@@ -32,7 +32,14 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. User can press R to reset the car to spawn position
   4. User sees a live speed readout (km/h) in the HUD and a stable 60fps FPS counter in debug mode
   5. User can toggle chase and cockpit camera modes with C
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Walking Skeleton: GLOSSARY, importmap, scene, fixed-timestep loop, terrain stub
+- [ ] 01-02-PLAN.md — Physics Engine: 6DOF integrator, tire/suspension stubs, getDriveTorque stub
+- [ ] 01-03-PLAN.md — Vehicle + Drivetrain: input, Ackermann steer, wheel spin, reset, HUD speed wire
+- [ ] 01-04-PLAN.md — Camera + Debug: spring-follow chase, cockpit toggle, lil-gui friction sliders
+
 **UI hint**: yes
 
 ### Phase 2: Scenario System + Debug Menu
@@ -113,7 +120,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → [research] → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Driving | 0/TBD | Not started | - |
+| 1. Core Driving | 0/4 | In progress | - |
 | 2. Scenario System + Debug Menu | 0/TBD | Not started | - |
 | 3. Tire Model | 0/TBD | Not started | - |
 | 4. Suspension | 0/TBD | Not started | - |
