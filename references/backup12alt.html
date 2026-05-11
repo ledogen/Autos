@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Car Game</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #111; overflow: hidden; font-family: 'Courier New', monospace; }
+  canvas { display: block; }
+  #hud {
+    position: fixed; top: 20px; left: 20px;
+    color: #00ff88; font-size: 13px;
+    text-shadow: 0 0 8px #00ff88;
+    pointer-events: none;
+  }
+  #hud span { display: block; margin-bottom: 4px; }
+  #slipInfo { color: #ffaa00; }
+  #debug {
+    display: none;
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.72); border: 1px solid #00ff8844;
+  }
+  #debug.visible { display: block; }
+</style>
+</head>
+<body>
+
+<div id="debug">
+  <canvas id="tirePlot" width="320" height="220"></canvas>
+  <div style="padding:8px 12px;color:#00ff88;font:11px monospace;pointer-events:all;">
+    <div style="font-size:10px; line-height:1.6;">
+      <div>B: <input type="range" id="sliderB" min="5" max="20" step="0.5" style="width:80px; vertical-align:middle;"> <span id="valB">10.0</span></div>
+      <div>C: <input type="range" id="sliderC" min="1.3" max="1.95" step="0.05" value="1.5" style="width:80px; vertical-align:middle;"> <span id="valC">1.50</span></div>
+      <div>E: <input type="range" id="sliderE" min="0" max="1" step="0.05" style="width:80px; vertical-align:middle;"> <span id="valE">0.50</span></div>
+      <div>Peak μ: <input type="range" id="sliderPeakMu" min="0.3" max="1.5" step="0.1" value="0.9" style="width:80px; vertical-align:middle;"> <span id="valPeakMu">0.90</span></div>
+      <div>HP: <input type="range" id="sliderHP" min="50" max="500" step="10" value="160" style="width:80px; vertical-align:middle;"> <span id="valHP">160</span></div>
+      <div>Brake (N): <input type="range" id="sliderBrake" min="2000" max="16000" step="500" value="8000" style="width:80px; vertical-align:middle;"> <span id="valBrake">8000</span></div>
+      <div>Spring (N/m): <input type="range" id="sliderSpring" min="5000" max="50000" step="1000" value="21000" style="width:80px; vertical-align:middle;"> <span id="valSpring">21000</span></div>
+      <div>Damping: <input type="range" id="sliderDamping" min="200" max="5000" step="100" value="1000" style="width:80px; vertical-align:middle;"> <span id="valDamping">1000</span></div>
+      <div>Ride Height (m): <input type="range" id="sliderRideHeight" min="0" max="0.6" step="0.05" value="0.30" style="width:80px; vertical-align:middle;"> <span id="valRideHeight">0.30</span></div>
+      <div style="margin-top:8px;"><input type="checkbox" id="conesToggle"> <label for="conesToggle">Cones</label></div>
+    </div>
+  </div>
+</div>
+<div id="hud">
+  <span>SPEED: <b id="speedVal">0.0</b> km/h</span>
+  <span id="slipInfo">FRONT SLIP: <b id="slipVal">0.0</b>° <b id="slipDir"></b></span>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ─── Scene ────────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0a);
+scene.fog = new THREE.Fog(0x0a0a0a, 80, 180);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 300);
+
+// ─── Lights ───────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const sun = new THREE.DirectionalLight(0xffeedd, 1.2);
+sun.position.set(30, 50, 20);
+sun.castShadow = true;
+sun.shadow.mapSize.width = 2048;
+sun.shadow.mapSize.height = 2048;
+sun.shadow.camera.left = -80; sun.shadow.camera.right = 80;
+sun.shadow.camera.top = 80; sun.shadow.camera.bottom = -80;
+scene.add(sun);
+
+// ─── Ground ───────────────────────────────────────────────────────────────────
+const GRID_SIZE = 200;
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE),
+  new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+scene.add(new THREE.GridHelper(GRID_SIZE, GRID_SIZE / 4, 0x00ff8820, 0x00ff8812));
+
+// ─── Vehicle Mesh ─────────────────────────────────────────────────────────────
+const WHEEL_RADIUS = 0.312;
+const WHEEL_WIDTH = 0.205;
+
+const carGroup = new THREE.Group();
+scene.add(carGroup);
+
+// Body — main lower section (extended 15% backwards to cover rear wheels)
+const carBodyMat = new THREE.MeshStandardMaterial({
+  color: 0x87ceeb,     // baby blue (SkyBlue)
+  roughness: 0.8,      // increase from default 0.5 for more diffuse shading
+  metalness: 0         // non-metallic
+});
+const carBody = new THREE.Mesh(
+  new THREE.BoxGeometry(1.5, 0.48, 3.22),  // 2.8 * 1.15
+  carBodyMat
+);
+carBody.position.y = 0.42;
+carBody.position.z = -0.176;  // offset back to center (3.22 - 2.8) / 2
+carBody.castShadow = true;
+carGroup.add(carBody);
+
+// Cabin roof — shorter, narrower, taller
+const cabin = new THREE.Mesh(
+  new THREE.BoxGeometry(1.3, 0.42, 1.2),
+  carBodyMat
+);
+cabin.position.set(0, 0.8, 0.2);
+cabin.castShadow = true;
+carGroup.add(cabin);
+
+// Wheel meshes
+const wheelGeo = new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_WIDTH, 16);
+const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+
+function makeWheel(lx, lz) {
+  const pivot = new THREE.Group();
+  pivot.position.set(lx, WHEEL_RADIUS, lz);
+  const mesh = new THREE.Mesh(wheelGeo, wheelMat);
+  mesh.rotation.z = Math.PI / 2;
+  pivot.add(mesh);
+  scene.add(pivot);  // Add directly to scene, not to carGroup, so they don't inherit pitch/roll
+  return { pivot, mesh };
+}
+
+const wheelFL = makeWheel(-0.71,  1.19);
+const wheelFR = makeWheel( 0.71,  1.19);
+const wheelRL = makeWheel(-0.71, -1.45);
+const wheelRR = makeWheel( 0.71, -1.45);
+const wheelMeshes = [wheelFL, wheelFR, wheelRL, wheelRR];
+let wheelSpinAngle = 0;
+
+// Taillights (red, dim by default, bright when braking)
+const tailLightGeo = new THREE.BoxGeometry(0.2, 0.12, 0.05);
+const tailLightMatL = new THREE.MeshStandardMaterial({ color: 0x330000, emissive: 0x330000 });
+const tailLightMatR = new THREE.MeshStandardMaterial({ color: 0x330000, emissive: 0x330000 });
+const tailLightL = new THREE.Mesh(tailLightGeo, tailLightMatL);
+const tailLightR = new THREE.Mesh(tailLightGeo, tailLightMatR);
+tailLightL.position.set(-0.55, 0.5, -1.9);
+tailLightR.position.set( 0.55, 0.5, -1.9);
+carGroup.add(tailLightL);
+carGroup.add(tailLightR);
+
+// Reverse lights (white, off by default)
+const revLightGeo = new THREE.BoxGeometry(0.15, 0.1, 0.05);
+const revLightMatL = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0x000000 });
+const revLightMatR = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0x000000 });
+const revLightL = new THREE.Mesh(revLightGeo, revLightMatL);
+const revLightR = new THREE.Mesh(revLightGeo, revLightMatR);
+revLightL.position.set(-0.35, 0.5, -1.9);
+revLightR.position.set( 0.35, 0.5, -1.9);
+carGroup.add(revLightL);
+carGroup.add(revLightR);
+
+// ─── Cones (off by default) ────────────────────────────────────────────────────
+const coneGroup = new THREE.Group();
+scene.add(coneGroup);
+let conesVisible = false;
+
+function generateCones() {
+  coneGroup.clear();
+  const numCones = Math.floor(Math.random() * 5) + 4;  // 4-8 cones
+  const coneMat = new THREE.MeshStandardMaterial({ color: 0xff8800 });
+
+  for (let i = 0; i < numCones; i++) {
+    const coneGeo = new THREE.ConeGeometry(0.3, 1, 8);
+    const cone = new THREE.Mesh(coneGeo, coneMat);
+
+    // Random position around the origin
+    cone.position.set(
+      (Math.random() - 0.5) * 100,
+      0.5,
+      (Math.random() - 0.5) * 100
+    );
+    coneGroup.add(cone);
+  }
+}
+
+function toggleCones() {
+  conesVisible = !conesVisible;
+  coneGroup.visible = conesVisible;
+  if (conesVisible && coneGroup.children.length === 0) {
+    generateCones();
+  }
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+const DT = 1 / 60;
+const MASS = 1200;           // kg
+const INERTIA = 1800;        // kg·m²
+const L = 2.64;              // wheelbase (Volvo 240)
+const a = 1.19;              // CG to front axle
+const b = 1.45;              // CG to rear axle
+const t = 0.71;              // half-track width
+const GRAVITY = 9.81;        // m/s²
+const W_TOTAL = MASS * GRAVITY;
+const N_PER_WHEEL = W_TOTAL / 4;  // equal weight, no transfer
+
+// Pacejka Magic Formula parameters (mutable for debug sliders)
+let TIRE_PEAK_MU = 0.9;           // peak friction coefficient
+let TIRE_D = TIRE_PEAK_MU * N_PER_WHEEL;
+let TIRE_C = 1.5;                 // shape factor (< 2.0 prevents zero crossing)
+let TIRE_B = 10.0;                // stiffness factor (controls initial slope)
+let TIRE_E = 0.5;                 // curvature factor (controls post-peak drop)
+
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+function tireLateralForce(alpha) {
+  const x = TIRE_B * alpha;
+  return -TIRE_D * Math.sin(TIRE_C * Math.atan(x - TIRE_E * (x - Math.atan(x))));
+}
+
+function computeWheelForces(wheel, vx, vz, omega, theta, drivePerWheel, braking, normalForce) {
+  // Velocity at contact patch: v_CG + omega × r
+  const wcX = vx + omega * wheel.rz;
+  const wcZ = vz - omega * wheel.rx;
+
+  // Wheel heading
+  const wH = theta + wheel.steer;
+  const cosW = Math.cos(wH), sinW = Math.sin(wH);
+
+  // Decompose into wheel frame
+  const wLong = wcX * sinW + wcZ * cosW;
+  const wLat = wcX * cosW - wcZ * sinW;
+
+  // Slip angle
+  const alpha = Math.atan2(wLat, Math.abs(wLong));
+
+  // Tire peak force based on current normal force
+  const tirePeakForce = TIRE_PEAK_MU * normalForce;
+
+  // Lateral force (Pacejka Magic Formula) — scale with normal force
+  const x = TIRE_B * alpha;
+  let Fy = -tirePeakForce * Math.sin(TIRE_C * Math.atan(x - TIRE_E * (x - Math.atan(x))));
+
+  // Longitudinal force
+  let Flong = 0;
+  if (wheel.driven) Flong = drivePerWheel;
+  if (braking && Math.abs(wLong) > BRAKE_VELOCITY_THRESHOLD) {
+    Flong += -(BRAKE_FORCE / 4) * Math.sign(wLong);
+  }
+
+  // Friction circle: clamp lateral to max, constrain long to remainder, penalize lateral by long usage
+  const Fy_clamped = clamp(Fy, -tirePeakForce, tirePeakForce);
+  const longBudget = Math.sqrt(Math.max(0, tirePeakForce * tirePeakForce - Fy_clamped * Fy_clamped));
+  Flong = clamp(Flong, -longBudget, longBudget);
+
+  const longUsage = Math.abs(Flong) / Math.max(longBudget, LONG_BUDGET_EPSILON);
+  const lateralPenalty = 1.0 - (longUsage * LATERAL_PENALTY_MAX);
+  const Fy_coupled = Fy_clamped * lateralPenalty;
+
+  // Convert to world frame
+  // Forward along wheel heading: (sinW, cosW)
+  // Lateral (right of wheel): (cosW, -sinW)
+  const fxW = Flong * sinW + Fy_coupled * cosW;
+  const fzW = Flong * cosW + Fy_coupled * (-sinW);
+
+  // Yaw torque: r × F (2D cross product: rz*Fx - rx*Fy)
+  const Mz = wheel.rz * fxW - wheel.rx * fzW;
+
+  return { fxW, fzW, Mz, alpha };
+}
+
+let HP = 160;                    // horsepower
+const HP_TO_FORCE = 745.7 / 30; // conversion: watts per HP / reference speed (30 m/s)
+let DRIVE_FORCE = HP * HP_TO_FORCE;  // N (derived from HP)
+let BRAKE_FORCE = 8000;         // N (total, split across 4 wheels)
+const REVERSE_SPEED = 1.34;  // m/s (~3 mph)
+const AIR_DRAG = 1.8;        // N/(m/s)²
+const MAX_STEER = 0.6;       // rad (~34°)
+
+// ─── Steering ──────────────────────────────────────────────────────────────
+const STEER_RATE_BUILD = 0.03;        // how fast steering builds up when turning
+const STEER_RATE_RETURN = 0.12;       // how fast steering returns to center
+const STEER_DEADZONE = 0.001;         // angle threshold for Ackermann calc
+
+// ─── Friction Circle ───────────────────────────────────────────────────────
+const LATERAL_PENALTY_MAX = 0.4;      // max grip loss from longitudinal demand
+const BRAKE_VELOCITY_THRESHOLD = 0.1; // m/s threshold for brake application
+const LONG_BUDGET_EPSILON = 0.1;      // prevent division by very small budgets
+
+// ─── Camera ────────────────────────────────────────────────────────────────
+const CAMERA_DISTANCE = 10;
+const CAMERA_HEIGHT = 5;
+const YAW_CAM_LOW_SPEED = 0.2;        // max lookahead multiplier
+
+// ─── Vehicle Behavior ──────────────────────────────────────────────────────
+const YAW_DAMPING = 1.0;              // yaw rate damping factor per frame
+const CG_HEIGHT = 0.5;                // center of gravity height (meters)
+
+// ─── Suspension ────────────────────────────────────────────────────────────────
+const WHEEL_MASS = 30;                // kg, mass of wheel + tire
+const WHEEL_NORMAL = WHEEL_MASS * GRAVITY;
+const BODY_MASS = MASS - (WHEEL_MASS * 4);  // body weight alone
+const PITCH_INERTIA = 2500;           // kg·m² (typically larger than yaw for cars)
+const ROLL_INERTIA = 2000;            // kg·m² (typically smaller than pitch)
+const SPRING_LENGTH = WHEEL_RADIUS;   // unloaded spring length (meters)
+let SPRING_STIFFNESS = 21000;         // spring constant (N/m)
+let SPRING_DAMPING = 1000;            // damper constant (N·s/m)
+let RIDE_HEIGHT = 0.3;               // upper suspension mount height above body CG (meters)
+
+// Ackermann geometry: compute inner/outer wheel angles from steering input
+function getAckermannAngles(steerAngle) {
+  if (Math.abs(steerAngle) < 0.001) return { left: 0, right: 0 };
+
+  const R = L / Math.tan(steerAngle);
+  const deltaL = Math.atan(L / (R - t));  // inner wheel
+  const deltaR = Math.atan(L / (R + t));  // outer wheel
+
+  return steerAngle > 0
+    ? { left: deltaL, right: deltaR }   // left turn: left wheel steers more
+    : { left: deltaR, right: deltaL };  // right turn: right wheel steers more
+}
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let x = 0, z = 0;
+let vx = 0, vz = 0;          // world velocity
+const DROP_HEIGHT = 1.0;               // meters above normal rest height
+let y = WHEEL_RADIUS + SPRING_LENGTH + DROP_HEIGHT;  // start elevated
+let vy = 0;                   // vertical velocity
+let theta = 0;                // heading (yaw)
+let pitch = 0;                // pitch angle (nose up/down)
+let roll = 0;                 // roll angle (lean left/right)
+let omega = 0;                // yaw rate (rad/s)
+let pitchRate = 0;            // pitch rate (rad/s)
+let rollRate = 0;             // roll rate (rad/s)
+let lastOmega = 0;            // previous frame yaw rate for low-speed filtering
+let delta = 0;                // steering angle
+let frontSlip = 0;            // for display
+let isBraking = false;
+let isReversing = false;
+let debugVisible = false;
+let ackAngles = { left: 0, right: 0 };  // cached Ackermann angles
+let lastFx = 0, lastFz = 0;   // previous frame forces for load transfer
+let lastYawInfluence = 0;     // previous frame yaw influence for smoothing
+let wheelY = [WHEEL_RADIUS + DROP_HEIGHT, WHEEL_RADIUS + DROP_HEIGHT, WHEEL_RADIUS + DROP_HEIGHT, WHEEL_RADIUS + DROP_HEIGHT];  // wheel center height [FL, FR, RL, RR]
+let wheelVy = [0, 0, 0, 0];  // vertical velocity of each wheel
+let wheelWorldPos = [  // wheel world positions (computed from rotated mounts)
+  { x: 0, y: WHEEL_RADIUS + DROP_HEIGHT, z: 0 },
+  { x: 0, y: WHEEL_RADIUS + DROP_HEIGHT, z: 0 },
+  { x: 0, y: WHEEL_RADIUS + DROP_HEIGHT, z: 0 },
+  { x: 0, y: WHEEL_RADIUS + DROP_HEIGHT, z: 0 },
+];
+let cameraMode = 'chase';    // 'chase' or 'cockpit'
+const debugData = { slips: [0,0,0,0], Fys: [0,0,0,0], Fx: 0, Fz: 0, Mz: 0 };
+
+// ─── Input ────────────────────────────────────────────────────────────────────
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+  if (e.key === '`') { debugVisible = !debugVisible; document.getElementById('debug').classList.toggle('visible', debugVisible); }
+  if (e.key === 'c' || e.key === 'C') {
+    cameraMode = cameraMode === 'chase' ? 'cockpit' : 'chase';
+    cabin.visible = cameraMode === 'chase';  // hide cabin in cockpit mode, show in chase
+    carBody.visible = true;  // body always visible
+  }
+});
+window.addEventListener('keyup', e => { if (e.key !== '`') keys[e.key.toLowerCase()] = false; });
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── HUD ──────────────────────────────────────────────────────────────────────
+const speedVal = document.getElementById('speedVal');
+const slipVal = document.getElementById('slipVal');
+const slipDir = document.getElementById('slipDir');
+
+// Update tail and reverse lights based on vehicle state
+function updateLights() {
+  // Taillights: dim red normally, bright red when braking
+  const tailEmissive = isBraking ? 0xff0000 : 0x330000;
+  const tailColor = isBraking ? 0xff0000 : 0x330000;
+  tailLightMatL.emissive.setHex(tailEmissive);
+  tailLightMatR.emissive.setHex(tailEmissive);
+  tailLightMatL.color.setHex(tailColor);
+  tailLightMatR.color.setHex(tailColor);
+
+  // Reverse lights: white when reversing, off otherwise
+  const revEmissive = isReversing ? 0xffffff : 0x000000;
+  const revColor = isReversing ? 0xffffff : 0x111111;
+  revLightMatL.emissive.setHex(revEmissive);
+  revLightMatR.emissive.setHex(revEmissive);
+  revLightMatL.color.setHex(revColor);
+  revLightMatR.color.setHex(revColor);
+}
+
+// Render debug panel with tire curve plot and current operating point
+function renderDebugPanel() {
+  if (!debugVisible) return;
+
+  const canvas = document.getElementById('tirePlot');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const PAD = 28;
+
+  ctx.clearRect(0, 0, W, H);
+
+  const MAX_ALPHA = 90 * Math.PI / 180;  // 0–90°
+  const MAX_F = TIRE_D * 1.1;
+
+  // Map slip angle and force to canvas coords
+  const px = a => PAD + (a / MAX_ALPHA) * (W - PAD * 2);
+  const py = f => PAD + (1 - f / MAX_F) * (H - PAD * 2);
+
+  // Title
+  ctx.fillStyle = '#00ff88';
+  ctx.font = 'bold 12px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Pacejka Magic Formula', W / 2, 14);
+
+  // Axes
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(PAD, H - PAD); ctx.lineTo(W - PAD, H - PAD);  // x-axis
+  ctx.moveTo(PAD, PAD);     ctx.lineTo(PAD, H - PAD);       // y-axis
+  ctx.stroke();
+
+  // X-axis label (slip angle)
+  ctx.fillStyle = '#888';
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Slip Angle (°)', W / 2, H - 5);
+
+  // Y-axis label (force)
+  ctx.save();
+  ctx.translate(8, H / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center';
+  ctx.fillText('Lateral Force (N)', 0, 0);
+  ctx.restore();
+
+  // Degree marks
+  ctx.strokeStyle = '#444';
+  ctx.fillStyle = '#666';
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'center';
+  [15, 30, 45, 60, 75, 90].forEach(deg => {
+    const ax = px(deg * Math.PI / 180);
+    ctx.beginPath();
+    ctx.moveTo(ax, H - PAD);
+    ctx.lineTo(ax, H - PAD + 4);
+    ctx.stroke();
+    ctx.fillText(deg + '°', ax, H - PAD + 13);
+  });
+
+  // Force marks on y-axis
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#666';
+  const forceStep = Math.ceil(MAX_F / 500) * 500;
+  for (let f = forceStep; f <= MAX_F; f += forceStep) {
+    const ay = py(f);
+    ctx.beginPath();
+    ctx.moveTo(PAD - 4, ay);
+    ctx.lineTo(PAD, ay);
+    ctx.stroke();
+    ctx.fillText(Math.round(f), PAD - 6, ay + 3);
+  }
+
+  // Tire curve
+  ctx.strokeStyle = '#00ff88';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  const STEPS = 200;
+  for (let i = 0; i <= STEPS; i++) {
+    const alpha = MAX_ALPHA * i / STEPS;
+    const f = -tireLateralForce(alpha);  // positive = force magnitude
+    i === 0 ? ctx.moveTo(px(alpha), py(f)) : ctx.lineTo(px(alpha), py(f));
+  }
+  ctx.stroke();
+
+  // Current operating point (abs front slip)
+  const absSlip = Math.abs(frontSlip);
+  const curF = -tireLateralForce(absSlip);
+  ctx.fillStyle = '#ff4400';
+  ctx.beginPath();
+  ctx.arc(px(absSlip), py(curF), 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// ─── Helper: Body-local to World Rotation ────────────────────────────────
+function rotateBody(lx, ly, lz) {
+  const cosT = Math.cos(theta), sinT = Math.sin(theta);
+  const cosP = Math.cos(pitch), sinP = Math.sin(pitch);
+  const cosR = Math.cos(roll),  sinR = Math.sin(roll);
+  // YXZ order: Rz(roll) → Rx(pitch) → Ry(yaw)
+  const ax = lx * cosR - ly * sinR, ay = lx * sinR + ly * cosR, az = lz;
+  const bx = ax, by = ay * cosP - az * sinP, bz = ay * sinP + az * cosP;
+  const wx = bx * cosT + bz * sinT, wy = by, wz = -bx * sinT + bz * cosT;
+  return { x: wx, y: wy, z: wz };
+}
+
+// ─── Physics ──────────────────────────────────────────────────────────────────
+function physicsStep() {
+  const fwd = keys['w'] || keys['arrowup'];
+  const back = keys['s'] || keys['arrowdown'];
+  const steerInput = (keys['a'] || keys['arrowleft'] ? 1 : 0)
+                   - (keys['d'] || keys['arrowright'] ? 1 : 0);
+
+  // Smooth steering — faster return to center, slower build-up
+  const targetDelta = steerInput * MAX_STEER;
+  const steerRate = steerInput !== 0 ? STEER_RATE_BUILD : STEER_RATE_RETURN;
+  delta += (targetDelta - delta) * steerRate;
+
+  // Ackermann geometry: left/right wheel angles
+  ackAngles = getAckermannAngles(delta);
+
+  const cosT = Math.cos(theta), sinT = Math.sin(theta);
+
+  // Car-right direction in world: (cosT, -sinT)
+  // Car-forward direction in world: (sinT, cosT)
+
+  // ── 4 wheel positions relative to CG (in world frame) ──
+  // FL, FR, RL, RR
+  const wheels = [
+    { rx:  a * sinT - t * cosT, rz:  a * cosT + t * sinT, steer: ackAngles.left,  driven: false }, // FL
+    { rx:  a * sinT + t * cosT, rz:  a * cosT - t * sinT, steer: ackAngles.right, driven: false }, // FR
+    { rx: -b * sinT - t * cosT, rz: -b * cosT + t * sinT, steer: 0,                driven: true  }, // RL
+    { rx: -b * sinT + t * cosT, rz: -b * cosT - t * sinT, steer: 0,                driven: true  }, // RR
+  ];
+
+  let Fx = 0, Fz = 0, Mz = 0;
+
+  // Forward speed along car heading
+  const speed = Math.sqrt(vx * vx + vz * vz);
+  const vLong = vx * sinT + vz * cosT;
+
+  // Drive / brake logic
+  let drivePerWheel = 0;   // applied to rear wheels along wheel heading
+  let braking = false;
+
+  if (fwd) {
+    drivePerWheel = DRIVE_FORCE / 2;
+  }
+  if (back) {
+    if (vLong > REVERSE_SPEED) {
+      braking = true;
+    } else {
+      drivePerWheel = -DRIVE_FORCE * 0.5 / 2;
+    }
+  }
+
+  isBraking = braking;
+  isReversing = back && vLong <= REVERSE_SPEED;
+
+  // Drag (applied once to whole car) — quadratic drag: F = k * v²
+  const Fdrag = -AIR_DRAG * speed * speed * Math.sign(vLong);
+  Fx += Fdrag * sinT;
+  Fz += Fdrag * cosT;
+
+  // ── Suspension physics ──
+  const cornerForward = [a, a, -b, -b];   // FL, FR, RL, RR
+  const cornerRight = [-t, t, -t, t];     // FL, FR, RL, RR
+  const localMounts = [
+    { lx: -t, ly: RIDE_HEIGHT, lz:  a },  // FL
+    { lx:  t, ly: RIDE_HEIGHT, lz:  a },  // FR
+    { lx: -t, ly: RIDE_HEIGHT, lz: -b },  // RL
+    { lx:  t, ly: RIDE_HEIGHT, lz: -b },  // RR
+  ];
+
+  const suspForces = [];
+  const groundNormals = [];
+  let totalSuspForceOnBody = 0;
+  let pitchTorqueFromSusp = 0;
+  let rollTorqueFromSusp = 0;
+
+  for (let i = 0; i < 4; i++) {
+    // Body corner height = body_y + mount offset + pitch contribution + roll contribution
+    const cornerY_body = y + RIDE_HEIGHT + cornerForward[i] * Math.sin(pitch) - cornerRight[i] * Math.sin(roll);
+
+    // Spring length = distance from body corner to wheel center
+    const currentSpringLength = cornerY_body - wheelY[i];
+
+    // Spring compression (positive = compressed)
+    const compression = SPRING_LENGTH - currentSpringLength;
+
+    // Spring force (positive = pushes apart)
+    const springForce = SPRING_STIFFNESS * compression;
+
+    // Damper force (opposes relative velocity between body corner and wheel)
+    const cornerVy_body = vy + cornerForward[i] * pitchRate * Math.cos(pitch) - cornerRight[i] * rollRate * Math.cos(roll);
+    const relativeVelocity = cornerVy_body - wheelVy[i];
+    const damperForce = -SPRING_DAMPING * relativeVelocity;
+
+    // Total suspension force (positive = pushes body up, pushes wheel down)
+    const suspForce = springForce + damperForce;
+    suspForces.push(suspForce);
+
+    // Ground contact: wheel can't go below ground
+    const groundLevel = WHEEL_RADIUS;
+    const wheelOnGround = wheelY[i] <= groundLevel;
+
+    let groundNormalForce = 0;
+    if (wheelOnGround) {
+      wheelY[i] = groundLevel;
+      if (wheelVy[i] < 0) wheelVy[i] = 0;
+      // Ground normal force = net downward force on wheel (gravity + suspension pushing down)
+      groundNormalForce = WHEEL_MASS * GRAVITY + suspForce;
+      if (groundNormalForce < 0) groundNormalForce = 0; // wheel lifting off
+    }
+    groundNormals.push(groundNormalForce);
+
+    // Wheel vertical integration
+    const wheelFy = -WHEEL_MASS * GRAVITY - suspForce + groundNormalForce;
+    wheelVy[i] += (wheelFy / WHEEL_MASS) * DT;
+    wheelY[i] += wheelVy[i] * DT;
+
+    // Update wheel world position (mount rotated + vertical offset)
+    const localMount = localMounts[i];
+    const mw = rotateBody(localMount.lx, localMount.ly, localMount.lz);
+    const offsetY = RIDE_HEIGHT - wheelY[i];
+    wheelWorldPos[i] = {
+      x: x + mw.x,
+      y: y + mw.y - offsetY,
+      z: z + mw.z,
+    };
+
+    // Accumulate body forces and torques from suspension
+    totalSuspForceOnBody += suspForce;
+    pitchTorqueFromSusp += suspForce * cornerForward[i];
+    rollTorqueFromSusp += suspForce * (-cornerRight[i]);
+  }
+
+  // ── Tire forces (using ground normal as tire load) ──
+  let frontSlipSum = 0;
+  let pitchTorqueFromTires = 0;
+  let rollTorqueFromTires = 0;
+
+  for (let i = 0; i < 4; i++) {
+    const w = wheels[i];
+    const forces = computeWheelForces(w, vx, vz, omega, theta, drivePerWheel, braking, groundNormals[i]);
+
+    Fx += forces.fxW;
+    Fz += forces.fzW;
+    Mz += forces.Mz;
+
+    // Pitch/roll torques from tire forces applied at wheel location (not at body CG)
+    // Convert world frame forces to car frame (forward = sin(theta), cos(theta))
+    const Fx_car = forces.fxW * Math.cos(theta) - forces.fzW * Math.sin(theta);   // lateral (right)
+    const Fz_car = forces.fxW * Math.sin(theta) + forces.fzW * Math.cos(theta);   // longitudinal (forward)
+    const heightOffset = (wheelY[i] - WHEEL_RADIUS) - y;  // contact patch to body CG
+
+    // Torque = r × F: vertical offset combined with horizontal forces creates pitch/roll
+    pitchTorqueFromTires += heightOffset * Fz_car;  // longitudinal force at height creates pitch
+    rollTorqueFromTires -= heightOffset * Fx_car;   // lateral force at height creates roll
+
+    debugData.slips[i] = forces.alpha;
+    debugData.Fys[i] = tireLateralForce(forces.alpha);
+
+    // Capture front slip for display (average of FL and FR)
+    if (i < 2) frontSlipSum += forces.alpha;
+  }
+
+  frontSlip = frontSlipSum / 2;
+  debugData.Fx = Fx; debugData.Fz = Fz; debugData.Mz = Mz;
+
+  // Save forces for next frame's load transfer calculation
+  lastFx = Fx;
+  lastFz = Fz;
+
+  // ── Integrate (horizontal and yaw) ──
+  vx += (Fx / MASS) * DT;
+  vz += (Fz / MASS) * DT;
+  omega += (Mz / INERTIA) * DT;
+
+  // Speed-dependent yaw damping: high at rest, low when moving
+  const speedKphPhysics = speed * 3.6;
+  const yawDampingActive = speedKphPhysics < 5
+    ? 0.7 + (speedKphPhysics / 5) * 0.3  // lerp 0.7 → 1.0 over 0-5 kph
+    : 1.0;
+  omega *= yawDampingActive;
+
+  // Low-pass filter on yaw rate below 5 kph to kill high-frequency noise
+  if (speedKphPhysics < 5) {
+    omega = lastOmega * 0.1 + omega * 0.9;  // minimal smoothing (10% old, 90% new)
+  }
+  lastOmega = omega;
+
+  theta += omega * DT;
+  x += vx * DT;
+  z += vz * DT;
+
+  // ── Integrate body vertical, pitch, roll ──
+  vy += (-BODY_MASS * GRAVITY + totalSuspForceOnBody) / BODY_MASS * DT;
+  y += vy * DT;
+
+  pitchRate += (pitchTorqueFromSusp + pitchTorqueFromTires) / PITCH_INERTIA * DT;
+  rollRate += (rollTorqueFromSusp + rollTorqueFromTires) / ROLL_INERTIA * DT;
+  pitch += pitchRate * DT;
+  roll += rollRate * DT;
+
+  // World wrap
+  const HALF = GRID_SIZE / 2;
+  if (x > HALF) x -= GRID_SIZE;
+  if (x < -HALF) x += GRID_SIZE;
+  if (z > HALF) z -= GRID_SIZE;
+  if (z < -HALF) z += GRID_SIZE;
+}
+
+// ─── Animation Loop ───────────────────────────────────────────────────────────
+let lastTime = performance.now();
+let acc = 0;
+
+function animate(now) {
+  requestAnimationFrame(animate);
+  acc += Math.min((now - lastTime) / 1000, 0.1);
+  lastTime = now;
+
+  while (acc >= DT) {
+    physicsStep();
+    acc -= DT;
+  }
+
+  // Update mesh position and rotation (including vertical and pitch/roll)
+  carGroup.position.x = x;
+  carGroup.position.y = y;
+  carGroup.position.z = z;
+  carGroup.rotation.order = 'YXZ';  // yaw first, then pitch, then roll
+  carGroup.rotation.y = theta;      // yaw
+  carGroup.rotation.x = pitch;      // pitch (nose up/down)
+  carGroup.rotation.z = roll;       // roll (lean left/right)
+
+  // Compute wheel world positions from rotated mount points
+  const localMounts = [
+    { lx: -t, ly: RIDE_HEIGHT, lz:  a },  // FL
+    { lx:  t, ly: RIDE_HEIGHT, lz:  a },  // FR
+    { lx: -t, ly: RIDE_HEIGHT, lz: -b },  // RL
+    { lx:  t, ly: RIDE_HEIGHT, lz: -b },  // RR
+  ];
+
+  for (let i = 0; i < 4; i++) {
+    const m = localMounts[i];
+    // Mount position: body-local corner rotated to world
+    const mw = rotateBody(m.lx, m.ly, m.lz);
+    // Wheel is at mount, offset downward by (RIDE_HEIGHT - wheelY)
+    const offsetY = RIDE_HEIGHT - wheelY[i];
+    wheelWorldPos[i] = {
+      x: x + mw.x,
+      y: y + mw.y - offsetY,
+      z: z + mw.z,
+    };
+
+    wheelMeshes[i].pivot.position.set(wheelWorldPos[i].x, wheelWorldPos[i].y, wheelWorldPos[i].z);
+
+    // Apply body rotation visually (yaw + steering + pitch + roll)
+    wheelMeshes[i].pivot.rotation.order = 'YXZ';
+    if (i === 0) wheelMeshes[i].pivot.rotation.y = theta + ackAngles.left;
+    else if (i === 1) wheelMeshes[i].pivot.rotation.y = theta + ackAngles.right;
+    else wheelMeshes[i].pivot.rotation.y = theta;
+    wheelMeshes[i].pivot.rotation.x = pitch;
+    wheelMeshes[i].pivot.rotation.z = roll;
+  }
+
+  // Wheel spin
+  const vLongRender = vx * Math.sin(theta) + vz * Math.cos(theta);
+  wheelSpinAngle += (vLongRender * DT) / WHEEL_RADIUS;
+  for (const w of wheelMeshes) w.mesh.rotation.x = wheelSpinAngle;
+
+  // Update lights
+  updateLights();
+
+  // HUD and camera speed
+  const speed = Math.sqrt(vx * vx + vz * vz);
+  const speedKph = speed * 3.6;
+
+  // Camera with yaw rate lookahead — disabled above 30 kph
+  let yawMultiplier = 0;
+  if (speedKph < 30) {
+    yawMultiplier = (speedKph / 30) * YAW_CAM_LOW_SPEED;  // lerp from 0 to 0.2 over 0-30 kph
+  }
+  if (cameraMode === 'chase') {
+    // Chase camera (third-person behind the car)
+    const targetYawInfluence = omega * yawMultiplier;
+    // Smooth with inertia to avoid snapping at threshold
+    let yawInfluence = lastYawInfluence * 0.95 + targetYawInfluence * 0.05;
+    lastYawInfluence = yawInfluence;
+    const cameraHeading = theta + yawInfluence;
+    camera.position.set(x - Math.sin(cameraHeading) * CAMERA_DISTANCE, y + CAMERA_HEIGHT, z - Math.cos(cameraHeading) * CAMERA_DISTANCE);
+    camera.lookAt(x, y, z);
+  } else {
+    // Cockpit camera (first-person from driver seat)
+    // Driver sits ~0.3m forward of CG, ~0.2m right of center, ~0.85m above ground
+    const driverForward = 0.3;
+    const driverLateral = 0.2;
+    const driverHeight = 0.85;
+
+    // Rotate driver offset by car yaw to get world position
+    const cosT = Math.cos(theta), sinT = Math.sin(theta);
+    const driverWorldX = x + driverForward * sinT + driverLateral * cosT;
+    const driverWorldZ = z + driverForward * cosT - driverLateral * sinT;
+    const driverWorldY = y + driverHeight;
+
+    camera.position.set(driverWorldX, driverWorldY, driverWorldZ);
+    // Look forward in the direction the car is heading
+    const lookForwardDist = 10;
+    const lookX = driverWorldX + lookForwardDist * sinT;
+    const lookZ = driverWorldZ + lookForwardDist * cosT;
+    camera.lookAt(lookX, driverWorldY, lookZ);
+  }
+  speedVal.textContent = speedKph.toFixed(1);
+  const slipDeg = frontSlip * 180 / Math.PI;
+  slipVal.textContent = Math.abs(slipDeg).toFixed(1);
+  slipDir.textContent = Math.abs(slipDeg) < 0.5 ? '' : (slipDeg > 0 ? 'R' : 'L');
+
+  // Render debug panel
+  renderDebugPanel();
+
+  renderer.render(scene, camera);
+}
+
+// Slider configuration and event listener setup
+const sliderConfig = [
+  { id: 'sliderB',          valId: 'valB',          decimals: 1, set: v => { TIRE_B = v; } },
+  { id: 'sliderC',          valId: 'valC',          decimals: 2, set: v => { TIRE_C = v; } },
+  { id: 'sliderE',          valId: 'valE',          decimals: 2, set: v => { TIRE_E = v; } },
+  { id: 'sliderPeakMu',     valId: 'valPeakMu',     decimals: 2, set: v => { TIRE_PEAK_MU = v; TIRE_D = TIRE_PEAK_MU * N_PER_WHEEL; } },
+  { id: 'sliderHP',         valId: 'valHP',         decimals: 0, set: v => { HP = v; DRIVE_FORCE = HP * HP_TO_FORCE; } },
+  { id: 'sliderBrake',      valId: 'valBrake',      decimals: 0, set: v => { BRAKE_FORCE = v; } },
+  { id: 'sliderSpring',     valId: 'valSpring',     decimals: 0, set: v => { SPRING_STIFFNESS = v; } },
+  { id: 'sliderDamping',    valId: 'valDamping',    decimals: 0, set: v => { SPRING_DAMPING = v; } },
+  { id: 'sliderRideHeight', valId: 'valRideHeight', decimals: 2, set: v => { RIDE_HEIGHT = 0.6 - v; } },
+];
+
+sliderConfig.forEach(cfg => {
+  document.getElementById(cfg.id).addEventListener('input', e => {
+    const value = parseFloat(e.target.value);
+    cfg.set(value);
+    document.getElementById(cfg.valId).textContent = value.toFixed(cfg.decimals);
+  });
+});
+
+// Cones toggle checkbox
+document.getElementById('conesToggle').addEventListener('change', e => {
+  toggleCones();
+});
+
+animate(performance.now());
+</script>
+</body>
+</html>
