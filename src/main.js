@@ -20,6 +20,8 @@ import Stats from 'three/addons/libs/stats.module.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics } from './physics.js'
 import { updateVehicle, SPAWN_STATE } from './vehicle.js'
+import { updateCamera } from './camera.js'
+import { initDebug } from './debug.js'
 
 // Manual verification hook — console.log confirms importmap loaded r184 (FOUND-02)
 console.log('THREE.REVISION', THREE.REVISION)
@@ -55,10 +57,8 @@ renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
 
 // ── Camera ───────────────────────────────────────────────────────────────────
-// Static chase position for Wave 1; Plan 03 replaces with spring-follow camera.
+// Spring-follow camera managed by src/camera.js (Plan 04). updateCamera() called each frame.
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000)
-camera.position.set(0, 4, 10)
-camera.lookAt(0, 0.55, 0)
 
 // ── Scene ────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene()
@@ -196,6 +196,10 @@ window.terrain = terrain  // console: terrain(5, 5) → {height: 0, normal: {x:0
 const stats = new Stats()
 document.body.appendChild(stats.dom)
 
+// ── Debug panel ──────────────────────────────────────────────────────────────
+// D-10: passes mutable RANGER_PARAMS ref so sliders write directly to the object physics.js reads.
+initDebug(RANGER_PARAMS)
+
 // ── Game loop ─────────────────────────────────────────────────────────────────
 // Fixed-timestep accumulator (RESEARCH §Pattern 2, gafferongames.com/post/fix_your_timestep/)
 // FIXED_DT = 1/60s; MAX_FRAME_TIME = 0.25s (T-01-04: spiral-of-death mitigation)
@@ -238,6 +242,8 @@ function loop () {
   // M1-11: live speed readout. velocity.length() = magnitude in m/s; * 3.6 converts to km/h.
   const speedKmh = vehicleState.velocity.length() * 3.6
   document.getElementById('speedVal').textContent = speedKmh.toFixed(1)
+
+  updateCamera(camera, vehicleState)
 
   renderer.render(scene, camera)
   stats.update()
