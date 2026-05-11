@@ -35,7 +35,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 4 plans
 
 Plans:
+**Wave 1**
 - [ ] 01-01-PLAN.md — Walking Skeleton: GLOSSARY, importmap, scene, fixed-timestep loop, terrain stub
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 01-02-PLAN.md — Physics Engine: 6DOF integrator, tire/suspension stubs, getDriveTorque stub
 - [ ] 01-03-PLAN.md — Vehicle + Drivetrain: input, Ackermann steer, wheel spin, reset, HUD speed wire
 - [ ] 01-04-PLAN.md — Camera + Debug: spring-follow chase, cockpit toggle, lil-gui friction sliders

@@ -646,7 +646,7 @@ const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Wheel spin accumulation for visual rotation (M1-09)**
    - What we know: Visual spin = `(longitudinalSpeed / wheelRadius) * dt` added per step
