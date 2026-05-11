@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>RangerSim</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #111; overflow: hidden; }
+    canvas { display: block; }
+    #hud {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      color: #00ff88;
+      font-family: monospace;
+      font-size: 14px;
+      pointer-events: none;
+      user-select: none;
+    }
+  </style>
+  <!-- importmap MUST appear before any <script type="module"> (Pitfall 6) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- Canvas queried by main.js via document.querySelector('canvas') — no id required -->
+  <canvas></canvas>
+
+  <!-- HUD overlay — Plan 03 wires speed readout; element must exist now -->
+  <div id="hud">SPEED: <span id="speedVal">0.0</span> km/h</div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
