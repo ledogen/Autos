@@ -127,23 +127,72 @@
 
 ## Traceability
 
-*(Populated by roadmapper)*
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FOUND-01–05 | Phase 1 | Pending |
-| M1-01–15 | Phase 1 | Pending |
-| M2-01–06 | Phase 2 | Pending |
-| M3-01–10 | Phase 3 | Pending |
-| M4-01–09 | Phase 4 | Pending |
-| M5-01–07 | Phase 5 | Pending |
-| TERR-01–06 | Phase 6 | Pending |
+| FOUND-01 | Phase 1 | Pending |
+| FOUND-02 | Phase 1 | Pending |
+| FOUND-03 | Phase 1 | Pending |
+| FOUND-04 | Phase 1 | Pending |
+| FOUND-05 | Phase 1 | Pending |
+| M1-01 | Phase 1 | Pending |
+| M1-02 | Phase 1 | Pending |
+| M1-03 | Phase 1 | Pending |
+| M1-04 | Phase 1 | Pending |
+| M1-05 | Phase 1 | Pending |
+| M1-06 | Phase 1 | Pending |
+| M1-07 | Phase 1 | Pending |
+| M1-08 | Phase 1 | Pending |
+| M1-09 | Phase 1 | Pending |
+| M1-10 | Phase 1 | Pending |
+| M1-11 | Phase 1 | Pending |
+| M1-12 | Phase 1 | Pending |
+| M1-13 | Phase 1 | Pending |
+| M1-14 | Phase 1 | Pending |
+| M1-15 | Phase 1 | Pending |
+| M2-01 | Phase 2 | Pending |
+| M2-02 | Phase 2 | Pending |
+| M2-03 | Phase 2 | Pending |
+| M2-04 | Phase 2 | Pending |
+| M2-05 | Phase 2 | Pending |
+| M2-06 | Phase 2 | Pending |
+| M3-01 | Phase 3 | Pending |
+| M3-02 | Phase 3 | Pending |
+| M3-03 | Phase 3 | Pending |
+| M3-04 | Phase 3 | Pending |
+| M3-05 | Phase 3 | Pending |
+| M3-06 | Phase 3 | Pending |
+| M3-07 | Phase 3 | Pending |
+| M3-08 | Phase 3 | Pending |
+| M3-09 | Phase 3 | Pending |
+| M3-10 | Phase 3 | Pending |
+| M4-01 | Phase 4 | Pending |
+| M4-02 | Phase 4 | Pending |
+| M4-03 | Phase 4 | Pending |
+| M4-04 | Phase 4 | Pending |
+| M4-05 | Phase 4 | Pending |
+| M4-06 | Phase 4 | Pending |
+| M4-07 | Phase 4 | Pending |
+| M4-08 | Phase 4 | Pending |
+| M4-09 | Phase 4 | Pending |
+| M5-01 | Phase 5 | Pending |
+| M5-02 | Phase 5 | Pending |
+| M5-03 | Phase 5 | Pending |
+| M5-04 | Phase 5 | Pending |
+| M5-05 | Phase 5 | Pending |
+| M5-06 | Phase 5 | Pending |
+| M5-07 | Phase 5 | Pending |
+| TERR-01 | Phase 6 | Pending |
+| TERR-02 | Phase 6 | Pending |
+| TERR-03 | Phase 6 | Pending |
+| TERR-04 | Phase 6 | Pending |
+| TERR-05 | Phase 6 | Pending |
+| TERR-06 | Phase 6 | Pending |
 
 **Coverage:**
-- v1 requirements: 52 total
-- Mapped to phases: 52
+- v1 requirements: 58 total
+- Mapped to phases: 58
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-05-10*
-*Last updated: 2026-05-10 after initial definition*
+*Last updated: 2026-05-10 after roadmap creation*
