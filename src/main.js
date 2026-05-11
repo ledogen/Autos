@@ -18,6 +18,8 @@
 import * as THREE from 'three'
 import Stats from 'three/addons/libs/stats.module.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
+import { stepPhysics } from './physics.js'
+import { updateVehicle, SPAWN_STATE } from './vehicle.js'
 
 // Manual verification hook — console.log confirms importmap loaded r184 (FOUND-02)
 console.log('THREE.REVISION', THREE.REVISION)
@@ -42,6 +44,7 @@ const vehicleState = {
   throttle:        0,
   brake:           0,
   wheelAngles:     [0, 0, 0, 0],                 // per-wheel spin angle [rad], Plan 03 drives
+  wheelSteerAngles: [0, 0, 0, 0],               // Per-wheel Ackermann steer angles [rad]; set by updateVehicle each step; read by stepPhysics for lateral force decomposition.
 }
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
@@ -157,13 +160,27 @@ function syncMeshesToState (state) {
   bodyMesh.quaternion.copy(state.quaternion)  // quaternion-only rotation, never Euler (GLOSSARY.md)
 
   // Wheels: compute world position = body CG + (local offset rotated by body quaternion)
-  // Wave 1 note: steer angle not yet applied to wheel meshes — that detail lands in Plan 03.
   for (let i = 0; i < 4; i++) {
     const worldOffset = wheelLocalOffsets[i].clone().applyQuaternion(state.quaternion)
     const cx = state.position.x + worldOffset.x
     const cz = state.position.z + worldOffset.z
     wheelMeshes[i].position.set(cx, wr, cz)
-    // Wave 1: no wheel spin or steer mesh rotation; Plan 03 adds those.
+
+    // Visual spin: wheelAngles[i] accumulated by vehicle.js each step (M1-09).
+    // rotation.x is the spin axis after the geometry was rotateZ(PI/2) in Plan 01 —
+    // the X axis of the mesh is the rolling axis (RESEARCH §Pitfall 5).
+    wheelMeshes[i].rotation.x = state.wheelAngles[i]
+
+    // Front wheel steer rotation: compose body quaternion with steer-around-body-up quaternion.
+    // Rear wheels carry body quaternion only (no steer).
+    if (i < 2) {
+      const steer = state.wheelSteerAngles ? state.wheelSteerAngles[i] : state.steerAngle
+      const bodyUp = new THREE.Vector3(0, 1, 0).applyQuaternion(state.quaternion)
+      const steerQ = new THREE.Quaternion().setFromAxisAngle(bodyUp, steer)
+      wheelMeshes[i].quaternion.copy(state.quaternion).premultiply(steerQ)
+    } else {
+      wheelMeshes[i].quaternion.copy(state.quaternion)
+    }
   }
 }
 
@@ -195,16 +212,33 @@ function loop () {
   accumulator += frameTime
 
   while (accumulator >= FIXED_DT) {
-    // Wave 1: no-op physics step.
-    // Plan 02 inserts: updateVehicle(vehicleState, RANGER_PARAMS, FIXED_DT)
-    //                  stepPhysics(vehicleState, RANGER_PARAMS, FIXED_DT)
-    // The terrain stub is called here so the call site exists for Plan 02's physics.js
+    // Terrain stub call retained for M1-13 verification (Phase 6 replaces body, not call site).
     const _surface = terrain(vehicleState.position.x, vehicleState.position.z)  // eslint-disable-line no-unused-vars
 
+    const resetRequested = updateVehicle(vehicleState, RANGER_PARAMS, FIXED_DT)
+    if (resetRequested) {
+      // M1-12: reset to spawn state — zero all motion, restore identity quaternion.
+      vehicleState.position.set(SPAWN_STATE.positionX, RANGER_PARAMS.cgHeight, SPAWN_STATE.positionZ)
+      vehicleState.velocity.set(0, 0, 0)
+      vehicleState.quaternion.set(SPAWN_STATE.quatX, SPAWN_STATE.quatY, SPAWN_STATE.quatZ, SPAWN_STATE.quatW)
+      vehicleState.angularVelocity.set(0, 0, 0)
+      vehicleState.steerAngle = 0
+      vehicleState.throttle = 0
+      vehicleState.brake = 0
+      vehicleState.wheelAngles = [0, 0, 0, 0]
+      vehicleState.wheelSteerAngles = [0, 0, 0, 0]
+    }
+
+    stepPhysics(vehicleState, RANGER_PARAMS, FIXED_DT)
     accumulator -= FIXED_DT
   }
 
   syncMeshesToState(vehicleState)
+
+  // M1-11: live speed readout. velocity.length() = magnitude in m/s; * 3.6 converts to km/h.
+  const speedKmh = vehicleState.velocity.length() * 3.6
+  document.getElementById('speedVal').textContent = speedKmh.toFixed(1)
+
   renderer.render(scene, camera)
   stats.update()
 }
