@@ -33,13 +33,13 @@
  * scaled by Fz. Phase 3 replaces this body only — signature and call site in physics.js do not change.
  */
 export function computeLateralForce (slipAngle, Fz, params) {
-  // Phase 1: slip-angle-based linear tire model (Bug 6 fix — replaces raw velocity damping).
-  // slipAngle = atan2(-latVel, |longVel| + 0.01) — the 0.01 guard prevents division by zero at rest.
-  // Sign convention (GLOSSARY.md §Slip Angle): positive slip angle when contact patch moves to
-  // wheel's left (negative lateral velocity) → force is positive (rightward) to resist the slip.
+  // Phase 1: slip-angle-based linear tire model.
+  // slipAngle = atan2(latVel, |longVel| + 0.01): positive latVel (contact patch rightward) →
+  // positive slip angle → negative Flat (leftward force opposing the drift). The 0.01 guard
+  // prevents division by zero at rest; friction cap prevents saturation to ±90°.
   const latVel  = params._lateralVelocity  || 0
   const longVel = params._longitudinalVelocity || 0
-  const slipAngleCalc = Math.atan2(-latVel, Math.abs(longVel) + 0.01)
+  const slipAngleCalc = Math.atan2(latVel, Math.abs(longVel) + 0.01)
   const raw = -params.corneringStiffness * slipAngleCalc
   // Friction cap: slip angle → ±90° at low speed → force >> Fn without this.
   // Phase 3 Pacejka saturates naturally; Phase 1 needs explicit clamping.
