@@ -86,14 +86,20 @@ scene.add(ground)
 const grid = new THREE.GridHelper(200, 100, 0x444444, 0x333333)
 scene.add(grid)
 
+// carGroup: parent Object3D for body + wheels — wheels inherit body pitch/roll (Bug 5 fix).
+// syncMeshesToState drives carGroup.position and carGroup.quaternion; children follow automatically.
+const carGroup = new THREE.Object3D()
+scene.add(carGroup)
+
 // ── Vehicle meshes ───────────────────────────────────────────────────────────
 // Body: BoxGeometry (width=1.8m, height=0.8m, length=4.6m)
+// Body is at carGroup local origin (0,0,0) — carGroup center IS the CG.
 const bodyMesh = new THREE.Mesh(
   new THREE.BoxGeometry(1.8, 0.8, 4.6),
   new THREE.MeshStandardMaterial({ color: 0x336699 })
 )
 bodyMesh.castShadow = true
-scene.add(bodyMesh)
+carGroup.add(bodyMesh)
 
 // Wheels: CylinderGeometry rotated 90° around Z (Pitfall 5 — must do this BEFORE
 // instantiating meshes or the spin axis will be wrong).
@@ -129,57 +135,56 @@ const tF = RANGER_PARAMS.trackFront / 2
 const tR = RANGER_PARAMS.trackRear / 2
 const wr = RANGER_PARAMS.wheelRadius
 
-// Wheel local offsets indexed 0=FL, 1=FR, 2=RL, 3=RR (GLOSSARY.md §Wheel Index)
+// Wheel local offsets in carGroup local space (body-relative), indexed 0=FL, 1=FR, 2=RL, 3=RR.
+// Y offset: wheel center is wheelRadius above ground; CG is cgHeight above ground.
+// So wheel center Y relative to CG = wr - cgHeight (negative — wheels are below CG).
+// wheelRadius=0.368, cgHeight=0.55 → Y offset = 0.368 - 0.55 = -0.182 m
 const wheelLocalOffsets = [
-  new THREE.Vector3(-tF,  0, -(L * wR)),  // 0: FL — left, front
-  new THREE.Vector3( tF,  0, -(L * wR)),  // 1: FR — right, front
-  new THREE.Vector3(-tR,  0,  (L * wF)),  // 2: RL — left, rear
-  new THREE.Vector3( tR,  0,  (L * wF)),  // 3: RR — right, rear
+  new THREE.Vector3(-tF, wr - RANGER_PARAMS.cgHeight, -(L * wR)),  // 0: FL — left, front
+  new THREE.Vector3( tF, wr - RANGER_PARAMS.cgHeight, -(L * wR)),  // 1: FR — right, front
+  new THREE.Vector3(-tR, wr - RANGER_PARAMS.cgHeight,  (L * wF)),  // 2: RL — left, rear
+  new THREE.Vector3( tR, wr - RANGER_PARAMS.cgHeight,  (L * wF)),  // 3: RR — right, rear
 ]
 
 const wheelMeshes = wheelLocalOffsets.map((offset, i) => {
   const mesh = new THREE.Mesh(wheelGeom, wheelMat)
-  // Wave 1: set initial world position from vehicleState.position + local offset
-  // (vehicleState.quaternion is identity here, so no rotation needed for Wave 1 init)
-  mesh.position.set(
-    vehicleState.position.x + offset.x,
-    wr,                                    // wheel center at wheelRadius above ground
-    vehicleState.position.z + offset.z
-  )
+  // Wheels are children of carGroup — position is in carGroup local space (body-relative).
+  // carGroup carries world position and orientation; wheels follow automatically (Bug 5 fix).
+  mesh.position.set(offset.x, offset.y, offset.z)
   mesh.castShadow = true
-  scene.add(mesh)
+  carGroup.add(mesh)
   return mesh
 })
 
 // ── Mesh sync ────────────────────────────────────────────────────────────────
 // Called every render frame to update mesh transforms from vehicleState.
-// Body rotation uses quaternion.copy — do NOT use Euler rotation on bodyMesh (Pitfall 3 / CLAUDE.md).
+// carGroup carries world position and quaternion — body and wheels inherit it (Bug 5 fix).
+// Do NOT use Euler rotation for body orientation (Pitfall 3 / CLAUDE.md).
 function syncMeshesToState (state) {
-  // Body: position and quaternion from physics state
-  bodyMesh.position.copy(state.position)
-  bodyMesh.quaternion.copy(state.quaternion)  // quaternion-only rotation, never Euler (GLOSSARY.md)
+  // Sync carGroup transform — body and wheels inherit this automatically (Bug 5 fix).
+  carGroup.position.copy(state.position)
+  carGroup.quaternion.copy(state.quaternion)  // quaternion-only rotation, never Euler (GLOSSARY.md)
 
-  // Wheels: compute world position = body CG + (local offset rotated by body quaternion)
+  // Per-wheel: spin and steer in carGroup local space.
+  // wheelLocalOffsets[i] is already set as local position — no re-apply needed.
   for (let i = 0; i < 4; i++) {
-    const worldOffset = wheelLocalOffsets[i].clone().applyQuaternion(state.quaternion)
-    const cx = state.position.x + worldOffset.x
-    const cz = state.position.z + worldOffset.z
-    wheelMeshes[i].position.set(cx, wr, cz)
-
     // Visual spin: wheelAngles[i] accumulated by vehicle.js each step (M1-09).
     // rotation.x is the spin axis after the geometry was rotateZ(PI/2) in Plan 01 —
     // the X axis of the mesh is the rolling axis (RESEARCH §Pitfall 5).
     wheelMeshes[i].rotation.x = state.wheelAngles[i]
 
-    // Front wheel steer rotation: compose body quaternion with steer-around-body-up quaternion.
-    // Rear wheels carry body quaternion only (no steer).
+    // Steer: front wheels only, rotate around local Y (body up in carGroup space = Y).
+    // carGroup already carries body orientation — no world-space up transform needed.
     if (i < 2) {
       const steer = state.wheelSteerAngles ? state.wheelSteerAngles[i] : state.steerAngle
-      const bodyUp = new THREE.Vector3(0, 1, 0).applyQuaternion(state.quaternion)
-      const steerQ = new THREE.Quaternion().setFromAxisAngle(bodyUp, steer)
-      wheelMeshes[i].quaternion.copy(state.quaternion).premultiply(steerQ)
+      const steerQ = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0),   // local Y — body up in carGroup space
+        steer
+      )
+      // Set quaternion to steer only — do not accumulate body rotation (carGroup carries it).
+      wheelMeshes[i].quaternion.copy(steerQ)
     } else {
-      wheelMeshes[i].quaternion.copy(state.quaternion)
+      wheelMeshes[i].quaternion.identity()
     }
   }
 }
