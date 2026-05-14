@@ -47,6 +47,7 @@ export const SPAWN_STATE = {
 export function updateVehicle (vehicleState, params, dt) {
   // ── 1. Throttle / Brake (M1-05) ────────────────────────────────────────────
   vehicleState.throttle = keys.w ? 1 : 0
+  // S key: sets brake=1; getDriveTorque uses maxReverseTorque for rear wheels (Bug 4 fix in physics.js)
   vehicleState.brake    = keys.s ? 1 : 0
 
   // ── 2. Speed-scaled steer limit (M1-08) ────────────────────────────────────
