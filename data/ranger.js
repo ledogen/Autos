@@ -27,14 +27,14 @@ export const RANGER_PARAMS = {
   // ── Drivetrain ────────────────────────────────────────────────────────────
   // Phase 1 placeholder; Phase 2+ replaces drivetrain model.
   // Values consumed by getDriveTorque stub.
-  maxDriveTorque:  250,   // N·m — flat throttle torque for Phase 1 response
+  maxDriveTorque:  400,   // N·m — flat throttle torque for Phase 1 response
   maxBrakeTorque:  3000,  // N·m — flat brake deceleration placeholder
 
   // ── Phase 1 Friction Placeholders (D-10) ─────────────────────────────────
   // Must be exposed as lil-gui sliders in Plan 03.
   // See docs/GLOSSARY.md §Term Definitions for units and meaning.
   lateralDampingCoeff:    4000,  // N/(m/s) — damps lateral contact-patch velocity
-  rollingResistanceCoeff: 200,   // N/(m/s) — rolling drag proportional to longitudinal velocity
+  rollingResistanceCoeff: 20,    // N/(m/s) — rolling drag proportional to longitudinal velocity
 
   // ── Steering ─────────────────────────────────────────────────────────────
   maxSteerAngle:  0.52,  // rad (~30°) — max steer angle at low speed
