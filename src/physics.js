@@ -74,10 +74,33 @@ export function stepPhysics (vehicleState, params, dt) {
   const totalForce  = new THREE.Vector3()
   const totalTorque = new THREE.Vector3()
 
+  // ── Gravity: applied once per step outside the wheel loop ─────────────────
+  totalForce.y -= params.mass * 9.81  // gravity [N] — applied once per step
+
   for (let i = 0; i < 4; i++) {
     // a. Contact patch world position from suspension
     const contactPt  = getWheelPosition(i, vehicleState, params)
     const contactVec = new THREE.Vector3(contactPt.x, contactPt.y, contactPt.z)
+
+    // Rigid ground contact at y=0.
+    // contactPt.y is the wheel contact patch world Y (wheel center Y minus wheelRadius
+    // from getWheelPosition, which returns the contact patch center, i.e., already
+    // at the bottom of the tire per suspension.js comments).
+    const penetrationDepth = Math.max(0, -contactPt.y)
+    let Fn = 0
+    if (penetrationDepth > 0) {
+      // 1. Zero out downward velocity component at CG (upward impulse).
+      //    Only zero if velocity is downward (negative y) to avoid pulling car up.
+      if (vehicleState.velocity.y < 0) {
+        vehicleState.velocity.y = 0
+      }
+      // 2. Position correction: push wheel above ground.
+      vehicleState.position.y += penetrationDepth
+      // 3. Normal force: distribute vehicle weight equally across grounded wheels.
+      //    Use static weight per wheel as a stable proxy for contact force magnitude.
+      //    Phase 4 replaces with spring-damper Fn.
+      Fn = params.mass * 9.81 / 4
+    }
 
     // b. Contact patch velocity = vehicle velocity + (angularVelocity × (contactPt − CG))
     //    (GLOSSARY.md §Contact Patch Velocity)
@@ -100,26 +123,23 @@ export function stepPhysics (vehicleState, params, dt) {
     const longVel = contactVel.dot(wheelFwd)
     const latVel  = contactVel.dot(wheelRight)
 
-    // d. Normal force from suspension
-    const Fz = computeNormalForce(i, vehicleState, params)
-
-    // e. Drive torque → longitudinal drive force (F = T / r)
+    // d. Drive torque → longitudinal drive force (F = T / r)
     const torque     = getDriveTorque(i, vehicleState, params)
     const driveForce = torque / params.wheelRadius
 
-    // f. Augment params for Phase 1 tire stubs (T-02-02 — intentional, single-threaded).
+    // e. Augment params for Phase 1 tire stubs (T-02-02 — intentional, single-threaded).
     //    Phase 3 removes these augmentations when Pacejka replaces the tire bodies.
     params._lateralVelocity      = latVel
     params._longitudinalVelocity = longVel
     params._driveForce           = driveForce
 
-    // g. Tire forces from tire.js (slipAngle/slipRatio unused in Phase 1 bodies)
-    const Fy = computeLateralForce(0, Fz, params)       // lateral force [N]
-    const Fx = computeLongitudinalForce(0, Fz, params)  // longitudinal force [N]
+    // f. Tire forces from tire.js (slipAngle/slipRatio unused in Phase 1 bodies)
+    const Flat  = computeLateralForce(0, Fn, params)       // lateral force [N]
+    const Flong = computeLongitudinalForce(0, Fn, params)  // longitudinal force [N]
 
-    // h. Accumulate world-frame force and torque
-    const wheelForce = wheelFwd.clone().multiplyScalar(Fx)
-    wheelForce.addScaledVector(wheelRight, Fy)
+    // g. Accumulate world-frame force and torque
+    const wheelForce = wheelFwd.clone().multiplyScalar(Flong)
+    wheelForce.addScaledVector(wheelRight, Flat)
 
     totalForce.add(wheelForce)
 
@@ -146,23 +166,5 @@ export function stepPhysics (vehicleState, params, dt) {
     const axis = omega.clone().normalize()
     const dq   = new THREE.Quaternion().setFromAxisAngle(axis, angSpeed * dt)
     vehicleState.quaternion.premultiply(dq).normalize()
-  }
-
-  // ── Step 5: Ground constraint (RESEARCH §Pattern 7) ───────────────────────
-  // Prevents the car from falling through the flat ground plane.
-  // Phase 4 suspension removes this clamp — spring-damper handles it.
-  const minY = params.cgHeight
-  if (vehicleState.position.y < minY) {
-    vehicleState.position.y = minY
-    if (vehicleState.velocity.y < 0) vehicleState.velocity.y = 0
-  }
-
-  // When on the ground, suppress pitch and roll angular velocity components.
-  // These would cause phantom tumbling from numerical force errors on flat terrain.
-  // A rigid ground plane provides a normal reaction that zeroes these components.
-  // Phase 4 suspension removes this clamp — spring-damper normal forces handle it.
-  if (vehicleState.position.y <= minY + 0.01) {
-    vehicleState.angularVelocity.x = 0  // pitch rate (rotation about lateral/X axis)
-    vehicleState.angularVelocity.z = 0  // roll rate  (rotation about longitudinal/Z axis)
   }
 }
