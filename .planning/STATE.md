@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-05-11T15:07:46.027Z"
-last_activity: 2026-05-11 -- Phase 1 planning complete
+stopped_at: context exhaustion at 75% (2026-05-14)
+last_updated: "2026-05-14T05:17:11.049Z"
+last_activity: 2026-05-14 -- Completed quick task 260513-vaw: physics fix gravity/rigid contact/naming cleanup
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 4
-  completed_plans: 0
+  completed_plans: 3
   percent: 0
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-10)
 
 **Core value:** Physics that feel honest: a car that can roll over naturally, drift on the limit, and behave predictably enough that tuning parameters produces the expected result.
-**Current focus:** Phase 1 — Core Driving
+**Current focus:** Phase 01 — core-driving
 
 ## Current Position
 
-Phase: 1 of 6 (Core Driving)
-Plan: 0 of TBD in current phase
-Status: Ready to execute
-Last activity: 2026-05-11 -- Phase 1 planning complete
+Phase: 01 (core-driving) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 01
+Last activity: 2026-05-11 -- Phase 01 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -69,6 +69,12 @@ Recent decisions affecting current work:
 
 None yet.
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260513-vaw | physics fix: gravity, rigid contact, naming cleanup (Fn/Flong/Flat), rollingResistanceCoeff 200→20, maxDriveTorque 250→400 | 2026-05-14 | e0ccac7 | [260513-vaw-physics-fix-gravity-rigid-contact-naming](.planning/quick/260513-vaw-physics-fix-gravity-rigid-contact-naming/) |
+
 ### Blockers/Concerns
 
 - Phase 6 requires a research phase before `/gsd-plan-phase 6` can run. Do not skip.
@@ -81,6 +87,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-11T05:06:38.194Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-core-driving/01-CONTEXT.md
+Last session: 2026-05-14T05:17:11.047Z
+Stopped at: context exhaustion at 75% (2026-05-14)
+Resume file: None
