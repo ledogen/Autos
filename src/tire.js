@@ -24,11 +24,11 @@
  *   params._lateralVelocity [m/s] (lateral component of contact patch velocity in wheel's right
  *   direction, computed by physics.js before calling). Phase 3 will use slipAngle and Fz via
  *   Pacejka Magic Formula instead.
- * @returns {number} Fy [N] lateral force. Positive = in wheel's right (+X body direction).
+ * @returns {number} Flat [N] lateral force. Positive = in wheel's right (+X body direction).
  *   Sign: opposes lateral velocity (damping) — if velocity is positive (rightward), force is
  *   negative (leftward), pulling the car back.
  *
- * Phase 3 replacement: Pacejka Magic Formula Fy = D * sin(C * atan(B * slipAngle − E * (B * slipAngle − atan(B * slipAngle))))
+ * Phase 3 replacement: Pacejka Magic Formula Flat = D * sin(C * atan(B * slipAngle − E * (B * slipAngle − atan(B * slipAngle))))
  * scaled by Fz. Phase 3 replaces this body only — signature and call site in physics.js do not change.
  */
 export function computeLateralForce (slipAngle, Fz, params) {
@@ -47,10 +47,10 @@ export function computeLateralForce (slipAngle, Fz, params) {
  *   params._longitudinalVelocity [m/s] (longitudinal contact patch speed in wheel forward direction)
  *   params._driveForce [N] (drive force contributed by getDriveTorque, already converted to force
  *   by physics.js via F = T / r). Phase 3 will use slipRatio and Fz via Pacejka Magic Formula instead.
- * @returns {number} Fx [N] longitudinal force. Positive = forward (along wheel heading, which is
+ * @returns {number} Flong [N] longitudinal force. Positive = forward (along wheel heading, which is
  *   in the -Z world direction at heading 0). Rolling resistance opposes motion; drive force adds to it.
  *
- * Phase 3 replacement: Pacejka Magic Formula Fx vs slip ratio, scaled by Fz.
+ * Phase 3 replacement: Pacejka Magic Formula Flong vs slip ratio, scaled by Fz.
  * Phase 3 replaces this body only — signature and call site in physics.js do not change.
  */
 export function computeLongitudinalForce (slipRatio, Fz, params) {
