@@ -91,8 +91,8 @@ export function stepPhysics (vehicleState, params, dt) {
     const Fn = isGrounded ? computeNormalForce(i, vehicleState, params) : 0
     if (isGrounded) {
       totalForce.y  += Fn
-      totalTorque.x -= rVec.z * Fn   // r × (0,Fn,0): roll restoring
-      totalTorque.z += rVec.x * Fn   // r × (0,Fn,0): pitch restoring
+      totalTorque.x -= rVec.z * Fn   // r × (0,Fn,0): pitch restoring (τ.x → inertiaPitch)
+      totalTorque.z += rVec.x * Fn   // r × (0,Fn,0): roll restoring  (τ.z → inertiaRoll)
     }
 
     // c. Contact patch velocity = velocity + angularVelocity × r
@@ -135,9 +135,12 @@ export function stepPhysics (vehicleState, params, dt) {
   vehicleState.position.addScaledVector(vehicleState.velocity, dt)
 
   // ── Step 4: Integrate angular velocity and quaternion orientation ──────────
-  vehicleState.angularVelocity.x += totalTorque.x / params.inertiaRoll  * dt
+  // World X = lateral axis → pitch (nose up/down) → inertiaPitch
+  // World Y = vertical axis → yaw (turning) → inertiaYaw
+  // World Z = longitudinal axis → roll (side to side) → inertiaRoll
+  vehicleState.angularVelocity.x += totalTorque.x / params.inertiaPitch * dt
   vehicleState.angularVelocity.y += totalTorque.y / params.inertiaYaw   * dt
-  vehicleState.angularVelocity.z += totalTorque.z / params.inertiaPitch * dt
+  vehicleState.angularVelocity.z += totalTorque.z / params.inertiaRoll  * dt
 
   // Quaternion integration from GLOSSARY.md §Quaternion Integration Convention and RESEARCH §Pattern 3.
   // World-frame angular velocity → premultiply convention (dq * q).

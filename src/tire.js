@@ -40,7 +40,11 @@ export function computeLateralForce (slipAngle, Fz, params) {
   const latVel  = params._lateralVelocity  || 0
   const longVel = params._longitudinalVelocity || 0
   const slipAngleCalc = Math.atan2(-latVel, Math.abs(longVel) + 0.01)
-  return -params.corneringStiffness * slipAngleCalc
+  const raw = -params.corneringStiffness * slipAngleCalc
+  // Friction cap: slip angle → ±90° at low speed → force >> Fn without this.
+  // Phase 3 Pacejka saturates naturally; Phase 1 needs explicit clamping.
+  const maxFlat = (params.frictionCoeff || 0.9) * Fz
+  return Math.max(-maxFlat, Math.min(maxFlat, raw))
 }
 
 /**
@@ -63,5 +67,7 @@ export function computeLongitudinalForce (slipRatio, Fz, params) {
   // Phase 1: rolling resistance drag proportional to longitudinal speed, plus drive force.
   // rollingResistanceCoeff [N/(m/s)] set in data/ranger.js, exposed as debug slider (D-10).
   const rollingDrag = -params.rollingResistanceCoeff * (params._longitudinalVelocity || 0)
-  return rollingDrag + (params._driveForce || 0)
+  const raw = rollingDrag + (params._driveForce || 0)
+  const maxFlong = (params.frictionCoeff || 0.9) * Fz
+  return Math.max(-maxFlong, Math.min(maxFlong, raw))
 }

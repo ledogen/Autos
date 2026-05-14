@@ -40,6 +40,7 @@ export const RANGER_PARAMS = {
   lateralDampingCoeff:    4000,  // N/(m/s) — damps lateral contact-patch velocity (unused, kept for slider compat)
   rollingResistanceCoeff: 20,    // N/(m/s) — rolling drag proportional to longitudinal velocity
   corneringStiffness: 50000,     // N/rad — linear tire lateral stiffness; used by computeLateralForce (Bug 6 fix)
+  frictionCoeff:      0.9,       // peak tire-road friction coefficient; caps Flat and Flong at μ*Fn
 
   // ── Steering ─────────────────────────────────────────────────────────────
   maxSteerAngle:  0.52,  // rad (~30°) — max steer angle at low speed
