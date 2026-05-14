@@ -5,7 +5,7 @@ milestone_name: milestone
 status: executing
 stopped_at: context exhaustion at 75% (2026-05-14)
 last_updated: "2026-05-14T05:17:11.049Z"
-last_activity: 2026-05-14 -- Completed quick task 260513-vaw: physics fix gravity/rigid contact/naming cleanup
+last_activity: 2026-05-13 -- Completed quick task 260513-jwo: physics 6DOF rewrite — Fn/torque pipeline, angular impulse, slip-angle lateral force, carGroup mesh sync
 progress:
   total_phases: 6
   completed_phases: 0
@@ -74,6 +74,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260513-vaw | physics fix: gravity, rigid contact, naming cleanup (Fn/Flong/Flat), rollingResistanceCoeff 200→20, maxDriveTorque 250→400 | 2026-05-14 | e0ccac7 | [260513-vaw-physics-fix-gravity-rigid-contact-naming](.planning/quick/260513-vaw-physics-fix-gravity-rigid-contact-naming/) |
+| 260513-jwo | physics 6DOF rewrite: Fn→totalForce.y, Fn restoring torque, angular impulse on ground contact, slip-angle lateral force, carGroup mesh sync, symmetric reverse torque | 2026-05-13 | 400c013 | [260513-jwo-physics-6dof-rewrite](.planning/quick/260513-jwo-physics-6dof-rewrite/) |
 
 ### Blockers/Concerns
 
