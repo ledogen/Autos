@@ -37,7 +37,11 @@ import { computeNormalForce, getWheelPosition } from './suspension.js'
 export function getDriveTorque (wheelIndex, vehicleState, params) {
   const isRear = wheelIndex === 2 || wheelIndex === 3
   const driveTorque = isRear ? vehicleState.throttle * params.maxDriveTorque : 0
-  const brakeTorque = -vehicleState.brake * params.maxBrakeTorque
+  // S key: reverse uses maxReverseTorque (symmetric to forward), not maxBrakeTorque (Bug 4 fix)
+  // Rear wheels receive reverse torque; front wheels brake only.
+  const brakeTorque = isRear
+    ? -vehicleState.brake * params.maxReverseTorque
+    : -vehicleState.brake * params.maxBrakeTorque
   return driveTorque + brakeTorque
 }
 
@@ -82,6 +86,10 @@ export function stepPhysics (vehicleState, params, dt) {
     const contactPt  = getWheelPosition(i, vehicleState, params)
     const contactVec = new THREE.Vector3(contactPt.x, contactPt.y, contactPt.z)
 
+    // rVec must be computed BEFORE the penetration block so it is available for
+    // angular impulse (Bug 3 fix) and Fn torque (Bug 2 fix) inside the if-block.
+    const rVec = contactVec.clone().sub(vehicleState.position)
+
     // Rigid ground contact at y=0.
     // contactPt.y is the wheel contact patch world Y (wheel center Y minus wheelRadius
     // from getWheelPosition, which returns the contact patch center, i.e., already
@@ -89,22 +97,40 @@ export function stepPhysics (vehicleState, params, dt) {
     const penetrationDepth = Math.max(0, -contactPt.y)
     let Fn = 0
     if (penetrationDepth > 0) {
-      // 1. Zero out downward velocity component at CG (upward impulse).
-      //    Only zero if velocity is downward (negative y) to avoid pulling car up.
-      if (vehicleState.velocity.y < 0) {
-        vehicleState.velocity.y = 0
-      }
-      // 2. Position correction: push wheel above ground.
+      // 1. Position correction: push wheel above ground.
       vehicleState.position.y += penetrationDepth
+
+      // 2. Angular impulse — correct both linear and angular velocity at contact point (Bug 3 fix).
+      //    Contact velocity in world Y at the contact point:
+      //    vContactY = velocity.y + (angVel.x * rVec.z − angVel.z * rVec.x)
+      const vContactY = vehicleState.velocity.y +
+        (vehicleState.angularVelocity.x * rVec.z - vehicleState.angularVelocity.z * rVec.x)
+      if (vContactY < 0) {
+        // Effective mass accounts for rotational inertia at contact point.
+        const mEff = 1 / (1 / params.mass +
+          (rVec.z * rVec.z) / params.inertiaRoll +
+          (rVec.x * rVec.x) / params.inertiaPitch)
+        const Jy = -vContactY * mEff   // impulse magnitude [N·s]
+        vehicleState.velocity.y        += Jy / params.mass
+        vehicleState.angularVelocity.x += -rVec.z * Jy / params.inertiaRoll
+        vehicleState.angularVelocity.z +=  rVec.x * Jy / params.inertiaPitch
+      }
+
       // 3. Normal force: distribute vehicle weight equally across grounded wheels.
-      //    Use static weight per wheel as a stable proxy for contact force magnitude.
       //    Phase 4 replaces with spring-damper Fn.
       Fn = params.mass * 9.81 / 4
+
+      // Bug 1 fix: add Fn to totalForce.y so gravity is balanced.
+      totalForce.y += Fn
+
+      // Bug 2 fix: Fn torque produces restoring pitch and roll moments.
+      // r × Fn (world Y): x-torque from z-offset, z-torque from x-offset.
+      totalTorque.x -= rVec.z * Fn   // roll restoring: x-torque from z-offset * upward Fn
+      totalTorque.z += rVec.x * Fn   // pitch restoring: z-torque from x-offset * upward Fn
     }
 
     // b. Contact patch velocity = vehicle velocity + (angularVelocity × (contactPt − CG))
     //    (GLOSSARY.md §Contact Patch Velocity)
-    const rVec      = contactVec.clone().sub(vehicleState.position)
     const contactVel = vehicleState.velocity.clone().add(
       new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rVec)
     )
