@@ -18,23 +18,29 @@
  * Compute lateral (side) force at this wheel's contact patch.
  *
  * @param {number} slipAngle - [rad] tire slip angle; sign convention in GLOSSARY.md §Slip Angle.
- *   Positive = contact patch velocity points to the wheel's left. Unused in Phase 1.
- * @param {number} Fz - [N] normal force on this wheel from suspension. Unused in Phase 1 damping.
+ *   Used in Phase 1 via atan2 from contact patch velocities (Bug 6 fix). Phase 3 will pass a
+ *   computed slip angle directly via Pacejka Magic Formula instead.
+ * @param {number} Fz - [N] normal force on this wheel from suspension. Unused in Phase 1 linear model.
  * @param {object} params - RANGER_PARAMS augmented with:
  *   params._lateralVelocity [m/s] (lateral component of contact patch velocity in wheel's right
- *   direction, computed by physics.js before calling). Phase 3 will use slipAngle and Fz via
- *   Pacejka Magic Formula instead.
- * @returns {number} Flat [N] lateral force. Positive = in wheel's right (+X body direction).
- *   Sign: opposes lateral velocity (damping) — if velocity is positive (rightward), force is
- *   negative (leftward), pulling the car back.
+ *   direction, computed by physics.js before calling).
+ *   params._longitudinalVelocity [m/s] (longitudinal contact patch speed, used as denominator guard).
+ *   params.corneringStiffness [N/rad] — linear tire lateral stiffness.
+ * @returns {number} Flat [N] lateral force proportional to slip angle times corneringStiffness.
+ *   Positive = in wheel's right (+X body direction). Returns 0 when both velocity components are 0.
  *
  * Phase 3 replacement: Pacejka Magic Formula Flat = D * sin(C * atan(B * slipAngle − E * (B * slipAngle − atan(B * slipAngle))))
  * scaled by Fz. Phase 3 replaces this body only — signature and call site in physics.js do not change.
  */
 export function computeLateralForce (slipAngle, Fz, params) {
-  // Phase 1: force proportional to lateral velocity at contact patch — damps sideslip.
-  // lateralDampingCoeff [N/(m/s)] set in data/ranger.js, exposed as debug slider (D-10).
-  return -params.lateralDampingCoeff * (params._lateralVelocity || 0)
+  // Phase 1: slip-angle-based linear tire model (Bug 6 fix — replaces raw velocity damping).
+  // slipAngle = atan2(-latVel, |longVel| + 0.01) — the 0.01 guard prevents division by zero at rest.
+  // Sign convention (GLOSSARY.md §Slip Angle): positive slip angle when contact patch moves to
+  // wheel's left (negative lateral velocity) → force is positive (rightward) to resist the slip.
+  const latVel  = params._lateralVelocity  || 0
+  const longVel = params._longitudinalVelocity || 0
+  const slipAngleCalc = Math.atan2(-latVel, Math.abs(longVel) + 0.01)
+  return -params.corneringStiffness * slipAngleCalc
 }
 
 /**
