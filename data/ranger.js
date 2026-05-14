@@ -29,12 +29,17 @@ export const RANGER_PARAMS = {
   // Values consumed by getDriveTorque stub.
   maxDriveTorque:  400,   // N·m — flat throttle torque for Phase 1 response
   maxBrakeTorque:  3000,  // N·m — flat brake deceleration placeholder
+  // Bug 4 fix: reverse uses maxReverseTorque (symmetric to forward), not maxBrakeTorque
+  maxReverseTorque: 400,  // N·m — matches maxDriveTorque; used by getDriveTorque for reverse
 
   // ── Phase 1 Friction Placeholders (D-10) ─────────────────────────────────
   // Must be exposed as lil-gui sliders in Plan 03.
   // See docs/GLOSSARY.md §Term Definitions for units and meaning.
-  lateralDampingCoeff:    4000,  // N/(m/s) — damps lateral contact-patch velocity
+  // Note: lateralDampingCoeff is now unused (replaced by corneringStiffness slip-angle model)
+  // but kept so existing debug sliders do not break.
+  lateralDampingCoeff:    4000,  // N/(m/s) — damps lateral contact-patch velocity (unused, kept for slider compat)
   rollingResistanceCoeff: 20,    // N/(m/s) — rolling drag proportional to longitudinal velocity
+  corneringStiffness: 50000,     // N/rad — linear tire lateral stiffness; used by computeLateralForce (Bug 6 fix)
 
   // ── Steering ─────────────────────────────────────────────────────────────
   maxSteerAngle:  0.52,  // rad (~30°) — max steer angle at low speed
