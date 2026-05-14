@@ -75,103 +75,59 @@ export function stepPhysics (vehicleState, params, dt) {
   // physics.js is the only module allowed to use Three.js for rotation math.
   params._rotateVector = (v) => new THREE.Vector3(v.x, v.y, v.z).applyQuaternion(vehicleState.quaternion)
 
-  const totalForce  = new THREE.Vector3()
+  const totalForce  = new THREE.Vector3(0, -params.mass * 9.81, 0)  // gravity
   const totalTorque = new THREE.Vector3()
 
-  // ── Gravity: applied once per step outside the wheel loop ─────────────────
-  totalForce.y -= params.mass * 9.81  // gravity [N] — applied once per step
-
   for (let i = 0; i < 4; i++) {
-    // a. Contact patch world position from suspension
+    // a. Contact patch world position (do NOT mutate vehicleState.position in this loop)
     const contactPt  = getWheelPosition(i, vehicleState, params)
     const contactVec = new THREE.Vector3(contactPt.x, contactPt.y, contactPt.z)
+    const rVec       = contactVec.clone().sub(vehicleState.position)
 
-    // rVec must be computed BEFORE the penetration block so it is available for
-    // angular impulse (Bug 3 fix) and Fn torque (Bug 2 fix) inside the if-block.
-    const rVec = contactVec.clone().sub(vehicleState.position)
-
-    // Rigid ground contact at y=0.
-    // contactPt.y is the wheel contact patch world Y (wheel center Y minus wheelRadius
-    // from getWheelPosition, which returns the contact patch center, i.e., already
-    // at the bottom of the tire per suspension.js comments).
-    const penetrationDepth = Math.max(0, -contactPt.y)
-    let Fn = 0
-    if (penetrationDepth > 0) {
-      // 1. Position correction: push wheel above ground.
-      vehicleState.position.y += penetrationDepth
-
-      // 2. Angular impulse — correct both linear and angular velocity at contact point (Bug 3 fix).
-      //    Contact velocity in world Y at the contact point:
-      //    vContactY = velocity.y + (angVel.x * rVec.z − angVel.z * rVec.x)
-      const vContactY = vehicleState.velocity.y +
-        (vehicleState.angularVelocity.x * rVec.z - vehicleState.angularVelocity.z * rVec.x)
-      if (vContactY < 0) {
-        // Effective mass accounts for rotational inertia at contact point.
-        const mEff = 1 / (1 / params.mass +
-          (rVec.z * rVec.z) / params.inertiaRoll +
-          (rVec.x * rVec.x) / params.inertiaPitch)
-        const Jy = -vContactY * mEff   // impulse magnitude [N·s]
-        vehicleState.velocity.y        += Jy / params.mass
-        vehicleState.angularVelocity.x += -rVec.z * Jy / params.inertiaRoll
-        vehicleState.angularVelocity.z +=  rVec.x * Jy / params.inertiaPitch
-      }
-
-      // 3. Normal force: distribute vehicle weight equally across grounded wheels.
-      //    Phase 4 replaces with spring-damper Fn.
-      Fn = params.mass * 9.81 / 4
-
-      // Bug 1 fix: add Fn to totalForce.y so gravity is balanced.
-      totalForce.y += Fn
-
-      // Bug 2 fix: Fn torque produces restoring pitch and roll moments.
-      // r × Fn (world Y): x-torque from z-offset, z-torque from x-offset.
-      totalTorque.x -= rVec.z * Fn   // roll restoring: x-torque from z-offset * upward Fn
-      totalTorque.z += rVec.x * Fn   // pitch restoring: z-torque from x-offset * upward Fn
+    // b. Ground normal force — only when contact patch is at or below y=0.
+    //    Uses weight-distributed Fn so front/rear Fn torques cancel at equilibrium.
+    //    (equal mass*g/4 does NOT cancel because axle offsets are asymmetric — Bug 1/2 fix)
+    const isGrounded = contactPt.y <= 0
+    const Fn = isGrounded ? computeNormalForce(i, vehicleState, params) : 0
+    if (isGrounded) {
+      totalForce.y  += Fn
+      totalTorque.x -= rVec.z * Fn   // r × (0,Fn,0): roll restoring
+      totalTorque.z += rVec.x * Fn   // r × (0,Fn,0): pitch restoring
     }
 
-    // b. Contact patch velocity = vehicle velocity + (angularVelocity × (contactPt − CG))
-    //    (GLOSSARY.md §Contact Patch Velocity)
+    // c. Contact patch velocity = velocity + angularVelocity × r
     const contactVel = vehicleState.velocity.clone().add(
       new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rVec)
     )
 
-    // c. Decompose contact velocity into wheel-frame components.
-    //    Front wheels use per-wheel steer angle from vehicle.js (vehicleState.wheelSteerAngles)
-    //    if present; fall back to the scalar steerAngle for front, 0 for rear.
+    // d. Wheel-frame velocity components
     const steer = (i < 2 && vehicleState.wheelSteerAngles)
       ? vehicleState.wheelSteerAngles[i]
       : (i < 2 ? vehicleState.steerAngle : 0)
 
-    const steerQ    = new THREE.Quaternion().setFromAxisAngle(up, steer)
-    const wheelFwd  = forward.clone().applyQuaternion(steerQ)
+    const steerQ     = new THREE.Quaternion().setFromAxisAngle(up, steer)
+    const wheelFwd   = forward.clone().applyQuaternion(steerQ)
     const wheelRight = right.clone().applyQuaternion(steerQ)
 
     const longVel = contactVel.dot(wheelFwd)
     const latVel  = contactVel.dot(wheelRight)
 
-    // d. Drive torque → longitudinal drive force (F = T / r)
-    const torque     = getDriveTorque(i, vehicleState, params)
-    const driveForce = torque / params.wheelRadius
+    // e. Drive force
+    const driveForce = getDriveTorque(i, vehicleState, params) / params.wheelRadius
 
-    // e. Augment params for Phase 1 tire stubs (T-02-02 — intentional, single-threaded).
-    //    Phase 3 removes these augmentations when Pacejka replaces the tire bodies.
+    // f. Augment params for Phase 1 tire stubs (T-02-02)
     params._lateralVelocity      = latVel
     params._longitudinalVelocity = longVel
     params._driveForce           = driveForce
 
-    // f. Tire forces from tire.js (slipAngle/slipRatio unused in Phase 1 bodies)
-    const Flat  = computeLateralForce(0, Fn, params)       // lateral force [N]
-    const Flong = computeLongitudinalForce(0, Fn, params)  // longitudinal force [N]
+    // g. Tire forces (zero when airborne so Fn=0 suppresses lateral/longitudinal naturally)
+    const Flat  = computeLateralForce(0, Fn, params)
+    const Flong = computeLongitudinalForce(0, Fn, params)
 
-    // g. Accumulate world-frame force and torque
     const wheelForce = wheelFwd.clone().multiplyScalar(Flong)
     wheelForce.addScaledVector(wheelRight, Flat)
-
     totalForce.add(wheelForce)
-
-    // Torque contribution: rVec × wheelForce
-    const torqueContrib = new THREE.Vector3().crossVectors(rVec, wheelForce)
-    totalTorque.add(torqueContrib)
+    totalTorque.add(new THREE.Vector3().crossVectors(rVec, wheelForce))
   }
 
   // ── Step 3: Integrate linear velocity and position (symplectic integration) ──
@@ -192,5 +148,19 @@ export function stepPhysics (vehicleState, params, dt) {
     const axis = omega.clone().normalize()
     const dq   = new THREE.Quaternion().setFromAxisAngle(axis, angSpeed * dt)
     vehicleState.quaternion.premultiply(dq).normalize()
+  }
+
+  // ── Step 5: Post-integration ground constraint (single pass — no cascade) ──
+  // Find deepest penetrating contact point, correct once.
+  // Per-wheel correction inside the force loop causes cascade: wheel 0 lifts
+  // the body so wheels 1-3 see no penetration and contribute zero Fn.
+  let maxPenetration = 0
+  for (let i = 0; i < 4; i++) {
+    const cp = getWheelPosition(i, vehicleState, params)
+    if (-cp.y > maxPenetration) maxPenetration = -cp.y
+  }
+  if (maxPenetration > 0) {
+    vehicleState.position.y += maxPenetration
+    if (vehicleState.velocity.y < 0) vehicleState.velocity.y = 0
   }
 }
