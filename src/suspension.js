@@ -24,12 +24,12 @@
  *   angularVelocity, steerAngle, throttle, brake, wheelAngles). Unused in Phase 1 static bodies.
  * @param {object} params - RANGER_PARAMS; uses params.mass [kg], params.weightFront [-],
  *   params.weightRear [-]. Phase 4 will also use spring stiffness and compression state.
- * @returns {number} Fz [N] normal force on this wheel. Positive = pushing up against wheel.
+ * @returns {number} Fn [N] normal force on this wheel. Positive = pushing up against wheel.
  *   Phase 4 will compute from spring compression and body acceleration (load transfer).
  *   Phase 1: static distribution — front wheels get mass * g * weightFront / 2,
  *   rear wheels get mass * g * weightRear / 2.
  *
- * Phase 4 replacement: spring-damper Fz with load transfer between corners.
+ * Phase 4 replacement: spring-damper Fn with load transfer between corners.
  * Phase 4 replaces this body only — signature and call site in physics.js do not change.
  */
 export function computeNormalForce (corner, vehicleState, params) {
