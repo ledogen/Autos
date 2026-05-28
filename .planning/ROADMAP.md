@@ -12,7 +12,7 @@ RangerSim builds from a bare 6DOF rigid body up to a fully validated physics san
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Core Driving** - 3D world, 6DOF quaternion body, flat-tire placeholder, input, render
+- [x] **Phase 1: Core Driving** - 3D world, 6DOF quaternion body, flat-tire placeholder, input, render
 - [ ] **Phase 2: Scenario System + Debug Menu** - JSON scenario runner, lil-gui sliders, HUD polish
 - [ ] **Phase 3: Tire Model** - Pacejka Magic Formula, wheel angular velocity, longitudinal slip, handbrake
 - [ ] **Phase 4: Suspension** - Spring-damper per wheel, dynamic Fz, load transfer, wheel lift
@@ -123,7 +123,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → [research] → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Driving | 0/4 | In progress | - |
+| 1. Core Driving | 4/4 | ✅ Complete | 2026-05-28 |
 | 2. Scenario System + Debug Menu | 0/TBD | Not started | - |
 | 3. Tire Model | 0/TBD | Not started | - |
 | 4. Suspension | 0/TBD | Not started | - |
