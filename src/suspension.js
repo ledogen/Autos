@@ -9,6 +9,10 @@
  * to keep this module pure math and testable outside the browser (no CDN Three.js available
  * in Node test contexts).
  *
+ * getWheelPosition returns the wheel hub center (not the contact patch bottom).
+ * physics.js passes the hub to queryContacts(hub, wheelRadius) to find actual contact patches,
+ * which handles slopes, walls, and multiple simultaneous contacts correctly.
+ *
  * getWheelPosition returns a plain {x, y, z} object, not THREE.Vector3, to avoid the Three.js
  * import dependency in this pure-math module. Physics.js wraps results in THREE.Vector3.
  *
@@ -33,12 +37,15 @@
  * Phase 4 replaces this body only — signature and call site in physics.js do not change.
  */
 export function computeNormalForce (corner, vehicleState, params) {
-  // Phase 1: static weight distribution. No dynamic load transfer.
-  // weightFront + weightRear = 1.0 (e.g., 0.55 + 0.45 for the Ranger).
-  // Each axle's load is divided by 2 for the two wheels on that axle.
-  const g = 9.81  // m/s²
-  const isFront = corner === 0 || corner === 1
-  return params.mass * g * (isFront ? params.weightFront : params.weightRear) / 2
+  // Tire spring-damper: radial compliance of the tire carcass (no suspension — matchbox car).
+  // params._compression [m] and params._compressionVelocity [m/s] are set by physics.js
+  // per wheel before this call. Positive compression = wheel inside terrain surface.
+  // Positive compressionVel = contact patch moving into terrain (compressing).
+  // Math.max(0, ...) prevents tension — tires can push but not pull the ground.
+  // Phase 4+ replaces this body with spring-damper + suspension geometry; signature unchanged.
+  const compression    = params._compression          || 0
+  const compressionVel = params._compressionVelocity  || 0
+  return Math.max(0, params.tireStiffness * compression + params.tireDamping * compressionVel)
 }
 
 /**
@@ -98,9 +105,9 @@ export function getWheelPosition (corner, vehicleState, params) {
     ? -(params.wheelbase * params.weightRear)
     :  (params.wheelbase * params.weightFront)
 
-  // Contact patch center: wheel hub is at -(cgHeight - wheelRadius) in body Y,
-  // contact patch is wheelRadius below hub, so: -(cgHeight - wheelRadius) - wheelRadius = -cgHeight
-  const localY = -(params.cgHeight)
+  // Wheel hub center: (cgHeight - wheelRadius) below CG in body Y.
+  // physics.js projects hub via queryContacts to find the actual contact patch.
+  const localY = -(params.cgHeight - params.wheelRadius)
 
   // Rotate local offset into world space using the injected helper.
   // params._rotateVector is set by physics.js before calling this function.
@@ -120,4 +127,37 @@ export function getWheelPosition (corner, vehicleState, params) {
     y: vehicleState.position.y + rotated.y,
     z: vehicleState.position.z + rotated.z
   }
+}
+
+/**
+ * World-space positions of four body contact points (bumper corners).
+ * These are small spheres on the car body that generate normal-only collision force,
+ * stopping the body from clipping walls and ramp faces.
+ *
+ * @param {object} vehicleState - Full vehicleState; uses .position and .quaternion.
+ * @param {object} params - RANGER_PARAMS; uses wheelbase, weightFront/Rear, trackFront, cgHeight.
+ *   Also uses params._rotateVector (injected by physics.js).
+ * @returns {Array<{x,y,z}>} Four world-space points: FL/FR front bumper, RL/RR rear bumper.
+ */
+export function getBodyContactPoints (vehicleState, params) {
+  const frontAxleZ = -(params.wheelbase * params.weightRear)
+  const rearAxleZ  =  (params.wheelbase * params.weightFront)
+  const localY     = 0.35 - params.cgHeight   // bumper at 0.35 m above ground in body space
+  const halfW      = params.trackFront / 2 + 0.1
+
+  const locals = [
+    { x: -halfW, y: localY, z: frontAxleZ - 0.85 },
+    { x:  halfW, y: localY, z: frontAxleZ - 0.85 },
+    { x: -halfW, y: localY, z: rearAxleZ  + 0.65 },
+    { x:  halfW, y: localY, z: rearAxleZ  + 0.65 },
+  ]
+
+  return locals.map(p => {
+    const rotated = typeof params._rotateVector === 'function' ? params._rotateVector(p) : p
+    return {
+      x: vehicleState.position.x + rotated.x,
+      y: vehicleState.position.y + rotated.y,
+      z: vehicleState.position.z + rotated.z,
+    }
+  })
 }

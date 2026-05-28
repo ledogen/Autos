@@ -3,198 +3,186 @@
  *
  * 6DOF rigid body step using quaternion orientation (see GLOSSARY.md §Quaternion Integration Convention).
  * Imports computeLateralForce/computeLongitudinalForce from tire.js and
- * computeNormalForce/getWheelPosition from suspension.js.
- * Call sites must not change when Phase 3/4 replace those bodies.
+ * computeNormalForce/getWheelPosition/getBodyContactPoints from suspension.js.
+ *
+ * Contact model: each wheel is a sphere (hub center + wheelRadius). The caller supplies
+ * queryContacts(cx, cy, cz, r) → Array<{normal, depth, contactPoint}> which returns every
+ * surface the sphere overlaps. Forces are applied independently per contact, enabling
+ * slopes, walls, and multiple simultaneous contacts.
+ *
+ * Body contact points (bumper corners) use the same queryContacts path but generate
+ * normal-only force — no tire lateral/longitudinal forces.
  *
  * Exports:
- *   stepPhysics(vehicleState, params, dt) — mutates vehicleState in-place each fixed step
+ *   stepPhysics(vehicleState, params, dt, queryContacts) — mutates vehicleState in-place
  *   getDriveTorque(wheelIndex, vehicleState, params) — Phase 1 RWD flat torque stub (M1-14)
  *
  * Conventions: see docs/GLOSSARY.md
- * Forbidden: body rotation must always use THREE.Quaternion, never bodyMesh.rotation or axis angles
- * stored as scalars (CLAUDE.md §What NOT to Use — gimbal lock prevention)
+ * Forbidden: body rotation must always use THREE.Quaternion, never bodyMesh.rotation
  */
 
 import * as THREE from 'three'
 import { computeLateralForce, computeLongitudinalForce } from './tire.js'
-import { computeNormalForce, getWheelPosition } from './suspension.js'
+import { computeNormalForce, getWheelPosition, getBodyContactPoints } from './suspension.js'
 
-// Dead zone for velocity-gated W/S switching. Below this speed (m/s) the car is
-// treated as "at rest" so the drive/brake mode doesn't flip twitchily near zero.
 const DRIVE_DEAD_ZONE = 0.5  // m/s
 
 /**
  * Compute drive/brake torque for a single wheel.
  *
- * Phase 1 stub — returns flat torque values from RANGER_PARAMS constants.
- * Phase 2+ replaces this with a real drivetrain model (torque curves, differential, gear ratios).
- * Signature is locked per D-06/M1-14 — Phase 2 replaces body only, call sites do not change.
- *
- * Velocity-gated semantics (requires params._longitudinalVelocity set by physics.js before call):
- *   W key: drive forward (RWD rear) when longVel > -DEAD_ZONE, brake all wheels when longVel < -DEAD_ZONE
- *   S key: drive reverse (RWD rear) when longVel < +DEAD_ZONE, brake all wheels when longVel > +DEAD_ZONE
- *
  * @param {number} wheelIndex - 0-3 per GLOSSARY.md §Wheel Index (0=FL, 1=FR, 2=RL, 3=RR).
- * @param {object} vehicleState - Full vehicleState; uses .throttle [0,1] and .brake [0,1] fields.
- * @param {object} params - RANGER_PARAMS augmented with params._longitudinalVelocity [m/s]
- *   (set by physics.js per-wheel loop before this call). Uses .maxDriveTorque, .maxReverseTorque,
- *   .maxBrakeTorque [N·m].
- * @returns {number} Torque [N·m] to apply at this wheel. Positive = drive forward.
- *   Phase 2+ replaces this with a real drivetrain model.
+ * @param {object} vehicleState - Full vehicleState; uses .throttle and .brake.
+ * @param {object} params - RANGER_PARAMS augmented with params._longitudinalVelocity [m/s].
+ * @returns {number} Torque [N·m]. Positive = drive forward.
  */
 export function getDriveTorque (wheelIndex, vehicleState, params) {
   const isRear  = wheelIndex === 2 || wheelIndex === 3
   const longVel = params._longitudinalVelocity || 0
 
   if (vehicleState.throttle > 0) {
-    // W: forward drive above dead zone; brake all wheels when moving backward
-    if (longVel < -DRIVE_DEAD_ZONE) {
-      return vehicleState.throttle * params.maxBrakeTorque       // all wheels brake from reverse
-    }
-    return isRear ? vehicleState.throttle * params.maxDriveTorque : 0  // RWD drive forward
+    if (longVel < -DRIVE_DEAD_ZONE) return vehicleState.throttle * params.maxBrakeTorque
+    return isRear ? vehicleState.throttle * params.maxDriveTorque : 0
   }
-
   if (vehicleState.brake > 0) {
-    // S: reverse drive below dead zone; brake all wheels when moving forward
-    if (longVel > DRIVE_DEAD_ZONE) {
-      return -vehicleState.brake * params.maxBrakeTorque         // all wheels brake from forward
-    }
-    return isRear ? -vehicleState.brake * params.maxReverseTorque : 0  // RWD drive reverse
+    if (longVel > DRIVE_DEAD_ZONE) return -vehicleState.brake * params.maxBrakeTorque
+    return isRear ? -vehicleState.brake * params.maxReverseTorque : 0
   }
-
   return 0
 }
 
 /**
  * Advance vehicle physics state by one fixed timestep.
  *
- * Performs 6DOF integration: force/torque accumulation from 4 tire contact patches,
- * velocity/position integration, quaternion orientation integration,
- * and ground constraint enforcement.
- *
- * @param {object} vehicleState - Mutable vehicleState object (mutated in-place each step).
- *   Shape: { position: THREE.Vector3, velocity: THREE.Vector3, quaternion: THREE.Quaternion,
- *            angularVelocity: THREE.Vector3, steerAngle: number, throttle: number,
- *            brake: number, wheelAngles: number[4], wheelSteerAngles?: number[4] }
+ * @param {object} vehicleState - Mutable vehicleState (mutated in-place).
  * @param {object} params - RANGER_PARAMS (may be augmented with debug-slider values).
- *   NOTE: This function temporarily mutates params with _lateralVelocity, _longitudinalVelocity,
- *   _driveForce, and _rotateVector fields for the Phase 1 tire/suspension stubs. These fields
- *   are intentional (T-02-02) and are removed/replaced each step. Phase 3 removes them.
- * @param {number} dt - Fixed timestep in seconds (1/60 from game loop).
- * @returns {void} — Mutates vehicleState in-place.
+ * @param {number} dt - Fixed timestep in seconds.
+ * @param {function} queryContacts - (cx,cy,cz,r) → Array<{normal,depth,contactPoint}>.
+ *   Caller (main.js) implements this against all solid geometry. Replaces the old terrain(x,z)
+ *   single-contact interface to support walls, slopes, and multiple contacts per wheel.
+ * @returns {void}
  */
-export function stepPhysics (vehicleState, params, dt, terrain) {
-  const _terrain = terrain || (() => ({ height: 0, normal: new THREE.Vector3(0, 1, 0) }))
-
-  // ── Step 0: Rotation helper (needed by getWheelPosition throughout) ────────
-  // Set before the ground constraint so the constraint can call getWheelPosition.
+export function stepPhysics (vehicleState, params, dt, queryContacts) {
+  // ── Step 0: Rotation helper ────────────────────────────────────────────────
   params._rotateVector = (v) => new THREE.Vector3(v.x, v.y, v.z).applyQuaternion(vehicleState.quaternion)
 
-  // ── Step 1: Ground constraint (correct last frame's penetration first) ─────
-  // Applied BEFORE force accumulation so forces are computed on the corrected position.
-  // This prevents the 1-frame position lag that caused visible body bounce: without this,
-  // Fn was computed pre-integration while the constraint corrected post-integration,
-  // leaving a mismatch that caused alternating under/over-support each frame.
-  // Single-pass: find deepest penetrating contact, lift body once.
-  // Per-wheel correction inside the force loop would cascade (wheel 0 lift → wheels 1-3 airborne).
+  // ── Step 1: Catastrophic penetration failsafe ──────────────────────────────
+  // Fires only for tunnelling (>0.3 m embed). Normal contact handled by spring in Step 3.
   {
-    let maxPenetration = 0
+    let maxEmbed = 0
     for (let i = 0; i < 4; i++) {
-      const cp = getWheelPosition(i, vehicleState, params)
-      const penetration = _terrain(cp.x, cp.z).height - cp.y
-      if (penetration > maxPenetration) maxPenetration = penetration
+      const hub   = getWheelPosition(i, vehicleState, params)
+      const embed = params.wheelRadius - hub.y   // positive when hub is below wheelRadius height
+      if (embed > maxEmbed) maxEmbed = embed
     }
-    if (maxPenetration > 0) {
-      vehicleState.position.y += maxPenetration
-      if (vehicleState.velocity.y < 0) vehicleState.velocity.y = 0
-      // Damp pitch and roll — kills contact oscillation while allowing slope equilibrium.
-      // Replaces hard zero so the body can settle at the correct angle on non-flat terrain.
-      vehicleState.angularVelocity.x *= 0.85
-      vehicleState.angularVelocity.z *= 0.85
+    if (maxEmbed > 0.3) {
+      vehicleState.position.y += maxEmbed
+      vehicleState.velocity.y  = 0
     }
   }
 
-  // ── Step 2: Body-space axes from quaternion ────────────────────────────────
-  // NEVER use bodyMesh.rotation for body orientation (CLAUDE.md §What NOT to Use, GLOSSARY.md).
+  // ── Step 2: Body-space axes ────────────────────────────────────────────────
   const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(vehicleState.quaternion)
   const right   = new THREE.Vector3(1, 0, 0).applyQuaternion(vehicleState.quaternion)
   const up      = new THREE.Vector3(0, 1, 0).applyQuaternion(vehicleState.quaternion)
 
   // ── Step 3: Per-wheel force accumulation ──────────────────────────────────
-  const totalForce  = new THREE.Vector3(0, -params.mass * 9.81, 0)  // gravity
+  const totalForce  = new THREE.Vector3(0, -params.mass * 9.81, 0)
   const totalTorque = new THREE.Vector3()
 
   for (let i = 0; i < 4; i++) {
-    // a. Contact patch world position (do NOT mutate vehicleState.position in this loop)
-    const contactPt  = getWheelPosition(i, vehicleState, params)
-    const contactVec = new THREE.Vector3(contactPt.x, contactPt.y, contactPt.z)
-    const rVec       = contactVec.clone().sub(vehicleState.position)
-
-    // b. Ground normal force — 5mm tolerance absorbs floating-point fuzz so a wheel
-    //    sitting just above terrain still registers as grounded.
-    //    Fn is applied along the terrain surface normal so torques balance at slope angle.
-    const surface    = _terrain(contactPt.x, contactPt.z)
-    const isGrounded = contactPt.y <= surface.height + 0.005
-    const Fn = isGrounded ? computeNormalForce(i, vehicleState, params) : 0
-    if (isGrounded) {
-      const FnVec = new THREE.Vector3(surface.normal.x, surface.normal.y, surface.normal.z).multiplyScalar(Fn)
-      totalForce.add(FnVec)
-      totalTorque.add(new THREE.Vector3().crossVectors(rVec, FnVec))
-    }
-
-    // c. Contact patch velocity = velocity + angularVelocity × r
-    const contactVel = vehicleState.velocity.clone().add(
-      new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rVec)
+    // Hub world position (sphere center for contact queries)
+    const hub  = getWheelPosition(i, vehicleState, params)
+    const rHub = new THREE.Vector3(
+      hub.x - vehicleState.position.x,
+      hub.y - vehicleState.position.y,
+      hub.z - vehicleState.position.z
     )
 
-    // d. Wheel-frame velocity components
+    // Hub velocity — used for tire slip angles
+    const hubVel = vehicleState.velocity.clone().add(
+      new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rHub)
+    )
+
+    // Wheel-frame axes (steered for front wheels)
     const steer = (i < 2 && vehicleState.wheelSteerAngles)
       ? vehicleState.wheelSteerAngles[i]
       : (i < 2 ? vehicleState.steerAngle : 0)
-
     const steerQ     = new THREE.Quaternion().setFromAxisAngle(up, steer)
     const wheelFwd   = forward.clone().applyQuaternion(steerQ)
     const wheelRight = right.clone().applyQuaternion(steerQ)
 
-    const longVel = contactVel.dot(wheelFwd)
-    const latVel  = contactVel.dot(wheelRight)
+    params._lateralVelocity      = hubVel.dot(wheelRight)
+    params._longitudinalVelocity = hubVel.dot(wheelFwd)
 
-    // e. Augment params before getDriveTorque so velocity-gated brake/drive logic can read longVel.
-    //    _driveForce is set after so computeLongitudinalForce gets the final converted value.
-    params._lateralVelocity      = latVel
-    params._longitudinalVelocity = longVel
-
-    // f. Drive force (getDriveTorque reads params._longitudinalVelocity for velocity gating)
     const driveForce = getDriveTorque(i, vehicleState, params) / params.wheelRadius
     params._driveForce = driveForce
 
-    // g. Tire forces (zero when airborne so Fn=0 suppresses lateral/longitudinal naturally)
-    const Flat  = computeLateralForce(0, Fn, params)
-    const Flong = computeLongitudinalForce(0, Fn, params)
+    // Query every surface this wheel sphere overlaps
+    const contacts = queryContacts(hub.x, hub.y, hub.z, params.wheelRadius)
 
-    const wheelForce = wheelFwd.clone().multiplyScalar(Flong)
-    wheelForce.addScaledVector(wheelRight, Flat)
-    totalForce.add(wheelForce)
-    totalTorque.add(new THREE.Vector3().crossVectors(rVec, wheelForce))
+    for (const { normal, depth, contactPoint } of contacts) {
+      const rContact = new THREE.Vector3(
+        contactPoint.x - vehicleState.position.x,
+        contactPoint.y - vehicleState.position.y,
+        contactPoint.z - vehicleState.position.z
+      )
+      const contactVel = vehicleState.velocity.clone().add(
+        new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rContact)
+      )
+
+      params._compression         = depth
+      params._compressionVelocity = -contactVel.dot(normal)
+
+      const Fn = computeNormalForce(i, vehicleState, params)
+      if (Fn <= 0) continue
+
+      totalForce.addScaledVector(normal, Fn)
+      totalTorque.add(new THREE.Vector3().crossVectors(rContact, normal.clone().multiplyScalar(Fn)))
+
+      // Tire forces applied in the contact plane
+      const Flat  = computeLateralForce(0, Fn, params)
+      const Flong = computeLongitudinalForce(0, Fn, params)
+      const wheelForce = wheelFwd.clone().multiplyScalar(Flong)
+      wheelForce.addScaledVector(wheelRight, Flat)
+      totalForce.add(wheelForce)
+      totalTorque.add(new THREE.Vector3().crossVectors(rContact, wheelForce))
+    }
   }
 
-  // ── Step 4: Integrate linear velocity and position (symplectic integration) ──
+  // ── Step 3b: Body contact points (normal force only — no tire forces) ──────
+  // Stops the car body from clipping walls and ramp faces.
+  const bodyPts = getBodyContactPoints(vehicleState, params)
+  for (const bp of bodyPts) {
+    const contacts = queryContacts(bp.x, bp.y, bp.z, params.bodyContactRadius)
+    for (const { normal, depth, contactPoint } of contacts) {
+      const rContact = new THREE.Vector3(
+        contactPoint.x - vehicleState.position.x,
+        contactPoint.y - vehicleState.position.y,
+        contactPoint.z - vehicleState.position.z
+      )
+      const contactVel = vehicleState.velocity.clone().add(
+        new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rContact)
+      )
+      const Fn = Math.max(0,
+        params.bodyContactStiffness * depth + params.bodyContactDamping * (-contactVel.dot(normal))
+      )
+      if (Fn <= 0) continue
+      totalForce.addScaledVector(normal, Fn)
+      totalTorque.add(new THREE.Vector3().crossVectors(rContact, normal.clone().multiplyScalar(Fn)))
+    }
+  }
+
+  // ── Step 4: Integrate linear velocity and position ─────────────────────────
   vehicleState.velocity.addScaledVector(totalForce, dt / params.mass)
   vehicleState.position.addScaledVector(vehicleState.velocity, dt)
 
   // ── Step 5: Integrate angular velocity and quaternion orientation ──────────
-  // World X = lateral axis → pitch (nose up/down) → inertiaPitch
-  // World Y = vertical axis → yaw (turning) → inertiaYaw
-  // World Z = longitudinal axis → roll (side to side) → inertiaRoll
   vehicleState.angularVelocity.x += totalTorque.x / params.inertiaPitch * dt
   vehicleState.angularVelocity.y += totalTorque.y / params.inertiaYaw   * dt
   vehicleState.angularVelocity.z += totalTorque.z / params.inertiaRoll  * dt
 
-  // Quaternion integration from GLOSSARY.md §Quaternion Integration Convention and RESEARCH §Pattern 3.
-  // World-frame angular velocity → premultiply convention (dq * q).
-  // Guard against zero angular velocity to avoid NaN in normalize (1e-10 threshold).
-  const omega     = vehicleState.angularVelocity
-  const angSpeed  = omega.length()
+  const omega    = vehicleState.angularVelocity
+  const angSpeed = omega.length()
   if (angSpeed > 1e-10) {
     const axis = omega.clone().normalize()
     const dq   = new THREE.Quaternion().setFromAxisAngle(axis, angSpeed * dt)

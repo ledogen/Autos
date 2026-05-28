@@ -32,6 +32,13 @@ export const RANGER_PARAMS = {
   // Bug 4 fix: reverse uses maxReverseTorque (symmetric to forward), not maxBrakeTorque
   maxReverseTorque: 800,  // N·m — matches maxDriveTorque; used by getDriveTorque for reverse
 
+  // ── Tire Spring-Damper ───────────────────────────────────────────────────
+  // Matchbox car has no suspension — the tire IS the only compliance between wheel and ground.
+  // tireStiffness: radial spring constant. At rest, each corner compresses ~22mm (mg/4 / k).
+  // tireDamping: critically damped at ~14000 N·s/m; 8000 gives slightly underdamped feel.
+  tireStiffness: 100000,  // N/m
+  tireDamping:     4000,  // N·s/m
+
   // ── Phase 1 Friction Placeholders (D-10) ─────────────────────────────────
   // Must be exposed as lil-gui sliders in Plan 03.
   // See docs/GLOSSARY.md §Term Definitions for units and meaning.
@@ -41,6 +48,11 @@ export const RANGER_PARAMS = {
   rollingResistanceCoeff: 20,    // N/(m/s) — rolling drag proportional to longitudinal velocity
   corneringStiffness: 50000,     // N/rad — linear tire lateral stiffness; used by computeLateralForce (Bug 6 fix)
   frictionCoeff:      0.9,       // peak tire-road friction coefficient; caps Flat and Flong at μ*Fn
+
+  // ── Body Contact (collision against walls/ramp faces) ────────────────────
+  bodyContactStiffness: 200000,  // N/m — stiffer than tire; metal-on-terrain response
+  bodyContactDamping:     8000,  // N·s/m
+  bodyContactRadius:      0.15,  // m — effective sphere radius for bumper corner points
 
   // ── Steering ─────────────────────────────────────────────────────────────
   maxSteerAngle:  0.52,  // rad (~30°) — max steer angle at low speed

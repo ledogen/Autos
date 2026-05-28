@@ -198,10 +198,12 @@ const RAMP_START_Z  = -15            // m — ramp toe (height=0) relative to sp
 const RAMP_LENGTH   = 5              // m along ground
 const RAMP_WIDTH    = 4              // m — collision bounds match mesh width
 const RAMP_MAX_H    = RAMP_LENGTH * Math.tan(RAMP_ANGLE)  // ≈ 0.88 m
+const RAMP_END_Z    = RAMP_START_Z - RAMP_LENGTH          // -20 — ramp top z
 
 const _rampNormal   = new THREE.Vector3(0, Math.cos(RAMP_ANGLE), Math.sin(RAMP_ANGLE))
 const _flatNormal   = new THREE.Vector3(0, 1, 0)
 
+// M1-13: terrain height-field query. Phase 6 replaces body, signature locked.
 function terrain (x, z) {
   if (Math.abs(x) > RAMP_WIDTH / 2) return { height: 0, normal: _flatNormal }
   const distIntoRamp = RAMP_START_Z - z
@@ -211,6 +213,68 @@ function terrain (x, z) {
   return { height: 0, normal: _flatNormal }
 }
 window.terrain = terrain
+
+/**
+ * Sphere collision query against all solid geometry.
+ * Returns every surface the sphere at (cx,cy,cz) with radius r overlaps.
+ * Each contact: normal points away from solid toward sphere; depth is penetration depth.
+ * Called by stepPhysics once per wheel and once per body contact point each physics step.
+ * Phase 6: extend to query the terrain height-field for rough terrain surfaces.
+ */
+function queryContacts (cx, cy, cz, r) {
+  const hits = []
+  const cosA = Math.cos(RAMP_ANGLE), sinA = Math.sin(RAMP_ANGLE)
+
+  // Ground half-space (y = 0, normal +Y)
+  const gd = r - cy
+  if (gd > 0) hits.push({ normal: _flatNormal.clone(), depth: gd,
+    contactPoint: new THREE.Vector3(cx, 0, cz) })
+
+  // Ramp faces — skip if sphere is clearly beyond ramp x range
+  if (Math.abs(cx) <= RAMP_WIDTH / 2 + r) {
+
+    // Top surface: inclined plane through ramp toe (0,0,RAMP_START_Z), normal = _rampNormal
+    {
+      const dist = cosA * cy + sinA * (cz - RAMP_START_Z)
+      // u = along-slope coordinate from toe; check sphere projects within ramp extent
+      const u = sinA * cy - cosA * (cz - RAMP_START_Z)
+      if (r - dist > 0 && u >= -r && u <= RAMP_LENGTH + r)
+        hits.push({ normal: _rampNormal.clone(), depth: r - dist,
+          contactPoint: new THREE.Vector3(cx, cy - dist * cosA, cz - dist * sinA) })
+    }
+
+    // Back face: vertical plane at z = RAMP_END_Z, normal (0,0,−1).
+    // Height check (cy < RAMP_MAX_H): when a wheel/body is on the ramp surface its hub
+    // is above RAMP_MAX_H, so this face only fires for approach from behind or a crash.
+    if (Math.abs(cx) <= RAMP_WIDTH / 2) {
+      const dist = RAMP_END_Z - cz   // positive when sphere is behind ramp (z < RAMP_END_Z)
+      if (r - dist > 0 && cy < RAMP_MAX_H)
+        hits.push({ normal: new THREE.Vector3(0, 0, -1), depth: r - dist,
+          contactPoint: new THREE.Vector3(cx, cy, RAMP_END_Z) })
+    }
+
+    // Side faces: left (x = −RAMP_WIDTH/2) and right (x = +RAMP_WIDTH/2).
+    // Only tested when sphere is outside the ramp x bounds and within ramp z/y extent.
+    const zInRamp  = cz > RAMP_END_Z - r && cz < RAMP_START_Z + r
+    const rampHere = (cz > RAMP_END_Z && cz < RAMP_START_Z)
+      ? (RAMP_START_Z - cz) * Math.tan(RAMP_ANGLE) : 0
+    if (zInRamp && cy < rampHere + r) {
+      if (cx <= -RAMP_WIDTH / 2) {
+        const dist = -(cx + RAMP_WIDTH / 2)
+        if (r - dist > 0)
+          hits.push({ normal: new THREE.Vector3(-1, 0, 0), depth: r - dist,
+            contactPoint: new THREE.Vector3(-RAMP_WIDTH / 2, cy, cz) })
+      } else if (cx >= RAMP_WIDTH / 2) {
+        const dist = cx - RAMP_WIDTH / 2
+        if (r - dist > 0)
+          hits.push({ normal: new THREE.Vector3(1, 0, 0), depth: r - dist,
+            contactPoint: new THREE.Vector3(RAMP_WIDTH / 2, cy, cz) })
+      }
+    }
+  }
+
+  return hits
+}
 
 // Ramp visual — inclined PlaneGeometry aligned to the terrain() geometry.
 // rotation.x = -PI/2 + RAMP_ANGLE tilts near edge (toward spawn) down, far edge up.
@@ -265,7 +329,7 @@ function loop () {
       vehicleState.wheelSteerAngles = [0, 0, 0, 0]
     }
 
-    stepPhysics(vehicleState, RANGER_PARAMS, FIXED_DT, terrain)
+    stepPhysics(vehicleState, RANGER_PARAMS, FIXED_DT, queryContacts)
     accumulator -= FIXED_DT
   }
 
