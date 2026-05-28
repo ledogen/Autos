@@ -203,6 +203,25 @@ const RAMP_END_Z    = RAMP_START_Z - RAMP_LENGTH          // -20 — ramp top z
 const _rampNormal   = new THREE.Vector3(0, Math.cos(RAMP_ANGLE), Math.sin(RAMP_ANGLE))
 const _flatNormal   = new THREE.Vector3(0, 1, 0)
 
+// ── Ramp triangle mesh ────────────────────────────────────────────────────────
+// Six triangles covering the ramp solid: top incline (2), back wall (2), left side (1), right side (1).
+// Vertices defined from ramp constants — no hardcoded numbers.
+const _hw = RAMP_WIDTH / 2
+const _TL = [-_hw, 0,          RAMP_START_Z]
+const _TR = [ _hw, 0,          RAMP_START_Z]
+const _CL = [-_hw, RAMP_MAX_H, RAMP_END_Z  ]
+const _CR = [ _hw, RAMP_MAX_H, RAMP_END_Z  ]
+const _BL = [-_hw, 0,          RAMP_END_Z  ]
+const _BR = [ _hw, 0,          RAMP_END_Z  ]
+const RAMP_TRIS = [
+  [_TL, _TR, _CR],  // top incline tri 1
+  [_TL, _CR, _CL],  // top incline tri 2
+  [_CL, _CR, _BR],  // back wall tri 1
+  [_CL, _BR, _BL],  // back wall tri 2
+  [_TL, _CL, _BL],  // left side
+  [_TR, _BR, _CR],  // right side
+]
+
 // M1-13: terrain height-field query. Phase 6 replaces body, signature locked.
 function terrain (x, z) {
   if (Math.abs(x) > RAMP_WIDTH / 2) return { height: 0, normal: _flatNormal }
@@ -215,6 +234,62 @@ function terrain (x, z) {
 window.terrain = terrain
 
 /**
+ * Closest point on a filled triangle ABC to query point P.
+ * Algorithm: Ericson "Real-Time Collision Detection" §5.1.5 — barycentric-coordinate clamping.
+ * All arithmetic on plain scalars; returns a new THREE.Vector3.
+ */
+function closestPointOnTriangle (px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz) {
+  // Edge vectors
+  const abx = bx - ax, aby = by - ay, abz = bz - az
+  const acx = cx - ax, acy = cy - ay, acz = cz - az
+
+  // P − A
+  const apx = px - ax, apy = py - ay, apz = pz - az
+
+  const d1 = abx * apx + aby * apy + abz * apz
+  const d2 = acx * apx + acy * apy + acz * apz
+  if (d1 <= 0 && d2 <= 0) return new THREE.Vector3(ax, ay, az)  // vertex A
+
+  // P − B
+  const bpx = px - bx, bpy = py - by, bpz = pz - bz
+  const d3 = abx * bpx + aby * bpy + abz * bpz
+  const d4 = acx * bpx + acy * bpy + acz * bpz
+  if (d3 >= 0 && d4 <= d3) return new THREE.Vector3(bx, by, bz)  // vertex B
+
+  // P − C
+  const cpx = px - cx, cpy = py - cy, cpz = pz - cz
+  const d5 = abx * cpx + aby * cpy + abz * cpz
+  const d6 = acx * cpx + acy * cpy + acz * cpz
+  if (d6 >= 0 && d5 <= d6) return new THREE.Vector3(cx, cy, cz)  // vertex C
+
+  // Edge AB
+  const vc = d1 * d4 - d3 * d2
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) {
+    const v = d1 / (d1 - d3)
+    return new THREE.Vector3(ax + v * abx, ay + v * aby, az + v * abz)
+  }
+
+  // Edge AC
+  const vb = d5 * d2 - d1 * d6
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) {
+    const w = d2 / (d2 - d6)
+    return new THREE.Vector3(ax + w * acx, ay + w * acy, az + w * acz)
+  }
+
+  // Edge BC
+  const va = d3 * d6 - d5 * d4
+  if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0) {
+    const w = (d4 - d3) / ((d4 - d3) + (d5 - d6))
+    return new THREE.Vector3(bx + w * (cx - bx), by + w * (cy - by), bz + w * (cz - bz))
+  }
+
+  // Interior
+  const denom = 1 / (va + vb + vc)
+  const v = vb * denom, w = vc * denom
+  return new THREE.Vector3(ax + v * abx + w * acx, ay + v * aby + w * acy, az + v * abz + w * acz)
+}
+
+/**
  * Sphere collision query against all solid geometry.
  * Returns every surface the sphere at (cx,cy,cz) with radius r overlaps.
  * Each contact: normal points away from solid toward sphere; depth is penetration depth.
@@ -223,56 +298,28 @@ window.terrain = terrain
  */
 function queryContacts (cx, cy, cz, r) {
   const hits = []
-  const cosA = Math.cos(RAMP_ANGLE), sinA = Math.sin(RAMP_ANGLE)
 
-  // Ground half-space (y = 0, normal +Y)
+  // Ground half-space (y = 0, normal +Y) — unchanged
   const gd = r - cy
-  if (gd > 0) hits.push({ normal: _flatNormal.clone(), depth: gd,
-    contactPoint: new THREE.Vector3(cx, 0, cz) })
+  if (gd > 0) hits.push({
+    normal: _flatNormal.clone(),
+    depth: gd,
+    contactPoint: new THREE.Vector3(cx, 0, cz)
+  })
 
-  // Ramp faces — skip if sphere is clearly beyond ramp x range
-  if (Math.abs(cx) <= RAMP_WIDTH / 2 + r) {
-
-    // Top surface: inclined plane through ramp toe (0,0,RAMP_START_Z), normal = _rampNormal
-    {
-      const dist = cosA * cy + sinA * (cz - RAMP_START_Z)
-      // u = along-slope coordinate from toe; check sphere projects within ramp extent
-      const u = sinA * cy - cosA * (cz - RAMP_START_Z)
-      if (r - dist > 0 && u >= -r && u <= RAMP_LENGTH + r)
-        hits.push({ normal: _rampNormal.clone(), depth: r - dist,
-          contactPoint: new THREE.Vector3(cx, cy - dist * cosA, cz - dist * sinA) })
-    }
-
-    // Back face: vertical plane at z = RAMP_END_Z, normal (0,0,−1).
-    // Height check (cy < RAMP_MAX_H): when a wheel/body is on the ramp surface its hub
-    // is above RAMP_MAX_H, so this face only fires for approach from behind or a crash.
-    if (Math.abs(cx) <= RAMP_WIDTH / 2) {
-      const dist = RAMP_END_Z - cz   // positive when sphere is behind ramp (z < RAMP_END_Z)
-      // cz < RAMP_END_Z + r: restrict to sphere within r of the face — prevents the
-      // unbounded half-space from firing when sphere is deep inside the ramp from above.
-      if (r - dist > 0 && cy < RAMP_MAX_H && cz < RAMP_END_Z + r)
-        hits.push({ normal: new THREE.Vector3(0, 0, -1), depth: r - dist,
-          contactPoint: new THREE.Vector3(cx, cy, RAMP_END_Z) })
-    }
-
-    // Side faces: left (x = −RAMP_WIDTH/2) and right (x = +RAMP_WIDTH/2).
-    // Only tested when sphere is outside the ramp x bounds and within ramp z/y extent.
-    const zInRamp  = cz > RAMP_END_Z - r && cz < RAMP_START_Z + r
-    const rampHere = (cz > RAMP_END_Z && cz < RAMP_START_Z)
-      ? (RAMP_START_Z - cz) * Math.tan(RAMP_ANGLE) : 0
-    if (zInRamp && cy < rampHere + r) {
-      if (cx <= -RAMP_WIDTH / 2) {
-        const dist = -(cx + RAMP_WIDTH / 2)
-        if (r - dist > 0)
-          hits.push({ normal: new THREE.Vector3(-1, 0, 0), depth: r - dist,
-            contactPoint: new THREE.Vector3(-RAMP_WIDTH / 2, cy, cz) })
-      } else if (cx >= RAMP_WIDTH / 2) {
-        const dist = cx - RAMP_WIDTH / 2
-        if (r - dist > 0)
-          hits.push({ normal: new THREE.Vector3(1, 0, 0), depth: r - dist,
-            contactPoint: new THREE.Vector3(RAMP_WIDTH / 2, cy, cz) })
-      }
-    }
+  // Triangle mesh contacts — sphere vs each ramp triangle
+  for (const [[ax, ay, az], [bx, by, bz], [ex, ey, ez]] of RAMP_TRIS) {
+    const cp = closestPointOnTriangle(cx, cy, cz, ax, ay, az, bx, by, bz, ex, ey, ez)
+    const dx = cx - cp.x, dy = cy - cp.y, dz = cz - cp.z
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+    const depth = r - dist
+    if (depth <= 0) continue
+    const inv = dist < 1e-8 ? 0 : 1 / dist
+    hits.push({
+      normal: new THREE.Vector3(dx * inv, dy * inv, dz * inv),
+      depth,
+      contactPoint: cp
+    })
   }
 
   return hits
