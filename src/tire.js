@@ -39,6 +39,8 @@ export function computeLateralForce (slipAngle, Fz, params) {
   // prevents division by zero at rest; friction cap prevents saturation to ±90°.
   const latVel  = params._lateralVelocity  || 0
   const longVel = params._longitudinalVelocity || 0
+  // Dead zone: atan2 singularity at low speed produces near-max slip angle from noise-level velocity.
+  if (Math.sqrt(latVel * latVel + longVel * longVel) < 0.2) return 0
   const slipAngleCalc = Math.atan2(latVel, Math.abs(longVel) + 0.01)
   const raw = -params.corneringStiffness * slipAngleCalc
   // Friction cap: slip angle → ±90° at low speed → force >> Fn without this.

@@ -73,6 +73,8 @@ None yet.
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260527-qae | lateral force dead zone: 0.2 m/s speed gate in computeLateralForce fixes rest-sliding/yaw feedback loop | 2026-05-27 | — | [260527-qae-lateral-force-dead-zone](.planning/quick/260527-qae-lateral-force-dead-zone/) |
+| 260527-qad | terrain-normal Fn direction (r×N·Fn), angular damping replaces hard zero, 10° test ramp + plateau meshes | 2026-05-27 | e1f754b | [260527-qad-terrain-normal-fn-angular-damping](.planning/quick/260527-qad-terrain-normal-fn-angular-damping/) |
 | 260513-vaw | physics fix: gravity, rigid contact, naming cleanup (Fn/Flong/Flat), rollingResistanceCoeff 200→20, maxDriveTorque 250→400 | 2026-05-14 | e0ccac7 | [260513-vaw-physics-fix-gravity-rigid-contact-naming](.planning/quick/260513-vaw-physics-fix-gravity-rigid-contact-naming/) |
 | 260513-jwo | physics 6DOF rewrite: Fn→totalForce.y, Fn restoring torque, angular impulse on ground contact, slip-angle lateral force, carGroup mesh sync, symmetric reverse torque | 2026-05-13 | 400c013 | [260513-jwo-physics-6dof-rewrite](.planning/quick/260513-jwo-physics-6dof-rewrite/) |
 
