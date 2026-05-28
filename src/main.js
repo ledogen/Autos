@@ -189,13 +189,51 @@ function syncMeshesToState (state) {
   }
 }
 
-// ── Terrain stub ─────────────────────────────────────────────────────────────
-// M1-13: terrain query. Phase 1 = flat ground; Phase 6 replaces body, signature unchanged.
-// Exposed on window for manual console verification (FOUND-02, M1-13).
+// ── Terrain + ramp ────────────────────────────────────────────────────────────
+// M1-13: terrain query. Phase 6 replaces body, signature unchanged.
+// Ramp: 10° slope starting 15m ahead of spawn, 8m long, then flat plateau.
+// Normal derivation: for a ramp rising in -Z, n = (0, cos(θ), sin(θ)).
+const RAMP_ANGLE    = Math.PI / 18   // 10 degrees
+const RAMP_START_Z  = -15            // m — ramp toe (height=0) relative to spawn
+const RAMP_LENGTH   = 8              // m along ground
+const RAMP_MAX_H    = RAMP_LENGTH * Math.tan(RAMP_ANGLE)  // ≈ 1.41 m
+
+const _rampNormal   = new THREE.Vector3(0, Math.cos(RAMP_ANGLE), Math.sin(RAMP_ANGLE))
+const _flatNormal   = new THREE.Vector3(0, 1, 0)
+
 function terrain (x, z) {
-  return { height: 0, normal: new THREE.Vector3(0, 1, 0) }
+  const distIntoRamp = RAMP_START_Z - z
+  if (distIntoRamp > 0 && distIntoRamp <= RAMP_LENGTH) {
+    return { height: distIntoRamp * Math.tan(RAMP_ANGLE), normal: _rampNormal }
+  }
+  if (z < RAMP_START_Z - RAMP_LENGTH) {
+    return { height: RAMP_MAX_H, normal: _flatNormal }
+  }
+  return { height: 0, normal: _flatNormal }
 }
-window.terrain = terrain  // console: terrain(5, 5) → {height: 0, normal: {x:0, y:1, z:0}}
+window.terrain = terrain
+
+// Ramp visual — inclined PlaneGeometry aligned to the terrain() geometry.
+// rotation.x = -PI/2 + RAMP_ANGLE tilts near edge (toward spawn) down, far edge up.
+// Center positioned at the midpoint height and Z of the ramp surface.
+const rampMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(5, RAMP_LENGTH),
+  new THREE.MeshPhongMaterial({ color: 0x885522, side: THREE.DoubleSide })
+)
+rampMesh.rotation.x = -Math.PI / 2 + RAMP_ANGLE
+rampMesh.position.set(0, (RAMP_LENGTH / 2) * Math.tan(RAMP_ANGLE), RAMP_START_Z - RAMP_LENGTH / 2)
+rampMesh.receiveShadow = true
+scene.add(rampMesh)
+
+// Plateau visual — flat surface at ramp exit height.
+const plateauMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(5, 40),
+  new THREE.MeshPhongMaterial({ color: 0x885522, side: THREE.DoubleSide })
+)
+plateauMesh.rotation.x = -Math.PI / 2
+plateauMesh.position.set(0, RAMP_MAX_H, RAMP_START_Z - RAMP_LENGTH - 20)
+plateauMesh.receiveShadow = true
+scene.add(plateauMesh)
 
 // ── Stats.js FPS panel (FOUND-03) ────────────────────────────────────────────
 const stats = new Stats()
@@ -238,7 +276,7 @@ function loop () {
       vehicleState.wheelSteerAngles = [0, 0, 0, 0]
     }
 
-    stepPhysics(vehicleState, RANGER_PARAMS, FIXED_DT)
+    stepPhysics(vehicleState, RANGER_PARAMS, FIXED_DT, terrain)
     accumulator -= FIXED_DT
   }
 

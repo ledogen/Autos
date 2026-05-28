@@ -83,7 +83,9 @@ export function getDriveTorque (wheelIndex, vehicleState, params) {
  * @param {number} dt - Fixed timestep in seconds (1/60 from game loop).
  * @returns {void} — Mutates vehicleState in-place.
  */
-export function stepPhysics (vehicleState, params, dt) {
+export function stepPhysics (vehicleState, params, dt, terrain) {
+  const _terrain = terrain || (() => ({ height: 0, normal: new THREE.Vector3(0, 1, 0) }))
+
   // ── Step 0: Rotation helper (needed by getWheelPosition throughout) ────────
   // Set before the ground constraint so the constraint can call getWheelPosition.
   params._rotateVector = (v) => new THREE.Vector3(v.x, v.y, v.z).applyQuaternion(vehicleState.quaternion)
@@ -99,16 +101,16 @@ export function stepPhysics (vehicleState, params, dt) {
     let maxPenetration = 0
     for (let i = 0; i < 4; i++) {
       const cp = getWheelPosition(i, vehicleState, params)
-      if (-cp.y > maxPenetration) maxPenetration = -cp.y
+      const penetration = _terrain(cp.x, cp.z).height - cp.y
+      if (penetration > maxPenetration) maxPenetration = penetration
     }
     if (maxPenetration > 0) {
       vehicleState.position.y += maxPenetration
       if (vehicleState.velocity.y < 0) vehicleState.velocity.y = 0
-      // Zero pitch and roll rate — these contribute to contact patch vertical velocity
-      // (v_cp_y = velocity.y + ω.z*r.x - ω.x*r.z) and drive the rocking oscillation.
-      // Yaw (angularVelocity.y) is intentional steering rotation — leave untouched.
-      vehicleState.angularVelocity.x = 0
-      vehicleState.angularVelocity.z = 0
+      // Damp pitch and roll — kills contact oscillation while allowing slope equilibrium.
+      // Replaces hard zero so the body can settle at the correct angle on non-flat terrain.
+      vehicleState.angularVelocity.x *= 0.85
+      vehicleState.angularVelocity.z *= 0.85
     }
   }
 
@@ -129,15 +131,15 @@ export function stepPhysics (vehicleState, params, dt) {
     const rVec       = contactVec.clone().sub(vehicleState.position)
 
     // b. Ground normal force — 5mm tolerance absorbs floating-point fuzz so a wheel
-    //    sitting at y=+0.001 (just above ground) still registers as grounded.
-    //    Uses weight-distributed Fn so front/rear Fn torques cancel at equilibrium.
-    //    (equal mass*g/4 does NOT cancel because axle offsets are asymmetric — Bug 1/2 fix)
-    const isGrounded = contactPt.y <= 0.005
+    //    sitting just above terrain still registers as grounded.
+    //    Fn is applied along the terrain surface normal so torques balance at slope angle.
+    const surface    = _terrain(contactPt.x, contactPt.z)
+    const isGrounded = contactPt.y <= surface.height + 0.005
     const Fn = isGrounded ? computeNormalForce(i, vehicleState, params) : 0
     if (isGrounded) {
-      totalForce.y  += Fn
-      totalTorque.x -= rVec.z * Fn   // r × (0,Fn,0): pitch restoring (τ.x → inertiaPitch)
-      totalTorque.z += rVec.x * Fn   // r × (0,Fn,0): roll restoring  (τ.z → inertiaRoll)
+      const FnVec = new THREE.Vector3(surface.normal.x, surface.normal.y, surface.normal.z).multiplyScalar(Fn)
+      totalForce.add(FnVec)
+      totalTorque.add(new THREE.Vector3().crossVectors(rVec, FnVec))
     }
 
     // c. Contact patch velocity = velocity + angularVelocity × r
