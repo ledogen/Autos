@@ -244,6 +244,16 @@ function loop () {
 
   syncMeshesToState(vehicleState)
 
+  // Snap ground and grid to car position so they appear infinite.
+  // Cell size = grid width (200m) / divisions (100) = 2m — snap prevents visible seam movement.
+  const CELL = 2
+  const snapX = Math.round(vehicleState.position.x / CELL) * CELL
+  const snapZ = Math.round(vehicleState.position.z / CELL) * CELL
+  ground.position.x = snapX
+  ground.position.z = snapZ
+  grid.position.x   = snapX
+  grid.position.z   = snapZ
+
   // M1-11: live speed readout. velocity.length() = magnitude in m/s; * 3.6 converts to km/h.
   const speedKmh = vehicleState.velocity.length() * 3.6
   document.getElementById('speedVal').textContent = speedKmh.toFixed(1)

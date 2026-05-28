@@ -31,8 +31,11 @@ document.addEventListener('keydown', e => {
  */
 export function updateCamera (camera, vehicleState) {
   if (cameraMode === 'chase') {
-    // Goal position: CHASE_OFFSET_LOCAL rotated to world space by vehicle quaternion, then offset from vehicle CG
-    const goalOffset = CHASE_OFFSET_LOCAL.clone().applyQuaternion(vehicleState.quaternion)
+    // Goal position: offset rotated by yaw-only quaternion — chase camera follows heading, not pitch/roll.
+    // Inheriting full vehicleState.quaternion displaces the goal position when the car tilts, causing glitches.
+    const euler  = new THREE.Euler().setFromQuaternion(vehicleState.quaternion, 'YXZ')
+    const yawQ   = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), euler.y)
+    const goalOffset = CHASE_OFFSET_LOCAL.clone().applyQuaternion(yawQ)
     const goalPos = vehicleState.position.clone().add(goalOffset)
     camera.position.lerp(goalPos, LERP_FACTOR)
     camera.lookAt(vehicleState.position)

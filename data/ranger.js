@@ -27,10 +27,10 @@ export const RANGER_PARAMS = {
   // ── Drivetrain ────────────────────────────────────────────────────────────
   // Phase 1 placeholder; Phase 2+ replaces drivetrain model.
   // Values consumed by getDriveTorque stub.
-  maxDriveTorque:  400,   // N·m — flat throttle torque for Phase 1 response
+  maxDriveTorque:  800,   // N·m — flat throttle torque for Phase 1 response
   maxBrakeTorque:  3000,  // N·m — flat brake deceleration placeholder
   // Bug 4 fix: reverse uses maxReverseTorque (symmetric to forward), not maxBrakeTorque
-  maxReverseTorque: 400,  // N·m — matches maxDriveTorque; used by getDriveTorque for reverse
+  maxReverseTorque: 800,  // N·m — matches maxDriveTorque; used by getDriveTorque for reverse
 
   // ── Phase 1 Friction Placeholders (D-10) ─────────────────────────────────
   // Must be exposed as lil-gui sliders in Plan 03.
