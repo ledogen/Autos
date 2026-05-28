@@ -5,7 +5,7 @@ milestone_name: milestone
 status: executing
 stopped_at: context exhaustion at 75% (2026-05-14)
 last_updated: "2026-05-14T05:17:11.049Z"
-last_activity: 2026-05-13 -- Completed quick task 260513-jwo: physics 6DOF rewrite — Fn/torque pipeline, angular impulse, slip-angle lateral force, carGroup mesh sync
+last_activity: 2026-05-27 -- lateral force dead zone (qae), ramp collision fix (cbb62dd), plus backfilled qaa–qac and tire model corrections
 progress:
   total_phases: 6
   completed_phases: 0
@@ -73,8 +73,13 @@ None yet.
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
-| 260527-qae | lateral force dead zone: 0.2 m/s speed gate in computeLateralForce fixes rest-sliding/yaw feedback loop | 2026-05-27 | — | [260527-qae-lateral-force-dead-zone](.planning/quick/260527-qae-lateral-force-dead-zone/) |
+| 260527-qae | lateral force dead zone: 0.2 m/s speed gate in computeLateralForce stops rest-sliding/yaw feedback loop | 2026-05-27 | 69cba5d | [260527-qae-lateral-force-dead-zone](.planning/quick/260527-qae-lateral-force-dead-zone/) |
+| —          | fix(terrain): X-bound ramp collision, remove plateau, smaller freestanding ramp (no quick dir) | 2026-05-27 | cbb62dd | — |
 | 260527-qad | terrain-normal Fn direction (r×N·Fn), angular damping replaces hard zero, 10° test ramp + plateau meshes | 2026-05-27 | e1f754b | [260527-qad-terrain-normal-fn-angular-damping](.planning/quick/260527-qad-terrain-normal-fn-angular-damping/) |
+| 260527-qac | yaw-only chase cam, infinite grid snap, 2× drive torque | 2026-05-27 | 3695fc5 | [260527-qac-camera-grid-torque](.planning/quick/260527-qac-camera-grid-torque/) |
+| 260527-qab | zero pitch/roll angular velocity on ground contact | 2026-05-27 | 0a29967 | [260527-qab-zero-pitch-roll-on-ground-contact](.planning/quick/260527-qab-zero-pitch-roll-on-ground-contact/) |
+| 260527-qaa | ground constraint pre-step + velocity-gated W/S torque | 2026-05-27 | 8f8429d | [260527-qaa-fix-ground-constraint-torque-gate](.planning/quick/260527-qaa-fix-ground-constraint-torque-gate/) |
+| —          | tire model: slip-angle lateral force, correct Fn cascade, inertia axes, friction cap (no quick dirs) | 2026-05-27 | 8b4757f–1ce9549 | — |
 | 260513-vaw | physics fix: gravity, rigid contact, naming cleanup (Fn/Flong/Flat), rollingResistanceCoeff 200→20, maxDriveTorque 250→400 | 2026-05-14 | e0ccac7 | [260513-vaw-physics-fix-gravity-rigid-contact-naming](.planning/quick/260513-vaw-physics-fix-gravity-rigid-contact-naming/) |
 | 260513-jwo | physics 6DOF rewrite: Fn→totalForce.y, Fn restoring torque, angular impulse on ground contact, slip-angle lateral force, carGroup mesh sync, symmetric reverse torque | 2026-05-13 | 400c013 | [260513-jwo-physics-6dof-rewrite](.planning/quick/260513-jwo-physics-6dof-rewrite/) |
 
