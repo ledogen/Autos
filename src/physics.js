@@ -19,6 +19,10 @@ import * as THREE from 'three'
 import { computeLateralForce, computeLongitudinalForce } from './tire.js'
 import { computeNormalForce, getWheelPosition } from './suspension.js'
 
+// Dead zone for velocity-gated W/S switching. Below this speed (m/s) the car is
+// treated as "at rest" so the drive/brake mode doesn't flip twitchily near zero.
+const DRIVE_DEAD_ZONE = 0.5  // m/s
+
 /**
  * Compute drive/brake torque for a single wheel.
  *
@@ -26,23 +30,39 @@ import { computeNormalForce, getWheelPosition } from './suspension.js'
  * Phase 2+ replaces this with a real drivetrain model (torque curves, differential, gear ratios).
  * Signature is locked per D-06/M1-14 — Phase 2 replaces body only, call sites do not change.
  *
+ * Velocity-gated semantics (requires params._longitudinalVelocity set by physics.js before call):
+ *   W key: drive forward (RWD rear) when longVel > -DEAD_ZONE, brake all wheels when longVel < -DEAD_ZONE
+ *   S key: drive reverse (RWD rear) when longVel < +DEAD_ZONE, brake all wheels when longVel > +DEAD_ZONE
+ *
  * @param {number} wheelIndex - 0-3 per GLOSSARY.md §Wheel Index (0=FL, 1=FR, 2=RL, 3=RR).
  * @param {object} vehicleState - Full vehicleState; uses .throttle [0,1] and .brake [0,1] fields.
- * @param {object} params - RANGER_PARAMS; uses .maxDriveTorque [N·m] and .maxBrakeTorque [N·m].
+ * @param {object} params - RANGER_PARAMS augmented with params._longitudinalVelocity [m/s]
+ *   (set by physics.js per-wheel loop before this call). Uses .maxDriveTorque, .maxReverseTorque,
+ *   .maxBrakeTorque [N·m].
  * @returns {number} Torque [N·m] to apply at this wheel. Positive = drive forward.
- *   Phase 1: rear wheels only (RWD — indices 2 and 3) receive drive torque.
- *   All 4 wheels receive brake torque (negative, opposes forward motion).
  *   Phase 2+ replaces this with a real drivetrain model.
  */
 export function getDriveTorque (wheelIndex, vehicleState, params) {
-  const isRear = wheelIndex === 2 || wheelIndex === 3
-  const driveTorque = isRear ? vehicleState.throttle * params.maxDriveTorque : 0
-  // S key: reverse uses maxReverseTorque (symmetric to forward), not maxBrakeTorque (Bug 4 fix)
-  // Rear wheels receive reverse torque; front wheels brake only.
-  const brakeTorque = isRear
-    ? -vehicleState.brake * params.maxReverseTorque
-    : -vehicleState.brake * params.maxBrakeTorque
-  return driveTorque + brakeTorque
+  const isRear  = wheelIndex === 2 || wheelIndex === 3
+  const longVel = params._longitudinalVelocity || 0
+
+  if (vehicleState.throttle > 0) {
+    // W: forward drive above dead zone; brake all wheels when moving backward
+    if (longVel < -DRIVE_DEAD_ZONE) {
+      return vehicleState.throttle * params.maxBrakeTorque       // all wheels brake from reverse
+    }
+    return isRear ? vehicleState.throttle * params.maxDriveTorque : 0  // RWD drive forward
+  }
+
+  if (vehicleState.brake > 0) {
+    // S: reverse drive below dead zone; brake all wheels when moving forward
+    if (longVel > DRIVE_DEAD_ZONE) {
+      return -vehicleState.brake * params.maxBrakeTorque         // all wheels brake from forward
+    }
+    return isRear ? -vehicleState.brake * params.maxReverseTorque : 0  // RWD drive reverse
+  }
+
+  return 0
 }
 
 /**
@@ -64,17 +84,36 @@ export function getDriveTorque (wheelIndex, vehicleState, params) {
  * @returns {void} — Mutates vehicleState in-place.
  */
 export function stepPhysics (vehicleState, params, dt) {
-  // ── Step 1: Body-space axes from quaternion ────────────────────────────────
+  // ── Step 0: Rotation helper (needed by getWheelPosition throughout) ────────
+  // Set before the ground constraint so the constraint can call getWheelPosition.
+  params._rotateVector = (v) => new THREE.Vector3(v.x, v.y, v.z).applyQuaternion(vehicleState.quaternion)
+
+  // ── Step 1: Ground constraint (correct last frame's penetration first) ─────
+  // Applied BEFORE force accumulation so forces are computed on the corrected position.
+  // This prevents the 1-frame position lag that caused visible body bounce: without this,
+  // Fn was computed pre-integration while the constraint corrected post-integration,
+  // leaving a mismatch that caused alternating under/over-support each frame.
+  // Single-pass: find deepest penetrating contact, lift body once.
+  // Per-wheel correction inside the force loop would cascade (wheel 0 lift → wheels 1-3 airborne).
+  {
+    let maxPenetration = 0
+    for (let i = 0; i < 4; i++) {
+      const cp = getWheelPosition(i, vehicleState, params)
+      if (-cp.y > maxPenetration) maxPenetration = -cp.y
+    }
+    if (maxPenetration > 0) {
+      vehicleState.position.y += maxPenetration
+      if (vehicleState.velocity.y < 0) vehicleState.velocity.y = 0
+    }
+  }
+
+  // ── Step 2: Body-space axes from quaternion ────────────────────────────────
   // NEVER use bodyMesh.rotation for body orientation (CLAUDE.md §What NOT to Use, GLOSSARY.md).
   const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(vehicleState.quaternion)
   const right   = new THREE.Vector3(1, 0, 0).applyQuaternion(vehicleState.quaternion)
   const up      = new THREE.Vector3(0, 1, 0).applyQuaternion(vehicleState.quaternion)
 
-  // ── Step 2: Per-wheel force accumulation ──────────────────────────────────
-  // Inject the rotation helper for suspension.js (keeps suspension.js Three.js-free).
-  // physics.js is the only module allowed to use Three.js for rotation math.
-  params._rotateVector = (v) => new THREE.Vector3(v.x, v.y, v.z).applyQuaternion(vehicleState.quaternion)
-
+  // ── Step 3: Per-wheel force accumulation ──────────────────────────────────
   const totalForce  = new THREE.Vector3(0, -params.mass * 9.81, 0)  // gravity
   const totalTorque = new THREE.Vector3()
 
@@ -84,10 +123,11 @@ export function stepPhysics (vehicleState, params, dt) {
     const contactVec = new THREE.Vector3(contactPt.x, contactPt.y, contactPt.z)
     const rVec       = contactVec.clone().sub(vehicleState.position)
 
-    // b. Ground normal force — only when contact patch is at or below y=0.
+    // b. Ground normal force — 5mm tolerance absorbs floating-point fuzz so a wheel
+    //    sitting at y=+0.001 (just above ground) still registers as grounded.
     //    Uses weight-distributed Fn so front/rear Fn torques cancel at equilibrium.
     //    (equal mass*g/4 does NOT cancel because axle offsets are asymmetric — Bug 1/2 fix)
-    const isGrounded = contactPt.y <= 0
+    const isGrounded = contactPt.y <= 0.005
     const Fn = isGrounded ? computeNormalForce(i, vehicleState, params) : 0
     if (isGrounded) {
       totalForce.y  += Fn
@@ -112,13 +152,14 @@ export function stepPhysics (vehicleState, params, dt) {
     const longVel = contactVel.dot(wheelFwd)
     const latVel  = contactVel.dot(wheelRight)
 
-    // e. Drive force
-    const driveForce = getDriveTorque(i, vehicleState, params) / params.wheelRadius
-
-    // f. Augment params for Phase 1 tire stubs (T-02-02)
+    // e. Augment params before getDriveTorque so velocity-gated brake/drive logic can read longVel.
+    //    _driveForce is set after so computeLongitudinalForce gets the final converted value.
     params._lateralVelocity      = latVel
     params._longitudinalVelocity = longVel
-    params._driveForce           = driveForce
+
+    // f. Drive force (getDriveTorque reads params._longitudinalVelocity for velocity gating)
+    const driveForce = getDriveTorque(i, vehicleState, params) / params.wheelRadius
+    params._driveForce = driveForce
 
     // g. Tire forces (zero when airborne so Fn=0 suppresses lateral/longitudinal naturally)
     const Flat  = computeLateralForce(0, Fn, params)
@@ -130,11 +171,11 @@ export function stepPhysics (vehicleState, params, dt) {
     totalTorque.add(new THREE.Vector3().crossVectors(rVec, wheelForce))
   }
 
-  // ── Step 3: Integrate linear velocity and position (symplectic integration) ──
+  // ── Step 4: Integrate linear velocity and position (symplectic integration) ──
   vehicleState.velocity.addScaledVector(totalForce, dt / params.mass)
   vehicleState.position.addScaledVector(vehicleState.velocity, dt)
 
-  // ── Step 4: Integrate angular velocity and quaternion orientation ──────────
+  // ── Step 5: Integrate angular velocity and quaternion orientation ──────────
   // World X = lateral axis → pitch (nose up/down) → inertiaPitch
   // World Y = vertical axis → yaw (turning) → inertiaYaw
   // World Z = longitudinal axis → roll (side to side) → inertiaRoll
@@ -151,19 +192,5 @@ export function stepPhysics (vehicleState, params, dt) {
     const axis = omega.clone().normalize()
     const dq   = new THREE.Quaternion().setFromAxisAngle(axis, angSpeed * dt)
     vehicleState.quaternion.premultiply(dq).normalize()
-  }
-
-  // ── Step 5: Post-integration ground constraint (single pass — no cascade) ──
-  // Find deepest penetrating contact point, correct once.
-  // Per-wheel correction inside the force loop causes cascade: wheel 0 lifts
-  // the body so wheels 1-3 see no penetration and contribute zero Fn.
-  let maxPenetration = 0
-  for (let i = 0; i < 4; i++) {
-    const cp = getWheelPosition(i, vehicleState, params)
-    if (-cp.y > maxPenetration) maxPenetration = -cp.y
-  }
-  if (maxPenetration > 0) {
-    vehicleState.position.y += maxPenetration
-    if (vehicleState.velocity.y < 0) vehicleState.velocity.y = 0
   }
 }
