@@ -104,6 +104,11 @@ export function stepPhysics (vehicleState, params, dt) {
     if (maxPenetration > 0) {
       vehicleState.position.y += maxPenetration
       if (vehicleState.velocity.y < 0) vehicleState.velocity.y = 0
+      // Zero pitch and roll rate — these contribute to contact patch vertical velocity
+      // (v_cp_y = velocity.y + ω.z*r.x - ω.x*r.z) and drive the rocking oscillation.
+      // Yaw (angularVelocity.y) is intentional steering rotation — leave untouched.
+      vehicleState.angularVelocity.x = 0
+      vehicleState.angularVelocity.z = 0
     }
   }
 
