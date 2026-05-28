@@ -248,7 +248,9 @@ function queryContacts (cx, cy, cz, r) {
     // is above RAMP_MAX_H, so this face only fires for approach from behind or a crash.
     if (Math.abs(cx) <= RAMP_WIDTH / 2) {
       const dist = RAMP_END_Z - cz   // positive when sphere is behind ramp (z < RAMP_END_Z)
-      if (r - dist > 0 && cy < RAMP_MAX_H)
+      // cz < RAMP_END_Z + r: restrict to sphere within r of the face — prevents the
+      // unbounded half-space from firing when sphere is deep inside the ramp from above.
+      if (r - dist > 0 && cy < RAMP_MAX_H && cz < RAMP_END_Z + r)
         hits.push({ normal: new THREE.Vector3(0, 0, -1), depth: r - dist,
           contactPoint: new THREE.Vector3(cx, cy, RAMP_END_Z) })
     }
