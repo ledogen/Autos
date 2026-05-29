@@ -40,7 +40,7 @@ export function getDriveTorque (wheelIndex, vehicleState, params) {
   const longVel = params._longitudinalVelocity || 0
 
   if (vehicleState.throttle > 0) {
-    if (longVel < -DRIVE_DEAD_ZONE) return vehicleState.throttle * params.maxBrakeTorque
+    if (longVel < -DRIVE_DEAD_ZONE) return isRear ? vehicleState.throttle * params.maxBrakeTorque : 0
     return isRear ? vehicleState.throttle * params.maxDriveTorque : 0
   }
   if (vehicleState.brake > 0) {
@@ -190,9 +190,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
   vehicleState.position.addScaledVector(vehicleState.velocity, dt)
 
   // ── Step 5: Integrate angular velocity and quaternion orientation ──────────
-  vehicleState.angularVelocity.x += totalTorque.x / params.inertiaPitch * dt
+  vehicleState.angularVelocity.x += totalTorque.x / params.inertiaRoll  * dt
   vehicleState.angularVelocity.y += totalTorque.y / params.inertiaYaw   * dt
-  vehicleState.angularVelocity.z += totalTorque.z / params.inertiaRoll  * dt
+  vehicleState.angularVelocity.z += totalTorque.z / params.inertiaPitch * dt
 
   const omega    = vehicleState.angularVelocity
   const angSpeed = omega.length()
