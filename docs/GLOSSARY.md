@@ -110,6 +110,17 @@ The angle between the wheel's **heading direction** and the **contact patch velo
 - **Sign:** Positive = velocity pointing left of heading (counter-clockwise viewed from above)
 - **Phase 3** will use slip angle as the input to the Pacejka Magic Formula lateral force calculation
 
+### Normal Force (`Fn`)
+
+The contact force exerted by the ground on a wheel's contact patch, acting in the **+Y direction** (world up, Three.js convention). Opposes gravity and prevents ground penetration.
+
+- **Unit:** N (Newtons)
+- **Symbol:** `Fn` — named for the physical role (normal to the contact surface), NOT the SAE Z-axis label `Fz`. This project uses Three.js Y-up axes throughout; the ground reaction acts in +Y, never +Z.
+- **Phase 1:** Computed per-wheel from impulse-based rigid ground contact. No spring stiffness constant — wheel-to-body geometry is rigid.
+- **Phase 4:** Computed from spring-damper compression at each corner, enabling dynamic load transfer.
+
+**Naming rule:** Always use `Fn` in code. Never use `Fz` for this quantity — that is SAE convention and contradicts the project coordinate system (GLOSSARY §Coordinate System).
+
 ### Contact Patch Velocity
 
 The velocity vector at the location where the tire meets the ground. Computed as:
@@ -120,8 +131,8 @@ v_contact = vehicleState.velocity + vehicleState.angularVelocity × (wheelContac
 
 Where `×` is the vector cross product. The contact patch velocity is then decomposed into:
 
-- **Longitudinal component:** projection along the wheel's `forward` vector → used for drive/brake force and rolling resistance
-- **Lateral component:** projection along the wheel's `right` vector → used for lateral (side) tire force
+- **Longitudinal component** (`Flong`): projection along the wheel's `forward` vector → used for drive/brake force and rolling resistance
+- **Lateral component** (`Flat`): projection along the wheel's `right` vector → used for lateral (side) tire force
 
 - **Unit:** m/s (both components)
 
@@ -159,6 +170,48 @@ Every module that indexes into a per-wheel array uses this mapping:
 | `3`   | RR (Rear Right)  | Rear Right  |
 
 This mapping applies to: `vehicleState.wheelAngles`, wheel mesh arrays in `main.js`, normal force arrays in `suspension.js`, and any per-wheel force arrays in `physics.js`.
+
+---
+
+## Frame Logger Fields
+
+Log fields written by `src/logger.js` `captureFrame()` and recorded in the downloaded `.json` file. Field order matches the `FIELDS` constant in `src/logger.js` exactly (D-07). Each row in the `frames` array has 33 scalar values in this order.
+
+### t
+Accumulated simulation time at the moment of capture — seconds elapsed since the recording session started (not wall-clock time). Source: `simTime` counter in `src/main.js`, incremented by `FIXED_DT` each physics step.
+
+### px, py, pz
+Vehicle centre-of-gravity position in world space — metres. Axes follow the project coordinate system (Y-up): `px` = world right, `py` = world up, `pz` = world forward (negative Z is forward at heading 0). Source: `vehicleState.position`.
+
+### vx, vy, vz
+Vehicle linear velocity in world space — m/s. Source: `vehicleState.velocity`.
+
+### qx, qy, qz, qw
+Vehicle body orientation as a unit quaternion in world space. Matches the Three.js `Quaternion` component order. Source: `vehicleState.quaternion`.
+
+### wx, wy, wz
+Vehicle angular velocity in world space — rad/s. Positive values follow the right-hand rule about each axis. Source: `vehicleState.angularVelocity`.
+
+### steer
+Front wheel steer angle scalar — radians. Positive = steer left (counter-clockwise viewed from above). This is the `vehicleState.steerAngle` scalar, not a body Euler angle. See §Sign Conventions → Steering Angle.
+
+### thr
+Throttle input — dimensionless, range 0..1. Source: `vehicleState.throttle`.
+
+### brk
+Brake input — dimensionless, range 0..1. Source: `vehicleState.brake`.
+
+### {fl/fr/rl/rr}_fn
+Normal (ground reaction) force at the named wheel contact patch — Newtons. Acts in the +Y direction (world up). Zero when the wheel is airborne. Prefix key: `fl` = front-left (index 0), `fr` = front-right (1), `rl` = rear-left (2), `rr` = rear-right (3). Source: `vehicleState.wheelDebug[i].fn` written by `src/physics.js`.
+
+### {fl/fr/rl/rr}_fy
+Lateral tire force at the named wheel contact patch — Newtons. Positive = force in the wheel's +right direction. Computed by `computeLateralForce()` in `src/physics.js`. Zero when airborne. Source: `vehicleState.wheelDebug[i].fy`.
+
+### {fl/fr/rl/rr}_sa
+Slip angle at the named wheel — radians. Computed as `atan2(lateralVelocity, |longitudinalVelocity|)`. Positive sign convention per §Sign Conventions → Slip Angle. Zero when airborne. Source: `vehicleState.wheelDebug[i].sa`.
+
+### {fl/fr/rl/rr}_c
+Contact compression depth at the named wheel — metres. The penetration depth of the wheel contact point into the ground plane at the moment of contact; zero when airborne. Source: `vehicleState.wheelDebug[i].c` (`params._compression` inside `src/physics.js`).
 
 ---
 
