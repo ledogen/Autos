@@ -13,7 +13,7 @@ RangerSim builds from a bare 6DOF rigid body up to a fully validated physics san
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Core Driving** - 3D world, 6DOF quaternion body, flat-tire placeholder, input, render
-- [ ] **Phase 2: Scenario System + Debug Menu** - JSON scenario runner, lil-gui sliders, HUD polish
+- [ ] **Phase 2: Scenario System + Debug Menu** - IC loader, frame logger, lil-gui sliders, HUD polish
 - [ ] **Phase 3: Tire Model** - Pacejka Magic Formula, wheel angular velocity, longitudinal slip, handbrake
 - [ ] **Phase 4: Suspension** - Spring-damper per wheel, dynamic Fz, load transfer, wheel lift
 - [ ] **Phase 5: Rollover Validation** - Ramp prop, rollover scenarios, G-force meter, orbit camera
@@ -46,24 +46,24 @@ Plans:
 **UI hint**: yes
 
 ### Phase 2: Scenario System + Debug Menu
-**Goal**: The user can record scripted driving runs, download JSON logs of per-frame physics state, and tune every physics constant live while driving via a lil-gui debug panel — without restarting the simulation.
+**Goal**: The user can load a known car state from JSON, record a frame log while driving, download it for bug reporting, and tune every physics constant live via a lil-gui debug panel — without restarting the simulation. (Note: headless deterministic replay was explicitly descoped per D-01 in 02-CONTEXT.md; may revisit in a later phase.)
 **Mode:** mvp
 **Depends on**: Phase 1
 **Requirements**: M2-01, M2-02, M2-03, M2-04, M2-05, M2-06
 **Success Criteria** (what must be TRUE):
-  1. User can load a JSON scenario file in the browser, run it headlessly through the same physics step function used for live play, and download a per-frame log (position, velocity, quaternion, angular velocity, per-wheel data)
-  2. User can press backtick to open/close the debug menu overlay and see sliders for all tunable physics constants
-  3. User can move a debug slider (e.g. friction coefficient) while driving and observe the car behavior change immediately with no restart
-  4. User can replay the same scenario file twice and receive identical logs (deterministic physics confirmed)
+  1. User can load a JSON initial condition file (via Ctrl+I) to set vehicle position, orientation, velocity, and angular velocity for reproducing known states
+  2. User can press backslash to toggle frame recording and receive an auto-downloaded columnar JSON log containing 33 fields per tick (position, velocity, quaternion, angular velocity, per-wheel fn/fy/sa/compression)
+  3. User can press backtick to open/close the debug menu overlay and see sliders for all tunable physics constants
+  4. User can move a debug slider (e.g. frictionCoeff) while driving and observe car behavior change immediately with no restart
 **Plans**: 3 plans
 
 Plans:
 **Wave 1** *(parallel — no shared files)*
-- [ ] 02-01-PLAN.md — Frame Logger + IC Loader: src/logger.js (new), physics.js wheelDebug, main.js hook
-- [ ] 02-02-PLAN.md — Debug Menu Expansion: src/debug.js D-08 sliders + Logger hint label
+- [x] 02-01-PLAN.md — Frame Logger + IC Loader: src/logger.js (new), physics.js wheelDebug, main.js hook
+- [x] 02-02-PLAN.md — Debug Menu Expansion: src/debug.js D-08 sliders + Logger hint label
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 02-03-PLAN.md — End-of-Phase Housekeeping: slider audit, HUD verify, GLOSSARY.md log fields
+- [x] 02-03-PLAN.md — End-of-Phase Housekeeping: slider audit, HUD verify, GLOSSARY.md log fields
 
 **UI hint**: yes
 

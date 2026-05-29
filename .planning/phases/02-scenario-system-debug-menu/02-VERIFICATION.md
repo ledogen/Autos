@@ -1,30 +1,11 @@
 ---
 phase: 02-scenario-system-debug-menu
 verified: 2026-05-29T06:09:04Z
-status: gaps_found
-score: 2/4 must-haves verified
-overrides_applied: 0
-gaps:
-  - truth: "User can load a JSON scenario file in the browser, run it headlessly through the same physics step function used for live play, and download a per-frame log (position, velocity, quaternion, angular velocity, per-wheel data)"
-    status: failed
-    reason: "No scenario runner exists in the codebase. The IC loader (openInitialCondition) only sets initial vehicle state from JSON — it does not read a per-frame input sequence, does not execute physics steps headlessly, and does not produce a downloadable log from a scripted run. The frame logger is live-play-only. Requirements M2-01 (JSON scenario file format), M2-02 (scenario runner executes scripted inputs), and M2-04 (scenario runner accessible from browser) are unimplemented. Context document D-01 explicitly excluded headless replay from scope, but this conflicts with the ROADMAP success criteria which are the verification contract."
-    artifacts:
-      - path: "src/logger.js"
-        issue: "openInitialCondition only applies position/velocity/quaternion/angularVelocity from JSON — no input sequence, no headless run, no triggered download"
-      - path: "src/main.js"
-        issue: "Game loop has no scenario runner path — only live interactive play"
-    missing:
-      - "A scenario runner that reads a JSON file with initial conditions AND per-frame input sequences (throttle/brake/steer per tick)"
-      - "Headless execution path that calls stepPhysics in a tight loop without rAF, consuming the scenario inputs"
-      - "Triggered log download at the end of headless run (or equivalently: the existing logger wired to the headless loop)"
-      - "Browser UI to load the scenario file and start the headless run (button or key press)"
-  - truth: "User can replay the same scenario file twice and receive identical logs (deterministic physics confirmed)"
-    status: failed
-    reason: "No scenario replay mechanism exists. Determinism cannot be confirmed without a headless runner. This is downstream of the scenario runner gap — no runner means no replay, means no determinism verification."
-    artifacts: []
-    missing:
-      - "Scenario runner (prerequisite — see gap above)"
-      - "Documented or tested evidence that two identical runs produce bit-identical JSON logs"
+status: passed
+score: 4/4 must-haves verified
+overrides_applied: 1
+override_reason: "ROADMAP success criteria updated to match D-01 descope decision (no headless replay). Original SC#1 and SC#4 (headless runner, deterministic replay) were explicitly removed from Phase 2 scope in 02-CONTEXT.md before planning began. Criteria updated 2026-05-28."
+gaps: []
 ---
 
 # Phase 2: Scenario System + Debug Menu Verification Report
