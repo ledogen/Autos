@@ -90,6 +90,11 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
   const totalTorque = new THREE.Vector3()
 
   for (let i = 0; i < 4; i++) {
+    // Zero wheelDebug for this wheel before contacts — ensures no stale values when wheel is off-ground
+    if (vehicleState.wheelDebug) {
+      vehicleState.wheelDebug[i] = { fn: 0, fy: 0, sa: 0, c: 0 }
+    }
+
     // Hub world position (sphere center for contact queries)
     const hub  = getWheelPosition(i, vehicleState, params)
     const rHub = new THREE.Vector3(
@@ -146,6 +151,14 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
       wheelForce.addScaledVector(wheelRight, Flat)
       totalForce.add(wheelForce)
       totalTorque.add(new THREE.Vector3().crossVectors(rContact, wheelForce))
+
+      // Write debug data for logger — last contact wins (most steps have exactly one contact)
+      if (vehicleState.wheelDebug) {
+        vehicleState.wheelDebug[i].fn = Fn
+        vehicleState.wheelDebug[i].fy = Flat
+        vehicleState.wheelDebug[i].sa = Math.atan2(params._lateralVelocity, Math.abs(params._longitudinalVelocity || 1e-6))
+        vehicleState.wheelDebug[i].c  = params._compression
+      }
     }
   }
 
