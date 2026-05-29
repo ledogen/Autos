@@ -15,14 +15,20 @@ export const RANGER_PARAMS = {
   trackRear:    1.46,   // m — center-to-center wheel spacing at rear axle
   cgHeight:     0.55,   // m — center of gravity above ground (estimate, laden)
   wheelRadius:  0.368,  // m — 245/75R16 tire radius
+  bodyLength:   4.61,   // m — approximate exterior length (2002 Ford Ranger)
+  bodyWidth:    1.85,   // m — approximate exterior width  (2002 Ford Ranger)
+  bodyHeight:   1.60,   // m — approximate exterior height (2002 Ford Ranger)
 
   // ── Mass & Inertia ────────────────────────────────────────────────────────
-  // Estimated box-model values; expose as debug sliders for tuning.
-  // For a box body 4.6m L × 1.8m W × 1.6m H: Ixx≈800, Iyy≈1400, Izz≈2200 kg·m²
+  // Box model formula: I = (1/12) * mass * (a² + b²) where a,b are the two
+  // body dimensions perpendicular to the rotation axis.
+  //   inertiaRoll  (Ixx): width² + height²  → (1/12)*1360*(1.85²+1.60²) ≈  800 kg·m²
+  //   inertiaPitch (Iyy): length² + height² → (1/12)*1360*(4.61²+1.60²) ≈ 3300 kg·m²
+  //   inertiaYaw   (Izz): length² + width²  → (1/12)*1360*(4.61²+1.85²) ≈ 3700 kg·m²
   mass:         1360,   // kg — curb weight estimate
-  inertiaYaw:   2200,   // kg·m² (Izz — rotation about up axis; turning)
-  inertiaPitch: 1400,   // kg·m² (Iyy — rotation about lateral axis; braking)
-  inertiaRoll:  800,    // kg·m² (Ixx — rotation about longitudinal axis; cornering)
+  inertiaRoll:  (1 / 12) * 1360 * (1.85 ** 2 + 1.60 ** 2),  // kg·m² (Ixx — roll,  ≈  800)
+  inertiaPitch: (1 / 12) * 1360 * (4.61 ** 2 + 1.60 ** 2),  // kg·m² (Iyy — pitch, ≈ 3300)
+  inertiaYaw:   (1 / 12) * 1360 * (4.61 ** 2 + 1.85 ** 2),  // kg·m² (Izz — yaw,   ≈ 3700)
 
   // ── Drivetrain ────────────────────────────────────────────────────────────
   // Phase 1 placeholder; Phase 2+ replaces drivetrain model.
