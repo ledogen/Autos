@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: context exhaustion at 76% (2026-05-29)
-last_updated: "2026-05-29T05:59:34.045Z"
-last_activity: 2026-05-29 -- Phase 02 execution started
+status: planning
+stopped_at: context exhaustion at 75% (2026-05-29)
+last_updated: "2026-05-29T06:43:44.297Z"
+last_activity: 2026-05-29
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 7
-  completed_plans: 5
+  completed_plans: 6
   percent: 17
 ---
 
@@ -74,6 +74,7 @@ None yet.
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260528-wtt | fix physics CR bugs: inertia axes, isRear guard, slip angle param, blob URL try/finally | 2026-05-29 | c7986cd | [260528-wtt-fix-physics-cr-bugs](.planning/quick/260528-wtt-fix-physics-cr-bugs/) |
 | 260528-qaf | sphere contact model: queryContacts replaces terrain(x,z); hub center; body bumper contacts; ramp solid faces | 2026-05-28 | 962a88b | [260528-qaf-sphere-contact-model](.planning/quick/260528-qaf-sphere-contact-model/) |
 | 260527-qae | lateral force dead zone: 0.2 m/s speed gate in computeLateralForce stops rest-sliding/yaw feedback loop | 2026-05-27 | 69cba5d | [260527-qae-lateral-force-dead-zone](.planning/quick/260527-qae-lateral-force-dead-zone/) |
 | —          | fix(terrain): X-bound ramp collision, remove plateau, smaller freestanding ramp (no quick dir) | 2026-05-27 | cbb62dd | — |
@@ -97,6 +98,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-29T05:59:34.042Z
-Stopped at: context exhaustion at 76% (2026-05-29)
+Last session: 2026-05-29T06:43:44.294Z
+Stopped at: context exhaustion at 75% (2026-05-29)
 Resume file: None
