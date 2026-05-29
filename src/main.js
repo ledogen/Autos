@@ -22,6 +22,7 @@ import { stepPhysics } from './physics.js'
 import { updateVehicle, SPAWN_STATE } from './vehicle.js'
 import { updateCamera } from './camera.js'
 import { initDebug } from './debug.js'
+import { captureFrame, toggleRecording, openInitialCondition } from './logger.js'
 
 // Manual verification hook — console.log confirms importmap loaded r184 (FOUND-02)
 console.log('THREE.REVISION', THREE.REVISION)
@@ -29,6 +30,8 @@ console.log('THREE.REVISION', THREE.REVISION)
 // ── Fixed-timestep loop constants (RESEARCH §Pattern 2) ─────────────────────
 const FIXED_DT = 1 / 60          // physics step: 16.667ms
 const MAX_FRAME_TIME = 0.25       // spiral-of-death clamp: 250ms (T-01-04 mitigation)
+
+let simTime = 0  // accumulated simulation time in seconds; incremented by FIXED_DT each physics step
 
 let accumulator = 0
 let currentTime = performance.now() / 1000
@@ -47,6 +50,7 @@ const vehicleState = {
   brake:           0,
   wheelAngles:     [0, 0, 0, 0],                 // per-wheel spin angle [rad], Plan 03 drives
   wheelSteerAngles: [0, 0, 0, 0],               // Per-wheel Ackermann steer angles [rad]; set by updateVehicle each step; read by stepPhysics for lateral force decomposition.
+  wheelDebug:      [ {fn:0,fy:0,sa:0,c:0}, {fn:0,fy:0,sa:0,c:0}, {fn:0,fy:0,sa:0,c:0}, {fn:0,fy:0,sa:0,c:0} ],  // per-wheel debug data written by stepPhysics; read by logger
 }
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
@@ -345,6 +349,13 @@ document.body.appendChild(stats.dom)
 // D-10: passes mutable RANGER_PARAMS ref so sliders write directly to the object physics.js reads.
 initDebug(RANGER_PARAMS)
 
+// ── Logger key bindings (D-03 / D-02) ────────────────────────────────────────
+// \ toggles frame recording; Ctrl+I opens the initial condition file picker.
+document.addEventListener('keydown', e => {
+  if (e.key === '\\') toggleRecording()
+  if (e.key === 'i' && e.ctrlKey) openInitialCondition(vehicleState)
+})
+
 // ── Game loop ─────────────────────────────────────────────────────────────────
 // Fixed-timestep accumulator (RESEARCH §Pattern 2, gafferongames.com/post/fix_your_timestep/)
 // FIXED_DT = 1/60s; MAX_FRAME_TIME = 0.25s (T-01-04: spiral-of-death mitigation)
@@ -376,9 +387,12 @@ function loop () {
       vehicleState.brake = 0
       vehicleState.wheelAngles = [0, 0, 0, 0]
       vehicleState.wheelSteerAngles = [0, 0, 0, 0]
+      vehicleState.wheelDebug = [ {fn:0,fy:0,sa:0,c:0}, {fn:0,fy:0,sa:0,c:0}, {fn:0,fy:0,sa:0,c:0}, {fn:0,fy:0,sa:0,c:0} ]
     }
 
     stepPhysics(vehicleState, RANGER_PARAMS, FIXED_DT, queryContacts)
+    simTime += FIXED_DT
+    captureFrame(simTime, vehicleState, vehicleState.wheelDebug)
     accumulator -= FIXED_DT
   }
 
