@@ -145,7 +145,10 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
       totalTorque.add(new THREE.Vector3().crossVectors(rContact, normal.clone().multiplyScalar(Fn)))
 
       // Tire forces applied in the contact plane
-      const Flat  = computeLateralForce(0, Fn, params)
+      const latVel  = params._lateralVelocity  || 0
+      const longVelAbs = Math.abs(params._longitudinalVelocity || 0)
+      const slipAngle = Math.atan2(latVel, longVelAbs + 0.01)
+      const Flat  = computeLateralForce(slipAngle, Fn, params)
       const Flong = computeLongitudinalForce(0, Fn, params)
       const wheelForce = wheelFwd.clone().multiplyScalar(Flong)
       wheelForce.addScaledVector(wheelRight, Flat)
