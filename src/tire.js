@@ -18,13 +18,12 @@
  * Compute lateral (side) force at this wheel's contact patch.
  *
  * @param {number} slipAngle - [rad] tire slip angle; sign convention in GLOSSARY.md §Slip Angle.
- *   Used in Phase 1 via atan2 from contact patch velocities (Bug 6 fix). Phase 3 will pass a
- *   computed slip angle directly via Pacejka Magic Formula instead.
+ *   Caller (physics.js) computes atan2(latVel, |longVel| + 0.01) and passes it here.
+ *   Phase 3 will pass a Pacejka-computed slip angle instead.
  * @param {number} Fz - [N] normal force on this wheel from suspension. Unused in Phase 1 linear model.
  * @param {object} params - RANGER_PARAMS augmented with:
- *   params._lateralVelocity [m/s] (lateral component of contact patch velocity in wheel's right
- *   direction, computed by physics.js before calling).
- *   params._longitudinalVelocity [m/s] (longitudinal contact patch speed, used as denominator guard).
+ *   params._lateralVelocity [m/s] (used only for the low-speed dead-zone guard).
+ *   params._longitudinalVelocity [m/s] (used only for the low-speed dead-zone guard).
  *   params.corneringStiffness [N/rad] — linear tire lateral stiffness.
  * @returns {number} Flat [N] lateral force proportional to slip angle times corneringStiffness.
  *   Positive = in wheel's right (+X body direction). Returns 0 when both velocity components are 0.
@@ -34,15 +33,14 @@
  */
 export function computeLateralForce (slipAngle, Fz, params) {
   // Phase 1: slip-angle-based linear tire model.
-  // slipAngle = atan2(latVel, |longVel| + 0.01): positive latVel (contact patch rightward) →
-  // positive slip angle → negative Flat (leftward force opposing the drift). The 0.01 guard
-  // prevents division by zero at rest; friction cap prevents saturation to ±90°.
+  // Caller passes slipAngle = atan2(latVel, |longVel| + 0.01): positive latVel (contact patch
+  // rightward) → positive slip angle → negative Flat (leftward force opposing the drift).
+  // The friction cap prevents saturation to ±90°.
   const latVel  = params._lateralVelocity  || 0
   const longVel = params._longitudinalVelocity || 0
-  // Dead zone: atan2 singularity at low speed produces near-max slip angle from noise-level velocity.
+  // Dead zone: low speed produces noise-level velocity; guard against atan2 singularity at rest.
   if (Math.sqrt(latVel * latVel + longVel * longVel) < 0.2) return 0
-  const slipAngleCalc = Math.atan2(latVel, Math.abs(longVel) + 0.01)
-  const raw = -params.corneringStiffness * slipAngleCalc
+  const raw = -params.corneringStiffness * slipAngle
   // Friction cap: slip angle → ±90° at low speed → force >> Fn without this.
   // Phase 3 Pacejka saturates naturally; Phase 1 needs explicit clamping.
   const maxFlat = (params.frictionCoeff || 0.9) * Fz
