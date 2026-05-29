@@ -2,14 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: context exhaustion at 75% (2026-05-14)
-last_updated: "2026-05-14T05:17:11.049Z"
-last_activity: 2026-05-27 -- lateral force dead zone (qae), ramp collision fix (cbb62dd), plus backfilled qaa–qac and tire model corrections
+status: ready-to-execute
+last_updated: "2026-05-28"
+last_activity: 2026-05-28 -- Phase 02 planned (3 plans, 2 waves)
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 4
+  total_plans: 7
   completed_plans: 3
   percent: 0
 ---
@@ -21,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-10)
 
 **Core value:** Physics that feel honest: a car that can roll over naturally, drift on the limit, and behave predictably enough that tuning parameters produces the expected result.
-**Current focus:** Phase 01 — core-driving
+**Current focus:** Phase 02 — scenario-system-debug-menu
 
 ## Current Position
 
-Phase: 01 (core-driving) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 01
-Last activity: 2026-05-11 -- Phase 01 execution started
+Phase: 02 (scenario-system-debug-menu) — READY TO EXECUTE
+Plans: 3 of 3 planned, 0 of 3 executed
+Status: Phase 02 planned — 3 plans in 2 waves (Wave 1: 02-01, 02-02 in parallel; Wave 2: 02-03)
+Last activity: 2026-05-28 -- Phase 02 planning complete
 
 Progress: [░░░░░░░░░░] 0%
 

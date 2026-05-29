@@ -55,7 +55,16 @@ Plans:
   2. User can press backtick to open/close the debug menu overlay and see sliders for all tunable physics constants
   3. User can move a debug slider (e.g. friction coefficient) while driving and observe the car behavior change immediately with no restart
   4. User can replay the same scenario file twice and receive identical logs (deterministic physics confirmed)
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+**Wave 1** *(parallel — no shared files)*
+- [ ] 02-01-PLAN.md — Frame Logger + IC Loader: src/logger.js (new), physics.js wheelDebug, main.js hook
+- [ ] 02-02-PLAN.md — Debug Menu Expansion: src/debug.js D-08 sliders + Logger hint label
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 02-03-PLAN.md — End-of-Phase Housekeeping: slider audit, HUD verify, GLOSSARY.md log fields
+
 **UI hint**: yes
 
 ### Phase 3: Tire Model
@@ -124,7 +133,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → [research] → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Driving | 4/4 | ✅ Complete | 2026-05-28 |
-| 2. Scenario System + Debug Menu | 0/TBD | Not started | - |
+| 2. Scenario System + Debug Menu | 0/3 | Ready to execute | - |
 | 3. Tire Model | 0/TBD | Not started | - |
 | 4. Suspension | 0/TBD | Not started | - |
 | 5. Rollover Validation | 0/TBD | Not started | - |
