@@ -245,11 +245,14 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
         vehicleState.wheelOmega[i] = (params._longitudinalVelocity || 0) / params.wheelRadius
       } else {
         const omega0 = vehicleState.wheelOmega?.[i] ?? 0
+        // Use >= 0 instead of Math.sign so that omega=0 still gets brake torque applied
+        // (Math.sign(0) = 0 would zero out brakeSigned and let road-reaction kick omega positive)
+        const spinSign = omega0 >= 0 ? 1 : -1
         // Brake torque opposes current spin direction — never adds energy in the spin direction
-        const brakeSigned = brakeTorque * Math.sign(omega0)
+        const brakeSigned = brakeTorque * spinSign
         const newOmega = omega0 + (driveTorque - roadReactionTorque - brakeSigned) / wheelInertia * dt
         // Clamp: braking cannot reverse spin direction (brake stops the wheel, doesn't push through zero)
-        if (brakeTorque > 0 && omega0 !== 0 && Math.sign(newOmega) !== Math.sign(omega0)) {
+        if (brakeTorque > 0 && Math.sign(newOmega) !== spinSign) {
           vehicleState.wheelOmega[i] = 0
         } else {
           vehicleState.wheelOmega[i] = newOmega
