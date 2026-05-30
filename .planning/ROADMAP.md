@@ -85,7 +85,7 @@ Plans:
 - [x] 03-01-PLAN.md — Pacejka core: data/ranger.js params + src/tire.js Magic Formula bodies (M3-03, M3-04, M3-10)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 03-02-PLAN.md — Physics integration: slip ratio, friction circle, omega integrator, handbrake (M3-01, M3-02, M3-05, M3-06)
+- [x] 03-02-PLAN.md — Physics integration: slip ratio, friction circle, omega integrator, handbrake (M3-01, M3-02, M3-05, M3-06)
 
 **Wave 3** *(blocked on Wave 2 completion — shares src/main.js)*
 - [ ] 03-03-PLAN.md — Debug UI + HUD + logger + glossary: Pacejka plot canvas, slider audit, slip-angle/throttle/brake HUD, omega log fields (M3-07, M3-08, M3-09, M3-10)
