@@ -91,9 +91,9 @@ Plans:
 - [x] 03-03-PLAN.md — Debug UI + HUD + logger + glossary: Pacejka plot canvas, slider audit, slip-angle/throttle/brake HUD, omega log fields (M3-07, M3-08, M3-09, M3-10)
 
 **Wave 4** *(gap closure — VERIFICATION.md + REVIEW.md; plans parallel — disjoint files)*
-- [ ] 03-04-PLAN.md — Fix plotCanvas/plotCtx scope bug in src/debug.js (M3-09 BLOCKER)
-- [ ] 03-05-PLAN.md — Physics corrections: reverse-throttle torque (CR-02), airborne omega integration (CR-03), lateral force sign (WR-02) (M3-01, M3-02, M3-03, M3-05)
-- [ ] 03-06-PLAN.md — Accept M3-06 brake-torque deviation via VERIFICATION.md overrides entry (M3-06)
+- [x] 03-04-PLAN.md — Fix plotCanvas/plotCtx scope bug in src/debug.js (M3-09 BLOCKER)
+- [x] 03-05-PLAN.md — Physics corrections: reverse-throttle torque (CR-02), airborne omega integration (CR-03), lateral force sign (WR-02) (M3-01, M3-02, M3-03, M3-05)
+- [x] 03-06-PLAN.md — Accept M3-06 brake-torque deviation via VERIFICATION.md overrides entry (M3-06)
 
 **UI hint**: yes
 
