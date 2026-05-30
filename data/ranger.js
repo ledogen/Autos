@@ -61,17 +61,12 @@ export const RANGER_PARAMS = {
   bodyContactRadius:      0.15,  // m — effective sphere radius for bumper corner points
 
   // ── Phase 3 Pacejka Tire Model (D-07) ────────────────────────────────────
-  // Lateral coefficients (all 4 wheels — D-06). Hard-clamped at C=[1.0,1.99] in tire.js.
+  // Combined-slip Pacejka — one isotropic curve, evaluated at σ_total = √(slipRatio² + tan²(slipAngle)).
+  // Peak force per wheel = frictionCoeff × pacejkaD × Fn. Hard-clamped at C=[1.0,1.99] in tire.js.
   pacejkaB:  10.0,   // stiffness factor — initial slope of force curve
-  pacejkaC:   1.9,   // shape factor — C<2 required; hard-clamped in computeLateralForce
-  pacejkaD:   1.0,   // peak factor — peak force = D × Fz (D=1.0 → μ=1.0 dry tarmac)
+  pacejkaC:   1.9,   // shape factor — C<2 required; hard-clamped in computeTireForces
+  pacejkaD:   1.0,   // peak factor — peak force = frictionCoeff × D × Fn
   pacejkaE:  0.97,   // curvature — near 1.0 produces realistic post-peak falloff
-
-  // Longitudinal coefficients (all 4 wheels — D-06)
-  pacejkaBx: 10.0,
-  pacejkaCx:  1.9,
-  pacejkaDx:  1.0,
-  pacejkaEx: 0.97,
 
   // Wheel angular dynamics (D-02)
   // I = 0.5 × mass_wheel × r²; mass_wheel ≈ 18 kg (245/75R16 truck tire+wheel assembly)

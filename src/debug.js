@@ -51,19 +51,13 @@ export function initDebug (params) {
   // D-16: maxHandbrakeTorque slider
   gui.add(params, 'maxHandbrakeTorque', 500, 5000, 100).name('Handbrake Torque (Nm)')
 
-  // D-12: Lateral Tire (Pacejka) folder with B/C/D/E sliders
-  const lateralFolder = gui.addFolder('Lateral Tire (Pacejka)')
-  lateralFolder.add(params, 'pacejkaB', 5, 20, 0.5).name('B - Stiffness')
-  lateralFolder.add(params, 'pacejkaC', 1.0, 1.99, 0.01).name('C - Shape [1.0-1.99]')
-  lateralFolder.add(params, 'pacejkaD', 0.5, 2.0, 0.05).name('D - Peak Factor')
-  lateralFolder.add(params, 'pacejkaE', -1.0, 1.0, 0.05).name('E - Curvature')
-
-  // D-13: Longitudinal Tire (Pacejka) folder with Bx/Cx/Dx/Ex sliders
-  const longitudinalFolder = gui.addFolder('Longitudinal Tire (Pacejka)')
-  longitudinalFolder.add(params, 'pacejkaBx', 5, 20, 0.5).name('Bx - Stiffness')
-  longitudinalFolder.add(params, 'pacejkaCx', 1.0, 1.99, 0.01).name('Cx - Shape [1.0-1.99]')
-  longitudinalFolder.add(params, 'pacejkaDx', 0.5, 2.0, 0.05).name('Dx - Peak Factor')
-  longitudinalFolder.add(params, 'pacejkaEx', -1.0, 1.0, 0.05).name('Ex - Curvature')
+  // D-12: Tire (Pacejka) folder — combined-slip isotropic curve, single set of coefficients.
+  // Longitudinal pacejkaBx/Cx/Dx/Ex were removed when the tire model switched to combined slip.
+  const tireFolder = gui.addFolder('Tire (Pacejka)')
+  tireFolder.add(params, 'pacejkaB', 5, 20, 0.5).name('B - Stiffness')
+  tireFolder.add(params, 'pacejkaC', 1.0, 1.99, 0.01).name('C - Shape [1.0-1.99]')
+  tireFolder.add(params, 'pacejkaD', 0.5, 2.0, 0.05).name('D - Peak Factor')
+  tireFolder.add(params, 'pacejkaE', -1.0, 1.0, 0.05).name('E - Curvature')
 
   // D-04: Read-only Logger hint — shows the \ key without being interactive
   const _loggerHint = { hint: '\\ to record' }

@@ -2,7 +2,7 @@
  * src/physics.js — Physics integrator for RangerSim.
  *
  * 6DOF rigid body step using quaternion orientation (see GLOSSARY.md §Quaternion Integration Convention).
- * Imports computeLateralForce/computeLongitudinalForce from tire.js and
+ * Imports computeTireForces (combined-slip Pacejka) from tire.js and
  * computeNormalForce/getWheelPosition/getBodyContactPoints from suspension.js.
  *
  * Contact model: each wheel is a sphere (hub center + wheelRadius). The caller supplies
@@ -22,7 +22,7 @@
  */
 
 import * as THREE from 'three'
-import { computeLateralForce, computeLongitudinalForce } from './tire.js'
+import { computeTireForces } from './tire.js'
 import { computeNormalForce, getWheelPosition, getBodyContactPoints } from './suspension.js'
 
 // Speed thresholds for input routing (rule-based, no dead-zone oscillation)
@@ -193,28 +193,20 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
       totalForce.addScaledVector(normal, Fn)
       totalTorque.add(new THREE.Vector3().crossVectors(rContact, normal.clone().multiplyScalar(Fn)))
 
-      // Tire forces applied in the contact plane
+      // Tire forces — combined-slip Pacejka (one curve, decomposed along the slip vector).
+      // The friction circle is now implicit in the kinematics: at full lockup (slipRatio=±1)
+      // with low slipAngle, the slip vector aligns with longitudinal and Flat → 0 naturally.
       const latVel  = params._lateralVelocity  || 0
       const longVelAbs = Math.abs(params._longitudinalVelocity || 0)
       const slipAngle = Math.atan2(latVel, longVelAbs + 0.01)
-      let Flat  = computeLateralForce(slipAngle, Fn, params)
-      let Flong = computeLongitudinalForce(slipRatio, Fn, params)
+      const { Flong, Flat } = computeTireForces(slipRatio, slipAngle, Fn, params)
 
-      // Friction circle — scales Flat and Flong so combined force stays within friction budget (M3-05)
-      const frictionBudget = (params.frictionCoeff || 0.9) * Fn
-      const combinedForce = Math.sqrt(Flat * Flat + Flong * Flong)
-      if (combinedForce > frictionBudget && combinedForce > 0) {
-        const scale = frictionBudget / combinedForce
-        Flat  *= scale
-        Flong *= scale
-      }
-
-      // Record scaled Flong for omega integrator (must be AFTER friction-circle scaling — constraint #5/Pitfall 2)
+      // Record Flong for omega integrator (constraint #5/Pitfall 2 — already saturation-bounded by Pacejka)
       lastScaledFlong = Flong
 
       const wheelForce = wheelFwd.clone().multiplyScalar(Flong)
       // WR-02: lateral grip opposes lateral hub velocity (resists the slide), so positive Flat from
-      // computeLateralForce(positive slipAngle) must be applied along -wheelRight.
+      // computeTireForces(positive slipAngle) must be applied along -wheelRight.
       wheelForce.addScaledVector(wheelRight, -Flat)
       totalForce.add(wheelForce)
       totalTorque.add(new THREE.Vector3().crossVectors(rContact, wheelForce))
