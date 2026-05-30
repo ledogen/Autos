@@ -212,7 +212,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
     // Airborne: lastScaledFlong=0 → road reaction=0 → drive/brake torque spin wheel freely.
     // T-03-03: OMEGA_EPSILON prevents explicit-Euler oscillation at low combined speed.
     {
-      const OMEGA_EPSILON = 0.5  // m/s combined-speed threshold
+      const OMEGA_EPSILON = 0.05  // m/s combined-speed threshold — must be < SLIP_EPSILON (0.1) to avoid locking out drive torque at low speed
       const wheelInertia = params.wheelInertia || 1.22
       const driveTorque = getDriveTorque(i, vehicleState, params)
       const brakeTorque = getBrakeTorque(i, vehicleState, params)
