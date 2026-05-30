@@ -78,7 +78,18 @@ Plans:
   3. User can observe the front slip angle HUD indicator cycle through green / orange / red as cornering intensity increases
   4. User can open the debug menu, see a live Pacejka curve plot with a moving operating-point dot per front wheel, and adjust B/C/D values to feel the difference immediately
   5. User can observe natural-feeling understeer, oversteer, and drift recovery tunable entirely via the debug menu
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+**Wave 1**
+- [ ] 03-01-PLAN.md — Pacejka core: data/ranger.js params + src/tire.js Magic Formula bodies (M3-03, M3-04, M3-10)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 03-02-PLAN.md — Physics integration: slip ratio, friction circle, omega integrator, handbrake (M3-01, M3-02, M3-05, M3-06)
+
+**Wave 3** *(blocked on Wave 2 completion — shares src/main.js)*
+- [ ] 03-03-PLAN.md — Debug UI + HUD + logger + glossary: Pacejka plot canvas, slider audit, slip-angle/throttle/brake HUD, omega log fields (M3-07, M3-08, M3-09, M3-10)
+
 **UI hint**: yes
 
 ### Phase 4: Suspension
@@ -134,7 +145,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → [research] → 6
 |-------|----------------|--------|-----------|
 | 1. Core Driving | 4/4 | ✅ Complete | 2026-05-28 |
 | 2. Scenario System + Debug Menu | 0/3 | Ready to execute | - |
-| 3. Tire Model | 0/TBD | Not started | - |
+| 3. Tire Model | 0/3 | Ready to execute | - |
 | 4. Suspension | 0/TBD | Not started | - |
 | 5. Rollover Validation | 0/TBD | Not started | - |
 | 6. Procedural Terrain | 0/TBD | Blocked (research required) | - |

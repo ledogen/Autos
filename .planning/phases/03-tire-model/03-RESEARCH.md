@@ -630,22 +630,16 @@ maxHandbrakeTorque:  2000,   // N·m — rear-only handbrake (D-10)
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **wheelInertia as slider vs hardcoded?**
-   - What we know: D-16 says add `maxHandbrakeTorque` slider; doesn't explicitly mention `wheelInertia`
-   - What's unclear: Should `wheelInertia` be tunable? It affects wheelspin onset meaningfully.
-   - Recommendation: Add it to ranger.js as a param with a slider. Low risk; high tuning value.
+   - RESOLVED: Add `wheelInertia` to ranger.js as a named param (value 1.22 kg·m²). Slider omitted — not in locked D-16 decisions; within Claude's discretion per CONTEXT.md. Planner adds param only.
 
 2. **M3-06 requirement says "reduces rear wheel Pacejka D" — CONTEXT.md D-09 says "max brake torque"**
-   - What we know: REQUIREMENTS.md M3-06: "Handbrake (Space) reduces rear wheel Pacejka D for drift initiation." CONTEXT.md D-09: "max brake torque to rear wheels only, does NOT hard-lock omega."
-   - What's unclear: Are these describing the same outcome? "Reduces Pacejka D" could mean the effective grip is reduced (which happens naturally via friction circle when brake torque reduces omega and builds slip). Or it could mean directly modifying the D parameter.
-   - Recommendation: Implement CONTEXT.md D-09 (brake torque approach). The Pacejka model naturally reduces effective lateral output via friction circle coupling when longitudinal slip builds — this IS "effectively reducing D" without directly mutating the param. The REQUIREMENTS.md description is outcome-focused, not implementation-prescriptive. Planner should note this interpretation.
+   - RESOLVED: Implement CONTEXT.md D-09 (max brake torque approach). CONTEXT.md locked decisions take precedence over REQUIREMENTS.md wording. "Reduces Pacejka D" in M3-06 describes the observable outcome (reduced lateral grip), not the mechanism — the Pacejka friction circle naturally reduces effective lateral output when longitudinal slip builds from brake torque.
 
 3. **Should `wheelOmega` be updated when wheel is airborne (Fn = 0)?**
-   - What we know: The omega integrator is inside the per-contact loop (Fn > 0 guard). If wheel is airborne, loop body doesn't execute.
-   - What's unclear: An airborne wheel in neutral should spin down via bearing friction; in throttle it would spin up unconstrained.
-   - Recommendation: For Phase 3, let omega remain constant when airborne (no contact = no road reaction; drive torque = uncapped spinup). Add a small bearing drag term outside the contact loop: `omega *= (1 - bearingFriction * dt)`. This is a polish item — not required for M3-01 but prevents infinite spinup during airborne moments.
+   - RESOLVED: For Phase 3, omega remains constant when airborne (no contact = no road reaction; no drive torque spinup when airborne either — getDriveTorque is only applied inside the contact loop). Bearing drag deferred to Phase 4 as a polish item; not required for M3-01 success criteria.
 
 ---
 
