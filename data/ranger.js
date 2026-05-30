@@ -36,7 +36,7 @@ export const RANGER_PARAMS = {
   maxBrakeTorque:  3000,  // N·m — flat brake deceleration placeholder
   // Bug 4 fix: reverse uses maxReverseTorque (symmetric to forward), not maxBrakeTorque
   maxReverseTorque: 800,  // N·m — matches maxDriveTorque; used by getDriveTorque for reverse
-  maxHandbrakeTorque: 2000, // N·m — rear-only handbrake; exposed as slider (D-16)
+  maxHandbrakeTorque: 4000, // N·m — rear-only handbrake; doubled from 2000 to actually lock rears; exposed as slider (D-16)
 
   // ── Tire Spring-Damper ───────────────────────────────────────────────────
   // Matchbox car has no suspension — the tire IS the only compliance between wheel and ground.
