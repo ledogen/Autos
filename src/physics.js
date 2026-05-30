@@ -146,6 +146,10 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
     const driveForce = getDriveTorque(i, vehicleState, params) / params.wheelRadius
     params._driveForce = driveForce
 
+    // lastScaledFlong: friction-circle-scaled Flong from the last processed contact.
+    // Zero when airborne — road reaction is 0 so drive/brake torque spin the wheel freely (CR-03).
+    let lastScaledFlong = 0
+
     // Query every surface this wheel sphere overlaps
     const contacts = queryContacts(hub.x, hub.y, hub.z, params.wheelRadius)
 
@@ -184,25 +188,13 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
         Flong *= scale
       }
 
-      // Omega integrator — uses friction-circle-SCALED Flong as road reaction (Pitfall 2 / constraint #5)
-      // T-03-03: OMEGA_EPSILON prevents explicit-Euler oscillation at low combined speed
-      const OMEGA_EPSILON = 0.5  // m/s combined-speed threshold
-      const wheelInertia = params.wheelInertia || 1.22
-      const driveTorque = getDriveTorque(i, vehicleState, params)
-      const brakeTorque = getBrakeTorque(i, vehicleState, params)
-      const roadReactionTorque = Flong * params.wheelRadius
-      const vehicleSpd = Math.abs(params._longitudinalVelocity)
-      const wheelSurfaceSpd = Math.abs((vehicleState.wheelOmega?.[i] ?? 0) * params.wheelRadius)
-      if (vehicleSpd + wheelSurfaceSpd < OMEGA_EPSILON) {
-        // Free-rolling clamp — prevent stiffness at rest (Pattern 2)
-        vehicleState.wheelOmega[i] = params._longitudinalVelocity / params.wheelRadius
-      } else {
-        vehicleState.wheelOmega[i] = (vehicleState.wheelOmega?.[i] ?? 0) +
-          (driveTorque - roadReactionTorque - brakeTorque) / wheelInertia * dt
-      }
+      // Record scaled Flong for omega integrator (must be AFTER friction-circle scaling — constraint #5/Pitfall 2)
+      lastScaledFlong = Flong
 
       const wheelForce = wheelFwd.clone().multiplyScalar(Flong)
-      wheelForce.addScaledVector(wheelRight, Flat)
+      // WR-02: lateral grip opposes lateral hub velocity (resists the slide), so positive Flat from
+      // computeLateralForce(positive slipAngle) must be applied along -wheelRight.
+      wheelForce.addScaledVector(wheelRight, -Flat)
       totalForce.add(wheelForce)
       totalTorque.add(new THREE.Vector3().crossVectors(rContact, wheelForce))
 
@@ -212,8 +204,33 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
         vehicleState.wheelDebug[i].fy = Flat
         vehicleState.wheelDebug[i].sa = Math.atan2(params._lateralVelocity, Math.abs(params._longitudinalVelocity || 1e-6))
         vehicleState.wheelDebug[i].c  = params._compression
-        vehicleState.wheelDebug[i].omega = vehicleState.wheelOmega[i]
       }
+    }
+
+    // Omega integrator — runs once per wheel per step, OUTSIDE the contacts loop (CR-03).
+    // Uses friction-circle-SCALED lastScaledFlong as road reaction (Pitfall 2 / constraint #5).
+    // Airborne: lastScaledFlong=0 → road reaction=0 → drive/brake torque spin wheel freely.
+    // T-03-03: OMEGA_EPSILON prevents explicit-Euler oscillation at low combined speed.
+    {
+      const OMEGA_EPSILON = 0.5  // m/s combined-speed threshold
+      const wheelInertia = params.wheelInertia || 1.22
+      const driveTorque = getDriveTorque(i, vehicleState, params)
+      const brakeTorque = getBrakeTorque(i, vehicleState, params)
+      const roadReactionTorque = lastScaledFlong * params.wheelRadius
+      const vehicleSpd = Math.abs(params._longitudinalVelocity || 0)
+      const wheelSurfaceSpd = Math.abs((vehicleState.wheelOmega?.[i] ?? 0) * params.wheelRadius)
+      if (vehicleSpd + wheelSurfaceSpd < OMEGA_EPSILON && contacts.length > 0) {
+        // Free-rolling clamp — prevent stiffness at rest (Pattern 2, grounded only)
+        vehicleState.wheelOmega[i] = (params._longitudinalVelocity || 0) / params.wheelRadius
+      } else {
+        vehicleState.wheelOmega[i] = (vehicleState.wheelOmega?.[i] ?? 0) +
+          (driveTorque - roadReactionTorque - brakeTorque) / wheelInertia * dt
+      }
+    }
+
+    // Update omega debug field — airborne wheels still log their evolving omega (CR-03)
+    if (vehicleState.wheelDebug) {
+      vehicleState.wheelDebug[i].omega = vehicleState.wheelOmega[i]
     }
   }
 
