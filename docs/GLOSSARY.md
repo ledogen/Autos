@@ -136,6 +136,77 @@ Where `×` is the vector cross product. The contact patch velocity is then decom
 
 - **Unit:** m/s (both components)
 
+### Longitudinal Slip Ratio (kappa)
+
+The ratio between wheel surface speed and vehicle ground speed, measuring how much the wheel spins faster or slower than the ground.
+
+- **Formula:** `kappa = (omega * r - v_x) / max(|omega * r|, |v_x|, epsilon)` where `epsilon = 0.1 m/s` (SLIP_EPSILON — prevents 0/0 at rest)
+- **Unit:** dimensionless
+- **Range:** [-1, +1]
+- **Sign:** Positive = wheel spinning faster than ground (wheelspin / acceleration); negative = wheel rotating slower than ground (braking / locked wheel)
+- **Used by:** `computeLongitudinalForce` in `src/tire.js` via the slip ratio computed in `src/physics.js`
+
+### Wheel Angular Velocity (omega_wheel / wheelOmega)
+
+Per-wheel spin rate in radians per second. Distinct from the vehicle body angular velocity (`vehicleState.angularVelocity`).
+
+- **Unit:** rad/s
+- **Storage:** `vehicleState.wheelOmega[4]` — per-wheel array (index convention: 0=FL, 1=FR, 2=RL, 3=RR)
+- **Integration:** Integrated in `src/physics.js` each physics step via the omega integrator: `wheelOmega[i] += (driveTorque - roadReactionTorque - brakeTorque) / wheelInertia * dt`
+- **Debug copy:** `vehicleState.wheelDebug[i].omega` — written each contact step; read by the logger and the Pacejka plot
+- **Distinct from:** `vehicleState.wheelAngles[4]` which accumulates visual spin angle for mesh rendering; `wheelOmega` drives physics, `wheelAngles` drives the mesh `rotation.x`
+
+### Pacejka B Coefficient (Stiffness Factor)
+
+The B coefficient in the Pacejka Magic Formula. Shapes the initial slope of the tire force curve — higher B increases the cornering stiffness (how quickly force builds with slip).
+
+- **Range (slider):** 5 to 20
+- **Default:** 10.0
+- **Used by:** `computeLateralForce` and `computeLongitudinalForce` in `src/tire.js`
+
+### Pacejka C Coefficient (Shape Factor)
+
+The C coefficient in the Pacejka Magic Formula. Controls the overall shape of the force curve (how peaked vs. rounded the curve is).
+
+- **Hard constraint:** Must be in range `[1.0, 1.99]`. At C ≥ 2.0, `sin(C * atan(...))` can produce zero or oscillatory output (curve collapse). The range `[1.0, 1.99]` guarantees a well-behaved bell-shaped curve.
+- **Enforcement:** Hard-clamped via `Math.max(1.0, Math.min(1.99, params.pacejkaC))` inside both tire functions in `src/tire.js` AND inside `updatePacejkaCurve` in `src/debug.js` (defense in depth — T-03-07).
+- **Range (slider):** 1.0 to 1.99
+- **Default:** 1.9
+
+### Pacejka D Coefficient (Peak Factor)
+
+The D coefficient in the Pacejka Magic Formula. Scales the peak force magnitude. Effective peak force = D × Fz (normal force). At D = 1.0, peak force equals the normal force (μ = 1.0, dry tarmac equivalent).
+
+- **Range (slider):** 0.5 to 2.0
+- **Default:** 1.0
+- **Used by:** `computeLateralForce` and `computeLongitudinalForce` in `src/tire.js`
+
+### Pacejka E Coefficient (Curvature Factor)
+
+The E coefficient in the Pacejka Magic Formula. Controls the post-peak falloff shape — how abruptly the tire force drops after the slip angle exceeds the peak.
+
+- **Range (slider):** -1.0 to 1.0
+- **Default:** 0.97 (near 1.0 → realistic gradual post-peak falloff)
+- **Note:** At E = 1.0 the curve falls off most gradually; at E = -1.0 the peak is sharper and the falloff steeper.
+
+### Friction Circle
+
+The combined lateral/longitudinal force envelope for a tire contact patch. A tire can only produce a limited total force proportional to `frictionCoeff * Fn`. If the vector sum of lateral and longitudinal forces exceeds this budget, both are scaled down proportionally.
+
+- **Formula:** `combinedForce = sqrt(Flat² + Flong²)`; if `combinedForce > frictionCoeff * Fn`, both `Flat` and `Flong` are multiplied by `frictionBudget / combinedForce`
+- **Implemented in:** `src/physics.js` friction circle scaling block (runs after force computation, before omega integration — constraint #5)
+- **Effect:** Drifting consumes longitudinal traction budget; hard braking reduces available lateral cornering force
+
+### Handbrake
+
+Rear-only braking applied via the Space key. Engages at full `params.maxHandbrakeTorque` on rear wheels while the key is held.
+
+- **Input:** Space key — `e.key === ' '` comparison in `src/vehicle.js` keydown/keyup listeners
+- **State:** `vehicleState.handbrake = true` while Space held; written by `updateVehicle` each step
+- **Force path:** `getBrakeTorque(i, vehicleState, params)` in `src/physics.js` — rear wheels (i ≥ 2) receive `params.maxHandbrakeTorque` when `vehicleState.handbrake === true`
+- **Drift mechanics:** Rear wheels slow down → negative longitudinal slip ratio → reduced `Flong` → friction circle frees up lateral budget → Pacejka `Flat` can approach peak → drift develops naturally (not a hard omega lock)
+- **Debug slider:** `maxHandbrakeTorque` in the RangerSim Debug panel (range 500–5000 N·m)
+
 ### Ackermann Geometry
 
 Steering geometry where the **inner wheel** (turning toward the turn center) rotates by a **sharper angle** than the outer wheel. This minimizes tire scrub during a low-speed turn by making both front tires track concentric arcs whose center lies on the extended rear-axle line.
@@ -175,7 +246,7 @@ This mapping applies to: `vehicleState.wheelAngles`, wheel mesh arrays in `main.
 
 ## Frame Logger Fields
 
-Log fields written by `src/logger.js` `captureFrame()` and recorded in the downloaded `.json` file. Field order matches the `FIELDS` constant in `src/logger.js` exactly (D-07). Each row in the `frames` array has 33 scalar values in this order.
+Log fields written by `src/logger.js` `captureFrame()` and recorded in the downloaded `.json` file. Field order matches the `FIELDS` constant in `src/logger.js` exactly (D-07). Each row in the `frames` array has 37 scalar values in this order. The first 33 fields are the original Phase 1/2 fields; fields 34–37 (`fl_omega`, `fr_omega`, `rl_omega`, `rr_omega`) are Phase 3 additions appended at the END per constraint #8 (append-only contract — never reorder existing fields).
 
 ### t
 Accumulated simulation time at the moment of capture — seconds elapsed since the recording session started (not wall-clock time). Source: `simTime` counter in `src/main.js`, incremented by `FIXED_DT` each physics step.
@@ -213,21 +284,26 @@ Slip angle at the named wheel — radians. Computed as `atan2(lateralVelocity, |
 ### {fl/fr/rl/rr}_c
 Contact compression depth at the named wheel — metres. The penetration depth of the wheel contact point into the ground plane at the moment of contact; zero when airborne. Source: `vehicleState.wheelDebug[i].c` (`params._compression` inside `src/physics.js`).
 
+### fl_omega
+Wheel angular velocity (rad/s) at the front-left wheel — Phase 3 addition. Source: `vehicleState.wheelDebug[0].omega` written by the omega integrator in `src/physics.js`.
+
+### fr_omega
+Wheel angular velocity (rad/s) at the front-right wheel — Phase 3 addition. Source: `vehicleState.wheelDebug[1].omega`.
+
+### rl_omega
+Wheel angular velocity (rad/s) at the rear-left wheel — Phase 3 addition. Source: `vehicleState.wheelDebug[2].omega`.
+
+### rr_omega
+Wheel angular velocity (rad/s) at the rear-right wheel — Phase 3 addition. Source: `vehicleState.wheelDebug[3].omega`.
+
 ---
 
-## Deferred to Phase 3 / Phase 4
+## Deferred to Phase 4
 
-The following terms are intentionally not defined in Phase 1. They will be defined in the phase that owns their implementation:
+The following terms are intentionally not defined in Phase 3. They will be defined in the phase that owns their implementation:
 
 | Term | Deferred To | Brief Note |
 |------|-------------|------------|
-| Pacejka B coefficient (stiffness factor) | Phase 3 | Shapes the initial slope of the tire force curve |
-| Pacejka C coefficient (shape factor) | Phase 3 | Controls peak shape (lateral vs longitudinal) |
-| Pacejka D coefficient (peak factor) | Phase 3 | Scales peak lateral/longitudinal force magnitude |
-| Pacejka E coefficient (curvature factor) | Phase 3 | Controls post-peak curvature behavior |
-| Friction circle | Phase 3 | Combined lateral + longitudinal force envelope |
-| Longitudinal slip ratio | Phase 3 | (ω·r − v_x) / max(ω·r, v_x); requires real wheel angular velocity |
-| Wheel angular velocity (ω_wheel) | Phase 3 | Wheel spin rate in rad/s; separate from body angular velocity |
 | Spring stiffness (k) | Phase 4 | Corner spring rate in N/m |
 | Damping coefficient (c) | Phase 4 | Corner damper rate in N/(m/s) |
 | Normal force load transfer | Phase 4 | Dynamic Fz shifts between corners under acceleration/braking/cornering |
