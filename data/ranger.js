@@ -2,8 +2,7 @@
  * 2002 Ford Ranger XLT 2WD parameters.
  * Values sourced from .planning/PROJECT.md; inertia tensor values are estimates
  * (box model) and are intended to be tuned via the debug menu.
- * Phase 1 only — Pacejka coefficients (Phase 3) and spring constants (Phase 4)
- * will be added in later phases.
+ * Phase 3: Pacejka coefficients added (D-07). Spring constants (Phase 4) still pending.
  *
  * Do NOT Object.freeze() this object — Plan 03 mutates fields live via lil-gui sliders.
  */
@@ -37,6 +36,7 @@ export const RANGER_PARAMS = {
   maxBrakeTorque:  3000,  // N·m — flat brake deceleration placeholder
   // Bug 4 fix: reverse uses maxReverseTorque (symmetric to forward), not maxBrakeTorque
   maxReverseTorque: 800,  // N·m — matches maxDriveTorque; used by getDriveTorque for reverse
+  maxHandbrakeTorque: 2000, // N·m — rear-only handbrake; exposed as slider (D-16)
 
   // ── Tire Spring-Damper ───────────────────────────────────────────────────
   // Matchbox car has no suspension — the tire IS the only compliance between wheel and ground.
@@ -59,6 +59,24 @@ export const RANGER_PARAMS = {
   bodyContactStiffness: 200000,  // N/m — stiffer than tire; metal-on-terrain response
   bodyContactDamping:     8000,  // N·s/m
   bodyContactRadius:      0.15,  // m — effective sphere radius for bumper corner points
+
+  // ── Phase 3 Pacejka Tire Model (D-07) ────────────────────────────────────
+  // Lateral coefficients (all 4 wheels — D-06). Hard-clamped at C=[1.0,1.99] in tire.js.
+  pacejkaB:  10.0,   // stiffness factor — initial slope of force curve
+  pacejkaC:   1.9,   // shape factor — C<2 required; hard-clamped in computeLateralForce
+  pacejkaD:   1.0,   // peak factor — peak force = D × Fz (D=1.0 → μ=1.0 dry tarmac)
+  pacejkaE:  0.97,   // curvature — near 1.0 produces realistic post-peak falloff
+
+  // Longitudinal coefficients (all 4 wheels — D-06)
+  pacejkaBx: 10.0,
+  pacejkaCx:  1.9,
+  pacejkaDx:  1.0,
+  pacejkaEx: 0.97,
+
+  // Wheel angular dynamics (D-02)
+  // I = 0.5 × mass_wheel × r²; mass_wheel ≈ 18 kg (245/75R16 truck tire+wheel assembly)
+  // → I = 0.5 × 18 × 0.368² ≈ 1.22 kg·m²
+  wheelInertia: 1.22,  // kg·m² — 0.5 × 18 kg × 0.368² (D-02)
 
   // ── Steering ─────────────────────────────────────────────────────────────
   maxSteerAngle:  0.52,  // rad (~30°) — max steer angle at low speed
