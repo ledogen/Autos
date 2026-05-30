@@ -18,6 +18,11 @@
 
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
 
+// Module-level bindings so updatePacejkaCurve (defined at module scope) can read them.
+// Assigned inside initDebug(); null until then.
+let plotCanvas = null
+let plotCtx = null
+
 /**
  * Initialize the debug panel. Creates a lil-gui instance, adds physics sliders,
  * registers the backtick toggle listener, and returns the GUI instance.
@@ -66,12 +71,12 @@ export function initDebug (params) {
 
   // D-11: Pacejka canvas overlay — 300×200 px, positioned to left of the lil-gui panel.
   // Pitfall 8: right:320px avoids overlap with lil-gui which is right:0.
-  const plotCanvas = document.createElement('canvas')
+  plotCanvas = document.createElement('canvas')
   plotCanvas.width = 300
   plotCanvas.height = 200
   plotCanvas.style.cssText = 'position:fixed;top:20px;right:320px;background:#111;border:1px solid #444;display:none'
   document.body.appendChild(plotCanvas)
-  const plotCtx = plotCanvas.getContext('2d')
+  plotCtx = plotCanvas.getContext('2d')
 
   // Backtick toggle listener — toggles BOTH gui panel AND plotCanvas in lockstep (constraint #9).
   // Only ONE backtick listener exists in this file (acceptance criterion).
@@ -104,7 +109,8 @@ export function initDebug (params) {
  */
 export function updatePacejkaCurve (vehicleState, params) {
   // T-03-09: early return when hidden — no canvas work per hidden frame
-  if (plotCanvas.style.display === 'none') return
+  // null-guard: protects against calls before initDebug has run
+  if (!plotCanvas || !plotCtx || plotCanvas.style.display === 'none') return
 
   const W = plotCanvas.width
   const H = plotCanvas.height
