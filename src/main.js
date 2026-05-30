@@ -21,7 +21,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics } from './physics.js'
 import { updateVehicle, SPAWN_STATE } from './vehicle.js'
 import { updateCamera } from './camera.js'
-import { initDebug } from './debug.js'
+import { initDebug, updatePacejkaCurve } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition } from './logger.js'
 
 // Manual verification hook — console.log confirms importmap loaded r184 (FOUND-02)
@@ -415,6 +415,23 @@ function loop () {
   // M1-11: live speed readout. velocity.length() = magnitude in m/s; * 3.6 converts to km/h.
   const speedKmh = vehicleState.velocity.length() * 3.6
   document.getElementById('speedVal').textContent = speedKmh.toFixed(1)
+
+  // M3-07: front slip-angle HUD — D-14 thresholds (5° / 10°, NOT M3-07's 15° value)
+  const slipDeg = (vehicleState.wheelDebug?.[0]?.sa || 0) * (180 / Math.PI)
+  const slipEl = document.getElementById('slipVal')
+  if (slipEl) {
+    slipEl.textContent = slipDeg.toFixed(1) + '°'
+    slipEl.style.color = Math.abs(slipDeg) < 5 ? '#00ff88' : Math.abs(slipDeg) < 10 ? '#ffaa00' : '#ff2222'
+  }
+
+  // M3-08: throttle and brake percentage HUD
+  const thrEl = document.getElementById('thrVal')
+  if (thrEl) thrEl.textContent = (vehicleState.throttle * 100).toFixed(0)
+  const brkEl = document.getElementById('brkVal')
+  if (brkEl) brkEl.textContent = (vehicleState.brake * 100).toFixed(0)
+
+  // M3-09: Pacejka curve plot — called once per render frame OUTSIDE the fixed accumulator (constraint #10)
+  updatePacejkaCurve(vehicleState, RANGER_PARAMS)
 
   updateCamera(camera, vehicleState)
 
