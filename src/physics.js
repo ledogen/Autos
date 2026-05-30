@@ -26,7 +26,7 @@ import { computeLateralForce, computeLongitudinalForce } from './tire.js'
 import { computeNormalForce, getWheelPosition, getBodyContactPoints } from './suspension.js'
 
 // Speed thresholds for input routing (rule-based, no dead-zone oscillation)
-const FWD_THRESHOLD =  0          // 0 m/s: W drives above zero, brakes below zero
+const FWD_THRESHOLD = -2 / 3.6   // -0.556 m/s: W drives above this, brakes only when clearly rolling back (mirrors REV deadband)
 const REV_THRESHOLD =  2 / 3.6   //  0.556 m/s: S switches from braking to reverse above this
 const HB_RAMP       =  0.3       // m/s: handbrake ramps from 0 at rest to full at this speed
 
@@ -34,7 +34,7 @@ const HB_RAMP       =  0.3       // m/s: handbrake ramps from 0 at rest to full 
  * Compute drive torque for a single wheel (positive = accelerate forward spin).
  * Handles W (forward drive) and S (reverse) only — braking is in getBrakeTorque.
  *
- * W above FWD_THRESHOLD (-5 km/h): drive rear wheels forward.
+ * W above FWD_THRESHOLD (-2 km/h): drive rear wheels forward.
  * S below REV_THRESHOLD (+2 km/h): drive rear wheels backward.
  *
  * @param {number} wheelIndex - 0-3 per GLOSSARY.md §Wheel Index (0=FL, 1=FR, 2=RL, 3=RR).
@@ -73,7 +73,7 @@ function getBrakeTorque (wheelIndex, vehicleState, params) {
   const isRear  = wheelIndex === 2 || wheelIndex === 3
   const longVel = params._longitudinalVelocity || 0
 
-  // W below FWD_THRESHOLD: brake all wheels to slow backward motion
+  // W below FWD_THRESHOLD (-2 km/h): brake all wheels to slow backward motion
   if (vehicleState.throttle > 0 && longVel < FWD_THRESHOLD) {
     return vehicleState.throttle * params.maxBrakeTorque
   }
