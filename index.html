@@ -33,7 +33,11 @@
   <canvas></canvas>
 
   <!-- HUD overlay — Plan 03 wires speed readout; element must exist now -->
-  <div id="hud">SPEED: <span id="speedVal">0.0</span> km/h</div>
+  <div id="hud">
+    SPEED: <span id="speedVal">0.0</span> km/h<br>
+    SLIP: <span id="slipVal">0.0&deg;</span><br>
+    THR: <span id="thrVal">0</span>% &nbsp; BRK: <span id="brkVal">0</span>%
+  </div>
 
   <script type="module" src="src/main.js"></script>
 </body>
