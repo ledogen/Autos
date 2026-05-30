@@ -25,10 +25,17 @@ import * as THREE from 'three'
 import { computeLateralForce, computeLongitudinalForce } from './tire.js'
 import { computeNormalForce, getWheelPosition, getBodyContactPoints } from './suspension.js'
 
-const DRIVE_DEAD_ZONE = 0.5  // m/s
+// Speed thresholds for input routing (rule-based, no dead-zone oscillation)
+const FWD_THRESHOLD = -5 / 3.6   // -1.389 m/s: W switches from drive to braking below this
+const REV_THRESHOLD =  2 / 3.6   //  0.556 m/s: S switches from braking to reverse above this
+const HB_RAMP       =  0.3       // m/s: handbrake ramps from 0 at rest to full at this speed
 
 /**
- * Compute drive/brake torque for a single wheel.
+ * Compute drive torque for a single wheel (positive = accelerate forward spin).
+ * Handles W (forward drive) and S (reverse) only — braking is in getBrakeTorque.
+ *
+ * W above FWD_THRESHOLD (-5 km/h): drive rear wheels forward.
+ * S below REV_THRESHOLD (+2 km/h): drive rear wheels backward.
  *
  * @param {number} wheelIndex - 0-3 per GLOSSARY.md §Wheel Index (0=FL, 1=FR, 2=RL, 3=RR).
  * @param {object} vehicleState - Full vehicleState; uses .throttle and .brake.
@@ -39,32 +46,49 @@ export function getDriveTorque (wheelIndex, vehicleState, params) {
   const isRear  = wheelIndex === 2 || wheelIndex === 3
   const longVel = params._longitudinalVelocity || 0
 
-  if (vehicleState.throttle > 0) {
-    if (longVel < -DRIVE_DEAD_ZONE) return isRear ? vehicleState.throttle * params.maxBrakeTorque : 0
+  // W: forward drive when speed is above -5 km/h
+  if (vehicleState.throttle > 0 && longVel >= FWD_THRESHOLD) {
     return isRear ? vehicleState.throttle * params.maxDriveTorque : 0
   }
-  if (vehicleState.brake > 0) {
-    if (longVel > DRIVE_DEAD_ZONE) return -vehicleState.brake * params.maxBrakeTorque
+
+  // S: reverse drive when speed is below +2 km/h
+  if (vehicleState.brake > 0 && longVel <= REV_THRESHOLD) {
     return isRear ? -vehicleState.brake * params.maxReverseTorque : 0
   }
+
   return 0
 }
 
 /**
- * Compute brake torque for a single wheel.
- * Rear wheels receive handbrake torque when handbrake is active.
- * All four wheels receive proportional braking when brake > 0.
+ * Compute resistive brake torque for a single wheel (always >= 0, subtracted in integrator).
+ * Handles W-braking when going backward fast, S-braking when going forward, and handbrake.
  * Module-private — not exported.
  *
  * @param {number} wheelIndex - 0-3 per GLOSSARY.md §Wheel Index.
- * @param {object} vehicleState - Full vehicleState; uses .handbrake and .brake.
- * @param {object} params - RANGER_PARAMS; uses .maxHandbrakeTorque and .maxBrakeTorque.
- * @returns {number} Brake torque [N·m]. Positive = resists forward motion.
+ * @param {object} vehicleState - Full vehicleState; uses .throttle, .brake, .handbrake.
+ * @param {object} params - RANGER_PARAMS; uses .maxBrakeTorque, .maxHandbrakeTorque.
+ * @returns {number} Brake torque [N·m]. Positive = resists current wheel spin direction.
  */
 function getBrakeTorque (wheelIndex, vehicleState, params) {
-  const isRear = wheelIndex === 2 || wheelIndex === 3
-  if (vehicleState.handbrake && isRear) return params.maxHandbrakeTorque
-  if (vehicleState.brake > 0) return vehicleState.brake * params.maxBrakeTorque
+  const isRear  = wheelIndex === 2 || wheelIndex === 3
+  const longVel = params._longitudinalVelocity || 0
+
+  // W below FWD_THRESHOLD: brake all wheels to slow backward motion
+  if (vehicleState.throttle > 0 && longVel < FWD_THRESHOLD) {
+    return vehicleState.throttle * params.maxBrakeTorque
+  }
+
+  // S above REV_THRESHOLD: brake all wheels to slow forward motion
+  if (vehicleState.brake > 0 && longVel > REV_THRESHOLD) {
+    return vehicleState.brake * params.maxBrakeTorque
+  }
+
+  // Handbrake: rear wheels only, ramped so it applies zero force at rest
+  if (vehicleState.handbrake && isRear) {
+    const scale = Math.min(Math.abs(longVel) / HB_RAMP, 1.0)
+    return params.maxHandbrakeTorque * scale
+  }
+
   return 0
 }
 
@@ -142,9 +166,6 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
     const omegaR = (vehicleState.wheelOmega?.[i] ?? 0) * params.wheelRadius
     const vx = params._longitudinalVelocity
     const slipRatio = (omegaR - vx) / Math.max(Math.abs(omegaR), Math.abs(vx), SLIP_EPSILON)
-
-    const driveForce = getDriveTorque(i, vehicleState, params) / params.wheelRadius
-    params._driveForce = driveForce
 
     // lastScaledFlong: friction-circle-scaled Flong from the last processed contact.
     // Zero when airborne — road reaction is 0 so drive/brake torque spin the wheel freely (CR-03).
