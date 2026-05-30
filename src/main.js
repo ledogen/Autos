@@ -50,7 +50,9 @@ const vehicleState = {
   brake:           0,
   wheelAngles:     [0, 0, 0, 0],                 // per-wheel spin angle [rad], Plan 03 drives
   wheelSteerAngles: [0, 0, 0, 0],               // Per-wheel Ackermann steer angles [rad]; set by updateVehicle each step; read by stepPhysics for lateral force decomposition.
-  wheelDebug:      [ {fn:0,fy:0,sa:0,c:0}, {fn:0,fy:0,sa:0,c:0}, {fn:0,fy:0,sa:0,c:0}, {fn:0,fy:0,sa:0,c:0} ],  // per-wheel debug data written by stepPhysics; read by logger
+  wheelDebug:      [ {fn:0,fy:0,sa:0,c:0,omega:0}, {fn:0,fy:0,sa:0,c:0,omega:0}, {fn:0,fy:0,sa:0,c:0,omega:0}, {fn:0,fy:0,sa:0,c:0,omega:0} ],  // per-wheel debug data written by stepPhysics; read by logger
+  wheelOmega:      [0, 0, 0, 0],                   // per-wheel angular velocity [rad/s]; integrated by physics.js omega integrator
+  handbrake:       false,                            // Space key handbrake state; written by updateVehicle, read by getBrakeTorque
 }
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
@@ -387,7 +389,9 @@ function loop () {
       vehicleState.brake = 0
       vehicleState.wheelAngles = [0, 0, 0, 0]
       vehicleState.wheelSteerAngles = [0, 0, 0, 0]
-      vehicleState.wheelDebug = [ {fn:0,fy:0,sa:0,c:0}, {fn:0,fy:0,sa:0,c:0}, {fn:0,fy:0,sa:0,c:0}, {fn:0,fy:0,sa:0,c:0} ]
+      vehicleState.wheelDebug = [ {fn:0,fy:0,sa:0,c:0,omega:0}, {fn:0,fy:0,sa:0,c:0,omega:0}, {fn:0,fy:0,sa:0,c:0,omega:0}, {fn:0,fy:0,sa:0,c:0,omega:0} ]
+      vehicleState.wheelOmega = [0, 0, 0, 0]
+      vehicleState.handbrake = false
     }
 
     stepPhysics(vehicleState, RANGER_PARAMS, FIXED_DT, queryContacts)

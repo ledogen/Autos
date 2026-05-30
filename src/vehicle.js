@@ -9,11 +9,11 @@
  */
 
 // ── Keyboard input state (module-private) ────────────────────────────────────
-const keys = { w: false, s: false, a: false, d: false, r: false }
+const keys = { w: false, s: false, a: false, d: false, r: false, ' ': false }
 
 // Register listeners at module load (module scripts run after parse — no DOMContentLoaded needed).
-document.addEventListener('keydown', e => { const k = e.key.toLowerCase(); if (k in keys) keys[k] = true })
-document.addEventListener('keyup',   e => { const k = e.key.toLowerCase(); if (k in keys) keys[k] = false })
+document.addEventListener('keydown', e => { const k = e.key === ' ' ? ' ' : e.key.toLowerCase(); if (k in keys) keys[k] = true })
+document.addEventListener('keyup',   e => { const k = e.key === ' ' ? ' ' : e.key.toLowerCase(); if (k in keys) keys[k] = false })
 
 // ── SPAWN_STATE ───────────────────────────────────────────────────────────────
 // Plain scalar values — main.js copies these into THREE.Vector3 / THREE.Quaternion
@@ -27,7 +27,8 @@ export const SPAWN_STATE = {
   angVelX: 0, angVelY: 0, angVelZ: 0,
   steerAngle: 0, throttle: 0, brake: 0,
   wheelAngles: [0, 0, 0, 0],
-  wheelSteerAngles: [0, 0, 0, 0]
+  wheelSteerAngles: [0, 0, 0, 0],
+  handbrake: false
 }
 
 /**
@@ -49,6 +50,7 @@ export function updateVehicle (vehicleState, params, dt) {
   vehicleState.throttle = keys.w ? 1 : 0
   // S key: sets brake=1; getDriveTorque uses maxReverseTorque for rear wheels (Bug 4 fix in physics.js)
   vehicleState.brake    = keys.s ? 1 : 0
+  vehicleState.handbrake = keys[' '] || false
 
   // ── 2. Speed-scaled steer limit (M1-08) ────────────────────────────────────
   // Compute current horizontal speed in m/s (ignore vertical for steering math).
