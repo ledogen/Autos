@@ -78,7 +78,7 @@ Plans:
   3. User can observe the front slip angle HUD indicator cycle through green / orange / red as cornering intensity increases
   4. User can open the debug menu, see a live Pacejka curve plot with a moving operating-point dot per front wheel, and adjust B/C/D values to feel the difference immediately
   5. User can observe natural-feeling understeer, oversteer, and drift recovery tunable entirely via the debug menu
-**Plans**: 3 plans
+**Plans**: 6 plans
 
 Plans:
 **Wave 1**
@@ -89,6 +89,11 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion — shares src/main.js)*
 - [x] 03-03-PLAN.md — Debug UI + HUD + logger + glossary: Pacejka plot canvas, slider audit, slip-angle/throttle/brake HUD, omega log fields (M3-07, M3-08, M3-09, M3-10)
+
+**Wave 4** *(gap closure — VERIFICATION.md + REVIEW.md; plans parallel — disjoint files)*
+- [ ] 03-04-PLAN.md — Fix plotCanvas/plotCtx scope bug in src/debug.js (M3-09 BLOCKER)
+- [ ] 03-05-PLAN.md — Physics corrections: reverse-throttle torque (CR-02), airborne omega integration (CR-03), lateral force sign (WR-02) (M3-01, M3-02, M3-03, M3-05)
+- [ ] 03-06-PLAN.md — Accept M3-06 brake-torque deviation via VERIFICATION.md overrides entry (M3-06)
 
 **UI hint**: yes
 
