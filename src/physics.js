@@ -26,7 +26,7 @@ import { computeLateralForce, computeLongitudinalForce } from './tire.js'
 import { computeNormalForce, getWheelPosition, getBodyContactPoints } from './suspension.js'
 
 // Speed thresholds for input routing (rule-based, no dead-zone oscillation)
-const FWD_THRESHOLD = -5 / 3.6   // -1.389 m/s: W switches from drive to braking below this
+const FWD_THRESHOLD =  0          // 0 m/s: W drives above zero, brakes below zero
 const REV_THRESHOLD =  2 / 3.6   //  0.556 m/s: S switches from braking to reverse above this
 const HB_RAMP       =  0.3       // m/s: handbrake ramps from 0 at rest to full at this speed
 
@@ -244,8 +244,16 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
         // Free-rolling clamp — prevent stiffness at rest (Pattern 2, grounded only)
         vehicleState.wheelOmega[i] = (params._longitudinalVelocity || 0) / params.wheelRadius
       } else {
-        vehicleState.wheelOmega[i] = (vehicleState.wheelOmega?.[i] ?? 0) +
-          (driveTorque - roadReactionTorque - brakeTorque) / wheelInertia * dt
+        const omega0 = vehicleState.wheelOmega?.[i] ?? 0
+        // Brake torque opposes current spin direction — never adds energy in the spin direction
+        const brakeSigned = brakeTorque * Math.sign(omega0)
+        const newOmega = omega0 + (driveTorque - roadReactionTorque - brakeSigned) / wheelInertia * dt
+        // Clamp: braking cannot reverse spin direction (brake stops the wheel, doesn't push through zero)
+        if (brakeTorque > 0 && omega0 !== 0 && Math.sign(newOmega) !== Math.sign(omega0)) {
+          vehicleState.wheelOmega[i] = 0
+        } else {
+          vehicleState.wheelOmega[i] = newOmega
+        }
       }
     }
 
