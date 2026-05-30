@@ -51,6 +51,24 @@ export function getDriveTorque (wheelIndex, vehicleState, params) {
 }
 
 /**
+ * Compute brake torque for a single wheel.
+ * Rear wheels receive handbrake torque when handbrake is active.
+ * All four wheels receive proportional braking when brake > 0.
+ * Module-private — not exported.
+ *
+ * @param {number} wheelIndex - 0-3 per GLOSSARY.md §Wheel Index.
+ * @param {object} vehicleState - Full vehicleState; uses .handbrake and .brake.
+ * @param {object} params - RANGER_PARAMS; uses .maxHandbrakeTorque and .maxBrakeTorque.
+ * @returns {number} Brake torque [N·m]. Positive = resists forward motion.
+ */
+function getBrakeTorque (wheelIndex, vehicleState, params) {
+  const isRear = wheelIndex === 2 || wheelIndex === 3
+  if (vehicleState.handbrake && isRear) return params.maxHandbrakeTorque
+  if (vehicleState.brake > 0) return vehicleState.brake * params.maxBrakeTorque
+  return 0
+}
+
+/**
  * Advance vehicle physics state by one fixed timestep.
  *
  * @param {object} vehicleState - Mutable vehicleState (mutated in-place).
@@ -92,7 +110,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
   for (let i = 0; i < 4; i++) {
     // Zero wheelDebug for this wheel before contacts — ensures no stale values when wheel is off-ground
     if (vehicleState.wheelDebug) {
-      vehicleState.wheelDebug[i] = { fn: 0, fy: 0, sa: 0, c: 0 }
+      vehicleState.wheelDebug[i] = { fn: 0, fy: 0, sa: 0, c: 0, omega: 0 }
     }
 
     // Hub world position (sphere center for contact queries)
@@ -118,6 +136,12 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
 
     params._lateralVelocity      = hubVel.dot(wheelRight)
     params._longitudinalVelocity = hubVel.dot(wheelFwd)
+
+    // Slip ratio — computed per wheel using omega integrator state (D-02, M3-02)
+    const SLIP_EPSILON = 0.1  // m/s — prevents 0/0 at rest (T-03-04)
+    const omegaR = (vehicleState.wheelOmega?.[i] ?? 0) * params.wheelRadius
+    const vx = params._longitudinalVelocity
+    const slipRatio = (omegaR - vx) / Math.max(Math.abs(omegaR), Math.abs(vx), SLIP_EPSILON)
 
     const driveForce = getDriveTorque(i, vehicleState, params) / params.wheelRadius
     params._driveForce = driveForce
@@ -148,8 +172,35 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
       const latVel  = params._lateralVelocity  || 0
       const longVelAbs = Math.abs(params._longitudinalVelocity || 0)
       const slipAngle = Math.atan2(latVel, longVelAbs + 0.01)
-      const Flat  = computeLateralForce(slipAngle, Fn, params)
-      const Flong = computeLongitudinalForce(0, Fn, params)
+      let Flat  = computeLateralForce(slipAngle, Fn, params)
+      let Flong = computeLongitudinalForce(slipRatio, Fn, params)
+
+      // Friction circle — scales Flat and Flong so combined force stays within friction budget (M3-05)
+      const frictionBudget = (params.frictionCoeff || 0.9) * Fn
+      const combinedForce = Math.sqrt(Flat * Flat + Flong * Flong)
+      if (combinedForce > frictionBudget && combinedForce > 0) {
+        const scale = frictionBudget / combinedForce
+        Flat  *= scale
+        Flong *= scale
+      }
+
+      // Omega integrator — uses friction-circle-SCALED Flong as road reaction (Pitfall 2 / constraint #5)
+      // T-03-03: OMEGA_EPSILON prevents explicit-Euler oscillation at low combined speed
+      const OMEGA_EPSILON = 0.5  // m/s combined-speed threshold
+      const wheelInertia = params.wheelInertia || 1.22
+      const driveTorque = getDriveTorque(i, vehicleState, params)
+      const brakeTorque = getBrakeTorque(i, vehicleState, params)
+      const roadReactionTorque = Flong * params.wheelRadius
+      const vehicleSpd = Math.abs(params._longitudinalVelocity)
+      const wheelSurfaceSpd = Math.abs((vehicleState.wheelOmega?.[i] ?? 0) * params.wheelRadius)
+      if (vehicleSpd + wheelSurfaceSpd < OMEGA_EPSILON) {
+        // Free-rolling clamp — prevent stiffness at rest (Pattern 2)
+        vehicleState.wheelOmega[i] = params._longitudinalVelocity / params.wheelRadius
+      } else {
+        vehicleState.wheelOmega[i] = (vehicleState.wheelOmega?.[i] ?? 0) +
+          (driveTorque - roadReactionTorque - brakeTorque) / wheelInertia * dt
+      }
+
       const wheelForce = wheelFwd.clone().multiplyScalar(Flong)
       wheelForce.addScaledVector(wheelRight, Flat)
       totalForce.add(wheelForce)
@@ -161,6 +212,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
         vehicleState.wheelDebug[i].fy = Flat
         vehicleState.wheelDebug[i].sa = Math.atan2(params._lateralVelocity, Math.abs(params._longitudinalVelocity || 1e-6))
         vehicleState.wheelDebug[i].c  = params._compression
+        vehicleState.wheelDebug[i].omega = vehicleState.wheelOmega[i]
       }
     }
   }
