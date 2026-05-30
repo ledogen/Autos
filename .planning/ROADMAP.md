@@ -82,7 +82,7 @@ Plans:
 
 Plans:
 **Wave 1**
-- [ ] 03-01-PLAN.md — Pacejka core: data/ranger.js params + src/tire.js Magic Formula bodies (M3-03, M3-04, M3-10)
+- [x] 03-01-PLAN.md — Pacejka core: data/ranger.js params + src/tire.js Magic Formula bodies (M3-03, M3-04, M3-10)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 03-02-PLAN.md — Physics integration: slip ratio, friction circle, omega integrator, handbrake (M3-01, M3-02, M3-05, M3-06)
