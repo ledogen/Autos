@@ -391,6 +391,8 @@ function loop () {
       vehicleState.wheelSteerAngles = [0, 0, 0, 0]
       vehicleState.wheelDebug = [ {fn:0,fy:0,sa:0,c:0,omega:0}, {fn:0,fy:0,sa:0,c:0,omega:0}, {fn:0,fy:0,sa:0,c:0,omega:0}, {fn:0,fy:0,sa:0,c:0,omega:0} ]
       vehicleState.wheelOmega = [0, 0, 0, 0]
+      vehicleState.slipLong = [0, 0, 0, 0]
+      vehicleState.slipLat  = [0, 0, 0, 0]
       vehicleState.handbrake = false
     }
 

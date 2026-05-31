@@ -61,12 +61,19 @@ export const RANGER_PARAMS = {
   bodyContactRadius:      0.15,  // m — effective sphere radius for bumper corner points
 
   // ── Phase 3 Pacejka Tire Model (D-07) ────────────────────────────────────
-  // Combined-slip Pacejka — one isotropic curve, evaluated at σ_total = √(slipRatio² + tan²(slipAngle)).
+  // Combined-slip Pacejka in SLIP-VELOCITY space (m/s). One isotropic curve, evaluated at
+  // |s| = √(s_long² + s_lat²) where s is the relaxation-length-filtered slip displacement.
   // Peak force per wheel = frictionCoeff × pacejkaD × Fn. Hard-clamped at C=[1.0,1.99] in tire.js.
   pacejkaB:  10.0,   // stiffness factor — initial slope of force curve
   pacejkaC:   1.9,   // shape factor — C<2 required; hard-clamped in computeTireForces
   pacejkaD:   1.0,   // peak factor — peak force = frictionCoeff × D × Fn
   pacejkaE:  0.97,   // curvature — near 1.0 produces realistic post-peak falloff
+
+  // Slip-velocity tire model parameters (added with combined-slip rewrite)
+  tireRelaxationLength: 0.3,   // m — characteristic distance over which tire force builds; ~0.3 for road tires
+  tireSlipVelRef:       1.0,   // m/s — slip velocity at which Pacejka curve approaches peak
+  tireStiffnessLong:    1.0,   // anisotropy hook — scale longitudinal slip component (default 1.0 isotropic)
+  tireStiffnessLat:     1.0,   // anisotropy hook — scale lateral slip component (real tires ≈ 0.7×Long)
 
   // Wheel angular dynamics (D-02)
   // I = 0.5 × mass_wheel × r²; mass_wheel ≈ 18 kg (245/75R16 truck tire+wheel assembly)

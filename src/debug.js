@@ -54,13 +54,18 @@ export function initDebug (params) {
   // Rolling resistance — horizontal drag scaled by ground load; tunable for coast feel
   gui.add(params, 'rollingResistanceCoeff', 0, 0.05, 0.001).name('Rolling Resistance Cr')
 
-  // D-12: Tire (Pacejka) folder — combined-slip isotropic curve, single set of coefficients.
-  // Longitudinal pacejkaBx/Cx/Dx/Ex were removed when the tire model switched to combined slip.
+  // D-12: Tire (Pacejka) folder — combined-slip in slip-velocity space.
+  // Pacejka B/C/D/E define the force curve shape; slip-velocity model params control
+  // dynamic response (relaxation length, peak slip velocity, anisotropy).
   const tireFolder = gui.addFolder('Tire (Pacejka)')
   tireFolder.add(params, 'pacejkaB', 5, 20, 0.5).name('B - Stiffness')
   tireFolder.add(params, 'pacejkaC', 1.0, 1.99, 0.01).name('C - Shape [1.0-1.99]')
   tireFolder.add(params, 'pacejkaD', 0.5, 2.0, 0.05).name('D - Peak Factor')
   tireFolder.add(params, 'pacejkaE', -1.0, 1.0, 0.05).name('E - Curvature')
+  tireFolder.add(params, 'tireRelaxationLength', 0.05, 1.5, 0.05).name('Relaxation Length L (m)')
+  tireFolder.add(params, 'tireSlipVelRef', 0.2, 5.0, 0.1).name('Slip Vel Ref (m/s)')
+  tireFolder.add(params, 'tireStiffnessLong', 0.3, 2.0, 0.05).name('Stiffness Long ×')
+  tireFolder.add(params, 'tireStiffnessLat', 0.3, 2.0, 0.05).name('Stiffness Lat ×')
 
   // D-04: Read-only Logger hint — shows the \ key without being interactive
   const _loggerHint = { hint: '\\ to record' }
@@ -115,27 +120,30 @@ export function updatePacejkaCurve (vehicleState, params) {
   plotCtx.clearRect(0, 0, W, H)
 
   // Read params — C hard-clamped to [1.0, 1.99] (T-03-07 / constraint #3)
-  const B = params.pacejkaB
-  const C = Math.max(1.0, Math.min(1.99, params.pacejkaC))
-  const E = params.pacejkaE
+  const B    = params.pacejkaB
+  const C    = Math.max(1.0, Math.min(1.99, params.pacejkaC))
+  const E    = params.pacejkaE
+  const vRef = params.tireSlipVelRef || 1.0
 
-  // Draw normalized Pacejka lateral force curve over slip angle RANGE [-0.3, +0.3] rad
-  // Y is normalized (D = 1.0 reference) — y = sin(C * atan(B*sa - E*(B*sa - atan(B*sa))))
+  // Draw normalized Pacejka force-magnitude curve over slip-velocity magnitude [0, 3·v_ref] m/s.
+  // (Now plotting |F|/(μ·Fn·D) vs |s| — slip-velocity formulation. wheelDebug[i].sa stores
+  // slip-velocity magnitude in m/s since the tire model rewrite.)
   const SAMPLES = 200
-  const SA_MIN = -0.3
-  const SA_MAX =  0.3
-  const SA_RANGE = SA_MAX - SA_MIN
+  const SV_MIN = 0
+  const SV_MAX = 3.0 * vRef
+  const SV_RANGE = SV_MAX - SV_MIN
 
   plotCtx.beginPath()
   plotCtx.strokeStyle = '#44ff88'
   plotCtx.lineWidth = 1.5
 
   for (let i = 0; i < SAMPLES; i++) {
-    const sa = SA_MIN + (i / (SAMPLES - 1)) * SA_RANGE
-    const Bsa = B * sa
-    const fNorm = Math.sin(C * Math.atan(Bsa - E * (Bsa - Math.atan(Bsa))))
-    const px = (sa - SA_MIN) / SA_RANGE * W
-    const py = H / 2 - fNorm * (H / 2 - 10)
+    const sv = SV_MIN + (i / (SAMPLES - 1)) * SV_RANGE
+    const x = sv / vRef
+    const Bx = B * x
+    const fNorm = Math.sin(C * Math.atan(Bx - E * (Bx - Math.atan(Bx))))
+    const px = (sv - SV_MIN) / SV_RANGE * W
+    const py = H - fNorm * (H - 10)  // baseline at bottom; force grows upward
     if (i === 0) plotCtx.moveTo(px, py)
     else plotCtx.lineTo(px, py)
   }
@@ -143,11 +151,12 @@ export function updatePacejkaCurve (vehicleState, params) {
 
   // Draw operating-point dots for FL (index 0) and FR (index 1)
   for (const i of [0, 1]) {
-    const sa = vehicleState.wheelDebug?.[i]?.sa || 0
-    const Bsa = B * sa
-    const fNorm = Math.sin(C * Math.atan(Bsa - E * (Bsa - Math.atan(Bsa))))
-    const px = (sa - SA_MIN) / SA_RANGE * W
-    const py = H / 2 - fNorm * (H / 2 - 10)
+    const sv = vehicleState.wheelDebug?.[i]?.sa || 0   // |slip velocity| in m/s
+    const x = sv / vRef
+    const Bx = B * x
+    const fNorm = Math.sin(C * Math.atan(Bx - E * (Bx - Math.atan(Bx))))
+    const px = Math.max(0, Math.min(W, (sv - SV_MIN) / SV_RANGE * W))
+    const py = H - fNorm * (H - 10)
 
     const pct = Math.abs(fNorm)
     const color = pct < 0.5 ? '#00ff88' : pct < 0.8 ? '#ffaa00' : '#ff2222'

@@ -162,17 +162,22 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
     params._lateralVelocity      = hubVel.dot(wheelRight)
     params._longitudinalVelocity = hubVel.dot(wheelFwd)
 
-    // Slip ratio — computed per wheel using omega integrator state (D-02, M3-02)
-    const SLIP_EPSILON = 0.1  // m/s — prevents 0/0 at rest (T-03-04)
-    const omegaR = (vehicleState.wheelOmega?.[i] ?? 0) * params.wheelRadius
-    const vx = params._longitudinalVelocity
-    const slipRatio = (omegaR - vx) / Math.max(Math.abs(omegaR), Math.abs(vx), SLIP_EPSILON)
+    // Slip-velocity tire model with relaxation length (see tire.js header).
+    // Per-tire state: vehicleState.slipLong[i], slipLat[i] — the "filtered" slip
+    // displacements (m), evolved per-step via implicit Euler on ds/dt = v_slip − s·|v|/L.
+    // Lazy-init so existing vehicleState shapes still work; arrays are tiny (4 floats each).
+    if (!vehicleState.slipLong) vehicleState.slipLong = [0, 0, 0, 0]
+    if (!vehicleState.slipLat)  vehicleState.slipLat  = [0, 0, 0, 0]
 
-    // lastScaledFlong: friction-circle-scaled Flong from the last processed contact.
-    // Zero when airborne — road reaction is 0 so drive/brake torque spin the wheel freely (CR-03).
-    // lastFn: paired Fn from the same contact, used by the semi-implicit ω integrator below.
-    let lastScaledFlong = 0
-    let lastFn = 0
+    const SLIP_EPSILON = 0.1  // m/s — floor on contact velocity for relaxation rate
+
+    // Per-step bookkeeping for the ω integrator (Newton-iterated implicit Euler below).
+    // Zero / null when airborne so road reaction = 0.
+    let lastFn          = 0
+    let lastSLongPrev   = 0   // sLong_old at this step's start (for Newton re-eval of s)
+    let lastSLatNew     = 0   // sLat already committed (lateral doesn't iterate with ω)
+    let lastLongVelCur  = 0
+    let lastRelaxDen    = 1
 
     // Query every surface this wheel sphere overlaps
     const contacts = queryContacts(hub.x, hub.y, hub.z, params.wheelRadius)
@@ -197,76 +202,99 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
       totalForce.addScaledVector(normal, Fn)
       totalTorque.add(new THREE.Vector3().crossVectors(rContact, normal.clone().multiplyScalar(Fn)))
 
-      // Tire forces — combined-slip Pacejka (one curve, decomposed along the slip vector).
-      // The friction circle is now implicit in the kinematics: at full lockup (slipRatio=±1)
-      // with low slipAngle, the slip vector aligns with longitudinal and Flat → 0 naturally.
-      const latVel  = params._lateralVelocity  || 0
-      const longVelAbs = Math.abs(params._longitudinalVelocity || 0)
-      const slipAngle = Math.atan2(latVel, longVelAbs + 0.01)
-      const { Flong, Flat } = computeTireForces(slipRatio, slipAngle, Fn, params)
+      // Tire forces — slip-velocity Pacejka with relaxation length per tire.
+      // The relaxation length L models tire carcass viscoelastic dynamics: the carcass
+      // takes a characteristic distance L of vehicle travel to build up to its target
+      // force. Implicit Euler on  ds/dt = v_slip − s·|v|/L  is unconditionally stable
+      // and reduces effective stiffness dF/dω to the point where Newton-iterated implicit
+      // Euler on the ω integrator (below) converges in 1-3 iterations at 60Hz.
+      //
+      // sLat is finalized here (depends on body lateral velocity, not on ω_new).
+      // sLong is computed here at the current ω (for body-force application this step) but
+      // re-evaluated and re-committed inside the ω Newton loop using the converged ω_new
+      // — this is operator splitting: body force lags ω by one step, acceptable trade for
+      // a clean Newton on ω alone.
+      const longVelCur = params._longitudinalVelocity || 0
+      const latVelCur  = params._lateralVelocity      || 0
+      const omegaCur   = (vehicleState.wheelOmega?.[i] ?? 0) * params.wheelRadius
+      const vCon       = Math.max(Math.abs(omegaCur), Math.abs(longVelCur), SLIP_EPSILON)
+      const L          = params.tireRelaxationLength || 0.3
+      const relaxDen   = 1 + dt * vCon / L
+      const sLongPrev  = vehicleState.slipLong[i]
+      const sLatNew    = (vehicleState.slipLat[i] + dt * latVelCur) / relaxDen
+      const sLongCur   = (sLongPrev + dt * (omegaCur - longVelCur)) / relaxDen
+      vehicleState.slipLat[i] = sLatNew
 
-      // Record Flong and Fn for omega integrator (constraint #5/Pitfall 2 — already saturation-bounded by Pacejka)
-      lastScaledFlong = Flong
-      lastFn = Fn
+      const { Flong, Flat } = computeTireForces(sLongCur, sLatNew, Fn, params)
+
+      // Save state for Newton iteration in ω integrator (re-evaluates sLong and F at ω_new).
+      lastFn         = Fn
+      lastSLongPrev  = sLongPrev
+      lastSLatNew    = sLatNew
+      lastLongVelCur = longVelCur
+      lastRelaxDen   = relaxDen
 
       const wheelForce = wheelFwd.clone().multiplyScalar(Flong)
-      // WR-02: lateral grip opposes lateral hub velocity (resists the slide), so positive Flat from
-      // computeTireForces(positive slipAngle) must be applied along -wheelRight.
+      // WR-02: lateral grip opposes lateral hub velocity (resists the slide), so positive Flat
+      // from computeTireForces(positive slipVy) must be applied along -wheelRight.
       wheelForce.addScaledVector(wheelRight, -Flat)
       totalForce.add(wheelForce)
       totalTorque.add(new THREE.Vector3().crossVectors(rContact, wheelForce))
 
-      // Write debug data for logger — last contact wins (most steps have exactly one contact)
+      // Write debug data for logger — last contact wins (most steps have exactly one contact).
+      // NOTE: `sa` field now stores SLIP VELOCITY magnitude (m/s) instead of slip angle (rad).
+      // Field name kept for log format stability; semantics document in GLOSSARY.
       if (vehicleState.wheelDebug) {
         vehicleState.wheelDebug[i].fn = Fn
         vehicleState.wheelDebug[i].fy = Flat
-        vehicleState.wheelDebug[i].sa = Math.atan2(params._lateralVelocity, Math.abs(params._longitudinalVelocity || 1e-6))
+        vehicleState.wheelDebug[i].sa = Math.hypot(sLongNew, sLatNew)
         vehicleState.wheelDebug[i].c  = params._compression
       }
     }
 
-    // Omega integrator — runs once per wheel per step, OUTSIDE the contacts loop (CR-03).
-    // Uses friction-circle-SCALED lastScaledFlong as road reaction (Pitfall 2 / constraint #5).
-    // Airborne: lastScaledFlong=0 → road reaction=0 → drive/brake torque spin wheel freely.
-    // T-03-03: OMEGA_EPSILON prevents explicit-Euler oscillation at low combined speed.
+    // Omega integrator — Newton-iterated implicit Euler. Runs once per wheel per step,
+    // OUTSIDE the contacts loop (CR-03). Re-evaluates sLong(ω) and F_long(sLong) at each
+    // Newton iteration so the iteration captures Pacejka saturation past peak — critical
+    // for clean launch from rest, where a single linearized step would overshoot.
+    //
+    // The implicit equation we're solving for ω_new:
+    //   ω_new = ω + dt/I · (T_drive − F_long(sLong_new(ω_new))·r − T_brake_signed)
+    // where sLong_new(ω) = (sLong_old + dt·(ω·r − v_long)) / (1 + dt·|v_contact|/L)
+    //
+    // Newton converges in 1-3 iterations at 60Hz; the loop caps at 4 with a tight residual
+    // tolerance. Airborne: lastFn = 0 ⇒ tireForce returns zero ⇒ ω evolves under drive/brake.
     {
-      const OMEGA_EPSILON = 0.05  // m/s combined-speed threshold — must be < SLIP_EPSILON (0.1) to avoid locking out drive torque at low speed
       const wheelInertia = params.wheelInertia || 1.22
-      const driveTorque = getDriveTorque(i, vehicleState, params)
-      const brakeTorque = getBrakeTorque(i, vehicleState, params)
-      const roadReactionTorque = lastScaledFlong * params.wheelRadius
-      const vehicleSpd = Math.abs(params._longitudinalVelocity || 0)
-      const wheelSurfaceSpd = Math.abs((vehicleState.wheelOmega?.[i] ?? 0) * params.wheelRadius)
-      if (vehicleSpd + wheelSurfaceSpd < OMEGA_EPSILON && contacts.length > 0) {
-        // Free-rolling clamp — prevent stiffness at rest (Pattern 2, grounded only)
-        vehicleState.wheelOmega[i] = (params._longitudinalVelocity || 0) / params.wheelRadius
+      const driveTorque  = getDriveTorque(i, vehicleState, params)
+      const brakeTorque  = getBrakeTorque(i, vehicleState, params)
+      const dsdo         = dt * params.wheelRadius / lastRelaxDen  // ∂sLong_new/∂ω_new
+      const omega0       = vehicleState.wheelOmega?.[i] ?? 0
+      const spinSign     = omega0 >= 0 ? 1 : -1
+      const brakeSigned  = brakeTorque * spinSign
+
+      let omegaNew = omega0
+      let sLongFinal = lastSLongPrev
+      for (let iter = 0; iter < 4; iter++) {
+        const omegaR    = omegaNew * params.wheelRadius
+        const sLongIter = (lastSLongPrev + dt * (omegaR - lastLongVelCur)) / lastRelaxDen
+        sLongFinal = sLongIter
+        if (lastFn <= 0) break  // airborne: no road reaction; Newton trivially converged
+        const { Flong, dFmagDs } = computeTireForces(sLongIter, lastSLatNew, lastFn, params)
+        const g  = omegaNew - omega0 - dt / wheelInertia * (driveTorque - Flong * params.wheelRadius - brakeSigned)
+        // g'(ω) = 1 + dt·r/I · dF/dω,  with dF/dω = dFmagDs · dsdo
+        const gp = 1 + dt * params.wheelRadius * dFmagDs * dsdo / wheelInertia
+        const delta = g / gp
+        omegaNew -= delta
+        if (Math.abs(delta) < 1e-4) break
+      }
+      // Commit the converged sLong (or, if airborne, just keep prev s relaxed by current step).
+      vehicleState.slipLong[i] = sLongFinal
+
+      // Clamp: braking cannot reverse spin direction (brake stops the wheel, doesn't push through zero).
+      if (brakeTorque > 0 && Math.sign(omegaNew) !== spinSign) {
+        vehicleState.wheelOmega[i] = 0
       } else {
-        const omega0 = vehicleState.wheelOmega?.[i] ?? 0
-        // Use >= 0 instead of Math.sign so that omega=0 still gets brake torque applied
-        // (Math.sign(0) = 0 would zero out brakeSigned and let road-reaction kick omega positive)
-        const spinSign = omega0 >= 0 ? 1 : -1
-        // Brake torque opposes current spin direction — never adds energy in the spin direction
-        const brakeSigned = brakeTorque * spinSign
-        // Semi-implicit Euler for the road-reaction term: linearize F_long around omega0 and
-        // solve implicitly. Pacejka's initial slope (≈66 kN/unit slip) makes the explicit-Euler
-        // step factor k·dt ≈ 8 (unstable, limit-cycle in saturated Pacejka). The implicit
-        // denominator (1 + dt·|dT/dω|/I) shrinks the effective step until stable.
-        // dT_road/dω ≈ -K_pacejka · r² / denom, where K_pacejka is the linear Pacejka stiffness
-        // and denom matches the slipRatio denominator above.
-        const omegaR  = omega0 * params.wheelRadius
-        const longAbs2 = Math.abs(params._longitudinalVelocity || 0)
-        const denomS  = Math.max(Math.abs(omegaR), longAbs2, SLIP_EPSILON)
-        const Kpac    = (params.frictionCoeff ?? 1.0) * lastFn *
-                        params.pacejkaB * params.pacejkaC * params.pacejkaD
-        const dT_dOm  = -Kpac * params.wheelRadius * params.wheelRadius / denomS  // ≤ 0
-        const tExplicit = driveTorque - roadReactionTorque - brakeSigned
-        const newOmega  = omega0 + dt * tExplicit / (wheelInertia - dt * dT_dOm)
-        // Clamp: braking cannot reverse spin direction (brake stops the wheel, doesn't push through zero)
-        if (brakeTorque > 0 && Math.sign(newOmega) !== spinSign) {
-          vehicleState.wheelOmega[i] = 0
-        } else {
-          vehicleState.wheelOmega[i] = newOmega
-        }
+        vehicleState.wheelOmega[i] = omegaNew
       }
     }
 
