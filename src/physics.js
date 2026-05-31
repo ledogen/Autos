@@ -287,15 +287,22 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
         omegaNew -= delta
         if (Math.abs(delta) < 1e-4) break
       }
-      // Commit the converged sLong (or, if airborne, just keep prev s relaxed by current step).
-      vehicleState.slipLong[i] = sLongFinal
-
       // Clamp: braking cannot reverse spin direction (brake stops the wheel, doesn't push through zero).
+      // Must happen BEFORE committing sLong — if omega is clamped to 0 the Newton loop may have
+      // diverged to a large unphysical omegaNew (wrong sign), so sLongFinal would be based on that
+      // wrong omega. Re-evaluate sLong at the ACTUAL committed omega (0 when clamped) so the
+      // slip state stays consistent with the wheel speed. Inconsistent sLong would generate a force
+      // in the wrong direction on the next step (accelerating backward instead of braking).
       if (brakeTorque > 0 && Math.sign(omegaNew) !== spinSign) {
         vehicleState.wheelOmega[i] = 0
+        // Recompute sLong at omega=0 so slip state matches actual wheel speed.
+        sLongFinal = (lastSLongPrev + dt * (0 - lastLongVelCur)) / lastRelaxDen
       } else {
         vehicleState.wheelOmega[i] = omegaNew
       }
+
+      // Commit sLong after clamp so the stored value is consistent with the actual committed omega.
+      vehicleState.slipLong[i] = sLongFinal
     }
 
     // Update omega debug field — airborne wheels still log their evolving omega (CR-03)
