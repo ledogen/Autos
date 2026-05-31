@@ -16,7 +16,6 @@
  */
 
 import * as THREE from 'three'
-import Stats from 'three/addons/libs/stats.module.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics } from './physics.js'
 import { updateVehicle, SPAWN_STATE } from './vehicle.js'
@@ -343,9 +342,10 @@ rampMesh.position.set(0, (RAMP_LENGTH / 2) * Math.tan(RAMP_ANGLE), RAMP_START_Z 
 rampMesh.receiveShadow = true
 scene.add(rampMesh)
 
-// ── Stats.js FPS panel (FOUND-03) ────────────────────────────────────────────
-const stats = new Stats()
-document.body.appendChild(stats.dom)
+// FPS tracking — smoothed using an exponential moving average (alpha=0.1).
+// Placed here (module scope) so it persists across frames without closure overhead.
+let _fpsEma = 60       // initial estimate: 60 fps
+let _fpsLastTime = 0   // will be set to currentTime on first frame
 
 // ── Debug panel ──────────────────────────────────────────────────────────────
 // D-10: passes mutable RANGER_PARAMS ref so sliders write directly to the object physics.js reads.
@@ -370,6 +370,15 @@ function loop () {
 
   // Clamp: prevents catch-up loop when tab was hidden or frame spiked (T-01-04)
   if (frameTime > MAX_FRAME_TIME) frameTime = MAX_FRAME_TIME
+
+  // FPS EMA — smooth the per-frame time to avoid noisy readout.
+  // alpha=0.1 gives ~1s smoothing window at 60 fps (10 frames half-life).
+  // Guard: skip first frame where _fpsLastTime=0 (frameTime would be garbage).
+  if (_fpsLastTime > 0 && frameTime > 0) {
+    const instantFps = 1 / frameTime
+    _fpsEma = _fpsEma * 0.9 + instantFps * 0.1
+  }
+  _fpsLastTime = newTime
 
   accumulator += frameTime
 
@@ -432,13 +441,16 @@ function loop () {
   const brkEl = document.getElementById('brkVal')
   if (brkEl) brkEl.textContent = (vehicleState.brake * 100).toFixed(0)
 
+  // FPS HUD
+  const fpsEl = document.getElementById('fpsVal')
+  if (fpsEl) fpsEl.textContent = Math.round(_fpsEma)
+
   // M3-09: Pacejka curve plot — called once per render frame OUTSIDE the fixed accumulator (constraint #10)
   updatePacejkaCurve(vehicleState, RANGER_PARAMS)
 
   updateCamera(camera, vehicleState)
 
   renderer.render(scene, camera)
-  stats.update()
 }
 
 requestAnimationFrame(loop)
