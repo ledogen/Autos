@@ -72,6 +72,7 @@ export const RANGER_PARAMS = {
   // I = 0.5 × mass_wheel × r²; mass_wheel ≈ 18 kg (245/75R16 truck tire+wheel assembly)
   // → I = 0.5 × 18 × 0.368² ≈ 1.22 kg·m²
   wheelInertia: 1.22,  // kg·m² — 0.5 × 18 kg × 0.368² (D-02)
+  rollingResistanceCoeff: 0.015,  // [-] horizontal drag = Cr · Σ Fn; 0.015 ≈ tire on dry pavement (~0.15 m/s² coast decel)
 
   // ── Steering ─────────────────────────────────────────────────────────────
   maxSteerAngle:  0.52,  // rad (~30°) — max steer angle at low speed

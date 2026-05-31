@@ -51,6 +51,9 @@ export function initDebug (params) {
   // D-16: maxHandbrakeTorque slider
   gui.add(params, 'maxHandbrakeTorque', 500, 5000, 100).name('Handbrake Torque (Nm)')
 
+  // Rolling resistance — horizontal drag scaled by ground load; tunable for coast feel
+  gui.add(params, 'rollingResistanceCoeff', 0, 0.05, 0.001).name('Rolling Resistance Cr')
+
   // D-12: Tire (Pacejka) folder — combined-slip isotropic curve, single set of coefficients.
   // Longitudinal pacejkaBx/Cx/Dx/Ex were removed when the tire model switched to combined slip.
   const tireFolder = gui.addFolder('Tire (Pacejka)')

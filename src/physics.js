@@ -130,6 +130,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
   // ── Step 3: Per-wheel force accumulation ──────────────────────────────────
   const totalForce  = new THREE.Vector3(0, -params.mass * 9.81, 0)
   const totalTorque = new THREE.Vector3()
+  let totalGroundFn = 0  // accumulated normal force across all wheel contacts; gates rolling resistance
 
   for (let i = 0; i < 4; i++) {
     // Zero wheelDebug for this wheel before contacts — ensures no stale values when wheel is off-ground
@@ -169,7 +170,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
 
     // lastScaledFlong: friction-circle-scaled Flong from the last processed contact.
     // Zero when airborne — road reaction is 0 so drive/brake torque spin the wheel freely (CR-03).
+    // lastFn: paired Fn from the same contact, used by the semi-implicit ω integrator below.
     let lastScaledFlong = 0
+    let lastFn = 0
 
     // Query every surface this wheel sphere overlaps
     const contacts = queryContacts(hub.x, hub.y, hub.z, params.wheelRadius)
@@ -189,6 +192,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
 
       const Fn = computeNormalForce(i, vehicleState, params)
       if (Fn <= 0) continue
+      totalGroundFn += Fn
 
       totalForce.addScaledVector(normal, Fn)
       totalTorque.add(new THREE.Vector3().crossVectors(rContact, normal.clone().multiplyScalar(Fn)))
@@ -201,8 +205,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
       const slipAngle = Math.atan2(latVel, longVelAbs + 0.01)
       const { Flong, Flat } = computeTireForces(slipRatio, slipAngle, Fn, params)
 
-      // Record Flong for omega integrator (constraint #5/Pitfall 2 — already saturation-bounded by Pacejka)
+      // Record Flong and Fn for omega integrator (constraint #5/Pitfall 2 — already saturation-bounded by Pacejka)
       lastScaledFlong = Flong
+      lastFn = Fn
 
       const wheelForce = wheelFwd.clone().multiplyScalar(Flong)
       // WR-02: lateral grip opposes lateral hub velocity (resists the slide), so positive Flat from
@@ -242,7 +247,20 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
         const spinSign = omega0 >= 0 ? 1 : -1
         // Brake torque opposes current spin direction — never adds energy in the spin direction
         const brakeSigned = brakeTorque * spinSign
-        const newOmega = omega0 + (driveTorque - roadReactionTorque - brakeSigned) / wheelInertia * dt
+        // Semi-implicit Euler for the road-reaction term: linearize F_long around omega0 and
+        // solve implicitly. Pacejka's initial slope (≈66 kN/unit slip) makes the explicit-Euler
+        // step factor k·dt ≈ 8 (unstable, limit-cycle in saturated Pacejka). The implicit
+        // denominator (1 + dt·|dT/dω|/I) shrinks the effective step until stable.
+        // dT_road/dω ≈ -K_pacejka · r² / denom, where K_pacejka is the linear Pacejka stiffness
+        // and denom matches the slipRatio denominator above.
+        const omegaR  = omega0 * params.wheelRadius
+        const longAbs2 = Math.abs(params._longitudinalVelocity || 0)
+        const denomS  = Math.max(Math.abs(omegaR), longAbs2, SLIP_EPSILON)
+        const Kpac    = (params.frictionCoeff ?? 1.0) * lastFn *
+                        params.pacejkaB * params.pacejkaC * params.pacejkaD
+        const dT_dOm  = -Kpac * params.wheelRadius * params.wheelRadius / denomS  // ≤ 0
+        const tExplicit = driveTorque - roadReactionTorque - brakeSigned
+        const newOmega  = omega0 + dt * tExplicit / (wheelInertia - dt * dT_dOm)
         // Clamp: braking cannot reverse spin direction (brake stops the wheel, doesn't push through zero)
         if (brakeTorque > 0 && Math.sign(newOmega) !== spinSign) {
           vehicleState.wheelOmega[i] = 0
@@ -255,6 +273,24 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
     // Update omega debug field — airborne wheels still log their evolving omega (CR-03)
     if (vehicleState.wheelDebug) {
       vehicleState.wheelDebug[i].omega = vehicleState.wheelOmega[i]
+    }
+  }
+
+  // ── Step 3a: Rolling resistance — horizontal velocity-aligned drag scaled by ground load ──
+  // Standard tire model: F_drag = -Cr · Σ Fn · v̂_horizontal. Vertical (Fn) carries the load,
+  // so scaling by Σ Fn means the drag vanishes when airborne and matches static weight on flat ground.
+  // 0.05 m/s deadband prevents creep oscillation at standstill.
+  {
+    const Cr = params.rollingResistanceCoeff || 0
+    if (Cr > 0 && totalGroundFn > 0) {
+      const vx = vehicleState.velocity.x
+      const vz = vehicleState.velocity.z
+      const vHoriz = Math.sqrt(vx * vx + vz * vz)
+      if (vHoriz > 0.05) {
+        const dragMag = Cr * totalGroundFn
+        totalForce.x -= dragMag * vx / vHoriz
+        totalForce.z -= dragMag * vz / vHoriz
+      }
     }
   }
 
