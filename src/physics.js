@@ -247,7 +247,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
       if (vehicleState.wheelDebug) {
         vehicleState.wheelDebug[i].fn = Fn
         vehicleState.wheelDebug[i].fy = Flat
-        vehicleState.wheelDebug[i].sa = Math.hypot(sLongNew, sLatNew)
+        vehicleState.wheelDebug[i].sa = Math.hypot(sLongCur, sLatNew)
         vehicleState.wheelDebug[i].c  = params._compression
       }
     }
