@@ -24,7 +24,7 @@ Phase 4 does NOT add a solid rear axle (real Ranger has one — deferred), does 
 
 ### Topology — fully independent at all 4 corners
 - **D-04:** Same quarter-car model applied 4×. No solid rear axle coupling. Front and rear use the same `suspensionStiffness`/`suspensionDamping`/`suspensionRestLength` slots, but front/rear values are independently tunable (split params: `suspensionStiffnessFront`, `suspensionStiffnessRear`, etc.) so the user can dial in understeer/oversteer balance.
-- **D-05:** Solid rear axle (live beam with shared roll DOF — authentic Ranger behavior) is **deferred** to a post-Phase-5 enhancement. Note added to `<deferred>`.
+- **D-05** [informational]: Solid rear axle (live beam with shared roll DOF — authentic Ranger behavior) is **deferred** to a post-Phase-5 enhancement. Note added to `<deferred>`.
 
 ### Anti-roll bars — front + rear, slider-tunable
 - **D-06:** Anti-roll bars are included in Phase 4. Two params: `arbStiffnessFront`, `arbStiffnessRear` (N/m). Per axle, the ARB applies an equal-and-opposite force pair between left and right wheels proportional to the **difference** in suspension compression:

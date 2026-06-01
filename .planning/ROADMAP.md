@@ -99,7 +99,6 @@ Plans:
 
 ### Phase 4: Suspension
 **Goal**: The user sees and feels weight transfer — the nose dips under hard braking, the body rolls into corners, and individual wheels can lift off the ground — because each wheel now has an independent spring-damper with dynamic normal force fed into the Pacejka model.
-**Mode:** mvp
 **Depends on**: Phase 3
 **Requirements**: M4-01, M4-02, M4-03, M4-04, M4-05, M4-06, M4-07, M4-08, M4-09
 **Success Criteria** (what must be TRUE):
@@ -108,7 +107,18 @@ Plans:
   3. User can open the debug panel and see per-wheel normal force (Fz) values change live during acceleration, braking, and cornering
   4. User can raise a wheel off the ground (via aggressive cornering or a bump) and observe that the airborne wheel contributes no tire force
   5. User can adjust spring stiffness and damping sliders in the debug menu and feel the suspension character change instantly while driving
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+**Wave 1**
+- [ ] 04-01-PLAN.md — Wave 0 validation scenarios (4 new scenarios/m4-*.json files)
+
+**Wave 2** *(blocked on Wave 1)*
+- [ ] 04-02-PLAN.md — Core suspension: params + hub state + quarter-car math + ARB + physics integration (M4-01..M4-07)
+
+**Wave 3** *(blocked on Wave 2)*
+- [ ] 04-03-PLAN.md — Debug sliders + per-wheel Fz HUD + logger fz fields + mesh visual binding + GLOSSARY + housekeeping (M4-08, M4-09)
+
 **UI hint**: no
 
 ### Phase 5: Rollover Validation
