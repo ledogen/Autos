@@ -1,0 +1,7 @@
+{
+  "description": "Static start; drive at low speed (~5 m/s) over single bump prop. Asserts hub vertical oscillation settles within 1.5s — characterizes ζ≈0.4 damping target. M4-06.",
+  "position":        { "x": 0, "y": 0.55, "z": 0 },
+  "velocity":        { "x": 0, "y": 0,    "z": 0 },
+  "quaternion":      { "x": 0, "y": 0,    "z": 0, "w": 1 },
+  "angularVelocity": { "x": 0, "y": 0,    "z": 0 }
+}

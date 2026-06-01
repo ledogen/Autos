@@ -1,0 +1,7 @@
+{
+  "description": "Drive forward 1s, full brake 1s. Asserts front fl_fz/fr_fz rise and rear rl_fz/rr_fz fall during brake; sum ≈ mass·g ± 5%. M4-04, M4-07 longitudinal.",
+  "position":        { "x": 0, "y": 0.55, "z": 0 },
+  "velocity":        { "x": 0, "y": 0,    "z": -16.667 },
+  "quaternion":      { "x": 0, "y": 0,    "z": 0, "w": 1 },
+  "angularVelocity": { "x": 0, "y": 0,    "z": 0 }
+}

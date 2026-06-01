@@ -1,0 +1,7 @@
+{
+  "description": "Drive forward into ramp asymmetrically; one wheel leaves ground. Asserts that wheel's fz=0 AND its fy=0 / sa=0 during airborne window per D-14. M4-05.",
+  "position":        { "x": 0, "y": 0.55, "z": 0 },
+  "velocity":        { "x": 0, "y": 0,    "z": -13.889 },
+  "quaternion":      { "x": 0, "y": 0,    "z": 0, "w": 1 },
+  "angularVelocity": { "x": 0, "y": 0,    "z": 0 }
+}
