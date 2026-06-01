@@ -161,7 +161,9 @@ export function getWheelPosition (corner, vehicleState, params) {
  *   D-03: Pacejka Fz = tire spring force, NOT suspension spring force
  *   D-06: ARB couples left/right suspension compression per axle
  *   D-07: ARB force uses same lever arm as main spring (bilinear-spring approx)
- *   D-08: N=2 fixed substeps; sdt = dt/N; vertical-only (no Pacejka inside substep)
+ *   D-08: fixed N substeps; sdt = dt/N; vertical-only (no Pacejka inside substep).
+ *         Currently N=4 with explicit Euler (was N=2 implicit; implicit form caused hub
+ *         "float in air" — false gravity g/(1+α) on hub in free fall).
  *   D-14: tireFz ≤ 0 ⇒ airborne; hub integrates under gravity + suspension only
  *   D-15: suspension spring term = 0 when compression < 0 (no tension at droop); damping acts both ways
  *
@@ -187,19 +189,33 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
   if (!vehicleState.hubVy || vehicleState.hubVy.length !== 4) return
 
   // Stability check — runs once (RESEARCH §Pitfall 2, D-10).
-  // Tire spring is the stiffest spring; it determines the critical substep size.
+  // Two constraints with explicit Euler:
+  //   tire spring: sdt < 2/omega_n_tire (oscillator stability)
+  //   suspension damping: c_S·sdt/m_u < 2 (damper explicit-Euler stability)
+  // N=4 gives sdt=4.17ms at 60Hz: c_S·sdt/m_u ≈ 1.04 for current dampers — safe.
+  // If suspension damping rises, N must rise too.
   if (!params._suspStabChecked) {
+    const N_check      = 4
+    const sdt_check    = dt / N_check
     const omega_n_tire = Math.sqrt(params.tireStiffness / params.wheelMass)
-    const sdt_check    = dt / 2
     if (sdt_check > 1.5 / omega_n_tire) {
       console.warn('[suspension] Sub-step too large for tire stiffness — potential instability.',
         'sdt=', sdt_check.toFixed(5), 'critical=', (1.5 / omega_n_tire).toFixed(5))
     }
+    const c_max = Math.max(params.suspensionDampingFront, params.suspensionDampingRear)
+    const alpha = c_max * sdt_check / params.wheelMass
+    if (alpha > 2) {
+      console.warn('[suspension] Damping too high for explicit Euler — raise N.',
+        'alpha=', alpha.toFixed(2), 'limit=2.0')
+    }
     params._suspStabChecked = true
   }
 
-  const N   = 2           // D-08: fixed 2 substeps
-  const sdt = dt / N      // D-08: sdt = physicsDt / 2
+  // N=4 substeps with explicit Euler on the damper (was N=2 implicit — implicit form
+  // biased hubVy toward mountVelY each substep, causing hubs to "float" in free fall
+  // at g/(1+α) instead of g. Explicit at sdt=4.17ms is stable for current dampers.)
+  const N   = 4
+  const sdt = dt / N
   const m_u = params.wheelMass
 
   // Zero accumulator arrays for this outer step (RESEARCH §Pattern 2 + §Pitfall 3)
@@ -274,39 +290,36 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       const k_S = isFront ? params.suspensionStiffnessFront : params.suspensionStiffnessRear
       const c_S = isFront ? params.suspensionDampingFront   : params.suspensionDampingRear
 
-      // Suspension spring force: D-15 no-tension clamp on spring term; damping acts both ways.
-      const springTerm  = suspComp > 0 ? k_S * suspComp : 0
-      const dampTerm    = c_S * suspVel
-      const suspForce   = springTerm + dampTerm  // +ve = pushes hub down, body up
+      // Suspension spring: D-15 no-tension clamp on spring term.
+      const springTerm = suspComp > 0 ? k_S * suspComp : 0
 
-      // Tire spring force (ground↔hub): query contacts at hub world position.
-      // Hub XZ tracks body mount XZ (Open Question #1: no independent hub XZ state).
-      // Sum vertical component of all contacts for hub ODE (Open Question #2: sum, not split per contact).
+      // Tire spring force (ground↔hub).
       const hubContacts = queryContacts(mountWorldX, vehicleState.hubY[i], mountWorldZ, params.wheelRadius)
       let tireFz = 0
       for (const c of hubContacts) {
-        // tireFnAtContact: tire spring force at this contact surface (D-14: airborne ≡ depth=0 → tireFz=0)
-        // Damping: hub moving toward ground (hubVy < 0) increases compression velocity.
-        // compressionVel ≈ -hubVy * c.normal.y for the vertical projection.
         const compressionVel = -vehicleState.hubVy[i] * c.normal.y
         const tireFnAtContact = Math.max(0,
           params.tireStiffness * c.depth + params.tireDamping * compressionVel
         )
-        // Project onto vertical for hub ODE (flat ground: normal.y ≈ 1, so tireFz ≈ tireFnAtContact)
         tireFz += tireFnAtContact * c.normal.y
       }
 
-      // Hub ODE (semi-implicit Euler — velocity updated first, then position) per D-01/D-08.
-      // F_hub = tireFz − suspForce + arbForce − wheelMass·g
-      // Note: arbForce convention — positive arbForce means "pushes hub down", same sign as suspForce.
-      // Convention check: when suspended (tireFz>0, suspForce>0), static equilibrium gives F_hub=0 ✓
-      const F_hub = tireFz - suspForce + arbF[i] - m_u * 9.81
-      vehicleState.hubVy[i] += (F_hub / m_u) * sdt  // velocity first (semi-implicit Euler)
-      vehicleState.hubY[i]  += vehicleState.hubVy[i] * sdt  // then position
+      // Hub ODE — explicit (semi-implicit) Euler. Damping acts on the actual relative
+      // velocity (suspVel) only, so in free fall (suspVel=0) the hub falls at full g.
+      // Stability: requires c_S·sdt/m_u < 2; enforced by N=4 substep choice + stability check above.
+      const F_total = tireFz - springTerm - c_S * suspVel + arbF[i] - m_u * 9.81
+      vehicleState.hubVy[i] += (F_total / m_u) * sdt
+      vehicleState.hubY[i]  += vehicleState.hubVy[i] * sdt
+      // Body-side reaction force at the mount: spring + damper (Newton's 3rd law on suspension).
+      // Use pre-step suspVel so body and hub see consistent damper force this substep.
+      const suspForce = springTerm + c_S * suspVel
 
-      // Accumulate for outer step (RESEARCH §Pitfall 3 — average force across substeps)
-      params._tireFz[i]         += tireFz    / N  // average tire-spring Fz for Pacejka feed
-      params._suspForceAccum[i] += suspForce / N  // average suspension force for body torque
+      // Accumulate for outer step (RESEARCH §Pitfall 3 — average force across substeps).
+      // Body reaction to ARB hub force is -arbF[i] applied at the same mount — this is what
+      // gives the ARB its roll-stiffness contribution on the body. Without it the ARB only
+      // shuffles hub loads and the body sees no anti-roll moment (Newton's 3rd law violation).
+      params._tireFz[i]         += tireFz                  / N  // average tire-spring Fz for Pacejka feed
+      params._suspForceAccum[i] += (suspForce - arbF[i])   / N  // body force at mount: spring+damper + ARB reaction
     }
   }
 }
