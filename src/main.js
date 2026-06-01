@@ -26,8 +26,48 @@ import { captureFrame, toggleRecording, openInitialCondition } from './logger.js
 // Manual verification hook — console.log confirms importmap loaded r184 (FOUND-02)
 console.log('THREE.REVISION', THREE.REVISION)
 
+// ── Suspension substep transient scratch arrays (Phase 4 — D-02, PATTERNS §underscore convention) ──
+// These are per-step outputs from stepSuspensionSubsteps; live on params (not vehicleState)
+// because they are re-computed every outer step and are not integrated state.
+// _tireFz[i]:         tire spring force per corner [N] — Fz fed into Pacejka (D-03)
+// _suspForceAccum[i]: averaged suspension spring force per corner [N] — applied to body (D-07)
+RANGER_PARAMS._tireFz         = [0, 0, 0, 0]
+RANGER_PARAMS._suspForceAccum = [0, 0, 0, 0]
+
+// ── Static equilibrium at startup (RESEARCH §Pattern 4) ─────────────────────────────────────
+// Pre-compute hub Y and body Y so the car spawns pre-settled with no visible drop.
+// Formula derivation (series-spring at static equilibrium):
+//   tireComp[i]  = m_corner * g / k_T   (tire spring holds the full corner weight)
+//   suspComp[i]  = (m_corner − wheelMass) * g / k_S   (suspension holds sprung-mass weight)
+//   hubY[i]      = wheelRadius − tireComp[i]
+//   bodyY_at_mount = hubY[i] + L_S − suspComp[i]
+//   vehicleState.position.y = average of front bodyY values (body is rigid; one CG)
+function computeStaticEquilibrium (p) {
+  const g = 9.81
+  const hubY         = [0, 0, 0, 0]
+  const bodyYCorner  = [0, 0, 0, 0]
+  for (let i = 0; i < 4; i++) {
+    const isFront   = i < 2
+    const cornerMass = p.mass * (isFront ? p.weightFront : p.weightRear) / 2 + p.wheelMass
+    const k_T = p.tireStiffness
+    const k_S = isFront ? p.suspensionStiffnessFront : p.suspensionStiffnessRear
+    const L_S = isFront ? p.suspensionRestLengthFront : p.suspensionRestLengthRear
+    const tireComp = cornerMass * g / k_T
+    const suspComp = (cornerMass - p.wheelMass) * g / k_S
+    hubY[i]        = p.wheelRadius - tireComp
+    bodyYCorner[i] = hubY[i] + L_S - suspComp
+  }
+  // Use average of front-pair bodyY for initial CG height (front/rear should be nearly equal
+  // with balanced tuning; minor front-rear offset settles within a frame via hub dynamics).
+  const bodyY = (bodyYCorner[0] + bodyYCorner[1]) / 2
+  return { bodyY, hubY }
+}
+
 // ── Fixed-timestep loop constants (RESEARCH §Pattern 2) ─────────────────────
-const FIXED_DT = 1 / 60          // physics step: 16.667ms
+// PHYSICS_DT: parameterized physics step per D-09. Single source of truth — all downstream
+// code reads this constant or params.physicsDt (same value, mirrored in ranger.js for
+// suspension.js which cannot import main.js). NEVER use 1/60 or 0.0167 literals below.
+const PHYSICS_DT = 1 / 60        // physics step: 16.667ms (D-09)
 const MAX_FRAME_TIME = 0.25       // spiral-of-death clamp: 250ms (T-01-04 mitigation)
 
 let simTime = 0  // accumulated simulation time in seconds; incremented by FIXED_DT each physics step
@@ -39,8 +79,12 @@ let currentTime = performance.now() / 1000
 // Vehicle state shape — see GLOSSARY.md. Mutated each physics step by Plan 02's
 // vehicle.js / physics.js. Wave 1 leaves it static.
 // Wheel index convention (GLOSSARY.md §Wheel Index): 0=FL, 1=FR, 2=RL, 3=RR
+//
+// Phase 4: position.y and hubY[] are set from static equilibrium so the car spawns pre-settled
+// with no visible drop. computeStaticEquilibrium() must be called after RANGER_PARAMS is loaded.
+const _spawnEq = computeStaticEquilibrium(RANGER_PARAMS)
 const vehicleState = {
-  position:        new THREE.Vector3(0, RANGER_PARAMS.cgHeight, 0),
+  position:        new THREE.Vector3(0, _spawnEq.bodyY, 0),
   velocity:        new THREE.Vector3(),
   quaternion:      new THREE.Quaternion(),       // identity — car points down -Z
   angularVelocity: new THREE.Vector3(),
@@ -49,7 +93,11 @@ const vehicleState = {
   brake:           0,
   wheelAngles:     [0, 0, 0, 0],                 // per-wheel spin angle [rad], Plan 03 drives
   wheelSteerAngles: [0, 0, 0, 0],               // Per-wheel Ackermann steer angles [rad]; set by updateVehicle each step; read by stepPhysics for lateral force decomposition.
-  wheelDebug:      [ {fn:0,fy:0,sa:0,c:0,omega:0}, {fn:0,fy:0,sa:0,c:0,omega:0}, {fn:0,fy:0,sa:0,c:0,omega:0}, {fn:0,fy:0,sa:0,c:0,omega:0} ],  // per-wheel debug data written by stepPhysics; read by logger
+  // Phase 4 hub state (D-02): wheel hub vertical position and velocity.
+  // Initialized to static equilibrium — hub sits at wheelRadius minus tire compression at rest.
+  hubY:            [..._spawnEq.hubY],   // m   — hub center world Y per corner (0=FL,1=FR,2=RL,3=RR)
+  hubVy:           [0, 0, 0, 0],        // m/s — hub vertical velocity per corner
+  wheelDebug:      [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ],  // per-wheel debug data written by stepPhysics; read by logger; fz=tire spring force (D-12)
   wheelOmega:      [0, 0, 0, 0],                   // per-wheel angular velocity [rad/s]; integrated by physics.js omega integrator
   handbrake:       false,                            // Space key handbrake state; written by updateVehicle, read by getBrakeTorque
 }
@@ -382,33 +430,39 @@ function loop () {
 
   accumulator += frameTime
 
-  while (accumulator >= FIXED_DT) {
+  while (accumulator >= PHYSICS_DT) {
     // Terrain stub call retained for M1-13 verification (Phase 6 replaces body, not call site).
     const _surface = terrain(vehicleState.position.x, vehicleState.position.z)  // eslint-disable-line no-unused-vars
 
-    const resetRequested = updateVehicle(vehicleState, RANGER_PARAMS, FIXED_DT)
+    const resetRequested = updateVehicle(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     if (resetRequested) {
       // M1-12: reset to spawn state — zero all motion, restore identity quaternion.
-      vehicleState.position.set(SPAWN_STATE.positionX, RANGER_PARAMS.cgHeight, SPAWN_STATE.positionZ)
+      // Phase 4: position.y and hubY[] reset to static equilibrium (not RANGER_PARAMS.cgHeight)
+      // so the car spawns pre-settled with no visible drop (RESEARCH §Pattern 4 / Pitfall 1).
+      const eq = computeStaticEquilibrium(RANGER_PARAMS)
+      vehicleState.position.set(SPAWN_STATE.positionX, eq.bodyY, SPAWN_STATE.positionZ)
       vehicleState.velocity.set(0, 0, 0)
       vehicleState.quaternion.set(SPAWN_STATE.quatX, SPAWN_STATE.quatY, SPAWN_STATE.quatZ, SPAWN_STATE.quatW)
       vehicleState.angularVelocity.set(0, 0, 0)
       vehicleState.steerAngle = 0
       vehicleState.throttle = 0
       vehicleState.brake = 0
-      vehicleState.wheelAngles = [0, 0, 0, 0]
+      vehicleState.wheelAngles    = [0, 0, 0, 0]
       vehicleState.wheelSteerAngles = [0, 0, 0, 0]
-      vehicleState.wheelDebug = [ {fn:0,fy:0,sa:0,c:0,omega:0}, {fn:0,fy:0,sa:0,c:0,omega:0}, {fn:0,fy:0,sa:0,c:0,omega:0}, {fn:0,fy:0,sa:0,c:0,omega:0} ]
-      vehicleState.wheelOmega = [0, 0, 0, 0]
-      vehicleState.slipLong = [0, 0, 0, 0]
-      vehicleState.slipLat  = [0, 0, 0, 0]
-      vehicleState.handbrake = false
+      vehicleState.wheelDebug     = [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ]
+      vehicleState.wheelOmega     = [0, 0, 0, 0]
+      vehicleState.slipLong       = [0, 0, 0, 0]
+      vehicleState.slipLat        = [0, 0, 0, 0]
+      vehicleState.handbrake      = false
+      // Phase 4 hub state reset — reassigned (not mutated entry-by-entry) per PATTERNS §Reset block
+      vehicleState.hubY           = [...eq.hubY]
+      vehicleState.hubVy          = [0, 0, 0, 0]
     }
 
-    stepPhysics(vehicleState, RANGER_PARAMS, FIXED_DT, queryContacts)
-    simTime += FIXED_DT
+    stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts)
+    simTime += PHYSICS_DT
     captureFrame(simTime, vehicleState, vehicleState.wheelDebug)
-    accumulator -= FIXED_DT
+    accumulator -= PHYSICS_DT
   }
 
   syncMeshesToState(vehicleState)

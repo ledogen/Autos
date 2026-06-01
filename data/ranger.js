@@ -90,4 +90,35 @@ export const RANGER_PARAMS = {
   // ── Weight Distribution ───────────────────────────────────────────────────
   weightFront:  0.55,   // fraction — 55% of weight on front axle (estimate)
   weightRear:   0.45,   // fraction — 45% of weight on rear axle (estimate)
+
+  // ── Suspension Spring-Damper (Phase 4 — D-04) ────────────────────────────
+  // Quarter-car per corner: hub↔body spring in series with the tire spring above.
+  // Natural frequency target: ~1.5 Hz body bounce → f_n = (1/2π)√(k/m)
+  //   Sprung mass per corner (front): mass·weightFront/2 ≈ 1360·0.55/2 ≈ 374 kg → k = (2π·1.5)²·374 ≈ 33 000 N/m
+  //   Sprung mass per corner (rear):  mass·weightRear /2 ≈ 1360·0.45/2 ≈ 306 kg → k = (2π·1.5)²·306 ≈ 27 000 N/m
+  // Damping ratio target: ζ ≈ 0.4 (slightly underdamped) → c = 2ζ√(k·m) = 0.8·√(k·m)
+  //   Front: 0.8·√(33000·374) ≈ 2800 N·s/m; Rear: 0.8·√(27000·306) ≈ 2300 N·s/m
+  // restLength: allowance for suspension travel (room for bump + droop from static equilibrium)
+  suspensionStiffnessFront:  33000,   // N/m — 1.5 Hz body bounce at front sprung corner mass
+  suspensionStiffnessRear:   27000,   // N/m — 1.5 Hz body bounce at rear sprung corner mass
+  suspensionDampingFront:     2800,   // N·s/m — ζ≈0.40 (slightly underdamped) at front
+  suspensionDampingRear:      2300,   // N·s/m — ζ≈0.40 (slightly underdamped) at rear
+  suspensionRestLengthFront:  0.20,   // m — travel allowance front axle (typical road truck)
+  suspensionRestLengthRear:   0.22,   // m — slightly more rear travel (lighter unloaded rear)
+  // wheelMass: unsprung mass per corner (tire + wheel + stub axle).
+  // I = 0.5 × wheelMass × r²; wheelMass ≈ 18 kg matches wheelInertia derivation above.
+  wheelMass:                    18,   // kg — per-corner unsprung mass (D-02)
+
+  // ── Anti-Roll Bars (Phase 4 — D-06) ──────────────────────────────────────
+  // Bilinear-spring approximation: ARB force shares the same lever arm as the main spring (D-07).
+  // F_arb = arbStiffness · (suspComp[left] − suspComp[right]) per axle.
+  // Front ARB stiffer than rear → promotes understeer balance for a Ranger.
+  // At 0.5g lateral: target ≈5° body roll total; front+rear ARBs together provide this.
+  arbStiffnessFront:  15000,   // N/m — front anti-roll bar stiffness (D-06)
+  arbStiffnessRear:    8000,   // N/m — softer rear ARB encourages oversteer balance (D-06)
+
+  // ── Physics Timestep (Phase 4 — D-09) ────────────────────────────────────
+  // Mirrors the PHYSICS_DT constant in main.js. Stored here so suspension.js (pure-math,
+  // no main.js import) can verify sub-step stability against dt without importing main.js.
+  physicsDt:  1 / 60,   // s — outer physics step (≈16.667ms); substep = physicsDt/2 (D-08)
 };
