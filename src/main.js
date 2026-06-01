@@ -385,7 +385,12 @@ function queryContacts (cx, cy, cz, r) {
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
     const depth = r - dist
     if (depth <= 0) continue
-    const inv = dist < 1e-8 ? 0 : 1 / dist
+    // WR-05: skip degenerate contacts where sphere center lies exactly on the triangle surface.
+    // inv = 0 would produce a zero-length normal; applying it gives Fn*zero = no force despite
+    // positive depth, allowing the object to penetrate silently. Use triangle face normal as
+    // fallback only when we can safely recover it — for now, skip and rely on adjacent contacts.
+    if (dist < 1e-8) continue
+    const inv = 1 / dist
     hits.push({
       normal: new THREE.Vector3(dx * inv, dy * inv, dz * inv),
       depth,
