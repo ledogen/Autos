@@ -421,7 +421,7 @@ initDebug(RANGER_PARAMS)
 // \ toggles frame recording; Ctrl+I opens the initial condition file picker.
 document.addEventListener('keydown', e => {
   if (e.key === '\\') toggleRecording()
-  if (e.key === 'i' && e.ctrlKey) openInitialCondition(vehicleState)
+  if (e.key === 'i' && e.ctrlKey) openInitialCondition(vehicleState, RANGER_PARAMS)
 })
 
 // ── Game loop ─────────────────────────────────────────────────────────────────

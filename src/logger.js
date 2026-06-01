@@ -122,11 +122,14 @@ export function captureFrame (simTime, vehicleState, wheelDebug) {
 /**
  * Open a file picker and apply the selected JSON as an initial condition.
  * Fields applied (if present): position, velocity, quaternion, angularVelocity.
+ * Suspension, slip, and wheel state are reset to avoid stale-state transients (WR-02).
  * Unknown keys are silently ignored. Malformed JSON is caught and logged without crashing.
  *
  * @param {object} vehicleState - Mutable vehicleState; fields are set in-place.
+ * @param {object} [params]     - RANGER_PARAMS; used to recompute hubY equilibrium after
+ *                                loading. If omitted, hubY is zeroed (better than stale).
  */
-export function openInitialCondition (vehicleState) {
+export function openInitialCondition (vehicleState, params) {
   const input = document.createElement('input')
   input.type = 'file'
   input.accept = '.json'
@@ -148,6 +151,38 @@ export function openInitialCondition (vehicleState) {
         }
         if (ic.angularVelocity) {
           vehicleState.angularVelocity.set(ic.angularVelocity.x, ic.angularVelocity.y, ic.angularVelocity.z)
+        }
+        // WR-02: reset suspension, slip, and wheel state to prevent stale-state force spikes.
+        // After loading a new position.y, stale hubY values produce an incorrect suspComp on
+        // the first physics step, causing a transient bounce that corrupts scenario assertions.
+        vehicleState.hubVy      = [0, 0, 0, 0]
+        vehicleState.wheelOmega = [0, 0, 0, 0]
+        vehicleState.slipLong   = [0, 0, 0, 0]
+        vehicleState.slipLat    = [0, 0, 0, 0]
+        // Recompute hubY from static equilibrium if params provided; zero otherwise.
+        // Equilibrium derivation mirrors computeStaticEquilibrium in main.js (series-spring model).
+        if (params) {
+          const g = 9.81
+          const hubY = [0, 0, 0, 0]
+          for (let i = 0; i < 4; i++) {
+            const isFront    = i < 2
+            const cornerMass = params.mass * (isFront ? params.weightFront : params.weightRear) / 2 + params.wheelMass
+            const k_T        = params.tireStiffness
+            const k_S        = isFront ? params.suspensionStiffnessFront : params.suspensionStiffnessRear
+            const L_S        = isFront ? params.suspensionRestLengthFront : params.suspensionRestLengthRear
+            const tireComp   = cornerMass * g / k_T
+            const suspComp   = (cornerMass - params.wheelMass) * g / k_S
+            hubY[i]          = params.wheelRadius - tireComp
+            // Adjust hubY for the actual loaded position.y: the IC may set a different body Y
+            // than the default equilibrium. Derive hub from mount geometry.
+            // mountWorldY = position.y - (cgHeight - wheelRadius)
+            // hubY = mountWorldY + L_S - suspComp   (inverted from static-eq formula)
+            const mountWorldY = vehicleState.position.y - (params.cgHeight - params.wheelRadius)
+            hubY[i] = mountWorldY - L_S + suspComp
+          }
+          vehicleState.hubY = hubY
+        } else {
+          vehicleState.hubY = [0, 0, 0, 0]
         }
       } catch (err) {
         console.error('[logger] Failed to parse IC file:', err)
