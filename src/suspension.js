@@ -247,7 +247,7 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       // suspComp: positive = spring compressed below rest length (hub is close to body)
       // Formula: L_S - (mountWorldY - hubY[i])  (D-15 notes: compression is deviation from rest)
       const suspComp = L_S - (mountWorldY - vehicleState.hubY[i])
-      const suspVel  = mountVelY - vehicleState.hubVy[i]
+      const suspVel  = vehicleState.hubVy[i] - mountVelY  // positive = compression (hub toward mount)
 
       cornerData.push({ mountWorldX, mountWorldY, mountWorldZ, rMount, suspComp, suspVel, isFront })
     }
