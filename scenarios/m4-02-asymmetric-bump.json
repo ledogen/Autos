@@ -1,6 +1,6 @@
 {
-  "description": "M4-02 per-wheel hub independence. Car offset to X=1.5 so the LEFT wheels clip the ramp (ramp spans X=±2, track half-width 0.73). Coasts at ~5 m/s starting 10 m before the toe; left side climbs while right stays on flat ground, producing sustained L/R Fz asymmetry. Auto-records 5 s.",
-  "position":        { "x": 1.5, "y": 0.60, "z": -5 },
+  "description": "M4-02 per-wheel hub independence. Car offset to X=2.0 so only the LEFT wheels touch the ramp (ramp spans X=±2; right wheel sphere radius 0.368 + half-track 0.73 needs car_X > 1.638 for full clearance). Coasts at ~5 m/s starting 10 m before the toe; left side climbs while right stays on flat ground, producing sustained L/R Fz asymmetry. Auto-records 5 s.",
+  "position":        { "x": 2.0, "y": 0.60, "z": -5 },
   "velocity":        { "x": 0,   "y": 0,    "z": -5 },
   "quaternion":      { "x": 0,   "y": 0,    "z": 0, "w": 1 },
   "angularVelocity": { "x": 0,   "y": 0,    "z": 0 },
