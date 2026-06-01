@@ -199,6 +199,14 @@ const wheelLocalOffsets = [
   new THREE.Vector3( tR, wr - RANGER_PARAMS.cgHeight,  (L * wF)),  // 3: RR — right, rear
 ]
 
+// ── Wheel mesh visual Y binding (D-16) ──────────────────────────────────────
+// hubYRest[i]: hub world Y at static equilibrium (computed once after spawn).
+// syncMeshesToState moves each wheel mesh in body-local Y by the deviation of hubY
+// from its rest value. Approximation: body-local ΔY ≈ world ΔY at typical roll angles
+// (< 10°: cos(10°) ≈ 0.985, error < 2%). Dominant effect is suspension travel, not roll
+// projection inaccuracy. Hub XZ stays fixed to wheelLocalOffsets[i].x/z per D-16.
+const hubYRest = [..._spawnEq.hubY]  // stash rest values at init
+
 const wheelMeshes = wheelLocalOffsets.map((offset, i) => {
   const mesh = new THREE.Mesh(wheelGeom, wheelMat)
   // Wheels are children of carGroup — position is in carGroup local space (body-relative).
@@ -218,8 +226,8 @@ function syncMeshesToState (state) {
   carGroup.position.copy(state.position)
   carGroup.quaternion.copy(state.quaternion)  // quaternion-only rotation, never Euler (GLOSSARY.md)
 
-  // Per-wheel: spin and steer in carGroup local space.
-  // wheelLocalOffsets[i] is already set as local position — no re-apply needed.
+  // Per-wheel: spin, steer, and hub-Y visual travel in carGroup local space.
+  // wheelLocalOffsets[i] provides rest position; Y is overridden each frame by hub deviation.
   for (let i = 0; i < 4; i++) {
     // Visual spin: wheelAngles[i] accumulated by vehicle.js each step (M1-09).
     // rotation.x is the spin axis after the geometry was rotateZ(PI/2) in Plan 01 —
@@ -238,6 +246,13 @@ function syncMeshesToState (state) {
       wheelMeshes[i].quaternion.copy(steerQ)
     } else {
       wheelMeshes[i].quaternion.identity()
+    }
+
+    // D-16: Hub vertical travel — move wheel mesh in body-local Y by hub deviation from rest.
+    // Approximation: body-local ΔY ≈ world ΔY (cos(10°)≈0.985, <2% error at typical roll angles).
+    // XZ stays fixed at wheelLocalOffsets[i].x/z — hub XZ tracks body mount XZ (D-16).
+    if (state.hubY && state.hubY[i] !== undefined) {
+      wheelMeshes[i].position.y = wheelLocalOffsets[i].y + (state.hubY[i] - hubYRest[i])
     }
   }
 }
@@ -480,6 +495,14 @@ function loop () {
   // M1-11: live speed readout. velocity.length() = magnitude in m/s; * 3.6 converts to km/h.
   const speedKmh = vehicleState.velocity.length() * 3.6
   document.getElementById('speedVal').textContent = speedKmh.toFixed(1)
+
+  // M4-09 / D-12: per-wheel Fz HUD — tire spring force per corner, updated each render frame.
+  // Uses ?. / ?? 0 nullish-default per PATTERNS §Logger field append-at-end + nullish-coalesce.
+  // toFixed(0) = whole newtons (Fz is in thousands; decimals add noise).
+  document.getElementById('flFzVal').textContent = (vehicleState.wheelDebug[0]?.fz ?? 0).toFixed(0)
+  document.getElementById('frFzVal').textContent = (vehicleState.wheelDebug[1]?.fz ?? 0).toFixed(0)
+  document.getElementById('rlFzVal').textContent = (vehicleState.wheelDebug[2]?.fz ?? 0).toFixed(0)
+  document.getElementById('rrFzVal').textContent = (vehicleState.wheelDebug[3]?.fz ?? 0).toFixed(0)
 
   // M3-07: front slip-angle HUD — D-14 thresholds (5° / 10°, NOT M3-07's 15° value)
   const slipDeg = (vehicleState.wheelDebug?.[0]?.sa || 0) * (180 / Math.PI)

@@ -67,6 +67,21 @@ export function initDebug (params) {
   tireFolder.add(params, 'tireStiffnessLong', 0.3, 2.0, 0.05).name('Stiffness Long ×')
   tireFolder.add(params, 'tireStiffnessLat', 0.3, 2.0, 0.05).name('Stiffness Lat ×')
 
+  // Phase 4 (D-11): Suspension folder — 8 sliders for spring/damper/rest-length/ARB per axle.
+  // Ranges per PATTERNS §lil-gui slider range/step convention (2× default within range, D-10 stability).
+  // Pass-through to live params is automatic — params is the mutable RANGER_PARAMS reference.
+  // wheelMass and physicsDt are intentionally NOT exposed: wheelMass is fixed per Claude's Discretion
+  // (CONTEXT.md) and physicsDt is parameterized but not user-tunable (D-09).
+  const suspFolder = gui.addFolder('Suspension')
+  suspFolder.add(params, 'suspensionStiffnessFront', 10000, 100000, 1000).name('Front Stiffness (N/m)')
+  suspFolder.add(params, 'suspensionStiffnessRear',  10000, 100000, 1000).name('Rear Stiffness (N/m)')
+  suspFolder.add(params, 'suspensionDampingFront',     500,   8000,  100).name('Front Damping (N·s/m)')
+  suspFolder.add(params, 'suspensionDampingRear',      500,   8000,  100).name('Rear Damping (N·s/m)')
+  suspFolder.add(params, 'suspensionRestLengthFront',  0.10,  0.40, 0.01).name('Front Rest Length (m)')
+  suspFolder.add(params, 'suspensionRestLengthRear',   0.10,  0.40, 0.01).name('Rear Rest Length (m)')
+  suspFolder.add(params, 'arbStiffnessFront',             0, 40000,  500).name('Front ARB (N/m)')
+  suspFolder.add(params, 'arbStiffnessRear',              0, 40000,  500).name('Rear ARB (N/m)')
+
   // D-04: Read-only Logger hint — shows the \ key without being interactive
   const _loggerHint = { hint: '\\ to record' }
   gui.add(_loggerHint, 'hint').name('Logger').disable()
