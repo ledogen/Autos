@@ -507,12 +507,14 @@ function loop () {
   document.getElementById('rlFzVal').textContent = (vehicleState.wheelDebug[2]?.fz ?? 0).toFixed(0)
   document.getElementById('rrFzVal').textContent = (vehicleState.wheelDebug[3]?.fz ?? 0).toFixed(0)
 
-  // M3-07: front slip-angle HUD — D-14 thresholds (5° / 10°, NOT M3-07's 15° value)
-  const slipDeg = (vehicleState.wheelDebug?.[0]?.sa || 0) * (180 / Math.PI)
+  // M3-07: front slip velocity HUD — sa field stores slip-velocity magnitude in m/s (not slip angle).
+  // See physics.js: "sa field now stores SLIP VELOCITY magnitude (m/s) instead of slip angle (rad)".
+  // Thresholds: ~0.5 m/s = light slip (green), ~1.5 m/s = heavy slip (red).
+  const slipMps = (vehicleState.wheelDebug?.[0]?.sa || 0)
   const slipEl = document.getElementById('slipVal')
   if (slipEl) {
-    slipEl.textContent = slipDeg.toFixed(1) + '°'
-    slipEl.style.color = Math.abs(slipDeg) < 5 ? '#00ff88' : Math.abs(slipDeg) < 10 ? '#ffaa00' : '#ff2222'
+    slipEl.textContent = slipMps.toFixed(2) + ' m/s'
+    slipEl.style.color = slipMps < 0.5 ? '#00ff88' : slipMps < 1.5 ? '#ffaa00' : '#ff2222'
   }
 
   // M3-08: throttle and brake percentage HUD
