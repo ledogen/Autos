@@ -114,7 +114,7 @@ Plans:
 - [x] 04-01-PLAN.md — Wave 0 validation scenarios (4 new scenarios/m4-*.json files)
 
 **Wave 2** *(blocked on Wave 1)*
-- [ ] 04-02-PLAN.md — Core suspension: params + hub state + quarter-car math + ARB + physics integration (M4-01..M4-07)
+- [x] 04-02-PLAN.md — Core suspension: params + hub state + quarter-car math + ARB + physics integration (M4-01..M4-07)
 
 **Wave 3** *(blocked on Wave 2)*
 - [ ] 04-03-PLAN.md — Debug sliders + per-wheel Fz HUD + logger fz fields + mesh visual binding + GLOSSARY + housekeeping (M4-08, M4-09)
