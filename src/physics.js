@@ -83,9 +83,11 @@ function getBrakeTorque (wheelIndex, vehicleState, params) {
     return vehicleState.brake * params.maxBrakeTorque
   }
 
-  // Handbrake: rear wheels only, ramped so it applies zero force at rest
+  // Handbrake: rear wheels only. Ramps from 0 to full over HB_RAMP m/s to avoid impulse
+  // artifacts at launch, but applies full torque at rest so the car can be held on a slope.
   if (vehicleState.handbrake && isRear) {
-    const scale = Math.min(Math.abs(longVel) / HB_RAMP, 1.0)
+    const absVel = Math.abs(longVel)
+    const scale  = absVel === 0 ? 1.0 : Math.min(absVel / HB_RAMP, 1.0)
     return params.maxHandbrakeTorque * scale
   }
 
