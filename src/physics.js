@@ -23,7 +23,7 @@
 
 import * as THREE from 'three'
 import { computeTireForces } from './tire.js'
-import { computeNormalForce, getWheelPosition, getBodyContactPoints } from './suspension.js'
+import { computeNormalForce, getWheelPosition, getBodyContactPoints, stepSuspensionSubsteps } from './suspension.js'
 
 // Speed thresholds for input routing (rule-based, no dead-zone oscillation)
 const FWD_THRESHOLD = -2 / 3.6   // -0.556 m/s: W drives above this, brakes only when clearly rolling back (mirrors REV deadband)
@@ -127,15 +127,77 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
   const right   = new THREE.Vector3(1, 0, 0).applyQuaternion(vehicleState.quaternion)
   const up      = new THREE.Vector3(0, 1, 0).applyQuaternion(vehicleState.quaternion)
 
+  // ── Step 2.5: Suspension substep loop (Phase 4 — D-08) ───────────────────────────────────────
+  // Integrate hub vertical state (hubY, hubVy) at dt/2 for stability. Writes:
+  //   params._tireFz[i]         — tire-spring Fz per corner (fed to Pacejka per D-03)
+  //   params._suspForceAccum[i] — averaged suspension force on body per corner (applied below)
+  // Must run BEFORE Step 3 so Pacejka reads the post-substep tire Fz (D-08).
+  stepSuspensionSubsteps(vehicleState, params, dt, queryContacts)
+
   // ── Step 3: Per-wheel force accumulation ──────────────────────────────────
   const totalForce  = new THREE.Vector3(0, -params.mass * 9.81, 0)
   const totalTorque = new THREE.Vector3()
   let totalGroundFn = 0  // accumulated normal force across all wheel contacts; gates rolling resistance
 
   for (let i = 0; i < 4; i++) {
-    // Zero wheelDebug for this wheel before contacts — ensures no stale values when wheel is off-ground
+    // Phase 4: write per-wheel fz from substep result FIRST (D-12), then airborne check (D-14).
+    // Zero wheelDebug for this wheel before contacts — ensures no stale values when wheel is off-ground.
+    // The fz field is written from _tireFz (computed by stepSuspensionSubsteps above).
     if (vehicleState.wheelDebug) {
-      vehicleState.wheelDebug[i] = { fn: 0, fy: 0, sa: 0, c: 0, omega: 0 }
+      vehicleState.wheelDebug[i] = { fn: 0, fy: 0, sa: 0, c: 0, omega: 0, fz: params._tireFz[i] || 0 }
+    }
+
+    // Phase 4: airborne check (D-14). If tire-spring force is zero or negative, this wheel is
+    // airborne. Pacejka contacts loop is skipped for airborne wheels. The omega integrator
+    // (below, outside the contacts loop) still runs for airborne wheels so drive torque can
+    // rev the wheel while airborne — lastFn=0 causes Newton to converge trivially with no road
+    // reaction (this was already the behavior via the `if (lastFn <= 0) break` Newton guard).
+    const isAirborne = (params._tireFz[i] || 0) <= 0
+
+    // Phase 4: compute rMount (rotated body mount point offset) for suspension body force torque.
+    // Must match the local offset used in stepSuspensionSubsteps for consistency.
+    const isFrontW = i < 2
+    const isLeftW  = i === 0 || i === 2
+    const mLocalX = isLeftW
+      ? -(isFrontW ? params.trackFront : params.trackRear) / 2
+      :  (isFrontW ? params.trackFront : params.trackRear) / 2
+    const mLocalZ = isFrontW
+      ? -(params.wheelbase * params.weightRear)
+      :  (params.wheelbase * params.weightFront)
+    const mLocalY = -(params.cgHeight - params.wheelRadius)
+    const rMount = params._rotateVector({ x: mLocalX, y: mLocalY, z: mLocalZ })
+
+    // Phase 4: apply suspension spring force to body (vertical only per D-07 bilinear-spring approx).
+    // Suspension force is the hub↔body force — it pushes the body up (+Y) and the hub down (-Y).
+    // Applied regardless of airborne state: suspension spring still acts on body even when wheel lifts.
+    // (When airborne, suspForce may be small/negative but damping still contributes, per D-15.)
+    const suspBodyForce = new THREE.Vector3(0, params._suspForceAccum[i], 0)
+    totalForce.add(suspBodyForce)
+    totalTorque.add(new THREE.Vector3().crossVectors(rMount, suspBodyForce))
+
+    // Airborne skip (D-14): skip Pacejka contacts loop for this wheel.
+    // Omega integrator below still runs (lastFn=0 causes Newton to converge with no road reaction).
+    if (isAirborne) {
+      // Update omega debug for airborne wheels (CR-03: all wheels log omega every step)
+      if (vehicleState.wheelDebug) vehicleState.wheelDebug[i].omega = vehicleState.wheelOmega?.[i] || 0
+      // Fall through to omega integrator below — do NOT `continue` past it
+      // (but we still need to run the integrator, so restructure to skip only the contacts loop)
+      // Use lastFn=0 to signal airborne to the omega Newton loop.
+      const wheelInertia_a = params.wheelInertia || 1.22
+      const driveTorque_a  = getDriveTorque(i, vehicleState, params)
+      const brakeTorque_a  = getBrakeTorque(i, vehicleState, params)
+      const omega0_a       = vehicleState.wheelOmega?.[i] ?? 0
+      const spinSign_a     = omega0_a >= 0 ? 1 : -1
+      const brakeSigned_a  = brakeTorque_a * spinSign_a
+      // Airborne: no road reaction, direct Euler step (Newton trivially converges with Flong=0)
+      const omegaNew_a = omega0_a + (dt / wheelInertia_a) * (driveTorque_a - brakeSigned_a)
+      if (brakeTorque_a > 0 && Math.sign(omegaNew_a) !== spinSign_a) {
+        vehicleState.wheelOmega[i] = 0
+      } else {
+        vehicleState.wheelOmega[i] = omegaNew_a
+      }
+      if (vehicleState.wheelDebug) vehicleState.wheelDebug[i].omega = vehicleState.wheelOmega[i]
+      continue  // skip the full Pacejka contacts loop + Newton omega below
     }
 
     // Hub world position (sphere center for contact queries)
@@ -195,12 +257,19 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
       params._compression         = depth
       params._compressionVelocity = -contactVel.dot(normal)
 
+      // Phase 4: Fn for Pacejka comes from params._tireFz[i] (computed by stepSuspensionSubsteps,
+      // per D-03). computeNormalForce is now a shim that reads _tireFz[i].
+      // Phase 4: body normal (vertical) force is applied via suspBodyForce above, NOT here.
+      // We still track totalGroundFn for rolling resistance gating.
       const Fn = computeNormalForce(i, vehicleState, params)
       if (Fn <= 0) continue
       totalGroundFn += Fn
 
-      totalForce.addScaledVector(normal, Fn)
-      totalTorque.add(new THREE.Vector3().crossVectors(rContact, normal.clone().multiplyScalar(Fn)))
+      // Phase 4 NOTE: do NOT add Fn*normal to totalForce here — the suspension spring force
+      // (_suspForceAccum[i]) was already applied to totalForce above this contacts loop.
+      // Adding tireFz*normal here would double-count the body upward force on flat ground.
+      // For non-flat contacts (walls, ramps), the normal reaction is handled by the existing
+      // body contact points path (Step 3b) which uses bodyContactStiffness, not tireStiffness.
 
       // Tire forces — slip-velocity Pacejka with relaxation length per tire.
       // The relaxation length L models tire carcass viscoelastic dynamics: the carcass

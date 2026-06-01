@@ -28,6 +28,13 @@ export const SPAWN_STATE = {
   steerAngle: 0, throttle: 0, brake: 0,
   wheelAngles: [0, 0, 0, 0],
   wheelSteerAngles: [0, 0, 0, 0],
+  // ── Phase 4 hub state (D-02) ────────────────────────────────────────────
+  // hubY[i]:  world Y of wheel hub center [m], indexed 0=FL,1=FR,2=RL,3=RR.
+  // hubVy[i]: vertical velocity of hub [m/s].
+  // These 0-placeholders are overwritten by main.js at init/reset using
+  // computeStaticEquilibrium(RANGER_PARAMS) so the car spawns pre-settled.
+  hubY:  [0, 0, 0, 0],   // m   — hub center world Y (D-02)
+  hubVy: [0, 0, 0, 0],   // m/s — hub vertical velocity (D-02)
   handbrake: false
 }
 
