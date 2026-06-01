@@ -16,6 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 2: Scenario System + Debug Menu** - IC loader, frame logger, lil-gui sliders, HUD polish
 - [ ] **Phase 3: Tire Model** - Pacejka Magic Formula, wheel angular velocity, longitudinal slip, handbrake
 - [ ] **Phase 4: Suspension** - Spring-damper per wheel, dynamic Fz, load transfer, wheel lift
+- [ ] **Phase 4.1: Body-Frame Suspension** (INSERTED) - Strut compression as state, hub motion along body Y-axis, bump/droop stops
 - [ ] **Phase 5: Rollover Validation** - Ramp prop, rollover scenarios, G-force meter, orbit camera
 - [ ] **Phase 6: Procedural Terrain** - ⚠ RESEARCH REQUIRED before planning or execution
 
@@ -119,6 +120,20 @@ Plans:
 **Wave 3** *(blocked on Wave 2)*
 - [x] 04-03-PLAN.md — Debug sliders + per-wheel Fz HUD + logger fz fields + mesh visual binding + GLOSSARY + housekeeping (M4-08, M4-09)
 
+**UI hint**: no
+
+### Phase 4.1: Body-Frame Suspension (INSERTED)
+**Goal**: The user observes physically correct suspension behavior at all body orientations — inside wheel never lifts past outer in body frame during cornering, wheels travel along the body's strut axis rather than purely in world-Y, and bump/droop stops cap the suspension travel envelope. Resolves the artifacts surfaced during Phase 4 review (hub "floats" in air bug, ARB body-frame mismatch, no travel limits).
+**Mode:** mvp
+**Depends on**: Phase 4 (VERIFICATION.md must close cleanly first)
+**Requirements**: TBD — derived from rollover artifacts logged 2026-06-01 (jump log 1780296563738, rollover log 1780296509354)
+**Success Criteria** (what must be TRUE):
+  1. User can hard-corner the car and observe that the inside wheel never sits higher in body frame than the outside wheel (ARB equilibrium respects body axis)
+  2. User can flip the car onto its roof and observe suspension forces tapering to zero load as the car approaches horizontal (gravity along strut axis = m·g·cos(tilt))
+  3. User can jump the car off a ramp and observe wheels snap back to rest length quickly in flight (no false "floating" above body)
+  4. User can hit a curb hard enough to bottom out and observe a stiff but finite bump-stop response (no infinite compression, no instability)
+  5. User can lift one wheel in the air and observe it hangs at droop-stop position (no infinite extension)
+**Plans**: TBD — produced by `/gsd-plan-phase 4.1`
 **UI hint**: no
 
 ### Phase 5: Rollover Validation

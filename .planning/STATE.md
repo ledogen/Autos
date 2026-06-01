@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 4 context gathered
-last_updated: "2026-06-01T02:54:51.448Z"
+stopped_at: context exhaustion at 76% (2026-06-01)
+last_updated: "2026-06-01T05:56:59.016Z"
 last_activity: 2026-06-01 -- Phase 04 execution started
 progress:
-  total_phases: 6
-  completed_phases: 2
+  total_phases: 7
+  completed_phases: 3
   total_plans: 16
-  completed_plans: 12
-  percent: 75
+  completed_plans: 15
+  percent: 50
 ---
 
 # Project State
@@ -68,7 +68,9 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+| # | Bug / Task | Description |
+|---|------------|-------------|
+| BUG-01 | Slip velocity per wheel chart doesn't display | The Pacejka canvas overlay in debug.js (toggled via backtick) is not visible when the debug panel opens. Additionally, operating-point dots only render for FL/FR (indices 0/1) — RL/RR (indices 2/3) are omitted from the draw loop (`for (const i of [0, 1])`). Chart should show all 4 wheels. |
 
 ### Quick Tasks Completed
 
@@ -98,6 +100,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-31T20:25:55.868Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-suspension/04-CONTEXT.md
+Last session: 2026-06-01T05:56:59.011Z
+Stopped at: context exhaustion at 76% (2026-06-01)
+Resume file: None
