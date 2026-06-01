@@ -40,7 +40,8 @@ RANGER_PARAMS._suspForceAccum = [0, 0, 0, 0]
 //   tireComp[i]  = m_corner * g / k_T   (tire spring holds the full corner weight)
 //   suspComp[i]  = (m_corner − wheelMass) * g / k_S   (suspension holds sprung-mass weight)
 //   hubY[i]      = wheelRadius − tireComp[i]
-//   bodyY_at_mount = hubY[i] + L_S − suspComp[i]
+//   mountWorldY  = hubY[i] + L_S − suspComp[i]
+//   bodyY (CG)   = mountWorldY + (cgHeight − wheelRadius)   ← mount is below CG by this offset
 //   vehicleState.position.y = average of front bodyY values (body is rigid; one CG)
 function computeStaticEquilibrium (p) {
   const g = 9.81
@@ -55,7 +56,9 @@ function computeStaticEquilibrium (p) {
     const tireComp = cornerMass * g / k_T
     const suspComp = (cornerMass - p.wheelMass) * g / k_S
     hubY[i]        = p.wheelRadius - tireComp
-    bodyYCorner[i] = hubY[i] + L_S - suspComp
+    // mountWorldY = hubY + L_S - suspComp
+    // CG world Y  = mountWorldY + (cgHeight - wheelRadius)  ← mount is below CG in body-space
+    bodyYCorner[i] = hubY[i] + L_S - suspComp + (p.cgHeight - p.wheelRadius)
   }
   // Use average of front-pair bodyY for initial CG height (front/rear should be nearly equal
   // with balanced tuning; minor front-rear offset settles within a frame via hub dynamics).
