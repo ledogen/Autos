@@ -193,23 +193,19 @@ export function openInitialCondition (vehicleState, params) {
         // Recompute hubY from static equilibrium if params provided; zero otherwise.
         // Equilibrium derivation mirrors computeStaticEquilibrium in main.js (series-spring model).
         if (params) {
+          // Tire-static formula: hub center sits wheelRadius above ground, minus the static
+          // tire compression that holds corner weight. Matches main.js computeStaticEquilibrium.
+          // The previous mount-derived form (hubY = mountWorldY - L_S + suspComp) jammed the
+          // rear tire ~60 mm into the ground whenever IC.position.y didn't equal the per-axle
+          // eq body Y (front 0.600 m, rear 0.627 m — they differ by L_S front/rear split, so
+          // no single body Y satisfies both axles simultaneously).
           const g = 9.81
           const hubY = [0, 0, 0, 0]
           for (let i = 0; i < 4; i++) {
             const isFront    = i < 2
             const cornerMass = params.mass * (isFront ? params.weightFront : params.weightRear) / 2 + params.wheelMass
-            const k_T        = params.tireStiffness
-            const k_S        = isFront ? params.suspensionStiffnessFront : params.suspensionStiffnessRear
-            const L_S        = isFront ? params.suspensionRestLengthFront : params.suspensionRestLengthRear
-            const tireComp   = cornerMass * g / k_T
-            const suspComp   = (cornerMass - params.wheelMass) * g / k_S
-            hubY[i]          = params.wheelRadius - tireComp
-            // Adjust hubY for the actual loaded position.y: the IC may set a different body Y
-            // than the default equilibrium. Derive hub from mount geometry.
-            // mountWorldY = position.y - (cgHeight - wheelRadius)
-            // hubY = mountWorldY + L_S - suspComp   (inverted from static-eq formula)
-            const mountWorldY = vehicleState.position.y - (params.cgHeight - params.wheelRadius)
-            hubY[i] = mountWorldY - L_S + suspComp
+            const tireComp   = cornerMass * g / params.tireStiffness
+            hubY[i] = params.wheelRadius - tireComp
           }
           vehicleState.hubY = hubY
         } else {
