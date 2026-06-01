@@ -12,10 +12,11 @@
  * Log format (D-06 / D-07):
  *   Columnar JSON — { fields: string[], frames: number[][] }
  *   One "fields" header array with short names; "frames" is an array of scalar arrays (one row per tick).
- *   Fields (37 entries): t, px, py, pz, vx, vy, vz, qx, qy, qz, qw, wx, wy, wz,
+ *   Fields (41 entries): t, px, py, pz, vx, vy, vz, qx, qy, qz, qw, wx, wy, wz,
  *     steer, thr, brk, fl_fn, fl_fy, fl_sa, fl_c, fr_fn, fr_fy, fr_sa, fr_c,
  *     rl_fn, rl_fy, rl_sa, rl_c, rr_fn, rr_fy, rr_sa, rr_c,
- *     fl_omega, fr_omega, rl_omega, rr_omega  (Phase 3 additions — wheel angular velocity rad/s)
+ *     fl_omega, fr_omega, rl_omega, rr_omega  (Phase 3 — wheel angular velocity rad/s)
+ *     fl_fz, fr_fz, rl_fz, rr_fz             (Phase 4 — tire spring force N per corner, D-12)
  *
  * Threat model: T-02-01 — JSON.parse wrapped in try/catch; unknown IC keys ignored, no eval.
  */
@@ -24,7 +25,7 @@
 let _recording = false
 const _frames = []
 
-// D-07: 37 fields — exact order is part of the public log contract; do not reorder.
+// D-07: 41 fields — exact order is part of the public log contract; do not reorder.
 // Phase 3 appends fl_omega/fr_omega/rl_omega/rr_omega at positions 33-36 (constraint #8).
 const FIELDS = [
   't',
@@ -39,6 +40,8 @@ const FIELDS = [
   'rr_fn', 'rr_fy', 'rr_sa', 'rr_c',
   // Phase 3 additions (constraint #8 — appended at END, never reorder above entries)
   'fl_omega', 'fr_omega', 'rl_omega', 'rr_omega',
+  // Phase 4 additions — per-wheel tire spring force Fz (D-12), 2026-05-31
+  'fl_fz', 'fr_fz', 'rl_fz', 'rr_fz',
 ]
 
 // ── Private helpers ───────────────────────────────────────────────────────────
@@ -111,6 +114,8 @@ export function captureFrame (simTime, vehicleState, wheelDebug) {
     rr.fn ?? 0, rr.fy ?? 0, rr.sa ?? 0, rr.c ?? 0,
     // Phase 3 additions — wheel angular velocity (constraint #8 — appended at END)
     fl.omega ?? 0, fr.omega ?? 0, rl.omega ?? 0, rr.omega ?? 0,
+    // Phase 4 additions — per-wheel tire spring force Fz (D-12), 2026-05-31
+    fl.fz ?? 0, fr.fz ?? 0, rl.fz ?? 0, rr.fz ?? 0,
   ])
 }
 

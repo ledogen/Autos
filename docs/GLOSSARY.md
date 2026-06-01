@@ -246,7 +246,7 @@ This mapping applies to: `vehicleState.wheelAngles`, wheel mesh arrays in `main.
 
 ## Frame Logger Fields
 
-Log fields written by `src/logger.js` `captureFrame()` and recorded in the downloaded `.json` file. Field order matches the `FIELDS` constant in `src/logger.js` exactly (D-07). Each row in the `frames` array has 37 scalar values in this order. The first 33 fields are the original Phase 1/2 fields; fields 34–37 (`fl_omega`, `fr_omega`, `rl_omega`, `rr_omega`) are Phase 3 additions appended at the END per constraint #8 (append-only contract — never reorder existing fields).
+Log fields written by `src/logger.js` `captureFrame()` and recorded in the downloaded `.json` file. Field order matches the `FIELDS` constant in `src/logger.js` exactly (D-07). Each row in the `frames` array has 41 scalar values in this order. The first 33 fields are the original Phase 1/2 fields; fields 34–37 (`fl_omega`–`rr_omega`) are Phase 3 additions; fields 38–41 (`fl_fz`–`rr_fz`) are Phase 4 additions — all appended at END per constraint #8 (append-only contract — never reorder existing fields).
 
 ### t
 Accumulated simulation time at the moment of capture — seconds elapsed since the recording session started (not wall-clock time). Source: `simTime` counter in `src/main.js`, incremented by `FIXED_DT` each physics step.
@@ -296,15 +296,57 @@ Wheel angular velocity (rad/s) at the rear-left wheel — Phase 3 addition. Sour
 ### rr_omega
 Wheel angular velocity (rad/s) at the rear-right wheel — Phase 3 addition. Source: `vehicleState.wheelDebug[3].omega`.
 
+### fl_fz
+Tire spring force (N) at the front-left wheel — Phase 4 addition (D-12). The vertical force the tire spring exerts on the hub at each physics substep, averaged across substeps. At static rest ≈ corner weight ≈ 3743 N (374 kg × 9.81 m/s²). Zero when the wheel is airborne. Source: `vehicleState.wheelDebug[0].fz` written by `stepSuspensionSubsteps` in `src/suspension.js`.
+
+### fr_fz
+Tire spring force (N) at the front-right wheel — Phase 4 addition. Source: `vehicleState.wheelDebug[1].fz`.
+
+### rl_fz
+Tire spring force (N) at the rear-left wheel — Phase 4 addition. Source: `vehicleState.wheelDebug[2].fz`.
+
+### rr_fz
+Tire spring force (N) at the rear-right wheel — Phase 4 addition. Source: `vehicleState.wheelDebug[3].fz`.
+
 ---
 
-## Deferred to Phase 4
+## Phase 4 Suspension Terms
 
-The following terms are intentionally not defined in Phase 3. They will be defined in the phase that owns their implementation:
+The following terms are introduced in Phase 4 with the quarter-car suspension model (D-01 through D-15).
 
-| Term | Deferred To | Brief Note |
-|------|-------------|------------|
-| Spring stiffness (k) | Phase 4 | Corner spring rate in N/m |
-| Damping coefficient (c) | Phase 4 | Corner damper rate in N/(m/s) |
-| Normal force load transfer | Phase 4 | Dynamic Fz shifts between corners under acceleration/braking/cornering |
-| Ride height | Phase 4 | Static suspension compression at rest |
+### Sprung Mass
+
+The portion of vehicle mass supported by the suspension springs — the body, chassis, and drivetrain components that sit above the springs. In RangerSim: `mass · weightFront / 2` ≈ 374 kg per front corner and `mass · weightRear / 2` ≈ 306 kg per rear corner. Used in the natural-frequency formula `f_n = (1/2π)·√(k/m_sprung)` to derive `suspensionStiffness{Front,Rear}`.
+
+### Unsprung Mass
+
+The portion of vehicle mass NOT supported by the suspension springs — wheels, hubs, brake rotors, and stub axles. These components follow the road surface directly. In RangerSim: `params.wheelMass` ≈ 18 kg per corner, integrated as `vehicleState.hubY[i]` (vertical position) and `vehicleState.hubVy[i]` (vertical velocity) each physics substep.
+
+### Suspension Travel
+
+The displacement of the wheel hub relative to the body mount point along the spring axis. Compression is positive (hub moves toward body); extension (droop) brings the hub away from body. Rest length `suspensionRestLength{Front,Rear}` sets the spring-at-rest length; `suspComp = restLength - currentLength` is the signed compression used in the spring-force calculation. Zero travel means the wheel is at its design ride height.
+
+### Ride Height
+
+The height of the vehicle body above the ground at static equilibrium — where spring compression and gravity balance. In RangerSim: computed at spawn by `computeStaticEquilibrium(params)` in `src/main.js`. Formula per corner: `tireComp = cornerMass · g / k_T`; `suspComp = sprungMass · g / k_S`; `hubY = wheelRadius − tireComp`; `bodyY_at_mount = hubY + restLength − suspComp`. The CG height at spawn is approximately 0.42 m (lower than the tuning estimate of `cgHeight = 0.55 m` because suspension compresses under load — this is correct physics).
+
+### Anti-Roll Bar (ARB)
+
+A torsional spring linking the left and right wheels of an axle that resists differential compression (body roll). When the left spring compresses more than the right, the ARB applies an equal and opposite force to each side, stiffening the axle against roll. In RangerSim: bilinear-spring approximation (D-07) where `F_arb = arbStiffness{Front,Rear} · (suspComp[left] − suspComp[right])` per axle; `−F_arb` applied to the left hub, `+F_arb` to the right hub. Tunable via `arbStiffnessFront` and `arbStiffnessRear` sliders. A stiffer front ARB relative to rear promotes understeer balance.
+
+### Substep / Physics Timestep Convention
+
+The outer physics step (`PHYSICS_DT = 1/60` s, per D-09) integrates the 6DOF rigid body. The suspension vertical sub-system runs at `N = 2` fixed sub-steps of `sdt = PHYSICS_DT / 2` each outer step to maintain stability of the stiff tire-spring ODE (D-08). All literals `1/60` in source code must be replaced with `PHYSICS_DT` (or `params.physicsDt`) — never hardcode `0.0167`. The substep count `N` and size `sdt` are fixed constants, not user-tunable. See `stepSuspensionSubsteps` in `src/suspension.js`.
+
+---
+
+## Deferred to Phase 4 (now resolved)
+
+The following terms were deferred in Phase 3 and are now defined above:
+
+| Term | Resolved In | Entry |
+|------|-------------|-------|
+| Spring stiffness (k) | Phase 4 | See Suspension Travel / Ride Height |
+| Damping coefficient (c) | Phase 4 | See Suspension Travel |
+| Normal force load transfer | Phase 4 | See Sprung Mass / ARB |
+| Ride height | Phase 4 | See Ride Height |
