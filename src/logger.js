@@ -6,8 +6,11 @@
  *
  * Exports:
  *   toggleRecording()                    — flips recording state; on stop, auto-downloads the log
+ *   startTimedRecording(durationSec)     — start a fixed-duration recording; auto-stops and downloads on expiry
  *   captureFrame(simTime, vehicleState, wheelDebug) — appends one row to the frame buffer
- *   openInitialCondition(vehicleState)   — opens a file picker and applies JSON state to vehicleState
+ *   openInitialCondition(vehicleState)   — opens a file picker and applies JSON state to vehicleState.
+ *                                          Optional IC fields: recordDuration (seconds — triggers auto-recording),
+ *                                          inputs (reserved for future input-script support; currently warns)
  *
  * Log format (D-06 / D-07):
  *   Columnar JSON — { fields: string[], frames: number[][] }
@@ -24,6 +27,7 @@
 // ── Module-private state ──────────────────────────────────────────────────────
 let _recording = false
 const _frames = []
+let _timedStopHandle = null  // setTimeout handle for auto-stop on scenario-driven recordings
 
 // D-07: 41 fields — exact order is part of the public log contract; do not reorder.
 // Phase 3 appends fl_omega/fr_omega/rl_omega/rr_omega at positions 33-36 (constraint #8).
@@ -72,12 +76,39 @@ function _downloadLog () {
 export function toggleRecording () {
   if (_recording) {
     _recording = false
+    if (_timedStopHandle !== null) { clearTimeout(_timedStopHandle); _timedStopHandle = null }
     _downloadLog()
     _frames.length = 0
   } else {
     _frames.length = 0
     _recording = true
   }
+}
+
+/**
+ * Start a fixed-duration recording. On expiry, auto-stops and downloads — same path
+ * as toggleRecording's stop branch. If a recording is already in progress, it is
+ * cancelled and dropped (no download) so the new timed run starts clean.
+ *
+ * Used by scenario JSONs that carry a `recordDuration` field: openInitialCondition
+ * calls this so a scenario load → drive → log download cycle is repeatable without
+ * the user managing the \ key.
+ *
+ * @param {number} durationSec - Wall-clock seconds to record (real time, not sim time).
+ */
+export function startTimedRecording (durationSec) {
+  if (!(durationSec > 0)) return
+  if (_timedStopHandle !== null) { clearTimeout(_timedStopHandle); _timedStopHandle = null }
+  _frames.length = 0
+  _recording = true
+  _timedStopHandle = setTimeout(() => {
+    _timedStopHandle = null
+    if (!_recording) return
+    _recording = false
+    _downloadLog()
+    _frames.length = 0
+  }, durationSec * 1000)
+  console.log(`[logger] timed recording started, ${durationSec.toFixed(2)} s`)
 }
 
 /**
@@ -183,6 +214,17 @@ export function openInitialCondition (vehicleState, params) {
           vehicleState.hubY = hubY
         } else {
           vehicleState.hubY = [0, 0, 0, 0]
+        }
+        // Future: ic.inputs would carry a time-keyed throttle/brake/steer script
+        // so scenarios are fully autonomous. For now warn so a stale field doesn't
+        // silently mean "input ignored".
+        if (ic.inputs) {
+          console.warn('[logger] scenario.inputs not yet supported — apply controls manually')
+        }
+        // Auto-start a timed recording if the scenario asks for one. This is what
+        // makes scenarios repeatable: same IC → same fixed-duration log → same assert.
+        if (typeof ic.recordDuration === 'number' && ic.recordDuration > 0) {
+          startTimedRecording(ic.recordDuration)
         }
       } catch (err) {
         console.error('[logger] Failed to parse IC file:', err)

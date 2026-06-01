@@ -1,7 +1,8 @@
 {
-  "description": "Drive forward 1s, full brake 1s. Asserts front fl_fz/fr_fz rise and rear rl_fz/rr_fz fall during brake; sum ≈ mass·g ± 5%. M4-04, M4-07 longitudinal.",
-  "position":        { "x": 0, "y": 0.60, "z": 0 },
+  "description": "M4-01/M4-04 load transfer. Starts at 60 km/h (16.667 m/s) on flat ground, +20 m away from the ramp toe (Z=+20, ramp at Z=-15). MANUAL: cruise ~1 s, then HOLD SPACE (brake) for the remaining ~3 s. Auto-records 4 s. Future: ic.inputs script will replace the manual hold.",
+  "position":        { "x": 0, "y": 0.60, "z": 20 },
   "velocity":        { "x": 0, "y": 0,    "z": -16.667 },
   "quaternion":      { "x": 0, "y": 0,    "z": 0, "w": 1 },
-  "angularVelocity": { "x": 0, "y": 0,    "z": 0 }
+  "angularVelocity": { "x": 0, "y": 0,    "z": 0 },
+  "recordDuration":  4.0
 }

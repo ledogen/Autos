@@ -1,7 +1,8 @@
 {
-  "description": "Static start; drive forward at low speed over a single-side bump prop placed by main.js terrain. Asserts hubY[0,2] (left) move while hubY[1,3] (right) stay flat (or vice versa). M4-02.",
-  "position":        { "x": 0, "y": 0.60, "z": 0 },
-  "velocity":        { "x": 0, "y": 0,    "z": 0 },
-  "quaternion":      { "x": 0, "y": 0,    "z": 0, "w": 1 },
-  "angularVelocity": { "x": 0, "y": 0,    "z": 0 }
+  "description": "M4-02 per-wheel hub independence. Car offset to X=1.5 so the LEFT wheels clip the ramp (ramp spans X=±2, track half-width 0.73). Coasts at ~5 m/s starting 10 m before the toe; left side climbs while right stays on flat ground, producing sustained L/R Fz asymmetry. Auto-records 5 s.",
+  "position":        { "x": 1.5, "y": 0.60, "z": -5 },
+  "velocity":        { "x": 0,   "y": 0,    "z": -5 },
+  "quaternion":      { "x": 0,   "y": 0,    "z": 0, "w": 1 },
+  "angularVelocity": { "x": 0,   "y": 0,    "z": 0 },
+  "recordDuration":  5.0
 }

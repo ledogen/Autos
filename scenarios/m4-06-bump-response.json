@@ -1,7 +1,8 @@
 {
-  "description": "Static start; drive at low speed (~5 m/s) over single bump prop. Asserts hub vertical oscillation settles within 1.5s — characterizes ζ≈0.4 damping target. M4-06.",
-  "position":        { "x": 0, "y": 0.60, "z": 0 },
-  "velocity":        { "x": 0, "y": 0,    "z": 0 },
+  "description": "M4-06 damping characterization. Car centered (X=0), both sides on the ramp, ~5 m/s. Climbs the 10° ramp, launches off the 0.88 m lip, lands → impulse → ringing. Assertion needs ≥1.5 s post-peak settle window. Auto-records 6 s.",
+  "position":        { "x": 0, "y": 0.60, "z": -5 },
+  "velocity":        { "x": 0, "y": 0,    "z": -5 },
   "quaternion":      { "x": 0, "y": 0,    "z": 0, "w": 1 },
-  "angularVelocity": { "x": 0, "y": 0,    "z": 0 }
+  "angularVelocity": { "x": 0, "y": 0,    "z": 0 },
+  "recordDuration":  6.0
 }

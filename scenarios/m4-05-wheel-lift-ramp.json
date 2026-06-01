@@ -1,7 +1,8 @@
 {
-  "description": "Drive forward into ramp asymmetrically; one wheel leaves ground. Asserts that wheel's fz=0 AND its fy=0 / sa=0 during airborne window per D-14. M4-05.",
-  "position":        { "x": 0, "y": 0.60, "z": 0 },
-  "velocity":        { "x": 0, "y": 0,    "z": -13.889 },
-  "quaternion":      { "x": 0, "y": 0,    "z": 0, "w": 1 },
-  "angularVelocity": { "x": 0, "y": 0,    "z": 0 }
+  "description": "M4-05 airborne wheel D-14 gate. Car offset to X=1.5 so only the LEFT wheels traverse the ramp at 50 km/h (13.889 m/s). At the ramp lip the left wheels launch into the air (fz=0) while the right wheels stay on flat ground. Asserts fz=0 ⇒ fy=0, sa=0, fn=0. Auto-records 3 s.",
+  "position":        { "x": 1.5, "y": 0.60, "z": -5 },
+  "velocity":        { "x": 0,   "y": 0,    "z": -13.889 },
+  "quaternion":      { "x": 0,   "y": 0,    "z": 0, "w": 1 },
+  "angularVelocity": { "x": 0,   "y": 0,    "z": 0 },
+  "recordDuration":  3.0
 }
