@@ -117,7 +117,7 @@ Plans:
 - [x] 04-02-PLAN.md — Core suspension: params + hub state + quarter-car math + ARB + physics integration (M4-01..M4-07)
 
 **Wave 3** *(blocked on Wave 2)*
-- [ ] 04-03-PLAN.md — Debug sliders + per-wheel Fz HUD + logger fz fields + mesh visual binding + GLOSSARY + housekeeping (M4-08, M4-09)
+- [x] 04-03-PLAN.md — Debug sliders + per-wheel Fz HUD + logger fz fields + mesh visual binding + GLOSSARY + housekeeping (M4-08, M4-09)
 
 **UI hint**: no
 
