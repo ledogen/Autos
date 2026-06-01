@@ -51,7 +51,6 @@ export const RANGER_PARAMS = {
   // Note: lateralDampingCoeff is now unused (replaced by corneringStiffness slip-angle model)
   // but kept so existing debug sliders do not break.
   lateralDampingCoeff:    4000,  // N/(m/s) — damps lateral contact-patch velocity (unused, kept for slider compat)
-  rollingResistanceCoeff: 20,    // N/(m/s) — rolling drag proportional to longitudinal velocity
   corneringStiffness: 50000,     // N/rad — linear tire lateral stiffness; used by computeLateralForce (Bug 6 fix)
   frictionCoeff:      0.9,       // peak tire-road friction coefficient; caps Flat and Flong at μ*Fn
 
