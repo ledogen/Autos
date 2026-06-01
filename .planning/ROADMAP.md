@@ -111,7 +111,7 @@ Plans:
 
 Plans:
 **Wave 1**
-- [ ] 04-01-PLAN.md — Wave 0 validation scenarios (4 new scenarios/m4-*.json files)
+- [x] 04-01-PLAN.md — Wave 0 validation scenarios (4 new scenarios/m4-*.json files)
 
 **Wave 2** *(blocked on Wave 1)*
 - [ ] 04-02-PLAN.md — Core suspension: params + hub state + quarter-car math + ARB + physics integration (M4-01..M4-07)
