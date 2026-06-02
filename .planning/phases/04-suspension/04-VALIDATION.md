@@ -1,12 +1,14 @@
 ---
 phase: 4
 slug: suspension
-status: active
+status: deferred-to-4.1
 nyquist_compliant: true
 wave_0_complete: true
 created: 2026-05-31
 updated: 2026-06-01
 ---
+
+> **Status note (2026-06-01):** End-to-end execution of the M4-* scenario suite is deferred to Phase 4.1 — the ramp-based scenarios surfaced two pre-existing Phase 4 design issues (world-Y-only tire normal projection, wheel visual binding mismatch under body pitch) that would require throwaway interim fixes since Phase 4.1's body-frame strut refactor will rewrite the same code paths. The four `test/assert-m4-*.mjs` scripts and `scenarios/m4-*.json` files are authored, committed, and waiting to be run against Phase 4.1 logs as that phase's acceptance criterion (Phase 4.1 ROADMAP success criterion 8). Phase 4 is otherwise closed.
 
 # Phase 4 — Validation Strategy
 

@@ -123,18 +123,21 @@ Plans:
 **UI hint**: no
 
 ### Phase 4.1: Body-Frame Suspension (INSERTED)
-**Goal**: The user observes physically correct suspension behavior at all body orientations — inside wheel never lifts past outer in body frame during cornering, wheels travel along the body's strut axis rather than purely in world-Y, and bump/droop stops cap the suspension travel envelope. Resolves the artifacts surfaced during Phase 4 review (hub "floats" in air bug, ARB body-frame mismatch, no travel limits).
+**Goal**: The user observes physically correct suspension behavior at all body orientations — inside wheel never lifts past outer in body frame during cornering, wheels travel along the body's strut axis rather than purely in world-Y, tire normal force transmits horizontally to the body so the car responds to gravity on slopes, and bump/droop stops cap the suspension travel envelope. Resolves the artifacts surfaced during Phase 4 review (hub "floats" in air, ARB body-frame mismatch, no travel limits, wheel visual exaggeration on pitched body, car stuck on ramps).
 **Mode:** mvp
 **Depends on**: Phase 4 (VERIFICATION.md must close cleanly first)
-**Requirements**: TBD — derived from rollover artifacts logged 2026-06-01 (jump log 1780296563738, rollover log 1780296509354)
+**Requirements**: TBD — derived from rollover artifacts logged 2026-06-01 (jump log 1780296563738, rollover log 1780296509354, ramp-rest log 1780375707695)
 **Success Criteria** (what must be TRUE):
   1. User can hard-corner the car and observe that the inside wheel never sits higher in body frame than the outside wheel (ARB equilibrium respects body axis)
   2. User can flip the car onto its roof and observe suspension forces tapering to zero load as the car approaches horizontal (gravity along strut axis = m·g·cos(tilt))
   3. User can jump the car off a ramp and observe wheels snap back to rest length quickly in flight (no false "floating" above body)
   4. User can hit a curb hard enough to bottom out and observe a stiff but finite bump-stop response (no infinite compression, no instability)
   5. User can lift one wheel in the air and observe it hangs at droop-stop position (no infinite extension)
+  6. User can park the car on the ramp with no input and observe it rolling downhill under gravity (tire normal force horizontal component transmitted to body)
+  7. User can drive up the ramp at slow speed and observe each wheel visually staying in contact with the surface (no phantom vertical wheel motion from body pitch projection)
+  8. All four `test/assert-m4-*.mjs` scripts return green when run against logs produced by the four `scenarios/m4-*.json` recordings (validation suite carried over from Phase 4)
 **Plans**: TBD — produced by `/gsd-plan-phase 4.1`
-**UI hint**: no
+**UI hint**: yes (visual wheel binding correctness is observable)
 
 ### Phase 5: Rollover Validation
 **Goal**: The user can deliberately roll the car over on a ramp, watch it stay rolled with stable physics, and inspect the event from any angle — all captured and replayable via the scenario system.
