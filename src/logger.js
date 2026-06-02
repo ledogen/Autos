@@ -15,11 +15,12 @@
  * Log format (D-06 / D-07):
  *   Columnar JSON — { fields: string[], frames: number[][] }
  *   One "fields" header array with short names; "frames" is an array of scalar arrays (one row per tick).
- *   Fields (41 entries): t, px, py, pz, vx, vy, vz, qx, qy, qz, qw, wx, wy, wz,
+ *   Fields (45 entries): t, px, py, pz, vx, vy, vz, qx, qy, qz, qw, wx, wy, wz,
  *     steer, thr, brk, fl_fn, fl_fy, fl_sa, fl_c, fr_fn, fr_fy, fr_sa, fr_c,
  *     rl_fn, rl_fy, rl_sa, rl_c, rr_fn, rr_fy, rr_sa, rr_c,
  *     fl_omega, fr_omega, rl_omega, rr_omega  (Phase 3 — wheel angular velocity rad/s)
  *     fl_fz, fr_fz, rl_fz, rr_fz             (Phase 4 — tire spring force N per corner, D-12)
+ *     fl_sc, fr_sc, rl_sc, rr_sc             (Phase 4.1 — strut compression m per corner, D-12)
  *
  * Threat model: T-02-01 — JSON.parse wrapped in try/catch; unknown IC keys ignored, no eval.
  */
@@ -46,6 +47,8 @@ const FIELDS = [
   'fl_omega', 'fr_omega', 'rl_omega', 'rr_omega',
   // Phase 4 additions — per-wheel tire spring force Fz (D-12), 2026-05-31
   'fl_fz', 'fr_fz', 'rl_fz', 'rr_fz',
+  // Phase 4.1 additions — per-wheel strut compression (D-12), 2026-06-01
+  'fl_sc', 'fr_sc', 'rl_sc', 'rr_sc',
 ]
 
 // ── Private helpers ───────────────────────────────────────────────────────────
@@ -147,6 +150,8 @@ export function captureFrame (simTime, vehicleState, wheelDebug) {
     fl.omega ?? 0, fr.omega ?? 0, rl.omega ?? 0, rr.omega ?? 0,
     // Phase 4 additions — per-wheel tire spring force Fz (D-12), 2026-05-31
     fl.fz ?? 0, fr.fz ?? 0, rl.fz ?? 0, rr.fz ?? 0,
+    // Phase 4.1 additions — per-wheel strut compression (D-12), 2026-06-01
+    fl.strutComp ?? 0, fr.strutComp ?? 0, rl.strutComp ?? 0, rr.strutComp ?? 0,
   ])
 }
 

@@ -20,7 +20,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics } from './physics.js'
 import { updateVehicle, SPAWN_STATE } from './vehicle.js'
 import { updateCamera } from './camera.js'
-import { initDebug, updatePacejkaCurve } from './debug.js'
+import { initDebug, updatePacejkaCurve, updateTravelBars } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition } from './logger.js'
 
 // Manual verification hook — console.log confirms importmap loaded r184 (FOUND-02)
@@ -565,6 +565,10 @@ function loop () {
 
   // M3-09: Pacejka curve plot — called once per render frame OUTSIDE the fixed accumulator (constraint #10)
   updatePacejkaCurve(vehicleState, RANGER_PARAMS)
+
+  // D-13: 4-corner travel bar visualization — called once per render frame, outside accumulator.
+  // Reflects most recent strutComp state (written by stepPhysics via wheelDebug each step).
+  updateTravelBars(vehicleState, RANGER_PARAMS)
 
   updateCamera(camera, vehicleState)
 

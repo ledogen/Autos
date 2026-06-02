@@ -340,6 +340,40 @@ The outer physics step (`PHYSICS_DT = 1/60` s, per D-09) integrates the 6DOF rig
 
 ---
 
+## Phase 4.1 Suspension Terms (Strut-Axis Model)
+
+The following terms are introduced in Phase 4.1 with the body-frame strut-compression model (D-01 through D-15).
+
+### strut axis
+
+The body-local up/down axis along which the strut translates. Body-fixed; rotates with the body quaternion. Derived in code as `new THREE.Vector3(0, -1, 0).applyQuaternion(vehicleState.quaternion)` (body_down). The strut can only compress or extend along this axis — lateral forces on the hub transmit instantly to the body through the rail constraint.
+
+### strutComp
+
+Strut compression from rest length [m]; positive = compressed below rest. State per corner; stored in `vehicleState.strutComp[4]` (index 0=FL, 1=FR, 2=RL, 3=RR). At static equilibrium, `strutComp[i] ≈ m_sprung_corner * g / k_S` (≈ 111 mm at current Ranger params). Logged as `fl_sc`/`fr_sc`/`rl_sc`/`rr_sc` in the scenario log (Phase 4.1 D-12 addition).
+
+### strutCompVel
+
+Rate of strut compression [m/s]; positive = compressing (hub moving toward body). State per corner; stored in `vehicleState.strutCompVel[4]`. Integrated by the hub ODE in `stepSuspensionSubsteps`. Used to compute suspension damping force `F_damp = -c * strutCompVel`.
+
+### bump stop
+
+Penalty spring engaging when `strutComp >= suspensionTravel`. Zero force at the engagement boundary; linear force past it: `F_bump = bumpStopStiffness * (strutComp - travel)`. Stiffness exposed as the "Bump Stop Stiffness" slider in the debug panel (range 10 000–500 000 N/m, default 330 000 N/m ≈ 10× front spring). The bump stop prevents the strut from collapsing without a physical stop.
+
+### droop stop
+
+Penalty spring engaging when `strutComp <= 0` (fully extended). Fixed constant `DROOP_STOP_STIFFNESS = 20 000 N/m` — not a slider. At hub weight (~18 kg) deflection is < 10 mm (design target). Prevents the hub from floating away from the body when the wheel is airborne. The droop stop is a light constraint; wheels visually stop at full droop and don't continue extending infinitely.
+
+### body offset (suspensionBodyOffsetFront / suspensionBodyOffsetRear)
+
+Y shift of the suspension mount point in body space [m]; controls ride height. Positive value lowers the mount (raises ride height). Default 0 = current geometry unchanged (mount at `-(cgHeight - wheelRadius)` in body-Y). Exposed as "Front Body Offset" and "Rear Body Offset" sliders in the debug panel (range −0.10 to +0.10 m, step 0.005 m).
+
+### hub slider
+
+Conceptual model for the suspension DOF: the hub is a rigid 1D slider constrained to translate only along the strut axis (body_down direction). The only degree of freedom is `strutComp`; lateral forces on the hub (from road contact normal X/Z residuals) transmit instantly to the body through the rail constraint and are applied as direct body forces via `_hubNormalXZ` (Step 2.6 in `src/physics.js`). There is no hub lateral compliance modeled.
+
+---
+
 ## Deferred to Phase 4 (now resolved)
 
 The following terms were deferred in Phase 3 and are now defined above:
