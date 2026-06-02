@@ -206,7 +206,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
     // Zero wheelDebug for this wheel before contacts — ensures no stale values when wheel is off-ground.
     // The fz field is written from _tireFz (computed by stepSuspensionSubsteps above).
     if (vehicleState.wheelDebug) {
-      vehicleState.wheelDebug[i] = { fn: 0, fy: 0, sa: 0, c: 0, omega: 0, fz: params._tireFz[i] || 0 }
+      vehicleState.wheelDebug[i] = { fn: 0, fy: 0, sa: 0, c: 0, omega: 0, fz: params._tireFz[i] || 0, strutComp: vehicleState.strutComp?.[i] ?? 0 }
     }
 
     // Phase 4: airborne check (D-14). If tire-spring force is zero or negative, this wheel is
