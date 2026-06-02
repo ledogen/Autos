@@ -28,13 +28,12 @@ export const SPAWN_STATE = {
   steerAngle: 0, throttle: 0, brake: 0,
   wheelAngles: [0, 0, 0, 0],
   wheelSteerAngles: [0, 0, 0, 0],
-  // ── Phase 4 hub state (D-02) ────────────────────────────────────────────
-  // hubY[i]:  world Y of wheel hub center [m], indexed 0=FL,1=FR,2=RL,3=RR.
-  // hubVy[i]: vertical velocity of hub [m/s].
-  // These 0-placeholders are overwritten by main.js at init/reset using
-  // computeStaticEquilibrium(RANGER_PARAMS) so the car spawns pre-settled.
-  hubY:  [0, 0, 0, 0],   // m   — hub center world Y (D-02)
-  hubVy: [0, 0, 0, 0],   // m/s — hub vertical velocity (D-02)
+  // ── Phase 4.1 strut state (D-01) ────────────────────────────────────────────
+  // strutComp[i]:    strut compression from rest length [m]; positive = compressed.
+  // strutCompVel[i]: compression velocity [m/s]; positive = compressing.
+  // 0-placeholders overwritten by main.js computeStaticEquilibrium at init/reset.
+  strutComp:    [0, 0, 0, 0],   // m   — strut compression per corner (D-01)
+  strutCompVel: [0, 0, 0, 0],   // m/s — strut compression velocity per corner (D-01)
   handbrake: false
 }
 

@@ -33,37 +33,48 @@ console.log('THREE.REVISION', THREE.REVISION)
 // _suspForceAccum[i]: averaged suspension spring force per corner [N] — applied to body (D-07)
 RANGER_PARAMS._tireFz         = [0, 0, 0, 0]
 RANGER_PARAMS._suspForceAccum = [0, 0, 0, 0]
+// _hubNormalXZ[i]: X/Z residual contact normal force per corner — plain {x,y,z} objects (not THREE.Vector3)
+// to preserve the suspension.js pure-math contract (D-06a). Zeroed by stepSuspensionSubsteps each step.
+RANGER_PARAMS._hubNormalXZ = [
+  { x: 0, y: 0, z: 0 },
+  { x: 0, y: 0, z: 0 },
+  { x: 0, y: 0, z: 0 },
+  { x: 0, y: 0, z: 0 }
+]
 
-// ── Static equilibrium at startup (RESEARCH §Pattern 4) ─────────────────────────────────────
-// Pre-compute hub Y and body Y so the car spawns pre-settled with no visible drop.
-// Formula derivation (series-spring at static equilibrium):
-//   tireComp[i]  = m_corner * g / k_T   (tire spring holds the full corner weight)
-//   suspComp[i]  = (m_corner − wheelMass) * g / k_S   (suspension holds sprung-mass weight)
-//   hubY[i]      = wheelRadius − tireComp[i]
-//   mountWorldY  = hubY[i] + L_S − suspComp[i]
-//   bodyY (CG)   = mountWorldY + (cgHeight − wheelRadius)   ← mount is below CG by this offset
+// ── Static equilibrium at startup (RESEARCH §Pattern 4, Phase 4.1 D-11) ─────────────────────────────────────
+// Pre-compute strutComp and body Y so the car spawns pre-settled with no visible drop.
+// Phase 4.1 D-11 formula: strutComp[i] = m_sprung_corner * g / k_S_i
+//   m_sprung_corner = mass * weight_i / 2  (sprung mass only — excludes wheelMass from hub ODE)
+//   Verified numerically: strutComp ≈ 0.111 m at current params
+// Body Y derivation (via series-spring geometry):
+//   tireComp  = cornerMass * g / k_T   (full corner mass including wheel)
+//   hubY      = wheelRadius - tireComp  (hub sits above ground by tireComp)
+//   bodyY[i]  = hubY + (L_S - strutComp[i]) + (cgHeight - wheelRadius)
 //   vehicleState.position.y = average of front bodyY values (body is rigid; one CG)
 function computeStaticEquilibrium (p) {
-  const g = 9.81
-  const hubY         = [0, 0, 0, 0]
-  const bodyYCorner  = [0, 0, 0, 0]
+  const g          = 9.81
+  const strutComp  = [0, 0, 0, 0]
+  const bodyYCorner = [0, 0, 0, 0]
   for (let i = 0; i < 4; i++) {
-    const isFront   = i < 2
+    const isFront    = i < 2
     const cornerMass = p.mass * (isFront ? p.weightFront : p.weightRear) / 2 + p.wheelMass
     const k_T = p.tireStiffness
     const k_S = isFront ? p.suspensionStiffnessFront : p.suspensionStiffnessRear
     const L_S = isFront ? p.suspensionRestLengthFront : p.suspensionRestLengthRear
-    const tireComp = cornerMass * g / k_T
-    const suspComp = (cornerMass - p.wheelMass) * g / k_S
-    hubY[i]        = p.wheelRadius - tireComp
-    // mountWorldY = hubY + L_S - suspComp
-    // CG world Y  = mountWorldY + (cgHeight - wheelRadius)  ← mount is below CG in body-space
-    bodyYCorner[i] = hubY[i] + L_S - suspComp + (p.cgHeight - p.wheelRadius)
+    const sprung    = p.mass * (isFront ? p.weightFront : p.weightRear) / 2  // D-11: sprung only
+    strutComp[i]    = sprung * g / k_S  // ≈ 0.111 m at current params
+    // Derive bodyY from strutComp (D-11 geometry):
+    //   hubY = wheelRadius - tireComp (where tireComp uses full corner mass incl wheel)
+    //   bodyY = hubY + (L_S - strutComp[i]) + (cgHeight - wheelRadius)
+    const tireComp   = cornerMass * g / k_T
+    const hubY       = p.wheelRadius - tireComp
+    bodyYCorner[i]   = hubY + (L_S - strutComp[i]) + (p.cgHeight - p.wheelRadius)
   }
   // Use average of front-pair bodyY for initial CG height (front/rear should be nearly equal
   // with balanced tuning; minor front-rear offset settles within a frame via hub dynamics).
   const bodyY = (bodyYCorner[0] + bodyYCorner[1]) / 2
-  return { bodyY, hubY }
+  return { bodyY, strutComp }
 }
 
 // ── Fixed-timestep loop constants (RESEARCH §Pattern 2) ─────────────────────
@@ -83,7 +94,7 @@ let currentTime = performance.now() / 1000
 // vehicle.js / physics.js. Wave 1 leaves it static.
 // Wheel index convention (GLOSSARY.md §Wheel Index): 0=FL, 1=FR, 2=RL, 3=RR
 //
-// Phase 4: position.y and hubY[] are set from static equilibrium so the car spawns pre-settled
+// Phase 4.1: position.y and strutComp[] are set from static equilibrium so the car spawns pre-settled
 // with no visible drop. computeStaticEquilibrium() must be called after RANGER_PARAMS is loaded.
 const _spawnEq = computeStaticEquilibrium(RANGER_PARAMS)
 const vehicleState = {
@@ -96,10 +107,10 @@ const vehicleState = {
   brake:           0,
   wheelAngles:     [0, 0, 0, 0],                 // per-wheel spin angle [rad], Plan 03 drives
   wheelSteerAngles: [0, 0, 0, 0],               // Per-wheel Ackermann steer angles [rad]; set by updateVehicle each step; read by stepPhysics for lateral force decomposition.
-  // Phase 4 hub state (D-02): wheel hub vertical position and velocity.
-  // Initialized to static equilibrium — hub sits at wheelRadius minus tire compression at rest.
-  hubY:            [..._spawnEq.hubY],   // m   — hub center world Y per corner (0=FL,1=FR,2=RL,3=RR)
-  hubVy:           [0, 0, 0, 0],        // m/s — hub vertical velocity per corner
+  // Phase 4.1 strut state (D-01): strut compression and velocity per corner.
+  // Initialized to static equilibrium — strutComp ≈ 0.111 m at current params.
+  strutComp:    [..._spawnEq.strutComp],  // m   — strut compression per corner (0=FL,1=FR,2=RL,3=RR)
+  strutCompVel: [0, 0, 0, 0],            // m/s — strut compression velocity per corner (D-01)
   wheelDebug:      [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ],  // per-wheel debug data written by stepPhysics; read by logger; fz=tire spring force (D-12)
   wheelOmega:      [0, 0, 0, 0],                   // per-wheel angular velocity [rad/s]; integrated by physics.js omega integrator
   handbrake:       false,                            // Space key handbrake state; written by updateVehicle, read by getBrakeTorque
@@ -202,13 +213,9 @@ const wheelLocalOffsets = [
   new THREE.Vector3( tR, wr - RANGER_PARAMS.cgHeight,  (L * wF)),  // 3: RR — right, rear
 ]
 
-// ── Wheel mesh visual Y binding (D-16) ──────────────────────────────────────
-// hubYRest[i]: hub world Y at static equilibrium (computed once after spawn).
-// syncMeshesToState moves each wheel mesh in body-local Y by the deviation of hubY
-// from its rest value. Approximation: body-local ΔY ≈ world ΔY at typical roll angles
-// (< 10°: cos(10°) ≈ 0.985, error < 2%). Dominant effect is suspension travel, not roll
-// projection inaccuracy. Hub XZ stays fixed to wheelLocalOffsets[i].x/z per D-16.
-const hubYRest = [..._spawnEq.hubY]  // stash rest values at init
+// NOTE (Phase 4.1): hubYRest removed. Wheel mesh position is now derived from strutComp via
+// full world-space hub position inverse-transformed into body-local space (D-07).
+// syncMeshesToState below handles this correctly for any body orientation.
 
 const wheelMeshes = wheelLocalOffsets.map((offset, i) => {
   const mesh = new THREE.Mesh(wheelGeom, wheelMat)
@@ -251,11 +258,35 @@ function syncMeshesToState (state) {
       wheelMeshes[i].quaternion.identity()
     }
 
-    // D-16: Hub vertical travel — move wheel mesh in body-local Y by hub deviation from rest.
-    // Approximation: body-local ΔY ≈ world ΔY (cos(10°)≈0.985, <2% error at typical roll angles).
-    // XZ stays fixed at wheelLocalOffsets[i].x/z — hub XZ tracks body mount XZ (D-16).
-    if (state.hubY && state.hubY[i] !== undefined) {
-      wheelMeshes[i].position.y = wheelLocalOffsets[i].y + (state.hubY[i] - hubYRest[i])
+    // D-07 (Phase 4.1): Derive full hub world position from strutComp, inverse-transform to body-local.
+    // Replaces the broken world-ΔY approximation with exact body-space hub position for any orientation.
+    {
+      const isFrontMesh = i < 2
+      const L_S_mesh = isFrontMesh
+        ? RANGER_PARAMS.suspensionRestLengthFront
+        : RANGER_PARAMS.suspensionRestLengthRear
+      const strutComp_i = state.strutComp?.[i] ?? 0
+      const strutLen_i  = L_S_mesh - strutComp_i
+      const carQ = state.quaternion
+      const body_down_mesh = new THREE.Vector3(0, -1, 0).applyQuaternion(carQ)
+      // Mount world position: same local offset as suspension.js, rotated into world space
+      const mountLocal = wheelLocalOffsets[i].clone()
+      const rMount_mesh = mountLocal.clone().applyQuaternion(carQ)
+      const mountWorld = new THREE.Vector3(
+        state.position.x + rMount_mesh.x,
+        state.position.y + rMount_mesh.y,
+        state.position.z + rMount_mesh.z
+      )
+      const hubWorld = new THREE.Vector3(
+        mountWorld.x + strutLen_i * body_down_mesh.x,
+        mountWorld.y + strutLen_i * body_down_mesh.y,
+        mountWorld.z + strutLen_i * body_down_mesh.z
+      )
+      // Inverse-transform into carGroup local space (carGroup IS the body):
+      const hubLocal = hubWorld.clone()
+        .sub(state.position)
+        .applyQuaternion(carQ.clone().invert())
+      wheelMeshes[i].position.copy(hubLocal)
     }
   }
 }
@@ -460,7 +491,7 @@ function loop () {
     const resetRequested = updateVehicle(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     if (resetRequested) {
       // M1-12: reset to spawn state — zero all motion, restore identity quaternion.
-      // Phase 4: position.y and hubY[] reset to static equilibrium (not RANGER_PARAMS.cgHeight)
+      // Phase 4.1: position.y and strutComp[] reset to static equilibrium (not RANGER_PARAMS.cgHeight)
       // so the car spawns pre-settled with no visible drop (RESEARCH §Pattern 4 / Pitfall 1).
       const eq = computeStaticEquilibrium(RANGER_PARAMS)
       vehicleState.position.set(SPAWN_STATE.positionX, eq.bodyY, SPAWN_STATE.positionZ)
@@ -477,9 +508,9 @@ function loop () {
       vehicleState.slipLong       = [0, 0, 0, 0]
       vehicleState.slipLat        = [0, 0, 0, 0]
       vehicleState.handbrake      = false
-      // Phase 4 hub state reset — reassigned (not mutated entry-by-entry) per PATTERNS §Reset block
-      vehicleState.hubY           = [...eq.hubY]
-      vehicleState.hubVy          = [0, 0, 0, 0]
+      // Phase 4.1 strut state reset — reassigned (not mutated entry-by-entry) per PATTERNS §Reset block
+      vehicleState.strutComp    = [...eq.strutComp]
+      vehicleState.strutCompVel = [0, 0, 0, 0]
     }
 
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts)

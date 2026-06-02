@@ -121,6 +121,26 @@ export const RANGER_PARAMS = {
   arbStiffnessFront:   5000,   // N/m — front anti-roll bar stiffness (D-06)
   arbStiffnessRear:    4000,   // N/m — rear ARB (D-06)
 
+  // ── Suspension Travel + Stops (Phase 4.1 — D-08) ──────────────────────────────────────────
+  // suspensionTravel: total strut compression before bump stop engages (bump side only).
+  // Typical road truck: ~100 mm bump + ~100 mm droop from static = ~200 mm total travel.
+  suspensionTravelFront:       0.12,   // m — strut travel before bump stop (D-08)
+  suspensionTravelRear:        0.14,   // m — slightly more rear travel (D-08)
+
+  // suspensionBodyOffset: Y shift of mount point in body space (ride-height control).
+  // Default 0 = current behavior unchanged (mount is at -(cgHeight - wheelRadius) body-Y).
+  suspensionBodyOffsetFront:   0.0,    // m — positive = mount lower in body space (raises ride height) (D-08)
+  suspensionBodyOffsetRear:    0.0,    // m — (D-08)
+
+  // bumpStopStiffness: penalty spring engaging at strutComp >= suspensionTravel.
+  // At 10× front spring: k_eff ≈ 363 000 N/m. Stability: sdt^2 * k_eff / m_u = 0.35 < 4. OK.
+  bumpStopStiffness:         330000,   // N/m — ~10× front spring; exposed as slider (D-08, D-14)
+
+  // DROOP_STOP_STIFFNESS: fixed constant; engages at strutComp <= 0 (fully extended).
+  // Sized so static hub weight (~18 kg) deflects < 10 mm: k > 18*9.81/0.010 = 17 658 N/m.
+  // 20 000 N/m gives ~8.8 mm deflection at hub weight → meets the <10 mm target.
+  DROOP_STOP_STIFFNESS:        20000,  // N/m — not a slider; fixed constant (D-08)
+
   // ── Physics Timestep (Phase 4 — D-09) ────────────────────────────────────
   // Mirrors the PHYSICS_DT constant in main.js. Stored here so suspension.js (pure-math,
   // no main.js import) can verify sub-step stability against dt without importing main.js.
