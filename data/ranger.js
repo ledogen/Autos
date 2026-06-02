@@ -39,11 +39,13 @@ export const RANGER_PARAMS = {
   maxHandbrakeTorque: 4000, // N·m — rear-only handbrake; doubled from 2000 to actually lock rears; exposed as slider (D-16)
 
   // ── Tire Spring-Damper ───────────────────────────────────────────────────
-  // Matchbox car has no suspension — the tire IS the only compliance between wheel and ground.
-  // tireStiffness: radial spring constant. At rest, each corner compresses ~22mm (mg/4 / k).
-  // tireDamping: critically damped at ~14000 N·s/m; 8000 gives slightly underdamped feel.
+  // tireStiffness: radial spring constant. At rest, each corner compresses ~38mm (mg/4 / k).
+  // tireDamping: ζ≈0.56 relative to critical (2·√(k·m)=2683 N·s/m). Kept below critical so
+  // the wheel returns to ground quickly but doesn't prematurely unload — overdamped tire
+  // damping causes tireFz to hit zero while hub is still 2 cm in ground (hubVy drives damping
+  // term negative, triggering spurious airborne flag at high hub velocities).
   tireStiffness: 100000,  // N/m
-  tireDamping:     4000,  // N·s/m
+  tireDamping:     1500,  // N·s/m — ζ≈0.56; reduced from 4000 to prevent premature wheel lift-off
 
   // ── Phase 1 Friction Placeholders (D-10) ─────────────────────────────────
   // Must be exposed as lil-gui sliders in Plan 03.
@@ -94,14 +96,17 @@ export const RANGER_PARAMS = {
   // Quarter-car per corner: hub↔body spring in series with the tire spring above.
   // Natural frequency target: ~1.5 Hz body bounce → f_n = (1/2π)√(k/m)
   //   Sprung mass per corner (front): mass·weightFront/2 ≈ 1360·0.55/2 ≈ 374 kg → k = (2π·1.5)²·374 ≈ 33 000 N/m
-  //   Sprung mass per corner (rear):  mass·weightRear /2 ≈ 1360·0.45/2 ≈ 306 kg → k = (2π·1.5)²·306 ≈ 27 000 N/m
-  // Damping ratio target: ζ ≈ 0.4 (slightly underdamped) → c = 2ζ√(k·m) = 0.8·√(k·m)
-  //   Front: 0.8·√(33000·374) ≈ 2800 N·s/m; Rear: 0.8·√(27000·306) ≈ 2300 N·s/m
+  //   Sprung mass per corner (rear):  mass·weightRear /2 ≈ 1360·0.45/2 ≈ 27 000 N/m
+  // Damping ratio target: ζ ≈ 0.64 → c = 2ζ√(k·m) = 1.28·√(k·m)
+  //   c_critical_front = 2·√(33000·374) ≈ 7026 N·s/m → ζ=0.64: c ≈ 4500
+  //   c_critical_rear  = 2·√(27000·306) ≈ 5749 N·s/m → ζ=0.64: c ≈ 3700
+  //   Raised from ζ=0.40 (2800/2300) — at ζ=0.40 the pitch mode amplitude was large enough
+  //   to lift front wheels off ground on every upswing (half-wave oscillation at 3 Hz).
   // restLength: allowance for suspension travel (room for bump + droop from static equilibrium)
   suspensionStiffnessFront:  33000,   // N/m — 1.5 Hz body bounce at front sprung corner mass
   suspensionStiffnessRear:   27000,   // N/m — 1.5 Hz body bounce at rear sprung corner mass
-  suspensionDampingFront:     2800,   // N·s/m — ζ≈0.40 (slightly underdamped) at front
-  suspensionDampingRear:      2300,   // N·s/m — ζ≈0.40 (slightly underdamped) at rear
+  suspensionDampingFront:     4500,   // N·s/m — ζ≈0.64 at front (raised from 2800/ζ0.40)
+  suspensionDampingRear:      3700,   // N·s/m — ζ≈0.64 at rear (raised from 2300/ζ0.40)
   suspensionRestLengthFront:  0.20,   // m — travel allowance front axle (typical road truck)
   suspensionRestLengthRear:   0.22,   // m — slightly more rear travel (lighter unloaded rear)
   // wheelMass: unsprung mass per corner (tire + wheel + stub axle).
@@ -113,8 +118,8 @@ export const RANGER_PARAMS = {
   // F_arb = arbStiffness · (suspComp[left] − suspComp[right]) per axle.
   // Front ARB stiffer than rear → promotes understeer balance for a Ranger.
   // At 0.5g lateral: target ≈5° body roll total; front+rear ARBs together provide this.
-  arbStiffnessFront:  15000,   // N/m — front anti-roll bar stiffness (D-06)
-  arbStiffnessRear:    8000,   // N/m — softer rear ARB encourages oversteer balance (D-06)
+  arbStiffnessFront:   5000,   // N/m — front anti-roll bar stiffness (D-06)
+  arbStiffnessRear:    4000,   // N/m — rear ARB (D-06)
 
   // ── Physics Timestep (Phase 4 — D-09) ────────────────────────────────────
   // Mirrors the PHYSICS_DT constant in main.js. Stored here so suspension.js (pure-math,
