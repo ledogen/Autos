@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 4.1 context gathered
-last_updated: "2026-06-02T15:30:39.780Z"
-last_activity: 2026-06-02 -- Phase 04.1 planning complete
+last_updated: "2026-06-02T15:48:04.631Z"
+last_activity: 2026-06-02
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 19
-  completed_plans: 15
-  percent: 79
+  completed_plans: 16
+  percent: 84
 ---
 
 # Project State
@@ -26,12 +26,12 @@ See: .planning/PROJECT.md (updated 2026-05-10)
 ## Current Position
 
 Phase: 04 (suspension) — EXECUTING
-Plan: 1 of 3
+Plan: 2 of 3
 Plans: 3 of 3 planned, 0 of 3 executed
 Status: Ready to execute
-Last activity: 2026-06-02 -- Phase 04.1 planning complete
+Last activity: 2026-06-02
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████░░] 84%
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 04.1 P01 | 15 | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -65,6 +66,8 @@ Recent decisions affecting current work:
 - Phase 1: Flat-tire friction placeholder only — NO Pacejka or spring-damper until Phase 3/4
 - Phase 1: `terrain(x,z) => {height, normal}` and `getDriveTorque(wheelIndex, vehicleState, params)` interfaces stubbed from day one to avoid retrofit cost
 - Phase 6: BLOCKED pending dedicated research phase — chunk ring-buffer + Web Worker heightmap questions unresolved
+- Phase 4.1 P01: vz threshold 0.5 m/s for ramp-slide gate — g*sin(10°)=1.7 m/s² over 3s; 0.5 distinguishes slide from static-stuck
+- Phase 4.1 P01: D-18 audit complete — zero existing assertion scripts probe hubY or hubVy; Phase 4.1 field renames are safe
 
 ### Pending Todos
 
@@ -100,6 +103,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-06-02T05:43:40.739Z
-Stopped at: Phase 4.1 context gathered
-Resume file: .planning/phases/04.1-body-frame-suspension/04.1-CONTEXT.md
+Last session: 2026-06-02T15:48:00.134Z
+Stopped at: Completed 04.1-01-PLAN.md (ramp-slide gate harness)
+Resume file: None
