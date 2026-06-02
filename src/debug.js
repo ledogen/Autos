@@ -12,16 +12,22 @@
  *   B/C/D/E sliders. Adds maxHandbrakeTorque slider. Adds Pacejka canvas overlay (300×200 px)
  *   with normalized curve and FL/FR operating-point dots. Extends backtick toggle to sync
  *   canvas visibility. Exports updatePacejkaCurve(vehicleState, params).
+ * Phase 4.1 (D-13, D-14): Adds 5 new Suspension sliders (Front Travel, Rear Travel,
+ *   Front Body Offset, Rear Body Offset, Bump Stop Stiffness). Adds 4-corner travel-bar
+ *   canvas (160×140 px). Extends backtick toggle to sync travel bar. Exports
+ *   updateTravelBars(vehicleState, params).
  *
  * Uses lil-gui (bundled in three/addons — zero additional dependency).
  */
 
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
 
-// Module-level bindings so updatePacejkaCurve (defined at module scope) can read them.
-// Assigned inside initDebug(); null until then.
+// Module-level bindings so updatePacejkaCurve and updateTravelBars (defined at module scope)
+// can read them. Assigned inside initDebug(); null until then.
 let plotCanvas = null
 let plotCtx = null
+let travelCanvas = null
+let travelCtx = null
 
 /**
  * Initialize the debug panel. Creates a lil-gui instance, adds physics sliders,
@@ -82,6 +88,14 @@ export function initDebug (params) {
   suspFolder.add(params, 'arbStiffnessFront',             0, 40000,  500).name('Front ARB (N/m)')
   suspFolder.add(params, 'arbStiffnessRear',              0, 40000,  500).name('Rear ARB (N/m)')
 
+  // D-14: Phase 4.1 suspension travel + stop sliders.
+  // DROOP_STOP_STIFFNESS is deliberately NOT exposed per CONTEXT.md (fixed constant, no slider).
+  suspFolder.add(params, 'suspensionTravelFront',     0.05,  0.40,   0.01).name('Front Travel (m)')
+  suspFolder.add(params, 'suspensionTravelRear',      0.05,  0.40,   0.01).name('Rear Travel (m)')
+  suspFolder.add(params, 'suspensionBodyOffsetFront', -0.10, 0.10,   0.005).name('Front Body Offset (m)')
+  suspFolder.add(params, 'suspensionBodyOffsetRear',  -0.10, 0.10,   0.005).name('Rear Body Offset (m)')
+  suspFolder.add(params, 'bumpStopStiffness',         10000, 500000, 5000).name('Bump Stop Stiffness (N/m)')
+
   // D-04: Read-only Logger hint — shows the \ key without being interactive
   const _loggerHint = { hint: '\\ to record' }
   gui.add(_loggerHint, 'hint').name('Logger').disable()
@@ -95,13 +109,24 @@ export function initDebug (params) {
   document.body.appendChild(plotCanvas)
   plotCtx = plotCanvas.getContext('2d')
 
-  // Backtick toggle listener — toggles BOTH gui panel AND plotCanvas in lockstep (constraint #9).
-  // Only ONE backtick listener exists in this file (acceptance criterion).
+  // D-13: 4-corner travel-bar canvas — 160×140 px, positioned below the Pacejka canvas.
+  // Four vertical bars (FL, FR, RL, RR) show strutComp as fraction of suspension travel.
+  // Color: green < 70%, yellow 70-95%, red >= 100% (bump stop engaged).
+  travelCanvas = document.createElement('canvas')
+  travelCanvas.width = 160
+  travelCanvas.height = 140
+  travelCanvas.style.cssText = 'position:fixed;top:240px;right:320px;background:#111;border:1px solid #444;display:none'
+  document.body.appendChild(travelCanvas)
+  travelCtx = travelCanvas.getContext('2d')
+
+  // Backtick toggle listener — toggles gui panel, plotCanvas, AND travelCanvas in lockstep
+  // (constraint #9 extended for Phase 4.1). Only ONE backtick listener in this file.
   document.addEventListener('keydown', e => {
     if (e.key === '`') {
       const hidden = gui.domElement.style.display === 'none'
       gui.domElement.style.display = hidden ? '' : 'none'
       plotCanvas.style.display = hidden ? '' : 'none'
+      travelCanvas.style.display = hidden ? '' : 'none'
     }
   })
 
@@ -124,6 +149,84 @@ export function initDebug (params) {
  * @param {object} vehicleState — read vehicleState.wheelDebug[0].sa, wheelDebug[1].sa
  * @param {object} params       — read pacejkaB, pacejkaC (clamped), pacejkaD, pacejkaE
  */
+/**
+ * Draw 4-corner suspension travel bars.
+ * Called once per render frame from src/main.js (outside the fixed-timestep accumulator).
+ * Early-returns when the canvas is hidden for performance (T-04.1-07).
+ *
+ * Bar fill formula per D-13 (droop stop at strutComp <= 0, so droopRange = 0):
+ *   fill[i] = clamp(strutComp[i] / travel[i], 0, 1.05)
+ * Color:
+ *   green  — fill < 0.70 (normal travel)
+ *   yellow — fill 0.70..0.95 (approaching bump stop)
+ *   red    — fill >= 1.00 (bump stop engaged)
+ *
+ * @param {object} vehicleState — read vehicleState.strutComp[0..3]
+ * @param {object} params       — read suspensionTravelFront, suspensionTravelRear
+ */
+export function updateTravelBars (vehicleState, params) {
+  // Early return when hidden (T-04.1-07: 160×140 redraw < 0.1 ms but still worth skipping)
+  if (!travelCanvas || !travelCtx || travelCanvas.style.display === 'none') return
+
+  const W = travelCanvas.width
+  const H = travelCanvas.height
+  travelCtx.clearRect(0, 0, W, H)
+
+  const labels    = ['FL', 'FR', 'RL', 'RR']
+  const barW      = 30    // px — width of each bar
+  const barH      = 90    // px — maximum bar height
+  const barY      = 20    // px — top of the bar area
+  const labelY    = H - 10 // px — label baseline
+  const colSpan   = W / 4  // px — column width per corner
+
+  const strutComp = vehicleState.strutComp || [0, 0, 0, 0]
+
+  for (let i = 0; i < 4; i++) {
+    const isFront  = i < 2
+    const travel   = isFront ? (params.suspensionTravelFront || 0.12) : (params.suspensionTravelRear || 0.14)
+    const comp     = strutComp[i] ?? 0
+    const fill     = Math.max(0, Math.min(1.05, comp / Math.max(travel, 0.001)))
+
+    const cx      = colSpan * i + colSpan / 2  // bar center X
+    const bx      = cx - barW / 2              // bar left X
+    const fillPx  = Math.round(fill * barH)
+
+    // Background (empty) bar
+    travelCtx.fillStyle = '#333'
+    travelCtx.fillRect(bx, barY, barW, barH)
+
+    // Filled portion — color by fill fraction
+    let color
+    if (fill >= 1.0) {
+      color = '#ff2222'   // red — bump stop engaged
+    } else if (fill >= 0.70) {
+      color = '#ffaa00'   // yellow — approaching bump stop
+    } else {
+      color = '#00cc66'   // green — normal travel
+    }
+    travelCtx.fillStyle = color
+    travelCtx.fillRect(bx, barY + barH - fillPx, barW, fillPx)
+
+    // Corner label
+    travelCtx.fillStyle = '#cccccc'
+    travelCtx.font = '11px monospace'
+    travelCtx.textAlign = 'center'
+    travelCtx.fillText(labels[i], cx, labelY)
+
+    // Percentage text inside bar (top edge of fill)
+    const pct = Math.round(fill * 100)
+    travelCtx.fillStyle = '#ffffff'
+    travelCtx.font = '10px monospace'
+    travelCtx.fillText(pct + '%', cx, barY + barH - fillPx - 2)
+  }
+
+  // Title
+  travelCtx.fillStyle = '#888888'
+  travelCtx.font = '10px monospace'
+  travelCtx.textAlign = 'left'
+  travelCtx.fillText('Travel', 4, 12)
+}
+
 export function updatePacejkaCurve (vehicleState, params) {
   // T-03-09: early return when hidden — no canvas work per hidden frame
   // null-guard: protects against calls before initDebug has run
