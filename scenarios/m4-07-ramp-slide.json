@@ -1,0 +1,8 @@
+{
+  "description": "M4-07 ramp-slide D-06 gate. Car at rest on 10 degree ramp midpoint (z=-17.5). No throttle, no brake — gravity alone should slide the car downhill. Asserts vz grows by >0.5 m/s in 3 s. Fails against pre-fix physics.js (D-17).",
+  "position":        { "x": 0,       "y": 0.99,     "z": -17.5 },
+  "velocity":        { "x": 0,       "y": 0,         "z": 0 },
+  "quaternion":      { "x": 0.08716, "y": 0,         "z": 0, "w": 0.99619 },
+  "angularVelocity": { "x": 0,       "y": 0,         "z": 0 },
+  "recordDuration":  3.0
+}
