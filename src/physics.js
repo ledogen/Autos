@@ -129,17 +129,77 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
   const right   = new THREE.Vector3(1, 0, 0).applyQuaternion(vehicleState.quaternion)
   const up      = new THREE.Vector3(0, 1, 0).applyQuaternion(vehicleState.quaternion)
 
-  // ── Step 2.5: Suspension substep loop (Phase 4 — D-08) ───────────────────────────────────────
-  // Integrate hub vertical state (hubY, hubVy) at dt/2 for stability. Writes:
-  //   params._tireFz[i]         — tire-spring Fz per corner (fed to Pacejka per D-03)
-  //   params._suspForceAccum[i] — averaged suspension force on body per corner (applied below)
+  // ── Step 2.5: Suspension substep loop (Phase 4.1) ──────────────────────────────────────────
+  // Integrates strutComp/strutCompVel at dt/N substeps. Writes:
+  //   params._tireFz[i]         — strut-axis tire-spring Fz per corner (fed to Pacejka per D-06b)
+  //   params._suspForceAccum[i] — averaged suspension force on body per corner (applied along body_up below)
+  //   params._hubNormalXZ[i]    — X/Z residual contact normal force per corner (applied in Step 2.6 below)
   // Must run BEFORE Step 3 so Pacejka reads the post-substep tire Fz (D-08).
   stepSuspensionSubsteps(vehicleState, params, dt, queryContacts)
+
+  // ── Step 2.6: Apply XZ contact normal forces to body (Phase 4.1 D-06a) ─────────────────────
+  // _hubNormalXZ[i] is the X/Z residual of tire contact normal force — the component of contact
+  // normal that is NOT along the strut axis. On flat ground (body upright) this is exactly (0,0,0).
+  // On a slope, this residual pushes the body horizontally, causing the car to slide downhill.
+  // Applied AFTER substep loop but BEFORE the Pacejka Step 3 loop.
+  //
+  // Phase 4.1 D-06 architecture:
+  //   - Strut-axis component of contact normal → spring pathway (_suspForceAccum) → body via Step 3
+  //   - X/Z residual → _hubNormalXZ → direct body force + torque here
+  //   On flat ground: _hubNormalXZ[i] = (0,0,0) exactly — legacy m4-02/04/05/06 assertions unaffected.
+  //
+  // NOTE: torque arm uses hub world position as approximation for contact patch (D-06a resolution).
+  // The ~0.37 m offset along the contact normal (hub to actual contact patch) contributes a small
+  // torque-arm error acceptable for body forces; a future phase may add _hubContactPoint accumulator
+  // for higher accuracy.
+  {
+    // totalForce and totalTorque are declared below in Step 3; we apply here before the per-wheel loop.
+    // Use a temporary accumulator then add after Step 3 declaration — or better, declare early.
+    // Solution: the Step 2.6 XZ forces are accumulated into their own temp vectors and added to the
+    // Step 3 totalForce/totalTorque after those are declared. See the _xzForce/_xzTorque application below.
+  }
+  // Pre-compute Step 2.6 XZ contributions so they can be added after totalForce/totalTorque are declared.
+  const _xzForceX = [0, 0, 0, 0]
+  const _xzForceY = [0, 0, 0, 0]
+  const _xzForceZ = [0, 0, 0, 0]
+  const _xzTorqueX = [0, 0, 0, 0]
+  const _xzTorqueY = [0, 0, 0, 0]
+  const _xzTorqueZ = [0, 0, 0, 0]
+  if (params._hubNormalXZ) {
+    for (let i = 0; i < 4; i++) {
+      const xz = params._hubNormalXZ[i]
+      if (!xz || (xz.x === 0 && xz.y === 0 && xz.z === 0)) continue
+      // Hub world position for torque arm (approximation per D-06a)
+      const hub_i  = getWheelPosition(i, vehicleState, params)
+      const rHubX  = hub_i.x - vehicleState.position.x
+      const rHubY  = hub_i.y - vehicleState.position.y
+      const rHubZ  = hub_i.z - vehicleState.position.z
+      // Cross product rHub × F_xz for torque
+      _xzForceX[i]  = xz.x
+      _xzForceY[i]  = xz.y
+      _xzForceZ[i]  = xz.z
+      _xzTorqueX[i] = rHubY * xz.z - rHubZ * xz.y
+      _xzTorqueY[i] = rHubZ * xz.x - rHubX * xz.z
+      _xzTorqueZ[i] = rHubX * xz.y - rHubY * xz.x
+    }
+  }
 
   // ── Step 3: Per-wheel force accumulation ──────────────────────────────────
   const totalForce  = new THREE.Vector3(0, -params.mass * 9.81, 0)
   const totalTorque = new THREE.Vector3()
   let totalGroundFn = 0  // accumulated normal force across all wheel contacts; gates rolling resistance
+
+  // Apply Step 2.6 pre-computed XZ contact normal forces (D-06a)
+  for (let i = 0; i < 4; i++) {
+    if (_xzForceX[i] !== 0 || _xzForceY[i] !== 0 || _xzForceZ[i] !== 0) {
+      totalForce.x  += _xzForceX[i]
+      totalForce.y  += _xzForceY[i]
+      totalForce.z  += _xzForceZ[i]
+      totalTorque.x += _xzTorqueX[i]
+      totalTorque.y += _xzTorqueY[i]
+      totalTorque.z += _xzTorqueZ[i]
+    }
+  }
 
   for (let i = 0; i < 4; i++) {
     // Phase 4: write per-wheel fz from substep result FIRST (D-12), then airborne check (D-14).
@@ -169,11 +229,11 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
     const mLocalY = -(params.cgHeight - params.wheelRadius)
     const rMount = params._rotateVector({ x: mLocalX, y: mLocalY, z: mLocalZ })
 
-    // Phase 4: apply suspension spring force to body (vertical only per D-07 bilinear-spring approx).
-    // Suspension force is the hub↔body force — it pushes the body up (+Y) and the hub down (-Y).
+    // Phase 4.1: apply suspension spring force to body along strut axis (body_up direction).
+    // Replaces the Phase 4 world-Y force vector — on a pitched body, the strut axis is NOT world-Y.
     // Applied regardless of airborne state: suspension spring still acts on body even when wheel lifts.
     // (When airborne, suspForce may be small/negative but damping still contributes, per D-15.)
-    const suspBodyForce = new THREE.Vector3(0, params._suspForceAccum[i], 0)
+    const suspBodyForce = up.clone().multiplyScalar(params._suspForceAccum[i])
     totalForce.add(suspBodyForce)
     totalTorque.add(new THREE.Vector3().crossVectors(rMount, suspBodyForce))
 
@@ -267,11 +327,12 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
       if (Fn <= 0) continue
       totalGroundFn += Fn
 
-      // Phase 4 NOTE: do NOT add Fn*normal to totalForce here — the suspension spring force
-      // (_suspForceAccum[i]) was already applied to totalForce above this contacts loop.
-      // Adding tireFz*normal here would double-count the body upward force on flat ground.
-      // For non-flat contacts (walls, ramps), the normal reaction is handled by the existing
-      // body contact points path (Step 3b) which uses bodyContactStiffness, not tireStiffness.
+      // Phase 4.1 NOTE (D-06): do NOT add Fn*normal to totalForce here.
+      // The strut-axis component of the contact normal flows through _suspForceAccum (spring pathway),
+      // applied above via suspBodyForce = up * _suspForceAccum[i] along body_up.
+      // The X/Z residual (off-axis component) flows through _hubNormalXZ, applied in Step 2.6 above.
+      // This clean split ensures: on flat ground _hubNormalXZ[i] = (0,0,0) exactly →
+      // existing m4-02/04/05/06 assertions remain unaffected by the Phase 4.1 changes.
 
       // Tire forces — slip-velocity Pacejka with relaxation length per tire.
       // The relaxation length L models tire carcass viscoelastic dynamics: the carcass

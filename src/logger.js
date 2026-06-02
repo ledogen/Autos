@@ -157,8 +157,8 @@ export function captureFrame (simTime, vehicleState, wheelDebug) {
  * Unknown keys are silently ignored. Malformed JSON is caught and logged without crashing.
  *
  * @param {object} vehicleState - Mutable vehicleState; fields are set in-place.
- * @param {object} [params]     - RANGER_PARAMS; used to recompute hubY equilibrium after
- *                                loading. If omitted, hubY is zeroed (better than stale).
+ * @param {object} [params]     - RANGER_PARAMS; used to recompute strutComp equilibrium after
+ *                                loading using D-11 formula. If omitted, strutComp is zeroed.
  */
 export function openInitialCondition (vehicleState, params) {
   const input = document.createElement('input')
@@ -184,32 +184,27 @@ export function openInitialCondition (vehicleState, params) {
           vehicleState.angularVelocity.set(ic.angularVelocity.x, ic.angularVelocity.y, ic.angularVelocity.z)
         }
         // WR-02: reset suspension, slip, and wheel state to prevent stale-state force spikes.
-        // After loading a new position.y, stale hubY values produce an incorrect suspComp on
+        // After loading a new IC, stale strutComp values produce incorrect spring forces on
         // the first physics step, causing a transient bounce that corrupts scenario assertions.
-        vehicleState.hubVy      = [0, 0, 0, 0]
-        vehicleState.wheelOmega = [0, 0, 0, 0]
-        vehicleState.slipLong   = [0, 0, 0, 0]
-        vehicleState.slipLat    = [0, 0, 0, 0]
-        // Recompute hubY from static equilibrium if params provided; zero otherwise.
-        // Equilibrium derivation mirrors computeStaticEquilibrium in main.js (series-spring model).
+        vehicleState.strutCompVel = [0, 0, 0, 0]
+        vehicleState.wheelOmega   = [0, 0, 0, 0]
+        vehicleState.slipLong     = [0, 0, 0, 0]
+        vehicleState.slipLat      = [0, 0, 0, 0]
+        // Recompute strutComp from static equilibrium using D-11 formula (sprung mass only).
+        // strutComp[i] = m_sprung_corner * g / k_S_i  where m_sprung = mass * weight_i / 2
+        // This is the hub-ODE equilibrium condition; wheel inertia is not included (D-11).
         if (params) {
-          // Tire-static formula: hub center sits wheelRadius above ground, minus the static
-          // tire compression that holds corner weight. Matches main.js computeStaticEquilibrium.
-          // The previous mount-derived form (hubY = mountWorldY - L_S + suspComp) jammed the
-          // rear tire ~60 mm into the ground whenever IC.position.y didn't equal the per-axle
-          // eq body Y (front 0.600 m, rear 0.627 m — they differ by L_S front/rear split, so
-          // no single body Y satisfies both axles simultaneously).
           const g = 9.81
-          const hubY = [0, 0, 0, 0]
+          const strutComp = [0, 0, 0, 0]
           for (let i = 0; i < 4; i++) {
-            const isFront    = i < 2
-            const cornerMass = params.mass * (isFront ? params.weightFront : params.weightRear) / 2 + params.wheelMass
-            const tireComp   = cornerMass * g / params.tireStiffness
-            hubY[i] = params.wheelRadius - tireComp
+            const isFront = i < 2
+            const k_S     = isFront ? params.suspensionStiffnessFront : params.suspensionStiffnessRear
+            const sprung  = params.mass * (isFront ? params.weightFront : params.weightRear) / 2
+            strutComp[i]  = sprung * g / k_S  // D-11
           }
-          vehicleState.hubY = hubY
+          vehicleState.strutComp = strutComp
         } else {
-          vehicleState.hubY = [0, 0, 0, 0]
+          vehicleState.strutComp = [0, 0, 0, 0]
         }
         // Future: ic.inputs would carry a time-keyed throttle/brake/steer script
         // so scenarios are fully autonomous. For now warn so a stale field doesn't
