@@ -29,7 +29,7 @@ let orbitPhi    = 0.38      // ≈ 22° elevation, matches rough chase offset an
 
 // ── Input listeners ────────────────────────────────────────────────────────────
 document.addEventListener('mousedown', e => {
-  if (e.button === 0 && cameraMode === 'chase') {
+  if (e.button === 0 && cameraMode === 'chase' && !e.target.closest('.lil-gui')) {
     isDragging = true
     dragLastX  = e.clientX
     dragLastY  = e.clientY
