@@ -18,6 +18,9 @@ findings:
   info: 3
   total: 8
 status: issues_found
+resolved:
+  - CR-01: fixed in commit 4306eb6 (TERR-FIX-02 — queryVertexContacts now uses sampleNormal)
+  - CR-02: fixed in commit 4d14743 (rebuildAllChunks — all loaded chunks rebuilt immediately on slider change)
 ---
 
 # Phase 06: Code Review Report
@@ -31,7 +34,7 @@ status: issues_found
 
 Phase 6 adds procedural terrain via a Blob Web Worker, a bilinear height-query system, and a TerrainSystem class that manages a 5×5 chunk ring. The core architecture is sound: the worker correctly transfers `heights.buffer` as a transferable (zero-copy), bilinear interpolation is correctly implemented, and the fixed-timestep loop correctly calls `terrainSystem.update()` outside the physics accumulator.
 
-Two critical bugs were found. First, `queryVertexContacts` uses a hardcoded flat normal `(0,1,0)` for terrain contact regardless of slope — while `queryContacts` (sphere contacts) correctly calls `sampleNormal`. This asymmetry means body-box vertex contacts on sloped terrain always push the body straight up, producing incorrect rollover/slide behavior on hills. Second, `terrainAmplitude` slider changes cause an immediate mismatch between the physics contact surface and visual geometry: `sampleHeight` reads the new amplitude instantly while existing built chunks retain geometry baked at the old amplitude, causing the car to collide with invisible terrain or float above visible ground until chunks cycle out.
+Two critical bugs were found and subsequently fixed. **CR-01** (`queryVertexContacts` flat normal) was resolved in commit `4306eb6` (TERR-FIX-02): body-vertex contacts now call `sampleNormal(px,pz)`. **CR-02** (amplitude physics/visual mismatch) was resolved in commit `4d14743`: `TerrainSystem.rebuildAllChunks()` re-applies the new amplitude to all loaded chunk geometries immediately on slider change, so physics and visuals stay co-located.
 
 Three warnings cover: the `_pendingQueue` not being filtered before building (stale out-of-ring chunks get GPU-uploaded for one frame), the dead `terrain()` function still being called every physics step, and the unused `simplex-noise` importmap entry fetching an unnecessary CDN dependency.
 
