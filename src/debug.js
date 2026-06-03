@@ -118,7 +118,9 @@ export function initDebug (params, callbacks = {}) {
   // rampEnabled toggle calls the setRampVisible callback (passed via initDebug second arg)
   // to keep rampMesh.visible in sync; also guards RAMP_TRIS loops in queryContacts.
   const terrainFolder = gui.addFolder('Terrain')
-  terrainFolder.add(params, 'terrainAmplitude', 0.1, 3.0, 0.05).name('Terrain Amplitude')
+  terrainFolder.add(params, 'terrainAmplitude', 0.1, 3.0, 0.05).name('Terrain Amplitude').onChange(() => {
+    if (typeof callbacks.rebuildTerrain === 'function') callbacks.rebuildTerrain()
+  })
   terrainFolder.add(params, 'rampEnabled').name('Ramp Visible').onChange(v => {
     if (typeof callbacks.setRampVisible === 'function') callbacks.setRampVisible(v)
   })

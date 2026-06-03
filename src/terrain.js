@@ -364,6 +364,24 @@ export class TerrainSystem {
      * See RESEARCH.md Pattern 6.
      * @private
      */
+    /**
+     * Re-apply the current terrainAmplitude to all already-built chunk geometries.
+     * Called when the debug amplitude slider changes so visuals update immediately
+     * instead of waiting for chunks to cycle out of the ring.
+     */
+    rebuildAllChunks() {
+        const amp = this._params.terrainAmplitude ?? 1.0
+        const N = GRID_SAMPLES
+        for (const [, chunk] of this._chunkMap) {
+            const pos = chunk.mesh.geometry.attributes.position
+            for (let i = 0; i < N * N; i++) {
+                pos.setY(i, chunk.heights[i] * amp)
+            }
+            pos.needsUpdate = true
+            chunk.mesh.geometry.computeVertexNormals()
+        }
+    }
+
     _flushPendingQueue() {
         let built = 0
         while (this._pendingQueue.length > 0 && built < MAX_BUILDS_PER_FRAME) {

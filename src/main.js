@@ -518,7 +518,8 @@ let _fpsLastTime = 0   // will be set to currentTime on first frame
 // Phase 6 (TERR-06): pass setRampVisible callback so the Ramp Visible toggle in debug.js
 // can control rampMesh visibility without requiring debug.js to import rampMesh directly.
 initDebug(RANGER_PARAMS, {
-  setRampVisible: (v) => { rampMesh.visible = v }
+  setRampVisible:  (v) => { rampMesh.visible = v },
+  rebuildTerrain:  ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() }
 })
 
 // ── TerrainSystem (Phase 6) ───────────────────────────────────────────────────
