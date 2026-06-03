@@ -1,0 +1,7 @@
+{
+  "description": "Car moving at 60 km/h in a straight line (forward = -Z)",
+  "position":        { "x": 0, "y": 0.55, "z": 0 },
+  "velocity":        { "x": 0, "y": 0,    "z": -16.667 },
+  "quaternion":      { "x": 0, "y": 0,    "z": 0, "w": 1 },
+  "angularVelocity": { "x": 0, "y": 0,    "z": 0 }
+}
