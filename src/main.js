@@ -407,36 +407,39 @@ function queryVertexContacts (px, py, pz) {
     hits.push({ normal: _flatNormal.clone(), depth: terrainH - py })
   }
 
-  // Ramp top incline face — half-space below the inclined plane, within ramp footprint
-  if (px >= -_hw && px <= _hw && pz <= RAMP_START_Z && pz >= RAMP_END_Z) {
-    const rampSurfaceY = (RAMP_START_Z - pz) * Math.tan(RAMP_ANGLE)
-    const depth = rampSurfaceY - py
-    if (depth > 0) {
-      hits.push({ normal: _rampNormal.clone(), depth })
+  // Ramp face contacts — all four faces skipped when ramp is disabled (TERR-06 / T-06-07)
+  if (RANGER_PARAMS.rampEnabled !== false) {
+    // Ramp top incline face — half-space below the inclined plane, within ramp footprint
+    if (px >= -_hw && px <= _hw && pz <= RAMP_START_Z && pz >= RAMP_END_Z) {
+      const rampSurfaceY = (RAMP_START_Z - pz) * Math.tan(RAMP_ANGLE)
+      const depth = rampSurfaceY - py
+      if (depth > 0) {
+        hits.push({ normal: _rampNormal.clone(), depth })
+      }
     }
-  }
 
-  // Ramp back wall — vertical face at RAMP_END_Z, within ramp width and height
-  if (px >= -_hw && px <= _hw && pz < RAMP_END_Z && py >= 0 && py <= RAMP_MAX_H) {
-    const depth = RAMP_END_Z - pz
-    if (depth > 0) {
-      hits.push({ normal: new THREE.Vector3(0, 0, 1), depth })
+    // Ramp back wall — vertical face at RAMP_END_Z, within ramp width and height
+    if (px >= -_hw && px <= _hw && pz < RAMP_END_Z && py >= 0 && py <= RAMP_MAX_H) {
+      const depth = RAMP_END_Z - pz
+      if (depth > 0) {
+        hits.push({ normal: new THREE.Vector3(0, 0, 1), depth })
+      }
     }
-  }
 
-  // Ramp left side wall — at x = -_hw, within ramp Z and height
-  if (pz <= RAMP_START_Z && pz >= RAMP_END_Z && py >= 0 && py <= RAMP_MAX_H) {
-    const depth = px - (-_hw)
-    if (depth < 0) {
-      hits.push({ normal: new THREE.Vector3(1, 0, 0), depth: -depth })
+    // Ramp left side wall — at x = -_hw, within ramp Z and height
+    if (pz <= RAMP_START_Z && pz >= RAMP_END_Z && py >= 0 && py <= RAMP_MAX_H) {
+      const depth = px - (-_hw)
+      if (depth < 0) {
+        hits.push({ normal: new THREE.Vector3(1, 0, 0), depth: -depth })
+      }
     }
-  }
 
-  // Ramp right side wall — at x = +_hw
-  if (pz <= RAMP_START_Z && pz >= RAMP_END_Z && py >= 0 && py <= RAMP_MAX_H) {
-    const depth = _hw - px
-    if (depth < 0) {
-      hits.push({ normal: new THREE.Vector3(-1, 0, 0), depth: -depth })
+    // Ramp right side wall — at x = +_hw
+    if (pz <= RAMP_START_Z && pz >= RAMP_END_Z && py >= 0 && py <= RAMP_MAX_H) {
+      const depth = _hw - px
+      if (depth < 0) {
+        hits.push({ normal: new THREE.Vector3(-1, 0, 0), depth: -depth })
+      }
     }
   }
 
@@ -465,24 +468,26 @@ function queryContacts (cx, cy, cz, r) {
     })
   }
 
-  // Triangle mesh contacts — sphere vs each ramp triangle
-  for (const [[ax, ay, az], [bx, by, bz], [ex, ey, ez]] of RAMP_TRIS) {
-    const cp = closestPointOnTriangle(cx, cy, cz, ax, ay, az, bx, by, bz, ex, ey, ez)
-    const dx = cx - cp.x, dy = cy - cp.y, dz = cz - cp.z
-    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
-    const depth = r - dist
-    if (depth <= 0) continue
-    // WR-05: skip degenerate contacts where sphere center lies exactly on the triangle surface.
-    // inv = 0 would produce a zero-length normal; applying it gives Fn*zero = no force despite
-    // positive depth, allowing the object to penetrate silently. Use triangle face normal as
-    // fallback only when we can safely recover it — for now, skip and rely on adjacent contacts.
-    if (dist < 1e-8) continue
-    const inv = 1 / dist
-    hits.push({
-      normal: new THREE.Vector3(dx * inv, dy * inv, dz * inv),
-      depth,
-      contactPoint: cp
-    })
+  // Triangle mesh contacts — sphere vs each ramp triangle (skipped when ramp is disabled)
+  if (RANGER_PARAMS.rampEnabled !== false) {
+    for (const [[ax, ay, az], [bx, by, bz], [ex, ey, ez]] of RAMP_TRIS) {
+      const cp = closestPointOnTriangle(cx, cy, cz, ax, ay, az, bx, by, bz, ex, ey, ez)
+      const dx = cx - cp.x, dy = cy - cp.y, dz = cz - cp.z
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+      const depth = r - dist
+      if (depth <= 0) continue
+      // WR-05: skip degenerate contacts where sphere center lies exactly on the triangle surface.
+      // inv = 0 would produce a zero-length normal; applying it gives Fn*zero = no force despite
+      // positive depth, allowing the object to penetrate silently. Use triangle face normal as
+      // fallback only when we can safely recover it — for now, skip and rely on adjacent contacts.
+      if (dist < 1e-8) continue
+      const inv = 1 / dist
+      hits.push({
+        normal: new THREE.Vector3(dx * inv, dy * inv, dz * inv),
+        depth,
+        contactPoint: cp
+      })
+    }
   }
 
   return hits
@@ -507,7 +512,11 @@ let _fpsLastTime = 0   // will be set to currentTime on first frame
 
 // ── Debug panel ──────────────────────────────────────────────────────────────
 // D-10: passes mutable RANGER_PARAMS ref so sliders write directly to the object physics.js reads.
-initDebug(RANGER_PARAMS)
+// Phase 6 (TERR-06): pass setRampVisible callback so the Ramp Visible toggle in debug.js
+// can control rampMesh visibility without requiring debug.js to import rampMesh directly.
+initDebug(RANGER_PARAMS, {
+  setRampVisible: (v) => { rampMesh.visible = v }
+})
 
 // ── TerrainSystem (Phase 6) ───────────────────────────────────────────────────
 // Instantiated after scene exists. Removes flat ground mesh to prevent Z-fighting.
