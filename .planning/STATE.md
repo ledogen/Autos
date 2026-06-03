@@ -25,11 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-10)
 
 ## Current Position
 
-Phase: 04 (suspension) — EXECUTING
-Plan: 3 of 3
-Plans: 3 of 3 planned, 0 of 3 executed
-Status: Phase complete — ready for verification
-Last activity: 2026-06-02
+Phase: 06 (procedural terrain) — RESEARCH REQUIRED before planning
+Plan: none yet
+Status: Phase 5 skipped; research phase must complete before /gsd-plan-phase 6
+Last activity: 2026-06-03
 
 Progress: [██████████] 95%
 

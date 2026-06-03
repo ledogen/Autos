@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 3: Tire Model** - Pacejka Magic Formula, wheel angular velocity, longitudinal slip, handbrake
 - [ ] **Phase 4: Suspension** - Spring-damper per wheel, dynamic Fz, load transfer, wheel lift
 - [ ] **Phase 4.1: Body-Frame Suspension** (INSERTED) - Strut compression as state, hub motion along body Y-axis, bump/droop stops
-- [ ] **Phase 5: Rollover Validation** - Ramp prop, rollover scenarios, G-force meter, orbit camera
+- [~] **Phase 5: Rollover Validation** - SKIPPED — rollovers work, orbit drag exists in chase mode; remaining items (O key, G-meter, scenario file) deemed not worth a full phase
 - [ ] **Phase 6: Procedural Terrain** - ⚠ RESEARCH REQUIRED before planning or execution
 
 ## Phase Details
