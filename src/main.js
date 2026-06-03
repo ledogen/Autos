@@ -23,6 +23,11 @@ import { updateVehicle, SPAWN_STATE } from './vehicle.js'
 import { updateCamera } from './camera.js'
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition } from './logger.js'
+import { TerrainSystem } from './terrain.js'
+
+// TerrainSystem instance — declared at module scope so queryContacts / queryVertexContacts
+// can access it by reference. Initialized after scene exists (below initDebug).
+let terrainSystem = null
 
 // Manual verification hook — console.log confirms importmap loaded r184 (FOUND-02)
 console.log('THREE.REVISION', THREE.REVISION)
@@ -396,9 +401,10 @@ function closestPointOnTriangle (px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz)
 function queryVertexContacts (px, py, pz) {
   const hits = []
 
-  // Ground half-space (y = 0)
-  if (py < 0) {
-    hits.push({ normal: _flatNormal.clone(), depth: -py })
+  // Ground surface — terrain height query (Phase 6)
+  const terrainH = terrainSystem ? terrainSystem.sampleHeight(px, pz) : 0
+  if (py < terrainH) {
+    hits.push({ normal: _flatNormal.clone(), depth: terrainH - py })
   }
 
   // Ramp top incline face — half-space below the inclined plane, within ramp footprint
@@ -447,13 +453,17 @@ function queryVertexContacts (px, py, pz) {
 function queryContacts (cx, cy, cz, r) {
   const hits = []
 
-  // Ground half-space (y = 0, normal +Y) — unchanged
-  const gd = r - cy
-  if (gd > 0) hits.push({
-    normal: _flatNormal.clone(),
-    depth: gd,
-    contactPoint: new THREE.Vector3(cx, 0, cz)
-  })
+  // Ground surface — terrain height query (Phase 6; replaces flat y=0 half-space)
+  const terrainH = terrainSystem ? terrainSystem.sampleHeight(cx, cz) : 0
+  const gd = terrainH + r - cy
+  if (gd > 0) {
+    const n = terrainSystem ? terrainSystem.sampleNormal(cx, cz) : { x: 0, y: 1, z: 0 }
+    hits.push({
+      normal:       new THREE.Vector3(n.x, n.y, n.z),
+      depth:        gd,
+      contactPoint: new THREE.Vector3(cx, terrainH, cz)
+    })
+  }
 
   // Triangle mesh contacts — sphere vs each ramp triangle
   for (const [[ax, ay, az], [bx, by, bz], [ex, ey, ez]] of RAMP_TRIS) {
@@ -498,6 +508,11 @@ let _fpsLastTime = 0   // will be set to currentTime on first frame
 // ── Debug panel ──────────────────────────────────────────────────────────────
 // D-10: passes mutable RANGER_PARAMS ref so sliders write directly to the object physics.js reads.
 initDebug(RANGER_PARAMS)
+
+// ── TerrainSystem (Phase 6) ───────────────────────────────────────────────────
+// Instantiated after scene exists. Removes flat ground mesh to prevent Z-fighting.
+terrainSystem = new TerrainSystem(scene, RANGER_PARAMS)
+scene.remove(ground)   // Remove flat 200×200 ground mesh — terrain chunks replace it (T-06-06)
 
 // ── Body contact point debug spheres ──────────────────────────────────────────
 // 14 translucent orange spheres — one per probe in getBodyContactPoints.
@@ -561,6 +576,9 @@ function loop () {
       // so the car spawns pre-settled with no visible drop (RESEARCH §Pattern 4 / Pitfall 1).
       const eq = computeStaticEquilibrium(RANGER_PARAMS)
       vehicleState.position.set(SPAWN_STATE.positionX, eq.bodyY, SPAWN_STATE.positionZ)
+      // Phase 6: offset spawn Y by terrain height so car sits on terrain surface after reset.
+      // sampleHeight returns 0 when chunk not loaded — safe flat-ground fallback (T-06-04).
+      vehicleState.position.y += terrainSystem ? terrainSystem.sampleHeight(SPAWN_STATE.positionX, SPAWN_STATE.positionZ) : 0
       vehicleState.velocity.set(0, 0, 0)
       vehicleState.quaternion.set(SPAWN_STATE.quatX, SPAWN_STATE.quatY, SPAWN_STATE.quatZ, SPAWN_STATE.quatW)
       vehicleState.angularVelocity.set(0, 0, 0)
@@ -587,13 +605,15 @@ function loop () {
 
   syncMeshesToState(vehicleState)
 
-  // Snap ground and grid to car position so they appear infinite.
+  // Phase 6: update terrain chunk ring each render frame (outside physics accumulator).
+  // ground.position.x/z snapping removed — ground mesh removed; terrain chunks replace it.
+  terrainSystem.update(vehicleState.position)
+
+  // Snap grid to car position so it appears infinite.
   // Cell size = grid width (200m) / divisions (100) = 2m — snap prevents visible seam movement.
   const CELL = 2
   const snapX = Math.round(vehicleState.position.x / CELL) * CELL
   const snapZ = Math.round(vehicleState.position.z / CELL) * CELL
-  ground.position.x = snapX
-  ground.position.z = snapZ
   grid.position.x   = snapX
   grid.position.z   = snapZ
 
