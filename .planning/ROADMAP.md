@@ -158,15 +158,23 @@ Plans:
 **Mode:** mvp
 **Depends on**: Phase 5
 **Requirements**: TERR-01, TERR-02, TERR-03, TERR-04, TERR-05, TERR-06
-
-> **⚠ RESEARCH REQUIRED**: This phase must NOT be planned or executed until a dedicated research phase is completed. Key open questions: chunk ring-buffer strategy, Web Worker heightmap generation (browser constraints), physics normal integration per contact point, 60fps budget with terrain active. Run `/gsd-plan-phase 6` only after research outputs are in `.planning/research/`.
-
 **Success Criteria** (what must be TRUE):
   1. User can drive continuously in any direction without visible terrain seams or chunk pop-in
   2. User can drive over hills and uneven ground and observe the car respond correctly — body pitches and rolls with terrain slope
   3. User can roll the car over on terrain without needing the ramp prop
   4. User can maintain 60fps on a mid-range laptop with terrain active and all prior physics systems running
-**Plans**: TBD (pending research phase)
+**Plans**: 3 plans
+
+Plans:
+**Wave 1**
+- [ ] 06-01-PLAN.md — TerrainSystem module: Blob worker, simplex noise, chunk ring, bilinear height/normal query
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 06-02-PLAN.md — main.js wiring: queryContacts + queryVertexContacts terrain integration, flat ground removal, importmap
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 06-03-PLAN.md — Debug terrain folder, terrainAmplitude param, ramp toggle, unit tests, GLOSSARY
+
 **UI hint**: no
 
 ## Progress
@@ -181,4 +189,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → [research] → 6
 | 3. Tire Model | 0/3 | Ready to execute | - |
 | 4. Suspension | 0/TBD | Not started | - |
 | 5. Rollover Validation | 0/TBD | Not started | - |
-| 6. Procedural Terrain | 0/TBD | Blocked (research required) | - |
+| 6. Procedural Terrain | 0/3 | Ready to execute | - |
