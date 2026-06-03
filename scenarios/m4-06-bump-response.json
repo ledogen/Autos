@@ -1,7 +1,7 @@
 {
-  "description": "M4-06 damping characterization. Car centered (X=0), both sides on the ramp, ~5 m/s. Climbs the 10° ramp, launches off the 0.88 m lip, lands → impulse → ringing. Assertion needs ≥1.5 s post-peak settle window. Auto-records 6 s.",
+  "description": "M4-06 damping characterization. Car centered (X=0), both sides on the ramp, ~13.9 m/s (50 kph). Punches through the 10° ramp, lands → impulse → ringing. Assertion needs ≥1.5 s post-peak settle window. Auto-records 6 s.",
   "position":        { "x": 0, "y": 0.60, "z": -5 },
-  "velocity":        { "x": 0, "y": 0,    "z": -5 },
+  "velocity":        { "x": 0, "y": 0,    "z": -13.889 },
   "quaternion":      { "x": 0, "y": 0,    "z": 0, "w": 1 },
   "angularVelocity": { "x": 0, "y": 0,    "z": 0 },
   "recordDuration":  6.0
