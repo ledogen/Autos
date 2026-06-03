@@ -74,7 +74,7 @@ Recent decisions affecting current work:
 
 | # | Bug / Task | Description |
 |---|------------|-------------|
-| BUG-01 | Slip velocity per wheel chart doesn't display | The Pacejka canvas overlay in debug.js (toggled via backtick) is not visible when the debug panel opens. Additionally, operating-point dots only render for FL/FR (indices 0/1) — RL/RR (indices 2/3) are omitted from the draw loop (`for (const i of [0, 1])`). Chart should show all 4 wheels. |
+*(none)*
 
 ### Quick Tasks Completed
 
