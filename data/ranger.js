@@ -145,4 +145,14 @@ export const RANGER_PARAMS = {
   // Mirrors the PHYSICS_DT constant in main.js. Stored here so suspension.js (pure-math,
   // no main.js import) can verify sub-step stability against dt without importing main.js.
   physicsDt:  1 / 60,   // s — outer physics step (≈16.667ms); substep = physicsDt/2 (D-08)
+
+  // ── Phase 6 Terrain (TERR-06) ─────────────────────────────────────────────
+  // terrainAmplitude: scale multiplier applied to raw noise heights during chunk geometry build.
+  // Exposed as a Terrain folder slider in debug.js (0.1–3.0, step 0.05).
+  // Changing the slider live affects newly-built chunks (geometry built from pending queue each frame).
+  terrainAmplitude: 1.0,   // m scale factor — multiplied onto heightmap values in TerrainSystem
+
+  // rampEnabled: when false, ramp triangles are skipped in queryContacts + queryVertexContacts,
+  // and rampMesh.visible is set false via the setRampVisible callback in debug.js.
+  rampEnabled: true,       // ramp collision + visibility toggle
 };

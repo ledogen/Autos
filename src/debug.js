@@ -41,7 +41,7 @@ let slipCtx = null
  *   take effect immediately (M2-06).
  * @returns {GUI} the lil-gui GUI instance
  */
-export function initDebug (params) {
+export function initDebug (params, callbacks = {}) {
   const gui = new GUI({ title: 'RangerSim Debug' })
   gui.domElement.style.display = 'none'  // hidden by default; backtick reveals it
 
@@ -111,6 +111,17 @@ export function initDebug (params) {
   suspFolder.add(params, 'suspensionBodyOffsetFront', -0.10, 0.10,   0.005).name('Front Body Offset (m)')
   suspFolder.add(params, 'suspensionBodyOffsetRear',  -0.10, 0.10,   0.005).name('Rear Body Offset (m)')
   suspFolder.add(params, 'bumpStopStiffness',         10000, 500000, 5000).name('Bump Stop Stiffness (N/m)')
+
+  // Phase 6 (TERR-06): Terrain folder — amplitude tuning + ramp visibility toggle.
+  // terrainAmplitude is read by TerrainSystem._flushPendingQueue during geometry build;
+  // live mutation of params.terrainAmplitude takes effect on the next chunk built.
+  // rampEnabled toggle calls the setRampVisible callback (passed via initDebug second arg)
+  // to keep rampMesh.visible in sync; also guards RAMP_TRIS loops in queryContacts.
+  const terrainFolder = gui.addFolder('Terrain')
+  terrainFolder.add(params, 'terrainAmplitude', 0.1, 3.0, 0.05).name('Terrain Amplitude')
+  terrainFolder.add(params, 'rampEnabled').name('Ramp Visible').onChange(v => {
+    if (typeof callbacks.setRampVisible === 'function') callbacks.setRampVisible(v)
+  })
 
   // D-04: Read-only Logger hint — shows the \ key without being interactive
   const _loggerHint = { hint: '\\ to record' }
