@@ -316,9 +316,9 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       const hubContacts = queryContacts(hubWorldX, hubWorldY, hubWorldZ, params.wheelRadius)
       let tireFz = 0
       for (const c of hubContacts) {
-        // compressionVel along strut: strutCompVelI is the pre-step compression rate.
-        // Positive strutCompVelI = hub moving toward body = compressing = penetrating ground = positive compressionVel.
-        const compressionVel = strutCompVelI
+        // compressionVel sign convention: positive = hub approaching ground = tire compressing.
+        // strutCompVelI > 0 means strut shortening = hub moving UP = tire decompressing, so negate.
+        const compressionVel = -strutCompVelI
         const tireFnAtContact = Math.max(0,
           params.tireStiffness * c.depth + params.tireDamping * compressionVel
         )
@@ -379,16 +379,35 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
 }
 
 export function getBodyContactPoints (vehicleState, params) {
-  const frontAxleZ = -(params.wheelbase * params.weightRear)
-  const rearAxleZ  =  (params.wheelbase * params.weightFront)
-  const localY     = 0.35 - params.cgHeight   // bumper at 0.35 m above ground in body space
-  const halfW      = params.trackFront / 2 + 0.1
+  const fz     = -(params.wheelbase * params.weightRear)   // front axle Z in body space
+  const rz     =  (params.wheelbase * params.weightFront)  // rear axle Z in body space
+  const bumY   = 0.35 - params.cgHeight                   // bumper height (low side of body)
+  const undY   = params.wheelRadius - params.cgHeight      // undercarriage bottom
+  const topY   = 0.4                                       // top of visual body box (0.8m box / 2, centered at CG)
+  const halfW  = params.trackFront / 2 + 0.1              // lateral extent (slightly past track)
+  const trkW   = params.trackFront / 2                    // at-wheel lateral position
 
   const locals = [
-    { x: -halfW, y: localY, z: frontAxleZ - 0.85 },
-    { x:  halfW, y: localY, z: frontAxleZ - 0.85 },
-    { x: -halfW, y: localY, z: rearAxleZ  + 0.65 },
-    { x:  halfW, y: localY, z: rearAxleZ  + 0.65 },
+    // Front bumper — left and right
+    { x: -halfW, y: bumY, z: fz - 0.85 },
+    { x:  halfW, y: bumY, z: fz - 0.85 },
+    // Rear bumper — left and right
+    { x: -halfW, y: bumY, z: rz + 0.65 },
+    { x:  halfW, y: bumY, z: rz + 0.65 },
+    // Undercarriage — just in front of rear wheels
+    { x: -trkW, y: undY, z: rz - 0.35 },
+    { x:  trkW, y: undY, z: rz - 0.35 },
+    // Undercarriage — just behind front wheels
+    { x: -trkW, y: undY, z: fz + 0.35 },
+    { x:  trkW, y: undY, z: fz + 0.35 },
+    // Undercarriage — center (two points straddling CG)
+    { x: 0, y: undY, z: -0.3 },
+    { x: 0, y: undY, z:  0.3 },
+    // Roof — four corners
+    { x: -halfW, y: topY, z: fz - 0.85 },
+    { x:  halfW, y: topY, z: fz - 0.85 },
+    { x: -halfW, y: topY, z: rz + 0.65 },
+    { x:  halfW, y: topY, z: rz + 0.65 },
   ]
 
   return locals.map(p => {

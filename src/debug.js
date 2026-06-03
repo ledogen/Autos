@@ -21,6 +21,7 @@
  */
 
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
+import { VEHICLES } from '../data/vehicles.js'
 
 // Module-level bindings so updatePacejkaCurve and updateTravelBars (defined at module scope)
 // can read them. Assigned inside initDebug(); null until then.
@@ -28,6 +29,8 @@ let plotCanvas = null
 let plotCtx = null
 let travelCanvas = null
 let travelCtx = null
+let slipCanvas = null
+let slipCtx = null
 
 /**
  * Initialize the debug panel. Creates a lil-gui instance, adds physics sliders,
@@ -42,6 +45,22 @@ export function initDebug (params) {
   const gui = new GUI({ title: 'RangerSim Debug' })
   gui.domElement.style.display = 'none'  // hidden by default; backtick reveals it
 
+  // Vehicle selector — copies preset into live params and refreshes all sliders
+  const vehicleState = { vehicle: 'Ranger' }
+  gui.add(vehicleState, 'vehicle', Object.keys(VEHICLES)).name('Vehicle').onChange(name => {
+    const preset = VEHICLES[name]
+    for (const key of Object.keys(preset)) {
+      if (!key.startsWith('_')) params[key] = preset[key]
+    }
+    params._suspStabChecked = false  // re-run stability check with new params
+    gui.controllersRecursive().forEach(c => c.updateDisplay())
+  })
+
+  // CG position controls — top section for easy access
+  gui.add(params, 'cgHeight', 0.20, 1.20, 0.01).name('CG Height (m)')
+  gui.add(params, 'weightFront', 0.30, 0.70, 0.01).name('CG Fwd/Back (front fraction)')
+    .onChange(v => { params.weightRear = +(1 - v).toFixed(4) })
+
   // Phase 1 sliders (kept — lateralDampingCoeff and corneringStiffness removed in Phase 3 per D-08, D-16).
   gui.add(params, 'tireStiffness', 50000, 400000, 5000).name('Tire Stiffness (N/m)')
   gui.add(params, 'tireDamping', 500, 20000, 500).name('Tire Damping (N·s/m)')
@@ -51,9 +70,6 @@ export function initDebug (params) {
   gui.add(params, 'frictionCoeff', 0.1, 1.5, 0.05).name('Friction Coeff')
   gui.add(params, 'maxDriveTorque', 100, 2000, 50).name('Max Drive Torque (N·m)')
   gui.add(params, 'maxBrakeTorque', 500, 8000, 100).name('Max Brake Torque (N·m)')
-  gui.add(params, 'bodyContactStiffness', 50000, 500000, 10000).name('Body Contact Stiffness (N/m)')
-  gui.add(params, 'bodyContactDamping', 1000, 30000, 500).name('Body Contact Damping (N·s/m)')
-
   // D-16: maxHandbrakeTorque slider
   gui.add(params, 'maxHandbrakeTorque', 500, 5000, 100).name('Handbrake Torque (Nm)')
 
@@ -102,31 +118,42 @@ export function initDebug (params) {
 
   // D-11: Pacejka canvas overlay — 300×200 px, positioned to left of the lil-gui panel.
   // Pitfall 8: right:320px avoids overlap with lil-gui which is right:0.
+  // All three plots stack on the left side under the HUD (top:150px leaves room for 6 HUD lines).
+  // travel + slip sit side by side below the Pacejka plot.
+  const BG = 'rgba(0,0,0,0.5)'
+  const BORDER = 'border:1px solid #444'
+  const LEFT = 20   // px from left edge (aligns with HUD)
+
   plotCanvas = document.createElement('canvas')
   plotCanvas.width = 300
   plotCanvas.height = 200
-  plotCanvas.style.cssText = 'position:fixed;top:20px;right:320px;background:#111;border:1px solid #444;display:none'
+  plotCanvas.style.cssText = `position:fixed;top:150px;left:${LEFT}px;background:${BG};${BORDER};display:none`
   document.body.appendChild(plotCanvas)
   plotCtx = plotCanvas.getContext('2d')
 
-  // D-13: 4-corner travel-bar canvas — 160×140 px, positioned below the Pacejka canvas.
-  // Four vertical bars (FL, FR, RL, RR) show strutComp as fraction of suspension travel.
-  // Color: green < 70%, yellow 70-95%, red >= 100% (bump stop engaged).
   travelCanvas = document.createElement('canvas')
-  travelCanvas.width = 160
-  travelCanvas.height = 140
-  travelCanvas.style.cssText = 'position:fixed;top:240px;right:320px;background:#111;border:1px solid #444;display:none'
+  travelCanvas.width = 110
+  travelCanvas.height = 220
+  travelCanvas.style.cssText = `position:fixed;top:358px;left:${LEFT}px;background:${BG};${BORDER};display:none`
   document.body.appendChild(travelCanvas)
   travelCtx = travelCanvas.getContext('2d')
 
-  // Backtick toggle listener — toggles gui panel, plotCanvas, AND travelCanvas in lockstep
-  // (constraint #9 extended for Phase 4.1). Only ONE backtick listener in this file.
+  slipCanvas = document.createElement('canvas')
+  slipCanvas.width = 220
+  slipCanvas.height = 220
+  slipCanvas.style.cssText = `position:fixed;top:358px;left:${LEFT + 114}px;background:${BG};${BORDER};display:none`
+  document.body.appendChild(slipCanvas)
+  slipCtx = slipCanvas.getContext('2d')
+
+  // Backtick toggle listener — toggles gui panel, plotCanvas, travelCanvas, AND slipCanvas in lockstep.
+  // Only ONE backtick listener in this file.
   document.addEventListener('keydown', e => {
     if (e.key === '`') {
       const hidden = gui.domElement.style.display === 'none'
       gui.domElement.style.display = hidden ? '' : 'none'
       plotCanvas.style.display = hidden ? '' : 'none'
       travelCanvas.style.display = hidden ? '' : 'none'
+      slipCanvas.style.display = hidden ? '' : 'none'
     }
   })
 
@@ -173,22 +200,27 @@ export function updateTravelBars (vehicleState, params) {
   travelCtx.clearRect(0, 0, W, H)
 
   const labels    = ['FL', 'FR', 'RL', 'RR']
-  const barW      = 30    // px — width of each bar
-  const barH      = 90    // px — maximum bar height
-  const barY      = 20    // px — top of the bar area
-  const labelY    = H - 10 // px — label baseline
-  const colSpan   = W / 4  // px — column width per corner
+  const barW      = 32    // px — width of each bar
+  const barH      = 75    // px — maximum bar height
+  const colSpan   = W / 2 // px — 2 columns
+  const rowSpan   = 35    // px — gap between bottom of bar and top of next row's bar (label + spacing)
+  const barY0     = 20    // px — top of row-0 bars (FL, FR)
+  const barY1     = barY0 + barH + rowSpan  // top of row-1 bars (RL, RR)
 
   const strutComp = vehicleState.strutComp || [0, 0, 0, 0]
 
   for (let i = 0; i < 4; i++) {
-    const isFront  = i < 2
-    const travel   = isFront ? (params.suspensionTravelFront || 0.12) : (params.suspensionTravelRear || 0.14)
-    const comp     = strutComp[i] ?? 0
-    const fill     = Math.max(0, Math.min(1.05, comp / Math.max(travel, 0.001)))
+    const col     = i % 2
+    const row     = Math.floor(i / 2)
+    const isFront = i < 2
+    const travel  = isFront ? (params.suspensionTravelFront || 0.25) : (params.suspensionTravelRear || 0.25)
+    const comp    = strutComp[i] ?? 0
+    const fill    = Math.max(0, Math.min(1.05, comp / Math.max(travel, 0.001)))
 
-    const cx      = colSpan * i + colSpan / 2  // bar center X
-    const bx      = cx - barW / 2              // bar left X
+    const cx      = colSpan * col + colSpan / 2
+    const bx      = cx - barW / 2
+    const barY    = row === 0 ? barY0 : barY1
+    const labelY  = barY + barH + 13
     const fillPx  = Math.round(fill * barH)
 
     // Background (empty) bar
@@ -198,11 +230,11 @@ export function updateTravelBars (vehicleState, params) {
     // Filled portion — color by fill fraction
     let color
     if (fill >= 1.0) {
-      color = '#ff2222'   // red — bump stop engaged
+      color = '#ff2222'
     } else if (fill >= 0.70) {
-      color = '#ffaa00'   // yellow — approaching bump stop
+      color = '#ffaa00'
     } else {
-      color = '#00cc66'   // green — normal travel
+      color = '#00cc66'
     }
     travelCtx.fillStyle = color
     travelCtx.fillRect(bx, barY + barH - fillPx, barW, fillPx)
@@ -225,6 +257,111 @@ export function updateTravelBars (vehicleState, params) {
   travelCtx.font = '10px monospace'
   travelCtx.textAlign = 'left'
   travelCtx.fillText('Travel', 4, 12)
+}
+
+/**
+ * Draw 2x2 slip-vector diagram.
+ * Each quadrant corresponds to a wheel corner (FL top-left, FR top-right, RL bottom-left, RR bottom-right),
+ * matching physical wheel positions when viewed from above.
+ * The vector shows contact-patch velocity in wheel frame: X = lateral (right = positive),
+ * Y = longitudinal (forward = up on screen). Color encodes slip magnitude.
+ *
+ * @param {object} vehicleState — read vehicleState.wheelDebug[0..3].vLong / .vLat
+ */
+export function updateSlipVectors (vehicleState) {
+  if (!slipCanvas || !slipCtx || slipCanvas.style.display === 'none') return
+
+  const W = slipCanvas.width
+  const H = slipCanvas.height
+  slipCtx.clearRect(0, 0, W, H)
+
+  const halfW = W / 2
+  const halfH = H / 2
+  const SCALE = 2       // px per m/s (halved for readability)
+  const MAX_VEL = 20    // m/s — clamp for arrow length
+  const ARROW = 5       // arrowhead size px
+
+  // Quadrant centers: [FL, FR, RL, RR]
+  const cx = [halfW / 2, halfW + halfW / 2, halfW / 2, halfW + halfW / 2]
+  const cy = [halfH / 2, halfH / 2, halfH + halfH / 2, halfH + halfH / 2]
+  const labels = ['FL', 'FR', 'RL', 'RR']
+
+  // Divider lines
+  slipCtx.strokeStyle = '#333'
+  slipCtx.lineWidth = 1
+  slipCtx.beginPath()
+  slipCtx.moveTo(halfW, 0); slipCtx.lineTo(halfW, H)
+  slipCtx.moveTo(0, halfH); slipCtx.lineTo(W, halfH)
+  slipCtx.stroke()
+
+  // Title
+  slipCtx.fillStyle = '#888'
+  slipCtx.font = '10px monospace'
+  slipCtx.textAlign = 'left'
+  slipCtx.fillText('Slip Vel', 4, 12)
+
+  const debug = vehicleState.wheelDebug || []
+
+  for (let i = 0; i < 4; i++) {
+    const wd    = debug[i] || {}
+    const vLong = wd.vLong || 0   // m/s forward
+    const vLat  = wd.vLat  || 0   // m/s rightward
+    const mag   = Math.hypot(vLong, vLat)
+
+    // Axes — faint crosshair in each quadrant
+    slipCtx.strokeStyle = '#2a2a2a'
+    slipCtx.lineWidth = 1
+    slipCtx.beginPath()
+    slipCtx.moveTo(cx[i] - 28, cy[i]); slipCtx.lineTo(cx[i] + 28, cy[i])
+    slipCtx.moveTo(cx[i], cy[i] - 28); slipCtx.lineTo(cx[i], cy[i] + 28)
+    slipCtx.stroke()
+
+    // Color by magnitude
+    let color
+    if (mag > 5)      color = '#ff2222'
+    else if (mag > 2) color = '#ffaa00'
+    else              color = '#00cc66'
+
+    // Vector: vLat → screen X, vLong → screen -Y (forward = up)
+    const clamped = Math.min(mag, MAX_VEL)
+    const scale   = mag > 0 ? (clamped / mag) * SCALE : 0
+    const dx =  vLat  * scale
+    const dy = -vLong * scale
+
+    const ex = cx[i] + dx
+    const ey = cy[i] + dy
+
+    // Arrow shaft
+    slipCtx.strokeStyle = color
+    slipCtx.lineWidth = 2
+    slipCtx.beginPath()
+    slipCtx.moveTo(cx[i], cy[i])
+    slipCtx.lineTo(ex, ey)
+    slipCtx.stroke()
+
+    // Arrowhead
+    if (mag > 0.1) {
+      const angle = Math.atan2(dy, dx)
+      slipCtx.fillStyle = color
+      slipCtx.beginPath()
+      slipCtx.moveTo(ex, ey)
+      slipCtx.lineTo(ex - ARROW * Math.cos(angle - 0.4), ey - ARROW * Math.sin(angle - 0.4))
+      slipCtx.lineTo(ex - ARROW * Math.cos(angle + 0.4), ey - ARROW * Math.sin(angle + 0.4))
+      slipCtx.closePath()
+      slipCtx.fill()
+    }
+
+    // Corner label + slip magnitude + Fz readout
+    slipCtx.fillStyle = '#666'
+    slipCtx.font = '10px monospace'
+    slipCtx.textAlign = 'center'
+    slipCtx.fillText(labels[i], cx[i], cy[i] - 32)
+    slipCtx.fillStyle = color
+    slipCtx.fillText(mag.toFixed(1) + ' m/s', cx[i], cy[i] + 38)
+    const fz = wd.fz ?? wd.fn ?? 0
+    slipCtx.fillStyle = '#aaa'
+    slipCtx.fillText(Math.round(fz) + ' N', cx[i], cy[i] + 50)
+  }
 }
 
 export function updatePacejkaCurve (vehicleState, params) {

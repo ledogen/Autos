@@ -15,7 +15,7 @@ export const RANGER_PARAMS = {
   cgHeight:     0.55,   // m — center of gravity above ground (estimate, laden)
   wheelRadius:  0.368,  // m — 245/75R16 tire radius
   bodyLength:   4.61,   // m — approximate exterior length (2002 Ford Ranger)
-  bodyWidth:    1.85,   // m — approximate exterior width  (2002 Ford Ranger)
+  bodyWidth:    1.66,   // m — track(1.46) + wheel width(0.25) - 0.05 margin so wheels visible from side
   bodyHeight:   1.60,   // m — approximate exterior height (2002 Ford Ranger)
 
   // ── Mass & Inertia ────────────────────────────────────────────────────────
@@ -33,7 +33,7 @@ export const RANGER_PARAMS = {
   // Phase 1 placeholder; Phase 2+ replaces drivetrain model.
   // Values consumed by getDriveTorque stub.
   maxDriveTorque:  800,   // N·m — flat throttle torque for Phase 1 response
-  maxBrakeTorque:  3000,  // N·m — flat brake deceleration placeholder
+  maxBrakeTorque:  1700,  // N·m — flat brake deceleration placeholder
   // Bug 4 fix: reverse uses maxReverseTorque (symmetric to forward), not maxBrakeTorque
   maxReverseTorque: 800,  // N·m — matches maxDriveTorque; used by getDriveTorque for reverse
   maxHandbrakeTorque: 4000, // N·m — rear-only handbrake; doubled from 2000 to actually lock rears; exposed as slider (D-16)
@@ -58,7 +58,7 @@ export const RANGER_PARAMS = {
 
   // ── Body Contact (collision against walls/ramp faces) ────────────────────
   bodyContactStiffness: 200000,  // N/m — stiffer than tire; metal-on-terrain response
-  bodyContactDamping:     8000,  // N·s/m
+  bodyContactDamping:     1000,  // N·s/m
   bodyContactRadius:      0.15,  // m — effective sphere radius for bumper corner points
 
   // ── Phase 3 Pacejka Tire Model (D-07) ────────────────────────────────────
@@ -105,8 +105,8 @@ export const RANGER_PARAMS = {
   // restLength: allowance for suspension travel (room for bump + droop from static equilibrium)
   suspensionStiffnessFront:  33000,   // N/m — 1.5 Hz body bounce at front sprung corner mass
   suspensionStiffnessRear:   27000,   // N/m — 1.5 Hz body bounce at rear sprung corner mass
-  suspensionDampingFront:     4500,   // N·s/m — ζ≈0.64 at front (raised from 2800/ζ0.40)
-  suspensionDampingRear:      3700,   // N·s/m — ζ≈0.64 at rear (raised from 2300/ζ0.40)
+  suspensionDampingFront:     3000,   // N·s/m
+  suspensionDampingRear:      3000,   // N·s/m
   suspensionRestLengthFront:  0.20,   // m — travel allowance front axle (typical road truck)
   suspensionRestLengthRear:   0.22,   // m — slightly more rear travel (lighter unloaded rear)
   // wheelMass: unsprung mass per corner (tire + wheel + stub axle).
@@ -119,18 +119,18 @@ export const RANGER_PARAMS = {
   // Front ARB stiffer than rear → promotes understeer balance for a Ranger.
   // At 0.5g lateral: target ≈5° body roll total; front+rear ARBs together provide this.
   arbStiffnessFront:   5000,   // N/m — front anti-roll bar stiffness (D-06)
-  arbStiffnessRear:    4000,   // N/m — rear ARB (D-06)
+  arbStiffnessRear:       0,   // N/m — rear ARB (D-06)
 
   // ── Suspension Travel + Stops (Phase 4.1 — D-08) ──────────────────────────────────────────
   // suspensionTravel: total strut compression before bump stop engages (bump side only).
   // Typical road truck: ~100 mm bump + ~100 mm droop from static = ~200 mm total travel.
-  suspensionTravelFront:       0.12,   // m — strut travel before bump stop (D-08)
-  suspensionTravelRear:        0.14,   // m — slightly more rear travel (D-08)
+  suspensionTravelFront:       0.25,   // m — strut travel before bump stop (D-08)
+  suspensionTravelRear:        0.25,   // m — strut travel before bump stop (D-08)
 
   // suspensionBodyOffset: Y shift of mount point in body space (ride-height control).
   // Default 0 = current behavior unchanged (mount is at -(cgHeight - wheelRadius) body-Y).
   suspensionBodyOffsetFront:   0.0,    // m — positive = mount lower in body space (raises ride height) (D-08)
-  suspensionBodyOffsetRear:    0.0,    // m — (D-08)
+  suspensionBodyOffsetRear:    0.035,  // m — (D-08)
 
   // bumpStopStiffness: penalty spring engaging at strutComp >= suspensionTravel.
   // At 10× front spring: k_eff ≈ 363 000 N/m. Stability: sdt^2 * k_eff / m_u = 0.35 < 4. OK.

@@ -12,7 +12,7 @@ let cameraMode = 'chase'  // 'chase' | 'cockpit'
 
 // Chase mode constants (Claude's discretion for tuning — see CONTEXT.md)
 const CHASE_OFFSET_LOCAL = new THREE.Vector3(0, 2.5, 6.0)  // body-space: behind (+Z) and above (+Y)
-const LERP_FACTOR = 0.08  // ~8% per frame at 60fps; see Pitfall 4 note in updateCamera
+const CHASE_STIFFNESS = 5  // exp-decay rate (s⁻¹); ~equiv to old LERP_FACTOR=0.08 at 60fps
 
 // ── Drag-orbit state ───────────────────────────────────────────────────────────
 // Spherical coordinates for orbit mode. orbitTheta = yaw (radians around Y axis),
@@ -64,7 +64,7 @@ document.addEventListener('keydown', e => {
  * @param {object} vehicleState — {position: THREE.Vector3, quaternion: THREE.Quaternion, velocity: THREE.Vector3}
  * @returns {void}
  */
-export function updateCamera (camera, vehicleState) {
+export function updateCamera (camera, vehicleState, dt) {
   if (cameraMode === 'chase') {
     if (isDragging) {
       // ── Orbit mode: place camera at fixed spherical offset in world space ──────
@@ -85,11 +85,9 @@ export function updateCamera (camera, vehicleState) {
       const yawQ       = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), euler.y)
       const goalOffset = CHASE_OFFSET_LOCAL.clone().applyQuaternion(yawQ)
       const goalPos    = vehicleState.position.clone().add(goalOffset)
-      camera.position.lerp(goalPos, LERP_FACTOR)
+      const alpha = 1 - Math.exp(-CHASE_STIFFNESS * dt)
+      camera.position.lerp(goalPos, alpha)
       camera.lookAt(vehicleState.position)
-      // Pitfall 4: LERP_FACTOR is frame-rate dependent. At target 60fps the feel is intentional.
-      // A frame-rate-independent version would be: 1 - Math.exp(-5 * dt). Claude's discretion
-      // (CONTEXT.md) — 0.08 is the default; expose as debug constant if needed.
 
       // Sync orbit angles from current camera position so drag handoff is seamless (no jump).
       const delta = camera.position.clone().sub(vehicleState.position)

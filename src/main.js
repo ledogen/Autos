@@ -18,9 +18,10 @@
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics } from './physics.js'
+import { getBodyContactPoints } from './suspension.js'
 import { updateVehicle, SPAWN_STATE } from './vehicle.js'
 import { updateCamera } from './camera.js'
-import { initDebug, updatePacejkaCurve, updateTravelBars } from './debug.js'
+import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition } from './logger.js'
 
 // Manual verification hook — console.log confirms importmap loaded r184 (FOUND-02)
@@ -162,7 +163,7 @@ scene.add(carGroup)
 // Body: BoxGeometry (width=1.8m, height=0.8m, length=4.6m)
 // Body is at carGroup local origin (0,0,0) — carGroup center IS the CG.
 const bodyMesh = new THREE.Mesh(
-  new THREE.BoxGeometry(1.8, 0.8, 4.6),
+  new THREE.BoxGeometry(1.66, 0.8, 4.6),
   new THREE.MeshStandardMaterial({ color: 0x336699 })
 )
 bodyMesh.castShadow = true
@@ -239,23 +240,17 @@ function syncMeshesToState (state) {
   // Per-wheel: spin, steer, and hub-Y visual travel in carGroup local space.
   // wheelLocalOffsets[i] provides rest position; Y is overridden each frame by hub deviation.
   for (let i = 0; i < 4; i++) {
-    // Visual spin: wheelAngles[i] accumulated by vehicle.js each step (M1-09).
-    // rotation.x is the spin axis after the geometry was rotateZ(PI/2) in Plan 01 —
-    // the X axis of the mesh is the rolling axis (RESEARCH §Pitfall 5).
-    wheelMeshes[i].rotation.x = state.wheelAngles[i]
+    // Spin quaternion: wheel rolling axis is X (geometry was rotateZ(PI/2) at creation).
+    const spinQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), state.wheelAngles[i])
 
-    // Steer: front wheels only, rotate around local Y (body up in carGroup space = Y).
-    // carGroup already carries body orientation — no world-space up transform needed.
     if (i < 2) {
-      const steer = state.wheelSteerAngles ? state.wheelSteerAngles[i] : state.steerAngle
-      const steerQ = new THREE.Quaternion().setFromAxisAngle(
-        new THREE.Vector3(0, 1, 0),   // local Y — body up in carGroup space
-        steer
-      )
-      // Set quaternion to steer only — do not accumulate body rotation (carGroup carries it).
-      wheelMeshes[i].quaternion.copy(steerQ)
+      // Front wheels: combine steer (Y) then spin (X). steerQ.multiply(spinQ) = steerQ * spinQ
+      // meaning spinQ is applied first, then steerQ — spin around axle, then yaw the whole assembly.
+      const steer  = state.wheelSteerAngles ? state.wheelSteerAngles[i] : state.steerAngle
+      const steerQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), steer)
+      wheelMeshes[i].quaternion.copy(steerQ).multiply(spinQ)
     } else {
-      wheelMeshes[i].quaternion.identity()
+      wheelMeshes[i].quaternion.copy(spinQ)
     }
 
     // D-07 (Phase 4.1): Derive full hub world position from strutComp, inverse-transform to body-local.
@@ -392,10 +387,61 @@ function closestPointOnTriangle (px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz)
 }
 
 /**
+ * Point (vertex) collision query against all solid geometry using face normals.
+ * Unlike queryContacts, this takes a bare point (no radius) and tests it against
+ * surface planes directly — returning the face normal, not a sphere-derived normal.
+ * Used for body box vertex contacts to eliminate edge/corner normal artifacts.
+ * Each contact: normal points away from solid; depth is penetration depth.
+ */
+function queryVertexContacts (px, py, pz) {
+  const hits = []
+
+  // Ground half-space (y = 0)
+  if (py < 0) {
+    hits.push({ normal: _flatNormal.clone(), depth: -py })
+  }
+
+  // Ramp top incline face — half-space below the inclined plane, within ramp footprint
+  if (px >= -_hw && px <= _hw && pz <= RAMP_START_Z && pz >= RAMP_END_Z) {
+    const rampSurfaceY = (RAMP_START_Z - pz) * Math.tan(RAMP_ANGLE)
+    const depth = rampSurfaceY - py
+    if (depth > 0) {
+      hits.push({ normal: _rampNormal.clone(), depth })
+    }
+  }
+
+  // Ramp back wall — vertical face at RAMP_END_Z, within ramp width and height
+  if (px >= -_hw && px <= _hw && pz < RAMP_END_Z && py >= 0 && py <= RAMP_MAX_H) {
+    const depth = RAMP_END_Z - pz
+    if (depth > 0) {
+      hits.push({ normal: new THREE.Vector3(0, 0, 1), depth })
+    }
+  }
+
+  // Ramp left side wall — at x = -_hw, within ramp Z and height
+  if (pz <= RAMP_START_Z && pz >= RAMP_END_Z && py >= 0 && py <= RAMP_MAX_H) {
+    const depth = px - (-_hw)
+    if (depth < 0) {
+      hits.push({ normal: new THREE.Vector3(1, 0, 0), depth: -depth })
+    }
+  }
+
+  // Ramp right side wall — at x = +_hw
+  if (pz <= RAMP_START_Z && pz >= RAMP_END_Z && py >= 0 && py <= RAMP_MAX_H) {
+    const depth = _hw - px
+    if (depth < 0) {
+      hits.push({ normal: new THREE.Vector3(-1, 0, 0), depth: -depth })
+    }
+  }
+
+  return hits
+}
+
+/**
  * Sphere collision query against all solid geometry.
  * Returns every surface the sphere at (cx,cy,cz) with radius r overlaps.
  * Each contact: normal points away from solid toward sphere; depth is penetration depth.
- * Called by stepPhysics once per wheel and once per body contact point each physics step.
+ * Called by stepPhysics once per wheel each physics step.
  * Phase 6: extend to query the terrain height-field for rough terrain surfaces.
  */
 function queryContacts (cx, cy, cz, r) {
@@ -452,6 +498,26 @@ let _fpsLastTime = 0   // will be set to currentTime on first frame
 // ── Debug panel ──────────────────────────────────────────────────────────────
 // D-10: passes mutable RANGER_PARAMS ref so sliders write directly to the object physics.js reads.
 initDebug(RANGER_PARAMS)
+
+// ── Body contact point debug spheres ──────────────────────────────────────────
+// 14 translucent orange spheres — one per probe in getBodyContactPoints.
+// Toggled with backtick alongside the rest of the debug overlay.
+const _dbgSphereMat = new THREE.MeshBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.45, depthWrite: false })
+const _dbgSphereGeo = new THREE.SphereGeometry(RANGER_PARAMS.bodyContactRadius, 8, 6)
+const BODY_CONTACT_COUNT = 14
+const _dbgSpheres = Array.from({ length: BODY_CONTACT_COUNT }, () => {
+  const m = new THREE.Mesh(_dbgSphereGeo, _dbgSphereMat)
+  m.visible = false
+  scene.add(m)
+  return m
+})
+let _dbgSpheresOn = false
+document.addEventListener('keydown', e => {
+  if (e.key === '`') {
+    _dbgSpheresOn = !_dbgSpheresOn
+    _dbgSpheres.forEach(m => { m.visible = _dbgSpheresOn })
+  }
+})
 
 // ── Logger key bindings (D-03 / D-02) ────────────────────────────────────────
 // \ toggles frame recording; Ctrl+I opens the initial condition file picker.
@@ -513,7 +579,7 @@ function loop () {
       vehicleState.strutCompVel = [0, 0, 0, 0]
     }
 
-    stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts)
+    stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, queryVertexContacts)
     simTime += PHYSICS_DT
     captureFrame(simTime, vehicleState, vehicleState.wheelDebug)
     accumulator -= PHYSICS_DT
@@ -569,8 +635,16 @@ function loop () {
   // D-13: 4-corner travel bar visualization — called once per render frame, outside accumulator.
   // Reflects most recent strutComp state (written by stepPhysics via wheelDebug each step).
   updateTravelBars(vehicleState, RANGER_PARAMS)
+  updateSlipVectors(vehicleState)
 
-  updateCamera(camera, vehicleState)
+  updateCamera(camera, vehicleState, frameTime)
+
+  // Update body contact debug spheres (only when visible — cheap early-out)
+  if (_dbgSpheresOn) {
+    RANGER_PARAMS._rotateVector = (v) => new THREE.Vector3(v.x, v.y, v.z).applyQuaternion(vehicleState.quaternion)
+    const pts = getBodyContactPoints(vehicleState, RANGER_PARAMS)
+    pts.forEach((pt, i) => { if (_dbgSpheres[i]) _dbgSpheres[i].position.set(pt.x, pt.y, pt.z) })
+  }
 
   renderer.render(scene, camera)
 }

@@ -105,7 +105,10 @@ function getBrakeTorque (wheelIndex, vehicleState, params) {
  *   single-contact interface to support walls, slopes, and multiple contacts per wheel.
  * @returns {void}
  */
-export function stepPhysics (vehicleState, params, dt, queryContacts) {
+const BODY_RESTITUTION  = 0.05  // near-zero = dead stop; slight bounce prevents micro-jitter at rest
+const BODY_FRICTION_MU  = 0.6   // Coulomb friction coefficient for body contact surfaces
+
+export function stepPhysics (vehicleState, params, dt, queryContacts, queryVertexContacts) {
   // ── Step 0: Rotation helper ────────────────────────────────────────────────
   params._rotateVector = (v) => new THREE.Vector3(v.x, v.y, v.z).applyQuaternion(vehicleState.quaternion)
 
@@ -377,10 +380,12 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
       // NOTE: `sa` field now stores SLIP VELOCITY magnitude (m/s) instead of slip angle (rad).
       // Field name kept for log format stability; semantics document in GLOSSARY.
       if (vehicleState.wheelDebug) {
-        vehicleState.wheelDebug[i].fn = Fn
-        vehicleState.wheelDebug[i].fy = Flat
-        vehicleState.wheelDebug[i].sa = Math.hypot(sLongCur, sLatNew)
-        vehicleState.wheelDebug[i].c  = params._compression
+        vehicleState.wheelDebug[i].fn    = Fn
+        vehicleState.wheelDebug[i].fy    = Flat
+        vehicleState.wheelDebug[i].sa    = Math.hypot(sLongCur, sLatNew)
+        vehicleState.wheelDebug[i].c     = params._compression
+        vehicleState.wheelDebug[i].vLong = longVelCur
+        vehicleState.wheelDebug[i].vLat  = latVelCur
       }
     }
 
@@ -461,26 +466,73 @@ export function stepPhysics (vehicleState, params, dt, queryContacts) {
     }
   }
 
-  // ── Step 3b: Body contact points (normal force only — no tire forces) ──────
-  // Stops the car body from clipping walls and ramp faces.
-  const bodyPts = getBodyContactPoints(vehicleState, params)
-  for (const bp of bodyPts) {
-    const contacts = queryContacts(bp.x, bp.y, bp.z, params.bodyContactRadius)
-    for (const { normal, depth, contactPoint } of contacts) {
-      const rContact = new THREE.Vector3(
-        contactPoint.x - vehicleState.position.x,
-        contactPoint.y - vehicleState.position.y,
-        contactPoint.z - vehicleState.position.z
-      )
-      const contactVel = vehicleState.velocity.clone().add(
-        new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rContact)
-      )
-      const Fn = Math.max(0,
-        params.bodyContactStiffness * depth + params.bodyContactDamping * (-contactVel.dot(normal))
-      )
-      if (Fn <= 0) continue
-      totalForce.addScaledVector(normal, Fn)
-      totalTorque.add(new THREE.Vector3().crossVectors(rContact, normal.clone().multiplyScalar(Fn)))
+  // ── Step 3b: Body contact — sphere probes + impulse solver ──────────────────
+  // Sphere probes at bumper corners (same geometry as before). Contact normal comes from
+  // sphere-center-to-closest-triangle-point (queryContacts). Force replaced with impulse:
+  // instantaneous velocity change sized to resolve the contact this step, eliminating the
+  // spring-damper asymmetry bug. Baumgarte correction bleeds out residual penetration.
+  {
+    const BAUMGARTE_BETA = 0.25
+    const SLOP = 0.005
+
+    const bodyPts = getBodyContactPoints(vehicleState, params)
+    for (const bp of bodyPts) {
+      const contacts = queryContacts(bp.x, bp.y, bp.z, params.bodyContactRadius)
+      for (const { normal, depth, contactPoint } of contacts) {
+        const rContact = new THREE.Vector3(
+          contactPoint.x - vehicleState.position.x,
+          contactPoint.y - vehicleState.position.y,
+          contactPoint.z - vehicleState.position.z
+        )
+
+        const vertVel = vehicleState.velocity.clone().add(
+          new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rContact)
+        )
+        const vn = vertVel.dot(normal)
+
+        if (vn < 0) {
+          const rCrossN = new THREE.Vector3().crossVectors(rContact, normal)
+          const iInvRCrossN = new THREE.Vector3(
+            rCrossN.x / params.inertiaRoll,
+            rCrossN.y / params.inertiaYaw,
+            rCrossN.z / params.inertiaPitch
+          )
+          const invEffMass = 1 / params.mass + rCrossN.dot(iInvRCrossN)
+          const j = -(1 + BODY_RESTITUTION) * vn / invEffMass
+
+          vehicleState.velocity.addScaledVector(normal, j / params.mass)
+          vehicleState.angularVelocity.x += iInvRCrossN.x * j
+          vehicleState.angularVelocity.y += iInvRCrossN.y * j
+          vehicleState.angularVelocity.z += iInvRCrossN.z * j
+
+          // Coulomb friction — tangential impulse capped at mu * normal impulse
+          const vt    = vertVel.clone().addScaledVector(normal, -vn)  // tangential velocity
+          const vtMag = vt.length()
+          if (vtMag > 1e-4) {
+            const tDir      = vt.clone().multiplyScalar(-1 / vtMag)   // oppose sliding
+            const rCrossT   = new THREE.Vector3().crossVectors(rContact, tDir)
+            const iInvRCrossT = new THREE.Vector3(
+              rCrossT.x / params.inertiaRoll,
+              rCrossT.y / params.inertiaYaw,
+              rCrossT.z / params.inertiaPitch
+            )
+            const invEffMassT = 1 / params.mass + rCrossT.dot(iInvRCrossT)
+            const jf = Math.min(vtMag / invEffMassT, BODY_FRICTION_MU * j)
+
+            vehicleState.velocity.addScaledVector(tDir, jf / params.mass)
+            vehicleState.angularVelocity.x += iInvRCrossT.x * jf
+            vehicleState.angularVelocity.y += iInvRCrossT.y * jf
+            vehicleState.angularVelocity.z += iInvRCrossT.z * jf
+          }
+        }
+
+        const correction = Math.max(0, depth - SLOP) * BAUMGARTE_BETA
+        if (correction > 0) {
+          vehicleState.position.x += normal.x * correction
+          vehicleState.position.y += normal.y * correction
+          vehicleState.position.z += normal.z * correction
+        }
+      }
     }
   }
 
