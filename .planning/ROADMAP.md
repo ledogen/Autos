@@ -167,7 +167,7 @@ Plans:
 
 Plans:
 **Wave 1**
-- [ ] 06-01-PLAN.md — TerrainSystem module: Blob worker, simplex noise, chunk ring, bilinear height/normal query
+- [x] 06-01-PLAN.md — TerrainSystem module: Blob worker, simplex noise, chunk ring, bilinear height/normal query
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 06-02-PLAN.md — main.js wiring: queryContacts + queryVertexContacts terrain integration, flat ground removal, importmap
