@@ -31,10 +31,13 @@ Physics that feel honest: a car that can roll over naturally, drift on the limit
 - [x] ES6 module architecture: tire.js, suspension.js, physics.js, vehicle.js, main.js — Phase 1
 - [x] Modular vehicle definition (car specs in a data file, swappable) — Phase 4 (freeform: data/vehicles.js, Ranger + 240sx presets)
 - [x] Rollover-capable physics with a validation ramp prop — Phase 4
+- [x] Procedural infinite terrain (simplex noise, chunk ring, terrain normals in physics) — Phase 6
+- [x] Sphere contact impulse solver (14-probe body + wheel hubs) — Phase 4.1
+- [x] Bump and droop stops, strut-axis ODE suspension — Phase 4.1
 
 ### Active
 
-- [ ] Infinite procedural terrain (later milestone — architecture must support it)
+*(No active v2 requirements yet — run `/gsd-new-milestone` to define v2 scope)*
 
 ### Out of Scope
 
@@ -84,6 +87,9 @@ Physics that feel honest: a car that can roll over naturally, drift on the limit
 | Surface normals in physics from day one | Infinite terrain is a planned milestone — retrofitting normal support is painful | Validated — sphere contact model uses face normals throughout |
 | Vehicle specs in data file (swappable) | User wants to try different vehicles later — Ranger is default, not hardcoded | Validated — data/vehicles.js, dropdown preset swap live |
 | Hand-rolled physics (no library) | User wants tuning transparency and control; physics library would obscure tire/suspension model | Validated — full Pacejka + spring-damper + impulse solver, all tunable |
+| Sphere contact model (queryContacts) | No trimesh collision lib; probe-based impulse solver avoids dependency | ✓ Good — stable rollovers, ramp contact, body collision without physics library |
+| Strut-axis ODE (strutComp/strutCompVel) | Hub motion must follow body frame at any orientation; world-Y hub state broke on slopes | ✓ Good — resolved ramp-rest float, ARB equilibrium, and slope physics |
+| Phase 5 skipped | Rollovers worked organically from Phase 4/4.1; remaining M5 items were polish not physics | Accepted — M5-03 through M5-07 deferred to v2 if needed |
 
 ## Evolution
 
@@ -103,4 +109,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-03 — Phase 4.1 complete (suspension, body collision, vehicle presets, UAT suite green)*
+*Last updated: 2026-06-03 after v1.0 milestone — full MVP shipped: physics sandbox on procedural terrain*

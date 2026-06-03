@@ -1,36 +1,36 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: milestone
-status: milestone_complete
-stopped_at: context exhaustion at 75% (2026-06-03)
-last_updated: "2026-06-03T07:46:14.046Z"
-last_activity: 2026-06-03 -- Phase 06 execution started
+milestone_name: MVP
+status: archived
+stopped_at: v1.0 milestone closed 2026-06-03
+last_updated: "2026-06-03T00:00:00.000Z"
+last_activity: 2026-06-03 -- v1.0 milestone archived
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 22
-  completed_plans: 18
-  percent: 71
+  completed_plans: 21
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-10)
+See: .planning/PROJECT.md (updated 2026-06-03)
 
 **Core value:** Physics that feel honest: a car that can roll over naturally, drift on the limit, and behave predictably enough that tuning parameters produces the expected result.
-**Current focus:** Phase 06 — procedural-terrain
+**Current focus:** Planning next milestone (v2.0) — run `/gsd-new-milestone`
 
 ## Current Position
 
-Phase: 06
-Plan: Not started
-Status: Milestone complete
+Phase: —
+Plan: —
+Status: v1.0 archived — planning v2.0
 Last activity: 2026-06-03
 
-Progress: [██████████] 95%
+Progress: [██████████] 100% — v1.0 SHIPPED
 
 ## Performance Metrics
 
