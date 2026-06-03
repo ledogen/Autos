@@ -113,13 +113,17 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
   params._rotateVector = (v) => new THREE.Vector3(v.x, v.y, v.z).applyQuaternion(vehicleState.quaternion)
 
   // ── Step 1: Catastrophic penetration failsafe ──────────────────────────────
-  // Fires only for tunnelling (>0.3 m embed). Normal contact handled by spring in Step 3.
+  // Fires only for tunnelling (>0.3 m embed). Uses queryContacts to detect terrain-aware
+  // severe penetration instead of a flat y=0 half-space check (Phase 6 fix: TERR-FIX-01).
+  // Old code: embed = wheelRadius - hub.y assumed flat ground at y=0 — always fired on terrain.
   {
     let maxEmbed = 0
     for (let i = 0; i < 4; i++) {
-      const hub   = getWheelPosition(i, vehicleState, params)
-      const embed = params.wheelRadius - hub.y   // positive when hub is below wheelRadius height
-      if (embed > maxEmbed) maxEmbed = embed
+      const hub      = getWheelPosition(i, vehicleState, params)
+      const contacts = queryContacts(hub.x, hub.y, hub.z, params.wheelRadius)
+      for (const { depth } of contacts) {
+        if (depth > maxEmbed) maxEmbed = depth
+      }
     }
     if (maxEmbed > 0.3) {
       vehicleState.position.y += maxEmbed

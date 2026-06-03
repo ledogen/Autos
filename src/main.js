@@ -404,7 +404,10 @@ function queryVertexContacts (px, py, pz) {
   // Ground surface — terrain height query (Phase 6)
   const terrainH = terrainSystem ? terrainSystem.sampleHeight(px, pz) : 0
   if (py < terrainH) {
-    hits.push({ normal: _flatNormal.clone(), depth: terrainH - py })
+    // Phase 6 fix (TERR-FIX-02): use terrain surface normal, not hardcoded flat normal.
+    // _flatNormal was always (0,1,0) — caused body contacts to push straight up on slopes.
+    const terrainN = terrainSystem ? terrainSystem.sampleNormal(px, pz) : { x: 0, y: 1, z: 0 }
+    hits.push({ normal: new THREE.Vector3(terrainN.x, terrainN.y, terrainN.z), depth: terrainH - py })
   }
 
   // Ramp face contacts — all four faces skipped when ramp is disabled (TERR-06 / T-06-07)
