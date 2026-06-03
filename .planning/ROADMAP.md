@@ -173,7 +173,7 @@ Plans:
 - [x] 06-02-PLAN.md — main.js wiring: queryContacts + queryVertexContacts terrain integration, flat ground removal, importmap
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 06-03-PLAN.md — Debug terrain folder, terrainAmplitude param, ramp toggle, unit tests, GLOSSARY
+- [x] 06-03-PLAN.md — Debug terrain folder, terrainAmplitude param, ramp toggle, unit tests, GLOSSARY
 
 **UI hint**: no
 
