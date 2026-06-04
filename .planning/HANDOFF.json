@@ -1,0 +1,36 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-06-04T07:28:09Z",
+  "phase": null,
+  "phase_name": null,
+  "phase_dir": null,
+  "plan": null,
+  "task": null,
+  "total_tasks": null,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "sky color changed to blue (0x87ceeb)", "status": "done", "commit": "uncommitted"},
+    {"id": 2, "name": "sLat sign-clamp: reset to SS when sLat opposes latVelCur", "status": "done", "commit": "uncommitted"},
+    {"id": 3, "name": "SLIP_EPSILON 0.1→3.0 and sLat SS overshoot cap", "status": "done", "commit": "uncommitted"},
+    {"id": 4, "name": "HUD vLong fix: store omegaCur-longVelCur instead of raw hub vel", "status": "done", "commit": "uncommitted"}
+  ],
+  "remaining_tasks": [
+    {"id": 5, "name": "Fix yaw oscillation root cause: sLong/wheel-omega positive feedback at rear wheels", "status": "not_started"}
+  ],
+  "blockers": [
+    {
+      "description": "BUG-03 yaw slosh still present despite sLat fixes. Root cause identified as sLong/wheel-omega positive feedback loop at rear wheels during yaw spin, not sLat spring energy.",
+      "type": "technical",
+      "workaround": "See blocking constraint section in .continue-here.md"
+    }
+  ],
+  "human_actions_pending": [],
+  "decisions": [
+    {"decision": "SLIP_EPSILON raised to 3.0", "rationale": "Prevents vCon→0 at rest which let sLat_ss grow to several meters of spring energy", "phase": "adhoc"},
+    {"decision": "sLat SS overshoot cap added", "rationale": "Prevents sLat from exceeding current-velocity steady state, eliminates sLat-driven springback", "phase": "adhoc"},
+    {"decision": "sLat sign-clamp added", "rationale": "Resets sLat to SS when it has wrong-direction sign vs latVelCur", "phase": "adhoc"}
+  ],
+  "uncommitted_files": ["src/physics.js", "src/main.js"],
+  "next_action": "Investigate sLong/wheel-omega positive feedback at RL/RR wheels during yaw rotation. The feedback: wY→longVelCur_RL(from spin)→sLong negative→Flong backward at RL→T_yaw positive (RL is at r_x=-0.77m so backward Flong creates +yaw torque)→wY grows. Need to decouple yaw-rotation-induced hub longitudinal velocity from the sLong input, OR add yaw angular damping, OR apply an impulse clamp on T_yaw.",
+  "context_notes": "Three logs analyzed. sLat at FL/FR is now capped correctly (fl_sa dropped from 0.5 to 0.04). But rl_sa and rr_sa are still 0.5-1.5m dominated by sLong from wheel omega oscillation. The rl_omega swings from +4.83 to -7.36 rad/s during a spin — this is the wheel spinning up/down from the yaw-induced longitudinal hub velocity. The Flong from this creates a yaw torque that amplifies the spin. Oscillation amplitude: wY decays from 2.0 to ~0.9 to ~0.6 per half-cycle — damping slowly."
+}

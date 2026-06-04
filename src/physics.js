@@ -300,7 +300,10 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
     if (!vehicleState.slipLong) vehicleState.slipLong = [0, 0, 0, 0]
     if (!vehicleState.slipLat)  vehicleState.slipLat  = [0, 0, 0, 0]
 
-    const SLIP_EPSILON = 0.1  // m/s — floor on contact velocity for relaxation rate
+    // 3.0 m/s floor prevents vCon→0 at rest (coasting wheels have near-zero omega,
+    // which would let sLat accumulate to latVelCur*L/epsilon → several meters of
+    // stored spring energy that releases as yaw oscillation after a slide stops).
+    const SLIP_EPSILON = 3.0
 
     // Per-step bookkeeping for the ω integrator (Newton-iterated implicit Euler below).
     // Zero / null when airborne so road reaction = 0.
@@ -360,7 +363,14 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
       const L          = params.tireRelaxationLength || 0.3
       const relaxDen   = 1 + dt * vCon / L
       const sLongPrev  = vehicleState.slipLong[i]
-      const sLatNew    = (vehicleState.slipLat[i] + dt * latVelCur) / relaxDen
+      let   sLatNew    = (vehicleState.slipLat[i] + dt * latVelCur) / relaxDen
+      const sLatSS    = latVelCur * L / vCon  // current-velocity steady state
+      // Wrong-direction clamp: old slip opposes current motion — reset to SS.
+      if (latVelCur * sLatNew < 0) sLatNew = sLatSS
+      // Overshoot clamp: sLat exceeds SS in same direction — snap down to SS.
+      // Together these ensure sLat never stores more spring energy than the current
+      // velocity warrants, eliminating the springback yaw oscillation post-slide.
+      if (Math.abs(sLatNew) > Math.abs(sLatSS)) sLatNew = sLatSS
       const sLongCur   = (sLongPrev + dt * (omegaCur - longVelCur)) / relaxDen
       vehicleState.slipLat[i] = sLatNew
 
@@ -388,7 +398,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
         vehicleState.wheelDebug[i].fy    = Flat
         vehicleState.wheelDebug[i].sa    = Math.hypot(sLongCur, sLatNew)
         vehicleState.wheelDebug[i].c     = params._compression
-        vehicleState.wheelDebug[i].vLong = longVelCur
+        vehicleState.wheelDebug[i].vLong = omegaCur - longVelCur
         vehicleState.wheelDebug[i].vLat  = latVelCur
       }
     }

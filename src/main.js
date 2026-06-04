@@ -135,16 +135,14 @@ const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerH
 
 // ── Scene ────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene()
-// High desert sky — bleached dusty blue like Mojave midday
-scene.background = new THREE.Color(0xc8d0d8)
-scene.fog = new THREE.FogExp2(0xc8d0d8, 0.006)
+scene.background = new THREE.Color(0x87ceeb)
+scene.fog = new THREE.FogExp2(0x87ceeb, 0.006)
 
-// Lighting — harsh Mojave sun: low-ish angle from the south-west, warm and strong
-const ambient = new THREE.AmbientLight(0xffd090, 0.55)
+const ambient = new THREE.AmbientLight(0xffffff, 0.6)
 scene.add(ambient)
 
-const sun = new THREE.DirectionalLight(0xfff4d0, 2.4)
-sun.position.set(80, 45, 60)  // low-angle from SW casts long shadows that read terrain shape
+const sun = new THREE.DirectionalLight(0xffffff, 2.2)
+sun.position.set(80, 45, 60)
 sun.castShadow = true
 sun.shadow.mapSize.width  = 2048
 sun.shadow.mapSize.height = 2048
