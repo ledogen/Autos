@@ -135,15 +135,23 @@ const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerH
 
 // ── Scene ────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x111111)
+// High desert sky — bleached dusty blue like Mojave midday
+scene.background = new THREE.Color(0xc8d0d8)
+scene.fog = new THREE.FogExp2(0xc8d0d8, 0.006)
 
-// Lighting
-const ambient = new THREE.AmbientLight(0xffffff, 0.3)
+// Lighting — harsh Mojave sun: low-ish angle from the south-west, warm and strong
+const ambient = new THREE.AmbientLight(0xffd090, 0.55)
 scene.add(ambient)
 
-const sun = new THREE.DirectionalLight(0xffffff, 1.0)
-sun.position.set(10, 20, 10)
+const sun = new THREE.DirectionalLight(0xfff4d0, 2.4)
+sun.position.set(80, 45, 60)  // low-angle from SW casts long shadows that read terrain shape
 sun.castShadow = true
+sun.shadow.mapSize.width  = 2048
+sun.shadow.mapSize.height = 2048
+sun.shadow.camera.near = 0.5
+sun.shadow.camera.far  = 400
+sun.shadow.camera.left = sun.shadow.camera.bottom = -150
+sun.shadow.camera.right = sun.shadow.camera.top   =  150
 scene.add(sun)
 
 // Ground plane (y=0, 200m × 200m)
@@ -155,8 +163,8 @@ ground.rotation.x = -Math.PI / 2
 ground.receiveShadow = true
 scene.add(ground)
 
-// Grid overlay
-const grid = new THREE.GridHelper(200, 100, 0x444444, 0x333333)
+// Grid overlay — muted sandy lines, subtle enough to read depth without screaming
+const grid = new THREE.GridHelper(200, 100, 0x7a6a50, 0x6a5a40)
 scene.add(grid)
 
 // carGroup: parent Object3D for body + wheels — wheels inherit body pitch/roll (Bug 5 fix).
@@ -511,7 +519,7 @@ function queryContacts (cx, cy, cz, r) {
 const _rampTotalLen = RAMP_LENGTH + RAMP_UNDERRUN
 const rampMesh = new THREE.Mesh(
   new THREE.PlaneGeometry(RAMP_WIDTH, _rampTotalLen),
-  new THREE.MeshPhongMaterial({ color: 0x885522, side: THREE.DoubleSide })
+  new THREE.MeshPhongMaterial({ color: 0x8a5030, side: THREE.DoubleSide })
 )
 rampMesh.rotation.x = -Math.PI / 2 + RAMP_ANGLE
 rampMesh.position.set(

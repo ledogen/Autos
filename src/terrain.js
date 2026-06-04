@@ -198,7 +198,7 @@ export class TerrainSystem {
 
         // Shared terrain material — one instance, reused across all chunks
         // Do NOT dispose this per-chunk (matches wheelMat shared pattern)
-        this._material = new THREE.MeshPhongMaterial({ color: 0x336622 })
+        this._material = new THREE.MeshPhongMaterial({ color: 0xb89060 })
 
         // Spawn Blob classic worker from inlined source string
         // RESEARCH.md Pattern 3: classic worker avoids module-worker CORS restrictions
