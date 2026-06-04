@@ -32,6 +32,10 @@ let terrainSystem = null
 // Manual verification hook — console.log confirms importmap loaded r184 (FOUND-02)
 console.log('THREE.REVISION', THREE.REVISION)
 
+// Snapshot of tunable params before any runtime _-prefixed keys are added.
+// Restored on R-key reset so sliders return to defaults alongside vehicleState.
+const _RANGER_PARAMS_DEFAULTS = { ...RANGER_PARAMS }
+
 // ── Suspension substep transient scratch arrays (Phase 4 — D-02, PATTERNS §underscore convention) ──
 // These are per-step outputs from stepSuspensionSubsteps; live on params (not vehicleState)
 // because they are re-computed every outer step and are not integrated state.
@@ -93,6 +97,12 @@ const MAX_FRAME_TIME = 0.25       // spiral-of-death clamp: 250ms (T-01-04 mitig
 let simTime = 0  // accumulated simulation time in seconds; incremented by FIXED_DT each physics step
 
 let accumulator = 0
+
+// Subframe render interpolation: track the physics state from immediately before the last step.
+// After the accumulator drains, lerp(prevRender, current, accumulator/PHYSICS_DT) eliminates the
+// one-frame jitter that occurs when the render loop and physics loop drift in/out of sync.
+const _prevRenderPos  = new THREE.Vector3()
+const _prevRenderQuat = new THREE.Quaternion()
 let currentTime = performance.now() / 1000
 
 // ── Vehicle state placeholder ────────────────────────────────────────────────
@@ -537,7 +547,7 @@ let _fpsLastTime = 0   // will be set to currentTime on first frame
 // D-10: passes mutable RANGER_PARAMS ref so sliders write directly to the object physics.js reads.
 // Phase 6 (TERR-06): pass setRampVisible callback so the Ramp Visible toggle in debug.js
 // can control rampMesh visibility without requiring debug.js to import rampMesh directly.
-initDebug(RANGER_PARAMS, {
+const _gui = initDebug(RANGER_PARAMS, {
   setRampVisible:  (v) => { rampMesh.visible = v },
   rebuildTerrain:  ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() }
 })
@@ -604,6 +614,10 @@ function loop () {
 
     const resetRequested = updateVehicle(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     if (resetRequested) {
+      // Restore all tunable params to file defaults and refresh slider display.
+      Object.assign(RANGER_PARAMS, _RANGER_PARAMS_DEFAULTS)
+      _gui.controllersRecursive().forEach(c => c.updateDisplay())
+
       // M1-12: reset to spawn state — zero all motion, restore identity quaternion.
       // Phase 4.1: position.y and strutComp[] reset to static equilibrium (not RANGER_PARAMS.cgHeight)
       // so the car spawns pre-settled with no visible drop (RESEARCH §Pattern 4 / Pitfall 1).
@@ -630,11 +644,25 @@ function loop () {
       vehicleState.strutCompVel = [0, 0, 0, 0]
     }
 
+    _prevRenderPos.copy(vehicleState.position)
+    _prevRenderQuat.copy(vehicleState.quaternion)
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, queryVertexContacts)
     simTime += PHYSICS_DT
     captureFrame(simTime, vehicleState, vehicleState.wheelDebug)
     accumulator -= PHYSICS_DT
   }
+
+  // Interpolate rendered position/quaternion between the last two physics steps.
+  // accumulator is the residual time since the last step; alpha=0 → last step, alpha→1 → next step.
+  const _renderAlpha = accumulator / PHYSICS_DT
+  const _renderPos   = _prevRenderPos.clone().lerp(vehicleState.position, _renderAlpha)
+  const _renderQuat  = _prevRenderQuat.clone().slerp(vehicleState.quaternion, _renderAlpha)
+
+  // Temporarily substitute interpolated pos/quat so meshes and camera both render at subframe time.
+  const _physPos  = vehicleState.position
+  const _physQuat = vehicleState.quaternion
+  vehicleState.position  = _renderPos
+  vehicleState.quaternion = _renderQuat
 
   syncMeshesToState(vehicleState)
 
@@ -691,6 +719,10 @@ function loop () {
   updateSlipVectors(vehicleState)
 
   updateCamera(camera, vehicleState, frameTime)
+
+  // Restore physics position/quaternion — the interpolated copies were render-only.
+  vehicleState.position  = _physPos
+  vehicleState.quaternion = _physQuat
 
   // Update body contact debug spheres (only when visible — cheap early-out)
   if (_dbgSpheresOn) {
