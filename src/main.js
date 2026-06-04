@@ -121,6 +121,8 @@ const vehicleState = {
   steerAngle:      0,                             // rad scalar, see GLOSSARY.md §Sign Conventions
   throttle:        0,
   brake:           0,
+  smoothThrottle:  0,                             // FEAT-01: ramped throttle accumulator; read+written by updateVehicle
+  smoothBrake:     0,                             // FEAT-01: ramped brake accumulator; read+written by updateVehicle
   wheelAngles:     [0, 0, 0, 0],                 // per-wheel spin angle [rad], Plan 03 drives
   wheelSteerAngles: [0, 0, 0, 0],               // Per-wheel Ackermann steer angles [rad]; set by updateVehicle each step; read by stepPhysics for lateral force decomposition.
   // Phase 4.1 strut state (D-01): strut compression and velocity per corner.
@@ -632,6 +634,8 @@ function loop () {
       vehicleState.steerAngle = 0
       vehicleState.throttle = 0
       vehicleState.brake = 0
+      vehicleState.smoothThrottle = 0    // FEAT-01: zero ramp accumulators on reset
+      vehicleState.smoothBrake = 0
       vehicleState.wheelAngles    = [0, 0, 0, 0]
       vehicleState.wheelSteerAngles = [0, 0, 0, 0]
       vehicleState.wheelDebug     = [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ]
