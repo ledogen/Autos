@@ -293,12 +293,13 @@ function syncMeshesToState (state) {
 
 // ── Terrain + ramp ────────────────────────────────────────────────────────────
 // M1-13: terrain query. Phase 6 replaces body, signature unchanged.
-// Freestanding ramp: 10°, 5m long, 4m wide, no plateau — drive up and off the edge.
+// Freestanding ramp: 10°, 5m long, 6m wide, no plateau — drive up and off the edge.
 // Normal derivation: for a ramp rising in -Z, n = (0, cos(θ), sin(θ)).
 const RAMP_ANGLE    = Math.PI / 18   // 10 degrees
 const RAMP_START_Z  = -15            // m — ramp toe (height=0) relative to spawn
 const RAMP_LENGTH   = 5              // m along ground
-const RAMP_WIDTH    = 4              // m — collision bounds match mesh width
+const RAMP_WIDTH    = 6              // m — 50% wider than original 4m; collision bounds match mesh width
+const RAMP_DEPTH    = 5              // m below y=0 the solid extends — ensures base stays below terrain at any amplitude
 const RAMP_MAX_H    = RAMP_LENGTH * Math.tan(RAMP_ANGLE)  // ≈ 0.88 m
 const RAMP_END_Z    = RAMP_START_Z - RAMP_LENGTH          // -20 — ramp top z
 
@@ -306,22 +307,27 @@ const _rampNormal   = new THREE.Vector3(0, Math.cos(RAMP_ANGLE), Math.sin(RAMP_A
 const _flatNormal   = new THREE.Vector3(0, 1, 0)
 
 // ── Ramp triangle mesh ────────────────────────────────────────────────────────
-// Six triangles covering the ramp solid: top incline (2), back wall (2), left side (1), right side (1).
+// Eight triangles covering the ramp solid: top incline (2), back wall (2), left side (2), right side (2).
+// Deep bottom vertices extend RAMP_DEPTH below y=0 so the solid is always below terrain.
 // Vertices defined from ramp constants — no hardcoded numbers.
-const _hw = RAMP_WIDTH / 2
-const _TL = [-_hw, 0,          RAMP_START_Z]
-const _TR = [ _hw, 0,          RAMP_START_Z]
-const _CL = [-_hw, RAMP_MAX_H, RAMP_END_Z  ]
-const _CR = [ _hw, RAMP_MAX_H, RAMP_END_Z  ]
-const _BL = [-_hw, 0,          RAMP_END_Z  ]
-const _BR = [ _hw, 0,          RAMP_END_Z  ]
+const _hw  = RAMP_WIDTH / 2
+const _TL  = [-_hw,          0, RAMP_START_Z]  // toe left  (surface level)
+const _TR  = [ _hw,          0, RAMP_START_Z]  // toe right (surface level)
+const _CL  = [-_hw,  RAMP_MAX_H, RAMP_END_Z ]  // crest left
+const _CR  = [ _hw,  RAMP_MAX_H, RAMP_END_Z ]  // crest right
+const _DTL = [-_hw, -RAMP_DEPTH, RAMP_START_Z] // deep toe left
+const _DTR = [ _hw, -RAMP_DEPTH, RAMP_START_Z] // deep toe right
+const _DBL = [-_hw, -RAMP_DEPTH, RAMP_END_Z  ] // deep back left
+const _DBR = [ _hw, -RAMP_DEPTH, RAMP_END_Z  ] // deep back right
 const RAMP_TRIS = [
-  [_TL, _TR, _CR],  // top incline tri 1
-  [_TL, _CR, _CL],  // top incline tri 2
-  [_CL, _CR, _BR],  // back wall tri 1
-  [_CL, _BR, _BL],  // back wall tri 2
-  [_TL, _CL, _BL],  // left side
-  [_TR, _BR, _CR],  // right side
+  [_TL,  _TR,  _CR ],  // top incline tri 1
+  [_TL,  _CR,  _CL ],  // top incline tri 2
+  [_CL,  _CR,  _DBR],  // back wall tri 1
+  [_CL,  _DBR, _DBL],  // back wall tri 2
+  [_DTL, _TL,  _CL ],  // left side tri 1
+  [_DTL, _CL,  _DBL],  // left side tri 2
+  [_TR,  _DTR, _DBR],  // right side tri 1
+  [_TR,  _DBR, _CR ],  // right side tri 2
 ]
 
 // M1-13: terrain height-field query. Phase 6 replaces body, signature locked.
@@ -422,7 +428,7 @@ function queryVertexContacts (px, py, pz) {
     }
 
     // Ramp back wall — vertical face at RAMP_END_Z, within ramp width and height
-    if (px >= -_hw && px <= _hw && pz < RAMP_END_Z && py >= 0 && py <= RAMP_MAX_H) {
+    if (px >= -_hw && px <= _hw && pz < RAMP_END_Z && py >= -RAMP_DEPTH && py <= RAMP_MAX_H) {
       const depth = RAMP_END_Z - pz
       if (depth > 0) {
         hits.push({ normal: new THREE.Vector3(0, 0, 1), depth })
@@ -430,7 +436,7 @@ function queryVertexContacts (px, py, pz) {
     }
 
     // Ramp left side wall — at x = -_hw, within ramp Z and height
-    if (pz <= RAMP_START_Z && pz >= RAMP_END_Z && py >= 0 && py <= RAMP_MAX_H) {
+    if (pz <= RAMP_START_Z && pz >= RAMP_END_Z && py >= -RAMP_DEPTH && py <= RAMP_MAX_H) {
       const depth = px - (-_hw)
       if (depth < 0) {
         hits.push({ normal: new THREE.Vector3(1, 0, 0), depth: -depth })
@@ -438,7 +444,7 @@ function queryVertexContacts (px, py, pz) {
     }
 
     // Ramp right side wall — at x = +_hw
-    if (pz <= RAMP_START_Z && pz >= RAMP_END_Z && py >= 0 && py <= RAMP_MAX_H) {
+    if (pz <= RAMP_START_Z && pz >= RAMP_END_Z && py >= -RAMP_DEPTH && py <= RAMP_MAX_H) {
       const depth = _hw - px
       if (depth < 0) {
         hits.push({ normal: new THREE.Vector3(-1, 0, 0), depth: -depth })
