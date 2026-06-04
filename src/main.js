@@ -502,15 +502,29 @@ function queryContacts (cx, cy, cz, r) {
   return hits
 }
 
-// Ramp visual — inclined PlaneGeometry aligned to the terrain() geometry.
-// rotation.x = -PI/2 + RAMP_ANGLE tilts near edge (toward spawn) down, far edge up.
-// Center positioned at the midpoint height and Z of the ramp surface.
+// Ramp visual — solid wedge BufferGeometry built from the same vertices as RAMP_TRIS so
+// collision and visual are always in sync. Vertices are in world space; mesh sits at origin
+// with no rotation or position offset. The deep bottom vertices embed the ramp below terrain.
+// A toe face (z=RAMP_START_Z, y=0 to -RAMP_DEPTH) is added for visuals only — excluded from
+// RAMP_TRIS collision because it would block cars driving onto the incline from spawn.
+const _rampVerts = []
+const _VISUAL_TRIS = [
+  ...RAMP_TRIS,
+  // Toe face — visual only, faces +Z toward spawn
+  [_DTL, _TR, _TL], [_DTL, _DTR, _TR],
+  // Bottom cap — seals the underside so it doesn't look hollow from below
+  [_DTL, _DBL, _DBR], [_DTL, _DBR, _DTR],
+]
+for (const [[ax,ay,az],[bx,by,bz],[cx,cy,cz]] of _VISUAL_TRIS) {
+  _rampVerts.push(ax,ay,az, bx,by,bz, cx,cy,cz)
+}
+const _rampGeo = new THREE.BufferGeometry()
+_rampGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(_rampVerts), 3))
+_rampGeo.computeVertexNormals()
 const rampMesh = new THREE.Mesh(
-  new THREE.PlaneGeometry(RAMP_WIDTH, RAMP_LENGTH),
-  new THREE.MeshPhongMaterial({ color: 0x885522, side: THREE.DoubleSide })
+  _rampGeo,
+  new THREE.MeshPhongMaterial({ color: 0x885522, side: THREE.DoubleSide, flatShading: true })
 )
-rampMesh.rotation.x = -Math.PI / 2 + RAMP_ANGLE
-rampMesh.position.set(0, (RAMP_LENGTH / 2) * Math.tan(RAMP_ANGLE), RAMP_START_Z - RAMP_LENGTH / 2)
 rampMesh.receiveShadow = true
 scene.add(rampMesh)
 
