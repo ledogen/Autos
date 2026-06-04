@@ -26,6 +26,7 @@ export const SPAWN_STATE = {
   quatX: 0, quatY: 0, quatZ: 0, quatW: 1,        // identity quaternion
   angVelX: 0, angVelY: 0, angVelZ: 0,
   steerAngle: 0, throttle: 0, brake: 0,
+  smoothThrottle: 0, smoothBrake: 0,
   wheelAngles: [0, 0, 0, 0],
   wheelSteerAngles: [0, 0, 0, 0],
   // ── Phase 4.1 strut state (D-01) ────────────────────────────────────────────
@@ -52,10 +53,21 @@ export const SPAWN_STATE = {
  * @returns {boolean} true if R-key reset was requested this step (main.js handles the copy).
  */
 export function updateVehicle (vehicleState, params, dt) {
-  // ── 1. Throttle / Brake (M1-05) ────────────────────────────────────────────
-  vehicleState.throttle = keys.w ? 1 : 0
+  // ── 1. Throttle / Brake (M1-05, FEAT-01) ──────────────────────────────────
+  // Ramp smoothed accumulators toward raw input; fast release, slow press.
+  const rawThrottle = keys.w ? 1 : 0
+  const rawBrake    = keys.s ? 1 : 0
+  if (rawThrottle > vehicleState.smoothThrottle)
+    vehicleState.smoothThrottle = Math.min(vehicleState.smoothThrottle + params.throttleRampRate * dt, rawThrottle)
+  else
+    vehicleState.smoothThrottle = Math.max(vehicleState.smoothThrottle - params.releaseRampRate * dt, rawThrottle)
+  if (rawBrake > vehicleState.smoothBrake)
+    vehicleState.smoothBrake = Math.min(vehicleState.smoothBrake + params.brakeRampRate * dt, rawBrake)
+  else
+    vehicleState.smoothBrake = Math.max(vehicleState.smoothBrake - params.releaseRampRate * dt, rawBrake)
+  vehicleState.throttle  = vehicleState.smoothThrottle
   // S key: sets brake=1; getDriveTorque uses maxReverseTorque for rear wheels (Bug 4 fix in physics.js)
-  vehicleState.brake    = keys.s ? 1 : 0
+  vehicleState.brake     = vehicleState.smoothBrake
   vehicleState.handbrake = keys[' '] || false
 
   // ── 2. Speed-scaled steer limit (M1-08) ────────────────────────────────────

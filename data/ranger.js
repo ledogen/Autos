@@ -155,4 +155,13 @@ export const RANGER_PARAMS = {
   // rampEnabled: when false, ramp triangles are skipped in queryContacts + queryVertexContacts,
   // and rampMesh.visible is set false via the setRampVisible callback in debug.js.
   rampEnabled: true,       // ramp collision + visibility toggle
+
+  // ── Input Ramp Rates (FEAT-01) ───────────────────────────────────────────
+  // Smoothed throttle/brake accumulators in vehicle.js ramp at these rates (1/s).
+  // throttleRampRate: 4/s → full range in 250 ms
+  // brakeRampRate:    8/s → full range in 125 ms
+  // releaseRampRate: 20/s → release in ~50 ms (fast but not instant)
+  throttleRampRate: 4,    // /s — drive/reverse input ramp (250 ms to full)
+  brakeRampRate:    8,    // /s — brake input ramp (125 ms to full)
+  releaseRampRate: 20,    // /s — release decay rate for both axes
 };

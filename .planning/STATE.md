@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: MVP
-status: archived
-stopped_at: v1.0 milestone closed 2026-06-03
-last_updated: "2026-06-03T00:00:00.000Z"
-last_activity: 2026-06-03 -- v1.0 milestone archived
+milestone_name: milestone
+status: planning
+stopped_at: context exhaustion at 75% (2026-06-04)
+last_updated: "2026-06-04T16:45:55.145Z"
+last_activity: 2026-06-03
 progress:
-  total_phases: 7
-  completed_phases: 6
-  total_plans: 22
-  completed_plans: 21
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
   percent: 100
 ---
 
@@ -80,6 +80,7 @@ Recent decisions affecting current work:
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260604-f01 | FEAT-01 smooth torque ramp: smoothThrottle/smoothBrake accumulators, ramp rates in ranger.js, Drivetrain sliders in debug.js | 2026-06-04 | — | [260604-f01-smooth-torque-ramp](.planning/quick/260604-f01-smooth-torque-ramp/) |
 | 260528-wtt | fix physics CR bugs: inertia axes, isRear guard, slip angle param, blob URL try/finally | 2026-05-29 | c7986cd | [260528-wtt-fix-physics-cr-bugs](.planning/quick/260528-wtt-fix-physics-cr-bugs/) |
 | 260528-qaf | sphere contact model: queryContacts replaces terrain(x,z); hub center; body bumper contacts; ramp solid faces | 2026-05-28 | 962a88b | [260528-qaf-sphere-contact-model](.planning/quick/260528-qaf-sphere-contact-model/) |
 | 260527-qae | lateral force dead zone: 0.2 m/s speed gate in computeLateralForce stops rest-sliding/yaw feedback loop | 2026-05-27 | 69cba5d | [260527-qae-lateral-force-dead-zone](.planning/quick/260527-qae-lateral-force-dead-zone/) |
@@ -104,6 +105,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-06-03T06:33:12.552Z
-Stopped at: context exhaustion at 75% (2026-06-03)
+Last session: 2026-06-04T16:45:55.141Z
+Stopped at: context exhaustion at 75% (2026-06-04)
 Resume file: None

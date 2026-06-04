@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RangerSim — Physics Handbook</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #dedad0;
+  font-family: 'Courier New', Courier, monospace;
+  color: #1c1c2e;
+  padding: 32px 24px 80px;
+}
+
+.page { max-width: 1040px; margin: 0 auto; }
+
+header { margin-bottom: 20px; }
+.title { font-size: 20px; font-weight: bold; letter-spacing: 0.2em; text-transform: uppercase; }
+.subtitle { font-size: 11px; color: #6a6a82; margin-top: 3px; letter-spacing: 0.1em; }
+
+.diagram-wrap {
+  border: 1.5px solid #9a9aaa;
+  background: #f5f0e6;
+  margin-bottom: 40px;
+  overflow: hidden;
+}
+
+svg { display: block; width: 100%; height: auto; }
+
+.var-g { cursor: pointer; }
+.var-g:hover .vl { fill: #0a2060; }
+.var-g:hover .hit { fill: rgba(26,79,138,0.09); rx: 3; }
+.vl {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  font-weight: bold;
+  fill: #1a4f8a;
+}
+.vl-sm {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 11px;
+  font-weight: bold;
+  fill: #1a4f8a;
+}
+.hit { fill: transparent; }
+.ld { stroke: #1a4f8a; stroke-width: 0.9; stroke-dasharray: 4 3; fill: none; opacity: 0.55; }
+.ann { stroke: #1a4f8a; stroke-width: 1.1; fill: none; opacity: 0.75; }
+.ann-r { stroke: #7a1a1a; stroke-width: 1.1; fill: none; opacity: 0.75; }
+
+/* Popup */
+#popup {
+  position: fixed;
+  display: none;
+  z-index: 999;
+  width: 272px;
+  padding: 12px 14px;
+  pointer-events: none;
+  background: #f5f0e6;
+  border: 1.5px solid #1a4f8a;
+  background-image:
+    linear-gradient(rgba(70,130,180,0.13) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(70,130,180,0.13) 1px, transparent 1px);
+  background-size: 14px 14px;
+}
+.ps { font-size: 18px; font-weight: bold; color: #1a4f8a; line-height: 1.1; }
+.pn { font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: #555570; margin-top: 2px; }
+.pv { font-size: 11.5px; margin-top: 7px; padding: 3px 7px; background: rgba(26,79,138,0.1); display: inline-block; color: #1c1c2e; }
+.pd { font-size: 11.5px; color: #2a2a3e; margin-top: 8px; line-height: 1.58; }
+
+/* Reference table */
+h3.sec {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.17em;
+  color: #6a6a82; margin: 28px 0 8px; padding-bottom: 4px;
+  border-bottom: 1px solid #b8b5a8;
+}
+table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+th {
+  text-align: left; font-size: 9.5px; text-transform: uppercase;
+  letter-spacing: 0.12em; color: #888898; padding: 3px 8px 6px;
+  border-bottom: 1px solid #b8b5a8;
+}
+td { padding: 5px 8px; vertical-align: top; border-bottom: 1px solid rgba(180,178,165,0.38); line-height: 1.45; }
+td:nth-child(1) { color: #1a4f8a; font-weight: bold; white-space: nowrap; width: 80px; }
+td:nth-child(2) { color: #777788; white-space: nowrap; width: 75px; }
+td:nth-child(3) { color: #1c1c2e; white-space: nowrap; width: 110px; }
+td:nth-child(4) { color: #3a3a4a; }
+tr:hover td { background: rgba(26,79,138,0.04); }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div class="title">RangerSim</div>
+  <div class="subtitle">Physics Handbook // 2002 Ford Ranger XLT 2WD &nbsp;·&nbsp; hover variable labels for descriptions</div>
+</header>
+
+<div class="diagram-wrap">
+<svg viewBox="0 0 980 498" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <pattern id="g20" width="20" height="20" patternUnits="userSpaceOnUse">
+    <path d="M20 0L0 0 0 20" fill="none" stroke="rgba(70,130,180,0.16)" stroke-width="0.5"/>
+  </pattern>
+  <pattern id="g100" width="100" height="100" patternUnits="userSpaceOnUse">
+    <rect width="100" height="100" fill="url(#g20)"/>
+    <path d="M100 0L0 0 0 100" fill="none" stroke="rgba(70,130,180,0.28)" stroke-width="0.8"/>
+  </pattern>
+  <pattern id="hatch" width="20" height="13" patternUnits="userSpaceOnUse">
+    <line x1="-2" y1="0" x2="10" y2="13" stroke="#3a3a4a" stroke-width="1.1" opacity="0.32"/>
+    <line x1="10" y1="0" x2="22" y2="13" stroke="#3a3a4a" stroke-width="1.1" opacity="0.32"/>
+  </pattern>
+  <marker id="ah" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+    <polygon points="0 0,7 3.5,0 7" fill="#1a4f8a" opacity="0.85"/>
+  </marker>
+  <marker id="ah2" markerWidth="7" markerHeight="7" refX="2" refY="3.5" orient="auto-start-reverse">
+    <polygon points="0 0,7 3.5,0 7" fill="#1a4f8a" opacity="0.85"/>
+  </marker>
+  <marker id="ahr" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+    <polygon points="0 0,7 3.5,0 7" fill="#7a1a1a" opacity="0.85"/>
+  </marker>
+</defs>
+
+<!-- bg -->
+<rect width="980" height="498" fill="#f5f0e6"/>
+<rect width="980" height="498" fill="url(#g100)"/>
+
+<!-- ground -->
+<line x1="18" y1="418" x2="962" y2="418" stroke="#1c1c2e" stroke-width="2.5"/>
+<rect x="18" y="419" width="944" height="14" fill="url(#hatch)"/>
+
+<!-- ── REAR WHEEL (cx=215) ── -->
+<circle cx="215" cy="366" r="52" fill="none" stroke="#1c1c2e" stroke-width="2"/>
+<line x1="215" y1="318" x2="215" y2="414" stroke="#1c1c2e" stroke-width="1" opacity="0.25"/>
+<line x1="163" y1="366" x2="267" y2="366" stroke="#1c1c2e" stroke-width="1" opacity="0.25"/>
+<circle cx="215" cy="366" r="9" fill="#f5f0e6" stroke="#1c1c2e" stroke-width="1.8"/>
+<circle cx="215" cy="366" r="3" fill="#1c1c2e"/>
+
+<!-- ── FRONT WHEEL (cx=755) ── -->
+<circle cx="755" cy="366" r="52" fill="none" stroke="#1c1c2e" stroke-width="2"/>
+<line x1="755" y1="318" x2="755" y2="414" stroke="#1c1c2e" stroke-width="1" opacity="0.25"/>
+<line x1="703" y1="366" x2="807" y2="366" stroke="#1c1c2e" stroke-width="1" opacity="0.25"/>
+<circle cx="755" cy="366" r="9" fill="#f5f0e6" stroke="#1c1c2e" stroke-width="1.8"/>
+<circle cx="755" cy="366" r="3" fill="#1c1c2e"/>
+
+<!-- ── BODY with wheel arches ── -->
+<!-- Main body outline: rear to front top, down, arch over front wheel, across, arch over rear, back -->
+<path d="
+  M 108 216 L 840 216
+  L 840 366
+  L 807 366
+  A 52 52 0 0 0 703 366
+  L 267 366
+  A 52 52 0 0 0 163 366
+  L 108 366 Z
+" fill="none" stroke="#1c1c2e" stroke-width="2"/>
+
+<!-- Cab -->
+<rect x="308" y="148" width="242" height="68" fill="none" stroke="#1c1c2e" stroke-width="2"/>
+<!-- Windshield A-pillar -->
+<line x1="308" y1="216" x2="322" y2="148" stroke="#1c1c2e" stroke-width="1.5"/>
+<!-- Rear B-pillar -->
+<line x1="550" y1="216" x2="537" y2="148" stroke="#1c1c2e" stroke-width="1.5"/>
+<!-- Door gap (dashed) -->
+<line x1="430" y1="216" x2="430" y2="366" stroke="#1c1c2e" stroke-width="1" stroke-dasharray="5,4" opacity="0.4"/>
+<!-- Bed top rail -->
+<line x1="108" y1="216" x2="308" y2="216" stroke="#1c1c2e" stroke-width="1.5"/>
+<!-- Running board hint -->
+<line x1="108" y1="335" x2="840" y2="335" stroke="#1c1c2e" stroke-width="0.8" stroke-dasharray="8,6" opacity="0.22"/>
+
+<!-- CG marker -->
+<line x1="460" y1="292" x2="460" y2="312" stroke="#1a4f8a" stroke-width="1.3" opacity="0.8"/>
+<line x1="450" y1="302" x2="470" y2="302" stroke="#1a4f8a" stroke-width="1.3" opacity="0.8"/>
+<circle cx="460" cy="302" r="4.5" fill="#1a4f8a" opacity="0.75"/>
+
+<!-- ════════════════ PACEJKA INSET ════════════════ -->
+<rect x="758" y="12" width="210" height="148" fill="#f5f0e6" stroke="#9a9ab0" stroke-width="1"/>
+<rect x="758" y="12" width="210" height="148" fill="url(#g20)"/>
+<!-- Title -->
+<text x="770" y="26" font-family="Courier New,monospace" font-size="9" fill="#6a6a82" letter-spacing="0.15em" text-anchor="start">PACEJKA MAGIC FORMULA</text>
+<!-- Axes -->
+<line x1="782" y1="140" x2="955" y2="140" stroke="#1c1c2e" stroke-width="1.2" marker-end="url(#ah)"/>
+<line x1="782" y1="140" x2="782" y2="30" stroke="#1c1c2e" stroke-width="1.2" marker-end="url(#ah)"/>
+<!-- Axis labels -->
+<text x="958" y="144" font-family="Courier New,monospace" font-size="9" fill="#3a3a4a">slip</text>
+<text x="775" y="27" font-family="Courier New,monospace" font-size="9" fill="#3a3a4a">F</text>
+<!-- Peak dashed line -->
+<line x1="782" y1="52" x2="832" y2="52" stroke="#1a4f8a" stroke-width="0.8" stroke-dasharray="3,2" opacity="0.6"/>
+<line x1="832" y1="52" x2="832" y2="140" stroke="#1a4f8a" stroke-width="0.8" stroke-dasharray="3,2" opacity="0.6"/>
+<!-- Curve -->
+<path d="M 782 140 C 800 140 812 52 832 52 C 872 52 930 80 952 82"
+  fill="none" stroke="#1c1c2e" stroke-width="1.8"/>
+<!-- B: initial slope annotation -->
+<line x1="782" y1="140" x2="808" y2="82" stroke="#1a4f8a" stroke-width="0.9" stroke-dasharray="3,2" opacity="0.7"/>
+<text x="800" y="98" font-family="Courier New,monospace" font-size="10" font-weight="bold" fill="#1a4f8a">B</text>
+<!-- D: peak height -->
+<text x="762" y="56" font-family="Courier New,monospace" font-size="10" font-weight="bold" fill="#1a4f8a">D</text>
+<!-- C: shape near peak shoulder -->
+<text x="855" y="54" font-family="Courier New,monospace" font-size="10" font-weight="bold" fill="#1a4f8a">C</text>
+<!-- E: post-peak falloff -->
+<text x="925" y="76" font-family="Courier New,monospace" font-size="10" font-weight="bold" fill="#1a4f8a">E</text>
+
+<!-- ════════════════ LEADER LINES (drawn before labels so labels sit on top) ════════════════ -->
+
+<!-- m → body center -->
+<line x1="455" y1="272" x2="455" y2="262" class="ld"/>
+
+<!-- Ixx → roll arc near CG -->
+<line x1="348" y1="262" x2="415" y2="295" class="ld"/>
+
+<!-- Iyy → pitch arc above body -->
+<line x1="460" y1="200" x2="460" y2="216" class="ld"/>
+
+<!-- Izz → yaw arc right of CG -->
+<line x1="570" y1="262" x2="505" y2="295" class="ld"/>
+
+<!-- h_cg → vertical bracket -->
+<line x1="88" y1="382" x2="88" y2="418" class="ld"/>
+<line x1="88" y1="302" x2="88" y2="360" class="ld"/>
+
+<!-- L → wheelbase horizontal -->
+<line x1="215" y1="456" x2="215" y2="430" class="ld"/>
+<line x1="755" y1="456" x2="755" y2="430" class="ld"/>
+
+<!-- r → wheel radius at rear -->
+<line x1="215" y1="440" x2="215" y2="418" class="ld"/>
+
+<!-- ω → rear wheel top -->
+<line x1="108" y1="302" x2="180" y2="325" class="ld"/>
+
+<!-- I_w → rear wheel -->
+<line x1="80" y1="348" x2="163" y2="366" class="ld"/>
+
+<!-- T_d → rear wheel bottom-left (drive torque arc) -->
+<line x1="60" y1="408" x2="175" y2="394" class="ld"/>
+
+<!-- ks → rear contact zone -->
+<line x1="82" y1="442" x2="175" y2="418" class="ld"/>
+
+<!-- cs → rear contact zone -->
+<line x1="130" y1="456" x2="200" y2="418" class="ld"/>
+
+<!-- Cr → ground center -->
+<line x1="465" y1="408" x2="465" y2="418" class="ld"/>
+
+<!-- δ → front wheel top -->
+<line x1="798" y1="284" x2="755" y2="314" class="ld"/>
+
+<!-- Fn → front contact, arrow up -->
+<line x1="870" y1="418" x2="870" y2="390" class="ann" marker-end="url(#ah)"/>
+
+<!-- Flong → horizontal arrow at contact -->
+<line x1="808" y1="406" x2="860" y2="406" class="ann" marker-end="url(#ah)"/>
+
+<!-- Flat dot (into page) indicator -->
+<circle cx="878" cy="432" r="3.5" fill="#1a4f8a" opacity="0.8"/>
+<circle cx="878" cy="432" r="6.5" fill="none" stroke="#1a4f8a" stroke-width="1" opacity="0.75"/>
+
+<!-- μ → front contact patch -->
+<line x1="795" y1="442" x2="755" y2="418" class="ld"/>
+
+<!-- T_b → front wheel arc -->
+<line x1="820" y1="456" x2="795" y2="410" class="ld"/>
+
+<!-- L_r → front tire area -->
+<line x1="672" y1="446" x2="703" y2="418" class="ld"/>
+
+<!-- sL/sT → front contact area -->
+<line x1="680" y1="460" x2="720" y2="418" class="ld"/>
+
+<!-- track → upper left (top view note) -->
+<line x1="58" y1="188" x2="108" y2="216" class="ld"/>
+
+<!-- ════════════════ ANNOTATION SHAPES ════════════════ -->
+
+<!-- h_cg: vertical arrow + bracket -->
+<line x1="88" y1="302" x2="88" y2="418" stroke="#1a4f8a" stroke-width="1" opacity="0.5"/>
+<line x1="84" y1="302" x2="92" y2="302" stroke="#1a4f8a" stroke-width="1" opacity="0.6"/>
+<line x1="84" y1="418" x2="92" y2="418" stroke="#1a4f8a" stroke-width="1" opacity="0.6"/>
+
+<!-- L: wheelbase arrow -->
+<line x1="215" y1="450" x2="755" y2="450" stroke="#1a4f8a" stroke-width="1" opacity="0.6" marker-start="url(#ah2)" marker-end="url(#ah)"/>
+
+<!-- r: radius arrow at rear wheel -->
+<line x1="215" y1="366" x2="215" y2="418" stroke="#1a4f8a" stroke-width="1" opacity="0.55" marker-end="url(#ah)"/>
+
+<!-- Ixx roll arc (small arc left of CG) -->
+<path d="M 435 310 A 18 18 0 0 1 435 290" class="ann" marker-end="url(#ah)"/>
+
+<!-- Iyy pitch arc (small arc above CG) -->
+<path d="M 445 295 A 20 20 0 0 1 475 295" class="ann" marker-end="url(#ah)"/>
+
+<!-- Izz yaw arc (small arc right of CG, curved differently) -->
+<path d="M 490 308 A 18 18 0 0 0 490 290" class="ann" marker-end="url(#ah)"/>
+
+<!-- Td drive torque arc at rear wheel -->
+<path d="M 195 400 A 28 28 0 0 1 238 388" class="ann-r" marker-end="url(#ahr)"/>
+
+<!-- δ steer angle wedge at front wheel -->
+<line x1="755" y1="314" x2="755" y2="280" stroke="#1a4f8a" stroke-width="0.9" opacity="0.55"/>
+<line x1="755" y1="314" x2="775" y2="278" stroke="#1a4f8a" stroke-width="0.9" opacity="0.55"/>
+<path d="M 755 294 A 20 20 0 0 1 768 282" class="ann" stroke-width="0.9"/>
+
+<!-- Tb brake torque arc at front wheel -->
+<path d="M 775 402 A 28 28 0 0 0 732 392" class="ann-r" marker-end="url(#ahr)"/>
+
+<!-- ════════════════ VARIABLE LABELS ════════════════ -->
+
+<!-- m -->
+<g class="var-g" data-var="m">
+  <rect class="hit" x="440" y="252" width="32" height="18" rx="2"/>
+  <text class="vl" x="444" y="266">m</text>
+</g>
+
+<!-- Ixx -->
+<g class="var-g" data-var="Ixx">
+  <rect class="hit" x="316" y="252" width="38" height="18" rx="2"/>
+  <text class="vl" x="320" y="266">Ixx</text>
+</g>
+
+<!-- Iyy -->
+<g class="var-g" data-var="Iyy">
+  <rect class="hit" x="438" y="192" width="38" height="18" rx="2"/>
+  <text class="vl" x="442" y="206">Iyy</text>
+</g>
+
+<!-- Izz -->
+<g class="var-g" data-var="Izz">
+  <rect class="hit" x="556" y="252" width="36" height="18" rx="2"/>
+  <text class="vl" x="560" y="266">Izz</text>
+</g>
+
+<!-- h_cg -->
+<g class="var-g" data-var="h_cg">
+  <rect class="hit" x="55" y="356" width="44" height="18" rx="2"/>
+  <text class="vl" x="58" y="370">h_cg</text>
+</g>
+
+<!-- L -->
+<g class="var-g" data-var="L">
+  <rect class="hit" x="472" y="454" width="22" height="18" rx="2"/>
+  <text class="vl" x="476" y="468">L</text>
+</g>
+
+<!-- track -->
+<g class="var-g" data-var="track">
+  <rect class="hit" x="24" y="178" width="48" height="18" rx="2"/>
+  <text class="vl-sm" x="28" y="191">track</text>
+</g>
+
+<!-- r -->
+<g class="var-g" data-var="r">
+  <rect class="hit" x="222" y="432" width="18" height="18" rx="2"/>
+  <text class="vl" x="226" y="446">r</text>
+</g>
+
+<!-- ω -->
+<g class="var-g" data-var="omega">
+  <rect class="hit" x="90" y="294" width="22" height="18" rx="2"/>
+  <text class="vl" x="94" y="308">ω</text>
+</g>
+
+<!-- I_w -->
+<g class="var-g" data-var="Iw">
+  <rect class="hit" x="60" y="338" width="32" height="18" rx="2"/>
+  <text class="vl-sm" x="64" y="351">I_w</text>
+</g>
+
+<!-- T_d -->
+<g class="var-g" data-var="Td">
+  <rect class="hit" x="36" y="400" width="32" height="18" rx="2"/>
+  <text class="vl-sm" x="40" y="413">T_d</text>
+</g>
+
+<!-- ks -->
+<g class="var-g" data-var="ks">
+  <rect class="hit" x="64" y="434" width="28" height="18" rx="2"/>
+  <text class="vl-sm" x="68" y="447">ks</text>
+</g>
+
+<!-- cs -->
+<g class="var-g" data-var="cs">
+  <rect class="hit" x="114" y="448" width="28" height="18" rx="2"/>
+  <text class="vl-sm" x="118" y="461">cs</text>
+</g>
+
+<!-- Cr -->
+<g class="var-g" data-var="Cr">
+  <rect class="hit" x="448" y="400" width="28" height="18" rx="2"/>
+  <text class="vl-sm" x="452" y="413">Cr</text>
+</g>
+
+<!-- δ -->
+<g class="var-g" data-var="delta">
+  <rect class="hit" x="798" y="276" width="18" height="18" rx="2"/>
+  <text class="vl" x="802" y="290">δ</text>
+</g>
+
+<!-- Fn -->
+<g class="var-g" data-var="Fn">
+  <rect class="hit" x="876" y="362" width="28" height="18" rx="2"/>
+  <text class="vl-sm" x="880" y="375">Fn</text>
+</g>
+
+<!-- Flong -->
+<g class="var-g" data-var="Flong">
+  <rect class="hit" x="866" y="396" width="48" height="18" rx="2"/>
+  <text class="vl-sm" x="870" y="409">Flong</text>
+</g>
+
+<!-- Flat (at the dot indicator) -->
+<g class="var-g" data-var="Flat">
+  <rect class="hit" x="888" y="424" width="38" height="18" rx="2"/>
+  <text class="vl-sm" x="892" y="437">Flat</text>
+</g>
+
+<!-- μ -->
+<g class="var-g" data-var="mu">
+  <rect class="hit" x="790" y="434" width="20" height="18" rx="2"/>
+  <text class="vl" x="794" y="448">μ</text>
+</g>
+
+<!-- T_b -->
+<g class="var-g" data-var="Tb">
+  <rect class="hit" x="820" y="448" width="32" height="18" rx="2"/>
+  <text class="vl-sm" x="824" y="461">T_b</text>
+</g>
+
+<!-- L_r -->
+<g class="var-g" data-var="Lr">
+  <rect class="hit" x="658" y="438" width="32" height="18" rx="2"/>
+  <text class="vl-sm" x="662" y="451">L_r</text>
+</g>
+
+<!-- sL / sT -->
+<g class="var-g" data-var="slip">
+  <rect class="hit" x="654" y="454" width="48" height="18" rx="2"/>
+  <text class="vl-sm" x="658" y="467">sL, sT</text>
+</g>
+
+<!-- Pacejka inset labels as clickable -->
+<g class="var-g" data-var="B">
+  <rect class="hit" x="795" y="90" width="18" height="18" rx="2"/>
+  <text class="vl-sm" x="799" y="103">B</text>
+</g>
+<g class="var-g" data-var="D">
+  <rect class="hit" x="760" y="46" width="18" height="18" rx="2"/>
+  <text class="vl-sm" x="764" y="59">D</text>
+</g>
+<g class="var-g" data-var="C">
+  <rect class="hit" x="852" y="45" width="18" height="18" rx="2"/>
+  <text class="vl-sm" x="856" y="58">C</text>
+</g>
+<g class="var-g" data-var="E">
+  <rect class="hit" x="921" y="68" width="18" height="18" rx="2"/>
+  <text class="vl-sm" x="925" y="81">E</text>
+</g>
+
+<!-- CG label -->
+<text x="468" y="298" font-family="Courier New,monospace" font-size="9" fill="#1a4f8a" opacity="0.8">CG</text>
+
+<!-- diagram title watermark -->
+<text x="20" y="494" font-family="Courier New,monospace" font-size="9" fill="#9a9ab0" letter-spacing="0.08em">
+  2002 FORD RANGER XLT 2WD · SIDE VIEW · NOT TO SCALE
+</text>
+
+</svg>
+</div>
+
+<!-- ════════════════ REFERENCE TABLE ════════════════ -->
+
+<h3 class="sec">Geometry</h3>
+<table>
+<tr><th>Symbol</th><th>Units</th><th>Value</th><th>Description</th></tr>
+<tr><td>L</td><td>m</td><td>2.85</td><td>Wheelbase — distance between front and rear axle centers. Sets the lever arm for longitudinal weight transfer: ΔFn = m·a·h_cg / L.</td></tr>
+<tr><td>track</td><td>m</td><td>1.46</td><td>Track width — lateral distance between wheel centers on the same axle. Wider track increases rollover resistance by reducing ΔFn_lat = m·a_lat·h_cg / track.</td></tr>
+<tr><td>h_cg</td><td>m</td><td>0.55</td><td>CG height above ground. Higher CG amplifies weight transfer in corners and braking, and lowers the rollover threshold. Trucks are taller than sports cars here.</td></tr>
+<tr><td>r</td><td>m</td><td>0.368</td><td>Loaded wheel radius (245/75R16). Converts angular wheel speed to contact-patch speed: v_contact = ω·r. Slip = v_contact − v_vehicle.</td></tr>
+<tr><td>weightFront</td><td>—</td><td>0.55</td><td>Static fraction of total weight on the front axle. Determines baseline normal force per axle before dynamic weight transfer.</td></tr>
+<tr><td>weightRear</td><td>—</td><td>0.45</td><td>Static fraction of total weight on the rear axle.</td></tr>
+</table>
+
+<h3 class="sec">Mass &amp; Inertia</h3>
+<table>
+<tr><th>Symbol</th><th>Units</th><th>Value</th><th>Description</th></tr>
+<tr><td>m</td><td>kg</td><td>1360</td><td>Total vehicle curb weight. Governs linear acceleration: a = F_net / m. More mass → slower response but more momentum.</td></tr>
+<tr><td>Ixx</td><td>kg·m²</td><td>~800</td><td>Roll inertia — resistance to rotation about the longitudinal axis. Controls how quickly the body rolls in corners. Computed as (1/12)·m·(width² + height²).</td></tr>
+<tr><td>Iyy</td><td>kg·m²</td><td>~3300</td><td>Pitch inertia — resistance to nose-dive under braking and squat under acceleration. Computed as (1/12)·m·(length² + height²).</td></tr>
+<tr><td>Izz</td><td>kg·m²</td><td>~3700</td><td>Yaw inertia — resistance to rotation about the vertical axis. High Izz makes the car resist direction changes; primary inertia in oversteer/understeer dynamics. Computed as (1/12)·m·(length² + width²).</td></tr>
+<tr><td>I_w</td><td>kg·m²</td><td>1.22</td><td>Rotational inertia of one wheel+tire assembly: I = ½·m_wheel·r². At 18 kg, r=0.368 m: I = 0.5·18·0.368² ≈ 1.22. Governs spin-up and lockup transients.</td></tr>
+</table>
+
+<h3 class="sec">Drivetrain</h3>
+<table>
+<tr><th>Symbol</th><th>Units</th><th>Value</th><th>Description</th></tr>
+<tr><td>T_d</td><td>N·m</td><td>800</td><td>Peak drive torque delivered to the rear wheels (RWD) at full throttle. Converted to longitudinal force via Pacejka slip model. Excess torque → wheelspin.</td></tr>
+<tr><td>T_b</td><td>N·m</td><td>3000</td><td>Total brake torque applied to all four wheels at full brake input. Sufficient torque locks the wheels, transitioning from rolling to sliding contact.</td></tr>
+<tr><td>T_hb</td><td>N·m</td><td>4000</td><td>Handbrake torque — rear axle only. Intentionally high to lock rear wheels, destroying lateral grip and allowing the rear to rotate for drift initiation.</td></tr>
+</table>
+
+<h3 class="sec">Tire Contact</h3>
+<table>
+<tr><th>Symbol</th><th>Units</th><th>Value</th><th>Description</th></tr>
+<tr><td>Fn</td><td>N</td><td>dynamic</td><td>Normal force at the contact patch — the force the ground exerts perpendicular to the surface. Computed each step from tire compression: Fn = ks·Δ + cs·(dΔ/dt). All tire friction forces scale with Fn.</td></tr>
+<tr><td>ks</td><td>N/m</td><td>100 000</td><td>Tire radial stiffness. Spring rate of the tire carcass in the vertical direction. At rest each corner compresses ~22 mm: Δ = (m·g/4) / ks.</td></tr>
+<tr><td>cs</td><td>N·s/m</td><td>4 000</td><td>Tire radial damping. Prevents the car from bouncing indefinitely. Critical damping ≈ 14 000 N·s/m; 4 000 gives a lively, slightly underdamped feel.</td></tr>
+<tr><td>μ</td><td>—</td><td>0.9</td><td>Peak tire-road friction coefficient. Scales Pacejka peak: F_peak = μ·D·Fn. Dry pavement is ~0.9; wet ~0.6; gravel ~0.5.</td></tr>
+<tr><td>Flong</td><td>N</td><td>dynamic</td><td>Longitudinal tire force — along the wheel's rolling direction. Positive = drive (pushes car forward). Generated by the difference between wheel surface speed and vehicle speed.</td></tr>
+<tr><td>Flat</td><td>N</td><td>dynamic</td><td>Lateral tire force — perpendicular to the wheel's rolling direction (into the page in side view). This is the cornering force that keeps the car on a curved path.</td></tr>
+<tr><td>Cr</td><td>—</td><td>0.015</td><td>Rolling resistance coefficient. Horizontal drag = Cr · Σ Fn, directed opposite to velocity. Causes coast-down deceleration of ~0.15 m/s². Vanishes when airborne.</td></tr>
+</table>
+
+<h3 class="sec">Pacejka Tire Model</h3>
+<table>
+<tr><th>Symbol</th><th>Units</th><th>Value</th><th>Description</th></tr>
+<tr><td>B</td><td>—</td><td>10.0</td><td>Stiffness factor. Controls the initial slope of the force-vs-slip curve. Slope at slip=0: B·C·D·μ·Fn/v_ref. Higher B → tire builds force faster from small slip.</td></tr>
+<tr><td>C</td><td>—</td><td>1.9</td><td>Shape factor. Must be in (1.0, 2.0) — the formula degenerates at C=2. Near 2.0 → sharper peak, faster falloff. 1.9 gives a rounded peak with gradual limit approach.</td></tr>
+<tr><td>D</td><td>—</td><td>1.0</td><td>Peak factor. F_peak = μ·D·Fn. D=1.0 means the tire fully exploits available friction. D&lt;1 → tire underperforms; D&gt;1 is physically unrealistic.</td></tr>
+<tr><td>E</td><td>—</td><td>0.97</td><td>Curvature factor. Near 1.0 produces gradual post-peak falloff — realistic tire behavior. Determines how quickly grip drops after the slip peak.</td></tr>
+<tr><td>v_ref</td><td>m/s</td><td>1.0</td><td>Slip velocity at which the Pacejka curve approaches its peak. Normalizes the slip input: x = |s|/v_ref. Lower v_ref → tire peaks at smaller slip, feels snappier.</td></tr>
+<tr><td>kL</td><td>—</td><td>1.0</td><td>Longitudinal slip anisotropy scale. Multiplies the longitudinal slip component before computing slip magnitude. Default 1.0 (isotropic). Real tires: kL &gt; kT by ~30–50%.</td></tr>
+<tr><td>kT</td><td>—</td><td>1.0</td><td>Lateral slip anisotropy scale. Multiplies the lateral slip component. Lower than kL in real tires — lateral carcass is softer than longitudinal.</td></tr>
+</table>
+
+<h3 class="sec">Slip &amp; Relaxation</h3>
+<table>
+<tr><th>Symbol</th><th>Units</th><th>Value</th><th>Description</th></tr>
+<tr><td>ω</td><td>rad/s</td><td>dynamic</td><td>Wheel angular velocity. Surface speed at contact patch = ω·r. Integrated via Newton-iterated implicit Euler each step: I_w·Δω = dt·(T_drive − Flong·r − T_brake).</td></tr>
+<tr><td>sL</td><td>m/s</td><td>dynamic</td><td>Longitudinal slip displacement (relaxation-filtered). Positive = wheel faster than ground (wheelspin). Negative = wheel slower (lockup). Updated via implicit Euler: s_new = (s_old + dt·v_slip) / (1 + dt·|v|/L_r).</td></tr>
+<tr><td>sT</td><td>m/s</td><td>dynamic</td><td>Lateral slip displacement (relaxation-filtered). Nonzero when contact patch slides sideways relative to vehicle heading. Drives the cornering force Flat via combined-slip Pacejka.</td></tr>
+<tr><td>L_r</td><td>m</td><td>0.3</td><td>Tire relaxation length. Characteristic distance the vehicle must travel for tire force to build after a slip change. Models viscoelastic lag in the tire carcass. Prevents force spikes at low speed.</td></tr>
+</table>
+
+<h3 class="sec">Steering</h3>
+<table>
+<tr><th>Symbol</th><th>Units</th><th>Value</th><th>Description</th></tr>
+<tr><td>δ</td><td>rad</td><td>0 – 0.52</td><td>Front wheel steer angle (~30° max). Rotates the wheel-frame axes, redirecting Flong and Flat. Speed-sensitive: max steer halves at v = speedSteerRef (15 m/s).</td></tr>
+<tr><td>steerRate</td><td>rad/s</td><td>1.2</td><td>Rate at which steer angle accumulates while the steering key is held.</td></tr>
+<tr><td>steerDecay</td><td>rad/s</td><td>2.0</td><td>Rate at which steer angle returns to zero when the key is released.</td></tr>
+<tr><td>v_steerRef</td><td>m/s</td><td>15</td><td>Reference speed at which maximum steer angle is halved. Prevents oversteering at highway speeds.</td></tr>
+</table>
+
+</div>
+
+<!-- POPUP -->
+<div id="popup">
+  <div class="ps" id="p-sym"></div>
+  <div class="pn" id="p-name"></div>
+  <div class="pv" id="p-val"></div>
+  <div class="pd" id="p-desc"></div>
+</div>
+
+<script>
+const VARS = {
+  m: {
+    sym: 'm', name: 'Mass', val: '1360 kg',
+    desc: 'Total vehicle curb weight. Governs linear acceleration via Newton\'s second law: F = m·a. More mass means slower acceleration for the same force, but also more momentum — the car is harder to stop or redirect.'
+  },
+  Ixx: {
+    sym: 'Ixx', name: 'Roll Inertia', val: '~800 kg·m²',
+    desc: 'Resistance to rotation about the longitudinal (front-to-rear) axis. Controls how quickly the body rolls in corners. Computed as (1/12)·m·(width² + height²). Lower Ixx → car rolls faster in response to lateral force.'
+  },
+  Iyy: {
+    sym: 'Iyy', name: 'Pitch Inertia', val: '~3300 kg·m²',
+    desc: 'Resistance to rotation about the lateral (side-to-side) axis. Controls nose-dive under braking and squat under acceleration. The Ranger\'s long body and tall profile make this large.'
+  },
+  Izz: {
+    sym: 'Izz', name: 'Yaw Inertia', val: '~3700 kg·m²',
+    desc: 'Resistance to rotation about the vertical axis. A high Izz makes the car resist direction changes — feels stable but sluggish to rotate into a corner. The primary inertia governing oversteer and understeer dynamics.'
+  },
+  h_cg: {
+    sym: 'h_cg', name: 'CG Height', val: '0.55 m',
+    desc: 'Height of the center of gravity above the ground plane. Higher CG increases weight transfer under cornering and braking, and lowers the rollover threshold. Trucks have much higher CG than sports cars.'
+  },
+  L: {
+    sym: 'L', name: 'Wheelbase', val: '2.85 m',
+    desc: 'Distance between front and rear axle centerlines. Longer wheelbase → more stable at speed, slower to rotate. Sets the lever arm for longitudinal weight transfer: ΔFn = m·a·h_cg / L.'
+  },
+  track: {
+    sym: 'track', name: 'Track Width', val: '1.46 m',
+    desc: 'Lateral distance between wheel centers on the same axle. Wider track reduces lateral load transfer ratio: ΔFn_lat = m·a_lat·h_cg / track. Wider is more stable but increases turning radius.'
+  },
+  r: {
+    sym: 'r', name: 'Wheel Radius', val: '0.368 m',
+    desc: 'Loaded radius of the tire (245/75R16). Converts angular velocity to contact-patch speed: v_contact = ω·r. The longitudinal slip velocity is the difference between v_contact and the vehicle\'s forward speed.'
+  },
+  Fn: {
+    sym: 'Fn', name: 'Normal Force', val: 'dynamic (N)',
+    desc: 'The force the ground exerts on the contact patch, always perpendicular to the ground surface. Computed from tire compression: Fn = ks·Δ + cs·(dΔ/dt). All friction forces (Flong, Flat) scale with Fn — heavier contact means more grip.'
+  },
+  Flong: {
+    sym: 'Flong', name: 'Longitudinal Tire Force', val: 'dynamic (N)',
+    desc: 'Tire force acting along the wheel\'s rolling direction. Positive = drive (pushes car forward). Negative = braking or drag. Generated by longitudinal slip: the difference between wheel surface speed (ω·r) and vehicle speed.'
+  },
+  Flat: {
+    sym: 'Flat', name: 'Lateral Tire Force', val: 'dynamic (N)',
+    desc: 'Tire force perpendicular to the wheel\'s rolling direction — the cornering force (into the page in this view). Keeps the car on a curved path. Driven by lateral slip: the rate at which the contact patch slides sideways relative to the wheel heading.'
+  },
+  mu: {
+    sym: 'μ', name: 'Friction Coefficient', val: '0.9 (dry)',
+    desc: 'Peak coefficient of friction between tire and road. Scales Pacejka peak: F_peak = μ·D·Fn. Dry pavement ≈ 0.9; wet ≈ 0.6; loose gravel ≈ 0.4. Reducing μ degrades all grip proportionally.'
+  },
+  ks: {
+    sym: 'ks', name: 'Tire Radial Stiffness', val: '100 000 N/m',
+    desc: 'Spring rate of the tire carcass in the vertical (compression) direction. At rest, each corner compresses ~22 mm: Δ = (m·g/4) / ks. Higher ks → less compliance over bumps, sharper load step response.'
+  },
+  cs: {
+    sym: 'cs', name: 'Tire Radial Damping', val: '4 000 N·s/m',
+    desc: 'Damping of the tire\'s radial spring. Prevents the car from bouncing indefinitely after hitting a bump. Critical damping ≈ 14 000 N·s/m; 4 000 gives a slightly underdamped feel with some residual bounce.'
+  },
+  Cr: {
+    sym: 'Cr', name: 'Rolling Resistance Coeff.', val: '0.015',
+    desc: 'Dimensionless coefficient relating normal load to rolling drag: F_drag = Cr · Σ Fn, opposing velocity. Represents tire deformation energy losses. At 0.015, coast deceleration is ~0.15 m/s² — the car rolls naturally to a stop.'
+  },
+  Td: {
+    sym: 'T_d', name: 'Drive Torque', val: '800 N·m (rear)',
+    desc: 'Torque applied to the rear wheels at full throttle (RWD — rear wheels only). The tire converts this to longitudinal force via the Pacejka slip model. Too much torque relative to grip → wheelspin and loss of longitudinal force.'
+  },
+  Tb: {
+    sym: 'T_b', name: 'Brake Torque', val: '3000 N·m (all)',
+    desc: 'Resistive torque applied to all wheels under braking. Opposes wheel spin direction, slowing the wheel. Full application locks the wheel (ω → 0), converting the contact from rolling to sliding and eliminating steering control.'
+  },
+  delta: {
+    sym: 'δ', name: 'Steer Angle', val: '0 – 0.52 rad (~30°)',
+    desc: 'Front wheel angle relative to the vehicle centerline. Rotates the wheel-frame axes, changing the direction that Flong and Flat are applied to the chassis. Speed-sensitive: max steer angle halves at v_ref = 15 m/s.'
+  },
+  omega: {
+    sym: 'ω', name: 'Wheel Angular Velocity', val: 'dynamic (rad/s)',
+    desc: 'Rotational speed of the wheel+tire assembly about its spin axis. Contact-patch surface speed = ω·r. Integrated each step by solving the torque balance: I_w·(dω/dt) = T_drive − Flong·r − T_brake. Drives longitudinal slip.'
+  },
+  Iw: {
+    sym: 'I_w', name: 'Wheel Inertia', val: '1.22 kg·m²',
+    desc: 'Rotational inertia of one wheel+tire assembly: I = ½·m_wheel·r². A heavier wheel takes longer to spin up under drive torque and longer to lock under brake torque, affecting slip transient behavior.'
+  },
+  B: {
+    sym: 'B', name: 'Pacejka Stiffness Factor', val: '10.0',
+    desc: 'Controls the initial slope of the force-vs-slip curve. Slope at slip=0 is B·C·D·μ·Fn/v_ref. Higher B → tire reaches peak grip at smaller slip displacement, like a stiff compound or sticky rubber.'
+  },
+  C: {
+    sym: 'C', name: 'Pacejka Shape Factor', val: '1.9',
+    desc: 'Shapes the peak and post-peak region of the curve. Must be in [1.0, 2.0) — the formula collapses at C=2. Values near 2.0 produce a sharper, narrower peak. C=1.9 gives a rounded peak with gradual limit approach.'
+  },
+  D: {
+    sym: 'D', name: 'Pacejka Peak Factor', val: '1.0',
+    desc: 'Scales the peak normalized force. F_peak = μ·D·Fn. D=1.0 means the tire fully utilizes the friction budget. D>1 is physically unrealistic. D<1 models a tire that cannot fully exploit available grip.'
+  },
+  E: {
+    sym: 'E', name: 'Pacejka Curvature Factor', val: '0.97',
+    desc: 'Controls post-peak behavior and the curvature of the falloff. Near E=1.0 gives realistic gradual falloff — force plateaus rather than collapsing. Important for stable behavior at and beyond the limit of grip.'
+  },
+  Lr: {
+    sym: 'L_r', name: 'Tire Relaxation Length', val: '0.3 m',
+    desc: 'The characteristic distance the vehicle must travel for tire force to build up after a slip change. Models viscoelastic lag in the tire carcass. The slip filter equation: ds/dt = v_slip − s·|v|/L_r. Prevents force singularities at rest.'
+  },
+  slip: {
+    sym: 'sL, sT', name: 'Slip Displacements', val: 'dynamic (m/s)',
+    desc: 'Relaxation-filtered slip velocities at the contact patch. sL (longitudinal): positive = wheel spinning faster than ground (drive/wheelspin), negative = wheel slower (lockup). sT (lateral): nonzero when contact patch slides sideways. Both feed into the combined-slip Pacejka model.'
+  },
+};
+
+const popup  = document.getElementById('popup');
+const pSym   = document.getElementById('p-sym');
+const pName  = document.getElementById('p-name');
+const pVal   = document.getElementById('p-val');
+const pDesc  = document.getElementById('p-desc');
+
+document.querySelectorAll('[data-var]').forEach(el => {
+  el.addEventListener('mouseenter', () => {
+    const v = VARS[el.dataset.var];
+    if (!v) return;
+    pSym.textContent  = v.sym;
+    pName.textContent = v.name;
+    pVal.textContent  = v.val;
+    pDesc.textContent = v.desc;
+    popup.style.display = 'block';
+  });
+  el.addEventListener('mouseleave', () => {
+    popup.style.display = 'none';
+  });
+});
+
+document.addEventListener('mousemove', e => {
+  if (popup.style.display === 'none') return;
+  let x = e.clientX + 20;
+  let y = e.clientY - 12;
+  if (x + 282 > window.innerWidth)  x = e.clientX - 292;
+  if (y + popup.offsetHeight > window.innerHeight) y = e.clientY - popup.offsetHeight - 12;
+  popup.style.left = x + 'px';
+  popup.style.top  = y + 'px';
+});
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 ---
 id: FEAT-01
 type: feature
-status: open
+status: complete
 opened: 2026-06-03
 ---
 
