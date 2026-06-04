@@ -293,32 +293,35 @@ function syncMeshesToState (state) {
 
 // ── Terrain + ramp ────────────────────────────────────────────────────────────
 // M1-13: terrain query. Phase 6 replaces body, signature unchanged.
-// Freestanding ramp: 10°, 5m long, 6m wide, no plateau — drive up and off the edge.
+// Freestanding ramp: 10°, 5m rise + 5m underrun, 6m wide, no plateau.
+// RAMP_UNDERRUN extends the slope downhill (toward spawn) so the toe is buried underground
+// along the ramp direction — not straight down. Toe sits at y ≈ −0.88 m.
 // Normal derivation: for a ramp rising in -Z, n = (0, cos(θ), sin(θ)).
 const RAMP_ANGLE    = Math.PI / 18   // 10 degrees
-const RAMP_START_Z  = -15            // m — ramp toe (height=0) relative to spawn
-const RAMP_LENGTH   = 5              // m along ground
-const RAMP_WIDTH    = 6              // m — 50% wider than original 4m; collision bounds match mesh width
-const RAMP_DEPTH    = 5              // m below y=0 the solid extends — ensures base stays below terrain at any amplitude
-const RAMP_MAX_H    = RAMP_LENGTH * Math.tan(RAMP_ANGLE)  // ≈ 0.88 m
-const RAMP_END_Z    = RAMP_START_Z - RAMP_LENGTH          // -20 — ramp top z
+const RAMP_LENGTH   = 5              // m — rise section (from ground level to crest)
+const RAMP_UNDERRUN = 5              // m — extra slope buried below terrain at the toe end
+const RAMP_WIDTH    = 6              // m — collision bounds match mesh width
+const RAMP_DEPTH    = 5              // m below toe the collision solid extends (sides + back)
+const RAMP_MAX_H    = RAMP_LENGTH * Math.tan(RAMP_ANGLE)  // ≈ 0.88 m — crest height
+const RAMP_END_Z    = -20            // m — crest z (top of ramp)
+const RAMP_TOE_Z    = RAMP_END_Z + RAMP_LENGTH + RAMP_UNDERRUN  // -10 — toe z (near spawn)
+const RAMP_TOE_Y    = -RAMP_UNDERRUN * Math.tan(RAMP_ANGLE)     // ≈ −0.88 m — toe depth
 
 const _rampNormal   = new THREE.Vector3(0, Math.cos(RAMP_ANGLE), Math.sin(RAMP_ANGLE))
 const _flatNormal   = new THREE.Vector3(0, 1, 0)
 
 // ── Ramp triangle mesh ────────────────────────────────────────────────────────
-// Eight triangles covering the ramp solid: top incline (2), back wall (2), left side (2), right side (2).
-// Deep bottom vertices extend RAMP_DEPTH below y=0 so the solid is always below terrain.
-// Vertices defined from ramp constants — no hardcoded numbers.
+// Eight triangles: top incline (2), back wall (2), left side (2), right side (2).
+// Toe vertices sit at RAMP_TOE_Y (below terrain); deep vertices extend RAMP_DEPTH further.
 const _hw  = RAMP_WIDTH / 2
-const _TL  = [-_hw,          0, RAMP_START_Z]  // toe left  (surface level)
-const _TR  = [ _hw,          0, RAMP_START_Z]  // toe right (surface level)
-const _CL  = [-_hw,  RAMP_MAX_H, RAMP_END_Z ]  // crest left
-const _CR  = [ _hw,  RAMP_MAX_H, RAMP_END_Z ]  // crest right
-const _DTL = [-_hw, -RAMP_DEPTH, RAMP_START_Z] // deep toe left
-const _DTR = [ _hw, -RAMP_DEPTH, RAMP_START_Z] // deep toe right
-const _DBL = [-_hw, -RAMP_DEPTH, RAMP_END_Z  ] // deep back left
-const _DBR = [ _hw, -RAMP_DEPTH, RAMP_END_Z  ] // deep back right
+const _TL  = [-_hw,  RAMP_TOE_Y,           RAMP_TOE_Z]  // toe left
+const _TR  = [ _hw,  RAMP_TOE_Y,           RAMP_TOE_Z]  // toe right
+const _CL  = [-_hw,  RAMP_MAX_H,           RAMP_END_Z ]  // crest left
+const _CR  = [ _hw,  RAMP_MAX_H,           RAMP_END_Z ]  // crest right
+const _DTL = [-_hw,  RAMP_TOE_Y - RAMP_DEPTH, RAMP_TOE_Z]  // deep toe left
+const _DTR = [ _hw,  RAMP_TOE_Y - RAMP_DEPTH, RAMP_TOE_Z]  // deep toe right
+const _DBL = [-_hw, -RAMP_DEPTH,           RAMP_END_Z ]  // deep back left
+const _DBR = [ _hw, -RAMP_DEPTH,           RAMP_END_Z ]  // deep back right
 const RAMP_TRIS = [
   [_TL,  _TR,  _CR ],  // top incline tri 1
   [_TL,  _CR,  _CL ],  // top incline tri 2
@@ -333,9 +336,10 @@ const RAMP_TRIS = [
 // M1-13: terrain height-field query. Phase 6 replaces body, signature locked.
 function terrain (x, z) {
   if (Math.abs(x) > RAMP_WIDTH / 2) return { height: 0, normal: _flatNormal }
-  const distIntoRamp = RAMP_START_Z - z
-  if (distIntoRamp > 0 && distIntoRamp <= RAMP_LENGTH) {
-    return { height: distIntoRamp * Math.tan(RAMP_ANGLE), normal: _rampNormal }
+  const distFromCrest = RAMP_END_Z - z  // negative when z > RAMP_END_Z (toward spawn)
+  const totalLen = RAMP_LENGTH + RAMP_UNDERRUN
+  if (distFromCrest < 0 && -distFromCrest <= totalLen) {
+    return { height: RAMP_MAX_H + distFromCrest * Math.tan(RAMP_ANGLE), normal: _rampNormal }
   }
   return { height: 0, normal: _flatNormal }
 }
@@ -419,8 +423,8 @@ function queryVertexContacts (px, py, pz) {
   // Ramp face contacts — all four faces skipped when ramp is disabled (TERR-06 / T-06-07)
   if (RANGER_PARAMS.rampEnabled !== false) {
     // Ramp top incline face — half-space below the inclined plane, within ramp footprint
-    if (px >= -_hw && px <= _hw && pz <= RAMP_START_Z && pz >= RAMP_END_Z) {
-      const rampSurfaceY = (RAMP_START_Z - pz) * Math.tan(RAMP_ANGLE)
+    if (px >= -_hw && px <= _hw && pz <= RAMP_TOE_Z && pz >= RAMP_END_Z) {
+      const rampSurfaceY = RAMP_MAX_H + (RAMP_END_Z - pz) * Math.tan(RAMP_ANGLE)
       const depth = rampSurfaceY - py
       if (depth > 0) {
         hits.push({ normal: _rampNormal.clone(), depth })
@@ -436,7 +440,7 @@ function queryVertexContacts (px, py, pz) {
     }
 
     // Ramp left side wall — at x = -_hw, within ramp Z and height
-    if (pz <= RAMP_START_Z && pz >= RAMP_END_Z && py >= -RAMP_DEPTH && py <= RAMP_MAX_H) {
+    if (pz <= RAMP_TOE_Z && pz >= RAMP_END_Z && py >= -RAMP_DEPTH && py <= RAMP_MAX_H) {
       const depth = px - (-_hw)
       if (depth < 0) {
         hits.push({ normal: new THREE.Vector3(1, 0, 0), depth: -depth })
@@ -444,7 +448,7 @@ function queryVertexContacts (px, py, pz) {
     }
 
     // Ramp right side wall — at x = +_hw
-    if (pz <= RAMP_START_Z && pz >= RAMP_END_Z && py >= -RAMP_DEPTH && py <= RAMP_MAX_H) {
+    if (pz <= RAMP_TOE_Z && pz >= RAMP_END_Z && py >= -RAMP_DEPTH && py <= RAMP_MAX_H) {
       const depth = _hw - px
       if (depth < 0) {
         hits.push({ normal: new THREE.Vector3(-1, 0, 0), depth: -depth })
@@ -502,28 +506,18 @@ function queryContacts (cx, cy, cz, r) {
   return hits
 }
 
-// Ramp visual — solid wedge BufferGeometry built from the same vertices as RAMP_TRIS so
-// collision and visual are always in sync. Vertices are in world space; mesh sits at origin
-// with no rotation or position offset. The deep bottom vertices embed the ramp below terrain.
-// A toe face (z=RAMP_START_Z, y=0 to -RAMP_DEPTH) is added for visuals only — excluded from
-// RAMP_TRIS collision because it would block cars driving onto the incline from spawn.
-const _rampVerts = []
-const _VISUAL_TRIS = [
-  ...RAMP_TRIS,
-  // Toe face — visual only, faces +Z toward spawn
-  [_DTL, _TR, _TL], [_DTL, _DTR, _TR],
-  // Bottom cap — seals the underside so it doesn't look hollow from below
-  [_DTL, _DBL, _DBR], [_DTL, _DBR, _DTR],
-]
-for (const [[ax,ay,az],[bx,by,bz],[cx,cy,cz]] of _VISUAL_TRIS) {
-  _rampVerts.push(ax,ay,az, bx,by,bz, cx,cy,cz)
-}
-const _rampGeo = new THREE.BufferGeometry()
-_rampGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(_rampVerts), 3))
-_rampGeo.computeVertexNormals()
+// Ramp visual — inclined PlaneGeometry spanning the full slope (rise + underrun).
+// Toe is buried underground (RAMP_TOE_Y < 0); terrain clips the lower section naturally.
+const _rampTotalLen = RAMP_LENGTH + RAMP_UNDERRUN
 const rampMesh = new THREE.Mesh(
-  _rampGeo,
-  new THREE.MeshPhongMaterial({ color: 0x885522, side: THREE.DoubleSide, flatShading: true })
+  new THREE.PlaneGeometry(RAMP_WIDTH, _rampTotalLen),
+  new THREE.MeshPhongMaterial({ color: 0x885522, side: THREE.DoubleSide })
+)
+rampMesh.rotation.x = -Math.PI / 2 + RAMP_ANGLE
+rampMesh.position.set(
+  0,
+  (RAMP_TOE_Y + RAMP_MAX_H) / 2,
+  (RAMP_TOE_Z + RAMP_END_Z) / 2
 )
 rampMesh.receiveShadow = true
 scene.add(rampMesh)
