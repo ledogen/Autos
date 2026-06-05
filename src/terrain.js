@@ -207,10 +207,14 @@ export class TerrainSystem {
         this._worker  = new Worker(blobURL)
         URL.revokeObjectURL(blobURL)  // safe to revoke after Worker construction
 
-        // Worker message handler: push received heightmaps into FIFO queue
+        // Worker message handler: push received heightmaps into FIFO queue.
+        // The key deliberately stays reserved in _pendingWorker here — it is only
+        // removed once _flushPendingQueue actually builds and tracks the chunk in
+        // _chunkMap. This keeps the !_pendingWorker.has(key) guard in
+        // _updateChunkRing effective for the full request→built window, preventing
+        // the duplicate-request race that orphaned spawn-chunk meshes.
         this._worker.onmessage = (e) => {
             const { key, cx, cz, heights } = e.data
-            this._pendingWorker.delete(key)
             this._pendingQueue.push({ key, cx, cz, heights })
         }
     }
@@ -411,10 +415,29 @@ export class TerrainSystem {
             // Center the chunk mesh at the chunk's world-space origin + half-size offset
             mesh.position.set(cx * S + S / 2, 0, cz * S + S / 2)
             mesh.receiveShadow = true
+
+            // Idempotent build guard: if a stale entry already exists for this key
+            // (defensive — normally prevented by the _pendingWorker reservation, but
+            // guards against any future double-build path), dispose its geometry so it
+            // cannot accumulate as an orphaned untracked mesh in the scene.
+            // Do NOT dispose this._material — it is the shared MeshPhongMaterial.
+            if (this._chunkMap.has(key)) {
+                const stale = this._chunkMap.get(key)
+                this._scene.remove(stale.mesh)
+                stale.mesh.geometry.dispose()  // T-06-03: explicit GPU memory release
+            }
+
             this._scene.add(mesh)
 
             // Store mesh and raw heights (heights used by sampleHeight for physics queries)
             this._chunkMap.set(key, { mesh, heights })
+
+            // Release the pending reservation only after _chunkMap is updated.
+            // This is the single authoritative release point — the key is held in
+            // _pendingWorker from the moment the worker is posted until here, so
+            // _updateChunkRing's !_pendingWorker.has(key) guard stays effective
+            // for the entire request→built window (closes the duplicate-request race).
+            this._pendingWorker.delete(key)
         }
     }
 }
