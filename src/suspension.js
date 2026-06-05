@@ -83,7 +83,12 @@ export function getWheelPosition (corner, vehicleState, params) {
     :  (params.wheelbase * params.weightFront)
 
   // Wheel hub center: (cgHeight - wheelRadius) below CG in body Y (mount point in body space).
-  const localY = -(params.cgHeight - params.wheelRadius)
+  // MUST include suspensionBodyOffset to match stepSuspensionSubsteps (line ~251). Without it the
+  // Pacejka contact query places the hub at the wrong height when ride height is tuned, so
+  // queryContacts finds no ground contact while the suspension is loaded — wheels report Fn=0/SA=0
+  // and the truck slides frictionlessly even though the strut is bearing weight (BUG-05 real cause).
+  const localY = -(params.cgHeight - params.wheelRadius) +
+    (isFront ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0))
 
   // Rotate local offset into world space using the injected helper.
   const local = { x: localX, y: localY, z: localZ }
@@ -188,6 +193,14 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
     if (alpha > 2) {
       console.warn('[suspension] Damping too high for explicit Euler — raise N.',
         'alpha=', alpha.toFixed(2), 'limit=2.0')
+    }
+    // Tire damper drives the same hub ODE — same stability criterion applies.
+    // alpha_tire > 1.5 → damping term overwhelms spring, force clamps to 0, wheel bounces.
+    const alpha_tire = params.tireDamping * sdt_check / params.wheelMass
+    if (alpha_tire > 1.5) {
+      console.warn('[suspension] tireDamping too high for explicit Euler — reduce tireDamping or raise N.',
+        'alpha=', alpha_tire.toFixed(2), 'limit=1.5, stable_max=',
+        Math.floor(1.5 * params.wheelMass / sdt_check), 'N·s/m')
     }
     params._suspStabChecked = true
   }
@@ -381,11 +394,20 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
 export function getBodyContactPoints (vehicleState, params) {
   const fz     = -(params.wheelbase * params.weightRear)   // front axle Z in body space
   const rz     =  (params.wheelbase * params.weightFront)  // rear axle Z in body space
-  const bumY   = 0.35 - params.cgHeight                   // bumper height (low side of body)
+  const bumY   = 0.45 - params.cgHeight                   // bumper height (low side of body)
   const undY   = params.wheelRadius - params.cgHeight      // undercarriage bottom
   const topY   = 0.4                                       // top of visual body box (0.8m box / 2, centered at CG)
   const halfW  = params.trackFront / 2 + 0.1              // lateral extent (slightly past track)
-  const trkW   = params.trackFront / 2                    // at-wheel lateral position
+
+  // BUG-05: the four near-wheel undercarriage probes used to sit at ±track/2 — exactly on the
+  // wheel centerline — so their spheres straddled the wheel and stole its ground contact when
+  // the car was lowered (false wheel lift-off + jitter). Pull them inboard so the probe's outer
+  // edge stays inside the wheel's inner sidewall (track/2 − wheelHalfWidth) with a small margin.
+  // Derived from geometry so it holds at any track width, wheel size, or bodyContactRadius.
+  const WHEEL_HALF_WIDTH = 0.125
+  const UND_MARGIN       = 0.05
+  const undWFront = params.trackFront / 2 - WHEEL_HALF_WIDTH - params.bodyContactRadius - UND_MARGIN
+  const undWRear  = params.trackRear  / 2 - WHEEL_HALF_WIDTH - params.bodyContactRadius - UND_MARGIN
 
   const locals = [
     // Front bumper — left and right
@@ -394,12 +416,12 @@ export function getBodyContactPoints (vehicleState, params) {
     // Rear bumper — left and right
     { x: -halfW, y: bumY, z: rz + 0.65 },
     { x:  halfW, y: bumY, z: rz + 0.65 },
-    // Undercarriage — just in front of rear wheels
-    { x: -trkW, y: undY, z: rz - 0.35 },
-    { x:  trkW, y: undY, z: rz - 0.35 },
-    // Undercarriage — just behind front wheels
-    { x: -trkW, y: undY, z: fz + 0.35 },
-    { x:  trkW, y: undY, z: fz + 0.35 },
+    // Undercarriage — just in front of rear wheels (inboard of the wheel footprint)
+    { x: -undWRear, y: undY, z: rz - 0.35 },
+    { x:  undWRear, y: undY, z: rz - 0.35 },
+    // Undercarriage — just behind front wheels (inboard of the wheel footprint)
+    { x: -undWFront, y: undY, z: fz + 0.35 },
+    { x:  undWFront, y: undY, z: fz + 0.35 },
     // Undercarriage — center (two points straddling CG)
     { x: 0, y: undY, z: -0.3 },
     { x: 0, y: undY, z:  0.3 },

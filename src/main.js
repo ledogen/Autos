@@ -79,7 +79,10 @@ function computeStaticEquilibrium (p) {
     //   bodyY = hubY + (L_S - strutComp[i]) + (cgHeight - wheelRadius)
     const tireComp   = cornerMass * g / k_T
     const hubY       = p.wheelRadius - tireComp
-    bodyYCorner[i]   = hubY + (L_S - strutComp[i]) + (p.cgHeight - p.wheelRadius)
+    // Subtract suspensionBodyOffset to invert getWheelPosition's mount-Y (which now includes it,
+    // BUG-05) — keeps the spawn height exact at any ride-height tuning instead of settling a frame.
+    const bodyOffset = isFront ? (p.suspensionBodyOffsetFront || 0) : (p.suspensionBodyOffsetRear || 0)
+    bodyYCorner[i]   = hubY + (L_S - strutComp[i]) + (p.cgHeight - p.wheelRadius) - bodyOffset
   }
   // Use average of front-pair bodyY for initial CG height (front/rear should be nearly equal
   // with balanced tuning; minor front-rear offset settles within a frame via hub dynamics).
@@ -285,6 +288,13 @@ function syncMeshesToState (state) {
       const body_down_mesh = new THREE.Vector3(0, -1, 0).applyQuaternion(carQ)
       // Mount world position: same local offset as suspension.js, rotated into world space
       const mountLocal = wheelLocalOffsets[i].clone()
+      // BUG-05: wheelLocalOffsets bakes in (wr − cgHeight) without suspensionBodyOffset. Add it live
+      // (read from RANGER_PARAMS so slider drags take effect) so the visual hub mount tracks the
+      // physics hub (getWheelPosition, which now includes the offset). Without this, positive offset
+      // renders the wheel below the physics hub — it visibly sinks into the ground; negative floats it.
+      mountLocal.y += isFrontMesh
+        ? (RANGER_PARAMS.suspensionBodyOffsetFront || 0)
+        : (RANGER_PARAMS.suspensionBodyOffsetRear || 0)
       const rMount_mesh = mountLocal.clone().applyQuaternion(carQ)
       const mountWorld = new THREE.Vector3(
         state.position.x + rMount_mesh.x,

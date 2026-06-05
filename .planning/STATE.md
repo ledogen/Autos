@@ -80,6 +80,8 @@ Recent decisions affecting current work:
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| —          | BUG-05 real fix: suspensionBodyOffset was missing from getWheelPosition (Pacejka hub) while present in stepSuspensionSubsteps — at bodyOffset≠0 the tire contact query found no ground while suspension stayed loaded → Fn=0/SA=0 frictionless slide. Added offset to all 3 physics mount-Y sites (suspension.js:86, physics.js:236, main.js:82 spawn) + visual wheel-mesh mount in syncMeshesToState (main.js ~290, read live so slider drags update) — without the mesh fix the rendered wheel sank into ground at positive offset. Plus defense-in-depth: pulled the 4 near-wheel undercarriage probes inboard of the wheel footprint (uncommitted) | 2026-06-05 | — | — |
+| —          | body collision cleanup: semi-implicit Euler ordering (integrate force→velocity before body-contact solver), restitution speed threshold (0.5 m/s), 8-pass Gauss-Seidel contact solver, raised front/rear bumper probes (bumY 0.35→0.45) — fixes upside-down resting jitter (uncommitted) | 2026-06-05 | — | — |
 | —          | Pacejka plot: 2× horizontal zoom, axis labels, peak-friction dashed marker + value (fast) | 2026-06-05 | a962532 | — |
 | —          | remove infinite GridHelper overlay + per-frame snap (fast) | 2026-06-05 | 52e1417 | — |
 | 260604-x3i | fix terrain spawn-chunk duplicate-request race: reserve chunk key in _pendingWorker until built + idempotent build guard (disposes stale mesh) — orphaned meshes no longer survive amplitude rebuilds | 2026-06-05 | 7cf6178 | [260604-x3i-fix-terrain-spawn-chunk-duplicate-reques](.planning/quick/260604-x3i-fix-terrain-spawn-chunk-duplicate-reques/) |

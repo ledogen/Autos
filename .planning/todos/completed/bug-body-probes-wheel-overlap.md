@@ -2,9 +2,34 @@
 id: BUG-05
 type: bug
 severity: moderate
-status: open
+status: resolved
 opened: 2026-06-03
+resolved: 2026-06-05
 ---
+
+> **Resolved 2026-06-05** — Two-part fix. A log captured with `bodyOffset = −0.1` front+rear
+> revealed the *actual* root cause was NOT collider overlap: `getWheelPosition` (the hub used by
+> the Pacejka contact query) omitted `suspensionBodyOffset`, while `stepSuspensionSubsteps` included
+> it. At non-trivial offsets the two hub heights diverged → suspension stayed loaded (`fz>0`) but
+> the tire's `queryContacts` found no ground → `Fn=0`, `SA=0`, no lateral force → truck slid
+> frictionlessly with the suspension still bearing weight.
+>
+> 1. **Real fix:** added the `suspensionBodyOffset` term to all three mount-Y sites so they agree —
+>    `getWheelPosition` (suspension.js:86), the suspension-force torque arm `mLocalY` (physics.js:236),
+>    and the spawn `computeStaticEquilibrium` inverse (main.js:82). This restores tire contact and
+>    grip at any ride-height tuning.
+> 2. **Visual follow-up:** the wheel *mesh* mount (`wheelLocalOffsets`, main.js) also omitted the
+>    offset, so after the physics fix the rendered wheel sat `offset` below the physics hub —
+>    positive offset visibly sank the wheel into the ground, negative floated it. Fixed by adding
+>    the offset live (read from RANGER_PARAMS so slider drags update) to the mesh mount-Y in
+>    `syncMeshesToState` (main.js ~290).
+> 3. **Defense-in-depth:** kept the geometry-derived inboard move of the four near-wheel undercarriage
+>    probes (`track/2 − wheelHalfWidth − bodyContactRadius − 0.05 m`, 0.05 m clearance inside the
+>    wheel's inner sidewall) so the probes can't steal the wheel's contact patch laterally regardless.
+>
+> Body contact probes (`getBodyContactPoints`) correctly do NOT take the offset — they're body-fixed
+> and the CG height already moves with ride height. The two centerline probes were left as-is; the
+> center hang-up note (candidate #3) was not addressed.
 
 # BUG-05: Body collision spheres overlap wheel hubs at low ride height / lowered suspension
 

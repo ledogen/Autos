@@ -233,7 +233,10 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
     const mLocalZ = isFrontW
       ? -(params.wheelbase * params.weightRear)
       :  (params.wheelbase * params.weightFront)
-    const mLocalY = -(params.cgHeight - params.wheelRadius)
+    // Include suspensionBodyOffset so the suspension-force torque arm matches the mount used in
+    // stepSuspensionSubsteps and getWheelPosition (BUG-05: all three mount-Y sites must agree).
+    const mLocalY = -(params.cgHeight - params.wheelRadius) +
+      (isFrontW ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0))
     const rMount = params._rotateVector({ x: mLocalX, y: mLocalY, z: mLocalZ })
 
     // Phase 4.1: apply suspension spring force to body along strut axis (body_up direction).
@@ -480,16 +483,34 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
     }
   }
 
-  // ── Step 3b: Body contact — sphere probes + impulse solver ──────────────────
-  // Sphere probes at bumper corners (same geometry as before). Contact normal comes from
-  // sphere-center-to-closest-triangle-point (queryContacts). Force replaced with impulse:
-  // instantaneous velocity change sized to resolve the contact this step, eliminating the
-  // spring-damper asymmetry bug. Baumgarte correction bleeds out residual penetration.
+  // ── Step 3b-pre: Integrate force → velocity BEFORE body contact (semi-implicit Euler) ──
+  // Gravity and accumulated forces must hit the velocity BEFORE the body-contact impulse
+  // solver runs. Previously velocity was integrated in Step 4 (after the solver), so each
+  // frame the solver nulled the contact velocity and gravity was re-added immediately after —
+  // leaving a body-at-rest in a perpetual sink-and-correct micro-jitter (observed as vy pinned
+  // at ~-0.8 m/s and roll rate flipping sign every frame when resting upside-down). Integrating
+  // first lets the solver see the gravity-loaded velocity and cancel it to a true rest.
+  vehicleState.velocity.addScaledVector(totalForce, dt / params.mass)
+  vehicleState.angularVelocity.x += totalTorque.x / params.inertiaRoll  * dt
+  vehicleState.angularVelocity.y += totalTorque.y / params.inertiaYaw   * dt
+  vehicleState.angularVelocity.z += totalTorque.z / params.inertiaPitch * dt
+
+  // ── Step 3b: Body contact — sphere probes + sequential-impulse solver ───────────────
+  // Sphere probes at body contact points. Contact normal comes from
+  // sphere-center-to-closest-triangle-point (queryContacts). Impulse: instantaneous velocity
+  // change sized to resolve the contact this step. Baumgarte correction bleeds out residual
+  // penetration. Contacts are gathered once, then solved over several Gauss-Seidel passes so
+  // coincident points (e.g. four roof corners when upside-down) settle to a consistent rest
+  // instead of fighting in a single pass.
   {
     const BAUMGARTE_BETA = 0.25
     const SLOP = 0.005
+    const REST_VEL_THRESHOLD = 0.5  // m/s — below this approach speed, no bounce (resting contact)
+    const SOLVER_ITERATIONS = 8     // sequential-impulse passes for coincident-contact convergence
 
+    // Gather all body contacts once — queryContacts is expensive, so don't re-run it per pass.
     const bodyPts = getBodyContactPoints(vehicleState, params)
+    const bodyContacts = []
     for (const bp of bodyPts) {
       const contacts = queryContacts(bp.x, bp.y, bp.z, params.bodyContactRadius)
       for (const { normal, depth, contactPoint } of contacts) {
@@ -498,21 +519,30 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
           contactPoint.y - vehicleState.position.y,
           contactPoint.z - vehicleState.position.z
         )
+        const rCrossN = new THREE.Vector3().crossVectors(rContact, normal)
+        const iInvRCrossN = new THREE.Vector3(
+          rCrossN.x / params.inertiaRoll,
+          rCrossN.y / params.inertiaYaw,
+          rCrossN.z / params.inertiaPitch
+        )
+        const invEffMass = 1 / params.mass + rCrossN.dot(iInvRCrossN)
+        bodyContacts.push({ normal, depth, rContact, iInvRCrossN, invEffMass })
+      }
+    }
 
+    // Velocity solver — multiple Gauss-Seidel passes converge coincident contacts.
+    for (let iter = 0; iter < SOLVER_ITERATIONS; iter++) {
+      for (const { normal, rContact, iInvRCrossN, invEffMass } of bodyContacts) {
         const vertVel = vehicleState.velocity.clone().add(
           new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rContact)
         )
         const vn = vertVel.dot(normal)
 
         if (vn < 0) {
-          const rCrossN = new THREE.Vector3().crossVectors(rContact, normal)
-          const iInvRCrossN = new THREE.Vector3(
-            rCrossN.x / params.inertiaRoll,
-            rCrossN.y / params.inertiaYaw,
-            rCrossN.z / params.inertiaPitch
-          )
-          const invEffMass = 1 / params.mass + rCrossN.dot(iInvRCrossN)
-          const j = -(1 + BODY_RESTITUTION) * vn / invEffMass
+          // Restitution only above a threshold approach speed — resting/slow contacts get a
+          // dead stop, so gravity can't re-inject a micro-bounce every frame.
+          const restitution = -vn > REST_VEL_THRESHOLD ? BODY_RESTITUTION : 0
+          const j = -(1 + restitution) * vn / invEffMass
 
           vehicleState.velocity.addScaledVector(normal, j / params.mass)
           vehicleState.angularVelocity.x += iInvRCrossN.x * j
@@ -539,26 +569,24 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
             vehicleState.angularVelocity.z += iInvRCrossT.z * jf
           }
         }
+      }
+    }
 
-        const correction = Math.max(0, depth - SLOP) * BAUMGARTE_BETA
-        if (correction > 0) {
-          vehicleState.position.x += normal.x * correction
-          vehicleState.position.y += normal.y * correction
-          vehicleState.position.z += normal.z * correction
-        }
+    // Baumgarte position correction — applied once after the velocity solver converges.
+    for (const { normal, depth } of bodyContacts) {
+      const correction = Math.max(0, depth - SLOP) * BAUMGARTE_BETA
+      if (correction > 0) {
+        vehicleState.position.x += normal.x * correction
+        vehicleState.position.y += normal.y * correction
+        vehicleState.position.z += normal.z * correction
       }
     }
   }
 
-  // ── Step 4: Integrate linear velocity and position ─────────────────────────
-  vehicleState.velocity.addScaledVector(totalForce, dt / params.mass)
+  // ── Step 4: Integrate position (velocity already integrated in Step 3b-pre + contacts) ──
   vehicleState.position.addScaledVector(vehicleState.velocity, dt)
 
-  // ── Step 5: Integrate angular velocity and quaternion orientation ──────────
-  vehicleState.angularVelocity.x += totalTorque.x / params.inertiaRoll  * dt
-  vehicleState.angularVelocity.y += totalTorque.y / params.inertiaYaw   * dt
-  vehicleState.angularVelocity.z += totalTorque.z / params.inertiaPitch * dt
-
+  // ── Step 5: Integrate quaternion orientation (angular velocity already integrated above) ──
   const omega    = vehicleState.angularVelocity
   const angSpeed = omega.length()
   if (angSpeed > 1e-10) {
