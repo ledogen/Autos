@@ -14,7 +14,7 @@ A browser-based 6DOF rigid body car physics simulation built in JavaScript with 
 - **File structure**: ES6 modules in a `src/` directory, single `index.html` entry point
 - **Physics**: Hand-rolled, no physics library — required for learning, tuning transparency, and terrain control
 - **Performance**: Target 60fps on a mid-range laptop with terrain active — physics must be lightweight
-- **LLM maintainability**: Code is primarily maintained by LLM sessions. Conventions must be explicit, self-documenting, and resistant to drift across sessions.
+- **LLM maintainability**: Code is primarily maintained by LLM sessions (Claude Sonnet 4.6, `claude-sonnet-4-6`). Conventions must be explicit, self-documenting, and resistant to drift across sessions.
 <!-- GSD:project-end -->
 
 <!-- GSD:stack-start source:research/STACK.md -->
