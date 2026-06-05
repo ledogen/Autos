@@ -1,446 +1,335 @@
-# Domain Pitfalls: Browser-Based 6DOF Car Physics
+# Pitfalls Research — v1.1 Mountains & Roads
 
-**Domain:** Hand-rolled vehicle physics simulation in JavaScript/Three.js
-**Researched:** 2026-05-10
-**Sources:** Prototype code analysis (backup12.html), vehicle dynamics first principles, FSAE-level physics knowledge, known prototype failure modes
+**Domain:** Adding seeded layered terrain, world-seed system, deterministic switchback road routing, road surface ribbon with terrain carve, free-fly camera, and POI anchors to a shipped browser car-physics sim (Three.js r184, vanilla ES6, Web Worker terrain gen, fixed 1/60s physics, sphere-contact queryContacts).
+**Researched:** 2026-06-05
+**Confidence:** HIGH (analysis of live terrain.js + blueprint + prior bug history). MEDIUM (road routing specifics — no shipped code yet, derived from algorithm analysis).
 
 ---
 
 ## Critical Pitfalls
 
-Mistakes that cause rewrites, physics breakdown, or unfixable behavioral bugs.
-
 ---
 
-### Pitfall 1: Euler Angle Gimbal Lock (CONFIRMED — already hit this)
+### Pitfall 1: Mesh/Physics Height Disagreement — The Floating/Sinking Truck
 
-**What goes wrong:** When representing body orientation as three separate scalar angles (yaw/pitch/roll) and composing them as Euler angles, there exists a degenerate configuration at 90° pitch where two axes become coplanar. The car can no longer roll — it yaws instead. Rotation integration also accumulates error non-linearly past ~60° tilt.
+**What goes wrong:**
+The truck visually floats above the terrain mesh or sinks through it. The mesh renders at one height; `queryContacts` queries a different height. The gap persists and is not transient (it is a systematic formula divergence, not a timing gap). When layered terrain adds coarse + fine + regional roughness octaves, the road carve blend, and a `terrainAmplitude` multiplier, there are at least five places where physics and mesh can silently diverge.
 
-**Why it happens:** The prototype used `carGroup.rotation.y = theta`, `.x = pitch`, `.z = roll` with `rotation.order = 'YXZ'`. At 90° pitch, the X and Z axes collapse into one. Three.js `Euler` objects expose this directly — it is not a Three.js bug, it is fundamental to the representation.
+**Why it happens:**
+The current system has a single path: the Worker computes raw noise heights, posts a `Float32Array` to the main thread, the main thread applies `terrainAmplitude` when building the mesh geometry (`heights[i] * amp`), and `sampleHeight` also applies `terrainAmplitude` (`raw * (this._params.terrainAmplitude ?? 1.0)`). This works today because there is only one formula and one multiplier. The v1.1 failure modes are:
 
-**Consequences:** Physics breakdown at extreme angles. Rollover simulation becomes impossible. Attempting to fix it by reordering Euler axes just moves the singularity to a different angle; it cannot be eliminated without changing representation.
+1. **Octave count divergence.** The Worker computes the height with N octaves (coarse + fine + regional). The main-thread physics sampler (`sampleHeight`) reads directly from the Worker's `Float32Array`. If the Worker's formula and any per-sample road-carve applied on the main thread get out of sync — e.g., road carve is applied in the Worker but not in `sampleHeight`, or vice versa — the two surfaces disagree.
 
-**Prevention:** Use `THREE.Quaternion` for body orientation from day one. Represent angular velocity as a 3D vector in world space. Update quaternion each step via:
-```
-q_new = q + 0.5 * dt * [0, omega_x, omega_y, omega_z] * q
-```
-Then normalize. Never decompose back to Euler for physics calculations — only decompose for rendering if absolutely required.
+2. **Road carve applied in only one path.** The cut-biased road carve blends the terrain toward the road surface within a shoulder width. If the carve is applied when building the chunk mesh (main thread) but `sampleHeight` still reads the raw Worker heights, every car wheel position is above the carved road surface. The truck "floats" on the road and sinks into terrain shoulders.
+
+3. **`terrainAmplitude` applied at different stages.** If the debug-panel amplitude slider changes, `rebuildAllChunks()` re-scales visible mesh geometry using the current `amp`. If a chunk is already built, its raw heights in `chunk.heights` are unscaled — `sampleHeight` re-applies `amp` at query time. This is correct today. But if road carve modifies `chunk.heights` values directly (rather than being a post-process), a subsequent `rebuildAllChunks` call will double-apply or mis-scale the carved values.
+
+4. **Float32 vs Float64 divergence across threads.** The Worker stores heights in `Float32Array`. The main thread reads from `Float32Array`. If any physics path recomputes noise independently using `Float64` math (e.g., a thin fallback inline in `sampleHeight` for unloaded chunks), the floats round differently and the physics surface differs from the mesh surface by a small but non-zero delta. For a 0.37 m wheel radius, even a 0.01 m systematic offset causes wheels to hover above ground.
+
+5. **Regional roughness multiplier applied only to mesh.** The regional roughness is a "low-frequency multiplier on the fine layer only." If the multiplier is baked into the mesh vertex positions but the physics sampler reconstructs fine-layer amplitude from a different path, the surface heights differ under the fine-noise peaks.
+
+**How to avoid:**
+- **Single source of truth.** Define the complete `height(x, z)` formula — including all octaves, regional multiplier, and road carve blend — as one pure function callable from both the Worker and the main-thread physics sampler. The Worker calls it to fill the `Float32Array`. `sampleHeight` reads from that `Float32Array` (bilinear-interpolated) — it never recomputes noise independently.
+- **Road carve must not modify `chunk.heights`.** Store road carve as a separate lookup (a road-proximity blend weight queryable by world position). In `sampleHeight`, apply the carve blend as a post-read operation on the interpolated raw height. In mesh build, apply the same carve blend to each vertex height using the same lookup. Both use identical math from the same carve function.
+- **Write a height-agreement unit test before any P7 terrain code ships.** Pick five world positions spread across a chunk. Assert that `terrainSystem.sampleHeight(x, z)` equals the bilinear-interpolated value from the chunk's stored `heights` array (which came from the Worker) multiplied by `terrainAmplitude`. If this test fails, there is a divergence bug. Run it at phase start, not after the full feature is built.
+- **Freeze `terrainAmplitude` as a spawn-time parameter once road carve is active.** Live-tuning amplitude while roads are carved creates re-scaling inconsistencies. If the slider must stay, ensure `rebuildAllChunks` re-derives road carve geometry simultaneously.
 
 **Warning signs:**
-- Car can roll to ~60-70° but then starts spinning in yaw instead of continuing to roll
-- `carGroup.rotation.order = 'YXZ'` anywhere near physics integration
-- Pitch or roll exceeding ~80° causes sudden heading changes
+- Car wheels visually rest above the terrain surface at rest on any non-flat ground.
+- Car sinks into the road surface on the carve shoulder but floats on the flat carved section.
+- `console.log(terrainSystem.sampleHeight(x, z))` compared against reading the mesh vertex Y at the same (x,z) shows a mismatch.
+- Increasing `terrainAmplitude` via the debug slider causes the car to lift off ground and stay there until respawn.
+- Physics normal appears flat (0,1,0) while the visible mesh slope is clearly non-zero — indicates `sampleHeight` is reading uncarved heights while the mesh shows carved heights.
 
-**Phase/module:** `physics.js` — must be correct at initialization. This is not fixable by patching later.
+**Phase to address:** P7 (terrain formula must be unified before any road work). Road carve in P9 must pass the same height-agreement test as P7.
 
 ---
 
-### Pitfall 2: Pacejka C Parameter Crossing Zero
+### Pitfall 2: Determinism Break — Chunk Load Order Dependence
 
-**What goes wrong:** The Pacejka shape factor `C` controls the "width" of the curve. When `C >= 2.0`, `sin(C * atan(...))` passes through zero at high slip angles, meaning the tire produces *no lateral force* (or inverts sign) at extreme slip. The car gains grip with more slip, which is physically impossible and causes oscillatory instability.
+**What goes wrong:**
+Two players use the same seed. The maps look different. Or: the player loads the same seed twice on different hardware and gets different terrain. Roads that went north on the first load go east on the second. The world-seed contract is broken.
 
-**Why it happens:** The formula is `F(α) = D * sin(C * atan(B*α - E*(B*α - atan(B*α))))`. The argument to `sin` can reach `C * π/2`. When `C >= 2`, this exceeds `π`, and `sin` returns negative — the curve crosses zero and produces reverse force at extreme angles.
+**Why it happens:**
+The HARD RULE states every generator is a pure function of `(worldSeed, world coords)`. Violations come from:
 
-**Consequences:** At high slip angles the tire "locks in" a feedback loop. The car oscillates between extreme slip angles with growing amplitude. Looks like a resonance bug or a sign error — the actual cause is the parameter constraint.
+1. **`Math.random()` called in the Worker.** The current Worker code uses `createNoise2D(() => 0.5)` — a fixed degenerate permutation, not seed-driven. When v1.1 replaces this with a seeded permutation, using `Math.random()` instead of a seed-derived PRNG breaks the contract globally for any player without a `?seed=` param.
 
-**Prevention:**
-- Hard-clamp `C` to `[1.0, 1.99]` in any slider or parameter loader. Do not allow `C = 2.0` even.
-- The prototype correctly enforced `C < 2.0` — document this constraint explicitly in `tire.js` as a code comment with the mathematical explanation.
-- Recommended for a truck tire: `C = 1.5` (lateral), `B = 10`, `E = 0.5`.
+2. **Worker message ordering.** Workers process messages FIFO within a single Worker, so the order of chunk responses equals the order of requests. However, if the ring decides which chunk to request first based on the car's exact position at the frame the ring update runs, and frame timing varies between loads, requests arrive in a different order. Since the noise function is pure, the heights themselves are deterministic — but if any logic branches on "which chunk arrived first" or accumulates state as chunks arrive, it will differ. The current `_pendingQueue.shift()` FIFO is safe; anything that writes shared state based on chunk-arrival order is not.
+
+3. **Sub-seed correlation between terrain and roads.** If `seedFor("roads")` is derived from `worldSeed` by a trivial operation — e.g., `worldSeed + 1` or `worldSeed XOR constant` — the road waypoints will visually correlate with terrain ridge lines. Roads always follow ridges or always avoid them in a pattern that looks designed, not natural. The bias is subtle but reproducible.
+
+4. **Road tile-graph depending on which tiles are currently loaded.** If the routing algorithm in P8 finds waypoints by sampling the coarse height function, and the coarse height is only available for loaded chunks, a tile that hasn't loaded yet returns height 0 (flat ground). The router finds a different least-cost path through the flat zero-height tile than it would through the actual terrain. On the next session, if that tile loads before routing runs, the path is different.
+
+5. **Float non-determinism between JS engines.** Modern JS engines do not guarantee identical IEEE 754 results for `Math.sin`, `Math.atan2`, or `Math.sqrt` across V8, SpiderMonkey, and JavaScriptCore. If the height function uses these operations, Chrome and Firefox can produce heights differing by the last ULP. In practice the difference is ~1e-7, which is sub-millimeter and imperceptible. However, if the road router uses height comparisons to choose left/right at a tile boundary, a single ULP difference can flip a branch and produce a divergent road path.
+
+**How to avoid:**
+- **Use `mulberry32` or `xoshiro128**` as the seed-driven PRNG.** Both are ~4 operations, produce independent streams per domain tag, and are identical across all JS engines (no floating-point). `seedFor("domain", tileX, tileZ)` hashes inputs to a 32-bit uint, feeds `mulberry32`, returns a deterministic sequence. Define and freeze `seedFor()` in P7 before any other generator uses it.
+- **Route over a standalone coarse-height function, not over chunk data.** The P8 road router must call `coarseHeight(x, z)` — a pure function using only the world-seed — not `terrainSystem.sampleHeight(x, z)`. The `TerrainSystem` is chunk-cached and chunk-load-order-dependent. The coarse function is always available. The same pure function feeds both the router and the coarse octave in the mesh-height formula.
+- **Hash domain tags with a non-commutative operation.** `seedFor("coarse")`, `seedFor("fine")`, `seedFor("regional")`, `seedFor("roads", tileX, tileZ)` must produce uncorrelated outputs even when the input tags are similar strings. Use a proper string hash (FNV-1a or similar) combined with the worldSeed before producing the PRNG seed. Do not use `worldSeed + tileX * 31 + tileZ * 37` — arithmetic combinations of small integers produce correlated outputs.
+- **Write a determinism test in P7.** Generate heights for a 5×5 grid of world positions twice with the same seed. Assert byte-identical results. Generate with a different seed and assert the results differ. Run this test on every future change to the height function.
 
 **Warning signs:**
-- Oscillating slip angle that grows instead of damping
-- Car "grips up" again at very high slip angles (physically wrong)
-- Debug slider for `C` moved above 1.9 in testing
+- Same seed produces different terrain on page refresh.
+- Roads on the same seed don't share the same shape between two browser sessions.
+- Terrain and road paths visually correlate (roads always exactly follow ridges or exactly follow valleys) — indicates sub-seed correlation.
+- Switching from the default seed to a custom `?seed=` produces identical terrain — indicates seed is not wired into the noise function.
 
-**Phase/module:** `tire.js` — enforce constraint at parameter ingestion, not just at slider level.
+**Phase to address:** P7 (seed foundation and `seedFor()` must be locked before any procedural generator is written). P8 road router must use the pure coarse-height function, not chunk data.
 
 ---
 
-### Pitfall 3: Quaternion Normalization Drift
+### Pitfall 3: Performance Cliff — Layered Noise + Road Lookups Busting 60fps
 
-**What goes wrong:** Quaternion multiplication is not perfectly numerically stable. After thousands of integration steps, floating-point accumulation causes the quaternion's magnitude to drift from 1.0. A non-unit quaternion applies scaling to the mesh and corrupts angular velocity calculations. The body appears to shrink or grow, and rotation rates become wrong.
+**What goes wrong:**
+The game drops from 60fps to 30–40fps after v1.1 terrain and road features land. The frame time is not obviously spiked — it just runs slightly slow because per-step physics costs increased. Profile reveals `queryContacts` or the road-carve lookup is the culprit.
 
-**Why it happens:** Each integration step: `q = q + 0.5 * dt * omega_quat * q`. The addition is approximate; `|q|` grows or shrinks by O(dt²) per step. Over 60 steps/second this is ~3600 tiny errors per second.
+**Why it happens (specific to this codebase):**
+`queryContacts` is called 4 times per physics step (one per wheel sphere), and potentially 14 more times for body probes — 18 total per step, at 60 Hz = 1,080 calls/second. Each call currently costs ~6 array lookups + 10 multiplies. The v1.1 additions that can blow this budget:
 
-**Consequences:** Subtle at first — visual "breathing" of car size, then incorrect roll/pitch angles, eventually NaN if magnitude reaches zero (divide-by-zero in normalization).
+1. **Multi-octave noise called directly in `sampleHeight` instead of reading the `Float32Array`.** If a developer "simplifies" the unified-height path by inlining the noise formula directly in `sampleHeight` (avoiding the chunk cache), each call computes 4–6 octaves of `Math.sin`/trig. Even at 100 ns/call, 1,080 calls × 4 octaves = ~0.4 ms per frame just for height queries. Add domain warp (another noise call to offset the input coordinates) and this doubles again to ~0.8 ms — 5% of the 16.7 ms frame budget gone on height queries alone.
 
-**Prevention:**
-- Normalize quaternion every physics step: `q.normalize()`. Three.js `Quaternion.normalize()` is available.
-- Cost is negligible (4 divides per step).
-- Add a debug assertion: if `Math.abs(q.length() - 1.0) > 0.01`, log a warning — this indicates a bug upstream of normalization.
+2. **Per-sample road proximity lookup using a spline distance search.** The road carve applies a blend based on distance from the road centerline. If `sampleHeight` calls a function that iterates over all road spline segments to find the nearest, the per-call cost is O(segments). A road network with 200 spline segments × 1,080 calls/second = 216,000 segment iterations/second. At 50 ns/iteration that is ~11 ms/frame — a catastrophic performance cliff.
+
+3. **Domain warping the input coordinates.** Domain warp (sampling noise at a noise-offset position) produces rich, natural-looking terrain. But it adds 2 extra noise calls per height query. If each call is 20 ns × 3 octaves = 60 ns, domain warp adds 120 ns per `sampleHeight`. At 1,080 physics calls/second: 0.13 ms. Acceptable on its own, but combined with other overhead it compounds.
+
+4. **`sampleNormal` calling `sampleHeight` 4 times per query.** The central-difference normal already makes 4 height lookups per call. If `sampleHeight` becomes expensive (due to items 1–3), `sampleNormal` becomes 4× as expensive. The 14 body-contact probes in `queryVertexContacts` all call `sampleHeight` — some also call `sampleNormal` — and the cost multiplies.
+
+5. **Chunk geometry build cost increase from layered noise.** The Worker currently computes 3 octaves. A full Sierra-style formula (ridged FBM + domain warp + regional multiplier) may be 6–8 noise calls per sample. At 4,225 samples per chunk, that is 25,000–34,000 noise calls per chunk. At 20 ns/call: 0.5–0.7 ms per chunk in the Worker. This is invisible on the main thread but means the Worker backlog grows during rapid movement.
+
+**How to avoid:**
+- **`sampleHeight` must read from `chunk.heights` Float32Array — never recompute noise.** The bilinear interpolation on the Float32Array is irreducibly cheap (6 lookups + 10 ops, ~5 ns). Noise recomputation in the physics hot path is strictly forbidden. Enforce this as an explicit code comment and a code-review check.
+- **Road carve lookup must be O(1).** Before P9 ships, define the road carve as a texture or a spatial hash: for a given (x,z), store the blend weight in a sparse per-chunk lookup (e.g., a second `Float32Array` per chunk, same 65×65 grid, value = carve blend weight 0–1). `sampleHeight` reads one array value — same cost as the terrain height lookup. The road spline-to-texture bake is done once when the chunk is built, not per physics call.
+- **Profile P7 terrain cost immediately after implementing the new noise formula.** Open Chrome DevTools Performance panel. Record 5 seconds of driving. Measure `queryContacts` call time. Budget: must stay under 0.2 ms/frame total for all height/normal queries. If it exceeds this, the noise formula is being re-evaluated in the hot path.
+- **Domain warp is a mesh-only option.** If domain warp is used for terrain shaping, bake it into the Worker's height computation (stored in `Float32Array`). Never domain-warp in `sampleHeight`.
+- **Road routing must not run per-frame.** The deterministic tile-graph approach in P8 computes road routes once per tile and caches them. The route is looked up per chunk load, not re-solved every frame. A global least-cost pathfinder called from `queryContacts` or the physics loop would instantly kill 60fps.
 
 **Warning signs:**
-- Car mesh slowly changes apparent size over long sessions
-- Physics behaves differently after 5+ minutes of play vs first minute
-- `q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z` measurably != 1.0
+- FPS drops to 45–50fps after terrain or road feature lands, with no obvious render change.
+- Chrome Performance panel shows `sampleHeight` or `sampleNormal` accumulating significant time across 1,000+ calls per second.
+- `queryContacts` timing is 3–5× higher than before v1.1.
+- Road feature lands and FPS drops further even though no new mesh was added — indicates per-sample road lookup in physics path.
 
-**Phase/module:** `physics.js` — add normalize call at end of every integration step, before forces are computed next frame.
+**Phase to address:** P7 (noise formula in hot path is the highest risk). P9 (road carve lookup must be designed as O(1) before being wired into `sampleHeight`).
 
 ---
 
-### Pitfall 4: Stiff Spring Numerical Instability (Explicit Euler Blowup)
+### Pitfall 4: Road Routing — Degenerate Paths at Tile Seams
 
-**What goes wrong:** Spring-damper systems integrated with explicit Euler become numerically unstable when `k * dt² / m > 2`. With `SPRING_STIFFNESS = 21000 N/m`, `WHEEL_MASS = 30 kg`, `dt = 1/60`:
+**What goes wrong:**
+Roads work in the interior of tiles but produce one or more of: discontinuous gaps at tile boundaries, overlapping double-paths near seam lines, extreme direction changes (180° turns) at seam edges, or roads that ignore terrain grade at boundaries because the coarse height is sampled only within one tile.
 
-```
-k * dt² / m = 21000 * (1/3600) / 30 = 0.194
-```
+**Why it happens:**
+The "deterministic tile-graph" approach from the blueprint computes routes tile by tile, seaming them at shared edges. Failure modes unique to this approach:
 
-This is stable (threshold is 2.0), but just barely. If stiffness is raised to explore stiffer setups (50,000+ N/m) or if dt is variable (frame-rate dependent loop), the system blows up — wheel positions diverge to ±infinity within seconds.
+1. **Tile-boundary waypoints computed independently.** If tile (0,0) picks its east-edge exit waypoint by minimizing grade within its own tile, and tile (1,0) picks its west-edge entry waypoint independently, the two waypoints are at different Z positions. The road has a seam jump at x=0 boundary. This is the most common tile-routing failure mode.
 
-**Why it happens:** Explicit Euler sees the spring force at the start of the step and applies it for the full `dt`. If the force is large relative to mass and dt is large, the overshoot exceeds the restoring force in the opposite direction, and oscillation amplitude grows geometrically.
+2. **Switchback waypoints exceeding max grade anyway.** The router adds switchback legs when the direct grade exceeds the max. But if the switchback itself cuts across a feature (a local ridge running perpendicular to the road direction) the switchback leg can exceed max grade. Greedy per-step routing without lookahead produces this. The router thinks it made a 3D turn but the new heading still climbs a steep face.
 
-**Consequences:** Wheels launch to ±infinity. Physics NaNs immediately follow. Browser tab may freeze or crash. Looks like a "random crash" because it only triggers when a specific parameter combination is hit.
+3. **Overlapping or crossing switchback arms.** A switchback that ascends a slope, reverses at a landing, and reverses again can cross its own previous leg if the turn radius (set by road width and minimum curve radius) doesn't have enough lateral room. On narrow ridges this is geometrically impossible to avoid without a wider hairpin zone.
 
-**Prevention:**
-- Keep the stability criterion check: `k * dt² / m < 1.0` (comfortable margin, not the theoretical 2.0 limit).
-- For the Ranger with `k=21000, m=30, dt=1/60`: ratio = 0.19. Safe.
-- If higher stiffness is needed, switch to semi-implicit Euler (velocity updated before position) or add sub-stepping for the suspension loop only.
-- Clamp slider max stiffness in the debug menu to the safe range — compute the limit dynamically: `k_max = 1.0 * m / (dt * dt) = 108,000 N/m`.
-- In `suspension.js`, add a comment with the stability formula and the Ranger's operating margin.
+4. **Spline continuity break between tiles.** Even if waypoints match at the seam, a cubic spline fitted tile-by-tile has a discontinuous tangent at the boundary unless the tangent constraint is propagated across tiles. Visual effect: a sharp kink in the road line at every tile boundary.
+
+5. **Road routing over coarse height diverges from the actual terrain shape.** If the coarse height function (used for routing) has significantly lower amplitude than the full layered height (which includes fine noise), the router thinks a grade of 12° is passable, but the actual road path traverses a fine-noise feature that adds local 18° slopes. The car hits these on the road surface even though the router "solved" the grade constraint.
+
+**How to avoid:**
+- **Tile boundary waypoints must be shared, not independently computed.** When tile (0,0) and tile (1,0) are generated, both must derive the edge-crossing waypoint using the same deterministic formula: `edgeWaypoint(tileX, tileZ, edge) = seedFor("edge", tileX, tileZ, edge) → deterministic Z position on the east/west/north/south edge`. Both tiles use this same function — the waypoint is canonical, not tile-local.
+- **Propagate entry and exit tangent constraints.** When building the road spline for a tile, require that the spline's entry tangent equals the exit tangent from the previous tile (stored in the tile-graph). This enforces C1 continuity across seams. Cache the exit tangent in the tile-graph when the tile is first routed.
+- **Use a minimum switchback arm length.** Enforce that each switchback leg is at least 3× the road width in length before allowing a reversal. This prevents hairpins that immediately overlap. Enforce the geometric no-crossing check: the new arm's starting point must be at least `road_width * 2` laterally offset from any prior arm at the same elevation.
+- **Grade check must use the full height function for a sanity pass.** After the coarse-height router proposes a path, evaluate the path elevation at 1 m intervals using the fine+coarse height. If any 10 m segment exceeds `max_grade * 1.2` (20% tolerance), flag that segment for carve deepening in P9 rather than re-routing.
+- **Visualize every new tile's spline immediately in debug mode.** P8 ships with colored debug splines drawn per tile. Visual inspection of seam continuity is faster than assertions for this problem class.
 
 **Warning signs:**
-- Wheel position values suddenly jump to large numbers (>100m from origin)
-- Physics crashes only after changing stiffness slider, not at startup
-- `wheelY[i]` becomes NaN or Infinity
+- Road line has visible kinks at integer tile boundaries (multiples of 64 m world units).
+- A road switchback visually loops back and crosses itself on steep terrain.
+- The road appears to go downhill then uphill in the same tile — indicates the routing cost function isn't accounting for the reversal arm's elevation gain correctly.
+- Entry tangent at a tile seam produces a sharp angle visible in the debug spline view.
 
-**Phase/module:** `suspension.js` — enforce parameter bounds at init and in slider callbacks.
+**Phase to address:** P8. Seam continuity and switchback geometry must both be verified in the debug-spline deliverable before any mesh work begins in P9.
 
 ---
 
-### Pitfall 5: Contact Patch Velocity Sign Error (Slip Angle Gets Inverted)
+### Pitfall 5: Road Surface — Carve Seam Cliffs at Shoulders
 
-**What goes wrong:** The contact patch velocity calculation `v_contact = v_CG + omega × r` requires the correct cross product direction. In the prototype's 2D approximation:
+**What goes wrong:**
+The road surface ribbon is smooth, but at the shoulder edge there is a sudden cliff: the terrain drops sharply from the road elevation back to the original uncarved terrain. Cars that drift to the road edge clip through this cliff or experience sudden impulse forces from the bodywork contact probes hitting the shoulder wall.
 
-```javascript
-const wcX = vx + omega * wheel.rz;  // correct: +omega * rz for X component
-const wcZ = vz - omega * wheel.rx;  // correct: -omega * rx for Z component
-```
+**Why it happens:**
+The cut-biased carve is supposed to blend the terrain down to the road surface within a shoulder width. If the blend weight function drops to 0 abruptly (hard cutoff at shoulder edge) rather than tapering over a gradual shoulder, the height transition from road surface to raw terrain is a step function. The chunk mesh shows a cliff. `sampleHeight` returns the road elevation at the edge, then the raw terrain elevation one sample further — a possible 2–5 m height jump per 1 m cell.
 
-A sign error here produces a contact patch velocity that is the mirror image of the actual velocity. Slip angles will be inverted — left turns produce right-pushing tire forces, and the car understeers catastrophically or spins in reverse.
+The body-contact probes in `queryVertexContacts` (front/rear bumpers, sills, undercarriage) are positioned assuming a smooth ground plane. A 1–2 m cliff on the road shoulder triggers bumper contacts at highway speed, producing sudden upward impulses — the car "launches" when drifting off-road.
 
-In 3D quaternion physics the cross product is `omega_vec.cross(r_vec)`. If `omega_vec` and `r_vec` are in different frames (one body-local, one world), the cross product is wrong by a rotation.
+Additionally: at the seam between two adjacent chunks, the blend function is evaluated independently per chunk. If the road passes diagonally across the chunk boundary, the blend weights on each side of the seam may be computed from slightly different distances-to-road (due to the tile-local spline representation vs the canonical edge waypoint). This produces a seam in the carve — a height discontinuity at the chunk boundary, aligned with the road.
 
-**Why it happens:** The 3D version requires `r` (wheel offset from CG) to be in world frame, and `omega` to also be in world frame. If angular velocity is stored in body frame and not transformed before the cross product, the contact patch velocity is correct only when the car is unrotated (yaw = 0, pitch = 0, roll = 0).
-
-**Consequences:** Steering feels inverted. Drifting goes the wrong direction. The bug is often masked at small angles (cross product error is small when car is near-upright) and only becomes obvious at roll angles >30°.
-
-**Prevention:**
-- In `tire.js`, document the frame of every vector: `omega_world` (rad/s in world frame), `r_world` (wheel offset in world frame).
-- Always transform `omega` from body frame to world frame before computing contact patch: `omega_world = q.apply(omega_body)`.
-- Unit test: stationary car, yaw rate = 1 rad/s, front-left wheel. Contact patch velocity should point exactly laterally (car-right). Verify direction before connecting to tire forces.
+**How to avoid:**
+- **Use a smooth blend function, not a hard cutoff.** The blend weight `w(d)` where `d` is distance from road centerline must be: `w(d) = 1` for `d < half_road_width`, tapering via `smoothstep` from 1 to 0 between `half_road_width` and `half_road_width + shoulder_width`. Zero at and beyond `shoulder_width`. A `smoothstep` taper over 3–5 m of shoulder width prevents visible cliffs while keeping the flat road zone flat.
+- **Carve blend evaluation must use the same road-proximity function in both chunks.** When computing the carve weight for a vertex or sample at (x,z), the distance to the road centerline must be looked up from the canonical tile-graph spline, not a chunk-local copy. Two adjacent chunk samples at (64.0, z) and (64.01, z) must return the same road proximity weight. This is only guaranteed if both call the same `roadDistance(x, z)` function that uses the canonical edge waypoints.
+- **Test carve at chunk seams explicitly.** Before P9 is complete, sample `sampleHeight` at (63.0, z), (64.0, z), (65.0, z) where the road crosses the chunk boundary. Assert that the height difference between adjacent samples is less than `terrain_slope * 1m` — i.e., no larger than the background terrain slope at that point.
+- **Ensure body-contact probes have realistic response on shoulder cliffs.** Even with smooth carve, the terrain immediately outside the shoulder can be several meters lower than the road. Add a grade-limit check: if the body probe detects a contact with depth > 0.3 m at a probe that was not contacting the previous frame, cap the impulse magnitude (already present in the Baumgarte corrector) to prevent launch spikes.
 
 **Warning signs:**
-- Car turns right when steering left at high speed
-- Slip angles appear correct at low speed but invert direction at high roll angles
-- Physics is fine when car is flat but breaks when tilted
+- Car experiences a sudden upward impulse when the front bumper probe crosses the road shoulder.
+- Visible cliff edge at road shoulders in the debug wireframe.
+- Height samples at (64.0, z) and (65.0, z) where a road crosses the chunk boundary differ by more than expected terrain slope.
+- `sampleNormal` at the road shoulder returns a near-horizontal normal (pointing sideways) — the cliff face is being treated as a contact surface.
 
-**Phase/module:** `tire.js` and `physics.js` interface — add a frame-of-reference comment block before every cross product.
+**Phase to address:** P9. The carve blend function design must be specified before the road surface mesh or physics integration is coded.
 
 ---
 
-### Pitfall 6: Ackermann Sign Error at Lock and Near-Zero Steering
+### Pitfall 6: Free-Cam — Physics Continuing While Flying, and Camera State Leak
 
-**What goes wrong:** The Ackermann formula divides by `tan(steerAngle)`. Near `steerAngle = 0`, `tan(steerAngle) → 0` and `R = L / tan(steerAngle) → infinity`. This is mathematically correct (straight line has infinite radius) but causes division-by-zero or NaN in subsequent calculations.
+**What goes wrong:**
+Two failure modes:
 
-At negative steer angles, the inner/outer wheel assignment flips. A common error: computing `R = L / tan(steerAngle)` then using `R - t` and `R + t` without tracking sign, so the "inner" wheel becomes the outer one.
+(A) While in free-cam mode the car continues to receive physics updates. On flat terrain the car slowly rolls to a stop harmlessly. On steep terrain, or if the car was partially airborne when free-cam was activated, it can roll off a cliff, flip, or land in an unrecoverable state before the player returns to chase mode.
 
-**From the prototype:**
-```javascript
-function getAckermannAngles(steerAngle) {
-  if (Math.abs(steerAngle) < 0.001) return { left: 0, right: 0 };
-  const R = L / Math.tan(steerAngle);
-  const deltaL = Math.atan(L / (R - t));
-  const deltaR = Math.atan(L / (R + t));
-  return steerAngle > 0
-    ? { left: deltaL, right: deltaR }
-    : { left: deltaR, right: deltaL };
-}
-```
+(B) When toggling back from free-cam to chase mode, the camera snaps abruptly to the car position because the chase camera's exponential follow state (`currentPos`, `currentLook`) was not updated during the free-cam period. The car moved; the chase camera's internal position state is stale. The result is a visible jump followed by a re-convergence lag that looks like a bug.
 
-This is correct but fragile. At near-zero steer, the deadzone (0.001 rad) prevents division by zero. But there is a discontinuity: for `|steerAngle| = 0.001` the function jumps from exact zero to the Ackermann result. This is acceptable but should be documented.
+**Why it happens:**
+`camera.js` is architected for multi-mode (confirmed in the blueprint: "this adds a mode, not a rewrite"). The current chase camera uses framerate-independent exponential follow (dt-based). Free-cam mode needs to: (1) keep the camera active without following the car, (2) idle the car or freeze physics while flying, (3) restore chase-cam state correctly on return.
 
-**More dangerous case:** At very large steer angles (~MAX_STEER), `R - t` can become negative if `R < t`. For the Ranger: `L = 2.85m`, `t = 0.73m`. At `steerAngle = MAX_STEER = 0.6 rad`: `R = 2.85 / tan(0.6) = 2.85 / 0.684 = 4.17m`. `R - t = 3.44m` — safe. But if `MAX_STEER` is increased to ~1.0 rad (`tan(1.0) = 1.557`): `R = 1.83m`, `R - t = 1.10m` — still safe. For `steerAngle` approaching `atan(L/t) = atan(2.85/0.73) = 1.32 rad`, `R → t`, meaning the inner wheel would need to pivot in place (zero turning radius) — `deltaL = atan(L/0) = π/2`. Beyond this: `R < t`, and the formula returns a negative argument to `atan`, producing a negative angle (wheel pointing backward). This is physically meaningless.
+The physics loop in `main.js` runs unconditionally inside the fixed-step accumulator. If free-cam just changes camera mode without touching the physics path, the car continues to simulate. This is likely the intended behavior (car idles while flying) but needs deliberate confirmation, since a car that falls off a cliff in the 30 seconds the player is evaluating terrain is frustrating.
 
-**Prevention:**
-- Clamp `MAX_STEER` such that `R_min > t * 1.5` (safety margin). For the Ranger: `steerAngle_max = atan(L / (t * 1.5)) = atan(2.85 / 1.095) = atan(2.60) ≈ 1.20 rad`. Use a lower practical max (0.6–0.7 rad is realistic for a truck with power steering lock).
-- Add assertion in `getAckermannAngles`: `if (R < t * 1.1) log warning`.
-- Implement the geometric constraint check at vehicle spec load time, not just at runtime.
+**How to avoid:**
+- **Decide explicitly: freeze physics or idle-simulate.** The blueprint says "car idles while flying." This means physics continues but the car receives zero throttle/brake/steer input. This is the correct choice (avoids a physics-resume discontinuity on return). Implement it as: while `camera.mode === 'freecam'`, force all input accumulators to zero before the physics step. The car coasts to a stop naturally due to rolling resistance and tire damping.
+- **On free-cam exit, snap chase camera state before first follow frame.** When toggling back to chase mode, set `camera.currentPos.copy(car.position + offset)` and `camera.currentLook.copy(car.position)` immediately — before the exponential follow runs. This eliminates the snap artifact. Add a one-frame "hard follow" (alpha = 1.0) on the first frame after mode switch to prevent any residual lerp artifact.
+- **Free-cam should not write to `vehicleState`.** Free-cam WASD controls must move only a `freeCamPos` / `freeCamQuat` state local to `camera.js`. They must not modify `vehicleState.position` or `vehicleState.velocity`. This prevents accidental car teleportation if the free-cam shares input processing with the car.
+- **Hide or dim the physics debug HUD while in free-cam.** The slip-angle HUD, Pacejka canvas, and suspension travel bars become meaningless while flying. Display a "free-cam active" overlay. This also prevents players from misreading the HUD as the camera flying.
 
 **Warning signs:**
-- Front wheels visually cross or point backward at full lock
-- Steering feels normal at moderate angles but becomes erratic at full lock
-- `atan` returns values > 90° for inner wheel
+- Car position shifts unexpectedly after returning from free-cam (indicates free-cam was writing to `vehicleState`).
+- Camera snaps to car on free-cam exit then slowly converges — indicates chase-cam state was stale.
+- Car falls off the visible terrain edge while in free-cam mode before the player can return — indicates input-zero not enforced.
+- Free-cam WASD movement also steers the car slightly — indicates input handlers are shared without mode gating.
 
-**Phase/module:** `vehicle.js` (spec validation on load) and `steering.js` / `tire.js`.
-
----
-
-## Moderate Pitfalls
+**Phase to address:** P7 (free-cam is the first deliverable within P7 and must be code-complete before terrain tuning begins — this is explicitly required by the blueprint).
 
 ---
 
-### Pitfall 7: Fixed Timestep Spiral of Death
+### Pitfall 7: Chunk Streaming Thrash — Road Carve Invalidating Built Chunks
 
-**What goes wrong:** The "spiral of death" is when physics simulation falls behind real time. Each frame, the simulation accumulates `dt_real - dt_physics` of unpaid time. If a GC pause or heavy render takes 50ms when `dt = 16ms`, the next frame must run 3+ physics steps. If those 3 steps take >16ms, the next frame owes 4 steps, and so on. The browser tab becomes unresponsive.
+**What goes wrong:**
+A chunk is built by the Worker and rendered. Later, the road routing system (P8/P9) determines that a road passes through that chunk and the carve needs to be applied. The chunk must now be rebuilt with carve weights. If the road data is not available when the chunk is first built, the chunk is built twice: once without carve, then again with carve. In a worst case the player sees the terrain "jump" from uncarved to carved as the road appears.
 
-**From the prototype (correct prevention already applied):**
-```javascript
-acc += Math.min((now - lastTime) / 1000, 0.1);  // cap accumulator at 100ms
-```
+A related variant: the player moves fast enough that the chunk ring evicts a chunk before its road data is resolved. On re-entry, the chunk is rebuilt but road data may or may not be resolved in time, producing flickering road presence.
 
-The `Math.min(..., 0.1)` cap is the prevention. Without it, a 500ms tab-switch pause would require 30 physics steps to catch up, causing a visible freeze.
+**Why it happens:**
+The existing chunk pipeline is: request → Worker generates heights → main thread builds mesh. In v1.1, road carve depends on P8 road routing data that is separate from the noise heightmap. If road routing is a second async step, there is a window between "chunk heights available" and "road data available" where the chunk can be built without carve.
 
-**Why it matters more in browser:** JavaScript GC is non-deterministic. A GC pause of 50-200ms is common on complex pages. Browser tabs can be backgrounded and suspended. `requestAnimationFrame` is throttled to 1fps when tab is hidden.
+The existing `MAX_BUILDS_PER_FRAME = 2` cap and the `_pendingWorker` reservation guard (which the spawn-chunk bug fix explicitly hardened in commit 7cf6178) prevent duplicate geometry builds from the Worker. But they do not prevent a "carve update" rebuild triggered by road data arriving after the chunk is already in `_chunkMap`.
 
-**Prevention:**
-- Always cap the physics accumulator: `acc = Math.min(acc + elapsed, MAX_CATCHUP)` where `MAX_CATCHUP = 0.1` (6 steps at 60Hz) is a reasonable limit.
-- The cap value trades off determinism vs responsiveness: larger cap = more deterministic but longer freezes; smaller cap = smoother but simulation runs slow in real time after a pause.
-- Log a warning if more than 3 consecutive catchup steps occur — this indicates performance headroom is insufficient.
+**How to avoid:**
+- **Prefer synchronous road data over async if road routing is cheap.** If `roadData(tileX, tileZ)` is a pure deterministic function (no I/O, no Worker), it can be called synchronously during chunk mesh build on the main thread. The chunk-build path becomes: Worker heights arrive → main thread calls `roadData(cx, cz)` synchronously → builds mesh with carve already applied. No second rebuild needed.
+- **If road data must be async, hold chunks in "pending carve" state.** Before P9 ships, extend the pending pipeline: `_pendingCarve` set analogous to `_pendingWorker`. A chunk does not transition to `_chunkMap` until both its heights and its road carve data are resolved. This extends the "flat ground fallback" period but eliminates the double-build artifact. The existing `_pendingWorker` reservation pattern is a direct model for this.
+- **Road tile-graph must be computed before any chunk in that tile is built.** Since road routing in P8 is deterministic and tile-keyed, the road graph for tile (cx, cz) can be computed as soon as `cx` and `cz` are known — before the Worker is even posted. Add `_roadTileGraph.ensure(cx, cz)` before `_worker.postMessage(...)` in `_updateChunkRing`. This ensures road data is always ready before heights arrive.
+- **Never rebuild a chunk solely for road carve updates to avoid the double-build stamp.** Once a chunk is in `_chunkMap` with carve applied, it should not be rebuilt unless it exits and re-enters the ring. Carve parameters should be frozen at build time for the ring's lifetime of that chunk.
 
 **Warning signs:**
-- Game freezes for 1-2 seconds after switching tabs and returning
-- Physics runs in apparent slow-motion after a browser GC event
-- `performance.now()` gap between frames occasionally > 500ms in logs
+- The terrain visible under a road suddenly drops/shifts when the road carve is applied after the chunk is already rendered — a visual "jump" in terrain height.
+- The road surface flickers between present and absent when moving near the chunk ring edge.
+- Two geometry build events for the same chunk key in the same session visible in a debug log.
+- The road appears to float above the terrain on re-entry into a previously visited chunk — the chunk was rebuilt without road carve data on re-entry.
 
-**Phase/module:** `main.js` animation loop.
-
----
-
-### Pitfall 8: Object Allocation in the Physics Hot Path (GC Pressure)
-
-**What goes wrong:** Creating JavaScript objects (including arrays) inside `physicsStep()` causes heap allocation on every physics tick. At 60Hz this is 60 allocations/second minimum; each can be larger if nested objects are created. The GC must collect these, and when it does, it pauses the JS thread. The pause is non-deterministic (can be 5ms or 200ms) and kills framerate.
-
-**Common offenders in physics code:**
-- `return { fxW, fzW, Mz, alpha }` inside `computeWheelForces` — creates a new object every call (4x per frame = 240 objects/second)
-- `const wheels = [...]` constructed every frame with 4 new objects
-- `{ rx, rz, steer, driven }` wheel descriptors created inline
-- `THREE.Vector3` temporaries created for cross products
-
-**Prevention:**
-- Pre-allocate all result objects at module scope, reuse them. Instead of `return { fxW, fzW }`, write into a persistent output buffer: `WHEEL_FORCE_BUF[i].fxW = ...`.
-- Pre-allocate the wheel descriptor array once, update properties in place each frame.
-- For Three.js math, maintain a pool of `THREE.Vector3` and `THREE.Quaternion` scratch objects; call `.set()` to reuse rather than `new`.
-- Use `Float64Array` or `Float32Array` for numeric state (wheel positions, velocities) — typed arrays avoid object overhead and are cache-friendly.
-- In the hot path, never use `Object.assign`, spread (`...`), or array destructuring — these allocate.
-
-**Warning signs:**
-- Chrome DevTools Memory profiler shows steady allocation rate during physics loop
-- GC "major" events visible in Performance timeline during gameplay
-- Frame time spikes correlate with allocation pressure, not render complexity
-
-**Phase/module:** `tire.js`, `suspension.js`, `physics.js` — apply at initial write, not as a post-hoc optimization.
+**Phase to address:** P8 (road tile-graph must be ready before chunk builds during that phase's implementation). P9 (carve integration into the chunk pipeline must follow the "no double-build" rule).
 
 ---
 
-### Pitfall 9: Suspension Geometry Breakdown at High Roll/Pitch
+## Technical Debt Patterns
 
-**What goes wrong:** The prototype computes body corner height as:
-```javascript
-const cornerY_body = y + RIDE_HEIGHT + cornerForward[i] * Math.sin(pitch) - cornerRight[i] * Math.sin(roll);
-```
-
-This is a first-order linearization: it assumes pitch and roll are independent and small. At `pitch = 90°`, `sin(pitch) = 1` and the formula gives a plausible number, but the actual body corner positions require a full rotation matrix or quaternion rotation of the local mount offset into world space.
-
-At combined high roll + high pitch (say 45° each), the linearized formula's error becomes significant. The computed corner height is wrong, which means spring compression is wrong, which means normal forces are wrong. The car can appear to float above ground on one side while physically penetrating on the other.
-
-**The correct approach:** Transform the local mount offset `(lx, ly, lz)` by the body quaternion to get its world-space position, then take the Y component as the corner height. This is exact for any orientation.
-
-```javascript
-// Correct (quaternion-based):
-const mountLocal = new THREE.Vector3(lx, ly, lz);
-mountLocal.applyQuaternion(bodyQuaternion);
-const cornerY_body = bodyPosition.y + mountLocal.y;
-```
-
-**Consequences:** Incorrect normal forces at high angles. Rollover physics feels "floaty" — the car rolls but doesn't settle because corner forces are wrong. Contact patch jumps discontinuously near 90°.
-
-**Warning signs:**
-- Wheels appear to penetrate ground on one side during roll
-- Normal force on one wheel spikes to very high value during high-angle maneuvers
-- Car oscillates or bounces after rollover instead of settling
-
-**Phase/module:** `suspension.js` — must use quaternion rotation from day one, not the linearized approximation.
+| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
+|----------|-------------------|----------------|-----------------|
+| Recompute noise inline in `sampleHeight` instead of reading `Float32Array` | Simpler code, no chunk-cache dependency | ~10× per-call cost in physics hot path; catastrophic at 1,080 calls/second | Never — always read from the `Float32Array` |
+| Modify `chunk.heights` array values for road carve | One array to maintain | `rebuildAllChunks()` applies `terrainAmplitude` to the carve-modified values, double-scaling the carve; `sampleHeight` loses the "raw vs carved" distinction | Never — keep raw heights in `chunk.heights`, apply carve as a post-read blend |
+| Use `Math.random()` in the seed-derived PRNG for "variety" | More visual variety | Breaks determinism; seed contract fails; shareable maps stop working | Never in any generator |
+| Route roads over `terrainSystem.sampleHeight()` instead of a pure coarse-height function | One fewer function to maintain | Road routing depends on which chunks are loaded; non-deterministic; different on each load | Never — routing must use a pure function |
+| Compute road proximity by iterating all spline segments in `sampleHeight` | Simple to code | O(segments) per call × 1,080 physics calls/second = catastrophic performance | Never in physics hot path |
+| Hard shoulder cutoff (no smoothstep blend) in road carve | Simple math | Cliff at shoulder edge; car body probes trigger launch impulses when drifting off road | Never — always blend over a shoulder width |
+| Snap chase camera directly to car on free-cam exit | No lerp artifact | One-frame snap is visible and looks like a bug | Never — always hard-set `currentPos` before the first exponential follow frame |
+| Accept that roads don't exactly match grade constraints due to fine-noise | Simpler router | Player drives a "flat" road that actually has 20° local slopes; grade constraint is meaningless | Acceptable only if fine-noise amplitude is low enough (< 0.3 m deviation from coarse) |
 
 ---
 
-### Pitfall 10: Wheel-Body Decoupling (Visual/Physics Mismatch)
+## Integration Gotchas
 
-**What goes wrong:** The prototype explicitly notes "Wheels are scene-level objects decoupled from body pitch/roll — they don't inherit body rotation, only receive it visually." This caused wheels to appear in the right place visually but have physics state (wheelY) that did not account for body tilt. At 45° roll, a wheel that should be lifted is still computed as if the body is flat.
-
-**In 6DOF:** Wheel attachment points are body-local offsets. Their world positions are computed by rotating those offsets by the body quaternion. If wheel physics state (spring length, contact detection) is computed from world-space wheel positions derived from quaternion rotation, and rendering uses the same computation, there is no mismatch. The prototype's decoupling was a symptom of the Euler-based architecture — it cannot occur if wheels are always computed as `body_position + q.rotate(local_offset)`.
-
-**Prevention:**
-- In the new architecture, wheels have no independent orientation state. They are defined as local offsets from body CG. All world positions are computed from those offsets + body quaternion each physics step.
-- There is no separate "visual" update vs "physics" update — the same quaternion rotation produces both.
-- Each wheel module stores: local offset (constant), spring compression (scalar), angular velocity (scalar for spin). World position is always derived, never stored as primary state.
-
-**Warning signs:**
-- Wheel meshes visually clip through ground while physics says they are in contact
-- Wheel visual positions diverge from physics positions at high angles
-- Need for a "visual update" function separate from "physics update"
-
-**Phase/module:** `vehicle.js` architecture — establish this contract at system design, not after wheels are implemented.
+| Integration | Common Mistake | Correct Approach |
+|-------------|----------------|------------------|
+| `seedFor()` → Worker | Passing `worldSeed` to the Worker as a message, then using `Math.random()` as a fallback if the message doesn't arrive before the first `generate` | Initialize the Worker's PRNG from the seed in the first message; refuse to generate until seed message is confirmed; no `Math.random()` fallback |
+| Road carve ↔ `sampleHeight` | Applying carve only in the mesh build path, not in `sampleHeight` | Both must call the same `carveBlend(x, z)` function; the function must be defined in a shared scope accessible from both the mesh builder and the `TerrainSystem.sampleHeight` path |
+| Free-cam ↔ input system | Free-cam sharing the same WASD input handlers as car steering | Gate all vehicle-input accumulation behind `if (camera.mode !== 'freecam')` before the physics step |
+| Road tile-graph ↔ chunk ring | Road graph state stored in `TerrainSystem` (tightly coupled to chunk lifecycle) | Road graph state is a separate module with its own Map keyed by `tileX,tileZ`; it is not evicted when a chunk leaves the ring (roads persist; terrain chunks are recycled) |
+| `queryContacts` ↔ road surface normal | Returning terrain normal (from `sampleNormal`) for a position on the road, which does not include crown or bank | Road contact points must check if they are within road width of centerline; if so, return road normal (crown + bank + terrain slope blend) instead of raw terrain normal |
+| `rebuildAllChunks()` ↔ road carve | Amplitude slider triggers `rebuildAllChunks()`, which re-scales all vertex heights from raw `chunk.heights` — if carve is baked into `chunk.heights`, it gets re-scaled by the new amplitude | Raw Worker heights stay in `chunk.heights`; carve is a post-read function; `rebuildAllChunks()` applies carve blend during vertex rebuild, not before storing heights |
 
 ---
 
-### Pitfall 11: Normal Force Sign at Low-Speed and Wheel Lift
+## Performance Traps
 
-**What goes wrong:** When a wheel lifts off the ground (suspension extends past natural length), the spring pulls rather than pushes. This is physically correct for a suspension with a jounce bump stop, but for a simple spring the computed `suspForce` goes negative (extension). If this negative force is passed as `normalForce` to the tire model, the tire tries to produce negative grip — which is nonsensical and can cause sign reversal in all tire forces.
-
-**From the prototype:**
-```javascript
-groundNormalForce = WHEEL_MASS * GRAVITY + suspForce;
-if (groundNormalForce < 0) groundNormalForce = 0; // wheel lifting off
-```
-
-The clamp is the prevention. Without it: a lifting wheel produces a small negative suspForce (spring in tension), yielding a small negative normal force, yielding a small negative `tirePeakForce`, yielding reversed tire forces — the lifted wheel pushes the car sideways in the wrong direction.
-
-**Prevention:**
-- Always clamp normal force to zero before passing to tire model: `Fn = Math.max(0, suspForce + wheelWeight)`.
-- When `Fn = 0`, skip tire force computation entirely (not just clamp it) — small efficiency gain and avoids any edge cases in Magic Formula at `D = 0`.
-- Add a boolean `inContact[i]` flag that gates tire force accumulation.
-
-**Warning signs:**
-- Car produces unexpected lateral forces when wheels are clearly airborne
-- Rolling over causes sudden force spike from a lifted wheel
-- Normal force debug display shows negative values
-
-**Phase/module:** `suspension.js` and `tire.js` interface.
+| Trap | Symptoms | Prevention | When It Breaks |
+|------|----------|------------|----------------|
+| Noise recomputed in `sampleHeight` hot path | fps drops from 60 to 45–50 with no render change; `sampleHeight` appears in profiler's hot functions | Read from `chunk.heights` Float32Array only; never call noise functions from the main thread | Immediately at 60 Hz × 18 probes with any multi-octave formula |
+| O(N) road spline search per physics call | fps crashes proportional to road network size; profiler shows `roadDistance()` dominates | Spatial grid or per-chunk `Float32Array` carve-weight map; O(1) lookup | With >20 road spline segments on screen |
+| Building all pending chunks in one frame when car crosses tile corners | Visible single-frame hitch; ms spike in Performance timeline | Existing `MAX_BUILDS_PER_FRAME = 2` cap must remain; do not bypass it for road carve rebuild | 4 new chunks × ~2 ms build = 8 ms spike without the cap |
+| `sampleNormal` calling `sampleHeight` 4× per call, with expensive `sampleHeight` | Normal query 4× worse than height query; physics slow on slopes | Keep `sampleHeight` O(1) bilinear; the 4× factor is then ~20 ns total for normal | Immediately if `sampleHeight` is non-O(1) |
+| Global least-cost pathfinding per frame | fps instantly non-playable; JS freezes | Tile-graph approach: route once per tile, cache; never route during the game loop | Every frame with any graph search over infinite terrain |
+| Road tile-graph recomputed every time a chunk is evicted and re-entered | Hitches on chunk boundary crossing | Road graph state is persistent (separate Map, not evicted with chunk) | In any drive session longer than 10 minutes on varied terrain |
 
 ---
 
-### Pitfall 12: Rollover Feels Wrong — CG Height Error
+## "Looks Done But Isn't" Checklist
 
-**What goes wrong:** The effective CG height governs when rollover occurs. For a lateral acceleration `a_y`, rollover happens when `a_y > g * (track/2) / CG_height`. For the Ranger: `CG_height ≈ 0.55m`, `track/2 = 0.73m`. Rollover threshold: `a_y = 9.81 * 0.73 / 0.55 = 13.0 m/s² ≈ 1.33g`. This is physically correct for a Ranger.
-
-If CG height is set too low (common mistake: using body mesh center instead of actual vehicle CG), the rollover threshold is too high and the car never tips. If CG height is too high, it tips at low speeds unrealistically.
-
-**Additional error:** The moment arm for roll torque from lateral tire forces is `CG_height + WHEEL_RADIUS` (force applies at ground, moment arm is full height from ground to CG). Many implementations use just `CG_height` (moment arm from wheel center to CG), which is shorter and underestimates roll tendency by `WHEEL_RADIUS / total_arm`.
-
-**Prevention:**
-- Use the real value: Ranger CG height from ground ≈ 0.55m. This is from suspension jounce position, not static ride height.
-- Document in `vehicle.js` what the CG height represents: height above ground plane, not above any other reference.
-- Roll torque calculation: moment arm = `body_CG_height_above_ground` (which varies with suspension travel). In 6DOF, this comes naturally from the cross product of force position and force direction — but verify the force application point is at the contact patch (ground level), not at wheel center or suspension mount.
-
-**Warning signs:**
-- Car rolls over easily on flat ground at moderate speeds (CG too high)
-- Car can be driven on two wheels indefinitely with no rollover (CG too low)
-- Roll behavior changes dramatically when spring stiffness is adjusted (suggests moment arm is coupled to spring geometry)
-
-**Phase/module:** `vehicle.js` (spec definition) and `physics.js` torque accumulation.
+- [ ] **Unified height function:** `terrainSystem.sampleHeight(x, z)` returns the same value as bilinear-interpolating the stored `chunk.heights` (times `terrainAmplitude`) — verified with an explicit assertion test at 5 world positions.
+- [ ] **Road carve in both paths:** Driving on the road surface feels level (no floating above mesh), and looking at the terrain from free-cam shows the carve in the mesh at the same location where `sampleHeight` returns the carved height.
+- [ ] **Seed determinism:** Refreshing the page with the same `?seed=` produces identical terrain and roads (visual inspection + the height-agreement unit test).
+- [ ] **Switchback grade constraint:** Driving a switchback from bottom to top in the Ranger without wheel-spin confirms no segment exceeds the target max grade (debug HUD shows slope angle during drive).
+- [ ] **Road seam continuity:** Debug spline view shows no kinks at tile boundaries (multiples of 64 m world units).
+- [ ] **Free-cam exit:** Toggling from free-cam back to chase mode shows no camera snap — the transition is smooth.
+- [ ] **60fps after all v1.1 features:** Open Chrome DevTools Performance panel, drive 60 seconds on road + terrain. `sampleHeight` and road lookup combined are under 0.2 ms/frame.
+- [ ] **Shoulder blend:** Driving off the road edge at low speed produces no sudden launch impulse from body-contact probes hitting a shoulder cliff.
 
 ---
 
-## Minor Pitfalls
+## Recovery Strategies
+
+| Pitfall | Recovery Cost | Recovery Steps |
+|---------|---------------|----------------|
+| Mesh/physics height divergence discovered mid-P9 | HIGH | Freeze all mesh and physics changes; write and run the height-agreement assertion test; identify which path diverges; fix the divergent path; rerun test before unfreezing |
+| Determinism break discovered after P8 ships | MEDIUM | Add the determinism test; bisect which generator breaks it (terrain, road, or seed derivation); fix `seedFor()` or the PRNG seeding; rerun all determinism assertions |
+| Performance cliff from noise in hot path | LOW (if caught early) / HIGH (if found after all features) | Profile immediately with DevTools; confirm `sampleHeight` is the culprit; add the Float32Array read path; remove any direct noise calls from main thread hot path |
+| Road seam kinks discovered in P9 mesh | MEDIUM | Return to P8 tile-graph; enforce shared edge-waypoints and C1 tangent propagation; re-examine all tile-boundary splines in debug view |
+| Carve cliff at shoulders discovered in P9 testing | LOW | Replace hard cutoff with smoothstep blend in carve weight function; confirm with height-sample assertion at shoulder edge; no architecture change required |
+| Free-cam camera snap on exit | LOW | Add `currentPos.copy(...)` hard-set before first chase-cam frame; one-line fix |
 
 ---
 
-### Pitfall 13: Friction Circle Instability with Hard Proportional Scaling
+## Pitfall-to-Phase Mapping
 
-**What goes wrong:** A common friction circle implementation scales *both* lateral and longitudinal forces proportionally when the combined force vector exceeds the friction circle:
-
-```javascript
-// Dangerous pattern:
-const totalForce = Math.sqrt(Fx*Fx + Fy*Fy);
-if (totalForce > maxForce) {
-  Fx *= maxForce / totalForce;
-  Fy *= maxForce / totalForce;
-}
-```
-
-This causes sudden lateral force discontinuities when longitudinal force changes abruptly (throttle application, braking onset). The discontinuity creates a feedback oscillation: reduced lateral force → car yaws → slip angle changes → lateral force recalculates → new discontinuity. The oscillation grows until the car spins or the simulation diverges.
-
-**Prevention:** Use the lateral-priority + penalty approach from the prototype: compute lateral force first (unconstrained), clamp longitudinal to the remaining budget, then apply a smooth penalty to lateral based on longitudinal usage fraction. This preserves lateral force continuity and damps oscillation naturally.
-
-**Warning signs:** Car oscillates at the grip limit — rapid left-right yaw oscillation that grows in amplitude. Throttle application at grip limit causes sudden spin.
-
-**Phase/module:** `tire.js` friction circle coupling.
-
----
-
-### Pitfall 14: Longitudinal Slip Model Without Wheel Angular Velocity
-
-**What goes wrong:** Using drive force directly (as the prototype does) without modeling wheel angular velocity means: no wheelspin, no burnouts, no traction loss from excessive throttle, and no ABS-style behavior under braking. This is acceptable for a first iteration but must be designed around — do not compute longitudinal force as `if (driven) F = driveForce` in the architecture, because retrofitting wheel angular velocity requires changing the fundamental per-wheel state.
-
-**Prevention:**
-- From day one, each wheel has: `omega_wheel` (angular velocity, rad/s), `inertia` (I_wheel, kg·m²).
-- Longitudinal slip ratio: `kappa = (r * omega_wheel - v_long) / max(|v_long|, epsilon)`.
-- Drive torque applied to `omega_wheel`, reaction torque transfers to body.
-- Even if simplified at first, the *variable* and *integration step* must exist in the architecture so the tire model can reference it.
-
-**Warning signs:** Drive force that doesn't depend on wheel spin state. No wheelspin under hard acceleration. Braking that is speed-independent.
-
-**Phase/module:** `vehicle.js` wheel state definition, `tire.js` slip ratio calculation.
-
----
-
-### Pitfall 15: Render Interpolation Missing (Physics Steps Visible as Judder)
-
-**What goes wrong:** Running physics at exactly 60Hz and rendering also at 60Hz should be smooth. But if the render frame and physics step are not synchronized — which is the normal case with a fixed-step accumulator — the rendered position can be anywhere between the previous physics position and the current one. Without interpolation, the car appears to "stutter" at a frequency of `|f_render - f_physics|` Hz.
-
-**Prevention:**
-- Compute interpolation alpha: `alpha = acc / dt` (how far between last step and next step).
-- Render position: `render_pos = lerp(prev_pos, curr_pos, alpha)`.
-- Requires storing `prev_pos` and `prev_quat` each physics step.
-- Same for quaternion: `render_quat = prev_quat.slerp(curr_quat, alpha)`.
-
-**Warning signs:** Subtle jitter visible at low speeds where position changes per step are small but the render doesn't land exactly on a physics position. Most noticeable in cockpit view.
-
-**Phase/module:** `main.js` render loop and `physics.js` state export.
-
----
-
-### Pitfall 16: Signed Slip Angle Convention Mismatch
-
-**What goes wrong:** SAE convention defines slip angle `α` as positive when the tire points left of the velocity vector (right-hand system). Some implementations define it with opposite sign. The Pacejka formula produces lateral force with a specific sign relative to `α`. If the sign convention between slip angle calculation and force sign is mismatched, the car turns the wrong way.
-
-**From the prototype:**
-```javascript
-const alpha = Math.atan2(wLat, Math.abs(wLong));
-let Fy = -tirePeakForce * Math.sin(TIRE_C * Math.atan(x - TIRE_E * (x - Math.atan(x))));
-```
-
-The `-` before `tirePeakForce` is the convention choice. The force opposes the lateral velocity. This is correct: positive `wLat` (drifting right) produces negative `Fy` (force pointing left, restoring). Any change to either the slip angle sign or the Fy sign without changing the other breaks the car.
-
-**Prevention:**
-- Write the sign convention explicitly in `tire.js` header: which direction is positive `alpha`, which direction is positive `Fy`.
-- Add a unit test: velocity pointing in +X direction, car heading pointing in +Z direction (90° slip). `alpha` should be consistent with the convention. `Fy` should point in +Z direction (restoring toward velocity vector).
-
-**Warning signs:** Car steers correctly at small angles but the lateral force overpowers rather than corrects at large angles. Spiral spin-out at any steering input.
-
-**Phase/module:** `tire.js` — document convention in the module header comment block.
-
----
-
-## Phase-Specific Warnings
-
-| Phase / Topic | Likely Pitfall | Mitigation |
-|---|---|---|
-| Core physics initialization | Euler angles surviving in any variable | Search for `rotation.x = pitch` or `rotation.z = roll` anywhere — should be zero occurrences |
-| Quaternion integration | Normalization drift | Add `q.normalize()` as the last line of every integration function |
-| Tire model — lateral | C > 1.99 in any parameter path | Enforce at parameter ingestion, not UI level |
-| Tire model — friction circle | Hard proportional scaling | Use lateral-priority + penalty pattern from prototype |
-| Suspension — spring | Stiffness slider without bounds check | Compute k_max from stability criterion and enforce it |
-| Suspension — geometry | Linearized sin(pitch) approximation | Use `applyQuaternion()` on mount offset instead |
-| Suspension — normal force | Negative Fn reaching tire model | Clamp at zero before tire force call |
-| Ackermann steering | Near-zero and lock edge cases | Deadzone guard + max steer geometry check at load |
-| Wheel spin (longitudinal) | Missing omega_wheel state | Include wheel angular velocity in state from day one even if simplified |
-| Physics loop | No accumulator cap | Add `Math.min(acc, MAX_CATCHUP)` before the while loop |
-| Hot path allocation | Objects created inside physicsStep | Pre-allocate all result buffers at module scope |
-| Rollover validation | Wrong CG height reference | Document: CG height = distance from ground plane, not from body origin |
-| High-angle combined rotation | Separate pitch + roll addition | Use quaternion rotation of mount offset — no sin/cos approximations |
+| Pitfall | Prevention Phase | Verification |
+|---------|------------------|--------------|
+| Mesh/physics height disagreement (core terrain) | P7 — height-agreement test must pass before P7 is complete | `sampleHeight(x,z)` === bilinear of `chunk.heights[...]` × amp at 5 world positions |
+| Mesh/physics height disagreement (road carve) | P9 — carve must be applied identically in mesh and `sampleHeight` | Same height-agreement test extended to on-road positions |
+| Determinism — seed not wired into noise | P7 — `seedFor()` and seeded PRNG locked before any other generator | Refresh with same `?seed=` → byte-identical heights at 5 positions |
+| Determinism — road router uses chunk data | P8 — pure coarse-height function must exist before routing is coded | Road path identical on two fresh page loads with same seed |
+| Determinism — sub-seed correlation | P7 — `seedFor()` uses FNV-1a or equivalent non-trivial hash | Visual check: terrain ridges and road paths are uncorrelated |
+| Performance cliff — noise in hot path | P7 — profile immediately after first layered terrain implementation | `sampleHeight` time in profiler < 0.01 ms/frame |
+| Performance cliff — O(N) road lookup | P9 — carve-weight map designed before coding | Profiler shows road carve lookup under 0.05 ms/frame |
+| Road routing seam discontinuity | P8 — shared edge-waypoints enforced before any spline smoothing | No kinks visible in debug spline view at tile boundaries |
+| Road routing degenerate switchbacks | P8 — minimum arm length + no-crossing check in router | Debug visualization shows no self-crossing switchback arms |
+| Road carve shoulder cliffs | P9 — smoothstep blend specified before mesh/physics coding | Height samples at shoulder edge show no step discontinuity |
+| Free-cam physics/state issues | P7 — free-cam is P7's first deliverable | Toggle free-cam → drive 30 seconds → return: car state intact, camera snap-free |
+| Chunk rebuild thrash from road carve | P8 — road tile-graph ready before chunk is built | No double-build events for any chunk key in session logs |
 
 ---
 
 ## Sources
 
-All findings derive from:
-- Direct analysis of the prototype (backup12.html) — confirmed failure modes and working patterns
-- Vehicle dynamics first principles (SAE tire convention, Pacejka 1987/1994, rigid body mechanics)
-- FSAE-level suspension and tire knowledge from project context
-- Numerical methods for stiff ODEs (explicit Euler stability criteria)
-- Known Three.js Euler/Quaternion behavior (documented in THREE.Euler constructor notes)
+- Direct code analysis of `src/terrain.js` (live codebase, 2026-06-05): chunk pipeline, `_pendingWorker` reservation, `sampleHeight` bilinear path, `rebuildAllChunks` amplitude re-scale, `MAX_BUILDS_PER_FRAME = 2` cap.
+- `.planning/v1.1-BLUEPRINT-DRAFT.md` (2026-06-04): "#1 correctness constraint," "HARD RULE," "Open Question" on tile-graph routing, "Carried-Forward Constraints."
+- `.planning/research/phase-06-terrain.md` (2026-06-03): Pitfall 3 (seams from non-deterministic seed), Pitfall 5 (queryVertexContacts not updated), Pitfall 7 (spawn terrain height), amplitude estimate analysis.
+- `.planning/STATE.md` quick task log: spawn-chunk duplicate-request race (260604-x3i), amplitude rebuild orphan bug — both are direct evidence for the "thrash on rebuild" failure mode.
+- Prior PITFALLS.md (2026-05-10): Pitfall 8 (GC pressure from hot-path allocation) — applicable to road carve lookups.
+- First-principles algorithm analysis: deterministic tile-graph routing, central-difference normal, bilinear interpolation O(1) cost.
 
-Confidence: HIGH for pitfalls directly observed in prototype code. HIGH for pitfalls with mathematical derivations (stability criterion, Ackermann geometry limit). MEDIUM for GC pressure and render interpolation (general JS runtime knowledge, not prototype-specific).
+---
+*Pitfalls research for: v1.1 Mountains & Roads (RangerSim)*
+*Researched: 2026-06-05*
