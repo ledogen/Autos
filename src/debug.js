@@ -62,8 +62,8 @@ export function initDebug (params, callbacks = {}) {
     .onChange(v => { params.weightRear = +(1 - v).toFixed(4) })
 
   // Phase 1 sliders (kept — lateralDampingCoeff and corneringStiffness removed in Phase 3 per D-08, D-16).
-  gui.add(params, 'tireStiffness', 50000, 400000, 5000).name('Tire Stiffness (N/m)')
-  gui.add(params, 'tireDamping', 500, 20000, 500).name('Tire Damping (N·s/m)')
+  gui.add(params, 'tireStiffness', 100000, 300000, 5000).name('Tire Stiffness (N/m)')
+  gui.add(params, 'tireDamping', 200, 4000, 100).name('Tire Damping (N·s/m)')
 
   // D-08: Phase 2 physics tuning sliders — all write directly to RANGER_PARAMS (live mutation)
   gui.add(params, 'mass', 500, 3000, 10).name('Mass (kg)')
@@ -393,38 +393,73 @@ export function updatePacejkaCurve (vehicleState, params) {
   const E    = params.pacejkaE
   const vRef = params.tireSlipVelRef || 1.0
 
-  // Draw normalized Pacejka force-magnitude curve over slip-velocity magnitude [0, 3·v_ref] m/s.
-  // (Now plotting |F|/(μ·Fn·D) vs |s| — slip-velocity formulation. wheelDebug[i].sa stores
+  // Plot-area margins reserve space for axis labels so they never overlap the curve.
+  const ML = 4, MR = 6, MT = 10, MB = 16
+  const plotW = W - ML - MR
+  const plotH = H - MT - MB
+
+  // Draw normalized Pacejka force-magnitude curve over slip-velocity magnitude [0, 1.5·v_ref] m/s.
+  // Range is 1.5·v_ref (was 3·v_ref) → 2× horizontal zoom so the low-slip peak region reads clearly.
+  // (Plotting |F|/(μ·Fn·D) vs |s| — slip-velocity formulation. wheelDebug[i].sa stores
   // slip-velocity magnitude in m/s since the tire model rewrite.)
   const SAMPLES = 200
   const SV_MIN = 0
-  const SV_MAX = 3.0 * vRef
+  const SV_MAX = 1.5 * vRef
   const SV_RANGE = SV_MAX - SV_MIN
 
+  // Coordinate transforms into the margined plot area.
+  const xToPx = (sv) => ML + (sv - SV_MIN) / SV_RANGE * plotW
+  const fToPy = (f)  => MT + plotH * (1 - f)  // f=0 → bottom, f=1 → top
+
+  // Normalized Pacejka force magnitude at a given slip velocity.
+  const fNormOf = (sv) => {
+    const Bx = B * (sv / vRef)
+    return Math.sin(C * Math.atan(Bx - E * (Bx - Math.atan(Bx))))
+  }
+
+  // Trace the curve and track the peak-friction slip point in the same pass.
+  let peakSv = 0, peakF = -Infinity
   plotCtx.beginPath()
   plotCtx.strokeStyle = '#44ff88'
   plotCtx.lineWidth = 1.5
-
   for (let i = 0; i < SAMPLES; i++) {
     const sv = SV_MIN + (i / (SAMPLES - 1)) * SV_RANGE
-    const x = sv / vRef
-    const Bx = B * x
-    const fNorm = Math.sin(C * Math.atan(Bx - E * (Bx - Math.atan(Bx))))
-    const px = (sv - SV_MIN) / SV_RANGE * W
-    const py = H - fNorm * (H - 10)  // baseline at bottom; force grows upward
+    const fNorm = fNormOf(sv)
+    if (fNorm > peakF) { peakF = fNorm; peakSv = sv }
+    const px = xToPx(sv)
+    const py = fToPy(fNorm)
     if (i === 0) plotCtx.moveTo(px, py)
     else plotCtx.lineTo(px, py)
   }
   plotCtx.stroke()
 
+  // Peak-friction marker: dashed vertical line + numeric slip-velocity label.
+  const peakPx = xToPx(peakSv)
+  plotCtx.save()
+  plotCtx.strokeStyle = '#ffcc00'
+  plotCtx.lineWidth = 1
+  plotCtx.setLineDash([4, 3])
+  plotCtx.beginPath()
+  plotCtx.moveTo(peakPx, MT)
+  plotCtx.lineTo(peakPx, MT + plotH)
+  plotCtx.stroke()
+  plotCtx.restore()
+
+  plotCtx.fillStyle = '#ffcc00'
+  plotCtx.font = '9px monospace'
+  plotCtx.textBaseline = 'top'
+  plotCtx.textAlign = 'left'
+  const peakLabel = `peak ${peakSv.toFixed(2)} m/s`
+  const labelW = plotCtx.measureText(peakLabel).width
+  // Flip label to the left of the line if it would run off the right edge.
+  plotCtx.fillText(peakLabel, (peakPx + 3 + labelW > W) ? peakPx - 3 - labelW : peakPx + 3, MT)
+
   // Draw operating-point dots for FL (index 0) and FR (index 1)
   for (const i of [0, 1]) {
     const sv = vehicleState.wheelDebug?.[i]?.sa || 0   // |slip velocity| in m/s
-    const x = sv / vRef
-    const Bx = B * x
-    const fNorm = Math.sin(C * Math.atan(Bx - E * (Bx - Math.atan(Bx))))
-    const px = Math.max(0, Math.min(W, (sv - SV_MIN) / SV_RANGE * W))
-    const py = H - fNorm * (H - 10)
+    const fNorm = fNormOf(sv)
+    const px = Math.max(ML, Math.min(W - MR, xToPx(sv)))
+    const py = fToPy(fNorm)
 
     const pct = Math.abs(fNorm)
     const color = pct < 0.5 ? '#00ff88' : pct < 0.8 ? '#ffaa00' : '#ff2222'
@@ -434,4 +469,15 @@ export function updatePacejkaCurve (vehicleState, params) {
     plotCtx.fillStyle = color
     plotCtx.fill()
   }
+
+  // Axis labels
+  plotCtx.fillStyle = '#88aa99'
+  plotCtx.font = '9px monospace'
+  plotCtx.textBaseline = 'top'
+  plotCtx.textAlign = 'left'
+  plotCtx.fillText('norm |F|', ML, 0)                          // y-axis: normalized force
+  plotCtx.textAlign = 'center'
+  plotCtx.fillText('slip vel (m/s)', ML + plotW / 2, H - 9)    // x-axis title
+  plotCtx.textAlign = 'right'
+  plotCtx.fillText(SV_MAX.toFixed(1), W - MR, H - 9)           // x-axis max tick
 }
