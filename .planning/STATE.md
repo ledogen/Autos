@@ -80,6 +80,7 @@ Recent decisions affecting current work:
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| —          | remove infinite GridHelper overlay + per-frame snap (fast) | 2026-06-05 | 52e1417 | — |
 | 260604-x3i | fix terrain spawn-chunk duplicate-request race: reserve chunk key in _pendingWorker until built + idempotent build guard (disposes stale mesh) — orphaned meshes no longer survive amplitude rebuilds | 2026-06-05 | 7cf6178 | [260604-x3i-fix-terrain-spawn-chunk-duplicate-reques](.planning/quick/260604-x3i-fix-terrain-spawn-chunk-duplicate-reques/) |
 | 260604-f01 | FEAT-01 smooth torque ramp: smoothThrottle/smoothBrake accumulators, ramp rates in ranger.js, Drivetrain sliders in debug.js | 2026-06-04 | — | [260604-f01-smooth-torque-ramp](.planning/quick/260604-f01-smooth-torque-ramp/) |
 | 260528-wtt | fix physics CR bugs: inertia axes, isRear guard, slip angle param, blob URL try/finally | 2026-05-29 | c7986cd | [260528-wtt-fix-physics-cr-bugs](.planning/quick/260528-wtt-fix-physics-cr-bugs/) |
