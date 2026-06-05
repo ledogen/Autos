@@ -2,7 +2,7 @@
  * src/main.js — RangerSim Walking Skeleton
  *
  * Entry point for the browser app. Responsibilities:
- *  - Three.js scene setup (renderer, camera, lighting, ground, grid)
+ *  - Three.js scene setup (renderer, camera, lighting, ground)
  *  - Vehicle mesh creation (body BoxGeometry + 4 wheel CylinderGeometry)
  *  - stats.js FPS panel init
  *  - Fixed-timestep accumulator game loop (Plan 02 inserts physics here)
@@ -172,10 +172,6 @@ const ground = new THREE.Mesh(
 ground.rotation.x = -Math.PI / 2
 ground.receiveShadow = true
 scene.add(ground)
-
-// Grid overlay — muted sandy lines, subtle enough to read depth without screaming
-const grid = new THREE.GridHelper(200, 100, 0x7a6a50, 0x6a5a40)
-scene.add(grid)
 
 // carGroup: parent Object3D for body + wheels — wheels inherit body pitch/roll (Bug 5 fix).
 // syncMeshesToState drives carGroup.position and carGroup.quaternion; children follow automatically.
@@ -673,14 +669,6 @@ function loop () {
   // Phase 6: update terrain chunk ring each render frame (outside physics accumulator).
   // ground.position.x/z snapping removed — ground mesh removed; terrain chunks replace it.
   terrainSystem.update(vehicleState.position)
-
-  // Snap grid to car position so it appears infinite.
-  // Cell size = grid width (200m) / divisions (100) = 2m — snap prevents visible seam movement.
-  const CELL = 2
-  const snapX = Math.round(vehicleState.position.x / CELL) * CELL
-  const snapZ = Math.round(vehicleState.position.z / CELL) * CELL
-  grid.position.x   = snapX
-  grid.position.z   = snapZ
 
   // M1-11: live speed readout. velocity.length() = magnitude in m/s; * 3.6 converts to km/h.
   const speedKmh = vehicleState.velocity.length() * 3.6
