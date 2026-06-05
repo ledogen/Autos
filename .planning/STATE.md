@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: context exhaustion at 75% (2026-06-04)
-last_updated: "2026-06-04T16:45:55.145Z"
+stopped_at: context exhaustion at 75% (2026-06-05)
+last_updated: "2026-06-05T06:41:37.634Z"
 last_activity: 2026-06-03
 progress:
   total_phases: 0
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-03)
 Phase: —
 Plan: —
 Status: v1.0 archived — planning v2.0
-Last activity: 2026-06-03
+Last activity: 2026-06-05 - Completed quick task 260604-x3i: fix terrain spawn-chunk duplicate-request race orphaning meshes
 
 Progress: [██████████] 100% — v1.0 SHIPPED
 
@@ -80,6 +80,7 @@ Recent decisions affecting current work:
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260604-x3i | fix terrain spawn-chunk duplicate-request race: reserve chunk key in _pendingWorker until built + idempotent build guard (disposes stale mesh) — orphaned meshes no longer survive amplitude rebuilds | 2026-06-05 | 7cf6178 | [260604-x3i-fix-terrain-spawn-chunk-duplicate-reques](.planning/quick/260604-x3i-fix-terrain-spawn-chunk-duplicate-reques/) |
 | 260604-f01 | FEAT-01 smooth torque ramp: smoothThrottle/smoothBrake accumulators, ramp rates in ranger.js, Drivetrain sliders in debug.js | 2026-06-04 | — | [260604-f01-smooth-torque-ramp](.planning/quick/260604-f01-smooth-torque-ramp/) |
 | 260528-wtt | fix physics CR bugs: inertia axes, isRear guard, slip angle param, blob URL try/finally | 2026-05-29 | c7986cd | [260528-wtt-fix-physics-cr-bugs](.planning/quick/260528-wtt-fix-physics-cr-bugs/) |
 | 260528-qaf | sphere contact model: queryContacts replaces terrain(x,z); hub center; body bumper contacts; ramp solid faces | 2026-05-28 | 962a88b | [260528-qaf-sphere-contact-model](.planning/quick/260528-qaf-sphere-contact-model/) |
@@ -105,6 +106,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-06-04T16:45:55.141Z
-Stopped at: context exhaustion at 75% (2026-06-04)
+Last session: 2026-06-05T06:41:37.632Z
+Stopped at: context exhaustion at 75% (2026-06-05)
 Resume file: None
