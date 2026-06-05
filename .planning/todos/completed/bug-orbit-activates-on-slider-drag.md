@@ -2,9 +2,10 @@
 id: BUG-02
 title: Orbit camera activates when dragging debug sliders
 severity: minor
-status: open
+status: resolved
 introduced: pre-phase-6
 created: 2026-06-03
+resolved: 2026-06-05
 resolves_phase: ~
 ---
 

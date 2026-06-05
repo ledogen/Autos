@@ -2,8 +2,9 @@
 id: BUG-03
 type: bug
 severity: minor
-status: open
+status: resolved
 opened: 2026-06-03
+resolved: 2026-06-04
 ---
 
 # BUG-03: Tire slosh at low longitudinal velocity with significant lateral slip

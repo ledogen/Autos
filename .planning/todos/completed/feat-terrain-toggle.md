@@ -1,8 +1,10 @@
 ---
 id: FEAT-02
 type: feature
-status: open
+status: cancelled
 opened: 2026-06-03
+cancelled: 2026-06-04
+resolution: Superseded — terrain amplitude slider now ranges to 0 (flat floor) without a dedicated toggle. No separate flat-ground toggle needed.
 ---
 
 # FEAT-02: Flat-ground toggle in debug panel (disable procedural terrain)

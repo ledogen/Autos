@@ -2,8 +2,9 @@
 id: BUG-04
 type: bug
 severity: moderate
-status: open
+status: resolved
 opened: 2026-06-03
+resolved: 2026-06-05
 ---
 
 # BUG-04: Physics instability at high tire damping values
