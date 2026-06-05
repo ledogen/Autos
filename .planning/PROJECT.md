@@ -8,6 +8,25 @@ A browser-based 6DOF rigid body car physics simulation built in JavaScript with 
 
 Physics that feel honest: a car that can roll over naturally, drift on the limit, and behave predictably enough that tuning parameters produces the expected result.
 
+## Current Milestone: v1.1 Mountains & Roads
+
+**Goal:** An Eastern-Sierra-style landscape (flat valleys, steep mountain faces) with procedurally-routed switchback roads, a reproducible world-seed system, a dev free-cam, and a POI/mission seam — a smooth preferred surface inside a lively off-road world.
+
+**Target features:**
+- Seeded layered terrain — a researched natural-terrain method (beyond plain simplex) for Sierra grades + fine suspension texture + regional roughness; one unified `height(x,z)` shared by Worker mesh build and physics sampler
+- World-seed foundation — `seedFor()` domain-tagged sub-seeds, `?seed=` URL param, debug-panel seed (string or int)
+- Dev free-fly camera — decoupled fly mode in `camera.js`, delivered first so terrain is observable
+- Road routing — deterministic, tile-able road graph over coarse height with hard max-grade + switchbacks; queryable debug splines
+- Road surface — ~10 m ribbon with basic asphalt color/texture, centerline crown + curvature camber, terrain carve, physics height **and normal** integration; cut-biased elevation (prefers carving into terrain over raised fill)
+- POI anchor hooks — seeded `{position, tangent, type}` data contract only (no spawning); pothole/crack micro-noise stretch
+
+**Key context:**
+- Research first, then deliberate terrain-gen architecture (pros/cons) before locking the approach.
+- Locked decision criteria for terrain-gen architecture: (1) **speed** — generation must be very fast (Worker-safe, 60 fps, cheap `height(x,z)`); (2) **fun** — terrain must produce interesting, drivable routes (steep/varied enough for switchbacks, not monotonous).
+- HARD RULE: every generator is a pure function of `(worldSeed, world coords)` — no load-order / frame / visit dependence.
+- #1 correctness constraint: a single `height(x,z)` for both mesh + physics; the cut-biased road carve must apply identically in mesh and physics sampler.
+- Carried-forward constraints: no new dependencies, Worker-safe height fn, `queryContacts` stays cheap (60 fps).
+
 ## Requirements
 
 ### Validated
@@ -37,7 +56,7 @@ Physics that feel honest: a car that can roll over naturally, drift on the limit
 
 ### Active
 
-*(No active v2 requirements yet — run `/gsd-new-milestone` to define v2 scope)*
+*(v1.1 requirements being defined — see REQUIREMENTS.md once the milestone scoping completes)*
 
 ### Out of Scope
 
@@ -109,4 +128,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-03 after v1.0 milestone — full MVP shipped: physics sandbox on procedural terrain*
+*Last updated: 2026-06-05 — started milestone v1.1 Mountains & Roads (seeded layered terrain, switchback roads, free-cam, POI hooks)*

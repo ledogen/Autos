@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
+milestone: v1.1
+milestone_name: Mountains & Roads
 status: planning
-stopped_at: context exhaustion at 75% (2026-06-05)
-last_updated: "2026-06-05T06:41:37.634Z"
-last_activity: 2026-06-03
+last_updated: "2026-06-05T08:29:01.160Z"
+last_activity: 2026-06-05
 progress:
   total_phases: 0
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 100
+  percent: 0
 ---
 
 # Project State
@@ -25,12 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-03)
 
 ## Current Position
 
-Phase: —
+Phase: Not started (defining requirements)
 Plan: —
-Status: v1.0 archived — planning v2.0
-Last activity: 2026-06-05 - Completed quick task 260604-x3i: fix terrain spawn-chunk duplicate-request race orphaning meshes
-
-Progress: [██████████] 100% — v1.0 SHIPPED
+Status: Defining requirements
+Last activity: 2026-06-05 — Milestone v1.1 started
 
 ## Performance Metrics
 
