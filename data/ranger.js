@@ -146,11 +146,29 @@ export const RANGER_PARAMS = {
   // no main.js import) can verify sub-step stability against dt without importing main.js.
   physicsDt:  1 / 60,   // s — outer physics step (≈16.667ms); substep = physicsDt/2 (D-08)
 
-  // ── Phase 6 Terrain (TERR-06) ─────────────────────────────────────────────
+  // ── Phase 6/7 Terrain (TERR-06 / TERR-01–04) ─────────────────────────────
   // terrainAmplitude: scale multiplier applied to raw noise heights during chunk geometry build.
   // Exposed as a Terrain folder slider in debug.js (0.1–3.0, step 0.05).
   // Changing the slider live affects newly-built chunks (geometry built from pending queue each frame).
   terrainAmplitude: 0.1,   // m scale factor — multiplied onto heightmap values in TerrainSystem
+
+  // Phase 7: Three-layer seeded height function parameters (TERR-01/02/03).
+  // Calibration starting values from RESEARCH.md §Calibration — interactive tuning via debug sliders.
+  // See terrain.js coarseHeight / fineHeight / regionalModulator for the formulas.
+  //
+  // Coarse ridged-multifractal layer (TERR-01: Eastern-Sierra escarpments + flat valleys)
+  coarseAmplitude: 350,    // m — full-scale range of coarse layer; ~640 m total relief at 5 octaves
+  coarseFreq:      0.001,  // 1/m — base frequency (1/1000 m = 1 km wavelength)
+  coarseOctaves:   5,      // octave count; each halves wavelength, gain 0.5 per octave
+  ridgeSharpness:  2.5,    // pow() exponent; 1=linear ridges, 2.5=moderate peaks, 4=knife-edge
+
+  // Fine FBM layer (TERR-02: suspension texture)
+  fineAmplitude:   1.5,    // m — ~15% slope perturbation at 20 m wavelength (D-10 default)
+  fineFreq:        0.05,   // 1/m — 20 m base wavelength
+
+  // Regional-roughness modulator (TERR-03: scales fine amplitude across map)
+  regionalStrength: 0.6,   // 0=uniform, 1=full modulation (valley vs hillside roughness)
+  regionalScale:    3000,  // m — modulator wavelength (3 km default)
 
   // rampEnabled: when false, ramp triangles are skipped in queryContacts + queryVertexContacts,
   // and rampMesh.visible is set false via the setRampVisible callback in debug.js.

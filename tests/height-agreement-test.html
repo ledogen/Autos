@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>P7-2 Height Agreement Test — RangerSim</title>
+  <style>
+    body { font-family: monospace; background: #1a1a1a; color: #ddd; padding: 1em; }
+    h1 { color: #8bc; margin-top: 0; }
+    #out { background: #111; border: 1px solid #444; padding: 1em; white-space: pre; }
+    .pass { color: #6f6; }
+    .fail { color: #f66; }
+    .info { color: #aaa; }
+  </style>
+
+  <!-- importmap mirrors index.html — must appear before any type="module" script -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+      "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/dist/esm/simplex-noise.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <h1>P7-2 Height Agreement Test</h1>
+  <p>Verifies that <code>sampleHeight(wx,wz)</code> (bilinear on built chunk) agrees with
+     <code>analyticHeight(wx,wz)</code> (direct analytic) at ≥5 grid-aligned positions.
+     Tolerance: 1e-3 m. Positions must be grid-aligned to avoid sub-cell bilinear divergence
+     (RESEARCH.md §Pitfall 4).</p>
+  <pre id="out">Running...</pre>
+
+  <script type="module">
+    import * as THREE from 'three'
+    import { TerrainSystem, CHUNK_SIZE, GRID_SAMPLES } from '../src/terrain.js'
+    import { parseWorldSeed } from '../src/seed.js'
+
+    const out = document.getElementById('out')
+    function log(msg, cls) {
+      const line = document.createElement('span')
+      if (cls) line.className = cls
+      line.textContent = msg + '\n'
+      out.appendChild(line)
+    }
+    // Clear initial "Running..." text on first log
+    let cleared = false
+    function logOnce(msg, cls) {
+      if (!cleared) { out.textContent = ''; cleared = true; }
+      log(msg, cls)
+    }
+
+    // ── Test parameters ──────────────────────────────────────────────────────
+    const TOL = 1e-3  // 1 mm tolerance (P7-2 exit gate requirement)
+
+    // Calibration starting values matching data/ranger.js (must stay in sync)
+    const params = {
+      terrainAmplitude:  0.1,
+      coarseAmplitude:   350,
+      coarseFreq:        0.001,
+      coarseOctaves:     5,
+      ridgeSharpness:    2.5,
+      fineAmplitude:     1.5,
+      fineFreq:          0.05,
+      regionalStrength:  0.6,
+      regionalScale:     3000,
+    }
+
+    // Grid cell size: CHUNK_SIZE / (GRID_SAMPLES - 1) = 64 / 64 = 1.0 m per sample
+    // All test positions are integer multiples of CELL_SIZE (1.0 m) so they land exactly on
+    // a grid vertex (RESEARCH.md §Pitfall 4 — grid-aligned positions eliminate bilinear error).
+    // Using positions that all fall within chunk (0,0): [0..64) × [0..64)
+    const CELL_SIZE = CHUNK_SIZE / (GRID_SAMPLES - 1)  // 1.0 m
+    const testPositions = [
+      [0,   0  ],
+      [64,  0  ],
+      [0,   64 ],
+      [32,  32 ],
+      [16,  48 ],
+    ]
+
+    // World seed for test (same as default 'lone-pine')
+    const worldSeed = parseWorldSeed('lone-pine')
+
+    // ── Build minimal THREE.Scene ────────────────────────────────────────────
+    const scene = new THREE.Scene()
+
+    // ── Construct TerrainSystem ──────────────────────────────────────────────
+    logOnce('[P7-2] Constructing TerrainSystem with worldSeed=' + worldSeed + '...', 'info')
+    const terrainSystem = new TerrainSystem(scene, params, worldSeed)
+
+    // ── Drive update loop until chunk covering (0,0) is built ───────────────
+    // The TerrainSystem is async (Worker). We poll until the chunk at (0,0) appears in
+    // _chunkMap via sampleHeight returning non-zero, or until the 5s watchdog fires.
+    const MAX_WAIT_MS = 5000
+    const startMs = performance.now()
+
+    // We need chunks covering ALL test positions.
+    // Chunk for wx,wz: Math.floor(wx/CHUNK_SIZE), Math.floor(wz/CHUNK_SIZE)
+    // Position (64, 0) → chunk (1, 0); (0, 64) → chunk (0, 1); (32,32) and (16,48) → chunk (0,0)
+    const requiredChunkKeys = new Set(
+      testPositions.map(([wx, wz]) => {
+        const cx = Math.floor(wx / CHUNK_SIZE)
+        const cz = Math.floor(wz / CHUNK_SIZE)
+        return cx + ',' + cz
+      })
+    )
+
+    function chunksReady() {
+      // Check by attempting sampleHeight at each position — returns 0 when chunk not loaded
+      for (const [wx, wz] of testPositions) {
+        const h = terrainSystem.sampleHeight(wx, wz)
+        // sampleHeight returns 0.0 for unloaded chunks. A loaded chunk at a non-flat terrain
+        // position will return non-zero. For position (0,0) which may be near-zero in raw
+        // noise, we check _chunkMap directly via a workaround:
+        // Instead, we check if the underlying chunk exists by probing _chunkMap
+        const cx = Math.floor(wx / CHUNK_SIZE)
+        const cz = Math.floor(wz / CHUNK_SIZE)
+        const key = cx + ',' + cz
+        // Access _chunkMap directly (internal, but needed for test polling)
+        if (!terrainSystem._chunkMap.has(key)) return false
+      }
+      return true
+    }
+
+    let frameCount = 0
+
+    function runFrame() {
+      const elapsed = performance.now() - startMs
+
+      // Drive the TerrainSystem update at the camera/car origin
+      terrainSystem.update({ x: 0, y: 0, z: 0 })
+      frameCount++
+
+      if (chunksReady()) {
+        runAssertions()
+        return
+      }
+
+      if (elapsed > MAX_WAIT_MS) {
+        logOnce('[P7-2] WATCHDOG', 'fail')
+        log('P7-2 FAIL: chunk(s) never built after ' + MAX_WAIT_MS + 'ms (' + frameCount + ' frames)', 'fail')
+        log('Required chunks: ' + [...requiredChunkKeys].join(', '), 'fail')
+        const built = [...terrainSystem._chunkMap.keys()]
+        log('Built chunks: ' + (built.length > 0 ? built.join(', ') : '(none)'), 'fail')
+        return
+      }
+
+      requestAnimationFrame(runFrame)
+    }
+
+    function runAssertions() {
+      logOnce('[P7-2] Chunks built after ' + frameCount + ' frames. Running assertions...', 'info')
+
+      let allPass = true
+      let passCount = 0
+
+      for (const [wx, wz] of testPositions) {
+        const fromBilinear = terrainSystem.sampleHeight(wx, wz)
+        const fromAnalytic = terrainSystem.analyticHeight(wx, wz)
+        const diff = Math.abs(fromBilinear - fromAnalytic)
+        const pass = diff < TOL
+
+        const posStr = '(' + wx + ', ' + wz + ')'
+        const msg = pass
+          ? '  PASS ' + posStr + ': bilinear=' + fromBilinear.toFixed(6) + ' analytic=' + fromAnalytic.toFixed(6) + ' diff=' + diff.toExponential(3)
+          : '  FAIL ' + posStr + ': bilinear=' + fromBilinear.toFixed(6) + ' analytic=' + fromAnalytic.toFixed(6) + ' diff=' + diff.toExponential(3) + ' (> ' + TOL + ')'
+
+        log(msg, pass ? 'pass' : 'fail')
+        console.assert(pass, 'P7-2 FAIL at ' + posStr + ': bilinear=' + fromBilinear + ' analytic=' + fromAnalytic + ' diff=' + diff)
+        if (pass) passCount++
+        else allPass = false
+      }
+
+      log('', 'info')
+      if (allPass) {
+        log('P7-2 PASS: height agreement verified (' + passCount + '/' + testPositions.length + ' positions within ' + TOL + ' m)', 'pass')
+        console.log('P7-2 PASS: height agreement verified')
+      } else {
+        log('P7-2 FAIL: ' + (testPositions.length - passCount) + ' position(s) outside tolerance ' + TOL + ' m', 'fail')
+        console.error('P7-2 FAIL: height agreement test failed')
+      }
+    }
+
+    // Start the polling loop
+    requestAnimationFrame(runFrame)
+  </script>
+</body>
+</html>
