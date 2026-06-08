@@ -20,7 +20,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics } from './physics.js'
 import { getBodyContactPoints } from './suspension.js'
 import { updateVehicle, SPAWN_STATE } from './vehicle.js'
-import { updateCamera } from './camera.js'
+import { updateCamera, getCameraMode, getFreecamPosition } from './camera.js'
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition } from './logger.js'
 import { TerrainSystem } from './terrain.js'
@@ -678,7 +678,10 @@ function loop () {
 
   // Phase 6: update terrain chunk ring each render frame (outside physics accumulator).
   // ground.position.x/z snapping removed — ground mesh removed; terrain chunks replace it.
-  terrainSystem.update(vehicleState.position)
+  // Phase 7 D-21: while free-cam is active, stream chunks around the camera, not the truck.
+  // Reverts to truck position on exit so the ring stays anchored to the car in normal mode.
+  const streamCenter = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
+  terrainSystem.update(streamCenter)
 
   // M1-11: live speed readout. velocity.length() = magnitude in m/s; * 3.6 converts to km/h.
   const speedKmh = vehicleState.velocity.length() * 3.6
