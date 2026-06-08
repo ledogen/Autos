@@ -24,6 +24,13 @@ import { updateCamera, getCameraMode, getFreecamPosition } from './camera.js'
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition } from './logger.js'
 import { TerrainSystem } from './terrain.js'
+import { parseWorldSeed } from './seed.js'
+
+// World seed — parsed from URL ?seed= parameter, defaulting to 'lone-pine'.
+// Plan 04 wires this to the debug panel seed field; for this plan we establish the
+// default here so TerrainSystem and analyticHeight are both seeded consistently.
+const _urlSeed = new URLSearchParams(window.location.search).get('seed')
+const worldSeed = _urlSeed ? parseWorldSeed(_urlSeed) : parseWorldSeed('lone-pine')
 
 // TerrainSystem instance — declared at module scope so queryContacts / queryVertexContacts
 // can access it by reference. Initialized after scene exists (below initDebug).
@@ -435,12 +442,12 @@ function closestPointOnTriangle (px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz)
 function queryVertexContacts (px, py, pz) {
   const hits = []
 
-  // Ground surface — terrain height query (Phase 6)
-  const terrainH = terrainSystem ? terrainSystem.sampleHeight(px, pz) : 0
+  // Ground surface — analytic height query (Phase 7: analyticHeight never returns 0 for
+  // unloaded chunks, fixing the chunk-seam gap at body contact points — RESEARCH §Pitfall 6).
+  const terrainH = terrainSystem ? terrainSystem.analyticHeight(px, pz) : 0
   if (py < terrainH) {
-    // Phase 6 fix (TERR-FIX-02): use terrain surface normal, not hardcoded flat normal.
-    // _flatNormal was always (0,1,0) — caused body contacts to push straight up on slopes.
-    const terrainN = terrainSystem ? terrainSystem.sampleNormal(px, pz) : { x: 0, y: 1, z: 0 }
+    // Use analyticNormal for consistency with analyticHeight (normal/height match guaranteed).
+    const terrainN = terrainSystem ? terrainSystem.analyticNormal(px, pz) : { x: 0, y: 1, z: 0 }
     hits.push({ normal: new THREE.Vector3(terrainN.x, terrainN.y, terrainN.z), depth: terrainH - py })
   }
 
@@ -493,11 +500,12 @@ function queryVertexContacts (px, py, pz) {
 function queryContacts (cx, cy, cz, r) {
   const hits = []
 
-  // Ground surface — terrain height query (Phase 6; replaces flat y=0 half-space)
-  const terrainH = terrainSystem ? terrainSystem.sampleHeight(cx, cz) : 0
+  // Ground surface — analytic height query (Phase 7: analyticHeight never returns 0 for
+  // unloaded chunks, fixing the chunk-seam gap at wheel sphere contacts — RESEARCH §Pitfall 6).
+  const terrainH = terrainSystem ? terrainSystem.analyticHeight(cx, cz) : 0
   const gd = terrainH + r - cy
   if (gd > 0) {
-    const n = terrainSystem ? terrainSystem.sampleNormal(cx, cz) : { x: 0, y: 1, z: 0 }
+    const n = terrainSystem ? terrainSystem.analyticNormal(cx, cz) : { x: 0, y: 1, z: 0 }
     hits.push({
       normal:       new THREE.Vector3(n.x, n.y, n.z),
       depth:        gd,
@@ -560,9 +568,12 @@ const _gui = initDebug(RANGER_PARAMS, {
   rebuildTerrain:  ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() }
 })
 
-// ── TerrainSystem (Phase 6) ───────────────────────────────────────────────────
+// ── TerrainSystem (Phase 6 / 7) ──────────────────────────────────────────────
 // Instantiated after scene exists. Removes flat ground mesh to prevent Z-fighting.
-terrainSystem = new TerrainSystem(scene, RANGER_PARAMS)
+// Phase 7: pass worldSeed so TerrainSystem initializes seeded noise closures and sends
+// the Worker init message before any generate requests. analyticHeight/analyticNormal
+// are immediately available after construction (no chunk load required).
+terrainSystem = new TerrainSystem(scene, RANGER_PARAMS, worldSeed)
 scene.remove(ground)   // Remove flat 200×200 ground mesh — terrain chunks replace it (T-06-06)
 
 // ── Body contact point debug spheres ──────────────────────────────────────────
@@ -631,9 +642,9 @@ function loop () {
       // so the car spawns pre-settled with no visible drop (RESEARCH §Pattern 4 / Pitfall 1).
       const eq = computeStaticEquilibrium(RANGER_PARAMS)
       vehicleState.position.set(SPAWN_STATE.positionX, eq.bodyY, SPAWN_STATE.positionZ)
-      // Phase 6: offset spawn Y by terrain height so car sits on terrain surface after reset.
-      // sampleHeight returns 0 when chunk not loaded — safe flat-ground fallback (T-06-04).
-      vehicleState.position.y += terrainSystem ? terrainSystem.sampleHeight(SPAWN_STATE.positionX, SPAWN_STATE.positionZ) : 0
+      // Phase 7: offset spawn Y by analytic terrain height — never returns 0 for unloaded
+      // chunks (fixes T-06-04 flat-ground fallback; analyticHeight is immediate pre-chunk).
+      vehicleState.position.y += terrainSystem ? terrainSystem.analyticHeight(SPAWN_STATE.positionX, SPAWN_STATE.positionZ) : 0
       vehicleState.velocity.set(0, 0, 0)
       vehicleState.quaternion.set(SPAWN_STATE.quatX, SPAWN_STATE.quatY, SPAWN_STATE.quatZ, SPAWN_STATE.quatW)
       vehicleState.angularVelocity.set(0, 0, 0)
