@@ -25,7 +25,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 
 ### v1.1 Mountains & Roads
 
-- [ ] **Phase 7: Free-Cam + Seeded Layered Terrain** — World-seed foundation, three-layer Sierra terrain, free-fly camera
+- [ ] **Phase 7: Free-Cam + Seeded Layered Terrain** (5 plans) — World-seed foundation, three-layer Sierra terrain, free-fly camera
 - [ ] **Phase 8: Road Routing** — Deterministic tile-graph A* roads with switchbacks, queryable debug splines
 - [ ] **Phase 9: Road Surface** — Ribbon mesh, asphalt, crown + camber, cut-biased terrain carve, physics height and normal
 - [ ] **Phase 10: POI Hooks + Polish** — Seeded POI anchor data contract; pothole/crack stretch
@@ -42,7 +42,12 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
   3. Pressing the free-cam toggle key decouples the camera from the truck; WASD + look flies freely while the truck idles visibly on the terrain below
   4. Returning from free-fly to chase view has no camera snap or jump — the view transitions smoothly
   5. The terrain has Eastern-Sierra character observable from free-cam: steep escarpment faces and flat valley floors, with fine surface texture that bounces the truck's suspension over open ground; frame rate holds at 60fps
-**Plans**: TBD
+**Plans**: 5 plans
+  - [ ] 07-01-PLAN.md — Free-fly dev camera (Shift+C, pointer-lock fly, WASD routing, camera-centered streaming)
+  - [ ] 07-02-PLAN.md — Seed module (djb2/seedFor/mulberry32) + P7-1 determinism gate
+  - [ ] 07-03-PLAN.md — Seeded three-layer terrain (coarse/fine/regional) + analytic physics height + P7-2 gate
+  - [ ] 07-04-PLAN.md — Terrain sliders + seed field + regeneration + canonical spawn + coarse-param lock + 60fps gate
+  - [ ] 07-05-PLAN.md — Esc pause menu + grid world + ramp relocation
 **Notes**: Free-cam must ship FIRST within P7 — all terrain tuning work must be done from free-cam. `seedFor()` determinism test and height-agreement test (sampleHeight == bilinear of chunk.heights * amp at 5 world positions) are required exit gates before P7 closes. Coarse terrain amplitude, wavelength, and octave parameters must be LOCKED at P7 completion — changing them after Phase 8 invalidates all generated roads.
 
 ---
@@ -101,7 +106,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 | 4.1. Body-Frame Suspension | v1.0 | 3/3 | ✅ Complete | 2026-06-02 |
 | 5. Rollover Validation | v1.0 | 0/0 | ⬜ Skipped | — |
 | 6. Procedural Terrain | v1.0 | 3/3 | ✅ Complete | 2026-06-03 |
-| 7. Free-Cam + Seeded Layered Terrain | v1.1 | 0/? | Not started | — |
+| 7. Free-Cam + Seeded Layered Terrain | v1.1 | 0/5 | Planned | — |
 | 8. Road Routing | v1.1 | 0/? | Not started | — |
 | 9. Road Surface | v1.1 | 0/? | Not started | — |
 | 10. POI Hooks + Polish | v1.1 | 0/? | Not started | — |
