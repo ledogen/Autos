@@ -80,17 +80,42 @@ Explicitly excluded for v1.1. Documented to prevent scope creep.
 
 ## Traceability
 
-Which phases cover which requirements. **Populated during roadmap creation (P7–P10).**
+Which phases cover which requirements.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| *(filled by roadmapper)* | — | Pending |
+| SEED-01 | Phase 7 | Pending |
+| SEED-02 | Phase 7 | Pending |
+| SEED-03 | Phase 7 | Pending |
+| SEED-04 | Phase 7 | Pending |
+| SEED-05 | Phase 7 | Pending |
+| TERR-01 | Phase 7 | Pending |
+| TERR-02 | Phase 7 | Pending |
+| TERR-03 | Phase 7 | Pending |
+| TERR-04 | Phase 7 | Pending |
+| TERR-05 | Phase 7 | Pending |
+| TERR-06 | Phase 7 | Pending |
+| CAM-01 | Phase 7 | Pending |
+| CAM-02 | Phase 7 | Pending |
+| CAM-03 | Phase 7 | Pending |
+| ROAD-01 | Phase 8 | Pending |
+| ROAD-02 | Phase 8 | Pending |
+| ROAD-03 | Phase 8 | Pending |
+| ROAD-04 | Phase 8 | Pending |
+| SURF-01 | Phase 9 | Pending |
+| SURF-02 | Phase 9 | Pending |
+| SURF-03 | Phase 9 | Pending |
+| SURF-04 | Phase 9 | Pending |
+| SURF-05 | Phase 9 | Pending |
+| SURF-06 | Phase 9 | Pending |
+| POI-01 | Phase 10 | Pending |
+| POI-02 | Phase 10 | Pending |
 
 **Coverage:**
-- v1.1 requirements: 24 total (1 stretch: SURF-06)
-- Mapped to phases: TBD (roadmap)
-- Unmapped: TBD ⚠️
+- v1.1 requirements: 26 total (24 core + 1 stretch SURF-06 + 1 POI-02 data-contract companion)
+- Mapped to phases: 26/26
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-06-07*
-*Last updated: 2026-06-07 after v1.1 milestone scoping*
+*Last updated: 2026-06-07 — traceability table populated by roadmapper (P7–P10)*

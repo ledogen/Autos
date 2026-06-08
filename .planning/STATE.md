@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Mountains & Roads
 status: planning
-last_updated: "2026-06-05T08:29:01.160Z"
-last_activity: 2026-06-05
+last_updated: "2026-06-07T00:00:00.000Z"
+last_activity: 2026-06-07
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,23 +17,27 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-03)
+See: .planning/PROJECT.md (updated 2026-06-05)
 
 **Core value:** Physics that feel honest: a car that can roll over naturally, drift on the limit, and behave predictably enough that tuning parameters produces the expected result.
-**Current focus:** Planning next milestone (v2.0) — run `/gsd-new-milestone`
+**Current focus:** v1.1 Mountains & Roads — roadmap defined, ready for phase planning. Start with `/gsd:plan-phase 7`.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Phase 7 — Free-Cam + Seeded Layered Terrain (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-05 — Milestone v1.1 started
+Status: Roadmap complete — awaiting plan-phase
+Last activity: 2026-06-07 — v1.1 roadmap created (Phases 7–10)
+
+```
+v1.1 Progress: [                    ] 0% (0/4 phases)
+```
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 6
+- Total plans completed: 0 (v1.1)
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -41,8 +45,10 @@ Last activity: 2026-06-05 — Milestone v1.1 started
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 02 | 3 | - | - |
-| 06 | 3 | - | - |
+| 07 | 0 | - | - |
+| 08 | 0 | - | - |
+| 09 | 0 | - | - |
+| 10 | 0 | - | - |
 
 **Recent Trend:**
 
@@ -50,8 +56,6 @@ Last activity: 2026-06-05 — Milestone v1.1 started
 - Trend: —
 
 *Updated after each plan completion*
-| Phase 04.1 P01 | 15 | 3 tasks | 2 files |
-| Phase 04.1 P02 | 451 | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -60,18 +64,26 @@ Last activity: 2026-06-05 — Milestone v1.1 started
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- Phase 1: Quaternion-only rotation from day one — Euler angles confirmed to cause gimbal lock at 90° in prototype
-- Phase 1: Flat-tire friction placeholder only — NO Pacejka or spring-damper until Phase 3/4
-- Phase 1: `terrain(x,z) => {height, normal}` and `getDriveTorque(wheelIndex, vehicleState, params)` interfaces stubbed from day one to avoid retrofit cost
 - Phase 6: BLOCKED pending dedicated research phase — chunk ring-buffer + Web Worker heightmap questions unresolved
 - Phase 4.1 P01: vz threshold 0.5 m/s for ramp-slide gate — g*sin(10°)=1.7 m/s² over 3s; 0.5 distinguishes slide from static-stuck
 - Phase 4.1 P01: D-18 audit complete — zero existing assertion scripts probe hubY or hubVy; Phase 4.1 field renames are safe
+- v1.1 Roadmap (2026-06-07): Coarse terrain parameters MUST be locked at end of Phase 7 — changing them after Phase 8 invalidates all generated roads
+- v1.1 Roadmap (2026-06-07): Road routing (Phase 8) is the highest-risk phase — requires a research spike before implementation to resolve how per-tile A* handles switchback paths at different altitudes
+- v1.1 Roadmap (2026-06-07): Carve blend design must be specified BEFORE any Phase 9 mesh or physics code — the post-read blend pattern (chunk.carveWeights Float32Array, never baked into chunk.heights) is the anti-drift discipline
+- v1.1 Roadmap (2026-06-07): Road router uses pure coarseHeight(wx,wz) only — never terrainSystem.sampleHeight (chunk-load-order dependent; breaks determinism)
 
 ### Pending Todos
 
 | # | Bug / Task | Description |
 |---|------------|-------------|
-*(none)*
+| 1 | P7 exit gate | seedFor() determinism test must pass before any other generator uses it |
+| 2 | P7 exit gate | height-agreement test: sampleHeight(x,z) == bilinear(chunk.heights)*amp at 5 world positions |
+| 3 | P7 exit gate | Lock coarse terrain amplitude/wavelength/octaves — do not change after P8 starts |
+| 4 | P8 start spike | Resolve switchback-in-tile routing approach (multi-layer grid vs waypoint graph with U-turn nodes vs recursive sub-tile) |
+| 5 | P8 exit gate | Debug splines show no kinks at tile seam boundaries; no self-crossing switchback arms |
+| 6 | P9 start gate | Specify carveBlend function signature and chunk.carveWeights build pattern before writing any mesh or physics code |
+| 7 | P9 exit gate | Height-agreement test extended to on-road positions: carve result identical in _flushPendingQueue and sampleHeight |
+| 8 | P9 exit gate | Shoulder cliff test: no step discontinuity in sampleHeight across chunk seam boundary at road edge |
 
 ### Quick Tasks Completed
 
@@ -97,7 +109,7 @@ Recent decisions affecting current work:
 
 ### Blockers/Concerns
 
-- Phase 6 requires a research phase before `/gsd-plan-phase 6` can run. Do not skip.
+- Phase 8 (Road Routing) requires a spike before implementation — switchback-in-tile routing is the novel algorithm with genuine unknowns. Plan-phase should flag this and include the spike as the first plan node.
 
 ## Deferred Items
 
@@ -107,6 +119,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-06-05T06:41:37.632Z
-Stopped at: context exhaustion at 75% (2026-06-05)
+Last session: 2026-06-07T00:00:00.000Z
+Stopped at: v1.1 roadmap created (Phases 7–10); ready for plan-phase 7
 Resume file: None
