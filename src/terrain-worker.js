@@ -1,8 +1,8 @@
 // src/terrain-worker.js — Classic Blob worker source for TerrainSystem
 //
 // Responsibilities:
-//  - Receive {type:'generate', cx, cz, key} messages from the main thread
-//  - Generate a 65×65 heightmap using 3-octave simplex FBM noise
+//  - Receive {type:'init', worldSeed, params} messages — initialize seeded noise closures
+//  - Receive {type:'generate', cx, cz, key} messages — generate 65×65 heightmap
 //  - Post {key, cx, cz, heights} with heights.buffer as a transferable
 //
 // This file is NOT an ES6 module. It is read as a string by terrain.js and
@@ -11,7 +11,41 @@
 // Minimal simplex noise 2D implementation extracted from simplex-noise@4.0.3
 // Original source: https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/dist/esm/simplex-noise.js
 // MIT License — Copyright (c) 2024 Jonas Wagner
-// See RESEARCH.md Pattern 3 as authoritative architecture reference.
+
+// ── Seed utilities (copied verbatim from src/seed.js — no export keyword) ──
+// SYNC: keep byte-identical with seed.js function bodies (no export).
+
+function djb2(str) {
+  let h = 5381
+  for (let i = 0; i < str.length; i++) {
+    h = (Math.imul(h, 33) ^ str.charCodeAt(i)) >>> 0
+  }
+  return h >>> 0
+}
+
+function parseWorldSeed(input) {
+  if (typeof input === 'number') return (input | 0) >>> 0
+  return djb2(String(input))
+}
+
+function seedFor(worldSeed, domainTag, ...coords) {
+  let h = djb2(domainTag)
+  h = (Math.imul(h ^ (worldSeed >>> 0), 0x9e3779b9) >>> 0)
+  for (const coord of coords) {
+    h = (Math.imul(h ^ ((coord | 0) >>> 0), 0x85ebca6b) >>> 0)
+  }
+  return h >>> 0
+}
+
+function mulberry32(seed) {
+  return function () {
+    seed |= 0
+    seed = seed + 0x6D2B79F5 | 0
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    t = t + Math.imul(t ^ (t >>> 7), 61 | t) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
 
 // ── Minimal simplex-noise@4.0.3 subset (2D only) ──────────────────────────
 
@@ -94,31 +128,86 @@ function createNoise2D(random) {
     };
 }
 
+// ── Height function (shared with Worker — keep in sync) ──────────────────
+// Three-layer height: coarse ridged-multifractal + fine FBM + regional modulator.
+// Returns RAW height (no terrainAmplitude multiply — amplitude applied at geometry setY
+// and in sampleHeight/analyticHeight, preserving the existing contract).
+// SYNC: keep byte-identical with terrain.js module-scope block below.
+
+function coarseHeight(wx, wz, noiseCoarse, params) {
+    const { coarseAmplitude, coarseFreq, coarseOctaves, ridgeSharpness } = params
+    let h = 0
+    let freq = coarseFreq
+    let amp  = coarseAmplitude
+    const gain = 0.5
+    const lacunarity = 2.0
+    for (let o = 0; o < coarseOctaves; o++) {
+        const n = noiseCoarse(wx * freq, wz * freq)
+        const ridged = 1.0 - Math.abs(n)
+        const shaped = Math.pow(ridged, ridgeSharpness)
+        h += shaped * amp
+        freq *= lacunarity
+        amp  *= gain
+    }
+    return h
+}
+
+function fineHeight(wx, wz, noiseFine, params) {
+    const { fineAmplitude, fineFreq } = params
+    return (
+        noiseFine(wx * fineFreq, wz * fineFreq) * fineAmplitude +
+        noiseFine(wx * fineFreq * 2.1, wz * fineFreq * 2.1) * fineAmplitude * 0.5
+    )
+}
+
+function regionalModulator(wx, wz, noiseRegional, params) {
+    const { regionalStrength, regionalScale } = params
+    const raw = noiseRegional(wx * (1 / regionalScale), wz * (1 / regionalScale))
+    const t = (raw + 1) * 0.5
+    return (1.0 - regionalStrength) + regionalStrength * t
+}
+
+function height(wx, wz, noiseCoarse, noiseFine, noiseRegional, params) {
+    const coarse = coarseHeight(wx, wz, noiseCoarse, params)
+    const reg    = regionalModulator(wx, wz, noiseRegional, params)
+    const fine   = fineHeight(wx, wz, noiseFine, params) * reg
+    return coarse + fine
+}
+
 // ── Worker constants ───────────────────────────────────────────────────────
 
-const GRID_SAMPLES = 65   // vertices per chunk side (64 cells + 1)
-const CHUNK_SIZE   = 64   // world units (metres) per chunk side
-const CELL_SIZE    = CHUNK_SIZE / (GRID_SAMPLES - 1)  // 1.0 m per sample
+const GRID_SAMPLES = 65
+const CHUNK_SIZE   = 64
+const CELL_SIZE    = CHUNK_SIZE / (GRID_SAMPLES - 1)
 
-// Deterministic seed: () => 0.5 produces a fixed permutation table so that
-// chunk boundaries computed in separate worker messages are seamless.
-// See RESEARCH.md §Pitfall 3 and §A6.
-const noise2D = createNoise2D(function() { return 0.5; })
+// Three seeded noise closures — initialized via 'init' message before any 'generate'.
+let noiseCoarse, noiseFine, noiseRegional
+// Worker params — set on 'init', used in 'generate'.
+let _workerParams = null
 
-// Verify noise is valid at worker startup (lattice-point origin should be 0)
-const _originCheck = noise2D(0, 0)
-if (isNaN(_originCheck)) {
-    console.error('[terrain-worker] ERROR: noise2D(0,0) is NaN — simplex init failed')
-} else {
-    console.log('[terrain-worker] ready. noise2D(0,0) =', _originCheck, '(expected 0)')
-}
+console.log('[terrain-worker] ready — awaiting init message')
 
 // ── Message handler ────────────────────────────────────────────────────────
 
 self.onmessage = function(e) {
-    const { type, cx, cz, key } = e.data
-    if (type !== 'generate') return
+    if (e.data.type === 'init') {
+        const { worldSeed, params } = e.data
+        _workerParams = params
+        noiseCoarse   = createNoise2D(mulberry32(seedFor(worldSeed, 'coarse')))
+        noiseFine     = createNoise2D(mulberry32(seedFor(worldSeed, 'fine')))
+        noiseRegional = createNoise2D(mulberry32(seedFor(worldSeed, 'regional')))
+        console.log('[terrain-worker] init complete. worldSeed =', worldSeed)
+        return
+    }
 
+    if (e.data.type !== 'generate') return
+
+    if (!noiseCoarse) {
+        console.warn('[terrain-worker] generate received before init — skipping key', e.data.key)
+        return
+    }
+
+    const { cx, cz, key } = e.data
     const N    = GRID_SAMPLES
     const S    = CHUNK_SIZE
     const cell = CELL_SIZE
@@ -127,19 +216,11 @@ self.onmessage = function(e) {
     const originX  = cx * S
     const originZ  = cz * S
 
-    // 3-octave FBM per RESEARCH.md Pattern 3:
-    //   Octave 1: feature size ~50 m, amplitude 4.0 m  (major hills)
-    //   Octave 2: feature size ~17 m, amplitude 1.5 m  (secondary terrain)
-    //   Octave 3: feature size ~7 m,  amplitude 0.5 m  (surface roughness)
     for (let zi = 0; zi < N; zi++) {
         for (let xi = 0; xi < N; xi++) {
             const wx = originX + xi * cell
             const wz = originZ + zi * cell
-            const h =
-                noise2D(wx * 0.02, wz * 0.02) * 4.0 +
-                noise2D(wx * 0.06, wz * 0.06) * 1.5 +
-                noise2D(wx * 0.15, wz * 0.15) * 0.5
-            heights[zi * N + xi] = h
+            heights[zi * N + xi] = height(wx, wz, noiseCoarse, noiseFine, noiseRegional, _workerParams)
         }
     }
 
