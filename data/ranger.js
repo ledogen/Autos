@@ -147,10 +147,11 @@ export const RANGER_PARAMS = {
   physicsDt:  1 / 60,   // s — outer physics step (≈16.667ms); substep = physicsDt/2 (D-08)
 
   // ── Phase 6/7 Terrain (TERR-06 / TERR-01–04) ─────────────────────────────
-  // terrainAmplitude: scale multiplier applied to raw noise heights during chunk geometry build.
-  // Exposed as a Terrain folder slider in debug.js (0.1–3.0, step 0.05).
-  // Changing the slider live affects newly-built chunks (geometry built from pending queue each frame).
-  terrainAmplitude: 0.1,   // m scale factor — multiplied onto heightmap values in TerrainSystem
+  // terrainAmplitude: live Y-rescale multiplier (Path A — instant, no Worker round-trip).
+  // Applied to raw noise heights during chunk geometry build. Default 1.0 because the
+  // coarse layer already outputs values in metres — no additional scale needed at default params.
+  // Changing this slider live rescales existing geometry without Worker regeneration (D-09 Path A).
+  terrainAmplitude: 1.0,   // Y-rescale multiplier — Path A instant rescale; coarse layer outputs metres directly
 
   // Phase 7: Three-layer seeded height function parameters (TERR-01/02/03).
   // Calibration starting values from RESEARCH.md §Calibration — interactive tuning via debug sliders.
