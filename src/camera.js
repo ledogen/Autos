@@ -144,13 +144,19 @@ document.addEventListener('keydown', e => {
 
 function _enterFreecam () {
   if (!_lastVehicleState) return  // guard against call before first updateCamera frame
-  // Spawn ~2 m above the truck position (D-04)
-  freecamPos.copy(_lastVehicleState.position).add(new THREE.Vector3(0, 2, 0))
-  // Initial yaw = car heading. Car faces -Z (right-hand Y-up), so euler.y from vehicle
-  // quaternion is the car's world yaw. Add PI so camera initially faces car's forward.
-  const euler = new THREE.Euler().setFromQuaternion(_lastVehicleState.quaternion, 'YXZ')
-  freecamYaw   = euler.y + Math.PI
-  freecamPitch = 0
+  // Spawn behind + above the truck, mirroring the chase-cam offset (D-04), so the truck
+  // is immediately in view on entry. CHASE_OFFSET_LOCAL is body-space (behind +Z, above +Y);
+  // rotate by yaw only so the spawn tracks heading without inheriting car pitch/roll.
+  const euler  = new THREE.Euler().setFromQuaternion(_lastVehicleState.quaternion, 'YXZ')
+  const yawQ   = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), euler.y)
+  const offset = CHASE_OFFSET_LOCAL.clone().applyQuaternion(yawQ)
+  freecamPos.copy(_lastVehicleState.position).add(offset)
+  // Orient to look AT the truck so it's framed on entry (fixes prior reversed-facing spawn).
+  // Solve yaw/pitch for the YXZ forward convention used in updateCamera:
+  //   forward = (-cosθ·sinψ, sinθ, -cosθ·cosψ)  ⇒  ψ = atan2(-dx,-dz), θ = asin(dy)
+  const dir = _lastVehicleState.position.clone().sub(freecamPos).normalize()
+  freecamYaw   = Math.atan2(-dir.x, -dir.z)
+  freecamPitch = Math.asin(Math.max(-1, Math.min(1, dir.y)))
   cameraMode   = 'freecam'
   const canvas = document.querySelector('canvas')
   if (canvas) canvas.requestPointerLock()
