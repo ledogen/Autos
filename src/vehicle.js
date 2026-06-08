@@ -6,7 +6,12 @@
  *
  * Conventions: see docs/GLOSSARY.md
  * Sign convention: positive steerAngle = steer left (counter-clockwise viewed from above, Y-up right-hand system).
+ *
+ * Import note: camera.js is imported here to gate truck WASD when free-cam is active (CAM-02 / D-05).
+ * camera.js does not import vehicle.js — no import cycle.
  */
+
+import { getCameraMode } from './camera.js'
 
 // ── Keyboard input state (module-private) ────────────────────────────────────
 const keys = { w: false, s: false, a: false, d: false, r: false, ' ': false }
@@ -53,10 +58,17 @@ export const SPAWN_STATE = {
  * @returns {boolean} true if R-key reset was requested this step (main.js handles the copy).
  */
 export function updateVehicle (vehicleState, params, dt) {
+  // ── 0. Free-cam WASD gate (CAM-02, D-05) ───────────────────────────────────
+  // While free-cam is active, the camera module consumes WASD for flight.
+  // Zero truck driver input so the truck idles with physics still running (NOT frozen).
+  // The smooth accumulators decay to zero naturally via the ramp logic below.
+  // C/Shift+C (camera mode toggle) and R (reset) are NOT blocked here.
+  const freecamActive = getCameraMode() === 'freecam'
+
   // ── 1. Throttle / Brake (M1-05, FEAT-01) ──────────────────────────────────
   // Ramp smoothed accumulators toward raw input; fast release, slow press.
-  const rawThrottle = keys.w ? 1 : 0
-  const rawBrake    = keys.s ? 1 : 0
+  const rawThrottle = (!freecamActive && keys.w) ? 1 : 0
+  const rawBrake    = (!freecamActive && keys.s) ? 1 : 0
   if (rawThrottle > vehicleState.smoothThrottle)
     vehicleState.smoothThrottle = Math.min(vehicleState.smoothThrottle + params.throttleRampRate * dt, rawThrottle)
   else
@@ -68,7 +80,7 @@ export function updateVehicle (vehicleState, params, dt) {
   vehicleState.throttle  = vehicleState.smoothThrottle
   // S key: sets brake=1; getDriveTorque uses maxReverseTorque for rear wheels (Bug 4 fix in physics.js)
   vehicleState.brake     = vehicleState.smoothBrake
-  vehicleState.handbrake = keys[' '] || false
+  vehicleState.handbrake = (!freecamActive && keys[' ']) || false
 
   // ── 2. Speed-scaled steer limit (M1-08) ────────────────────────────────────
   // Compute current horizontal speed in m/s (ignore vertical for steering math).
@@ -79,10 +91,10 @@ export function updateVehicle (vehicleState, params, dt) {
   const dynamicMaxSteer = params.maxSteerAngle / (1 + speed / params.speedSteerRef)
 
   // ── 3. Steer accumulation (M1-07) ──────────────────────────────────────────
-  if (keys.a) vehicleState.steerAngle += params.steerRate * dt
-  if (keys.d) vehicleState.steerAngle -= params.steerRate * dt
+  if (!freecamActive && keys.a) vehicleState.steerAngle += params.steerRate * dt
+  if (!freecamActive && keys.d) vehicleState.steerAngle -= params.steerRate * dt
 
-  if (!keys.a && !keys.d) {
+  if (freecamActive || (!keys.a && !keys.d)) {
     // Decay toward zero at steerDecayRate (rad/s)
     const decay = params.steerDecayRate * dt
     if (Math.abs(vehicleState.steerAngle) <= decay) {
