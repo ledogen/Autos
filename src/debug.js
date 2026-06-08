@@ -117,12 +117,61 @@ export function initDebug (params, callbacks = {}) {
   // live mutation of params.terrainAmplitude takes effect on the next chunk built.
   // rampEnabled toggle calls the setRampVisible callback (passed via initDebug second arg)
   // to keep rampMesh.visible in sync; also guards RAMP_TRIS loops in queryContacts.
+  //
+  // Phase 7 (TERR-06 / SEED-04): World Seed text field + Coarse/Fine/Regional sub-folders.
+  // Path A: terrainAmplitude slider → callbacks.rebuildTerrain() (instant Y-rescale, no Worker churn).
+  // Path B: coarse/fine/regional sliders + seed field → callbacks.rebuildTerrainFull() (debounced ~150ms
+  //   in main.js: reinitWorker → rebuildAllChunksFromWorker → re-seat truck).
+  // Debounce lives in main.js.rebuildTerrainFull; debug.js fires callbacks unconditionally on onChange.
   const terrainFolder = gui.addFolder('Terrain')
-  terrainFolder.add(params, 'terrainAmplitude', 0, 1.0, 0.05).name('Terrain Amplitude').onChange(() => {
+  terrainFolder.add(params, 'terrainAmplitude', 0, 3.0, 0.05).name('Terrain Amplitude (Y-scale)').onChange(() => {
     if (typeof callbacks.rebuildTerrain === 'function') callbacks.rebuildTerrain()
   })
   terrainFolder.add(params, 'rampEnabled').name('Ramp Visible').onChange(v => {
     if (typeof callbacks.setRampVisible === 'function') callbacks.setRampVisible(v)
+  })
+
+  // World Seed text field (D-13 / SEED-04) — lil-gui renders a plain <input type="text">
+  // automatically when the property value is a string. Internally tracks a display string
+  // ('lone-pine' by default) but fires callbacks.changeSeed(v) so main.js can parseWorldSeed
+  // the raw text and trigger Path B rebuild.
+  const _seedState = { seed: 'lone-pine' }
+  terrainFolder.add(_seedState, 'seed').name('World Seed').onChange(v => {
+    if (typeof callbacks.changeSeed === 'function') callbacks.changeSeed(v)
+  })
+
+  // ── Coarse Layer sub-folder (ridged-multifractal — TERR-01, D-08 ranges) ────────────────
+  // All sliders fire rebuildTerrainFull (Path B) — shape changes require Worker re-init.
+  const coarseFolder = terrainFolder.addFolder('Coarse Layer')
+  coarseFolder.add(params, 'coarseAmplitude', 50, 500, 10).name('Amplitude (m)').onChange(() => {
+    if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull()
+  })
+  coarseFolder.add(params, 'coarseFreq', 0.0005, 0.005, 0.0001).name('Wavelength/Freq (1/m)').onChange(() => {
+    if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull()
+  })
+  coarseFolder.add(params, 'coarseOctaves', 1, 6, 1).name('Octaves').onChange(() => {
+    if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull()
+  })
+  coarseFolder.add(params, 'ridgeSharpness', 1.0, 4.0, 0.1).name('Ridge Sharpness').onChange(() => {
+    if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull()
+  })
+
+  // ── Fine Layer sub-folder (FBM suspension texture — TERR-02, D-10) ────────────────────
+  const fineFolder = terrainFolder.addFolder('Fine Layer')
+  fineFolder.add(params, 'fineAmplitude', 0, 10, 0.1).name('Amplitude (m)').onChange(() => {
+    if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull()
+  })
+  fineFolder.add(params, 'fineFreq', 0.01, 0.2, 0.005).name('Frequency (1/m)').onChange(() => {
+    if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull()
+  })
+
+  // ── Regional Modulator sub-folder (valley/hillside roughness — TERR-03) ──────────────
+  const regionalFolder = terrainFolder.addFolder('Regional Modulator')
+  regionalFolder.add(params, 'regionalStrength', 0, 1, 0.05).name('Strength (0=uniform, 1=full)').onChange(() => {
+    if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull()
+  })
+  regionalFolder.add(params, 'regionalScale', 500, 10000, 100).name('Scale (m)').onChange(() => {
+    if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull()
   })
 
   // D-04: Read-only Logger hint — shows the \ key without being interactive
