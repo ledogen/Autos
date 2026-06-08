@@ -24,13 +24,13 @@ import { updateCamera, getCameraMode, getFreecamPosition } from './camera.js'
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition } from './logger.js'
 import { TerrainSystem } from './terrain.js'
-import { parseWorldSeed } from './seed.js'
+import { parseWorldSeed, seedFor } from './seed.js'
 
 // World seed — parsed from URL ?seed= parameter, defaulting to 'lone-pine'.
-// Plan 04 wires this to the debug panel seed field; for this plan we establish the
-// default here so TerrainSystem and analyticHeight are both seeded consistently.
+// Plan 04: changed to `let` so debug panel seed field can mutate it (SEED-04).
+// Refreshing the same ?seed= URL reproduces the same terrain (SEED-01/03).
 const _urlSeed = new URLSearchParams(window.location.search).get('seed')
-const worldSeed = _urlSeed ? parseWorldSeed(_urlSeed) : parseWorldSeed('lone-pine')
+let worldSeed = parseWorldSeed(_urlSeed ?? 'lone-pine')
 
 // TerrainSystem instance — declared at module scope so queryContacts / queryVertexContacts
 // can access it by reference. Initialized after scene exists (below initDebug).
@@ -95,6 +95,109 @@ function computeStaticEquilibrium (p) {
   // with balanced tuning; minor front-rear offset settles within a frame via hub dynamics).
   const bodyY = (bodyYCorner[0] + bodyYCorner[1]) / 2
   return { bodyY, strutComp }
+}
+
+// ── resolveSpawn (D-14 / D-16) ───────────────────────────────────────────────────────────
+// Canonical terrain-only low-slope spawn resolver. Returns { position: THREE.Vector3, heading }
+// where position.y is the terrain surface height (analyticHeight) at the chosen (x,z).
+//
+// Phase 7 SEAM COMMENT — Phase 8 swaps the body of this function to a road-graph probe
+// (nearest road node + tangent heading) at this SAME call site. DO NOT change the signature
+// (worldSeed, params) → { position: THREE.Vector3, heading: number }.
+//
+// Algorithm:
+//   1. Seed a start offset from seedFor(worldSeed, 'spawn') for determinism.
+//   2. Search up to MAX_TRIES candidate (x,z) positions using analyticNormal.
+//      Accept the first whose normal.y > cos(15°) ≈ 0.966 (grade < ~15%).
+//   3. Fall back to origin with console.warn if no flat candidate found.
+//   4. heading = bits from spawn seed (low bits) → 0..2π rotation.
+//
+// T-07-04-SPAWN: bounded loop (≤50 tries), origin fallback, console.warn — no infinite loop.
+function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
+  const spawnSeed = seedFor(wseed, 'spawn')
+  const MAX_TRIES = 50
+  const GRADE_THRESHOLD = Math.cos(15 * Math.PI / 180)  // ≈ 0.966, grade < ~15%
+
+  // Search a deterministic expanding spiral using the spawn seed as a starting offset.
+  // Candidate offsets step by 80 m — coarse enough to sample different terrain features.
+  const STEP = 80
+  let candX = ((spawnSeed & 0xFFFF) / 0xFFFF - 0.5) * 200  // ±100 m initial offset
+  let candZ = (((spawnSeed >>> 16) & 0xFFFF) / 0xFFFF - 0.5) * 200
+
+  let chosenX = 0
+  let chosenZ = 0
+  let found = false
+
+  if (terrainSystem) {
+    for (let i = 0; i < MAX_TRIES; i++) {
+      const nx = (i % 5) * STEP * (i % 2 === 0 ? 1 : -1) + candX
+      const nz = Math.floor(i / 5) * STEP * (i % 3 === 0 ? 1 : -1) + candZ
+      const normal = terrainSystem.analyticNormal(nx, nz)
+      if (normal.y > GRADE_THRESHOLD) {
+        chosenX = nx
+        chosenZ = nz
+        found = true
+        break
+      }
+    }
+    if (!found) {
+      console.warn('[resolveSpawn] No flat spawn found in', MAX_TRIES, 'tries — falling back to origin')
+      chosenX = candX
+      chosenZ = candZ
+    }
+  }
+
+  const surfaceY = terrainSystem ? terrainSystem.analyticHeight(chosenX, chosenZ) : 0
+  const heading = ((spawnSeed & 0xFF) / 255) * Math.PI * 2
+
+  return {
+    position: new THREE.Vector3(chosenX, surfaceY, chosenZ),
+    heading
+  }
+}
+
+// ── Debounced Path-B rebuild (D-09) ──────────────────────────────────────────────────────
+// Fires on coarse/fine/regional slider changes and seed field changes (~150 ms debounce).
+// Path B: reinitWorker → rebuildAllChunksFromWorker → re-seat truck at spawn.
+// The amplitude slider (Path A: rebuildAllChunks) bypasses this entirely.
+// Free-cam keeps flying through a regenerate — only the truck is re-seated (D-15).
+let _rebuildDebounceTimer = null
+function debouncedRebuildFull () {
+  clearTimeout(_rebuildDebounceTimer)
+  _rebuildDebounceTimer = setTimeout(() => {
+    if (!terrainSystem) return
+    terrainSystem.reinitWorker(worldSeed, RANGER_PARAMS)
+    terrainSystem.rebuildAllChunksFromWorker()
+    _reseatTruckAtSpawn()
+  }, 150)
+}
+
+// ── _reseatTruckAtSpawn (D-15) ────────────────────────────────────────────────────────────
+// Single canonical seat: resolveSpawn → computeStaticEquilibrium → position + heading + zero state.
+// Used at: (1) initial load, (2) R-reset, (3) every debounced Path-B regenerate.
+// Free-cam position is NOT affected — only vehicleState is modified.
+// 3-PLACES NOTE: This plan adds NO new vehicleState fields; all fields below already exist.
+function _reseatTruckAtSpawn () {
+  const { position: spawnPos, heading } = resolveSpawn(worldSeed, RANGER_PARAMS)
+  const eq = computeStaticEquilibrium(RANGER_PARAMS)
+  vehicleState.position.set(spawnPos.x, spawnPos.y + eq.bodyY, spawnPos.z)
+  vehicleState.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), heading)
+  vehicleState.velocity.set(0, 0, 0)
+  vehicleState.angularVelocity.set(0, 0, 0)
+  vehicleState.steerAngle    = 0
+  vehicleState.throttle      = 0
+  vehicleState.brake         = 0
+  vehicleState.smoothThrottle = 0
+  vehicleState.smoothBrake    = 0
+  vehicleState.wheelAngles    = [0, 0, 0, 0]
+  vehicleState.wheelSteerAngles = [0, 0, 0, 0]
+  vehicleState.wheelDebug     = [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ]
+  vehicleState.wheelOmega     = [0, 0, 0, 0]
+  vehicleState.slipLong       = [0, 0, 0, 0]
+  vehicleState.slipLat        = [0, 0, 0, 0]
+  vehicleState.handbrake      = false
+  vehicleState.strutComp      = [...eq.strutComp]
+  vehicleState.strutCompVel   = [0, 0, 0, 0]
 }
 
 // ── Fixed-timestep loop constants (RESEARCH §Pattern 2) ─────────────────────
@@ -563,9 +666,13 @@ let _fpsLastTime = 0   // will be set to currentTime on first frame
 // D-10: passes mutable RANGER_PARAMS ref so sliders write directly to the object physics.js reads.
 // Phase 6 (TERR-06): pass setRampVisible callback so the Ramp Visible toggle in debug.js
 // can control rampMesh visibility without requiring debug.js to import rampMesh directly.
+// Phase 7 (SEED-04 / D-09): rebuildTerrainFull = Path B debounced rebuild (Worker reinit + re-seat);
+//   changeSeed = update worldSeed then fire Path B.
 const _gui = initDebug(RANGER_PARAMS, {
-  setRampVisible:  (v) => { rampMesh.visible = v },
-  rebuildTerrain:  ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() }
+  setRampVisible:      (v) => { rampMesh.visible = v },
+  rebuildTerrain:      ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() },
+  rebuildTerrainFull:  ()  => debouncedRebuildFull(),
+  changeSeed:          (v) => { worldSeed = parseWorldSeed(v); debouncedRebuildFull() }
 })
 
 // ── TerrainSystem (Phase 6 / 7) ──────────────────────────────────────────────
@@ -575,6 +682,11 @@ const _gui = initDebug(RANGER_PARAMS, {
 // are immediately available after construction (no chunk load required).
 terrainSystem = new TerrainSystem(scene, RANGER_PARAMS, worldSeed)
 scene.remove(ground)   // Remove flat 200×200 ground mesh — terrain chunks replace it (T-06-06)
+
+// Phase 7 (D-14/15/16): initial-load seat via canonical resolveSpawn + analyticHeight ground-probe.
+// TerrainSystem is now alive and analyticHeight is immediately available (no chunk load required).
+// This overrides the vehicleState.position set during declaration (which used origin + _spawnEq.bodyY).
+_reseatTruckAtSpawn()
 
 // ── Body contact point debug spheres ──────────────────────────────────────────
 // 14 translucent orange spheres — one per probe in getBodyContactPoints.
@@ -637,32 +749,10 @@ function loop () {
       Object.assign(RANGER_PARAMS, _RANGER_PARAMS_DEFAULTS)
       _gui.controllersRecursive().forEach(c => c.updateDisplay())
 
-      // M1-12: reset to spawn state — zero all motion, restore identity quaternion.
-      // Phase 4.1: position.y and strutComp[] reset to static equilibrium (not RANGER_PARAMS.cgHeight)
-      // so the car spawns pre-settled with no visible drop (RESEARCH §Pattern 4 / Pitfall 1).
-      const eq = computeStaticEquilibrium(RANGER_PARAMS)
-      vehicleState.position.set(SPAWN_STATE.positionX, eq.bodyY, SPAWN_STATE.positionZ)
-      // Phase 7: offset spawn Y by analytic terrain height — never returns 0 for unloaded
-      // chunks (fixes T-06-04 flat-ground fallback; analyticHeight is immediate pre-chunk).
-      vehicleState.position.y += terrainSystem ? terrainSystem.analyticHeight(SPAWN_STATE.positionX, SPAWN_STATE.positionZ) : 0
-      vehicleState.velocity.set(0, 0, 0)
-      vehicleState.quaternion.set(SPAWN_STATE.quatX, SPAWN_STATE.quatY, SPAWN_STATE.quatZ, SPAWN_STATE.quatW)
-      vehicleState.angularVelocity.set(0, 0, 0)
-      vehicleState.steerAngle = 0
-      vehicleState.throttle = 0
-      vehicleState.brake = 0
-      vehicleState.smoothThrottle = 0    // FEAT-01: zero ramp accumulators on reset
-      vehicleState.smoothBrake = 0
-      vehicleState.wheelAngles    = [0, 0, 0, 0]
-      vehicleState.wheelSteerAngles = [0, 0, 0, 0]
-      vehicleState.wheelDebug     = [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ]
-      vehicleState.wheelOmega     = [0, 0, 0, 0]
-      vehicleState.slipLong       = [0, 0, 0, 0]
-      vehicleState.slipLat        = [0, 0, 0, 0]
-      vehicleState.handbrake      = false
-      // Phase 4.1 strut state reset — reassigned (not mutated entry-by-entry) per PATTERNS §Reset block
-      vehicleState.strutComp    = [...eq.strutComp]
-      vehicleState.strutCompVel = [0, 0, 0, 0]
+      // Phase 7 (D-15): canonical re-seat via resolveSpawn + analyticHeight ground-probe.
+      // _reseatTruckAtSpawn() replaces the former inline reset block — picks a low-slope spawn
+      // using the current worldSeed, seats at static equilibrium height, zeros all motion.
+      _reseatTruckAtSpawn()
     }
 
     _prevRenderPos.copy(vehicleState.position)
