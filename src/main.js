@@ -24,6 +24,7 @@ import { updateCamera, getCameraMode, getFreecamPosition } from './camera.js'
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition } from './logger.js'
 import { TerrainSystem } from './terrain.js'
+import { RoadSystem } from './road.js'
 import { parseWorldSeed, seedFor } from './seed.js'
 
 // World seed — parsed from URL ?seed= parameter, defaulting to 'lone-pine'.
@@ -35,6 +36,10 @@ let worldSeed = parseWorldSeed(_urlSeed ?? 'lone-pine')
 // TerrainSystem instance — declared at module scope so queryContacts / queryVertexContacts
 // can access it by reference. Initialized after scene exists (below initDebug).
 let terrainSystem = null
+
+// RoadSystem instance — declared at module scope so the lil-gui callbacks (onRoadVizToggle,
+// onRoadParamChange) can access it. Initialized after TerrainSystem exists (requires scene).
+let roadSystem = null
 
 // Grid-world mode flag (D-18 / D-19).
 // When true: terrain streaming paused, Sierra chunks hidden, ramp visible/collidable,
@@ -185,7 +190,31 @@ function debouncedRebuildFull () {
     if (!terrainSystem) return
     terrainSystem.reinitWorker(worldSeed, RANGER_PARAMS)
     terrainSystem.rebuildAllChunksFromWorker()
+    // Phase 8: re-init RoadSystem with new seed — roads are pure fns of (worldSeed, coords, params)
+    // so a new seed produces a different deterministic road network. Preserve viz state.
+    if (roadSystem && scene) {
+      const wasVisible = roadSystem._debugVisible
+      roadSystem = new RoadSystem(worldSeed, RANGER_PARAMS)
+      roadSystem.init(scene)
+      if (wasVisible) roadSystem.buildDebugLines()
+    }
     _reseatTruckAtSpawn()
+  }, 150)
+}
+
+// ── Debounced road re-route (D-03 / Phase 8) ──────────────────────────────────────────────
+// Fires on max-grade / road param slider changes (~150 ms debounce).
+// Pattern: mirrors debouncedRebuildFull — same timer convention (D-09).
+// Re-route = invalidateCache (clears tile + waypoint caches) + buildDebugLines (rebuilds visible
+// centerlines for current view). Roads are pure fns of (worldSeed, coords, params) → same seed
+// always produces the same route after any re-route at a given param value (D-03 deterministic).
+let _roadRebuildDebounceTimer = null
+function debouncedRoadRebuild () {
+  clearTimeout(_roadRebuildDebounceTimer)
+  _roadRebuildDebounceTimer = setTimeout(() => {
+    if (!roadSystem) return
+    roadSystem.invalidateCache()
+    roadSystem.buildDebugLines()
   }, 150)
 }
 
@@ -693,7 +722,10 @@ const _gui = initDebug(RANGER_PARAMS, {
   setRampVisible:      (v) => { rampMesh.visible = v },
   rebuildTerrain:      ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() },
   rebuildTerrainFull:  ()  => debouncedRebuildFull(),
-  changeSeed:          (v) => { worldSeed = parseWorldSeed(v); debouncedRebuildFull() }
+  changeSeed:          (v) => { worldSeed = parseWorldSeed(v); debouncedRebuildFull() },
+  // Phase 8 (D-03 / D-05): road viz toggle + param-change debounce
+  onRoadVizToggle:     (v) => { if (roadSystem) roadSystem.setDebugVisible(v) },
+  onRoadParamChange:   ()  => debouncedRoadRebuild(),
 }, { initialSeed: _urlSeed ?? 'lone-pine' })
 
 // ── TerrainSystem (Phase 6 / 7) ──────────────────────────────────────────────
@@ -703,6 +735,13 @@ const _gui = initDebug(RANGER_PARAMS, {
 // are immediately available after construction (no chunk load required).
 terrainSystem = new TerrainSystem(scene, RANGER_PARAMS, worldSeed)
 scene.remove(ground)   // Remove flat 200×200 ground mesh — terrain chunks replace it (T-06-06)
+
+// Phase 8 (D-05 / D-07): RoadSystem — instantiated after scene exists.
+// init(scene) attaches the scene reference so buildDebugLines() can add debug lines.
+// RoadSystem is pure-function-of-(worldSeed, coords, params) — the tile cache is memoization
+// only; same seed always produces the same roads.
+roadSystem = new RoadSystem(worldSeed, RANGER_PARAMS)
+roadSystem.init(scene)
 
 // Phase 7 (D-14/15/16): initial-load seat via canonical resolveSpawn + analyticHeight ground-probe.
 // TerrainSystem is now alive and analyticHeight is immediately available (no chunk load required).
