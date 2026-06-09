@@ -210,6 +210,24 @@ export function initDebug (params, callbacks = {}, options = {}) {
     if (typeof callbacks.onRoadParamChange === 'function') callbacks.onRoadParamChange()
   })
 
+  // ── Valley Trunk (Phase-8 redesign PROTOTYPE) ────────────────────────────────
+  // Non-destructive experimental router: endless valley-following trunk streamed
+  // around the view (freecam up + toggle on). Cyan line = proto trunk. Tune the cost
+  // weights live and watch it re-route around mountains.
+  //   callbacks.onProtoToggle(v: boolean)
+  //   callbacks.onProtoParam(key: string, value: number)
+  const _protoState = { on: false, wAlt: 0.85, wGrade: 400, wOver: 8000, maxGrade: 0.15, wTurn: 200 }
+  const proto = roadFolder.addFolder('Valley Trunk (proto)')
+  proto.add(_protoState, 'on').name('Show Valley Trunk').onChange(v => {
+    if (typeof callbacks.onProtoToggle === 'function') callbacks.onProtoToggle(v)
+  })
+  const fireProto = (k) => () => { if (typeof callbacks.onProtoParam === 'function') callbacks.onProtoParam(k, _protoState[k]) }
+  proto.add(_protoState, 'wAlt',   0, 3,     0.05).name('wAlt (stay low)').onChange(fireProto('wAlt'))
+  proto.add(_protoState, 'wGrade', 0, 2000,  20  ).name('wGrade (gentle)').onChange(fireProto('wGrade'))
+  proto.add(_protoState, 'wOver',  0, 40000, 500 ).name('wOver (soft cap)').onChange(fireProto('wOver'))
+  proto.add(_protoState, 'maxGrade', 0.04, 0.30, 0.005).name('maxGrade').onChange(fireProto('maxGrade'))
+  proto.add(_protoState, 'wTurn',  0, 800,   20  ).name('wTurn (straighter)').onChange(fireProto('wTurn'))
+
   // D-04: Read-only Logger hint — shows the \ key without being interactive
   const _loggerHint = { hint: '\\ to record' }
   gui.add(_loggerHint, 'hint').name('Logger').disable()

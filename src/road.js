@@ -53,6 +53,19 @@ export const CHUNK_SIZE = 64
  */
 const SEAM_SAMPLES = 33
 
+// ── PROTOTYPE constants (valley-following streaming trunk — spike) ─────────────
+// Non-destructive experimental routing for the Phase-8 redesign. Endless roads as a
+// deterministic chain of valley-anchor connections, streamed around the view like terrain.
+const PROTO_ANCHOR_SPACING = 256   // m between macro-grid anchors
+const PROTO_CELL           = 10    // m — A* grid resolution for an anchor→anchor connection
+const PROTO_MARGIN         = 200   // m — N/S detour room so a connection can wrap around a peak
+const PROTO_REGEN_MOVE     = 96    // m — re-stream the trunk once the view center moves this far
+const PROTO_SNAP_CAP       = PROTO_ANCHOR_SPACING * 0.45  // m — max anchor gradient-descent displacement (keeps anchors in their lane → fewer parallel/duplicate roads)
+const PROTO_PARAM_DEBOUNCE = 160   // ms — coalesce slider drags before re-routing
+// 8-connectivity direction vectors (index 0..7); used for the turn-penalty A* state.
+const PROTO_DIRS = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]]
+const _protoTurnSteps = (d1, d2) => { const a = Math.abs(d1 - d2); return Math.min(a, 8 - a) }  // 0..4 (×45°)
+
 // ── Module-scope pure height function ─────────────────────────────────────────
 /**
  * Raw coarse terrain height at world (wx, wz), pre-amplitude.
@@ -180,6 +193,7 @@ export class RoadSystem {
         this._noiseCoarse        = null       // built by _reinitNoise()
         this._coarseHeightOverride = coarseHeightOverride  // test injection point
         this._reinitNoise(worldSeed, params)
+        this._protoInit()
     }
 
     /**
@@ -658,6 +672,231 @@ export class RoadSystem {
             line.visible = visible
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PROTOTYPE — valley-following streaming trunk (Phase-8 redesign spike)
+    //
+    // Endless deterministic roads as a chain of valley-anchor connections, streamed
+    // around the view center each frame (same model as terrain chunks). Cost is
+    // dominated by altitude + grade with a SOFT (finite) grade penalty, so the route
+    // wraps AROUND high ground instead of climbing it. Fully non-destructive: this
+    // path does not touch _routeTile / ensureTile / queryNearest (the spawn path).
+    // If validated, this replaces the per-tile router. Toggle + tune from the Roads
+    // debug folder.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    _protoInit() {
+        this._proto = {
+            enabled: false,
+            params: {
+                wDist:   1,        // directness
+                wAlt:    0.85,     // stay low (valley-seeking) — user-tuned default
+                wGrade:  400,      // gentle (quadratic) — user-tuned default
+                wOver:   8000,     // soft over-cap penalty — user-tuned default
+                maxGrade: 0.15,    // grade the soft penalty kicks in above — user-tuned default
+                wTurn:   200,      // per-45° turn penalty — long straights / true switchbacks
+            },
+            paramDirtyAt: 0,
+            radius:   640,                                   // m — visible road radius (set from terrain stream radius)
+            anchors:  new Map(),                             // "mx,mz" → THREE.Vector3 (valley-snapped)
+            segs:     new Map(),                             // "ax,az>bx,bz" → THREE.Vector3[] (connection waypoints)
+            lines:    [],                                    // THREE.Line debug objects
+            lastCenter: null,
+            dirty:    true,
+            surfaceY: null,                                  // optional (x,z)=>renderedHeight for visual line placement
+        }
+    }
+
+    setProtoEnabled(v) {
+        this._proto.enabled = !!v
+        if (!v) this._clearProtoLines()
+        else { this._proto.dirty = true }
+    }
+    setProtoParam(key, value) {
+        if (key in this._proto.params) { this._proto.params[key] = value; this._proto.dirty = true; this._proto.paramDirtyAt = Date.now(); this._proto.segs.clear() }
+    }
+    setProtoRadius(r) { if (r > 0 && r !== this._proto.radius) { this._proto.radius = r; this._proto.dirty = true } }
+    setSurfaceSampler(fn) { this._proto.surfaceY = fn }       // main.js passes terrainSystem.analyticHeight
+
+    _invalidateProto() { this._proto.anchors.clear(); this._proto.segs.clear() }
+
+    _clearProtoLines() {
+        for (const line of this._proto.lines) {
+            if (this._scene) this._scene.remove(line)
+            if (line.geometry) line.geometry.dispose()
+            if (line.material) line.material.dispose()
+        }
+        this._proto.lines = []
+    }
+
+    // Deterministic valley anchor for macro-cell (mx,mz): seeded candidate in the cell,
+    // then gradient-descended onto the local valley floor (pure function of seed+coords).
+    _protoAnchor(mx, mz) {
+        const key = `${mx},${mz}`
+        const cached = this._proto.anchors.get(key)
+        if (cached) return cached
+        const rng = mulberry32(seedFor(this._worldSeed, 'roadanchor', mx, mz))
+        let wx = (mx + rng()) * PROTO_ANCHOR_SPACING
+        let wz = (mz + rng()) * PROTO_ANCHOR_SPACING
+        let h  = this._coarseH(wx, wz)
+        const ox = wx, oz = wz   // original candidate — cap displacement so anchors stay in their lane
+        // Gradient descent to a local minimum (bounded so adjacent cells don't collapse to one valley).
+        for (let s = 0; s < 48; s++) {
+            const step = 8
+            let bx = wx, bz = wz, bh = h
+            for (let a = 0; a < 8; a++) {
+                const ang = a / 8 * Math.PI * 2
+                const nx = wx + Math.cos(ang) * step, nz = wz + Math.sin(ang) * step
+                const nh = this._coarseH(nx, nz)
+                if (nh < bh) { bh = nh; bx = nx; bz = nz }
+            }
+            if (bh >= h) break
+            if (Math.hypot(bx - ox, bz - oz) > PROTO_SNAP_CAP) break  // lane cap (reduces duplicate roads)
+            wx = bx; wz = bz; h = bh
+        }
+        const v = new THREE.Vector3(wx, h, wz)
+        this._proto.anchors.set(key, v)
+        return v
+    }
+
+    _protoEdgeCost(fromH, toH, horiz, P) {
+        const grade = Math.abs(toH - fromH) / horiz
+        const over  = Math.max(0, grade - P.maxGrade)
+        return P.wDist * horiz + P.wAlt * toH + P.wGrade * grade * grade + P.wOver * over
+    }
+
+    // Collinear simplify: drop waypoints that don't represent a real turn (relative to the last
+    // kept point). Collapses grid-discretization micro-jogs into long straights → smoother spline,
+    // fewer control points, fewer overshoot self-intersections.
+    _protoSimplify(points, angleThreshDeg) {
+        if (points.length < 3) return points.slice()
+        const th = angleThreshDeg * Math.PI / 180
+        const out = [points[0]]
+        for (let i = 1; i < points.length - 1; i++) {
+            const p = out[out.length - 1], c = points[i], n = points[i + 1]
+            const v1x = c.x - p.x, v1z = c.z - p.z, v2x = n.x - c.x, v2z = n.z - c.z
+            const l1 = Math.hypot(v1x, v1z), l2 = Math.hypot(v2x, v2z)
+            if (l1 < 1e-6 || l2 < 1e-6) continue
+            const cos = (v1x * v2x + v1z * v2z) / (l1 * l2)
+            if (Math.acos(Math.max(-1, Math.min(1, cos))) > th) out.push(c)  // keep real turns
+        }
+        out.push(points[points.length - 1])
+        return out
+    }
+
+    // Turn-penalty soft-cost A* between two anchors over a grid covering their bbox + N/S margin.
+    // State = (cell, incoming-direction) so a per-45° turn penalty (wTurn) is charged — this is what
+    // makes the route run long straights and only switchback where the grade truly forces it.
+    // Never fails (soft penalty keeps all edges finite).
+    _protoConnect(a, b) {
+        const key = `${a.x.toFixed(0)},${a.z.toFixed(0)}>${b.x.toFixed(0)},${b.z.toFixed(0)}`
+        const cached = this._proto.segs.get(key)
+        if (cached) return cached
+        const P = this._proto.params
+        const minX = Math.min(a.x, b.x) - PROTO_MARGIN, maxX = Math.max(a.x, b.x) + PROTO_MARGIN
+        const minZ = Math.min(a.z, b.z) - PROTO_MARGIN, maxZ = Math.max(a.z, b.z) + PROTO_MARGIN
+        const NX = Math.max(2, Math.round((maxX - minX) / PROTO_CELL))
+        const NZ = Math.max(2, Math.round((maxZ - minZ) / PROTO_CELL))
+        const S = NX * NZ
+        const H = new Float64Array(S)
+        for (let gz = 0; gz < NZ; gz++) for (let gx = 0; gx < NX; gx++) {
+            const wx = minX + (gx + 0.5) * (maxX - minX) / NX
+            const wz = minZ + (gz + 0.5) * (maxZ - minZ) / NZ
+            H[gz * NX + gx] = this._coarseH(wx, wz)
+        }
+        const cellW = (maxX - minX) / NX, cellH = (maxZ - minZ) / NZ
+        const wxOf = gx => minX + (gx + 0.5) * cellW, wzOf = gz => minZ + (gz + 0.5) * cellH
+        const toCell = (p) => [
+            Math.max(0, Math.min(NX - 1, Math.round((p.x - minX) / cellW - 0.5))),
+            Math.max(0, Math.min(NZ - 1, Math.round((p.z - minZ) / cellH - 0.5))),
+        ]
+        const [sgx, sgz] = toCell(a), [ggx, ggz] = toCell(b)
+        const start = sgz * NX + sgx, goal = ggz * NX + ggx
+        // State id = cellIdx*9 + dir (dir 0..7, 8 = start/no-direction).
+        const g = new Float64Array(S * 9).fill(Infinity)
+        const from = new Int32Array(S * 9).fill(-1)
+        const seen = new Uint8Array(S * 9)
+        const open = new MinHeap()
+        const heur = (ci) => P.wDist * Math.hypot(wxOf(ggx) - wxOf(ci % NX), wzOf(ggz) - wzOf((ci / NX) | 0))
+        const startState = start * 9 + 8
+        g[startState] = 0; open.push(startState, heur(start))
+        let goalState = -1
+        while (open.size) {
+            const sid = open.pop(); if (seen[sid]) continue; seen[sid] = 1
+            const ci = (sid / 9) | 0, dir = sid % 9
+            if (ci === goal) { goalState = sid; break }
+            const cgx = ci % NX, cgz = (ci / NX) | 0, ch = H[ci]
+            for (let nd = 0; nd < 8; nd++) {
+                const nx = cgx + PROTO_DIRS[nd][0], nz = cgz + PROTO_DIRS[nd][1]
+                if (nx < 0 || nx >= NX || nz < 0 || nz >= NZ) continue
+                const ni = nz * NX + nx, nsid = ni * 9 + nd
+                if (seen[nsid]) continue
+                const horiz = Math.hypot(PROTO_DIRS[nd][0] * cellW, PROTO_DIRS[nd][1] * cellH)
+                const turn = dir === 8 ? 0 : P.wTurn * _protoTurnSteps(dir, nd)
+                const t = g[sid] + this._protoEdgeCost(ch, H[ni], horiz, P) + turn
+                if (t < g[nsid]) { g[nsid] = t; from[nsid] = sid; open.push(nsid, t + heur(ni)) }
+            }
+        }
+        if (goalState === -1) {  // goal not popped — pick its cheapest direction-state
+            let best = Infinity
+            for (let d = 0; d < 9; d++) { const sid = goal * 9 + d; if (g[sid] < best) { best = g[sid]; goalState = sid } }
+        }
+        const wps = []
+        if (goalState !== -1 && isFinite(g[goalState])) {
+            let sid = goalState; const chain = []
+            while (sid !== -1) { chain.push((sid / 9) | 0); sid = from[sid] }
+            chain.reverse()
+            for (const ci of chain) wps.push(new THREE.Vector3(wxOf(ci % NX), H[ci], wzOf((ci / NX) | 0)))
+        }
+        // Endpoints anchored exactly (C0 join between consecutive connections), interior simplified.
+        const raw = [a.clone(), ...this._protoSimplify(wps, 12), b.clone()]
+        const out = []
+        for (const p of raw) if (!out.length || out[out.length - 1].distanceToSquared(p) > 1e-4) out.push(p)
+        this._proto.segs.set(key, out)
+        return out
+    }
+
+    // Stream the trunk: regenerate visible east-running valley roads around `center`.
+    // Called each render frame from main.js with the same stream center as terrain.
+    updateProto(center) {
+        if (!this._proto.enabled || !this._scene) return
+        // Debounce slider drags: wait for the cost weights to settle before re-routing.
+        if (this._proto.dirty && this._proto.paramDirtyAt && (Date.now() - this._proto.paramDirtyAt) < PROTO_PARAM_DEBOUNCE) return
+        const moved = !this._proto.lastCenter || center.distanceTo(this._proto.lastCenter) > PROTO_REGEN_MOVE
+        if (!moved && !this._proto.dirty) return
+        this._proto.lastCenter = center.clone()
+        this._proto.dirty = false
+        this._clearProtoLines()
+
+        const R = this._proto.radius
+        const mx0 = Math.floor((center.x - R) / PROTO_ANCHOR_SPACING) - 1
+        const mx1 = Math.ceil((center.x + R) / PROTO_ANCHOR_SPACING)
+        const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING)
+        const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING)
+        const surf = this._proto.surfaceY
+        const drawn = new Set()   // dedupe identical segments (collapsed anchors → same road)
+        for (let mz = mz0; mz <= mz1; mz++) {
+            for (let mx = mx0; mx <= mx1; mx++) {
+                const a = this._protoAnchor(mx, mz)
+                const e = this._protoAnchor(mx + 1, mz)               // east-running valley road
+                const segKey = `${a.x.toFixed(0)},${a.z.toFixed(0)}>${e.x.toFixed(0)},${e.z.toFixed(0)}`
+                if (drawn.has(segKey)) continue
+                drawn.add(segKey)
+                const wps = this._protoConnect(a, e)
+                if (wps.length < 2) continue
+                const spline = new THREE.CatmullRomCurve3(wps, false, 'centripetal', 0.5)
+                const pts = spline.getPoints(Math.max(16, wps.length * 3))
+                if (surf) for (const p of pts) p.y = surf(p.x, p.z) + 1.0  // hug rendered surface
+                else for (const p of pts) p.y += 1.0
+                const line = _buildDebugLine2(pts, 0x00e5ff)
+                this._scene.add(line)
+                this._proto.lines.push(line)
+            }
+        }
+        // Bound caches during endless play.
+        if (this._proto.anchors.size > 4000) this._proto.anchors.clear()
+        if (this._proto.segs.size    > 1500) this._proto.segs.clear()
+    }
 }
 
 // ── Module-scope debug line builder ───────────────────────────────────────────
@@ -670,6 +909,13 @@ export class RoadSystem {
  */
 function _buildDebugLine(spline, color = 0xffaa00) {
     const pts = spline.getPoints(64)
+    const geo = new THREE.BufferGeometry().setFromPoints(pts)
+    const mat = new THREE.LineBasicMaterial({ color, depthTest: true })
+    return new THREE.Line(geo, mat)
+}
+
+// PROTOTYPE: build a THREE.Line directly from a point array (valley-trunk proto).
+function _buildDebugLine2(pts, color = 0x00e5ff) {
     const geo = new THREE.BufferGeometry().setFromPoints(pts)
     const mat = new THREE.LineBasicMaterial({ color, depthTest: true })
     return new THREE.Line(geo, mat)

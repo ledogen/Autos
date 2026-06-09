@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Spike 001 — Valley-following route wraps the mountain</title>
+<!-- classic (non-module) error surfacer: catches module import + runtime errors on-page -->
+<script>
+window.addEventListener('error', e => {
+  const d = document.createElement('pre');
+  d.style.cssText = 'color:#f88;background:#300;padding:8px;white-space:pre-wrap;font-family:monospace;font-size:12px;margin:0';
+  d.textContent = 'ERROR: ' + (e.message || e) + '\n  @ ' + (e.filename || '') + ':' + (e.lineno || '') + ':' + (e.colno || '');
+  document.body.prepend(d);
+});
+window.addEventListener('unhandledrejection', e => {
+  const d = document.createElement('pre');
+  d.style.cssText = 'color:#f88;background:#300;padding:8px;white-space:pre-wrap;font-family:monospace;font-size:12px;margin:0';
+  d.textContent = 'PROMISE REJECTION: ' + (e.reason && e.reason.message || e.reason);
+  document.body.prepend(d);
+});
+</script>
+<!-- importmap copied verbatim from index.html -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/dist/esm/simplex-noise.js"
+  }
+}
+</script>
+<style>
+  body { margin:0; font-family: ui-monospace, monospace; background:#0d0f12; color:#dde; display:flex; }
+  #left { padding:12px; }
+  #panel { padding:12px 16px; width:340px; font-size:12px; line-height:1.5; }
+  canvas { border:1px solid #333; image-rendering:pixelated; cursor:crosshair; }
+  h1 { font-size:14px; margin:0 0 8px; }
+  h2 { font-size:12px; margin:14px 0 4px; color:#9bd; }
+  .row { display:flex; justify-content:space-between; gap:8px; align-items:center; margin:3px 0; }
+  .row label { flex:1; }
+  input[type=range] { width:150px; }
+  .val { width:54px; text-align:right; color:#fc8; }
+  .stat { color:#8f8; }
+  .bad { color:#f88; }
+  code { color:#fc8; }
+  button { background:#234; color:#dde; border:1px solid #456; padding:4px 8px; cursor:pointer; margin:2px 0; }
+  .legend span { display:inline-block; width:10px; height:10px; margin-right:4px; vertical-align:middle; }
+</style>
+</head>
+<body>
+<div id="left">
+  <h1>Spike 001 — does a least-cost trunk wrap the mountain?</h1>
+  <canvas id="cv" width="640" height="640"></canvas>
+  <div style="font-size:11px;color:#89a;margin-top:6px">
+    Click map: 1st click = <b style="color:#6f6">START</b>, 2nd = <b style="color:#f66">END</b>, 3rd resets.
+    Red line = routed trunk. Dashed white = straight line (what crosses the mountain).
+  </div>
+</div>
+<div id="panel">
+  <h2>World</h2>
+  <div class="row"><label>seed</label><input id="seed" value="lone-pine" style="width:120px;background:#123;color:#dde;border:1px solid #345"></div>
+  <div class="row"><label>view span (m)</label><span class="val" id="spanV">1024</span></div>
+  <div class="row"><input type="range" id="span" min="512" max="2048" step="128" value="1024" style="width:100%"></div>
+  <div class="row"><label>center X / Z (m)</label><span class="val" id="ctrV">0,0</span></div>
+  <div class="row"><label>cell size (m)</label><span class="val" id="cellV">8</span></div>
+  <div class="row"><input type="range" id="cell" min="4" max="16" step="2" value="8" style="width:100%"></div>
+
+  <h2>Cost weights (the experiment)</h2>
+  <div style="font-size:11px;color:#89a">edgeCost = wDist·horiz + wAlt·h + wGrade·grade² + wOver·max(0,grade−maxGrade)</div>
+  <div class="row"><label>wDist (directness)</label><input type="range" id="wDist" min="0" max="4" step="0.1" value="1"><span class="val" id="wDistV">1.0</span></div>
+  <div class="row"><label>wAlt (stay low)</label><input type="range" id="wAlt" min="0" max="3" step="0.05" value="0.5"><span class="val" id="wAltV">0.50</span></div>
+  <div class="row"><label>wGrade (gentle)</label><input type="range" id="wGrade" min="0" max="2000" step="20" value="200"><span class="val" id="wGradeV">200</span></div>
+  <div class="row"><label>wOver (soft cap)</label><input type="range" id="wOver" min="0" max="40000" step="500" value="8000"><span class="val" id="wOverV">8000</span></div>
+  <div class="row"><label>maxGrade</label><input type="range" id="maxGrade" min="0.04" max="0.30" step="0.005" value="0.12"><span class="val" id="maxGradeV">0.120</span></div>
+  <button id="hardBlock">Toggle HARD block (old per-tile behavior)</button>
+
+  <h2>Route stats</h2>
+  <div id="stats" style="font-size:12px"></div>
+
+  <h2>Legend</h2>
+  <div class="legend" style="font-size:11px">
+    <div><span style="background:#0a3d4a"></span>low / valley &nbsp; <span style="background:#7fb069"></span>mid &nbsp; <span style="background:#fff"></span>peak</div>
+    <div><span style="background:#ff3b3b"></span>routed trunk &nbsp; <span style="background:#ffd23f"></span>peak marker &nbsp; <span style="background:#6f6"></span>start <span style="background:#f66"></span>end</div>
+  </div>
+  <div style="margin-top:10px"><button id="export">Export findings JSON</button></div>
+</div>
+
+<script type="module">
+import { createNoise2D } from 'simplex-noise'
+import { parseWorldSeed, seedFor, mulberry32 } from '../../../src/seed.js'
+
+// ── Locked Phase-7 coarse params (data/ranger.js) ──────────────────────────────
+const COARSE = { coarseAmplitude:150, coarseFreq:0.0005, coarseOctaves:4, ridgeSharpness:1.6 }
+
+let noise = null
+function rebuildNoise(seedStr){
+  const ws = parseWorldSeed(seedStr)
+  noise = createNoise2D(mulberry32(seedFor(ws,'coarse')))
+  return ws
+}
+// Byte-identical to terrain.js coarseHeight
+function coarseHeight(wx,wz){
+  let h=0, freq=COARSE.coarseFreq, amp=COARSE.coarseAmplitude
+  for(let o=0;o<COARSE.coarseOctaves;o++){
+    const n=noise(wx*freq, wz*freq)
+    h += Math.pow(1-Math.abs(n), COARSE.ridgeSharpness)*amp
+    freq*=2; amp*=0.5
+  }
+  return h
+}
+
+// ── MinHeap ────────────────────────────────────────────────────────────────────
+class MinHeap{ constructor(){this.a=[]} get size(){return this.a.length}
+  push(it,p){this.a.push({it,p}); let i=this.a.length-1; while(i>0){const par=(i-1)>>1; if(this.a[par].p<=this.a[i].p)break;[this.a[par],this.a[i]]=[this.a[i],this.a[par]];i=par}}
+  pop(){const top=this.a[0].it; const last=this.a.pop(); if(this.a.length){this.a[0]=last; let i=0; const n=this.a.length; while(true){let m=i; const l=2*i+1,r=2*i+2; if(l<n&&this.a[l].p<this.a[m].p)m=l; if(r<n&&this.a[r].p<this.a[m].p)m=r; if(m===i)break;[this.a[m],this.a[i]]=[this.a[i],this.a[m]];i=m}} return top}
+}
+
+// ── State ──────────────────────────────────────────────────────────────────────
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d')
+const CVPX = 640
+let cfg = { seed:'lone-pine', span:1024, cell:8, cx:0, cz:0,
+            wDist:1, wAlt:0.5, wGrade:200, wOver:8000, maxGrade:0.12, hardBlock:false }
+let grid=null, start=null, end=null, peakCell=null, lastRoute=null, lastStats=null
+
+// Build height grid over the view window
+function buildGrid(){
+  const N = Math.round(cfg.span / cfg.cell)
+  const x0 = cfg.cx - cfg.span/2, z0 = cfg.cz - cfg.span/2
+  const h = new Float64Array(N*N)
+  let hmin=Infinity,hmax=-Infinity, peak=0
+  for(let gz=0;gz<N;gz++)for(let gx=0;gx<N;gx++){
+    const wx=x0+(gx+0.5)*cfg.cell, wz=z0+(gz+0.5)*cfg.cell
+    const v=coarseHeight(wx,wz); h[gz*N+gx]=v
+    if(v<hmin)hmin=v; if(v>hmax){hmax=v;peak=gz*N+gx}
+  }
+  grid={N,x0,z0,h,hmin,hmax}; peakCell=peak
+}
+
+function cellWorld(idx){ const {N,x0,z0}=grid; const gx=idx%N, gz=(idx/N|0)
+  return { gx,gz, wx:x0+(gx+0.5)*cfg.cell, wz:z0+(gz+0.5)*cfg.cell, h:grid.h[idx] } }
+function worldToCell(wx,wz){ const {N,x0,z0}=grid
+  const gx=Math.max(0,Math.min(N-1,Math.floor((wx-x0)/cfg.cell)))
+  const gz=Math.max(0,Math.min(N-1,Math.floor((wz-z0)/cfg.cell))); return gz*N+gx }
+
+// ── A* least-cost route ──────────────────────────────────────────────────────
+function route(){
+  if(!grid||start==null||end==null){ lastRoute=null; lastStats=null; return }
+  const {N,h}=grid
+  const idx=(gx,gz)=>gz*N+gx
+  const g=new Float64Array(N*N).fill(Infinity)
+  const from=new Int32Array(N*N).fill(-1)
+  const open=new MinHeap(); g[start]=0
+  const sc=cellWorld(start), ec=cellWorld(end)
+  const heur=(i)=>{const c=cellWorld(i); return cfg.wDist*Math.hypot(ec.wx-c.wx, ec.wz-c.wz)}
+  open.push(start, heur(start))
+  const seen=new Set(); let expanded=0
+  while(open.size){
+    const cur=open.pop(); if(cur===end)break; if(seen.has(cur))continue; seen.add(cur); expanded++
+    const c=cellWorld(cur)
+    for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
+      if(!dx&&!dz)continue; const nx=c.gx+dx, nz=c.gz+dz
+      if(nx<0||nx>=N||nz<0||nz>=N)continue
+      const ni=idx(nx,nz); if(seen.has(ni))continue
+      const nb=cellWorld(ni); const horiz=Math.hypot(nb.wx-c.wx, nb.wz-c.wz)
+      const grade=Math.abs(nb.h-c.h)/horiz
+      if(cfg.hardBlock && grade>cfg.maxGrade) continue   // old behavior
+      const over = Math.max(0, grade-cfg.maxGrade)
+      const cost = cfg.wDist*horiz + cfg.wAlt*nb.h + cfg.wGrade*grade*grade + cfg.wOver*over
+      const t=g[cur]+cost
+      if(t<g[ni]){ g[ni]=t; from[ni]=cur; open.push(ni, t+heur(ni)) }
+    }
+  }
+  if(from[end]===-1 && start!==end){ lastRoute=null; lastStats={fail:true, expanded}; return }
+  const path=[]; let c=end; while(c!==-1){path.push(c); c=from[c]} path.reverse()
+  // stats
+  let len=0, climb=0, maxG=0, overCount=0
+  for(let i=1;i<path.length;i++){ const a=cellWorld(path[i-1]), b=cellWorld(path[i])
+    const horiz=Math.hypot(b.wx-a.wx,b.wz-a.wz), dh=b.h-a.h, grade=Math.abs(dh)/horiz
+    len+=Math.hypot(horiz,dh); if(dh>0)climb+=dh; if(grade>maxG)maxG=grade; if(grade>cfg.maxGrade)overCount++ }
+  // does it wrap? distance from path to peak vs straight line to peak
+  const pk=cellWorld(peakCell)
+  let minPeakDist=Infinity
+  for(const pi of path){ const p=cellWorld(pi); const d=Math.hypot(p.wx-pk.wx,p.wz-pk.wz); if(d<minPeakDist)minPeakDist=d }
+  lastRoute=path
+  lastStats={ fail:false, expanded, len, climb, maxG, overCount, segs:path.length-1, minPeakDist, peakH:pk.h }
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────────
+function colormap(t){ // 0..1 → teal→green→yellow→white
+  t=Math.max(0,Math.min(1,t))
+  const stops=[[10,61,74],[127,176,105],[230,200,80],[255,255,255]]
+  const s=t*(stops.length-1); const i=Math.min(stops.length-2,Math.floor(s)); const f=s-i
+  const a=stops[i], b=stops[i+1]
+  return `rgb(${a[0]+(b[0]-a[0])*f|0},${a[1]+(b[1]-a[1])*f|0},${a[2]+(b[2]-a[2])*f|0})`
+}
+function draw(){
+  if(!grid)return
+  const {N,h,hmin,hmax}=grid; const px=CVPX/N
+  // heatmap + cheap hillshade
+  for(let gz=0;gz<N;gz++)for(let gx=0;gx<N;gx++){
+    const v=h[gz*N+gx]; const t=(v-hmin)/(hmax-hmin+1e-9)
+    // hillshade from x/z gradient
+    const hl = gx<N-1? h[gz*N+gx+1]-v : 0, hu = gz<N-1? h[(gz+1)*N+gx]-v : 0
+    const shade = Math.max(-1,Math.min(1,(-(hl+hu))/8))*30
+    ctx.fillStyle=colormap(t); ctx.fillRect(gx*px, gz*px, Math.ceil(px), Math.ceil(px))
+    if(shade){ ctx.fillStyle=`rgba(${shade>0?255:0},${shade>0?255:0},${shade>0?255:0},${Math.abs(shade)/120})`; ctx.fillRect(gx*px,gz*px,Math.ceil(px),Math.ceil(px)) }
+  }
+  const toPx=(idx)=>{const gx=idx%N, gz=(idx/N|0); return [(gx+0.5)*px,(gz+0.5)*px]}
+  // straight line start→end
+  if(start!=null&&end!=null){ const a=toPx(start),b=toPx(end)
+    ctx.strokeStyle='rgba(255,255,255,0.6)'; ctx.setLineDash([5,5]); ctx.lineWidth=1
+    ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke(); ctx.setLineDash([]) }
+  // route
+  if(lastRoute){ ctx.strokeStyle='#ff3b3b'; ctx.lineWidth=2.5; ctx.beginPath()
+    lastRoute.forEach((idx,i)=>{const [x,y]=toPx(idx); i?ctx.lineTo(x,y):ctx.moveTo(x,y)}); ctx.stroke() }
+  // markers
+  const dot=(idx,col,r=6)=>{const [x,y]=toPx(idx); ctx.fillStyle=col; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill()}
+  if(peakCell!=null) dot(peakCell,'#ffd23f',7)
+  if(start!=null) dot(start,'#6f6')
+  if(end!=null) dot(end,'#f66')
+
+  // ── DIAGNOSTIC OVERLAY (spike debug) ──────────────────────────────────────
+  // guaranteed-visible test swatch — if you can't see this magenta box, draw() isn't running
+  ctx.fillStyle='#ff00ff'; ctx.fillRect(4,4,40,40)
+  // colormap legend bar 0..1 left→right
+  for(let i=0;i<200;i++){ ctx.fillStyle=colormap(i/199); ctx.fillRect(50+i,8,1,28) }
+  ctx.strokeStyle='#000'; ctx.strokeRect(50,8,200,28)
+  // height readout
+  ctx.fillStyle='#fff'; ctx.font='12px monospace'
+  ctx.fillText(`N=${N}  hmin=${hmin.toFixed(1)}  hmax=${hmax.toFixed(1)}`, 50, 52)
+  const mid = grid.h[((N>>1)*N)+(N>>1)]
+  ctx.fillText(`centerH=${mid.toFixed(1)}  swatch@0.5=${colormap(0.5)}`, 50, 66)
+}
+
+// ── Stats panel ──────────────────────────────────────────────────────────────
+function showStats(){
+  const el=document.getElementById('stats')
+  if(!lastStats){ el.innerHTML='<span class="bad">click START and END on the map</span>'; return }
+  if(lastStats.fail){ el.innerHTML=`<span class="bad">NO PATH (hard block) — expanded ${lastStats.expanded} cells</span>`; return }
+  const s=lastStats
+  const straight = (start!=null&&end!=null)? Math.hypot(cellWorld(end).wx-cellWorld(start).wx, cellWorld(end).wz-cellWorld(start).wz):0
+  const detour = straight>0? (s.len/straight) : 0
+  const wraps = s.minPeakDist > 60   // route stays >60m from the peak summit
+  el.innerHTML = `
+    <div class="row"><span>route length</span><span class="val">${s.len.toFixed(0)} m</span></div>
+    <div class="row"><span>straight-line</span><span class="val">${straight.toFixed(0)} m</span></div>
+    <div class="row"><span>detour ratio</span><span class="val">${detour.toFixed(2)}×</span></div>
+    <div class="row"><span>total climb</span><span class="val">${s.climb.toFixed(0)} m</span></div>
+    <div class="row"><span>max grade</span><span class="val ${s.maxG>cfg.maxGrade?'bad':'stat'}">${(s.maxG*100).toFixed(1)}%</span></div>
+    <div class="row"><span>segs over cap</span><span class="val ${s.overCount?'bad':'stat'}">${s.overCount}/${s.segs}</span></div>
+    <div class="row"><span>min dist to peak</span><span class="val">${s.minPeakDist.toFixed(0)} m</span></div>
+    <div class="row"><span>peak height</span><span class="val">${s.peakH.toFixed(0)} m</span></div>
+    <div class="row" style="margin-top:6px"><b>WRAPS THE PEAK?</b><b class="${wraps?'stat':'bad'}">${wraps?'YES ✓':'NO — cuts near summit'}</b></div>
+    <div style="font-size:11px;color:#89a">expanded ${s.expanded} cells</div>`
+}
+
+// ── Auto endpoints: lowest cell in left third / right third ────────────────────
+function autoEndpoints(){
+  const {N,h}=grid; let lo1=Infinity,i1=0, lo2=Infinity,i2=0
+  for(let gz=0;gz<N;gz++)for(let gx=0;gx<N;gx++){ const v=h[gz*N+gx]
+    if(gx<N*0.18 && v<lo1){lo1=v;i1=gz*N+gx}
+    if(gx>N*0.82 && v<lo2){lo2=v;i2=gz*N+gx} }
+  start=i1; end=i2
+}
+
+function recompute(full){ if(full)buildGrid(); route(); draw(); showStats() }
+
+// ── Wiring ──────────────────────────────────────────────────────────────────────
+const bind=(id,key,fmt,full)=>{ const el=document.getElementById(id), out=document.getElementById(id+'V')
+  const upd=()=>{ cfg[key]=parseFloat(el.value); if(out)out.textContent=fmt?fmt(cfg[key]):el.value; recompute(full) }
+  el.addEventListener('input',upd) }
+bind('span','span',v=>v,true); bind('cell','cell',v=>v,true)
+bind('wDist','wDist',v=>v.toFixed(1)); bind('wAlt','wAlt',v=>v.toFixed(2))
+bind('wGrade','wGrade',v=>v.toFixed(0)); bind('wOver','wOver',v=>v.toFixed(0))
+bind('maxGrade','maxGrade',v=>v.toFixed(3))
+document.getElementById('span').addEventListener('input',()=>{document.getElementById('spanV').textContent=cfg.span})
+document.getElementById('cell').addEventListener('input',()=>{document.getElementById('cellV').textContent=cfg.cell})
+document.getElementById('seed').addEventListener('change',e=>{ cfg.seed=e.target.value; rebuildNoise(cfg.seed); start=end=null; recompute(true) })
+document.getElementById('hardBlock').addEventListener('click',()=>{ cfg.hardBlock=!cfg.hardBlock; document.getElementById('hardBlock').style.background=cfg.hardBlock?'#622':'#234'; recompute(false) })
+cv.addEventListener('click',e=>{ const r=cv.getBoundingClientRect()
+  const wx=grid.x0 + (e.clientX-r.left)/CVPX*cfg.span, wz=grid.z0 + (e.clientY-r.top)/CVPX*cfg.span
+  const ci=worldToCell(wx,wz)
+  if(start==null||(start!=null&&end!=null)){ start=ci; end=null } else { end=ci }
+  recompute(false) })
+document.getElementById('export').addEventListener('click',()=>{
+  const blob=new Blob([JSON.stringify({cfg,stats:lastStats},null,2)],{type:'application/json'})
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='spike001-findings.json'; a.click() })
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+rebuildNoise(cfg.seed); buildGrid(); autoEndpoints(); recompute(false)
+document.getElementById('ctrV').textContent=`${cfg.cx},${cfg.cz}`
+console.log('[spike001] ready — peak at', cellWorld(peakCell))

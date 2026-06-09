@@ -754,6 +754,9 @@ const _gui = initDebug(RANGER_PARAMS, {
   // Phase 8 (D-03 / D-05): road viz toggle + param-change debounce
   onRoadVizToggle:     (v) => { if (roadSystem) roadSystem.setDebugVisible(v) },
   onRoadParamChange:   ()  => debouncedRoadRebuild(),
+  // Phase-8 redesign PROTOTYPE — valley-following streaming trunk.
+  onProtoToggle:       (v)      => { if (roadSystem) roadSystem.setProtoEnabled(v) },
+  onProtoParam:        (k, val) => { if (roadSystem) roadSystem.setProtoParam(k, val) },
 }, { initialSeed: _urlSeed ?? 'lone-pine' })
 
 // ── TerrainSystem (Phase 6 / 7) ──────────────────────────────────────────────
@@ -770,6 +773,10 @@ scene.remove(ground)   // Remove flat 200×200 ground mesh — terrain chunks re
 // only; same seed always produces the same roads.
 roadSystem = new RoadSystem(worldSeed, RANGER_PARAMS)
 roadSystem.init(scene)
+// Phase-8 redesign PROTOTYPE: let the valley-trunk proto place its debug line on the
+// rendered terrain surface, and stream it at roughly the terrain view radius.
+roadSystem.setSurfaceSampler((x, z) => terrainSystem.analyticHeight(x, z))
+roadSystem.setProtoRadius(640)
 
 // Phase 7 (D-14/15/16): initial-load seat via canonical resolveSpawn + analyticHeight ground-probe.
 // TerrainSystem is now alive and analyticHeight is immediately available (no chunk load required).
@@ -1003,6 +1010,8 @@ function loop () {
   // Reverts to truck position on exit so the ring stays anchored to the car in normal mode.
   const streamCenter = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
   terrainSystem.update(streamCenter)
+  // Phase-8 redesign PROTOTYPE: stream the valley-trunk around the same center as terrain.
+  if (roadSystem) roadSystem.updateProto(streamCenter)
 
   // Grid world: recenter the dev grid + ground on the view each frame so they read as
   // infinite. The grid snaps to the cell size so its lines appear stationary (no crawling);
