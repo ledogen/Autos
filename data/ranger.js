@@ -183,4 +183,36 @@ export const RANGER_PARAMS = {
   throttleRampRate: 4,    // /s — drive/reverse input ramp (250 ms to full)
   brakeRampRate:    8,    // /s — brake input ramp (125 ms to full)
   releaseRampRate: 20,    // /s — release decay rate for both axes
+
+  // ── Phase 8 Road Routing (ROAD-01/02/03) ─────────────────────────────────
+  // Parameters for the per-tile A* router in src/road.js.
+  // See .planning/phases/08-road-routing/08-RESEARCH.md for derivation details.
+  //
+  // maxRoadGrade: Hard upper limit on road grade (rise/run ratio). D-02 target ~12%.
+  // Edges exceeding this grade are impassable (Infinity cost in A*). The truck
+  // must always be able to climb any routed road at this limit.
+  // Research assumption: A2, RESEARCH §Grade & Switchbacks
+  maxRoadGrade: 0.12,   // ratio (12%) — hard grade limit; D-02 Eastern-Sierra target
+
+  // routeGridSize: NxN cell count per 64 m tile for A* routing.
+  // 16×16 = 4 m cells — fine enough to resolve both hairpin arms (RESEARCH A2 / Pitfall 6).
+  // At 4 m cells a ~15 m hairpin radius occupies ~3×3 = 9 cells (two arms separated).
+  routeGridSize: 16,     // cells/side — 4 m cell size at 64 m tile (RESEARCH A2)
+
+  // roadSlopePenalty: Multiplier for the quadratic slope cost term grade²×penalty.
+  // Quadratic means 2× grade → 4× penalty, strongly discouraging steep but allowing gentle.
+  // Starting value from RESEARCH §Open Q2; expose as debug slider for runtime tuning.
+  // Research assumption: A4 (cost weights require tuning)
+  roadSlopePenalty: 50,  // arbitrary cost units; tunable via debug slider (RESEARCH A4)
+
+  // roadAltWeight: Per-cell altitude cost weight (D-04 valley-seeking).
+  // Adds toCell.h × weight to edge cost — lower raw coarseHeight = cheaper.
+  // Roads hug valley floors and climb only at passes (Eastern Sierra feel).
+  // Research assumption: A4 (cost weights require tuning)
+  roadAltWeight: 0.1,   // arbitrary cost units / m; tunable via debug slider (RESEARCH A4)
+
+  // spurProbability: Probability that any given trunk tile spawns a spur branch.
+  // D-01: sparse trunk + occasional seeded spurs.
+  // Research assumption: A1 (15% per-tile starting value)
+  spurProbability: 0.15, // ratio [0,1] — 15% per-tile spur chance (D-01 / RESEARCH A1)
 };

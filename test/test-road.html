@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>RangerSim — Road Routing Tests</title>
+  <!-- importmap copied verbatim from index.html (MUST appear before module scripts) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+      "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/dist/esm/simplex-noise.js"
+    }
+  }
+  </script>
+  <style>
+    body { font-family: monospace; background: #111; color: #eee; padding: 1em; }
+    h1 { font-size: 1.1em; }
+    p { font-size: 0.85em; color: #aaa; }
+  </style>
+</head>
+<body>
+  <h1>RangerSim Road Routing Tests</h1>
+  <p>Open DevTools console to see PASS/FAIL results.</p>
+
+  <script type="module">
+    import { RoadSystem } from '../src/road.js'
+    import { parseWorldSeed } from '../src/seed.js'
+    import { assert, mockCoarseHeight, TEST_PARAMS } from './road-test-harness.js'
+
+    // ── Harness loads ──────────────────────────────────────────────────────────
+    assert('harness loads', true)
+
+    // ── ROAD-01: Determinism — coarse height + waypoints + spline ─────────────
+    // Two RoadSystem instances with the same worldSeed must produce identical results.
+    ;(function testDeterminism() {
+        const ws = parseWorldSeed('lone-pine')
+        const r1 = new RoadSystem(ws, TEST_PARAMS)
+        const r2 = new RoadSystem(ws, TEST_PARAMS)
+
+        // Coarse height closure produces identical values
+        const h1 = r1._coarseH(123, 456)
+        const h2 = r2._coarseH(123, 456)
+        assert('ROAD-01 determinism: coarse height identical across two instances',
+            Math.abs(h1 - h2) < 1e-9)
+
+        // Edge waypoints are identical
+        const wp1 = r1._deriveEdgeWaypoints(0, 0)
+        const wp2 = r2._deriveEdgeWaypoints(0, 0)
+        assert('ROAD-01 determinism: edge waypoints entry X equal',
+            Math.abs(wp1.entry.x - wp2.entry.x) < 1e-9)
+        assert('ROAD-01 determinism: edge waypoints entry Z equal',
+            Math.abs(wp1.entry.z - wp2.entry.z) < 1e-9)
+        assert('ROAD-01 determinism: edge waypoints exit X equal',
+            Math.abs(wp1.exit.x - wp2.exit.x) < 1e-9)
+
+        // Edge waypoints on tile boundaries
+        assert('ROAD-01 edge waypoints: entry.x === tileX*64',
+            Math.abs(wp1.entry.x - 0) < 1e-9)   // tileX=0 → west edge x=0
+        assert('ROAD-01 edge waypoints: exit.x === (tileX+1)*64',
+            Math.abs(wp1.exit.x - 64) < 1e-9)   // tileX=0 → east edge x=64
+
+        // Full tile route determinism (waypoints)
+        const tile1 = r1._getTileWaypointsOnly(0, 0)
+        const tile2 = r2._getTileWaypointsOnly(0, 0)
+        assert('ROAD-01 determinism: routed waypoint count equal',
+            tile1.length === tile2.length)
+        if (tile1.length > 0 && tile2.length > 0) {
+            assert('ROAD-01 determinism: first waypoint X equal',
+                Math.abs(tile1[0].x - tile2[0].x) < 1e-9)
+        }
+
+        // Spline sample determinism
+        const s1 = r1._getTile(0, 0).spline.getPoint(0.5)
+        const s2 = r2._getTile(0, 0).spline.getPoint(0.5)
+        assert('ROAD-01 determinism: spline sample at t=0.5 identical',
+            s1.distanceTo(s2) < 1e-6)
+    })()
+
+    // ── ROAD-02: Hard grade limit — no routed edge exceeds maxRoadGrade ────────
+    ;(function testGradeLimit() {
+        const ws = parseWorldSeed('lone-pine')
+        const r = new RoadSystem(ws, TEST_PARAMS)
+        const waypoints = r._getTileWaypointsOnly(0, 0)
+        let allOk = true
+        for (let i = 1; i < waypoints.length; i++) {
+            const a = waypoints[i - 1]
+            const b = waypoints[i]
+            const dx = b.x - a.x
+            const dz = b.z - a.z
+            const dh = Math.abs(b.y - a.y)
+            const horiz = Math.sqrt(dx*dx + dz*dz)
+            if (horiz < 1e-6) continue  // skip near-zero horizontal distance
+            const grade = dh / horiz
+            if (grade > TEST_PARAMS.maxRoadGrade + 1e-6) {
+                console.error(`ROAD-02 FAIL: grade ${grade.toFixed(4)} exceeds maxRoadGrade ${TEST_PARAMS.maxRoadGrade} at waypoint ${i}`)
+                allOk = false
+            }
+        }
+        assert('ROAD-02 hard grade limit: no edge exceeds maxRoadGrade', allOk)
+    })()
+
+    // ── ROAD-03: Switchback emergence — lateral travel on mockCoarseHeight ─────
+    // Use mockCoarseHeight (50% grade ramp in +Z).
+    // A router that hard-blocks >12% grade CANNOT climb straight up a 50% ramp.
+    // It must switchback laterally — so total X-extent must exceed one grid cell (4 m).
+    ;(function testSwitchback() {
+        const ws = parseWorldSeed('lone-pine')
+        // Create a RoadSystem that uses mockCoarseHeight instead of live noise.
+        // We pass a custom params object that overrides routeGridSize for testing,
+        // and force the router to use mockCoarseHeight by passing a mock params
+        // with a custom _overrideCoarseH function.
+        const mockParams = { ...TEST_PARAMS }
+        const r = new RoadSystem(ws, mockParams, mockCoarseHeight)
+        const waypoints = r._getTileWaypointsOnly(0, 0)
+
+        // All edges must satisfy grade limit
+        let gradeOk = true
+        for (let i = 1; i < waypoints.length; i++) {
+            const a = waypoints[i - 1]
+            const b = waypoints[i]
+            const dx = b.x - a.x
+            const dz = b.z - a.z
+            const dh = Math.abs(b.y - a.y)
+            const horiz = Math.sqrt(dx*dx + dz*dz)
+            if (horiz < 1e-6) continue
+            const grade = dh / horiz
+            if (grade > TEST_PARAMS.maxRoadGrade + 1e-6) {
+                gradeOk = false
+            }
+        }
+        assert('ROAD-03 switchback: grade constraint satisfied on 50% ramp', gradeOk)
+
+        // X-extent must exceed one grid cell (4 m = CHUNK_SIZE/routeGridSize)
+        const cellSize = 64 / TEST_PARAMS.routeGridSize  // 4 m
+        if (waypoints.length >= 2) {
+            const xCoords = waypoints.map(p => p.x)
+            const xMin = Math.min(...xCoords)
+            const xMax = Math.max(...xCoords)
+            const xExtent = xMax - xMin
+            assert('ROAD-03 switchback: lateral X-extent > one grid cell (switchback arms present)',
+                xExtent > cellSize)
+        } else {
+            assert('ROAD-03 switchback: at least 2 waypoints routed', false)
+        }
+    })()
+
+    // ── ROAD-04: Query primitives — unit tangent + finite point ───────────────
+    ;(function testQueryPrimitives() {
+        const ws = parseWorldSeed('lone-pine')
+        const r = new RoadSystem(ws, TEST_PARAMS)
+        const tile = r._getTile(0, 0)
+        const spline = tile.spline
+        assert('ROAD-04: _getTile returns a spline', spline != null)
+
+        if (spline) {
+            const pt = spline.getPointAt(0.5)
+            assert('ROAD-04: getPointAt(0.5) returns finite point',
+                isFinite(pt.x) && isFinite(pt.y) && isFinite(pt.z))
+
+            const tan = spline.getTangentAt(0.5)
+            const tanLen = Math.sqrt(tan.x*tan.x + tan.y*tan.y + tan.z*tan.z)
+            assert('ROAD-04: getTangentAt(0.5) is unit length (|len - 1| < 1e-3)',
+                Math.abs(tanLen - 1.0) < 1e-3)
+        }
+    })()
+
+    // ── C0 Seam Continuity — tile A t=1 ≈ tile B t=0 ─────────────────────────
+    ;(function testSeamC0() {
+        const ws = parseWorldSeed('lone-pine')
+        const r = new RoadSystem(ws, TEST_PARAMS)
+        const tileA = r._getTile(0, 0)
+        const tileB = r._getTile(1, 0)
+        if (tileA.spline && tileB.spline) {
+            const endA = tileA.spline.getPoint(1.0)
+            const startB = tileB.spline.getPoint(0.0)
+            const dist = endA.distanceTo(startB)
+            assert(`C0 seam continuity: tile(0,0) end ≈ tile(1,0) start (dist=${dist.toFixed(4)}m < 0.01m)`,
+                dist < 0.01)
+        } else {
+            assert('C0 seam continuity: splines exist for both tiles', false)
+        }
+    })()
+
+    // ── No-recursion check — 3×3 tile grid ────────────────────────────────────
+    ;(function testNoRecursion() {
+        const ws = parseWorldSeed('lone-pine')
+        const r = new RoadSystem(ws, TEST_PARAMS)
+        let ok = true
+        try {
+            for (let tx = -1; tx <= 1; tx++) {
+                for (let tz = -1; tz <= 1; tz++) {
+                    r._getTile(tx, tz)
+                }
+            }
+        } catch(e) {
+            ok = false
+            console.error('3×3 tile grid failed:', e.message)
+        }
+        assert('No recursion / stack overflow on 3×3 tile grid', ok)
+    })()
+
+    console.log('--- Road routing test suite complete ---')
+  </script>
+</body>
+</html>
