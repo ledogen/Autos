@@ -26,7 +26,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 ### v1.1 Mountains & Roads
 
 - [x] **Phase 7: Free-Cam + Seeded Layered Terrain** (5 plans) — World-seed foundation, three-layer Sierra terrain, free-fly camera (completed 2026-06-09)
-- [ ] **Phase 8: Road Routing** — Deterministic tile-graph A* roads with switchbacks, queryable debug splines
+- [ ] **Phase 8: Road Routing** (3 plans) — Deterministic tile-graph A* roads with switchbacks, queryable debug splines
 - [ ] **Phase 9: Road Surface** — Ribbon mesh, asphalt, crown + camber, cut-biased terrain carve, physics height and normal
 - [ ] **Phase 10: POI Hooks + Polish** — Seeded POI anchor data contract; pothole/crack stretch
 
@@ -61,7 +61,10 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
   2. Road splines cross chunk tile seams without visible kinks or gaps — the route is continuous across the 64 m tile boundary
   3. Where the terrain grade would exceed the maximum, the road switchbacks visibly up the slope rather than climbing straight
   4. Road centerlines are visible as colored debug lines in the scene and can be toggled off
-**Plans**: TBD
+**Plans**: 3 plans
+  - [ ] 08-01-PLAN.md — road.js core: per-tile A* over raw coarseHeight, quadratic slope cost + hard grade block + valley-seeking, seeded edge waypoints, Catmull-Rom splines with ghost control points + Wave 0 test harness (ROAD-01/02/03)
+  - [ ] 08-02-PLAN.md — Query API (queryNearest/ensureTile) + centerline debug viz + lil-gui Roads folder (viz checkbox + max-grade slider) + main.js wiring + debounced re-route (ROAD-04, D-03, D-05)
+  - [ ] 08-03-PLAN.md — resolveSpawn swap to nearest-road-node + tangent heading (D-07) + seam-continuity exit-gate test (D-06)
 **Notes**: HIGHEST RISK phase in v1.1 — the infinite, deterministic, switchbacking tile-graph router is the only novel algorithm in the milestone. A research spike at the START of P8 planning (before implementation) is required: resolve how per-tile A* handles paths that double back at different altitudes. Router MUST use pure coarseHeight(wx,wz) — never terrainSystem.sampleHeight (chunk-load-order dependent). Shared tile-edge waypoints derived by both adjacent tiles from the same seedFor() key enforce C1 continuity at seams. Debug splines showing no kinks at seam boundaries is an exit gate before P9.
 **UI hint**: yes
 
@@ -107,7 +110,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 | 5. Rollover Validation | v1.0 | 0/0 | ⬜ Skipped | — |
 | 6. Procedural Terrain | v1.0 | 3/3 | ✅ Complete | 2026-06-03 |
 | 7. Free-Cam + Seeded Layered Terrain | v1.1 | 5/5 | Complete   | 2026-06-09 |
-| 8. Road Routing | v1.1 | 0/? | Not started | — |
+| 8. Road Routing | v1.1 | 0/3 | Planned | — |
 | 9. Road Surface | v1.1 | 0/? | Not started | — |
 | 10. POI Hooks + Polish | v1.1 | 0/? | Not started | — |
 
