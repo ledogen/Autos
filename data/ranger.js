@@ -164,7 +164,7 @@ export const RANGER_PARAMS = {
   ridgeSharpness:  1.6,    // pow() exponent; 1=linear ridges, 2.5=moderate peaks, 4=knife-edge
 
   // Fine FBM layer (TERR-02: suspension texture)
-  fineAmplitude:   1.0,    // m — slope perturbation at 20 m wavelength (P7-3 calibrated lock)
+  fineAmplitude:   0.5,    // m — slope perturbation at 20 m wavelength (P7-3 calibrated lock)
   fineFreq:        0.05,   // 1/m — 20 m base wavelength
 
   // Regional-roughness modulator (TERR-03: scales fine amplitude across map)
