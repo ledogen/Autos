@@ -158,13 +158,13 @@ export const RANGER_PARAMS = {
   // See terrain.js coarseHeight / fineHeight / regionalModulator for the formulas.
   //
   // Coarse ridged-multifractal layer (TERR-01: Eastern-Sierra escarpments + flat valleys)
-  coarseAmplitude: 350,    // m — full-scale range of coarse layer; ~640 m total relief at 5 octaves
-  coarseFreq:      0.001,  // 1/m — base frequency (1/1000 m = 1 km wavelength)
-  coarseOctaves:   5,      // octave count; each halves wavelength, gain 0.5 per octave
-  ridgeSharpness:  2.5,    // pow() exponent; 1=linear ridges, 2.5=moderate peaks, 4=knife-edge
+  coarseAmplitude: 150,    // m — full-scale range of coarse layer (P7-3 calibrated lock)
+  coarseFreq:      0.0005, // 1/m — base frequency (1/2000 m = 2 km wavelength)
+  coarseOctaves:   4,      // octave count; each halves wavelength, gain 0.5 per octave
+  ridgeSharpness:  1.6,    // pow() exponent; 1=linear ridges, 2.5=moderate peaks, 4=knife-edge
 
   // Fine FBM layer (TERR-02: suspension texture)
-  fineAmplitude:   1.5,    // m — ~15% slope perturbation at 20 m wavelength (D-10 default)
+  fineAmplitude:   1.0,    // m — slope perturbation at 20 m wavelength (P7-3 calibrated lock)
   fineFreq:        0.05,   // 1/m — 20 m base wavelength
 
   // Regional-roughness modulator (TERR-03: scales fine amplitude across map)

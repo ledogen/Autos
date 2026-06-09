@@ -40,8 +40,15 @@ let terrainSystem = null
 console.log('THREE.REVISION', THREE.REVISION)
 
 // Snapshot of tunable params before any runtime _-prefixed keys are added.
-// Restored on R-key reset so sliders return to defaults alongside vehicleState.
+// Restored on R-key reset so vehicle tuning returns to defaults alongside vehicleState.
 const _RANGER_PARAMS_DEFAULTS = { ...RANGER_PARAMS }
+
+// Terrain-layer param keys preserved across R-reset (sticky until full page reload).
+// R re-seats the truck but must NOT regenerate terrain back to file defaults (D-15).
+const _TERRAIN_PARAM_KEYS = [
+  'terrainAmplitude', 'coarseAmplitude', 'coarseFreq', 'coarseOctaves', 'ridgeSharpness',
+  'fineAmplitude', 'fineFreq', 'regionalStrength', 'regionalScale'
+]
 
 // ── Suspension substep transient scratch arrays (Phase 4 — D-02, PATTERNS §underscore convention) ──
 // These are per-step outputs from stepSuspensionSubsteps; live on params (not vehicleState)
@@ -745,8 +752,13 @@ function loop () {
 
     const resetRequested = updateVehicle(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     if (resetRequested) {
-      // Restore all tunable params to file defaults and refresh slider display.
-      Object.assign(RANGER_PARAMS, _RANGER_PARAMS_DEFAULTS)
+      // Restore vehicle tuning params to file defaults, but PRESERVE the live terrain-layer
+      // params: R re-seats the truck, it does NOT regenerate terrain. Terrain stays as tuned
+      // (sliders + seed) until a full page reload. Without this, analyticHeight (reads
+      // RANGER_PARAMS live) snaps the collision mesh back to file defaults on every reset.
+      const _stickyTerrain = {}
+      for (const k of _TERRAIN_PARAM_KEYS) _stickyTerrain[k] = RANGER_PARAMS[k]
+      Object.assign(RANGER_PARAMS, _RANGER_PARAMS_DEFAULTS, _stickyTerrain)
       _gui.controllersRecursive().forEach(c => c.updateDisplay())
 
       // Phase 7 (D-15): canonical re-seat via resolveSpawn + analyticHeight ground-probe.
