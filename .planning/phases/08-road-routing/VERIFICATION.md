@@ -3,7 +3,47 @@
 **Verified:** 2026-06-09
 **Method:** Goal-backward static analysis (code reading). Browser-console test harnesses
 were NOT executed (browser-only project, no headless runner) — execution is the user's UAT step.
-**Verdict:** ⚠ **FAIL — exit gate (D-06) will not pass as built**
+**Verdict:** ⚠ **FAIL — routing architecture is wrong; phase needs replanning (see "Update" below)**
+
+---
+
+## UPDATE (2026-06-09, browser-confirmed)
+
+Ran the harnesses in a browser (no-cache). Findings:
+
+- ✅ **C0 seam continuity FIXED.** A shared-boundary-crossing change to `_deriveEdgeWaypoints` /
+  `_buildTileSpline` (uncommitted working-tree edit) makes `getPoint(1)` of tile A == `getPoint(0)`
+  of tile B exactly → `dist=0.0000 m` on all 6 seams. The seam *architecture* is correct.
+- ❌ **C1 fails (17°–68° kinks) and ROAD-02 fails** — both because **A\* finds NO valid path on
+  essentially every real-terrain tile**, so each tile collapses to a straight `westSeam→eastSeam`
+  fallback line. Adjacent fallback lines share the seam point but arrive/leave at very different
+  headings → kinks; the ungraded fallback line also violates the 12% cap.
+
+**Root cause (architectural):** the per-tile model **forces every tile to route west-edge→east-edge**.
+On the locked coarse terrain (150 m amplitude / 2 km wavelength, ridged → ~15–40% flanks) there is
+often no continuous ≤12% path across a single 64 m tile, because switchbacks need more lateral room
+than one tile provides. The router therefore tries to climb straight over high ground instead of
+going around it. This is the exact "highest-risk / research-spike-required" item the phase flagged;
+the spike's answer (independent per-tile A*) was wrong.
+
+**User decision (recorded):** pursue a **valley-following trunk** architecture — the road should hug
+low ground and **wrap around mountains** (lateral traverse), not force eastward switchbacks up steep
+terrain. Accepts that some genuine passes will still be steep.
+
+**Recommended architecture (for the replan):** invert the model — generate seeded anchors snapped
+down to valley floors, route the trunk **globally between anchors** over a wide window with cost
+dominated by altitude + grade (so it wraps around high ground), then **slice the single continuous
+polyline into per-tile splines**. Seam C0/C1 then hold trivially (one curve, sliced) with no
+ghost-point or shared-seam machinery. Determinism + infinite extent via lazy per-macro-cell anchors.
+
+**Next step:** replan the routing (short research spike on deterministic valley/drainage-following
+roads → fresh plan) rather than live-hacking the ~600-line rewrite in a verification session.
+The uncommitted C0 fix in `src/road.js` is likely moot under the new model (continuous-slice seams),
+so the replan can start from the committed baseline.
+
+---
+
+### Original (pre-browser) verdict
 
 ---
 
