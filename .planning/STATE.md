@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: Mountains & Roads
 status: executing
 stopped_at: Phase 8 context gathered
-last_updated: "2026-06-09T04:58:24.169Z"
-last_activity: 2026-06-09 -- Phase 08 planning complete
+last_updated: "2026-06-09T05:01:29.364Z"
+last_activity: 2026-06-09 -- Phase 08 execution started
 progress:
   total_phases: 5
   completed_phases: 1
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05)
 
 **Core value:** Physics that feel honest: a car that can roll over naturally, drift on the limit, and behave predictably enough that tuning parameters produces the expected result.
-**Current focus:** Phase 999.1 — truck body styles and functional brake reverse lights
+**Current focus:** Phase 08 — road-routing
 
 ## Current Position
 
-Phase: 999.1
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-09 -- Phase 08 planning complete
+Phase: 08 (road-routing) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 08
+Last activity: 2026-06-09 -- Phase 08 execution started
 
 ```
 v1.1 Progress: [                    ] 0% (0/4 phases)
