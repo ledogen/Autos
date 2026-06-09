@@ -200,6 +200,82 @@
         assert('No recursion / stack overflow on 3×3 tile grid', ok)
     })()
 
+    // ── ROAD-04 (08-02 extension): ensureTile idempotent + same reference ───────
+    ;(function testEnsureTileIdempotent() {
+        const ws = parseWorldSeed('lone-pine')
+        const r = new RoadSystem(ws, TEST_PARAMS)
+        const t1 = r.ensureTile(0, 0)
+        const t2 = r.ensureTile(0, 0)
+        // ensureTile must return the tile object (not void)
+        assert('08-02 ensureTile: returns tile object (not undefined)', t1 !== undefined && t1 !== null)
+        // Second call must return the SAME object reference (cache hit)
+        assert('08-02 ensureTile: idempotent — same object reference on second call', t1 === t2)
+    })()
+
+    // ── ROAD-04 (08-02 extension): queryNearest returns unit tangent ─────────────
+    ;(function testQueryNearest() {
+        const ws = parseWorldSeed('lone-pine')
+        const r = new RoadSystem(ws, TEST_PARAMS)
+        // Pre-generate 3×3 tile grid (RESEARCH Open Q4: caller ensures tiles before query)
+        for (let tx = -1; tx <= 1; tx++) {
+            for (let tz = -1; tz <= 1; tz++) {
+                r.ensureTile(tx, tz)
+            }
+        }
+        // Query near tile (0,0) centre — should find a road within 200 m radius
+        const result = r.queryNearest(32, 32)
+        assert('08-02 queryNearest: returns non-null after 3×3 tile warmup', result !== null)
+        if (result) {
+            const tLen = Math.sqrt(
+                result.tangent.x * result.tangent.x +
+                result.tangent.y * result.tangent.y +
+                result.tangent.z * result.tangent.z
+            )
+            assert('08-02 queryNearest: tangent is unit length (|len-1| < 1e-3)',
+                Math.abs(tLen - 1.0) < 1e-3)
+            assert('08-02 queryNearest: point is finite',
+                isFinite(result.point.x) && isFinite(result.point.y) && isFinite(result.point.z))
+        }
+    })()
+
+    // ── ROAD-04 (08-02 extension): setDebugVisible toggle count-stable ──────────
+    ;(function testSetDebugVisible() {
+        const ws = parseWorldSeed('lone-pine')
+        const r = new RoadSystem(ws, TEST_PARAMS)
+        // _debugVisible must be initialized false (D-05 clean default)
+        assert('08-02 _debugVisible initialized false', r._debugVisible === false)
+        // Pre-generate a tile so there are splines to visualize
+        r.ensureTile(0, 0)
+        // Create a minimal stub scene to allow buildDebugLines
+        const addedObjects = []
+        const stubScene = {
+            add: (obj) => { addedObjects.push(obj) },
+            remove: (obj) => {
+                const idx = addedObjects.indexOf(obj)
+                if (idx >= 0) addedObjects.splice(idx, 1)
+            }
+        }
+        r.init(stubScene)
+        // setDebugVisible(true) with no lines should call buildDebugLines (lines appear)
+        r.setDebugVisible(true)
+        const countAfterEnable = r._debugLines.length
+        assert('08-02 setDebugVisible(true): lines built when none exist', countAfterEnable > 0)
+        // setDebugVisible(false) should toggle .visible but NOT change _debugLines.length
+        r.setDebugVisible(false)
+        const countAfterDisable = r._debugLines.length
+        assert('08-02 setDebugVisible(false): _debugLines.length unchanged (no dispose)',
+            countAfterDisable === countAfterEnable)
+        // All lines should be invisible
+        const allHidden = r._debugLines.every(l => l.visible === false)
+        assert('08-02 setDebugVisible(false): all lines invisible', allHidden)
+        // setDebugVisible(true) again should make them visible (no rebuild)
+        r.setDebugVisible(true)
+        const allVisible = r._debugLines.every(l => l.visible === true)
+        assert('08-02 setDebugVisible(true): all lines visible', allVisible)
+        assert('08-02 setDebugVisible second enable: length still same (no rebuild)',
+            r._debugLines.length === countAfterEnable)
+    })()
+
     console.log('--- Road routing test suite complete ---')
   </script>
 </body>
