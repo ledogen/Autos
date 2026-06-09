@@ -216,7 +216,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // weights live and watch it re-route around mountains.
   //   callbacks.onProtoToggle(v: boolean)
   //   callbacks.onProtoParam(key: string, value: number)
-  const _protoState = { on: false, wAlt: 0.85, wGrade: 400, wOver: 8000, maxGrade: 0.15, wTurn: 200 }
+  const _protoState = { on: false, wAlt: 0.85, wGrade: 400, wOver: 8000, maxGrade: 0.15, wTurn: 120 }
   const proto = roadFolder.addFolder('Valley Trunk (proto)')
   proto.add(_protoState, 'on').name('Show Valley Trunk').onChange(v => {
     if (typeof callbacks.onProtoToggle === 'function') callbacks.onProtoToggle(v)

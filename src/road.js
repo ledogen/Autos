@@ -65,6 +65,12 @@ const PROTO_PARAM_DEBOUNCE = 160   // ms — coalesce slider drags before re-rou
 // 8-connectivity direction vectors (index 0..7); used for the turn-penalty A* state.
 const PROTO_DIRS = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]]
 const _protoTurnSteps = (d1, d2) => { const a = Math.abs(d1 - d2); return Math.min(a, 8 - a) }  // 0..4 (×45°)
+// Parallel-overlap suppression: a candidate road is dropped if more than COVER_FRAC of its sample
+// points run within COVER_D metres of an already-drawn road heading the same way (dot > COVER_DOT).
+// Crossings (different heading where they meet) are preserved — only same-direction overlaps are cut.
+const PROTO_COVER_D    = 36     // m — proximity that counts as "on top of" another road
+const PROTO_COVER_DOT  = 0.93   // cos(~21°) — heading similarity that counts as "same direction"
+const PROTO_COVER_FRAC = 0.5    // drop the road if more than half its length overlaps a same-dir road
 
 // ── Module-scope pure height function ─────────────────────────────────────────
 /**
@@ -694,7 +700,7 @@ export class RoadSystem {
                 wGrade:  400,      // gentle (quadratic) — user-tuned default
                 wOver:   8000,     // soft over-cap penalty — user-tuned default
                 maxGrade: 0.15,    // grade the soft penalty kicks in above — user-tuned default
-                wTurn:   200,      // per-45° turn penalty — long straights / true switchbacks
+                wTurn:   120,      // per-45° turn penalty — long straights / true switchbacks (user-tuned)
             },
             paramDirtyAt: 0,
             radius:   640,                                   // m — visible road radius (set from terrain stream radius)
@@ -874,7 +880,25 @@ export class RoadSystem {
         const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING)
         const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING)
         const surf = this._proto.surfaceY
-        const drawn = new Set()   // dedupe identical segments (collapsed anchors → same road)
+        const drawn = new Set()       // dedupe identical segments (collapsed anchors → same road)
+        const cover = new Map()       // spatial hash: "cx,cz" → [x, z, hx, hz] of already-drawn road points
+        const ckey = (x, z) => `${Math.floor(x / PROTO_COVER_D)},${Math.floor(z / PROTO_COVER_D)}`
+        const registerPoint = (x, z, hx, hz) => {
+            const k = ckey(x, z); let arr = cover.get(k); if (!arr) { arr = []; cover.set(k, arr) }
+            arr.push(x, z, hx, hz)
+        }
+        const pointCovered = (x, z, hx, hz) => {
+            const cx = Math.floor(x / PROTO_COVER_D), cz = Math.floor(z / PROTO_COVER_D)
+            for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+                const arr = cover.get(`${cx + dx},${cz + dz}`); if (!arr) continue
+                for (let i = 0; i < arr.length; i += 4) {
+                    const ex = arr[i] - x, ez = arr[i + 1] - z
+                    if (ex * ex + ez * ez < PROTO_COVER_D * PROTO_COVER_D &&
+                        hx * arr[i + 2] + hz * arr[i + 3] > PROTO_COVER_DOT) return true
+                }
+            }
+            return false
+        }
         for (let mz = mz0; mz <= mz1; mz++) {
             for (let mx = mx0; mx <= mx1; mx++) {
                 const a = this._protoAnchor(mx, mz)
@@ -886,6 +910,18 @@ export class RoadSystem {
                 if (wps.length < 2) continue
                 const spline = new THREE.CatmullRomCurve3(wps, false, 'centripetal', 0.5)
                 const pts = spline.getPoints(Math.max(16, wps.length * 3))
+                // Per-point heading (unit, xz) for the parallel-overlap test.
+                const head = pts.map((p, i) => {
+                    const q = pts[Math.min(pts.length - 1, i + 1)], r = pts[Math.max(0, i - 1)]
+                    const hx = q.x - r.x, hz = q.z - r.z, l = Math.hypot(hx, hz) || 1
+                    return [hx / l, hz / l]
+                })
+                // Drop the road if too much of it overlaps an already-drawn same-direction road.
+                let coveredN = 0
+                for (let i = 0; i < pts.length; i++) if (pointCovered(pts[i].x, pts[i].z, head[i][0], head[i][1])) coveredN++
+                if (coveredN / pts.length > PROTO_COVER_FRAC) continue
+                // Keep it: register its points so later roads suppress against it, then draw.
+                for (let i = 0; i < pts.length; i++) registerPoint(pts[i].x, pts[i].z, head[i][0], head[i][1])
                 if (surf) for (const p of pts) p.y = surf(p.x, p.z) + 1.0  // hug rendered surface
                 else for (const p of pts) p.y += 1.0
                 const line = _buildDebugLine2(pts, 0x00e5ff)
