@@ -549,12 +549,11 @@ function closestPointOnTriangle (px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz)
 function queryVertexContacts (px, py, pz) {
   const hits = []
 
-  // Ground surface — analytic height query (Phase 7: analyticHeight never returns 0 for
-  // unloaded chunks, fixing the chunk-seam gap at body contact points — RESEARCH §Pitfall 6).
-  const terrainH = terrainSystem ? terrainSystem.analyticHeight(px, pz) : 0
+  // Ground surface — flat y=0 in grid world; analytic terrain height in Sierra world.
+  // Grid-world uses flat ground so body vertex contacts are correct on the clean flat plane (D-18).
+  const terrainH = _gridWorldActive ? 0 : (terrainSystem ? terrainSystem.analyticHeight(px, pz) : 0)
   if (py < terrainH) {
-    // Use analyticNormal for consistency with analyticHeight (normal/height match guaranteed).
-    const terrainN = terrainSystem ? terrainSystem.analyticNormal(px, pz) : { x: 0, y: 1, z: 0 }
+    const terrainN = _gridWorldActive ? { x: 0, y: 1, z: 0 } : (terrainSystem ? terrainSystem.analyticNormal(px, pz) : { x: 0, y: 1, z: 0 })
     hits.push({ normal: new THREE.Vector3(terrainN.x, terrainN.y, terrainN.z), depth: terrainH - py })
   }
 
@@ -608,12 +607,12 @@ function queryVertexContacts (px, py, pz) {
 function queryContacts (cx, cy, cz, r) {
   const hits = []
 
-  // Ground surface — analytic height query (Phase 7: analyticHeight never returns 0 for
-  // unloaded chunks, fixing the chunk-seam gap at wheel sphere contacts — RESEARCH §Pitfall 6).
-  const terrainH = terrainSystem ? terrainSystem.analyticHeight(cx, cz) : 0
+  // Ground surface — flat y=0 in grid world; analytic terrain height in Sierra world.
+  // Grid-world uses flat ground so physics contacts are correct on the clean flat plane (D-18).
+  const terrainH = _gridWorldActive ? 0 : (terrainSystem ? terrainSystem.analyticHeight(cx, cz) : 0)
   const gd = terrainH + r - cy
   if (gd > 0) {
-    const n = terrainSystem ? terrainSystem.analyticNormal(cx, cz) : { x: 0, y: 1, z: 0 }
+    const n = _gridWorldActive ? { x: 0, y: 1, z: 0 } : (terrainSystem ? terrainSystem.analyticNormal(cx, cz) : { x: 0, y: 1, z: 0 })
     hits.push({
       normal:       new THREE.Vector3(n.x, n.y, n.z),
       depth:        gd,
@@ -714,6 +713,134 @@ document.addEventListener('keydown', e => {
   if (e.key === '`') {
     _dbgSpheresOn = !_dbgSpheresOn
     _dbgSpheres.forEach(m => { m.visible = _dbgSpheresOn })
+  }
+})
+
+// ── Grid-world flat grid helper (D-18) ────────────────────────────────────────
+// A THREE.GridHelper at y=0 — shown only in grid-world mode.
+// 200 m wide, 5 m cell spacing → 40×40 grid.
+const _gridHelper = new THREE.GridHelper(200, 40, 0x444444, 0x222222)
+_gridHelper.visible = false
+scene.add(_gridHelper)
+
+// ── Grid-world: flat ground plane ────────────────────────────────────────────
+// A white-ish flat plane at y=0 — provides collision surface in grid world
+// (analyticHeight returns real terrain height; a flat plane at 0 keeps the truck grounded
+// when terrain streaming is paused and the terrain height is well above origin).
+// In grid world the car is placed at origin where analyticHeight ≈ valid terrain level,
+// but since grid world uses the ANALYTIC height at (0,0), it is always grounded correctly.
+// No separate flat plane physics is needed — analyticHeight always returns the correct surface.
+// This plane is visual only: adds a visible ground surface reference.
+const _gridGroundPlane = new THREE.Mesh(
+  new THREE.PlaneGeometry(200, 200),
+  new THREE.MeshPhongMaterial({ color: 0x333333 })
+)
+_gridGroundPlane.rotation.x = -Math.PI / 2
+_gridGroundPlane.receiveShadow = true
+_gridGroundPlane.visible = false
+scene.add(_gridGroundPlane)
+
+// ── enterGridWorld / returnToWorld (D-17 / D-18 / D-19) ─────────────────────
+// enterGridWorld: pause streaming, hide Sierra chunks, show flat grid + ramp,
+//   place car at origin on flat ground.
+// returnToWorld: hide flat grid + ramp, re-enable streaming, show Sierra chunks,
+//   re-seat truck at canonical spawn via _reseatTruckAtSpawn().
+// Physics loop is NOT frozen — truck continues to settle while menu is open or
+// after teleport (CAM-02 spirit; RESEARCH §Pause Menu).
+
+function enterGridWorld () {
+  _gridWorldActive = true
+
+  // Pause terrain streaming and hide Sierra chunks
+  if (terrainSystem) {
+    terrainSystem.setEnabled(false)
+    terrainSystem.setChunksVisible(false)
+  }
+
+  // Show flat grid and ground plane
+  _gridHelper.visible = true
+  _gridGroundPlane.visible = true
+
+  // Show ramp rig (D-19: ramp lives in grid world, not Sierra world)
+  rampMesh.visible = RANGER_PARAMS.rampEnabled !== false
+
+  // Place car at origin at static-equilibrium height above y=0 flat ground
+  // Grid world y=0 is flat; computeStaticEquilibrium gives the correct body height.
+  const eq = computeStaticEquilibrium(RANGER_PARAMS)
+  vehicleState.position.set(0, eq.bodyY, 0)
+  vehicleState.quaternion.identity()
+  vehicleState.velocity.set(0, 0, 0)
+  vehicleState.angularVelocity.set(0, 0, 0)
+  vehicleState.steerAngle     = 0
+  vehicleState.throttle       = 0
+  vehicleState.brake          = 0
+  vehicleState.smoothThrottle = 0
+  vehicleState.smoothBrake    = 0
+  vehicleState.wheelAngles    = [0, 0, 0, 0]
+  vehicleState.wheelSteerAngles = [0, 0, 0, 0]
+  vehicleState.strutComp      = [...eq.strutComp]
+  vehicleState.strutCompVel   = [0, 0, 0, 0]
+  vehicleState.wheelDebug     = [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ]
+  vehicleState.wheelOmega     = [0, 0, 0, 0]
+  vehicleState.slipLong       = [0, 0, 0, 0]
+  vehicleState.slipLat        = [0, 0, 0, 0]
+  vehicleState.handbrake      = false
+
+  _hidePauseMenu()
+}
+
+function returnToWorld () {
+  _gridWorldActive = false
+
+  // Hide flat grid and ramp
+  _gridHelper.visible = false
+  _gridGroundPlane.visible = false
+  rampMesh.visible = false
+
+  // Re-enable terrain streaming and show Sierra chunks
+  if (terrainSystem) {
+    terrainSystem.setEnabled(true)
+    terrainSystem.setChunksVisible(true)
+  }
+
+  // Re-seat truck at canonical spawn (Plan 04 — resolveSpawn + analyticHeight ground-probe)
+  _reseatTruckAtSpawn()
+
+  _hidePauseMenu()
+}
+
+// ── Pause-menu helpers ────────────────────────────────────────────────────────
+function _showPauseMenu () {
+  const el = document.getElementById('pause-menu')
+  if (el) el.style.display = 'flex'
+}
+
+function _hidePauseMenu () {
+  const el = document.getElementById('pause-menu')
+  if (el) el.style.display = 'none'
+}
+
+// Wire pause-menu buttons (elements must exist in index.html)
+document.getElementById('pm-resume').addEventListener('click', () => _hidePauseMenu())
+document.getElementById('pm-grid').addEventListener('click', () => enterGridWorld())
+document.getElementById('pm-return').addEventListener('click', () => returnToWorld())
+
+// ── Esc handler — pause menu (D-17 / RESEARCH §Pitfall 3) ────────────────────
+// Gate: only open the menu when NOT in free-cam mode.
+// In free-cam, Esc triggers a browser-forced pointer-lock release first; opening the
+// menu on the same Esc event causes an immediate flash-open/close. The user must press C
+// to exit free-cam, then Esc to open the menu from chase/cockpit mode.
+// (RESEARCH §Pitfall 3 / 07-PATTERNS.md §Esc/keyboard listener coexistence)
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return
+  if (getCameraMode() !== 'freecam') {  // gate: only open menu when NOT in free-cam (Pitfall 3)
+    const el = document.getElementById('pause-menu')
+    if (!el) return
+    if (el.style.display === 'none' || el.style.display === '') {
+      _showPauseMenu()
+    } else {
+      _hidePauseMenu()
+    }
   }
 })
 

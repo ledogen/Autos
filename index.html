@@ -17,6 +17,48 @@
       pointer-events: none;
       user-select: none;
     }
+    #pause-menu {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.82);
+      border: 1px solid #444;
+      padding: 28px 40px;
+      font-family: monospace;
+      font-size: 15px;
+      color: #cccccc;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      z-index: 100;
+      min-width: 200px;
+    }
+    #pause-menu .pm-title {
+      color: #00ff88;
+      font-size: 13px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    #pause-menu button {
+      background: none;
+      border: 1px solid #555;
+      color: #cccccc;
+      font-family: monospace;
+      font-size: 14px;
+      padding: 7px 18px;
+      cursor: pointer;
+      width: 100%;
+      text-align: left;
+      transition: background 0.1s, color 0.1s;
+    }
+    #pause-menu button:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+      border-color: #888;
+    }
   </style>
   <!-- importmap MUST appear before any <script type="module"> (Pitfall 6) -->
   <script type="importmap">
@@ -41,6 +83,16 @@
     FPS: <span id="fpsVal">60</span><br>
     FL Fz: <span id="flFzVal">0</span> N &nbsp; FR Fz: <span id="frFzVal">0</span> N<br>
     RL Fz: <span id="rlFzVal">0</span> N &nbsp; RR Fz: <span id="rrFzVal">0</span> N
+  </div>
+
+  <!-- Pause menu overlay (D-17) — shown on Esc from chase/cockpit mode; hidden in free-cam.
+       Labels are fixed: "grid world" (exactly, D-18), "return to world", "resume".
+       Button ids are wired in main.js: pm-resume, pm-grid, pm-return. -->
+  <div id="pause-menu">
+    <div class="pm-title">paused</div>
+    <button id="pm-resume">resume</button>
+    <button id="pm-grid">grid world</button>
+    <button id="pm-return">return to world</button>
   </div>
 
   <script type="module" src="src/main.js"></script>
