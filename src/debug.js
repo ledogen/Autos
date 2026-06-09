@@ -134,10 +134,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // World Seed text field (D-13 / SEED-04) — lil-gui renders a plain <input type="text">
   // automatically when the property value is a string. Initialized from the ACTIVE seed
   // (options.initialSeed, derived from ?seed= in main.js) so the field never misreports the
-  // loaded world (CR-01). Fires callbacks.changeSeed(v) so main.js can parseWorldSeed the
-  // raw text and trigger Path B rebuild.
+  // loaded world (CR-01). Uses onFinishChange (not onChange) so the terrain only regenerates
+  // once the user commits the seed by pressing Return (or blurring), not on every keystroke.
   const _seedState = { seed: options.initialSeed ?? 'lone-pine' }
-  terrainFolder.add(_seedState, 'seed').name('World Seed').onChange(v => {
+  terrainFolder.add(_seedState, 'seed').name('World Seed').onFinishChange(v => {
     if (typeof callbacks.changeSeed === 'function') callbacks.changeSeed(v)
   })
 
@@ -147,7 +147,12 @@ export function initDebug (params, callbacks = {}, options = {}) {
   coarseFolder.add(params, 'coarseAmplitude', 50, 500, 10).name('Amplitude (m)').onChange(() => {
     if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull()
   })
-  coarseFolder.add(params, 'coarseFreq', 0.0005, 0.005, 0.0001).name('Wavelength/Freq (1/m)').onChange(() => {
+  // Coarse frequency exposed in cycles per kilometre (friendlier than the raw 1/m param).
+  // Display value = coarseFreq * 1000; converted back to the 1/m value the height math uses.
+  // Default 0.5 /km == 0.0005 /m == 2 km wavelength. Higher = rougher (more, tighter features).
+  const _coarseFreqKm = { freq: params.coarseFreq * 1000 }
+  coarseFolder.add(_coarseFreqKm, 'freq', 0.1, 1.0, 0.05).name('Frequency (1/km)').onChange(v => {
+    params.coarseFreq = v / 1000
     if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull()
   })
   coarseFolder.add(params, 'coarseOctaves', 1, 6, 1).name('Octaves').onChange(() => {
