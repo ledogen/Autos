@@ -180,6 +180,36 @@ export function initDebug (params, callbacks = {}, options = {}) {
     if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull()
   })
 
+  // ── Roads folder (Phase 8 / D-03 / D-05) ──────────────────────────────────────
+  // Road viz checkbox + max-grade slider + optional cost-weight sliders.
+  // Placed AFTER the Terrain folder — do not reorder existing sliders.
+  //
+  // Callback contract (callbacks = {} default — never throws if not provided):
+  //   callbacks.onRoadVizToggle(v: boolean) — show/hide road splines (setDebugVisible)
+  //   callbacks.onRoadParamChange()          — debounced re-route (invalidateCache + rebuild)
+  //
+  // D-05: _roadState.roadViz is UI-only state (not a params field) — mirrors the _seedState
+  //   pattern above. Default false = clean (no lines on load).
+  // D-03: maxRoadGrade live slider → debouncedRoadRebuild() in main.js (same 150ms pattern
+  //   as terrainFolder sliders). debug.js fires callbacks unconditionally on onChange;
+  //   debounce lives in main.js (consistent with D-09 / rebuildTerrainFull convention).
+  const roadFolder = gui.addFolder('Roads')
+  const _roadState = { roadViz: false }
+  roadFolder.add(_roadState, 'roadViz').name('Show Road Splines').onChange(v => {
+    if (typeof callbacks.onRoadVizToggle === 'function') callbacks.onRoadVizToggle(v)
+  })
+  roadFolder.add(params, 'maxRoadGrade', 0.04, 0.20, 0.01).name('Max Grade (ratio)').onChange(() => {
+    if (typeof callbacks.onRoadParamChange === 'function') callbacks.onRoadParamChange()
+  })
+  // Optional cost-weight sliders (RESEARCH A4 — require runtime tuning; D-03 discretion).
+  // Both fire onRoadParamChange so the router re-routes with updated weights.
+  roadFolder.add(params, 'roadSlopePenalty', 10, 200, 5).name('Slope Penalty').onChange(() => {
+    if (typeof callbacks.onRoadParamChange === 'function') callbacks.onRoadParamChange()
+  })
+  roadFolder.add(params, 'roadAltWeight', 0, 1.0, 0.01).name('Alt Weight').onChange(() => {
+    if (typeof callbacks.onRoadParamChange === 'function') callbacks.onRoadParamChange()
+  })
+
   // D-04: Read-only Logger hint — shows the \ key without being interactive
   const _loggerHint = { hint: '\\ to record' }
   gui.add(_loggerHint, 'hint').name('Logger').disable()
