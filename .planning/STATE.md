@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Mountains & Roads
-status: ready_to_plan
-stopped_at: Phase 07 complete (5/5) — ready to discuss Phase 999.1
-last_updated: 2026-06-09T04:16:39.350Z
-last_activity: 2026-06-08 -- Phase 07 execution started
+status: planning
+stopped_at: Phase 8 context gathered
+last_updated: "2026-06-09T04:31:53.022Z"
+last_activity: 2026-06-09
 progress:
-  total_phases: 4
-  completed_phases: 0
+  total_phases: 5
+  completed_phases: 1
   total_plans: 5
   completed_plans: 5
-  percent: 0
+  percent: 20
 ---
 
 # Project State
@@ -120,6 +120,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-06-08T05:24:30.108Z
-Stopped at: Phase 7 context gathered
-Resume file: .planning/phases/07-free-cam-seeded-layered-terrain/07-CONTEXT.md
+Last session: 2026-06-09T04:31:53.014Z
+Stopped at: Phase 8 context gathered
+Resume file: .planning/phases/08-road-routing/08-CONTEXT.md
