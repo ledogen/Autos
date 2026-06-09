@@ -110,3 +110,21 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 | 8. Road Routing | v1.1 | 0/? | Not started | — |
 | 9. Road Surface | v1.1 | 0/? | Not started | — |
 | 10. POI Hooks + Polish | v1.1 | 0/? | Not started | — |
+
+## Backlog
+
+### Phase 999.1: Truck body + swappable body styles + functional lights (BACKLOG)
+
+**Goal:** [Captured for future planning]
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Vehicle-visuals feature (decoupled from physics). Three threads:
+- **Truck body model** — replace the current `BoxGeometry` body (built in `main.js`) with a truck-shaped mesh.
+- **Swappable body-style architecture** — a vehicle-visual model registry so additional bodies (e.g. Nissan 240sx) can be selected later, keeping the physics rig (collision box, CG, wheelbase) independent of the visual shell.
+- **Functional lights (emissive meshes that toggle with state):**
+  - Tail/brake lights illuminate when braking is applied (`vehicleState.brake` / `smoothBrake`).
+  - Reverse lights illuminate when the vehicle rolls backwards (velocity projected onto the body forward axis < 0).
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
