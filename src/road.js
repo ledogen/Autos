@@ -790,6 +790,25 @@ export class RoadSystem {
         return out
     }
 
+    // Remove self-intersection loops from a single road's polyline: where segment (i,i+1)
+    // crosses a non-adjacent segment (j,j+1), splice out the loop between them and stitch at the
+    // crossing point. Crossing-based → switchbacks (parallel, non-crossing legs) are never touched;
+    // only genuine loops (e.g. centripetal spline overshoot at sharp turns) are cut.
+    _removeLoops(pts) {
+        let p = pts
+        for (let guard = 0; guard < 40; guard++) {
+            let found = false
+            for (let i = 0; i < p.length - 1 && !found; i++) {
+                for (let j = i + 2; j < p.length - 1; j++) {
+                    const X = _segIntersectXZ(p[i], p[i + 1], p[j], p[j + 1])
+                    if (X) { p = [...p.slice(0, i + 1), X, ...p.slice(j + 1)]; found = true; break }
+                }
+            }
+            if (!found) break
+        }
+        return p
+    }
+
     // Turn-penalty soft-cost A* between two anchors over a grid covering their bbox + N/S margin.
     // State = (cell, incoming-direction) so a per-45° turn penalty (wTurn) is charged — this is what
     // makes the route run long straights and only switchback where the grade truly forces it.
@@ -909,7 +928,7 @@ export class RoadSystem {
                 const wps = this._protoConnect(a, e)
                 if (wps.length < 2) continue
                 const spline = new THREE.CatmullRomCurve3(wps, false, 'centripetal', 0.5)
-                const pts = spline.getPoints(Math.max(16, wps.length * 3))
+                const pts = this._removeLoops(spline.getPoints(Math.max(16, wps.length * 3)))  // intra-road loop cleanup
                 // Per-point heading (unit, xz) for the parallel-overlap test.
                 const head = pts.map((p, i) => {
                     const q = pts[Math.min(pts.length - 1, i + 1)], r = pts[Math.max(0, i - 1)]
@@ -955,4 +974,20 @@ function _buildDebugLine2(pts, color = 0x00e5ff) {
     const geo = new THREE.BufferGeometry().setFromPoints(pts)
     const mat = new THREE.LineBasicMaterial({ color, depthTest: true })
     return new THREE.Line(geo, mat)
+}
+
+// PROTOTYPE: XZ segment intersection (a→b vs c→d). Returns the crossing point (with
+// interpolated y on a→b) or null. Strict interior test (eps) so shared vertices of
+// adjacent segments don't count as crossings. Used by _removeLoops.
+function _segIntersectXZ(a, b, c, d) {
+    const r1 = b.x - a.x, r2 = b.z - a.z, s1 = d.x - c.x, s2 = d.z - c.z
+    const denom = r1 * s2 - r2 * s1
+    if (Math.abs(denom) < 1e-9) return null                     // parallel / collinear
+    const t = ((c.x - a.x) * s2 - (c.z - a.z) * s1) / denom
+    const u = ((c.x - a.x) * r2 - (c.z - a.z) * r1) / denom
+    const eps = 1e-4
+    if (t > eps && t < 1 - eps && u > eps && u < 1 - eps) {
+        return new THREE.Vector3(a.x + t * r1, a.y + t * (b.y - a.y), a.z + t * r2)
+    }
+    return null
 }
