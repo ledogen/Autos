@@ -18,7 +18,8 @@ findings:
   warning: 7
   info: 4
   total: 12
-status: issues_found
+status: resolved
+resolution: CR-01 + WR-01..WR-07 fixed in commits on 2026-06-08 (3fd6cfc..674b60f). Info items IN-01..IN-04 left as noted (unreachable/cosmetic/by-design).
 ---
 
 # Phase 7: Code Review Report
