@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Mountains & Roads
-status: executing
-stopped_at: Phase 7 context gathered
-last_updated: "2026-06-08T16:50:20.064Z"
+status: ready_to_plan
+stopped_at: Phase 07 complete (5/5) — ready to discuss Phase 999.1
+last_updated: 2026-06-09T04:16:39.350Z
 last_activity: 2026-06-08 -- Phase 07 execution started
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 5
-  completed_plans: 0
+  completed_plans: 5
   percent: 0
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05)
 
 **Core value:** Physics that feel honest: a car that can roll over naturally, drift on the limit, and behave predictably enough that tuning parameters produces the expected result.
-**Current focus:** Phase 07 — free-cam-seeded-layered-terrain
+**Current focus:** Phase 999.1 — truck body styles and functional brake reverse lights
 
 ## Current Position
 
-Phase: 07 (free-cam-seeded-layered-terrain) — EXECUTING
-Plan: 1 of 5
-Status: Executing Phase 07
-Last activity: 2026-06-08 -- Phase 07 execution started
+Phase: 999.1
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-06-09
 
 ```
 v1.1 Progress: [                    ] 0% (0/4 phases)
@@ -38,7 +38,7 @@ v1.1 Progress: [                    ] 0% (0/4 phases)
 
 **Velocity:**
 
-- Total plans completed: 0 (v1.1)
+- Total plans completed: 5 (v1.1)
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -46,7 +46,7 @@ v1.1 Progress: [                    ] 0% (0/4 phases)
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 07 | 0 | - | - |
+| 07 | 5 | - | - |
 | 08 | 0 | - | - |
 | 09 | 0 | - | - |
 | 10 | 0 | - | - |

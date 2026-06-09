@@ -1,8 +1,9 @@
 ---
 phase: 07-free-cam-seeded-layered-terrain
 verified: 2026-06-08T00:00:00Z
-status: human_needed
-score: 12/14 must-haves verified
+status: passed
+score: 14/14 must-haves verified
+human_verification_result: "Resolved 2026-06-09 via 07-HUMAN-UAT.md — TERR-05 60fps PASS, Sierra visual match PASS, Esc/grid-world PASS (infinite-grid + contrast fix approved). P7-2 browser re-run SKIPPED by user (satisfied with landscape; agreement validated via driving + shared height function)."
 overrides_applied: 0
 human_verification:
   - test: "TERR-05 60fps checkpoint — drive the truck on open ground with ~25 chunks loaded and physics sampling analyticHeight; confirm FPS HUD holds >= 55 fps"

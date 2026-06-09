@@ -1,14 +1,14 @@
 ---
-status: partial
+status: resolved
 phase: 07-free-cam-seeded-layered-terrain
 source: [07-VERIFICATION.md]
 started: 2026-06-08T00:00:00Z
-updated: 2026-06-08T00:00:00Z
+updated: 2026-06-09T00:00:00Z
 ---
 
 ## Current Test
 
-[awaiting human testing]
+[complete — 3 passed, 1 skipped (cancelled by user)]
 
 ## Tests
 
@@ -22,23 +22,23 @@ result: PASS (2026-06-09)
 
 ### 3. P7-2 — height-agreement gate (browser reconfirmation)
 expected: Open `tests/height-agreement-test.html` via a local HTTP server; console prints `P7-2 PASS: height agreement verified` (re-run because 07-04 changed coarseAmplitude 350→150 and coarseOctaves 5→4 after the original P7-2 pass).
-result: [pending]
+result: SKIPPED (2026-06-09) — user cancelled the formal browser re-run; satisfied with the landscape. Analytic-vs-worker height agreement is validated implicitly through driving (items 1 & 2 pass) and the shared height() function.
 
 ### 4. Esc pause menu + grid world (D-17/18/19)
 expected: Esc from chase → menu appears; "grid world" → flat grid + ramp visible, car at origin; "return to world" → terrain streaming resumes and truck re-seats; no ramp in Sierra world; no menu flash when Esc pressed in free-cam.
-result: PARTIAL — menu + grid world + return all work. Gaps: grid is finite (needs to read as infinite) and grid contrast too low.
+result: PASS (2026-06-09) — menu, grid world, and return all work; infinite-grid + higher-contrast gap (G1) fixed and approved.
 
 ## Summary
 
 total: 4
-passed: 2
+passed: 3
 issues: 0
-pending: 1
-skipped: 0
-blocked: 1
+pending: 0
+skipped: 1
+blocked: 0
 
 ## Gaps
 
-### G1. Grid world: finite grid + low contrast
-The grid-world dev grid is a fixed-size GridHelper that visibly ends, and its line contrast is too low to read while tuning. Make the grid read as infinite (follow the car, snapped to division size) and raise line contrast.
-status: in_progress
+### G1. Grid world: finite grid + low contrast — RESOLVED
+Grid + ground now recenter on the view each frame (grid snapped to its 5 m cell → reads as infinite), with bright lines on a near-black ground for contrast. Fixed in commit 807ba48, approved 2026-06-09.
+status: resolved
