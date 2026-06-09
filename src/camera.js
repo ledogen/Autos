@@ -89,7 +89,10 @@ document.addEventListener('pointerlockchange', () => {
 document.addEventListener('click', e => {
   const canvas = document.querySelector('canvas')
   if (canvas && e.target === canvas && cameraMode === 'freecam' && !isPointerLocked) {
-    canvas.requestPointerLock()
+    // Swallow the rejection: requestPointerLock rejects (and logs "Uncaught (in promise)")
+    // during the browser's post-exitPointerLock cooldown. Optional chaining guards older
+    // browsers that return undefined instead of a promise (WR-02).
+    canvas.requestPointerLock()?.catch(() => {})
   }
 })
 
@@ -142,8 +145,16 @@ document.addEventListener('keydown', e => {
 
 // ── Freecam helpers ────────────────────────────────────────────────────────────
 
+// Zero all held-key state. Called on freecam entry AND exit so a Shift held for the
+// Shift+C toggle (or any key still down at mode switch) can't leak into the next
+// freecam session — otherwise the camera silently re-enters at boost speed (WR-03).
+function _resetFreecamKeys () {
+  for (const k in freecamKeys) freecamKeys[k] = false
+}
+
 function _enterFreecam () {
   if (!_lastVehicleState) return  // guard against call before first updateCamera frame
+  _resetFreecamKeys()
   // Spawn behind + above the truck, mirroring the chase-cam offset (D-04), so the truck
   // is immediately in view on entry. CHASE_OFFSET_LOCAL is body-space (behind +Z, above +Y);
   // rotate by yaw only so the spawn tracks heading without inheriting car pitch/roll.
@@ -159,10 +170,11 @@ function _enterFreecam () {
   freecamPitch = Math.asin(Math.max(-1, Math.min(1, dir.y)))
   cameraMode   = 'freecam'
   const canvas = document.querySelector('canvas')
-  if (canvas) canvas.requestPointerLock()
+  if (canvas) canvas.requestPointerLock()?.catch(() => {})  // swallow cooldown rejection (WR-02)
 }
 
 function _exitFreecam () {
+  _resetFreecamKeys()  // clear boost/move keys so the next entry starts at base speed (WR-03)
   cameraMode = 'chase'
   document.exitPointerLock()
   // No position snap needed: chase follow-mode lerp (CHASE_STIFFNESS=5, ~200ms) smoothly
@@ -254,12 +266,15 @@ export function getCameraMode () {
 }
 
 /**
- * Returns the live freecam position Vector3.
+ * Returns a COPY of the freecam position Vector3.
  * Used by main.js to pass the camera position to terrainSystem.update() when in freecam
  * so the terrain chunk ring streams around the camera rather than the truck (D-21).
+ * Returns a clone (not the live internal instance) so callers cannot alias or mutate
+ * module-private camera state across the boundary (WR-05). Allocation is negligible and
+ * only occurs while in free-cam.
  *
- * @returns {THREE.Vector3}
+ * @returns {THREE.Vector3} a fresh copy of the freecam world position
  */
 export function getFreecamPosition () {
-  return freecamPos
+  return freecamPos.clone()
 }

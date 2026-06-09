@@ -131,23 +131,36 @@ function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
   let chosenX = 0
   let chosenZ = 0
   let found = false
+  // Track the flattest candidate seen so the no-flat fallback uses it instead of an
+  // already-rejected steep point (WR-06). bestNormalY starts at -1 so any real sample wins.
+  let bestNormalY = -1
+  let bestX = candX
+  let bestZ = candZ
 
   if (terrainSystem) {
-    for (let i = 0; i < MAX_TRIES; i++) {
-      const nx = (i % 5) * STEP * (i % 2 === 0 ? 1 : -1) + candX
-      const nz = Math.floor(i / 5) * STEP * (i % 3 === 0 ? 1 : -1) + candZ
+    // Bounded grid sweep: keep candidates within ±2 STEP (±160 m) of the seeded offset so
+    // the spawn stays near where the seed nominally places it (WR-06 — the old sawtooth let
+    // the Z term wander to ±720 m). Deterministic order preserves SEED-driven reproducibility.
+    for (let i = 0; i < MAX_TRIES && !found; i++) {
+      const nx = candX + ((i % 5) - 2) * STEP
+      const nz = candZ + (Math.floor(i / 5) % 5 - 2) * STEP
       const normal = terrainSystem.analyticNormal(nx, nz)
+      if (normal.y > bestNormalY) {
+        bestNormalY = normal.y
+        bestX = nx
+        bestZ = nz
+      }
       if (normal.y > GRADE_THRESHOLD) {
         chosenX = nx
         chosenZ = nz
         found = true
-        break
       }
     }
     if (!found) {
-      console.warn('[resolveSpawn] No flat spawn found in', MAX_TRIES, 'tries — falling back to origin')
-      chosenX = candX
-      chosenZ = candZ
+      console.warn('[resolveSpawn] No spawn under grade threshold in', MAX_TRIES,
+        'tries — using flattest candidate (normal.y =', bestNormalY.toFixed(3) + ')')
+      chosenX = bestX
+      chosenZ = bestZ
     }
   }
 
@@ -681,7 +694,7 @@ const _gui = initDebug(RANGER_PARAMS, {
   rebuildTerrain:      ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() },
   rebuildTerrainFull:  ()  => debouncedRebuildFull(),
   changeSeed:          (v) => { worldSeed = parseWorldSeed(v); debouncedRebuildFull() }
-})
+}, { initialSeed: _urlSeed ?? 'lone-pine' })
 
 // ── TerrainSystem (Phase 6 / 7) ──────────────────────────────────────────────
 // Instantiated after scene exists. Removes flat ground mesh to prevent Z-fighting.
@@ -820,10 +833,12 @@ function _hidePauseMenu () {
   if (el) el.style.display = 'none'
 }
 
-// Wire pause-menu buttons (elements must exist in index.html)
-document.getElementById('pm-resume').addEventListener('click', () => _hidePauseMenu())
-document.getElementById('pm-grid').addEventListener('click', () => enterGridWorld())
-document.getElementById('pm-return').addEventListener('click', () => returnToWorld())
+// Wire pause-menu buttons. Null-guarded (?.) like every other DOM lookup in this file:
+// an unguarded deref would throw at module-eval and abort the whole sim if an id is
+// renamed/removed from index.html (WR-04).
+document.getElementById('pm-resume')?.addEventListener('click', () => _hidePauseMenu())
+document.getElementById('pm-grid')?.addEventListener('click', () => enterGridWorld())
+document.getElementById('pm-return')?.addEventListener('click', () => returnToWorld())
 
 // ── Esc handler — pause menu (D-17 / RESEARCH §Pitfall 3) ────────────────────
 // Gate: only open the menu when NOT in free-cam mode.

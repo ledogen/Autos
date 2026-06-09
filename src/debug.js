@@ -41,7 +41,7 @@ let slipCtx = null
  *   take effect immediately (M2-06).
  * @returns {GUI} the lil-gui GUI instance
  */
-export function initDebug (params, callbacks = {}) {
+export function initDebug (params, callbacks = {}, options = {}) {
   const gui = new GUI({ title: 'RangerSim Debug' })
   gui.domElement.style.display = 'none'  // hidden by default; backtick reveals it
 
@@ -132,10 +132,11 @@ export function initDebug (params, callbacks = {}) {
   })
 
   // World Seed text field (D-13 / SEED-04) — lil-gui renders a plain <input type="text">
-  // automatically when the property value is a string. Internally tracks a display string
-  // ('lone-pine' by default) but fires callbacks.changeSeed(v) so main.js can parseWorldSeed
-  // the raw text and trigger Path B rebuild.
-  const _seedState = { seed: 'lone-pine' }
+  // automatically when the property value is a string. Initialized from the ACTIVE seed
+  // (options.initialSeed, derived from ?seed= in main.js) so the field never misreports the
+  // loaded world (CR-01). Fires callbacks.changeSeed(v) so main.js can parseWorldSeed the
+  // raw text and trigger Path B rebuild.
+  const _seedState = { seed: options.initialSeed ?? 'lone-pine' }
   terrainFolder.add(_seedState, 'seed').name('World Seed').onChange(v => {
     if (typeof callbacks.changeSeed === 'function') callbacks.changeSeed(v)
   })
