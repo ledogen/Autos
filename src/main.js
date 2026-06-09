@@ -36,6 +36,13 @@ let worldSeed = parseWorldSeed(_urlSeed ?? 'lone-pine')
 // can access it by reference. Initialized after scene exists (below initDebug).
 let terrainSystem = null
 
+// Grid-world mode flag (D-18 / D-19).
+// When true: terrain streaming paused, Sierra chunks hidden, ramp visible/collidable,
+//            car placed at origin on a flat grid for clean physics tuning.
+// When false (default / Sierra world): terrain streams normally, ramp invisible and non-collidable.
+// enterGridWorld() and returnToWorld() (below initDebug) are the only write sites.
+let _gridWorldActive = false
+
 // Manual verification hook — console.log confirms importmap loaded r184 (FOUND-02)
 console.log('THREE.REVISION', THREE.REVISION)
 
@@ -551,8 +558,9 @@ function queryVertexContacts (px, py, pz) {
     hits.push({ normal: new THREE.Vector3(terrainN.x, terrainN.y, terrainN.z), depth: terrainH - py })
   }
 
-  // Ramp face contacts — all four faces skipped when ramp is disabled (TERR-06 / T-06-07)
-  if (RANGER_PARAMS.rampEnabled !== false) {
+  // Ramp face contacts — skipped when not in grid-world mode (D-19: ramp retired from Sierra world)
+  // _gridWorldActive is the authoritative gate; RANGER_PARAMS.rampEnabled is a secondary debug toggle.
+  if (_gridWorldActive && RANGER_PARAMS.rampEnabled !== false) {
     // Ramp top incline face — half-space below the inclined plane, within ramp footprint
     if (px >= -_hw && px <= _hw && pz <= RAMP_TOE_Z && pz >= RAMP_END_Z) {
       const rampSurfaceY = RAMP_MAX_H + (RAMP_END_Z - pz) * Math.tan(RAMP_ANGLE)
@@ -613,8 +621,9 @@ function queryContacts (cx, cy, cz, r) {
     })
   }
 
-  // Triangle mesh contacts — sphere vs each ramp triangle (skipped when ramp is disabled)
-  if (RANGER_PARAMS.rampEnabled !== false) {
+  // Triangle mesh contacts — skipped when not in grid-world mode (D-19: ramp retired from Sierra world)
+  // _gridWorldActive is the authoritative gate; RANGER_PARAMS.rampEnabled is a secondary debug toggle.
+  if (_gridWorldActive && RANGER_PARAMS.rampEnabled !== false) {
     for (const [[ax, ay, az], [bx, by, bz], [ex, ey, ez]] of RAMP_TRIS) {
       const cp = closestPointOnTriangle(cx, cy, cz, ax, ay, az, bx, by, bz, ex, ey, ez)
       const dx = cx - cp.x, dy = cy - cp.y, dz = cz - cp.z
@@ -652,6 +661,9 @@ rampMesh.position.set(
   (RAMP_TOE_Z + RAMP_END_Z) / 2
 )
 rampMesh.receiveShadow = true
+// D-19: ramp is NOT visible in the Sierra terrain world — only in grid world.
+// Authoritative gate is _gridWorldActive; debug toggle (RANGER_PARAMS.rampEnabled) is secondary.
+rampMesh.visible = false
 scene.add(rampMesh)
 
 // FPS tracking — smoothed using an exponential moving average (alpha=0.1).
