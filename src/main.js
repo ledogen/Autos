@@ -24,7 +24,7 @@ import { updateCamera, getCameraMode, getFreecamPosition } from './camera.js'
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition } from './logger.js'
 import { TerrainSystem } from './terrain.js'
-import { RoadSystem } from './road.js'
+import { RoadSystem, CHUNK_SIZE } from './road.js'
 import { parseWorldSeed, seedFor } from './seed.js'
 
 // World seed — parsed from URL ?seed= parameter, defaulting to 'lone-pine'.
@@ -107,32 +107,60 @@ function computeStaticEquilibrium (p) {
 }
 
 // ── resolveSpawn (D-14 / D-16) ───────────────────────────────────────────────────────────
-// Canonical terrain-only low-slope spawn resolver. Returns { position: THREE.Vector3, heading }
-// where position.y is the terrain surface height (analyticHeight) at the chosen (x,z).
-//
-// Phase 7 SEAM COMMENT — Phase 8 swaps the body of this function to a road-graph probe
-// (nearest road node + tangent heading) at this SAME call site. DO NOT change the signature
-// (worldSeed, params) → { position: THREE.Vector3, heading: number }.
+// Phase 8 COMPLETE (D-07 / D-16): Body now probes the road graph first (nearest road node +
+// tangent heading), with the Phase 7 terrain-only body preserved as a fallback.
+// Signature is unchanged: (wseed, params) → { position: THREE.Vector3, heading: number }.
+// Call site (_reseatTruckAtSpawn) is also unchanged — only the body was swapped.
 //
 // Algorithm:
-//   1. Seed a start offset from seedFor(worldSeed, 'spawn') for determinism.
-//   2. Search up to MAX_TRIES candidate (x,z) positions using analyticNormal.
-//      Accept the first whose normal.y > cos(15°) ≈ 0.966 (grade < ~15%).
-//   3. Fall back to origin with console.warn if no flat candidate found.
-//   4. heading = bits from spawn seed (low bits) → 0..2π rotation.
-//
-// T-07-04-SPAWN: bounded loop (≤50 tries), origin fallback, console.warn — no infinite loop.
+//   1. Compute spawnSeed = seedFor(wseed, 'spawn') and base offset baseX/baseZ (±100 m).
+//   2. If roadSystem exists: eagerly ensureTile the 3×3 spawn-region tiles so queryNearest
+//      has data (RESEARCH Pitfall 5 — query on un-generated tiles returns null).
+//   3. queryNearest(baseX, baseZ, 200) — nearest point on any road spline within 200 m.
+//   4. On road hit: position.y = terrainSystem.analyticHeight(...) for visual surface match
+//      (router uses raw coarseHeight for grade math; spawn PLACEMENT uses analyticHeight so
+//      the truck rests on the rendered surface). heading = atan2(tangent.x, tangent.z) faces
+//      down the road (D-07).
+//   5. Null result or absent roadSystem → console.warn + Phase 7 terrain-only fallback
+//      (bounded ≤50 tries, deterministic — T-07-04-SPAWN guarantee preserved).
 function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
   const spawnSeed = seedFor(wseed, 'spawn')
+  const baseX = ((spawnSeed & 0xFFFF) / 0xFFFF - 0.5) * 200   // ±100 m initial offset
+  const baseZ = (((spawnSeed >>> 16) & 0xFFFF) / 0xFFFF - 0.5) * 200
+
+  // ── Phase 8: road-graph probe (D-07) ─────────────────────────────────────────
+  if (roadSystem) {
+    // Eagerly generate the 3×3 tiles around the spawn region before querying.
+    // resolveSpawn runs at init BEFORE any road tile exists (lazy generation).
+    // Without this, queryNearest returns null every time (RESEARCH Pitfall 5).
+    const baseTX = Math.floor(baseX / CHUNK_SIZE)
+    const baseTZ = Math.floor(baseZ / CHUNK_SIZE)
+    for (let dtx = -1; dtx <= 1; dtx++) {
+      for (let dtz = -1; dtz <= 1; dtz++) {
+        roadSystem.ensureTile(baseTX + dtx, baseTZ + dtz)
+      }
+    }
+    const nearest = roadSystem.queryNearest(baseX, baseZ, 200)
+    if (nearest) {
+      // analyticHeight for placement so the truck rests on the rendered terrain surface.
+      // (router used raw coarseHeight for grade; spawn PLACEMENT uses analyticHeight — visual match)
+      const surfaceY = terrainSystem ? terrainSystem.analyticHeight(nearest.point.x, nearest.point.z) : 0
+      return {
+        position: new THREE.Vector3(nearest.point.x, surfaceY, nearest.point.z),
+        heading:  Math.atan2(nearest.tangent.x, nearest.tangent.z)  // face down the road
+      }
+    }
+    console.warn('[resolveSpawn] No road node within radius — falling back to terrain-only spawn')
+  }
+
+  // ── Phase 7 terrain-only fallback (preserved) ────────────────────────────────
+  // T-07-04-SPAWN: bounded loop (≤50 tries), origin fallback, console.warn — no infinite loop.
   const MAX_TRIES = 50
   const GRADE_THRESHOLD = Math.cos(15 * Math.PI / 180)  // ≈ 0.966, grade < ~15%
-
-  // Search a deterministic expanding spiral using the spawn seed as a starting offset.
-  // Candidate offsets step by 80 m — coarse enough to sample different terrain features.
   const STEP = 80
-  let candX = ((spawnSeed & 0xFFFF) / 0xFFFF - 0.5) * 200  // ±100 m initial offset
-  let candZ = (((spawnSeed >>> 16) & 0xFFFF) / 0xFFFF - 0.5) * 200
 
+  let candX = baseX
+  let candZ = baseZ
   let chosenX = 0
   let chosenZ = 0
   let found = false
