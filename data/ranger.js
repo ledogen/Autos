@@ -168,8 +168,8 @@ export const RANGER_PARAMS = {
   fineFreq:        0.05,   // 1/m — 20 m base wavelength
 
   // Regional-roughness modulator (TERR-03: scales fine amplitude across map)
-  regionalStrength: 0.6,   // 0=uniform, 1=full modulation (valley vs hillside roughness)
-  regionalScale:    3000,  // m — modulator wavelength (3 km default)
+  regionalStrength: 1,     // 0=uniform, 1=full modulation (valley vs hillside roughness)
+  regionalScale:    500,   // m — modulator wavelength
 
   // rampEnabled: when false, ramp triangles are skipped in queryContacts + queryVertexContacts,
   // and rampMesh.visible is set false via the setRampVisible callback in debug.js.

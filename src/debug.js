@@ -173,10 +173,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
 
   // ── Regional Modulator sub-folder (valley/hillside roughness — TERR-03) ──────────────
   const regionalFolder = terrainFolder.addFolder('Regional Modulator')
-  regionalFolder.add(params, 'regionalStrength', 0, 1, 0.05).name('Strength (0=uniform, 1=full)').onChange(() => {
+  regionalFolder.add(params, 'regionalStrength', 0, 2, 0.05).name('Strength (0=uniform, 1=full)').onChange(() => {
     if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull()
   })
-  regionalFolder.add(params, 'regionalScale', 500, 10000, 100).name('Scale (m)').onChange(() => {
+  regionalFolder.add(params, 'regionalScale', 250, 2500, 50).name('Scale (m)').onChange(() => {
     if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull()
   })
 
