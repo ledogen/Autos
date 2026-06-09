@@ -730,9 +730,12 @@ document.addEventListener('keydown', e => {
 })
 
 // ── Grid-world flat grid helper (D-18) ────────────────────────────────────────
-// A THREE.GridHelper at y=0 — shown only in grid-world mode.
-// 200 m wide, 5 m cell spacing → 40×40 grid.
-const _gridHelper = new THREE.GridHelper(200, 40, 0x444444, 0x222222)
+// A THREE.GridHelper at y=0 — shown only in grid-world mode. The grid recenters on the
+// view each frame (snapped to cell size) so it reads as INFINITE while driving (see loop).
+// 5 m cells; bright lines on a near-black ground for high contrast while tuning.
+const GRID_WORLD_SIZE = 1000       // m span; large enough that the snapped follow never shows an edge
+const GRID_WORLD_DIVISIONS = 200   // → 5 m cells
+const _gridHelper = new THREE.GridHelper(GRID_WORLD_SIZE, GRID_WORLD_DIVISIONS, 0xc8c8c8, 0x707070)
 _gridHelper.visible = false
 scene.add(_gridHelper)
 
@@ -745,8 +748,8 @@ scene.add(_gridHelper)
 // No separate flat plane physics is needed — analyticHeight always returns the correct surface.
 // This plane is visual only: adds a visible ground surface reference.
 const _gridGroundPlane = new THREE.Mesh(
-  new THREE.PlaneGeometry(200, 200),
-  new THREE.MeshPhongMaterial({ color: 0x333333 })
+  new THREE.PlaneGeometry(GRID_WORLD_SIZE * 2, GRID_WORLD_SIZE * 2),
+  new THREE.MeshPhongMaterial({ color: 0x141414 })  // near-black so the bright grid lines pop
 )
 _gridGroundPlane.rotation.x = -Math.PI / 2
 _gridGroundPlane.receiveShadow = true
@@ -933,6 +936,15 @@ function loop () {
   // Reverts to truck position on exit so the ring stays anchored to the car in normal mode.
   const streamCenter = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
   terrainSystem.update(streamCenter)
+
+  // Grid world: recenter the dev grid + ground on the view each frame so they read as
+  // infinite. The grid snaps to the cell size so its lines appear stationary (no crawling);
+  // the ground plane follows continuously so its edges never enter view.
+  if (_gridWorldActive) {
+    const cell = GRID_WORLD_SIZE / GRID_WORLD_DIVISIONS
+    _gridHelper.position.set(Math.round(streamCenter.x / cell) * cell, 0, Math.round(streamCenter.z / cell) * cell)
+    _gridGroundPlane.position.set(streamCenter.x, 0, streamCenter.z)
+  }
 
   // M1-11: live speed readout. velocity.length() = magnitude in m/s; * 3.6 converts to km/h.
   const speedKmh = vehicleState.velocity.length() * 3.6
