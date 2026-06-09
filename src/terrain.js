@@ -404,7 +404,24 @@ export class TerrainSystem {
         this._noiseRegional = _createNoise2D(_mulberry32(_seedFor(worldSeed, 'regional')))
 
         // Send init to Worker — Worker reinitializes its own three noise closures.
-        this._worker.postMessage({ type: 'init', worldSeed, params })
+        // Pass ONLY the structured-cloneable terrain-layer fields. The live params object
+        // accumulates non-cloneable runtime scratch (e.g. main.js attaches a _rotateVector
+        // function and typed-array suspension buffers). Cloning the whole object throws a
+        // DataCloneError, which silently aborts the regenerate before rebuildAllChunksFromWorker
+        // runs — freezing the visible mesh while physics (reads params locally, no clone)
+        // keeps updating. terrainAmplitude is intentionally omitted: it is applied on the
+        // main thread in _flushPendingQueue, not inside the Worker height() function.
+        const workerParams = {
+            coarseAmplitude:  params.coarseAmplitude,
+            coarseFreq:       params.coarseFreq,
+            coarseOctaves:    params.coarseOctaves,
+            ridgeSharpness:   params.ridgeSharpness,
+            fineAmplitude:    params.fineAmplitude,
+            fineFreq:         params.fineFreq,
+            regionalStrength: params.regionalStrength,
+            regionalScale:    params.regionalScale
+        }
+        this._worker.postMessage({ type: 'init', worldSeed, params: workerParams })
     }
 
     /**
