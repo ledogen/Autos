@@ -25,7 +25,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 
 ### v1.1 Mountains & Roads
 
-- [ ] **Phase 7: Free-Cam + Seeded Layered Terrain** (5 plans) — World-seed foundation, three-layer Sierra terrain, free-fly camera
+- [x] **Phase 7: Free-Cam + Seeded Layered Terrain** (5 plans) — World-seed foundation, three-layer Sierra terrain, free-fly camera (completed 2026-06-09)
 - [ ] **Phase 8: Road Routing** — Deterministic tile-graph A* roads with switchbacks, queryable debug splines
 - [ ] **Phase 9: Road Surface** — Ribbon mesh, asphalt, crown + camber, cut-biased terrain carve, physics height and normal
 - [ ] **Phase 10: POI Hooks + Polish** — Seeded POI anchor data contract; pothole/crack stretch
@@ -47,7 +47,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
   - [x] 07-02-PLAN.md — Seed module (djb2/seedFor/mulberry32) + P7-1 determinism gate
   - [x] 07-03-PLAN.md — Seeded three-layer terrain (coarse/fine/regional) + analytic physics height + P7-2 gate
   - [x] 07-04-PLAN.md — Terrain sliders + seed field + regeneration + canonical spawn + coarse-param lock + 60fps gate
-  - [ ] 07-05-PLAN.md — Esc pause menu + grid world + ramp relocation
+  - [x] 07-05-PLAN.md — Esc pause menu + grid world + ramp relocation
 **Notes**: Free-cam must ship FIRST within P7 — all terrain tuning work must be done from free-cam. `seedFor()` determinism test and height-agreement test (sampleHeight == bilinear of chunk.heights * amp at 5 world positions) are required exit gates before P7 closes. Coarse terrain amplitude, wavelength, and octave parameters must be LOCKED at P7 completion — changing them after Phase 8 invalidates all generated roads.
 
 ---
@@ -106,7 +106,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 | 4.1. Body-Frame Suspension | v1.0 | 3/3 | ✅ Complete | 2026-06-02 |
 | 5. Rollover Validation | v1.0 | 0/0 | ⬜ Skipped | — |
 | 6. Procedural Terrain | v1.0 | 3/3 | ✅ Complete | 2026-06-03 |
-| 7. Free-Cam + Seeded Layered Terrain | v1.1 | 4/5 | In Progress|  |
+| 7. Free-Cam + Seeded Layered Terrain | v1.1 | 5/5 | Complete   | 2026-06-09 |
 | 8. Road Routing | v1.1 | 0/? | Not started | — |
 | 9. Road Surface | v1.1 | 0/? | Not started | — |
 | 10. POI Hooks + Polish | v1.1 | 0/? | Not started | — |
