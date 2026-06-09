@@ -22,12 +22,20 @@
  *  - D-06: Ghost control points enable C0/C1 continuity at tile seams (exit gate)
  *
  * Phase: 8-road-routing
- * Plan: 08-01
+ * Plan: 08-01 (core); 08-02 (public API + debug viz)
  */
 
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
+
+// ── Module-scope scratch vectors (queryNearest allocation guard) ───────────────
+// queryNearest is called at near-60fps cadence (resolveSpawn + Phase 9 consumption).
+// Using a single reusable scratch vector for the per-sample distance check avoids
+// per-sample Vector3 allocation (RESEARCH anti-pattern; GC pressure kills frame time).
+// The two final return vectors (point, tangent) are still allocated once per call — only
+// the search loop scratch is reused.
+const _scratchPt = new THREE.Vector3()
 
 // ── Module constants ───────────────────────────────────────────────────────────
 /**
@@ -160,6 +168,7 @@ export class RoadSystem {
         this._waypointCache      = new Map()  // key: "tX,tZ" → waypoints[] (spline-free)
         this._debugLines         = []         // THREE.Line objects added to scene on demand
         this._scene              = null       // set via init(scene)
+        this._debugVisible       = false      // D-05: clean by default; toggled via setDebugVisible()
         this._noiseCoarse        = null       // built by _reinitNoise()
         this._coarseHeightOverride = coarseHeightOverride  // test injection point
         this._reinitNoise(worldSeed, params)
@@ -504,13 +513,17 @@ export class RoadSystem {
 
     // ── Public API ─────────────────────────────────────────────────────────────
     /**
-     * Eagerly generate a tile if not already cached.
-     * Used by resolveSpawn to warm the cache before querying nearest road point.
+     * Eagerly generate a tile if not already cached, and return the tile object.
+     * Idempotent — calling twice with the same coords returns the same cached reference.
+     * Used by resolveSpawn to warm the cache before querying nearest road point,
+     * and by buildDebugLines to ensure tiles exist before visualizing.
+     *
      * @param {number} tileX
      * @param {number} tileZ
+     * @returns {{ waypoints: THREE.Vector3[], spline: THREE.CatmullRomCurve3 }}
      */
     ensureTile(tileX, tileZ) {
-        this._getTile(tileX, tileZ)
+        return this._getTile(tileX, tileZ)
     }
 
     /**
@@ -527,28 +540,36 @@ export class RoadSystem {
      * @returns {{ point: THREE.Vector3, tangent: THREE.Vector3 } | null}
      */
     queryNearest(wx, wz, radiusM = 200) {
-        const queryPt = new THREE.Vector3(wx, 0, wz)
         let bestDist = radiusM
-        let bestPoint = null
-        let bestTangent = null
+        let bestU = -1
+        let bestSpline = null
 
+        // Search loop uses module-scope _scratchPt to avoid per-sample Vector3 allocation.
+        // Three.js getPointAt(u, target) writes into target in-place when target is provided.
         for (const [, tile] of this._tileCache) {
             if (!tile.spline) continue
             const SAMPLES = 32
             for (let i = 0; i <= SAMPLES; i++) {
-                const t = i / SAMPLES
-                const pt  = tile.spline.getPointAt(t)
-                const d2d = Math.sqrt((pt.x - wx) * (pt.x - wx) + (pt.z - wz) * (pt.z - wz))
+                const u = i / SAMPLES
+                tile.spline.getPointAt(u, _scratchPt)  // writes into scratch; no allocation
+                const dx = _scratchPt.x - wx
+                const dz = _scratchPt.z - wz
+                const d2d = Math.sqrt(dx * dx + dz * dz)
                 if (d2d < bestDist) {
-                    bestDist    = d2d
-                    bestPoint   = pt
-                    bestTangent = tile.spline.getTangentAt(t)
+                    bestDist   = d2d
+                    bestU      = u
+                    bestSpline = tile.spline
                 }
             }
         }
 
-        if (!bestPoint) return null
-        return { point: bestPoint, tangent: bestTangent }
+        if (bestSpline === null) return null
+
+        // Allocate the two return vectors only once (one point, one tangent)
+        return {
+            point:   bestSpline.getPointAt(bestU),
+            tangent: bestSpline.getTangentAt(bestU),
+        }
     }
 
     // ── Cache invalidation ─────────────────────────────────────────────────────
@@ -592,9 +613,19 @@ export class RoadSystem {
 
     /**
      * Show or hide all debug road centerlines.
+     *
+     * If enabling (visible=true) and no lines exist yet, calls buildDebugLines() first
+     * so the caller does not need to manually call buildDebugLines after a fresh init.
+     * Toggle is via line.visible (NOT dispose/recreate) — avoids GC at 60fps (RESEARCH anti-pattern).
+     *
      * @param {boolean} visible
      */
     setDebugVisible(visible) {
+        this._debugVisible = visible
+        if (visible && this._debugLines.length === 0) {
+            // Auto-build on first enable — caller need not call buildDebugLines() explicitly
+            this.buildDebugLines()
+        }
         for (const line of this._debugLines) {
             line.visible = visible
         }
