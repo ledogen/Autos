@@ -3,8 +3,9 @@
  *
  * Responsibilities:
  *  - Per-tile A* road routing over raw coarseHeight (forbidden: chunk-sampled or amplitude-scaled height)
- *  - Seeded tile-edge waypoints via seedFor("roads", tileX, tileZ) for seam continuity
- *  - THREE.CatmullRomCurve3 per tile segment with ghost control points (C1 across seams)
+ *  - Shared boundary seam crossings (_seamPoint, keyed by boundary not tile) so adjacent
+ *    tile splines join exactly at 64 m seams — C0 by construction (D-06 exit gate)
+ *  - THREE.CatmullRomCurve3 per tile segment anchored at those shared seam crossings
  *  - Lazy tile generation, cached in Map<"tX,tZ", { waypoints, spline }>; invalidated on param change
  *  - queryNearest(wx, wz) → { point, tangent } for resolveSpawn and Phase 9
  *  - Debug line visualization toggled via line.visible (set from debug.js checkbox)
@@ -18,8 +19,8 @@
  * Design decisions implemented here:
  *  - D-01: Sparse trunk + seeded spurs (trunk routing East-West; spur seeding stub)
  *  - D-02: max grade ~12% with hard block + quadratic slope cost driving tighter hairpins
- *  - D-04: Valley/pass-seeking via altitude cost term in _edgeCost
- *  - D-06: Ghost control points enable C0/C1 continuity at tile seams (exit gate)
+ *  - D-04: Valley/pass-seeking via altitude cost term in _edgeCost + lowest-point seam crossings
+ *  - D-06: Shared boundary seam crossings give C0/C1 continuity at tile seams (exit gate)
  *
  * Phase: 8-road-routing
  * Plan: 08-01 (core); 08-02 (public API + debug viz)
@@ -44,6 +45,13 @@ const _scratchPt = new THREE.Vector3()
  * Coupling: if terrain.js CHUNK_SIZE changes, this must change too.
  */
 export const CHUNK_SIZE = 64
+
+/**
+ * Number of samples taken along a vertical tile-boundary edge when locating the
+ * shared seam crossing (the lowest-altitude point on that edge). 33 samples = 2 m
+ * spacing on a 64 m edge — fine enough to find the valley notch deterministically.
+ */
+const SEAM_SAMPLES = 33
 
 // ── Module-scope pure height function ─────────────────────────────────────────
 /**
@@ -214,46 +222,61 @@ export class RoadSystem {
         return _coarseHeight(wx, wz, this._noiseCoarse, this._params)
     }
 
-    // ── Seeded edge waypoints ──────────────────────────────────────────────────
+    // ── Shared seam crossing ─────────────────────────────────────────────────────
     /**
-     * Derive the west-entry and east-exit waypoints for a tile.
+     * The shared road crossing on the vertical tile boundary at world x = boundaryTileX * CHUNK_SIZE,
+     * within row `tileZ`. Defined as the LOWEST-altitude point along that boundary edge.
      *
-     * Trunk road convention (Open Q3 → Claude's discretion): East-West trunk.
-     * West entry lies on x = tileX * CHUNK_SIZE (western edge of this tile).
-     * East exit lies on x = (tileX+1) * CHUNK_SIZE (eastern edge of this tile).
+     * Why this gives seam continuity (the D-06 exit gate):
+     *   The crossing is a pure function of (boundaryTileX, tileZ) via raw coarseHeight —
+     *   it contains NO per-tile seed. So tile A = (tX, tZ) querying its EAST boundary
+     *   (boundaryTileX = tX+1) and its neighbor B = (tX+1, tZ) querying its WEST boundary
+     *   (boundaryTileX = tX+1) call _seamPoint(tX+1, tZ) with identical arguments and get
+     *   the IDENTICAL point. Both tiles' splines terminate exactly here → C0 continuity by
+     *   construction (no ghost-point trickery, no gap).
      *
-     * Ownership convention (RESEARCH §Pattern 3):
-     *   Tile (tX, tZ) OWNS its western edge waypoints.
-     *   Its eastern exit == western entry of tile (tX+1, tZ), but the eastern exit
-     *   is derived using THIS tile's seed — not the neighbor's.
-     *   The neighbor (tX+1, tZ) derives its own entry by calling _deriveEdgeWaypoints(tX+1, tZ)
-     *   which produces the same value by construction (different rng draw from the same tile seed).
+     * Lowest-point selection also serves D-04 (valley-seeking): the trunk threads through
+     * the natural low notch of each ridge boundary rather than crossing at a random Z.
      *
-     * Seam continuity: because both tiles call _deriveEdgeWaypoints with THEIR OWN tile coords,
-     * the east exit of tile A (tX, tZ) is DIFFERENT from the west entry of tile B (tX+1, tZ).
-     * Instead, ghost points are used for C1 continuity — see _buildTileSpline().
-     * The east exit position is used as the A* goal on THIS tile only.
+     * @param {number} boundaryTileX — integer tile-boundary index (world x = boundaryTileX * CHUNK_SIZE)
+     * @param {number} tileZ — row index; crossing is searched within [tileZ*CHUNK_SIZE, (tileZ+1)*CHUNK_SIZE]
+     * @returns {THREE.Vector3} the shared crossing point (raw coarse height as y)
+     */
+    _seamPoint(boundaryTileX, tileZ) {
+        const wx = boundaryTileX * CHUNK_SIZE
+        const z0 = tileZ * CHUNK_SIZE
+        let bestZ = z0
+        let bestH = Infinity
+        for (let i = 0; i < SEAM_SAMPLES; i++) {
+            const wz = z0 + (i / (SEAM_SAMPLES - 1)) * CHUNK_SIZE
+            const h  = this._coarseH(wx, wz)
+            if (h < bestH) { bestH = h; bestZ = wz }
+        }
+        return new THREE.Vector3(wx, bestH, bestZ)
+    }
+
+    // ── Edge waypoints (shared seam endpoints) ───────────────────────────────────
+    /**
+     * West-entry and east-exit crossings for a tile — the deterministic, NEIGHBOR-SHARED
+     * seam points on this tile's two vertical boundaries.
+     *
+     * Trunk road convention: East-West trunk.
+     *   entry = west boundary crossing  = _seamPoint(tileX,     tileZ)  (x = tileX * CHUNK_SIZE)
+     *   exit  = east boundary crossing  = _seamPoint(tileX + 1, tileZ)  (x = (tileX+1) * CHUNK_SIZE)
+     *
+     * Because the crossings are keyed by BOUNDARY (not by tile), the east exit of tile
+     * (tX, tZ) is byte-identical to the west entry of tile (tX+1, tZ) — this is what makes
+     * adjacent tile splines join at the seam (D-06). The entry/exit are also used as the
+     * A* start/goal anchors inside _routeTile.
      *
      * @param {number} tileX
      * @param {number} tileZ
      * @returns {{ entry: THREE.Vector3, exit: THREE.Vector3 }}
      */
     _deriveEdgeWaypoints(tileX, tileZ) {
-        const rng = mulberry32(seedFor(this._worldSeed, 'roads', tileX, tileZ))
-
-        // West entry: random Z offset on western edge
-        const entryX = tileX * CHUNK_SIZE
-        const entryZ = tileZ * CHUNK_SIZE + rng() * CHUNK_SIZE
-        const entryH = this._coarseH(entryX, entryZ)
-
-        // East exit: second random draw from same tile seed, on eastern edge
-        const exitX = (tileX + 1) * CHUNK_SIZE
-        const exitZ  = tileZ * CHUNK_SIZE + rng() * CHUNK_SIZE
-        const exitH  = this._coarseH(exitX, exitZ)
-
         return {
-            entry: new THREE.Vector3(entryX, entryH, entryZ),
-            exit:  new THREE.Vector3(exitX,  exitH,  exitZ),
+            entry: this._seamPoint(tileX,     tileZ),  // west boundary (shared with tileX-1's east)
+            exit:  this._seamPoint(tileX + 1, tileZ),  // east boundary (shared with tileX+1's west)
         }
     }
 
@@ -438,41 +461,46 @@ export class RoadSystem {
 
     // ── Spline construction ────────────────────────────────────────────────────
     /**
-     * Build a THREE.CatmullRomCurve3 spline for a tile with ghost control points.
+     * Build a THREE.CatmullRomCurve3 spline for a tile, anchored at the shared seam crossings.
      *
-     * Ghost points (RESEARCH §Pattern 3):
-     *  - Ghost-left:  last waypoint of tile (tileX-1, tileZ)
-     *  - Ghost-right: first waypoint of tile (tileX+1, tileZ)
+     * Control points: [ westSeam, ...routedWaypoints, eastSeam ]
+     *   westSeam = _seamPoint(tileX,     tileZ)  — shared with tile (tileX-1, tileZ)'s eastSeam
+     *   eastSeam = _seamPoint(tileX + 1, tileZ)  — shared with tile (tileX+1, tileZ)'s westSeam
      *
-     * Why ghost points give C1 continuity:
-     *   Catmull-Rom tangent at P_i = τ(P_{i+1} - P_{i-1})
-     *   Both tile A and tile B share P_{i-1} (ghost) and P_{i+1} (ghost).
-     *   → The tangent at the seam waypoint P_i is identical on both sides.
+     * Seam continuity (D-06 exit gate):
+     *   For an open Catmull-Rom curve getPoint(0) === first control point and
+     *   getPoint(1) === last control point. Because adjacent tiles compute the SAME
+     *   boundary crossing (_seamPoint is keyed by boundary, not tile), getPoint(1) of
+     *   tile A === getPoint(0) of tile B exactly → C0 continuity by construction. The
+     *   matching interior cells on either side keep the seam tangents aligned → C1.
+     *   (The earlier ghost-point scheme could not join the splines because adjacent
+     *   tiles never shared a boundary point — see VERIFICATION.md.)
      *
-     * Ghost lookups use _getTileWaypointsOnly() NOT _getTile() to avoid recursion:
-     *   tile A builds spline → asks B for waypoints only → B does NOT build spline → no cycle.
+     * Anchoring the spline endpoints to the seam points does NOT affect the grade-checked
+     * route: _getTileWaypointsOnly() still returns only the A* cells (ROAD-02/03 operate on
+     * those). The seam endpoints are spline-shaping anchors, not graded route edges.
      *
-     * Uses 'centripetal' parameterization (RESEARCH A5): avoids self-intersection
-     * at tight hairpin bends.
+     * Uses 'centripetal' parameterization (RESEARCH A5): avoids self-intersection at tight
+     * hairpin bends. Consecutive coincident points are de-duplicated so a zero-length segment
+     * never makes the centripetal exponent divide by zero (e.g. degenerate direct-fallback routes).
      *
      * @param {number} tileX
      * @param {number} tileZ
-     * @param {THREE.Vector3[]} waypoints — routed waypoints for this tile
+     * @param {THREE.Vector3[]} waypoints — routed A* cell waypoints for this tile
      * @returns {THREE.CatmullRomCurve3}
      */
     _buildTileSpline(tileX, tileZ, waypoints) {
-        // Fetch ghost points from adjacent tiles (waypoints only — no recursion)
-        const leftWaypoints  = this._getTileWaypointsOnly(tileX - 1, tileZ)
-        const rightWaypoints = this._getTileWaypointsOnly(tileX + 1, tileZ)
+        const { entry: westSeam, exit: eastSeam } = this._deriveEdgeWaypoints(tileX, tileZ)
 
-        const ghostLeft  = leftWaypoints.length  > 0 ? leftWaypoints[leftWaypoints.length - 1]  : null
-        const ghostRight = rightWaypoints.length > 0 ? rightWaypoints[0] : null
+        // De-duplicate consecutive coincident control points (centripetal guard).
+        const raw = [westSeam, ...waypoints, eastSeam]
+        const pts = []
+        for (const p of raw) {
+            if (pts.length === 0 || pts[pts.length - 1].distanceToSquared(p) > 1e-6) {
+                pts.push(p)
+            }
+        }
 
-        // Assemble control points: [ghostLeft, ...waypoints, ghostRight]
-        // filter(Boolean) removes null ghosts at world edges
-        const pts = [ghostLeft, ...waypoints, ghostRight].filter(Boolean)
-
-        // Need at least 2 points for a valid spline
         if (pts.length < 2) {
             console.warn(`[RoadSystem] _buildTileSpline(${tileX},${tileZ}): fewer than 2 control points`)
         }

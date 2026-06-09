@@ -4,3 +4,8 @@
 # Logs
 Logs/
 *.log
+
+# Claude Code local harness state (volatile / per-machine)
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
