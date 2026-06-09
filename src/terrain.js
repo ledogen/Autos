@@ -69,7 +69,9 @@ function djb2(str) {
 
 function parseWorldSeed(input) {
   if (typeof input === 'number') return (input | 0) >>> 0
-  return djb2(String(input))
+  const s = String(input)
+  if (/^-?\d+$/.test(s)) return (parseInt(s, 10) | 0) >>> 0
+  return djb2(s)
 }
 
 function seedFor(worldSeed, domainTag, ...coords) {
@@ -268,6 +270,7 @@ self.onmessage = function(e) {
         }
     }
 
+    // Transfer heights buffer to main thread (zero-copy transferable)
     self.postMessage({ key, cx, cz, heights }, [heights.buffer])
 }
 `
@@ -481,7 +484,10 @@ export class TerrainSystem {
      * @returns {number} Height in metres (with terrainAmplitude applied).
      */
     analyticHeight(wx, wz) {
-        if (!this._noiseCoarse) return 0  // before reinitWorker — should not happen in normal use
+        // Precondition: reinitWorker (called synchronously in the constructor) must have built
+        // the noise closures. Throw rather than silently returning 0 — a 0 here would seat the
+        // truck at sea level inside the terrain and violate the "never returns 0" contract (WR-07).
+        if (!this._noiseCoarse) throw new Error('analyticHeight called before reinitWorker — call-order bug')
         const raw = height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params)
         return raw * (this._params.terrainAmplitude ?? 1.0)
     }

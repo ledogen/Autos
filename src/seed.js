@@ -31,11 +31,17 @@ export function djb2(str) {
 
 // ── parseWorldSeed — accepts string or integer → unsigned 32-bit int ─────────
 // Used at startup (URL ?seed= param) and on debug-panel seed field change.
-// Integer path: (input | 0) >>> 0  (clips to signed 32-bit then forces unsigned)
-// String path:  djb2(String(input))
+// Integer path:        (input | 0) >>> 0  (clips to signed 32-bit then forces unsigned)
+// Numeric-text path:   all-digit strings parse as integers so ?seed=12345 and the debug
+//                      field agree with a numeric seed — URLSearchParams.get is ALWAYS a
+//                      string, so without this an all-digit URL seed would hash via djb2
+//                      and silently diverge from the documented integer world (SEED-01/03).
+// String path:         djb2(String(input))
 export function parseWorldSeed(input) {
   if (typeof input === 'number') return (input | 0) >>> 0
-  return djb2(String(input))
+  const s = String(input)
+  if (/^-?\d+$/.test(s)) return (parseInt(s, 10) | 0) >>> 0
+  return djb2(s)
 }
 
 // ── seedFor — domain-tagged sub-seed derivation ───────────────────────────────

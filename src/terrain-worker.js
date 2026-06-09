@@ -25,7 +25,9 @@ function djb2(str) {
 
 function parseWorldSeed(input) {
   if (typeof input === 'number') return (input | 0) >>> 0
-  return djb2(String(input))
+  const s = String(input)
+  if (/^-?\d+$/.test(s)) return (parseInt(s, 10) | 0) >>> 0
+  return djb2(s)
 }
 
 function seedFor(worldSeed, domainTag, ...coords) {
