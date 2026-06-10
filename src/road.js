@@ -71,6 +71,12 @@ const _protoTurnSteps = (d1, d2) => { const a = Math.abs(d1 - d2); return Math.m
 const PROTO_COVER_D    = 36     // m — proximity that counts as "on top of" another road
 const PROTO_COVER_DOT  = 0.93   // cos(~21°) — heading similarity that counts as "same direction"
 const PROTO_COVER_FRAC = 0.5    // drop the road if more than half its length overlaps a same-dir road
+// Intra-road loop removal (proximity-based): if the path returns within PROTO_LOOP_D metres of
+// somewhere it was already PROTO_LOOP_ARCLAG metres-of-travel ago, the intervening stretch is a
+// loop/fold and gets spliced out. ARCLAG > LOOP_D keeps switchbacks (legs sit > LOOP_D apart).
+const PROTO_LOOP_D      = 11    // m — "returned to where it was" distance
+const PROTO_LOOP_ARCLAG = 38    // m — min along-path travel before a return counts as a loop
+const PROTO_RUN_MIN     = 4     // min points for an emitted road run (avoids tiny fragments)
 
 // ── Module-scope pure height function ─────────────────────────────────────────
 /**
@@ -790,18 +796,25 @@ export class RoadSystem {
         return out
     }
 
-    // Remove self-intersection loops from a single road's polyline: where segment (i,i+1)
-    // crosses a non-adjacent segment (j,j+1), splice out the loop between them and stitch at the
-    // crossing point. Crossing-based → switchbacks (parallel, non-crossing legs) are never touched;
-    // only genuine loops (e.g. centripetal spline overshoot at sharp turns) are cut.
+    // Remove loops / self-folds from a single road's polyline (PROXIMITY based, not crossing based):
+    // if point j returns within PROTO_LOOP_D of an earlier point i that is > PROTO_LOOP_ARCLAG metres
+    // back along the path, the stretch i+1..j-1 is a loop or tight fold and is spliced out (i joins j).
+    // Catches spline-overshoot loops AND junction folds even when the sampled crossing is imperfect;
+    // switchbacks survive because their parallel legs sit farther apart than PROTO_LOOP_D.
     _removeLoops(pts) {
         let p = pts
-        for (let guard = 0; guard < 40; guard++) {
+        for (let guard = 0; guard < 200; guard++) {
+            const arc = new Float64Array(p.length)
+            for (let k = 1; k < p.length; k++) arc[k] = arc[k - 1] + Math.hypot(p[k].x - p[k - 1].x, p[k].z - p[k - 1].z)
             let found = false
             for (let i = 0; i < p.length - 1 && !found; i++) {
-                for (let j = i + 2; j < p.length - 1; j++) {
-                    const X = _segIntersectXZ(p[i], p[i + 1], p[j], p[j + 1])
-                    if (X) { p = [...p.slice(0, i + 1), X, ...p.slice(j + 1)]; found = true; break }
+                for (let j = i + 2; j < p.length; j++) {
+                    if (arc[j] - arc[i] < PROTO_LOOP_ARCLAG) continue       // too close along the path
+                    const dx = p[j].x - p[i].x, dz = p[j].z - p[i].z
+                    if (dx * dx + dz * dz < PROTO_LOOP_D * PROTO_LOOP_D) {  // returned near an earlier point
+                        p = [...p.slice(0, i + 1), ...p.slice(j)]          // splice out the loop
+                        found = true; break
+                    }
                 }
             }
             if (!found) break
@@ -899,14 +912,15 @@ export class RoadSystem {
         const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING)
         const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING)
         const surf = this._proto.surfaceY
-        const drawn = new Set()       // dedupe identical segments (collapsed anchors → same road)
-        const cover = new Map()       // spatial hash: "cx,cz" → [x, z, hx, hz] of already-drawn road points
+
+        // Inter-row same-direction overlap suppression: spatial hash of points kept from PRIOR rows.
+        const cover = new Map()
         const ckey = (x, z) => `${Math.floor(x / PROTO_COVER_D)},${Math.floor(z / PROTO_COVER_D)}`
         const registerPoint = (x, z, hx, hz) => {
             const k = ckey(x, z); let arr = cover.get(k); if (!arr) { arr = []; cover.set(k, arr) }
             arr.push(x, z, hx, hz)
         }
-        const pointCovered = (x, z, hx, hz) => {
+        const sameDirCovered = (x, z, hx, hz) => {
             const cx = Math.floor(x / PROTO_COVER_D), cz = Math.floor(z / PROTO_COVER_D)
             for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
                 const arr = cover.get(`${cx + dx},${cz + dz}`); if (!arr) continue
@@ -918,36 +932,51 @@ export class RoadSystem {
             }
             return false
         }
+
         for (let mz = mz0; mz <= mz1; mz++) {
+            // Concatenate this row's east connections into ONE continuous polyline, so loops at the
+            // anchor junctions are visible to the loop remover and the row renders as a single road.
+            let rowWps = []
             for (let mx = mx0; mx <= mx1; mx++) {
-                const a = this._protoAnchor(mx, mz)
-                const e = this._protoAnchor(mx + 1, mz)               // east-running valley road
-                const segKey = `${a.x.toFixed(0)},${a.z.toFixed(0)}>${e.x.toFixed(0)},${e.z.toFixed(0)}`
-                if (drawn.has(segKey)) continue
-                drawn.add(segKey)
-                const wps = this._protoConnect(a, e)
+                const wps = this._protoConnect(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz))
                 if (wps.length < 2) continue
-                const spline = new THREE.CatmullRomCurve3(wps, false, 'centripetal', 0.5)
-                const pts = this._removeLoops(spline.getPoints(Math.max(16, wps.length * 3)))  // intra-road loop cleanup
-                // Per-point heading (unit, xz) for the parallel-overlap test.
-                const head = pts.map((p, i) => {
-                    const q = pts[Math.min(pts.length - 1, i + 1)], r = pts[Math.max(0, i - 1)]
-                    const hx = q.x - r.x, hz = q.z - r.z, l = Math.hypot(hx, hz) || 1
-                    return [hx / l, hz / l]
-                })
-                // Drop the road if too much of it overlaps an already-drawn same-direction road.
-                let coveredN = 0
-                for (let i = 0; i < pts.length; i++) if (pointCovered(pts[i].x, pts[i].z, head[i][0], head[i][1])) coveredN++
-                if (coveredN / pts.length > PROTO_COVER_FRAC) continue
-                // Keep it: register its points so later roads suppress against it, then draw.
-                for (let i = 0; i < pts.length; i++) registerPoint(pts[i].x, pts[i].z, head[i][0], head[i][1])
-                if (surf) for (const p of pts) p.y = surf(p.x, p.z) + 1.0  // hug rendered surface
-                else for (const p of pts) p.y += 1.0
-                const line = _buildDebugLine2(pts, 0x00e5ff)
-                this._scene.add(line)
-                this._proto.lines.push(line)
+                if (rowWps.length) { for (let k = 1; k < wps.length; k++) rowWps.push(wps[k]) }  // drop shared anchor
+                else rowWps = wps.slice()
             }
+            if (rowWps.length < 2) continue
+
+            const spline = new THREE.CatmullRomCurve3(rowWps, false, 'centripetal', 0.5)
+            const pts = this._removeLoops(spline.getPoints(Math.max(24, rowWps.length * 2)))
+            if (pts.length < 2) continue
+            const head = pts.map((p, i) => {
+                const q = pts[Math.min(pts.length - 1, i + 1)], r = pts[Math.max(0, i - 1)]
+                const hx = q.x - r.x, hz = q.z - r.z, l = Math.hypot(hx, hz) || 1
+                return [hx / l, hz / l]
+            })
+
+            // Draw as contiguous runs, breaking wherever this row overlaps a PRIOR row (same dir).
+            // Register this row's points only AFTER drawing it, so a straight road never self-culls.
+            const kept = []
+            let run = []
+            const emitRun = () => {
+                if (run.length >= PROTO_RUN_MIN) {
+                    const seg = run.slice()
+                    if (surf) for (const p of seg) p.y = surf(p.x, p.z) + 1.0
+                    else for (const p of seg) p.y += 1.0
+                    const line = _buildDebugLine2(seg, 0x00e5ff)
+                    this._scene.add(line); this._proto.lines.push(line)
+                }
+                run = []
+            }
+            for (let i = 0; i < pts.length; i++) {
+                const x = pts[i].x, z = pts[i].z, hx = head[i][0], hz = head[i][1]
+                if (sameDirCovered(x, z, hx, hz)) emitRun()
+                else { run.push(pts[i]); kept.push(x, z, hx, hz) }
+            }
+            emitRun()
+            for (let i = 0; i < kept.length; i += 4) registerPoint(kept[i], kept[i + 1], kept[i + 2], kept[i + 3])
         }
+
         // Bound caches during endless play.
         if (this._proto.anchors.size > 4000) this._proto.anchors.clear()
         if (this._proto.segs.size    > 1500) this._proto.segs.clear()
@@ -976,18 +1005,4 @@ function _buildDebugLine2(pts, color = 0x00e5ff) {
     return new THREE.Line(geo, mat)
 }
 
-// PROTOTYPE: XZ segment intersection (a→b vs c→d). Returns the crossing point (with
-// interpolated y on a→b) or null. Strict interior test (eps) so shared vertices of
-// adjacent segments don't count as crossings. Used by _removeLoops.
-function _segIntersectXZ(a, b, c, d) {
-    const r1 = b.x - a.x, r2 = b.z - a.z, s1 = d.x - c.x, s2 = d.z - c.z
-    const denom = r1 * s2 - r2 * s1
-    if (Math.abs(denom) < 1e-9) return null                     // parallel / collinear
-    const t = ((c.x - a.x) * s2 - (c.z - a.z) * s1) / denom
-    const u = ((c.x - a.x) * r2 - (c.z - a.z) * r1) / denom
-    const eps = 1e-4
-    if (t > eps && t < 1 - eps && u > eps && u < 1 - eps) {
-        return new THREE.Vector3(a.x + t * r1, a.y + t * (b.y - a.y), a.z + t * r2)
-    }
-    return null
-}
+// (removed: _segIntersectXZ — replaced by proximity-based _removeLoops)
