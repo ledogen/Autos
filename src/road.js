@@ -44,6 +44,22 @@ import { createNoise2D } from 'simplex-noise'
 // the search loop scratch is reused.
 const _scratchPt = new THREE.Vector3()
 
+/**
+ * Allocating linear interpolation between two Vector3 (used at SLICE time, not query cadence —
+ * slicing is a one-shot per re-stream, so the allocation here is not on the hot query path).
+ * @param {THREE.Vector3} a
+ * @param {THREE.Vector3} b
+ * @param {number} t — 0..1
+ * @returns {THREE.Vector3} new vector a + (b-a)·t
+ */
+function _lerpVec3(a, b, t) {
+    return new THREE.Vector3(
+        a.x + (b.x - a.x) * t,
+        a.y + (b.y - a.y) * t,
+        a.z + (b.z - a.z) * t,
+    )
+}
+
 // ── Module constants ───────────────────────────────────────────────────────────
 /**
  * Tile side length in metres. MUST match terrain.js CHUNK_SIZE.
@@ -285,6 +301,9 @@ export class RoadSystem {
         }
         this._debugLines = []
         if (this._network) this._network.clear()
+        if (this._tiles) this._tiles.clear()
+        if (this._tileObjects) this._tileObjects.clear()
+        this._slicedFrom = null
         this._invalidateProto()
     }
 
@@ -348,6 +367,17 @@ export class RoadSystem {
         // key "<mz>:<runIndex>" → { points: THREE.Vector3[] } (continuous centerline, raw routed y).
         this._network = new Map()
         this._networkCenter = null   // center the current network was streamed around
+
+        // Per-tile sliced spline store — built ONLY by _sliceNetwork from this._network.
+        // key "<tileX>,<tileZ>" → { spline, points, waypoints }[] (a tile MAY hold several segments).
+        // Each segment is a slice of ONE continuous network polyline cut at 64 m (CHUNK_SIZE)
+        // boundaries, so adjacent tiles share the exact boundary point (C0) and tangent (C1) by
+        // construction — NO shared-seam-waypoint machinery (D-06 REVISED).
+        this._tiles = new Map()
+        this._slicedFrom = null      // identity of the network the current slice was built from
+        // Memoized representative tile objects returned by ensureTile (idempotency for the seam
+        // harness's two passes). key "<tileX>,<tileZ>" → { spline, waypoints }. Rebuilt on re-slice.
+        this._tileObjects = new Map()
     }
 
     setProtoEnabled(v) {
@@ -560,6 +590,10 @@ export class RoadSystem {
         this._proto.lastCenter = center.clone()
         this._proto.dirty = false
         this._network.clear()
+        // A real re-stream invalidates the previous slice; _sliceNetwork re-slices on next call.
+        this._slicedFrom = null
+        if (this._tiles) this._tiles.clear()
+        if (this._tileObjects) this._tileObjects.clear()
 
         const R = this._proto.radius
         const mx0 = Math.floor((center.x - R) / PROTO_ANCHOR_SPACING) - 1
@@ -637,8 +671,133 @@ export class RoadSystem {
             // Drop the network entirely if it has grown unbounded — next stream rebuilds the window.
             this._network.clear()
             this._networkCenter = null
+            this._slicedFrom = null
+            if (this._tiles) this._tiles.clear()
+            if (this._tileObjects) this._tileObjects.clear()
         }
         return this._network
+    }
+
+    // ── Per-tile slicing (D-06 REVISED — C0/C1 seam continuity is FREE) ──────────
+    /**
+     * Slice the canonical `this._network` continuous polylines into per-tile Catmull-Rom
+     * splines stored in `this._tiles` (key "<tileX>,<tileZ>" → segment[]). Because each per-tile
+     * spline is a SLICE of ONE continuous parent polyline, consecutive tiles share the exact
+     * boundary-crossing point (C0) and — being samples of the same parent geometry — align
+     * tangents there (C1). There is NO shared-seam-waypoint / ghost-point machinery (the old
+     * approach that failed VERIFICATION.md is gone for good).
+     *
+     * For each network polyline: walk it segment-by-segment, and wherever the segment crosses a
+     * 64 m (CHUNK_SIZE) tile boundary in x or z, insert the exact crossing point (linear
+     * interpolation at the integer-boundary coordinate) into BOTH the ending sub-polyline and the
+     * starting sub-polyline — so the two adjacent per-tile splines share that exact point. Each
+     * sub-polyline is assigned to the tile containing its midpoint. Sub-polylines are de-duplicated
+     * (consecutive coincident control points removed — centripetal divide-by-zero guard) and those
+     * with < 2 distinct points are skipped. Each kept sub-polyline becomes a
+     * `THREE.CatmullRomCurve3(points, false, 'centripetal', 0.5)` — the SAME parameterization as
+     * the source network curve (so the slice geometry matches the rendered/source curve).
+     *
+     * Deterministic: pure function of `this._network` (itself a pure function of seed+coords+params).
+     * Idempotent: re-slicing the same network identity is a no-op (memoized via `this._slicedFrom`).
+     *
+     * @returns {Map<string, {spline: THREE.CatmullRomCurve3, points: THREE.Vector3[], waypoints: THREE.Vector3[]}[]>} this._tiles
+     */
+    _sliceNetwork() {
+        // Identity guard: re-slicing the identical network is a no-op. _streamNetwork/invalidateCache
+        // null this._slicedFrom on any real network change, forcing a re-slice.
+        if (this._slicedFrom === this._network && this._tiles.size > 0) return this._tiles
+
+        this._tiles.clear()
+        this._tileObjects.clear()
+
+        const S = CHUNK_SIZE
+        for (const { points } of this._network.values()) {
+            if (!points || points.length < 2) continue
+
+            // Walk the polyline, cutting at every x/z integer-multiple-of-S boundary crossing.
+            // `current` accumulates the active sub-polyline; on a cut we push the boundary point to
+            // BOTH the closing sub-polyline and the new one (shared C0 point).
+            let current = [points[0].clone()]
+            const flush = () => {
+                if (current.length >= 2) this._assignSlice(current)
+                // start the next sub-polyline at the same boundary point we just closed on (shared)
+            }
+            for (let i = 1; i < points.length; i++) {
+                const a = points[i - 1], b = points[i]
+                // Collect all boundary crossings along segment a→b, ordered by parametric t∈(0,1).
+                const crossings = []
+                this._collectCrossings(a.x, b.x, S, (t) => crossings.push(t))
+                this._collectCrossings(a.z, b.z, S, (t) => crossings.push(t))
+                crossings.sort((p, q) => p - q)
+                let prevT = 0
+                for (const t of crossings) {
+                    if (t <= 1e-9 || t >= 1 - 1e-9) continue        // skip endpoints (no zero-length cut)
+                    if (t <= prevT + 1e-9) continue                  // coincident crossings (corner) → one cut
+                    const cp = _lerpVec3(a, b, t)
+                    current.push(cp.clone())                          // close current sub-polyline ON the boundary
+                    flush()
+                    current = [cp.clone()]                            // next sub-polyline STARTS on the same point (C0)
+                    prevT = t
+                }
+                current.push(b.clone())
+            }
+            flush()  // emit the trailing sub-polyline
+        }
+
+        this._slicedFrom = this._network
+        return this._tiles
+    }
+
+    /**
+     * Invoke `cb(t)` for every t∈(0,1) at which the linear segment [v0,v1] crosses an
+     * integer multiple of `step` (a tile boundary on one axis). No allocation.
+     * @param {number} v0 — segment start coordinate (x or z)
+     * @param {number} v1 — segment end coordinate
+     * @param {number} step — CHUNK_SIZE
+     * @param {(t:number)=>void} cb
+     */
+    _collectCrossings(v0, v1, step, cb) {
+        if (v0 === v1) return
+        const lo = Math.min(v0, v1), hi = Math.max(v0, v1)
+        // First boundary strictly greater than lo.
+        let k = Math.floor(lo / step) + 1
+        let boundary = k * step
+        while (boundary < hi - 1e-9) {
+            const t = (boundary - v0) / (v1 - v0)
+            if (t > 1e-9 && t < 1 - 1e-9) cb(t)
+            k++
+            boundary = k * step
+        }
+    }
+
+    /**
+     * De-duplicate a sub-polyline's coincident control points, assign it to the tile containing
+     * its midpoint, build its centripetal Catmull-Rom spline, and store it in `this._tiles`.
+     * Skips sub-polylines that collapse to < 2 distinct points.
+     * @param {THREE.Vector3[]} pts — a sub-polyline (one tile's slice of a network polyline)
+     */
+    _assignSlice(pts) {
+        // Centripetal divide-by-zero guard: drop consecutive coincident control points.
+        const clean = []
+        for (const p of pts) {
+            const last = clean[clean.length - 1]
+            if (!last || Math.abs(last.x - p.x) > 1e-6 || Math.abs(last.y - p.y) > 1e-6 || Math.abs(last.z - p.z) > 1e-6) {
+                clean.push(p)
+            }
+        }
+        if (clean.length < 2) return
+
+        // Assign by midpoint tile (a slice lies within one tile by construction, since it was cut
+        // at every boundary crossing; the midpoint is an unambiguous, deterministic representative).
+        const mid = clean[(clean.length / 2) | 0]
+        const tileX = Math.floor(mid.x / CHUNK_SIZE)
+        const tileZ = Math.floor(mid.z / CHUNK_SIZE)
+        const key = `${tileX},${tileZ}`
+
+        const spline = new THREE.CatmullRomCurve3(clean, false, 'centripetal', 0.5)
+        let arr = this._tiles.get(key)
+        if (!arr) { arr = []; this._tiles.set(key, arr) }
+        arr.push({ spline, points: clean, waypoints: clean })
     }
 
     // Legacy proto viz driver: delegates DATA to _streamNetwork (single source of truth), then
