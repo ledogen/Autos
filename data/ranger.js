@@ -184,35 +184,43 @@ export const RANGER_PARAMS = {
   brakeRampRate:    8,    // /s — brake input ramp (125 ms to full)
   releaseRampRate: 20,    // /s — release decay rate for both axes
 
-  // ── Phase 8 Road Routing (ROAD-01/02/03) ─────────────────────────────────
-  // Parameters for the per-tile A* router in src/road.js.
-  // See .planning/phases/08-road-routing/08-RESEARCH.md for derivation details.
+  // ── Phase 8 Road Routing — D-09 LOCKED cost model (valley-trunk core) ─────
+  // Soft-cost turn-penalty A* weights for the valley-following streaming trunk in src/road.js.
+  // Cost (per A* edge, D-09):
+  //   edgeCost = roadWDist·horiz + roadWAlt·h + roadWGrade·grade²
+  //            + roadWOver·max(0, grade − maxRoadGrade) + roadWTurn·(Δheading/45°)
+  // These are live-tunable (08-07 sliders flow through this._proto.params seeded from these).
+  // The over-cap term is FINITE/SOFT — there is NEVER an Infinity edge / hard grade block
+  // (D-02 REVISED; the old hard block caused the "no path" failure — see 08-VERIFICATION.md).
+  // See .planning/phases/08-road-routing/08-RESEARCH.md + spike 001 for derivation.
   //
-  // maxRoadGrade: Hard upper limit on road grade (rise/run ratio). D-02 target ~12%.
-  // Edges exceeding this grade are impassable (Infinity cost in A*). The truck
-  // must always be able to climb any routed road at this limit.
-  // Research assumption: A2, RESEARCH §Grade & Switchbacks
-  maxRoadGrade: 0.12,   // ratio (12%) — hard grade limit; D-02 Eastern-Sierra target
+  // maxRoadGrade: SOFT target grade the over-cap penalty measures against (rise/run ratio).
+  // Exceeding it is penalized (roadWOver·excess), NOT blocked — the route climbs steep ground
+  // only when wrapping around would cost more. D-09 default 0.15 (15%).
+  maxRoadGrade: 0.15,   // ratio (15%) — SOFT over-cap target (D-02 REVISED; never a hard block)
 
-  // routeGridSize: NxN cell count per 64 m tile for A* routing.
-  // 16×16 = 4 m cells — fine enough to resolve both hairpin arms (RESEARCH A2 / Pitfall 6).
-  // At 4 m cells a ~15 m hairpin radius occupies ~3×3 = 9 cells (two arms separated).
-  routeGridSize: 16,     // cells/side — 4 m cell size at 64 m tile (RESEARCH A2)
+  // roadWDist: directness weight — cost per metre of horizontal travel. Keeps the trunk from
+  // wandering; balanced against the altitude/grade terms. D-09 default 1.
+  roadWDist: 1,         // cost units / m horizontal — directness (D-09)
 
-  // roadSlopePenalty: Multiplier for the quadratic slope cost term grade²×penalty.
-  // Quadratic means 2× grade → 4× penalty, strongly discouraging steep but allowing gentle.
-  // Starting value from RESEARCH §Open Q2; expose as debug slider for runtime tuning.
-  // Research assumption: A4 (cost weights require tuning)
-  roadSlopePenalty: 50,  // arbitrary cost units; tunable via debug slider (RESEARCH A4)
+  // roadWAlt: stay-low valley-seeking weight — DOMINANT term. Adds roadWAlt·h per cell so the
+  // route prefers low ground and wraps AROUND high ground (D-04) instead of climbing it.
+  roadWAlt: 0.85,       // cost units / m altitude — valley-seeking dominant term (D-09 / D-04)
 
-  // roadAltWeight: Per-cell altitude cost weight (D-04 valley-seeking).
-  // Adds toCell.h × weight to edge cost — lower raw coarseHeight = cheaper.
-  // Roads hug valley floors and climb only at passes (Eastern Sierra feel).
-  // Research assumption: A4 (cost weights require tuning)
-  roadAltWeight: 0.1,   // arbitrary cost units / m; tunable via debug slider (RESEARCH A4)
+  // roadWGrade: gentle-grade weight — quadratic (grade²) cost. 2× grade → 4× penalty; shapes
+  // smooth gentle climbs without forbidding any grade. D-09 default 400.
+  roadWGrade: 400,      // cost units — quadratic grade² penalty (gentle climbs) (D-09)
 
-  // spurProbability: Probability that any given trunk tile spawns a spur branch.
-  // D-01: sparse trunk + occasional seeded spurs.
-  // Research assumption: A1 (15% per-tile starting value)
-  spurProbability: 0.15, // ratio [0,1] — 15% per-tile spur chance (D-01 / RESEARCH A1)
+  // roadWOver: FINITE over-cap penalty — roadWOver·max(0, grade − maxRoadGrade). Strongly (but
+  // never infinitely) discourages exceeding maxRoadGrade; forces switchbacks where the grade
+  // would otherwise blow past the target. NEVER Infinity (D-02 REVISED). D-09 default 8000.
+  roadWOver: 8000,      // cost units / unit over-grade — SOFT over-cap penalty (D-02 REVISED)
+
+  // roadWTurn: per-45° turn penalty — roadWTurn·(Δheading/45°). Charges each direction change so
+  // the trunk runs long straights and switchbacks ONLY where grade truly forces it. D-09 default 120.
+  roadWTurn: 120,       // cost units / 45° heading change — straight/switchback shaping (D-09)
+
+  // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
+  // Retained for the DEFERRED D-01 spur pass (trunk-only ships first). D-01 / RESEARCH A1.
+  spurProbability: 0.15, // ratio [0,1] — spur chance (deferred D-01 spur pass)
 };
