@@ -32,8 +32,8 @@ polyline is **sliced into per-tile splines** (seam C0/C1 falls out for free) and
 path); soft-cost A* (altitude + grade² + finite over-cap penalty + turn penalty) over a wide window;
 deterministic lazy macro-anchor generation (256 m grid) with bounded valley gradient-descent; per-tile
 slicing of the continuous polyline into Catmull-Rom splines; `queryNearest(x,z) → {point, tangent}`;
-sparse trunk + occasional seeded spurs (D-01); centerline debug viz; and wiring the Phase 7
-`resolveSpawn` seam to spawn the truck on the nearest road facing down it.
+**trunk-only** network (sparse spurs D-01 deferred); centerline debug viz with live cost-weight
+sliders; and wiring the Phase 7 `resolveSpawn` seam to spawn the truck on the nearest road facing down it.
 
 **Out of scope (own phases):** road surface ribbon mesh / crown / camber / terrain carve (Phase 9 —
 SURF); POI anchors (Phase 10); pothole/crack micro-noise (Phase 10 stretch). **Final route-quality
@@ -68,7 +68,11 @@ off in-sim. This phase is the productionization of a proven prototype, not a fre
   Post-path cleanup: **dedupe identical segments + collinear-simplify** before splining.
 
 ### Network Shape
-- **D-01:** **Sparse network** — a trunk road with *occasional seeded spurs/forks*, not a dense web (and **not** an east road on every macro-row). The road is a "find" in mostly-off-road terrain. Branch points are **seeded** (`seedFor("roads", ...)`) so spurs are deterministic and reproducible.
+- **D-01 (DEFERRED out of Phase 8):** **Sparse network** — a trunk road with *occasional seeded
+  spurs/forks*. **Spurs are deferred to post-functional polish:** a trunk-only valley network already
+  yields the usable per-tile splines this phase (and Phase 9) needs; seeded spurs are an additive
+  branch pass that can land later without reworking the trunk. Phase 8 ships **trunk-only**. (The
+  `spurProbability` param stays defined in `data/ranger.js` for that future pass.)
 
 ### Grade & Switchbacks
 - **D-02 (REVISED):** **Max grade is a soft target, ~15%** (`maxGrade 0.15`), enforced by the **finite
@@ -160,7 +164,7 @@ MUST cover these six items:
    `resolveSpawn` (D-07) puts the truck on the road facing down it.
 3. **Per-tile slicing** of the continuous polylines so Phase 9 consumes stable per-tile splines;
    seam C0/C1 is automatic (one curve sliced).
-4. **Sparseness / spurs (D-01):** a trunk + occasional seeded spurs, not an east road on every macro-row.
+4. ~~**Sparseness / spurs (D-01)**~~ — **DEFERRED** to post-functional polish (trunk-only ships; see D-01).
 5. **Determinism + lazy infinite generation preserved** (already true of the streaming-anchor model).
 6. **Re-run the Phase-8 verification / seam exit gate** (`test/test-road-seam.html`, `test/test-road.html`).
 </specifics>
@@ -168,6 +172,8 @@ MUST cover these six items:
 <deferred>
 ## Deferred Ideas
 
+- **Seeded sparse spurs (D-01)** — trunk-only ships in Phase 8; spurs are an additive branch pass for later polish (`spurProbability` param retained).
+- **Final route-quality tuning** — slight 10 m grid coarseness + a few unnatural loop-backs (spike 001 sign-off: post-functional polish).
 - Road surface ribbon mesh, crown/camber, terrain carve — Phase 9 (SURF).
 - POI anchors at road-adjacent low-slope sites — Phase 10.
 - Pothole / crack micro-noise on the road surface — Phase 10 stretch.
