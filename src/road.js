@@ -286,6 +286,15 @@ export class RoadSystem {
      * continuously across adjacent tiles, so at least one E-W adjacent pair carries a spline on both
      * sides (exit-gate totalSeams >= 1).
      *
+     * ⚠ IMPORTANT (WR-02): `.spline` is the *E-W-SPANNING SEAM REPRESENTATIVE ONLY* — the single
+     * slice that touches BOTH the west and east tile boundary (`spanScore === 2`). It is NOT "the
+     * road on this tile". A tile crossed by road that enters and exits the same edge, or runs
+     * mostly N-S, has no spanning slice and returns `{ spline: null }` even though it visibly
+     * carries road. Consumers needing the ACTUAL per-tile geometry (e.g. Phase 9 ribbon meshing)
+     * MUST iterate `this._tiles.get("<tileX>,<tileZ>")` for ALL slices, not read this representative.
+     * This method exists for the seam exit-gate's single-representative endpoint comparison; do not
+     * repurpose its `.spline` as a per-tile road accessor.
+     *
      * @param {number} tileX — tile column (world tile = [tileX·64,(tileX+1)·64))
      * @param {number} tileZ — tile row
      * @returns {{ spline: THREE.CatmullRomCurve3|null, waypoints: THREE.Vector3[] }}
