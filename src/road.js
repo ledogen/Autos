@@ -787,6 +787,13 @@ export class RoadSystem {
         // Refresh live D-09 weights from this._params (debug sliders mutate it in place) so this
         // re-stream uses the current slider values — deterministic re-route (D-03).
         this._refreshParams()
+        // Bound the proto caches BEFORE building (CR-02). anchors/segs are pure functions of
+        // coords, so a cache miss recomputes the identical value — evicting them is always benign.
+        // Doing it pre-build (rather than post-build) makes the result independent of WHEN the
+        // size threshold trips, preserving the module's purity contract (a network is a pure
+        // function of seed+center+params, caches are memoization only).
+        if (this._proto.anchors.size > 4000) this._proto.anchors.clear()
+        if (this._proto.segs.size    > 1500) this._proto.segs.clear()
         this._network.clear()
         // A real re-stream invalidates the previous slice; _sliceNetwork re-slices on next call.
         this._slicedFrom = null
@@ -862,17 +869,12 @@ export class RoadSystem {
             for (let i = 0; i < kept.length; i += 4) registerPoint(kept[i], kept[i + 1], kept[i + 2], kept[i + 3])
         }
 
-        // Bound caches during endless play.
-        if (this._proto.anchors.size > 4000) this._proto.anchors.clear()
-        if (this._proto.segs.size    > 1500) this._proto.segs.clear()
-        if (this._network.size       > 3000) {
-            // Drop the network entirely if it has grown unbounded — next stream rebuilds the window.
-            this._network.clear()
-            this._networkCenter = null
-            this._slicedFrom = null
-            if (this._tiles) this._tiles.clear()
-            if (this._tileObjects) this._tileObjects.clear()
-        }
+        // NOTE (CR-02): no post-build cache eviction. The previous `_network.size > 3000` guard
+        // was non-deterministic — it depended on accumulated session history, not on
+        // (seed, center, params), and could discard the network JUST built for this center,
+        // violating the purity contract. _network is .clear()-ed + rebuilt for the current window
+        // at the top of every real re-stream, so its size is window-bounded, not history-bounded;
+        // no eviction is needed here. Proto-cache bounding moved BEFORE the build (see above).
         return this._network
     }
 
