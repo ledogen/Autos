@@ -428,6 +428,12 @@ export class RoadSystem {
         const point = p.clone()
         const tangent = new THREE.Vector3(q.x - rr.x, q.y - rr.y, q.z - rr.z)
         if (tangent.lengthSq() < 1e-12) tangent.set(0, 0, 1)
+        // Orient the fallback tangent WEST→EAST (increasing x) to match the sliced-spline path's
+        // convention (_assignSlice reverses slices so getPoint(0)=west, getPoint(1)=east). Raw
+        // this._network runs keep their build order and are NOT consistently W→E, so without this
+        // the spawn heading (atan2(tangent.x, tangent.z)) could flip 180° vs the primary path
+        // depending on build order (WR-04). Negate when the run points E→W so parity is deterministic.
+        if (tangent.x < 0) tangent.negate()
         tangent.normalize()   // UNIT tangent (contract)
         return { point, tangent }
     }
