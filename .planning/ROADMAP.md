@@ -111,7 +111,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 | 5. Rollover Validation | v1.0 | 0/0 | ⬜ Skipped | — |
 | 6. Procedural Terrain | v1.0 | 3/3 | ✅ Complete | 2026-06-03 |
 | 7. Free-Cam + Seeded Layered Terrain | v1.1 | 5/5 | Complete   | 2026-06-09 |
-| 8. Road Routing | v1.1 | 4/4 | Complete   | 2026-06-10 |
+| 8. Road Routing | v1.1 | 5/7 | In Progress|  |
 | 9. Road Surface | v1.1 | 0/? | Not started | — |
 | 10. POI Hooks + Polish | v1.1 | 0/? | Not started | — |
 
