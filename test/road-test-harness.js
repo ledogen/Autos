@@ -9,8 +9,9 @@
  *   TEST_PARAMS — minimal RANGER_PARAMS mirror with coarse + road routing fields
  *
  * Purpose: Isolate road routing tests from live simplex noise and full RANGER_PARAMS.
- * mockCoarseHeight returns a 50% grade ramp in +Z — far exceeding the 12% max-grade
- * limit — so any valid router MUST switchback laterally rather than climbing straight up.
+ * mockCoarseHeight returns a 50% grade ramp in +Z — far exceeding the 15% soft maxGrade
+ * target (D-09) — so the turn-penalty A* MUST switchback laterally rather than climbing
+ * straight up.
  */
 
 // ── assert ─────────────────────────────────────────────────────────────────────
@@ -31,9 +32,10 @@ export function assert(label, condition) {
 /**
  * Synthetic steep-ramp terrain: height = wz * 0.5 (50% grade in +Z direction).
  *
- * Grade = |dh/dz| = 0.5 — far exceeds the 12% maxRoadGrade limit.
- * Any router that hard-blocks edges exceeding maxRoadGrade CANNOT climb straight
- * in +Z on this surface; it MUST route laterally (switchbacks).
+ * Grade = |dh/dz| = 0.5 — far exceeds the 15% soft maxGrade target (D-09).
+ * The turn-penalty A* (soft cost, never hard-blocks) will route laterally
+ * (switchbacks) on this surface because the altitude + grade costs strongly
+ * discourage climbing straight in +Z.
  *
  * Used to verify ROAD-03 (switchback emergence) in isolation from live noise.
  *
@@ -48,11 +50,11 @@ export function mockCoarseHeight(wx, wz) {
 // ── TEST_PARAMS ────────────────────────────────────────────────────────────────
 /**
  * Minimal RANGER_PARAMS mirror for road routing tests.
- * Mirrors the Phase 7 coarse-layer block (frozen) and Phase 8 routing params.
+ * Mirrors the Phase 7 coarse-layer block (frozen) and Phase 8 D-09 locked routing params.
  * Tests import this instead of the full data/ranger.js to stay self-contained.
  *
- * Coarse-layer values are locked at Phase 7 completion values.
- * Road routing values match data/ranger.js Phase 8 block defaults.
+ * Coarse-layer values are locked at Phase 7 completion values — do NOT change.
+ * Road routing values are the D-09 locked cost-model params (valley-trunk architecture).
  */
 export const TEST_PARAMS = {
     // ── Coarse terrain layer (Phase 7 locked) ──────────────────────────────
@@ -62,10 +64,13 @@ export const TEST_PARAMS = {
     ridgeSharpness:   1.6,
     terrainAmplitude: 1.0,     // Y-rescale only — router must ignore this
 
-    // ── Phase 8 Road Routing ───────────────────────────────────────────────
-    maxRoadGrade:    0.12,   // ratio (12%) — hard grade limit
-    routeGridSize:   16,     // cells/side — 4 m cells at 64 m tile
-    roadSlopePenalty: 50,   // quadratic slope cost multiplier
-    roadAltWeight:   0.1,   // valley-seeking altitude cost weight
-    spurProbability: 0.15,  // per-tile spur branch probability
+    // ── Phase 8 Road Routing — D-09 locked cost model ─────────────────────
+    // Valley-trunk architecture: soft cost model, turn-penalty A*, no hard grade block.
+    maxRoadGrade:    0.15,   // ratio (15%) — soft target; over-cap penalty kicks in above this
+    roadWDist:       1,      // directness weight
+    roadWAlt:        0.85,   // valley-seeking altitude weight (stay low)
+    roadWGrade:      400,    // quadratic grade penalty weight (gentle discouragement)
+    roadWOver:       8000,   // soft over-cap penalty (expensive but finite — never hard-blocks)
+    roadWTurn:       120,    // per-45° turn penalty (long straights + true switchbacks)
+    spurProbability: 0.15,   // per-tile spur branch probability (stub — no spur generation yet)
 }
