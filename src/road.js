@@ -309,27 +309,31 @@ export class RoadSystem {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // PROTOTYPE — valley-following streaming trunk (Phase-8 redesign spike)
+    // VALLEY-TRUNK STREAMING CORE (the real routing engine — D-08)
     //
     // Endless deterministic roads as a chain of valley-anchor connections, streamed
     // around the view center each frame (same model as terrain chunks). Cost is
     // dominated by altitude + grade with a SOFT (finite) grade penalty, so the route
-    // wraps AROUND high ground instead of climbing it. Fully non-destructive: this
-    // path does not touch _routeTile / ensureTile / queryNearest (the spawn path).
-    // If validated, this replaces the per-tile router. Toggle + tune from the Roads
-    // debug folder.
+    // wraps AROUND high ground instead of climbing it (D-04 / D-02 REVISED). This IS
+    // the canonical RoadSystem core: _streamNetwork(center) builds this._network (the
+    // single source of truth for slicing/viz/queries). The remaining setProto*/
+    // updateProto helpers drive the legacy debug toggle until 08-07 replaces the viz;
+    // the network DATA is always built by _streamNetwork.
     // ═══════════════════════════════════════════════════════════════════════════
 
     _protoInit() {
+        // Seed the cost weights from this._params (D-09 locked defaults in data/ranger.js)
+        // — NO hardcoded weight literals. 08-07 live-slider edits flow through setProtoParam.
+        const p = this._params || {}
         this._proto = {
             enabled: false,
             params: {
-                wDist:   1,        // directness
-                wAlt:    0.85,     // stay low (valley-seeking) — user-tuned default
-                wGrade:  400,      // gentle (quadratic) — user-tuned default
-                wOver:   8000,     // soft over-cap penalty — user-tuned default
-                maxGrade: 0.15,    // grade the soft penalty kicks in above — user-tuned default
-                wTurn:   120,      // per-45° turn penalty — long straights / true switchbacks (user-tuned)
+                wDist:    p.roadWDist  ?? 1,      // directness
+                wAlt:     p.roadWAlt   ?? 0.85,   // stay low (valley-seeking) — DOMINANT term (D-04)
+                wGrade:   p.roadWGrade ?? 400,    // gentle (quadratic grade²)
+                wOver:    p.roadWOver  ?? 8000,   // SOFT over-cap penalty — never Infinity (D-02 REVISED)
+                maxGrade: p.maxRoadGrade ?? 0.15, // SOFT target the over-cap penalty measures against
+                wTurn:    p.roadWTurn  ?? 120,    // per-45° turn penalty — long straights / true switchbacks
             },
             paramDirtyAt: 0,
             radius:   640,                                   // m — visible road radius (set from terrain stream radius)
@@ -340,6 +344,10 @@ export class RoadSystem {
             dirty:    true,
             surfaceY: null,                                  // optional (x,z)=>renderedHeight for visual line placement
         }
+        // Canonical valley-trunk network store — built ONLY by _streamNetwork.
+        // key "<mz>:<runIndex>" → { points: THREE.Vector3[] } (continuous centerline, raw routed y).
+        this._network = new Map()
+        this._networkCenter = null   // center the current network was streamed around
     }
 
     setProtoEnabled(v) {
@@ -517,24 +525,47 @@ export class RoadSystem {
         return out
     }
 
-    // Stream the trunk: regenerate visible east-running valley roads around `center`.
-    // Called each render frame from main.js with the same stream center as terrain.
-    updateProto(center) {
-        if (!this._proto.enabled || !this._scene) return
-        // Debounce slider drags: wait for the cost weights to settle before re-routing.
-        if (this._proto.dirty && this._proto.paramDirtyAt && (Date.now() - this._proto.paramDirtyAt) < PROTO_PARAM_DEBOUNCE) return
-        const moved = !this._proto.lastCenter || center.distanceTo(this._proto.lastCenter) > PROTO_REGEN_MOVE
-        if (!moved && !this._proto.dirty) return
+    // ── Canonical network builder (D-08) ────────────────────────────────────────
+    /**
+     * Build the canonical valley-trunk network around `center` into this._network — the
+     * single source of truth for slicing (08-06), viz (08-07), and queries. Pure data:
+     * allocates NO scene lines and applies NO visual y-lift (those are render-only, 08-07);
+     * the network y is the raw routed height.
+     *
+     * Pipeline (validated in spike-001): over the streamed macro-cell window, for each row
+     * concatenate the row's east _protoConnect(_protoAnchor(mx,mz), _protoAnchor(mx+1,mz))
+     * segments into ONE continuous polyline (dropping the shared anchor), centripetal-sample
+     * it, _removeLoops, then split into kept runs using the inter-row same-direction overlap
+     * suppression (PROTO_COVER_* spatial hash; a row is registered only AFTER it is emitted so
+     * a straight road never self-culls). Each kept run (≥ PROTO_RUN_MIN points) is stored as
+     * this._network["<mz>:<runIndex>"] = { points: THREE.Vector3[] }.
+     *
+     * Lazy streaming: honors PROTO_REGEN_MOVE move-threshold, the dirty flag, and
+     * PROTO_PARAM_DEBOUNCE slider-settle gating. On a real re-stream this._network is cleared
+     * and rebuilt; the cache is bounded for endless play. Pure function of
+     * (worldSeed, center, params) → identical inputs yield identical polylines.
+     *
+     * @param {THREE.Vector3} center — stream center (same as terrain stream center)
+     * @returns {Map<string, {points: THREE.Vector3[]}>} this._network (also stored on the instance)
+     */
+    _streamNetwork(center) {
+        // Lazy gating (mirrors the old updateProto gating; viz-independent so it works headless).
+        if (this._proto.dirty && this._proto.paramDirtyAt && (Date.now() - this._proto.paramDirtyAt) < PROTO_PARAM_DEBOUNCE) {
+            return this._network
+        }
+        const moved = !this._networkCenter || center.distanceTo(this._networkCenter) > PROTO_REGEN_MOVE
+        if (!moved && !this._proto.dirty && this._network.size > 0) return this._network
+
+        this._networkCenter = center.clone()
         this._proto.lastCenter = center.clone()
         this._proto.dirty = false
-        this._clearProtoLines()
+        this._network.clear()
 
         const R = this._proto.radius
         const mx0 = Math.floor((center.x - R) / PROTO_ANCHOR_SPACING) - 1
         const mx1 = Math.ceil((center.x + R) / PROTO_ANCHOR_SPACING)
         const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING)
         const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING)
-        const surf = this._proto.surfaceY
 
         // Inter-row same-direction overlap suppression: spatial hash of points kept from PRIOR rows.
         const cover = new Map()
@@ -558,7 +589,7 @@ export class RoadSystem {
 
         for (let mz = mz0; mz <= mz1; mz++) {
             // Concatenate this row's east connections into ONE continuous polyline, so loops at the
-            // anchor junctions are visible to the loop remover and the row renders as a single road.
+            // anchor junctions are visible to the loop remover and the row is a single road.
             let rowWps = []
             for (let mx = mx0; mx <= mx1; mx++) {
                 const wps = this._protoConnect(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz))
@@ -577,17 +608,16 @@ export class RoadSystem {
                 return [hx / l, hz / l]
             })
 
-            // Draw as contiguous runs, breaking wherever this row overlaps a PRIOR row (same dir).
-            // Register this row's points only AFTER drawing it, so a straight road never self-culls.
+            // Split into contiguous runs, breaking wherever this row overlaps a PRIOR row (same dir).
+            // Register this row's points only AFTER emitting it, so a straight road never self-culls.
             const kept = []
             let run = []
+            let runIndex = 0
             const emitRun = () => {
                 if (run.length >= PROTO_RUN_MIN) {
-                    const seg = run.slice()
-                    if (surf) for (const p of seg) p.y = surf(p.x, p.z) + 1.0
-                    else for (const p of seg) p.y += 1.0
-                    const line = _buildDebugLine2(seg, 0x00e5ff)
-                    this._scene.add(line); this._proto.lines.push(line)
+                    // Canonical centerline — raw routed y, no visual lift/surfaceY (render-only, 08-07).
+                    this._network.set(`${mz}:${runIndex}`, { points: run.map(p => p.clone()) })
+                    runIndex++
                 }
                 run = []
             }
@@ -603,6 +633,32 @@ export class RoadSystem {
         // Bound caches during endless play.
         if (this._proto.anchors.size > 4000) this._proto.anchors.clear()
         if (this._proto.segs.size    > 1500) this._proto.segs.clear()
+        if (this._network.size       > 3000) {
+            // Drop the network entirely if it has grown unbounded — next stream rebuilds the window.
+            this._network.clear()
+            this._networkCenter = null
+        }
+        return this._network
+    }
+
+    // Legacy proto viz driver: delegates DATA to _streamNetwork (single source of truth), then
+    // draws debug lines from this._network for the existing proto toggle. 08-07 replaces the viz.
+    // Called each render frame from main.js with the same stream center as terrain.
+    updateProto(center) {
+        if (!this._proto.enabled || !this._scene) return
+        const before = this._networkCenter
+        this._streamNetwork(center)
+        // Only redraw when the network actually re-streamed (center changed or first build).
+        if (before === this._networkCenter && this._proto.lines.length) return
+        this._clearProtoLines()
+        const surf = this._proto.surfaceY
+        for (const { points } of this._network.values()) {
+            const seg = points.map(p => p.clone())
+            if (surf) for (const p of seg) p.y = surf(p.x, p.z) + 1.0
+            else for (const p of seg) p.y += 1.0
+            const line = _buildDebugLine2(seg, 0x00e5ff)
+            this._scene.add(line); this._proto.lines.push(line)
+        }
     }
 }
 
