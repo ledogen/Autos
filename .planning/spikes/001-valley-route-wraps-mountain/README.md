@@ -102,3 +102,16 @@ only as a record of the journey; the live experiment is in `src/road.js` (`updat
 
 **Folds in spike 003** (lazy/deterministic/infinite): the streaming-anchor model already demonstrated
 infinite deterministic generation, so 003 is effectively validated alongside 001.
+
+### Route-quality iterations (all in-sim)
+- Turn-penalty A* (`wTurn`, state = cell+heading) → true switchbacks / long straights. User pick **120**.
+- Bounded anchor gradient-descent (≤0.45·spacing) + same-direction inter-road overlap suppression
+  (spatial hash, run-based splitting) → no parallel/duplicate roads.
+- Per-row continuous polyline + **proximity** loop removal (return within ~11 m after >38 m travel)
+  → genuine single-road loops/folds removed; switchbacks preserved (legs > loop distance apart).
+
+### Deferred tuning (user: "tune later, after generation actually works")
+- Pathing reads a little **coarse** (10 m routing grid / spline sampling) — can refine cell size or
+  post-smooth.
+- A few **unnatural loop-backs** remain (proximity-remover thresholds / detour cost shaping).
+Neither blocks the real build; they're polish once the road system is functional (queryable + sliced).

@@ -31,6 +31,21 @@ _(Design decisions that emerge from spiking — non-negotiable for the real buil
 - **Prototype lives in-sim**, not a standalone harness: the real sim already has freecam + lil-gui +
   spline debug viz, so tuning there beats a 2D canvas. Non-destructive `RoadSystem` proto path
   (does not touch the per-tile spawn API) gated behind Roads → "Valley Trunk (proto)".
+- **User sign-off (in-sim):** pathing looks good, switchbacks read as real switchbacks, loops/dups
+  resolved. wTurn 120. **Deferred to post-functional tuning:** slight coarseness (10 m grid) and a
+  few unnatural loop-backs — polish, not blockers.
+
+## Real-build scope (what "road generation actually works" means)
+
+The proto only renders a debug centerline. To replace the failed per-tile router for real:
+1. Make the valley trunk the actual `RoadSystem` output (retire the per-tile A* / hard-block path).
+2. **Queryable for spawn:** `queryNearest(x,z) → {point, tangent}` over the streamed network so
+   `resolveSpawn` (D-07) puts the truck on the road facing down it.
+3. **Per-tile slicing** of the continuous polylines so downstream (Phase 9 surface) consumes stable
+   per-tile splines; seam C0/C1 is automatic (one curve sliced).
+4. **Sparseness / spurs (D-01):** a trunk + occasional spurs, not an east road on every macro-row.
+5. Determinism + lazy infinite generation preserved (already true of the streaming-anchor model).
+6. Then re-run the Phase-8 verification / seam exit gate.
 
 ## Spikes
 
