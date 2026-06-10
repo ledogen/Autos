@@ -130,8 +130,9 @@ function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
 
   // ── Phase 8: road-graph probe (D-07) ─────────────────────────────────────────
   if (roadSystem) {
-    // Eagerly generate the 3×3 tiles around the spawn region before querying.
-    // resolveSpawn runs at init BEFORE any road tile exists (lazy generation).
+    // Eagerly warm the 3×3 valley-trunk tiles around the spawn region before querying
+    // (ensureTile streams + slices the network into this tile's per-tile splines).
+    // resolveSpawn runs at init BEFORE the network is streamed (lazy generation).
     // Without this, queryNearest returns null every time (RESEARCH Pitfall 5).
     const baseTX = Math.floor(baseX / CHUNK_SIZE)
     const baseTZ = Math.floor(baseZ / CHUNK_SIZE)
@@ -224,25 +225,36 @@ function debouncedRebuildFull () {
       const wasVisible = roadSystem._debugVisible
       roadSystem = new RoadSystem(worldSeed, RANGER_PARAMS)
       roadSystem.init(scene)
-      if (wasVisible) roadSystem.buildDebugLines()
+      // Re-apply the new-API config the initial instance got (surface placement + stream radius).
+      roadSystem.setSurfaceSampler((x, z) => terrainSystem.analyticHeight(x, z))
+      roadSystem.setRadius(640)
+      // Restore viz state — the next roadSystem.update(streamCenter) re-streams the new seed's
+      // network and (because _debugVisible is set) rebuilds the centerline lines.
+      roadSystem.setDebugVisible(wasVisible)
     }
     _reseatTruckAtSpawn()
   }, 150)
 }
 
 // ── Debounced road re-route (D-03 / Phase 8) ──────────────────────────────────────────────
-// Fires on max-grade / road param slider changes (~150 ms debounce).
+// Fires on max-grade / D-09 cost-weight slider changes (~150 ms debounce).
 // Pattern: mirrors debouncedRebuildFull — same timer convention (D-09).
-// Re-route = invalidateCache (clears tile + waypoint caches) + buildDebugLines (rebuilds visible
-// centerlines for current view). Roads are pure fns of (worldSeed, coords, params) → same seed
-// always produces the same route after any re-route at a given param value (D-03 deterministic).
+// Re-route = invalidateCache (clears this._network + this._tiles + viz lines and marks the network
+// dirty) so the next roadSystem.update(streamCenter) re-streams with the new D-09 weights. Roads are
+// pure fns of (worldSeed, coords, params) → same seed+params always produces the same route, so the
+// re-route is deterministic (D-03). If the viz is currently visible, re-stream once around the active
+// view center and rebuild the centerline lines immediately (so a static view updates without waiting
+// for the truck/cam to move past the update() move-threshold).
 let _roadRebuildDebounceTimer = null
 function debouncedRoadRebuild () {
   clearTimeout(_roadRebuildDebounceTimer)
   _roadRebuildDebounceTimer = setTimeout(() => {
     if (!roadSystem) return
     roadSystem.invalidateCache()
-    roadSystem.buildDebugLines()
+    if (roadSystem._debugVisible) {
+      const c = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
+      roadSystem.update(c)   // re-streams (dirty) + re-slices + rebuilds visible lines
+    }
   }, 150)
 }
 
@@ -751,12 +763,10 @@ const _gui = initDebug(RANGER_PARAMS, {
   rebuildTerrain:      ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() },
   rebuildTerrainFull:  ()  => debouncedRebuildFull(),
   changeSeed:          (v) => { worldSeed = parseWorldSeed(v); debouncedRebuildFull() },
-  // Phase 8 (D-03 / D-05): road viz toggle + param-change debounce
+  // Phase 8 (D-03 / D-05): road viz toggle + D-09 cost-weight param-change debounce.
+  // (08-07: proto wiring retired — there is ONE road system + ONE viz now.)
   onRoadVizToggle:     (v) => { if (roadSystem) roadSystem.setDebugVisible(v) },
   onRoadParamChange:   ()  => debouncedRoadRebuild(),
-  // Phase-8 redesign PROTOTYPE — valley-following streaming trunk.
-  onProtoToggle:       (v)      => { if (roadSystem) roadSystem.setProtoEnabled(v) },
-  onProtoParam:        (k, val) => { if (roadSystem) roadSystem.setProtoParam(k, val) },
 }, { initialSeed: _urlSeed ?? 'lone-pine' })
 
 // ── TerrainSystem (Phase 6 / 7) ──────────────────────────────────────────────
@@ -773,10 +783,10 @@ scene.remove(ground)   // Remove flat 200×200 ground mesh — terrain chunks re
 // only; same seed always produces the same roads.
 roadSystem = new RoadSystem(worldSeed, RANGER_PARAMS)
 roadSystem.init(scene)
-// Phase-8 redesign PROTOTYPE: let the valley-trunk proto place its debug line on the
-// rendered terrain surface, and stream it at roughly the terrain view radius.
+// Place the centerline viz on the rendered terrain surface, and stream the valley-trunk
+// network at roughly the terrain view radius (08-07: setRadius replaces the retired setProtoRadius).
 roadSystem.setSurfaceSampler((x, z) => terrainSystem.analyticHeight(x, z))
-roadSystem.setProtoRadius(640)
+roadSystem.setRadius(640)
 
 // Phase 7 (D-14/15/16): initial-load seat via canonical resolveSpawn + analyticHeight ground-probe.
 // TerrainSystem is now alive and analyticHeight is immediately available (no chunk load required).
@@ -1010,8 +1020,9 @@ function loop () {
   // Reverts to truck position on exit so the ring stays anchored to the car in normal mode.
   const streamCenter = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
   terrainSystem.update(streamCenter)
-  // Phase-8 redesign PROTOTYPE: stream the valley-trunk around the same center as terrain.
-  if (roadSystem) roadSystem.updateProto(streamCenter)
+  // Phase 8: stream the valley-trunk network around the same center as terrain (08-07: the
+  // unified update() replaces the retired updateProto — streams + slices + redraws viz if visible).
+  if (roadSystem) roadSystem.update(streamCenter)
 
   // Grid world: recenter the dev grid + ground on the view each frame so they read as
   // infinite. The grid snaps to the cell size so its lines appear stationary (no crawling);
