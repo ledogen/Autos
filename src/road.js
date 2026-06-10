@@ -435,20 +435,82 @@ export class RoadSystem {
     }
 
     /**
-     * STUB (08-07 rebuilds viz from this._network). No-op until 08-07 replaces the viz with
-     * centerline splines sampled from the valley-trunk network.
+     * Per-frame entry point (08-07): stream the valley-trunk network around `center`, slice it into
+     * per-tile splines, and — if the viz is enabled — refresh the centerline debug lines for the new
+     * window. The streamer is lazy-gated (move-threshold / dirty / param-debounce) so this is cheap
+     * when nothing changed. This is THE single road update path the render loop calls (replaces the
+     * retired updateProto).
+     *
+     * @param {THREE.Vector3} center — stream center (same as terrain stream center)
      */
-    buildDebugLines() {
-        // no-op (08-07)
+    update(center) {
+        const before = this._networkCenter
+        this._streamNetwork(center)
+        this._sliceNetwork()
+        // Refresh viz lines only when the network actually re-streamed (center changed / first
+        // build / re-route) and the viz is currently visible.
+        if (this._debugVisible && (before !== this._networkCenter || this._debugLines.length === 0)) {
+            this.buildDebugLines()
+        }
     }
 
     /**
-     * STUB (08-07 rebuilds viz). Records the requested visibility for 08-07 to honor; toggles
-     * any lines that already exist. Auto-build is deferred to 08-07's network-backed viz.
+     * Set the streamed road radius (m) — how far around the view center the valley-trunk network is
+     * built. Marks the network dirty so the next `update`/stream rebuilds the window at the new
+     * radius. (Replaces the retired setProtoRadius — one viz now.)
+     * @param {number} r — radius in metres
+     */
+    setRadius(r) {
+        if (r > 0 && r !== this._proto.radius) {
+            this._proto.radius = r
+            this._proto.dirty = true
+        }
+    }
+
+    /**
+     * Rebuild the shipped centerline viz (D-05: centerline splines only) from the streamed/sliced
+     * network. Clears any prior debug lines, then adds one THREE.Line per per-tile slice in
+     * `this._tiles`, lifted onto the rendered surface (`this._proto.surfaceY` sampler if set, else
+     * +1.0 m) so the lines sit on the terrain. Lines honor the current `this._debugVisible` flag.
+     * Per-toggle visibility uses `setDebugVisible` (`.visible`), not a rebuild — no GC churn beyond
+     * this one-shot rebuild on a new streamed window / re-route.
+     */
+    buildDebugLines() {
+        // Clear prior lines (one-shot rebuild for a new streamed window / re-route).
+        for (const line of this._debugLines) {
+            if (this._scene) this._scene.remove(line)
+            if (line.geometry) line.geometry.dispose()
+            if (line.material) line.material.dispose()
+        }
+        this._debugLines = []
+        if (!this._scene || !this._tiles) return
+
+        const surf = this._proto.surfaceY
+        for (const segs of this._tiles.values()) {
+            for (const { points } of segs) {
+                if (!points || points.length < 2) continue
+                const seg = points.map(p => p.clone())
+                if (surf) for (const p of seg) p.y = surf(p.x, p.z) + 1.0
+                else      for (const p of seg) p.y += 1.0
+                const line = _buildDebugLine2(seg, 0x00e5ff)
+                line.visible = this._debugVisible
+                this._scene.add(line)
+                this._debugLines.push(line)
+            }
+        }
+    }
+
+    /**
+     * Toggle the shipped centerline viz (D-05). Records the requested visibility and toggles each
+     * existing line's `.visible` (NO dispose/recreate — GC anti-pattern). Auto-builds the lines on
+     * first enable if none exist yet. `_debugVisible` defaults false (clean by default).
      * @param {boolean} visible
      */
     setDebugVisible(visible) {
         this._debugVisible = visible
+        if (visible && this._debugLines.length === 0) {
+            this.buildDebugLines()   // auto-build on first enable
+        }
         for (const line of this._debugLines) {
             line.visible = visible
         }
@@ -462,17 +524,19 @@ export class RoadSystem {
     // dominated by altitude + grade with a SOFT (finite) grade penalty, so the route
     // wraps AROUND high ground instead of climbing it (D-04 / D-02 REVISED). This IS
     // the canonical RoadSystem core: _streamNetwork(center) builds this._network (the
-    // single source of truth for slicing/viz/queries). The remaining setProto*/
-    // updateProto helpers drive the legacy debug toggle until 08-07 replaces the viz;
-    // the network DATA is always built by _streamNetwork.
+    // single source of truth for slicing/viz/queries). 08-07 retired the proto-only viz
+    // API; the shipped centerline viz (buildDebugLines/setDebugVisible) and the per-frame
+    // update(center) entry point now drive the one-and-only road visualization. The
+    // network DATA is always built by _streamNetwork. (`this._proto` is kept as the
+    // streamer's internal state bag — cost params, anchors, segs, stream radius.)
     // ═══════════════════════════════════════════════════════════════════════════
 
     _protoInit() {
         // Seed the cost weights from this._params (D-09 locked defaults in data/ranger.js)
-        // — NO hardcoded weight literals. 08-07 live-slider edits flow through setProtoParam.
+        // — NO hardcoded weight literals. Live slider edits flow through via _refreshParams()
+        // on each re-stream (debug sliders mutate this._params in place).
         const p = this._params || {}
         this._proto = {
-            enabled: false,
             params: {
                 wDist:    p.roadWDist  ?? 1,      // directness
                 wAlt:     p.roadWAlt   ?? 0.85,   // stay low (valley-seeking) — DOMINANT term (D-04)
@@ -482,10 +546,9 @@ export class RoadSystem {
                 wTurn:    p.roadWTurn  ?? 120,    // per-45° turn penalty — long straights / true switchbacks
             },
             paramDirtyAt: 0,
-            radius:   640,                                   // m — visible road radius (set from terrain stream radius)
+            radius:   640,                                   // m — streamed road radius (set from terrain stream radius)
             anchors:  new Map(),                             // "mx,mz" → THREE.Vector3 (valley-snapped)
             segs:     new Map(),                             // "ax,az>bx,bz" → THREE.Vector3[] (connection waypoints)
-            lines:    [],                                    // THREE.Line debug objects
             lastCenter: null,
             dirty:    true,
             surfaceY: null,                                  // optional (x,z)=>renderedHeight for visual line placement
@@ -507,27 +570,26 @@ export class RoadSystem {
         this._tileObjects = new Map()
     }
 
-    setProtoEnabled(v) {
-        this._proto.enabled = !!v
-        if (!v) this._clearProtoLines()
-        else { this._proto.dirty = true }
-    }
-    setProtoParam(key, value) {
-        if (key in this._proto.params) { this._proto.params[key] = value; this._proto.dirty = true; this._proto.paramDirtyAt = Date.now(); this._proto.segs.clear() }
-    }
-    setProtoRadius(r) { if (r > 0 && r !== this._proto.radius) { this._proto.radius = r; this._proto.dirty = true } }
+    // (08-07) The proto-only viz API (setProtoEnabled / setProtoParam / setProtoRadius / updateProto)
+    // is retired — there is ONE viz now, toggled by setDebugVisible + driven by update()/buildDebugLines.
+    // Live D-09 weight edits arrive by debug sliders mutating this._params; each re-stream refreshes
+    // this._proto.params from this._params (see _refreshParams) so slider changes take effect.
     setSurfaceSampler(fn) { this._proto.surfaceY = fn }       // main.js passes terrainSystem.analyticHeight
 
-    _invalidateProto() { this._proto.anchors.clear(); this._proto.segs.clear() }
-
-    _clearProtoLines() {
-        for (const line of this._proto.lines) {
-            if (this._scene) this._scene.remove(line)
-            if (line.geometry) line.geometry.dispose()
-            if (line.material) line.material.dispose()
-        }
-        this._proto.lines = []
+    // Refresh the live cost weights from this._params (debug sliders mutate this._params in place).
+    // Called on every re-stream so D-09 slider edits flow through deterministically (D-03).
+    _refreshParams() {
+        const p = this._params || {}
+        const P = this._proto.params
+        P.wDist    = p.roadWDist    ?? P.wDist
+        P.wAlt     = p.roadWAlt     ?? P.wAlt
+        P.wGrade   = p.roadWGrade   ?? P.wGrade
+        P.wOver    = p.roadWOver    ?? P.wOver
+        P.maxGrade = p.maxRoadGrade ?? P.maxGrade
+        P.wTurn    = p.roadWTurn    ?? P.wTurn
     }
+
+    _invalidateProto() { this._proto.anchors.clear(); this._proto.segs.clear() }
 
     // Deterministic valley anchor for macro-cell (mx,mz): seeded candidate in the cell,
     // then gradient-descended onto the local valley floor (pure function of seed+coords).
@@ -716,6 +778,9 @@ export class RoadSystem {
         this._networkCenter = center.clone()
         this._proto.lastCenter = center.clone()
         this._proto.dirty = false
+        // Refresh live D-09 weights from this._params (debug sliders mutate it in place) so this
+        // re-stream uses the current slider values — deterministic re-route (D-03).
+        this._refreshParams()
         this._network.clear()
         // A real re-stream invalidates the previous slice; _sliceNetwork re-slices on next call.
         this._slicedFrom = null
@@ -950,25 +1015,6 @@ export class RoadSystem {
         arr.push({ spline, points: clean, waypoints: clean, runKey, runWeight, spanScore })
     }
 
-    // Legacy proto viz driver: delegates DATA to _streamNetwork (single source of truth), then
-    // draws debug lines from this._network for the existing proto toggle. 08-07 replaces the viz.
-    // Called each render frame from main.js with the same stream center as terrain.
-    updateProto(center) {
-        if (!this._proto.enabled || !this._scene) return
-        const before = this._networkCenter
-        this._streamNetwork(center)
-        // Only redraw when the network actually re-streamed (center changed or first build).
-        if (before === this._networkCenter && this._proto.lines.length) return
-        this._clearProtoLines()
-        const surf = this._proto.surfaceY
-        for (const { points } of this._network.values()) {
-            const seg = points.map(p => p.clone())
-            if (surf) for (const p of seg) p.y = surf(p.x, p.z) + 1.0
-            else for (const p of seg) p.y += 1.0
-            const line = _buildDebugLine2(seg, 0x00e5ff)
-            this._scene.add(line); this._proto.lines.push(line)
-        }
-    }
 }
 
 // ── Module-scope debug line builder ───────────────────────────────────────────
