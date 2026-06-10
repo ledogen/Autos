@@ -26,7 +26,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 ### v1.1 Mountains & Roads
 
 - [x] **Phase 7: Free-Cam + Seeded Layered Terrain** (5 plans) — World-seed foundation, three-layer Sierra terrain, free-fly camera (completed 2026-06-09)
-- [x] **Phase 8: Road Routing** (3 plans) — Deterministic tile-graph A* roads with switchbacks, queryable debug splines (completed 2026-06-09)
+- [ ] **Phase 8: Road Routing** (4 plans) — REPLAN (valley-following trunk, per-tile A* retired): deterministic valley-wrapping streaming trunk + spurs, per-tile-sliced queryable splines, seam exit gate
 - [ ] **Phase 9: Road Surface** — Ribbon mesh, asphalt, crown + camber, cut-biased terrain carve, physics height and normal
 - [ ] **Phase 10: POI Hooks + Polish** — Seeded POI anchor data contract; pothole/crack stretch
 
@@ -61,11 +61,12 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
   2. Road splines cross chunk tile seams without visible kinks or gaps — the route is continuous across the 64 m tile boundary
   3. Where the terrain grade would exceed the maximum, the road switchbacks visibly up the slope rather than climbing straight
   4. Road centerlines are visible as colored debug lines in the scene and can be toggled off
-**Plans**: 3 plans
-  - [x] 08-01-PLAN.md — road.js core: per-tile A* over raw coarseHeight, quadratic slope cost + hard grade block + valley-seeking, seeded edge waypoints, Catmull-Rom splines with ghost control points + Wave 0 test harness (ROAD-01/02/03)
-  - [x] 08-02-PLAN.md — Query API (queryNearest/ensureTile) + centerline debug viz + lil-gui Roads folder (viz checkbox + max-grade slider) + main.js wiring + debounced re-route (ROAD-04, D-03, D-05)
-  - [x] 08-03-PLAN.md — resolveSpawn swap to nearest-road-node + tangent heading (D-07) + seam-continuity exit-gate test (D-06)
-**Notes**: HIGHEST RISK phase in v1.1 — the infinite, deterministic, switchbacking tile-graph router is the only novel algorithm in the milestone. A research spike at the START of P8 planning (before implementation) is required: resolve how per-tile A* handles paths that double back at different altitudes. Router MUST use pure coarseHeight(wx,wz) — never terrainSystem.sampleHeight (chunk-load-order dependent). Shared tile-edge waypoints derived by both adjacent tiles from the same seedFor() key enforce C1 continuity at seams. Debug splines showing no kinks at seam boundaries is an exit gate before P9.
+**Plans**: 4 plans (REPLAN after spike 001 — first per-tile/hard-block build failed verification; valley-following architecture validated in-sim and signed off)
+  - [ ] 08-01-PLAN.md — Valley-trunk streaming network core: retire per-tile A*/hard-block path; productionize soft-cost turn-penalty A* (D-09: wAlt 0.85 / wGrade 400 / wOver 8000 / maxGrade 0.15 / wTurn 120, finite over-cap — never "no path") into _streamNetwork over seeded 256 m macro-anchors; lock D-09 cost defaults in ranger.js (ROAD-01/02/03, D-02/04/08/09)
+  - [ ] 08-02-PLAN.md — Per-tile slicing of the continuous trunk into Catmull-Rom splines (seam C0/C1 free — one curve sliced) + queryNearest(x,z)→{point,tangent} + ensureTile over the streamed network (ROAD-01/04, D-06/07)
+  - [ ] 08-03-PLAN.md — Seeded sparse spurs (D-01) + shipped centerline-only viz with lil-gui checkbox (D-05) + maxGrade/cost-weight live sliders → debounced deterministic re-route (D-03) + resolveSpawn queryNearest wiring (D-07); retire all proto scaffolding (ROAD-01/04)
+  - [ ] 08-04-PLAN.md — Re-run the Phase-8 exit gate: refresh test-road-seam.html (C0/C1 on sliced splines) + test-road.html (determinism, queryNearest, switchback, soft-model) to the valley-trunk API; TEST_PARAMS to D-09 (ROAD-01/02/03/04, D-06)
+**Notes**: HIGHEST-RISK phase — the novel-router risk is now RETIRED (spike 001 validated the valley-following architecture on the real locked terrain; user signed off in-sim). The first build (per-tile west→east A* with a HARD grade block) FAILED verification: no valid path on nearly every 64 m tile on the steep coarse terrain, climbing mountains via fallback. The replacement is a valley-following streaming-anchor trunk routed by a SOFT-cost A* that wraps around high ground, sliced into per-tile splines (seam C0/C1 free — no shared-seam-waypoint machinery). Router MUST use pure coarseHeight(wx,wz) — never terrainSystem.sampleHeight. The over-cap penalty is FINITE/soft — NEVER an Infinity hard block (D-02 REVISED); some genuine passes stay steep (accepted). Browser harnesses (test-road-seam.html, test-road.html) are the exit gate — execution is the user's UAT; the seam gate must be green before P9. Deferred to post-functional polish (user): route-quality tuning (10 m grid coarseness, a few loop-backs).
 **UI hint**: yes
 
 ---
@@ -110,7 +111,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 | 5. Rollover Validation | v1.0 | 0/0 | ⬜ Skipped | — |
 | 6. Procedural Terrain | v1.0 | 3/3 | ✅ Complete | 2026-06-03 |
 | 7. Free-Cam + Seeded Layered Terrain | v1.1 | 5/5 | Complete   | 2026-06-09 |
-| 8. Road Routing | v1.1 | 3/3 | Complete   | 2026-06-09 |
+| 8. Road Routing | v1.1 | 0/4 | Replanned  | 2026-06-09 |
 | 9. Road Surface | v1.1 | 0/? | Not started | — |
 | 10. POI Hooks + Polish | v1.1 | 0/? | Not started | — |
 
