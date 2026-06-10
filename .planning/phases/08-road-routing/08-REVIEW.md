@@ -14,7 +14,27 @@ findings:
   warning: 7
   info: 5
   total: 14
-status: issues_found
+fixes_applied:
+  - id: CR-01
+    status: fixed
+    commit: 6d09087
+    note: "queryNearest + resolveSpawn search/warm block sized from radius (Math.ceil(radiusM/CHUNK_SIZE))"
+  - id: CR-02
+    status: fixed
+    commit: adfd10b
+    note: "non-deterministic _network.size>3000 eviction removed; anchors/segs eviction moved pre-build"
+  - id: WR-04
+    status: fixed
+    commit: 1ded0b4
+    note: "fallback tangent oriented W->E deterministically (if tangent.x<0 negate) to match sliced-spline convention"
+  - id: WR-02
+    status: documented
+    commit: 51c0a70
+    note: "ensureTile docstring clarifies .spline is E-W-seam representative only (no rename, no behavior change)"
+unresolved:
+  warning: [WR-01, WR-03, WR-05, WR-06, WR-07]
+  info: [all 5 INFO items]
+status: blockers_resolved
 ---
 
 # Phase 8: Code Review Report (gap-closure 08-05/06/07)
