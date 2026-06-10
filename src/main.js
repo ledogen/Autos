@@ -130,14 +130,18 @@ function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
 
   // ── Phase 8: road-graph probe (D-07) ─────────────────────────────────────────
   if (roadSystem) {
-    // Eagerly warm the 3×3 valley-trunk tiles around the spawn region before querying
+    // Eagerly warm the valley-trunk tiles around the spawn region before querying
     // (ensureTile streams + slices the network into this tile's per-tile splines).
     // resolveSpawn runs at init BEFORE the network is streamed (lazy generation).
     // Without this, queryNearest returns null every time (RESEARCH Pitfall 5).
+    // Warm a region sized from the 200 m query radius (CR-01) — a ±1 (3×3) block is
+    // narrower than the radius, so an in-radius road 2–3 tiles away would be unwarmed
+    // and queryNearest would miss it, falling through to terrain-only spawn.
     const baseTX = Math.floor(baseX / CHUNK_SIZE)
     const baseTZ = Math.floor(baseZ / CHUNK_SIZE)
-    for (let dtx = -1; dtx <= 1; dtx++) {
-      for (let dtz = -1; dtz <= 1; dtz++) {
+    const warmBlk = Math.ceil(200 / CHUNK_SIZE)
+    for (let dtx = -warmBlk; dtx <= warmBlk; dtx++) {
+      for (let dtz = -warmBlk; dtz <= warmBlk; dtz++) {
         roadSystem.ensureTile(baseTX + dtx, baseTZ + dtz)
       }
     }

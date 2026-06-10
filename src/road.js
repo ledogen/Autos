@@ -339,9 +339,10 @@ export class RoadSystem {
      * D-07 consumer: `resolveSpawn` reads `nearest.point` + `nearest.tangent` to place the truck on
      * the road facing down it.
      *
-     * Searches the sliced per-tile splines in `this._tiles`, restricted to the 3×3 tile block around
-     * the query tile (O(1)-ish), falling back to the raw `this._network` polylines for any tile in
-     * the block that lacks splines. Samples each candidate spline at arc-length intervals using the
+     * Searches the sliced per-tile splines in `this._tiles`, restricted to a tile block sized from
+     * the radius (`ceil(radiusM/CHUNK_SIZE)` tiles each way, so the block always covers the full
+     * radius — CR-01), falling back to the raw `this._network` polylines if no spline came within
+     * radius. Samples each candidate spline at arc-length intervals using the
      * module-scope `_scratchPt` for the per-sample probe (no per-sample allocation); only the two
      * returned vectors are allocated. Safe to call before any tile is warmed (returns null, no throw).
      *
@@ -374,8 +375,13 @@ export class RoadSystem {
             }
         }
 
-        for (let dx = -1; dx <= 1; dx++) {
-            for (let dz = -1; dz <= 1; dz++) {
+        // Size the search block from the radius (CR-01). A hard-coded 3×3 block spans only ±1 tile
+        // (±64 m), narrower than the default 200 m radius, so in-radius roads 2–3 tiles away were
+        // silently missed and resolveSpawn fell through to terrain-only. `blk = ceil(radiusM/CHUNK_SIZE)`
+        // guarantees every tile that could hold an in-radius point is scanned (200/64 → 4 tiles each way).
+        const blk = Math.ceil(radiusM / CHUNK_SIZE)
+        for (let dx = -blk; dx <= blk; dx++) {
+            for (let dz = -blk; dz <= blk; dz++) {
                 const key = `${qTileX + dx},${qTileZ + dz}`
                 const segs = this._tiles.get(key)
                 if (segs && segs.length) {
