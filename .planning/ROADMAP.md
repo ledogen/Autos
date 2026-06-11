@@ -82,7 +82,13 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
   4. The road surface looks like asphalt — dark grey with lane markings, no external asset files required
   5. (Stretch) Driving slowly on the road surface, pothole and crack micro-perturbations are felt as slight vertical jolts through the suspension
   6. Where two roads cross, they mesh as a single merged at-grade paved junction (one shared footprint, not z-fighting overlapping ribbons), reproducible and stable while driving (no pop/rebuild as you fly past)
-**Plans**: TBD
+**Plans**: 6 plans (waves 1-6, strictly sequential — carve architecture + shared road files force ordering)
+  - [ ] 09-01-PLAN.md — BUG-08 window-invariant splines (D-16) + module-scope _segXZ + scaffold test-road-carve.html/test-road-mesh.html harnesses (SURF-07 prereq)
+  - [ ] 09-02-PLAN.md — road-carve.js pure carve + smoothed design grade + cut-and-fill carve identical in Worker mesh build & analyticHeight/sampleHeight; EXIT GATES height-agreement + carve-continuity (SURF-04/05, D-05..D-08)
+  - [ ] 09-03-PLAN.md — road-mesh.js ribbon sweep + crown + curvature camber as real geometry/normal (folded into carve gradeY); streaming tile lifecycle (SURF-01/03, D-04)
+  - [ ] 09-04-PLAN.md — Merged at-grade junctions: _detectJunctions + fillet-arc footprint + triangulation + leg trim + shared-node elevation, same carve embed (SURF-07, D-12..D-15)
+  - [ ] 09-05-PLAN.md — Procedural worn-asphalt vertex colors + per-500m roadQuality tiers/markings + 5-zone feathered materials + full Roads-folder debug sliders (SURF-02, D-01/02/03/09/10/11)
+  - [ ] 09-06-PLAN.md — STRETCH: pothole/crack micro-noise on road surface only, severity from roadQuality, identical mesh+physics (SURF-06, D-03 — skip if P9 over budget)
 **Notes**: The carve blend design (carveBlend function + chunk.carveWeights Float32Array pattern) must be specified BEFORE any mesh or physics code is written. Height-agreement test extended to on-road positions is the exit gate: assert carveBlend result is identical in _flushPendingQueue vertex write and sampleHeight return. Carve-continuity test: sampleHeight stepped across the carve boundary must show no vertical step discontinuity (the surface stays continuous) — note this allows steep but continuous cut faces on switchback terrain; it only forbids degenerate vertical seams. SURF-06 (pothole/crack micro-noise) is a stretch goal within this phase — implement if P9 lands under budget. SCOPE EXPANDED 2026-06-11 (discuss-phase): road intersections folded in (SURF-07, merged at-grade paved footprint — built junction-aware from the start to keep mesh-building clean; merged-footprint algorithm is the primary research target); BUG-08 window-invariant splines folded in (junctions require stable geometry). Carve model is CUT-AND-FILL via one signed cross-section (cut on steep, raised dirt foundation on rolling) — see 09-CONTEXT.md D-05..D-16.
 **UI hint**: yes
 
@@ -113,7 +119,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 | 6. Procedural Terrain | v1.0 | 3/3 | ✅ Complete | 2026-06-03 |
 | 7. Free-Cam + Seeded Layered Terrain | v1.1 | 5/5 | Complete   | 2026-06-09 |
 | 8. Road Routing | v1.1 | 7/7 | Complete   | 2026-06-10 |
-| 9. Road Surface | v1.1 | 0/? | Not started | — |
+| 9. Road Surface | v1.1 | 0/6 | Planned | — |
 | 10. POI Hooks + Polish | v1.1 | 0/? | Not started | — |
 
 ## Backlog
