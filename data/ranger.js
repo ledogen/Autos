@@ -220,6 +220,11 @@ export const RANGER_PARAMS = {
   // the trunk runs long straights and switchbacks ONLY where grade truly forces it. D-09 default 120.
   roadWTurn: 120,       // cost units / 45° heading change — straight/switchback shaping (D-09)
 
+  // roadMaxTurnDeg: QUAL-01 — max deflection angle (deg) at a centerline vertex before _limitTurnAngle
+  // chamfers it (in _streamNetwork). 0 deflection = straight; lower value = smoother, less-sharp roads.
+  // Live-tunable via the "Max Turn Angle (°)" debug slider (src/debug.js Roads folder).
+  roadMaxTurnDeg: 70,   // deg — max interior deflection before chamfer rounding kicks in (QUAL-01)
+
   // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
   // Retained for the DEFERRED D-01 spur pass (trunk-only ships first). D-01 / RESEARCH A1.
   spurProbability: 0.15, // ratio [0,1] — spur chance (deferred D-01 spur pass)

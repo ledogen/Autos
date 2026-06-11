@@ -211,6 +211,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(params, 'roadWGrade', 0, 2000,  20  ).name('wGrade (gentle)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWOver',  0, 40000, 500 ).name('wOver (soft cap)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWTurn',  0, 800,   20  ).name('wTurn (straighter)').onChange(fireRoadParam)
+  // QUAL-01 — max deflection angle before _limitTurnAngle chamfers the vertex (lower = smoother corners)
+  roadFolder.add(params, 'roadMaxTurnDeg', 30, 120, 5).name('Max Turn Angle (°)').onChange(fireRoadParam)
 
   // D-04: Read-only Logger hint — shows the \ key without being interactive
   const _loggerHint = { hint: '\\ to record' }

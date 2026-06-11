@@ -575,6 +575,7 @@ export class RoadSystem {
                 wOver:      p.roadWOver      ?? 8000, // SOFT over-cap penalty — never Infinity (D-02 REVISED)
                 maxGrade:   p.maxRoadGrade   ?? 0.15, // SOFT target the over-cap penalty measures against
                 wTurn:      p.roadWTurn      ?? 120,  // per-45° turn penalty — long straights / true switchbacks
+                maxTurnDeg: p.roadMaxTurnDeg ?? 70,   // QUAL-01 — max interior deflection before chamfer
             },
             paramDirtyAt: 0,
             radius:   640,                                   // m — streamed road radius (set from terrain stream radius)
@@ -618,6 +619,7 @@ export class RoadSystem {
         P.wOver      = p.roadWOver      ?? P.wOver
         P.maxGrade   = p.maxRoadGrade   ?? P.maxGrade
         P.wTurn      = p.roadWTurn      ?? P.wTurn
+        P.maxTurnDeg = p.roadMaxTurnDeg ?? P.maxTurnDeg  // QUAL-01 — live-tunable corner rounding
     }
 
     _invalidateProto() { this._proto.anchors.clear(); this._proto.segs.clear() }
@@ -741,6 +743,53 @@ export class RoadSystem {
                 }
             }
             if (!found) break
+        }
+        return p
+    }
+
+    // Cap the deflection angle at INTERIOR vertices by iterative chamfering (QUAL-01).
+    // For each interior vertex p[i] whose deflection > maxTurnDeg, replace it with two chamfer
+    // points pulled back along each adjacent edge by 40% of the shorter edge length. Endpoints
+    // (p[0] and p[last]) are NEVER moved — they are connection/junction anchors that seam
+    // slicing and run-splitting rely on for C0 continuity. Runs up to 3 passes so a single
+    // tight spike can be progressively relaxed. Purely geometric — no random state (D-03).
+    _limitTurnAngle(pts, maxTurnDeg) {
+        if (pts.length < 3 || maxTurnDeg >= 180) return pts
+        const maxRad = maxTurnDeg * Math.PI / 180
+        const EPS = 2 * Math.PI / 180  // 2° epsilon — avoid infinite micro-loops on already-close vertices
+        let p = pts.slice()
+        for (let pass = 0; pass < 3; pass++) {
+            let changed = false
+            const next = [p[0]]  // always preserve the first endpoint
+            for (let i = 1; i < p.length - 1; i++) {
+                const prev = next[next.length - 1]
+                const cur  = p[i]
+                const nxt  = p[i + 1]
+                const v1x = cur.x - prev.x, v1z = cur.z - prev.z
+                const v2x = nxt.x - cur.x,  v2z = nxt.z - cur.z
+                const l1 = Math.hypot(v1x, v1z), l2 = Math.hypot(v2x, v2z)
+                if (l1 < 1e-6 || l2 < 1e-6) { next.push(cur); continue }
+                const cos = (v1x * v2x + v1z * v2z) / (l1 * l2)
+                const deflection = Math.acos(Math.max(-1, Math.min(1, cos)))
+                if (deflection <= maxRad + EPS) { next.push(cur); continue }
+                // Chamfer: pull back 40% of the shorter adjacent edge length
+                const cut = Math.min(l1, l2) * 0.4
+                const c1 = new THREE.Vector3(
+                    cur.x - (v1x / l1) * cut,
+                    cur.y,
+                    cur.z - (v1z / l1) * cut,
+                )
+                const c2 = new THREE.Vector3(
+                    cur.x + (v2x / l2) * cut,
+                    cur.y,
+                    cur.z + (v2z / l2) * cut,
+                )
+                next.push(c1, c2)
+                changed = true
+            }
+            next.push(p[p.length - 1])  // always preserve the last endpoint
+            p = next
+            if (!changed) break
         }
         return p
     }
@@ -909,6 +958,7 @@ export class RoadSystem {
             let pts = spline.getPoints(Math.max(24, rowWps.length * 2))
             pts = this._removeLoops(pts)                                            // proximity-based fold removal (existing)
             pts = this._removeSelfCrossings(pts)                                    // QUAL-01 — true segment crossings
+            pts = this._limitTurnAngle(pts, this._proto.params.maxTurnDeg)          // QUAL-01 — cap sharp corners
             if (pts.length < 2) continue
             const head = pts.map((p, i) => {
                 const q = pts[Math.min(pts.length - 1, i + 1)], r = pts[Math.max(0, i - 1)]
