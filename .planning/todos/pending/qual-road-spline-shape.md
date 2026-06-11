@@ -5,7 +5,30 @@ severity: minor
 status: open
 opened: 2026-06-10
 phase_origin: 08-road-routing
+partial_progress: "2026-06-11 quick 260610-v0y — spline viz + self-crossing removal shipped; corner smoothing DEFERRED"
 ---
+
+# QUAL-01: Road splines show occasional loop-backs and sharper-than-ideal corners
+
+## ⏳ REMINDER — corner smoothing still OUTSTANDING (deferred 2026-06-11)
+
+Quick task `260610-v0y` shipped TWO of the three QUAL-01 fixes (commits `2ae75d2` viz+crossings,
+`4a53a1f` strip):
+- ✅ **Spline viz** — `buildDebugLines` now samples the actual per-tile `seg.spline` (~2 m res) instead
+  of drawing the coarse control polyline. Much of the apparent corner "sharpness" was this rendering
+  artifact.
+- ✅ **Loop / self-crossing removal** — `_removeSelfCrossings` (deterministic segment-intersection
+  excision) added after `_removeLoops`; removes the real X-crossings / loops (UAT Images 2, 3).
+- ⏳ **DEFERRED — corner smoothing (max-turn-angle / min-radius limit + slider).** A `_limitTurnAngle`
+  chamfer pass + `roadMaxTurnDeg` param (default 70°) + "Max Turn Angle" debug slider were drafted but
+  **intentionally stripped** (commit `4a53a1f`) so the user can first re-look at the smooth spline viz
+  (loops gone) on Pages and decide whether any genuinely-sharp control-point corners still need limiting
+  — and at what threshold, WITHOUT flattening real switchbacks (which arrive with spurs, currently
+  deferred). The stripped implementation is recoverable from commit `2ae75d2` if we revive it.
+
+**Next time:** user re-looks on Pages → if corners still too sharp, revive `_limitTurnAngle` + the
+`roadMaxTurnDeg` slider (re-apply from `2ae75d2`), tune the default by eye, verify D-06 seam gate +
+determinism still pass.
 
 # QUAL-01: Road splines show occasional loop-backs and sharper-than-ideal corners
 
