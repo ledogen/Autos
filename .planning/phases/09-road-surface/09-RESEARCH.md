@@ -1007,7 +1007,7 @@ analyticHeight(wx, wz) {
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Carve table rebuild on road re-stream**
    - What we know: carve tables are pre-baked per chunk and sent with generate requests. If BUG-08
@@ -1015,20 +1015,21 @@ analyticHeight(wx, wz) {
    - What's unclear: Does this require `rebuildAllChunksFromWorker()` (full Worker round-trip) or
      can we update carve tables in-place on already-built chunks via a new `{type:'updateCarve'}`
      message?
-   - Recommendation: For simplicity in P9, trigger `rebuildAllChunksFromWorker()` on road re-stream.
-     The carve-only in-place update is a P10 optimization.
+   - **RESOLVED:** For simplicity in P9, trigger `rebuildAllChunksFromWorker()` on road re-stream.
+     The carve-only in-place update is a P10 optimization. Implemented by Plans 09-02 and 09-03.
 
 2. **Road mesh LOD / streaming lifecycle**
    - What we know: terrain chunks stream in a 5×5 ring (RING_RADIUS=2). Road tiles should match.
    - What's unclear: should road tiles be disposed when the terrain chunk evicts, or persist longer?
-   - Recommendation: co-locate road tile lifetime with terrain chunk lifetime; same ring key.
+   - **RESOLVED:** co-locate road tile lifetime with terrain chunk lifetime; same ring key.
+     Implemented by Plans 09-03 and 09-04.
 
 3. **Multiple road segments per tile and junction tiles**
    - What we know: `this._tiles.get(key)` returns an ARRAY of segments (a tile MAY hold several
      slices from different runs). Junction footprints span parts of all legs.
    - What's unclear: junction footprint tile assignment — the footprint may straddle multiple tiles.
-   - Recommendation: assign the junction mesh to the tile containing the node position. When that
-     tile is loaded, build all junction meshes whose node falls within it.
+   - **RESOLVED:** assign the junction mesh to the tile containing the node position. When that
+     tile is loaded, build all junction meshes whose node falls within it. Implemented by Plan 09-04.
 
 4. **`analyticNormal` after carve**
    - What we know: `analyticNormal` uses central-difference over `analyticHeight` with `EPS = 0.5 m`.
@@ -1037,10 +1038,10 @@ analyticHeight(wx, wz) {
    - What's unclear: is `EPS = 0.5 m` fine enough to resolve the crown profile (0.05 m over 5 m)?
      Central-difference gradient at the centerline = `crownHeight * 2 * 0.5 / (roadHalfWidth²) *
      EPS` — for default params ≈ 0.01 rad = 0.6°. This is below the 2–6° target for physics feel.
-   - Recommendation: for physics contacts that are ON the road, the crown normal is correctly sampled
+   - **RESOLVED:** for physics contacts that are ON the road, the crown normal is correctly sampled
      by `analyticNormal`. For the carve-driven camber, the tilted surface geometry is captured in the
      carve gradeY table which includes the tilt. So `analyticNormal` naturally captures camber too.
-     No special case needed; verify with the carve-continuity test.
+     No special case needed; verify with the carve-continuity test (Plan 09-02 exit gate).
 
 ---
 
