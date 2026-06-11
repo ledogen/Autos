@@ -27,7 +27,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 
 - [x] **Phase 7: Free-Cam + Seeded Layered Terrain** (5 plans) — World-seed foundation, three-layer Sierra terrain, free-fly camera (completed 2026-06-09)
 - [x] **Phase 8: Road Routing** (7 plans) — REPLAN (valley-following trunk, per-tile A* retired): deterministic valley-wrapping streaming trunk (trunk-only; spurs deferred), per-tile-sliced queryable splines, seam exit gate. Gap closure 08-05/06/07 built the valley-trunk core into src/road.js — re-verified 7/7 must-haves + human UAT 3/3 (D-06 gate PASS, viz, on-road spawn) 2026-06-10. Non-blocking follow-ups: PERF-01 (load time), QUAL-01 (spline shape). (completed 2026-06-10)
-- [ ] **Phase 9: Road Surface** — Ribbon mesh, asphalt, crown + camber, cut-biased terrain carve, physics height and normal
+- [ ] **Phase 9: Road Surface** — Ribbon mesh, worn asphalt, crown + camber, cut-and-fill terrain carve, 5-zone materials, merged at-grade intersections, physics height and normal
 - [ ] **Phase 10: POI Hooks + Polish** — Seeded POI anchor data contract; pothole/crack stretch
 
 ## Phase Details
@@ -74,15 +74,16 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 ### Phase 9: Road Surface
 **Goal**: The road exists as a physical ribbon in the world — visible asphalt, shaped with crown and banking, carved into the terrain so the truck feels the elevation change and surface normals through its suspension.
 **Depends on**: Phase 8 (stable, locked road splines)
-**Requirements**: SURF-01, SURF-02, SURF-03, SURF-04, SURF-05, SURF-06
+**Requirements**: SURF-01, SURF-02, SURF-03, SURF-04, SURF-05, SURF-06, SURF-07
 **Success Criteria** (what must be TRUE):
   1. Driving onto the road, the truck rides on the raised or carved surface — it does not float above or sink below the visible mesh
   2. The road camber banks in the correct direction (surface tilts so the inside of the curve is lower) with realistic, curvature-proportional magnitude, plus a centerline crown — verified on the road surface geometry/normal itself, NOT via the truck's body-roll response
   3. Where the road crosses rolling terrain, the surface carves into high ground (cut-biased) and the carve transitions to the surrounding terrain continuously — no vertical discontinuity / step that launches the body-contact probes. Real cut faces and drop-offs on steep or switchback terrain are EXPECTED and allowed; only degenerate vertical seams are disallowed
   4. The road surface looks like asphalt — dark grey with lane markings, no external asset files required
   5. (Stretch) Driving slowly on the road surface, pothole and crack micro-perturbations are felt as slight vertical jolts through the suspension
+  6. Where two roads cross, they mesh as a single merged at-grade paved junction (one shared footprint, not z-fighting overlapping ribbons), reproducible and stable while driving (no pop/rebuild as you fly past)
 **Plans**: TBD
-**Notes**: The carve blend design (carveBlend function + chunk.carveWeights Float32Array pattern) must be specified BEFORE any mesh or physics code is written. Height-agreement test extended to on-road positions is the exit gate: assert carveBlend result is identical in _flushPendingQueue vertex write and sampleHeight return. Carve-continuity test: sampleHeight stepped across the carve boundary must show no vertical step discontinuity (the surface stays continuous) — note this allows steep but continuous cut faces on switchback terrain; it only forbids degenerate vertical seams. SURF-06 (pothole/crack micro-noise) is a stretch goal within this phase — implement if P9 lands under budget.
+**Notes**: The carve blend design (carveBlend function + chunk.carveWeights Float32Array pattern) must be specified BEFORE any mesh or physics code is written. Height-agreement test extended to on-road positions is the exit gate: assert carveBlend result is identical in _flushPendingQueue vertex write and sampleHeight return. Carve-continuity test: sampleHeight stepped across the carve boundary must show no vertical step discontinuity (the surface stays continuous) — note this allows steep but continuous cut faces on switchback terrain; it only forbids degenerate vertical seams. SURF-06 (pothole/crack micro-noise) is a stretch goal within this phase — implement if P9 lands under budget. SCOPE EXPANDED 2026-06-11 (discuss-phase): road intersections folded in (SURF-07, merged at-grade paved footprint — built junction-aware from the start to keep mesh-building clean; merged-footprint algorithm is the primary research target); BUG-08 window-invariant splines folded in (junctions require stable geometry). Carve model is CUT-AND-FILL via one signed cross-section (cut on steep, raised dirt foundation on rolling) — see 09-CONTEXT.md D-05..D-16.
 **UI hint**: yes
 
 ---

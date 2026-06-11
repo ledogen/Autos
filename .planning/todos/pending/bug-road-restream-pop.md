@@ -2,10 +2,13 @@
 id: BUG-08
 type: bug
 severity: minor
-status: open
+status: folded
 opened: 2026-06-11
 phase_origin: 08-road-routing
+resolves_phase: 9
+folded_into: 09-road-surface
 source: user-observation
+note: "FOLDED INTO Phase 9 (2026-06-11 discuss-phase) — junctions/ribbon mesh require window-invariant splines (D-16). Will auto-close on Phase 9 completion."
 ---
 
 # BUG-08: Roads visibly re-shape in real time as you fly and new map streams in

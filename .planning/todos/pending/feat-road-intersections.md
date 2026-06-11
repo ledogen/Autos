@@ -1,11 +1,13 @@
 ---
 id: FEAT-05
 type: feature
-status: open
+status: folded
 opened: 2026-06-11
 phase_origin: 08-road-routing
+resolves_phase: 9
+folded_into: 09-road-surface
 source: user-observation
-note: "Reclassified from BUG-09 (2026-06-11) — road crossings are expected; we need to handle them as intersections."
+note: "Reclassified from BUG-09 (2026-06-11) — road crossings are expected; we need to handle them as intersections. FOLDED INTO Phase 9 (2026-06-11 discuss-phase, SURF-07) — merged at-grade paved junctions built junction-aware from the start; see 09-CONTEXT.md D-12..D-15. Will auto-close on Phase 9 completion."
 ---
 
 # FEAT-05: Road intersections / junctions where roads cross
