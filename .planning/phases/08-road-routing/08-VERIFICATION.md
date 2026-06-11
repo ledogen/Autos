@@ -1,7 +1,9 @@
 ---
 phase: 08-road-routing
 verified: 2026-06-10T00:00:00Z
-status: human_needed
+status: passed
+human_verified: 2026-06-10T21:15:00Z
+human_result: "3/3 human-UAT items passed (D-06 gate PASS in browser; road viz + valley-following good; truck spawns on road on reload + R-reset). Non-blocking follow-ups: PERF-01 load time, QUAL-01 spline shape."
 score: 7/7 must-haves verified
 overrides_applied: 0
 re_verification:
