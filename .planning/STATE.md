@@ -21,7 +21,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05)
 
 **Core value:** Physics that feel honest: a car that can roll over naturally, drift on the limit, and behave predictably enough that tuning parameters produces the expected result.
-**Current focus:** Phase 9 — Road Surface (next active phase; Phase 999.1 truck-body is BACKLOG, not next)
+**Current focus:** Phase 9 — Road Surface (next active phase; former Phase 999.1 truck-body retired into todo FEAT-04)
 
 ## Current Position
 
