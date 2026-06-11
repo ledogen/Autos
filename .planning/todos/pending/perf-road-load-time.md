@@ -25,7 +25,37 @@ This is a deferred diagnostic — flagged for a dedicated load-time pass later, 
 latency is not a phase exit gate but is a real UX regression worth fixing before Phase 9 builds the
 ribbon mesh on top of this stream.
 
-## Suspected causes (to confirm with a diagnostic, not yet proven)
+## CONFIRMED ROOT CAUSE (read-only code diagnostic, 2026-06-10)
+
+`resolveSpawn` (`src/main.js`) warms the spawn region by calling `roadSystem.ensureTile` **per tile**
+across a `warmBlk = Math.ceil(200 / CHUNK_SIZE) = 4` → **9×9 = 81-tile** grid. Each `ensureTile(tx,tz)`
+re-centers `_streamNetwork` on *that tile's* center (`(tx+0.5)*64, (tz+0.5)*64`), tiles 64 m apart.
+`_streamNetwork` is move-gated at `PROTO_REGEN_MOVE = 96` m, but consecutive tile-center drift exceeds
+96 m, so **~40 of the 81 calls trigger a full network rebuild + re-slice** over `this._proto.radius =
+640 m`. This runs on every reload (synchronously before first paint → worst case) and every R-reset.
+
+A single `_streamNetwork(spawnCenter)` already covers a 640 m radius — so all 81 tile centers (max ±256 m
+from spawn) fall inside ONE stream. The per-tile warm loop is entirely redundant; ~40 of the rebuilds
+are wasted work.
+
+**CR-01 amplified this** (regression introduced this session): the warm loop was 3×3 (±64 m, ~1–2
+rebuilds) before CR-01 widened it to 9×9 (±256 m, ~40 rebuilds) — a ~20–40× spawn-streaming increase.
+CR-01's *intent* (don't miss an in-radius road 2–3 tiles away) is correct; its *mechanism* (warm per
+tile via a re-streaming `ensureTile`) is the bug.
+
+### Fix (high confidence)
+Replace the 81-call warm loop in `resolveSpawn` with a SINGLE `roadSystem.ensureTile(baseTX, baseTZ)`
+(one 640 m stream covers the 200 m query radius), then `queryNearest(baseX, baseZ, 200)` as today.
+`queryNearest`'s own 9×9 read over `this._tiles` (CR-01) is cheap (no streaming) and stays — so CR-01's
+correctness win is preserved while spawn streaming drops from ~40 rebuilds to 1. Verify in-browser that
+the truck still spawns on the road (UAT test 3) and that reload/R-reset time drops.
+
+### Secondary (verify after primary fix)
+- Reload-only cost beyond spawn: the render-loop `roadSystem.update(streamCenter)` first stream +
+  initial terrain build also runs before first paint (Suspect D below) — re-measure once the warm-loop
+  fix lands; may already be acceptable.
+
+## Suspected causes (original hypotheses — Suspect A/B now CONFIRMED above)
 
 ### Suspect A — `ensureTile` re-streams the whole network per call (primary suspect)
 
