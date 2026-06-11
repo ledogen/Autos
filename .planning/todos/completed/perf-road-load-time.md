@@ -2,10 +2,21 @@
 id: PERF-01
 type: perf
 severity: major
-status: open
+status: resolved
 opened: 2026-06-10
+resolved: 2026-06-11
+resolved_by: "quick task 260610-pl6 — commit f377235 (resolveSpawn single warm call)"
 phase_origin: 08-road-routing
 ---
+
+> **RESOLVED 2026-06-11** — `resolveSpawn` warm loop replaced with a single
+> `roadSystem.ensureTile(baseTX, baseTZ)` (quick task `260610-pl6`, commit `f377235`).
+> Spawn/reload streaming dropped from ~40 redundant 640 m network rebuilds to 1.
+> Pending user confirmation in-browser that reload/R-reset is faster and the truck still
+> spawns on the road (Phase-08 UAT test 3). The secondary reload cost (render-loop first
+> stream) was left for re-measurement after this primary fix — reopen a new todo if it's
+> still slow.
+
 
 # PERF-01: Load/spawn time regressed after the valley-trunk replan (reload + R-reset)
 
