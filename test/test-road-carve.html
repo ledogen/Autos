@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>RangerSim — Road Carve Tests</title>
+  <!-- importmap copied verbatim from index.html (MUST appear before module scripts) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+      "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/dist/esm/simplex-noise.js"
+    }
+  }
+  </script>
+  <style>
+    body { font-family: monospace; background: #111; color: #eee; padding: 1em; }
+    h1 { font-size: 1.1em; }
+    p { font-size: 0.85em; color: #aaa; }
+  </style>
+</head>
+<body>
+  <h1>RangerSim Road Carve Tests</h1>
+  <p>Open DevTools console to see PASS/FAIL results.</p>
+  <p>BUG-08 window-invariance assertion (Plan 09-01). Carve/continuity assertions added in Plan 09-02.</p>
+
+  <script type="module">
+    import * as THREE from 'three'
+    import { RoadSystem } from '../src/road.js'
+    import { parseWorldSeed } from '../src/seed.js'
+    import { assert, TEST_PARAMS } from './road-test-harness.js'
+
+    // ── Harness loads ──────────────────────────────────────────────────────────
+    assert('harness loads', true)
+
+    // ── BUG-08: Window-invariance assertion ───────────────────────────────────
+    // Fixed world XZ positions that lie where the road network is dense.
+    // The test streams the road at center A, records queryNearest results at 5
+    // world positions, then shifts the stream center by > PROTO_REGEN_MOVE (96 m)
+    // to trigger a real re-stream, and verifies the results are identical.
+    //
+    // Tolerance: point delta < 0.01 m, tangent delta < 0.001 (near-unit vectors).
+    // Both must hold for the fix (D-16 canonical per-run derivation) to be valid.
+    ;(async function testBug08WindowInvariance() {
+        const ws = parseWorldSeed('lone-pine')
+        const rs = new RoadSystem(ws, TEST_PARAMS)
+
+        // Center A: warm the network around origin. Use a 3×3 tile grid so the
+        // road system has runs to query across several tiles.
+        const centerA = new THREE.Vector3(0, 0, 0)
+        for (let tx = -2; tx <= 2; tx++) {
+            for (let tz = -2; tz <= 2; tz++) {
+                rs.ensureTile(tx, tz)
+            }
+        }
+
+        // Pick 5 query positions that should be near (within 200 m) of road geometry.
+        // We use positions spread across the initial stream window.
+        const probePositions = [
+            [  64,    0],
+            [ 128,   64],
+            [  32,  128],
+            [ -64,   32],
+            [ 192,  -64],
+        ]
+
+        // Record queryNearest at each position from center A stream.
+        const resultsA = probePositions.map(([wx, wz]) => rs.queryNearest(wx, wz, 400))
+
+        // Shift center to B — more than PROTO_REGEN_MOVE = 96 m away to force a re-stream.
+        // Use (300, 0, 0) — 300 m in X, well past the 96 m threshold.
+        const centerB = new THREE.Vector3(300, 0, 0)
+        rs._streamNetwork(centerB)
+        rs._sliceNetwork()
+        // Warm the same tile neighborhood around center B.
+        const bTX = Math.floor(centerB.x / 64)
+        const bTZ = Math.floor(centerB.z / 64)
+        for (let tx = bTX - 2; tx <= bTX + 2; tx++) {
+            for (let tz = bTZ - 2; tz <= bTZ + 2; tz++) {
+                rs.ensureTile(tx, tz)
+            }
+        }
+
+        // Re-query the SAME 5 world positions from center B stream.
+        const resultsB = probePositions.map(([wx, wz]) => rs.queryNearest(wx, wz, 400))
+
+        // Assert: for each probe position that returned a result from both streams,
+        // point delta < 0.01 m and tangent delta < 0.001.
+        let anyRoadFound = false
+        for (let i = 0; i < probePositions.length; i++) {
+            const [wx, wz] = probePositions[i]
+            const a = resultsA[i]
+            const b = resultsB[i]
+            if (a === null && b === null) {
+                // No road near this probe — counts as trivially invariant.
+                assert(`BUG-08 window-invariance (${wx},${wz}): both null (no road in range) — trivially invariant`, true)
+                continue
+            }
+            if (a === null || b === null) {
+                // One stream found a road, the other did not. This is a failure.
+                assert(`BUG-08 window-invariance (${wx},${wz}): road visibility inconsistent across streams`, false)
+                continue
+            }
+            anyRoadFound = true
+            const dP = a.point.distanceTo(b.point)
+            const dT = a.tangent.distanceTo(b.tangent)
+            assert(
+                `BUG-08 window-invariance (${wx},${wz}): dP=${dP.toFixed(4)}m < 0.01`,
+                dP < 0.01
+            )
+            assert(
+                `BUG-08 window-invariance (${wx},${wz}): dT=${dT.toFixed(5)} < 0.001`,
+                dT < 0.001
+            )
+        }
+
+        // At least one position should have found road geometry (sanity).
+        assert('BUG-08 window-invariance: at least one probe position found road geometry', anyRoadFound)
+
+    })()
+
+    // ── SURF-05 / SURF-04 carve-continuity and height-agreement assertions ────
+    // TODO (Plan 09-02): carve blend spec locked; carveBlend + analyticHeight
+    // height-agreement test added here once the carve system is built.
+    // Placeholder:
+    assert('SURF-05/SURF-04 carve assertions (Plan 09-02): placeholder always passes', true)
+
+  </script>
+</body>
+</html>
