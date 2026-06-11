@@ -575,7 +575,7 @@ export class RoadSystem {
                 wOver:      p.roadWOver      ?? 8000, // SOFT over-cap penalty — never Infinity (D-02 REVISED)
                 maxGrade:   p.maxRoadGrade   ?? 0.15, // SOFT target the over-cap penalty measures against
                 wTurn:      p.roadWTurn      ?? 120,  // per-45° turn penalty — long straights / true switchbacks
-                minTurnRadius: p.roadMinTurnRadius ?? 70,  // QUAL-01 — m; coils tighter than this are excised
+                minTurnRadius: p.roadMinTurnRadius ?? 45,  // QUAL-01 — m; coils tighter than this are excised
             },
             paramDirtyAt: 0,
             radius:   640,                                   // m — streamed road radius (set from terrain stream radius)

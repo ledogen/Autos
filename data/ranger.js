@@ -225,7 +225,7 @@ export const RANGER_PARAMS = {
   // loops/teardrops). Higher = straighter roads (more aggressive coil removal); lower = allows tighter
   // turns. Curvature (angle-per-distance) control, not per-vertex angle. Live-tunable via the
   // "Min Turn Radius (m)" debug slider (src/debug.js Roads folder).
-  roadMinTurnRadius: 70,   // m — coils tighter than this radius are excised (QUAL-01)
+  roadMinTurnRadius: 45,   // m — coils tighter than this radius are excised (QUAL-01)
 
   // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
   // Retained for the DEFERRED D-01 spur pass (trunk-only ships first). D-01 / RESEARCH A1.
