@@ -651,6 +651,14 @@ export class RoadSystem {
         // Memoized representative tile objects returned by ensureTile (idempotency for the seam
         // harness's two passes). key "<tileX>,<tileZ>" → { spline, waypoints }. Rebuilt on re-slice.
         this._tileObjects = new Map()
+
+        // Junction detection cache (P9 plan 04 — SURF-07).
+        // key nodeKey "<round(x)>,<round(z)>" → { pos: THREE.Vector3, legs: [{runKey, segIdx, dir}],
+        //   nodeY: number, simpleMerge: bool }
+        // Pure function of this._network — deterministic + window-invariant by transitivity (D-16).
+        // Cleared on re-stream (same site as this._tiles.clear()).
+        this._junctions = new Map()
+        this._junctionsFrom = null   // identity guard for _detectJunctions memoization
     }
 
     // (08-07) The proto-only viz API (setProtoEnabled / setProtoParam / setProtoRadius / updateProto)
@@ -960,6 +968,9 @@ export class RoadSystem {
         this._slicedFrom = null
         if (this._tiles) this._tiles.clear()
         if (this._tileObjects) this._tileObjects.clear()
+        // Junction cache is a pure function of this._network — clear and rebuild on re-stream.
+        if (this._junctions) this._junctions.clear()
+        this._junctionsFrom = null
 
         // ── D-16: Canonical per-run derivation (window-invariant) ─────────────────
         // Pure function of (worldSeed, world coords, params) — window-invariant (D-16);
@@ -1162,6 +1173,116 @@ export class RoadSystem {
 
         this._slicedFrom = this._network
         return this._tiles
+    }
+
+    // ── Phase 9: Junction detection (SURF-07 / P9 plan 04) ───────────────────────────
+    /**
+     * Detect inter-run crossings in this._network and build the junction cache.
+     *
+     * Returns a Map of nodeKey → { pos, legs, nodeY, simpleMerge } where:
+     *   - pos:         THREE.Vector3 — crossing point (Y = avg of 4 segment-endpoint Ys)
+     *   - legs:        Array of { runKey: string, segIdx: number, dir: {x,z} } — legs leaving
+     *                  the node in each road direction, sorted by bearing
+     *   - nodeY:       number — shared elevation (average of 4 endpoint Ys, used for footprint)
+     *   - simpleMerge: boolean — true = fall back to rectangular box (no fillet):
+     *                    - crossing half-angle < 10° (near-parallel roads)
+     *                    - or legs.length > 4 (3+ roads meeting)
+     *
+     * Memoized via this._junctionsFrom identity guard (same pattern as _slicedFrom).
+     * Cleared on re-stream at the this._tiles.clear() site.
+     *
+     * Pure function of this._network — deterministic + window-invariant by transitivity (D-16).
+     *
+     * @returns {Map<string, {pos: THREE.Vector3, legs: Array, nodeY: number, simpleMerge: boolean}>}
+     */
+    _detectJunctions() {
+        // Identity guard: re-detecting the same network is a no-op.
+        if (this._junctionsFrom === this._network && this._junctions.size > 0) {
+            return this._junctions
+        }
+
+        this._junctions.clear()
+
+        const runs = [...this._network.entries()]  // [[runKey, {points}], ...]
+        const nRuns = runs.length
+
+        // Pairwise inter-run crossing detection using module-scope _segXZ.
+        for (let ri = 0; ri < nRuns - 1; ri++) {
+            const [keyA, { points: ptsA }] = runs[ri]
+            for (let rj = ri + 1; rj < nRuns; rj++) {
+                const [keyB, { points: ptsB }] = runs[rj]
+
+                for (let ai = 0; ai < ptsA.length - 1; ai++) {
+                    const a0 = ptsA[ai], a1 = ptsA[ai + 1]
+                    for (let bi = 0; bi < ptsB.length - 1; bi++) {
+                        const b0 = ptsB[bi], b1 = ptsB[bi + 1]
+
+                        const ix = _segXZ(a0.x, a0.z, a1.x, a1.z, b0.x, b0.z, b1.x, b1.z)
+                        if (!ix) continue
+
+                        // Shared node elevation: average of the 4 segment endpoint Ys.
+                        const posY = (a0.y + a1.y + b0.y + b1.y) * 0.25
+
+                        const nodeKey = `${Math.round(ix.x)},${Math.round(ix.z)}`
+                        let node = this._junctions.get(nodeKey)
+                        if (!node) {
+                            node = {
+                                pos:         new THREE.Vector3(ix.x, posY, ix.z),
+                                legs:        [],
+                                nodeY:       posY,
+                                simpleMerge: false,
+                            }
+                            this._junctions.set(nodeKey, node)
+                        }
+
+                        // Compute unit direction vectors from node toward adjacent segment endpoints.
+                        // Each road contributes two legs (one each direction away from crossing).
+                        const addLeg = (runKey, segIdx, fromPt, toPt) => {
+                            const dx = toPt.x - ix.x
+                            const dz = toPt.z - ix.z
+                            const len = Math.sqrt(dx * dx + dz * dz) || 1
+                            node.legs.push({ runKey, segIdx, dir: { x: dx / len, z: dz / len } })
+                        }
+                        addLeg(keyA, ai,     a0,  a1)   // run A, toward a1
+                        addLeg(keyA, ai + 1, a1,  a0)   // run A, toward a0
+                        addLeg(keyB, bi,     b0,  b1)   // run B, toward b1
+                        addLeg(keyB, bi + 1, b1,  b0)   // run B, toward b0
+
+                        // Half-angle guard: if crossing is near-parallel (< ~10°), use simple box.
+                        // Compute the acute angle between the two road directions.
+                        const edgeAx = a1.x - a0.x, edgeAz = a1.z - a0.z
+                        const edgeBx = b1.x - b0.x, edgeBz = b1.z - b0.z
+                        const lenA = Math.sqrt(edgeAx * edgeAx + edgeAz * edgeAz) || 1
+                        const lenB = Math.sqrt(edgeBx * edgeBx + edgeBz * edgeBz) || 1
+                        const dot  = (edgeAx * edgeBx + edgeAz * edgeBz) / (lenA * lenB)
+                        const acuteAngle = Math.acos(Math.min(1, Math.abs(dot))) * (180 / Math.PI)
+                        if (acuteAngle < 10) node.simpleMerge = true
+                    }
+                }
+            }
+        }
+
+        // Post-process each detected node.
+        for (const node of this._junctions.values()) {
+            // Guard: more than 4 legs → fall back to simple box (3+ roads meeting — T-09-07).
+            if (node.legs.length > 4) node.simpleMerge = true
+
+            // Sort legs by bearing angle around node (atan2(dx, dz) → [-π, π]).
+            // Sorted CCW from -π so fillet arcs connect adjacent legs in winding order.
+            node.legs.sort((a, b) => Math.atan2(a.dir.x, a.dir.z) - Math.atan2(b.dir.x, b.dir.z))
+
+            // Shared-node elevation hook (D-14): nodeY is stored on the node record so both
+            // road-mesh and the carve builder read the same value.
+            // approach_Y(s) = lerp(designGradeY(s), nodeY, max(0, 1 - dist_to_node / blendLength))
+            // blendLength is read from params.roadJunctionBlendLength (default 30 m, ranger.js).
+            // The actual lerp is applied during ribbon mesh building, not here — this method
+            // just stores nodeY on the record as the authoritative shared elevation.
+        }
+
+        // Purity comment: Pure function of this._network — deterministic + window-invariant
+        // by transitivity (D-16).
+        this._junctionsFrom = this._network
+        return this._junctions
     }
 
     // ── Phase 9: Analytic carve world sampler (SURF-04) ──────────────────────────────
