@@ -269,4 +269,17 @@ export const RANGER_PARAMS = {
   // on both sides of each spline sample. 50 m suppresses the 20 m fine-noise wavelength
   // (fineFreq 0.05/m) while preserving coarse terrain grade. D-06.
   designGradeWindow: 50,    // m — sliding-window smoothing half-width for design grade (D-06)
+
+  // crownHeight: height of the centerline crown above the ribbon edges (metres).
+  // The crown is a parabolic cross-section: peak at centerline, tapers to 0 at ribbon edge.
+  // Default 0.05 m = 5 cm (1% cross-slope on a 5 m half-width) — subtle water-shedding
+  // profile that is physically meaningful without being noticeable at driving speed.
+  // Exposed via debug slider (D-04). Range: 0–0.2 m.
+  crownHeight: 0.05,       // m — centerline crown above ribbon edge (D-04 / A12)
+
+  // camberStrength: gain from road curvature (1/m) to camber angle (radians).
+  // camberAngle = clamp(camberStrength * signedKappa, -6°, +6°).
+  // At camberStrength=200 m: a 50 m radius curve (signedKappa≈0.02) → 0.02*200=4° of bank.
+  // Exposed via debug slider (D-04). Range: 50–500 m.
+  camberStrength: 200,     // m·rad/rad — curvature→camber gain (D-04 / A4)
 };

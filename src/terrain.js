@@ -27,6 +27,7 @@
  */
 
 import * as THREE from 'three'
+import { crownProfile } from './road-carve.js'
 
 // ── Module constants ───────────────────────────────────────────────────────
 
@@ -427,6 +428,17 @@ export class TerrainSystem {
     }
 
     /**
+     * Return the set of active chunk keys ("X,Z") currently loaded in the chunk ring.
+     * Used by RoadMeshSystem.syncToChunkRing() to co-locate road tile lifetime with
+     * terrain chunk lifetime (SURF-01 streaming lifecycle).
+     *
+     * @returns {Set<string>}
+     */
+    getActiveChunkKeys() {
+        return new Set(this._chunkMap.keys())
+    }
+
+    /**
      * Show or hide all currently-loaded chunk meshes without disposing them.
      * Used by grid-world mode to hide Sierra terrain while keeping chunks in memory
      * so they reappear immediately on returnToWorld without requiring re-streaming.
@@ -771,11 +783,14 @@ export class TerrainSystem {
         const amp  = this._params.terrainAmplitude ?? 1.0
         const p    = this._params
 
-        const halfWidth     = p.roadHalfWidth     ?? 5
-        const shoulderWidth = p.roadShoulderWidth  ?? 2.5
-        const fillHeight    = p.roadFillHeight     ?? 2.0
-        const fillSlope     = p.roadFillSlope      ?? 3.0
-        const cutSlope      = p.roadCutSlope       ?? 1.0
+        const halfWidth      = p.roadHalfWidth     ?? 5
+        const shoulderWidth  = p.roadShoulderWidth  ?? 2.5
+        const fillHeight     = p.roadFillHeight     ?? 2.0
+        const fillSlope      = p.roadFillSlope      ?? 3.0
+        const cutSlope       = p.roadCutSlope       ?? 1.0
+        const crownHeightVal = p.crownHeight        ?? 0.05
+        const camberStrength = p.camberStrength     ?? 200
+        const MAX_CAMBER_RAD = 6 * (Math.PI / 180)
 
         // Maximum lateral extent to bother querying: ribbon + shoulder + max fill toe
         // fillToe = halfWidth + shoulderWidth + fillHeight * fillSlope
@@ -818,7 +833,11 @@ export class TerrainSystem {
                 const dz = wz - nr.point.z
                 // Project onto perpendicular (lateral) direction
                 const tx = nr.tangent.x, tz = nr.tangent.z
-                const latDist = Math.abs(dx * (-tz) + dz * tx)  // |cross product XZ|
+                // Signed lateral: positive = right of road heading, negative = left.
+                // right = (tz, 0, -tx), so signedLat = dx*tz - dz*tx.
+                // (Historical: latDist used |dx*(-tz)+dz*tx| = |dx*tz-dz*tx|, sign flipped but same abs)
+                const signedLat = dx * tz - dz * tx
+                const latDist   = Math.abs(signedLat)
 
                 // Raw terrain height at this vertex — PRE-amplitude (matches height() output)
                 const rawPre = height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params)
@@ -832,6 +851,33 @@ export class TerrainSystem {
 
                 // Fill cap: never raise more than roadFillHeight
                 if (delta > fillHeight) designY = rawH + fillHeight
+
+                // ── Crown + camber fold-in (SURF-03 / D-04) ──────────────────────
+                // For on-ribbon vertices: add crown profile + camber tilt to gradeY
+                // so analyticNormal returns the crowned/cambered normal.
+                // MUST match sweepRibbon formula in road-mesh.js (height-agreement gate).
+                if (latDist < halfWidth) {
+                    // Crown: parabolic — peak at centerline, 0 at edges
+                    const crownY = crownProfile(signedLat, halfWidth, crownHeightVal)
+
+                    // Camber: estimate local signed curvature via a second queryNearest ahead.
+                    // eps = 2 m forward along road tangent. T-09-04 guard: skip if no result.
+                    const eps = 2.0
+                    const nrAhead = this._roadSystem.queryNearest(wx + tx * eps, wz + tz * eps, maxExt + eps)
+                    let camberAngle = 0
+                    if (nrAhead) {
+                        const tAx = nrAhead.tangent.x, tAz = nrAhead.tangent.z
+                        const cross = tx * tAz - tz * tAx
+                        const dtx = tAx - tx, dtz = tAz - tz
+                        const dtLen = Math.sqrt(dtx * dtx + dtz * dtz)
+                        const kappa = dtLen / eps
+                        const rawCamber = camberStrength * Math.sign(cross) * kappa
+                        camberAngle = Math.max(-MAX_CAMBER_RAD, Math.min(MAX_CAMBER_RAD, rawCamber))
+                    }
+
+                    const tiltY = signedLat * Math.sin(camberAngle)
+                    designY = designY + crownY + tiltY
+                }
 
                 // Compute fill toe distance (how far the embankment foot extends laterally)
                 const cappedDelta = Math.max(0, designY - rawH)
