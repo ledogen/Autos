@@ -26,7 +26,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 ### v1.1 Mountains & Roads
 
 - [x] **Phase 7: Free-Cam + Seeded Layered Terrain** (5 plans) — World-seed foundation, three-layer Sierra terrain, free-fly camera (completed 2026-06-09)
-- [x] **Phase 8: Road Routing** (4 plans) — REPLAN (valley-following trunk, per-tile A* retired): deterministic valley-wrapping streaming trunk (trunk-only; spurs deferred), per-tile-sliced queryable splines, seam exit gate — ⚠ verification gaps_found 2026-06-10 (2/7 must-haves; valley-trunk core never built into src/road.js — see 08-VERIFICATION.md) (completed 2026-06-10)
+- [x] **Phase 8: Road Routing** (7 plans) — REPLAN (valley-following trunk, per-tile A* retired): deterministic valley-wrapping streaming trunk (trunk-only; spurs deferred), per-tile-sliced queryable splines, seam exit gate. Gap closure 08-05/06/07 built the valley-trunk core into src/road.js — re-verified 7/7 must-haves + human UAT 3/3 (D-06 gate PASS, viz, on-road spawn) 2026-06-10. Non-blocking follow-ups: PERF-01 (load time), QUAL-01 (spline shape). (completed 2026-06-10)
 - [ ] **Phase 9: Road Surface** — Ribbon mesh, asphalt, crown + camber, cut-biased terrain carve, physics height and normal
 - [ ] **Phase 10: POI Hooks + Polish** — Seeded POI anchor data contract; pothole/crack stretch
 
