@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Mountains & Roads
-status: ready_to_plan
-stopped_at: Phase 08 closed out (7/7 verified, UAT 3/3, PERF-01 load-time fix confirmed) — next active phase is Phase 9 (Road Surface)
-last_updated: 2026-06-10T00:00:00.000Z
-last_activity: 2026-06-10 -- quick 260610-v0y QUAL-01 partial: spline viz + self-crossing removal shipped
+status: completed
+stopped_at: Phase 9 context gathered (intersections scoped in)
+last_updated: "2026-06-11T08:01:45.646Z"
+last_activity: 2026-06-11
 progress:
-  total_phases: 5
-  completed_phases: 1
+  total_phases: 4
+  completed_phases: 2
   total_plans: 12
   completed_plans: 12
-  percent: 20
+  percent: 50
 ---
 
 # Project State
@@ -122,6 +122,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-06-09T04:31:53.014Z
-Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-road-routing/08-CONTEXT.md
+Last session: 2026-06-11T08:01:45.637Z
+Stopped at: Phase 9 context gathered (intersections scoped in)
+Resume file: .planning/phases/09-road-surface/09-CONTEXT.md
