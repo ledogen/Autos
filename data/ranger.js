@@ -282,4 +282,16 @@ export const RANGER_PARAMS = {
   // At camberStrength=200 m: a 50 m radius curve (signedKappa≈0.02) → 0.02*200=4° of bank.
   // Exposed via debug slider (D-04). Range: 50–500 m.
   camberStrength: 200,     // m·rad/rad — curvature→camber gain (D-04 / A4)
+
+  // ── Phase 9 Road Surface — Plan 04 junction params (SURF-07 / D-12–D-15) ────
+  // roadJunctionBlendLength: how far before a junction node each road's design grade
+  // blends toward the shared nodeY elevation (D-14 / A8).
+  // approach_Y(s) = lerp(designGradeY(s), nodeY, max(0, 1 - dist_to_node / blendLength))
+  // 30 m default — enough to smooth the grade ramp without extending far into approach lanes.
+  roadJunctionBlendLength: 30,  // m — grade-blend reach toward junction node (D-14 / A8)
+
+  // roadFilletRadius: default corner fillet radius for junction footprints (D-13 / A5).
+  // Used as a slider default; actual per-junction R_f is computed from halfWidth*tan(theta/2).
+  // Default 5 = roadHalfWidth default, produces quarter-circle fillets at 90° crossings.
+  roadFilletRadius: 5,          // m — junction corner fillet radius default (D-13 / A5)
 };
