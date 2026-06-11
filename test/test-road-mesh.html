@@ -22,19 +22,19 @@
 <body>
   <h1>RangerSim Road Mesh Tests</h1>
   <p>Open DevTools console to see PASS/FAIL results.</p>
-  <p>SURF-01/02/07 mesh smoke assertions added in Plans 09-03/09-04/09-05.</p>
+  <p>SURF-01 ribbon mesh smoke (Plan 09-03). SURF-02/07 added in Plans 09-04/09-05.</p>
 
   <script type="module">
     import * as THREE from 'three'
-    import { assert } from './road-test-harness.js'
+    import { RoadSystem, CHUNK_SIZE } from '../src/road.js'
+    import { RoadMeshSystem } from '../src/road-mesh.js'
+    import { parseWorldSeed } from '../src/seed.js'
+    import { assert, TEST_PARAMS } from './road-test-harness.js'
 
     // ── Harness loads ──────────────────────────────────────────────────────────
     assert('harness loads', true)
 
     // ── Minimal THREE scene scaffold (smoke test) ─────────────────────────────
-    // This confirms that: (a) the r184 importmap resolves correctly, (b) the harness
-    // imports load without error, and (c) a basic Three.js scene constructs cleanly.
-    // Road ribbon / junction mesh assertions are added in Plan 09-03/04/05.
     ;(function testSceneConstruct() {
         let ok = false
         try {
@@ -55,16 +55,103 @@
         assert('harness scene constructed (r184 importmap + WebGLRenderer ok)', ok)
     })()
 
-    // ── SURF-01/02/07 mesh smoke assertions ───────────────────────────────────
-    // SURF-01: ~10 m ribbon mesh swept along road splines          → Plan 09-03
-    // SURF-02: Basic asphalt vertex-color material, no z-fighting  → Plan 09-04
-    // SURF-07: Junction merged footprint, no z-fighting            → Plan 09-05
-    //
-    // Placeholder comments — replaced by real assertions in later plans.
-    // These are stubbed as trivially passing so the file is non-empty and runnable
-    // (the plan's "smoke harness scaffold" contract: opens and renders without error).
-    assert('SURF-01 ribbon mesh smoke (Plan 09-03): placeholder', true)
+    // ── SURF-01: ribbon mesh smoke — RoadMeshSystem builds geometry ───────────
+    // Constructs a RoadSystem over a fixed seed, warms one tile, then calls
+    // _buildRoadTile directly to get the ribbon geometry. Asserts:
+    //   - geometry has > 0 vertices
+    //   - normal at a centerline vertex is finite and length ≈ 1 (non-degenerate)
+    //   - geometry has an index buffer (quad strip indexed)
+    ;(async function testSurf01RibbonMeshSmoke() {
+        try {
+            const ws  = parseWorldSeed('lone-pine')
+            const params = Object.assign({}, TEST_PARAMS, {
+                crownHeight:   0.05,
+                camberStrength: 200,
+            })
+
+            const scene = new THREE.Scene()
+            const rs    = new RoadSystem(ws, params)
+
+            // Fake terrain ref: flat terrain at height 10
+            const terrainRef = (x, z) => 10
+
+            // Warm the road network around origin so _tiles has data.
+            rs.ensureTile(0, 0)
+            rs.ensureTile(1, 0)
+            rs.ensureTile(-1, 0)
+
+            const rms = new RoadMeshSystem(scene, rs, terrainRef, params)
+
+            // Find a tile that actually has road slices.
+            let foundTile = null
+            for (let tx = -2; tx <= 2 && !foundTile; tx++) {
+                for (let tz = -2; tz <= 2 && !foundTile; tz++) {
+                    const key = `${tx},${tz}`
+                    const segs = rs._tiles.get(key)
+                    if (segs && segs.length > 0 && segs[0].spline) {
+                        foundTile = { tx, tz, key }
+                    }
+                }
+            }
+
+            if (!foundTile) {
+                assert('SURF-01 ribbon mesh built (found road tile to test)', false)
+                return
+            }
+
+            const { tx, tz, key } = foundTile
+            // Build the road tile synchronously via the private method (bypasses queue for test).
+            rms._buildRoadTile(tx, tz, key)
+
+            const entry = rms._tileMeshMap.get(key)
+            assert('SURF-01 road tile built (entry in tileMeshMap)', !!entry)
+
+            if (!entry || entry.meshes.length === 0) {
+                assert('SURF-01 ribbon mesh built (has at least one mesh)', false)
+                return
+            }
+
+            const mesh = entry.meshes[0]
+            const geo  = mesh.geometry
+            const pos  = geo.attributes.position
+
+            const vertCount = pos.count
+            assert(`SURF-01 ribbon mesh built (verts=${vertCount})`, vertCount > 0)
+
+            // Check that normals were computed and are finite unit-length.
+            const nrm = geo.attributes.normal
+            assert('SURF-01 ribbon has vertex normals attribute', !!nrm)
+
+            if (nrm) {
+                // Sample the centerline normal (vertex at lateral center of first section).
+                // Centerline vertex index: section 0, lateral vertex at CROSS_SEGS/2.
+                const CROSS_SEGS = 8
+                const centerIdx = Math.floor(CROSS_SEGS / 2)  // vertex 4 of 9
+                const nx = nrm.getX(centerIdx)
+                const ny = nrm.getY(centerIdx)
+                const nz = nrm.getZ(centerIdx)
+                const normalLen = Math.sqrt(nx*nx + ny*ny + nz*nz)
+                const isFinite = Number.isFinite(nx) && Number.isFinite(ny) && Number.isFinite(nz)
+                const isUnit   = Math.abs(normalLen - 1.0) < 0.01
+                assert('SURF-01 centerline vertex normal is finite', isFinite)
+                assert('SURF-01 centerline vertex normal length ≈ 1 (non-degenerate)', isUnit)
+            }
+
+            // Check index buffer exists (quad strip indexed).
+            assert('SURF-01 ribbon has index buffer', !!geo.index)
+
+            // Dispose test resources.
+            for (const g of entry.geometries) g.dispose()
+        } catch (e) {
+            console.error('SURF-01 test threw:', e)
+            assert('SURF-01 ribbon mesh smoke: no exception', false)
+        }
+    })()
+
+    // ── SURF-02 asphalt material smoke (Plan 09-04): placeholder ─────────────
     assert('SURF-02 asphalt material smoke (Plan 09-04): placeholder', true)
+
+    // ── SURF-07 junction footprint smoke (Plan 09-05): placeholder ────────────
     assert('SURF-07 junction footprint smoke (Plan 09-05): placeholder', true)
 
   </script>

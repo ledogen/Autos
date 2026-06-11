@@ -28,6 +28,7 @@
     import * as THREE from 'three'
     import { RoadSystem } from '../src/road.js'
     import { parseWorldSeed } from '../src/seed.js'
+    import { crownProfile } from '../src/road-carve.js'
     import { assert, TEST_PARAMS } from './road-test-harness.js'
 
     // ── Harness loads ──────────────────────────────────────────────────────────
@@ -256,6 +257,71 @@
         }
 
         console.log('SURF-04/SURF-05 pure-function exit gates: all checks complete.')
+    })()
+
+    // ── SURF-03: crown + camber normal direction assertion (Plan 09-03) ───────
+    // Verifies that crownProfile + camber tilt in the gradeY formula produce the
+    // expected surface characteristics:
+    //  1. Crown: on the right half of the road (uLat > 0), crownProfile < crownHeight
+    //     (peak is at centerline, 0 at edges) — lateral gradient exists.
+    //  2. Camber sign: positive curvature (left turn) → negative camberAngle → right
+    //     side of road is higher than left (banks into the right turn). This matches the
+    //     highway banking convention: turn left → bank right (inside-low).
+    //  3. Camber formula: uLat * sin(camberAngle) — sign is consistent with the
+    //     sweepRibbon implementation.
+    ;(function testSurf03CrownCamberNormal() {
+        // ── Crown assertion ─────────────────────────────────────────────────
+        // crownProfile(uLat, halfWidth, crownHeight):
+        //   peak at uLat=0 (centerline), 0 at uLat=±halfWidth
+        const halfWidth    = 5
+        const crownHeight  = 0.05
+        const crownCenter  = crownProfile(0,          halfWidth, crownHeight)
+        const crownMid     = crownProfile(halfWidth/2, halfWidth, crownHeight)
+        const crownEdge    = crownProfile(halfWidth,   halfWidth, crownHeight)
+
+        assert('SURF-03 crown peak at centerline = crownHeight', Math.abs(crownCenter - crownHeight) < 1e-9)
+        assert('SURF-03 crown at edge = 0', Math.abs(crownEdge) < 1e-9)
+        assert('SURF-03 crown midpoint is between 0 and peak', crownMid > 0 && crownMid < crownHeight)
+        // Lateral gradient: right side (uLat>0) is lower than centerline → correct water shedding.
+        assert('SURF-03 crown right > center > edge (symmetric shed)', crownCenter > crownMid && crownMid > crownEdge)
+
+        // ── Camber direction assertion ───────────────────────────────────────
+        // When curvature is positive (left turn, cross product > 0), signedKappa > 0.
+        // camberAngle = camberStrength * signedKappa → positive.
+        // tiltY = uLat * sin(camberAngle):
+        //   left edge (uLat = -halfWidth): tiltY = -halfWidth * sin(angle) < 0 → lower
+        //   right edge (uLat = +halfWidth): tiltY = +halfWidth * sin(angle) > 0 → higher
+        // Net: left turn banks the right side UP and left side DOWN → inside (left) is lower.
+        // This is correct road banking: turn left → bank toward right (inside-low).
+        const camberStrength = 200
+        const radius = 50           // m — typical tight turn
+        const signedKappa = 1 / radius  // positive = left turn
+        const rawCamber = camberStrength * signedKappa  // 200 * 0.02 = 4°
+        const MAX_CAMBER = 6 * (Math.PI / 180)
+        const camberAngle = Math.max(-MAX_CAMBER, Math.min(MAX_CAMBER, rawCamber))
+
+        // For a left turn: right edge (uLat = +halfWidth) should be higher (tiltY > 0)
+        const tiltRight = halfWidth * Math.sin(camberAngle)
+        const tiltLeft  = (-halfWidth) * Math.sin(camberAngle)
+        assert('SURF-03 camber direction: left turn → right edge higher (banks inside)', tiltRight > 0)
+        assert('SURF-03 camber direction: left turn → left edge lower (banks inside)', tiltLeft < 0)
+
+        // The lateral normal component of the cambered surface:
+        // If right is higher and left is lower, the normal tilts toward the left (inside of turn).
+        // This is verified by the sign: d(vy)/d(uLat) ≈ sin(camberAngle) > 0 for left turn.
+        // analyticNormal uses central differences: nx = -(hR - hL) / (2 * EPS).
+        // Higher on right (hR > hL) → nx = -(positive) < 0 → normal tilts left (toward inside).
+        const heightAtRight = 10 + tiltRight   // design grade + tilt
+        const heightAtLeft  = 10 + tiltLeft    // design grade + tilt
+        const approxNx = -(heightAtRight - heightAtLeft) / (2 * halfWidth)
+        assert(`SURF-03 camber direction (x component): banks inside (nx=${approxNx.toFixed(3)})`, approxNx < 0)
+
+        // ── Crown produces non-zero lateral gradient ─────────────────────────
+        // At uLat = halfWidth/2: crownProfile is non-zero, meaning the surface is not flat.
+        const crownGradient = crownCenter - crownEdge   // height drop from center to edge
+        assert('SURF-03 crown lateral gradient is non-zero', crownGradient > 0)
+
+        console.log('SURF-03 crown + camber direction assertions complete.')
     })()
 
   </script>

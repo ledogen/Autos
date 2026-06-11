@@ -25,6 +25,7 @@ import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors } fr
 import { captureFrame, toggleRecording, openInitialCondition } from './logger.js'
 import { TerrainSystem } from './terrain.js'
 import { RoadSystem, CHUNK_SIZE } from './road.js'
+import { RoadMeshSystem } from './road-mesh.js'
 import { parseWorldSeed, seedFor } from './seed.js'
 
 // World seed — parsed from URL ?seed= parameter, defaulting to 'lone-pine'.
@@ -40,6 +41,11 @@ let terrainSystem = null
 // RoadSystem instance — declared at module scope so the lil-gui callbacks (onRoadVizToggle,
 // onRoadParamChange) can access it. Initialized after TerrainSystem exists (requires scene).
 let roadSystem = null
+
+// RoadMeshSystem instance — declared at module scope so re-stream callbacks can clear it.
+// Initialized after both terrainSystem and roadSystem exist.
+// Provides the visual ribbon mesh (SURF-01) with crown + camber (SURF-03).
+let roadMeshSystem = null
 
 // Grid-world mode flag (D-18 / D-19).
 // When true: terrain streaming paused, Sierra chunks hidden, ramp visible/collidable,
@@ -230,6 +236,15 @@ function debouncedRebuildFull () {
       // Restore viz state — the next roadSystem.update(streamCenter) re-streams the new seed's
       // network and (because _debugVisible is set) rebuilds the centerline lines.
       roadSystem.setDebugVisible(wasVisible)
+      // Phase 9 (SURF-01): clear + re-create RoadMeshSystem with the new road system so
+      // ribbon tiles rebuild from the new network. Road is a pure fn of (seed, coords, params).
+      if (roadMeshSystem) roadMeshSystem.clearAll()
+      roadMeshSystem = new RoadMeshSystem(
+        scene, roadSystem,
+        (x, z) => terrainSystem.analyticHeight(x, z),
+        RANGER_PARAMS
+      )
+      terrainSystem.setRoadSystem(roadSystem)
     }
     _reseatTruckAtSpawn()
   }, 150)
@@ -250,6 +265,8 @@ function debouncedRoadRebuild () {
   _roadRebuildDebounceTimer = setTimeout(() => {
     if (!roadSystem) return
     roadSystem.invalidateCache()
+    // Phase 9 (SURF-01): clear road ribbon tiles — they rebuild from the new network.
+    if (roadMeshSystem) roadMeshSystem.clearAll()
     if (roadSystem._debugVisible) {
       const c = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
       roadSystem.update(c)   // re-streams (dirty) + re-slices + rebuilds visible lines
@@ -787,6 +804,16 @@ roadSystem.init(scene)
 roadSystem.setSurfaceSampler((x, z) => terrainSystem.analyticHeight(x, z))
 roadSystem.setRadius(640)
 
+// Phase 9 (SURF-01 / SURF-03): RoadMeshSystem — ribbon mesh sweep with crown + camber.
+// Constructed after both terrainSystem and roadSystem exist.
+// setRoadSystem() wires the carve hook in analyticHeight so physics feels the road surface.
+terrainSystem.setRoadSystem(roadSystem)
+roadMeshSystem = new RoadMeshSystem(
+  scene, roadSystem,
+  (x, z) => terrainSystem.analyticHeight(x, z),
+  RANGER_PARAMS
+)
+
 // Phase 7 (D-14/15/16): initial-load seat via canonical resolveSpawn + analyticHeight ground-probe.
 // TerrainSystem is now alive and analyticHeight is immediately available (no chunk load required).
 // This overrides the vehicleState.position set during declaration (which used origin + _spawnEq.bodyY).
@@ -1022,6 +1049,13 @@ function loop () {
   // Phase 8: stream the valley-trunk network around the same center as terrain (08-07: the
   // unified update() replaces the retired updateProto — streams + slices + redraws viz if visible).
   if (roadSystem) roadSystem.update(streamCenter)
+  // Phase 9 (SURF-01): sync road ribbon tiles with the active terrain chunk ring.
+  // syncToChunkRing enqueues new tiles and disposes evicted ones co-located with chunk lifetime.
+  // flushPendingQueue builds up to MAX_ROAD_BUILDS_PER_FRAME tiles per frame.
+  if (roadMeshSystem && terrainSystem) {
+    roadMeshSystem.syncToChunkRing(terrainSystem.getActiveChunkKeys())
+    roadMeshSystem.flushPendingQueue()
+  }
 
   // Grid world: recenter the dev grid + ground on the view each frame so they read as
   // infinite. The grid snaps to the cell size so its lines appear stationary (no crawling);

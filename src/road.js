@@ -35,6 +35,7 @@
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
+import { crownProfile } from './road-carve.js'
 
 // ── Module-scope scratch vectors (queryNearest allocation guard) ───────────────
 // queryNearest is called at near-60fps cadence (resolveSpawn + Phase 9 consumption).
@@ -1186,6 +1187,8 @@ export class RoadSystem {
         const halfWidth     = p.roadHalfWidth     ?? 5
         const shoulderWidth = p.roadShoulderWidth  ?? 2.5
         const fillHeight    = p.roadFillHeight     ?? 2.0
+        const crownHeight   = p.crownHeight        ?? 0.05
+        const camberStrength = p.camberStrength    ?? 200
 
         const maxExt = halfWidth + shoulderWidth + 4
         const nr = this.queryNearest(wx, wz, maxExt)
@@ -1194,7 +1197,14 @@ export class RoadSystem {
         const dx = wx - nr.point.x
         const dz = wz - nr.point.z
         const tx = nr.tangent.x, tz = nr.tangent.z
-        const latDist = Math.abs(dx * (-tz) + dz * tx)
+
+        // Signed lateral distance (positive = right of road heading, negative = left).
+        // right = (tz, 0, -tx) so signedLat = dx*(-tz) + dz*tx = dot(d, perp).
+        // Wait — right vector is (tz, 0, -tx); signed lateral = dot((dx,dz), (tz,-tx)) = dx*tz - dz*tx.
+        // But historically latDist = |dx*(-tz) + dz*tx| = |-(dx*tz - dz*tx)| = |dx*tz - dz*tx|.
+        // So signedLat = dx*tz - dz*tx (positive = right side of travel direction).
+        const signedLat = dx * tz - dz * tx
+        const latDist   = Math.abs(signedLat)
 
         if (latDist > halfWidth + shoulderWidth) return null
 
@@ -1203,6 +1213,40 @@ export class RoadSystem {
         let designY = nr.point.y
         const delta = designY - rawAmp
         if (delta > fillHeight) designY = rawAmp + fillHeight
+
+        // ── Crown + camber fold-in (SURF-03 / D-04) ─────────────────────────────
+        // Same formula as sweepRibbon in road-mesh.js — ensures analyticNormal returns
+        // the crowned/cambered surface normal that physics feels (height-agreement gate).
+        // Only applied on the ribbon (blendW=1 zone) so the crown/camber doesn't bleed
+        // into the shoulder blend where the road is transitioning back to raw terrain.
+        if (latDist < halfWidth) {
+            // Crown: parabolic profile — peak at centerline, 0 at edges.
+            // Uses crownProfile() from road-carve.js — SAME formula as sweepRibbon.
+            const crownY = crownProfile(signedLat, halfWidth, crownHeight)
+
+            // Camber: estimate local signed curvature via a second queryNearest 2 m ahead.
+            // Two queries per analyticHeight call on road — acceptable for physics (not per-frame hot path).
+            // Curvature eps = 2 m world-space step along road heading.
+            const eps = 2.0
+            const nrAhead = this.queryNearest(wx + tx * eps, wz + tz * eps, maxExt + eps)
+            let camberAngle = 0
+            if (nrAhead) {
+                const tA = nrAhead.tangent
+                const cross = tx * tA.z - tz * tA.x   // signed curvature indicator
+                const dtx = tA.x - tx, dtz = tA.z - tz
+                const dtLen = Math.sqrt(dtx * dtx + dtz * dtz)
+                const kappa = dtLen / eps  // |dT/ds| approximation (T is unit tangent)
+                const signedKappa = Math.sign(cross) * kappa
+                const raw = camberStrength * signedKappa
+                const MAX_CAMBER = 6 * (Math.PI / 180)
+                camberAngle = Math.max(-MAX_CAMBER, Math.min(MAX_CAMBER, raw))
+            }
+
+            // Tilt: signedLat * sin(camberAngle) — same formula as sweepRibbon
+            const tiltY = signedLat * Math.sin(camberAngle)
+
+            designY = designY + crownY + tiltY
+        }
 
         // Blend weight: 1 on ribbon, ramp down across shoulder.
         let blendW
