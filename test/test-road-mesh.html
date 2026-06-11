@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>RangerSim — Road Mesh Tests</title>
+  <!-- importmap copied verbatim from index.html (MUST appear before module scripts) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+      "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/dist/esm/simplex-noise.js"
+    }
+  }
+  </script>
+  <style>
+    body { font-family: monospace; background: #111; color: #eee; padding: 1em; }
+    h1 { font-size: 1.1em; }
+    p { font-size: 0.85em; color: #aaa; }
+  </style>
+</head>
+<body>
+  <h1>RangerSim Road Mesh Tests</h1>
+  <p>Open DevTools console to see PASS/FAIL results.</p>
+  <p>SURF-01/02/07 mesh smoke assertions added in Plans 09-03/09-04/09-05.</p>
+
+  <script type="module">
+    import * as THREE from 'three'
+    import { assert } from './road-test-harness.js'
+
+    // ── Harness loads ──────────────────────────────────────────────────────────
+    assert('harness loads', true)
+
+    // ── Minimal THREE scene scaffold (smoke test) ─────────────────────────────
+    // This confirms that: (a) the r184 importmap resolves correctly, (b) the harness
+    // imports load without error, and (c) a basic Three.js scene constructs cleanly.
+    // Road ribbon / junction mesh assertions are added in Plan 09-03/04/05.
+    ;(function testSceneConstruct() {
+        let ok = false
+        try {
+            const scene    = new THREE.Scene()
+            const camera   = new THREE.PerspectiveCamera(60, 1, 0.1, 2000)
+            const renderer = new THREE.WebGLRenderer({ antialias: false })
+            renderer.setSize(256, 256)
+            const light    = new THREE.DirectionalLight(0xffffff, 1)
+            scene.add(light)
+            camera.position.set(0, 100, 200)
+            camera.lookAt(0, 0, 0)
+            renderer.render(scene, camera)
+            renderer.dispose()
+            ok = true
+        } catch (e) {
+            console.error('Scene construction threw:', e)
+        }
+        assert('harness scene constructed (r184 importmap + WebGLRenderer ok)', ok)
+    })()
+
+    // ── SURF-01/02/07 mesh smoke assertions ───────────────────────────────────
+    // SURF-01: ~10 m ribbon mesh swept along road splines          → Plan 09-03
+    // SURF-02: Basic asphalt vertex-color material, no z-fighting  → Plan 09-04
+    // SURF-07: Junction merged footprint, no z-fighting            → Plan 09-05
+    //
+    // Placeholder comments — replaced by real assertions in later plans.
+    // These are stubbed as trivially passing so the file is non-empty and runnable
+    // (the plan's "smoke harness scaffold" contract: opens and renders without error).
+    assert('SURF-01 ribbon mesh smoke (Plan 09-03): placeholder', true)
+    assert('SURF-02 asphalt material smoke (Plan 09-04): placeholder', true)
+    assert('SURF-07 junction footprint smoke (Plan 09-05): placeholder', true)
+
+  </script>
+</body>
+</html>
