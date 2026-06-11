@@ -10,10 +10,15 @@ phase_origin: 08-road-routing
 ---
 
 > **RESOLVED 2026-06-11** — all three parts shipped: (1) spline viz (`buildDebugLines` samples
-> `seg.spline`), (2) loop/self-crossing removal (`_removeSelfCrossings`), (3) corner smoothing
-> (`_limitTurnAngle` chamfer + `roadMaxTurnDeg 70°` default + "Max Turn Angle" debug slider). Default
-> is a starting point — user tunes live via the slider; lock a new `roadMaxTurnDeg` default later if
-> desired. Pending only the user's in-browser look on Pages to dial the value to taste.
+> `seg.spline`), (2) loop/self-crossing removal (`_removeSelfCrossings`), (3) over-tight-corner control.
+>
+> Part (3) was first built as a per-vertex max-angle chamfer (`_limitTurnAngle` + `roadMaxTurnDeg`), but
+> that could not fix tight loops/teardrops (each vertex turns only a few degrees; they ACCUMULATE a big
+> heading change over a short arc). Replaced (commit `f38ed4e`) with **curvature / min-turn-radius
+> excision** — `_limitCurvature` excises spans that coil tighter than `roadMinTurnRadius` (default 70 m),
+> exposed as the **"Min Turn Radius (m)"** debug slider (20–300). Standalone test: teardrop coil
+> 540°→32° excised, gentle R=200 m curve preserved, deterministic. Default is a starting point — user
+> tunes live on Pages; lock a new `roadMinTurnRadius` default later if desired.
 
 # QUAL-01: Road splines show occasional loop-backs and sharper-than-ideal corners
 
