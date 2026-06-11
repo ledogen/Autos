@@ -1163,6 +1163,58 @@ export class RoadSystem {
         return this._tiles
     }
 
+    // ── Phase 9: Analytic carve world sampler (SURF-04) ──────────────────────────────
+    /**
+     * Sample the road carve at a world-space position (wx, wz) for use in analyticHeight.
+     * Returns { blendW, gradeY } or null if no road is near.
+     *
+     * The blend formula is byte-identical to carveBlend() in road-carve.js and to the
+     * _buildCarveTable inner loop (SURF-05 height-agreement requirement).
+     *
+     * NOTE: does NOT receive or call terrain — the caller (analyticHeight) already has the
+     * raw height and passes rawAmp separately to avoid infinite recursion.
+     *
+     * @param {number} wx     — world X
+     * @param {number} wz     — world Z
+     * @param {number} rawAmp — raw terrain height at (wx,wz), amplitude already applied (metres)
+     * @returns {{ blendW: number, gradeY: number } | null}
+     *
+     * Pure function of (wx, wz, roadSystem, params, rawAmp) — deterministic (D-16).
+     */
+    _sampleCarveWorld(wx, wz, rawAmp) {
+        const p             = this._params
+        const halfWidth     = p.roadHalfWidth     ?? 5
+        const shoulderWidth = p.roadShoulderWidth  ?? 2.5
+        const fillHeight    = p.roadFillHeight     ?? 2.0
+
+        const maxExt = halfWidth + shoulderWidth + 4
+        const nr = this.queryNearest(wx, wz, maxExt)
+        if (!nr) return null
+
+        const dx = wx - nr.point.x
+        const dz = wz - nr.point.z
+        const tx = nr.tangent.x, tz = nr.tangent.z
+        const latDist = Math.abs(dx * (-tz) + dz * tx)
+
+        if (latDist > halfWidth + shoulderWidth) return null
+
+        // Design grade Y — road point Y is the routing elevation.
+        // Apply fill cap: never raise the surface more than fillHeight above raw terrain.
+        let designY = nr.point.y
+        const delta = designY - rawAmp
+        if (delta > fillHeight) designY = rawAmp + fillHeight
+
+        // Blend weight: 1 on ribbon, ramp down across shoulder.
+        let blendW
+        if (latDist < halfWidth) {
+            blendW = 1.0
+        } else {
+            blendW = Math.max(0.0, 1.0 - (latDist - halfWidth) / shoulderWidth)
+        }
+
+        return { blendW, gradeY: designY }
+    }
+
     // ── Phase 9: Design grade smoothing (D-06) ────────────────────────────────────
     /**
      * Compute a smoothed "design grade" Y array for a per-tile spline.
