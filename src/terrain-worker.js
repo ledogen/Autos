@@ -176,6 +176,33 @@ function height(wx, wz, noiseCoarse, noiseFine, noiseRegional, params) {
     return coarse + fine
 }
 
+// ── Road carve pure functions (CARVE SYNC) ────────────────────────────────
+// Function bodies copied verbatim from src/road-carve.js (no export keyword).
+// SYNC RULE: any edit here must be reflected in road-carve.js AND terrain-worker.js.
+// Same discipline as the height() / seed utility sync (T-07-03-SYNC).
+//
+// carveTable layout: Float32Array [blendW_0, gradeY_preamp_0, blendW_1, gradeY_preamp_1, ...]
+// gradeY_preamp = design grade Y / terrainAmplitude (pre-amplitude) so the Worker can blend
+// without knowing terrainAmplitude. gradeY_preamp * amp = world-space design grade Y.
+
+function sampleCarve(wx, wz, carveTable, N, originX, originZ, cellSize) {
+    const lx = wx - originX
+    const lz = wz - originZ
+    const xi = Math.max(0, Math.min(N - 2, Math.floor(lx / cellSize)))
+    const zi = Math.max(0, Math.min(N - 2, Math.floor(lz / cellSize)))
+    const fx = (lx / cellSize) - xi
+    const fz = (lz / cellSize) - zi
+    const i00 = (zi     * N +  xi   ) * 2
+    const i10 = (zi     * N + (xi+1)) * 2
+    const i01 = ((zi+1) * N +  xi   ) * 2
+    const i11 = ((zi+1) * N + (xi+1)) * 2
+    const w00 = (1-fx) * (1-fz), w10 = fx * (1-fz)
+    const w01 = (1-fx) *    fz,  w11 = fx *    fz
+    const blendW = carveTable[i00]*w00 + carveTable[i10]*w10 + carveTable[i01]*w01 + carveTable[i11]*w11
+    const gradeY = carveTable[i00+1]*w00 + carveTable[i10+1]*w10 + carveTable[i01+1]*w01 + carveTable[i11+1]*w11
+    return { blendW, gradeY }
+}
+
 // ── Worker constants ───────────────────────────────────────────────────────
 
 const GRID_SAMPLES = 65
@@ -209,7 +236,14 @@ self.onmessage = function(e) {
         return
     }
 
-    const { cx, cz, key } = e.data
+    // CARVE SYNC: destructure carveTable (Float32Array Transferable, may be undefined/null).
+    // carveTable stores [blendW, gradeY_preamp] per vertex (pre-amplitude design grade).
+    // The Worker receives and acknowledges the carveTable (T-09-02 Transferable mitigation)
+    // but DOES NOT bake carve into heights — heights remain RAW (pre-amplitude, pre-carve).
+    // The main thread _flushPendingQueue applies the carve blend from chunk.carveData after
+    // receiving raw heights — this ensures chunk.heights is never overwritten (Pitfall 1).
+    // CARVE SYNC: carveTable validation present; blend applied identically by main-thread paths.
+    const { cx, cz, key, carveTable } = e.data
     const N    = GRID_SAMPLES
     const S    = CHUNK_SIZE
     const cell = CELL_SIZE
@@ -222,6 +256,7 @@ self.onmessage = function(e) {
         for (let xi = 0; xi < N; xi++) {
             const wx = originX + xi * cell
             const wz = originZ + zi * cell
+            // Raw height — no carve baked in. Carve applied by main thread in _flushPendingQueue.
             heights[zi * N + xi] = height(wx, wz, noiseCoarse, noiseFine, noiseRegional, _workerParams)
         }
     }

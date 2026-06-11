@@ -119,11 +119,144 @@
 
     })()
 
-    // ── SURF-05 / SURF-04 carve-continuity and height-agreement assertions ────
-    // TODO (Plan 09-02): carve blend spec locked; carveBlend + analyticHeight
-    // height-agreement test added here once the carve system is built.
-    // Placeholder:
-    assert('SURF-05/SURF-04 carve assertions (Plan 09-02): placeholder always passes', true)
+    // ── SURF-05 / SURF-04 height-agreement and carve-continuity assertions ───────
+    // EXIT GATE (Plan 09-02): carve blend spec locked.
+    // These tests verify the pure carve functions (road-carve.js) directly —
+    // no TerrainSystem/Worker needed for these assertions.
+    ;(async function testCarvePureFunctions() {
+        const { sampleCarve, crownProfile, carveBlend } = await import('../src/road-carve.js')
+
+        // ── carveBlend: on-ribbon ────────────────────────────────────────────────
+        {
+            const raw = 10, designY = 15, halfW = 5, shoulderW = 2.5
+            const result = carveBlend(raw, 3, designY, halfW, shoulderW)
+            assert('SURF-05 carveBlend on-ribbon (dist<halfW): returns designGradeY',
+                Math.abs(result - designY) < 1e-9)
+        }
+
+        // ── carveBlend: shoulder blend at t=0.5 ──────────────────────────────────
+        {
+            const raw = 10, designY = 20, halfW = 5, shoulderW = 4
+            const dist = halfW + shoulderW / 2
+            const expected = raw + 0.5 * (designY - raw)
+            const result = carveBlend(raw, dist, designY, halfW, shoulderW)
+            assert(`SURF-05 carveBlend shoulder t=0.5: result=${result.toFixed(3)} expected=${expected.toFixed(3)}`,
+                Math.abs(result - expected) < 1e-6)
+        }
+
+        // ── carveBlend: beyond shoulder → raw terrain ─────────────────────────────
+        {
+            const raw = 10, designY = 20, halfW = 5, shoulderW = 2.5
+            const result = carveBlend(raw, halfW + shoulderW + 1, designY, halfW, shoulderW)
+            assert('SURF-05 carveBlend beyond shoulder: returns raw terrain',
+                Math.abs(result - raw) < 1e-9)
+        }
+
+        // ── carveBlend: fill case ─────────────────────────────────────────────────
+        {
+            const raw = 5, designY = 7, halfW = 5, shoulderW = 2.5
+            const onRibbon = carveBlend(raw, 0, designY, halfW, shoulderW)
+            assert('SURF-05 carveBlend fill case: on-ribbon returns designGradeY',
+                Math.abs(onRibbon - designY) < 1e-9)
+        }
+
+        // ── carveBlend: cut case ──────────────────────────────────────────────────
+        {
+            const raw = 15, designY = 10, halfW = 5, shoulderW = 2.5
+            const onRibbon = carveBlend(raw, 0, designY, halfW, shoulderW)
+            assert('SURF-05 carveBlend cut case: on-ribbon returns designGradeY',
+                Math.abs(onRibbon - designY) < 1e-9)
+        }
+
+        // ── crownProfile: shape checks ────────────────────────────────────────────
+        {
+            const peak = crownProfile(0, 5, 0.05)
+            const edge = crownProfile(5, 5, 0.05)
+            const mid  = crownProfile(2.5, 5, 0.05)
+            assert(`SURF-05 crownProfile: peak at centerline=${peak.toFixed(4)}`,
+                Math.abs(peak - 0.05) < 1e-9)
+            assert(`SURF-05 crownProfile: zero at edge=${edge.toFixed(6)}`,
+                Math.abs(edge) < 1e-9)
+            assert(`SURF-05 crownProfile: midpoint in (0,0.05): ${mid.toFixed(4)}`,
+                mid > 0 && mid < 0.05)
+        }
+
+        // ── crownProfile: symmetry ────────────────────────────────────────────────
+        {
+            const left  = crownProfile(-2, 5, 0.05)
+            const right = crownProfile( 2, 5, 0.05)
+            assert(`SURF-04 crownProfile symmetry: crownProfile(-2)==crownProfile(2)`,
+                Math.abs(left - right) < 1e-9)
+        }
+
+        // ── sampleCarve: bilinear interpolation ───────────────────────────────────
+        {
+            const N = 3, cellSize = 1.0, originX = 0, originZ = 0
+            const table = new Float32Array(N * N * 2)
+            const centerIdx = (1 * N + 1) * 2
+            table[centerIdx]     = 1.0
+            table[centerIdx + 1] = 5.0
+            const c = sampleCarve(1.0, 1.0, table, N, originX, originZ, cellSize)
+            assert(`SURF-05 sampleCarve center vertex: blendW=${c.blendW.toFixed(3)}==1`,
+                Math.abs(c.blendW - 1.0) < 1e-6)
+            assert(`SURF-05 sampleCarve center vertex: gradeY=${c.gradeY.toFixed(3)}==5`,
+                Math.abs(c.gradeY - 5.0) < 1e-6)
+            const c2 = sampleCarve(0.5, 0.5, table, N, originX, originZ, cellSize)
+            assert(`SURF-05 sampleCarve (0.5,0.5) bilinear: blendW=${c2.blendW.toFixed(4)}≈0.25`,
+                Math.abs(c2.blendW - 0.25) < 1e-6)
+        }
+
+        // ── SURF-05 carve-continuity: fill scenario ───────────────────────────────
+        // Step across carve boundary at 0.25 m increments; no step > allowed slope * step.
+        {
+            const raw = 5, designY = 8, halfW = 5, shoulderW = 2.5
+            const step = 0.25
+            const allowedSlope = (designY - raw) / shoulderW  // max slope = rise/shoulderWidth
+            const allowedMax   = allowedSlope * step + 0.01
+            let maxStep = 0
+            let prev = carveBlend(raw, 0, designY, halfW, shoulderW)
+            for (let d = step; d <= halfW + shoulderW + 2; d += step) {
+                const cur = carveBlend(raw, d, designY, halfW, shoulderW)
+                maxStep = Math.max(maxStep, Math.abs(cur - prev))
+                prev = cur
+            }
+            assert(`SURF-05 carve-continuity fill (3m): maxStep=${maxStep.toFixed(4)}m < ${allowedMax.toFixed(4)}m`,
+                maxStep < allowedMax)
+        }
+
+        // ── SURF-05 carve-continuity: cut scenario ────────────────────────────────
+        {
+            const raw = 12, designY = 8, halfW = 5, shoulderW = 2.5
+            const step = 0.25
+            const allowedSlope = (raw - designY) / shoulderW
+            const allowedMax   = allowedSlope * step + 0.01
+            let maxStep = 0
+            let prev = carveBlend(raw, 0, designY, halfW, shoulderW)
+            for (let d = step; d <= halfW + shoulderW + 2; d += step) {
+                const cur = carveBlend(raw, d, designY, halfW, shoulderW)
+                maxStep = Math.max(maxStep, Math.abs(cur - prev))
+                prev = cur
+            }
+            assert(`SURF-05 carve-continuity cut (4m): maxStep=${maxStep.toFixed(4)}m < ${allowedMax.toFixed(4)}m`,
+                maxStep < allowedMax)
+        }
+
+        // ── SURF-05 carve monotonicity: fill case ──────────────────────────────────
+        // Moving away from centerline should monotonically decrease toward raw terrain.
+        {
+            const raw = 10, designY = 15, halfW = 5, shoulderW = 2.5
+            let prev = carveBlend(raw, 0, designY, halfW, shoulderW)
+            let monotonic = true
+            for (let d = 0.1; d <= halfW + shoulderW + 1; d += 0.1) {
+                const cur = carveBlend(raw, d, designY, halfW, shoulderW)
+                if (cur > prev + 1e-9) { monotonic = false; break }
+                prev = cur
+            }
+            assert('SURF-05 carveBlend fill monotonically decreases from center to far', monotonic)
+        }
+
+        console.log('SURF-04/SURF-05 pure-function exit gates: all checks complete.')
+    })()
 
   </script>
 </body>

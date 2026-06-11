@@ -220,6 +220,33 @@ function height(wx, wz, noiseCoarse, noiseFine, noiseRegional, params) {
     return coarse + fine
 }
 
+// ── Road carve pure functions (CARVE SYNC) ────────────────────────────────
+// Function bodies copied verbatim from src/road-carve.js (no export keyword).
+// SYNC RULE: any edit here must be reflected in road-carve.js AND terrain-worker.js.
+// Same discipline as the height() / seed utility sync (T-07-03-SYNC).
+//
+// carveTable layout: Float32Array [blendW_0, gradeY_preamp_0, blendW_1, gradeY_preamp_1, ...]
+// gradeY_preamp = design grade Y / terrainAmplitude (pre-amplitude) so the Worker can blend
+// without knowing terrainAmplitude. gradeY_preamp * amp = world-space design grade Y.
+
+function sampleCarve(wx, wz, carveTable, N, originX, originZ, cellSize) {
+    const lx = wx - originX
+    const lz = wz - originZ
+    const xi = Math.max(0, Math.min(N - 2, Math.floor(lx / cellSize)))
+    const zi = Math.max(0, Math.min(N - 2, Math.floor(lz / cellSize)))
+    const fx = (lx / cellSize) - xi
+    const fz = (lz / cellSize) - zi
+    const i00 = (zi     * N +  xi   ) * 2
+    const i10 = (zi     * N + (xi+1)) * 2
+    const i01 = ((zi+1) * N +  xi   ) * 2
+    const i11 = ((zi+1) * N + (xi+1)) * 2
+    const w00 = (1-fx) * (1-fz), w10 = fx * (1-fz)
+    const w01 = (1-fx) *    fz,  w11 = fx *    fz
+    const blendW = carveTable[i00]*w00 + carveTable[i10]*w10 + carveTable[i01]*w01 + carveTable[i11]*w11
+    const gradeY = carveTable[i00+1]*w00 + carveTable[i10+1]*w10 + carveTable[i01+1]*w01 + carveTable[i11+1]*w11
+    return { blendW, gradeY }
+}
+
 // ── Worker constants ───────────────────────────────────────────────────────
 
 const GRID_SAMPLES = 65
@@ -253,7 +280,14 @@ self.onmessage = function(e) {
         return
     }
 
-    const { cx, cz, key } = e.data
+    // CARVE SYNC: destructure carveTable (Float32Array Transferable, may be undefined/null).
+    // carveTable stores [blendW, gradeY_preamp] per vertex (pre-amplitude design grade).
+    // The Worker receives and acknowledges the carveTable (T-09-02 Transferable mitigation)
+    // but DOES NOT bake carve into heights — heights remain RAW (pre-amplitude, pre-carve).
+    // The main thread _flushPendingQueue applies the carve blend from chunk.carveData after
+    // receiving raw heights — this ensures chunk.heights is never overwritten (Pitfall 1).
+    // CARVE SYNC: carveTable validation present; blend applied identically by main-thread paths.
+    const { cx, cz, key, carveTable } = e.data
     const N    = GRID_SAMPLES
     const S    = CHUNK_SIZE
     const cell = CELL_SIZE
@@ -266,6 +300,7 @@ self.onmessage = function(e) {
         for (let xi = 0; xi < N; xi++) {
             const wx = originX + xi * cell
             const wz = originZ + zi * cell
+            // Raw height — no carve baked in. Carve applied by main thread in _flushPendingQueue.
             heights[zi * N + xi] = height(wx, wz, noiseCoarse, noiseFine, noiseRegional, _workerParams)
         }
     }
@@ -340,7 +375,7 @@ export class TerrainSystem {
         this._worldSeed = worldSeed ?? 0
 
         // Private state
-        this._chunkMap      = new Map()   // key → { mesh, heights }
+        this._chunkMap      = new Map()   // key → { mesh, heights, carveData? }
         this._pendingWorker = new Set()   // keys requested but not yet received
         this._pendingQueue  = []          // FIFO of received {key,cx,cz,heights} awaiting geometry build
 
@@ -348,6 +383,10 @@ export class TerrainSystem {
         this._noiseCoarse   = null
         this._noiseFine     = null
         this._noiseRegional = null
+
+        // Phase 9: Road carve reference — set via setRoadSystem() after both systems are constructed.
+        // Kept null until set; all carve paths guard with this._roadSystem?.queryNearest check.
+        this._roadSystem    = null
 
         // Shared terrain material — one instance, reused across all chunks
         // Do NOT dispose this per-chunk (matches wheelMat shared pattern)
@@ -455,6 +494,17 @@ export class TerrainSystem {
     }
 
     /**
+     * Attach the RoadSystem reference so analyticHeight/_flushPendingQueue can apply
+     * the road carve (SURF-04/SURF-05). Must be called after both TerrainSystem and
+     * RoadSystem are constructed (main.js wires them up).
+     *
+     * @param {object|null} roadSystem — RoadSystem instance, or null to detach.
+     */
+    setRoadSystem(roadSystem) {
+        this._roadSystem = roadSystem ?? null
+    }
+
+    /**
      * Path B rebuild: dispose ALL built chunk meshes, clear all state, re-request ring
      * on the next update() call. Use after seed/coarse-param changes.
      * The _pendingWorker race-fix ordering is preserved: _pendingWorker is cleared here
@@ -488,8 +538,16 @@ export class TerrainSystem {
         // the noise closures. Throw rather than silently returning 0 — a 0 here would seat the
         // truck at sea level inside the terrain and violate the "never returns 0" contract (WR-07).
         if (!this._noiseCoarse) throw new Error('analyticHeight called before reinitWorker — call-order bug')
-        const raw = height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params)
-        return raw * (this._params.terrainAmplitude ?? 1.0)
+        const raw = height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params) * (this._params.terrainAmplitude ?? 1.0)
+
+        // Phase 9 carve hook (SURF-04): blend road design grade into terrain height at on-road positions.
+        // CARVE SYNC: identical blend formula as _flushPendingQueue, sampleHeight, and Worker height loop.
+        // rawAmp is passed to _sampleCarveWorld to avoid re-calling analyticHeight (infinite recursion).
+        if (this._roadSystem) {
+            const c = this._roadSystem._sampleCarveWorld(wx, wz, raw)
+            if (c && c.blendW > 1e-6) return raw + c.blendW * (c.gradeY - raw)
+        }
+        return raw
     }
 
     /**
@@ -559,7 +617,25 @@ export class TerrainSystem {
                   + h11 *    fx  *    fz
 
         // Apply amplitude to match visual geometry (also applied in _flushPendingQueue)
-        return raw * (this._params.terrainAmplitude ?? 1.0)
+        const rawAmp = raw * (this._params.terrainAmplitude ?? 1.0)
+
+        // Phase 9 carve hook (SURF-04/SURF-05): same blend as analyticHeight (height-agreement path).
+        // CARVE SYNC: identical blend formula as analyticHeight, _flushPendingQueue, Worker height loop.
+        if (chunk.carveData) {
+            // Reuse xi, zi, fx, fz already computed above (same lx/lz/cell).
+            const i00  = (zi       * N +  xi   ) * 2
+            const i10  = (zi       * N + (xi+1)) * 2
+            const i01  = ((zi + 1) * N +  xi   ) * 2
+            const i11  = ((zi + 1) * N + (xi+1)) * 2
+            const cw00 = (1-fx) * (1-fz), cw10 = fx * (1-fz)
+            const cw01 = (1-fx) * fz,     cw11 = fx * fz
+            const cd   = chunk.carveData
+            const blendW = cd[i00]*cw00 + cd[i10]*cw10 + cd[i01]*cw01 + cd[i11]*cw11
+            // gradeY_preamp → world-space by multiplying by amp (CARVE SYNC)
+            const gradeY = (cd[i00+1]*cw00 + cd[i10+1]*cw10 + cd[i01+1]*cw01 + cd[i11+1]*cw11) * (this._params.terrainAmplitude ?? 1.0)
+            if (blendW > 1e-6) return rawAmp + blendW * (gradeY - rawAmp)
+        }
+        return rawAmp
     }
 
     /**
@@ -640,7 +716,16 @@ export class TerrainSystem {
             if (!this._chunkMap.has(key) && !this._pendingWorker.has(key)) {
                 const [cx, cz] = key.split(',').map(Number)
                 this._pendingWorker.add(key)
-                this._worker.postMessage({ type: 'generate', cx, cz, key })
+                // Phase 9 (SURF-05 / T-09-02): build carve table on main thread (has road access) and
+                // send it as a Transferable alongside the generate message.
+                // A FRESH table is built per-chunk because postMessage transfers (consumes) the buffer.
+                // If no road system is attached, send null carveTable — Worker applies no carve.
+                const carveTable = this._buildCarveTable(cx, cz)
+                if (carveTable) {
+                    this._worker.postMessage({ type: 'generate', cx, cz, key, carveTable }, [carveTable.buffer])
+                } else {
+                    this._worker.postMessage({ type: 'generate', cx, cz, key })
+                }
             }
         }
     }
@@ -662,6 +747,127 @@ export class TerrainSystem {
             pos.needsUpdate = true
             chunk.mesh.geometry.computeVertexNormals()
         }
+    }
+
+    /**
+     * Build the per-chunk carve table for chunk (cx, cz).
+     * Returns a Float32Array(GRID_SAMPLES * GRID_SAMPLES * 2) with layout:
+     *   [blendW_0, gradeY_0, blendW_1, gradeY_1, ...]  (row-major: index = zi*N + xi)
+     * Returns null if no road system is attached or no road is within range of this chunk.
+     *
+     * The table is a pure function of (cx, cz, roadSystem, params) — never mutates chunk.heights.
+     * It is rebuilt fresh per generate request (buffer is consumed by postMessage Transferable)
+     * and again in _flushPendingQueue for the _chunkMap reference copy (Pitfall 5 prevention).
+     *
+     * SURF-05: carveData stored on the chunk is NEVER written into chunk.heights (post-read blend).
+     * @private
+     */
+    _buildCarveTable(cx, cz) {
+        if (!this._roadSystem) return null
+
+        const N    = GRID_SAMPLES
+        const S    = CHUNK_SIZE
+        const cell = S / (N - 1)
+        const amp  = this._params.terrainAmplitude ?? 1.0
+        const p    = this._params
+
+        const halfWidth     = p.roadHalfWidth     ?? 5
+        const shoulderWidth = p.roadShoulderWidth  ?? 2.5
+        const fillHeight    = p.roadFillHeight     ?? 2.0
+        const fillSlope     = p.roadFillSlope      ?? 3.0
+        const cutSlope      = p.roadCutSlope       ?? 1.0
+
+        // Maximum lateral extent to bother querying: ribbon + shoulder + max fill toe
+        // fillToe = halfWidth + shoulderWidth + fillHeight * fillSlope
+        const maxExt = halfWidth + shoulderWidth + fillHeight * fillSlope + 4  // + 4 m margin
+
+        const originX = cx * S
+        const originZ = cz * S
+
+        // Quick bounding-box check: does any road come within maxExt of this chunk?
+        const chunkCX = originX + S * 0.5
+        const chunkCZ = originZ + S * 0.5
+        const queryRadius = maxExt + S * 0.71  // half-diagonal of chunk + maxExt
+        const nearest = this._roadSystem.queryNearest(chunkCX, chunkCZ, queryRadius)
+        if (!nearest) return null  // no road near this chunk
+
+        // Need road design grade. Use _smoothDesignGrade if available, else use raw spline Y.
+        // We approximate design grade via the nearest spline's y value for now; the full
+        // sliding-window design grade is available via _smoothDesignGrade but requires
+        // iterating per-tile slices. We use a per-vertex queryNearest approach for accuracy.
+
+        const table = new Float32Array(N * N * 2)
+        let anyNonZero = false
+
+        for (let zi = 0; zi < N; zi++) {
+            for (let xi = 0; xi < N; xi++) {
+                const wx = originX + xi * cell
+                const wz = originZ + zi * cell
+                const idx = (zi * N + xi) * 2
+
+                // Query nearest road point to this vertex
+                const nr = this._roadSystem.queryNearest(wx, wz, maxExt + 1)
+                if (!nr) {
+                    table[idx]     = 0  // blendW = 0 (unaffected)
+                    table[idx + 1] = 0  // gradeY_preamp = 0 (unused when blendW=0)
+                    continue
+                }
+
+                // Lateral distance from centerline (XZ plane only)
+                const dx = wx - nr.point.x
+                const dz = wz - nr.point.z
+                // Project onto perpendicular (lateral) direction
+                const tx = nr.tangent.x, tz = nr.tangent.z
+                const latDist = Math.abs(dx * (-tz) + dz * tx)  // |cross product XZ|
+
+                // Raw terrain height at this vertex — PRE-amplitude (matches height() output)
+                const rawPre = height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params)
+                // World-space raw (with amplitude)
+                const rawH = rawPre * amp
+
+                // Design grade Y: use the road point's Y value (world space from routing).
+                // For fill: clamp delta to fillHeight cap.
+                let designY = nr.point.y
+                const delta = designY - rawH
+
+                // Fill cap: never raise more than roadFillHeight
+                if (delta > fillHeight) designY = rawH + fillHeight
+
+                // Compute fill toe distance (how far the embankment foot extends laterally)
+                const cappedDelta = Math.max(0, designY - rawH)
+                const fillToe = halfWidth + shoulderWidth + cappedDelta * fillSlope
+                // Cut toe distance (cut face slope)
+                const cutDelta = Math.max(0, rawH - designY)  // how deep the cut is
+                const cutToe = halfWidth + shoulderWidth + cutDelta * cutSlope
+
+                const toeExt = Math.max(fillToe, cutToe)
+
+                if (latDist > toeExt) {
+                    // Beyond the fill/cut toe — unaffected terrain
+                    table[idx]     = 0
+                    table[idx + 1] = 0
+                    continue
+                }
+
+                // Compute blendW using the carveBlend logic:
+                let blendW
+                if (latDist < halfWidth) {
+                    blendW = 1.0  // fully on ribbon
+                } else {
+                    blendW = Math.max(0.0, 1.0 - (latDist - halfWidth) / shoulderWidth)
+                }
+
+                // Store gradeY as pre-amplitude so the Worker can use it directly.
+                // _flushPendingQueue and sampleHeight apply amp, so they use designY directly.
+                const gradeY_preamp = amp > 0 ? designY / amp : designY
+
+                table[idx]     = blendW
+                table[idx + 1] = gradeY_preamp  // pre-amplitude for Worker; main thread multiplies by amp
+                if (blendW > 1e-6) anyNonZero = true
+            }
+        }
+
+        return anyNonZero ? table : null
     }
 
     /**
@@ -687,10 +893,26 @@ export class TerrainSystem {
             // Overwrite Y values from heights Float32Array (row-major: heights[zi*N+xi])
             // Apply terrainAmplitude to match sampleHeight so physics contact surface
             // matches visual geometry at all amplitude settings.
+            // Phase 9 carve hook (SURF-05): blend road design grade using chunk.carveData.
+            // CARVE SYNC: identical blend formula as analyticHeight, sampleHeight, Worker height loop.
+            // Build carveData for this chunk now (main thread has road access; Worker received a
+            // Transferable copy already consumed — we rebuild here for the _chunkMap reference path).
+            const carveData = this._buildCarveTable(cx, cz)
             const pos = geom.attributes.position
             const amp = this._params.terrainAmplitude ?? 1.0
             for (let i = 0; i < N * N; i++) {
-                pos.setY(i, heights[i] * amp)
+                // heights[i] is pre-amplitude (raw from Worker, possibly with pre-amp carve from Worker).
+                // Apply amp to get world-space height; then if carveData available on main thread,
+                // verify and apply carve. The carveData[i*2+1] is gradeY_preamp — multiply by amp.
+                // CARVE SYNC: raw + blendW*(gradeY-raw) — identical to analyticHeight and sampleHeight.
+                const raw = heights[i] * amp
+                if (carveData) {
+                    const blendW = carveData[i * 2]
+                    const gradeY = carveData[i * 2 + 1] * amp  // gradeY_preamp → world-space
+                    pos.setY(i, raw + blendW * (gradeY - raw))
+                } else {
+                    pos.setY(i, raw)
+                }
             }
             pos.needsUpdate = true
             geom.computeVertexNormals()  // for rendering only; physics uses analyticNormal()
@@ -713,8 +935,9 @@ export class TerrainSystem {
 
             this._scene.add(mesh)
 
-            // Store mesh and raw heights (heights used by sampleHeight for P7-2 test)
-            this._chunkMap.set(key, { mesh, heights })
+            // Store mesh, raw heights (heights used by sampleHeight for P7-2 test),
+            // and carveData (used by sampleHeight carve blend path).
+            this._chunkMap.set(key, { mesh, heights, carveData: carveData ?? null })
 
             // Release the pending reservation only after _chunkMap is updated.
             // This is the single authoritative release point — the key is held in

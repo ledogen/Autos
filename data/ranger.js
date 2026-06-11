@@ -230,4 +230,43 @@ export const RANGER_PARAMS = {
   // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
   // Retained for the DEFERRED D-01 spur pass (trunk-only ships first). D-01 / RESEARCH A1.
   spurProbability: 0.15, // ratio [0,1] — spur chance (deferred D-01 spur pass)
+
+  // ── Phase 9 Road Surface — D-04/D-05/D-07/D-08 carve params ──────────────
+  // These params drive the cut-and-fill terrain carve (SURF-05) and the ribbon geometry (SURF-01).
+  // Live-tunable via the Roads folder debug sliders (debug.js onRoadSurfaceChange).
+  // All distances in metres, slopes as H:V ratios.
+
+  // roadWidth: total paved ribbon width. Two driving lanes at 5 m each = 10 m default.
+  // D-04 — road width drives halfWidth, crown, and camber geometry.
+  roadWidth: 10,            // m — total paved width (D-04)
+
+  // roadHalfWidth: half of roadWidth — ribbon extends ±roadHalfWidth from centerline.
+  // DERIVED: keep in sync with roadWidth manually (roadHalfWidth = roadWidth / 2).
+  // Stored separately to avoid repeated division in hot paths.
+  roadHalfWidth: 5,         // m — half roadWidth (derived; keep in sync with roadWidth)
+
+  // roadShoulderWidth: blend/shoulder zone width beyond the ribbon edge.
+  // Within this zone the terrain blends smoothly from ribbon grade back to raw terrain.
+  // 2.5 m gives a 1:2 blend fade for a standard paved shoulder width. D-05.
+  roadShoulderWidth: 2.5,   // m — shoulder blend zone width beyond ribbon edge (D-05)
+
+  // roadFillHeight: maximum fill embankment height (delta cap).
+  // When the road design grade is ABOVE the terrain (fill), the height difference is clamped
+  // to this value before computing the fill-toe distance. Prevents extreme causeways.
+  // Default 2.0 m — ~one-storey raised causeway, tunable up to 4 m. D-07.
+  roadFillHeight: 2.0,      // m — max fill embankment height cap (D-07)
+
+  // roadCutSlope: H:V ratio for the cut face (terrain higher than design grade).
+  // 1.0 = 45° — moderate rocky cut slope. Range: 0.5:1 (steep) to 2:1 (gentle). D-08.
+  roadCutSlope: 1.0,        // H:V ratio — cut face slope ~45° (D-08)
+
+  // roadFillSlope: H:V ratio for the fill embankment (design grade higher than terrain).
+  // 3.0 = 18.4° — standard dirt embankment slope (3 m horizontal per 1 m vertical). D-08.
+  roadFillSlope: 3.0,       // H:V ratio — fill embankment slope, 3:1 dirt standard (D-08)
+
+  // designGradeWindow: sliding-window half-width for design grade smoothing.
+  // The smoothed road profile is a windowed average of analyticHeight over this half-width
+  // on both sides of each spline sample. 50 m suppresses the 20 m fine-noise wavelength
+  // (fineFreq 0.05/m) while preserving coarse terrain grade. D-06.
+  designGradeWindow: 50,    // m — sliding-window smoothing half-width for design grade (D-06)
 };

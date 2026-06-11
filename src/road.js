@@ -1163,6 +1163,158 @@ export class RoadSystem {
         return this._tiles
     }
 
+    // ── Phase 9: Analytic carve world sampler (SURF-04) ──────────────────────────────
+    /**
+     * Sample the road carve at a world-space position (wx, wz) for use in analyticHeight.
+     * Returns { blendW, gradeY } or null if no road is near.
+     *
+     * The blend formula is byte-identical to carveBlend() in road-carve.js and to the
+     * _buildCarveTable inner loop (SURF-05 height-agreement requirement).
+     *
+     * NOTE: does NOT receive or call terrain — the caller (analyticHeight) already has the
+     * raw height and passes rawAmp separately to avoid infinite recursion.
+     *
+     * @param {number} wx     — world X
+     * @param {number} wz     — world Z
+     * @param {number} rawAmp — raw terrain height at (wx,wz), amplitude already applied (metres)
+     * @returns {{ blendW: number, gradeY: number } | null}
+     *
+     * Pure function of (wx, wz, roadSystem, params, rawAmp) — deterministic (D-16).
+     */
+    _sampleCarveWorld(wx, wz, rawAmp) {
+        const p             = this._params
+        const halfWidth     = p.roadHalfWidth     ?? 5
+        const shoulderWidth = p.roadShoulderWidth  ?? 2.5
+        const fillHeight    = p.roadFillHeight     ?? 2.0
+
+        const maxExt = halfWidth + shoulderWidth + 4
+        const nr = this.queryNearest(wx, wz, maxExt)
+        if (!nr) return null
+
+        const dx = wx - nr.point.x
+        const dz = wz - nr.point.z
+        const tx = nr.tangent.x, tz = nr.tangent.z
+        const latDist = Math.abs(dx * (-tz) + dz * tx)
+
+        if (latDist > halfWidth + shoulderWidth) return null
+
+        // Design grade Y — road point Y is the routing elevation.
+        // Apply fill cap: never raise the surface more than fillHeight above raw terrain.
+        let designY = nr.point.y
+        const delta = designY - rawAmp
+        if (delta > fillHeight) designY = rawAmp + fillHeight
+
+        // Blend weight: 1 on ribbon, ramp down across shoulder.
+        let blendW
+        if (latDist < halfWidth) {
+            blendW = 1.0
+        } else {
+            blendW = Math.max(0.0, 1.0 - (latDist - halfWidth) / shoulderWidth)
+        }
+
+        return { blendW, gradeY: designY }
+    }
+
+    // ── Phase 9: Design grade smoothing (D-06) ────────────────────────────────────
+    /**
+     * Compute a smoothed "design grade" Y array for a per-tile spline.
+     * Purpose: suppress fine-noise terrain texture (±0.5 m) from the road vertical profile
+     * while preserving coarse terrain grade (mountains / valleys). The smoothed grade is used
+     * as the target elevation for cut-and-fill carve (carveBlend in road-carve.js).
+     *
+     * Algorithm: Arc-length sliding window average over `analyticHeight` samples.
+     *   For each sample point i with arc-length position s_i:
+     *     designGradeY[i] = mean(analyticHeight at all samples j where |s_j - s_i| < window)
+     *   Window half-width = params.designGradeWindow (default 50 m).
+     *
+     * Boundary stability: the spline is sampled 2 extra samples past each tile endpoint so the
+     * sliding window has valid values at the tile edges (Pitfall 7). The returned array matches
+     * the sampled `points` array 1:1.
+     *
+     * Memoized: the result is cached by spline + window identity. Re-calling with the same spline
+     * object and same window returns the cached array without re-computing. The cache is a
+     * WeakMap keyed by the spline object — cleared automatically when the spline is GC'd.
+     *
+     * @param {THREE.CatmullRomCurve3} spline     — per-tile slice spline (from this._tiles)
+     * @param {Function}               terrainRef — `(wx, wz) => number` analytic height sampler
+     *                                              (pass terrain.analyticHeight.bind(terrain))
+     * @param {object}                 params     — RANGER_PARAMS (reads designGradeWindow)
+     * @returns {{ points: THREE.Vector3[], designGradeY: Float32Array }}
+     *   points: arc-length-sampled spline positions (N samples × tile length ~2 m apart)
+     *   designGradeY: smoothed height at each sample position (metres, terrainAmplitude included)
+     *
+     * Pure function of (spline, terrainRef, params) — no side effects (D-16).
+     */
+    _smoothDesignGrade(spline, terrainRef, params) {
+        // Lazy-init the per-instance WeakMap cache.
+        if (!this._designGradeCache) this._designGradeCache = new WeakMap()
+
+        const window = params.designGradeWindow ?? 50   // half-width in metres
+        const cacheKey = spline   // WeakMap key — unique per spline object
+
+        // Return cached result if still valid (same window value).
+        const cached = this._designGradeCache.get(cacheKey)
+        if (cached && cached.window === window) return cached.result
+
+        // ── Sample the spline at ~2 m arc-length intervals ────────────────────────
+        // Use at least 32 samples even for short splines; cap at 512.
+        const arcLen = spline.getLength ? spline.getLength() : 64
+        const N = Math.max(32, Math.min(512, Math.ceil(arcLen / 2) + 1))
+
+        const pts = []
+        for (let i = 0; i < N; i++) {
+            const u = i / (N - 1)
+            pts.push(spline.getPointAt(u))
+        }
+
+        // ── Evaluate analyticHeight at each sample point ───────────────────────────
+        const rawY = new Float32Array(N)
+        for (let i = 0; i < N; i++) {
+            rawY[i] = terrainRef(pts[i].x, pts[i].z)
+        }
+
+        // ── Compute arc-length positions for sliding window indexing ───────────────
+        const arcPos = new Float32Array(N)
+        arcPos[0] = 0
+        for (let i = 1; i < N; i++) {
+            const dx = pts[i].x - pts[i-1].x
+            const dz = pts[i].z - pts[i-1].z
+            arcPos[i] = arcPos[i-1] + Math.sqrt(dx*dx + dz*dz)
+        }
+
+        // ── Sliding window average ─────────────────────────────────────────────────
+        // For each sample i, sum rawY[j] for all j where |arcPos[j] - arcPos[i]| < window.
+        // Use two-pointer technique for O(N) total cost.
+        const designGradeY = new Float32Array(N)
+        let lo = 0
+        let hi = 0
+        let sum = 0
+        // Initialize window around sample 0
+        while (hi < N && arcPos[hi] - arcPos[0] < window) {
+            sum += rawY[hi]
+            hi++
+        }
+
+        for (let i = 0; i < N; i++) {
+            designGradeY[i] = sum / (hi - lo)
+
+            // Advance window: add next sample within window
+            while (hi < N && arcPos[hi] - arcPos[i+1 < N ? i+1 : i] < window) {
+                sum += rawY[hi]
+                hi++
+            }
+            // Drop samples that fell behind the window
+            while (lo < hi && arcPos[i+1 < N ? i+1 : i] - arcPos[lo] >= window) {
+                sum -= rawY[lo]
+                lo++
+            }
+        }
+
+        const result = { points: pts, designGradeY }
+        this._designGradeCache.set(cacheKey, { window, result })
+        return result
+    }
+
     /**
      * Invoke `cb(t)` for every t∈(0,1) at which the linear segment [v0,v1] crosses an
      * integer multiple of `step` (a tile boundary on one axis). No allocation.
