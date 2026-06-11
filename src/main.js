@@ -242,11 +242,36 @@ function debouncedRebuildFull () {
       roadMeshSystem = new RoadMeshSystem(
         scene, roadSystem,
         (x, z) => terrainSystem.analyticHeight(x, z),
-        RANGER_PARAMS
+        RANGER_PARAMS,
+        worldSeed  // D-03: roadQuality determinism
       )
       terrainSystem.setRoadSystem(roadSystem)
     }
     _reseatTruckAtSpawn()
+  }, 150)
+}
+
+// ── Debounced road surface rebuild (D-04/D-07 — Plan 09-05) ─────────────────────────────────
+// Fires on road surface geometry slider changes (roadWidth, crown, camber, carve slopes, etc.)
+// Re-bakes carve tables + rebuilds all terrain chunks from Worker + re-sweeps road mesh tiles.
+// This is Path B (full Worker round-trip) because carve tables depend on width/slope params
+// that affect per-vertex blendW and gradeY — the Worker needs fresh carve tables.
+// Pattern: mirrors debouncedRebuildFull — 150ms debounce, same timer convention (D-09).
+let _roadSurfaceDebounceTimer = null
+function debouncedRoadSurfaceRebuild () {
+  clearTimeout(_roadSurfaceDebounceTimer)
+  _roadSurfaceDebounceTimer = setTimeout(() => {
+    if (!terrainSystem) return
+    // Re-bake carve tables by doing a full Worker round-trip (Path B).
+    // reinitWorker re-sends init (same seed/noise — no change) and
+    // rebuildAllChunksFromWorker disposes all chunks + re-requests them, calling
+    // _buildCarveTable again with the updated carve params (roadWidth, slopes, etc.).
+    terrainSystem.reinitWorker(worldSeed, RANGER_PARAMS)
+    terrainSystem.rebuildAllChunksFromWorker()
+    // Re-sweep the road ribbon tiles with the updated geometry params.
+    if (roadMeshSystem) {
+      roadMeshSystem.clearAll()
+    }
   }, 150)
 }
 
@@ -783,6 +808,8 @@ const _gui = initDebug(RANGER_PARAMS, {
   // (08-07: proto wiring retired — there is ONE road system + ONE viz now.)
   onRoadVizToggle:     (v) => { if (roadSystem) roadSystem.setDebugVisible(v) },
   onRoadParamChange:   ()  => debouncedRoadRebuild(),
+  // Plan 09-05 (D-04/D-07): surface geometry sliders fire a debounced carve+mesh rebuild.
+  onRoadSurfaceChange: ()  => debouncedRoadSurfaceRebuild(),
 }, { initialSeed: _urlSeed ?? 'lone-pine' })
 
 // ── TerrainSystem (Phase 6 / 7) ──────────────────────────────────────────────
@@ -811,7 +838,8 @@ terrainSystem.setRoadSystem(roadSystem)
 roadMeshSystem = new RoadMeshSystem(
   scene, roadSystem,
   (x, z) => terrainSystem.analyticHeight(x, z),
-  RANGER_PARAMS
+  RANGER_PARAMS,
+  worldSeed  // D-03: roadQuality determinism requires the world seed
 )
 
 // Phase 7 (D-14/15/16): initial-load seat via canonical resolveSpawn + analyticHeight ground-probe.
