@@ -53,6 +53,7 @@ Physics that feel honest: a car that can roll over naturally, drift on the limit
 - [x] Procedural infinite terrain (simplex noise, chunk ring, terrain normals in physics) — Phase 6
 - [x] Sphere contact impulse solver (14-probe body + wheel hubs) — Phase 4.1
 - [x] Bump and droop stops, strut-axis ODE suspension — Phase 4.1
+- [x] Deterministic road routing over coarse terrain — valley-following streaming trunk (soft-cost A*, no hard grade block), per-tile-sliced queryable Catmull-Rom splines, queryNearest spawn, debug-spline viz (ROAD-01..04) — Phase 8
 
 ### Active
 
@@ -128,4 +129,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-05 — started milestone v1.1 Mountains & Roads (seeded layered terrain, switchback roads, free-cam, POI hooks)*
+*Last updated: 2026-06-11 — Phase 8 (Road Routing) complete: valley-trunk streaming network is the production RoadSystem core (ROAD-01..04 validated, UAT passed, PERF-01 load-time fix confirmed). Next active phase: Phase 9 (Road Surface).*

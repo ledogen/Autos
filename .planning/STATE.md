@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Mountains & Roads
 status: ready_to_plan
-stopped_at: Phase 08 complete (7/7) — ready to discuss Phase 999.1
-last_updated: 2026-06-11T00:55:34.210Z
-last_activity: 2026-06-10 -- Phase 08 execution started
+stopped_at: Phase 08 closed out (7/7 verified, UAT 3/3, PERF-01 load-time fix confirmed) — next active phase is Phase 9 (Road Surface)
+last_updated: 2026-06-11T02:00:00.000Z
+last_activity: 2026-06-11 -- Phase 08 closed out (gap closure + PERF-01 confirmed)
 progress:
   total_phases: 5
   completed_phases: 1
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05)
 
 **Core value:** Physics that feel honest: a car that can roll over naturally, drift on the limit, and behave predictably enough that tuning parameters produces the expected result.
-**Current focus:** Phase 999.1 — truck body styles and functional brake reverse lights
+**Current focus:** Phase 9 — Road Surface (next active phase; Phase 999.1 truck-body is BACKLOG, not next)
 
 ## Current Position
 
-Phase: 999.1
+Phase: 9
 Plan: Not started
-Status: Ready to plan
+Status: Ready to discuss/plan (Phase 8 complete)
 Last activity: 2026-06-11
 
 ```
