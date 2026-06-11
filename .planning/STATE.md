@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: Mountains & Roads
 status: ready_to_plan
 stopped_at: Phase 08 closed out (7/7 verified, UAT 3/3, PERF-01 load-time fix confirmed) — next active phase is Phase 9 (Road Surface)
-last_updated: 2026-06-11T02:00:00.000Z
-last_activity: 2026-06-11 -- Phase 08 closed out (gap closure + PERF-01 confirmed)
+last_updated: 2026-06-10T00:00:00.000Z
+last_activity: 2026-06-10 -- quick 260610-v0y QUAL-01 partial: spline viz + self-crossing removal shipped
 progress:
   total_phases: 5
   completed_phases: 1
@@ -90,6 +90,7 @@ Recent decisions affecting current work:
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260610-v0y | QUAL-01 (partial): buildDebugLines draws smooth spline (~2 m res) not coarse control polyline; _removeSelfCrossings added (deterministic XZ segment-crossing excision, bounded ≤ 200) wired after _removeLoops in _streamNetwork. D-06 seam gate PASS (3 seams, maxC0=0.00000 m, maxC1=0.02°). Corner smoothing deferred. | 2026-06-10 | 2ae75d2 | [260610-v0y-qual-01-road-corner-smoothing-and-loop-r](.planning/quick/260610-v0y-qual-01-road-corner-smoothing-and-loop-r/) |
 | 260610-pl6 | PERF-01: replace 9x9 ensureTile warm loop in resolveSpawn with single ensureTile(baseTX, baseTZ) — drops ~40 redundant _streamNetwork rebuilds per spawn/reload to 1; CR-01 correctness preserved | 2026-06-10 | f377235 | [260610-pl6-perf-01-resolvespawn-single-warm-call](.planning/quick/260610-pl6-perf-01-resolvespawn-single-warm-call/) |
 | —          | BUG-05 real fix: suspensionBodyOffset was missing from getWheelPosition (Pacejka hub) while present in stepSuspensionSubsteps — at bodyOffset≠0 the tire contact query found no ground while suspension stayed loaded → Fn=0/SA=0 frictionless slide. Added offset to all 3 physics mount-Y sites (suspension.js:86, physics.js:236, main.js:82 spawn) + visual wheel-mesh mount in syncMeshesToState (main.js ~290, read live so slider drags update) — without the mesh fix the rendered wheel sank into ground at positive offset. Plus defense-in-depth: pulled the 4 near-wheel undercarriage probes inboard of the wheel footprint (uncommitted) | 2026-06-05 | — | — |
 | —          | body collision cleanup: semi-implicit Euler ordering (integrate force→velocity before body-contact solver), restitution speed threshold (0.5 m/s), 8-pass Gauss-Seidel contact solver, raised front/rear bumper probes (bumY 0.35→0.45) — fixes upside-down resting jitter (uncommitted) | 2026-06-05 | — | — |
