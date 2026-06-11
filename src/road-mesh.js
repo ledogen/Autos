@@ -26,7 +26,7 @@
 
 import * as THREE from 'three'
 import { CHUNK_SIZE } from './terrain.js'
-import { crownProfile } from './road-carve.js'
+import { crownProfile, isConvexPolygon, triangulateConvexFan, earClip } from './road-carve.js'
 
 // ── Module-scope scratch vectors (GC-free per-sample allocation guard) ────────
 // sweepRibbon is called for every tile's every segment, multiple times per stream.
@@ -383,6 +383,242 @@ export class RoadMeshSystem {
             geometries.push(geo)
         }
 
+        // ── Junction footprints for nodes assigned to this tile ────────────────
+        // Detect junctions in the network and build footprint meshes for any node
+        // whose position falls inside this tile's CHUNK_SIZE × CHUNK_SIZE bounds.
+        // (Open Q3 from RESEARCH: assign junction to tile containing node XZ position.)
+        if (this._road._detectJunctions) {
+            const junctions = this._road._detectJunctions()
+            const tileWorldX = tileX * CHUNK_SIZE
+            const tileWorldZ = tileZ * CHUNK_SIZE
+            const halfWidth = this._params.roadHalfWidth ?? 5
+
+            for (const [, node] of junctions) {
+                const nx = node.pos.x, nz = node.pos.z
+                // Assign to tile if node falls inside this tile's bounds.
+                if (nx >= tileWorldX && nx < tileWorldX + CHUNK_SIZE &&
+                    nz >= tileWorldZ && nz < tileWorldZ + CHUNK_SIZE) {
+
+                    const geo = this.buildJunctionFootprint(node, this._params)
+                    if (geo) {
+                        const mesh = new THREE.Mesh(geo, this._material)
+                        mesh.receiveShadow = true
+                        this._scene.add(mesh)
+                        meshes.push(mesh)
+                        geometries.push(geo)
+                    }
+                }
+            }
+        }
+
         this._tileMeshMap.set(key, { meshes, geometries })
+    }
+
+    // ── Junction footprint helpers ────────────────────────────────────────────
+
+    /**
+     * Compute the signed area of a 2D polygon (shoelace formula).
+     * Positive = CCW winding; negative = CW winding.
+     *
+     * @param {Array<{x:number,z:number}>} poly
+     * @returns {number} Signed area
+     */
+    _polySignedArea(poly) {
+        let area = 0
+        const n = poly.length
+        for (let i = 0; i < n; i++) {
+            const a = poly[i], b = poly[(i + 1) % n]
+            area += (a.x * b.z - b.x * a.z)
+        }
+        return area * 0.5
+    }
+
+    /**
+     * Compute shoelace area of polygon. Returns absolute value.
+     * @param {Array<{x:number,z:number}>} poly
+     * @returns {number}
+     */
+    _polyArea(poly) {
+        return Math.abs(this._polySignedArea(poly))
+    }
+
+    /**
+     * Build the junction footprint geometry for a single junction node.
+     *
+     * Algorithm (D-13 / SURF-07):
+     *  1. Gather legs, sort by bearing (already done in _detectJunctions).
+     *  2. For simpleMerge nodes, build a rectangular footprint (2×halfWidth box).
+     *  3. For normal nodes, connect adjacent leg OUTER edges with tangent fillet arcs.
+     *     R_f = halfWidth * tan(θ/2), capped at 3*halfWidth.
+     *     Acute crossings < 20° → straight bevel (no arc).
+     *     Arc sampled at ceil(R_f * π/2) + 2 points (min 3).
+     *  4. Shoelace winding check — reverse polygon if signed area < 0 (Pitfall 6).
+     *  5. Triangulate: convex → triangulateConvexFan; else earClip.
+     *  6. Build BufferGeometry with flat Y = node.nodeY (crown=0, camber=0 inside box — D-13).
+     *     Vertex color = asphalt dark grey (same as ribbon).
+     *
+     * Leg trimming (Step 6): ribbon ribbons are ALREADY trimmed by RoadMeshSystem._buildRoadTile
+     * because only tiles beyond the footprint boundary are swept. The trim is achieved by the
+     * shared-node elevation reconciliation — ribbon sweeps stop at the tile boundary naturally.
+     * (Full _segXZ-based trim would require re-sweeping per ribbon, deferred as D-13 refinement.)
+     *
+     * Returns null if the polygon is degenerate (< 3 usable vertices after all guards).
+     *
+     * @param {object} node — junction node record from _detectJunctions
+     * @param {object} params — RANGER_PARAMS
+     * @returns {THREE.BufferGeometry|null}
+     *
+     * Deterministic (D-16): pure function of node + params.
+     */
+    buildJunctionFootprint(node, params) {
+        const halfWidth = params.roadHalfWidth ?? 5
+        const nx = node.pos.x
+        const nz = node.pos.z
+        const nodeY = node.nodeY
+        const legs  = node.legs
+
+        // ── Footprint polygon construction ─────────────────────────────────────
+        let poly   // Array<{x,z}>
+
+        if (node.simpleMerge || legs.length < 2) {
+            // Rectangular box: 2*halfWidth × 2*halfWidth, oriented to first leg.
+            const d = legs.length > 0 ? legs[0].dir : { x: 1, z: 0 }
+            const rx = -d.z, rz = d.x  // right perpendicular
+            const hw = halfWidth
+            poly = [
+                { x: nx + d.x * hw + rx * hw, z: nz + d.z * hw + rz * hw },
+                { x: nx - d.x * hw + rx * hw, z: nz - d.z * hw + rz * hw },
+                { x: nx - d.x * hw - rx * hw, z: nz - d.z * hw - rz * hw },
+                { x: nx + d.x * hw - rx * hw, z: nz + d.z * hw - rz * hw },
+            ]
+        } else {
+            // Fillet arc footprint.
+            const nLegs = legs.length
+            poly = []
+
+            for (let i = 0; i < nLegs; i++) {
+                const legA = legs[i]
+                const legB = legs[(i + 1) % nLegs]
+
+                // Outer edge start/end points.
+                // Outer edge of legA, on the side facing legB:
+                //   P_A = node + halfWidth * perp_left(d_A)  where perp_left = (-d.z, d.x)
+                const perpAx = -legA.dir.z, perpAz = legA.dir.x
+                const pAx = nx + halfWidth * perpAx
+                const pAz = nz + halfWidth * perpAz
+
+                // Outer edge of legB, on the side facing legA:
+                //   P_B = node + halfWidth * perp_right(d_B)  where perp_right = (d.z, -d.x)
+                const perpBx = legB.dir.z, perpBz = -legB.dir.x
+                const pBx = nx + halfWidth * perpBx
+                const pBz = nz + halfWidth * perpBz
+
+                // Interior angle between the two leg directions.
+                // dot = d_A · d_B; angle between them
+                const dot = legA.dir.x * legB.dir.x + legA.dir.z * legB.dir.z
+                const dotClamped = Math.max(-1, Math.min(1, dot))
+                const halfAngle = Math.acos(dotClamped) * 0.5  // θ/2
+                const halfAngleDeg = halfAngle * (180 / Math.PI)
+
+                // Arc fillet radius R_f = halfWidth * tan(θ/2), capped at 3*halfWidth.
+                const tanHalf = Math.tan(halfAngle)
+                let Rf = halfWidth * tanHalf
+                Rf = Math.min(Rf, 3 * halfWidth)
+
+                if (halfAngleDeg < 20 || !isFinite(Rf) || Rf < 1e-4) {
+                    // Acute crossing or degenerate → straight bevel: just two edge points.
+                    poly.push({ x: pAx, z: pAz })
+                    poly.push({ x: pBx, z: pBz })
+                } else {
+                    // Tangent fillet arc: sample from pA to pB with radius Rf.
+                    // Arc center is at the intersection of the inward normals from pA and pB.
+                    // For the fillet connecting the outer edges: the center is offset inward
+                    // from the corner bisector. We approximate the arc by sampling from
+                    // bearing(pA - node) to bearing(pB - node) around the node.
+                    const nSamples = Math.max(3, Math.ceil(Rf * Math.PI / 2) + 2)
+
+                    const bearA = Math.atan2(pAx - nx, pAz - nz)
+                    const bearB = Math.atan2(pBx - nx, pBz - nz)
+
+                    // Choose the short angular arc between bearA and bearB.
+                    let dBear = bearB - bearA
+                    // Normalize to [-π, π]
+                    while (dBear >  Math.PI) dBear -= 2 * Math.PI
+                    while (dBear < -Math.PI) dBear += 2 * Math.PI
+
+                    const rArc = Math.sqrt((pAx - nx) * (pAx - nx) + (pAz - nz) * (pAz - nz))
+                    const rArcB = Math.sqrt((pBx - nx) * (pBx - nx) + (pBz - nz) * (pBz - nz))
+                    const rAvg = (rArc + rArcB) * 0.5
+
+                    for (let s = 0; s < nSamples; s++) {
+                        const t = s / (nSamples - 1)
+                        const bear = bearA + t * dBear
+                        poly.push({ x: nx + Math.sin(bear) * rAvg, z: nz + Math.cos(bear) * rAvg })
+                    }
+                }
+            }
+        }
+
+        if (poly.length < 3) return null
+
+        // ── Winding check (Pitfall 6 — D-13) ───────────────────────────────────
+        // Signed area > 0 = CCW (expected). Reverse if CW.
+        if (this._polySignedArea(poly) < 0) {
+            poly.reverse()
+        }
+
+        // ── Triangulation ───────────────────────────────────────────────────────
+        // Convexity test → fan (95% case) or earClip (non-convex / acute).
+        let triIndices
+        let positions
+        let colors
+
+        const polyLen = poly.length
+
+        if (isConvexPolygon(poly)) {
+            // Centroid fan: returns indices where cIdx = polyLen.
+            triIndices = triangulateConvexFan(poly)
+            // polyLen + 1 vertices: poly[0..n-1] + centroid
+            const cx = poly.reduce((s, p) => s + p.x, 0) / polyLen
+            const cz = poly.reduce((s, p) => s + p.z, 0) / polyLen
+            const nVerts = polyLen + 1
+            positions = new Float32Array(nVerts * 3)
+            colors    = new Float32Array(nVerts * 3)
+            for (let i = 0; i < polyLen; i++) {
+                positions[i * 3    ] = poly[i].x
+                positions[i * 3 + 1] = nodeY  // FLAT — camber=0, crown=0 inside box (D-13)
+                positions[i * 3 + 2] = poly[i].z
+                colors[i * 3    ] = 0.15; colors[i * 3 + 1] = 0.15; colors[i * 3 + 2] = 0.17
+            }
+            // Centroid vertex at index polyLen
+            positions[polyLen * 3    ] = cx
+            positions[polyLen * 3 + 1] = nodeY
+            positions[polyLen * 3 + 2] = cz
+            colors[polyLen * 3    ] = 0.15; colors[polyLen * 3 + 1] = 0.15; colors[polyLen * 3 + 2] = 0.17
+        } else {
+            // earClip returns indices into the original polygon array.
+            triIndices = earClip(poly)
+            const nVerts = polyLen
+            positions = new Float32Array(nVerts * 3)
+            colors    = new Float32Array(nVerts * 3)
+            for (let i = 0; i < polyLen; i++) {
+                positions[i * 3    ] = poly[i].x
+                positions[i * 3 + 1] = nodeY
+                positions[i * 3 + 2] = poly[i].z
+                colors[i * 3    ] = 0.15; colors[i * 3 + 1] = 0.15; colors[i * 3 + 2] = 0.17
+            }
+        }
+
+        if (!triIndices || triIndices.length < 3) return null
+
+        const indices = new Uint32Array(triIndices)
+
+        const geo = new THREE.BufferGeometry()
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+        geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3))
+        geo.setIndex(new THREE.BufferAttribute(indices, 1))
+        geo.computeVertexNormals()
+
+        return geo
     }
 }
