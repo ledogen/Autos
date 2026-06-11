@@ -44,6 +44,42 @@ import { createNoise2D } from 'simplex-noise'
 // the search loop scratch is reused.
 const _scratchPt = new THREE.Vector3()
 
+// ── Module-scope 2D segment intersection (D-16 / P9 junction detection) ────────
+/**
+ * XZ 2-D segment intersection test. Returns the crossing point {x,z} or null if
+ * the segments are parallel, collinear, or only touch at an endpoint.
+ * Open-interval test (t, u ∈ (1e-6, 1−1e-6)) means shared endpoints are NOT
+ * counted as crossings — the caller's self-crossing removal / junction detection
+ * logic handles endpoint touching cases separately.
+ *
+ * Pure function of its inputs — no allocations, no side effects.
+ * Promoted from the closure inside _removeSelfCrossings (P9 plan 01-01) so that
+ * Wave 3 junction detection (_detectJunctions) can reuse it across different runs
+ * in this._network without duplicating the math. _removeSelfCrossings delegates here.
+ *
+ * @param {number} ax — segment A start X
+ * @param {number} az — segment A start Z
+ * @param {number} bx — segment A end X
+ * @param {number} bz — segment A end Z
+ * @param {number} cx — segment B start X
+ * @param {number} cz — segment B start Z
+ * @param {number} dx — segment B end X
+ * @param {number} dz — segment B end Z
+ * @returns {{x:number, z:number}|null}
+ */
+function _segXZ(ax, az, bx, bz, cx, cz, dx, dz) {
+    const ex = bx - ax, ez = bz - az
+    const fx = dx - cx, fz = dz - cz
+    const denom = ex * fz - ez * fx
+    if (Math.abs(denom) < 1e-10) return null  // parallel/collinear
+    const t = ((cx - ax) * fz - (cz - az) * fx) / denom
+    const u = ((cx - ax) * ez - (cz - az) * ex) / denom
+    if (t > 1e-6 && t < 1 - 1e-6 && u > 1e-6 && u < 1 - 1e-6) {
+        return { x: ax + t * ex, z: az + t * ez }
+    }
+    return null
+}
+
 /**
  * Allocating linear interpolation between two Vector3 (used at SLICE time, not query cadence —
  * slicing is a one-shot per re-stream, so the allocation here is not on the hot query path).
@@ -92,6 +128,19 @@ const PROTO_COVER_FRAC = 0.5    // drop the road if more than half its length ov
 const PROTO_LOOP_D      = 11    // m — "returned to where it was" distance
 const PROTO_LOOP_ARCLAG = 38    // m — min along-path travel before a return counts as a loop
 const PROTO_RUN_MIN     = 4     // min points for an emitted road run (avoids tiny fragments)
+
+// ── D-16: Canonical anchor-band half-width for window-invariant runs ───────────
+// _streamNetwork builds each macro-row run over a canonical fixed-width band keyed by
+// (mz, mx0, mx1) rather than the transient streaming window. CANONICAL_HALF_WIDTH is the
+// number of macro-column cells to extend either side of the view-center column, derived
+// by rounding the streaming radius (640 m) up to the nearest PROTO_ANCHOR_SPACING (256 m).
+// This ensures no rendered road escapes the canonical band while keeping the band finite.
+// The canonical mx0/mx1 for a given center remains the same so long as the integer quotient
+// floor(center.x / PROTO_ANCHOR_SPACING) is unchanged — the memo key "mz:mx0:mx1" then
+// short-circuits the per-run rebuild without recomputing the polyline (same discipline as
+// _slicedFrom identity guard). The value 4 covers ±1024 m (4 × 256 m), safely wider than
+// the default 640 m streaming radius.
+const CANONICAL_HALF_WIDTH = 4  // macro-column cells each side of the center column
 
 // ── Module-scope pure height function ─────────────────────────────────────────
 /**
@@ -451,6 +500,7 @@ export class RoadSystem {
         if (this._network) this._network.clear()
         if (this._tiles) this._tiles.clear()
         if (this._tileObjects) this._tileObjects.clear()
+        if (this._canonRunCache) this._canonRunCache.clear()
         this._slicedFrom = null
         this._invalidateProto()
     }
@@ -622,7 +672,12 @@ export class RoadSystem {
         P.minTurnRadius = p.roadMinTurnRadius ?? P.minTurnRadius  // QUAL-01 — live-tunable min turn radius (m)
     }
 
-    _invalidateProto() { this._proto.anchors.clear(); this._proto.segs.clear() }
+    _invalidateProto() {
+        this._proto.anchors.clear()
+        this._proto.segs.clear()
+        // Clear the canonical run cache: param changes affect routing results.
+        if (this._canonRunCache) this._canonRunCache.clear()
+    }
 
     // Deterministic valley anchor for macro-cell (mx,mz): seeded candidate in the cell,
     // then gradient-descended onto the local valley floor (pure function of seed+coords).
@@ -713,20 +768,8 @@ export class RoadSystem {
     // iterations so it cannot loop infinitely on a degenerate polyline.
     // Pure function of its input — no Math.random, no Date, no session state → deterministic (D-03).
     _removeSelfCrossings(pts) {
-        // XZ 2-D segment intersection test (does NOT count shared endpoints as crossings).
-        // Returns the intersection point as {x,z} or null if no proper crossing.
-        const _segXZ = (ax, az, bx, bz, cx, cz, dx, dz) => {
-            const ex = bx - ax, ez = bz - az
-            const fx = dx - cx, fz = dz - cz
-            const denom = ex * fz - ez * fx
-            if (Math.abs(denom) < 1e-10) return null  // parallel/collinear
-            const t = ((cx - ax) * fz - (cz - az) * fx) / denom
-            const u = ((cx - ax) * ez - (cz - az) * ex) / denom
-            if (t > 1e-6 && t < 1 - 1e-6 && u > 1e-6 && u < 1 - 1e-6) {
-                return { x: ax + t * ex, z: az + t * ez }
-            }
-            return null
-        }
+        // Delegates to the module-scope _segXZ (promoted in P9 plan 01-01 for D-16 junction reuse).
+        // No behavior change — same open-interval crossing test, same splice logic.
         let p = pts
         for (let guard = 0; guard < 200; guard++) {
             let found = false
@@ -917,13 +960,76 @@ export class RoadSystem {
         if (this._tiles) this._tiles.clear()
         if (this._tileObjects) this._tileObjects.clear()
 
+        // ── D-16: Canonical per-run derivation (window-invariant) ─────────────────
+        // Pure function of (worldSeed, world coords, params) — window-invariant (D-16);
+        // identical world regions yield identical runs across re-streams.
+        //
+        // The mz row range follows the streaming radius (so we render roads out to R metres),
+        // but each row's COLUMN extent (mx0..mx1) is derived from a STABLE world-aligned
+        // grid anchor rather than the transient streaming window. This means the same macro-row
+        // always gets the same polyline regardless of where the view center happens to be.
+        //
+        // Canonical column band: center_mx ± CANONICAL_HALF_WIDTH, where center_mx =
+        //   floor(center.x / PROTO_ANCHOR_SPACING). Rows that would fall partially outside
+        //   the streaming radius are still included, but their COVER suppression operates on
+        //   the full canonical band — not the window slice.
+        //
+        // Row results are memoized by (mz, mx0, mx1) in this._canonRunCache. A re-stream whose
+        // center still maps to the same canonical band key is a no-op for all rows that hit the
+        // cache — same discipline as the _slicedFrom identity guard.
+        // ─────────────────────────────────────────────────────────────────────────
+
         const R = this._proto.radius
-        const mx0 = Math.floor((center.x - R) / PROTO_ANCHOR_SPACING) - 1
-        const mx1 = Math.ceil((center.x + R) / PROTO_ANCHOR_SPACING)
+        // Canonical X band — fixed per center_mx, not per streaming window edge.
+        const center_mx = Math.floor(center.x / PROTO_ANCHOR_SPACING)
+        const mx0 = center_mx - CANONICAL_HALF_WIDTH
+        const mx1 = center_mx + CANONICAL_HALF_WIDTH
+        // Z row range still follows streaming radius (rows come and go as we move N/S).
         const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING)
         const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING)
 
-        // Inter-row same-direction overlap suppression: spatial hash of points kept from PRIOR rows.
+        // Per-mz canonical run cache: memoize rows by "mz:mx0:mx1" so re-streams within the
+        // same canonical band are free. Cleared on dirty/param-change (see _invalidateProto
+        // / invalidateCache which call this._proto.dirty = true).
+        if (!this._canonRunCache) this._canonRunCache = new Map()
+
+        // Build each row over the canonical band and cache the result keyed "mz:mx0:mx1".
+        // Collect all canonical runs in sorted mz order so that the COVER suppression pass
+        // (which must be deterministic) sees rows in a fixed order — not streaming order.
+        const canonRuns = []  // [{ mz, pts }] in mz order
+        for (let mz = mz0; mz <= mz1; mz++) {
+            const bandKey = `${mz}:${mx0}:${mx1}`
+            let cachedPts = this._canonRunCache.get(bandKey)
+            if (!cachedPts) {
+                // Concatenate this row's east connections into ONE continuous polyline.
+                let rowWps = []
+                for (let mx = mx0; mx <= mx1; mx++) {
+                    const wps = this._protoConnect(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz))
+                    if (wps.length < 2) continue
+                    if (rowWps.length) { for (let k = 1; k < wps.length; k++) rowWps.push(wps[k]) }
+                    else rowWps = wps.slice()
+                }
+                if (rowWps.length < 2) {
+                    cachedPts = []
+                } else {
+                    const spline = new THREE.CatmullRomCurve3(rowWps, false, 'centripetal', 0.5)
+                    let pts = spline.getPoints(Math.max(24, rowWps.length * 2))
+                    // Post-passes run on the FULL canonical run — not a windowed slice (D-16).
+                    pts = this._removeLoops(pts)
+                    pts = this._removeSelfCrossings(pts)
+                    pts = this._limitCurvature(pts, this._proto.params.minTurnRadius)
+                    cachedPts = pts
+                }
+                this._canonRunCache.set(bandKey, cachedPts)
+            }
+            if (cachedPts.length >= 2) canonRuns.push({ mz, pts: cachedPts })
+        }
+
+        // ── COVER suppression pass (deterministic mz-ordered) ─────────────────
+        // Rebuild the spatial hash from scratch using the completed canonical rows in mz
+        // order. Never accumulate across re-streams — always rebuilt from the canonical set.
+        // Operating on the canonical band means the same row always sees the same neighbors,
+        // making overlap suppression window-invariant (D-16).
         const cover = new Map()
         const ckey = (x, z) => `${Math.floor(x / PROTO_COVER_D)},${Math.floor(z / PROTO_COVER_D)}`
         const registerPoint = (x, z, hx, hz) => {
@@ -943,23 +1049,7 @@ export class RoadSystem {
             return false
         }
 
-        for (let mz = mz0; mz <= mz1; mz++) {
-            // Concatenate this row's east connections into ONE continuous polyline, so loops at the
-            // anchor junctions are visible to the loop remover and the row is a single road.
-            let rowWps = []
-            for (let mx = mx0; mx <= mx1; mx++) {
-                const wps = this._protoConnect(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz))
-                if (wps.length < 2) continue
-                if (rowWps.length) { for (let k = 1; k < wps.length; k++) rowWps.push(wps[k]) }  // drop shared anchor
-                else rowWps = wps.slice()
-            }
-            if (rowWps.length < 2) continue
-
-            const spline = new THREE.CatmullRomCurve3(rowWps, false, 'centripetal', 0.5)
-            let pts = spline.getPoints(Math.max(24, rowWps.length * 2))
-            pts = this._removeLoops(pts)                                            // proximity-based fold removal (existing)
-            pts = this._removeSelfCrossings(pts)                                    // QUAL-01 — true segment crossings
-            pts = this._limitCurvature(pts, this._proto.params.minTurnRadius)       // QUAL-01 — excise over-tight coils
+        for (const { mz, pts } of canonRuns) {
             if (pts.length < 2) continue
             const head = pts.map((p, i) => {
                 const q = pts[Math.min(pts.length - 1, i + 1)], r = pts[Math.max(0, i - 1)]
@@ -989,12 +1079,10 @@ export class RoadSystem {
             for (let i = 0; i < kept.length; i += 4) registerPoint(kept[i], kept[i + 1], kept[i + 2], kept[i + 3])
         }
 
-        // NOTE (CR-02): no post-build cache eviction. The previous `_network.size > 3000` guard
-        // was non-deterministic — it depended on accumulated session history, not on
-        // (seed, center, params), and could discard the network JUST built for this center,
-        // violating the purity contract. _network is .clear()-ed + rebuilt for the current window
-        // at the top of every real re-stream, so its size is window-bounded, not history-bounded;
-        // no eviction is needed here. Proto-cache bounding moved BEFORE the build (see above).
+        // NOTE (CR-02): no post-build cache eviction. _network is .clear()-ed + rebuilt for the
+        // current window at the top of every real re-stream, so its size is window-bounded.
+        // The canonical run cache (_canonRunCache) is bounded by the number of rows in the
+        // streaming window × the CANONICAL_HALF_WIDTH span — also window-bounded.
         return this._network
     }
 
