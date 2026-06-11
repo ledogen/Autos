@@ -575,7 +575,7 @@ export class RoadSystem {
                 wOver:      p.roadWOver      ?? 8000, // SOFT over-cap penalty — never Infinity (D-02 REVISED)
                 maxGrade:   p.maxRoadGrade   ?? 0.15, // SOFT target the over-cap penalty measures against
                 wTurn:      p.roadWTurn      ?? 120,  // per-45° turn penalty — long straights / true switchbacks
-                maxTurnDeg: p.roadMaxTurnDeg ?? 70,   // QUAL-01 — max interior deflection before chamfer
+                minTurnRadius: p.roadMinTurnRadius ?? 70,  // QUAL-01 — m; coils tighter than this are excised
             },
             paramDirtyAt: 0,
             radius:   640,                                   // m — streamed road radius (set from terrain stream radius)
@@ -619,7 +619,7 @@ export class RoadSystem {
         P.wOver      = p.roadWOver      ?? P.wOver
         P.maxGrade   = p.maxRoadGrade   ?? P.maxGrade
         P.wTurn      = p.roadWTurn      ?? P.wTurn
-        P.maxTurnDeg = p.roadMaxTurnDeg ?? P.maxTurnDeg  // QUAL-01 — live-tunable corner rounding
+        P.minTurnRadius = p.roadMinTurnRadius ?? P.minTurnRadius  // QUAL-01 — live-tunable min turn radius (m)
     }
 
     _invalidateProto() { this._proto.anchors.clear(); this._proto.segs.clear() }
@@ -747,49 +747,50 @@ export class RoadSystem {
         return p
     }
 
-    // Cap the deflection angle at INTERIOR vertices by iterative chamfering (QUAL-01).
-    // For each interior vertex p[i] whose deflection > maxTurnDeg, replace it with two chamfer
-    // points pulled back along each adjacent edge by 40% of the shorter edge length. Endpoints
-    // (p[0] and p[last]) are NEVER moved — they are connection/junction anchors that seam
-    // slicing and run-splitting rely on for C0 continuity. Runs up to 3 passes so a single
-    // tight spike can be progressively relaxed. Purely geometric — no random state (D-03).
-    _limitTurnAngle(pts, maxTurnDeg) {
-        if (pts.length < 3 || maxTurnDeg >= 180) return pts
-        const maxRad = maxTurnDeg * Math.PI / 180
-        const EPS = 2 * Math.PI / 180  // 2° epsilon — avoid infinite micro-loops on already-close vertices
+    // Excise over-tight coils by CURVATURE (angle-per-distance), not per-vertex angle (QUAL-01).
+    // A tight loop/teardrop is many small-deflection vertices that ACCUMULATE a large heading change
+    // over a short arc — per-vertex angle never catches it. Here we scan spans of signed cumulative
+    // heading change vs arc length: where a span turns >= TURN_MIN and its effective radius
+    // (arc / |Δheading|) < minRadius, the path is curling tighter than a road of radius minRadius can
+    // — excise the span (join its entry directly to its exit). Signed accumulation means S-curves
+    // (alternating turns) cancel and are NOT excised; only consistent coils are. Endpoints are
+    // preserved by the slice (p[0..i] and p[j+1..end] are kept). Deterministic, no random state (D-03).
+    _limitCurvature(pts, minRadius) {
+        if (pts.length < 4 || !(minRadius > 0)) return pts
+        const TURN_MIN = 150 * Math.PI / 180  // only scrutinize spans that turn >= 150° (a coil/loop)
+        const TURN_CAP = 2.2 * Math.PI        // stop growing a window past ~400° of accumulation
         let p = pts.slice()
-        for (let pass = 0; pass < 3; pass++) {
-            let changed = false
-            const next = [p[0]]  // always preserve the first endpoint
-            for (let i = 1; i < p.length - 1; i++) {
-                const prev = next[next.length - 1]
-                const cur  = p[i]
-                const nxt  = p[i + 1]
-                const v1x = cur.x - prev.x, v1z = cur.z - prev.z
-                const v2x = nxt.x - cur.x,  v2z = nxt.z - cur.z
-                const l1 = Math.hypot(v1x, v1z), l2 = Math.hypot(v2x, v2z)
-                if (l1 < 1e-6 || l2 < 1e-6) { next.push(cur); continue }
-                const cos = (v1x * v2x + v1z * v2z) / (l1 * l2)
-                const deflection = Math.acos(Math.max(-1, Math.min(1, cos)))
-                if (deflection <= maxRad + EPS) { next.push(cur); continue }
-                // Chamfer: pull back 40% of the shorter adjacent edge length
-                const cut = Math.min(l1, l2) * 0.4
-                const c1 = new THREE.Vector3(
-                    cur.x - (v1x / l1) * cut,
-                    cur.y,
-                    cur.z - (v1z / l1) * cut,
-                )
-                const c2 = new THREE.Vector3(
-                    cur.x + (v2x / l2) * cut,
-                    cur.y,
-                    cur.z + (v2z / l2) * cut,
-                )
-                next.push(c1, c2)
-                changed = true
+        for (let guard = 0; guard < 200; guard++) {
+            const n = p.length
+            if (n < 4) break
+            // Per-segment heading + length.
+            const len = new Float64Array(n - 1)
+            const ang = new Float64Array(n - 1)
+            for (let k = 0; k < n - 1; k++) {
+                const dx = p[k + 1].x - p[k].x, dz = p[k + 1].z - p[k].z
+                len[k] = Math.hypot(dx, dz)
+                ang[k] = Math.atan2(dz, dx)
             }
-            next.push(p[p.length - 1])  // always preserve the last endpoint
-            p = next
-            if (!changed) break
+            let found = false
+            for (let i = 0; i < n - 2 && !found; i++) {
+                let cumTurn = 0          // signed cumulative heading change (rad)
+                let cumArc  = len[i]
+                for (let j = i + 1; j < n - 1; j++) {
+                    let d = ang[j] - ang[j - 1]
+                    while (d >  Math.PI) d -= 2 * Math.PI
+                    while (d < -Math.PI) d += 2 * Math.PI
+                    cumTurn += d
+                    cumArc  += len[j]
+                    const absTurn = Math.abs(cumTurn)
+                    if (absTurn >= TURN_MIN && (cumArc / absTurn) < minRadius) {
+                        p = [...p.slice(0, i + 1), ...p.slice(j + 1)]  // excise coil; join entry→exit
+                        found = true
+                        break
+                    }
+                    if (absTurn > TURN_CAP) break  // window already a full coil — move the start
+                }
+            }
+            if (!found) break
         }
         return p
     }
@@ -958,7 +959,7 @@ export class RoadSystem {
             let pts = spline.getPoints(Math.max(24, rowWps.length * 2))
             pts = this._removeLoops(pts)                                            // proximity-based fold removal (existing)
             pts = this._removeSelfCrossings(pts)                                    // QUAL-01 — true segment crossings
-            pts = this._limitTurnAngle(pts, this._proto.params.maxTurnDeg)          // QUAL-01 — cap sharp corners
+            pts = this._limitCurvature(pts, this._proto.params.minTurnRadius)       // QUAL-01 — excise over-tight coils
             if (pts.length < 2) continue
             const head = pts.map((p, i) => {
                 const q = pts[Math.min(pts.length - 1, i + 1)], r = pts[Math.max(0, i - 1)]
