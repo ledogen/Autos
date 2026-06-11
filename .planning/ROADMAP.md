@@ -83,7 +83,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
   5. (Stretch) Driving slowly on the road surface, pothole and crack micro-perturbations are felt as slight vertical jolts through the suspension
   6. Where two roads cross, they mesh as a single merged at-grade paved junction (one shared footprint, not z-fighting overlapping ribbons), reproducible and stable while driving (no pop/rebuild as you fly past)
 **Plans**: 6 plans (waves 1-6, strictly sequential — carve architecture + shared road files force ordering)
-  - [ ] 09-01-PLAN.md — BUG-08 window-invariant splines (D-16) + module-scope _segXZ + scaffold test-road-carve.html/test-road-mesh.html harnesses (SURF-07 prereq)
+  - [x] 09-01-PLAN.md — BUG-08 window-invariant splines (D-16) + module-scope _segXZ + scaffold test-road-carve.html/test-road-mesh.html harnesses (SURF-07 prereq)
   - [ ] 09-02-PLAN.md — road-carve.js pure carve + smoothed design grade + cut-and-fill carve identical in Worker mesh build & analyticHeight/sampleHeight; EXIT GATES height-agreement + carve-continuity (SURF-04/05, D-05..D-08)
   - [ ] 09-03-PLAN.md — road-mesh.js ribbon sweep + crown + curvature camber as real geometry/normal (folded into carve gradeY); streaming tile lifecycle (SURF-01/03, D-04)
   - [ ] 09-04-PLAN.md — Merged at-grade junctions: _detectJunctions + fillet-arc footprint + triangulation + leg trim + shared-node elevation, same carve embed (SURF-07, D-12..D-15)
@@ -119,7 +119,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 | 6. Procedural Terrain | v1.0 | 3/3 | ✅ Complete | 2026-06-03 |
 | 7. Free-Cam + Seeded Layered Terrain | v1.1 | 5/5 | Complete   | 2026-06-09 |
 | 8. Road Routing | v1.1 | 7/7 | Complete   | 2026-06-10 |
-| 9. Road Surface | v1.1 | 0/6 | Planned | — |
+| 9. Road Surface | v1.1 | 1/6 | In Progress|  |
 | 10. POI Hooks + Polish | v1.1 | 0/? | Not started | — |
 
 ## Backlog

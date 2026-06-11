@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: Mountains & Roads
 status: executing
 stopped_at: Phase 9 context gathered (intersections scoped in)
-last_updated: "2026-06-11T16:01:12.354Z"
-last_activity: 2026-06-11 -- Phase 09 planning complete
+last_updated: "2026-06-11T20:40:29.335Z"
+last_activity: 2026-06-11 -- Phase 09 execution started
 progress:
   total_phases: 4
   completed_phases: 2
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05)
 
 **Core value:** Physics that feel honest: a car that can roll over naturally, drift on the limit, and behave predictably enough that tuning parameters produces the expected result.
-**Current focus:** Phase 9 — Road Surface (next active phase; former Phase 999.1 truck-body retired into todo FEAT-04)
+**Current focus:** Phase 09 — road-surface
 
 ## Current Position
 
-Phase: 9
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-11 -- Phase 09 planning complete
+Phase: 09 (road-surface) — EXECUTING
+Plan: 1 of 6
+Status: Executing Phase 09
+Last activity: 2026-06-11 -- Phase 09 execution started
 
 ```
 v1.1 Progress: [                    ] 0% (0/4 phases)
