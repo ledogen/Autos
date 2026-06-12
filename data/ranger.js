@@ -312,4 +312,20 @@ export const RANGER_PARAMS = {
   // roadCliffSlopeHi: slope threshold where terrain is fully cliff-colored.
   // At slope=0.6 (~54° from vertical) terrain reads fully as weathered cliff rock.
   roadCliffSlopeHi: 0.6,       // [-] slope upper threshold for full cliff color (D-11 / A10)
+
+  // ── Phase 9 Plan 06 — Pothole / Crack Micro-Noise (SURF-06 / D-03) ──────────
+  // potholeEnabled: master toggle. When false, potholeNoise always returns 0 and the
+  // road surface is perfectly smooth (crown + camber only). Allows A/B comparison.
+  // SURF-06 (stretch goal). D-03 severity tied to per-stretch roadQuality hook.
+  potholeEnabled: true,         // bool — master on/off for pothole perturbation (D-03 / SURF-06)
+
+  // potholeAmplitude: maximum signed Y perturbation at roadQuality=0 (low quality).
+  // ~4 cm is felt as a light jolt at walking pace; imperceptible at highway speed.
+  // Range: 0–0.1 m. Exposed as a debug slider in the Roads folder.
+  potholeAmplitude: 0.04,       // m — peak perturbation depth at lowest quality (D-03 / SURF-06)
+
+  // potholeFrequency: spatial frequency of the noise lattice (bumps per metre).
+  // 0.3/m = one lattice cell per ~3.3 m → realistic pothole spacing on rural roads.
+  // Range: 0.1–1.0/m. Higher = more frequent, smaller bumps.
+  potholeFrequency: 0.3,        // /m — noise lattice frequency (D-03 / SURF-06)
 };
