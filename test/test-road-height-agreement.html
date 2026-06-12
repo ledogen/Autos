@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>RangerSim — Phase 9 Height-Agreement Exit Gate</title>
+  <!--
+    Phase 9 HEIGHT-AGREEMENT EXIT GATE (Plan 09-09)
+    ════════════════════════════════════════════════
+    This is the INTEGRATION test that asserts:
+      ribbon vertex Y (sweepRibbon BufferGeometry) == physics carve Y (_sampleCarveWorld)
+    at IDENTICAL on-road world XZ positions.
+
+    This test is NOT testing the pure helper functions (carveBlend, crownProfile, sampleCarve,
+    potholeNoise) in isolation — that is what test-road-carve.html and test-road-mesh.html do.
+    The whole point of this test is to cross-check the DIVERGENT CALL SITES:
+      - sweepRibbon() in road-mesh.js writes vertex positions into BufferGeometry
+      - _sampleCarveWorld() in road.js is the physics surface sampler used by analyticHeight
+
+    After Plans 09-07 (carve-free design grade + cache) and 09-08 (unified gradeY source +
+    shared curvature + pothole arcS), both sites now read the SAME memoized smoothed grade,
+    the SAME signedCurvature formula (ds=2.0 m), and the SAME pothole arcS. This test proves
+    the two surfaces agree to <= 1e-3 m at on-road centerline positions.
+
+    Reference: .planning/phases/09-road-surface/09-VERIFICATION.md
+  -->
+  <!-- importmap copied verbatim from index.html (MUST appear before module scripts) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+      "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/dist/esm/simplex-noise.js"
+    }
+  }
+  </script>
+  <style>
+    body { font-family: monospace; background: #111; color: #eee; padding: 1em; }
+    h1 { font-size: 1.1em; }
+    p { font-size: 0.85em; color: #aaa; }
+  </style>
+</head>
+<body>
+  <h1>RangerSim — Phase 9 Height-Agreement Exit Gate (Plan 09-09)</h1>
+  <p>Open DevTools console to see PASS/FAIL results.</p>
+  <p>
+    Asserts: <code>ribbonVertexY == _sampleCarveWorld-derived physicsY</code>
+    at on-road centerline positions. Both sites must read the same smoothed grade (09-07/09-08).
+  </p>
+
+  <script type="module">
+    import * as THREE from 'three'
+    import { RoadSystem, CHUNK_SIZE } from '../src/road.js'
+    import { RoadMeshSystem } from '../src/road-mesh.js'
+    import { parseWorldSeed } from '../src/seed.js'
+    import { assert, TEST_PARAMS, ribbonCenterlineVertex } from './road-test-harness.js'
+
+    // ── Harness loads ────────────────────────────────────────────────────────────
+    assert('harness loads', true)
+
+    // ── Height-agreement tolerance ───────────────────────────────────────────────
+    // Both surfaces read the same smoothed grade, crown, camber, and pothole — they
+    // should agree to floating-point (< 1e-6 m), but we allow 1e-3 m for any
+    // floating-point ordering differences in the two call paths.
+    const TOL = 1e-3  // metres
+
+    // ── Synthetic non-flat terrain ───────────────────────────────────────────────
+    // A gentle sinusoidal ramp: h(x,z) = 8 * sin(x * 0.02) + 6 * cos(z * 0.015) + 5
+    // This is NON-FLAT so the smoothing window does real work — a flat terrainRef would
+    // make raw==smoothed and hide any double-count bug. The amplitude is moderate so
+    // the fill-height cap (roadFillHeight=2.0) rarely activates, keeping assertions clean.
+    //
+    // This SAME function is wired as both:
+    //   (a) RoadMeshSystem terrainRef  → feeds _smoothDesignGrade (ribbon vertex Y)
+    //   (b) RoadSystem._rawHeightSampler → feeds sampleDesignGradeAt (_sampleCarveWorld)
+    //   (c) rawSampler for physicsY blend formula: raw + blendW*(gradeY - raw)
+    // Mirroring the production wiring where ribbon and physics share one carve-free source.
+    function syntheticRawHeight(wx, wz) {
+        return 8 * Math.sin(wx * 0.02) + 6 * Math.cos(wz * 0.015) + 5
+    }
+
+    // ── Test params ──────────────────────────────────────────────────────────────
+    // Include all surface params that affect ribbon Y vs physics Y so the formulas
+    // are exercised with realistic non-default values.
+    const PARAMS_BASE = Object.assign({}, TEST_PARAMS, {
+        crownHeight:         0.05,
+        camberStrength:      200,
+        roadHalfWidth:       5,
+        roadWidth:           10,
+        roadShoulderWidth:   2.5,
+        roadFillHeight:      2.0,
+        designGradeWindow:   50,
+        roadQualityStretch:  500,
+        roadQualityBlend:    10,
+        potholeEnabled:      false,   // CASE 1: no pothole
+    })
+
+    // ── Helper: find a road tile with a spline ───────────────────────────────────
+    function findRoadTile(rs) {
+        for (let tx = -3; tx <= 3; tx++) {
+            for (let tz = -3; tz <= 3; tz++) {
+                const key = `${tx},${tz}`
+                const segs = rs._tiles.get(key)
+                if (segs && segs.length > 0 && segs[0].spline) {
+                    return { tx, tz, key }
+                }
+            }
+        }
+        return null
+    }
+
+    // ── CASE 1: Height-agreement without potholes ────────────────────────────────
+    ;(async function testHeightAgreementNoPothole() {
+        const label = 'HEIGHT-AGREEMENT (potholeEnabled=false)'
+        try {
+            const ws     = parseWorldSeed('lone-pine')
+            const params = Object.assign({}, PARAMS_BASE, { potholeEnabled: false })
+            const scene  = new THREE.Scene()
+            const rs     = new RoadSystem(ws, params)
+
+            // Wire the carve-free raw-height sampler (mirrors main.js: setRawHeightSampler)
+            rs.setRawHeightSampler(syntheticRawHeight)
+
+            // Warm tiles around origin
+            for (let tx = -2; tx <= 2; tx++) {
+                for (let tz = -2; tz <= 2; tz++) { rs.ensureTile(tx, tz) }
+            }
+
+            const rms = new RoadMeshSystem(scene, rs, syntheticRawHeight, params, ws)
+
+            const found = findRoadTile(rs)
+            if (!found) {
+                assert(`${label}: found road tile to test`, false)
+                return
+            }
+
+            const { tx, tz, key } = found
+            rms._buildRoadTile(tx, tz, key)
+
+            const entry = rms._tileMeshMap.get(key)
+            if (!entry || entry.meshes.length === 0) {
+                assert(`${label}: ribbon mesh built`, false)
+                return
+            }
+
+            // CROSS_SEGS=8 → centerline lateral vertex = CROSS_SEGS/2 = 4
+            const CROSS_SEGS = 8
+            const centerLateralIdx = Math.floor(CROSS_SEGS / 2)  // vertex 4 of 0..8
+
+            const geo     = entry.meshes[0].geometry
+            const posAttr = geo.attributes.position
+            const N_LONG  = posAttr.count / (CROSS_SEGS + 1)
+
+            assert(`${label}: ribbon has sections (N_LONG=${N_LONG})`, N_LONG >= 2)
+
+            // Sample multiple centerline vertices across the ribbon.
+            // We pick 5 evenly-spaced sections (or all if fewer than 5).
+            const nSample = Math.min(5, N_LONG)
+            const stride  = Math.max(1, Math.floor((N_LONG - 1) / (nSample - 1 || 1)))
+
+            let maxDivergence = 0
+            let allPass = true
+
+            for (let si = 0; si < nSample; si++) {
+                const sectionIdx = Math.min(si * stride, N_LONG - 1)
+                const { x: vx, y: ribbonVertexY, z: vz } =
+                    ribbonCenterlineVertex(geo, sectionIdx, CROSS_SEGS)
+
+                // Compute physics surface Y at this world XZ:
+                //   1. raw terrain height at (vx, vz)
+                //   2. _sampleCarveWorld → { blendW, gradeY }
+                //   3. physicsY = raw + blendW * (gradeY - raw)
+                //      (reproduces terrain.js analyticHeight blend formula, line 566)
+                const raw = syntheticRawHeight(vx, vz)
+                const carve = rs._sampleCarveWorld(vx, vz, raw)
+
+                if (!carve) {
+                    // Point is outside road radius — skip (should not happen at centerline)
+                    continue
+                }
+
+                const { blendW, gradeY } = carve
+                const physicsY = raw + blendW * (gradeY - raw)
+
+                const divergence = Math.abs(ribbonVertexY - physicsY)
+                if (divergence > maxDivergence) maxDivergence = divergence
+
+                const pass = divergence <= TOL
+                if (!pass) allPass = false
+
+                assert(
+                    `${label}: section=${sectionIdx} ribbonY=${ribbonVertexY.toFixed(4)} physicsY=${physicsY.toFixed(4)} |diff|=${divergence.toExponential(2)}`,
+                    pass
+                )
+            }
+
+            console.log(`${label}: max divergence = ${maxDivergence.toExponential(3)} m (tolerance = ${TOL} m)`)
+            assert(`${label}: all sampled vertices agree within ${TOL} m`, allPass)
+
+            for (const g of entry.geometries) g.dispose()
+        } catch (e) {
+            console.error(`${label} test threw:`, e)
+            assert(`${label}: no exception`, false)
+        }
+    })()
+
+    // ── CASE 2: Height-agreement WITH potholes (CR-03 coverage) ─────────────────
+    // When potholeEnabled=true, both ribbon and physics add potholeNoise(vx, vz, q, params)
+    // at the same (vx, vz) world position and the same arcS-keyed roadQuality q.
+    // After 09-08 (CR-03), both use centerlineArcS = nr.arcS + (nr.arcSOffset??0), so
+    // the pothole severity matches at all three sites. This case asserts that agreement
+    // holds even with potholes active.
+    ;(async function testHeightAgreementWithPothole() {
+        const label = 'HEIGHT-AGREEMENT (potholeEnabled=true, CR-03)'
+        try {
+            const ws     = parseWorldSeed('lone-pine')
+            const params = Object.assign({}, PARAMS_BASE, {
+                potholeEnabled:     true,
+                potholeAmplitude:   0.08,   // m — realistic micro-noise amplitude
+                potholeFreq:        0.5,    // 1/m — ~2 m wavelength pothole lattice
+                potholeQualityGate: 0.5,    // active on stretches with q < 0.5
+            })
+            const scene  = new THREE.Scene()
+            const rs     = new RoadSystem(ws, params)
+
+            rs.setRawHeightSampler(syntheticRawHeight)
+
+            for (let tx = -2; tx <= 2; tx++) {
+                for (let tz = -2; tz <= 2; tz++) { rs.ensureTile(tx, tz) }
+            }
+
+            const rms = new RoadMeshSystem(scene, rs, syntheticRawHeight, params, ws)
+
+            const found = findRoadTile(rs)
+            if (!found) {
+                assert(`${label}: found road tile to test`, false)
+                return
+            }
+
+            const { tx, tz, key } = found
+            rms._buildRoadTile(tx, tz, key)
+
+            const entry = rms._tileMeshMap.get(key)
+            if (!entry || entry.meshes.length === 0) {
+                assert(`${label}: ribbon mesh built`, false)
+                return
+            }
+
+            const CROSS_SEGS = 8
+            const centerLateralIdx = Math.floor(CROSS_SEGS / 2)
+
+            const geo     = entry.meshes[0].geometry
+            const posAttr = geo.attributes.position
+            const N_LONG  = posAttr.count / (CROSS_SEGS + 1)
+
+            assert(`${label}: ribbon has sections (N_LONG=${N_LONG})`, N_LONG >= 2)
+
+            const nSample = Math.min(5, N_LONG)
+            const stride  = Math.max(1, Math.floor((N_LONG - 1) / (nSample - 1 || 1)))
+
+            let maxDivergence = 0
+            let allPass = true
+
+            for (let si = 0; si < nSample; si++) {
+                const sectionIdx = Math.min(si * stride, N_LONG - 1)
+                const { x: vx, y: ribbonVertexY, z: vz } =
+                    ribbonCenterlineVertex(geo, sectionIdx, CROSS_SEGS)
+
+                const raw   = syntheticRawHeight(vx, vz)
+                const carve = rs._sampleCarveWorld(vx, vz, raw)
+
+                if (!carve) continue
+
+                const { blendW, gradeY } = carve
+                const physicsY = raw + blendW * (gradeY - raw)
+
+                const divergence = Math.abs(ribbonVertexY - physicsY)
+                if (divergence > maxDivergence) maxDivergence = divergence
+
+                const pass = divergence <= TOL
+                if (!pass) allPass = false
+
+                assert(
+                    `${label}: section=${sectionIdx} ribbonY=${ribbonVertexY.toFixed(4)} physicsY=${physicsY.toFixed(4)} |diff|=${divergence.toExponential(2)}`,
+                    pass
+                )
+            }
+
+            console.log(`${label}: max divergence = ${maxDivergence.toExponential(3)} m (tolerance = ${TOL} m)`)
+            assert(`${label}: all sampled vertices agree within ${TOL} m (pothole-perturbed Y matches)`, allPass)
+
+            for (const g of entry.geometries) g.dispose()
+        } catch (e) {
+            console.error(`${label} test threw:`, e)
+            assert(`${label}: no exception`, false)
+        }
+    })()
+
+    // ── CASE 3: Non-flat terrain produces meaningful Y variation ─────────────────
+    // Sanity check: if the synthetic terrain were flat, raw==smoothed and the test
+    // would trivially pass even if the CR-04 double-count bug were present. This
+    // assertion proves the terrain is non-flat by checking that at least two sampled
+    // ribbon vertices have Y values that differ by more than 0.1 m.
+    ;(async function testNonFlatTerrainProducesVariation() {
+        const label = 'NON-FLAT terrain produces meaningful Y variation (anti-trivial guard)'
+        try {
+            const ws     = parseWorldSeed('lone-pine')
+            const params = Object.assign({}, PARAMS_BASE, { potholeEnabled: false })
+            const scene  = new THREE.Scene()
+            const rs     = new RoadSystem(ws, params)
+
+            rs.setRawHeightSampler(syntheticRawHeight)
+
+            for (let tx = -2; tx <= 2; tx++) {
+                for (let tz = -2; tz <= 2; tz++) { rs.ensureTile(tx, tz) }
+            }
+
+            const rms = new RoadMeshSystem(scene, rs, syntheticRawHeight, params, ws)
+
+            const found = findRoadTile(rs)
+            if (!found) {
+                // If no tile found, skip with informational pass (same guard as CASE 1)
+                assert(`${label}: found tile`, false)
+                return
+            }
+
+            const { tx, tz, key } = found
+            rms._buildRoadTile(tx, tz, key)
+
+            const entry = rms._tileMeshMap.get(key)
+            if (!entry || entry.meshes.length === 0) {
+                assert(`${label}: mesh built`, false)
+                return
+            }
+
+            const CROSS_SEGS = 8
+            const geo     = entry.meshes[0].geometry
+            const posAttr = geo.attributes.position
+            const N_LONG  = posAttr.count / (CROSS_SEGS + 1)
+
+            let minY = Infinity, maxY = -Infinity
+            for (let i = 0; i < N_LONG; i++) {
+                const { y } = ribbonCenterlineVertex(geo, i, CROSS_SEGS)
+                if (y < minY) minY = y
+                if (y > maxY) maxY = y
+            }
+
+            const variation = maxY - minY
+            console.log(`${label}: Y range = [${minY.toFixed(2)}, ${maxY.toFixed(2)}] (variation=${variation.toFixed(3)} m)`)
+            assert(
+                `${label}: ribbon centerline Y varies by > 0.1 m across the tile (variation=${variation.toFixed(3)} m)`,
+                variation > 0.1
+            )
+
+            for (const g of entry.geometries) g.dispose()
+        } catch (e) {
+            console.error(`${label} test threw:`, e)
+            assert(`${label}: no exception`, false)
+        }
+    })()
+
+  </script>
+</body>
+</html>
