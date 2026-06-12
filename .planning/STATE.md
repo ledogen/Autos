@@ -4,14 +4,14 @@ milestone: v1.1
 milestone_name: Mountains & Roads
 status: executing
 stopped_at: Phase 9 context gathered (intersections scoped in)
-last_updated: "2026-06-12T03:41:24.387Z"
+last_updated: "2026-06-12T08:01:18.406Z"
 last_activity: 2026-06-12
 progress:
   total_phases: 4
-  completed_phases: 3
-  total_plans: 21
-  completed_plans: 21
-  percent: 75
+  completed_phases: 2
+  total_plans: 24
+  completed_plans: 22
+  percent: 50
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-05)
 ## Current Position
 
 Phase: 09 (road-surface) — EXECUTING
-Plan: 4 of 9
+Plan: 5 of 9
 Status: Ready to execute
 Last activity: 2026-06-12
 
@@ -58,6 +58,7 @@ v1.1 Progress: [                    ] 0% (0/4 phases)
 
 *Updated after each plan completion*
 | Phase 09-road-surface P07 | 15 | 2 tasks | 3 files |
+| Phase 09-road-surface P10 | 20 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,7 @@ Recent decisions affecting current work:
 - v1.1 Roadmap (2026-06-07): Road router uses pure coarseHeight(wx,wz) only — never terrainSystem.sampleHeight (chunk-load-order dependent; breaks determinism)
 - [Phase ?]: CR-04: rawHeightWorld wraps height()*terrainAmplitude with no carve hook — feeds _smoothDesignGrade a carve-free profile eliminating double-count of crown/camber/pothole
 - [Phase ?]: CR-04 stale-cache: invalidateDesignGradeCache() called from debouncedRoadSurfaceRebuild on surface-param changes so memoized design-grade is always fresh
+- [Phase ?]: Plan 09-10: vertsPerSection=13 stride locked for Plan 09-12 test harness
 
 ### Pending Todos
 
@@ -125,6 +127,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-06-12T03:36:39.998Z
+Last session: 2026-06-12T08:00:32.390Z
 Stopped at: Phase 9 context gathered (intersections scoped in)
 Resume file: None
