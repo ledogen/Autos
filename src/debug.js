@@ -180,19 +180,23 @@ export function initDebug (params, callbacks = {}, options = {}) {
     if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull()
   })
 
-  // ── Roads folder (Phase 8 / D-03 / D-05) ──────────────────────────────────────
-  // Road viz checkbox + max-grade slider + optional cost-weight sliders.
+  // ── Roads folder (Phase 8 / D-03 / D-05 / D-04 / D-07 / D-09) ─────────────────
+  // Road viz checkbox + max-grade slider + cost-weight sliders + surface tuning sliders.
   // Placed AFTER the Terrain folder — do not reorder existing sliders.
   //
   // Callback contract (callbacks = {} default — never throws if not provided):
-  //   callbacks.onRoadVizToggle(v: boolean) — show/hide road splines (setDebugVisible)
-  //   callbacks.onRoadParamChange()          — debounced re-route (invalidateCache + rebuild)
+  //   callbacks.onRoadVizToggle(v: boolean)  — show/hide road splines (setDebugVisible)
+  //   callbacks.onRoadParamChange()           — debounced re-route (invalidateCache + rebuild)
+  //   callbacks.onRoadSurfaceChange()         — debounced re-bake carve + road mesh + terrain
+  //                                            (roadWidth/crown/camber/carve geometry changes)
   //
   // D-05: _roadState.roadViz is UI-only state (not a params field) — mirrors the _seedState
   //   pattern above. Default false = clean (no lines on load).
   // D-03: maxRoadGrade live slider → debouncedRoadRebuild() in main.js (same 150ms pattern
   //   as terrainFolder sliders). debug.js fires callbacks unconditionally on onChange;
   //   debounce lives in main.js (consistent with D-09 / rebuildTerrainFull convention).
+  // D-04/D-07: surface geometry sliders fire onRoadSurfaceChange → main.js debounced rebuild
+  //   (re-bake carve tables + rebuildAllChunksFromWorker + re-sweep road mesh tiles).
   const roadFolder = gui.addFolder('Roads')
   const _roadState = { roadViz: false }
   roadFolder.add(_roadState, 'roadViz').name('Show Road Splines').onChange(v => {
@@ -213,6 +217,40 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(params, 'roadWTurn',  0, 800,   20  ).name('wTurn (straighter)').onChange(fireRoadParam)
   // QUAL-01 — min turn radius (m); coils tighter than this are excised (higher = straighter roads)
   roadFolder.add(params, 'roadMinTurnRadius', 20, 300, 5).name('Min Turn Radius (m)').onChange(fireRoadParam)
+
+  // ── Road Surface sub-folder (D-04/D-07 — Plan 09-05 surface sliders) ────────────
+  // These sliders change ROAD GEOMETRY (width, crown, camber, carve slopes, shoulder, etc.)
+  // and fire onRoadSurfaceChange which triggers a full debounced road-mesh + carve rebuild.
+  // Debounce lives in main.js (consistent with D-09 pattern). Sliders bound directly to `params`.
+  //
+  // Ranges use Claude's-discretion realistic defaults with 2× headroom above default (D-09):
+  //   roadWidth:           6–14 m (default 10 m, 0.5 step — D-04)
+  //   crownHeight:         0–0.2 m (default 0.05 m, 0.005 step — D-04)
+  //   camberStrength:      50–500 m (default 200, step 10 — D-04)
+  //   roadFillHeight:      0–4 m (default 2.0, step 0.1 — D-07)
+  //   roadCutSlope:        0.5–2 H:V (default 1.0, step 0.05 — D-08)
+  //   roadFillSlope:       1.5–5 H:V (default 3.0, step 0.1 — D-08)
+  //   roadShoulderWidth:   1–6 m (default 2.5, step 0.5 — D-05)
+  //   designGradeWindow:   10–150 m (default 50, step 5 — D-06)
+  //   roadFilletRadius:    0.5–10 m (default 5, step 0.5 — D-13)
+  //   roadCliffSlopeLo/Hi: slope thresholds for cliff shading (D-11)
+  const fireSurface = () => { if (typeof callbacks.onRoadSurfaceChange === 'function') callbacks.onRoadSurfaceChange() }
+  const surfaceFolder = roadFolder.addFolder('Road Surface')
+  surfaceFolder.add(params, 'roadWidth',          6,   14,    0.5).name('Road Width (m)').onChange(() => {
+    // Keep roadHalfWidth derived field in sync (hot path avoids division)
+    params.roadHalfWidth = params.roadWidth / 2
+    fireSurface()
+  })
+  surfaceFolder.add(params, 'crownHeight',         0,    0.2,  0.005).name('Crown Height (m)').onChange(fireSurface)
+  surfaceFolder.add(params, 'camberStrength',      50,  500,  10   ).name('Camber Strength').onChange(fireSurface)
+  surfaceFolder.add(params, 'roadFillHeight',       0,    4,    0.1 ).name('Fill Height (m)').onChange(fireSurface)
+  surfaceFolder.add(params, 'roadCutSlope',         0.5,  2,    0.05).name('Cut Slope (H:V)').onChange(fireSurface)
+  surfaceFolder.add(params, 'roadFillSlope',        1.5,  5,    0.1 ).name('Fill Slope (H:V)').onChange(fireSurface)
+  surfaceFolder.add(params, 'roadShoulderWidth',    1,    6,    0.5 ).name('Shoulder Width (m)').onChange(fireSurface)
+  surfaceFolder.add(params, 'designGradeWindow',   10,  150,   5   ).name('Grade Window (m)').onChange(fireSurface)
+  surfaceFolder.add(params, 'roadFilletRadius',     0.5, 10,    0.5 ).name('Fillet Radius (m)').onChange(fireSurface)
+  surfaceFolder.add(params, 'roadCliffSlopeLo',     0,    0.5,  0.02).name('Cliff Slope Lo').onChange(fireSurface)
+  surfaceFolder.add(params, 'roadCliffSlopeHi',     0.3,  0.9,  0.02).name('Cliff Slope Hi').onChange(fireSurface)
 
   // D-04: Read-only Logger hint — shows the \ key without being interactive
   const _loggerHint = { hint: '\\ to record' }

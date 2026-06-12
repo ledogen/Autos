@@ -294,4 +294,22 @@ export const RANGER_PARAMS = {
   // Used as a slider default; actual per-junction R_f is computed from halfWidth*tan(theta/2).
   // Default 5 = roadHalfWidth default, produces quarter-circle fillets at 90° crossings.
   roadFilletRadius: 5,          // m — junction corner fillet radius default (D-13 / A5)
+
+  // ── Phase 9 Plan 05 — Road Quality Markings (D-02/D-03) ───────────────────
+  // roadQualityStretch: arc-length per quality tier (metres). Each stretch gets a deterministic
+  // quality value from (worldSeed, runKey, stretchIdx). 500 m gives ~2–4 tier changes per km. D-02.
+  roadQualityStretch: 500,     // m — arc-length per road-quality tier stretch (D-02 / A9)
+
+  // roadQualityBlend: marking transition zone at stretch boundaries (metres). D-02.
+  // Smooth-step over this span prevents marking tier from snapping visually.
+  roadQualityBlend: 10,        // m — smooth-step blend zone at stretch boundaries (D-02 / A9)
+
+  // ── Phase 9 Plan 05 — Cliff Shading (D-11) ────────────────────────────────
+  // roadCliffSlopeLo: slope threshold where cliff color begins to blend in.
+  // slope = 1 - vertexNormal.y. At slope=0.3 (~17° from vertical) cliff grey starts mixing.
+  roadCliffSlopeLo: 0.3,       // [-] slope lower threshold for cliff blend onset (D-11 / A10)
+
+  // roadCliffSlopeHi: slope threshold where terrain is fully cliff-colored.
+  // At slope=0.6 (~54° from vertical) terrain reads fully as weathered cliff rock.
+  roadCliffSlopeHi: 0.6,       // [-] slope upper threshold for full cliff color (D-11 / A10)
 };

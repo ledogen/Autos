@@ -389,9 +389,11 @@ export class TerrainSystem {
         // Kept null until set; all carve paths guard with this._roadSystem?.queryNearest check.
         this._roadSystem    = null
 
-        // Shared terrain material — one instance, reused across all chunks
-        // Do NOT dispose this per-chunk (matches wheelMat shared pattern)
-        this._material = new THREE.MeshPhongMaterial({ color: 0xb89060 })
+        // Shared terrain material — one instance, reused across all chunks.
+        // vertexColors:true enables the 5-zone feathered material system (D-09/D-10/D-11,
+        // Plan 09-05). Per-vertex colors written in _flushPendingQueue.
+        // Do NOT dispose this per-chunk (matches wheelMat shared pattern).
+        this._material = new THREE.MeshPhongMaterial({ vertexColors: true })
 
         // Spawn Blob classic worker from inlined source string
         // RESEARCH.md Pattern 3: classic worker avoids module-worker CORS restrictions
@@ -758,6 +760,8 @@ export class TerrainSystem {
             }
             pos.needsUpdate = true
             chunk.mesh.geometry.computeVertexNormals()
+            // Re-write vertex colors after Y + normals are updated (D-09/D-10/D-11).
+            this._writeChunkVertexColors(chunk.mesh.geometry, chunk.carveData, chunk.heights, amp)
         }
     }
 
@@ -917,6 +921,106 @@ export class TerrainSystem {
     }
 
     /**
+     * Write per-vertex colors for the 5-zone feathered material system (D-09/D-10/D-11).
+     *
+     * Called from _flushPendingQueue AFTER computeVertexNormals() so the normal attribute
+     * is available for cliff slope detection (D-11).
+     *
+     * Zone priority (all blended/feathered — no hard lines, D-09):
+     *   General terrain → lerp → Natural cliff  (driven by slope, D-11)
+     *   General terrain → lerp → Engineered cutout (driven by blendW where delta<0, D-10)
+     *   General terrain → lerp → Dirt foundation  (driven by blendW where delta>0, D-07)
+     * Cut/fill zones are further feathered by blendW (from carve system, free side effect).
+     * Cutout color is distinct from natural cliff color (D-10).
+     *
+     * @param {THREE.BufferGeometry} geom      — geometry with position + normal attributes
+     * @param {Float32Array|null}    carveData — [blendW, gradeY_preamp, ...] per vertex (or null)
+     * @param {Float32Array}         heights   — raw pre-amplitude heights per vertex
+     * @param {number}               amp       — terrainAmplitude
+     * @private
+     */
+    _writeChunkVertexColors(geom, carveData, heights, amp) {
+        const N = GRID_SAMPLES
+
+        // Cliff thresholds from params (D-11). Fall back to defaults if not in params.
+        const cliffLo = this._params.roadCliffSlopeLo ?? 0.3
+        const cliffHi = this._params.roadCliffSlopeHi ?? 0.6
+
+        const nrmAttr = geom.attributes.normal
+        const nVerts = N * N
+
+        const colorArr = new Float32Array(nVerts * 3)
+
+        // Color constants (linear RGB — D-09/D-10/D-11):
+        // General terrain: warm brown
+        const GT_R = 0.72, GT_G = 0.60, GT_B = 0.47
+        // Natural cliff: weathered grey (distinct from cutout — D-10)
+        const CL_R = 0.60, CL_G = 0.58, CL_B = 0.55
+        // Engineered cutout: uniform grey-tan (man-made/uniform — D-10)
+        const CO_R = 0.55, CO_G = 0.50, CO_B = 0.42
+        // Dirt foundation (fill embankment): warm tan
+        const DF_R = 0.65, DF_G = 0.55, DF_B = 0.38
+
+        for (let i = 0; i < nVerts; i++) {
+            const idx3 = i * 3
+
+            // ── Slope for cliff blend (D-11) ────────────────────────────────
+            // slope = 1 - normal.y; near 0 = flat, near 1 = vertical
+            const ny = nrmAttr ? nrmAttr.getY(i) : 1.0
+            const slope = 1.0 - Math.max(0.0, Math.min(1.0, ny))
+            // smoothstep(cliffLo, cliffHi, slope)
+            let cliffBlend = 0
+            if (slope >= cliffHi) {
+                cliffBlend = 1.0
+            } else if (slope > cliffLo) {
+                const tC = (slope - cliffLo) / (cliffHi - cliffLo)
+                cliffBlend = tC * tC * (3 - 2 * tC)
+            }
+
+            // ── Road zone blend (cutout/dirt from carveData) ─────────────────
+            let carveZoneBlend = 0  // 0 = general terrain; 1 = fully in cutout or dirt zone
+            let isFill = false      // true = dirt foundation; false = engineered cutout
+
+            if (carveData) {
+                const blendW = carveData[i * 2]
+                if (blendW > 1e-6) {
+                    const gradeY = carveData[i * 2 + 1] * amp
+                    const rawH   = heights[i] * amp
+                    const delta  = gradeY - rawH  // positive = fill, negative = cut
+                    isFill = delta > 0
+                    carveZoneBlend = blendW
+                }
+            }
+
+            // ── Color blend pipeline ─────────────────────────────────────────
+            // Start with general terrain, then apply cliff blend, then apply road-zone blend.
+            // Road zone blend uses cutout vs dirt depending on delta sign.
+            // Order: road-zone overrides cliff (engineered face reads man-made, not wild — D-10).
+
+            // Step 1: general terrain → cliff (natural slope)
+            let r = GT_R + (CL_R - GT_R) * cliffBlend
+            let g = GT_G + (CL_G - GT_G) * cliffBlend
+            let b = GT_B + (CL_B - GT_B) * cliffBlend
+
+            // Step 2: blend road zone on top (feathered by blendW — free from carve system)
+            if (carveZoneBlend > 1e-6) {
+                const zr = isFill ? DF_R : CO_R
+                const zg = isFill ? DF_G : CO_G
+                const zb = isFill ? DF_B : CO_B
+                r = r + (zr - r) * carveZoneBlend
+                g = g + (zg - g) * carveZoneBlend
+                b = b + (zb - b) * carveZoneBlend
+            }
+
+            colorArr[idx3    ] = r
+            colorArr[idx3 + 1] = g
+            colorArr[idx3 + 2] = b
+        }
+
+        geom.setAttribute('color', new THREE.BufferAttribute(colorArr, 3))
+    }
+
+    /**
      * Build up to MAX_BUILDS_PER_FRAME chunk geometries from the pending FIFO queue.
      * Spreading builds across frames prevents frame spikes at chunk boundaries.
      * T-06-01: capped at 2 builds/frame.
@@ -962,6 +1066,17 @@ export class TerrainSystem {
             }
             pos.needsUpdate = true
             geom.computeVertexNormals()  // for rendering only; physics uses analyticNormal()
+
+            // ── 5-zone feathered vertex colors (D-09/D-10/D-11, Plan 09-05) ─────
+            // Zones (no hard lines — all feathered, D-09):
+            //   1. General terrain:    warm brown (0.72, 0.60, 0.47)
+            //   2. Natural cliff:      slope-driven grey (0.60, 0.58, 0.55) via smoothstep(D-11)
+            //   3. Engineered cutout:  uniform grey-tan (0.55, 0.50, 0.42) where delta<0, blendW>0 (D-10)
+            //   4. Dirt foundation:    warm tan (0.65, 0.55, 0.38) where delta>0, blendW>0 (D-07)
+            //   Asphalt lives on the road-mesh.js ribbon (not on terrain chunks).
+            // Cutout/dirt zones are feathered by carveData blendW (free from the carve system).
+            // Cliff is feathered by slope smoothstep(roadCliffSlopeLo, roadCliffSlopeHi, slope).
+            this._writeChunkVertexColors(geom, carveData, heights, amp)
 
             const mesh = new THREE.Mesh(geom, this._material)
             // Center the chunk mesh at the chunk's world-space origin + half-size offset

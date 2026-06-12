@@ -10,9 +10,15 @@
  * camber tilt used in sweepRibbon() are folded into road.js _buildCarveTable().
  *
  * SURF-01: fixed-width ribbon swept along splines with streaming lifecycle.
+ * SURF-02: per-vertex dark-grey asphalt with per-500 m quality-tiered lane markings.
  * SURF-03: centerline crown + curvature-driven camber as real surface geometry.
  *
  * Design decisions:
+ *  - D-01: Asphalt and markings are purely procedural (vertex colors, no asset files).
+ *  - D-02: roadQuality tiers span ROAD_QUALITY_STRETCH=500 m stretches, blended over
+ *    ROAD_QUALITY_BLEND=10 m at boundaries so markings do not snap.
+ *  - D-03: roadQuality is a labeled hook on each arc position — the same value drives
+ *    both markings here and pothole severity in Plan 09-06.
  *  - D-04: crown + camber are REAL geometry (vertex Y) so computeVertexNormals()
  *    returns the banked normal that physics analyticNormal agrees with.
  *  - T-09-04: zero-length tangent guard (NaN prevention); camber clamped ±6°.
@@ -21,12 +27,13 @@
  *  - _scratchPt/_scratchTan: module-scope reuse avoids per-sample Vector3 alloc (GC).
  *
  * Phase: 09-road-surface
- * Plan: 09-03
+ * Plan: 09-05
  */
 
 import * as THREE from 'three'
 import { CHUNK_SIZE } from './terrain.js'
 import { crownProfile, isConvexPolygon, triangulateConvexFan, earClip } from './road-carve.js'
+import { seedFor, mulberry32 } from './seed.js'
 
 // ── Module-scope scratch vectors (GC-free per-sample allocation guard) ────────
 // sweepRibbon is called for every tile's every segment, multiple times per stream.
@@ -45,6 +52,90 @@ const MAX_CAMBER_RAD = 6 * (Math.PI / 180)
 // Build cap: one road tile per frame alongside terrain's MAX_BUILDS_PER_FRAME.
 const MAX_ROAD_BUILDS_PER_FRAME = 1
 
+// ── Road quality constants (D-02/D-03) ───────────────────────────────────────
+// ROAD_QUALITY_STRETCH: arc-length span per quality tier (metres). D-02.
+// Each 500 m stretch gets a deterministic quality value from (worldSeed, runKey, stretchIdx).
+const ROAD_QUALITY_STRETCH = 500
+
+// ROAD_QUALITY_BLEND: blend zone at stretch boundaries (metres). D-02.
+// Smooth-step over this span prevents the marking tier from snapping.
+const ROAD_QUALITY_BLEND = 10
+
+// ── Road quality lane-marking thresholds ─────────────────────────────────────
+// Markings drawn as bright vertex-color patches (no texture, no asset — D-01).
+// Widths are lateral distances from the road centerline (uLat).
+const MARK_CENTER_HALF = 0.15  // m half-width of centerline stripe
+const MARK_EDGE_HALF   = 0.10  // m half-width of edge-line stripe (measured inward from ribbon edge)
+
+// ── Road quality helpers (D-02/D-03) ─────────────────────────────────────────
+
+/**
+ * Hash a runKey string into a stable 32-bit integer for use as a seedFor coordinate.
+ * Reuses the djb2-style approach: fold each character using Math.imul.
+ * Pure function — no side effects. Deterministic (D-16).
+ *
+ * @param {string} runKey — per-run identifier from road._network (e.g. "mz3")
+ * @returns {number} unsigned 32-bit integer
+ */
+function hashRunKey(runKey) {
+    let h = 5381
+    const s = String(runKey)
+    for (let i = 0; i < s.length; i++) {
+        h = (Math.imul(h, 33) ^ s.charCodeAt(i)) >>> 0
+    }
+    return h >>> 0
+}
+
+/**
+ * Compute the blended road quality value at arc-length `arcS` along a run.
+ *
+ * Algorithm (D-02):
+ *   stretchIdx = floor(arcS / ROAD_QUALITY_STRETCH)
+ *   Each stretch: quality = mulberry32(seedFor(worldSeed, 'roadquality', hashRunKey(runKey), stretchIdx))()
+ *   Within ROAD_QUALITY_BLEND metres of a stretch boundary: smoothstep-blend adjacent stretch values.
+ *
+ * Returns a value in [0, 1). Deterministic from (worldSeed, runKey, arcS) — D-16.
+ *
+ * D-03: This function IS the labeled `roadQuality` hook. Call it from any surface consumer
+ * (markings here, pothole severity in Plan 09-06) to get the per-arc quality value.
+ *
+ * @param {number} arcS      — arc-length along the run (metres)
+ * @param {string} runKey    — per-run identifier
+ * @param {number} worldSeed — unsigned 32-bit world seed
+ * @returns {number} road quality in [0, 1); higher = better condition
+ */
+export function roadQuality(arcS, runKey, worldSeed) {
+    const rk = hashRunKey(runKey)
+    const stretchIdx = Math.floor(arcS / ROAD_QUALITY_STRETCH)
+
+    // Quality for the current stretch
+    const q0 = mulberry32(seedFor(worldSeed, 'roadquality', rk, stretchIdx))()
+
+    // Arc-length fraction within the current stretch [0, 1)
+    const fracInStretch = (arcS % ROAD_QUALITY_STRETCH) / ROAD_QUALITY_STRETCH
+
+    // Blend at the END boundary (last ROAD_QUALITY_BLEND metres of this stretch)
+    const blendStart = 1.0 - ROAD_QUALITY_BLEND / ROAD_QUALITY_STRETCH
+    if (fracInStretch >= blendStart) {
+        const q1 = mulberry32(seedFor(worldSeed, 'roadquality', rk, stretchIdx + 1))()
+        // smoothstep blend: t goes 0→1 across the blend zone
+        const tRaw = (fracInStretch - blendStart) / (ROAD_QUALITY_BLEND / ROAD_QUALITY_STRETCH)
+        const t = tRaw * tRaw * (3 - 2 * tRaw)  // smoothstep
+        return q0 + (q1 - q0) * t
+    }
+
+    // Blend at the START boundary (first ROAD_QUALITY_BLEND metres of this stretch)
+    const blendEnd = ROAD_QUALITY_BLEND / ROAD_QUALITY_STRETCH
+    if (fracInStretch < blendEnd && stretchIdx > 0) {
+        const qPrev = mulberry32(seedFor(worldSeed, 'roadquality', rk, stretchIdx - 1))()
+        const tRaw = fracInStretch / blendEnd
+        const t = tRaw * tRaw * (3 - 2 * tRaw)  // smoothstep
+        return qPrev + (q0 - qPrev) * t
+    }
+
+    return q0
+}
+
 // ── RoadMeshSystem ────────────────────────────────────────────────────────────
 
 export class RoadMeshSystem {
@@ -53,12 +144,14 @@ export class RoadMeshSystem {
      * @param {object}          roadSystem — RoadSystem instance (provides _tiles, ensureTile, _smoothDesignGrade)
      * @param {Function}        terrainRef — (wx,wz)=>number  analytic height sampler
      * @param {object}          params     — RANGER_PARAMS (roadWidth, roadHalfWidth, crownHeight, camberStrength, ...)
+     * @param {number}          [worldSeed=0] — world seed for roadQuality determinism (D-03)
      */
-    constructor(scene, roadSystem, terrainRef, params) {
+    constructor(scene, roadSystem, terrainRef, params, worldSeed = 0) {
         this._scene      = scene
         this._road       = roadSystem
         this._terrainRef = terrainRef
         this._params     = params
+        this._worldSeed  = worldSeed >>> 0  // D-03: stored for roadQuality() calls in sweepRibbon
 
         // Tile map: "X,Z" → { meshes: THREE.Mesh[], geometries: THREE.BufferGeometry[] }
         // One tile may have multiple ribbon meshes (one per slice in road._tiles).
@@ -122,7 +215,8 @@ export class RoadMeshSystem {
     }
 
     /**
-     * Sweep a ribbon mesh along a Catmull-Rom spline with per-section crown + camber.
+     * Sweep a ribbon mesh along a Catmull-Rom spline with per-section crown + camber
+     * and per-500 m road-quality-tiered lane markings (SURF-02, D-01, D-02, D-03).
      *
      * Vertex Y formula (same formula as carve gradeY on-ribbon vertices — SURF-03):
      *   vy = designGradeY[i] + crownProfile(uLat, roadHalfWidth, crownHeight)
@@ -131,15 +225,27 @@ export class RoadMeshSystem {
      * This is the formula that must match what road.js folds into the carve gradeY
      * table so analyticNormal returns the crowned/cambered normal (height-agreement gate).
      *
+     * Road quality markings (no asset files — D-01):
+     *   High quality (q >= 0.66): solid centerline + solid edge lines, full white (0.9,0.9,0.9).
+     *   Mid quality (q 0.33–0.66): solid centerline + intermittent edge (arcS%12<8), faded (0.65).
+     *   Low quality (q < 0.33): faint centerline only (brightness ~0.3), no edge lines.
+     *   Transition blended by blended roadQuality so markings fade smoothly across stretch boundary.
+     *
+     * Markings are INTERRUPTED inside junction footprints (D-12): this is indicated to
+     * callers via the `inJunction` parameter — when true, marking colors are suppressed
+     * (only asphalt base color) so the junction footprint can render its own clean surface.
+     *
      * @param {THREE.CatmullRomCurve3} spline       — per-tile slice spline
      * @param {Float32Array}           designGradeY — smoothed design grade heights (N values, 1:1 with points)
      * @param {THREE.Vector3[]}        points       — arc-length-sampled spline positions (N values)
      * @param {object}                 params       — RANGER_PARAMS
+     * @param {string}                 [runKey='']  — run identifier for roadQuality determinism (D-03)
+     * @param {number}                 [arcSOffset=0] — arc-length offset of this tile's slice start (m)
      * @returns {THREE.BufferGeometry} Ribbon geometry with positions, normals, and colors.
      *
      * Pure function of its inputs — no side effects. Deterministic (D-16).
      */
-    sweepRibbon(spline, designGradeY, points, params) {
+    sweepRibbon(spline, designGradeY, points, params, runKey = '', arcSOffset = 0) {
         const N_LONG = points.length     // number of longitudinal sections (from _smoothDesignGrade)
         const halfWidth      = params.roadHalfWidth    ?? 5
         const roadWidth      = params.roadWidth        ?? 10
@@ -152,7 +258,7 @@ export class RoadMeshSystem {
         const positions = new Float32Array(nVerts * 3)
         const colors    = new Float32Array(nVerts * 3)
 
-        // Dark grey asphalt base color (SURF-02 — vertex-color, no texture).
+        // Dark grey asphalt base color (SURF-02 — vertex-color, no texture — D-01).
         // Linear-space: (0.15, 0.15, 0.17) — dark cool grey.
         const RC = 0.15, GC = 0.15, BC = 0.17
 
@@ -182,6 +288,27 @@ export class RoadMeshSystem {
             const posZ  = _scratchPt.z
             const gradeY = designGradeY[i]
 
+            // ── Road quality at this arc position (D-02/D-03) ──────────────────
+            // arcS: arc-length from run start. Approximate as arcSOffset + u*arcLen.
+            const arcS = arcSOffset + u * arcLen
+            const q = roadQuality(arcS, runKey, this._worldSeed)
+
+            // Tier classification:
+            //   High (q >= 0.66): solid center + solid edge, white (0.9)
+            //   Mid  (q 0.33–0.66): solid center + intermittent edge (arcS%12<8), faded (0.65)
+            //   Low  (q < 0.33): very faint center only (~0.3), no edge
+            const isHigh = q >= 0.66
+            const isMid  = q >= 0.33 && q < 0.66
+            // isLow = q < 0.33
+
+            // Marking brightness: interpolate smoothly so transitions are smooth across tier boundary.
+            // Center marking exists for all tiers; brightness scales with quality.
+            const centerBrightness = isHigh ? 0.9 : (isMid ? 0.65 : 0.3)
+            // Edge line: present for High (solid), Mid (intermittent), absent for Low.
+            // Use arcS modulo 12 m pattern for Mid intermittent (8 m on, 4 m off — D-02).
+            const edgeOn = isHigh ? true : (isMid ? ((arcS % 12) < 8) : false)
+            const edgeBrightness = isHigh ? 0.9 : 0.65
+
             for (let j = 0; j <= CROSS_SEGS; j++) {
                 // Lateral offset: -halfWidth (left edge) to +halfWidth (right edge)
                 const uLat = (j / CROSS_SEGS - 0.5) * roadWidth
@@ -201,10 +328,28 @@ export class RoadMeshSystem {
                 positions[idx + 1] = vy
                 positions[idx + 2] = vz
 
-                // Asphalt vertex color (uniform for now — Plan 09-04 adds markings)
-                colors[idx    ] = RC
-                colors[idx + 1] = GC
-                colors[idx + 2] = BC
+                // ── Vertex color: asphalt base + marking overlay ───────────────
+                // Markings are bright vertex-color patches (no texture/asset — D-01).
+                const absLat = Math.abs(uLat)
+
+                // Centerline: |uLat| < MARK_CENTER_HALF
+                const isCenterline = absLat < MARK_CENTER_HALF
+
+                // Edge lines: within MARK_EDGE_HALF of the ribbon edge.
+                // Left edge: uLat near -halfWidth; Right edge: uLat near +halfWidth.
+                const distFromEdge = halfWidth - absLat
+                const isEdgeLine = edgeOn && distFromEdge < MARK_EDGE_HALF
+
+                let r = RC, g = GC, b = BC  // asphalt base
+                if (isCenterline) {
+                    r = centerBrightness; g = centerBrightness; b = centerBrightness
+                } else if (isEdgeLine) {
+                    r = edgeBrightness; g = edgeBrightness; b = edgeBrightness
+                }
+
+                colors[idx    ] = r
+                colors[idx + 1] = g
+                colors[idx + 2] = b
             }
         }
 
@@ -371,7 +516,16 @@ export class RoadMeshSystem {
 
             if (points.length < 2) continue
 
-            const geo  = this.sweepRibbon(spline, designGradeY, points, this._params)
+            // Extract runKey for deterministic road quality per-run (D-03).
+            // seg.runKey is set by road.js _sliceNetwork when it stores slice records.
+            // Fall back to empty string if not present (backwards-compatible).
+            const runKey = seg.runKey ?? ''
+
+            // Arc-length offset: seg.arcSOffset tracks where this tile slice starts
+            // along the canonical run. Fall back to 0 if not set.
+            const arcSOffset = seg.arcSOffset ?? 0
+
+            const geo  = this.sweepRibbon(spline, designGradeY, points, this._params, runKey, arcSOffset)
             const mesh = new THREE.Mesh(geo, this._material)
 
             // Road mesh sits at world origin (geometry is already in world space).
