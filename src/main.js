@@ -268,6 +268,11 @@ function debouncedRoadSurfaceRebuild () {
     // _buildCarveTable again with the updated carve params (roadWidth, slopes, etc.).
     terrainSystem.reinitWorker(worldSeed, RANGER_PARAMS)
     terrainSystem.rebuildAllChunksFromWorker()
+    // CR-04 stale-cache fix: drop memoized design-grade entries so the next ribbon sweep
+    // recomputes smoothed grade against the new params (crownHeight / terrainAmplitude /
+    // camberStrength). Spline objects persist across rebuilds — WeakMap would return stale
+    // pre-change profiles without this invalidation call.
+    if (roadSystem) roadSystem.invalidateDesignGradeCache()
     // Re-sweep the road ribbon tiles with the updated geometry params.
     if (roadMeshSystem) {
       roadMeshSystem.clearAll()

@@ -1496,9 +1496,59 @@ export class RoadSystem {
             }
         }
 
-        const result = { points: pts, designGradeY }
+        // Expose arcPos alongside points and designGradeY — sampleDesignGradeAt needs it for
+        // arc-length interpolation without re-computing arc positions on each call.
+        const result = { points: pts, designGradeY, arcPos }
         this._designGradeCache.set(cacheKey, { window, result })
         return result
+    }
+
+    /**
+     * Drop all memoized design-grade entries so the next ribbon sweep recomputes smoothed grade.
+     * Call this whenever surface-param sliders (crownHeight, terrainAmplitude, camberStrength)
+     * change via debouncedRoadSurfaceRebuild — the spline objects persist across rebuilds, so
+     * the WeakMap would otherwise return stale pre-change profiles (CR-04 stale-cache fix).
+     */
+    invalidateDesignGradeCache() {
+        this._designGradeCache = new WeakMap()
+    }
+
+    /**
+     * Return the smoothed design-grade Y at arc-length position arcS along spline.
+     * Delegates to _smoothDesignGrade (shared WeakMap memo — O(1) after first sweep per spline).
+     * arcS is clamped to [arcPos[0], arcPos[N-1]] before interpolation.
+     *
+     * This is the SINGLE shared elevation source for plan 09-08 carve sites. Calling it at
+     * nr.arcS from both _sampleCarveWorld and _buildCarveTable gives a clean, cache-coherent,
+     * carve-free grade that does NOT double-count crown/camber/pothole.
+     *
+     * @param {THREE.CatmullRomCurve3} spline  — spline object (WeakMap key)
+     * @param {number}                 arcS    — arc-length position along spline (metres)
+     * @param {Function}               terrainRef — carve-free raw-height sampler (rawHeightWorld)
+     * @param {object}                 params  — RANGER_PARAMS (for designGradeWindow)
+     * @returns {number} Smoothed design-grade height in metres.
+     */
+    sampleDesignGradeAt(spline, arcS, terrainRef, params) {
+        const { designGradeY, arcPos } = this._smoothDesignGrade(spline, terrainRef, params)
+        const N = arcPos.length
+        if (N === 0) return 0
+
+        // Clamp to sampled arc range.
+        const s = Math.max(arcPos[0], Math.min(arcPos[N - 1], arcS))
+
+        // Binary search for the interval containing s.
+        let lo = 0
+        let hi = N - 1
+        while (lo < hi - 1) {
+            const mid = (lo + hi) >> 1
+            if (arcPos[mid] <= s) lo = mid; else hi = mid
+        }
+
+        // Linear interpolation between lo and hi.
+        const span = arcPos[hi] - arcPos[lo]
+        if (span < 1e-9) return designGradeY[lo]
+        const t = (s - arcPos[lo]) / span
+        return designGradeY[lo] + t * (designGradeY[hi] - designGradeY[lo])
     }
 
     /**
