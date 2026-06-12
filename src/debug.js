@@ -252,6 +252,25 @@ export function initDebug (params, callbacks = {}, options = {}) {
   surfaceFolder.add(params, 'roadCliffSlopeLo',     0,    0.5,  0.02).name('Cliff Slope Lo').onChange(fireSurface)
   surfaceFolder.add(params, 'roadCliffSlopeHi',     0.3,  0.9,  0.02).name('Cliff Slope Hi').onChange(fireSurface)
 
+  // Plan 09-10 — Decal ribbon depth-bias + edge skirts.
+  // roadSkirtDepth is geometry → fires fireSurface (full road rebuild).
+  // roadPolygonOffsetFactor/Units are material state → update live material via
+  // callbacks.onRoadMaterialChange THEN fireSurface for the rebuild path.
+  const fireMaterial = (factor, units) => {
+    if (typeof callbacks.onRoadMaterialChange === 'function') {
+      callbacks.onRoadMaterialChange(factor, units)
+    }
+  }
+  surfaceFolder.add(params, 'roadSkirtDepth',           0,   1.5, 0.05).name('Skirt Depth (m)').onChange(fireSurface)
+  surfaceFolder.add(params, 'roadPolygonOffsetFactor',  -4,  0,   0.5 ).name('PolyOffset Factor').onChange(() => {
+    fireMaterial(params.roadPolygonOffsetFactor, params.roadPolygonOffsetUnits)
+    fireSurface()
+  })
+  surfaceFolder.add(params, 'roadPolygonOffsetUnits',   -8,  0,   0.5 ).name('PolyOffset Units').onChange(() => {
+    fireMaterial(params.roadPolygonOffsetFactor, params.roadPolygonOffsetUnits)
+    fireSurface()
+  })
+
   // D-04: Read-only Logger hint — shows the \ key without being interactive
   const _loggerHint = { hint: '\\ to record' }
   gui.add(_loggerHint, 'hint').name('Logger').disable()

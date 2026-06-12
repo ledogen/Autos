@@ -90,9 +90,14 @@ export class RoadMeshSystem {
         // Shared material — one instance reused across all road tiles.
         // Do NOT dispose per-tile (matches terrain._material shared pattern).
         // vertexColors: true enables the asphalt base color baked into vertex buffer.
+        // polygonOffset: Plan 09-10 — negative factor/units pull the ribbon toward the
+        // camera in depth so it renders over coplanar terrain without z-fighting.
         this._material = new THREE.MeshPhongMaterial({
             vertexColors: true,
             side: THREE.FrontSide,
+            polygonOffset: true,
+            polygonOffsetFactor: params.roadPolygonOffsetFactor ?? -1,
+            polygonOffsetUnits:  params.roadPolygonOffsetUnits  ?? -1,
         })
     }
 
@@ -454,6 +459,9 @@ export class RoadMeshSystem {
 
             // Road mesh sits at world origin (geometry is already in world space).
             // Do NOT offset by tile center — ribbon vertices are world-space XZ from sweepRibbon.
+            // renderOrder=1: Plan 09-10 — ribbon draws after terrain (renderOrder 0) so the
+            // depth-biased road surface wins over terrain at the same Z range.
+            mesh.renderOrder = 1
             mesh.receiveShadow = true
 
             this._scene.add(mesh)
@@ -480,6 +488,7 @@ export class RoadMeshSystem {
                     const geo = this.buildJunctionFootprint(node, this._params)
                     if (geo) {
                         const mesh = new THREE.Mesh(geo, this._material)
+                        mesh.renderOrder = 1  // Plan 09-10: ribbon draws after terrain
                         mesh.receiveShadow = true
                         this._scene.add(mesh)
                         meshes.push(mesh)

@@ -328,4 +328,23 @@ export const RANGER_PARAMS = {
   // 0.3/m = one lattice cell per ~3.3 m → realistic pothole spacing on rural roads.
   // Range: 0.1–1.0/m. Higher = more frequent, smaller bumps.
   potholeFrequency: 0.3,        // /m — noise lattice frequency (D-03 / SURF-06)
+
+  // ── Phase 9 Plan 10 — Decal Ribbon Depth-Bias + Edge Skirts ──────────────────
+  // roadSkirtDepth: vertical distance the edge apron drops below the ribbon edge vertex.
+  // 0.4 m ensures the skirt face extends below the terrain surface when the road
+  // sits above the surrounding ground, closing the see-through gap at ribbon edges.
+  // Range: 0–1.5 m. Exposed as a Road Surface debug slider.
+  roadSkirtDepth: 0.4,          // m — vertical apron depth below ribbon edge (Plan 09-10)
+
+  // roadPolygonOffsetFactor: WebGL polygon-offset factor applied to the ribbon material.
+  // Negative value pulls the ribbon toward the camera in depth, ensuring it renders
+  // over coplanar terrain without z-fighting. Paired with roadPolygonOffsetUnits.
+  // Range: -4–0. Exposed as a Road Surface debug slider (live material update, no rebuild).
+  roadPolygonOffsetFactor: -1,  // [-] polygon-offset factor (negative = toward camera) (Plan 09-10)
+
+  // roadPolygonOffsetUnits: WebGL polygon-offset units bias paired with the factor.
+  // Negative units further bias the ribbon toward the camera. Together with a negative
+  // factor the ribbon reliably wins depth over terrain at all viewing angles.
+  // Range: -8–0. Exposed as a Road Surface debug slider (live material update, no rebuild).
+  roadPolygonOffsetUnits: -1,   // [-] polygon-offset units bias (Plan 09-10)
 };

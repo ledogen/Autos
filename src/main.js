@@ -816,6 +816,16 @@ const _gui = initDebug(RANGER_PARAMS, {
   onRoadParamChange:   ()  => debouncedRoadRebuild(),
   // Plan 09-05 (D-04/D-07): surface geometry sliders fire a debounced carve+mesh rebuild.
   onRoadSurfaceChange: ()  => debouncedRoadSurfaceRebuild(),
+  // Plan 09-10: polygon-offset sliders update the live material without requiring a rebuild.
+  // factor/units are written directly to the shared MeshPhongMaterial so the change is
+  // visible immediately at the next render frame (needsUpdate = true not required for
+  // polygonOffset changes — Three.js checks the values at draw time).
+  onRoadMaterialChange: (factor, units) => {
+    if (roadMeshSystem) {
+      roadMeshSystem._material.polygonOffsetFactor = factor
+      roadMeshSystem._material.polygonOffsetUnits  = units
+    }
+  },
 }, { initialSeed: _urlSeed ?? 'lone-pine' })
 
 // ── TerrainSystem (Phase 6 / 7) ──────────────────────────────────────────────
