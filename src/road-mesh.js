@@ -170,10 +170,14 @@ export class RoadMeshSystem {
         const roadWidth      = params.roadWidth        ?? 10
         const crownHeightVal = params.crownHeight      ?? 0.05
         const camberStrength = params.camberStrength   ?? 200
+        const skirtDepth     = params.roadSkirtDepth   ?? 0.4
         const arcLen = spline.getLength ? spline.getLength() : 64
 
-        // Per-section (i) × per-lateral-vertex (j): total vertices = N_LONG × (CROSS_SEGS + 1)
-        const nVerts = N_LONG * (CROSS_SEGS + 1)
+        // Plan 09-10: vertsPerSection includes the top-surface lateral strip PLUS 2 skirt
+        // bottom verts (left-edge-bottom at index CROSS_SEGS+1, right-edge-bottom at CROSS_SEGS+2).
+        // This stride must stay stable — Plan 09-12 test harness indexes centerline verts using it.
+        const vertsPerSection = (CROSS_SEGS + 1) + 2  // 11 top + 2 skirt = 13 per section
+        const nVerts = N_LONG * vertsPerSection
         const positions = new Float32Array(nVerts * 3)
         const colors    = new Float32Array(nVerts * 3)
 
@@ -228,6 +232,10 @@ export class RoadMeshSystem {
             const edgeOn = isHigh ? true : (isMid ? ((arcS % 12) < 8) : false)
             const edgeBrightness = isHigh ? 0.9 : 0.65
 
+            // Track edge vy values to build skirt verts after the top-surface loop.
+            let leftEdgeVx = 0, leftEdgeVy = 0, leftEdgeVz = 0
+            let rightEdgeVx = 0, rightEdgeVy = 0, rightEdgeVz = 0
+
             for (let j = 0; j <= CROSS_SEGS; j++) {
                 // Lateral offset: -halfWidth (left edge) to +halfWidth (right edge)
                 const uLat = (j / CROSS_SEGS - 0.5) * roadWidth
@@ -252,7 +260,7 @@ export class RoadMeshSystem {
 
                 const vy = gradeY + crownY + tiltY + pY
 
-                const idx = (i * (CROSS_SEGS + 1) + j) * 3
+                const idx = (i * vertsPerSection + j) * 3
                 positions[idx    ] = vx
                 positions[idx + 1] = vy
                 positions[idx + 2] = vz
@@ -279,23 +287,80 @@ export class RoadMeshSystem {
                 colors[idx    ] = r
                 colors[idx + 1] = g
                 colors[idx + 2] = b
+
+                // Capture edge vert positions for skirt generation below.
+                if (j === 0)          { leftEdgeVx  = vx; leftEdgeVy  = vy; leftEdgeVz  = vz }
+                if (j === CROSS_SEGS) { rightEdgeVx = vx; rightEdgeVy = vy; rightEdgeVz = vz }
             }
+
+            // ── Plan 09-10: Skirt verts — two extra verts per section ─────────────
+            // Left-edge bottom (local index CROSS_SEGS+1): same XZ as j=0 edge, Y dropped by skirtDepth.
+            // Right-edge bottom (local index CROSS_SEGS+2): same XZ as j=CROSS_SEGS edge, Y dropped.
+            // Color: asphalt base (road-dark — no markings on skirt faces).
+            const leftSkirtBase  = (i * vertsPerSection + (CROSS_SEGS + 1)) * 3
+            positions[leftSkirtBase    ] = leftEdgeVx
+            positions[leftSkirtBase + 1] = leftEdgeVy - skirtDepth
+            positions[leftSkirtBase + 2] = leftEdgeVz
+            colors[leftSkirtBase    ] = RC
+            colors[leftSkirtBase + 1] = GC
+            colors[leftSkirtBase + 2] = BC
+
+            const rightSkirtBase = (i * vertsPerSection + (CROSS_SEGS + 2)) * 3
+            positions[rightSkirtBase    ] = rightEdgeVx
+            positions[rightSkirtBase + 1] = rightEdgeVy - skirtDepth
+            positions[rightSkirtBase + 2] = rightEdgeVz
+            colors[rightSkirtBase    ] = RC
+            colors[rightSkirtBase + 1] = GC
+            colors[rightSkirtBase + 2] = BC
         }
 
         // ── Index buffer: quad strip → 2 triangles per quad (CCW winding) ────────
-        // Each quad connects sections i and i+1 across lateral vertices j and j+1.
-        const nQuads = (N_LONG - 1) * CROSS_SEGS
+        // Top surface: (N_LONG-1) * CROSS_SEGS quads — lateral strip connecting sections.
+        // Skirts: (N_LONG-1) * 2 quads — one left-edge skirt quad + one right-edge skirt quad
+        //         per section pair. Total quads = (N_LONG-1) * (CROSS_SEGS + 2).
+        const nQuads = (N_LONG - 1) * CROSS_SEGS  +  (N_LONG - 1) * 2
         const indices = new Uint32Array(nQuads * 6)
         let ii = 0
         for (let i = 0; i < N_LONG - 1; i++) {
+            // ── Top-surface quad strip ─────────────────────────────────────────
             for (let j = 0; j < CROSS_SEGS; j++) {
-                const a = i       * (CROSS_SEGS + 1) + j
-                const b = i       * (CROSS_SEGS + 1) + (j + 1)
-                const c = (i + 1) * (CROSS_SEGS + 1) + j
-                const d = (i + 1) * (CROSS_SEGS + 1) + (j + 1)
+                const a = i       * vertsPerSection + j
+                const b = i       * vertsPerSection + (j + 1)
+                const c = (i + 1) * vertsPerSection + j
+                const d = (i + 1) * vertsPerSection + (j + 1)
                 // CCW winding (Three.js default — FrontSide faces up).
                 indices[ii++] = a; indices[ii++] = c; indices[ii++] = b
                 indices[ii++] = b; indices[ii++] = c; indices[ii++] = d
+            }
+
+            // ── Left-edge skirt quad ───────────────────────────────────────────
+            // topLeft(i) = i*vertsPerSection + 0 (j=0 is left edge)
+            // topLeft(i+1) = (i+1)*vertsPerSection + 0
+            // bottomLeft(i) = i*vertsPerSection + (CROSS_SEGS+1)
+            // bottomLeft(i+1) = (i+1)*vertsPerSection + (CROSS_SEGS+1)
+            // Left skirt faces outward (-right direction): winding CW when viewed from -right.
+            // Three.js FrontSide, so we need CCW from the outside face (-right side).
+            // Outside view (-right): topLeft(i) → bottomLeft(i) → topLeft(i+1), then topLeft(i+1) → bottomLeft(i) → bottomLeft(i+1)
+            {
+                const tL0 = i       * vertsPerSection + 0
+                const tL1 = (i + 1) * vertsPerSection + 0
+                const bL0 = i       * vertsPerSection + (CROSS_SEGS + 1)
+                const bL1 = (i + 1) * vertsPerSection + (CROSS_SEGS + 1)
+                indices[ii++] = tL0; indices[ii++] = bL0; indices[ii++] = tL1
+                indices[ii++] = tL1; indices[ii++] = bL0; indices[ii++] = bL1
+            }
+
+            // ── Right-edge skirt quad ──────────────────────────────────────────
+            // topRight(i) = i*vertsPerSection + CROSS_SEGS (j=CROSS_SEGS is right edge)
+            // bottomRight(i) = i*vertsPerSection + (CROSS_SEGS+2)
+            // Right skirt faces outward (+right direction): winding CCW from +right side.
+            {
+                const tR0 = i       * vertsPerSection + CROSS_SEGS
+                const tR1 = (i + 1) * vertsPerSection + CROSS_SEGS
+                const bR0 = i       * vertsPerSection + (CROSS_SEGS + 2)
+                const bR1 = (i + 1) * vertsPerSection + (CROSS_SEGS + 2)
+                indices[ii++] = tR0; indices[ii++] = tR1; indices[ii++] = bR0
+                indices[ii++] = bR0; indices[ii++] = tR1; indices[ii++] = bR1
             }
         }
 
