@@ -6,8 +6,8 @@
  * Exports:
  *   assert(label, condition) — logs PASS:/FAIL: prefix to console
  *   mockCoarseHeight(wx, wz) — deterministic 50% steep ramp terrain (wz * 0.5)
- *   ribbonCenterlineVertex(geo, sectionIdx, crossSegs) — read {x,y,z} of the centerline
- *     vertex for section sectionIdx from a ribbon BufferGeometry produced by sweepRibbon
+ *   ribbonCenterlineVertex(geo, sectionIdx, crossSegs, vertsPerSection) — read {x,y,z} of the
+ *     centerline vertex for section sectionIdx from a ribbon BufferGeometry produced by sweepRibbon
  *   TEST_PARAMS — minimal RANGER_PARAMS mirror with coarse + road routing fields
  *
  * Purpose: Isolate road routing tests from live simplex noise and full RANGER_PARAMS.
@@ -35,23 +35,27 @@ export function assert(label, condition) {
  * Read the world-space {x, y, z} of the centerline vertex for a given longitudinal
  * section from a ribbon BufferGeometry produced by sweepRibbon().
  *
- * sweepRibbon() vertex layout:
- *   vertex index = sectionIdx * (CROSS_SEGS + 1) + lateralIdx
+ * sweepRibbon() vertex layout after Plan 09-10 (skirts added):
+ *   vertsPerSection = (CROSS_SEGS + 1) + 2   (11 top + 2 skirt bottom = 13 per section)
+ *   vertex index = sectionIdx * vertsPerSection + lateralIdx
  *   lateralIdx 0 = left edge, lateralIdx CROSS_SEGS = right edge
  *   Centerline = lateralIdx = Math.floor(CROSS_SEGS / 2) = CROSS_SEGS/2 for even CROSS_SEGS
+ *   Skirt bottom verts live at local indices CROSS_SEGS+1 (left) and CROSS_SEGS+2 (right).
  *
  * Used by test-road-height-agreement.html to extract ribbon vertex Y for cross-checking
- * against the physics surface (_sampleCarveWorld) at the same world XZ (Plan 09-09 exit gate).
+ * against the physics surface (_sampleCarveWorld) at the same world XZ (Plan 09-12 exit gate).
  *
- * @param {THREE.BufferGeometry} geo         — ribbon geometry from sweepRibbon
- * @param {number}               sectionIdx  — longitudinal section index (0 .. N_LONG-1)
- * @param {number}               [crossSegs=8] — CROSS_SEGS value used when sweeping
+ * @param {THREE.BufferGeometry} geo              — ribbon geometry from sweepRibbon
+ * @param {number}               sectionIdx       — longitudinal section index (0 .. N_LONG-1)
+ * @param {number}               [crossSegs=8]    — CROSS_SEGS value used when sweeping
+ * @param {number}               [vertsPerSection] — total verts per section; defaults to
+ *                                                   (crossSegs+1)+2 (Plan 09-10 stride with skirts)
  * @returns {{ x: number, y: number, z: number }} world-space position of the centerline vertex
  */
-export function ribbonCenterlineVertex(geo, sectionIdx, crossSegs = 8) {
+export function ribbonCenterlineVertex(geo, sectionIdx, crossSegs = 8, vertsPerSection = (crossSegs + 1) + 2) {
     const pos       = geo.attributes.position
     const latIdx    = Math.floor(crossSegs / 2)
-    const vertIdx   = sectionIdx * (crossSegs + 1) + latIdx
+    const vertIdx   = sectionIdx * vertsPerSection + latIdx
     return {
         x: pos.getX(vertIdx),
         y: pos.getY(vertIdx),
