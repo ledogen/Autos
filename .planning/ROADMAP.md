@@ -27,7 +27,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 
 - [x] **Phase 7: Free-Cam + Seeded Layered Terrain** (5 plans) — World-seed foundation, three-layer Sierra terrain, free-fly camera (completed 2026-06-09)
 - [x] **Phase 8: Road Routing** (7 plans) — REPLAN (valley-following trunk, per-tile A* retired): deterministic valley-wrapping streaming trunk (trunk-only; spurs deferred), per-tile-sliced queryable splines, seam exit gate. Gap closure 08-05/06/07 built the valley-trunk core into src/road.js — re-verified 7/7 must-haves + human UAT 3/3 (D-06 gate PASS, viz, on-road spawn) 2026-06-10. Non-blocking follow-ups: PERF-01 (load time), QUAL-01 (spline shape). (completed 2026-06-10)
-- [x] **Phase 9: Road Surface** — Ribbon mesh, worn asphalt, crown + camber, cut-and-fill terrain carve, 5-zone materials, merged at-grade intersections, physics height and normal (plans executed; gaps_found — height-agreement exit gate violated, gap-closure pending) (completed 2026-06-12)
+- [~] **Phase 9: Road Surface** — Ribbon mesh, worn asphalt, crown + camber, cut-and-fill terrain carve, 5-zone materials, merged at-grade intersections, physics height and normal. Plans 09-01..09 executed; verification found the carve-and-meet height-agreement gate violated + a perf regression. RE-ARCHITECTED via gap-closure 09-10..12: decal ribbon authoritative on top (polygonOffset + edge skirts), terrain carved cheaply BELOW the ribbon (perf restored), physics still rides the ribbon, new 3-clause exit gate (terrain-below + ribbon-driven + longitudinal continuity) replaces the retired equality gate.
 - [ ] **Phase 10: POI Hooks + Polish** — Seeded POI anchor data contract; pothole/crack stretch
 
 ## Phase Details
@@ -82,14 +82,20 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
   4. The road surface looks like asphalt — dark grey with lane markings, no external asset files required
   5. (Stretch) Driving slowly on the road surface, pothole and crack micro-perturbations are felt as slight vertical jolts through the suspension
   6. Where two roads cross, they mesh as a single merged at-grade paved junction (one shared footprint, not z-fighting overlapping ribbons), reproducible and stable while driving (no pop/rebuild as you fly past)
-**Plans**: 6 plans (waves 1-6, strictly sequential — carve architecture + shared road files force ordering)
+**Plans**: 9 plans executed + 3 gap-closure RE-ARCH plans (09-10..12 — decal-ribbon-on-top re-architecture, waves 1-3 sequential on shared road files)
   - [x] 09-01-PLAN.md — BUG-08 window-invariant splines (D-16) + module-scope _segXZ + scaffold test-road-carve.html/test-road-mesh.html harnesses (SURF-07 prereq)
   - [x] 09-02-PLAN.md — road-carve.js pure carve + smoothed design grade + cut-and-fill carve identical in Worker mesh build & analyticHeight/sampleHeight; EXIT GATES height-agreement + carve-continuity (SURF-04/05, D-05..D-08)
   - [x] 09-03-PLAN.md — road-mesh.js ribbon sweep + crown + curvature camber as real geometry/normal (folded into carve gradeY); streaming tile lifecycle (SURF-01/03, D-04)
   - [x] 09-04-PLAN.md — Merged at-grade junctions: _detectJunctions + fillet-arc footprint + triangulation + leg trim + shared-node elevation, same carve embed (SURF-07, D-12..D-15)
   - [x] 09-05-PLAN.md — Procedural worn-asphalt vertex colors + per-500m roadQuality tiers/markings + 5-zone feathered materials + full Roads-folder debug sliders (SURF-02, D-01/02/03/09/10/11)
   - [x] 09-06-PLAN.md — STRETCH: pothole/crack micro-noise on road surface only, severity from roadQuality, identical mesh+physics (SURF-06, D-03 — skip if P9 over budget)
-**Notes**: The carve blend design (carveBlend function + chunk.carveWeights Float32Array pattern) must be specified BEFORE any mesh or physics code is written. Height-agreement test extended to on-road positions is the exit gate: assert carveBlend result is identical in _flushPendingQueue vertex write and sampleHeight return. Carve-continuity test: sampleHeight stepped across the carve boundary must show no vertical step discontinuity (the surface stays continuous) — note this allows steep but continuous cut faces on switchback terrain; it only forbids degenerate vertical seams. SURF-06 (pothole/crack micro-noise) is a stretch goal within this phase — implement if P9 lands under budget. SCOPE EXPANDED 2026-06-11 (discuss-phase): road intersections folded in (SURF-07, merged at-grade paved footprint — built junction-aware from the start to keep mesh-building clean; merged-footprint algorithm is the primary research target); BUG-08 window-invariant splines folded in (junctions require stable geometry). Carve model is CUT-AND-FILL via one signed cross-section (cut on steep, raised dirt foundation on rolling) — see 09-CONTEXT.md D-05..D-16.
+  - [x] 09-07-PLAN.md — CR-04 carve-free design-grade sampler (rawHeightWorld) + design-grade cache invalidation + sampleDesignGradeAt arc-keyed lookup
+  - [x] 09-08-PLAN.md — CR-01/02/03 unified gradeY source + shared signedCurvature + pothole arcS (the carve-and-meet unification — later superseded by re-arch for the terrain mesh)
+  - [x] 09-09-PLAN.md — equality exit-gate integration test (RETIRED by 09-12 — terrainMeshY==ribbonY is wrong under the decal-on-top model)
+  - [ ] 09-10-PLAN.md — RE-ARCH 1/3: ribbon authoritative on top — polygonOffset (negative factor/units) + renderOrder + downward edge skirts (roadSkirtDepth) so the ribbon wins depth and has no see-through edge gap (SURF-03/04/05)
+  - [ ] 09-11-PLAN.md — RE-ARCH 2/3: terrain carved cheaply BELOW the ribbon — gut the per-vertex sampleDesignGradeAt/2nd-queryNearest/closure (perf restored), carve toward targetY−clearanceMargin under a footprint widened by carveExtraWidth; physics still rides the ribbon (SURF-04/05)
+  - [ ] 09-12-PLAN.md — RE-ARCH 3/3: new 3-clause exit gate replaces the retired 09-09 equality — terrain-below (≤ribbon−clearanceMargin) + ribbon-driven (physics==ribbon on-road) + longitudinal continuity (within-tile + across boundary) (SURF-04/05/06/07)
+**Notes**: ORIGINAL approach (carve terrain to MEET the ribbon at the road edge) was found geometrically unsound at verification — two independently-tessellated opaque surfaces interpenetrate between their own vertices (z-fighting/camo), and 09-08 introduced a per-vertex binary-search + 2nd queryNearest perf regression (~1 s terrain-load hang). RE-ARCHITECTED 2026-06-12 (user-locked decision): the ribbon is the ONE authoritative surface — it wins depth via polygonOffset + has edge skirts; terrain is carved CHEAPLY to stay clearanceMargin BELOW it under a wider footprint; physics samples the ribbon on-road (crown/camber/pothole fold-in retained in road.js _sampleCarveWorld). The 09-09 equality exit gate is RETIRED — the new gate is terrain-below + ribbon-driven + longitudinally-continuous. Worker CARVE SYNC unchanged: terrain-worker.js stores RAW heights, no decal symbols leak in. SURF-06 (pothole) is a stretch; SURF-07 (junctions) still needs human z-fight/stability confirmation.
 **UI hint**: yes
 
 ---
@@ -119,7 +125,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 | 6. Procedural Terrain | v1.0 | 3/3 | ✅ Complete | 2026-06-03 |
 | 7. Free-Cam + Seeded Layered Terrain | v1.1 | 5/5 | Complete   | 2026-06-09 |
 | 8. Road Routing | v1.1 | 7/7 | Complete   | 2026-06-10 |
-| 9. Road Surface | v1.1 | 9/9 | Complete   | 2026-06-12 |
+| 9. Road Surface | v1.1 | 9/12 | Re-arch gap-closure | — |
 | 10. POI Hooks + Polish | v1.1 | 0/? | Not started | — |
 
 ## Backlog
