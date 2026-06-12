@@ -347,4 +347,20 @@ export const RANGER_PARAMS = {
   // factor the ribbon reliably wins depth over terrain at all viewing angles.
   // Range: -8–0. Exposed as a Road Surface debug slider (live material update, no rebuild).
   roadPolygonOffsetUnits: -1,   // [-] polygon-offset units bias (Plan 09-10)
+
+  // ── Phase 9 Plan 11 — Cheap Below-Margin Terrain Carve (SURF-04 / SURF-05) ───
+  // roadClearanceMargin: the terrain-mesh carve target sits this many metres BELOW the
+  // ribbon surface so the terrain can never poke through the decal ribbon + skirt.
+  // 0.5 m gives a half-metre clearance buffer; raise to push terrain further down.
+  // The carved floor is NOT the driving surface — the truck rides the ribbon (road.js
+  // _sampleCarveWorld carries crown/camber/pothole and is unchanged).
+  // Range: 0–1.5 m. Exposed as a Road Surface debug slider.
+  roadClearanceMargin: 0.5,     // m — terrain stays this far BELOW ribbon surface (Plan 09-11)
+
+  // roadCarveExtraWidth: extra lateral width beyond roadHalfWidth + roadShoulderWidth
+  // that the terrain carve footprint covers. Ensures the carved depression is wider than
+  // the ribbon + its edge skirts so the skirt apron always sits on carved-down terrain.
+  // Default 3 m; increase if skirt edges are still sitting above terrain.
+  // Range: 0–8 m. Exposed as a Road Surface debug slider.
+  roadCarveExtraWidth: 3.0,     // m — extra carve footprint beyond ribbon + shoulder (Plan 09-11)
 };

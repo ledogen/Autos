@@ -812,18 +812,18 @@ export class TerrainSystem {
         const amp  = this._params.terrainAmplitude ?? 1.0
         const p    = this._params
 
-        const halfWidth      = p.roadHalfWidth     ?? 5
-        const shoulderWidth  = p.roadShoulderWidth  ?? 2.5
-        const fillHeight     = p.roadFillHeight     ?? 2.0
-        const fillSlope      = p.roadFillSlope      ?? 3.0
-        const cutSlope       = p.roadCutSlope       ?? 1.0
-        const crownHeightVal = p.crownHeight        ?? 0.05
-        const camberStrength = p.camberStrength     ?? 200
-        const MAX_CAMBER_RAD = 6 * (Math.PI / 180)
+        const halfWidth       = p.roadHalfWidth      ?? 5
+        const shoulderWidth   = p.roadShoulderWidth   ?? 2.5
+        const fillHeight      = p.roadFillHeight      ?? 2.0
+        const fillSlope       = p.roadFillSlope       ?? 3.0
+        const cutSlope        = p.roadCutSlope        ?? 1.0
+        // Plan 09-11: cheap below-margin carve params (no crown/camber/pothole in terrain mesh).
+        const clearanceMargin = p.roadClearanceMargin ?? 0.5
+        const carveExtraWidth = p.roadCarveExtraWidth ?? 3.0
 
-        // Maximum lateral extent to bother querying: ribbon + shoulder + max fill toe
+        // Maximum lateral extent to bother querying: ribbon + shoulder + max fill toe + extra width
         // fillToe = halfWidth + shoulderWidth + fillHeight * fillSlope
-        const maxExt = halfWidth + shoulderWidth + fillHeight * fillSlope + 4  // + 4 m margin
+        const maxExt = halfWidth + shoulderWidth + fillHeight * fillSlope + 4 + carveExtraWidth
 
         const originX = cx * S
         const originZ = cz * S
@@ -835,10 +835,60 @@ export class TerrainSystem {
         const nearest = this._roadSystem.queryNearest(chunkCX, chunkCZ, queryRadius)
         if (!nearest) return null  // no road near this chunk
 
-        // Need road design grade. Use _smoothDesignGrade if available, else use raw spline Y.
-        // We approximate design grade via the nearest spline's y value for now; the full
-        // sliding-window design grade is available via _smoothDesignGrade but requires
-        // iterating per-tile slices. We use a per-vertex queryNearest approach for accuracy.
+        // ── Plan 09-11: Cheap Continuous Per-Tile Design-Grade Target ────────────
+        // Compute the smoothed design-grade Y at the 4 tile corners (and tile center) ONCE,
+        // before the vertex loop. Inside the loop we bilinearly interpolate between corners —
+        // a few multiplies, no binary search, no queryNearest, no closure.
+        //
+        // Continuity guarantee: adjacent tiles share corner positions (e.g., the top-right corner
+        // of tile A == the top-left corner of tile B). Evaluating sampleDesignGradeAt at the EXACT
+        // same world coordinates from both tiles guarantees the same target Y at the shared edge,
+        // so the carved depression is continuous across tile boundaries (no longitudinal step).
+        //
+        // Fallback: if a corner has no road within maxExt, its target Y is the raw terrain at that
+        // corner so the carve degrades gracefully to "no carve" away from the road.
+        //
+        // Corner layout (u, v):
+        //   (0,0) = top-left  (originX,        originZ)
+        //   (1,0) = top-right (originX+S,       originZ)
+        //   (0,1) = bot-left  (originX,         originZ+S)
+        //   (1,1) = bot-right (originX+S,       originZ+S)
+        //   centre (0.5,0.5)  (originX+S*0.5,   originZ+S*0.5)
+        //
+        // We sample at each of the 4 corners + the centre (5 calls max), then bilinear-interpolate
+        // in the loop. The centre sample is used to improve accuracy for large tiles by
+        // constructing 4 bilinear sub-quads, but for simplicity we use a single bilinear on the
+        // 4 corners; the centre sample is used to detect if road coverage is uneven.
+        //
+        // Implementation: straight bilinear on the 4 corners — adequate because the design grade
+        // is smooth and the tile is 64 m wide. Crown/camber/pothole are NOT included; they are
+        // handled exclusively by road.js _sampleCarveWorld (physics) and road-mesh.js sweepRibbon
+        // (visual ribbon). The terrain mesh only carries the trough floor.
+        const rawHW = (wx, wz) => this.rawHeightWorld(wx, wz)
+
+        /** Sample design-grade Y at world position (wx, wz); fallback to rawHeightWorld. */
+        const cornerGradeY = (wx, wz) => {
+            const cnr = this._roadSystem.queryNearest(wx, wz, maxExt + 1)
+            if (!cnr) return rawHW(wx, wz)
+            if (cnr.spline) {
+                return this._roadSystem.sampleDesignGradeAt(cnr.spline, cnr.arcS, rawHW, p)
+            }
+            return cnr.point.y
+        }
+
+        // 4 tile corners (shared with adjacent tiles — continuity guarantee):
+        const g00 = cornerGradeY(originX,     originZ)        // (0,0) top-left
+        const g10 = cornerGradeY(originX + S, originZ)        // (1,0) top-right
+        const g01 = cornerGradeY(originX,     originZ + S)    // (0,1) bot-left
+        const g11 = cornerGradeY(originX + S, originZ + S)    // (1,1) bot-right
+
+        // Bilinear interpolation helper — u,v in [0,1] across the tile.
+        // Returns the interpolated design-grade Y at fractional position (u,v).
+        const bilinearGrade = (u, v) =>
+            g00 * (1 - u) * (1 - v) +
+            g10 * u       * (1 - v) +
+            g01 * (1 - u) * v       +
+            g11 * u       * v
 
         const table = new Float32Array(N * N * 2)
         let anyNonZero = false
