@@ -47,7 +47,7 @@ Requirements for milestone v1.1. Each maps to roadmap phases P7–P10.
 - [x] **SURF-04**: The physics surface carries the road's height AND normal, so the car feels the crown and bank
 - [x] **SURF-05**: The road embeds in the terrain via cut-and-fill — cut faces into high/steep ground, raised graded-dirt embankment on rolling ground — blended over a shoulder width and applied identically in mesh build and physics sampler *(revised 2026-06-11: cut-and-fill, was "cut-biased over fill")*
 - [x] **SURF-06**: *(stretch)* Pothole/crack micro-noise perturbs only the road surface, severity driven by the per-stretch road-quality tier
-- [ ] **SURF-07**: Where two roads cross, they mesh as a single merged at-grade paved junction (one shared footprint, no z-fighting), built deterministically and stable while driving *(scoped into Phase 9 on 2026-06-11; folds FEAT-05 + BUG-08)*
+- [x] **SURF-07**: Where two roads cross, they mesh as a single merged at-grade paved junction (one shared footprint, no z-fighting), built deterministically and stable while driving *(scoped into Phase 9 on 2026-06-11; folds FEAT-05 + BUG-08)*
 
 ### POI Hooks (POI)
 
@@ -109,7 +109,7 @@ Which phases cover which requirements.
 | SURF-04 | Phase 9 | Complete |
 | SURF-05 | Phase 9 | Complete |
 | SURF-06 | Phase 9 | Complete |
-| SURF-07 | Phase 9 | Pending |
+| SURF-07 | Phase 9 | Complete |
 | POI-01 | Phase 10 | Pending |
 | POI-02 | Phase 10 | Pending |
 

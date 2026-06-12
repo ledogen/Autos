@@ -94,7 +94,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
   - [x] 09-09-PLAN.md — equality exit-gate integration test (RETIRED by 09-12 — terrainMeshY==ribbonY is wrong under the decal-on-top model)
   - [x] 09-10-PLAN.md — RE-ARCH 1/3: ribbon authoritative on top — polygonOffset (negative factor/units) + renderOrder + downward edge skirts (roadSkirtDepth) so the ribbon wins depth and has no see-through edge gap (SURF-03/04/05)
   - [x] 09-11-PLAN.md — RE-ARCH 2/3: terrain carved cheaply BELOW the ribbon — gut the per-vertex sampleDesignGradeAt/2nd-queryNearest/closure (perf restored), carve toward targetY−clearanceMargin under a footprint widened by carveExtraWidth; physics still rides the ribbon (SURF-04/05)
-  - [ ] 09-12-PLAN.md — RE-ARCH 3/3: new 3-clause exit gate replaces the retired 09-09 equality — terrain-below (≤ribbon−clearanceMargin) + ribbon-driven (physics==ribbon on-road) + longitudinal continuity (within-tile + across boundary) (SURF-04/05/06/07)
+  - [x] 09-12-PLAN.md — RE-ARCH 3/3: new 3-clause exit gate replaces the retired 09-09 equality — terrain-below (≤ribbon−clearanceMargin) + ribbon-driven (physics==ribbon on-road) + longitudinal continuity (within-tile + across boundary) (SURF-04/05/06/07)
 **Notes**: ORIGINAL approach (carve terrain to MEET the ribbon at the road edge) was found geometrically unsound at verification — two independently-tessellated opaque surfaces interpenetrate between their own vertices (z-fighting/camo), and 09-08 introduced a per-vertex binary-search + 2nd queryNearest perf regression (~1 s terrain-load hang). RE-ARCHITECTED 2026-06-12 (user-locked decision): the ribbon is the ONE authoritative surface — it wins depth via polygonOffset + has edge skirts; terrain is carved CHEAPLY to stay clearanceMargin BELOW it under a wider footprint; physics samples the ribbon on-road (crown/camber/pothole fold-in retained in road.js _sampleCarveWorld). The 09-09 equality exit gate is RETIRED — the new gate is terrain-below + ribbon-driven + longitudinally-continuous. Worker CARVE SYNC unchanged: terrain-worker.js stores RAW heights, no decal symbols leak in. SURF-06 (pothole) is a stretch; SURF-07 (junctions) still needs human z-fight/stability confirmation.
 **UI hint**: yes
 
@@ -125,7 +125,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 | 6. Procedural Terrain | v1.0 | 3/3 | ✅ Complete | 2026-06-03 |
 | 7. Free-Cam + Seeded Layered Terrain | v1.1 | 5/5 | Complete   | 2026-06-09 |
 | 8. Road Routing | v1.1 | 7/7 | Complete   | 2026-06-10 |
-| 9. Road Surface | v1.1 | 11/12 | In Progress|  |
+| 9. Road Surface | v1.1 | 12/12 | Complete   | 2026-06-12 |
 | 10. POI Hooks + Polish | v1.1 | 0/? | Not started | — |
 
 ## Backlog
