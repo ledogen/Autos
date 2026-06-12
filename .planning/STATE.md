@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Mountains & Roads
 status: executing
-stopped_at: Phase 9 context gathered (intersections scoped in)
+stopped_at: Phase 9 executed (6/6 plans) — verification gaps_found, height-agreement exit gate violated; gap-closure pending
 last_updated: "2026-06-11T20:40:29.335Z"
-last_activity: 2026-06-11 -- Phase 09 execution started
+last_activity: 2026-06-11 -- Phase 09 executed; verifier returned gaps_found (3/6 criteria), exit gate violated
 progress:
   total_phases: 4
   completed_phases: 2
