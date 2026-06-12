@@ -27,7 +27,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 
 - [x] **Phase 7: Free-Cam + Seeded Layered Terrain** (5 plans) — World-seed foundation, three-layer Sierra terrain, free-fly camera (completed 2026-06-09)
 - [x] **Phase 8: Road Routing** (7 plans) — REPLAN (valley-following trunk, per-tile A* retired): deterministic valley-wrapping streaming trunk (trunk-only; spurs deferred), per-tile-sliced queryable splines, seam exit gate. Gap closure 08-05/06/07 built the valley-trunk core into src/road.js — re-verified 7/7 must-haves + human UAT 3/3 (D-06 gate PASS, viz, on-road spawn) 2026-06-10. Non-blocking follow-ups: PERF-01 (load time), QUAL-01 (spline shape). (completed 2026-06-10)
-- [ ] **Phase 9: Road Surface** — Ribbon mesh, worn asphalt, crown + camber, cut-and-fill terrain carve, 5-zone materials, merged at-grade intersections, physics height and normal
+- [x] **Phase 9: Road Surface** — Ribbon mesh, worn asphalt, crown + camber, cut-and-fill terrain carve, 5-zone materials, merged at-grade intersections, physics height and normal (completed 2026-06-12)
 - [ ] **Phase 10: POI Hooks + Polish** — Seeded POI anchor data contract; pothole/crack stretch
 
 ## Phase Details
@@ -88,7 +88,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
   - [x] 09-03-PLAN.md — road-mesh.js ribbon sweep + crown + curvature camber as real geometry/normal (folded into carve gradeY); streaming tile lifecycle (SURF-01/03, D-04)
   - [x] 09-04-PLAN.md — Merged at-grade junctions: _detectJunctions + fillet-arc footprint + triangulation + leg trim + shared-node elevation, same carve embed (SURF-07, D-12..D-15)
   - [x] 09-05-PLAN.md — Procedural worn-asphalt vertex colors + per-500m roadQuality tiers/markings + 5-zone feathered materials + full Roads-folder debug sliders (SURF-02, D-01/02/03/09/10/11)
-  - [ ] 09-06-PLAN.md — STRETCH: pothole/crack micro-noise on road surface only, severity from roadQuality, identical mesh+physics (SURF-06, D-03 — skip if P9 over budget)
+  - [x] 09-06-PLAN.md — STRETCH: pothole/crack micro-noise on road surface only, severity from roadQuality, identical mesh+physics (SURF-06, D-03 — skip if P9 over budget)
 **Notes**: The carve blend design (carveBlend function + chunk.carveWeights Float32Array pattern) must be specified BEFORE any mesh or physics code is written. Height-agreement test extended to on-road positions is the exit gate: assert carveBlend result is identical in _flushPendingQueue vertex write and sampleHeight return. Carve-continuity test: sampleHeight stepped across the carve boundary must show no vertical step discontinuity (the surface stays continuous) — note this allows steep but continuous cut faces on switchback terrain; it only forbids degenerate vertical seams. SURF-06 (pothole/crack micro-noise) is a stretch goal within this phase — implement if P9 lands under budget. SCOPE EXPANDED 2026-06-11 (discuss-phase): road intersections folded in (SURF-07, merged at-grade paved footprint — built junction-aware from the start to keep mesh-building clean; merged-footprint algorithm is the primary research target); BUG-08 window-invariant splines folded in (junctions require stable geometry). Carve model is CUT-AND-FILL via one signed cross-section (cut on steep, raised dirt foundation on rolling) — see 09-CONTEXT.md D-05..D-16.
 **UI hint**: yes
 
@@ -119,7 +119,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 | 6. Procedural Terrain | v1.0 | 3/3 | ✅ Complete | 2026-06-03 |
 | 7. Free-Cam + Seeded Layered Terrain | v1.1 | 5/5 | Complete   | 2026-06-09 |
 | 8. Road Routing | v1.1 | 7/7 | Complete   | 2026-06-10 |
-| 9. Road Surface | v1.1 | 5/6 | In Progress|  |
+| 9. Road Surface | v1.1 | 6/6 | Complete   | 2026-06-12 |
 | 10. POI Hooks + Polish | v1.1 | 0/? | Not started | — |
 
 ## Backlog
