@@ -551,6 +551,27 @@ export class TerrainSystem {
      * @param {number} wz - World Z coordinate.
      * @returns {number} Height in metres (with terrainAmplitude applied).
      */
+    /**
+     * Sample terrain height at world-space (wx, wz) with NO carve hook applied.
+     * Returns exactly the `raw` value from analyticHeight — height()*terrainAmplitude — but
+     * skips the _sampleCarveWorld blend entirely. This is the carve-free design-grade input
+     * source for _smoothDesignGrade (CR-04 fix): feeding the smoothing window a carve-inclusive
+     * value caused crown/camber/pothole to be baked into the design grade and then re-added
+     * downstream (double-count). rawHeightWorld removes that structural error.
+     *
+     * Lives only on the main-thread TerrainSystem class — NOT mirrored in terrain-worker.js.
+     * The Worker already stores raw heights and applies no carve blend; this method is a
+     * thin main-thread wrapper and never belongs in the Worker CARVE SYNC body.
+     *
+     * @param {number} wx - World X coordinate.
+     * @param {number} wz - World Z coordinate.
+     * @returns {number} Raw (carve-free) terrain height in metres (terrainAmplitude applied).
+     */
+    rawHeightWorld(wx, wz) {
+        if (!this._noiseCoarse) throw new Error('rawHeightWorld called before reinitWorker — call-order bug')
+        return height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params) * (this._params.terrainAmplitude ?? 1.0)
+    }
+
     analyticHeight(wx, wz) {
         // Precondition: reinitWorker (called synchronously in the constructor) must have built
         // the noise closures. Throw rather than silently returning 0 — a 0 here would seat the

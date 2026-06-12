@@ -837,7 +837,7 @@ roadSystem.setRadius(640)
 terrainSystem.setRoadSystem(roadSystem)
 roadMeshSystem = new RoadMeshSystem(
   scene, roadSystem,
-  (x, z) => terrainSystem.analyticHeight(x, z),
+  (x, z) => terrainSystem.rawHeightWorld(x, z),  // CR-04: carve-free — no crown/camber/pothole baked into design-grade window
   RANGER_PARAMS,
   worldSeed  // D-03: roadQuality determinism requires the world seed
 )
