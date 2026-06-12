@@ -35,7 +35,11 @@
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
-import { crownProfile } from './road-carve.js'
+import { crownProfile, potholeNoise } from './road-carve.js'
+// roadQuality imported for SURF-06 D-03: pothole severity uses the same per-stretch
+// quality hook as markings. Importing from road-quality.js (not road-mesh.js) avoids
+// the road-mesh.js → terrain.js → road.js chain issues.
+import { roadQuality } from './road-quality.js'
 
 // ── Module-scope scratch vectors (queryNearest allocation guard) ───────────────
 // queryNearest is called at near-60fps cadence (resolveSpawn + Phase 9 consumption).
@@ -416,12 +420,14 @@ export class RoadSystem {
         let bestD2 = r2
         let bestSpline = null
         let bestU = 0
+        let bestRunKey = ''    // SURF-06 D-03: track runKey for roadQuality caller (pothole severity)
+        let bestArcLen = 0     // SURF-06 D-03: track arc length so caller can compute arcS = bestU * arcLen
 
         const qTileX = Math.floor(wx / CHUNK_SIZE)
         const qTileZ = Math.floor(wz / CHUNK_SIZE)
 
         // Probe one spline: sample at N arc-length intervals, track nearest U within radius.
-        const probeSpline = (spline) => {
+        const probeSpline = (spline, runKey) => {
             const len = spline.getLength ? spline.getLength() : 0
             // ~1 sample / 2 m, clamped to [16, 256] — enough resolution for a 200 m radius query.
             const n = Math.max(16, Math.min(256, Math.ceil((len || 64) / 2)))
@@ -430,7 +436,10 @@ export class RoadSystem {
                 spline.getPointAt(u, _scratchPt)
                 const dx = _scratchPt.x - wx, dz = _scratchPt.z - wz
                 const d2 = dx * dx + dz * dz
-                if (d2 < bestD2) { bestD2 = d2; bestSpline = spline; bestU = u }
+                if (d2 < bestD2) {
+                    bestD2 = d2; bestSpline = spline; bestU = u
+                    bestRunKey = runKey; bestArcLen = len
+                }
             }
         }
 
@@ -444,7 +453,7 @@ export class RoadSystem {
                 const key = `${qTileX + dx},${qTileZ + dz}`
                 const segs = this._tiles.get(key)
                 if (segs && segs.length) {
-                    for (const s of segs) probeSpline(s.spline)
+                    for (const s of segs) probeSpline(s.spline, s.runKey ?? '')
                 }
             }
         }
@@ -453,7 +462,9 @@ export class RoadSystem {
             // The only two allocations on the spline path: the returned point + unit tangent.
             const point = bestSpline.getPointAt(bestU)
             const tangent = bestSpline.getTangentAt(bestU)   // getTangentAt returns a UNIT vector
-            return { point, tangent }
+            // runKey and arcS (= bestU * bestArcLen) available for SURF-06 quality consumers.
+            // arcS is tile-local (0 → spline length), consistent with sweepRibbon's arcSOffset=0 default.
+            return { point, tangent, runKey: bestRunKey, arcS: bestU * bestArcLen }
         }
 
         // Fallback: no sliced spline came within radius — probe the raw network polylines
@@ -485,7 +496,8 @@ export class RoadSystem {
         // depending on build order (WR-04). Negate when the run points E→W so parity is deterministic.
         if (tangent.x < 0) tangent.negate()
         tangent.normalize()   // UNIT tangent (contract)
-        return { point, tangent }
+        // Fallback path: runKey unknown (network fallback lacks segment metadata), arcS=0.
+        return { point, tangent, runKey: '', arcS: 0 }
     }
 
     /**
@@ -1367,6 +1379,15 @@ export class RoadSystem {
             const tiltY = signedLat * Math.sin(camberAngle)
 
             designY = designY + crownY + tiltY
+
+            // ── SURF-06: pothole micro-noise (D-03) ─────────────────────────────
+            // Only on-ribbon (latDist < halfWidth) — does NOT affect shoulder blend.
+            // arcS is tile-local (nr.arcS = bestU * spline.arcLen), consistent with
+            // sweepRibbon which uses arcSOffset=0 (no global offset stored on segments).
+            if (p.potholeEnabled) {
+                const rq = roadQuality(nr.arcS ?? 0, nr.runKey ?? '', this._worldSeed)
+                designY += potholeNoise(wx, wz, rq, p)
+            }
         }
 
         // Blend weight: 1 on ribbon, ramp down across shoulder.

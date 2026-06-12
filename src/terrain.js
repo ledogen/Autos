@@ -27,7 +27,11 @@
  */
 
 import * as THREE from 'three'
-import { crownProfile } from './road-carve.js'
+import { crownProfile, potholeNoise } from './road-carve.js'
+// roadQuality imported for SURF-06 D-03: same per-stretch quality hook as markings.
+// Importing from road-quality.js (not road-mesh.js) avoids the circular dependency that
+// road-mesh.js → terrain.js → road-mesh.js would create.
+import { roadQuality } from './road-quality.js'
 
 // ── Module constants ───────────────────────────────────────────────────────
 
@@ -881,6 +885,16 @@ export class TerrainSystem {
 
                     const tiltY = signedLat * Math.sin(camberAngle)
                     designY = designY + crownY + tiltY
+
+                    // ── SURF-06: pothole micro-noise (D-03) ─────────────────────
+                    // Applied on-ribbon only (latDist < halfWidth already guaranteed here).
+                    // arcS from nr.arcS (bestU * spline.arcLen from queryNearest — tile-local,
+                    // consistent with sweepRibbon's arcSOffset=0 default).
+                    // runKey from nr.runKey (new queryNearest return field, Plan 09-06).
+                    if (p.potholeEnabled) {
+                        const rq = roadQuality(nr.arcS ?? 0, nr.runKey ?? '', this._worldSeed)
+                        designY += potholeNoise(wx, wz, rq, p)
+                    }
                 }
 
                 // Compute fill toe distance (how far the embankment foot extends laterally)

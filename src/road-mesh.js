@@ -32,8 +32,12 @@
 
 import * as THREE from 'three'
 import { CHUNK_SIZE } from './terrain.js'
-import { crownProfile, isConvexPolygon, triangulateConvexFan, earClip } from './road-carve.js'
-import { seedFor, mulberry32 } from './seed.js'
+import { crownProfile, isConvexPolygon, triangulateConvexFan, earClip, potholeNoise } from './road-carve.js'
+// roadQuality / hashRunKey / constants moved to road-quality.js (Plan 09-06) to break the
+// terrain.js → road-mesh.js → terrain.js circular import that SURF-06 would otherwise create.
+// Re-exported here so existing callers (test harness, road.js) can still import from road-mesh.js.
+export { roadQuality, hashRunKey, ROAD_QUALITY_STRETCH, ROAD_QUALITY_BLEND } from './road-quality.js'
+import { roadQuality, ROAD_QUALITY_STRETCH, ROAD_QUALITY_BLEND } from './road-quality.js'
 
 // ── Module-scope scratch vectors (GC-free per-sample allocation guard) ────────
 // sweepRibbon is called for every tile's every segment, multiple times per stream.
@@ -52,89 +56,11 @@ const MAX_CAMBER_RAD = 6 * (Math.PI / 180)
 // Build cap: one road tile per frame alongside terrain's MAX_BUILDS_PER_FRAME.
 const MAX_ROAD_BUILDS_PER_FRAME = 1
 
-// ── Road quality constants (D-02/D-03) ───────────────────────────────────────
-// ROAD_QUALITY_STRETCH: arc-length span per quality tier (metres). D-02.
-// Each 500 m stretch gets a deterministic quality value from (worldSeed, runKey, stretchIdx).
-const ROAD_QUALITY_STRETCH = 500
-
-// ROAD_QUALITY_BLEND: blend zone at stretch boundaries (metres). D-02.
-// Smooth-step over this span prevents the marking tier from snapping.
-const ROAD_QUALITY_BLEND = 10
-
 // ── Road quality lane-marking thresholds ─────────────────────────────────────
 // Markings drawn as bright vertex-color patches (no texture, no asset — D-01).
 // Widths are lateral distances from the road centerline (uLat).
 const MARK_CENTER_HALF = 0.15  // m half-width of centerline stripe
 const MARK_EDGE_HALF   = 0.10  // m half-width of edge-line stripe (measured inward from ribbon edge)
-
-// ── Road quality helpers (D-02/D-03) ─────────────────────────────────────────
-
-/**
- * Hash a runKey string into a stable 32-bit integer for use as a seedFor coordinate.
- * Reuses the djb2-style approach: fold each character using Math.imul.
- * Pure function — no side effects. Deterministic (D-16).
- *
- * @param {string} runKey — per-run identifier from road._network (e.g. "mz3")
- * @returns {number} unsigned 32-bit integer
- */
-function hashRunKey(runKey) {
-    let h = 5381
-    const s = String(runKey)
-    for (let i = 0; i < s.length; i++) {
-        h = (Math.imul(h, 33) ^ s.charCodeAt(i)) >>> 0
-    }
-    return h >>> 0
-}
-
-/**
- * Compute the blended road quality value at arc-length `arcS` along a run.
- *
- * Algorithm (D-02):
- *   stretchIdx = floor(arcS / ROAD_QUALITY_STRETCH)
- *   Each stretch: quality = mulberry32(seedFor(worldSeed, 'roadquality', hashRunKey(runKey), stretchIdx))()
- *   Within ROAD_QUALITY_BLEND metres of a stretch boundary: smoothstep-blend adjacent stretch values.
- *
- * Returns a value in [0, 1). Deterministic from (worldSeed, runKey, arcS) — D-16.
- *
- * D-03: This function IS the labeled `roadQuality` hook. Call it from any surface consumer
- * (markings here, pothole severity in Plan 09-06) to get the per-arc quality value.
- *
- * @param {number} arcS      — arc-length along the run (metres)
- * @param {string} runKey    — per-run identifier
- * @param {number} worldSeed — unsigned 32-bit world seed
- * @returns {number} road quality in [0, 1); higher = better condition
- */
-export function roadQuality(arcS, runKey, worldSeed) {
-    const rk = hashRunKey(runKey)
-    const stretchIdx = Math.floor(arcS / ROAD_QUALITY_STRETCH)
-
-    // Quality for the current stretch
-    const q0 = mulberry32(seedFor(worldSeed, 'roadquality', rk, stretchIdx))()
-
-    // Arc-length fraction within the current stretch [0, 1)
-    const fracInStretch = (arcS % ROAD_QUALITY_STRETCH) / ROAD_QUALITY_STRETCH
-
-    // Blend at the END boundary (last ROAD_QUALITY_BLEND metres of this stretch)
-    const blendStart = 1.0 - ROAD_QUALITY_BLEND / ROAD_QUALITY_STRETCH
-    if (fracInStretch >= blendStart) {
-        const q1 = mulberry32(seedFor(worldSeed, 'roadquality', rk, stretchIdx + 1))()
-        // smoothstep blend: t goes 0→1 across the blend zone
-        const tRaw = (fracInStretch - blendStart) / (ROAD_QUALITY_BLEND / ROAD_QUALITY_STRETCH)
-        const t = tRaw * tRaw * (3 - 2 * tRaw)  // smoothstep
-        return q0 + (q1 - q0) * t
-    }
-
-    // Blend at the START boundary (first ROAD_QUALITY_BLEND metres of this stretch)
-    const blendEnd = ROAD_QUALITY_BLEND / ROAD_QUALITY_STRETCH
-    if (fracInStretch < blendEnd && stretchIdx > 0) {
-        const qPrev = mulberry32(seedFor(worldSeed, 'roadquality', rk, stretchIdx - 1))()
-        const tRaw = fracInStretch / blendEnd
-        const t = tRaw * tRaw * (3 - 2 * tRaw)  // smoothstep
-        return qPrev + (q0 - qPrev) * t
-    }
-
-    return q0
-}
 
 // ── RoadMeshSystem ────────────────────────────────────────────────────────────
 
@@ -320,8 +246,18 @@ export class RoadMeshSystem {
                 const tiltY = uLat * Math.sin(camberAngle)
 
                 const vx = posX + rightX * uLat
-                const vy = gradeY + crownY + tiltY
                 const vz = posZ + rightZ * uLat
+
+                // ── SURF-06: pothole/crack perturbation (D-03) ─────────────────
+                // Applied only on-ribbon (|uLat| < halfWidth) — zero outside ribbon.
+                // Uses world position (vx, vz) as lattice key — identical to the
+                // carve table builder and _sampleCarveWorld (height-agreement gate).
+                const absLatP = Math.abs(uLat)
+                const pY = absLatP < halfWidth
+                    ? potholeNoise(vx, vz, q, params)
+                    : 0
+
+                const vy = gradeY + crownY + tiltY + pY
 
                 const idx = (i * (CROSS_SEGS + 1) + j) * 3
                 positions[idx    ] = vx

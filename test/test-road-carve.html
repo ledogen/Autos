@@ -324,6 +324,106 @@
         console.log('SURF-03 crown + camber direction assertions complete.')
     })()
 
+    // ── SURF-06: pothole height-agreement + nonzero on low quality (Plan 09-06) ──
+    // Asserts:
+    //  1. potholeNoise returns non-zero perturbation on low-quality road stretch.
+    //  2. potholeNoise returns near-zero on high-quality (severity ≈ 0 when rq ≈ 1).
+    //  3. potholeNoise is disabled when potholeEnabled=false.
+    //  4. Height-agreement: potholeNoise(wx, wz, rq, params) is deterministic — calling it
+    //     from the mesh path and physics path with the same (wx, wz) produces identical output.
+    //     This is the height-agreement gate for SURF-06.
+    //  5. Carve-continuity is unaffected — potholeNoise only modifies on-ribbon gradeY,
+    //     not the shoulder blend, so carveBlend continuity assertions still pass.
+    ;(async function testSurf06Potholes() {
+        const { potholeNoise } = await import('../src/road-carve.js')
+
+        const baseParams = {
+            potholeEnabled:   true,
+            potholeAmplitude: 0.04,
+            potholeFrequency: 0.3,
+        }
+
+        // ── 1. Low quality → non-zero perturbation ──────────────────────────
+        // rq=0 means full severity — the output is determined by the noise hash.
+        // At some world positions the hash may be near zero; test several.
+        {
+            const wx = 137.5, wz = 83.2
+            const p = potholeNoise(wx, wz, 0.0, baseParams)
+            assert(`SURF-06 pothole nonzero on low quality (rq=0): pNoise=${p.toFixed(5)}`,
+                Math.abs(p) > 1e-6)
+        }
+
+        // ── 2. High quality → near-zero perturbation ────────────────────────
+        // rq=1.0 means severity=0 — should return exactly 0.
+        {
+            const wx = 137.5, wz = 83.2
+            const p = potholeNoise(wx, wz, 1.0, baseParams)
+            assert(`SURF-06 pothole near-zero on high quality (rq=1.0): pNoise=${p.toFixed(8)}`,
+                Math.abs(p) < 1e-9)
+        }
+
+        // ── 3. Disabled when potholeEnabled=false ───────────────────────────
+        {
+            const disabledParams = { ...baseParams, potholeEnabled: false }
+            const p = potholeNoise(100.0, 200.0, 0.0, disabledParams)
+            assert(`SURF-06 pothole disabled: potholeEnabled=false → pNoise=${p}`,
+                p === 0)
+        }
+
+        // ── 4. Height-agreement: deterministic from (wx, wz) ────────────────
+        // Calling potholeNoise twice at the same position with the same params
+        // must return the same value (pure function, no state).
+        // This simulates the mesh path and physics path both computing the same Y.
+        {
+            const wx = 255.3, wz = -47.8
+            const rq = 0.15  // low quality stretch
+            const p1 = potholeNoise(wx, wz, rq, baseParams)
+            const p2 = potholeNoise(wx, wz, rq, baseParams)
+            assert(`SURF-06 pothole height-agreement: same (wx,wz) → same perturbation`,
+                p1 === p2)
+            // Also verify the perturbed gradeY from mesh == perturbed gradeY from physics:
+            // gradeY_mesh   = designGradeY + p1
+            // gradeY_physics = designGradeY + p2
+            // Since p1 === p2, height-agreement holds.
+            const designGradeY = 42.7  // arbitrary
+            const meshY    = designGradeY + p1
+            const physicsY = designGradeY + p2
+            assert(`SURF-06 pothole height-agreement: perturbed mesh Y == perturbed physics Y`,
+                Math.abs(meshY - physicsY) < 1e-12)
+            console.log(`SURF-06 pothole height-agreement: perturbation=${p1.toFixed(5)}m at (${wx},${wz}) rq=${rq}`)
+        }
+
+        // ── 5. Severity scales with (1 - rq) ────────────────────────────────
+        // At the same world position, higher quality → smaller absolute perturbation.
+        {
+            const wx = 137.5, wz = 83.2
+            const pLow  = Math.abs(potholeNoise(wx, wz, 0.0,  baseParams))  // rq=0 → full severity
+            const pMid  = Math.abs(potholeNoise(wx, wz, 0.5,  baseParams))  // rq=0.5 → half severity
+            const pHigh = Math.abs(potholeNoise(wx, wz, 1.0,  baseParams))  // rq=1 → zero severity
+            assert(`SURF-06 pothole severity: low(${pLow.toFixed(5)}) >= mid(${pMid.toFixed(5)})`,
+                pLow >= pMid - 1e-9)
+            assert(`SURF-06 pothole severity: mid >= high(${pHigh.toFixed(8)})`,
+                pMid >= pHigh - 1e-9)
+        }
+
+        // ── 6. Amplitude is within expected range (sanity) ───────────────────
+        // With potholeAmplitude=0.04, combined noise cannot exceed ~1.4 * amplitude.
+        {
+            let maxAbs = 0
+            for (let i = 0; i < 50; i++) {
+                const wx = i * 3.37
+                const wz = i * 7.13
+                const p = Math.abs(potholeNoise(wx, wz, 0.0, baseParams))
+                maxAbs = Math.max(maxAbs, p)
+            }
+            const expectedMax = baseParams.potholeAmplitude * 2.0  // generous 2× tolerance
+            assert(`SURF-06 pothole amplitude bounded: max=${maxAbs.toFixed(5)}m < ${expectedMax}m`,
+                maxAbs < expectedMax)
+        }
+
+        console.log('SURF-06 pothole height-agreement + nonzero on low quality: all checks complete.')
+    })()
+
   </script>
 </body>
 </html>

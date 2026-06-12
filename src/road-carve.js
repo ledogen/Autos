@@ -106,6 +106,114 @@ export function carveBlend(raw, dist, designGradeY, halfWidth, shoulderWidth) {
     return raw + t * (designGradeY - raw)
 }
 
+// ── SURF-06: Pothole / crack micro-noise (D-03) ───────────────────────────────
+// NOT synced into WORKER_SOURCE — carve table gradeY_preamp is built main-thread only
+// (the Worker stores RAW heights; it never applies carve). This function is called at
+// the THREE sites where on-ribbon gradeY is produced on the main thread:
+//   (a) road.js _sampleCarveWorld     (physics — analyticHeight)
+//   (b) terrain.js _buildCarveTable   (physics/mesh — sampleHeight + _flushPendingQueue)
+//   (c) road-mesh.js sweepRibbon      (visual ribbon)
+// These three sites all have (wx, wz) world coordinates for the vertex, which is the
+// canonical key — using world position ensures identical output at each site without
+// requiring arcS propagation through the carve table builder.
+//
+// Deviation note: plan specified potholeNoise(arcS, uLat, ...) but _buildCarveTable
+// iterates a grid and does not track arcS. Using (wx, wz) as the hash key achieves
+// the same determinism guarantee and is the only input available at all three sites.
+
+/**
+ * Deterministic pothole / crack micro-noise for road surfaces.
+ *
+ * Returns a small signed Y perturbation (metres) at a world position.
+ * Applied ONLY to on-ribbon vertices (latDist < halfWidth) by the caller;
+ * must be zero-called for shoulder/terrain vertices to avoid bleeding.
+ *
+ * Severity scales with (1 - roadQuality):
+ *   roadQuality ≈ 1 (high quality): perturbation → 0
+ *   roadQuality ≈ 0 (low quality): perturbation at full amplitude
+ *
+ * Hash lattice: value-noise at two integer grid layers derived from world
+ * coordinates snapped to a 1/potholeFrequency spacing. Two-octave sum gives
+ * potholes (low freq) + crack texture (high freq). No Math.random, no Date.
+ *
+ * SURF-06 / D-03: same roadQuality value drives both markings (road-mesh.js)
+ * and pothole severity (here).
+ *
+ * @param {number} wx           — world X of the vertex (metres)
+ * @param {number} wz           — world Z of the vertex (metres)
+ * @param {number} rq           — road quality in [0,1]; 1=smooth, 0=rough
+ * @param {object} params       — RANGER_PARAMS (potholeEnabled, potholeAmplitude, potholeFrequency)
+ * @returns {number} Signed Y perturbation (metres). Always 0 when potholeEnabled is falsy.
+ *
+ * Pure function — no imports, no side effects. Deterministic (D-16). Worker-safe.
+ */
+export function potholeNoise(wx, wz, rq, params) {
+    if (!params.potholeEnabled) return 0
+
+    const amplitude  = params.potholeAmplitude  ?? 0.04   // m (default 4 cm)
+    const frequency  = params.potholeFrequency  ?? 0.3    // per m
+
+    // Severity: (1 - roadQuality) so high quality → near zero.
+    const severity = 1.0 - Math.max(0, Math.min(1, rq))
+    if (severity < 1e-6) return 0
+
+    // ── Value-noise hash (no Math.random / no Date) ──────────────────────────
+    // Integer lattice hash: multiplies primes, bit-mixed by >>> 0.
+    // Two-octave sum: pothole layer + crack layer.
+
+    // Octave 1 (potholes): spacing = 1/frequency
+    const freq1 = frequency
+    const gx1 = Math.floor(wx * freq1)
+    const gz1 = Math.floor(wz * freq1)
+    const fx1 = (wx * freq1) - gx1  // fractional [0,1)
+    const fz1 = (wz * freq1) - gz1
+
+    // Smoothstep for lattice interpolation
+    const sx1 = fx1 * fx1 * (3 - 2 * fx1)
+    const sz1 = fz1 * fz1 * (3 - 2 * fz1)
+
+    // Hash unsigned 32-bit integer from 2D lattice coords, mapped to [-1, 1]
+    const _h = (ix, iz) => {
+        let v = (Math.imul(ix + 3251, 2654435761) ^ Math.imul(iz + 1019, 2246822519)) >>> 0
+        v = (Math.imul(v ^ (v >>> 16), 2246822519)) >>> 0
+        v = (Math.imul(v ^ (v >>> 13), 3266489917)) >>> 0
+        v = (v ^ (v >>> 16)) >>> 0
+        return (v / 0xFFFFFFFF) * 2 - 1  // [-1, 1]
+    }
+
+    const v1_00 = _h(gx1,     gz1)
+    const v1_10 = _h(gx1 + 1, gz1)
+    const v1_01 = _h(gx1,     gz1 + 1)
+    const v1_11 = _h(gx1 + 1, gz1 + 1)
+    const noise1 = v1_00 * (1-sx1) * (1-sz1)
+                 + v1_10 *    sx1  * (1-sz1)
+                 + v1_01 * (1-sx1) *    sz1
+                 + v1_11 *    sx1  *    sz1
+
+    // Octave 2 (cracks): 2× frequency, 0.4× amplitude
+    const freq2 = frequency * 2.0
+    const gx2 = Math.floor(wx * freq2)
+    const gz2 = Math.floor(wz * freq2)
+    const fx2 = (wx * freq2) - gx2
+    const fz2 = (wz * freq2) - gz2
+    const sx2 = fx2 * fx2 * (3 - 2 * fx2)
+    const sz2 = fz2 * fz2 * (3 - 2 * fz2)
+
+    const v2_00 = _h(gx2 + 7919, gz2 + 6271)  // offset to decorrelate from octave 1
+    const v2_10 = _h(gx2 + 7920, gz2 + 6271)
+    const v2_01 = _h(gx2 + 7919, gz2 + 6272)
+    const v2_11 = _h(gx2 + 7920, gz2 + 6272)
+    const noise2 = v2_00 * (1-sx2) * (1-sz2)
+                 + v2_10 *    sx2  * (1-sz2)
+                 + v2_01 * (1-sx2) *    sz2
+                 + v2_11 *    sx2  *    sz2
+
+    // Combined noise: primary pothole + 40% crack
+    const combined = noise1 + 0.4 * noise2
+
+    return combined * amplitude * severity
+}
+
 // ── Junction polygon utilities (P9 plan 04) ──────────────────────────────────
 // No imports — Worker-safe discipline maintained for future use.
 // NOTE: junction footprint is main-thread only; these are NOT synced into WORKER_SOURCE.
