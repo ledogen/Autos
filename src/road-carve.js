@@ -214,6 +214,52 @@ export function potholeNoise(wx, wz, rq, params) {
     return combined * amplitude * severity
 }
 
+// ── CR-02: Shared signed-curvature helper (SURF-03 / plan 09-08) ─────────────
+// EXPORTED so it is NOT swept into the byte-identical Worker CARVE SYNC mirror
+// (the Worker never computes curvature; sampleCarve only reads the pre-baked table).
+// Called at all THREE sites with IDENTICAL arguments: ds = 2.0 m world-space.
+//   (a) road.js _sampleCarveWorld
+//   (b) terrain.js _buildCarveTable
+//   (c) road-mesh.js sweepRibbon (via _splineCurvatureSigned thin wrapper)
+
+/**
+ * Signed curvature from two unit tangent vectors and the arc-length span between them.
+ *
+ * Returns Math.sign(cross) * (dtLen / ds) where:
+ *   cross  = T0x*T1z - T0z*T1x  (positive = left turn / CCW)
+ *   dtLen  = |T1 - T0|           (chord of tangent change)
+ *   ds     = arc-length span between the two tangent sample points (metres)
+ *
+ * Degenerate guards (T-09-04):
+ *   - Either tangent length < 1e-8 → 0 (collapsed spline)
+ *   - ds < 1e-10 → 0 (zero span)
+ *
+ * @param {number} T0x — XZ tangent 0, X component (unit vector)
+ * @param {number} T0z — XZ tangent 0, Z component (unit vector)
+ * @param {number} T1x — XZ tangent 1, X component (unit vector)
+ * @param {number} T1z — XZ tangent 1, Z component (unit vector)
+ * @param {number} ds  — arc-length span between the two sample points (metres)
+ * @returns {number} Signed curvature κ (1/m). Positive = left turn (CCW).
+ *
+ * Pure function — no imports, no side effects. Deterministic (D-16).
+ */
+export function signedCurvature(T0x, T0z, T1x, T1z, ds) {
+    // Degenerate guard: zero tangent or zero span
+    const l0 = Math.sqrt(T0x * T0x + T0z * T0z)
+    const l1 = Math.sqrt(T1x * T1x + T1z * T1z)
+    if (l0 < 1e-8 || l1 < 1e-8 || ds < 1e-10) return 0
+
+    // Signed cross product: > 0 = left turn (bank right), < 0 = right turn (bank left)
+    const cross = T0x * T1z - T0z * T1x
+
+    // Curvature magnitude: |dT/ds| approximation (T is unit tangent)
+    const dtx = T1x - T0x
+    const dtz = T1z - T0z
+    const dtLen = Math.sqrt(dtx * dtx + dtz * dtz)
+
+    return Math.sign(cross) * (dtLen / ds)
+}
+
 // ── Junction polygon utilities (P9 plan 04) ──────────────────────────────────
 // No imports — Worker-safe discipline maintained for future use.
 // NOTE: junction footprint is main-thread only; these are NOT synced into WORKER_SOURCE.

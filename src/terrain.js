@@ -27,7 +27,7 @@
  */
 
 import * as THREE from 'three'
-import { crownProfile, potholeNoise } from './road-carve.js'
+import { crownProfile, potholeNoise, signedCurvature } from './road-carve.js'
 // roadQuality imported for SURF-06 D-03: same per-stretch quality hook as markings.
 // Importing from road-quality.js (not road-mesh.js) avoids the circular dependency that
 // road-mesh.js → terrain.js → road-mesh.js would create.
@@ -890,17 +890,14 @@ export class TerrainSystem {
                     const crownY = crownProfile(signedLat, halfWidth, crownHeightVal)
 
                     // Camber: estimate local signed curvature via a second queryNearest ahead.
-                    // eps = 2 m forward along road tangent. T-09-04 guard: skip if no result.
+                    // CR-02 (09-08): uses shared signedCurvature() with ds=2.0 — identical to sweepRibbon
+                    // and _sampleCarveWorld so camber magnitude matches at all three sites.
                     const eps = 2.0
                     const nrAhead = this._roadSystem.queryNearest(wx + tx * eps, wz + tz * eps, maxExt + eps)
                     let camberAngle = 0
                     if (nrAhead) {
                         const tAx = nrAhead.tangent.x, tAz = nrAhead.tangent.z
-                        const cross = tx * tAz - tz * tAx
-                        const dtx = tAx - tx, dtz = tAz - tz
-                        const dtLen = Math.sqrt(dtx * dtx + dtz * dtz)
-                        const kappa = dtLen / eps
-                        const rawCamber = camberStrength * Math.sign(cross) * kappa
+                        const rawCamber = camberStrength * signedCurvature(tx, tz, tAx, tAz, eps)
                         camberAngle = Math.max(-MAX_CAMBER_RAD, Math.min(MAX_CAMBER_RAD, rawCamber))
                     }
 

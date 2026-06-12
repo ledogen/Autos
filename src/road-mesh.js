@@ -32,7 +32,7 @@
 
 import * as THREE from 'three'
 import { CHUNK_SIZE } from './terrain.js'
-import { crownProfile, isConvexPolygon, triangulateConvexFan, earClip, potholeNoise } from './road-carve.js'
+import { crownProfile, isConvexPolygon, triangulateConvexFan, earClip, potholeNoise, signedCurvature } from './road-carve.js'
 // roadQuality / hashRunKey / constants moved to road-quality.js (Plan 09-06) to break the
 // terrain.js → road-mesh.js → terrain.js circular import that SURF-06 would otherwise create.
 // Re-exported here so existing callers (test harness, road.js) can still import from road-mesh.js.
@@ -112,32 +112,20 @@ export class RoadMeshSystem {
      *
      * Pure function — no side effects (D-16).
      */
-    _splineCurvatureSigned(spline, u, arcLen, eps = 0.01) {
-        const u0 = Math.max(0.0, u - eps)
-        const u1 = Math.min(1.0, u + eps)
+    _splineCurvatureSigned(spline, u, arcLen) {
+        // CR-02 (09-08): thin wrapper over the shared signedCurvature helper.
+        // Uses a fixed world-space ds = 2.0 m so camber matches both carve sites exactly.
+        const ds = 2.0
+        const du = arcLen > 1e-6 ? ds / arcLen : 0.02
+        const u0 = Math.max(0.0, u - du * 0.5)
+        const u1 = Math.min(1.0, u + du * 0.5)
 
         const T0 = spline.getTangentAt(u0)
         const T1 = spline.getTangentAt(u1)
 
-        // Guard: near-zero tangent length means the spline collapsed (degenerate control points).
-        // Return 0 to avoid NaN camber — T-09-04.
-        const l0 = Math.sqrt(T0.x * T0.x + T0.z * T0.z)
-        const l1 = Math.sqrt(T1.x * T1.x + T1.z * T1.z)
-        if (l0 < 1e-8 || l1 < 1e-8) return 0
-
-        // Signed curvature via XZ cross product of unit tangents.
-        // cross = T0.x*T1.z - T0.z*T1.x  > 0 = left turn, < 0 = right turn
-        const cross = T0.x * T1.z - T0.z * T1.x
-
-        // Magnitude: |T1 - T0| / (2*eps * arcLen) approximates |dT/ds| (curvature).
-        const dtx = T1.x - T0.x
-        const dtz = T1.z - T0.z
-        const dtLen = Math.sqrt(dtx * dtx + dtz * dtz)
-        const du = (u1 - u0)   // actual finite-diff span (may be smaller at endpoints)
-        if (du < 1e-10) return 0
-
-        const kappa = dtLen / (du * arcLen)
-        return Math.sign(cross) * kappa
+        // Actual arc-length span between the two sample points.
+        const actualDs = (u1 - u0) * arcLen
+        return signedCurvature(T0.x, T0.z, T1.x, T1.z, actualDs)
     }
 
     /**

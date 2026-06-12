@@ -35,7 +35,7 @@
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
-import { crownProfile, potholeNoise } from './road-carve.js'
+import { crownProfile, potholeNoise, signedCurvature } from './road-carve.js'
 // roadQuality imported for SURF-06 D-03: pothole severity uses the same per-stretch
 // quality hook as markings. Importing from road-quality.js (not road-mesh.js) avoids
 // the road-mesh.js → terrain.js → road.js chain issues.
@@ -1358,18 +1358,14 @@ export class RoadSystem {
             const crownY = crownProfile(signedLat, halfWidth, crownHeight)
 
             // Camber: estimate local signed curvature via a second queryNearest 2 m ahead.
-            // Two queries per analyticHeight call on road — acceptable for physics (not per-frame hot path).
-            // Curvature eps = 2 m world-space step along road heading.
+            // CR-02 (09-08): uses shared signedCurvature() with ds=2.0 — identical to sweepRibbon
+            // and _buildCarveTable so camber magnitude matches at all three sites.
             const eps = 2.0
             const nrAhead = this.queryNearest(wx + tx * eps, wz + tz * eps, maxExt + eps)
             let camberAngle = 0
             if (nrAhead) {
                 const tA = nrAhead.tangent
-                const cross = tx * tA.z - tz * tA.x   // signed curvature indicator
-                const dtx = tA.x - tx, dtz = tA.z - tz
-                const dtLen = Math.sqrt(dtx * dtx + dtz * dtz)
-                const kappa = dtLen / eps  // |dT/ds| approximation (T is unit tangent)
-                const signedKappa = Math.sign(cross) * kappa
+                const signedKappa = signedCurvature(tx, tz, tA.x, tA.z, eps)
                 const raw = camberStrength * signedKappa
                 const MAX_CAMBER = 6 * (Math.PI / 180)
                 camberAngle = Math.max(-MAX_CAMBER, Math.min(MAX_CAMBER, raw))
