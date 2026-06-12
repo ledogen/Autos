@@ -873,9 +873,22 @@ export class TerrainSystem {
                 // World-space raw (with amplitude)
                 const rawH = rawPre * amp
 
-                // Design grade Y: use the road point's Y value (world space from routing).
-                // For fill: clamp delta to fillHeight cap.
-                let designY = nr.point.y
+                // Design grade Y — CR-01 (09-08): derive base from the shared smoothed design grade
+                // via roadSystem.sampleDesignGradeAt so physics/mesh surface agrees by construction.
+                // Null-spline fallback: raw-polyline queryNearest returns no spline (nr.spline null);
+                // fall back to nr.point.y (pre-existing behavior) to avoid passing null to sampleDesignGradeAt.
+                // Cache note: memoized by spline WeakMap (09-07) — O(1) after first sweep per spline.
+                // Invalidated by invalidateDesignGradeCache() on surface-param slider changes.
+                let designY
+                if (nr.spline) {
+                    designY = this._roadSystem.sampleDesignGradeAt(
+                        nr.spline, nr.arcS,
+                        (x, z) => this.rawHeightWorld(x, z),  // carve-free — never analyticHeight
+                        p
+                    )
+                } else {
+                    designY = nr.point.y
+                }
                 const delta = designY - rawH
 
                 // Fill cap: never raise more than roadFillHeight
@@ -906,11 +919,12 @@ export class TerrainSystem {
 
                     // ── SURF-06: pothole micro-noise (D-03) ─────────────────────
                     // Applied on-ribbon only (latDist < halfWidth already guaranteed here).
-                    // arcS from nr.arcS (bestU * spline.arcLen from queryNearest — tile-local,
-                    // consistent with sweepRibbon's arcSOffset=0 default).
-                    // runKey from nr.runKey (new queryNearest return field, Plan 09-06).
+                    // CR-03 (09-08): key on centerline arcS = nr.arcS + (nr.arcSOffset ?? 0) to match
+                    // sweepRibbon's arcSOffset + u*arcLen. arcSOffset is 0 for all current segments
+                    // (seg.arcSOffset not yet tracked in _assignSlice) but the addition is forward-safe.
                     if (p.potholeEnabled) {
-                        const rq = roadQuality(nr.arcS ?? 0, nr.runKey ?? '', this._worldSeed)
+                        const centerlineArcS = (nr.arcS ?? 0) + (nr.arcSOffset ?? 0)
+                        const rq = roadQuality(centerlineArcS, nr.runKey ?? '', this._worldSeed)
                         designY += potholeNoise(wx, wz, rq, p)
                     }
                 }

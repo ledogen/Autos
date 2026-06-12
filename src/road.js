@@ -464,7 +464,8 @@ export class RoadSystem {
             const tangent = bestSpline.getTangentAt(bestU)   // getTangentAt returns a UNIT vector
             // runKey and arcS (= bestU * bestArcLen) available for SURF-06 quality consumers.
             // arcS is tile-local (0 → spline length), consistent with sweepRibbon's arcSOffset=0 default.
-            return { point, tangent, runKey: bestRunKey, arcS: bestU * bestArcLen }
+            // spline exposed for sampleDesignGradeAt (CR-01, plan 09-08) — WeakMap cache key.
+            return { point, tangent, runKey: bestRunKey, arcS: bestU * bestArcLen, spline: bestSpline }
         }
 
         // Fallback: no sliced spline came within radius — probe the raw network polylines
@@ -678,6 +679,14 @@ export class RoadSystem {
     // Live D-09 weight edits arrive by debug sliders mutating this._params; each re-stream refreshes
     // this._proto.params from this._params (see _refreshParams) so slider changes take effect.
     setSurfaceSampler(fn) { this._proto.surfaceY = fn }       // main.js passes terrainSystem.analyticHeight
+
+    /**
+     * Wire the carve-free raw-height sampler used by sampleDesignGradeAt (CR-01, plan 09-08).
+     * Must be rawHeightWorld — NOT analyticHeight (which re-introduces carve and would recurse).
+     * Called from main.js after terrainSystem is constructed.
+     * @param {Function} fn — (wx, wz) => number  carve-free raw terrain height (metres)
+     */
+    setRawHeightSampler(fn) { this._rawHeightSampler = fn }
 
     // Refresh the live cost weights from this._params (debug sliders mutate this._params in place).
     // Called on every re-stream so D-09 slider edits flow through deterministically (D-03).
@@ -1341,9 +1350,18 @@ export class RoadSystem {
 
         if (latDist > halfWidth + shoulderWidth) return null
 
-        // Design grade Y — road point Y is the routing elevation.
-        // Apply fill cap: never raise the surface more than fillHeight above raw terrain.
-        let designY = nr.point.y
+        // Design grade Y — CR-01 (09-08): derive base from the shared smoothed design grade
+        // via sampleDesignGradeAt so physics sees the same elevation as the visible ribbon.
+        // Null-spline fallback: raw-polyline queryNearest path returns no spline (nr.spline null);
+        // fall back to nr.point.y (pre-existing behavior) to avoid passing null to sampleDesignGradeAt.
+        // Cache note: sampleDesignGradeAt is memoized by spline object (WeakMap, 09-07) — O(1) after
+        // first sweep per spline; invalidated by invalidateDesignGradeCache() on surface-param change.
+        let designY
+        if (nr.spline && this._rawHeightSampler) {
+            designY = this.sampleDesignGradeAt(nr.spline, nr.arcS, this._rawHeightSampler, p)
+        } else {
+            designY = nr.point.y
+        }
         const delta = designY - rawAmp
         if (delta > fillHeight) designY = rawAmp + fillHeight
 
@@ -1378,10 +1396,12 @@ export class RoadSystem {
 
             // ── SURF-06: pothole micro-noise (D-03) ─────────────────────────────
             // Only on-ribbon (latDist < halfWidth) — does NOT affect shoulder blend.
-            // arcS is tile-local (nr.arcS = bestU * spline.arcLen), consistent with
-            // sweepRibbon which uses arcSOffset=0 (no global offset stored on segments).
+            // CR-03 (09-08): key on centerline arcS = nr.arcS + (nr.arcSOffset ?? 0) to match
+            // sweepRibbon's arcSOffset + u*arcLen. arcSOffset is 0 for all current segments
+            // (seg.arcSOffset not yet tracked in _assignSlice) but the addition is forward-safe.
             if (p.potholeEnabled) {
-                const rq = roadQuality(nr.arcS ?? 0, nr.runKey ?? '', this._worldSeed)
+                const centerlineArcS = (nr.arcS ?? 0) + (nr.arcSOffset ?? 0)
+                const rq = roadQuality(centerlineArcS, nr.runKey ?? '', this._worldSeed)
                 designY += potholeNoise(wx, wz, rq, p)
             }
         }

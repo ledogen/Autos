@@ -232,6 +232,7 @@ function debouncedRebuildFull () {
       roadSystem.init(scene)
       // Re-apply the new-API config the initial instance got (surface placement + stream radius).
       roadSystem.setSurfaceSampler((x, z) => terrainSystem.analyticHeight(x, z))
+      roadSystem.setRawHeightSampler((x, z) => terrainSystem.rawHeightWorld(x, z))  // CR-01: carve-free sampler for sampleDesignGradeAt
       roadSystem.setRadius(640)
       // Restore viz state — the next roadSystem.update(streamCenter) re-streams the new seed's
       // network and (because _debugVisible is set) rebuilds the centerline lines.
@@ -834,6 +835,7 @@ roadSystem.init(scene)
 // Place the centerline viz on the rendered terrain surface, and stream the valley-trunk
 // network at roughly the terrain view radius (08-07: setRadius replaces the retired setProtoRadius).
 roadSystem.setSurfaceSampler((x, z) => terrainSystem.analyticHeight(x, z))
+roadSystem.setRawHeightSampler((x, z) => terrainSystem.rawHeightWorld(x, z))  // CR-01: carve-free sampler for sampleDesignGradeAt
 roadSystem.setRadius(640)
 
 // Phase 9 (SURF-01 / SURF-03): RoadMeshSystem — ribbon mesh sweep with crown + camber.
