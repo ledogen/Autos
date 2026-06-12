@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Mountains & Roads
 status: executing
-stopped_at: Phase 9 executed (6/6 plans) — verification gaps_found, height-agreement exit gate violated; gap-closure pending
-last_updated: "2026-06-11T20:40:29.335Z"
-last_activity: 2026-06-11 -- Phase 09 executed; verifier returned gaps_found (3/6 criteria), exit gate violated
+stopped_at: Phase 9 context gathered (intersections scoped in)
+last_updated: "2026-06-12T03:28:31.089Z"
+last_activity: 2026-06-12
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 18
-  completed_plans: 12
+  total_plans: 21
+  completed_plans: 19
   percent: 50
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-05)
 ## Current Position
 
 Phase: 09 (road-surface) — EXECUTING
-Plan: 1 of 6
-Status: Executing Phase 09
-Last activity: 2026-06-11 -- Phase 09 execution started
+Plan: 2 of 9
+Status: Ready to execute
+Last activity: 2026-06-12
 
 ```
 v1.1 Progress: [                    ] 0% (0/4 phases)
@@ -57,6 +57,7 @@ v1.1 Progress: [                    ] 0% (0/4 phases)
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 09-road-surface P07 | 15 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,8 @@ Recent decisions affecting current work:
 - v1.1 Roadmap (2026-06-07): Road routing (Phase 8) is the highest-risk phase — requires a research spike before implementation to resolve how per-tile A* handles switchback paths at different altitudes
 - v1.1 Roadmap (2026-06-07): Carve blend design must be specified BEFORE any Phase 9 mesh or physics code — the post-read blend pattern (chunk.carveWeights Float32Array, never baked into chunk.heights) is the anti-drift discipline
 - v1.1 Roadmap (2026-06-07): Road router uses pure coarseHeight(wx,wz) only — never terrainSystem.sampleHeight (chunk-load-order dependent; breaks determinism)
+- [Phase ?]: CR-04: rawHeightWorld wraps height()*terrainAmplitude with no carve hook — feeds _smoothDesignGrade a carve-free profile eliminating double-count of crown/camber/pothole
+- [Phase ?]: CR-04 stale-cache: invalidateDesignGradeCache() called from debouncedRoadSurfaceRebuild on surface-param changes so memoized design-grade is always fresh
 
 ### Pending Todos
 
@@ -122,6 +125,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-06-11T08:01:45.637Z
+Last session: 2026-06-12T03:28:22.447Z
 Stopped at: Phase 9 context gathered (intersections scoped in)
-Resume file: .planning/phases/09-road-surface/09-CONTEXT.md
+Resume file: None
