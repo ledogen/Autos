@@ -298,17 +298,21 @@ function debouncedRoadRebuild () {
     roadSystem.invalidateCache()
     // Phase 9 (SURF-01): clear road ribbon tiles — they rebuild from the new network.
     if (roadMeshSystem) roadMeshSystem.clearAll()
+    // ORDER MATTERS (in-sim fix): re-stream the NEW road BEFORE rebuilding the ribbon/carve so
+    // both build against the new geometry. Previously the carve rebuilt here while _network was
+    // still empty/dirty (invalidateCache cleared it but had not re-streamed), so _buildCarveTable
+    // read a stale/empty road → the cuts + foundations lagged the new road position. The re-stream
+    // was also gated on _debugVisible, so with the centerline viz OFF the road never re-streamed on
+    // a slider change at all. Re-stream first, unconditionally; update() rebuilds viz lines only if
+    // visible (internal _debugVisible check), so this is safe regardless of viz state.
+    const c = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
+    roadSystem.update(c)   // re-streams (dirty) + re-slices; rebuilds viz lines only if visible
     // D3 (plan 09-22): the carve footprint bound reads roadMinTurnRadius directly from
-    // _roadSystem._params, so a re-route (min-radius change) must also re-bake the carve.
-    // This mirrors debouncedRoadSurfaceRebuild — rebuild chunks from Worker so _buildCarveTable
-    // runs again with the updated roadMinTurnRadius footprint cap.
+    // _roadSystem._params, so a re-route (min-radius change) must also re-bake the carve. Now that
+    // the road is re-streamed above, _buildCarveTable reads the NEW road geometry.
     if (terrainSystem) {
       terrainSystem.reinitWorker(worldSeed, RANGER_PARAMS)
       terrainSystem.rebuildAllChunksFromWorker()
-    }
-    if (roadSystem._debugVisible) {
-      const c = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
-      roadSystem.update(c)   // re-streams (dirty) + re-slices + rebuilds visible lines
     }
   }, 150)
 }
