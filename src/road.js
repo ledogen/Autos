@@ -1132,18 +1132,20 @@ export class RoadSystem {
                 continue
             }
 
-            // Fillet start (trim incoming leg back by tangentLen)
-            const T1 = {
-                x: B.x - tangentLen * inUx,
-                y: B.y,    // elevation at B (will be refined below)
-                z: B.z - tangentLen * inUz
-            }
+            // Fillet start (trim incoming leg back by tangentLen).
+            // MUST be a THREE.Vector3 — downstream consumers (_streamNetwork emitRun's
+            // p.clone(), the Catmull-Rom slicer) call Vector3 methods on every point.
+            const T1 = new THREE.Vector3(
+                B.x - tangentLen * inUx,
+                B.y,    // elevation at B (refined below)
+                B.z - tangentLen * inUz
+            )
             // Fillet end (trim outgoing leg forward by tangentLen)
-            const T2 = {
-                x: B.x + tangentLen * outUx,
-                y: B.y,
-                z: B.z + tangentLen * outUz
-            }
+            const T2 = new THREE.Vector3(
+                B.x + tangentLen * outUx,
+                B.y,
+                B.z + tangentLen * outUz
+            )
 
             // Interpolate Y linearly from A to C across T1 and T2 so grade stays continuous.
             // T1 is at fraction (inLen - tangentLen)/inLen back from B along A→B.
@@ -1197,7 +1199,7 @@ export class RoadSystem {
                 const arcX = centerX + minRadius * Math.cos(ang)
                 const arcZ = centerZ + minRadius * Math.sin(ang)
                 const arcY = T1.y + frac * (T2.y - T1.y)
-                out.push({ x: arcX, y: arcY, z: arcZ })
+                out.push(new THREE.Vector3(arcX, arcY, arcZ))
             }
 
             // T2 is pushed when we process the NEXT vertex (it becomes the start of the next leg).
