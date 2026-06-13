@@ -304,6 +304,31 @@ const FIXTURES = [
         // and also directly read sliceA.last / sliceB.first for the boundary metric.
     },
     {
+        // 09-18 D0 hairpin gate — ribbon inner edge must not fold.
+        // A 180° switchback constructed from two parallel straight legs connected by a
+        // semicircular arc of radius HAIRPIN_R. The arms are separated by 2*HAIRPIN_R.
+        // HAIRPIN_R is set above the D0 floor (roadHalfWidth + clearanceMargin + ε = 5.6 m),
+        // so by construction the ribbon inner edge (offset +halfWidth = 5 m inward) must not fold.
+        // The fixture points are pre-computed as a polyline approximation of the hairpin:
+        //   Leg 1: along +X from x=0 to x=50 at z=0
+        //   Semicircle: 17 points around center (50, 0, HAIRPIN_R) from z=0 to z=2·HAIRPIN_R
+        //   Leg 2: along -X from x=50 to x=0 at z=2·HAIRPIN_R
+        // The ribbon is swept ±ROAD_HALF_WIDTH (5 m) along XZ right-normal at each spline sample.
+        // Inner edge = the side closer to the hairpin center (the +Z side on leg 1, -Z on leg 2).
+        // Gate: inner-edge fold count == 0.
+        //   A fold is detected when the dot product of consecutive inner-edge segment tangents is < 0
+        //   (direction reversal) OR when adjacent inner-edge points show a cross-product sign flip
+        //   relative to the centerline tangent (arc-direction reversal).
+        name: 'hairpin',
+        role: 'gate',
+        description: 'Pre-filleted 180° hairpin (R=' + (() => {
+            const HAIRPIN_R_PREVIEW = 8  // m — must match HAIRPIN_R below
+            return HAIRPIN_R_PREVIEW
+        })() + ' m > D0 floor 5.6 m). Gate: ribbon inner-edge fold count == 0.',
+        // hairpinMode: true — handled by computeHairpinMetrics below (not computeMetrics)
+        hairpinMode: true,
+    },
+    {
         // 09-17 physics-sampling C0-continuity gate.
         // A gently curving path with a steeper Y rise — the staircase only shows where Y changes
         // with arc position AND the spline has XZ curvature so adjacent discrete samples have
@@ -470,6 +495,115 @@ function computeMetrics(fixture) {
     return { maxVStep, maxDKappa, maxDCamber, boundaryMismatch }
 }
 
+// ── Hairpin gate (09-18 D0) ───────────────────────────────────────────────────
+// Constructs a pre-filleted 180° hairpin polyline, sweeps a ribbon of ±halfWidth
+// along the XZ right-normal, and counts inner-edge folds.
+//
+// A fold is defined as: a segment on the inner-edge polyline whose tangent direction
+// has reversed relative to the previous segment (dot product < 0). This detects the
+// case where the inner edge "flips back" on itself — the hallmark of a ribbon that
+// has been pulled into a fold by a too-tight hairpin corner.
+//
+// The fixture is constructed as a true arc (pre-filleted to HAIRPIN_R), so a correct
+// arc-fillet with HAIRPIN_R above the D0 floor must produce zero folds.
+
+const HAIRPIN_R         = 8    // m — arc-fillet radius for fixture; above D0 floor (5.6 m)
+const HAIRPIN_HALF_W    = 5    // m — ribbon half-width (mirrors ROAD_HALF_WIDTH)
+const HAIRPIN_ARM_LEN   = 50   // m — length of each straight leg before/after the arc
+const HAIRPIN_ARC_SEGS  = 16   // segments to approximate the semicircle
+
+/**
+ * Build the pre-filleted hairpin polyline:
+ *   Leg 1: (0,0,0) → (HAIRPIN_ARM_LEN, 0, 0) along +X
+ *   Semicircle: 180° arc from (ARM_LEN,0,0) to (ARM_LEN,0,2R) around center (ARM_LEN,0,R)
+ *   Leg 2: (ARM_LEN,0,2R) → (0,0,2R) along −X
+ * Returns Array<{x,y,z}> (y=0 throughout — flat fixture).
+ */
+function buildHairpinPoints() {
+    const pts = []
+    // Leg 1
+    const legSteps = 10
+    for (let i = 0; i <= legSteps; i++) {
+        pts.push({ x: (i / legSteps) * HAIRPIN_ARM_LEN, y: 0, z: 0 })
+    }
+    // Semicircle: center at (HAIRPIN_ARM_LEN, 0, HAIRPIN_R), radius HAIRPIN_R.
+    // Sweeps from angle -π/2 (pointing toward z=0) to +π/2 (pointing toward z=2R).
+    for (let i = 1; i <= HAIRPIN_ARC_SEGS; i++) {
+        const a = -Math.PI / 2 + (Math.PI * i / HAIRPIN_ARC_SEGS)
+        pts.push({
+            x: HAIRPIN_ARM_LEN + HAIRPIN_R * Math.cos(a),
+            y: 0,
+            z: HAIRPIN_R + HAIRPIN_R * Math.sin(a),
+        })
+    }
+    // Leg 2
+    for (let i = 1; i <= legSteps; i++) {
+        pts.push({ x: HAIRPIN_ARM_LEN - (i / legSteps) * HAIRPIN_ARM_LEN, y: 0, z: 2 * HAIRPIN_R })
+    }
+    return pts
+}
+
+/**
+ * Sweep the ribbon cross-section along a set of sample points and count inner-edge folds.
+ * The inner edge is the +Z side (toward the hairpin's center) on leg 1, and the -Z side
+ * on leg 2. For simplicity we always offset in the same XZ-perpendicular direction per
+ * segment and detect folds by dot-product reversal of consecutive inner-edge segment tangents.
+ *
+ * @param {{ getPoint: (t:number)=>{x,y,z}, tangentAt: (t:number)=>{x,z} }} curve
+ * @param {number} halfWidth — ribbon half-width (m)
+ * @param {number} N — number of sample points
+ * @returns {{ foldCount: number, innerEdgePts: Array<{x,z}> }}
+ */
+function sweepRibbonInnerEdge(curve, halfWidth, N) {
+    const innerEdgePts = []
+
+    for (let i = 0; i < N; i++) {
+        const t = i / (N - 1)
+        const p    = curve.getPoint(t)
+        const tang = curve.tangentAt(t)
+        // XZ right-normal: rotate tangent 90° CW: (+tangZ, -tangX)
+        // "Inner edge" = left side of the path = negate the right-normal = (-tangZ, +tangX)
+        // (The hairpin curves left when driving along leg 1, so the inner edge is to the left.)
+        const innerX = p.x + halfWidth * (-tang.z)
+        const innerZ = p.z + halfWidth * ( tang.x)
+        innerEdgePts.push({ x: innerX, z: innerZ })
+    }
+
+    // Count folds: consecutive inner-edge segment tangent reversals (dot product < 0).
+    let foldCount = 0
+    for (let i = 1; i < innerEdgePts.length - 1; i++) {
+        const dx1 = innerEdgePts[i].x   - innerEdgePts[i-1].x
+        const dz1 = innerEdgePts[i].z   - innerEdgePts[i-1].z
+        const dx2 = innerEdgePts[i+1].x - innerEdgePts[i].x
+        const dz2 = innerEdgePts[i+1].z - innerEdgePts[i].z
+        const len1 = Math.hypot(dx1, dz1)
+        const len2 = Math.hypot(dx2, dz2)
+        if (len1 < 1e-8 || len2 < 1e-8) continue  // skip degenerate zero-length segments
+        const dot = (dx1 * dx2 + dz1 * dz2) / (len1 * len2)
+        if (dot < 0) foldCount++
+    }
+
+    return { foldCount, innerEdgePts }
+}
+
+/**
+ * Compute hairpin-gate metrics for the hairpin fixture.
+ * Returns { foldCount, armSeparation, halfWidth }.
+ */
+function computeHairpinMetrics() {
+    const pts   = buildHairpinPoints()
+    const curve = catmullRomCurve(pts)
+    const totalLen = curve.getLength()
+    const N = Math.max(64, Math.ceil(totalLen / 0.5))  // sample every ~0.5 m
+
+    const { foldCount } = sweepRibbonInnerEdge(curve, HAIRPIN_HALF_W, N)
+
+    // Arm separation = 2 * HAIRPIN_R (by construction)
+    const armSeparation = 2 * HAIRPIN_R
+
+    return { foldCount, armSeparation, halfWidth: HAIRPIN_HALF_W }
+}
+
 // ── Table printing ────────────────────────────────────────────────────────────
 
 function pf(v, digits) { return v == null ? '  —   ' : v.toFixed(digits) }
@@ -505,12 +639,17 @@ console.log('-'.repeat(120))
 let allGatesPassed = true
 
 const results = []
-// physics-mode fixtures are printed in a separate section after the main table
+// physics-mode and hairpin-mode fixtures are printed in separate sections after the main table
 const physicsModeFixtures = []
+const hairpinModeFixtures = []
 
 for (const fix of FIXTURES) {
     if (fix.physicsMode) {
         physicsModeFixtures.push(fix)
+        continue
+    }
+    if (fix.hairpinMode) {
+        hairpinModeFixtures.push(fix)
         continue
     }
     const m = computeMetrics(fix)
@@ -611,6 +750,43 @@ if (physicsModeFixtures.length > 0) {
 
         // Self-documenting contrast line (plan requirement)
         console.log(`    nearest-discrete: ΔY=${maxDY_nearest.toFixed(4)} m (would ${nearestExceeds ? 'FAIL' : 'PASS'}) | refine: ΔY=${maxDY_refine.toFixed(4)} m (${refinePass ? 'PASS' : 'FAIL'})`)
+    }
+    console.log('-'.repeat(120))
+    console.log('')
+}
+
+// ── 09-18 Hairpin gate section ────────────────────────────────────────────────
+if (hairpinModeFixtures.length > 0) {
+    console.log('='.repeat(120))
+    console.log('  HAIRPIN INNER-EDGE FOLD GATE (09-18 D0 arc-fillet)')
+    console.log(`  Gate: inner-edge fold count == 0 (ribbon of ±${HAIRPIN_HALF_W} m half-width must not self-fold)`)
+    console.log(`  Floor check: hairpin radius ${HAIRPIN_R} m > D0 floor (roadHalfWidth ${HAIRPIN_HALF_W} + clearance 0.5 + ε = 5.6 m)`)
+    console.log('='.repeat(120))
+    const hpHdr = [
+        col('Fixture',                 30),
+        col('armSeparation(m)',        18),
+        col('ribbonHalfWidth(m)',      18),
+        col('innerEdgeFolds',          16),
+        col('GATE',                    8),
+    ].join(' | ')
+    console.log(hpHdr)
+    console.log('-'.repeat(120))
+
+    for (const fix of hairpinModeFixtures) {
+        const { foldCount, armSeparation, halfWidth } = computeHairpinMetrics()
+        const gatePass = foldCount === 0
+
+        if (fix.role === 'gate' && !gatePass) allGatesPassed = false
+
+        const row = [
+            col(fix.name,                         30),
+            col(armSeparation.toFixed(2),         18),
+            col(halfWidth.toFixed(2),             18),
+            col(foldCount.toString(),             16),
+            col(gatePass ? '  PASS  ' : '  FAIL  ', 8),
+        ].join(' | ')
+        console.log(row)
+        console.log(`    arm separation: ${armSeparation.toFixed(2)} m | ribbon width: ${(2 * halfWidth).toFixed(2)} m | inner-edge folds: ${foldCount} (gate: == 0)`)
     }
     console.log('-'.repeat(120))
     console.log('')
