@@ -656,41 +656,55 @@ export class RoadSystem {
      * @param {number} centerX — chunk centre world X
      * @param {number} centerZ — chunk centre world Z
      * @param {number} radiusM — search radius in metres (same value as queryNearest early-reject)
-     * @returns {number[]} flat [x0,y0,z0,tx0,tz0, x1,y1,z1,tx1,tz1, ...] — length is a multiple of 5;
-     *   empty if no road nearby.  Stride = 5 (D4: position XYZ + tangent XZ for arm-disambiguation).
+     * @returns {{ pts: number[], sampleArcS: number[], sampleRunKeys: string[] }}
+     *   pts — flat [x0,y0,z0,tx0,tz0, x1,...] stride-5 (D4: position XYZ + tangent XZ).
+     *   sampleArcS[i] — arc-length along the spline (metres) for sample i (pts[i*5..i*5+4]).
+     *   sampleRunKeys[i] — canonical run key for sample i.
+     *   D3 (plan 09-22): sampleArcS + sampleRunKeys allow _buildCarveTable to call
+     *   camberProfile(arcS, runKey) per vertex (O(1) array lookup post-build — no spline eval).
      */
     collectChunkSplinePoints(centerX, centerZ, radiusM) {
-        if (!this._tiles) return []
+        if (!this._tiles) return { pts: [], sampleArcS: [], sampleRunKeys: [] }
 
         const qTileX = Math.floor(centerX / CHUNK_SIZE)
         const qTileZ = Math.floor(centerZ / CHUNK_SIZE)
         const blk    = Math.ceil(radiusM / CHUNK_SIZE)
 
-        const out = []
+        const pts          = []
+        const sampleArcS   = []
+        const sampleRunKeys = []
 
         for (let dx = -blk; dx <= blk; dx++) {
             for (let dz = -blk; dz <= blk; dz++) {
                 const key  = `${qTileX + dx},${qTileZ + dz}`
                 const segs = this._tiles.get(key)
                 if (!segs || !segs.length) continue
-                for (const { spline } of segs) {
+                for (const seg of segs) {
+                    const { spline } = seg
                     if (!spline) continue
                     // ~1 sample per 1.5 m, clamped to [2, 512].  This is the ONLY getPointAt
                     // site on the carve path — it runs ONCE per chunk (not per vertex).
-                    const len = spline.getLength ? (spline.getLength() || 64) : 64
-                    const n   = Math.max(2, Math.min(512, Math.ceil(len / 1.5)))
+                    const len    = spline.getLength ? (spline.getLength() || 64) : 64
+                    const n      = Math.max(2, Math.min(512, Math.ceil(len / 1.5)))
+                    const runKey = seg.runKey ?? ''
+                    // D3: arcSOffset is 0 for _tiles slices (same assumption as _sampleCarveWorld
+                    // where centerlineArcS = (nr.arcS ?? 0) + (nr.arcSOffset ?? 0) with arcSOffset=0).
+                    const arcSOffset = seg.arcSOffset ?? 0
                     for (let i = 0; i <= n; i++) {
                         const u = i / n
                         const p = spline.getPointAt(u)   // allocates; only site — pre-loop
                         const t = spline.getTangentAt(u) // D4: tangent for arm-disambiguation
                         // Stride 5: [x, y, z, tx, tz]
-                        out.push(p.x, p.y, p.z, t.x, t.z)
+                        pts.push(p.x, p.y, p.z, t.x, t.z)
+                        // D3: parallel arc-length + runKey arrays (indexed by sample number, not stride)
+                        sampleArcS.push(arcSOffset + u * len)
+                        sampleRunKeys.push(runKey)
                     }
                 }
             }
         }
 
-        return out
+        return { pts, sampleArcS, sampleRunKeys }
     }
 
     /**

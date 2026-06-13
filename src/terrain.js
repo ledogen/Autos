@@ -27,10 +27,12 @@
  */
 
 import * as THREE from 'three'
-// Plan 09-11: crownProfile, potholeNoise, signedCurvature, roadQuality removed from
-// terrain.js — crown/camber/pothole are no longer folded into the terrain mesh carve.
-// They are retained in road.js _sampleCarveWorld (physics) and road-mesh.js sweepRibbon
-// (visual ribbon). The terrain carve only produces the trough floor (below-margin target).
+// Plan 09-11: potholeNoise, signedCurvature, roadQuality removed from terrain.js —
+// pothole/curvature are not needed on the terrain mesh carve path.
+// Plan 09-22: crownProfile re-imported — D3 carve inherits the ribbon cross-section
+// (crownProfile + camberProfile tilt) so the carved trough tilts with the ribbon →
+// uniform clearance on banked turns (fixes inside-edge clip / outside-edge gap).
+import { crownProfile } from './road-carve.js'
 
 // ── Module constants ───────────────────────────────────────────────────────
 
@@ -857,8 +859,10 @@ export class TerrainSystem {
         const fillHeight      = p.roadFillHeight      ?? 2.0
         const fillSlope       = p.roadFillSlope       ?? 3.0
         const cutSlope        = p.roadCutSlope        ?? 1.0
-        // Plan 09-11: cheap below-margin carve params (crown/camber/pothole removed from terrain mesh;
-        // they are retained in road.js _sampleCarveWorld for physics and road-mesh.js for the visual ribbon).
+        const crownHeight     = p.crownHeight         ?? 0.05
+        // D3 (plan 09-22): carve inherits the ribbon cross-section. carveTargetY now includes
+        // crownProfile(uLat) + camberTilt(uLat, camberProfile(arcS)) so the trough tilts
+        // WITH the ribbon → uniform clearanceMargin on banked turns (fixes clip/gap, bug #5).
         const clearanceMargin = p.roadClearanceMargin ?? 0.5
         const carveExtraWidth = p.roadCarveExtraWidth ?? 3.0
 
@@ -888,7 +892,10 @@ export class TerrainSystem {
         // above, which already includes points slightly beyond the chunk edge.  This means
         // adjacent chunks share the same set of spline samples near their shared boundary →
         // continuous carved trough, no seam steps (SURF-05 continuity preserved).
-        const samples = this._roadSystem.collectChunkSplinePoints(chunkCX, chunkCZ, queryRadius)
+        // D3 (plan 09-22): collectChunkSplinePoints now returns { pts, sampleArcS, sampleRunKeys }
+        // sampleArcS[i] and sampleRunKeys[i] give the arc-length and run key for pts[i*5..i*5+4].
+        // Used to read camberProfile(arcS, runKey) for the D3 cross-section-inheriting carve target.
+        const { pts: samples, sampleArcS, sampleRunKeys } = this._roadSystem.collectChunkSplinePoints(chunkCX, chunkCZ, queryRadius)
         if (samples.length === 0) return null  // early-reject passed but no actual points sampled
 
         const table = new Float32Array(N * N * 2)
@@ -909,6 +916,10 @@ export class TerrainSystem {
         // arm-disambiguation as queryNearest — prefer the sample whose footprint the vertex is
         // interior to (|signedLat| ≤ footprintHW) over the globally-nearest exterior sample.
         // Keeps carve and physics consistent at switchbacks (no carve-arm vs physics-arm mismatch).
+        //
+        // D3 (plan 09-22): after selecting bi, compute signedLat from the chosen sample's tangent;
+        // read camberProfile(arcS, runKey) from the pre-built D2 profile (O(1) binary-search,
+        // cached on RoadSystem — no per-vertex spline eval). Crown + tilt fold into carveTargetY.
         const carveFootprintHW = (p.roadHalfWidth ?? 5) + (p.roadShoulderWidth ?? 2.5)
         const STRIDE = 5  // D4: stride widened from 3 to 5 ([x,y,z,tx,tz])
 
@@ -948,12 +959,32 @@ export class TerrainSystem {
                 const rawPre = height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params)
                 const rawH   = rawPre * amp
 
-                // ── Plan 09-16: Per-vertex carve target from nearest road point Y ──
-                // ny is the actual spline Y at the nearest sample — accurate even mid-tile on
-                // steep or curving sections (fixes SURF-05 road-below-ground).  The old 4-corner
-                // bilinear approximation is replaced by this single nearest-point lookup.
-                // clearanceMargin ensures the terrain floor sits BELOW the ribbon.
-                let carveTargetY = ny - clearanceMargin
+                // ── D3 (plan 09-22): carve target inherits the ribbon cross-section ──
+                // Formula: carveTargetY = roadY(arcS) + crownProfile(uLat) + camberTilt − clearanceMargin
+                //
+                // signedLat: re-derive from chosen sample's tangent (same sign convention as D4 inner loop
+                // and queryNearest — sdx_fwd = sample − query = -sdx, so signedLat = (-sdx)*tz − (-sdz)*tx).
+                // This is O(1): two multiplies, using pre-sampled tangent from flat array.
+                //
+                // camberAngle: read from D2 camberProfile cache — O(log N) binary search (pre-built per run,
+                // no per-vertex spline eval). sampleArcS / sampleRunKeys parallel arrays from collectChunkSplinePoints.
+                //
+                // The trough tilts WITH the ribbon → clearanceMargin is uniform regardless of banking angle
+                // (fixes bug #5: at 6°×5m = 0.52m > 0.5m clearance under a flat carve).
+                const biIdx   = bi / STRIDE   // sample index (integer)
+                const biTx    = samples[bi + 3], biTz = samples[bi + 4]
+                const sdxBi   = samples[bi] - wx, sdzBi = samples[bi + 2] - wz
+                const signedLat = (-sdxBi) * biTz - (-sdzBi) * biTx
+
+                const arcS   = sampleArcS[biIdx]
+                const runKey = sampleRunKeys[biIdx]
+                const camberAngle = this._roadSystem.camberProfile(arcS, runKey)
+
+                const crownY = crownProfile(signedLat, halfWidth, crownHeight)
+                const tiltY  = signedLat * Math.sin(camberAngle)
+
+                // carveTargetY = ribbon_surface − clearanceMargin (uniform clearance on banked turns)
+                let carveTargetY = ny + crownY + tiltY - clearanceMargin
 
                 // Fill cap: never raise terrain more than roadFillHeight above raw terrain.
                 const delta = carveTargetY - rawH
