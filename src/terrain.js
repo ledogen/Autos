@@ -829,70 +829,26 @@ export class TerrainSystem {
         const originZ = cz * S
 
         // Quick bounding-box check: does any road come within maxExt of this chunk?
+        // (Runs ONCE per chunk — not the lag. The lag was per-vertex queryNearest below, now removed.)
         const chunkCX = originX + S * 0.5
         const chunkCZ = originZ + S * 0.5
         const queryRadius = maxExt + S * 0.71  // half-diagonal of chunk + maxExt
         const nearest = this._roadSystem.queryNearest(chunkCX, chunkCZ, queryRadius)
         if (!nearest) return null  // no road near this chunk
 
-        // ── Plan 09-11: Cheap Continuous Per-Tile Design-Grade Target ────────────
-        // Compute the smoothed design-grade Y at the 4 tile corners (and tile center) ONCE,
-        // before the vertex loop. Inside the loop we bilinearly interpolate between corners —
-        // a few multiplies, no binary search, no queryNearest, no closure.
+        // ── Plan 09-16: Pre-sample spline points ONCE per chunk (SURF-04 perf fix) ──
         //
-        // Continuity guarantee: adjacent tiles share corner positions (e.g., the top-right corner
-        // of tile A == the top-left corner of tile B). Evaluating sampleDesignGradeAt at the EXACT
-        // same world coordinates from both tiles guarantees the same target Y at the shared edge,
-        // so the carved depression is continuous across tile boundaries (no longitudinal step).
+        // collectChunkSplinePoints performs the same tile-block scan as queryNearest but
+        // samples every nearby spline at ~1.5 m arc intervals into a flat [x,y,z,...] array.
+        // This is the SINGLE getPointAt site on the carve path — it runs outside the vertex
+        // loop so the 4225-vertex inner loop never calls getPointAt or queryNearest.
         //
-        // Fallback: if a corner has no road within maxExt, its target Y is the raw terrain at that
-        // corner so the carve degrades gracefully to "no carve" away from the road.
-        //
-        // Corner layout (u, v):
-        //   (0,0) = top-left  (originX,        originZ)
-        //   (1,0) = top-right (originX+S,       originZ)
-        //   (0,1) = bot-left  (originX,         originZ+S)
-        //   (1,1) = bot-right (originX+S,       originZ+S)
-        //   centre (0.5,0.5)  (originX+S*0.5,   originZ+S*0.5)
-        //
-        // We sample at each of the 4 corners + the centre (5 calls max), then bilinear-interpolate
-        // in the loop. The centre sample is used to improve accuracy for large tiles by
-        // constructing 4 bilinear sub-quads, but for simplicity we use a single bilinear on the
-        // 4 corners; the centre sample is used to detect if road coverage is uneven.
-        //
-        // Implementation: straight bilinear on the 4 corners — adequate because the design grade
-        // is smooth and the tile is 64 m wide. Crown/camber/pothole are NOT included; they are
-        // handled exclusively by road.js _sampleCarveWorld (physics) and road-mesh.js sweepRibbon
-        // (visual ribbon). The terrain mesh only carries the trough floor.
-
-        // Helper: design-grade Y at a tile corner world position.
-        // Inlined (not a named function) to keep queryNearest source-line count ≤ 2 file-wide
-        // (the grep acceptance check counts source lines, not call count).
-        const sampleCorner = (cx, cz) => {
-            const cnr = this._roadSystem.queryNearest(cx, cz, maxExt + 1)  // corner probe — pre-loop
-            if (!cnr) return this.rawHeightWorld(cx, cz)
-            // 09-13: use continuous routed centerline Y (cnr.point.y) for all corners.
-            // Adjacent tiles share corner positions → shared cnr.point.y → continuous carved
-            // trough across tile seams. Replaces sampleDesignGradeAt (cache-miss lag source).
-            return cnr.point.y
-        }
-
-        // 4 tile corners (shared with adjacent tiles — continuity guarantee).
-        // sampleCorner calls queryNearest on the SAME source line each time — the grep
-        // acceptance check sees exactly one extra source line for pre-loop corner probes,
-        // for a total of ≤ 2 queryNearest source lines in _buildCarveTable.
-        const g00 = sampleCorner(originX,     originZ)      // top-left
-        const g10 = sampleCorner(originX + S, originZ)      // top-right
-        const g01 = sampleCorner(originX,     originZ + S)  // bot-left
-        const g11 = sampleCorner(originX + S, originZ + S)  // bot-right
-
-        // Bilinear interpolation helper — u,v in [0,1] across the tile.
-        // Returns the interpolated design-grade Y at fractional position (u,v).
-        const bilinearGrade = (u, v) =>
-            g00 * (1 - u) * (1 - v) +
-            g10 * u       * (1 - v) +
-            g01 * (1 - u) * v       +
-            g11 * u       * v
+        // The search radius (queryRadius) is the same value used for the chunk early-reject
+        // above, which already includes points slightly beyond the chunk edge.  This means
+        // adjacent chunks share the same set of spline samples near their shared boundary →
+        // continuous carved trough, no seam steps (SURF-05 continuity preserved).
+        const samples = this._roadSystem.collectChunkSplinePoints(chunkCX, chunkCZ, queryRadius)
+        if (samples.length === 0) return null  // early-reject passed but no actual points sampled
 
         const table = new Float32Array(N * N * 2)
         let anyNonZero = false
@@ -901,41 +857,48 @@ export class TerrainSystem {
         // carveExtraWidth so the flat trough bed is wider than the ribbon + skirt edge.
         const carveHalfWidth = halfWidth + carveExtraWidth
 
+        // ── Per-vertex inner loop ────────────────────────────────────────────────
+        // PERF CONTRACT (Plan 09-16 / SURF-04):
+        //   • ZERO getPointAt calls   — splines already sampled above (collectChunkSplinePoints)
+        //   • ZERO queryNearest calls — nearest point found by plain squared-distance search
+        //   • ZERO arrow-closure allocations — no => expressions, no new objects per vertex
+        // The single getPointAt site for this function is collectChunkSplinePoints (pre-loop above).
         for (let zi = 0; zi < N; zi++) {
             for (let xi = 0; xi < N; xi++) {
                 const wx = originX + xi * cell
                 const wz = originZ + zi * cell
                 const idx = (zi * N + xi) * 2
 
-                // Quick per-vertex footprint test: only process vertices near the road.
-                // We still call queryNearest once per vertex to obtain the lateral distance.
-                const nr = this._roadSystem.queryNearest(wx, wz, maxExt + 1)
-                if (!nr) {
-                    table[idx]     = 0
-                    table[idx + 1] = 0
-                    continue
+                // Find the nearest pre-sampled road point by squared XZ distance.
+                // Lateral sign is not needed: the carve blend is symmetric around the centerline.
+                let bestD2 = Infinity
+                let bi = 0
+                for (let si = 0; si < samples.length; si += 3) {
+                    const sdx = samples[si]     - wx
+                    const sdz = samples[si + 2] - wz
+                    const d2  = sdx * sdx + sdz * sdz
+                    if (d2 < bestD2) { bestD2 = d2; bi = si }
                 }
 
-                // Lateral distance from centerline (XZ plane only).
-                const dx       = wx - nr.point.x
-                const dz       = wz - nr.point.z
-                const tx       = nr.tangent.x
-                const tz       = nr.tangent.z
-                const signedLat = dx * tz - dz * tx
-                const latDist   = Math.abs(signedLat)
+                const nx = samples[bi]
+                const ny = samples[bi + 1]
+                const nz = samples[bi + 2]
+
+                // XZ distance to nearest road point — replaces the old signedLat magnitude.
+                // (nx, nz unused beyond bestD2, kept for clarity / future tangent extension.)
+                void nx; void nz
+                const latDist = Math.sqrt(bestD2)
 
                 // Raw terrain height at this vertex (world-space, with amplitude).
                 const rawPre = height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params)
                 const rawH   = rawPre * amp
 
-                // ── Plan 09-11: Cheap below-margin carve target ───────────────────
-                // Derive the trough-floor Y from the precomputed corner bilinear target,
-                // then subtract clearanceMargin so terrain always sits BELOW the ribbon.
-                // Crown/camber/pothole are NOT folded in here — they live in the ribbon
-                // (road-mesh.js sweepRibbon for visuals; road.js _sampleCarveWorld for physics).
-                const u      = (wx - originX) / S
-                const v      = (wz - originZ) / S
-                let carveTargetY = bilinearGrade(u, v) - clearanceMargin
+                // ── Plan 09-16: Per-vertex carve target from nearest road point Y ──
+                // ny is the actual spline Y at the nearest sample — accurate even mid-tile on
+                // steep or curving sections (fixes SURF-05 road-below-ground).  The old 4-corner
+                // bilinear approximation is replaced by this single nearest-point lookup.
+                // clearanceMargin ensures the terrain floor sits BELOW the ribbon.
+                let carveTargetY = ny - clearanceMargin
 
                 // Fill cap: never raise terrain more than roadFillHeight above raw terrain.
                 const delta = carveTargetY - rawH
