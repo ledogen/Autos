@@ -409,10 +409,17 @@ export class RoadSystem {
      * module-scope `_scratchPt` for the per-sample probe (no per-sample allocation); only the two
      * returned vectors are allocated. Safe to call before any tile is warmed (returns null, no throw).
      *
+     * 09-17 (SURF-04 gap closure): after probeSpline finds the nearest DISCRETE sample bestU (=i/n,
+     * ~2 m spacing), a LOCAL PROJECTION REFINE maps (wx,wz) to a continuous parameter refinedU by
+     * projecting onto the two XZ polyline segments bracketing bestU (prev→bestU and bestU→next).
+     * This makes nr.point.y C0-continuous as the query moves — eliminating the ~2 m staircase that
+     * previously kicked the suspension via _sampleCarveWorld(designY = nr.point.y). The refine is
+     * O(1) and allocation-free (uses only scalar locals + _scratchPt reuse for bracket evaluation).
+     *
      * @param {number} wx — world x
      * @param {number} wz — world z
      * @param {number} [radiusM=200] — max XZ distance to accept a hit
-     * @returns {{ point: THREE.Vector3, tangent: THREE.Vector3 } | null}
+     * @returns {{ point: THREE.Vector3, tangent: THREE.Vector3, runKey: string, arcS: number, spline: THREE.Curve } | null}
      */
     queryNearest(wx, wz, radiusM = 200) {
         if (!this._tiles) return null
@@ -420,6 +427,7 @@ export class RoadSystem {
         let bestD2 = r2
         let bestSpline = null
         let bestU = 0
+        let bestN = 0          // 09-17: probe sample count for refine bracket spacing
         let bestRunKey = ''    // SURF-06 D-03: track runKey for roadQuality caller (pothole severity)
         let bestArcLen = 0     // SURF-06 D-03: track arc length so caller can compute arcS = bestU * arcLen
 
@@ -437,7 +445,7 @@ export class RoadSystem {
                 const dx = _scratchPt.x - wx, dz = _scratchPt.z - wz
                 const d2 = dx * dx + dz * dz
                 if (d2 < bestD2) {
-                    bestD2 = d2; bestSpline = spline; bestU = u
+                    bestD2 = d2; bestSpline = spline; bestU = u; bestN = n
                     bestRunKey = runKey; bestArcLen = len
                 }
             }
@@ -459,13 +467,59 @@ export class RoadSystem {
         }
 
         if (bestSpline) {
-            // The only two allocations on the spline path: the returned point + unit tangent.
-            const point = bestSpline.getPointAt(bestU)
-            const tangent = bestSpline.getTangentAt(bestU)   // getTangentAt returns a UNIT vector
-            // runKey and arcS (= bestU * bestArcLen) available for SURF-06 quality consumers.
+            // ── 09-17 PROJECTION REFINE ─────────────────────────────────────────────
+            // probeSpline found the nearest DISCRETE sample bestU (step = du = 1/bestN, ~2 m).
+            // Project (wx,wz) onto the two XZ segments bracketing bestU to find a continuous
+            // refinedU. This eliminates the ~2 m Y staircase that causes the physics bounce.
+            // All work is done in scalars or by reusing _scratchPt — no new Vector3 per call.
+            const du = 1 / bestN
+            const uPrev = Math.max(0, bestU - du)
+            const uNext = Math.min(1, bestU + du)
+
+            // Evaluate the three bracket points into scalars (reuse _scratchPt repeatedly).
+            bestSpline.getPointAt(uPrev, _scratchPt)
+            const prevX = _scratchPt.x, prevZ = _scratchPt.z
+
+            bestSpline.getPointAt(bestU, _scratchPt)
+            const midX = _scratchPt.x, midZ = _scratchPt.z
+
+            bestSpline.getPointAt(uNext, _scratchPt)
+            const nextX = _scratchPt.x, nextZ = _scratchPt.z
+
+            // Project query (wx,wz) onto segment [prev→mid].
+            let refinedU
+            {
+                const abX = midX - prevX, abZ = midZ - prevZ
+                const lenSq = abX * abX + abZ * abZ
+                const tA = lenSq < 1e-12 ? 0
+                    : Math.max(0, Math.min(1, ((wx - prevX) * abX + (wz - prevZ) * abZ) / lenSq))
+                const pxA = prevX + tA * abX, pzA = prevZ + tA * abZ
+                const dA2 = (wx - pxA) ** 2 + (wz - pzA) ** 2
+
+                // Project query (wx,wz) onto segment [mid→next].
+                const cbX = nextX - midX, cbZ = nextZ - midZ
+                const lenSqB = cbX * cbX + cbZ * cbZ
+                const tB = lenSqB < 1e-12 ? 0
+                    : Math.max(0, Math.min(1, ((wx - midX) * cbX + (wz - midZ) * cbZ) / lenSqB))
+                const pxB = midX + tB * cbX, pzB = midZ + tB * cbZ
+                const dB2 = (wx - pxB) ** 2 + (wz - pzB) ** 2
+
+                // Pick the closer segment and map its projection fraction to a u value.
+                if (dA2 <= dB2) {
+                    refinedU = uPrev + tA * (bestU - uPrev)
+                } else {
+                    refinedU = bestU + tB * (uNext - bestU)
+                }
+            }
+            refinedU = Math.max(0, Math.min(1, refinedU))
+
+            // Two allocations (the returned vectors): point + unit tangent at the refined position.
+            const point = bestSpline.getPointAt(refinedU)
+            const tangent = bestSpline.getTangentAt(refinedU)   // getTangentAt returns a UNIT vector
+            // runKey and arcS (= refinedU * bestArcLen) available for SURF-06 quality consumers.
             // arcS is tile-local (0 → spline length), consistent with sweepRibbon's arcSOffset=0 default.
             // spline exposed for sampleDesignGradeAt (CR-01, plan 09-08) — WeakMap cache key.
-            return { point, tangent, runKey: bestRunKey, arcS: bestU * bestArcLen, spline: bestSpline }
+            return { point, tangent, runKey: bestRunKey, arcS: refinedU * bestArcLen, spline: bestSpline }
         }
 
         // Fallback: no sliced spline came within radius — probe the raw network polylines
