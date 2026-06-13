@@ -165,7 +165,7 @@ export class RoadMeshSystem {
      * Pure function of its inputs — no side effects. Deterministic (D-16).
      */
     sweepRibbon(spline, designGradeY, points, params, runKey = '', arcSOffset = 0) {
-        const N_LONG = points.length     // number of longitudinal sections (from _smoothDesignGrade)
+        const N_LONG = points.length     // number of longitudinal sections (~2 m resolution)
         const halfWidth      = params.roadHalfWidth    ?? 5
         const roadWidth      = params.roadWidth        ?? 10
         const crownHeightVal = params.crownHeight      ?? 0.05
@@ -499,14 +499,23 @@ export class RoadMeshSystem {
             const { spline } = seg
             if (!spline) continue
 
-            // Design grade: smoothed analyticHeight profile along this spline slice.
-            // _smoothDesignGrade is memoized by spline identity + window, so repeated calls
-            // for the same tile (e.g. after re-stream to same canonical position) are O(1).
-            const { points, designGradeY } = this._road._smoothDesignGrade(
-                spline,
-                this._terrainRef,
-                this._params
-            )
+            // Design grade: derive directly from the CONTINUOUS routed centerline Y.
+            // The slice spline's control points carry the routed network polyline .y, and
+            // adjacent tile slices SHARE the exact boundary control point (C0) and tangent (C1)
+            // by construction (D-06), so spline.getPointAt(u).y is continuous across tile seams.
+            // This replaces the per-tile _smoothDesignGrade call (which disagreed at slice
+            // boundaries and cache-missed on every stream — the Phase 9 seam-step + lag source).
+            // ~2 m longitudinal sampling resolution (same as prior _smoothDesignGrade output).
+            const arcLen = spline.getLength ? spline.getLength() : 64
+            const N = Math.max(2, Math.min(256, Math.ceil(arcLen / 2) + 1))
+            const points = []
+            const designGradeY = new Float32Array(N)
+            for (let _i = 0; _i < N; _i++) {
+                const _u = _i / (N - 1)
+                const _pt = spline.getPointAt(_u)
+                points.push(_pt)
+                designGradeY[_i] = _pt.y
+            }
 
             if (points.length < 2) continue
 
