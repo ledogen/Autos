@@ -16,7 +16,7 @@
  * Check: node --check test/spline-continuity.mjs
  */
 
-import { signedCurvature, crownProfile } from '../src/road-carve.js'
+import { signedCurvature, crownProfile, filletMinRadius, circumradiusXZ } from '../src/road-carve.js'
 
 // ── Tunable threshold constants ───────────────────────────────────────────────
 // Re-tune these once the real graded spline lands (Phase 8 target).
@@ -1318,6 +1318,82 @@ if (camberRateModeFixtures.length > 0) {
         console.log(row)
         console.log(`    unlimited: maxDCamber=${maxDCamber_unlimited.toFixed(4)}°/m (would ${unlimitedExceeds ? 'FAIL' : 'PASS'}) | slew-limited (${slewRateDegM}°/m): maxDCamber=${maxDCamber_slewed.toFixed(4)}°/m (${slewedPass ? 'PASS' : 'FAIL'})`)
     }
+    console.log('-'.repeat(120))
+    console.log('')
+}
+
+// ── 09-25 D0 fillet MIN-RADIUS ENFORCEMENT gate (runs the REAL filletMinRadius) ──
+// Unlike the 09-18 hairpin fixture (a PRE-filleted polyline that never exercised the
+// fillet), this gate feeds filletMinRadius a RAW sharp hairpin (sharp apex, arms spread)
+// like the router produces, then asserts the OUTPUT's minimum turn radius ≥ minRadius.
+// minRadius (12 m) > roadHalfWidth (5 m) ⇒ a ribbon swept at ±5 m cannot fold.
+{
+    const FILLET_MIN_R   = 12     // m — target min turn radius (data/ranger.js roadMinTurnRadius)
+    const FILLET_HALF_W  = 5      // m — roadHalfWidth (fold floor: radius must exceed this)
+    const FILLET_TOL     = 0.05   // accept ≥ minRadius·(1−tol)
+
+    // RAW sharp hairpin: two 40 m arms 20 m apart (z=±10) joined by a SHARP V apex (radius≈1 m).
+    const buildRawHairpin = () => {
+        const pts = []
+        const armLen = 40, halfGap = 10, spacing = 2
+        for (let x = -armLen; x < 0; x += spacing) pts.push({ x, y: 0, z: +halfGap })
+        // Sharp V apex (near-zero radius) — what the router + dense CatmullRom yield at a switchback.
+        pts.push({ x: 0, y: 0, z: +halfGap })
+        pts.push({ x: 1, y: 0, z: +halfGap / 2 })
+        pts.push({ x: 1.5, y: 0, z: 0 })
+        pts.push({ x: 1, y: 0, z: -halfGap / 2 })
+        pts.push({ x: 0, y: 0, z: -halfGap })
+        for (let x = 0; x >= -armLen; x -= spacing) pts.push({ x, y: 0, z: -halfGap })
+        return pts
+    }
+    const minTurnRadius = (pts) => {
+        let m = Infinity
+        for (let i = 1; i < pts.length - 1; i++) {
+            const r = circumradiusXZ(pts[i - 1].x, pts[i - 1].z, pts[i].x, pts[i].z, pts[i + 1].x, pts[i + 1].z)
+            if (r < m) m = r
+        }
+        return m
+    }
+
+    const raw       = buildRawHairpin()
+    const rawMinR   = minTurnRadius(raw)
+    const filleted  = filletMinRadius(raw, FILLET_MIN_R)
+    const filMinR   = minTurnRadius(filleted)
+    const target    = FILLET_MIN_R * (1 - FILLET_TOL)
+    // Continuity: filletMinRadius must not change point count or leave gaps (endpoints pinned).
+    const sameCount = filleted.length === raw.length
+    const endpointsPinned =
+        Math.hypot(filleted[0].x - raw[0].x, filleted[0].z - raw[0].z) < 1e-9 &&
+        Math.hypot(filleted[filleted.length - 1].x - raw[raw.length - 1].x,
+                   filleted[filleted.length - 1].z - raw[raw.length - 1].z) < 1e-9
+    const radiusOK  = filMinR >= target && filMinR >= FILLET_HALF_W
+    const gatePass  = radiusOK && sameCount && endpointsPinned
+    const rawFails  = rawMinR < FILLET_HALF_W   // contrast: raw input WOULD fold
+
+    if (!gatePass) allGatesPassed = false
+
+    console.log('='.repeat(120))
+    console.log('  FILLET MIN-RADIUS ENFORCEMENT GATE (09-25 D0 — runs the REAL filletMinRadius)')
+    console.log(`  Gate: filleted min turn radius ≥ ${target.toFixed(2)} m AND ≥ roadHalfWidth ${FILLET_HALF_W} m (no fold), endpoints pinned, point-count stable`)
+    console.log('='.repeat(120))
+    const fHdr = [
+        col('Fixture',                30),
+        col('rawMinRadius(m)',        18),
+        col('filletedMinRadius(m)',   22),
+        col('raw<halfWidth?',         16),
+        col('GATE',                   8),
+    ].join(' | ')
+    console.log(fHdr)
+    console.log('-'.repeat(120))
+    const fRow = [
+        col('hairpin-fillet-enforced',                       30),
+        col(rawMinR.toFixed(3),                              18),
+        col(filMinR.toFixed(3),                              22),
+        col(rawFails ? 'YES (expected)' : 'no (unexpected)', 16),
+        col(gatePass ? '  PASS  ' : '  FAIL  ',              8),
+    ].join(' | ')
+    console.log(fRow)
+    console.log(`    raw apex radius ${rawMinR.toFixed(3)} m (would fold: ${rawFails}) → filleted ${filMinR.toFixed(3)} m (gate ≥ ${target.toFixed(2)} m) | count ${raw.length}→${filleted.length} (${sameCount ? 'stable' : 'CHANGED'}) | endpoints ${endpointsPinned ? 'pinned' : 'MOVED'}`)
     console.log('-'.repeat(120))
     console.log('')
 }

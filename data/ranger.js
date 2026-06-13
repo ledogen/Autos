@@ -225,13 +225,15 @@ export const RANGER_PARAMS = {
   // hairpin corners. Higher = wider hairpins (arms further apart); lower = tighter corners.
   // FLOOR CONSTRAINT (D0): minRadius must be ≥ roadHalfWidth + roadClearanceMargin so the ribbon's
   // inner edge (at ±roadHalfWidth from centerline) cannot fold onto itself. With roadHalfWidth=5 and
-  // roadClearanceMargin=0.5, the floor is ~5.5 m — that is the SAFETY MINIMUM, not the default.
-  // The DEFAULT stays generous at 45 m: under fillet semantics minRadius IS the sharpest-corner
-  // radius, so a small value (e.g. 12 m) makes every corner visibly sharp. 45 m reads as smooth
-  // road curves while still being well above the fold floor (arms separate by ~2×45 = 90 m).
+  // roadClearanceMargin=0.5, the floor is ~5.5 m. The DEFAULT 12 m is "a little wider than the road"
+  // (user intent): comfortably above the fold floor (so hairpins never self-overlap) while keeping
+  // switchbacks looking like switchbacks. filletMinRadius (src/road-carve.js) rounds any turn tighter
+  // than this to radius ≈ minRadius via curvature-clamp relaxation, so 12 m means a radius-12 U-turn
+  // at hairpins (arms separate by ~2×12 = 24 m). Much larger values flatten tight switchbacks toward
+  // straight caps; the fold floor is the hard lower bound, 12 m is the smooth-but-tight default.
   // Floor enforced in src/road.js _refreshParams (Math.max clamp) and slider lower bound in debug.js.
   // Live-tunable via the "Min Turn Radius (m)" debug slider (src/debug.js Roads folder).
-  roadMinTurnRadius: 45,   // m — arc-fillet min turn radius (D0); safety floor ≥ roadHalfWidth + clearance (~5.5 m)
+  roadMinTurnRadius: 12,   // m — arc-fillet min turn radius (D0); safety floor ≥ roadHalfWidth + clearance (~5.5 m)
 
   // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
   // Retained for the DEFERRED D-01 spur pass (trunk-only ships first). D-01 / RESEARCH A1.

@@ -35,7 +35,7 @@
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
-import { crownProfile, potholeNoise, signedCurvature } from './road-carve.js'
+import { crownProfile, potholeNoise, signedCurvature, filletMinRadius } from './road-carve.js'
 // roadQuality imported for SURF-06 D-03: pothole severity uses the same per-stretch
 // quality hook as markings. Importing from road-quality.js (not road-mesh.js) avoids
 // the road-mesh.js → terrain.js → road.js chain issues.
@@ -1077,140 +1077,21 @@ export class RoadSystem {
     // NOTE ON MAX GRADE: Filleting a hairpin rounds the corner and may slightly lengthen the path.
     // The existing soft-cost router already balances grade (D-09); the fillet does not bypass it.
     // A re-stream after a slider change re-routes with the updated minRadius, re-evaluating grade.
+    // Thin THREE-adapter around the pure filletMinRadius (src/road-carve.js). The pure
+    // function does the real work: an iterative curvature-clamp that relaxes any vertex
+    // whose local turn radius is below minRadius toward its neighbour midpoint, until
+    // every interior turn radius ≥ minRadius. A previous version filleted per-vertex
+    // (tangent = minRadius·tan(φ/2)), which BAILED at hairpins — the tangent couldn't fit
+    // between the dense Catmull-Rom samples, so the sharp apex passed through unchanged
+    // and the ribbon (±roadHalfWidth) folded. The pure curvature-clamp handles dense
+    // polylines and hairpins correctly and is gated headlessly by the fillet-enforcement
+    // fixture in test/spline-continuity.mjs.
     _filletMinRadius(pts, minRadius) {
         if (pts.length < 3 || !(minRadius > 0)) return pts
-
-        // Number of arc sample points inserted per fillet (controls smoothness of the arc).
-        // 8 points gives a visually smooth arc; more = smoother, but more vertices.
-        const N_ARC = 8
-
-        const out = []
-        out.push(pts[0])
-
-        for (let i = 1; i < pts.length - 1; i++) {
-            const A = pts[i - 1]
-            const B = pts[i]
-            const C = pts[i + 1]
-
-            // XZ leg vectors (incoming = A→B, outgoing = B→C)
-            const inDx = B.x - A.x, inDz = B.z - A.z
-            const outDx = C.x - B.x, outDz = C.z - B.z
-            const inLen  = Math.hypot(inDx, inDz)
-            const outLen = Math.hypot(outDx, outDz)
-
-            if (inLen < 1e-6 || outLen < 1e-6) {
-                // Degenerate zero-length leg — pass through unchanged.
-                out.push(B)
-                continue
-            }
-
-            // Normalized leg directions
-            const inUx = inDx / inLen,  inUz = inDz / inLen
-            const outUx = outDx / outLen, outUz = outDz / outLen
-
-            // Deflection angle φ: the turn angle between the incoming and outgoing directions.
-            // cos(φ) = dot of incoming and outgoing unit vectors (same direction = 0 deflection).
-            // sin(φ) = cross product magnitude (XZ: inU × outU = inUx*outUz − inUz*outUx).
-            // φ ∈ [0, π]: 0 = straight, π = full U-turn.
-            const dotProd  = inUx * outUx + inUz * outUz
-            const crossProd = inUx * outUz - inUz * outUx  // signed: positive = right turn in XZ
-            const phi = Math.atan2(Math.abs(crossProd), dotProd)  // deflection angle [0, π)
-
-            if (phi < 1e-4) {
-                // Nearly straight — no fillet needed.
-                out.push(B)
-                continue
-            }
-
-            // Tangent length: how far each leg is trimmed back from B.
-            const tanHalf = Math.tan(phi / 2)
-            const tangentLen = minRadius * tanHalf
-
-            if (tangentLen >= inLen || tangentLen >= outLen) {
-                // Arc doesn't fit in either leg — pass through unchanged (degenerate).
-                out.push(B)
-                continue
-            }
-
-            // Fillet start (trim incoming leg back by tangentLen).
-            // MUST be a THREE.Vector3 — downstream consumers (_streamNetwork emitRun's
-            // p.clone(), the Catmull-Rom slicer) call Vector3 methods on every point.
-            const T1 = new THREE.Vector3(
-                B.x - tangentLen * inUx,
-                B.y,    // elevation at B (refined below)
-                B.z - tangentLen * inUz
-            )
-            // Fillet end (trim outgoing leg forward by tangentLen)
-            const T2 = new THREE.Vector3(
-                B.x + tangentLen * outUx,
-                B.y,
-                B.z + tangentLen * outUz
-            )
-
-            // Interpolate Y linearly from A to C across T1 and T2 so grade stays continuous.
-            // T1 is at fraction (inLen - tangentLen)/inLen back from B along A→B.
-            // We approximate by linearly interpolating A.y→C.y by XZ distance.
-            const totalPathLen = inLen + outLen
-            const t1FracOfPath = (inLen - tangentLen) / totalPathLen  // fraction along A→C path
-            const t2FracOfPath = (inLen + tangentLen) / totalPathLen
-            T1.y = A.y + (C.y - A.y) * t1FracOfPath
-            T2.y = A.y + (C.y - A.y) * t2FracOfPath
-
-            // Push the fillet start point
-            out.push(T1)
-
-            // Insert arc sample points T1→T2 along the circular arc.
-            // The arc's center lies perpendicular to each leg at T1 and T2:
-            //   For incoming leg, the center offset direction is the XZ-perpendicular to inU,
-            //   pointing toward the inside of the curve (sign depends on turn direction).
-            // Turn direction: crossProd > 0 means the outgoing dir is to the left of incoming (left turn).
-            // Inside-of-turn perpendicular to incoming leg:
-            //   left turn: perp = (-inUz, inUx) in XZ (rotate 90° CCW)
-            //   right turn: perp = (inUz, -inUx) in XZ (rotate 90° CW)
-            const sign = crossProd >= 0 ? 1 : -1  // +1 = left turn, -1 = right turn
-            const perpX = -sign * inUz
-            const perpZ =  sign * inUx
-
-            const centerX = T1.x + minRadius * perpX
-            const centerZ = T1.z + minRadius * perpZ
-
-            // Angle from center to T1 and T2 (in XZ plane)
-            const angle1 = Math.atan2(T1.z - centerZ, T1.x - centerX)
-            const angle2 = Math.atan2(T2.z - centerZ, T2.x - centerX)
-
-            // Arc from angle1 to angle2 sweeping in the correct direction.
-            // The arc always sweeps toward the outgoing leg: ensure the sweep is phi radians.
-            // Sweep direction: same sign as crossProd (left turn → CCW in standard XZ, right → CW).
-            // We step from angle1 to angle2 in N_ARC intermediate points (not including T1 and T2).
-            let sweep = angle2 - angle1
-            // Normalize sweep to [-π, π]
-            while (sweep >  Math.PI) sweep -= 2 * Math.PI
-            while (sweep < -Math.PI) sweep += 2 * Math.PI
-            // Ensure sweep direction matches turn sign (left turn = CCW = positive sweep in standard math)
-            // In Three.js XZ: +X right, +Z forward. Left turn (positive crossProd) → arc goes CCW
-            // when viewed from above (positive Y up). Math.atan2 is standard CCW.
-            // If sweep direction is wrong, adjust:
-            if (sign > 0 && sweep < 0) sweep += 2 * Math.PI
-            if (sign < 0 && sweep > 0) sweep -= 2 * Math.PI
-
-            for (let k = 1; k < N_ARC; k++) {
-                const frac = k / N_ARC
-                const ang  = angle1 + frac * sweep
-                const arcX = centerX + minRadius * Math.cos(ang)
-                const arcZ = centerZ + minRadius * Math.sin(ang)
-                const arcY = T1.y + frac * (T2.y - T1.y)
-                out.push(new THREE.Vector3(arcX, arcY, arcZ))
-            }
-
-            // T2 is pushed when we process the NEXT vertex (it becomes the start of the next leg).
-            // To avoid duplicating T2 / losing it, we push T2 now and skip the raw B push.
-            out.push(T2)
-            // Skip pushing the original B — it has been replaced by the fillet arc.
-            continue
-        }
-
-        out.push(pts[pts.length - 1])
-        return out
+        // filletMinRadius works on plain {x,y,z}; map back to THREE.Vector3 so downstream
+        // consumers (emitRun's p.clone(), the Catmull-Rom slicer) keep their Vector3 API.
+        const relaxed = filletMinRadius(pts, minRadius)
+        return relaxed.map(p => new THREE.Vector3(p.x, p.y, p.z))
     }
 
     // Excise over-tight coils by CURVATURE (angle-per-distance), not per-vertex angle (QUAL-01).

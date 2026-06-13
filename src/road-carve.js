@@ -407,3 +407,89 @@ export function earClip(polygon) {
 
     return tris
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  NOT part of CARVE SYNC. The functions below are road CENTERLINE geometry used
+//  only on the main thread by src/road.js (_streamNetwork). The Worker never runs
+//  them — do NOT copy them into terrain.js WORKER_SOURCE / terrain-worker.js.
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Circumradius of triangle ABC in the XZ plane (Y ignored). Returns Infinity when
+ * the three points are (nearly) collinear — a straight run has infinite turn radius.
+ * Pure/deterministic.
+ */
+export function circumradiusXZ(ax, az, bx, bz, cx, cz) {
+    const a = Math.hypot(cx - bx, cz - bz)   // |BC|
+    const b = Math.hypot(ax - cx, az - cz)   // |CA|
+    const c = Math.hypot(bx - ax, bz - az)   // |AB|
+    // 2*Area via the cross product of AB and AC.
+    const area2 = Math.abs((bx - ax) * (cz - az) - (bz - az) * (cx - ax))
+    if (area2 < 1e-9) return Infinity        // collinear → straight → infinite radius
+    return (a * b * c) / (2 * area2)         // R = abc / (4·Area) = abc / (2·area2)
+}
+
+/**
+ * filletMinRadius — D0. Enforce a minimum turn radius on a centerline polyline so a
+ * ribbon swept at ±halfWidth (halfWidth < minRadius) can never fold its inner edge.
+ *
+ * The input is a DENSELY-sampled spline (CatmullRom). A per-vertex corner fillet is
+ * the wrong tool here: at a hairpin the tight samples have local radius far below
+ * minRadius and the tangent (minRadius·tan(φ/2)) cannot fit between adjacent dense
+ * samples, so a corner fillet bails and leaves the apex sharp → the ribbon folds.
+ *
+ * Instead we iteratively RELAX (straighten) every vertex whose local turn radius is
+ * below minRadius toward the midpoint of its neighbours. Straightening monotonically
+ * increases the local circumradius, so the loop converges to a polyline whose every
+ * interior turn radius is ≥ minRadius — densely-sampled tight turns become smooth
+ * arcs of radius ≈ minRadius (hairpins round into U-turns whose arms separate by
+ * ≥ 2·minRadius). Endpoints are pinned, so run connectivity is preserved. Only tight
+ * vertices move — straights and gentle curves are untouched. Deterministic (D-16).
+ *
+ * @param {Array<{x:number,y:number,z:number}>} points — input polyline (≥3). Not mutated.
+ * @param {number} minRadius — target minimum turn radius (m), measured in XZ.
+ * @param {object} [opts]
+ * @param {number} [opts.maxIters=300] — relaxation iteration cap.
+ * @param {number} [opts.lambda=0.5]   — relaxation step fraction (0..1).
+ * @param {number} [opts.tol=0.02]     — radius tolerance fraction (accept ≥ minRadius·(1−tol)).
+ * @returns {Array<{x:number,y:number,z:number}>} new polyline; interior turn radius ≥ minRadius·(1−tol).
+ */
+export function filletMinRadius(points, minRadius, opts = {}) {
+    const n = points.length
+    if (n < 3 || !(minRadius > 0)) return points.map(p => ({ x: p.x, y: p.y, z: p.z }))
+    const maxIters = opts.maxIters ?? 300
+    const lambda   = opts.lambda   ?? 0.5
+    const tol      = opts.tol      ?? 0.02
+    const target   = minRadius * (1 - tol)
+
+    const px = new Float64Array(n), py = new Float64Array(n), pz = new Float64Array(n)
+    for (let i = 0; i < n; i++) { px[i] = points[i].x; py[i] = points[i].y; pz[i] = points[i].z }
+
+    const dx = new Float64Array(n), dy = new Float64Array(n), dz = new Float64Array(n)
+    for (let iter = 0; iter < maxIters; iter++) {
+        let anyTight = false
+        dx.fill(0); dy.fill(0); dz.fill(0)
+        // Jacobi sweep: compute all displacements from the CURRENT state, then apply once
+        // (so the pass is order-independent → deterministic regardless of array direction).
+        for (let i = 1; i < n - 1; i++) {
+            const r = circumradiusXZ(px[i - 1], pz[i - 1], px[i], pz[i], px[i + 1], pz[i + 1])
+            if (r >= target) continue
+            anyTight = true
+            // Step toward the neighbour midpoint; tighter turns take a larger step (capped by lambda).
+            const deficit = Math.min(1, (target - r) / target)   // 0..1
+            const w  = lambda * deficit
+            const mx = 0.5 * (px[i - 1] + px[i + 1])
+            const my = 0.5 * (py[i - 1] + py[i + 1])
+            const mz = 0.5 * (pz[i - 1] + pz[i + 1])
+            dx[i] = w * (mx - px[i])
+            dy[i] = w * (my - py[i])
+            dz[i] = w * (mz - pz[i])
+        }
+        if (!anyTight) break
+        for (let i = 1; i < n - 1; i++) { px[i] += dx[i]; py[i] += dy[i]; pz[i] += dz[i] }
+    }
+
+    const out = new Array(n)
+    for (let i = 0; i < n; i++) out[i] = { x: px[i], y: py[i], z: pz[i] }
+    return out
+}
