@@ -933,6 +933,165 @@ export class RoadSystem {
         return p
     }
 
+    // Arc-fillet minimum-turn-radius pass (D0 — replaces the coil-excision _limitCurvature).
+    // At each interior vertex where the implied corner radius < minRadius, insert a circular arc
+    // of radius = minRadius tangent to both legs, replacing the sharp corner. The centerline is
+    // ROUNDED (not excised) to minRadius so the two arms of a hairpin are separated by ~2·minRadius.
+    // At a 180° hairpin this yields a semicircle → arm separation ≈ 2·minRadius — wide enough that
+    // the ribbon (±roadHalfWidth) never folds onto itself when minRadius ≥ roadHalfWidth + clearance.
+    //
+    // Algorithm per interior vertex B between legs A→B (incoming) and B→C (outgoing):
+    //   1. Compute XZ heading vectors for both legs.
+    //   2. Turn angle φ = exterior deflection angle (the angle you must steer through).
+    //      φ = π − (interior angle at B) = |atan2 cross, dot| of normalized leg directions.
+    //   3. Tangent length (how far back each leg is trimmed): t = R · tan(φ/2).
+    //      (Standard road geometry: tangent distance for a circular arc of radius R and deflection φ.)
+    //   4. If either leg is shorter than t, skip the fillet (degenerate; the point is too close to
+    //      a neighbor for the arc to fit). The point is left as-is.
+    //   5. Trim points: T1 = B − t·dir_incoming, T2 = B + t·dir_outgoing.
+    //   6. Insert N_ARC arc sample points along the circular arc from T1 to T2 (interpolated in XZ
+    //      with Y linearly blended from T1.y to T2.y so the routed grade stays continuous).
+    //
+    // Pure function of (pts, minRadius) — deterministic, window-invariant. Runs on the canonical
+    // run (not a windowed slice) like the other post-passes. No Math.random, no session state.
+    //
+    // NOTE ON MAX GRADE: Filleting a hairpin rounds the corner and may slightly lengthen the path.
+    // The existing soft-cost router already balances grade (D-09); the fillet does not bypass it.
+    // A re-stream after a slider change re-routes with the updated minRadius, re-evaluating grade.
+    _filletMinRadius(pts, minRadius) {
+        if (pts.length < 3 || !(minRadius > 0)) return pts
+
+        // Number of arc sample points inserted per fillet (controls smoothness of the arc).
+        // 8 points gives a visually smooth arc; more = smoother, but more vertices.
+        const N_ARC = 8
+
+        const out = []
+        out.push(pts[0])
+
+        for (let i = 1; i < pts.length - 1; i++) {
+            const A = pts[i - 1]
+            const B = pts[i]
+            const C = pts[i + 1]
+
+            // XZ leg vectors (incoming = A→B, outgoing = B→C)
+            const inDx = B.x - A.x, inDz = B.z - A.z
+            const outDx = C.x - B.x, outDz = C.z - B.z
+            const inLen  = Math.hypot(inDx, inDz)
+            const outLen = Math.hypot(outDx, outDz)
+
+            if (inLen < 1e-6 || outLen < 1e-6) {
+                // Degenerate zero-length leg — pass through unchanged.
+                out.push(B)
+                continue
+            }
+
+            // Normalized leg directions
+            const inUx = inDx / inLen,  inUz = inDz / inLen
+            const outUx = outDx / outLen, outUz = outDz / outLen
+
+            // Deflection angle φ: the turn angle between the incoming and outgoing directions.
+            // cos(φ) = dot of incoming and outgoing unit vectors (same direction = 0 deflection).
+            // sin(φ) = cross product magnitude (XZ: inU × outU = inUx*outUz − inUz*outUx).
+            // φ ∈ [0, π]: 0 = straight, π = full U-turn.
+            const dotProd  = inUx * outUx + inUz * outUz
+            const crossProd = inUx * outUz - inUz * outUx  // signed: positive = right turn in XZ
+            const phi = Math.atan2(Math.abs(crossProd), dotProd)  // deflection angle [0, π)
+
+            if (phi < 1e-4) {
+                // Nearly straight — no fillet needed.
+                out.push(B)
+                continue
+            }
+
+            // Tangent length: how far each leg is trimmed back from B.
+            const tanHalf = Math.tan(phi / 2)
+            const tangentLen = minRadius * tanHalf
+
+            if (tangentLen >= inLen || tangentLen >= outLen) {
+                // Arc doesn't fit in either leg — pass through unchanged (degenerate).
+                out.push(B)
+                continue
+            }
+
+            // Fillet start (trim incoming leg back by tangentLen)
+            const T1 = {
+                x: B.x - tangentLen * inUx,
+                y: B.y,    // elevation at B (will be refined below)
+                z: B.z - tangentLen * inUz
+            }
+            // Fillet end (trim outgoing leg forward by tangentLen)
+            const T2 = {
+                x: B.x + tangentLen * outUx,
+                y: B.y,
+                z: B.z + tangentLen * outUz
+            }
+
+            // Interpolate Y linearly from A to C across T1 and T2 so grade stays continuous.
+            // T1 is at fraction (inLen - tangentLen)/inLen back from B along A→B.
+            // We approximate by linearly interpolating A.y→C.y by XZ distance.
+            const totalPathLen = inLen + outLen
+            const t1FracOfPath = (inLen - tangentLen) / totalPathLen  // fraction along A→C path
+            const t2FracOfPath = (inLen + tangentLen) / totalPathLen
+            T1.y = A.y + (C.y - A.y) * t1FracOfPath
+            T2.y = A.y + (C.y - A.y) * t2FracOfPath
+
+            // Push the fillet start point
+            out.push(T1)
+
+            // Insert arc sample points T1→T2 along the circular arc.
+            // The arc's center lies perpendicular to each leg at T1 and T2:
+            //   For incoming leg, the center offset direction is the XZ-perpendicular to inU,
+            //   pointing toward the inside of the curve (sign depends on turn direction).
+            // Turn direction: crossProd > 0 means the outgoing dir is to the left of incoming (left turn).
+            // Inside-of-turn perpendicular to incoming leg:
+            //   left turn: perp = (-inUz, inUx) in XZ (rotate 90° CCW)
+            //   right turn: perp = (inUz, -inUx) in XZ (rotate 90° CW)
+            const sign = crossProd >= 0 ? 1 : -1  // +1 = left turn, -1 = right turn
+            const perpX = -sign * inUz
+            const perpZ =  sign * inUx
+
+            const centerX = T1.x + minRadius * perpX
+            const centerZ = T1.z + minRadius * perpZ
+
+            // Angle from center to T1 and T2 (in XZ plane)
+            const angle1 = Math.atan2(T1.z - centerZ, T1.x - centerX)
+            const angle2 = Math.atan2(T2.z - centerZ, T2.x - centerX)
+
+            // Arc from angle1 to angle2 sweeping in the correct direction.
+            // The arc always sweeps toward the outgoing leg: ensure the sweep is phi radians.
+            // Sweep direction: same sign as crossProd (left turn → CCW in standard XZ, right → CW).
+            // We step from angle1 to angle2 in N_ARC intermediate points (not including T1 and T2).
+            let sweep = angle2 - angle1
+            // Normalize sweep to [-π, π]
+            while (sweep >  Math.PI) sweep -= 2 * Math.PI
+            while (sweep < -Math.PI) sweep += 2 * Math.PI
+            // Ensure sweep direction matches turn sign (left turn = CCW = positive sweep in standard math)
+            // In Three.js XZ: +X right, +Z forward. Left turn (positive crossProd) → arc goes CCW
+            // when viewed from above (positive Y up). Math.atan2 is standard CCW.
+            // If sweep direction is wrong, adjust:
+            if (sign > 0 && sweep < 0) sweep += 2 * Math.PI
+            if (sign < 0 && sweep > 0) sweep -= 2 * Math.PI
+
+            for (let k = 1; k < N_ARC; k++) {
+                const frac = k / N_ARC
+                const ang  = angle1 + frac * sweep
+                const arcX = centerX + minRadius * Math.cos(ang)
+                const arcZ = centerZ + minRadius * Math.sin(ang)
+                const arcY = T1.y + frac * (T2.y - T1.y)
+                out.push({ x: arcX, y: arcY, z: arcZ })
+            }
+
+            // T2 is pushed when we process the NEXT vertex (it becomes the start of the next leg).
+            // To avoid duplicating T2 / losing it, we push T2 now and skip the raw B push.
+            out.push(T2)
+            // Skip pushing the original B — it has been replaced by the fillet arc.
+            continue
+        }
+
+        out.push(pts[pts.length - 1])
+        return out
+    }
+
     // Excise over-tight coils by CURVATURE (angle-per-distance), not per-vertex angle (QUAL-01).
     // A tight loop/teardrop is many small-deflection vertices that ACCUMULATE a large heading change
     // over a short arc — per-vertex angle never catches it. Here we scan spans of signed cumulative
@@ -941,6 +1100,7 @@ export class RoadSystem {
     // — excise the span (join its entry directly to its exit). Signed accumulation means S-curves
     // (alternating turns) cancel and are NOT excised; only consistent coils are. Endpoints are
     // preserved by the slice (p[0..i] and p[j+1..end] are kept). Deterministic, no random state (D-03).
+    // NOTE: _limitCurvature is superseded by _filletMinRadius (D0) — kept for reference only.
     _limitCurvature(pts, minRadius) {
         if (pts.length < 4 || !(minRadius > 0)) return pts
         const TURN_MIN = 150 * Math.PI / 180  // only scrutinize spans that turn >= 150° (a coil/loop)
@@ -1163,7 +1323,7 @@ export class RoadSystem {
                     // Post-passes run on the FULL canonical run — not a windowed slice (D-16).
                     pts = this._removeLoops(pts)
                     pts = this._removeSelfCrossings(pts)
-                    pts = this._limitCurvature(pts, this._proto.params.minTurnRadius)
+                    pts = this._filletMinRadius(pts, this._proto.params.minTurnRadius)  // D0 arc-fillet (replaces _limitCurvature excision)
                     cachedPts = pts
                 }
                 this._canonRunCache.set(bandKey, cachedPts)
