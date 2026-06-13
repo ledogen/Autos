@@ -28,6 +28,13 @@ const MAX_BOUNDARY_MISMATCH_M = 0.05 // max Y gap at a tile-seam boundary (m) �
 
 const SAMPLE_INTERVAL_M    = 1.0   // arc-length spacing between metric samples (m)
 
+// 09-17 physics-sampling continuity threshold.
+// Maximum |ΔY| between adjacent physics query steps (m).
+// Far below the old ~2 m discrete-step staircase artifact (which would produce
+// |ΔY| jumps ~0.5–2 m on a typical road grade). A smooth C0 surface at 1 m query
+// steps on a road with ≤8% grade produces |ΔY| < 0.08 m; set threshold at 0.05 m.
+const MAX_PHYSICS_DY_M     = 0.05  // max |ΔY| per adjacent physics query step (m)
+
 // Ranger.js-sourced scalars — hard-coded to keep harness dependency-free.
 // Source: data/ranger.js (camberStrength, roadHalfWidth, crownHeight, designGradeWindow)
 const CAMBER_STRENGTH       = 200   // m·rad/rad — curvature → camber gain (D-04)
@@ -148,6 +155,82 @@ function catmullRomCurve(pts) {
     return { getPoint, tangentAt, getLength }
 }
 
+// ── Physics-sampling continuity helper (09-17) ───────────────────────────────
+// Vendors the two strategies for sampling a road spline's Y value at a query point,
+// mirroring queryNearest in src/road.js. The harness MUST NOT import road.js / three /
+// terrain.js (zero-install rule), so the refine logic is re-implemented here against
+// catmullRomCurve's getPoint(t) API (t in [0,1] ≡ u in getPointAt).
+//
+// mode 'nearest': brute the nearest DISCRETE sample u=i/n by XZ distance.
+//   Reproduces the OLD staircase that caused the physics bounce.
+// mode 'refine':  same nearest-discrete search, then apply the SAME bracket→project→map
+//   refine as road.js queryNearest (09-17 fix). Reproduces the FIXED C0 surface.
+
+/**
+ * Sample the road spline Y at query point (qx, qz) using one of two strategies.
+ *
+ * @param {{ getPoint: (t:number)=>{x,y,z}, getLength: ()=>number }} curve
+ * @param {number} qx
+ * @param {number} qz
+ * @param {'nearest'|'refine'} mode
+ * @returns {number} Y value at the nearest (or refined) position on the spline
+ */
+function physicsSampleY(curve, qx, qz, mode) {
+    const totalLen = curve.getLength()
+    const n = Math.max(16, Math.min(256, Math.ceil((totalLen || 64) / 2)))
+
+    // ── Nearest-discrete search ───────────────────────────────────────────────
+    let bestD2 = Infinity
+    let bestU = 0
+    for (let i = 0; i <= n; i++) {
+        const u = i / n
+        const p = curve.getPoint(u)
+        const dx = p.x - qx, dz = p.z - qz
+        const d2 = dx * dx + dz * dz
+        if (d2 < bestD2) { bestD2 = d2; bestU = u }
+    }
+
+    if (mode === 'nearest') {
+        return curve.getPoint(bestU).y
+    }
+
+    // ── Projection refine (mirrors road.js queryNearest 09-17 fix) ────────────
+    const du = 1 / n
+    const uPrev = Math.max(0, bestU - du)
+    const uNext = Math.min(1, bestU + du)
+
+    const prev = curve.getPoint(uPrev)
+    const mid  = curve.getPoint(bestU)
+    const next = curve.getPoint(uNext)
+
+    // Project onto segment [prev→mid]
+    const abX = mid.x - prev.x, abZ = mid.z - prev.z
+    const lenSqA = abX * abX + abZ * abZ
+    const tA = lenSqA < 1e-12 ? 0
+        : Math.max(0, Math.min(1, ((qx - prev.x) * abX + (qz - prev.z) * abZ) / lenSqA))
+    const pxA = prev.x + tA * abX, pzA = prev.z + tA * abZ
+    const dA2 = (qx - pxA) ** 2 + (qz - pzA) ** 2
+
+    // Project onto segment [mid→next]
+    const cbX = next.x - mid.x, cbZ = next.z - mid.z
+    const lenSqB = cbX * cbX + cbZ * cbZ
+    const tB = lenSqB < 1e-12 ? 0
+        : Math.max(0, Math.min(1, ((qx - mid.x) * cbX + (qz - mid.z) * cbZ) / lenSqB))
+    const pxB = mid.x + tB * cbX, pzB = mid.z + tB * cbZ
+    const dB2 = (qx - pxB) ** 2 + (qz - pzB) ** 2
+
+    // Map winning segment's t back to a continuous u
+    let refinedU
+    if (dA2 <= dB2) {
+        refinedU = uPrev + tA * (bestU - uPrev)
+    } else {
+        refinedU = bestU + tB * (uNext - bestU)
+    }
+    refinedU = Math.max(0, Math.min(1, refinedU))
+
+    return curve.getPoint(refinedU).y
+}
+
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 // role: 'gate'              → affects exit code; must PASS for exit 0
 // role: 'demo-expected-fail' → informational only; FAIL is expected, shown for diagnostics
@@ -220,6 +303,30 @@ const FIXTURES = [
         // For the seam fixture we build a combined spline from sliceA + sliceB deduped,
         // and also directly read sliceA.last / sliceB.first for the boundary metric.
     },
+    {
+        // 09-17 physics-sampling C0-continuity gate.
+        // A gently curving path with a steeper Y rise — the staircase only shows where Y changes
+        // with arc position AND the spline has XZ curvature so adjacent discrete samples have
+        // meaningfully different Y. The grade here (~8%) produces ~0.16 m per discrete 2 m step,
+        // which clearly exceeds MAX_PHYSICS_DY_M (0.05 m) in nearest mode.
+        // Query points march along the spline at fine steps; Y is sampled via both strategies.
+        // The refine mode must stay under MAX_PHYSICS_DY_M; nearest mode must exceed it.
+        name: 'physics-sampling-continuity',
+        role: 'gate',
+        description: 'Physics query marching along a rising, curving path (~8% grade). Refine mode must be C0-smooth; nearest-discrete must show staircase (>MAX_PHYSICS_DY_M). Gate: refine maxDY <= MAX_PHYSICS_DY_M.',
+        points: [
+            { x:   0, y:  0.0, z:  0 },
+            { x:  15, y:  1.2, z:  4 },
+            { x:  30, y:  2.4, z: 10 },
+            { x:  45, y:  3.6, z: 14 },
+            { x:  60, y:  4.8, z: 16 },
+            { x:  75, y:  6.0, z: 14 },
+            { x:  90, y:  7.0, z:  8 },
+            { x: 105, y:  7.6, z:  0 },
+        ],
+        // physicsMode: special marker — computePhysicsMetrics handles this fixture
+        physicsMode: true,
+    },
 ]
 
 // ── Metric computation ────────────────────────────────────────────────────────
@@ -228,6 +335,54 @@ const FIXTURES = [
  * Clamp a value between lo and hi.
  */
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
+
+/**
+ * Compute physics-sampling continuity metrics for a physicsMode fixture.
+ * Marches a query point along the spline path in fine steps and samples Y via
+ * both 'nearest' and 'refine' strategies, returning maxDY for each.
+ *
+ * Returns { maxDY_nearest, maxDY_refine }
+ */
+function computePhysicsMetrics(fixture) {
+    const curve = catmullRomCurve(fixture.points)
+    const totalLen = curve.getLength()
+    // Fine steps: ~0.25 m — much smaller than the ~2 m discrete-sample spacing,
+    // so we catch every staircase jump.
+    const STEP_M = 0.25
+    const steps = Math.max(4, Math.ceil(totalLen / STEP_M))
+
+    // March query points slightly off-centerline (lateral offset 0.5 m) so the
+    // nearest-discrete result actually varies between steps rather than finding the
+    // same sample every time. Off-centerline is realistic: the car isn't always dead-center.
+    const LATERAL = 0.5  // metres off-center
+
+    let prevY_nearest = null
+    let prevY_refine  = null
+    let maxDY_nearest = 0
+    let maxDY_refine  = 0
+
+    for (let i = 0; i <= steps; i++) {
+        const t = i / steps
+        const p = curve.getPoint(t)
+        // Apply a small lateral offset in the XZ plane (perpendicular to tangent direction).
+        // tangentAt gives XZ direction; perp = (-tz, tx) in XZ.
+        const tang = curve.tangentAt(t)
+        const qx = p.x - tang.z * LATERAL  // perp offset
+        const qz = p.z + tang.x * LATERAL
+
+        const yN = physicsSampleY(curve, qx, qz, 'nearest')
+        const yR = physicsSampleY(curve, qx, qz, 'refine')
+
+        if (prevY_nearest !== null) {
+            maxDY_nearest = Math.max(maxDY_nearest, Math.abs(yN - prevY_nearest))
+            maxDY_refine  = Math.max(maxDY_refine,  Math.abs(yR - prevY_refine))
+        }
+        prevY_nearest = yN
+        prevY_refine  = yR
+    }
+
+    return { maxDY_nearest, maxDY_refine }
+}
 
 /**
  * Compute spline-continuity metrics for a fixture.
@@ -350,7 +505,14 @@ console.log('-'.repeat(120))
 let allGatesPassed = true
 
 const results = []
+// physics-mode fixtures are printed in a separate section after the main table
+const physicsModeFixtures = []
+
 for (const fix of FIXTURES) {
+    if (fix.physicsMode) {
+        physicsModeFixtures.push(fix)
+        continue
+    }
     const m = computeMetrics(fix)
     const isGate = fix.role === 'gate'
     const isDemoFail = fix.role === 'demo-expected-fail'
@@ -399,9 +561,9 @@ const gateFailed   = gateFixtures.filter(r => r.metricsFail)
 
 console.log('')
 if (allGatesPassed) {
-    console.log(`  GATE RESULT: PASS  — ${gateFixtures.length} gate fixture(s) all within thresholds`)
+    console.log(`  GATE RESULT (spline metrics): PASS  — ${gateFixtures.length} gate fixture(s) all within thresholds`)
 } else {
-    console.log(`  GATE RESULT: FAIL  — ${gateFailed.length}/${gateFixtures.length} gate fixture(s) exceeded thresholds`)
+    console.log(`  GATE RESULT (spline metrics): FAIL  — ${gateFailed.length}/${gateFixtures.length} gate fixture(s) exceeded thresholds`)
 }
 console.log(`  Demo fixtures shown (informational): ${demoFixtures.length} — expected to fail; do NOT affect exit code.`)
 console.log('')
@@ -411,6 +573,48 @@ console.log('    demo-expected-fail = measured for diagnostics; FAIL expected; e
 console.log('    Threshold constants are at the top of test/spline-continuity.mjs (tunable).')
 console.log('    Re-tune after Phase 8 graded-Y spline bake lands.')
 console.log('')
+
+// ── 09-17 Physics-sampling continuity section ─────────────────────────────────
+if (physicsModeFixtures.length > 0) {
+    console.log('='.repeat(120))
+    console.log('  PHYSICS-SAMPLING CONTINUITY (09-17 SURF-04 gap closure)')
+    console.log(`  Gate: refine maxDY <= ${MAX_PHYSICS_DY_M} m  |  nearest-discrete must EXCEED threshold (staircase catch demo)`)
+    console.log('='.repeat(120))
+    const physHdr = [
+        col('Fixture',                 30),
+        col('nearest maxDY(m)',        18),
+        col('Nearest>thresh?',         16),
+        col('refine maxDY(m)',         16),
+        col('Refine<=thresh?',         16),
+        col('GATE',                    8),
+    ].join(' | ')
+    console.log(physHdr)
+    console.log('-'.repeat(120))
+
+    for (const fix of physicsModeFixtures) {
+        const { maxDY_nearest, maxDY_refine } = computePhysicsMetrics(fix)
+        const nearestExceeds = maxDY_nearest > MAX_PHYSICS_DY_M
+        const refinePass     = maxDY_refine  <= MAX_PHYSICS_DY_M
+        const gatePass       = refinePass  // gate: refine must be smooth
+
+        if (fix.role === 'gate' && !gatePass) allGatesPassed = false
+
+        const row = [
+            col(fix.name,                         30),
+            col(maxDY_nearest.toFixed(4),         18),
+            col(nearestExceeds ? 'YES (expected)' : 'no (unexpected)', 16),
+            col(maxDY_refine.toFixed(4),          16),
+            col(refinePass ? ' PASS ' : ' FAIL ', 16),
+            col(gatePass    ? '  PASS  ' : '  FAIL  ', 8),
+        ].join(' | ')
+        console.log(row)
+
+        // Self-documenting contrast line (plan requirement)
+        console.log(`    nearest-discrete: ΔY=${maxDY_nearest.toFixed(4)} m (would ${nearestExceeds ? 'FAIL' : 'PASS'}) | refine: ΔY=${maxDY_refine.toFixed(4)} m (${refinePass ? 'PASS' : 'FAIL'})`)
+    }
+    console.log('-'.repeat(120))
+    console.log('')
+}
 
 // Crown sanity note (crownProfile imported but not driving metrics — documented here).
 {
