@@ -749,6 +749,47 @@ export class TerrainSystem {
             }
         }
 
+        // D1 (plan 09-19): version-mismatch re-carve pass (fixes bug #6 — slider-no-rebuild-carve).
+        // Any live chunk whose builtRoadGeneration differs from the current road generation was
+        // carved against an old route (e.g. after maxGrade slider re-routes). Re-build its carve
+        // table on the main thread and re-apply the blend to the existing mesh Y positions.
+        // This is an in-place recarve — no worker round-trip; no new geometry allocation needed
+        // because GRID_SAMPLES and CHUNK_SIZE are fixed, and chunk.heights holds the raw heights.
+        // Frame-spread: cap re-carves at MAX_BUILDS_PER_FRAME per ring-sync tick (same discipline
+        // as _flushPendingQueue) so a sudden re-route doesn't spike the main thread.
+        // CARVE SYNC: carve never enters terrain-worker.js — it is a post-read main-thread blend.
+        if (this._roadSystem) {
+            const currentRoadGen = this._roadSystem.roadGeneration()
+            let recarved = 0
+            for (const [key, chunk] of this._chunkMap) {
+                if (recarved >= MAX_BUILDS_PER_FRAME) break
+                if (chunk.builtRoadGeneration === currentRoadGen) continue
+                const [cx, cz] = key.split(',').map(Number)
+                const newCarveData = this._buildCarveTable(cx, cz)
+                // Re-apply heights + carve blend to the mesh Y positions (same formula as _flushPendingQueue).
+                const amp = this._params.terrainAmplitude ?? 1.0
+                const N   = GRID_SAMPLES
+                const pos = chunk.mesh.geometry.attributes.position
+                for (let i = 0; i < N * N; i++) {
+                    const raw = chunk.heights[i] * amp
+                    if (newCarveData) {
+                        const blendW = newCarveData[i * 2]
+                        const gradeY = newCarveData[i * 2 + 1] * amp
+                        pos.setY(i, raw + blendW * (gradeY - raw))
+                    } else {
+                        pos.setY(i, raw)
+                    }
+                }
+                pos.needsUpdate = true
+                chunk.mesh.geometry.computeVertexNormals()
+                this._writeChunkVertexColors(chunk.mesh.geometry, newCarveData, chunk.heights, amp)
+                // Stamp the new generation so we don't re-carve this chunk again until the next re-route.
+                chunk.carveData = newCarveData ?? null
+                chunk.builtRoadGeneration = currentRoadGen
+                recarved++
+            }
+        }
+
         // Request new chunks not yet loaded or pending
         for (const key of needed) {
             if (!this._chunkMap.has(key) && !this._pendingWorker.has(key)) {
@@ -1119,8 +1160,13 @@ export class TerrainSystem {
             this._scene.add(mesh)
 
             // Store mesh, raw heights (heights used by sampleHeight for P7-2 test),
-            // and carveData (used by sampleHeight carve blend path).
-            this._chunkMap.set(key, { mesh, heights, carveData: carveData ?? null })
+            // carveData (used by sampleHeight carve blend path), and builtRoadGeneration
+            // (D1, plan 09-19: the road generation at which this chunk's carve was built;
+            // _updateChunkRing re-carves chunks whose stored version ≠ roadGeneration()).
+            this._chunkMap.set(key, {
+                mesh, heights, carveData: carveData ?? null,
+                builtRoadGeneration: this._roadSystem?.roadGeneration() ?? -1,
+            })
 
             // Release the pending reservation only after _chunkMap is updated.
             // This is the single authoritative release point — the key is held in
