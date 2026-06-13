@@ -627,6 +627,8 @@ export class RoadSystem {
         if (this._tileObjects) this._tileObjects.clear()
         if (this._canonRunCache) this._canonRunCache.clear()
         this._slicedFrom = null
+        // D1: bump the single invalidation counter — signals ribbon tiles + carve chunks to rebuild.
+        this._generation++
         this._invalidateProto()
     }
 
@@ -762,6 +764,12 @@ export class RoadSystem {
             dirty:    true,
             surfaceY: null,                                  // optional (x,z)=>renderedHeight for visual line placement
         }
+        // D1 — single invalidation source (plan 09-19).
+        // Bumped on every re-route (invalidateCache) AND every real re-stream (_streamNetwork past
+        // lazy gate). Consumed by ribbon tiles (road-mesh.js builtGeneration) and terrain-carve
+        // chunks (terrain.js builtRoadGeneration) to detect and rebuild stale geometry.
+        this._generation = 0
+
         // Canonical valley-trunk network store — built ONLY by _streamNetwork.
         // key "<mz>:<runIndex>" → { points: THREE.Vector3[] } (continuous centerline, raw routed y).
         this._network = new Map()
@@ -792,6 +800,16 @@ export class RoadSystem {
     // Live D-09 weight edits arrive by debug sliders mutating this._params; each re-stream refreshes
     // this._proto.params from this._params (see _refreshParams) so slider changes take effect.
     setSurfaceSampler(fn) { this._proto.surfaceY = fn }       // main.js passes terrainSystem.analyticHeight
+
+    /**
+     * D1 — generation counter accessor (plan 09-19).
+     * Returns the current generation; increments whenever the road network re-routes
+     * (invalidateCache) or truly re-streams (_streamNetwork past lazy gate).
+     * Consumed by road-mesh.js (builtGeneration) and terrain.js (builtRoadGeneration)
+     * to detect and frame-spread-rebuild stale ribbon tiles and carve chunks.
+     * @returns {number}
+     */
+    roadGeneration() { return this._generation }
 
     /**
      * Wire the carve-free raw-height sampler used by sampleDesignGradeAt (CR-01, plan 09-08).
@@ -1264,6 +1282,9 @@ export class RoadSystem {
         if (this._proto.anchors.size > 4000) this._proto.anchors.clear()
         if (this._proto.segs.size    > 1500) this._proto.segs.clear()
         this._network.clear()
+        // D1: bump generation counter on real re-stream — distinct from the invalidateCache bump
+        // (re-route path) so both entry points signal ribbon tiles + carve chunks to rebuild.
+        this._generation++
         // A real re-stream invalidates the previous slice; _sliceNetwork re-slices on next call.
         this._slicedFrom = null
         if (this._tiles) this._tiles.clear()
