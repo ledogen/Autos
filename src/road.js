@@ -1711,7 +1711,7 @@ export class RoadSystem {
         const shoulderWidth = p.roadShoulderWidth  ?? 2.5
         const fillHeight    = p.roadFillHeight     ?? 2.0
         const crownHeight   = p.crownHeight        ?? 0.05
-        const camberStrength = p.camberStrength    ?? 200
+        // camberStrength now consumed by camberProfile() — not needed here (D2, plan 09-21)
 
         const maxExt = halfWidth + shoulderWidth + 4
         const nr = this.queryNearest(wx, wz, maxExt)
@@ -1750,19 +1750,14 @@ export class RoadSystem {
             // Uses crownProfile() from road-carve.js — SAME formula as sweepRibbon.
             const crownY = crownProfile(signedLat, halfWidth, crownHeight)
 
-            // Camber: estimate local signed curvature via a second queryNearest 2 m ahead.
-            // CR-02 (09-08): uses shared signedCurvature() with ds=2.0 — identical to sweepRibbon
-            // and _buildCarveTable so camber magnitude matches at all three sites.
-            const eps = 2.0
-            const nrAhead = this.queryNearest(wx + tx * eps, wz + tz * eps, maxExt + eps)
-            let camberAngle = 0
-            if (nrAhead) {
-                const tA = nrAhead.tangent
-                const signedKappa = signedCurvature(tx, tz, tA.x, tA.z, eps)
-                const raw = camberStrength * signedKappa
-                const MAX_CAMBER = 6 * (Math.PI / 180)
-                camberAngle = Math.max(-MAX_CAMBER, Math.min(MAX_CAMBER, raw))
-            }
+            // Continuous run arc-length: nr.arcS (tile-local refinedU*arcLen) + arcSOffset
+            // matches sweepRibbon's arcSOffset + u*arcLen — same keying as pothole below.
+            const centerlineArcS = (nr.arcS ?? 0) + (nr.arcSOffset ?? 0)
+
+            // D2 (plan 09-21): replace second-queryNearest camber estimate with the shared
+            // slew-limited camberProfile — visual ribbon and physics now read the SAME angle.
+            // Removes the redundant ahead-query (perf win on the hot physics path).
+            const camberAngle = this.camberProfile(centerlineArcS, nr.runKey ?? '')
 
             // Tilt: signedLat * sin(camberAngle) — same formula as sweepRibbon
             const tiltY = signedLat * Math.sin(camberAngle)
@@ -1771,11 +1766,8 @@ export class RoadSystem {
 
             // ── SURF-06: pothole micro-noise (D-03) ─────────────────────────────
             // Only on-ribbon (latDist < halfWidth) — does NOT affect shoulder blend.
-            // CR-03 (09-08): key on centerline arcS = nr.arcS + (nr.arcSOffset ?? 0) to match
-            // sweepRibbon's arcSOffset + u*arcLen. arcSOffset is 0 for all current segments
-            // (seg.arcSOffset not yet tracked in _assignSlice) but the addition is forward-safe.
+            // CR-03 (09-08): key on centerline arcS (same as camber above — consistent keying).
             if (p.potholeEnabled) {
-                const centerlineArcS = (nr.arcS ?? 0) + (nr.arcSOffset ?? 0)
                 const rq = roadQuality(centerlineArcS, nr.runKey ?? '', this._worldSeed)
                 designY += potholeNoise(wx, wz, rq, p)
             }
