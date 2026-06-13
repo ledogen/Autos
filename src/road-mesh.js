@@ -453,6 +453,25 @@ export class RoadMeshSystem {
             }
         }
         this._pendingQueue = newQueue
+
+        // D1 (plan 09-19): version-mismatch rebuild pass (fixes bug #1 — stale ribbon).
+        // Any built tile whose builtGeneration differs from the current road generation was
+        // built against an old spline; dispose it and re-enqueue so it rebuilds against the
+        // current route. Frame-spread is preserved: re-enqueue lets flushPendingQueue drain
+        // at MAX_ROAD_BUILDS_PER_FRAME — never rebuilds all stale tiles in one frame.
+        // Only check active tiles so we don't revive tiles that should stay evicted.
+        const currentGen = this._road.roadGeneration()
+        // Snapshot keys to avoid mutating the map while iterating.
+        const builtKeys = [...this._tileMeshMap.keys()]
+        for (const key of builtKeys) {
+            const entry = this._tileMeshMap.get(key)
+            if (!entry) continue
+            if (activeKeys.has(key) && entry.builtGeneration !== currentGen) {
+                const [cx, cz] = key.split(',').map(Number)
+                this.disposeRoadTile(key)   // remove meshes + geometry; deletes from _tileMeshMap
+                this.ensureRoadTile(cx, cz) // re-enqueue for rebuild against current spline
+            }
+        }
     }
 
     /**
@@ -488,7 +507,8 @@ export class RoadMeshSystem {
         const segs = this._road._tiles.get(key)
         if (!segs || segs.length === 0) {
             // No road on this tile — mark as processed so we don't re-queue it.
-            this._tileMeshMap.set(key, { meshes: [], geometries: [] })
+            // D1 (plan 09-19): stamp generation so a later re-route triggers a re-check.
+            this._tileMeshMap.set(key, { meshes: [], geometries: [], builtGeneration: this._road.roadGeneration() })
             return
         }
 
@@ -572,7 +592,9 @@ export class RoadMeshSystem {
             }
         }
 
-        this._tileMeshMap.set(key, { meshes, geometries })
+        // D1 (plan 09-19): stamp the road generation this tile was built against so
+        // syncToChunkRing can detect stale tiles and re-enqueue them on mismatch.
+        this._tileMeshMap.set(key, { meshes, geometries, builtGeneration: this._road.roadGeneration() })
     }
 
     // ── Junction footprint helpers ────────────────────────────────────────────
