@@ -39,8 +39,25 @@ the road before rebuilding the carve.)
   span, not the windowed run.
 - Reconcile spawn placement with the rendered centerline.
 
+## Progress (2026-06-13)
+
+- **Spawn-off-road: FIXED** (`resolveSpawn`, main.js). Root: spawn streamed + queried from the
+  baseTile center, then seated the truck up to 200 m away — across a 256 m anchor band — so the
+  first-frame re-stream around the truck shifted the canonical run's X-extent (`mx0..mx1` follow the
+  stream center) and the road moved out from under the truck. Fix: after finding the spawn point,
+  re-stream centered on it (`ensureTile(spawnTile)`) and re-seat on THAT network so placement matches
+  the rendered road.
+- **Determinism (12→15→12 ≠ reload): still open — this is the cross-band window-variance, same root as
+  BUG-08.** `mx0/mx1 = floor(center.x / PROTO_ANCHOR_SPACING) ± CANONICAL_HALF_WIDTH` (road.js ~1301)
+  follow the stream center, so the canonical run (and its CatmullRom + fillet end-effects) re-shape
+  each time the center crosses a 256 m band. Within a band it IS invariant. **Proper fix:** build each
+  row-run with a world-anchored MARGIN beyond the rendered span and only consume the interior, so the
+  rendered region's geometry (incl. the curvature-clamp fillet, which is local — bracketed by straights)
+  is invariant across stream centers. Pre-req: a headless window-invariance probe (stream the same world
+  region from two centers, assert identical geometry). Treat BUG-08 and this as one fix.
+
 ## Acceptance
 
 - Reload-at-12 and slider 12→15→12 produce the SAME road geometry at the same world position.
-- Truck spawns ON the road ribbon.
+- Truck spawns ON the road ribbon. ✅ (spawn fix)
 - Headless window-invariance assertion for the filleted run.

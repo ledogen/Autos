@@ -146,8 +146,20 @@ function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
     const baseTX = Math.floor(baseX / CHUNK_SIZE)
     const baseTZ = Math.floor(baseZ / CHUNK_SIZE)
     roadSystem.ensureTile(baseTX, baseTZ)
-    const nearest = roadSystem.queryNearest(baseX, baseZ, 200)
+    let nearest = roadSystem.queryNearest(baseX, baseZ, 200)
     if (nearest) {
+      // BUG-11 spawn-off-road: the network the road is RENDERED from is whatever the per-frame
+      // update() streams around the truck. The spawn point found above can be up to 200 m from
+      // baseTile — across a 256 m anchor band — so the canonical run's X-extent (mx0..mx1, which
+      // follows the stream center) differs between the baseTile stream and the first-frame stream
+      // around the truck. The road then re-shapes out from under the just-seated truck.
+      // Re-stream centered on the spawn point and re-seat on THAT network so placement matches
+      // what the first frame renders. ensureTile is lazy-gated (96 m), so this only re-streams when
+      // the spawn point is actually far enough from baseTile to matter.
+      const spawnTX = Math.floor(nearest.point.x / CHUNK_SIZE)
+      const spawnTZ = Math.floor(nearest.point.z / CHUNK_SIZE)
+      roadSystem.ensureTile(spawnTX, spawnTZ)
+      nearest = roadSystem.queryNearest(nearest.point.x, nearest.point.z, 100) || nearest
       // analyticHeight for placement so the truck rests on the rendered terrain surface.
       // (router used raw coarseHeight for grade; spawn PLACEMENT uses analyticHeight — visual match)
       const surfaceY = terrainSystem ? terrainSystem.analyticHeight(nearest.point.x, nearest.point.z) : 0
