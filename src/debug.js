@@ -277,6 +277,11 @@ export function initDebug (params, callbacks = {}, options = {}) {
   surfaceFolder.add(params, 'roadClearanceMargin', 0,   1.5, 0.05).name('Clearance Margin (m)').onChange(fireSurface)
   surfaceFolder.add(params, 'roadCarveExtraWidth', 0,   8,   0.5 ).name('Carve Extra Width (m)').onChange(fireSurface)
 
+  // D5 (plan 09-20) ring hysteresis: keep-radius = build-radius + roadTileKeepMargin.
+  // Does not require a full road rebuild — tile lifecycle adjusts on the next syncToChunkRing.
+  // Fires onRoadSurfaceChange so syncToChunkRing picks up the new margin promptly.
+  surfaceFolder.add(params, 'roadTileKeepMargin', 0, 3, 1).name('Keep Margin (tiles)').onChange(fireSurface)
+
   // D-04: Read-only Logger hint — shows the \ key without being interactive
   const _loggerHint = { hint: '\\ to record' }
   gui.add(_loggerHint, 'hint').name('Logger').disable()

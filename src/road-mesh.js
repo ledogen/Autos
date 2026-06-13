@@ -429,24 +429,53 @@ export class RoadMeshSystem {
      * Tiles in `activeKeys` that are not built are enqueued; tiles not in `activeKeys`
      * are disposed. This keeps road tile lifetime co-located with terrain chunk lifetime.
      *
+     * D5 (plan 09-20) ring hysteresis: built tiles are disposed only when they fall outside
+     * the KEEP set, which is the active build ring expanded by `roadTileKeepMargin` tiles in
+     * each direction. This prevents the instant dispose+re-enqueue thrash (bug #2) when the
+     * car crosses a tile edge: the departing tile stays alive for an extra frame-cycle before
+     * the expanded keep ring also contracts past it.
+     * Build (enqueue) still uses the original activeKeys — keep-radius > build-radius.
+     *
      * @param {Set<string>} activeKeys — set of "X,Z" keys currently in the terrain ring
      */
     syncToChunkRing(activeKeys) {
-        // Enqueue any active tile that does not have a road mesh yet
+        // Enqueue any active tile that does not have a road mesh yet (build-radius unchanged)
         for (const key of activeKeys) {
             const [cx, cz] = key.split(',').map(Number)
             this.ensureRoadTile(cx, cz)
         }
-        // Dispose road tiles whose terrain chunk has been evicted
+
+        // D5: compute the keep set = active ring expanded by roadTileKeepMargin tiles.
+        // Parse min/max tile X/Z from activeKeys, then expand by the margin.
+        const margin = (this._params.roadTileKeepMargin ?? 1) | 0   // integer tiles
+        let minCX = Infinity, maxCX = -Infinity, minCZ = Infinity, maxCZ = -Infinity
+        for (const key of activeKeys) {
+            const [cx, cz] = key.split(',').map(Number)
+            if (cx < minCX) minCX = cx
+            if (cx > maxCX) maxCX = cx
+            if (cz < minCZ) minCZ = cz
+            if (cz > maxCZ) maxCZ = cz
+        }
+        // Build keepSet only if activeKeys is non-empty (avoid Infinity/-Infinity on empty ring)
+        const keepSet = new Set()
+        if (activeKeys.size > 0) {
+            for (let cx = minCX - margin; cx <= maxCX + margin; cx++) {
+                for (let cz = minCZ - margin; cz <= maxCZ + margin; cz++) {
+                    keepSet.add(`${cx},${cz}`)
+                }
+            }
+        }
+
+        // Dispose road tiles whose terrain chunk has been evicted AND are outside the keep set
         for (const key of this._tileMeshMap.keys()) {
-            if (!activeKeys.has(key)) {
+            if (!keepSet.has(key)) {
                 this.disposeRoadTile(key)
             }
         }
-        // Also drop pending tiles that are no longer in the active ring
+        // Also drop pending tiles that are no longer in the keep set
         const newQueue = []
         for (const item of this._pendingQueue) {
-            if (activeKeys.has(item.key)) {
+            if (keepSet.has(item.key)) {
                 newQueue.push(item)
             } else {
                 this._pendingSet.delete(item.key)

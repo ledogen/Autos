@@ -367,4 +367,13 @@ export const RANGER_PARAMS = {
   // Default 3 m; increase if skirt edges are still sitting above terrain.
   // Range: 0–8 m. Exposed as a Road Surface debug slider.
   roadCarveExtraWidth: 3.0,     // m — extra carve footprint beyond ribbon + shoulder (Plan 09-11)
+
+  // roadTileKeepMargin: D5 ring hysteresis (plan 09-20).
+  // Ribbon tiles are KEPT for this many extra tiles beyond the terrain active ring before
+  // being disposed. When crossing a tile edge, the terrain ring shrinks by one tile on one
+  // side and expands on the other; without hysteresis the ribbon tile that just left the
+  // ring is disposed and immediately re-enqueued → visible thrash (bug #2).
+  // A margin of 1 tile means keep-radius = build-radius + 1, so the departing tile is held
+  // for ~1 extra frame-cycle before disposal. Units: tiles. Range: 0–3.
+  roadTileKeepMargin: 1,        // tiles — keep-radius = build-radius + this margin (D5 / 09-20)
 };
