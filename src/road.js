@@ -502,6 +502,63 @@ export class RoadSystem {
     }
 
     /**
+     * collectChunkSplinePoints — Pre-sample nearby road splines into a flat numeric array for the terrain carve hot path.
+     *
+     * This is the SINGLE getPointAt site for the _buildCarveTable carve path.  It performs the
+     * same tile-block scan as queryNearest (CR-01 radius-sized block) and samples every
+     * candidate spline at a fixed ~1.5 m arc interval, pushing consecutive [x, y, z] triples
+     * into a plain flat Array.  The caller (_buildCarveTable) calls this ONCE per chunk (outside
+     * the per-vertex loop) and then does a simple O(N) squared-distance search over the returned
+     * array — zero getPointAt, zero queryNearest, zero closure allocation in the inner vertex loop.
+     *
+     * Lateral sign is NOT needed: the carve blend is symmetric around the centerline, so unsigned
+     * XZ distance from the nearest road point suffices.  If sign is ever needed (e.g. for one-sided
+     * camber in a future plan), the flat array can be extended with the tangent triples at the
+     * same arc positions without changing the calling convention.
+     *
+     * Samples include points slightly beyond the chunk edge (the caller passes
+     * `queryRadius = maxExt + CHUNK_SIZE * 0.71`, same as the chunk-level early-reject) so
+     * adjacent chunks share the same spline points near their shared boundary — continuity
+     * is preserved with no seam steps.
+     *
+     * @param {number} centerX — chunk centre world X
+     * @param {number} centerZ — chunk centre world Z
+     * @param {number} radiusM — search radius in metres (same value as queryNearest early-reject)
+     * @returns {number[]} flat [x0,y0,z0, x1,y1,z1, ...] — length is a multiple of 3; empty if no road nearby.
+     */
+    collectChunkSplinePoints(centerX, centerZ, radiusM) {
+        if (!this._tiles) return []
+
+        const qTileX = Math.floor(centerX / CHUNK_SIZE)
+        const qTileZ = Math.floor(centerZ / CHUNK_SIZE)
+        const blk    = Math.ceil(radiusM / CHUNK_SIZE)
+
+        const out = []
+
+        for (let dx = -blk; dx <= blk; dx++) {
+            for (let dz = -blk; dz <= blk; dz++) {
+                const key  = `${qTileX + dx},${qTileZ + dz}`
+                const segs = this._tiles.get(key)
+                if (!segs || !segs.length) continue
+                for (const { spline } of segs) {
+                    if (!spline) continue
+                    // ~1 sample per 1.5 m, clamped to [2, 512].  This is the ONLY getPointAt
+                    // site on the carve path — it runs ONCE per chunk (not per vertex).
+                    const len = spline.getLength ? (spline.getLength() || 64) : 64
+                    const n   = Math.max(2, Math.min(512, Math.ceil(len / 1.5)))
+                    for (let i = 0; i <= n; i++) {
+                        const u = i / n
+                        const p = spline.getPointAt(u)
+                        out.push(p.x, p.y, p.z)
+                    }
+                }
+            }
+        }
+
+        return out
+    }
+
+    /**
      * Clear cached road data and remove any debug lines from the scene.
      * Clears the valley-trunk network and proto caches (the per-tile caches are gone).
      */
@@ -570,13 +627,9 @@ export class RoadSystem {
         this._debugLines = []
         if (!this._scene || !this._tiles) return
 
-        // 09-13: param-gated viz toggle.
-        // When roadDebugLineOnSurface is false (default), draw the spline's own routed Y
-        // with a small constant lift (+0.5 m) — the line reads as the continuous spline geometry
-        // (truth, no analyticHeight carve-inclusive distortion, no stepped seams).
-        // When true, keep legacy surf(p.x,p.z)+1.0 behavior for carve-surface debugging.
-        const onSurf = this._params?.roadDebugLineOnSurface ?? false
-        const surf = this._proto.surfaceY
+        // Draw the routed spline geometry Y (the truth) with a small constant lift (+0.5 m)
+        // so the line sits just above the road ribbon.  The terrain is carved to meet the
+        // spline, so the centerline viz simply draws the spline — no surface-lift toggle needed.
         for (const segs of this._tiles.values()) {
             for (const { spline, points } of segs) {
                 if (!points || points.length < 2) continue
@@ -591,13 +644,8 @@ export class RoadSystem {
                 } else {
                     seg = points.map(p => p.clone())
                 }
-                if (onSurf && surf) {
-                    for (const p of seg) p.y = surf(p.x, p.z) + 1.0
-                } else {
-                    // Default: draw the routed spline geometry Y (the truth).
-                    // +0.5 m constant lift keeps the line just above the road ribbon.
-                    for (const p of seg) p.y += 0.5
-                }
+                // Draw at routed spline Y + 0.5 m lift (continuous truth, no analyticHeight distortion).
+                for (const p of seg) p.y += 0.5
                 const line = _buildDebugLine2(seg, 0x00e5ff)
                 line.visible = this._debugVisible
                 this._scene.add(line)
