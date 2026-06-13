@@ -101,7 +101,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
   - [x] 09-16-PLAN.md — CARVE-PERF gap closure: replace per-vertex queryNearest + 4-corner bilinearGrade in _buildCarveTable with a pre-sampled spline-point lookup (single pre-loop getPointAt site, closure-free per-vertex nearest-point search) — fixes the ~1s stream lag AND road-below-ground on steep/curving tiles; remove roadDebugLineOnSurface viz toggle (SURF-04/05)
   - [x] 09-18-PLAN.md — D0: true minimum-turn-radius arc-fillet pass (`_filletMinRadius` replaces the coil-excision `_limitCurvature`); minRadius floored ≥ roadHalfWidth+clearance; hairpin no-fold gate fixture (SURF-01/03)
   - [x] 09-19-PLAN.md — D1: single generation-counter versioning (roadGeneration) — ribbon tiles + terrain-carve chunks record built-against generation, rebuild on mismatch; fixes stale ribbon (#1) + maxGrade-no-carve-rebuild (#6) (SURF-01/05)
-  - [ ] 09-20-PLAN.md — D5 ring hysteresis (keep-radius > build-radius, kills tile-edge thrash #2) + D4 stateless queryNearest arm-disambiguation (footprint/interior preference, kills invisible-ramp launch #3); carve nearest kept consistent (SURF-01/04)
+  - [x] 09-20-PLAN.md — D5 ring hysteresis (keep-radius > build-radius, kills tile-edge thrash #2) + D4 stateless queryNearest arm-disambiguation (footprint/interior preference, kills invisible-ramp launch #3); carve nearest kept consistent (SURF-01/04)
   - [ ] 09-21-PLAN.md — D2: ONE slew-limited `camberProfile(arcS)` per canonical run (signed-κ → rate limit → ±6°), cached + generation-invalidated; ribbon + physics read it (visual==physics, no clamp-flip spike #4) (SURF-03/04)
   - [ ] 09-22-PLAN.md — D3: carve inherits the ribbon cross-section (crown + camberProfile − clearanceMargin → uniform banked-turn clearance #5) + multi-arm footprint bound (≤½ inter-arm sep) + max-floor guard (no undermining); worker byte-identical (SURF-04/05)
   - [ ] 09-23-PLAN.md — Harness gate fixtures: D4 switchback no-arm-flip, D3 two-close-arms no-undermine, D2 camber-rate; full headless gate set exits 0 (SURF-03/04/05)
@@ -136,7 +136,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 | 6. Procedural Terrain | v1.0 | 3/3 | ✅ Complete | 2026-06-03 |
 | 7. Free-Cam + Seeded Layered Terrain | v1.1 | 5/5 | Complete   | 2026-06-09 |
 | 8. Road Routing | v1.1 | 7/7 | Complete   | 2026-06-10 |
-| 9. Road Surface | v1.1 | 17/24 | In Progress|  |
+| 9. Road Surface | v1.1 | 18/24 | In Progress|  |
 | 10. POI Hooks + Polish | v1.1 | 0/? | Not started | — |
 
 ## Backlog
