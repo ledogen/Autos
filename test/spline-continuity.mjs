@@ -352,6 +352,44 @@ const FIXTURES = [
         // physicsMode: special marker — computePhysicsMetrics handles this fixture
         physicsMode: true,
     },
+    {
+        // 09-23 D4 switchback no-arm-flip gate.
+        // Two parallel switchback arms running close together in XZ (separated by ~2*minRadius).
+        // Arm A runs along +X at z=0; arm B runs along -X at z=2*SW_ARM_SEP (return leg).
+        // A query point marches along arm A with a small lateral offset toward arm B.
+        // Gate: the footprint-preference selector (mirrors D4 queryNearest) NEVER flips to arm B
+        //       (arm-flip count == 0), while the brute global-nearest selector WOULD flip
+        //       (demonstrating the gate is meaningful — the bug it guards against is real).
+        // Footprint halfwidth = roadHalfWidth + roadShoulderWidth (matches D4 footprintHW in src/road.js).
+        // switchbackMode: special marker — computeSwitchbackMetrics handles this fixture.
+        name: 'switchback-no-arm-flip',
+        role: 'gate',
+        description: 'Two parallel switchback arms ~2·minRadius apart. Footprint-preference selector must not flip to the other arm (armFlipCount==0). Brute selector is expected to flip.',
+        switchbackMode: true,
+    },
+    {
+        // 09-23 D3 two-arms-at-different-heights no-undermine gate.
+        // Upper arm at Y+h, lower arm at Y=0; arms separated laterally by ~2*minRadius.
+        // The D3 max-floor guard must prevent the lower arm's carve from undermining the upper arm's
+        // support: carve floor under the upper arm must never drop below (upperArmY - clearanceMargin).
+        // twoArmsMode: special marker — computeTwoArmsMetrics handles this fixture.
+        name: 'two-arms-no-undermine',
+        role: 'gate',
+        description: 'Upper arm (Y+h) and lower arm (Y=0) separated laterally by ~2·minRadius. Max-floor guard must prevent undermine: floor under upper arm ≥ upperArmY - clearanceMargin (undermineDepth==0).',
+        twoArmsMode: true,
+    },
+    {
+        // 09-23 D2 camber-rate slew-limit gate.
+        // An S-curve (alternating corners) where unlimited instantaneous camber would clamp-flip
+        // and spike the rate at the curvature zero-crossing (tight-turn shows 12.76°/m unlimited).
+        // The D2 slew-rate limiter (forward-march |dCamber/ds| ≤ roadCamberRate °/m) must keep
+        // the slew-limited maxDCamber ≤ MAX_DCAMBER_DEG_PER_M (2.0°/m) with no zero-crossing spike.
+        // camberRateMode: special marker — computeCamberRateMetrics handles this fixture.
+        name: 'camber-rate',
+        role: 'gate',
+        description: 'S-curve with curvature sign change. Slew-limited camber must stay ≤ MAX_DCAMBER_DEG_PER_M (2.0°/m); unlimited camber rate must exceed it (demonstrating the gate is meaningful).',
+        camberRateMode: true,
+    },
 ]
 
 // ── Metric computation ────────────────────────────────────────────────────────
@@ -604,6 +642,364 @@ function computeHairpinMetrics() {
     return { foldCount, armSeparation, halfWidth: HAIRPIN_HALF_W }
 }
 
+// ── 09-23 D4 Switchback no-arm-flip ──────────────────────────────────────────
+// Vendors a minimal arm-selector that mirrors D4 queryNearest's footprint-preference rule.
+// Two selectors are compared:
+//   'footprint': prefers the arm whose footprint the query point lies interior to
+//                (|signedLat| ≤ footprintHW = roadHalfWidth + roadShoulderWidth),
+//                falling back to globally nearest. Mirrors src/road.js queryNearest D4 fix.
+//   'brute':     always picks the globally nearest discrete sample, regardless of footprint.
+//                This is the OLD behavior that caused invisible-ramp launch (#3).
+//
+// The fixture has two switchback arms separated by SW_ARM_SEP (≈ 2·minRadius = 24 m) laterally.
+// A query point marches along arm A with a SW_QUERY_LATERAL offset toward arm B.
+// The brute selector starts picking arm B when the query gets geometrically closer to B;
+// the footprint selector never does (the query is always interior to arm A's footprint).
+
+// Geometry chosen to trigger the D4 bug with the brute selector:
+//   1. Arm A has COARSE samples (large gaps) — so between two arm A samples, a
+//      dense arm B sample may be geometrically closer to the query.
+//   2. Arm B runs at SW_ARM_SEP from arm A; query is inside A's footprint but
+//      outside B's footprint.
+//   3. footprintHW_SW < arm separation / 2, so footprints do NOT overlap.
+//
+// Geometry invariants:
+//   SW_QUERY_LATERAL < SW_FOOTPRINT_HW   (query inside arm A footprint)
+//   SW_ARM_SEP - SW_QUERY_LATERAL > SW_FOOTPRINT_HW  (query outside arm B footprint)
+//   ⟹  SW_ARM_SEP > SW_FOOTPRINT_HW + SW_QUERY_LATERAL
+// Values: footprint=2.5m, query lateral=1.5m, arm sep=5m (5 > 2.5+1.5=4 ✓)
+// Arm A: 5 coarse samples spread over 60m (12m apart)  ← few samples → gaps
+// Arm B: 40 dense samples over 60m (1.5m apart)        ← dense → always one close
+
+const SW_FOOTPRINT_HW    = 2.5   // m — arm footprint halfwidth used in both selectors
+const SW_ARM_SEP         = 5     // m — arm separation (> footprint+query_lat = 4m)
+const SW_ARM_LEN         = 60    // m — length of each arm
+const SW_QUERY_LATERAL   = 1.5   // m — offset toward arm B, inside arm A footprint (1.5 < 2.5)
+const SW_ARM_A_COARSE_N  = 5     // coarse sample count for arm A (12m gaps)
+const SW_ARM_B_DENSE_N   = 40    // dense sample count for arm B (1.5m gaps)
+
+/**
+ * Build two parallel switchback arms as arrays of {x,y,z} samples.
+ * Arm A: z = 0, COARSE — 5 samples over SW_ARM_LEN (12m apart)
+ * Arm B: z = SW_ARM_SEP, DENSE — 40 samples over SW_ARM_LEN (1.5m apart)
+ * Running in opposite directions (A: +X, B: −X mirror for self-approaching hairpin).
+ */
+function buildSwitchbackArms() {
+    const armA = []
+    for (let i = 0; i <= SW_ARM_A_COARSE_N; i++) {
+        const frac = i / SW_ARM_A_COARSE_N
+        armA.push({ x: frac * SW_ARM_LEN, y: 0, z: 0 })
+    }
+    const armB = []
+    for (let i = 0; i <= SW_ARM_B_DENSE_N; i++) {
+        const frac = i / SW_ARM_B_DENSE_N
+        // Arm B runs in opposite direction (self-approaching hairpin — mirrors D0 filleted hairpin)
+        armB.push({ x: (1 - frac) * SW_ARM_LEN, y: 0, z: SW_ARM_SEP })
+    }
+    return { armA, armB }
+}
+
+/**
+ * Select the nearest arm sample for a query point (qx, qz) using the given strategy.
+ * armSamples: Array<Array<{x,y,z}>> — list of arms, each being an array of {x,y,z} samples.
+ * strategy: 'footprint' | 'brute'
+ * footprintHW: half-width of each arm's footprint.
+ * Returns the arm index (0 = armA, 1 = armB) that the selector picks.
+ */
+function selectArm(armSamples, qx, qz, strategy, footprintHW) {
+    let extBestD2 = Infinity
+    let extBestArm = 0
+    let intBestD2 = Infinity
+    let intBestArm = -1  // -1 = no interior candidate found yet
+
+    for (let armIdx = 0; armIdx < armSamples.length; armIdx++) {
+        const arm = armSamples[armIdx]
+        for (let i = 0; i < arm.length; i++) {
+            const s = arm[i]
+            const dx = s.x - qx
+            const dz = s.z - qz
+            const d2 = dx * dx + dz * dz
+
+            // Compute tangent from this arm's direction (arm A goes +X, arm B goes -X)
+            // Use adjacent samples for tangent (or endpoint copies at ends)
+            const prev = arm[Math.max(0, i - 1)]
+            const next = arm[Math.min(arm.length - 1, i + 1)]
+            const ttx = next.x - prev.x
+            const ttz = next.z - prev.z
+            const tlen = Math.hypot(ttx, ttz)
+            const tx = tlen < 1e-9 ? 1 : ttx / tlen
+            const tz = tlen < 1e-9 ? 0 : ttz / tlen
+
+            // Signed lateral distance (right-normal direction from tangent)
+            // rightNormal = (tz, -tx) → signedLat = dot(queryOffset, rightNormal)
+            const signedLat = dx * tz - dz * tx
+
+            // Update global best
+            if (d2 < extBestD2) {
+                extBestD2 = d2
+                extBestArm = armIdx
+            }
+
+            // Update interior best (query inside this arm's footprint)
+            if (Math.abs(signedLat) <= footprintHW && d2 < intBestD2) {
+                intBestD2 = d2
+                intBestArm = armIdx
+            }
+        }
+    }
+
+    if (strategy === 'footprint') {
+        // Prefer interior if found, else fall back to global nearest
+        return intBestArm >= 0 ? intBestArm : extBestArm
+    }
+    // brute: always global nearest
+    return extBestArm
+}
+
+/**
+ * Compute switchback arm-flip metrics.
+ * Returns { armFlipCount_footprint, armFlipCount_brute, footprintHW, armSep }
+ */
+function computeSwitchbackMetrics() {
+    const { armA, armB } = buildSwitchbackArms()
+    const armSamples = [armA, armB]
+    const footprintHW = SW_FOOTPRINT_HW  // 2.5 m — query inside A (1.5<2.5), outside B (3.5>2.5)
+
+    let prevArm_footprint = -1
+    let prevArm_brute = -1
+    let armFlipCount_footprint = 0
+    let armFlipCount_brute = 0
+
+    // March along arm A with SW_QUERY_LATERAL offset toward arm B (in +Z direction).
+    // Arm A runs along z=0; arm B is at z=SW_ARM_SEP. So lateral offset is +Z.
+    const N_STEPS = 60
+    for (let i = 0; i <= N_STEPS; i++) {
+        const frac = i / N_STEPS
+        // Query point: on arm A's centerline, shifted toward arm B
+        const qx = frac * SW_ARM_LEN
+        const qz = SW_QUERY_LATERAL  // offset toward arm B
+
+        const pickedFP    = selectArm(armSamples, qx, qz, 'footprint', footprintHW)
+        const pickedBrute = selectArm(armSamples, qx, qz, 'brute',     footprintHW)
+
+        if (prevArm_footprint >= 0 && pickedFP    !== prevArm_footprint) armFlipCount_footprint++
+        if (prevArm_brute     >= 0 && pickedBrute !== prevArm_brute)     armFlipCount_brute++
+
+        prevArm_footprint = pickedFP
+        prevArm_brute     = pickedBrute
+    }
+
+    return { armFlipCount_footprint, armFlipCount_brute, footprintHW, armSep: SW_ARM_SEP }
+}
+
+// ── 09-23 D3 Two-arms-at-different-heights no-undermine ──────────────────────
+// Vendors a cross-section evaluator that mirrors the D3 max-floor guard in _buildCarveTable.
+// Two switchback arms separated laterally by TA_ARM_SEP:
+//   Arm A (upper): Y = TA_UPPER_Y
+//   Arm B (lower): Y = 0
+// Each arm's carve trough is: carveTargetY = armY - clearanceMargin (simplified: no crown/camber
+// in this fixture — we're testing the max-floor guard logic only).
+// Each arm's footprint halfwidth is bounded by minTurnRadius = ½ · arm separation (footprint bound).
+//
+// For a lateral cross-section spanning both arms, the max-floor guard fires where intBi != extBi:
+//   carveTarget = MAX(armA.carveTarget, armB.carveTarget)
+// Gate: at every lateral position under arm A's footprint, the carve floor
+//   ≥ TA_UPPER_Y - TA_CLEARANCE_M (the upper arm's required floor).
+//   This means the lower arm's deeper cut cannot undermine the upper arm's support.
+
+const TA_UPPER_Y         = 8.0   // m — upper arm Y above lower arm
+const TA_ARM_SEP         = 24    // m — lateral separation (≈ 2·minRadius)
+const TA_CLEARANCE_M     = 0.5   // m — clearanceMargin (mirrors ranger.js default)
+const TA_FOOTPRINT_HW    = TA_ARM_SEP / 2  // 12 m — footprint bound ≤ ½ arm separation
+const TA_EPS             = 0.001  // m — tolerance for undermine check
+
+/**
+ * Evaluate the carve floor across a lateral cross-section spanning both arms.
+ * Lateral coordinate u runs from -TA_FOOTPRINT_HW to +TA_FOOTPRINT_HW relative to arm A centre.
+ * Arm B centre is at u = +TA_ARM_SEP (outside arm A's footprint).
+ *
+ * For each lateral sample u:
+ *   - Check if u is inside arm A's footprint (|u| ≤ TA_FOOTPRINT_HW).
+ *   - Check if u is inside arm B's footprint (|u - TA_ARM_SEP| ≤ TA_FOOTPRINT_HW).
+ *   - Determine carveTarget for each covering arm: armY - clearanceMargin.
+ *   - If both arms cover, apply max-floor guard: use MAX(carveTargetA, carveTargetB).
+ *   - If only one arm covers, use that arm's carveTarget.
+ *   - Track the minimum carve floor under arm A's footprint.
+ *
+ * Returns { minFloorUnderA, minFloorUnderB, requiredFloorA, requiredFloorB,
+ *           undermineDepth, armBFloorAtWorst }
+ */
+function computeTwoArmsMetrics() {
+    const armAY = TA_UPPER_Y
+    const armBY = 0
+    const carveTargetA = armAY - TA_CLEARANCE_M  // 7.5 m
+    const carveTargetB = armBY - TA_CLEARANCE_M  // -0.5 m
+
+    // Arm A centred at u=0, arm B centred at u=TA_ARM_SEP
+    // Cross-section spans u in [-TA_FOOTPRINT_HW, TA_ARM_SEP + TA_FOOTPRINT_HW]
+    const uMin = -TA_FOOTPRINT_HW
+    const uMax = TA_ARM_SEP + TA_FOOTPRINT_HW
+    const N = 200
+    const du = (uMax - uMin) / N
+
+    let minFloorUnderA = Infinity
+    let minFloorUnderB = Infinity
+    let worstUndermineDepth = 0
+
+    for (let i = 0; i <= N; i++) {
+        const u = uMin + i * du
+        const insideA = Math.abs(u) <= TA_FOOTPRINT_HW
+        const insideB = Math.abs(u - TA_ARM_SEP) <= TA_FOOTPRINT_HW
+
+        if (!insideA && !insideB) continue  // outside both footprints — uncarved
+
+        let carveFloor
+        if (insideA && insideB) {
+            // Both arms cover this lateral position — apply max-floor guard
+            carveFloor = Math.max(carveTargetA, carveTargetB)
+        } else if (insideA) {
+            carveFloor = carveTargetA
+        } else {
+            carveFloor = carveTargetB
+        }
+
+        if (insideA) {
+            minFloorUnderA = Math.min(minFloorUnderA, carveFloor)
+            // Undermine: floor dropped below what arm A requires
+            const depth = carveTargetA - carveFloor
+            if (depth > worstUndermineDepth) worstUndermineDepth = depth
+        }
+        if (insideB) {
+            minFloorUnderB = Math.min(minFloorUnderB, carveFloor)
+        }
+    }
+
+    return {
+        minFloorUnderA,
+        minFloorUnderB,
+        requiredFloorA: carveTargetA,
+        requiredFloorB: carveTargetB,
+        undermineDepth: worstUndermineDepth,
+    }
+}
+
+// ── 09-23 D2 Camber-rate slew-limit gate ─────────────────────────────────────
+// Vendors the D2 slew-rate limiter (forward-march |dCamber/ds| ≤ roadCamberRate °/m,
+// then ±6° clamp) matching _buildCamberProfile in src/road.js (plan 09-21).
+//
+// The fixture is an S-curve: a left-hand turn followed by a right-hand turn (curvature
+// sign change). Without the slew limiter, the instantaneous camber clamp-flips at the
+// zero-crossing and spikes the camber rate (the tight-turn demo shows 12.76°/m).
+// With the slew limiter, the rate is kept ≤ MAX_DCAMBER_DEG_PER_M (2.0°/m).
+//
+// Gate: slew-limited maxDCamber ≤ MAX_DCAMBER_DEG_PER_M.
+// Contrast: unlimited maxDCamber > MAX_DCAMBER_DEG_PER_M (gate would fail without limiter).
+
+const CR_CAMBER_STRENGTH   = CAMBER_STRENGTH   // 200 m·rad/rad — same as harness top
+const CR_CLAMP_RAD         = CAMBER_CLAMP_RAD  // ±6° in radians
+const CR_SLEW_RATE_DEG_M   = 1.5              // °/m — roadCamberRate default (ranger.js)
+const CR_SLEW_RATE_RAD_M   = CR_SLEW_RATE_DEG_M * Math.PI / 180
+
+// S-curve: left turn then right turn — creates a curvature sign change that would spike
+// the camber rate without the slew limiter.
+const CR_SCURVE_POINTS = [
+    { x:   0, y: 0, z:   0 },
+    { x:  15, y: 0, z:   5 },
+    { x:  25, y: 0, z:  15 },  // peak left
+    { x:  35, y: 0, z:  25 },
+    { x:  45, y: 0, z:  30 },  // mid — curvature flips
+    { x:  55, y: 0, z:  25 },
+    { x:  65, y: 0, z:  15 },  // peak right
+    { x:  75, y: 0, z:   5 },
+    { x:  90, y: 0, z:   0 },
+]
+
+/**
+ * Apply D2 forward-march slew-rate limiter to an array of raw camber angles (radians).
+ * ds: arc-length step between samples (metres).
+ * slewRateRadPerM: max |dCamber/ds| in rad/m.
+ * clampRad: max |camber| in radians.
+ * Returns new array of slew-limited camber angles.
+ */
+function applySlewLimit(rawCamberRad, ds, slewRateRadPerM, clampRad) {
+    const limited = new Array(rawCamberRad.length)
+    let prev = 0  // start from neutral
+    for (let i = 0; i < rawCamberRad.length; i++) {
+        const target = Math.max(-clampRad, Math.min(clampRad, rawCamberRad[i]))
+        const maxDelta = slewRateRadPerM * ds
+        const delta = Math.max(-maxDelta, Math.min(maxDelta, target - prev))
+        prev = Math.max(-clampRad, Math.min(clampRad, prev + delta))
+        limited[i] = prev
+    }
+    return limited
+}
+
+/**
+ * Compute camber-rate metrics for the S-curve fixture.
+ * Returns { maxDCamber_unlimited, maxDCamber_slewed, slewRateDegM }
+ */
+function computeCamberRateMetrics() {
+    const curve = catmullRomCurve(CR_SCURVE_POINTS)
+    const totalLen = curve.getLength()
+    const N = Math.max(2, Math.ceil(totalLen / SAMPLE_INTERVAL_M))
+
+    const positions = []
+    const tangents  = []
+    const arcS      = []
+
+    for (let i = 0; i < N; i++) {
+        const t = i / (N - 1)
+        positions.push(curve.getPoint(t))
+        tangents.push(curve.tangentAt(t))
+    }
+
+    arcS.push(0)
+    for (let i = 1; i < N; i++) {
+        const a = positions[i-1], b = positions[i]
+        const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z
+        arcS.push(arcS[i-1] + Math.sqrt(dx*dx + dy*dy + dz*dz))
+    }
+
+    // Per-pair curvature (N-1 values)
+    const kappa = []
+    for (let i = 0; i < N - 1; i++) {
+        const ds = arcS[i+1] - arcS[i]
+        kappa.push(signedCurvature(
+            tangents[i].x, tangents[i].z,
+            tangents[i+1].x, tangents[i+1].z,
+            Math.max(ds, 1e-9)
+        ))
+    }
+
+    // Raw unlimited camber (rad) — per segment, clamped to ±6° only
+    const rawCamberRad = kappa.map(k =>
+        Math.max(-CR_CLAMP_RAD, Math.min(CR_CLAMP_RAD, CR_CAMBER_STRENGTH * k))
+    )
+
+    // Average ds for slew limit (use median arc-step)
+    const avgDs = arcS[arcS.length - 1] / (N - 1)
+
+    // Apply slew-rate limit
+    const slewedCamberRad = applySlewLimit(rawCamberRad, avgDs, CR_SLEW_RATE_RAD_M, CR_CLAMP_RAD)
+
+    // Convert to degrees and measure maxDCamber for each
+    const rawCamberDeg   = rawCamberRad.map(r => r * 180 / Math.PI)
+    const slewedCamberDeg = slewedCamberRad.map(r => r * 180 / Math.PI)
+
+    let maxDCamber_unlimited = 0
+    let maxDCamber_slewed    = 0
+
+    for (let i = 0; i < rawCamberDeg.length - 1; i++) {
+        const ds = Math.max(arcS[i+2] - arcS[i+1], 1e-9)
+        const dUnlim = Math.abs(rawCamberDeg[i+1]   - rawCamberDeg[i])   / ds
+        const dSlew  = Math.abs(slewedCamberDeg[i+1] - slewedCamberDeg[i]) / ds
+        maxDCamber_unlimited = Math.max(maxDCamber_unlimited, dUnlim)
+        maxDCamber_slewed    = Math.max(maxDCamber_slewed,    dSlew)
+    }
+
+    return { maxDCamber_unlimited, maxDCamber_slewed, slewRateDegM: CR_SLEW_RATE_DEG_M }
+}
+
 // ── Table printing ────────────────────────────────────────────────────────────
 
 function pf(v, digits) { return v == null ? '  —   ' : v.toFixed(digits) }
@@ -640,8 +1036,11 @@ let allGatesPassed = true
 
 const results = []
 // physics-mode and hairpin-mode fixtures are printed in separate sections after the main table
-const physicsModeFixtures = []
-const hairpinModeFixtures = []
+const physicsModeFixtures  = []
+const hairpinModeFixtures  = []
+const switchbackModeFixtures = []
+const twoArmsModeFixtures  = []
+const camberRateModeFixtures = []
 
 for (const fix of FIXTURES) {
     if (fix.physicsMode) {
@@ -650,6 +1049,18 @@ for (const fix of FIXTURES) {
     }
     if (fix.hairpinMode) {
         hairpinModeFixtures.push(fix)
+        continue
+    }
+    if (fix.switchbackMode) {
+        switchbackModeFixtures.push(fix)
+        continue
+    }
+    if (fix.twoArmsMode) {
+        twoArmsModeFixtures.push(fix)
+        continue
+    }
+    if (fix.camberRateMode) {
+        camberRateModeFixtures.push(fix)
         continue
     }
     const m = computeMetrics(fix)
@@ -787,6 +1198,125 @@ if (hairpinModeFixtures.length > 0) {
         ].join(' | ')
         console.log(row)
         console.log(`    arm separation: ${armSeparation.toFixed(2)} m | ribbon width: ${(2 * halfWidth).toFixed(2)} m | inner-edge folds: ${foldCount} (gate: == 0)`)
+    }
+    console.log('-'.repeat(120))
+    console.log('')
+}
+
+// ── 09-23 D4 Switchback no-arm-flip section ───────────────────────────────────
+if (switchbackModeFixtures.length > 0) {
+    console.log('='.repeat(120))
+    console.log('  SWITCHBACK NO-ARM-FLIP GATE (09-23 D4 arm-disambiguation)')
+    console.log(`  Gate: footprint-preference selector armFlipCount == 0 (brute selector expected to flip)`)
+    console.log(`  Fixture geometry: 2 arms, lateral separation ${SW_ARM_SEP} m (self-approaching), footprintHW ${SW_FOOTPRINT_HW} m, query offset ${SW_QUERY_LATERAL} m`)
+    console.log('='.repeat(120))
+    const swHdr = [
+        col('Fixture',                 30),
+        col('footprintFlips',          16),
+        col('bruteFlips',              14),
+        col('bruteFlips>0?',           14),
+        col('GATE',                    8),
+    ].join(' | ')
+    console.log(swHdr)
+    console.log('-'.repeat(120))
+
+    for (const fix of switchbackModeFixtures) {
+        const { armFlipCount_footprint, armFlipCount_brute, footprintHW, armSep } = computeSwitchbackMetrics()
+        const gatePass = armFlipCount_footprint === 0
+
+        if (fix.role === 'gate' && !gatePass) allGatesPassed = false
+
+        const row = [
+            col(fix.name,                              30),
+            col(armFlipCount_footprint.toString(),     16),
+            col(armFlipCount_brute.toString(),         14),
+            col(armFlipCount_brute > 0 ? 'YES (expected)' : 'no (unexpected)', 14),
+            col(gatePass ? '  PASS  ' : '  FAIL  ',   8),
+        ].join(' | ')
+        console.log(row)
+        console.log(`    footprint-preference selector: armFlips=${armFlipCount_footprint} (gate: ==0) | brute selector: armFlips=${armFlipCount_brute} (expected >0 to confirm gate catches the bug)`)
+        console.log(`    arm sep: ${armSep} m | footprintHW: ${footprintHW} m | query lateral offset: ${SW_QUERY_LATERAL} m`)
+    }
+    console.log('-'.repeat(120))
+    console.log('')
+}
+
+// ── 09-23 D3 Two-arms no-undermine section ────────────────────────────────────
+if (twoArmsModeFixtures.length > 0) {
+    console.log('='.repeat(120))
+    console.log('  TWO-ARMS NO-UNDERMINE GATE (09-23 D3 max-floor guard)')
+    console.log(`  Gate: undermineDepth == 0 (carve floor under upper arm ≥ upperArmY - clearanceMargin)`)
+    console.log(`  Fixture: upper arm Y=${TA_UPPER_Y} m, lower arm Y=0, sep=${TA_ARM_SEP} m, footprintHW=${TA_FOOTPRINT_HW} m, clearance=${TA_CLEARANCE_M} m`)
+    console.log('='.repeat(120))
+    const taHdr = [
+        col('Fixture',                 30),
+        col('minFloorA(m)',            14),
+        col('reqFloorA(m)',            14),
+        col('undermineDepth(m)',       20),
+        col('minFloorB(m)',            14),
+        col('GATE',                    8),
+    ].join(' | ')
+    console.log(taHdr)
+    console.log('-'.repeat(120))
+
+    for (const fix of twoArmsModeFixtures) {
+        const { minFloorUnderA, minFloorUnderB, requiredFloorA, requiredFloorB, undermineDepth } = computeTwoArmsMetrics()
+        const gatePass = undermineDepth < TA_EPS
+
+        if (fix.role === 'gate' && !gatePass) allGatesPassed = false
+
+        const row = [
+            col(fix.name,                              30),
+            col(minFloorUnderA.toFixed(4),             14),
+            col(requiredFloorA.toFixed(4),             14),
+            col(undermineDepth.toFixed(6),             20),
+            col(minFloorUnderB.toFixed(4),             14),
+            col(gatePass ? '  PASS  ' : '  FAIL  ',   8),
+        ].join(' | ')
+        console.log(row)
+        console.log(`    upper arm floor min: ${minFloorUnderA.toFixed(4)} m (required ≥ ${requiredFloorA.toFixed(4)} m) | undermine depth: ${undermineDepth.toFixed(6)} m (gate: == 0)`)
+        console.log(`    lower arm floor min: ${minFloorUnderB.toFixed(4)} m (required ≥ ${requiredFloorB.toFixed(4)} m)`)
+    }
+    console.log('-'.repeat(120))
+    console.log('')
+}
+
+// ── 09-23 D2 Camber-rate slew-limit section ───────────────────────────────────
+if (camberRateModeFixtures.length > 0) {
+    console.log('='.repeat(120))
+    console.log('  CAMBER-RATE SLEW-LIMIT GATE (09-23 D2 slew-limited camberProfile)')
+    console.log(`  Gate: slew-limited maxDCamber ≤ ${MAX_DCAMBER_DEG_PER_M}°/m  |  unlimited maxDCamber must EXCEED threshold (spike catch demo)`)
+    console.log(`  Slew rate: ${CR_SLEW_RATE_DEG_M}°/m (roadCamberRate) | fixture: S-curve with curvature sign change`)
+    console.log('='.repeat(120))
+    const crHdr = [
+        col('Fixture',                 30),
+        col('unlimited maxDCam(°/m)',  22),
+        col('Unlim>thresh?',           14),
+        col('slewed maxDCam(°/m)',     20),
+        col('Slewed<=thresh?',         16),
+        col('GATE',                    8),
+    ].join(' | ')
+    console.log(crHdr)
+    console.log('-'.repeat(120))
+
+    for (const fix of camberRateModeFixtures) {
+        const { maxDCamber_unlimited, maxDCamber_slewed, slewRateDegM } = computeCamberRateMetrics()
+        const unlimitedExceeds = maxDCamber_unlimited > MAX_DCAMBER_DEG_PER_M
+        const slewedPass       = maxDCamber_slewed <= MAX_DCAMBER_DEG_PER_M
+        const gatePass         = slewedPass
+
+        if (fix.role === 'gate' && !gatePass) allGatesPassed = false
+
+        const row = [
+            col(fix.name,                              30),
+            col(maxDCamber_unlimited.toFixed(4),       22),
+            col(unlimitedExceeds ? 'YES (expected)' : 'no (unexpected)', 14),
+            col(maxDCamber_slewed.toFixed(4),          20),
+            col(slewedPass ? ' PASS ' : ' FAIL ',      16),
+            col(gatePass ? '  PASS  ' : '  FAIL  ',   8),
+        ].join(' | ')
+        console.log(row)
+        console.log(`    unlimited: maxDCamber=${maxDCamber_unlimited.toFixed(4)}°/m (would ${unlimitedExceeds ? 'FAIL' : 'PASS'}) | slew-limited (${slewRateDegM}°/m): maxDCamber=${maxDCamber_slewed.toFixed(4)}°/m (${slewedPass ? 'PASS' : 'FAIL'})`)
     }
     console.log('-'.repeat(120))
     console.log('')
