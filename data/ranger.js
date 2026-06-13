@@ -360,21 +360,25 @@ export const RANGER_PARAMS = {
   // Range: -8–0. Exposed as a Road Surface debug slider (live material update, no rebuild).
   roadPolygonOffsetUnits: -1,   // [-] polygon-offset units bias (Plan 09-10)
 
-  // ── Phase 9 Plan 11 — Cheap Below-Margin Terrain Carve (SURF-04 / SURF-05) ───
+  // ── Phase 9 Plan 11 + Plan 22 — Terrain Carve (SURF-04 / SURF-05 / D3) ────
   // roadClearanceMargin: the terrain-mesh carve target sits this many metres BELOW the
   // ribbon surface so the terrain can never poke through the decal ribbon + skirt.
+  // D3 (plan 09-22): carve trough tilts WITH the ribbon (crown + camber), so clearance
+  // is now uniform on banked turns — inside-edge clip and outside-edge gap are eliminated.
   // 0.5 m gives a half-metre clearance buffer; raise to push terrain further down.
-  // The carved floor is NOT the driving surface — the truck rides the ribbon (road.js
-  // _sampleCarveWorld carries crown/camber/pothole and is unchanged).
   // Range: 0–1.5 m. Exposed as a Road Surface debug slider.
-  roadClearanceMargin: 0.5,     // m — terrain stays this far BELOW ribbon surface (Plan 09-11)
+  roadClearanceMargin: 0.5,     // m — terrain stays this far BELOW ribbon surface (Plan 09-11 / D3)
 
   // roadCarveExtraWidth: extra lateral width beyond roadHalfWidth + roadShoulderWidth
   // that the terrain carve footprint covers. Ensures the carved depression is wider than
   // the ribbon + its edge skirts so the skirt apron always sits on carved-down terrain.
   // Default 3 m; increase if skirt edges are still sitting above terrain.
+  // D3 COUPLING (plan 09-22): the effective carve footprint is bounded to min(halfWidth +
+  // carveExtraWidth, roadMinTurnRadius). Adjacent switchback arms separate by ~2*minRadius
+  // (D0), so the footprint cap ensures each arm's trough stays within its ½ of the gap.
+  // To widen the footprint further, widen roadMinTurnRadius alongside carveExtraWidth.
   // Range: 0–8 m. Exposed as a Road Surface debug slider.
-  roadCarveExtraWidth: 3.0,     // m — extra carve footprint beyond ribbon + shoulder (Plan 09-11)
+  roadCarveExtraWidth: 3.0,     // m — extra carve footprint beyond ribbon + shoulder (Plan 09-11 / D3)
 
   // roadTileKeepMargin: D5 ring hysteresis (plan 09-20).
   // Ribbon tiles are KEPT for this many extra tiles beyond the terrain active ring before

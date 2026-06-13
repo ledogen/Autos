@@ -298,6 +298,14 @@ function debouncedRoadRebuild () {
     roadSystem.invalidateCache()
     // Phase 9 (SURF-01): clear road ribbon tiles — they rebuild from the new network.
     if (roadMeshSystem) roadMeshSystem.clearAll()
+    // D3 (plan 09-22): the carve footprint bound reads roadMinTurnRadius directly from
+    // _roadSystem._params, so a re-route (min-radius change) must also re-bake the carve.
+    // This mirrors debouncedRoadSurfaceRebuild — rebuild chunks from Worker so _buildCarveTable
+    // runs again with the updated roadMinTurnRadius footprint cap.
+    if (terrainSystem) {
+      terrainSystem.reinitWorker(worldSeed, RANGER_PARAMS)
+      terrainSystem.rebuildAllChunksFromWorker()
+    }
     if (roadSystem._debugVisible) {
       const c = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
       roadSystem.update(c)   // re-streams (dirty) + re-slices + rebuilds visible lines

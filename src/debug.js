@@ -217,6 +217,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(params, 'roadWTurn',  0, 800,   20  ).name('wTurn (straighter)').onChange(fireRoadParam)
   // D0 — min turn radius (m); arc-fillet rounds corners tighter than this (higher = wider hairpins).
   // Floor: 6 m (UI lower bound; road.js _refreshParams further clamps to ≥ roadHalfWidth+clearance+ε).
+  // D3 (plan 09-22) COUPLING: carve footprint (blendW=1 trough width) is capped at roadMinTurnRadius
+  // so adjacent switchback arms' footprints can't overlap. Changing this slider re-routes the road
+  // AND re-bakes the carve (debouncedRoadRebuild now also calls rebuildAllChunksFromWorker).
   roadFolder.add(params, 'roadMinTurnRadius', 6, 300, 5).name('Min Turn Radius (m)').onChange(fireRoadParam)
 
   // ── Road Surface sub-folder (D-04/D-07 — Plan 09-05 surface sliders) ────────────
@@ -274,6 +277,11 @@ export function initDebug (params, callbacks = {}, options = {}) {
 
   // Plan 09-11 — Cheap below-margin carve params.
   // Both are geometry params → full road rebuild via fireSurface.
+  // D3 (plan 09-22) COUPLING NOTE: carveExtraWidth sets the blendW=1 trough width, but the
+  // effective carveHalfWidth is ALSO capped at roadMinTurnRadius (footprint bound ≤ ½ min inter-arm
+  // separation). Widening carveExtraWidth beyond roadMinTurnRadius has no effect on the trough width;
+  // to widen the trough further you must also widen roadMinTurnRadius (re-route slider, Road folder).
+  // roadClearanceMargin is now uniform on banked turns (carve trough tilts WITH the ribbon — D3).
   surfaceFolder.add(params, 'roadClearanceMargin', 0,   1.5, 0.05).name('Clearance Margin (m)').onChange(fireSurface)
   surfaceFolder.add(params, 'roadCarveExtraWidth', 0,   8,   0.5 ).name('Carve Extra Width (m)').onChange(fireSurface)
 
