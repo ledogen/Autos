@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Mountains & Roads
 status: executing
-stopped_at: Phase 9 context gathered (intersections scoped in)
-last_updated: "2026-06-13T11:41:23.687Z"
-last_activity: 2026-06-13 -- Phase 09 execution started
+stopped_at: Phase 9 D0–D5 refactor executed; in-sim verification fixing regressions
+last_updated: "2026-06-13T12:00:00.000Z"
+last_activity: 2026-06-13 -- Phase 09 (09-18..24) executed; in-sim fixes landed; open BUG-10 (camber), BUG-11 (rebuild/spawn)
 progress:
   total_phases: 4
   completed_phases: 2
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-05)
 
 ## Current Position
 
-Phase: 09 (road-surface) — EXECUTING
-Plan: 1 of 24
-Status: Executing Phase 09
-Last activity: 2026-06-13 -- Phase 09 execution started
+Phase: 09 (road-surface) — EXECUTED, IN-SIM VERIFICATION
+Plan: 09-18..09-24 executed (combined D0–D5 lifecycle+camber refactor)
+Status: In-sim human-verify of 09-24 surfaced regressions; fixes landing iteratively (see 09-INSIM-VERIFY.md). Open: BUG-10 (camber discontinuity), BUG-11 (road rebuild determinism + spawn-off-road), residual hairpin overlap.
+Last activity: 2026-06-13 -- in-sim fixes: fillet curvature-clamp, generation-churn, carve-ordering
 
 ```
 v1.1 Progress: [                    ] 0% (0/4 phases)
