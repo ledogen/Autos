@@ -36,6 +36,20 @@ backward) pass would center the ramp on the curvature change.
   (the current camber-rate gate only tests within a single synthetic run).
 - Consider symmetric slew limiting.
 
+## Status (2026-06-13): ROOT FIXED (`3df47cd`), in-sim verify + seam-gate owed
+
+Real root was NOT "per-run reset" — it was `arcSOffset` defaulting to 0 in `_sliceNetwork` (never
+set), so camber/quality used **tile-local** arc and sawtoothed back to the run start at every 64 m
+tile seam. Fixed: slices now carry `arcS0/arcS1` (run-global arc at their ends, reversal-aware), and
+ribbon + physics (`queryNearest`) + carve (`collectChunkSplinePoints` / `_buildCarveTable`) all read
+the run-global arc + a `camberSign` for E→W slices. ribbon == physics == carve banking. Worker
+byte-identical. All 8 harness gates pass.
+
+**Still owed:** a headless camber-across-seam gate (the existing camber-rate gate only tests a single
+synthetic run, never the tile-slice indexing — which is exactly why this shipped). Blocked on the
+slicer needing THREE (can't import road.js into the zero-install harness); options: extract a pure
+slice-arc helper, or a thin THREE-backed node test. Until then: in-sim verification only.
+
 ## Acceptance
 
 - Driving through turns and across run/arm boundaries, banking eases smoothly (no step).

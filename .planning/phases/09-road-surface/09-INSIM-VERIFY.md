@@ -12,6 +12,8 @@
 | `7ebe72a` | Roads flicker in/out + FPS 6; sharp corners | D1 generation bumped on every positional re-stream (window-invariant geometry) → continuous ribbon rebuild + terrain re-carve. Bump now only in `invalidateCache` (real route/param change). + restored a smoother `roadMinTurnRadius`. |
 | `c65384b` | Ribbon folds/overlaps at hairpins (D0 not actually rounding) | Per-vertex fillet BAILED on the dense CatmullRom (tangent couldn't fit between samples). Replaced with pure iterative **curvature-clamp** `filletMinRadius` in `road-carve.js`; added a REAL headless gate (`hairpin-fillet-enforced`, 2.97 m → 11.76 m). `roadMinTurnRadius` default → 12 m ("a little wider than the road"). |
 | `b376127` | Min-radius/maxGrade slider: cuts & foundations don't follow the new road | `debouncedRoadRebuild` rebuilt the carve BEFORE re-streaming the road (carve read stale/empty network); re-stream was also gated on `_debugVisible`. Re-stream first, unconditionally, then rebuild ribbon + carve. |
+| `82b2636` | Truck spawns off the side of the road (BUG-11, spawn half) | `resolveSpawn` streamed/queried from baseTile but seated the truck up to 200 m away (different anchor band); re-stream centered on the spawn point and re-seat. (Determinism half = window-variance, WONTFIX — user likes it.) |
+| `3df47cd` | Camber sharp/discontinuous at every tile seam (BUG-10) | `arcSOffset` defaulted to 0 → camber/quality were tile-local, sawtoothing at each 64 m seam. Slices now carry run-global `arcS0/arcS1` + `camberSign`; ribbon, physics, carve all read run-global arc. Seam-gate still owed. |
 
 Headless gate: `node test/spline-continuity.mjs` — all 8 gate fixtures exit 0.
 Worker CARVE SYNC: `src/terrain-worker.js` byte-identical throughout.
