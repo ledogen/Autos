@@ -904,30 +904,44 @@ export class TerrainSystem {
         //   • ZERO queryNearest calls — nearest point found by plain squared-distance search
         //   • ZERO arrow-closure allocations — no => expressions, no new objects per vertex
         // The single getPointAt site for this function is collectChunkSplinePoints (pre-loop above).
+        //
+        // D4 (plan 09-20): samples stride = 5 ([x,y,z,tx,tz]); apply the SAME footprint-preference
+        // arm-disambiguation as queryNearest — prefer the sample whose footprint the vertex is
+        // interior to (|signedLat| ≤ footprintHW) over the globally-nearest exterior sample.
+        // Keeps carve and physics consistent at switchbacks (no carve-arm vs physics-arm mismatch).
+        const carveFootprintHW = (p.roadHalfWidth ?? 5) + (p.roadShoulderWidth ?? 2.5)
+        const STRIDE = 5  // D4: stride widened from 3 to 5 ([x,y,z,tx,tz])
+
         for (let zi = 0; zi < N; zi++) {
             for (let xi = 0; xi < N; xi++) {
                 const wx = originX + xi * cell
                 const wz = originZ + zi * cell
                 const idx = (zi * N + xi) * 2
 
-                // Find the nearest pre-sampled road point by squared XZ distance.
-                // Lateral sign is not needed: the carve blend is symmetric around the centerline.
-                let bestD2 = Infinity
-                let bi = 0
-                for (let si = 0; si < samples.length; si += 3) {
+                // D4: track two parallel bests (mirrors queryNearest D4 arm-disambiguation).
+                // extBestD2 — globally nearest regardless of footprint.
+                // intBestD2 — nearest among samples where |signedLat| ≤ footprintHW (interior).
+                let extBestD2 = Infinity, intBestD2 = Infinity
+                let extBi = 0, intBi = 0
+                for (let si = 0; si < samples.length; si += STRIDE) {
                     const sdx = samples[si]     - wx
                     const sdz = samples[si + 2] - wz
                     const d2  = sdx * sdx + sdz * sdz
-                    if (d2 < bestD2) { bestD2 = d2; bi = si }
+                    if (d2 < extBestD2) { extBestD2 = d2; extBi = si }
+                    if (d2 < intBestD2) {
+                        // signedLat = sdx_fwd*tz − sdz_fwd*tx where sdx_fwd = sample − query = -sdx
+                        const tx = samples[si + 3], tz = samples[si + 4]
+                        const signedLat = (-sdx) * tz - (-sdz) * tx
+                        if (Math.abs(signedLat) <= carveFootprintHW) { intBestD2 = d2; intBi = si }
+                    }
                 }
+                // Prefer interior sample; fall back to exterior if no interior found.
+                const bi = (intBestD2 < Infinity) ? intBi : extBi
+                const bestD2 = (intBestD2 < Infinity) ? intBestD2 : extBestD2
 
-                const nx = samples[bi]
                 const ny = samples[bi + 1]
-                const nz = samples[bi + 2]
 
-                // XZ distance to nearest road point — replaces the old signedLat magnitude.
-                // (nx, nz unused beyond bestD2, kept for clarity / future tangent extension.)
-                void nx; void nz
+                // XZ distance to nearest road point.
                 const latDist = Math.sqrt(bestD2)
 
                 // Raw terrain height at this vertex (world-space, with amplitude).

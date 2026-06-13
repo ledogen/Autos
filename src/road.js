@@ -613,15 +613,13 @@ export class RoadSystem {
      *
      * This is the SINGLE getPointAt site for the _buildCarveTable carve path.  It performs the
      * same tile-block scan as queryNearest (CR-01 radius-sized block) and samples every
-     * candidate spline at a fixed ~1.5 m arc interval, pushing consecutive [x, y, z] triples
-     * into a plain flat Array.  The caller (_buildCarveTable) calls this ONCE per chunk (outside
-     * the per-vertex loop) and then does a simple O(N) squared-distance search over the returned
-     * array — zero getPointAt, zero queryNearest, zero closure allocation in the inner vertex loop.
+     * candidate spline at a fixed ~1.5 m arc interval.
      *
-     * Lateral sign is NOT needed: the carve blend is symmetric around the centerline, so unsigned
-     * XZ distance from the nearest road point suffices.  If sign is ever needed (e.g. for one-sided
-     * camber in a future plan), the flat array can be extended with the tangent triples at the
-     * same arc positions without changing the calling convention.
+     * D4 (plan 09-20): stride widened from 3 to 5 to carry tangent XZ alongside position XYZ.
+     * Each entry is [x, y, z, tx, tz] where (tx,tz) is the unit tangent at that arc position.
+     * The carve inner loop (_buildCarveTable) uses these tangent components to apply the SAME
+     * footprint-preference arm-disambiguation as queryNearest D4 — so the carved trough and
+     * the physics height pick the same arm at switchbacks.
      *
      * Samples include points slightly beyond the chunk edge (the caller passes
      * `queryRadius = maxExt + CHUNK_SIZE * 0.71`, same as the chunk-level early-reject) so
@@ -631,7 +629,8 @@ export class RoadSystem {
      * @param {number} centerX — chunk centre world X
      * @param {number} centerZ — chunk centre world Z
      * @param {number} radiusM — search radius in metres (same value as queryNearest early-reject)
-     * @returns {number[]} flat [x0,y0,z0, x1,y1,z1, ...] — length is a multiple of 3; empty if no road nearby.
+     * @returns {number[]} flat [x0,y0,z0,tx0,tz0, x1,y1,z1,tx1,tz1, ...] — length is a multiple of 5;
+     *   empty if no road nearby.  Stride = 5 (D4: position XYZ + tangent XZ for arm-disambiguation).
      */
     collectChunkSplinePoints(centerX, centerZ, radiusM) {
         if (!this._tiles) return []
@@ -655,8 +654,10 @@ export class RoadSystem {
                     const n   = Math.max(2, Math.min(512, Math.ceil(len / 1.5)))
                     for (let i = 0; i <= n; i++) {
                         const u = i / n
-                        const p = spline.getPointAt(u)
-                        out.push(p.x, p.y, p.z)
+                        const p = spline.getPointAt(u)   // allocates; only site — pre-loop
+                        const t = spline.getTangentAt(u) // D4: tangent for arm-disambiguation
+                        // Stride 5: [x, y, z, tx, tz]
+                        out.push(p.x, p.y, p.z, t.x, t.z)
                     }
                 }
             }
