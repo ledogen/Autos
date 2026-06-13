@@ -8,7 +8,7 @@
 
 Phase 9's road *surface* basics are done and in-sim confirmed: seam steps (09-13), terrain-load lag + road-below-ground (09-16), physics bounce (09-17). The remaining issues are NOT surface bugs — they live in the Phase 8 road **streaming / slicing / mesh lifecycle** and the **camber model**, which the surface work kept exposing. This refactor fixes all of them with one coherent set of decisions instead of per-bug patches.
 
-**DO NOT modify Phase 8 routing geometry** — the canonical run (road.js ~1016-1058, `_limitCurvature`, `_protoConnect`/`_protoAnchor`) is correct and produces a continuous, curvature-limited spline (user-verified). The decal architecture from 09-10/11/12 (ribbon authoritative on top, polygonOffset + skirts, terrain carved below) stays.
+**Routing scope:** the canonical run's routed Y / continuity is correct (user-verified) and the A* router (`_protoConnect`/`_protoAnchor`) stays. BUT `_limitCurvature` (road.js:944) is NOT a radius limiter — it is a coil-*excision* pass (only scrutinizes ≥150° spans; deletes the coil and joins entry→exit with a straight line, line 972). It never *rounds* a turn to the min radius, so hairpins pinch/self-intersect even at Min Turn Radius 85 m (user image 2026-06-13). This MUST be replaced (see D0). The decal architecture from 09-10/11/12 (ribbon authoritative on top, polygonOffset + skirts, terrain carved below) stays.
 
 ## The 6 bugs
 
@@ -20,6 +20,13 @@ Phase 9's road *surface* basics are done and in-sim confirmed: seam steps (09-13
 6. Routing sliders (maxGrade) re-route the road but don't rebuild the terrain carve.
 
 ## Locked decisions
+
+### D0 — Enforce a TRUE minimum turn radius (replaces the coil-excision limiter)
+The spline **centerline does not self-intersect** — but at hairpins it turns tighter than the nominal Min Turn Radius (the current `_limitCurvature` is excision-only and never rounds a turn to the radius). When the two arms come within less than the road width (2·roadHalfWidth) of each other, the **wide ribbon mesh folds onto itself** (the inner edge inverts) → visible self-overlap + the carve/arm interactions at hairpins.
+Fix: replace `_limitCurvature` with a real corner-rounding / **arc-fillet pass** on the canonical run — where the implied corner radius < minRadius, insert a circular arc of radius = minRadius tangent to both legs. Deterministic + window-invariant (run on the canonical run, like the other post-passes). At a 180° hairpin this yields a semicircle of radius minRadius → arms separated by ~2·minRadius.
+**Set the floor: minRadius ≥ roadHalfWidth + clearance** (user: "a little wider than the road") so the ribbon's inner edge can't fold onto itself by construction.
+→ Fixes hairpin ribbon self-overlap at the source, and (because arms now separate by > road width) **dramatically reduces the severity of D3-refinement (no footprint overlap) and D4 (arms no longer near-coincident).** This is the upstream root; D3/D4 become safety nets rather than primary fixes.
+**Tension to handle:** a wider hairpin occupies more horizontal space on a steep slope → may force a longer route / more switchbacks to hold Max Grade. Acceptable; the router already balances grade. Verify the arc-fillet doesn't violate Max Grade (or re-run grade after).
 
 ### D1 — Slice versioning is the single invalidation source
 A generation counter bumps on every re-stream AND re-route (`invalidateCache`, main.js `debouncedRoadRebuild`). Ribbon tiles (road-mesh.js) and terrain-carve chunks (terrain.js) record the version they were built against; on sync, rebuild any whose stored version ≠ current.
@@ -49,7 +56,7 @@ Ribbon tiles use a keep-radius larger than the build-radius (don't dispose the i
 → Fixes #2 (edge thrash).
 
 ## Bug → decision map
-#1 → D1 · #2 → D5 · #3 → D4 · #4 → D2 · #5 → D3(+D2) · #6 → D1
+#0 hairpin ribbon self-overlap → **D0** (upstream root; also de-risks #3/#5/#3-refinement) · #1 → D1 · #2 → D5 · #3 → D4 · #4 → D2 · #5 → D3(+D2) · #6 → D1
 
 ## Cross-system couplings (the reason this is one refactor, not piecemeal)
 - D1's versioning is consumed by ribbon tiles, carve chunks, the camber profile (D2), and the design-grade caches.
@@ -69,6 +76,7 @@ Ribbon tiles use a keep-radius larger than the build-radius (don't dispose the i
 
 ## Plan-breakdown guidance for the planner
 Combined refactor, dependency-ordered within one plan set (e.g. 09-18..):
+0. **D0 first — true min-radius arc-fillet** (replace `_limitCurvature`; minRadius floor ≥ roadHalfWidth + clearance; re-check Max Grade). Upstream root: rounds hairpins so arms separate → de-risks everything downstream. Verify with a hairpin harness fixture (ribbon inner-edge does not fold).
 1. D1 versioning core (the invalidation mechanism) — everything else hangs off it.
 2. D5 ring hysteresis + D4 stateless arm-disambiguation (queryNearest + carve nearest consistent).
 3. D2 shared camber profile (continuous-run, slew-limited, cached, version-invalidated).
