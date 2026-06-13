@@ -47,7 +47,10 @@ import { roadQuality } from './road-quality.js'
 // per-sample Vector3 allocation (RESEARCH anti-pattern; GC pressure kills frame time).
 // The two final return vectors (point, tangent) are still allocated once per call — only
 // the search loop scratch is reused.
-const _scratchPt = new THREE.Vector3()
+const _scratchPt  = new THREE.Vector3()
+// _scratchTan: module-scope scratch for getTangentAt reuse in queryNearest D4 footprint check
+// (avoids one Vector3 allocation per new-nearest sample — consistent with _scratchPt rationale).
+const _scratchTan = new THREE.Vector3()
 
 // ── Module-scope 2D segment intersection (D-16 / P9 junction detection) ────────
 /**
@@ -424,17 +427,40 @@ export class RoadSystem {
     queryNearest(wx, wz, radiusM = 200) {
         if (!this._tiles) return null
         const r2 = radiusM * radiusM
-        let bestD2 = r2
-        let bestSpline = null
-        let bestU = 0
-        let bestN = 0          // 09-17: probe sample count for refine bracket spacing
-        let bestRunKey = ''    // SURF-06 D-03: track runKey for roadQuality caller (pothole severity)
-        let bestArcLen = 0     // SURF-06 D-03: track arc length so caller can compute arcS = bestU * arcLen
+
+        // ── D4 (plan 09-20): stateless arm-disambiguation ─────────────────────────
+        // Switchback arms are always laterally separated (never vertically stacked, user-confirmed).
+        // Physics stays a pure 2D height field — signature unchanged.
+        //
+        // Strategy: track TWO parallel bests:
+        //   intBest* — nearest sample on a spline whose footprint the query is INTERIOR to
+        //              (|signedLat| ≤ footprint half-width = roadHalfWidth + roadShoulderWidth)
+        //   extBest* — globally nearest sample regardless of footprint membership
+        //
+        // Final selection: if any interior candidate was found, prefer it over the exterior
+        // globally-nearest; otherwise fall back to the globally-nearest (existing behavior).
+        //
+        // signedLat = dx*tz − dz*tx  (lateral distance, sign = side — same formula as _sampleCarveWorld).
+        // getTangentAt is called ONLY when a new nearest sample is discovered (rare), so the per-sample
+        // hot path adds no extra work beyond the one getPointAt that already runs.
+        // No new Vector3 allocations in the hot path — getTangentAt reuse via _scratchTan.
+        const footprintHW = (this._params.roadHalfWidth ?? 5) + (this._params.roadShoulderWidth ?? 2.5)
+
+        let extBestD2 = r2,  intBestD2 = r2
+        let extBestSpline = null, intBestSpline = null
+        let extBestU = 0,    intBestU = 0
+        let extBestN = 0,    intBestN = 0
+        let extBestRunKey = '', intBestRunKey = ''
+        let extBestArcLen = 0,  intBestArcLen = 0
+
+        // Aliases for the 09-17 projection refine (applied to whichever best wins below)
+        let bestSpline = null, bestU = 0, bestN = 0, bestRunKey = '', bestArcLen = 0
 
         const qTileX = Math.floor(wx / CHUNK_SIZE)
         const qTileZ = Math.floor(wz / CHUNK_SIZE)
 
         // Probe one spline: sample at N arc-length intervals, track nearest U within radius.
+        // D4: at each new global nearest, check footprint membership via getTangentAt → signedLat.
         const probeSpline = (spline, runKey) => {
             const len = spline.getLength ? spline.getLength() : 0
             // ~1 sample / 2 m, clamped to [16, 256] — enough resolution for a 200 m radius query.
@@ -444,9 +470,25 @@ export class RoadSystem {
                 spline.getPointAt(u, _scratchPt)
                 const dx = _scratchPt.x - wx, dz = _scratchPt.z - wz
                 const d2 = dx * dx + dz * dz
-                if (d2 < bestD2) {
-                    bestD2 = d2; bestSpline = spline; bestU = u; bestN = n
-                    bestRunKey = runKey; bestArcLen = len
+                if (d2 < extBestD2) {
+                    extBestD2 = d2; extBestSpline = spline; extBestU = u; extBestN = n
+                    extBestRunKey = runKey; extBestArcLen = len
+                }
+                // D4: check if this sample is a new interior nearest (footprint membership)
+                if (d2 < intBestD2) {
+                    // Compute signed lateral at this sample — getTangentAt reuses _scratchTan.
+                    // This branch fires only when a new candidate is closer than the current
+                    // interior best; the getTangentAt call is bounded by intBestD2, not extBestD2.
+                    spline.getTangentAt(u, _scratchTan)
+                    const tz = _scratchTan.z, tx = _scratchTan.x
+                    // dx/dz are query − sample, so lateral = (sample − query) cross tangent
+                    // signedLat = −dx*tz + dz*tx  (point-to-sample offset cross tangent, consistent
+                    // with _sampleCarveWorld: signedLat = dx*tz − dz*tx where dx = samplePt − query)
+                    const signedLat = (-dx) * tz - (-dz) * tx  // = dx_fwd*tz − dz_fwd*tx
+                    if (Math.abs(signedLat) <= footprintHW) {
+                        intBestD2 = d2; intBestSpline = spline; intBestU = u; intBestN = n
+                        intBestRunKey = runKey; intBestArcLen = len
+                    }
                 }
             }
         }
@@ -464,6 +506,17 @@ export class RoadSystem {
                     for (const s of segs) probeSpline(s.spline, s.runKey ?? '')
                 }
             }
+        }
+
+        // D4 (plan 09-20): arm-disambiguation — prefer interior spline over exterior.
+        // If any spline's footprint contains the query, use it; otherwise fall back to the
+        // globally-nearest spline (existing 09-17 behavior, fully preserved).
+        if (intBestSpline) {
+            bestSpline  = intBestSpline;  bestU = intBestU; bestN = intBestN
+            bestRunKey  = intBestRunKey;  bestArcLen = intBestArcLen
+        } else {
+            bestSpline  = extBestSpline;  bestU = extBestU; bestN = extBestN
+            bestRunKey  = extBestRunKey;  bestArcLen = extBestArcLen
         }
 
         if (bestSpline) {
