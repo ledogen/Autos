@@ -104,6 +104,33 @@ function _lerpVec3(a, b, t) {
     )
 }
 
+// ── D2 camberProfile binary-search interpolation (plan 09-21) ─────────────────
+/**
+ * Binary-search + linear interpolation on a camber profile array pair.
+ * Module-scope (allocation-free, no `this`) so camberProfile() can call it without
+ * creating a closure per query. O(log N) per call.
+ *
+ * @param {number[]} arcPos    — monotone arc-length positions (metres)
+ * @param {number[]} camberRad — corresponding banking angles (radians)
+ * @param {number}   s         — query arc-length (metres)
+ * @returns {number} interpolated camber angle (radians)
+ */
+function _interpolateCamber(arcPos, camberRad, s) {
+    const N = arcPos.length
+    if (N === 0) return 0
+    if (s <= arcPos[0])     return camberRad[0]
+    if (s >= arcPos[N - 1]) return camberRad[N - 1]
+    let lo = 0, hi = N - 1
+    while (lo < hi - 1) {
+        const mid = (lo + hi) >> 1
+        if (arcPos[mid] <= s) lo = mid; else hi = mid
+    }
+    const span = arcPos[hi] - arcPos[lo]
+    if (span < 1e-9) return camberRad[lo]
+    const t = (s - arcPos[lo]) / span
+    return camberRad[lo] + t * (camberRad[hi] - camberRad[lo])
+}
+
 // ── Module constants ───────────────────────────────────────────────────────────
 /**
  * Tile side length in metres. MUST match terrain.js CHUNK_SIZE.
@@ -1875,6 +1902,127 @@ export class RoadSystem {
      */
     invalidateDesignGradeCache() {
         this._designGradeCache = new WeakMap()
+    }
+
+    // ── D2: One slew-limited camber profile per canonical run (plan 09-21) ───────
+    /**
+     * Build and cache a rate-limited camber profile for the canonical run `runKey`.
+     * Called once per run; subsequent calls return the cached sampled array.
+     *
+     * Algorithm:
+     *   1. Walk the network run's control points, computing arc positions and
+     *      tangents (finite-difference between adjacent points).
+     *   2. At each sample i, compute raw camber = clamp(camberStrength·κ_i, ±6°)
+     *      where κ_i = signedCurvature(T_{i-1}, T_i, ds_i).
+     *   3. Forward-march a slew-rate limit: the stored camber at i+1 cannot change
+     *      by more than roadCamberRate·Δs from the stored camber at i.
+     *   4. Return { arcPos: Float64Array, camberRad: Float64Array } arrays.
+     *
+     * Cache: Map keyed by runKey, invalidated when this._generation changes.
+     * O(N) build once per run, O(log N) binary-search per camberProfile query.
+     * No allocation per query (allocation-disciplined inner loop).
+     *
+     * @param {string} runKey — canonical run key (e.g. "0:0")
+     * @returns {{ arcPos: number[], camberRad: number[] } | null}
+     */
+    _buildCamberProfile(runKey) {
+        const netEntry = this._network?.get(runKey)
+        if (!netEntry || !netEntry.points || netEntry.points.length < 2) return null
+
+        const pts = netEntry.points
+        const N = pts.length
+
+        const p = this._params || {}
+        const camberStrength = p.camberStrength ?? 200
+        // roadCamberRate in °/m → rad/m for the slew limiter
+        const slewRateRadPerM = (p.roadCamberRate ?? 1.5) * (Math.PI / 180)
+        const MAX_CAMBER = 6 * (Math.PI / 180)   // ±6° clamp
+
+        // Step 1: compute arc positions along the polyline.
+        const arcPos    = new Array(N)
+        const rawCamber = new Array(N)
+        arcPos[0] = 0
+        rawCamber[0] = 0  // no predecessor → curvature undefined, bank = 0
+
+        // Tangents: compute forward tangent from point i to i+1.
+        // For curvature at sample i (i≥1), use tangent at i-1 → i (T0) and i → i+1 (T1).
+        for (let i = 1; i < N; i++) {
+            const ax = pts[i].x - pts[i - 1].x
+            const az = pts[i].z - pts[i - 1].z
+            const ds = Math.sqrt(ax * ax + az * az)
+            arcPos[i] = arcPos[i - 1] + ds
+
+            // Curvature at i: finite-difference using prev-seg tangent and next-seg tangent.
+            // T0 = direction from pts[i-1] → pts[i].
+            // T1 = direction from pts[i] → pts[i+1] (or repeat T0 at end).
+            const t0x = ax, t0z = az  // already unnormalized; signedCurvature normalises internally
+
+            let t1x, t1z, effectiveDs
+            if (i < N - 1) {
+                t1x = pts[i + 1].x - pts[i].x
+                t1z = pts[i + 1].z - pts[i].z
+                const ds1 = Math.sqrt(t1x * t1x + t1z * t1z) || 1e-8
+                effectiveDs = (ds + ds1) * 0.5
+            } else {
+                t1x = t0x; t1z = t0z   // boundary: replicate
+                effectiveDs = ds || 1e-8
+            }
+
+            const kappa = signedCurvature(t0x, t0z, t1x, t1z, effectiveDs)
+            const raw = camberStrength * kappa
+            rawCamber[i] = Math.max(-MAX_CAMBER, Math.min(MAX_CAMBER, raw))
+        }
+
+        // Step 2: forward-march slew-rate limit.
+        // |camberRad[i] - camberRad[i-1]| ≤ slewRateRadPerM * Δs
+        const camberRad = new Array(N)
+        camberRad[0] = rawCamber[0]
+        for (let i = 1; i < N; i++) {
+            const ds = arcPos[i] - arcPos[i - 1]
+            const maxDelta = slewRateRadPerM * ds
+            const prev = camberRad[i - 1]
+            const target = rawCamber[i]
+            const delta = target - prev
+            if (delta >  maxDelta) camberRad[i] = prev + maxDelta
+            else if (delta < -maxDelta) camberRad[i] = prev - maxDelta
+            else camberRad[i] = target
+        }
+
+        return { arcPos, camberRad }
+    }
+
+    /**
+     * Return the banking angle (radians) at continuous-run arc-position `arcS` for `runKey`.
+     * D2 (plan 09-21): ONE slew-rate-limited profile per canonical run — ribbon sweep,
+     * terrain carve, and physics all call this so visual == physics banking.
+     *
+     * Cache: keyed by runKey, invalidated when this._generation changes (D1).
+     * Query: O(log N) binary search — allocation-free in the inner loop (no new arrays).
+     *
+     * @param {number} arcS   — continuous arc-length position along the run (metres)
+     * @param {string} runKey — canonical run key matching the network entry
+     * @returns {number} banking angle in radians (positive = bank right on left turn)
+     */
+    camberProfile(arcS, runKey) {
+        if (!runKey) return 0
+
+        // Lazy-init the per-instance cache Map.
+        if (!this._camberProfileCache) this._camberProfileCache = new Map()
+
+        // D1 generation invalidation: rebuild if the generation changed since last build.
+        const currentGen = this._generation
+        const cached = this._camberProfileCache.get(runKey)
+        if (cached && cached.generation === currentGen) {
+            // Fast path: binary-search and interpolate.
+            return _interpolateCamber(cached.arcPos, cached.camberRad, arcS)
+        }
+
+        // (Re)build the profile for this run.
+        const profile = this._buildCamberProfile(runKey)
+        if (!profile) return 0
+
+        this._camberProfileCache.set(runKey, { generation: currentGen, ...profile })
+        return _interpolateCamber(profile.arcPos, profile.camberRad, arcS)
     }
 
     /**

@@ -287,6 +287,14 @@ export const RANGER_PARAMS = {
   // Exposed via debug slider (D-04). Range: 50–500 m.
   camberStrength: 200,     // m·rad/rad — curvature→camber gain (D-04 / A4)
 
+  // roadCamberRate: maximum rate of camber change along the road centerline (degrees per metre).
+  // D2 (plan 09-21): the camberProfile(arcS) slew-rate limiter forward-marches along the
+  // CONTINUOUS canonical run, clamping |dCamber/ds| ≤ roadCamberRate (°/m). This is what
+  // eases banking across tile-seam boundaries and through curvature zero-crossings — killing
+  // the clamp-flip spike (bug #4). Must be ≤ MAX_DCAMBER_DEG_PER_M=2.0 (harness gate).
+  // Default 1.5 °/m: eases banking smoothly; tight corners ramp up over ~4 m instead of spiking.
+  roadCamberRate: 1.5,     // °/m — max camber slew rate along run arc-length (D2)
+
   // ── Phase 9 Road Surface — Plan 04 junction params (SURF-07 / D-12–D-15) ────
   // roadJunctionBlendLength: how far before a junction node each road's design grade
   // blends toward the shared nodeY elevation (D-14 / A8).

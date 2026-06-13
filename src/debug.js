@@ -282,6 +282,12 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // Fires onRoadSurfaceChange so syncToChunkRing picks up the new margin promptly.
   surfaceFolder.add(params, 'roadTileKeepMargin', 0, 3, 1).name('Keep Margin (tiles)').onChange(fireSurface)
 
+  // D2 (plan 09-21) camber slew-rate: camberProfile(arcS) limits |dCamber/ds| ≤ roadCamberRate
+  // along the CONTINUOUS canonical run, easing banking across seams + zero-crossings (bug #4).
+  // Keep ≤ 2.0 °/m to satisfy the harness gate (MAX_DCAMBER_DEG_PER_M). Full rebuild needed
+  // because camberProfile is cached per run and the cached profile must be rebuilt.
+  surfaceFolder.add(params, 'roadCamberRate', 0.1, 4.0, 0.1).name('Camber Rate (°/m)').onChange(fireSurface)
+
   // D-04: Read-only Logger hint — shows the \ key without being interactive
   const _loggerHint = { hint: '\\ to record' }
   gui.add(_loggerHint, 'hint').name('Logger').disable()
