@@ -98,7 +98,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
   - [x] 09-13-PLAN.md — SPLINE-FIX 1/3: follow the CONTINUOUS routed centerline Y (kill per-tile _smoothDesignGrade in ribbon + physics + terrain carve) — removes seam steps AND the ~1s load lag; truthful cyan viz draws the spline geometry not analyticHeight (SURF-03/04/05, D-06/D-16)
   - [ ] 09-14-PLAN.md — SPLINE-FIX 2/3: rate-limit camber along arc (pure camberRateLimit slew limiter) applied in ribbon AND physics (visual==physics); no clamp-flip spike at zero-crossings; tunable roadCamberRate + slider, +/-6deg clamp kept; harness tight-turn gate (SURF-03/04, D-04)
   - [ ] 09-15-PLAN.md — SPLINE-FIX 3/3: dirt-brown ribbon edge skirts via roadDirtColor param + picker so cuts/fill shoulders read as dirt not asphalt; final full-surface human verify (SURF-05, D-05/D-08/D-09)
-  - [ ] 09-16-PLAN.md — CARVE-PERF gap closure: replace per-vertex queryNearest + 4-corner bilinearGrade in _buildCarveTable with a pre-sampled spline-point lookup (single pre-loop getPointAt site, closure-free per-vertex nearest-point search) — fixes the ~1s stream lag AND road-below-ground on steep/curving tiles; remove roadDebugLineOnSurface viz toggle (SURF-04/05)
+  - [x] 09-16-PLAN.md — CARVE-PERF gap closure: replace per-vertex queryNearest + 4-corner bilinearGrade in _buildCarveTable with a pre-sampled spline-point lookup (single pre-loop getPointAt site, closure-free per-vertex nearest-point search) — fixes the ~1s stream lag AND road-below-ground on steep/curving tiles; remove roadDebugLineOnSurface viz toggle (SURF-04/05)
 **Notes**: ORIGINAL approach (carve terrain to MEET the ribbon at the road edge) was found geometrically unsound at verification — two independently-tessellated opaque surfaces interpenetrate between their own vertices (z-fighting/camo), and 09-08 introduced a per-vertex binary-search + 2nd queryNearest perf regression (~1 s terrain-load hang). RE-ARCHITECTED 2026-06-12 (user-locked decision): the ribbon is the ONE authoritative surface — it wins depth via polygonOffset + has edge skirts; terrain is carved CHEAPLY to stay clearanceMargin BELOW it under a wider footprint; physics samples the ribbon on-road (crown/camber/pothole fold-in retained in road.js _sampleCarveWorld). The 09-09 equality exit gate is RETIRED — the new gate is terrain-below + ribbon-driven + longitudinally-continuous. Worker CARVE SYNC unchanged: terrain-worker.js stores RAW heights, no decal symbols leak in. SURF-06 (pothole) is a stretch; SURF-07 (junctions) still needs human z-fight/stability confirmation.
 **UI hint**: yes
 
@@ -129,7 +129,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 | 6. Procedural Terrain | v1.0 | 3/3 | ✅ Complete | 2026-06-03 |
 | 7. Free-Cam + Seeded Layered Terrain | v1.1 | 5/5 | Complete   | 2026-06-09 |
 | 8. Road Routing | v1.1 | 7/7 | Complete   | 2026-06-10 |
-| 9. Road Surface | v1.1 | 13/15 | In Progress|  |
+| 9. Road Surface | v1.1 | 14/16 | In Progress|  |
 | 10. POI Hooks + Polish | v1.1 | 0/? | Not started | — |
 
 ## Backlog
