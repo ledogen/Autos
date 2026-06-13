@@ -185,6 +185,14 @@ export class RoadMeshSystem {
         // Linear-space: (0.15, 0.15, 0.17) — dark cool grey.
         const RC = 0.15, GC = 0.15, BC = 0.17
 
+        // Plan 09-24 — Dirt shoulder colour for skirt verts (SURF-05 / D-01 / D-08).
+        // Derived from params.roadDirtColor hex int via bit-shifts → 0–1 linear space.
+        // Matches the linear-space convention used by RC/GC/BC above.
+        const dirtHex = params.roadDirtColor ?? 0x6b5a3e
+        const dirtR = ((dirtHex >> 16) & 0xff) / 255
+        const dirtG = ((dirtHex >>  8) & 0xff) / 255
+        const dirtB =  (dirtHex        & 0xff) / 255
+
         for (let i = 0; i < N_LONG; i++) {
             const u = (N_LONG > 1) ? i / (N_LONG - 1) : 0
 
@@ -297,22 +305,24 @@ export class RoadMeshSystem {
             // ── Plan 09-10: Skirt verts — two extra verts per section ─────────────
             // Left-edge bottom (local index CROSS_SEGS+1): same XZ as j=0 edge, Y dropped by skirtDepth.
             // Right-edge bottom (local index CROSS_SEGS+2): same XZ as j=CROSS_SEGS edge, Y dropped.
-            // Color: asphalt base (road-dark — no markings on skirt faces).
+            // Color: dirt brown (SURF-05 / Plan 09-24) — visually distinguishes the engineered
+            // shoulder from the paved asphalt surface. Derived from params.roadDirtColor (hex int).
+            // D-01 discipline: procedural vertex colour — no texture or asset file.
             const leftSkirtBase  = (i * vertsPerSection + (CROSS_SEGS + 1)) * 3
             positions[leftSkirtBase    ] = leftEdgeVx
             positions[leftSkirtBase + 1] = leftEdgeVy - skirtDepth
             positions[leftSkirtBase + 2] = leftEdgeVz
-            colors[leftSkirtBase    ] = RC
-            colors[leftSkirtBase + 1] = GC
-            colors[leftSkirtBase + 2] = BC
+            colors[leftSkirtBase    ] = dirtR
+            colors[leftSkirtBase + 1] = dirtG
+            colors[leftSkirtBase + 2] = dirtB
 
             const rightSkirtBase = (i * vertsPerSection + (CROSS_SEGS + 2)) * 3
             positions[rightSkirtBase    ] = rightEdgeVx
             positions[rightSkirtBase + 1] = rightEdgeVy - skirtDepth
             positions[rightSkirtBase + 2] = rightEdgeVz
-            colors[rightSkirtBase    ] = RC
-            colors[rightSkirtBase + 1] = GC
-            colors[rightSkirtBase + 2] = BC
+            colors[rightSkirtBase    ] = dirtR
+            colors[rightSkirtBase + 1] = dirtG
+            colors[rightSkirtBase + 2] = dirtB
         }
 
         // ── Index buffer: quad strip → 2 triangles per quad (CCW winding) ────────
