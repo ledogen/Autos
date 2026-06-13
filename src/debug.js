@@ -296,6 +296,12 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // because camberProfile is cached per run and the cached profile must be rebuilt.
   surfaceFolder.add(params, 'roadCamberRate', 0.1, 4.0, 0.1).name('Camber Rate (°/m)').onChange(fireSurface)
 
+  // Plan 09-24 — Dirt shoulder colour picker (SURF-05 / D-01 / D-08).
+  // addColor accepts a hex int on `params`; changing it fires fireSurface so the ribbon
+  // rebuilds and the new skirt vertex colours take effect immediately.
+  // No asset files — colour is applied as vertex colour on the skirt apron verts only.
+  surfaceFolder.addColor(params, 'roadDirtColor').name('Dirt Shoulder Color').onChange(fireSurface)
+
   // D-04: Read-only Logger hint — shows the \ key without being interactive
   const _loggerHint = { hint: '\\ to record' }
   gui.add(_loggerHint, 'hint').name('Logger').disable()

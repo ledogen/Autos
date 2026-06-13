@@ -388,4 +388,14 @@ export const RANGER_PARAMS = {
   // A margin of 1 tile means keep-radius = build-radius + 1, so the departing tile is held
   // for ~1 extra frame-cycle before disposal. Units: tiles. Range: 0–3.
   roadTileKeepMargin: 1,        // tiles — keep-radius = build-radius + this margin (D5 / 09-20)
+
+  // ── Phase 9 Plan 24 — Dirt-colour edge skirts (SURF-05 / D-08) ───────────────
+  // roadDirtColor: hex colour applied to the ribbon's downward edge aprons (skirt verts).
+  // Visually distinguishes the engineered dirt shoulder from the paved asphalt surface.
+  // Muted brown (~0x6b5a3e) matches exposed earth/gravel typical of rural road construction.
+  // D-01 discipline: procedural vertex colour only — no texture or image asset.
+  // SURF-05: cut/fill shoulders read as dirt, not asphalt.
+  // D-08: material intent — shoulder face is unpaved earth.
+  // Units: hex RGB int (0xRRGGBB). Exposed as a colour picker in the Road Surface folder.
+  roadDirtColor: 0x6b5a3e,     // hex RGB — dirt-brown skirt vertex colour (SURF-05 / D-08 / Plan 09-24)
 };
