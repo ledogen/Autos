@@ -225,11 +225,13 @@ export const RANGER_PARAMS = {
   // hairpin corners. Higher = wider hairpins (arms further apart); lower = tighter corners.
   // FLOOR CONSTRAINT (D0): minRadius must be ≥ roadHalfWidth + roadClearanceMargin so the ribbon's
   // inner edge (at ±roadHalfWidth from centerline) cannot fold onto itself. With roadHalfWidth=5 and
-  // roadClearanceMargin=0.5, the floor is 5.5 m. The default 12 m provides ~2× headroom:
-  //   arm separation ≈ 2 × 12 = 24 m, ribbon width = 10 m → 14 m clearance between inner edges.
+  // roadClearanceMargin=0.5, the floor is ~5.5 m — that is the SAFETY MINIMUM, not the default.
+  // The DEFAULT stays generous at 45 m: under fillet semantics minRadius IS the sharpest-corner
+  // radius, so a small value (e.g. 12 m) makes every corner visibly sharp. 45 m reads as smooth
+  // road curves while still being well above the fold floor (arms separate by ~2×45 = 90 m).
   // Floor enforced in src/road.js _refreshParams (Math.max clamp) and slider lower bound in debug.js.
   // Live-tunable via the "Min Turn Radius (m)" debug slider (src/debug.js Roads folder).
-  roadMinTurnRadius: 12,   // m — arc-fillet min turn radius (D0); floor ≥ roadHalfWidth + clearance
+  roadMinTurnRadius: 45,   // m — arc-fillet min turn radius (D0); safety floor ≥ roadHalfWidth + clearance (~5.5 m)
 
   // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
   // Retained for the DEFERRED D-01 spur pass (trunk-only ships first). D-01 / RESEARCH A1.

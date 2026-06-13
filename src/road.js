@@ -1379,9 +1379,15 @@ export class RoadSystem {
         if (this._proto.anchors.size > 4000) this._proto.anchors.clear()
         if (this._proto.segs.size    > 1500) this._proto.segs.clear()
         this._network.clear()
-        // D1: bump generation counter on real re-stream — distinct from the invalidateCache bump
-        // (re-route path) so both entry points signal ribbon tiles + carve chunks to rebuild.
-        this._generation++
+        // D1: do NOT bump _generation here. A positional re-stream produces window-INVARIANT
+        // geometry (D-16: the network is a pure function of seed+world-coords+params), so an
+        // in-range tile's geometry is identical before and after — rebuilding it is pure waste.
+        // _streamNetwork is also called from multiple centers per frame (update() with the view
+        // center AND ensureTile()/spawn with a tile center); they ping-pong _networkCenter past
+        // PROTO_REGEN_MOVE and would bump generation every frame, forcing a continuous ribbon
+        // rebuild + terrain re-carve loop (flicker + FPS collapse). Generation is bumped ONLY on a
+        // real ROUTE/PARAM change via invalidateCache() — that is the only path that changes tile
+        // geometry, and it is the path the maxGrade/camber sliders take (fixes bug #1 + #6).
         // A real re-stream invalidates the previous slice; _sliceNetwork re-slices on next call.
         this._slicedFrom = null
         if (this._tiles) this._tiles.clear()
