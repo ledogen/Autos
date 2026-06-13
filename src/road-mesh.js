@@ -164,7 +164,11 @@ export class RoadMeshSystem {
      *
      * Pure function of its inputs — no side effects. Deterministic (D-16).
      */
-    sweepRibbon(spline, designGradeY, points, params, runKey = '', arcSOffset = 0) {
+    sweepRibbon(spline, designGradeY, points, params, runKey = '', arcS0 = 0, arcS1 = 0) {
+        // BUG-10: arcS0/arcS1 are the RUN-global arc at this slice's u=0/u=1 ends. arcS(u) =
+        // arcS0 + (arcS1−arcS0)·u is the continuous run arc (no per-tile sawtooth); camberSign maps
+        // the run-frame signed camber into this slice's sweep frame (slice may run E→W → arcS1<arcS0).
+        const camberSign = arcS1 >= arcS0 ? 1 : -1
         const N_LONG = points.length     // number of longitudinal sections (~2 m resolution)
         const halfWidth      = params.roadHalfWidth    ?? 5
         const roadWidth      = params.roadWidth        ?? 10
@@ -215,15 +219,16 @@ export class RoadMeshSystem {
             const gradeY = designGradeY[i]
 
             // ── Road quality at this arc position (D-02/D-03) ──────────────────
-            // arcS: arc-length from run start. Computed before camber so both share it.
-            const arcS = arcSOffset + u * arcLen
+            // arcS: RUN-global arc-length (BUG-10). Computed before camber so both share it.
+            const arcS = arcS0 + (arcS1 - arcS0) * u
             const q = roadQuality(arcS, runKey, this._worldSeed)
 
             // D2 (plan 09-21): camber from the shared slew-limited camberProfile — replaces
             // the per-vertex instantaneous _splineCurvatureSigned camber (bug #4 fix).
             // One profile per canonical run, cached + generation-invalidated (D1).
-            // visual ribbon banking now eases across seams and curvature zero-crossings.
-            const camberAngle = this._road.camberProfile(arcS, runKey)
+            // BUG-10: keyed on run-global arcS + camberSign so banking is continuous across tile
+            // seams and correctly oriented on E→W (reversed) slices.
+            const camberAngle = camberSign * this._road.camberProfile(arcS, runKey)
 
             // Tier classification:
             //   High (q >= 0.66): solid center + solid edge, white (0.9)
@@ -584,11 +589,13 @@ export class RoadMeshSystem {
             // Fall back to empty string if not present (backwards-compatible).
             const runKey = seg.runKey ?? ''
 
-            // Arc-length offset: seg.arcSOffset tracks where this tile slice starts
-            // along the canonical run. Fall back to 0 if not set.
-            const arcSOffset = seg.arcSOffset ?? 0
+            // BUG-10: seg.arcS0/arcS1 are the RUN-global arc at this slice's u=0/u=1 ends (set by
+            // road.js _assignSlice). Replaces the old arcSOffset=0 default that made camber/quality
+            // tile-local and sawtooth at every seam. Fall back to 0 if not set (degraded, not crashing).
+            const arcS0 = seg.arcS0 ?? 0
+            const arcS1 = seg.arcS1 ?? 0
 
-            const geo  = this.sweepRibbon(spline, designGradeY, points, this._params, runKey, arcSOffset)
+            const geo  = this.sweepRibbon(spline, designGradeY, points, this._params, runKey, arcS0, arcS1)
             const mesh = new THREE.Mesh(geo, this._material)
 
             // Road mesh sits at world origin (geometry is already in world space).

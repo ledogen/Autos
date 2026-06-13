@@ -479,16 +479,19 @@ export class RoadSystem {
         let extBestN = 0,    intBestN = 0
         let extBestRunKey = '', intBestRunKey = ''
         let extBestArcLen = 0,  intBestArcLen = 0
+        // BUG-10: run-arc endpoints of the matched slice (for run-global camber arcS + sign).
+        let extBestArcS0 = 0, extBestArcS1 = 0, intBestArcS0 = 0, intBestArcS1 = 0
 
         // Aliases for the 09-17 projection refine (applied to whichever best wins below)
         let bestSpline = null, bestU = 0, bestN = 0, bestRunKey = '', bestArcLen = 0
+        let bestArcS0 = 0, bestArcS1 = 0
 
         const qTileX = Math.floor(wx / CHUNK_SIZE)
         const qTileZ = Math.floor(wz / CHUNK_SIZE)
 
         // Probe one spline: sample at N arc-length intervals, track nearest U within radius.
         // D4: at each new global nearest, check footprint membership via getTangentAt → signedLat.
-        const probeSpline = (spline, runKey) => {
+        const probeSpline = (spline, runKey, arcS0In, arcS1In) => {
             const len = spline.getLength ? spline.getLength() : 0
             // ~1 sample / 2 m, clamped to [16, 256] — enough resolution for a 200 m radius query.
             const n = Math.max(16, Math.min(256, Math.ceil((len || 64) / 2)))
@@ -500,6 +503,7 @@ export class RoadSystem {
                 if (d2 < extBestD2) {
                     extBestD2 = d2; extBestSpline = spline; extBestU = u; extBestN = n
                     extBestRunKey = runKey; extBestArcLen = len
+                    extBestArcS0 = arcS0In; extBestArcS1 = arcS1In
                 }
                 // D4: check if this sample is a new interior nearest (footprint membership)
                 if (d2 < intBestD2) {
@@ -515,6 +519,7 @@ export class RoadSystem {
                     if (Math.abs(signedLat) <= footprintHW) {
                         intBestD2 = d2; intBestSpline = spline; intBestU = u; intBestN = n
                         intBestRunKey = runKey; intBestArcLen = len
+                        intBestArcS0 = arcS0In; intBestArcS1 = arcS1In
                     }
                 }
             }
@@ -530,7 +535,7 @@ export class RoadSystem {
                 const key = `${qTileX + dx},${qTileZ + dz}`
                 const segs = this._tiles.get(key)
                 if (segs && segs.length) {
-                    for (const s of segs) probeSpline(s.spline, s.runKey ?? '')
+                    for (const s of segs) probeSpline(s.spline, s.runKey ?? '', s.arcS0 ?? 0, s.arcS1 ?? 0)
                 }
             }
         }
@@ -541,9 +546,11 @@ export class RoadSystem {
         if (intBestSpline) {
             bestSpline  = intBestSpline;  bestU = intBestU; bestN = intBestN
             bestRunKey  = intBestRunKey;  bestArcLen = intBestArcLen
+            bestArcS0   = intBestArcS0;   bestArcS1 = intBestArcS1
         } else {
             bestSpline  = extBestSpline;  bestU = extBestU; bestN = extBestN
             bestRunKey  = extBestRunKey;  bestArcLen = extBestArcLen
+            bestArcS0   = extBestArcS0;   bestArcS1 = extBestArcS1
         }
 
         if (bestSpline) {
@@ -596,10 +603,13 @@ export class RoadSystem {
             // Two allocations (the returned vectors): point + unit tangent at the refined position.
             const point = bestSpline.getPointAt(refinedU)
             const tangent = bestSpline.getTangentAt(refinedU)   // getTangentAt returns a UNIT vector
-            // runKey and arcS (= refinedU * bestArcLen) available for SURF-06 quality consumers.
-            // arcS is tile-local (0 → spline length), consistent with sweepRibbon's arcSOffset=0 default.
+            // BUG-10: arcS is now the RUN-GLOBAL arc (arcS0 + (arcS1−arcS0)·refinedU), NOT tile-local,
+            // so camberProfile/roadQuality index the continuous run profile (no per-tile sawtooth).
+            // camberSign maps the run-frame signed camber into a slice that may run E→W (reversed).
             // spline exposed for sampleDesignGradeAt (CR-01, plan 09-08) — WeakMap cache key.
-            return { point, tangent, runKey: bestRunKey, arcS: refinedU * bestArcLen, spline: bestSpline }
+            const runArcS = bestArcS0 + (bestArcS1 - bestArcS0) * refinedU
+            const camberSign = bestArcS1 >= bestArcS0 ? 1 : -1
+            return { point, tangent, runKey: bestRunKey, arcS: runArcS, camberSign, spline: bestSpline }
         }
 
         // Fallback: no sliced spline came within radius — probe the raw network polylines
@@ -632,7 +642,7 @@ export class RoadSystem {
         if (tangent.x < 0) tangent.negate()
         tangent.normalize()   // UNIT tangent (contract)
         // Fallback path: runKey unknown (network fallback lacks segment metadata), arcS=0.
-        return { point, tangent, runKey: '', arcS: 0 }
+        return { point, tangent, runKey: '', arcS: 0, camberSign: 1 }
     }
 
     /**
@@ -664,7 +674,7 @@ export class RoadSystem {
      *   camberProfile(arcS, runKey) per vertex (O(1) array lookup post-build — no spline eval).
      */
     collectChunkSplinePoints(centerX, centerZ, radiusM) {
-        if (!this._tiles) return { pts: [], sampleArcS: [], sampleRunKeys: [] }
+        if (!this._tiles) return { pts: [], sampleArcS: [], sampleRunKeys: [], sampleCamberSign: [] }
 
         const qTileX = Math.floor(centerX / CHUNK_SIZE)
         const qTileZ = Math.floor(centerZ / CHUNK_SIZE)
@@ -673,6 +683,7 @@ export class RoadSystem {
         const pts          = []
         const sampleArcS   = []
         const sampleRunKeys = []
+        const sampleCamberSign = []   // BUG-10: per-sample run-frame→slice-frame camber sign
 
         for (let dx = -blk; dx <= blk; dx++) {
             for (let dz = -blk; dz <= blk; dz++) {
@@ -687,24 +698,27 @@ export class RoadSystem {
                     const len    = spline.getLength ? (spline.getLength() || 64) : 64
                     const n      = Math.max(2, Math.min(512, Math.ceil(len / 1.5)))
                     const runKey = seg.runKey ?? ''
-                    // D3: arcSOffset is 0 for _tiles slices (same assumption as _sampleCarveWorld
-                    // where centerlineArcS = (nr.arcS ?? 0) + (nr.arcSOffset ?? 0) with arcSOffset=0).
-                    const arcSOffset = seg.arcSOffset ?? 0
+                    // BUG-10: run-GLOBAL arc + camber sign from the slice's arcS0/arcS1. Was tile-local
+                    // (arcSOffset=0) → camber sawtoothed to the run start at every tile seam in the carve
+                    // too, desyncing the trough from the banked ribbon. arcS(u)=arcS0+(arcS1−arcS0)·u.
+                    const arcS0 = seg.arcS0 ?? 0, arcS1 = seg.arcS1 ?? len
+                    const camberSign = arcS1 >= arcS0 ? 1 : -1
                     for (let i = 0; i <= n; i++) {
                         const u = i / n
                         const p = spline.getPointAt(u)   // allocates; only site — pre-loop
                         const t = spline.getTangentAt(u) // D4: tangent for arm-disambiguation
                         // Stride 5: [x, y, z, tx, tz]
                         pts.push(p.x, p.y, p.z, t.x, t.z)
-                        // D3: parallel arc-length + runKey arrays (indexed by sample number, not stride)
-                        sampleArcS.push(arcSOffset + u * len)
+                        // D3: parallel arc-length + runKey + camberSign arrays (indexed by sample number)
+                        sampleArcS.push(arcS0 + (arcS1 - arcS0) * u)
                         sampleRunKeys.push(runKey)
+                        sampleCamberSign.push(camberSign)
                     }
                 }
             }
         }
 
-        return { pts, sampleArcS, sampleRunKeys }
+        return { pts, sampleArcS, sampleRunKeys, sampleCamberSign }
     }
 
     /**
@@ -1450,12 +1464,18 @@ export class RoadSystem {
             // `current` accumulates the active sub-polyline; on a cut we push the boundary point to
             // BOTH the closing sub-polyline and the new one (shared C0 point).
             let current = [points[0].clone()]
-            const flush = () => {
-                if (current.length >= 2) this._assignSlice(current, runKey, runWeight)
+            // BUG-10 camber continuity: track cumulative XZ run arc-length so each slice records the
+            // run-arc at its endpoints. XZ metric matches _buildCamberProfile's arcPos. Without this,
+            // arcSOffset defaulted to 0 and camber sawtoothed back to the run start at every tile seam.
+            let runArcAtA = 0       // run-arc at points[i-1] (current segment start)
+            let sliceStartArc = 0   // run-arc at current[0]
+            const flush = (sliceEndArc) => {
+                if (current.length >= 2) this._assignSlice(current, runKey, runWeight, sliceStartArc, sliceEndArc)
                 // start the next sub-polyline at the same boundary point we just closed on (shared)
             }
             for (let i = 1; i < points.length; i++) {
                 const a = points[i - 1], b = points[i]
+                const segLen = Math.hypot(b.x - a.x, b.z - a.z)  // XZ segment length (matches camber arcPos)
                 // Collect all boundary crossings along segment a→b, ordered by parametric t∈(0,1).
                 const crossings = []
                 this._collectCrossings(a.x, b.x, S, (t) => crossings.push(t))
@@ -1467,13 +1487,16 @@ export class RoadSystem {
                     if (t <= prevT + 1e-9) continue                  // coincident crossings (corner) → one cut
                     const cp = _lerpVec3(a, b, t)
                     current.push(cp.clone())                          // close current sub-polyline ON the boundary
-                    flush()
+                    const cpArc = runArcAtA + segLen * t
+                    flush(cpArc)
                     current = [cp.clone()]                            // next sub-polyline STARTS on the same point (C0)
+                    sliceStartArc = cpArc
                     prevT = t
                 }
                 current.push(b.clone())
+                runArcAtA += segLen
             }
-            flush()  // emit the trailing sub-polyline
+            flush(runArcAtA)  // trailing slice ends at the run's total arc
         }
 
         this._slicedFrom = this._network
@@ -1653,14 +1676,14 @@ export class RoadSystem {
             // Uses crownProfile() from road-carve.js — SAME formula as sweepRibbon.
             const crownY = crownProfile(signedLat, halfWidth, crownHeight)
 
-            // Continuous run arc-length: nr.arcS (tile-local refinedU*arcLen) + arcSOffset
-            // matches sweepRibbon's arcSOffset + u*arcLen — same keying as pothole below.
-            const centerlineArcS = (nr.arcS ?? 0) + (nr.arcSOffset ?? 0)
+            // BUG-10: nr.arcS is now the RUN-GLOBAL arc straight from queryNearest (no per-tile
+            // sawtooth); matches sweepRibbon's run-arc keying. Used for camber AND pothole below.
+            const centerlineArcS = nr.arcS ?? 0
 
             // D2 (plan 09-21): replace second-queryNearest camber estimate with the shared
             // slew-limited camberProfile — visual ribbon and physics now read the SAME angle.
-            // Removes the redundant ahead-query (perf win on the hot physics path).
-            const camberAngle = this.camberProfile(centerlineArcS, nr.runKey ?? '')
+            // camberSign maps the run-frame camber into the (possibly E→W reversed) slice frame.
+            const camberAngle = (nr.camberSign ?? 1) * this.camberProfile(centerlineArcS, nr.runKey ?? '')
 
             // Tilt: signedLat * sin(camberAngle) — same formula as sweepRibbon
             const tiltY = signedLat * Math.sin(camberAngle)
@@ -1988,7 +2011,7 @@ export class RoadSystem {
      * @param {string} runKey — parent network-run key (so adjacent tiles can pick the same run)
      * @param {number} runWeight — parent run's total point count (representative tie-break)
      */
-    _assignSlice(pts, runKey, runWeight) {
+    _assignSlice(pts, runKey, runWeight, arcSHead = 0, arcSTail = 0) {
         // Centripetal divide-by-zero guard: drop consecutive coincident control points.
         const clean = []
         for (const p of pts) {
@@ -2010,7 +2033,17 @@ export class RoadSystem {
         // getPoint(1.0)=east-edge convention holds: a tile's east-edge point matches the east
         // neighbour's west-edge point (both are the same sliced boundary crossing → C0/C1).
         const head = clean[0], tail = clean[clean.length - 1]
-        if (tail.x < head.x) clean.reverse()
+        const reversed = (tail.x < head.x)
+        if (reversed) clean.reverse()
+
+        // BUG-10 camber continuity: arcS0/arcS1 = the RUN-arc-length at this slice's oriented u=0 and
+        // u=1 endpoints. arcSHead/arcSTail are the run-arc at the original (pre-orientation) head/tail
+        // (arcSHead < arcSTail since the run is walked in order). After the W→E reversal, the u=0 end
+        // is the original tail. Consumers compute arcS(u) = arcS0 + (arcS1−arcS0)·u (the true run-arc,
+        // monotonic in u even when the slice runs E→W) and camberSign = sign(arcS1−arcS0) to express
+        // the run-frame signed camber in this slice's sweep frame.
+        const arcS0 = reversed ? arcSTail : arcSHead
+        const arcS1 = reversed ? arcSHead : arcSTail
 
         // Record which tile boundaries this slice touches, so ensureTile can prefer an E-W-spanning
         // representative (one whose endpoints sit on the shared E/W boundaries the harness reads).
@@ -2023,7 +2056,7 @@ export class RoadSystem {
         const spline = new THREE.CatmullRomCurve3(clean, false, 'centripetal', 0.5)
         let arr = this._tiles.get(key)
         if (!arr) { arr = []; this._tiles.set(key, arr) }
-        arr.push({ spline, points: clean, waypoints: clean, runKey, runWeight, spanScore })
+        arr.push({ spline, points: clean, waypoints: clean, runKey, runWeight, spanScore, arcS0, arcS1 })
     }
 
 }

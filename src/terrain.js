@@ -895,7 +895,7 @@ export class TerrainSystem {
         // D3 (plan 09-22): collectChunkSplinePoints now returns { pts, sampleArcS, sampleRunKeys }
         // sampleArcS[i] and sampleRunKeys[i] give the arc-length and run key for pts[i*5..i*5+4].
         // Used to read camberProfile(arcS, runKey) for the D3 cross-section-inheriting carve target.
-        const { pts: samples, sampleArcS, sampleRunKeys } = this._roadSystem.collectChunkSplinePoints(chunkCX, chunkCZ, queryRadius)
+        const { pts: samples, sampleArcS, sampleRunKeys, sampleCamberSign } = this._roadSystem.collectChunkSplinePoints(chunkCX, chunkCZ, queryRadius)
         if (samples.length === 0) return null  // early-reject passed but no actual points sampled
 
         const table = new Float32Array(N * N * 2)
@@ -987,7 +987,8 @@ export class TerrainSystem {
 
                 const arcS   = sampleArcS[biIdx]
                 const runKey = sampleRunKeys[biIdx]
-                const camberAngle = this._roadSystem.camberProfile(arcS, runKey)
+                // BUG-10: run-frame camber × per-sample sign → slice-frame angle (matches ribbon + physics).
+                const camberAngle = (sampleCamberSign ? sampleCamberSign[biIdx] : 1) * this._roadSystem.camberProfile(arcS, runKey)
 
                 const crownY = crownProfile(signedLat, halfWidth, crownHeight)
                 const tiltY  = signedLat * Math.sin(camberAngle)
@@ -1014,7 +1015,7 @@ export class TerrainSystem {
                     const eTx = samples[extBi + 3], eTz = samples[extBi + 4]
                     const sdxExt = samples[extBi] - wx, sdzExt = samples[extBi + 2] - wz
                     const signedLatExt  = (-sdxExt) * eTz - (-sdzExt) * eTx
-                    const camberExt     = this._roadSystem.camberProfile(sampleArcS[extIdx], sampleRunKeys[extIdx])
+                    const camberExt     = (sampleCamberSign ? sampleCamberSign[extIdx] : 1) * this._roadSystem.camberProfile(sampleArcS[extIdx], sampleRunKeys[extIdx])
                     const maxFloor      = enyExt + crownProfile(signedLatExt, halfWidth, crownHeight) +
                                           signedLatExt * Math.sin(camberExt) - clearanceMargin
                     if (maxFloor > carveTargetY) carveTargetY = maxFloor
