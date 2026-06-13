@@ -220,12 +220,16 @@ export const RANGER_PARAMS = {
   // the trunk runs long straights and switchbacks ONLY where grade truly forces it. D-09 default 120.
   roadWTurn: 120,       // cost units / 45° heading change — straight/switchback shaping (D-09)
 
-  // roadMinTurnRadius: QUAL-01 — minimum turn radius (m) for centerlines. _limitCurvature excises any
-  // span that coils tighter than this (large cumulative heading change over a short arc — tight
-  // loops/teardrops). Higher = straighter roads (more aggressive coil removal); lower = allows tighter
-  // turns. Curvature (angle-per-distance) control, not per-vertex angle. Live-tunable via the
-  // "Min Turn Radius (m)" debug slider (src/debug.js Roads folder).
-  roadMinTurnRadius: 45,   // m — coils tighter than this radius are excised (QUAL-01)
+  // roadMinTurnRadius: D0 — minimum turn radius (m) for road centerlines. _filletMinRadius inserts a
+  // circular arc of this radius wherever the implied corner radius is tighter, rounding (not excising)
+  // hairpin corners. Higher = wider hairpins (arms further apart); lower = tighter corners.
+  // FLOOR CONSTRAINT (D0): minRadius must be ≥ roadHalfWidth + roadClearanceMargin so the ribbon's
+  // inner edge (at ±roadHalfWidth from centerline) cannot fold onto itself. With roadHalfWidth=5 and
+  // roadClearanceMargin=0.5, the floor is 5.5 m. The default 12 m provides ~2× headroom:
+  //   arm separation ≈ 2 × 12 = 24 m, ribbon width = 10 m → 14 m clearance between inner edges.
+  // Floor enforced in src/road.js _refreshParams (Math.max clamp) and slider lower bound in debug.js.
+  // Live-tunable via the "Min Turn Radius (m)" debug slider (src/debug.js Roads folder).
+  roadMinTurnRadius: 12,   // m — arc-fillet min turn radius (D0); floor ≥ roadHalfWidth + clearance
 
   // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
   // Retained for the DEFERRED D-01 spur pass (trunk-only ships first). D-01 / RESEARCH A1.

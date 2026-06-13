@@ -812,7 +812,13 @@ export class RoadSystem {
         P.wOver      = p.roadWOver      ?? P.wOver
         P.maxGrade   = p.maxRoadGrade   ?? P.maxGrade
         P.wTurn      = p.roadWTurn      ?? P.wTurn
-        P.minTurnRadius = p.roadMinTurnRadius ?? P.minTurnRadius  // QUAL-01 — live-tunable min turn radius (m)
+        // D0: floor minTurnRadius ≥ roadHalfWidth + clearanceMargin + ε so the ribbon inner edge
+        // cannot fold by construction. This clamp applies even when the slider is dragged below
+        // the floor — the arc-fillet always receives a geometrically safe radius.
+        const halfW     = p.roadHalfWidth       ?? 5
+        const clearance = p.roadClearanceMargin ?? 0.5
+        const floorR    = halfW + clearance + 0.1  // +0.1 m epsilon
+        P.minTurnRadius = Math.max(p.roadMinTurnRadius ?? P.minTurnRadius, floorR)  // D0 floor
     }
 
     _invalidateProto() {
