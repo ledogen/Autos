@@ -864,8 +864,6 @@ export class TerrainSystem {
         // is smooth and the tile is 64 m wide. Crown/camber/pothole are NOT included; they are
         // handled exclusively by road.js _sampleCarveWorld (physics) and road-mesh.js sweepRibbon
         // (visual ribbon). The terrain mesh only carries the trough floor.
-        // Carve-free raw-height sampler (closure allocated once pre-loop, not per vertex).
-        const rawHW = (wx, wz) => this.rawHeightWorld(wx, wz)
 
         // Helper: design-grade Y at a tile corner world position.
         // Inlined (not a named function) to keep queryNearest source-line count ≤ 2 file-wide
@@ -873,7 +871,9 @@ export class TerrainSystem {
         const sampleCorner = (cx, cz) => {
             const cnr = this._roadSystem.queryNearest(cx, cz, maxExt + 1)  // corner probe — pre-loop
             if (!cnr) return this.rawHeightWorld(cx, cz)
-            if (cnr.spline) return this._roadSystem.sampleDesignGradeAt(cnr.spline, cnr.arcS, rawHW, p)
+            // 09-13: use continuous routed centerline Y (cnr.point.y) for all corners.
+            // Adjacent tiles share corner positions → shared cnr.point.y → continuous carved
+            // trough across tile seams. Replaces sampleDesignGradeAt (cache-miss lag source).
             return cnr.point.y
         }
 

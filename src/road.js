@@ -570,6 +570,12 @@ export class RoadSystem {
         this._debugLines = []
         if (!this._scene || !this._tiles) return
 
+        // 09-13: param-gated viz toggle.
+        // When roadDebugLineOnSurface is false (default), draw the spline's own routed Y
+        // with a small constant lift (+0.5 m) — the line reads as the continuous spline geometry
+        // (truth, no analyticHeight carve-inclusive distortion, no stepped seams).
+        // When true, keep legacy surf(p.x,p.z)+1.0 behavior for carve-surface debugging.
+        const onSurf = this._params?.roadDebugLineOnSurface ?? false
         const surf = this._proto.surfaceY
         for (const segs of this._tiles.values()) {
             for (const { spline, points } of segs) {
@@ -585,8 +591,13 @@ export class RoadSystem {
                 } else {
                     seg = points.map(p => p.clone())
                 }
-                if (surf) for (const p of seg) p.y = surf(p.x, p.z) + 1.0
-                else      for (const p of seg) p.y += 1.0
+                if (onSurf && surf) {
+                    for (const p of seg) p.y = surf(p.x, p.z) + 1.0
+                } else {
+                    // Default: draw the routed spline geometry Y (the truth).
+                    // +0.5 m constant lift keeps the line just above the road ribbon.
+                    for (const p of seg) p.y += 0.5
+                }
                 const line = _buildDebugLine2(seg, 0x00e5ff)
                 line.visible = this._debugVisible
                 this._scene.add(line)
@@ -1350,18 +1361,12 @@ export class RoadSystem {
 
         if (latDist > halfWidth + shoulderWidth) return null
 
-        // Design grade Y — CR-01 (09-08): derive base from the shared smoothed design grade
-        // via sampleDesignGradeAt so physics sees the same elevation as the visible ribbon.
-        // Null-spline fallback: raw-polyline queryNearest path returns no spline (nr.spline null);
-        // fall back to nr.point.y (pre-existing behavior) to avoid passing null to sampleDesignGradeAt.
-        // Cache note: sampleDesignGradeAt is memoized by spline object (WeakMap, 09-07) — O(1) after
-        // first sweep per spline; invalidated by invalidateDesignGradeCache() on surface-param change.
-        let designY
-        if (nr.spline && this._rawHeightSampler) {
-            designY = this.sampleDesignGradeAt(nr.spline, nr.arcS, this._rawHeightSampler, p)
-        } else {
-            designY = nr.point.y
-        }
+        // Design grade Y — 09-13: derive base from the CONTINUOUS routed centerline Y.
+        // nr.point.y is the slice spline evaluated at the nearest arc-length position; adjacent
+        // tile slices share boundary control points (D-06) so this value is C0-continuous across
+        // tile seams. Replaces the per-tile sampleDesignGradeAt path (WeakMap cache-miss lag source
+        // and the seam-step source from per-tile _smoothDesignGrade disagreement at boundaries).
+        let designY = nr.point.y
         const delta = designY - rawAmp
         if (delta > fillHeight) designY = rawAmp + fillHeight
 
