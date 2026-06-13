@@ -103,7 +103,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
   - [x] 09-19-PLAN.md — D1: single generation-counter versioning (roadGeneration) — ribbon tiles + terrain-carve chunks record built-against generation, rebuild on mismatch; fixes stale ribbon (#1) + maxGrade-no-carve-rebuild (#6) (SURF-01/05)
   - [x] 09-20-PLAN.md — D5 ring hysteresis (keep-radius > build-radius, kills tile-edge thrash #2) + D4 stateless queryNearest arm-disambiguation (footprint/interior preference, kills invisible-ramp launch #3); carve nearest kept consistent (SURF-01/04)
   - [x] 09-21-PLAN.md — D2: ONE slew-limited `camberProfile(arcS)` per canonical run (signed-κ → rate limit → ±6°), cached + generation-invalidated; ribbon + physics read it (visual==physics, no clamp-flip spike #4) (SURF-03/04)
-  - [ ] 09-22-PLAN.md — D3: carve inherits the ribbon cross-section (crown + camberProfile − clearanceMargin → uniform banked-turn clearance #5) + multi-arm footprint bound (≤½ inter-arm sep) + max-floor guard (no undermining); worker byte-identical (SURF-04/05)
+  - [x] 09-22-PLAN.md — D3: carve inherits the ribbon cross-section (crown + camberProfile − clearanceMargin → uniform banked-turn clearance #5) + multi-arm footprint bound (≤½ inter-arm sep) + max-floor guard (no undermining); worker byte-identical (SURF-04/05)
   - [ ] 09-23-PLAN.md — Harness gate fixtures: D4 switchback no-arm-flip, D3 two-close-arms no-undermine, D2 camber-rate; full headless gate set exits 0 (SURF-03/04/05)
   - [ ] 09-24-PLAN.md — Dirt-brown ribbon edge skirts (roadDirtColor param + picker) + combined in-sim human-verify pass for the whole D0–D5 refactor (SURF-02/05)
 **Notes**: ORIGINAL approach (carve terrain to MEET the ribbon at the road edge) was found geometrically unsound at verification — two independently-tessellated opaque surfaces interpenetrate between their own vertices (z-fighting/camo), and 09-08 introduced a per-vertex binary-search + 2nd queryNearest perf regression (~1 s terrain-load hang). RE-ARCHITECTED 2026-06-12 (user-locked decision): the ribbon is the ONE authoritative surface — it wins depth via polygonOffset + has edge skirts; terrain is carved CHEAPLY to stay clearanceMargin BELOW it under a wider footprint; physics samples the ribbon on-road (crown/camber/pothole fold-in retained in road.js _sampleCarveWorld). The 09-09 equality exit gate is RETIRED — the new gate is terrain-below + ribbon-driven + longitudinally-continuous. Worker CARVE SYNC unchanged: terrain-worker.js stores RAW heights, no decal symbols leak in. SURF-06 (pothole) is a stretch; SURF-07 (junctions) still needs human z-fight/stability confirmation.
@@ -136,7 +136,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 | 6. Procedural Terrain | v1.0 | 3/3 | ✅ Complete | 2026-06-03 |
 | 7. Free-Cam + Seeded Layered Terrain | v1.1 | 5/5 | Complete   | 2026-06-09 |
 | 8. Road Routing | v1.1 | 7/7 | Complete   | 2026-06-10 |
-| 9. Road Surface | v1.1 | 19/24 | In Progress|  |
+| 9. Road Surface | v1.1 | 20/24 | In Progress|  |
 | 10. POI Hooks + Polish | v1.1 | 0/? | Not started | — |
 
 ## Backlog
