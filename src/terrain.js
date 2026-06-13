@@ -901,9 +901,18 @@ export class TerrainSystem {
         const table = new Float32Array(N * N * 2)
         let anyNonZero = false
 
+        // D3 refinement (plan 09-22): footprint bound coupled to min-turn-radius.
+        // Min inter-arm separation at a hairpin ≈ 2·minRadius (D0 arc-fillet arms
+        // separate by ~2·minRadius). Each arm's carve footprint is bounded to ≤ ½ that
+        // separation = minRadius so adjacent arms' footprints can't overlap → no mutual
+        // undermining by construction. NEW COUPLING: carve footprint ↔ min-turn-radius —
+        // if roadMinTurnRadius is widened, carve footprint widens with it; if narrowed,
+        // they must be sized together to preserve the no-overlap guarantee.
+        //
         // Widened carve-core half-width: the blendW=1 zone extends beyond the ribbon by
         // carveExtraWidth so the flat trough bed is wider than the ribbon + skirt edge.
-        const carveHalfWidth = halfWidth + carveExtraWidth
+        const minRadius      = (this._roadSystem._params?.roadMinTurnRadius ?? 12)
+        const carveHalfWidth = Math.min(halfWidth + carveExtraWidth, minRadius)
 
         // ── Per-vertex inner loop ────────────────────────────────────────────────
         // PERF CONTRACT (Plan 09-16 / SURF-04):
@@ -985,6 +994,31 @@ export class TerrainSystem {
 
                 // carveTargetY = ribbon_surface − clearanceMargin (uniform clearance on banked turns)
                 let carveTargetY = ny + crownY + tiltY - clearanceMargin
+
+                // ── D3 refinement: max-floor guard (plan 09-22) ──────────────────────
+                // Where geometry forces two arms closer than the footprint bound, this vertex
+                // may lie inside the footprint of BOTH arm A (intBi / the chosen bi) and arm B
+                // (extBi / the globally nearest). If arm B is at a HIGHER elevation, we must
+                // NOT carve below the floor it needs — a lower arm's cut cannot remove an upper
+                // arm's support (D3 refinement, SURF-04).
+                //
+                // When intBi != extBi, extBi is a different arm. Compute its carveTargetY and
+                // apply a MAX floor: the higher arm wins. We accept a managed steep bank between
+                // arms at the transition (only degenerate vertical seams are disallowed — SURF-05).
+                //
+                // PERF CONTRACT: the guard is one float array read + a single O(log N) camberProfile
+                // call on extBi (only when extBi != intBi); no per-vertex allocation.
+                if (intBestD2 < Infinity && extBi !== intBi) {
+                    const enyExt = samples[extBi + 1]
+                    const extIdx = extBi / STRIDE
+                    const eTx = samples[extBi + 3], eTz = samples[extBi + 4]
+                    const sdxExt = samples[extBi] - wx, sdzExt = samples[extBi + 2] - wz
+                    const signedLatExt  = (-sdxExt) * eTz - (-sdzExt) * eTx
+                    const camberExt     = this._roadSystem.camberProfile(sampleArcS[extIdx], sampleRunKeys[extIdx])
+                    const maxFloor      = enyExt + crownProfile(signedLatExt, halfWidth, crownHeight) +
+                                          signedLatExt * Math.sin(camberExt) - clearanceMargin
+                    if (maxFloor > carveTargetY) carveTargetY = maxFloor
+                }
 
                 // Fill cap: never raise terrain more than roadFillHeight above raw terrain.
                 const delta = carveTargetY - rawH
