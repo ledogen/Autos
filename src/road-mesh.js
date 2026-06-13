@@ -169,7 +169,7 @@ export class RoadMeshSystem {
         const halfWidth      = params.roadHalfWidth    ?? 5
         const roadWidth      = params.roadWidth        ?? 10
         const crownHeightVal = params.crownHeight      ?? 0.05
-        const camberStrength = params.camberStrength   ?? 200
+        // camberStrength now consumed by this._road.camberProfile() — not needed here (D2, plan 09-21)
         const skirtDepth     = params.roadSkirtDepth   ?? 0.4
         const arcLen = spline.getLength ? spline.getLength() : 64
 
@@ -202,19 +202,20 @@ export class RoadMeshSystem {
             const rightX = tLen > 1e-8 ? tz / tLen : 1
             const rightZ = tLen > 1e-8 ? -tx / tLen : 0
 
-            // Signed curvature → camber angle
-            const signedKappa = this._splineCurvatureSigned(spline, u, arcLen)
-            const rawCamber   = camberStrength * signedKappa
-            const camberAngle = Math.max(-MAX_CAMBER_RAD, Math.min(MAX_CAMBER_RAD, rawCamber))
-
             const posX  = _scratchPt.x
             const posZ  = _scratchPt.z
             const gradeY = designGradeY[i]
 
             // ── Road quality at this arc position (D-02/D-03) ──────────────────
-            // arcS: arc-length from run start. Approximate as arcSOffset + u*arcLen.
+            // arcS: arc-length from run start. Computed before camber so both share it.
             const arcS = arcSOffset + u * arcLen
             const q = roadQuality(arcS, runKey, this._worldSeed)
+
+            // D2 (plan 09-21): camber from the shared slew-limited camberProfile — replaces
+            // the per-vertex instantaneous _splineCurvatureSigned camber (bug #4 fix).
+            // One profile per canonical run, cached + generation-invalidated (D1).
+            // visual ribbon banking now eases across seams and curvature zero-crossings.
+            const camberAngle = this._road.camberProfile(arcS, runKey)
 
             // Tier classification:
             //   High (q >= 0.66): solid center + solid edge, white (0.9)
