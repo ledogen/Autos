@@ -329,6 +329,13 @@ export const RANGER_PARAMS = {
   // Range: 0.1–1.0/m. Higher = more frequent, smaller bumps.
   potholeFrequency: 0.3,        // /m — noise lattice frequency (D-03 / SURF-06)
 
+  // ── Phase 9 Plan 13 — Continuous Routed Centerline Y (SURF-03/04/05) ─────────
+  // roadDebugLineOnSurface: bool — when true, the cyan centerline viz lifts onto
+  // analyticHeight (carve surface) for debugging; false = draw the routed spline
+  // geometry (truth, default). Per 09-13 the default MUST be false so the cyan line
+  // represents the continuous spline geometry without carve-inclusive distortion.
+  roadDebugLineOnSurface: false,  // bool — viz debug toggle; false = spline truth (09-13)
+
   // ── Phase 9 Plan 10 — Decal Ribbon Depth-Bias + Edge Skirts ──────────────────
   // roadSkirtDepth: vertical distance the edge apron drops below the ribbon edge vertex.
   // 0.4 m ensures the skirt face extends below the terrain surface when the road
