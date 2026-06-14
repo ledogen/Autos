@@ -40,6 +40,18 @@ violation on all fill sections taller than `fillHeight`.
   there's no visible/physical hole. Don't let the carve cap pull physics down.
 - Make ribbon, physics, and carve use ONE grade source + ONE cap policy (height-agreement).
 
+## Status (2026-06-14): FIXED (`85b57ac`), pending in-sim confirm
+
+Removed the `fillHeight` cap from BOTH `_sampleCarveWorld` (physics) and `_buildCarveTable` (carve
+mesh). Physics + foundation now track the true uncapped ribbon grade → no fall-through, height-agreement
+on tall fills. On rolling ground (delta < fillHeight) the cap never fired, so no change there.
+
+**Cosmetic follow-up (not blocking):** on a TALL causeway the fill shoulder drops from road grade to
+terrain over `shoulderWidth` (~2.5 m), so the dirt slope is steep (near-vertical for big fills), and the
+toe beyond `maxExt` can truncate (the carve query radius still sizes from the capped `fillHeight*fillSlope`).
+Road surface is solid/driveable; only the embankment *look* is rough on tall fills. If wanted, size
+`maxExt` + the fill toe from the actual local delta, or grade the shoulder over a longer run.
+
 ## Acceptance
 
 - On a causeway crossing falling terrain, the truck stays ON the visible road (no fall-through).
