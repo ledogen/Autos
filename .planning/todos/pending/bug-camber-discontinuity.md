@@ -50,6 +50,25 @@ synthetic run, never the tile-slice indexing — which is exactly why this shipp
 slicer needing THREE (can't import road.js into the zero-install harness); options: extract a pure
 slice-arc helper, or a thin THREE-backed node test. Until then: in-sim verification only.
 
+## Update (2026-06-14): within-run sawtooth fixed, but sharp transitions PERSIST
+
+`3df47cd` (run-global arcS) killed the per-tile-seam sawtooth, and `a99ab5c` (camberStrength 200→4)
+fixed the over-banking. But the user still sees **sharp camber transitions** in-sim (image 17). Remaining
+suspects (still under BUG-10):
+
+1. **Per-RUN reset (primary):** `_buildCamberProfile` forces `rawCamber[0] = camberRad[0] = 0` at the
+   START of every network run (road.js ~1840/1874). The ribbon/physics read `camberProfile(arcS, runKey)`,
+   so wherever the nearest run (`runKey`) changes — a road crossing from one E-W canonical run to the next
+   (e.g. N-S / winding climbs that span multiple `mz` rows) — banking jumps to 0 and ramps back. The
+   arcSOffset fix made camber continuous WITHIN a run but did nothing ACROSS runs. A run that begins
+   mid-curve also starts at 0 bank (wrong).
+2. **(Ruled out)** camberSign flip on reversed slices is self-consistent: uLat and camberSign flip
+   together, so banking is invariant across slice orientation — NOT the cause.
+
+Fix direction: make camber continuous across run boundaries (seed each run's start camber from the
+adjacent run's end, or build camber over stitched runs), and add the camber-across-run-boundary headless
+gate (still owed). Don't force `camberRad[0]=0` when the run starts mid-curve.
+
 ## Acceptance
 
 - Driving through turns and across run/arm boundaries, banking eases smoothly (no step).
