@@ -14,6 +14,7 @@
 | `b376127` | Min-radius/maxGrade slider: cuts & foundations don't follow the new road | `debouncedRoadRebuild` rebuilt the carve BEFORE re-streaming the road (carve read stale/empty network); re-stream was also gated on `_debugVisible`. Re-stream first, unconditionally, then rebuild ribbon + carve. |
 | `82b2636` | Truck spawns off the side of the road (BUG-11, spawn half) | `resolveSpawn` streamed/queried from baseTile but seated the truck up to 200 m away (different anchor band); re-stream centered on the spawn point and re-seat. (Determinism half = window-variance, WONTFIX — user likes it.) |
 | `3df47cd` | Camber sharp/discontinuous at every tile seam (BUG-10) | `arcSOffset` defaulted to 0 → camber/quality were tile-local, sawtoothing at each 64 m seam. Slices now carry run-global `arcS0/arcS1` + `camberSign`; ribbon, physics, carve all read run-global arc. Seam-gate still owed. |
+| `a99ab5c` | Road over-banked → rollovers/excessive grip/erratic contact normal | `camberStrength` was 200 but `camberStrength·kappa` is RADIANS → 6° clamp hit on every curve <~1900 m radius. Hidden while physics camber was ~0; exposed by 3df47cd. Set to 4 → proportional 1–6° banking (D-04). **Open: confirm "car floating" is resolved or separate.** |
 
 Headless gate: `node test/spline-continuity.mjs` — all 8 gate fixtures exit 0.
 Worker CARVE SYNC: `src/terrain-worker.js` byte-identical throughout.
