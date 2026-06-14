@@ -1021,9 +1021,12 @@ export class TerrainSystem {
                     if (maxFloor > carveTargetY) carveTargetY = maxFloor
                 }
 
-                // Fill cap: never raise terrain more than roadFillHeight above raw terrain.
-                const delta = carveTargetY - rawH
-                if (delta > fillHeight) carveTargetY = rawH + fillHeight
+                // BUG-13: NO fill cap. Capping carveTargetY at rawH + fillHeight pulled the carved
+                // foundation (and physics) down to follow the terrain on causeways taller than
+                // fillHeight, leaving a gap under the ribbon and dropping the collision surface so the
+                // truck fell through. The foundation now rises to the full road grade and meets the
+                // ribbon (height-agreement with road-mesh.js designGradeY + _sampleCarveWorld). The fill
+                // shoulder can be steep on tall causeways — cosmetic follow-up; road stays solid/driveable.
 
                 // Compute fill/cut toe distances (SURF-05 continuity — shoulder rejoins terrain).
                 const cappedDelta = Math.max(0, carveTargetY - rawH)

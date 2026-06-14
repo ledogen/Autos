@@ -1635,9 +1635,9 @@ export class RoadSystem {
         const p             = this._params
         const halfWidth     = p.roadHalfWidth     ?? 5
         const shoulderWidth = p.roadShoulderWidth  ?? 2.5
-        const fillHeight    = p.roadFillHeight     ?? 2.0
         const crownHeight   = p.crownHeight        ?? 0.05
         // camberStrength now consumed by camberProfile() — not needed here (D2, plan 09-21)
+        // roadFillHeight cap intentionally NOT read here (BUG-13): physics tracks the uncapped grade.
 
         const maxExt = halfWidth + shoulderWidth + 4
         const nr = this.queryNearest(wx, wz, maxExt)
@@ -1662,9 +1662,12 @@ export class RoadSystem {
         // tile slices share boundary control points (D-06) so this value is C0-continuous across
         // tile seams. Replaces the per-tile sampleDesignGradeAt path (WeakMap cache-miss lag source
         // and the seam-step source from per-tile _smoothDesignGrade disagreement at boundaries).
+        // BUG-13: do NOT cap the physics grade to rawAmp + fillHeight. That cap pulled the road DOWN
+        // to follow the terrain on causeway sections taller than fillHeight (delta > fillHeight), so the
+        // truck fell through the visible ribbon — which uses the UNCAPPED routed grade (road-mesh.js
+        // designGradeY[i] = _pt.y). Physics rides the true ribbon grade (decal contract); the raised
+        // dirt foundation is the terrain carve's job (also uncapped now, terrain.js _buildCarveTable).
         let designY = nr.point.y
-        const delta = designY - rawAmp
-        if (delta > fillHeight) designY = rawAmp + fillHeight
 
         // ── Crown + camber fold-in (SURF-03 / D-04) ─────────────────────────────
         // Same formula as sweepRibbon in road-mesh.js — ensures analyticNormal returns
