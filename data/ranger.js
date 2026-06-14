@@ -285,11 +285,16 @@ export const RANGER_PARAMS = {
   // Exposed via debug slider (D-04). Range: 0–0.2 m.
   crownHeight: 0.05,       // m — centerline crown above ribbon edge (D-04 / A12)
 
-  // camberStrength: gain from road curvature (1/m) to camber angle (radians).
+  // camberStrength: gain from road curvature (1/m) to camber angle (RADIANS).
   // camberAngle = clamp(camberStrength * signedKappa, -6°, +6°).
-  // At camberStrength=200 m: a 50 m radius curve (signedKappa≈0.02) → 0.02*200=4° of bank.
-  // Exposed via debug slider (D-04). Range: 50–500 m.
-  camberStrength: 200,     // m·rad/rad — curvature→camber gain (D-04 / A4)
+  // UNITS BUG FIX: the result is RADIANS, not degrees. The old default 200 made
+  // camberStrength*kappa = 200*0.02 = 4 RADIANS (229°) for a 50 m curve → clamped to the full 6°
+  // on essentially EVERY curve (any radius < ~1900 m). That over-banked the physics surface
+  // (rollovers / erratic contact normal once the run-arc camber fix made physics actually feel it).
+  // For ~4° of bank at a 50 m radius (signedKappa≈0.02): 4° = 0.070 rad → camberStrength ≈ 3.5.
+  // 4 gives proportional banking: ~1° at R=200 m, ~4.6° at R=50 m, clamped 6° on tight hairpins (R<37 m).
+  // Exposed via debug slider (D-04). Range: 0.5–10.
+  camberStrength: 4,       // rad·m — curvature→camber gain (D-04 / A4); proportional 1–6° banking
 
   // roadCamberRate: maximum rate of camber change along the road centerline (degrees per metre).
   // D2 (plan 09-21): the camberProfile(arcS) slew-rate limiter forward-marches along the
