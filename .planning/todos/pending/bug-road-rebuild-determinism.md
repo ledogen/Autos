@@ -39,6 +39,13 @@ the road before rebuilding the carve.)
   span, not the windowed run.
 - Reconcile spawn placement with the rendered centerline.
 
+## Status (2026-06-13): spawn FIXED; determinism = WONTFIX-for-now (user likes the behavior)
+
+**User decision (2026-06-13):** the cross-band re-shaping (12→15→12 ≠ reload) is acceptable —
+they *like* that you can mess with road settings at any time and still have a road near where it
+was. So the determinism half is documented as a known/potential behavior, NOT a priority fix. Keep
+this note; revisit only if it becomes a real problem. The spawn-off-road fix stays.
+
 ## Progress (2026-06-13)
 
 - **Spawn-off-road: FIXED** (`resolveSpawn`, main.js). Root: spawn streamed + queried from the
