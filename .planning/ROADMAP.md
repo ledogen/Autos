@@ -106,7 +106,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
   - [x] 09-22-PLAN.md — D3: carve inherits the ribbon cross-section (crown + camberProfile − clearanceMargin → uniform banked-turn clearance #5) + multi-arm footprint bound (≤½ inter-arm sep) + max-floor guard (no undermining); worker byte-identical (SURF-04/05)
   - [x] 09-23-PLAN.md — Harness gate fixtures: D4 switchback no-arm-flip, D3 two-close-arms no-undermine, D2 camber-rate; full headless gate set exits 0 (SURF-03/04/05)
   - [x] 09-24-PLAN.md — Dirt-brown ribbon edge skirts (roadDirtColor param + picker) + combined in-sim human-verify pass for the whole D0–D5 refactor (SURF-02/05)
-  - [ ] 09-25-PLAN.md — P0 foundation: RoadRunProfile + O(log N) runProfile(arcS,runKey)→{gradeY,camberRad,tx,tz}, cached + generation-invalidated (the continuous per-run profile everything hangs off) (SURF-03/04/05)
+  - [x] 09-25-PLAN.md — P0 foundation: RoadRunProfile + O(log N) runProfile(arcS,runKey)→{gradeY,camberRad,tx,tz}, cached + generation-invalidated (the continuous per-run profile everything hangs off) (SURF-03/04/05)
   - [ ] 09-26-PLAN.md — P1 API: RoadSample + byArc(runKey,arcS) + sampleRoadAt(x,z) (queryNearest demoted to projector); geometry read from runProfile by arcS; surfaceType/onRoad hooks carried, no feature logic (SURF-04/05)
   - [ ] 09-27-PLAN.md — P2 BUG-14: physics _sampleCarveWorld + carve _buildCarveTable read gradeY(arcS) from the profile (kills seam grade-step/launch; mesh==physics==carve height) (SURF-04/05)
   - [ ] 09-28-PLAN.md — P3 BUG-12: sweepRibbon section frame from continuous runProfile tangent + shared-boundary edge weld (seals ribbon at sharp corners) (SURF-01/03)
@@ -142,7 +142,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 | 6. Procedural Terrain | v1.0 | 3/3 | ✅ Complete | 2026-06-03 |
 | 7. Free-Cam + Seeded Layered Terrain | v1.1 | 5/5 | Complete   | 2026-06-09 |
 | 8. Road Routing | v1.1 | 7/7 | Complete   | 2026-06-10 |
-| 9. Road Surface | v1.1 | 24/30 | In Progress|  |
+| 9. Road Surface | v1.1 | 25/30 | In Progress|  |
 | 10. POI Hooks + Polish | v1.1 | 0/? | Not started | — |
 
 ## Backlog
