@@ -4,13 +4,13 @@ milestone: v1.1
 milestone_name: Mountains & Roads
 status: executing
 stopped_at: Phase 9 context gathered (intersections scoped in)
-last_updated: "2026-06-15T07:17:31.520Z"
-last_activity: 2026-06-15 -- Phase 09 planning complete
+last_updated: "2026-06-15T07:33:16.617Z"
+last_activity: 2026-06-15 -- Phase 09 execution started
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 42
-  completed_plans: 34
+  completed_plans: 36
   percent: 50
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-05)
 
 ## Current Position
 
-Phase: 09 (road-surface) — EXECUTED, IN-SIM VERIFICATION
-Plan: 09-18..09-24 executed (combined D0–D5 lifecycle+camber refactor)
-Status: Ready to execute
-Last activity: 2026-06-15 -- Phase 09 planning complete
+Phase: 09 (road-surface) — EXECUTING
+Plan: 1 of 30
+Status: Executing Phase 09
+Last activity: 2026-06-15 -- Phase 09 execution started
 
 ```
 v1.1 Progress: [                    ] 0% (0/4 phases)
