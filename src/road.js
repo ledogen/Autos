@@ -1705,17 +1705,29 @@ export class RoadSystem {
 
         if (latDist > halfWidth + shoulderWidth) return null
 
-        // Design grade Y — 09-13: derive base from the CONTINUOUS routed centerline Y.
-        // nr.point.y is the slice spline evaluated at the nearest arc-length position; adjacent
-        // tile slices share boundary control points (D-06) so this value is C0-continuous across
-        // tile seams. Replaces the per-tile sampleDesignGradeAt path (WeakMap cache-miss lag source
-        // and the seam-step source from per-tile _smoothDesignGrade disagreement at boundaries).
+        // Design grade Y — P2 (09-27): replace per-slice spline nr.point.y with the run-global
+        // continuous profile gradeY. nr.arcS is run-global (BUG-10 fix in 3df47cd) and is C0
+        // across a slice-switch (both sides of the boundary resolve to the same arcS), so
+        // runProfile(nr.arcS).gradeY is C0 across tile/chunk seams → no teleport, no upward-step
+        // penetration → no launch (BUG-14 closed).
+        //
+        // Previous: let designY = nr.point.y
+        // Problem: nr.point.y came from a per-slice spline whose "nearest" sample snapped to a
+        // different slice across the boundary, producing a discrete Y step that kicked the truck
+        // (~300 mm at Coarse Amp 150, seed 7 behind spawn). That step caused chassis penetration
+        // into the terrain which the physics solver resolved as an upward impulse → launch.
+        //
+        // PERF NOTE: runProfile allocates one { gradeY, camberRad, tx, tz } per call. This is
+        // the hot physics path (4 wheels × ~5 substeps = ~20 calls/frame). If runProfile was
+        // called with an out-object parameter (09-25 optional 3rd arg), pass a module-scope
+        // reusable object here to avoid per-call allocation. TODO(perf-cache): wire the out-object
+        // once profiled as a hot spot (09-CONTINUOUS-PROFILE-DESIGN.md line 70).
+        //
         // BUG-13: do NOT cap the physics grade to rawAmp + fillHeight. That cap pulled the road DOWN
-        // to follow the terrain on causeway sections taller than fillHeight (delta > fillHeight), so the
-        // truck fell through the visible ribbon — which uses the UNCAPPED routed grade (road-mesh.js
-        // designGradeY[i] = _pt.y). Physics rides the true ribbon grade (decal contract); the raised
-        // dirt foundation is the terrain carve's job (also uncapped now, terrain.js _buildCarveTable).
-        let designY = nr.point.y
+        // to follow the terrain on causeway sections taller than fillHeight so the truck fell through.
+        // Physics rides the true ribbon grade (decal contract); the raised dirt foundation is the
+        // terrain carve's job (also uncapped now, terrain.js _buildCarveTable).
+        let designY = this.runProfile(nr.arcS ?? 0, nr.runKey ?? '').gradeY
 
         // ── Crown + camber fold-in (SURF-03 / D-04) ─────────────────────────────
         // Same formula as sweepRibbon in road-mesh.js — ensures analyticNormal returns
