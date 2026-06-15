@@ -131,6 +131,54 @@ function _interpolateCamber(arcPos, camberRad, s) {
     return camberRad[lo] + t * (camberRad[hi] - camberRad[lo])
 }
 
+// ── P0 run-profile sampler (plan 09-25) ───────────────────────────────────────
+/**
+ * ONE binary search on arcPos, then interpolate all four profile arrays.
+ * Module-scope (allocation-free, no `this`), O(log N) per call.
+ * Returns the out-object reference (caller provides or we allocate once).
+ *
+ * @param {number[]} arcPos    — monotone arc-length positions (metres)
+ * @param {number[]} gradeY    — Y-height per sample
+ * @param {number[]} camberRad — banking angle (radians) per sample
+ * @param {number[]} tx        — unit XZ tangent X per sample
+ * @param {number[]} tz        — unit XZ tangent Z per sample
+ * @param {number}   s         — query arc-length (metres)
+ * @param {object}   out       — { gradeY, camberRad, tx, tz } object to write into
+ * @returns {object} out — mutated with interpolated values
+ */
+function _interpolateRunProfile(arcPos, gradeY, camberRad, tx, tz, s, out) {
+    const N = arcPos.length
+    if (N === 0) {
+        out.gradeY = 0; out.camberRad = 0; out.tx = 1; out.tz = 0
+        return out
+    }
+    if (s <= arcPos[0]) {
+        out.gradeY = gradeY[0]; out.camberRad = camberRad[0]; out.tx = tx[0]; out.tz = tz[0]
+        return out
+    }
+    if (s >= arcPos[N - 1]) {
+        out.gradeY = gradeY[N-1]; out.camberRad = camberRad[N-1]; out.tx = tx[N-1]; out.tz = tz[N-1]
+        return out
+    }
+    // Binary search for interval [lo, hi] containing s.
+    let lo = 0, hi = N - 1
+    while (lo < hi - 1) {
+        const mid = (lo + hi) >> 1
+        if (arcPos[mid] <= s) lo = mid; else hi = mid
+    }
+    const span = arcPos[hi] - arcPos[lo]
+    if (span < 1e-9) {
+        out.gradeY = gradeY[lo]; out.camberRad = camberRad[lo]; out.tx = tx[lo]; out.tz = tz[lo]
+        return out
+    }
+    const t = (s - arcPos[lo]) / span
+    out.gradeY    = gradeY[lo]    + t * (gradeY[hi]    - gradeY[lo])
+    out.camberRad = camberRad[lo] + t * (camberRad[hi] - camberRad[lo])
+    out.tx        = tx[lo]        + t * (tx[hi]        - tx[lo])
+    out.tz        = tz[lo]        + t * (tz[hi]        - tz[lo])
+    return out
+}
+
 // ── Module constants ───────────────────────────────────────────────────────────
 /**
  * Tile side length in metres. MUST match terrain.js CHUNK_SIZE.
@@ -2040,6 +2088,65 @@ export class RoadSystem {
 
         this._camberProfileCache.set(runKey, { generation: currentGen, ...profile })
         return _interpolateCamber(profile.arcPos, profile.camberRad, arcS)
+    }
+
+    /**
+     * P0 — Continuous per-run profile sampler (plan 09-25).
+     * Returns gradeY/camberRad/tx/tz sampled at run-global arc-position `arcS` for `runKey`.
+     *
+     * ONE source, ONE arc domain. Both sides of any tile/chunk seam resolve to the same arcS,
+     * so anything read by arcS is C0 by construction — seam-continuity is guaranteed.
+     *
+     * Cache: lazy-init `this._runProfileCache` Map, entries keyed by runKey carrying
+     *   { generation, arcPos, gradeY, camberRad, tx, tz }.
+     * Invalidation: D1 — rebuilt when `this._generation` differs from stored (same discipline
+     *   as camberProfile / _camberProfileCache).
+     * Query: ONE binary search on arcPos via _interpolateRunProfile, O(log N) per call.
+     * Allocation: the returned object { gradeY, camberRad, tx, tz } is the ONLY allocation
+     *   per query. Signature optionally accepts a caller-provided `out` object to avoid it.
+     *
+     * @param {number} arcS   — run-global arc-length position (metres)
+     * @param {string} runKey — canonical run key matching the network entry (e.g. "0:0")
+     * @param {object} [out]  — optional reusable { gradeY, camberRad, tx, tz } to write into
+     * @returns {{ gradeY: number, camberRad: number, tx: number, tz: number }}
+     *   gradeY    — routed centerline Y (metres)
+     *   camberRad — slew-limited banking angle (radians)
+     *   tx / tz   — unit XZ forward tangent components
+     *   Falls back to zeroed sample { gradeY:0, camberRad:0, tx:1, tz:0 } for unknown/empty run.
+     */
+    runProfile(arcS, runKey, out) {
+        const result = out ?? { gradeY: 0, camberRad: 0, tx: 1, tz: 0 }
+
+        if (!runKey) {
+            result.gradeY = 0; result.camberRad = 0; result.tx = 1; result.tz = 0
+            return result
+        }
+
+        // Lazy-init per-instance cache.
+        if (!this._runProfileCache) this._runProfileCache = new Map()
+
+        const currentGen = this._generation
+        const cached = this._runProfileCache.get(runKey)
+        if (cached && cached.generation === currentGen) {
+            // Fast path: ONE binary search, interpolate all four arrays.
+            return _interpolateRunProfile(
+                cached.arcPos, cached.gradeY, cached.camberRad, cached.tx, cached.tz,
+                arcS, result
+            )
+        }
+
+        // (Re)build profile for this run.
+        const profile = this._buildRunProfile(runKey)
+        if (!profile) {
+            result.gradeY = 0; result.camberRad = 0; result.tx = 1; result.tz = 0
+            return result
+        }
+
+        this._runProfileCache.set(runKey, { generation: currentGen, ...profile })
+        return _interpolateRunProfile(
+            profile.arcPos, profile.gradeY, profile.camberRad, profile.tx, profile.tz,
+            arcS, result
+        )
     }
 
     /**
