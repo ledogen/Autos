@@ -4,13 +4,13 @@ milestone: v1.1
 milestone_name: Mountains & Roads
 status: executing
 stopped_at: Phase 9 context gathered (intersections scoped in)
-last_updated: "2026-06-15T15:50:11.021Z"
+last_updated: "2026-06-15T15:56:51.122Z"
 last_activity: 2026-06-15
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 42
-  completed_plans: 40
+  completed_plans: 41
   percent: 50
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-05)
 ## Current Position
 
 Phase: 09 (road-surface) — EXECUTING
-Plan: 5 of 30
+Plan: 6 of 30
 Status: Ready to execute
 Last activity: 2026-06-15
 
@@ -61,6 +61,7 @@ v1.1 Progress: [                    ] 0% (0/4 phases)
 | Phase 09-road-surface P10 | 20 | 2 tasks | 4 files |
 | Phase 09-road-surface P12 | 15 | 1 tasks | 2 files |
 | Phase 09-road-surface P28 | 25 | 2 tasks | 1 files |
+| Phase 09-road-surface P29 | 15 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,7 @@ Recent decisions affecting current work:
 - [Phase ?]: CR-04: rawHeightWorld wraps height()*terrainAmplitude with no carve hook — feeds _smoothDesignGrade a carve-free profile eliminating double-count of crown/camber/pothole
 - [Phase ?]: CR-04 stale-cache: invalidateDesignGradeCache() called from debouncedRoadSurfaceRebuild on surface-param changes so memoized design-grade is always fresh
 - [Phase ?]: Plan 09-10: vertsPerSection=13 stride locked for Plan 09-12 test harness
+- [Phase ?]: Phase 9 P4 (09-29): _runStartCamber seeds cross-run camber from predecessor end value via generation-keyed XZ adjacency index — BUG-10 closed
 
 ### Pending Todos
 
@@ -130,6 +132,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-06-15T15:50:11.018Z
+Last session: 2026-06-15T15:56:45.830Z
 Stopped at: Phase 9 context gathered (intersections scoped in)
 Resume file: None
