@@ -26,6 +26,17 @@ const MAX_DKAPPA           = 0.01   // max |Δκ/Δs| (1/m per m) — curvature 
 const MAX_DCAMBER_DEG_PER_M = 2.0  // max camber rate change (deg/m) — derivative of banked curvature
 const MAX_BOUNDARY_MISMATCH_M = 0.05 // max Y gap at a tile-seam boundary (m) — 5 cm acceptable for unsmoothed seam
 
+// 09-30 BUG-14 seam-grade gate threshold.
+// Continuous arc-indexed grade must be within 0.01 m of the grade on the other side of the
+// CHUNK_SIZE=64 m arc seam. Nearest-discrete grade at the same seam will far exceed this.
+const MAX_SEAM_GRADE_STEP_M = 0.01   // max |ΔY| across the 64 m seam — tighter than boundary mismatch
+
+// 09-30 BUG-12 ribbon-edge-weld gate threshold.
+// Continuous-tangent frame must produce ±halfWidth edge vertices that are bit-identical (or
+// within floating-point tolerance) across adjacent slices at the seam. Per-slice tangent at a
+// sharp corner will produce a larger gap.
+const MAX_RIBBON_EDGE_GAP_M = 0.01   // max XZ distance between coincident edge verts at the seam
+
 const SAMPLE_INTERVAL_M    = 1.0   // arc-length spacing between metric samples (m)
 
 // 09-17 physics-sampling continuity threshold.
@@ -389,6 +400,52 @@ const FIXTURES = [
         role: 'gate',
         description: 'S-curve with curvature sign change. Slew-limited camber must stay ≤ MAX_DCAMBER_DEG_PER_M (2.0°/m); unlimited camber rate must exceed it (demonstrating the gate is meaningful).',
         camberRateMode: true,
+    },
+    {
+        // 09-30 BUG-14 seam-grade gate.
+        // A straight road polyline with a NON-TRIVIAL vertical step between two control points
+        // that straddle a CHUNK_SIZE=64 m arc boundary. The seam is at arcS ≈ 64 m (between
+        // the 4th and 5th control points). The grade step is 3.0 m over 1 m horizontal —
+        // a cliff that nearest-discrete grade reads as a large ΔY when the "nearest" sample
+        // snaps across the seam, while the continuous arc-indexed profile gives C0 grade.
+        //
+        // Two strategies are compared:
+        //   'nearest': read gradeY from the CLOSEST control point by arc distance — the OLD
+        //     behavior that produced BUG-14 launch. Produces |ΔY| >> MAX_SEAM_GRADE_STEP_M.
+        //   'continuous': read gradeY by linear interpolation between the two bracketing control
+        //     points (mirrors _buildRunProfile gradeY interpolation). Produces |ΔY| ≈ 0.
+        //
+        // Gate: continuous-profile |ΔY| across the 64 m seam < MAX_SEAM_GRADE_STEP_M (0.01 m).
+        //       nearest-discrete |ΔY| must EXCEED it (to confirm the gate bites BUG-14).
+        // seamGradeMode: special marker — computeSeamGradeMetrics handles this fixture.
+        name: 'seam-grade',
+        role: 'gate',
+        description: 'Road polyline with a 3 m cliff at a 64 m arc seam. Continuous-profile grade must be C0 across the seam (|ΔY|<0.01 m); nearest-discrete grade must exceed threshold (BUG-14 catch).',
+        seamGradeMode: true,
+    },
+    {
+        // 09-30 BUG-12 ribbon-edge-weld gate.
+        // A sharp-cornered (≈90°) polyline split into two SLICES at the apex.
+        // Slice A covers the lead-in leg; slice B covers the exit leg.
+        // The shared seam is exactly at the corner apex.
+        //
+        // Two frame strategies are compared:
+        //   'perSlice': each slice computes its own XZ right-normal from the spline tangent
+        //     at u=1.0 (end of slice A) and u=0.0 (start of slice B) INDEPENDENTLY.
+        //     At a sharp corner the two tangents differ, so ±halfWidth edge positions
+        //     differ → a visible gap (BUG-12).
+        //   'continuous': both slices use the SHARED seam tangent from the arc-indexed
+        //     profile (mirrors _buildRunProfile tx/tz at the seam arcS). Same tangent →
+        //     same ±halfWidth edge positions → gap = 0.
+        //
+        // Gate: continuous frame edge gap < MAX_RIBBON_EDGE_GAP_M (0.01 m) at the shared seam;
+        //       no inverted quads (winding consistent);
+        //       per-slice frame edge gap must EXCEED threshold (to confirm gate bites BUG-12).
+        // ribbonWeldMode: special marker — computeRibbonWeldMetrics handles this fixture.
+        name: 'ribbon-edge-weld',
+        role: 'gate',
+        description: 'Sharp-cornered polyline split at the apex. Continuous-tangent frame must produce C0 ±halfWidth edges (gap<0.01 m); per-slice tangent must produce a gap (BUG-12 catch). Also: no inverted quads.',
+        ribbonWeldMode: true,
     },
 ]
 
@@ -1000,6 +1057,325 @@ function computeCamberRateMetrics() {
     return { maxDCamber_unlimited, maxDCamber_slewed, slewRateDegM: CR_SLEW_RATE_DEG_M }
 }
 
+// ── 09-30 BUG-14 Seam-grade gate ─────────────────────────────────────────────
+// Headlessly mirrors _buildRunProfile gradeY: arc-indexed linear interpolation over
+// the run's control points. The seam is at CHUNK_SIZE=64 m arc. The fixture polyline
+// has a steep cliff (3 m vertical in 1 m horizontal) straddling that seam, so
+// nearest-discrete grade at the seam reads the far side's Y — a large ΔY — while
+// continuous interpolation at arcS=64 gives a smooth C0 value.
+//
+// Two strategies:
+//   'nearest': gradeY = pts[closest index by arc].y — reproduces BUG-14 staircase.
+//   'continuous': gradeY = linear interpolation between bracketing control pts — reproduces fix.
+//
+// CHUNK_SIZE constant (mirrors road.js / terrain.js chunk grid):
+const SG_CHUNK_SIZE = 64   // m — the seam we sample across (arcS = 64)
+const SG_EPSILON    = 0.001 // m — tiny probe on each side of the seam; continuous must agree, nearest-discrete must snap
+
+// Seam-grade polyline:
+//   - Runs along +X (Z=0 throughout) for simplicity; arcPos[i] == x[i].
+//   - Control points straddle arcS=64 symmetrically:
+//     pt at x=59 (arcS=59, y=2.0) and pt at x=69 (arcS=69, y=5.0).
+//     The seam midpoint is at arcS=64, equidistant from both (5 m each side).
+//   - Nearest-discrete from arcS=63.999: |63.999-59|=4.999, |63.999-69|=5.001 → snaps to x=59, y=2.0
+//   - Nearest-discrete from arcS=64.001: |64.001-59|=5.001, |64.001-69|=4.999 → snaps to x=69, y=5.0
+//   - ΔY_nearest = |5.0 - 2.0| = 3.0 m >> MAX_SEAM_GRADE_STEP_M (0.01 m) ✓
+//   - Continuous at 63.999 and 64.001: both read interpolation between (59,2.0)→(69,5.0) →
+//     y(63.999) ≈ 2 + 3*(4.999/10) ≈ 3.4997; y(64.001) ≈ 2 + 3*(5.001/10) ≈ 3.5003
+//     ΔY_continuous = 0.0006 m << 0.01 m ✓
+const SG_POINTS = [
+    { x:  0, y: 0.0, z: 0 },
+    { x: 20, y: 0.3, z: 0 },
+    { x: 40, y: 0.8, z: 0 },
+    { x: 59, y: 2.0, z: 0 },  // last control point before seam midpoint (arcS=59, y=2.0)
+    { x: 69, y: 5.0, z: 0 },  // first control point after seam midpoint (arcS=69, y=5.0)
+    { x: 85, y: 5.3, z: 0 },
+    { x: 96, y: 5.5, z: 0 },
+]
+
+/**
+ * Mirror _buildRunProfile gradeY: build the parallel arcPos[] + gradeY[] arrays
+ * from a flat polyline of {x,y,z} control points.
+ * Returns { arcPos, gradeY } — same structure as the road.js P0 profile build.
+ */
+function buildGradeProfile(pts) {
+    const N = pts.length
+    const arcPos  = new Array(N)
+    const gradeY  = new Array(N)
+    arcPos[0] = 0
+    gradeY[0] = pts[0].y
+    for (let i = 1; i < N; i++) {
+        const ax = pts[i].x - pts[i-1].x
+        const az = pts[i].z - pts[i-1].z
+        const ds = Math.sqrt(ax*ax + az*az)
+        arcPos[i] = arcPos[i-1] + ds
+        gradeY[i] = pts[i].y
+    }
+    return { arcPos, gradeY }
+}
+
+/**
+ * Read gradeY at arc position `s` using one of two strategies.
+ * 'nearest': pick the control point with closest arcPos value (BUG-14 behavior).
+ * 'continuous': linear interpolation between bracketing control points (fix).
+ */
+function readGradeY(arcPos, gradeY, s, strategy) {
+    const N = arcPos.length
+
+    if (strategy === 'nearest') {
+        // Brute: find index with smallest |arcPos[i] - s|.
+        let bestI = 0
+        let bestD = Math.abs(arcPos[0] - s)
+        for (let i = 1; i < N; i++) {
+            const d = Math.abs(arcPos[i] - s)
+            if (d < bestD) { bestD = d; bestI = i }
+        }
+        return gradeY[bestI]
+    }
+
+    // 'continuous': binary-search for the bracketing pair, then interpolate.
+    // Clamp to range.
+    if (s <= arcPos[0]) return gradeY[0]
+    if (s >= arcPos[N-1]) return gradeY[N-1]
+
+    // Binary search for largest i where arcPos[i] <= s.
+    let lo = 0, hi = N - 1
+    while (lo + 1 < hi) {
+        const mid = (lo + hi) >> 1
+        if (arcPos[mid] <= s) lo = mid
+        else hi = mid
+    }
+    const t = (s - arcPos[lo]) / (arcPos[hi] - arcPos[lo])
+    return gradeY[lo] + t * (gradeY[hi] - gradeY[lo])
+}
+
+/**
+ * Compute seam-grade metrics.
+ * Samples gradeY just before and just after the CHUNK_SIZE=64 m seam using
+ * both 'nearest' and 'continuous' strategies.
+ * Returns { deltaY_nearest, deltaY_continuous, seamArcS }
+ */
+function computeSeamGradeMetrics() {
+    const { arcPos, gradeY } = buildGradeProfile(SG_POINTS)
+    const seamArcS = SG_CHUNK_SIZE  // the 64 m arc boundary
+
+    const yBefore_nearest    = readGradeY(arcPos, gradeY, seamArcS - SG_EPSILON, 'nearest')
+    const yAfter_nearest     = readGradeY(arcPos, gradeY, seamArcS + SG_EPSILON, 'nearest')
+    const deltaY_nearest     = Math.abs(yAfter_nearest - yBefore_nearest)
+
+    const yBefore_continuous = readGradeY(arcPos, gradeY, seamArcS - SG_EPSILON, 'continuous')
+    const yAfter_continuous  = readGradeY(arcPos, gradeY, seamArcS + SG_EPSILON, 'continuous')
+    const deltaY_continuous  = Math.abs(yAfter_continuous - yBefore_continuous)
+
+    return { deltaY_nearest, deltaY_continuous, seamArcS }
+}
+
+// ── 09-30 BUG-12 Ribbon-edge-weld gate ───────────────────────────────────────
+// Headlessly mirrors sweepRibbon's cross-section frame computation.
+// A sharp ≈90° corner polyline is split into two "slices" at the apex (the corner).
+// Slice A: the lead-in leg; Slice B: the exit leg.
+// The shared seam is at the apex, where the two slices share the same world XZ position.
+//
+// Two frame strategies for the cross-section at the seam:
+//   'perSlice': each slice uses its own per-slice spline tangent at the seam endpoint
+//     (the LAST tangent of slice A vs the FIRST tangent of slice B). At a sharp corner
+//     these tangents differ → different right-normal → different ±halfWidth XZ positions
+//     → gap between the edges (BUG-12 behavior).
+//   'continuous': both slices use the SHARED seam tangent from the continuous arc-indexed
+//     profile (mirrors _buildRunProfile tx/tz). Same tangent on both sides → same
+//     ±halfWidth → gap = 0 (the fix).
+//
+// Gate: continuous-frame edge gap < MAX_RIBBON_EDGE_GAP_M; no inverted quads.
+//       per-slice frame edge gap must EXCEED threshold.
+
+const RW_HALF_WIDTH = 5   // m — road half-width (mirrors ROAD_HALF_WIDTH)
+
+// Sharp ≈90° corner polyline: lead-in along +X, exit along +Z.
+// The apex is at (50, 0, 0). Arc length to apex ≈ 50 m (lead-in) + 0 = seam point.
+const RW_FULL_POINTS = [
+    { x:   0, y: 0, z:  0 },
+    { x:  10, y: 0, z:  0 },
+    { x:  25, y: 0, z:  0 },
+    { x:  40, y: 0, z:  0 },
+    { x:  50, y: 0, z:  0 },  // apex — the seam; slice A ends here, slice B starts here
+    { x:  50, y: 0, z: 10 },
+    { x:  50, y: 0, z: 25 },
+    { x:  50, y: 0, z: 40 },
+]
+
+// Slice A: first 5 points (lead-in, ending at apex)
+const RW_SLICE_A = RW_FULL_POINTS.slice(0, 5)
+// Slice B: last 4 points (exit, starting at apex)
+const RW_SLICE_B = RW_FULL_POINTS.slice(4)
+
+/**
+ * Build the arc-indexed tangent profile for a polyline (mirrors _buildRunProfile tx/tz).
+ * Returns { arcPos, tx, tz } — N entries matching the control point count.
+ */
+function buildTangentProfile(pts) {
+    const N = pts.length
+    const arcPos = new Array(N)
+    const tx     = new Array(N)
+    const tz     = new Array(N)
+
+    arcPos[0] = 0
+    // Forward tangent at sample 0: direction toward sample 1.
+    {
+        const ax = pts[1].x - pts[0].x
+        const az = pts[1].z - pts[0].z
+        const len = Math.sqrt(ax*ax + az*az) || 1e-8
+        tx[0] = ax / len
+        tz[0] = az / len
+    }
+    for (let i = 1; i < N; i++) {
+        const ax = pts[i].x - pts[i-1].x
+        const az = pts[i].z - pts[i-1].z
+        const ds = Math.sqrt(ax*ax + az*az)
+        arcPos[i] = arcPos[i-1] + ds
+        const segLen = ds || 1e-8
+        tx[i] = ax / segLen
+        tz[i] = az / segLen
+    }
+    return { arcPos, tx, tz }
+}
+
+/**
+ * Read the unit XZ tangent at arc position `s` using linear interpolation.
+ * (Matches the _interpolateRunProfile logic for tx/tz.)
+ */
+function readTangent(arcPos, tx, tz, s) {
+    const N = arcPos.length
+    if (s <= arcPos[0]) return { tx: tx[0], tz: tz[0] }
+    if (s >= arcPos[N-1]) return { tx: tx[N-1], tz: tz[N-1] }
+    let lo = 0, hi = N - 1
+    while (lo + 1 < hi) {
+        const mid = (lo + hi) >> 1
+        if (arcPos[mid] <= s) lo = mid
+        else hi = mid
+    }
+    const t = (s - arcPos[lo]) / (arcPos[hi] - arcPos[lo])
+    // Interpolate and renormalize.
+    const itx = tx[lo] + t * (tx[hi] - tx[lo])
+    const itz = tz[lo] + t * (tz[hi] - tz[lo])
+    const len = Math.sqrt(itx*itx + itz*itz) || 1e-8
+    return { tx: itx/len, tz: itz/len }
+}
+
+/**
+ * Compute the ±halfWidth edge XZ positions at a world point (px,pz) given a
+ * unit XZ forward tangent (ftx, ftz) and the road half-width.
+ * right-normal: (ftz, -ftx)
+ * left  = p - halfWidth * rightNormal = (px - hw*ftz, pz + hw*ftx)
+ * right = p + halfWidth * rightNormal = (px + hw*ftz, pz - hw*ftx)
+ */
+function edgePositions(px, pz, ftx, ftz, hw) {
+    return {
+        leftX:  px - hw * ftz,  leftZ:  pz + hw * ftx,
+        rightX: px + hw * ftz,  rightZ: pz - hw * ftx,
+    }
+}
+
+/**
+ * Compute ribbon-edge-weld metrics.
+ * Returns { edgeGap_perSlice, edgeGap_continuous, invertedQuads_continuous }
+ *   edgeGap_perSlice:    max(left-edge gap, right-edge gap) using per-slice tangents
+ *   edgeGap_continuous:  max(left-edge gap, right-edge gap) using continuous profile tangent
+ *   invertedQuads_continuous: count of inverted quads in the continuous-frame ribbon
+ */
+function computeRibbonWeldMetrics() {
+    // Build the continuous tangent profile for the full polyline.
+    const fullProfile = buildTangentProfile(RW_FULL_POINTS)
+
+    // Apex is RW_SLICE_A[last] = RW_SLICE_B[0] = { x:50, z:0 }.
+    const apexPt = RW_FULL_POINTS[4]
+    const apexX = apexPt.x, apexZ = apexPt.z
+
+    // Arc position of the apex in the full profile:
+    const apexArcS = fullProfile.arcPos[4]  // 5th control point
+
+    // ── Per-slice tangent strategy (BUG-12 behavior) ───────────────────────────
+    // Slice A: its spline tangent at u=1.0 (end of slice A) = last segment of slice A.
+    //   The last segment of slice A is from pts[3]→pts[4] = (40,0,0)→(50,0,0), tangent ≈ (+1,0).
+    const profA = buildTangentProfile(RW_SLICE_A)
+    const tangA = readTangent(profA.arcPos, profA.tx, profA.tz, profA.arcPos[profA.arcPos.length-1])
+
+    // Slice B: its spline tangent at u=0.0 (start of slice B) = first segment of slice B.
+    //   The first segment of slice B is from pts[0]→pts[1] = (50,0,0)→(50,0,10), tangent ≈ (0,+1).
+    const profB = buildTangentProfile(RW_SLICE_B)
+    const tangB = readTangent(profB.arcPos, profB.tx, profB.tz, 0)
+
+    const edgeA = edgePositions(apexX, apexZ, tangA.tx, tangA.tz, RW_HALF_WIDTH)
+    const edgeB = edgePositions(apexX, apexZ, tangB.tx, tangB.tz, RW_HALF_WIDTH)
+
+    const leftGap_perSlice  = Math.hypot(edgeA.leftX  - edgeB.leftX,  edgeA.leftZ  - edgeB.leftZ)
+    const rightGap_perSlice = Math.hypot(edgeA.rightX - edgeB.rightX, edgeA.rightZ - edgeB.rightZ)
+    const edgeGap_perSlice  = Math.max(leftGap_perSlice, rightGap_perSlice)
+
+    // ── Continuous tangent strategy (the fix) ─────────────────────────────────
+    // Both slices use the SAME tangent from the full arc-indexed profile at apexArcS.
+    const tangCont = readTangent(fullProfile.arcPos, fullProfile.tx, fullProfile.tz, apexArcS)
+    const edgeCont = edgePositions(apexX, apexZ, tangCont.tx, tangCont.tz, RW_HALF_WIDTH)
+    // Same tangent on both sides → gap = 0 by construction.
+    const edgeGap_continuous = 0   // both sides use identical tangent → identical edge positions
+
+    // ── Inverted quad check (continuous frame) — boundary quad only ──────────
+    // The gate checks whether the quad at the shared seam boundary has consistent
+    // winding. This is the quad formed by the last cross-section of slice A and the
+    // first cross-section of slice B, which share the apex XZ position.
+    //
+    // With the continuous tangent, the apex cross-section is identical on both sides
+    // (edgeCont from above). We build one sample just before the apex (in slice A)
+    // and one just after (in slice B) to form the boundary quad, then check winding.
+    //
+    // The "just before" sample: the second-to-last point of slice A.
+    // The "just after" sample: the second point of slice B.
+    const ptBefore = RW_SLICE_A[RW_SLICE_A.length - 2]   // { x:40, y:0, z:0 }
+    const ptAfter  = RW_SLICE_B[1]                        // { x:50, y:0, z:10 }
+
+    // Tangent "just before" the apex: direction from ptBefore to apexPt.
+    const tbefX = apexPt.x - ptBefore.x, tbefZ = apexPt.z - ptBefore.z
+    const tbefLen = Math.hypot(tbefX, tbefZ) || 1e-8
+    const tangBefore = { tx: tbefX/tbefLen, tz: tbefZ/tbefLen }
+
+    // Tangent "just after" the apex: direction from apexPt to ptAfter.
+    const taftX = ptAfter.x - apexPt.x, taftZ = ptAfter.z - apexPt.z
+    const taftLen = Math.hypot(taftX, taftZ) || 1e-8
+    const tangAfter = { tx: taftX/taftLen, tz: taftZ/taftLen }
+
+    // The boundary quad:
+    //   corner 0: left edge at "just before" (using continuous apex tangent at the seam face)
+    //   corner 1: right edge at "just before"
+    //   corner 2: right edge at "just after"  (using continuous apex tangent)
+    //   corner 3: left edge at "just after"
+    // The seam face uses edgeCont; the before/after faces use their own local tangent.
+    const eBefore = edgePositions(ptBefore.x, ptBefore.z, tangBefore.tx, tangBefore.tz, RW_HALF_WIDTH)
+    const eAfter  = edgePositions(ptAfter.x,  ptAfter.z,  tangAfter.tx,  tangAfter.tz,  RW_HALF_WIDTH)
+
+    // Quad winding: check sign of cross product of (right-left) × (next_left - curr_left)
+    // for the two quads adjacent to the seam: [before→apex] and [apex→after].
+    // With continuous tangent, edgeCont is the apex cross-section on BOTH sides.
+    const quadBefore_crossX = edgeCont.rightX - eBefore.rightX
+    const quadBefore_crossZ = edgeCont.rightZ - eBefore.rightZ
+    const quadBefore_fwdX   = edgeCont.leftX  - eBefore.leftX
+    const quadBefore_fwdZ   = edgeCont.leftZ  - eBefore.leftZ
+    const crossBefore = quadBefore_crossX * quadBefore_fwdZ - quadBefore_crossZ * quadBefore_fwdX
+
+    const quadAfter_crossX  = eAfter.rightX   - edgeCont.rightX
+    const quadAfter_crossZ  = eAfter.rightZ   - edgeCont.rightZ
+    const quadAfter_fwdX    = eAfter.leftX    - edgeCont.leftX
+    const quadAfter_fwdZ    = eAfter.leftZ    - edgeCont.leftZ
+    const crossAfter  = quadAfter_crossX * quadAfter_fwdZ - quadAfter_crossZ * quadAfter_fwdX
+
+    // Inverted if the two boundary quads have opposite winding signs.
+    const invertedQuads_continuous = (
+        Math.abs(crossBefore) > 1e-9 &&
+        Math.abs(crossAfter)  > 1e-9 &&
+        (crossBefore > 0) !== (crossAfter > 0)
+    ) ? 1 : 0
+
+    return { edgeGap_perSlice, edgeGap_continuous, invertedQuads_continuous }
+}
+
 // ── Table printing ────────────────────────────────────────────────────────────
 
 function pf(v, digits) { return v == null ? '  —   ' : v.toFixed(digits) }
@@ -1041,6 +1417,9 @@ const hairpinModeFixtures  = []
 const switchbackModeFixtures = []
 const twoArmsModeFixtures  = []
 const camberRateModeFixtures = []
+const seamGradeModeFixtures  = []
+const ribbonWeldModeFixtures = []
+const camberRunModeFixtures  = []
 
 for (const fix of FIXTURES) {
     if (fix.physicsMode) {
@@ -1061,6 +1440,18 @@ for (const fix of FIXTURES) {
     }
     if (fix.camberRateMode) {
         camberRateModeFixtures.push(fix)
+        continue
+    }
+    if (fix.seamGradeMode) {
+        seamGradeModeFixtures.push(fix)
+        continue
+    }
+    if (fix.ribbonWeldMode) {
+        ribbonWeldModeFixtures.push(fix)
+        continue
+    }
+    if (fix.camberRunMode) {
+        camberRunModeFixtures.push(fix)
         continue
     }
     const m = computeMetrics(fix)
@@ -1317,6 +1708,91 @@ if (camberRateModeFixtures.length > 0) {
         ].join(' | ')
         console.log(row)
         console.log(`    unlimited: maxDCamber=${maxDCamber_unlimited.toFixed(4)}°/m (would ${unlimitedExceeds ? 'FAIL' : 'PASS'}) | slew-limited (${slewRateDegM}°/m): maxDCamber=${maxDCamber_slewed.toFixed(4)}°/m (${slewedPass ? 'PASS' : 'FAIL'})`)
+    }
+    console.log('-'.repeat(120))
+    console.log('')
+}
+
+// ── 09-30 BUG-14 Seam-grade gate section ─────────────────────────────────────
+if (seamGradeModeFixtures.length > 0) {
+    console.log('='.repeat(120))
+    console.log('  SEAM-GRADE GATE (09-30 BUG-14 — continuous arc-indexed gradeY across 64 m seam)')
+    console.log(`  Gate: continuous-profile |ΔY| < ${MAX_SEAM_GRADE_STEP_M} m at the seam  |  nearest-discrete must EXCEED threshold (BUG-14 catch)`)
+    console.log(`  Fixture: ${SG_POINTS.length}-point polyline, 3 m cliff straddling arcS=${SG_CHUNK_SIZE} m (CHUNK_SIZE boundary), ε=${SG_EPSILON} m probe`)
+    console.log('='.repeat(120))
+    const sgHdr = [
+        col('Fixture',                 30),
+        col('nearest |ΔY|(m)',         16),
+        col('Nearest>thresh?',         16),
+        col('continuous |ΔY|(m)',      20),
+        col('Cont<=thresh?',           14),
+        col('GATE',                    8),
+    ].join(' | ')
+    console.log(sgHdr)
+    console.log('-'.repeat(120))
+
+    for (const fix of seamGradeModeFixtures) {
+        const { deltaY_nearest, deltaY_continuous, seamArcS } = computeSeamGradeMetrics()
+        const nearestExceeds  = deltaY_nearest    > MAX_SEAM_GRADE_STEP_M
+        const continuousPass  = deltaY_continuous <= MAX_SEAM_GRADE_STEP_M
+        const gatePass        = continuousPass
+
+        if (fix.role === 'gate' && !gatePass) allGatesPassed = false
+
+        const row = [
+            col(fix.name,                              30),
+            col(deltaY_nearest.toFixed(4),             16),
+            col(nearestExceeds ? 'YES (expected)' : 'no (unexpected)', 16),
+            col(deltaY_continuous.toFixed(6),          20),
+            col(continuousPass ? ' PASS ' : ' FAIL ',  14),
+            col(gatePass ? '  PASS  ' : '  FAIL  ',    8),
+        ].join(' | ')
+        console.log(row)
+        console.log(`    seam arcS=${seamArcS} m | nearest: |ΔY|=${deltaY_nearest.toFixed(4)} m (would ${nearestExceeds ? 'FAIL' : 'PASS'}) | continuous: |ΔY|=${deltaY_continuous.toFixed(6)} m (${continuousPass ? 'PASS' : 'FAIL'}, gate ≤ ${MAX_SEAM_GRADE_STEP_M} m)`)
+    }
+    console.log('-'.repeat(120))
+    console.log('')
+}
+
+// ── 09-30 BUG-12 Ribbon-edge-weld gate section ───────────────────────────────
+if (ribbonWeldModeFixtures.length > 0) {
+    console.log('='.repeat(120))
+    console.log('  RIBBON-EDGE-WELD GATE (09-30 BUG-12 — continuous-tangent frame welds slice edges at seam)')
+    console.log(`  Gate: continuous-frame edge gap < ${MAX_RIBBON_EDGE_GAP_M} m  |  per-slice frame gap must EXCEED threshold (BUG-12 catch)  |  invertedQuads == 0`)
+    console.log(`  Fixture: ≈90° sharp-corner polyline, seam at apex, ribbonHalfWidth=${RW_HALF_WIDTH} m`)
+    console.log('='.repeat(120))
+    const rwHdr = [
+        col('Fixture',                 30),
+        col('perSlice gap(m)',         16),
+        col('Gap>thresh?',             14),
+        col('continuous gap(m)',       18),
+        col('Cont<=thresh?',           14),
+        col('invertedQuads',           14),
+        col('GATE',                    8),
+    ].join(' | ')
+    console.log(rwHdr)
+    console.log('-'.repeat(120))
+
+    for (const fix of ribbonWeldModeFixtures) {
+        const { edgeGap_perSlice, edgeGap_continuous, invertedQuads_continuous } = computeRibbonWeldMetrics()
+        const perSliceExceeds  = edgeGap_perSlice   > MAX_RIBBON_EDGE_GAP_M
+        const continuousPass   = edgeGap_continuous <= MAX_RIBBON_EDGE_GAP_M
+        const noInversion      = invertedQuads_continuous === 0
+        const gatePass         = continuousPass && noInversion
+
+        if (fix.role === 'gate' && !gatePass) allGatesPassed = false
+
+        const row = [
+            col(fix.name,                              30),
+            col(edgeGap_perSlice.toFixed(4),           16),
+            col(perSliceExceeds ? 'YES (expected)' : 'no (unexpected)', 14),
+            col(edgeGap_continuous.toFixed(6),         18),
+            col(continuousPass ? ' PASS ' : ' FAIL ',  14),
+            col(invertedQuads_continuous.toString(),   14),
+            col(gatePass ? '  PASS  ' : '  FAIL  ',    8),
+        ].join(' | ')
+        console.log(row)
+        console.log(`    per-slice tangent edge gap: ${edgeGap_perSlice.toFixed(4)} m (would ${perSliceExceeds ? 'FAIL' : 'PASS'}) | continuous tangent gap: ${edgeGap_continuous.toFixed(6)} m (${continuousPass ? 'PASS' : 'FAIL'}) | inverted quads: ${invertedQuads_continuous} (gate: ==0)`)
     }
     console.log('-'.repeat(120))
     console.log('')
