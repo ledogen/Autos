@@ -2149,6 +2149,133 @@ export class RoadSystem {
         )
     }
 
+    // ── Phase 9 P1: Road-query API — single seam-continuous surface ──────────────
+
+    /**
+     * @typedef {Object} RoadSample
+     * Road surface sample — the single struct every consumer reads.
+     * Implement-now fields (P1): all geometry needed by BUG-14/12/10 fixes.
+     * Design-for-later hooks: surfaceType, onRoad — carried but no feature logic built (P1 scope).
+     *
+     * @property {boolean} onRoad         — true if blendW > 0 (query is within road corridor)
+     * @property {string}  runKey         — canonical run key matching this._network entry
+     * @property {number}  arcS           — run-global arc-length position (metres)
+     * @property {number}  lateralSigned  — signed lateral distance from centerline (metres; positive = right of travel)
+     * @property {number}  gradeY         — seam-continuous routed centerline Y (metres) from runProfile
+     * @property {{ x: number, z: number }} tangent — unit XZ forward tangent from runProfile
+     * @property {number}  camber         — banking angle (radians) in world/slice frame (camberSign applied)
+     * @property {number}  crown          — crown height offset at lateralSigned (metres)
+     * @property {number}  blendW         — blend weight: 1 on ribbon, ramps to 0 at shoulder edge
+     * @property {string}  surfaceType    — surface material hook ('asphalt' default; friction/tier NOT built here)
+     */
+
+    /**
+     * `byArc(runKey, arcS, lateralSigned?)` → RoadSample
+     *
+     * Build a RoadSample for consumers that already have (runKey, arcS) — ribbon, carve, physics.
+     * All geometry is read from the P0 runProfile (seam-continuous by construction).
+     *
+     * Does NOT read queryNearest or per-tile splines — geometry comes ONLY from runProfile.
+     * Crown and camber are returned as SEPARATE fields; physics/carve fold them in their own way (P2).
+     *
+     * @param {string} runKey         — canonical run key
+     * @param {number} arcS           — run-global arc-length (metres)
+     * @param {number} [lateralSigned=0] — signed lateral offset from centerline (metres)
+     * @returns {RoadSample}
+     */
+    byArc(runKey, arcS, lateralSigned = 0) {
+        const p             = this._params
+        const halfWidth     = p.roadHalfWidth     ?? 5
+        const shoulderWidth = p.roadShoulderWidth  ?? 2.5
+        const crownHeight   = p.crownHeight        ?? 0.05
+
+        // All geometry from P0 runProfile — seam-continuous across tile/slice boundaries.
+        const prof = this.runProfile(arcS, runKey)
+
+        // Crown: parabolic profile via road-carve.js crownProfile (same formula as sweepRibbon).
+        const crown = crownProfile(lateralSigned, halfWidth, crownHeight)
+
+        // Blend weight: 1 on ribbon (|lat| < halfWidth), ramp down over shoulder, 0 beyond.
+        const latAbs = Math.abs(lateralSigned)
+        let blendW
+        if (latAbs < halfWidth) {
+            blendW = 1.0
+        } else {
+            blendW = Math.max(0.0, 1.0 - (latAbs - halfWidth) / shoulderWidth)
+        }
+
+        return {
+            onRoad:        blendW > 0,
+            runKey,
+            arcS,
+            lateralSigned,
+            gradeY:        prof.gradeY,
+            tangent:       { x: prof.tx, z: prof.tz },
+            // camber in run-frame — caller (sampleRoadAt) applies camberSign for world/slice frame.
+            // byArc exposes the raw run-frame angle; direct callers that already have camberSign
+            // should multiply it themselves (e.g. physics via _sampleCarveWorld already does this).
+            camber:        prof.camberRad,
+            crown,
+            blendW,
+            surfaceType:   'asphalt',   // hook for future friction/tier — no logic built (P1 scope)
+        }
+    }
+
+    /**
+     * `sampleRoadAt(wx, wz, radiusM?)` → RoadSample | null
+     *
+     * World-space road query. Uses `queryNearest` as the PROJECTOR (keeps _tiles block acceleration
+     * + 09-17 projection refine) to find `(runKey, arcS)`, then delegates ALL geometry to
+     * `byArc` which reads the P0 runProfile — so gradeY/camber/tangent are seam-continuous.
+     *
+     * queryNearest is ONLY the projector here; no geometry values (nr.point.y, etc.) are used
+     * for the returned sample — only nr.point/nr.tangent for the lateral-sign derivation and
+     * nr.runKey/nr.arcS/nr.camberSign for routing to the profile.
+     *
+     * Returns null when:
+     *  - queryNearest finds no road within maxExt radius, OR
+     *  - the computed lateral distance exceeds (halfWidth + shoulderWidth) — off-road reject,
+     *    same threshold as _sampleCarveWorld line ~1706.
+     *
+     * Performance note: sampleRoadAt is the future per-wheel cache chokepoint — accumulating
+     * per-wheel results across suspension substeps to amortize the O(log N) profile cost on the
+     * 60 fps hot path. Caching is NOT built in this plan (P1 scope); the chokepoint design is
+     * preserved so it slots in without another refactor.
+     *
+     * @param {number} wx       — world X
+     * @param {number} wz       — world Z
+     * @param {number} [radiusM] — max search radius (defaults to halfWidth + shoulderWidth + 4)
+     * @returns {RoadSample | null}
+     */
+    sampleRoadAt(wx, wz, radiusM) {
+        const p             = this._params
+        const halfWidth     = p.roadHalfWidth     ?? 5
+        const shoulderWidth = p.roadShoulderWidth  ?? 2.5
+
+        const maxExt = halfWidth + shoulderWidth + 4
+        const nr = this.queryNearest(wx, wz, radiusM ?? maxExt)
+        if (!nr) return null
+
+        // Derive signed lateral using the established sign convention (same as _sampleCarveWorld):
+        // signedLat = dx*tz − dz*tx, where dx/dz = query point relative to nearest road point.
+        const dx = wx - nr.point.x
+        const dz = wz - nr.point.z
+        const tx = nr.tangent.x, tz = nr.tangent.z
+        const signedLat = dx * tz - dz * tx
+
+        // Off-road reject — same threshold as _sampleCarveWorld.
+        if (Math.abs(signedLat) > halfWidth + shoulderWidth) return null
+
+        // All geometry from byArc → runProfile (P0). nr.point.y is NOT used for gradeY.
+        const sample = this.byArc(nr.runKey, nr.arcS, signedLat)
+
+        // Apply camberSign to put camber into the world/slice frame (matches _sampleCarveWorld
+        // and the carve: camberSign = sign(arcS1−arcS0) accounts for E→W slice reversal).
+        sample.camber = (nr.camberSign ?? 1) * sample.camber
+
+        return sample
+    }
+
     /**
      * Return the smoothed design-grade Y at arc-length position arcS along spline.
      * Delegates to _smoothDesignGrade (shared WeakMap memo — O(1) after first sweep per spline).
