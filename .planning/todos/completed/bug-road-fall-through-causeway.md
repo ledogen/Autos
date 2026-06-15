@@ -1,11 +1,16 @@
 ---
 id: BUG-13
 type: bug
-status: open
+status: resolved
 opened: 2026-06-14
+resolved: 2026-06-14
 source: phase-09-insim-verify
 severity: high
 ---
+
+> RESOLVED 2026-06-14 (`85b57ac`), confirmed in-sim by user. Removed the fillHeight cap from physics
+> + carve so they track the true ribbon grade — no more causeway fall-through. Steep-fill-shoulder
+> cosmetic follow-up still noted below.
 
 # BUG-13: Physics falls through to terrain on raised-causeway road sections (undriveable)
 
