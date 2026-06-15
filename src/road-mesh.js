@@ -200,27 +200,37 @@ export class RoadMeshSystem {
         for (let i = 0; i < N_LONG; i++) {
             const u = (N_LONG > 1) ? i / (N_LONG - 1) : 0
 
-            // Arc-length-correct position and tangent at this section.
-            // getPointAt/getTangentAt are arc-length-parameterized (not uniform-t).
+            // Arc-length-correct position at this section.
             _scratchPt.copy(points[i])
-            spline.getTangentAt(u, _scratchTan)
-
-            const tx = _scratchTan.x
-            const tz = _scratchTan.z
-            const tLen = Math.sqrt(tx * tx + tz * tz)
-
-            // Perpendicular right vector in XZ: right = (tan.z, 0, -tan.x).normalize()
-            // Guard: degenerate tangent (T-09-04) — fallback to unit X right
-            const rightX = tLen > 1e-8 ? tz / tLen : 1
-            const rightZ = tLen > 1e-8 ? -tx / tLen : 0
 
             const posX  = _scratchPt.x
             const posZ  = _scratchPt.z
-            const gradeY = designGradeY[i]
 
             // ── Road quality at this arc position (D-02/D-03) ──────────────────
-            // arcS: RUN-global arc-length (BUG-10). Computed before camber so both share it.
+            // arcS: RUN-global arc-length (BUG-10). Computed before frame so both share it.
             const arcS = arcS0 + (arcS1 - arcS0) * u
+
+            // P3 (BUG-12): Section frame from the continuous run tangent (09-28).
+            // runProfile(arcS, runKey).tx/tz is C0 across ALL slice seams — both sides of a
+            // seam resolve to the same arcS and return the SAME tx/tz → boundary cross-sections
+            // are identical → ±halfWidth edge vertices coincide → edges weld by construction.
+            // Replaces spline.getTangentAt(u) which was per-slice and tore at sharp corners.
+            const _rp = this._road.runProfile(arcS, runKey)
+            // The run tangent points along the canonical run direction. A slice may run E→W
+            // (arcS1 < arcS0 → camberSign = -1); flip the tangent into THIS slice's sweep
+            // direction so winding is not inverted and camber orientation stays correct.
+            const rpTx = camberSign * _rp.tx
+            const rpTz = camberSign * _rp.tz
+            const tLen = Math.sqrt(rpTx * rpTx + rpTz * rpTz)
+
+            // Perpendicular right vector in XZ: right = (tan.z, 0, -tan.x).normalize()
+            // Guard: degenerate tangent (T-09-04) — fallback to unit X right
+            const rightX = tLen > 1e-8 ? rpTz / tLen : 1
+            const rightZ = tLen > 1e-8 ? -rpTx / tLen : 0
+
+            // P3 (09-28): use rp.gradeY as the centerline Y so ribbon, physics, and carve
+            // all read from the same single arc-indexed profile (height-agreement invariant).
+            const gradeY = _rp.gradeY
             const q = roadQuality(arcS, runKey, this._worldSeed)
 
             // D2 (plan 09-21): camber from the shared slew-limited camberProfile — replaces
@@ -328,6 +338,92 @@ export class RoadMeshSystem {
             colors[rightSkirtBase    ] = dirtR
             colors[rightSkirtBase + 1] = dirtG
             colors[rightSkirtBase + 2] = dirtB
+        }
+
+        // ── P3 (09-28): Shared-boundary edge weld (continuity-over-roundness, BUG-12) ──────
+        // Both slices that share a seam resolve to the SAME arcS at the boundary, so
+        // runProfile already returns bit-identical tx/tz → the loop above already produces
+        // identical edge positions. This explicit snap makes that GUARANTEE by construction
+        // rather than by floating-point luck — it overwrites the first/last sections'
+        // ±halfWidth edge vertices with positions recomputed directly from the boundary arcS
+        // profile, so even a future refactor cannot accidentally break the weld.
+        // Does NOT modify spline/router geometry — position (posX,posZ) still comes from the
+        // spline control point (C0 shared by construction); only the right-vector offset is re-pinned.
+        for (const bndIdx of [0, N_LONG - 1]) {
+            if (N_LONG < 2) break
+            const bndArcS = bndIdx === 0 ? arcS0 : arcS1
+            const bndRp   = this._road.runProfile(bndArcS, runKey)
+            const bndTx   = camberSign * bndRp.tx
+            const bndTz   = camberSign * bndRp.tz
+            const bndLen  = Math.sqrt(bndTx * bndTx + bndTz * bndTz)
+            const bndRightX = bndLen > 1e-8 ? bndTz / bndLen : 1
+            const bndRightZ = bndLen > 1e-8 ? -bndTx / bndLen : 0
+
+            // Re-read the centerline XZ for this boundary section (world-space from spline).
+            const bndPt = points[bndIdx]
+            const bndPosX = bndPt.x, bndPosZ = bndPt.z
+            const bndGradeY = bndRp.gradeY
+            const bndCamberAngle = camberSign * this._road.camberProfile(bndArcS, runKey)
+            const bndQ = roadQuality(bndArcS, runKey, this._worldSeed)
+            const bndIsHigh = bndQ >= 0.66
+            const bndIsMid  = bndQ >= 0.33 && bndQ < 0.66
+
+            for (let j = 0; j <= CROSS_SEGS; j++) {
+                const uLat = (j / CROSS_SEGS - 0.5) * roadWidth
+                const crownY  = crownProfile(uLat, halfWidth, crownHeightVal)
+                const tiltY   = uLat * Math.sin(bndCamberAngle)
+                const bndVx   = bndPosX + bndRightX * uLat
+                const bndVz   = bndPosZ + bndRightZ * uLat
+                const bndAbsP = Math.abs(uLat)
+                const bndPY   = bndAbsP < halfWidth ? potholeNoise(bndVx, bndVz, bndQ, params) : 0
+                const bndVy   = bndGradeY + crownY + tiltY + bndPY
+
+                const bndBase = (bndIdx * vertsPerSection + j) * 3
+                positions[bndBase    ] = bndVx
+                positions[bndBase + 1] = bndVy
+                positions[bndBase + 2] = bndVz
+
+                // Recompute color for boundary vert (same logic as main loop).
+                const bndAbsLat = Math.abs(uLat)
+                const bndIsCenterline = bndAbsLat < MARK_CENTER_HALF
+                const bndDistFromEdge = halfWidth - bndAbsLat
+                const bndEdgeOn = bndIsHigh ? true : (bndIsMid ? ((bndArcS % 12) < 8) : false)
+                const bndEdgeBrightness = bndIsHigh ? 0.9 : 0.65
+                const bndCenterBrightness = bndIsHigh ? 0.9 : (bndIsMid ? 0.65 : 0.3)
+                const bndIsEdgeLine = bndEdgeOn && bndDistFromEdge < MARK_EDGE_HALF
+                let bndR = RC, bndG = GC, bndB = BC
+                if (bndIsCenterline) {
+                    bndR = bndCenterBrightness; bndG = bndCenterBrightness; bndB = bndCenterBrightness
+                } else if (bndIsEdgeLine) {
+                    bndR = bndEdgeBrightness; bndG = bndEdgeBrightness; bndB = bndEdgeBrightness
+                }
+                colors[bndBase    ] = bndR
+                colors[bndBase + 1] = bndG
+                colors[bndBase + 2] = bndB
+            }
+            // Re-snap the skirt verts at this boundary section too.
+            // Left skirt: j=0 edge
+            const bndLeftEdgeVx = bndPosX + bndRightX * (-halfWidth)
+            const bndLeftEdgeVy = bndGradeY
+                + crownProfile(-halfWidth, halfWidth, crownHeightVal)
+                + (-halfWidth) * Math.sin(bndCamberAngle)
+                + (halfWidth < halfWidth ? potholeNoise(bndLeftEdgeVx, bndPosZ + bndRightZ * (-halfWidth), bndQ, params) : 0)
+            const bndLeftEdgeVz = bndPosZ + bndRightZ * (-halfWidth)
+            const bndLeftSkirtBase = (bndIdx * vertsPerSection + (CROSS_SEGS + 1)) * 3
+            positions[bndLeftSkirtBase    ] = bndLeftEdgeVx
+            positions[bndLeftSkirtBase + 1] = bndLeftEdgeVy - skirtDepth
+            positions[bndLeftSkirtBase + 2] = bndLeftEdgeVz
+            // Right skirt: j=CROSS_SEGS edge
+            const bndRightEdgeVx = bndPosX + bndRightX * halfWidth
+            const bndRightEdgeVy = bndGradeY
+                + crownProfile(halfWidth, halfWidth, crownHeightVal)
+                + halfWidth * Math.sin(bndCamberAngle)
+                + (halfWidth < halfWidth ? potholeNoise(bndRightEdgeVx, bndPosZ + bndRightZ * halfWidth, bndQ, params) : 0)
+            const bndRightEdgeVz = bndPosZ + bndRightZ * halfWidth
+            const bndRightSkirtBase = (bndIdx * vertsPerSection + (CROSS_SEGS + 2)) * 3
+            positions[bndRightSkirtBase    ] = bndRightEdgeVx
+            positions[bndRightSkirtBase + 1] = bndRightEdgeVy - skirtDepth
+            positions[bndRightSkirtBase + 2] = bndRightEdgeVz
         }
 
         // ── Index buffer: quad strip → 2 triangles per quad (CCW winding) ────────
