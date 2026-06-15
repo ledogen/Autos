@@ -1885,6 +1885,142 @@ export class RoadSystem {
         this._designGradeCache = new WeakMap()
     }
 
+    // ── P4: Run-adjacency index (plan 09-29) ─────────────────────────────────────
+    /**
+     * Return the canonical run key whose LAST point XZ-matches THIS run's first point
+     * (within XZ_ADJACENCY_EPS). Used by _buildCamberProfile / _buildRunProfile to seed
+     * the start camber from the predecessor run's end camber instead of forcing 0 (BUG-10).
+     *
+     * Built once per generation into `this._runAdjacencyCache`:
+     *   { generation: number, map: Map<runKey → predecessorRunKey> }
+     *
+     * Algorithm: for each network run, record its last-point XZ in a spatial hash
+     * (keyed by rounded metre). A second pass looks up each run's first-point. O(R)
+     * where R = number of runs in the current network window — negligible vs profile build.
+     *
+     * Cycle-safe: we only return the predecessor KEY; the caller decides how to read the
+     * camber value (from an already-cached profile or from raw curvature) — no recursion here.
+     *
+     * @param {string} runKey — canonical run key to look up
+     * @returns {string|null} predecessor runKey, or null if none found
+     */
+    _predecessorRunKey(runKey) {
+        if (!this._network) return null
+
+        const currentGen = this._generation
+        // Rebuild adjacency index when generation changes or not yet built.
+        if (!this._runAdjacencyCache || this._runAdjacencyCache.generation !== currentGen) {
+            // Spatial hash: "<rx>,<rz>" → runKey  (endpoint → runKey whose END is there)
+            const XZ_EPS = 2.0   // metres — shared boundary nodes are exact duplicates; use generous eps
+            const hash = new Map()
+            const hashKey = (x, z) => `${Math.round(x / XZ_EPS)},${Math.round(z / XZ_EPS)}`
+
+            for (const [rk, entry] of this._network) {
+                const pts = entry.points
+                if (!pts || pts.length < 2) continue
+                const last = pts[pts.length - 1]
+                hash.set(hashKey(last.x, last.z), rk)
+            }
+
+            // Now build map from runKey → predecessor (the run whose end matches this run's start).
+            const adjMap = new Map()
+            for (const [rk, entry] of this._network) {
+                const pts = entry.points
+                if (!pts || pts.length < 2) continue
+                const first = pts[0]
+                const predKey = hash.get(hashKey(first.x, first.z))
+                // Guard: a run must not be its own predecessor (shouldn't happen but be safe).
+                if (predKey && predKey !== rk) {
+                    adjMap.set(rk, predKey)
+                }
+            }
+
+            this._runAdjacencyCache = { generation: currentGen, map: adjMap }
+        }
+
+        return this._runAdjacencyCache.map.get(runKey) ?? null
+    }
+
+    /**
+     * Return the start-camber seed (radians) for the given run.
+     * Used by _buildCamberProfile / _buildRunProfile to replace the forced rawCamber[0]=0.
+     *
+     * Lookup order (cycle-safe — no recursive call to _buildCamberProfile):
+     *   1. Find predecessor run via _predecessorRunKey.
+     *   2. If predecessor profile is already in _camberProfileCache (current generation):
+     *      use its last camberRad value (stitched, slew-limited end camber).
+     *   3. Else: compute predecessor's end camber from raw curvature only — walk the
+     *      predecessor points, build rawCamber[], forward-march slew from 0 — and return
+     *      the last value. No seeding of the predecessor (avoids deeper recursion).
+     *   4. If no predecessor: return 0 (genuine run start, no boundary context).
+     *
+     * @param {string} runKey
+     * @returns {number} start camber in radians
+     */
+    _runStartCamber(runKey) {
+        const predKey = this._predecessorRunKey(runKey)
+        if (!predKey) return 0
+
+        // Fast path: predecessor already cached this generation.
+        if (this._camberProfileCache) {
+            const cached = this._camberProfileCache.get(predKey)
+            if (cached && cached.generation === this._generation && cached.camberRad.length > 0) {
+                return cached.camberRad[cached.camberRad.length - 1]
+            }
+        }
+
+        // Slow path: predecessor not yet built — compute its end camber from raw curvature only.
+        // We walk predecessor's points and forward-march the slew from 0 (unseeded) to avoid
+        // recursive calls to _buildCamberProfile. This is the natural "unseeded" profile for that run.
+        const predEntry = this._network?.get(predKey)
+        if (!predEntry || !predEntry.points || predEntry.points.length < 2) return 0
+
+        const pts = predEntry.points
+        const N   = pts.length
+        const p   = this._params || {}
+        const camberStrength  = p.camberStrength ?? 200
+        const slewRateRadPerM = (p.roadCamberRate ?? 1.5) * (Math.PI / 180)
+        const MAX_CAMBER      = 6 * (Math.PI / 180)
+
+        const arcPos    = new Array(N)
+        const rawCamber = new Array(N)
+        arcPos[0] = 0
+        rawCamber[0] = 0  // predecessor's own start is unseeded (avoids deeper recursion)
+
+        for (let i = 1; i < N; i++) {
+            const ax = pts[i].x - pts[i - 1].x
+            const az = pts[i].z - pts[i - 1].z
+            const ds = Math.sqrt(ax * ax + az * az)
+            arcPos[i] = arcPos[i - 1] + ds
+            const t0x = ax, t0z = az
+            let t1x, t1z, effectiveDs
+            if (i < N - 1) {
+                t1x = pts[i + 1].x - pts[i].x
+                t1z = pts[i + 1].z - pts[i].z
+                const ds1 = Math.sqrt(t1x * t1x + t1z * t1z) || 1e-8
+                effectiveDs = (ds + ds1) * 0.5
+            } else {
+                t1x = t0x; t1z = t0z
+                effectiveDs = ds || 1e-8
+            }
+            const kappa = signedCurvature(t0x, t0z, t1x, t1z, effectiveDs)
+            rawCamber[i] = Math.max(-MAX_CAMBER, Math.min(MAX_CAMBER, camberStrength * kappa))
+        }
+
+        // Forward-march slew from 0 (no boundary seed for the predecessor itself).
+        let prev = 0
+        for (let i = 1; i < N; i++) {
+            const ds = arcPos[i] - arcPos[i - 1]
+            const maxDelta = slewRateRadPerM * ds
+            const delta = rawCamber[i] - prev
+            if      (delta >  maxDelta) prev = prev + maxDelta
+            else if (delta < -maxDelta) prev = prev - maxDelta
+            else                        prev = rawCamber[i]
+        }
+        // prev is now the predecessor's last slew-limited camber (starting from 0 seed).
+        return prev
+    }
+
     // ── D2: One slew-limited camber profile per canonical run (plan 09-21) ───────
     /**
      * Build and cache a rate-limited camber profile for the canonical run `runKey`.
@@ -1902,6 +2038,12 @@ export class RoadSystem {
      * Cache: Map keyed by runKey, invalidated when this._generation changes.
      * O(N) build once per run, O(log N) binary-search per camberProfile query.
      * No allocation per query (allocation-disciplined inner loop).
+     *
+     * P4 (09-29): camberRad[0] is now seeded from the adjacent predecessor run's end
+     * camber (via _runStartCamber) instead of being forced to 0. Runs with no predecessor
+     * (genuine free starts) still fall through to 0. Cycle-safe: _runStartCamber never
+     * calls _buildCamberProfile recursively (it reads from the already-cached profile or
+     * from a raw forward-march without seeding the predecessor further).
      *
      * @param {string} runKey — canonical run key (e.g. "0:0")
      * @returns {{ arcPos: number[], camberRad: number[] } | null}
@@ -1923,7 +2065,10 @@ export class RoadSystem {
         const arcPos    = new Array(N)
         const rawCamber = new Array(N)
         arcPos[0] = 0
-        rawCamber[0] = 0  // no predecessor → curvature undefined, bank = 0
+        // P4 (BUG-10): seed from predecessor's end camber instead of hard 0.
+        // Curvature is undefined at sample 0 (no predecessor segment), so rawCamber[0]
+        // carries the boundary seed. _runStartCamber returns 0 for genuine run starts.
+        rawCamber[0] = this._runStartCamber(runKey)
 
         // Tangents: compute forward tangent from point i to i+1.
         // For curvature at sample i (i≥1), use tangent at i-1 → i (T0) and i → i+1 (T1).
@@ -2007,7 +2152,13 @@ export class RoadSystem {
 
         arcPos[0]    = 0
         gradeY[0]    = pts[0].y
-        rawCamber[0] = 0   // no predecessor → curvature undefined, bank = 0
+        // P4 (BUG-10): seed from predecessor's end camber instead of hard 0.
+        // Curvature is undefined at sample 0 (no predecessor segment); the boundary
+        // seed carries the correct banking across the shared run boundary node.
+        // _runStartCamber reads from the predecessor's ALREADY-CACHED profile (fast path)
+        // or from a raw forward-march without recursion (slow path). Returns 0 for
+        // genuine free run starts (no predecessor). Cycle-safe.
+        rawCamber[0] = this._runStartCamber(runKey)
 
         // Forward tangent for sample 0: direction toward sample 1.
         {
