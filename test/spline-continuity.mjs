@@ -424,6 +424,25 @@ const FIXTURES = [
         seamGradeMode: true,
     },
     {
+        // 09-30 BUG-10 camber-across-run gate.
+        // Two adjacent runs sharing a boundary NODE mid-curve. Run A runs through a sustained
+        // left-hand curve so its end camber is well above zero (~5–6° depending on curvature).
+        // Run B starts at the same XZ position as run A's last point, also curving.
+        //
+        // Two strategies for run B's start camber:
+        //   'forcedZero': rawCamber[0] = 0 — the OLD BUG-10 behavior that reset banking.
+        //     Run A ends at ~5°; run B starts at 0°. |Δcamber| = ~5° >> slew limit (1.5°/m × Δs).
+        //   'seeded': rawCamber[0] = runA's last camberRad — the 09-29 cross-run stitch fix.
+        //     Both sides of the boundary have the same camber → |Δcamber| ≈ 0.
+        //
+        // Gate: seeded |Δcamber| ≤ slewRate × Δs; forcedZero |Δcamber| EXCEEDS this.
+        // camberRunMode: special marker — computeCamberRunMetrics handles this fixture.
+        name: 'camber-across-run',
+        role: 'gate',
+        description: 'Two adjacent runs sharing a boundary mid-curve. Seeded-start camber must be C0 (|Δcamber|≤slew×Δs); forced-zero-start must show a reset (BUG-10 catch).',
+        camberRunMode: true,
+    },
+    {
         // 09-30 BUG-12 ribbon-edge-weld gate.
         // A sharp-cornered (≈90°) polyline split into two SLICES at the apex.
         // Slice A covers the lead-in leg; slice B covers the exit leg.
@@ -1376,6 +1395,165 @@ function computeRibbonWeldMetrics() {
     return { edgeGap_perSlice, edgeGap_continuous, invertedQuads_continuous }
 }
 
+// ── 09-30 BUG-10 Camber-across-run gate ──────────────────────────────────────
+// Headlessly mirrors _buildCamberProfile + the 09-29 cross-run seed (_runStartCamber).
+//
+// Run A: a curved left-hand polyline that reaches a sustained curvature → end camber ~5–6°.
+// Run B: shares the same boundary node (run A's last point == run B's first point).
+//         Run B continues curving (so raw camber at its samples is also non-zero).
+//
+// The "boundary step" = |camberRad_A_last - camberRad_B_first| where camberRad_B_first is:
+//   'forcedZero': rawCamber[0]=0, then slew-march → camberRad_B_first = 0.
+//   'seeded':     rawCamber[0]=runA_lastCamber, then slew-march → camberRad_B_first = runA_lastCamber.
+//
+// Gate metric: |Δcamber| across the boundary vs slewRate × firstSegDs.
+//   Seeded:     |Δcamber| = 0 → PASS.
+//   ForcedZero: |Δcamber| = endCamberA >> slewRate × firstSegDs → FAIL (gate catches BUG-10).
+//
+// Slew params (match road.js defaults, same as CR_SLEW_RATE_*):
+const CRUN_CAMBER_STRENGTH   = CAMBER_STRENGTH    // 200 m·rad/rad
+const CRUN_MAX_CAMBER_RAD    = CAMBER_CLAMP_RAD   // ±6°
+const CRUN_SLEW_RATE_DEG_M   = CR_SLEW_RATE_DEG_M // 1.5°/m
+const CRUN_SLEW_RATE_RAD_M   = CR_SLEW_RATE_RAD_M // 1.5°/m in radians
+
+// Run A: long left-hand curve — arc ~100 m, radius ~25 m, curvature ~0.04/m → raw camber ~8° (clamped to 6°).
+// Build as a polyline approximating a 90° arc of radius 25 m, then a short straight.
+// This ensures the end camber is well above zero.
+const CRUN_A_RADIUS = 25  // m
+const CRUN_A_ARC_SEGS = 10
+function buildRunAPoints() {
+    const pts = []
+    // Short approach straight.
+    for (let i = 0; i <= 5; i++) {
+        pts.push({ x: i * 5, y: 0, z: 0 })
+    }
+    // Left-turn arc: center at (25, 0, 25), sweep from angle=-π/2 (pointing +Z) to angle=0 (pointing +X reversed).
+    // Actually: arm starts at (25, 0, 0), center at (25, 0, 25), sweeps 90° CCW from (25,0,0) to (0,0,25).
+    const cx = 25, cz = 25
+    for (let i = 1; i <= CRUN_A_ARC_SEGS; i++) {
+        const angle = -Math.PI/2 + (Math.PI/2) * i / CRUN_A_ARC_SEGS
+        pts.push({
+            x: cx + CRUN_A_RADIUS * Math.cos(angle),
+            y: 0,
+            z: cz + CRUN_A_RADIUS * Math.sin(angle),
+        })
+    }
+    return pts
+}
+
+// Run B: shares run A's last point, continues with 1 m dense segments so the slew
+// limit per step = 1.5°/m × 1 m = 1.5°. A boundary step of 6° >> 1.5° → FAIL for forced-zero.
+// With seeded start, step = 0° << 1.5° → PASS.
+function buildRunBPoints(runALast) {
+    const pts = []
+    pts.push({ ...runALast })   // shared boundary node
+    // Dense 1 m segments continuing straight along -X (run A ended heading roughly -X from the arc end).
+    // Run A ends at approx (50, 0, 25) heading along +X at angle=0. Continue straight.
+    for (let i = 1; i <= 10; i++) {
+        pts.push({ x: runALast.x + i * 1, y: 0, z: runALast.z + i * 1 })
+    }
+    return pts
+}
+
+/**
+ * Build a camber profile for a polyline of control points, mirroring _buildCamberProfile.
+ * startCamber: the seed value for rawCamber[0] (0 for forced-zero, predecessor end for seeded).
+ * Returns { arcPos, camberRad }.
+ */
+function buildCamberProfileMirror(pts, startCamber) {
+    const N = pts.length
+    const arcPos    = new Array(N)
+    const rawCamber = new Array(N)
+
+    arcPos[0]    = 0
+    rawCamber[0] = startCamber  // P4 seed (or 0 for BUG-10 behavior)
+
+    for (let i = 1; i < N; i++) {
+        const ax = pts[i].x - pts[i-1].x
+        const az = pts[i].z - pts[i-1].z
+        const ds = Math.sqrt(ax*ax + az*az)
+        arcPos[i] = arcPos[i-1] + ds
+
+        const t0x = ax, t0z = az
+        let t1x, t1z, effectiveDs
+        if (i < N - 1) {
+            t1x = pts[i+1].x - pts[i].x
+            t1z = pts[i+1].z - pts[i].z
+            const ds1 = Math.sqrt(t1x*t1x + t1z*t1z) || 1e-8
+            effectiveDs = (ds + ds1) * 0.5
+        } else {
+            t1x = t0x; t1z = t0z
+            effectiveDs = ds || 1e-8
+        }
+
+        const kappa = signedCurvature(t0x, t0z, t1x, t1z, effectiveDs)
+        const raw   = CRUN_CAMBER_STRENGTH * kappa
+        rawCamber[i] = Math.max(-CRUN_MAX_CAMBER_RAD, Math.min(CRUN_MAX_CAMBER_RAD, raw))
+    }
+
+    // Forward-march slew-rate limit (mirrors _buildCamberProfile step 2).
+    const camberRad = new Array(N)
+    camberRad[0] = rawCamber[0]
+    for (let i = 1; i < N; i++) {
+        const ds       = arcPos[i] - arcPos[i-1]
+        const maxDelta = CRUN_SLEW_RATE_RAD_M * ds
+        const prev     = camberRad[i-1]
+        const target   = rawCamber[i]
+        const delta    = target - prev
+        if      (delta >  maxDelta) camberRad[i] = prev + maxDelta
+        else if (delta < -maxDelta) camberRad[i] = prev - maxDelta
+        else                        camberRad[i] = target
+    }
+
+    return { arcPos, camberRad }
+}
+
+/**
+ * Compute camber-across-run metrics.
+ * Returns { endCamberA_deg, boundaryStep_seeded_deg, boundaryStep_forced_deg, firstSegDs, slewLimit_deg }
+ */
+function computeCamberRunMetrics() {
+    const runAPoints = buildRunAPoints()
+    const runALast   = runAPoints[runAPoints.length - 1]
+    const runBPoints = buildRunBPoints(runALast)
+
+    // Build run A's profile (no predecessor — forced zero start for run A itself).
+    const profA = buildCamberProfileMirror(runAPoints, 0)
+    // Use second-to-last sample as endCamberA: the last sample has kappa=0 (boundary
+    // replicate) and thus slews back toward 0 from the arc's sustained 6°. The effective
+    // "mid-curve end camber" that the run A arc sustains is camberRad[N-2].
+    const endCamberA = profA.camberRad[profA.camberRad.length - 2]
+
+    // Run B first-segment arc length (used for slew-limit comparison).
+    const bax = runBPoints[1].x - runBPoints[0].x
+    const baz = runBPoints[1].z - runBPoints[0].z
+    const firstSegDs = Math.sqrt(bax*bax + baz*baz) || 1e-8
+
+    // Strategy A: forced zero (BUG-10 behavior — rawCamber[0] = 0).
+    // The boundary step is |endCamberA - 0| = endCamberA (the full mid-curve banking).
+    const profB_forced = buildCamberProfileMirror(runBPoints, 0)
+    const firstCamberB_forced = profB_forced.camberRad[0]
+    const boundaryStep_forced = Math.abs(endCamberA - firstCamberB_forced)
+
+    // Strategy B: seeded from run A's end camber (09-29 fix).
+    // Run B first sample starts AT endCamberA → boundary step = 0.
+    const profB_seeded = buildCamberProfileMirror(runBPoints, endCamberA)
+    const firstCamberB_seeded = profB_seeded.camberRad[0]
+    const boundaryStep_seeded = Math.abs(endCamberA - firstCamberB_seeded)
+
+    // Slew limit for the first segment of run B.
+    const slewLimit_rad = CRUN_SLEW_RATE_RAD_M * firstSegDs
+    const slewLimit_deg = slewLimit_rad * (180 / Math.PI)
+
+    return {
+        endCamberA_deg:         endCamberA             * (180 / Math.PI),
+        boundaryStep_seeded_deg: boundaryStep_seeded   * (180 / Math.PI),
+        boundaryStep_forced_deg: boundaryStep_forced   * (180 / Math.PI),
+        firstSegDs,
+        slewLimit_deg,
+    }
+}
+
 // ── Table printing ────────────────────────────────────────────────────────────
 
 function pf(v, digits) { return v == null ? '  —   ' : v.toFixed(digits) }
@@ -1793,6 +1971,50 @@ if (ribbonWeldModeFixtures.length > 0) {
         ].join(' | ')
         console.log(row)
         console.log(`    per-slice tangent edge gap: ${edgeGap_perSlice.toFixed(4)} m (would ${perSliceExceeds ? 'FAIL' : 'PASS'}) | continuous tangent gap: ${edgeGap_continuous.toFixed(6)} m (${continuousPass ? 'PASS' : 'FAIL'}) | inverted quads: ${invertedQuads_continuous} (gate: ==0)`)
+    }
+    console.log('-'.repeat(120))
+    console.log('')
+}
+
+// ── 09-30 BUG-10 Camber-across-run gate section ──────────────────────────────
+if (camberRunModeFixtures.length > 0) {
+    console.log('='.repeat(120))
+    console.log('  CAMBER-ACROSS-RUN GATE (09-30 BUG-10 — seeded start camber vs forced-zero at run boundary)')
+    console.log(`  Gate: seeded |Δcamber| ≤ slew×Δs at run boundary  |  forced-zero |Δcamber| must EXCEED (BUG-10 catch)`)
+    console.log(`  Slew rate: ${CRUN_SLEW_RATE_DEG_M}°/m (roadCamberRate)`)
+    console.log('='.repeat(120))
+    const crHdr2 = [
+        col('Fixture',                 30),
+        col('runA endCam(°)',          16),
+        col('forced step(°)',          16),
+        col('Forced>slew?',            14),
+        col('seeded step(°)',          16),
+        col('Seed<=slew?',             12),
+        col('GATE',                    8),
+    ].join(' | ')
+    console.log(crHdr2)
+    console.log('-'.repeat(120))
+
+    for (const fix of camberRunModeFixtures) {
+        const { endCamberA_deg, boundaryStep_seeded_deg, boundaryStep_forced_deg, firstSegDs, slewLimit_deg } = computeCamberRunMetrics()
+        const forcedExceeds = boundaryStep_forced_deg > slewLimit_deg
+        const seededPass    = boundaryStep_seeded_deg <= slewLimit_deg
+        const gatePass      = seededPass
+
+        if (fix.role === 'gate' && !gatePass) allGatesPassed = false
+
+        const row = [
+            col(fix.name,                              30),
+            col(endCamberA_deg.toFixed(3),             16),
+            col(boundaryStep_forced_deg.toFixed(3),    16),
+            col(forcedExceeds ? 'YES (expected)' : 'no (unexpected)', 14),
+            col(boundaryStep_seeded_deg.toFixed(6),    16),
+            col(seededPass ? ' PASS ' : ' FAIL ',      12),
+            col(gatePass ? '  PASS  ' : '  FAIL  ',    8),
+        ].join(' | ')
+        console.log(row)
+        console.log(`    run A end camber: ${endCamberA_deg.toFixed(3)}° | slew limit: ${slewLimit_deg.toFixed(3)}°/seg (${CRUN_SLEW_RATE_DEG_M}°/m × ${firstSegDs.toFixed(2)} m)`)
+        console.log(`    forced-zero start: boundary step=${boundaryStep_forced_deg.toFixed(3)}° (would ${forcedExceeds ? 'FAIL' : 'PASS'}) | seeded start: step=${boundaryStep_seeded_deg.toFixed(6)}° (${seededPass ? 'PASS' : 'FAIL'})`)
     }
     console.log('-'.repeat(120))
     console.log('')
