@@ -39,6 +39,15 @@ GRADE REFERENCE is still selected discretely / per-window, and that selection is
 Both are worse at high coarse amplitude (steep road grades turn small arc-position / sample-selection
 differences into large Y steps). Distinct from the camber-seam BUG-10 (that was arcS keying).
 
+## Symptom detail (user, 2026-06-14)
+
+Usually the transition feels like the car **teleports up/down with no residual velocity** → a pure
+POSITION discontinuity: `analyticHeight` jumps between frames, suspension re-seats at the new height, no
+energy injected. **Sometimes it clips → launch** → that's the UPWARD step: when the seam step is a gain,
+the wheel resting at the old (lower) height is suddenly below the new (higher) surface → large one-step
+penetration → contact/bump-stop correction ejects it hard. Downward steps are benign; upward steps launch.
+A single C0 fix on the contact height kills both (no step → no teleport, no penetration spike).
+
 ## Fix directions
 
 - **Carve foundation:** project onto the slice spline (continuous, same as physics) instead of nearest
