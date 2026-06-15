@@ -959,8 +959,6 @@ export class TerrainSystem {
                 const bi = (intBestD2 < Infinity) ? intBi : extBi
                 const bestD2 = (intBestD2 < Infinity) ? intBestD2 : extBestD2
 
-                const ny = samples[bi + 1]
-
                 // XZ distance to nearest road point.
                 const latDist = Math.sqrt(bestD2)
 
@@ -987,6 +985,15 @@ export class TerrainSystem {
 
                 const arcS   = sampleArcS[biIdx]
                 const runKey = sampleRunKeys[biIdx]
+
+                // P2 (09-27): replace nearest-discrete-sample ny = samples[bi+1] with the run-global
+                // continuous profile gradeY. Both adjacent chunks read the SAME runProfile by the SAME
+                // arcS → shared boundary vertices match → the chunk-boundary foundation step is gone
+                // (BUG-14 carve path closed). roadY is world-space (post-amplitude), exactly like the
+                // old samples[bi+1] it replaces, so the amplitude convention below is UNCHANGED.
+                // Previous: const ny = samples[bi + 1]
+                const roadY = this._roadSystem.runProfile(arcS, runKey).gradeY
+
                 // BUG-10: run-frame camber × per-sample sign → slice-frame angle (matches ribbon + physics).
                 const camberAngle = (sampleCamberSign ? sampleCamberSign[biIdx] : 1) * this._roadSystem.camberProfile(arcS, runKey)
 
@@ -994,7 +1001,7 @@ export class TerrainSystem {
                 const tiltY  = signedLat * Math.sin(camberAngle)
 
                 // carveTargetY = ribbon_surface − clearanceMargin (uniform clearance on banked turns)
-                let carveTargetY = ny + crownY + tiltY - clearanceMargin
+                let carveTargetY = roadY + crownY + tiltY - clearanceMargin
 
                 // ── D3 refinement: max-floor guard (plan 09-22) ──────────────────────
                 // Where geometry forces two arms closer than the footprint bound, this vertex
@@ -1008,15 +1015,17 @@ export class TerrainSystem {
                 // arms at the transition (only degenerate vertical seams are disallowed — SURF-05).
                 //
                 // PERF CONTRACT: the guard is one float array read + a single O(log N) camberProfile
-                // call on extBi (only when extBi != intBi); no per-vertex allocation.
+                // + runProfile call on extBi (only when extBi != intBi); no per-vertex allocation.
                 if (intBestD2 < Infinity && extBi !== intBi) {
-                    const enyExt = samples[extBi + 1]
                     const extIdx = extBi / STRIDE
                     const eTx = samples[extBi + 3], eTz = samples[extBi + 4]
                     const sdxExt = samples[extBi] - wx, sdzExt = samples[extBi + 2] - wz
                     const signedLatExt  = (-sdxExt) * eTz - (-sdzExt) * eTx
+                    // P2 (09-27): exterior grade also from runProfile — same continuous source.
+                    // Previous: const enyExt = samples[extBi + 1]
+                    const roadYExt      = this._roadSystem.runProfile(sampleArcS[extIdx], sampleRunKeys[extIdx]).gradeY
                     const camberExt     = (sampleCamberSign ? sampleCamberSign[extIdx] : 1) * this._roadSystem.camberProfile(sampleArcS[extIdx], sampleRunKeys[extIdx])
-                    const maxFloor      = enyExt + crownProfile(signedLatExt, halfWidth, crownHeight) +
+                    const maxFloor      = roadYExt + crownProfile(signedLatExt, halfWidth, crownHeight) +
                                           signedLatExt * Math.sin(camberExt) - clearanceMargin
                     if (maxFloor > carveTargetY) carveTargetY = maxFloor
                 }
