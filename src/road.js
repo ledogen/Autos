@@ -1912,6 +1912,102 @@ export class RoadSystem {
         return { arcPos, camberRad }
     }
 
+    // ── P0 — Continuous per-run profile (plan 09-25) ──────────────────────────
+    /**
+     * Build a unified RoadRunProfile for the given run, holding parallel arc-indexed arrays.
+     *
+     * GEOMETRY SOURCE: this._network.get(runKey).points ONLY — no new geometry source,
+     * no getPointAt/getTangentAt, no _tiles read. Same XZ arc-walk as _buildCamberProfile.
+     * DETERMINISM (D-16): pure function of network entry — no Math.random, no Date, no session state.
+     *
+     * @param {string} runKey — canonical run key (e.g. "0:0")
+     * @returns {{ arcPos: number[], gradeY: number[], camberRad: number[], tx: number[], tz: number[] } | null}
+     *   arcPos   — monotone XZ arc-length positions (metres), N entries
+     *   gradeY   — routed centerline Y per sample (metres), continuous along the full run
+     *   camberRad — slew-limited banking angle (radians), same computation as _buildCamberProfile
+     *   tx/tz    — unit XZ tangent (forward direction) per sample; last sample replicates previous
+     */
+    _buildRunProfile(runKey) {
+        const netEntry = this._network?.get(runKey)
+        if (!netEntry || !netEntry.points || netEntry.points.length < 2) return null
+
+        const pts = netEntry.points
+        const N = pts.length
+
+        const p = this._params || {}
+        const camberStrength  = p.camberStrength ?? 200
+        const slewRateRadPerM = (p.roadCamberRate ?? 1.5) * (Math.PI / 180)
+        const MAX_CAMBER      = 6 * (Math.PI / 180)   // ±6° clamp
+
+        const arcPos    = new Array(N)
+        const gradeY    = new Array(N)
+        const rawCamber = new Array(N)
+        const tx        = new Array(N)
+        const tz        = new Array(N)
+
+        arcPos[0]    = 0
+        gradeY[0]    = pts[0].y
+        rawCamber[0] = 0   // no predecessor → curvature undefined, bank = 0
+
+        // Forward tangent for sample 0: direction toward sample 1.
+        {
+            const ax = pts[1].x - pts[0].x
+            const az = pts[1].z - pts[0].z
+            const len = Math.sqrt(ax * ax + az * az) || 1e-8
+            tx[0] = ax / len
+            tz[0] = az / len
+        }
+
+        for (let i = 1; i < N; i++) {
+            const ax = pts[i].x - pts[i - 1].x
+            const az = pts[i].z - pts[i - 1].z
+            const ds = Math.sqrt(ax * ax + az * az)
+            arcPos[i] = arcPos[i - 1] + ds
+            gradeY[i]  = pts[i].y
+
+            // Unit XZ tangent at sample i: forward segment i-1 → i (normalized).
+            const segLen = ds || 1e-8
+            tx[i] = ax / segLen
+            tz[i] = az / segLen
+
+            // Curvature at i: finite-difference using prev-seg tangent (T0) and next-seg tangent (T1).
+            const t0x = ax, t0z = az   // unnormalized; signedCurvature normalises internally
+            let t1x, t1z, effectiveDs
+            if (i < N - 1) {
+                t1x = pts[i + 1].x - pts[i].x
+                t1z = pts[i + 1].z - pts[i].z
+                const ds1 = Math.sqrt(t1x * t1x + t1z * t1z) || 1e-8
+                effectiveDs = (ds + ds1) * 0.5
+            } else {
+                t1x = t0x; t1z = t0z   // boundary: replicate
+                effectiveDs = ds || 1e-8
+            }
+
+            const kappa = signedCurvature(t0x, t0z, t1x, t1z, effectiveDs)
+            const raw   = camberStrength * kappa
+            rawCamber[i] = Math.max(-MAX_CAMBER, Math.min(MAX_CAMBER, raw))
+        }
+
+        // Last sample: replicate tangent from second-to-last segment.
+        // (already computed above — tx[N-1]/tz[N-1] = forward tangent of last segment, correct)
+
+        // Forward-march slew-rate limit for camber.
+        const camberRad = new Array(N)
+        camberRad[0] = rawCamber[0]
+        for (let i = 1; i < N; i++) {
+            const ds       = arcPos[i] - arcPos[i - 1]
+            const maxDelta = slewRateRadPerM * ds
+            const prev     = camberRad[i - 1]
+            const target   = rawCamber[i]
+            const delta    = target - prev
+            if      (delta >  maxDelta) camberRad[i] = prev + maxDelta
+            else if (delta < -maxDelta) camberRad[i] = prev - maxDelta
+            else                        camberRad[i] = target
+        }
+
+        return { arcPos, gradeY, camberRad, tx, tz }
+    }
+
     /**
      * Return the banking angle (radians) at continuous-run arc-position `arcS` for `runKey`.
      * D2 (plan 09-21): ONE slew-rate-limited profile per canonical run — ribbon sweep,
