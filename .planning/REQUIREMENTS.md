@@ -41,7 +41,7 @@ Requirements for milestone v1.1. Each maps to roadmap phases P7–P10.
 
 ### Road Surface (SURF)
 
-- [ ] **SURF-01**: A ~10 m fixed-width ribbon mesh is swept along the road splines
+- [x] **SURF-01**: A ~10 m fixed-width ribbon mesh is swept along the road splines
 - [ ] **SURF-02**: The road surface has a basic asphalt color/texture generated without asset files
 - [x] **SURF-03**: The cross-section has a centerline crown plus curvature-driven camber that banks into turns
 - [x] **SURF-04**: The physics surface carries the road's height AND normal, so the car feels the crown and bank
@@ -103,7 +103,7 @@ Which phases cover which requirements.
 | ROAD-02 | Phase 8 | Pending |
 | ROAD-03 | Phase 8 | Pending |
 | ROAD-04 | Phase 8 | Pending |
-| SURF-01 | Phase 9 | Pending |
+| SURF-01 | Phase 9 | Complete |
 | SURF-02 | Phase 9 | Pending |
 | SURF-03 | Phase 9 | Complete |
 | SURF-04 | Phase 9 | Complete |
