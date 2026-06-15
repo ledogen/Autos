@@ -111,7 +111,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
   - [x] 09-27-PLAN.md — P2 BUG-14: physics _sampleCarveWorld + carve _buildCarveTable read gradeY(arcS) from the profile (kills seam grade-step/launch; mesh==physics==carve height) (SURF-04/05)
   - [x] 09-28-PLAN.md — P3 BUG-12: sweepRibbon section frame from continuous runProfile tangent + shared-boundary edge weld (seals ribbon at sharp corners) (SURF-01/03)
   - [x] 09-29-PLAN.md — P4 BUG-10: cross-run camber stitch — seed run-start camber from adjacent run's end (no forced zero mid-curve), generation-invalidated (SURF-03)
-  - [ ] 09-30-PLAN.md — Verification: 3 seam-biting headless gates (seam-grade, ribbon-edge-weld, camber-across-run) in test/spline-continuity.mjs + combined in-sim human-verify pass (seed 7 + Coarse Amp 150 BUG-14 repro + switchbacks + sharp corners) (SURF-01/03/04/05)
+  - [x] 09-30-PLAN.md — Verification: 3 seam-biting headless gates (seam-grade, ribbon-edge-weld, camber-across-run) in test/spline-continuity.mjs + combined in-sim human-verify pass (seed 7 + Coarse Amp 150 BUG-14 repro + switchbacks + sharp corners) (SURF-01/03/04/05)
 **Notes**: ORIGINAL approach (carve terrain to MEET the ribbon at the road edge) was found geometrically unsound at verification — two independently-tessellated opaque surfaces interpenetrate between their own vertices (z-fighting/camo), and 09-08 introduced a per-vertex binary-search + 2nd queryNearest perf regression (~1 s terrain-load hang). RE-ARCHITECTED 2026-06-12 (user-locked decision): the ribbon is the ONE authoritative surface — it wins depth via polygonOffset + has edge skirts; terrain is carved CHEAPLY to stay clearanceMargin BELOW it under a wider footprint; physics samples the ribbon on-road (crown/camber/pothole fold-in retained in road.js _sampleCarveWorld). The 09-09 equality exit gate is RETIRED — the new gate is terrain-below + ribbon-driven + longitudinally-continuous. Worker CARVE SYNC unchanged: terrain-worker.js stores RAW heights, no decal symbols leak in. SURF-06 (pothole) is a stretch; SURF-07 (junctions) still needs human z-fight/stability confirmation.
 **UI hint**: yes
 
@@ -142,7 +142,7 @@ See [v1.0-ROADMAP.md](.planning/milestones/v1.0-ROADMAP.md) for full phase detai
 | 6. Procedural Terrain | v1.0 | 3/3 | ✅ Complete | 2026-06-03 |
 | 7. Free-Cam + Seeded Layered Terrain | v1.1 | 5/5 | Complete   | 2026-06-09 |
 | 8. Road Routing | v1.1 | 7/7 | Complete   | 2026-06-10 |
-| 9. Road Surface | v1.1 | 29/30 | In Progress|  |
+| 9. Road Surface | v1.1 | 30/30 | Complete   | 2026-06-15 |
 | 10. POI Hooks + Polish | v1.1 | 0/? | Not started | — |
 
 ## Backlog
