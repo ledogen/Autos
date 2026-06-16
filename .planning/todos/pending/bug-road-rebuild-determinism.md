@@ -39,7 +39,17 @@ the road before rebuilding the carve.)
   span, not the windowed run.
 - Reconcile spawn placement with the rendered centerline.
 
-## Status (2026-06-13): spawn FIXED; determinism = WONTFIX-for-now (user likes the behavior)
+## Status (2026-06-16): REOPENED — determinism now IN SCOPE, folded into the centerline rewrite
+
+**User REVERSED the prior WONTFIX (2026-06-16):** switch to deterministic routing. Folded into the
+09 centerline rewrite as **Step 0 (the foundation)** — see `09-CENTERLINE-CONDITIONER-DESIGN.md` /
+`09-31-PLAN.md`. Fix = world-anchored row-run span + margin, consume interior → window-invariant;
+headless two-center invariance probe is the foundation gate (makes the min-radius/camber gates test a
+stable target). Tradeoff accepted: gives up the "sticky across param-tweaks" behavior below; same
+(seed,params) becomes reproducible (stable spawns, shareable seeds). Same root as BUG-08 and BUG-14's
+band-shift. (Spawn-off-road half remains fixed.)
+
+## Status (2026-06-13, SUPERSEDED): spawn FIXED; determinism = WONTFIX-for-now (user liked the behavior)
 
 **User decision (2026-06-13):** the cross-band re-shaping (12→15→12 ≠ reload) is acceptable —
 they *like* that you can mess with road settings at any time and still have a road near where it
