@@ -85,3 +85,25 @@ Exact slider magnitudes: raise height, camber/crown, shoulder/blend widths, desi
 
 - Grade-separated crossings (overpasses/bridges/underpasses) — at-grade only this phase.
 - FEAT-04 (truck body + lights), FEAT-03 (dust trails), BUG-06 (chase-cam jitter) — reviewed, not folded (independent of road surface).
+
+---
+
+# Addendum: Valid-by-Construction Centerline gap-closure (2026-06-16)
+
+**Trigger:** BUG-12 (ribbon folds at sharp corners) traced via user screenshots to the routed
+centerline creasing (~1 m radius) at junctions and vertically. Root cause: generate-then-clean
+pipeline (A* soft turn-penalty → CR spline → post-hoc `filletMinRadius`, endpoint-pinned + XZ-only).
+Guided by QUAL-03. Decisions land in CONTEXT.md (VBC-01..09).
+
+| Area | Options | Chosen |
+|------|---------|--------|
+| Scope | generation-only crease-free / full QUAL-03 shrink | **generation-only crease-free** |
+| Vertical kinks | XZ radius + grade-rate / unified 3D radius | **XZ radius only (hard); grade-rate separate soft tunable; radius prioritized over grade** |
+| Corrective passes | keep then delete / delete now | **keep as safety net, delete in follow-up once proven** |
+| Junctions | clean legs + merge-corner guard / clean legs only / defer | **user reframed: build-stage two-case (parallel→merge+rediverge; orthogonal→fillet blend); no extra near-road constraints; tie-ends+3-way as stretch — larger separate effort** |
+
+**Scope boundary:** reopens the Phase-8 router within P9 (was locked "do not modify routing"),
+for the generation algorithm only; determinism / pure-coarseHeight / window-invariance preserved.
+
+**Deferred:** QUAL-03 full road.js shrink + valley-exit-search isolation; junction redesign
+(parallel-merge, tie-ends, 3-way); any vertical/3D radius constraint (explicitly not wanted).

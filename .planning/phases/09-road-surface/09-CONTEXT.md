@@ -180,5 +180,92 @@ fillet radii) — pick realistic defaults and expose debug sliders to tune live 
 
 ---
 
+## Gap-Closure Context: Valid-by-Construction Centerline (added 2026-06-16)
+
+**Gathered:** 2026-06-16
+**Why:** BUG-12 (ribbon folds at sharp corners) is NOT a surface bug — the routed centerline
+itself creases to ~1 m radius (near right-angle) at junctions and in the vertical plane.
+Root cause: the generate-then-clean pipeline (A* soft turn-penalty → Catmull-Rom spline →
+post-hoc `filletMinRadius`, which pins run endpoints so creases survive at junctions, and is
+XZ-only). Mandate (QUAL-03): enforce curvature validity DURING generation so a crease can
+never form, instead of cleaning up bad output.
+
+<domain>
+Make the routed road CENTERLINE valid-by-construction in the XZ plane: every corner ≥ min
+turn radius as the spline is DRAWN, across segment AND run boundaries — so a ±halfWidth ribbon
+can never fold. This deliberately REOPENS the Phase-8 router within P9 (the original P9 locked
+"do not modify routing"; this gap-closure overrides that for the generation algorithm ONLY,
+while preserving determinism / pure-`coarseHeight` / window-invariance — D-16).
+</domain>
+
+<decisions>
+### Constraint model
+- **VBC-01:** XZ (horizontal) min-radius is the **HARD** constraint — enforced during generation
+  so the centerline never creases. **Radius is prioritized OVER grade**: it is OK for radius
+  conformity to **violate max-grade** (a too-steep road is driveable; a folded corner is not).
+  (Locks the session's "fail grade before radius" as: radius hard, grade soft.)
+- **VBC-02:** **NO vertical / 3D radius constraint** — only XZ radius is enforced. The current
+  vertical profile / valley-exit character is "working well enough"; do NOT change it.
+- **VBC-03:** **Grade-change-rate is a SEPARATE tunable parameter** (soft smoothness knob for
+  crests/dips), NOT a hard solve constraint and NOT coupled to the radius solve.
+- **VBC-04:** Do NOT pursue "start the incline earlier / land-bridge" for valley exits — user
+  finds it jarring/unrealistic and likes the current character.
+
+### Generation approach
+- **VBC-05:** Enforce min-radius at the ROAD-BUILDING / GENERATION stage, not via post-hoc
+  spline-cleaning passes (the pattern that just bit us). The exact mechanism (heading-aware
+  curvature-constrained search vs arc-spline draw vs other) is a RESEARCH/PLANNER target — not
+  locked here.
+- **VBC-06:** Constraint applies **PER-ROAD only**. Do NOT add extra curvature constraints on a
+  road merely because it is NEAR another road — that would over-constrain an already-tight solve.
+
+### Corrective passes
+- **VBC-07:** Keep `_removeLoops` / `_removeSelfCrossings` / `_filletMinRadius` as a safety net
+  when the new generator lands; delete them in a FOLLOW-UP once crease-free is confirmed in-sim
+  across varied seeds. (Do not delete in the same change.)
+
+### Junctions (intended direction — see scope split)
+- **VBC-08:** Handle intersections at the BUILD stage as TWO cases, not via spline cleanup:
+  (a) **Near-parallel** approaches → COMBINE into a single road (with a solvable min approach
+  angle), then RE-DIVERGE to complete a 4-way crossing.
+  (b) **Orthogonal-ish** approaches → mesh-blend with the min-radius fillet rules (inner-angle
+  fillets) — the existing 09-04 merge direction.
+- **VBC-09:** (stretch / vision) Tie road STARTS/ENDS to other roads to reduce random dead-ends
+  → requires 3-way (T) intersection handling.
+
+### Scope of THIS gap-closure (locked: "generation-only, crease-free")
+- **Deliver:** XZ-curvature-valid open-road centerline by construction — kills the open-road
+  crease class of BUG-12.
+- The broader QUAL-03 road.js shrink + valley-exit-search isolation is a LATER milestone.
+- The junction REDESIGN (VBC-08 parallel-merge, VBC-09 tie-ends + 3-way) is a SEPARATE, larger
+  effort — likely its own plan(s)/follow-up. **Open question for planning:** does the immediate
+  junction crease (screenshot) close from clean per-road legs + the existing merge, or does it
+  need a build-stage junction tweak now? Researcher/planner to determine.
+</decisions>
+
+<canonical_refs>
+- `.planning/todos/pending/qual-road-system-simplify.md` (QUAL-03) — guiding philosophy
+  (valid-by-construction centerline, swept cross-section, line-count reduction). MUST read.
+- `src/road.js` — `_streamNetwork` (generation), `_protoConnect`/`_protoAnchor` (A* router:
+  8-dir grid, soft turn PENALTY only — the thing to make a hard curvature constraint),
+  `filletMinRadius` call site, `_removeLoops`/`_removeSelfCrossings` (corrective passes to
+  retire per VBC-07), `_assignSlice` (per-tile CR spline the ribbon sweeps), `_detectJunctions`
+  (09-04 merge).
+- `src/road-carve.js` — `filletMinRadius` (pure XZ-only, endpoint-pinned curvature-relax — the
+  post-hoc pass being superseded).
+- `src/road-mesh.js` — `sweepRibbon` (the ±halfWidth sweep that folds on sub-radius corners).
+- Memory `project_centerline_validity_mandate` — the mandate + screenshot evidence.
+</canonical_refs>
+
+<deferred>
+- **QUAL-03 full road.js shrink** + isolate the valley-exit/switchback search into one bounded
+  module — later milestone (not this effort).
+- **Junction redesign** — near-parallel road merge+re-diverge (VBC-08a), tie road ends to other
+  roads + 3-way/T handling (VBC-09) — larger follow-up; not the open-road crease fix.
+- **Vertical / 3D radius constraint** — explicitly NOT wanted (VBC-02).
+</deferred>
+
+---
+
 *Phase: 9-road-surface*
-*Context gathered: 2026-06-11*
+*Context gathered: 2026-06-11 (surface); 2026-06-16 (valid-by-construction centerline gap-closure)*
