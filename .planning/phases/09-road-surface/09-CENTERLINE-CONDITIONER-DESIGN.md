@@ -7,10 +7,39 @@ first when picking up fresh. Companion to `09-31-PLAN.md` (the executable plan) 
 ## The thesis (do not violate)
 
 **This refactor must SIMPLIFY the centerline backbone, not add a layer on top of it.** The current
-pipeline GENERATES bad geometry then tries to CLEAN it with passes that don't work. The fix is ONE
-constructive conditioner that produces correct geometry by construction, and DELETES the cleanup
-passes. If at the end we have *more* code, we did it wrong. Safety nets (VBC-07) stay only as a
-transition and are removed once the conditioner is confirmed crease-free in-sim.
+pipeline GENERATES bad geometry then tries to CLEAN it with passes that don't work. If at the end we
+have *more* code, we did it wrong. Safety nets (VBC-07) stay only as a transition and are removed once
+the result is confirmed crease-free in-sim.
+
+## ARCHITECTURE DECISION (2026-06-16, user) — fix the SOURCE, do NOT build a conditioner layer
+
+Reject the "conditioner" framing (a post-pass that fixes bad waypoints — it's the generate-then-fix
+abstraction the user wants gone). Instead make the geometry valid where it's produced. Two parts:
+
+1. **Router turn-cost → hard curvature constraint.** `_protoConnect` ALREADY carries heading state
+   (`state = cell × incoming-dir`, PROTO_CELL=10 m, 8 dirs, soft `wTurn` per-45° penalty, ~line 1209/1256).
+   Today sub-radius corners are *allowed* (just penalized). Make them **forbidden**: gate transitions so
+   an accumulated turn implying radius < roadMinTurnRadius is infinite-cost. Heading state already exists —
+   this is a transition gate, not new machinery. Grade stays SOFT (VBC-01) → the search spends grade to
+   hold radius (the user's priority). Result: impossible corners are never routed → `_removeLoops` /
+   `_removeSelfCrossings` / `_filletMinRadius` / dead `_limitCurvature` all DELETE.
+2. **One clean grid→curve fit.** A 10 m/8-dir grid path inherently zig-zags at 45°, so a single smooth
+   fit (grid polyline → drivable curve) is unavoidable AND legitimate — it is the honest "represent the
+   routed path as a smooth curve" step, NOT a cleanup layer. Do it ONCE and correctly: curvature-preserving
+   (stays ≥ minRadius, no overshoot — arc-spline or low-tension) + UNIFORM arc-length sampling (fixes the
+   camber-from-uneven-spacing symptom). This replaces steps 3–6 below.
+
+**Fallback if the 10 m/45° grid fit still isn't clean enough:** replace grid-A* with a **hybrid-A* using
+min-radius arc motion-primitives** (continuous heading) — output is curvature-valid natively, ~no fit
+needed. The purest form of the vision; bigger change; hold as fallback, not the opening move.
+
+**Risk to verify (taken deliberately):** touching the router affects the VALLEY-EXIT search — a hard
+radius constraint can make tight-terrain routes longer/steeper or (rarely) unroutable. Acceptable under
+radius-hard/grade-soft, but it's a behavioral change — verify headlessly (router unit test on real seeds,
+deterministic via pure coarseHeight) before in-sim. A conditioner was "safe" because it left routing
+alone — but that's the layer we're rejecting, so we accept the router risk and de-risk with tests.
+
+Everything below that says "conditioner" = this single grid→curve fit, fed by the now-curvature-valid router.
 
 ## Converged root cause (measured on real dumps — trust this, not the earlier detours)
 
@@ -108,11 +137,19 @@ Extend the 'p' dump (`road.js debugDumpNearestRun` + main.js handler) to ALSO em
 (`rowWps` pre-CR) for the run, so the conditioner is built/verified against its true INPUT, not the
 already-conditioned output. Drive to a sharp corner, press p, that becomes a fixture.
 
-## First steps for the fresh session
+## First steps for the fresh session (source-fix sequencing)
 
-1. Read this doc + 09-31-PLAN.md + 09-CONTEXT.md (VBC) + QUAL-03.
-2. Extract the two real dumps' networkPoints into `diag-minradius-pipeline.mjs` as fixtures; add the
-   (A)/(B)/(C)+camber gates.
-3. Prototype `conditionCenterline` (arc-spline first) in `src/road-carve.js`; iterate until all gates green.
-4. Wire into `_streamNetwork` replacing steps 3–6; keep nets (VBC-07); verify headless gate exits 0.
-5. In-sim verify (seed 8 + seed 6 + rd_minr). Then DELETE the cleanup passes + re-verify (the simplification).
+1. Read this doc (esp. the ARCHITECTURE DECISION) + 09-31-PLAN.md + 09-CONTEXT.md (VBC) + QUAL-03.
+2. Build the headless gates first: extract the two real dumps' networkPoints into
+   `diag-minradius-pipeline.mjs` as fixtures; add (A) dense minR ≥ minRadius, (B) gentle preserved,
+   (C) uniform spacing / curvature-jump (camber) below threshold. Add a router unit test that runs
+   `_protoConnect` on real seeds and asserts the routed path's implied turn radius ≥ minRadius.
+3. **Router first:** convert the `wTurn` soft penalty into a hard curvature gate in `_protoConnect`
+   (forbid sub-minRadius accumulated turns; grade stays soft). Verify the router unit test: no
+   sub-radius corners routed; confirm valley-exit still finds routes on tight seeds.
+4. **Then the single fit:** replace `_streamNetwork` steps 3–6 with one curvature-preserving + uniform
+   arc-length grid→curve fit. Verify (A)/(B)/(C) gates green on the real dumps + synthetic fixtures.
+5. Keep nets (VBC-07); headless gate exits 0; in-sim verify (seed 8 seam + seed 6 camber + rd_minr).
+6. DELETE `_removeLoops` / `_removeSelfCrossings` / `_filletMinRadius` / dead `_limitCurvature`;
+   re-verify. The deletion + a smaller road.js is the done-signal (the simplification), not just "folds gone".
+7. If the grid fit can't hit the gates cleanly: escalate to the hybrid-A* arc-primitive fallback.
