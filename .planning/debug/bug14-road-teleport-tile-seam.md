@@ -10,6 +10,52 @@ related_plan: 09-30
 
 # Debug: BUG-14 road teleport at tile seam
 
+> ## CORRECTION 2026-06-16 — the "arm-flip + hysteresis" root cause/fix below was WRONG
+>
+> The first fix attempt (commit 7fcaeac: D5 `preferRunKey` hysteresis in `queryNearest`) was
+> based on a SYNTHETIC fixture, not the real seeded network. Real instrumented logs (added
+> `rd_*` fields to logger) DISPROVE it. Seed 6, `Logs/rangersim-log-1781590955401.json`, frame 129 (t=37.417), teleport py 118.42→138.92 at px=−193.6:
+>
+> | field | before | teleport (4 frames) | after |
+> |---|---|---|---|
+> | `rd_rk` (resolved run) | 47974 | **47974 (UNCHANGED)** | 47974 |
+> | `rd_lrk` (hysteresis hint) | 47974 | 47974 | 47974 |
+> | `rd_arcs` (resolved arcS) | 1351 | **1885 (+534 m)** | 1349 |
+> | `rd_gy` = runProfile(arcS).gradeY | 117.85 | **138.32** | 118.0 |
+> | `rd_py` = nr.point.y | 117.85 | **117.86 (CONTINUOUS)** | 118.0 |
+> | `rd_gh` + 4 wheel samples | ~117.8 | ~138.3 | ~118.0 |
+>
+> Whole-log stats: `rd_py` has 0 frame-to-frame jumps >0.5 m (max 0.088 m); `rd_arcs` spikes for exactly 4 frames (the streaming-settle window).
+>
+> **Confirmed root cause:** `arcS` is WINDOW-RELATIVE. `_buildRunProfile` (road.js:2135) measures
+> run-arc from `points[0]` of the run as streamed in the CURRENT window (`this._network.set(\`${mz}:${runIndex}\`, {points})` at road.js:1476). When `_streamNetwork` re-streams as the truck crosses px=−192, the run's start extends, so the truck's world position gets a different `arcS` (+534 m) for the ~4 frames the chunks settle, then snaps back. The run KEY stays the same (47974) — so it is NOT an arm/run flip and hysteresis on runKey cannot help. Plan 09-27 introduced this by switching physics height from `nr.point.y` (window-invariant geometry — BUG-08 fixed that) to `runProfile(nr.arcS).gradeY` (depends on the window-relative arc). The ribbon (09-28) and carve also read runProfile(arcS), so they spike too.
+>
+> **FIX APPLIED (commit 5fe27fd) — user-confirmed teleport gone in-sim:**
+> `_streamNetwork` rebuilds `this._network` (shifting each run's `points[0]` arc origin as the
+> canonical band tracks the view center) and re-slices `this._tiles` but intentionally does NOT
+> bump `_generation` — leaving the generation-keyed `_runProfileCache`/`_camberProfileCache` stale.
+> So `queryNearest` returned `arcS` in the NEW slice parameterization while `runProfile` served the
+> OLD-origin cached profile → `arcS` indexed the wrong `gradeY`. Fix: clear those profile caches
+> (plus `_runAdjacencyCache`, `_designGradeCache`) alongside the existing `this._tiles.clear()` in
+> `_streamNetwork`, so `arcS` and `gradeY` always share one arc origin. Lazy rebuild, no generation
+> bump → no ribbon-mesh rebuild / flicker.
+>
+> Also REVERTED the wrong f9e8f3c hysteresis (preferRunKey/_lastPhysicsRunKey + synthetic
+> window-shift-arm-flip gate): the log proved runKey is constant through the teleport (no arm-flip),
+> so it was inert. Kept the `runProfile` desync `console.warn`.
+>
+> Diagnostic instrumentation (committed d97b5b3, kept): `src/logger.js` rd_* fields + `isRecording()`,
+> `src/road.js debugSampleAt()`, `src/main.js` per-frame probe — useful for any future seam regression.
+>
+> root_cause: window-relative arcS + stale generation-keyed profile caches on positional re-stream (no _generation bump) → arcS/gradeY parameterization mismatch → +20 m on-road ground step.
+> fix: clear _runProfileCache/_camberProfileCache/_runAdjacencyCache/_designGradeCache in _streamNetwork; revert f9e8f3c hysteresis.
+> verification: instrumented log (seed 6) — rd_arcs stays continuous through the px=−192 seam, no py teleport (user-confirmed).
+> files_changed: src/road.js (cache-clear in _streamNetwork; hysteresis removed), test/spline-continuity.mjs (synthetic gate removed).
+
+---
+**(Everything below this line is the SUPERSEDED first-attempt analysis — retained for audit. Its root cause is wrong; see correction above.)**
+
+
 ## Symptoms
 
 - **Expected:** Driving on the road across a tile border is smooth — ground height (and truck Y) continuous, no jump.
