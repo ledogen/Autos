@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Mountains & Roads
 status: executing
-stopped_at: Phase 9 valid-by-construction centerline context gathered
-last_updated: "2026-06-16T07:40:23.183Z"
+stopped_at: "Phase 9: BUG-14/BUG-10 fixed in-sim; BUG-12 root cause verified (filletMinRadius fails on tight corners); 09-31 planned, generator impl pending in-sim verify"
+last_updated: "2026-06-16T15:55:30.403Z"
 last_activity: 2026-06-15
 progress:
   total_phases: 4
-  completed_phases: 3
-  total_plans: 42
+  completed_phases: 2
+  total_plans: 43
   completed_plans: 42
-  percent: 75
+  percent: 50
 ---
 
 # Project State
@@ -133,6 +133,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-06-16T07:40:23.175Z
-Stopped at: Phase 9 valid-by-construction centerline context gathered
-Resume file: .planning/phases/09-road-surface/09-CONTEXT.md
+Last session: 2026-06-16T15:55:30.396Z
+Stopped at: Phase 9: BUG-14/BUG-10 fixed in-sim; BUG-12 root cause verified (filletMinRadius fails on tight corners); 09-31 planned, generator impl pending in-sim verify
+Resume file: .planning/phases/09-road-surface/09-31-PLAN.md
