@@ -1735,6 +1735,51 @@ export class RoadSystem {
         }
     }
 
+    // ── BUG-12 fix-dev tool: dump real run geometry at a failing corner (read-only) ────
+    /**
+     * Export the centerline geometry of the run nearest (wx, wz) so the constructive
+     * min-radius fix can be developed + verified against REAL seeded geometry (not just
+     * synthetic harness fixtures). Returns:
+     *   - networkPoints: the raw routed run polyline (this._network points — what runProfile
+     *     and the slicer consume; the post-fillet "design grade" centerline).
+     *   - slices: for each per-tile slice of this run, the Catmull-Rom spline DENSELY sampled
+     *     (~1 pt/2 m) — this is the actual curve the ribbon sweeps, so its curvature reveals
+     *     CR overshoot relative to networkPoints.
+     * Pure read; no mutation. Feed the JSON into test/diag-minradius-pipeline.mjs as a fixture.
+     * @returns {{ runKey:string, minTurnRadius:number, networkPoints:Array, slices:Array } | null}
+     */
+    debugDumpNearestRun(wx, wz) {
+        const p = this._params
+        const maxExt = (p.roadHalfWidth ?? 5) + (p.roadShoulderWidth ?? 2.5) + 4
+        const nr = this.queryNearest(wx, wz, Math.max(maxExt, 50))
+        if (!nr || !nr.runKey) return null
+        const runKey = nr.runKey
+        const netEntry = this._network?.get(runKey)
+        const networkPoints = netEntry?.points
+            ? netEntry.points.map(q => ({ x: +q.x.toFixed(3), y: +q.y.toFixed(3), z: +q.z.toFixed(3) }))
+            : []
+        const slices = []
+        if (this._tiles) {
+            for (const [tileKey, segs] of this._tiles) {
+                for (const s of segs) {
+                    if ((s.runKey ?? '') !== runKey || !s.spline) continue
+                    const len = s.spline.getLength ? s.spline.getLength() : 64
+                    const n = Math.max(8, Math.min(256, Math.ceil(len / 2)))
+                    const pts = s.spline.getPoints(n).map(q => ({ x: +q.x.toFixed(3), y: +q.y.toFixed(3), z: +q.z.toFixed(3) }))
+                    slices.push({ tileKey, arcS0: s.arcS0 ?? 0, arcS1: s.arcS1 ?? 0, length: +len.toFixed(2), samples: pts })
+                }
+            }
+        }
+        return {
+            runKey,
+            query: { wx: +wx.toFixed(2), wz: +wz.toFixed(2) },
+            minTurnRadius: p.roadMinTurnRadius ?? 0,
+            roadHalfWidth: p.roadHalfWidth ?? 5,
+            networkPoints,
+            slices,
+        }
+    }
+
     // ── Phase 9: Analytic carve world sampler (SURF-04) ──────────────────────────────
     /**
      * Sample the road carve at a world-space position (wx, wz) for use in analyticHeight.

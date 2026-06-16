@@ -1046,6 +1046,20 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keydown', e => {
   if (e.key === '\\') toggleRecording()
   if (e.key === 'i' && e.ctrlKey) openInitialCondition(vehicleState, RANGER_PARAMS)
+  // BUG-12 fix-dev: 'p' dumps the nearest run's real centerline + slice-spline geometry to JSON
+  // (drive to a kink, press p, send the file). Feeds test/diag-minradius-pipeline.mjs as a fixture.
+  if (e.key === 'p' && roadSystem && !_gridWorldActive) {
+    const dump = roadSystem.debugDumpNearestRun(vehicleState.position.x, vehicleState.position.z)
+    if (!dump) { console.warn('[road-dump] no road near truck'); return }
+    const blob = new Blob([JSON.stringify(dump)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    try {
+      const a = document.createElement('a')
+      a.href = url; a.download = 'road-run-dump-' + Date.now() + '.json'
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    } finally { URL.revokeObjectURL(url) }
+    console.log(`[road-dump] run ${dump.runKey}: ${dump.networkPoints.length} pts, ${dump.slices.length} slices`)
+  }
 })
 
 // ── Game loop ─────────────────────────────────────────────────────────────────
