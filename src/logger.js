@@ -61,6 +61,9 @@ const FIELDS = [
   'rd_gh', 'rd_hit', 'rd_rk', 'rd_arcs', 'rd_gy', 'rd_py', 'rd_lat', 'rd_lrk',
   // Per-wheel ground sample: analyticHeight at each hub XZ (FL,FR,RL,RR) — which corner sees the step
   'rd_ghfl', 'rd_ghfr', 'rd_ghrl', 'rd_ghrr',
+  // BUG-12 diagnostic: local XZ turn radius of the truck's run centerline (m). 9999 = ~straight.
+  // If a ribbon FOLD is visible where rd_minr is still ≥ ~15 m → fold is junction/mesh, not the spline.
+  'rd_minr',
 ]
 
 // ── Private helpers ───────────────────────────────────────────────────────────
@@ -177,6 +180,8 @@ export function captureFrame (simTime, vehicleState, wheelDebug, roadDebug) {
     rd.gh ?? 0, rd.hit ?? 0, rd.rk ?? 0, rd.arcS ?? 0, rd.gradeY ?? 0, rd.pointY ?? 0, rd.lat ?? 0, rd.lrk ?? 0,
     // Per-wheel ground sample (FL,FR,RL,RR)
     rd.ghfl ?? 0, rd.ghfr ?? 0, rd.ghrl ?? 0, rd.ghrr ?? 0,
+    // BUG-12 diagnostic: local centerline turn radius near truck
+    rd.minR ?? 9999,
   ])
 }
 

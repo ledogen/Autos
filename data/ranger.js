@@ -233,7 +233,7 @@ export const RANGER_PARAMS = {
   // straight caps; the fold floor is the hard lower bound, 12 m is the smooth-but-tight default.
   // Floor enforced in src/road.js _refreshParams (Math.max clamp) and slider lower bound in debug.js.
   // Live-tunable via the "Min Turn Radius (m)" debug slider (src/debug.js Roads folder).
-  roadMinTurnRadius: 12,   // m — arc-fillet min turn radius (D0); safety floor ≥ roadHalfWidth + clearance (~5.5 m)
+  roadMinTurnRadius: 15,   // m — arc-fillet min turn radius (D0); safety floor ≥ roadHalfWidth + clearance (~5.5 m). 15 m = user's "15–20 m" feel pick (2026-06-16); live-tunable via "Min Turn Radius (m)" slider.
 
   // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
   // Retained for the DEFERRED D-01 spur pass (trunk-only ships first). D-01 / RESEARCH A1.

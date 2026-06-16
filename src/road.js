@@ -1704,18 +1704,34 @@ export class RoadSystem {
             return h & 0x7fffffff
         }
         const nr = this.queryNearest(wx, wz, maxExt)
-        if (!nr) return { hit: 0, rk: 0, arcS: 0, gradeY: 0, pointY: 0, lat: 0, lrk: 0 }
+        if (!nr) return { hit: 0, rk: 0, arcS: 0, gradeY: 0, pointY: 0, lat: 0, lrk: 0, minR: 9999 }
         const dx = wx - nr.point.x, dz = wz - nr.point.z
         const signedLat = dx * nr.tangent.z - dz * nr.tangent.x
-        const gradeY = this.runProfile(nr.arcS ?? 0, nr.runKey ?? '').gradeY
+        const arcS = nr.arcS ?? 0
+        const runKey = nr.runKey ?? ''
+        const gradeY = this.runProfile(arcS, runKey).gradeY
+        // BUG-12 diagnostic: local XZ turn radius of THIS run's centerline near the truck, from the
+        // continuous-profile tangents at arcS±ds. radius = arc / heading-change. If a ribbon FOLD is
+        // seen where minR is still >> halfWidth (e.g. ≥15 m), the fold is NOT the per-run centerline —
+        // it's a junction/mesh issue (between two runs), not the spline this run delivers.
+        let minR = 9999
+        {
+            const ds = 4
+            const a0 = this.runProfile(arcS - ds, runKey)
+            const a1 = this.runProfile(arcS + ds, runKey)
+            const dot = Math.max(-1, Math.min(1, a0.tx * a1.tx + a0.tz * a1.tz))
+            const dth = Math.acos(dot)               // heading change over 2·ds
+            minR = dth > 1e-6 ? (2 * ds) / dth : 9999 // arc / angle
+        }
         return {
             hit:    1,
-            rk:     hashKey(nr.runKey ?? ''),
-            arcS:   nr.arcS ?? 0,
+            rk:     hashKey(runKey),
+            arcS,
             gradeY,
             pointY: nr.point.y,
             lat:    signedLat,
             lrk:    0,
+            minR,
         }
     }
 
