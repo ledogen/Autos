@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Mountains & Roads
 status: executing
-stopped_at: "Phase 9: BUG-14/BUG-10 fixed in-sim; BUG-12 root cause verified (filletMinRadius fails on tight corners); 09-31 planned, generator impl pending in-sim verify"
-last_updated: "2026-06-16T15:55:30.403Z"
+stopped_at: BUG-12/camber root cause CONVERGED on real dumps (sub-radius centerline + uneven spacing → one constructive conditioner replaces generate-then-clean). Design/handoff doc written; no code yet.
+last_updated: "2026-06-16T16:41:15.063Z"
 last_activity: 2026-06-15
 progress:
   total_phases: 4
@@ -133,6 +133,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-06-16T15:55:30.396Z
-Stopped at: Phase 9: BUG-14/BUG-10 fixed in-sim; BUG-12 root cause verified (filletMinRadius fails on tight corners); 09-31 planned, generator impl pending in-sim verify
-Resume file: .planning/phases/09-road-surface/09-31-PLAN.md
+Last session: 2026-06-16T16:41:15.057Z
+Stopped at: BUG-12/camber root cause CONVERGED on real dumps (sub-radius centerline + uneven spacing → one constructive conditioner replaces generate-then-clean). Design/handoff doc written; no code yet.
+Resume file: .planning/phases/09-road-surface/09-CENTERLINE-CONDITIONER-DESIGN.md
