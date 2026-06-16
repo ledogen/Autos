@@ -499,7 +499,7 @@ export class RoadSystem {
      * @param {number} [radiusM=200] — max XZ distance to accept a hit
      * @returns {{ point: THREE.Vector3, tangent: THREE.Vector3, runKey: string, arcS: number, spline: THREE.Curve } | null}
      */
-    queryNearest(wx, wz, radiusM = 200) {
+    queryNearest(wx, wz, radiusM = 200, preferRunKey = '') {
         if (!this._tiles) return null
         const r2 = radiusM * radiusM
 
@@ -507,13 +507,16 @@ export class RoadSystem {
         // Switchback arms are always laterally separated (never vertically stacked, user-confirmed).
         // Physics stays a pure 2D height field — signature unchanged.
         //
-        // Strategy: track TWO parallel bests:
+        // Strategy: track THREE parallel bests:
         //   intBest* — nearest sample on a spline whose footprint the query is INTERIOR to
         //              (|signedLat| ≤ footprint half-width = roadHalfWidth + roadShoulderWidth)
         //   extBest* — globally nearest sample regardless of footprint membership
+        //   prefBest* — nearest interior sample on the PREFERRED run (D5 hysteresis, BUG-14)
         //
-        // Final selection: if any interior candidate was found, prefer it over the exterior
-        // globally-nearest; otherwise fall back to the globally-nearest (existing behavior).
+        // Final selection (D5, plan 09-30): if preferRunKey is set and the preferred run is still
+        //   interior, use it — prevents a newly-streamed crossing road from stealing the truck
+        //   away from its current road (window-invariant physics resolution).
+        //   Otherwise: prefer intBest over extBest (D4), fall back to extBest (09-17 behavior).
         //
         // signedLat = dx*tz − dz*tx  (lateral distance, sign = side — same formula as _sampleCarveWorld).
         // getTangentAt is called ONLY when a new nearest sample is discovered (rare), so the per-sample
@@ -529,6 +532,10 @@ export class RoadSystem {
         let extBestArcLen = 0,  intBestArcLen = 0
         // BUG-10: run-arc endpoints of the matched slice (for run-global camber arcS + sign).
         let extBestArcS0 = 0, extBestArcS1 = 0, intBestArcS0 = 0, intBestArcS1 = 0
+        // D5 (BUG-14): preferred-run best — tracks the nearest interior sample on preferRunKey.
+        // Only populated when preferRunKey is set (fast-path no-op when caller passes empty string).
+        let prefBestD2 = r2, prefBestSpline = null, prefBestU = 0, prefBestN = 0
+        let prefBestArcLen = 0, prefBestArcS0 = 0, prefBestArcS1 = 0
 
         // Aliases for the 09-17 projection refine (applied to whichever best wins below)
         let bestSpline = null, bestU = 0, bestN = 0, bestRunKey = '', bestArcLen = 0
@@ -554,20 +561,29 @@ export class RoadSystem {
                     extBestArcS0 = arcS0In; extBestArcS1 = arcS1In
                 }
                 // D4: check if this sample is a new interior nearest (footprint membership)
-                if (d2 < intBestD2) {
+                // D5: also update prefBest when this sample belongs to the preferred run.
+                // The two checks share the getTangentAt call (only done once when d2 is a new nearest
+                // or when the preferred run has a closer candidate than prefBestD2).
+                const isNewGlobalNearest = (d2 < intBestD2)
+                const isNewPrefNearest   = (preferRunKey && runKey === preferRunKey && d2 < prefBestD2)
+                if (isNewGlobalNearest || isNewPrefNearest) {
                     // Compute signed lateral at this sample — getTangentAt reuses _scratchTan.
-                    // This branch fires only when a new candidate is closer than the current
-                    // interior best; the getTangentAt call is bounded by intBestD2, not extBestD2.
                     spline.getTangentAt(u, _scratchTan)
                     const tz = _scratchTan.z, tx = _scratchTan.x
                     // dx/dz are query − sample, so lateral = (sample − query) cross tangent
                     // signedLat = −dx*tz + dz*tx  (point-to-sample offset cross tangent, consistent
                     // with _sampleCarveWorld: signedLat = dx*tz − dz*tx where dx = samplePt − query)
                     const signedLat = (-dx) * tz - (-dz) * tx  // = dx_fwd*tz − dz_fwd*tx
-                    if (Math.abs(signedLat) <= footprintHW) {
+                    const isInterior = (Math.abs(signedLat) <= footprintHW)
+                    if (isNewGlobalNearest && isInterior) {
                         intBestD2 = d2; intBestSpline = spline; intBestU = u; intBestN = n
                         intBestRunKey = runKey; intBestArcLen = len
                         intBestArcS0 = arcS0In; intBestArcS1 = arcS1In
+                    }
+                    // D5: update prefBest independently — preferred run may not be globally nearest.
+                    if (isNewPrefNearest && isInterior) {
+                        prefBestD2 = d2; prefBestSpline = spline; prefBestU = u; prefBestN = n
+                        prefBestArcLen = len; prefBestArcS0 = arcS0In; prefBestArcS1 = arcS1In
                     }
                 }
             }
@@ -588,10 +604,19 @@ export class RoadSystem {
             }
         }
 
+        // D5 (plan 09-30, BUG-14): hysteresis — if the preferred run is still interior, use it.
+        // This prevents a newly-streamed crossing road from winning intBest by discrete sample
+        // density while the truck is still inside the current road's footprint. The preferred run
+        // must have a sample inside the footprint (prefBestSpline != null) to be used — if the
+        // truck has truly left the preferred road, prefBestD2 stays at r2 and we fall through.
+        if (prefBestSpline) {
+            bestSpline  = prefBestSpline; bestU = prefBestU; bestN = prefBestN
+            bestRunKey  = preferRunKey;   bestArcLen = prefBestArcLen
+            bestArcS0   = prefBestArcS0;  bestArcS1 = prefBestArcS1
         // D4 (plan 09-20): arm-disambiguation — prefer interior spline over exterior.
         // If any spline's footprint contains the query, use it; otherwise fall back to the
         // globally-nearest spline (existing 09-17 behavior, fully preserved).
-        if (intBestSpline) {
+        } else if (intBestSpline) {
             bestSpline  = intBestSpline;  bestU = intBestU; bestN = intBestN
             bestRunKey  = intBestRunKey;  bestArcLen = intBestArcLen
             bestArcS0   = intBestArcS0;   bestArcS1 = intBestArcS1
@@ -950,6 +975,10 @@ export class RoadSystem {
         // Cleared on re-stream (same site as this._tiles.clear()).
         this._junctions = new Map()
         this._junctionsFrom = null   // identity guard for _detectJunctions memoization
+        // D5 (BUG-14): preferred run key for physics hysteresis — set by _sampleCarveWorld,
+        // passed to queryNearest so a newly-streamed crossing road cannot steal the truck
+        // away from its current road mid-drive.
+        this._lastPhysicsRunKey = ''
     }
 
     // (08-07) The proto-only viz API (setProtoEnabled / setProtoParam / setProtoRadius / updateProto)
@@ -1688,8 +1717,13 @@ export class RoadSystem {
         // roadFillHeight cap intentionally NOT read here (BUG-13): physics tracks the uncapped grade.
 
         const maxExt = halfWidth + shoulderWidth + 4
-        const nr = this.queryNearest(wx, wz, maxExt)
+        // D5 (BUG-14): pass the last-known physics run key as a preference hint so queryNearest
+        // holds onto the current road even if a newly-streamed crossing road is geometrically
+        // closer by discrete sample density. Updated below after a successful query.
+        const nr = this.queryNearest(wx, wz, maxExt, this._lastPhysicsRunKey ?? '')
         if (!nr) return null
+        // D5: record the selected run key for the next call's hysteresis.
+        if (nr.runKey) this._lastPhysicsRunKey = nr.runKey
 
         const dx = wx - nr.point.x
         const dz = wz - nr.point.z
@@ -2301,6 +2335,11 @@ export class RoadSystem {
         // (Re)build profile for this run.
         const profile = this._buildRunProfile(runKey)
         if (!profile) {
+            // BUG-14 secondary: runKey not found in this._network — _tiles/_network desync.
+            // This can happen when queryNearest returns a runKey that has already been evicted
+            // from this._network by a re-stream. Fail loud so the caller can diagnose (D-16).
+            // Do NOT silently snap gradeY to 0 (that would pull the truck underground).
+            if (runKey) console.warn(`[road] runProfile: runKey "${runKey}" not in _network (desync) arcS=${arcS.toFixed(1)}`)
             result.gradeY = 0; result.camberRad = 0; result.tx = 1; result.tz = 0
             return result
         }
