@@ -466,30 +466,6 @@ const FIXTURES = [
         description: 'Sharp-cornered polyline split at the apex. Continuous-tangent frame must produce C0 ±halfWidth edges (gap<0.01 m); per-slice tangent must produce a gap (BUG-12 catch). Also: no inverted quads.',
         ribbonWeldMode: true,
     },
-    {
-        // 09-30 BUG-14 window-shift arm-flip gate (D5 hysteresis).
-        //
-        // Models the REAL failure mode: a streaming window shift adds a new road (arm B at
-        // gradeY=139) to this._tiles while the truck is still inside arm A (gradeY=118).
-        // Both arms pass through the truck's footprint (|signedLat| <= footprintHW for both).
-        // Arm B has DENSER discrete samples so the global nearest-discrete wins on arm B —
-        // reproducing the BUG-14 selector flip.
-        //
-        // Two selector strategies:
-        //   'no-hysteresis':   D4 only (intBest by nearest discrete) — flips to arm B when window
-        //     shifts. Produces gradeYFlipCount > 0 and gradeY jump = 139 - 118 = 21 m.
-        //   'with-hysteresis': D5 added (prefer arm A while still interior) — arm A wins on both
-        //     sides of the window shift. gradeYFlipCount == 0.
-        //
-        // Gate: with-hysteresis gradeYFlipCount == 0.
-        //       no-hysteresis gradeYFlipCount must be > 0 (to confirm gate bites BUG-14).
-        //
-        // windowShiftMode: special marker — computeWindowShiftMetrics handles this fixture.
-        name: 'window-shift-arm-flip',
-        role: 'gate',
-        description: 'BUG-14: two arms both inside footprint; arm B denser. D5 hysteresis must keep arm A selected across window shift (flipCount==0). D4-only must flip (contrast).',
-        windowShiftMode: true,
-    },
 ]
 
 // ── Metric computation ────────────────────────────────────────────────────────
@@ -1579,188 +1555,6 @@ function computeCamberRunMetrics() {
 }
 
 
-// ── 09-30 BUG-14 Window-shift arm-flip gate (D5 hysteresis) ──────────────────
-// Models the REAL failure mode: a streaming window shift adds a new road arm (arm B)
-// to the visible tile set while the truck is still inside arm A.
-// Both arms pass through the truck's XZ footprint.
-// Arm B has DENSER discrete samples so nearest-discrete selects arm B — BUG-14.
-//
-// The fixture uses the SAME `selectArm` vendored logic as the D4 switchback gate,
-// extended with a D5 `preferRunKey` parameter:
-//   'no-hysteresis':  D4 only (intBest by nearest discrete). Arm B wins after window shift.
-//   'with-hysteresis': D5 added — if the preferRunKey is still interior, use it.
-//
-// Geometry:
-//   Arm A: gradeY=118 m, runs along +X at Z=0. COARSE samples (footprint correctly covers query).
-//   Arm B: gradeY=139 m, runs parallel at Z=3 m (inside footprintHW=7.5 m). DENSE samples.
-//          Arm B is only "present" in the AFTER-window-shift state.
-//   Query: marches along X at Z=1 m (inside both arms' footprints since 1 < 7.5 and 3-1=2 < 7.5).
-//
-// Invariant: arm A is always closer (distance=1 m from centerline) than arm B (distance=2 m).
-//            However arm B's denser samples produce a discrete nearest that beats arm A's coarser samples.
-//
-// Arm A: ARM_LEN=60 m, COARSE_N=5 samples (12 m apart). Nearest sample to query at Z=1 is sqrt(0+1)=1 m.
-// Arm B: ARM_LEN=60 m, DENSE_N=40 samples (1.5 m apart). Nearest sample to query at Z=1 is 2 m away
-//         from the centerline (Z=3), but can be at X=query±0.75 m → d2=(0.75^2+4)=4.56 → d=2.1 m.
-//         Meanwhile arm A sample at X=query−6 m (12 m gap/2) is at d2=36+1=37 → d=6.1 m.
-//         So arm B wins by discrete nearest (2.1 < 6.1)!
-//
-// This confirms the bug is real: arm B (further from centerline) beats arm A (closer) due to sample density.
-
-// Geometry constants
-const WS_FOOTPRINT_HW  = 7.5   // m — roadHalfWidth + roadShoulderWidth (matches road.js default)
-const WS_ARM_LEN       = 60    // m
-const WS_ARM_A_Z       = 0     // arm A centerline Z (truck's road)
-const WS_ARM_B_Z       = 3     // arm B centerline Z (crossing/competing road, inside footprint)
-const WS_QUERY_Z       = 1     // query Z — inside both footprints (1<7.5 from A, 2<7.5 from B)
-const WS_ARM_A_GRADE_Y = 118   // gradeY for arm A (truck's road)
-const WS_ARM_B_GRADE_Y = 139   // gradeY for arm B (competing road, +21 m jump on flip)
-const WS_ARM_A_N       = 5     // coarse sample count for arm A (60/5 = 12 m apart)
-const WS_ARM_B_N       = 40    // dense sample count for arm B (60/40 = 1.5 m apart)
-
-/**
- * Build arm A samples (coarse, gradeY=WS_ARM_A_GRADE_Y, z=WS_ARM_A_Z).
- * Returns Array<{x, z, gradeY, runKey}>.
- */
-function buildWSArmA() {
-    const pts = []
-    for (let i = 0; i <= WS_ARM_A_N; i++) {
-        pts.push({ x: (i / WS_ARM_A_N) * WS_ARM_LEN, z: WS_ARM_A_Z, gradeY: WS_ARM_A_GRADE_Y, runKey: 'armA' })
-    }
-    return pts
-}
-
-/**
- * Build arm B samples (dense, gradeY=WS_ARM_B_GRADE_Y, z=WS_ARM_B_Z).
- * Returns Array<{x, z, gradeY, runKey}>.
- */
-function buildWSArmB() {
-    const pts = []
-    for (let i = 0; i <= WS_ARM_B_N; i++) {
-        pts.push({ x: (i / WS_ARM_B_N) * WS_ARM_LEN, z: WS_ARM_B_Z, gradeY: WS_ARM_B_GRADE_Y, runKey: 'armB' })
-    }
-    return pts
-}
-
-/**
- * Select the winning arm for a query point (qx, qz) from the given pool of samples.
- * Vendors the core of queryNearest D4+D5 logic (scalar, no Three.js).
- *
- * strategy: 'no-hysteresis' (D4 intBest only) or 'with-hysteresis' (D5 prefer preferRunKey).
- * footprintHW: half-width of arm footprints.
- * preferRunKey: for D5 — preferred run key from last frame (ignored for no-hysteresis).
- *
- * Returns { winnerRunKey: string, winnerGradeY: number }.
- */
-function selectWSArm(armSamples, qx, qz, strategy, footprintHW, preferRunKey) {
-    let extBestD2 = Infinity
-    let extBestRunKey = ''
-    let extBestGradeY = 0
-
-    let intBestD2 = Infinity
-    let intBestRunKey = ''
-    let intBestGradeY = 0
-
-    let prefBestD2 = Infinity
-    let prefBestRunKey = ''
-    let prefBestGradeY = 0
-
-    for (const pts of armSamples) {
-        const runKey = pts[0].runKey
-        for (let i = 0; i < pts.length; i++) {
-            const s = pts[i]
-            const dx = s.x - qx
-            const dz = s.z - qz
-            const d2 = dx * dx + dz * dz
-
-            // Compute tangent: use adjacent samples (arm runs along +X, so tx=1, tz=0 throughout).
-            // (This is a straight road — tangent is (1,0) everywhere.)
-            const tx = 1, tz = 0
-
-            // Signed lateral distance: signedLat = dx_fwd*tz − dz_fwd*tx
-            // (sample-to-query offset cross tangent, same as road.js)
-            // fwd offset: query − sample = (qx-s.x, qz-s.z) = (−dx, −dz)
-            const signedLat = (-dx) * tz - (-dz) * tx   // = dz (for tx=1,tz=0: signedLat = dz)
-            const isInterior = Math.abs(signedLat) <= footprintHW
-
-            // Ext best
-            if (d2 < extBestD2) {
-                extBestD2 = d2; extBestRunKey = runKey; extBestGradeY = s.gradeY
-            }
-
-            // Int best
-            const isNewGlobal = d2 < intBestD2
-            // Pref best: only update when this sample is from the preferred run AND closer than prefBestD2
-            const isNewPref   = preferRunKey && runKey === preferRunKey && d2 < prefBestD2
-
-            if (isNewGlobal || isNewPref) {
-                // Lateral already computed
-                if (isNewGlobal && isInterior) {
-                    intBestD2 = d2; intBestRunKey = runKey; intBestGradeY = s.gradeY
-                }
-                if (isNewPref && isInterior) {
-                    prefBestD2 = d2; prefBestRunKey = runKey; prefBestGradeY = s.gradeY
-                }
-            }
-        }
-    }
-
-    if (strategy === 'with-hysteresis' && prefBestRunKey) {
-        return { winnerRunKey: prefBestRunKey, winnerGradeY: prefBestGradeY }
-    }
-    if (intBestRunKey) {
-        return { winnerRunKey: intBestRunKey, winnerGradeY: intBestGradeY }
-    }
-    return { winnerRunKey: extBestRunKey, winnerGradeY: extBestGradeY }
-}
-
-/**
- * Compute window-shift arm-flip metrics.
- * Returns { flipCount_noHyst, flipCount_withHyst, gradeJump_noHyst, gradeJump_withHyst }
- */
-function computeWindowShiftMetrics() {
-    const armA = buildWSArmA()
-    const armB = buildWSArmB()
-
-    // Window-before: only arm A is available.
-    // Window-after: arm A + arm B both available (window shift brought arm B into range).
-    const windowBefore = [armA]
-    const windowAfter  = [armA, armB]
-
-    // March query along X at WS_QUERY_Z.
-    // For each query step, compare selection before and after the window shift.
-    // Count how many steps FLIP runKey after the window shift.
-    const N_STEPS = 30
-    let flipCount_noHyst   = 0
-    let flipCount_withHyst = 0
-    let gradeJump_noHyst   = 0   // max |ΔgradeY| across window shift (no-hysteresis)
-    let gradeJump_withHyst = 0   // max |ΔgradeY| across window shift (with-hysteresis)
-
-    for (let i = 0; i <= N_STEPS; i++) {
-        const qx = (i / N_STEPS) * WS_ARM_LEN
-        const qz = WS_QUERY_Z
-
-        // Before window shift: only arm A available. Both strategies return arm A.
-        const beforeNoHyst   = selectWSArm(windowBefore, qx, qz, 'no-hysteresis',  WS_FOOTPRINT_HW, '')
-        const beforeWithHyst = selectWSArm(windowBefore, qx, qz, 'with-hysteresis', WS_FOOTPRINT_HW, 'armA')
-
-        // After window shift: arm A + arm B available.
-        // No-hysteresis: D4 intBest by nearest discrete. Arm B wins due to density.
-        const afterNoHyst   = selectWSArm(windowAfter, qx, qz, 'no-hysteresis',  WS_FOOTPRINT_HW, '')
-        // With-hysteresis: D5 prefers arm A (preferRunKey='armA') as long as arm A is still interior.
-        const afterWithHyst = selectWSArm(windowAfter, qx, qz, 'with-hysteresis', WS_FOOTPRINT_HW, 'armA')
-
-        // Count flips (before → after window shift)
-        if (beforeNoHyst.winnerRunKey !== afterNoHyst.winnerRunKey) flipCount_noHyst++
-        if (beforeWithHyst.winnerRunKey !== afterWithHyst.winnerRunKey) flipCount_withHyst++
-
-        // Track max gradeY jump across window shift
-        gradeJump_noHyst   = Math.max(gradeJump_noHyst,   Math.abs(afterNoHyst.winnerGradeY   - beforeNoHyst.winnerGradeY))
-        gradeJump_withHyst = Math.max(gradeJump_withHyst, Math.abs(afterWithHyst.winnerGradeY - beforeWithHyst.winnerGradeY))
-    }
-
-    return { flipCount_noHyst, flipCount_withHyst, gradeJump_noHyst, gradeJump_withHyst }
-}
 
 // ── Table printing ────────────────────────────────────────────────────────────
 
@@ -1806,7 +1600,6 @@ const camberRateModeFixtures = []
 const seamGradeModeFixtures  = []
 const ribbonWeldModeFixtures = []
 const camberRunModeFixtures  = []
-const windowShiftModeFixtures = []
 
 for (const fix of FIXTURES) {
     if (fix.physicsMode) {
@@ -1839,10 +1632,6 @@ for (const fix of FIXTURES) {
     }
     if (fix.camberRunMode) {
         camberRunModeFixtures.push(fix)
-        continue
-    }
-    if (fix.windowShiftMode) {
-        windowShiftModeFixtures.push(fix)
         continue
     }
     const m = computeMetrics(fix)
@@ -2316,51 +2105,6 @@ if (camberRunModeFixtures.length > 0) {
     if (Math.abs(edgeCheck) > 1e-9) {
         console.log('  WARNING: crownProfile(edge) should be 0; got', edgeCheck)
     }
-}
-
-// ── 09-30 BUG-14 Window-shift arm-flip gate section ─────────────────────────
-if (windowShiftModeFixtures.length > 0) {
-    console.log('='.repeat(120))
-    console.log('  WINDOW-SHIFT ARM-FLIP GATE (09-30 BUG-14 — D5 hysteresis prevents crossing road from stealing truck)')
-    console.log(`  Gate: with-hysteresis flipCount == 0  |  no-hysteresis flipCount must be > 0 (BUG-14 catch)`)
-    console.log(`  Fixture: arm A (gradeY=${WS_ARM_A_GRADE_Y}, coarse ${WS_ARM_A_N} samples), arm B (gradeY=${WS_ARM_B_GRADE_Y}, dense ${WS_ARM_B_N} samples), query Z=${WS_QUERY_Z} m`)
-    console.log(`  Both arms within footprintHW=${WS_FOOTPRINT_HW} m. Arm B denser → wins intBest without hysteresis.`)
-    console.log('='.repeat(120))
-    const wsHdr = [
-        col('Fixture',                 30),
-        col('noHyst flips',            14),
-        col('noHyst>0?',               14),
-        col('noHyst gradeJump(m)',     20),
-        col('withHyst flips',          16),
-        col('withHyst jump(m)',        16),
-        col('GATE',                    8),
-    ].join(' | ')
-    console.log(wsHdr)
-    console.log('-'.repeat(120))
-
-    for (const fix of windowShiftModeFixtures) {
-        const { flipCount_noHyst, flipCount_withHyst, gradeJump_noHyst, gradeJump_withHyst } = computeWindowShiftMetrics()
-        const noHystFlips     = flipCount_noHyst > 0
-        const withHystNoFlip  = flipCount_withHyst === 0
-        const gatePass        = withHystNoFlip
-
-        if (fix.role === 'gate' && !gatePass) allGatesPassed = false
-
-        const row = [
-            col(fix.name,                              30),
-            col(flipCount_noHyst.toString(),           14),
-            col(noHystFlips ? 'YES (expected)' : 'no (unexpected)', 14),
-            col(gradeJump_noHyst.toFixed(1),           20),
-            col(flipCount_withHyst.toString(),         16),
-            col(gradeJump_withHyst.toFixed(1),         16),
-            col(gatePass ? '  PASS  ' : '  FAIL  ',    8),
-        ].join(' | ')
-        console.log(row)
-        console.log(`    no-hysteresis: ${flipCount_noHyst} flip(s), max gradeY jump=${gradeJump_noHyst.toFixed(1)} m (would FAIL gate — confirms BUG-14)`)
-        console.log(`    with-hysteresis: ${flipCount_withHyst} flip(s), max gradeY jump=${gradeJump_withHyst.toFixed(1)} m (gate: flipCount==0)`)
-    }
-    console.log('-'.repeat(120))
-    console.log('')
 }
 
 process.exit(allGatesPassed ? 0 : 1)
