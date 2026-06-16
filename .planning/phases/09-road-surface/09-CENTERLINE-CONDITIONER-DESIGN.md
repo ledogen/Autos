@@ -11,7 +11,43 @@ pipeline GENERATES bad geometry then tries to CLEAN it with passes that don't wo
 have *more* code, we did it wrong. Safety nets (VBC-07) stay only as a transition and are removed once
 the result is confirmed crease-free in-sim.
 
-## ARCHITECTURE DECISION (2026-06-16, user) — fix the SOURCE, do NOT build a conditioner layer
+## ARCHITECTURE DECISION v2 (2026-06-16, user steering — SUPERSEDES v1 below)
+
+The v1 "hard curvature gate in the A*" is REJECTED — it would constrain the router's tight-turn
+character, which the user LIKES. Final shape:
+
+1. **Router first (most important): fix its COST/CHARACTER, keep its curvature freedom.**
+   - KEEP valley-following — `wAlt·toH` valley-bias is CORRECT (roads follow valleys: people/water).
+     Do NOT gut it or roads glue to crests. The router may route tight corners — that's liked character.
+   - KEEP long straights + variable waypoint spacing, tight turns, switchbacks, traverses (all liked).
+   - ADD climb-anticipation: gain altitude SOONER within the valley/traverse when a high pass is coming,
+     so the route doesn't wall-out. This is a VERTICAL-progress term (penalize being below the
+     start→goal constant-grade ramp), ORTHOGONAL to the lateral valley preference — NOT crest-riding.
+   - Improve switchback parallelism (context-dependent turn cost: cheap when a turn dodges over-grade;
+     distinct tighter fold-safe apex radius so arms sit ~2×apex apart; note the cleanup passes may be
+     EXCISING tight switchbacks as "loops" — deleting them may restore parallelism for free).
+
+2. **Then ONE minimal spline modification of the routed points (the BUG-12 fix):**
+   - Enforce MIN TURN RADIUS (HARD) but MINIMALLY: only touch corners that would fold the ±halfWidth
+     ribbon; round just to the FOLD-SAFE floor (~halfWidth+clearance ≈ 7–8 m) so tight turns stay
+     tight (do NOT gentle them to 15 m); leave straights untouched.
+   - Then enforce MAX GRADE (SOFT, "if possible") — occasional grade deviations are FINE, navigable,
+     and add character. Do not fight terrain hard on grade.
+   - This single surgical pass REPLACES the cleanup stack (`_removeLoops`/`_removeSelfCrossings`/
+     `_filletMinRadius`/dead `_limitCurvature`) → they all delete. It is NOT a heavy conditioner and
+     NOT uniform resampling.
+
+3. **Camber discontinuity (seed-6): fix WITHOUT uniform resampling.** Variable spacing is liked — do
+   NOT uniformly resample the centerline. Instead make the camber/curvature computation
+   SPACING-INVARIANT: sample signed curvature at a CONSISTENT ARC-LENGTH scale (a fixed window in
+   metres), not per-raw-point. Smooth camber regardless of uneven point spacing; route character intact.
+
+Priority/tolerance: min-radius HARD, max-grade SOFT (occasional violations welcome). Fold-safe floor,
+not the 15 m feel value, is the hard radius bound (feel stays a separate slider).
+
+---
+## ARCHITECTURE DECISION v1 (SUPERSEDED by v2 above — kept for history)
+### fix the SOURCE, do NOT build a conditioner layer
 
 Reject the "conditioner" framing (a post-pass that fixes bad waypoints — it's the generate-then-fix
 abstraction the user wants gone). Instead make the geometry valid where it's produced. Two parts:
@@ -137,19 +173,27 @@ Extend the 'p' dump (`road.js debugDumpNearestRun` + main.js handler) to ALSO em
 (`rowWps` pre-CR) for the run, so the conditioner is built/verified against its true INPUT, not the
 already-conditioned output. Drive to a sharp corner, press p, that becomes a fixture.
 
-## First steps for the fresh session (source-fix sequencing)
+## First steps for the fresh session (v2 sequencing)
 
-1. Read this doc (esp. the ARCHITECTURE DECISION) + 09-31-PLAN.md + 09-CONTEXT.md (VBC) + QUAL-03.
-2. Build the headless gates first: extract the two real dumps' networkPoints into
-   `diag-minradius-pipeline.mjs` as fixtures; add (A) dense minR ≥ minRadius, (B) gentle preserved,
-   (C) uniform spacing / curvature-jump (camber) below threshold. Add a router unit test that runs
-   `_protoConnect` on real seeds and asserts the routed path's implied turn radius ≥ minRadius.
-3. **Router first:** convert the `wTurn` soft penalty into a hard curvature gate in `_protoConnect`
-   (forbid sub-minRadius accumulated turns; grade stays soft). Verify the router unit test: no
-   sub-radius corners routed; confirm valley-exit still finds routes on tight seeds.
-4. **Then the single fit:** replace `_streamNetwork` steps 3–6 with one curvature-preserving + uniform
-   arc-length grid→curve fit. Verify (A)/(B)/(C) gates green on the real dumps + synthetic fixtures.
-5. Keep nets (VBC-07); headless gate exits 0; in-sim verify (seed 8 seam + seed 6 camber + rd_minr).
+1. Read this doc (esp. ARCHITECTURE DECISION v2) + 09-31-PLAN.md + 09-CONTEXT.md (VBC) + QUAL-03.
+2. **Headless gates first** (extract the two real dumps as fixtures in `diag-minradius-pipeline.mjs`):
+   - (A) MIN-RADIUS: after the minimal spline pass, every corner's DENSE-sampled XZ radius ≥ fold-safe
+     floor (~halfWidth+clearance). (B) MINIMAL: straights/gentle curves and overall route shape are
+     unchanged (don't over-smooth — measure point displacement off the original where radius was already
+     ok). (C) CAMBER: signed curvature sampled at a CONSISTENT ARC-LENGTH window is continuous
+     (no spikes) on the real dumps — WITHOUT uniform-resampling the centerline.
+   - Router character metrics (for part 1): grade-profile vs start→goal ramp (climb-anticipation),
+     switchback arm-spacing, peak grade. Tune to numbers, not screenshots.
+3. **Router first (most important):** improve `_protoEdgeCost`/turn model for CHARACTER — keep valley
+   bias (`wAlt`), keep straights/tight-turns/switchbacks; add climb-anticipation (penalize being below
+   the start→goal altitude ramp); make turn cost context-dependent (cheap when dodging over-grade).
+   Do NOT add a hard curvature gate (keep tight-turn freedom). Verify valley-following preserved + climb
+   starts earlier on a high-pass seed.
+4. **Then minimal spline pass:** modify routed points to enforce min-radius (hard, fold-safe floor,
+   ONLY at folding corners, straights untouched) then max-grade (soft, occasional deviation ok). This
+   is where filletMinRadius failed — use a constructive arc only at violating corners. Camber fix =
+   arc-length-consistent curvature sampling (step 2C), not uniform points.
+5. Keep nets (VBC-07); headless gates exit 0; in-sim verify (seed 8 seam + seed 6 camber + rd_minr +
+   subjective: valleys/straights/switchbacks still feel right).
 6. DELETE `_removeLoops` / `_removeSelfCrossings` / `_filletMinRadius` / dead `_limitCurvature`;
-   re-verify. The deletion + a smaller road.js is the done-signal (the simplification), not just "folds gone".
-7. If the grid fit can't hit the gates cleanly: escalate to the hybrid-A* arc-primitive fallback.
+   re-verify. Deletion + smaller road.js is the done-signal, not just "folds gone".
