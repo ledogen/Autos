@@ -35,7 +35,7 @@
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
-import { crownProfile, potholeNoise, signedCurvature, filletMinRadius } from './road-carve.js'
+import { crownProfile, potholeNoise, signedCurvature, filletMinRadius, arcFilletWaypoints } from './road-carve.js'
 // roadQuality imported for SURF-06 D-03: pothole severity uses the same per-stretch
 // quality hook as markings. Importing from road-quality.js (not road-mesh.js) avoids
 // the road-mesh.js → terrain.js → road.js chain issues.
@@ -1409,12 +1409,21 @@ export class RoadSystem {
                 if (rowWps.length < 2) {
                     cachedPts = []
                 } else {
-                    const spline = new THREE.CatmullRomCurve3(rowWps, false, 'centripetal', 0.5)
-                    let pts = spline.getPoints(Math.max(24, rowWps.length * 2))
+                    // Step 2 (BUG-12 fix): apply constructive arc-fillet to the SPARSE A* waypoints
+                    // BEFORE CR densification. arcFilletWaypoints inserts clean arc-point sequences at
+                    // sub-floor corners, ensuring the CR spline through them never folds the ±halfWidth
+                    // ribbon. Runs on plain {x,y,z}; convert from/back to THREE.Vector3.
+                    const filledPlain = arcFilletWaypoints(
+                        rowWps.map(p => ({ x: p.x, y: p.y, z: p.z })),
+                        this._proto.params.minTurnRadius  // fold-safe floor (≥ halfWidth + clearance + ε, D0)
+                    )
+                    const filledWps = filledPlain.map(p => new THREE.Vector3(p.x, p.y, p.z))
+                    const spline = new THREE.CatmullRomCurve3(filledWps, false, 'centripetal', 0.5)
+                    let pts = spline.getPoints(Math.max(24, filledWps.length * 2))
                     // Post-passes run on the FULL canonical run — not a windowed slice (D-16).
                     pts = this._removeLoops(pts)
                     pts = this._removeSelfCrossings(pts)
-                    pts = this._filletMinRadius(pts, this._proto.params.minTurnRadius)  // D0 arc-fillet (replaces _limitCurvature excision)
+                    pts = this._filletMinRadius(pts, this._proto.params.minTurnRadius)  // D0 safety net (removed in Step 4)
                     cachedPts = pts
                 }
                 this._canonRunCache.set(bandKey, cachedPts)
@@ -2180,40 +2189,61 @@ export class RoadSystem {
         const slewRateRadPerM = (p.roadCamberRate ?? 1.5) * (Math.PI / 180)
         const MAX_CAMBER = 6 * (Math.PI / 180)   // ±6° clamp
 
-        // Step 1: compute arc positions along the polyline.
-        const arcPos    = new Array(N)
-        const rawCamber = new Array(N)
+        // Step 1: build arc-position LUT for the polyline.
+        const arcPos = new Array(N)
         arcPos[0] = 0
+        for (let i = 1; i < N; i++) {
+            const dx = pts[i].x - pts[i - 1].x, dz = pts[i].z - pts[i - 1].z
+            arcPos[i] = arcPos[i - 1] + Math.sqrt(dx * dx + dz * dz)
+        }
+        const totalArc = arcPos[N - 1]
+
+        // Step 3 (BUG-12 camber fix): compute curvature using a CONSISTENT ARC-LENGTH WINDOW
+        // (camberArcWindow metres) instead of the per-adjacent-point finite difference.
+        // Per-point diff is SPACING-SENSITIVE: a 2 m segment + 90° turn gives kappa ≈ 1/2 m
+        // regardless of the 20 m road context → massive camber spikes at uneven-spacing points.
+        // Arc-length window: sample tangent at (s − W/2) and (s + W/2); the direction change
+        // over W metres is spacing-invariant → camber is smooth regardless of point distribution.
+        //
+        // Helper: polyline tangent at arc-length s (binary-search into arcPos LUT).
+        const windowM = p.camberArcWindow ?? 20  // m — arc-length curvature window (D-src Step 3)
+        const tangentAtArcS = (s) => {
+            s = Math.max(0, Math.min(totalArc, s))
+            // Binary search for the segment containing s.
+            let lo = 0, hi = N - 1
+            while (lo < hi - 1) {
+                const mid = (lo + hi) >> 1
+                if (arcPos[mid] <= s) lo = mid; else hi = mid
+            }
+            const span = arcPos[hi] - arcPos[lo]
+            if (span < 1e-9) {
+                // Zero-length segment — use the segment tangent from the nearest non-degenerate pair.
+                for (let k = lo; k < N - 1; k++) {
+                    const dx = pts[k + 1].x - pts[k].x, dz = pts[k + 1].z - pts[k].z
+                    const len = Math.sqrt(dx * dx + dz * dz)
+                    if (len > 1e-9) return { tx: dx / len, tz: dz / len }
+                }
+                return { tx: 1, tz: 0 }
+            }
+            // Interpolate direction between pts[lo] and pts[hi].
+            const dx = pts[hi].x - pts[lo].x, dz = pts[hi].z - pts[lo].z
+            const len = Math.sqrt(dx * dx + dz * dz) || 1e-9
+            return { tx: dx / len, tz: dz / len }
+        }
+
+        const rawCamber = new Array(N)
         // P4 (BUG-10): seed from predecessor's end camber instead of hard 0.
-        // Curvature is undefined at sample 0 (no predecessor segment), so rawCamber[0]
-        // carries the boundary seed. _runStartCamber returns 0 for genuine run starts.
         rawCamber[0] = this._runStartCamber(runKey)
 
-        // Tangents: compute forward tangent from point i to i+1.
-        // For curvature at sample i (i≥1), use tangent at i-1 → i (T0) and i → i+1 (T1).
         for (let i = 1; i < N; i++) {
-            const ax = pts[i].x - pts[i - 1].x
-            const az = pts[i].z - pts[i - 1].z
-            const ds = Math.sqrt(ax * ax + az * az)
-            arcPos[i] = arcPos[i - 1] + ds
-
-            // Curvature at i: finite-difference using prev-seg tangent and next-seg tangent.
-            // T0 = direction from pts[i-1] → pts[i].
-            // T1 = direction from pts[i] → pts[i+1] (or repeat T0 at end).
-            const t0x = ax, t0z = az  // already unnormalized; signedCurvature normalises internally
-
-            let t1x, t1z, effectiveDs
-            if (i < N - 1) {
-                t1x = pts[i + 1].x - pts[i].x
-                t1z = pts[i + 1].z - pts[i].z
-                const ds1 = Math.sqrt(t1x * t1x + t1z * t1z) || 1e-8
-                effectiveDs = (ds + ds1) * 0.5
-            } else {
-                t1x = t0x; t1z = t0z   // boundary: replicate
-                effectiveDs = ds || 1e-8
-            }
-
-            const kappa = signedCurvature(t0x, t0z, t1x, t1z, effectiveDs)
+            const s = arcPos[i]
+            const sA = Math.max(0, s - windowM / 2)
+            const sB = Math.min(totalArc, s + windowM / 2)
+            const tA = tangentAtArcS(sA)
+            const tB = tangentAtArcS(sB)
+            const ds = sB - sA
+            // signedCurvature: |dT/ds| × sign(cross) — spacing-invariant over the window.
+            const kappa = signedCurvature(tA.tx, tA.tz, tB.tx, tB.tz, ds)
             const raw = camberStrength * kappa
             rawCamber[i] = Math.max(-MAX_CAMBER, Math.min(MAX_CAMBER, raw))
         }
