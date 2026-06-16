@@ -214,6 +214,153 @@ export function potholeNoise(wx, wz, rq, params) {
     return combined * amplitude * severity
 }
 
+/**
+ * arcFilletWaypoints — constructive minimum-turn-radius pass.
+ *
+ * Works on the SPARSE A* waypoints (before CR densification). At each interior
+ * waypoint B between A and C, the DEFLECTION ANGLE φ (exterior turn angle) is
+ * computed. The implied minimum spline radius near B is approximately:
+ *   r_implied ≈ min(|AB|, |BC|) / (2 × |sin(φ/2)|)
+ * (This is the inscribed-circle radius for a sharp corner — the CR spline
+ * will produce at least this radius near B.)
+ *
+ * If r_implied < minRadius: replace B with a proper circular arc of radius = minRadius
+ * tangent to both legs (constructive, NOT relaxation). This is the MINIMAL fix:
+ * straights and already-OK geometry pass through untouched (PROPERTY B).
+ *
+ * Algorithm per interior waypoint B between A and C:
+ *   1. Compute XZ leg directions dAB (A→B) and dBC (B→C).
+ *   2. Deflection angle φ = π − acos(dot(dAB, dBC)).
+ *   3. Implied spline radius r = min(|AB|,|BC|) / (2 × sin(φ/2)), or Infinity if φ < 1e-4.
+ *   4. If r ≥ minRadius: pass through unchanged.
+ *   5. Tangent length t = minRadius × tan(φ/2). If t > 0.9 × min leg: skip (degenerate).
+ *   6. Trim points T1 = B − t×dAB, T2 = B + t×dBC (XZ); Y linearly blended.
+ *   7. Arc center at T1 + minRadius × inward_normal_to_dAB.
+ *   8. Insert N = max(4, ceil(arcLen/2)) arc points from T1 to T2 (inclusive), then
+ *      emit T2 as the leg-resume point so the downstream leg BC starts correctly.
+ *
+ * Pure function of (points, minRadius) — deterministic (D-16).
+ * NOT synced to WORKER_SOURCE (main-thread centerline geometry only).
+ *
+ * @param {Array<{x:number,y:number,z:number}>} points — sparse A* waypoints (≥3). Not mutated.
+ * @param {number} minRadius — fold-safe floor (m); typically halfWidth + clearance ≈ 5.6 m.
+ * @returns {Array<{x:number,y:number,z:number}>} new waypoint array with sharp corners replaced by arcs.
+ */
+export function arcFilletWaypoints(points, minRadius) {
+    const n = points.length
+    if (n < 3 || !(minRadius > 0)) return points.map(p => ({ x: p.x, y: p.y, z: p.z }))
+
+    const out = [{ x: points[0].x, y: points[0].y, z: points[0].z }]
+
+    // Track whether the previous iteration pushed a T2 point (ending an arc).
+    // If so, the current waypoint B is already "pre-empted" by that T2, and
+    // we should NOT push B separately — instead, start the next leg from T2.
+    let prevT2 = null   // { x, y, z } of the T2 trim point from the last arc, or null
+
+    for (let i = 1; i < n - 1; i++) {
+        const rawA = prevT2 ?? points[i - 1]  // effective incoming point (post-trim from last arc)
+        const B = points[i]
+        const C = points[i + 1]
+
+        // Leg vectors (XZ only for direction; Y for height blending)
+        const abX = B.x - rawA.x, abZ = B.z - rawA.z
+        const bcX = C.x - B.x,   bcZ = C.z - B.z
+        const lenAB = Math.sqrt(abX*abX + abZ*abZ)
+        const lenBC = Math.sqrt(bcX*bcX + bcZ*bcZ)
+
+        if (lenAB < 1e-6 || lenBC < 1e-6) {
+            // Degenerate leg — emit B and clear prevT2
+            out.push({ x: B.x, y: B.y, z: B.z })
+            prevT2 = null
+            continue
+        }
+
+        // Unit leg directions
+        const dABx = abX / lenAB, dABz = abZ / lenAB
+        const dBCx = bcX / lenBC, dBCz = bcZ / lenBC
+
+        // Deflection angle φ = exterior turn angle
+        const dot = dABx * dBCx + dABz * dBCz
+        const interiorAngle = Math.acos(Math.max(-1, Math.min(1, dot)))
+        const phi = Math.PI - interiorAngle
+
+        if (phi < 1e-4) {
+            // Nearly straight — no fillet
+            out.push({ x: B.x, y: B.y, z: B.z })
+            prevT2 = null
+            continue
+        }
+
+        // Implied minimum spline radius near B
+        const sinHalfPhi = Math.sin(phi / 2)
+        const rImplied = sinHalfPhi < 1e-6 ? Infinity : Math.min(lenAB, lenBC) / (2 * sinHalfPhi)
+
+        if (rImplied >= minRadius) {
+            // Already OK — pass through unchanged (PROPERTY B)
+            out.push({ x: B.x, y: B.y, z: B.z })
+            prevT2 = null
+            continue
+        }
+
+        // Tangent length for the arc
+        const tanHalfPhi = Math.tan(phi / 2)
+        const t = minRadius * tanHalfPhi
+
+        if (t > lenAB * 0.9 || t > lenBC * 0.9) {
+            // Arc won't fit — emit B unchanged (degenerate; can't fillet)
+            out.push({ x: B.x, y: B.y, z: B.z })
+            prevT2 = null
+            continue
+        }
+
+        // Trim points in XZ; Y linearly interpolated
+        const T1x = B.x - t * dABx, T1z = B.z - t * dABz
+        const T2x = B.x + t * dBCx, T2z = B.z + t * dBCz
+        const T1y = rawA.y + (lenAB - t) / lenAB * (B.y - rawA.y)
+        const T2y = B.y + t / lenBC * (C.y - B.y)
+
+        // Arc center: minRadius × inward normal from T1 (perpendicular to dAB, pointing toward turn center)
+        const cross = dABx * dBCz - dABz * dBCx  // + = CCW/left turn
+        let nx, nz
+        if (cross >= 0) { nx = -dABz; nz = dABx  }   // left turn: center to the left
+        else             { nx =  dABz; nz = -dABx }   // right turn: center to the right
+
+        const Cx = T1x + minRadius * nx
+        const Cz = T1z + minRadius * nz
+
+        // Arc angles
+        const aT1 = Math.atan2(T1z - Cz, T1x - Cx)
+        const aT2 = Math.atan2(T2z - Cz, T2x - Cx)
+
+        // Sweep direction (same as turn direction)
+        let sweepAngle = aT2 - aT1
+        if (cross >= 0) { if (sweepAngle < 0) sweepAngle += 2 * Math.PI }  // CCW: keep positive
+        else            { if (sweepAngle > 0) sweepAngle -= 2 * Math.PI }  // CW: keep negative
+
+        // Insert arc points (including T1 and T2)
+        const arcLen = minRadius * Math.abs(sweepAngle)
+        const N = Math.max(4, Math.ceil(arcLen / 2.0))
+        for (let k = 0; k <= N; k++) {
+            const frac = k / N
+            const angle = aT1 + frac * sweepAngle
+            out.push({
+                x: Cx + minRadius * Math.cos(angle),
+                y: T1y + frac * (T2y - T1y),
+                z: Cz + minRadius * Math.sin(angle),
+            })
+        }
+
+        // Record T2 so the next iteration uses it as the incoming point (instead of B)
+        prevT2 = { x: T2x, y: T2y, z: T2z }
+    }
+
+    // Push the last endpoint
+    const last = points[n - 1]
+    out.push({ x: last.x, y: last.y, z: last.z })
+
+    return out
+}
+
 // ── CR-02: Shared signed-curvature helper (SURF-03 / plan 09-08) ─────────────
 // EXPORTED so it is NOT swept into the byte-identical Worker CARVE SYNC mirror
 // (the Worker never computes curvature; sampleCarve only reads the pre-baked table).
