@@ -49,6 +49,18 @@ const FIELDS = [
   'fl_fz', 'fr_fz', 'rl_fz', 'rr_fz',
   // Phase 4.1 additions — per-wheel strut compression (D-12), 2026-06-01
   'fl_sc', 'fr_sc', 'rl_sc', 'rr_sc',
+  // BUG-14 diagnostic additions (road resolution at truck CG), 2026-06-16 — appended at END:
+  //   rd_gh  = terrain.analyticHeight(px,pz) — the actual ground the physics sees (carve-inclusive)
+  //   rd_hit = 1 if queryNearest found a road in carve range, else 0
+  //   rd_rk  = resolved runKey hash (changes ⇒ run/arm flip)
+  //   rd_arcs= resolved run-global arcS
+  //   rd_gy  = runProfile(arcS,runKey).gradeY — the carve grade source (the value that jumps)
+  //   rd_py  = nr.point.y — old per-slice spline Y (for comparison)
+  //   rd_lat = signed lateral distance from centerline
+  //   rd_lrk = _lastPhysicsRunKey hash (hysteresis hint; rk≠lrk at a seam ⇒ hysteresis didn't hold)
+  'rd_gh', 'rd_hit', 'rd_rk', 'rd_arcs', 'rd_gy', 'rd_py', 'rd_lat', 'rd_lrk',
+  // Per-wheel ground sample: analyticHeight at each hub XZ (FL,FR,RL,RR) — which corner sees the step
+  'rd_ghfl', 'rd_ghfr', 'rd_ghrl', 'rd_ghrr',
 ]
 
 // ── Private helpers ───────────────────────────────────────────────────────────
@@ -115,15 +127,24 @@ export function startTimedRecording (durationSec) {
 }
 
 /**
+ * Is frame recording currently active? Lets the caller skip building optional
+ * diagnostics (e.g. the road-resolution probe) when no log is being captured.
+ */
+export function isRecording () { return _recording }
+
+/**
  * Capture one physics tick as a row in the frame buffer.
  * No-op when recording is off.
  *
  * @param {number} simTime - Accumulated simulation time in seconds.
  * @param {object} vehicleState - Full vehicle state object (position, velocity, quaternion, etc.).
  * @param {Array}  wheelDebug  - Array of 4 objects [{fn, fy, sa, c}, ...] (FL, FR, RL, RR).
+ * @param {object} [roadDebug] - BUG-14 diagnostic: { gh, hit, rk, arcS, gradeY, pointY, lat, lrk }.
+ *                               Omitted/null → all rd_* fields log 0.
  */
-export function captureFrame (simTime, vehicleState, wheelDebug) {
+export function captureFrame (simTime, vehicleState, wheelDebug, roadDebug) {
   if (!_recording) return
+  const rd = roadDebug || {}
 
   const p = vehicleState.position
   const v = vehicleState.velocity
@@ -152,6 +173,10 @@ export function captureFrame (simTime, vehicleState, wheelDebug) {
     fl.fz ?? 0, fr.fz ?? 0, rl.fz ?? 0, rr.fz ?? 0,
     // Phase 4.1 additions — per-wheel strut compression (D-12), 2026-06-01
     fl.strutComp ?? 0, fr.strutComp ?? 0, rl.strutComp ?? 0, rr.strutComp ?? 0,
+    // BUG-14 diagnostic additions — road resolution at truck CG, 2026-06-16
+    rd.gh ?? 0, rd.hit ?? 0, rd.rk ?? 0, rd.arcS ?? 0, rd.gradeY ?? 0, rd.pointY ?? 0, rd.lat ?? 0, rd.lrk ?? 0,
+    // Per-wheel ground sample (FL,FR,RL,RR)
+    rd.ghfl ?? 0, rd.ghfr ?? 0, rd.ghrl ?? 0, rd.ghrr ?? 0,
   ])
 }
 

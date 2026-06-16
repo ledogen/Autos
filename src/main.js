@@ -18,11 +18,11 @@
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics } from './physics.js'
-import { getBodyContactPoints } from './suspension.js'
+import { getBodyContactPoints, getWheelPosition } from './suspension.js'
 import { updateVehicle, SPAWN_STATE } from './vehicle.js'
 import { updateCamera, getCameraMode, getFreecamPosition } from './camera.js'
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors } from './debug.js'
-import { captureFrame, toggleRecording, openInitialCondition } from './logger.js'
+import { captureFrame, toggleRecording, openInitialCondition, isRecording } from './logger.js'
 import { TerrainSystem } from './terrain.js'
 import { RoadSystem, CHUNK_SIZE } from './road.js'
 import { RoadMeshSystem } from './road-mesh.js'
@@ -1091,7 +1091,22 @@ function loop () {
     _prevRenderQuat.copy(vehicleState.quaternion)
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, queryVertexContacts)
     simTime += PHYSICS_DT
-    captureFrame(simTime, vehicleState, vehicleState.wheelDebug)
+    // BUG-14 diagnostic: resolve the road at the truck CG exactly as the physics carve path
+    // does, plus the actual ground sample, and log it. Computed only while recording so it
+    // adds zero per-step cost in normal play (queryNearest scans a 3×3 tile block).
+    let roadDebug = null
+    if (isRecording() && roadSystem && terrainSystem && !_gridWorldActive) {
+      const px = vehicleState.position.x, pz = vehicleState.position.z
+      roadDebug = roadSystem.debugSampleAt(px, pz)
+      roadDebug.gh = terrainSystem.analyticHeight(px, pz)
+      // Per-wheel ground sample (FL,FR,RL,RR) — see which corner first hits the step.
+      const wKeys = ['ghfl', 'ghfr', 'ghrl', 'ghrr']
+      for (let i = 0; i < 4; i++) {
+        const hub = getWheelPosition(i, vehicleState, RANGER_PARAMS)
+        roadDebug[wKeys[i]] = terrainSystem.analyticHeight(hub.x, hub.z)
+      }
+    }
+    captureFrame(simTime, vehicleState, vehicleState.wheelDebug, roadDebug)
     accumulator -= PHYSICS_DT
   }
 

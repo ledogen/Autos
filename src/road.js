@@ -1690,6 +1690,49 @@ export class RoadSystem {
         return this._junctions
     }
 
+    // ── BUG-14 diagnostic (read-only) ────────────────────────────────────────────────
+    /**
+     * Resolve the road at (wx, wz) EXACTLY as the physics carve path (_sampleCarveWorld)
+     * does, and return NUMERIC diagnostics for the frame logger. Read-only: does NOT mutate
+     * `_lastPhysicsRunKey` hysteresis state (uses its current value as the preference hint,
+     * same as the physics path would on this frame).
+     *
+     * runKeys are hashed to small non-negative ints — the value is opaque; what matters for
+     * diagnosis is whether `rk` (resolved run) CHANGES across a tile seam while `lrk` (the
+     * hysteresis hint) does not, which would prove a window-shift arm-flip.
+     *
+     * @param {number} wx — world X
+     * @param {number} wz — world Z
+     * @returns {{ hit:number, rk:number, arcS:number, gradeY:number, pointY:number, lat:number, lrk:number }}
+     */
+    debugSampleAt(wx, wz) {
+        const p             = this._params
+        const halfWidth     = p.roadHalfWidth     ?? 5
+        const shoulderWidth = p.roadShoulderWidth ?? 2.5
+        const maxExt        = halfWidth + shoulderWidth + 4
+        const prefer        = this._lastPhysicsRunKey ?? ''
+        const hashKey = (k) => {
+            if (!k) return 0
+            let h = 0
+            for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) | 0
+            return h & 0x7fffffff
+        }
+        const nr = this.queryNearest(wx, wz, maxExt, prefer)
+        if (!nr) return { hit: 0, rk: 0, arcS: 0, gradeY: 0, pointY: 0, lat: 0, lrk: hashKey(prefer) }
+        const dx = wx - nr.point.x, dz = wz - nr.point.z
+        const signedLat = dx * nr.tangent.z - dz * nr.tangent.x
+        const gradeY = this.runProfile(nr.arcS ?? 0, nr.runKey ?? '').gradeY
+        return {
+            hit:    1,
+            rk:     hashKey(nr.runKey ?? ''),
+            arcS:   nr.arcS ?? 0,
+            gradeY,
+            pointY: nr.point.y,
+            lat:    signedLat,
+            lrk:    hashKey(prefer),
+        }
+    }
+
     // ── Phase 9: Analytic carve world sampler (SURF-04) ──────────────────────────────
     /**
      * Sample the road carve at a world-space position (wx, wz) for use in analyticHeight.
