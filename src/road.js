@@ -810,7 +810,7 @@ export class RoadSystem {
         const _t2 = performance.now()
         if (before !== this._networkCenter) {
             let _npts = 0; for (const r of this._network.values()) _npts += r.points.length
-            console.debug(`[road perf] stream(route) ${(_t1 - _t0).toFixed(1)}ms | slice(spline) ${(_t2 - _t1).toFixed(1)}ms | runs ${this._network.size} | centerline pts ${_npts}`)
+            console.log(`[road perf] stream(route) ${(_t1 - _t0).toFixed(1)}ms | slice(spline) ${(_t2 - _t1).toFixed(1)}ms | runs ${this._network.size} | centerline pts ${_npts}`)
         }
         // Refresh viz lines only when the network actually re-streamed (center changed / first
         // build / re-route) and the viz is currently visible.
