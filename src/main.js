@@ -25,6 +25,8 @@ import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors } fr
 import { captureFrame, toggleRecording, openInitialCondition, isRecording } from './logger.js'
 import { TerrainSystem } from './terrain.js'
 import { RoadSystem, CHUNK_SIZE } from './road.js'
+import { perfAdd, perfMark, perfDump, perfReset } from './perf.js'  // TEMP perf triage (D-arc)
+let _perfFrame = 0  // TEMP: frame counter for auto-dump at load
 import { RoadMeshSystem } from './road-mesh.js'
 import { parseWorldSeed, seedFor } from './seed.js'
 
@@ -1143,17 +1145,29 @@ function loop () {
   // Phase 7 D-21: while free-cam is active, stream chunks around the camera, not the truck.
   // Reverts to truck position on exit so the ring stays anchored to the car in normal mode.
   const streamCenter = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
+  let _pt = performance.now()
   terrainSystem.update(streamCenter)
+  perfAdd('frame.terrain.update', performance.now() - _pt)
   // Phase 8: stream the valley-trunk network around the same center as terrain (08-07: the
   // unified update() replaces the retired updateProto — streams + slices + redraws viz if visible).
+  _pt = performance.now()
   if (roadSystem) roadSystem.update(streamCenter)
+  perfAdd('frame.road.update', performance.now() - _pt)
   // Phase 9 (SURF-01): sync road ribbon tiles with the active terrain chunk ring.
   // syncToChunkRing enqueues new tiles and disposes evicted ones co-located with chunk lifetime.
   // flushPendingQueue builds up to MAX_ROAD_BUILDS_PER_FRAME tiles per frame.
   if (roadMeshSystem && terrainSystem) {
+    _pt = performance.now()
     roadMeshSystem.syncToChunkRing(terrainSystem.getActiveChunkKeys())
+    perfAdd('frame.ribbon.sync', performance.now() - _pt)
+    _pt = performance.now()
     roadMeshSystem.flushPendingQueue()
+    perfAdd('frame.ribbon.flush', performance.now() - _pt)
   }
+  // TEMP (D-arc): auto-dump the perf profile at ~load (frame 180 ≈ 3s) and steady-state (frame 600).
+  _perfFrame++
+  if (_perfFrame === 180) { perfDump('load ~3s'); perfReset() }
+  else if (_perfFrame === 600) { perfDump('steady ~10s') }
 
   // Grid world: recenter the dev grid + ground on the view each frame so they read as
   // infinite. The grid snaps to the cell size so its lines appear stationary (no crawling);

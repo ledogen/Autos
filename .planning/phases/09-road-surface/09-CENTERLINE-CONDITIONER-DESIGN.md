@@ -88,6 +88,17 @@ crease-free in-sim, then remove the transition nets. Confirm `road.js` shrank.
   FOLD-SAFE floor (~7–8 m). Feel value (15 m) stays a separate slider, not the hard bound.
 - D-grade: max grade is SOFT ("if possible"); occasional deviations welcome/navigable.
 - D-del: success = the cleanup stack DELETED + smaller road.js, not just folds gone.
+- D-arc (CHOSEN 2026-06-16, reverses "hybrid-A* = fallback only"): replace the 8-grid `_protoConnect`
+  inner planner with an **arc-primitive hybrid-A\*** (state = pos-cell + heading-bin ~32; primitives =
+  {straight=curv-0, gentle±, hard±}; hardest radius = **8 m** floor → min-radius-valid BY CONSTRUCTION).
+  KEEP the 256 m valley-descended macro-anchor skeleton + goal-directed heuristic (the "goes somewhere"
+  intentionality). Cost biases toward straight/large-radius (curvature cost) so long near-straights are
+  cheap; grade + climb-anticipation make tight switchbacks emerge deterministically up steep passes (the
+  terrain is the "noise", NOT random). TRUE straights = the curvature-0 primitive (no large-radius approx).
+  This makes the whole cleanup stack deletable (arcFillet/_filletMinRadius/_removeLoops/_removeSelfCrossings/
+  _limitCurvature + Step-2 spline fillet) — CR only smooths between already-valid arc points. Determinism +
+  window-invariance preserved (lattice, no randomness, still per-anchor-pair cached). Supersedes the per-corner
+  fillet approach (relaxation undershoots → ruled out; folds confirmed in-sim at HEAD e50484d).
 - Carried (VBC/D-16): pure `coarseHeight`, determinism, single `height(x,z)`, no asset files/deps,
   `terrain-worker.js` stays byte-synced; junctions (VBC-08) and vertical/3D radius (VBC-02) OUT of scope.
 

@@ -38,6 +38,7 @@ import { crownProfile, isConvexPolygon, triangulateConvexFan, earClip, potholeNo
 // Re-exported here so existing callers (test harness, road.js) can still import from road-mesh.js.
 export { roadQuality, hashRunKey, ROAD_QUALITY_STRETCH, ROAD_QUALITY_BLEND } from './road-quality.js'
 import { roadQuality, ROAD_QUALITY_STRETCH, ROAD_QUALITY_BLEND } from './road-quality.js'
+import { perfAdd } from './perf.js'  // TEMP perf triage (D-arc)
 
 // ── Module-scope scratch vectors (GC-free per-sample allocation guard) ────────
 // sweepRibbon is called for every tile's every segment, multiple times per stream.
@@ -644,7 +645,9 @@ export class RoadMeshSystem {
     _buildRoadTile(tileX, tileZ, key) {
         // Ensure the road slice data is available for this tile.
         // ensureTile() warms the network + slices if needed.
+        const _ptE = performance.now()
         this._road.ensureTile(tileX, tileZ)
+        perfAdd('ribbon.ensureTile(streamSlice)', performance.now() - _ptE)  // TEMP: may re-stream the road network!
         const segs = this._road._tiles.get(key)
         if (!segs || segs.length === 0) {
             // No road on this tile — mark as processed so we don't re-queue it.
@@ -691,7 +694,9 @@ export class RoadMeshSystem {
             const arcS0 = seg.arcS0 ?? 0
             const arcS1 = seg.arcS1 ?? 0
 
+            const _ptS = performance.now()
             const geo  = this.sweepRibbon(spline, designGradeY, points, this._params, runKey, arcS0, arcS1)
+            perfAdd('ribbon.sweepRibbon', performance.now() - _ptS)
             const mesh = new THREE.Mesh(geo, this._material)
 
             // Road mesh sits at world origin (geometry is already in world space).

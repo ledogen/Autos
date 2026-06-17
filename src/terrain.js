@@ -33,6 +33,7 @@ import * as THREE from 'three'
 // (crownProfile + camberProfile tilt) so the carved trough tilts with the ribbon →
 // uniform clearance on banked turns (fixes inside-edge clip / outside-edge gap).
 import { crownProfile } from './road-carve.js'
+import { perfAdd } from './perf.js'  // TEMP perf triage (D-arc)
 
 // ── Module constants ───────────────────────────────────────────────────────
 
@@ -468,8 +469,12 @@ export class TerrainSystem {
         // Streaming paused (grid-world mode) — no-op to prevent chunk ring changes while in grid world.
         if (this._enabled === false) return
         const { cx: ccx, cz: ccz } = this._worldToChunk(carPos.x, carPos.z)
+        let _pt = performance.now()
         this._updateChunkRing(ccx, ccz)
+        perfAdd('terrain.updateChunkRing', performance.now() - _pt)   // TEMP: includes dispatch-path carve + re-carve pass
+        _pt = performance.now()
         this._flushPendingQueue()
+        perfAdd('terrain.flushPendingQueue', performance.now() - _pt) // TEMP: mesh build (geometry+carve+normals+colors)
     }
 
     /**
@@ -802,7 +807,9 @@ export class TerrainSystem {
                 // send it as a Transferable alongside the generate message.
                 // A FRESH table is built per-chunk because postMessage transfers (consumes) the buffer.
                 // If no road system is attached, send null carveTable — Worker applies no carve.
+                const _ptD = performance.now()
                 const carveTable = this._buildCarveTable(cx, cz)
+                perfAdd('dispatch.buildCarveTable', performance.now() - _ptD)
                 if (carveTable) {
                     this._worker.postMessage({ type: 'generate', cx, cz, key, carveTable }, [carveTable.buffer])
                 } else {
@@ -896,10 +903,10 @@ export class TerrainSystem {
         // D3 (plan 09-22): collectChunkSplinePoints now returns { pts, sampleArcS, sampleRunKeys }
         // sampleArcS[i] and sampleRunKeys[i] give the arc-length and run key for pts[i*5..i*5+4].
         // Used to read camberProfile(arcS, runKey) for the D3 cross-section-inheriting carve target.
-        const _tCarve = performance.now()  // TEMP perf probe (D-arc) — remove once carve cost confirmed
+        const _ptC = performance.now()
         const { pts: samples, sampleArcS, sampleRunKeys, sampleCamberSign } = this._roadSystem.collectChunkSplinePoints(chunkCX, chunkCZ, queryRadius)
+        perfAdd('carve.collectSplines', performance.now() - _ptC)
         if (samples.length === 0) return null  // early-reject passed but no actual points sampled
-        const _tCollect = performance.now()
 
         const table = new Float32Array(N * N * 2)
         let anyNonZero = false
@@ -1101,9 +1108,6 @@ export class TerrainSystem {
 
         // TEMP perf probe (D-arc): log carve cost for this chunk — collect(spline sampling) vs the
         // per-vertex loop — plus how many road sample points fell in range (windier road = more).
-        const _msTot = performance.now() - _tCarve, _msCollect = _tCollect - _tCarve
-        this._carveN = (this._carveN || 0) + 1
-        if (_msTot > 4) console.log(`[carve perf] #${this._carveN} chunk ${cx},${cz}: ${_msTot.toFixed(1)}ms (collect ${_msCollect.toFixed(1)}ms + loop ${(_msTot - _msCollect).toFixed(1)}ms) | road samples ${samples.length / 5} | runs ${this._roadSystem._network?.size ?? '?'}`)
         return anyNonZero ? table : null
     }
 
@@ -1235,7 +1239,9 @@ export class TerrainSystem {
             // CARVE SYNC: identical blend formula as analyticHeight, sampleHeight, Worker height loop.
             // Build carveData for this chunk now (main thread has road access; Worker received a
             // Transferable copy already consumed — we rebuild here for the _chunkMap reference path).
+            let _pt = performance.now()
             const carveData = this._buildCarveTable(cx, cz)
+            perfAdd('flush.buildCarveTable', performance.now() - _pt)
             const pos = geom.attributes.position
             const amp = this._params.terrainAmplitude ?? 1.0
             for (let i = 0; i < N * N; i++) {
@@ -1253,7 +1259,9 @@ export class TerrainSystem {
                 }
             }
             pos.needsUpdate = true
+            _pt = performance.now()
             geom.computeVertexNormals()  // for rendering only; physics uses analyticNormal()
+            perfAdd('flush.computeVertexNormals', performance.now() - _pt)
 
             // ── 5-zone feathered vertex colors (D-09/D-10/D-11, Plan 09-05) ─────
             // Zones (no hard lines — all feathered, D-09):
@@ -1264,7 +1272,9 @@ export class TerrainSystem {
             //   Asphalt lives on the road-mesh.js ribbon (not on terrain chunks).
             // Cutout/dirt zones are feathered by carveData blendW (free from the carve system).
             // Cliff is feathered by slope smoothstep(roadCliffSlopeLo, roadCliffSlopeHi, slope).
+            _pt = performance.now()
             this._writeChunkVertexColors(geom, carveData, heights, amp)
+            perfAdd('flush.writeVertexColors', performance.now() - _pt)
 
             const mesh = new THREE.Mesh(geom, this._material)
             // Center the chunk mesh at the chunk's world-space origin + half-size offset

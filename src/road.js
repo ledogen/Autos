@@ -40,6 +40,7 @@ import { crownProfile, potholeNoise, signedCurvature, filletMinRadius, arcFillet
 // quality hook as markings. Importing from road-quality.js (not road-mesh.js) avoids
 // the road-mesh.js → terrain.js → road.js chain issues.
 import { roadQuality } from './road-quality.js'
+import { perfAdd } from './perf.js'  // TEMP perf triage (D-arc)
 
 // ── Module-scope scratch vectors (queryNearest allocation guard) ───────────────
 // queryNearest is called at near-60fps cadence (resolveSpawn + Phase 9 consumption).
@@ -800,18 +801,13 @@ export class RoadSystem {
      */
     update(center) {
         const before = this._networkCenter
-        // TEMP perf probe (D-arc): split stream(routing) vs slice(spline build) and report centerline
-        // point count, but ONLY when the network actually re-streamed (center moved / re-route) so it
-        // doesn't spam every frame. Remove once streaming perf is confirmed acceptable.
-        const _t0 = performance.now()
+        // TEMP perf buckets (D-arc): split stream(routing) vs slice(spline build).
+        let _pt = performance.now()
         this._streamNetwork(center)
-        const _t1 = performance.now()
+        perfAdd('road.streamNetwork', performance.now() - _pt)
+        _pt = performance.now()
         this._sliceNetwork()
-        const _t2 = performance.now()
-        if (before !== this._networkCenter) {
-            let _npts = 0; for (const r of this._network.values()) _npts += r.points.length
-            console.log(`[road perf] stream(route) ${(_t1 - _t0).toFixed(1)}ms | slice(spline) ${(_t2 - _t1).toFixed(1)}ms | runs ${this._network.size} | centerline pts ${_npts}`)
-        }
+        perfAdd('road.sliceNetwork', performance.now() - _pt)
         // Refresh viz lines only when the network actually re-streamed (center changed / first
         // build / re-route) and the viz is currently visible.
         if (this._debugVisible && (before !== this._networkCenter || this._debugLines.length === 0)) {
