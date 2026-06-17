@@ -895,8 +895,10 @@ export class TerrainSystem {
         // D3 (plan 09-22): collectChunkSplinePoints now returns { pts, sampleArcS, sampleRunKeys }
         // sampleArcS[i] and sampleRunKeys[i] give the arc-length and run key for pts[i*5..i*5+4].
         // Used to read camberProfile(arcS, runKey) for the D3 cross-section-inheriting carve target.
+        const _tCarve = performance.now()  // TEMP perf probe (D-arc) — remove once carve cost confirmed
         const { pts: samples, sampleArcS, sampleRunKeys, sampleCamberSign } = this._roadSystem.collectChunkSplinePoints(chunkCX, chunkCZ, queryRadius)
         if (samples.length === 0) return null  // early-reject passed but no actual points sampled
+        const _tCollect = performance.now()
 
         const table = new Float32Array(N * N * 2)
         let anyNonZero = false
@@ -1072,6 +1074,10 @@ export class TerrainSystem {
             }
         }
 
+        // TEMP perf probe (D-arc): log carve cost for this chunk — collect(spline sampling) vs the
+        // per-vertex loop — plus how many road sample points fell in range (windier road = more).
+        const _msTot = performance.now() - _tCarve, _msCollect = _tCollect - _tCarve
+        if (_msTot > 4) console.log(`[carve perf] chunk ${cx},${cz}: ${_msTot.toFixed(1)}ms (collect ${_msCollect.toFixed(1)}ms + loop ${(_msTot - _msCollect).toFixed(1)}ms) | road samples ${samples.length / 5} | runs ${this._roadSystem._network?.size ?? '?'}`)
         return anyNonZero ? table : null
     }
 
