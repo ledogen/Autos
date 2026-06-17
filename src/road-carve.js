@@ -682,14 +682,30 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     const wOver    = opts.wOver    ?? 8000
     const maxGrade = opts.maxGrade ?? 0.15
     const wCurv    = opts.wCurv    ?? 120      // curvature penalty (replaces wTurn) → straight-biased
+    const wHeur    = opts.wHeur    ?? 1.5       // weighted-A* heuristic inflation (>1 = greedier, far
+                                               // fewer node expansions → faster streaming; paths stay near-optimal)
 
     const minX = Math.min(ax, bx) - margin, maxX = Math.max(ax, bx) + margin
     const minZ = Math.min(az, bz) - margin, maxZ = Math.max(az, bz) + margin
     const NX = Math.max(2, Math.ceil((maxX - minX) / cell)) + 1
+    const NZ = Math.max(2, Math.ceil((maxZ - minZ) / cell)) + 1
     const TAU = Math.PI * 2
-    const binOf  = (th) => ((Math.round(th / TAU * hbins) % hbins) + hbins) % hbins
-    const cellOf = (x, z) => Math.max(0, Math.round((z - minZ) / cell)) * NX + Math.max(0, Math.round((x - minX) / cell))
+    const binOf = (th) => ((Math.round(th / TAU * hbins) % hbins) + hbins) % hbins
+    const cxOf  = (x) => Math.max(0, Math.min(NX - 1, Math.round((x - minX) / cell)))
+    const czOf  = (z) => Math.max(0, Math.min(NZ - 1, Math.round((z - minZ) / cell)))
+    const cellOf = (x, z) => czOf(z) * NX + cxOf(x)
     const stateOf = (x, z, th) => cellOf(x, z) * hbins + binOf(th)
+
+    // PERF: cache terrain height per lattice cell (compute heightFn once per cell, not per node
+    // expansion). _coarseHeight is multi-octave ridged noise — recomputing it for every one of the
+    // hundreds of thousands of node expansions was the streaming-stutter cost. Search cost uses the
+    // cell-center height (same approach as the old grid A*); emitted point Y stays exact (heightFn).
+    const hH = new Float64Array(NX * NZ), hSeen = new Uint8Array(NX * NZ)
+    const hAt = (x, z) => {
+        const ci = cellOf(x, z)
+        if (!hSeen[ci]) { hH[ci] = heightFn(minX + (ci % NX) * cell, minZ + ((ci / NX) | 0) * cell); hSeen[ci] = 1 }
+        return hH[ci]
+    }
 
     const kappas = [0, 1 / gentleR, -1 / gentleR, 1 / hardR, -1 / hardR]
 
@@ -727,10 +743,10 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         return top
     }
 
-    const heur = (x, z) => wDist * Math.hypot(bx - x, bz - z)
+    const heur = (x, z) => wHeur * wDist * Math.hypot(bx - x, bz - z)
     const th0 = Math.atan2(bz - az, bx - ax)
     const startState = stateOf(ax, az, th0)
-    node.set(startState, { g: 0, x: ax, z: az, th: th0, parent: -1, sh: heightFn(ax, az) })
+    node.set(startState, { g: 0, x: ax, z: az, th: th0, parent: -1, sh: hAt(ax, az) })
     let counter = 0
     hpush(heur(ax, az), counter++, startState)
 
@@ -750,7 +766,7 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             if (nx < minX || nx > maxX || nz < minZ || nz > maxZ) continue
             const nst = stateOf(nx, nz, nth)
             if (closed.has(nst)) continue
-            const nH = heightFn(nx, nz)
+            const nH = hAt(nx, nz)
             const grade = Math.abs(nH - cur.sh) / stepLen
             const stepCost = wDist * stepLen + wGrade * grade * grade + wOver * Math.max(0, grade - maxGrade)
                            + wAlt * nH + wCurv * Math.abs(k) * stepLen
