@@ -530,6 +530,7 @@ export class TerrainSystem {
      * so all keys are releasable, and the next update() will re-request the ring cleanly.
      */
     rebuildAllChunksFromWorker() {
+        console.log(`[terrain] rebuildAllChunksFromWorker — disposing ${this._chunkMap.size} chunks (FULL terrain regen)`)  // TEMP probe (D-arc)
         // Dispose all built chunk meshes and remove from scene
         for (const [, chunk] of this._chunkMap) {
             this._scene.remove(chunk.mesh)
@@ -934,6 +935,25 @@ export class TerrainSystem {
         const carveFootprintHW = (p.roadHalfWidth ?? 5) + (p.roadShoulderWidth ?? 2.5)
         const STRIDE = 5  // D4: stride widened from 3 to 5 ([x,y,z,tx,tz])
 
+        // PERF (D-arc): conservative per-chunk lateral bound so the inner loop can SKIP the expensive
+        // per-vertex work (full height() + runProfile + camberProfile) for vertices that are too far
+        // from any road to ever be carved. The widest possible fill/cut toe is
+        //   halfWidth + shoulderWidth + maxDelta·max(fillSlope,cutSlope), maxDelta = max |roadY − terrainY|.
+        // Bound maxDelta from the road sample Y range vs the chunk's terrain range (corners+center, 5
+        // height() calls), + a generous margin. extBestD2 (true nearest) beyond this ⇒ table = 0 anyway,
+        // so skipping is loss-free except on extreme causeways (cosmetic; revisit if seen).
+        let _rYmin = Infinity, _rYmax = -Infinity
+        for (let si = 1; si < samples.length; si += STRIDE) { const y = samples[si]; if (y < _rYmin) _rYmin = y; if (y > _rYmax) _rYmax = y }
+        let _tMin = Infinity, _tMax = -Infinity
+        for (let c = 0; c < 5; c++) {
+            const sx = (c & 1), sz = (c >> 1) & 1, mid = c === 4 ? 0.5 : 0
+            const th = height(originX + (mid || sx) * S, originZ + (mid || sz) * S, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params) * amp
+            if (th < _tMin) _tMin = th; if (th > _tMax) _tMax = th
+        }
+        const _maxDelta = Math.max(Math.abs(_rYmax - _tMin), Math.abs(_rYmax - _tMax), Math.abs(_rYmin - _tMin), Math.abs(_rYmin - _tMax))
+        const _maxToe = halfWidth + shoulderWidth + _maxDelta * Math.max(fillSlope, cutSlope) + cell * 2
+        const _maxToe2 = _maxToe * _maxToe
+
         for (let zi = 0; zi < N; zi++) {
             for (let xi = 0; xi < N; xi++) {
                 const wx = originX + xi * cell
@@ -957,6 +977,11 @@ export class TerrainSystem {
                         if (Math.abs(signedLat) <= carveFootprintHW) { intBestD2 = d2; intBi = si }
                     }
                 }
+                // PERF (D-arc): skip the expensive per-vertex work for vertices beyond the widest
+                // possible carve toe. extBestD2 is the TRUE nearest (global, footprint-agnostic), so if
+                // it exceeds the conservative bound the vertex cannot be carved → table = 0, continue.
+                if (extBestD2 > _maxToe2) { table[idx] = 0; table[idx + 1] = 0; continue }
+
                 // Prefer interior sample; fall back to exterior if no interior found.
                 const bi = (intBestD2 < Infinity) ? intBi : extBi
                 const bestD2 = (intBestD2 < Infinity) ? intBestD2 : extBestD2
@@ -1077,7 +1102,8 @@ export class TerrainSystem {
         // TEMP perf probe (D-arc): log carve cost for this chunk — collect(spline sampling) vs the
         // per-vertex loop — plus how many road sample points fell in range (windier road = more).
         const _msTot = performance.now() - _tCarve, _msCollect = _tCollect - _tCarve
-        if (_msTot > 4) console.log(`[carve perf] chunk ${cx},${cz}: ${_msTot.toFixed(1)}ms (collect ${_msCollect.toFixed(1)}ms + loop ${(_msTot - _msCollect).toFixed(1)}ms) | road samples ${samples.length / 5} | runs ${this._roadSystem._network?.size ?? '?'}`)
+        this._carveN = (this._carveN || 0) + 1
+        if (_msTot > 4) console.log(`[carve perf] #${this._carveN} chunk ${cx},${cz}: ${_msTot.toFixed(1)}ms (collect ${_msCollect.toFixed(1)}ms + loop ${(_msTot - _msCollect).toFixed(1)}ms) | road samples ${samples.length / 5} | runs ${this._roadSystem._network?.size ?? '?'}`)
         return anyNonZero ? table : null
     }
 
