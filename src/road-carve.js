@@ -744,7 +744,10 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     }
 
     const heur = (x, z) => wHeur * wDist * Math.hypot(bx - x, bz - z)
-    const th0 = Math.atan2(bz - az, bx - ax)
+    // Start heading: the caller threads the PREVIOUS connection's arrival heading here so consecutive
+    // connections are G1-continuous across the shared anchor (no kink/fold at anchor joins). Defaults
+    // to the straight-line bearing toward b for the first connection in a row.
+    const th0 = (opts.startHeading ?? null) !== null ? opts.startHeading : Math.atan2(bz - az, bx - ax)
     const startState = stateOf(ax, az, th0)
     node.set(startState, { g: 0, x: ax, z: az, th: th0, parent: -1, sh: hAt(ax, az) })
     let counter = 0
