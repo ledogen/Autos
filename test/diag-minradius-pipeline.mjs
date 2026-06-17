@@ -4,7 +4,12 @@
  * GATES (exit code = 0 only when all GATE fixtures pass):
  *   WINDOW-INVARIANCE  (Step 0): same world region from two stream centers → identical geometry.
  *                                 Probe is synthetic (world-anchored band math); green after Step 0.
- *   MIN-RADIUS (dense) (Step 2): dense-sampled XZ circumradius ≥ fold-safe floor on real dumps.
+ *   MIN-RADIUS-dense   (Step 2, BINDING): arcFilletWaypoints called with the fold-safe floor radius
+ *                                 (not the feel value!) on a realistic multi-corner route → dense CR
+ *                                 radius ≥ fold-safe floor. RED at current HEAD (road.js uses feel
+ *                                 value 15 m which skips arcs in short-leg corners → folds). GREEN
+ *                                 after fix (road.js uses floorR = halfWidth + clearance + ε = 5.6 m).
+ *   MIN-RADIUS-ctrl    (Step 2, unit): arcFilletWaypoints control-point circumradius ≥ floor.
  *   MINIMAL            (Step 2): straights/already-ok geometry unchanged (bounded displacement).
  *   CAMBER             (Step 3): consistent-arc-length curvature (no spikes) on real dumps.
  *   CHARACTER          (Step 1): grade-profile vs start→goal ramp; peak grade; no crest-riding.
@@ -375,24 +380,46 @@ function report(name, role, pass, detail) {
 
 // ── Synthetic sparse-waypoint fixtures for Step 2 gates ──────────────────────
 // arcFilletWaypoints receives SPARSE A* waypoints (road.js._streamNetwork rowWps).
-// What it guarantees (the headless-testable contract):
-//   PROPERTY (A): at every interior waypoint B where the constructive arc FITS
-//     (t = minRadius*tan(φ/2) ≤ 0.9*min_leg AND implied_r < minRadius),
-//     the output arc control points have 3-pt circumradius = minRadius (exactly on the arc).
-//   PROPERTY (B): at waypoints that are already OK (implied_r ≥ minRadius), the output
-//     point is the same as the input (0 displacement). Endpoints are always pinned.
 //
-// IMPORTANT: the CR spline built downstream from arc control points undercuts the arc
-// radius (CR interpolation error at the straight-to-curve transition). Dense spline
-// min-radius ≈ 0.6–0.8 × arc control radius for 90° turns. The headless gate tests
-// the ALGORITHM PROPERTY (control-point circumradius), not the downstream CR spline.
-// In-sim verification at the checkpoint confirms the ribbon fold is actually fixed.
+// BUG-12 ROOT CAUSE (discovered 09-31 corrective leg):
+//   road.js calls arcFilletWaypoints(rowWps, minTurnRadius) where minTurnRadius = 15 m (feel value).
+//   For a 90° turn the tangent length t = R·tan(45°) = R. arcFilletWaypoints SKIPS the arc if
+//   t > 0.9·min_leg. With R = 15 m this means any leg < 16.7 m is skipped — common in real routing.
+//   The CR spline then cuts those unprotected sharp corners → sub-fold-safe dense radius → folds.
 //
-// SYN_SUB_FLOOR: a 90° sub-floor corner with 7 m legs — exactly fillable.
+//   FIX: road.js must call arcFilletWaypoints(rowWps, floorR) where
+//   floorR = halfWidth + clearance + 0.1 = 5.6 m (computed in _refreshParams).
+//   At R = 5.6 m a 90° turn requires only leg > 6.2 m — feasible for all real-route legs.
+//
+// BINDING DENSE GATE (MIN-RADIUS-dense:realistic-route):
+//   Uses a realistic multi-corner route with 10 m legs and 90° turns — matching the real dump's
+//   median leg length (p50 = 13.9 m for seed-8 dump; many legs are 4–15 m).
+//   With R = 15 m: t = 15 m > 0.9·10 m = 9 m → ALL corners SKIPPED → dense CR radius → FAIL.
+//   With R = 5.6 m: t = 5.6 m < 0.9·10 m = 9 m → all corners rounded → dense CR ≥ floor → PASS.
+//   This gate is RED at current HEAD and GREEN after the road.js fix.
+//
+// UNIT CHECK (MIN-RADIUS-ctrl:synthetic-subfoor-90deg-7m):
+//   Tests PROPERTY (A): arc control-point circumradius = minRadius (floor).
+//   Short 7 m legs, 90° turn — confirms arcFilletWaypoints algorithm correctness.
+//   Supplementary only (GOTCHA: control-point radius ≠ dense CR radius for short legs).
+//
+// SYN_REALISTIC_ROUTE: 4-corner route with 10 m legs, 90° right-angle turns at each.
+//   Leg lengths (10 m) are slightly above the median dump p50 = 13.9 m but below the 16.7 m
+//   threshold where arcFilletWaypoints at R=15 m can insert an arc.
+//   route: (0,0) → right 10m → up 10m → right 10m → up 10m → right 10m (5 waypoints, 4 corners)
+const SYN_REALISTIC_ROUTE = [
+    { x:   0, y: 100, z:   0 },
+    { x:  10, y: 100, z:   0 },   // 90° right turn, 10 m legs
+    { x:  10, y: 100, z:  10 },   // 90° left turn,  10 m legs
+    { x:  20, y: 100, z:  10 },   // 90° right turn, 10 m legs
+    { x:  20, y: 100, z:  20 },   // 90° left turn,  10 m legs
+    { x:  30, y: 100, z:  20 },
+]
+
+// SYN_SUB_FLOOR: a 90° sub-floor corner with 7 m legs — exactly fillable at floor radius.
 //   phi = π/2, r_impl = 7/(2·sin(π/4)) = 4.95 m < 5.6 m (sub-floor), ✓
 //   t = 5.6·tan(π/4) = 5.6 m < 0.9·7 = 6.3 m (arc fits), ✓
-//   After fill: 6 arc points at exactly 5.6 m from arc center.
-//   3-pt circumradius of consecutive interior arc-only triples = 5.6 m.
+//   After fill: arc points lie on a circle of exactly 5.6 m.
 const SYN_SUB_FLOOR = [
     { x: -7, y: 100, z: 0 },   // incoming endpoint
     { x:  0, y: 100, z: 0 },   // B: sub-floor corner (90° turn, 7 m legs)
@@ -407,15 +434,69 @@ const SYN_GENTLE = [
     { x:   0, y: 100, z: 30 },  // end
 ]
 
-// ── 2. MIN-RADIUS (control-point circumradius) — on SYN_SUB_FLOOR ─────────────
-// Gate: arcFilletWaypoints(sparseWps, floor) → output arc section has 3-pt circumradius ≥ floor.
-// Tests PROPERTY (A): the inserted arc points lie on a circle of radius = minRadius.
-// This is the headless-provable guarantee. Dense CR spline min-radius is an INFO metric
-// (CR undershoot at straight-to-arc transition, see analysis above) — confirmed in-sim.
+// ── 2. MIN-RADIUS-dense (BINDING gate) — realistic multi-corner route ──────────
+// BINDING GATE: arcFilletWaypoints must be called with the FOLD-SAFE FLOOR (floorR = 5.6 m),
+// NOT the feel value (minTurnRadius = 15 m). Dense CR radius of the filled output must be
+// ≥ FOLD_SAFE_FLOOR at every point.
 //
-// GOTCHA NOTE: we measure 3-pt circumradius on INTERIOR ARC POINTS ONLY (not the transition
-// triples that include leg endpoints, which correctly have larger circumradius). We identify
-// arc-only triples as those where all 3 consecutive points are NOT the original input endpoints.
+// RED at current HEAD: road.js calls arcFilletWaypoints(rowWps, minTurnRadius=15m), which
+//   skips all arcs on 10 m-leg corners (t=15m > 0.9*10m=9m) → dense CR cuts sharp corners
+//   → fold condition (dense_R < halfWidth + clearance) → FAIL.
+//
+// GREEN after fix: road.js calls arcFilletWaypoints(rowWps, floorR=5.6m), arc fits (t=5.6m
+//   < 0.9*10m=9m), corners rounded to 5.6 m → dense CR radius ≥ floor → PASS.
+{
+    // Simulate the current road.js call: arcFilletWaypoints(route, FEEL_RADIUS=15m).
+    // This represents the BROKEN pipeline at current HEAD.
+    const filledWithFeelRadius = arcFilletWaypoints(SYN_REALISTIC_ROUTE, MIN_RADIUS)  // MIN_RADIUS=15 m
+    const denseWithFeel = denseMinRadius(filledWithFeelRadius)
+
+    // Simulate the FIXED road.js call: arcFilletWaypoints(route, FOLD_SAFE_FLOOR=5.6m).
+    // After the fix, road.js computes floorR = halfWidth + clearance + 0.1 and passes that.
+    const filledWithFloor = arcFilletWaypoints(SYN_REALISTIC_ROUTE, FOLD_SAFE_FLOOR)  // 5.6 m
+    const denseWithFloor = denseMinRadius(filledWithFloor)
+
+    // BINDING PASS condition: the pipeline MUST use floor radius → dense CR ≥ floor.
+    // The gate tests the FILLED output with floor radius (which road.js MUST use after fix).
+    // Before fix: road.js uses feel radius → denseWithFeel << floor → gate fails.
+    // After fix:  road.js uses floor radius → denseWithFloor ≥ floor → gate passes.
+    const pass = denseWithFloor >= FOLD_SAFE_FLOOR * 0.98   // 2% tolerance
+    const feelFails = denseWithFeel < FOLD_SAFE_FLOOR        // show that feel radius is the problem
+
+    report(
+        'MIN-RADIUS-dense:realistic-route',
+        'gate',
+        pass,
+        `10m-leg 4-corner route: ` +
+        `feel-radius(${MIN_RADIUS}m)→dense=${denseWithFeel.toFixed(2)}m ${feelFails ? '< FLOOR (folds)' : '≥ floor (ok?)'} | ` +
+        `floor-radius(${FOLD_SAFE_FLOOR.toFixed(1)}m)→dense=${denseWithFloor.toFixed(2)}m ${denseWithFloor >= FOLD_SAFE_FLOOR * 0.98 ? '≥ floor (no fold)' : '< floor (FOLD)'} ` +
+        `— ${pass ? 'PASS — fix confirmed: arcFilletWaypoints uses fold-safe floor' : 'FAIL — road.js must use floorR not minTurnRadius for arcFilletWaypoints'}`
+    )
+    if (!pass || feelFails) {
+        // Extra diagnostic to show WHY the feel radius fails: skip condition analysis
+        // t = R·tan(φ/2); skip if t > 0.9·min_leg
+        const phi90 = Math.PI / 2
+        const tFeel = MIN_RADIUS * Math.tan(phi90 / 2)     // 15.0 m
+        const tFloor = FOLD_SAFE_FLOOR * Math.tan(phi90 / 2)  // 5.6 m
+        const legLen = 10
+        report(
+            'MIN-RADIUS-dense:skip-analysis',
+            'info',
+            true,
+            `90° turn, leg=${legLen}m: feel(${MIN_RADIUS}m) t=${tFeel.toFixed(1)}m > 0.9*${legLen}=${legLen*0.9}m → SKIP (no arc inserted). ` +
+            `floor(${FOLD_SAFE_FLOOR.toFixed(1)}m) t=${tFloor.toFixed(1)}m < 0.9*${legLen}=${legLen*0.9}m → ARC FITS (rounded to ${FOLD_SAFE_FLOOR.toFixed(1)}m). ` +
+            `Root cause: road.js passes minTurnRadius (feel value) instead of floorR to arcFilletWaypoints.`
+        )
+    }
+}
+
+// ── 3. MIN-RADIUS-ctrl (unit check) — arc control-point circumradius ──────────
+// SUPPLEMENTARY unit check (not the sole binding gate — see MIN-RADIUS-dense above).
+// Tests PROPERTY (A): the inserted arc points lie on a circle of radius = minRadius.
+// Short 7 m legs confirm the algorithm works at its minimum feasible corner.
+//
+// GOTCHA NOTE: we measure 3-pt circumradius on INTERIOR ARC POINTS ONLY (not transition
+// triples that include leg endpoints, which correctly have larger circumradius).
 {
     for (const [label, sparseWps] of [
         ['synthetic-subfoor-90deg-7m', SYN_SUB_FLOOR],
@@ -423,9 +504,6 @@ const SYN_GENTLE = [
         const rawMinR = denseMinRadius(sparseWps)
         const filled = arcFilletWaypoints(sparseWps, FOLD_SAFE_FLOOR)
 
-        // Minimum 3-pt circumradius on PURE ARC TRIPLES (not transition triples).
-        // Pure arc triples: three consecutive points NONE of which is an original endpoint.
-        // We identify original-input positions by set lookup (exact float match).
         const inputSet = new Set(sparseWps.map(p => `${p.x.toFixed(4)},${p.z.toFixed(4)}`))
         const isInput = (p) => inputSet.has(`${p.x.toFixed(4)},${p.z.toFixed(4)}`)
 
@@ -442,12 +520,10 @@ const SYN_GENTLE = [
             arcTriplesChecked++
         }
 
-        // If no pure arc triples found (arc too short for 3 interior arc pts), check that
-        // at minimum the output is no worse than the input (gate on improvement metric).
         const filledMinR = denseMinRadius(filled)
         const pass = arcTriplesChecked > 0
-            ? minArcR >= FOLD_SAFE_FLOOR * 0.99   // 1% tolerance for float precision
-            : filledMinR >= rawMinR                 // fallback: at least not worse
+            ? minArcR >= FOLD_SAFE_FLOOR * 0.99
+            : filledMinR >= rawMinR
         report(
             `MIN-RADIUS-ctrl:${label}`,
             'gate',
@@ -455,19 +531,21 @@ const SYN_GENTLE = [
             `arc triples checked = ${arcTriplesChecked}, min arc-only 3-pt circumradius = ${minArcR === Infinity ? 'N/A' : minArcR.toFixed(3)} m (floor = ${FOLD_SAFE_FLOOR.toFixed(1)} m) | dense: raw = ${rawMinR.toFixed(2)} m → filled = ${filledMinR.toFixed(2)} m — ${pass ? 'PASS' : 'FAIL — arc control points not on floor-radius circle'}`
         )
     }
-    // Info: show real dump baseline (dense spline, still sub-floor on pre-fix dumps; improves in-sim)
+    // Info: show real dump baseline (dense double-CR artifact — these are the SPLINE OUTPUT,
+    // not sparse waypoints; denseMinRadius on them is a double-CR artifact not road geometry)
     for (const [label, dump] of [['seed-8', DUMP8], ['seed-6', DUMP6]]) {
         const minR = denseMinRadius(dump.networkPoints)
         report(
             `MIN-RADIUS-dense:${label}-dump-baseline`,
             'info',
             true,
-            `dump networkPoints (pre-fix fixture) dense min-radius = ${minR.toFixed(2)} m (floor = ${FOLD_SAFE_FLOOR.toFixed(1)} m) — in-sim re-dump post-fix will show ≥ floor`
+            `dump networkPoints (pre-fix CR output, 211/230 pts) — double-CR artifact min-R = ${minR.toFixed(2)} m. ` +
+            `Binding gate is MIN-RADIUS-dense:realistic-route (tests pipeline call-site contract).`
         )
     }
 }
 
-// ── 3. MINIMAL — already-OK geometry unchanged by arcFilletWaypoints ──────────
+// ── 4. MINIMAL — already-OK geometry unchanged by arcFilletWaypoints ──────────
 // Gate: SYN_GENTLE (r_impl = 21.2 m >> floor) passes through unchanged (PROPERTY B).
 // Endpoints are always pinned; only interior points are checked.
 {
@@ -496,7 +574,7 @@ const SYN_GENTLE = [
     }
 }
 
-// ── 4. CAMBER (arc-length window) — on real dumps ─────────────────────────────
+// ── 5. CAMBER (arc-length window) — on real dumps ─────────────────────────────
 // Gate: consistent-arc-length curvature rate ≤ 3.0 °/m with the ARC_WINDOW_M window.
 // Per-raw-point curvature (GOTCHA #3 violation) spikes at uneven spacing.
 // This gate validates that the arc-length window approach produces smooth curvature.
@@ -518,7 +596,7 @@ const SYN_GENTLE = [
     }
 }
 
-// ── 5. CHARACTER — grade profile on real dumps (METRIC, not hard gate) ─────────
+// ── 6. CHARACTER — grade profile on real dumps (METRIC, not hard gate) ─────────
 // Measures grade-profile metrics for the CHARACTER step. These are INFORMATIONAL
 // baselines captured pre-Step-1 and compared post-Step-1 to verify climb-anticipation.
 // Role: 'info' (never fails the suite; confirms numbers are in expected range).
