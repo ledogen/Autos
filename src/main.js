@@ -148,7 +148,9 @@ function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
     // rebuilding the network redundantly on every spawn/reload (PERF-01).
     const baseTX = Math.floor(baseX / CHUNK_SIZE)
     const baseTZ = Math.floor(baseZ / CHUNK_SIZE)
+    perfMark('resolveSpawn: before ensureTile (cold network stream)')  // TEMP (D-arc)
     roadSystem.ensureTile(baseTX, baseTZ)
+    perfMark('resolveSpawn: cold network stream done')  // TEMP (D-arc)
     let nearest = roadSystem.queryNearest(baseX, baseZ, 200)
     if (nearest) {
       // BUG-11 spawn-off-road: the network the road is RENDERED from is whatever the per-frame

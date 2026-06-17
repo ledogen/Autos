@@ -1230,11 +1230,14 @@ export class RoadSystem {
         const pp = this._params || {}
         const halfW = pp.roadHalfWidth ?? 5, clearance = pp.roadClearanceMargin ?? 0.5
         const hardR = Math.max(pp.roadArcHardRadius ?? 8, halfW + clearance + 0.1)  // tightest turn; ≥ floor
-        const raw = arcPrimitiveConnect(a.x, a.z, b.x, b.z, (x, z) => this._coarseH(x, z), {
+        const _ptAC = performance.now()
+        const rawPts = arcPrimitiveConnect(a.x, a.z, b.x, b.z, (x, z) => this._coarseH(x, z), {
             hardR, gentleR: pp.roadArcGentleRadius ?? 30, margin: PROTO_MARGIN,
             wDist: P.wDist, wAlt: P.wAlt, wGrade: P.wGrade, wOver: P.wOver,
             maxGrade: P.maxGrade, wCurv: P.wTurn, wHeur: pp.roadArcHeurWeight ?? 1.5,
-        }).map(p => new THREE.Vector3(p.x, p.y, p.z))
+        })
+        perfAdd('road.arcPrimitiveConnect', performance.now() - _ptAC)  // TEMP (D-arc): cold-route cost = the spawn lag
+        const raw = rawPts.map(p => new THREE.Vector3(p.x, p.y, p.z))
         // Collapse true straights (drop near-collinear interior points) → variable spacing; the
         // arc corners (≥ ~3.8°/sample) are kept, so re-splining downstream cannot undershoot to a fold.
         const simp = this._protoSimplify(raw, 2)
