@@ -641,6 +641,23 @@ export function filletMinRadius(points, minRadius, opts = {}) {
     return out
 }
 
+// ── arcPrimitiveConnect search scratch (module-scope, reused + generation-stamped) ──────────────
+// The cold network stream routes ~80 connections at once (spawn lag). Per-call Map/Set/object-per-node
+// allocation + hashing + GC dominated that. These typed arrays are indexed by state id and allocated
+// ONCE (grown as needed), reused across every call. A per-call generation stamp (_apcGen) marks which
+// entries are live this call, so we never memset the (large) arrays between calls.
+let _apcCap = 0
+let _apcG, _apcGStamp, _apcClosed, _apcX, _apcZ, _apcTh, _apcSh, _apcKi, _apcParent
+let _apcGen = 0
+const _apcHPri = [], _apcHSt = []   // heap as parallel arrays (reset length each call; no per-node alloc)
+function _apcEnsure(n) {
+    if (n <= _apcCap) return
+    _apcCap = n
+    _apcG = new Float64Array(n); _apcGStamp = new Uint32Array(n); _apcClosed = new Uint32Array(n)
+    _apcX = new Float64Array(n); _apcZ = new Float64Array(n); _apcTh = new Float64Array(n)
+    _apcSh = new Float64Array(n); _apcKi = new Int8Array(n); _apcParent = new Int32Array(n)
+}
+
 /**
  * arcPrimitiveConnect — hybrid-A* router between two anchors using ARC MOTION PRIMITIVES.
  *
@@ -671,7 +688,7 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     const hardR    = opts.hardR    ?? 8       // m — tightest turn (hardest primitive); ≥ geometric floor
     const gentleR  = opts.gentleR  ?? 30      // m — gentle turn radius
     const stepLen  = opts.stepLen  ?? 8       // m — arc length per search primitive
-    const hbins    = opts.hbins    ?? 32      // heading discretization (11.25°)
+    const hbins    = opts.hbins    ?? 24      // heading discretization (15°) — fewer states = faster cold route
     const cell     = opts.cell     ?? 8       // m — position lattice cell
     const margin   = opts.margin   ?? 200     // m — detour room around the a–b bbox (wrap a peak)
     const emitDs   = opts.emitDs   ?? 4       // m — arc emission spacing (≥ this keeps 3-pt circumradius on the floor circle; finer just multiplies downstream slice/ribbon/carve cost)
@@ -725,75 +742,85 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         }
     }
 
-    const node = new Map()   // state → { g, x, z, th, parent, sh }
-    const heap = []          // [priority, counter, state] binary min-heap (counter = stable tie-break)
-    const hpush = (pri, cnt, st) => {
-        heap.push([pri, cnt, st]); let i = heap.length - 1
-        while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break;[heap[p], heap[i]] = [heap[i], heap[p]]; i = p }
+    // Typed-array lattice with a generation stamp — same algorithm as a Map/Set/heap-of-arrays A*,
+    // but no per-call allocation/clears (this is the cold-stream speedup). State id = cellOf*hbins+binOf.
+    // Heap comparison is PRIORITY-ONLY (matches the prior implementation exactly → identical routes).
+    const NSTATES = NX * NZ * hbins
+    _apcEnsure(NSTATES)
+    const gen = ++_apcGen
+    const G = _apcG, GS = _apcGStamp, CL = _apcClosed
+    const SX = _apcX, SZ = _apcZ, STh = _apcTh, SSh = _apcSh, SKi = _apcKi, SP = _apcParent
+    const HP = _apcHPri, HS = _apcHSt
+    HP.length = 0; HS.length = 0
+    let hlen = 0
+    const hpush = (pri, st) => {
+        let i = hlen++
+        HP[i] = pri; HS[i] = st
+        while (i > 0) { const p = (i - 1) >> 1; if (HP[p] <= HP[i]) break
+            const tp = HP[p], ts = HS[p]; HP[p] = HP[i]; HS[p] = HS[i]; HP[i] = tp; HS[i] = ts; i = p }
     }
-    const hpop = () => {
-        const top = heap[0], last = heap.pop()
-        if (heap.length) {
-            heap[0] = last; let i = 0; const n = heap.length
+    const hpopState = () => {
+        const top = HS[0]; hlen--
+        if (hlen > 0) {
+            HP[0] = HP[hlen]; HS[0] = HS[hlen]; let i = 0
             for (;;) { let l = 2 * i + 1, r = 2 * i + 2, m = i
-                if (l < n && heap[l][0] < heap[m][0]) m = l
-                if (r < n && heap[r][0] < heap[m][0]) m = r
-                if (m === i) break;[heap[m], heap[i]] = [heap[i], heap[m]]; i = m }
+                if (l < hlen && HP[l] < HP[m]) m = l
+                if (r < hlen && HP[r] < HP[m]) m = r
+                if (m === i) break
+                const tp = HP[m], ts = HS[m]; HP[m] = HP[i]; HS[m] = HS[i]; HP[i] = tp; HS[i] = ts; i = m }
         }
         return top
     }
 
     const heur = (x, z) => wHeur * wDist * Math.hypot(bx - x, bz - z)
     const th0 = Math.atan2(bz - az, bx - ax)
+    const goalR = Math.max(cell, stepLen), goalR2 = goalR * goalR
     const startState = stateOf(ax, az, th0)
-    node.set(startState, { g: 0, x: ax, z: az, th: th0, parent: -1, sh: hAt(ax, az) })
-    let counter = 0
-    hpush(heur(ax, az), counter++, startState)
+    G[startState] = 0; GS[startState] = gen
+    SX[startState] = ax; SZ[startState] = az; STh[startState] = th0; SSh[startState] = hAt(ax, az)
+    SP[startState] = -1; SKi[startState] = 0
+    hpush(heur(ax, az), startState)
 
-    const goalR = Math.max(cell, stepLen)
-    const closed = new Set()
     let goalState = -1, expanded = 0
-    while (heap.length && expanded < maxNodes) {
-        const [, , sid] = hpop()
-        if (closed.has(sid)) continue
-        closed.add(sid)
-        const cur = node.get(sid)
-        if (Math.hypot(bx - cur.x, bz - cur.z) <= goalR) { goalState = sid; break }
+    let bestState = startState, bestD2 = (bx - ax) * (bx - ax) + (bz - az) * (bz - az)
+    while (hlen > 0 && expanded < maxNodes) {
+        const sid = hpopState()
+        if (CL[sid] === gen) continue
+        CL[sid] = gen
+        const cx = SX[sid], cz = SZ[sid], cth = STh[sid], csh = SSh[sid], cg = G[sid]
+        const dgx = bx - cx, dgz = bz - cz, d2 = dgx * dgx + dgz * dgz
+        if (d2 < bestD2) { bestD2 = d2; bestState = sid }
+        if (d2 <= goalR2) { goalState = sid; break }
         expanded++
         for (let ki = 0; ki < kappas.length; ki++) {
             const k = kappas[ki]
-            const [nx, nz, nth] = arcEnd(cur.x, cur.z, cur.th, k, stepLen)
+            const [nx, nz, nth] = arcEnd(cx, cz, cth, k, stepLen)
             if (nx < minX || nx > maxX || nz < minZ || nz > maxZ) continue
             const nst = stateOf(nx, nz, nth)
-            if (closed.has(nst)) continue
+            if (CL[nst] === gen) continue
             const nH = hAt(nx, nz)
-            const grade = Math.abs(nH - cur.sh) / stepLen
-            const stepCost = wDist * stepLen + wGrade * grade * grade + wOver * Math.max(0, grade - maxGrade)
-                           + wAlt * nH + wCurv * Math.abs(k) * stepLen
-            const ng = cur.g + stepCost
-            const ex = node.get(nst)
-            if (!ex || ng < ex.g) {
-                node.set(nst, { g: ng, x: nx, z: nz, th: nth, parent: sid, sh: nH, k })
-                hpush(ng + heur(nx, nz), counter++, nst)
+            const grade = Math.abs(nH - csh) / stepLen
+            const ng = cg + wDist * stepLen + wGrade * grade * grade + wOver * Math.max(0, grade - maxGrade)
+                     + wAlt * nH + wCurv * Math.abs(k) * stepLen
+            if (GS[nst] !== gen || ng < G[nst]) {
+                G[nst] = ng; GS[nst] = gen
+                SX[nst] = nx; SZ[nst] = nz; STh[nst] = nth; SSh[nst] = nH; SP[nst] = sid; SKi[nst] = ki
+                hpush(ng + heur(nx, nz), nst)
             }
         }
     }
 
-    // Fallback: if the goal was never captured (capped/blocked), end at the node closest to b.
-    let endState = goalState
-    if (endState === -1) {
-        let best = Infinity
-        for (const [st, nd] of node) { const d = Math.hypot(bx - nd.x, bz - nd.z); if (d < best) { best = d; endState = st } }
-    }
+    // Fallback: if the goal was never captured (capped/blocked), end at the closest expanded node.
+    const endState = goalState !== -1 ? goalState : bestState
     // Walk the parent chain, then re-integrate each primitive from its parent's stored pose so the
     // emitted polyline lies exactly on the valid-radius arcs (G1 across joints).
     const chain = []
-    for (let st = endState; st !== -1 && st !== undefined; st = node.get(st).parent) chain.push(st)
+    for (let st = endState; st !== -1; st = SP[st]) chain.push(st)
     chain.reverse()
     const pts2d = [[ax, az]]
     for (let i = 1; i < chain.length; i++) {
-        const par = node.get(chain[i - 1])
-        arcPoints(par.x, par.z, par.th, node.get(chain[i]).k, stepLen, pts2d)
+        const par = chain[i - 1]
+        arcPoints(SX[par], SZ[par], STh[par], kappas[SKi[chain[i]]], stepLen, pts2d)
     }
     pts2d.push([bx, bz])   // anchor the exact goal endpoint (C0 join with the next connection)
 
