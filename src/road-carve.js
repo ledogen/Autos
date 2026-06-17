@@ -640,3 +640,152 @@ export function filletMinRadius(points, minRadius, opts = {}) {
     for (let i = 0; i < n; i++) out[i] = { x: px[i], y: py[i], z: pz[i] }
     return out
 }
+
+/**
+ * arcPrimitiveConnect — hybrid-A* router between two anchors using ARC MOTION PRIMITIVES.
+ *
+ * Replaces the 8-grid cell A* whose 45°-per-cell turns produced sub-floor corners that the
+ * post-hoc fillet/cleanup stack could not repair (folds). Here every search expansion is a
+ * fixed-length ARC at a curvature in {0 (straight), ±1/gentleR, ±1/hardR}. Because the hardest
+ * primitive has radius hardR and consecutive primitives are G1-continuous (each starts at the
+ * previous arc's end heading), the emitted centerline is min-turn-radius-VALID BY CONSTRUCTION:
+ * dense XZ radius ≥ hardR everywhere except short endpoint stubs. No fillet/relaxation needed.
+ *
+ * State = (position-cell, heading-bin). Cost mirrors _protoEdgeCost semantics:
+ *   wDist·L + wGrade·grade² + wOver·max(0,grade−maxGrade) + wAlt·height + wCurv·|κ|·L
+ * The wCurv·|κ|·L term makes the straight primitive (κ=0) cheapest → long near-straights on
+ * gentle ground; the grade terms make tight switchbacks worth their curvature cost up a steep
+ * pass → variety is TERRAIN-DRIVEN and deterministic (no Math.random). Heuristic = wDist·‖·→b‖.
+ *
+ * Pure/deterministic (D-16): lattice search, stable heap tie-break, no random/Date/session state.
+ * Window-invariant by construction when called per anchor-pair (independent of stream center).
+ * NOT part of CARVE SYNC — main-thread centerline geometry only.
+ *
+ * @param {number} ax @param {number} az — start anchor (XZ)
+ * @param {number} bx @param {number} bz — goal anchor (XZ)
+ * @param {(x:number,z:number)=>number} heightFn — terrain height sampler (coarseHeight)
+ * @param {object} [opts] — hardR, gentleR, stepLen, hbins, cell, margin, emitDs, maxNodes + cost weights
+ * @returns {Array<{x:number,y:number,z:number}>} dense valid-radius centerline from a to b (y = heightFn)
+ */
+export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
+    const hardR    = opts.hardR    ?? 8       // m — tightest turn (hardest primitive); ≥ geometric floor
+    const gentleR  = opts.gentleR  ?? 30      // m — gentle turn radius
+    const stepLen  = opts.stepLen  ?? 8       // m — arc length per search primitive
+    const hbins    = opts.hbins    ?? 32      // heading discretization (11.25°)
+    const cell     = opts.cell     ?? 8       // m — position lattice cell
+    const margin   = opts.margin   ?? 200     // m — detour room around the a–b bbox (wrap a peak)
+    const emitDs   = opts.emitDs   ?? 2       // m — dense emission spacing along arcs
+    const maxNodes = opts.maxNodes ?? 200000  // expansion cap (never hang)
+    const wDist    = opts.wDist    ?? 1
+    const wAlt     = opts.wAlt     ?? 0.85
+    const wGrade   = opts.wGrade   ?? 400
+    const wOver    = opts.wOver    ?? 8000
+    const maxGrade = opts.maxGrade ?? 0.15
+    const wCurv    = opts.wCurv    ?? 120      // curvature penalty (replaces wTurn) → straight-biased
+
+    const minX = Math.min(ax, bx) - margin, maxX = Math.max(ax, bx) + margin
+    const minZ = Math.min(az, bz) - margin, maxZ = Math.max(az, bz) + margin
+    const NX = Math.max(2, Math.ceil((maxX - minX) / cell)) + 1
+    const TAU = Math.PI * 2
+    const binOf  = (th) => ((Math.round(th / TAU * hbins) % hbins) + hbins) % hbins
+    const cellOf = (x, z) => Math.max(0, Math.round((z - minZ) / cell)) * NX + Math.max(0, Math.round((x - minX) / cell))
+    const stateOf = (x, z, th) => cellOf(x, z) * hbins + binOf(th)
+
+    const kappas = [0, 1 / gentleR, -1 / gentleR, 1 / hardR, -1 / hardR]
+
+    const arcEnd = (x, z, th, k, L) => {
+        if (Math.abs(k) < 1e-12) return [x + L * Math.cos(th), z + L * Math.sin(th), th]
+        const th2 = th + k * L
+        return [x + (Math.sin(th2) - Math.sin(th)) / k, z - (Math.cos(th2) - Math.cos(th)) / k, th2]
+    }
+    // Dense points along an arc (excludes the start point, includes the end) → push [x,z] to `out`.
+    const arcPoints = (x, z, th, k, L, out) => {
+        const n = Math.max(1, Math.ceil(L / emitDs))
+        for (let i = 1; i <= n; i++) {
+            const s = L * i / n
+            if (Math.abs(k) < 1e-12) { out.push([x + s * Math.cos(th), z + s * Math.sin(th)]); continue }
+            const th2 = th + k * s
+            out.push([x + (Math.sin(th2) - Math.sin(th)) / k, z - (Math.cos(th2) - Math.cos(th)) / k])
+        }
+    }
+
+    const node = new Map()   // state → { g, x, z, th, parent, sh }
+    const heap = []          // [priority, counter, state] binary min-heap (counter = stable tie-break)
+    const hpush = (pri, cnt, st) => {
+        heap.push([pri, cnt, st]); let i = heap.length - 1
+        while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break;[heap[p], heap[i]] = [heap[i], heap[p]]; i = p }
+    }
+    const hpop = () => {
+        const top = heap[0], last = heap.pop()
+        if (heap.length) {
+            heap[0] = last; let i = 0; const n = heap.length
+            for (;;) { let l = 2 * i + 1, r = 2 * i + 2, m = i
+                if (l < n && heap[l][0] < heap[m][0]) m = l
+                if (r < n && heap[r][0] < heap[m][0]) m = r
+                if (m === i) break;[heap[m], heap[i]] = [heap[i], heap[m]]; i = m }
+        }
+        return top
+    }
+
+    const heur = (x, z) => wDist * Math.hypot(bx - x, bz - z)
+    const th0 = Math.atan2(bz - az, bx - ax)
+    const startState = stateOf(ax, az, th0)
+    node.set(startState, { g: 0, x: ax, z: az, th: th0, parent: -1, sh: heightFn(ax, az) })
+    let counter = 0
+    hpush(heur(ax, az), counter++, startState)
+
+    const goalR = Math.max(cell, stepLen)
+    const closed = new Set()
+    let goalState = -1, expanded = 0
+    while (heap.length && expanded < maxNodes) {
+        const [, , sid] = hpop()
+        if (closed.has(sid)) continue
+        closed.add(sid)
+        const cur = node.get(sid)
+        if (Math.hypot(bx - cur.x, bz - cur.z) <= goalR) { goalState = sid; break }
+        expanded++
+        for (let ki = 0; ki < kappas.length; ki++) {
+            const k = kappas[ki]
+            const [nx, nz, nth] = arcEnd(cur.x, cur.z, cur.th, k, stepLen)
+            if (nx < minX || nx > maxX || nz < minZ || nz > maxZ) continue
+            const nst = stateOf(nx, nz, nth)
+            if (closed.has(nst)) continue
+            const nH = heightFn(nx, nz)
+            const grade = Math.abs(nH - cur.sh) / stepLen
+            const stepCost = wDist * stepLen + wGrade * grade * grade + wOver * Math.max(0, grade - maxGrade)
+                           + wAlt * nH + wCurv * Math.abs(k) * stepLen
+            const ng = cur.g + stepCost
+            const ex = node.get(nst)
+            if (!ex || ng < ex.g) {
+                node.set(nst, { g: ng, x: nx, z: nz, th: nth, parent: sid, sh: nH, k })
+                hpush(ng + heur(nx, nz), counter++, nst)
+            }
+        }
+    }
+
+    // Fallback: if the goal was never captured (capped/blocked), end at the node closest to b.
+    let endState = goalState
+    if (endState === -1) {
+        let best = Infinity
+        for (const [st, nd] of node) { const d = Math.hypot(bx - nd.x, bz - nd.z); if (d < best) { best = d; endState = st } }
+    }
+    // Walk the parent chain, then re-integrate each primitive from its parent's stored pose so the
+    // emitted polyline lies exactly on the valid-radius arcs (G1 across joints).
+    const chain = []
+    for (let st = endState; st !== -1 && st !== undefined; st = node.get(st).parent) chain.push(st)
+    chain.reverse()
+    const pts2d = [[ax, az]]
+    for (let i = 1; i < chain.length; i++) {
+        const par = node.get(chain[i - 1])
+        arcPoints(par.x, par.z, par.th, node.get(chain[i]).k, stepLen, pts2d)
+    }
+    pts2d.push([bx, bz])   // anchor the exact goal endpoint (C0 join with the next connection)
+
+    const out = []
+    for (let i = 0; i < pts2d.length; i++) {
+        const x = pts2d[i][0], z = pts2d[i][1]
+        if (out.length) { const lp = out[out.length - 1]; if ((x - lp.x) ** 2 + (z - lp.z) ** 2 < 1e-6) continue }
+        out.push({ x, y: heightFn(x, z), z })
+    }
+    return out
+}
