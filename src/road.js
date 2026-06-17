@@ -35,7 +35,7 @@
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
-import { crownProfile, potholeNoise, signedCurvature, filletMinRadius, arcFilletWaypoints } from './road-carve.js'
+import { crownProfile, potholeNoise, signedCurvature, filletMinRadius, arcFilletWaypoints, arcPrimitiveConnect } from './road-carve.js'
 // roadQuality imported for SURF-06 D-03: pothole severity uses the same per-stretch
 // quality hook as markings. Importing from road-quality.js (not road-mesh.js) avoids
 // the road-mesh.js → terrain.js → road.js chain issues.
@@ -1214,65 +1214,26 @@ export class RoadSystem {
         const cached = this._proto.segs.get(key)
         if (cached) return cached
         const P = this._proto.params
-        const minX = Math.min(a.x, b.x) - PROTO_MARGIN, maxX = Math.max(a.x, b.x) + PROTO_MARGIN
-        const minZ = Math.min(a.z, b.z) - PROTO_MARGIN, maxZ = Math.max(a.z, b.z) + PROTO_MARGIN
-        const NX = Math.max(2, Math.round((maxX - minX) / PROTO_CELL))
-        const NZ = Math.max(2, Math.round((maxZ - minZ) / PROTO_CELL))
-        const S = NX * NZ
-        const H = new Float64Array(S)
-        for (let gz = 0; gz < NZ; gz++) for (let gx = 0; gx < NX; gx++) {
-            const wx = minX + (gx + 0.5) * (maxX - minX) / NX
-            const wz = minZ + (gz + 0.5) * (maxZ - minZ) / NZ
-            H[gz * NX + gx] = this._coarseH(wx, wz)
-        }
-        const cellW = (maxX - minX) / NX, cellH = (maxZ - minZ) / NZ
-        const wxOf = gx => minX + (gx + 0.5) * cellW, wzOf = gz => minZ + (gz + 0.5) * cellH
-        const toCell = (p) => [
-            Math.max(0, Math.min(NX - 1, Math.round((p.x - minX) / cellW - 0.5))),
-            Math.max(0, Math.min(NZ - 1, Math.round((p.z - minZ) / cellH - 0.5))),
-        ]
-        const [sgx, sgz] = toCell(a), [ggx, ggz] = toCell(b)
-        const start = sgz * NX + sgx, goal = ggz * NX + ggx
-        // State id = cellIdx*9 + dir (dir 0..7, 8 = start/no-direction).
-        const g = new Float64Array(S * 9).fill(Infinity)
-        const from = new Int32Array(S * 9).fill(-1)
-        const seen = new Uint8Array(S * 9)
-        const open = new MinHeap()
-        const heur = (ci) => P.wDist * Math.hypot(wxOf(ggx) - wxOf(ci % NX), wzOf(ggz) - wzOf((ci / NX) | 0))
-        const startState = start * 9 + 8
-        g[startState] = 0; open.push(startState, heur(start))
-        let goalState = -1
-        while (open.size) {
-            const sid = open.pop(); if (seen[sid]) continue; seen[sid] = 1
-            const ci = (sid / 9) | 0, dir = sid % 9
-            if (ci === goal) { goalState = sid; break }
-            const cgx = ci % NX, cgz = (ci / NX) | 0, ch = H[ci]
-            for (let nd = 0; nd < 8; nd++) {
-                const nx = cgx + PROTO_DIRS[nd][0], nz = cgz + PROTO_DIRS[nd][1]
-                if (nx < 0 || nx >= NX || nz < 0 || nz >= NZ) continue
-                const ni = nz * NX + nx, nsid = ni * 9 + nd
-                if (seen[nsid]) continue
-                const horiz = Math.hypot(PROTO_DIRS[nd][0] * cellW, PROTO_DIRS[nd][1] * cellH)
-                const turn = dir === 8 ? 0 : P.wTurn * _protoTurnSteps(dir, nd)
-                const t = g[sid] + this._protoEdgeCost(ch, H[ni], horiz, P) + turn
-                if (t < g[nsid]) { g[nsid] = t; from[nsid] = sid; open.push(nsid, t + heur(ni)) }
-            }
-        }
-        if (goalState === -1) {  // goal not popped — pick its cheapest direction-state
-            let best = Infinity
-            for (let d = 0; d < 9; d++) { const sid = goal * 9 + d; if (g[sid] < best) { best = g[sid]; goalState = sid } }
-        }
-        const wps = []
-        if (goalState !== -1 && isFinite(g[goalState])) {
-            let sid = goalState; const chain = []
-            while (sid !== -1) { chain.push((sid / 9) | 0); sid = from[sid] }
-            chain.reverse()
-            for (const ci of chain) wps.push(new THREE.Vector3(wxOf(ci % NX), H[ci], wzOf((ci / NX) | 0)))
-        }
-        // Endpoints anchored exactly (C0 join between consecutive connections), interior simplified.
-        const raw = [a.clone(), ...this._protoSimplify(wps, 12), b.clone()]
+        // Arc-primitive hybrid-A* (D-arc): the centerline is min-turn-radius-VALID BY CONSTRUCTION,
+        // replacing the 8-grid cell A* whose 45°/cell corners folded the ribbon and which the
+        // post-hoc fillet/cleanup stack could not repair. The hardest motion primitive's radius is
+        // the geometric fold-safe floor (~halfWidth + clearance, user-set ≥ 8 m); cost mirrors
+        // _protoEdgeCost (valley wAlt, grade², soft over-cap) plus a curvature penalty (wCurv = wTurn)
+        // so the straight primitive is cheapest → long near-straights, with switchbacks emerging
+        // deterministically only where grade forces them. Pure fn in road-carve.js.
+        const pp = this._params || {}
+        const halfW = pp.roadHalfWidth ?? 5, clearance = pp.roadClearanceMargin ?? 0.5
+        const hardR = Math.max(pp.roadArcHardRadius ?? 8, halfW + clearance + 0.1)  // tightest turn; ≥ floor
+        const raw = arcPrimitiveConnect(a.x, a.z, b.x, b.z, (x, z) => this._coarseH(x, z), {
+            hardR, gentleR: pp.roadArcGentleRadius ?? 30, margin: PROTO_MARGIN,
+            wDist: P.wDist, wAlt: P.wAlt, wGrade: P.wGrade, wOver: P.wOver,
+            maxGrade: P.maxGrade, wCurv: P.wTurn,
+        }).map(p => new THREE.Vector3(p.x, p.y, p.z))
+        // Collapse true straights (drop near-collinear interior points) → variable spacing; the
+        // arc corners (≥ ~3.8°/sample) are kept, so re-splining downstream cannot undershoot to a fold.
+        const simp = this._protoSimplify(raw, 2)
         const out = []
-        for (const p of raw) if (!out.length || out[out.length - 1].distanceToSquared(p) > 1e-4) out.push(p)
+        for (const p of simp) if (!out.length || out[out.length - 1].distanceToSquared(p) > 1e-4) out.push(p)
         this._proto.segs.set(key, out)
         return out
     }
@@ -1409,21 +1370,16 @@ export class RoadSystem {
                 if (rowWps.length < 2) {
                     cachedPts = []
                 } else {
-                    // Step 2 (BUG-12 fix): apply constructive arc-fillet to the SPARSE A* waypoints
-                    // BEFORE CR densification. arcFilletWaypoints inserts clean arc-point sequences at
-                    // sub-floor corners, ensuring the CR spline through them never folds the ±halfWidth
-                    // ribbon. Runs on plain {x,y,z}; convert from/back to THREE.Vector3.
-                    const filledPlain = arcFilletWaypoints(
-                        rowWps.map(p => ({ x: p.x, y: p.y, z: p.z })),
-                        this._proto.params.minTurnRadius  // fold-safe floor (≥ halfWidth + clearance + ε, D0)
-                    )
-                    const filledWps = filledPlain.map(p => new THREE.Vector3(p.x, p.y, p.z))
-                    const spline = new THREE.CatmullRomCurve3(filledWps, false, 'centripetal', 0.5)
-                    let pts = spline.getPoints(Math.max(24, filledWps.length * 2))
+                    // D-arc: rowWps already comes from the arc-primitive router — min-radius-VALID by
+                    // construction. No arc-fillet, no _filletMinRadius (which, at the old 45 m feel
+                    // radius, would relax the valid 8 m switchbacks back into undershoot). CR centripetal
+                    // only smooths between already-valid arc points. _removeLoops/_removeSelfCrossings
+                    // stay as transition nets (VBC-07) — deleted in Step 4 after in-sim confirms crease-free.
+                    const spline = new THREE.CatmullRomCurve3(rowWps, false, 'centripetal', 0.5)
+                    let pts = spline.getPoints(Math.max(24, rowWps.length * 2))
                     // Post-passes run on the FULL canonical run — not a windowed slice (D-16).
                     pts = this._removeLoops(pts)
                     pts = this._removeSelfCrossings(pts)
-                    pts = this._filletMinRadius(pts, this._proto.params.minTurnRadius)  // D0 safety net (removed in Step 4)
                     cachedPts = pts
                 }
                 this._canonRunCache.set(bandKey, cachedPts)
