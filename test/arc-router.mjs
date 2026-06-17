@@ -99,18 +99,6 @@ const opts = { hardR: HARD_R, gentleR: 30, maxGrade: 0.15 }
     log(msSearch < 60, 'PERF:search-time', `${msSearch.toFixed(1)}ms/connection avg (search incl. terrain) — chunk loads several connections`)
 }
 
-// 7: ANCHOR-JOIN CONTINUITY — chaining arrival→start heading keeps the join G1 (no kink/fold).
-{
-    const c1 = arcPrimitiveConnect(0, 0, 256, 40, peak, opts)
-    const n1 = c1.length
-    const arrival = Math.atan2(c1[n1-1].z - c1[n1-2].z, c1[n1-1].x - c1[n1-2].x)
-    const c2 = arcPrimitiveConnect(256, 40, 480, -30, peak, { ...opts, startHeading: arrival })
-    const depart = Math.atan2(c2[1].z - c2[0].z, c2[1].x - c2[0].x)
-    let d = Math.abs(arrival - depart); if (d > Math.PI) d = 2*Math.PI - d
-    const degKink = d * 180 / Math.PI
-    log(degKink < 20, 'ANCHOR-JOIN-CONTINUITY', `heading kink at shared anchor = ${degKink.toFixed(1)}° (chained); a sharp join here is what folded the ribbon at 256m anchors`)
-}
-
 console.log(`\n================================================================`)
 console.log(`ARC-ROUTER GATES: ${pass} pass, ${fail} FAIL (${pass + fail} total) — exit ${fail ? 1 : 0}`)
 process.exit(fail ? 1 : 0)

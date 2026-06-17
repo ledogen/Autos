@@ -1209,11 +1209,8 @@ export class RoadSystem {
     // State = (cell, incoming-direction) so a per-45° turn penalty (wTurn) is charged — this is what
     // makes the route run long straights and only switchback where the grade truly forces it.
     // Never fails (soft penalty keeps all edges finite).
-    _protoConnect(a, b, startHeading) {
-        // startHeading (optional): the previous connection's arrival heading, threaded so the row is
-        // G1-continuous across the shared anchor (no kink/fold at 256 m anchor joins). Part of the key.
-        const hk = (startHeading ?? null) !== null ? `@${startHeading.toFixed(2)}` : ''
-        const key = `${a.x.toFixed(0)},${a.z.toFixed(0)}>${b.x.toFixed(0)},${b.z.toFixed(0)}${hk}`
+    _protoConnect(a, b) {
+        const key = `${a.x.toFixed(0)},${a.z.toFixed(0)}>${b.x.toFixed(0)},${b.z.toFixed(0)}`
         const cached = this._proto.segs.get(key)
         if (cached) return cached
         const P = this._proto.params
@@ -1230,7 +1227,7 @@ export class RoadSystem {
         const raw = arcPrimitiveConnect(a.x, a.z, b.x, b.z, (x, z) => this._coarseH(x, z), {
             hardR, gentleR: pp.roadArcGentleRadius ?? 30, margin: PROTO_MARGIN,
             wDist: P.wDist, wAlt: P.wAlt, wGrade: P.wGrade, wOver: P.wOver,
-            maxGrade: P.maxGrade, wCurv: P.wTurn, wHeur: pp.roadArcHeurWeight ?? 1.5, startHeading,
+            maxGrade: P.maxGrade, wCurv: P.wTurn, wHeur: pp.roadArcHeurWeight ?? 1.5,
         }).map(p => new THREE.Vector3(p.x, p.y, p.z))
         // Collapse true straights (drop near-collinear interior points) → variable spacing; the
         // arc corners (≥ ~3.8°/sample) are kept, so re-splining downstream cannot undershoot to a fold.
@@ -1364,14 +1361,11 @@ export class RoadSystem {
             if (!cachedPts) {
                 // Concatenate this row's east connections into ONE continuous polyline.
                 let rowWps = []
-                let prevHeading   // arrival heading of the previous connection → next connection's start (G1 across anchors)
                 for (let mx = mx0; mx <= mx1; mx++) {
-                    const wps = this._protoConnect(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz), prevHeading)
+                    const wps = this._protoConnect(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz))
                     if (wps.length < 2) continue
                     if (rowWps.length) { for (let k = 1; k < wps.length; k++) rowWps.push(wps[k]) }
                     else rowWps = wps.slice()
-                    const n = wps.length
-                    prevHeading = Math.atan2(wps[n - 1].z - wps[n - 2].z, wps[n - 1].x - wps[n - 2].x)
                 }
                 if (rowWps.length < 2) {
                     cachedPts = []
