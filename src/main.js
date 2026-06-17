@@ -1231,7 +1231,9 @@ function loop () {
     pts.forEach((pt, i) => { if (_dbgSpheres[i]) _dbgSpheres[i].position.set(pt.x, pt.y, pt.z) })
   }
 
+  const _ptR = performance.now()
   renderer.render(scene, camera)
+  perfAdd('frame.render', performance.now() - _ptR)  // TEMP: the ~8.5s uninstrumented load cost suspect
 }
 
 requestAnimationFrame(loop)

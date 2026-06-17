@@ -643,11 +643,14 @@ export class RoadMeshSystem {
      * @param {string} key
      */
     _buildRoadTile(tileX, tileZ, key) {
-        // Ensure the road slice data is available for this tile.
-        // ensureTile() warms the network + slices if needed.
+        // D-arc perf: the road network is already streamed + sliced every frame around the VIEW center
+        // (main loop calls roadSystem.update BEFORE the ribbon flush). The old ensureTile() here RE-STREAMED
+        // the network around each TILE center — ping-ponging the stream center, clearing _tiles, and forcing
+        // both the carve and already-built ribbon tiles to rebuild (the streaming-stutter thrash). Just
+        // ensure the current network is sliced (idempotent, ~0.05ms) and read this tile's slices directly.
         const _ptE = performance.now()
-        this._road.ensureTile(tileX, tileZ)
-        perfAdd('ribbon.ensureTile(streamSlice)', performance.now() - _ptE)  // TEMP: may re-stream the road network!
+        this._road._sliceNetwork()
+        perfAdd('ribbon.sliceNetwork', performance.now() - _ptE)
         const segs = this._road._tiles.get(key)
         if (!segs || segs.length === 0) {
             // No road on this tile — mark as processed so we don't re-queue it.
