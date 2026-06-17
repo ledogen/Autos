@@ -1214,6 +1214,7 @@ export class TerrainSystem {
      * @private
      */
     _flushPendingQueue() {
+        const _tFlush = performance.now()  // TEMP perf probe (D-arc) — terrain mesh build cost
         let built = 0
         while (this._pendingQueue.length > 0 && built < MAX_BUILDS_PER_FRAME) {
             const { key, cx, cz, heights } = this._pendingQueue.shift()
@@ -1298,6 +1299,13 @@ export class TerrainSystem {
             // _updateChunkRing's !_pendingWorker.has(key) guard stays effective
             // for the entire request→built window (closes the duplicate-request race).
             this._pendingWorker.delete(key)
+        }
+        // TEMP perf probe (D-arc): terrain mesh build is the suspected page-load cost (independent of
+        // the road). Track cumulative build time + chunk count + remaining queue depth.
+        if (built > 0) {
+            this._flushMs = (this._flushMs || 0) + (performance.now() - _tFlush)
+            this._flushN  = (this._flushN  || 0) + built
+            console.log(`[terrain build] +${built} chunks this frame | total ${this._flushN} chunks, ${this._flushMs.toFixed(0)}ms cumulative | queue left ${this._pendingQueue.length}`)
         }
     }
 }
