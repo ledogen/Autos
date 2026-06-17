@@ -222,6 +222,15 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // AND re-bakes the carve (debouncedRoadRebuild now also calls rebuildAllChunksFromWorker).
   roadFolder.add(params, 'roadMinTurnRadius', 6, 300, 5).name('Min Turn Radius (m)').onChange(fireRoadParam)
 
+  // D-arc (2026-06-16) — arc-primitive router knobs. The road is min-radius-valid BY CONSTRUCTION;
+  // these set its turn CHARACTER (and one perf lever). Each re-routes via onRoadParamChange.
+  //   Arc Hard Radius:   tightest switchback the router can make (the real fold floor). ↑ = no tight turns.
+  //   Arc Gentle Radius: the preferred, cheap curve radius. ↑ = sweeping bends.
+  //   Arc Heur Weight:   weighted-A* speed knob. ↑ = faster chunk loads, slightly less optimal routes.
+  roadFolder.add(params, 'roadArcHardRadius',   6,  40,  1   ).name('Arc Hard Radius (m)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadArcGentleRadius', 10, 120, 5   ).name('Arc Gentle Radius (m)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadArcHeurWeight',   1,  3,   0.1 ).name('Arc Heur Weight (speed)').onChange(fireRoadParam)
+
   // ── Road Surface sub-folder (D-04/D-07 — Plan 09-05 surface sliders) ────────────
   // These sliders change ROAD GEOMETRY (width, crown, camber, carve slopes, shoulder, etc.)
   // and fire onRoadSurfaceChange which triggers a full debounced road-mesh + carve rebuild.

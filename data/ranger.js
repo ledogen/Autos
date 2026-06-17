@@ -235,6 +235,13 @@ export const RANGER_PARAMS = {
   // Live-tunable via the "Min Turn Radius (m)" debug slider (src/debug.js Roads folder).
   roadMinTurnRadius: 15,   // m — arc-fillet min turn radius (D0); safety floor ≥ roadHalfWidth + clearance (~5.5 m). 15 m = user's "15–20 m" feel pick (2026-06-16); live-tunable via "Min Turn Radius (m)" slider.
 
+  // D-arc (2026-06-16) — arc-primitive router knobs (arcPrimitiveConnect). The road is min-radius-VALID
+  // by construction: roadArcHardRadius is the HARDEST (tightest) turn the router can express — the real
+  // fold floor — while roadArcGentleRadius + wTurn (curvature cost) bias toward gentle/straight runs.
+  roadArcHardRadius:   8,   // m — tightest switchback radius (≥ roadHalfWidth+clearance ≈ 5.6 m floor). Higher = no tight turns.
+  roadArcGentleRadius: 30,  // m — gentle-turn primitive radius (the preferred, cheap curve).
+  roadArcHeurWeight:   1.5, // weighted-A* heuristic inflation — PERF knob: higher = faster streaming, slightly less optimal routing.
+
   // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
   // Retained for the DEFERRED D-01 spur pass (trunk-only ships first). D-01 / RESEARCH A1.
   spurProbability: 0.15, // ratio [0,1] — spur chance (deferred D-01 spur pass)

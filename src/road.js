@@ -1227,7 +1227,7 @@ export class RoadSystem {
         const raw = arcPrimitiveConnect(a.x, a.z, b.x, b.z, (x, z) => this._coarseH(x, z), {
             hardR, gentleR: pp.roadArcGentleRadius ?? 30, margin: PROTO_MARGIN,
             wDist: P.wDist, wAlt: P.wAlt, wGrade: P.wGrade, wOver: P.wOver,
-            maxGrade: P.maxGrade, wCurv: P.wTurn,
+            maxGrade: P.maxGrade, wCurv: P.wTurn, wHeur: pp.roadArcHeurWeight ?? 1.5,
         }).map(p => new THREE.Vector3(p.x, p.y, p.z))
         // Collapse true straights (drop near-collinear interior points) → variable spacing; the
         // arc corners (≥ ~3.8°/sample) are kept, so re-splining downstream cannot undershoot to a fold.
