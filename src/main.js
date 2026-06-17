@@ -27,6 +27,7 @@ import { TerrainSystem } from './terrain.js'
 import { RoadSystem, CHUNK_SIZE } from './road.js'
 import { perfAdd, perfMark, perfDump, perfReset } from './perf.js'  // TEMP perf triage (D-arc)
 let _perfFrame = 0  // TEMP: frame counter for auto-dump at load
+let _firstFrameMarked = false  // TEMP: mark the first animate frame to isolate init vs loop time
 import { RoadMeshSystem } from './road-mesh.js'
 import { parseWorldSeed, seedFor } from './seed.js'
 
@@ -859,6 +860,7 @@ const _gui = initDebug(RANGER_PARAMS, {
 // Phase 7: pass worldSeed so TerrainSystem initializes seeded noise closures and sends
 // the Worker init message before any generate requests. analyticHeight/analyticNormal
 // are immediately available after construction (no chunk load required).
+perfMark('init: before TerrainSystem')  // TEMP (D-arc) — the ~8s load is one-time init, not the frame loop
 terrainSystem = new TerrainSystem(scene, RANGER_PARAMS, worldSeed)
 scene.remove(ground)   // Remove flat 200×200 ground mesh — terrain chunks replace it (T-06-06)
 
@@ -888,7 +890,9 @@ roadMeshSystem = new RoadMeshSystem(
 // Phase 7 (D-14/15/16): initial-load seat via canonical resolveSpawn + analyticHeight ground-probe.
 // TerrainSystem is now alive and analyticHeight is immediately available (no chunk load required).
 // This overrides the vehicleState.position set during declaration (which used origin + _spawnEq.bodyY).
+perfMark('init: systems created, before spawn reseat')  // TEMP (D-arc)
 _reseatTruckAtSpawn()
+perfMark('init: spawn reseated')  // TEMP (D-arc)
 
 // ── Body contact point debug spheres ──────────────────────────────────────────
 // 14 translucent orange spheres — one per probe in getBodyContactPoints.
@@ -1069,6 +1073,7 @@ document.addEventListener('keydown', e => {
 // FIXED_DT = 1/60s; MAX_FRAME_TIME = 0.25s (T-01-04: spiral-of-death mitigation)
 function loop () {
   requestAnimationFrame(loop)
+  if (!_firstFrameMarked) { _firstFrameMarked = true; perfMark('first animate frame') }  // TEMP (D-arc)
 
   const newTime = performance.now() / 1000
   let frameTime = newTime - currentTime
@@ -1236,6 +1241,7 @@ function loop () {
   perfAdd('frame.render', performance.now() - _ptR)  // TEMP: the ~8.5s uninstrumented load cost suspect
 }
 
+perfMark('init: synchronous bootstrap done, requesting first frame')  // TEMP (D-arc)
 requestAnimationFrame(loop)
 
 // ── Resize handler ───────────────────────────────────────────────────────────
