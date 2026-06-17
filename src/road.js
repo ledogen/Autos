@@ -800,8 +800,18 @@ export class RoadSystem {
      */
     update(center) {
         const before = this._networkCenter
+        // TEMP perf probe (D-arc): split stream(routing) vs slice(spline build) and report centerline
+        // point count, but ONLY when the network actually re-streamed (center moved / re-route) so it
+        // doesn't spam every frame. Remove once streaming perf is confirmed acceptable.
+        const _t0 = performance.now()
         this._streamNetwork(center)
+        const _t1 = performance.now()
         this._sliceNetwork()
+        const _t2 = performance.now()
+        if (before !== this._networkCenter) {
+            let _npts = 0; for (const r of this._network.values()) _npts += r.points.length
+            console.debug(`[road perf] stream(route) ${(_t1 - _t0).toFixed(1)}ms | slice(spline) ${(_t2 - _t1).toFixed(1)}ms | runs ${this._network.size} | centerline pts ${_npts}`)
+        }
         // Refresh viz lines only when the network actually re-streamed (center changed / first
         // build / re-route) and the viz is currently visible.
         if (this._debugVisible && (before !== this._networkCenter || this._debugLines.length === 0)) {
@@ -1371,14 +1381,13 @@ export class RoadSystem {
                     cachedPts = []
                 } else {
                     // D-arc: rowWps already comes from the arc-primitive router — min-radius-VALID by
-                    // construction. No arc-fillet, no _filletMinRadius (which, at the old 45 m feel
-                    // radius, would relax the valid 8 m switchbacks back into undershoot). CR centripetal
-                    // only smooths between already-valid arc points. _removeLoops/_removeSelfCrossings
-                    // stay as transition nets (VBC-07) — deleted in Step 4 after in-sim confirms crease-free.
-                    const spline = new THREE.CatmullRomCurve3(rowWps, false, 'centripetal', 0.5)
-                    let pts = spline.getPoints(Math.max(24, rowWps.length * 2))
-                    // Post-passes run on the FULL canonical run — not a windowed slice (D-16).
-                    pts = this._removeLoops(pts)
+                    // construction AND already dense (arc emission). The old `getPoints(rowWps.length*2)`
+                    // existed to DENSIFY the old SPARSE grid points; applied to the already-dense arc
+                    // output it multiplied the centerline into 5-20x the geometry the downstream slicer/
+                    // ribbon/carve must process every stream — the streaming-cost regression. Use the
+                    // arc points directly. _removeLoops/_removeSelfCrossings stay as transition nets
+                    // (VBC-07) — deleted in Step 4 after in-sim confirms crease-free.
+                    let pts = this._removeLoops(rowWps)
                     pts = this._removeSelfCrossings(pts)
                     cachedPts = pts
                 }
