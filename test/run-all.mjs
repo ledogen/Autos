@@ -15,7 +15,8 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const GATES = [
     'arc-router.mjs',       // arc-primitive router: valid-by-construction (Phase 09-31)
     'defect-b-grade.mjs',   // smoothGradeInPlace window-invariance (defect B)
-    'invariance.mjs',       // two-center network invariance (THIS rewrite — RED until Phase 2)
+    'invariance.mjs',       // two-center network invariance (THIS rewrite — green since Phase 2)
+    'restream-invariance.mjs', // same-instance re-stream (cache-reuse) invariance — drive-in == fresh
     'ribbon-carve.mjs',     // synthetic ribbon↔carve agreement (dump-free; replaced seam-grade.mjs)
 ]
 

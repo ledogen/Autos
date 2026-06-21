@@ -1420,6 +1420,14 @@ export class RoadSystem {
                     // (VBC-07) — deleted in Step 4 after in-sim confirms crease-free.
                     let pts = this._removeLoops(rowWps)
                     pts = this._removeSelfCrossings(pts)
+                    // CLONE before grading. rowWps holds the SAME THREE.Vector3 instances that
+                    // _protoConnect cached in this._proto.segs (returned by reference, road.js:1253),
+                    // and _removeLoops/_removeSelfCrossings pass them through. smoothGradeInPlace
+                    // mutates point.y IN PLACE — without this clone it would corrupt the cached
+                    // connect waypoints' Y, so a later re-stream that REUSES a cached segment grades
+                    // already-graded Y → grade becomes streaming-history-dependent (re-stream tear,
+                    // caught by restream-invariance.mjs). Cloning keeps the segment cache raw.
+                    pts = pts.map(p => p.clone())
                     // Defect B (09-31): GRADE the centerline — longitudinal Y low-pass on the
                     // canonical row BEFORE caching/COVER-split/slicing. The arc router stamps each
                     // point Y = coarseHeight(x,z), so without this the road RIDES raw ridged terrain

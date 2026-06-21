@@ -68,6 +68,33 @@ export function buildNetwork(center) {
     return road
 }
 
+/**
+ * ONE RoadSystem driven through a SEQUENCE of stream centers (the headless analogue of actually
+ * driving/freecamming across the world — each update() is a real re-stream with cache reuse).
+ * Used by restream-invariance.mjs to prove the final-state region is identical to a fresh build,
+ * i.e. that re-stream cache handling never serves stale geometry/arc/grade.
+ * @param {Array<{x:number,z:number}>} centers — visited in order; the LAST is the final state
+ * @returns {RoadSystem}
+ */
+export function buildNetworkPath(centers, { probe = false } = {}) {
+    const road = new RoadSystem(WORLD_SEED, TEST_PARAMS, COARSE_HEIGHT)
+    for (const c of centers) {
+        road.update(new THREE.Vector3(c.x, 0, c.z))
+        // probe=true mirrors the real game: queries run EVERY frame, so runProfile/camberProfile
+        // caches fill DURING streaming (keyed per-run, generation-not-bumped on positional re-stream).
+        // A later re-stream that changes a run's extent must invalidate those caches or it serves
+        // stale arcS→gradeY. Sampling around each center here populates the caches so the final-state
+        // comparison actually exercises that invalidation path (without probe the caches are empty
+        // until the final sample → the staleness is masked).
+        if (probe) {
+            for (let x = c.x - 600; x <= c.x + 600; x += 24)
+                for (let z = c.z - 600; z <= c.z + 600; z += 24)
+                    road.debugSampleAt(x, z)
+        }
+    }
+    return road
+}
+
 // ── sampleRegion ──────────────────────────────────────────────────────────────────
 const r3 = (v) => Math.round(v * 1000) / 1000   // mm rounding for byte-identical set comparison
 
