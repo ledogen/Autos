@@ -102,13 +102,17 @@ if (capture.kind === 'place') {
     if (!surfaceOk) { console.log('        → SURFACE TEAR present at this location (drivable height is window-variant).'); fail = 1 }
 
     // ── (3) fold / kink metric at the mark ────────────────────────────────────────────
+    // The arc router is min-turn-radius VALID BY CONSTRUCTION, so any local centerline radius below
+    // the design min (roadMinTurnRadius) is a construction breach = a kink/fold. Severity by how far
+    // under: < hard floor (roadArcHardRadius) is egregious.
     const minR = got.minR ?? 9999
-    const HARD = params.roadMinTurnRadius ?? 45
+    const designMin = params.roadMinTurnRadius ?? 45
+    const hardFloor = params.roadArcHardRadius ?? 8
     console.log(`\n  (3) FOLD METRIC @ mark`)
-    console.log(`        local centerline turn radius = ${minR.toFixed(1)} m  (design min ${HARD} m)`)
-    console.log(minR < HARD * 0.6
-        ? `        → SHARP KINK: radius well under design min — likely the fold/kink.`
-        : `        → centerline radius within tolerance here.`)
+    console.log(`        local centerline turn radius = ${minR.toFixed(1)} m  (design min ${designMin} m, hard floor ${hardFloor} m)`)
+    if (minR < hardFloor)        console.log(`        → SEVERE KINK: radius below the hard floor — a fold.`)
+    else if (minR < designMin)   console.log(`        → KINK: radius ${(minR / designMin * 100).toFixed(0)}% of design min — tighter than the router should emit.`)
+    else                         console.log(`        → centerline radius within design min here.`)
 
 } else if (capture.kind === 'event') {
     const { replayEvent } = await import('./lib/physics-replay.mjs')   // lazy: only the event path loads physics+terrain
