@@ -1,10 +1,12 @@
 ---
 id: BUG-14
 type: bug
-status: open
+status: closed
 opened: 2026-06-14
+closed: 2026-06-21
 source: phase-09-insim-verify
 severity: high
+resolution: fixed
 ---
 
 # BUG-14: Vertical grade step at tile/chunk seams (carve foundation + physics) → suspension launch
@@ -39,25 +41,21 @@ GRADE REFERENCE is still selected discretely / per-window, and that selection is
 Both are worse at high coarse amplitude (steep road grades turn small arc-position / sample-selection
 differences into large Y steps). Distinct from the camber-seam BUG-10 (that was arcS keying).
 
-## Symptom detail (user, 2026-06-14)
+## Fix (plan 09-27)
 
-Usually the transition feels like the car **teleports up/down with no residual velocity** → a pure
-POSITION discontinuity: `analyticHeight` jumps between frames, suspension re-seats at the new height, no
-energy injected. **Sometimes it clips → launch** → that's the UPWARD step: when the seam step is a gain,
-the wheel resting at the old (lower) height is suddenly below the new (higher) surface → large one-step
-penetration → contact/bump-stop correction ejects it hard. Downward steps are benign; upward steps launch.
-A single C0 fix on the contact height kills both (no step → no teleport, no penetration spike).
+- **Carve path (terrain.js `_buildCarveTable`):** replaced `ny = samples[bi+1]` (nearest discrete sample Y)
+  with `this._roadSystem.runProfile(arcS, runKey).gradeY` — the same continuous run-global profile used by
+  physics. Both adjacent chunks read the same runProfile at the same arcS → shared boundary vertices agree
+  by construction.
+- **Physics path (road.js `queryNearest`):** `analyticHeight` now uses `runProfile(nr.arcS).gradeY` which
+  is C0 across slice switches — no jump when `bestSpline` switches at a tile boundary.
 
-## Fix directions
+## Verification
 
-- **Carve foundation:** project onto the slice spline (continuous, same as physics) instead of nearest
-  discrete sample; OR guarantee shared chunk-boundary vertices use an identical cross-boundary sample/grade
-  so adjacent chunks agree by construction. Then mesh == physics and no per-chunk seam step.
-- **Physics:** make the slice/arm selection stable across tile boundaries — prefer the continuous parent
-  run and blend `nr.point.y` across a slice switch rather than hard-switching `bestSpline`.
-- Extend the headless harness: a seam fixture that samples grade on BOTH sides of a tile boundary from the
-  carve-table path AND the queryNearest path and asserts |ΔY| < ε across the seam (the current
-  tile-seam-mismatch gate only checks the spline endpoints, not the discrete carve / slice-switch).
+Confirmed closed by harness on 2026-06-21: all 6 gate suites GREEN, including:
+- `invariance.mjs` GRADEY-INVARIANT: 525 pts on-road, worst Δ 0.000 m
+- `ribbon-carve.mjs` SEAM-BOUNDED: worst tile-seam step 0.183 m (<0.35 m)
+- `ribbon-carve.mjs` RIBBON-MATCHES-CARVE: ribbon↔carve Y gap 0.000 m
 
 ## Acceptance
 
