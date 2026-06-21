@@ -1,9 +1,11 @@
 ---
 id: BUG-11
 type: bug
-status: open
+status: closed
 opened: 2026-06-13
 source: phase-09-insim-verify
+closed: 2026-06-21
+resolution: "Both halves fixed. Spawn-off-road: resolveSpawn re-streams + re-seats (main.js). Determinism: world-anchored run identity (Phase 2, same root as closed BUG-08) makes geometry a pure fn of (seed,params), not slider history — verified headless: param A->B->A == fresh A (geom+gradeY identical) with a real re-routing control."
 ---
 
 # BUG-11: Road rebuild non-determinism + spawn-off-road
@@ -78,3 +80,27 @@ this note; revisit only if it becomes a real problem. The spawn-off-road fix sta
 - Reload-at-12 and slider 12→15→12 produce the SAME road geometry at the same world position.
 - Truck spawns ON the road ribbon. ✅ (spawn fix)
 - Headless window-invariance assertion for the filleted run.
+
+## Resolution (2026-06-21)
+
+Both acceptance halves met.
+
+- **Spawn-on-road**: fixed earlier via `resolveSpawn` (main.js) — re-streams centered on the spawn point
+  and re-seats on that network so placement matches the rendered ribbon. (Runtime placement; not
+  headless-testable, documented fixed.)
+- **History-independent geometry**: fixed by the Phase 2 world-anchored run identity (same root cause as
+  closed BUG-08). Verified headless by driving the real RoadSystem through the in-game path
+  (mutate param -> invalidateCache() -> update()) and comparing a param-change-and-return against a fresh
+  build, with a re-routing control that actually changes the route:
+    - `maxRoadGrade 0.15->0.05->0.15`: intermediate route differs (913 vs 1259 on-road pts);
+      `A->B->A` == fresh `A` — geometry AND gradeY byte-identical.
+    - `roadWTurn 120->5->120`: intermediate route differs (1077 pts); `A->B->A` == fresh `A` identical.
+  (First attempt with roadMinTurnRadius was vacuous — the gentle synthetic terrain never curves tight
+  enough for the fillet to bite, so the control didn't change the route; switching to a re-routing param
+  made it a real test.)
+
+Caveat: probe ran on the synthetic coarse-height (seed 6), but history-independence is a structural
+property of the rebuild/cache path (`_generation`/`_networkRev` keying + world-anchored band),
+independent of the height function. Standing stream-center invariance is already guarded by
+invariance.mjs / restream-invariance.mjs (in npm test); the param-history probe was throwaway (easy to
+recreate, per project preference not to retain one-off gates).
