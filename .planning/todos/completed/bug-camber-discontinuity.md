@@ -1,9 +1,11 @@
 ---
 id: BUG-10
 type: bug
-status: open
+status: closed
 opened: 2026-06-13
 source: phase-09-insim-verify
+closed: 2026-06-21
+resolution: "Fixed by _runStartCamber cross-run camber seeding (road.js:2195, P4/09-29). Proven by the camber-across-run gate in test/spline-continuity.mjs. Gate left as an on-demand diagnostic, not promoted to npm test (easy to recreate if it resurfaces)."
 ---
 
 # BUG-10: Road camber transitions are sharp / discontinuous
@@ -73,3 +75,19 @@ gate (still owed). Don't force `camberRad[0]=0` when the run starts mid-curve.
 
 - Driving through turns and across run/arm boundaries, banking eases smoothly (no step).
 - Headless gate proves `|Δcamber/Δs| ≤ roadCamberRate` across a run-boundary fixture.
+
+## Resolution (2026-06-21)
+
+Confirmed fixed (user: "fixed for a while"). Root cause was the forced per-run `rawCamber[0]=0` reset
+that made banking jump to zero at every run boundary. `_runStartCamber(runKey)` (src/road.js:2195,
+landed P4 / plan 09-29) replaced that reset — each run's start camber is now seeded from the adjacent
+predecessor run's end value via `_runAdjacencyCache`, so banking is C0 across run/arm boundaries.
+
+Proven by `test/spline-continuity.mjs` → `camber-across-run` (role: gate, exit 0):
+
+- run A end camber 6.000°; **forced-zero start** (old BUG-10 behaviour) → boundary step 6.000° (would FAIL);
+  **seeded start** (the fix) → boundary step 0.000000° → PASS. `|Δcamber/Δs| ≤ roadCamberRate` across the
+  boundary, with a negative control confirming the gate bites the bug.
+
+Note: `spline-continuity.mjs` is a diagnostic, NOT registered in `npm test` — by decision we are not
+keeping it as a standing guard; if camber discontinuity ever resurfaces, recreating the gate is cheap.
