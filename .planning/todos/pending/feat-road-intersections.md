@@ -1,58 +1,84 @@
 ---
-id: FEAT-05
+id: FEAT-07
 type: feature
-status: folded
+status: open
 opened: 2026-06-11
-phase_origin: 08-road-routing
-resolves_phase: 9
-folded_into: 09-road-surface
+rewritten: 2026-06-21
+severity: major
 source: user-observation
-note: "Reclassified from BUG-09 (2026-06-11) — road crossings are expected; we need to handle them as intersections. FOLDED INTO Phase 9 (2026-06-11 discuss-phase, SURF-07) — merged at-grade paved junctions built junction-aware from the start; see 09-CONTEXT.md D-12..D-15. Will auto-close on Phase 9 completion."
+supersedes: FEAT-05 (road intersections, folded) ← BUG-09
+phase_origin: 08-road-routing
+note: "Rewritten 2026-06-21 per user: intersections must be a TRUE single merged mesh emerging from the interaction of the adjacent road splines — not two overlapping ribbons, not a decal/patch laid on top. Un-folded from Phase 9 (the at-grade-junction fold never shipped). NOT being addressed yet — request only."
 ---
 
-# FEAT-05: Road intersections / junctions where roads cross
+# FEAT-07: Road intersections — one mesh meshed from the interaction of adjacent splines
 
 ## Goal
 
-Roads cross each other (two different runs meeting at an angle) — this is EXPECTED, not a defect. What's
-missing is treating those crossings as real **intersections/junctions**: a shared node where the roads
-meet, so the network is a connected graph and Phase-9 meshing can build a clean intersection instead of
-two overlapping/z-fighting ribbons.
+Where two roads cross or meet (two runs converging at an angle, an X- or a T-crossing), the surface must
+be a **single continuous road mesh that is generated from the interaction of the adjacent centerline
+splines** — the junction surface is *derived* from how those splines overlap and blend, so it reads as
+one paved intersection. Explicitly NOT:
 
-## Current behavior (why crossings already occur)
+- two independent crowned ribbons overlapping / z-fighting at the crossing,
+- a separate decal or patch "intersection prop" dropped on top of the ribbons,
+- a flat polygon that hides the seam.
 
-- The network is one east-west run **per macro-row** (`mz`), each routed independently by the A*
-  (`_protoConnect`), which may detour up to `PROTO_MARGIN = 200 m` N/S to wrap around a peak — so runs
-  from different rows can cross.
-- `_removeSelfCrossings` only removes crossings **within a single polyline**; it never compares two runs.
-- Overlap suppression (`PROTO_COVER_*`) is **same-direction only** and explicitly preserves angled
-  crossings (road.js:85). So crossings survive — there's just nothing that turns them into junctions.
+The intersection geometry, crown/camber blend, and the terrain carve under it should all fall out of the
+combined spline footprint at the junction — the same construction philosophy as the rest of the road
+surface (mesh == physics-felt surface, by construction).
 
-## What "do intersections" means (design sketch)
+## Acceptance (what "done" looks like)
 
-- **Detect** inter-run crossings: pairwise XZ segment intersection across all runs in `this._network`.
-- **Insert a shared junction node** at each crossing (split both runs at the intersection point so they
-  share that exact vertex) → connected graph; both centerlines pass through one point.
-- Keep determinism: crossing detection + node insertion must be a pure function of `(seed, coords, params)`
-  and stable across re-streams (ties into BUG-08 window-invariance — junctions must not pop either).
-- Phase-9 consideration: the mesh needs an intersection treatment (merged surface / priority road) at each
-  junction so two ribbons don't z-fight; the shared node is the hook for that.
+- A crossing produces **one connected mesh** through the junction: walk the surface from any incoming road
+  arm to any other and there is no overlap edge, no z-fight, no decal seam — continuous geometry.
+- The junction surface is **a function of the participating splines** (their crossing point, angles, and
+  widths), not hand-placed: change a road's route and the intersection re-forms correctly.
+- Crown/camber blend smoothly to flat (or a sensible priority profile) through the junction — no ridge
+  where two crowns intersect, no lateral step (cf. BUG-15 shoulder discontinuity).
+- The terrain carve under the junction matches the merged surface (no airborne/sink-through across it).
+- **Window-invariant & deterministic**: the junction is a pure function of `(seed, world-coords, params)`
+  and identical across stream centers / re-streams — it must not pop. (The harness invariance gates that
+  retired BUG-08 should extend to cover junction nodes too.)
 
-## Open questions
+## Why crossings already occur (current behavior)
 
-- Junction geometry: simple shared-point, or a proper blended intersection footprint?
-- Priority/ramp: do crossing roads stay flat-crossing, or does one duck under (grade-separated)? Likely
-  flat at-grade for now.
-- Interaction with spurs (deferred D-01) — spurs will create T-junctions too; design the junction model
-  once for both X- and T-crossings.
+- The network is one east-west run per macro-row (`mz`), each routed independently (`_protoConnect`),
+  allowed to detour N/S (`PROTO_MARGIN`) around peaks — so runs from different rows cross.
+- `_removeSelfCrossings` only de-crosses *within* one polyline; it never compares two runs.
+- Overlap suppression (`PROTO_COVER_*`) is same-direction only and deliberately preserves angled
+  crossings (road.js:85). So crossings survive untreated — there is no junction concept and no merged mesh.
+
+## Design sketch (enabler — not a committed plan)
+
+1. **Detect** inter-run crossings: pairwise XZ segment intersection across all runs in `this._network`
+   (plus T-meets when an endpoint lands on another run, and future spur joins).
+2. **Insert a shared junction node**: split both runs at the exact crossing vertex so the network is a
+   connected graph and both centerlines pass through one point — the hook the mesh builds on.
+3. **Generate the merged surface from the incident splines**: build the junction footprint from the union
+   of the arms' swept cross-sections, blending crown→flat and carving the terrain to the same surface.
+   This is the core of the request — the mesh is *interacted from the splines*, not stamped.
+4. Keep all of the above a pure function of `(seed, coords, params)` and stable across re-streams.
+
+## Open questions (decide during planning, not now)
+
+- Junction footprint model: convex hull of arm cross-sections, a swept blend, or a parameterized fillet?
+- At-grade only, or eventually grade-separated (one road ducks under)? Assume flat at-grade first.
+- Priority/crown handling: symmetric flatten, or a through-road keeps its crown and the minor road yields?
+- Design the junction model **once** to cover both X-crossings and T-junctions (spurs, deferred D-01,
+  will create T's).
+
+## Relationships
+
+- **QUAL-03** (road re-architecture to constrained-spline + swept cross-section): a junction-aware,
+  graph-based road model is exactly what QUAL-03 proposes — these likely want to be designed together, so
+  the swept-cross-section model handles junctions natively rather than bolting them on after.
+- **BUG-15 / BUG-14** (carve↔surface discontinuities): the junction merge must not reintroduce the same
+  crown/seam steps; share the unified cross-section + carve approach.
+- **BUG-08** (closed): junctions inherit the window-invariance contract — extend those gates.
 
 ## Files
 
-- `src/road.js` — `_streamNetwork` run build, `this._network`, a new inter-run crossing/junction pass;
-  `PROTO_MARGIN` / `PROTO_COVER_*` context.
-- (Phase 9) ribbon mesh — intersection surface treatment at junction nodes.
-
-## Notes
-
-- Pairs with BUG-08 (re-stream pop): junctions must be window-invariant too, so ideally both are solved
-  by moving to canonical, center-independent run/junction derivation.
+- `src/road.js` — `_streamNetwork` / `this._network` (add an inter-run crossing + junction-node pass);
+  `PROTO_MARGIN` / `PROTO_COVER_*` / `_removeSelfCrossings` context.
+- Ribbon mesh + carve (Phase 9 surface code) — the merged-junction surface treatment driven by junction nodes.
