@@ -2,8 +2,10 @@
 id: BUG-06
 type: bug
 severity: minor
-status: open
+status: closed
 opened: 2026-06-03
+closed: 2026-06-21
+resolution: "Closed on user UAT (no headless gate — render-time/subjective). Symptom gone in current build. Most likely resolved INDIRECTLY by Phase 4.1 suspension stabilization (less CG micro-bounce to amplify); the suspected mechanism (unsmoothed lookAt, camera.js:239) is still present, so a one-line _smoothLookAt lerp remains the fix if it ever resurfaces."
 ---
 
 # BUG-06: Intermittent jitter in chase cam (not orbit, not cockpit)
@@ -64,3 +66,20 @@ Store the previous and current physics position and interpolate by `accumulator 
 
 - The Euler extraction on lines 84–85 is still slightly inelegant (allocates `THREE.Euler` each frame, gimbal-adjacent at extreme pitch) but is **not** the cause of the reported symptom. The forward-vector/atan2 replacement is still a valid improvement if a refactor is done here.
 - Reset `_smoothLookAt` to `vehicleState.position` on R-reset so it doesn't lerp in from the old position after reset.
+
+## Resolution (2026-06-21)
+
+Closed on user verification — user reports the chase cam is smooth in the current build and is happy
+with it. No headless gate: the camera is render-time / rAF + DOM coupled and the symptom is subjective
+(a 1-2deg intermittent wobble), so there is nothing deterministic to assert in the zero-install harness.
+
+Honest note for the record: the prime suspect from the root-cause analysis — the UNSMOOTHED `lookAt`
+target — is still in the code (`src/camera.js:239`, `camera.lookAt(vehicleState.position)`, raw, no
+lerp; no `_smoothLookAt` was ever added). So the jitter was not fixed in the camera. It was most likely
+resolved INDIRECTLY: the wobble magnitude is `atan(dY / distance)` driven by CG micro-bounce from
+suspension oscillation, and the Phase 4.1 strut/damper stabilization removed that bounce, leaving the
+unsmoothed look-at nothing to amplify.
+
+Latent mechanism therefore remains: a violent CG bounce (e.g. the BUG-15 slam, or rough terrain) could
+still produce a frame or two of look-at wobble. If it resurfaces, apply the `_smoothLookAt` lerp from
+the Candidate Fixes section above (and reset it to vehicleState.position on R-reset).
