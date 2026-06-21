@@ -2,10 +2,12 @@
 id: QUAL-03
 type: quality
 severity: major
-status: open
+status: closed
 opened: 2026-06-15
 source: scribe-session
 tags: [refactor, tech-debt, architecture, road]
+closed: 2026-06-21
+resolution: "Stale — the re-architecture it asked for is effectively delivered (arc-primitive valid-by-construction routing + swept cross-section / curvature-driven camber). road.js did NOT shrink (grew to 2860 LOC) but the bulk is now inherent complexity (streaming/invariance/carve), not band-aids. Only residual is a trivial dead-code deletion (_limitCurvature). No major win remains."
 ---
 
 # QUAL-03: Road system is too large/complex — re-architect around a constrained-spline + swept-cross-section model
@@ -94,3 +96,31 @@ The coding agent is **actively in Phase 9 (Road Surface)** right now — this is
 re-architecture*, NOT an interrupt. Reconcile against in-flight Phase 9 work (decal pivot, BUG-14,
 continuous-profile design) before acting; likely a post-Phase-9 milestone item. Captured via scribe
 session — promote/plan deliberately, don't let it collide with active road work.
+
+## Resolution (2026-06-21) — closed as substantially delivered / stale
+
+Investigated against current `src/road.js`. The two architectural asks are both effectively in place,
+achieved incrementally (arc-router + Phase 9 surface work) rather than a from-scratch rewrite:
+
+1. **Valid-by-construction centerline** — DELIVERED. The arc-primitive hybrid-A* router
+   (`_protoConnect` -> `arcPrimitiveConnect`, road.js:1267 "min-turn-radius VALID BY CONSTRUCTION")
+   replaced the old grid-A*. The active `_filletMinRadius` pass (thin adapter over `filletMinRadius`)
+   enforces min radius and is gated by the `hairpin-fillet-enforced` fixture (raw 2.97 m -> 11.76 m).
+   Deleted band-aids: `_limitTurnAngle`, `roadMaxTurnDeg`, `_excise` (0 refs). `_limitCurvature` is
+   explicitly "superseded by _filletMinRadius (D0) — kept for reference only" (dead, no call site).
+2. **Swept cross-section + curvature-driven superelevation** — DELIVERED. `crownProfile` swept along the
+   centerline (road-mesh.js) + curvature-driven slew-limited camber; BUG-10 (closed) proves the bank is
+   C0 across run/arm boundaries — the "back-to-back corners with no discontinuity" requirement.
+
+**Headline goal (shrink road.js) NOT met, and no longer a real win:** the file GREW from the cited ~2k
+to **2860 LOC**. That growth is arc-router integration + per-run invariance caching (the BUG-08/11 fix)
++ carve/ribbon coherence — *inherent* complexity, not the "band-aids on band-aids" this ticket described.
+The corrective passes that remain are small: `_removeLoops` / `_removeSelfCrossings` are kept as cheap
+transition safety-nets on the arc output (no-ops for valid input), and `_smoothDesignGrade` /
+`smoothGradeInPlace` are the grade path. Removing them would delete real insurance/behavior, not bloat.
+
+**Only concrete residual:** delete the dead `_limitCurvature` block (~40 lines, road.js ~1209-1261,
+superseded, uncalled). A 2-minute quick task — not worth a tracked major quality ticket. Captured here;
+do it opportunistically (e.g. next time road.js is open) if desired.
+
+Net: the architectural vision is realized; there is no major simplification win left to chase. Closed.
