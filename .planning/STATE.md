@@ -2,16 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Mountains & Roads
-status: executing
-stopped_at: BUG-12/camber root cause CONVERGED on real dumps (sub-radius centerline + uneven spacing → one constructive conditioner replaces generate-then-clean). Design/handoff doc written; no code yet.
-last_updated: "2026-06-16T18:09:00.176Z"
-last_activity: 2026-06-16 -- Phase 09 execution started
-progress:
-  total_phases: 4
-  completed_phases: 2
-  total_plans: 43
-  completed_plans: 42
-  percent: 50
+status: bug-polish
+stopped_at: v1.1 road surface + headless invariance/replay harness landed (Phases 0–5 of 09-INVARIANCE-HARNESS). In bug-polish — remaining work tracked as tickets in .planning/todos/, not phase plans.
+last_updated: "2026-06-21"
+last_activity: 2026-06-21 -- tracker triage (closed BUG-06/08/10/11, QUAL-03; filed BUG-16, PERF-02; refiled FEAT-07) + right-sized workflow
+workflow_note: "Right-sized for maintenance stage 2026-06-21 — lightweight loop (todos tracker + plan mode + direct edits + conventional commits + headless harness gate); GSD orchestration is opt-in. See CLAUDE.md ## Workflow."
 ---
 
 # Project State
@@ -21,18 +16,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05)
 
 **Core value:** Physics that feel honest: a car that can roll over naturally, drift on the limit, and behave predictably enough that tuning parameters produces the expected result.
-**Current focus:** Phase 09 — road-surface
+**Current focus:** v1.1 bug-polish — road surface tickets in `.planning/todos/`
 
 ## Current Position
 
-Phase: 09 (road-surface) — EXECUTING
-Plan: 1 of 31
-Status: Executing Phase 09
-Last activity: 2026-06-16 -- Phase 09 execution started
+Stage: **maintenance / bug-polish** (v1.1 Mountains & Roads)
+Road surface + the headless invariance/replay harness (Phases 0–5 of 09-INVARIANCE-HARNESS, in `test/`)
+have landed; the surface is window-invariant + drivable. Phase 10 (POI + polish) is backlog.
+Remaining work is the `.planning/todos/` tracker, not new phase plans.
 
-```
-v1.1 Progress: [                    ] 0% (0/4 phases)
-```
+Open tickets (2026-06-21): BUG-12, BUG-14, BUG-15 (replay-reproducible), BUG-16 (heading dither),
+PERF-02 (stream hitch), QUAL-02 (sky/fog), FEAT-03/04/05/06/07.
+Last activity: 2026-06-21 — tracker triage + right-sized workflow (see CLAUDE.md ## Workflow).
 
 ## Performance Metrics
 
@@ -85,16 +80,9 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-| # | Bug / Task | Description |
-|---|------------|-------------|
-| 1 | P7 exit gate | seedFor() determinism test must pass before any other generator uses it |
-| 2 | P7 exit gate | height-agreement test: sampleHeight(x,z) == bilinear(chunk.heights)*amp at 5 world positions |
-| 3 | P7 exit gate | Lock coarse terrain amplitude/wavelength/octaves — do not change after P8 starts |
-| 4 | P8 start spike | Resolve switchback-in-tile routing approach (multi-layer grid vs waypoint graph with U-turn nodes vs recursive sub-tile) |
-| 5 | P8 exit gate | Debug splines show no kinks at tile seam boundaries; no self-crossing switchback arms |
-| 6 | P9 start gate | Specify carveBlend function signature and chunk.carveWeights build pattern before writing any mesh or physics code |
-| 7 | P9 exit gate | Height-agreement test extended to on-road positions: carve result identical in _flushPendingQueue and sampleHeight |
-| 8 | P9 exit gate | Shoulder cliff test: no step discontinuity in sampleHeight across chunk seam boundary at road edge |
+The live tracker is **`.planning/todos/pending/`** (open) and **`.planning/todos/completed/`** (closed).
+This section is no longer maintained by hand — see the tracker. (The old P7/P8/P9 exit-gate list here was
+satisfied long ago; the harness gates in `test/` + `npm test` are the current quality bar.)
 
 ### Quick Tasks Completed
 
@@ -133,6 +121,7 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-06-16T16:41:15.057Z
-Stopped at: BUG-12/camber root cause CONVERGED on real dumps (sub-radius centerline + uneven spacing → one constructive conditioner replaces generate-then-clean). Design/handoff doc written; no code yet.
-Resume file: .planning/phases/09-road-surface/09-CENTERLINE-CONDITIONER-DESIGN.md
+Last session: 2026-06-21
+Stopped at: tracker triage + workflow right-sizing. v1.1 in bug-polish; harness (Phases 0–5) shipped.
+Resume: pick a ticket from `.planning/todos/pending/` (the road-surface family BUG-12/14/15/16 + FEAT-07
+shares a carve/centerline root; BUG-15 reproduces headlessly via `node test/replay.mjs <capture>`).

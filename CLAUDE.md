@@ -104,17 +104,26 @@ Architecture not yet mapped. Follow existing patterns found in the codebase.
 No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, `.github/skills/`, or `.codex/skills/` with a `SKILL.md` index file.
 <!-- GSD:skills-end -->
 
-<!-- GSD:workflow-start source:GSD defaults -->
-## GSD Workflow Enforcement
+<!-- GSD:workflow-start source:customized 2026-06-21 (right-sized for maintenance stage) -->
+## Workflow
 
-Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
+This project is in **maintenance / polish stage**. Work the lightweight loop — direct edits are the
+norm; you do NOT need to route every change through a `/gsd-*` command.
 
-Use these entry points:
-- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd-debug` for investigation and bug fixing
-- `/gsd-execute-phase` for planned phase work
+- **Capture** bugs/features/ideas as tickets in `.planning/todos/pending/` (frontmatter: `id`, `type`,
+  `status`, `severity`, plus a clear acceptance section). This tracker is the live source of truth for
+  outstanding work. Close a ticket by moving it to `.planning/todos/completed/` with a resolution note.
+- **Plan** non-trivial / multi-file changes via plan mode (get sign-off before implementing). Skip the
+  ceremony for small fixes.
+- **Implement directly** with focused edits. The headless harness is the real quality gate: `npm test`
+  (the registered gates) + `node test/replay.mjs <capture>` for captured bugs. Prove fixes there rather
+  than through heavyweight verify phases.
+- **Commit** with conventional messages (`feat(NN)` / `fix(NN)` / `perf(NN)` / `docs`), only at a
+  task/phase boundary or when asked.
 
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
+The full GSD skills (`/gsd-execute-phase`, executors, discuss/verify) remain available and are worth it
+for a large structured effort — but they are **opt-in, not required**. The `.planning/` phase artifacts
+are historical record; `.planning/todos/` is the live tracker.
 <!-- GSD:workflow-end -->
 
 
