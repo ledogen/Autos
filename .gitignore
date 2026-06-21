@@ -5,6 +5,9 @@
 Logs/
 *.log
 
+# Node test-harness deps (browser runtime uses the index.html CDN importmap, not these)
+node_modules/
+
 # Claude Code local harness state (volatile / per-machine)
 .claude/worktrees/
 .claude/scheduled_tasks.lock
