@@ -213,6 +213,20 @@ const PROTO_LOOP_D      = 11    // m — "returned to where it was" distance
 const PROTO_LOOP_ARCLAG = 38    // m — min along-path travel before a return counts as a loop
 const PROTO_RUN_MIN     = 4     // min points for an emitted road run (avoids tiny fragments)
 
+// ── D-16 Phase 2: world-deterministic run origin (anchor-owned identity + arcS) ─────
+// A run's owning macro-anchor = the first contained column (W→E) whose run-local arc to the
+// next contained anchor covers ≥ RUN_OWNER_MIN_RATIO of the canonical _protoConnect route.
+// The window-truncated western tail routes through a degenerate-A* no-route (canon ≫ run →
+// ratio ≈ 0) and is skipped identically across streams → owner + arc origin are a pure fn of
+// (seed, mz, geom). See _runOwnerAnchor.
+const RUN_OWNER_ANCHOR_EPS = 2.0   // m — run point counts as "on" a macro-anchor within this
+// Owner = first contained anchor whose run-local arc to the NEXT contained anchor covers at
+// least this fraction of the canonical _protoConnect route. Real core segments cover ~0.7–1.0
+// (a small loop may be trimmed); window-truncated tails route through a degenerate no-route
+// (canon ≫ run → ratio ≈ 0) and are skipped. In the shared core both builds see identical
+// geometry → identical decisions, so any threshold in (junk≈0, core≈0.7) is robust.
+const RUN_OWNER_MIN_RATIO  = 0.5
+
 // ── D-16: Canonical anchor-band half-width for window-invariant runs ───────────
 // _streamNetwork builds each macro-row run over a canonical fixed-width band keyed by
 // (mz, mx0, mx1) rather than the transient streaming window. CANONICAL_HALF_WIDTH is the
@@ -1024,6 +1038,7 @@ export class RoadSystem {
         this._proto.segs.clear()
         // Clear the canonical run cache: param changes affect routing results.
         if (this._canonRunCache) this._canonRunCache.clear()
+        if (this._canonSegArcCache) this._canonSegArcCache.clear()   // D-16: depends on _protoConnect
     }
 
     // Deterministic valley anchor for macro-cell (mx,mz): seeded candidate in the cell,
@@ -1459,7 +1474,13 @@ export class RoadSystem {
             const emitRun = () => {
                 if (run.length >= PROTO_RUN_MIN) {
                     // Canonical centerline — raw routed y, no visual lift/surfaceY (render-only, 08-07).
-                    this._network.set(`${mz}:${runIndex}`, { points: run.map(p => p.clone()) })
+                    // D-16 Phase 2: identity + arc origin anchor to the run's OWNING macro-anchor
+                    // (world-deterministic), not the band-relative emission index / run[0]. Edge
+                    // fragments with no clean canonical segment keep a band-relative fallback key
+                    // ("<mz>:f<n>") — they are tiny truncated bits that never reach the consumed region.
+                    const owned = this._runOwnerAnchor(run, mz)
+                    const key = owned ? `${mz}:${owned.ownerMx}` : `${mz}:f${runIndex}`
+                    this._network.set(key, { points: run.map(p => p.clone()), arcOrigin: owned ? owned.arcOrigin : 0 })
                     runIndex++
                 }
                 run = []
@@ -1478,6 +1499,79 @@ export class RoadSystem {
         // The canonical run cache (_canonRunCache) is bounded by the number of rows in the
         // streaming window × the CANONICAL_HALF_WIDTH span — also window-bounded.
         return this._network
+    }
+
+    // ── D-16 Phase 2: world-deterministic run identity + arc origin ──────────────
+    /**
+     * Pick a run's OWNING macro-anchor so identity ("<mz>:<ownerMx>") and arc origin are a
+     * pure function of (worldSeed, mz, run geometry) — not the transient streaming band.
+     *
+     * The band's west/east edges (center_mx ± CANONICAL_HALF_WIDTH) truncate each row's
+     * polyline differently per stream center, so run[0] — and any arc measured from it — is
+     * window-RELATIVE (the freecam↔drive-in tear: BUG-14 / SLICE-BOUNDARY / ARCS gates).
+     *
+     * Fix: scan CONTAINED anchors W→E and take the FIRST whose run-local arc to the next
+     * contained anchor covers ≥ RUN_OWNER_MIN_RATIO of the canonical _protoConnect route
+     * (gap-spanning: sum the canonical segment arcs if intermediate columns were loop-removed).
+     * In the stable interior the run follows the canonical route (ratio ~0.7–1.0); the window-
+     * truncated tail routes through a degenerate no-route (canon ≫ run → ratio ≈ 0) and is
+     * skipped. Because the shared core is byte-identical geometry across streams, both builds
+     * make identical ratio decisions, so owner + the run-local arc at it are invariant.
+     *
+     * @param {THREE.Vector3[]} pts — the emitted run polyline
+     * @param {number} mz — macro-row index
+     * @returns {{ ownerMx:number, arcOrigin:number } | null} null = no clean segment (tiny edge fragment)
+     */
+    _runOwnerAnchor(pts, mz) {
+        const N = pts.length
+        const arc = new Float64Array(N)
+        for (let k = 1; k < N; k++) arc[k] = arc[k - 1] + Math.hypot(pts[k].x - pts[k - 1].x, pts[k].z - pts[k - 1].z)
+
+        // Contained macro-anchors: nearest run point within RUN_OWNER_ANCHOR_EPS of _protoAnchor(mx,mz).
+        let minX = Infinity, maxX = -Infinity
+        for (const p of pts) { if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x }
+        const mxLo = Math.floor(minX / PROTO_ANCHOR_SPACING) - 1
+        const mxHi = Math.ceil(maxX / PROTO_ANCHOR_SPACING) + 1
+        const idxOf = new Map()   // mx → nearest contained run-point index
+        for (let mx = mxLo; mx <= mxHi; mx++) {
+            const a = this._protoAnchor(mx, mz)
+            let bestD = RUN_OWNER_ANCHOR_EPS, bestI = -1
+            for (let i = 0; i < N; i++) {
+                const d = Math.hypot(pts[i].x - a.x, pts[i].z - a.z)
+                if (d < bestD) { bestD = d; bestI = i }
+            }
+            if (bestI >= 0) idxOf.set(mx, bestI)
+        }
+
+        // First contained anchor (W→E) whose run-arc to the next contained anchor covers
+        // ≥ RUN_OWNER_MIN_RATIO of the canonical route = the stable-core start. (Gap-spanning:
+        // if intermediate columns were loop-removed, sum their canonical segment arcs.)
+        const contained = [...idxOf.keys()].sort((a, b) => a - b)
+        for (let c = 0; c < contained.length - 1; c++) {
+            const mx = contained[c], mxNext = contained[c + 1]
+            const runSeg = arc[idxOf.get(mxNext)] - arc[idxOf.get(mx)]
+            if (runSeg <= 0) continue
+            let canonSum = 0
+            for (let j = mx; j < mxNext; j++) canonSum += this._canonSegArc(j, mz)
+            if (canonSum > 0 && runSeg / canonSum >= RUN_OWNER_MIN_RATIO) {
+                return { ownerMx: mx, arcOrigin: arc[idxOf.get(mx)] }
+            }
+        }
+        return null
+    }
+
+    /** Pure (memoized) arc length of the canonical _protoConnect from anchor(mx,mz) to anchor(mx+1,mz). */
+    _canonSegArc(mx, mz) {
+        if (!this._canonSegArcCache) this._canonSegArcCache = new Map()
+        const key = `${mx},${mz}`
+        let v = this._canonSegArcCache.get(key)
+        if (v === undefined) {
+            const wps = this._protoConnect(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz))
+            v = 0
+            for (let i = 1; i < wps.length; i++) v += Math.hypot(wps[i].x - wps[i - 1].x, wps[i].z - wps[i - 1].z)
+            this._canonSegArcCache.set(key, v)
+        }
+        return v
     }
 
     // ── Per-tile slicing (D-06 REVISED — C0/C1 seam continuity is FREE) ──────────
@@ -1513,8 +1607,13 @@ export class RoadSystem {
         this._tileObjects.clear()
 
         const S = CHUNK_SIZE
-        for (const [runKey, { points }] of this._network) {
+        for (const [runKey, entry] of this._network) {
+            const points = entry.points
             if (!points || points.length < 2) continue
+            // D-16 Phase 2: slice arcS measured from the run's world-deterministic owner anchor,
+            // not run[0] — so arcS0/arcS1 (and the runProfile/camberProfile they index) are
+            // window-invariant. Matches _buildRunProfile / _buildCamberProfile arcPos[0] = -arcOrigin.
+            const arcOrigin = entry.arcOrigin ?? 0
 
             // Parent-run weight = total control-point count. A tile picks its representative as the
             // slice from the heaviest parent run that touches it; because ONE parent run yields one
@@ -1530,8 +1629,8 @@ export class RoadSystem {
             // BUG-10 camber continuity: track cumulative XZ run arc-length so each slice records the
             // run-arc at its endpoints. XZ metric matches _buildCamberProfile's arcPos. Without this,
             // arcSOffset defaulted to 0 and camber sawtoothed back to the run start at every tile seam.
-            let runArcAtA = 0       // run-arc at points[i-1] (current segment start)
-            let sliceStartArc = 0   // run-arc at current[0]
+            let runArcAtA = -arcOrigin       // run-arc at points[i-1] (owner-origined)
+            let sliceStartArc = -arcOrigin   // run-arc at current[0] (owner-origined)
             const flush = (sliceEndArc) => {
                 if (current.length >= 2) this._assignSlice(current, runKey, runWeight, sliceStartArc, sliceEndArc)
                 // start the next sub-polyline at the same boundary point we just closed on (shared)
@@ -2184,8 +2283,10 @@ export class RoadSystem {
         const MAX_CAMBER = 6 * (Math.PI / 180)   // ±6° clamp
 
         // Step 1: build arc-position LUT for the polyline.
+        // D-16 Phase 2: owner-origined so camberProfile(arcS) indexes the same frame as the
+        // slice arcS0/arcS1 queryNearest hands back (and _buildRunProfile arcPos).
         const arcPos = new Array(N)
-        arcPos[0] = 0
+        arcPos[0] = -(netEntry.arcOrigin ?? 0)
         for (let i = 1; i < N; i++) {
             const dx = pts[i].x - pts[i - 1].x, dz = pts[i].z - pts[i - 1].z
             arcPos[i] = arcPos[i - 1] + Math.sqrt(dx * dx + dz * dz)
@@ -2201,8 +2302,9 @@ export class RoadSystem {
         //
         // Helper: polyline tangent at arc-length s (binary-search into arcPos LUT).
         const windowM = p.camberArcWindow ?? 20  // m — arc-length curvature window (D-src Step 3)
+        const arc0 = arcPos[0]   // D-16: owner origin (may be negative); window clamps to it, not 0
         const tangentAtArcS = (s) => {
-            s = Math.max(0, Math.min(totalArc, s))
+            s = Math.max(arc0, Math.min(totalArc, s))
             // Binary search for the segment containing s.
             let lo = 0, hi = N - 1
             while (lo < hi - 1) {
@@ -2231,7 +2333,7 @@ export class RoadSystem {
 
         for (let i = 1; i < N; i++) {
             const s = arcPos[i]
-            const sA = Math.max(0, s - windowM / 2)
+            const sA = Math.max(arc0, s - windowM / 2)
             const sB = Math.min(totalArc, s + windowM / 2)
             const tA = tangentAtArcS(sA)
             const tB = tangentAtArcS(sB)
@@ -2293,7 +2395,7 @@ export class RoadSystem {
         const tx        = new Array(N)
         const tz        = new Array(N)
 
-        arcPos[0]    = 0
+        arcPos[0]    = -(netEntry.arcOrigin ?? 0)   // D-16 Phase 2: owner-origined (matches slicer arcS0/arcS1)
         gradeY[0]    = pts[0].y
         // P4 (BUG-10): seed from predecessor's end camber instead of hard 0.
         // Curvature is undefined at sample 0 (no predecessor segment); the boundary
