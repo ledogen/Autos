@@ -145,7 +145,7 @@ export function sampleRegion(road, region) {
     for (let x = x0; x <= x1; x += step) {
         for (let z = z0; z <= z1; z += step) {
             const s = road.debugSampleAt(x, z)
-            worldSamples.push({ x, z, hit: s.hit, rk: s.rk, arcS: s.arcS, gradeY: s.gradeY, pointY: s.pointY })
+            worldSamples.push({ x, z, hit: s.hit, rk: s.rk, arcS: s.arcS, gradeY: s.gradeY, camber: s.camber ?? 0, pointY: s.pointY })
         }
     }
 

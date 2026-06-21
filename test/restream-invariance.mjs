@@ -13,6 +13,7 @@
 //
 // Run: node test/restream-invariance.mjs   (exit 0 = re-stream is stale-free; exit 1 = staleness)
 
+import * as THREE from 'three'
 import { buildNetwork, buildNetworkPath, sampleRegion } from './lib/road-headless.mjs'
 
 const FINAL = { x: 0, z: 0 }
@@ -36,18 +37,19 @@ const cmp = (driven, name, how) => {
     const sliceOk = eqArr(d.sliceBoundaries, ref.sliceBoundaries)
     // arcS + gradeY over the on-road grid points present in both.
     const rMap = new Map(ref.worldSamples.map(s => [`${s.x},${s.z}`, s]))
-    let both = 0, arcMis = 0, gradeMis = 0, worstArc = 0, worstGrade = 0
+    let both = 0, arcMis = 0, gradeMis = 0, camberMis = 0, worstArc = 0, worstGrade = 0, worstCamber = 0
     for (const s of d.worldSamples) {
         if (!s.hit) continue
         const t = rMap.get(`${s.x},${s.z}`)
         if (!t || !t.hit) continue
         both++
-        const dA = Math.abs(s.arcS - t.arcS), dG = Math.abs(s.gradeY - t.gradeY)
+        const dA = Math.abs(s.arcS - t.arcS), dG = Math.abs(s.gradeY - t.gradeY), dC = Math.abs(s.camber - t.camber)
         if (dA > 1e-3) { arcMis++; worstArc = Math.max(worstArc, dA) }
         if (dG > 1e-3) { gradeMis++; worstGrade = Math.max(worstGrade, dG) }
+        if (dC > 1e-6) { camberMis++; worstCamber = Math.max(worstCamber, dC) }
     }
-    const ok = keysOk && geomOk && sliceOk && arcMis === 0 && gradeMis === 0
-    log(ok, name, `${how}\n        keys=${keysOk} geom=${geomOk} slices=${sliceOk} | ${both} on-road: arcΔ#${arcMis}(worst ${worstArc.toFixed(1)}m) gradeΔ#${gradeMis}(worst ${worstGrade.toFixed(3)}m)`)
+    const ok = keysOk && geomOk && sliceOk && arcMis === 0 && gradeMis === 0 && camberMis === 0
+    log(ok, name, `${how}\n        keys=${keysOk} geom=${geomOk} slices=${sliceOk} | ${both} on-road: arcΔ#${arcMis}(worst ${worstArc.toFixed(1)}m) gradeΔ#${gradeMis}(worst ${worstGrade.toFixed(3)}m) camberΔ#${camberMis}(worst ${(worstCamber*180/Math.PI).toFixed(3)}°)`)
 }
 
 // probe:true populates runProfile/camberProfile caches at each intermediate center (the real
@@ -58,6 +60,25 @@ cmp(buildNetworkPath([{ x: -800, z: 0 }, { x: -600, z: 0 }, { x: -400, z: 0 }, {
 
 cmp(buildNetworkPath([FINAL, { x: 1200, z: 0 }, FINAL], { probe: true }),
     'REVISIT-MATCHES-FRESH', 'sat at (0,0), jumped to x=1200, returned, querying each frame')
+
+// ── (perf) within-cell re-stream skips the rebuild and PRESERVES caches ──────────────
+// Moving >PROTO_REGEN_MOVE but within the same 256 m macro-cell yields an identical network
+// signature → _streamNetwork must skip the whole rebuild (no _networkRev bump) and keep the
+// per-run profile caches intact (the win that replaced the eager clear-on-restream). If this
+// regresses, the cached array is rebuilt (new reference) and _networkRev advances.
+{
+    const road = buildNetwork(FINAL)
+    for (let x = -600; x <= 600; x += 24) for (let z = -600; z <= 600; z += 24) road.debugSampleAt(x, z)
+    const rev0 = road._networkRev
+    const someKey = [...road._runProfileCache.keys()][0]
+    const arrRef0 = road._runProfileCache.get(someKey).gradeY
+    road.update(new THREE.Vector3(120, 0, 0))   // same center_mx (0), same z-rows → identical window
+    const rev1 = road._networkRev
+    const arrRef1 = road._runProfileCache.get(someKey)?.gradeY
+    const ok = rev1 === rev0 && arrRef1 === arrRef0 && road._runProfileCache.size > 0
+    log(ok, 'WITHIN-CELL-SKIP-PRESERVES-CACHE',
+        `moved (0,0)→(120,0) inside one macro-cell: networkRev ${rev0}→${rev1} (no bump) cacheEntry preserved=${arrRef1 === arrRef0} (${road._runProfileCache.size} runs cached)`)
+}
 
 console.log('\n' + '='.repeat(64))
 console.log(`RESTREAM-INVARIANCE GATES: ${pass} pass, ${fail} FAIL (${pass + fail} total) — exit ${fail ? 1 : 0}`)

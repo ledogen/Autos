@@ -816,8 +816,10 @@ export class RoadSystem {
         if (this._tileObjects) this._tileObjects.clear()
         if (this._canonRunCache) this._canonRunCache.clear()
         this._slicedFrom = null
+        this._lastBandSig = null   // force the next _streamNetwork to rebuild (route/params changed)
         // D1: bump the single invalidation counter — signals ribbon tiles + carve chunks to rebuild.
         this._generation++
+        this._networkRev++         // invalidate per-run profile/adjacency caches (route/params changed)
         this._invalidateProto()
     }
 
@@ -963,6 +965,16 @@ export class RoadSystem {
         // lazy gate). Consumed by ribbon tiles (road-mesh.js builtGeneration) and terrain-carve
         // chunks (terrain.js builtRoadGeneration) to detect and rebuild stale geometry.
         this._generation = 0
+
+        // Network-content revision (D-16 Phase 3). Bumped on every re-route (invalidateCache) and
+        // every re-stream that actually REBUILDS the network (not the identical-signature skip below).
+        // Per-run caches (runProfile/camberProfile/adjacency) key off this instead of _generation:
+        // a positional re-stream that produces identical geometry leaves _networkRev untouched, so
+        // those caches survive (the perf win) — and a real change bumps it, lazily invalidating them
+        // (replaces the old eager BUG-14 clear-on-restream band-aid). Distinct from _generation, which
+        // still drives ribbon/carve MESH rebuilds.
+        this._networkRev = 0
+        this._lastBandSig = null   // signature of the last built network window (for the rebuild skip)
 
         // Canonical valley-trunk network store — built ONLY by _streamNetwork.
         // key "<mz>:<runIndex>" → { points: THREE.Vector3[] } (continuous centerline, raw routed y).
@@ -1310,9 +1322,32 @@ export class RoadSystem {
         const moved = !this._networkCenter || center.distanceTo(this._networkCenter) > PROTO_REGEN_MOVE
         if (!moved && !this._proto.dirty && this._network.size > 0) return this._network
 
+        // ── Network window signature (D-16 Phase 3) ───────────────────────────────
+        // The network is a PURE function of (mz row range, mx band, _generation): the band
+        // columns are radius-INDEPENDENT (center_mx ± CANONICAL_HALF_WIDTH) and per-row geometry
+        // is a pure fn of (mz, band). So if this signature is unchanged since the last build and
+        // nothing is dirty, a re-stream would reproduce byte-identical geometry — skip the whole
+        // rebuild/re-slice and KEEP every cache (the common case: moving within one 256 m cell).
+        const R = this._proto.radius
+        const center_mx = Math.floor(center.x / PROTO_ANCHOR_SPACING)
+        const mx0 = center_mx - CANONICAL_HALF_WIDTH
+        const mx1 = center_mx + CANONICAL_HALF_WIDTH
+        const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING)
+        const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING)
+        const bandSig = `${mz0}:${mz1}:${mx0}:${mx1}:${this._generation}`
+        if (!this._proto.dirty && bandSig === this._lastBandSig && this._network.size > 0 && this._tiles && this._tiles.size > 0) {
+            // Identical window → network/slices/profiles all still valid; just track the new center
+            // so the next <PROTO_REGEN_MOVE move short-circuits at the lazy gate above.
+            this._networkCenter = center.clone()
+            this._proto.lastCenter = center.clone()
+            return this._network
+        }
+
         this._networkCenter = center.clone()
         this._proto.lastCenter = center.clone()
         this._proto.dirty = false
+        this._lastBandSig = bandSig
+        this._networkRev++   // real rebuild → invalidate per-run profile/adjacency caches (lazy)
         // Refresh live D-09 weights from this._params (debug sliders mutate it in place) so this
         // re-stream uses the current slider values — deterministic re-route (D-03).
         this._refreshParams()
@@ -1341,22 +1376,11 @@ export class RoadSystem {
         if (this._junctions) this._junctions.clear()
         this._junctionsFrom = null
 
-        // ── BUG-14 fix: keep the per-run profile caches COHERENT with the re-sliced tiles ──
-        // runProfile (gradeY/camberRad/tangent) and camberProfile index by run-arc measured from
-        // each run's points[0]. The canonical band [mx0,mx1] is anchored to center_mx (below), which
-        // tracks the streaming center — so when the truck moves a run's points[0] (the arc origin)
-        // shifts, and every arcS along it shifts with it. We intentionally do NOT bump _generation on
-        // a positional re-stream (see note above), but these caches are generation-keyed, so without
-        // an explicit clear they stay built against the PREVIOUS band's arc origin. queryNearest then
-        // returns arcS in the new slice parameterization while runProfile serves the stale old-origin
-        // profile → arcS indexes the wrong gradeY → the ~20 m on-road teleport at tile seams (BUG-14).
-        // Clearing here (alongside this._tiles) forces a lazy O(N)-per-run rebuild from the SAME
-        // this._network the new slices came from, so arcS and gradeY always share one arc origin.
-        // No per-frame cost: this runs only when _streamNetwork actually rebuilds (gated above), and
-        // it does NOT bump generation, so it triggers no ribbon-mesh rebuild (no flicker).
-        if (this._runProfileCache) this._runProfileCache.clear()
-        if (this._camberProfileCache) this._camberProfileCache.clear()
-        this._runAdjacencyCache = null
+        // Per-run profile caches (runProfile/camberProfile) and the run-adjacency cache are keyed by
+        // this._networkRev (bumped just above), so this real rebuild lazily invalidates them — no eager
+        // clear needed (replaces the old BUG-14 clear-on-restream band-aid). With owner-anchored arc
+        // origins (D-16 Phase 2) the arcS↔gradeY domain is window-invariant, so the only thing a real
+        // rebuild changes is run EXTENT at the frontier; the rev bump re-derives those lazily.
         this._designGradeCache = new WeakMap()
 
         // ── D-16: Canonical per-run derivation (window-invariant) ─────────────────
@@ -1378,14 +1402,7 @@ export class RoadSystem {
         // cache — same discipline as the _slicedFrom identity guard.
         // ─────────────────────────────────────────────────────────────────────────
 
-        const R = this._proto.radius
-        // Canonical X band — fixed per center_mx, not per streaming window edge.
-        const center_mx = Math.floor(center.x / PROTO_ANCHOR_SPACING)
-        const mx0 = center_mx - CANONICAL_HALF_WIDTH
-        const mx1 = center_mx + CANONICAL_HALF_WIDTH
-        // Z row range still follows streaming radius (rows come and go as we move N/S).
-        const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING)
-        const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING)
+        // (R / center_mx / mx0 / mx1 / mz0 / mz1 computed above for the window-signature skip.)
 
         // Per-mz canonical run cache: memoize rows by "mz:mx0:mx1" so re-streams within the
         // same canonical band are free. Cleared on dirty/param-change (see _invalidateProto
@@ -1814,6 +1831,7 @@ export class RoadSystem {
         const arcS = nr.arcS ?? 0
         const runKey = nr.runKey ?? ''
         const gradeY = this.runProfile(arcS, runKey).gradeY
+        const camber = this.camberProfile(arcS, runKey)   // banking (rad) — couples runs via seed; gated by restream-invariance
         // BUG-12 diagnostic: local XZ turn radius of THIS run's centerline near the truck, from the
         // continuous-profile tangents at arcS±ds. radius = arc / heading-change. If a ribbon FOLD is
         // seen where minR is still >> halfWidth (e.g. ≥15 m), the fold is NOT the per-run centerline —
@@ -1832,6 +1850,7 @@ export class RoadSystem {
             rk:     hashKey(runKey),
             arcS,
             gradeY,
+            camber,
             pointY: nr.point.y,
             lat:    signedLat,
             lrk:    0,
@@ -2136,9 +2155,9 @@ export class RoadSystem {
     _predecessorRunKey(runKey) {
         if (!this._network) return null
 
-        const currentGen = this._generation
-        // Rebuild adjacency index when generation changes or not yet built.
-        if (!this._runAdjacencyCache || this._runAdjacencyCache.generation !== currentGen) {
+        const currentRev = this._networkRev
+        // Rebuild adjacency index when the network content changes (rev bump) or not yet built.
+        if (!this._runAdjacencyCache || this._runAdjacencyCache.rev !== currentRev) {
             // Spatial hash: "<rx>,<rz>" → runKey  (endpoint → runKey whose END is there)
             const XZ_EPS = 2.0   // metres — shared boundary nodes are exact duplicates; use generous eps
             const hash = new Map()
@@ -2164,7 +2183,7 @@ export class RoadSystem {
                 }
             }
 
-            this._runAdjacencyCache = { generation: currentGen, map: adjMap }
+            this._runAdjacencyCache = { rev: currentRev, map: adjMap }
         }
 
         return this._runAdjacencyCache.map.get(runKey) ?? null
@@ -2190,10 +2209,10 @@ export class RoadSystem {
         const predKey = this._predecessorRunKey(runKey)
         if (!predKey) return 0
 
-        // Fast path: predecessor already cached this generation.
+        // Fast path: predecessor already cached this network revision.
         if (this._camberProfileCache) {
             const cached = this._camberProfileCache.get(predKey)
-            if (cached && cached.generation === this._generation && cached.camberRad.length > 0) {
+            if (cached && cached.rev === this._networkRev && cached.camberRad.length > 0) {
                 return cached.camberRad[cached.camberRad.length - 1]
             }
         }
@@ -2490,10 +2509,10 @@ export class RoadSystem {
         // Lazy-init the per-instance cache Map.
         if (!this._camberProfileCache) this._camberProfileCache = new Map()
 
-        // D1 generation invalidation: rebuild if the generation changed since last build.
-        const currentGen = this._generation
+        // Network-revision invalidation: rebuild if the network content changed since last build.
+        const currentRev = this._networkRev
         const cached = this._camberProfileCache.get(runKey)
-        if (cached && cached.generation === currentGen) {
+        if (cached && cached.rev === currentRev) {
             // Fast path: binary-search and interpolate.
             return _interpolateCamber(cached.arcPos, cached.camberRad, arcS)
         }
@@ -2502,7 +2521,7 @@ export class RoadSystem {
         const profile = this._buildCamberProfile(runKey)
         if (!profile) return 0
 
-        this._camberProfileCache.set(runKey, { generation: currentGen, ...profile })
+        this._camberProfileCache.set(runKey, { rev: currentRev, ...profile })
         return _interpolateCamber(profile.arcPos, profile.camberRad, arcS)
     }
 
@@ -2541,9 +2560,9 @@ export class RoadSystem {
         // Lazy-init per-instance cache.
         if (!this._runProfileCache) this._runProfileCache = new Map()
 
-        const currentGen = this._generation
+        const currentRev = this._networkRev
         const cached = this._runProfileCache.get(runKey)
-        if (cached && cached.generation === currentGen) {
+        if (cached && cached.rev === currentRev) {
             // Fast path: ONE binary search, interpolate all four arrays.
             return _interpolateRunProfile(
                 cached.arcPos, cached.gradeY, cached.camberRad, cached.tx, cached.tz,
@@ -2563,7 +2582,7 @@ export class RoadSystem {
             return result
         }
 
-        this._runProfileCache.set(runKey, { generation: currentGen, ...profile })
+        this._runProfileCache.set(runKey, { rev: currentRev, ...profile })
         return _interpolateRunProfile(
             profile.arcPos, profile.gradeY, profile.camberRad, profile.tx, profile.tz,
             arcS, result
