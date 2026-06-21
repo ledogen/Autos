@@ -2,13 +2,15 @@
 id: BUG-08
 type: bug
 severity: minor
-status: folded
+status: closed
 opened: 2026-06-11
 phase_origin: 08-road-routing
 resolves_phase: 9
 folded_into: 09-road-surface
 source: user-observation
 note: "FOLDED INTO Phase 9 (2026-06-11 discuss-phase) — junctions/ribbon mesh require window-invariant splines (D-16). Will auto-close on Phase 9 completion."
+closed: 2026-06-21
+resolution: "Proven invariant by the road-invariance harness (Phase 2 world-anchored run identity). Standing regression guards in npm test."
 ---
 
 # BUG-08: Roads visibly re-shape in real time as you fly and new map streams in
@@ -62,3 +64,22 @@ this bug is a violation of that stronger invariance.
   from these splines, so a re-stream that shifts the centerline would rebuild/shift the road mesh under
   the truck. Worth resolving before/with Phase 9.
 - Related: the Phase-8 determinism gate only checked same-center reproducibility, so this slipped through.
+
+## Resolution (2026-06-21)
+
+Proven no longer reproducible. The road network is now a pure function of `(seed, world-coords,
+params)`, invariant to streaming center AND streaming history — the exact contract this bug violated.
+Fixed by Phase 2 of the invariance harness (world-anchored run identity + arc origin in `src/road.js`).
+
+Standing regression guards (both in `npm test`, exit 0 with exact-zero deltas):
+
+- `test/restream-invariance.mjs` → `DRIVE-IN-MATCHES-FRESH`: drives east into (0,0) from x=-800
+  re-streaming each frame (the literal BUG-08 "fly while map streams in" scenario), then asserts the
+  fixed region == a fresh build — 2588 on-road pts, geomΔ=0, gradeΔ=0, camberΔ=0. Plus
+  `REVISIT-MATCHES-FRESH` (far-jump to x=1200 and return) and `WITHIN-CELL-SKIP-PRESERVES-CACHE`.
+- `test/invariance.mjs` → `GEOMETRY-INVARIANT`: two builds at centers 800 m apart emit byte-identical
+  network geometry in the overlap (130/130 pts); `ARCS-INVARIANT` / `GRADEY-INVARIANT` worst Δ 0.
+
+Caveat: gates run on the harness synthetic coarse-height (seed 6), but BUG-08 is a structural
+windowing/excision invariance independent of the height function, and the gates drive the real
+`RoadSystem` streaming/slicing/post-process paths named in the root-cause section above.
