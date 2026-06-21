@@ -23,12 +23,28 @@
  *     fl_sc, fr_sc, rl_sc, rr_sc             (Phase 4.1 — strut compression m per corner, D-12)
  *
  * Threat model: T-02-01 — JSON.parse wrapped in try/catch; unknown IC keys ignored, no eval.
+ *
+ * Phase 4/5 (plan 09): on stop the recorder writes a kind:"event" CAPTURE (src/capture.js schema) —
+ * the replayable bug-report artifact — instead of the raw columnar log, IF a capture-context provider
+ * is registered (setCaptureContext). The columnar frames live inside event.frames, so nothing is lost;
+ * the capture just adds the world (seed/params) + initial state + input timeline the headless physics
+ * replay (test/replay.mjs) needs. With no provider it falls back to the legacy raw-log download.
  */
+
+import { buildEventCapture } from './capture.js'
 
 // ── Module-private state ──────────────────────────────────────────────────────
 let _recording = false
 const _frames = []
 let _timedStopHandle = null  // setTimeout handle for auto-stop on scenario-driven recordings
+let _captureCtx = null       // () => { worldSeed, seedString, params, streamCenterHistory, complaint }
+
+/**
+ * Register the provider that supplies world/reproduction context at recording-stop time, so the
+ * downloaded file is a replayable kind:"event" capture rather than a bare telemetry log. main.js
+ * registers this once with closures over worldSeed / RANGER_PARAMS / the stream-center ring.
+ */
+export function setCaptureContext (fn) { _captureCtx = fn }
 
 // D-07: 41 fields — exact order is part of the public log contract; do not reorder.
 // Phase 3 appends fl_omega/fr_omega/rl_omega/rr_omega at positions 33-36 (constraint #8).
@@ -69,13 +85,31 @@ const FIELDS = [
 // ── Private helpers ───────────────────────────────────────────────────────────
 
 function _downloadLog () {
-  const log = JSON.stringify({ fields: FIELDS, frames: _frames })
-  const blob = new Blob([log], { type: 'application/json' })
+  let payload, name
+  if (_captureCtx) {
+    // Phase 4/5: write a replayable kind:"event" capture (world + initial state + input timeline +
+    // the columnar frames). main.js's provider supplies seed/params/stream-center context.
+    const ctx = _captureCtx() || {}
+    payload = buildEventCapture({
+      worldSeed:           ctx.worldSeed,
+      seedString:          ctx.seedString,
+      params:              ctx.params,
+      complaint:           ctx.complaint,
+      streamCenterHistory: ctx.streamCenterHistory,
+      fields:              FIELDS,
+      frames:              _frames,
+    })
+    name = 'rangersim-capture-' + Date.now() + '.json'
+  } else {
+    payload = { fields: FIELDS, frames: _frames }   // legacy raw-log fallback
+    name = 'rangersim-log-' + Date.now() + '.json'
+  }
+  const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   try {
     const a = document.createElement('a')
     a.href = url
-    a.download = 'rangersim-log-' + Date.now() + '.json'
+    a.download = name
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)

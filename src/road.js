@@ -1848,6 +1848,7 @@ export class RoadSystem {
         return {
             hit:    1,
             rk:     hashKey(runKey),
+            runKey,                         // the canonical key string (capture/replay diff; rk is its hash)
             arcS,
             gradeY,
             camber,

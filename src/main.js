@@ -22,7 +22,8 @@ import { getBodyContactPoints, getWheelPosition } from './suspension.js'
 import { updateVehicle, SPAWN_STATE } from './vehicle.js'
 import { updateCamera, getCameraMode, getFreecamPosition } from './camera.js'
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors } from './debug.js'
-import { captureFrame, toggleRecording, openInitialCondition, isRecording } from './logger.js'
+import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext } from './logger.js'
+import { buildPlaceCapture } from './capture.js'
 import { TerrainSystem } from './terrain.js'
 import { RoadSystem, CHUNK_SIZE } from './road.js'
 import { perfAdd, perfMark, perfDump, perfReset } from './perf.js'  // TEMP perf triage (D-arc)
@@ -36,6 +37,19 @@ import { parseWorldSeed, seedFor } from './seed.js'
 // Refreshing the same ?seed= URL reproduces the same terrain (SEED-01/03).
 const _urlSeed = new URLSearchParams(window.location.search).get('seed')
 let worldSeed = parseWorldSeed(_urlSeed ?? 'lone-pine')
+let _seedString = _urlSeed ?? 'lone-pine'   // current seed STRING (reference for captures; numeric worldSeed drives repro)
+
+// Capture stream-center ring (Phase 4/5): last N stream centers, for event/tear reproduction. Cheap —
+// pushed only when the center moves a meaningful distance. Not required for PLACE repro (the road is
+// window-invariant since Phase 2/3) but free insurance for the event class.
+const _streamCenterRing = []
+const _STREAM_RING_MAX = 240
+function _trackStreamCenter (t, x, z) {
+  const last = _streamCenterRing[_streamCenterRing.length - 1]
+  if (last && Math.hypot(x - last.x, z - last.z) < 16) return  // only log meaningful moves
+  _streamCenterRing.push({ t, x, z })
+  if (_streamCenterRing.length > _STREAM_RING_MAX) _streamCenterRing.shift()
+}
 
 // TerrainSystem instance — declared at module scope so queryContacts / queryVertexContacts
 // can access it by reference. Initialized after scene exists (below initDebug).
@@ -838,7 +852,7 @@ const _gui = initDebug(RANGER_PARAMS, {
   setRampVisible:      (v) => { rampMesh.visible = v },
   rebuildTerrain:      ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() },
   rebuildTerrainFull:  ()  => debouncedRebuildFull(),
-  changeSeed:          (v) => { worldSeed = parseWorldSeed(v); debouncedRebuildFull() },
+  changeSeed:          (v) => { worldSeed = parseWorldSeed(v); _seedString = String(v); debouncedRebuildFull() },
   // Phase 8 (D-03 / D-05): road viz toggle + D-09 cost-weight param-change debounce.
   // (08-07: proto wiring retired — there is ONE road system + ONE viz now.)
   onRoadVizToggle:     (v) => { if (roadSystem) roadSystem.setDebugVisible(v) },
@@ -1051,22 +1065,47 @@ document.addEventListener('keydown', e => {
 
 // ── Logger key bindings (D-03 / D-02) ────────────────────────────────────────
 // \ toggles frame recording; Ctrl+I opens the initial condition file picker.
+// Capture context provider (Phase 4/5): supplies world + stream-history so the \ recorder writes a
+// replayable kind:"event" capture on stop (see logger._downloadLog).
+setCaptureContext(() => ({
+  worldSeed,
+  seedString:          _seedString,
+  params:              RANGER_PARAMS,
+  streamCenterHistory: _streamCenterRing.slice(),
+}))
+
+// Download a JS object as a timestamped JSON file (capture export).
+function _downloadJSON (obj, name) {
+  const blob = new Blob([JSON.stringify(obj)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  try {
+    const a = document.createElement('a')
+    a.href = url; a.download = name
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+  } finally { URL.revokeObjectURL(url) }
+}
+
 document.addEventListener('keydown', e => {
   if (e.key === '\\') toggleRecording()
   if (e.key === 'i' && e.ctrlKey) openInitialCondition(vehicleState, RANGER_PARAMS)
-  // BUG-12 fix-dev: 'p' dumps the nearest run's real centerline + slice-spline geometry to JSON
-  // (drive to a kink, press p, send the file). Feeds test/diag-minradius-pipeline.mjs as a fixture.
+  // 'p' = MARK THIS PLACE: write a kind:"place" capture at the truck — the replayable spatial bug
+  // report (kink / fold / grade / tear). test/replay.mjs rebuilds the road here from seed+params and
+  // diffs what the game observed. Supersedes the old road-run-dump (geometry lives in the capture).
   if (e.key === 'p' && roadSystem && !_gridWorldActive) {
-    const dump = roadSystem.debugDumpNearestRun(vehicleState.position.x, vehicleState.position.z)
-    if (!dump) { console.warn('[road-dump] no road near truck'); return }
-    const blob = new Blob([JSON.stringify(dump)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    try {
-      const a = document.createElement('a')
-      a.href = url; a.download = 'road-run-dump-' + Date.now() + '.json'
-      document.body.appendChild(a); a.click(); document.body.removeChild(a)
-    } finally { URL.revokeObjectURL(url) }
-    console.log(`[road-dump] run ${dump.runKey}: ${dump.networkPoints.length} pts, ${dump.slices.length} slices`)
+    const px = vehicleState.position.x, pz = vehicleState.position.z
+    // Optional terrain side of `observed` (verified once terrain-headless lands, Phase 5).
+    let terrainSample = null
+    if (terrainSystem) {
+      const wheelGroundY = []
+      for (let i = 0; i < 4; i++) { const hub = getWheelPosition(i, vehicleState, RANGER_PARAMS); wheelGroundY.push(terrainSystem.analyticHeight(hub.x, hub.z)) }
+      terrainSample = { groundY: terrainSystem.analyticHeight(px, pz), wheelGroundY }
+    }
+    const capture = buildPlaceCapture({
+      roadSystem, worldSeed, seedString: _seedString, params: RANGER_PARAMS,
+      mark: { x: px, z: pz }, streamCenterHistory: _streamCenterRing.slice(), terrainSample,
+    })
+    _downloadJSON(capture, 'rangersim-capture-' + Date.now() + '.json')
+    console.log(`[capture] place @(${px.toFixed(1)},${pz.toFixed(1)}) run ${capture.place.observed.runKey} gradeY ${capture.place.observed.gradeY?.toFixed(2)} minR ${capture.place.observed.minRadius?.toFixed(1)}`)
   }
 })
 
@@ -1152,6 +1191,7 @@ function loop () {
   // Phase 7 D-21: while free-cam is active, stream chunks around the camera, not the truck.
   // Reverts to truck position on exit so the ring stays anchored to the car in normal mode.
   const streamCenter = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
+  _trackStreamCenter(simTime, streamCenter.x, streamCenter.z)   // capture ring (Phase 4/5)
   let _pt = performance.now()
   terrainSystem.update(streamCenter)
   perfAdd('frame.terrain.update', performance.now() - _pt)

@@ -18,6 +18,7 @@ const GATES = [
     'invariance.mjs',       // two-center network invariance (THIS rewrite — green since Phase 2)
     'restream-invariance.mjs', // same-instance re-stream (cache-reuse) invariance — drive-in == fresh
     'ribbon-carve.mjs',     // synthetic ribbon↔carve agreement (dump-free; replaced seam-grade.mjs)
+    'replay-selftest.mjs',  // capture↔replay round-trip (Phase 4 place path) — src/capture.js + replay.mjs
 ]
 
 let failed = []
