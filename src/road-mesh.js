@@ -198,9 +198,22 @@ export class RoadMeshSystem {
         const dirtG = ((dirtHex >>  8) & 0xff) / 255
         const dirtB =  (dirtHex        & 0xff) / 255
 
-        for (let i = 0; i < N_LONG; i++) {
-            const u = (N_LONG > 1) ? i / (N_LONG - 1) : 0
+        // 09-32 SEAM FIX: map section index → run-arc by the polyline's CUMULATIVE XZ arc-length,
+        // not uniform u. `points[]` come from spline.getPointAt(u), which is parameterised by 3D
+        // arc-length — that diverges from the run-arc (XZ) metric wherever the road climbs or the
+        // Catmull-Rom bows/overshoots at a tile-boundary cut. Uniform-u then hands an overshot vertex
+        // an arcS (hence gradeY) that does NOT match its true XZ position, rendering a sharp step the
+        // carved collision surface never shows (the carve resolves Y by nearest-XZ sample, diluting
+        // the overshoot — hence "smooth to drive, stepped to look at"). Cumulative XZ tracks each
+        // vertex's real run-arc, so the ribbon Y matches the driven surface. Endpoints still map to
+        // arcS0/arcS1 exactly (cum=0 and cum=total) → boundary cross-sections coincide → seams still weld.
+        const cumXZ = new Float32Array(N_LONG)
+        for (let i = 1; i < N_LONG; i++) {
+            cumXZ[i] = cumXZ[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z)
+        }
+        const totXZ = cumXZ[N_LONG - 1] || 1
 
+        for (let i = 0; i < N_LONG; i++) {
             // Arc-length-correct position at this section.
             _scratchPt.copy(points[i])
 
@@ -208,8 +221,9 @@ export class RoadMeshSystem {
             const posZ  = _scratchPt.z
 
             // ── Road quality at this arc position (D-02/D-03) ──────────────────
-            // arcS: RUN-global arc-length (BUG-10). Computed before frame so both share it.
-            const arcS = arcS0 + (arcS1 - arcS0) * u
+            // arcS: RUN-global arc-length (BUG-10), keyed by cumulative XZ (09-32) so gradeY/camber/
+            // quality track the vertex's true XZ position, not the spline's 3D-arc parameter.
+            const arcS = arcS0 + (arcS1 - arcS0) * (cumXZ[i] / totXZ)
 
             // P3 (BUG-12): Section frame from the continuous run tangent (09-28).
             // runProfile(arcS, runKey).tx/tz is C0 across ALL slice seams — both sides of a

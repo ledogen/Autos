@@ -407,6 +407,47 @@ export function signedCurvature(T0x, T0z, T1x, T1z, ds) {
     return Math.sign(cross) * (dtLen / ds)
 }
 
+/**
+ * Defect B fix (09-31): longitudinal road-grade smoothing — low-pass a centerline
+ * polyline's Y over an arc-length box window, IN PLACE. Only `.y` is touched; XZ is
+ * untouched so arc min-radius (valid-by-construction) and camber (XZ curvature) are
+ * unaffected. The arc-primitive router stamps each point Y = coarseHeight(x,z), so
+ * without this the road RIDES raw ridged terrain (launches the truck); smoothing grades
+ * it (cut-and-fill) and the terrain carve raises/cuts dirt to meet it.
+ *
+ * Two-pointer O(N) arc-length box mean. Reads raw Y into a buffer first so the running
+ * sum is never contaminated by already-written points.
+ *
+ * Window-invariance: a point's smoothed Y depends only on neighbours within ±window, so
+ * any point ≥window from a truncated polyline end is identical regardless of how far the
+ * polyline extends past it — the caller guarantees consumed geometry sits inside that margin.
+ *
+ * Pure + deterministic (D-16).
+ * @param {Array<{x:number,z:number,y:number}>} pts — polyline (mutated: only .y changes)
+ * @param {number} window — box half-width in metres (arc-length)
+ */
+export function smoothGradeInPlace(pts, window) {
+    const N = pts.length
+    if (N < 3 || !(window > 0)) return
+    const rawY   = new Float32Array(N)
+    const arcPos = new Float32Array(N)
+    rawY[0] = pts[0].y
+    for (let i = 1; i < N; i++) {
+        const dx = pts[i].x - pts[i - 1].x
+        const dz = pts[i].z - pts[i - 1].z
+        arcPos[i] = arcPos[i - 1] + Math.sqrt(dx * dx + dz * dz)
+        rawY[i]   = pts[i].y
+    }
+    let lo = 0, hi = 0, sum = 0
+    while (hi < N && arcPos[hi] - arcPos[0] < window) { sum += rawY[hi]; hi++ }
+    for (let i = 0; i < N; i++) {
+        pts[i].y = sum / (hi - lo)
+        const ref = arcPos[i + 1 < N ? i + 1 : i]
+        while (hi < N && arcPos[hi] - ref < window) { sum += rawY[hi]; hi++ }
+        while (lo < hi && ref - arcPos[lo] >= window) { sum -= rawY[lo]; lo++ }
+    }
+}
+
 // ── Junction polygon utilities (P9 plan 04) ──────────────────────────────────
 // No imports — Worker-safe discipline maintained for future use.
 // NOTE: junction footprint is main-thread only; these are NOT synced into WORKER_SOURCE.

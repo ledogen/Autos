@@ -35,7 +35,7 @@
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
-import { crownProfile, potholeNoise, signedCurvature, filletMinRadius, arcFilletWaypoints, arcPrimitiveConnect } from './road-carve.js'
+import { crownProfile, potholeNoise, signedCurvature, filletMinRadius, arcFilletWaypoints, arcPrimitiveConnect, smoothGradeInPlace } from './road-carve.js'
 // roadQuality imported for SURF-06 D-03: pothole severity uses the same per-stretch
 // quality hook as markings. Importing from road-quality.js (not road-mesh.js) avoids
 // the road-mesh.js → terrain.js → road.js chain issues.
@@ -752,14 +752,31 @@ export class RoadSystem {
                     // too, desyncing the trough from the banked ribbon. arcS(u)=arcS0+(arcS1−arcS0)·u.
                     const arcS0 = seg.arcS0 ?? 0, arcS1 = seg.arcS1 ?? len
                     const camberSign = arcS1 >= arcS0 ? 1 : -1
+                    // 09-32: arcS keyed by CUMULATIVE XZ arc-length (identical to road-mesh.js
+                    // sweepRibbon) — NOT uniform u. getPointAt(u) is 3D-arc-parameterised, which
+                    // diverges from the run-arc (XZ) metric where the road climbs or the Catmull-Rom
+                    // overshoots a boundary cut. With uniform u here but cumulative-XZ in the ribbon,
+                    // the carved physics surface (analyticHeight, this table) drifted up to ~9 m from
+                    // the rendered ribbon → the truck sank through the visual road. Keying BOTH on
+                    // cumulative XZ makes analyticHeight == ribbon Y by construction (0 gap). Endpoints
+                    // still map to arcS0/arcS1 (cum=0, cum=total) so chunk-seam continuity is preserved.
+                    // Two-pass: getPointAt once per sample into a buffer, accumulate XZ, then emit.
+                    const _bx = new Float64Array(n + 1), _by = new Float64Array(n + 1), _bz = new Float64Array(n + 1)
+                    const _btx = new Float64Array(n + 1), _btz = new Float64Array(n + 1)
+                    const _cum = new Float64Array(n + 1)
                     for (let i = 0; i <= n; i++) {
                         const u = i / n
                         const p = spline.getPointAt(u)   // allocates; only site — pre-loop
                         const t = spline.getTangentAt(u) // D4: tangent for arm-disambiguation
+                        _bx[i] = p.x; _by[i] = p.y; _bz[i] = p.z; _btx[i] = t.x; _btz[i] = t.z
+                        if (i > 0) _cum[i] = _cum[i - 1] + Math.hypot(_bx[i] - _bx[i - 1], _bz[i] - _bz[i - 1])
+                    }
+                    const _totXZ = _cum[n] || 1
+                    for (let i = 0; i <= n; i++) {
                         // Stride 5: [x, y, z, tx, tz]
-                        pts.push(p.x, p.y, p.z, t.x, t.z)
+                        pts.push(_bx[i], _by[i], _bz[i], _btx[i], _btz[i])
                         // D3: parallel arc-length + runKey + camberSign arrays (indexed by sample number)
-                        sampleArcS.push(arcS0 + (arcS1 - arcS0) * u)
+                        sampleArcS.push(arcS0 + (arcS1 - arcS0) * (_cum[i] / _totXZ))
                         sampleRunKeys.push(runKey)
                         sampleCamberSign.push(camberSign)
                     }
@@ -1388,6 +1405,13 @@ export class RoadSystem {
                     // (VBC-07) — deleted in Step 4 after in-sim confirms crease-free.
                     let pts = this._removeLoops(rowWps)
                     pts = this._removeSelfCrossings(pts)
+                    // Defect B (09-31): GRADE the centerline — longitudinal Y low-pass on the
+                    // canonical row BEFORE caching/COVER-split/slicing. The arc router stamps each
+                    // point Y = coarseHeight(x,z), so without this the road RIDES raw ridged terrain
+                    // (±5.65 m off a 50 m grade → launches the truck). Both consumers read this one
+                    // polyline (_buildRunProfile.gradeY for physics/carve; _buildRoadTile slices it
+                    // for the ribbon), so smoothing here keeps height-agreement by construction.
+                    smoothGradeInPlace(pts, this._params?.designGradeWindow ?? 50)
                     cachedPts = pts
                 }
                 this._canonRunCache.set(bandKey, cachedPts)
@@ -1866,6 +1890,12 @@ export class RoadSystem {
     }
 
     // ── Phase 9: Design grade smoothing (D-06) ────────────────────────────────────
+    // NOTE (09-31, defect B): the LIVE longitudinal grade smoother is smoothGradeInPlace()
+    // in road-carve.js, applied to the canonical run polyline in _streamNetwork BEFORE the
+    // COVER split — it grades the single `this._network` polyline that BOTH consumers read
+    // (physics via _buildRunProfile.gradeY, ribbon via _buildRoadTile slicing). The
+    // per-spline _smoothDesignGrade below is the BYPASSED legacy path (reachable only via the
+    // dead sampleDesignGradeAt → test harness); kept until the cleanup step.
     /**
      * Compute a smoothed "design grade" Y array for a per-tile spline.
      * Purpose: suppress fine-noise terrain texture (±0.5 m) from the road vertical profile
