@@ -1,3 +1,4 @@
+// RAINY-DAY (not in run-all): node test/assert-m4-05-wheel-lift-ramp.mjs <a recorded scenario log .json>
 // M4-05: airborne wheel contributes zero Pacejka force
 // Scenario: scenarios/m4-05-wheel-lift-ramp.json — IC at 50 km/h forward, driver hits ramp/curb to lift a wheel.
 // Expects: at least one frame where one wheel has fz=0 (airborne), and its fy/sa also ≈ 0 (D-14 gate).

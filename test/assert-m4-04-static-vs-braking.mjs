@@ -1,3 +1,4 @@
+// RAINY-DAY (not in run-all): node test/assert-m4-04-static-vs-braking.mjs <a recorded scenario log .json>
 // M4-01, M4-04: load transfer under braking
 // Scenario: scenarios/m4-04-static-vs-braking.json — IC at 60 km/h forward, driver applies brake.
 // Expects: front Fz rises and rear Fz falls when brake > 0.5; total ≈ m·g; no NaN.

@@ -1,3 +1,4 @@
+// RAINY-DAY support lib for the assert-m4-*.mjs scripts (not in run-all; each needs a recorded log).
 // Shared helpers for Phase 4 log-assertion scripts.
 // Read a logger JSON file produced by src/logger.js and expose a typed-ish API.
 

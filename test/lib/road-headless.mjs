@@ -33,8 +33,8 @@ export function COARSE_HEIGHT(x, z) {
 }
 
 // ── Params ───────────────────────────────────────────────────────────────────────
-// Coarse + D-09 routing values mirror test/road-test-harness.js TEST_PARAMS (Phase 7/8 locked),
-// plus the Phase 9 surface/query + arc-router fields the streaming + queryNearest paths read.
+// Coarse + D-09 routing values (Phase 7/8 locked), plus the Phase 9 surface/query + arc-router
+// fields the streaming + queryNearest paths read.
 export const TEST_PARAMS = {
     // Coarse terrain layer (router ignores these when an override is supplied, but ctor still reads
     // them to build the simplex closure; harmless).

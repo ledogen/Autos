@@ -1,3 +1,4 @@
+// RAINY-DAY (not in run-all): node test/assert-m4-07-ramp-slide.mjs <a recorded scenario log .json>
 // M4-07: ramp-slide D-06 gate
 // Scenario: scenarios/m4-07-ramp-slide.json — car at rest on 10-degree ramp, no input, 3 s record.
 // Expects: car slides downhill (vz grows by >0.5 m/s) and total Fz never exceeds 3× static weight.

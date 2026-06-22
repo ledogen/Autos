@@ -3,8 +3,8 @@
 // runner, and gates stay isolated). Exits non-zero if ANY gate fails.
 //
 // Gates are listed explicitly (not glob-discovered) because test/ also holds libraries
-// (lib/*.mjs), diagnostics (diag-*.mjs, spline-continuity.mjs), and browser harnesses
-// (*.html, *.js) that are NOT pass/fail gates. Add a gate here when you write one.
+// (lib/*.mjs) and rainy-day manual scripts (assert-m4-*.mjs, need a recorded log) that are
+// NOT pass/fail gates. Add a gate here when you write one.
 
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'

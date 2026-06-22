@@ -1153,20 +1153,13 @@ function loop () {
     _prevRenderQuat.copy(vehicleState.quaternion)
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, queryVertexContacts)
     simTime += PHYSICS_DT
-    // BUG-14 diagnostic: resolve the road at the truck CG exactly as the physics carve path
-    // does, plus the actual ground sample, and log it. Computed only while recording so it
-    // adds zero per-step cost in normal play (queryNearest scans a 3×3 tile block).
+    // BUG-12 diagnostic (open): while recording, log the truck run's local centerline turn radius
+    // to localize ribbon folds. Gated on isRecording() so normal play pays nothing (queryNearest
+    // scans a 3×3 tile block). The post-hoc road-resolution path lives in test/replay.mjs.
     let roadDebug = null
-    if (isRecording() && roadSystem && terrainSystem && !_gridWorldActive) {
+    if (isRecording() && roadSystem && !_gridWorldActive) {
       const px = vehicleState.position.x, pz = vehicleState.position.z
-      roadDebug = roadSystem.debugSampleAt(px, pz)
-      roadDebug.gh = terrainSystem.analyticHeight(px, pz)
-      // Per-wheel ground sample (FL,FR,RL,RR) — see which corner first hits the step.
-      const wKeys = ['ghfl', 'ghfr', 'ghrl', 'ghrr']
-      for (let i = 0; i < 4; i++) {
-        const hub = getWheelPosition(i, vehicleState, RANGER_PARAMS)
-        roadDebug[wKeys[i]] = terrainSystem.analyticHeight(hub.x, hub.z)
-      }
+      roadDebug = { minR: roadSystem.debugSampleAt(px, pz).minR }
     }
     captureFrame(simTime, vehicleState, vehicleState.wheelDebug, roadDebug)
     accumulator -= PHYSICS_DT

@@ -1,3 +1,4 @@
+// RAINY-DAY (not in run-all): node test/assert-m4-02-asymmetric-bump.mjs <a recorded scenario log .json>
 // M4-02: per-wheel hub independence
 // Scenario: scenarios/m4-02-asymmetric-bump.json — at rest, driver drives over a one-sided bump.
 // Expects: one side's tire Fz transients while the opposite side stays near static; no NaN.

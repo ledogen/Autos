@@ -1,3 +1,4 @@
+// RAINY-DAY (not in run-all): node test/assert-m4-06-bump-response.mjs <a recorded scenario log .json>
 // M4-06: suspension damping characterization
 // Scenario: scenarios/m4-06-bump-response.json — IC at rest, driver drives over a single bump.
 // Expects: total Fz transient decays to < 10% of peak deviation within 1.5s. No NaN.

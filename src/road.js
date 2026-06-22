@@ -35,7 +35,7 @@
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
-import { crownProfile, potholeNoise, signedCurvature, filletMinRadius, arcFilletWaypoints, arcPrimitiveConnect, smoothGradeInPlace } from './road-carve.js'
+import { crownProfile, potholeNoise, signedCurvature, arcPrimitiveConnect, smoothGradeInPlace } from './road-carve.js'
 // roadQuality imported for SURF-06 D-03: pothole severity uses the same per-stretch
 // quality hook as markings. Importing from road-quality.js (not road-mesh.js) avoids
 // the road-mesh.js → terrain.js → road.js chain issues.
@@ -1164,97 +1164,6 @@ export class RoadSystem {
         return p
     }
 
-    // Arc-fillet minimum-turn-radius pass (D0 — replaces the coil-excision _limitCurvature).
-    // At each interior vertex where the implied corner radius < minRadius, insert a circular arc
-    // of radius = minRadius tangent to both legs, replacing the sharp corner. The centerline is
-    // ROUNDED (not excised) to minRadius so the two arms of a hairpin are separated by ~2·minRadius.
-    // At a 180° hairpin this yields a semicircle → arm separation ≈ 2·minRadius — wide enough that
-    // the ribbon (±roadHalfWidth) never folds onto itself when minRadius ≥ roadHalfWidth + clearance.
-    //
-    // Algorithm per interior vertex B between legs A→B (incoming) and B→C (outgoing):
-    //   1. Compute XZ heading vectors for both legs.
-    //   2. Turn angle φ = exterior deflection angle (the angle you must steer through).
-    //      φ = π − (interior angle at B) = |atan2 cross, dot| of normalized leg directions.
-    //   3. Tangent length (how far back each leg is trimmed): t = R · tan(φ/2).
-    //      (Standard road geometry: tangent distance for a circular arc of radius R and deflection φ.)
-    //   4. If either leg is shorter than t, skip the fillet (degenerate; the point is too close to
-    //      a neighbor for the arc to fit). The point is left as-is.
-    //   5. Trim points: T1 = B − t·dir_incoming, T2 = B + t·dir_outgoing.
-    //   6. Insert N_ARC arc sample points along the circular arc from T1 to T2 (interpolated in XZ
-    //      with Y linearly blended from T1.y to T2.y so the routed grade stays continuous).
-    //
-    // Pure function of (pts, minRadius) — deterministic, window-invariant. Runs on the canonical
-    // run (not a windowed slice) like the other post-passes. No Math.random, no session state.
-    //
-    // NOTE ON MAX GRADE: Filleting a hairpin rounds the corner and may slightly lengthen the path.
-    // The existing soft-cost router already balances grade (D-09); the fillet does not bypass it.
-    // A re-stream after a slider change re-routes with the updated minRadius, re-evaluating grade.
-    // Thin THREE-adapter around the pure filletMinRadius (src/road-carve.js). The pure
-    // function does the real work: an iterative curvature-clamp that relaxes any vertex
-    // whose local turn radius is below minRadius toward its neighbour midpoint, until
-    // every interior turn radius ≥ minRadius. A previous version filleted per-vertex
-    // (tangent = minRadius·tan(φ/2)), which BAILED at hairpins — the tangent couldn't fit
-    // between the dense Catmull-Rom samples, so the sharp apex passed through unchanged
-    // and the ribbon (±roadHalfWidth) folded. The pure curvature-clamp handles dense
-    // polylines and hairpins correctly and is gated headlessly by the fillet-enforcement
-    // fixture in test/spline-continuity.mjs.
-    _filletMinRadius(pts, minRadius) {
-        if (pts.length < 3 || !(minRadius > 0)) return pts
-        // filletMinRadius works on plain {x,y,z}; map back to THREE.Vector3 so downstream
-        // consumers (emitRun's p.clone(), the Catmull-Rom slicer) keep their Vector3 API.
-        const relaxed = filletMinRadius(pts, minRadius)
-        return relaxed.map(p => new THREE.Vector3(p.x, p.y, p.z))
-    }
-
-    // Excise over-tight coils by CURVATURE (angle-per-distance), not per-vertex angle (QUAL-01).
-    // A tight loop/teardrop is many small-deflection vertices that ACCUMULATE a large heading change
-    // over a short arc — per-vertex angle never catches it. Here we scan spans of signed cumulative
-    // heading change vs arc length: where a span turns >= TURN_MIN and its effective radius
-    // (arc / |Δheading|) < minRadius, the path is curling tighter than a road of radius minRadius can
-    // — excise the span (join its entry directly to its exit). Signed accumulation means S-curves
-    // (alternating turns) cancel and are NOT excised; only consistent coils are. Endpoints are
-    // preserved by the slice (p[0..i] and p[j+1..end] are kept). Deterministic, no random state (D-03).
-    // NOTE: _limitCurvature is superseded by _filletMinRadius (D0) — kept for reference only.
-    _limitCurvature(pts, minRadius) {
-        if (pts.length < 4 || !(minRadius > 0)) return pts
-        const TURN_MIN = 150 * Math.PI / 180  // only scrutinize spans that turn >= 150° (a coil/loop)
-        const TURN_CAP = 2.2 * Math.PI        // stop growing a window past ~400° of accumulation
-        let p = pts.slice()
-        for (let guard = 0; guard < 200; guard++) {
-            const n = p.length
-            if (n < 4) break
-            // Per-segment heading + length.
-            const len = new Float64Array(n - 1)
-            const ang = new Float64Array(n - 1)
-            for (let k = 0; k < n - 1; k++) {
-                const dx = p[k + 1].x - p[k].x, dz = p[k + 1].z - p[k].z
-                len[k] = Math.hypot(dx, dz)
-                ang[k] = Math.atan2(dz, dx)
-            }
-            let found = false
-            for (let i = 0; i < n - 2 && !found; i++) {
-                let cumTurn = 0          // signed cumulative heading change (rad)
-                let cumArc  = len[i]
-                for (let j = i + 1; j < n - 1; j++) {
-                    let d = ang[j] - ang[j - 1]
-                    while (d >  Math.PI) d -= 2 * Math.PI
-                    while (d < -Math.PI) d += 2 * Math.PI
-                    cumTurn += d
-                    cumArc  += len[j]
-                    const absTurn = Math.abs(cumTurn)
-                    if (absTurn >= TURN_MIN && (cumArc / absTurn) < minRadius) {
-                        p = [...p.slice(0, i + 1), ...p.slice(j + 1)]  // excise coil; join entry→exit
-                        found = true
-                        break
-                    }
-                    if (absTurn > TURN_CAP) break  // window already a full coil — move the start
-                }
-            }
-            if (!found) break
-        }
-        return p
-    }
-
     // Turn-penalty soft-cost A* between two anchors over a grid covering their bbox + N/S margin.
     // State = (cell, incoming-direction) so a per-45° turn penalty (wTurn) is charged — this is what
     // makes the route run long straights and only switchback where the grade truly forces it.
@@ -1869,7 +1778,7 @@ export class RoadSystem {
      *   - slices: for each per-tile slice of this run, the Catmull-Rom spline DENSELY sampled
      *     (~1 pt/2 m) — this is the actual curve the ribbon sweeps, so its curvature reveals
      *     CR overshoot relative to networkPoints.
-     * Pure read; no mutation. Feed the JSON into test/diag-minradius-pipeline.mjs as a fixture.
+     * Pure read; no mutation. Consumed by the ribbon↔carve gate (test/ribbon-carve.mjs).
      * @returns {{ runKey:string, minTurnRadius:number, networkPoints:Array, slices:Array } | null}
      */
     debugDumpNearestRun(wx, wz) {
