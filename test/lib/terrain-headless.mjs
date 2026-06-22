@@ -5,7 +5,7 @@
 // (analyticHeight / analyticNormal / rawHeightWorld) that the physics contacts ride — enough for the
 // Phase 5 input-timeline replay (test/lib/physics-replay.mjs) to feel the same ground the game does.
 //
-// SYNC DISCIPLINE (same spirit as terrain-worker.js — see project_terrain_worker_constraints):
+// SYNC DISCIPLINE (same spirit as the terrain.js WORKER_SOURCE — see project_terrain_worker_constraints):
 //   - seedFor / mulberry32 are imported from src/seed.js (single source — no copy here).
 //   - The vendored simplex (grad2/F2/G2/buildPermutationTable/createNoise2D) and the height layers
 //     (coarseHeight/fineHeight/regionalModulator/height) below are copied VERBATIM from src/terrain.js

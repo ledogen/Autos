@@ -2,11 +2,9 @@
  * src/seed.js — World-seed foundation for RangerSim v1.1
  *
  * HARD RULE: The four function bodies below (djb2, parseWorldSeed, seedFor,
- * mulberry32) are copied VERBATIM into:
- *   1. src/terrain.js  — inside the WORKER_SOURCE template-literal string
- *   2. src/terrain-worker.js — standalone Worker source
- * Those copies must NOT include the `export` keyword. Any edit here must be
- * immediately reflected in both Worker copies (Pitfall 2, RESEARCH.md §Pitfall 2).
+ * mulberry32) are copied VERBATIM into src/terrain.js, inside the WORKER_SOURCE
+ * template-literal string. That copy must NOT include the `export` keyword. Any edit
+ * here must be immediately reflected there (Pitfall 2, RESEARCH.md §Pitfall 2).
  *
  * SECURITY: seed strings flow only through djb2 charCodeAt() arithmetic —
  * no string-to-code execution path exists (T-07-02-INJ threat mitigated).

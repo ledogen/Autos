@@ -2,18 +2,16 @@
  * src/road-carve.js — Pure no-import carve functions for RangerSim road surface.
  *
  * Worker-safe: NO imports. Function BODIES (no `export` keyword) are copied verbatim
- * into terrain.js WORKER_SOURCE and terrain-worker.js — same discipline as the
- * height() / seed utility sync (T-07-03-SYNC).
+ * into terrain.js WORKER_SOURCE — same discipline as the height() / seed utility sync
+ * (T-07-03-SYNC).
  *
- * SYNC RULE: any edit here must be reflected in:
- *   (1) terrain.js WORKER_SOURCE carve section   ← search for "CARVE SYNC"
- *   (2) terrain-worker.js carve section           ← search for "CARVE SYNC"
- * Edit all three in the same commit (T-07-03-SYNC mitigation).
+ * SYNC RULE: any edit here must be reflected in the terrain.js WORKER_SOURCE carve section
+ *   (search for "CARVE SYNC"). Edit both in the same commit (T-07-03-SYNC mitigation).
  *
  * Pure functions — deterministic (D-16). No Math.random, no Date, no session state.
  */
 
-// ── CARVE SYNC: function bodies below are embedded verbatim in WORKER_SOURCE and terrain-worker.js ──
+// ── CARVE SYNC: function bodies below are embedded verbatim in terrain.js WORKER_SOURCE ──
 
 /**
  * Bilinear lookup into a per-chunk carve table.
@@ -452,7 +450,7 @@ export function earClip(polygon) {
 // ──────────────────────────────────────────────────────────────────────────────
 //  NOT part of CARVE SYNC. The functions below are road CENTERLINE geometry used
 //  only on the main thread by src/road.js (_streamNetwork). The Worker never runs
-//  them — do NOT copy them into terrain.js WORKER_SOURCE / terrain-worker.js.
+//  them — do NOT copy them into terrain.js WORKER_SOURCE.
 // ──────────────────────────────────────────────────────────────────────────────
 
 // ── arcPrimitiveConnect search scratch (module-scope, reused + generation-stamped) ──────────────

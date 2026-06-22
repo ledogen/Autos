@@ -22,8 +22,8 @@
  * Threat mitigations:
  *   T-06-01: MAX_BUILDS_PER_FRAME=2 caps main-thread geometry build cost per frame
  *   T-06-03: geometry.dispose() called in _updateChunkRing before chunkMap.delete
- *   T-07-03-SYNC: WORKER_SOURCE and terrain-worker.js edited in the same commit;
- *                 byte-equality check in Task 1 automated verify block.
+ *   T-07-03-SYNC: WORKER_SOURCE is the sole source of the terrain Worker (no separate file
+ *                 mirror); its carve/height/seed helpers stay byte-synced with their originals.
  */
 
 import * as THREE from 'three'
@@ -43,13 +43,12 @@ const        RING_RADIUS         = 2   // chunks in each direction → 5×5 = 25
 const        MAX_BUILDS_PER_FRAME = 2  // T-06-01: cap geometry builds per frame
 
 // ── Embedded worker source ─────────────────────────────────────────────────
-// Content of src/terrain-worker.js embedded verbatim as a Blob classic worker.
-// The worker context has no importmap — all code must be self-contained.
-// SYNC RULE: every edit to WORKER_SOURCE must immediately be reflected in terrain-worker.js.
-//            Both files are edited in the same commit (T-07-03-SYNC mitigation).
+// The terrain Worker's full source as a string, spun up as a Blob classic worker (see the
+// constructor). This string IS the worker — the single source of truth (no file mirror).
+// The worker context has no importmap — all code must be self-contained (no import/export).
 
 const WORKER_SOURCE = `
-// src/terrain-worker.js — Classic Blob worker source for TerrainSystem
+// Classic Blob worker source for TerrainSystem (embedded as WORKER_SOURCE in src/terrain.js)
 //
 // Responsibilities:
 //  - Receive {type:'init', worldSeed, params} messages — initialize seeded noise closures
@@ -229,7 +228,7 @@ function height(wx, wz, noiseCoarse, noiseFine, noiseRegional, params) {
 
 // ── Road carve pure functions (CARVE SYNC) ────────────────────────────────
 // Function bodies copied verbatim from src/road-carve.js (no export keyword).
-// SYNC RULE: any edit here must be reflected in road-carve.js AND terrain-worker.js.
+// SYNC RULE: any edit here must be reflected in road-carve.js (the canonical originals).
 // Same discipline as the height() / seed utility sync (T-07-03-SYNC).
 //
 // carveTable layout: Float32Array [blendW_0, gradeY_preamp_0, blendW_1, gradeY_preamp_1, ...]
@@ -321,7 +320,6 @@ self.onmessage = function(e) {
 // Three-layer height: coarse ridged-multifractal + fine FBM + regional modulator.
 // Returns RAW height (no terrainAmplitude multiply).
 // SYNC RULE: keep byte-identical with the same block inside WORKER_SOURCE above.
-//            Any edit here must be reflected in WORKER_SOURCE AND terrain-worker.js.
 
 function coarseHeight(wx, wz, noiseCoarse, params) {
     const { coarseAmplitude, coarseFreq, coarseOctaves, ridgeSharpness } = params
@@ -566,7 +564,7 @@ export class TerrainSystem {
      * value caused crown/camber/pothole to be baked into the design grade and then re-added
      * downstream (double-count). rawHeightWorld removes that structural error.
      *
-     * Lives only on the main-thread TerrainSystem class — NOT mirrored in terrain-worker.js.
+     * Lives only on the main-thread TerrainSystem class — NOT in the worker (WORKER_SOURCE).
      * The Worker already stores raw heights and applies no carve blend; this method is a
      * thin main-thread wrapper and never belongs in the Worker CARVE SYNC body.
      *
@@ -765,7 +763,7 @@ export class TerrainSystem {
         // because GRID_SAMPLES and CHUNK_SIZE are fixed, and chunk.heights holds the raw heights.
         // Frame-spread: cap re-carves at MAX_BUILDS_PER_FRAME per ring-sync tick (same discipline
         // as _flushPendingQueue) so a sudden re-route doesn't spike the main thread.
-        // CARVE SYNC: carve never enters terrain-worker.js — it is a post-read main-thread blend.
+        // CARVE SYNC: carve never enters the worker (WORKER_SOURCE) — it is a post-read main-thread blend.
         if (this._roadSystem) {
             const currentRoadGen = this._roadSystem.roadGeneration()
             let recarved = 0
