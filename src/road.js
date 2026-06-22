@@ -36,6 +36,7 @@ import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
 import { crownProfile, potholeNoise, signedCurvature, arcPrimitiveConnect, smoothGradeInPlace } from './road-carve.js'
+import { centerlineFromDescriptors } from './centerline.js'
 // roadQuality imported for SURF-06 D-03: pothole severity uses the same per-stretch
 // quality hook as markings. Importing from road-quality.js (not road-mesh.js) avoids
 // the road-mesh.js → terrain.js → road.js chain issues.
@@ -1216,6 +1217,34 @@ export class RoadSystem {
         for (const p of simp) if (!out.length || out[out.length - 1].distanceToSquared(p) > 1e-4) out.push(p)
         this._proto.segs.set(key, out)
         return out
+    }
+
+    // Road Overhaul, Phase A — primitive-centerline path, built BESIDE the legacy _protoConnect
+    // points path (no consumer reads this yet; Phase B switches the ribbon/carve/queryNearest over,
+    // Phase C deletes _protoConnect + the patch stack). Same anchors, same canonical headings, same
+    // router cost model — but emitPrimitives:true so the result is the EXACT curvature-bounded curve
+    // (line/arc/Dubins-terminal primitives, radius ≥ hardR by construction) carried end-to-end with
+    // no Catmull-Rom re-fit. Returns a Centerline; window-invariant (pure fn of the anchor pair).
+    _protoConnectCenterline(a, b, mx, mz) {
+        if (!this._proto.cls) this._proto.cls = new Map()
+        const key = `${mx},${mz}:${a.x.toFixed(0)},${a.z.toFixed(0)}>${b.x.toFixed(0)},${b.z.toFixed(0)}`
+        const cached = this._proto.cls.get(key)
+        if (cached) return cached
+        const P = this._proto.params
+        const pp = this._params || {}
+        const halfW = pp.roadHalfWidth ?? 5, clearance = pp.roadClearanceMargin ?? 0.5
+        const hardR = Math.max(pp.roadArcHardRadius ?? 8, halfW + clearance + 0.1)
+        const startHeading = this._protoAnchorHeading(mx, mz)
+        const goalHeading  = this._protoAnchorHeading(mx + 1, mz)
+        const descs = arcPrimitiveConnect(a.x, a.z, b.x, b.z, (x, z) => this._coarseH(x, z), {
+            hardR, gentleR: pp.roadArcGentleRadius ?? 30, margin: PROTO_MARGIN,
+            wDist: P.wDist, wAlt: P.wAlt, wGrade: P.wGrade, wOver: P.wOver,
+            maxGrade: P.maxGrade, wCurv: P.wTurn, wHeur: pp.roadArcHeurWeight ?? 1.5,
+            startHeading, goalHeading, emitPrimitives: true,
+        })
+        const cl = centerlineFromDescriptors(descs)
+        this._proto.cls.set(key, cl)
+        return cl
     }
 
     // ── Canonical network builder (D-08) ────────────────────────────────────────

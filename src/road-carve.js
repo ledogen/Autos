@@ -477,14 +477,18 @@ function _apcEnsure(n) {
 // canonical anchor pose: unlike a cubic Hermite (whose curvature spikes for large heading changes),
 // this rounds even a switchback-apex turn into a valid-radius hairpin (≥ rho), never a fold. Pure.
 const _DUBmod = (x) => { const t = x % (Math.PI * 2); return t < 0 ? t + Math.PI * 2 : t }
-function dubinsPath(x0, z0, th0, x1, z1, th1, rho, ds) {
+
+// Shortest Dubins word from pose (x0,z0,th0) to (x1,z1,th1) at radius rho. Returns the chosen
+// { len, segs:[[kSign,lenR],...] } (segs in rho units; kSign: +1 left, −1 right, 0 straight) or null.
+// Shared by dubinsPath (dense points) and dubinsPrimitives (typed primitives) so the geometry agrees.
+function _dubinsBest(x0, z0, th0, x1, z1, th1, rho) {
     const dx = x1 - x0, dz = z1 - z0
     const D = Math.hypot(dx, dz)
     const d = D / rho
     const theta = _DUBmod(Math.atan2(dz, dx))
     const a = _DUBmod(th0 - theta), b = _DUBmod(th1 - theta)
     const sa = Math.sin(a), ca = Math.cos(a), sb = Math.sin(b), cb = Math.cos(b), cab = Math.cos(a - b)
-    const words = []   // each: { len, segs:[[kSign,len],...] } in rho units; kSign: +1 left, -1 right, 0 straight
+    const words = []
     // LSL
     { const p2 = 2 + d * d - 2 * cab + 2 * d * (sa - sb)
       if (p2 >= 0) { const tmp = d + sa - sb, t = _DUBmod(-a + Math.atan2(cb - ca, tmp)), p = Math.sqrt(p2), q = _DUBmod(b - Math.atan2(cb - ca, tmp)); words.push({ len: t + p + q, segs: [[1, t], [0, p], [1, q]] }) } }
@@ -505,7 +509,13 @@ function dubinsPath(x0, z0, th0, x1, z1, th1, rho, ds) {
       if (Math.abs(tmp) <= 1) { const p = _DUBmod(2 * Math.PI - Math.acos(tmp)), t = _DUBmod(-a + Math.atan2(-ca + cb, d + sa - sb) + p / 2), q = _DUBmod(b - a - t + p); words.push({ len: t + p + q, segs: [[1, t], [-1, p], [1, q]] }) } }
     if (!words.length) return null
     let best = words[0]; for (const w of words) if (w.len < best.len) best = w
-    // Emit by integrating the chosen 3 segments at radius rho.
+    return best
+}
+
+// Dense [x,z] points (excluding start, including exact goal) for the shortest Dubins path. Pure.
+function dubinsPath(x0, z0, th0, x1, z1, th1, rho, ds) {
+    const best = _dubinsBest(x0, z0, th0, x1, z1, th1, rho)
+    if (!best) return null
     const out = []
     let x = x0, z = z0, th = th0
     for (const [kSign, lenR] of best.segs) {
@@ -518,11 +528,30 @@ function dubinsPath(x0, z0, th0, x1, z1, th1, rho, ds) {
             if (kSign === 0) { out.push([x + s * Math.cos(th), z + s * Math.sin(th)]) }
             else { const th2 = th + k * s; out.push([x + (Math.sin(th2) - Math.sin(th)) / k, z - (Math.cos(th2) - Math.cos(th)) / k]) }
         }
-        // advance running pose to this segment's end
         if (kSign === 0) { x += L * Math.cos(th); z += L * Math.sin(th) }
         else { const th2 = th + k * L; x += (Math.sin(th2) - Math.sin(th)) / k; z -= (Math.cos(th2) - Math.cos(th)) / k; th = th2 }
     }
     return out
+}
+
+// Typed primitive descriptors {x0,z0,theta0,length,kappa0,kappa1} for the shortest Dubins path —
+// the exact same arcs/straights as dubinsPath, carried as primitives (curvature ≥ 1/rho by
+// construction) instead of flattened points. Used by arcPrimitiveConnect's primitive terminal.
+// Plain descriptors (no Centerline import) keep road-carve dependency-free for the CARVE-SYNC copy.
+function dubinsPrimitives(x0, z0, th0, x1, z1, th1, rho) {
+    const best = _dubinsBest(x0, z0, th0, x1, z1, th1, rho)
+    if (!best) return null
+    const prims = []
+    let x = x0, z = z0, th = th0
+    for (const [kSign, lenR] of best.segs) {
+        const L = lenR * rho
+        if (L < 1e-9) continue
+        const k = kSign === 0 ? 0 : kSign / rho
+        prims.push({ x0: x, z0: z, theta0: th, length: L, kappa0: k, kappa1: k })
+        if (kSign === 0) { x += L * Math.cos(th); z += L * Math.sin(th) }
+        else { const th2 = th + k * L; x += (Math.sin(th2) - Math.sin(th)) / k; z -= (Math.cos(th2) - Math.cos(th)) / k; th = th2 }
+    }
+    return prims
 }
 
 /**
@@ -693,6 +722,44 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     const chain = []
     for (let st = endState; st !== -1; st = SP[st]) chain.push(st)
     chain.reverse()
+
+    // ── Primitive emission (Road Overhaul, Phase A) ────────────────────────────────────────────
+    // Return the search result as TYPED PRIMITIVES instead of dense points. Each chain step IS an
+    // arc primitive (start pose = parent's stored pose, curvature = kappas[SKi], length = stepLen),
+    // so curvature is ≥ 1/hardR by construction — no Catmull-Rom re-fit downstream, no fold. The
+    // terminal mirrors the dense path: legacy → a straight line stub to the anchor (C0); heading-
+    // continuous → cut back ~goalBlend of whole arcs and replace with a Dubins primitive run into
+    // the canonical goalHeading. Window-invariant: a pure fn of this anchor-pair's search + the
+    // anchor-derived headings (independent of stream center / emission density).
+    if (opts.emitPrimitives) {
+        const prims = []
+        const pushArc = (x, z, th, k, L) => { if (L > 1e-6) prims.push({ x0: x, z0: z, theta0: th, length: L, kappa0: k, kappa1: k }) }
+        if (goalHeading == null) {
+            for (let i = 1; i < chain.length; i++) {
+                const par = chain[i - 1]
+                pushArc(SX[par], SZ[par], STh[par], kappas[SKi[chain[i]]], stepLen)
+            }
+            // C0 straight stub to the exact anchor (matches legacy points terminal).
+            const ex = SX[endState], ez = SZ[endState]
+            const dx = bx - ex, dz = bz - ez, L = Math.hypot(dx, dz)
+            pushArc(ex, ez, Math.atan2(dz, dx), 0, L)
+        } else {
+            // Drop trailing whole arcs until ≥ goalBlend is freed, then Dubins from the cut pose.
+            let acc = 0, cutIdx = chain.length - 1
+            while (cutIdx > 0 && acc < goalBlend) { acc += stepLen; cutIdx-- }
+            for (let i = 1; i <= cutIdx; i++) {
+                const par = chain[i - 1]
+                pushArc(SX[par], SZ[par], STh[par], kappas[SKi[chain[i]]], stepLen)
+            }
+            const cs = chain[cutIdx]
+            const cx = SX[cs], cz = SZ[cs], cth = STh[cs]
+            const dub = dubinsPrimitives(cx, cz, cth, bx, bz, goalHeading, hardR)
+            if (dub) for (const p of dub) pushArc(p.x0, p.z0, p.theta0, p.kappa0, p.length)
+            else { const dx = bx - cx, dz = bz - cz, L = Math.hypot(dx, dz); pushArc(cx, cz, Math.atan2(dz, dx), 0, L) }
+        }
+        return prims
+    }
+
     const pts2d = [[ax, az]]
     for (let i = 1; i < chain.length; i++) {
         const par = chain[i - 1]
