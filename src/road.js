@@ -1083,6 +1083,18 @@ export class RoadSystem {
         return v
     }
 
+    // BUG-12: canonical per-anchor heading — the chord direction through the row neighbors
+    // (anchor(mx-1) → anchor(mx+1)). A PURE function of world anchors (each itself a deterministic
+    // function of grid coords), so it is window-invariant: every segment touching anchor (mx,mz) —
+    // on either side — independently targets this SAME heading there, so consecutive arc segments
+    // meet G1 (shared tangent) instead of at a sharp corner. No runtime pose is threaded across the
+    // window, which is what keeps the join fix invariant (D-16).
+    _protoAnchorHeading(mx, mz) {
+        const prev = this._protoAnchor(mx - 1, mz)
+        const next = this._protoAnchor(mx + 1, mz)
+        return Math.atan2(next.z - prev.z, next.x - prev.x)
+    }
+
     _protoEdgeCost(fromH, toH, horiz, P) {
         const grade = Math.abs(toH - fromH) / horiz
         const over  = Math.max(0, grade - P.maxGrade)
@@ -1168,8 +1180,8 @@ export class RoadSystem {
     // State = (cell, incoming-direction) so a per-45° turn penalty (wTurn) is charged — this is what
     // makes the route run long straights and only switchback where the grade truly forces it.
     // Never fails (soft penalty keeps all edges finite).
-    _protoConnect(a, b) {
-        const key = `${a.x.toFixed(0)},${a.z.toFixed(0)}>${b.x.toFixed(0)},${b.z.toFixed(0)}`
+    _protoConnect(a, b, mx, mz) {
+        const key = `${mx},${mz}:${a.x.toFixed(0)},${a.z.toFixed(0)}>${b.x.toFixed(0)},${b.z.toFixed(0)}`
         const cached = this._proto.segs.get(key)
         if (cached) return cached
         const P = this._proto.params
@@ -1183,11 +1195,17 @@ export class RoadSystem {
         const pp = this._params || {}
         const halfW = pp.roadHalfWidth ?? 5, clearance = pp.roadClearanceMargin ?? 0.5
         const hardR = Math.max(pp.roadArcHardRadius ?? 8, halfW + clearance + 0.1)  // tightest turn; ≥ floor
+        // BUG-12: both sides of each shared anchor target the SAME canonical heading there, so the
+        // segment starts along H(mx) and is gated to arrive along H(mx+1) → G1 joins, valid radius
+        // ACROSS segment boundaries (not just within a segment). Window-invariant (pure fn of anchors).
+        const startHeading = this._protoAnchorHeading(mx, mz)
+        const goalHeading  = this._protoAnchorHeading(mx + 1, mz)
         const _ptAC = performance.now()
         const rawPts = arcPrimitiveConnect(a.x, a.z, b.x, b.z, (x, z) => this._coarseH(x, z), {
             hardR, gentleR: pp.roadArcGentleRadius ?? 30, margin: PROTO_MARGIN,
             wDist: P.wDist, wAlt: P.wAlt, wGrade: P.wGrade, wOver: P.wOver,
             maxGrade: P.maxGrade, wCurv: P.wTurn, wHeur: pp.roadArcHeurWeight ?? 1.5,
+            startHeading, goalHeading,
         })
         perfAdd('road.arcPrimitiveConnect', performance.now() - _ptAC)  // TEMP (D-arc): cold-route cost = the spawn lag
         const raw = rawPts.map(p => new THREE.Vector3(p.x, p.y, p.z))
@@ -1329,7 +1347,7 @@ export class RoadSystem {
                 // Concatenate this row's east connections into ONE continuous polyline.
                 let rowWps = []
                 for (let mx = mx0; mx <= mx1; mx++) {
-                    const wps = this._protoConnect(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz))
+                    const wps = this._protoConnect(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz), mx, mz)
                     if (wps.length < 2) continue
                     if (rowWps.length) { for (let k = 1; k < wps.length; k++) rowWps.push(wps[k]) }
                     else rowWps = wps.slice()
@@ -1500,7 +1518,7 @@ export class RoadSystem {
         const key = `${mx},${mz}`
         let v = this._canonSegArcCache.get(key)
         if (v === undefined) {
-            const wps = this._protoConnect(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz))
+            const wps = this._protoConnect(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz), mx, mz)
             v = 0
             for (let i = 1; i < wps.length; i++) v += Math.hypot(wps[i].x - wps[i - 1].x, wps[i].z - wps[i - 1].z)
             this._canonSegArcCache.set(key, v)

@@ -470,6 +470,61 @@ function _apcEnsure(n) {
     _apcSh = new Float64Array(n); _apcKi = new Int8Array(n); _apcParent = new Int32Array(n)
 }
 
+// ── Dubins shortest path (BUG-12 terminal connector) ───────────────────────────────────────────
+// Returns dense [x,z] points (excluding the start, including the exact goal) from pose (x0,z0,th0)
+// to pose (x1,z1,th1) using arcs of radius `rho` (left/right) and straights — so curvature is
+// piecewise-constant and EVERYWHERE ≥ rho. Used to terminate an arc-router segment exactly at the
+// canonical anchor pose: unlike a cubic Hermite (whose curvature spikes for large heading changes),
+// this rounds even a switchback-apex turn into a valid-radius hairpin (≥ rho), never a fold. Pure.
+const _DUBmod = (x) => { const t = x % (Math.PI * 2); return t < 0 ? t + Math.PI * 2 : t }
+function dubinsPath(x0, z0, th0, x1, z1, th1, rho, ds) {
+    const dx = x1 - x0, dz = z1 - z0
+    const D = Math.hypot(dx, dz)
+    const d = D / rho
+    const theta = _DUBmod(Math.atan2(dz, dx))
+    const a = _DUBmod(th0 - theta), b = _DUBmod(th1 - theta)
+    const sa = Math.sin(a), ca = Math.cos(a), sb = Math.sin(b), cb = Math.cos(b), cab = Math.cos(a - b)
+    const words = []   // each: { len, segs:[[kSign,len],...] } in rho units; kSign: +1 left, -1 right, 0 straight
+    // LSL
+    { const p2 = 2 + d * d - 2 * cab + 2 * d * (sa - sb)
+      if (p2 >= 0) { const tmp = d + sa - sb, t = _DUBmod(-a + Math.atan2(cb - ca, tmp)), p = Math.sqrt(p2), q = _DUBmod(b - Math.atan2(cb - ca, tmp)); words.push({ len: t + p + q, segs: [[1, t], [0, p], [1, q]] }) } }
+    // RSR
+    { const p2 = 2 + d * d - 2 * cab + 2 * d * (sb - sa)
+      if (p2 >= 0) { const tmp = d - sa + sb, t = _DUBmod(a - Math.atan2(ca - cb, tmp)), p = Math.sqrt(p2), q = _DUBmod(-b + Math.atan2(ca - cb, tmp)); words.push({ len: t + p + q, segs: [[-1, t], [0, p], [-1, q]] }) } }
+    // LSR
+    { const p2 = -2 + d * d + 2 * cab + 2 * d * (sa + sb)
+      if (p2 >= 0) { const p = Math.sqrt(p2), tmp = Math.atan2(-ca - cb, d + sa + sb) - Math.atan2(-2, p), t = _DUBmod(-a + tmp), q = _DUBmod(-b + tmp); words.push({ len: t + p + q, segs: [[1, t], [0, p], [-1, q]] }) } }
+    // RSL
+    { const p2 = -2 + d * d + 2 * cab - 2 * d * (sa + sb)
+      if (p2 >= 0) { const p = Math.sqrt(p2), tmp = Math.atan2(ca + cb, d - sa - sb) - Math.atan2(2, p), t = _DUBmod(a - tmp), q = _DUBmod(b - tmp); words.push({ len: t + p + q, segs: [[-1, t], [0, p], [1, q]] }) } }
+    // RLR
+    { const tmp = (6 - d * d + 2 * cab + 2 * d * (sa - sb)) / 8
+      if (Math.abs(tmp) <= 1) { const p = _DUBmod(2 * Math.PI - Math.acos(tmp)), t = _DUBmod(a - Math.atan2(ca - cb, d - sa + sb) + p / 2), q = _DUBmod(a - b - t + p); words.push({ len: t + p + q, segs: [[-1, t], [1, p], [-1, q]] }) } }
+    // LRL
+    { const tmp = (6 - d * d + 2 * cab + 2 * d * (sb - sa)) / 8
+      if (Math.abs(tmp) <= 1) { const p = _DUBmod(2 * Math.PI - Math.acos(tmp)), t = _DUBmod(-a + Math.atan2(-ca + cb, d + sa - sb) + p / 2), q = _DUBmod(b - a - t + p); words.push({ len: t + p + q, segs: [[1, t], [-1, p], [1, q]] }) } }
+    if (!words.length) return null
+    let best = words[0]; for (const w of words) if (w.len < best.len) best = w
+    // Emit by integrating the chosen 3 segments at radius rho.
+    const out = []
+    let x = x0, z = z0, th = th0
+    for (const [kSign, lenR] of best.segs) {
+        const L = lenR * rho
+        if (L < 1e-9) continue
+        const k = kSign / rho
+        const n = Math.max(1, Math.ceil(L / ds))
+        for (let i = 1; i <= n; i++) {
+            const s = L * i / n
+            if (kSign === 0) { out.push([x + s * Math.cos(th), z + s * Math.sin(th)]) }
+            else { const th2 = th + k * s; out.push([x + (Math.sin(th2) - Math.sin(th)) / k, z - (Math.cos(th2) - Math.cos(th)) / k]) }
+        }
+        // advance running pose to this segment's end
+        if (kSign === 0) { x += L * Math.cos(th); z += L * Math.sin(th) }
+        else { const th2 = th + k * L; x += (Math.sin(th2) - Math.sin(th)) / k; z -= (Math.cos(th2) - Math.cos(th)) / k; th = th2 }
+    }
+    return out
+}
+
 /**
  * arcPrimitiveConnect — hybrid-A* router between two anchors using ARC MOTION PRIMITIVES.
  *
@@ -513,6 +568,15 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     const wCurv    = opts.wCurv    ?? 120      // curvature penalty (replaces wTurn) → straight-biased
     const wHeur    = opts.wHeur    ?? 1.5       // weighted-A* heuristic inflation (>1 = greedier, far
                                                // fewer node expansions → faster streaming; paths stay near-optimal)
+    // BUG-12: canonical join headings. The segment STARTS along startHeading (so its DEPARTURE from
+    // the anchor is the canonical heading) and, when goalHeading is set, its ARRIVAL is blended into
+    // the canonical heading over the last `goalBlend` metres (terminal Hermite below). Two segments
+    // sharing an anchor each target the SAME canonical H there → they meet G1, no sharp corner. The
+    // search itself runs FREE (undistorted, valley-true); only the start heading + terminal blend are
+    // canonical. undefined → legacy straight-to-goal, no blend (byte-identical to pre-BUG-12).
+    const startHeading = opts.startHeading
+    const goalHeading  = opts.goalHeading
+    const goalBlend    = opts.goalBlend ?? 20   // m — distance over which the arrival is blended into goalHeading
 
     const minX = Math.min(ax, bx) - margin, maxX = Math.max(ax, bx) + margin
     const minZ = Math.min(az, bz) - margin, maxZ = Math.max(az, bz) + margin
@@ -585,7 +649,7 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     }
 
     const heur = (x, z) => wHeur * wDist * Math.hypot(bx - x, bz - z)
-    const th0 = Math.atan2(bz - az, bx - ax)
+    const th0 = startHeading ?? Math.atan2(bz - az, bx - ax)
     const goalR = Math.max(cell, stepLen), goalR2 = goalR * goalR
     const startState = stateOf(ax, az, th0)
     G[startState] = 0; GS[startState] = gen
@@ -634,7 +698,34 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         const par = chain[i - 1]
         arcPoints(SX[par], SZ[par], STh[par], kappas[SKi[chain[i]]], stepLen, pts2d)
     }
-    pts2d.push([bx, bz])   // anchor the exact goal endpoint (C0 join with the next connection)
+    // BUG-12 terminal. Legacy (no goalHeading): pin the exact anchor with a straight stub (C0 only).
+    // Heading-continuous: the free search arrives near the anchor at its valley-true (uncontrolled)
+    // heading; pinning it straight to the anchor hairpins (a sub-floor cusp that centripetal-CR then
+    // amplifies), and a cubic-Hermite blend spikes its curvature on a big heading change. Instead,
+    // cut back `goalBlend` metres of arc and replace that tail with a DUBINS path (radius hardR) from
+    // the cut pose to the EXACT anchor at the canonical goalHeading. Dubins curvature is piecewise
+    // constant and everywhere ≥ hardR, so even a switchback-apex turn becomes a valid-radius hairpin,
+    // never a fold. The next segment starts at the same anchor with startHeading == this goalHeading
+    // → G1 join. Window-invariant: a pure function of this segment's own (per-anchor-pair) search +
+    // the anchor-derived canonical headings.
+    if (goalHeading == null) {
+        pts2d.push([bx, bz])
+    } else {
+        let acc = 0, cut = pts2d.length - 1
+        while (cut > 0) {
+            acc += Math.hypot(pts2d[cut][0] - pts2d[cut - 1][0], pts2d[cut][1] - pts2d[cut - 1][1])
+            cut--
+            if (acc >= goalBlend) break
+        }
+        const p0 = pts2d[cut]
+        const t0 = cut > 0
+            ? Math.atan2(p0[1] - pts2d[cut - 1][1], p0[0] - pts2d[cut - 1][0])
+            : th0   // whole-segment terminal → leave along the canonical start heading
+        pts2d.length = cut + 1   // drop the tail we are about to replace
+        const dub = dubinsPath(p0[0], p0[1], t0, bx, bz, goalHeading, hardR, emitDs)
+        if (dub) for (const q of dub) pts2d.push(q)
+        else pts2d.push([bx, bz])
+    }
 
     const out = []
     for (let i = 0; i < pts2d.length; i++) {
