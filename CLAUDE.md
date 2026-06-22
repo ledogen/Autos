@@ -89,7 +89,38 @@ A browser-based 6DOF rigid body car physics simulation built in JavaScript with 
 <!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
-Conventions not yet established. Will populate as patterns emerge during development.
+### src/ is the product
+
+`src/` is a shippable, bare-minimum game engine. Keep it that way:
+
+- **No diagnostic plumbing in the frame loop.** Per-frame probes, ground-vs-grade comparisons, and
+  one-off bug instrumentation do not belong in `src/`. Diagnostics run *externally* against the
+  headless harness in `test/` (replay + rainy-day scripts), not inside the running game.
+- **No dead code.** A retired approach gets deleted, not parked behind a "kept for reference" comment.
+  Git history and `.planning/` hold the story.
+- **Comments keep the story.** BUG-XX / D-NN / CR-NN tags and invariant explainers stay inline —
+  they're shipped with `src/` and prevent regressions. Strip the tag only when the code it described
+  is gone.
+
+### Diagnostic tools (all live in test/, triggered externally)
+
+- **Road resolution / fold debugging:** `node test/replay.mjs <place-capture.json>` — reports
+  gradeY / hit / runKey / arcS / minR at the marked location and checks surface window-invariance.
+  (Captures are produced in-game; press the capture key. `RoadSystem.debugSampleAt()` is the read-only
+  method behind it.)
+- **Physics behaviors** (load transfer, wheel independence, wheel lift, damping, ramp slide):
+  `test/assert-m4-*.mjs` — rainy-day manual scripts; each needs a recorded scenario log. Not in
+  `npm test`.
+- **Regression gates:** `npm test` runs `test/run-all.mjs` (6 headless gates). Add a gate there when
+  you write one; `test/` also holds libs (`lib/*.mjs`) and the rainy-day scripts, which are not gates.
+
+### Terrain Worker
+
+The terrain Web Worker source lives only as the `WORKER_SOURCE` template string in `src/terrain.js`
+(spun up as a Blob classic worker). There is no separate worker file. Carve bodies (canonical in
+`src/road-carve.js`) and seed/height helpers (canonical in `src/seed.js`) are copied verbatim into
+`WORKER_SOURCE` — edit the canonical original and reflect it there in the same commit (search
+`CARVE SYNC` / SYNC RULE).
 <!-- GSD:conventions-end -->
 
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
