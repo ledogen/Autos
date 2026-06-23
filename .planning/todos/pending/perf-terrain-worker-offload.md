@@ -91,6 +91,18 @@ The case for the Worker is performance; the lever for draw distance is to move *
 
 ## Fix directions (ordered by leverage)
 
+0. **Stop building the carve table TWICE per chunk (pure redundancy — do first, lowest risk).**
+   On-hardware profiling (2026-06-23, M4) showed `dispatch.buildCarveTable` AND `flush.buildCarveTable`
+   each fire once per chunk (~6 + ~5 µs/chunk avg; the two biggest non-`frame.terrain.update` buckets).
+   The Worker's own `generate` handler explicitly **ignores** the carve table it is sent (terrain.js
+   ~`:292`: "DOES NOT bake carve into heights — heights remain RAW"). So the table built + transferred
+   at dispatch (`_updateChunkRing` ~`:809`) is **never used**, and because the transfer *consumes* the
+   buffer, `_flushPendingQueue` (~`:1241`) **rebuilds it from scratch** for the mesh + colors. Fix:
+   don't build/transfer at dispatch at all — build it ONCE in `_flushPendingQueue` (where it's actually
+   consumed), and just send `{type:'generate', cx, cz, key}` to the Worker. Removes one full carve-table
+   build per chunk (and a 34 KB transfer) with no behavior change. (The Worker carveTable param +
+   destructure can then be deleted too.)
+
 1. **Measure first.** The `perfAdd` buckets already exist (`terrain.updateChunkRing`,
    `terrain.flushPendingQueue`, `dispatch.buildCarveTable`, `carve.collectSplines`). Run a 10-chunk
    burst in-browser and get the real split between carve / geometry / normals / colors before optimizing.
