@@ -20,6 +20,8 @@
 // derived canonical headings, so a Centerline is window-invariant by construction. XZ only; Y
 // (gradeY) is owned by road.js's grade layer, sampled by arc-length the same way.
 
+import * as THREE from 'three'
+
 const EPS_K = 1e-9   // |κ| below this ⇒ treat as straight (closed-form line, avoids 1/κ blowup)
 
 // Type tag from the curvature endpoints — purely descriptive (sampling branches on κ, not on type).
@@ -107,6 +109,69 @@ function primPose(p, ls) {
     return { x, z, theta, kappa }
 }
 
+/**
+ * CenterlineCurve — a THREE.Curve-compatible adapter so road consumers (sweepRibbon, queryNearest,
+ * carve sampler, seam harness) sample the EXACT bounded primitive curve in place of the old
+ * per-slice centripetal-Catmull-Rom spline — the BUG-12 fold fix. XZ position/tangent come from the
+ * run centerline over arc [s0, s1] (s0>s1 ⇒ slice runs E→W; u still 0→1 along the slice). Y is
+ * carried from the slice's already-graded control points `cleanPts` (interp by u) so gradeY agreement
+ * — ribbon Y, carve p.y, queryNearest point.y — is unchanged; only XZ stops overshooting.
+ *
+ * @param {Centerline} centerline — the run's own centerline (0..L_run)
+ * @param {number} s0,s1 — arc on `centerline` at slice u=0 / u=1
+ * @param {THREE.Vector3[]} cleanPts — slice control points (carry graded Y at u=0..1)
+ */
+export class CenterlineCurve {
+    constructor(centerline, s0, s1, cleanPts) {
+        this._cl = centerline
+        this._s0 = s0; this._s1 = s1
+        this._len = Math.abs(s1 - s0)
+        // Y(u) table from the graded control points, keyed by their cumulative-XZ fraction.
+        const N = cleanPts.length
+        this._yFrac = new Float64Array(N)
+        this._y = new Float64Array(N)
+        let acc = 0
+        for (let i = 0; i < N; i++) {
+            if (i > 0) acc += Math.hypot(cleanPts[i].x - cleanPts[i - 1].x, cleanPts[i].z - cleanPts[i - 1].z)
+            this._yFrac[i] = acc; this._y[i] = cleanPts[i].y
+        }
+        const tot = acc || 1
+        for (let i = 0; i < N; i++) this._yFrac[i] /= tot
+    }
+    getLength() { return this._len }
+    _yAt(u) {
+        const f = this._yFrac, y = this._y, n = f.length
+        if (n === 0) return 0
+        if (u <= f[0]) return y[0]
+        if (u >= f[n - 1]) return y[n - 1]
+        let lo = 0, hi = n - 1
+        while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (f[mid] <= u) lo = mid; else hi = mid - 1 }
+        const hiIdx = Math.min(n - 1, lo + 1)
+        const span = f[hiIdx] - f[lo] || 1
+        const t = (u - f[lo]) / span
+        return y[lo] + t * (y[hiIdx] - y[lo])
+    }
+    getPoint(u, target = new THREE.Vector3()) { return this.getPointAt(u, target) }
+    getPointAt(u, target = new THREE.Vector3()) {
+        const s = this._s0 + u * (this._s1 - this._s0)
+        const p = this._cl.pointAt(s)
+        return target.set(p.x, this._yAt(u), p.z)
+    }
+    getTangentAt(u, target = new THREE.Vector3()) {
+        const s = this._s0 + u * (this._s1 - this._s0)
+        const t = this._cl.tangentAt(s)
+        const sgn = this._s1 >= this._s0 ? 1 : -1
+        return target.set(sgn * t.x, 0, sgn * t.z).normalize()
+    }
+    getTangent(u, target) { return this.getTangentAt(u, target) }
+    getSpacedPoints(n = 5) {
+        const out = []
+        for (let i = 0; i <= n; i++) out.push(this.getPointAt(i / n))
+        return out
+    }
+    getPoints(n = 5) { return this.getSpacedPoints(n) }
+}
+
 // Wrap plain primitive descriptors {x0,z0,theta0,length,kappa0,kappa1} (as emitted by
 // arcPrimitiveConnect({emitPrimitives:true}) / dubinsPrimitives) into a Centerline. Descriptors are
 // kept dependency-free on the router side; this is the single place they become live primitives.
@@ -180,13 +245,16 @@ export class Centerline {
     }
 
     // Nearest point on the centerline to (x,z): coarse arc-length scan + one Newton refine.
-    // Closed-form-enough for physics queryNearest / carve nearest in Phase B.
-    nearest(x, z, ds = 1.0) {
+    // Optional [sMin, sMax] window bounds the scan (cheaper, and disambiguates switchbacks/loops by
+    // searching only near an expected arc) — used by per-slice projection in road.js.
+    nearest(x, z, ds = 1.0, sMin = 0, sMax = this.length) {
         if (this.primitives.length === 0) return null
-        let bestS = 0, bestD2 = Infinity
-        const n = Math.max(1, Math.ceil(this.length / ds))
+        const lo = Math.max(0, Math.min(this.length, sMin))
+        const hi = Math.max(lo, Math.min(this.length, sMax))
+        let bestS = lo, bestD2 = Infinity
+        const n = Math.max(1, Math.ceil((hi - lo) / ds))
         for (let i = 0; i <= n; i++) {
-            const s = this.length * i / n
+            const s = lo + (hi - lo) * i / n
             const q = this.pointAt(s)
             const d2 = (q.x - x) * (q.x - x) + (q.z - z) * (q.z - z)
             if (d2 < bestD2) { bestD2 = d2; bestS = s }
@@ -195,7 +263,7 @@ export class Centerline {
         const q = this.pointAt(bestS)
         const t = this.tangentAt(bestS)
         const along = (x - q.x) * t.x + (z - q.z) * t.z
-        bestS = Math.max(0, Math.min(this.length, bestS + along))
+        bestS = Math.max(lo, Math.min(hi, bestS + along))
         const fp = this.pointAt(bestS)
         return {
             s: bestS,

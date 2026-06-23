@@ -243,6 +243,51 @@ fresh. Then start Phase A. Keep every commit green; build new beside old; delete
 
 ---
 
+## 11. Phase B attempt (2026-06-22) — machinery built + dormant; the real blocker found
+
+Phase A landed clean (committed). Phase B (consumers sample the centerline) is **built but held OFF**
+behind `const USE_CENTERLINE_RIBBON = false` (road.js). Flip it on and the BUG-12 gate
+(`road-minradius.mjs`) goes GREEN — **the fold is genuinely fixed** by sampling the exact primitive
+curve. It is held off because activating it regresses `invariance.mjs`, for a now-understood reason.
+
+**What was built (all present, dormant):**
+- `centerline.js`: `CenterlineCurve` (THREE.Curve-compatible adapter over a `Centerline` arc range
+  [s0,s1] + graded-Y from the slice's clean points), `Centerline.subrange`, windowed `Centerline.nearest`.
+- `road.js`: `_protoConnectCenterline` (cached per-anchor primitive centerline); per-run centerline +
+  an **exact monotonic polyline→centerline arc correspondence table** built in `_streamNetwork`
+  (sequential forward projection); `_assignSlice` swaps the Catmull-Rom spline for a `CenterlineCurve`
+  via that table (gated by the flag); `_interpArcTable` helper.
+
+**Why it can't be activated yet — two COUPLED blockers (this is the crux the prior session hit):**
+
+1. **The raw arc SEARCH wanders kilometres.** `arcPrimitiveConnect`'s cost has an *absolute-altitude*
+   attractor (`wAlt·nH` per step). It is an unbounded global-minimum magnet: the search dives into far
+   basins via huge detours — measured **21 / 45 connections > 5× the anchor distance, one 132× (57 km
+   for 435 m anchors)**. Those paths self-cross, so the cleanup stack (`_removeLoops`/COVER/owner) is
+   **load-bearing** — it carves the wandering path down to the rendered road. Therefore the *routed
+   centerline ≠ the rendered polyline*: loop-removal SPLICES the polyline, so it diverges from the
+   exact centerline, and the slice→centerline mapping breaks at every splice (displaced slices, the
+   "no run found" capture, non-invariance). This is the polyline≠centerline mismatch, root-caused.
+
+2. **Fixing the search destabilises the assembly's invariance.** The research-standard fix (replace
+   the absolute-altitude reward with a BOUNDED "penalise terrain above the anchor-to-anchor baseline"
+   cost — avoid ridges, no reward for descending) **works for routing**: loops 23→1 / 45, max path
+   57 km→1.7 km, and `arc-router.mjs` stays 9/9 (DETOURS-AROUND-PEAK included → valley-following
+   preserved). BUT it shifts where roads route, which flips COVER/`_runOwnerAnchor` threshold
+   decisions per stream window → `invariance.mjs` RUNKEY-SET / ARCS / SLICE-BOUNDARY break (the BUG-14
+   fragility class). Confirmed independent of the consumer swap.
+
+**Conclusion / next step (a COORDINATED rewrite, not a bolt-on):** routing and assembly are coupled
+through the cleanup stack. To finish Phase B/C you must do them together:
+- Land the **bounded-`wAlt` (or otherwise loop-free) search** so the centerline IS the road, AND
+- **Replace the COVER/owner/loop-removal polyline assembly** with primitive-centerline-native run
+  identity (the §5/§8 target: run identity from primitive arc-length, not polyline cleanup) so
+  invariance no longer depends on routing-sensitive threshold decisions.
+Then delete `_removeLoops`/`_removeSelfCrossings`/`_protoSimplify` (Phase C) and flip
+`USE_CENTERLINE_RIBBON = true`. The dormant machinery + the new `centerline-curvature.mjs` gate are
+ready to validate it. Do NOT try to activate Phase B against the current COVER/owner stack — it is the
+entanglement that cost two sessions.
+
 ## Sources
 - Clothoid / G2 road & path geometry: [Sketching Piecewise Clothoid Curves (McCrae & Singh)](https://www.dgp.toronto.edu/~mccrae/projects/clothoid/sbim2008mccrae.pdf) · [Interpolating clothoid splines with curvature continuity](https://www.researchgate.net/publication/321943188_Interpolating_clothoid_splines_with_curvature_continuity) · [Smooth Interpolating Curves with Local Control and Monotone Alternating Curvature (EG 2022)](https://alexandrebinninger.com/assets/publications/local_interpol_spline_mono_curvature/local_interpol_spline_mono_curvature.pdf)
 - Polyline smoothing with G1 + bounded curvature: [Fast Shortest Path Polyline Smoothing With G1 Continuity and Bounded Curvature (arXiv:2409.09816)](https://arxiv.org/pdf/2409.09816)

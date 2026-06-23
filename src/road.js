@@ -36,7 +36,7 @@ import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
 import { crownProfile, potholeNoise, signedCurvature, arcPrimitiveConnect, smoothGradeInPlace } from './road-carve.js'
-import { centerlineFromDescriptors } from './centerline.js'
+import { centerlineFromDescriptors, CenterlineCurve, Centerline } from './centerline.js'
 // roadQuality imported for SURF-06 D-03: pothole severity uses the same per-stretch
 // quality hook as markings. Importing from road-quality.js (not road-mesh.js) avoids
 // the road-mesh.js → terrain.js → road.js chain issues.
@@ -181,6 +181,20 @@ function _interpolateRunProfile(arcPos, gradeY, camberRad, tx, tz, s, out) {
     return out
 }
 
+// Interpolate a monotonic table key[]→val[] (both ascending Float64Array, same length) at `k`.
+// Used to map a run's polyline cumulative-XZ arc → centerline arc (Phase B slice mapping).
+function _interpArcTable(key, val, k) {
+    const n = key.length
+    if (n === 0) return 0
+    if (k <= key[0]) return val[0]
+    if (k >= key[n - 1]) return val[n - 1]
+    let lo = 0, hi = n - 1
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (key[m] <= k) lo = m; else hi = m }
+    const span = key[hi] - key[lo] || 1
+    const t = (k - key[lo]) / span
+    return val[lo] + t * (val[hi] - val[lo])
+}
+
 // ── Module constants ───────────────────────────────────────────────────────────
 /**
  * Tile side length in metres. MUST match terrain.js CHUNK_SIZE.
@@ -213,6 +227,11 @@ const PROTO_COVER_FRAC = 0.5    // drop the road if more than half its length ov
 const PROTO_LOOP_D      = 11    // m — "returned to where it was" distance
 const PROTO_LOOP_ARCLAG = 38    // m — min along-path travel before a return counts as a loop
 const PROTO_RUN_MIN     = 4     // min points for an emitted road run (avoids tiny fragments)
+// Road Overhaul Phase B transition flag: when true, slice splines sample the exact primitive
+// centerline (CenterlineCurve) instead of re-fitting centripetal Catmull-Rom (the BUG-12 fold fix).
+// Held OFF until the routing→assembly invariance coupling is resolved (the cleanup stack's COVER/owner
+// decisions shift when routing changes; see ROAD-OVERHAUL-HANDOFF). Machinery is built + tested.
+const USE_CENTERLINE_RIBBON = false
 
 // ── D-16 Phase 2: world-deterministic run origin (anchor-owned identity + arcS) ─────
 // A run's owning macro-anchor = the first contained column (W→E) whose run-local arc to the
@@ -1247,6 +1266,25 @@ export class RoadSystem {
         return cl
     }
 
+    // Road Overhaul, Phase B — a primitive centerline over the ABSOLUTE column span [mxLo, mxHi],
+    // concatenating each east connection's primitives. They join G1 at the shared anchors (canonical
+    // headings), so the concatenation is the EXACT curve the row polyline samples. A COVER-split run
+    // restricts it to its own span (subrange) → the run centerline the ribbon/carve/query sample
+    // instead of re-fitting Catmull-Rom (BUG-12 fold fix).
+    //
+    // D-16: the span MUST be derived from the run's own (window-invariant) geometry, NOT the streaming
+    // band [mx0,mx1] — a band-relative span makes the centerline length (and thus nearest()'s
+    // coarse-scan resolution) center-dependent, drifting the subrange clip points and breaking
+    // arcS/gradeY invariance. Per-connection centerlines are cached, so per-run rebuild is cheap.
+    _buildRowCenterline(mxLo, mxHi, mz) {
+        const prims = []
+        for (let mx = mxLo; mx <= mxHi; mx++) {
+            const cl = this._protoConnectCenterline(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz), mx, mz)
+            for (const p of cl.primitives) prims.push(p)
+        }
+        return new Centerline(prims)
+    }
+
     // ── Canonical network builder (D-08) ────────────────────────────────────────
     /**
      * Build the canonical valley-trunk network around `center` into this._network — the
@@ -1461,7 +1499,66 @@ export class RoadSystem {
                     // ("<mz>:f<n>") — they are tiny truncated bits that never reach the consumed region.
                     const owned = this._runOwnerAnchor(run, mz)
                     const key = owned ? `${mz}:${owned.ownerMx}` : `${mz}:f${runIndex}`
-                    this._network.set(key, { points: run.map(p => p.clone()), arcOrigin: owned ? owned.arcOrigin : 0 })
+                    // Phase B: this run's own centerline = the row centerline restricted between the
+                    // projections of run start/end (run endpoints are exact centerline points → exact
+                    // projection). polyArc = the run's XZ arc total, the denominator that maps a slice's
+                    // owner-origined arcS to centerline arc. Both are window-invariant (the run geometry
+                    // is identical across stream centers; subrange normalises the band offset out).
+                    // Every run gets its EXACT primitive centerline (the BUG-12 fold fix): build it over
+                    // the run's column span (concatenated connection primitives) and record `ownerArc` =
+                    // the centerline arc at this run's arc origin, so a slice's owner-origined arcS maps
+                    // to centerline arc as `ownerArc + arcS`.
+                    //
+                    // D-16: for OWNED runs ownerArc is computed EXACTLY from connection lengths (the
+                    // owner anchor = start of connection ownerMx). This avoids any mapping through
+                    // full-run totals / projection, whose value depends on the run's band-truncated tails
+                    // (which differ per stream center) — that was the arcS/gradeY invariance break. The
+                    // owner core geometry is identical across centers, so the sampled point is invariant.
+                    // Fallback "f" fragments have no owner and are band-relative (never invariance-
+                    // compared); they anchor arcS=0 at run[0] via projection.
+                    let centerline = null, ownerArc = 0
+                    {
+                        let rMinX = Infinity, rMaxX = -Infinity
+                        for (const p of run) { if (p.x < rMinX) rMinX = p.x; if (p.x > rMaxX) rMaxX = p.x }
+                        let mxLo = Math.floor(rMinX / PROTO_ANCHOR_SPACING) - 1
+                        let mxHi = Math.ceil(rMaxX / PROTO_ANCHOR_SPACING) + 1
+                        if (owned) { mxLo = Math.min(mxLo, owned.ownerMx); mxHi = Math.max(mxHi, owned.ownerMx + 1) }
+                        const prims = []
+                        let acc = 0, ownerColArc = null
+                        for (let mx = mxLo; mx <= mxHi; mx++) {
+                            if (owned && mx === owned.ownerMx) ownerColArc = acc   // owner anchor = start of connection ownerMx
+                            const cl = this._protoConnectCenterline(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz), mx, mz)
+                            for (const p of cl.primitives) prims.push(p)
+                            acc += cl.length
+                        }
+                        centerline = new Centerline(prims)
+                        if (owned) ownerArc = ownerColArc ?? 0
+                        else { const pr = centerline.nearest(run[0].x, run[0].z); ownerArc = pr ? pr.s : 0 }
+                    }
+                    // Exact, monotonic polyline→centerline arc correspondence (polyCum[i] = run XZ arc
+                    // from run[0]; clArc[i] = centerline arc at run point i). The polyline is loop-removed
+                    // / simplified so it runs SHORTER than the exact centerline and a single offset drifts
+                    // (up to ~280 m); a switchback also makes a global nearest ambiguous. Both are solved
+                    // by walking the run forward and projecting each point just AHEAD of the previous
+                    // match (small forward window → unambiguous, drift-free, monotone). A slice maps its
+                    // owner-origined arcS through this table in _assignSlice.
+                    let polyCum = null, clArc = null
+                    if (centerline) {
+                        const M = run.length
+                        polyCum = new Float64Array(M); clArc = new Float64Array(M)
+                        const seed = ownerArc - (owned ? owned.arcOrigin : 0)   // centerline arc at run[0]
+                        let s = centerline.nearest(run[0].x, run[0].z, 1.0, seed - 50, seed + 50)?.s ?? 0
+                        clArc[0] = s
+                        for (let i = 1; i < M; i++) {
+                            const step = Math.hypot(run[i].x - run[i - 1].x, run[i].z - run[i - 1].z)
+                            polyCum[i] = polyCum[i - 1] + step
+                            const win = step * 2 + 12   // forward-only window (centerline ≥ chordal step)
+                            const pr = centerline.nearest(run[i].x, run[i].z, 0.5, clArc[i - 1], clArc[i - 1] + win)
+                            s = pr ? Math.max(clArc[i - 1], pr.s) : clArc[i - 1]
+                            clArc[i] = s
+                        }
+                    }
+                    this._network.set(key, { points: run.map(p => p.clone()), arcOrigin: owned ? owned.arcOrigin : 0, centerline, polyCum, clArc })
                     runIndex++
                 }
                 run = []
@@ -2783,7 +2880,27 @@ export class RoadSystem {
         const touchesEast = Math.abs(a1.x - xe) < 1e-3
         const spanScore = (touchesWest ? 1 : 0) + (touchesEast ? 1 : 0)
 
-        const spline = new THREE.CatmullRomCurve3(clean, false, 'centripetal', 0.5)
+        // Phase B (BUG-12 fold fix): sample the run's EXACT primitive centerline instead of re-fitting
+        // these control points with overshooting centripetal Catmull-Rom. Map this slice's owner-
+        // origined run-arc [arcS0, arcS1] to centerline arc by fraction of polyArc (both endpoints of a
+        // tile-boundary cut map to the SAME fraction from each side → seam C0 preserved). Y is carried
+        // from `clean` (already graded) so gradeY/camber agreement is unchanged; only XZ stops folding.
+        // Fallback to Catmull-Rom for edge fragments with no centerline (tiny truncated bits).
+        const entry = this._network.get(runKey)
+        let spline
+        if (USE_CENTERLINE_RIBBON && entry && entry.centerline && entry.centerline.length > 1e-6 && entry.polyCum) {
+            // Map this slice's owner-origined arcS endpoints to centerline arc through the run's exact
+            // polyline→centerline correspondence table (built in _streamNetwork by sequential
+            // projection). arcS + arcOrigin = run polyline cumulative-XZ arc = the table's polyCum key.
+            // A tile-boundary cut has one arcS shared by both adjacent slices → identical centerline arc
+            // → seam C0 preserved. clean carries the graded Y (overlaid by CenterlineCurve).
+            const arcOrigin = entry.arcOrigin ?? 0
+            const s0 = _interpArcTable(entry.polyCum, entry.clArc, arcS0 + arcOrigin)
+            const s1 = _interpArcTable(entry.polyCum, entry.clArc, arcS1 + arcOrigin)
+            spline = new CenterlineCurve(entry.centerline, s0, s1, clean)
+        } else {
+            spline = new THREE.CatmullRomCurve3(clean, false, 'centripetal', 0.5)
+        }
         let arr = this._tiles.get(key)
         if (!arr) { arr = []; this._tiles.set(key, arr) }
         arr.push({ spline, points: clean, waypoints: clean, runKey, runWeight, spanScore, arcS0, arcS1 })

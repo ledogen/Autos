@@ -43,9 +43,21 @@ hybrid-A* + analytic smoothing, OpenDRIVE-style model). Deletes the Catmull-Rom 
   - **Decision logged:** G1 Dubins terminal kept for Phase A — fold-safety is satisfied (every
     primitive radius ≥ hardR; the fold was 100% Catmull-Rom overshoot, now bypassed). The G2
     clothoid-pair terminal is a ride-feel upgrade (continuous curvature), NOT a fold fix — deferred.
-- **Phase B — NEXT:** switch `road-mesh.js sweepRibbon` + carve table + `queryNearest` to SAMPLE the
-  Centerline (no Catmull-Rom slice). Expect `road-minradius.mjs` + `ribbon-carve.mjs` green, camber
-  from exact `curvatureAt(s)`. Keep `invariance.mjs`/`restream-invariance.mjs` green.
+- **Phase B — MACHINERY BUILT, HELD OFF (flag `USE_CENTERLINE_RIBBON=false`).** Consumers can sample
+  the exact centerline (CenterlineCurve + per-run centerline + monotonic polyline→centerline arc
+  table); flipping the flag makes `road-minradius.mjs` GREEN — **the BUG-12 fold is genuinely fixed**.
+  Held off because activating it regresses `invariance.mjs`. Root cause found (see HANDOFF §11):
+  1. The raw arc SEARCH wanders km (`wAlt·nH` absolute-altitude attractor; 21/45 conns >5×, one 132×)
+     → cleanup stack (`_removeLoops`/COVER) is load-bearing → routed centerline ≠ rendered polyline →
+     slice mapping breaks at loop-removal splices.
+  2. The research-correct fix (bounded "avoid-ridges" valley cost) tames the wander (loops 23→1,
+     arc-router stays 9/9) BUT shifts routing → flips COVER/`_runOwnerAnchor` thresholds → breaks
+     RUNKEY/ARCS/SLICE invariance (BUG-14 class). Routing + assembly are COUPLED.
+- **NEXT (coordinated rewrite, not a bolt-on):** land the loop-free search AND replace the
+  COVER/owner/loop-removal polyline assembly with primitive-centerline-native run identity
+  (HANDOFF §5/§8) so invariance no longer depends on routing-sensitive thresholds. Then delete the
+  patch stack (Phase C) and flip `USE_CENTERLINE_RIBBON=true`. Baseline is GREEN at 7/8 (road-minradius
+  red by design); dormant machinery + `centerline-curvature.mjs` gate ready to validate.
 
 ## State at handoff (branch road-invariance, UNCOMMITTED)
 Phase-2 work done + worth keeping: `_protoAnchorHeading` (canonical, invariant) + `arcPrimitiveConnect`
