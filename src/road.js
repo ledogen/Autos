@@ -97,6 +97,29 @@ function _segXZ(ax, az, bx, bz, cx, cz, dx, dz) {
  * @param {number} t — 0..1
  * @returns {THREE.Vector3} new vector a + (b-a)·t
  */
+// Squared minimum distance between XZ segments A→B and C→D (no allocations). Used as the cheap
+// COVER pre-filter: two connections can only overlap if their ANCHOR segments come close, and
+// anchors are cheap/cached — so distant neighbours are skipped WITHOUT routing their centerline.
+function _segSegDist2(ax, az, bx, bz, cx, cz, dx, dz) {
+    const ux = bx - ax, uz = bz - az, vx = dx - cx, vz = dz - cz, wx = ax - cx, wz = az - cz
+    const a = ux * ux + uz * uz, b = ux * vx + uz * vz, c = vx * vx + vz * vz
+    const d = ux * wx + uz * wz, e = vx * wx + vz * wz
+    const D = a * c - b * b
+    let sc, sN, sD = D, tc, tN, tD = D
+    if (D < 1e-9) { sN = 0; sD = 1; tN = e; tD = c }
+    else {
+        sN = b * e - c * d; tN = a * e - b * d
+        if (sN < 0) { sN = 0; tN = e; tD = c }
+        else if (sN > sD) { sN = sD; tN = e + b; tD = c }
+    }
+    if (tN < 0) { tN = 0; if (-d < 0) sN = 0; else if (-d > a) sN = sD; else { sN = -d; sD = a } }
+    else if (tN > tD) { tN = tD; if (-d + b < 0) sN = 0; else if (-d + b > a) sN = sD; else { sN = -d + b; sD = a } }
+    sc = Math.abs(sN) < 1e-9 ? 0 : sN / sD
+    tc = Math.abs(tN) < 1e-9 ? 0 : tN / tD
+    const px = wx + sc * ux - tc * vx, pz = wz + sc * uz - tc * vz
+    return px * px + pz * pz
+}
+
 function _lerpVec3(a, b, t) {
     return new THREE.Vector3(
         a.x + (b.x - a.x) * t,
@@ -210,6 +233,16 @@ const PROTO_CELL           = 10    // m — A* grid resolution for an anchor→a
 const PROTO_MARGIN         = 200   // m — N/S detour room so a connection can wrap around a peak
 const PROTO_REGEN_MOVE     = 96    // m — re-stream the trunk once the view center moves this far
 const PROTO_SAMPLE_DS      = 4     // m — centerline → polyline sampling spacing (profile/slice/query density)
+// COVER suppression: a connection run is dropped where it runs on TOP of a lower-priority (lower-mz)
+// row's road — adjacent rows whose valley-snapped anchors converge route duplicates otherwise. Checked
+// against canonical neighbour geometry at fixed depth so the decision is window-invariant (see
+// _streamNetwork). Crossings (different heading) are preserved — only same-direction overlap is cut.
+const PROTO_COVER_D    = 36     // m — proximity that counts as "on top of" another road
+const PROTO_COVER_DOT  = 0.93   // |cos| ~21° — heading similarity that counts as "parallel"
+const PROTO_COVER_FRAC = 0.5    // drop the connection if more than half its length overlaps a lower row
+const PROTO_COVER_DEPTH = 1     // rows below to check. Adjacent-row only: rows ≥2 apart are ≥282m apart
+                               // after the ≤115m anchor snap (base 512m) — can't overlap (COVER_D 36m).
+const PROTO_COVER_PREFILTER = 110  // m — anchor-segment proximity gate (slack over COVER_D for mid-span detour) before routing a neighbour
 const PROTO_SNAP_CAP       = PROTO_ANCHOR_SPACING * 0.45  // m — max anchor gradient-descent displacement (keeps anchors in their lane → fewer parallel/duplicate roads)
 const PROTO_PARAM_DEBOUNCE = 160   // ms — coalesce slider drags before re-routing
 // 8-connectivity direction vectors (index 0..7); used for the turn-penalty A* state.
@@ -1298,6 +1331,62 @@ export class RoadSystem {
                 this._network.set(`${mz}:${mx}`, { points: run, arcOrigin: 0, centerline, polyCum, clArc })
             }
         }
+
+        // ── COVER suppression (window-invariant, per-connection) ──────────────────
+        // Adjacent rows whose valley-snapped anchors converged route their roads on top of each other;
+        // draw only ONE. A connection mz:mx is DROPPED iff > COVER_FRAC of its samples lie within
+        // COVER_D of a SAME-HEADING point on a LOWER-mz row's road (lower mz = higher priority, the
+        // deterministic tie-break). Coverage is tested against the lower rows' CANONICAL centerline
+        // geometry (a pure fn, computed even for out-of-band neighbour rows) at FIXED depth
+        // (PROTO_COVER_DEPTH rows — beyond the snap+detour overlap reach) → both stream centers make
+        // identical drop decisions for a shared connection, so it stays window-invariant (unlike the
+        // old band-relative ordered-registration pass that this replaces). Whole-connection grain.
+        const D2 = PROTO_COVER_D * PROTO_COVER_D
+        const toDrop = (this._params?.roadCoverSuppress ?? true) ? [] : null
+        for (const [key, entry] of (toDrop ? this._network : [])) {
+            const c = key.indexOf(':'); const mz = +key.slice(0, c), mx = +key.slice(c + 1)
+            if (!Number.isInteger(mz) || !Number.isInteger(mx)) continue
+            const pts = entry.points
+            if (!pts || pts.length < 2) continue
+            // Gather lower-priority neighbour sample points (canonical, band-independent). CHEAP
+            // PRE-FILTER first: route+sample a neighbour ONLY if its anchor segment comes within
+            // COVER_D+slack of this run's anchor segment (anchors are cached, pure — no routing). This
+            // keeps COVER near-free: distant rows (the common case) never trigger an arc search.
+            const aA = this._protoAnchor(mx, mz), aB = this._protoAnchor(mx + 1, mz)
+            const gate2 = (PROTO_COVER_D + PROTO_COVER_PREFILTER) ** 2
+            const neigh = []   // flat [x, z, tx, tz, ...]
+            for (let dmz = 1; dmz <= PROTO_COVER_DEPTH; dmz++) {
+                for (let dmx = -1; dmx <= 1; dmx++) {
+                    const nmx = mx + dmx, nmz = mz - dmz
+                    const nA = this._protoAnchor(nmx, nmz), nB = this._protoAnchor(nmx + 1, nmz)
+                    if (_segSegDist2(aA.x, aA.z, aB.x, aB.z, nA.x, nA.z, nB.x, nB.z) > gate2) continue
+                    const cl = this._protoConnectCenterline(nA, nB, nmx, nmz)
+                    if (!cl || cl.length < 1e-6) continue
+                    const n = Math.max(1, Math.ceil(cl.length / PROTO_COVER_D))   // ~1 sample / COVER_D
+                    for (let i = 0; i <= n; i++) {
+                        const s = cl.length * i / n, p = cl.pointAt(s), t = cl.tangentAt(s)
+                        neigh.push(p.x, p.z, t.x, t.z)
+                    }
+                }
+            }
+            if (neigh.length === 0) continue
+            let covered = 0
+            const needToDrop = Math.floor(pts.length * PROTO_COVER_FRAC) + 1
+            for (let i = 0; i < pts.length; i++) {
+                const px = pts[i].x, pz = pts[i].z
+                const q = pts[Math.min(pts.length - 1, i + 1)], r = pts[Math.max(0, i - 1)]
+                let hx = q.x - r.x, hz = q.z - r.z; const hl = Math.hypot(hx, hz) || 1; hx /= hl; hz /= hl
+                for (let k = 0; k < neigh.length; k += 4) {
+                    const ex = neigh[k] - px, ez = neigh[k + 1] - pz
+                    if (ex * ex + ez * ez < D2 && Math.abs(hx * neigh[k + 2] + hz * neigh[k + 3]) > PROTO_COVER_DOT) {
+                        covered++; break
+                    }
+                }
+                if (covered >= needToDrop) { toDrop.push(key); break }
+            }
+        }
+        if (toDrop) for (const key of toDrop) this._network.delete(key)
+
         // NOTE (CR-02): no post-build cache eviction. _network is .clear()-ed + rebuilt for the
         // current window at the top of every real re-stream, so its size is window-bounded. The
         // per-connection centerline cache (_proto.cls) is evicted by size above.

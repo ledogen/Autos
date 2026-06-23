@@ -203,9 +203,22 @@ export const RANGER_PARAMS = {
   // wandering; balanced against the altitude/grade terms. D-09 default 1.
   roadWDist: 1,         // cost units / m horizontal — directness (D-09)
 
-  // roadWAlt: stay-low valley-seeking weight — DOMINANT term. Adds roadWAlt·h per cell so the
-  // route prefers low ground and wraps AROUND high ground (D-04) instead of climbing it.
+  // roadWAlt: stay-low valley-seeking weight — DOMINANT term. The altitude cost is measured
+  // RELATIVE to the straight anchor→anchor baseline: roadWAlt·max(0, δ + roadValleyDepthCap), where
+  // δ = terrainHeight − baseline. Above baseline → avoid (route around ridges); below baseline →
+  // seek the low ground (valley spine); below the cap → saturates (bounded, no km wander).
   roadWAlt: 0.85,       // cost units / m altitude — valley-seeking dominant term (D-09 / D-04)
+
+  // roadValleyDepthCap: how far BELOW the anchor baseline still earns valley-seeking reward (m).
+  // Higher = stronger pull into deep valleys & more decisive, less squiggly roads (but a touch more
+  // detour); lower = flatter, more direct-but-aimless. The cap is what keeps the old absolute-altitude
+  // global magnet (km wander) from coming back. ~40 m re-activates the spine over ~all road length.
+  roadValleyDepthCap: 40,  // m below baseline that still rewards descending (bounded valley-seek)
+
+  // roadCoverSuppress: drop a connection where it runs ON TOP of a lower-row road (adjacent rows whose
+  // valley-snapped anchors converged). true = cleaner (no stacked/duplicate roads & their junctions)
+  // but a fringe of neighbour connections is routed on cold spawn (slower load); false = faster spawn.
+  roadCoverSuppress: true,
 
   // roadWGrade: gentle-grade weight — quadratic (grade²) cost. 2× grade → 4× penalty; shapes
   // smooth gentle climbs without forbidding any grade. D-09 default 400.

@@ -215,6 +215,12 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(params, 'roadWGrade', 0, 2000,  20  ).name('wGrade (gentle)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWOver',  0, 40000, 500 ).name('wOver (soft cap)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWTurn',  0, 800,   20  ).name('wTurn (straighter)').onChange(fireRoadParam)
+  // Valley-seek depth cap (m below the anchor baseline that still rewards descending). Higher =
+  // more decisive valley-following / less squiggly (slightly more detour); the cap bounds wander.
+  roadFolder.add(params, 'roadValleyDepthCap', 0, 120, 5).name('Valley Depth Cap (m)').onChange(fireRoadParam)
+  // COVER suppression: drop roads that run on top of a lower row's road. OFF = faster spawn (no
+  // neighbour pre-routing), ON = no stacked/duplicate roads + fewer junctions. Re-routes on toggle.
+  roadFolder.add(params, 'roadCoverSuppress').name('COVER Suppress').onChange(fireRoadParam)
   // D0 — min turn radius (m); arc-fillet rounds corners tighter than this (higher = wider hairpins).
   // Floor: 6 m (UI lower bound; road.js _refreshParams further clamps to ≥ roadHalfWidth+clearance+ε).
   // D3 (plan 09-22) COUPLING: carve footprint (blendW=1 trough width) is capped at roadMinTurnRadius
