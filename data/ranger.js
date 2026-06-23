@@ -252,7 +252,9 @@ export const RANGER_PARAMS = {
   // by construction: roadArcHardRadius is the HARDEST (tightest) turn the router can express — the real
   // fold floor — while roadArcGentleRadius + wTurn (curvature cost) bias toward gentle/straight runs.
   roadArcHardRadius:   8,   // m — tightest switchback radius (≥ roadHalfWidth+clearance ≈ 5.6 m floor). Higher = no tight turns.
-  roadArcGentleRadius: 30,  // m — gentle-turn primitive radius (the preferred, cheap curve).
+  roadArcGentleRadius: 75,  // m — gentle-turn primitive radius (the preferred, cheap curve). 75 m
+                            // sweeps wider → fewer tight loopbacks; the loopbacks that remain read as
+                            // natural cloverleaf/on-ramp curves (see feat-road-self-overpass ticket).
   roadArcHeurWeight:   1.5, // weighted-A* heuristic inflation — PERF knob: higher = faster streaming, slightly less optimal routing.
 
   // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
