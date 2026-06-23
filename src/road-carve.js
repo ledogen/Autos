@@ -629,6 +629,25 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         return hH[ci]
     }
 
+    // Bounded altitude cost (D-arc REVISED): penalise terrain ABOVE the straight a→b altitude
+    // baseline only — NO reward for descending. The old `wAlt·nH` was an absolute-altitude GLOBAL
+    // MAGNET: the search dived into far basins via kilometre detours (21/45 connections >5× anchor
+    // distance, one 132×), and those wandering paths self-crossed — so the road.js cleanup stack
+    // (_removeLoops/COVER/owner) had to carve the rendered road back out of them, making the routed
+    // centerline ≠ the rendered polyline (the BUG-12 / invariance entanglement). Baseline = linear
+    // height interp along the a→b chord at the node's clamped projection; cost = wAlt·max(0, nH −
+    // baseline) keeps the search LOCAL/bounded while still routing AROUND ridges (over-baseline
+    // terrain is penalised) → valley-following without the wander. For equal-height anchors this is
+    // byte-identical to the old term (baseline ≡ ha), so arc-router.mjs's DETOURS-AROUND-PEAK holds.
+    const ha = hAt(ax, az), hb = hAt(bx, bz)
+    const _abx = bx - ax, _abz = bz - az
+    const _abLen2 = _abx * _abx + _abz * _abz || 1
+    const baselineAt = (x, z) => {
+        let t = ((x - ax) * _abx + (z - az) * _abz) / _abLen2
+        if (t < 0) t = 0; else if (t > 1) t = 1
+        return ha + t * (hb - ha)
+    }
+
     const kappas = [0, 1 / gentleR, -1 / gentleR, 1 / hardR, -1 / hardR]
 
     const arcEnd = (x, z, th, k, L) => {
@@ -706,7 +725,7 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             const nH = hAt(nx, nz)
             const grade = Math.abs(nH - csh) / stepLen
             const ng = cg + wDist * stepLen + wGrade * grade * grade + wOver * Math.max(0, grade - maxGrade)
-                     + wAlt * nH + wCurv * Math.abs(k) * stepLen
+                     + wAlt * Math.max(0, nH - baselineAt(nx, nz)) + wCurv * Math.abs(k) * stepLen
             if (GS[nst] !== gen || ng < G[nst]) {
                 G[nst] = ng; GS[nst] = gen
                 SX[nst] = nx; SZ[nst] = nz; STh[nst] = nth; SSh[nst] = nH; SP[nst] = sid; SKi[nst] = ki

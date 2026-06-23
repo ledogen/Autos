@@ -5,11 +5,17 @@
 // synthetic deterministic terrain) via the real `road.debugDumpNearestRun()` — NOT from a press-'p'
 // dump file. So it runs in CI with no game and no fixture, and can never go stale.
 //
-// What it proves (the 09-32 cumulative-XZ seam fix, made permanent):
-//   1. SEAM-BOUNDED        — worst rendered-centerline Y step at a true tile seam < 0.35 m under the
-//                            shipped cumulative-XZ arcS parameterisation (residual = hairpin-apex geom).
-//   2. FIX-ENGAGED         — uniform-u (the OLD parameterisation) is ≥2× worse → proves cumulative-XZ
-//                            is the reason the seam is small (guards against a silent revert).
+// What it proves:
+//   1. SEAM-BOUNDED        — worst rendered-centerline Y step at a true tile seam < 0.35 m
+//                            (residual = hairpin-apex geometry).
+//   2. SEAM-PARAM-ROBUST   — Road Overhaul: now that the ribbon samples ONE continuous, arc-length-
+//                            EXACT primitive centerline (CenterlineCurve) per run, the seam is small
+//                            under BOTH the uniform-u and cumulative-XZ parameterisations. The old
+//                            FIX-ENGAGED check asserted cumulative-XZ was ≥2× better than uniform-u —
+//                            that gap only existed because the Catmull-Rom slice spline was NOT arc-
+//                            length-uniform (it overshot, BUG-12). With the fold fixed at the source
+//                            (the exact centerline) that compensation is structurally unnecessary;
+//                            this gate now guards that both parameterisations stay below the floor.
 //   3. RIBBON-MATCHES-CARVE— ribbon arcS (cumulative-XZ) and carve arcS (cumulative-XZ) resolve the
 //                            SAME gradeY at the same world point (<0.1 m); vs metres if carve were
 //                            left uniform-u → the truck would sink through the visual road.
@@ -120,8 +126,9 @@ const gapGood = ribbonVsCarve(dump, true)
 console.log(`(harness run ${dump.runKey}, ${dump.slices.length} slices — geometry from debugDumpNearestRun, no dump file)`)
 log(fix < 0.35, 'SEAM-BOUNDED',
     `cumulative-XZ worst tile-seam step = ${fix.toFixed(3)} m (<0.35 m; residual = hairpin-apex geometry)`)
-log(old / Math.max(fix, 1e-6) >= 2, 'FIX-ENGAGED',
-    `uniform-u ${old.toFixed(3)} m → cumulative-XZ ${fix.toFixed(3)} m (${(old / Math.max(fix, 1e-6)).toFixed(1)}× better, ≥2×)`)
+log(old < 0.35 && fix < 0.35, 'SEAM-PARAM-ROBUST',
+    `exact-centerline ribbon: seam step bounded under BOTH params — uniform-u ${old.toFixed(3)} m, ` +
+    `cumulative-XZ ${fix.toFixed(3)} m (both <0.35 m → the BUG-12 overshoot the remap compensated is gone)`)
 log(gapGood < 0.1, 'RIBBON-MATCHES-CARVE',
     `ribbon↔carve Y gap (both cumulative-XZ) = ${gapGood.toFixed(3)} m (<0.1 m; vs ${gapBad.toFixed(2)} m if carve left uniform-u → sink-through)`)
 

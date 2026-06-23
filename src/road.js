@@ -231,7 +231,7 @@ const PROTO_RUN_MIN     = 4     // min points for an emitted road run (avoids ti
 // centerline (CenterlineCurve) instead of re-fitting centripetal Catmull-Rom (the BUG-12 fold fix).
 // Held OFF until the routing→assembly invariance coupling is resolved (the cleanup stack's COVER/owner
 // decisions shift when routing changes; see ROAD-OVERHAUL-HANDOFF). Machinery is built + tested.
-const USE_CENTERLINE_RIBBON = false
+const USE_CENTERLINE_RIBBON = true
 
 // ── D-16 Phase 2: world-deterministic run origin (anchor-owned identity + arcS) ─────
 // A run's owning macro-anchor = the first contained column (W→E) whose run-local arc to the
@@ -1377,200 +1377,71 @@ export class RoadSystem {
         // rebuild changes is run EXTENT at the frontier; the rev bump re-derives those lazily.
         this._designGradeCache = new WeakMap()
 
-        // ── D-16: Canonical per-run derivation (window-invariant) ─────────────────
-        // Pure function of (worldSeed, world coords, params) — window-invariant (D-16);
-        // identical world regions yield identical runs across re-streams.
+        // ── Per-connection run assembly (Road Overhaul, Phase B/C) ────────────────
+        // Each east connection anchor(mx,mz)→anchor(mx+1,mz) is ONE run, keyed "<mz>:<mx>".
+        // This identity is a PURE function of world coords (the anchor pair) — band-INDEPENDENT,
+        // so it is window-invariant BY CONSTRUCTION. There is no COVER overlap split, no owner-ratio
+        // threshold, and no loop/self-crossing removal — all of which depended on the routed geometry
+        // (and on the transient band) and were the source of the BUG-14/invariance fragility: a
+        // routing change flipped a near-threshold decision and the runKey/arcS moved. With bounded-
+        // wAlt routing (road-carve.js) the centerline no longer wanders/self-crosses, so the cleanup
+        // stack is unnecessary and the connection IS the world-fixed unit of identity.
         //
-        // The mz row range follows the streaming radius (so we render roads out to R metres),
-        // but each row's COLUMN extent (mx0..mx1) is derived from a STABLE world-aligned
-        // grid anchor rather than the transient streaming window. This means the same macro-row
-        // always gets the same polyline regardless of where the view center happens to be.
-        //
-        // Canonical column band: center_mx ± CANONICAL_HALF_WIDTH, where center_mx =
-        //   floor(center.x / PROTO_ANCHOR_SPACING). Rows that would fall partially outside
-        //   the streaming radius are still included, but their COVER suppression operates on
-        //   the full canonical band — not the window slice.
-        //
-        // Row results are memoized by (mz, mx0, mx1) in this._canonRunCache. A re-stream whose
-        // center still maps to the same canonical band key is a no-op for all rows that hit the
-        // cache — same discipline as the _slicedFrom identity guard.
-        // ─────────────────────────────────────────────────────────────────────────
-
-        // (R / center_mx / mx0 / mx1 / mz0 / mz1 computed above for the window-signature skip.)
-
-        // Per-mz canonical run cache: memoize rows by "mz:mx0:mx1" so re-streams within the
-        // same canonical band are free. Cleared on dirty/param-change (see _invalidateProto
-        // / invalidateCache which call this._proto.dirty = true).
-        if (!this._canonRunCache) this._canonRunCache = new Map()
-
-        // Build each row over the canonical band and cache the result keyed "mz:mx0:mx1".
-        // Collect all canonical runs in sorted mz order so that the COVER suppression pass
-        // (which must be deterministic) sees rows in a fixed order — not streaming order.
-        const canonRuns = []  // [{ mz, pts }] in mz order
+        // arcS is LOCAL to the connection (0 at anchor mx) ⇒ arcOrigin = 0, no global-row arc to
+        // track. Grade is smoothed over the WHOLE row polyline FIRST (so the shared anchor point gets
+        // ONE continuous smoothed Y), THEN the row is split per connection at the anchor boundaries ⇒
+        // gradeY is C0 across the join. Each run carries its connection's EXACT primitive centerline
+        // (radius ≥ hardR by construction) so the ribbon/carve sample it directly (the BUG-12 fold
+        // fix), never a Catmull-Rom re-fit.
         for (let mz = mz0; mz <= mz1; mz++) {
-            const bandKey = `${mz}:${mx0}:${mx1}`
-            let cachedPts = this._canonRunCache.get(bandKey)
-            if (!cachedPts) {
-                // Concatenate this row's east connections into ONE continuous polyline.
-                let rowWps = []
-                for (let mx = mx0; mx <= mx1; mx++) {
-                    const wps = this._protoConnect(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz), mx, mz)
-                    if (wps.length < 2) continue
-                    if (rowWps.length) { for (let k = 1; k < wps.length; k++) rowWps.push(wps[k]) }
-                    else rowWps = wps.slice()
-                }
-                if (rowWps.length < 2) {
-                    cachedPts = []
-                } else {
-                    // D-arc: rowWps already comes from the arc-primitive router — min-radius-VALID by
-                    // construction AND already dense (arc emission). The old `getPoints(rowWps.length*2)`
-                    // existed to DENSIFY the old SPARSE grid points; applied to the already-dense arc
-                    // output it multiplied the centerline into 5-20x the geometry the downstream slicer/
-                    // ribbon/carve must process every stream — the streaming-cost regression. Use the
-                    // arc points directly. _removeLoops/_removeSelfCrossings stay as transition nets
-                    // (VBC-07) — deleted in Step 4 after in-sim confirms crease-free.
-                    let pts = this._removeLoops(rowWps)
-                    pts = this._removeSelfCrossings(pts)
-                    // CLONE before grading. rowWps holds the SAME THREE.Vector3 instances that
-                    // _protoConnect cached in this._proto.segs (returned by reference, road.js:1253),
-                    // and _removeLoops/_removeSelfCrossings pass them through. smoothGradeInPlace
-                    // mutates point.y IN PLACE — without this clone it would corrupt the cached
-                    // connect waypoints' Y, so a later re-stream that REUSES a cached segment grades
-                    // already-graded Y → grade becomes streaming-history-dependent (re-stream tear,
-                    // caught by restream-invariance.mjs). Cloning keeps the segment cache raw.
-                    pts = pts.map(p => p.clone())
-                    // Defect B (09-31): GRADE the centerline — longitudinal Y low-pass on the
-                    // canonical row BEFORE caching/COVER-split/slicing. The arc router stamps each
-                    // point Y = coarseHeight(x,z), so without this the road RIDES raw ridged terrain
-                    // (±5.65 m off a 50 m grade → launches the truck). Both consumers read this one
-                    // polyline (_buildRunProfile.gradeY for physics/carve; _buildRoadTile slices it
-                    // for the ribbon), so smoothing here keeps height-agreement by construction.
-                    smoothGradeInPlace(pts, this._params?.designGradeWindow ?? 50)
-                    cachedPts = pts
-                }
-                this._canonRunCache.set(bandKey, cachedPts)
+            // Concatenate the row's east connections into ONE polyline, recording where each
+            // connection starts so we can split back after the continuous grade smooth. Each
+            // connection shares its terminal anchor with the next connection's start anchor.
+            let rowPts = []
+            const spans = []   // { mx, i0, i1 } — inclusive index range in rowPts (i1 of mx == i0 of mx+1)
+            for (let mx = mx0; mx <= mx1; mx++) {
+                const wps = this._protoConnect(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz), mx, mz)
+                if (wps.length < 2) continue
+                const i0 = rowPts.length ? rowPts.length - 1 : 0   // share the anchor with the prev connection
+                if (rowPts.length) { for (let k = 1; k < wps.length; k++) rowPts.push(wps[k]) }
+                else rowPts = wps.slice()
+                spans.push({ mx, i0, i1: rowPts.length - 1 })
             }
-            if (cachedPts.length >= 2) canonRuns.push({ mz, pts: cachedPts })
-        }
+            if (rowPts.length < 2 || spans.length === 0) continue
 
-        // ── COVER suppression pass (deterministic mz-ordered) ─────────────────
-        // Rebuild the spatial hash from scratch using the completed canonical rows in mz
-        // order. Never accumulate across re-streams — always rebuilt from the canonical set.
-        // Operating on the canonical band means the same row always sees the same neighbors,
-        // making overlap suppression window-invariant (D-16).
-        const cover = new Map()
-        const ckey = (x, z) => `${Math.floor(x / PROTO_COVER_D)},${Math.floor(z / PROTO_COVER_D)}`
-        const registerPoint = (x, z, hx, hz) => {
-            const k = ckey(x, z); let arr = cover.get(k); if (!arr) { arr = []; cover.set(k, arr) }
-            arr.push(x, z, hx, hz)
-        }
-        const sameDirCovered = (x, z, hx, hz) => {
-            const cx = Math.floor(x / PROTO_COVER_D), cz = Math.floor(z / PROTO_COVER_D)
-            for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
-                const arr = cover.get(`${cx + dx},${cz + dz}`); if (!arr) continue
-                for (let i = 0; i < arr.length; i += 4) {
-                    const ex = arr[i] - x, ez = arr[i + 1] - z
-                    if (ex * ex + ez * ez < PROTO_COVER_D * PROTO_COVER_D &&
-                        hx * arr[i + 2] + hz * arr[i + 3] > PROTO_COVER_DOT) return true
-                }
-            }
-            return false
-        }
+            // Clone (the connect cache returns shared instances) + grade the continuous row Y.
+            rowPts = rowPts.map(p => p.clone())
+            smoothGradeInPlace(rowPts, this._params?.designGradeWindow ?? 50)
 
-        for (const { mz, pts } of canonRuns) {
-            if (pts.length < 2) continue
-            const head = pts.map((p, i) => {
-                const q = pts[Math.min(pts.length - 1, i + 1)], r = pts[Math.max(0, i - 1)]
-                const hx = q.x - r.x, hz = q.z - r.z, l = Math.hypot(hx, hz) || 1
-                return [hx / l, hz / l]
-            })
-
-            // Split into contiguous runs, breaking wherever this row overlaps a PRIOR row (same dir).
-            // Register this row's points only AFTER emitting it, so a straight road never self-culls.
-            const kept = []
-            let run = []
-            let runIndex = 0
-            const emitRun = () => {
-                if (run.length >= PROTO_RUN_MIN) {
-                    // Canonical centerline — raw routed y, no visual lift/surfaceY (render-only, 08-07).
-                    // D-16 Phase 2: identity + arc origin anchor to the run's OWNING macro-anchor
-                    // (world-deterministic), not the band-relative emission index / run[0]. Edge
-                    // fragments with no clean canonical segment keep a band-relative fallback key
-                    // ("<mz>:f<n>") — they are tiny truncated bits that never reach the consumed region.
-                    const owned = this._runOwnerAnchor(run, mz)
-                    const key = owned ? `${mz}:${owned.ownerMx}` : `${mz}:f${runIndex}`
-                    // Phase B: this run's own centerline = the row centerline restricted between the
-                    // projections of run start/end (run endpoints are exact centerline points → exact
-                    // projection). polyArc = the run's XZ arc total, the denominator that maps a slice's
-                    // owner-origined arcS to centerline arc. Both are window-invariant (the run geometry
-                    // is identical across stream centers; subrange normalises the band offset out).
-                    // Every run gets its EXACT primitive centerline (the BUG-12 fold fix): build it over
-                    // the run's column span (concatenated connection primitives) and record `ownerArc` =
-                    // the centerline arc at this run's arc origin, so a slice's owner-origined arcS maps
-                    // to centerline arc as `ownerArc + arcS`.
-                    //
-                    // D-16: for OWNED runs ownerArc is computed EXACTLY from connection lengths (the
-                    // owner anchor = start of connection ownerMx). This avoids any mapping through
-                    // full-run totals / projection, whose value depends on the run's band-truncated tails
-                    // (which differ per stream center) — that was the arcS/gradeY invariance break. The
-                    // owner core geometry is identical across centers, so the sampled point is invariant.
-                    // Fallback "f" fragments have no owner and are band-relative (never invariance-
-                    // compared); they anchor arcS=0 at run[0] via projection.
-                    let centerline = null, ownerArc = 0
-                    {
-                        let rMinX = Infinity, rMaxX = -Infinity
-                        for (const p of run) { if (p.x < rMinX) rMinX = p.x; if (p.x > rMaxX) rMaxX = p.x }
-                        let mxLo = Math.floor(rMinX / PROTO_ANCHOR_SPACING) - 1
-                        let mxHi = Math.ceil(rMaxX / PROTO_ANCHOR_SPACING) + 1
-                        if (owned) { mxLo = Math.min(mxLo, owned.ownerMx); mxHi = Math.max(mxHi, owned.ownerMx + 1) }
-                        const prims = []
-                        let acc = 0, ownerColArc = null
-                        for (let mx = mxLo; mx <= mxHi; mx++) {
-                            if (owned && mx === owned.ownerMx) ownerColArc = acc   // owner anchor = start of connection ownerMx
-                            const cl = this._protoConnectCenterline(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz), mx, mz)
-                            for (const p of cl.primitives) prims.push(p)
-                            acc += cl.length
-                        }
-                        centerline = new Centerline(prims)
-                        if (owned) ownerArc = ownerColArc ?? 0
-                        else { const pr = centerline.nearest(run[0].x, run[0].z); ownerArc = pr ? pr.s : 0 }
+            // Split per connection. The shared anchor (i1 of mx == i0 of mx+1) lands in BOTH runs with
+            // the same smoothed Y → C0. Each run carries its connection centerline + an exact polyline→
+            // centerline arc table (sequential forward projection — the polyline is the centerline's
+            // dense sampling, so the correspondence is monotone and drift-free). _assignSlice maps a
+            // slice's local arcS through this table onto the centerline (the BUG-12 fold fix).
+            for (const { mx, i0, i1 } of spans) {
+                if (i1 - i0 < 1) continue
+                const run = []
+                for (let i = i0; i <= i1; i++) run.push(rowPts[i].clone())
+                const centerline = this._protoConnectCenterline(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz), mx, mz)
+                let polyCum = null, clArc = null
+                if (centerline && centerline.length > 1e-6) {
+                    const M = run.length
+                    polyCum = new Float64Array(M); clArc = new Float64Array(M)
+                    let s = centerline.nearest(run[0].x, run[0].z, 1.0, 0, 30)?.s ?? 0
+                    clArc[0] = s
+                    for (let i = 1; i < M; i++) {
+                        const step = Math.hypot(run[i].x - run[i - 1].x, run[i].z - run[i - 1].z)
+                        polyCum[i] = polyCum[i - 1] + step
+                        const win = step * 2 + 12   // forward-only window (centerline ≥ chordal step)
+                        const pr = centerline.nearest(run[i].x, run[i].z, 0.5, clArc[i - 1], clArc[i - 1] + win)
+                        s = pr ? Math.max(clArc[i - 1], pr.s) : clArc[i - 1]
+                        clArc[i] = s
                     }
-                    // Exact, monotonic polyline→centerline arc correspondence (polyCum[i] = run XZ arc
-                    // from run[0]; clArc[i] = centerline arc at run point i). The polyline is loop-removed
-                    // / simplified so it runs SHORTER than the exact centerline and a single offset drifts
-                    // (up to ~280 m); a switchback also makes a global nearest ambiguous. Both are solved
-                    // by walking the run forward and projecting each point just AHEAD of the previous
-                    // match (small forward window → unambiguous, drift-free, monotone). A slice maps its
-                    // owner-origined arcS through this table in _assignSlice.
-                    let polyCum = null, clArc = null
-                    if (centerline) {
-                        const M = run.length
-                        polyCum = new Float64Array(M); clArc = new Float64Array(M)
-                        const seed = ownerArc - (owned ? owned.arcOrigin : 0)   // centerline arc at run[0]
-                        let s = centerline.nearest(run[0].x, run[0].z, 1.0, seed - 50, seed + 50)?.s ?? 0
-                        clArc[0] = s
-                        for (let i = 1; i < M; i++) {
-                            const step = Math.hypot(run[i].x - run[i - 1].x, run[i].z - run[i - 1].z)
-                            polyCum[i] = polyCum[i - 1] + step
-                            const win = step * 2 + 12   // forward-only window (centerline ≥ chordal step)
-                            const pr = centerline.nearest(run[i].x, run[i].z, 0.5, clArc[i - 1], clArc[i - 1] + win)
-                            s = pr ? Math.max(clArc[i - 1], pr.s) : clArc[i - 1]
-                            clArc[i] = s
-                        }
-                    }
-                    this._network.set(key, { points: run.map(p => p.clone()), arcOrigin: owned ? owned.arcOrigin : 0, centerline, polyCum, clArc })
-                    runIndex++
                 }
-                run = []
+                this._network.set(`${mz}:${mx}`, { points: run, arcOrigin: 0, centerline, polyCum, clArc })
             }
-            for (let i = 0; i < pts.length; i++) {
-                const x = pts[i].x, z = pts[i].z, hx = head[i][0], hz = head[i][1]
-                if (sameDirCovered(x, z, hx, hz)) emitRun()
-                else { run.push(pts[i]); kept.push(x, z, hx, hz) }
-            }
-            emitRun()
-            for (let i = 0; i < kept.length; i += 4) registerPoint(kept[i], kept[i + 1], kept[i + 2], kept[i + 3])
         }
+
 
         // NOTE (CR-02): no post-build cache eviction. _network is .clear()-ed + rebuilt for the
         // current window at the top of every real re-stream, so its size is window-bounded.
@@ -2261,40 +2132,56 @@ export class RoadSystem {
      */
     _runStartCamber(runKey) {
         const predKey = this._predecessorRunKey(runKey)
-        if (!predKey) return 0
+        return predKey ? this._runEndCamber(predKey) : 0
+    }
 
-        // Fast path: predecessor already cached this network revision.
-        if (this._camberProfileCache) {
-            const cached = this._camberProfileCache.get(predKey)
-            if (cached && cached.rev === this._networkRev && cached.camberRad.length > 0) {
-                return cached.camberRad[cached.camberRad.length - 1]
-            }
+    /**
+     * Deterministic, ORDER-INDEPENDENT slew-limited END camber of a run, seeded by its predecessor
+     * chain. Memoized per network revision.
+     *
+     * Why this exists (Road Overhaul): with per-connection runs every macro-anchor is a run boundary,
+     * so camber is stitched across a chain of predecessors (mz:mx ← mz:mx-1 ← …). The previous
+     * _runStartCamber read the predecessor's end from the camber-profile CACHE when present and
+     * otherwise recomputed it UNSEEDED — so the seed (hence the whole downstream profile) depended on
+     * cache-fill order, i.e. on streaming history. That is exactly the restream-variance the gate
+     * catches. This recursion is a pure function of the band's run set: it walks the predecessor chain
+     * to the band frontier (predecessor absent → seed 0) and forward-marches each run's raw camber,
+     * so the value is identical regardless of which run was queried first. Acyclic (the predecessor
+     * always has a strictly smaller mx); depth-capped as a belt-and-braces guard.
+     *
+     * @param {string} runKey
+     * @param {number} [depth=0]
+     * @returns {number} slew-limited end camber (radians)
+     */
+    _runEndCamber(runKey, depth = 0) {
+        if (!this._runEndCamberCache || this._runEndCamberCache.rev !== this._networkRev) {
+            this._runEndCamberCache = { rev: this._networkRev, map: new Map() }
         }
+        const memo = this._runEndCamberCache.map
+        const hit = memo.get(runKey)
+        if (hit !== undefined) return hit
 
-        // Slow path: predecessor not yet built — compute its end camber from raw curvature only.
-        // We walk predecessor's points and forward-march the slew from 0 (unseeded) to avoid
-        // recursive calls to _buildCamberProfile. This is the natural "unseeded" profile for that run.
-        const predEntry = this._network?.get(predKey)
-        if (!predEntry || !predEntry.points || predEntry.points.length < 2) return 0
+        const entry = this._network?.get(runKey)
+        if (!entry || !entry.points || entry.points.length < 2) { memo.set(runKey, 0); return 0 }
 
-        const pts = predEntry.points
+        // Seed from the predecessor's stitched end camber (bounded recursion up the row chain).
+        const predKey = depth < 16 ? this._predecessorRunKey(runKey) : null
+        const seed = predKey ? this._runEndCamber(predKey, depth + 1) : 0
+        memo.set(runKey, seed)   // tentative cycle-guard; overwritten with the true end below
+
+        const pts = entry.points
         const N   = pts.length
         const p   = this._params || {}
         const camberStrength  = p.camberStrength ?? 200
         const slewRateRadPerM = (p.roadCamberRate ?? 1.5) * (Math.PI / 180)
         const MAX_CAMBER      = 6 * (Math.PI / 180)
 
-        const arcPos    = new Array(N)
-        const rawCamber = new Array(N)
-        arcPos[0] = 0
-        rawCamber[0] = 0  // predecessor's own start is unseeded (avoids deeper recursion)
-
+        // Forward-march raw camber from the seed (camberRad[0] = seed, matching _buildCamberProfile).
+        let prev = seed
         for (let i = 1; i < N; i++) {
             const ax = pts[i].x - pts[i - 1].x
             const az = pts[i].z - pts[i - 1].z
-            const ds = Math.sqrt(ax * ax + az * az)
-            arcPos[i] = arcPos[i - 1] + ds
-            const t0x = ax, t0z = az
+            const ds = Math.sqrt(ax * ax + az * az) || 1e-8
             let t1x, t1z, effectiveDs
             if (i < N - 1) {
                 t1x = pts[i + 1].x - pts[i].x
@@ -2302,24 +2189,17 @@ export class RoadSystem {
                 const ds1 = Math.sqrt(t1x * t1x + t1z * t1z) || 1e-8
                 effectiveDs = (ds + ds1) * 0.5
             } else {
-                t1x = t0x; t1z = t0z
-                effectiveDs = ds || 1e-8
+                t1x = ax; t1z = az; effectiveDs = ds
             }
-            const kappa = signedCurvature(t0x, t0z, t1x, t1z, effectiveDs)
-            rawCamber[i] = Math.max(-MAX_CAMBER, Math.min(MAX_CAMBER, camberStrength * kappa))
-        }
-
-        // Forward-march slew from 0 (no boundary seed for the predecessor itself).
-        let prev = 0
-        for (let i = 1; i < N; i++) {
-            const ds = arcPos[i] - arcPos[i - 1]
+            const kappa = signedCurvature(ax, az, t1x, t1z, effectiveDs)
+            const raw = Math.max(-MAX_CAMBER, Math.min(MAX_CAMBER, camberStrength * kappa))
             const maxDelta = slewRateRadPerM * ds
-            const delta = rawCamber[i] - prev
+            const delta = raw - prev
             if      (delta >  maxDelta) prev = prev + maxDelta
             else if (delta < -maxDelta) prev = prev - maxDelta
-            else                        prev = rawCamber[i]
+            else                        prev = raw
         }
-        // prev is now the predecessor's last slew-limited camber (starting from 0 seed).
+        memo.set(runKey, prev)
         return prev
     }
 
