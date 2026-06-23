@@ -63,9 +63,8 @@ const _scratchTan = new THREE.Vector3()
  * logic handles endpoint touching cases separately.
  *
  * Pure function of its inputs — no allocations, no side effects.
- * Promoted from the closure inside _removeSelfCrossings (P9 plan 01-01) so that
- * Wave 3 junction detection (_detectJunctions) can reuse it across different runs
- * in this._network without duplicating the math. _removeSelfCrossings delegates here.
+ * Module scope so junction detection (_detectJunctions) can reuse it to find inter-run
+ * crossings across different runs in this._network without duplicating the math.
  *
  * @param {number} ax — segment A start X
  * @param {number} az — segment A start Z
@@ -215,37 +214,13 @@ const PROTO_PARAM_DEBOUNCE = 160   // ms — coalesce slider drags before re-rou
 // 8-connectivity direction vectors (index 0..7); used for the turn-penalty A* state.
 const PROTO_DIRS = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]]
 const _protoTurnSteps = (d1, d2) => { const a = Math.abs(d1 - d2); return Math.min(a, 8 - a) }  // 0..4 (×45°)
-// Parallel-overlap suppression: a candidate road is dropped if more than COVER_FRAC of its sample
-// points run within COVER_D metres of an already-drawn road heading the same way (dot > COVER_DOT).
-// Crossings (different heading where they meet) are preserved — only same-direction overlaps are cut.
-const PROTO_COVER_D    = 36     // m — proximity that counts as "on top of" another road
-const PROTO_COVER_DOT  = 0.93   // cos(~21°) — heading similarity that counts as "same direction"
-const PROTO_COVER_FRAC = 0.5    // drop the road if more than half its length overlaps a same-dir road
-// Intra-road loop removal (proximity-based): if the path returns within PROTO_LOOP_D metres of
-// somewhere it was already PROTO_LOOP_ARCLAG metres-of-travel ago, the intervening stretch is a
-// loop/fold and gets spliced out. ARCLAG > LOOP_D keeps switchbacks (legs sit > LOOP_D apart).
-const PROTO_LOOP_D      = 11    // m — "returned to where it was" distance
-const PROTO_LOOP_ARCLAG = 38    // m — min along-path travel before a return counts as a loop
-const PROTO_RUN_MIN     = 4     // min points for an emitted road run (avoids tiny fragments)
-// Road Overhaul Phase B transition flag: when true, slice splines sample the exact primitive
-// centerline (CenterlineCurve) instead of re-fitting centripetal Catmull-Rom (the BUG-12 fold fix).
-// Held OFF until the routing→assembly invariance coupling is resolved (the cleanup stack's COVER/owner
-// decisions shift when routing changes; see ROAD-OVERHAUL-HANDOFF). Machinery is built + tested.
+// Road Overhaul: the ribbon/carve sample each run's exact primitive centerline (CenterlineCurve)
+// instead of re-fitting centripetal Catmull-Rom — the BUG-12 fold fix. (Flag retained as a guard:
+// a run with no centerline descriptors still falls back to Catmull-Rom in _assignSlice.)
+// Phase C deleted the patch stack that the dormant flag waited on (COVER overlap suppression,
+// proximity loop-removal, owner-ratio run origin) — run identity is now the connection's own
+// world key "mz:mx", band-independent by construction (see _streamNetwork).
 const USE_CENTERLINE_RIBBON = true
-
-// ── D-16 Phase 2: world-deterministic run origin (anchor-owned identity + arcS) ─────
-// A run's owning macro-anchor = the first contained column (W→E) whose run-local arc to the
-// next contained anchor covers ≥ RUN_OWNER_MIN_RATIO of the canonical _protoConnect route.
-// The window-truncated western tail routes through a degenerate-A* no-route (canon ≫ run →
-// ratio ≈ 0) and is skipped identically across streams → owner + arc origin are a pure fn of
-// (seed, mz, geom). See _runOwnerAnchor.
-const RUN_OWNER_ANCHOR_EPS = 2.0   // m — run point counts as "on" a macro-anchor within this
-// Owner = first contained anchor whose run-local arc to the NEXT contained anchor covers at
-// least this fraction of the canonical _protoConnect route. Real core segments cover ~0.7–1.0
-// (a small loop may be trimmed); window-truncated tails route through a degenerate no-route
-// (canon ≫ run → ratio ≈ 0) and are skipped. In the shared core both builds see identical
-// geometry → identical decisions, so any threshold in (junk≈0, core≈0.7) is robust.
-const RUN_OWNER_MIN_RATIO  = 0.5
 
 // ── D-16: Canonical anchor-band half-width for window-invariant runs ───────────
 // _streamNetwork builds each macro-row run over a canonical fixed-width band keyed by
@@ -834,7 +809,6 @@ export class RoadSystem {
         if (this._network) this._network.clear()
         if (this._tiles) this._tiles.clear()
         if (this._tileObjects) this._tileObjects.clear()
-        if (this._canonRunCache) this._canonRunCache.clear()
         this._slicedFrom = null
         this._lastBandSig = null   // force the next _streamNetwork to rebuild (route/params changed)
         // D1: bump the single invalidation counter — signals ribbon tiles + carve chunks to rebuild.
@@ -1068,9 +1042,9 @@ export class RoadSystem {
     _invalidateProto() {
         this._proto.anchors.clear()
         this._proto.segs.clear()
-        // Clear the canonical run cache: param changes affect routing results.
-        if (this._canonRunCache) this._canonRunCache.clear()
-        if (this._canonSegArcCache) this._canonSegArcCache.clear()   // D-16: depends on _protoConnect
+        // Param changes affect routing results → drop the per-connection centerline cache too
+        // (both segs (points) and cls (primitive centerlines) are pure fns of params).
+        if (this._proto.cls) this._proto.cls.clear()
     }
 
     // Deterministic valley anchor for macro-cell (mx,mz): seeded candidate in the cell,
@@ -1140,61 +1114,10 @@ export class RoadSystem {
         return out
     }
 
-    // Remove loops / self-folds from a single road's polyline (PROXIMITY based, not crossing based):
-    // if point j returns within PROTO_LOOP_D of an earlier point i that is > PROTO_LOOP_ARCLAG metres
-    // back along the path, the stretch i+1..j-1 is a loop or tight fold and is spliced out (i joins j).
-    // Catches spline-overshoot loops AND junction folds even when the sampled crossing is imperfect;
-    // switchbacks survive because their parallel legs sit farther apart than PROTO_LOOP_D.
-    _removeLoops(pts) {
-        let p = pts
-        for (let guard = 0; guard < 200; guard++) {
-            const arc = new Float64Array(p.length)
-            for (let k = 1; k < p.length; k++) arc[k] = arc[k - 1] + Math.hypot(p[k].x - p[k - 1].x, p[k].z - p[k - 1].z)
-            let found = false
-            for (let i = 0; i < p.length - 1 && !found; i++) {
-                for (let j = i + 2; j < p.length; j++) {
-                    if (arc[j] - arc[i] < PROTO_LOOP_ARCLAG) continue       // too close along the path
-                    const dx = p[j].x - p[i].x, dz = p[j].z - p[i].z
-                    if (dx * dx + dz * dz < PROTO_LOOP_D * PROTO_LOOP_D) {  // returned near an earlier point
-                        p = [...p.slice(0, i + 1), ...p.slice(j)]          // splice out the loop
-                        found = true; break
-                    }
-                }
-            }
-            if (!found) break
-        }
-        return p
-    }
-
-    // Remove TRUE segment-segment self-crossings from a polyline (QUAL-01 — complements proximity
-    // _removeLoops which only catches wide arcs; this catches Image-2 X-crossings and tight loops
-    // that fall below PROTO_LOOP_ARCLAG). Algorithm: for each pair of non-adjacent segments
-    // (i,i+1) and (j,j+1) with j >= i+2, test XZ intersection; on the first crossing found,
-    // splice to [...pts[0..i], intersectionPoint, ...pts[j+1..]] and restart. Bounded ≤ 200
-    // iterations so it cannot loop infinitely on a degenerate polyline.
-    // Pure function of its input — no Math.random, no Date, no session state → deterministic (D-03).
-    _removeSelfCrossings(pts) {
-        // Delegates to the module-scope _segXZ (promoted in P9 plan 01-01 for D-16 junction reuse).
-        // No behavior change — same open-interval crossing test, same splice logic.
-        let p = pts
-        for (let guard = 0; guard < 200; guard++) {
-            let found = false
-            outer: for (let i = 0; i < p.length - 2; i++) {
-                for (let j = i + 2; j < p.length - 1; j++) {
-                    const ix = _segXZ(p[i].x, p[i].z, p[i+1].x, p[i+1].z,
-                                      p[j].x, p[j].z, p[j+1].x, p[j+1].z)
-                    if (ix) {
-                        // Insert the crossing point and drop the self-crossing interior
-                        const crossPt = new THREE.Vector3(ix.x, (p[i].y + p[j].y) * 0.5, ix.z)
-                        p = [...p.slice(0, i + 1), crossPt, ...p.slice(j + 1)]
-                        found = true; break outer
-                    }
-                }
-            }
-            if (!found) break
-        }
-        return p
-    }
+    // (Road Overhaul Phase C: _removeLoops / _removeSelfCrossings deleted. They existed to carve a
+    // rendered road out of the absolute-altitude search's kilometre-wandering, self-crossing paths.
+    // Bounded-wAlt routing no longer wanders, so the routed centerline IS the road — no cleanup pass.
+    // _segXZ stays (module scope, still used by _detectJunctions for inter-run crossings).)
 
     // Turn-penalty soft-cost A* between two anchors over a grid covering their bbox + N/S margin.
     // State = (cell, incoming-direction) so a per-45° turn penalty (wTurn) is charged — this is what
@@ -1292,13 +1215,13 @@ export class RoadSystem {
      * allocates NO scene lines and applies NO visual y-lift (those are render-only, 08-07);
      * the network y is the raw routed height.
      *
-     * Pipeline (validated in spike-001): over the streamed macro-cell window, for each row
-     * concatenate the row's east _protoConnect(_protoAnchor(mx,mz), _protoAnchor(mx+1,mz))
-     * segments into ONE continuous polyline (dropping the shared anchor), centripetal-sample
-     * it, _removeLoops, then split into kept runs using the inter-row same-direction overlap
-     * suppression (PROTO_COVER_* spatial hash; a row is registered only AFTER it is emitted so
-     * a straight road never self-culls). Each kept run (≥ PROTO_RUN_MIN points) is stored as
-     * this._network["<mz>:<runIndex>"] = { points: THREE.Vector3[] }.
+     * Pipeline (Road Overhaul): over the streamed macro-cell window, each east connection
+     * _protoConnect(_protoAnchor(mx,mz), _protoAnchor(mx+1,mz)) is ONE run keyed "<mz>:<mx>" —
+     * a pure function of the anchor pair, band-independent → window-invariant by construction
+     * (no COVER overlap split, no loop-removal, no owner-ratio origin). Grade is smoothed over the
+     * whole row then split at anchors (C0 at the shared point). Each run is stored as
+     * this._network["<mz>:<mx>"] = { points, arcOrigin:0, centerline, polyCum, clArc }, where
+     * `centerline` is the connection's exact curvature-bounded primitive curve the ribbon samples.
      *
      * Lazy streaming: honors PROTO_REGEN_MOVE move-threshold, the dirty flag, and
      * PROTO_PARAM_DEBOUNCE slider-settle gating. On a real re-stream this._network is cleared
@@ -1352,6 +1275,7 @@ export class RoadSystem {
         // function of seed+center+params, caches are memoization only).
         if (this._proto.anchors.size > 4000) this._proto.anchors.clear()
         if (this._proto.segs.size    > 1500) this._proto.segs.clear()
+        if (this._proto.cls && this._proto.cls.size > 1500) this._proto.cls.clear()
         this._network.clear()
         // D1: do NOT bump _generation here. A positional re-stream produces window-INVARIANT
         // geometry (D-16: the network is a pure function of seed+world-coords+params), so an
@@ -1441,87 +1365,15 @@ export class RoadSystem {
                 this._network.set(`${mz}:${mx}`, { points: run, arcOrigin: 0, centerline, polyCum, clArc })
             }
         }
-
-
         // NOTE (CR-02): no post-build cache eviction. _network is .clear()-ed + rebuilt for the
-        // current window at the top of every real re-stream, so its size is window-bounded.
-        // The canonical run cache (_canonRunCache) is bounded by the number of rows in the
-        // streaming window × the CANONICAL_HALF_WIDTH span — also window-bounded.
+        // current window at the top of every real re-stream, so its size is window-bounded. The
+        // per-connection points/centerline caches (_proto.segs/_proto.cls) are evicted by size above.
         return this._network
     }
 
-    // ── D-16 Phase 2: world-deterministic run identity + arc origin ──────────────
-    /**
-     * Pick a run's OWNING macro-anchor so identity ("<mz>:<ownerMx>") and arc origin are a
-     * pure function of (worldSeed, mz, run geometry) — not the transient streaming band.
-     *
-     * The band's west/east edges (center_mx ± CANONICAL_HALF_WIDTH) truncate each row's
-     * polyline differently per stream center, so run[0] — and any arc measured from it — is
-     * window-RELATIVE (the freecam↔drive-in tear: BUG-14 / SLICE-BOUNDARY / ARCS gates).
-     *
-     * Fix: scan CONTAINED anchors W→E and take the FIRST whose run-local arc to the next
-     * contained anchor covers ≥ RUN_OWNER_MIN_RATIO of the canonical _protoConnect route
-     * (gap-spanning: sum the canonical segment arcs if intermediate columns were loop-removed).
-     * In the stable interior the run follows the canonical route (ratio ~0.7–1.0); the window-
-     * truncated tail routes through a degenerate no-route (canon ≫ run → ratio ≈ 0) and is
-     * skipped. Because the shared core is byte-identical geometry across streams, both builds
-     * make identical ratio decisions, so owner + the run-local arc at it are invariant.
-     *
-     * @param {THREE.Vector3[]} pts — the emitted run polyline
-     * @param {number} mz — macro-row index
-     * @returns {{ ownerMx:number, arcOrigin:number } | null} null = no clean segment (tiny edge fragment)
-     */
-    _runOwnerAnchor(pts, mz) {
-        const N = pts.length
-        const arc = new Float64Array(N)
-        for (let k = 1; k < N; k++) arc[k] = arc[k - 1] + Math.hypot(pts[k].x - pts[k - 1].x, pts[k].z - pts[k - 1].z)
-
-        // Contained macro-anchors: nearest run point within RUN_OWNER_ANCHOR_EPS of _protoAnchor(mx,mz).
-        let minX = Infinity, maxX = -Infinity
-        for (const p of pts) { if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x }
-        const mxLo = Math.floor(minX / PROTO_ANCHOR_SPACING) - 1
-        const mxHi = Math.ceil(maxX / PROTO_ANCHOR_SPACING) + 1
-        const idxOf = new Map()   // mx → nearest contained run-point index
-        for (let mx = mxLo; mx <= mxHi; mx++) {
-            const a = this._protoAnchor(mx, mz)
-            let bestD = RUN_OWNER_ANCHOR_EPS, bestI = -1
-            for (let i = 0; i < N; i++) {
-                const d = Math.hypot(pts[i].x - a.x, pts[i].z - a.z)
-                if (d < bestD) { bestD = d; bestI = i }
-            }
-            if (bestI >= 0) idxOf.set(mx, bestI)
-        }
-
-        // First contained anchor (W→E) whose run-arc to the next contained anchor covers
-        // ≥ RUN_OWNER_MIN_RATIO of the canonical route = the stable-core start. (Gap-spanning:
-        // if intermediate columns were loop-removed, sum their canonical segment arcs.)
-        const contained = [...idxOf.keys()].sort((a, b) => a - b)
-        for (let c = 0; c < contained.length - 1; c++) {
-            const mx = contained[c], mxNext = contained[c + 1]
-            const runSeg = arc[idxOf.get(mxNext)] - arc[idxOf.get(mx)]
-            if (runSeg <= 0) continue
-            let canonSum = 0
-            for (let j = mx; j < mxNext; j++) canonSum += this._canonSegArc(j, mz)
-            if (canonSum > 0 && runSeg / canonSum >= RUN_OWNER_MIN_RATIO) {
-                return { ownerMx: mx, arcOrigin: arc[idxOf.get(mx)] }
-            }
-        }
-        return null
-    }
-
-    /** Pure (memoized) arc length of the canonical _protoConnect from anchor(mx,mz) to anchor(mx+1,mz). */
-    _canonSegArc(mx, mz) {
-        if (!this._canonSegArcCache) this._canonSegArcCache = new Map()
-        const key = `${mx},${mz}`
-        let v = this._canonSegArcCache.get(key)
-        if (v === undefined) {
-            const wps = this._protoConnect(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz), mx, mz)
-            v = 0
-            for (let i = 1; i < wps.length; i++) v += Math.hypot(wps[i].x - wps[i - 1].x, wps[i].z - wps[i - 1].z)
-            this._canonSegArcCache.set(key, v)
-        }
-        return v
-    }
+    // (Road Overhaul Phase C: _runOwnerAnchor / _canonSegArc deleted. Run identity is now the
+    // connection's own world key "mz:mx" — band-independent by construction — so the owner-ratio
+    // search that picked a world-fixed origin inside a band-truncated whole-row run is unnecessary.)
 
     // ── Per-tile slicing (D-06 REVISED — C0/C1 seam continuity is FREE) ──────────
     /**
@@ -2809,5 +2661,3 @@ function _buildDebugLine2(pts, color = 0x00e5ff) {
     const mat = new THREE.LineBasicMaterial({ color, depthTest: true })
     return new THREE.Line(geo, mat)
 }
-
-// (removed: _segIntersectXZ — replaced by proximity-based _removeLoops)
