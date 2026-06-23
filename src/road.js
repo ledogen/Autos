@@ -230,7 +230,10 @@ export const CHUNK_SIZE = 64
 // deterministic chain of valley-anchor connections, streamed around the view like terrain.
 const PROTO_ANCHOR_SPACING = 256   // m between macro-grid anchors
 const PROTO_CELL           = 10    // m — A* grid resolution for an anchor→anchor connection
-const PROTO_MARGIN         = 200   // m — N/S detour room so a connection can wrap around a peak
+const PROTO_MARGIN         = 120   // m — N/S detour room so a connection can wrap around a peak. PERF
+                                   // (Tier 1): the arc-search lattice area is (256+2·margin)² so this
+                                   // is the dominant per-connection cost knob (200→120 ≈ 1.8× faster);
+                                   // 120 m still clears the DETOURS-AROUND-PEAK gate (119 m detour).
 const PROTO_REGEN_MOVE     = 96    // m — re-stream the trunk once the view center moves this far
 const PROTO_SAMPLE_DS      = 4     // m — centerline → polyline sampling spacing (profile/slice/query density)
 // COVER suppression: a connection run is dropped where it runs on TOP of a lower-priority (lower-mz)
@@ -259,15 +262,14 @@ const USE_CENTERLINE_RIBBON = true
 // ── D-16: Canonical anchor-band half-width for window-invariant runs ───────────
 // _streamNetwork builds each macro-row run over a canonical fixed-width band keyed by
 // (mz, mx0, mx1) rather than the transient streaming window. CANONICAL_HALF_WIDTH is the
-// number of macro-column cells to extend either side of the view-center column, derived
-// by rounding the streaming radius (640 m) up to the nearest PROTO_ANCHOR_SPACING (256 m).
-// This ensures no rendered road escapes the canonical band while keeping the band finite.
-// The canonical mx0/mx1 for a given center remains the same so long as the integer quotient
-// floor(center.x / PROTO_ANCHOR_SPACING) is unchanged — the memo key "mz:mx0:mx1" then
-// short-circuits the per-run rebuild without recomputing the polyline (same discipline as
-// _slicedFrom identity guard). The value 4 covers ±1024 m (4 × 256 m), safely wider than
-// the default 640 m streaming radius.
-const CANONICAL_HALF_WIDTH = 4  // macro-column cells each side of the center column
+// number of macro-column cells to extend either side of the view-center column. It sets how far
+// roads extend in X around the player, and is the FLOOR on streaming cost: every row routes
+// (2·HALF_WIDTH+1) connections regardless of the Z radius. PERF (Tier 1): 4 routed ±1024 m of road
+// in X — ~4–6× wider than the visible terrain ring (~160–226 m) — so it was pure waste. 2 covers
+// ±512 m (still comfortably past the terrain ring) and cuts the per-row connection count 9→5.
+// Window-invariance is unaffected (run identity is the band-independent per-connection key "mz:mx");
+// only how many connections land in the streamed network changes.
+const CANONICAL_HALF_WIDTH = 2  // macro-column cells each side of the center column (±512 m)
 
 // ── Module-scope pure height function ─────────────────────────────────────────
 /**

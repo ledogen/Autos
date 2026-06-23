@@ -264,7 +264,7 @@ function debouncedRebuildFull () {
       // Re-apply the new-API config the initial instance got (surface placement + stream radius).
       roadSystem.setSurfaceSampler((x, z) => terrainSystem.analyticHeight(x, z))
       roadSystem.setRawHeightSampler((x, z) => terrainSystem.rawHeightWorld(x, z))  // CR-01: carve-free sampler for sampleDesignGradeAt
-      roadSystem.setRadius(640)
+      roadSystem.setRadius(320)   // PERF (Tier 1): match the terrain ring, not 640 m — see initial setup
       // Restore viz state — the next roadSystem.update(streamCenter) re-streams the new seed's
       // network and (because _debugVisible is set) rebuilds the centerline lines.
       roadSystem.setDebugVisible(wasVisible)
@@ -890,7 +890,10 @@ roadSystem.init(scene)
 // network at roughly the terrain view radius (08-07: setRadius replaces the retired setProtoRadius).
 roadSystem.setSurfaceSampler((x, z) => terrainSystem.analyticHeight(x, z))
 roadSystem.setRawHeightSampler((x, z) => terrainSystem.rawHeightWorld(x, z))  // CR-01: carve-free sampler for sampleDesignGradeAt
-roadSystem.setRadius(640)
+// PERF (Tier 1): road stream radius ~matches the terrain ring (5×5 chunks ≈ 160–226 m), not 640 m.
+// Routing/slicing cost scales with this area; 640 m routed ~16× the terrain footprint. 320 m covers
+// the visible terrain ring with margin while cutting cold-stream + per-crossing re-stream cost.
+roadSystem.setRadius(320)
 
 // Phase 9 (SURF-01 / SURF-03): RoadMeshSystem — ribbon mesh sweep with crown + camber.
 // Constructed after both terrainSystem and roadSystem exist.

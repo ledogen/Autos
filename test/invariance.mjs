@@ -22,7 +22,9 @@
 import { buildNetwork, sampleRegion } from './lib/road-headless.mjs'
 
 const CENTER_A = { x: 0,   z: 0 }   // spawn
-const CENTER_B = { x: 800, z: 0 }   // +800 m east — a different canonical band (center_mx 0 vs 3)
+const CENTER_B = { x: 256, z: 0 }   // +256 m east — a different canonical band (center_mx 0 vs 1).
+                                    // (Was 800 m for CANONICAL_HALF_WIDTH=4's ±1024 m band; with the
+                                    // Tier-1 band ±512 m the two bands must still both cover REGION.)
 // Region inside BOTH stream radii (640 m): x overlap [160,640], z overlap [-640,640]. Sampled on an
 // 8 m grid — fine enough to land many points inside the ~11.5 m road footprint queryNearest accepts.
 const REGION = { x0: 220, x1: 600, z0: -600, z1: 600, step: 8 }

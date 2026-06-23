@@ -20,7 +20,7 @@ import { RoadSystem } from '../src/road.js'
 import { COARSE_HEIGHT, TEST_PARAMS } from './lib/road-headless.mjs'
 
 const SEED = 6
-const SPACING = 256, HALF_W = 4   // PROTO_ANCHOR_SPACING / CANONICAL_HALF_WIDTH (road.js)
+const SPACING = 256, HALF_W = 2   // PROTO_ANCHOR_SPACING / CANONICAL_HALF_WIDTH (road.js)
 
 let pass = 0, fail = 0
 const log = (ok, name, msg) => {
