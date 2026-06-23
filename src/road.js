@@ -1121,6 +1121,7 @@ export class RoadSystem {
             hardR, gentleR: pp.roadArcGentleRadius ?? 30, margin: PROTO_MARGIN,
             wDist: P.wDist, wAlt: P.wAlt, wGrade: P.wGrade, wOver: P.wOver,
             maxGrade: P.maxGrade, wCurv: P.wTurn, wHeur: pp.roadArcHeurWeight ?? 1.5,
+            valleyDepthCap: pp.roadValleyDepthCap ?? 40,
             startHeading, goalHeading, emitPrimitives: true,
         })
         const cl = centerlineFromDescriptors(descs)

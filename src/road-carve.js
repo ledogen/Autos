@@ -629,16 +629,19 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         return hH[ci]
     }
 
-    // Bounded altitude cost (D-arc REVISED): penalise terrain ABOVE the straight a→b altitude
-    // baseline only — NO reward for descending. The old `wAlt·nH` was an absolute-altitude GLOBAL
-    // MAGNET: the search dived into far basins via kilometre detours (21/45 connections >5× anchor
-    // distance, one 132×), and those wandering paths self-crossed — so the road.js cleanup stack
-    // (_removeLoops/COVER/owner) had to carve the rendered road back out of them, making the routed
-    // centerline ≠ the rendered polyline (the BUG-12 / invariance entanglement). Baseline = linear
-    // height interp along the a→b chord at the node's clamped projection; cost = wAlt·max(0, nH −
-    // baseline) keeps the search LOCAL/bounded while still routing AROUND ridges (over-baseline
-    // terrain is penalised) → valley-following without the wander. For equal-height anchors this is
-    // byte-identical to the old term (baseline ≡ ha), so arc-router.mjs's DETOURS-AROUND-PEAK holds.
+    // Bounded valley-seeking altitude cost (D-arc REVISED²). Reference = the straight a→b altitude
+    // baseline (linear height interp along the chord). δ = nH − baseline; cost = wAlt·max(0, δ +
+    // valleyCap). So:
+    //   • ABOVE baseline (δ>0): cost grows → route AROUND ridges (peak avoidance / pass-crossing).
+    //   • BELOW baseline, down to valleyCap (−valleyCap ≤ δ ≤ 0): cost shrinks → SEEK the low ground
+    //     (the valley-following "spine" / personality).
+    //   • DEEPER than valleyCap (δ < −valleyCap): cost saturates at 0 — the CAP. No further reward,
+    //     so a far/deep basin can't pull the search into a kilometre detour the way the old absolute
+    //     `wAlt·nH` global magnet did (the wander that forced the now-deleted cleanup stack).
+    // Cost stays ≥ 0 (A*-safe — a true negative "reward" edge would break the priority queue).
+    // For equal-height anchors baseline≡ha, so DETOURS-AROUND-PEAK (arc-router.mjs) is unchanged.
+    // Pure fn of the anchor pair (+ valleyCap) → window-invariant.
+    const valleyCap = opts.valleyDepthCap ?? 40   // m — depth below baseline that still earns reward
     const ha = hAt(ax, az), hb = hAt(bx, bz)
     const _abx = bx - ax, _abz = bz - az
     const _abLen2 = _abx * _abx + _abz * _abz || 1
@@ -725,7 +728,7 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             const nH = hAt(nx, nz)
             const grade = Math.abs(nH - csh) / stepLen
             const ng = cg + wDist * stepLen + wGrade * grade * grade + wOver * Math.max(0, grade - maxGrade)
-                     + wAlt * Math.max(0, nH - baselineAt(nx, nz)) + wCurv * Math.abs(k) * stepLen
+                     + wAlt * Math.max(0, nH - baselineAt(nx, nz) + valleyCap) + wCurv * Math.abs(k) * stepLen
             if (GS[nst] !== gen || ng < G[nst]) {
                 G[nst] = ng; GS[nst] = gen
                 SX[nst] = nx; SZ[nst] = nz; STh[nst] = nth; SSh[nst] = nH; SP[nst] = sid; SKi[nst] = ki
