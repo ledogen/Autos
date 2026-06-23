@@ -209,6 +209,7 @@ const PROTO_ANCHOR_SPACING = 256   // m between macro-grid anchors
 const PROTO_CELL           = 10    // m — A* grid resolution for an anchor→anchor connection
 const PROTO_MARGIN         = 200   // m — N/S detour room so a connection can wrap around a peak
 const PROTO_REGEN_MOVE     = 96    // m — re-stream the trunk once the view center moves this far
+const PROTO_SAMPLE_DS      = 4     // m — centerline → polyline sampling spacing (profile/slice/query density)
 const PROTO_SNAP_CAP       = PROTO_ANCHOR_SPACING * 0.45  // m — max anchor gradient-descent displacement (keeps anchors in their lane → fewer parallel/duplicate roads)
 const PROTO_PARAM_DEBOUNCE = 160   // ms — coalesce slider drags before re-routing
 // 8-connectivity direction vectors (index 0..7); used for the turn-penalty A* state.
@@ -949,7 +950,7 @@ export class RoadSystem {
             paramDirtyAt: 0,
             radius:   640,                                   // m — streamed road radius (set from terrain stream radius)
             anchors:  new Map(),                             // "mx,mz" → THREE.Vector3 (valley-snapped)
-            segs:     new Map(),                             // "ax,az>bx,bz" → THREE.Vector3[] (connection waypoints)
+            cls:      new Map(),                             // "mx,mz:…" → Centerline (per-connection primitive curve)
             lastCenter: null,
             dirty:    true,
             surfaceY: null,                                  // optional (x,z)=>renderedHeight for visual line placement
@@ -1041,9 +1042,8 @@ export class RoadSystem {
 
     _invalidateProto() {
         this._proto.anchors.clear()
-        this._proto.segs.clear()
-        // Param changes affect routing results → drop the per-connection centerline cache too
-        // (both segs (points) and cls (primitive centerlines) are pure fns of params).
+        // Param changes affect routing results → drop the per-connection centerline cache
+        // (a pure fn of params, so the next miss recomputes the new value).
         if (this._proto.cls) this._proto.cls.clear()
     }
 
@@ -1095,75 +1095,14 @@ export class RoadSystem {
         return P.wDist * horiz + P.wAlt * toH + P.wGrade * grade * grade + P.wOver * over
     }
 
-    // Collinear simplify: drop waypoints that don't represent a real turn (relative to the last
-    // kept point). Collapses grid-discretization micro-jogs into long straights → smoother spline,
-    // fewer control points, fewer overshoot self-intersections.
-    _protoSimplify(points, angleThreshDeg) {
-        if (points.length < 3) return points.slice()
-        const th = angleThreshDeg * Math.PI / 180
-        const out = [points[0]]
-        for (let i = 1; i < points.length - 1; i++) {
-            const p = out[out.length - 1], c = points[i], n = points[i + 1]
-            const v1x = c.x - p.x, v1z = c.z - p.z, v2x = n.x - c.x, v2z = n.z - c.z
-            const l1 = Math.hypot(v1x, v1z), l2 = Math.hypot(v2x, v2z)
-            if (l1 < 1e-6 || l2 < 1e-6) continue
-            const cos = (v1x * v2x + v1z * v2z) / (l1 * l2)
-            if (Math.acos(Math.max(-1, Math.min(1, cos))) > th) out.push(c)  // keep real turns
-        }
-        out.push(points[points.length - 1])
-        return out
-    }
+    // (Road Overhaul Phase C: _protoConnect / _protoSimplify / _removeLoops / _removeSelfCrossings
+    // deleted. The routed centerline (_protoConnectCenterline below) is now the SOLE representation;
+    // _streamNetwork samples it into the run polyline (Y = coarse height), so the separate point-mode
+    // search + collinear-simplify + loop/self-crossing cleanup are all gone — and routing runs ONCE
+    // per connection, not twice. _segXZ stays (module scope, _detectJunctions inter-run crossings).)
 
-    // (Road Overhaul Phase C: _removeLoops / _removeSelfCrossings deleted. They existed to carve a
-    // rendered road out of the absolute-altitude search's kilometre-wandering, self-crossing paths.
-    // Bounded-wAlt routing no longer wanders, so the routed centerline IS the road — no cleanup pass.
-    // _segXZ stays (module scope, still used by _detectJunctions for inter-run crossings).)
-
-    // Turn-penalty soft-cost A* between two anchors over a grid covering their bbox + N/S margin.
-    // State = (cell, incoming-direction) so a per-45° turn penalty (wTurn) is charged — this is what
-    // makes the route run long straights and only switchback where the grade truly forces it.
-    // Never fails (soft penalty keeps all edges finite).
-    _protoConnect(a, b, mx, mz) {
-        const key = `${mx},${mz}:${a.x.toFixed(0)},${a.z.toFixed(0)}>${b.x.toFixed(0)},${b.z.toFixed(0)}`
-        const cached = this._proto.segs.get(key)
-        if (cached) return cached
-        const P = this._proto.params
-        // Arc-primitive hybrid-A* (D-arc): the centerline is min-turn-radius-VALID BY CONSTRUCTION,
-        // replacing the 8-grid cell A* whose 45°/cell corners folded the ribbon and which the
-        // post-hoc fillet/cleanup stack could not repair. The hardest motion primitive's radius is
-        // the geometric fold-safe floor (~halfWidth + clearance, user-set ≥ 8 m); cost mirrors
-        // _protoEdgeCost (valley wAlt, grade², soft over-cap) plus a curvature penalty (wCurv = wTurn)
-        // so the straight primitive is cheapest → long near-straights, with switchbacks emerging
-        // deterministically only where grade forces them. Pure fn in road-carve.js.
-        const pp = this._params || {}
-        const halfW = pp.roadHalfWidth ?? 5, clearance = pp.roadClearanceMargin ?? 0.5
-        const hardR = Math.max(pp.roadArcHardRadius ?? 8, halfW + clearance + 0.1)  // tightest turn; ≥ floor
-        // BUG-12: both sides of each shared anchor target the SAME canonical heading there, so the
-        // segment starts along H(mx) and is gated to arrive along H(mx+1) → G1 joins, valid radius
-        // ACROSS segment boundaries (not just within a segment). Window-invariant (pure fn of anchors).
-        const startHeading = this._protoAnchorHeading(mx, mz)
-        const goalHeading  = this._protoAnchorHeading(mx + 1, mz)
-        const _ptAC = performance.now()
-        const rawPts = arcPrimitiveConnect(a.x, a.z, b.x, b.z, (x, z) => this._coarseH(x, z), {
-            hardR, gentleR: pp.roadArcGentleRadius ?? 30, margin: PROTO_MARGIN,
-            wDist: P.wDist, wAlt: P.wAlt, wGrade: P.wGrade, wOver: P.wOver,
-            maxGrade: P.maxGrade, wCurv: P.wTurn, wHeur: pp.roadArcHeurWeight ?? 1.5,
-            startHeading, goalHeading,
-        })
-        perfAdd('road.arcPrimitiveConnect', performance.now() - _ptAC)  // TEMP (D-arc): cold-route cost = the spawn lag
-        const raw = rawPts.map(p => new THREE.Vector3(p.x, p.y, p.z))
-        // Collapse true straights (drop near-collinear interior points) → variable spacing; the
-        // arc corners (≥ ~3.8°/sample) are kept, so re-splining downstream cannot undershoot to a fold.
-        const simp = this._protoSimplify(raw, 2)
-        const out = []
-        for (const p of simp) if (!out.length || out[out.length - 1].distanceToSquared(p) > 1e-4) out.push(p)
-        this._proto.segs.set(key, out)
-        return out
-    }
-
-    // Road Overhaul, Phase A — primitive-centerline path, built BESIDE the legacy _protoConnect
-    // points path (no consumer reads this yet; Phase B switches the ribbon/carve/queryNearest over,
-    // Phase C deletes _protoConnect + the patch stack). Same anchors, same canonical headings, same
+    // Road Overhaul — the connection's primitive centerline (THE routed representation). Same anchors,
+    // same canonical headings, same
     // router cost model — but emitPrimitives:true so the result is the EXACT curvature-bounded curve
     // (line/arc/Dubins-terminal primitives, radius ≥ hardR by construction) carried end-to-end with
     // no Catmull-Rom re-fit. Returns a Centerline; window-invariant (pure fn of the anchor pair).
@@ -1268,13 +1207,12 @@ export class RoadSystem {
         // Refresh live D-09 weights from this._params (debug sliders mutate it in place) so this
         // re-stream uses the current slider values — deterministic re-route (D-03).
         this._refreshParams()
-        // Bound the proto caches BEFORE building (CR-02). anchors/segs are pure functions of
+        // Bound the proto caches BEFORE building (CR-02). anchors/cls are pure functions of
         // coords, so a cache miss recomputes the identical value — evicting them is always benign.
         // Doing it pre-build (rather than post-build) makes the result independent of WHEN the
         // size threshold trips, preserving the module's purity contract (a network is a pure
         // function of seed+center+params, caches are memoization only).
         if (this._proto.anchors.size > 4000) this._proto.anchors.clear()
-        if (this._proto.segs.size    > 1500) this._proto.segs.clear()
         if (this._proto.cls && this._proto.cls.size > 1500) this._proto.cls.clear()
         this._network.clear()
         // D1: do NOT bump _generation here. A positional re-stream produces window-INVARIANT
@@ -1318,56 +1256,50 @@ export class RoadSystem {
         // (radius ≥ hardR by construction) so the ribbon/carve sample it directly (the BUG-12 fold
         // fix), never a Catmull-Rom re-fit.
         for (let mz = mz0; mz <= mz1; mz++) {
-            // Concatenate the row's east connections into ONE polyline, recording where each
-            // connection starts so we can split back after the continuous grade smooth. Each
-            // connection shares its terminal anchor with the next connection's start anchor.
+            // Sample each east connection's EXACT primitive centerline (a SINGLE arc-search, cached)
+            // into a polyline; Y = coarse terrain height (graded below). The centerline is the sole
+            // routed representation — the polyline is merely its dense sampling — so the polyline→
+            // centerline arc correspondence is EXACT by construction (no projection search): the
+            // centerline arc at sample i is simply s_i = i·(L/n). Connections share their terminal
+            // anchor with the next connection's start anchor (skipped on append).
             let rowPts = []
-            const spans = []   // { mx, i0, i1 } — inclusive index range in rowPts (i1 of mx == i0 of mx+1)
+            const spans = []   // { mx, i0, i1, clArc } — run index range in rowPts + per-sample centerline arc
             for (let mx = mx0; mx <= mx1; mx++) {
-                const wps = this._protoConnect(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz), mx, mz)
-                if (wps.length < 2) continue
-                const i0 = rowPts.length ? rowPts.length - 1 : 0   // share the anchor with the prev connection
-                if (rowPts.length) { for (let k = 1; k < wps.length; k++) rowPts.push(wps[k]) }
-                else rowPts = wps.slice()
-                spans.push({ mx, i0, i1: rowPts.length - 1 })
+                const cl = this._protoConnectCenterline(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz), mx, mz)
+                if (!cl || cl.length < 1e-6) continue
+                const n = Math.max(1, Math.ceil(cl.length / PROTO_SAMPLE_DS))
+                const i0 = rowPts.length ? rowPts.length - 1 : 0   // share anchor mx with the prev connection's end
+                const clArc = new Float64Array(n + 1)
+                const startK = rowPts.length ? 1 : 0               // skip the shared start anchor on append
+                for (let i = 0; i <= n; i++) {
+                    const s = cl.length * i / n
+                    clArc[i] = s
+                    if (i >= startK) { const p = cl.pointAt(s); rowPts.push(new THREE.Vector3(p.x, this._coarseH(p.x, p.z), p.z)) }
+                }
+                spans.push({ mx, i0, i1: rowPts.length - 1, clArc })
             }
             if (rowPts.length < 2 || spans.length === 0) continue
 
-            // Clone (the connect cache returns shared instances) + grade the continuous row Y.
-            rowPts = rowPts.map(p => p.clone())
+            // Grade the continuous row Y in one pass (so the shared anchor point gets ONE smoothed Y →
+            // gradeY is C0 across every join), then split per connection at the anchor boundaries.
             smoothGradeInPlace(rowPts, this._params?.designGradeWindow ?? 50)
 
-            // Split per connection. The shared anchor (i1 of mx == i0 of mx+1) lands in BOTH runs with
-            // the same smoothed Y → C0. Each run carries its connection centerline + an exact polyline→
-            // centerline arc table (sequential forward projection — the polyline is the centerline's
-            // dense sampling, so the correspondence is monotone and drift-free). _assignSlice maps a
-            // slice's local arcS through this table onto the centerline (the BUG-12 fold fix).
-            for (const { mx, i0, i1 } of spans) {
+            for (const { mx, i0, i1, clArc } of spans) {
                 if (i1 - i0 < 1) continue
-                const run = []
-                for (let i = i0; i <= i1; i++) run.push(rowPts[i].clone())
-                const centerline = this._protoConnectCenterline(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz), mx, mz)
-                let polyCum = null, clArc = null
-                if (centerline && centerline.length > 1e-6) {
-                    const M = run.length
-                    polyCum = new Float64Array(M); clArc = new Float64Array(M)
-                    let s = centerline.nearest(run[0].x, run[0].z, 1.0, 0, 30)?.s ?? 0
-                    clArc[0] = s
-                    for (let i = 1; i < M; i++) {
-                        const step = Math.hypot(run[i].x - run[i - 1].x, run[i].z - run[i - 1].z)
-                        polyCum[i] = polyCum[i - 1] + step
-                        const win = step * 2 + 12   // forward-only window (centerline ≥ chordal step)
-                        const pr = centerline.nearest(run[i].x, run[i].z, 0.5, clArc[i - 1], clArc[i - 1] + win)
-                        s = pr ? Math.max(clArc[i - 1], pr.s) : clArc[i - 1]
-                        clArc[i] = s
-                    }
+                const M = i1 - i0 + 1
+                const run = new Array(M)
+                const polyCum = new Float64Array(M)   // cumulative-XZ (chord) arc from run[0]
+                for (let i = 0; i < M; i++) {
+                    run[i] = rowPts[i0 + i].clone()
+                    if (i > 0) polyCum[i] = polyCum[i - 1] + Math.hypot(run[i].x - run[i - 1].x, run[i].z - run[i - 1].z)
                 }
+                const centerline = this._protoConnectCenterline(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz), mx, mz)
                 this._network.set(`${mz}:${mx}`, { points: run, arcOrigin: 0, centerline, polyCum, clArc })
             }
         }
         // NOTE (CR-02): no post-build cache eviction. _network is .clear()-ed + rebuilt for the
         // current window at the top of every real re-stream, so its size is window-bounded. The
-        // per-connection points/centerline caches (_proto.segs/_proto.cls) are evicted by size above.
+        // per-connection centerline cache (_proto.cls) is evicted by size above.
         return this._network
     }
 
