@@ -1722,7 +1722,27 @@ export class RoadSystem {
      *
      * Pure function of (wx, wz, roadSystem, params, rawAmp) — deterministic (D-16).
      */
-    _sampleCarveWorld(wx, wz, rawAmp) {
+    // Carve-radius nearest-run query — the run-match the physics carve path uses. Exposed so a caller
+    // doing several samples in a tiny neighbourhood (terrain.analyticNormal's ±0.5 m finite differences,
+    // queryContacts' height+normal for one wheel) can find the run ONCE and pass it back as a hint to
+    // _sampleCarveWorld for every offset, instead of re-running the tile scan ~5× per wheel-contact.
+    // (That redundancy is the "lag only when wheels touch the ground" symptom: ~5 full queries/wheel/
+    // substep, but ONLY when in contact — analyticNormal is skipped airborne.)
+    carveHint(wx, wz) {
+        const p = this._params
+        const maxExt = (p.roadHalfWidth ?? 5) + (p.roadShoulderWidth ?? 2.5) + 4
+        return this.queryNearest(wx, wz, maxExt)
+    }
+
+    /**
+     * @param {number} wx @param {number} wz
+     * @param {number} rawAmp
+     * @param {object|null|undefined} [nrHint] — precomputed carveHint(wx,wz) result. When provided
+     *   (incl. null), it is used in place of a fresh queryNearest and the point is PROJECTED onto that
+     *   run (arcSEff/signedLat) — so the 4 offsets of one normal share one tile scan, accurately
+     *   (projection error over ±0.5 m on radius≥8 m is sub-mm; no position quantization → no stepping).
+     */
+    _sampleCarveWorld(wx, wz, rawAmp, nrHint) {
         const p             = this._params
         const halfWidth     = p.roadHalfWidth     ?? 5
         const shoulderWidth = p.roadShoulderWidth  ?? 2.5
@@ -1731,12 +1751,19 @@ export class RoadSystem {
         // roadFillHeight cap intentionally NOT read here (BUG-13): physics tracks the uncapped grade.
 
         const maxExt = halfWidth + shoulderWidth + 4
-        const nr = this.queryNearest(wx, wz, maxExt)
+        const nr = (nrHint !== undefined) ? nrHint : this.queryNearest(wx, wz, maxExt)
         if (!nr) return null
 
         const dx = wx - nr.point.x
         const dz = wz - nr.point.z
         const tx = nr.tangent.x, tz = nr.tangent.z
+
+        // Per-point arc via projection onto the run tangent. For a FRESH query nr.point is the exact
+        // foot of perpendicular so this is ~0 (no change). For a CACHE HIT at a nearby quantized cell
+        // it recovers the offset's true along-run arc, so analyticNormal's ±0.5 m finite differences
+        // still see the road's longitudinal GRADE (not just lateral crown/camber) → correct normal
+        // from ONE query instead of 4. (signedLat below already varies via dx,dz for the lateral term.)
+        const arcSEff = (nr.arcS ?? 0) + dx * tx + dz * tz
 
         // Signed lateral distance (positive = right of road heading, negative = left).
         // right = (tz, 0, -tx) so signedLat = dx*(-tz) + dz*tx = dot(d, perp).
@@ -1770,7 +1797,7 @@ export class RoadSystem {
         // to follow the terrain on causeway sections taller than fillHeight so the truck fell through.
         // Physics rides the true ribbon grade (decal contract); the raised dirt foundation is the
         // terrain carve's job (also uncapped now, terrain.js _buildCarveTable).
-        let designY = this.runProfile(nr.arcS ?? 0, nr.runKey ?? '').gradeY
+        let designY = this.runProfile(arcSEff, nr.runKey ?? '').gradeY
 
         // ── Crown + camber fold-in (SURF-03 / D-04) ─────────────────────────────
         // Same formula as sweepRibbon in road-mesh.js — ensures analyticNormal returns
@@ -1784,7 +1811,7 @@ export class RoadSystem {
 
             // BUG-10: nr.arcS is now the RUN-GLOBAL arc straight from queryNearest (no per-tile
             // sawtooth); matches sweepRibbon's run-arc keying. Used for camber AND pothole below.
-            const centerlineArcS = nr.arcS ?? 0
+            const centerlineArcS = arcSEff
 
             // D2 (plan 09-21): replace second-queryNearest camber estimate with the shared
             // slew-limited camberProfile — visual ribbon and physics now read the SAME angle.

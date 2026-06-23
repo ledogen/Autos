@@ -781,6 +781,10 @@ function queryContacts (cx, cy, cz, r) {
 
   // Ground surface — flat y=0 in grid world; analytic terrain height in Sierra world.
   // Grid-world uses flat ground so physics contacts are correct on the clean flat plane (D-18).
+  // PERF (contact path): the wheel HEIGHT stays an exact self-query (rest height byte-identical → no
+  // penetration/launch risk). analyticNormal internally finds the road run ONCE and reuses it for its
+  // 4 finite-difference offsets (carveHint + projection) → ~5 road tile-scans/wheel-contact collapse
+  // to 2 (height + one for the normal). This is the work that ran ONLY while wheels touch the ground.
   const terrainH = _gridWorldActive ? 0 : (terrainSystem ? terrainSystem.analyticHeight(cx, cz) : 0)
   const gd = terrainH + r - cy
   if (gd > 0) {

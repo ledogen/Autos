@@ -577,7 +577,10 @@ export class TerrainSystem {
         return height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params) * (this._params.terrainAmplitude ?? 1.0)
     }
 
-    analyticHeight(wx, wz) {
+    // nrHint (optional): a precomputed roadSystem.carveHint(wx,wz) result, threaded through so a tight
+    // cluster of samples (analyticNormal's ±0.5 m offsets, queryContacts' height+normal for one wheel)
+    // shares ONE road tile-scan instead of re-querying per call. undefined = query internally (legacy).
+    analyticHeight(wx, wz, nrHint) {
         // Precondition: reinitWorker (called synchronously in the constructor) must have built
         // the noise closures. Throw rather than silently returning 0 — a 0 here would seat the
         // truck at sea level inside the terrain and violate the "never returns 0" contract (WR-07).
@@ -588,7 +591,7 @@ export class TerrainSystem {
         // CARVE SYNC: identical blend formula as _flushPendingQueue, sampleHeight, and Worker height loop.
         // rawAmp is passed to _sampleCarveWorld to avoid re-calling analyticHeight (infinite recursion).
         if (this._roadSystem) {
-            const c = this._roadSystem._sampleCarveWorld(wx, wz, raw)
+            const c = this._roadSystem._sampleCarveWorld(wx, wz, raw, nrHint)
             if (c && c.blendW > 1e-6) return raw + c.blendW * (c.gradeY - raw)
         }
         return raw
@@ -604,12 +607,18 @@ export class TerrainSystem {
      * @param {number} wz - World Z coordinate.
      * @returns {{ x: number, y: number, z: number }} Unit normal pointing away from surface.
      */
-    analyticNormal(wx, wz) {
+    analyticNormal(wx, wz, nrHint) {
         const EPS = 0.5
-        const hL  = this.analyticHeight(wx - EPS, wz)
-        const hR  = this.analyticHeight(wx + EPS, wz)
-        const hD  = this.analyticHeight(wx,       wz - EPS)
-        const hU  = this.analyticHeight(wx,       wz + EPS)
+        // PERF (contact path): find the road run ONCE (at the center) and reuse it for all 4 offsets,
+        // collapsing ~5 road queries/wheel-contact → 1. The offsets project onto this run, so the
+        // finite difference still captures grade + crown/camber accurately (sub-mm projection error
+        // over ±0.5 m). When called WITHOUT a hint, derive one here so any normal-only caller benefits.
+        const hint = (nrHint !== undefined) ? nrHint
+            : (this._roadSystem ? this._roadSystem.carveHint(wx, wz) : null)
+        const hL  = this.analyticHeight(wx - EPS, wz, hint)
+        const hR  = this.analyticHeight(wx + EPS, wz, hint)
+        const hD  = this.analyticHeight(wx,       wz - EPS, hint)
+        const hU  = this.analyticHeight(wx,       wz + EPS, hint)
         const nx  = -(hR - hL) / (2 * EPS)
         const ny  = 1
         const nz  = -(hU - hD) / (2 * EPS)
