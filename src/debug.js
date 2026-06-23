@@ -22,6 +22,7 @@
 
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
 import { VEHICLES } from '../data/vehicles.js'
+import { BUILD } from './version.js'
 
 // Module-level bindings so updatePacejkaCurve and updateTravelBars (defined at module scope)
 // can read them. Assigned inside initDebug(); null until then.
@@ -44,6 +45,10 @@ let slipCtx = null
 export function initDebug (params, callbacks = {}, options = {}) {
   const gui = new GUI({ title: 'RangerSim Debug' })
   gui.domElement.style.display = 'none'  // hidden by default; backtick reveals it
+
+  // QUAL-04: build marker — confirms which build the browser actually loaded (deploy lag + cache).
+  // Disabled (read-only) text controller at the top of the panel; value baked at commit time.
+  gui.add({ build: BUILD }, 'build').name('Build').disable()
 
   // Vehicle selector — copies preset into live params and refreshes all sliders
   const vehicleState = { vehicle: 'Ranger' }
