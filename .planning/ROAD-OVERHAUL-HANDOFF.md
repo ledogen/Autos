@@ -1,5 +1,11 @@
 # Road System Overhaul — Handoff & Plan (2026-06-22)
 
+> **STATUS: PHASES A–C DONE ✅ (2026-06-22).** The coordinated routing+assembly rewrite this doc
+> mandated is landed and committed on `road-invariance`. BUG-12 is fixed — `road-minradius.mjs` is
+> GREEN (the dense ribbon centerline no longer folds), and all 8 headless gates pass. See **§12** for
+> exactly what was done and what (deliberately) remains (Phase D perf / Phase E future-proofing).
+> Everything below §11 is the original plan, kept as the record of the investigation that led here.
+
 > **For the next agent.** Read this top-to-bottom before touching `src/road.js`. It captures a deep
 > BUG-12 investigation, *why a major rewrite is justified*, the industry-standard architecture to
 > rewrite toward, and a phased plan. A large rewrite is explicitly sanctioned by the project owner
@@ -293,3 +299,52 @@ entanglement that cost two sessions.
 - Polyline smoothing with G1 + bounded curvature: [Fast Shortest Path Polyline Smoothing With G1 Continuity and Bounded Curvature (arXiv:2409.09816)](https://arxiv.org/pdf/2409.09816)
 - Hybrid-A* + Dubins/clothoid analytic smoothing: [Trajectory Generation using Sharpness-Continuous Dubins-like Paths (arXiv:1801.08995)](https://arxiv.org/pdf/1801.08995) · [Clothoids Composition Method for Smooth Path Generation (Springer)](https://link.springer.com/article/10.1007/s10846-017-0531-8) · [3D Dubins-Path-Guided Continuous Curvature Path Smoothing (MDPI)](https://www.mdpi.com/2076-3417/12/22/11336)
 - Game road/terrain architecture & streaming: [Spline-Based Procedural Terrain/Road Generation (J. Peire)](https://jarnepeire.be/splinebasedprocterraingen/) · [Finding Junctions in Spline-based Road Generation (DiVA)](https://www.diva-portal.org/smash/get/diva2:1675311/FULLTEXT02) · [3D Decals for roads on terrain (GameDev.net)](https://www.gamedev.net/forums/topic/691182-3d-decals-for-roads-on-terrain/) · [Asset Streaming Techniques for Open World Games](https://daydreamsoft.com/blog/asset-streaming-techniques-for-open-world-games-building-seamless-and-immersive-experiences)
+
+---
+
+## 12. Completion record (2026-06-22) — Phases A–C DONE
+
+The two **coupled** blockers from §11 were resolved together (the coordinated rewrite §11 demanded —
+neither half is invariant-safe alone). 8/8 gates green; `road-minradius.mjs` GREEN for the first time.
+
+**What landed (commits on `road-invariance`):**
+
+1. **Bounded-wAlt routing** (`road-carve.js arcPrimitiveConnect`). The absolute-altitude reward
+   `wAlt·nH` (a global-minimum magnet → km-wandering, self-crossing paths) became a BOUNDED penalty
+   `wAlt·max(0, nH − baseline)`, baseline = linear a→b altitude interp. Wander on the synthetic seed:
+   worst length/anchor **132× → 4.2×, zero >5×**. The routed centerline now IS the road. Equal-height
+   anchors are byte-identical to the old term → `arc-router.mjs` DETOURS-AROUND-PEAK still 9/9.
+
+2. **Per-connection run identity** (`road.js _streamNetwork`). Each east connection
+   `anchor(mx,mz)→anchor(mx+1,mz)` is ONE run keyed **`"mz:mx"`** — a pure fn of world coords,
+   band-INDEPENDENT, so window-invariance holds **by construction** (no COVER split, no owner-ratio,
+   no loop-removal — the routing-sensitive decisions that were the BUG-14 fragility). arcS is
+   connection-local (`arcOrigin=0`); grade is smoothed over the whole row then split at anchors (C0).
+
+3. **Centerline is the sole routed representation.** The run's exact primitive centerline (radius ≥
+   hardR by construction) is what the ribbon/carve SAMPLE (`USE_CENTERLINE_RIBBON=true`) — the BUG-12
+   fold fix. The polyline is just the centerline sampled at 4 m with Y=coarseHeight, so routing runs
+   **once** per connection (cold stream **2416ms → 1255ms**) and the polyline→centerline arc map is
+   exact (no projection table).
+
+4. **Deterministic camber seed** (`_runEndCamber`): memoized predecessor-chain walk replaces the
+   cache-order-dependent fast/slow split (with every anchor now a seam, that order-dependence was the
+   only restream-variance left).
+
+**Deleted (the patch stack, Phase C):** `_removeLoops`, `_removeSelfCrossings`, `_runOwnerAnchor`,
+`_canonSegArc`, `_protoConnect`, `_protoSimplify`, COVER/LOOP/RUN_OWNER consts, `_canonRunCache`,
+`_proto.segs`. `road.js` **2933 → 2595 lines**. `_segXZ` kept (junction detection).
+
+**Test note:** `ribbon-carve.mjs` FIX-ENGAGED → **SEAM-PARAM-ROBUST** (the cumulative-XZ remap was
+compensating for Catmull-Rom overshoot; with the exact centerline that's gone, so seams are bounded
+under both parameterisations — the stronger property). The 3 historical `Logs/` captures now MISMATCH
+on `replay.mjs` reproduction because they recorded the OLD runKey/arcS scheme — but their **fold metric
+is fixed** (capture-1 site 2.77m → 17.4m) and `road-minradius.mjs` confirms all 3 are fold-free.
+
+**What remains (deliberately deferred, not blockers):**
+- **Phase D — perf.** Cold routing of ~63 connections is the residual ~1.25s hitch. Offload
+  `arcPrimitiveConnect` to the terrain Web Worker (PERF-03); primitive lists postMessage cheaply.
+- **Phase E — future-proofing.** Junctions/variable-width/lanes as offset curves on the centerline.
+- **Optional cleanup.** `road-mesh.js` still does the cumulative-XZ section→arcS remap; it's now a
+  near-no-op (the curve is arc-length-exact) but still drives gradeY/camber indexing — harmless, can
+  simplify later. The per-tile slicer/profile machinery could shrink further toward the §5 target.
