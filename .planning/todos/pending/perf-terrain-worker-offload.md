@@ -3,11 +3,68 @@ id: PERF-03
 type: perf
 status: open
 opened: 2026-06-21
+updated: 2026-06-23
 severity: major
 source: user-observation
+note: "2026-06-23: reframed as the umbrella 'move heavy streaming work off the main thread' ticket. The DOMINANT cost is ROAD ROUTING, not terrain chunk build (profiled this session) — see Workstream A. Tier 1 sizing wins (radius/band/margin) already SHIPPED (commit f514727) and cut load ~6.6x; Workstream A is the Tier 2 follow-up. Terrain chunk-build offload (original scope) is Workstream B."
 ---
 
-# PERF-03: Push more chunk-build work into the terrain Worker (enable greater draw distance)
+# PERF-03: Move heavy streaming work off the main thread (road routing + terrain chunk build)
+
+## Symptom / goal
+
+20 s reload + painful fly-stutter on a mid-range machine (i9-12th / RTX A2000). Profiling (2026-06-23,
+headless harness) showed the dominant cost is **synchronous road routing on the main thread**, not
+terrain. Goal: the main thread never blocks on routing or chunk build — both stream in asynchronously
+like terrain heightmaps already do.
+
+---
+
+## Workstream A — Road routing offload (the Tier 2 follow-up — DOMINANT lever)
+
+### Profiled root cause (2026-06-23)
+
+Road routing (`arcPrimitiveConnect` hybrid-A*) runs **synchronously on the main thread** in
+`_streamNetwork`, and a full network re-stream fires on every 256 m macro-cell crossing. Measured
+(warmed JIT; cold / real-hardware worse):
+
+- per-connection arc search ≈ 12–21 ms (dominated by the `(256+2·margin)²` lattice)
+- `_sliceNetwork` ≈ 1 ms (negligible); `queryNearest` 15–93 µs (fine)
+- so routing ≈ the entire streaming cost.
+
+### Tier 1 — sizing (SHIPPED 2026-06-23, commit f514727)
+
+Shrank the work to match the visible terrain footprint instead of ~16× it:
+`setRadius 640→320`, `CANONICAL_HALF_WIDTH 4→2` (±1024→±512 m in X), `PROTO_MARGIN 200→120`.
+Result (warmed): first-stream **3399→514 ms (6.6×)**; per-crossing hitch **avg 429→83, worst 557→121 ms**;
+59→19 connections. All 8 gates green. This is a one-time shrink — it does NOT remove routing from the
+frame, so a ~100 ms crossing hitch remains. Tier 2 (below) removes it.
+
+### Tier 2 — offload routing to the Worker (this workstream)
+
+Routing is pure/deterministic; inputs are tiny (seed, mx, mz, params), outputs are small primitive
+lists (`centerlineFromDescriptors` descriptors) — ideal Worker payload (unlike dense polylines /
+RANGER_PARAMS, see project_terrain_worker_constraints). Move `arcPrimitiveConnect` + the per-connection
+centerline build into the Worker; the main thread consumes routed connections asynchronously and
+assembles `this._network` as they arrive (mirrors terrain chunk consumption). Removes the routing hitch
+from the frame entirely, regardless of radius/band size.
+
+**The hard part — roads are needed SYNCHRONOUSLY where routing currently guarantees them:**
+- physics `queryNearest` on the first frames (truck must land on a road/carved surface),
+- `_buildCarveTable` (terrain carve reads road geometry),
+- spawn placement (`resolveSpawn` → `ensureTile`).
+Done naively, the truck spawns on un-carved terrain with no road until the Worker replies. Needs:
+block spawn on the first route(s) only, and a graceful "no road yet" fallback for queryNearest/carve
+(terrain-only surface) until the async network fills. This is the bulk of the work and risk.
+
+**Determinism/invariance:** the Worker must produce byte-identical routes to the main thread (same
+cost model, same canonical headings) so `invariance` / `restream-invariance` / `road-minradius` stay
+green. `arcPrimitiveConnect`/`dubinsPrimitives` are NOT currently in `WORKER_SOURCE` (main-thread only)
+— they'd need adding to the Worker source and keeping in sync (like the carve bodies).
+
+---
+
+## Workstream B — Terrain chunk-build offload (original PERF-03 scope; enables draw distance)
 
 ## Symptom / goal
 
