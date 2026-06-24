@@ -429,4 +429,18 @@ export const RANGER_PARAMS = {
   // D-08: material intent — shoulder face is unpaved earth.
   // Units: hex RGB int (0xRRGGBB). Exposed as a colour picker in the Road Surface folder.
   roadDirtColor: 0x6b5a3e,     // hex RGB — dirt-brown skirt vertex colour (SURF-05 / D-08 / Plan 09-24)
+
+  // ── Wheel dust trails (src/dust.js — visual polish) ──────────────────────────
+  // Stylized sprite puffs kicked up behind the wheels, tinted to the dirt we drive on.
+  // dustEnabled: master toggle. dustColor: puff tint — a light warm tan that, decoded
+  // from sRGB, lands near the terrain general-ground colour (terrain warm-brown
+  // 0.72/0.60/0.47 linear) so airborne dust reads as the same earth, a touch lighter.
+  // dustAmount: density multiplier (0 = off-ish, 1 = default, >1 = heavier). Units: hex / scalar.
+  dustEnabled: true,
+  dustColor: 0xc9b79a,         // hex RGB — dust puff tint (dirt we're driving on)
+  dustAmount: 1.0,             // [-] emission density multiplier
+  // dustPavedFactor: how much dust survives on the paved asphalt ribbon (vs full dirt dust
+  // off-road). Tyres on tarmac barely scuff dust, so this is low; it ramps smoothly up to 1
+  // across the ribbon edge into the dirt shoulder. 0 = none on asphalt, 1 = same as dirt.
+  dustPavedFactor: 0.1,        // [-] on-asphalt dust multiplier
 };
