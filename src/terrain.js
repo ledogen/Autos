@@ -780,7 +780,7 @@ export class TerrainSystem {
                 if (recarved >= MAX_BUILDS_PER_FRAME) break
                 if (chunk.builtRoadGeneration === currentRoadGen) continue
                 const [cx, cz] = key.split(',').map(Number)
-                const newCarveData = this._buildCarveTable(cx, cz)
+                const newCarveData = this._buildCarveTable(cx, cz, chunk.heights)   // PERF-03 #1: reuse stored raw heights
                 // Re-apply heights + carve blend to the mesh Y positions (same formula as _flushPendingQueue).
                 const amp = this._params.terrainAmplitude ?? 1.0
                 const N   = GRID_SAMPLES
@@ -855,7 +855,12 @@ export class TerrainSystem {
      * SURF-05: carveData stored on the chunk is NEVER written into chunk.heights (post-read blend).
      * @private
      */
-    _buildCarveTable(cx, cz) {
+    // PERF-03 #1: `rawHeights` (optional) is the Worker's already-computed raw 65×65 noise grid for this
+    // chunk (row-major, pre-amplitude). When provided, the per-vertex loop reuses rawHeights[zi*N+xi]
+    // instead of re-evaluating the multi-octave `height()` noise — byte-identical (same fn, same inputs),
+    // just not recomputed. Available now that the table is built in _flushPendingQueue (has the heights)
+    // and the re-carve path (chunk.heights). Callers without it (none currently) fall back to height().
+    _buildCarveTable(cx, cz, rawHeights = null) {
         if (!this._roadSystem) return null
 
         const N    = GRID_SAMPLES
@@ -999,7 +1004,8 @@ export class TerrainSystem {
                 const latDist = Math.sqrt(bestD2)
 
                 // Raw terrain height at this vertex (world-space, with amplitude).
-                const rawPre = height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params)
+                const rawPre = rawHeights ? rawHeights[zi * N + xi]
+                    : height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params)
                 const rawH   = rawPre * amp
 
                 // ── D3 (plan 09-22): carve target inherits the ribbon cross-section ──
@@ -1242,7 +1248,7 @@ export class TerrainSystem {
             // Build carveData for this chunk now (main thread has road access; Worker received a
             // Transferable copy already consumed — we rebuild here for the _chunkMap reference path).
             let _pt = performance.now()
-            const carveData = this._buildCarveTable(cx, cz)
+            const carveData = this._buildCarveTable(cx, cz, heights)   // PERF-03 #1: reuse the Worker's raw heights
             perfAdd('flush.buildCarveTable', performance.now() - _pt)
             const pos = geom.attributes.position
             const amp = this._params.terrainAmplitude ?? 1.0
