@@ -805,23 +805,18 @@ export class TerrainSystem {
             }
         }
 
-        // Request new chunks not yet loaded or pending
+        // Request new chunks not yet loaded or pending.
+        // PERF-03 #0: do NOT build/transfer the carve table here. The Worker's `generate` handler
+        // ignores any carveTable it receives (heights stay RAW — see WORKER_SOURCE: "DOES NOT bake
+        // carve into heights"); the carve blend is applied on the main thread in _flushPendingQueue,
+        // which builds the table itself. Building it here was pure waste — and worse, transferring the
+        // buffer CONSUMED it, forcing _flushPendingQueue to rebuild from scratch (the chunk was carve-
+        // tabled twice). Send a bare generate; _flushPendingQueue owns the single carve-table build.
         for (const key of needed) {
             if (!this._chunkMap.has(key) && !this._pendingWorker.has(key)) {
                 const [cx, cz] = key.split(',').map(Number)
                 this._pendingWorker.add(key)
-                // Phase 9 (SURF-05 / T-09-02): build carve table on main thread (has road access) and
-                // send it as a Transferable alongside the generate message.
-                // A FRESH table is built per-chunk because postMessage transfers (consumes) the buffer.
-                // If no road system is attached, send null carveTable — Worker applies no carve.
-                const _ptD = performance.now()
-                const carveTable = this._buildCarveTable(cx, cz)
-                perfAdd('dispatch.buildCarveTable', performance.now() - _ptD)
-                if (carveTable) {
-                    this._worker.postMessage({ type: 'generate', cx, cz, key, carveTable }, [carveTable.buffer])
-                } else {
-                    this._worker.postMessage({ type: 'generate', cx, cz, key })
-                }
+                this._worker.postMessage({ type: 'generate', cx, cz, key })
             }
         }
     }
