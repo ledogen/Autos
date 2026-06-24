@@ -82,3 +82,67 @@ surface (mesh == physics-felt surface, by construction).
 - `src/road.js` — `_streamNetwork` / `this._network` (add an inter-run crossing + junction-node pass);
   `PROTO_MARGIN` / `PROTO_COVER_*` / `_removeSelfCrossings` context.
 - Ribbon mesh + carve (Phase 9 surface code) — the merged-junction surface treatment driven by junction nodes.
+
+---
+
+## Implementation Plan (2026-06-24) — flatten-to-flat at-grade merge
+
+**Decision (this session):** crown/camber resolve by **flattening to a flat junction pad** through the
+crossing (both arms ease crown→0 to a common flat plane at the node grade). At-grade only — grade
+separation is FEAT-08, which shares the detection foundation in step 1.
+
+### What already exists (this is a FINISH, not a from-scratch build)
+- **Detection:** `road.js _detectJunctions()` (~road.js:1627) already does pairwise inter-run XZ crossing
+  detection via module-scope `_segXZ`, building `this._junctions` (nodeKey → `{ pos, legs (sorted by
+  bearing), nodeY = avg of the 4 segment-endpoint Ys, simpleMerge }`), memoized by `_junctionsFrom`,
+  cleared on re-stream. Near-parallel (<10°) or >4 legs ⇒ `simpleMerge`.
+- **Mesh stub:** `road-mesh.js buildJunctionFootprint(node, params)` exists and is wired into tile
+  building (~road-mesh.js:731-758: a node is assigned to the tile containing its XZ, then a footprint
+  mesh is built). This is the "never-shipped at-grade fold" the ticket note refers to — it emits a
+  footprint but NOT a correct single merged surface, and **nothing carves the terrain under it**.
+
+### Gaps to close
+1. **Shared crossing record (also the FEAT-08 foundation).** Extend `_detectJunctions` to also catch
+   (a) SELF-crossings (a run crossing itself — only `ri<rj` DIFFERENT-run pairs are tested today) and
+   (b) T-meets (an endpoint landing on another run). For each crossing store `{ runA, arcA, runB, arcB,
+   point, angle, dYrouted }` (routed-Y gap of the two strands). **Classify:** `|dYrouted| < clearance`
+   and not arc-separated ⇒ **at-grade junction (FEAT-07)**; arc-length-separated / large dY ⇒
+   **overpass (FEAT-08)**. One detection pass feeds both features.
+2. **Node-grade continuity.** Pad plane Y = node grade. Today `nodeY` is only the 4-point average and
+   never feeds back into the run grade profiles, so the arms can arrive at different Ys. Feed the node
+   grade into `_buildRunProfile` so each incident arm's `gradeY` converges to the pad plane near the
+   node (same spirit as the anchor-join grade continuity already in `_streamNetwork`).
+3. **Crown/camber → flat blend.** Within a junction blend radius `Rj` (≈ halfWidth + shoulder + margin),
+   ramp the `crownProfile`/`camberProfile` contributions to 0 so all arms meet ONE flat pad — no
+   crown-vs-crown ridge, no lateral step. Apply the SAME per-vertex blend `f(distToNode)` in both the
+   ribbon sweep (road-mesh.js) and the carve (terrain.js) so surface == physics by construction.
+4. **Single merged pad surface.** Finish `buildJunctionFootprint` into ONE triangulated pad = the
+   union/hull of the incident arms' cross-section edges at the pad plane (road-carve.js already exports
+   `isConvexPolygon` / `triangulateConvexFan` / `earClip`). Arms sweep up to the pad boundary; the pad
+   fills the interior → walk any arm → pad → any other arm with no overlap edge / z-fight.
+5. **Carve the pad (the missing physics half).** `terrain.js _buildCarveTable`: for vertices within `Rj`
+   of a junction node, target the **flat pad Y** (crown/camber blended to 0) with the normal shoulder
+   ramp out, so the carved ground == the pad mesh (no airborne/sink-through across the intersection).
+   Junction nodes are a pure fn of `_network`, read like `runProfile`/`camberProfile` are today.
+
+### Determinism / gates
+- Junctions are a pure fn of `(seed, the two runs' geometry, params)` → window-invariant by transitivity.
+  Add `test/junction-invariance.mjs`: sample node position + pad Y + footprint across two stream centers,
+  assert identical (the BUG-08 contract extended to nodes) + a surface-agreement check (ribbon pad Y ==
+  carve pad Y at sampled points, like `ribbon-carve`; no crown ridge). Register in `run-all.mjs`.
+- `route-worker-sync` unaffected — junctions are post-network, not in the routed primitives.
+
+### Files
+- `src/road.js` — extend `_detectJunctions` (self/T-cross + classify + crossing records); node-grade
+  feedback into `_buildRunProfile`; a `junctionsForCarve()` accessor (akin to `collectChunkSplinePoints`).
+- `src/road-mesh.js` — finish `buildJunctionFootprint` (single merged pad); crown/camber→flat blend.
+- `src/terrain.js` — carve the pad flat within `Rj` in `_buildCarveTable` (main-thread; no ROUTE SYNC).
+- `data/ranger.js` — `roadJunctionBlendRadius`, pad margin.
+- `test/junction-invariance.mjs` (+ register).
+
+### Risks / hard parts
+- Pad triangulation for T (3-leg), X (4-leg), and the `simpleMerge` (>4 / near-parallel) fallback.
+- Crown→flat blend without a seam at `Rj` (BUG-15 class) — must blend in ribbon AND carve identically.
+- Node-grade feedback without breaking grade C1 or window-invariance.
+- Interaction with QUAL-05 (gentler routing → fewer/cleaner crossings) and COVER suppression (don't drop
+  a run that participates in a junction).
