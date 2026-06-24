@@ -781,14 +781,17 @@ function queryContacts (cx, cy, cz, r) {
 
   // Ground surface — flat y=0 in grid world; analytic terrain height in Sierra world.
   // Grid-world uses flat ground so physics contacts are correct on the clean flat plane (D-18).
-  // PERF (contact path): the wheel HEIGHT stays an exact self-query (rest height byte-identical → no
-  // penetration/launch risk). analyticNormal internally finds the road run ONCE and reuses it for its
-  // 4 finite-difference offsets (carveHint + projection) → ~5 road tile-scans/wheel-contact collapse
-  // to 2 (height + one for the normal). This is the work that ran ONLY while wheels touch the ground.
-  const terrainH = _gridWorldActive ? 0 : (terrainSystem ? terrainSystem.analyticHeight(cx, cz) : 0)
+  // PERF (contact path): resolve the road run ONCE (memoized carveHint) and thread it into BOTH the
+  // height and the normal (which finite-differences 4 more heights). That collapses the per-wheel
+  // road tile-scans to ~1, and — crucially — carveHint is memoized per 0.1 m cell, so the death-spiral's
+  // ~300 queryContacts/frame at a near-stationary wheel reuse one query instead of each re-scanning a
+  // switchback's many slices (the slow-CPU 5fps lock that recovers airborne). Height stays accurate:
+  // at the query center the projection is ~0 (perp foot) so rest height ≈ exact (≤~5 mm via the memo).
+  const _hint = (!_gridWorldActive && roadSystem) ? roadSystem.carveHint(cx, cz) : undefined
+  const terrainH = _gridWorldActive ? 0 : (terrainSystem ? terrainSystem.analyticHeight(cx, cz, _hint) : 0)
   const gd = terrainH + r - cy
   if (gd > 0) {
-    const n = _gridWorldActive ? { x: 0, y: 1, z: 0 } : (terrainSystem ? terrainSystem.analyticNormal(cx, cz) : { x: 0, y: 1, z: 0 })
+    const n = _gridWorldActive ? { x: 0, y: 1, z: 0 } : (terrainSystem ? terrainSystem.analyticNormal(cx, cz, _hint) : { x: 0, y: 1, z: 0 })
     hits.push({
       normal:       new THREE.Vector3(n.x, n.y, n.z),
       depth:        gd,

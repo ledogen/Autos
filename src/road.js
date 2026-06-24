@@ -1728,10 +1728,35 @@ export class RoadSystem {
     // _sampleCarveWorld for every offset, instead of re-running the tile scan ~5× per wheel-contact.
     // (That redundancy is the "lag only when wheels touch the ground" symptom: ~5 full queries/wheel/
     // substep, but ONLY when in contact — analyticNormal is skipped airborne.)
+    // Memoized by quantized position + networkRev so the physics death-spiral can't explode the cost:
+    // a slow frame makes the fixed-timestep accumulator dispatch up to ~15 outer steps × 4 suspension
+    // substeps × (4 wheels), all calling queryContacts → carveHint at NEARLY the same wheel position
+    // (the spiral fires when the truck is ~stationary). queryNearest is O(slices in the 3×3 tile block),
+    // which BALLOONS on tight switchbacks (many road arms per tile) — so those ~300 calls/frame at full
+    // cost are the 5fps lock that only a slow CPU on a switchback hits (and that recovers airborne, when
+    // no wheel is in contact). 0.1 m cells: a wheel's substeps (sub-cm apart) share one query; distinct
+    // wheels (≥1.6 m apart = 16 cells) and distinct runs never collide. Pure fn of (pos, rev) → a hit is
+    // identical to a fresh query at the cell; rev-cleared (re-stream) and size-bounded.
     carveHint(wx, wz) {
         const p = this._params
         const maxExt = (p.roadHalfWidth ?? 5) + (p.roadShoulderWidth ?? 2.5) + 4
-        return this.queryNearest(wx, wz, maxExt)
+        if (!this._hintCache || this._hintCache.rev !== this._networkRev) {
+            this._hintCache = { rev: this._networkRev, map: new Map() }
+        }
+        const m = this._hintCache.map
+        // 0.05 m cells: the death-spiral fires when the truck is ~STATIONARY (a slow frame dispatches
+        // many catch-up steps at one spot), so even a tiny cell fully collapses it — while keeping the
+        // cached-run position error small during normal driving (≤0.05 m → grade error sub-cm), which
+        // bounds rest-height drift well under the penetration tolerance. Wheels (≥1.6 m = 32 cells) and
+        // distinct runs never share a cell.
+        const key = `${Math.round(wx * 20)},${Math.round(wz * 20)}`
+        let nr = m.get(key)
+        if (nr === undefined) {
+            nr = this.queryNearest(wx, wz, maxExt)
+            if (m.size > 128) m.clear()
+            m.set(key, nr)
+        }
+        return nr
     }
 
     /**
