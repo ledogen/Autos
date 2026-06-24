@@ -22,6 +22,7 @@ const GATES = [
     'ribbon-carve.mjs',     // synthetic ribbon↔carve agreement (dump-free; replaced seam-grade.mjs)
     'replay-selftest.mjs',  // capture↔replay round-trip (Phase 4 place path) — src/capture.js + replay.mjs
     'route-worker-sync.mjs',// PERF-03 WS-A: worker routing copy == road-carve.js canonical (byte-identical)
+    'camber-continuity.mjs',// BUG-19: banking carries continuously across continuing run boundaries (cross-run seed sync)
 ]
 
 let failed = []

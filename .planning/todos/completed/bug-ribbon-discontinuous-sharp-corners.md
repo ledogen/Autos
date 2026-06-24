@@ -1,9 +1,11 @@
 ---
 id: BUG-12
 type: bug
-status: open
+status: closed
 opened: 2026-06-14
+closed: 2026-06-24
 source: phase-09-insim-verify
+resolution: "Solved by the arc-based road rewrite (Road Overhaul Phases A–C). arcPrimitiveConnect emits curvature-bounded primitive centerlines (dense XZ radius ≥ hardR by construction) consumed directly by the ribbon and carve — eliminating the overshooting centripetal Catmull-Rom re-fit + _removeLoops/_removeSelfCrossings stack that produced sub-halfWidth radii and the ribbon fold/tear at sharp corners. road-minradius + centerline-curvature + invariance gates green."
 ---
 
 # BUG-12: Road ribbon mesh tears (gap/overlap) at sharp corners

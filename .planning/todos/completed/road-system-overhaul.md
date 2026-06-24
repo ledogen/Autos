@@ -1,8 +1,10 @@
 ---
 id: road-overhaul
 type: refactor
-status: pending
+status: cancelled
 severity: high
+closed: 2026-06-24
+resolution: "Cancelled — superseded/delivered. The primitive-centerline rewrite this umbrella called for already landed as Road Overhaul Phases A–C: arc-primitive valid-by-construction routing (arcPrimitiveConnect emits curvature-bounded primitives, no overshooting centripetal Catmull-Rom re-fit), per-connection 'mz:mx' run assembly, _removeLoops/_removeSelfCrossings retired. BUG-12 fold fixed; road-minradius / invariance gates green. No separate overhaul work remains; residual road feel/structure is tracked by focused tickets (QUAL-05 curvature, FEAT-07/08 junctions/overpass)."
 ---
 
 # Road system overhaul — primitive-centerline rewrite (supersedes BUG-12 patching)

@@ -1,8 +1,10 @@
 ---
 id: FEAT-03
 type: feature
-status: open
+status: closed
 opened: 2026-06-04
+closed: 2026-06-24
+resolution: "Shipped. DustSystem (src/dust.js) — pooled camera-facing sprite puffs, one procedural texture, emission driven by per-wheel slip velocity + speed. Terrain-dependent as requested: full dirt dust off-road, reduced on the paved ribbon (onRoadFactor via roadSystem.carveHint + dustPavedFactor, smooth feather across the shoulder edge). Tunable via ranger.js dustEnabled/dustColor/dustAmount/dustPavedFactor. Commits d0ae8e2 (module) + aec3b33 (main-loop wiring); on main."
 ---
 
 # FEAT-03: Terrain-dependent dust trails behind the tires

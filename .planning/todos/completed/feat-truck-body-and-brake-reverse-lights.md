@@ -1,15 +1,16 @@
 ---
 id: FEAT-04
 type: feature
-status: open
+status: closed
 opened: 2026-06-10
 updated: 2026-06-24
-resolution_status: drafted-pending-merge
+closed: 2026-06-24
 resolution_branch: visual-model
 followup: FEAT-04a
 source: scribe-session
 absorbs: 999.1-truck-body-styles-and-functional-brake-reverse-lights
 note: "Merged with the retired ROADMAP backlog phase 999.1 (2026-06-11) — this todo is the single source of intent."
+resolution: "Shipped via the visual-model merge (merge commit 2fe2d46, branch commits 0ee74ad + c5744a7). src/vehicle-model.js createVehicleModel() loads a low-poly Hilux GLB (assets/models/hilux.glb, data/vehicle-models.js spec) with functional tail/brake/reverse lights driven each frame by syncMeshesToState, plus a 'Body color' debug picker. Follow-up FEAT-04a (wire the visual swap to the physics-vehicle dropdown) remains OPEN."
 ---
 
 # FEAT-04: Truck body shape + swappable body styles + functional brake/reverse lights

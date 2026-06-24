@@ -2211,38 +2211,16 @@ export class RoadSystem {
         const seed = predKey ? this._runEndCamber(predKey, depth + 1) : 0
         memo.set(runKey, seed)   // tentative cycle-guard; overwritten with the true end below
 
-        const pts = entry.points
-        const N   = pts.length
-        const p   = this._params || {}
-        const camberStrength  = p.camberStrength ?? 200
-        const slewRateRadPerM = (p.roadCamberRate ?? 1.5) * (Math.PI / 180)
-        const MAX_CAMBER      = 6 * (Math.PI / 180)
-
-        // Forward-march raw camber from the seed (camberRad[0] = seed, matching _buildCamberProfile).
-        let prev = seed
-        for (let i = 1; i < N; i++) {
-            const ax = pts[i].x - pts[i - 1].x
-            const az = pts[i].z - pts[i - 1].z
-            const ds = Math.sqrt(ax * ax + az * az) || 1e-8
-            let t1x, t1z, effectiveDs
-            if (i < N - 1) {
-                t1x = pts[i + 1].x - pts[i].x
-                t1z = pts[i + 1].z - pts[i].z
-                const ds1 = Math.sqrt(t1x * t1x + t1z * t1z) || 1e-8
-                effectiveDs = (ds + ds1) * 0.5
-            } else {
-                t1x = ax; t1z = az; effectiveDs = ds
-            }
-            const kappa = signedCurvature(ax, az, t1x, t1z, effectiveDs)
-            const raw = Math.max(-MAX_CAMBER, Math.min(MAX_CAMBER, camberStrength * kappa))
-            const maxDelta = slewRateRadPerM * ds
-            const delta = raw - prev
-            if      (delta >  maxDelta) prev = prev + maxDelta
-            else if (delta < -maxDelta) prev = prev - maxDelta
-            else                        prev = raw
-        }
-        memo.set(runKey, prev)
-        return prev
+        // BUG-19 FIX: march via the SHARED canonical camber routine — the SAME arc-length-windowed
+        // curvature _buildCamberProfile uses — so the end value this returns is byte-identical to the
+        // predecessor profile's real end. Previously this used a per-adjacent-point finite difference
+        // while _buildCamberProfile used the arc-window (the BUG-12 camber fix), so the seed handed to
+        // the next run didn't match the predecessor's actual end → banking stepped at every run
+        // boundary (the camber discontinuity). One routine = they can't desync again.
+        const { camberRad } = this._computeCamberArrays(entry.points, entry.arcOrigin, seed)
+        const end = camberRad[camberRad.length - 1]
+        memo.set(runKey, end)
+        return end
     }
 
     // ── D2: One slew-limited camber profile per canonical run (plan 09-21) ───────
@@ -2272,51 +2250,44 @@ export class RoadSystem {
      * @param {string} runKey — canonical run key (e.g. "0:0")
      * @returns {{ arcPos: number[], camberRad: number[] } | null}
      */
-    _buildCamberProfile(runKey) {
-        const netEntry = this._network?.get(runKey)
-        if (!netEntry || !netEntry.points || netEntry.points.length < 2) return null
-
-        const pts = netEntry.points
+    /**
+     * BUG-19: the SINGLE canonical camber computation for a run's centerline points. Arc-length-WINDOWED
+     * curvature (camberArcWindow m — spacing-invariant, the BUG-12 camber fix) → ±6° clamp → forward
+     * slew-rate march from `seed`. Shared by _buildCamberProfile (the profile the carve/ribbon read) AND
+     * _runEndCamber (the cross-run seed source) so the two can NEVER desync. They HAD desynced —
+     * _runEndCamber used a per-adjacent-point finite difference while _buildCamberProfile used the
+     * window — so the seed handed to each run didn't match the predecessor's real end camber and banking
+     * stepped at every continuing run boundary (BUG-19, a regression of BUG-10).
+     *
+     * @param {THREE.Vector3[]} pts — run centerline points (≥ 2)
+     * @param {number} arcOrigin — owner arc origin; arcPos[0] = -arcOrigin (D-16 frame, matches slicer)
+     * @param {number} seed — camber (rad) at sample 0 (predecessor end, or 0 for a free run start)
+     * @returns {{ arcPos: number[], camberRad: number[] }}
+     */
+    _computeCamberArrays(pts, arcOrigin, seed) {
         const N = pts.length
-
         const p = this._params || {}
-        const camberStrength = p.camberStrength ?? 200
-        // roadCamberRate in °/m → rad/m for the slew limiter
+        const camberStrength  = p.camberStrength ?? 200
         const slewRateRadPerM = (p.roadCamberRate ?? 1.5) * (Math.PI / 180)
-        const MAX_CAMBER = 6 * (Math.PI / 180)   // ±6° clamp
+        const MAX_CAMBER      = 6 * (Math.PI / 180)   // ±6° clamp
+        const windowM         = p.camberArcWindow ?? 20  // m — arc-length curvature window
 
-        // Step 1: build arc-position LUT for the polyline.
-        // D-16 Phase 2: owner-origined so camberProfile(arcS) indexes the same frame as the
-        // slice arcS0/arcS1 queryNearest hands back (and _buildRunProfile arcPos).
+        // Arc-position LUT (D-16 Phase 2: owner-origined so arcS indexes the slicer's frame).
         const arcPos = new Array(N)
-        arcPos[0] = -(netEntry.arcOrigin ?? 0)
+        arcPos[0] = -(arcOrigin ?? 0)
         for (let i = 1; i < N; i++) {
             const dx = pts[i].x - pts[i - 1].x, dz = pts[i].z - pts[i - 1].z
             arcPos[i] = arcPos[i - 1] + Math.sqrt(dx * dx + dz * dz)
         }
-        const totalArc = arcPos[N - 1]
+        const totalArc = arcPos[N - 1], arc0 = arcPos[0]
 
-        // Step 3 (BUG-12 camber fix): compute curvature using a CONSISTENT ARC-LENGTH WINDOW
-        // (camberArcWindow metres) instead of the per-adjacent-point finite difference.
-        // Per-point diff is SPACING-SENSITIVE: a 2 m segment + 90° turn gives kappa ≈ 1/2 m
-        // regardless of the 20 m road context → massive camber spikes at uneven-spacing points.
-        // Arc-length window: sample tangent at (s − W/2) and (s + W/2); the direction change
-        // over W metres is spacing-invariant → camber is smooth regardless of point distribution.
-        //
-        // Helper: polyline tangent at arc-length s (binary-search into arcPos LUT).
-        const windowM = p.camberArcWindow ?? 20  // m — arc-length curvature window (D-src Step 3)
-        const arc0 = arcPos[0]   // D-16: owner origin (may be negative); window clamps to it, not 0
+        // Polyline tangent at arc-length s (binary search) — spacing-invariant curvature over windowM.
         const tangentAtArcS = (s) => {
             s = Math.max(arc0, Math.min(totalArc, s))
-            // Binary search for the segment containing s.
             let lo = 0, hi = N - 1
-            while (lo < hi - 1) {
-                const mid = (lo + hi) >> 1
-                if (arcPos[mid] <= s) lo = mid; else hi = mid
-            }
+            while (lo < hi - 1) { const mid = (lo + hi) >> 1; if (arcPos[mid] <= s) lo = mid; else hi = mid }
             const span = arcPos[hi] - arcPos[lo]
             if (span < 1e-9) {
-                // Zero-length segment — use the segment tangent from the nearest non-degenerate pair.
                 for (let k = lo; k < N - 1; k++) {
                     const dx = pts[k + 1].x - pts[k].x, dz = pts[k + 1].z - pts[k].z
                     const len = Math.sqrt(dx * dx + dz * dz)
@@ -2324,45 +2295,38 @@ export class RoadSystem {
                 }
                 return { tx: 1, tz: 0 }
             }
-            // Interpolate direction between pts[lo] and pts[hi].
             const dx = pts[hi].x - pts[lo].x, dz = pts[hi].z - pts[lo].z
             const len = Math.sqrt(dx * dx + dz * dz) || 1e-9
             return { tx: dx / len, tz: dz / len }
         }
 
-        const rawCamber = new Array(N)
-        // P4 (BUG-10): seed from predecessor's end camber instead of hard 0.
-        rawCamber[0] = this._runStartCamber(runKey)
-
+        // Windowed curvature → clamp → forward slew-rate march, seeded at sample 0.
+        const camberRad = new Array(N)
+        camberRad[0] = seed
+        let prev = seed
         for (let i = 1; i < N; i++) {
             const s = arcPos[i]
             const sA = Math.max(arc0, s - windowM / 2)
             const sB = Math.min(totalArc, s + windowM / 2)
-            const tA = tangentAtArcS(sA)
-            const tB = tangentAtArcS(sB)
-            const ds = sB - sA
-            // signedCurvature: |dT/ds| × sign(cross) — spacing-invariant over the window.
-            const kappa = signedCurvature(tA.tx, tA.tz, tB.tx, tB.tz, ds)
-            const raw = camberStrength * kappa
-            rawCamber[i] = Math.max(-MAX_CAMBER, Math.min(MAX_CAMBER, raw))
+            const tA = tangentAtArcS(sA), tB = tangentAtArcS(sB)
+            const kappa = signedCurvature(tA.tx, tA.tz, tB.tx, tB.tz, sB - sA)
+            const raw = Math.max(-MAX_CAMBER, Math.min(MAX_CAMBER, camberStrength * kappa))
+            const maxDelta = slewRateRadPerM * (arcPos[i] - arcPos[i - 1])
+            const delta = raw - prev
+            if      (delta >  maxDelta) prev = prev + maxDelta
+            else if (delta < -maxDelta) prev = prev - maxDelta
+            else                        prev = raw
+            camberRad[i] = prev
         }
-
-        // Step 2: forward-march slew-rate limit.
-        // |camberRad[i] - camberRad[i-1]| ≤ slewRateRadPerM * Δs
-        const camberRad = new Array(N)
-        camberRad[0] = rawCamber[0]
-        for (let i = 1; i < N; i++) {
-            const ds = arcPos[i] - arcPos[i - 1]
-            const maxDelta = slewRateRadPerM * ds
-            const prev = camberRad[i - 1]
-            const target = rawCamber[i]
-            const delta = target - prev
-            if (delta >  maxDelta) camberRad[i] = prev + maxDelta
-            else if (delta < -maxDelta) camberRad[i] = prev - maxDelta
-            else camberRad[i] = target
-        }
-
         return { arcPos, camberRad }
+    }
+
+    _buildCamberProfile(runKey) {
+        const netEntry = this._network?.get(runKey)
+        if (!netEntry || !netEntry.points || netEntry.points.length < 2) return null
+        // BUG-19: build via the shared canonical routine, seeded from the predecessor's end (P4/BUG-10).
+        // _runEndCamber uses the SAME routine, so the seed equals the predecessor profile's real end.
+        return this._computeCamberArrays(netEntry.points, netEntry.arcOrigin, this._runStartCamber(runKey))
     }
 
     // ── P0 — Continuous per-run profile (plan 09-25) ──────────────────────────
