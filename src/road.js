@@ -1255,6 +1255,9 @@ export class RoadSystem {
             wDist: P.wDist, wAlt: P.wAlt, wGrade: P.wGrade, wOver: P.wOver,
             maxGrade: P.maxGrade, wCurv: P.wTurn, wHeur: pp.roadArcHeurWeight ?? 1.5,
             valleyDepthCap: pp.roadValleyDepthCap ?? 40,
+            // QUAL-05 follow-up: fixed-angle palette → large sweeping radii (see ranger.js roadArc*).
+            radii: pp.roadArcRadii, hbins: pp.roadArcHeadingBins, gradeSamples: pp.roadArcGradeSamples,
+            maxNodes: pp.roadArcMaxNodes ?? 300000,
             startHeading: this._protoAnchorHeading(mx, mz),
             goalHeading:  this._protoAnchorHeading(mx + 1, mz),
             emitPrimitives: true,

@@ -207,7 +207,7 @@ export const RANGER_PARAMS = {
   // RELATIVE to the straight anchor→anchor baseline: roadWAlt·max(0, δ + roadValleyDepthCap), where
   // δ = terrainHeight − baseline. Above baseline → avoid (route around ridges); below baseline →
   // seek the low ground (valley spine); below the cap → saturates (bounded, no km wander).
-  roadWAlt: 0.85,       // cost units / m altitude — valley-seeking dominant term (D-09 / D-04)
+  roadWAlt: 1.0,        // cost units/m altitude·m — valley-seeking term, per-metre (×L) (D-09 / D-04)
 
   // roadValleyDepthCap: how far BELOW the anchor baseline still earns valley-seeking reward (m).
   // Higher = stronger pull into deep valleys & more decisive, less squiggly roads (but a touch more
@@ -222,12 +222,17 @@ export const RANGER_PARAMS = {
 
   // roadWGrade: gentle-grade weight — quadratic (grade²) cost. 2× grade → 4× penalty; shapes
   // smooth gentle climbs without forbidding any grade. D-09 default 400.
-  roadWGrade: 400,      // cost units — quadratic grade² penalty (gentle climbs) (D-09)
+  // NOTE (fixed-angle redesign): the router cost is now accrued PER-METRE × arc length, since turn
+  // primitives vary in length (fixed-angle: arc = R·turnAngle). roadWGrade/roadWOver/roadWAlt were
+  // rescaled accordingly (they were per-8m-primitive before). Tuned via a headless radius+grade sweep
+  // on seed 6 + lone-pine to give sweeping radii on mild ground (avg ~130 m, ~50% of road ≥100 m) while
+  // switchbacking where grade forces it.
+  roadWGrade: 100,      // cost units/m — quadratic grade² penalty (gentle climbs); per-metre (×L)
 
   // roadWOver: FINITE over-cap penalty — roadWOver·max(0, grade − maxRoadGrade). Strongly (but
   // never infinitely) discourages exceeding maxRoadGrade; forces switchbacks where the grade
   // would otherwise blow past the target. NEVER Infinity (D-02 REVISED). D-09 default 8000.
-  roadWOver: 8000,      // cost units / unit over-grade — SOFT over-cap penalty (D-02 REVISED)
+  roadWOver: 5000,      // cost units/m over-grade — SOFT over-cap penalty, per-metre (×L) (D-02 REVISED)
 
   // roadWTurn: curvature penalty weight (wCurv) in the arc router. QUAL-05: the per-primitive cost is
   // wCurv·κ²·L (curvature SQUARED — "bending energy"), so for a given heading change the cost is
@@ -262,6 +267,20 @@ export const RANGER_PARAMS = {
                             // sweeps wider → fewer tight loopbacks; the loopbacks that remain read as
                             // natural cloverleaf/on-ramp curves (see feat-road-self-overpass ticket).
   roadArcHeurWeight:   1.5, // weighted-A* heuristic inflation — PERF knob: higher = faster streaming, slightly less optimal routing.
+
+  // ── Fixed-angle motion-primitive palette (QUAL-05 follow-up: large sweeping radii) ──────────────
+  // The router turns a FIXED ANGLE per primitive (one heading bin) at one of these radii, so arc length
+  // scales with radius — a 200 m sweep is representable (a fixed-LENGTH step at 200 m would turn <1° and
+  // be invisible to the lattice). The router prefers the LARGEST radius that fits the heading change +
+  // grade, so mild ground gets sweeping turns (avg ~130 m, ~50% of curved road ≥100 m radius) and tight
+  // radii (down to roadArcHardRadius) appear only where grade forces a switchback. Largest→smallest;
+  // last entry should equal roadArcHardRadius (the min-radius floor). NOTE: with fixed-angle primitives,
+  // COARSER heading bins give LONGER (sweepier) arcs — finer bins (the old anti-zigzag intuition) is not
+  // needed and is slower; 24 bins (15°) is the sweet spot. gradeSamples>1 samples grade along the long
+  // arcs so the search isn't blind to intra-arc steepness.
+  roadArcRadii: [200, 90, 35, 8],  // m — curvature palette (sweep / gentle / medium / hard floor)
+  roadArcHeadingBins: 24,          // heading discretization (15°); one bin turned per turn primitive
+  roadArcGradeSamples: 2,          // grade samples along each primitive arc (≥2 for long sweeps)
 
   // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
   // Retained for the DEFERRED D-01 spur pass (trunk-only ships first). D-01 / RESEARCH A1.

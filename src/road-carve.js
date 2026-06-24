@@ -591,13 +591,24 @@ function dubinsPrimitives(x0, z0, th0, x1, z1, th1, rho) {
  */
 export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     const hardR    = opts.hardR    ?? 8       // m — tightest turn (hardest primitive); ≥ geometric floor
-    const gentleR  = opts.gentleR  ?? 30      // m — gentle turn radius
-    const stepLen  = opts.stepLen  ?? 8       // m — arc length per search primitive
-    const hbins    = opts.hbins    ?? 24      // heading discretization (15°) — fewer states = faster cold route
+    const gentleR  = opts.gentleR  ?? 30      // m — gentle turn radius (fallback palette member)
+    const stepLen  = opts.stepLen  ?? 8       // m — STRAIGHT primitive length (turn primitives are fixed-ANGLE; see below)
+    const hbins    = opts.hbins    ?? 24      // heading discretization — fewer states = faster cold route
     const cell     = opts.cell     ?? 8       // m — position lattice cell
     const margin   = opts.margin   ?? 200     // m — detour room around the a–b bbox (wrap a peak)
     const emitDs   = opts.emitDs   ?? 4       // m — arc emission spacing (≥ this keeps 3-pt circumradius on the floor circle; finer just multiplies downstream slice/ribbon/carve cost)
     const maxNodes = opts.maxNodes ?? 200000  // expansion cap (never hang)
+    // ── FIXED-ANGLE motion primitives (QUAL-05 follow-up: large sweeping radii) ──────────────────────
+    // Each TURN primitive turns a FIXED angle `turnAngle` at radius R, so its arc length = R·turnAngle
+    // (large R → long gentle arc, small R → short tight arc) — and every turn lands exactly one heading
+    // step away, so even a 200 m sweep is representable in the lattice (a fixed-LENGTH step at 200 m would
+    // turn <1° and be invisible). `radii` (largest→smallest) is the curvature palette; the router prefers
+    // the largest radius that fits the heading change + grade, giving sweeping turns on mild ground and
+    // tight switchbacks only where grade forces them. gradeSamples>1 samples grade ALONG the (long) arc
+    // so the search isn't blind to intra-arc steepness. Falls back to the old [gentleR,hardR] behaviour.
+    const radii        = opts.radii        ?? [gentleR, hardR]
+    const turnAngle    = opts.turnAngle    ?? (2 * Math.PI / hbins)   // one heading bin per turn primitive
+    const gradeSamples = opts.gradeSamples ?? 1
     const wDist    = opts.wDist    ?? 1
     const wAlt     = opts.wAlt     ?? 0.85
     const wGrade   = opts.wGrade   ?? 400
@@ -660,7 +671,11 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         return ha + t * (hb - ha)
     }
 
-    const kappas = [0, 1 / gentleR, -1 / gentleR, 1 / hardR, -1 / hardR]
+    // Curvature palette: straight (κ=0) + ± each radius. primLen(k): straight = stepLen; turns = the
+    // fixed-angle arc length R·turnAngle = turnAngle/|k| (so larger radius ⇒ longer, gentler arc).
+    const kappas = [0]
+    for (const R of radii) { kappas.push(1 / R, -1 / R) }
+    const primLen = (k) => (Math.abs(k) < 1e-12) ? stepLen : (turnAngle / Math.abs(k))
 
     const arcEnd = (x, z, th, k, L) => {
         if (Math.abs(k) < 1e-12) return [x + L * Math.cos(th), z + L * Math.sin(th), th]
@@ -730,14 +745,35 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         expanded++
         for (let ki = 0; ki < kappas.length; ki++) {
             const k = kappas[ki]
-            const [nx, nz, nth] = arcEnd(cx, cz, cth, k, stepLen)
+            const L = primLen(k)   // fixed-angle: straight = stepLen, turns = turnAngle/|k| (∝ radius)
+            const [nx, nz, nth] = arcEnd(cx, cz, cth, k, L)
             if (nx < minX || nx > maxX || nz < minZ || nz > maxZ) continue
             const nst = stateOf(nx, nz, nth)
             if (CL[nst] === gen) continue
             const nH = hAt(nx, nz)
-            const grade = Math.abs(nH - csh) / stepLen
-            const ng = cg + wDist * stepLen + wGrade * grade * grade + wOver * Math.max(0, grade - maxGrade)
-                     + wAlt * Math.max(0, nH - baselineAt(nx, nz) + valleyCap) + wCurv * k * k * stepLen
+            // Grade along the primitive. Endpoint-to-endpoint by default; multi-point MAX along the arc
+            // when gradeSamples>1, so a long large-radius arc isn't blind to intra-arc steepness.
+            let grade
+            if (gradeSamples > 1 && Math.abs(k) >= 1e-12) {
+                let prevH = csh, gm = 0
+                const nseg = Math.max(1, Math.min(gradeSamples, Math.ceil(L / 8)))
+                for (let gi = 1; gi <= nseg; gi++) {
+                    const ss = L * gi / nseg
+                    const th2 = cth + k * ss
+                    const gx = cx + (Math.sin(th2) - Math.sin(cth)) / k
+                    const gz = cz - (Math.cos(th2) - Math.cos(cth)) / k
+                    const gh = hAt(gx, gz)
+                    const seg = Math.abs(gh - prevH) / (L / nseg)
+                    if (seg > gm) gm = seg
+                    prevH = gh
+                }
+                grade = gm
+            } else {
+                grade = Math.abs(nH - csh) / L
+            }
+            // Per-METRE accrual × L (primitives now vary in length) so cost is length-consistent.
+            const ng = cg + L * (wDist + wGrade * grade * grade + wOver * Math.max(0, grade - maxGrade)
+                     + wAlt * Math.max(0, nH - baselineAt(nx, nz) + valleyCap) + wCurv * k * k)
             if (GS[nst] !== gen || ng < G[nst]) {
                 G[nst] = ng; GS[nst] = gen
                 SX[nst] = nx; SZ[nst] = nz; STh[nst] = nth; SSh[nst] = nH; SP[nst] = sid; SKi[nst] = ki
@@ -768,7 +804,8 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         if (goalHeading == null) {
             for (let i = 1; i < chain.length; i++) {
                 const par = chain[i - 1]
-                pushArc(SX[par], SZ[par], STh[par], kappas[SKi[chain[i]]], stepLen)
+                const kc = kappas[SKi[chain[i]]]
+                pushArc(SX[par], SZ[par], STh[par], kc, primLen(kc))
             }
             // C0 straight stub to the exact anchor (matches legacy points terminal).
             const ex = SX[endState], ez = SZ[endState]
@@ -777,10 +814,11 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         } else {
             // Drop trailing whole arcs until ≥ goalBlend is freed, then Dubins from the cut pose.
             let acc = 0, cutIdx = chain.length - 1
-            while (cutIdx > 0 && acc < goalBlend) { acc += stepLen; cutIdx-- }
+            while (cutIdx > 0 && acc < goalBlend) { acc += primLen(kappas[SKi[chain[cutIdx]]]); cutIdx-- }
             for (let i = 1; i <= cutIdx; i++) {
                 const par = chain[i - 1]
-                pushArc(SX[par], SZ[par], STh[par], kappas[SKi[chain[i]]], stepLen)
+                const kc = kappas[SKi[chain[i]]]
+                pushArc(SX[par], SZ[par], STh[par], kc, primLen(kc))
             }
             const cs = chain[cutIdx]
             const cx = SX[cs], cz = SZ[cs], cth = STh[cs]
@@ -794,7 +832,8 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     const pts2d = [[ax, az]]
     for (let i = 1; i < chain.length; i++) {
         const par = chain[i - 1]
-        arcPoints(SX[par], SZ[par], STh[par], kappas[SKi[chain[i]]], stepLen, pts2d)
+        const kc = kappas[SKi[chain[i]]]
+        arcPoints(SX[par], SZ[par], STh[par], kc, primLen(kc), pts2d)
     }
     // BUG-12 terminal. Legacy (no goalHeading): pin the exact anchor with a straight stub (C0 only).
     // Heading-continuous: the free search arrives near the anchor at its valley-true (uncontrolled)
