@@ -227,7 +227,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(params, 'roadWAlt',   0, 3,     0.05).name('wAlt (stay low)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWGrade', 0, 2000,  20  ).name('wGrade (gentle)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWOver',  0, 40000, 500 ).name('wOver (soft cap)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadWTurn',  0, 800,   20  ).name('wTurn (straighter)').onChange(fireRoadParam)
+  // QUAL-05: wCurv·κ² curvature penalty — higher = gentler/straighter roads, tight radii only where
+  // grade forces them. Range widened from the old linear-model 0–800 to the κ² scale (default 8000).
+  roadFolder.add(params, 'roadWTurn',  0, 50000, 500 ).name('Curve Penalty (wCurv·κ²)').onChange(fireRoadParam)
   // Valley-seek depth cap (m below the anchor baseline that still rewards descending). Higher =
   // more decisive valley-following / less squiggly (slightly more detour); the cap bounds wander.
   roadFolder.add(params, 'roadValleyDepthCap', 0, 120, 5).name('Valley Depth Cap (m)').onChange(fireRoadParam)

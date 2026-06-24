@@ -379,8 +379,11 @@ function dubinsPrimitives(x0, z0, th0, x1, z1, th1, rho) {
  * dense XZ radius ≥ hardR everywhere except short endpoint stubs. No fillet/relaxation needed.
  *
  * State = (position-cell, heading-bin). Cost mirrors _protoEdgeCost semantics:
- *   wDist·L + wGrade·grade² + wOver·max(0,grade−maxGrade) + wAlt·height + wCurv·|κ|·L
- * The wCurv·|κ|·L term makes the straight primitive (κ=0) cheapest → long near-straights on
+ *   wDist·L + wGrade·grade² + wOver·max(0,grade−maxGrade) + wAlt·height + wCurv·κ²·L
+ * The wCurv·κ²·L term (curvature SQUARED — QUAL-05) makes the straight primitive (κ=0) cheapest and,
+ * integrated over a turn, costs wCurv·Δθ/R → a TIGHTER radius costs MORE for the same heading change,
+ * so the router prefers gentle sweeps and only spends a tight radius where the grade terms make it
+ * worth it (terrain-driven). Long near-straights on
  * gentle ground; the grade terms make tight switchbacks worth their curvature cost up a steep
  * pass → variety is TERRAIN-DRIVEN and deterministic (no Math.random). Heuristic = wDist·‖·→b‖.
  *
@@ -408,7 +411,7 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     const wGrade   = opts.wGrade   ?? 400
     const wOver    = opts.wOver    ?? 8000
     const maxGrade = opts.maxGrade ?? 0.15
-    const wCurv    = opts.wCurv    ?? 120      // curvature penalty (replaces wTurn) → straight-biased
+    const wCurv    = opts.wCurv    ?? 120      // QUAL-05: curvature penalty weight; cost = wCurv·κ²·L (squared → tighter radius costs more). Bare fallback only; the game passes roadWTurn (8000).
     const wHeur    = opts.wHeur    ?? 1.5       // weighted-A* heuristic inflation (>1 = greedier, far
                                                // fewer node expansions → faster streaming; paths stay near-optimal)
     // BUG-12: canonical join headings. The segment STARTS along startHeading (so its DEPARTURE from
@@ -542,7 +545,7 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             const nH = hAt(nx, nz)
             const grade = Math.abs(nH - csh) / stepLen
             const ng = cg + wDist * stepLen + wGrade * grade * grade + wOver * Math.max(0, grade - maxGrade)
-                     + wAlt * Math.max(0, nH - baselineAt(nx, nz) + valleyCap) + wCurv * Math.abs(k) * stepLen
+                     + wAlt * Math.max(0, nH - baselineAt(nx, nz) + valleyCap) + wCurv * k * k * stepLen
             if (GS[nst] !== gen || ng < G[nst]) {
                 G[nst] = ng; GS[nst] = gen
                 SX[nst] = nx; SZ[nst] = nz; STh[nst] = nth; SSh[nst] = nH; SP[nst] = sid; SKi[nst] = ki

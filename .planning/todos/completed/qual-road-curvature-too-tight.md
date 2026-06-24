@@ -1,10 +1,12 @@
 ---
 id: QUAL-05
 type: quality
-status: open
+status: closed
 severity: minor
 opened: 2026-06-24
+closed: 2026-06-24
 source: user-observation
+resolution: "Changed the arc-router curvature penalty from LINEAR wCurv·|κ|·L (which integrates to wCurv·Δθ — radius-blind per turn, so tight never cost more → roads turned tight everywhere) to QUADRATIC wCurv·κ²·L (integrates to wCurv·Δθ/R → a tighter radius costs MORE for the same heading change). The unchanged grade/altitude terms then let tight radii emerge only where steep terrain makes them worth it. Re-mirrored the ROUTE SYNC region into the terrain WORKER_SOURCE (route-worker-sync gate green). Default roadWTurn 120→8000, picked by a headless radius-distribution sweep (ranger gentle=75/hard=8 primitives): tight (<20 m) arc-length 48%→8%, avg radius 24 m→53 m, 76% straight, min radius still the 8 m hard floor (tight never disappears). Debug slider retuned: 'Curve Penalty (wCurv·κ²)', range 0–50000. 10/10 gates green (min-radius/invariance unaffected — κ² changes selection cost only, not the primitive radii or determinism). Secondary levers from the ticket left for follow-up: the Dubins terminal is still pinned at hardR=8 (≈5% irreducible tight at every anchor — fix direction #2), and no intermediate radius primitive was added (#3)."
 ---
 
 # QUAL-05: Roads turn too tight everywhere — weight smaller radii as more expensive (gentle by default, tight emerges on steep terrain)

@@ -229,9 +229,15 @@ export const RANGER_PARAMS = {
   // would otherwise blow past the target. NEVER Infinity (D-02 REVISED). D-09 default 8000.
   roadWOver: 8000,      // cost units / unit over-grade — SOFT over-cap penalty (D-02 REVISED)
 
-  // roadWTurn: per-45° turn penalty — roadWTurn·(Δheading/45°). Charges each direction change so
-  // the trunk runs long straights and switchbacks ONLY where grade truly forces it. D-09 default 120.
-  roadWTurn: 120,       // cost units / 45° heading change — straight/switchback shaping (D-09)
+  // roadWTurn: curvature penalty weight (wCurv) in the arc router. QUAL-05: the per-primitive cost is
+  // wCurv·κ²·L (curvature SQUARED — "bending energy"), so for a given heading change the cost is
+  // wCurv·Δθ/R → a TIGHTER radius costs more. This biases the route to gentle sweeps on mild ground and
+  // lets tight radii (down to roadArcHardRadius) emerge ONLY where grade/altitude savings outweigh the
+  // penalty (i.e. where the terrain is genuinely steep). Was 120 under the old LINEAR (wCurv·|κ|·L)
+  // model, which was radius-blind per turn → roads turned tight everywhere. 8000 picked by a headless
+  // radius-distribution sweep: tight (<20 m) arc-length 48%→8%, avg radius 24 m→53 m, min radius still
+  // the hard floor (8 m). Higher = gentler/straighter; live-tunable via "Curve Penalty (wCurv)".
+  roadWTurn: 8000,      // cost units — wCurv·κ²·L curvature penalty (QUAL-05); higher = gentler roads
 
   // roadMinTurnRadius: D0 — minimum turn radius (m) for road centerlines. _filletMinRadius inserts a
   // circular arc of this radius wherever the implied corner radius is tighter, rounding (not excising)
