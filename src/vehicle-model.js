@@ -26,22 +26,11 @@
 
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
 
-// ── Imported model (low-poly glTF) ───────────────────────────────────────────
-// When present, this GLB replaces the primitive truck. The primitives stay as an
-// automatic fallback if the load fails (offline, 404, parse error).
-//   PAINT_MATERIAL — the material that is the body paint (recolorable).
-//                    M_0042_Sienna is the saturated-blue paint coat.
-//   MODEL_YAW      — extra Y rotation if the model faces the wrong way (game forward = -Z).
-const MODEL_GLB          = 'assets/models/hilux.glb'
-const PAINT_MATERIAL     = 'M_0042_Sienna'
-const TARGET_LENGTH      = 4.6        // m — scale so the model's longest horizontal axis = this
-const BODY_SCALE         = 1.065      // extra body-only scale multiplier (wheels are sized separately)
-const MODEL_YAW          = 0          // rad — flip to Math.PI if the truck faces backward
+// The imported GLB (described by a spec from data/vehicle-models.js) replaces the primitive truck.
+// The primitives stay as an automatic fallback if the load fails (offline, 404, parse error).
 const DEFAULT_BODY_COLOR = 0x2f6da4
-// Fine alignment of the body shell relative to the procedural wheels (after auto-placement).
-const BODY_SHIFT_REAR    = 0.318      // m — shift body rearward (+Z)
-const BODY_SHIFT_DOWN    = 0.21       // m — downward nudge to seat the body on the wheels
 
 // ── Palette ────────────────────────────────────────────────────────────────
 const COLOR_BODY    = 0x2f6da4   // body panels (medium blue)
@@ -59,12 +48,41 @@ const REV_OFF   = 0x222222
 
 const _box = (w, h, d) => new THREE.BoxGeometry(w, h, d)
 
+// Split a mesh's triangles into "front" + "rear" geometry groups by triangle-centroid Z
+// (model-local), then give the rear group its own cloned material. Used to isolate the white
+// reverse-lens faces (which share one material with white faces across the whole truck) so only
+// the rear lens can be lit. Returns the rear material, or null if no rear triangles were found.
+function splitRearGroup (mesh, rearZ) {
+  const geom = mesh.geometry
+  const pos = geom.attributes.position
+  const index = geom.index
+  const idxAt = (k) => (index ? index.getX(k) : k)
+  const triCount = (index ? index.count : pos.count) / 3
+  const front = [], rear = []
+  for (let t = 0; t < triCount; t++) {
+    const a = idxAt(t * 3), b = idxAt(t * 3 + 1), c = idxAt(t * 3 + 2)
+    const zc = (pos.getZ(a) + pos.getZ(b) + pos.getZ(c)) / 3
+    ;(zc > rearZ ? rear : front).push(a, b, c)
+  }
+  if (rear.length === 0) return null
+  geom.setIndex(front.concat(rear))
+  geom.clearGroups()
+  geom.addGroup(0, front.length, 0)
+  geom.addGroup(front.length, rear.length, 1)
+  const rearMat = mesh.material.clone()
+  rearMat.emissive = new THREE.Color(0x000000)
+  mesh.material = [mesh.material, rearMat]   // group 0 → original, group 1 → driven rear lens
+  return rearMat
+}
+
 /**
  * Build the vehicle model and attach it to `scene`.
  * @param {THREE.Scene} scene
  * @param {object} params  RANGER_PARAMS (read live for slider-driven geometry)
+ * @param {object} [spec]  visual spec from data/vehicle-models.js (model file, alignment, lights).
+ *                         Defaults to the project default vehicle; pass another to swap models.
  */
-export function createVehicleModel (scene, params) {
+export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL) {
   // carGroup: parent Object3D for body + wheels — wheels inherit body pitch/roll (Bug 5 fix).
   // syncMeshesToState drives carGroup.position and carGroup.quaternion; children follow automatically.
   const carGroup = new THREE.Object3D()
@@ -220,6 +238,8 @@ export function createVehicleModel (scene, params) {
   // transform still drives the model). paintMaterials are the OBJ's recolorable coats.
   let modelActive = false
   const paintMaterials = []
+  const modelTailMats = []          // GLB rear-lamp materials, driven as tail/brake lights
+  const modelReverseMats = []       // split-out rear white-lens materials, driven on reverse
   let pendingBodyColor = DEFAULT_BODY_COLOR
 
   // ── Mesh sync ──────────────────────────────────────────────────────────────
@@ -287,10 +307,6 @@ export function createVehicleModel (scene, params) {
     }
 
     // ── Light response ──────────────────────────────────────────────────────
-    // Skip when the imported model is active — its light faces are static (the primitive
-    // emissive panels are hidden). The procedural wheels above still animate.
-    if (modelActive) return
-
     // Longitudinal velocity along the car's forward axis (-Z local). Negative = reversing.
     _fwd.set(0, 0, -1).applyQuaternion(state.quaternion)
     const vLong = state.velocity ? state.velocity.dot(_fwd) : 0
@@ -306,6 +322,24 @@ export function createVehicleModel (scene, params) {
       (vLong < -0.4 && throttle > 0.1)
     const reversing = vLong < -0.4
 
+    if (modelActive) {
+      // Imported model: drive the GLB rear-lamp material's emissive. Bright red on brake,
+      // a dim glow as a running light when headlights are on, otherwise dark (the lens base
+      // color stays red, so it still reads as a taillight when unlit).
+      const tailEmis = braking ? TAIL_BRK : (headlightsOn ? TAIL_DIM : 0x000000)
+      for (const m of modelTailMats) {
+        m.emissive.setHex(tailEmis)
+        m.emissiveIntensity = braking ? 1.0 : 0.6
+      }
+      // Reverse lights: white lens glows when actually moving backward.
+      for (const m of modelReverseMats) {
+        m.emissive.setHex(reversing ? REV_ON : 0x000000)
+        m.emissiveIntensity = 1.0
+      }
+      return
+    }
+
+    // Primitive-truck fallback: emissive panels swap color directly.
     const tailHex = braking ? TAIL_BRK : (headlightsOn ? TAIL_DIM : TAIL_OFF)
     for (const m of taillightMats) {
       m.emissive.setHex(tailHex)
@@ -327,33 +361,44 @@ export function createVehicleModel (scene, params) {
 
   // ── Load the imported GLB (replaces the primitive truck on success) ─────────
   // Async + fault-tolerant: any failure leaves the primitive truck visible.
-  new GLTFLoader().load(MODEL_GLB, (gltf) => {
+  new GLTFLoader().load(spec.url, (gltf) => {
     const root = gltf.scene
     // Orient first (game forward = -Z), then measure for auto scale + ground plant.
-    root.rotation.y = MODEL_YAW
+    root.rotation.y = spec.yaw || 0
     root.updateMatrixWorld(true)
     const box = new THREE.Box3().setFromObject(root)   // post-rotation, pre-scale (scale=1)
     const size = new THREE.Vector3(); box.getSize(size)
     const center = new THREE.Vector3(); box.getCenter(center)
-    const s = (TARGET_LENGTH / Math.max(size.x, size.z)) * BODY_SCALE // longest axis = truck length, ×body scale
+    const s = (spec.targetLength / Math.max(size.x, size.z)) * (spec.bodyScale || 1) // longest axis = truck length, ×body scale
     root.scale.setScalar(s)
     // Center on the CG in X/Z; plant the model's bottom on the ground plane (y = -cgHeight).
-    // Then apply the manual fine-alignment offsets (rearward + down) relative to the wheels.
+    // Then apply the spec's fine-alignment offsets (rearward + down) relative to the wheels.
     root.position.set(
       -center.x * s,
-      -params.cgHeight - box.min.y * s - BODY_SHIFT_DOWN,
-      -center.z * s + BODY_SHIFT_REAR
+      -params.cgHeight - box.min.y * s - (spec.shiftDown || 0),
+      -center.z * s + (spec.shiftRear || 0)
     )
 
+    const lensMeshes = []
     root.traverse((o) => {
       if (!o.isMesh) return
       o.castShadow = true
       const mats = Array.isArray(o.material) ? o.material : [o.material]
       for (const m of mats) {
-        if (m && typeof m.name === 'string' && m.name.includes(PAINT_MATERIAL)) paintMaterials.push(m)
+        if (!m || typeof m.name !== 'string') continue
+        if (spec.paint && m.name.includes(spec.paint)) paintMaterials.push(m)
+        if (spec.tail && m.name.includes(spec.tail) && !modelTailMats.includes(m)) modelTailMats.push(m)
+        if (spec.reverse && m.name.includes(spec.reverse.material)) lensMeshes.push(o)
       }
     })
     setBodyColor(pendingBodyColor)
+
+    // Reverse lights: split the rear white-lens faces off the shared lens mesh so only they
+    // light up on reverse (the rest of that material stays plain white).
+    for (const m of lensMeshes) {
+      const rm = splitRearGroup(m, spec.reverse.rearZ)
+      if (rm) modelReverseMats.push(rm)
+    }
 
     carGroup.add(root)
     bodyGroup.visible = false               // hide primitive shell (body + emissive light panels)
