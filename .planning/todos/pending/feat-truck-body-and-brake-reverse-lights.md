@@ -3,7 +3,10 @@ id: FEAT-04
 type: feature
 status: open
 opened: 2026-06-10
-updated: 2026-06-11
+updated: 2026-06-24
+resolution_status: drafted-pending-merge
+resolution_branch: visual-model
+followup: FEAT-04a
 source: scribe-session
 absorbs: 999.1-truck-body-styles-and-functional-brake-reverse-lights
 note: "Merged with the retired ROADMAP backlog phase 999.1 (2026-06-11) — this todo is the single source of intent."
@@ -43,3 +46,41 @@ ROADMAP backlog phase `999.1`. Three threads:
 - Reverse detection: project world velocity onto the body's forward axis; < 0 ⇒ rolling backward.
 - Emissive material toggle (set `material.emissiveIntensity` / `emissive` on the light meshes) keyed to
   those states each frame in the mesh-sync path.
+
+## Resolution (2026-06-24, branch `visual-model`)
+
+Delivered on the `visual-model` branch (base commit `0ee74ad` + follow-up lights/multi-vehicle work).
+The entire vehicle visual was extracted out of `main.js` into a dedicated, self-contained module so
+it no longer collides with terrain/road code.
+
+**1. Truck body model — DONE.** The `BoxGeometry` body is gone from `main.js`. `src/vehicle-model.js`
+now loads a low-poly **Toyota Hilux 97 GLB** (`assets/models/hilux.glb`, CC-BY Muhammad Reyhan) as the
+body shell — auto scale / center / ground-plant, fine-alignment offsets, and a debug-panel **body-color
+picker** that recolors the paint material live. A hand-built primitive truck remains as an automatic
+fallback if the GLB fails to load.
+
+**2. Swappable body-style architecture — DONE.** Per-vehicle visual data lives in a new registry,
+`data/vehicle-models.js` (kept separate from the physics presets in `data/vehicles.js`). The loader is
+generic: `createVehicleModel(scene, params, spec)` consumes any spec `{ url, targetLength, bodyScale,
+yaw, shiftRear, shiftDown, paint, tail, reverse, ... }`. Adding a vehicle is data-only — drop a `.glb`
+in `assets/models/`, add an entry, pass the spec. Light fields are optional (a model lacking a tail/
+reverse material simply skips that light). **Physics rig is fully decoupled** — the contact model
+(`bodyContactRadius` / contact points / wheel hubs) is param-driven and untouched; the GLB is cosmetic.
+*Partial:* runtime model-switching (tying the visual swap to the physics-vehicle dropdown) still needs a
+small reload hook — the architecture supports it (pass a different spec); only the wiring is outstanding.
+Tracked separately as **FEAT-04a**.
+
+**3. Functional lights — DONE.** Driven live each frame in the mesh-sync path off vehicle state:
+  - **Brake lights** — the GLB rear lamp (`Lisanne_Bandana`) glows bright red. Direction-aware so it
+    means *deceleration*, not just the key: brake (`S`) while moving forward, throttle (`W`) while
+    reversing. Dim red running-light glow when headlights are on (`L` toggle).
+  - **Reverse lights** — the white rear lens (split off the shared `FrontColor` material by triangle
+    position so only the rear faces light) glows white when world velocity projected on the forward
+    axis is backward (`vLong < -0.4`).
+  - Wheels are procedural (spin / steer / suspension travel); the GLB's own static wheels are stripped.
+
+**Files:** `src/vehicle-model.js` (new), `data/vehicle-models.js` (new), `assets/models/hilux.glb` +
+`CREDITS.md` (new), `src/main.js` (factory call + color-picker hook), `src/version.js` (build marker).
+
+**Status:** complete on `visual-model`; **pending merge into `main`** once PERF-03 reaches a commit
+boundary (conflict surface is tiny — the `version.js` marker line plus a few separated `main.js` hunks).

@@ -32,6 +32,7 @@ let _firstFrameMarked = false  // TEMP: mark the first animate frame to isolate 
 import { RoadMeshSystem } from './road-mesh.js'
 import { DustSystem } from './dust.js'
 import { parseWorldSeed, seedFor } from './seed.js'
+import { createVehicleModel } from './vehicle-model.js'
 
 // World seed — parsed from URL ?seed= parameter, defaulting to 'lone-pine'.
 // Plan 04: changed to `let` so debug panel seed field can mutate it (SEED-04).
@@ -464,149 +465,15 @@ ground.rotation.x = -Math.PI / 2
 ground.receiveShadow = true
 scene.add(ground)
 
-// carGroup: parent Object3D for body + wheels — wheels inherit body pitch/roll (Bug 5 fix).
-// syncMeshesToState drives carGroup.position and carGroup.quaternion; children follow automatically.
-const carGroup = new THREE.Object3D()
-scene.add(carGroup)
-
 // Wheel dust trails (src/dust.js). Self-contained sprite-pool puffs tinted to the dirt
 // we're driving on; driven each render frame from vehicleState (see loop). Construct here
 // since it only needs the scene + params — no dependency on terrain/road systems.
 const dustSystem = new DustSystem(scene, RANGER_PARAMS)
 
-// ── Vehicle meshes ───────────────────────────────────────────────────────────
-// Body: BoxGeometry (width=1.8m, height=0.8m, length=4.6m)
-// Body is at carGroup local origin (0,0,0) — carGroup center IS the CG.
-const bodyMesh = new THREE.Mesh(
-  new THREE.BoxGeometry(1.66, 0.8, 4.6),
-  new THREE.MeshStandardMaterial({ color: 0x336699 })
-)
-bodyMesh.castShadow = true
-carGroup.add(bodyMesh)
-
-// Wheels: CylinderGeometry rotated 90° around Z (Pitfall 5 — must do this BEFORE
-// instantiating meshes or the spin axis will be wrong).
-// Cylinder default = height along Y. After rotateZ(PI/2), height is along X (lateral).
-// Wheels then spin around their local X axis, which is the correct lateral roll axis.
-const wheelGeom = new THREE.CylinderGeometry(
-  RANGER_PARAMS.wheelRadius,  // radiusTop
-  RANGER_PARAMS.wheelRadius,  // radiusBottom
-  0.25,                       // height (tire width)
-  16                          // radialSegments
-)
-wheelGeom.rotateZ(Math.PI / 2)  // align spin axis — MUST happen before mesh creation
-
-const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 })
-
-// Local-frame offsets for wheel center positions relative to vehicle CG.
-// Car forward = -Z (GLOSSARY.md §Coordinate System).
-// Front axle is forward (more negative Z); rear axle is behind (more positive Z).
-//
-// Longitudinal offset from CG:
-//   front wheels: +wheelbase * weightRear in -Z direction = -(wheelbase * weightRear)
-//   rear wheels:  +wheelbase * weightFront in +Z direction = +(wheelbase * weightFront)
-//
-// Lateral offset (X):
-//   left wheels: -trackFront/2 or -trackRear/2
-//   right wheels: +trackFront/2 or +trackRear/2
-//
-// Vertical: wheel center at y = wheelRadius (tire sits on ground)
-const L = RANGER_PARAMS.wheelbase
-const wF = RANGER_PARAMS.weightFront
-const wR = RANGER_PARAMS.weightRear
-const tF = RANGER_PARAMS.trackFront / 2
-const tR = RANGER_PARAMS.trackRear / 2
-const wr = RANGER_PARAMS.wheelRadius
-
-// Wheel local offsets in carGroup local space (body-relative), indexed 0=FL, 1=FR, 2=RL, 3=RR.
-// Y offset: wheel center is wheelRadius above ground; CG is cgHeight above ground.
-// So wheel center Y relative to CG = wr - cgHeight (negative — wheels are below CG).
-// wheelRadius=0.368, cgHeight=0.55 → Y offset = 0.368 - 0.55 = -0.182 m
-const wheelLocalOffsets = [
-  new THREE.Vector3(-tF, wr - RANGER_PARAMS.cgHeight, -(L * wR)),  // 0: FL — left, front
-  new THREE.Vector3( tF, wr - RANGER_PARAMS.cgHeight, -(L * wR)),  // 1: FR — right, front
-  new THREE.Vector3(-tR, wr - RANGER_PARAMS.cgHeight,  (L * wF)),  // 2: RL — left, rear
-  new THREE.Vector3( tR, wr - RANGER_PARAMS.cgHeight,  (L * wF)),  // 3: RR — right, rear
-]
-
-// NOTE (Phase 4.1): hubYRest removed. Wheel mesh position is now derived from strutComp via
-// full world-space hub position inverse-transformed into body-local space (D-07).
-// syncMeshesToState below handles this correctly for any body orientation.
-
-const wheelMeshes = wheelLocalOffsets.map((offset, i) => {
-  const mesh = new THREE.Mesh(wheelGeom, wheelMat)
-  // Wheels are children of carGroup — position is in carGroup local space (body-relative).
-  // carGroup carries world position and orientation; wheels follow automatically (Bug 5 fix).
-  mesh.position.set(offset.x, offset.y, offset.z)
-  mesh.castShadow = true
-  carGroup.add(mesh)
-  return mesh
-})
-
-// ── Mesh sync ────────────────────────────────────────────────────────────────
-// Called every render frame to update mesh transforms from vehicleState.
-// carGroup carries world position and quaternion — body and wheels inherit it (Bug 5 fix).
-// Do NOT use Euler rotation for body orientation (Pitfall 3 / CLAUDE.md).
-function syncMeshesToState (state) {
-  // Sync carGroup transform — body and wheels inherit this automatically (Bug 5 fix).
-  carGroup.position.copy(state.position)
-  carGroup.quaternion.copy(state.quaternion)  // quaternion-only rotation, never Euler (GLOSSARY.md)
-
-  // Per-wheel: spin, steer, and hub-Y visual travel in carGroup local space.
-  // wheelLocalOffsets[i] provides rest position; Y is overridden each frame by hub deviation.
-  for (let i = 0; i < 4; i++) {
-    // Spin quaternion: wheel rolling axis is X (geometry was rotateZ(PI/2) at creation).
-    const spinQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), state.wheelAngles[i])
-
-    if (i < 2) {
-      // Front wheels: combine steer (Y) then spin (X). steerQ.multiply(spinQ) = steerQ * spinQ
-      // meaning spinQ is applied first, then steerQ — spin around axle, then yaw the whole assembly.
-      const steer  = state.wheelSteerAngles ? state.wheelSteerAngles[i] : state.steerAngle
-      const steerQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), steer)
-      wheelMeshes[i].quaternion.copy(steerQ).multiply(spinQ)
-    } else {
-      wheelMeshes[i].quaternion.copy(spinQ)
-    }
-
-    // D-07 (Phase 4.1): Derive full hub world position from strutComp, inverse-transform to body-local.
-    // Replaces the broken world-ΔY approximation with exact body-space hub position for any orientation.
-    {
-      const isFrontMesh = i < 2
-      const L_S_mesh = isFrontMesh
-        ? RANGER_PARAMS.suspensionRestLengthFront
-        : RANGER_PARAMS.suspensionRestLengthRear
-      const strutComp_i = state.strutComp?.[i] ?? 0
-      const strutLen_i  = L_S_mesh - strutComp_i
-      const carQ = state.quaternion
-      const body_down_mesh = new THREE.Vector3(0, -1, 0).applyQuaternion(carQ)
-      // Mount world position: same local offset as suspension.js, rotated into world space
-      const mountLocal = wheelLocalOffsets[i].clone()
-      // BUG-05: wheelLocalOffsets bakes in (wr − cgHeight) without suspensionBodyOffset. Add it live
-      // (read from RANGER_PARAMS so slider drags take effect) so the visual hub mount tracks the
-      // physics hub (getWheelPosition, which now includes the offset). Without this, positive offset
-      // renders the wheel below the physics hub — it visibly sinks into the ground; negative floats it.
-      mountLocal.y += isFrontMesh
-        ? (RANGER_PARAMS.suspensionBodyOffsetFront || 0)
-        : (RANGER_PARAMS.suspensionBodyOffsetRear || 0)
-      const rMount_mesh = mountLocal.clone().applyQuaternion(carQ)
-      const mountWorld = new THREE.Vector3(
-        state.position.x + rMount_mesh.x,
-        state.position.y + rMount_mesh.y,
-        state.position.z + rMount_mesh.z
-      )
-      const hubWorld = new THREE.Vector3(
-        mountWorld.x + strutLen_i * body_down_mesh.x,
-        mountWorld.y + strutLen_i * body_down_mesh.y,
-        mountWorld.z + strutLen_i * body_down_mesh.z
-      )
-      // Inverse-transform into carGroup local space (carGroup IS the body):
-      const hubLocal = hubWorld.clone()
-        .sub(state.position)
-        .applyQuaternion(carQ.clone().invert())
-      wheelMeshes[i].position.copy(hubLocal)
-    }
-  }
-}
+// Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
+// src/vehicle-model.js. carGroup/bodyMesh/wheelMeshes are returned for back-compat;
+// syncMeshesToState(state) is called once per render frame below.
+const { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor } = createVehicleModel(scene, RANGER_PARAMS)
 
 // ── Terrain + ramp ────────────────────────────────────────────────────────────
 // M1-13: terrain query. Phase 6 replaces body, signature unchanged.
@@ -905,6 +772,10 @@ const _gui = initDebug(RANGER_PARAMS, {
     }
   },
 }, { initialSeed: _urlSeed ?? 'lone-pine' })
+
+// Body paint color picker (visual-model) — recolors the imported truck's paint coat live.
+const _bodyColor = { color: '#2f6da4' }
+_gui.addColor(_bodyColor, 'color').name('Body color').onChange((v) => setBodyColor(v))
 
 // ── TerrainSystem (Phase 6 / 7) ──────────────────────────────────────────────
 // Instantiated after scene exists. Removes flat ground mesh to prevent Z-fighting.
