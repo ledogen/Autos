@@ -1,10 +1,12 @@
 ---
 id: PERF-02
 type: perf
-status: open
+status: closed
 opened: 2026-06-21
+closed: 2026-06-24
 severity: major
 source: user-observation
+resolution: "Fixed in terrain.js: the request loop now orders missing chunks NEAREST-FIRST (and budgets dispatch via MAX_REQUESTS_PER_FRAME); _flushPendingQueue drains nearest-first too, so the area under/ahead of the truck always builds before the periphery. Added RING_KEEP_MARGIN hysteresis (dispose only beyond ring+1) to kill boundary dispose↔rebuild thrash, and replaced the fixed MAX_BUILDS_PER_FRAME count with a BUILD_MS_BUDGET time-slice. All 9 gates green; steady-state smoothness pending an in-browser confirm."
 ---
 
 # PERF-02: Frame-drop hitch when new terrain chunks stream in (row-at-once, uncapped main-thread carve)

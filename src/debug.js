@@ -136,6 +136,14 @@ export function initDebug (params, callbacks = {}, options = {}) {
     if (typeof callbacks.setRampVisible === 'function') callbacks.setRampVisible(v)
   })
 
+  // Draw distance (PERF-03): preset dropdown — each tier sets terrain ring radius + road stream
+  // radius + fog density together (callbacks.applyDrawDistance in main.js). Default 'Normal' == the
+  // current shipped behaviour, so this only changes anything when the user picks another tier.
+  const _ddState = { drawDistance: 'Normal' }
+  terrainFolder.add(_ddState, 'drawDistance', ['Near', 'Normal', 'Far', 'Ultra']).name('Draw Distance').onChange(v => {
+    if (typeof callbacks.applyDrawDistance === 'function') callbacks.applyDrawDistance(v)
+  })
+
   // World Seed text field (D-13 / SEED-04) — lil-gui renders a plain <input type="text">
   // automatically when the property value is a string. Initialized from the ACTIVE seed
   // (options.initialSeed, derived from ?seed= in main.js) so the field never misreports the

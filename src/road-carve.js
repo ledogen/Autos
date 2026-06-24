@@ -453,6 +453,12 @@ export function earClip(polygon) {
 //  them — do NOT copy them into terrain.js WORKER_SOURCE.
 // ──────────────────────────────────────────────────────────────────────────────
 
+// ROUTE SYNC START — everything from here to "ROUTE SYNC END" is copied VERBATIM into the terrain
+// Worker (WORKER_SOURCE in src/terrain.js) so road routing can run off the main thread (PERF-03
+// Workstream A). Same discipline as CARVE SYNC: edit the canonical original HERE and mirror it there
+// in the same commit. The route-worker-sync.mjs gate asserts the two regions are byte-identical
+// (modulo the leading `export ` on arcPrimitiveConnect, which the Worker copy drops). Determinism of
+// the pre-warmed route cache vs the synchronous fallback depends on this staying in sync.
 // ── arcPrimitiveConnect search scratch (module-scope, reused + generation-stamped) ──────────────
 // The cold network stream routes ~80 connections at once (spawn lag). Per-call Map/Set/object-per-node
 // allocation + hashing + GC dominated that. These typed arrays are indexed by state id and allocated
@@ -824,3 +830,4 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     }
     return out
 }
+// ROUTE SYNC END

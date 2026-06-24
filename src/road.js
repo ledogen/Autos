@@ -271,6 +271,12 @@ const USE_CENTERLINE_RIBBON = true
 // only how many connections land in the streamed network changes.
 const CANONICAL_HALF_WIDTH = 2  // macro-column cells each side of the center column (±512 m)
 
+// ── Off-thread route pre-warm tuning (PERF-03 Workstream A) ───────────────────
+const PREWARM_MARGIN    = 2   // extra macro-cols/rows beyond the streamer band to route AHEAD of need
+const PREWARM_MAX_JOBS  = 4   // route jobs dispatched per warmRoutes() call — trickle, so they interleave
+                              // with terrain heightmap generation on the shared Worker (no head-of-line stall)
+const PREWARM_WARM_MOVE = 32  // m — only rescan/redispatch the pre-warm band after the center moves this far
+
 // ── Module-scope pure height function ─────────────────────────────────────────
 /**
  * Raw coarse terrain height at world (wx, wz), pre-amplitude.
@@ -1029,6 +1035,19 @@ export class RoadSystem {
         // Cleared on re-stream (same site as this._tiles.clear()).
         this._junctions = new Map()
         this._junctionsFrom = null   // identity guard for _detectJunctions memoization
+
+        // ── Off-thread route pre-warming (PERF-03 Workstream A) ──────────────────
+        // warmRoutes() asks a Worker to route the connections the streamer will soon need and posts
+        // the resulting primitives back; ingestRoutedConnections() drops them into _proto.cls. The
+        // synchronous _streamNetwork then finds cache HITS instead of paying the 12–21 ms arc search
+        // on a macro-cell crossing — the routing hitch moves off the main thread. If no dispatcher is
+        // set (headless gates, or before wiring) routing stays fully synchronous: identical behaviour,
+        // so the invariance/restream gates are untouched. _routeEpoch tags each dispatch so a reply
+        // from before a re-route (cls cleared) is discarded as stale.
+        this._routeDispatch  = null        // (jobs, epoch) => post to Worker; set via setRouteDispatcher
+        this._pendingRoutes  = new Set()   // cls keys requested from the Worker, awaiting a reply
+        this._routeEpoch     = 0           // bumped on every _invalidateProto (param/route change)
+        this._lastWarmCenter = null        // throttle: only rescan the pre-warm band after moving
     }
 
     // (08-07) The proto-only viz API (setProtoEnabled / setProtoParam / setProtoRadius / updateProto)
@@ -1080,6 +1099,85 @@ export class RoadSystem {
         // Param changes affect routing results → drop the per-connection centerline cache
         // (a pure fn of params, so the next miss recomputes the new value).
         if (this._proto.cls) this._proto.cls.clear()
+        // Off-thread routing (PERF-03 WS-A): the cleared cache must be re-warmable, and any Worker
+        // reply still in flight was routed against the OLD params → bump the epoch so it's discarded
+        // as stale, and clear pending so the new params' connections get re-dispatched.
+        this._routeEpoch++
+        this._pendingRoutes.clear()
+        this._lastWarmCenter = null   // force the next warmRoutes() to rescan against the new params
+    }
+
+    // ── Off-thread route pre-warming API (PERF-03 Workstream A) ──────────────────
+    /**
+     * Wire the Worker route dispatcher. `fn(jobs, epoch)` posts the jobs to a Worker that runs
+     * arcPrimitiveConnect and replies via ingestRoutedConnections(). main.js routes this through the
+     * terrain Worker (which already has the seeded coarse-noise the routes are computed against).
+     * Until set, routing is fully synchronous (headless gates never set it → unchanged behaviour).
+     */
+    setRouteDispatcher(fn) { this._routeDispatch = fn }
+
+    /** Current route epoch — dispatch tags carry it so stale (pre-re-route) replies are dropped. */
+    routeEpoch() { return this._routeEpoch }
+
+    /**
+     * Pre-warm the per-connection centerline cache around `center` by routing the connections the
+     * streamer will soon need ON THE WORKER, ahead of need. By the time _streamNetwork's band reaches
+     * a connection, it's already in _proto.cls → cache hit, no synchronous arc search → no macro-cell
+     * crossing hitch. No-op without a dispatcher (gates / pre-wiring). Trickles ≤ PREWARM_MAX_JOBS
+     * jobs per call and only rescans after the center moves PREWARM_WARM_MOVE m, so it can't flood the
+     * shared Worker. Throttle is bypassed right after a re-route (_lastWarmCenter nulled).
+     * @param {THREE.Vector3} center — same stream center the terrain + road update use
+     */
+    warmRoutes(center) {
+        if (!this._routeDispatch) return
+        if (this._lastWarmCenter && center.distanceTo(this._lastWarmCenter) < PREWARM_WARM_MOVE) return
+        this._refreshParams()   // route against the CURRENT slider values (same as the next _streamNetwork)
+
+        const R = this._proto.radius
+        const center_mx = Math.floor(center.x / PROTO_ANCHOR_SPACING)
+        const mx0 = center_mx - CANONICAL_HALF_WIDTH - PREWARM_MARGIN
+        const mx1 = center_mx + CANONICAL_HALF_WIDTH + PREWARM_MARGIN
+        const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING) - PREWARM_MARGIN
+        const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING) + PREWARM_MARGIN
+
+        const jobs = []
+        // Nearest macro-row first so the connections under/ahead of the view warm before the fringe.
+        const center_mz = Math.floor(center.z / PROTO_ANCHOR_SPACING)
+        const rows = []
+        for (let mz = mz0; mz <= mz1; mz++) rows.push(mz)
+        rows.sort((a, b) => Math.abs(a - center_mz) - Math.abs(b - center_mz))
+        for (const mz of rows) {
+            for (let mx = mx0; mx <= mx1; mx++) {
+                if (jobs.length >= PREWARM_MAX_JOBS) break
+                const spec = this._connRouteSpec(mx, mz)
+                if (this._proto.cls?.has(spec.key) || this._pendingRoutes.has(spec.key)) continue
+                this._pendingRoutes.add(spec.key)
+                jobs.push({ key: spec.key, ax: spec.ax, az: spec.az, bx: spec.bx, bz: spec.bz, opts: spec.opts })
+            }
+            if (jobs.length >= PREWARM_MAX_JOBS) break
+        }
+        // Only advance the throttle anchor once the visible band is fully warmed/pending — otherwise a
+        // single move could leave fringe connections un-dispatched until the NEXT PREWARM_WARM_MOVE.
+        if (jobs.length < PREWARM_MAX_JOBS) this._lastWarmCenter = center.clone()
+        if (jobs.length > 0) this._routeDispatch(jobs, this._routeEpoch)
+    }
+
+    /**
+     * Consume Worker-routed connections: drop each {key, prims} into _proto.cls (the memoization the
+     * synchronous router would otherwise fill). Stale replies (epoch != current — a re-route happened
+     * since dispatch) are discarded wholesale. Pure cache population: the network/slices/queries are
+     * untouched until the next natural _streamNetwork, which then finds these as cache hits.
+     * @param {Array<{key:string, prims:object[]}>} results
+     * @param {number} epoch — the route epoch the dispatch carried
+     */
+    ingestRoutedConnections(results, epoch) {
+        if (epoch !== this._routeEpoch) return   // routed against stale params — discard
+        if (!this._proto.cls) this._proto.cls = new Map()
+        for (const { key, prims } of results) {
+            this._pendingRoutes.delete(key)
+            if (!prims) continue
+            if (!this._proto.cls.has(key)) this._proto.cls.set(key, centerlineFromDescriptors(prims))
+        }
     }
 
     // Deterministic valley anchor for macro-cell (mx,mz): seeded candidate in the cell,
@@ -1141,26 +1239,42 @@ export class RoadSystem {
     // router cost model — but emitPrimitives:true so the result is the EXACT curvature-bounded curve
     // (line/arc/Dubins-terminal primitives, radius ≥ hardR by construction) carried end-to-end with
     // no Catmull-Rom re-fit. Returns a Centerline; window-invariant (pure fn of the anchor pair).
-    _protoConnectCenterline(a, b, mx, mz) {
-        if (!this._proto.cls) this._proto.cls = new Map()
+    // Deterministic route SPEC for east connection (mx,mz)→(mx+1,mz): the cls cache key, anchor
+    // endpoints, and the exact arcPrimitiveConnect opts. Shared by _protoConnectCenterline (synchronous
+    // compute) and warmRoutes (the off-thread Worker job) so the pre-warmed route is byte-identical to
+    // the synchronous fallback — same anchors, same canonical headings, same cost weights.
+    _connRouteSpec(mx, mz) {
+        const a = this._protoAnchor(mx, mz), b = this._protoAnchor(mx + 1, mz)
         const key = `${mx},${mz}:${a.x.toFixed(0)},${a.z.toFixed(0)}>${b.x.toFixed(0)},${b.z.toFixed(0)}`
-        const cached = this._proto.cls.get(key)
-        if (cached) return cached
         const P = this._proto.params
         const pp = this._params || {}
         const halfW = pp.roadHalfWidth ?? 5, clearance = pp.roadClearanceMargin ?? 0.5
         const hardR = Math.max(pp.roadArcHardRadius ?? 8, halfW + clearance + 0.1)
-        const startHeading = this._protoAnchorHeading(mx, mz)
-        const goalHeading  = this._protoAnchorHeading(mx + 1, mz)
-        const descs = arcPrimitiveConnect(a.x, a.z, b.x, b.z, (x, z) => this._coarseH(x, z), {
+        const opts = {
             hardR, gentleR: pp.roadArcGentleRadius ?? 30, margin: PROTO_MARGIN,
             wDist: P.wDist, wAlt: P.wAlt, wGrade: P.wGrade, wOver: P.wOver,
             maxGrade: P.maxGrade, wCurv: P.wTurn, wHeur: pp.roadArcHeurWeight ?? 1.5,
             valleyDepthCap: pp.roadValleyDepthCap ?? 40,
-            startHeading, goalHeading, emitPrimitives: true,
-        })
+            startHeading: this._protoAnchorHeading(mx, mz),
+            goalHeading:  this._protoAnchorHeading(mx + 1, mz),
+            emitPrimitives: true,
+        }
+        return { key, ax: a.x, az: a.z, bx: b.x, bz: b.z, opts }
+    }
+
+    _protoConnectCenterline(mx, mz) {
+        if (!this._proto.cls) this._proto.cls = new Map()
+        const spec = this._connRouteSpec(mx, mz)
+        const cached = this._proto.cls.get(spec.key)
+        if (cached) return cached
+        // Synchronous miss: the pre-warm Worker didn't reach this connection in time (cold load / fast
+        // teleport / no dispatcher) — route it now. Same spec the Worker uses → identical result, so
+        // the cache value is the same whichever path populates it (and gates, which never set a
+        // dispatcher, always take this path → unchanged behaviour).
+        const descs = arcPrimitiveConnect(spec.ax, spec.az, spec.bx, spec.bz, (x, z) => this._coarseH(x, z), spec.opts)
         const cl = centerlineFromDescriptors(descs)
-        this._proto.cls.set(key, cl)
+        this._proto.cls.set(spec.key, cl)
+        this._pendingRoutes.delete(spec.key)   // a still-in-flight Worker reply for this key is now redundant
         return cl
     }
 
@@ -1177,7 +1291,7 @@ export class RoadSystem {
     _buildRowCenterline(mxLo, mxHi, mz) {
         const prims = []
         for (let mx = mxLo; mx <= mxHi; mx++) {
-            const cl = this._protoConnectCenterline(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz), mx, mz)
+            const cl = this._protoConnectCenterline(mx, mz)
             for (const p of cl.primitives) prims.push(p)
         }
         return new Centerline(prims)
@@ -1301,7 +1415,7 @@ export class RoadSystem {
             let rowPts = []
             const spans = []   // { mx, i0, i1, clArc } — run index range in rowPts + per-sample centerline arc
             for (let mx = mx0; mx <= mx1; mx++) {
-                const cl = this._protoConnectCenterline(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz), mx, mz)
+                const cl = this._protoConnectCenterline(mx, mz)
                 if (!cl || cl.length < 1e-6) continue
                 const n = Math.max(1, Math.ceil(cl.length / PROTO_SAMPLE_DS))
                 const i0 = rowPts.length ? rowPts.length - 1 : 0   // share anchor mx with the prev connection's end
@@ -1329,7 +1443,7 @@ export class RoadSystem {
                     run[i] = rowPts[i0 + i].clone()
                     if (i > 0) polyCum[i] = polyCum[i - 1] + Math.hypot(run[i].x - run[i - 1].x, run[i].z - run[i - 1].z)
                 }
-                const centerline = this._protoConnectCenterline(this._protoAnchor(mx, mz), this._protoAnchor(mx + 1, mz), mx, mz)
+                const centerline = this._protoConnectCenterline(mx, mz)
                 this._network.set(`${mz}:${mx}`, { points: run, arcOrigin: 0, centerline, polyCum, clArc })
             }
         }
@@ -1362,7 +1476,7 @@ export class RoadSystem {
                     const nmx = mx + dmx, nmz = mz - dmz
                     const nA = this._protoAnchor(nmx, nmz), nB = this._protoAnchor(nmx + 1, nmz)
                     if (_segSegDist2(aA.x, aA.z, aB.x, aB.z, nA.x, nA.z, nB.x, nB.z) > gate2) continue
-                    const cl = this._protoConnectCenterline(nA, nB, nmx, nmz)
+                    const cl = this._protoConnectCenterline(nmx, nmz)
                     if (!cl || cl.length < 1e-6) continue
                     const n = Math.max(1, Math.ceil(cl.length / PROTO_COVER_D))   // ~1 sample / COVER_D
                     for (let i = 0; i <= n; i++) {

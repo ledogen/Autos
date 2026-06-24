@@ -30,6 +30,7 @@ import { perfAdd, perfMark, perfDump, perfReset } from './perf.js'  // TEMP perf
 let _perfFrame = 0  // TEMP: frame counter for auto-dump at load
 let _firstFrameMarked = false  // TEMP: mark the first animate frame to isolate init vs loop time
 import { RoadMeshSystem } from './road-mesh.js'
+import { DustSystem } from './dust.js'
 import { parseWorldSeed, seedFor } from './seed.js'
 
 // World seed — parsed from URL ?seed= parameter, defaulting to 'lone-pine'.
@@ -265,6 +266,7 @@ function debouncedRebuildFull () {
       roadSystem.setSurfaceSampler((x, z) => terrainSystem.analyticHeight(x, z))
       roadSystem.setRawHeightSampler((x, z) => terrainSystem.rawHeightWorld(x, z))  // CR-01: carve-free sampler for sampleDesignGradeAt
       roadSystem.setRadius(320)   // PERF (Tier 1): match the terrain ring, not 640 m — see initial setup
+      roadSystem.setRouteDispatcher((jobs, epoch) => terrainSystem.postRouteJobs(jobs, epoch))  // PERF-03 WS-A
       // Restore viz state — the next roadSystem.update(streamCenter) re-streams the new seed's
       // network and (because _debugVisible is set) rebuilds the centerline lines.
       roadSystem.setDebugVisible(wasVisible)
@@ -466,6 +468,11 @@ scene.add(ground)
 // syncMeshesToState drives carGroup.position and carGroup.quaternion; children follow automatically.
 const carGroup = new THREE.Object3D()
 scene.add(carGroup)
+
+// Wheel dust trails (src/dust.js). Self-contained sprite-pool puffs tinted to the dirt
+// we're driving on; driven each render frame from vehicleState (see loop). Construct here
+// since it only needs the scene + params — no dependency on terrain/road systems.
+const dustSystem = new DustSystem(scene, RANGER_PARAMS)
 
 // ── Vehicle meshes ───────────────────────────────────────────────────────────
 // Body: BoxGeometry (width=1.8m, height=0.8m, length=4.6m)
@@ -851,12 +858,33 @@ let _fpsLastTime = 0   // will be set to currentTime on first frame
 
 // ── Debug panel ──────────────────────────────────────────────────────────────
 // D-10: passes mutable RANGER_PARAMS ref so sliders write directly to the object physics.js reads.
+// Draw-distance presets (PERF-03): bundle terrain ring radius + warm margin + road stream radius + fog
+// density so one user pick scales the whole visible world consistently. Normal == the current default
+// (ring 2 / road 320 / fog 0.006), so the unchanged-on-load behaviour is preserved.
+//   `warm` = rings GENERATED beyond the visible ring (pop-in lead). It grows with draw distance: the
+//   higher tiers run lighter fog (you see further), so the build frontier must sit further out to stay
+//   hidden — a flat 1-ring margin left obvious pop-in at Far/Ultra. Sized so build radius (ring+warm)
+//   reaches roughly where the fog goes ~opaque (density·d ≈ 1.3); roadRadius covers the build corner.
+const DRAW_DISTANCE_PRESETS = {
+  Near:   { ring: 1, warm: 1, roadRadius: 192, fogDensity: 0.012 },
+  Normal: { ring: 2, warm: 1, roadRadius: 320, fogDensity: 0.006 },
+  Far:    { ring: 3, warm: 3, roadRadius: 512, fogDensity: 0.004 },
+  Ultra:  { ring: 4, warm: 4, roadRadius: 640, fogDensity: 0.003 },
+}
+function applyDrawDistance (name) {
+  const p = DRAW_DISTANCE_PRESETS[name] ?? DRAW_DISTANCE_PRESETS.Normal
+  if (terrainSystem) terrainSystem.setRingRadius(p.ring, p.warm)
+  if (roadSystem)    roadSystem.setRadius(p.roadRadius)   // marks dirty → next update() re-streams the wider network
+  if (scene.fog)     scene.fog.density = p.fogDensity
+}
+
 // Phase 6 (TERR-06): pass setRampVisible callback so the Ramp Visible toggle in debug.js
 // can control rampMesh visibility without requiring debug.js to import rampMesh directly.
 // Phase 7 (SEED-04 / D-09): rebuildTerrainFull = Path B debounced rebuild (Worker reinit + re-seat);
 //   changeSeed = update worldSeed then fire Path B.
 const _gui = initDebug(RANGER_PARAMS, {
   setRampVisible:      (v) => { rampMesh.visible = v },
+  applyDrawDistance:   (name) => applyDrawDistance(name),   // PERF-03: draw-distance preset (ring + road radius + fog)
   rebuildTerrain:      ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() },
   rebuildTerrainFull:  ()  => debouncedRebuildFull(),
   changeSeed:          (v) => { worldSeed = parseWorldSeed(v); _seedString = String(v); debouncedRebuildFull() },
@@ -906,6 +934,10 @@ roadSystem.setRadius(320)
 // Constructed after both terrainSystem and roadSystem exist.
 // setRoadSystem() wires the carve hook in analyticHeight so physics feels the road surface.
 terrainSystem.setRoadSystem(roadSystem)
+// PERF-03 WS-A: let the road pre-warm its centerline cache off-thread via the terrain Worker, so the
+// per-crossing arc-search hitch never lands on the main thread. RoadSystem no-ops this when no
+// dispatcher is set (headless gates), keeping their behaviour unchanged.
+roadSystem.setRouteDispatcher((jobs, epoch) => terrainSystem.postRouteJobs(jobs, epoch))
 roadMeshSystem = new RoadMeshSystem(
   scene, roadSystem,
   (x, z) => terrainSystem.rawHeightWorld(x, z),  // CR-04: carve-free — no crown/camber/pothole baked into design-grade window
@@ -1189,6 +1221,28 @@ function loop () {
 
   syncMeshesToState(vehicleState)
 
+  // Wheel dust trails — advance + emit using the interpolated render pose (vehicleState is
+  // still the render copy here; restored below). Ground sampler mirrors queryContacts: flat
+  // y=0 in grid world, analytic terrain height otherwise. Cheap no-op when no wheel is working.
+  dustSystem.update(frameTime, vehicleState, RANGER_PARAMS,
+    (x, z) => _gridWorldActive ? 0 : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0),
+    // On-road factor: dust is reduced on the paved ribbon. carveHint is the memoized nearest-road
+    // query the physics path already warmed at these wheel positions, so this is ~free. Lateral
+    // distance from the wheel to the centerline point < roadHalfWidth ⇒ on asphalt; ramp smoothly
+    // up to 1 across a band into the dirt shoulder so the edge isn't a hard line.
+    (x, z) => {
+      if (_gridWorldActive || !roadSystem) return 1
+      const nr = roadSystem.carveHint(x, z)
+      if (!nr || !nr.point) return 1                         // off-road → full dirt dust
+      const lat = Math.hypot(x - nr.point.x, z - nr.point.z)
+      const hw = RANGER_PARAMS.roadHalfWidth ?? 5
+      const paved = RANGER_PARAMS.dustPavedFactor ?? 0.1
+      const band = 1.5                                        // m — edge feather into the shoulder
+      if (lat <= hw - band) return paved
+      if (lat >= hw) return 1
+      return paved + (1 - paved) * (lat - (hw - band)) / band
+    })
+
   // Phase 6: update terrain chunk ring each render frame (outside physics accumulator).
   // ground.position.x/z snapping removed — ground mesh removed; terrain chunks replace it.
   // Phase 7 D-21: while free-cam is active, stream chunks around the camera, not the truck.
@@ -1203,6 +1257,9 @@ function loop () {
   _pt = performance.now()
   if (roadSystem) roadSystem.update(streamCenter)
   perfAdd('frame.road.update', performance.now() - _pt)
+  // PERF-03 WS-A: pre-warm the road centerline cache off-thread ahead of the streamer (throttled,
+  // self-limiting — no-op until the view moves PREWARM_WARM_MOVE). Removes the macro-cell routing hitch.
+  if (roadSystem) roadSystem.warmRoutes(streamCenter)
   // Phase 9 (SURF-01): sync road ribbon tiles with the active terrain chunk ring.
   // syncToChunkRing enqueues new tiles and disposes evicted ones co-located with chunk lifetime.
   // flushPendingQueue builds up to MAX_ROAD_BUILDS_PER_FRAME tiles per frame.

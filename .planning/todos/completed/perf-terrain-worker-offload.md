@@ -1,12 +1,14 @@
 ---
 id: PERF-03
 type: perf
-status: open
+status: closed
 opened: 2026-06-21
 updated: 2026-06-23
+closed: 2026-06-24
 severity: major
 source: user-observation
 note: "2026-06-23: reframed as the umbrella 'move heavy streaming work off the main thread' ticket. The DOMINANT cost is ROAD ROUTING, not terrain chunk build (profiled this session) — see Workstream A. Tier 1 sizing wins (radius/band/margin) already SHIPPED (commit f514727) and cut load ~6.6x; Workstream A is the Tier 2 follow-up. Terrain chunk-build offload (original scope) is Workstream B."
+resolution: "Both workstreams done (2026-06-24). Workstream B: replaced computeVertexNormals() with a grid-FD analytic normal pass (_computeGridNormals) at all 3 sites — cheaper per-chunk build, carve-aware shading preserved. Workstream A: road routing (arcPrimitiveConnect + dubins helpers) copied VERBATIM into the terrain WORKER_SOURCE under a new ROUTE SYNC rule; RoadSystem.warmRoutes() PRE-WARMS the per-connection centerline cache off-thread ahead of the streamer, so the synchronous _streamNetwork hits cache (no arc-search hitch on macro-cell crossings). DESIGN PIVOT from the approved plan: chose pre-warm-cache over full-async network fill — same goal, far lower risk (the invariance-critical _streamNetwork is untouched; the main thread keeps the synchronous router as cold-load/teleport fallback), and it makes spawn stay synchronous (truck always lands on a real carved road, no async-spawn edge cases — strictly better than all 3 spawn options offered). Determinism guarded by test/route-worker-sync.mjs (byte-identity gate) + the existing terrain/road height-agreement invariant. Also shipped the draw-distance preset feature (Near/Normal/Far/Ultra: terrain ring + road radius + fog) and a warm-margin ring. All 9 gates green; macro-cell hitch removal + visuals pending an in-browser confirm."
 ---
 
 # PERF-03: Move heavy streaming work off the main thread (road routing + terrain chunk build)

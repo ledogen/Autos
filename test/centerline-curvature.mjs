@@ -38,8 +38,7 @@ function* connections(road, center) {
     const mz0 = Math.floor((center.z - R) / SPACING), mz1 = Math.ceil((center.z + R) / SPACING)
     for (let mz = mz0; mz <= mz1; mz++) {
         for (let mx = mx0; mx <= mx1; mx++) {
-            const a = road._protoAnchor(mx, mz), b = road._protoAnchor(mx + 1, mz)
-            yield { mx, mz, cl: road._protoConnectCenterline(a, b, mx, mz) }
+            yield { mx, mz, cl: road._protoConnectCenterline(mx, mz) }
         }
     }
 }

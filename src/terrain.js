@@ -4,7 +4,7 @@
  * Responsibilities:
  *  - Chunk ring management (5×5, RING_RADIUS=2, 64 m tiles)
  *  - Heightmap generation via Blob classic Web Worker (simplex noise inlined)
- *  - Frame-spread geometry build (MAX_BUILDS_PER_FRAME=2 per frame)
+ *  - Frame-spread geometry build (PERF-02: ms-budgeted, nearest-first; MAX_BUILDS_PER_FRAME hard cap)
  *  - O(1) bilinear height query + central-difference normal for physics pipeline
  *  - analyticHeight/analyticNormal: main-thread direct analytic sampling (no chunk lookup)
  *    — used by queryContacts/queryVertexContacts for physics contacts (no chunk-seam gap)
@@ -20,7 +20,7 @@
  *                computeVertexNormals from physics (rendering only).
  *
  * Threat mitigations:
- *   T-06-01: MAX_BUILDS_PER_FRAME=2 caps main-thread geometry build cost per frame
+ *   T-06-01: BUILD_MS_BUDGET (+ MAX_BUILDS_PER_FRAME cap) bounds main-thread geometry build cost per frame
  *   T-06-03: geometry.dispose() called in _updateChunkRing before chunkMap.delete
  *   T-07-03-SYNC: WORKER_SOURCE is the sole source of the terrain Worker (no separate file
  *                 mirror); its carve/height/seed helpers stay byte-synced with their originals.
@@ -39,8 +39,11 @@ import { perfAdd } from './perf.js'  // TEMP perf triage (D-arc)
 
 export const CHUNK_SIZE    = 64   // world units (metres) per chunk side
 export const GRID_SAMPLES  = 65   // vertices per side (64 cells), avoids seams
-const        RING_RADIUS         = 2   // chunks in each direction → 5×5 = 25 total
-const        MAX_BUILDS_PER_FRAME = 2  // T-06-01: cap geometry builds per frame
+const        RING_RADIUS          = 2   // chunks in each direction → 5×5 = 25 total (DEFAULT; runtime-tunable via setRingRadius)
+const        RING_KEEP_MARGIN     = 1   // PERF-02: keep (don't dispose) chunks within ring+this — hysteresis kills boundary dispose↔rebuild thrash
+const        MAX_BUILDS_PER_FRAME = 4   // hard safety cap on geometry builds/recarves per frame (BUILD_MS_BUDGET is the primary limiter)
+const        BUILD_MS_BUDGET      = 3.0 // PERF-02: per-frame ms budget for geometry build + re-carve — adapts to machine speed (vs a fixed count)
+const        MAX_REQUESTS_PER_FRAME = 8 // PERF-02: cap worker `generate` dispatches per frame — bounds the postMessage flood at large rings (raised for the deeper warm rings at Far/Ultra)
 
 // ── Embedded worker source ─────────────────────────────────────────────────
 // The terrain Worker's full source as a string, spun up as a Blob classic worker (see the
@@ -264,6 +267,382 @@ let noiseCoarse, noiseFine, noiseRegional
 // Worker params — set on 'init', used in 'generate'.
 let _workerParams = null
 
+// ── arcPrimitiveConnect search scratch (module-scope, reused + generation-stamped) ──────────────
+// The cold network stream routes ~80 connections at once (spawn lag). Per-call Map/Set/object-per-node
+// allocation + hashing + GC dominated that. These typed arrays are indexed by state id and allocated
+// ONCE (grown as needed), reused across every call. A per-call generation stamp (_apcGen) marks which
+// entries are live this call, so we never memset the (large) arrays between calls.
+let _apcCap = 0
+let _apcG, _apcGStamp, _apcClosed, _apcX, _apcZ, _apcTh, _apcSh, _apcKi, _apcParent
+let _apcGen = 0
+const _apcHPri = [], _apcHSt = []   // heap as parallel arrays (reset length each call; no per-node alloc)
+function _apcEnsure(n) {
+    if (n <= _apcCap) return
+    _apcCap = n
+    _apcG = new Float64Array(n); _apcGStamp = new Uint32Array(n); _apcClosed = new Uint32Array(n)
+    _apcX = new Float64Array(n); _apcZ = new Float64Array(n); _apcTh = new Float64Array(n)
+    _apcSh = new Float64Array(n); _apcKi = new Int8Array(n); _apcParent = new Int32Array(n)
+}
+
+// ── Dubins shortest path (BUG-12 terminal connector) ───────────────────────────────────────────
+// Returns dense [x,z] points (excluding the start, including the exact goal) from pose (x0,z0,th0)
+// to pose (x1,z1,th1) using arcs of radius \`rho\` (left/right) and straights — so curvature is
+// piecewise-constant and EVERYWHERE ≥ rho. Used to terminate an arc-router segment exactly at the
+// canonical anchor pose: unlike a cubic Hermite (whose curvature spikes for large heading changes),
+// this rounds even a switchback-apex turn into a valid-radius hairpin (≥ rho), never a fold. Pure.
+const _DUBmod = (x) => { const t = x % (Math.PI * 2); return t < 0 ? t + Math.PI * 2 : t }
+
+// Shortest Dubins word from pose (x0,z0,th0) to (x1,z1,th1) at radius rho. Returns the chosen
+// { len, segs:[[kSign,lenR],...] } (segs in rho units; kSign: +1 left, −1 right, 0 straight) or null.
+// Shared by dubinsPath (dense points) and dubinsPrimitives (typed primitives) so the geometry agrees.
+function _dubinsBest(x0, z0, th0, x1, z1, th1, rho) {
+    const dx = x1 - x0, dz = z1 - z0
+    const D = Math.hypot(dx, dz)
+    const d = D / rho
+    const theta = _DUBmod(Math.atan2(dz, dx))
+    const a = _DUBmod(th0 - theta), b = _DUBmod(th1 - theta)
+    const sa = Math.sin(a), ca = Math.cos(a), sb = Math.sin(b), cb = Math.cos(b), cab = Math.cos(a - b)
+    const words = []
+    // LSL
+    { const p2 = 2 + d * d - 2 * cab + 2 * d * (sa - sb)
+      if (p2 >= 0) { const tmp = d + sa - sb, t = _DUBmod(-a + Math.atan2(cb - ca, tmp)), p = Math.sqrt(p2), q = _DUBmod(b - Math.atan2(cb - ca, tmp)); words.push({ len: t + p + q, segs: [[1, t], [0, p], [1, q]] }) } }
+    // RSR
+    { const p2 = 2 + d * d - 2 * cab + 2 * d * (sb - sa)
+      if (p2 >= 0) { const tmp = d - sa + sb, t = _DUBmod(a - Math.atan2(ca - cb, tmp)), p = Math.sqrt(p2), q = _DUBmod(-b + Math.atan2(ca - cb, tmp)); words.push({ len: t + p + q, segs: [[-1, t], [0, p], [-1, q]] }) } }
+    // LSR
+    { const p2 = -2 + d * d + 2 * cab + 2 * d * (sa + sb)
+      if (p2 >= 0) { const p = Math.sqrt(p2), tmp = Math.atan2(-ca - cb, d + sa + sb) - Math.atan2(-2, p), t = _DUBmod(-a + tmp), q = _DUBmod(-b + tmp); words.push({ len: t + p + q, segs: [[1, t], [0, p], [-1, q]] }) } }
+    // RSL
+    { const p2 = -2 + d * d + 2 * cab - 2 * d * (sa + sb)
+      if (p2 >= 0) { const p = Math.sqrt(p2), tmp = Math.atan2(ca + cb, d - sa - sb) - Math.atan2(2, p), t = _DUBmod(a - tmp), q = _DUBmod(b - tmp); words.push({ len: t + p + q, segs: [[-1, t], [0, p], [1, q]] }) } }
+    // RLR
+    { const tmp = (6 - d * d + 2 * cab + 2 * d * (sa - sb)) / 8
+      if (Math.abs(tmp) <= 1) { const p = _DUBmod(2 * Math.PI - Math.acos(tmp)), t = _DUBmod(a - Math.atan2(ca - cb, d - sa + sb) + p / 2), q = _DUBmod(a - b - t + p); words.push({ len: t + p + q, segs: [[-1, t], [1, p], [-1, q]] }) } }
+    // LRL
+    { const tmp = (6 - d * d + 2 * cab + 2 * d * (sb - sa)) / 8
+      if (Math.abs(tmp) <= 1) { const p = _DUBmod(2 * Math.PI - Math.acos(tmp)), t = _DUBmod(-a + Math.atan2(-ca + cb, d + sa - sb) + p / 2), q = _DUBmod(b - a - t + p); words.push({ len: t + p + q, segs: [[1, t], [-1, p], [1, q]] }) } }
+    if (!words.length) return null
+    let best = words[0]; for (const w of words) if (w.len < best.len) best = w
+    return best
+}
+
+// Dense [x,z] points (excluding start, including exact goal) for the shortest Dubins path. Pure.
+function dubinsPath(x0, z0, th0, x1, z1, th1, rho, ds) {
+    const best = _dubinsBest(x0, z0, th0, x1, z1, th1, rho)
+    if (!best) return null
+    const out = []
+    let x = x0, z = z0, th = th0
+    for (const [kSign, lenR] of best.segs) {
+        const L = lenR * rho
+        if (L < 1e-9) continue
+        const k = kSign / rho
+        const n = Math.max(1, Math.ceil(L / ds))
+        for (let i = 1; i <= n; i++) {
+            const s = L * i / n
+            if (kSign === 0) { out.push([x + s * Math.cos(th), z + s * Math.sin(th)]) }
+            else { const th2 = th + k * s; out.push([x + (Math.sin(th2) - Math.sin(th)) / k, z - (Math.cos(th2) - Math.cos(th)) / k]) }
+        }
+        if (kSign === 0) { x += L * Math.cos(th); z += L * Math.sin(th) }
+        else { const th2 = th + k * L; x += (Math.sin(th2) - Math.sin(th)) / k; z -= (Math.cos(th2) - Math.cos(th)) / k; th = th2 }
+    }
+    return out
+}
+
+// Typed primitive descriptors {x0,z0,theta0,length,kappa0,kappa1} for the shortest Dubins path —
+// the exact same arcs/straights as dubinsPath, carried as primitives (curvature ≥ 1/rho by
+// construction) instead of flattened points. Used by arcPrimitiveConnect's primitive terminal.
+// Plain descriptors (no Centerline import) keep road-carve dependency-free for the CARVE-SYNC copy.
+function dubinsPrimitives(x0, z0, th0, x1, z1, th1, rho) {
+    const best = _dubinsBest(x0, z0, th0, x1, z1, th1, rho)
+    if (!best) return null
+    const prims = []
+    let x = x0, z = z0, th = th0
+    for (const [kSign, lenR] of best.segs) {
+        const L = lenR * rho
+        if (L < 1e-9) continue
+        const k = kSign === 0 ? 0 : kSign / rho
+        prims.push({ x0: x, z0: z, theta0: th, length: L, kappa0: k, kappa1: k })
+        if (kSign === 0) { x += L * Math.cos(th); z += L * Math.sin(th) }
+        else { const th2 = th + k * L; x += (Math.sin(th2) - Math.sin(th)) / k; z -= (Math.cos(th2) - Math.cos(th)) / k; th = th2 }
+    }
+    return prims
+}
+
+/**
+ * arcPrimitiveConnect — hybrid-A* router between two anchors using ARC MOTION PRIMITIVES.
+ *
+ * Replaces the 8-grid cell A* whose 45°-per-cell turns produced sub-floor corners that the
+ * post-hoc fillet/cleanup stack could not repair (folds). Here every search expansion is a
+ * fixed-length ARC at a curvature in {0 (straight), ±1/gentleR, ±1/hardR}. Because the hardest
+ * primitive has radius hardR and consecutive primitives are G1-continuous (each starts at the
+ * previous arc's end heading), the emitted centerline is min-turn-radius-VALID BY CONSTRUCTION:
+ * dense XZ radius ≥ hardR everywhere except short endpoint stubs. No fillet/relaxation needed.
+ *
+ * State = (position-cell, heading-bin). Cost mirrors _protoEdgeCost semantics:
+ *   wDist·L + wGrade·grade² + wOver·max(0,grade−maxGrade) + wAlt·height + wCurv·|κ|·L
+ * The wCurv·|κ|·L term makes the straight primitive (κ=0) cheapest → long near-straights on
+ * gentle ground; the grade terms make tight switchbacks worth their curvature cost up a steep
+ * pass → variety is TERRAIN-DRIVEN and deterministic (no Math.random). Heuristic = wDist·‖·→b‖.
+ *
+ * Pure/deterministic (D-16): lattice search, stable heap tie-break, no random/Date/session state.
+ * Window-invariant by construction when called per anchor-pair (independent of stream center).
+ * NOT part of CARVE SYNC — main-thread centerline geometry only.
+ *
+ * @param {number} ax @param {number} az — start anchor (XZ)
+ * @param {number} bx @param {number} bz — goal anchor (XZ)
+ * @param {(x:number,z:number)=>number} heightFn — terrain height sampler (coarseHeight)
+ * @param {object} [opts] — hardR, gentleR, stepLen, hbins, cell, margin, emitDs, maxNodes + cost weights
+ * @returns {Array<{x:number,y:number,z:number}>} dense valid-radius centerline from a to b (y = heightFn)
+ */
+function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
+    const hardR    = opts.hardR    ?? 8       // m — tightest turn (hardest primitive); ≥ geometric floor
+    const gentleR  = opts.gentleR  ?? 30      // m — gentle turn radius
+    const stepLen  = opts.stepLen  ?? 8       // m — arc length per search primitive
+    const hbins    = opts.hbins    ?? 24      // heading discretization (15°) — fewer states = faster cold route
+    const cell     = opts.cell     ?? 8       // m — position lattice cell
+    const margin   = opts.margin   ?? 200     // m — detour room around the a–b bbox (wrap a peak)
+    const emitDs   = opts.emitDs   ?? 4       // m — arc emission spacing (≥ this keeps 3-pt circumradius on the floor circle; finer just multiplies downstream slice/ribbon/carve cost)
+    const maxNodes = opts.maxNodes ?? 200000  // expansion cap (never hang)
+    const wDist    = opts.wDist    ?? 1
+    const wAlt     = opts.wAlt     ?? 0.85
+    const wGrade   = opts.wGrade   ?? 400
+    const wOver    = opts.wOver    ?? 8000
+    const maxGrade = opts.maxGrade ?? 0.15
+    const wCurv    = opts.wCurv    ?? 120      // curvature penalty (replaces wTurn) → straight-biased
+    const wHeur    = opts.wHeur    ?? 1.5       // weighted-A* heuristic inflation (>1 = greedier, far
+                                               // fewer node expansions → faster streaming; paths stay near-optimal)
+    // BUG-12: canonical join headings. The segment STARTS along startHeading (so its DEPARTURE from
+    // the anchor is the canonical heading) and, when goalHeading is set, its ARRIVAL is blended into
+    // the canonical heading over the last \`goalBlend\` metres (terminal Hermite below). Two segments
+    // sharing an anchor each target the SAME canonical H there → they meet G1, no sharp corner. The
+    // search itself runs FREE (undistorted, valley-true); only the start heading + terminal blend are
+    // canonical. undefined → legacy straight-to-goal, no blend (byte-identical to pre-BUG-12).
+    const startHeading = opts.startHeading
+    const goalHeading  = opts.goalHeading
+    const goalBlend    = opts.goalBlend ?? 20   // m — distance over which the arrival is blended into goalHeading
+
+    const minX = Math.min(ax, bx) - margin, maxX = Math.max(ax, bx) + margin
+    const minZ = Math.min(az, bz) - margin, maxZ = Math.max(az, bz) + margin
+    const NX = Math.max(2, Math.ceil((maxX - minX) / cell)) + 1
+    const NZ = Math.max(2, Math.ceil((maxZ - minZ) / cell)) + 1
+    const TAU = Math.PI * 2
+    const binOf = (th) => ((Math.round(th / TAU * hbins) % hbins) + hbins) % hbins
+    const cxOf  = (x) => Math.max(0, Math.min(NX - 1, Math.round((x - minX) / cell)))
+    const czOf  = (z) => Math.max(0, Math.min(NZ - 1, Math.round((z - minZ) / cell)))
+    const cellOf = (x, z) => czOf(z) * NX + cxOf(x)
+    const stateOf = (x, z, th) => cellOf(x, z) * hbins + binOf(th)
+
+    // PERF: cache terrain height per lattice cell (compute heightFn once per cell, not per node
+    // expansion). _coarseHeight is multi-octave ridged noise — recomputing it for every one of the
+    // hundreds of thousands of node expansions was the streaming-stutter cost. Search cost uses the
+    // cell-center height (same approach as the old grid A*); emitted point Y stays exact (heightFn).
+    const hH = new Float64Array(NX * NZ), hSeen = new Uint8Array(NX * NZ)
+    const hAt = (x, z) => {
+        const ci = cellOf(x, z)
+        if (!hSeen[ci]) { hH[ci] = heightFn(minX + (ci % NX) * cell, minZ + ((ci / NX) | 0) * cell); hSeen[ci] = 1 }
+        return hH[ci]
+    }
+
+    // Bounded valley-seeking altitude cost (D-arc REVISED²). Reference = the straight a→b altitude
+    // baseline (linear height interp along the chord). δ = nH − baseline; cost = wAlt·max(0, δ +
+    // valleyCap). So:
+    //   • ABOVE baseline (δ>0): cost grows → route AROUND ridges (peak avoidance / pass-crossing).
+    //   • BELOW baseline, down to valleyCap (−valleyCap ≤ δ ≤ 0): cost shrinks → SEEK the low ground
+    //     (the valley-following "spine" / personality).
+    //   • DEEPER than valleyCap (δ < −valleyCap): cost saturates at 0 — the CAP. No further reward,
+    //     so a far/deep basin can't pull the search into a kilometre detour the way the old absolute
+    //     \`wAlt·nH\` global magnet did (the wander that forced the now-deleted cleanup stack).
+    // Cost stays ≥ 0 (A*-safe — a true negative "reward" edge would break the priority queue).
+    // For equal-height anchors baseline≡ha, so DETOURS-AROUND-PEAK (arc-router.mjs) is unchanged.
+    // Pure fn of the anchor pair (+ valleyCap) → window-invariant.
+    const valleyCap = opts.valleyDepthCap ?? 40   // m — depth below baseline that still earns reward
+    const ha = hAt(ax, az), hb = hAt(bx, bz)
+    const _abx = bx - ax, _abz = bz - az
+    const _abLen2 = _abx * _abx + _abz * _abz || 1
+    const baselineAt = (x, z) => {
+        let t = ((x - ax) * _abx + (z - az) * _abz) / _abLen2
+        if (t < 0) t = 0; else if (t > 1) t = 1
+        return ha + t * (hb - ha)
+    }
+
+    const kappas = [0, 1 / gentleR, -1 / gentleR, 1 / hardR, -1 / hardR]
+
+    const arcEnd = (x, z, th, k, L) => {
+        if (Math.abs(k) < 1e-12) return [x + L * Math.cos(th), z + L * Math.sin(th), th]
+        const th2 = th + k * L
+        return [x + (Math.sin(th2) - Math.sin(th)) / k, z - (Math.cos(th2) - Math.cos(th)) / k, th2]
+    }
+    // Dense points along an arc (excludes the start point, includes the end) → push [x,z] to \`out\`.
+    const arcPoints = (x, z, th, k, L, out) => {
+        const n = Math.max(1, Math.ceil(L / emitDs))
+        for (let i = 1; i <= n; i++) {
+            const s = L * i / n
+            if (Math.abs(k) < 1e-12) { out.push([x + s * Math.cos(th), z + s * Math.sin(th)]); continue }
+            const th2 = th + k * s
+            out.push([x + (Math.sin(th2) - Math.sin(th)) / k, z - (Math.cos(th2) - Math.cos(th)) / k])
+        }
+    }
+
+    // Typed-array lattice with a generation stamp — same algorithm as a Map/Set/heap-of-arrays A*,
+    // but no per-call allocation/clears (this is the cold-stream speedup). State id = cellOf*hbins+binOf.
+    // Heap comparison is PRIORITY-ONLY (matches the prior implementation exactly → identical routes).
+    const NSTATES = NX * NZ * hbins
+    _apcEnsure(NSTATES)
+    const gen = ++_apcGen
+    const G = _apcG, GS = _apcGStamp, CL = _apcClosed
+    const SX = _apcX, SZ = _apcZ, STh = _apcTh, SSh = _apcSh, SKi = _apcKi, SP = _apcParent
+    const HP = _apcHPri, HS = _apcHSt
+    HP.length = 0; HS.length = 0
+    let hlen = 0
+    const hpush = (pri, st) => {
+        let i = hlen++
+        HP[i] = pri; HS[i] = st
+        while (i > 0) { const p = (i - 1) >> 1; if (HP[p] <= HP[i]) break
+            const tp = HP[p], ts = HS[p]; HP[p] = HP[i]; HS[p] = HS[i]; HP[i] = tp; HS[i] = ts; i = p }
+    }
+    const hpopState = () => {
+        const top = HS[0]; hlen--
+        if (hlen > 0) {
+            HP[0] = HP[hlen]; HS[0] = HS[hlen]; let i = 0
+            for (;;) { let l = 2 * i + 1, r = 2 * i + 2, m = i
+                if (l < hlen && HP[l] < HP[m]) m = l
+                if (r < hlen && HP[r] < HP[m]) m = r
+                if (m === i) break
+                const tp = HP[m], ts = HS[m]; HP[m] = HP[i]; HS[m] = HS[i]; HP[i] = tp; HS[i] = ts; i = m }
+        }
+        return top
+    }
+
+    const heur = (x, z) => wHeur * wDist * Math.hypot(bx - x, bz - z)
+    const th0 = startHeading ?? Math.atan2(bz - az, bx - ax)
+    const goalR = Math.max(cell, stepLen), goalR2 = goalR * goalR
+    const startState = stateOf(ax, az, th0)
+    G[startState] = 0; GS[startState] = gen
+    SX[startState] = ax; SZ[startState] = az; STh[startState] = th0; SSh[startState] = hAt(ax, az)
+    SP[startState] = -1; SKi[startState] = 0
+    hpush(heur(ax, az), startState)
+
+    let goalState = -1, expanded = 0
+    let bestState = startState, bestD2 = (bx - ax) * (bx - ax) + (bz - az) * (bz - az)
+    while (hlen > 0 && expanded < maxNodes) {
+        const sid = hpopState()
+        if (CL[sid] === gen) continue
+        CL[sid] = gen
+        const cx = SX[sid], cz = SZ[sid], cth = STh[sid], csh = SSh[sid], cg = G[sid]
+        const dgx = bx - cx, dgz = bz - cz, d2 = dgx * dgx + dgz * dgz
+        if (d2 < bestD2) { bestD2 = d2; bestState = sid }
+        if (d2 <= goalR2) { goalState = sid; break }
+        expanded++
+        for (let ki = 0; ki < kappas.length; ki++) {
+            const k = kappas[ki]
+            const [nx, nz, nth] = arcEnd(cx, cz, cth, k, stepLen)
+            if (nx < minX || nx > maxX || nz < minZ || nz > maxZ) continue
+            const nst = stateOf(nx, nz, nth)
+            if (CL[nst] === gen) continue
+            const nH = hAt(nx, nz)
+            const grade = Math.abs(nH - csh) / stepLen
+            const ng = cg + wDist * stepLen + wGrade * grade * grade + wOver * Math.max(0, grade - maxGrade)
+                     + wAlt * Math.max(0, nH - baselineAt(nx, nz) + valleyCap) + wCurv * Math.abs(k) * stepLen
+            if (GS[nst] !== gen || ng < G[nst]) {
+                G[nst] = ng; GS[nst] = gen
+                SX[nst] = nx; SZ[nst] = nz; STh[nst] = nth; SSh[nst] = nH; SP[nst] = sid; SKi[nst] = ki
+                hpush(ng + heur(nx, nz), nst)
+            }
+        }
+    }
+
+    // Fallback: if the goal was never captured (capped/blocked), end at the closest expanded node.
+    const endState = goalState !== -1 ? goalState : bestState
+    // Walk the parent chain, then re-integrate each primitive from its parent's stored pose so the
+    // emitted polyline lies exactly on the valid-radius arcs (G1 across joints).
+    const chain = []
+    for (let st = endState; st !== -1; st = SP[st]) chain.push(st)
+    chain.reverse()
+
+    // ── Primitive emission (Road Overhaul, Phase A) ────────────────────────────────────────────
+    // Return the search result as TYPED PRIMITIVES instead of dense points. Each chain step IS an
+    // arc primitive (start pose = parent's stored pose, curvature = kappas[SKi], length = stepLen),
+    // so curvature is ≥ 1/hardR by construction — no Catmull-Rom re-fit downstream, no fold. The
+    // terminal mirrors the dense path: legacy → a straight line stub to the anchor (C0); heading-
+    // continuous → cut back ~goalBlend of whole arcs and replace with a Dubins primitive run into
+    // the canonical goalHeading. Window-invariant: a pure fn of this anchor-pair's search + the
+    // anchor-derived headings (independent of stream center / emission density).
+    if (opts.emitPrimitives) {
+        const prims = []
+        const pushArc = (x, z, th, k, L) => { if (L > 1e-6) prims.push({ x0: x, z0: z, theta0: th, length: L, kappa0: k, kappa1: k }) }
+        if (goalHeading == null) {
+            for (let i = 1; i < chain.length; i++) {
+                const par = chain[i - 1]
+                pushArc(SX[par], SZ[par], STh[par], kappas[SKi[chain[i]]], stepLen)
+            }
+            // C0 straight stub to the exact anchor (matches legacy points terminal).
+            const ex = SX[endState], ez = SZ[endState]
+            const dx = bx - ex, dz = bz - ez, L = Math.hypot(dx, dz)
+            pushArc(ex, ez, Math.atan2(dz, dx), 0, L)
+        } else {
+            // Drop trailing whole arcs until ≥ goalBlend is freed, then Dubins from the cut pose.
+            let acc = 0, cutIdx = chain.length - 1
+            while (cutIdx > 0 && acc < goalBlend) { acc += stepLen; cutIdx-- }
+            for (let i = 1; i <= cutIdx; i++) {
+                const par = chain[i - 1]
+                pushArc(SX[par], SZ[par], STh[par], kappas[SKi[chain[i]]], stepLen)
+            }
+            const cs = chain[cutIdx]
+            const cx = SX[cs], cz = SZ[cs], cth = STh[cs]
+            const dub = dubinsPrimitives(cx, cz, cth, bx, bz, goalHeading, hardR)
+            if (dub) for (const p of dub) pushArc(p.x0, p.z0, p.theta0, p.kappa0, p.length)
+            else { const dx = bx - cx, dz = bz - cz, L = Math.hypot(dx, dz); pushArc(cx, cz, Math.atan2(dz, dx), 0, L) }
+        }
+        return prims
+    }
+
+    const pts2d = [[ax, az]]
+    for (let i = 1; i < chain.length; i++) {
+        const par = chain[i - 1]
+        arcPoints(SX[par], SZ[par], STh[par], kappas[SKi[chain[i]]], stepLen, pts2d)
+    }
+    // BUG-12 terminal. Legacy (no goalHeading): pin the exact anchor with a straight stub (C0 only).
+    // Heading-continuous: the free search arrives near the anchor at its valley-true (uncontrolled)
+    // heading; pinning it straight to the anchor hairpins (a sub-floor cusp that centripetal-CR then
+    // amplifies), and a cubic-Hermite blend spikes its curvature on a big heading change. Instead,
+    // cut back \`goalBlend\` metres of arc and replace that tail with a DUBINS path (radius hardR) from
+    // the cut pose to the EXACT anchor at the canonical goalHeading. Dubins curvature is piecewise
+    // constant and everywhere ≥ hardR, so even a switchback-apex turn becomes a valid-radius hairpin,
+    // never a fold. The next segment starts at the same anchor with startHeading == this goalHeading
+    // → G1 join. Window-invariant: a pure function of this segment's own (per-anchor-pair) search +
+    // the anchor-derived canonical headings.
+    if (goalHeading == null) {
+        pts2d.push([bx, bz])
+    } else {
+        let acc = 0, cut = pts2d.length - 1
+        while (cut > 0) {
+            acc += Math.hypot(pts2d[cut][0] - pts2d[cut - 1][0], pts2d[cut][1] - pts2d[cut - 1][1])
+            cut--
+            if (acc >= goalBlend) break
+        }
+        const p0 = pts2d[cut]
+        const t0 = cut > 0
+            ? Math.atan2(p0[1] - pts2d[cut - 1][1], p0[0] - pts2d[cut - 1][0])
+            : th0   // whole-segment terminal → leave along the canonical start heading
+        pts2d.length = cut + 1   // drop the tail we are about to replace
+        const dub = dubinsPath(p0[0], p0[1], t0, bx, bz, goalHeading, hardR, emitDs)
+        if (dub) for (const q of dub) pts2d.push(q)
+        else pts2d.push([bx, bz])
+    }
+
+    const out = []
+    for (let i = 0; i < pts2d.length; i++) {
+        const x = pts2d[i][0], z = pts2d[i][1]
+        if (out.length) { const lp = out[out.length - 1]; if ((x - lp.x) ** 2 + (z - lp.z) ** 2 < 1e-6) continue }
+        out.push({ x, y: heightFn(x, z), z })
+    }
+    return out
+}
+// ROUTE SYNC END (verbatim mirror of road-carve.js — route-worker-sync.mjs enforces)
+// (PERF-03 Workstream A: the road-carve.js ROUTE SYNC region — arcPrimitiveConnect + dubins helpers
+//  + search scratch — is spliced in here VERBATIM. Do not hand-edit; mirror road-carve.js and the
+//  route-worker-sync.mjs gate enforces byte-equality.)
+
 console.log('[terrain-worker] ready — awaiting init message')
 
 // ── Message handler ────────────────────────────────────────────────────────
@@ -276,6 +655,25 @@ self.onmessage = function(e) {
         noiseFine     = createNoise2D(mulberry32(seedFor(worldSeed, 'fine')))
         noiseRegional = createNoise2D(mulberry32(seedFor(worldSeed, 'regional')))
         console.log('[terrain-worker] init complete. worldSeed =', worldSeed)
+        return
+    }
+
+    if (e.data.type === 'route') {
+        // PERF-03 WS-A: off-thread road routing. Pre-warms the main thread's per-connection centerline
+        // cache so the synchronous _streamNetwork finds cache hits and never pays the arc-search cost on
+        // a macro-cell crossing. heightFn = the SAME seeded coarse height the main thread routes against
+        // (noiseCoarse from seedFor(worldSeed,'coarse'); _workerParams coarse fields) → the worker's
+        // prims are byte-identical to the main-thread synchronous fallback (ROUTE SYNC guarantees it).
+        // Not initialized yet (route raced ahead of 'init'): echo the keys with prims:null so the main
+        // thread RELEASES them from _pendingRoutes and re-warms after init (else they'd stick pending).
+        if (!noiseCoarse) { self.postMessage({ routed: true, epoch: e.data.epoch, results: e.data.jobs.map(function (j) { return { key: j.key, prims: null } }) }); return }
+        const _hf = function (x, z) { return coarseHeight(x, z, noiseCoarse, _workerParams) }
+        const results = []
+        for (const job of e.data.jobs) {
+            const prims = arcPrimitiveConnect(job.ax, job.az, job.bx, job.bz, _hf, job.opts)
+            results.push({ key: job.key, prims })
+        }
+        self.postMessage({ routed: true, epoch: e.data.epoch, results })
         return
     }
 
@@ -379,6 +777,12 @@ export class TerrainSystem {
         this._params  = params
         this._worldSeed = worldSeed ?? 0
 
+        // Draw-distance (Phase 3): visible ring radius in chunks (runtime-tunable via setRingRadius).
+        // _warmMargin extends the GENERATED ring one chunk beyond the visible edge so terrain is built
+        // before it enters view — nearest-first ordering (PERF-02) still fills visible chunks first.
+        this._ringRadius = RING_RADIUS
+        this._warmMargin = 1
+
         // Private state
         this._chunkMap      = new Map()   // key → { mesh, heights, carveData? }
         this._pendingWorker = new Set()   // keys requested but not yet received
@@ -413,6 +817,12 @@ export class TerrainSystem {
         // _updateChunkRing effective for the full request→built window, preventing
         // the duplicate-request race that orphaned spawn-chunk meshes.
         this._worker.onmessage = (e) => {
+            // PERF-03 WS-A: route replies (off-thread road routing) are tagged `routed`; forward them
+            // to the RoadSystem's centerline-cache pre-warm. Everything else is a heightmap.
+            if (e.data.routed) {
+                this._roadSystem?.ingestRoutedConnections(e.data.results, e.data.epoch)
+                return
+            }
             const { key, cx, cz, heights } = e.data
             this._pendingQueue.push({ key, cx, cz, heights })
         }
@@ -431,6 +841,22 @@ export class TerrainSystem {
      */
     setEnabled(flag) {
         this._enabled = flag
+    }
+
+    /**
+     * Set the visible chunk-ring radius (chunks in each direction) — the draw-distance lever.
+     * The generated ring extends one warm-margin chunk beyond this so new terrain finishes building
+     * before it enters view (no edge pop-in). Growing requests new chunks on the next update();
+     * shrinking disposes the now-out-of-ring chunks via the existing dispose loop. Called by the
+     * draw-distance presets (main.js applyDrawDistance).
+     * @param {number} n — ring radius in chunks (≥ 1)
+     * @param {number} [warmMargin] — rings to generate BEYOND the visible ring (pop-in lead). Scales
+     *   with draw distance: higher tiers see further (lighter fog) so they need a deeper warm ring to
+     *   keep the build frontier out past the visible edge. Omit to leave the current margin unchanged.
+     */
+    setRingRadius(n, warmMargin) {
+        this._ringRadius = Math.max(1, Math.floor(n))
+        if (warmMargin != null) this._warmMargin = Math.max(0, Math.floor(warmMargin))
     }
 
     /**
@@ -471,7 +897,7 @@ export class TerrainSystem {
         this._updateChunkRing(ccx, ccz)
         perfAdd('terrain.updateChunkRing', performance.now() - _pt)   // TEMP: includes dispatch-path carve + re-carve pass
         _pt = performance.now()
-        this._flushPendingQueue()
+        this._flushPendingQueue(ccx, ccz)
         perfAdd('terrain.flushPendingQueue', performance.now() - _pt) // TEMP: mesh build (geometry+carve+normals+colors)
     }
 
@@ -524,6 +950,18 @@ export class TerrainSystem {
      */
     setRoadSystem(roadSystem) {
         this._roadSystem = roadSystem ?? null
+    }
+
+    /**
+     * PERF-03 WS-A: dispatch road route jobs to the terrain Worker (which already holds the seeded
+     * coarse noise routes are computed against). The Worker runs arcPrimitiveConnect per job and
+     * replies `{routed, epoch, results}`, forwarded to RoadSystem.ingestRoutedConnections via onmessage.
+     * RoadSystem owns the route semantics; TerrainSystem just owns the Worker transport.
+     * @param {Array<object>} jobs — route specs {key, ax, az, bx, bz, opts}
+     * @param {number} epoch — RoadSystem route epoch (echoed back for stale-reply rejection)
+     */
+    postRouteJobs(jobs, epoch) {
+        this._worker.postMessage({ type: 'route', jobs, epoch })
     }
 
     /**
@@ -747,17 +1185,25 @@ export class TerrainSystem {
      * @private
      */
     _updateChunkRing(ccx, ccz) {
-        // Build the target set of keys needed in this ring
+        const ringRadius  = this._ringRadius ?? RING_RADIUS
+        const buildRadius = ringRadius + (this._warmMargin ?? 0)   // Phase 3: generate one warm ring beyond visible
+
+        // Build the target set of keys to REQUEST/build (visible ring + warm margin).
         const needed = new Set()
-        for (let dx = -RING_RADIUS; dx <= RING_RADIUS; dx++) {
-            for (let dz = -RING_RADIUS; dz <= RING_RADIUS; dz++) {
+        for (let dx = -buildRadius; dx <= buildRadius; dx++) {
+            for (let dz = -buildRadius; dz <= buildRadius; dz++) {
                 needed.add(this._chunkKey(ccx + dx, ccz + dz))
             }
         }
 
-        // T-06-03: Dispose chunks that fell out of the ring (geometry only, not material)
+        // T-06-03 + PERF-02 hysteresis: dispose a chunk only once it falls OUTSIDE ring+keepMargin
+        // (Chebyshev distance), not the instant it leaves the build ring. Without the margin, idling
+        // on a chunk boundary dispose↔rebuilds the edge row every frame (a stutter that feels random).
+        const keepRadius = buildRadius + RING_KEEP_MARGIN
         for (const [key, chunk] of this._chunkMap) {
-            if (!needed.has(key)) {
+            const ci = key.indexOf(',')
+            const kx = +key.slice(0, ci), kz = +key.slice(ci + 1)
+            if (Math.max(Math.abs(kx - ccx), Math.abs(kz - ccz)) > keepRadius) {
                 this._scene.remove(chunk.mesh)
                 chunk.mesh.geometry.dispose()  // T-06-03: explicit GPU memory release
                 this._chunkMap.delete(key)
@@ -775,9 +1221,10 @@ export class TerrainSystem {
         // CARVE SYNC: carve never enters the worker (WORKER_SOURCE) — it is a post-read main-thread blend.
         if (this._roadSystem) {
             const currentRoadGen = this._roadSystem.roadGeneration()
+            const recarveDeadline = performance.now() + BUILD_MS_BUDGET   // PERF-02: time-slice, not fixed count
             let recarved = 0
             for (const [key, chunk] of this._chunkMap) {
-                if (recarved >= MAX_BUILDS_PER_FRAME) break
+                if (recarved >= MAX_BUILDS_PER_FRAME || performance.now() >= recarveDeadline) break
                 if (chunk.builtRoadGeneration === currentRoadGen) continue
                 const [cx, cz] = key.split(',').map(Number)
                 const newCarveData = this._buildCarveTable(cx, cz, chunk.heights)   // PERF-03 #1: reuse stored raw heights
@@ -796,7 +1243,7 @@ export class TerrainSystem {
                     }
                 }
                 pos.needsUpdate = true
-                chunk.mesh.geometry.computeVertexNormals()
+                this._computeGridNormals(chunk.mesh.geometry)  // PERF-03: grid-FD normals
                 this._writeChunkVertexColors(chunk.mesh.geometry, newCarveData, chunk.heights, amp)
                 // Stamp the new generation so we don't re-carve this chunk again until the next re-route.
                 chunk.carveData = newCarveData ?? null
@@ -812,12 +1259,26 @@ export class TerrainSystem {
         // which builds the table itself. Building it here was pure waste — and worse, transferring the
         // buffer CONSUMED it, forcing _flushPendingQueue to rebuild from scratch (the chunk was carve-
         // tabled twice). Send a bare generate; _flushPendingQueue owns the single carve-table build.
+        // PERF-02: request missing chunks NEAREST-FIRST, budgeted per frame. The worker processes
+        // `generate` messages FIFO, so posting nearest-first makes replies (and thus the build queue)
+        // arrive nearest-first → the area under/ahead of the truck fills before the periphery (no
+        // visible hole where it matters). Remaining chunks ride the next tick — _pendingWorker dedups,
+        // so no extra bookkeeping. MAX_REQUESTS_PER_FRAME bounds the postMessage flood at large rings.
+        const missing = []
         for (const key of needed) {
             if (!this._chunkMap.has(key) && !this._pendingWorker.has(key)) {
-                const [cx, cz] = key.split(',').map(Number)
-                this._pendingWorker.add(key)
-                this._worker.postMessage({ type: 'generate', cx, cz, key })
+                const ci = key.indexOf(',')
+                const cx = +key.slice(0, ci), cz = +key.slice(ci + 1)
+                const dx = cx - ccx, dz = cz - ccz
+                missing.push({ key, cx, cz, d2: dx * dx + dz * dz })
             }
+        }
+        missing.sort((a, b) => a.d2 - b.d2)
+        const reqBudget = Math.min(missing.length, MAX_REQUESTS_PER_FRAME)
+        for (let i = 0; i < reqBudget; i++) {
+            const { key, cx, cz } = missing[i]
+            this._pendingWorker.add(key)
+            this._worker.postMessage({ type: 'generate', cx, cz, key })
         }
     }
 
@@ -836,7 +1297,7 @@ export class TerrainSystem {
                 pos.setY(i, chunk.heights[i] * amp)
             }
             pos.needsUpdate = true
-            chunk.mesh.geometry.computeVertexNormals()
+            this._computeGridNormals(chunk.mesh.geometry)  // PERF-03: grid-FD normals
             // Re-write vertex colors after Y + normals are updated (D-09/D-10/D-11).
             this._writeChunkVertexColors(chunk.mesh.geometry, chunk.carveData, chunk.heights, amp)
         }
@@ -1122,7 +1583,7 @@ export class TerrainSystem {
     /**
      * Write per-vertex colors for the 5-zone feathered material system (D-09/D-10/D-11).
      *
-     * Called from _flushPendingQueue AFTER computeVertexNormals() so the normal attribute
+     * Called from _flushPendingQueue AFTER _computeGridNormals() so the normal attribute
      * is available for cliff slope detection (D-11).
      *
      * Zone priority (all blended/feathered — no hard lines, D-09):
@@ -1220,15 +1681,67 @@ export class TerrainSystem {
     }
 
     /**
+     * PERF-03 (Workstream B): write per-vertex normals from central differences over the carved
+     * height GRID (the position attribute's Y values), replacing THREE's computeVertexNormals()
+     * face-normal pass. ~65×65 reads + one normalize per vertex — far cheaper than building and
+     * averaging face normals — and because it reads the POST-carve Y it preserves carve-aware shading
+     * (the road trough / fill embankment still light correctly). One-sided differences at the 64-wide
+     * chunk border: equivalent to today, since each chunk builds normals independently → chunk-seam
+     * normals are already discontinuous. Convention matches analyticNormal/sampleNormal:
+     * n = normalize(-dh/dx, 1, -dh/dz). Vertex layout is row-major i = zi*N + xi (xi→+x, zi→+z),
+     * the same layout pos.setY uses, so grid-index differences map directly to world x/z.
+     *
+     * @param {THREE.BufferGeometry} geom — geometry whose position.Y holds the carved heights
+     * @private
+     */
+    _computeGridNormals(geom) {
+        const N    = GRID_SAMPLES
+        const cell = CHUNK_SIZE / (N - 1)
+        const pos  = geom.attributes.position
+        let   nrm  = geom.attributes.normal
+        if (!nrm || nrm.count !== N * N) {
+            nrm = new THREE.BufferAttribute(new Float32Array(N * N * 3), 3)
+            geom.setAttribute('normal', nrm)
+        }
+        const inv2c = 1 / (2 * cell)
+        for (let zi = 0; zi < N; zi++) {
+            for (let xi = 0; xi < N; xi++) {
+                const i = zi * N + xi
+                let dhx, dhz
+                if      (xi === 0)     dhx = (pos.getY(i + 1) - pos.getY(i))     / cell
+                else if (xi === N - 1) dhx = (pos.getY(i)     - pos.getY(i - 1)) / cell
+                else                   dhx = (pos.getY(i + 1) - pos.getY(i - 1)) * inv2c
+                if      (zi === 0)     dhz = (pos.getY(i + N) - pos.getY(i))     / cell
+                else if (zi === N - 1) dhz = (pos.getY(i)     - pos.getY(i - N)) / cell
+                else                   dhz = (pos.getY(i + N) - pos.getY(i - N)) * inv2c
+                const nx = -dhx, ny = 1, nz = -dhz
+                const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1
+                nrm.setXYZ(i, nx / len, ny / len, nz / len)
+            }
+        }
+        nrm.needsUpdate = true
+    }
+
+    /**
      * Build up to MAX_BUILDS_PER_FRAME chunk geometries from the pending FIFO queue.
      * Spreading builds across frames prevents frame spikes at chunk boundaries.
      * T-06-01: capped at 2 builds/frame.
      * @private
      */
-    _flushPendingQueue() {
+    _flushPendingQueue(ccx = 0, ccz = 0) {
         const _tFlush = performance.now()  // TEMP perf probe (D-arc) — terrain mesh build cost
+        const deadline = _tFlush + BUILD_MS_BUDGET   // PERF-02: time-slice the build (vs a fixed count)
+        // PERF-02: nearest-first drain. Replies usually arrive nearest-first already (worker FIFO over
+        // nearest-first dispatch), but sort defensively so a future worker pool / out-of-order arrival
+        // still builds the truck's surroundings before the periphery.
+        if (this._pendingQueue.length > 1) {
+            this._pendingQueue.sort((a, b) =>
+                ((a.cx - ccx) ** 2 + (a.cz - ccz) ** 2) - ((b.cx - ccx) ** 2 + (b.cz - ccz) ** 2))
+        }
         let built = 0
-        while (this._pendingQueue.length > 0 && built < MAX_BUILDS_PER_FRAME) {
+        // Deadline checked AFTER the first build so at least one chunk always lands per frame.
+        while (this._pendingQueue.length > 0 && built < MAX_BUILDS_PER_FRAME &&
+               (built === 0 || performance.now() < deadline)) {
             const { key, cx, cz, heights } = this._pendingQueue.shift()
             built++
 
@@ -1268,8 +1781,8 @@ export class TerrainSystem {
             }
             pos.needsUpdate = true
             _pt = performance.now()
-            geom.computeVertexNormals()  // for rendering only; physics uses analyticNormal()
-            perfAdd('flush.computeVertexNormals', performance.now() - _pt)
+            this._computeGridNormals(geom)  // PERF-03: grid-FD normals (rendering only; physics uses analyticNormal)
+            perfAdd('flush.gridNormals', performance.now() - _pt)
 
             // ── 5-zone feathered vertex colors (D-09/D-10/D-11, Plan 09-05) ─────
             // Zones (no hard lines — all feathered, D-09):
