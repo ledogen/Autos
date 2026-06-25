@@ -1892,23 +1892,7 @@ export class RoadSystem {
         // camberStrength now consumed by camberProfile() — not needed here (D2, plan 09-21)
         // roadFillHeight cap intentionally NOT read here (BUG-13): physics tracks the uncapped grade.
 
-        // Carve cross-section geometry — MUST match terrain.js _buildCarveTable so the physics surface
-        // the wheels ride == the dirt-foundation mesh the player sees. Before this, the physics carve
-        // used bare halfWidth for the flat bed and a fixed shoulderWidth ramp, while the mesh used the
-        // WIDENED carveHalfWidth + a fill/cut-slope toe — so the physics dropped to raw terrain metres
-        // INSIDE where the visible road was still flat: an invisible cliff at the road edge on sidehill
-        // fills. carveHalfWidth widens the flat bed past the ribbon; the ramp back to raw spans the
-        // fill/cut TOE (slope·delta), so a tall fill is a graded embankment, not a near-vertical drop.
-        const carveExtraWidth = p.roadCarveExtraWidth ?? 0
-        const minRadius       = p.roadMinTurnRadius   ?? 12
-        const carveHalfWidth  = Math.min(halfWidth + carveExtraWidth, minRadius)
-        const fillSlope       = p.roadFillSlope ?? 3.0
-        const cutSlope        = p.roadCutSlope  ?? 1.0
-        const fillHeight      = p.roadFillHeight ?? 2.0
-
-        // Query radius must reach the embankment toe (carveHalfWidth + slope·delta), else a wheel out on
-        // the fill slope finds no road → raw → reintroduces a cliff. Matches _buildCarveTable's maxExt.
-        const maxExt = carveHalfWidth + shoulderWidth + fillHeight * fillSlope + 4
+        const maxExt = halfWidth + shoulderWidth + 4
         const nr = (nrHint !== undefined) ? nrHint : this.queryNearest(wx, wz, maxExt)
         if (!nr) return null
 
@@ -1931,9 +1915,7 @@ export class RoadSystem {
         const signedLat = dx * tz - dz * tx
         const latDist   = Math.abs(signedLat)
 
-        // Loose reject (perf): anything past the widest possible toe is raw. The precise per-point
-        // cutoff is the blendW→0 ramp below (which honours the actual fill/cut delta).
-        if (latDist > maxExt) return null
+        if (latDist > halfWidth + shoulderWidth) return null
 
         // Design grade Y — P2 (09-27): replace per-slice spline nr.point.y with the run-global
         // continuous profile gradeY. nr.arcS is run-global (BUG-10 fix in 3df47cd) and is C0
@@ -1992,18 +1974,12 @@ export class RoadSystem {
             }
         }
 
-        // Blend weight — IDENTICAL cross-section to terrain.js _buildCarveTable (else physics ≠ visual):
-        // 1.0 across the widened carve bed (carveHalfWidth), then ramp to raw over the fill/cut TOE.
-        // The ramp width is slope·delta (delta = |road grade − raw terrain|), floored at shoulderWidth, so
-        // a tall sidehill fill becomes a graded fillSlope embankment instead of a shoulderWidth cliff.
+        // Blend weight: 1 on ribbon, ramp down across shoulder.
         let blendW
-        if (latDist < carveHalfWidth) {
+        if (latDist < halfWidth) {
             blendW = 1.0
         } else {
-            const delta = Math.abs(designY - rawAmp)
-            const slope = (designY >= rawAmp) ? fillSlope : cutSlope
-            const rampW = Math.max(shoulderWidth, slope * delta)
-            blendW = Math.max(0.0, 1.0 - (latDist - carveHalfWidth) / rampW)
+            blendW = Math.max(0.0, 1.0 - (latDist - halfWidth) / shoulderWidth)
         }
 
         return { blendW, gradeY: designY }

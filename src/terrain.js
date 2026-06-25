@@ -1596,20 +1596,15 @@ export class TerrainSystem {
                     continue
                 }
 
-                // Blend weight: 1 across the widened carve core, then ramp to raw terrain.
+                // Blend weight: 1 across the widened carve core, shoulder ramp beyond.
                 // The core is carveHalfWidth (= halfWidth + carveExtraWidth) wide so the flat
-                // trough bed is wider than the ribbon + skirt. The ramp spans the fill/cut TOE
-                // (slope·delta), floored at shoulderWidth: a tall sidehill fill becomes a graded
-                // fillSlope embankment instead of a shoulderWidth-wide near-vertical cliff (which
-                // the physics carve, _sampleCarveWorld, mirrors — they must stay identical).
+                // trough bed is wider than the ribbon + skirt. The shoulder ramp still uses
+                // shoulderWidth to blend back to raw terrain (SURF-05 continuity retained).
                 let blendW
                 if (latDist < carveHalfWidth) {
                     blendW = 1.0
                 } else {
-                    const rampW = cappedDelta > 0
-                        ? Math.max(shoulderWidth, fillSlope * cappedDelta)
-                        : Math.max(shoulderWidth, cutSlope * cutDelta)
-                    blendW = Math.max(0.0, 1.0 - (latDist - carveHalfWidth) / rampW)
+                    blendW = Math.max(0.0, 1.0 - (latDist - carveHalfWidth) / shoulderWidth)
                 }
 
                 // Store carveTargetY as pre-amplitude (Worker uses raw heights; main thread
