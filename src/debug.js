@@ -47,8 +47,25 @@ export function initDebug (params, callbacks = {}, options = {}) {
   gui.domElement.style.display = 'none'  // hidden by default; backtick reveals it
 
   // QUAL-04: build marker — confirms which build the browser actually loaded (deploy lag + cache).
-  // Disabled (read-only) text controller at the top of the panel; value baked at commit time.
-  gui.add({ build: BUILD }, 'build').name('Build').disable()
+  // Read-only text controller at the top of the panel; value baked at commit time. The input is
+  // disabled (not editable), so to make the ID easy to SEND we attach click-to-copy on the row:
+  // click copies BUILD to the clipboard and flashes "(copied!)" in the label. Falls back to selecting
+  // the text if the Clipboard API is unavailable (it's fine on localhost — a secure context).
+  const buildCtrl = gui.add({ build: BUILD }, 'build').name('Build').disable()
+  buildCtrl.domElement.style.cursor = 'pointer'
+  buildCtrl.domElement.title = 'Click to copy build ID'
+  buildCtrl.domElement.addEventListener('click', () => {
+    const flash = () => { buildCtrl.name('Build (copied!)'); setTimeout(() => buildCtrl.name('Build'), 1200) }
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(BUILD).then(flash).catch(() => {
+        const inp = buildCtrl.domElement.querySelector('input')
+        if (inp) { inp.disabled = false; inp.select(); inp.disabled = true }
+      })
+    } else {
+      const inp = buildCtrl.domElement.querySelector('input')
+      if (inp) { inp.disabled = false; inp.select(); inp.disabled = true }
+    }
+  })
 
   // Vehicle selector — copies preset into live params and refreshes all sliders
   const vehicleState = { vehicle: 'Ranger' }
@@ -243,14 +260,30 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // AND re-bakes the carve (debouncedRoadRebuild now also calls rebuildAllChunksFromWorker).
   roadFolder.add(params, 'roadMinTurnRadius', 6, 300, 5).name('Min Turn Radius (m)').onChange(fireRoadParam)
 
-  // D-arc (2026-06-16) — arc-primitive router knobs. The road is min-radius-valid BY CONSTRUCTION;
-  // these set its turn CHARACTER (and one perf lever). Each re-routes via onRoadParamChange.
-  //   Arc Hard Radius:   tightest switchback the router can make (the real fold floor). ↑ = no tight turns.
-  //   Arc Gentle Radius: the preferred, cheap curve radius. ↑ = sweeping bends.
-  //   Arc Heur Weight:   weighted-A* speed knob. ↑ = faster chunk loads, slightly less optimal routes.
-  roadFolder.add(params, 'roadArcHardRadius',   6,  40,  1   ).name('Arc Hard Radius (m)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadArcGentleRadius', 10, 120, 5   ).name('Arc Gentle Radius (m)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadArcHeurWeight',   1,  3,   0.1 ).name('Arc Heur Weight (speed)').onChange(fireRoadParam)
+  // D-arc (2026-06-16) / fixed-angle palette (QUAL-05 follow-up, 2026-06-24) — arc-primitive router knobs.
+  // The road is min-radius-valid BY CONSTRUCTION: the router turns a FIXED ANGLE per primitive (one
+  // heading bin) at one of the palette radii below, preferring the LARGEST that fits the heading change +
+  // grade → sweeping turns on mild ground, tight switchbacks only where grade forces them. Each re-routes
+  // via onRoadParamChange. The old single 'Arc Gentle Radius' slider is GONE — it bound roadArcGentleRadius,
+  // which the fixed-angle router now only reads as a fallback when roadArcRadii is absent (never, here).
+  //   Sweep/Gentle/Medium Radius: the curvature palette roadArcRadii[0..2] — ↑ = wider, sweepier turns.
+  //   Hard Radius:   tightest switchback the router (and the Dubins terminal) can express — the real fold
+  //                  floor. Writes BOTH roadArcRadii[3] and roadArcHardRadius so the palette tail stays
+  //                  pinned to the floor (ranger.js invariant: "last entry should equal roadArcHardRadius").
+  //   Heading Bins:  heading-lattice resolution; one bin is turned per turn primitive. COARSER (fewer
+  //                  bins) = LONGER, sweepier arcs (the opposite of the old anti-zigzag intuition).
+  //   Grade Samples: grade sample points along each (now variable-length) arc; ≥2 for the long sweeps.
+  //   Heur Weight:   weighted-A* speed knob. ↑ = faster chunk loads, slightly less optimal routes.
+  roadFolder.add(params.roadArcRadii, '0', 60, 400, 10).name('Arc Sweep Radius (m)').onChange(fireRoadParam)
+  roadFolder.add(params.roadArcRadii, '1', 30, 200, 5 ).name('Arc Gentle Radius (m)').onChange(fireRoadParam)
+  roadFolder.add(params.roadArcRadii, '2', 15, 100, 5 ).name('Arc Medium Radius (m)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadArcHardRadius', 6, 40, 1).name('Arc Hard Radius (m)').onChange(() => {
+    params.roadArcRadii[3] = params.roadArcHardRadius   // keep the palette tail pinned to the min-radius floor
+    fireRoadParam()
+  })
+  roadFolder.add(params, 'roadArcHeadingBins', 8, 48, 1 ).name('Arc Heading Bins (coarser=sweepier)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadArcGradeSamples', 1, 6, 1 ).name('Arc Grade Samples').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadArcHeurWeight',   1, 3, 0.1).name('Arc Heur Weight (speed)').onChange(fireRoadParam)
 
   // ── Road Surface sub-folder (D-04/D-07 — Plan 09-05 surface sliders) ────────────
   // These sliders change ROAD GEOMETRY (width, crown, camber, carve slopes, shoulder, etc.)
