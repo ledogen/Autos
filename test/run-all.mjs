@@ -20,6 +20,7 @@ const GATES = [
     'invariance.mjs',       // two-center network invariance (THIS rewrite — green since Phase 2)
     'restream-invariance.mjs', // same-instance re-stream (cache-reuse) invariance — drive-in == fresh
     'ribbon-carve.mjs',     // synthetic ribbon↔carve agreement (dump-free; replaced seam-grade.mjs)
+    'road-smoothness.mjs',  // collision surface has no invisible step the visual ribbon lacks (carve continuity)
     'replay-selftest.mjs',  // capture↔replay round-trip (Phase 4 place path) — src/capture.js + replay.mjs
     'route-worker-sync.mjs',// PERF-03 WS-A: worker routing copy == road-carve.js canonical (byte-identical)
     'camber-continuity.mjs',// BUG-19: banking carries continuously across continuing run boundaries (cross-run seed sync)

@@ -1839,6 +1839,130 @@ export class RoadSystem {
      *
      * Pure function of (wx, wz, roadSystem, params, rawAmp) — deterministic (D-16).
      */
+    /**
+     * Continuous nearest-point projection of (wx,wz) onto a run's centerline POLYLINE.
+     *
+     * Unlike queryNearest (which samples the per-tile CatmullRom spline at ~2 m then refines within a
+     * ±1-sample bracket — that bracket cannot track the true nearest point where the road curves, so
+     * its arcS/signedLat LURCH, tearing the carve surface: the "invisible cliff" that pinned the truck
+     * at the lone-pine spawn), this projects onto the raw network segments — the SAME points
+     * _buildRunProfile integrates — so the foot point, run-global arcS and signed lateral are all
+     * continuous in (wx,wz). arcS = (cumulative chord to foot) − arcOrigin, exactly the runProfile arc
+     * domain (arcPos[0] = −arcOrigin, arcPos[i] = arcPos[i−1] + chord).
+     *
+     * @returns {{ fx,fz, tx,tz, arcS, signedLat, d2 } | null}
+     */
+    _projectOntoRun(netEntry, wx, wz) {
+        const pts = netEntry.points
+        const N = pts ? pts.length : 0
+        if (N < 2) return null
+        const arcOrigin = netEntry.arcOrigin ?? 0
+        let bestD2 = Infinity, bestFx = 0, bestFz = 0, bestTx = 1, bestTz = 0, bestCum = 0
+        let bestI = 0, bestTclamp = 0
+        let cum = 0
+        for (let i = 0; i < N - 1; i++) {
+            const ax = pts[i].x, az = pts[i].z
+            const ex = pts[i + 1].x - ax, ez = pts[i + 1].z - az
+            const segLen2 = ex * ex + ez * ez
+            const segLen = Math.sqrt(segLen2) || 1e-8
+            let t = segLen2 > 1e-12 ? ((wx - ax) * ex + (wz - az) * ez) / segLen2 : 0
+            if (t < 0) t = 0; else if (t > 1) t = 1
+            const fx = ax + t * ex, fz = az + t * ez
+            const ddx = wx - fx, ddz = wz - fz
+            const d2 = ddx * ddx + ddz * ddz
+            if (d2 < bestD2) {
+                bestD2 = d2; bestFx = fx; bestFz = fz
+                bestTx = ex / segLen; bestTz = ez / segLen
+                bestCum = cum + t * segLen
+                bestI = i; bestTclamp = t
+            }
+            cum += segLen
+        }
+        // Terminus overshoot: nearest foot is the run's very first/last vertex AND the query lies
+        // longitudinally BEYOND that end (not beside the ribbon). Such a point is off the end of THIS
+        // run — its continuation run (junction neighbour) owns the surface there — so reject it rather
+        // than carve a bogus endpoint height (the 40 m "topmost" artifact came from accepting these).
+        const overBefore = bestI === 0 && bestTclamp === 0 &&
+            ((wx - pts[0].x) * bestTx + (wz - pts[0].z) * bestTz) < 0
+        const overAfter  = bestI === N - 2 && bestTclamp === 1 &&
+            ((wx - pts[N - 1].x) * bestTx + (wz - pts[N - 1].z) * bestTz) > 0
+        return {
+            fx: bestFx, fz: bestFz, tx: bestTx, tz: bestTz,
+            arcS: bestCum - arcOrigin,
+            // signedLat sign convention matches _sampleCarveWorld: (query − foot) cross tangent.
+            signedLat: (wx - bestFx) * bestTz - (wz - bestFz) * bestTx,
+            d2: bestD2,
+            offEnd: overBefore || overAfter
+        }
+    }
+
+    /**
+     * Resolve WHICH road the physics carve sits on at (wx,wz) — the nearest run whose footprint contains
+     * the point — via the continuous polyline projection, returned in queryNearest's shape so
+     * _sampleCarveWorld can consume it. This replaces queryNearest in the carve path.
+     *
+     * queryNearest answers "nearest centerline of ANY run" by sampling the per-tile spline at ~2 m and
+     * refining within a ±1-sample bracket. That bracket cannot track the true nearest point where the
+     * road curves, so its arcS/signedLat LURCH (→ same-run carve cliffs, e.g. the 66 cm step at the
+     * lone-pine spawn); and at footprint overlaps the discrete sampling flips runs at different heights
+     * (→ cross-run cliffs). Projecting onto the raw network segments (_projectOntoRun) makes arcS and
+     * signedLat continuous in (wx,wz), and selecting the nearest footprint-INTERIOR run (queryNearest's
+     * own interior policy, but continuous) removes both tear classes — the physics surface now tracks
+     * the swept visual ribbon (road-mesh.js sweepRibbon, which resolves per-run along ordered points).
+     *
+     * A height-based "topmost" selection was tried and REJECTED: it teleported the surface onto
+     * wrong-height runs that merely pass nearby (a 40 m artifact). Terminus-overshoot candidates
+     * (off the end of a run) are also rejected — the junction-neighbour run owns the surface there.
+     *
+     * Candidates come from the 3×3 tile block (footprint ≤ halfWidth+shoulder ≈ 7.5 m ≪ 64 m tile, so
+     * any run that can carve here has a slice in-block). Returns null off all road → raw terrain.
+     */
+    _resolveRoadSurface(wx, wz) {
+        if (!this._tiles || !this._network) return null
+        const p = this._params
+        const halfWidth     = p.roadHalfWidth     ?? 5
+        const shoulderWidth = p.roadShoulderWidth  ?? 2.5
+        const footHW = halfWidth + shoulderWidth
+
+        const qtx = Math.floor(wx / CHUNK_SIZE)
+        const qtz = Math.floor(wz / CHUNK_SIZE)
+        const seen = new Set()
+        // Select the NEAREST footprint-interior run by true lateral distance (queryNearest's interior
+        // policy), but via the continuous polyline projection so arcS/signedLat don't lurch at curves.
+        // (Height-based "topmost" selection was tried and rejected — it teleported the surface onto
+        // wrong-height runs that merely pass nearby.) Where genuinely overlapping runs at different
+        // heights remain, this leaves at most a localized crease, not the old sampled-spline cliff.
+        let bestLat = Infinity, bestPr = null, bestRunKey = ''
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dz = -1; dz <= 1; dz++) {
+                const segs = this._tiles.get(`${qtx + dx},${qtz + dz}`)
+                if (!segs) continue
+                for (const s of segs) {
+                    const runKey = s.runKey ?? ''
+                    if (seen.has(runKey)) continue
+                    seen.add(runKey)
+                    const netEntry = this._network.get(runKey)
+                    if (!netEntry) continue
+                    const pr = this._projectOntoRun(netEntry, wx, wz)
+                    if (!pr || pr.offEnd) continue
+                    const latDist = Math.abs(pr.signedLat)
+                    if (latDist > footHW) continue
+                    if (latDist < bestLat) { bestLat = latDist; bestPr = pr; bestRunKey = runKey }
+                }
+            }
+        }
+        if (!bestPr) return null
+        // camberSign = 1: the projection uses the run's own canonical polyline direction (arcS increases
+        // along it), so run-frame camber maps to the world frame directly (no E→W slice reversal here).
+        return {
+            point:      new THREE.Vector3(bestPr.fx, this.runProfile(bestPr.arcS, bestRunKey).gradeY, bestPr.fz),
+            tangent:    new THREE.Vector3(bestPr.tx, 0, bestPr.tz),
+            runKey:     bestRunKey,
+            arcS:       bestPr.arcS,
+            camberSign: 1
+        }
+    }
+
     // Carve-radius nearest-run query — the run-match the physics carve path uses. Exposed so a caller
     // doing several samples in a tiny neighbourhood (terrain.analyticNormal's ±0.5 m finite differences,
     // queryContacts' height+normal for one wheel) can find the run ONCE and pass it back as a hint to
@@ -1855,8 +1979,6 @@ export class RoadSystem {
     // wheels (≥1.6 m apart = 16 cells) and distinct runs never collide. Pure fn of (pos, rev) → a hit is
     // identical to a fresh query at the cell; rev-cleared (re-stream) and size-bounded.
     carveHint(wx, wz) {
-        const p = this._params
-        const maxExt = (p.roadHalfWidth ?? 5) + (p.roadShoulderWidth ?? 2.5) + 4
         if (!this._hintCache || this._hintCache.rev !== this._networkRev) {
             this._hintCache = { rev: this._networkRev, map: new Map() }
         }
@@ -1869,7 +1991,8 @@ export class RoadSystem {
         const key = `${Math.round(wx * 20)},${Math.round(wz * 20)}`
         let nr = m.get(key)
         if (nr === undefined) {
-            nr = this.queryNearest(wx, wz, maxExt)
+            // Continuous-projection road resolver, NOT queryNearest — see _resolveRoadSurface.
+            nr = this._resolveRoadSurface(wx, wz)
             if (m.size > 128) m.clear()
             m.set(key, nr)
         }
@@ -1892,8 +2015,9 @@ export class RoadSystem {
         // camberStrength now consumed by camberProfile() — not needed here (D2, plan 09-21)
         // roadFillHeight cap intentionally NOT read here (BUG-13): physics tracks the uncapped grade.
 
-        const maxExt = halfWidth + shoulderWidth + 4
-        const nr = (nrHint !== undefined) ? nrHint : this.queryNearest(wx, wz, maxExt)
+        // Continuous-projection road resolver replaces queryNearest in the carve path —
+        // see _resolveRoadSurface. nrHint (from carveHint) is already a _resolveRoadSurface result.
+        const nr = (nrHint !== undefined) ? nrHint : this._resolveRoadSurface(wx, wz)
         if (!nr) return null
 
         const dx = wx - nr.point.x
