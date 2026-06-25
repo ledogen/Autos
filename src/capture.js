@@ -34,6 +34,12 @@ export function serializableParams(params) {
     for (const k of Object.keys(params || {})) {
         const v = params[k]
         if (typeof v === 'number' && Number.isFinite(v)) out[k] = v
+        // Number ARRAYS must survive too — e.g. roadArcRadii (the fixed-angle curvature palette).
+        // Dropping it made replay.mjs route with arcPrimitiveConnect's [gentleR,hardR] fallback, i.e.
+        // a DIFFERENT road than the game ran, so every road capture replayed against the wrong surface.
+        else if (Array.isArray(v) && v.every(x => typeof x === 'number' && Number.isFinite(x))) {
+            out[k] = v.slice()
+        }
     }
     return out
 }

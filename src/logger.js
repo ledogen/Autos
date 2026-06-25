@@ -21,6 +21,8 @@
  *     fl_omega, fr_omega, rl_omega, rr_omega  (Phase 3 — wheel angular velocity rad/s)
  *     fl_fz, fr_fz, rl_fz, rr_fz             (Phase 4 — tire spring force N per corner, D-12)
  *     fl_sc, fr_sc, rl_sc, rr_sc             (Phase 4.1 — strut compression m per corner, D-12)
+ *     rd_minr                                (BUG-12 — local centerline turn radius m)
+ *     rd_gh, fl_gh, fr_gh, rl_gh, rr_gh      (2026-06-25 — ground height under CG + each wheel, harness fidelity)
  *
  * Threat model: T-02-01 — JSON.parse wrapped in try/catch; unknown IC keys ignored, no eval.
  *
@@ -68,6 +70,12 @@ const FIELDS = [
   // BUG-12 diagnostic (open): local XZ turn radius of the truck's run centerline (m). 9999 = ~straight.
   // If a ribbon FOLD is visible where rd_minr is still ≥ ~15 m → fold is junction/mesh, not the spline.
   'rd_minr',
+  // Harness-fidelity columns (2026-06-25): the SURFACE the browser actually sampled, so test/replay.mjs
+  // can diff it against the headless terrain model frame-by-frame instead of guessing. rd_gh = ground
+  // height (analyticHeight, carve included) under the CG — this is the column the physics-replay terrain
+  // self-check looks for. fl_gh..rr_gh = ground height under each WHEEL hub (airborne-safe: sampled from
+  // getWheelPosition, not contact state), so a jamming/floating wheel on steep terrain is visible directly.
+  'rd_gh', 'fl_gh', 'fr_gh', 'rl_gh', 'rr_gh',
 ]
 
 // ── Private helpers ───────────────────────────────────────────────────────────
@@ -164,11 +172,14 @@ export function isRecording () { return _recording }
  * @param {number} simTime - Accumulated simulation time in seconds.
  * @param {object} vehicleState - Full vehicle state object (position, velocity, quaternion, etc.).
  * @param {Array}  wheelDebug  - Array of 4 objects [{fn, fy, sa, c}, ...] (FL, FR, RL, RR).
- * @param {object} [roadDebug] - BUG-12 diagnostic: { minR }. Omitted/null → rd_minr logs 9999.
+ * @param {object} [roadDebug] - { minR, gh, wheelGh }. minR: BUG-12 turn-radius diagnostic (omitted →
+ *   9999). gh: ground height under the CG (omitted → null). wheelGh: [fl,fr,rl,rr] ground height under
+ *   each wheel hub (omitted → nulls). gh/wheelGh are the harness-fidelity surface samples.
  */
 export function captureFrame (simTime, vehicleState, wheelDebug, roadDebug) {
   if (!_recording) return
   const rd = roadDebug || {}
+  const wgh = rd.wheelGh || []
 
   const p = vehicleState.position
   const v = vehicleState.velocity
@@ -199,6 +210,10 @@ export function captureFrame (simTime, vehicleState, wheelDebug, roadDebug) {
     fl.strutComp ?? 0, fr.strutComp ?? 0, rl.strutComp ?? 0, rr.strutComp ?? 0,
     // BUG-12 diagnostic (open): local centerline turn radius near truck
     rd.minR ?? 9999,
+    // Harness-fidelity surface samples (2026-06-25): CG + per-wheel ground height. null when no terrain
+    // (e.g. grid world) — the replay self-check treats a missing/null rd_gh as "older capture, skip".
+    rd.gh ?? null,
+    wgh[0] ?? null, wgh[1] ?? null, wgh[2] ?? null, wgh[3] ?? null,
   ])
 }
 

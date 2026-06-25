@@ -1070,9 +1070,17 @@ function loop () {
     // to localize ribbon folds. Gated on isRecording() so normal play pays nothing (queryNearest
     // scans a 3×3 tile block). The post-hoc road-resolution path lives in test/replay.mjs.
     let roadDebug = null
-    if (isRecording() && roadSystem && !_gridWorldActive) {
+    if (isRecording() && !_gridWorldActive) {
       const px = vehicleState.position.x, pz = vehicleState.position.z
-      roadDebug = { minR: roadSystem.debugSampleAt(px, pz).minR }
+      // Surface fidelity (2026-06-25): record the ground the browser actually sampled — CG + each wheel
+      // hub — so test/replay.mjs can diff it against the headless terrain instead of guessing. Per-wheel
+      // uses getWheelPosition (airborne-safe), the same call the contact path and place-capture use.
+      const gh = terrainSystem ? terrainSystem.analyticHeight(px, pz) : null
+      const wheelGh = terrainSystem
+        ? [0, 1, 2, 3].map(i => { const hub = getWheelPosition(i, vehicleState, RANGER_PARAMS); return terrainSystem.analyticHeight(hub.x, hub.z) })
+        : [null, null, null, null]
+      const minR = roadSystem ? roadSystem.debugSampleAt(px, pz).minR : 9999
+      roadDebug = { minR, gh, wheelGh }
     }
     captureFrame(simTime, vehicleState, vehicleState.wheelDebug, roadDebug)
     accumulator -= PHYSICS_DT
