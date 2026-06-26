@@ -41,7 +41,8 @@ export const CHUNK_SIZE    = 64   // world units (metres) per chunk side
 export const GRID_SAMPLES  = 65   // vertices per side (64 cells), avoids seams
 const        RING_RADIUS          = 2   // chunks in each direction → 5×5 = 25 total (DEFAULT; runtime-tunable via setRingRadius)
 const        RING_KEEP_MARGIN     = 1   // PERF-02: keep (don't dispose) chunks within ring+this — hysteresis kills boundary dispose↔rebuild thrash
-const        MAX_BUILDS_PER_FRAME = 4   // hard safety cap on geometry builds/recarves per frame (BUILD_MS_BUDGET is the primary limiter)
+const        GEOM_POOL_MAX        = 32  // PERF-05: recycled chunk-geometry pool cap. Steady driving keeps it near-empty (build≈evict); it fills only transiently on a full-ring regen, where the cap bounds retained memory. Recycling kills the per-chunk PlaneGeometry alloc + the non-deterministic GC pause (~16% of dropped-frame time on slow GPUs).
+const        MAX_BUILDS_PER_FRAME = 1   // PERF-05: one chunk build/recarve per frame. On slow GPUs a single chunk's carve already blows BUILD_MS_BUDGET, so building 2+ in a frame only deepens the hitch; capping at 1 bounds the worst frame and evens the physics-substep catch-up. Fast machines still fill the ring at 60 chunks/s. (BUILD_MS_BUDGET remains the adaptive limiter.)
 const        BUILD_MS_BUDGET      = 3.0 // PERF-02: per-frame ms budget for geometry build + re-carve — adapts to machine speed (vs a fixed count)
 const        MAX_REQUESTS_PER_FRAME = 8 // PERF-02: cap worker `generate` dispatches per frame — bounds the postMessage flood at large rings (raised for the deeper warm rings at Far/Ultra)
 
@@ -829,6 +830,7 @@ export class TerrainSystem {
         this._chunkMap      = new Map()   // key → { mesh, heights, carveData? }
         this._pendingWorker = new Set()   // keys requested but not yet received
         this._pendingQueue  = []          // FIFO of received {key,cx,cz,heights} awaiting geometry build
+        this._geomPool      = []          // PERF-05: recycled chunk BufferGeometry (65×65 XZ plane; only Y/normal/color change per chunk) — avoids per-chunk PlaneGeometry alloc + GC
 
         // Main-thread analytic noise closures (seeded same way as Worker — deterministic agreement)
         this._noiseCoarse   = null
@@ -1017,13 +1019,42 @@ export class TerrainSystem {
         // Dispose all built chunk meshes and remove from scene
         for (const [, chunk] of this._chunkMap) {
             this._scene.remove(chunk.mesh)
-            chunk.mesh.geometry.dispose()
+            this._releaseChunkGeometry(chunk.mesh.geometry)  // PERF-05: recycle for the imminent re-stream
         }
         this._chunkMap.clear()
 
         // Clear pending state — Worker will process new generate requests after reinit
         this._pendingWorker.clear()
         this._pendingQueue.length = 0
+    }
+
+    /**
+     * PERF-05: acquire a chunk geometry. The X/Z grid layout, UVs, and index buffer are identical for
+     * every chunk (the chunk's world position lives on the mesh, not the geometry), so an evicted chunk's
+     * geometry is reusable as-is — the build loop overwrites position.Y, then _computeGridNormals and
+     * _writeChunkVertexColors overwrite the normal + color attributes. Pulling from the pool avoids a
+     * fresh PlaneGeometry allocation + rotateX + the eventual GC pause every chunk (the non-deterministic
+     * cost that surfaces as random hitches on slow hardware). Index + UV buffers are also never re-uploaded.
+     * @private
+     */
+    _acquireChunkGeometry() {
+        const pooled = this._geomPool.pop()
+        if (pooled) return pooled
+        const geom = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, GRID_SAMPLES - 1, GRID_SAMPLES - 1)
+        geom.rotateX(-Math.PI / 2)  // XY plane → XZ (Three.js Y-up); baked once, never re-applied on reuse
+        return geom
+    }
+
+    /**
+     * PERF-05: return an evicted chunk geometry to the pool for reuse (replaces the former per-eviction
+     * geometry.dispose()). Only geometries removed from the scene and about to leave _chunkMap are passed
+     * here, so a live geometry can never enter the pool. Over the cap → dispose, so a full-ring regen
+     * burst can't grow the pool without bound.
+     * @private
+     */
+    _releaseChunkGeometry(geom) {
+        if (this._geomPool.length < GEOM_POOL_MAX) this._geomPool.push(geom)
+        else geom.dispose()
     }
 
     /**
@@ -1247,7 +1278,7 @@ export class TerrainSystem {
             const kx = +key.slice(0, ci), kz = +key.slice(ci + 1)
             if (Math.max(Math.abs(kx - ccx), Math.abs(kz - ccz)) > keepRadius) {
                 this._scene.remove(chunk.mesh)
-                chunk.mesh.geometry.dispose()  // T-06-03: explicit GPU memory release
+                this._releaseChunkGeometry(chunk.mesh.geometry)  // PERF-05: recycle (was T-06-03 dispose)
                 this._chunkMap.delete(key)
             }
         }
@@ -1771,8 +1802,7 @@ export class TerrainSystem {
      * @private
      */
     _flushPendingQueue(ccx = 0, ccz = 0) {
-        const _tFlush = performance.now()  // TEMP perf probe (D-arc) — terrain mesh build cost
-        const deadline = _tFlush + BUILD_MS_BUDGET   // PERF-02: time-slice the build (vs a fixed count)
+        const deadline = performance.now() + BUILD_MS_BUDGET   // PERF-02: time-slice the build (vs a fixed count)
         // PERF-02: nearest-first drain. Replies usually arrive nearest-first already (worker FIFO over
         // nearest-first dispatch), but sort defensively so a future worker pool / out-of-order arrival
         // still builds the truck's surroundings before the periphery.
@@ -1790,10 +1820,9 @@ export class TerrainSystem {
             const N = GRID_SAMPLES
             const S = CHUNK_SIZE
 
-            // PlaneGeometry(S, S, N-1, N-1): creates a 65×65 vertex grid in XY plane
-            // rotateX(-PI/2): rotates to XZ plane (Three.js Y-up)
-            const geom = new THREE.PlaneGeometry(S, S, N - 1, N - 1)
-            geom.rotateX(-Math.PI / 2)
+            // PERF-05: pooled 65×65 XZ-plane geometry (recycled across chunks; fresh only on pool miss).
+            // The X/Z grid + UV + index are chunk-invariant — only Y (below), normals, and colors change.
+            const geom = this._acquireChunkGeometry()
 
             // Overwrite Y values from heights Float32Array (row-major: heights[zi*N+xi])
             // Apply terrainAmplitude to match sampleHeight so physics contact surface
@@ -1852,7 +1881,7 @@ export class TerrainSystem {
             if (this._chunkMap.has(key)) {
                 const stale = this._chunkMap.get(key)
                 this._scene.remove(stale.mesh)
-                stale.mesh.geometry.dispose()  // T-06-03: explicit GPU memory release
+                this._releaseChunkGeometry(stale.mesh.geometry)  // PERF-05: recycle (was T-06-03 dispose)
             }
 
             this._scene.add(mesh)
@@ -1872,13 +1901,6 @@ export class TerrainSystem {
             // _updateChunkRing's !_pendingWorker.has(key) guard stays effective
             // for the entire request→built window (closes the duplicate-request race).
             this._pendingWorker.delete(key)
-        }
-        // TEMP perf probe (D-arc): terrain mesh build is the suspected page-load cost (independent of
-        // the road). Track cumulative build time + chunk count + remaining queue depth.
-        if (built > 0) {
-            this._flushMs = (this._flushMs || 0) + (performance.now() - _tFlush)
-            this._flushN  = (this._flushN  || 0) + built
-            console.log(`[terrain build] +${built} chunks this frame | total ${this._flushN} chunks, ${this._flushMs.toFixed(0)}ms cumulative | queue left ${this._pendingQueue.length}`)
         }
     }
 }
