@@ -166,7 +166,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // (options.initialSeed, derived from ?seed= in main.js) so the field never misreports the
   // loaded world (CR-01). Uses onFinishChange (not onChange) so the terrain only regenerates
   // once the user commits the seed by pressing Return (or blurring), not on every keystroke.
-  const _seedState = { seed: options.initialSeed ?? 'lone-pine' }
+  const _seedState = { seed: options.initialSeed ?? '6' }
   terrainFolder.add(_seedState, 'seed').name('World Seed').onFinishChange(v => {
     if (typeof callbacks.changeSeed === 'function') callbacks.changeSeed(v)
   })

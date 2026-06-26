@@ -34,12 +34,12 @@ import { DustSystem } from './dust.js'
 import { parseWorldSeed, seedFor } from './seed.js'
 import { createVehicleModel } from './vehicle-model.js'
 
-// World seed — parsed from URL ?seed= parameter, defaulting to 'lone-pine'.
+// World seed — parsed from URL ?seed= parameter, defaulting to '6'.
 // Plan 04: changed to `let` so debug panel seed field can mutate it (SEED-04).
 // Refreshing the same ?seed= URL reproduces the same terrain (SEED-01/03).
 const _urlSeed = new URLSearchParams(window.location.search).get('seed')
-let worldSeed = parseWorldSeed(_urlSeed ?? 'lone-pine')
-let _seedString = _urlSeed ?? 'lone-pine'   // current seed STRING (reference for captures; numeric worldSeed drives repro)
+let worldSeed = parseWorldSeed(_urlSeed ?? '6')
+let _seedString = _urlSeed ?? '6'   // current seed STRING (reference for captures; numeric worldSeed drives repro)
 
 // Capture stream-center ring (Phase 4/5): last N stream centers, for event/tear reproduction. Cheap —
 // pushed only when the center moves a meaningful distance. Not required for PLACE repro (the road is
@@ -771,7 +771,7 @@ const _gui = initDebug(RANGER_PARAMS, {
       roadMeshSystem._material.polygonOffsetUnits  = units
     }
   },
-}, { initialSeed: _urlSeed ?? 'lone-pine' })
+}, { initialSeed: _urlSeed ?? '6' })
 
 // Body paint color picker (visual-model) — recolors the imported truck's paint coat live.
 const _bodyColor = { color: '#2f6da4' }
