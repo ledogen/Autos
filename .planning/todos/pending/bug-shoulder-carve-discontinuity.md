@@ -151,8 +151,20 @@ gate `test/road-fill-support.mjs` (real-noise seeds 6,7, pinned to one run's cro
 GREEN now; the wheel-ground path is `queryContacts → analyticHeight → _sampleCarveWorld`, confirmed. The
 crown+camber (cut) gate still green, event replay still clears the airborne+slam. 14 gates green.
 
+### Road-edge dropoff 2026-06-26 (commit eb108e7)
+
+User wanted the road edge to actually DROP (the float was unrealistic / not punishing). Physics now
+subtracts `roadClearanceMargin` off the ribbon (`latDist >= halfWidth` → ride the carved dirt, same as
+the mesh), so clipping the edge drops the wheel ~clearanceMargin onto the lower shoulder. On-ribbon it
+rides the ribbon top. Physics now == visual everywhere. `roadClearanceMargin` **0.5 → 0.25 m** (jolting,
+not launching). Verified: clean 0.23 m dropoff at the hairpin edge; event replay still holds all-wheel
+contact (the 0.25 m dropoff is bounded — NOT the old 0.52 m camber cliff). shoulder-lateral-continuity
+gate now two-zone (tight 0.10 m off-edge, clearance+0.08 at the edge) — RED on the camber cliff, GREEN on
+the intended dropoff. 14 gates green.
+
 **Still OPEN — two items:**
-1. **In-browser confirm** the airborne/slam (hairpin -297,231) AND the fill fall-through are both gone.
+1. **In-browser confirm** the airborne/slam (hairpin -297,231), the fill fall-through, AND the new
+   road-edge dropoff feel right.
 2. **Sub-floor fold (minRadius 7.69 m < 8 m hard floor)** — the lateral fix removes the airborne+slam
    even at this radius, but the router still emits a sub-hard-floor hairpin here (a valid-by-construction
    breach). Separate concern; split to its own ticket if the tight inner cross-section shows other
