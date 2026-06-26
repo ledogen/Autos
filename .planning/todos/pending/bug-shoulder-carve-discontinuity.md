@@ -6,6 +6,11 @@ opened: 2026-06-21
 source: phase-09-capture-replay
 severity: high
 capture: Logs/rangersim-capture-1782068814989.json
+captures:
+  - Logs/rangersim-capture-1782068814989.json   # original (kind:event, seed 6, t116.3–118.7)
+  - Logs/rangersim-capture-1782456166947.json    # 2026-06-25 re-capture (kind:event, 403 frames) — reproduces headlessly
+  - Logs/rangersim-capture-1782456169343.json    # 2026-06-25 place dump @ hairpin (-297,231), minRadius 7.69 m (sub-floor)
+repro_headless: confirmed   # test/replay.mjs reproduces airborne+slam (Phase-5 driver now live)
 ---
 
 # BUG-15: Carve↔ground surface discontinuity at the road shoulder threshold → wheels go airborne then slam
@@ -79,3 +84,40 @@ profile vs `analyticHeight` — the gap should be ~0 everywhere; it is not in th
   continuous (`*_fz` never drops to 0 from a surface step). The lateral carve↔crown gap stays < ε across
   the shoulder band. Headless lateral-shoulder gate passes; the BUG-15 event capture replays without the
   contact-loss/slam signature.
+
+## Update 2026-06-25 — re-confirmed + now reproduces headlessly + FOLD compounding factor
+
+User re-reported (with pic): "collision mesh for the tires is discontinuous near the threshold of
+terrain and road, especially in hairpins." Truck at the inside edge of a tight hairpin, front wheels
+dipping/catching at the road↔terrain boundary. Fresh captures at the hairpin **(-297, 231)**:
+
+- **Event** `Logs/rangersim-capture-1782456166947.json` (403 frames). `node test/replay.mjs` now
+  reproduces the signature headlessly (Phase-5 physics-replay driver is live):
+  - (A) terrain self-check: headless `analyticHeight` matches recorded `rd_gh` to **0.016 m** → the
+    carve surface is faithfully reproduced; the bug is in that surface, not the harness.
+  - (C) **all-wheels airborne frames 139–156 (t 25.30–25.58), then front-right slam `fr_fz` → 5850 N**
+    at frame 159 (replay peak ~10.8 kN). Same airborne→slam as the 2026-06-21 capture. CONFIRMED.
+- **Place** `Logs/rangersim-capture-1782456169343.json` @ (-297,231): window-invariance is GREEN
+  (BUG-20 fix holds — this is NOT the disappearing-road bug), BUT the **FOLD METRIC flags
+  `minRadius = 7.69 m`, BELOW the 8 m hard floor** (design min 15 m). runKey `0:-3`, arcS 705,
+  camber 0.105 rad (~6°, the ±6° clamp — fully banked).
+
+**New root-cause insight — a tight-hairpin FOLD compounds the lateral carve step.** At a 7.69 m
+centerline radius with `roadHalfWidth = 5 m`, the inner edge radius is only ~2.7 m: adjacent arc-sample
+cross-sections splay/overlap on the inside, so the carved collision surface there is near-degenerate
+(and the heavy camber tilts the whole cross-section). This is WHY the discontinuity is "especially in
+hairpins" — the lateral carve↔crown mismatch (the core BUG-15 step) is worst exactly where the
+centerline is tightest/folded. Two coupled defects:
+  1. **Lateral carve↔crown unification** (the original BUG-15 fix above) — still the primary fix.
+  2. **Sub-floor centerline radius (7.69 m < 8 m hard floor)** — a router "valid-by-construction"
+     breach at this hairpin (likely the pinned-anchor crease noted in the centerline-validity mandate).
+     The fold makes the inner cross-section degenerate independent of (1). May warrant verifying the
+     hard-floor enforcement at run-end/anchor pins; if the lateral-unification fix alone doesn't clear
+     the airborne+slam at this radius, split this out as its own ticket.
+
+**Do NOT fold BUG-18 into this fix — same system, different bug.** BUG-18 (visual wheel dip on the
+inside of switchbacks) shares the contact *system* but has a distinct root cause: single-sphere-at-
+wheel-center contact missing the tire's wide inner edge (FEAT-09 multi-point footprint). That is a
+contact-SAMPLING defect. BUG-15 here is a surface-GEOMETRY defect (the carve↔crown lateral step + the
+sub-floor fold). They stay separate tickets; this fix touches the carve/road surface, not the contact
+probe. See the centerline-validity mandate for the sub-floor-radius angle.
