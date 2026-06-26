@@ -115,6 +115,32 @@ centerline is tightest/folded. Two coupled defects:
      hard-floor enforcement at run-end/anchor pins; if the lateral-unification fix alone doesn't clear
      the airborne+slam at this radius, split this out as its own ticket.
 
+## Fix landed 2026-06-26 (commit ceeadb3) — pending in-browser confirm
+
+Root cause pinned with a lateral sweep at the hairpin: `_sampleCarveWorld` folded crown+camber in ONLY
+for `latDist < halfWidth` and dropped the camber tilt at the ribbon edge. On the banked hairpin the
+outer edge sits `halfWidth·sin(camber)` above grade; the sweep showed gradeY climb +0.47 m across the
+ribbon then **drop 0.523 m in one 0.25 m step at the edge** — the cliff the wheel falls off → airborne →
+slam. The visual terrain mesh carve (`terrain.js _buildCarveTable`) did NOT have this — it folds
+crown+camber across the whole footprint with the full `signedLat`. So the bug was a physics-vs-mesh
+*formula divergence*, not a carve-table artifact.
+
+**Fix:** `_sampleCarveWorld` now folds crown+camber across the whole footprint using the full
+`signedLat` — the IDENTICAL `crownProfile(signedLat) + signedLat·sin(camber)` the mesh carve uses → the
+physics surface is C0 at the ribbon edge and matches the carved terrain in the shoulder. Verified:
+lateral sweep worst step **0.523 m → 0.026 m**; the event capture no longer reproduces airborne+slam
+(all-wheel contact held). New gate `test/shoulder-lateral-continuity.mjs` (real-noise seeds 6,7, marches
+perpendicular at a fixed arc station) is RED pre-fix (~0.56 m edge step) / GREEN now; 13 gates green.
+
+**Still OPEN — two items:**
+1. **In-browser confirm** the airborne/slam is gone driving the hairpin at (-297,231).
+2. **Sub-floor fold (minRadius 7.69 m < 8 m hard floor)** — the lateral fix removes the airborne+slam
+   even at this radius, but the router still emits a sub-hard-floor hairpin here (a valid-by-construction
+   breach). Separate concern; split to its own ticket if the tight inner cross-section shows other
+   artifacts. Residual physics↔mesh shoulder differences (clearanceMargin offset, wider `carveHalfWidth`
+   core) are pre-existing and not cliffs — the full single-shared-cross-section unification remains the
+   ideal but was not needed to kill the airborne+slam.
+
 **Do NOT fold BUG-18 into this fix — same system, different bug.** BUG-18 (visual wheel dip on the
 inside of switchbacks) shares the contact *system* but has a distinct root cause: single-sphere-at-
 wheel-center contact missing the tire's wide inner edge (FEAT-09 multi-point footprint). That is a
