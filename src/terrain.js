@@ -1419,13 +1419,24 @@ export class TerrainSystem {
         for (const [key, chunk] of this._chunkMap) {
             const [cx, cz] = key.split(',').map(Number)
             const pos = chunk.mesh.geometry.attributes.position
+            // Re-apply the road carve blend (raw + blendW*(gradeY-raw)) — same formula as
+            // _flushPendingQueue / the re-carve path. Without it the mesh snaps back to RAW
+            // height and buries the road trough (the ribbon stays at graded Y). CARVE SYNC.
+            const carveData = chunk.carveData
             for (let i = 0; i < N * N; i++) {
-                pos.setY(i, chunk.heights[i] * amp)
+                const raw = chunk.heights[i] * amp
+                if (carveData) {
+                    const blendW = carveData[i * 2]
+                    const gradeY = carveData[i * 2 + 1] * amp  // gradeY_preamp → world-space
+                    pos.setY(i, raw + blendW * (gradeY - raw))
+                } else {
+                    pos.setY(i, raw)
+                }
             }
             pos.needsUpdate = true
             this._computeGridNormals(chunk.mesh.geometry)  // PERF-03: grid-FD normals
             // Re-write vertex colors after Y + normals are updated (D-09/D-10/D-11).
-            this._writeChunkVertexColors(chunk.mesh.geometry, chunk.carveData, chunk.heights, amp, cx, cz)
+            this._writeChunkVertexColors(chunk.mesh.geometry, carveData, chunk.heights, amp, cx, cz)
         }
     }
 

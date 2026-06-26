@@ -484,7 +484,7 @@ export const RANGER_PARAMS = {
   // Biome split (slope + altitude). slope = 1 - vertexNormal.y. Altitude = raw terrain world Y.
   terrainGrassSlopeMax: 0.16,  // [-] above this slope, no grass (too steep to hold meadow)
   terrainTreelineLo:    60,    // m — below this altitude grass is full; rock-alt term is 0
-  terrainTreelineHi:    105,   // m — above this altitude terrain trends to bare granite (treeline)
+  terrainTreelineHi:    200,   // m — above this altitude terrain trends to bare granite (treeline)
 
   // Meadow (relative elevation). rel = rawHeight - localMean(radius). Negative = local basin
   // where water collects → lush meadow; rel ≈ 0 (flat bench) → fertile/forest green.
