@@ -1368,6 +1368,7 @@ export class TerrainSystem {
                     }
                 }
                 pos.needsUpdate = true
+                chunk.mesh.geometry.computeBoundingSphere()  // PERF-05 pooling fix: keep frustum-cull bounds in sync with re-carved Y
                 this._computeGridNormals(chunk.mesh.geometry)  // PERF-03: grid-FD normals
                 this._writeChunkVertexColors(chunk.mesh.geometry, newCarveData, chunk.heights, amp, cx, cz)
                 // Stamp the new generation so we don't re-carve this chunk again until the next re-route.
@@ -1434,6 +1435,7 @@ export class TerrainSystem {
                 }
             }
             pos.needsUpdate = true
+            chunk.mesh.geometry.computeBoundingSphere()  // PERF-05 pooling fix: keep frustum-cull bounds in sync with re-carved Y
             this._computeGridNormals(chunk.mesh.geometry)  // PERF-03: grid-FD normals
             // Re-write vertex colors after Y + normals are updated (D-09/D-10/D-11).
             this._writeChunkVertexColors(chunk.mesh.geometry, carveData, chunk.heights, amp, cx, cz)
@@ -2016,6 +2018,11 @@ export class TerrainSystem {
                 }
             }
             pos.needsUpdate = true
+            // PERF-05 pooling fix: a recycled geometry carries the PREVIOUS chunk's cached
+            // boundingSphere; Three.js only auto-computes it when null, so without this the new
+            // (displaced-Y) chunk is frustum-culled against stale bounds → terrain holes that pop
+            // in/out as the camera moves. Recompute from the freshly written positions.
+            geom.computeBoundingSphere()
             _pt = performance.now()
             this._computeGridNormals(geom)  // PERF-03: grid-FD normals (rendering only; physics uses analyticNormal)
             perfAdd('flush.gridNormals', performance.now() - _pt)
