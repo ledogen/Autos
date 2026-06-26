@@ -11,6 +11,11 @@ note: "User: roads still overlap whether `roadCoverSuppress` (COVER Suppress sli
 
 # BUG-17: COVER Suppress toggle has no visible effect — roads overlap on or off
 
+> **DEFERRED / SUBSUMED by FEAT-10 (2026-06-25).** COVER is the weak per-connection dedup this ticket
+> is about; FEAT-10 (robust route merge + exclusion) **deletes the COVER mechanism** and replaces it
+> with a deterministic graph merge. **Close BUG-17 as subsumed when FEAT-10 lands and `PROTO_COVER_*`
+> is removed.** No independent fix here. See `feat-robust-route-merge.md`.
+
 ## Observed
 
 Toggling **COVER Suppress** (`roadCoverSuppress`) in the debug GUI does not visibly change the road

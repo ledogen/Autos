@@ -13,6 +13,12 @@ note: "Rewritten 2026-06-21 per user: intersections must be a TRUE single merged
 
 # FEAT-07: Road intersections — one mesh meshed from the interaction of adjacent splines
 
+> **PREREQUISITE: FEAT-10 (2026-06-25).** This renders a merged mesh at junctions; it cannot fix a
+> network that generates *parallel-duplicate* ribbons + spirals (current state — see screenshot in
+> FEAT-10). FEAT-10 (robust route merge + exclusion) produces the clean, deduplicated junction NODES
+> this ticket consumes. Design the merge-node/junction record once across both. See
+> `feat-robust-route-merge.md`.
+
 ## Goal
 
 Where two roads cross or meet (two runs converging at an angle, an X- or a T-crossing), the surface must
