@@ -1,34 +1,53 @@
 ---
 id: PERF-05
 type: perf
-status: open
+status: completed
 opened: 2026-06-25
+closed: 2026-06-25
 severity: major
 source: user-observation
-note: "AWAITING DATA — user is compiling a Chrome DevTools Performance recording + perfDump on the Windows machine (Intel Ultra 7 / Arc 140) to confirm which of the two suspects below dominates. Do NOT apply a fix blind; the two suspects have different fixes. This is the runtime-fps half of the perf work; PERF-04 (bundler) does NOT touch it."
+resolution: "Tier 1 (geometry pooling + MAX_BUILDS_PER_FRAME 4→1, commit b48001e) removed the severe build spikes; the residual is render/GPU-bound on the low-end iGPU, resolved by running the Near draw-distance preset (what it exists for). User confirms stutter 'pretty much gone' on Near. Suspect 2 (sync routing) confirmed dead even on slow HW. Tier 2/3 not pursued — carve fell to 4.1% of dropped-frame time post-Tier-1, no longer the bottleneck."
 ---
 
 # PERF-05: Frame stutter while driving when terrain streams (steady-state, post-init)
 
-## Progress
+## Resolution (2026-06-25) — RESOLVED
 
-**2026-06-25 — diagnosed + Tier 1 landed (commit b48001e). ⏳ RE-PROFILE PENDING.**
+**Test machines:** SLOW = Surface Book/Pro, i5-7300U / Intel HD 620 (the box that stutters).
+FAST = MacBook Air M4 (never stutters). (Original ticket guessed Intel Ultra 7 / Arc 140 — actual
+slow box was the HD 620, even weaker, which only sharpens the conclusion.)
 
-Chrome Performance traces (logs/{surface pro,m4} chromeperf.json.gz) settled it: Surface Pro
-(i5-7300U / HD 620) had **71 steady-state dropped frames** (~2.1 s jank); M4 had **0** (max main task
-0.14 ms). Self-time *inside the dropped frames*: **`_buildCarveTable` 22.7%**, **GC/`(program)` 16%**
-(per-chunk `new PlaneGeometry`), **WebGL render/upload ~30%**. **Suspect 2 (sync routing) is DEAD** —
-zero `arcPrimitiveConnect` on the main thread; PERF-03 pre-warm wins. `_detectJunctions` looked big in
-aggregate (5.6%) but is NOT a dropped-frame driver.
+**Diagnosis (Chrome Performance traces, `logs/*chromeperf*` + `logs/{surface t1,m4 tier 1}`):**
+attribute CPU self-time *inside the dropped frames*, and detect the real main thread by the tid that
+runs `loop()` (NOT the `CrRendererMain` thread_name — they can differ; counting the wrong tid gave a
+false "0 dropped frames" reading mid-investigation). Baseline slow box: 65 steady frames >16.7 ms,
+**31 >33 ms** (visible freezes), max 701 ms. Costs: `_buildCarveTable` 22.7%, GC/`(program)` 16%
+(per-chunk `new PlaneGeometry`), WebGL render ~30%. **Suspect 2 (sync routing) DEAD** — zero
+`arcPrimitiveConnect` on main thread; PERF-03 pre-warm holds even on the slow box.
 
-Tier 1 done: geometry pooling (kills the 16% GC) + `MAX_BUILDS_PER_FRAME` 4→1 + stripped the
-frame-loop `console.log`. Determinism-safe; 11/11 gates green. perfAdd/perfDump probes KEPT for the
-re-profile.
+**Fix that shipped — Tier 1 (commit b48001e), determinism-safe, 11/11 gates green:**
+- Geometry pooling (`_acquireChunkGeometry`/`_releaseChunkGeometry`, cap 32) — recycle chunk
+  BufferGeometry instead of `new PlaneGeometry` + dispose per chunk (X/Z grid + UV + index are
+  chunk-invariant; only Y/normal/color change). Kills the per-chunk alloc + non-deterministic GC pause.
+- `MAX_BUILDS_PER_FRAME` 4→1 — bounds the worst frame; one chunk's carve already blows BUILD_MS_BUDGET
+  on the slow box.
+- Free win: removed the per-frame `[terrain build]` console.log + `_flushMs`/`_flushN` from the loop.
 
-**NEXT: re-record a driving Performance trace on the Surface Pro and compare dropped-frame count.**
-If the hitch persists and `_buildCarveTable` still dominates → Tier 2 (spatial-bin the carve
-per-vertex search — risky, carve bug history, needs a switchback gate). If GPU-bound → accept or
-Tier 3 (last resort). Only then clean up the perfAdd/perfDump TEMP probes.
+**Outcome:** post-Tier-1 the severe freezes dropped 31→8 (>33 ms) and total excess-jank 2047→1503 ms,
+but at Normal the slow box gained many small 16–33 ms overruns (p95 right on the 60 fps line) and the
+user felt **no real change** — because the residual bottleneck is **render/GPU** (HD 620 saturated:
+WebGL + `(program)` GPU-wait dominate; `_buildCarveTable` fell to 4.1%), not terrain CPU. On the
+**Near** draw-distance preset (9 visible chunks vs Normal's 25, road radius 192 vs 320) the stutter is
+**pretty much gone** — user-confirmed. Near is the intended low-end setting.
+
+**Not pursued:** Tier 2 (carve spatial-bin) — carve is no longer the bottleneck. Tier 3 (shadow-map
+1024², off-frame upload) — available if someone later wants Normal smooth on weak iGPUs; lowest ROI.
+
+**Probe cleanup deferred to PERF-04:** the `perfAdd`/`perfDump`/`perfMark` harness (`src/perf.js` +
+imports in terrain/road/road-mesh/main) is RETAINED because its `perfMark` load-timeline marks in
+`main.js` instrument the cold load — exactly PERF-04's (bundler) target. Strip the whole harness when
+PERF-04 closes, not before, so we don't lose load instrumentation. (The one frame-loop `console.log`
+CLAUDE.md objects to is already gone.)
 
 
 
