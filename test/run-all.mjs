@@ -18,6 +18,7 @@ const GATES = [
     'centerline-curvature.mjs', // Road Overhaul Phase A: EXACT primitive min-radius + D-16 invariance (new path, beside old)
     'defect-b-grade.mjs',   // smoothGradeInPlace window-invariance (defect B)
     'invariance.mjs',       // two-center network invariance (THIS rewrite — green since Phase 2)
+    'road-band-coverage.mjs', // Mechanism B: R-scaled band covers the disc — runs don't drop out on fly-over (hit+gradeY invariant)
     'restream-invariance.mjs', // same-instance re-stream (cache-reuse) invariance — drive-in == fresh
     'ribbon-carve.mjs',     // synthetic ribbon↔carve agreement (dump-free; replaced seam-grade.mjs)
     'road-smoothness.mjs',  // collision surface has no invisible step the visual ribbon lacks (carve continuity)

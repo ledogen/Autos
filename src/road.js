@@ -259,17 +259,35 @@ const _protoTurnSteps = (d1, d2) => { const a = Math.abs(d1 - d2); return Math.m
 // world key "mz:mx", band-independent by construction (see _streamNetwork).
 const USE_CENTERLINE_RIBBON = true
 
-// ── D-16: Canonical anchor-band half-width for window-invariant runs ───────────
-// _streamNetwork builds each macro-row run over a canonical fixed-width band keyed by
-// (mz, mx0, mx1) rather than the transient streaming window. CANONICAL_HALF_WIDTH is the
-// number of macro-column cells to extend either side of the view-center column. It sets how far
-// roads extend in X around the player, and is the FLOOR on streaming cost: every row routes
-// (2·HALF_WIDTH+1) connections regardless of the Z radius. PERF (Tier 1): 4 routed ±1024 m of road
-// in X — ~4–6× wider than the visible terrain ring (~160–226 m) — so it was pure waste. 2 covers
-// ±512 m (still comfortably past the terrain ring) and cuts the per-row connection count 9→5.
-// Window-invariance is unaffected (run identity is the band-independent per-connection key "mz:mx");
-// only how many connections land in the streamed network changes.
-const CANONICAL_HALF_WIDTH = 2  // macro-column cells each side of the center column (±512 m)
+// ── D-16: anchor-band half-width, SCALED to the active road radius ─────────────
+// _streamNetwork builds each macro-row run over a band keyed by (mz, mx0, mx1). The Z (mz) extent
+// already scales with the road radius R (= the draw-distance preset's terrain ring); the X (mx) band
+// must too, or it under-covers the carved disc at the larger presets → runs that curve into the
+// VISIBLE region but are anchored just outside the band drop out → a chunk gets carved with no road
+// there → whole sections "disappear" on fly-over and never self-heal (Mechanism B).
+//
+// A run is keyed by its WEST anchor "mz:mx" but its geometry spans EAST to anchor(mx+1) (~1 cell) and
+// each anchor valley-snaps ±PROTO_SNAP_CAP (~0.45 cell), so a west-anchored run reaches ~2.5 cells
+// east of its column. To register every run whose geometry can enter the disc (radius R), the band
+// half-width = ceil(R / spacing) + ROAD_BAND_MARGIN cells, where the margin absorbs that east-reach +
+// snap + arc bulge. Per draw-distance preset: Near (R=192) → HW 2 / ±512 m (= the PERF-05 cost, the
+// small disc can't be reached by a run anchored further out), Normal/Far (R=320/512) → HW 3 / ±768 m,
+// Ultra (R=640) → HW 4 / ±1024 m. Run identity stays band-independent ("mz:mx"), so widening only
+// changes WHICH runs land in the network, never their geometry/arcS (D-16 invariant). [margin=1
+// validated: replay window-invariance on the disappearing-road capture passes with gradeΔ=hitΔ=0.]
+const ROAD_BAND_MARGIN = 1  // extra macro-cols beyond ceil(R/spacing) each side (run east-reach + snap + bulge)
+
+// ── D-16: grade-smoothing pad for band-edge gradeY invariance ──────────────────
+// The longitudinal grade moving-average (smoothGradeInPlace, ±designGradeWindow m) reaches ACROSS
+// connection joins for C0 continuity. A connection at the band edge (mx0/mx1) would otherwise get a
+// TRUNCATED averaging window → its smoothed gradeY (and the terrain carve cut to it) shifts as the
+// player moves and the band slides → window-VARIANT drivable surface (terrain holes / floating road
+// on fly-over, not self-healing on drive-over). _streamNetwork assembles + grades PROTO_GRADE_PAD
+// extra connections beyond the band on EACH side (pure fns of (mx,mz), identical from any center),
+// then registers only the in-band connections — so every registered run is INTERIOR to the smoother
+// and its gradeY is invariant. One connection (~256 m) already dwarfs the ±50 m window; 2 covers
+// valley-snapped short connections too.
+const PROTO_GRADE_PAD = 2
 
 // ── Off-thread route pre-warm tuning (PERF-03 Workstream A) ───────────────────
 const PREWARM_MARGIN    = 2   // extra macro-cols/rows beyond the streamer band to route AHEAD of need
@@ -1120,6 +1138,17 @@ export class RoadSystem {
     routeEpoch() { return this._routeEpoch }
 
     /**
+     * Macro-column band half-width (cells each side of the center column), SCALED to the active road
+     * radius so the registered network always covers the carved disc at every draw-distance preset.
+     * See the ROAD_BAND_MARGIN block: ceil(R / spacing) covers the disc, +margin absorbs a west-anchored
+     * run's east-reach + anchor snap so no visible run is dropped (Mechanism B fix). Used by BOTH
+     * warmRoutes (pre-warm) and _streamNetwork (register) so they stay consistent.
+     */
+    _bandHalfWidth() {
+        return Math.ceil(this._proto.radius / PROTO_ANCHOR_SPACING) + ROAD_BAND_MARGIN
+    }
+
+    /**
      * Pre-warm the per-connection centerline cache around `center` by routing the connections the
      * streamer will soon need ON THE WORKER, ahead of need. By the time _streamNetwork's band reaches
      * a connection, it's already in _proto.cls → cache hit, no synchronous arc search → no macro-cell
@@ -1135,8 +1164,11 @@ export class RoadSystem {
 
         const R = this._proto.radius
         const center_mx = Math.floor(center.x / PROTO_ANCHOR_SPACING)
-        const mx0 = center_mx - CANONICAL_HALF_WIDTH - PREWARM_MARGIN
-        const mx1 = center_mx + CANONICAL_HALF_WIDTH + PREWARM_MARGIN
+        // Pre-warm a superset of the registered band (+PREWARM_MARGIN) so the off-thread router fills
+        // every connection _streamNetwork will register — same R-scaled half-width as the real stream.
+        const HW = this._bandHalfWidth()
+        const mx0 = center_mx - HW - PREWARM_MARGIN
+        const mx1 = center_mx + HW + PREWARM_MARGIN
         const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING) - PREWARM_MARGIN
         const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING) + PREWARM_MARGIN
 
@@ -1333,14 +1365,15 @@ export class RoadSystem {
 
         // ── Network window signature (D-16 Phase 3) ───────────────────────────────
         // The network is a PURE function of (mz row range, mx band, _generation): the band
-        // columns are radius-INDEPENDENT (center_mx ± CANONICAL_HALF_WIDTH) and per-row geometry
-        // is a pure fn of (mz, band). So if this signature is unchanged since the last build and
-        // nothing is dirty, a re-stream would reproduce byte-identical geometry — skip the whole
-        // rebuild/re-slice and KEEP every cache (the common case: moving within one 256 m cell).
+        // columns are derived from world coords + the active radius (center_mx ± _bandHalfWidth())
+        // and per-row geometry is a pure fn of (mz, band). So if this signature is unchanged since the
+        // last build and nothing is dirty, a re-stream would reproduce byte-identical geometry — skip
+        // the whole rebuild/re-slice and KEEP every cache (the common case: moving within one 256 m cell).
         const R = this._proto.radius
         const center_mx = Math.floor(center.x / PROTO_ANCHOR_SPACING)
-        const mx0 = center_mx - CANONICAL_HALF_WIDTH
-        const mx1 = center_mx + CANONICAL_HALF_WIDTH
+        const HW = this._bandHalfWidth()
+        const mx0 = center_mx - HW
+        const mx1 = center_mx + HW
         const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING)
         const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING)
         const bandSig = `${mz0}:${mz1}:${mx0}:${mx1}:${this._generation}`
@@ -1415,9 +1448,12 @@ export class RoadSystem {
             // centerline arc correspondence is EXACT by construction (no projection search): the
             // centerline arc at sample i is simply s_i = i·(L/n). Connections share their terminal
             // anchor with the next connection's start anchor (skipped on append).
+            // D-16: build PROTO_GRADE_PAD extra connections beyond the band on each side so the
+            // grade smoother (below) sees a fully-fed window at every IN-BAND connection's start/end;
+            // the pad spans are graded for continuity but NOT registered (skipped in the loop below).
             let rowPts = []
             const spans = []   // { mx, i0, i1, clArc } — run index range in rowPts + per-sample centerline arc
-            for (let mx = mx0; mx <= mx1; mx++) {
+            for (let mx = mx0 - PROTO_GRADE_PAD; mx <= mx1 + PROTO_GRADE_PAD; mx++) {
                 const cl = this._protoConnectCenterline(mx, mz)
                 if (!cl || cl.length < 1e-6) continue
                 const n = Math.max(1, Math.ceil(cl.length / PROTO_SAMPLE_DS))
@@ -1438,6 +1474,7 @@ export class RoadSystem {
             smoothGradeInPlace(rowPts, this._params?.designGradeWindow ?? 50)
 
             for (const { mx, i0, i1, clArc } of spans) {
+                if (mx < mx0 || mx > mx1) continue   // pad connection: graded for window-invariance, not registered
                 if (i1 - i0 < 1) continue
                 const M = i1 - i0 + 1
                 const run = new Array(M)
