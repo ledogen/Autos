@@ -468,4 +468,36 @@ export const RANGER_PARAMS = {
   // off-road). Tyres on tarmac barely scuff dust, so this is low; it ramps smoothly up to 1
   // across the ribbon edge into the dirt shoulder. 0 = none on asphalt, 1 = same as dirt.
   dustPavedFactor: 0.1,        // [-] on-asphalt dust multiplier
+
+  // ── FEAT-05 — Alpine terrain look (procedural biome colour + fbm detail) ─────
+  // Palette (hex RGB; decoded as LINEAR /255 in terrain.js _writeChunkVertexColors — these
+  // ARE the linear vertex-colour values, NOT sRGB, so a colour picker round-trips exactly).
+  // Tuned for high-altitude Eastern Sierra / Lone Pine: granite-grey rock, decomposed-granite
+  // soil, muted sage-meadow green. Replaces the old desert warm-brown palette.
+  terrainRockColor:  0x808287, // granite grey — steep faces AND high (above-treeline) terrain
+  terrainDirtColor:  0x66543d, // alpine soil/decomposed-granite — moderate slopes (the "general" mid)
+  terrainGrassColor: 0x4c5e38, // muted sage — FERTILE/forest flats (above the basin floors; trees go here)
+  terrainMeadowColor: 0x5c7a30, // lush green — MEADOW basins (local lows where water collects)
+  terrainCutoutColor: 0x757066, // engineered road cut face (man-made grey-tan, distinct from cliff)
+  terrainFillColor:   0x6b5740, // dirt fill embankment / road foundation
+
+  // Biome split (slope + altitude). slope = 1 - vertexNormal.y. Altitude = raw terrain world Y.
+  terrainGrassSlopeMax: 0.16,  // [-] above this slope, no grass (too steep to hold meadow)
+  terrainTreelineLo:    60,    // m — below this altitude grass is full; rock-alt term is 0
+  terrainTreelineHi:    105,   // m — above this altitude terrain trends to bare granite (treeline)
+
+  // Meadow (relative elevation). rel = rawHeight - localMean(radius). Negative = local basin
+  // where water collects → lush meadow; rel ≈ 0 (flat bench) → fertile/forest green.
+  terrainRelRadius:    40,     // m — neighbourhood radius for the local-mean low-pass (valley scale)
+  terrainMeadowRelLo:  -12,    // m — rel at/below this (deep basin) reads full meadow
+  terrainMeadowRelHi:  -2,     // m — rel at/above this (flat bench) reads fertile, not meadow
+
+  // Procedural fbm detail (shared shader in terrain-detail.js — terrain + road shoulder).
+  // terrainDetailScale is the master multiplier AND a perf kill-switch: 0 disables the
+  // per-pixel noise entirely (escape hatch for weak GPUs — PERF-05 coordination).
+  terrainDetailScale:    1.0,  // [-] master 0..1 (0 = no fbm mottle/bump at all)
+  terrainNoiseScale:     0.15, // 1/m — fbm spatial frequency (~6.7 m period)
+  terrainMottleStrength: 0.22, // [-] albedo mottle depth (multiplies biome colour)
+  terrainBumpStrength:   0.7,  // [-] normal-perturbation strength on rocky/high terrain
+  roadShoulderBump:      0.5,  // [-] gravel bump strength on the dirt road shoulder only
 };

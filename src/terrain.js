@@ -33,6 +33,7 @@ import * as THREE from 'three'
 // (crownProfile + camberProfile tilt) so the carved trough tilts with the ribbon →
 // uniform clearance on banked turns (fixes inside-edge clip / outside-edge gap).
 import { crownProfile } from './road-carve.js'
+import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
 import { perfAdd } from './perf.js'  // TEMP perf triage (D-arc)
 
 // ── Module constants ───────────────────────────────────────────────────────
@@ -847,6 +848,57 @@ export class TerrainSystem {
         // Do NOT dispose this per-chunk (matches wheelMat shared pattern).
         this._material = new THREE.MeshPhongMaterial({ vertexColors: true })
 
+        // FEAT-05: per-pixel procedural detail on top of the per-vertex biome colour — fbm
+        // albedo mottle + a normal bump that ramps in with rockiness (steep OR above-treeline),
+        // so granite reads bumpy and meadow reads smooth. Uniforms are live-tunable from the
+        // debug panel; uDetailScale=0 is the PERF-05 kill-switch. Single shared material →
+        // shader compiles once (not per chunk).
+        this._terrainUniforms = {
+            uDetailScale: { value: params.terrainDetailScale    ?? 1.0  },
+            uNoiseScale:  { value: params.terrainNoiseScale      ?? 0.15 },
+            uMottle:      { value: params.terrainMottleStrength  ?? 0.22 },
+            uBump:        { value: params.terrainBumpStrength    ?? 0.7  },
+            uCliffLo:     { value: params.roadCliffSlopeLo       ?? 0.3  },
+            uCliffHi:     { value: params.roadCliffSlopeHi       ?? 0.6  },
+            uTreeLo:      { value: params.terrainTreelineLo      ?? 60   },
+            uTreeHi:      { value: params.terrainTreelineHi      ?? 105  },
+        }
+        this._material.onBeforeCompile = (shader) => {
+            Object.assign(shader.uniforms, this._terrainUniforms)
+            addWorldVaryings(shader)
+            shader.fragmentShader = 'uniform float uDetailScale, uNoiseScale, uMottle, uBump, uCliffLo, uCliffHi, uTreeLo, uTreeHi;\n' + shader.fragmentShader
+            // Albedo mottle (after vColor is folded into diffuseColor).
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <color_fragment>',
+                `#include <color_fragment>
+                if (uDetailScale > 0.0) {
+                    float td_n = tdFbm(vWorldPos.xz * uNoiseScale);
+                    diffuseColor.rgb *= 1.0 + uMottle * uDetailScale * (td_n - 0.5);
+                }`
+            )
+            // Normal bump (after the geometric normal is established). Rockiness = max(steepness,
+            // altitude) so the bump is granite-only; flat low meadow stays smooth.
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <normal_fragment_begin>',
+                `#include <normal_fragment_begin>
+                if (uDetailScale > 0.0) {
+                    float td_slp = 1.0 - clamp(vWorldNrm.y, 0.0, 1.0);
+                    float td_rock = max(smoothstep(uCliffLo, uCliffHi, td_slp),
+                                        smoothstep(uTreeLo, uTreeHi, vWorldPos.y));
+                    if (td_rock > 0.001) {
+                        vec2 td_p = vWorldPos.xz * uNoiseScale;
+                        float td_e = 0.6;
+                        float td_h0 = tdFbm(td_p);
+                        float td_hx = tdFbm(td_p + vec2(td_e, 0.0));
+                        float td_hz = tdFbm(td_p + vec2(0.0, td_e));
+                        vec3 td_wb = vec3(-(td_hx - td_h0), 0.0, -(td_hz - td_h0)) * (uBump * uDetailScale * td_rock);
+                        normal = normalize(normal + mat3(viewMatrix) * td_wb);
+                    }
+                }`
+            )
+        }
+        this._material.customProgramCacheKey = () => 'feat05-alpine-terrain'
+
         // Spawn Blob classic worker from inlined source string
         // RESEARCH.md Pattern 3: classic worker avoids module-worker CORS restrictions
         const blob    = new Blob([WORKER_SOURCE], { type: 'application/javascript' })
@@ -1317,7 +1369,7 @@ export class TerrainSystem {
                 }
                 pos.needsUpdate = true
                 this._computeGridNormals(chunk.mesh.geometry)  // PERF-03: grid-FD normals
-                this._writeChunkVertexColors(chunk.mesh.geometry, newCarveData, chunk.heights, amp)
+                this._writeChunkVertexColors(chunk.mesh.geometry, newCarveData, chunk.heights, amp, cx, cz)
                 // Stamp the new generation so we don't re-carve this chunk again until the next re-route.
                 chunk.carveData = newCarveData ?? null
                 chunk.builtRoadGeneration = currentRoadGen
@@ -1364,7 +1416,8 @@ export class TerrainSystem {
     rebuildAllChunks() {
         const amp = this._params.terrainAmplitude ?? 1.0
         const N = GRID_SAMPLES
-        for (const [, chunk] of this._chunkMap) {
+        for (const [key, chunk] of this._chunkMap) {
+            const [cx, cz] = key.split(',').map(Number)
             const pos = chunk.mesh.geometry.attributes.position
             for (let i = 0; i < N * N; i++) {
                 pos.setY(i, chunk.heights[i] * amp)
@@ -1372,7 +1425,7 @@ export class TerrainSystem {
             pos.needsUpdate = true
             this._computeGridNormals(chunk.mesh.geometry)  // PERF-03: grid-FD normals
             // Re-write vertex colors after Y + normals are updated (D-09/D-10/D-11).
-            this._writeChunkVertexColors(chunk.mesh.geometry, chunk.carveData, chunk.heights, amp)
+            this._writeChunkVertexColors(chunk.mesh.geometry, chunk.carveData, chunk.heights, amp, cx, cz)
         }
     }
 
@@ -1654,25 +1707,95 @@ export class TerrainSystem {
     }
 
     /**
+     * FEAT-05 meadows: per-vertex LOCAL-MEAN raw-terrain height — the low-pass landform used to
+     * derive relative elevation (rel = rawHeight - localMean). Negative rel = a local basin where
+     * water collects → meadow; rel ≈ 0 = a flat bench → fertile/forest.
+     *
+     * Seam-free + deterministic: sampled from rawHeightWorld() (a pure fn of world coords, carve-free
+     * so road cuts never read as meadows) on a coarse grid that extends a HALO of `terrainRelRadius`
+     * beyond the chunk, then box-blurred (separable) so in-chunk nodes always average a FULL window of
+     * real neighbour terrain — no chunk-edge discontinuity. Cheap: ~(baseNodes+2·halo)² height evals
+     * per chunk (≈360 at defaults), not one per vertex. Returns world-space metres (amp applied).
+     *
+     * @param {number} cx - chunk X index
+     * @param {number} cz - chunk Z index
+     * @returns {Float32Array} N·N local-mean heights (row-major i = zi·N + xi), world-space metres
+     * @private
+     */
+    _localMeanGrid(cx, cz) {
+        const N = GRID_SAMPLES, S = CHUNK_SIZE
+        const cell   = S / (N - 1)
+        const STRIDE = 8                                   // low-res grid: every 8th cell
+        const R      = this._params.terrainRelRadius ?? 40 // m — neighbourhood radius
+        const halo   = Math.max(1, Math.ceil(R / (cell * STRIDE)))
+        const base   = Math.floor((N - 1) / STRIDE) + 1    // in-chunk low-res nodes per side
+        const LN     = base + 2 * halo
+
+        // Sample raw landform at each low-res node (incl. halo into neighbour chunks).
+        const lr = new Float32Array(LN * LN)
+        for (let jz = 0; jz < LN; jz++) {
+            const wz = cz * S + (jz - halo) * STRIDE * cell
+            for (let jx = 0; jx < LN; jx++) {
+                const wx = cx * S + (jx - halo) * STRIDE * cell
+                lr[jz * LN + jx] = this.rawHeightWorld(wx, wz)
+            }
+        }
+
+        // Separable box-blur (kernel radius = halo) → local mean. Edge count-clamping only affects
+        // halo-border nodes, which are never bilerp'd into the chunk interior.
+        const tmp = new Float32Array(LN * LN)
+        for (let z = 0; z < LN; z++) for (let x = 0; x < LN; x++) {
+            let s = 0, c = 0
+            for (let k = -halo; k <= halo; k++) { const xx = x + k; if (xx >= 0 && xx < LN) { s += lr[z * LN + xx]; c++ } }
+            tmp[z * LN + x] = s / c
+        }
+        const blur = new Float32Array(LN * LN)
+        for (let z = 0; z < LN; z++) for (let x = 0; x < LN; x++) {
+            let s = 0, c = 0
+            for (let k = -halo; k <= halo; k++) { const zz = z + k; if (zz >= 0 && zz < LN) { s += tmp[zz * LN + x]; c++ } }
+            blur[z * LN + x] = s / c
+        }
+
+        // Bilerp the blurred low-res grid to per-vertex resolution.
+        const out = new Float32Array(N * N)
+        for (let zi = 0; zi < N; zi++) {
+            const fz = zi / STRIDE + halo
+            const iz = Math.min(LN - 2, Math.floor(fz)), tz = fz - iz
+            for (let xi = 0; xi < N; xi++) {
+                const fx = xi / STRIDE + halo
+                const ix = Math.min(LN - 2, Math.floor(fx)), tx = fx - ix
+                const m00 = blur[iz * LN + ix],       m10 = blur[iz * LN + ix + 1]
+                const m01 = blur[(iz + 1) * LN + ix], m11 = blur[(iz + 1) * LN + ix + 1]
+                out[zi * N + xi] = (m00 * (1 - tx) + m10 * tx) * (1 - tz)
+                                 + (m01 * (1 - tx) + m11 * tx) * tz
+            }
+        }
+        return out
+    }
+
+    /**
      * Write per-vertex colors for the 5-zone feathered material system (D-09/D-10/D-11).
      *
      * Called from _flushPendingQueue AFTER _computeGridNormals() so the normal attribute
      * is available for cliff slope detection (D-11).
      *
      * Zone priority (all blended/feathered — no hard lines, D-09):
-     *   General terrain → lerp → Natural cliff  (driven by slope, D-11)
-     *   General terrain → lerp → Engineered cutout (driven by blendW where delta<0, D-10)
-     *   General terrain → lerp → Dirt foundation  (driven by blendW where delta>0, D-07)
+     *   dirt → vegetation → granite rock  (vegetation = fertile↔meadow by relative elevation;
+     *     rock driven by slope cliff band D-11 OR above-treeline altitude — FEAT-05)
+     *   → Engineered cutout (driven by blendW where delta<0, D-10)
+     *   → Dirt foundation  (driven by blendW where delta>0, D-07)
      * Cut/fill zones are further feathered by blendW (from carve system, free side effect).
-     * Cutout color is distinct from natural cliff color (D-10).
+     * Cutout color is distinct from natural cliff/rock color (D-10).
      *
      * @param {THREE.BufferGeometry} geom      — geometry with position + normal attributes
      * @param {Float32Array|null}    carveData — [blendW, gradeY_preamp, ...] per vertex (or null)
      * @param {Float32Array}         heights   — raw pre-amplitude heights per vertex
      * @param {number}               amp       — terrainAmplitude
+     * @param {number}               cx        — chunk X index (for the meadow local-mean grid)
+     * @param {number}               cz        — chunk Z index
      * @private
      */
-    _writeChunkVertexColors(geom, carveData, heights, amp) {
+    _writeChunkVertexColors(geom, carveData, heights, amp, cx, cz) {
         const N = GRID_SAMPLES
 
         // Cliff thresholds from params (D-11). Fall back to defaults if not in params.
@@ -1684,15 +1807,29 @@ export class TerrainSystem {
 
         const colorArr = new Float32Array(nVerts * 3)
 
-        // Color constants (linear RGB — D-09/D-10/D-11):
-        // General terrain: warm brown
-        const GT_R = 0.72, GT_G = 0.60, GT_B = 0.47
-        // Natural cliff: weathered grey (distinct from cutout — D-10)
-        const CL_R = 0.60, CL_G = 0.58, CL_B = 0.55
-        // Engineered cutout: uniform grey-tan (man-made/uniform — D-10)
-        const CO_R = 0.55, CO_G = 0.50, CO_B = 0.42
-        // Dirt foundation (fill embankment): warm tan
-        const DF_R = 0.65, DF_G = 0.55, DF_B = 0.38
+        // ── Alpine biome palette (FEAT-05) — decoded from params as LINEAR RGB (/255) ───
+        // Replaces the old desert warm-brown set. Natural biome is dirt→grass→rock, selected
+        // by slope + altitude (treeline); engineered cut/fill zones still override via carve.
+        const p = this._params
+        const _hx = (c) => [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255]
+        const [DT_R, DT_G, DT_B] = _hx(p.terrainDirtColor   ?? 0x66543d) // dirt — the "general" mid
+        const [GR_R, GR_G, GR_B] = _hx(p.terrainGrassColor  ?? 0x4c5e38) // FERTILE/forest green (flat bench)
+        const [MD_R, MD_G, MD_B] = _hx(p.terrainMeadowColor ?? 0x5c7a30) // MEADOW green (local basins)
+        const [RK_R, RK_G, RK_B] = _hx(p.terrainRockColor   ?? 0x808287) // granite (steep OR above treeline)
+        const [CO_R, CO_G, CO_B] = _hx(p.terrainCutoutColor ?? 0x757066) // engineered cut face (D-10)
+        const [DF_R, DF_G, DF_B] = _hx(p.terrainFillColor   ?? 0x6b5740) // dirt fill foundation (D-07)
+        // Biome thresholds (slope = 1 - normal.y; altitude = raw terrain world Y).
+        const grassSlopeMax = p.terrainGrassSlopeMax ?? 0.16
+        const treeLo = p.terrainTreelineLo ?? 60
+        const treeHi = p.terrainTreelineHi ?? 105
+        // Relative-elevation thresholds (meadow). rel = worldH - localMean.
+        const relLo = p.terrainMeadowRelLo ?? -12
+        const relHi = p.terrainMeadowRelHi ?? -2
+        const localMean = this._localMeanGrid(cx, cz)  // per-vertex low-pass landform (seam-free)
+        const smooth = (e0, e1, x) => {
+            if (x <= e0) return 0; if (x >= e1) return 1
+            const t = (x - e0) / (e1 - e0); return t * t * (3 - 2 * t)
+        }
 
         for (let i = 0; i < nVerts; i++) {
             const idx3 = i * 3
@@ -1725,15 +1862,32 @@ export class TerrainSystem {
                 }
             }
 
-            // ── Color blend pipeline ─────────────────────────────────────────
-            // Start with general terrain, then apply cliff blend, then apply road-zone blend.
-            // Road zone blend uses cutout vs dirt depending on delta sign.
-            // Order: road-zone overrides cliff (engineered face reads man-made, not wild — D-10).
+            // ── Color blend pipeline (FEAT-05 alpine biome) ──────────────────
+            // Natural biome: dirt (mid) → grass (flat + below treeline) → rock (steep OR
+            // above treeline), then the engineered road cut/fill zone overrides on top.
 
-            // Step 1: general terrain → cliff (natural slope)
-            let r = GT_R + (CL_R - GT_R) * cliffBlend
-            let g = GT_G + (CL_G - GT_G) * cliffBlend
-            let b = GT_B + (CL_B - GT_B) * cliffBlend
+            // Altitude (raw terrain, pre-carve — embankments don't change biome by their cut Y).
+            const worldH = heights[i] * amp
+            // Vegetated where it's both flat enough AND below treeline.
+            const vegBlend = (1 - smooth(grassSlopeMax * 0.5, grassSlopeMax, slope))
+                           * (1 - smooth(treeLo, treeHi, worldH))
+            // Within vegetated ground, relative elevation splits MEADOW (local basin, water collects)
+            // from FERTILE/forest (flat bench). rel below relLo → full meadow; at/above relHi → fertile.
+            const rel = worldH - localMean[i]
+            const meadowness = 1 - smooth(relLo, relHi, rel)
+            const VG_R = GR_R + (MD_R - GR_R) * meadowness
+            const VG_G = GR_G + (MD_G - GR_G) * meadowness
+            const VG_B = GR_B + (MD_B - GR_B) * meadowness
+            // Rock from steepness (the cliff band) OR from altitude (bare granite above treeline).
+            const rockBlend = Math.max(cliffBlend, smooth(treeLo, treeHi, worldH))
+
+            // Step 1: dirt → vegetation (fertile/meadow) → rock
+            let r = DT_R + (VG_R - DT_R) * vegBlend
+            let g = DT_G + (VG_G - DT_G) * vegBlend
+            let b = DT_B + (VG_B - DT_B) * vegBlend
+            r = r + (RK_R - r) * rockBlend
+            g = g + (RK_G - g) * rockBlend
+            b = b + (RK_B - b) * rockBlend
 
             // Step 2: blend road zone on top (feathered by blendW — free from carve system)
             if (carveZoneBlend > 1e-6) {
@@ -1855,17 +2009,14 @@ export class TerrainSystem {
             this._computeGridNormals(geom)  // PERF-03: grid-FD normals (rendering only; physics uses analyticNormal)
             perfAdd('flush.gridNormals', performance.now() - _pt)
 
-            // ── 5-zone feathered vertex colors (D-09/D-10/D-11, Plan 09-05) ─────
-            // Zones (no hard lines — all feathered, D-09):
-            //   1. General terrain:    warm brown (0.72, 0.60, 0.47)
-            //   2. Natural cliff:      slope-driven grey (0.60, 0.58, 0.55) via smoothstep(D-11)
-            //   3. Engineered cutout:  uniform grey-tan (0.55, 0.50, 0.42) where delta<0, blendW>0 (D-10)
-            //   4. Dirt foundation:    warm tan (0.65, 0.55, 0.38) where delta>0, blendW>0 (D-07)
-            //   Asphalt lives on the road-mesh.js ribbon (not on terrain chunks).
-            // Cutout/dirt zones are feathered by carveData blendW (free from the carve system).
-            // Cliff is feathered by slope smoothstep(roadCliffSlopeLo, roadCliffSlopeHi, slope).
+            // ── Alpine biome vertex colors (FEAT-05; D-09/D-10/D-11 feathering kept) ─────
+            // Natural biome (all feathered, D-09): dirt → vegetation → granite, where vegetation
+            // splits into FERTILE/forest vs MEADOW by relative elevation (local basins read meadow).
+            // Selected by slope (cliff band, D-11), absolute altitude (treeline), and rel = worldH -
+            // localMean. Engineered cut/fill zones override via carveData blendW (D-10/D-07, free).
+            // Asphalt lives on the road-mesh.js ribbon (not on terrain chunks).
             _pt = performance.now()
-            this._writeChunkVertexColors(geom, carveData, heights, amp)
+            this._writeChunkVertexColors(geom, carveData, heights, amp, cx, cz)
             perfAdd('flush.writeVertexColors', performance.now() - _pt)
 
             const mesh = new THREE.Mesh(geom, this._material)

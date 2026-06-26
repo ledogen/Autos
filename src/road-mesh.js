@@ -32,6 +32,7 @@
 
 import * as THREE from 'three'
 import { CHUNK_SIZE } from './terrain.js'
+import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: shared procedural detail
 import { crownProfile, isConvexPolygon, triangulateConvexFan, earClip, potholeNoise, signedCurvature } from './road-carve.js'
 // roadQuality / hashRunKey / constants moved to road-quality.js (Plan 09-06) to break the
 // terrain.js → road-mesh.js → terrain.js circular import that SURF-06 would otherwise create.
@@ -100,6 +101,38 @@ export class RoadMeshSystem {
             polygonOffsetFactor: params.roadPolygonOffsetFactor ?? -1,
             polygonOffsetUnits:  params.roadPolygonOffsetUnits  ?? -1,
         })
+
+        // FEAT-05: procedural gravel bump on the DIRT SHOULDER only. The shoulder skirt verts
+        // are warm dirt-brown (roadDirtColor), asphalt is neutral grey and markings are white —
+        // so (vColor.r - vColor.b) cleanly isolates the shoulder, keeping the paved surface +
+        // lane markings crisp/flat. Shares the terrain fbm + uDetailScale kill-switch.
+        this._roadUniforms = {
+            uDetailScale:  { value: params.terrainDetailScale ?? 1.0  },
+            uNoiseScale:   { value: params.terrainNoiseScale   ?? 0.15 },
+            uShoulderBump: { value: params.roadShoulderBump    ?? 0.5  },
+        }
+        this._material.onBeforeCompile = (shader) => {
+            Object.assign(shader.uniforms, this._roadUniforms)
+            addWorldVaryings(shader)
+            shader.fragmentShader = 'uniform float uDetailScale, uNoiseScale, uShoulderBump;\n' + shader.fragmentShader
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <normal_fragment_begin>',
+                `#include <normal_fragment_begin>
+                if (uDetailScale > 0.0) {
+                    float td_shoulder = smoothstep(0.04, 0.10, vColor.r - vColor.b);
+                    if (td_shoulder > 0.001) {
+                        vec2 td_p = vWorldPos.xz * (uNoiseScale * 2.0);
+                        float td_e = 0.4;
+                        float td_h0 = tdFbm(td_p);
+                        float td_hx = tdFbm(td_p + vec2(td_e, 0.0));
+                        float td_hz = tdFbm(td_p + vec2(0.0, td_e));
+                        vec3 td_wb = vec3(-(td_hx - td_h0), 0.0, -(td_hz - td_h0)) * (uShoulderBump * uDetailScale * td_shoulder);
+                        normal = normalize(normal + mat3(viewMatrix) * td_wb);
+                    }
+                }`
+            )
+        }
+        this._material.customProgramCacheKey = () => 'feat05-alpine-road'
     }
 
     /**

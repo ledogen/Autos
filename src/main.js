@@ -439,13 +439,17 @@ const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerH
 
 // ── Scene ────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x87ceeb)
-scene.fog = new THREE.FogExp2(0x87ceeb, 0.006)
+// FEAT-05: cooler high-altitude alpine sky/haze (was desert sky-blue 0x87ceeb). Background and
+// fog share the colour so the horizon blends with no hard band. Full skybox work stays QUAL-02.
+scene.background = new THREE.Color(0x9bb8d4)
+scene.fog = new THREE.FogExp2(0x9bb8d4, 0.006)
 
-const ambient = new THREE.AmbientLight(0xffffff, 0.6)
+// HemisphereLight (cool alpine sky above, warm granite-ground bounce below) reads far more alpine
+// than a flat white ambient for almost no cost (FEAT-05).
+const ambient = new THREE.HemisphereLight(0xaccadc, 0x5b5048, 0.65)
 scene.add(ambient)
 
-const sun = new THREE.DirectionalLight(0xffffff, 2.2)
+const sun = new THREE.DirectionalLight(0xfff2e0, 2.2)  // slightly warm alpine sun (FEAT-05)
 sun.position.set(80, 45, 60)
 sun.castShadow = true
 sun.shadow.mapSize.width  = 2048
@@ -732,17 +736,30 @@ let _fpsLastTime = 0   // will be set to currentTime on first frame
 //   higher tiers run lighter fog (you see further), so the build frontier must sit further out to stay
 //   hidden — a flat 1-ring margin left obvious pop-in at Far/Ultra. Sized so build radius (ring+warm)
 //   reaches roughly where the fog goes ~opaque (density·d ≈ 1.3); roadRadius covers the build corner.
+// detailScale (PERF-05 × FEAT-05): the tier also drives the procedural-detail master scale. Near is
+// the low-end / GPU-bound path (PERF-05 found the residual stutter on weak iGPUs is render-bound), so
+// it disables the per-pixel fbm shader entirely (0) — the same toggle that bounds terrain-CPU cost
+// also removes the fragment cost. Normal+ keep FEAT-05's tuned look (1.0); a mid value on Normal is a
+// FEAT-05 tuning call. The shader gates on uDetailScale > 0.0, so 0 is a true kill-switch.
 const DRAW_DISTANCE_PRESETS = {
-  Near:   { ring: 1, warm: 1, roadRadius: 192, fogDensity: 0.012 },
-  Normal: { ring: 2, warm: 1, roadRadius: 320, fogDensity: 0.006 },
-  Far:    { ring: 3, warm: 3, roadRadius: 512, fogDensity: 0.004 },
-  Ultra:  { ring: 4, warm: 4, roadRadius: 640, fogDensity: 0.003 },
+  Near:   { ring: 1, warm: 1, roadRadius: 192, fogDensity: 0.012, detailScale: 0   },
+  Normal: { ring: 2, warm: 1, roadRadius: 320, fogDensity: 0.006, detailScale: 1.0 },
+  Far:    { ring: 3, warm: 3, roadRadius: 512, fogDensity: 0.004, detailScale: 1.0 },
+  Ultra:  { ring: 4, warm: 4, roadRadius: 640, fogDensity: 0.003, detailScale: 1.0 },
 }
 function applyDrawDistance (name) {
   const p = DRAW_DISTANCE_PRESETS[name] ?? DRAW_DISTANCE_PRESETS.Normal
   if (terrainSystem) terrainSystem.setRingRadius(p.ring, p.warm)
   if (roadSystem)    roadSystem.setRadius(p.roadRadius)   // marks dirty → next update() re-streams the wider network
   if (scene.fog)     scene.fog.density = p.fogDensity
+  // Drive the FEAT-05 detail master from the tier. Mirrors setTerrainUniform: write the param (source
+  // of truth + what the debug slider binds to) and push the live uniform to both the terrain and the
+  // road-shoulder materials. The debug onChange refreshes the slider display to match.
+  if (p.detailScale !== undefined) {
+    RANGER_PARAMS.terrainDetailScale = p.detailScale
+    if (terrainSystem?._terrainUniforms?.uDetailScale) terrainSystem._terrainUniforms.uDetailScale.value = p.detailScale
+    if (roadMeshSystem?._roadUniforms?.uDetailScale)   roadMeshSystem._roadUniforms.uDetailScale.value   = p.detailScale
+  }
 }
 
 // Phase 6 (TERR-06): pass setRampVisible callback so the Ramp Visible toggle in debug.js
@@ -770,6 +787,13 @@ const _gui = initDebug(RANGER_PARAMS, {
       roadMeshSystem._material.polygonOffsetFactor = factor
       roadMeshSystem._material.polygonOffsetUnits  = units
     }
+  },
+  // FEAT-05: live-update a procedural-detail shader uniform on both the terrain and road-shoulder
+  // materials (shared names like uDetailScale/uNoiseScale update both; material-specific names hit
+  // only the one that has them). No rebuild — the change shows on the next frame.
+  setTerrainUniform: (name, value) => {
+    if (terrainSystem?._terrainUniforms?.[name]) terrainSystem._terrainUniforms[name].value = value
+    if (roadMeshSystem?._roadUniforms?.[name])   roadMeshSystem._roadUniforms[name].value = value
   },
 }, { initialSeed: _urlSeed ?? '6' })
 

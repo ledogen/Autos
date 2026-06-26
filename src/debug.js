@@ -159,6 +159,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   const _ddState = { drawDistance: 'Normal' }
   terrainFolder.add(_ddState, 'drawDistance', ['Near', 'Normal', 'Far', 'Ultra']).name('Draw Distance').onChange(v => {
     if (typeof callbacks.applyDrawDistance === 'function') callbacks.applyDrawDistance(v)
+    // PERF-05 × FEAT-05: the tier also sets params.terrainDetailScale (Near = 0 kill-switch), so
+    // refresh controllers to reflect the new Detail-scale value in the panel.
+    gui.controllersRecursive().forEach(c => c.updateDisplay())
   })
 
   // World Seed text field (D-13 / SEED-04) — lil-gui renders a plain <input type="text">
@@ -209,6 +212,33 @@ export function initDebug (params, callbacks = {}, options = {}) {
   regionalFolder.add(params, 'regionalScale', 250, 2500, 50).name('Scale (m)').onChange(() => {
     if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull()
   })
+
+  // ── Terrain Look (FEAT-05) — alpine biome palette + procedural fbm detail ──────
+  // Two kinds of control:
+  //  • Palette + biome thresholds are written per-vertex (CPU) → recolour live via
+  //    callbacks.rebuildTerrain() (Path A — re-runs _writeChunkVertexColors on existing chunks).
+  //  • Detail (mottle/bump/scale) are shader uniforms → callbacks.setTerrainUniform(name, value)
+  //    updates the shared terrain + road materials live, no rebuild.
+  // terrainDetailScale=0 is the PERF-05 GPU kill-switch (disables all per-pixel fbm).
+  const lookFolder = terrainFolder.addFolder('Terrain Look (alpine)')
+  const _recolor = () => { if (typeof callbacks.rebuildTerrain === 'function') callbacks.rebuildTerrain() }
+  const _setU = (n, v) => { if (typeof callbacks.setTerrainUniform === 'function') callbacks.setTerrainUniform(n, v) }
+  lookFolder.addColor(params, 'terrainGrassColor').name('Fertile colour').onChange(_recolor)
+  lookFolder.addColor(params, 'terrainMeadowColor').name('Meadow colour').onChange(_recolor)
+  lookFolder.addColor(params, 'terrainDirtColor').name('Dirt colour').onChange(_recolor)
+  lookFolder.addColor(params, 'terrainRockColor').name('Rock colour').onChange(_recolor)
+  lookFolder.add(params, 'terrainGrassSlopeMax', 0.05, 0.40, 0.01).name('Grass slope max').onChange(_recolor)
+  // Meadow (relative elevation): basins below the local mean greenify; radius sets the valley scale.
+  lookFolder.add(params, 'terrainRelRadius', 10, 120, 5).name('Meadow radius (m)').onChange(_recolor)
+  lookFolder.add(params, 'terrainMeadowRelLo', -30, 0, 1).name('Meadow full at (m)').onChange(_recolor)
+  lookFolder.add(params, 'terrainMeadowRelHi', -15, 2, 0.5).name('Meadow start at (m)').onChange(_recolor)
+  lookFolder.add(params, 'terrainTreelineLo', 0, 200, 5).name('Treeline low (m)').onChange(v => { _setU('uTreeLo', v); _recolor() })
+  lookFolder.add(params, 'terrainTreelineHi', 0, 300, 5).name('Treeline high (m)').onChange(v => { _setU('uTreeHi', v); _recolor() })
+  lookFolder.add(params, 'terrainDetailScale', 0, 1, 0.05).name('Detail scale (0=off)').onChange(v => _setU('uDetailScale', v))
+  lookFolder.add(params, 'terrainNoiseScale', 0.02, 0.50, 0.01).name('Noise scale (1/m)').onChange(v => _setU('uNoiseScale', v))
+  lookFolder.add(params, 'terrainMottleStrength', 0, 0.6, 0.02).name('Mottle strength').onChange(v => _setU('uMottle', v))
+  lookFolder.add(params, 'terrainBumpStrength', 0, 2.0, 0.05).name('Rock bump strength').onChange(v => _setU('uBump', v))
+  lookFolder.add(params, 'roadShoulderBump', 0, 2.0, 0.05).name('Shoulder bump').onChange(v => _setU('uShoulderBump', v))
 
   // ── Roads folder (Phase 8 / D-03 / D-05 / D-04 / D-07 / D-09) ─────────────────
   // Road viz checkbox + max-grade slider + cost-weight sliders + surface tuning sliders.
