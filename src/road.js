@@ -2105,32 +2105,35 @@ export class RoadSystem {
         // ── Crown + camber fold-in (SURF-03 / D-04) ─────────────────────────────
         // Same formula as sweepRibbon in road-mesh.js — ensures analyticNormal returns
         // the crowned/cambered surface normal that physics feels (height-agreement gate).
-        // Only applied on the ribbon (blendW=1 zone) so the crown/camber doesn't bleed
-        // into the shoulder blend where the road is transitioning back to raw terrain.
-        if (latDist < halfWidth) {
-            // Crown: parabolic profile — peak at centerline, 0 at edges.
-            // Uses crownProfile() from road-carve.js — SAME formula as sweepRibbon.
+        //
+        // BUG-15: crown/camber are folded in across the WHOLE footprint using the full signedLat —
+        // IDENTICAL to the terrain-mesh carve (terrain.js _buildCarveTable: crownProfile(signedLat) +
+        // signedLat·sin(camber)). The old code applied them only for latDist < halfWidth and dropped
+        // the tilt at the ribbon edge, so on a banked section the physics surface fell off a vertical
+        // ±halfWidth·sin(camber) cliff (≈0.52 m at the ±6° hairpin camber clamp) into the shoulder
+        // while the visual mesh carve stayed continuous → wheel goes airborne then slams (the reported
+        // hairpin glitch). Carrying the SAME crown/camber the mesh uses makes the physics surface C0 at
+        // the ribbon edge AND match the carved terrain the wheel rolls onto in the shoulder. blendW
+        // (below) then ramps the whole cambered surface down to raw terrain with no step.
+        {
+            // Crown: parabolic — peak at centerline, 0 at edges, slight dip past (matches _buildCarveTable).
             const crownY = crownProfile(signedLat, halfWidth, crownHeight)
 
-            // BUG-10: nr.arcS is now the RUN-GLOBAL arc straight from queryNearest (no per-tile
-            // sawtooth); matches sweepRibbon's run-arc keying. Used for camber AND pothole below.
-            const centerlineArcS = arcSEff
+            // BUG-10: arcSEff is the RUN-GLOBAL arc (no per-tile sawtooth); matches sweepRibbon's run-arc
+            // keying. D2 (plan 09-21): shared slew-limited camberProfile — visual ribbon, mesh carve, and
+            // physics read the SAME angle. camberSign maps run-frame camber into the slice frame.
+            const camberAngle = (nr.camberSign ?? 1) * this.camberProfile(arcSEff, nr.runKey ?? '')
 
-            // D2 (plan 09-21): replace second-queryNearest camber estimate with the shared
-            // slew-limited camberProfile — visual ribbon and physics now read the SAME angle.
-            // camberSign maps the run-frame camber into the (possibly E→W reversed) slice frame.
-            const camberAngle = (nr.camberSign ?? 1) * this.camberProfile(centerlineArcS, nr.runKey ?? '')
-
-            // Tilt: signedLat * sin(camberAngle) — same formula as sweepRibbon
+            // Tilt: signedLat * sin(camberAngle) — same formula as sweepRibbon AND _buildCarveTable.
             const tiltY = signedLat * Math.sin(camberAngle)
 
             designY = designY + crownY + tiltY
 
             // ── SURF-06: pothole micro-noise (D-03) ─────────────────────────────
-            // Only on-ribbon (latDist < halfWidth) — does NOT affect shoulder blend.
+            // Stays ON-RIBBON only (latDist < halfWidth) — does NOT bleed into the shoulder blend.
             // CR-03 (09-08): key on centerline arcS (same as camber above — consistent keying).
-            if (p.potholeEnabled) {
-                const rq = roadQuality(centerlineArcS, nr.runKey ?? '', this._worldSeed)
+            if (p.potholeEnabled && latDist < halfWidth) {
+                const rq = roadQuality(arcSEff, nr.runKey ?? '', this._worldSeed)
                 designY += potholeNoise(wx, wz, rq, p)
             }
         }
