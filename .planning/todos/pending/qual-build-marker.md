@@ -34,3 +34,10 @@ so "is this the new code?" is otherwise a guess (hard-refresh + hope).
 - Or display the `Last-Modified` / `ETag` of `main.js` fetched at load — reflects the served bundle
   directly, no manual bump.
 - Keep it tiny and out of the way; this is a testing aid, not a UI feature.
+
+## Relationship
+
+- **PERF-04** (adopt a bundler) — *combines directly*. This ticket's "no build step allowed" framing
+  exists only because of the no-bundler constraint. If PERF-04 lands, the build id is free (output
+  content-hash filename, or a Vite `define`-injected commit SHA) and this collapses to a trivial
+  follow-on. Revisit QUAL-04's approach once PERF-04 is decided.
