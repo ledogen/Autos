@@ -27,7 +27,9 @@ const carveHW   = Math.min(hw + (RANGER_PARAMS.roadCarveExtraWidth ?? 3.0), RANG
 const MESH_EXT  = carveHW + sw          // the mesh's raised-embankment lateral extent
 const DLAT      = 0.2
 const SUPPORT_TO = carveHW              // physics must stay supported out to at least the blendW=1 core
-const STEP_TOL   = 0.20                 // m — max analyticHeight step (the toe's raw steepness sets the floor)
+// Max analyticHeight step. The intended road-edge dropoff (roadClearanceMargin, BUG-15) is the largest
+// allowed; the raw embankment toe's own steepness stays under it.
+const STEP_TOL   = (RANGER_PARAMS.roadClearanceMargin ?? 0.25) + 0.05
 
 let pass = 0, fail = 0
 const log = (ok, name, msg) => {

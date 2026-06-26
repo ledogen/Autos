@@ -421,9 +421,10 @@ export const RANGER_PARAMS = {
   // ribbon surface so the terrain can never poke through the decal ribbon + skirt.
   // D3 (plan 09-22): carve trough tilts WITH the ribbon (crown + camber), so clearance
   // is now uniform on banked turns — inside-edge clip and outside-edge gap are eliminated.
-  // 0.5 m gives a half-metre clearance buffer; raise to push terrain further down.
-  // Range: 0–1.5 m. Exposed as a Road Surface debug slider.
-  roadClearanceMargin: 0.5,     // m — terrain stays this far BELOW ribbon surface (Plan 09-11 / D3)
+  // Also the ROAD-EDGE DROPOFF height: physics rides the road on-ribbon and drops to the carved dirt
+  // (this far below) off the ribbon edge, so clipping the edge is punishing (BUG-15). 0.25 m = a
+  // realistic, jolting-but-not-launching edge. Range: 0–1.5 m. Exposed as a Road Surface debug slider.
+  roadClearanceMargin: 0.25,    // m — terrain (and physics shoulder) sits this far BELOW the ribbon (Plan 09-11 / D3)
 
   // roadCarveExtraWidth: extra lateral width beyond roadHalfWidth + roadShoulderWidth
   // that the terrain carve footprint covers. Ensures the carved depression is wider than

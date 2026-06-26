@@ -2067,6 +2067,11 @@ export class RoadSystem {
         const carveExtraWidth = p.roadCarveExtraWidth ?? 3.0
         const minRadius       = p.roadMinTurnRadius   ?? 12
         const carveHalfWidth  = Math.min(halfWidth + carveExtraWidth, minRadius)
+        // Road-edge dropoff: the carved DIRT sits roadClearanceMargin below the road surface (same as the
+        // mesh _buildCarveTable). Off the ribbon the wheel rides that dirt, so physics drops by this margin
+        // at the ribbon edge — a real, punishing edge, not a float over the dirt. On-ribbon it rides the
+        // ribbon top (no clearance). Matches terrain.js so the drivable surface == the visual everywhere.
+        const clearanceMargin = p.roadClearanceMargin ?? 0.25
 
         // Continuous-projection road resolver replaces queryNearest in the carve path —
         // see _resolveRoadSurface. nrHint (from carveHint) is already a _resolveRoadSurface result.
@@ -2152,6 +2157,13 @@ export class RoadSystem {
                 const rq = roadQuality(arcSEff, nr.runKey ?? '', this._worldSeed)
                 designY += potholeNoise(wx, wz, rq, p)
             }
+
+            // Road-edge dropoff (BUG-15): off the ribbon, drop to the carved dirt (roadClearanceMargin
+            // below the road) — exactly what the mesh draws. Produces a hard ~clearanceMargin step at the
+            // ribbon edge (latDist = halfWidth): clip the edge and the wheel drops onto the lower shoulder.
+            // This is intentional and bounded (≤ clearanceMargin); it is NOT the old camber tilt cliff,
+            // which was carried across the edge above and is gone.
+            if (latDist >= halfWidth) designY -= clearanceMargin
         }
 
         // Blend weight: 1 across the widened carve core (carveHalfWidth), ramp down over shoulderWidth.

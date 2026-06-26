@@ -24,8 +24,14 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 
 const SEEDS    = [6, 7]          // real-noise networks (seed 6 = the reported hairpin's world)
 const DLAT     = 0.2             // m — lateral march step
-const STEP_TOL = 0.10            // m — max allowed carve-height step between adjacent lateral samples
 const ARC_DS   = 8               // m — along-run sampling spacing
+const CLEAR    = RANGER_PARAMS.roadClearanceMargin ?? 0.25
+// Tolerances: the carve cross-section must be C0 (≤ FLAT_TOL) EVERYWHERE except the ribbon edge, where
+// the intended road-edge dropoff (≈ clearanceMargin: off-ribbon the wheel rides the carved dirt, BUG-15)
+// is allowed. EDGE_TOL covers that dropoff plus the tilt/crown increment the 0.2 m march bundles at the
+// threshold. The ~0.5 m camber-tilt cliff this gate guards exceeds EDGE_TOL and still fails.
+const FLAT_TOL = 0.10
+const EDGE_TOL = CLEAR + 0.08
 
 const hw = RANGER_PARAMS.roadHalfWidth ?? 5
 const sw = RANGER_PARAMS.roadShoulderWidth ?? 2.5
@@ -44,7 +50,7 @@ for (const seed of SEEDS) {
     const road = new RoadSystem(seed, RANGER_PARAMS)
     road.update(new THREE.Vector3(0, 0, 0))
 
-    let worst = 0, worstAt = null, samples = 0
+    let worst = 0, worstAt = null, samples = 0, worstViol = -Infinity
     for (const [runKey, entry] of road._network) {
         const pts = entry.points
         if (!pts || pts.length < 3) continue
@@ -68,22 +74,26 @@ for (const seed of SEEDS) {
             if (!nr0 || (nr0.runKey ?? '') !== runKey) continue
             // Sweep one side (the banked OUTER edge is the failure side; cover both via ±).
             for (const sgn of [1, -1]) {
-                let prev = null
+                let prev = null, prevLat = null
                 for (let lat = 0; lat <= LAT_MAX + 1e-6; lat += DLAT) {
                     const c = road._sampleCarveWorld(fx + sgn * px * lat, fz + sgn * pz * lat, 0, nr0)
-                    if (!c) { prev = null; continue }
+                    if (!c) { prev = null; prevLat = null; continue }
                     if (prev !== null) {
                         const step = Math.abs(c.gradeY - prev)
+                        // The lone intended discontinuity is the road-edge dropoff where the march crosses
+                        // latDist = halfWidth (≈ lat, pinned-perp). Allow clearanceMargin there; tight elsewhere.
+                        const nearEdge = Math.abs(lat - hw) < DLAT * 1.5 || Math.abs(prevLat - hw) < DLAT * 1.5
+                        const tol = nearEdge ? EDGE_TOL : FLAT_TOL
                         samples++
-                        if (step > worst) { worst = step; worstAt = { x: +fx.toFixed(0), z: +fz.toFixed(0), lat: +lat.toFixed(1) } }
+                        if (step - tol > worstViol) { worstViol = step - tol; worst = step; worstAt = { x: +fx.toFixed(0), z: +fz.toFixed(0), lat: +lat.toFixed(1), tol } }
                     }
-                    prev = c.gradeY
+                    prev = c.gradeY; prevLat = lat
                 }
             }
         }
     }
-    log(worst <= STEP_TOL, `LATERAL-CONTINUOUS seed=${seed}`,
-        `${samples} lateral steps checked across ${road._network.size} runs; worst |Δheight| = ${worst.toFixed(3)} m at ${worstAt ? `(${worstAt.x},${worstAt.z}) lat ${worstAt.lat} m` : 'n/a'} (tol ${STEP_TOL} m, step ${DLAT} m)`)
+    log(worstViol <= 0, `LATERAL-CONTINUOUS seed=${seed}`,
+        `${samples} lateral steps checked across ${road._network.size} runs; worst |Δheight| = ${worst.toFixed(3)} m at ${worstAt ? `(${worstAt.x},${worstAt.z}) lat ${worstAt.lat} m, tol ${worstAt.tol.toFixed(2)} m` : 'n/a'} (flat ${FLAT_TOL} m / edge ${EDGE_TOL.toFixed(2)} m, step ${DLAT} m)`)
 }
 
 console.log('\n' + '='.repeat(64))
