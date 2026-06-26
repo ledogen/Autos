@@ -132,8 +132,27 @@ lateral sweep worst step **0.523 m → 0.026 m**; the event capture no longer re
 (all-wheel contact held). New gate `test/shoulder-lateral-continuity.mjs` (real-noise seeds 6,7, marches
 perpendicular at a fixed arc station) is RED pre-fix (~0.56 m edge step) / GREEN now; 13 gates green.
 
+### Fill side also rectified 2026-06-26 (commit 0894722)
+
+User: "do the same physics/mesh rectification on the shoulder FILL — the car falls through the shoulder
+that is RAISED to meet the road; your fix only handled the CARVED shoulder." Same divergence, fill side:
+the terrain MESH carve (`_buildCarveTable`) raises its dirt embankment out to `carveHalfWidth +
+shoulderWidth` (`carveHalfWidth = halfWidth + carveExtraWidth`, capped at `minRadius` = **10.5 m** with
+defaults), but the physics carve footprint (`_resolveRoadSurface` `footHW`, `_sampleCarveWorld` cap +
+`blendW` core) stopped at the narrower `halfWidth + shoulderWidth` = **7.5 m**. On a fill, the 7.5–10.5 m
+band was raised mesh with no collision support → car drops through it. (Benign on a cut — physics fell
+back to raw, which is higher there.)
+
+**Fix:** `_sampleCarveWorld` + `_resolveRoadSurface` now use `carveHalfWidth` (same formula as
+terrain.js) for the footprint extent AND the `blendW=1` core, so the physics holds the road grade across
+the full embankment the mesh raised, then ramps to raw — identical extent on both fill and cut. Verified:
+at the strongest fill spot (road 5.1 m above terrain) physics support extends **7.5 m → 10.0 m**. New
+gate `test/road-fill-support.mjs` (real-noise seeds 6,7, pinned to one run's cross-section) RED pre-fix /
+GREEN now; the wheel-ground path is `queryContacts → analyticHeight → _sampleCarveWorld`, confirmed. The
+crown+camber (cut) gate still green, event replay still clears the airborne+slam. 14 gates green.
+
 **Still OPEN — two items:**
-1. **In-browser confirm** the airborne/slam is gone driving the hairpin at (-297,231).
+1. **In-browser confirm** the airborne/slam (hairpin -297,231) AND the fill fall-through are both gone.
 2. **Sub-floor fold (minRadius 7.69 m < 8 m hard floor)** — the lateral fix removes the airborne+slam
    even at this radius, but the router still emits a sub-hard-floor hairpin here (a valid-by-construction
    breach). Separate concern; split to its own ticket if the tight inner cross-section shows other
