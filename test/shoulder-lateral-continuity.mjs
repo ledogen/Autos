@@ -29,7 +29,10 @@ const ARC_DS   = 8               // m — along-run sampling spacing
 
 const hw = RANGER_PARAMS.roadHalfWidth ?? 5
 const sw = RANGER_PARAMS.roadShoulderWidth ?? 2.5
-const LAT_MAX = hw + sw          // sweep the full footprint (ribbon + shoulder)
+// Sweep the full carve footprint — carveHalfWidth + shoulder (the widened core the mesh + physics
+// both carve out to, BUG-15 fill fix), not just halfWidth + shoulder.
+const carveHW = Math.min(hw + (RANGER_PARAMS.roadCarveExtraWidth ?? 3.0), RANGER_PARAMS.roadMinTurnRadius ?? 12)
+const LAT_MAX = carveHW + sw
 
 let pass = 0, fail = 0
 const log = (ok, name, msg) => {

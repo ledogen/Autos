@@ -1959,7 +1959,13 @@ export class RoadSystem {
         const p = this._params
         const halfWidth     = p.roadHalfWidth     ?? 5
         const shoulderWidth = p.roadShoulderWidth  ?? 2.5
-        const footHW = halfWidth + shoulderWidth
+        // BUG-15 (fill): the footprint must reach the MESH carve extent (carveHalfWidth + shoulderWidth,
+        // carveHalfWidth = halfWidth + carveExtraWidth capped at minRadius — same as terrain.js
+        // _buildCarveTable), not just halfWidth + shoulderWidth. Otherwise the physics resolver returns
+        // "no road" across the outer fill embankment the mesh raised, and the car falls through it.
+        const carveExtraWidth = p.roadCarveExtraWidth ?? 3.0
+        const minRadius       = p.roadMinTurnRadius   ?? 12
+        const footHW = Math.min(halfWidth + carveExtraWidth, minRadius) + shoulderWidth
 
         const qtx = Math.floor(wx / CHUNK_SIZE)
         const qtz = Math.floor(wz / CHUNK_SIZE)
@@ -2052,6 +2058,16 @@ export class RoadSystem {
         // camberStrength now consumed by camberProfile() — not needed here (D2, plan 09-21)
         // roadFillHeight cap intentionally NOT read here (BUG-13): physics tracks the uncapped grade.
 
+        // BUG-15 (fill): the terrain MESH carve (_buildCarveTable) holds the full road grade out to
+        // carveHalfWidth (= halfWidth + carveExtraWidth, capped at minRadius), then ramps to raw over
+        // shoulderWidth — so its raised fill embankment reaches carveHalfWidth + shoulderWidth. Physics
+        // must use the SAME extent + blend core, or on a fill the car drops through the band between the
+        // physics footprint (halfWidth + shoulderWidth) and the wider mesh embankment. Same formula as
+        // terrain.js so the drivable surface and the visual carve agree on both fill AND cut.
+        const carveExtraWidth = p.roadCarveExtraWidth ?? 3.0
+        const minRadius       = p.roadMinTurnRadius   ?? 12
+        const carveHalfWidth  = Math.min(halfWidth + carveExtraWidth, minRadius)
+
         // Continuous-projection road resolver replaces queryNearest in the carve path —
         // see _resolveRoadSurface. nrHint (from carveHint) is already a _resolveRoadSurface result.
         const nr = (nrHint !== undefined) ? nrHint : this._resolveRoadSurface(wx, wz)
@@ -2076,7 +2092,7 @@ export class RoadSystem {
         const signedLat = dx * tz - dz * tx
         const latDist   = Math.abs(signedLat)
 
-        if (latDist > halfWidth + shoulderWidth) return null
+        if (latDist > carveHalfWidth + shoulderWidth) return null  // BUG-15: match the mesh carve extent
 
         // Design grade Y — P2 (09-27): replace per-slice spline nr.point.y with the run-global
         // continuous profile gradeY. nr.arcS is run-global (BUG-10 fix in 3df47cd) and is C0
@@ -2138,12 +2154,16 @@ export class RoadSystem {
             }
         }
 
-        // Blend weight: 1 on ribbon, ramp down across shoulder.
+        // Blend weight: 1 across the widened carve core (carveHalfWidth), ramp down over shoulderWidth.
+        // BUG-15 (fill): core is carveHalfWidth — NOT halfWidth — so the physics holds the road grade out
+        // to the SAME width as the mesh's raised embankment (identical to _buildCarveTable), then ramps to
+        // raw. Without this the fill embankment between halfWidth+shoulderWidth and carveHalfWidth+
+        // shoulderWidth is unsupported and the car falls through it.
         let blendW
-        if (latDist < halfWidth) {
+        if (latDist < carveHalfWidth) {
             blendW = 1.0
         } else {
-            blendW = Math.max(0.0, 1.0 - (latDist - halfWidth) / shoulderWidth)
+            blendW = Math.max(0.0, 1.0 - (latDist - carveHalfWidth) / shoulderWidth)
         }
 
         return { blendW, gradeY: designY }
