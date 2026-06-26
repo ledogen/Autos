@@ -6,10 +6,23 @@ opened: 2026-06-25
 closed: 2026-06-25
 severity: major
 source: user-observation
-resolution: "Tier 1 (geometry pooling + MAX_BUILDS_PER_FRAME 4→1, commit b48001e) removed the severe build spikes; the residual is render/GPU-bound on the low-end iGPU, resolved by running the Near draw-distance preset (what it exists for). User confirms stutter 'pretty much gone' on Near. Suspect 2 (sync routing) confirmed dead even on slow HW. Tier 2/3 not pursued — carve fell to 4.1% of dropped-frame time post-Tier-1, no longer the bottleneck."
+resolution: "Tier 1 (geometry pooling + MAX_BUILDS_PER_FRAME 4→1, commit b48001e) removed the severe build spikes; the residual is render/GPU-bound on the low-end iGPU, resolved by running the Near draw-distance preset (what it exists for). User confirms stutter 'pretty much gone' on Near. Suspect 2 (sync routing) confirmed dead even on slow HW. Tier 2/3 not pursued — carve fell to 4.1% of dropped-frame time post-Tier-1, no longer the bottleneck. FOLLOW-UP REGRESSION FIXED (commit 67732c5): pooling reused chunk geometries without recomputing boundingSphere → frustum culling tested new chunks against stale bounds → terrain holes popping in/out; fixed with computeBoundingSphere() after every Y write."
 ---
 
 # PERF-05: Frame stutter while driving when terrain streams (steady-state, post-init)
+
+## Follow-up regression — FIXED (2026-06-25, commit 67732c5)
+
+The Tier 1 geometry pooling introduced a frustum-culling regression: a recycled
+BufferGeometry keeps the PREVIOUS chunk's cached `boundingSphere` (Three.js only
+auto-computes it when null), so each reused chunk was culled against stale bounds →
+**large terrain holes that popped in/out as the camera moved** (road ribbon
+unaffected — separate mesh; FPS unaffected — culling, not cost). Fresh geometries
+never hit this because the lazy compute ran after Y was set. Fix: call
+`geom.computeBoundingSphere()` after writing `position.Y` in the build loop AND on
+both in-place re-carve paths (re-carve shifts Y too). User-confirmed fixed in browser.
+**Lesson:** any geometry reuse that displaces vertices must recompute bounds — the
+fresh-allocation path got correct bounds for free via lazy compute.
 
 ## Resolution (2026-06-25) — RESOLVED
 
