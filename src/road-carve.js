@@ -617,6 +617,15 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     const wCurv    = opts.wCurv    ?? 120      // QUAL-05: curvature penalty weight; cost = wCurv·κ²·L (squared → tighter radius costs more). Bare fallback only; the game passes roadWTurn (8000).
     const wHeur    = opts.wHeur    ?? 1.5       // weighted-A* heuristic inflation (>1 = greedier, far
                                                // fewer node expansions → faster streaming; paths stay near-optimal)
+    // FEAT-10 earthwork routing. earthworkWindow>0 switches the grade/altitude cost from RAW terrain to a
+    // spatially LOW-PASSED terrain (box-blur radius ~earthworkWindow) — the design grade line the carve
+    // smooths to — so the router stops spiralling to follow bumps it will fill/cut anyway, and adds a
+    // per-metre wDev·|lowpass − raw| EARTHWORK penalty so a path through rough ground (lots of fill/cut)
+    // costs more than one through smooth ground. The three weighted levers the design calls for then are:
+    // wCurv (tight turns), wOver (grade violation, now of the SMOOTH grade), wDev (deviation/earthwork).
+    const earthworkWindow = opts.earthworkWindow ?? 0
+    const wDev            = opts.wDev            ?? 0
+    const earthwork       = earthworkWindow > 1e-6 && wDev > 0
     // BUG-12: canonical join headings. The segment STARTS along startHeading (so its DEPARTURE from
     // the anchor is the canonical heading) and, when goalHeading is set, its ARRIVAL is blended into
     // the canonical heading over the last `goalBlend` metres (terminal Hermite below). Two segments
@@ -648,6 +657,36 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         if (!hSeen[ci]) { hH[ci] = heightFn(minX + (ci % NX) * cell, minZ + ((ci / NX) | 0) * cell); hSeen[ci] = 1 }
         return hH[ci]
     }
+
+    // FEAT-10 earthwork: spatial LOW-PASS of terrain via a summed-area table (built once, O(1) box query).
+    // loH(x,z) = mean terrain over a (2·loR+1)² cell window ≈ the design grade line the carve smooths to,
+    // so the router follows it (gentle) instead of every bump. SAT needs the full hH grid → eager-fill it
+    // (NX·NZ heightFn calls, same as the lazy worst case; only when earthwork is on). Pure fn of terrain.
+    const loR = Math.max(1, Math.round(earthworkWindow / cell))
+    let loSAT = null
+    const buildLoSAT = () => {
+        for (let i = 0; i < NX * NZ; i++) if (!hSeen[i]) { hH[i] = heightFn(minX + (i % NX) * cell, minZ + ((i / NX) | 0) * cell); hSeen[i] = 1 }
+        // integral image with a zero-padded top/left row → (NX+1)·(NZ+1)
+        const W1 = NX + 1
+        loSAT = new Float64Array(W1 * (NZ + 1))
+        for (let z = 0; z < NZ; z++) {
+            let rowSum = 0
+            for (let x = 0; x < NX; x++) {
+                rowSum += hH[z * NX + x]
+                loSAT[(z + 1) * W1 + (x + 1)] = loSAT[z * W1 + (x + 1)] + rowSum
+            }
+        }
+    }
+    const loH = (x, z) => {
+        const cxi = cxOf(x), czi = czOf(z)
+        const x0 = Math.max(0, cxi - loR), x1 = Math.min(NX - 1, cxi + loR)
+        const z0 = Math.max(0, czi - loR), z1 = Math.min(NZ - 1, czi + loR)
+        const W1 = NX + 1
+        const s = loSAT[(z1 + 1) * W1 + (x1 + 1)] - loSAT[z0 * W1 + (x1 + 1)]
+              - loSAT[(z1 + 1) * W1 + x0] + loSAT[z0 * W1 + x0]
+        return s / ((x1 - x0 + 1) * (z1 - z0 + 1))
+    }
+    if (earthwork) buildLoSAT()
 
     // Bounded valley-seeking altitude cost (D-arc REVISED²). Reference = the straight a→b altitude
     // baseline (linear height interp along the chord). δ = nH − baseline; cost = wAlt·max(0, δ +
@@ -728,7 +767,7 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     const goalR = Math.max(cell, stepLen), goalR2 = goalR * goalR
     const startState = stateOf(ax, az, th0)
     G[startState] = 0; GS[startState] = gen
-    SX[startState] = ax; SZ[startState] = az; STh[startState] = th0; SSh[startState] = hAt(ax, az)
+    SX[startState] = ax; SZ[startState] = az; STh[startState] = th0; SSh[startState] = earthwork ? loH(ax, az) : hAt(ax, az)
     SP[startState] = -1; SKi[startState] = 0
     hpush(heur(ax, az), startState)
 
@@ -750,11 +789,16 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             if (nx < minX || nx > maxX || nz < minZ || nz > maxZ) continue
             const nst = stateOf(nx, nz, nth)
             if (CL[nst] === gen) continue
-            const nH = hAt(nx, nz)
+            const nHraw = hAt(nx, nz)
+            // FEAT-10 earthwork: cost grade + altitude against the LOW-PASSED design line (loH), not raw
+            // terrain, so bumps the carve will fill/cut don't force a switchback. nHc is the height used
+            // for grade/alt (stored in SSh so the grade chain stays consistent); deviation = |nHc − raw|.
+            const nHc = earthwork ? loH(nx, nz) : nHraw
             // Grade along the primitive. Endpoint-to-endpoint by default; multi-point MAX along the arc
-            // when gradeSamples>1, so a long large-radius arc isn't blind to intra-arc steepness.
+            // when gradeSamples>1, so a long large-radius arc isn't blind to intra-arc steepness. In
+            // earthwork mode the design line is already smooth → endpoint grade suffices (skip sampling).
             let grade
-            if (gradeSamples > 1 && Math.abs(k) >= 1e-12) {
+            if (!earthwork && gradeSamples > 1 && Math.abs(k) >= 1e-12) {
                 let prevH = csh, gm = 0
                 const nseg = Math.max(1, Math.min(gradeSamples, Math.ceil(L / 8)))
                 for (let gi = 1; gi <= nseg; gi++) {
@@ -769,14 +813,17 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
                 }
                 grade = gm
             } else {
-                grade = Math.abs(nH - csh) / L
+                grade = Math.abs(nHc - csh) / L
             }
             // Per-METRE accrual × L (primitives now vary in length) so cost is length-consistent.
-            const ng = cg + L * (wDist + wGrade * grade * grade + wOver * Math.max(0, grade - maxGrade)
-                     + wAlt * Math.max(0, nH - baselineAt(nx, nz) + valleyCap) + wCurv * k * k)
+            // earthwork adds wDev·|design − raw| (the fill/cut depth) per metre — the deviation penalty.
+            let perM = wDist + wGrade * grade * grade + wOver * Math.max(0, grade - maxGrade)
+                     + wAlt * Math.max(0, nHc - baselineAt(nx, nz) + valleyCap) + wCurv * k * k
+            if (earthwork) perM += wDev * Math.abs(nHc - nHraw)
+            const ng = cg + L * perM
             if (GS[nst] !== gen || ng < G[nst]) {
                 G[nst] = ng; GS[nst] = gen
-                SX[nst] = nx; SZ[nst] = nz; STh[nst] = nth; SSh[nst] = nH; SP[nst] = sid; SKi[nst] = ki
+                SX[nst] = nx; SZ[nst] = nz; STh[nst] = nth; SSh[nst] = nHc; SP[nst] = sid; SKi[nst] = ki
                 hpush(ng + heur(nx, nz), nst)
             }
         }

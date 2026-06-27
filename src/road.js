@@ -1290,6 +1290,11 @@ export class RoadSystem {
             // QUAL-05 follow-up: fixed-angle palette → large sweeping radii (see ranger.js roadArc*).
             radii: pp.roadArcRadii, hbins: pp.roadArcHeadingBins, gradeSamples: pp.roadArcGradeSamples,
             maxNodes: pp.roadArcMaxNodes ?? 300000,
+            // FEAT-10 earthwork routing: when earthworkWindow>0 the router costs grade against a
+            // spatially LOW-PASSED terrain (the design grade the carve will build) instead of raw
+            // terrain — so it stops spiralling to follow every bump — and pays wDev per metre of
+            // |lowpass − raw| (the fill/cut earthwork). Default 0 = off (terrain-following, unchanged).
+            earthworkWindow: pp.roadEarthworkWindow ?? 0, wDev: pp.roadWDeviation ?? 0,
             startHeading: this._protoAnchorHeading(mx, mz),
             goalHeading:  this._protoAnchorHeading(mx + 1, mz),
             emitPrimitives: true,
