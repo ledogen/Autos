@@ -1980,6 +1980,17 @@ export class RoadSystem {
         // wrong-height runs that merely pass nearby.) Where genuinely overlapping runs at different
         // heights remain, this leaves at most a localized crease, not the old sampled-spline cliff.
         let bestLat = Infinity, bestPr = null, bestRunKey = ''
+        // BUG-21: terminal-vertex sliver fallback. At a shared hairpin apex BOTH continuation arms treat
+        // the wedge just beyond the anchor as off-their-end (_projectOntoRun offEnd), so the primary
+        // interior pass finds nothing and the surface pops to raw terrain (the +0.6 m jolt). Collect
+        // offEnd candidates whose foot is the terminal vertex and that lie within footHW RADIALLY of it
+        // (pr.d2 ≤ footHW² — a radial gate, NOT lateral-only: a run merely ending ~40 m off the query
+        // has a small perpendicular lat but a large d2, so the radial gate still rejects the old
+        // "topmost" 40 m artifact offEnd was added to kill). Used only if nothing interior wins; the
+        // candidate's arcS is already clamped to the run end, so runProfile gives the endpoint gradeY —
+        // C0 with the sibling arm, which shares the anchor (synced run-end camber, BUG-19/QUAL-05).
+        let bestEndD2 = Infinity, bestEndPr = null, bestEndRunKey = ''
+        const footHW2 = footHW * footHW
         for (let dx = -1; dx <= 1; dx++) {
             for (let dz = -1; dz <= 1; dz++) {
                 const segs = this._tiles.get(`${qtx + dx},${qtz + dz}`)
@@ -1991,13 +2002,18 @@ export class RoadSystem {
                     const netEntry = this._network.get(runKey)
                     if (!netEntry) continue
                     const pr = this._projectOntoRun(netEntry, wx, wz)
-                    if (!pr || pr.offEnd) continue
+                    if (!pr) continue
                     const latDist = Math.abs(pr.signedLat)
+                    if (pr.offEnd) {   // BUG-21 apex-sliver candidate (radial gate, weakest priority)
+                        if (pr.d2 <= footHW2 && pr.d2 < bestEndD2) { bestEndD2 = pr.d2; bestEndPr = pr; bestEndRunKey = runKey }
+                        continue
+                    }
                     if (latDist > footHW) continue
                     if (latDist < bestLat) { bestLat = latDist; bestPr = pr; bestRunKey = runKey }
                 }
             }
         }
+        if (!bestPr && bestEndPr) { bestPr = bestEndPr; bestRunKey = bestEndRunKey }  // BUG-21: fill the apex sliver
         if (!bestPr) return null
         // camberSign = 1: the projection uses the run's own canonical polyline direction (arcS increases
         // along it), so run-frame camber maps to the world frame directly (no E→W slice reversal here).
