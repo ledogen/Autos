@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<!--
+  test/prop-preview.html — Standalone visual check for FEAT-06 procedural props.
+
+  Renders the baked palette + a deterministic scatter over a fake hilly terrain, with a road strip
+  excluded. NO dependency on main.js / index.html / road / terrain — just the prop modules + a
+  synthetic sampler set, so it runs while the road/terrain bugfix work is in flight.
+
+  Run from the repo root with any static server (file:// breaks ES modules):
+    npx serve .      → open /test/prop-preview.html
+    python3 -m http.server   → open /test/prop-preview.html
+  Keys: orbit = drag, zoom = wheel. Top-left buttons reseed / toggle wireframe.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RangerSim — Prop Preview (FEAT-06)</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #9bb7d4; font-family: monospace; }
+    #ui { position: fixed; top: 8px; left: 8px; z-index: 10; color: #1a2a3a; }
+    #ui button { font-family: monospace; margin-right: 6px; }
+    #info { position: fixed; bottom: 8px; left: 8px; color: #1a2a3a; font-size: 12px; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="ui">
+    <button id="reseed">Reseed</button>
+    <button id="wire">Wireframe</button>
+    <span id="count"></span>
+  </div>
+  <div id="info">drag = orbit · wheel = zoom · synthetic terrain + road-strip exclusion at x≈0</div>
+
+  <script type="module">
+    import * as THREE from 'three'
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+    import { PropSystem } from '../src/props/prop-system.js'
+    import { FLORA_PARAMS } from '../data/flora.js'
+
+    // ── synthetic terrain (same shape the samplers report) ──────────────────────────────
+    const H = (x, z) => 4 * Math.sin(x * 0.04) * Math.cos(z * 0.05) + 2 * Math.sin(x * 0.12 + z * 0.1)
+    const slopeRoadBlocked = (x) => Math.abs(x) < FLORA_PARAMS.scatter.roadExclusion
+    const samplers = {
+      heightAt: (x, z) => H(x, z),
+      normalAt: (x, z) => {
+        const e = 0.5
+        const dx = (H(x + e, z) - H(x - e, z)) / (2 * e)
+        const dz = (H(x, z + e) - H(x, z - e)) / (2 * e)
+        const n = new THREE.Vector3(-dx, 1, -dz).normalize()
+        return { x: n.x, y: n.y, z: n.z }
+      },
+      roadBlocked: (x, z) => slopeRoadBlocked(x),
+    }
+
+    const scene = new THREE.Scene()
+    scene.fog = new THREE.Fog(0x9bb7d4, 80, 320)
+    const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 2000)
+    camera.position.set(40, 35, 70)
+    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer.setSize(innerWidth, innerHeight)
+    renderer.setPixelRatio(Math.min(2, devicePixelRatio))
+    renderer.shadowMap.enabled = true
+    document.body.appendChild(renderer.domElement)
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.target.set(0, 5, 0)
+
+    scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x4a5a3a, 0.9))
+    const sun = new THREE.DirectionalLight(0xfff2e0, 1.2)
+    sun.position.set(60, 120, 40); sun.castShadow = true
+    scene.add(sun)
+
+    // ground mesh from the same height field
+    const G = 384, SEG = 96
+    const gground = new THREE.PlaneGeometry(G, G, SEG, SEG).rotateX(-Math.PI / 2)
+    const gp = gground.attributes.position
+    for (let i = 0; i < gp.count; i++) gp.setY(i, H(gp.getX(i), gp.getZ(i)))
+    gground.computeVertexNormals()
+    const ground = new THREE.Mesh(gground, new THREE.MeshLambertMaterial({ color: 0x6f8c4f }))
+    ground.receiveShadow = true
+    scene.add(ground)
+    // road strip
+    const road = new THREE.Mesh(
+      new THREE.PlaneGeometry(2 * FLORA_PARAMS.scatter.roadExclusion, G).rotateX(-Math.PI / 2),
+      new THREE.MeshLambertMaterial({ color: 0x444444 }))
+    road.position.y = 6; scene.add(road)
+
+    let sys, wire = false
+    function build(seed) {
+      if (sys) sys.dispose()
+      sys = new PropSystem({ scene, worldSeed: seed, samplers })
+      sys.update(0, 0, 2)   // 5x5 chunks around origin
+      document.getElementById('count').textContent = `seed ${seed} · ${sys.liveCount()} props`
+      sys._material.wireframe = wire
+    }
+    build(7)
+
+    document.getElementById('reseed').onclick = () => build((Math.random() * 1e6) | 0)
+    document.getElementById('wire').onclick = () => { wire = !wire; sys._material.wireframe = wire }
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix()
+      renderer.setSize(innerWidth, innerHeight)
+    })
+    ;(function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera) })()
+  </script>
+</body>
+</html>
