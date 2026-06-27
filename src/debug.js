@@ -282,6 +282,11 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // Valley-seek depth cap (m below the anchor baseline that still rewards descending). Higher =
   // more decisive valley-following / less squiggly (slightly more detour); the cap bounds wander.
   roadFolder.add(params, 'roadValleyDepthCap', 0, 120, 5).name('Valley Depth Cap (m)').onChange(fireRoadParam)
+  // FEAT-10 earthwork routing levers (re-route + re-stream + carve rebuild on change via fireRoadParam).
+  // Window 0 = OFF (terrain-following / old spiral behaviour). These trade loops vs earthwork depth.
+  roadFolder.add(params, 'roadEarthworkWindow', 0, 250, 10).name('Earthwork Window (m, 0=off)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadWDeviation',      0, 20,  0.5).name('wDev (hug terrain ↑)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadDeviationCap',    0, 25,  1  ).name('Deviation Cap (max fill/cut m)').onChange(fireRoadParam)
   // COVER suppression: drop roads that run on top of a lower row's road. OFF = faster spawn (no
   // neighbour pre-routing), ON = no stacked/duplicate roads + fewer junctions. Re-routes on toggle.
   roadFolder.add(params, 'roadCoverSuppress').name('COVER Suppress').onChange(fireRoadParam)
