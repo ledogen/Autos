@@ -1295,6 +1295,7 @@ export class RoadSystem {
             // terrain — so it stops spiralling to follow every bump — and pays wDev per metre of
             // |lowpass − raw| (the fill/cut earthwork). Default 0 = off (terrain-following, unchanged).
             earthworkWindow: pp.roadEarthworkWindow ?? 0, wDev: pp.roadWDeviation ?? 0,
+            deviationCap: pp.roadDeviationCap ?? Infinity,
             startHeading: this._protoAnchorHeading(mx, mz),
             goalHeading:  this._protoAnchorHeading(mx + 1, mz),
             emitPrimitives: true,
@@ -1476,7 +1477,34 @@ export class RoadSystem {
 
             // Grade the continuous row Y in one pass (so the shared anchor point gets ONE smoothed Y →
             // gradeY is C0 across every join), then split per connection at the anchor boundaries.
-            smoothGradeInPlace(rowPts, this._params?.designGradeWindow ?? 50)
+            // FEAT-10 earthwork: when earthwork routing is on, the road must follow the DESIGN line, not
+            // raw terrain — otherwise the straighter route just dives into valleys / over ridges (steeper,
+            // dippy). Smooth the row Y over the WIDER earthwork window so the road bridges valleys and cuts
+            // ridges at a gentle grade (the carve then fills/cuts to it), and clamp the smoothed Y to
+            // ±deviationCap of raw so fills/cuts stay within what the carve can build (matches the router's
+            // designH). Off → legacy ±designGradeWindow terrain-following smoothing, unchanged.
+            const ewWindow = this._params?.roadEarthworkWindow ?? 0
+            const ewActive = ewWindow > 0 && (this._params?.roadWDeviation ?? 0) > 0
+            const legacyWin = this._params?.designGradeWindow ?? 50
+            if (!ewActive) {
+                smoothGradeInPlace(rowPts, legacyWin)
+            } else {
+                // FEAT-10 earthwork design line: (1) wide-smooth raw → the gentle bridged/cut grade;
+                // (2) a SMOOTH terrain reference (legacy-window smooth of raw) for the cap; (3) clamp the
+                // design to ±cap of that SMOOTH reference. Clamping against the smooth ref (not raw coarse)
+                // is essential — clamping against raw would make the design follow raw's bumps wherever the
+                // cap bites, putting near-vertical steps into the collision surface (road-smoothness).
+                const rowRaw = rowPts.map(pt => pt.y)
+                smoothGradeInPlace(rowPts, ewWindow)            // rowPts.y = wide design line
+                const design = rowPts.map(pt => pt.y)
+                for (let i = 0; i < rowPts.length; i++) rowPts[i].y = rowRaw[i]
+                smoothGradeInPlace(rowPts, legacyWin)           // rowPts.y = smooth terrain reference
+                const cap = this._params?.roadDeviationCap ?? Infinity
+                for (let i = 0; i < rowPts.length; i++) {
+                    const ref = rowPts[i].y, y = design[i]
+                    rowPts[i].y = y > ref + cap ? ref + cap : (y < ref - cap ? ref - cap : y)
+                }
+            }
 
             for (const { mx, i0, i1, clArc } of spans) {
                 if (mx < mx0 || mx > mx1) continue   // pad connection: graded for window-invariance, not registered

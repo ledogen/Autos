@@ -248,6 +248,25 @@ export const RANGER_PARAMS = {
   // the hard floor (8 m). Higher = gentler/straighter; live-tunable via "Curve Penalty (wCurv)".
   roadWTurn: 8000,      // cost units — wCurv·κ²·L curvature penalty (QUAL-05); higher = gentler roads
 
+  // ── FEAT-10 earthwork routing ────────────────────────────────────────────────────────────────
+  // The router used to cost grade against RAW terrain, so it SPIRALLED to follow contours (43/63 runs
+  // looped >270° at seed 6). These three turn on the "fill-the-valley / cut-the-ridge" cost model: the
+  // router (and the design-grade profile) follow a LOW-PASSED terrain line instead of raw, paying a
+  // weighted deviation (earthwork) penalty, bounded by a cap. Result (seed 6): loops 43→15, full-circle
+  // spirals 20→2, detour 1.72→1.19, no perf cost. Set roadEarthworkWindow=0 to fully revert to terrain-
+  // following routing. (Carve fills/cuts to the design line; deviationCap keeps them carve-buildable.)
+  //
+  // roadEarthworkWindow: half-width (m) of the terrain low-pass = the design grade line. Larger =
+  // smoother/straighter roads + bigger earthwork. 0 = OFF (terrain-following, the old behaviour).
+  roadEarthworkWindow: 120,
+  // roadWDeviation: weight on the per-metre |design − terrain| earthwork penalty. Higher = hugs terrain
+  // more (less fill/cut, windier); lower = straighter (more earthwork). 0 = OFF.
+  roadWDeviation: 3,
+  // roadDeviationCap: max |design − terrain| (m) the router/profile will build — bounds fill/cut depth so
+  // the carve can construct it. On terrain taller than this the design grade falls back to terrain grade
+  // and the road still switchbacks (the genuinely-forced loops).
+  roadDeviationCap: 8,
+
   // roadMinTurnRadius: D0 — minimum turn radius (m) for road centerlines. _filletMinRadius inserts a
   // circular arc of this radius wherever the implied corner radius is tighter, rounding (not excising)
   // hairpin corners. Higher = wider hairpins (arms further apart); lower = tighter corners.

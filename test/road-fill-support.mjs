@@ -60,22 +60,35 @@ for (const seed of SEEDS) {
     // lateral march can't snap to a NEIGHBOUR run. (At parallel/stacked-road overlaps a free re-resolve
     // jumps to the closer road at a different height — a real but SEPARATE defect, COVER/FEAT-10 route
     // merge, not the fill fall-through under test.) analyticHeight = raw + blendW·(gradeY − raw).
-    let lastSupported = 0, worstStep = 0, prev = null
+    // FEAT-10: distinguish DRIVABLE smoothness from EMBANKMENT steepness. On a tall fill (earthwork
+    // routing builds them up to the deviation cap) the bank beyond the road edge is legitimately steep —
+    // that is a continuous, supported fill slope you'd slide down, NOT the BUG-15 fall-through (a sudden
+    // DROP to raw where the mesh stays raised). Physics & mesh use the same _sampleCarveWorld formula now,
+    // so they agree by construction; what still matters is: (1) the DRIVABLE surface (≤ halfWidth) is
+    // smooth, (2) the embankment never JUMPS UP (an upward step = a run-flip onto a higher surface, the
+    // real "invisible cliff"), and (3) it stays supported (above raw) out to the core. A steep DOWNWARD
+    // bank beyond the road edge is allowed.
+    let lastSupported = 0, worstDriveStep = 0, worstUpStep = 0, prev = null
     for (let lat = 0; lat <= MESH_EXT + 0.5; lat += DLAT) {
         const wx = fx + tz * lat, wz = fz - tx * lat
         const raw = terr.rawHeightWorld(wx, wz)
         const c = road._sampleCarveWorld(wx, wz, raw, nr0)
         const ah = (c && c.blendW > 1e-6) ? raw + c.blendW * (c.gradeY - raw) : raw
         if (ah - raw > 0.05) lastSupported = lat               // physics still raising the embankment
-        if (prev !== null) worstStep = Math.max(worstStep, Math.abs(ah - prev))
+        if (prev !== null) {
+            const d = ah - prev
+            if (lat <= hw + DLAT) worstDriveStep = Math.max(worstDriveStep, Math.abs(d))  // drivable: smooth
+            if (d > worstUpStep) worstUpStep = d               // anywhere: an UPWARD jump = run-flip cliff
+        }
         prev = ah
     }
 
     const extentOk = lastSupported >= SUPPORT_TO - DLAT
-    const stepOk   = worstStep <= STEP_TOL
-    log(extentOk && stepOk, `FILL-SUPPORT seed=${seed}`,
-        `fill ${best.d.toFixed(1)} m @(${best.x.toFixed(0)},${best.z.toFixed(0)}); physics supported to lat ${lastSupported.toFixed(1)} m ` +
-        `(need ≥${SUPPORT_TO.toFixed(1)} m, mesh extent ${MESH_EXT.toFixed(1)} m); worst |Δheight| ${worstStep.toFixed(3)} m (tol ${STEP_TOL} m)`)
+    const driveOk  = worstDriveStep <= STEP_TOL
+    const upOk     = worstUpStep   <= STEP_TOL                 // no upward flip cliff (downward bank is OK)
+    log(extentOk && driveOk && upOk, `FILL-SUPPORT seed=${seed}`,
+        `fill ${best.d.toFixed(1)} m @(${best.x.toFixed(0)},${best.z.toFixed(0)}); supported to lat ${lastSupported.toFixed(1)} m ` +
+        `(need ≥${SUPPORT_TO.toFixed(1)} m); drivable step ${worstDriveStep.toFixed(3)} m, worst UP-step ${worstUpStep.toFixed(3)} m (tol ${STEP_TOL} m; steep downward bank allowed)`)
 }
 
 console.log('\n' + '='.repeat(64))
