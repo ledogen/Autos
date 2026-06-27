@@ -196,8 +196,12 @@ export const RANGER_PARAMS = {
   //
   // maxRoadGrade: SOFT target grade the over-cap penalty measures against (rise/run ratio).
   // Exceeding it is penalized (roadWOver·excess), NOT blocked — the route climbs steep ground
-  // only when wrapping around would cost more. D-09 default 0.15 (15%).
-  maxRoadGrade: 0.15,   // ratio (15%) — SOFT over-cap target (D-02 REVISED; never a hard block)
+  // only when wrapping around would cost more.
+  // FEAT-10: raised 0.15→0.20. At 0.15 the router switchbacked so hard to stay gentle that roads
+  // SPIRALED (2.3× detour, 34/62 runs looping). A steeper grade lets roads run straighter (~1.8×
+  // detour, ~22 loops); tall fills are handled by the constant-slope embankment carve (landed with it).
+  // Live slider: lower = gentler + windier; higher = straighter + steeper.
+  maxRoadGrade: 0.20,   // ratio (20%) — SOFT over-cap target (FEAT-10; never a hard block)
 
   // roadWDist: directness weight — cost per metre of horizontal travel. Keeps the trunk from
   // wandering; balanced against the altitude/grade terms. D-09 default 1.
@@ -232,7 +236,7 @@ export const RANGER_PARAMS = {
   // roadWOver: FINITE over-cap penalty — roadWOver·max(0, grade − maxRoadGrade). Strongly (but
   // never infinitely) discourages exceeding maxRoadGrade; forces switchbacks where the grade
   // would otherwise blow past the target. NEVER Infinity (D-02 REVISED). D-09 default 8000.
-  roadWOver: 5000,      // cost units/m over-grade — SOFT over-cap penalty, per-metre (×L) (D-02 REVISED)
+  roadWOver: 2500,      // cost units/m over-grade — SOFT over-cap penalty, per-metre (×L) (FEAT-10: 5000→2500 — let roads take a steeper line instead of spiralling)
 
   // roadWTurn: curvature penalty weight (wCurv) in the arc router. QUAL-05: the per-primitive cost is
   // wCurv·κ²·L (curvature SQUARED — "bending energy"), so for a given heading change the cost is
@@ -318,6 +322,16 @@ export const RANGER_PARAMS = {
   // roadFillSlope: H:V ratio for the fill embankment (design grade higher than terrain).
   // 3.0 = 18.4° — standard dirt embankment slope (3 m horizontal per 1 m vertical). D-08.
   roadFillSlope: 3.0,       // H:V ratio — fill embankment slope, 3:1 dirt standard (D-08)
+
+  // roadMaxEmbankmentToe: FEAT-10 — hard cap on how far the fill/cut embankment apron may extend
+  // BEYOND the carve core (carveHalfWidth). Without it, a tall fill on a steep road ramps at its full
+  // slope for tens of metres; at a tight turn the two arms' giant aprons OVERLAP and fight (different
+  // target Ys) → fan-shaped terrain shards radiating from the turn. Capping the apron keeps each arm's
+  // embankment within the D3 max-floor guard's reach so overlaps resolve cleanly. Trade-off: a very
+  // tall fill gets a slightly steeper (never vertical) bank once its natural toe exceeds this. Live
+  // slider: lower = tighter banks, fewer shards; higher = gentler banks, more overlap risk. 10 m keeps
+  // the fill-support gate green (slope stays < 1.5 for the strongest fills) while killing the shards.
+  roadMaxEmbankmentToe: 10, // m — max embankment apron width beyond the carve core (FEAT-10 shard cap)
 
   // designGradeWindow: sliding-window half-width for design grade smoothing.
   // The smoothed road profile is a windowed average of analyticHeight over this half-width

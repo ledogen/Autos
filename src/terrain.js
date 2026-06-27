@@ -1480,6 +1480,7 @@ export class TerrainSystem {
         // WITH the ribbon → uniform clearanceMargin on banked turns (fixes clip/gap, bug #5).
         const clearanceMargin = p.roadClearanceMargin ?? 0.5
         const carveExtraWidth = p.roadCarveExtraWidth ?? 3.0
+        const maxEmbankmentToe = p.roadMaxEmbankmentToe ?? 10  // FEAT-10: cap apron beyond carve core
 
         // Maximum lateral extent to bother querying: ribbon + shoulder + max fill toe + extra width
         // fillToe = halfWidth + shoulderWidth + fillHeight * fillSlope
@@ -1684,7 +1685,10 @@ export class TerrainSystem {
                 const fillToe = halfWidth + shoulderWidth + cappedDelta * fillSlope
                 const cutDelta = Math.max(0, rawH - carveTargetY)
                 const cutToe  = halfWidth + shoulderWidth + cutDelta * cutSlope
-                const toeExt  = Math.max(fillToe, cutToe)
+                // FEAT-10: cap the apron at carveHalfWidth + roadMaxEmbankmentToe so tall fills on steep
+                // roads can't blow the toe out to tens of metres. Uncapped, adjacent arms' giant aprons
+                // overlap at tight turns and fight → fan-shaped shards. IDENTICAL cap in _sampleCarveWorld.
+                const toeExt  = Math.min(Math.max(fillToe, cutToe), carveHalfWidth + maxEmbankmentToe)
 
                 if (latDist > toeExt) {
                     // Beyond the fill/cut toe — unaffected terrain.
@@ -1701,7 +1705,12 @@ export class TerrainSystem {
                 if (latDist < carveHalfWidth) {
                     blendW = 1.0
                 } else {
-                    blendW = Math.max(0.0, 1.0 - (latDist - carveHalfWidth) / shoulderWidth)
+                    // FEAT-10: ramp the embankment at its fill/cut SLOPE over the variable toe (toeExt),
+                    // not a fixed shoulderWidth — a tall fill (steeper roads) descends gently to terrain
+                    // instead of dropping its whole height over 2.5 m (a near-vertical dirt wall). ≥
+                    // shoulderWidth so short fills/cuts are unchanged. IDENTICAL ramp in _sampleCarveWorld.
+                    const ramp = Math.max(shoulderWidth, toeExt - carveHalfWidth)
+                    blendW = Math.max(0.0, 1.0 - (latDist - carveHalfWidth) / ramp)
                 }
 
                 // Store carveTargetY as pre-amplitude (Worker uses raw heights; main thread

@@ -1965,7 +1965,11 @@ export class RoadSystem {
         // "no road" across the outer fill embankment the mesh raised, and the car falls through it.
         const carveExtraWidth = p.roadCarveExtraWidth ?? 3.0
         const minRadius       = p.roadMinTurnRadius   ?? 12
-        const footHW = Math.min(halfWidth + carveExtraWidth, minRadius) + shoulderWidth
+        // FEAT-10: the embankment now reaches carveHalfWidth + roadMaxEmbankmentToe (capped apron), so the
+        // resolver footprint must extend to the SAME toe — otherwise a wheel on the far fill embankment
+        // (>carveHalfWidth + shoulderWidth lateral) returns "no road" and drops through the raised dirt.
+        const maxEmbankmentToe = p.roadMaxEmbankmentToe ?? 10
+        const footHW = Math.min(halfWidth + carveExtraWidth, minRadius) + maxEmbankmentToe
 
         const qtx = Math.floor(wx / CHUNK_SIZE)
         const qtz = Math.floor(wz / CHUNK_SIZE)
@@ -2096,8 +2100,9 @@ export class RoadSystem {
         // So signedLat = dx*tz - dz*tx (positive = right side of travel direction).
         const signedLat = dx * tz - dz * tx
         const latDist   = Math.abs(signedLat)
-
-        if (latDist > carveHalfWidth + shoulderWidth) return null  // BUG-15: match the mesh carve extent
+        // FEAT-10: the precise fill/cut-toe cutoff now happens AFTER designY is known (it depends on the
+        // fill height) — see the blend block below. The caller (_resolveRoadSurface / carveHint) has
+        // already committed this point to a nearby run, so latDist is bounded; no early cheap reject needed.
 
         // Design grade Y — P2 (09-27): replace per-slice spline nr.point.y with the run-global
         // continuous profile gradeY. nr.arcS is run-global (BUG-10 fix in 3df47cd) and is C0
@@ -2166,16 +2171,26 @@ export class RoadSystem {
             if (latDist >= halfWidth) designY -= clearanceMargin
         }
 
-        // Blend weight: 1 across the widened carve core (carveHalfWidth), ramp down over shoulderWidth.
-        // BUG-15 (fill): core is carveHalfWidth — NOT halfWidth — so the physics holds the road grade out
-        // to the SAME width as the mesh's raised embankment (identical to _buildCarveTable), then ramps to
-        // raw. Without this the fill embankment between halfWidth+shoulderWidth and carveHalfWidth+
-        // shoulderWidth is unsupported and the car falls through it.
+        // Fill/cut toe + blend — IDENTICAL to terrain.js _buildCarveTable (CARVE SYNC). The embankment
+        // ramps at its SLOPE over the variable toe so a tall fill (steeper roads, FEAT-10) descends
+        // gently to terrain instead of dropping its whole height over a fixed 2.5 m shoulder (a wall →
+        // the road-fill-support "step"). Core (blendW=1) stays carveHalfWidth wide (BUG-15 fill support).
+        const fillSlope = p.roadFillSlope ?? 3.0
+        const cutSlope  = p.roadCutSlope  ?? 1.0
+        const maxEmbankmentToe = p.roadMaxEmbankmentToe ?? 10
+        const fillToe = halfWidth + shoulderWidth + Math.max(0, designY - rawAmp) * fillSlope
+        const cutToe  = halfWidth + shoulderWidth + Math.max(0, rawAmp - designY) * cutSlope
+        // FEAT-10: cap the apron at carveHalfWidth + roadMaxEmbankmentToe (IDENTICAL to _buildCarveTable)
+        // so tall fills can't blow the toe out and overlap into shards at tight turns.
+        const toeExt  = Math.min(Math.max(fillToe, cutToe), carveHalfWidth + maxEmbankmentToe)
+        if (latDist > toeExt) return null   // beyond the fill/cut toe — unaffected terrain
+
+        const ramp = Math.max(shoulderWidth, toeExt - carveHalfWidth)
         let blendW
         if (latDist < carveHalfWidth) {
             blendW = 1.0
         } else {
-            blendW = Math.max(0.0, 1.0 - (latDist - carveHalfWidth) / shoulderWidth)
+            blendW = Math.max(0.0, 1.0 - (latDist - carveHalfWidth) / ramp)
         }
 
         return { blendW, gradeY: designY }

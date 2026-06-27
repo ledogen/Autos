@@ -262,7 +262,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(_roadState, 'roadViz').name('Show Road Splines').onChange(v => {
     if (typeof callbacks.onRoadVizToggle === 'function') callbacks.onRoadVizToggle(v)
   })
-  roadFolder.add(params, 'maxRoadGrade', 0.04, 0.20, 0.01).name('Max Grade (ratio)').onChange(() => {
+  // FEAT-10: range widened to 0.35 — Max Grade is the spiral↔steepness lever (higher = straighter
+  // roads but steeper climbs; lower = gentler but more switchback spiral).
+  roadFolder.add(params, 'maxRoadGrade', 0.08, 0.35, 0.01).name('Max Grade (ratio)').onChange(() => {
     if (typeof callbacks.onRoadParamChange === 'function') callbacks.onRoadParamChange()
   })
   // D-09 dominant cost-weight sliders (08-07): bound directly to the live `params` object, each
@@ -343,6 +345,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   surfaceFolder.add(params, 'roadFillHeight',       0,    4,    0.1 ).name('Fill Height (m)').onChange(fireSurface)
   surfaceFolder.add(params, 'roadCutSlope',         0.5,  2,    0.05).name('Cut Slope (H:V)').onChange(fireSurface)
   surfaceFolder.add(params, 'roadFillSlope',        1.5,  5,    0.1 ).name('Fill Slope (H:V)').onChange(fireSurface)
+  // FEAT-10: caps how far the fill/cut embankment apron extends past the carve core. Lower = tighter
+  // banks + fewer fan-shaped shards at tight turns; higher = gentler banks but more cross-arm overlap.
+  surfaceFolder.add(params, 'roadMaxEmbankmentToe', 3,   20,    0.5 ).name('Max Embankment Toe (m)').onChange(fireSurface)
   surfaceFolder.add(params, 'roadShoulderWidth',    1,    6,    0.5 ).name('Shoulder Width (m)').onChange(fireSurface)
   surfaceFolder.add(params, 'designGradeWindow',   10,  150,   5   ).name('Grade Window (m)').onChange(fireSurface)
   surfaceFolder.add(params, 'roadFilletRadius',     0.5, 10,    0.5 ).name('Fillet Radius (m)').onChange(fireSurface)
