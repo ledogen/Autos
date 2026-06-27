@@ -267,6 +267,15 @@ export const RANGER_PARAMS = {
   // and the road still switchbacks (the genuinely-forced loops).
   roadDeviationCap: 8,
 
+  // roadJunctionFootprints: render the placeholder junction-footprint pads (FEAT-07 will replace these
+  // with the real merged+carved junction surface). DEFAULT OFF: the pad is only an imperfect overlapping
+  // rectangle with no carve, and building it runs road.js _detectJunctions() — an O(runs²×seg²) crossing
+  // rescan — on EVERY tile build inside flushPendingQueue. That cost a measured 296 ms single-frame stall
+  // at Ultra (Trace-20260627T013753). Gating it off keeps the hot path clear with zero shipped-feature
+  // loss until FEAT-10 makes junction nodes graph-native + FEAT-07 builds the real surface. Set true only
+  // to eyeball the placeholder pads.
+  roadJunctionFootprints: false,
+
   // roadMinTurnRadius: D0 — minimum turn radius (m) for road centerlines. _filletMinRadius inserts a
   // circular arc of this radius wherever the implied corner radius is tighter, rounding (not excising)
   // hairpin corners. Higher = wider hairpins (arms further apart); lower = tighter corners.

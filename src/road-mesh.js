@@ -765,7 +765,13 @@ export class RoadMeshSystem {
         // Detect junctions in the network and build footprint meshes for any node
         // whose position falls inside this tile's CHUNK_SIZE × CHUNK_SIZE bounds.
         // (Open Q3 from RESEARCH: assign junction to tile containing node XZ position.)
-        if (this._road._detectJunctions) {
+        //
+        // GATED OFF by default (roadJunctionFootprints, ranger.js): _detectJunctions() is an
+        // O(runs²×seg²) crossing rescan run per tile build on the hot path (flushPendingQueue →
+        // _buildRoadTile) — a measured 296 ms Ultra stall (Trace-20260627T013753) — and only yields
+        // an imperfect placeholder pad. FEAT-10 (graph-native junction nodes) + FEAT-07 (real merged
+        // surface) replace this; until then the gate keeps the hot path clear at zero feature loss.
+        if (this._params.roadJunctionFootprints && this._road._detectJunctions) {
             const junctions = this._road._detectJunctions()
             const tileWorldX = tileX * CHUNK_SIZE
             const tileWorldZ = tileZ * CHUNK_SIZE

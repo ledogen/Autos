@@ -119,6 +119,13 @@ Immediate, FEAT-10-independent mitigation: `road-mesh.js buildJunctionFootprint`
 imperfect placeholder pad (overlapping ribbons, no carve), so **gate it off the hot path now** to kill
 the 296 ms stall with zero shipped-feature loss until FEAT-07 builds the real merged surface.
 
+> **DONE 2026-06-27 (mitigation only — Design D proper still open):** added `roadJunctionFootprints`
+> (ranger.js, default **false**) and gated the per-tile `_detectJunctions()` call in `road-mesh.js`
+> `_buildRoadTile` behind it. The O(N²) crossing rescan no longer runs on the `flushPendingQueue` hot
+> path → 296 ms Ultra stall removed. The scan + placeholder footprint are dormant, not deleted; the
+> real fix (graph-native junction nodes, delete the brute-force scan) is still owned by this ticket.
+> 16 gates green.
+
 ## Acceptance
 
 - On the seed that currently spirals (the screenshot, seed 6): **no two roads run parallel within
