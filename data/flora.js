@@ -115,6 +115,6 @@ export const FLORA_PARAMS = {
   collision: {
     trunkRadiusScale: 1.15,   // capsule radius = trunkRadius × instScale × this (bark + slop)
     rockRadiusScale:  0.92,   // sphere radius  = blob boundingSphere × instScale × this (lumpy, inset)
-    bush: { k: 45, fMax: 200 }, // soft drag: F = clamp(k · |v| · effRadius, 0, fMax) N, opposing v
+    bush: { k: 1350, fMax: 12000 }, // soft drag: F = clamp(k · |v| · effRadius, 0, fMax) N, opposing v
   },
 }

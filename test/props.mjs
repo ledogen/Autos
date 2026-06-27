@@ -16,6 +16,7 @@ import { buildPalette } from '../src/props/prop-palette.js'
 import { scatterChunk } from '../src/props/prop-scatter.js'
 import { PropSystem } from '../src/props/prop-system.js'
 import { sphereVsSphere, sphereVsCapsuleY, bushDrag } from '../src/props/prop-collider.js'
+import { FLORA_PARAMS } from '../data/flora.js'
 import { mulberry32 } from '../src/seed.js'
 
 let fails = 0
@@ -139,7 +140,7 @@ console.log('5. collision math + PropSystem queries (FEAT-06b)')
   if (bush) {
     const f = sys.bushDragForce(bush.x, bush.y, bush.z, 30, 0, 0)
     const m = Math.hypot(f.x, f.y, f.z)
-    ok(m > 0 && m <= 200 + 1e-6, 'bushDragForce applies + caps at fMax')
+    ok(m > 0 && m <= FLORA_PARAMS.collision.bush.fMax + 1e-6, 'bushDragForce applies + caps at fMax')
   } else { ok(true, '(no bush in sample — drag integration skipped)') }
   sys.dispose()
 }
