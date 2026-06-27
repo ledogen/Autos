@@ -2235,13 +2235,7 @@ export class RoadSystem {
         if (latDist < carveHalfWidth) {
             blendW = 1.0
         } else {
-            // QUAL-06/QUAL-07: SMOOTHSTEP shoulder falloff (was linear). u = 0 at the carve-core edge,
-            // 1 at the toe; blendW = 1 − smoothstep(u) = 1 − u²(3−2u) has ZERO slope at BOTH ends, so
-            // the bank has no hard crease at the top-of-bank (core edge) and feathers to terrain at the
-            // toe — killing the staircase/crease the linear ramp left on coarse-grid steep banks. The
-            // mesh and physics share this fn, so both get the C1 bank identically (agreement preserved).
-            const u = Math.min(1, (latDist - carveHalfWidth) / ramp)
-            blendW = 1.0 - u * u * (3.0 - 2.0 * u)
+            blendW = Math.max(0.0, 1.0 - (latDist - carveHalfWidth) / ramp)
         }
 
         return { blendW, gradeY: designY }
