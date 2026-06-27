@@ -33,6 +33,8 @@ import { RoadMeshSystem } from './road-mesh.js'
 import { DustSystem } from './dust.js'
 import { parseWorldSeed, seedFor } from './seed.js'
 import { createVehicleModel } from './vehicle-model.js'
+import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
+import { FLORA_PARAMS } from '../data/flora.js'
 
 // World seed — parsed from URL ?seed= parameter, defaulting to '6'.
 // Plan 04: changed to `let` so debug panel seed field can mutate it (SEED-04).
@@ -65,6 +67,17 @@ let roadSystem = null
 // Initialized after both terrainSystem and roadSystem exist.
 // Provides the visual ribbon mesh (SURF-01) with crown + camber (SURF-03).
 let roadMeshSystem = null
+
+// FEAT-06: PropSystem — procedural trees/rocks/bushes. Decoupled from road/terrain; we inject the
+// real samplers at construction. The factory reads the module-scope terrain/road systems at CALL
+// time, so it stays correct across the seed-rebuild reassignment below. PROP_RING ≤ terrain ring.
+let propSystem = null
+const PROP_RING = 2
+const makePropSamplers = () => ({
+  heightAt:    (x, z) => terrainSystem.analyticHeight(x, z),
+  normalAt:    (x, z) => terrainSystem.analyticNormal(x, z),
+  roadBlocked: (x, z) => !!roadSystem.queryNearest(x, z, FLORA_PARAMS.scatter.roadExclusion),
+})
 
 // Grid-world mode flag (D-18 / D-19).
 // When true: terrain streaming paused, Sierra chunks hidden, ramp visible/collidable,
@@ -281,6 +294,13 @@ function debouncedRebuildFull () {
         worldSeed  // D-03: roadQuality determinism
       )
       terrainSystem.setRoadSystem(roadSystem)
+    }
+    // FEAT-06: props are seed-deterministic, so a new seed must rebuild them or they show stale
+    // scatter. The samplers read the (now-reassigned) module-scope systems, so makePropSamplers()
+    // picks up the fresh terrain/road instances.
+    if (propSystem) {
+      propSystem.dispose()
+      propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
     }
     _reseatTruckAtSpawn()
   }, 150)
@@ -840,6 +860,9 @@ roadMeshSystem = new RoadMeshSystem(
   worldSeed  // D-03: roadQuality determinism requires the world seed
 )
 
+// FEAT-06: prop system — needs terrain (height/normal) + road (exclusion) samplers, both alive now.
+propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
+
 // Phase 7 (D-14/15/16): initial-load seat via canonical resolveSpawn + analyticHeight ground-probe.
 // TerrainSystem is now alive and analyticHeight is immediately available (no chunk load required).
 // This overrides the vehicleState.position set during declaration (which used origin + _spawnEq.bodyY).
@@ -1160,6 +1183,8 @@ function loop () {
   _pt = performance.now()
   if (roadSystem) roadSystem.update(streamCenter)
   perfAdd('frame.road.update', performance.now() - _pt)
+  // FEAT-06: stream props around the same center (diff is cheap when no chunk crossed).
+  if (propSystem) propSystem.update(streamCenter.x, streamCenter.z, PROP_RING)
   // PERF-03 WS-A: pre-warm the road centerline cache off-thread ahead of the streamer (throttled,
   // self-limiting — no-op until the view moves PREWARM_WARM_MOVE). Removes the macro-cell routing hitch.
   if (roadSystem) roadSystem.warmRoutes(streamCenter)
