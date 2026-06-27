@@ -625,6 +625,7 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     // wCurv (tight turns), wOver (grade violation, now of the SMOOTH grade), wDev (deviation/earthwork).
     const earthworkWindow = opts.earthworkWindow ?? 0
     const wDev            = opts.wDev            ?? 0
+    const deviationCap    = opts.deviationCap    ?? Infinity   // m — max |design − terrain| the carve will build
     const earthwork       = earthworkWindow > 1e-6 && wDev > 0
     // BUG-12: canonical join headings. The segment STARTS along startHeading (so its DEPARTURE from
     // the anchor is the canonical heading) and, when goalHeading is set, its ARRIVAL is blended into
@@ -685,6 +686,13 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         const s = loSAT[(z1 + 1) * W1 + (x1 + 1)] - loSAT[z0 * W1 + (x1 + 1)]
               - loSAT[(z1 + 1) * W1 + x0] + loSAT[z0 * W1 + x0]
         return s / ((x1 - x0 + 1) * (z1 - z0 + 1))
+    }
+    // The DESIGN line: low-pass terrain clamped to ±deviationCap of raw, so the road can flatten bumps
+    // up to a fill/cut the carve can actually build but on a genuinely tall hill stays within the cap
+    // (grade then ≈ terrain grade → it still switchbacks where the terrain truly forces it).
+    const designH = (x, z) => {
+        const r = hAt(x, z), lo = loH(x, z)
+        return lo > r + deviationCap ? r + deviationCap : (lo < r - deviationCap ? r - deviationCap : lo)
     }
     if (earthwork) buildLoSAT()
 
@@ -767,7 +775,7 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     const goalR = Math.max(cell, stepLen), goalR2 = goalR * goalR
     const startState = stateOf(ax, az, th0)
     G[startState] = 0; GS[startState] = gen
-    SX[startState] = ax; SZ[startState] = az; STh[startState] = th0; SSh[startState] = earthwork ? loH(ax, az) : hAt(ax, az)
+    SX[startState] = ax; SZ[startState] = az; STh[startState] = th0; SSh[startState] = earthwork ? designH(ax, az) : hAt(ax, az)
     SP[startState] = -1; SKi[startState] = 0
     hpush(heur(ax, az), startState)
 
@@ -793,7 +801,7 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             // FEAT-10 earthwork: cost grade + altitude against the LOW-PASSED design line (loH), not raw
             // terrain, so bumps the carve will fill/cut don't force a switchback. nHc is the height used
             // for grade/alt (stored in SSh so the grade chain stays consistent); deviation = |nHc − raw|.
-            const nHc = earthwork ? loH(nx, nz) : nHraw
+            const nHc = earthwork ? designH(nx, nz) : nHraw
             // Grade along the primitive. Endpoint-to-endpoint by default; multi-point MAX along the arc
             // when gradeSamples>1, so a long large-radius arc isn't blind to intra-arc steepness. In
             // earthwork mode the design line is already smooth → endpoint grade suffices (skip sampling).
