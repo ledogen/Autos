@@ -17,6 +17,33 @@ continuously."
 
 # QUAL-07: Unify the road carve into one cross-section function (visual mesh == collision surface)
 
+## Implementation status — DONE (headless-green) 2026-06-27; in-browser confirm pending
+
+Landed in 4 commits (a0ca70a / 90ca4f7 / df50c77 + this status):
+- **One cross-section fn** `RoadSystem._carveCrossSection` (+ `_carveDirtY` for the crown/camber/
+  clearance fold). Physics `_sampleCarveWorld` and the terrain mesh `_buildCarveTable` BOTH call it.
+- **Mesh adopts the continuous resolve**: `_buildCarveTable` now projects each vertex point-to-SEGMENT
+  onto the pre-collected sample polyline (continuous perpendicular signedLat + interpolated arcS) and
+  calls the shared fn — replacing the Euclidean nearest-discrete-sample metric that made the collision
+  apron sit higher/wider than the drawn bank. Added `sampleSegStart` to `collectChunkSplinePoints` so
+  the projection never spans a seg boundary. D4 interior-arm pick + D3 cross-arm max-floor preserved.
+  Discrete surface path + dead `crownProfile` import deleted (net LOC down).
+- **Clearance decomposition** preserved: shared fn returns the DIRT surface (−clearance always); physics
+  adds clearance back on-ribbon (rides the decal) + pothole. Off-ribbon both read the same dirt.
+- **QUAL-06 staircase**: linear shoulder falloff → **smoothstep** (C1 at core edge AND toe) in the one fn.
+- **Gate** `test/carve-surface-agreement.mjs` (registered): mesh continuous resolve == physics to ≤0.007 m
+  on real fill+cut banks (vs the Euclidean-discrete control's 0.03–0.10 m) + a no-staircase bound. All 17
+  gates green; road-smoothness / camber-continuity / ribbon-carve / road-fill-support /
+  shoulder-lateral-continuity / invariance / restream-invariance unregressed.
+
+**REMAINING:** (1) in-browser confirm — drive a steep fill embankment + a cut bank: truck contacts where
+drawn (no float/sink), bank reads smooth. (2) Optional max-bank-slope clamp + debug sliders (reserved for
+user tuning — NOT guessed blind). (3) Spot-check stream-time carve cost holds the frame budget (structure
+preserves the PERF contract: point-to-segment on the pre-collected polyline, no new getPointAt/queryNearest,
+no per-vertex alloc — but confirm on a switchback chunk). QUAL-06 is subsumed (smoothstep landed).
+
+---
+
 ## Problem
 
 There are **two road-carve resolvers** computing the same cut/fill surface with different math, so the
