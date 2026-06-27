@@ -31,6 +31,53 @@ Make the FEAT-06 props physically interactive. Three interaction classes, by des
    `F_max` by size within the cap).
 3. **Decorative (no-op)** — **small rocks (all < 0.1 m)**: no collision, drive straight over.
 
+## Implementation status — SPLICE LANDED 2026-06-27 (physics path wired; in-browser tuning pending)
+
+Wired the collision core into the live physics path:
+- `main.js` `queryContacts`: appends `propSystem.queryProps(cx,cy,cz,r)` (guarded `!_gridWorldActive
+  && propSystem`). This single splice covers BOTH wheel contacts and body-box contacts — physics.js
+  routes body contacts through `queryContacts` too (Step 3b), so a separate `queryVertexContacts`
+  splice is unnecessary (that callback is passed to `stepPhysics` but never invoked → wiring it
+  would be dead code).
+- `queryProps` now emits `contactPoint` (centre walked back along -normal by `r-depth`), matching the
+  `{normal,depth,contactPoint}` shape the wheel + body solvers destructure.
+- `main.js` loop: bush soft-drag applied per physics substep as an impulse on the chassis velocity
+  (`dv = F/m · dt`), via a reused `_bushDragF` scratch; `bushDragForce` now zeroes `out` so the
+  scratch is safe to reuse.
+- All 16 gates green (props gate incl. §5 collider/query checks).
+
+**REMAINING: in-browser tuning only** — drive into trees/rocks/boulders and through bushes; tune
+`collision.trunkRadiusScale` / `rockRadiusScale` / `bush.{k,fMax}` via the debug **Collision** folder
+(read live, no re-stream). Consider Vector3 pooling in `queryProps` if it shows on the contact hot
+path under dense foliage.
+
+---
+### (historical) prior state — ~80% BUILT 2026-06-27 (conflict-free core; physics splice deferred)
+
+Built the collision CORE without touching the physics path (the road/terrain worker is mid-edit in
+`road.js` / `queryContacts`-adjacent code). All new/own-lane files; props gate green (12 collision
+checks). Decoupled so the remaining work is a tiny splice once the worker's contact churn settles.
+
+- `src/props/prop-collider.js` — pure math (no THREE): `sphereVsSphere`, `sphereVsCapsuleY`,
+  `bushDrag`. Contacts returned as `{nx,ny,nz,depth}` (normal out of solid, matches queryContacts).
+- `src/props/prop-palette.js` — each baked variant now carries a `collision` descriptor: trees =
+  `{kind:'capsule', radius, height}`, rocks/boulders = `{kind:'sphere', radius}`, bushes =
+  `{kind:'bush', radius}`, small rocks = `null` (non-collidable).
+- `src/props/prop-system.js` — per-chunk collidable lists + a lazy uniform grid (8 m cells, rebuilt
+  on chunk-membership change). Public API:
+  - `queryProps(cx,cy,cz,r) → [{normal:Vector3, depth}]` — trees (capsule) + rocks (sphere).
+  - `bushDragForce(cx,cy,cz,vx,vy,vz,out) → out` — accumulates soft drag, capped (collision.bush).
+  - collision-scale params read LIVE at query time → debug sliders tune without a re-stream.
+- `data/flora.js` `collision` block + `prop-debug.js` Collision folder (trunk/rock scale, bush k/cap).
+- `test/props.mjs` §5 — collider math + PropSystem query/index gates.
+
+**REMAINING (deferred — ~10-line splice once worker's `road.js`/`queryContacts` is stable):**
+1. `queryContacts` (main.js): `hits.push(...propSystem.queryProps(cx,cy,cz,r))`.
+2. `queryVertexContacts` (main.js): same for body-box vertices.
+3. Loop: apply `propSystem.bushDragForce(...)` to the chassis once/frame.
+4. Tune capsule/rock scale + bush drag against real driving; consider pooling the Vector3 alloc in
+   `queryProps` if it shows on the contact hot path.
+
 ## Scope
 
 - Register collidable props (trees, large rocks, boulders) as a **contact source** feeding the

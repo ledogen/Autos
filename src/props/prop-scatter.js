@@ -51,13 +51,13 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
   const size = P.chunkSize
   const ox = cx * size, oz = cz * size
   const out = []
-  const { heightAt, normalAt, roadBlocked } = samplers
+  const { heightAt, normalAt, roadBlocked, roadDist } = samplers
 
   const slopeAt = (x, z) => 1 - Math.max(0, Math.min(1, normalAt(x, z).y))
 
   // ── helper: place a single prop of category `cat` at (x,z) if terrain allows ──────────
-  const placeBlob = (cat, x, z, buryRange) => {
-    if (roadBlocked(x, z)) return
+  const placeBlob = (cat, x, z, buryRange, ignoreRoad = false) => {
+    if (!ignoreRoad && roadBlocked(x, z)) return
     const cfg = P[cat]
     const variant = (rng() * cfg.variants) | 0
     const scale = frange(rng, cfg.instScale)
@@ -78,11 +78,16 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
     const slope = slopeAt(x, z)
     if (slope > S.slopeRejectMax) return
     const cfg = P[cat]
+    // Uniform brightness jitter (NO hue shift) — instanceColor multiplies the WHOLE tree, so a
+    // coloured tint would bleed the canopy hue onto the trunk (was greening the white aspen bark).
+    const b = 0.92 + rng() * 0.16
     out.push({
       cat, variant: (rng() * cfg.variants) | 0, x, z,
-      y: heightAt(x, z),
+      y: heightAt(x, z) - S.groundSink,    // sink so the base digs in (kills slope-float)
       scale: frange(rng, cfg.instScale), rotY: rng() * Math.PI * 2,
-      tint: tintFor(rng, cfg.canopyColor, cfg.tintJitter),
+      // per-tree lean from vertical (pivots at the trunk base = geometry origin) — natural variation
+      tilt: rng() * S.treeTiltMax, tiltAz: rng() * Math.PI * 2,
+      tint: [b, b, b],
     })
   }
 
@@ -126,8 +131,14 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
     placeBlob('boulder', x, z, P.boulder.buryFrac)
   }
 
-  scatterN(irange(rng, S.smallRocksPerChunk), (x, z) => placeBlob('smallRock', x, z, P.smallRock.buryFrac))
-  scatterN(irange(rng, S.bushesPerChunk),     (x, z) => placeBlob('bush', x, z, [0, 0]))
+  // Small rocks IGNORE the road exclusion — dense on the shoulder, sparse ON the road surface.
+  scatterN(irange(rng, S.smallRocksPerChunk), (x, z) => {
+    const d = roadDist ? roadDist(x, z) : Infinity
+    if (d < S.roadHalfWidth && rng() > S.smallRockOnRoadKeep) return   // sparse on the road itself
+    placeBlob('smallRock', x, z, P.smallRock.buryFrac, true)
+  })
+  // Bushes sink slightly into the ground (kills slope-float, matches groundSink intent).
+  scatterN(irange(rng, S.bushesPerChunk),     (x, z) => placeBlob('bush', x, z, [0.18, 0.34]))
 
   return out
 }

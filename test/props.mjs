@@ -15,6 +15,7 @@ import { makeBlob, makeKinkedTube, makeConeStack } from '../src/props/prop-geome
 import { buildPalette } from '../src/props/prop-palette.js'
 import { scatterChunk } from '../src/props/prop-scatter.js'
 import { PropSystem } from '../src/props/prop-system.js'
+import { sphereVsSphere, sphereVsCapsuleY, bushDrag } from '../src/props/prop-collider.js'
 import { mulberry32 } from '../src/seed.js'
 
 let fails = 0
@@ -52,13 +53,18 @@ console.log('2. palette bake determinism')
   const b = buildPalette(42)
   const c = buildPalette(43)
   ok(a.variants.aspen.length === 4 && a.variants.rock.length === 5, 'variant counts match params')
-  const v0a = a.variants.aspen[0].attributes.position.array
-  const v0b = b.variants.aspen[0].attributes.position.array
+  const v0a = a.variants.aspen[0].geo.attributes.position.array
+  const v0b = b.variants.aspen[0].geo.attributes.position.array
   let same = v0a.length === v0b.length
   for (let i = 0; same && i < v0a.length; i++) if (v0a[i] !== v0b[i]) same = false
   ok(same, 'same seed → byte-identical geometry')
-  const v0c = c.variants.aspen[0].attributes.position.array
+  const v0c = c.variants.aspen[0].geo.attributes.position.array
   ok(v0a.length !== v0c.length || v0a.some((x, i) => x !== v0c[i]), 'different seed → different geometry')
+  // collision descriptors baked per variant
+  ok(a.variants.aspen[0].collision.kind === 'capsule' && a.variants.aspen[0].collision.height > 0, 'tree variant carries a capsule collision')
+  ok(a.variants.rock[0].collision.kind === 'sphere' && a.variants.rock[0].collision.radius > 0, 'rock variant carries a sphere collision')
+  ok(a.variants.smallRock[0].collision === null, 'small rock is non-collidable')
+  ok(a.variants.bush[0].collision.kind === 'bush', 'bush variant carries a bush (drag) collision')
 }
 
 console.log('3. scatter determinism + window-invariance')
@@ -100,6 +106,41 @@ console.log('4. PropSystem slot allocation')
   let balanced = true
   for (const rec of sys._meshes.values()) if (rec.free.length + rec.used !== rec.cap) balanced = false
   ok(balanced, 'instance slot accounting balanced (free + used == cap, no leak)')
+  sys.dispose()
+}
+
+console.log('5. collision math + PropSystem queries (FEAT-06b)')
+{
+  ok(sphereVsSphere(0, 0, 0, 1, 1.5, 0, 0, 1).depth > 0, 'sphere/sphere overlap → contact')
+  ok(sphereVsSphere(0, 0, 0, 1, 5, 0, 0, 1) === null, 'sphere/sphere apart → no contact')
+  const cap = sphereVsCapsuleY(0.5, 2, 0, 0.4, 0, 0, 0, 5, 0.3)
+  ok(cap && cap.depth > 0 && Math.abs(cap.ny) < 1e-9, 'sphere/capsule side hit → horizontal normal')
+  ok(sphereVsCapsuleY(3, 2, 0, 0.4, 0, 0, 0, 5, 0.3) === null, 'sphere far from capsule → no contact')
+  const drag = bushDrag(0, 0, 0, 10, 0, 0, 0, 0, 0, 1, 1, 45, 200)
+  ok(drag && drag.x < 0, 'bush drag opposes velocity')
+  ok(Math.hypot(drag.x, drag.y, drag.z) <= 200 + 1e-6, 'bush drag capped at fMax')
+  ok(bushDrag(0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 45, 200) === null, 'no drag at rest')
+
+  const scene = new THREE.Scene()
+  const samplers = { heightAt: () => 0, normalAt: () => ({ x: 0, y: 1, z: 0 }), roadBlocked: () => false }
+  const sys = new PropSystem({ scene, worldSeed: 11, samplers })
+  sys.update(0, 0, 1)
+  ok(sys.collidableCount() > 0, `collidable index populated (${sys.collidableCount()})`)
+  let rock = null
+  for (const list of sys._collidables.values()) { rock = list.find((c) => c.kind === 'sphere'); if (rock) break }
+  ok(rock, 'found a rock collidable')
+  if (rock) {
+    const hits = sys.queryProps(rock.x, rock.y, rock.z, 0.4)
+    ok(hits.length > 0 && hits[0].depth > 0, 'queryProps at rock centre returns a contact')
+    ok(sys.queryProps(rock.x + 9999, rock.y, rock.z, 0.4).length === 0, 'queryProps far away returns nothing')
+  }
+  let bush = null
+  for (const list of sys._collidables.values()) { bush = list.find((c) => c.kind === 'bush'); if (bush) break }
+  if (bush) {
+    const f = sys.bushDragForce(bush.x, bush.y, bush.z, 30, 0, 0)
+    const m = Math.hypot(f.x, f.y, f.z)
+    ok(m > 0 && m <= 200 + 1e-6, 'bushDragForce applies + caps at fMax')
+  } else { ok(true, '(no bush in sample — drag integration skipped)') }
   sys.dispose()
 }
 

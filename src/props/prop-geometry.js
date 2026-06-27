@@ -156,7 +156,10 @@ export function makeKinkedTube(o, rng) {
 // ── makeConeStack ────────────────────────────────────────────────────────────────────
 /**
  * Stacked kinked cone-frustum skirts (pine canopy). Base of the lowest skirt at y = 0, growing up.
- * Each skirt = frustum side + bottom rim disk (so the underside reads as a flat skirt edge).
+ *
+ * Each skirt is a CLOSED SOLID frustum (CylinderGeometry with a small top radius), not an open
+ * surface — so it reads opaque from every angle, including straight down (fixes the see-through
+ * top: a single-sided open cone shows its culled backface from above). Flat-shaded.
  *
  * @param {{coneCount:number, baseRadius:number, coneHeight:number, overlap:number, bend:number,
  *          sides:number}} o
@@ -165,34 +168,23 @@ export function makeKinkedTube(o, rng) {
 export function makeConeStack(o, rng) {
   const C = Math.max(1, o.coneCount | 0)
   const sides = Math.max(3, o.sides | 0)
-  const verts = []
-  const push = (x, y, z) => verts.push(x, y, z)
   const rise = o.coneHeight * (1 - o.overlap)
+  const parts = []
   let y = 0
   for (let c = 0; c < C; c++) {
     const shrink = 1 - (c / C) * 0.72
     const rBot = o.baseRadius * shrink
     const rTop = rBot * 0.18
+    // CLOSED frustum (caps on) → opaque solid with correct outward winding.
+    const cyl = new THREE.CylinderGeometry(rTop, rBot, o.coneHeight, sides, 1, false)
     const cx = (rng() * 2 - 1) * o.bend * o.baseRadius   // kink: per-cone lateral offset
     const cz = (rng() * 2 - 1) * o.bend * o.baseRadius
-    const yb = y, yt = y + o.coneHeight
-    for (let k = 0; k < sides; k++) {
-      const a0 = (k / sides) * Math.PI * 2, a1 = ((k + 1) / sides) * Math.PI * 2
-      const bx0 = cx + Math.cos(a0) * rBot, bz0 = cz + Math.sin(a0) * rBot
-      const bx1 = cx + Math.cos(a1) * rBot, bz1 = cz + Math.sin(a1) * rBot
-      const tx0 = cx + Math.cos(a0) * rTop, tz0 = cz + Math.sin(a0) * rTop
-      const tx1 = cx + Math.cos(a1) * rTop, tz1 = cz + Math.sin(a1) * rTop
-      // side (two tris)
-      push(bx0, yb, bz0); push(bx1, yb, bz1); push(tx0, yt, tz0)
-      push(bx1, yb, bz1); push(tx1, yt, tz1); push(tx0, yt, tz0)
-      // bottom rim disk (skirt underside)
-      push(cx, yb, cz); push(bx0, yb, bz0); push(bx1, yb, bz1)
-    }
+    cyl.translate(cx, y + o.coneHeight / 2, cz)
+    parts.push(cyl.toNonIndexed())   // non-indexed for flat shading + dependency-free merge
     y += rise
   }
-  const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3))
-  geo.computeVertexNormals()
+  const geo = mergeGeometries(parts)   // ignores uv; carries position/normal
+  geo.computeVertexNormals()           // flat per-face (non-indexed)
   geo.computeBoundingSphere()
   return geo
 }
@@ -204,6 +196,22 @@ export function fillColor(geo, hex) {
   const n = geo.attributes.position.count
   const arr = new Float32Array(n * 3)
   for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b }
+  geo.setAttribute('color', new THREE.BufferAttribute(arr, 3))
+  return geo
+}
+
+/**
+ * Bake `baseHex` everywhere with random per-FACE `fleckHex` patches (aspen bark: white + black
+ * marks). Geometry must be non-indexed (one triple of verts per triangle). Deterministic given rng.
+ */
+export function fleckColor(geo, baseHex, fleckHex, chance, rng) {
+  const base = new THREE.Color(baseHex), fleck = new THREE.Color(fleckHex)
+  const n = geo.attributes.position.count
+  const arr = new Float32Array(n * 3)
+  for (let t = 0; t < n; t += 3) {
+    const c = rng() < chance ? fleck : base
+    for (let k = 0; k < 3; k++) { const i = (t + k) * 3; arr[i] = c.r; arr[i + 1] = c.g; arr[i + 2] = c.b }
+  }
   geo.setAttribute('color', new THREE.BufferAttribute(arr, 3))
   return geo
 }
@@ -252,9 +260,10 @@ export function translateGeo(geo, dx, dy, dz) {
  * @param {number} barkHex
  * @param {number} canopyHex
  * @param {number} canopyDrop  how far the canopy base sits BELOW the trunk top (overlap), metres
+ * @param {?number} barkHex  pass null if the trunk geometry is already coloured (e.g. aspen flecks)
  */
 export function assembleTree(trunk, canopy, barkHex, canopyHex, canopyDrop = 0) {
-  fillColor(trunk.geo, barkHex)
+  if (barkHex != null) fillColor(trunk.geo, barkHex)
   fillColor(canopy, canopyHex)
   translateGeo(canopy, 0, trunk.topY - canopyDrop, 0)
   return mergeGeometries([trunk.geo, canopy])

@@ -19,6 +19,23 @@ note: "Rewritten 2026-06-21 per user: intersections must be a TRUE single merged
 > this ticket consumes. Design the merge-node/junction record once across both. See
 > `feat-robust-route-merge.md`.
 
+> **DISPOSITION on `_detectJunctions` (2026-06-27).** The current `_detectJunctions` is a **post-hoc
+> brute-force O(runs² × seg²) crossing rescan** run EVERY re-stream — it caused a measured **296 ms
+> single-frame stall** at Ultra (CPU trace `Trace-20260627T013753`, via
+> `loop → flushPendingQueue → _buildRoadTile → _detectJunctions`; the M4 is the only machine fast
+> enough to reach an Ultra-size network and notice the freeze). **It is transitional scaffolding —
+> REPLACE it, do NOT broad-phase-optimize it.** Junction NODES become **graph-native under FEAT-10**
+> (emitted by the route-merge graph in O(N), incrementally), and this ticket consumes those nodes. The
+> only residual geometric crossing detection is for genuine NON-merge X-crossings + FEAT-08
+> arc-separated overpasses, found ONCE during graph build, not rescanned per frame. Much of today's N²
+> cost is also a *symptom* of the un-merged network: it footprints crossings at the parallel-duplicate /
+> spiral overlaps FEAT-10 deletes, so the crossing set collapses once FEAT-10 lands.
+>
+> **Immediate mitigation (standalone quick win, doesn't block this ticket):** the junction footprint
+> `buildJunctionFootprint` renders only the imperfect placeholder pad (overlapping ribbons, no carve —
+> see "What already exists" below), so **gate it OFF the hot path / behind a flag now** to kill the
+> 296 ms stall with zero loss of shipped functionality, until FEAT-07 builds the real merged surface.
+
 ## Goal
 
 Where two roads cross or meet (two runs converging at an angle, an X- or a T-crossing), the surface must
@@ -98,22 +115,27 @@ crossing (both arms ease crown→0 to a common flat plane at the node grade). At
 separation is FEAT-08, which shares the detection foundation in step 1.
 
 ### What already exists (this is a FINISH, not a from-scratch build)
-- **Detection:** `road.js _detectJunctions()` (~road.js:1627) already does pairwise inter-run XZ crossing
-  detection via module-scope `_segXZ`, building `this._junctions` (nodeKey → `{ pos, legs (sorted by
-  bearing), nodeY = avg of the 4 segment-endpoint Ys, simpleMerge }`), memoized by `_junctionsFrom`,
-  cleared on re-stream. Near-parallel (<10°) or >4 legs ⇒ `simpleMerge`.
+- **Detection (TRANSITIONAL — see Disposition above):** `road.js _detectJunctions()` (~road.js:1700)
+  does pairwise inter-run XZ crossing detection via module-scope `_segXZ`, building `this._junctions`
+  (nodeKey → `{ pos, legs (sorted by bearing), nodeY = avg of the 4 segment-endpoint Ys, simpleMerge }`),
+  memoized by `_junctionsFrom`, cleared on re-stream. Near-parallel (<10°) or >4 legs ⇒ `simpleMerge`.
+  **The node RECORD shape is what survives; the brute-force scan that fills it is replaced by FEAT-10
+  graph nodes.** The memoize-by-identity + clear-on-re-stream pattern is the perf trap (full N² rescan
+  every re-stream) — gone once nodes come from the graph.
 - **Mesh stub:** `road-mesh.js buildJunctionFootprint(node, params)` exists and is wired into tile
-  building (~road-mesh.js:731-758: a node is assigned to the tile containing its XZ, then a footprint
+  building (road-mesh.js:768-790: a node is assigned to the tile containing its XZ, then a footprint
   mesh is built). This is the "never-shipped at-grade fold" the ticket note refers to — it emits a
   footprint but NOT a correct single merged surface, and **nothing carves the terrain under it**.
+  (This is the placeholder to gate off the hot path now — see Disposition.)
 
 ### Gaps to close
-1. **Shared crossing record (also the FEAT-08 foundation).** Extend `_detectJunctions` to also catch
-   (a) SELF-crossings (a run crossing itself — only `ri<rj` DIFFERENT-run pairs are tested today) and
-   (b) T-meets (an endpoint landing on another run). For each crossing store `{ runA, arcA, runB, arcB,
-   point, angle, dYrouted }` (routed-Y gap of the two strands). **Classify:** `|dYrouted| < clearance`
-   and not arc-separated ⇒ **at-grade junction (FEAT-07)**; arc-length-separated / large dY ⇒
-   **overpass (FEAT-08)**. One detection pass feeds both features.
+1. **Junction nodes from the FEAT-10 graph (REPLACES the brute-force scan).** Consume FEAT-10's merge
+   nodes directly instead of rescanning every segment pair. For the residual geometric crossings FEAT-10
+   does NOT merge — genuine NON-merge X-crossings, plus (a) SELF-crossings and (b) T-meets — do a
+   **bounded** pass (broad-phased by the tile buckets, found ONCE during graph build, not per re-stream).
+   For each crossing store `{ runA, arcA, runB, arcB, point, angle, dYrouted }` (routed-Y gap of the two
+   strands). **Classify:** `|dYrouted| < clearance` and not arc-separated ⇒ **at-grade junction
+   (FEAT-07)**; arc-length-separated / large dY ⇒ **overpass (FEAT-08)**. One pass feeds both features.
 2. **Node-grade continuity.** Pad plane Y = node grade. Today `nodeY` is only the 4-point average and
    never feeds back into the run grade profiles, so the arms can arrive at different Ys. Feed the node
    grade into `_buildRunProfile` so each incident arm's `gradeY` converges to the pad plane near the

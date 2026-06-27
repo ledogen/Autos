@@ -34,6 +34,7 @@ import { DustSystem } from './dust.js'
 import { parseWorldSeed, seedFor } from './seed.js'
 import { createVehicleModel } from './vehicle-model.js'
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
+import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
 import { FLORA_PARAMS } from '../data/flora.js'
 
 // World seed — parsed from URL ?seed= parameter, defaulting to '6'.
@@ -73,10 +74,16 @@ let roadMeshSystem = null
 // time, so it stays correct across the seed-rebuild reassignment below. PROP_RING ≤ terrain ring.
 let propSystem = null
 const PROP_RING = 2
+const _bushDragF = { x: 0, y: 0, z: 0 }   // FEAT-06b: reused bush soft-drag accumulator (no per-substep alloc)
 const makePropSamplers = () => ({
   heightAt:    (x, z) => terrainSystem.analyticHeight(x, z),
   normalAt:    (x, z) => terrainSystem.analyticNormal(x, z),
   roadBlocked: (x, z) => !!roadSystem.queryNearest(x, z, FLORA_PARAMS.scatter.roadExclusion),
+  // distance to the nearest road centreline (Infinity if none within 25 m) — small-rock road bands
+  roadDist:    (x, z) => {
+    const nr = roadSystem.queryNearest(x, z, 25)
+    return nr ? Math.hypot(x - nr.point.x, z - nr.point.z) : Infinity
+  },
 })
 
 // Grid-world mode flag (D-18 / D-19).
@@ -475,10 +482,13 @@ sun.castShadow = true
 sun.shadow.mapSize.width  = 2048
 sun.shadow.mapSize.height = 2048
 sun.shadow.camera.near = 0.5
-sun.shadow.camera.far  = 400
-sun.shadow.camera.left = sun.shadow.camera.bottom = -150
-sun.shadow.camera.right = sun.shadow.camera.top   =  150
+sun.shadow.camera.far  = 500
+// FEAT-06: widened from ±150 — the shadow frustum follows the view centre each frame (loop), so
+// shadows render across the whole near ring instead of only the tiles near origin.
+sun.shadow.camera.left = sun.shadow.camera.bottom = -220
+sun.shadow.camera.right = sun.shadow.camera.top   =  220
 scene.add(sun)
+scene.add(sun.target)   // FEAT-06: target must be in-scene for the per-frame shadow-follow to apply
 
 // Ground plane (y=0, 200m × 200m)
 const ground = new THREE.Mesh(
@@ -720,6 +730,15 @@ function queryContacts (cx, cy, cz, r) {
     }
   }
 
+  // FEAT-06b: prop hard contacts (tree trunks = capsule, rocks/boulders = sphere). Local query
+  // against the per-chunk collidable grid — bushes are NOT here (soft-drag is applied separately
+  // once per substep in the loop). Skipped in grid-world (no props there). Same {normal,depth,
+  // contactPoint} shape, so the wheel + body solvers consume them unchanged.
+  if (!_gridWorldActive && propSystem) {
+    const propHits = propSystem.queryProps(cx, cy, cz, r)
+    for (let i = 0; i < propHits.length; i++) hits.push(propHits[i])
+  }
+
   return hits
 }
 
@@ -862,6 +881,17 @@ roadMeshSystem = new RoadMeshSystem(
 
 // FEAT-06: prop system — needs terrain (height/normal) + road (exclusion) samplers, both alive now.
 propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
+// FEAT-06: live-tuning GUI (self-contained — attaches to the existing _gui, doesn't touch debug.js).
+addPropGui(_gui, {
+  params: FLORA_PARAMS,
+  rebuild: () => {
+    propSystem.dispose()
+    propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
+  },
+})
+// User pref: every lil-gui section collapsed by default (the root panel stays open). Runs after ALL
+// folders exist (debug + props), so it covers debug.js's folders without editing debug.js.
+_gui.foldersRecursive().forEach((f) => f.close())
 
 // Phase 7 (D-14/15/16): initial-load seat via canonical resolveSpawn + analyticHeight ground-probe.
 // TerrainSystem is now alive and analyticHeight is immediately available (no chunk load required).
@@ -1111,6 +1141,20 @@ function loop () {
 
     _prevRenderPos.copy(vehicleState.position)
     _prevRenderQuat.copy(vehicleState.quaternion)
+
+    // FEAT-06b: bush soft-drag — a capped, velocity-opposing resistive force while the chassis
+    // overlaps a bush volume (never a hard contact). Applied as an impulse on the body velocity
+    // each substep: dv = F/m · dt. propSystem caps F at collision.bush.fMax (~200 N) so it's a
+    // felt drag, not a stop. No-op (returns 0) when no bush overlaps the CG.
+    if (!_gridWorldActive && propSystem) {
+      const p = vehicleState.position, v = vehicleState.velocity
+      const f = propSystem.bushDragForce(p.x, p.y, p.z, v.x, v.y, v.z, _bushDragF)
+      if (f.x || f.y || f.z) {
+        const k = PHYSICS_DT / RANGER_PARAMS.mass
+        v.x += f.x * k; v.y += f.y * k; v.z += f.z * k
+      }
+    }
+
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, queryVertexContacts)
     simTime += PHYSICS_DT
     // BUG-12 diagnostic (open): while recording, log the truck run's local centerline turn radius
@@ -1175,6 +1219,11 @@ function loop () {
   // Reverts to truck position on exit so the ring stays anchored to the car in normal mode.
   const streamCenter = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
   _trackStreamCenter(simTime, streamCenter.x, streamCenter.z)   // capture ring (Phase 4/5)
+  // FEAT-06: keep the sun's shadow frustum centred on the view, else only tiles near origin get
+  // shadows. Direction is fixed (offset preserved); just the position + target track the centre.
+  sun.position.set(streamCenter.x + 80, 45, streamCenter.z + 60)
+  sun.target.position.set(streamCenter.x, 0, streamCenter.z)
+  sun.target.updateMatrixWorld()
   let _pt = performance.now()
   terrainSystem.update(streamCenter)
   perfAdd('frame.terrain.update', performance.now() - _pt)

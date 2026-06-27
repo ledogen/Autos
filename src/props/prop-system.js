@@ -29,6 +29,7 @@
 import * as THREE from 'three'
 import { buildPalette } from './prop-palette.js'
 import { scatterChunk } from './prop-scatter.js'
+import { sphereVsSphere, sphereVsCapsuleY, bushDrag } from './prop-collider.js'
 import { FLORA_PARAMS } from '../../data/flora.js'
 
 // Per-category global instance capacity (split evenly across that category's variants). Sized for
@@ -39,6 +40,8 @@ const CAPACITY = {
 
 const _m = new THREE.Matrix4()
 const _q = new THREE.Quaternion()
+const _qTilt = new THREE.Quaternion()
+const _tiltAxis = new THREE.Vector3()
 const _e = new THREE.Euler()
 const _p = new THREE.Vector3()
 const _s = new THREE.Vector3()
@@ -59,13 +62,14 @@ export class PropSystem {
     const { variants, material } = buildPalette(this._seed, params)
     this._material = material
 
-    // meshes: key "cat#v" -> { mesh, free:[], used:0 }
+    // meshes: key "cat#v" -> { mesh, free:[], used:0 };  collision: key -> descriptor | null
     this._meshes = new Map()
+    this._collision = new Map()
     for (const cat of Object.keys(variants)) {
-      const geos = variants[cat]
-      const perVariant = Math.max(1, Math.floor((CAPACITY[cat] ?? 1000) / geos.length))
-      geos.forEach((geo, v) => {
-        const mesh = new THREE.InstancedMesh(geo, material, perVariant)
+      const entries = variants[cat]
+      const perVariant = Math.max(1, Math.floor((CAPACITY[cat] ?? 1000) / entries.length))
+      entries.forEach((entry, v) => {
+        const mesh = new THREE.InstancedMesh(entry.geo, material, perVariant)
         mesh.frustumCulled = false           // PERF-05: chunk streaming bounds these
         mesh.castShadow = true
         mesh.receiveShadow = true
@@ -76,14 +80,26 @@ export class PropSystem {
         // free list (use high indices first so low slots fill contiguously)
         const free = []
         for (let i = perVariant - 1; i >= 0; i--) free.push(i)
-        this._meshes.set(cat + '#' + v, { mesh, free, used: 0, cap: perVariant })
+        const key = cat + '#' + v
+        this._meshes.set(key, { mesh, free, used: 0, cap: perVariant })
+        this._collision.set(key, entry.collision || null)
         scene.add(mesh)
       })
     }
 
-    this._chunks = new Map()   // "cx,cz" -> [{ key, slot }, ...]
-    this._dirty = new Set()    // mesh keys needing instanceMatrix/instanceColor upload
+    this._chunks = new Map()       // "cx,cz" -> [{ key, slot }, ...]
+    this._dirty = new Set()        // mesh keys needing instanceMatrix/instanceColor upload
     this._overflowWarned = false
+
+    // ── FEAT-06b collision index ──────────────────────────────────────────────────────
+    // Per-chunk collidable lists are the source of truth; a uniform grid (rebuilt lazily when chunk
+    // membership changes) gives O(1)-ish nearest-prop lookup for the truck contact query. Each
+    // collidable stores RAW baked dims + instance scale; the collision-scale params are applied LIVE
+    // at query time (so the debug sliders tune without a re-stream).
+    this._collidables = new Map()  // "cx,cz" -> [{ kind, x, y, z, radius, height, scale }]
+    this._grid = new Map()         // "gx,gz" -> [collidable, ...]
+    this._gridCell = 8             // m
+    this._gridDirty = true
   }
 
   // ── chunk lifecycle ─────────────────────────────────────────────────────────────────
@@ -92,6 +108,7 @@ export class PropSystem {
     if (this._chunks.has(ck)) return
     const placements = scatterChunk(cx, cz, this._seed, this._samplers, this._params)
     const owned = []
+    const collidables = []
     for (const pl of placements) {
       const key = pl.cat + '#' + pl.variant
       const rec = this._meshes.get(key)
@@ -106,6 +123,11 @@ export class PropSystem {
       _p.set(pl.x, pl.y, pl.z)
       _e.set(0, pl.rotY, 0)
       _q.setFromEuler(_e)
+      if (pl.tilt) {   // per-instance lean (trees); pivots at the geometry origin = trunk base
+        _tiltAxis.set(Math.cos(pl.tiltAz), 0, Math.sin(pl.tiltAz))
+        _qTilt.setFromAxisAngle(_tiltAxis, pl.tilt)
+        _q.multiply(_qTilt)
+      }
       _s.setScalar(pl.scale)
       _m.compose(_p, _q, _s)
       rec.mesh.setMatrixAt(slot, _m)
@@ -113,8 +135,16 @@ export class PropSystem {
       rec.mesh.setColorAt(slot, _col)
       owned.push({ key, slot })
       this._dirty.add(key)
+
+      // FEAT-06b: record the collidable (capsule for trees, sphere for rocks, bush for soft-drag)
+      const col = this._collision.get(key)
+      if (col) collidables.push({
+        kind: col.kind, x: pl.x, y: pl.y, z: pl.z,
+        radius: col.radius, height: col.height || 0, scale: pl.scale,
+      })
     }
     this._chunks.set(ck, owned)
+    if (collidables.length) { this._collidables.set(ck, collidables); this._gridDirty = true }
   }
 
   releaseChunk(cx, cz) {
@@ -130,6 +160,7 @@ export class PropSystem {
       this._dirty.add(key)
     }
     this._chunks.delete(ck)
+    if (this._collidables.delete(ck)) this._gridDirty = true
   }
 
   /**
@@ -163,6 +194,94 @@ export class PropSystem {
     this._dirty.clear()
   }
 
+  // ── FEAT-06b collision queries ──────────────────────────────────────────────────────────
+  _ensureGrid() {
+    if (!this._gridDirty) return
+    this._grid.clear()
+    const cs = this._gridCell
+    for (const list of this._collidables.values()) {
+      for (const c of list) {
+        const R = c.radius * c.scale * 2   // generous footprint (covers live scale-factor changes)
+        const gx0 = Math.floor((c.x - R) / cs), gx1 = Math.floor((c.x + R) / cs)
+        const gz0 = Math.floor((c.z - R) / cs), gz1 = Math.floor((c.z + R) / cs)
+        for (let gx = gx0; gx <= gx1; gx++) for (let gz = gz0; gz <= gz1; gz++) {
+          const k = gx + ',' + gz
+          let arr = this._grid.get(k); if (!arr) { arr = []; this._grid.set(k, arr) }
+          arr.push(c)
+        }
+      }
+    }
+    this._gridDirty = false
+  }
+
+  _cellsAround(x, z, r, fn) {
+    const cs = this._gridCell
+    const gx0 = Math.floor((x - r) / cs), gx1 = Math.floor((x + r) / cs)
+    const gz0 = Math.floor((z - r) / cs), gz1 = Math.floor((z + r) / cs)
+    const seen = this._scratchSeen || (this._scratchSeen = new Set())
+    seen.clear()
+    for (let gx = gx0; gx <= gx1; gx++) for (let gz = gz0; gz <= gz1; gz++) {
+      const arr = this._grid.get(gx + ',' + gz)
+      if (!arr) continue
+      for (const c of arr) { if (seen.has(c)) continue; seen.add(c); fn(c) }
+    }
+  }
+
+  /**
+   * Hard-contact query: sphere (cx,cy,cz,r) vs nearby trees (capsule) + rocks/boulders (sphere).
+   * Returns [{ normal:THREE.Vector3, depth, contactPoint:THREE.Vector3 }] — the SAME shape main.js
+   * queryContacts emits (normal out of solid, depth > 0, contactPoint on the solid surface), so the
+   * splice is just `hits.push(...propSystem.queryProps(cx,cy,cz,r))`. The surface point is the query
+   * centre walked back along -normal by (r - depth) (the sphere penetrates the solid by `depth`).
+   */
+  queryProps(cx, cy, cz, r) {
+    this._ensureGrid()
+    const C = this._params.collision
+    const out = []
+    this._cellsAround(cx, cz, r, (c) => {
+      let hit = null
+      if (c.kind === 'capsule') {
+        const capR = c.radius * c.scale * C.trunkRadiusScale
+        hit = sphereVsCapsuleY(cx, cy, cz, r, c.x, c.z, c.y, c.y + c.height * c.scale, capR)
+      } else if (c.kind === 'sphere') {
+        hit = sphereVsSphere(cx, cy, cz, r, c.x, c.y, c.z, c.radius * c.scale * C.rockRadiusScale)
+      }
+      if (hit) {
+        const t = r - hit.depth   // distance from query centre to the solid surface along -normal
+        out.push({
+          normal: new THREE.Vector3(hit.nx, hit.ny, hit.nz),
+          depth: hit.depth,
+          contactPoint: new THREE.Vector3(cx - hit.nx * t, cy - hit.ny * t, cz - hit.nz * t),
+        })
+      }
+    })
+    return out
+  }
+
+  /**
+   * Accumulate bush soft-drag for a point moving at (vx,vy,vz) into `out` {x,y,z} (returns it).
+   * Never a hard contact — capped low (FLORA collision.bush). Call once/frame for the chassis.
+   */
+  bushDragForce(cx, cy, cz, vx, vy, vz, out = { x: 0, y: 0, z: 0 }) {
+    this._ensureGrid()
+    out.x = 0; out.y = 0; out.z = 0   // reset so callers can pass a reused scratch object
+    const B = this._params.collision.bush
+    this._cellsAround(cx, cz, 0, (c) => {
+      if (c.kind !== 'bush') return
+      const br = c.radius * c.scale
+      const f = bushDrag(cx, cy, cz, vx, vy, vz, c.x, c.y, c.z, br, br, B.k, B.fMax)
+      if (f) { out.x += f.x; out.y += f.y; out.z += f.z }
+    })
+    return out
+  }
+
+  /** Total collidable props currently indexed (diagnostics / tests). */
+  collidableCount() {
+    let n = 0
+    for (const list of this._collidables.values()) n += list.length
+    return n
+  }
+
   /** Total live instances (diagnostics / tests). */
   liveCount() {
     let n = 0
@@ -179,5 +298,7 @@ export class PropSystem {
     this._material.dispose()
     this._meshes.clear()
     this._chunks.clear()
+    this._collidables.clear()
+    this._grid.clear()
   }
 }

@@ -176,4 +176,98 @@ You can also eyeball geometry in isolation (no game needed): `npx serve .` →
 - Memory written: `project_feat06_props_scope.md` has the full scope + build status.
 - Remaining FEAT-06 follow-ups (not blocking this merge): debug-menu sliders for `FLORA_PARAMS`,
   density/colour tuning against real terrain, then FEAT-06b (collision) and FEAT-06c (LOD/impostors).
+
+---
+---
+
+# ROUND 2 (2026-06-27) — feedback fixes + FEAT-06b collision core (UNCOMMITTED)
+
+The foundation (§1–§4 above) is committed. Since then I did another prop round. **The working tree
+is now a MIX of your road/QUAL-07 work and my prop work — both uncommitted.** Sort the commits per
+the lists below; ⚠️ again, **do NOT `git add -A`**.
+
+## Commit split (verified `git status` 2026-06-27)
+
+**YOURS (commit first, your message):**
 ```
+src/road.js
+data/ranger.js
+.planning/todos/completed/bug-run-boundary-jolt.md
+.planning/todos/pending/qual-unify-carve-surface.md      (QUAL-07, new)
+.planning/todos/pending/qual-carve-staircase-vertical-walls.md  (QUAL-06 subsumed-by edit)
+```
+> ⚠️ When you committed your road WIP, `npm test` showed 2 RED gates — `road-smoothness.mjs` and
+> `road-fill-support.mjs`. Those are YOUR in-progress `road.js` (neither imports props). Get them
+> green before/with your commit.
+
+**MINE (commit as one — feedback fixes + FEAT-06b core):**
+```
+data/flora.js
+src/main.js                       ← see ⚠️ below
+src/props/prop-geometry.js
+src/props/prop-palette.js
+src/props/prop-scatter.js
+src/props/prop-system.js
+src/props/prop-collider.js        (new)
+src/props/prop-debug.js           (new)
+test/props.mjs
+.planning/todos/pending/feat-prop-collision.md
+```
+> ⚠️ **`src/main.js` currently holds MY prop edits** (sampler `roadDist`; sun shadow-follow +
+> widened frustum; `addPropGui` wiring; `_gui.foldersRecursive().forEach(f=>f.close())`). If you
+> also edited main.js this round, `git diff src/main.js` and reconcile — these are additive and
+> localized (sampler block, lighting block, after-`initDebug` GUI wire, in-loop shadow follow).
+
+**Round-2 visual/behaviour changes (FYI):** solid pine cones (was see-through), white+black aspen
+bark (was green — instanceColor was tinting the whole tree), bigger trunks, brighter canopies, more
+rocks, small rocks on shoulder + sparse on road, +50% small-rock size, ground-sink (slope-float),
+per-tree spawn tilt, all GUI folders collapsed by default.
+
+---
+
+# FEAT-06b — physics splice (do LAST, after your `road.js`/`queryContacts` is committed + stable)
+
+The collision **core is built + gated** (`test/props.mjs` §5, all green): `prop-collider.js` (pure
+math), per-variant collision shapes in the palette, and a spatial index + `queryProps` /
+`bushDragForce` on `PropSystem`. Only the splice into YOUR contact code remains — ~10 lines, and it
+must come after your contact/carve churn settles (it edits the exact functions you're in).
+
+### Splice 1 — wheel sphere contacts (`queryContacts`, before `return hits`, ~line 732)
+```js
+if (propSystem) hits.push(...propSystem.queryProps(cx, cy, cz, r))
+```
+
+### Splice 2 — body-box vertex contacts (`queryVertexContacts`, before `return hits`, ~line 676)
+```js
+if (propSystem) hits.push(...propSystem.queryProps(px, py, pz, 0))   // point query (r=0)
+```
+`queryProps` returns `[{ normal: THREE.Vector3, depth }]` — the exact shape both functions already
+push, so the solver handles tree (capsule) + rock/boulder (sphere) contacts with no other changes.
+Small rocks are non-collidable by construction (no descriptor). Tilt is ignored for the trunk
+capsule (vertical) — fine at ~10°.
+
+### Splice 3 — bush soft-drag (chassis, once/frame, NOT a contact) near the `stepPhysics` call (~line 1134)
+Bushes never produce a hard contact — apply a capped resistive force to the chassis CoM:
+```js
+if (propSystem) {
+  const p = vehicleState.position, v = vehicleState.velocity   // both {x,y,z}
+  const f = propSystem.bushDragForce(p.x, p.y, p.z, v.x, v.y, v.z)   // {x,y,z}, capped ~200 N
+  // apply as an impulse to the body (your call on the exact hook — bodyMass from RANGER_PARAMS):
+  const k = PHYSICS_DT / RANGER_PARAMS.mass
+  v.x += f.x * k; v.y += f.y * k; v.z += f.z * k
+  // (or feed `f` into a body force accumulator inside stepPhysics if you'd rather keep it in physics.js)
+}
+```
+
+### Verify
+- `node test/props.mjs` → PROPS GATE: PASS (incl. §5 collision).
+- `npm test` → your road gates green + props green.
+- In-browser: drive into a **tree** (stops/deflects) · into **bushes** (gentle drag, push through) ·
+  over **small rocks** (no effect) · into a **large rock / buried boulder** (climb / can roll).
+
+### Watch-outs
+- `queryProps` allocates one `THREE.Vector3` per contact (matches `queryVertexContacts` style). If it
+  shows on the contact hot path, pool it.
+- Collision-scale params (`FLORA_PARAMS.collision`) are read LIVE — the debug Collision folder tunes
+  capsule/rock radius + bush k/cap without a re-stream.
+- `prop-collider.js` is pure (no THREE) → keep it that way; it's the headless-testable layer.

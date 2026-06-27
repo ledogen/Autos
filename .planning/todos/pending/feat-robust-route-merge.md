@@ -95,6 +95,30 @@ connection (or revisit-within-R of an earlier arc-s of the same run) in `arcPrim
 cap/relax `PROTO_MARGIN` so peak-wrapping can't spiral. Tune so a genuine switchback survives but a
 concentric ring does not.
 
+### D. Junction nodes are GRAPH-NATIVE — supersede `_detectJunctions`'s brute-force scan (2026-06-27)
+The merge graph from A/B **emits junction nodes by construction** (a merge node where an anchor adopts a
+higher-priority node, a T/Y where a corridor diverges). FEAT-10 therefore OWNS the junction-node record
+and **replaces the post-hoc geometric detection** in `road.js _detectJunctions()`.
+
+Why this matters (the disposition, with FEAT-07): `_detectJunctions` today is a **pairwise
+O(runs² × seg²) crossing rescan run EVERY re-stream**, memoized only by object identity and cleared on
+re-stream. It caused a measured **296 ms single-frame stall at Ultra** (CPU trace
+`Trace-20260627T013753`: `loop → flushPendingQueue → _buildRoadTile → _detectJunctions`; only the M4 is
+fast enough to reach an Ultra-size network and notice the freeze). **Do NOT broad-phase-optimize that
+scan — delete it.** Junction nodes come from the graph in O(N), incrementally. A large part of the N²
+cost is also a *symptom* of the un-merged network this ticket fixes: it footprints crossings at the very
+parallel-duplicate / spiral overlaps FEAT-10 deletes, so the crossing set collapses once A/B land.
+
+Residual: genuine NON-merge X-crossings (two corridors that legitimately cross at an angle without
+merging) and FEAT-08 arc-separated overpasses still need a geometric crossing pass — but **bounded**
+(tile-bucket broad-phase) and run **ONCE during graph build**, emitted into the same node record, not
+rescanned per frame. Design the node/junction record ONCE here so FEAT-07 (at-grade merged mesh) and
+FEAT-08 (overpass) both consume graph nodes directly.
+
+Immediate, FEAT-10-independent mitigation: `road-mesh.js buildJunctionFootprint` renders only an
+imperfect placeholder pad (overlapping ribbons, no carve), so **gate it off the hot path now** to kill
+the 296 ms stall with zero shipped-feature loss until FEAT-07 builds the real merged surface.
+
 ## Acceptance
 
 - On the seed that currently spirals (the screenshot, seed 6): **no two roads run parallel within
@@ -108,6 +132,11 @@ concentric ring does not.
   is removed; **BUG-17 closed as subsumed.**
 - No regression: `road-minradius`, `road-smoothness`, `camber-continuity`, `invariance`,
   `restream-invariance`, `route-worker-sync` all stay green.
+- **Junction nodes are graph-native (Design D):** the `_detectJunctions` brute-force O(N²) crossing
+  rescan is **deleted**, junction nodes are read from the merge graph + a bounded once-per-build crossing
+  pass. The Ultra re-stream frame stall (296 ms, `Trace-20260627T013753`) is gone — no per-re-stream
+  full network rescan. (If the placeholder footprint is gated off first as the immediate mitigation,
+  verify the real graph-node path restores correct junction nodes.)
 
 ## Determinism / gates
 
@@ -123,7 +152,9 @@ concentric ring does not.
 
 - **FEAT-07** (merged intersection mesh): FEAT-10 is its **prerequisite** — it produces the clean,
   deduplicated junction nodes FEAT-07 renders. They share the junction concept; design the node/junction
-  record once so FEAT-07's `_detectJunctions` consumes FEAT-10's merge nodes directly.
+  record once so FEAT-07 consumes FEAT-10's graph nodes directly (Design D). FEAT-10 OWNS the deletion of
+  the `_detectJunctions` brute-force scan; FEAT-07 owns the merged mesh + carve that consume the nodes,
+  and the immediate gate-off-the-placeholder mitigation.
 - **BUG-17** (COVER toggle does nothing): **subsumed** — COVER is deleted here. Close BUG-17 when this
   lands (user: "defer BUG-17 when we remove COVER").
 - **BUG-16** (heading dither): the dither is part of why COVER's heading gate fails; a smoother
@@ -138,6 +169,8 @@ concentric ring does not.
 - `src/road.js` — `_protoAnchor` (node exclusion/merge), `_streamNetwork` (build the graph + **remove
   the COVER pass**), the post-route merge pass (B1), `_protoConnect`/`_protoConnectCenterline`,
   `_segSegDist2` pre-filter reuse, delete `PROTO_COVER_*`, revisit `PROTO_SNAP_CAP`/`PROTO_MARGIN`.
+  **Replace `_detectJunctions`'s brute-force scan (road.js:1700) with graph-node emission + a bounded
+  once-per-build crossing pass (Design D); keep the junction-node RECORD shape FEAT-07/08 consume.**
 - `src/road-carve.js` — only if B2 / loop-penalty land in `arcPrimitiveConnect` (then ROUTE SYNC).
 - `data/ranger.js` — `roadNodeMergeRadius`, `roadMergeBand`, parallel/follow + loop-penalty knobs,
   network-character sliders.

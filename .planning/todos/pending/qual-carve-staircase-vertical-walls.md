@@ -7,9 +7,15 @@ severity: minor
 source: user-observation
 note: "Visual polish at the road↔terrain transition — NOT a physics/correctness bug. The carve
 geometry is continuous enough to drive on; this is purely how the shoulder-to-terrain step LOOKS."
+subsumed_by: QUAL-07
 ---
 
 # QUAL-06: Smooth out staircasing on terrain carves / shoulder-meet walls
+
+> **SUBSUMED by QUAL-07 (2026-06-27).** The bank-smoothing fix (widen ramp / max-slope clamp / smoothstep
+> falloff) is folded into QUAL-07's single unified carve cross-section function, so the smoothing applies
+> to the visual mesh AND the collision surface in one place. Close QUAL-06 when QUAL-07 lands. No
+> independent fix here. See `qual-unify-carve-surface.md`.
 
 ## Request
 

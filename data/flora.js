@@ -19,14 +19,20 @@ export const FLORA_PARAMS = {
 
   // ── Scatter / biome ───────────────────────────────────────────────────────────
   scatter: {
-    clustersPerChunk: 3,        // tree cluster centres seeded per chunk (grouping)
+    clustersPerChunk: 4,        // tree cluster centres seeded per chunk (grouping)
     clusterRadius:    18,       // m — individuals scatter within this of a cluster centre
     treesPerCluster:  [4, 11],  // [min,max] individuals per cluster
-    rocksPerChunk:    [3, 8],   // collidable rocks (independent scatter)
-    smallRocksPerChunk:[18, 38],// decorative <0.1 m rocks (non-collidable)
+    rocksPerChunk:    [12, 26], // collidable rocks (independent scatter) — denser per user
+    smallRocksPerChunk:[30, 60],// decorative <0.1 m rocks (non-collidable; also shoulder + road)
     bushesPerChunk:   [6, 14],
     boulderChance:    0.04,     // per chunk, a rare large buried boulder
-    roadExclusion:    9,        // m — reject props within this of the road footprint
+    roadExclusion:    9,        // m — reject TREES + collidable rocks within this of the road
+    groundSink:       0.3,      // m — sink trees + bushes so the base digs in (kills slope-float)
+    treeTiltMax:      0.18,     // rad (~10°) — per-tree random lean from vertical (pivots at base)
+    // Small-rock road bands: dense on the shoulder, SPARSE on the road surface itself.
+    roadHalfWidth:    5,        // ~ RANGER_PARAMS.roadHalfWidth (road surface half-width)
+    roadShoulderOuter:8.5,      // outer edge of the shoulder band
+    smallRockOnRoadKeep:0.07,   // fraction of small rocks kept ON the road surface (sparse)
 
     // Species selection by terrain (slope = 1 - normal.y; 0 flat, →1 vertical):
     slopeMeadowMax:   0.16,     // below → meadow (aspen favoured)
@@ -41,22 +47,24 @@ export const FLORA_PARAMS = {
   // ── Aspen: tall white trunk (kinked tapered tube) + rounded blob canopy ─────────
   aspen: {
     variants: 4,
-    trunk:  { segCount: [3, 7], segLen: [1.6, 2.6], baseRadius: [0.10, 0.18],
-              taperPow: 1.4, topFrac: 0.30, bend: 0.10, sides: 6 },
+    trunk:  { segCount: [3, 7], segLen: [1.6, 2.6], baseRadius: [0.16, 0.26],
+              taperPow: 1.4, topFrac: 0.32, bend: 0.10, sides: 6 },
     canopy: { radius: [1.8, 2.8], axisScale: [0.85, 1.7, 0.85], irregularity: 0.26,
               noiseFreq: 1.6, subdiv: 1 },
-    barkColor: 0xdfe3e0, canopyColor: 0x55803a, tintJitter: 0.12,
+    // white aspen bark with black flecks (fleck = per-face dark patches baked at palette time)
+    barkColor: 0xeae7df, barkFleck: 0x242424, fleckChance: 0.22,
+    canopyColor: 0x86b84a, tintJitter: 0.12,
     instScale: [0.8, 1.35],
   },
 
   // ── Pine: frustum trunk + stacked kinked cone-skirt canopy ──────────────────────
   pine: {
     variants: 4,
-    trunk:  { segCount: [3, 5], segLen: [1.2, 2.0], baseRadius: [0.15, 0.26],
-              taperPow: 1.6, topFrac: 0.16, bend: 0.08, sides: 6 },
+    trunk:  { segCount: [3, 5], segLen: [1.2, 2.0], baseRadius: [0.24, 0.40],
+              taperPow: 1.6, topFrac: 0.18, bend: 0.08, sides: 6 },
     canopy: { coneCount: [3, 5], baseRadius: [1.5, 2.3], coneHeight: [1.2, 1.9],
               overlap: 0.45, bend: 0.06, sides: 7 },
-    barkColor: 0x5a3d22, canopyColor: 0x2f5d34, tintJitter: 0.10,
+    barkColor: 0x5a3d22, canopyColor: 0x53935a, tintJitter: 0.10,
     instScale: [0.9, 1.6],
   },
 
@@ -84,7 +92,7 @@ export const FLORA_PARAMS = {
   // Small decorative rocks (<0.1 m) — NON-collidable (06b: drive straight over).
   smallRock: {
     variants: 3, collidable: false,
-    blob:  { radius: [0.04, 0.09], axisScale: [1.25, 0.7, 1.0], irregularity: 0.55,
+    blob:  { radius: [0.06, 0.135], axisScale: [1.25, 0.7, 1.0], irregularity: 0.55,
              noiseFreq: 2.6, subdiv: 0 },
     color: 0x8a8782, colorJitter: 0.12,
     buryFrac: [0.1, 0.4],
@@ -96,7 +104,17 @@ export const FLORA_PARAMS = {
     variants: 4,
     blob:  { radius: [0.5, 1.5], axisScale: [1.1, 0.78, 1.1], irregularity: 0.34,
              noiseFreq: 2.0, subdiv: 1 },
-    color: 0x3d6b2e, colorJitter: 0.12,
+    color: 0x4f8a3a, colorJitter: 0.12,
     instScale: [0.8, 1.3],
+  },
+
+  // ── Collision (FEAT-06b) — analytic shapes the truck contact query tests against ────────
+  // Read LIVE at query time (collider applies these to the baked shape dims), so the sliders tune
+  // without a re-stream. Trees = vertical capsule (trunk only); rocks/boulders = sphere; bushes =
+  // soft drag (no hard contact); small rocks = none.
+  collision: {
+    trunkRadiusScale: 1.15,   // capsule radius = trunkRadius × instScale × this (bark + slop)
+    rockRadiusScale:  0.92,   // sphere radius  = blob boundingSphere × instScale × this (lumpy, inset)
+    bush: { k: 45, fMax: 200 }, // soft drag: F = clamp(k · |v| · effRadius, 0, fMax) N, opposing v
   },
 }
