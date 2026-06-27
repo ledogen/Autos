@@ -792,7 +792,7 @@ export class RoadSystem {
      *   camberProfile(arcS, runKey) per vertex (O(1) array lookup post-build — no spline eval).
      */
     collectChunkSplinePoints(centerX, centerZ, radiusM) {
-        if (!this._tiles) return { pts: [], sampleArcS: [], sampleRunKeys: [], sampleCamberSign: [], sampleSegStart: [] }
+        if (!this._tiles) return { pts: [], sampleArcS: [], sampleRunKeys: [], sampleCamberSign: [] }
 
         const qTileX = Math.floor(centerX / CHUNK_SIZE)
         const qTileZ = Math.floor(centerZ / CHUNK_SIZE)
@@ -802,11 +802,6 @@ export class RoadSystem {
         const sampleArcS   = []
         const sampleRunKeys = []
         const sampleCamberSign = []   // BUG-10: per-sample run-frame→slice-frame camber sign
-        // QUAL-07: marks the FIRST sample of each seg. The flat array concatenates per-tile-slice segs;
-        // the mesh carve (_buildCarveTable) does point-to-SEGMENT projection on consecutive samples, so
-        // it must NOT form a segment across a seg boundary (segs aren't spatially contiguous in the
-        // array). sampleSegStart[i] === 1 ⇒ sample i begins a new seg ⇒ segment [i-1,i] is invalid.
-        const sampleSegStart = []
 
         for (let dx = -blk; dx <= blk; dx++) {
             for (let dz = -blk; dz <= blk; dz++) {
@@ -853,13 +848,12 @@ export class RoadSystem {
                         sampleArcS.push(arcS0 + (arcS1 - arcS0) * (_cum[i] / _totXZ))
                         sampleRunKeys.push(runKey)
                         sampleCamberSign.push(camberSign)
-                        sampleSegStart.push(i === 0 ? 1 : 0)   // QUAL-07: seg boundary marker
                     }
                 }
             }
         }
 
-        return { pts, sampleArcS, sampleRunKeys, sampleCamberSign, sampleSegStart }
+        return { pts, sampleArcS, sampleRunKeys, sampleCamberSign }
     }
 
     /**
@@ -2158,28 +2152,6 @@ export class RoadSystem {
         return { blendW: cs.blendW, gradeY }
     }
 
-    // ── QUAL-07: dirt-surface helper (the crown/camber/clearance fold, shared) ───────────────
-    /**
-     * The carve DIRT surface at a resolved point: run-global grade + crown + camber tilt − clearance.
-     * Single source of the cross-section's vertical fold, used by _carveCrossSection AND the terrain
-     * mesh's D3 cross-arm max-floor (so the exterior-arm floor uses identical math). Clearance is
-     * ALWAYS subtracted (terrain-carve convention); physics adds it back on-ribbon to ride the decal.
-     *
-     * BUG-14: run-global continuous gradeY is C0 across slice/chunk seams. BUG-13: NOT capped to
-     * rawAmp + fillHeight. BUG-15: crown/camber fold across the WHOLE footprint with full signedLat
-     * (same formula as sweepRibbon) so the surface is C0 at the ribbon edge into the shoulder.
-     */
-    _carveDirtY(signedLat, arcSEff, runKey, camberSign) {
-        const p = this._params
-        const halfWidth     = p.roadHalfWidth      ?? 5
-        const crownHeight   = p.crownHeight         ?? 0.05
-        const clearanceMargin = p.roadClearanceMargin ?? 0.25
-        const crownY = crownProfile(signedLat, halfWidth, crownHeight)
-        const camberAngle = camberSign * this.camberProfile(arcSEff, runKey)
-        const tiltY = signedLat * Math.sin(camberAngle)
-        return this.runProfile(arcSEff, runKey).gradeY + crownY + tiltY - clearanceMargin
-    }
-
     // ── QUAL-07: the ONE road-carve cross-section function ───────────────────────────────────
     /**
      * Resolve the carve DIRT-trough surface + shoulder blend at a point already resolved to a run.
@@ -2196,16 +2168,14 @@ export class RoadSystem {
      * (clearance ALWAYS subtracted — the terrain-carve convention). Physics rides the asphalt decal
      * on-ribbon by adding clearanceMargin back (see _sampleCarveWorld). Off-ribbon both read this dirt.
      *
-     * @param {number} [floorY=-Infinity] — QUAL-07/D3 cross-arm max-floor: where this vertex overlaps a
-     *   HIGHER neighbouring arm's footprint, the carve must not cut below that arm's dirt surface (a
-     *   lower arm's cut can't remove an upper arm's support). The mesh passes the exterior arm's
-     *   _carveDirtY; physics (single-arm) leaves it at the default.
      * @returns {{ blendW:number, gradeY:number } | null}  null = beyond the fill/cut toe (raw terrain)
      */
-    _carveCrossSection(signedLat, arcSEff, runKey, camberSign, rawAmp, floorY = -Infinity) {
+    _carveCrossSection(signedLat, arcSEff, runKey, camberSign, rawAmp) {
         const p             = this._params
         const halfWidth     = p.roadHalfWidth      ?? 5
         const shoulderWidth = p.roadShoulderWidth   ?? 2.5
+        const crownHeight   = p.crownHeight         ?? 0.05
+        const clearanceMargin = p.roadClearanceMargin ?? 0.25
         // BUG-15 (fill): hold the full road grade out to carveHalfWidth (= halfWidth + carveExtraWidth,
         // capped at minRadius) so the raised fill embankment / cut bench has a flat core wider than the
         // ribbon, then ramp to raw over the variable toe. Same extent the mesh carve uses.
@@ -2215,9 +2185,19 @@ export class RoadSystem {
 
         const latDist = Math.abs(signedLat)
 
-        // Dirt surface (run grade + crown/camber − clearance). D3: a higher overlapping arm raises it.
-        let designY = this._carveDirtY(signedLat, arcSEff, runKey, camberSign)
-        if (floorY > designY) designY = floorY
+        // Design grade Y — run-global continuous profile (BUG-14: C0 across slice/chunk seams).
+        // BUG-13: NOT capped to rawAmp + fillHeight (that pulled the road down on tall causeways).
+        let designY = this.runProfile(arcSEff, runKey).gradeY
+
+        // Crown + camber fold-in (SURF-03 / D-04 / BUG-15): across the WHOLE footprint with the full
+        // signedLat — same formula as sweepRibbon (road-mesh.js). crownProfile + signedLat·sin(camber)
+        // tilt the trough WITH the ribbon so the surface is C0 at the ribbon edge into the shoulder.
+        const crownY = crownProfile(signedLat, halfWidth, crownHeight)
+        const camberAngle = camberSign * this.camberProfile(arcSEff, runKey)
+        const tiltY = signedLat * Math.sin(camberAngle)
+        // Dirt surface: clearanceMargin ALWAYS subtracted (terrain-carve convention). Physics adds it
+        // back on-ribbon to ride the decal; the mesh draws this dirt directly.
+        designY = designY + crownY + tiltY - clearanceMargin
 
         // Fill/cut toe + blend (FEAT-10): the embankment ramps at its SLOPE over the variable toe so a
         // tall fill descends gently to terrain instead of dropping its height over a fixed shoulder.
