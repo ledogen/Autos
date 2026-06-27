@@ -47,7 +47,38 @@ Seed 6.
   BUG-15 ribbon-edge clearance dropoff, not the 0.62 m event spike.
 - **Surface window-invariance:** GREEN at the place mark (no streaming tear).
 
-## Leading hypotheses for the fix session (the static-fresh-smooth vs live-drive-spiky gap is the clue)
+## ROOT CAUSE — CONFIRMED 2026-06-26 (the cache hypothesis below is REFUTED)
+
+Diagnostic: reconstructed the 4 wheel hubs per frame from the event capture (`getWheelPosition` on the
+recorded pos+quat+strutComp) and sampled the FRESH `_resolveRoadSurface` / `analyticHeight` at each hub.
+
+- The two runs **share the apex anchor exactly**: run `0:-3` end == run `0:-2` start == **(-295.52, 223.97)**.
+- The OUTSIDE-of-hairpin wheels (FL/FR, ~3–4.7 m lateral) hit a **one-frame off-road sliver** at the
+  apex: **FL f59** `(-296.72, 220.94)` and **FR f60** `(-297.31, 219.59)` both resolve to **NULL** →
+  surface pops UP to **raw terrain** (FL 120.31→120.54, FR 120.44→**121.03** ≈ +0.6 m; the road is in a
+  CUT here so raw sits above the grade) → the jolt/slam. RL/RR (inside the bend) never go off-road.
+- **It is NOT the carveHint cache.** The recorded `*_gh` telemetry (logged via a FRESH `analyticHeight`,
+  no hint — main.js:1104) MATCHES the fresh resolve to **Δ = 0.000** at the OFF frames. The fresh
+  resolver itself returns off-road there.
+- Mechanism: at the OFF points `_projectOntoRun` returns `offEnd=Y` for **both** arms — `overAfter` for
+  `0:-3` (arcS 714.46, past its end) and `overBefore` for `0:-2` (arcS 0.00, past its start) — yet both
+  are `inFoot` (lat 3.26 / 4.73 < footHW 10.5). A point laterally offset on the OUTSIDE of the sharp bend
+  has its perpendicular foot AT the shared apex vertex but lies longitudinally beyond the end of both
+  arms, so the wedge beyond the apex is owned by no run. (`offEnd` was added to kill the 40 m "topmost"
+  endpoint artifact; at a hairpin BOTH continuation arms terminate at the shared anchor and each treats
+  the wedge as off-its-end.)
+
+### Fix (designed)
+
+In `_resolveRoadSurface`, when the primary nearest-interior-non-offEnd pass yields nothing (`bestPr`
+null), run a SECOND pass: among candidates that are `offEnd` but whose foot is a **terminal vertex** AND
+are `inFoot` (lat ≤ footHW), pick the nearest by lateral distance and **clamp arcS to that run end**.
+This fills the apex/continuation sliver with the endpoint road surface (gradeY + crown + camber at the
+run end — C0 with both arms, which share the anchor and have synced run-end camber per BUG-19/QUAL-05),
+removing the raw-terrain pop. The `inFoot` gate preserves the 40 m-artifact rejection (a run passing far
+away has its endpoint foot well outside footHW). Then add the acceptance gate.
+
+## Leading hypotheses (SUPERSEDED — kept for the record; #1 was refuted above)
 
 1. **`carveHint` quantized-cell cache staleness (LEADING).** The live physics ground path is
    `queryContacts (main.js) → carveHint(cx,cz) → _resolveRoadSurface → _sampleCarveWorld`, and
