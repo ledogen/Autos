@@ -1,8 +1,14 @@
 ---
 id: FEAT-06b
 type: feature
-status: open
+status: closed
 opened: 2026-06-26
+closed: 2026-06-27
+resolution: "DONE — collision core spliced into the live physics path (main.js queryContacts: trees=capsule,
+rocks/boulders=sphere hard contacts; bush soft-drag impulse on the chassis per substep). queryProps emits
+contactPoint to match the solver shape. Bush drag tuned in-browser to k=1350/fMax=12000 N (felt-but-passable).
+Debug Collision folder reads params live. 16 gates green. Hard contacts wired + gated; small rocks pass-through.
+Deferred to FEAT-06c: LOD/impostors. Commits 0932f0e (splice) + eb064df (tune)."
 severity: minor
 source: user-decision
 parent: FEAT-06

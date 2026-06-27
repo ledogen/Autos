@@ -1,9 +1,15 @@
 ---
 id: FEAT-06
 type: feature
-status: open
+status: closed
 opened: 2026-06-11
 rescoped: 2026-06-26
+closed: 2026-06-27
+resolution: "DONE — procedural palette + deterministic scatter + instanced render landed and wired into
+main.js (PropSystem instantiated with real terrain/road samplers, streamed in the loop at PROP_RING). All
+four merge-time items complete: (1) wired into main.js, (2) test/props.mjs registered as a run-all gate,
+(3) debug sliders via addPropGui, (4) densities/colours first-pass tuned in-browser. Collision = FEAT-06b
+(also closed). LOD/impostors = FEAT-06c (still open)."
 severity: minor
 source: scribe-session
 note: "Rescoped 2026-06-26 with user: all props PROCEDURAL/PARAMETRIC (no baked assets) — fits the
