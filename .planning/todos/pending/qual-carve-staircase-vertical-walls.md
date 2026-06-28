@@ -6,16 +6,20 @@ opened: 2026-06-26
 severity: minor
 source: user-observation
 note: "Visual polish at the road↔terrain transition — NOT a physics/correctness bug. The carve
-geometry is continuous enough to drive on; this is purely how the shoulder-to-terrain step LOOKS."
-subsumed_by: QUAL-07
+geometry is continuous enough to drive on; this is purely how the shoulder-to-terrain step LOOKS.
+Mostly fixed by QUAL-07 (2026-06-27) but a residual staircase remains on LARGE FILLS — kept minor."
+relates_to: QUAL-07
 ---
 
 # QUAL-06: Smooth out staircasing on terrain carves / shoulder-meet walls
 
-> **SUBSUMED by QUAL-07 (2026-06-27).** The bank-smoothing fix (widen ramp / max-slope clamp / smoothstep
-> falloff) is folded into QUAL-07's single unified carve cross-section function, so the smoothing applies
-> to the visual mesh AND the collision surface in one place. Close QUAL-06 when QUAL-07 lands. No
-> independent fix here. See `qual-unify-carve-surface.md`.
+> **MOSTLY FIXED by QUAL-07 (2026-06-27, commit 0cf01ac), residual on large fills.** QUAL-07 made the
+> mesh resolve via physics' continuous `_resolveRoadSurface` + the smoothstep shoulder falloff in the
+> shared `_carveCrossSection`, which removed the discrete-arc grade steps (carve-mesh-smoothness gate:
+> spike edges 0.9% → 0.02%, worst 2nd-diff 45 → 16-21 m). A visible staircase still shows on LARGE
+> FILLS (tall embankments on steep ground), so this stays OPEN as a minor polish item. Likely needs a
+> max-bank-slope clamp / wider ramp on tall fills (the deferred half of QUAL-07's bank-smoothing). See
+> `qual-unify-carve-surface.md`.
 
 ## Request
 

@@ -1,12 +1,20 @@
 ---
 id: QUAL-07
 type: quality
-status: open
+status: closed
 opened: 2026-06-27
+closed: 2026-06-27
 severity: major
 source: user-architecture-review
 relates_to: [QUAL-06, BUG-15, BUG-21, QUAL-03]
-subsumes: QUAL-06 (bank staircasing — folded into the single carve fn here)
+resolution: "DONE (commit 0cf01ac). One shared RoadSystem._carveCrossSection (+ _carveDirtY); terrain
+mesh _buildCarveTable resolves each carve-band vertex via the SAME _resolveRoadSurface physics uses,
+then the shared fn → mesh == analyticHeight by construction (worst mesh↔phys 44 m → 0.3 m). Fixed
+truck-float-on-shoulder + floating props (placed at analyticHeight). Smoother than shipped (spike edges
+0.9% → 0.02%) — also eased QUAL-06. FPS holds 60. New regression net test/carve-mesh-smoothness.mjs runs
+the REAL _buildCarveTable over every carved chunk (built after a first attempt's continuous-projection
+TORE the mesh and the point-sample gate missed it). 17 gates green. Residual large-fill staircase →
+QUAL-06 (minor, still open). Optional max-bank-slope clamp + sliders not done."
 note: "Collapse the DUPLICATED road carve into ONE shared cross-section function so the visual mesh and
 the physics collision surface are the same surface by construction. Decision (2026-06-27, with user):
 unify the SURFACE DEFINITION, not the REPRESENTATION — analytic stays the physics source of truth (its
