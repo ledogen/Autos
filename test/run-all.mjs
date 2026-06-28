@@ -24,6 +24,7 @@ const GATES = [
     'road-smoothness.mjs',  // collision surface has no invisible step the visual ribbon lacks (carve continuity)
     'shoulder-lateral-continuity.mjs', // BUG-15: carve cross-section is C0 across the shoulder edge (no camber-tilt cliff → no airborne/slam in hairpins)
     'road-fill-support.mjs', // BUG-15 (fill): physics footprint matches the mesh embankment extent — car doesn't drop through a raised fill shoulder
+    'carve-mesh-smoothness.mjs', // QUAL-07 regression net: REAL _buildCarveTable whole-surface has no catastrophic spikes/tearing (spike% + worst 2nd-diff bounded vs shipped baseline)
     'road-apex-sliver.mjs', // BUG-21: no off-road sliver at a shared hairpin anchor (radial end-fallback in _resolveRoadSurface) — no jolt crossing run boundaries
     'replay-selftest.mjs',  // capture↔replay round-trip (Phase 4 place path) — src/capture.js + replay.mjs
     'route-worker-sync.mjs',// PERF-03 WS-A: worker routing copy == road-carve.js canonical (byte-identical)

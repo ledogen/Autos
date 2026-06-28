@@ -112,6 +112,17 @@ function height(wx, wz, noiseCoarse, noiseFine, noiseRegional, params) {
     return coarse + fine
 }
 
+// Build the three main-thread noise closures EXACTLY as TerrainSystem does (terrain.js:1070-1072 /
+// :753-755). Exposed so a headless gate can call the REAL TerrainSystem.prototype._buildCarveTable via
+// a fake `this` (no Worker) and feed it noise that byte-matches the running game.
+export function makeNoise(seed) {
+    return {
+        noiseCoarse:   createNoise2D(mulberry32(seedFor(seed, 'coarse'))),
+        noiseFine:     createNoise2D(mulberry32(seedFor(seed, 'fine'))),
+        noiseRegional: createNoise2D(mulberry32(seedFor(seed, 'regional'))),
+    }
+}
+
 // ── Public factory ────────────────────────────────────────────────────────────────────────────────
 /**
  * Build a headless analytic terrain sampler matching src/terrain.js's main-thread path.
