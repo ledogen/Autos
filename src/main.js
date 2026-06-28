@@ -31,6 +31,7 @@ let _perfFrame = 0  // TEMP: frame counter for auto-dump at load
 let _firstFrameMarked = false  // TEMP: mark the first animate frame to isolate init vs loop time
 import { RoadMeshSystem } from './road-mesh.js'
 import { DustSystem } from './dust.js'
+import { SkySystem } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
 import { parseWorldSeed, seedFor } from './seed.js'
 import { createVehicleModel } from './vehicle-model.js'
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
@@ -466,9 +467,11 @@ const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerH
 
 // ── Scene ────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene()
-// FEAT-05: cooler high-altitude alpine sky/haze (was desert sky-blue 0x87ceeb). Background and
-// fog share the colour so the horizon blends with no hard band. Full skybox work stays QUAL-02.
-scene.background = new THREE.Color(0x9bb8d4)
+// QUAL-02: the flat-colour background is replaced by SkySystem's atmospheric Sky mesh (constructed
+// after the lights, below — it needs the sun/hemisphere refs). Fog stays here: its DENSITY is owned
+// by the draw-distance presets (PERF-03), while SkySystem recolours it to match the sky horizon so
+// the FEAT-05 "no hard band at the horizon" invariant is preserved. Initial colour is a placeholder
+// overwritten by SkySystem.setSun() on construction.
 scene.fog = new THREE.FogExp2(0x9bb8d4, 0.006)
 
 // HemisphereLight (cool alpine sky above, warm granite-ground bounce below) reads far more alpine
@@ -489,6 +492,11 @@ sun.shadow.camera.left = sun.shadow.camera.bottom = -220
 sun.shadow.camera.right = sun.shadow.camera.top   =  220
 scene.add(sun)
 scene.add(sun.target)   // FEAT-06: target must be in-scene for the per-frame shadow-follow to apply
+
+// QUAL-02: atmospheric skybox + sun-driven lighting. Drives the sun light, hemisphere fill and fog
+// tint from ONE sun elevation/azimuth (the static base a day/night cycle plugs into). SkySystem adds
+// the Sky mesh and sets scene.background = null (the mesh is the background now).
+const skySystem = new SkySystem({ scene, renderer, sun, ambient })
 
 // Ground plane (y=0, 200m × 200m)
 const ground = new THREE.Mesh(
@@ -889,6 +897,8 @@ addPropGui(_gui, {
     propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
   },
 })
+// QUAL-02: sky/lighting tuning folder (self-contained — attaches to _gui like the props folder).
+skySystem.addGui(_gui)
 // User pref: every lil-gui section collapsed by default (the root panel stays open). Runs after ALL
 // folders exist (debug + props), so it covers debug.js's folders without editing debug.js.
 _gui.foldersRecursive().forEach((f) => f.close())
@@ -1220,8 +1230,14 @@ function loop () {
   const streamCenter = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
   _trackStreamCenter(simTime, streamCenter.x, streamCenter.z)   // capture ring (Phase 4/5)
   // FEAT-06: keep the sun's shadow frustum centred on the view, else only tiles near origin get
-  // shadows. Direction is fixed (offset preserved); just the position + target track the centre.
-  sun.position.set(streamCenter.x + 80, 45, streamCenter.z + 60)
+  // shadows. QUAL-02: the direction now comes from SkySystem.sunDirection (so shadows align with the
+  // visible sun in the sky) — place the light along that direction at a fixed standoff, target the
+  // centre. A day/night cycle that animates the sun elevation moves the shadows for free.
+  sun.position.set(
+    streamCenter.x + skySystem.sunDirection.x * 200,
+    skySystem.sunDirection.y * 200,
+    streamCenter.z + skySystem.sunDirection.z * 200
+  )
   sun.target.position.set(streamCenter.x, 0, streamCenter.z)
   sun.target.updateMatrixWorld()
   let _pt = performance.now()
@@ -1314,6 +1330,9 @@ function loop () {
     const pts = getBodyContactPoints(vehicleState, RANGER_PARAMS)
     pts.forEach((pt, i) => { if (_dbgSpheres[i]) _dbgSpheres[i].position.set(pt.x, pt.y, pt.z) })
   }
+
+  // QUAL-02: keep the (finite) sky box centred on the camera so it always surrounds the view.
+  skySystem.update(camera.position)
 
   const _ptR = performance.now()
   renderer.render(scene, camera)
