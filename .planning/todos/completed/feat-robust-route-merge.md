@@ -1,8 +1,10 @@
 ---
 id: FEAT-10
 type: feature
-status: open
+status: closed
 opened: 2026-06-25
+closed: 2026-06-28
+resolution: "LANDED 2026-06-28. Merge graph (merged _protoAnchor + node-identity redundant/degenerate edge drop) collapses converging anchors → drops the degenerate ~27 m stubs whose ribbon TORE (the reported tears) + duplicate edges; COVER deleted (BUG-17 subsumed). Merged-node heading look-through + run-join ribbon/carve SEAL (roadJoinWeldLength) make joins smooth & navigable — FEAT-07 folded in & confirmed in-browser. Junction grade/camber flatten keeps the collision surface step-free. New gate test/route-merge.mjs; all 18 gates green. RESIDUAL (not claimed): robust dedup of partial-corridor parallels (runs sharing a corridor mid-span with distinct endpoints) — node-identity merge only removes exact node-pair duplicates + stubs; a harder extension if wanted."
 severity: major
 source: user-observation (in-sim screenshot — spiral + parallel-duplicate roads)
 supersedes: COVER suppression mechanism (PROTO_COVER_*)
@@ -12,15 +14,26 @@ note: "Request: a routing-graph that MERGES into existing roads instead of layin
 with a robust exclusion zone — robust network connecting points, minimal small loopbacks, a real (but
 condensed-for-game) forest-road system. This is UPSTREAM of FEAT-07: FEAT-07 renders junctions; it
 cannot fix a network that generates duplicates in the first place."
+scope_note: "SPIRAL split out 2026-06-27 → FEAT-12 (earthwork routing), which LANDED (3be629c) and cut
+the seed-6 spiral. This ticket is now SCOPED TO THE MERGE ONLY (parallel-duplicate dedup + graph junction
+nodes). Earthwork did NOT supersede or close this — the parallel-duplicate merge is still open."
 ---
 
 # FEAT-10: Robust route merge + exclusion — a deterministic road GRAPH (replaces COVER)
 
+> **SCOPE (2026-06-27).** FEAT-10's original problem statement named TWO root causes: (1) parallel-
+> duplicate ribbons and (2) the concentric spiral. **The spiral (#2) was split out to FEAT-12 (earthwork
+> routing) and has LANDED** (`3be629c`; seed-6 loops>270° 43→18, crossings 52→9). This ticket is now
+> **scoped to the MERGE (#1) only:** dedup converging corridors into shared graph junction nodes. Earthwork
+> makes routes straighter but still lays parallel ribbons where corridors converge — that is what remains
+> here. See `completed/feat-earthwork-routing.md`.
+
 ## Problem (observed 2026-06-25, in-sim)
 
 The streamed network lays **multiple near-parallel ribbons down the same corridor** (e.g. two roads
-leaving the same point on the same path) and **spirals on itself** (concentric "rose" loops). It is
-ugly and hard to drive. Two distinct root causes, neither of which is FEAT-07:
+leaving the same point on the same path). It is ugly and hard to drive. (The original report also noted
+the network **spiralling on itself** — concentric "rose" loops — but that **spiral half is now FEAT-12,
+landed**; the remaining defect is the parallel duplicates.) The two original root causes were:
 
 1. **Parallel duplicates.** Each macro-row routes its run **independently** (`_protoConnect` per
    `mz:mx`, `road.js:~1259`), and the A\* may take a ±`PROTO_MARGIN` (120 m) N/S detour to wrap peaks
@@ -31,10 +44,11 @@ ugly and hard to drive. Two distinct root causes, neither of which is FEAT-07:
    - **adjacent-row only** (`PROTO_COVER_DEPTH`=1),
    - **heading-gated** (`PROTO_COVER_DOT`=0.93 ≈ 21° — the BUG-16 heading dither defeats it),
    - and it **deletes, never merges** (leaves a gap; never reuses the existing road).
-2. **The spiral.** `_protoAnchor` (`road.js:1197`) gradient-descends each cell's anchor into its
-   valley floor; many cells funnel into one basin (the `PROTO_SNAP_CAP`≈115 m lane cap is not enough),
-   and the router wraps the central peak with **no penalty for revisiting near-traversed ground or for
-   tight loopbacks** → concentric rings. COVER does not address this at all.
+2. **The spiral** *(RESOLVED → FEAT-12 earthwork, landed `3be629c`)*. The router wrapped peaks with
+   grade-limiting switchbacks because `arcPrimitiveConnect` costed grade against RAW terrain (road assumed
+   to follow contours). FEAT-12 lets the router fill/cut (deviate from terrain at a weighted cost) →
+   straighter alignments, spiral cut on seed 6 from loops>270°=43 to 18. **This half is done; kept here
+   only for context.** The merge below is independent of it.
 
 ## Goal
 
@@ -59,7 +73,7 @@ any stream center reaches the identical graph.
 
 ## Design — two mechanisms (user chose BOTH)
 
-### A. Anchor-node EXCLUSION → shared graph nodes (kills the spiral at the source)
+### A. Anchor-node EXCLUSION → shared graph nodes (collapses converging anchors → one node per basin)
 After `_protoAnchor` snaps a cell's anchor to its valley floor, run a deterministic merge pass: an
 anchor computes the snapped positions of its neighbour anchors (a bounded macro-window; all pure
 fns/cached) and, if a **higher-priority** anchor lies within `roadNodeMergeRadius` (R_excl), it
@@ -89,11 +103,12 @@ pushes the lower one onto its own corridor (a deliberate loop is allowed).
 Recommendation: **B1** (post-route merge) for robustness with the least router/Worker risk; revisit B2
 only if mid-span merges need to influence the actual arc geometry rather than snap onto it.
 
-### C. Loopback suppression
-Penalize tight self-loops: a cost for a primitive whose cell was already traversed within THIS
-connection (or revisit-within-R of an earlier arc-s of the same run) in `arcPrimitiveConnect`, and/or
-cap/relax `PROTO_MARGIN` so peak-wrapping can't spiral. Tune so a genuine switchback survives but a
-concentric ring does not.
+### C. Loopback suppression — LARGELY HANDLED BY FEAT-12 (earthwork)
+The concentric-ring spiral this section targeted was caused by grade-limiting switchbacks; **FEAT-12
+(earthwork routing) addressed it** by letting the router fill/cut instead of wrapping peaks (loops>270°
+43→18 on seed 6). Any *residual* tight self-loops after the merge can still be penalized here (a cost for
+a primitive revisiting near-traversed ground within THIS connection in `arcPrimitiveConnect`), but this is
+now a tune-up on top of FEAT-12, not a from-scratch fix. Do NOT re-derive the earthwork cost here.
 
 ### D. Junction nodes are GRAPH-NATIVE — supersede `_detectJunctions`'s brute-force scan (2026-06-27)
 The merge graph from A/B **emits junction nodes by construction** (a merge node where an anchor adopts a
@@ -128,10 +143,10 @@ the 296 ms stall with zero shipped-feature loss until FEAT-07 builds the real me
 
 ## Acceptance
 
-- On the seed that currently spirals (the screenshot, seed 6): **no two roads run parallel within
-  ~`roadMergeBand` over a meaningful length**, **no concentric self-loops**, and the leftward duplicate
-  is gone (merged to one). Every macro-anchor stays **reachable** (connectivity preserved — we didn't
-  just delete roads into disconnection).
+- On seed 6: **no two roads run parallel within ~`roadMergeBand` over a meaningful length**, and the
+  leftward duplicate is gone (merged to one). Every macro-anchor stays **reachable** (connectivity
+  preserved — we didn't just delete roads into disconnection). *(Concentric self-loops are FEAT-12's
+  acceptance, already met — not re-tested here.)*
 - Redundant corridors merge into clean **T/Y junction nodes** (the FEAT-07 input), not overlapping
   ribbons. A few deliberate loops remain where corridors genuinely diverge.
 - **Window-invariant + deterministic:** the merged graph (node set + positions + edge set +
@@ -150,8 +165,9 @@ the 296 ms stall with zero shipped-feature loss until FEAT-07 builds the real me
 - Extend the invariance harness: assert node positions + edge set + per-edge centerline are identical
   from two stream centers (the BUG-08 contract, now at the GRAPH level).
 - New metric gates (register in `run-all.mjs`): **no-duplicate** (no pair of centerlines within
-  `roadMergeBand`, same heading, for > `Lmin` on test seeds) and **loop-count** (bounded
-  self-loops per unit area) — with a control showing the pre-FEAT-10 network exceeds them.
+  `roadMergeBand`, same heading, for > `Lmin` on test seeds). *(The **loop-count** metric — bounded
+  self-loops per unit area — already exists as FEAT-12's `test/road-selfcross.mjs`; reuse it, don't
+  rebuild it. The new gate this ticket needs is the no-duplicate/merge one.)*
 - If B1: `route-worker-sync` is untouched (merge is post-network). If B2: the ROUTE SYNC region grows —
   mirror into `WORKER_SOURCE` in the same commit and keep the gate byte-identical.
 
@@ -181,7 +197,8 @@ the 296 ms stall with zero shipped-feature loss until FEAT-07 builds the real me
 - `src/road-carve.js` — only if B2 / loop-penalty land in `arcPrimitiveConnect` (then ROUTE SYNC).
 - `data/ranger.js` — `roadNodeMergeRadius`, `roadMergeBand`, parallel/follow + loop-penalty knobs,
   network-character sliders.
-- `test/` — graph-invariance + no-duplicate + loop-count gates (+ register in `run-all.mjs`).
+- `test/` — graph-invariance + no-duplicate gates (+ register in `run-all.mjs`); reuse FEAT-12's
+  `road-selfcross.mjs` for loop-count.
 
 ## Open questions (planning)
 

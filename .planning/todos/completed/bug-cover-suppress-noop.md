@@ -1,8 +1,10 @@
 ---
 id: BUG-17
 type: bug
-status: open
+status: closed
 opened: 2026-06-23
+closed: 2026-06-28
+resolution: "Subsumed by FEAT-10. The COVER suppression system (PROTO_COVER_*, _segSegDist2, roadCoverSuppress) is DELETED outright and replaced by the node-identity merge graph (redundant + degenerate edge drop). The dead toggle is gone."
 severity: minor
 source: user-observation
 phase_origin: road-overhaul

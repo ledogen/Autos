@@ -1,9 +1,11 @@
 ---
 id: FEAT-07
 type: feature
-status: open
+status: closed
 opened: 2026-06-11
 rewritten: 2026-06-21
+closed: 2026-06-28
+resolution: "FOLDED into FEAT-10 and closed 2026-06-28. User relaxed the purist 'single welded mesh from spline interaction' bar to SMOOTH NAVIGABLE INTERSECTIONS ('intersection of meshes' acceptable). Delivered via: junction grade/camber flatten (coplanar at merged nodes) + run-join ribbon/carve seal (endpoint cross-sections share the canonical node tangent → edges line up). Confirmed in-browser. The separate triangulated merged-pad mesh + brute-force _detectJunctions deletion (Design D) were NOT needed for the navigable bar and are not done — track separately if a true unified pad is later wanted."
 severity: major
 source: user-observation
 supersedes: FEAT-05 (road intersections, folded) ← BUG-09
