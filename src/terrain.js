@@ -29,10 +29,8 @@
 import * as THREE from 'three'
 // Plan 09-11: potholeNoise, signedCurvature, roadQuality removed from terrain.js —
 // pothole/curvature are not needed on the terrain mesh carve path.
-// Plan 09-22: crownProfile re-imported — D3 carve inherits the ribbon cross-section
-// (crownProfile + camberProfile tilt) so the carved trough tilts with the ribbon →
-// uniform clearance on banked turns (fixes inside-edge clip / outside-edge gap).
-import { crownProfile } from './road-carve.js'
+// QUAL-07: crownProfile no longer imported — the crown/camber fold moved into the one shared
+// RoadSystem._carveCrossSection; the mesh resolves (signedLat, arcS) per vertex and calls it.
 import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
 import { perfAdd } from './perf.js'  // TEMP perf triage (D-arc)
 
@@ -1529,13 +1527,11 @@ export class TerrainSystem {
         const fillHeight      = p.roadFillHeight      ?? 2.0
         const fillSlope       = p.roadFillSlope       ?? 3.0
         const cutSlope        = p.roadCutSlope        ?? 1.0
-        const crownHeight     = p.crownHeight         ?? 0.05
-        // D3 (plan 09-22): carve inherits the ribbon cross-section. carveTargetY now includes
-        // crownProfile(uLat) + camberTilt(uLat, camberProfile(arcS)) so the trough tilts
-        // WITH the ribbon → uniform clearanceMargin on banked turns (fixes clip/gap, bug #5).
-        const clearanceMargin = p.roadClearanceMargin ?? 0.5
+        // QUAL-07: crown/camber/clearance fold + fill/cut toe + blend now live in the ONE shared
+        // RoadSystem._carveCrossSection (the same fn physics uses). The per-vertex loop only RESOLVES
+        // (signedLat, arcS) and calls it; crownHeight/clearanceMargin/maxEmbankmentToe/carveHalfWidth are
+        // read inside that fn. carveExtraWidth stays here for the conservative query-radius bound (maxExt).
         const carveExtraWidth = p.roadCarveExtraWidth ?? 3.0
-        const maxEmbankmentToe = p.roadMaxEmbankmentToe ?? 10  // FEAT-10: cap apron beyond carve core
 
         // Maximum lateral extent to bother querying: ribbon + shoulder + max fill toe + extra width
         // fillToe = halfWidth + shoulderWidth + fillHeight * fillSlope
@@ -1574,18 +1570,9 @@ export class TerrainSystem {
         const table = new Float32Array(N * N * 2)
         let anyNonZero = false
 
-        // D3 refinement (plan 09-22): footprint bound coupled to min-turn-radius.
-        // Min inter-arm separation at a hairpin ≈ 2·minRadius (D0 arc-fillet arms
-        // separate by ~2·minRadius). Each arm's carve footprint is bounded to ≤ ½ that
-        // separation = minRadius so adjacent arms' footprints can't overlap → no mutual
-        // undermining by construction. NEW COUPLING: carve footprint ↔ min-turn-radius —
-        // if roadMinTurnRadius is widened, carve footprint widens with it; if narrowed,
-        // they must be sized together to preserve the no-overlap guarantee.
-        //
-        // Widened carve-core half-width: the blendW=1 zone extends beyond the ribbon by
-        // carveExtraWidth so the flat trough bed is wider than the ribbon + skirt edge.
-        const minRadius      = (this._roadSystem._params?.roadMinTurnRadius ?? 12)
-        const carveHalfWidth = Math.min(halfWidth + carveExtraWidth, minRadius)
+        // QUAL-07: the carve-core half-width (= halfWidth + carveExtraWidth, capped at minRadius so
+        // adjacent hairpin arms can't undermine each other) is computed inside _carveCrossSection now —
+        // the per-vertex loop just resolves (signedLat, arcS) and calls it.
 
         // ── Per-vertex inner loop ────────────────────────────────────────────────
         // PERF CONTRACT (Plan 09-16 / SURF-04):
@@ -1656,125 +1643,63 @@ export class TerrainSystem {
                 const bi = (intBestD2 < Infinity) ? intBi : extBi
                 const bestD2 = (intBestD2 < Infinity) ? intBestD2 : extBestD2
 
-                // XZ distance to nearest road point.
-                const latDist = Math.sqrt(bestD2)
-
                 // Raw terrain height at this vertex (world-space, with amplitude).
                 const rawPre = rawHeights ? rawHeights[zi * N + xi]
                     : height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params)
                 const rawH   = rawPre * amp
 
-                // ── D3 (plan 09-22): carve target inherits the ribbon cross-section ──
-                // Formula: carveTargetY = roadY(arcS) + crownProfile(uLat) + camberTilt − clearanceMargin
+                // ── QUAL-07: resolve (signedLat, arcS) then call the ONE shared cross-section ──
+                // signedLat: PERPENDICULAR offset of the vertex from the chosen sample, along that
+                // sample's tangent (same value the old code used for crown). This replaces the old
+                // Euclidean nearest-sample distance (sqrt(bestD2)) as the lateral metric — the Euclidean
+                // distance is always ≥ the true perpendicular and quantized, so the old mesh apron pulled
+                // to raw terrain SOONER/wider than physics (_sampleCarveWorld, perpendicular) → the truck
+                // floated above the drawn bank (the QUAL-07 bug). Physics uses |signedLat|; so do we now.
+                // arcS stays the DISCRETE sample arc (run-global; the per-cell grade step is the separate
+                // QUAL-06 staircase, unchanged here — NOT the continuous-projection rewrite that tore the
+                // mesh: that is deliberately avoided; this is a one-metric change routed through the shared
+                // fn so mesh and physics ramp the SAME bank).
                 //
-                // signedLat: re-derive from chosen sample's tangent (same sign convention as D4 inner loop
-                // and queryNearest — sdx_fwd = sample − query = -sdx, so signedLat = (-sdx)*tz − (-sdz)*tx).
-                // This is O(1): two multiplies, using pre-sampled tangent from flat array.
-                //
-                // camberAngle: read from D2 camberProfile cache — O(log N) binary search (pre-built per run,
-                // no per-vertex spline eval). sampleArcS / sampleRunKeys parallel arrays from collectChunkSplinePoints.
-                //
-                // The trough tilts WITH the ribbon → clearanceMargin is uniform regardless of banking angle
-                // (fixes bug #5: at 6°×5m = 0.52m > 0.5m clearance under a flat carve).
-                const biIdx   = bi / STRIDE   // sample index (integer)
+                // OFF-END GUARD: perpendicular distance alone doesn't reject a vertex BEYOND the road's
+                // end (small |signedLat|, large along-tangent offset) the way the old Euclidean metric did
+                // — without this the carve would shelf past a terminus. longitudinal² = bestD2 − signedLat²;
+                // if the vertex sits more than a shoulder beyond the sample longitudinally, leave it raw.
+                const biIdx   = bi / STRIDE
                 const biTx    = samples[bi + 3], biTz = samples[bi + 4]
                 const sdxBi   = samples[bi] - wx, sdzBi = samples[bi + 2] - wz
                 const signedLat = (-sdxBi) * biTz - (-sdzBi) * biTx
+                const longit2   = Math.max(0, bestD2 - signedLat * signedLat)
+                const offEndMargin = shoulderWidth + cell      // ~one shoulder past the nearest sample
+                if (longit2 > offEndMargin * offEndMargin) { table[idx] = 0; table[idx + 1] = 0; continue }
 
-                const arcS   = sampleArcS[biIdx]
-                const runKey = sampleRunKeys[biIdx]
+                const arcS    = sampleArcS[biIdx]
+                const runKey  = sampleRunKeys[biIdx]
+                const camberSign = sampleCamberSign ? sampleCamberSign[biIdx] : 1
 
-                // P2 (09-27): replace nearest-discrete-sample ny = samples[bi+1] with the run-global
-                // continuous profile gradeY. Both adjacent chunks read the SAME runProfile by the SAME
-                // arcS → shared boundary vertices match → the chunk-boundary foundation step is gone
-                // (BUG-14 carve path closed). roadY is world-space (post-amplitude), exactly like the
-                // old samples[bi+1] it replaces, so the amplitude convention below is UNCHANGED.
-                // Previous: const ny = samples[bi + 1]
-                const roadY = this._roadSystem.runProfile(arcS, runKey).gradeY
-
-                // BUG-10: run-frame camber × per-sample sign → slice-frame angle (matches ribbon + physics).
-                const camberAngle = (sampleCamberSign ? sampleCamberSign[biIdx] : 1) * this._roadSystem.camberProfile(arcS, runKey)
-
-                const crownY = crownProfile(signedLat, halfWidth, crownHeight)
-                const tiltY  = signedLat * Math.sin(camberAngle)
-
-                // carveTargetY = ribbon_surface − clearanceMargin (uniform clearance on banked turns)
-                let carveTargetY = roadY + crownY + tiltY - clearanceMargin
-
-                // ── D3 refinement: max-floor guard (plan 09-22) ──────────────────────
-                // Where geometry forces two arms closer than the footprint bound, this vertex
-                // may lie inside the footprint of BOTH arm A (intBi / the chosen bi) and arm B
-                // (extBi / the globally nearest). If arm B is at a HIGHER elevation, we must
-                // NOT carve below the floor it needs — a lower arm's cut cannot remove an upper
-                // arm's support (D3 refinement, SURF-04).
-                //
-                // When intBi != extBi, extBi is a different arm. Compute its carveTargetY and
-                // apply a MAX floor: the higher arm wins. We accept a managed steep bank between
-                // arms at the transition (only degenerate vertical seams are disallowed — SURF-05).
-                //
-                // PERF CONTRACT: the guard is one float array read + a single O(log N) camberProfile
-                // + runProfile call on extBi (only when extBi != intBi); no per-vertex allocation.
+                // ── D3 max-floor guard (plan 09-22): higher overlapping arm wins ──────
+                // At arm overlaps (intBi != extBi) a lower arm's cut must not undercut the higher arm.
+                // Resolve the exterior arm's DIRT surface (_carveDirtY — the same crown/camber/clearance
+                // fold the cross-section uses) and pass it as a floor. Discrete arc + sample-tangent
+                // signedLat, identical inputs to the old inline guard.
+                let floorY = -Infinity
                 if (intBestD2 < Infinity && extBi !== intBi) {
                     const extIdx = extBi / STRIDE
                     const eTx = samples[extBi + 3], eTz = samples[extBi + 4]
                     const sdxExt = samples[extBi] - wx, sdzExt = samples[extBi + 2] - wz
-                    const signedLatExt  = (-sdxExt) * eTz - (-sdzExt) * eTx
-                    // P2 (09-27): exterior grade also from runProfile — same continuous source.
-                    // Previous: const enyExt = samples[extBi + 1]
-                    const roadYExt      = this._roadSystem.runProfile(sampleArcS[extIdx], sampleRunKeys[extIdx]).gradeY
-                    const camberExt     = (sampleCamberSign ? sampleCamberSign[extIdx] : 1) * this._roadSystem.camberProfile(sampleArcS[extIdx], sampleRunKeys[extIdx])
-                    const maxFloor      = roadYExt + crownProfile(signedLatExt, halfWidth, crownHeight) +
-                                          signedLatExt * Math.sin(camberExt) - clearanceMargin
-                    if (maxFloor > carveTargetY) carveTargetY = maxFloor
+                    const signedLatExt = (-sdxExt) * eTz - (-sdzExt) * eTx
+                    floorY = this._roadSystem._carveDirtY(
+                        signedLatExt, sampleArcS[extIdx], sampleRunKeys[extIdx],
+                        sampleCamberSign ? sampleCamberSign[extIdx] : 1)
                 }
 
-                // BUG-13: NO fill cap. Capping carveTargetY at rawH + fillHeight pulled the carved
-                // foundation (and physics) down to follow the terrain on causeways taller than
-                // fillHeight, leaving a gap under the ribbon and dropping the collision surface so the
-                // truck fell through. The foundation now rises to the full road grade and meets the
-                // ribbon (height-agreement with road-mesh.js designGradeY + _sampleCarveWorld). The fill
-                // shoulder can be steep on tall causeways — cosmetic follow-up; road stays solid/driveable.
+                // One cross-section (dirt surface + shoulder blend), shared with physics. null = beyond
+                // the fill/cut toe → unaffected terrain. BUG-13: no fill cap; the foundation meets the ribbon.
+                const cs = this._roadSystem._carveCrossSection(signedLat, arcS, runKey, camberSign, rawH, floorY)
+                if (!cs) { table[idx] = 0; table[idx + 1] = 0; continue }
 
-                // Compute fill/cut toe distances (SURF-05 continuity — shoulder rejoins terrain).
-                const cappedDelta = Math.max(0, carveTargetY - rawH)
-                const fillToe = halfWidth + shoulderWidth + cappedDelta * fillSlope
-                const cutDelta = Math.max(0, rawH - carveTargetY)
-                const cutToe  = halfWidth + shoulderWidth + cutDelta * cutSlope
-                // FEAT-10: cap the apron at carveHalfWidth + roadMaxEmbankmentToe so tall fills on steep
-                // roads can't blow the toe out to tens of metres. Uncapped, adjacent arms' giant aprons
-                // overlap at tight turns and fight → fan-shaped shards. IDENTICAL cap in _sampleCarveWorld.
-                const toeExt  = Math.min(Math.max(fillToe, cutToe), carveHalfWidth + maxEmbankmentToe)
-
-                if (latDist > toeExt) {
-                    // Beyond the fill/cut toe — unaffected terrain.
-                    table[idx]     = 0
-                    table[idx + 1] = 0
-                    continue
-                }
-
-                // Blend weight: 1 across the widened carve core, shoulder ramp beyond.
-                // The core is carveHalfWidth (= halfWidth + carveExtraWidth) wide so the flat
-                // trough bed is wider than the ribbon + skirt. The shoulder ramp still uses
-                // shoulderWidth to blend back to raw terrain (SURF-05 continuity retained).
-                let blendW
-                if (latDist < carveHalfWidth) {
-                    blendW = 1.0
-                } else {
-                    // FEAT-10: ramp the embankment at its fill/cut SLOPE over the variable toe (toeExt),
-                    // not a fixed shoulderWidth — a tall fill (steeper roads) descends gently to terrain
-                    // instead of dropping its whole height over 2.5 m (a near-vertical dirt wall). ≥
-                    // shoulderWidth so short fills/cuts are unchanged. IDENTICAL ramp in _sampleCarveWorld.
-                    const ramp = Math.max(shoulderWidth, toeExt - carveHalfWidth)
-                    blendW = Math.max(0.0, 1.0 - (latDist - carveHalfWidth) / ramp)
-                }
-
-                // Store carveTargetY as pre-amplitude (Worker uses raw heights; main thread
-                // reads back and blends against the amplitude-scaled raw height).
-                const gradeY_preamp = amp > 0 ? carveTargetY / amp : carveTargetY
-
-                table[idx]     = blendW
-                table[idx + 1] = gradeY_preamp
-                if (blendW > 1e-6) anyNonZero = true
+                table[idx]     = cs.blendW
+                table[idx + 1] = amp > 0 ? cs.gradeY / amp : cs.gradeY
+                if (cs.blendW > 1e-6) anyNonZero = true
             }
         }
 

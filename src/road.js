@@ -2106,24 +2106,6 @@ export class RoadSystem {
     _sampleCarveWorld(wx, wz, rawAmp, nrHint) {
         const p             = this._params
         const halfWidth     = p.roadHalfWidth     ?? 5
-        const shoulderWidth = p.roadShoulderWidth  ?? 2.5
-        const crownHeight   = p.crownHeight        ?? 0.05
-        // camberStrength now consumed by camberProfile() — not needed here (D2, plan 09-21)
-        // roadFillHeight cap intentionally NOT read here (BUG-13): physics tracks the uncapped grade.
-
-        // BUG-15 (fill): the terrain MESH carve (_buildCarveTable) holds the full road grade out to
-        // carveHalfWidth (= halfWidth + carveExtraWidth, capped at minRadius), then ramps to raw over
-        // shoulderWidth — so its raised fill embankment reaches carveHalfWidth + shoulderWidth. Physics
-        // must use the SAME extent + blend core, or on a fill the car drops through the band between the
-        // physics footprint (halfWidth + shoulderWidth) and the wider mesh embankment. Same formula as
-        // terrain.js so the drivable surface and the visual carve agree on both fill AND cut.
-        const carveExtraWidth = p.roadCarveExtraWidth ?? 3.0
-        const minRadius       = p.roadMinTurnRadius   ?? 12
-        const carveHalfWidth  = Math.min(halfWidth + carveExtraWidth, minRadius)
-        // Road-edge dropoff: the carved DIRT sits roadClearanceMargin below the road surface (same as the
-        // mesh _buildCarveTable). Off the ribbon the wheel rides that dirt, so physics drops by this margin
-        // at the ribbon edge — a real, punishing edge, not a float over the dirt. On-ribbon it rides the
-        // ribbon top (no clearance). Matches terrain.js so the drivable surface == the visual everywhere.
         const clearanceMargin = p.roadClearanceMargin ?? 0.25
 
         // Continuous-projection road resolver replaces queryNearest in the carve path —
@@ -2143,94 +2125,102 @@ export class RoadSystem {
         const arcSEff = (nr.arcS ?? 0) + dx * tx + dz * tz
 
         // Signed lateral distance (positive = right of road heading, negative = left).
-        // right = (tz, 0, -tx) so signedLat = dx*(-tz) + dz*tx = dot(d, perp).
-        // Wait — right vector is (tz, 0, -tx); signed lateral = dot((dx,dz), (tz,-tx)) = dx*tz - dz*tx.
-        // But historically latDist = |dx*(-tz) + dz*tx| = |-(dx*tz - dz*tx)| = |dx*tz - dz*tx|.
-        // So signedLat = dx*tz - dz*tx (positive = right side of travel direction).
+        // signedLat = dx*tz - dz*tx (positive = right side of travel direction).
         const signedLat = dx * tz - dz * tx
         const latDist   = Math.abs(signedLat)
-        // FEAT-10: the precise fill/cut-toe cutoff now happens AFTER designY is known (it depends on the
-        // fill height) — see the blend block below. The caller (_resolveRoadSurface / carveHint) has
-        // already committed this point to a nearby run, so latDist is bounded; no early cheap reject needed.
 
-        // Design grade Y — P2 (09-27): replace per-slice spline nr.point.y with the run-global
-        // continuous profile gradeY. nr.arcS is run-global (BUG-10 fix in 3df47cd) and is C0
-        // across a slice-switch (both sides of the boundary resolve to the same arcS), so
-        // runProfile(nr.arcS).gradeY is C0 across tile/chunk seams → no teleport, no upward-step
-        // penetration → no launch (BUG-14 closed).
-        //
-        // Previous: let designY = nr.point.y
-        // Problem: nr.point.y came from a per-slice spline whose "nearest" sample snapped to a
-        // different slice across the boundary, producing a discrete Y step that kicked the truck
-        // (~300 mm at Coarse Amp 150, seed 7 behind spawn). That step caused chassis penetration
-        // into the terrain which the physics solver resolved as an upward impulse → launch.
-        //
-        // PERF NOTE: runProfile allocates one { gradeY, camberRad, tx, tz } per call. This is
-        // the hot physics path (4 wheels × ~5 substeps = ~20 calls/frame). If runProfile was
-        // called with an out-object parameter (09-25 optional 3rd arg), pass a module-scope
-        // reusable object here to avoid per-call allocation. TODO(perf-cache): wire the out-object
-        // once profiled as a hot spot (09-CONTINUOUS-PROFILE-DESIGN.md line 70).
-        //
-        // BUG-13: do NOT cap the physics grade to rawAmp + fillHeight. That cap pulled the road DOWN
-        // to follow the terrain on causeway sections taller than fillHeight so the truck fell through.
-        // Physics rides the true ribbon grade (decal contract); the raised dirt foundation is the
-        // terrain carve's job (also uncapped now, terrain.js _buildCarveTable).
-        let designY = this.runProfile(arcSEff, nr.runKey ?? '').gradeY
+        // QUAL-07: one carve cross-section function shared with the terrain mesh (_buildCarveTable).
+        // It returns the DIRT-trough surface (clearanceMargin ALWAYS subtracted) + the shoulder blend.
+        const cs = this._carveCrossSection(signedLat, arcSEff, nr.runKey ?? '', nr.camberSign ?? 1, rawAmp)
+        if (!cs) return null   // beyond the fill/cut toe — unaffected terrain
 
-        // ── Crown + camber fold-in (SURF-03 / D-04) ─────────────────────────────
-        // Same formula as sweepRibbon in road-mesh.js — ensures analyticNormal returns
-        // the crowned/cambered surface normal that physics feels (height-agreement gate).
-        //
-        // BUG-15: crown/camber are folded in across the WHOLE footprint using the full signedLat —
-        // IDENTICAL to the terrain-mesh carve (terrain.js _buildCarveTable: crownProfile(signedLat) +
-        // signedLat·sin(camber)). The old code applied them only for latDist < halfWidth and dropped
-        // the tilt at the ribbon edge, so on a banked section the physics surface fell off a vertical
-        // ±halfWidth·sin(camber) cliff (≈0.52 m at the ±6° hairpin camber clamp) into the shoulder
-        // while the visual mesh carve stayed continuous → wheel goes airborne then slams (the reported
-        // hairpin glitch). Carrying the SAME crown/camber the mesh uses makes the physics surface C0 at
-        // the ribbon edge AND match the carved terrain the wheel rolls onto in the shoulder. blendW
-        // (below) then ramps the whole cambered surface down to raw terrain with no step.
-        {
-            // Crown: parabolic — peak at centerline, 0 at edges, slight dip past (matches _buildCarveTable).
-            const crownY = crownProfile(signedLat, halfWidth, crownHeight)
-
-            // BUG-10: arcSEff is the RUN-GLOBAL arc (no per-tile sawtooth); matches sweepRibbon's run-arc
-            // keying. D2 (plan 09-21): shared slew-limited camberProfile — visual ribbon, mesh carve, and
-            // physics read the SAME angle. camberSign maps run-frame camber into the slice frame.
-            const camberAngle = (nr.camberSign ?? 1) * this.camberProfile(arcSEff, nr.runKey ?? '')
-
-            // Tilt: signedLat * sin(camberAngle) — same formula as sweepRibbon AND _buildCarveTable.
-            const tiltY = signedLat * Math.sin(camberAngle)
-
-            designY = designY + crownY + tiltY
-
-            // ── SURF-06: pothole micro-noise (D-03) ─────────────────────────────
-            // Stays ON-RIBBON only (latDist < halfWidth) — does NOT bleed into the shoulder blend.
-            // CR-03 (09-08): key on centerline arcS (same as camber above — consistent keying).
-            if (p.potholeEnabled && latDist < halfWidth) {
+        // ── Physics-only on-ribbon overlay (the one intentional mesh↔collision difference) ──
+        // The terrain mesh draws the dirt trough everywhere; ON the ribbon the truck instead rides the
+        // asphalt DECAL on top, which sits clearanceMargin above the dirt (BUG-15 edge dropoff: off the
+        // ribbon the wheel drops onto the lower carved dirt). So on-ribbon we add clearanceMargin back
+        // (ride the decal) + the SURF-06 pothole micro-noise (D-03, physics-only, on-ribbon only). Off
+        // the ribbon the surface == the mesh dirt by construction (QUAL-07 agreement).
+        let gradeY = cs.gradeY
+        if (latDist < halfWidth) {
+            gradeY += clearanceMargin
+            if (p.potholeEnabled) {
                 const rq = roadQuality(arcSEff, nr.runKey ?? '', this._worldSeed)
-                designY += potholeNoise(wx, wz, rq, p)
+                gradeY += potholeNoise(wx, wz, rq, p)
             }
-
-            // Road-edge dropoff (BUG-15): off the ribbon, drop to the carved dirt (roadClearanceMargin
-            // below the road) — exactly what the mesh draws. Produces a hard ~clearanceMargin step at the
-            // ribbon edge (latDist = halfWidth): clip the edge and the wheel drops onto the lower shoulder.
-            // This is intentional and bounded (≤ clearanceMargin); it is NOT the old camber tilt cliff,
-            // which was carried across the edge above and is gone.
-            if (latDist >= halfWidth) designY -= clearanceMargin
         }
 
-        // Fill/cut toe + blend — IDENTICAL to terrain.js _buildCarveTable (CARVE SYNC). The embankment
-        // ramps at its SLOPE over the variable toe so a tall fill (steeper roads, FEAT-10) descends
-        // gently to terrain instead of dropping its whole height over a fixed 2.5 m shoulder (a wall →
-        // the road-fill-support "step"). Core (blendW=1) stays carveHalfWidth wide (BUG-15 fill support).
+        return { blendW: cs.blendW, gradeY }
+    }
+
+    // ── QUAL-07: dirt-surface helper (the crown/camber/clearance fold, shared) ───────────────
+    /**
+     * The carve DIRT surface at a resolved point: run-global grade + crown + camber tilt − clearance.
+     * Single source of the cross-section's vertical fold, used by _carveCrossSection AND the terrain
+     * mesh's D3 cross-arm max-floor (so the exterior-arm floor uses identical math). Clearance is
+     * ALWAYS subtracted (terrain-carve convention); physics adds it back on-ribbon to ride the decal.
+     *
+     * BUG-14: run-global continuous gradeY is C0 across slice/chunk seams. BUG-13: NOT capped to
+     * rawAmp + fillHeight. BUG-15: crown/camber fold across the WHOLE footprint with full signedLat
+     * (same formula as sweepRibbon) so the surface is C0 at the ribbon edge into the shoulder.
+     */
+    _carveDirtY(signedLat, arcSEff, runKey, camberSign) {
+        const p = this._params
+        const halfWidth     = p.roadHalfWidth      ?? 5
+        const crownHeight   = p.crownHeight         ?? 0.05
+        const clearanceMargin = p.roadClearanceMargin ?? 0.25
+        const crownY = crownProfile(signedLat, halfWidth, crownHeight)
+        const camberAngle = camberSign * this.camberProfile(arcSEff, runKey)
+        const tiltY = signedLat * Math.sin(camberAngle)
+        return this.runProfile(arcSEff, runKey).gradeY + crownY + tiltY - clearanceMargin
+    }
+
+    // ── QUAL-07: the ONE road-carve cross-section function ───────────────────────────────────
+    /**
+     * Resolve the carve DIRT-trough surface + shoulder blend at a point already resolved to a run.
+     * This is the single cross-section both consumers share: the terrain mesh (_buildCarveTable,
+     * tessellation) and physics (_sampleCarveWorld, point sample) — so mesh vertex Y == collision
+     * surface by construction (no more float-above-the-bank on fills).
+     *
+     * Inputs are the resolved (signedLat, arcSEff, runKey, camberSign) — each consumer computes those
+     * its own way: physics via continuous polyline projection (_resolveRoadSurface); the mesh via
+     * point-to-segment projection onto the pre-collected sample polyline. rawAmp is the raw terrain
+     * height (world-space, amplitude applied) at the point, for the fill/cut toe.
+     *
+     * Returns the DIRT surface: gradeY = runProfile.gradeY + crown + camberTilt − clearanceMargin
+     * (clearance ALWAYS subtracted — the terrain-carve convention). Physics rides the asphalt decal
+     * on-ribbon by adding clearanceMargin back (see _sampleCarveWorld). Off-ribbon both read this dirt.
+     *
+     * @param {number} [floorY=-Infinity] — QUAL-07/D3 cross-arm max-floor: where this vertex overlaps a
+     *   HIGHER neighbouring arm's footprint, the carve must not cut below that arm's dirt surface (a
+     *   lower arm's cut can't remove an upper arm's support). The mesh passes the exterior arm's
+     *   _carveDirtY; physics (single-arm) leaves it at the default.
+     * @returns {{ blendW:number, gradeY:number } | null}  null = beyond the fill/cut toe (raw terrain)
+     */
+    _carveCrossSection(signedLat, arcSEff, runKey, camberSign, rawAmp, floorY = -Infinity) {
+        const p             = this._params
+        const halfWidth     = p.roadHalfWidth      ?? 5
+        const shoulderWidth = p.roadShoulderWidth   ?? 2.5
+        // BUG-15 (fill): hold the full road grade out to carveHalfWidth (= halfWidth + carveExtraWidth,
+        // capped at minRadius) so the raised fill embankment / cut bench has a flat core wider than the
+        // ribbon, then ramp to raw over the variable toe. Same extent the mesh carve uses.
+        const carveExtraWidth = p.roadCarveExtraWidth ?? 3.0
+        const minRadius       = p.roadMinTurnRadius   ?? 12
+        const carveHalfWidth  = Math.min(halfWidth + carveExtraWidth, minRadius)
+
+        const latDist = Math.abs(signedLat)
+
+        // Dirt surface (run grade + crown/camber − clearance). D3: a higher overlapping arm raises it.
+        let designY = this._carveDirtY(signedLat, arcSEff, runKey, camberSign)
+        if (floorY > designY) designY = floorY
+
+        // Fill/cut toe + blend (FEAT-10): the embankment ramps at its SLOPE over the variable toe so a
+        // tall fill descends gently to terrain instead of dropping its height over a fixed shoulder.
+        // FEAT-10 cap: apron ≤ carveHalfWidth + roadMaxEmbankmentToe (no shard-fighting at tight turns).
         const fillSlope = p.roadFillSlope ?? 3.0
         const cutSlope  = p.roadCutSlope  ?? 1.0
         const maxEmbankmentToe = p.roadMaxEmbankmentToe ?? 10
         const fillToe = halfWidth + shoulderWidth + Math.max(0, designY - rawAmp) * fillSlope
         const cutToe  = halfWidth + shoulderWidth + Math.max(0, rawAmp - designY) * cutSlope
-        // FEAT-10: cap the apron at carveHalfWidth + roadMaxEmbankmentToe (IDENTICAL to _buildCarveTable)
-        // so tall fills can't blow the toe out and overlap into shards at tight turns.
         const toeExt  = Math.min(Math.max(fillToe, cutToe), carveHalfWidth + maxEmbankmentToe)
         if (latDist > toeExt) return null   // beyond the fill/cut toe — unaffected terrain
 
@@ -2239,7 +2229,13 @@ export class RoadSystem {
         if (latDist < carveHalfWidth) {
             blendW = 1.0
         } else {
-            blendW = Math.max(0.0, 1.0 - (latDist - carveHalfWidth) / ramp)
+            // QUAL-06/QUAL-07: SMOOTHSTEP shoulder falloff (was linear). u = 0 at the carve-core edge,
+            // 1 at the toe; blendW = 1 − smoothstep(u) = 1 − u²(3−2u) has ZERO slope at BOTH ends, so
+            // the bank has no hard crease at the top-of-bank (core edge) and feathers to terrain at the
+            // toe — killing the staircase/crease the linear ramp left on coarse-grid steep banks. The
+            // mesh and physics share this fn, so both get the C1 bank identically (agreement preserved).
+            const u = Math.min(1, (latDist - carveHalfWidth) / ramp)
+            blendW = 1.0 - u * u * (3.0 - 2.0 * u)
         }
 
         return { blendW, gradeY: designY }
