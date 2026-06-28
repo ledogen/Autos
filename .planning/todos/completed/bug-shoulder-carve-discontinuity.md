@@ -1,8 +1,10 @@
 ---
 id: BUG-15
 type: bug
-status: open
+status: closed
 opened: 2026-06-21
+closed: 2026-06-28
+resolution: "Fixed in ceeadb3 — _sampleCarveWorld dropped camber tilt at the ribbon edge, producing a ~0.5 m cliff at the road↔terrain threshold that flung wheels airborne then slammed them. Now folds crown+camber across the whole footprint with full signedLat (matches _buildCarveTable). New regression gate test/shoulder-lateral-continuity.mjs."
 source: phase-09-capture-replay
 severity: high
 capture: Logs/rangersim-capture-1782068814989.json

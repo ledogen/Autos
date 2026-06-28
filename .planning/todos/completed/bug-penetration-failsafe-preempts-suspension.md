@@ -1,8 +1,10 @@
 ---
 id: BUG-24
 type: bug
-status: open
+status: closed
 opened: 2026-06-28
+closed: 2026-06-28
+resolution: "Fixed in ea61a2e — the catastrophic-penetration failsafe now fires only on true tunnels, not on resolvable shoulder steps. The intended 0.25 m road-over-shoulder step (BUG-15 era) no longer trips the teleport-up failsafe; the body is pushed by tire force through the suspension as designed."
 severity: high
 source: user-observation (shoulder stress-test) + capture analysis
 capture: logs/rangersim-capture-1782632966689.json   # kind:event, seed 6, 292 frames, t 102.5–107.3

@@ -2,8 +2,10 @@
 id: QUAL-02
 type: quality
 severity: minor
-status: open
+status: closed
 opened: 2026-06-11
+closed: 2026-06-28
+resolution: "Landed in 9315be9 — atmospheric skybox + sun-driven lighting (src/sky.js SkySystem). Gradient/procedural sky with fog harmonized to the horizon, ACES tone mapping enabled globally with lights re-tuned, day/night via setSun(). Stays within no-asset / single-origin constraints (procedural, no image cubemap)."
 source: scribe-session
 ---
 
