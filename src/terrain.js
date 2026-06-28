@@ -1561,9 +1561,10 @@ export class TerrainSystem {
         // continuous carved trough, no seam steps (SURF-05 continuity preserved).
         // D3 (plan 09-22): collectChunkSplinePoints now returns { pts, sampleArcS, sampleRunKeys }
         // sampleArcS[i] and sampleRunKeys[i] give the arc-length and run key for pts[i*5..i*5+4].
-        // Used to read camberProfile(arcS, runKey) for the D3 cross-section-inheriting carve target.
+        // QUAL-07: only `pts` is needed now — as a cheap per-vertex distance probe to SKIP the precise
+        // resolve for vertices too far from any road. The actual surface comes from _resolveRoadSurface.
         const _ptC = performance.now()
-        const { pts: samples, sampleArcS, sampleRunKeys, sampleCamberSign } = this._roadSystem.collectChunkSplinePoints(chunkCX, chunkCZ, queryRadius)
+        const { pts: samples } = this._roadSystem.collectChunkSplinePoints(chunkCX, chunkCZ, queryRadius)
         perfAdd('carve.collectSplines', performance.now() - _ptC)
         if (samples.length === 0) return null  // early-reject passed but no actual points sampled
 
@@ -1575,22 +1576,11 @@ export class TerrainSystem {
         // the per-vertex loop just resolves (signedLat, arcS) and calls it.
 
         // ── Per-vertex inner loop ────────────────────────────────────────────────
-        // PERF CONTRACT (Plan 09-16 / SURF-04):
-        //   • ZERO getPointAt calls   — splines already sampled above (collectChunkSplinePoints)
-        //   • ZERO queryNearest calls — nearest point found by plain squared-distance search
-        //   • ZERO arrow-closure allocations — no => expressions, no new objects per vertex
-        // The single getPointAt site for this function is collectChunkSplinePoints (pre-loop above).
-        //
-        // D4 (plan 09-20): samples stride = 5 ([x,y,z,tx,tz]); apply the SAME footprint-preference
-        // arm-disambiguation as queryNearest — prefer the sample whose footprint the vertex is
-        // interior to (|signedLat| ≤ footprintHW) over the globally-nearest exterior sample.
-        // Keeps carve and physics consistent at switchbacks (no carve-arm vs physics-arm mismatch).
-        //
-        // D3 (plan 09-22): after selecting bi, compute signedLat from the chosen sample's tangent;
-        // read camberProfile(arcS, runKey) from the pre-built D2 profile (O(1) binary-search,
-        // cached on RoadSystem — no per-vertex spline eval). Crown + tilt fold into carveTargetY.
-        const carveFootprintHW = (p.roadHalfWidth ?? 5) + (p.roadShoulderWidth ?? 2.5)
-        const STRIDE = 5  // D4: stride widened from 3 to 5 ([x,y,z,tx,tz])
+        // QUAL-07: each carve-band vertex resolves via _resolveRoadSurface (the physics resolver) + the
+        // shared _carveCrossSection, so the mesh == the collision surface. The cheap squared-distance
+        // probe over `samples` (no getPointAt — those were taken once in collectChunkSplinePoints) only
+        // SKIPS far vertices so the heavier resolve runs on the carve band, not all 4225 vertices.
+        const STRIDE = 5  // samples stride: [x, y, z, tx, tz]
 
         // PERF (D-arc): conservative per-chunk lateral bound so the inner loop can SKIP the expensive
         // per-vertex work (full height() + runProfile + camberProfile) for vertices that are too far
@@ -1617,84 +1607,38 @@ export class TerrainSystem {
                 const wz = originZ + zi * cell
                 const idx = (zi * N + xi) * 2
 
-                // D4: track two parallel bests (mirrors queryNearest D4 arm-disambiguation).
-                // extBestD2 — globally nearest regardless of footprint.
-                // intBestD2 — nearest among samples where |signedLat| ≤ footprintHW (interior).
-                let extBestD2 = Infinity, intBestD2 = Infinity
-                let extBi = 0, intBi = 0
+                // PERF skip: cheap nearest-sample distance bounds the precise resolve to the carve band.
+                // A vertex farther than the widest possible fill/cut toe from ANY road sample can't be
+                // carved, so it never needs the (heavier) _resolveRoadSurface call below.
+                let extBestD2 = Infinity
                 for (let si = 0; si < samples.length; si += STRIDE) {
-                    const sdx = samples[si]     - wx
-                    const sdz = samples[si + 2] - wz
-                    const d2  = sdx * sdx + sdz * sdz
-                    if (d2 < extBestD2) { extBestD2 = d2; extBi = si }
-                    if (d2 < intBestD2) {
-                        // signedLat = sdx_fwd*tz − sdz_fwd*tx where sdx_fwd = sample − query = -sdx
-                        const tx = samples[si + 3], tz = samples[si + 4]
-                        const signedLat = (-sdx) * tz - (-sdz) * tx
-                        if (Math.abs(signedLat) <= carveFootprintHW) { intBestD2 = d2; intBi = si }
-                    }
+                    const sdx = samples[si] - wx, sdz = samples[si + 2] - wz
+                    const d2 = sdx * sdx + sdz * sdz
+                    if (d2 < extBestD2) extBestD2 = d2
                 }
-                // PERF (D-arc): skip the expensive per-vertex work for vertices beyond the widest
-                // possible carve toe. extBestD2 is the TRUE nearest (global, footprint-agnostic), so if
-                // it exceeds the conservative bound the vertex cannot be carved → table = 0, continue.
                 if (extBestD2 > _maxToe2) { table[idx] = 0; table[idx + 1] = 0; continue }
-
-                // Prefer interior sample; fall back to exterior if no interior found.
-                const bi = (intBestD2 < Infinity) ? intBi : extBi
-                const bestD2 = (intBestD2 < Infinity) ? intBestD2 : extBestD2
 
                 // Raw terrain height at this vertex (world-space, with amplitude).
                 const rawPre = rawHeights ? rawHeights[zi * N + xi]
                     : height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params)
                 const rawH   = rawPre * amp
 
-                // ── QUAL-07: resolve (signedLat, arcS) then call the ONE shared cross-section ──
-                // signedLat: PERPENDICULAR offset of the vertex from the chosen sample, along that
-                // sample's tangent (same value the old code used for crown). This replaces the old
-                // Euclidean nearest-sample distance (sqrt(bestD2)) as the lateral metric — the Euclidean
-                // distance is always ≥ the true perpendicular and quantized, so the old mesh apron pulled
-                // to raw terrain SOONER/wider than physics (_sampleCarveWorld, perpendicular) → the truck
-                // floated above the drawn bank (the QUAL-07 bug). Physics uses |signedLat|; so do we now.
-                // arcS stays the DISCRETE sample arc (run-global; the per-cell grade step is the separate
-                // QUAL-06 staircase, unchanged here — NOT the continuous-projection rewrite that tore the
-                // mesh: that is deliberately avoided; this is a one-metric change routed through the shared
-                // fn so mesh and physics ramp the SAME bank).
-                //
-                // OFF-END GUARD: perpendicular distance alone doesn't reject a vertex BEYOND the road's
-                // end (small |signedLat|, large along-tangent offset) the way the old Euclidean metric did
-                // — without this the carve would shelf past a terminus. longitudinal² = bestD2 − signedLat²;
-                // if the vertex sits more than a shoulder beyond the sample longitudinally, leave it raw.
-                const biIdx   = bi / STRIDE
-                const biTx    = samples[bi + 3], biTz = samples[bi + 4]
-                const sdxBi   = samples[bi] - wx, sdzBi = samples[bi + 2] - wz
-                const signedLat = (-sdxBi) * biTz - (-sdzBi) * biTx
-                const longit2   = Math.max(0, bestD2 - signedLat * signedLat)
-                const offEndMargin = shoulderWidth + cell      // ~one shoulder past the nearest sample
-                if (longit2 > offEndMargin * offEndMargin) { table[idx] = 0; table[idx + 1] = 0; continue }
+                // ── QUAL-07: resolve EXACTLY like physics → mesh == collision BY CONSTRUCTION ──
+                // The mesh resolves the road via the SAME _resolveRoadSurface physics uses (nearest
+                // footprint-interior RUN, continuous polyline projection → run-global arcS + true
+                // perpendicular signedLat, with the BUG-21 apex-sliver fallback), then the SAME
+                // _carveCrossSection. So the rendered dirt surface IS the analyticHeight surface the truck
+                // and props ride — no float, no floating rocks. Because physics is continuous+smooth, the
+                // tessellation is too (this is NOT the hand-rolled point-to-segment projection that tore
+                // the mesh — it's physics' own resolver). No mesh-only D3 max-floor: physics doesn't do it,
+                // and _resolveRoadSurface already picks ONE run, so we match _sampleCarveWorld exactly.
+                const nr = this._roadSystem._resolveRoadSurface(wx, wz)
+                if (!nr) { table[idx] = 0; table[idx + 1] = 0; continue }
+                const dx = wx - nr.point.x, dz = wz - nr.point.z
+                const arcSEff   = (nr.arcS ?? 0) + dx * nr.tangent.x + dz * nr.tangent.z
+                const signedLat = dx * nr.tangent.z - dz * nr.tangent.x
 
-                const arcS    = sampleArcS[biIdx]
-                const runKey  = sampleRunKeys[biIdx]
-                const camberSign = sampleCamberSign ? sampleCamberSign[biIdx] : 1
-
-                // ── D3 max-floor guard (plan 09-22): higher overlapping arm wins ──────
-                // At arm overlaps (intBi != extBi) a lower arm's cut must not undercut the higher arm.
-                // Resolve the exterior arm's DIRT surface (_carveDirtY — the same crown/camber/clearance
-                // fold the cross-section uses) and pass it as a floor. Discrete arc + sample-tangent
-                // signedLat, identical inputs to the old inline guard.
-                let floorY = -Infinity
-                if (intBestD2 < Infinity && extBi !== intBi) {
-                    const extIdx = extBi / STRIDE
-                    const eTx = samples[extBi + 3], eTz = samples[extBi + 4]
-                    const sdxExt = samples[extBi] - wx, sdzExt = samples[extBi + 2] - wz
-                    const signedLatExt = (-sdxExt) * eTz - (-sdzExt) * eTx
-                    floorY = this._roadSystem._carveDirtY(
-                        signedLatExt, sampleArcS[extIdx], sampleRunKeys[extIdx],
-                        sampleCamberSign ? sampleCamberSign[extIdx] : 1)
-                }
-
-                // One cross-section (dirt surface + shoulder blend), shared with physics. null = beyond
-                // the fill/cut toe → unaffected terrain. BUG-13: no fill cap; the foundation meets the ribbon.
-                const cs = this._roadSystem._carveCrossSection(signedLat, arcS, runKey, camberSign, rawH, floorY)
+                const cs = this._roadSystem._carveCrossSection(signedLat, arcSEff, nr.runKey ?? '', nr.camberSign ?? 1, rawH)
                 if (!cs) { table[idx] = 0; table[idx + 1] = 0; continue }
 
                 table[idx]     = cs.blendW
