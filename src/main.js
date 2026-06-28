@@ -471,7 +471,7 @@ const scene = new THREE.Scene()
 // after the lights, below — it needs the sun/hemisphere refs). Fog stays here: its DENSITY is owned
 // by the draw-distance presets (PERF-03), while SkySystem recolours it to match the sky horizon so
 // the FEAT-05 "no hard band at the horizon" invariant is preserved. Initial colour is a placeholder
-// overwritten by SkySystem.setSun() on construction.
+// overwritten by SkySystem.apply() on construction (it applies the active look's fog colour).
 scene.fog = new THREE.FogExp2(0x9bb8d4, 0.006)
 
 // HemisphereLight (cool alpine sky above, warm granite-ground bounce below) reads far more alpine
@@ -497,6 +497,7 @@ scene.add(sun.target)   // FEAT-06: target must be in-scene for the per-frame sh
 // tint from ONE sun elevation/azimuth (the static base a day/night cycle plugs into). SkySystem adds
 // the Sky mesh and sets scene.background = null (the mesh is the background now).
 const skySystem = new SkySystem({ scene, renderer, sun, ambient })
+window.sky = skySystem   // debug handle (mirrors window.terrain) — drive presets/time-of-day from console
 
 // Ground plane (y=0, 200m × 200m)
 const ground = new THREE.Mesh(
