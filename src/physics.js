@@ -113,9 +113,19 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
   params._rotateVector = (v) => new THREE.Vector3(v.x, v.y, v.z).applyQuaternion(vehicleState.quaternion)
 
   // ── Step 1: Catastrophic penetration failsafe ──────────────────────────────
-  // Fires only for tunnelling (>0.3 m embed). Uses queryContacts to detect terrain-aware
-  // severe penetration instead of a flat y=0 half-space check (Phase 6 fix: TERR-FIX-01).
+  // Fires ONLY for genuine tunnelling. Uses queryContacts to detect terrain-aware severe penetration
+  // instead of a flat y=0 half-space check (Phase 6 fix: TERR-FIX-01).
   // Old code: embed = wheelRadius - hub.y assumed flat ground at y=0 — always fired on terrain.
+  //
+  // BUG-24: the trigger is now `depth > wheelRadius` (the hub CENTER is below the surface), NOT a flat
+  // 0.3 m. 0.3 m sat BELOW the wheel radius (0.368 m), so a deeply-compressed-but-normal contact would
+  // fire it: e.g. a wheel crossing the intended ~0.25 m road-over-shoulder step has contact depth
+  // ~0.25 m + ~0.06 m loaded tire deflection ≈ 0.31 m > 0.3, yet its hub center is still ~0.06 m ABOVE
+  // ground — a resolvable contact the suspension (Step 2.5) handles via tire→strut→body force. The old
+  // threshold preempted that chain and hard-teleported the body (position write + vy=0) → the observed
+  // "teleport instead of a natural bump". depth > wheelRadius is the physical line between a compressed
+  // tire and a wheel actually inside the ground (true tunnel, e.g. driven through a wall) that the force
+  // solver cannot recover in one step.
   {
     let maxEmbed = 0
     for (let i = 0; i < 4; i++) {
@@ -125,7 +135,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
         if (depth > maxEmbed) maxEmbed = depth
       }
     }
-    if (maxEmbed > 0.3) {
+    if (maxEmbed > params.wheelRadius) {
       vehicleState.position.y += maxEmbed
       vehicleState.velocity.y  = 0
     }

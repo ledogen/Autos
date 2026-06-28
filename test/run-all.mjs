@@ -31,6 +31,7 @@ const GATES = [
     'camber-continuity.mjs',// BUG-19: banking carries continuously across continuing run boundaries (cross-run seed sync)
     'route-merge.mjs',      // FEAT-10: merge drops degenerate stubs (the run-join tear) + preserves connectivity
     'props.mjs',            // FEAT-06: prop geometry sanity + scatter determinism/window-invariance + slot accounting
+    'penetration-failsafe.mjs', // BUG-24: catastrophic-penetration failsafe fires only on true tunnels (depth>wheelRadius), not resolvable deep contact — no body teleport on the shoulder step
 ]
 
 let failed = []

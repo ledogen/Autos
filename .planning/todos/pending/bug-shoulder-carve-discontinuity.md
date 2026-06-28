@@ -172,6 +172,13 @@ the intended dropoff. 14 gates green.
    core) are pre-existing and not cliffs — the full single-shared-cross-section unification remains the
    ideal but was not needed to kill the airborne+slam.
 
+> **NOTE 2026-06-28 — a teleport seen while shoulder stress-testing is NOT this ticket.** A fresh
+> capture (`logs/rangersim-capture-1782632966689.json`) showed the body teleporting up ~0.30 m when a
+> wheel crosses the shoulder edge. Investigation found the 0.25 m road-over-shoulder step is **intended**
+> (the eb108e7 dropoff, working as designed); the teleport is the **catastrophic-penetration failsafe**
+> (`physics.js:115-131`) firing on that resolvable contact and preempting the suspension. Split out to
+> its own ticket — see `bug-penetration-failsafe-preempts-suspension.md` (**BUG-24**). Not a surface bug.
+
 **Do NOT fold BUG-18 into this fix — same system, different bug.** BUG-18 (visual wheel dip on the
 inside of switchbacks) shares the contact *system* but has a distinct root cause: single-sphere-at-
 wheel-center contact missing the tire's wide inner edge (FEAT-09 multi-point footprint). That is a
