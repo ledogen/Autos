@@ -219,10 +219,21 @@ export const RANGER_PARAMS = {
   // global magnet (km wander) from coming back. ~40 m re-activates the spine over ~all road length.
   roadValleyDepthCap: 40,  // m below baseline that still rewards descending (bounded valley-seek)
 
-  // roadCoverSuppress: drop a connection where it runs ON TOP of a lower-row road (adjacent rows whose
-  // valley-snapped anchors converged). true = cleaner (no stacked/duplicate roads & their junctions)
-  // but a fringe of neighbour connections is routed on cold spawn (slower load); false = faster spawn.
-  roadCoverSuppress: true,
+  // FEAT-10 merge graph (replaces the deleted COVER suppression).
+  // roadNodeMergeRadius: a macro-anchor ADOPTS the position of a strictly-higher-priority neighbour
+  //   anchor (lower (mz,mx)) whose raw valley-snap lies within this radius (±1-cell window) → converging
+  //   anchors collapse to ONE shared graph node. Kills the spiral/duplicate stacking at the source and
+  //   removes the over-constrained short stubs whose ribbon tears. Must be < PROTO_ANCHOR_SPACING (256);
+  //   too large collapses roads into one trunk, too small leaves duplicates. 0 = merge off.
+  //   Tuned to 50: collapses genuinely-coincident anchors (the ~27 m degenerate stubs whose ribbon
+  //   tears) without merging distinct anchors that sit on a bend (which would concentrate the bend into
+  //   a sharp hairpin — measured 68° at R=90 vs ~34° pre-existing at R=50). The spiral/duplicate bulk is
+  //   already handled upstream by FEAT-12 earthwork routing, so this is the residual same-basin collapse.
+  roadNodeMergeRadius: 50,
+  // roadMergeBand: how close two merged endpoints count as the "same node" when dropping a DEGENERATE
+  //   edge (both endpoints coincide → collapsed stub) or a REDUNDANT edge (same node-pair already
+  //   connected by a higher-priority edge → parallel duplicate). m.
+  roadMergeBand: 24,
 
   // roadWGrade: gentle-grade weight — quadratic (grade²) cost. 2× grade → 4× penalty; shapes
   // smooth gentle climbs without forbidding any grade. D-09 default 400.
@@ -399,6 +410,12 @@ export const RANGER_PARAMS = {
   // approach_Y(s) = lerp(designGradeY(s), nodeY, max(0, 1 - dist_to_node / blendLength))
   // 30 m default — enough to smooth the grade ramp without extending far into approach lanes.
   roadJunctionBlendLength: 30,  // m — grade-blend reach toward junction node (D-14 / A8)
+
+  // FEAT-10: roadJoinWeldLength — how far from a run's endpoints the ribbon cross-section tangent
+  // blends toward the shared canonical node heading (_protoAnchorHeading), so adjacent runs build the
+  // SAME endpoint cross-section and their ribbon edges line up (seals the outside-of-bend wedge at run
+  // joins). m. 0 = off (endpoint tangent = local last-segment direction, the un-sealed default).
+  roadJoinWeldLength: 6,
 
   // roadFilletRadius: default corner fillet radius for junction footprints (D-13 / A5).
   // Used as a slider default; actual per-junction R_f is computed from halfWidth*tan(theta/2).

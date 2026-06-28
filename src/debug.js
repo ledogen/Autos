@@ -287,9 +287,11 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(params, 'roadEarthworkWindow', 0, 250, 10).name('Earthwork Window (m, 0=off)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWDeviation',      0, 20,  0.5).name('wDev (hug terrain ↑)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadDeviationCap',    0, 25,  1  ).name('Deviation Cap (max fill/cut m)').onChange(fireRoadParam)
-  // COVER suppression: drop roads that run on top of a lower row's road. OFF = faster spawn (no
-  // neighbour pre-routing), ON = no stacked/duplicate roads + fewer junctions. Re-routes on toggle.
-  roadFolder.add(params, 'roadCoverSuppress').name('COVER Suppress').onChange(fireRoadParam)
+  // FEAT-10 merge graph: converging anchors collapse to one shared node (kills duplicates + the
+  // run-join tears). Radius 0 = merge off. Band = "same node" tolerance for dropping degenerate /
+  // redundant edges. Re-routes on change.
+  roadFolder.add(params, 'roadNodeMergeRadius', 0, 200, 5).name('Node Merge Radius (m, 0=off)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadMergeBand', 4, 60, 2).name('Merge Band (m)').onChange(fireRoadParam)
   // D0 — min turn radius (m); arc-fillet rounds corners tighter than this (higher = wider hairpins).
   // Floor: 6 m (UI lower bound; road.js _refreshParams further clamps to ≥ roadHalfWidth+clearance+ε).
   // D3 (plan 09-22) COUPLING: carve footprint (blendW=1 trough width) is capped at roadMinTurnRadius
