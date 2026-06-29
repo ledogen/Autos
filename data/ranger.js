@@ -333,6 +333,13 @@ export const RANGER_PARAMS = {
   // router spiral an ugly 360° loop to dodge a grade it then builds anyway. 0.30 lets short connectors run
   // direct (seed 6: loopers 5→0, parallel pairs 8→1, routed crossings 28→6). Lower for gentler, loopier.
   roadGraphMaxGrade: 0.30,
+  // roadGraphGoalBlend: how many metres of an edge's tail are routed as a clean Dubins curve INTO the goal
+  // node (graph mode only; rows use a tight 20 m). The hybrid-A* search overshoots short edges' goal node
+  // and reels back, bowing the road past the node so it crosses a sibling TWICE near the junction. A wide
+  // blend (~140 m) replaces that overshooting tail with a direct curve into the node → no overshoot, no
+  // double-cross (seed 6 routed crossings 6→2, overshoot edges 5→0). Lower = more terrain-following tail
+  // but the overshoot/double-cross returns.
+  roadGraphGoalBlend: 140,
   // ── FEAT-13 v2 blue-noise anchor + Urquhart knobs (graph mode only) ──
   // roadSiteSpacing: macro-cell size (m) the blue-noise sites are seeded over (sites jitter across the
   // whole cell). Defaults to the 256 m anchor spacing. Smaller = denser anchor field = denser network.

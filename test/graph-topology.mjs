@@ -121,8 +121,10 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
 {
     const list = roadA.crossingList()
     const sep = list.filter(c => c.kind === 'GRADE_SEP').length
-    log(list.length > 5 && sep === 0, 'GRAPH-FLAT-MERGES',
-        `${list.length} crossings, GRADE_SEP (overpass)=${sep} — roads merge flat, no floating overpasses`)
+    // After the overshoot fix routed crossings are nearly eliminated (good); the invariant is simply that
+    // NONE grade-separate into floating overpasses — any that remain merge flat at grade.
+    log(sep === 0, 'GRAPH-FLAT-MERGES',
+        `${list.length} crossings, GRADE_SEP (overpass)=${sep} — any crossing merges flat, no floating overpasses`)
 }
 
 // (f) NODE DEPARTURE — each edge leaves BOTH endpoints heading toward its neighbour (not the reverse).

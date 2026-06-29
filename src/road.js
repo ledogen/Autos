@@ -1520,6 +1520,13 @@ export class RoadSystem {
             // to the arrival direction. (startHeading is already the leave-at-c1 = forward direction.)
             startHeading: this._edgeTerminalHeading(c1, c2),
             goalHeading:  this._edgeTerminalHeading(c2, c1) + (((this._params?.roadNetworkMode ?? 'rows') === 'graph') ? Math.PI : 0),
+            // Graph mode (FEAT-13): a WIDE goal blend. The hybrid-A* search overshoots short edges' goal
+            // node (wanders past it, then the terminal reels back) → the edge bows past the node and crosses
+            // a sibling TWICE (the "happens twice" double-cross the user flagged). Cutting back a wide tail
+            // (~140 m) and replacing it with the clean Dubins terminal-into-node erases that overshoot: the
+            // edge runs straight in. Robust across seeds (seed 6 crossings 6→2, overshoot 5→0; seed 3 →0),
+            // no loops reintroduced. Rows keep the tight 20 m blend (collinear rows never overshoot).
+            goalBlend: ((this._params?.roadNetworkMode ?? 'rows') === 'graph') ? (pp.roadGraphGoalBlend ?? 140) : 20,
             emitPrimitives: true,
         }
     }

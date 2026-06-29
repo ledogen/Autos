@@ -283,6 +283,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(params, 'roadGraphFlatMerges').name('Graph Flat Merges (no overpass)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphDeviationCap', 0, 12, 0.5).name('Graph Earthwork Cap (m)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphMaxGrade', 0.15, 0.45, 0.01).name('Graph Max Grade (anti-loop)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadGraphGoalBlend', 20, 200, 10).name('Graph Goal Blend (anti-overshoot)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWAlt',   0, 3,     0.05).name('wAlt (stay low)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWGrade', 0, 2000,  20  ).name('wGrade (gentle)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWOver',  0, 40000, 500 ).name('wOver (soft cap)').onChange(fireRoadParam)
