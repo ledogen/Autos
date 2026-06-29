@@ -1,5 +1,13 @@
 # Road Network — session handoff (2026-06-28) — for a fresh context
 
+> **UPDATE 2026-06-28 (commit 85970fa): the §5 v2 design FOUNDATION is now BUILT.** The lattice draft
+> below is replaced by blue-noise anchors + Urquhart edges (`src/road-graph.js`, `road.js` site
+> sampler/`_buildUrquhart`/`_nodePos`). §5A (anchors+edges) + §D (node-identity generalisation, reuse of
+> classifier/junction machinery) DONE; 23 gates green; in-browser = organic varied-direction network with
+> real T/X hubs. **STILL DEFERRED (next pass):** §5B T/X secondary-node promotion (the only residual
+> surface steps are in crossing zones — graph-topology.mjs excludes them), §5A residual NEAR_PARALLEL
+> safe-prune, §5C switchbacks + centerline #5. Sections 5/8 below remain the spec for that follow-up.
+
 **Status:** graph topology (FEAT-13) is a working *first draft* behind a toggle, all gates green, but the
 network geometry is not nice enough to keep. The lattice-graph foundation produces structural artifacts
 (below) that tuning can't fix. This doc summarises what's built, the standing problems + their root

@@ -9,6 +9,19 @@ builds_on: FEAT-10 (merge graph + smooth navigable junctions + COVER deletion �
 relates: FEAT-12 (earthwork routing — lets cross-roads climb ridges), QUAL-03 (graph re-architecture), FEAT-08 (overpasses)
 ---
 
+## STATUS 2026-06-28 — v2 FOUNDATION LANDED (committed 85970fa), follow-up deferred
+
+The lattice-graph first draft (§ handoff) was replaced by the **locked v2 generator**: an URQUHART graph
+(Delaunay − each triangle's longest edge) over a window-invariant **BLUE-NOISE** anchor set
+(`src/road-graph.js` + `road.js` site sampler/`_buildUrquhart`/`_nodePos`/`_graphDegreeOf`). Node
+identity generalised grid-cell `[mx,mz]` → site id `[cmx,cmz,k]`. Kills parallel rows + lattice
+artifacts; connected by construction (Urquhart ⊇ MST). 23 gates green (rows untouched, still default);
+in-browser seed 6 = organic varied-direction network with real T/X hubs, 0 console errors.
+**DEFERRED follow-up (next pass):** (1) T/X secondary-node PROMOTION of routed mid-span crossings
+(the remaining surface steps live only in crossing zones — gate excludes them); (2) NEAR_PARALLEL /
+connectivity-safe PRUNE of residual close strands; (3) switchback + centerline-divergence retune
+(handoff §5C). See `.planning/ROAD-GRAPH-HANDOFF.md` and memory `project_feat13_v2_foundation`.
+
 ## STATUS 2026-06-28 — RESEQUENCED behind a crossing-model rework (user reframe)
 
 Before adding N-S roads, the existing crossing handling needs work: the network already makes abundant
