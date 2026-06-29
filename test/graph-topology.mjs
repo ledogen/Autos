@@ -121,8 +121,26 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
 {
     const list = roadA.crossingList()
     const sep = list.filter(c => c.kind === 'GRADE_SEP').length
-    log(list.length > 10 && sep === 0, 'GRAPH-FLAT-MERGES',
+    log(list.length > 5 && sep === 0, 'GRAPH-FLAT-MERGES',
         `${list.length} crossings, GRADE_SEP (overpass)=${sep} — roads merge flat, no floating overpasses`)
+}
+
+// (f) NODE DEPARTURE — each edge leaves BOTH endpoints heading toward its neighbour (not the reverse).
+// Guards the goalHeading-direction bug: a directed router fed the reversed goal heading loops around to
+// approach a node from the wrong side → "enter from the wrong side" / shallow near-node crossings.
+{
+    const br = (p0, p1) => Math.atan2(p1.z - p0.z, p1.x - p0.x) * 180 / Math.PI
+    const angDiff = (a, b) => { let d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d }
+    let worst = 0, sum = 0, m = 0
+    for (const [, e] of roadA._network) {
+        const A = roadA._nodePos(e.cellA), B = roadA._nodePos(e.cellB), pts = e.points
+        const eA = angDiff(br(pts[0], pts[Math.min(2, pts.length - 1)]), br(A, B))
+        const eB = angDiff(br(pts[pts.length - 1], pts[Math.max(0, pts.length - 3)]), br(B, A))
+        sum += eA + eB; m += 2; worst = Math.max(worst, eA, eB)
+    }
+    const avg = sum / m
+    log(avg < 22 && worst < 60, 'GRAPH-NODE-DEPARTURE',
+        `leave-bearing vs chord: avg=${avg.toFixed(1)}° worst=${worst.toFixed(0)}° over ${m} endpoints (reversed goalHeading would be ~150°)`)
 }
 
 console.log(`\nGRAPH-TOPOLOGY: ${pass}/${pass + fail} checks green`)

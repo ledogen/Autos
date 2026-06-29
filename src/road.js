@@ -1506,8 +1506,14 @@ export class RoadSystem {
             // |lowpass − raw| (the fill/cut earthwork). Default 0 = off (terrain-following, unchanged).
             earthworkWindow: pp.roadEarthworkWindow ?? 0, wDev: pp.roadWDeviation ?? 0,
             deviationCap: pp.roadDeviationCap ?? Infinity,
+            // The router's goalHeading is the TRAVEL direction ARRIVING at c2 (= bearing c1→c2). Rows'
+            // _edgeTerminalHeading returns the through-chord, which already points forward (east), so it
+            // needs no flip. Graph's _edgeTerminalHeading(c2,c1) is the LEAVE direction at c2 (bearing
+            // c2→c1) = the reverse of arrival, so a directed router would loop around to approach c2 from
+            // the wrong side (the "enter from the wrong side" / shallow near-node crossing). +π flips it
+            // to the arrival direction. (startHeading is already the leave-at-c1 = forward direction.)
             startHeading: this._edgeTerminalHeading(c1, c2),
-            goalHeading:  this._edgeTerminalHeading(c2, c1),
+            goalHeading:  this._edgeTerminalHeading(c2, c1) + (((this._params?.roadNetworkMode ?? 'rows') === 'graph') ? Math.PI : 0),
             emitPrimitives: true,
         }
     }
