@@ -278,14 +278,64 @@ export const RANGER_PARAMS = {
   // and the road still switchbacks (the genuinely-forced loops).
   roadDeviationCap: 8,
 
-  // roadJunctionFootprints: render the placeholder junction-footprint pads (FEAT-07 will replace these
-  // with the real merged+carved junction surface). DEFAULT OFF: the pad is only an imperfect overlapping
-  // rectangle with no carve, and building it runs road.js _detectJunctions() — an O(runs²×seg²) crossing
-  // rescan — on EVERY tile build inside flushPendingQueue. That cost a measured 296 ms single-frame stall
-  // at Ultra (Trace-20260627T013753). Gating it off keeps the hot path clear with zero shipped-feature
-  // loss until FEAT-10 makes junction nodes graph-native + FEAT-07 builds the real surface. Set true only
-  // to eyeball the placeholder pads.
-  roadJunctionFootprints: false,
+  // roadJunctionFootprints: render the flat pad mesh at AT_GRADE crossings (FEAT-07 Step 2). Now ON: the
+  // pad sits coplanar with the two strands the mid-span flatten eased to node.nodeY, so the crossing reads
+  // as one paved intersection (mesh == the flattened collision surface). The old 296 ms stall is gone —
+  // _detectJunctions() is the bounded, once-per-build, identity-cached crossing classifier (warmed by
+  // _streamNetwork), so the per-tile build is a cache hit. Only AT_GRADE nodes get a pad (GRADE_SEP =
+  // overpass Step 3; NEAR_PARALLEL = glancing graze). Set false to hide the pads.
+  roadJunctionFootprints: true,
+
+  // ── Crossing classifier (FEAT-07/08/11/13 foundation) ───────────────────────────────────────────
+  // road.js _detectJunctions() finds every inter-run / self-run XZ crossing and CLASSIFIES each by the
+  // strand-to-strand elevation gap (dY) and crossing angle. The class drives what later steps build:
+  //   NEAR_PARALLEL (angle < roadCrossAngleMin) — a glancing/duplicate graze, NOT a junction (no pad/bridge).
+  //   AT_GRADE      (dY ≤ roadCrossMergeDY)      — flatten both strands to one shared pad (FEAT-07).
+  //   GRADE_SEP     (dY >  roadCrossMergeDY)     — overpass: one strand bridges the other (FEAT-08); the
+  //                                                cut-side counterpart is a tunnel (FEAT-11).
+  // roadCrossMergeDY is COUPLED to roadCrossOverpassClearance: a grade-separation only makes physical
+  // sense when the natural strand gap is already big enough to fit the lower truck UNDER the upper deck
+  // (deck thickness + truck height ≈ roadCrossOverpassClearance). Below that you can't build a bridge
+  // there anyway → flatten both strands into one at-grade pad (these are service roads — the pad must
+  // clear a large truck + deck). So default mergeDY ≈ clearance (4.5 m): dY < 4.5 m merges, dY ≥ 4.5 m
+  // overpasses. At current earthwork params (roadDeviationCap 8 m) that grade-separates ~27% of inter-row
+  // crossings (the genuinely tall gaps, up to ~10 m); the rest flatten. Raise to flatten still more.
+  // USER-OWNED — tune to taste; live-tunable sliders are a later step.
+  roadCrossMergeDY:  4.5,  // m  — strand dY at/below which a crossing flattens to one pad vs grade-separates (≈ clearance).
+  roadCrossAngleMin: 12,   // deg — crossings shallower than this are near-parallel grazes, not junctions.
+  roadCrossOverpassClearance: 4.5, // m — deck underside clearance above the lower strand (truck + deck). RESERVED for Step 3.
+
+  // ── Road network topology (FEAT-13) ─────────────────────────────────────────────────────────────
+  // roadNetworkMode: how the macro-anchor lattice is turned into roads.
+  //   'rows'  — one E-W run per macro-row anchor(mx,mz)→anchor(mx+1,mz). Parallel by construction (the
+  //             historical generator; every existing gate validates this mode).
+  //   'graph' — a per-anchor directional GRAPH: each anchor links to a hashed spanning-forest parent
+  //             (downhill in a per-cell priority hash) + root-chaining + seeded stitch/loop edges, over
+  //             the 8-neighbourhood. Roads run in VARIED directions (not parallel), orphan-free,
+  //             window-invariant, mostly-tree with a few loops. Headless-validated: 0% orphans, max
+  //             direction variety, ~67% of anchors in one connected component at extraEdgeProb 0.22.
+  roadNetworkMode: 'rows',
+  // roadGraphFlatMerges: graph mode — force EVERY crossing to a flat at-grade intersection (no dynamic
+  // overpasses). Roads meet/merge at one shared height instead of one floating over another. Real
+  // grade-separation is deferred to future prefab intersections (cloverleaf etc.), not the dynamic
+  // system. true is strongly recommended: dynamic overpasses produce intense Z geometry at junctions.
+  roadGraphFlatMerges: true,
+  // roadGraphDeviationCap: graph mode earthwork fill/cut cap (m), much tighter than rows' roadDeviationCap.
+  // Graph edges still EARTHWORK (smooth grades — pure terrain-following makes near-parallel edges step on
+  // slopes), but the low cap keeps edge endpoints near the ground so roads MEET at grade and flat merges
+  // stay gentle (a high cap floats junctions 8–15 m apart → the steep-ramp / overpass chaos). ~2 m gives
+  // smooth, step-free, low-float roads (the forest-service-road look). Raise for smoother long grades at
+  // the cost of steeper merges.
+  roadGraphDeviationCap: 2,
+  // roadGraphExtraEdgeProb: graph mode only — per-cell probability of a seeded EXTRA edge (a loop, and a
+  // stitch that fuses adjacent forest trees into one drivable network). 0 = pure forest (isolated pockets);
+  // higher = more connected + more loops (less tree-like). At 0.4 the orthogonal (4-neighbour) graph puts
+  // ~70% of anchors in one component (connected-leaning, few loops); raise toward 0.5–0.65 for ~85%.
+  roadGraphExtraEdgeProb: 0.55,
+  // roadGraphDiagonals: graph mode neighbourhood. false = orthogonal 4-neighbourhood (E/W/N/S): roads
+  // meet at NODES as real T/X junctions with almost no mid-span crossings → fewer intersections/overpasses,
+  // cleaner. true = 8-neighbourhood (adds diagonals): more varied directions but dense mid-span X-crossings.
+  roadGraphDiagonals: false,
 
   // roadMinTurnRadius: D0 — minimum turn radius (m) for road centerlines. _filletMinRadius inserts a
   // circular arc of this radius wherever the implied corner radius is tighter, rounding (not excising)
@@ -534,10 +584,10 @@ export const RANGER_PARAMS = {
   // ARE the linear vertex-colour values, NOT sRGB, so a colour picker round-trips exactly).
   // Tuned for high-altitude Eastern Sierra / Lone Pine: granite-grey rock, decomposed-granite
   // soil, muted sage-meadow green. Replaces the old desert warm-brown palette.
-  terrainRockColor:  0x808287, // granite grey — steep faces AND high (above-treeline) terrain
-  terrainDirtColor:  0x66543d, // alpine soil/decomposed-granite — moderate slopes (the "general" mid)
-  terrainGrassColor: 0x4c5e38, // muted sage — FERTILE/forest flats (above the basin floors; trees go here)
-  terrainMeadowColor: 0x5c7a30, // lush green — MEADOW basins (local lows where water collects)
+  terrainRockColor:  0x72604b, // granite grey — steep faces AND high (above-treeline) terrain
+  terrainDirtColor:  0x69481b, // alpine soil/decomposed-granite — moderate slopes (the "general" mid)
+  terrainGrassColor: 0x426917, // muted sage — FERTILE/forest flats (above the basin floors; trees go here)
+  terrainMeadowColor: 0x1c270c, // lush green — MEADOW basins (local lows where water collects)
   terrainCutoutColor: 0x757066, // engineered road cut face (man-made grey-tan, distinct from cliff)
   terrainFillColor:   0x6b5740, // dirt fill embankment / road foundation
 

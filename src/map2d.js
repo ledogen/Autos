@@ -1,0 +1,427 @@
+// src/map2d.js — FEAT-16: 2D top-down map (dev / validation overlay, toggled with M).
+//
+// A self-contained HTML5 2d-context overlay for eyeballing the road network's MACRO shape
+// (parallel runs, intersection density, disconnected pockets, sparse-vs-dense) without
+// freecaming. It is a DEV/VALIDATION surface, kept entirely off the physics/frame-critical
+// path (CLAUDE.md "src/ is the product") — no scene mutation, no per-frame hot-loop cost when
+// closed.
+//
+// Data source = a SEPARATE, read-only RoadSystem instance dedicated to the map, NOT the live
+// play network: the play network only holds the ~320 m streamed window the truck + ribbon mesh
+// consume, so re-streaming IT around a pan cursor would re-shape the road under the truck. The
+// road network is window-invariant (a pure fn of seed + coords), so the map builds its own
+// `new RoadSystem(seed, params)` streamed around the PAN CURSOR at a large radius, fully
+// independent of play (the same construct-and-update path the headless gates use). It is never
+// init(scene)'d and never setDebugVisible'd — it stays pure data (no THREE objects).
+//
+// Built to graduate: the render is a plain canvas draw, so it can later feed a CanvasTexture
+// for the fluttering map-prop (ticket "Future") without a rewrite.
+
+import * as THREE from 'three'
+import { RoadSystem } from './road.js'
+
+const MAP_RADIUS      = 1500   // m — target streamed radius of the map's own RoadSystem around the pan cursor
+// Progressive (chunked) streaming radii. Routing the full 1500 m radius synchronously is ~10 s; the
+// per-connection ROUTE CACHE persists across re-streams on one instance, so growing the radius in
+// steps fills the network incrementally (first ring paints in ~1.5 s, then the rest streams in across
+// frames) instead of one long freeze. Each step yields a frame between chunks (PROGRESSIVE_GAP).
+const MAP_RADIUS_STEPS = [400, 650, 900, 1150, 1500]
+const PROGRESSIVE_GAP  = 16    // ms — yield between stream chunks so the page stays responsive
+const STREAM_DEBOUNCE = 120    // ms — re-stream only after a pan settles (a stream is expensive)
+const RESTREAM_MOVE   = 300    // m — re-stream when the pan center has drifted past this since last stream
+const COARSE_DIV      = 250    // m — coarse-height normaliser for terrain shading (≈ full range, see ranger.js)
+const BG_CELL_PX      = 18     // px — terrain shading sample cell (coarser = cheaper)
+
+export class Map2D {
+    /**
+     * @param {object}   o
+     * @param {HTMLCanvasElement} o.canvas   — the #map2d overlay canvas
+     * @param {() => number}      o.getSeed  — current world seed (numeric); map rebuilds its instance on change
+     * @param {() => object}      o.getParams— live RANGER_PARAMS ref (so the map mirrors roadNetworkMode etc.)
+     * @param {() => {x:number,z:number,fx:number,fz:number}} o.getCar — car world XZ + world-forward XZ
+     */
+    constructor({ canvas, getSeed, getParams, getCar }) {
+        this._canvas    = canvas
+        this._ctx       = canvas.getContext('2d')
+        this._getSeed   = getSeed
+        this._getParams = getParams
+        this._getCar    = getCar
+
+        this._open       = false
+        this._road       = null          // the map's own RoadSystem; KEPT ALIVE across opens (route cache)
+        this._sig        = null          // seed+road-param signature the current _road was built for
+        this._streamAt   = null          // THREE.Vector3 the network was last streamed around
+        this._streamTimer = 0            // pan-debounce handle
+        this._centeredOnce = false       // pan is centred on the car on the FIRST open only
+
+        // Progressive (chunked) streaming state — see MAP_RADIUS_STEPS.
+        this._streaming   = false        // a chunked stream is in flight
+        this._streamStep  = 0            // next index into MAP_RADIUS_STEPS to stream
+        this._streamFull  = false        // network is streamed out to the final radius around _streamAt
+        this._pumpTimer   = 0            // setTimeout handle between chunks
+
+        // View transform: pan = world center of the view; zoom = px per world metre.
+        this._panX = 0
+        this._panZ = 0
+        this._zoom = 0.1
+
+        // Cached background layer (terrain + roads + nodes + crossings) — only depends on the
+        // transform + streamed network, NOT the car. Rebuilt when dirty; the moving car marker
+        // is drawn on top each frame, so an idle (non-panning) map costs ~nothing per frame.
+        this._bg      = document.createElement('canvas')
+        this._bgDirty = true
+
+        // Drag-pan state.
+        this._dragging = false
+        this._lastX = 0
+        this._lastY = 0
+
+        // Bound listeners (so show/hide can add+remove the exact same refs).
+        this._onDown  = this._onMouseDown.bind(this)
+        this._onMove  = this._onMouseMove.bind(this)
+        this._onUp    = this._onMouseUp.bind(this)
+        this._onWheel = this._onWheelEvent.bind(this)
+    }
+
+    isOpen() { return this._open }
+
+    toggle() { this._open ? this.hide() : this.show() }
+
+    show() {
+        if (this._open) return
+        this._open = true
+        this._canvas.style.display = 'block'
+        this._resize()
+
+        // Rebuild the map's RoadSystem only when the seed or a road param actually changed (so the
+        // tool always reflects the roadNetworkMode / graph knobs being validated) — otherwise REUSE
+        // the kept instance, whose warm route cache makes a reopen instant. The terrain layer paints
+        // immediately; the network then streams in progressively (see _startStream).
+        const sig = this._paramSig()
+        if (!this._road || sig !== this._sig) { this._buildRoad(); this._sig = sig }
+
+        if (!this._centeredOnce) {
+            const car = this._getCar()
+            this._panX = car.x; this._panZ = car.z
+            this._centeredOnce = true
+        }
+        // Resume/begin the chunked stream unless this exact center is already fully streamed.
+        if (!this._streamFull || !this._streamAt ||
+            Math.hypot(this._panX - this._streamAt.x, this._panZ - this._streamAt.z) > RESTREAM_MOVE) {
+            this._startStream()
+        }
+
+        this._canvas.addEventListener('mousedown', this._onDown)
+        window.addEventListener('mousemove', this._onMove)
+        window.addEventListener('mouseup', this._onUp)
+        this._canvas.addEventListener('wheel', this._onWheel, { passive: false })
+        this._bgDirty = true
+    }
+
+    hide() {
+        if (!this._open) return
+        this._open = false
+        this._dragging = false
+        this._streaming = false
+        clearTimeout(this._pumpTimer)
+        clearTimeout(this._streamTimer)
+        this._canvas.style.display = 'none'
+        this._canvas.removeEventListener('mousedown', this._onDown)
+        window.removeEventListener('mousemove', this._onMove)
+        window.removeEventListener('mouseup', this._onUp)
+        this._canvas.removeEventListener('wheel', this._onWheel)
+    }
+
+    // ── RoadSystem (the map's own read-only instance) ────────────────────────────────────────
+    // A signature over the seed + every road* param, so the kept instance is rebuilt iff the network
+    // it represents could have changed (mode/graph-knob tuning) — and reused (instant) otherwise.
+    _paramSig() {
+        const p = this._getParams()
+        let s = 'seed=' + this._getSeed()
+        for (const k of Object.keys(p)) if (/^road/i.test(k) && typeof p[k] !== 'function') s += '|' + k + '=' + p[k]
+        return s
+    }
+
+    // Fresh instance — wholly independent of the live play network. Cheap (constructor is ~0); the
+    // cost is in streaming, which _startStream chunks. Resets the progressive cursor.
+    _buildRoad() {
+        this._road = new RoadSystem(this._getSeed(), this._getParams())
+        this._streamAt = null
+        this._streamFull = false
+        this._streamStep = 0
+    }
+
+    // Begin/restart the chunked stream around the current pan center: grow the radius through
+    // MAP_RADIUS_STEPS one chunk per timer tick, marking the bg dirty after each so the network
+    // visibly fills in. Already-routed edges hit the warm route cache, so re-streaming a center
+    // that's already covered (e.g. a small pan, or resuming after reopen) is fast.
+    _startStream() {
+        clearTimeout(this._pumpTimer)
+        // Restart the radius growth from the smallest step for the NEW center (first ring paints fast).
+        this._streamStep = 0
+        this._streamFull = false
+        this._streamCenter = new THREE.Vector3(this._panX, 0, this._panZ)
+        this._streaming = true
+        // Defer the FIRST chunk one tick so the next render paints the terrain layer + "streaming…"
+        // badge immediately (the overlay appears instantly; the network then fills in).
+        this._pumpTimer = setTimeout(() => this._pump(), 0)
+    }
+
+    _pump() {
+        if (!this._open || !this._streaming) { this._streaming = false; return }
+        const R = MAP_RADIUS_STEPS[this._streamStep]
+        this._road.setRadius(R)
+        this._road.update(this._streamCenter)
+        this._streamAt = this._streamCenter
+        this._bgDirty = true
+        this._streamStep++
+        if (this._streamStep < MAP_RADIUS_STEPS.length) {
+            this._pumpTimer = setTimeout(() => this._pump(), PROGRESSIVE_GAP)
+        } else {
+            this._streaming = false
+            this._streamFull = true
+        }
+    }
+
+    // ── Transform helpers ────────────────────────────────────────────────────────────────────
+    _sx(wx) { return (wx - this._panX) * this._zoom + this._canvas.clientWidth  / 2 }
+    _sy(wz) { return (wz - this._panZ) * this._zoom + this._canvas.clientHeight / 2 }
+
+    _resize() {
+        const dpr = window.devicePixelRatio || 1
+        const w = window.innerWidth, h = window.innerHeight
+        for (const c of [this._canvas, this._bg]) {
+            c.width = Math.round(w * dpr)
+            c.height = Math.round(h * dpr)
+        }
+        this._canvas.style.width = w + 'px'
+        this._canvas.style.height = h + 'px'
+        this._dpr = dpr
+        // Fit MAP_RADIUS*2 to the short screen edge on the very first sizing.
+        if (!this._zoomInit) { this._zoom = Math.min(w, h) / (MAP_RADIUS * 2); this._zoomInit = true }
+        this._bgDirty = true
+    }
+
+    // ── Mouse: drag-pan + wheel-zoom ──────────────────────────────────────────────────────────
+    _onMouseDown(e) {
+        this._dragging = true
+        this._lastX = e.clientX
+        this._lastY = e.clientY
+        this._canvas.style.cursor = 'grabbing'
+    }
+
+    _onMouseMove(e) {
+        if (!this._dragging) return
+        const dx = e.clientX - this._lastX
+        const dy = e.clientY - this._lastY
+        this._lastX = e.clientX
+        this._lastY = e.clientY
+        // Drag moves the world under the cursor: pan center shifts opposite the drag, scaled by zoom.
+        this._panX -= dx / this._zoom
+        this._panZ -= dy / this._zoom
+        this._bgDirty = true   // transform changed → bg re-projects this frame
+    }
+
+    _onMouseUp() {
+        if (!this._dragging) return
+        this._dragging = false
+        this._canvas.style.cursor = 'grab'
+        // Re-stream (chunked) only if the pan center drifted far from where we last streamed, and
+        // debounced so a flurry of small drags doesn't kick off repeated streams.
+        if (!this._streamAt ||
+            Math.hypot(this._panX - this._streamAt.x, this._panZ - this._streamAt.z) > RESTREAM_MOVE) {
+            clearTimeout(this._streamTimer)
+            this._streamTimer = setTimeout(() => this._startStream(), STREAM_DEBOUNCE)
+        }
+    }
+
+    _onWheelEvent(e) {
+        e.preventDefault()
+        // Zoom about the cursor — a PURE canvas transform, no re-stream.
+        const rect = this._canvas.getBoundingClientRect()
+        const mx = e.clientX - rect.left, my = e.clientY - rect.top
+        // World point under the cursor before zoom.
+        const wx = (mx - this._canvas.clientWidth / 2) / this._zoom + this._panX
+        const wz = (my - this._canvas.clientHeight / 2) / this._zoom + this._panZ
+        const factor = Math.exp(-e.deltaY * 0.0015)
+        this._zoom = Math.max(0.005, Math.min(4, this._zoom * factor))
+        // Keep that same world point under the cursor after zoom.
+        this._panX = wx - (mx - this._canvas.clientWidth / 2) / this._zoom
+        this._panZ = wz - (my - this._canvas.clientHeight / 2) / this._zoom
+        this._bgDirty = true
+    }
+
+    // ── Render ────────────────────────────────────────────────────────────────────────────────
+    // Called each frame from the main loop ONLY while open. Rebuilds the cached bg layer when the
+    // transform/network changed, then blits it and draws the (moving) car marker + legend on top.
+    render() {
+        if (!this._open) return
+        if (this._canvas.width !== Math.round(window.innerWidth * (window.devicePixelRatio || 1))) this._resize()
+        if (this._bgDirty) { this._drawBackground(); this._bgDirty = false }
+
+        const ctx = this._ctx
+        ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0)
+        ctx.clearRect(0, 0, this._canvas.clientWidth, this._canvas.clientHeight)
+        ctx.drawImage(this._bg, 0, 0, this._canvas.clientWidth, this._canvas.clientHeight)
+
+        this._drawCar(ctx)
+        this._drawLegend(ctx)
+        if (this._streaming) this._drawStreamingBadge(ctx)
+    }
+
+    // Small bottom-center badge while the network is still filling in (chunked stream in flight).
+    _drawStreamingBadge(ctx) {
+        const W = this._canvas.clientWidth, H = this._canvas.clientHeight
+        const txt = `streaming network… ${Math.round(100 * this._streamStep / MAP_RADIUS_STEPS.length)}%`
+        ctx.font = '13px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+        const w = ctx.measureText(txt).width + 24
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(W / 2 - w / 2, 14, w, 26)
+        ctx.fillStyle = '#ffd24a'; ctx.fillText(txt, W / 2, 28)
+        ctx.textAlign = 'left'
+    }
+
+    _drawBackground() {
+        const ctx = this._bg.getContext('2d')
+        ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0)
+        const W = this._canvas.clientWidth, H = this._canvas.clientHeight
+        ctx.clearRect(0, 0, W, H)
+
+        this._drawTerrain(ctx, W, H)
+        this._drawRoads(ctx)
+        this._drawCrossings(ctx)
+        this._drawNodes(ctx)
+    }
+
+    // (1) Cheap coarse-height grayscale so roads read in context (not a full terrain render).
+    //     Samples the map RoadSystem's own coarse-noise closure (works standalone — the
+    //     constructor builds it; no terrain system / surface sampler needed).
+    _drawTerrain(ctx, W, H) {
+        const road = this._road
+        if (!road) return
+        for (let py = 0; py < H; py += BG_CELL_PX) {
+            for (let px = 0; px < W; px += BG_CELL_PX) {
+                const wx = (px + BG_CELL_PX / 2 - W / 2) / this._zoom + this._panX
+                const wz = (py + BG_CELL_PX / 2 - H / 2) / this._zoom + this._panZ
+                const h = road._coarseH(wx, wz)
+                const t = Math.max(0, Math.min(1, h / COARSE_DIV))
+                const v = Math.round(20 + t * 70)   // dark olive-gray ramp; roads (light) pop over it
+                ctx.fillStyle = `rgb(${v},${v + 6},${v - 2})`
+                ctx.fillRect(px, py, BG_CELL_PX, BG_CELL_PX)
+            }
+        }
+    }
+
+    // (2) Road centerlines — each streamed network run projected (x,z) → screen.
+    _drawRoads(ctx) {
+        const road = this._road
+        if (!road || !road._network) return
+        ctx.strokeStyle = '#d8d8d0'
+        ctx.lineWidth = 2
+        ctx.lineJoin = 'round'
+        for (const { points } of road._network.values()) {
+            if (!points || points.length < 2) continue
+            ctx.beginPath()
+            ctx.moveTo(this._sx(points[0].x), this._sy(points[0].z))
+            for (let i = 1; i < points.length; i++) ctx.lineTo(this._sx(points[i].x), this._sy(points[i].z))
+            ctx.stroke()
+        }
+    }
+
+    // (3) Classified crossings — colored by kind (the v2 grade-separation / parallel signal).
+    _drawCrossings(ctx) {
+        const road = this._road
+        if (!road || typeof road.crossingList !== 'function') return
+        const col = { AT_GRADE: '#3fd06a', NEAR_PARALLEL: '#e0c83c', GRADE_SEP: '#e0543c' }
+        for (const c of road.crossingList()) {
+            const p = c.point; if (!p) continue
+            ctx.fillStyle = col[c.kind] || '#aaaaaa'
+            ctx.beginPath()
+            ctx.arc(this._sx(p.x), this._sy(p.z), 3.5, 0, Math.PI * 2)
+            ctx.fill()
+        }
+    }
+
+    // (4) Anchor nodes — unique cells from edge cellA/cellB, colored by graph degree
+    //     (leaf vs hub — the node taxonomy the v2 rework is validating).
+    _drawNodes(ctx) {
+        const road = this._road
+        if (!road || !road._network) return
+        const seen = new Set()
+        for (const e of road._network.values()) {
+            for (const cell of [e.cellA, e.cellB]) {
+                if (!cell) continue
+                const key = cell[0] + ',' + cell[1]
+                if (seen.has(key)) continue
+                seen.add(key)
+                const a = road._protoAnchor(cell[0], cell[1])
+                const deg = typeof road._graphAnchorDegree === 'function' ? road._graphAnchorDegree(cell[0], cell[1]) : 2
+                // leaf (deg≤1) dim, degree-2 pass-through mid, hub (deg≥3) bright cyan.
+                ctx.fillStyle = deg >= 3 ? '#46c8ff' : deg === 2 ? '#7088a0' : '#506070'
+                ctx.beginPath()
+                ctx.arc(this._sx(a.x), this._sy(a.z), deg >= 3 ? 4 : 2.5, 0, Math.PI * 2)
+                ctx.fill()
+            }
+        }
+    }
+
+    // (5) Car marker — a triangle at the car's world XZ, pointing along its world-forward XZ.
+    _drawCar(ctx) {
+        const car = this._getCar()
+        const sx = this._sx(car.x), sy = this._sy(car.z)
+        let fx = car.fx, fz = car.fz
+        const m = Math.hypot(fx, fz) || 1; fx /= m; fz /= m   // forward (screen: x→right, z→down)
+        const px = -fz, pz = fx                               // perpendicular
+        const L = 9, Wd = 5
+        ctx.fillStyle = '#ff5a3c'
+        ctx.strokeStyle = '#1a1a1a'
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.moveTo(sx + fx * L,            sy + fz * L)             // nose
+        ctx.lineTo(sx - fx * L + px * Wd,  sy - fz * L + pz * Wd)   // rear-left
+        ctx.lineTo(sx - fx * L - px * Wd,  sy - fz * L - pz * Wd)   // rear-right
+        ctx.closePath()
+        ctx.fill()
+        ctx.stroke()
+    }
+
+    // (6) Legend + scale bar (drawn on-canvas — no extra DOM).
+    _drawLegend(ctx) {
+        const W = this._canvas.clientWidth, H = this._canvas.clientHeight
+        ctx.font = '12px monospace'
+        ctx.textBaseline = 'middle'
+        const rows = [
+            ['#d8d8d0', 'road'],
+            ['#3fd06a', 'AT_GRADE'],
+            ['#e0c83c', 'NEAR_PARALLEL'],
+            ['#e0543c', 'GRADE_SEP'],
+            ['#46c8ff', 'hub (deg≥3)'],
+            ['#ff5a3c', 'car'],
+        ]
+        const x0 = 16, y0 = 16, lh = 18
+        ctx.fillStyle = 'rgba(0,0,0,0.45)'
+        ctx.fillRect(x0 - 8, y0 - 8, 168, rows.length * lh + 16)
+        rows.forEach(([c, label], i) => {
+            const y = y0 + i * lh + lh / 2
+            ctx.fillStyle = c
+            ctx.beginPath(); ctx.arc(x0 + 5, y, 5, 0, Math.PI * 2); ctx.fill()
+            ctx.fillStyle = '#e8e8e8'
+            ctx.fillText(label, x0 + 18, y)
+        })
+
+        // Scale bar: a "nice" world length near 120 px wide.
+        const targetPx = 120
+        const rawM = targetPx / this._zoom
+        const pow = Math.pow(10, Math.floor(Math.log10(rawM)))
+        const niceM = (rawM / pow >= 5 ? 5 : rawM / pow >= 2 ? 2 : 1) * pow
+        const barPx = niceM * this._zoom
+        const bx = W - barPx - 24, by = H - 28
+        ctx.strokeStyle = '#e8e8e8'; ctx.lineWidth = 2
+        ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + barPx, by)
+        ctx.moveTo(bx, by - 4); ctx.lineTo(bx, by + 4)
+        ctx.moveTo(bx + barPx, by - 4); ctx.lineTo(bx + barPx, by + 4)
+        ctx.stroke()
+        ctx.fillStyle = '#e8e8e8'; ctx.textBaseline = 'bottom'
+        ctx.fillText(niceM >= 1000 ? (niceM / 1000) + ' km' : niceM + ' m', bx, by - 6)
+        ctx.textBaseline = 'middle'
+    }
+}

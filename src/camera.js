@@ -1,6 +1,6 @@
 /**
- * Camera module for RangerSim. Spring-follow chase mode, fixed-offset cockpit mode,
- * and free-fly dev mode. C key toggles chase/cockpit; Shift+C enters/exits freecam.
+ * Camera module for RangerSim. Spring-follow chase mode, fixed-offset hood cam,
+ * and free-fly dev mode. C key toggles chase/hood; Shift+C enters/exits freecam.
  * Does NOT parent camera to car mesh — parenting propagates jitter.
  * Uses lerp-to-goal per RESEARCH.md §Pattern 6. See GLOSSARY.md §Named Vectors
  * for quaternion-derived forward direction.
@@ -9,7 +9,7 @@
 import * as THREE from 'three'
 
 // ── Module-level camera state ──────────────────────────────────────────────────
-let cameraMode = 'chase'  // 'chase' | 'cockpit' | 'freecam'
+let cameraMode = 'chase'  // 'chase' | 'hood' | 'freecam'
 
 // Chase mode constants (Claude's discretion for tuning — see CONTEXT.md)
 const CHASE_OFFSET_LOCAL = new THREE.Vector3(0, 2.5, 6.0)  // body-space: behind (+Z) and above (+Y)
@@ -27,6 +27,16 @@ let dragLastX   = 0
 let dragLastY   = 0
 let orbitTheta  = Math.PI   // start directly behind car (+Z world = behind -Z-facing car)
 let orbitPhi    = 0.38      // ≈ 22° elevation, matches rough chase offset angle
+
+// ── Hood-cam drag-look state ─────────────────────────────────────────────────────
+// Yaw/pitch offset (radians) layered on top of the body-locked hood orientation. Dragging
+// accumulates it (mousemove); releasing eases it back to 0 so the view re-centers on the
+// body's forward direction — the hood-cam analog of the chase cam's snap-back-behind.
+let hoodLookYaw   = 0
+let hoodLookPitch = 0
+const HOOD_LOOK_YAW_CLAMP     = 2.5  // rad — how far around (±) the view can be dragged
+const HOOD_LOOK_PITCH_CLAMP   = 1.0  // rad — up/down look limit (±)
+const HOOD_RECENTER_STIFFNESS = 5    // s⁻¹ exp-decay back to forward on release (matches chase feel)
 
 // ── Free-cam state ─────────────────────────────────────────────────────────────
 // Pointer-lock FPS mouse-look state for free-fly mode. freecamPos is the camera world
@@ -48,7 +58,7 @@ let _lastVehicleState = null
 
 // ── Input listeners ────────────────────────────────────────────────────────────
 document.addEventListener('mousedown', e => {
-  if (e.button === 0 && cameraMode === 'chase' && !e.target.closest('.lil-gui')) {
+  if (e.button === 0 && (cameraMode === 'chase' || cameraMode === 'hood') && !e.target.closest('.lil-gui')) {
     isDragging = true
     dragLastX  = e.clientX
     dragLastY  = e.clientY
@@ -64,6 +74,18 @@ document.addEventListener('mousemove', e => {
     orbitPhi    = Math.max(-1.2, Math.min(1.2, orbitPhi + dy * DRAG_SENSITIVITY))
     dragLastX   = e.clientX
     dragLastY   = e.clientY
+  }
+
+  // Hood drag-look — accumulate a yaw/pitch offset around the body forward. Drag right → look
+  // right, drag down → look down (signs chosen so the view follows the cursor). Clamped; eased
+  // back to forward on release in updateCamera.
+  if (isDragging && cameraMode === 'hood') {
+    const dx = e.clientX - dragLastX
+    const dy = e.clientY - dragLastY
+    hoodLookYaw   = Math.max(-HOOD_LOOK_YAW_CLAMP,   Math.min(HOOD_LOOK_YAW_CLAMP,   hoodLookYaw   - dx * DRAG_SENSITIVITY))
+    hoodLookPitch = Math.max(-HOOD_LOOK_PITCH_CLAMP, Math.min(HOOD_LOOK_PITCH_CLAMP, hoodLookPitch - dy * DRAG_SENSITIVITY))
+    dragLastX     = e.clientX
+    dragLastY     = e.clientY
   }
 
   // Freecam pointer-lock FPS look — only when pointer is locked and in freecam mode.
@@ -124,7 +146,7 @@ document.addEventListener('keyup', e => {
 })
 
 // C-key listener — upgraded from the original single-mode toggle.
-// D-01: Shift+C enters/exits freecam. C alone cycles chase↔cockpit when not in freecam,
+// D-01: Shift+C enters/exits freecam. C alone cycles chase↔hood when not in freecam,
 //       or exits freecam when in it.
 document.addEventListener('keydown', e => {
   if (e.key.toLowerCase() !== 'c') return
@@ -136,7 +158,7 @@ document.addEventListener('keydown', e => {
     }
   } else {
     if (cameraMode !== 'freecam') {
-      cameraMode = cameraMode === 'chase' ? 'cockpit' : 'chase'
+      cameraMode = cameraMode === 'chase' ? 'hood' : 'chase'
     } else {
       _exitFreecam()  // C alone also exits freecam per D-01
     }
@@ -211,7 +233,7 @@ export function updateCamera (camera, vehicleState, dt) {
     // 'YXZ' Euler order: yaw applied first in world space, then pitch in local space.
     // This is the FPS-camera convention that prevents roll at zenith (RESEARCH §Pitfall 8).
     camera.rotation.set(freecamPitch, freecamYaw, 0, 'YXZ')
-    return  // Do not fall through to chase/cockpit branches
+    return  // Do not fall through to chase/hood branches
   }
 
   if (cameraMode === 'chase') {
@@ -244,22 +266,41 @@ export function updateCamera (camera, vehicleState, dt) {
       orbitPhi    = Math.asin(Math.max(-1, Math.min(1, delta.y / ORBIT_RADIUS)))
     }
   } else {
-    // Cockpit mode: fixed offset inside cabin (body space → world space)
-    // RESEARCH.md §Open Questions #2: offset ~(0, 0.8, 0.3) in body space — slightly above and forward of CG
-    const COCKPIT_OFFSET_LOCAL = new THREE.Vector3(0, 0.8, 0.3)  // body-space
-    const cockpitOffset = COCKPIT_OFFSET_LOCAL.clone().applyQuaternion(vehicleState.quaternion)
-    camera.position.copy(vehicleState.position).add(cockpitOffset)
-    // Look along forward direction (body -Z in world)
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(vehicleState.quaternion)
-    const lookTarget = vehicleState.position.clone().add(cockpitOffset).add(forward)
-    camera.lookAt(lookTarget)
+    // Hood cam: fixed offset at the rear edge of the hood, just outside the windshield
+    // (body space → world space). Body -Z is forward; the hood spans z∈[-2.2,-0.95] with its
+    // top surface at y≈0.21, and the windshield/cab front face is at z≈-0.95. Placing the camera
+    // at z=-1.0 (a hair ahead of the glass) and y=0.75 (~0.54 above the hood) gives a clean
+    // forward view over the hood with no body interior clipping into frame.
+    const HOOD_OFFSET_LOCAL = new THREE.Vector3(0, 0.75, -1.0)  // body-space
+    const hoodOffset = HOOD_OFFSET_LOCAL.clone().applyQuaternion(vehicleState.quaternion)
+    camera.position.copy(vehicleState.position).add(hoodOffset)
+
+    // Drag-look re-center: when not actively dragging, ease the look offset back to forward so
+    // releasing the mouse snaps the view back over the hood (chase-cam-style snap-back behind).
+    if (!isDragging) {
+      const decay = Math.exp(-HOOD_RECENTER_STIFFNESS * dt)
+      hoodLookYaw   *= decay
+      hoodLookPitch *= decay
+      if (Math.abs(hoodLookYaw)   < 1e-3) hoodLookYaw   = 0
+      if (Math.abs(hoodLookPitch) < 1e-3) hoodLookPitch = 0
+    }
+
+    // Lock orientation to the body — no horizon stabilization — then layer the drag-look offset
+    // on top. A Three.js camera looks down its local -Z with local +Y up, which matches body
+    // forward/up, so the body quaternion makes the view roll/pitch 1:1 with the truck; the YXZ
+    // offset (yaw about local up, then pitch about local right) lets you glance around without
+    // introducing roll, relative to the body frame.
+    const lookOffset = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(hoodLookPitch, hoodLookYaw, 0, 'YXZ')
+    )
+    camera.quaternion.copy(vehicleState.quaternion).multiply(lookOffset)
   }
 }
 
 /**
  * Returns the current camera mode string.
  *
- * @returns {'chase'|'cockpit'|'freecam'}
+ * @returns {'chase'|'hood'|'freecam'}
  */
 export function getCameraMode () {
   return cameraMode

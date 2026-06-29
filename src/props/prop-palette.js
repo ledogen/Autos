@@ -55,11 +55,16 @@ function bakePine(P, rng) {
       baseRadius, taperPow: t.taperPow, topFrac: t.topFrac, bend: t.bend, sides: t.sides,
     }, rng)
     const c = P.canopy
+    // Stretch the cone stack vertically (c.stretch) without widening it.
+    const coneHeight = rr(rng, c.coneHeight) * c.stretch
     const canopy = makeConeStack({
       coneCount: Math.round(rr(rng, c.coneCount)), baseRadius: rr(rng, c.baseRadius),
-      coneHeight: rr(rng, c.coneHeight), overlap: c.overlap, bend: c.bend, sides: c.sides,
+      coneHeight, overlap: c.overlap, bend: c.bend, sides: c.sides,
     }, rng)
-    const geo = assembleTree(trunk, canopy, P.barkColor, P.canopyColor, rr(rng, c.coneHeight) * 0.3)
+    // Sit the canopy base c.dropFrac of a cone below the trunk tip, and recentre it over the
+    // trunk's kinked top node (topX/topZ) so leaning trunks don't look "glued on" off-axis.
+    const geo = assembleTree(trunk, canopy, P.barkColor, P.canopyColor,
+      coneHeight * c.dropFrac, trunk.topX, trunk.topZ)
     out.push({ geo, collision: { kind: 'capsule', radius: baseRadius, height: trunk.topY } })
   }
   return out

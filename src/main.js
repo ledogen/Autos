@@ -34,6 +34,7 @@ import { DustSystem } from './dust.js'
 import { SkySystem } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
 import { parseWorldSeed, seedFor } from './seed.js'
 import { createVehicleModel } from './vehicle-model.js'
+import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
 import { FLORA_PARAMS } from '../data/flora.js'
@@ -516,7 +517,23 @@ const dustSystem = new DustSystem(scene, RANGER_PARAMS)
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
 // src/vehicle-model.js. carGroup/bodyMesh/wheelMeshes are returned for back-compat;
 // syncMeshesToState(state) is called once per render frame below.
-const { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor } = createVehicleModel(scene, RANGER_PARAMS)
+const { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor } = createVehicleModel(scene, RANGER_PARAMS)
+
+// ── FEAT-16: 2D top-down map (dev/validation overlay, toggle M) ──────────────────
+// Owns a SEPARATE read-only RoadSystem instance streamed around its own pan cursor — it never
+// touches the live roadSystem/play network (see src/map2d.js). Accessors are injected so map2d
+// stays decoupled from main's module state. Body forward is the -Z axis (vehicle.js); we pass
+// the world-forward XZ so the marker's heading is convention-agnostic.
+const _mapFwd = new THREE.Vector3()
+const map2d = new Map2D({
+  canvas:    document.getElementById('map2d'),
+  getSeed:   () => worldSeed,
+  getParams: () => RANGER_PARAMS,
+  getCar:    () => {
+    _mapFwd.set(0, 0, -1).applyQuaternion(vehicleState.quaternion)
+    return { x: vehicleState.position.x, z: vehicleState.position.z, fx: _mapFwd.x, fz: _mapFwd.z }
+  }
+})
 
 // ── Terrain + ramp ────────────────────────────────────────────────────────────
 // M1-13: terrain query. Phase 6 replaces body, signature unchanged.
@@ -900,6 +917,8 @@ addPropGui(_gui, {
 })
 // QUAL-02: sky/lighting tuning folder (self-contained — attaches to _gui like the props folder).
 skySystem.addGui(_gui)
+// FEAT-14: vehicle cast-light tuning folder (headlight beams + rear lamp pools).
+addLightGui(_gui)
 // User pref: every lil-gui section collapsed by default (the root panel stays open). Runs after ALL
 // folders exist (debug + props), so it covers debug.js's folders without editing debug.js.
 _gui.foldersRecursive().forEach((f) => f.close())
@@ -929,6 +948,8 @@ document.addEventListener('keydown', e => {
     _dbgSpheresOn = !_dbgSpheresOn
     _dbgSpheres.forEach(m => { m.visible = _dbgSpheresOn })
   }
+  // FEAT-16: M toggles the 2D top-down map overlay (sim keeps running underneath).
+  if (e.key === 'm' || e.key === 'M') map2d.toggle()
 })
 
 // ── Grid-world flat grid helper (D-18) ────────────────────────────────────────
@@ -1049,7 +1070,7 @@ document.getElementById('pm-return')?.addEventListener('click', () => returnToWo
 // Gate: only open the menu when NOT in free-cam mode.
 // In free-cam, Esc triggers a browser-forced pointer-lock release first; opening the
 // menu on the same Esc event causes an immediate flash-open/close. The user must press C
-// to exit free-cam, then Esc to open the menu from chase/cockpit mode.
+// to exit free-cam, then Esc to open the menu from chase/hood mode.
 // (RESEARCH §Pitfall 3 / 07-PATTERNS.md §Esc/keyboard listener coexistence)
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return
@@ -1093,12 +1114,18 @@ document.addEventListener('keydown', e => {
   // report (kink / fold / grade / tear). test/replay.mjs rebuilds the road here from seed+params and
   // diffs what the game observed. Supersedes the old road-run-dump (geometry lives in the capture).
   if (e.key === 'p' && roadSystem && !_gridWorldActive) {
-    const px = vehicleState.position.x, pz = vehicleState.position.z
+    // Mark from the freecam when it's active (lets you fly to a defect and capture it), else the truck.
+    const markPos = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
+    const px = markPos.x, pz = markPos.z
     // Optional terrain side of `observed` (verified once terrain-headless lands, Phase 5).
+    // wheelGroundY only makes sense at the truck — in freecam the truck isn't at the mark, so skip it.
     let terrainSample = null
     if (terrainSystem) {
-      const wheelGroundY = []
-      for (let i = 0; i < 4; i++) { const hub = getWheelPosition(i, vehicleState, RANGER_PARAMS); wheelGroundY.push(terrainSystem.analyticHeight(hub.x, hub.z)) }
+      let wheelGroundY = null
+      if (getCameraMode() !== 'freecam') {
+        wheelGroundY = []
+        for (let i = 0; i < 4; i++) { const hub = getWheelPosition(i, vehicleState, RANGER_PARAMS); wheelGroundY.push(terrainSystem.analyticHeight(hub.x, hub.z)) }
+      }
       terrainSample = { groundY: terrainSystem.analyticHeight(px, pz), wheelGroundY }
     }
     const capture = buildPlaceCapture({
@@ -1200,6 +1227,8 @@ function loop () {
   vehicleState.position  = _renderPos
   vehicleState.quaternion = _renderQuat
 
+  // FEAT-14: feed the day/night factor so headlight/lamp cast pools dim by day, brighten at night.
+  setNightFactor(skySystem.nightFactor())
   syncMeshesToState(vehicleState)
 
   // Wheel dust trails — advance + emit using the interpolated render pose (vehicleState is
@@ -1334,6 +1363,9 @@ function loop () {
 
   // QUAL-02: keep the (finite) sky box centred on the camera so it always surrounds the view.
   skySystem.update(camera.position)
+
+  // FEAT-16: redraw the 2D map overlay only while it's open (off the hot path otherwise).
+  if (map2d.isOpen()) map2d.render()
 
   const _ptR = performance.now()
   renderer.render(scene, camera)

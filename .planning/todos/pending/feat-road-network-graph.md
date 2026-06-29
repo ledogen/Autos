@@ -9,6 +9,29 @@ builds_on: FEAT-10 (merge graph + smooth navigable junctions + COVER deletion �
 relates: FEAT-12 (earthwork routing — lets cross-roads climb ridges), QUAL-03 (graph re-architecture), FEAT-08 (overpasses)
 ---
 
+## STATUS 2026-06-28 — RESEQUENCED behind a crossing-model rework (user reframe)
+
+Before adding N-S roads, the existing crossing handling needs work: the network already makes abundant
+NON-merged mid-span crossings (adjacent-row curved arcs crossing away from any shared anchor — the case
+FEAT-10 doesn't handle) that render as undriveable messes. `_resolveRoadSurface` returns one Y per (x,z),
+so two strands at one XZ fight over one height. User wants **overpasses as a valid intersection strategy**
+(MERGE flat pad vs GRADE-SEPARATE bridge, by elevation gap) + tunnels (cut-side). FEAT-13 N-S roads come
+LAST, after crossings are robust. Full sequence + status: [[project_crossing_classifier]].
+
+**Step 1 LANDED (uncommitted, 20 gates green):** the crossing CLASSIFIER. `road.js _detectJunctions()`
+reworked → bounded tile-bucket broad phase (Design D, once-per-build, self-aware) emitting classified
+records `kind ∈ {NEAR_PARALLEL, AT_GRADE, GRADE_SEP}` + deterministic over/under, via `crossingList()`.
+Knobs `roadCrossMergeDY`/`roadCrossAngleMin`/`roadCrossOverpassClearance` in ranger.js. Gate
+`test/crossing-classifier.mjs`. Data-only — no mesh/carve/physics change yet.
+
+**FINDING:** at current earthwork params crossings spread up to ~10 m dY (the 90/10 in the original plan
+was stale capture params — overpasses are a MAJOR fraction). `roadCrossMergeDY` set to **4.5 m** (coupled
+to the truck+deck overpass clearance — below it you can't grade-separate, so flatten; service roads need
+the pad to clear a large truck) ⇒ ~24% of crossings grade-separate.
+
+**Remaining steps:** 2) at-grade pad surface (FEAT-07 finish), 3) grade-sep visual-first
+(FEAT-08 overpass + FEAT-11 tunnel), 4) multi-layer surface query (FEAT-08b), 5) THIS ticket's N-S graph.
+
 # FEAT-13: 2D road-network GRAPH — real intersections, varied directions, not parallel rows
 
 ## The reframe (why this is the actual goal)

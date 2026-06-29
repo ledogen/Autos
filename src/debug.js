@@ -273,6 +273,13 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // roadAltWeight sliders (per-tile router params, removed in 08-05). The full "Valley Trunk (proto)"
   // subfolder is gone — there is ONE road system and ONE viz now (Show Road Splines above).
   const fireRoadParam = () => { if (typeof callbacks.onRoadParamChange === 'function') callbacks.onRoadParamChange() }
+  // FEAT-13 topology: 'rows' = parallel E-W rows (historical); 'graph' = per-anchor directional graph
+  // (varied directions, real T/X junctions, not parallel). Diagonals = orthogonal(off)/8-way(on).
+  roadFolder.add(params, 'roadNetworkMode', ['rows', 'graph']).name('Network Mode').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadGraphExtraEdgeProb', 0, 0.8, 0.05).name('Graph Connectivity (loops)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadGraphDiagonals').name('Graph Diagonals (8-way)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadGraphFlatMerges').name('Graph Flat Merges (no overpass)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadGraphDeviationCap', 0, 12, 0.5).name('Graph Earthwork Cap (m)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWAlt',   0, 3,     0.05).name('wAlt (stay low)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWGrade', 0, 2000,  20  ).name('wGrade (gentle)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWOver',  0, 40000, 500 ).name('wOver (soft cap)').onChange(fireRoadParam)

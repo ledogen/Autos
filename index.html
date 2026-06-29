@@ -75,6 +75,11 @@
   <!-- Canvas queried by main.js via document.querySelector('canvas') — no id required -->
   <canvas></canvas>
 
+  <!-- FEAT-16: 2D top-down map overlay (dev/validation tool, toggled with M).
+       Fullscreen 2d-context canvas above the WebGL canvas but below the pause menu
+       (z 100). Hidden by default; src/map2d.js owns its draw + pan/zoom handlers. -->
+  <canvas id="map2d" style="position:fixed; inset:0; display:none; z-index:90; background:rgba(10,12,16,0.92); cursor:grab;"></canvas>
+
   <!-- HUD overlay — Plan 03 wires speed readout; element must exist now -->
   <div id="hud">
     SPEED: <span id="speedVal">0.0</span> km/h<br>
@@ -85,7 +90,7 @@
     RL Fz: <span id="rlFzVal">0</span> N &nbsp; RR Fz: <span id="rrFzVal">0</span> N
   </div>
 
-  <!-- Pause menu overlay (D-17) — shown on Esc from chase/cockpit mode; hidden in free-cam.
+  <!-- Pause menu overlay (D-17) — shown on Esc from chase/hood mode; hidden in free-cam.
        Labels are fixed: "grid world" (exactly, D-18), "return to world", "resume".
        Button ids are wired in main.js: pm-resume, pm-grid, pm-return. -->
   <div id="pause-menu">

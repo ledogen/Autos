@@ -90,7 +90,7 @@ export function makeBlob(o, rng) {
  * @param {{segCount:number, segLen:number, baseRadius:number, taperPow:number, topFrac:number,
  *          bend:number, sides:number}} o
  * @param {() => number} rng
- * @returns {{geo: THREE.BufferGeometry, topY: number, topRadius: number}}
+ * @returns {{geo: THREE.BufferGeometry, topX: number, topY: number, topZ: number, topRadius: number}}
  */
 export function makeKinkedTube(o, rng) {
   const N = Math.max(2, o.segCount | 0)
@@ -150,7 +150,7 @@ export function makeKinkedTube(o, rng) {
   geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3))
   geo.computeVertexNormals()
   geo.computeBoundingSphere()
-  return { geo, topY: nodes[N].y, topRadius: radii[N] }
+  return { geo, topX: nodes[N].x, topY: nodes[N].y, topZ: nodes[N].z, topRadius: radii[N] }
 }
 
 // ── makeConeStack ────────────────────────────────────────────────────────────────────
@@ -260,12 +260,14 @@ export function translateGeo(geo, dx, dy, dz) {
  * @param {number} barkHex
  * @param {number} canopyHex
  * @param {number} canopyDrop  how far the canopy base sits BELOW the trunk top (overlap), metres
+ * @param {number} offsetX  lateral X recentre of the canopy (e.g. onto the trunk's kinked tip)
+ * @param {number} offsetZ  lateral Z recentre of the canopy
  * @param {?number} barkHex  pass null if the trunk geometry is already coloured (e.g. aspen flecks)
  */
-export function assembleTree(trunk, canopy, barkHex, canopyHex, canopyDrop = 0) {
+export function assembleTree(trunk, canopy, barkHex, canopyHex, canopyDrop = 0, offsetX = 0, offsetZ = 0) {
   if (barkHex != null) fillColor(trunk.geo, barkHex)
   fillColor(canopy, canopyHex)
-  translateGeo(canopy, 0, trunk.topY - canopyDrop, 0)
+  translateGeo(canopy, offsetX, trunk.topY - canopyDrop, offsetZ)
   return mergeGeometries([trunk.geo, canopy])
 }
 

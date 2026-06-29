@@ -60,11 +60,13 @@ export const FLORA_PARAMS = {
   // ── Pine: frustum trunk + stacked kinked cone-skirt canopy ──────────────────────
   pine: {
     variants: 4,
-    trunk:  { segCount: [3, 5], segLen: [1.2, 2.0], baseRadius: [0.24, 0.40],
+    trunk:  { segCount: [3, 5], segLen: [2.4, 4.0], baseRadius: [0.24, 0.54],
               taperPow: 1.6, topFrac: 0.18, bend: 0.08, sides: 6 },
-    canopy: { coneCount: [3, 5], baseRadius: [1.5, 2.3], coneHeight: [1.2, 1.9],
-              overlap: 0.45, bend: 0.06, sides: 7 },
-    barkColor: 0x5a3d22, canopyColor: 0x53935a, tintJitter: 0.10,
+    canopy: { coneCount: [3, 5], baseRadius: [1.5, 2.3], coneHeight: [2.4, 3.8],
+              overlap: 0.45, bend: 0.06, sides: 7,
+              stretch: 1.5,    // vertical-only stretch of the cone stack (taller, same width)
+              dropFrac: 0.6 }, // canopy base sits this fraction of a cone below the trunk tip
+    barkColor: 0x5a3d22, canopyColor: 0x3b6840, tintJitter: 0.10,
     instScale: [0.9, 1.6],
   },
 
@@ -73,7 +75,7 @@ export const FLORA_PARAMS = {
     variants: 5,
     blob:  { radius: [0.5, 2.0], axisScale: [1.25, 0.7, 1.0], irregularity: 0.5,
              noiseFreq: 2.2, subdiv: 1 },
-    color: 0x8a8782, colorJitter: 0.10,
+    color: 0xb7b6b4, colorJitter: 0.10,
     buryFrac: [0.2, 0.9],          // 20–90% below ground (placement sinks the blob)
     slopeBias: 1.8,                // density multiplier ramps with slope (large rocks on steeps)
     instScale: [0.7, 1.6],
@@ -84,7 +86,7 @@ export const FLORA_PARAMS = {
     variants: 3,
     blob:  { radius: [6, 20], axisScale: [1.2, 0.65, 1.05], irregularity: 0.42,
              noiseFreq: 1.3, subdiv: 2 },
-    color: 0x807d78, colorJitter: 0.08,
+    color: 0xb7b6b4, colorJitter: 0.10,   // shares the rock palette (boulders = large rock tail)
     buryFrac: [0.45, 0.8],
     instScale: [0.7, 1.2],
   },

@@ -766,11 +766,12 @@ export class RoadMeshSystem {
         // whose position falls inside this tile's CHUNK_SIZE × CHUNK_SIZE bounds.
         // (Open Q3 from RESEARCH: assign junction to tile containing node XZ position.)
         //
-        // GATED OFF by default (roadJunctionFootprints, ranger.js): _detectJunctions() is an
-        // O(runs²×seg²) crossing rescan run per tile build on the hot path (flushPendingQueue →
-        // _buildRoadTile) — a measured 296 ms Ultra stall (Trace-20260627T013753) — and only yields
-        // an imperfect placeholder pad. FEAT-10 (graph-native junction nodes) + FEAT-07 (real merged
-        // surface) replace this; until then the gate keeps the hot path clear at zero feature loss.
+        // FEAT-07 Step 2: render the at-grade junction pad. _detectJunctions() is now the BOUNDED,
+        // once-per-build, identity-cached crossing classifier (no longer the O(runs²×seg²) per-tile
+        // rescan that cost the 296 ms Ultra stall — _streamNetwork warms it, so this is a cache hit).
+        // Only AT_GRADE nodes get a pad: the two strands are flattened to node.nodeY (the mid-span
+        // flatten), so the pad sits coplanar with them (mesh == the flattened collision surface). GRADE_SEP
+        // nodes are overpasses (Step 3) and NEAR_PARALLEL nodes are glancing grazes — neither gets a pad.
         if (this._params.roadJunctionFootprints && this._road._detectJunctions) {
             const junctions = this._road._detectJunctions()
             const tileWorldX = tileX * CHUNK_SIZE
@@ -778,6 +779,7 @@ export class RoadMeshSystem {
             const halfWidth = this._params.roadHalfWidth ?? 5
 
             for (const [, node] of junctions) {
+                if (node.kind !== 'AT_GRADE') continue   // only flat junctions; overpass/graze get no pad
                 const nx = node.pos.x, nz = node.pos.z
                 // Assign to tile if node falls inside this tile's bounds.
                 if (nx >= tileWorldX && nx < tileWorldX + CHUNK_SIZE &&

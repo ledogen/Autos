@@ -202,6 +202,15 @@ export class SkySystem {
     }
   }
 
+  /**
+   * Day/night factor in [0,1] for consumers that need to react to darkness (e.g. vehicle headlights).
+   * 0 = full daylight, 1 = night. Ramps as the SKY-sun drops through the horizon (elev 4° → -6°),
+   * so it tracks the cycle's dusk/dawn blend. Static day (no cycle) returns 0.
+   */
+  nightFactor () {
+    return THREE.MathUtils.clamp((4 - SKY_PARAMS.elevation) / 10, 0, 1)
+  }
+
   _refreshGui () { for (const c of this._controllers) c.updateDisplay() }
 
   /** Self-contained lil-gui folder (mirrors prop-debug.js — attaches to the existing panel). */

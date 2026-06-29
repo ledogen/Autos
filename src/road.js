@@ -56,15 +56,17 @@ const _scratchTan = new THREE.Vector3()
 
 // ── Module-scope 2D segment intersection (D-16 / P9 junction detection) ────────
 /**
- * XZ 2-D segment intersection test. Returns the crossing point {x,z} or null if
+ * XZ 2-D segment intersection test. Returns the crossing point + parametric positions
+ * {x, z, t, u} (t along segment A, u along segment B — both ∈ (0,1)) or null if
  * the segments are parallel, collinear, or only touch at an endpoint.
  * Open-interval test (t, u ∈ (1e-6, 1−1e-6)) means shared endpoints are NOT
  * counted as crossings — the caller's self-crossing removal / junction detection
  * logic handles endpoint touching cases separately.
  *
  * Pure function of its inputs — no allocations, no side effects.
- * Module scope so junction detection (_detectJunctions) can reuse it to find inter-run
- * crossings across different runs in this._network without duplicating the math.
+ * Module scope so the crossing classifier (_detectJunctions) can reuse it to find inter-run
+ * (and self-run) crossings across this._network without duplicating the math; t/u let the caller
+ * interpolate each strand's Y and arc position at the crossing.
  *
  * @param {number} ax — segment A start X
  * @param {number} az — segment A start Z
@@ -74,9 +76,9 @@ const _scratchTan = new THREE.Vector3()
  * @param {number} cz — segment B start Z
  * @param {number} dx — segment B end X
  * @param {number} dz — segment B end Z
- * @returns {{x:number, z:number}|null}
+ * @returns {{x:number, z:number, t:number, u:number}|null}
  */
-function _segXZ(ax, az, bx, bz, cx, cz, dx, dz) {
+function _segCrossParam(ax, az, bx, bz, cx, cz, dx, dz) {
     const ex = bx - ax, ez = bz - az
     const fx = dx - cx, fz = dz - cz
     const denom = ex * fz - ez * fx
@@ -84,7 +86,7 @@ function _segXZ(ax, az, bx, bz, cx, cz, dx, dz) {
     const t = ((cx - ax) * fz - (cz - az) * fx) / denom
     const u = ((cx - ax) * ez - (cz - az) * ex) / denom
     if (t > 1e-6 && t < 1 - 1e-6 && u > 1e-6 && u < 1 - 1e-6) {
-        return { x: ax + t * ex, z: az + t * ez }
+        return { x: ax + t * ex, z: az + t * ez, t, u }
     }
     return null
 }
@@ -206,6 +208,9 @@ export const CHUNK_SIZE = 64
 // Non-destructive experimental routing for the Phase-8 redesign. Endless roads as a
 // deterministic chain of valley-anchor connections, streamed around the view like terrain.
 const PROTO_ANCHOR_SPACING = 256   // m between macro-grid anchors
+// FEAT-13 graph mode: the 8-neighbourhood over the anchor lattice (edges run in these directions →
+// varied, not parallel). Used by _graphEdgesFrom / _graphIncidentCells / _graphAnchorDegree.
+const GRAPH_NB = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]
 const PROTO_CELL           = 10    // m — A* grid resolution for an anchor→anchor connection
 const PROTO_MARGIN         = 120   // m — N/S detour room so a connection can wrap around a peak. PERF
                                    // (Tier 1): the arc-search lattice area is (256+2·margin)² so this
@@ -1018,13 +1023,16 @@ export class RoadSystem {
         // harness's two passes). key "<tileX>,<tileZ>" → { spline, waypoints }. Rebuilt on re-slice.
         this._tileObjects = new Map()
 
-        // Junction detection cache (P9 plan 04 — SURF-07).
+        // Crossing classifier cache (P9 plan 04 — SURF-07; reworked into the FEAT-07/08/11/13 classifier).
         // key nodeKey "<round(x)>,<round(z)>" → { pos: THREE.Vector3, legs: [{runKey, segIdx, dir}],
-        //   nodeY: number, simpleMerge: bool }
+        //   nodeY: number, simpleMerge: bool, kind, dY, angle, under, over, records: [...] }
         // Pure function of this._network — deterministic + window-invariant by transitivity (D-16).
         // Cleared on re-stream (same site as this._tiles.clear()).
         this._junctions = new Map()
         this._junctionsFrom = null   // identity guard for _detectJunctions memoization
+        this._crossingList = []      // flat per-crossing classified records (rebuilt with _junctions)
+        // FEAT-07 Step 2: per-run index of AT_GRADE mid-span crossings to flatten toward {arc, nodeY}.
+        this._crossingsByRun = new Map()   // runKey → [{ arc, nodeY }] (rebuilt with _junctions)
 
         // ── Off-thread route pre-warming (PERF-03 Workstream A) ──────────────────
         // warmRoutes() asks a Worker to route the connections the streamer will soon need and posts
@@ -1151,13 +1159,29 @@ export class RoadSystem {
         const rows = []
         for (let mz = mz0; mz <= mz1; mz++) rows.push(mz)
         rows.sort((a, b) => Math.abs(a - center_mz) - Math.abs(b - center_mz))
+        const graph = (this._params?.roadNetworkMode ?? 'rows') === 'graph'
+        const addJob = (spec) => {
+            if (this._proto.cls?.has(spec.key) || this._pendingRoutes.has(spec.key)) return
+            this._pendingRoutes.add(spec.key)
+            jobs.push({ key: spec.key, ax: spec.ax, az: spec.az, bx: spec.bx, bz: spec.bz, opts: spec.opts })
+        }
+        const canon = (a, b) => (a[1] < b[1] || (a[1] === b[1] && a[0] <= b[0])) ? [a, b] : [b, a]
+        const warmedEdges = graph ? new Set() : null
         for (const mz of rows) {
             for (let mx = mx0; mx <= mx1; mx++) {
                 if (jobs.length >= PREWARM_MAX_JOBS) break
-                const spec = this._connRouteSpec(mx, mz)
-                if (this._proto.cls?.has(spec.key) || this._pendingRoutes.has(spec.key)) continue
-                this._pendingRoutes.add(spec.key)
-                jobs.push({ key: spec.key, ax: spec.ax, az: spec.az, bx: spec.bx, bz: spec.bz, opts: spec.opts })
+                if (graph) {
+                    for (const nb of this._graphEdgesFrom(mx, mz)) {
+                        const [c1, c2] = canon([mx, mz], nb)
+                        const ek = `${c1[0]},${c1[1]}:${c2[0]},${c2[1]}`
+                        if (warmedEdges.has(ek)) continue
+                        warmedEdges.add(ek)
+                        addJob(this._edgeRouteSpec(c1, c2))
+                        if (jobs.length >= PREWARM_MAX_JOBS) break
+                    }
+                } else {
+                    addJob(this._connRouteSpec(mx, mz))
+                }
             }
             if (jobs.length >= PREWARM_MAX_JOBS) break
         }
@@ -1272,6 +1296,77 @@ export class RoadSystem {
         return Math.atan2(next.z - prev.z, next.x - prev.x)
     }
 
+    // FEAT-13: the canonical "through" heading at an anchor cell, used as the routing terminal heading
+    // and the ribbon-weld target. Rows mode = the row chord (_protoAnchorHeading). Graph mode = a chord
+    // through the cell's graph neighbours when it is a degree-2 pass-through (G1 flow), else this edge's
+    // own direction (junction flatten/weld owns continuity at degree-1/≥3 nodes). Pure / window-invariant.
+    // The terminal heading the routed edge `at → toward` leaves the anchor `at` with (and the ribbon-weld
+    // target there). Rows mode = the row chord (_protoAnchorHeading — all E edges of a row stay collinear,
+    // byte-identical to the old behaviour). Graph mode = the EDGE's OWN direction toward its neighbour, so
+    // edges meeting at a junction DIVERGE toward their neighbours (a shared per-cell heading made them all
+    // leave parallel and overlap — the near-parallel-graze step bug). A straight pass-through still gets
+    // ~G1 for free (the two opposite edges' headings are collinear); corners/junctions bend/diverge.
+    _edgeTerminalHeading(at, toward) {
+        if ((this._params?.roadNetworkMode ?? 'rows') !== 'graph') return this._protoAnchorHeading(at[0], at[1])
+        const a = this._protoAnchor(at[0], at[1]), b = this._protoAnchor(toward[0], toward[1])
+        return Math.atan2(b.z - a.z, b.x - a.x)
+    }
+
+    // ── FEAT-13 graph topology — per-anchor directional graph over the lattice ──────────────────────
+    // Per-cell priority hashes (pure fns of (seed, cell) → window-invariant). _graphCellH drives the
+    // spanning-forest; _graphCellHx drives the seeded stitch/loop edge.
+    _graphCellH(mx, mz)  { return seedFor(this._worldSeed, 'roadgraph',  mx, mz) / 4294967296 }
+    _graphCellHx(mx, mz) { return seedFor(this._worldSeed, 'roadgraphX', mx, mz) / 4294967296 }
+
+    // The neighbourhood the graph edges span. roadGraphDiagonals=false ⇒ orthogonal 4-neighbourhood
+    // (E/W/N/S) — roads meet at NODES (real T/X junctions), almost no mid-span crossings → far fewer
+    // intersections/overpasses, cleaner. true ⇒ full 8-neighbourhood (adds NE/NW/SE/SW) — more varied
+    // directions but dense mid-span diagonal X-crossings. (The orthogonal dirs are GRAPH_NB[0..3].)
+    _graphNB() { return (this._params?.roadGraphDiagonals ?? false) ? GRAPH_NB : GRAPH_NB.slice(0, 4) }
+
+    // Directed edges LEAVING cell (mx,mz): the spanning-forest parent (lowest-priority neighbour strictly
+    // below this cell) OR — if this cell is a local-min ROOT — its lowest neighbour (chains trees into
+    // large components), PLUS a seeded stitch/loop edge with probability roadGraphExtraEdgeProb. The
+    // undirected edge {c, parent(c)} forms an acyclic forest (priority strictly decreases downhill);
+    // root-chaining + stitches add the few loops + connectivity. Pure fn → window-invariant. (See the
+    // headless prototype: 0% orphans, max direction variety, ~67% one component at extraProb 0.22.)
+    _graphEdgesFrom(mx, mz) {
+        const NBlist = this._graphNB()
+        const out = []
+        const h = this._graphCellH(mx, mz)
+        let best = null, bestH = Infinity, lo = null, loH = Infinity
+        for (const [dx, dz] of NBlist) {
+            const hn = this._graphCellH(mx + dx, mz + dz)
+            if (hn < loH) { loH = hn; lo = [mx + dx, mz + dz] }
+            if (hn < h && hn < bestH) { bestH = hn; best = [mx + dx, mz + dz] }
+        }
+        if (best) out.push(best)
+        else if (lo) out.push(lo)   // local-min root → chain to lowest neighbour (no orphan, links trees)
+        const extraProb = this._params?.roadGraphExtraEdgeProb ?? 0.22
+        if (this._graphCellHx(mx, mz) < extraProb) {
+            const k = Math.floor(this._graphCellHx(mx + 7, mz - 3) * NBlist.length) % NBlist.length
+            out.push([mx + NBlist[k][0], mz + NBlist[k][1]])
+        }
+        return out
+    }
+
+    // All cells linked to (mx,mz): its own outgoing edges UNION the 1-ring neighbours whose outgoing
+    // edges point back here (edges are ≤1 cell, so a 1-ring scan is complete). Used for degree + heading.
+    _graphIncidentCells(mx, mz) {
+        const NBlist = this._graphNB()
+        const m = new Map()
+        for (const c of this._graphEdgesFrom(mx, mz)) m.set(`${c[0]},${c[1]}`, c)
+        for (const [dx, dz] of NBlist) {
+            const nx = mx + dx, nz = mz + dz
+            for (const c of this._graphEdgesFrom(nx, nz)) if (c[0] === mx && c[1] === mz) { m.set(`${nx},${nz}`, [nx, nz]); break }
+        }
+        return [...m.values()]
+    }
+
+    // Graph-mode degree of an anchor cell (incident-edge count) — drives junction classification:
+    // degree ≥ 3 = junction (flatten + camber→0 + pad); degree 2 = continuing path (grade-C0 only).
+    _graphAnchorDegree(mx, mz) { return this._graphIncidentCells(mx, mz).length }
+
     _protoEdgeCost(fromH, toH, horiz, P) {
         const grade = Math.abs(toH - fromH) / horiz
         const over  = Math.max(0, grade - P.maxGrade)
@@ -1282,7 +1377,7 @@ export class RoadSystem {
     // deleted. The routed centerline (_protoConnectCenterline below) is now the SOLE representation;
     // _streamNetwork samples it into the run polyline (Y = coarse height), so the separate point-mode
     // search + collinear-simplify + loop/self-crossing cleanup are all gone — and routing runs ONCE
-    // per connection, not twice. _segXZ stays (module scope, _detectJunctions inter-run crossings).)
+    // per connection, not twice. _segCrossParam stays (module scope, _detectJunctions crossings).)
 
     // Road Overhaul — the connection's primitive centerline (THE routed representation). Same anchors,
     // same canonical headings, same
@@ -1293,14 +1388,15 @@ export class RoadSystem {
     // endpoints, and the exact arcPrimitiveConnect opts. Shared by _protoConnectCenterline (synchronous
     // compute) and warmRoutes (the off-thread Worker job) so the pre-warmed route is byte-identical to
     // the synchronous fallback — same anchors, same canonical headings, same cost weights.
-    _connRouteSpec(mx, mz) {
-        const a = this._protoAnchor(mx, mz), b = this._protoAnchor(mx + 1, mz)
-        const key = `${mx},${mz}:${a.x.toFixed(0)},${a.z.toFixed(0)}>${b.x.toFixed(0)},${b.z.toFixed(0)}`
+    // Shared arcPrimitiveConnect opts for an edge between two anchor CELLS c1,c2 (terminal headings from
+    // _anchorThroughHeading — rows mode == _protoAnchorHeading, byte-identical; graph mode == the graph
+    // through-heading). Used by both the rows _connRouteSpec and the graph _edgeRouteSpec.
+    _routeOptsBetween(c1, c2) {
         const P = this._proto.params
         const pp = this._params || {}
         const halfW = pp.roadHalfWidth ?? 5, clearance = pp.roadClearanceMargin ?? 0.5
         const hardR = Math.max(pp.roadArcHardRadius ?? 8, halfW + clearance + 0.1)
-        const opts = {
+        return {
             hardR, gentleR: pp.roadArcGentleRadius ?? 30, margin: PROTO_MARGIN,
             wDist: P.wDist, wAlt: P.wAlt, wGrade: P.wGrade, wOver: P.wOver,
             maxGrade: P.maxGrade, wCurv: P.wTurn, wHeur: pp.roadArcHeurWeight ?? 1.5,
@@ -1314,11 +1410,35 @@ export class RoadSystem {
             // |lowpass − raw| (the fill/cut earthwork). Default 0 = off (terrain-following, unchanged).
             earthworkWindow: pp.roadEarthworkWindow ?? 0, wDev: pp.roadWDeviation ?? 0,
             deviationCap: pp.roadDeviationCap ?? Infinity,
-            startHeading: this._protoAnchorHeading(mx, mz),
-            goalHeading:  this._protoAnchorHeading(mx + 1, mz),
+            startHeading: this._edgeTerminalHeading(c1, c2),
+            goalHeading:  this._edgeTerminalHeading(c2, c1),
             emitPrimitives: true,
         }
-        return { key, ax: a.x, az: a.z, bx: b.x, bz: b.z, opts }
+    }
+
+    _connRouteSpec(mx, mz) {
+        const a = this._protoAnchor(mx, mz), b = this._protoAnchor(mx + 1, mz)
+        const key = `${mx},${mz}:${a.x.toFixed(0)},${a.z.toFixed(0)}>${b.x.toFixed(0)},${b.z.toFixed(0)}`
+        return { key, ax: a.x, az: a.z, bx: b.x, bz: b.z, opts: this._routeOptsBetween([mx, mz], [mx + 1, mz]) }
+    }
+
+    // FEAT-13 graph mode: route SPEC for an arbitrary anchor-cell edge c1→c2 (canonical 'g' cache key).
+    _edgeRouteSpec(c1, c2) {
+        const a = this._protoAnchor(c1[0], c1[1]), b = this._protoAnchor(c2[0], c2[1])
+        const key = `g${c1[0]},${c1[1]}>${c2[0]},${c2[1]}:${a.x.toFixed(0)},${a.z.toFixed(0)}>${b.x.toFixed(0)},${b.z.toFixed(0)}`
+        return { key, ax: a.x, az: a.z, bx: b.x, bz: b.z, opts: this._routeOptsBetween(c1, c2) }
+    }
+
+    _edgeCenterline(c1, c2) {
+        if (!this._proto.cls) this._proto.cls = new Map()
+        const spec = this._edgeRouteSpec(c1, c2)
+        const cached = this._proto.cls.get(spec.key)
+        if (cached) return cached
+        const descs = arcPrimitiveConnect(spec.ax, spec.az, spec.bx, spec.bz, (x, z) => this._coarseH(x, z), spec.opts)
+        const cl = centerlineFromDescriptors(descs)
+        this._proto.cls.set(spec.key, cl)
+        this._pendingRoutes.delete(spec.key)
+        return cl
     }
 
     _protoConnectCenterline(mx, mz) {
@@ -1335,6 +1455,70 @@ export class RoadSystem {
         this._proto.cls.set(spec.key, cl)
         this._pendingRoutes.delete(spec.key)   // a still-in-flight Worker reply for this key is now redundant
         return cl
+    }
+
+    // Smooth a polyline's Y in place (shared by the rows row-polyline and the graph per-edge polyline).
+    // Off-earthwork: legacy ±designGradeWindow terrain-following smoothing. Earthwork: (1) wide-smooth raw
+    // → the gentle bridged/cut design line; (2) a legacy-window-smooth terrain reference; (3) clamp the
+    // design to ±deviationCap of that SMOOTH reference — clamping against raw would let the design follow
+    // raw bumps where the cap bites, putting near-vertical steps into the collision surface (road-smoothness).
+    _gradeEdgeInPlace(pts, capOverride = null) {
+        const ewWindow = this._params?.roadEarthworkWindow ?? 0
+        const ewActive = ewWindow > 0 && (this._params?.roadWDeviation ?? 0) > 0
+        const legacyWin = this._params?.designGradeWindow ?? 50
+        if (!ewActive) { smoothGradeInPlace(pts, legacyWin); return }
+        const raw = pts.map(pt => pt.y)
+        smoothGradeInPlace(pts, ewWindow)            // pts.y = wide design line
+        const design = pts.map(pt => pt.y)
+        for (let i = 0; i < pts.length; i++) pts[i].y = raw[i]
+        smoothGradeInPlace(pts, legacyWin)           // pts.y = smooth terrain reference
+        const cap = capOverride ?? this._params?.roadDeviationCap ?? Infinity
+        for (let i = 0; i < pts.length; i++) {
+            const ref = pts[i].y, y = design[i]
+            pts[i].y = y > ref + cap ? ref + cap : (y < ref - cap ? ref - cap : y)
+        }
+    }
+
+    // FEAT-13 graph mode: build the per-anchor directional graph into this._network over the band
+    // [mx0,mx1]×[mz0,mz1] (+ a cell margin so each undirected edge is emitted identically from any stream
+    // center — window-invariant, mirroring the rows pad). Each edge is canonicalised + dedup'd, degenerate
+    // (merged-coincident) edges skipped, routed via _edgeCenterline, sampled, graded STANDALONE (the
+    // junction reconciliation in _applyJunctionBlend ties shared anchors together), and registered with
+    // cellA/cellB. runKey = "g:<mx1>,<mz1>:<mx2>,<mz2>" (canonical).
+    _assembleGraphEdges(mx0, mx1, mz0, mz1) {
+        const MARGIN = 2
+        const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
+        const inBand = (c) => c[0] >= mx0 && c[0] <= mx1 && c[1] >= mz0 && c[1] <= mz1
+        const canon = (a, b) => (a[1] < b[1] || (a[1] === b[1] && a[0] <= b[0])) ? [a, b] : [b, a]
+        const seen = new Set()
+        for (let mz = mz0 - MARGIN; mz <= mz1 + MARGIN; mz++) {
+            for (let mx = mx0 - MARGIN; mx <= mx1 + MARGIN; mx++) {
+                for (const nb of this._graphEdgesFrom(mx, mz)) {
+                    const [c1, c2] = canon([mx, mz], nb)
+                    const key = `g:${c1[0]},${c1[1]}:${c2[0]},${c2[1]}`
+                    if (seen.has(key)) continue
+                    seen.add(key)
+                    if (!inBand(c1) && !inBand(c2)) continue   // fully-margin edge: not registered (frontier, like rows pad)
+                    const A = this._protoAnchor(c1[0], c1[1]), B = this._protoAnchor(c2[0], c2[1])
+                    { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }   // degenerate (merged) edge
+                    const cl = this._edgeCenterline(c1, c2)
+                    if (!cl || cl.length < 1e-6) continue
+                    const n = Math.max(1, Math.ceil(cl.length / PROTO_SAMPLE_DS))
+                    const pts = new Array(n + 1)
+                    const clArc = new Float64Array(n + 1)
+                    for (let i = 0; i <= n; i++) {
+                        const s = cl.length * i / n
+                        clArc[i] = s
+                        const p = cl.pointAt(s)
+                        pts[i] = new THREE.Vector3(p.x, this._coarseH(p.x, p.z), p.z)
+                    }
+                    this._gradeEdgeInPlace(pts, this._params?.roadGraphDeviationCap ?? 2)
+                    const polyCum = new Float64Array(n + 1)
+                    for (let i = 1; i <= n; i++) polyCum[i] = polyCum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
+                    this._network.set(key, { points: pts, arcOrigin: 0, centerline: cl, polyCum, clArc, cellA: c1, cellB: c2 })
+                }
+            }
+        }
     }
 
     // Road Overhaul, Phase B — a primitive centerline over the ABSOLUTE column span [mxLo, mxHi],
@@ -1465,6 +1649,9 @@ export class RoadSystem {
         // gradeY is C0 across the join. Each run carries its connection's EXACT primitive centerline
         // (radius ≥ hardR by construction) so the ribbon/carve sample it directly (the BUG-12 fold
         // fix), never a Catmull-Rom re-fit.
+        if ((this._params?.roadNetworkMode ?? 'rows') === 'graph') {
+            this._assembleGraphEdges(mx0, mx1, mz0, mz1)
+        } else
         for (let mz = mz0; mz <= mz1; mz++) {
             // Sample each east connection's EXACT primitive centerline (a SINGLE arc-search, cached)
             // into a polyline; Y = coarse terrain height (graded below). The centerline is the sole
@@ -1512,28 +1699,7 @@ export class RoadSystem {
             // ridges at a gentle grade (the carve then fills/cuts to it), and clamp the smoothed Y to
             // ±deviationCap of raw so fills/cuts stay within what the carve can build (matches the router's
             // designH). Off → legacy ±designGradeWindow terrain-following smoothing, unchanged.
-            const ewWindow = this._params?.roadEarthworkWindow ?? 0
-            const ewActive = ewWindow > 0 && (this._params?.roadWDeviation ?? 0) > 0
-            const legacyWin = this._params?.designGradeWindow ?? 50
-            if (!ewActive) {
-                smoothGradeInPlace(rowPts, legacyWin)
-            } else {
-                // FEAT-10 earthwork design line: (1) wide-smooth raw → the gentle bridged/cut grade;
-                // (2) a SMOOTH terrain reference (legacy-window smooth of raw) for the cap; (3) clamp the
-                // design to ±cap of that SMOOTH reference. Clamping against the smooth ref (not raw coarse)
-                // is essential — clamping against raw would make the design follow raw's bumps wherever the
-                // cap bites, putting near-vertical steps into the collision surface (road-smoothness).
-                const rowRaw = rowPts.map(pt => pt.y)
-                smoothGradeInPlace(rowPts, ewWindow)            // rowPts.y = wide design line
-                const design = rowPts.map(pt => pt.y)
-                for (let i = 0; i < rowPts.length; i++) rowPts[i].y = rowRaw[i]
-                smoothGradeInPlace(rowPts, legacyWin)           // rowPts.y = smooth terrain reference
-                const cap = this._params?.roadDeviationCap ?? Infinity
-                for (let i = 0; i < rowPts.length; i++) {
-                    const ref = rowPts[i].y, y = design[i]
-                    rowPts[i].y = y > ref + cap ? ref + cap : (y < ref - cap ? ref - cap : y)
-                }
-            }
+            this._gradeEdgeInPlace(rowPts)
 
             for (const { mx, i0, i1, clArc } of spans) {
                 if (mx < mx0 || mx > mx1) continue   // pad connection: graded for window-invariance, not registered
@@ -1546,7 +1712,11 @@ export class RoadSystem {
                     if (i > 0) polyCum[i] = polyCum[i - 1] + Math.hypot(run[i].x - run[i - 1].x, run[i].z - run[i - 1].z)
                 }
                 const centerline = this._protoConnectCenterline(mx, mz)
-                this._network.set(`${mz}:${mx}`, { points: run, arcOrigin: 0, centerline, polyCum, clArc })
+                // cellA/cellB: the run's two anchor CELLS (FEAT-13). Rows mode = the E pair; graph mode
+                // sets the edge's cells. Consumers read these instead of parsing the "mz:mx" runKey, so
+                // both topology modes share one code path.
+                this._network.set(`${mz}:${mx}`, { points: run, arcOrigin: 0, centerline, polyCum, clArc,
+                    cellA: [mx, mz], cellB: [mx + 1, mz] })
             }
         }
 
@@ -1567,6 +1737,10 @@ export class RoadSystem {
         // centerline sampling) + the deterministic (mz,mx) priority. No dependence on stream center or
         // build order. Node-merge reaches only ±1 cell, so an owner endpoint sits within ±1 of
         // (mx,mz)/(mx+1,mz) → W=2 over-covers safely.
+        // ROWS mode only: this parallel-duplicate drop is specific to the per-row E-edge pattern. Graph
+        // mode emits each undirected edge once (canonical key) and skips degenerate edges at assembly,
+        // so it needs no post-hoc redundant drop.
+        if ((this._params?.roadNetworkMode ?? 'rows') !== 'graph') {
         const band  = this._params?.roadMergeBand ?? 24
         const band2 = band * band
         const _coin = (p, qx, qz) => { const ex = p.x - qx, ez = p.z - qz; return ex * ex + ez * ez <= band2 }
@@ -1591,6 +1765,16 @@ export class RoadSystem {
             if (redundant) toDrop.push(key)
         }
         for (const key of toDrop) this._network.delete(key)
+        }
+
+        // FEAT-07 Step 2: run the crossing classifier now (bounded + cached) so _crossingsByRun is
+        // populated BEFORE any run profile is built — the AT_GRADE mid-span flatten in _buildRunProfile/
+        // _buildCamberProfile reads that index. Once per real re-stream; lazy callers (mesh footprints,
+        // crossingList()) then hit the identity-guard cache. Within rendered/loaded tiles both crossing
+        // strands are always fully in-band (region runsets are identical across centers — the
+        // RUNKEY-SET-INVARIANT guarantee), so the flatten is window-invariant where it is consumed; a
+        // frontier crossing's short ramp (roadJunctionBlendLength) never reaches loaded geometry.
+        this._detectJunctions()
 
         // NOTE (CR-02): no post-build cache eviction. _network is .clear()-ed + rebuilt for the
         // current window at the top of every real re-stream, so its size is window-bounded. The
@@ -1693,114 +1877,211 @@ export class RoadSystem {
         return this._tiles
     }
 
-    // ── Phase 9: Junction detection (SURF-07 / P9 plan 04) ───────────────────────────
+    // ── Crossing classifier (FEAT-07/08/11/13 foundation) ────────────────────────────
     /**
-     * Detect inter-run crossings in this._network and build the junction cache.
+     * Find every inter-run AND self-run XZ crossing in this._network and CLASSIFY each by the
+     * strand-to-strand elevation gap (dY) and crossing angle. This is the spine the at-grade pad
+     * (FEAT-07), overpass (FEAT-08), tunnel (FEAT-11) and N-S graph (FEAT-13) steps consume.
      *
-     * Returns a Map of nodeKey → { pos, legs, nodeY, simpleMerge } where:
-     *   - pos:         THREE.Vector3 — crossing point (Y = avg of 4 segment-endpoint Ys)
-     *   - legs:        Array of { runKey: string, segIdx: number, dir: {x,z} } — legs leaving
-     *                  the node in each road direction, sorted by bearing
-     *   - nodeY:       number — shared elevation (average of 4 endpoint Ys, used for footprint)
-     *   - simpleMerge: boolean — true = fall back to rectangular box (no fillet):
-     *                    - crossing half-angle < 10° (near-parallel roads)
-     *                    - or legs.length > 4 (3+ roads meeting)
+     * BROAD PHASE (Design D — kills the old O(runs²×seg²) rescan that cost a 296 ms Ultra stall):
+     * bucket every run's segments into CHUNK_SIZE world tiles, then run the narrow-phase seg×seg test
+     * ONLY on pairs sharing a bucket. Near-linear in segment count. Run once per build (identity guard).
      *
-     * Memoized via this._junctionsFrom identity guard (same pattern as _slicedFrom).
-     * Cleared on re-stream at the this._tiles.clear() site.
+     * Two outputs, both rebuilt together:
+     *   - this._junctions — Map nodeKey "<round x>,<round z>" → { pos, legs, nodeY, simpleMerge, kind,
+     *       dY, angle, under, over, records } (legs/pos/nodeY/simpleMerge preserved for the road-mesh
+     *       footprint consumer; the rest is the classification for later steps).
+     *   - this._crossingList — flat per-crossing records (see _recordCrossing); the canonical classifier
+     *       output, read via crossingList().
      *
-     * Pure function of this._network — deterministic + window-invariant by transitivity (D-16).
+     * CLASSIFICATION (pure fn of the crossing + params):
+     *   NEAR_PARALLEL  angle < roadCrossAngleMin  — glancing/duplicate graze, not a junction.
+     *   AT_GRADE       dY ≤ roadCrossMergeDY       — flatten both strands to one shared pad.
+     *   GRADE_SEP      dY > roadCrossMergeDY        — overpass; over/under by a fixed (mz,mx,arc) order.
      *
-     * @returns {Map<string, {pos: THREE.Vector3, legs: Array, nodeY: number, simpleMerge: boolean}>}
+     * Pure function of this._network — deterministic + window-invariant by transitivity (D-16). The
+     * SET of crossings over a fixed interior region is identical across stream centers because the runs
+     * covering that region are themselves window-invariant (the RUNKEY-SET-INVARIANT guarantee asserted
+     * by invariance.mjs); frontier runs differ between centers, so callers compare within a common
+     * region (as invariance.mjs / the classifier gate do).
+     *
+     * @returns {Map<string, object>} this._junctions
      */
     _detectJunctions() {
-        // Identity guard: re-detecting the same network is a no-op.
+        // Identity guard: re-detecting the same network is a no-op (this._crossingList stays valid too).
         if (this._junctionsFrom === this._network && this._junctions.size > 0) {
             return this._junctions
         }
 
         this._junctions.clear()
+        this._crossingList = []
+        this._crossingsByRun = new Map()
 
-        const runs = [...this._network.entries()]  // [[runKey, {points}], ...]
-        const nRuns = runs.length
+        const p = this._params || {}
+        const mergeDY  = p.roadCrossMergeDY  ?? 2.5
+        const angleMin = p.roadCrossAngleMin ?? 12
+        // FEAT-13: in graph mode, force every crossing FLAT (no dynamic overpasses) — roads merge at one
+        // shared height. Grade-separation is left to future prefab intersections, not the dynamic system.
+        const forceFlat = (p.roadNetworkMode === 'graph') && (p.roadGraphFlatMerges ?? true)
 
-        // Pairwise inter-run crossing detection using module-scope _segXZ.
-        for (let ri = 0; ri < nRuns - 1; ri++) {
-            const [keyA, { points: ptsA }] = runs[ri]
-            for (let rj = ri + 1; rj < nRuns; rj++) {
-                const [keyB, { points: ptsB }] = runs[rj]
-
-                for (let ai = 0; ai < ptsA.length - 1; ai++) {
-                    const a0 = ptsA[ai], a1 = ptsA[ai + 1]
-                    for (let bi = 0; bi < ptsB.length - 1; bi++) {
-                        const b0 = ptsB[bi], b1 = ptsB[bi + 1]
-
-                        const ix = _segXZ(a0.x, a0.z, a1.x, a1.z, b0.x, b0.z, b1.x, b1.z)
-                        if (!ix) continue
-
-                        // Shared node elevation: average of the 4 segment endpoint Ys.
-                        const posY = (a0.y + a1.y + b0.y + b1.y) * 0.25
-
-                        const nodeKey = `${Math.round(ix.x)},${Math.round(ix.z)}`
-                        let node = this._junctions.get(nodeKey)
-                        if (!node) {
-                            node = {
-                                pos:         new THREE.Vector3(ix.x, posY, ix.z),
-                                legs:        [],
-                                nodeY:       posY,
-                                simpleMerge: false,
-                            }
-                            this._junctions.set(nodeKey, node)
-                        }
-
-                        // Compute unit direction vectors from node toward adjacent segment endpoints.
-                        // Each road contributes two legs (one each direction away from crossing).
-                        const addLeg = (runKey, segIdx, fromPt, toPt) => {
-                            const dx = toPt.x - ix.x
-                            const dz = toPt.z - ix.z
-                            const len = Math.sqrt(dx * dx + dz * dz) || 1
-                            node.legs.push({ runKey, segIdx, dir: { x: dx / len, z: dz / len } })
-                        }
-                        addLeg(keyA, ai,     a0,  a1)   // run A, toward a1
-                        addLeg(keyA, ai + 1, a1,  a0)   // run A, toward a0
-                        addLeg(keyB, bi,     b0,  b1)   // run B, toward b1
-                        addLeg(keyB, bi + 1, b1,  b0)   // run B, toward b0
-
-                        // Half-angle guard: if crossing is near-parallel (< ~10°), use simple box.
-                        // Compute the acute angle between the two road directions.
-                        const edgeAx = a1.x - a0.x, edgeAz = a1.z - a0.z
-                        const edgeBx = b1.x - b0.x, edgeBz = b1.z - b0.z
-                        const lenA = Math.sqrt(edgeAx * edgeAx + edgeAz * edgeAz) || 1
-                        const lenB = Math.sqrt(edgeBx * edgeBx + edgeBz * edgeBz) || 1
-                        const dot  = (edgeAx * edgeBx + edgeAz * edgeBz) / (lenA * lenB)
-                        const acuteAngle = Math.acos(Math.min(1, Math.abs(dot))) * (180 / Math.PI)
-                        if (acuteAngle < 10) node.simpleMerge = true
+        // ── Broad phase: bucket every run segment into the CHUNK_SIZE tiles its AABB touches. ──
+        // Each seg record carries what the narrow phase + classifier need: world endpoints, endpoint Ys,
+        // run-local XZ arc (via polyCum), and parsed (mz,mx) for the deterministic over/under order.
+        const buckets = new Map()   // "tx,tz" → seg[]
+        for (const [runKey, entry] of this._network) {
+            const pts = entry.points
+            if (!pts || pts.length < 2) continue
+            const polyCum = entry.polyCum
+            // (mx,mz) = the run's start CELL (netEntry.cellA) — the per-run identity for the deterministic
+            // over/under order (FEAT-13: works for rows + graph; no runKey parsing).
+            const mx = entry.cellA ? entry.cellA[0] : NaN, mz = entry.cellA ? entry.cellA[1] : NaN
+            for (let i = 0; i < pts.length - 1; i++) {
+                const x0 = pts[i].x, z0 = pts[i].z, x1 = pts[i + 1].x, z1 = pts[i + 1].z
+                const seg = {
+                    runKey, mz, mx, segIdx: i,
+                    x0, z0, x1, z1, y0: pts[i].y, y1: pts[i + 1].y,
+                    a0: polyCum ? polyCum[i] : i, a1: polyCum ? polyCum[i + 1] : i + 1,
+                }
+                const txLo = Math.floor(Math.min(x0, x1) / CHUNK_SIZE), txHi = Math.floor(Math.max(x0, x1) / CHUNK_SIZE)
+                const tzLo = Math.floor(Math.min(z0, z1) / CHUNK_SIZE), tzHi = Math.floor(Math.max(z0, z1) / CHUNK_SIZE)
+                for (let tx = txLo; tx <= txHi; tx++) {
+                    for (let tz = tzLo; tz <= tzHi; tz++) {
+                        const k = `${tx},${tz}`
+                        let arr = buckets.get(k); if (!arr) { arr = []; buckets.set(k, arr) }
+                        arr.push(seg)
                     }
                 }
             }
         }
 
-        // Post-process each detected node.
-        for (const node of this._junctions.values()) {
-            // Guard: more than 4 legs → fall back to simple box (3+ roads meeting — T-09-07).
-            if (node.legs.length > 4) node.simpleMerge = true
-
-            // Sort legs by bearing angle around node (atan2(dx, dz) → [-π, π]).
-            // Sorted CCW from -π so fillet arcs connect adjacent legs in winding order.
-            node.legs.sort((a, b) => Math.atan2(a.dir.x, a.dir.z) - Math.atan2(b.dir.x, b.dir.z))
-
-            // Shared-node elevation hook (D-14): nodeY is stored on the node record so both
-            // road-mesh and the carve builder read the same value.
-            // approach_Y(s) = lerp(designGradeY(s), nodeY, max(0, 1 - dist_to_node / blendLength))
-            // blendLength is read from params.roadJunctionBlendLength (default 30 m, ranger.js).
-            // The actual lerp is applied during ribbon mesh building, not here — this method
-            // just stores nodeY on the record as the authoritative shared elevation.
+        // ── Narrow phase: seg×seg only within a shared bucket; dedup pairs (a seg spans ≥1 bucket). ──
+        const seenPairs = new Set()
+        for (const arr of buckets.values()) {
+            for (let i = 0; i < arr.length - 1; i++) {
+                const A = arr[i]
+                for (let j = i + 1; j < arr.length; j++) {
+                    const B = arr[j]
+                    // Skip adjacent segments of the SAME run (they share an endpoint, not a real crossing).
+                    if (A.runKey === B.runKey && Math.abs(A.segIdx - B.segIdx) <= 1) continue
+                    // Canonical (S before T) so the same pair found via two buckets is tested once.
+                    const aFirst = A.runKey < B.runKey || (A.runKey === B.runKey && A.segIdx < B.segIdx)
+                    const S = aFirst ? A : B, T = aFirst ? B : A
+                    const pk = `${S.runKey}#${S.segIdx}|${T.runKey}#${T.segIdx}`
+                    if (seenPairs.has(pk)) continue
+                    seenPairs.add(pk)
+                    const ix = _segCrossParam(S.x0, S.z0, S.x1, S.z1, T.x0, T.z0, T.x1, T.z1)
+                    if (!ix) continue
+                    this._recordCrossing(S, T, ix, mergeDY, angleMin, forceFlat)
+                }
+            }
         }
 
-        // Purity comment: Pure function of this._network — deterministic + window-invariant
-        // by transitivity (D-16).
+        // ── Post-process nodes for the road-mesh footprint consumer + the AT_GRADE flatten index. ──
+        for (const node of this._junctions.values()) {
+            if (node.legs.length > 4) node.simpleMerge = true   // 3+ roads meeting → box (T-09-07)
+            // Sort legs CCW by bearing so fillet arcs connect adjacent legs in winding order.
+            node.legs.sort((a, b) => Math.atan2(a.dir.x, a.dir.z) - Math.atan2(b.dir.x, b.dir.z))
+            // Finalise nodeY = mean grade Y of every strand at the node (the pad + the flatten use it).
+            if (node._yCount > 0) { node.nodeY = node._ySum / node._yCount; node.pos.y = node.nodeY }
+            // Flatten the strands of a node toward its ONE shared node.nodeY so they meet at one elevation
+            // (no step). Normally only AT_GRADE nodes (GRADE_SEP = overpass excluded). In forceFlat (graph)
+            // mode flatten EVERY node — including near-parallel grazes (which otherwise leave a collision
+            // step where two overlapping strands sit at different heights).
+            if (node.kind === 'AT_GRADE' || forceFlat) {
+                for (const r of node.records) {
+                    this._addCrossingByRun(r.runA, r.arcA, node.nodeY)
+                    this._addCrossingByRun(r.runB, r.arcB, node.nodeY)
+                }
+            }
+        }
+
         this._junctionsFrom = this._network
         return this._junctions
+    }
+
+    _addCrossingByRun(runKey, arc, nodeY) {
+        let arr = this._crossingsByRun.get(runKey)
+        if (!arr) { arr = []; this._crossingsByRun.set(runKey, arr) }
+        arr.push({ arc, nodeY })
+    }
+
+    /**
+     * Classify one seg×seg crossing and fold it into this._crossingList + the node Map.
+     * S/T are seg records (S canonical-first); ix is _segCrossParam's {x,z,t,u}. Pure fn of inputs.
+     */
+    _recordCrossing(S, T, ix, mergeDY, angleMin, forceFlat = false) {
+        const yA = S.y0 + (S.y1 - S.y0) * ix.t
+        const yB = T.y0 + (T.y1 - T.y0) * ix.u
+        const dY = Math.abs(yA - yB)
+        const arcA = S.a0 + (S.a1 - S.a0) * ix.t
+        const arcB = T.a0 + (T.a1 - T.a0) * ix.u
+
+        // Acute angle between the two segment directions.
+        const v1x = S.x1 - S.x0, v1z = S.z1 - S.z0, v2x = T.x1 - T.x0, v2z = T.z1 - T.z0
+        const l1 = Math.hypot(v1x, v1z) || 1, l2 = Math.hypot(v2x, v2z) || 1
+        const dot = Math.abs((v1x * v2x + v1z * v2z) / (l1 * l2))
+        const angle = Math.acos(Math.min(1, dot)) * (180 / Math.PI)
+
+        const selfCrossing = S.runKey === T.runKey
+        // forceFlat (graph) → never GRADE_SEP; everything flattens (angle only picks pad style).
+        const kind = angle < angleMin ? 'NEAR_PARALLEL'
+            : (forceFlat || dY <= mergeDY) ? 'AT_GRADE' : 'GRADE_SEP'
+
+        // Deterministic over/under: the strand with the lower (mz, mx, arc·10 rounded) tuple goes UNDER.
+        // A fixed total order over the two strands' world identities → window-invariant (no stream/history).
+        const ta = [S.mz, S.mx, Math.round(arcA * 10)], tb = [T.mz, T.mx, Math.round(arcB * 10)]
+        const aUnder = ta[0] !== tb[0] ? ta[0] < tb[0] : (ta[1] !== tb[1] ? ta[1] < tb[1] : ta[2] <= tb[2])
+        const under = aUnder ? S.runKey : T.runKey
+        const over  = aUnder ? T.runKey : S.runKey
+
+        const posY = (yA + yB) * 0.5
+        const record = {
+            point: { x: ix.x, y: posY, z: ix.z },
+            runA: S.runKey, segA: S.segIdx, arcA, yA,
+            runB: T.runKey, segB: T.segIdx, arcB, yB,
+            dY, angle, selfCrossing, kind, under, over,
+        }
+        this._crossingList.push(record)
+
+        // ── Aggregate into the node Map (road-mesh consumer reads pos/legs/nodeY/simpleMerge). ──
+        const nodeKey = `${Math.round(ix.x)},${Math.round(ix.z)}`
+        let node = this._junctions.get(nodeKey)
+        if (!node) {
+            node = {
+                pos: new THREE.Vector3(ix.x, posY, ix.z), legs: [], nodeY: posY, simpleMerge: false,
+                kind, dY, angle, under, over, records: [], _ySum: 0, _yCount: 0,
+            }
+            this._junctions.set(nodeKey, node)
+        }
+        // nodeY = average grade Y of ALL strands meeting at this node (not just the first pair) — the mean
+        // ROAD height, so a multi-road junction doesn't tip toward whichever crossing was found first.
+        node._ySum += yA + yB; node._yCount += 2
+        node.records.push(record)
+        // Keep the strongest class at a multi-crossing node (GRADE_SEP > AT_GRADE > NEAR_PARALLEL).
+        const rank = (k) => (k === 'GRADE_SEP' ? 2 : k === 'AT_GRADE' ? 1 : 0)
+        if (rank(kind) > rank(node.kind)) { node.kind = kind; node.dY = dY; node.angle = angle; node.under = under; node.over = over }
+
+        // Legs: each strand contributes two, one each way from the crossing (dir = unit toward endpoint).
+        const addLeg = (runKey, segIdx, toX, toZ) => {
+            const dx = toX - ix.x, dz = toZ - ix.z
+            const len = Math.hypot(dx, dz) || 1
+            node.legs.push({ runKey, segIdx, dir: { x: dx / len, z: dz / len } })
+        }
+        addLeg(S.runKey, S.segIdx,     S.x1, S.z1)
+        addLeg(S.runKey, S.segIdx + 1, S.x0, S.z0)
+        addLeg(T.runKey, T.segIdx,     T.x1, T.z1)
+        addLeg(T.runKey, T.segIdx + 1, T.x0, T.z0)
+        if (kind === 'NEAR_PARALLEL') node.simpleMerge = true   // near-parallel → rectangular box (no fillet)
+    }
+
+    /**
+     * The classifier's canonical output: a flat array of per-crossing classified records (rebuilt with
+     * _detectJunctions). See _recordCrossing for the record shape. Pure fn of this._network.
+     * @returns {Array<object>}
+     */
+    crossingList() {
+        this._detectJunctions()
+        return this._crossingList
     }
 
     // ── BUG-14 diagnostic (read-only) ────────────────────────────────────────────────
@@ -2619,16 +2900,45 @@ export class RoadSystem {
         return rows >= 2
     }
 
-    // Per-run endpoint junction info for run "mz:mx" (nodes A=(mx,mz), B=(mx+1,mz)).
-    // nodeY = the shared merged-anchor Y both crossing runs ease toward.
-    _runEndpointJunctions(runKey) {
-        const c = runKey.indexOf(':'); const mz = +runKey.slice(0, c), mx = +runKey.slice(c + 1)
-        if (!Number.isInteger(mz) || !Number.isInteger(mx)) return { jStart: { is: false, y: 0 }, jEnd: { is: false, y: 0 } }
-        const A = this._protoAnchor(mx, mz), B = this._protoAnchor(mx + 1, mz)
-        return {
-            jStart: { is: this._isJunctionNode(mx, mz),     y: A.y },
-            jEnd:   { is: this._isJunctionNode(mx + 1, mz), y: B.y },
+    // Shared elevation a junction node should sit at: the AVERAGE GRADE Y of every road that meets there
+    // — NOT the merged anchor's terrain Y. The anchor is gradient-descended to a terrain valley minimum
+    // (_protoAnchorRaw), so easing the road grade toward it collapses junctions down to the valley floor
+    // even when all incoming roads are on a fill bridging the valley (a ~10 m hump/dip — user 2026-06-28).
+    // Averaging the incident runs' endpoint grade Ys puts the node at the mean ROAD height, minimising
+    // humping. Pure fn of the network endpoints coincident with the anchor (window-invariant). Falls back
+    // to the anchor terrain Y only if no incident run is registered (shouldn't happen at a real junction).
+    _anchorJunctionGradeY(mx, mz) {
+        const P = this._protoAnchor(mx, mz)
+        let sum = 0, n = 0
+        for (let cz = mz - 2; cz <= mz + 2; cz++) {
+            for (let cx = mx - 2; cx <= mx + 2; cx++) {
+                const e = this._network?.get(`${cz}:${cx}`)
+                if (!e || !e.points || e.points.length < 2) continue
+                const a0 = this._protoAnchor(cx, cz), a1 = this._protoAnchor(cx + 1, cz)
+                if (Math.abs(a0.x - P.x) < 0.5 && Math.abs(a0.z - P.z) < 0.5) { sum += e.points[0].y; n++ }
+                if (Math.abs(a1.x - P.x) < 0.5 && Math.abs(a1.z - P.z) < 0.5) { sum += e.points[e.points.length - 1].y; n++ }
+            }
         }
+        return n > 0 ? sum / n : P.y
+    }
+
+    // Per-run endpoint junction info: the two endpoint anchor CELLS come from netEntry.cellA/cellB
+    // (FEAT-13 — works for both rows and graph topology; no runKey parsing).
+    // nodeY = the shared junction Y both runs ease toward — the AVERAGE incident road grade (not terrain).
+    _runEndpointJunctions(runKey) {
+        const e = this._network?.get(runKey)
+        if (!e || !e.cellA || !e.cellB) return { jStart: { is: false, y: 0, flatCamber: false }, jEnd: { is: false, y: 0, flatCamber: false } }
+        const [ax, az] = e.cellA, [bx, bz] = e.cellB
+        const graph = (this._params?.roadNetworkMode ?? 'rows') === 'graph'
+        // `is` = needs grade reconciliation (ease toward the shared mean for C0); `flatCamber` = also kill
+        // camber + read as a full intersection. Rows: a cross-row merge is both. Graph: degree ≥ 2 joins
+        // reconcile grade (per-edge grading leaves a small step otherwise), but only degree ≥ 3 are true
+        // junctions that flatten camber — a degree-2 pass-through keeps its banking/flow.
+        const nodeInfo = (mx, mz) => {
+            if (graph) { const d = this._graphAnchorDegree(mx, mz); return { is: d >= 2, flatCamber: d >= 3, y: this._anchorJunctionGradeY(mx, mz) } }
+            const j = this._isJunctionNode(mx, mz); return { is: j, flatCamber: j, y: this._anchorJunctionGradeY(mx, mz) }
+        }
+        return { jStart: nodeInfo(ax, az), jEnd: nodeInfo(bx, bz) }
     }
 
     // Mutate gradeY (→nodeY) and/or camberRad (→0) in place within roadJunctionBlendLength of a junction
@@ -2640,13 +2950,51 @@ export class RoadSystem {
         if (Rj <= 0) return
         const N = arcPos.length, aStart = arcPos[0], aEnd = arcPos[N - 1]
         for (let i = 0; i < N; i++) {
+            // fG = grade-reconcile weight (any junction endpoint); fC = camber-kill weight (only a
+            // flatCamber endpoint, i.e. a true ≥3-way intersection — a degree-2 graph pass-through keeps
+            // its banking while still reconciling grade to C0).
+            let fG = 0, ny = 0, fC = 0
+            if (ej.jStart.is) { const d = arcPos[i] - aStart; if (d < Rj) { const t = 1 - d / Rj; const fs = t * t * (3 - 2 * t); if (fs > fG) { fG = fs; ny = ej.jStart.y } if (ej.jStart.flatCamber && fs > fC) fC = fs } }
+            if (ej.jEnd.is)   { const d = aEnd - arcPos[i];   if (d < Rj) { const t = 1 - d / Rj; const fs = t * t * (3 - 2 * t); if (fs > fG) { fG = fs; ny = ej.jEnd.y } if (ej.jEnd.flatCamber && fs > fC) fC = fs } }
+            if (gradeY && fG > 0)    gradeY[i] += (ny - gradeY[i]) * fG
+            if (camberRad && fC > 0) camberRad[i] *= (1 - fC)
+        }
+    }
+
+    // FEAT-07 Step 2: flatten this run toward each AT_GRADE MID-SPAN crossing's shared node Y (and
+    // camber → 0) within roadJunctionBlendLength of the crossing's arc position — the same smoothstep
+    // ramp as _applyJunctionBlend, but anchored at an interior arcS (a graph mid-span crossing) instead
+    // of a shared anchor endpoint. Both crossing strands ease to the SAME node.nodeY, so they meet at one
+    // elevation at the crossing → no invisible step (the screenshot "mess" fix); the ribbon, the carve,
+    // and physics all read this flattened gradeY (mesh == collision, QUAL-07). Pure fn of _crossingsByRun
+    // (itself a pure fn of the network) → window-invariant. No-op for runs with no AT_GRADE crossing.
+    _applyMidspanJunctionBlend(runKey, arcPos, gradeY, camberRad) {
+        const xs = this._crossingsByRun?.get(runKey)
+        if (!xs || xs.length === 0) return
+        const Rj = this._params?.roadJunctionBlendLength ?? 30
+        if (Rj <= 0) return
+        const N = arcPos.length
+        const aStart = arcPos[0], aEnd = arcPos[N - 1]
+        const ss = (t) => t * t * (3 - 2 * t)
+        for (let i = 0; i < N; i++) {
             let f = 0, ny = 0
-            if (ej.jStart.is) { const d = arcPos[i] - aStart; if (d < Rj) { const t = 1 - d / Rj; const fs = t * t * (3 - 2 * t); if (fs > f) { f = fs; ny = ej.jStart.y } } }
-            if (ej.jEnd.is)   { const d = aEnd - arcPos[i];   if (d < Rj) { const t = 1 - d / Rj; const fs = t * t * (3 - 2 * t); if (fs > f) { f = fs; ny = ej.jEnd.y } } }
-            if (f > 0) {
-                if (camberRad) camberRad[i] *= (1 - f)
-                if (gradeY)    gradeY[i] += (ny - gradeY[i]) * f
+            for (const x of xs) {
+                const d = Math.abs(arcPos[i] - x.arc)
+                if (d < Rj) { const fs = ss(1 - d / Rj); if (fs > f) { f = fs; ny = x.nodeY } }
             }
+            if (f <= 0) continue
+            // Endpoint taper: a mid-span crossing's ramp must NOT alter gradeY/camber at the run's own
+            // endpoints — that is the shared-anchor blend's territory, and the continuing neighbour run
+            // keeps its anchor value there. Forcing this run's end toward a crossing nodeY breaks C0
+            // (a collision-only step, road-smoothness) and the cross-run camber seed (camber-continuity).
+            // Zero the influence within Rj of each end so endpoints stay = the graded anchor value.
+            let g = 1
+            const dS = arcPos[i] - aStart; if (dS < Rj) g = Math.min(g, ss(dS / Rj))
+            const dE = aEnd - arcPos[i];   if (dE < Rj) g = Math.min(g, ss(dE / Rj))
+            f *= g
+            if (f <= 0) continue
+            if (camberRad) camberRad[i] *= (1 - f)
+            if (gradeY)    gradeY[i] += (ny - gradeY[i]) * f
         }
     }
 
@@ -2656,7 +3004,8 @@ export class RoadSystem {
         // BUG-19: build via the shared canonical routine, seeded from the predecessor's end (P4/BUG-10).
         // _runEndCamber uses the SAME routine, so the seed equals the predecessor profile's real end.
         const prof = this._computeCamberArrays(netEntry.points, netEntry.arcOrigin, this._runStartCamber(runKey))
-        this._applyJunctionBlend(runKey, prof.arcPos, null, prof.camberRad)   // FEAT-10: camber→0 at junctions
+        this._applyJunctionBlend(runKey, prof.arcPos, null, prof.camberRad)   // FEAT-10: camber→0 at shared-anchor junctions
+        this._applyMidspanJunctionBlend(runKey, prof.arcPos, null, prof.camberRad)   // FEAT-07 Step 2: camber→0 at AT_GRADE crossings
         return prof
     }
 
@@ -2768,10 +3117,9 @@ export class RoadSystem {
         // edges line up → the join seals. Not an average/weld: it's the shared node tangent both runs
         // already agree on. (Guarded against a reverse-stored run by the forward-dot check.)
         {
-            const _c = runKey.indexOf(':'); const _mz = +runKey.slice(0, _c), _mx = +runKey.slice(_c + 1)
             const Rw = p.roadJoinWeldLength ?? 6
-            if (Rw > 0 && Number.isInteger(_mz) && Number.isInteger(_mx)) {
-                const hS = this._protoAnchorHeading(_mx, _mz), hE = this._protoAnchorHeading(_mx + 1, _mz)
+            if (Rw > 0 && netEntry.cellA && netEntry.cellB) {
+                const hS = this._edgeTerminalHeading(netEntry.cellA, netEntry.cellB), hE = this._edgeTerminalHeading(netEntry.cellB, netEntry.cellA)
                 let sx = Math.cos(hS), sz = Math.sin(hS), ex = Math.cos(hE), ez = Math.sin(hE)
                 const fwdS = tx[0] * sx + tz[0] * sz >= 0, fwdE = tx[N - 1] * ex + tz[N - 1] * ez >= 0
                 const aS = arcPos[0], aE = arcPos[N - 1]
@@ -2791,6 +3139,8 @@ export class RoadSystem {
         // runs agree at the node (no invisible collision step, no banking jolt). Same blend as
         // _buildCamberProfile → the ribbon (camberProfile) and the run profile stay in sync at junctions.
         this._applyJunctionBlend(runKey, arcPos, gradeY, camberRad)
+        // FEAT-07 Step 2: same flatten at AT_GRADE mid-span crossings (both strands → one shared node Y).
+        this._applyMidspanJunctionBlend(runKey, arcPos, gradeY, camberRad)
 
         return { arcPos, gradeY, camberRad, tx, tz }
     }

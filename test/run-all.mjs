@@ -30,6 +30,9 @@ const GATES = [
     'route-worker-sync.mjs',// PERF-03 WS-A: worker routing copy == road-carve.js canonical (byte-identical)
     'camber-continuity.mjs',// BUG-19: banking carries continuously across continuing run boundaries (cross-run seed sync)
     'route-merge.mjs',      // FEAT-10: merge drops degenerate stubs (the run-join tear) + preserves connectivity
+    'crossing-classifier.mjs', // FEAT-07/08/11/13 foundation: bounded crossing classifier == brute force + window-invariant + class span
+    'junction-atgrade.mjs', // FEAT-07 Step 2: AT_GRADE mid-span flatten — strands meet (driveable), GRADE_SEP not flattened, window-invariant
+    'graph-topology.mjs',   // FEAT-13: graph mode (roadNetworkMode:graph) — reachability/no-orphans, window-invariance, direction variety, step-free surface
     'props.mjs',            // FEAT-06: prop geometry sanity + scatter determinism/window-invariance + slot accounting
     'penetration-failsafe.mjs', // BUG-24: catastrophic-penetration failsafe fires only on true tunnels (depth>wheelRadius), not resolvable deep contact — no body teleport on the shoulder step
 ]

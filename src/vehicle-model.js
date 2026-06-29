@@ -16,12 +16,21 @@
  * Coordinate frame (carGroup local space): origin = CG, forward = -Z, right = +X,
  * up = +Y. Ground sits at y = -params.cgHeight. Car forward is -Z (GLOSSARY.md).
  *
- * Lights are emissive panels (not real Three.js lights): the scene runs full
- * daytime sun + ambient, so beam casters would be invisible and cost frame
- * budget. Emissive panels read clearly as on/off and stay within the 60fps target.
- *   - Headlights: toggle with the 'L' key (default ON).
- *   - Taillights: dim red when lights on, bright red under brake.
- *   - Reverse lights: white, on when the truck is actually moving backward.
+ * Lights are BOTH emissive lens panels (the visible glow) AND real Three.js SpotLights that cast
+ * into the scene (FEAT-14). The cast beams matter now that QUAL-02 added a day/night cycle — they
+ * read as subtle by day, dramatic at night. Lights are children of carGroup, so the beams move and
+ * turn with the vehicle. Perf budget (iGPU floor): a FIXED count of 6 spots (2 headlight + 2 brake +
+ * 2 reverse, one per lens corner — not centered), no spotlight shadows by default (GUI-toggleable),
+ * and lights are dimmed to intensity 0 when off rather than removed from the scene (removal
+ * recompiles the shader and hitches).
+ *   - Headlights: 'L' cycles off → low beam → high beam → off (default low). Low beam is a HALF cone
+ *     (a projected cookie masks the top, giving a real low-beam "beltline" cutoff); high beam is a
+ *     full cone. Forward beam.
+ *   - Taillights: dim red rearward pool when lights on, brighter red under brake.
+ *   - Reverse lights: white rearward pool, on when the truck is actually moving backward.
+ *
+ * Tunables for the casters (intensity/distance/angle/decay/shadows) live in HEAD_TUNE / REAR_TUNE
+ * and are exposed via addLightGui() (wired in main.js).
  */
 
 import * as THREE from 'three'
@@ -39,19 +48,50 @@ const COLOR_GLASS   = 0x0a1018   // greenhouse / windows (dark)
 const COLOR_TIRE    = 0x111111
 
 // Emissive light colors
-const HEAD_ON   = 0xfff4d6
-const TAIL_DIM  = 0x330000
+const HEAD_ON   = 0xfff4d6   // low-beam lens / warm white
+const HEAD_HI   = 0xffffff   // high-beam lens (brighter, cooler white)
+const TAIL_DIM  = 0x7a0000   // running-light red — bright enough to read against daylight (was 0x330000)
 const TAIL_OFF  = 0x110000
 const TAIL_BRK  = 0xff1111
 const REV_ON    = 0xffffff
 const REV_OFF   = 0x222222
 
+// ── Cast-light tunables (FEAT-14) ────────────────────────────────────────────
+// SpotLight units are physical (candela) with distance falloff `decay`; values are authored against
+// the ACES-tone-mapped scene (sun ≈ 0.7–4.8). Editable live via addLightGui(). aimY/aimZ are the
+// target offsets in carGroup-local space (forward = -Z), which set the beam's pitch and length.
+const HEAD_TUNE = {
+  lowIntensity: 700, lowDistance: 120, lowAngle: 0.70, lowPenumbra: 0.45, lowAimY: -3.2,  lowAimZ: -28,
+  highIntensity: 1130, highDistance: 200, highAngle: 0.50, highPenumbra: 0.30, highAimY: -1.3, highAimZ: -65,
+  lensLow: 1.4, lensHigh: 2.2,   // emissiveIntensity of the headlight LENS (the visible glow), low vs high
+  // Low beam is a HALF cone: a projected cookie masks the upper part of the cone so the beam cuts off
+  // at the "beltline" (real low-beam behaviour). lowCutoff is the cone fraction (0 top..1 bottom) of
+  // the cutoff line; 0.5 = lower half lit. High beam keeps the full cone (uniform white cookie).
+  lowCutoff: 0.37,
+  // SpotLight shadows are expensive (see addLightGui); keep the map small + frustum tight when used.
+  shadowMapSize: 512, shadowFar: 50,
+  decay: 1.8, shadows: false,
+}
+const REAR_TUNE = {
+  tailRunIntensity: 18, tailBrakeIntensity: 120, tailDistance: 16, tailAngle: 0.95, tailPenumbra: 1.0,
+  reverseIntensity: 90, reverseDistance: 22, reverseAngle: 1.0, reversePenumbra: 1.0,
+  lensRun: 1.4, lensBrake: 3.0, lensReverse: 2.5,   // emissiveIntensity of the rear LENS panels per state
+  decay: 2, aimY: -2.0, aimZ: 14,
+}
+const TAIL_RED = 0xff1a1a
+
+// Day/night response for the CAST beams (not the lens emissive). The pools are dimmed toward `dayScale`
+// in full daylight and ramp to full strength at night, so headlights read as subtle by day and bright
+// at night. nightFactor (0=day, 1=night) is supplied from the sky system each frame (setNightFactor).
+const LIGHT_ENV = { dayScale: 0.1 }
+
 const _box = (w, h, d) => new THREE.BoxGeometry(w, h, d)
 
 // Split a mesh's triangles into "front" + "rear" geometry groups by triangle-centroid Z
-// (model-local), then give the rear group its own cloned material. Used to isolate the white
-// reverse-lens faces (which share one material with white faces across the whole truck) so only
-// the rear lens can be lit. Returns the rear material, or null if no rear triangles were found.
+// (model-local), each with its own cloned material. The shared white-lens material spans BOTH the
+// front lenses (headlights) and the rear lens (reverse) across the truck; splitting lets each be lit
+// independently. Returns { frontMat, rearMat } (frontMat = headlight lens, rearMat = reverse lens),
+// or null if no rear triangles were found.
 function splitRearGroup (mesh, rearZ) {
   const geom = mesh.geometry
   const pos = geom.attributes.position
@@ -69,10 +109,12 @@ function splitRearGroup (mesh, rearZ) {
   geom.clearGroups()
   geom.addGroup(0, front.length, 0)
   geom.addGroup(front.length, rear.length, 1)
+  const frontMat = mesh.material.clone()    // headlight lens — own clone so only these front faces light
   const rearMat = mesh.material.clone()
+  frontMat.emissive = new THREE.Color(0x000000)
   rearMat.emissive = new THREE.Color(0x000000)
-  mesh.material = [mesh.material, rearMat]   // group 0 → original, group 1 → driven rear lens
-  return rearMat
+  mesh.material = [frontMat, rearMat]        // group 0 → front (headlight), group 1 → rear (reverse)
+  return { frontMat, rearMat }
 }
 
 /**
@@ -168,18 +210,133 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
     part(_box(0.14, 0.12, 0.05), mat, sx * 0.40, -0.10, 2.25)
   }
 
-  // Headlight on/off state, toggled by 'L'. Default on so it's immediately visible.
-  let headlightsOn = true
+  // ── Headlight beam cookies (SpotLight.map) ─────────────────────────────────
+  // A projected greyscale texture multiplies the spot's output, so painting the upper part of the
+  // cookie black makes the low beam a HALF cone with a flat top — the "beltline cutoff" of a real
+  // low beam. The cookie's vertical axis is the beam's up axis (canvas row 0 = up), so masking the
+  // top rows removes the upward part of the cone. High beam uses a uniform-white cookie (= no change,
+  // full cone). BOTH headlights always carry a cookie so numSpotLightMaps never changes → swapping
+  // low↔high never recompiles the shader. Skipped headless (no document); spots just stay unmapped.
+  function drawCookie (ctx, S, kind) {
+    const img = ctx.createImageData(S, S)
+    const d = img.data
+    for (let y = 0; y < S; y++) {
+      let v = 1
+      if (kind === 'low') {
+        const feather = S * 0.07
+        const cut = HEAD_TUNE.lowCutoff * S          // texture row of the cutoff line
+        const t = (y - (cut - feather)) / (2 * feather)
+        const m = Math.min(1, Math.max(0, t))
+        v = m * m * (3 - 2 * m)                       // 0 above the cutoff (top), 1 below — half cone
+      }
+      const c = Math.round(v * 255)
+      for (let x = 0; x < S; x++) {
+        const i = (y * S + x) * 4
+        d[i] = d[i + 1] = d[i + 2] = c; d[i + 3] = 255
+      }
+    }
+    ctx.putImageData(img, 0, 0)
+  }
+  function makeCookie (kind) {
+    if (typeof document === 'undefined') return { tex: null, redraw: () => {} }
+    const S = 128
+    const cv = document.createElement('canvas'); cv.width = cv.height = S
+    const ctx = cv.getContext('2d')
+    drawCookie(ctx, S, kind)
+    const tex = new THREE.CanvasTexture(cv)
+    tex.colorSpace = THREE.SRGBColorSpace
+    return { tex, redraw: () => { drawCookie(ctx, S, kind); tex.needsUpdate = true } }
+  }
+  const lowCookie = makeCookie('low')
+  const highCookie = makeCookie('high')
+
+  // ── Cast lighting (real SpotLights, parented to carGroup) ──────────────────
+  // One spot per lens, at the lens corner (NOT centered) so the cast pool emanates from where the
+  // lamp visibly is. Headlights aim forward (-Z) and slightly down; rear lamps aim back (+Z) for a
+  // wide soft pool. Positions/targets are carGroup children so the beams track the body. All six
+  // stay in the scene at intensity 0 when off (toggling intensity, not scene membership, avoids a
+  // shader recompile). Shadows default off for the iGPU budget — addLightGui() can enable them.
+  const headlightSpots = []
+  for (const sx of [-1, 1]) {
+    const s = new THREE.SpotLight(HEAD_ON, 0, HEAD_TUNE.lowDistance, HEAD_TUNE.lowAngle, HEAD_TUNE.lowPenumbra, HEAD_TUNE.decay)
+    s.position.set(sx * 0.60, 0.10, -2.22)               // at the headlight lens, front face
+    s.target.position.set(sx * 0.60, HEAD_TUNE.lowAimY, HEAD_TUNE.lowAimZ)
+    s.map = lowCookie.tex                                 // default low beam → half-cone cookie
+    s.castShadow = false
+    // Shadows (opt-in) kept cheap: small map + tight frustum — see addLightGui() for the cost notes.
+    s.shadow.mapSize.set(HEAD_TUNE.shadowMapSize, HEAD_TUNE.shadowMapSize)
+    s.shadow.camera.near = 0.5
+    s.shadow.camera.far = HEAD_TUNE.shadowFar
+    s.shadow.bias = -0.0005
+    carGroup.add(s, s.target)
+    headlightSpots.push(s)
+  }
+
+  // Brake/running casters: one red spot at each tail-lens corner (sx*0.66, matching the tail panels).
+  const tailSpots = []
+  for (const sx of [-1, 1]) {
+    const s = new THREE.SpotLight(TAIL_RED, 0, REAR_TUNE.tailDistance, REAR_TUNE.tailAngle, REAR_TUNE.tailPenumbra, REAR_TUNE.decay)
+    s.position.set(sx * 0.66, -0.02, 2.25)
+    s.target.position.set(sx * 0.66, REAR_TUNE.aimY, REAR_TUNE.aimZ)
+    carGroup.add(s, s.target)
+    tailSpots.push(s)
+  }
+  // Reverse casters: one white spot at each reverse-lens corner (sx*0.40, matching the reverse panels).
+  const reverseSpots = []
+  for (const sx of [-1, 1]) {
+    const s = new THREE.SpotLight(0xffffff, 0, REAR_TUNE.reverseDistance, REAR_TUNE.reverseAngle, REAR_TUNE.reversePenumbra, REAR_TUNE.decay)
+    s.position.set(sx * 0.40, -0.10, 2.25)
+    s.target.position.set(sx * 0.40, REAR_TUNE.aimY, REAR_TUNE.aimZ)
+    carGroup.add(s, s.target)
+    reverseSpots.push(s)
+  }
+
+  // GLB headlight lens materials (front split of the shared white-lens material); populated on load.
+  // Declared here so applyHeadlights() (called just below) can reference it without a TDZ error.
+  const modelHeadMats = []
+
+  // Day/night factor for the CAST beams: 0 = full day (pools dimmed toward LIGHT_ENV.dayScale),
+  // 1 = night (full strength). Fed from the sky system each frame via setNightFactor().
+  let nightFactor = 0
+
+  // Headlight mode: 0 = off, 1 = low beam, 2 = high beam. 'L' cycles off→low→high→off.
+  // Default low so the lamps read immediately. applyHeadlights() syncs the emissive LENS panels and
+  // the beam SHAPE (distance/angle/aim) to the mode; the cast INTENSITY is set per-frame in
+  // syncMeshesToState so it can scale with the day/night factor (and pick up GUI edits live).
+  let headlightMode = 1
   const applyHeadlights = () => {
+    const on = headlightMode !== 0
+    const high = headlightMode === 2
+    const lensHex = high ? HEAD_HI : HEAD_ON
+    const lensIntensity = on ? (high ? HEAD_TUNE.lensHigh : HEAD_TUNE.lensLow) : 0
+    // Primitive-truck headlight lens panels.
     for (const m of headlightMats) {
-      m.emissive.setHex(headlightsOn ? HEAD_ON : 0x000000)
-      m.color.setHex(headlightsOn ? HEAD_ON : 0x555555)
+      m.emissive.setHex(on ? lensHex : 0x000000)
+      m.emissiveIntensity = lensIntensity
+      m.color.setHex(on ? lensHex : 0x555555)
+    }
+    // Imported-model headlight lens (front split of the shared white-lens material).
+    for (const m of modelHeadMats) {
+      m.emissive.setHex(on ? lensHex : 0x000000)
+      m.emissiveIntensity = lensIntensity
+    }
+    // Beam shape per mode (intensity handled per-frame in syncMeshesToState). Low beam swaps in the
+    // half-cone cutoff cookie; high beam the full-cone (uniform) one. Both are always non-null so the
+    // swap never changes numSpotLightMaps (no shader recompile).
+    for (const s of headlightSpots) {
+      const sx = Math.sign(s.position.x) || 1
+      s.color.setHex(lensHex)
+      s.map       = high ? highCookie.tex : lowCookie.tex
+      s.distance  = high ? HEAD_TUNE.highDistance : HEAD_TUNE.lowDistance
+      s.angle     = high ? HEAD_TUNE.highAngle    : HEAD_TUNE.lowAngle
+      s.penumbra  = high ? HEAD_TUNE.highPenumbra : HEAD_TUNE.lowPenumbra
+      s.target.position.set(sx * 0.60, high ? HEAD_TUNE.highAimY : HEAD_TUNE.lowAimY, high ? HEAD_TUNE.highAimZ : HEAD_TUNE.lowAimZ)
     }
   }
   applyHeadlights()
   if (typeof window !== 'undefined') {
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'l' || e.key === 'L') { headlightsOn = !headlightsOn; applyHeadlights() }
+      if (e.key === 'l' || e.key === 'L') { headlightMode = (headlightMode + 1) % 3; applyHeadlights() }
     })
   }
 
@@ -240,6 +397,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
   const paintMaterials = []
   const modelTailMats = []          // GLB rear-lamp materials, driven as tail/brake lights
   const modelReverseMats = []       // split-out rear white-lens materials, driven on reverse
+  // (modelHeadMats declared earlier — front split of the white-lens material, driven as headlights)
   let pendingBodyColor = DEFAULT_BODY_COLOR
 
   // ── Mesh sync ──────────────────────────────────────────────────────────────
@@ -321,35 +479,109 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
       (vLong >  0.4 && brake    > 0.1) ||
       (vLong < -0.4 && throttle > 0.1)
     const reversing = vLong < -0.4
+    const lightsRunning = headlightMode !== 0
+
+    // Cast intensities (FEAT-14): scaled by the day/night factor so the pools are subtle by day and
+    // bright at night. Driven here (not in applyHeadlights) so headlights pick up the live factor too.
+    // Runs for both the primitive and GLB paths (the spots are carGroup children, model-independent).
+    const castScale = LIGHT_ENV.dayScale + (1 - LIGHT_ENV.dayScale) * nightFactor
+    const headCast = headlightMode === 0 ? 0 : (headlightMode === 2 ? HEAD_TUNE.highIntensity : HEAD_TUNE.lowIntensity)
+    for (const s of headlightSpots) s.intensity = headCast * castScale
+    const tailCast = braking ? REAR_TUNE.tailBrakeIntensity : (lightsRunning ? REAR_TUNE.tailRunIntensity : 0)
+    for (const s of tailSpots) s.intensity = tailCast * castScale
+    for (const s of reverseSpots) s.intensity = (reversing ? REAR_TUNE.reverseIntensity : 0) * castScale
 
     if (modelActive) {
       // Imported model: drive the GLB rear-lamp material's emissive. Bright red on brake,
       // a dim glow as a running light when headlights are on, otherwise dark (the lens base
       // color stays red, so it still reads as a taillight when unlit).
-      const tailEmis = braking ? TAIL_BRK : (headlightsOn ? TAIL_DIM : 0x000000)
+      const tailEmis = braking ? TAIL_BRK : (lightsRunning ? TAIL_DIM : 0x000000)
       for (const m of modelTailMats) {
         m.emissive.setHex(tailEmis)
-        m.emissiveIntensity = braking ? 1.0 : 0.6
+        m.emissiveIntensity = braking ? REAR_TUNE.lensBrake : (lightsRunning ? REAR_TUNE.lensRun : 0)
       }
       // Reverse lights: white lens glows when actually moving backward.
       for (const m of modelReverseMats) {
         m.emissive.setHex(reversing ? REV_ON : 0x000000)
-        m.emissiveIntensity = 1.0
+        m.emissiveIntensity = reversing ? REAR_TUNE.lensReverse : 0
       }
       return
     }
 
-    // Primitive-truck fallback: emissive panels swap color directly.
-    const tailHex = braking ? TAIL_BRK : (headlightsOn ? TAIL_DIM : TAIL_OFF)
+    // Primitive-truck fallback: emissive panels reflect state through BOTH colour and brightness —
+    // off (near-black, faint) → running (dim red) → brake (bright red). Reverse: off → bright white.
+    const tailHex = braking ? TAIL_BRK : (lightsRunning ? TAIL_DIM : TAIL_OFF)
+    const tailLensIntensity = braking ? REAR_TUNE.lensBrake : (lightsRunning ? REAR_TUNE.lensRun : 0.25)
     for (const m of taillightMats) {
       m.emissive.setHex(tailHex)
       m.color.setHex(tailHex)
+      m.emissiveIntensity = tailLensIntensity
     }
     const revHex = reversing ? REV_ON : REV_OFF
     for (const m of reverseMats) {
       m.emissive.setHex(reversing ? REV_ON : 0x000000)
       m.color.setHex(revHex)
+      m.emissiveIntensity = reversing ? REAR_TUNE.lensReverse : 0.25
     }
+  }
+
+  // ── Light tuning GUI (FEAT-14) ──────────────────────────────────────────────
+  // Self-contained lil-gui folder (mirrors sky.js addGui). Rear intensities are read live each frame
+  // in syncMeshesToState, so editing them needs no re-apply; headlight params do (applyHeadlights).
+  function addLightGui (gui) {
+    const f = gui.addFolder('Vehicle Lights (FEAT-14)')
+    f.close()
+    f.add({ cycle: () => { headlightMode = (headlightMode + 1) % 3; applyHeadlights() } }, 'cycle')
+      .name('cycle headlights (L)')
+
+    const reapply = () => applyHeadlights()
+    // Day/night: how dim the CAST pools are in full daylight (0 = invisible, 1 = same as night).
+    f.add(LIGHT_ENV, 'dayScale', 0, 1, 0.01).name('day cast scale')
+
+    const h = f.addFolder('Headlights'); h.close()
+    h.add(HEAD_TUNE, 'lensLow', 0, 4, 0.1).name('lens low').onChange(reapply)
+    h.add(HEAD_TUNE, 'lensHigh', 0, 4, 0.1).name('lens high').onChange(reapply)
+    h.add(HEAD_TUNE, 'lowIntensity', 0, 2000, 10).onChange(reapply)
+    h.add(HEAD_TUNE, 'highIntensity', 0, 3000, 10).onChange(reapply)
+    h.add(HEAD_TUNE, 'lowCutoff', 0.1, 0.9, 0.01).name('low beltline cutoff').onChange(() => lowCookie.redraw())
+    // distance = hard range cap. NOTE: 0 (three's "infinite") collapses the spot-map projection frustum
+    // and breaks the cookie mask, so keep it > 0. Sliders centred on 120.
+    h.add(HEAD_TUNE, 'lowDistance', 20, 220, 1).name('low distance').onChange(reapply)
+    h.add(HEAD_TUNE, 'highDistance', 20, 220, 1).name('high distance').onChange(reapply)
+    h.add(HEAD_TUNE, 'lowAngle', 0.1, 1.4, 0.01).onChange(reapply)
+    h.add(HEAD_TUNE, 'highAngle', 0.1, 1.4, 0.01).onChange(reapply)
+    h.add(HEAD_TUNE, 'lowAimY', -8, 2, 0.1).onChange(reapply)
+    h.add(HEAD_TUNE, 'highAimY', -8, 2, 0.1).onChange(reapply)
+    h.add(HEAD_TUNE, 'decay', 0, 3, 0.1).onChange(() => {
+      for (const s of headlightSpots) s.decay = HEAD_TUNE.decay
+    })
+    // Shadows are COSTLY: enabling them adds a full shadow-map render pass over every castShadow object
+    // (the car + all instanced props) for EACH headlight, every frame, plus a one-time material
+    // recompile when the shadow-light count changes. Off by default; use sparingly on weak GPUs.
+    h.add(HEAD_TUNE, 'shadows').name('cast shadows (costly)').onChange((v) => {
+      for (const s of headlightSpots) s.castShadow = v
+    })
+
+    const r = f.addFolder('Rear lamps'); r.close()
+    r.add(REAR_TUNE, 'lensRun', 0, 5, 0.1).name('lens run')
+    r.add(REAR_TUNE, 'lensBrake', 0, 6, 0.1).name('lens brake')
+    r.add(REAR_TUNE, 'lensReverse', 0, 6, 0.1).name('lens reverse')
+    r.add(REAR_TUNE, 'tailRunIntensity', 0, 300, 1)
+    r.add(REAR_TUNE, 'tailBrakeIntensity', 0, 500, 1)
+    r.add(REAR_TUNE, 'reverseIntensity', 0, 400, 1)
+    r.add(REAR_TUNE, 'tailDistance', 2, 60, 1).onChange(() => { for (const s of tailSpots) s.distance = REAR_TUNE.tailDistance })
+    r.add(REAR_TUNE, 'reverseDistance', 2, 60, 1).onChange(() => { for (const s of reverseSpots) s.distance = REAR_TUNE.reverseDistance })
+    r.add(REAR_TUNE, 'decay', 0, 3, 0.1).onChange(() => {
+      for (const s of tailSpots) s.decay = REAR_TUNE.decay
+      for (const s of reverseSpots) s.decay = REAR_TUNE.decay
+    })
+    return f
+  }
+
+  // Set the day/night factor (0 = day, 1 = night) that scales the cast beams. Called each frame from
+  // main.js with the sky system's nightFactor() so the pools dim by day and brighten at night.
+  function setNightFactor (f) {
+    nightFactor = f < 0 ? 0 : (f > 1 ? 1 : f)
   }
 
   // Recolor the body paint. Safe to call before the model finishes loading — the
@@ -393,12 +625,14 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
     })
     setBodyColor(pendingBodyColor)
 
-    // Reverse lights: split the rear white-lens faces off the shared lens mesh so only they
-    // light up on reverse (the rest of that material stays plain white).
+    // Split the shared white-lens mesh into front (headlights) + rear (reverse) so each lights
+    // independently — the rest of that material stays plain white. Then push current state in
+    // (the lens mats didn't exist when applyHeadlights() first ran at construction).
     for (const m of lensMeshes) {
-      const rm = splitRearGroup(m, spec.reverse.rearZ)
-      if (rm) modelReverseMats.push(rm)
+      const split = splitRearGroup(m, spec.reverse.rearZ)
+      if (split) { modelReverseMats.push(split.rearMat); modelHeadMats.push(split.frontMat) }
     }
+    applyHeadlights()
 
     carGroup.add(root)
     bodyGroup.visible = false               // hide primitive shell (body + emissive light panels)
@@ -419,5 +653,5 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
     modelActive = true
   }, undefined, (err) => console.warn('[vehicle-model] GLB load failed; keeping primitive truck:', err))
 
-  return { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor }
+  return { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor }
 }
