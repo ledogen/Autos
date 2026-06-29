@@ -143,5 +143,16 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
         `leave-bearing vs chord: avg=${avg.toFixed(1)}° worst=${worst.toFixed(0)}° over ${m} endpoints (reversed goalHeading would be ~150°)`)
 }
 
+// (g) NO LOOPS — no edge's routed centerline curls into a near-full loop. A short edge that climbs just
+// over the grade target used to spiral a 360° loop (an ugly pseudo-switchback) instead of running direct;
+// roadGraphMaxGrade fixes it. Guard: total absolute turning along any edge stays well under a full turn.
+{
+    const turning = (pts) => { let t = 0; for (let i = 1; i < pts.length - 1; i++) { const ax = pts[i].x - pts[i - 1].x, az = pts[i].z - pts[i - 1].z, bx = pts[i + 1].x - pts[i].x, bz = pts[i + 1].z - pts[i].z; t += Math.atan2(ax * bz - az * bx, ax * bx + az * bz) } return Math.abs(t * 180 / Math.PI) }
+    let loopers = 0, worst = 0, worstKey = ''
+    for (const [k, e] of roadA._network) { const t = turning(e.points); if (t > worst) { worst = t; worstKey = k } if (t > 200) loopers++ }
+    log(loopers === 0, 'GRAPH-NO-LOOPS',
+        `edges turning >200°=${loopers}; worst=${worst.toFixed(0)}° (${worstKey}) — no 360° spiral routes`)
+}
+
 console.log(`\nGRAPH-TOPOLOGY: ${pass}/${pass + fail} checks green`)
 process.exit(fail === 0 ? 0 : 1)

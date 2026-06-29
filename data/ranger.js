@@ -327,6 +327,12 @@ export const RANGER_PARAMS = {
   // smooth, step-free, low-float roads (the forest-service-road look). Raise for smoother long grades at
   // the cost of steeper merges.
   roadGraphDeviationCap: 2,
+  // roadGraphMaxGrade: SOFT grade target for the GRAPH-mode router only (rows uses maxRoadGrade). Higher
+  // than rows because blue-noise edges climb between sites whose chord often just tops 20%, and the tight
+  // deviation cap makes the built road hug the steep terrain regardless — so a low target only makes the
+  // router spiral an ugly 360° loop to dodge a grade it then builds anyway. 0.30 lets short connectors run
+  // direct (seed 6: loopers 5→0, parallel pairs 8→1, routed crossings 28→6). Lower for gentler, loopier.
+  roadGraphMaxGrade: 0.30,
   // ── FEAT-13 v2 blue-noise anchor + Urquhart knobs (graph mode only) ──
   // roadSiteSpacing: macro-cell size (m) the blue-noise sites are seeded over (sites jitter across the
   // whole cell). Defaults to the 256 m anchor spacing. Smaller = denser anchor field = denser network.

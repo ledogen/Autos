@@ -1495,7 +1495,13 @@ export class RoadSystem {
         return {
             hardR, gentleR: pp.roadArcGentleRadius ?? 30, margin: PROTO_MARGIN,
             wDist: P.wDist, wAlt: P.wAlt, wGrade: P.wGrade, wOver: P.wOver,
-            maxGrade: P.maxGrade, wCurv: P.wTurn, wHeur: pp.roadArcHeurWeight ?? 1.5,
+            // FEAT-13: graph mode tolerates a steeper SOFT grade target than rows. Blue-noise edges climb
+            // between sites whose chord often just exceeds 20%; with the tight roadGraphDeviationCap the
+            // built road hugs the (steep) terrain ANYWAY, so a low maxGrade only makes the router spiral a
+            // pointless 360° loop to "avoid" a grade the vertical profile then builds regardless. A higher
+            // target lets short connectors take the direct line (loopers 5→0, crossings 28→6 at seed 6).
+            maxGrade: ((this._params?.roadNetworkMode ?? 'rows') === 'graph') ? (pp.roadGraphMaxGrade ?? 0.30) : P.maxGrade,
+            wCurv: P.wTurn, wHeur: pp.roadArcHeurWeight ?? 1.5,
             valleyDepthCap: pp.roadValleyDepthCap ?? 40,
             // QUAL-05 follow-up: fixed-angle palette → large sweeping radii (see ranger.js roadArc*).
             radii: pp.roadArcRadii, hbins: pp.roadArcHeadingBins, gradeSamples: pp.roadArcGradeSamples,
