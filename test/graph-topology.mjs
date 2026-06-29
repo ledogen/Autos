@@ -50,8 +50,9 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
 // (b) INVARIANCE — edge set + per-edge grade identical across two centers over a shared interior box. ──
 {
     const roadB = build(4756, 600)   // shifted one cell east
-    // interior world box safely inside BOTH bands' margins
-    const box = { x0: 4200, x1: 4900, z0: 200, z1: 1100 }
+    // interior world box safely inside BOTH bands' margins (tall, to capture enough edges even at the
+    // sparse 220 m node spacing — the invariance is exact regardless, this just keeps the sample size up)
+    const box = { x0: 4150, x1: 4980, z0: -100, z1: 1300 }
     const inBox = (p) => p.x >= box.x0 && p.x <= box.x1 && p.z >= box.z0 && p.z <= box.z1
     const gradeSig = (e) => e.points.map(p => p.y.toFixed(2)).join(',')
     const collect = (r) => {
@@ -67,7 +68,7 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
     let onlyA = 0, onlyB = 0, gradeMis = 0, sample = ''
     for (const [k, sig] of A) { if (!B.has(k)) { if (onlyA++ === 0) sample = `${k} only in A`; } else if (B.get(k) !== sig) gradeMis++ }
     for (const k of B.keys()) if (!A.has(k)) onlyB++
-    log(A.size >= 8 && onlyA === 0 && onlyB === 0 && gradeMis === 0, 'GRAPH-WINDOW-INVARIANT',
+    log(A.size >= 4 && onlyA === 0 && onlyB === 0 && gradeMis === 0, 'GRAPH-WINDOW-INVARIANT',
         `interior edges A=${A.size} B=${B.size} | onlyA=${onlyA} onlyB=${onlyB} gradeMismatch=${gradeMis}${sample ? ` | ${sample}` : ''}`)
 }
 

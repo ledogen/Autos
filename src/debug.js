@@ -277,7 +277,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // (varied directions, real T/X junctions, not parallel). Diagonals = orthogonal(off)/8-way(on).
   roadFolder.add(params, 'roadNetworkMode', ['rows', 'graph']).name('Network Mode').onChange(fireRoadParam)
   roadFolder.add(params, 'roadSiteCandidates', 1, 4, 1).name('Graph Site Candidates').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadSiteMinDist', 40, 200, 5).name('Graph Site Spacing (m)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadSiteMinDist', 60, 280, 10).name('Graph Node Spacing (m)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadSiteValleySnap').name('Graph Valley Snap').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphMargin', 1, 6, 1).name('Graph Margin (cells)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphFlatMerges').name('Graph Flat Merges (no overpass)').onChange(fireRoadParam)

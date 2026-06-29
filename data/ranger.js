@@ -358,9 +358,10 @@ export const RANGER_PARAMS = {
   // residual grid regularity (one-per-cell still reads as rows); 2–3 gives an organic blue-noise field.
   roadSiteCandidates: 3,
   // roadSiteMinDist: Poisson-disk minimum spacing (m) between accepted anchor sites. A candidate is
-  // rejected if a higher-priority accepted site is within this radius → even, row-free spacing. ~110 m
-  // ≈ one site per ~0.4 cell. Lower = denser/closer anchors; raise for sparser, longer roads.
-  roadSiteMinDist: 110,
+  // rejected if a higher-priority accepted site is within this radius → even, row-free spacing. 220 m
+  // ≈ a sparse forest-service feel: ~12 nodes/km², ~370 m avg edge, ~26% dead-end spurs (the primary
+  // sparsity lever — also lengthens edges, giving roads room to wind). Lower = denser/closer anchors.
+  roadSiteMinDist: 220,
   // roadSiteValleySnap: gradient-descend each site onto the local valley floor (like the rows anchors) so
   // roads still favour valleys. false = sites stay at their seeded jitter position (more even, less natural).
   roadSiteValleySnap: true,
