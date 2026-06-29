@@ -1463,6 +1463,72 @@ export class RoadSystem {
         return g.adj.get(g.key(id))?.size ?? 0
     }
 
+    // FEAT-13: SAFE-PRUNE the redundant edge of every routed crossing. Two edges whose centerlines cross
+    // mid-span are an at-grade intersection the user finds ugly; since the graph is planar-ABSTRACT, a
+    // routed crossing means one of the two edges is taking a redundant excursion. Drop the redundant one —
+    // but ONLY if the other endpoint keeps a bounded-hop DETOUR, so connectivity is preserved (dead ends
+    // and bridge edges have no detour → kept). Deterministic (canonical crossing order + key tie-break)
+    // and bounded (≤ roadGraphCullMaxHops BFS) → window-invariant for interior crossings; verified by the
+    // graph invariance gate. Reads this._crossingList (must run after _detectJunctions); returns true if it
+    // dropped anything (caller re-detects on the culled network). Pure topology — runs before slicing.
+    _cullCrossings() {
+        const g = this._proto.graph
+        if (!g || !this._crossingList?.length) return false
+        const adj = new Map()
+        const addj = (a, b) => { (adj.get(a) || adj.set(a, new Set()).get(a)).add(b) }
+        for (const e of this._network.values()) { addj(g.key(e.cellA), g.key(e.cellB)); addj(g.key(e.cellB), g.key(e.cellA)) }
+        const maxHops = this._params?.roadGraphCullMaxHops ?? 4
+        // shortest #hops a→b NOT using the direct edge (a,b); -1 if none within maxHops (≈ a bridge/leaf).
+        const detour = (a, b) => {
+            const q = [[a, 0]], seen = new Set([a])
+            while (q.length) {
+                const [u, d] = q.shift()
+                if (d >= maxHops) continue
+                for (const v of adj.get(u) || []) {
+                    if (u === a && v === b) continue
+                    if (v === b) return d + 1
+                    if (!seen.has(v)) { seen.add(v); q.push([v, d + 1]) }
+                }
+            }
+            return -1
+        }
+        const pairs = [], seen = new Set()
+        for (const c of this._crossingList) {
+            if (c.selfCrossing) continue
+            const lo = c.runA < c.runB ? c.runA : c.runB, hi = c.runA < c.runB ? c.runB : c.runA
+            const pk = lo + '#' + hi
+            if (!seen.has(pk)) { seen.add(pk); pairs.push([lo, hi]) }
+        }
+        pairs.sort((x, y) => x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : (x[1] < y[1] ? -1 : 1))
+        const dropped = []
+        for (const [ka, kb] of pairs) {
+            const ea = this._network.get(ka), eb = this._network.get(kb)
+            if (!ea || !eb) continue   // one strand already dropped → crossing resolved
+            const da = detour(g.key(ea.cellA), g.key(ea.cellB)), db = detour(g.key(eb.cellA), g.key(eb.cellB))
+            let drop = null
+            if (da >= 0 && db >= 0) drop = da !== db ? (da < db ? ka : kb) : (ka < kb ? ka : kb)   // prefer shorter detour (more redundant)
+            else if (da >= 0) drop = ka
+            else if (db >= 0) drop = kb
+            else continue   // neither has a safe detour (both bridges) → keep both, connectivity wins
+            const e = drop === ka ? ea : eb
+            this._network.delete(drop)
+            adj.get(g.key(e.cellA))?.delete(g.key(e.cellB))
+            adj.get(g.key(e.cellB))?.delete(g.key(e.cellA))
+            g.adj.get(g.key(e.cellA))?.delete(g.key(e.cellB))
+            g.adj.get(g.key(e.cellB))?.delete(g.key(e.cellA))
+            dropped.push(drop)
+        }
+        if (dropped.length) {   // rebuild the junction-Y incidence index over the survivors
+            this._proto.nodeInc.clear()
+            for (const [rk, e] of this._network) {
+                const ka = g.key(e.cellA), kb = g.key(e.cellB)
+                ;(this._proto.nodeInc.get(ka) || this._proto.nodeInc.set(ka, []).get(ka)).push(rk)
+                ;(this._proto.nodeInc.get(kb) || this._proto.nodeInc.set(kb, []).get(kb)).push(rk)
+            }
+        }
+        return dropped.length > 0
+    }
+
     _protoEdgeCost(fromH, toH, horiz, P) {
         const grade = Math.abs(toH - fromH) / horiz
         const over  = Math.max(0, grade - P.maxGrade)
@@ -1886,6 +1952,13 @@ export class RoadSystem {
         // RUNKEY-SET-INVARIANT guarantee), so the flatten is window-invariant where it is consumed; a
         // frontier crossing's short ramp (roadJunctionBlendLength) never reaches loaded geometry.
         this._detectJunctions()
+        // FEAT-13: graph mode safe-prunes the redundant edge of each routed crossing (at-grade
+        // intersections read as ugly; the graph is planar-abstract so a routed cross = a redundant
+        // excursion). Connectivity-preserving (bounded detour test) + window-invariant. Re-detect on the
+        // culled network so _crossingsByRun / the flatten reflect the survivors.
+        if ((this._params?.roadNetworkMode ?? 'rows') === 'graph' && (this._params?.roadGraphCullCrossings ?? true)) {
+            if (this._cullCrossings()) { this._junctionsFrom = null; this._detectJunctions() }
+        }
 
         // NOTE (CR-02): no post-build cache eviction. _network is .clear()-ed + rebuilt for the
         // current window at the top of every real re-stream, so its size is window-bounded. The

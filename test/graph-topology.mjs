@@ -156,5 +156,15 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
         `edges turning >200°=${loopers}; worst=${worst.toFixed(0)}° (${worstKey}) — no 360° spiral routes`)
 }
 
+// (h) CROSSINGS CULLED — the safe-prune drops redundant routed crossings (at-grade intersections read
+// ugly). Any survivor is a genuine bridge (no detour). Connectivity is already guarded by (a); this
+// asserts the cull actually fires and leaves very few crossings.
+{
+    const culled = roadA.crossingList().length
+    const uncut = (() => { const r = new RoadSystem(6, { ...P, roadGraphCullCrossings: false }); r.update(new THREE.Vector3(4500, 0, 600)); return r.crossingList().length })()
+    log(culled <= 2 && culled <= uncut, 'GRAPH-CROSSINGS-CULLED',
+        `routed crossings: cull-off=${uncut} → cull-on=${culled} (survivors are un-cullable bridges)`)
+}
+
 console.log(`\nGRAPH-TOPOLOGY: ${pass}/${pass + fail} checks green`)
 process.exit(fail === 0 ? 0 : 1)

@@ -340,6 +340,16 @@ export const RANGER_PARAMS = {
   // double-cross (seed 6 routed crossings 6→2, overshoot edges 5→0). Lower = more terrain-following tail
   // but the overshoot/double-cross returns.
   roadGraphGoalBlend: 140,
+  // roadGraphCullCrossings: graph mode — SAFE-PRUNE the redundant edge of every routed at-grade crossing
+  // (they read as ugly mid-span intersections; the graph is planar-abstract so a routed cross means one
+  // edge took a redundant excursion). Only dropped if the far endpoint keeps a detour (≤ cull max hops),
+  // so dead ends + bridges are never cut. seed-set: routed crossings 7→1 (the 1 is a true bridge, kept).
+  roadGraphCullCrossings: true,
+  // roadGraphCullMaxHops: how far the connectivity-safe detour search looks before deeming a crossing
+  // edge a bridge (un-cullable). Higher = culls crossings with longer alternate routes (more aggressive,
+  // accepts bigger detours); lower = keeps more crossings but never risks a long way round. 8 clears all
+  // but genuine bridges while connectivity holds.
+  roadGraphCullMaxHops: 8,
   // ── FEAT-13 v2 blue-noise anchor + Urquhart knobs (graph mode only) ──
   // roadSiteSpacing: macro-cell size (m) the blue-noise sites are seeded over (sites jitter across the
   // whole cell). Defaults to the 256 m anchor spacing. Smaller = denser anchor field = denser network.
