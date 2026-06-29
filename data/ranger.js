@@ -306,14 +306,14 @@ export const RANGER_PARAMS = {
   roadCrossOverpassClearance: 4.5, // m — deck underside clearance above the lower strand (truck + deck). RESERVED for Step 3.
 
   // ── Road network topology (FEAT-13) ─────────────────────────────────────────────────────────────
-  // roadNetworkMode: how the macro-anchor lattice is turned into roads.
+  // roadNetworkMode: how the macro-anchor field is turned into roads.
   //   'rows'  — one E-W run per macro-row anchor(mx,mz)→anchor(mx+1,mz). Parallel by construction (the
   //             historical generator; every existing gate validates this mode).
-  //   'graph' — a per-anchor directional GRAPH: each anchor links to a hashed spanning-forest parent
-  //             (downhill in a per-cell priority hash) + root-chaining + seeded stitch/loop edges, over
-  //             the 8-neighbourhood. Roads run in VARIED directions (not parallel), orphan-free,
-  //             window-invariant, mostly-tree with a few loops. Headless-validated: 0% orphans, max
-  //             direction variety, ~67% of anchors in one connected component at extraEdgeProb 0.22.
+  //   'graph' — FEAT-13 v2: an URQUHART graph (Delaunay minus each triangle's longest edge) over a
+  //             BLUE-NOISE anchor set. No parallel rows (blue-noise has no rows), varied-angle real T/X
+  //             intersections at nodes, sparse with route-choice cycles, CONNECTED by construction
+  //             (Urquhart ⊇ Euclidean MST), window-invariant. (Replaced the v1 lattice/spanning-forest
+  //             draft; see .planning/ROAD-GRAPH-HANDOFF.md.)
   roadNetworkMode: 'rows',
   // roadGraphFlatMerges: graph mode — force EVERY crossing to a flat at-grade intersection (no dynamic
   // overpasses). Roads meet/merge at one shared height instead of one floating over another. Real
@@ -327,15 +327,24 @@ export const RANGER_PARAMS = {
   // smooth, step-free, low-float roads (the forest-service-road look). Raise for smoother long grades at
   // the cost of steeper merges.
   roadGraphDeviationCap: 2,
-  // roadGraphExtraEdgeProb: graph mode only — per-cell probability of a seeded EXTRA edge (a loop, and a
-  // stitch that fuses adjacent forest trees into one drivable network). 0 = pure forest (isolated pockets);
-  // higher = more connected + more loops (less tree-like). At 0.4 the orthogonal (4-neighbour) graph puts
-  // ~70% of anchors in one component (connected-leaning, few loops); raise toward 0.5–0.65 for ~85%.
-  roadGraphExtraEdgeProb: 0.55,
-  // roadGraphDiagonals: graph mode neighbourhood. false = orthogonal 4-neighbourhood (E/W/N/S): roads
-  // meet at NODES as real T/X junctions with almost no mid-span crossings → fewer intersections/overpasses,
-  // cleaner. true = 8-neighbourhood (adds diagonals): more varied directions but dense mid-span X-crossings.
-  roadGraphDiagonals: false,
+  // ── FEAT-13 v2 blue-noise anchor + Urquhart knobs (graph mode only) ──
+  // roadSiteSpacing: macro-cell size (m) the blue-noise sites are seeded over (sites jitter across the
+  // whole cell). Defaults to the 256 m anchor spacing. Smaller = denser anchor field = denser network.
+  roadSiteSpacing: 256,
+  // roadSiteCandidates: seeded candidate sites PER macro-cell before Poisson-disk thinning. >1 breaks the
+  // residual grid regularity (one-per-cell still reads as rows); 2–3 gives an organic blue-noise field.
+  roadSiteCandidates: 3,
+  // roadSiteMinDist: Poisson-disk minimum spacing (m) between accepted anchor sites. A candidate is
+  // rejected if a higher-priority accepted site is within this radius → even, row-free spacing. ~110 m
+  // ≈ one site per ~0.4 cell. Lower = denser/closer anchors; raise for sparser, longer roads.
+  roadSiteMinDist: 110,
+  // roadSiteValleySnap: gradient-descend each site onto the local valley floor (like the rows anchors) so
+  // roads still favour valleys. false = sites stay at their seeded jitter position (more even, less natural).
+  roadSiteValleySnap: true,
+  // roadGraphMargin: cells of padding around the stream band over which the Urquhart graph is computed, so
+  // an interior edge's membership is independent of the stream center (window-invariance). 3 is ample for
+  // blue-noise spacing; raise only if the invariance gate reports center-dependent interior edges.
+  roadGraphMargin: 3,
 
   // roadMinTurnRadius: D0 — minimum turn radius (m) for road centerlines. _filletMinRadius inserts a
   // circular arc of this radius wherever the implied corner radius is tighter, rounding (not excising)

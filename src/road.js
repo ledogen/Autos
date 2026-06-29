@@ -37,6 +37,10 @@ import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
 import { crownProfile, potholeNoise, signedCurvature, arcPrimitiveConnect, smoothGradeInPlace } from './road-carve.js'
 import { centerlineFromDescriptors, CenterlineCurve, Centerline } from './centerline.js'
+import { delaunay, urquhartEdges } from './road-graph.js'
+
+// FEAT-13 v2: total order on site ids [cmx,cmz,k] — the Poisson-disk priority tie-break.
+function idLess(a, b) { return a[0] !== b[0] ? a[0] < b[0] : (a[1] !== b[1] ? a[1] < b[1] : a[2] < b[2]) }
 // roadQuality imported for SURF-06 D-03: pothole severity uses the same per-stretch
 // quality hook as markings. Importing from road-quality.js (not road-mesh.js) avoids
 // the road-mesh.js → terrain.js → road.js chain issues.
@@ -208,9 +212,6 @@ export const CHUNK_SIZE = 64
 // Non-destructive experimental routing for the Phase-8 redesign. Endless roads as a
 // deterministic chain of valley-anchor connections, streamed around the view like terrain.
 const PROTO_ANCHOR_SPACING = 256   // m between macro-grid anchors
-// FEAT-13 graph mode: the 8-neighbourhood over the anchor lattice (edges run in these directions →
-// varied, not parallel). Used by _graphEdgesFrom / _graphIncidentCells / _graphAnchorDegree.
-const GRAPH_NB = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]
 const PROTO_CELL           = 10    // m — A* grid resolution for an anchor→anchor connection
 const PROTO_MARGIN         = 120   // m — N/S detour room so a connection can wrap around a peak. PERF
                                    // (Tier 1): the arc-search lattice area is (256+2·margin)² so this
@@ -986,6 +987,10 @@ export class RoadSystem {
             radius:   640,                                   // m — streamed road radius (set from terrain stream radius)
             anchors:  new Map(),                             // "mx,mz" → THREE.Vector3 (raw valley-snapped, pre-merge)
             mergedAnchors: new Map(),                        // "mx,mz" → THREE.Vector3 (FEAT-10 merged graph node)
+            sites:    new Map(),                             // FEAT-13 v2: "cmx,cmz" → blue-noise candidate sites
+            aliveSites: new Map(),                           // FEAT-13 v2: "cmx,cmz" → Poisson-disk-accepted sites
+            graph:    null,                                  // FEAT-13 v2: current band Urquhart {sig, edges, adj, key}
+            nodeInc:  new Map(),                             // FEAT-13 v2: site-key → [runKey,…] incident registered edges
             cls:      new Map(),                             // "mx,mz:…" → Centerline (per-connection primitive curve)
             lastCenter: null,
             dirty:    true,
@@ -1095,6 +1100,10 @@ export class RoadSystem {
     _invalidateProto() {
         this._proto.anchors.clear()
         this._proto.mergedAnchors.clear()   // FEAT-10: merged nodes derive from raw anchors + params
+        this._proto.sites.clear()           // FEAT-13 v2: sites + Urquhart graph derive from seed + params
+        this._proto.aliveSites.clear()
+        this._proto.graph = null
+        this._proto.nodeInc.clear()
         // Param changes affect routing results → drop the per-connection centerline cache
         // (a pure fn of params, so the next miss recomputes the new value).
         if (this._proto.cls) this._proto.cls.clear()
@@ -1165,25 +1174,23 @@ export class RoadSystem {
             this._pendingRoutes.add(spec.key)
             jobs.push({ key: spec.key, ax: spec.ax, az: spec.az, bx: spec.bx, bz: spec.bz, opts: spec.opts })
         }
-        const canon = (a, b) => (a[1] < b[1] || (a[1] === b[1] && a[0] <= b[0])) ? [a, b] : [b, a]
-        const warmedEdges = graph ? new Set() : null
-        for (const mz of rows) {
-            for (let mx = mx0; mx <= mx1; mx++) {
+        if (graph) {
+            // FEAT-13 v2: warm every Urquhart edge in the band (same edge set _assembleGraphEdges will
+            // register → the pre-warmed routes are exact cache hits). Edge SELECTION stays main-thread;
+            // only arcPrimitiveConnect runs on the Worker (no WORKER_SOURCE / ROUTE SYNC change).
+            const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)   // persist=false: don't clobber the streaming graph
+            for (const [c1, c2] of g.edges) {
                 if (jobs.length >= PREWARM_MAX_JOBS) break
-                if (graph) {
-                    for (const nb of this._graphEdgesFrom(mx, mz)) {
-                        const [c1, c2] = canon([mx, mz], nb)
-                        const ek = `${c1[0]},${c1[1]}:${c2[0]},${c2[1]}`
-                        if (warmedEdges.has(ek)) continue
-                        warmedEdges.add(ek)
-                        addJob(this._edgeRouteSpec(c1, c2))
-                        if (jobs.length >= PREWARM_MAX_JOBS) break
-                    }
-                } else {
+                addJob(this._edgeRouteSpec(c1, c2))
+            }
+        } else {
+            for (const mz of rows) {
+                for (let mx = mx0; mx <= mx1; mx++) {
+                    if (jobs.length >= PREWARM_MAX_JOBS) break
                     addJob(this._connRouteSpec(mx, mz))
                 }
+                if (jobs.length >= PREWARM_MAX_JOBS) break
             }
-            if (jobs.length >= PREWARM_MAX_JOBS) break
         }
         // Only advance the throttle anchor once the visible band is fully warmed/pending — otherwise a
         // single move could leave fringe connections un-dispatched until the NEXT PREWARM_WARM_MOVE.
@@ -1308,64 +1315,153 @@ export class RoadSystem {
     // ~G1 for free (the two opposite edges' headings are collinear); corners/junctions bend/diverge.
     _edgeTerminalHeading(at, toward) {
         if ((this._params?.roadNetworkMode ?? 'rows') !== 'graph') return this._protoAnchorHeading(at[0], at[1])
-        const a = this._protoAnchor(at[0], at[1]), b = this._protoAnchor(toward[0], toward[1])
+        const a = this._nodePos(at), b = this._nodePos(toward)
         return Math.atan2(b.z - a.z, b.x - a.x)
     }
 
-    // ── FEAT-13 graph topology — per-anchor directional graph over the lattice ──────────────────────
-    // Per-cell priority hashes (pure fns of (seed, cell) → window-invariant). _graphCellH drives the
-    // spanning-forest; _graphCellHx drives the seeded stitch/loop edge.
-    _graphCellH(mx, mz)  { return seedFor(this._worldSeed, 'roadgraph',  mx, mz) / 4294967296 }
-    _graphCellHx(mx, mz) { return seedFor(this._worldSeed, 'roadgraphX', mx, mz) / 4294967296 }
+    // ── FEAT-13 v2 graph topology — Urquhart graph over a blue-noise anchor set ──────────────────────
+    // The lattice (one grid anchor per cell + spanning-forest neighbour edges) is replaced by:
+    //   (1) BLUE-NOISE anchor SITES — multiple seeded candidates per macro-cell, Poisson-disk thinned, so
+    //       there are no parallel rows (a grid forces parallelism into ANY edge rule — handoff §4/§5A);
+    //   (2) URQUHART edges (Delaunay minus each triangle's longest edge, src/road-graph.js) over a bounded
+    //       band+margin neighbourhood — sparse, varied-angle, CONNECTED by construction (Urquhart ⊇ MST),
+    //       and window-invariant (the Delaunay of a fixed point set is unique; the margin makes interior
+    //       edges independent of the stream center — verified by test/graph-topology.mjs).
+    // A node id is a SITE id `[cmx, cmz, k]` (macro-cell + candidate index), generalising the rows
+    // `[mx, mz]` cell id. _nodePos resolves either to a world position; everything downstream
+    // (_edgeRouteSpec, headings, junction blend) reads positions through it.
 
-    // The neighbourhood the graph edges span. roadGraphDiagonals=false ⇒ orthogonal 4-neighbourhood
-    // (E/W/N/S) — roads meet at NODES (real T/X junctions), almost no mid-span crossings → far fewer
-    // intersections/overpasses, cleaner. true ⇒ full 8-neighbourhood (adds NE/NW/SE/SW) — more varied
-    // directions but dense mid-span diagonal X-crossings. (The orthogonal dirs are GRAPH_NB[0..3].)
-    _graphNB() { return (this._params?.roadGraphDiagonals ?? false) ? GRAPH_NB : GRAPH_NB.slice(0, 4) }
-
-    // Directed edges LEAVING cell (mx,mz): the spanning-forest parent (lowest-priority neighbour strictly
-    // below this cell) OR — if this cell is a local-min ROOT — its lowest neighbour (chains trees into
-    // large components), PLUS a seeded stitch/loop edge with probability roadGraphExtraEdgeProb. The
-    // undirected edge {c, parent(c)} forms an acyclic forest (priority strictly decreases downhill);
-    // root-chaining + stitches add the few loops + connectivity. Pure fn → window-invariant. (See the
-    // headless prototype: 0% orphans, max direction variety, ~67% one component at extraProb 0.22.)
-    _graphEdgesFrom(mx, mz) {
-        const NBlist = this._graphNB()
+    // The seeded candidate sites for macro-cell (cmx,cmz): roadSiteCandidates points jittered across the
+    // whole cell, each optionally valley-snapped (reusing the _protoAnchorRaw gradient-descent so sites
+    // still favour valley floors). Pure fn of (seed, cell) → window-invariant. Cached per cell.
+    _anchorSites(cmx, cmz) {
+        const ckey = `${cmx},${cmz}`
+        const cached = this._proto.sites.get(ckey)
+        if (cached) return cached
+        const S = this._params?.roadSiteSpacing ?? PROTO_ANCHOR_SPACING
+        const C = Math.max(1, Math.round(this._params?.roadSiteCandidates ?? 2))
+        const snap = this._params?.roadSiteValleySnap ?? true
+        const snapCap = S * 0.45
+        const rng = mulberry32(seedFor(this._worldSeed, 'roadsite', cmx, cmz))
         const out = []
-        const h = this._graphCellH(mx, mz)
-        let best = null, bestH = Infinity, lo = null, loH = Infinity
-        for (const [dx, dz] of NBlist) {
-            const hn = this._graphCellH(mx + dx, mz + dz)
-            if (hn < loH) { loH = hn; lo = [mx + dx, mz + dz] }
-            if (hn < h && hn < bestH) { bestH = hn; best = [mx + dx, mz + dz] }
+        for (let k = 0; k < C; k++) {
+            let wx = (cmx + rng()) * S, wz = (cmz + rng()) * S
+            let h = this._coarseH(wx, wz)
+            if (snap) {
+                const ox = wx, oz = wz
+                for (let s = 0; s < 48; s++) {
+                    let bx = wx, bz = wz, bh = h
+                    for (let a = 0; a < 8; a++) {
+                        const ang = a / 8 * Math.PI * 2
+                        const nx = wx + Math.cos(ang) * 8, nz = wz + Math.sin(ang) * 8
+                        const nh = this._coarseH(nx, nz)
+                        if (nh < bh) { bh = nh; bx = nx; bz = nz }
+                    }
+                    if (bh >= h) break
+                    if (Math.hypot(bx - ox, bz - oz) > snapCap) break
+                    wx = bx; wz = bz; h = bh
+                }
+            }
+            out.push({ id: [cmx, cmz, k], pos: new THREE.Vector3(wx, h, wz), pri: seedFor(this._worldSeed, 'roadsitePri', cmx, cmz * 131 + k) })
         }
-        if (best) out.push(best)
-        else if (lo) out.push(lo)   // local-min root → chain to lowest neighbour (no orphan, links trees)
-        const extraProb = this._params?.roadGraphExtraEdgeProb ?? 0.22
-        if (this._graphCellHx(mx, mz) < extraProb) {
-            const k = Math.floor(this._graphCellHx(mx + 7, mz - 3) * NBlist.length) % NBlist.length
-            out.push([mx + NBlist[k][0], mz + NBlist[k][1]])
-        }
+        this._proto.sites.set(ckey, out)
         return out
     }
 
-    // All cells linked to (mx,mz): its own outgoing edges UNION the 1-ring neighbours whose outgoing
-    // edges point back here (edges are ≤1 cell, so a 1-ring scan is complete). Used for degree + heading.
-    _graphIncidentCells(mx, mz) {
-        const NBlist = this._graphNB()
-        const m = new Map()
-        for (const c of this._graphEdgesFrom(mx, mz)) m.set(`${c[0]},${c[1]}`, c)
-        for (const [dx, dz] of NBlist) {
-            const nx = mx + dx, nz = mz + dz
-            for (const c of this._graphEdgesFrom(nx, nz)) if (c[0] === mx && c[1] === mz) { m.set(`${nx},${nz}`, [nx, nz]); break }
+    // Poisson-disk acceptance: a site is ALIVE iff no STRICTLY higher-priority accepted site lies within
+    // roadSiteMinDist. Acceptance reads only higher-priority sites in the bounded ±W-cell window covering
+    // minDist (each a pure fn) — same argument as the _protoAnchor merge (line ~1254) → window-invariant.
+    _siteAlive(site) {
+        if (site._alive !== undefined) return site._alive   // memoized (DAG over strict priority → cycle-free)
+        const minD = this._params?.roadSiteMinDist ?? 90
+        if (minD <= 0) return (site._alive = true)
+        const S = this._params?.roadSiteSpacing ?? PROTO_ANCHOR_SPACING
+        const W = Math.max(1, Math.ceil(minD / S) + 1)
+        const minD2 = minD * minD
+        const [cmx, cmz] = site.id
+        site._alive = true   // optimistic; a closer higher-priority site below flips it (never re-entered)
+        for (let dz = -W; dz <= W; dz++) {
+            for (let dx = -W; dx <= W; dx++) {
+                for (const other of this._anchorSites(cmx + dx, cmz + dz)) {
+                    if (other === site) continue
+                    // strictly higher priority (lower pri value; tie-break by id for total order)
+                    const hp = other.pri < site.pri || (other.pri === site.pri && idLess(other.id, site.id))
+                    if (!hp) continue
+                    if (!this._siteAlive(other)) continue   // a rejected site cannot suppress us
+                    const ex = other.pos.x - site.pos.x, ez = other.pos.z - site.pos.z
+                    if (ex * ex + ez * ez < minD2) return (site._alive = false)
+                }
+            }
         }
-        return [...m.values()]
+        return (site._alive = true)
     }
 
-    // Graph-mode degree of an anchor cell (incident-edge count) — drives junction classification:
-    // degree ≥ 3 = junction (flatten + camber→0 + pad); degree 2 = continuing path (grade-C0 only).
-    _graphAnchorDegree(mx, mz) { return this._graphIncidentCells(mx, mz).length }
+    // The alive sites in macro-cell (cmx,cmz) (post Poisson-disk thinning). Cached per cell.
+    _aliveSitesIn(cmx, cmz) {
+        const ckey = `${cmx},${cmz}`
+        const cached = this._proto.aliveSites.get(ckey)
+        if (cached) return cached
+        const out = this._anchorSites(cmx, cmz).filter(s => this._siteAlive(s))
+        this._proto.aliveSites.set(ckey, out)
+        return out
+    }
+
+    // World position for a site id [cmx,cmz,k].
+    _siteAt(id) {
+        for (const s of this._anchorSites(id[0], id[1])) if (s.id[2] === id[2]) return s.pos
+        return this._coarseAnchorFallback(id)
+    }
+    _coarseAnchorFallback(id) {   // defensive — a non-existent candidate index
+        const S = this._params?.roadSiteSpacing ?? PROTO_ANCHOR_SPACING
+        const x = (id[0] + 0.5) * S, z = (id[1] + 0.5) * S
+        return new THREE.Vector3(x, this._coarseH(x, z), z)
+    }
+
+    // Generalised node-position lookup: rows id [mx,mz] → merged grid anchor; graph site id [cmx,cmz,k]
+    // → blue-noise site. The single seam between the two topologies — every graph helper reads here.
+    _nodePos(id) { return id.length >= 3 ? this._siteAt(id) : this._protoAnchor(id[0], id[1]) }
+
+    // Build (or reuse) the Urquhart graph over the band [mx0,mx1]×[mz0,mz1] padded by roadGraphMargin
+    // cells. Returns { edges:[[idA,idB]...], adj:Map(key→Set(key)), key(id) }. Interior edges are
+    // window-invariant; the margin must be wide enough that adding farther sites can't change them
+    // (graph-topology.mjs asserts this across two centers). Cached on the padded-band signature.
+    // persist=true caches into this._proto.graph (the junction-degree source — used by the streaming
+    // assemble path). warmRoutes passes persist=false: it only needs the edge LIST for route jobs and
+    // runs on its own prewarm band, so it must NOT clobber the streaming graph (degree would go stale on
+    // a rebuild-skip). Window-invariance makes both bands agree on shared interior edges either way.
+    _buildUrquhart(mx0, mx1, mz0, mz1, persist = true) {
+        const M = Math.max(1, Math.round(this._params?.roadGraphMargin ?? 3))
+        const sig = `${mx0 - M},${mx1 + M},${mz0 - M},${mz1 + M}`
+        if (persist && this._proto.graph && this._proto.graph.sig === sig) return this._proto.graph
+        const key = (id) => `${id[0]},${id[1]},${id[2]}`
+        const ids = [], pts = []
+        for (let cz = mz0 - M; cz <= mz1 + M; cz++)
+            for (let cx = mx0 - M; cx <= mx1 + M; cx++)
+                for (const s of this._aliveSitesIn(cx, cz)) { ids.push(s.id); pts.push([s.pos.x, s.pos.z]) }
+        const adj = new Map()
+        const edges = []
+        if (pts.length >= 3) {
+            const tris = delaunay(pts)
+            for (const [i, j] of urquhartEdges(pts, tris)) {
+                const a = ids[i], b = ids[j], ka = key(a), kb = key(b)
+                if (!adj.has(ka)) adj.set(ka, new Set())
+                if (!adj.has(kb)) adj.set(kb, new Set())
+                adj.get(ka).add(kb); adj.get(kb).add(ka)
+                edges.push([a, b])
+            }
+        }
+        const g = { sig, edges, adj, key }
+        if (persist) this._proto.graph = g
+        return g
+    }
+
+    // Graph-mode degree of a site (incident Urquhart-edge count over the current band graph) — drives
+    // junction classification: degree ≥ 3 = junction (flatten + camber→0 + pad); 2 = continuing path.
+    _graphDegreeOf(id) {
+        const g = this._proto.graph
+        if (!g) return 2
+        return g.adj.get(g.key(id))?.size ?? 0
+    }
 
     _protoEdgeCost(fromH, toH, horiz, P) {
         const grade = Math.abs(toH - fromH) / horiz
@@ -1422,10 +1518,11 @@ export class RoadSystem {
         return { key, ax: a.x, az: a.z, bx: b.x, bz: b.z, opts: this._routeOptsBetween([mx, mz], [mx + 1, mz]) }
     }
 
-    // FEAT-13 graph mode: route SPEC for an arbitrary anchor-cell edge c1→c2 (canonical 'g' cache key).
+    // FEAT-13 graph mode: route SPEC for an arbitrary node-id edge c1→c2 (canonical 'g' cache key).
+    // Node ids are blue-noise site ids [cmx,cmz,k]; the key joins their components so it is unique.
     _edgeRouteSpec(c1, c2) {
-        const a = this._protoAnchor(c1[0], c1[1]), b = this._protoAnchor(c2[0], c2[1])
-        const key = `g${c1[0]},${c1[1]}>${c2[0]},${c2[1]}:${a.x.toFixed(0)},${a.z.toFixed(0)}>${b.x.toFixed(0)},${b.z.toFixed(0)}`
+        const a = this._nodePos(c1), b = this._nodePos(c2)
+        const key = `g${c1.join('_')}>${c2.join('_')}:${a.x.toFixed(0)},${a.z.toFixed(0)}>${b.x.toFixed(0)},${b.z.toFixed(0)}`
         return { key, ax: a.x, az: a.z, bx: b.x, bz: b.z, opts: this._routeOptsBetween(c1, c2) }
     }
 
@@ -1479,45 +1576,40 @@ export class RoadSystem {
         }
     }
 
-    // FEAT-13 graph mode: build the per-anchor directional graph into this._network over the band
-    // [mx0,mx1]×[mz0,mz1] (+ a cell margin so each undirected edge is emitted identically from any stream
-    // center — window-invariant, mirroring the rows pad). Each edge is canonicalised + dedup'd, degenerate
-    // (merged-coincident) edges skipped, routed via _edgeCenterline, sampled, graded STANDALONE (the
-    // junction reconciliation in _applyJunctionBlend ties shared anchors together), and registered with
-    // cellA/cellB. runKey = "g:<mx1>,<mz1>:<mx2>,<mz2>" (canonical).
+    // FEAT-13 v2 graph mode: build the Urquhart network into this._network over the band
+    // [mx0,mx1]×[mz0,mz1]. _buildUrquhart computes the edge set over band+margin so every undirected edge
+    // is emitted identically from any stream center (window-invariant). Each edge with ≥1 in-band endpoint
+    // is routed via _edgeCenterline, sampled, graded STANDALONE (the junction reconciliation in
+    // _applyJunctionBlend ties shared nodes together), and registered with cellA/cellB = site ids. An
+    // incidence map (site-key → runKeys) is built for the junction-grade reconciliation. runKey =
+    // "g:<idA>:<idB>" (canonical, from _buildUrquhart's id order).
     _assembleGraphEdges(mx0, mx1, mz0, mz1) {
-        const MARGIN = 2
         const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
         const inBand = (c) => c[0] >= mx0 && c[0] <= mx1 && c[1] >= mz0 && c[1] <= mz1
-        const canon = (a, b) => (a[1] < b[1] || (a[1] === b[1] && a[0] <= b[0])) ? [a, b] : [b, a]
-        const seen = new Set()
-        for (let mz = mz0 - MARGIN; mz <= mz1 + MARGIN; mz++) {
-            for (let mx = mx0 - MARGIN; mx <= mx1 + MARGIN; mx++) {
-                for (const nb of this._graphEdgesFrom(mx, mz)) {
-                    const [c1, c2] = canon([mx, mz], nb)
-                    const key = `g:${c1[0]},${c1[1]}:${c2[0]},${c2[1]}`
-                    if (seen.has(key)) continue
-                    seen.add(key)
-                    if (!inBand(c1) && !inBand(c2)) continue   // fully-margin edge: not registered (frontier, like rows pad)
-                    const A = this._protoAnchor(c1[0], c1[1]), B = this._protoAnchor(c2[0], c2[1])
-                    { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }   // degenerate (merged) edge
-                    const cl = this._edgeCenterline(c1, c2)
-                    if (!cl || cl.length < 1e-6) continue
-                    const n = Math.max(1, Math.ceil(cl.length / PROTO_SAMPLE_DS))
-                    const pts = new Array(n + 1)
-                    const clArc = new Float64Array(n + 1)
-                    for (let i = 0; i <= n; i++) {
-                        const s = cl.length * i / n
-                        clArc[i] = s
-                        const p = cl.pointAt(s)
-                        pts[i] = new THREE.Vector3(p.x, this._coarseH(p.x, p.z), p.z)
-                    }
-                    this._gradeEdgeInPlace(pts, this._params?.roadGraphDeviationCap ?? 2)
-                    const polyCum = new Float64Array(n + 1)
-                    for (let i = 1; i <= n; i++) polyCum[i] = polyCum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
-                    this._network.set(key, { points: pts, arcOrigin: 0, centerline: cl, polyCum, clArc, cellA: c1, cellB: c2 })
-                }
+        const g = this._buildUrquhart(mx0, mx1, mz0, mz1)
+        this._proto.nodeInc.clear()
+        const addInc = (idKey, runKey) => { const a = this._proto.nodeInc.get(idKey) || this._proto.nodeInc.set(idKey, []).get(idKey); a.push(runKey) }
+        for (const [c1, c2] of g.edges) {
+            if (!inBand(c1) && !inBand(c2)) continue   // fully-margin edge: not registered (frontier, like rows pad)
+            const A = this._nodePos(c1), B = this._nodePos(c2)
+            { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }   // degenerate (coincident) edge
+            const key = `g:${g.key(c1)}:${g.key(c2)}`
+            const cl = this._edgeCenterline(c1, c2)
+            if (!cl || cl.length < 1e-6) continue
+            const n = Math.max(1, Math.ceil(cl.length / PROTO_SAMPLE_DS))
+            const pts = new Array(n + 1)
+            const clArc = new Float64Array(n + 1)
+            for (let i = 0; i <= n; i++) {
+                const s = cl.length * i / n
+                clArc[i] = s
+                const p = cl.pointAt(s)
+                pts[i] = new THREE.Vector3(p.x, this._coarseH(p.x, p.z), p.z)
             }
+            this._gradeEdgeInPlace(pts, this._params?.roadGraphDeviationCap ?? 2)
+            const polyCum = new Float64Array(n + 1)
+            for (let i = 1; i <= n; i++) polyCum[i] = polyCum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
+            this._network.set(key, { points: pts, arcOrigin: 0, centerline: cl, polyCum, clArc, cellA: c1, cellB: c2 })
+            addInc(g.key(c1), key); addInc(g.key(c2), key)
         }
     }
 
@@ -2928,17 +3020,36 @@ export class RoadSystem {
     _runEndpointJunctions(runKey) {
         const e = this._network?.get(runKey)
         if (!e || !e.cellA || !e.cellB) return { jStart: { is: false, y: 0, flatCamber: false }, jEnd: { is: false, y: 0, flatCamber: false } }
-        const [ax, az] = e.cellA, [bx, bz] = e.cellB
         const graph = (this._params?.roadNetworkMode ?? 'rows') === 'graph'
         // `is` = needs grade reconciliation (ease toward the shared mean for C0); `flatCamber` = also kill
         // camber + read as a full intersection. Rows: a cross-row merge is both. Graph: degree ≥ 2 joins
         // reconcile grade (per-edge grading leaves a small step otherwise), but only degree ≥ 3 are true
-        // junctions that flatten camber — a degree-2 pass-through keeps its banking/flow.
-        const nodeInfo = (mx, mz) => {
-            if (graph) { const d = this._graphAnchorDegree(mx, mz); return { is: d >= 2, flatCamber: d >= 3, y: this._anchorJunctionGradeY(mx, mz) } }
-            const j = this._isJunctionNode(mx, mz); return { is: j, flatCamber: j, y: this._anchorJunctionGradeY(mx, mz) }
+        // junctions that flatten camber — a degree-2 pass-through keeps its banking/flow. (id = a site id
+        // [cmx,cmz,k] in graph mode, a grid cell [mx,mz] in rows mode.)
+        const nodeInfo = (id) => {
+            if (graph) { const d = this._graphDegreeOf(id); return { is: d >= 2, flatCamber: d >= 3, y: this._graphJunctionGradeY(id) } }
+            const j = this._isJunctionNode(id[0], id[1]); return { is: j, flatCamber: j, y: this._anchorJunctionGradeY(id[0], id[1]) }
         }
-        return { jStart: nodeInfo(ax, az), jEnd: nodeInfo(bx, bz) }
+        return { jStart: nodeInfo(e.cellA), jEnd: nodeInfo(e.cellB) }
+    }
+
+    // FEAT-13 v2 graph-mode junction Y: the AVERAGE endpoint grade-Y of every registered run incident to
+    // this site (via the _assembleGraphEdges incidence map) — the mean ROAD height, so easing toward it
+    // doesn't collapse the junction to the terrain valley floor (the rows _anchorJunctionGradeY rationale,
+    // but keyed on site ids instead of scanning grid keys). Falls back to the site terrain Y.
+    _graphJunctionGradeY(id) {
+        const g = this._proto.graph
+        const inc = g ? this._proto.nodeInc.get(g.key(id)) : null
+        if (!inc || !inc.length) return this._siteAt(id).y
+        let sum = 0, n = 0
+        for (const runKey of inc) {
+            const e = this._network?.get(runKey)
+            if (!e || !e.points || e.points.length < 2) continue
+            // endpoint matching this node: cellA → points[0], cellB → last
+            if (g.key(e.cellA) === g.key(id)) { sum += e.points[0].y; n++ }
+            else if (g.key(e.cellB) === g.key(id)) { sum += e.points[e.points.length - 1].y; n++ }
+        }
+        return n > 0 ? sum / n : this._siteAt(id).y
     }
 
     // Mutate gradeY (→nodeY) and/or camberRad (→0) in place within roadJunctionBlendLength of a junction

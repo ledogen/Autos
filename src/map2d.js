@@ -350,11 +350,12 @@ export class Map2D {
         for (const e of road._network.values()) {
             for (const cell of [e.cellA, e.cellB]) {
                 if (!cell) continue
-                const key = cell[0] + ',' + cell[1]
+                const key = cell.join(',')
                 if (seen.has(key)) continue
                 seen.add(key)
-                const a = road._protoAnchor(cell[0], cell[1])
-                const deg = typeof road._graphAnchorDegree === 'function' ? road._graphAnchorDegree(cell[0], cell[1]) : 2
+                // FEAT-13 v2: node id is a site id [cmx,cmz,k] (graph) or a grid cell [mx,mz] (rows).
+                const a = typeof road._nodePos === 'function' ? road._nodePos(cell) : road._protoAnchor(cell[0], cell[1])
+                const deg = typeof road._graphDegreeOf === 'function' && cell.length >= 3 ? road._graphDegreeOf(cell) : 2
                 // leaf (deg≤1) dim, degree-2 pass-through mid, hub (deg≥3) bright cyan.
                 ctx.fillStyle = deg >= 3 ? '#46c8ff' : deg === 2 ? '#7088a0' : '#506070'
                 ctx.beginPath()
