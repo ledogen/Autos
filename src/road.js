@@ -1054,7 +1054,7 @@ export class RoadSystem {
         this._junctionsFrom = null   // identity guard for _detectJunctions memoization
         this._crossingList = []      // flat per-crossing classified records (rebuilt with _junctions)
         // FEAT-07 Step 2: per-run index of AT_GRADE mid-span crossings to flatten toward {arc, nodeY}.
-        this._crossingsByRun = new Map()   // runKey → [{ arc, nodeY }] (rebuilt with _junctions)
+        this._crossingsByRun = new Map()   // runKey → [{ arc, nodeY, slope }] (rebuilt with _junctions)
 
         // ── Off-thread route pre-warming (PERF-03 Workstream A) ──────────────────
         // warmRoutes() asks a Worker to route the connections the streamer will soon need and posts
@@ -2217,15 +2217,14 @@ export class RoadSystem {
             node.legs.sort((a, b) => Math.atan2(a.dir.x, a.dir.z) - Math.atan2(b.dir.x, b.dir.z))
             // Finalise nodeY = mean grade Y of every strand at the node (the pad + the flatten use it).
             if (node._yCount > 0) { node.nodeY = node._ySum / node._yCount; node.pos.y = node.nodeY }
-            // Flatten the strands of a node toward its ONE shared node.nodeY so they meet at one elevation
-            // (no step). Normally only AT_GRADE nodes (GRADE_SEP = overpass excluded). In forceFlat (graph)
-            // mode flatten EVERY node — including near-parallel grazes (which otherwise leave a collision
-            // step where two overlapping strands sit at different heights).
+            // FEAT-19: reconcile the strands of a node so they MEET at the crossing (no step) WITHOUT
+            // flattening the through road's slope. Per crossing record, _addCrossingPair leaves the
+            // THROUGH/crossbar strand on its grade and eases only the JOINING/upright strand onto the
+            // through surface (height + local slope). Normally only AT_GRADE nodes (GRADE_SEP = overpass
+            // excluded); in forceFlat (graph) mode every node reconciles — including near-parallel grazes
+            // (which otherwise leave a collision step where two overlapping strands sit at different Ys).
             if (node.kind === 'AT_GRADE' || forceFlat) {
-                for (const r of node.records) {
-                    this._addCrossingByRun(r.runA, r.arcA, node.nodeY)
-                    this._addCrossingByRun(r.runB, r.arcB, node.nodeY)
-                }
+                for (const r of node.records) this._addCrossingPair(r)
             }
         }
 
@@ -2233,10 +2232,41 @@ export class RoadSystem {
         return this._junctions
     }
 
-    _addCrossingByRun(runKey, arc, nodeY) {
+    // FEAT-19: classify a crossing record's two strands as THROUGH (interior arc, well away from its own
+    // endpoints — the crossbar) vs JOINING (terminating near an endpoint — the upright), then register a
+    // grade-LINE flatten for the JOINING strand only. The through strand keeps its gradeY untouched, so the
+    // crossing follows the through road's slope instead of collapsing to a level pad. T-junction = one
+    // through + one joining; X/4-way = both interior → the steeper is the dominant "through" surface and
+    // the other matches it locally (can't preserve both unless they agree). Deterministic (interior test,
+    // then steeper |slope|, then lower runKey) → window-invariant. The joining strand eases toward the
+    // through strand's CONTACT Y so both still agree at the crossing (C0, no invisible step).
+    _addCrossingPair(r) {
+        const Rj = this._params?.roadJunctionBlendLength ?? 30
+        const lenA = this._network.get(r.runA)?.polyCum?.at(-1) ?? 0
+        const lenB = this._network.get(r.runB)?.polyCum?.at(-1) ?? 0
+        const throughA = Math.min(r.arcA, lenA - r.arcA) >= Rj
+        const throughB = Math.min(r.arcB, lenB - r.arcB) >= Rj
+        let aDom
+        if (throughA !== throughB) aDom = throughA   // T-junction: the interior (crossbar) strand dominates
+        else {                                       // both interior (X) or both terminating: steeper wins
+            const sa = Math.abs(r.mA), sb = Math.abs(r.mB)
+            aDom = sa > sb || (sa === sb && r.runA <= r.runB)
+        }
+        if (aDom) {
+            // A is through: ease B onto A's surface. slope = A's grade vector (mA·tA) projected onto B's
+            // tangent → B lands tangent to the through surface at the contact (matches grade + local slope).
+            const slope = r.mA * (r.tAx * r.tBx + r.tAz * r.tBz)
+            this._addCrossingByRun(r.runB, r.arcB, r.yA, slope)
+        } else {
+            const slope = r.mB * (r.tBx * r.tAx + r.tBz * r.tAz)
+            this._addCrossingByRun(r.runA, r.arcA, r.yB, slope)
+        }
+    }
+
+    _addCrossingByRun(runKey, arc, nodeY, slope = 0) {
         let arr = this._crossingsByRun.get(runKey)
         if (!arr) { arr = []; this._crossingsByRun.set(runKey, arr) }
-        arr.push({ arc, nodeY })
+        arr.push({ arc, nodeY, slope })   // FEAT-19: nodeY = through-surface CONTACT Y; slope = dGradeY/dArc
     }
 
     /**
@@ -2268,11 +2298,19 @@ export class RoadSystem {
         const under = aUnder ? S.runKey : T.runKey
         const over  = aUnder ? T.runKey : S.runKey
 
+        // FEAT-19: per-strand grade LINE at the crossing — unit XZ tangent (increasing-arc) + longitudinal
+        // slope (dGradeY/dArc). The AT_GRADE flatten eases the JOINING strand toward the THROUGH strand's
+        // surface (height + slope) instead of a flat scalar, so the through road keeps its grade (no level
+        // pad). tA/mA describe strand S (runA), tB/mB strand T (runB). Pure fn of the seg endpoints.
+        const tAx = v1x / l1, tAz = v1z / l1, tBx = v2x / l2, tBz = v2z / l2
+        const mA = (S.a1 - S.a0) > 1e-9 ? (S.y1 - S.y0) / (S.a1 - S.a0) : 0
+        const mB = (T.a1 - T.a0) > 1e-9 ? (T.y1 - T.y0) / (T.a1 - T.a0) : 0
+
         const posY = (yA + yB) * 0.5
         const record = {
             point: { x: ix.x, y: posY, z: ix.z },
-            runA: S.runKey, segA: S.segIdx, arcA, yA,
-            runB: T.runKey, segB: T.segIdx, arcB, yB,
+            runA: S.runKey, segA: S.segIdx, arcA, yA, tAx, tAz, mA,
+            runB: T.runKey, segB: T.segIdx, arcB, yB, tBx, tBz, mB,
             dY, angle, selfCrossing, kind, under, over,
         }
         this._crossingList.push(record)
@@ -3159,20 +3197,97 @@ export class RoadSystem {
     // Per-run endpoint junction info: the two endpoint anchor CELLS come from netEntry.cellA/cellB
     // (FEAT-13 — works for both rows and graph topology; no runKey parsing).
     // nodeY = the shared junction Y both runs ease toward — the AVERAGE incident road grade (not terrain).
+    // FEAT-19: each endpoint also carries `slopeAway` (dGradeY per metre moving AWAY from the node along
+    // THIS run) so the blend eases toward a grade LINE (nodeY + slopeAway·d), keeping the through road's
+    // slope/inclination through the node instead of collapsing it to a level pad.
     _runEndpointJunctions(runKey) {
+        const NONE = { is: false, y: 0, flatCamber: false, slopeAway: 0 }
         const e = this._network?.get(runKey)
-        if (!e || !e.cellA || !e.cellB) return { jStart: { is: false, y: 0, flatCamber: false }, jEnd: { is: false, y: 0, flatCamber: false } }
+        if (!e || !e.cellA || !e.cellB || !e.points || e.points.length < 2) return { jStart: NONE, jEnd: NONE }
         const graph = (this._params?.roadNetworkMode ?? 'rows') === 'graph'
         // `is` = needs grade reconciliation (ease toward the shared mean for C0); `flatCamber` = also kill
         // camber + read as a full intersection. Rows: a cross-row merge is both. Graph: degree ≥ 2 joins
         // reconcile grade (per-edge grading leaves a small step otherwise), but only degree ≥ 3 are true
         // junctions that flatten camber — a degree-2 pass-through keeps its banking/flow. (id = a site id
         // [cmx,cmz,k] in graph mode, a grid cell [mx,mz] in rows mode.)
-        const nodeInfo = (id) => {
-            if (graph) { const d = this._graphDegreeOf(id); return { is: d >= 2, flatCamber: d >= 3, y: this._graphJunctionGradeY(id) } }
-            const j = this._isJunctionNode(id[0], id[1]); return { is: j, flatCamber: j, y: this._anchorJunctionGradeY(id[0], id[1]) }
+        // `thisStrand` = this run's away-from-node tangent at the endpoint; slopeAway projects the node's
+        // dominant grade VECTOR onto it (FEAT-19) — the through axis's slope, carried into this run.
+        const nodeInfo = (id, thisStrand) => {
+            let is, flatCamber, y, strands
+            if (graph) { const d = this._graphDegreeOf(id); is = d >= 2; flatCamber = d >= 3; y = this._graphJunctionGradeY(id); strands = is ? this._graphNodeStrands(id) : null }
+            else { const j = this._isJunctionNode(id[0], id[1]); is = j; flatCamber = j; y = this._anchorJunctionGradeY(id[0], id[1]); strands = is ? this._anchorNodeStrands(id[0], id[1]) : null }
+            let slopeAway = 0
+            if (is && strands && thisStrand) { const G = this._junctionGradeVector(strands); slopeAway = G.gx * thisStrand.wx + G.gz * thisStrand.wz }
+            return { is, flatCamber, y, slopeAway }
         }
-        return { jStart: nodeInfo(e.cellA), jEnd: nodeInfo(e.cellB) }
+        return { jStart: nodeInfo(e.cellA, this._strandAtEnd(e.points, true)), jEnd: nodeInfo(e.cellB, this._strandAtEnd(e.points, false)) }
+    }
+
+    // FEAT-19: one run END at a node → unit XZ tangent pointing AWAY from the node + the longitudinal grade
+    // slope (dGradeY/m) moving away. isStart picks the start endpoint (cellA, points[0]) vs the end
+    // (cellB, last point). Returns null for a degenerate zero-length terminal segment. Pure fn of points.
+    _strandAtEnd(pts, isStart) {
+        const N = pts.length
+        const p0 = isStart ? pts[0] : pts[N - 1]          // the node endpoint
+        const p1 = isStart ? pts[1] : pts[N - 2]          // the next interior point (away from node)
+        const dx = p1.x - p0.x, dz = p1.z - p0.z
+        const len = Math.hypot(dx, dz)
+        if (len < 1e-6) return null
+        return { wx: dx / len, wz: dz / len, mAway: (p1.y - p0.y) / len }
+    }
+
+    // FEAT-19: incident strands at a GRAPH node (away-tangent + away-slope per registered incident edge).
+    _graphNodeStrands(id) {
+        const g = this._proto.graph
+        const inc = g ? this._proto.nodeInc.get(g.key(id)) : null
+        if (!inc || !inc.length) return []
+        const kid = g.key(id)
+        const out = []
+        for (const runKey of inc) {
+            const e = this._network?.get(runKey)
+            if (!e || !e.points || e.points.length < 2) continue
+            const s = this._strandAtEnd(e.points, g.key(e.cellA) === kid)
+            if (s) { s.key = runKey; out.push(s) }
+        }
+        return out
+    }
+
+    // FEAT-19: incident strands at a ROWS-mode anchor node (mirrors _anchorJunctionGradeY's cell scan).
+    _anchorNodeStrands(mx, mz) {
+        const P = this._protoAnchor(mx, mz)
+        const out = []
+        for (let cz = mz - 2; cz <= mz + 2; cz++) {
+            for (let cx = mx - 2; cx <= mx + 2; cx++) {
+                const runKey = `${cz}:${cx}`
+                const e = this._network?.get(runKey)
+                if (!e || !e.points || e.points.length < 2) continue
+                const a0 = this._protoAnchor(cx, cz), a1 = this._protoAnchor(cx + 1, cz)
+                if (Math.abs(a0.x - P.x) < 0.5 && Math.abs(a0.z - P.z) < 0.5) { const s = this._strandAtEnd(e.points, true);  if (s) { s.key = runKey; out.push(s) } }
+                if (Math.abs(a1.x - P.x) < 0.5 && Math.abs(a1.z - P.z) < 0.5) { const s = this._strandAtEnd(e.points, false); if (s) { s.key = runKey; out.push(s) } }
+            }
+        }
+        return out
+    }
+
+    // FEAT-19: the dominant grade VECTOR at a junction node (world XZ, dGradeY per horizontal metre). The
+    // node's THROUGH axis = the most anti-collinear pair of incident strands (a T-junction's crossbar
+    // arms, or a degree-2 pass-through's two arms); the steeper of that pair (tie-break lower runKey)
+    // defines the surface every strand is reconciled to. Projecting this vector onto each strand's tangent
+    // (slopeAway) gives a grade LINE that keeps the through slope and lets the joining roads match it,
+    // instead of easing everything to a flat scalar (the level-pad bug). Pure fn of the incident strands
+    // → window-invariant over the domain where the node's edges are all streamed (same as the mean-Y).
+    _junctionGradeVector(strands) {
+        if (!strands || strands.length < 2) return { gx: 0, gz: 0 }
+        let bi = 0, bj = 1, minDot = Infinity
+        for (let i = 0; i < strands.length; i++) {
+            for (let j = i + 1; j < strands.length; j++) {
+                const d = strands[i].wx * strands[j].wx + strands[i].wz * strands[j].wz
+                if (d < minDot) { minDot = d; bi = i; bj = j }
+            }
+        }
+        const a = strands[bi], b = strands[bj]
+        const dom = (Math.abs(a.mAway) > Math.abs(b.mAway) || (Math.abs(a.mAway) === Math.abs(b.mAway) && a.key <= b.key)) ? a : b
+        return { gx: dom.mAway * dom.wx, gz: dom.mAway * dom.wz }
     }
 
     // FEAT-13 v2 graph-mode junction Y: the AVERAGE endpoint grade-Y of every registered run incident to
@@ -3194,8 +3309,13 @@ export class RoadSystem {
         return n > 0 ? sum / n : this._siteAt(id).y
     }
 
-    // Mutate gradeY (→nodeY) and/or camberRad (→0) in place within roadJunctionBlendLength of a junction
-    // endpoint, via a smoothstep ramp. Pass null for whichever array isn't being flattened.
+    // Mutate gradeY (→ a grade LINE) and/or camberRad (→0) in place within roadJunctionBlendLength of a
+    // junction endpoint, via a smoothstep ramp. Pass null for whichever array isn't being flattened.
+    // FEAT-19: the grade target is the LINE `endpoint.y + slopeAway·d` (d = distance from the node along
+    // this run), NOT the flat scalar `endpoint.y`. d ≥ 0 at both ends and slopeAway is the through-axis
+    // slope moving AWAY from the node, so the through road holds its grade across the node (no level pad)
+    // while both runs still meet at endpoint.y AT the node (d = 0) → C0 step-free. Camber is unchanged
+    // (still → 0 only at flatCamber ≥3-way nodes): inclination handling stays as-is.
     _applyJunctionBlend(runKey, arcPos, gradeY, camberRad) {
         const ej = this._runEndpointJunctions(runKey)
         if (!ej.jStart.is && !ej.jEnd.is) return
@@ -3207,20 +3327,23 @@ export class RoadSystem {
             // flatCamber endpoint, i.e. a true ≥3-way intersection — a degree-2 graph pass-through keeps
             // its banking while still reconciling grade to C0).
             let fG = 0, ny = 0, fC = 0
-            if (ej.jStart.is) { const d = arcPos[i] - aStart; if (d < Rj) { const t = 1 - d / Rj; const fs = t * t * (3 - 2 * t); if (fs > fG) { fG = fs; ny = ej.jStart.y } if (ej.jStart.flatCamber && fs > fC) fC = fs } }
-            if (ej.jEnd.is)   { const d = aEnd - arcPos[i];   if (d < Rj) { const t = 1 - d / Rj; const fs = t * t * (3 - 2 * t); if (fs > fG) { fG = fs; ny = ej.jEnd.y } if (ej.jEnd.flatCamber && fs > fC) fC = fs } }
+            if (ej.jStart.is) { const d = arcPos[i] - aStart; if (d < Rj) { const t = 1 - d / Rj; const fs = t * t * (3 - 2 * t); if (fs > fG) { fG = fs; ny = ej.jStart.y + ej.jStart.slopeAway * d } if (ej.jStart.flatCamber && fs > fC) fC = fs } }
+            if (ej.jEnd.is)   { const d = aEnd - arcPos[i];   if (d < Rj) { const t = 1 - d / Rj; const fs = t * t * (3 - 2 * t); if (fs > fG) { fG = fs; ny = ej.jEnd.y + ej.jEnd.slopeAway * d } if (ej.jEnd.flatCamber && fs > fC) fC = fs } }
             if (gradeY && fG > 0)    gradeY[i] += (ny - gradeY[i]) * fG
             if (camberRad && fC > 0) camberRad[i] *= (1 - fC)
         }
     }
 
-    // FEAT-07 Step 2: flatten this run toward each AT_GRADE MID-SPAN crossing's shared node Y (and
-    // camber → 0) within roadJunctionBlendLength of the crossing's arc position — the same smoothstep
-    // ramp as _applyJunctionBlend, but anchored at an interior arcS (a graph mid-span crossing) instead
-    // of a shared anchor endpoint. Both crossing strands ease to the SAME node.nodeY, so they meet at one
-    // elevation at the crossing → no invisible step (the screenshot "mess" fix); the ribbon, the carve,
-    // and physics all read this flattened gradeY (mesh == collision, QUAL-07). Pure fn of _crossingsByRun
-    // (itself a pure fn of the network) → window-invariant. No-op for runs with no AT_GRADE crossing.
+    // FEAT-07 Step 2 + FEAT-19: reconcile this run toward each AT_GRADE MID-SPAN crossing within
+    // roadJunctionBlendLength of the crossing arc — the same smoothstep ramp as _applyJunctionBlend, but
+    // anchored at an interior arcS (a graph mid-span crossing) instead of a shared anchor endpoint. This
+    // is the JOINING/upright side only (the through/crossbar strand registered no crossing entry, so it
+    // keeps its grade). FEAT-19: the ease target is a grade LINE x.nodeY + x.slope·(s − x.arc) — the
+    // through strand's surface (CONTACT Y + local slope) — NOT a flat scalar. At the crossing (s = x.arc)
+    // the target = the through CONTACT Y, so both strands still meet at one elevation → no invisible step
+    // (the FEAT-07 "mess" fix); away from it the joining road follows the through slope instead of going
+    // flat. The ribbon, the carve, and physics all read this gradeY (mesh == collision, QUAL-07). Pure fn
+    // of _crossingsByRun (itself a pure fn of the network) → window-invariant. No-op for runs with none.
     _applyMidspanJunctionBlend(runKey, arcPos, gradeY, camberRad) {
         const xs = this._crossingsByRun?.get(runKey)
         if (!xs || xs.length === 0) return
@@ -3233,7 +3356,7 @@ export class RoadSystem {
             let f = 0, ny = 0
             for (const x of xs) {
                 const d = Math.abs(arcPos[i] - x.arc)
-                if (d < Rj) { const fs = ss(1 - d / Rj); if (fs > f) { f = fs; ny = x.nodeY } }
+                if (d < Rj) { const fs = ss(1 - d / Rj); if (fs > f) { f = fs; ny = x.nodeY + x.slope * (arcPos[i] - x.arc) } }
             }
             if (f <= 0) continue
             // Endpoint taper: a mid-span crossing's ramp must NOT alter gradeY/camber at the run's own
