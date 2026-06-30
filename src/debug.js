@@ -27,7 +27,7 @@
 
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
 import { VEHICLES } from '../data/vehicles.js'
-import { BUILD } from './version.js'
+import { resolveBuild } from './version.js'
 
 // Module-level bindings so updatePacejkaCurve and updateTravelBars (defined at module scope)
 // can read them. Assigned inside initDebug(); null until then.
@@ -52,17 +52,21 @@ export function initDebug (params, callbacks = {}, options = {}) {
   gui.domElement.style.display = 'none'  // hidden by default; backtick reveals it
 
   // QUAL-04: build marker — confirms which build the browser actually loaded (deploy lag + cache).
-  // Read-only text controller at the top of the panel; value baked at commit time. The input is
-  // disabled (not editable), so to make the ID easy to SEND we attach click-to-copy on the row:
-  // click copies BUILD to the clipboard and flashes "(copied!)" in the label. Falls back to selecting
-  // the text if the Clipboard API is unavailable (it's fine on localhost — a secure context).
-  const buildCtrl = gui.add({ build: BUILD }, 'build').name('Build').disable()
+  // Read-only text controller at the top of the panel. The value is the SERVED main.js
+  // Last-Modified/ETag, fetched once via resolveBuild() (src/version.js) — it reflects the bundle
+  // that is actually RUNNING (no manual bump, no build step). Starts as '…' and fills in when the
+  // probe resolves. The input is disabled (not editable), so to make the ID easy to SEND we attach
+  // click-to-copy on the row: click copies the resolved id to the clipboard and flashes "(copied!)"
+  // in the label. Falls back to selecting the text if the Clipboard API is unavailable.
+  const buildState = { build: '…' }
+  const buildCtrl = gui.add(buildState, 'build').name('Build').disable()
+  resolveBuild().then(v => { buildState.build = v; buildCtrl.updateDisplay() })
   buildCtrl.domElement.style.cursor = 'pointer'
   buildCtrl.domElement.title = 'Click to copy build ID'
   buildCtrl.domElement.addEventListener('click', () => {
     const flash = () => { buildCtrl.name('Build (copied!)'); setTimeout(() => buildCtrl.name('Build'), 1200) }
     if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(BUILD).then(flash).catch(() => {
+      navigator.clipboard.writeText(buildState.build).then(flash).catch(() => {
         const inp = buildCtrl.domElement.querySelector('input')
         if (inp) { inp.disabled = false; inp.select(); inp.disabled = true }
       })
