@@ -36,6 +36,7 @@ const GATES = [
     'graph-topology.mjs',   // FEAT-13 v2: graph mode (roadNetworkMode:graph) — blue-noise + Urquhart: reachability, window-invariance, direction variety, step-free inter-edge surface
     'props.mjs',            // FEAT-06: prop geometry sanity + scatter determinism/window-invariance + slot accounting
     'penetration-failsafe.mjs', // BUG-24: catastrophic-penetration failsafe fires only on true tunnels (depth>wheelRadius), not resolvable deep contact — no body teleport on the shoulder step
+    'body-contact-energy.mjs',  // BUG-27: hard body slams are strictly dissipative (restitution≈0, accumulated-impulse solver, tamed Baumgarte) — no phantom spin, no launch, rest stays stable
 ]
 
 let failed = []

@@ -105,7 +105,14 @@ function getBrakeTorque (wheelIndex, vehicleState, params) {
  *   single-contact interface to support walls, slopes, and multiple contacts per wheel.
  * @returns {void}
  */
-const BODY_RESTITUTION  = 0.05  // near-zero = dead stop; slight bounce prevents micro-jitter at rest
+// BUG-27: body (frame/bumper/undercarriage) contact is fully PLASTIC — restitution 0.
+// A real steel frame slamming the ground deforms and absorbs the impact; it does not rebound.
+// The old 0.05 restitution only ever fired on FAST contacts (the REST_VEL_THRESHOLD gate set
+// e=0 for slow/resting contacts), so it added bounce to exactly the hard slams that should be
+// the most inelastic — and that 0.05 target was amplified to ~0.15 effective by the 6 coincident
+// undercarriage probes × 8 Gauss-Seidel passes, launching the car. e=0 makes the normal impulse
+// kill all approach velocity (maximally dissipative) while leaving resting contact dead-stopped.
+const BODY_RESTITUTION  = 0.0   // fully plastic: hard hits thud and stay, no rebound (BUG-27)
 const BODY_FRICTION_MU  = 0.6   // Coulomb friction coefficient for body contact surfaces
 
 export function stepPhysics (vehicleState, params, dt, queryContacts, queryVertexContacts) {
@@ -513,9 +520,16 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
   // coincident points (e.g. four roof corners when upside-down) settle to a consistent rest
   // instead of fighting in a single pass.
   {
-    const BAUMGARTE_BETA = 0.25
+    // BUG-27: Baumgarte tamed. The position correction below pushes the body OUT of penetration
+    // but injects gravitational PE with no matching velocity sink — on a deep slam (depth up to
+    // ~0.16 m across the coincident undercarriage probes) the old beta=0.25 lifted the body ~4 cm
+    // per step every step, compounding into the upward "launch/creep" after the bounce. Lower beta
+    // + a hard per-step clamp let deep penetration bleed out over a few frames instead of catapulting
+    // (true tunnels are still caught by the Step 1 failsafe). The velocity solver already dead-stops
+    // the contact (restitution 0), so the residual depth is small and a gentle correction suffices.
+    const BAUMGARTE_BETA = 0.1     // was 0.25 — softer positional push, less PE injected per step
+    const MAX_CORRECTION = 0.02    // m — cap the per-step de-penetration so a deep hit can't launch
     const SLOP = 0.005
-    const REST_VEL_THRESHOLD = 0.5  // m/s — below this approach speed, no bounce (resting contact)
     const SOLVER_ITERATIONS = 8     // sequential-impulse passes for coincident-contact convergence
 
     // Gather all body contacts once — queryContacts is expensive, so don't re-run it per pass.
@@ -540,29 +554,47 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
       }
     }
 
-    // Velocity solver — multiple Gauss-Seidel passes converge coincident contacts.
+    // Velocity solver — accumulated-impulse projected Gauss-Seidel (BUG-27).
+    // The previous solver applied a FRESH full normal impulse (−vn/invEffMass) every pass without
+    // tracking the accumulated impulse. On a hard slam the body probes are coincident but at very
+    // different lever arms (front/rear undercarriage + bumpers span ~4 m in z), and that
+    // non-accumulated sweep did NOT converge to the inelastic resting solution in 8 passes — it
+    // pumped a large phantom PITCH rotation (ω_z ≈ −2 rad/s from a pure vertical drop) plus net
+    // UPWARD velocity, i.e. it CREATED energy and launched the car. Accumulating each contact's
+    // impulse and clamping the TOTAL to be non-negative (the standard sequential-impulse / Box2D
+    // formulation) converges to the true LCP solution: the body stops dead, no phantom spin,
+    // mechanical energy strictly removed. Resting contact is unchanged (it already sat at vn ≈ 0).
+    for (const c of bodyContacts) { c.accumN = 0 }
+
     for (let iter = 0; iter < SOLVER_ITERATIONS; iter++) {
-      for (const { normal, rContact, iInvRCrossN, invEffMass } of bodyContacts) {
-        const vertVel = vehicleState.velocity.clone().add(
+      for (const c of bodyContacts) {
+        const { normal, rContact, iInvRCrossN, invEffMass } = c
+
+        // ── Normal impulse: drive vn → 0 (restitution 0 = fully plastic), accumulate & clamp ≥ 0 ──
+        let vertVel = vehicleState.velocity.clone().add(
           new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rContact)
         )
         const vn = vertVel.dot(normal)
+        let dN = -(1 + BODY_RESTITUTION) * vn / invEffMass
+        const newN = Math.max(0, c.accumN + dN)   // total normal impulse can never pull the body down
+        dN = newN - c.accumN
+        c.accumN = newN
+        if (dN !== 0) {
+          vehicleState.velocity.addScaledVector(normal, dN / params.mass)
+          vehicleState.angularVelocity.x += iInvRCrossN.x * dN
+          vehicleState.angularVelocity.y += iInvRCrossN.y * dN
+          vehicleState.angularVelocity.z += iInvRCrossN.z * dN
+        }
 
-        if (vn < 0) {
-          // Restitution only above a threshold approach speed — resting/slow contacts get a
-          // dead stop, so gravity can't re-inject a micro-bounce every frame.
-          const restitution = -vn > REST_VEL_THRESHOLD ? BODY_RESTITUTION : 0
-          const j = -(1 + restitution) * vn / invEffMass
-
-          vehicleState.velocity.addScaledVector(normal, j / params.mass)
-          vehicleState.angularVelocity.x += iInvRCrossN.x * j
-          vehicleState.angularVelocity.y += iInvRCrossN.y * j
-          vehicleState.angularVelocity.z += iInvRCrossN.z * j
-
-          // Coulomb friction — tangential impulse capped at mu * normal impulse
-          const vt    = vertVel.clone().addScaledVector(normal, -vn)  // tangential velocity
+        // ── Coulomb friction: tangential impulse opposing slide, capped at μ · accumulated normal ──
+        if (c.accumN > 0) {
+          vertVel = vehicleState.velocity.clone().add(
+            new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rContact)
+          )
+          const vnNow = vertVel.dot(normal)
+          const vt    = vertVel.clone().addScaledVector(normal, -vnNow)  // tangential velocity
           const vtMag = vt.length()
-          if (vtMag > 1e-4) {
+          if (vtMag > 1e-6) {
             const tDir      = vt.clone().multiplyScalar(-1 / vtMag)   // oppose sliding
             const rCrossT   = new THREE.Vector3().crossVectors(rContact, tDir)
             const iInvRCrossT = new THREE.Vector3(
@@ -571,20 +603,23 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
               rCrossT.z / params.inertiaPitch
             )
             const invEffMassT = 1 / params.mass + rCrossT.dot(iInvRCrossT)
-            const jf = Math.min(vtMag / invEffMassT, BODY_FRICTION_MU * j)
-
-            vehicleState.velocity.addScaledVector(tDir, jf / params.mass)
-            vehicleState.angularVelocity.x += iInvRCrossT.x * jf
-            vehicleState.angularVelocity.y += iInvRCrossT.y * jf
-            vehicleState.angularVelocity.z += iInvRCrossT.z * jf
+            const jf = Math.min(vtMag / invEffMassT, BODY_FRICTION_MU * c.accumN)
+            if (jf > 0) {
+              vehicleState.velocity.addScaledVector(tDir, jf / params.mass)
+              vehicleState.angularVelocity.x += iInvRCrossT.x * jf
+              vehicleState.angularVelocity.y += iInvRCrossT.y * jf
+              vehicleState.angularVelocity.z += iInvRCrossT.z * jf
+            }
           }
         }
       }
     }
 
     // Baumgarte position correction — applied once after the velocity solver converges.
+    // BUG-27: clamped to MAX_CORRECTION so a deep slam de-penetrates over several frames rather
+    // than teleporting up in one (which injected unbounded PE → the launch).
     for (const { normal, depth } of bodyContacts) {
-      const correction = Math.max(0, depth - SLOP) * BAUMGARTE_BETA
+      const correction = Math.min(Math.max(0, depth - SLOP) * BAUMGARTE_BETA, MAX_CORRECTION)
       if (correction > 0) {
         vehicleState.position.x += normal.x * correction
         vehicleState.position.y += normal.y * correction
