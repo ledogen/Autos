@@ -507,6 +507,14 @@ sun.shadow.camera.right = sun.shadow.camera.top   =  220
 scene.add(sun)
 scene.add(sun.target)   // FEAT-06: target must be in-scene for the per-frame shadow-follow to apply
 
+// BUG-29: world-size of one shadow-map texel + scratch vectors for texel-snapping the shadow frustum
+// centre each frame (see the follow in loop()). frustumWidth / mapSize ≈ 440 / 2048 ≈ 0.215 m/texel.
+const SHADOW_TEXEL  = (sun.shadow.camera.right - sun.shadow.camera.left) / sun.shadow.mapSize.width
+const _shadowFwd    = new THREE.Vector3()
+const _shadowRight  = new THREE.Vector3()
+const _shadowUp     = new THREE.Vector3()
+const _shadowCenter = new THREE.Vector3()
+
 // QUAL-02: atmospheric skybox + sun-driven lighting. Drives the sun light, hemisphere fill and fog
 // tint from ONE sun elevation/azimuth (the static base a day/night cycle plugs into). SkySystem adds
 // the Sky mesh and sets scene.background = null (the mesh is the background now).
@@ -1316,12 +1324,32 @@ function loop () {
   // PERF-06: skip the follow entirely when the Quality tier disabled shadows (sun.castShadow=false) —
   // there is no shadow map to centre, so the matrix writes would be wasted work.
   if (sun.castShadow) {
+    const sunDir = skySystem.sunDirection
+    // BUG-29: texel-snap the follow centre. The ortho shadow camera is re-centred on the continuous
+    // streamCenter every frame; un-snapped, the 2048² map's texel grid slides sub-texel under the
+    // geometry → swimming/dithering shadow edges. Quantise the centre to one shadow-texel increment in
+    // the LIGHT's view basis (its right/up axes are the shadow-map axes), so the sampling grid stays
+    // world-locked. forward = pos→target dir = +sunDir (toward the sun); up = world Y, so
+    // right = worldUp × forward lies in the ground plane and matches Three's lookAt basis.
+    _shadowFwd.copy(sunDir).normalize()
+    _shadowRight.set(0, 1, 0).cross(_shadowFwd)
+    if (_shadowRight.lengthSq() < 1e-8) _shadowRight.set(1, 0, 0)   // degenerate: sun straight overhead
+    _shadowRight.normalize()
+    _shadowUp.copy(_shadowFwd).cross(_shadowRight).normalize()
+    _shadowCenter.set(streamCenter.x, 0, streamCenter.z)
+    const snapR = Math.round(_shadowCenter.dot(_shadowRight) / SHADOW_TEXEL) * SHADOW_TEXEL
+    const snapU = Math.round(_shadowCenter.dot(_shadowUp)    / SHADOW_TEXEL) * SHADOW_TEXEL
+    const keepF = _shadowCenter.dot(_shadowFwd)               // forward component is along the view axis — leave it
+    _shadowCenter.set(0, 0, 0)
+      .addScaledVector(_shadowRight, snapR)
+      .addScaledVector(_shadowUp,    snapU)
+      .addScaledVector(_shadowFwd,   keepF)
     sun.position.set(
-      streamCenter.x + skySystem.sunDirection.x * 200,
-      skySystem.sunDirection.y * 200,
-      streamCenter.z + skySystem.sunDirection.z * 200
+      _shadowCenter.x + sunDir.x * 200,
+      _shadowCenter.y + sunDir.y * 200,
+      _shadowCenter.z + sunDir.z * 200
     )
-    sun.target.position.set(streamCenter.x, 0, streamCenter.z)
+    sun.target.position.copy(_shadowCenter)
     sun.target.updateMatrixWorld()
   }
   let _pt = performance.now()
