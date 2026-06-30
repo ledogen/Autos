@@ -75,14 +75,27 @@ function bakeBlobs(P, rng, kind) {
   const out = []
   for (let i = 0; i < P.variants; i++) {
     const b = P.blob
+    const drawnRadius = rr(rng, b.radius)
     const geo = makeBlob({
-      radius: rr(rng, b.radius),
+      radius: drawnRadius,
       axisScale: [b.axisScale[0], b.axisScale[1], b.axisScale[2]],
       irregularity: b.irregularity, noiseFreq: b.noiseFreq, subdiv: b.subdiv,
     }, rng)
     fillColor(geo, P.color)
-    // collision radius from the (axis-scaled) visual bounds; scale factors applied live at query.
-    const collision = kind === 'none' ? null : { kind, radius: geo.boundingSphere.radius }
+    let collision = null
+    if (kind === 'sphere') {
+      // BUG-22: collide against the VISIBLE BULK, not the boundingSphere max-vertex. The blob's
+      // boundingSphere radius sits on its OUTERMOST lump (radius·(1+irregularity)), so a hard sphere
+      // of that size overshoots the typical surface — worst on huge/partly-buried boulders, where the
+      // truck hit "air" metres before the visible rock and took a spurious sideways shove off the road.
+      // The nominal horizontal radius (drawn radius × mean ground-plane axis) tracks the dome the truck
+      // actually touches; rockRadiusScale (live, prop-system query) still insets it for lumpiness.
+      const rBulk = drawnRadius * (b.axisScale[0] + b.axisScale[2]) / 2
+      collision = { kind, radius: rBulk }
+    } else if (kind === 'bush') {
+      // Bush soft-drag extent is the full visual reach (unchanged) — it's a gentle field, not a wall.
+      collision = { kind, radius: geo.boundingSphere.radius }
+    }
     out.push({ geo, collision })
   }
   return out
