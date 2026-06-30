@@ -997,7 +997,7 @@ export class TerrainSystem {
      * The generated ring extends one warm-margin chunk beyond this so new terrain finishes building
      * before it enters view (no edge pop-in). Growing requests new chunks on the next update();
      * shrinking disposes the now-out-of-ring chunks via the existing dispose loop. Called by the
-     * draw-distance presets (main.js applyDrawDistance).
+     * Quality presets (main.js applyQuality).
      * @param {number} n — ring radius in chunks (≥ 1)
      * @param {number} [warmMargin] — rings to generate BEYOND the visible ring (pop-in lead). Scales
      *   with draw distance: higher tiers see further (lighter fog) so they need a deeper warm ring to

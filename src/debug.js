@@ -72,6 +72,20 @@ export function initDebug (params, callbacks = {}, options = {}) {
     }
   })
 
+  // ── Quality selector (PERF-06) ────────────────────────────────────────────────
+  // Top-level master perf tier (supersedes the old Terrain-folder "Draw Distance" dropdown). Each tier
+  // bundles terrain ring + road route radius + fog + detail shader PLUS dynamic shadows, prop render
+  // radius, and internal render resolution (callbacks.applyQuality in main.js). Default 'Normal' == the
+  // current shipped behaviour, so this only changes anything when the user picks another tier. Low strips
+  // every non-gameplay GPU cost (shadows off, props thinned, fbm off, 720p) for weak machines.
+  const _qualityState = { quality: 'Normal' }
+  gui.add(_qualityState, 'quality', ['Low', 'Normal', 'High', 'Ultra']).name('Quality').onChange(v => {
+    if (typeof callbacks.applyQuality === 'function') callbacks.applyQuality(v)
+    // The tier also sets params.terrainDetailScale (Low = 0 kill-switch), so refresh controllers to
+    // reflect the new Detail-scale value wherever it is bound in the panel.
+    gui.controllersRecursive().forEach(c => c.updateDisplay())
+  })
+
   // ── Vehicle folder (QUAL-09) ──────────────────────────────────────────────────
   // All vehicle-physics controls live here, sub-grouped into Mass & CG / Drivetrain & Brakes /
   // Tires / Suspension, so the panel ROOT stays a short folder list (Vehicle / Terrain / Roads)
@@ -165,17 +179,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
   })
   terrainFolder.add(params, 'rampEnabled').name('Ramp Visible').onChange(v => {
     if (typeof callbacks.setRampVisible === 'function') callbacks.setRampVisible(v)
-  })
-
-  // Draw distance (PERF-03): preset dropdown — each tier sets terrain ring radius + road stream
-  // radius + fog density together (callbacks.applyDrawDistance in main.js). Default 'Normal' == the
-  // current shipped behaviour, so this only changes anything when the user picks another tier.
-  const _ddState = { drawDistance: 'Normal' }
-  terrainFolder.add(_ddState, 'drawDistance', ['Near', 'Normal', 'Far', 'Ultra']).name('Draw Distance').onChange(v => {
-    if (typeof callbacks.applyDrawDistance === 'function') callbacks.applyDrawDistance(v)
-    // PERF-05 × FEAT-05: the tier also sets params.terrainDetailScale (Near = 0 kill-switch), so
-    // refresh controllers to reflect the new Detail-scale value in the panel.
-    gui.controllersRecursive().forEach(c => c.updateDisplay())
   })
 
   // World Seed text field (D-13 / SEED-04) — lil-gui renders a plain <input type="text">

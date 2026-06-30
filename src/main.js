@@ -73,9 +73,11 @@ let roadMeshSystem = null
 
 // FEAT-06: PropSystem — procedural trees/rocks/bushes. Decoupled from road/terrain; we inject the
 // real samplers at construction. The factory reads the module-scope terrain/road systems at CALL
-// time, so it stays correct across the seed-rebuild reassignment below. PROP_RING ≤ terrain ring.
+// time, so it stays correct across the seed-rebuild reassignment below. _propRing ≤ terrain ring.
 let propSystem = null
-const PROP_RING = 2
+// PERF-06: prop render radius in chunks — written by applyQuality (Low=1, Normal/High=2, Ultra=3),
+// read by the frame loop's propSystem.update(). Mutable so the Quality selector can thin out props.
+let _propRing = 2
 const _bushDragF = { x: 0, y: 0, z: 0 }   // FEAT-06b: reused bush soft-drag accumulator (no per-substep alloc)
 const makePropSamplers = () => ({
   heightAt:    (x, z) => terrainSystem.analyticHeight(x, z),
@@ -794,29 +796,56 @@ let _fpsLastTime = 0   // will be set to currentTime on first frame
 
 // ── Debug panel ──────────────────────────────────────────────────────────────
 // D-10: passes mutable RANGER_PARAMS ref so sliders write directly to the object physics.js reads.
-// Draw-distance presets (PERF-03): bundle terrain ring radius + warm margin + road stream radius + fog
-// density so one user pick scales the whole visible world consistently. Normal == the current default
-// (ring 2 / road 320 / fog 0.006), so the unchanged-on-load behaviour is preserved.
+// Quality presets (PERF-06, supersedes the PERF-03 draw-distance dropdown): ONE master tier bundles the
+// terrain ring + warm margin + fog density + detail-shader scale (the old draw-distance fields) PLUS
+// dynamic shadows, prop render radius, and an internal render-resolution cap. Normal == today's shipped
+// defaults (ring 2 / fog 0.006 / detail 1.0 / shadows on / props 2 / native res), so on-load behaviour
+// is unchanged. LOW is the only genuinely new tier — it strips every non-gameplay GPU cost.
 //   `warm` = rings GENERATED beyond the visible ring (pop-in lead). It grows with draw distance: the
 //   higher tiers run lighter fog (you see further), so the build frontier must sit further out to stay
-//   hidden — a flat 1-ring margin left obvious pop-in at Far/Ultra. Sized so build radius (ring+warm)
-//   reaches roughly where the fog goes ~opaque (density·d ≈ 1.3); roadRadius covers the build corner.
-// detailScale (PERF-05 × FEAT-05): the tier also drives the procedural-detail master scale. Near is
-// the low-end / GPU-bound path (PERF-05 found the residual stutter on weak iGPUs is render-bound), so
-// it disables the per-pixel fbm shader entirely (0) — the same toggle that bounds terrain-CPU cost
-// also removes the fragment cost. Normal+ keep FEAT-05's tuned look (1.0); a mid value on Normal is a
-// FEAT-05 tuning call. The shader gates on uDetailScale > 0.0, so 0 is a true kill-switch.
-const DRAW_DISTANCE_PRESETS = {
-  Near:   { ring: 1, warm: 1, roadRadius: 192, fogDensity: 0.012, detailScale: 0   },
-  Normal: { ring: 2, warm: 1, roadRadius: 320, fogDensity: 0.006, detailScale: 1.0 },
-  Far:    { ring: 3, warm: 3, roadRadius: 512, fogDensity: 0.004, detailScale: 1.0 },
-  Ultra:  { ring: 4, warm: 4, roadRadius: 640, fogDensity: 0.003, detailScale: 1.0 },
+//   hidden — a flat 1-ring margin left obvious pop-in at High/Ultra. Sized so build radius (ring+warm)
+//   reaches roughly where the fog goes ~opaque (density·d ≈ 1.3).
+// detailScale (PERF-05 × FEAT-05): Low is the low-end / GPU-bound path (PERF-05 found the residual
+//   stutter on weak iGPUs is render-bound), so it disables the per-pixel fbm shader entirely (0).
+//   Normal+ keep FEAT-05's tuned look (1.0). The shader gates on uDetailScale > 0.0, so 0 is a kill-switch.
+// shadows: drives sun.castShadow (toggled in applyQuality, NOT renderer.shadowMap.enabled — see there).
+// propRing: chunk radius passed to propSystem.update() via _propRing.
+// resHeight: internal render-resolution cap in px (see applyRenderResolution). null = device-native.
+//   Only Low caps (720p) — Normal/High/Ultra stay native so on-load + the "high/ultra are fine" tiers
+//   are byte-identical to today (today's renderer.setPixelRatio(devicePixelRatio) == resHeight null).
+// roadRadius is NOT stored: it is DERIVED from the ring in applyQuality (see there).
+const QUALITY_PRESETS = {
+  Low:    { ring: 1, warm: 1, fogDensity: 0.012, detailScale: 0,   shadows: false, propRing: 1, resHeight: 720  },
+  Normal: { ring: 2, warm: 1, fogDensity: 0.006, detailScale: 1.0, shadows: true,  propRing: 2, resHeight: null },
+  High:   { ring: 3, warm: 3, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 2, resHeight: null },
+  Ultra:  { ring: 4, warm: 4, fogDensity: 0.003, detailScale: 1.0, shadows: true,  propRing: 3, resHeight: null },
 }
-function applyDrawDistance (name) {
-  const p = DRAW_DISTANCE_PRESETS[name] ?? DRAW_DISTANCE_PRESETS.Normal
+
+// PERF-06: internal render-resolution cap for the CURRENT tier (px height; null = device-native). Held
+// at module scope so the resize handler can re-apply the clamp (which depends on innerHeight) without
+// re-selecting a tier. A fractional pixelRatio < 1 pins the backing buffer to ~resHeight lines tall
+// (aspect-correct) → the GPU shades far fewer fragments on a HiDPI/large panel; Math.min prevents
+// upscaling past native on a small window or non-HiDPI display.
+let _qualityResHeight = QUALITY_PRESETS.Normal.resHeight
+function applyRenderResolution () {
+  const ratio = _qualityResHeight == null
+    ? window.devicePixelRatio
+    : Math.min(window.devicePixelRatio, _qualityResHeight / window.innerHeight)
+  renderer.setPixelRatio(ratio)
+  renderer.setSize(window.innerWidth, window.innerHeight)  // re-stamp the backing buffer at the new ratio
+}
+
+function applyQuality (name) {
+  const p = QUALITY_PRESETS[name] ?? QUALITY_PRESETS.Normal
   if (terrainSystem) terrainSystem.setRingRadius(p.ring, p.warm)
-  if (roadSystem)    roadSystem.setRadius(p.roadRadius)   // marks dirty → next update() re-streams the wider network
-  if (scene.fog)     scene.fog.density = p.fogDensity
+  // roadRadius DERIVED from the visible ring (PERF-06): (ring+0.5)·2·CHUNK_SIZE = 2× the terrain axis
+  // half-width = the square ring's diagonal corner (×√2) with a ×√2 lead. The road network is a CIRCLE
+  // that must enclose the SQUARE terrain ring's corner before it scrolls into view; it is a route/slice
+  // radius (CPU), not a draw distance (the ribbon mesh is terrain-chunk-bound via syncToChunkRing). Low/
+  // Normal land exactly on today's 192/320; High/Ultra trim 512→448 / 640→576 (the old constants were
+  // routed past anything renderable). Tied to ring so it can never drift out of sync with the terrain.
+  if (roadSystem) roadSystem.setRadius((p.ring + 0.5) * 2 * CHUNK_SIZE)   // dirty → next update() re-streams
+  if (scene.fog) scene.fog.density = p.fogDensity
   // Drive the FEAT-05 detail master from the tier. Mirrors setTerrainUniform: write the param (source
   // of truth + what the debug slider binds to) and push the live uniform to both the terrain and the
   // road-shoulder materials. The debug onChange refreshes the slider display to match.
@@ -825,6 +854,16 @@ function applyDrawDistance (name) {
     if (terrainSystem?._terrainUniforms?.uDetailScale) terrainSystem._terrainUniforms.uDetailScale.value = p.detailScale
     if (roadMeshSystem?._roadUniforms?.uDetailScale)   roadMeshSystem._roadUniforms.uDetailScale.value   = p.detailScale
   }
+  // PERF-06 shadows: toggle the directional light's caster flag, NOT renderer.shadowMap.enabled. Flipping
+  // shadowMap.enabled forces a full material/shader recompile on every object (a visible hitch); toggling
+  // sun.castShadow just skips the shadow pass for that light. Receivers keep receiveShadow → they simply
+  // receive no shadow when the caster is off. The frame loop also skips the shadow-frustum-follow then.
+  sun.castShadow = p.shadows
+  // PERF-06 prop radius: thin out the scattered-prop ring on Low (read by the loop's propSystem.update).
+  _propRing = p.propRing
+  // PERF-06 render resolution: stash the tier's cap, then apply (also re-applied on window resize).
+  _qualityResHeight = p.resHeight
+  applyRenderResolution()
 }
 
 // Phase 6 (TERR-06): pass setRampVisible callback so the Ramp Visible toggle in debug.js
@@ -833,7 +872,7 @@ function applyDrawDistance (name) {
 //   changeSeed = update worldSeed then fire Path B.
 const _gui = initDebug(RANGER_PARAMS, {
   setRampVisible:      (v) => { rampMesh.visible = v },
-  applyDrawDistance:   (name) => applyDrawDistance(name),   // PERF-03: draw-distance preset (ring + road radius + fog)
+  applyQuality:        (name) => applyQuality(name),   // PERF-06: master Quality tier (draw distance + shadows + props + res)
   rebuildTerrain:      ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() },
   rebuildTerrainFull:  ()  => debouncedRebuildFull(),
   changeSeed:          (v) => { worldSeed = parseWorldSeed(v); _seedString = String(v); debouncedRebuildFull() },
@@ -1263,13 +1302,17 @@ function loop () {
   // shadows. QUAL-02: the direction now comes from SkySystem.sunDirection (so shadows align with the
   // visible sun in the sky) — place the light along that direction at a fixed standoff, target the
   // centre. A day/night cycle that animates the sun elevation moves the shadows for free.
-  sun.position.set(
-    streamCenter.x + skySystem.sunDirection.x * 200,
-    skySystem.sunDirection.y * 200,
-    streamCenter.z + skySystem.sunDirection.z * 200
-  )
-  sun.target.position.set(streamCenter.x, 0, streamCenter.z)
-  sun.target.updateMatrixWorld()
+  // PERF-06: skip the follow entirely when the Quality tier disabled shadows (sun.castShadow=false) —
+  // there is no shadow map to centre, so the matrix writes would be wasted work.
+  if (sun.castShadow) {
+    sun.position.set(
+      streamCenter.x + skySystem.sunDirection.x * 200,
+      skySystem.sunDirection.y * 200,
+      streamCenter.z + skySystem.sunDirection.z * 200
+    )
+    sun.target.position.set(streamCenter.x, 0, streamCenter.z)
+    sun.target.updateMatrixWorld()
+  }
   let _pt = performance.now()
   terrainSystem.update(streamCenter)
   perfAdd('frame.terrain.update', performance.now() - _pt)
@@ -1279,7 +1322,7 @@ function loop () {
   if (roadSystem) roadSystem.update(streamCenter)
   perfAdd('frame.road.update', performance.now() - _pt)
   // FEAT-06: stream props around the same center (diff is cheap when no chunk crossed).
-  if (propSystem) propSystem.update(streamCenter.x, streamCenter.z, PROP_RING)
+  if (propSystem) propSystem.update(streamCenter.x, streamCenter.z, _propRing)
   // PERF-03 WS-A: pre-warm the road centerline cache off-thread ahead of the streamer (throttled,
   // self-limiting — no-op until the view moves PREWARM_WARM_MOVE). Removes the macro-cell routing hitch.
   if (roadSystem) roadSystem.warmRoutes(streamCenter)
@@ -1379,5 +1422,7 @@ requestAnimationFrame(loop)
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(window.innerWidth, window.innerHeight)
+  // PERF-06: applyRenderResolution re-clamps pixelRatio (the resHeight cap depends on innerHeight) AND
+  // re-stamps the backing buffer — replaces the bare setSize so a Low-tier 720p cap survives a resize.
+  applyRenderResolution()
 })
