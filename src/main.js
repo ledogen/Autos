@@ -83,6 +83,10 @@ const makePropSamplers = () => ({
   heightAt:    (x, z) => terrainSystem.analyticHeight(x, z),
   normalAt:    (x, z) => terrainSystem.analyticNormal(x, z),
   roadBlocked: (x, z) => !!roadSystem.queryNearest(x, z, FLORA_PARAMS.scatter.roadExclusion),
+  // BUG-23: radius-aware road keep-out — true when NO road centreline is within `keepOut` m. Lets the
+  // scatter inflate the mask by a prop's own bounding radius so big rocks/boulders can't overhang the
+  // lane. queryNearest already sizes its tile-block search from the radius, so large keep-outs are safe.
+  roadClear:   (x, z, keepOut) => !roadSystem.queryNearest(x, z, keepOut),
   // distance to the nearest road centreline (Infinity if none within 25 m) — small-rock road bands
   roadDist:    (x, z) => {
     const nr = roadSystem.queryNearest(x, z, 25)

@@ -11,6 +11,8 @@
  *   heightAt(x,z)   -> number              // terrainSystem.analyticHeight
  *   normalAt(x,z)   -> {x,y,z}             // terrainSystem.analyticNormal (slope = 1 - .y)
  *   roadBlocked(x,z)-> boolean             // true if within FLORA_PARAMS.scatter.roadExclusion of road
+ *   roadClear(x,z,keepOut) -> boolean      // BUG-23: true if NO road centreline within keepOut metres
+ *                                          //   (radius-aware keep-out; legacy sets may omit it)
  * }
  *
  * Placement record: { cat, variant, x, y, z, scale, rotY, tint:[r,g,b] }
@@ -51,14 +53,29 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
   const size = P.chunkSize
   const ox = cx * size, oz = cz * size
   const out = []
-  const { heightAt, normalAt, roadBlocked, roadDist } = samplers
+  const { heightAt, normalAt, roadBlocked, roadDist, roadClear: roadClearFn } = samplers
+
+  // BUG-23: radius-aware road keep-out. roadClear(x,z,keepOut) is true when NO road centreline lies
+  // within keepOut metres. Falls back to the legacy fixed-radius roadBlocked for older fixtures that
+  // predate roadClear (keepOut then ignored — they only exercise determinism, not the inflated mask).
+  const roadClear = roadClearFn || ((x, z) => !roadBlocked(x, z))
+
+  // Max world horizontal bounding radius of a blob category — an UPPER bound over its variants +
+  // instance scale: widest drawn radius × widest ground-plane axis × the irregularity peak × max
+  // scale. Used to inflate the road keep-out so no part of a placed blob overhangs the lane (BUG-23).
+  const blobBoundR = (cfg) =>
+    cfg.blob.radius[1] * Math.max(cfg.blob.axisScale[0], cfg.blob.axisScale[2]) *
+    (1 + cfg.blob.irregularity) * cfg.instScale[1]
 
   const slopeAt = (x, z) => 1 - Math.max(0, Math.min(1, normalAt(x, z).y))
 
   // ── helper: place a single prop of category `cat` at (x,z) if terrain allows ──────────
   const placeBlob = (cat, x, z, buryRange, ignoreRoad = false) => {
-    if (!ignoreRoad && roadBlocked(x, z)) return
     const cfg = P[cat]
+    // BUG-23: exclude road-respecting props from the road FOOTPRINT, inflating the keep-out by the
+    // prop's own bounding radius so a big rock/boulder whose CENTRE sits just off the ribbon can no
+    // longer overhang (and wall off) the driveable lane. Pure fn of seed/coords (window-invariant).
+    if (!ignoreRoad && !roadClear(x, z, S.roadExclusion + blobBoundR(cfg))) return
     const variant = (rng() * cfg.variants) | 0
     const scale = frange(rng, cfg.instScale)
     const bury = frange(rng, buryRange)
