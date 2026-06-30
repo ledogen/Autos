@@ -16,6 +16,11 @@
  *   Front Body Offset, Rear Body Offset, Bump Stop Stiffness). Adds 4-corner travel-bar
  *   canvas (160×140 px). Extends backtick toggle to sync travel bar. Exports
  *   updateTravelBars(vehicleState, params).
+ * QUAL-09: Folds every vehicle-physics control into one top-level 'Vehicle' folder, sub-grouped
+ *   into Mass & CG / Drivetrain & Brakes / Tires (Pacejka folded in) / Suspension. Panel root is
+ *   now Build · (quality selector) · Vehicle · Terrain · Roads · Logger. Renamed the weightFront
+ *   slider 'CG Fwd/Back (front fraction)' → 'CG (front fraction)'. Pure GUI nesting — no params /
+ *   physics / main.js change.
  *
  * Uses lil-gui (bundled in three/addons — zero additional dependency).
  */
@@ -67,9 +72,15 @@ export function initDebug (params, callbacks = {}, options = {}) {
     }
   })
 
-  // Vehicle selector — copies preset into live params and refreshes all sliders
+  // ── Vehicle folder (QUAL-09) ──────────────────────────────────────────────────
+  // All vehicle-physics controls live here, sub-grouped into Mass & CG / Drivetrain & Brakes /
+  // Tires / Suspension, so the panel ROOT stays a short folder list (Vehicle / Terrain / Roads)
+  // plus the meta Build marker + Logger hint. The vehicle PRESET selector sits at the folder root;
+  // selecting a preset copies it into live params and refreshes every (now-nested) slider via
+  // controllersRecursive (which walks subfolders).
+  const vehicleFolder = gui.addFolder('Vehicle')
   const vehicleState = { vehicle: 'Ranger' }
-  gui.add(vehicleState, 'vehicle', Object.keys(VEHICLES)).name('Vehicle').onChange(name => {
+  vehicleFolder.add(vehicleState, 'vehicle', Object.keys(VEHICLES)).name('Vehicle').onChange(name => {
     const preset = VEHICLES[name]
     for (const key of Object.keys(preset)) {
       if (!key.startsWith('_')) params[key] = preset[key]
@@ -78,45 +89,48 @@ export function initDebug (params, callbacks = {}, options = {}) {
     gui.controllersRecursive().forEach(c => c.updateDisplay())
   })
 
-  // CG position controls — top section for easy access
-  gui.add(params, 'cgHeight', 0.20, 1.20, 0.01).name('CG Height (m)')
-  gui.add(params, 'weightFront', 0.30, 0.70, 0.01).name('CG Fwd/Back (front fraction)')
+  // ── Mass & CG ──────────────────────────────────────────────────────────────────
+  const massCgFolder = vehicleFolder.addFolder('Mass & CG')
+  massCgFolder.add(params, 'cgHeight', 0.20, 1.20, 0.01).name('CG Height (m)')
+  massCgFolder.add(params, 'weightFront', 0.30, 0.70, 0.01).name('CG (front fraction)')
     .onChange(v => { params.weightRear = +(1 - v).toFixed(4) })
+  // D-08: live mutation of RANGER_PARAMS
+  massCgFolder.add(params, 'mass', 500, 3000, 10).name('Mass (kg)')
 
-  // Phase 1 sliders (kept — lateralDampingCoeff and corneringStiffness removed in Phase 3 per D-08, D-16).
-  gui.add(params, 'tireStiffness', 100000, 300000, 5000).name('Tire Stiffness (N/m)')
-  gui.add(params, 'tireDamping', 200, 4000, 100).name('Tire Damping (N·s/m)')
-
-  // D-08: Phase 2 physics tuning sliders — all write directly to RANGER_PARAMS (live mutation)
-  gui.add(params, 'mass', 500, 3000, 10).name('Mass (kg)')
-  gui.add(params, 'frictionCoeff', 0.1, 1.5, 0.05).name('Friction Coeff')
-  gui.add(params, 'maxDriveTorque', 100, 2000, 50).name('Max Drive Torque (N·m)')
-  gui.add(params, 'maxBrakeTorque', 500, 8000, 100).name('Max Brake Torque (N·m)')
-  // D-16: maxHandbrakeTorque slider
-  gui.add(params, 'maxHandbrakeTorque', 500, 5000, 100).name('Handbrake Torque (Nm)')
-
+  // ── Drivetrain & Brakes ─────────────────────────────────────────────────────────
+  // D-08 / D-16: all write directly to RANGER_PARAMS (live mutation).
+  const driveFolder = vehicleFolder.addFolder('Drivetrain & Brakes')
+  driveFolder.add(params, 'maxDriveTorque', 100, 2000, 50).name('Max Drive Torque (N·m)')
+  driveFolder.add(params, 'maxBrakeTorque', 500, 8000, 100).name('Max Brake Torque (N·m)')
+  driveFolder.add(params, 'maxHandbrakeTorque', 500, 5000, 100).name('Handbrake Torque (Nm)')
   // Rolling resistance — horizontal drag scaled by ground load; tunable for coast feel
-  gui.add(params, 'rollingResistanceCoeff', 0, 0.05, 0.001).name('Rolling Resistance Cr')
+  driveFolder.add(params, 'rollingResistanceCoeff', 0, 0.05, 0.001).name('Rolling Resistance Cr')
 
-  // D-12: Tire (Pacejka) folder — combined-slip in slip-velocity space.
-  // Pacejka B/C/D/E define the force curve shape; slip-velocity model params control
-  // dynamic response (relaxation length, peak slip velocity, anisotropy).
-  const tireFolder = gui.addFolder('Tire (Pacejka)')
-  tireFolder.add(params, 'pacejkaB', 5, 20, 0.5).name('B - Stiffness')
-  tireFolder.add(params, 'pacejkaC', 1.0, 1.99, 0.01).name('C - Shape [1.0-1.99]')
-  tireFolder.add(params, 'pacejkaD', 0.5, 2.0, 0.05).name('D - Peak Factor')
-  tireFolder.add(params, 'pacejkaE', -1.0, 1.0, 0.05).name('E - Curvature')
-  tireFolder.add(params, 'tireRelaxationLength', 0.05, 1.5, 0.05).name('Relaxation Length L (m)')
-  tireFolder.add(params, 'tireSlipVelRef', 0.2, 5.0, 0.1).name('Slip Vel Ref (m/s)')
-  tireFolder.add(params, 'tireStiffnessLong', 0.3, 2.0, 0.05).name('Stiffness Long ×')
-  tireFolder.add(params, 'tireStiffnessLat', 0.3, 2.0, 0.05).name('Stiffness Lat ×')
+  // ── Tires ───────────────────────────────────────────────────────────────────────
+  // Vertical tire spring (stiffness/damping) + ground friction + the Pacejka force-curve model
+  // (D-12, combined-slip in slip-velocity space). Pacejka B/C/D/E define the force curve shape;
+  // slip-velocity model params control dynamic response (relaxation length, peak slip velocity,
+  // anisotropy). (Phase 1 tireStiffness/Damping kept — lateralDampingCoeff/corneringStiffness
+  // removed in Phase 3 per D-08, D-16.)
+  const tiresFolder = vehicleFolder.addFolder('Tires')
+  tiresFolder.add(params, 'tireStiffness', 100000, 300000, 5000).name('Tire Stiffness (N/m)')
+  tiresFolder.add(params, 'tireDamping', 200, 4000, 100).name('Tire Damping (N·s/m)')
+  tiresFolder.add(params, 'frictionCoeff', 0.1, 1.5, 0.05).name('Friction Coeff')
+  tiresFolder.add(params, 'pacejkaB', 5, 20, 0.5).name('B - Stiffness')
+  tiresFolder.add(params, 'pacejkaC', 1.0, 1.99, 0.01).name('C - Shape [1.0-1.99]')
+  tiresFolder.add(params, 'pacejkaD', 0.5, 2.0, 0.05).name('D - Peak Factor')
+  tiresFolder.add(params, 'pacejkaE', -1.0, 1.0, 0.05).name('E - Curvature')
+  tiresFolder.add(params, 'tireRelaxationLength', 0.05, 1.5, 0.05).name('Relaxation Length L (m)')
+  tiresFolder.add(params, 'tireSlipVelRef', 0.2, 5.0, 0.1).name('Slip Vel Ref (m/s)')
+  tiresFolder.add(params, 'tireStiffnessLong', 0.3, 2.0, 0.05).name('Stiffness Long ×')
+  tiresFolder.add(params, 'tireStiffnessLat', 0.3, 2.0, 0.05).name('Stiffness Lat ×')
 
   // Phase 4 (D-11): Suspension folder — 8 sliders for spring/damper/rest-length/ARB per axle.
   // Ranges per PATTERNS §lil-gui slider range/step convention (2× default within range, D-10 stability).
   // Pass-through to live params is automatic — params is the mutable RANGER_PARAMS reference.
   // wheelMass and physicsDt are intentionally NOT exposed: wheelMass is fixed per Claude's Discretion
   // (CONTEXT.md) and physicsDt is parameterized but not user-tunable (D-09).
-  const suspFolder = gui.addFolder('Suspension')
+  const suspFolder = vehicleFolder.addFolder('Suspension')
   suspFolder.add(params, 'suspensionStiffnessFront', 10000, 100000, 1000).name('Front Stiffness (N/m)')
   suspFolder.add(params, 'suspensionStiffnessRear',  10000, 100000, 1000).name('Rear Stiffness (N/m)')
   suspFolder.add(params, 'suspensionDampingFront',     500,   8000,  100).name('Front Damping (N·s/m)')
