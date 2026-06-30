@@ -9,6 +9,21 @@ builds_on: FEAT-10 (merge graph + smooth navigable junctions + COVER deletion �
 relates: FEAT-12 (earthwork routing — lets cross-roads climb ridges), QUAL-03 (graph re-architecture), FEAT-08 (overpasses)
 ---
 
+## STATUS 2026-06-29 — v2 CLEAN + SPARSE on main (through 3eafd05); NEXT = restore windiness
+
+The v2 graph network is landed, cleaned up, and sparsified — on `main`. Chain: foundation (85970fa) →
+wrong-side/goalHeading (3ee7192) → loop fix / graph maxGrade (c94bcec) → overshoot fix / goalBlend 140
+(95af923) → at-grade cull / `_cullCrossings` (0ed2149) → sparsify (b5af6e3) → site-grid decoupled, default
+`roadSiteSpacing 640` ≈ 4 nodes/km² (3eafd05). Network reads as a sparse forest-service graph: real T/X
+junctions at varied angles, dead-end spurs, ~0 ugly crossings, window-invariant, 23 gates green, perf
+cheaper than rows. Graph still behind the `roadNetworkMode` toggle (`rows` default).
+
+**NEXT STAGE = make the roads FEEL like the old ones (windy/terrain-following, not rigid).** Mostly router
+weights (graph-specific `roadWAlt`↑ / `roadWTurn`↓ / `roadGraphMaxGrade`↓) + the one real task: lower
+`roadGraphGoalBlend` (the main rigidity cause) WITHOUT reintroducing goal-overshoot (needs a search-level
+overshoot fix in `arcPrimitiveConnect`). **Full plan: `.planning/ROAD-WINDINESS-HANDOFF.md`.** Deferred:
+POIs (random along edges), dead-end thinning; T/X promotion DROPPED.
+
 ## STATUS 2026-06-28 — v2 FOUNDATION LANDED (committed 85970fa), follow-up deferred
 
 The lattice-graph first draft (§ handoff) was replaced by the **locked v2 generator**: an URQUHART graph
