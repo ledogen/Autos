@@ -1,0 +1,84 @@
+---
+id: PERF-07
+type: perf
+status: open
+opened: 2026-06-30
+severity: minor
+source: user-idea
+note: "Idea, perf-uncertain — MEASURE before committing. Consider pre-baking environment lighting/shadows
+(static AO / contact shadows / lightmaps) for props instead of every prop being a real-time shadow
+CASTER in the sun's shadow pass. Today every scattered prop has castShadow=true (prop-system.js:74) →
+all trees/rocks/bushes re-render into the 2048² directional shadow map every frame. Tradeoff: lose easy
+dynamic day/night shadow movement — user is fine sampling/re-baking infrequently for a big perf win at
+little visual cost. NOTE: the shadow DITHERING the user also mentioned is a SEPARATE issue with a cheaper
+standalone fix — captured as BUG-29 (texel-snap the shadow camera); don't justify the bake on that alone."
+---
+
+# PERF-07: Pre-bake environment shadows for props instead of real-time shadow casting
+
+## Idea
+
+Every scattered prop is currently a **real-time shadow caster**: `mesh.castShadow = true` in
+`src/props/prop-system.js:74` (and `receiveShadow = true`). So every instanced tree/rock/bush is
+re-rendered into the single directional sun's **2048×2048** shadow map (`src/main.js:476–506`) every
+frame. With dense scatter that shadow pass can be a real cost on the iGPU floor the project targets.
+
+Proposal: **pre-bake** the environment lighting/shadows for props — static ambient occlusion / baked
+contact shadows / lightmaps — so props stop participating in the dynamic shadow pass. Accept losing
+free dynamic day/night shadow motion; re-bake (or sample) infrequently instead.
+
+User is explicit they're **not sure it's actually a win** — so this is a MEASURE-FIRST investigation,
+not a commitment.
+
+## Measure first (don't bake blind — per CLAUDE.md, prove perf claims headlessly/with the profiler)
+
+- The frame loop already has a perf harness (`perfAdd`/`perfDump`, auto-dumps at frame 180 / 600 —
+  `src/main.js:1351–1354`). Add a shadow-pass timing read (or use a Chrome GPU trace per
+  [[reference_inbrowser_verify_cdp]] / [[project_perf05_driving_stutter]] for the trace gotcha) and
+  compare: props `castShadow = true` vs `false`, on Normal/High quality, on a mid GPU.
+- Quantify what the shadow pass actually costs with dense props before deciding the bake is worth it.
+  PERF-05 found driving stutter was render/GPU-bound — the shadow pass is a plausible contributor, so
+  this is worth measuring, but confirm.
+
+## Options if measurement says it's worth it
+
+- **Drop prop shadow CASTING, add cheap fake contact shadows.** Set props `castShadow = false`; give each
+  a baked soft contact-shadow blob (a dark radial decal/quad under the trunk/base, or AO baked into the
+  ground/terrain vertex colour where props sit). Removes all props from the shadow pass; keeps grounding.
+- **Baked AO / lightmap into terrain + impostors.** Bake static AO from the prop field into the terrain
+  shading; pairs naturally with FEAT-06c impostors ([[project_feat06_props_scope]] — already in scope for
+  baked in-browser impostors). Distant props as impostors with baked lighting cost ~nothing.
+- **Keep dynamic shadows only for near/hero props.** Cast from the closest N props (or only big trees
+  near the vehicle); bake/fake the rest. Hybrid keeps some dynamism where it's visible.
+- **Infrequent re-bake for day/night.** If a coarse day/night is still wanted, re-bake the static
+  lighting on a timer / on time-of-day step (QUAL-02 SkySystem `setTimeOfDay`, [[project_qual02_skybox]])
+  rather than per-frame — the user's "sample less frequently" suggestion.
+
+## Tradeoffs / constraints
+
+- **D-01 procedural-only / no asset files:** any bake must be generated at runtime (canvas/DataTexture/
+  vertex AO), not shipped texture files — same discipline as markings (BUG-28) and FEAT-06c impostors.
+- **Lose free dynamic day/night shadows** from props (user accepts). The sun's shadow direction currently
+  tracks `SkySystem.sunDirection` (`main.js:1313`); baked prop shadows won't follow it without a re-bake.
+- **Window-invariance / streaming:** baked data must be a pure fn of seed/coords so a prop's baked shadow
+  is identical regardless of when its chunk streamed in.
+
+## Acceptance
+
+- A measured before/after of the shadow pass cost (numbers recorded here) justifying the change — or a
+  decision NOT to, recorded here.
+- If adopted: props no longer in the dynamic shadow pass; grounding/AO still reads well; measurable frame
+  win on the target GPU; window-invariant; no asset files; `npm test` green.
+
+## Related
+
+- **BUG-29** shadow dithering (`bug-shadow-shimmer-texel-snap.md`) — the OTHER thing the user mentioned;
+  separate root cause (non-texel-snapped shadow camera) with a cheaper standalone fix. The bake would
+  also remove prop-shadow shimmer by eliminating those casters, but BUG-29 fixes the dither for ALL
+  dynamic shadows independently — don't justify PERF-07 on the dither alone.
+- **FEAT-06 / 06c** props scatter + baked impostors ([[project_feat06_props_scope]]) — the natural home
+  for baked prop lighting.
+- **PERF-05** driving stutter is render/GPU-bound ([[project_perf05_driving_stutter]]) — context for why
+  the shadow pass is worth measuring; includes the Chrome-trace gotcha.
+- **PERF-06** Quality selector already gates `sun.castShadow` per tier (`main.js:868–872`).
+- **QUAL-02** SkySystem / time-of-day ([[project_qual02_skybox]]) — the day/night the bake trades against.
