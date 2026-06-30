@@ -14,7 +14,12 @@
  * SURF-03: centerline crown + curvature-driven camber as real surface geometry.
  *
  * Design decisions:
- *  - D-01: Asphalt and markings are purely procedural (vertex colors, no asset files).
+ *  - D-01: Asphalt and markings are purely procedural (no asset files). Asphalt/dirt are
+ *    vertex colors; lane MARKINGS are evaluated per-fragment in the road shader (BUG-28) —
+ *    vertex-colour painting could not draw a 0.3 m stripe at ~1.1 m vertex spacing (it
+ *    Gouraud-smeared white→dark into a ~2 m gradient). The marking spatial/dash test now
+ *    runs in onBeforeCompile off an `aMark = vec4(uLat, arcS, q, markEnable)` attribute, so
+ *    stripes are crisp + antialiased at any distance and dashes are real on/off.
  *  - D-02: roadQuality tiers span ROAD_QUALITY_STRETCH=500 m stretches, blended over
  *    ROAD_QUALITY_BLEND=10 m at boundaries so markings do not snap.
  *  - D-03: roadQuality is a labeled hook on each arc position — the same value drives
@@ -59,10 +64,22 @@ const MAX_CAMBER_RAD = 6 * (Math.PI / 180)
 const MAX_ROAD_BUILDS_PER_FRAME = 1
 
 // ── Road quality lane-marking thresholds ─────────────────────────────────────
-// Markings drawn as bright vertex-color patches (no texture, no asset — D-01).
-// Widths are lateral distances from the road centerline (uLat).
+// Markings are evaluated PER-FRAGMENT in the road shader (BUG-28), not painted as
+// vertex colours — vertex spacing (~1.1 m) is far wider than the stripe (0.3 m), so
+// Gouraud interpolation smeared white→dark over ~2 m. The lateral half-widths below are
+// passed to the shader (uMarkCenterHalf / uMarkEdgeHalf) and tested against the
+// per-fragment lateral coord `uLat`; the longitudinal dash pattern is tested against the
+// per-fragment run-arc `arcS`. Widths are lateral distances from the road centerline.
 const MARK_CENTER_HALF = 0.15  // m half-width of centerline stripe
 const MARK_EDGE_HALF   = 0.10  // m half-width of edge-line stripe (measured inward from ribbon edge)
+
+// Longitudinal dash geometry (metres of run-arc). BUG-28: real on/off dashes, crisp by
+// fragment evaluation. Centerline is a dashed lane-divider for every tier that draws it;
+// the Mid-tier edge line keeps its historical intermittent pattern (8 m on / 12 m period).
+const MARK_CENTER_DASH_PERIOD = 12  // m: centerline dash cycle
+const MARK_CENTER_DASH_ON     = 4   // m: painted length per centerline cycle (4 on / 8 off)
+const MARK_EDGE_DASH_PERIOD   = 12  // m: Mid-tier edge dash cycle
+const MARK_EDGE_DASH_ON       = 8   // m: painted length per Mid-tier edge cycle (8 on / 4 off)
 
 // ── RoadMeshSystem ────────────────────────────────────────────────────────────
 
@@ -103,18 +120,52 @@ export class RoadMeshSystem {
         })
 
         // FEAT-05: procedural gravel bump on the DIRT SHOULDER only. The shoulder skirt verts
-        // are warm dirt-brown (roadDirtColor), asphalt is neutral grey and markings are white —
-        // so (vColor.r - vColor.b) cleanly isolates the shoulder, keeping the paved surface +
-        // lane markings crisp/flat. Shares the terrain fbm + uDetailScale kill-switch.
+        // are warm dirt-brown (roadDirtColor) and the paved surface is neutral grey — markings
+        // are now per-fragment (BUG-28), so they never tint vColor — so (vColor.r - vColor.b)
+        // cleanly isolates the shoulder, keeping the paved surface flat. Shares the terrain
+        // fbm + uDetailScale kill-switch.
         this._roadUniforms = {
             uDetailScale:  { value: params.terrainDetailScale ?? 1.0  },
             uNoiseScale:   { value: params.terrainNoiseScale   ?? 0.15 },
             uShoulderBump: { value: params.roadShoulderBump    ?? 0.5  },
+            // BUG-28: ribbon half-width drives the per-fragment edge-line distance test.
+            uRoadHalf:     { value: params.roadHalfWidth       ?? 5    },
         }
         this._material.onBeforeCompile = (shader) => {
             Object.assign(shader.uniforms, this._roadUniforms)
             addWorldVaryings(shader)
-            shader.fragmentShader = 'uniform float uDetailScale, uNoiseScale, uShoulderBump;\n' + shader.fragmentShader
+
+            // ── BUG-28: per-vertex marking coord → fragment ────────────────────
+            // aMark = vec4(uLat, arcS, q, markEnable). markEnable is 0 on the dirt skirt
+            // verts and on junction pads so stripes are confined to the paved top surface.
+            shader.vertexShader = 'attribute vec4 aMark;\nvarying vec4 vMark;\n' + shader.vertexShader
+            shader.vertexShader = shader.vertexShader.replace(
+                '#include <begin_vertex>',
+                '#include <begin_vertex>\n  vMark = aMark;'
+            )
+
+            shader.fragmentShader =
+                'uniform float uDetailScale, uNoiseScale, uShoulderBump, uRoadHalf;\n' +
+                'varying vec4 vMark;\n' +
+                // Marking spatial/dash constants baked from the JS module constants above.
+                `const float RS_CENTER_HALF = ${MARK_CENTER_HALF.toFixed(4)};
+                 const float RS_EDGE_HALF   = ${MARK_EDGE_HALF.toFixed(4)};
+                 const float RS_C_PERIOD = ${MARK_CENTER_DASH_PERIOD.toFixed(2)};
+                 const float RS_C_ON     = ${MARK_CENTER_DASH_ON.toFixed(2)};
+                 const float RS_E_PERIOD = ${MARK_EDGE_DASH_PERIOD.toFixed(2)};
+                 const float RS_E_ON     = ${MARK_EDGE_DASH_ON.toFixed(2)};
+                 // Antialiased on/off dash along run-arc s: 1 inside [0,onLen] of each period.
+                 float rsDash(float s, float period, float onLen) {
+                     float ph = mod(s, period);
+                     float w  = max(fwidth(s), 1e-4);
+                     float rise = smoothstep(-w, w, ph);
+                     float fall = 1.0 - smoothstep(onLen - w, onLen + w, ph);
+                     return clamp(rise * fall, 0.0, 1.0);
+                 }\n` +
+                shader.fragmentShader
+
+            // FEAT-05 shoulder gravel bump (unchanged — keys off vColor.r - vColor.b, which
+            // is still clean dirt-vs-asphalt now that markings are no longer painted into vColor).
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <normal_fragment_begin>',
                 `#include <normal_fragment_begin>
@@ -131,8 +182,39 @@ export class RoadMeshSystem {
                     }
                 }`
             )
+
+            // ── BUG-28: procedural lane markings, per-fragment over the asphalt base ──
+            // diffuseColor.rgb is the asphalt/dirt vertex colour after <color_fragment>.
+            // We composite crisp, antialiased grey stripes on top. Tier brightness/dash
+            // gating mirrors roadQuality() exactly (move only the SPATIAL test to the GPU):
+            //   High (q>=0.66): solid edge lines + dashed centerline, full white (0.9)
+            //   Mid  (0.33–0.66): dashed edge (8/12) + dashed centerline, faded (0.65)
+            //   Low  (q<0.33): faint dashed centerline only (0.3), no edge lines
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <color_fragment>',
+                `#include <color_fragment>
+                if (vMark.w > 0.5) {
+                    float uLat = vMark.x;
+                    float arcS = vMark.y;
+                    float q    = vMark.z;
+                    float aaL  = max(fwidth(uLat), 1e-4);
+                    // Lateral masks (crisp constant-width stripes — the core BUG-28 fix).
+                    float centerSpatial = 1.0 - smoothstep(RS_CENTER_HALF - aaL, RS_CENTER_HALF + aaL, abs(uLat));
+                    float distEdge      = uRoadHalf - abs(uLat);
+                    float edgeSpatial   = 1.0 - smoothstep(RS_EDGE_HALF - aaL, RS_EDGE_HALF + aaL, distEdge);
+                    // Tier brightness + dash gating (matches roadQuality tiers).
+                    float centerB = q >= 0.66 ? 0.9 : (q >= 0.33 ? 0.65 : 0.3);
+                    float edgeB   = q >= 0.66 ? 0.9 : 0.65;
+                    float edgeGate = q >= 0.66 ? 1.0 : (q >= 0.33 ? rsDash(arcS, RS_E_PERIOD, RS_E_ON) : 0.0);
+                    float centerDash = rsDash(arcS, RS_C_PERIOD, RS_C_ON);
+                    float centerAlpha = centerSpatial * centerDash;
+                    float edgeAlpha   = edgeSpatial   * edgeGate;
+                    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(centerB), centerAlpha);
+                    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(edgeB),   edgeAlpha);
+                }`
+            )
         }
-        this._material.customProgramCacheKey = () => 'feat05-alpine-road'
+        this._material.customProgramCacheKey = () => 'bug28-road-markings'
     }
 
     /**
@@ -218,6 +300,9 @@ export class RoadMeshSystem {
         const nVerts = N_LONG * vertsPerSection
         const positions = new Float32Array(nVerts * 3)
         const colors    = new Float32Array(nVerts * 3)
+        // BUG-28: per-vertex marking coord vec4(uLat, arcS, q, markEnable). The fragment
+        // shader evaluates the stripe/dash mask from this — crisp at any vertex spacing.
+        const marks     = new Float32Array(nVerts * 4)
 
         // Dark grey asphalt base color (SURF-02 — vertex-color, no texture — D-01).
         // Linear-space: (0.15, 0.15, 0.17) — dark cool grey.
@@ -279,6 +364,9 @@ export class RoadMeshSystem {
             // P3 (09-28): use rp.gradeY as the centerline Y so ribbon, physics, and carve
             // all read from the same single arc-indexed profile (height-agreement invariant).
             const gradeY = _rp.gradeY
+            // BUG-28: q (road quality) is carried per-vertex in the aMark attribute; the
+            // marking tier (brightness / edge presence / dash) is decided per-FRAGMENT in
+            // the shader, not here. q is still needed for pothole severity (potholeNoise).
             const q = roadQuality(arcS, runKey, this._worldSeed)
 
             // D2 (plan 09-21): camber from the shared slew-limited camberProfile — replaces
@@ -287,22 +375,6 @@ export class RoadMeshSystem {
             // BUG-10: keyed on run-global arcS + camberSign so banking is continuous across tile
             // seams and correctly oriented on E→W (reversed) slices.
             const camberAngle = camberSign * this._road.camberProfile(arcS, runKey)
-
-            // Tier classification:
-            //   High (q >= 0.66): solid center + solid edge, white (0.9)
-            //   Mid  (q 0.33–0.66): solid center + intermittent edge (arcS%12<8), faded (0.65)
-            //   Low  (q < 0.33): very faint center only (~0.3), no edge
-            const isHigh = q >= 0.66
-            const isMid  = q >= 0.33 && q < 0.66
-            // isLow = q < 0.33
-
-            // Marking brightness: interpolate smoothly so transitions are smooth across tier boundary.
-            // Center marking exists for all tiers; brightness scales with quality.
-            const centerBrightness = isHigh ? 0.9 : (isMid ? 0.65 : 0.3)
-            // Edge line: present for High (solid), Mid (intermittent), absent for Low.
-            // Use arcS modulo 12 m pattern for Mid intermittent (8 m on, 4 m off — D-02).
-            const edgeOn = isHigh ? true : (isMid ? ((arcS % 12) < 8) : false)
-            const edgeBrightness = isHigh ? 0.9 : 0.65
 
             // Track edge vy values to build skirt verts after the top-surface loop.
             let leftEdgeVx = 0, leftEdgeVy = 0, leftEdgeVz = 0
@@ -337,28 +409,21 @@ export class RoadMeshSystem {
                 positions[idx + 1] = vy
                 positions[idx + 2] = vz
 
-                // ── Vertex color: asphalt base + marking overlay ───────────────
-                // Markings are bright vertex-color patches (no texture/asset — D-01).
-                const absLat = Math.abs(uLat)
+                // ── Vertex color: asphalt base only (BUG-28) ───────────────────
+                // Markings are no longer painted here — they are evaluated per-fragment
+                // from the aMark attribute below. The asphalt base stays a clean neutral
+                // grey so FEAT-05's shoulder isolation (vColor.r - vColor.b) is unaffected.
+                colors[idx    ] = RC
+                colors[idx + 1] = GC
+                colors[idx + 2] = BC
 
-                // Centerline: |uLat| < MARK_CENTER_HALF
-                const isCenterline = absLat < MARK_CENTER_HALF
-
-                // Edge lines: within MARK_EDGE_HALF of the ribbon edge.
-                // Left edge: uLat near -halfWidth; Right edge: uLat near +halfWidth.
-                const distFromEdge = halfWidth - absLat
-                const isEdgeLine = edgeOn && distFromEdge < MARK_EDGE_HALF
-
-                let r = RC, g = GC, b = BC  // asphalt base
-                if (isCenterline) {
-                    r = centerBrightness; g = centerBrightness; b = centerBrightness
-                } else if (isEdgeLine) {
-                    r = edgeBrightness; g = edgeBrightness; b = edgeBrightness
-                }
-
-                colors[idx    ] = r
-                colors[idx + 1] = g
-                colors[idx + 2] = b
+                // ── Marking coord (BUG-28): vec4(uLat, arcS, q, markEnable=1) ───
+                // Top-surface verts are markable; the shader masks the stripe spatially.
+                const midx = (i * vertsPerSection + j) * 4
+                marks[midx    ] = uLat
+                marks[midx + 1] = arcS
+                marks[midx + 2] = q
+                marks[midx + 3] = 1
 
                 // Capture edge vert positions for skirt generation below.
                 if (j === 0)          { leftEdgeVx  = vx; leftEdgeVy  = vy; leftEdgeVz  = vz }
@@ -378,6 +443,8 @@ export class RoadMeshSystem {
             colors[leftSkirtBase    ] = dirtR
             colors[leftSkirtBase + 1] = dirtG
             colors[leftSkirtBase + 2] = dirtB
+            // BUG-28: markEnable=0 — the dirt skirt is the vertical shoulder wall; no stripes.
+            marks[(i * vertsPerSection + (CROSS_SEGS + 1)) * 4 + 3] = 0
 
             const rightSkirtBase = (i * vertsPerSection + (CROSS_SEGS + 2)) * 3
             positions[rightSkirtBase    ] = rightEdgeVx
@@ -386,6 +453,7 @@ export class RoadMeshSystem {
             colors[rightSkirtBase    ] = dirtR
             colors[rightSkirtBase + 1] = dirtG
             colors[rightSkirtBase + 2] = dirtB
+            marks[(i * vertsPerSection + (CROSS_SEGS + 2)) * 4 + 3] = 0
         }
 
         // ── P3 (09-28): Shared-boundary edge weld (continuity-over-roundness, BUG-12) ──────
@@ -413,8 +481,6 @@ export class RoadMeshSystem {
             const bndGradeY = bndRp.gradeY
             const bndCamberAngle = camberSign * this._road.camberProfile(bndArcS, runKey)
             const bndQ = roadQuality(bndArcS, runKey, this._worldSeed)
-            const bndIsHigh = bndQ >= 0.66
-            const bndIsMid  = bndQ >= 0.33 && bndQ < 0.66
 
             for (let j = 0; j <= CROSS_SEGS; j++) {
                 const uLat = (j / CROSS_SEGS - 0.5) * roadWidth
@@ -431,23 +497,16 @@ export class RoadMeshSystem {
                 positions[bndBase + 1] = bndVy
                 positions[bndBase + 2] = bndVz
 
-                // Recompute color for boundary vert (same logic as main loop).
-                const bndAbsLat = Math.abs(uLat)
-                const bndIsCenterline = bndAbsLat < MARK_CENTER_HALF
-                const bndDistFromEdge = halfWidth - bndAbsLat
-                const bndEdgeOn = bndIsHigh ? true : (bndIsMid ? ((bndArcS % 12) < 8) : false)
-                const bndEdgeBrightness = bndIsHigh ? 0.9 : 0.65
-                const bndCenterBrightness = bndIsHigh ? 0.9 : (bndIsMid ? 0.65 : 0.3)
-                const bndIsEdgeLine = bndEdgeOn && bndDistFromEdge < MARK_EDGE_HALF
-                let bndR = RC, bndG = GC, bndB = BC
-                if (bndIsCenterline) {
-                    bndR = bndCenterBrightness; bndG = bndCenterBrightness; bndB = bndCenterBrightness
-                } else if (bndIsEdgeLine) {
-                    bndR = bndEdgeBrightness; bndG = bndEdgeBrightness; bndB = bndEdgeBrightness
-                }
-                colors[bndBase    ] = bndR
-                colors[bndBase + 1] = bndG
-                colors[bndBase + 2] = bndB
+                // BUG-28: base asphalt only; markings are per-fragment from aMark.
+                colors[bndBase    ] = RC
+                colors[bndBase + 1] = GC
+                colors[bndBase + 2] = BC
+
+                const bndMidx = (bndIdx * vertsPerSection + j) * 4
+                marks[bndMidx    ] = uLat
+                marks[bndMidx + 1] = bndArcS
+                marks[bndMidx + 2] = bndQ
+                marks[bndMidx + 3] = 1
             }
             // Re-snap the skirt verts at this boundary section too.
             // Left skirt: j=0 edge
@@ -461,6 +520,7 @@ export class RoadMeshSystem {
             positions[bndLeftSkirtBase    ] = bndLeftEdgeVx
             positions[bndLeftSkirtBase + 1] = bndLeftEdgeVy - skirtDepth
             positions[bndLeftSkirtBase + 2] = bndLeftEdgeVz
+            marks[(bndIdx * vertsPerSection + (CROSS_SEGS + 1)) * 4 + 3] = 0  // BUG-28: skirt, no stripes
             // Right skirt: j=CROSS_SEGS edge
             const bndRightEdgeVx = bndPosX + bndRightX * halfWidth
             const bndRightEdgeVy = bndGradeY
@@ -472,6 +532,7 @@ export class RoadMeshSystem {
             positions[bndRightSkirtBase    ] = bndRightEdgeVx
             positions[bndRightSkirtBase + 1] = bndRightEdgeVy - skirtDepth
             positions[bndRightSkirtBase + 2] = bndRightEdgeVz
+            marks[(bndIdx * vertsPerSection + (CROSS_SEGS + 2)) * 4 + 3] = 0  // BUG-28: skirt, no stripes
         }
 
         // ── Index buffer: quad strip → 2 triangles per quad (CCW winding) ────────
@@ -527,6 +588,7 @@ export class RoadMeshSystem {
         const geo = new THREE.BufferGeometry()
         geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
         geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3))
+        geo.setAttribute('aMark',    new THREE.BufferAttribute(marks,     4))  // BUG-28: per-fragment markings
         geo.setIndex(new THREE.BufferAttribute(indices, 1))
 
         // computeVertexNormals: smooth normals reflecting crown/camber.
@@ -1005,6 +1067,11 @@ export class RoadMeshSystem {
         const geo = new THREE.BufferGeometry()
         geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
         geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3))
+        // BUG-28: junction pads share the road material (which references aMark). Supply an
+        // all-zero aMark (markEnable=0 in .w) so the shader paints NO stripes on the pad —
+        // markings stop cleanly at the junction. Without this, the default generic vertex
+        // attrib (uLat=0) would render a phantom centerline across every pad.
+        geo.setAttribute('aMark',    new THREE.BufferAttribute(new Float32Array((positions.length / 3) * 4), 4))
         geo.setIndex(new THREE.BufferAttribute(indices, 1))
         geo.computeVertexNormals()
 
