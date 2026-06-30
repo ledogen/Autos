@@ -913,6 +913,22 @@ export class RoadSystem {
         // Draw the routed spline geometry Y (the truth) with a small constant lift (+0.5 m)
         // so the line sits just above the road ribbon.  The terrain is carved to meet the
         // spline, so the centerline viz simply draws the spline — no surface-lift toggle needed.
+        // Clip the viz to the streamed radius: a graph edge with one in-band endpoint is carried in
+        // FULL out to its far node (up to ~1.4 km at a 320 m stream), but terrain chunks + the ribbon
+        // mesh only render the chunk ring (~the stream radius). Drawing the whole edge leaves centerline
+        // segments hanging in the sky past the rendered world (the "floating centerlines"). Split each
+        // slice into runs of points within `radius` of the stream center so only on-terrain spans draw.
+        const cen = this._networkCenter
+        const R = this._proto.radius || 0
+        const inR = (p) => !cen || R <= 0 || ((p.x - cen.x) ** 2 + (p.z - cen.z) ** 2) <= R * R
+        const emit = (run) => {
+            if (run.length < 2) return
+            for (const p of run) p.y += 0.5   // routed spline Y + 0.5 m lift (continuous truth)
+            const line = _buildDebugLine2(run, 0x00e5ff)
+            line.visible = this._debugVisible
+            this._scene.add(line)
+            this._debugLines.push(line)
+        }
         for (const segs of this._tiles.values()) {
             for (const { spline, points } of segs) {
                 if (!points || points.length < 2) continue
@@ -927,12 +943,13 @@ export class RoadSystem {
                 } else {
                     seg = points.map(p => p.clone())
                 }
-                // Draw at routed spline Y + 0.5 m lift (continuous truth, no analyticHeight distortion).
-                for (const p of seg) p.y += 0.5
-                const line = _buildDebugLine2(seg, 0x00e5ff)
-                line.visible = this._debugVisible
-                this._scene.add(line)
-                this._debugLines.push(line)
+                // Break the polyline at the clip boundary → emit only the in-radius runs.
+                let run = []
+                for (const p of seg) {
+                    if (inR(p)) { run.push(p) }
+                    else if (run.length) { emit(run); run = [] }
+                }
+                emit(run)
             }
         }
     }
@@ -1429,8 +1446,8 @@ export class RoadSystem {
     // assemble path). warmRoutes passes persist=false: it only needs the edge LIST for route jobs and
     // runs on its own prewarm band, so it must NOT clobber the streaming graph (degree would go stale on
     // a rebuild-skip). Window-invariance makes both bands agree on shared interior edges either way.
-    _buildUrquhart(mx0, mx1, mz0, mz1, persist = true) {
-        const M = Math.max(1, Math.round(this._params?.roadGraphMargin ?? 3))
+    _buildUrquhart(mx0, mx1, mz0, mz1, persist = true, marginOverride = null) {
+        const M = marginOverride != null ? Math.max(1, Math.round(marginOverride)) : Math.max(1, Math.round(this._params?.roadGraphMargin ?? 3))
         // FEAT-13: the SITE grid is decoupled from the 256 m macro-grid. The band [mx0,mx1] is in
         // macro-cells; convert to the band's WORLD extent, then iterate SITE cells at roadSiteSpacing
         // scale that cover it (+margin). When roadSiteSpacing == PROTO_ANCHOR_SPACING this is the identity
@@ -1481,13 +1498,31 @@ export class RoadSystem {
     // and bounded (≤ roadGraphCullMaxHops BFS) → window-invariant for interior crossings; verified by the
     // graph invariance gate. Reads this._crossingList (must run after _detectJunctions); returns true if it
     // dropped anything (caller re-detects on the culled network). Pure topology — runs before slicing.
-    _cullCrossings() {
+    _cullCrossings(mx0, mx1, mz0, mz1) {
         const g = this._proto.graph
         if (!g || !this._crossingList?.length) return false
+        // The detour BFS runs over a DEDICATED wide Urquhart graph (margin = roadGraphMargin + maxHops site
+        // cells) so the maxHops detour neighbourhood of any in-band crossing is fully contained REGARDLESS
+        // of the render radius — the streaming graph `g` (margin 3) is only ~2 km wide at the 320 m play
+        // radius, too narrow for a 4-hop detour, so long-detour crossings were culled on the wide map but
+        // not in-world. This wide graph is window-invariant per region, so map↔world now agree. Topology
+        // only (no routing) → cheap. Junction-degree mutation still targets g (this._proto.graph) below.
+        const maxHops0 = this._params?.roadGraphCullMaxHops ?? 4
+        const dg = (mx0 != null)
+            ? this._buildUrquhart(mx0, mx1, mz0, mz1, false, (this._params?.roadGraphMargin ?? 3) + maxHops0 + 1)
+            : g
+        // WINDOW-INVARIANCE (map↔world desync fix): the detour search MUST run over the window-invariant
+        // Urquhart graph `g` (band + roadGraphMargin, ~2 km even at the 320 m play radius), NOT the
+        // render-bounded `this._network`. Built from this._network, a small play-radius window has too few
+        // edges for the BFS to find any detour → every crossing looks like a bridge → 0 culls; the wide map
+        // window finds detours → culls more. Same seed/center, different cull = the "map culls roads the 3D
+        // doesn't" desync. g is the SAME graph in any window's overlap, so the detour answer is now
+        // render-radius-independent. (Crossings the play window doesn't even reach aren't shown, so they
+        // can't desync.) The drop still deletes only from this._network — the rendered edge set.
         const adj = new Map()
         const addj = (a, b) => { (adj.get(a) || adj.set(a, new Set()).get(a)).add(b) }
-        for (const e of this._network.values()) { addj(g.key(e.cellA), g.key(e.cellB)); addj(g.key(e.cellB), g.key(e.cellA)) }
-        const maxHops = this._params?.roadGraphCullMaxHops ?? 4
+        for (const [c1, c2] of dg.edges) { addj(dg.key(c1), dg.key(c2)); addj(dg.key(c2), dg.key(c1)) }
+        const maxHops = maxHops0
         // shortest #hops a→b NOT using the direct edge (a,b); -1 if none within maxHops (≈ a bridge/leaf).
         const detour = (a, b) => {
             const q = [[a, 0]], seen = new Set([a])
@@ -1566,18 +1601,20 @@ export class RoadSystem {
     _routeOptsBetween(c1, c2) {
         const P = this._proto.params
         const pp = this._params || {}
+        const isGraph = (this._params?.roadNetworkMode ?? 'rows') === 'graph'
         const halfW = pp.roadHalfWidth ?? 5, clearance = pp.roadClearanceMargin ?? 0.5
         const hardR = Math.max(pp.roadArcHardRadius ?? 8, halfW + clearance + 0.1)
         return {
             hardR, gentleR: pp.roadArcGentleRadius ?? 30, margin: PROTO_MARGIN,
-            wDist: P.wDist, wAlt: P.wAlt, wGrade: P.wGrade, wOver: P.wOver,
-            // FEAT-13: graph mode tolerates a steeper SOFT grade target than rows. Blue-noise edges climb
-            // between sites whose chord often just exceeds 20%; with the tight roadGraphDeviationCap the
-            // built road hugs the (steep) terrain ANYWAY, so a low maxGrade only makes the router spiral a
-            // pointless 360° loop to "avoid" a grade the vertical profile then builds regardless. A higher
-            // target lets short connectors take the direct line (loopers 5→0, crossings 28→6 at seed 6).
-            maxGrade: ((this._params?.roadNetworkMode ?? 'rows') === 'graph') ? (pp.roadGraphMaxGrade ?? 0.30) : P.maxGrade,
-            wCurv: P.wTurn, wHeur: pp.roadArcHeurWeight ?? 1.5,
+            // WINDINESS stage (FEAT-13): graph mode gets its own valley-seeking + curvature weights so the
+            // graph roads can be tuned windier (rows-like) without disturbing the rows defaults. Lower wCurv
+            // = cheaper bends; higher wAlt = harder valley-diving. Rows keep the shared P.wTurn / P.wAlt.
+            wDist: P.wDist, wAlt: isGraph ? (pp.roadGraphWAlt ?? P.wAlt) : P.wAlt, wGrade: P.wGrade, wOver: P.wOver,
+            // The SOFT grade target is the dominant windiness lever: a lower target makes more chords exceed
+            // it, so the over-cap penalty forces terrain-following detours/switchbacks (windier roads). Graph
+            // uses its own roadGraphMaxGrade (default 0.20, == rows) so it can be tuned independently.
+            maxGrade: isGraph ? (pp.roadGraphMaxGrade ?? 0.20) : P.maxGrade,
+            wCurv: isGraph ? (pp.roadGraphWTurn ?? P.wTurn) : P.wTurn, wHeur: pp.roadArcHeurWeight ?? 1.5,
             valleyDepthCap: pp.roadValleyDepthCap ?? 40,
             // QUAL-05 follow-up: fixed-angle palette → large sweeping radii (see ranger.js roadArc*).
             radii: pp.roadArcRadii, hbins: pp.roadArcHeadingBins, gradeSamples: pp.roadArcGradeSamples,
@@ -1595,14 +1632,14 @@ export class RoadSystem {
             // the wrong side (the "enter from the wrong side" / shallow near-node crossing). +π flips it
             // to the arrival direction. (startHeading is already the leave-at-c1 = forward direction.)
             startHeading: this._edgeTerminalHeading(c1, c2),
-            goalHeading:  this._edgeTerminalHeading(c2, c1) + (((this._params?.roadNetworkMode ?? 'rows') === 'graph') ? Math.PI : 0),
+            goalHeading:  this._edgeTerminalHeading(c2, c1) + (isGraph ? Math.PI : 0),
             // Graph mode (FEAT-13): a WIDE goal blend. The hybrid-A* search overshoots short edges' goal
             // node (wanders past it, then the terminal reels back) → the edge bows past the node and crosses
             // a sibling TWICE (the "happens twice" double-cross the user flagged). Cutting back a wide tail
             // (~140 m) and replacing it with the clean Dubins terminal-into-node erases that overshoot: the
             // edge runs straight in. Robust across seeds (seed 6 crossings 6→2, overshoot 5→0; seed 3 →0),
             // no loops reintroduced. Rows keep the tight 20 m blend (collinear rows never overshoot).
-            goalBlend: ((this._params?.roadNetworkMode ?? 'rows') === 'graph') ? (pp.roadGraphGoalBlend ?? 140) : 20,
+            goalBlend: isGraph ? (pp.roadGraphGoalBlend ?? 60) : 20,
             emitPrimitives: true,
         }
     }
@@ -1970,7 +2007,7 @@ export class RoadSystem {
         // excursion). Connectivity-preserving (bounded detour test) + window-invariant. Re-detect on the
         // culled network so _crossingsByRun / the flatten reflect the survivors.
         if ((this._params?.roadNetworkMode ?? 'rows') === 'graph' && (this._params?.roadGraphCullCrossings ?? true)) {
-            if (this._cullCrossings()) { this._junctionsFrom = null; this._detectJunctions() }
+            if (this._cullCrossings(mx0, mx1, mz0, mz1)) { this._junctionsFrom = null; this._detectJunctions() }
         }
 
         // NOTE (CR-02): no post-build cache eviction. _network is .clear()-ed + rebuilt for the

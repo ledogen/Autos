@@ -37,7 +37,9 @@ function interior(road, r) {
     return Math.min(r.arcA, lenA - r.arcA) >= Rj && Math.min(r.arcB, lenB - r.arcB) >= Rj
 }
 
-const road = new RoadSystem(SEED, P); road.update(new THREE.Vector3(4500, 0, 600))
+// Pinned to ROWS: this gate checks rows-mode at-grade crossing flatten/meet behavior. Graph is now the
+// shipped default (data/ranger.js) but culls those crossings; rows remains a valid selectable mode.
+const road = new RoadSystem(SEED, { ...P, roadNetworkMode: 'rows' }); road.update(new THREE.Vector3(4500, 0, 600))
 const list = road.crossingList()
 
 // (a) Interior AT_GRADE crossings flatten to a driveable gap. ────────────────────────────────────
@@ -67,7 +69,7 @@ const list = road.crossingList()
 
 // (c) Flattened gaps are window-invariant across stream centers. ──────────────────────────────────
 {
-    const roadB = new RoadSystem(SEED, P); roadB.update(new THREE.Vector3(4756, 0, 600))
+    const roadB = new RoadSystem(SEED, { ...P, roadNetworkMode: 'rows' }); roadB.update(new THREE.Vector3(4756, 0, 600))
     const keyOf = (r) => `${r.runA}#${r.segA}|${r.runB}#${r.segB}`
     const gapsB = new Map(roadB.crossingList().map(r => [keyOf(r), strandGap(roadB, r)]))
     let both = 0, mism = 0, worst = 0, sample = ''

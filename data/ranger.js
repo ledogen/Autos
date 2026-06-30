@@ -314,32 +314,43 @@ export const RANGER_PARAMS = {
   //             intersections at nodes, sparse with route-choice cycles, CONNECTED by construction
   //             (Urquhart ⊇ Euclidean MST), window-invariant. (Replaced the v1 lattice/spanning-forest
   //             draft; see .planning/ROAD-GRAPH-HANDOFF.md.)
-  roadNetworkMode: 'rows',
+  roadNetworkMode: 'graph',
   // roadGraphFlatMerges: graph mode — force EVERY crossing to a flat at-grade intersection (no dynamic
   // overpasses). Roads meet/merge at one shared height instead of one floating over another. Real
   // grade-separation is deferred to future prefab intersections (cloverleaf etc.), not the dynamic
   // system. true is strongly recommended: dynamic overpasses produce intense Z geometry at junctions.
   roadGraphFlatMerges: true,
-  // roadGraphDeviationCap: graph mode earthwork fill/cut cap (m), much tighter than rows' roadDeviationCap.
-  // Graph edges still EARTHWORK (smooth grades — pure terrain-following makes near-parallel edges step on
-  // slopes), but the low cap keeps edge endpoints near the ground so roads MEET at grade and flat merges
-  // stay gentle (a high cap floats junctions 8–15 m apart → the steep-ramp / overpass chaos). ~2 m gives
-  // smooth, step-free, low-float roads (the forest-service-road look). Raise for smoother long grades at
-  // the cost of steeper merges.
-  roadGraphDeviationCap: 2,
-  // roadGraphMaxGrade: SOFT grade target for the GRAPH-mode router only (rows uses maxRoadGrade). Higher
-  // than rows because blue-noise edges climb between sites whose chord often just tops 20%, and the tight
-  // deviation cap makes the built road hug the steep terrain regardless — so a low target only makes the
-  // router spiral an ugly 360° loop to dodge a grade it then builds anyway. 0.30 lets short connectors run
-  // direct (seed 6: loopers 5→0, parallel pairs 8→1, routed crossings 28→6). Lower for gentler, loopier.
-  roadGraphMaxGrade: 0.30,
-  // roadGraphGoalBlend: how many metres of an edge's tail are routed as a clean Dubins curve INTO the goal
-  // node (graph mode only; rows use a tight 20 m). The hybrid-A* search overshoots short edges' goal node
-  // and reels back, bowing the road past the node so it crosses a sibling TWICE near the junction. A wide
-  // blend (~140 m) replaces that overshooting tail with a direct curve into the node → no overshoot, no
-  // double-cross (seed 6 routed crossings 6→2, overshoot edges 5→0). Lower = more terrain-following tail
-  // but the overshoot/double-cross returns.
-  roadGraphGoalBlend: 140,
+  // roadGraphDeviationCap: graph-mode earthwork fill/cut cap (m) — how far the smooth design grade may
+  // deviate from terrain before the clamp pulls it back. CAUTION: too TIGHT is the jarring "level-patch"
+  // staircase — the clamp slams the gentle wide-window design line back onto steep raw grade wherever a
+  // terrain bump exceeds the cap, producing flat plateau → steep drop → flat plateau (grade kinks of 20%+
+  // over a single sample). The old 2 m value did exactly this. 8 m (== rows' roadDeviationCap) lets the
+  // design bridge/cut normal undulations smoothly: on the seed-67 complaint edge it cut grade kinks 10→0
+  // and flat patches 7→0. Junction endpoints are reconciled separately (_applyJunctionBlend), so a looser
+  // mid-edge cap does not float merges. Lower only if you want tighter terrain-hug AND accept the steps.
+  roadGraphDeviationCap: 8,
+  // roadGraphMaxGrade: SOFT grade target for the GRAPH-mode router only (rows uses maxRoadGrade). This is
+  // the DOMINANT WINDINESS lever (windiness-stage finding): lower target ⇒ more chords exceed it ⇒ the
+  // over-cap penalty forces terrain-following detours/switchbacks ⇒ windier, more rows-like roads. 0.20
+  // (matching rows' maxRoadGrade) lifts seed-6 detour 1.13→1.22 and stays loop-free across seeds 3/6/7/11/42
+  // (paired with roadGraphWTurn 3000 + roadGraphWAlt 2.0 + goalBlend 60). Raising it back toward 0.30
+  // straightens roads (short connectors run direct); much below 0.20 reintroduces 360° spiral loops.
+  roadGraphMaxGrade: 0.20,
+  // roadGraphGoalBlend: how many metres of an edge's tail are routed as a clean GEOMETRIC Dubins curve INTO
+  // the goal node (graph mode only; rows use a tight 20 m). NOTE (windiness-stage): this is NOT a windiness
+  // lever — sweeping 140→20 barely moves detour (the straightness lives in the SEARCH cost, not the tail).
+  // Its real job is taming overshoot: the hybrid-A* can sail past a short edge's goal node, bowing the road
+  // past it to cross a sibling near the junction; replacing the tail with a direct Dubins curve erases that.
+  // 60 m keeps overshoot low while letting more of the tail follow terrain; <40 m reintroduces a couple of
+  // routed crossings (cullable). 140 m was the old straightener-era value.
+  roadGraphGoalBlend: 60,
+  // roadGraphWTurn: graph-mode curvature penalty (wCurv), overriding the shared roadWTurn (8000) for graph
+  // edges only. Lower = cheaper bends = the router accepts more/tighter curves = windier. 3000 (windiness
+  // stage) noticeably loosens the roads without tripping the min-radius or no-loop gates. Rows keep 8000.
+  roadGraphWTurn: 3000,
+  // roadGraphWAlt: graph-mode valley-seeking weight, overriding the shared roadWAlt (1.0) for graph edges
+  // only. Higher = roads dive harder for low ground = more terrain-hugging wander. 2.0 (windiness stage).
+  roadGraphWAlt: 2.0,
   // roadGraphCullCrossings: graph mode — SAFE-PRUNE the redundant edge of every routed at-grade crossing
   // (they read as ugly mid-span intersections; the graph is planar-abstract so a routed cross means one
   // edge took a redundant excursion). Only dropped if the far endpoint keeps a detour (≤ cull max hops),

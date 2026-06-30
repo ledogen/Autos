@@ -12,3 +12,32 @@ node_modules/
 .claude/worktrees/
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
+
+# ── Screenshots / image + video captures (agentic verification & planning artifacts) ──
+# Broad net so a stray capture (e.g. an in-browser CDP screenshot, or an image dropped into
+# a .planning/ doc) can't be `git add`ed by accident. .gitignore only gates UNtracked files,
+# so already-committed art (references/*.png, assets/models/*.glb) is unaffected. Real binary
+# assets live under assets/ and references/ — un-ignored below so they still commit normally.
+# To intentionally add a new image elsewhere: `git add -f <file>`.
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.bmp
+*.tif
+*.tiff
+*.heic
+*.mp4
+*.mov
+*.webm
+*.avif
+
+# Keep the real asset directories addable (negate the patterns above for these paths)
+!assets/**
+!references/**
+
+# Common scratch / capture dump locations
+screenshots/
+captures/
+*.screenshot.*

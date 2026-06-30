@@ -188,10 +188,21 @@ function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
     // rebuilding the network redundantly on every spawn/reload (PERF-01).
     const baseTX = Math.floor(baseX / CHUNK_SIZE)
     const baseTZ = Math.floor(baseZ / CHUNK_SIZE)
+    // FEAT-13 graph spawn: the graph network is SPARSE (roadSiteSpacing ≈ 640 m), so the nearest road to
+    // the seeded ±100 m spawn offset can be 500 m+ away (seed "witch" → 531 m). The old fixed 200 m probe
+    // (fine for the dense rows network) then found nothing → off-road terrain fallback. Widen the search
+    // to ~1.5× the site spacing in graph mode, AND widen the streamed radius to match (ensureTile streams
+    // at _proto.radius, which is the play radius ~320 m — too small to even contain a 531 m road), then
+    // restore the play radius so the first frame streams normally. Rows mode keeps the tight 200 m probe.
+    const _graphSpawn = (params.roadNetworkMode ?? 'rows') === 'graph'
+    const _spawnR = _graphSpawn ? Math.max(200, Math.round((params.roadSiteSpacing ?? 256) * 1.5)) : 200
+    const _savedRadius = roadSystem._proto.radius
+    if (_graphSpawn) roadSystem.setRadius(Math.max(_savedRadius, _spawnR + 200))
     perfMark('resolveSpawn: before ensureTile (cold network stream)')  // TEMP (D-arc)
     roadSystem.ensureTile(baseTX, baseTZ)
     perfMark('resolveSpawn: cold network stream done')  // TEMP (D-arc)
-    let nearest = roadSystem.queryNearest(baseX, baseZ, 200)
+    let nearest = roadSystem.queryNearest(baseX, baseZ, _spawnR)
+    if (_graphSpawn) roadSystem.setRadius(_savedRadius)   // restore play radius (next update re-streams tight)
     if (nearest) {
       // BUG-11 spawn-off-road: the network the road is RENDERED from is whatever the per-frame
       // update() streams around the truck. The spawn point found above can be up to 200 m from

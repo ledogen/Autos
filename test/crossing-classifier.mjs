@@ -21,7 +21,11 @@ import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 
 const SEED = 6
-const p = RANGER_PARAMS
+// This gate exercises the ROWS-mode mid-span crossing classifier (adjacent parallel rows crossing away
+// from a shared anchor). Graph mode is now the shipped default (data/ranger.js) but culls those crossings,
+// so pin rows explicitly — this guards the rows code path, which remains a selectable mode.
+const ROWS = { ...RANGER_PARAMS, roadNetworkMode: 'rows' }
+const p = ROWS
 const MERGE_DY  = p.roadCrossMergeDY  ?? 2.5
 const ANGLE_MIN = p.roadCrossAngleMin ?? 12
 
@@ -88,7 +92,7 @@ const keyOf = (r) => `${r.runA}#${r.segA}|${r.runB}#${r.segB}`
 const listToMap = (list) => new Map(list.map(r => [keyOf(r), r]))
 
 // ── Build the real seed-6 network around a crossing-rich center. ──
-const roadA = new RoadSystem(SEED, RANGER_PARAMS); roadA.update(new THREE.Vector3(4500, 0, 600))
+const roadA = new RoadSystem(SEED, ROWS); roadA.update(new THREE.Vector3(4500, 0, 600))
 const listA = roadA.crossingList()
 const mapA  = listToMap(listA)
 
@@ -109,7 +113,7 @@ const mapA  = listToMap(listA)
 
 // (b) INVARIANCE — two stream centers agree within the region both bands cover. ──────────────────
 {
-    const roadB = new RoadSystem(SEED, RANGER_PARAMS); roadB.update(new THREE.Vector3(4756, 0, 600))
+    const roadB = new RoadSystem(SEED, ROWS); roadB.update(new THREE.Vector3(4756, 0, 600))
     const mapB = listToMap(roadB.crossingList())
     // Interior region safely inside both ±~512 m bands (A@4500, B@4756; z centre shared).
     const inRegion = (r) => r.point.x >= 4350 && r.point.x <= 4900 && r.point.z >= 200 && r.point.z <= 1000
@@ -142,7 +146,7 @@ const mapA  = listToMap(listA)
     const counts = { NEAR_PARALLEL: 0, AT_GRADE: 0, GRADE_SEP: 0 }
     const seen = new Set()
     for (const c of [[4500, 600], [-300, 220], [-900, 150], [800, 440], [5300, 850]]) {
-        const r = new RoadSystem(SEED, RANGER_PARAMS); r.update(new THREE.Vector3(c[0], 0, c[1]))
+        const r = new RoadSystem(SEED, ROWS); r.update(new THREE.Vector3(c[0], 0, c[1]))
         for (const rec of r.crossingList()) {
             const gk = `${Math.round(rec.point.x)},${Math.round(rec.point.z)}`
             if (seen.has(gk)) continue; seen.add(gk)
