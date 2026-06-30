@@ -1431,12 +1431,22 @@ export class RoadSystem {
     // a rebuild-skip). Window-invariance makes both bands agree on shared interior edges either way.
     _buildUrquhart(mx0, mx1, mz0, mz1, persist = true) {
         const M = Math.max(1, Math.round(this._params?.roadGraphMargin ?? 3))
-        const sig = `${mx0 - M},${mx1 + M},${mz0 - M},${mz1 + M}`
+        // FEAT-13: the SITE grid is decoupled from the 256 m macro-grid. The band [mx0,mx1] is in
+        // macro-cells; convert to the band's WORLD extent, then iterate SITE cells at roadSiteSpacing
+        // scale that cover it (+margin). When roadSiteSpacing == PROTO_ANCHOR_SPACING this is the identity
+        // (site cell == macro cell), so existing behaviour is byte-unchanged; raising it makes the anchor
+        // field genuinely sparser (fewer cells → fewer nodes), which the 256 m grid could not.
+        const S = this._params?.roadSiteSpacing ?? PROTO_ANCHOR_SPACING
+        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
+        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
+        const scx0 = Math.floor(wx0 / S) - M, scx1 = Math.floor((wx1 - 1e-6) / S) + M
+        const scz0 = Math.floor(wz0 / S) - M, scz1 = Math.floor((wz1 - 1e-6) / S) + M
+        const sig = `${S}:${scx0},${scx1},${scz0},${scz1}`
         if (persist && this._proto.graph && this._proto.graph.sig === sig) return this._proto.graph
         const key = (id) => `${id[0]},${id[1]},${id[2]}`
         const ids = [], pts = []
-        for (let cz = mz0 - M; cz <= mz1 + M; cz++)
-            for (let cx = mx0 - M; cx <= mx1 + M; cx++)
+        for (let cz = scz0; cz <= scz1; cz++)
+            for (let cx = scx0; cx <= scx1; cx++)
                 for (const s of this._aliveSitesIn(cx, cz)) { ids.push(s.id); pts.push([s.pos.x, s.pos.z]) }
         const adj = new Map()
         const edges = []
@@ -1670,7 +1680,10 @@ export class RoadSystem {
     // "g:<idA>:<idB>" (canonical, from _buildUrquhart's id order).
     _assembleGraphEdges(mx0, mx1, mz0, mz1) {
         const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
-        const inBand = (c) => c[0] >= mx0 && c[0] <= mx1 && c[1] >= mz0 && c[1] <= mz1
+        // in-band test is by WORLD extent now (site ids live on a different grid than the macro band).
+        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
+        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
+        const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
         const g = this._buildUrquhart(mx0, mx1, mz0, mz1)
         this._proto.nodeInc.clear()
         const addInc = (idKey, runKey) => { const a = this._proto.nodeInc.get(idKey) || this._proto.nodeInc.set(idKey, []).get(idKey); a.push(runKey) }

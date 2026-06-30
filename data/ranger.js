@@ -351,17 +351,17 @@ export const RANGER_PARAMS = {
   // but genuine bridges while connectivity holds.
   roadGraphCullMaxHops: 8,
   // ── FEAT-13 v2 blue-noise anchor + Urquhart knobs (graph mode only) ──
-  // roadSiteSpacing: macro-cell size (m) the blue-noise sites are seeded over (sites jitter across the
-  // whole cell). Defaults to the 256 m anchor spacing. Smaller = denser anchor field = denser network.
-  roadSiteSpacing: 256,
-  // roadSiteCandidates: seeded candidate sites PER macro-cell before Poisson-disk thinning. >1 breaks the
+  // roadSiteSpacing: the PRIMARY density knob — cell size (m) the blue-noise anchor sites are seeded over
+  // (≈ one site per cell after Poisson thinning), DECOUPLED from the 256 m macro-grid. 640 m ≈ a sparse
+  // remote forest-service network: ~4 nodes/km², ~670 m between junctions, ~45% dead-end spurs. Smaller =
+  // denser (256 = the old tight grid). Pair roadSiteMinDist ≈ 0.65× this.
+  roadSiteSpacing: 640,
+  // roadSiteCandidates: seeded candidate sites PER cell before Poisson-disk thinning. >1 breaks the
   // residual grid regularity (one-per-cell still reads as rows); 2–3 gives an organic blue-noise field.
   roadSiteCandidates: 3,
-  // roadSiteMinDist: Poisson-disk minimum spacing (m) between accepted anchor sites. A candidate is
-  // rejected if a higher-priority accepted site is within this radius → even, row-free spacing. 220 m
-  // ≈ a sparse forest-service feel: ~12 nodes/km², ~370 m avg edge, ~26% dead-end spurs (the primary
-  // sparsity lever — also lengthens edges, giving roads room to wind). Lower = denser/closer anchors.
-  roadSiteMinDist: 220,
+  // roadSiteMinDist: Poisson-disk minimum spacing (m) between accepted anchor sites — thins WITHIN the
+  // cell grid for an even, row-free field. Keep ≈ 0.65× roadSiteSpacing. Lower = denser/closer anchors.
+  roadSiteMinDist: 420,
   // roadSiteValleySnap: gradient-descend each site onto the local valley floor (like the rows anchors) so
   // roads still favour valleys. false = sites stay at their seeded jitter position (more even, less natural).
   roadSiteValleySnap: true,

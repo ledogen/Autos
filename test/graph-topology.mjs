@@ -22,7 +22,8 @@ const P = { ...RANGER_PARAMS, roadNetworkMode: 'graph' }
 let pass = 0, fail = 0
 const log = (ok, name, msg) => { console.log(`[${ok ? 'PASS' : 'FAIL'}] ${ok ? '✓' : '✗'} ${name}\n        ${msg}`); ok ? pass++ : fail++ }
 
-const build = (cx, cz) => { const r = new RoadSystem(6, P); r.update(new THREE.Vector3(cx, 0, cz)); return r }
+// Wide radius so the sparse default (≈4 nodes/km²) still streams enough network for meaningful samples.
+const build = (cx, cz) => { const r = new RoadSystem(6, P); r.setRadius(1600); r.update(new THREE.Vector3(cx, 0, cz)); return r }
 const roadA = build(4500, 600)
 
 // An edge keyed by its two endpoint WORLD positions (rounded, unordered) — center-independent identity.
@@ -52,7 +53,7 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
     const roadB = build(4756, 600)   // shifted one cell east
     // interior world box safely inside BOTH bands' margins (tall, to capture enough edges even at the
     // sparse 220 m node spacing — the invariance is exact regardless, this just keeps the sample size up)
-    const box = { x0: 4150, x1: 4980, z0: -100, z1: 1300 }
+    const box = { x0: 3800, x1: 5400, z0: -400, z1: 1600 }
     const inBox = (p) => p.x >= box.x0 && p.x <= box.x1 && p.z >= box.z0 && p.z <= box.z1
     const gradeSig = (e) => e.points.map(p => p.y.toFixed(2)).join(',')
     const collect = (r) => {

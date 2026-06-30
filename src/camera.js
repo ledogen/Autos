@@ -15,6 +15,15 @@ let cameraMode = 'chase'  // 'chase' | 'hood' | 'freecam'
 const CHASE_OFFSET_LOCAL = new THREE.Vector3(0, 2.5, 6.0)  // body-space: behind (+Z) and above (+Y)
 const CHASE_STIFFNESS = 5  // exp-decay rate (s⁻¹); ~equiv to old LERP_FACTOR=0.08 at 60fps
 
+// Pitch-follow: the chase cam tilts to track the car's pitch (nose up climbing / down braking)
+// so the view leans into hills instead of staying rigidly level. CHASE_PITCH_FOLLOW scales how
+// much of the car's pitch the camera adopts (0 = none, 1 = 1:1). The smoothing is deliberately
+// slow (CHASE_PITCH_STIFFNESS ≈ 0.67 s time constant) so transient suspension bumps are filtered
+// out and only sustained grade changes move the camera — the "inertia" the feature calls for.
+const CHASE_PITCH_FOLLOW    = 0.6   // fraction of car pitch the camera tilts toward
+const CHASE_PITCH_STIFFNESS = 1.5   // exp-decay rate (s⁻¹) for the smoothed pitch — low = heavy inertia
+let smoothedPitch = 0               // module-level low-passed car pitch (radians)
+
 // ── Drag-orbit state ───────────────────────────────────────────────────────────
 // Spherical coordinates for orbit mode. orbitTheta = yaw (radians around Y axis),
 // orbitPhi = pitch (radians above XZ plane). Synced each chase-follow frame so that
@@ -254,7 +263,15 @@ export function updateCamera (camera, vehicleState, dt) {
       // Inheriting full vehicleState.quaternion displaces the goal position when the car tilts, causing glitches.
       const euler      = new THREE.Euler().setFromQuaternion(vehicleState.quaternion, 'YXZ')
       const yawQ       = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), euler.y)
-      const goalOffset = CHASE_OFFSET_LOCAL.clone().applyQuaternion(yawQ)
+
+      // Low-pass the car's raw pitch so the camera tilt has inertia and shrugs off transient
+      // bumps (only sustained grade changes survive the slow exp-decay). The smoothed pitch then
+      // tilts the goal offset about the yawed local-right (X) axis: nose-up drops the camera lower
+      // behind the car, and the lookAt below re-aims at the body, so the view leans up the hill.
+      smoothedPitch += (euler.x - smoothedPitch) * (1 - Math.exp(-CHASE_PITCH_STIFFNESS * dt))
+      const tiltQ      = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), smoothedPitch * CHASE_PITCH_FOLLOW)
+      const goalRot    = yawQ.clone().multiply(tiltQ)  // yaw (world Y) first, then pitch about resulting local X
+      const goalOffset = CHASE_OFFSET_LOCAL.clone().applyQuaternion(goalRot)
       const goalPos    = vehicleState.position.clone().add(goalOffset)
       const alpha = 1 - Math.exp(-CHASE_STIFFNESS * dt)
       camera.position.lerp(goalPos, alpha)
