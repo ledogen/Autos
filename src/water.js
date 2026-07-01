@@ -531,21 +531,49 @@ export class WaterSystem {
         return out
     }
 
-    // ── FEAT-18 stream channel carve (pure; staged for CARVE SYNC) ─────────────
+    // ── FEAT-18 stream channel carve (pure; applied MAIN-THREAD only) ──────────
     // Cross-section carve for the stream channel, in the SAME shape the road carve
     // uses (a blendW in [0,1] + a target bed Y). Flat bed of half-width `width`,
     // then a linear bank ramp of `bankWidth` back up to raw terrain. Signed distance
     // is the perpendicular distance to the nearest centerline segment; the bed Y
     // follows the centerline's descending profile (NOT a flat plane).
     //
-    // This is deliberately NOT mirrored into WORKER_SOURCE yet — that mirror + the
-    // CARVE SYNC test are part of the (later) wiring commit. Kept pure + testable
-    // so the channel geometry can be validated headless first.
-    streamCarveSample(x, z, streams) {
+    // NOT mirrored into WORKER_SOURCE — the terrain Worker returns RAW heights and
+    // every carve blend (road AND stream) is applied on the main thread (see
+    // terrain.js "carve never enters the worker"), so a Worker copy would be dead
+    // code. terrain.js consumes this via the injected setWaterCarve hook (main.js
+    // wires it; water.js stays a leaf). HOT PATH: called per physics contact sample
+    // via analyticHeight — the per-stream bbox reject below keeps the common
+    // (nowhere-near-water) case at a few float compares per stream.
+    //
+    // MULTI-STREAM SEAMS: where two channels overlap (parallel traces into the same
+    // basin), "nearest centerline wins" would step the bed at the Voronoi seam
+    // between them (same defect class as the carve invisible-cliff bug). Instead
+    // each stream's cross-section is composed against `raw` and the DEEPEST result
+    // (minimum height) wins — a min of continuous surfaces is continuous, so the
+    // union of channels is seam-free. `raw` (world-space terrain at x,z) is passed
+    // by the terrain paths that already have it; falls back to this WaterSystem's
+    // own heightFn when omitted (legacy callers).
+    streamCarveSample(x, z, streams, raw) {
         const list = streams || this.streamsInBBox(x, z, x, z)
-        let best = null   // { dist, bedY }
+        let rawH
+        let best = null   // { h, blendW, bedY } — minimum composed height across streams
         for (const st of list) {
+            const pad = st.width + st.bankWidth
+            // Lazy cached centerline bbox (window-invariant: pure fn of the cached record).
+            let bb = st._bb
+            if (!bb) {
+                bb = { x0: Infinity, z0: Infinity, x1: -Infinity, z1: -Infinity }
+                for (const p of st.points) {
+                    if (p.x < bb.x0) bb.x0 = p.x; if (p.x > bb.x1) bb.x1 = p.x
+                    if (p.z < bb.z0) bb.z0 = p.z; if (p.z > bb.z1) bb.z1 = p.z
+                }
+                st._bb = bb
+            }
+            if (x < bb.x0 - pad || x > bb.x1 + pad || z < bb.z0 - pad || z > bb.z1 + pad) continue
+            // This stream's nearest-segment cross-section.
             const pts = st.points
+            let d2min = Infinity, bedY = 0
             for (let i = 1; i < pts.length; i++) {
                 const a = pts[i - 1], b = pts[i]
                 const abx = b.x - a.x, abz = b.z - a.z
@@ -554,20 +582,18 @@ export class WaterSystem {
                 let t = ((x - a.x) * abx + (z - a.z) * abz) / len2
                 t = Math.max(0, Math.min(1, t))
                 const px = a.x + abx * t, pz = a.z + abz * t
-                const dist = Math.hypot(x - px, z - pz)
-                if (best === null || dist < best.dist) {
-                    const bedY = (a.y + (b.y - a.y) * t) - st.depth   // centerline Y minus channel depth
-                    best = { dist, bedY, width: st.width, bankWidth: st.bankWidth }
-                }
+                const d2 = (x - px) * (x - px) + (z - pz) * (z - pz)
+                if (d2 < d2min) { d2min = d2; bedY = (a.y + (b.y - a.y) * t) - st.depth }
             }
+            if (d2min === Infinity) continue
+            const dist = Math.sqrt(d2min)
+            if (dist >= st.width + st.bankWidth) continue
+            const sw = dist <= st.width ? 1 : 1 - (dist - st.width) / st.bankWidth
+            if (rawH === undefined) rawH = (raw !== undefined) ? raw : this._h(x, z)
+            const h = rawH + sw * (bedY - rawH)
+            if (best === null || h < best.h) best = { h, blendW: sw, bedY }
         }
         if (best === null) return { blendW: 0, bedY: 0 }
-
-        const { dist, bedY, width, bankWidth } = best
-        if (dist <= width) return { blendW: 1, bedY }                 // flat bed
-        if (dist >= width + bankWidth) return { blendW: 0, bedY: 0 }  // outside channel
-        // Bank ramp: linear blend from bed (1) to terrain (0) across bankWidth.
-        const t = (dist - width) / bankWidth
-        return { blendW: 1 - t, bedY }
+        return { blendW: best.blendW, bedY: best.bedY }
     }
 }

@@ -97,6 +97,49 @@ function rebuildWaterSystem () {
   waterSystem   = new WaterSystem(worldSeed, RANGER_PARAMS, (x, z) => terrainSystem.rawHeightWorld(x, z))
   waterRenderer = new WaterRenderer(waterSystem, {})
   scene.add(waterRenderer.group)
+  // FEAT-17: roads route AROUND ponds — inject the water no-go into the (current) RoadSystem as pure
+  // queries/data; road.js never imports water.js. Called here so BOTH the initial wiring and every
+  // seed rebuild re-inject into the fresh instances (the debounced rebuild recreates roadSystem
+  // BEFORE this runs). Must precede the first roadSystem.update() so the network never streams
+  // pond-crossing edges. Deterministic: both fns are pure in (seed, coords, params).
+  // Closures read module-scope waterSystem at CALL time (same convention as makePropSamplers), so
+  // they survive water rebuilds without re-injection.
+  const waterNoGoFn = (x, z) => waterSystem.isRoadNoGo(x, z)
+  const pondDiscsFn = (minX, minZ, maxX, maxZ) => {
+    const discs = []
+    for (const p of waterSystem.pondsNear(minX, minZ, maxX, maxZ)) {
+      discs.push(p.floorX, p.floorZ, p.radius + p.skirt)
+    }
+    return discs
+  }
+  if (roadSystem) roadSystem.setWaterNoGo(waterNoGoFn, pondDiscsFn)
+  // The map's own read-only RoadSystem must route with the identical exclusion (it validates the
+  // network the player drives).
+  map2d.setWaterNoGo(waterNoGoFn, pondDiscsFn)
+  // FEAT-18: stream channels carve the terrain (bed + banks) — inject the pure sampler into the
+  // terrain height paths (see terrain.setWaterCarve for the composition + bridge-deck rule).
+  // sampleAt keeps a 1-entry windowed stream cache: physics contact queries are spatially coherent,
+  // so the common case is a few bbox compares (window-invariance makes the cache safe — any window
+  // covering the point yields identical streams; refetch triggers well before the pad could clip).
+  const _wcWin = { x0: 0, z0: 0, x1: 0, z1: 0, streams: null }
+  const WC_FETCH_R = 512, WC_EDGE = 64
+  terrainSystem.setWaterCarve({
+    streamsNear: (x0, z0, x1, z1) => waterSystem.streamsInBBox(x0, z0, x1, z1),
+    sampleAt: (x, z, streams, raw) => {
+      let list = streams
+      if (!list) {
+        if (!_wcWin.streams ||
+            x < _wcWin.x0 + WC_EDGE || x > _wcWin.x1 - WC_EDGE ||
+            z < _wcWin.z0 + WC_EDGE || z > _wcWin.z1 - WC_EDGE) {
+          _wcWin.x0 = x - WC_FETCH_R; _wcWin.z0 = z - WC_FETCH_R
+          _wcWin.x1 = x + WC_FETCH_R; _wcWin.z1 = z + WC_FETCH_R
+          _wcWin.streams = waterSystem.streamsInBBox(_wcWin.x0, _wcWin.z0, _wcWin.x1, _wcWin.z1)
+        }
+        list = _wcWin.streams
+      }
+      return waterSystem.streamCarveSample(x, z, list, raw)
+    },
+  })
 }
 const _bushDragF = { x: 0, y: 0, z: 0 }   // FEAT-06b: reused bush soft-drag accumulator (no per-substep alloc)
 const makePropSamplers = () => ({
@@ -112,6 +155,9 @@ const makePropSamplers = () => ({
     const nr = roadSystem.queryNearest(x, z, 25)
     return nr ? Math.hypot(x - nr.point.x, z - nr.point.z) : Infinity
   },
+  // FEAT-17: pond/skirt membership — the scatter rejects placements inWater (no underwater trees)
+  // and keeps the skirt plantable. Reads module-scope waterSystem at call time like the rest.
+  waterAt:     (x, z) => waterSystem ? waterSystem.pondSkirtAt(x, z) : null,
 })
 
 // Grid-world mode flag (D-18 / D-19).
@@ -373,15 +419,17 @@ function debouncedRebuildFull () {
       )
       terrainSystem.setRoadSystem(roadSystem)
     }
+    // FEAT-22/17/18: water is seed-deterministic — rebuild it on a new seed or it shows stale water.
+    // BEFORE props: the scatter's waterAt sampler must read the NEW seed's ponds, and setWaterNoGo
+    // (inside) must reshape the fresh roadSystem's network before anything streams it.
+    if (waterSystem) rebuildWaterSystem()
     // FEAT-06: props are seed-deterministic, so a new seed must rebuild them or they show stale
     // scatter. The samplers read the (now-reassigned) module-scope systems, so makePropSamplers()
-    // picks up the fresh terrain/road instances.
+    // picks up the fresh terrain/road/water instances.
     if (propSystem) {
       propSystem.dispose()
       propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
     }
-    // FEAT-22/17/18: water is seed-deterministic — rebuild it on a new seed or it shows stale water.
-    if (waterSystem) rebuildWaterSystem()
     _reseatTruckAtSpawn()
   }, 150)
 }
@@ -1034,10 +1082,12 @@ roadMeshSystem = new RoadMeshSystem(
   worldSeed  // D-03: roadQuality determinism requires the world seed
 )
 
-// FEAT-06: prop system — needs terrain (height/normal) + road (exclusion) samplers, both alive now.
-propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
-// FEAT-22/17/18: water — needs terrainSystem.rawHeightWorld, alive now. Seed-deterministic like props.
+// FEAT-22/17/18: water — needs terrainSystem.rawHeightWorld, alive now. Seed-deterministic like
+// props. BEFORE PropSystem: the scatter's waterAt sampler must see the current water from the very
+// first chunk, and BEFORE the first roadSystem.update(): setWaterNoGo (inside) reshapes the network.
 rebuildWaterSystem()
+// FEAT-06: prop system — needs terrain (height/normal) + road (exclusion) + water samplers, all alive now.
+propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
 // FEAT-06: live-tuning GUI (self-contained — attaches to the existing _gui, doesn't touch debug.js).
 addPropGui(_gui, {
   params: FLORA_PARAMS,

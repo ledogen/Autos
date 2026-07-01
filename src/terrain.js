@@ -408,6 +408,11 @@ export class TerrainSystem {
         // Kept null until set; all carve paths guard with this._roadSystem?.queryNearest check.
         this._roadSystem    = null
 
+        // FEAT-18: stream channel carve hook — set via setWaterCarve() (main.js injects a pure
+        // sampler over WaterSystem; terrain never imports water.js). null = no stream carve
+        // (headless gates / pre-wiring) → every height path byte-unchanged.
+        this._waterCarve    = null
+
         // Shared terrain material — one instance, reused across all chunks.
         // vertexColors:true enables the 5-zone feathered material system (D-09/D-10/D-11,
         // Plan 09-05). Per-vertex colors written in _flushPendingQueue.
@@ -609,6 +614,32 @@ export class TerrainSystem {
     }
 
     /**
+     * FEAT-18: attach the stream-channel carve sampler (main.js injects it over WaterSystem —
+     * terrain.js never imports water.js, same decoupling as the road carve's setRoadSystem).
+     * The carve is blended MAIN-THREAD ONLY (the Worker returns raw heights — see WORKER_SOURCE
+     * "DOES NOT bake carve into heights"), so no WORKER_SOURCE mirror exists or is needed.
+     *
+     * THE height composition:
+     *     hStream = raw + sw·(bedY − raw)                    stream channel cuts RAW terrain
+     *     MESH    = hStream + bw·(1−sw)·(gradeY − hStream)   sampleHeight + the three chunk-Y
+     *                                                        writers (_composeCarvedY): the road
+     *                                                        carve is suppressed inside a channel,
+     *                                                        so the crossing shows a channel NOTCH
+     *     PHYSICS = hStream + bw·(gradeY − hStream)          analyticHeight: UN-suppressed — the
+     *                                                        road core pulls the surface to gradeY
+     * At a crossing the road RIBBON mesh (which follows gradeY, not terrain) spans the mesh
+     * notch = the bridge deck; physics rides it (fill AND cut). Collision agrees with the
+     * union of terrain mesh + ribbon mesh — the FEAT-18 "roads always bridge streams" v1
+     * (proper deck/abutment geometry is the FEAT-08 shared span builder, later).
+     *
+     * @param {object|null} waterCarve — { streamsNear(x0,z0,x1,z1)→streams,
+     *   sampleAt(x,z,streams?,raw?)→{blendW,bedY} } (bedY + raw WORLD-space), or null to detach.
+     */
+    setWaterCarve(waterCarve) {
+        this._waterCarve = waterCarve ?? null
+    }
+
+    /**
      * Path B rebuild: dispose ALL built chunk meshes, clear all state, re-request ring
      * on the next update() call. Use after seed/coarse-param changes.
      * The _pendingWorker race-fix ordering is preserved: _pendingWorker is cleared here
@@ -698,14 +729,27 @@ export class TerrainSystem {
         if (!this._noiseCoarse) throw new Error('analyticHeight called before reinitWorker — call-order bug')
         const raw = height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params) * (this._params.terrainAmplitude ?? 1.0)
 
+        // FEAT-18: stream channel carve of the RAW terrain (see setWaterCarve for the composition).
+        let hs = raw
+        if (this._waterCarve) {
+            const s = this._waterCarve.sampleAt(wx, wz, undefined, raw)
+            if (s.blendW > 1e-6) hs = raw + s.blendW * (s.bedY - raw)
+        }
+
         // Phase 9 carve hook (SURF-04): blend road design grade into terrain height at on-road positions.
         // CARVE SYNC: identical blend formula as _flushPendingQueue, sampleHeight, and Worker height loop.
         // rawAmp is passed to _sampleCarveWorld to avoid re-calling analyticHeight (infinite recursion).
+        // FEAT-18 bridge deck: the PHYSICS surface uses the UN-suppressed road blend over the
+        // stream-carved terrain — at a crossing the road core pulls the surface to gradeY (wheels
+        // ride the ribbon-deck, in fill AND in cut), the channel holds off-road, and the blend is
+        // smooth between. The terrain MESH uses the (1−sw)-suppressed formula instead (the channel
+        // notch the ribbon spans) — see _composeCarvedY; the rendered deck at the crossing is the
+        // road RIBBON mesh, which follows gradeY, so collision agrees with the union of the meshes.
         if (this._roadSystem) {
             const c = this._roadSystem._sampleCarveWorld(wx, wz, raw, nrHint)
-            if (c && c.blendW > 1e-6) return raw + c.blendW * (c.gradeY - raw)
+            if (c && c.blendW > 1e-6) return hs + c.blendW * (c.gradeY - hs)
         }
-        return raw
+        return hs
     }
 
     /**
@@ -785,21 +829,31 @@ export class TerrainSystem {
 
         // Phase 9 carve hook (SURF-04/SURF-05): same blend as analyticHeight (height-agreement path).
         // CARVE SYNC: identical blend formula as analyticHeight, _flushPendingQueue, Worker height loop.
+        // FEAT-18: composed with the per-chunk stream table exactly as the mesh Y write (this is the
+        // MESH surface — no bridge-deck floor here; physics rides analyticHeight).
+        const i00  = (zi       * N +  xi   ) * 2
+        const i10  = (zi       * N + (xi+1)) * 2
+        const i01  = ((zi + 1) * N +  xi   ) * 2
+        const i11  = ((zi + 1) * N + (xi+1)) * 2
+        const cw00 = (1-fx) * (1-fz), cw10 = fx * (1-fz)
+        const cw01 = (1-fx) * fz,     cw11 = fx * fz
+        let sw = 0, hs = rawAmp
+        if (chunk.streamData) {
+            const sd = chunk.streamData
+            sw = sd[i00]*cw00 + sd[i10]*cw10 + sd[i01]*cw01 + sd[i11]*cw11
+            if (sw > 1e-6) {
+                const bedY = sd[i00+1]*cw00 + sd[i10+1]*cw10 + sd[i01+1]*cw01 + sd[i11+1]*cw11  // world-space
+                hs = rawAmp + sw * (bedY - rawAmp)
+            } else sw = 0
+        }
         if (chunk.carveData) {
-            // Reuse xi, zi, fx, fz already computed above (same lx/lz/cell).
-            const i00  = (zi       * N +  xi   ) * 2
-            const i10  = (zi       * N + (xi+1)) * 2
-            const i01  = ((zi + 1) * N +  xi   ) * 2
-            const i11  = ((zi + 1) * N + (xi+1)) * 2
-            const cw00 = (1-fx) * (1-fz), cw10 = fx * (1-fz)
-            const cw01 = (1-fx) * fz,     cw11 = fx * fz
             const cd   = chunk.carveData
             const blendW = cd[i00]*cw00 + cd[i10]*cw10 + cd[i01]*cw01 + cd[i11]*cw11
             // gradeY_preamp → world-space by multiplying by amp (CARVE SYNC)
             const gradeY = (cd[i00+1]*cw00 + cd[i10+1]*cw10 + cd[i01+1]*cw01 + cd[i11+1]*cw11) * (this._params.terrainAmplitude ?? 1.0)
-            if (blendW > 1e-6) return rawAmp + blendW * (gradeY - rawAmp)
+            if (blendW > 1e-6) return hs + blendW * (1 - sw) * (gradeY - hs)
         }
-        return rawAmp
+        return hs
     }
 
     /**
@@ -902,18 +956,13 @@ export class TerrainSystem {
                 const [cx, cz] = key.split(',').map(Number)
                 const newCarveData = this._buildCarveTable(cx, cz, chunk.heights)   // PERF-03 #1: reuse stored raw heights
                 // Re-apply heights + carve blend to the mesh Y positions (same formula as _flushPendingQueue).
+                // FEAT-18: chunk.streamData is reused as-is — streams are a pure fn of (seed, water
+                // params), independent of the road generation this pass reconciles.
                 const amp = this._params.terrainAmplitude ?? 1.0
                 const N   = GRID_SAMPLES
                 const pos = chunk.mesh.geometry.attributes.position
                 for (let i = 0; i < N * N; i++) {
-                    const raw = chunk.heights[i] * amp
-                    if (newCarveData) {
-                        const blendW = newCarveData[i * 2]
-                        const gradeY = newCarveData[i * 2 + 1] * amp
-                        pos.setY(i, raw + blendW * (gradeY - raw))
-                    } else {
-                        pos.setY(i, raw)
-                    }
+                    pos.setY(i, this._composeCarvedY(chunk.heights[i] * amp, newCarveData, chunk.streamData, i, amp))
                 }
                 pos.needsUpdate = true
                 chunk.mesh.geometry.computeBoundingSphere()  // PERF-05 pooling fix: keep frustum-cull bounds in sync with re-carved Y
@@ -971,16 +1020,12 @@ export class TerrainSystem {
             // Re-apply the road carve blend (raw + blendW*(gradeY-raw)) — same formula as
             // _flushPendingQueue / the re-carve path. Without it the mesh snaps back to RAW
             // height and buries the road trough (the ribbon stays at graded Y). CARVE SYNC.
+            // FEAT-18 known debug-slider limitation: chunk.streamData bedY is WORLD-space, baked at
+            // build amp — after an amplitude change the channel bed is stale until the chunk cycles
+            // (water detection itself is amp-baked the same way; ponds drift too). Dev-slider only.
             const carveData = chunk.carveData
             for (let i = 0; i < N * N; i++) {
-                const raw = chunk.heights[i] * amp
-                if (carveData) {
-                    const blendW = carveData[i * 2]
-                    const gradeY = carveData[i * 2 + 1] * amp  // gradeY_preamp → world-space
-                    pos.setY(i, raw + blendW * (gradeY - raw))
-                } else {
-                    pos.setY(i, raw)
-                }
+                pos.setY(i, this._composeCarvedY(chunk.heights[i] * amp, carveData, chunk.streamData, i, amp))
             }
             pos.needsUpdate = true
             chunk.mesh.geometry.computeBoundingSphere()  // PERF-05 pooling fix: keep frustum-cull bounds in sync with re-carved Y
@@ -988,6 +1033,56 @@ export class TerrainSystem {
             // Re-write vertex colors after Y + normals are updated (D-09/D-10/D-11).
             this._writeChunkVertexColors(chunk.mesh.geometry, carveData, chunk.heights, amp, cx, cz)
         }
+    }
+
+    /**
+     * FEAT-18: per-chunk stream-channel table — the stream analogue of _buildCarveTable.
+     * Layout Float32Array [sw_0, bedY_0, sw_1, bedY_1, ...] (row-major, index = zi*N + xi).
+     * bedY is WORLD-space (WaterSystem heights already include terrainAmplitude), unlike
+     * carveData's pre-amp gradeY — so it is NOT amp-rescaled at blend time. null when no water
+     * is wired or no stream channel touches the chunk (the common case — cheap bbox reject).
+     * Pure fn of (cx, cz, waterSystem) → window-invariant. @private
+     */
+    _buildStreamTable(cx, cz, rawHeights) {
+        if (!this._waterCarve) return null
+        const N = GRID_SAMPLES, S = CHUNK_SIZE, cell = S / (N - 1)
+        const ox = cx * S, oz = cz * S
+        const PAD = 16   // m — > streamWidth + streamBankWidth: any channel reaching into the chunk
+        const streams = this._waterCarve.streamsNear(ox - PAD, oz - PAD, ox + S + PAD, oz + S + PAD)
+        if (!streams || streams.length === 0) return null
+        const amp = this._params.terrainAmplitude ?? 1.0
+        const table = new Float32Array(N * N * 2)
+        let touched = false
+        for (let zi = 0; zi < N; zi++) {
+            for (let xi = 0; xi < N; xi++) {
+                const idx = zi * N + xi
+                // raw world-space height — the multi-channel min-composition tie-breaker.
+                const s = this._waterCarve.sampleAt(ox + xi * cell, oz + zi * cell, streams, rawHeights[idx] * amp)
+                if (s.blendW > 1e-6) {
+                    table[idx * 2] = s.blendW; table[idx * 2 + 1] = s.bedY
+                    touched = true
+                }
+            }
+        }
+        return touched ? table : null
+    }
+
+    /**
+     * FEAT-18: THE mesh vertex-height composition (see setWaterCarve for the derivation) — shared
+     * by the three mesh Y-write loops (_flushPendingQueue, recarve, rebuildAllChunks) so they can
+     * never drift. raw + streamData bedY world-space; carveData gradeY pre-amp (×amp here). @private
+     */
+    _composeCarvedY(raw, carveData, streamData, i, amp) {
+        let sw = 0, h = raw
+        if (streamData) {
+            sw = streamData[i * 2]
+            if (sw > 1e-6) h = raw + sw * (streamData[i * 2 + 1] - raw); else sw = 0
+        }
+        if (carveData) {
+            const bw = carveData[i * 2]
+            if (bw > 1e-6) h = h + bw * (1 - sw) * (carveData[i * 2 + 1] * amp - h)
+        }
+        return h
     }
 
     /**
@@ -1429,21 +1524,17 @@ export class TerrainSystem {
             let _pt = performance.now()
             const carveData = this._buildCarveTable(cx, cz, heights)   // PERF-03 #1: reuse the Worker's raw heights
             perfAdd('flush.buildCarveTable', performance.now() - _pt)
+            // FEAT-18: stream-channel table (null when no channel touches the chunk — the common case).
+            _pt = performance.now()
+            const streamData = this._buildStreamTable(cx, cz, heights)
+            perfAdd('flush.buildStreamTable', performance.now() - _pt)
             const pos = geom.attributes.position
             const amp = this._params.terrainAmplitude ?? 1.0
             for (let i = 0; i < N * N; i++) {
-                // heights[i] is pre-amplitude (raw from Worker, possibly with pre-amp carve from Worker).
-                // Apply amp to get world-space height; then if carveData available on main thread,
-                // verify and apply carve. The carveData[i*2+1] is gradeY_preamp — multiply by amp.
-                // CARVE SYNC: raw + blendW*(gradeY-raw) — identical to analyticHeight and sampleHeight.
-                const raw = heights[i] * amp
-                if (carveData) {
-                    const blendW = carveData[i * 2]
-                    const gradeY = carveData[i * 2 + 1] * amp  // gradeY_preamp → world-space
-                    pos.setY(i, raw + blendW * (gradeY - raw))
-                } else {
-                    pos.setY(i, raw)
-                }
+                // heights[i] is pre-amplitude (raw from Worker). Apply amp for world-space, then the
+                // shared stream+road composition (_composeCarvedY — FEAT-18 + CARVE SYNC formula,
+                // identical to analyticHeight's mesh branch and sampleHeight).
+                pos.setY(i, this._composeCarvedY(heights[i] * amp, carveData, streamData, i, amp))
             }
             pos.needsUpdate = true
             // PERF-05 pooling fix: a recycled geometry carries the PREVIOUS chunk's cached
@@ -1489,6 +1580,7 @@ export class TerrainSystem {
             // _updateChunkRing re-carves chunks whose stored version ≠ roadGeneration()).
             this._chunkMap.set(key, {
                 mesh, heights, carveData: carveData ?? null,
+                streamData: streamData ?? null,   // FEAT-18: stream table (sampleHeight + recarve/amp paths reuse it)
                 builtRoadGeneration: this._roadSystem?.roadGeneration() ?? -1,
             })
 
