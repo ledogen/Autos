@@ -76,6 +76,13 @@ The `ROUTE SYNC` region of `src/road-carve.js` is already mirrored into a Worker
 reuses that routing code; window-invariance (pure fn of seed+coords) is what makes an off-thread build
 byte-identical to the main thread.
 
+**Scope guardrail — TWO workers total, split by cadence not algorithm.** Terrain-gen (latency-critical,
+frequent) + this network/route worker (bursty, can-wait). Do NOT add a carve worker: `_buildCarveTable`
+sits at the terrain+route CONFLUENCE (needs heights AND routed centerlines), so a carve worker means
+shipping both inputs cross-worker + another SYNC copy + a round-trip the terrain latency can't afford —
+it's ~3.4 ms/frame main-thread today with no frame drops, cheaper to leave put. Target is the iGPU floor
+(~2 cores): a 3rd+ worker just adds idle threads + contention.
+
 ## Notes / direction (from FEAT-16 profiling)
 
 - The cost is ENTIRELY `_streamNetwork` route computation; `_sliceNetwork` + `crossingList()` are
