@@ -29,7 +29,7 @@
 import * as THREE from 'three'
 import { buildPalette } from './prop-palette.js'
 import { scatterChunk } from './prop-scatter.js'
-import { sphereVsSphere, sphereVsCapsuleY, bushDrag } from './prop-collider.js'
+import { sphereVsSphere, sphereVsCapsuleY, sphereVsMeshInstance, bushDrag } from './prop-collider.js'
 import { FLORA_PARAMS } from '../../data/flora.js'
 
 // Per-category global instance capacity (split evenly across that category's variants). Sized for
@@ -141,6 +141,7 @@ export class PropSystem {
       if (col) collidables.push({
         kind: col.kind, x: pl.x, y: pl.y, z: pl.z,
         radius: col.radius, height: col.height || 0, scale: pl.scale,
+        rotY: pl.rotY, tris: col.tris,   // rotY/tris used by 'mesh' (boulder) contacts; undefined otherwise
       })
     }
     this._chunks.set(ck, owned)
@@ -245,6 +246,13 @@ export class PropSystem {
         hit = sphereVsCapsuleY(cx, cy, cz, r, c.x, c.z, c.y, c.y + c.height * c.scale, capR)
       } else if (c.kind === 'sphere') {
         hit = sphereVsSphere(cx, cy, cz, r, c.x, c.y, c.z, c.radius * c.scale * C.rockRadiusScale)
+      } else if (c.kind === 'mesh') {
+        // BUG-22c: boulder — broad-phase reject against the bounding sphere, then exact triangle test.
+        const cullR = r + c.radius * c.scale
+        const dx = cx - c.x, dy = cy - c.y, dz = cz - c.z
+        if (dx * dx + dy * dy + dz * dz < cullR * cullR) {
+          hit = sphereVsMeshInstance(cx, cy, cz, r, c.tris, c.x, c.y, c.z, c.rotY, c.scale)
+        }
       }
       if (hit) {
         const t = r - hit.depth   // distance from query centre to the solid surface along -normal

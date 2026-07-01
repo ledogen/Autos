@@ -1,7 +1,9 @@
 ---
 id: BUG-27
 type: bug
-status: open
+status: completed
+resolved: 2026-06-30
+resolution: "Two parts. (a) BUG-27: accumulated projected Gauss-Seidel body-contact solver + restitution 0 + tamed Baumgarte (src/physics.js), commit 57c5c37 — hard slams strictly dissipative, no launch; new gate test/body-contact-energy.mjs. (b) BUG-27b: BODY_FRICTION_MU 0.6→0.1 (commit b0d3c41) — normal stays damped but tangential slides (slippery), so a bumper grazing the road no longer stops the truck dead. Both verified in-browser by user."
 opened: 2026-06-30
 severity: medium
 source: user-report

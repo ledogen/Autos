@@ -36,7 +36,8 @@ const GATES = [
     'graph-topology.mjs',   // FEAT-13 v2: graph mode (roadNetworkMode:graph) — blue-noise + Urquhart: reachability, window-invariance, direction variety, step-free inter-edge surface
     'props.mjs',            // FEAT-06: prop geometry sanity + scatter determinism/window-invariance + slot accounting
     'prop-road-clearance.mjs', // BUG-23: no hard-collidable prop (centre-or-overhang) on the road footprint (inflated keep-out)
-    'rock-collision-proxy.mjs', // BUG-22: rock/boulder hard-contact proxy fits the visible bulk (no overshoot air-gap → no spurious sideways shove)
+    'rock-collision-proxy.mjs', // BUG-22: ROCK hard-contact sphere proxy fits the visible surface (no overshoot air-gap → no spurious sideways shove)
+    'rock-collision-mesh.mjs',  // BUG-22c: BOULDERS collide vs their actual triangle mesh (exact visible surface, no sphere overshoot)
     'penetration-failsafe.mjs', // BUG-24: catastrophic-penetration failsafe fires only on true tunnels (depth>wheelRadius), not resolvable deep contact — no body teleport on the shoulder step
     'body-contact-energy.mjs',  // BUG-27: hard body slams are strictly dissipative (restitution≈0, accumulated-impulse solver, tamed Baumgarte) — no phantom spin, no launch, rest stays stable
 ]

@@ -83,7 +83,15 @@ function bakeBlobs(P, rng, kind) {
     }, rng)
     fillColor(geo, P.color)
     let collision = null
-    if (kind === 'sphere') {
+    if (kind === 'mesh') {
+      // BUG-22c: boulders collide against their ACTUAL visible mesh (few boulders, low-poly → cheap).
+      // No sphere proxy can match a lumpy 20 m boulder — the truck either hit "air" (overshoot) or the
+      // sphere sat inside the rock. queryProps tests the vehicle probe vs these triangles directly, so
+      // collision lands exactly on the surface the player sees. `radius` is the full boundingSphere =
+      // broad-phase cull only (never miss an outer lump); the triangle-soup is the narrow phase.
+      geo.computeBoundingSphere()
+      collision = { kind, radius: geo.boundingSphere.radius, tris: new Float32Array(geo.attributes.position.array) }
+    } else if (kind === 'sphere') {
       // BUG-22/22b: collide against the VISIBLE BOUNDARY, derived from the ACTUAL baked mesh. makeBlob
       // displaces vertices symmetrically (r·(1+irregularity·n), n∈[-1,1]), so the MEAN horizontal reach
       // sits at the CENTRE of the lumps — basing the proxy there (× mean axis) put the sphere far INSIDE
@@ -128,7 +136,7 @@ export function buildPalette(worldSeed, params = FLORA_PARAMS) {
     aspen:     bakeAspen(params.aspen, rng),
     pine:      bakePine(params.pine, rng),
     rock:      bakeBlobs(params.rock, rng, 'sphere'),
-    boulder:   bakeBlobs(params.boulder, rng, 'sphere'),
+    boulder:   bakeBlobs(params.boulder, rng, 'mesh'),
     smallRock: bakeBlobs(params.smallRock, rng, 'none'),
     bush:      bakeBlobs(params.bush, rng, 'bush'),
   }
