@@ -1,11 +1,13 @@
 ---
 id: QUAL-04
 type: quality
-status: open
+status: completed
 opened: 2026-06-23
 severity: trivial
 source: user-request
 note: "Request only — NOT being implemented yet. Dev-ergonomics: a visible build identifier so you can confirm at a glance WHICH build the browser actually loaded (GitHub Pages deploy lag + browser cache make this ambiguous when testing perf/behavior changes)."
+resolved: 2026-06-30
+resolution: "Build row (debug panel) now probes the served main.js Last-Modified/ETag at load (src/version.js resolveBuild + src/debug.js), commit 7fb3220 — reflects the actually-loaded bundle, no manual stamp. Replaced a pre-existing stale hand-stamped constant. Verified in-browser by user."
 ---
 
 # QUAL-04: Visible build marker (commit hash / build id in the debug panel)

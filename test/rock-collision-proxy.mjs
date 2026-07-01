@@ -52,38 +52,37 @@ console.log('1. proxy radius tracks the visible BULK, not the outermost lump')
         const s = geoStats(entry.geo)
         const r = entry.collision.radius
         samples++
-        // tracks the bulk: within a band around the mean equatorial reach (substantial, no blow-out)
-        if (!(r >= 0.70 * s.meanEqHr && r <= 1.15 * s.meanEqHr)) allBulkFit = false
-        // strictly inside the outermost lump (so the truck no longer hits the outer-lump shell = air)
+        // BUG-22b: tied to the VISIBLE BOUNDARY — out at/above the mean equatorial reach (NOT far
+        // inside the rock), reaching toward the outer surface the player sees.
+        if (!(r >= s.meanEqHr)) allBulkFit = false
+        // still strictly inside the outermost lump (no uniform-sphere overshoot past the visible mesh).
         if (!(r < s.maxHr)) allTighter = false
       }
     }
   }
   ok(samples >= 16, `sampled rock+boulder variants across seeds (${samples})`)
-  ok(allBulkFit, 'every proxy radius sits within [0.70, 1.15]× the bulk (mean equatorial) reach')
+  ok(allBulkFit, 'every proxy radius reaches out to/past the mean equatorial surface (not far inside)')
   ok(allTighter, 'every proxy radius is strictly inside the outermost visible lump (no air-shell)')
 }
 
-console.log('2. no air-gap: a standoff that hit the OLD (boundingSphere) proxy now misses')
+console.log('2. proxy sits inside the outer-lump shell (no uniform-sphere overshoot) but at the surface')
 {
-  // Use the largest boulder variant (worst overshoot). Compare new bulk proxy vs the old maxR proxy.
+  // Use the largest boulder variant (worst overshoot risk). Compare new proxy vs the old maxR (bs) proxy.
   const { variants } = buildPalette(2024, P)
   let big = null, bigBs = 0
   for (const e of variants.boulder) { const s = geoStats(e.geo); if (s.bs > bigBs) { bigBs = s.bs; big = { e, s } } }
   const scale = 1.0
   const effNew = big.e.collision.radius * scale * ROCK_SCALE   // current effective collidable radius
-  const effOld = big.s.bs * scale * ROCK_SCALE                 // pre-fix effective collidable radius
-  ok(effNew < effOld - 1.0, `boulder proxy tightened by >1 m (old ${effOld.toFixed(2)} → new ${effNew.toFixed(2)})`)
+  const effOld = big.s.bs * scale * ROCK_SCALE                 // pre-fix (boundingSphere = outer spike) radius
+  // BUG-22b: proxy stays strictly inside the lone outer-spike shell (avoids the original air overshoot),
+  // yet reaches the visible surface (out past the mean bulk) — no longer far inside.
+  ok(effNew < effOld, `boulder proxy inside the outer-spike shell (old ${effOld.toFixed(2)} → new ${effNew.toFixed(2)})`)
+  ok(big.e.collision.radius > big.s.meanEqHr, `boulder proxy reaches past the mean bulk (${big.e.collision.radius.toFixed(2)} > mean ${big.s.meanEqHr.toFixed(2)})`)
 
-  // Standoff in the removed overshoot band: truck would have penetrated the OLD shell, but is now clear.
-  const dAir = effOld + R_TRUCK - 0.3      // 0.3 m inside the old surface
-  const air = sphereVsSphere(big.s.bs * 0 + dAir, 0, 0, R_TRUCK, 0, 0, 0, effNew)  // rock at origin
-  ok(air === null, `standoff ${dAir.toFixed(2)} m (inside old shell) → NO contact under the bulk proxy`)
-
-  // But genuinely touching the bulk still contacts, with a sane outward (horizontal) normal + small depth.
+  // Genuinely touching the visible surface still contacts, with a sane outward (horizontal) normal + small depth.
   const dHit = effNew + R_TRUCK - 0.1
   const hit = sphereVsSphere(dHit, 0, 0, R_TRUCK, 0, 0, 0, effNew)
-  ok(hit && hit.depth > 0 && hit.depth < 0.25, `touching the bulk → contact with small depth (${hit ? hit.depth.toFixed(3) : 'none'})`)
+  ok(hit && hit.depth > 0 && hit.depth < 0.25, `touching the surface → contact with small depth (${hit ? hit.depth.toFixed(3) : 'none'})`)
   ok(hit && hit.nx > 0.99 && Math.abs(hit.ny) < 1e-6, 'contact normal points outward (away from rock), not launching')
 }
 

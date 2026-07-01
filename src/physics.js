@@ -113,7 +113,12 @@ function getBrakeTorque (wheelIndex, vehicleState, params) {
 // undercarriage probes × 8 Gauss-Seidel passes, launching the car. e=0 makes the normal impulse
 // kill all approach velocity (maximally dissipative) while leaving resting contact dead-stopped.
 const BODY_RESTITUTION  = 0.0   // fully plastic: hard hits thud and stay, no rebound (BUG-27)
-const BODY_FRICTION_MU  = 0.6   // Coulomb friction coefficient for body contact surfaces
+// BUG-27b: body contact is SLIPPERY — damp the NORMAL (arrest sink-in, no launch) but do NOT
+// arrest tangential/forward slide. At mu=0.6 a bumper grazing the road while crossing the shoulder
+// saturated friction (jf = vt/invEffMassT ≤ 0.6·accumN) and stopped the truck DEAD. A low mu caps
+// the tangential impulse well below full arrest, so the frame slides along the surface (steel-on-
+// dirt is slippery) while the plastic normal still kills the springy bounce. Only the normal is damped.
+const BODY_FRICTION_MU  = 0.1   // slippery body contact — normal-damped, tangential slides (BUG-27b)
 
 export function stepPhysics (vehicleState, params, dt, queryContacts, queryVertexContacts) {
   // ── Step 0: Rotation helper ────────────────────────────────────────────────

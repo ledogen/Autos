@@ -1,7 +1,9 @@
 ---
 id: BUG-29
 type: bug
-status: open
+status: completed
+resolved: 2026-06-30
+resolution: "Texel-snapped the sun shadow frustum to the shadow-map grid in the light's view basis (src/main.js), commit 6f609ce. Verified in-browser by user — shadow edges stay locked, no shimmer."
 opened: 2026-06-30
 severity: minor
 source: user-report

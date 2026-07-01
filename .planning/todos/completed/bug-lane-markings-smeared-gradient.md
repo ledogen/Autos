@@ -1,7 +1,9 @@
 ---
 id: BUG-28
 type: bug
-status: open
+status: completed
+resolved: 2026-06-30
+resolution: "Markings moved from interpolated vertex-colours to a per-fragment shader (aMark attribute + fwidth-antialiased masks + arc-based dashes) in src/road-mesh.js, commit 687e6bd. FEAT-05 shoulder isolation preserved; junction pads suppress the stripe. Verified in-browser by user — crisp lines, no smear."
 opened: 2026-06-30
 severity: medium
 source: user-report

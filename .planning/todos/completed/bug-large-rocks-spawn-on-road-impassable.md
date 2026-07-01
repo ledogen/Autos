@@ -1,7 +1,9 @@
 ---
 id: BUG-23
 type: bug
-status: open
+status: completed
+resolved: 2026-06-30
+resolution: "Radius-aware road keep-out — scatter now inflates the road exclusion by the prop's bounding radius so no collidable rock/boulder overhangs the ribbon (src/props/prop-scatter.js + roadClear sampler in src/main.js), commit 786b549. New gate test/prop-road-clearance.mjs. Verified in-browser by user — no rocks blocking lanes."
 opened: 2026-06-27
 severity: high
 source: user-observation

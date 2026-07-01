@@ -1,7 +1,9 @@
 ---
 id: FEAT-19
 type: feature
-status: open
+status: completed
+resolved: 2026-06-30
+resolution: "Junction flatten now eases gradeY toward a slope-preserving grade LINE (through-road grade projected) instead of a scalar nodeY, in _applyJunctionBlend + _applyMidspanJunctionBlend (src/road.js), commit 9b91d9a. Through road keeps its grade; joining road matches it. All road gates green. Verified in-browser by user ('good enough to call completed'). NOTE: junction footprint pad-mesh visual polish on slopes is deferred to QUAL-10 — user is hoping QUAL-10 improves the smoothness further."
 opened: 2026-06-30
 severity: minor
 source: user-request

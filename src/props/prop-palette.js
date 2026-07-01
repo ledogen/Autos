@@ -84,13 +84,27 @@ function bakeBlobs(P, rng, kind) {
     fillColor(geo, P.color)
     let collision = null
     if (kind === 'sphere') {
-      // BUG-22: collide against the VISIBLE BULK, not the boundingSphere max-vertex. The blob's
-      // boundingSphere radius sits on its OUTERMOST lump (radius·(1+irregularity)), so a hard sphere
-      // of that size overshoots the typical surface — worst on huge/partly-buried boulders, where the
-      // truck hit "air" metres before the visible rock and took a spurious sideways shove off the road.
-      // The nominal horizontal radius (drawn radius × mean ground-plane axis) tracks the dome the truck
-      // actually touches; rockRadiusScale (live, prop-system query) still insets it for lumpiness.
-      const rBulk = drawnRadius * (b.axisScale[0] + b.axisScale[2]) / 2
+      // BUG-22/22b: collide against the VISIBLE BOUNDARY, derived from the ACTUAL baked mesh. makeBlob
+      // displaces vertices symmetrically (r·(1+irregularity·n), n∈[-1,1]), so the MEAN horizontal reach
+      // sits at the CENTRE of the lumps — basing the proxy there (× mean axis) put the sphere far INSIDE
+      // the rock (truck penetrated the visible surface before contacting), and rockRadiusScale then inset
+      // it further. But the theoretical outer surface r·(1+irregularity) OVERSHOOTS the real mesh: value
+      // noise on a low-poly icosphere never realises the full ±1 amplitude, so that formula exceeded the
+      // actual boundingSphere. So measure the geometry directly: take a high PERCENTILE of the equatorial-
+      // band horizontal reach — the flanks the truck actually contacts — which sits AT the visible surface
+      // while ignoring the single outermost spike (whose uniform-sphere use was the original overshoot).
+      const pos = geo.attributes.position
+      let maxAbsY = 0
+      for (let v = 0; v < pos.count; v++) { const ay = Math.abs(pos.getY(v)); if (ay > maxAbsY) maxAbsY = ay }
+      const flankHr = []
+      for (let v = 0; v < pos.count; v++) {
+        if (Math.abs(pos.getY(v)) < 0.4 * maxAbsY) flankHr.push(Math.hypot(pos.getX(v), pos.getZ(v)))
+      }
+      flankHr.sort((p, q) => p - q)
+      // 90th-percentile flank reach = out at the visible surface, short only of the lone widest lump.
+      // (The live rockRadiusScale 0.92 insets this a touch, landing the effective sphere on the flank —
+      // not the mean bulk it sat at before, which read as "collision far inside the rock".)
+      const rBulk = flankHr[Math.floor(0.9 * (flankHr.length - 1))]
       collision = { kind, radius: rBulk }
     } else if (kind === 'bush') {
       // Bush soft-drag extent is the full visual reach (unchanged) — it's a gentle field, not a wall.
