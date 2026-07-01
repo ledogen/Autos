@@ -171,6 +171,30 @@ export const RANGER_PARAMS = {
   regionalStrength: 1,     // 0=uniform, 1=full modulation (valley vs hillside roughness)
   regionalScale:    500,   // m — modulator wavelength
 
+  // ── Water features (FEAT-22 / FEAT-17 ponds / FEAT-18 streams) ────────────
+  // Consumed by src/water.js (WaterSystem). NOT yet wired into the running game —
+  // present here as the USER-OWNED tunable set (mirrors WATER_DEFAULTS in water.js).
+  // Detection reads RAW terrain height only (carve-free); every knob feeds a
+  // bounded, window-invariant computation (no random dice roll — see minBasinDepth).
+  water: {
+    // Ponds (FEAT-17, Plan-B rim fill):
+    minBasinDepth:    12,   // m — RARITY DIAL: rim-above-floor closure depth to qualify a basin
+    pondMaxRadius:    50,   // m — footprint cap (~100 m diameter; ponds, not lakes)
+    pondSearchRadius: 64,   // m — rim ray-cast reach (≥ pondMaxRadius)
+    pondRimSamples:   24,   // rays cast to find the rim (lowest ring peak = spill proxy)
+    pondFreeboard:    1.5,  // m — waterLevel = rimHeight − freeboard (never overflows)
+    pondSkirtWidth:   10,   // m — shoreline buffer: no road gen + scatter ground (FEAT-06)
+    // Streams (FEAT-18, saddle-sourced gradient-descent trace):
+    saddleMinDrop:    18,   // m — min traced descent to keep a stream (prominence/rarity dial)
+    streamMinLength:  120,  // m — drop shorter trickles
+    streamStep:       8,    // m — descent step length
+    streamMaxLength:  1400, // m — hard cap on a trace (bounds the stream query margin)
+    streamWidth:      3,    // m — channel bed half-width
+    streamDepth:      2.5,  // m — bed cut below surrounding terrain
+    streamBankWidth:  5,    // m — bank ramp width (each side)
+    streamWaterDepth: 0.6,  // m — water surface above the bed (render ribbon)
+  },
+
   // rampEnabled: when false, ramp triangles are skipped in queryContacts + queryVertexContacts,
   // and rampMesh.visible is set false via the setRampVisible callback in debug.js.
   rampEnabled: true,       // ramp collision + visibility toggle

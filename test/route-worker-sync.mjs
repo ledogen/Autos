@@ -1,8 +1,9 @@
 // test/route-worker-sync.mjs — PERF-03 Workstream A determinism gate.
 //
 // Road routing (arcPrimitiveConnect + dubins helpers + search scratch) is copied VERBATIM from the
-// canonical src/road-carve.js "ROUTE SYNC" region into the terrain Worker (WORKER_SOURCE in
-// src/terrain.js) so it can run off the main thread. The pre-warmed route cache is only safe if the
+// canonical src/road-carve.js "ROUTE SYNC" region into the dedicated road-network Worker
+// (ROAD_WORKER_SOURCE in src/road-worker.js) so it can run off the main thread. (QUAL-08 moved this
+// mirror out of the terrain Worker — terrain is now heightfield-only, see BUG-26.) The pre-warmed route cache is only safe if the
 // worker's routes are byte-identical to the main-thread synchronous fallback — i.e. the two copies of
 // the code agree. This gate asserts that, catching copy drift (the one new failure mode WS-A adds).
 //
@@ -16,11 +17,11 @@ import { dirname, join } from 'node:path'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '..')
 const carve   = readFileSync(join(ROOT, 'src/road-carve.js'), 'utf8')
-const terrain = readFileSync(join(ROOT, 'src/terrain.js'), 'utf8')
+const worker  = readFileSync(join(ROOT, 'src/road-worker.js'), 'utf8')
 
 const START    = '// ── arcPrimitiveConnect search scratch'
 const CARVE_END = '// ROUTE SYNC END'
-const TERR_END  = '// ROUTE SYNC END (verbatim mirror'
+const WORK_END  = '// ROUTE SYNC END (verbatim mirror'
 
 function region(src, start, end, label) {
   const a = src.indexOf(start), b = src.indexOf(end)
@@ -36,7 +37,7 @@ const canon = region(carve, START, CARVE_END, 'road-carve.js')
   .replace(/^export function arcPrimitiveConnect/m, 'function arcPrimitiveConnect')
 
 // Worker copy: reverse the template-literal escaping applied when it was spliced in.
-const copy = region(terrain, START, TERR_END, 'terrain.js WORKER_SOURCE')
+const copy = region(worker, START, WORK_END, 'road-worker.js ROAD_WORKER_SOURCE')
   .replace(/\\\$\{/g, '${')
   .replace(/\\`/g, '`')
   .replace(/\\\\/g, '\\')

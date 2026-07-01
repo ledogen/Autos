@@ -49,6 +49,7 @@ export class Map2D {
 
         this._open       = false
         this._road       = null          // the map's own RoadSystem; KEPT ALIVE across opens (route cache)
+        this._routeWorker = null         // QUAL-08: dedicated road-network Worker (client 'map'); set via setRouteWorker
         this._sig        = null          // seed+road-param signature the current _road was built for
         this._streamAt   = null          // THREE.Vector3 the network was last streamed around
         this._streamTimer = 0            // pan-debounce handle
@@ -82,6 +83,11 @@ export class Map2D {
         this._onUp    = this._onMouseUp.bind(this)
         this._onWheel = this._onWheelEvent.bind(this)
     }
+
+    // QUAL-08: attach the dedicated road-network routing Worker so the map's read-only RoadSystem routes
+    // OFF the main thread (client 'map'), decoupled from the play/terrain pipeline. Optional — without it
+    // the map falls back to synchronous routing (its prior behaviour). Wired in _buildRoad on (re)build.
+    setRouteWorker(rw) { this._routeWorker = rw }
 
     isOpen() { return this._open }
 
@@ -149,6 +155,13 @@ export class Map2D {
         this._streamAt = null
         this._streamFull = false
         this._streamStep = 0
+        // QUAL-08: route this instance off-thread via the shared road-network Worker (client 'map'). The
+        // stable 'map' id swaps the instance on rebuild; old in-flight replies drop by the new instance's
+        // epoch. warmRoutes() (see _pump) then pre-warms the map cache off the main thread.
+        if (this._routeWorker) {
+            this._routeWorker.registerClient('map', this._road)
+            this._road.setRouteDispatcher((jobs, epoch) => this._routeWorker.postRouteJobs('map', jobs, epoch))
+        }
     }
 
     // Begin/restart the chunked stream around the current pan center: grow the radius through
@@ -171,6 +184,10 @@ export class Map2D {
         if (!this._open || !this._streaming) { this._streaming = false; return }
         const R = MAP_RADIUS_STEPS[this._streamStep]
         this._road.setRadius(R)
+        // QUAL-08: kick off-thread routing for this radius so the worker fills the map's route cache;
+        // the synchronous update below still routes on cache miss (fallback), but subsequent steps / pans
+        // / reopens over the same region hit the warmed cache instead of re-routing on the main thread.
+        this._road.warmRoutes(this._streamCenter)
         this._road.update(this._streamCenter)
         this._streamAt = this._streamCenter
         this._bgDirty = true

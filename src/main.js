@@ -38,6 +38,7 @@ import { SkySystem } from './sky.js'                        // QUAL-02: atmosphe
 import { parseWorldSeed, seedFor } from './seed.js'
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
+import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
 import { FLORA_PARAMS } from '../data/flora.js'
@@ -162,14 +163,13 @@ function computeStaticEquilibrium (p) {
   return { bodyY, strutComp }
 }
 
-// BUG-26: the road router and terrain heightfield generation SHARE one Web Worker (FIFO). Dispatching
-// route pre-warm jobs to it FLOODS the queue and STARVES terrain `generate` for seconds after a road
-// param change / while flying (probe: WORKER-STARVED, +recv=0, terrain void). Main-thread gating can't
-// fix it — once route jobs are in the Worker's FIFO they block later generates. So route ONLY on the main
-// thread (road.streamNetwork, ~3.5 ms/frame, no frame drops) and keep the Worker terrain-only: leave the
-// route dispatcher UNSET, so warmRoutes() no-ops and _streamNetwork routes synchronously on cache miss.
-// Flip to true only once routing has its OWN worker (so the two job classes never contend) — see BUG-26.
-const USE_WORKER_ROUTING = false
+// QUAL-08 (closes BUG-26): routing now runs on its OWN Worker (src/road-worker.js), separate from the
+// terrain heightfield Worker, so route pre-warm jobs can never starve terrain `generate` (the shared-FIFO
+// starvation that forced BUG-26 to route on the main thread). With the two job classes on two Workers the
+// pre-warm is safe to re-enable. Flip false to fall back to fully-synchronous main-thread routing (the
+// BUG-26-safe state) if the dedicated Worker ever regresses — the synchronous router stays the cache-miss
+// / teleport / headless fallback regardless.
+const USE_WORKER_ROUTING = true
 
 // ── resolveSpawn (D-14 / D-16) ───────────────────────────────────────────────────────────
 // Phase 8 COMPLETE (D-07 / D-16): Body now probes the road graph first (nearest road node +
@@ -213,12 +213,29 @@ function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
     const _graphSpawn = (params.roadNetworkMode ?? 'rows') === 'graph'
     const _spawnR = _graphSpawn ? Math.max(200, Math.round((params.roadSiteSpacing ?? 256) * 1.5)) : 200
     const _savedRadius = roadSystem._proto.radius
-    if (_graphSpawn) roadSystem.setRadius(Math.max(_savedRadius, _spawnR + 200))
+    // PERF (spawn pre-bake): the cold spawn stream cost scales with radius² (routing area). In graph mode
+    // the network is sparse, so the old single stream (query _spawnR=1.5×spacing + 200 m pad ≈ 1160 m)
+    // routed ~13× the play footprint synchronously — ~5–7 s of the load hitch. Probe a TIGHT radius first
+    // (~0.85× site spacing ≈ 544 m): it resolves the vast majority of seeds ~2× faster, and only widens to
+    // the full _spawnR horizon when the tight probe misses a sparse blue-noise gap. The WIDE tier is
+    // byte-identical to the old behaviour, so no seed that spawned on-road can now spawn off-road; the
+    // per-connection route cache persists across the two streams, so the widen only routes the new annulus.
+    // Headless-verified (scratchpad probe-spawn-final.mjs): 0 off-road / 15 seeds; 14 spawn IDENTICAL, the
+    // 1 that differs lands on a CLOSER on-road point (confirmed by the BUG-11 re-stream reconcile below).
+    const _tightR = Math.max(320, Math.round((params.roadSiteSpacing ?? 256) * 0.85))
+    const _spawnTiers = _graphSpawn
+      ? [[_tightR, _tightR + 128], [_spawnR, _spawnR + 200]]   // tight ≈672/544 → wide ≈1160/960 (== old)
+      : [[200, _savedRadius]]                                  // rows: unchanged — play radius, 200 m probe
+    let nearest = null
     perfMark('resolveSpawn: before ensureTile (cold network stream)')  // TEMP (D-arc)
-    roadSystem.ensureTile(baseTX, baseTZ)
+    for (const [_qR, _streamR] of _spawnTiers) {
+      roadSystem.setRadius(Math.max(_savedRadius, _streamR))
+      roadSystem.ensureTile(baseTX, baseTZ)
+      nearest = roadSystem.queryNearest(baseX, baseZ, _qR)
+      if (nearest) break   // tight tier hit → skip the wide stream entirely (the common, fast path)
+    }
     perfMark('resolveSpawn: cold network stream done')  // TEMP (D-arc)
-    let nearest = roadSystem.queryNearest(baseX, baseZ, _spawnR)
-    if (_graphSpawn) roadSystem.setRadius(_savedRadius)   // restore play radius (next update re-streams tight)
+    roadSystem.setRadius(_savedRadius)   // restore play radius (next update re-streams tight)
     if (nearest) {
       // BUG-11 spawn-off-road: the network the road is RENDERED from is whatever the per-frame
       // update() streams around the truck. The spawn point found above can be up to 200 m from
@@ -318,8 +335,14 @@ function debouncedRebuildFull () {
       roadSystem.setSurfaceSampler((x, z) => terrainSystem.analyticHeight(x, z))
       roadSystem.setRawHeightSampler((x, z) => terrainSystem.rawHeightWorld(x, z))  // CR-01: carve-free sampler for sampleDesignGradeAt
       roadSystem.setRadius(320)   // PERF (Tier 1): match the terrain ring, not 640 m — see initial setup
-      // BUG-26: only share the Worker for routing if it won't starve terrain (see USE_WORKER_ROUTING).
-      if (USE_WORKER_ROUTING) roadSystem.setRouteDispatcher((jobs, epoch) => terrainSystem.postRouteJobs(jobs, epoch))  // PERF-03 WS-A
+      // QUAL-08: re-seed the dedicated route Worker + re-register the new play RoadSystem instance (a new
+      // seed → a different deterministic network). The stable 'play' client id swaps the instance; old
+      // in-flight replies are dropped by the new instance's route epoch. See USE_WORKER_ROUTING.
+      if (USE_WORKER_ROUTING && roadWorker) {
+        roadWorker.init(worldSeed, RANGER_PARAMS)
+        roadWorker.registerClient('play', roadSystem)
+        roadSystem.setRouteDispatcher((jobs, epoch) => roadWorker.postRouteJobs('play', jobs, epoch))
+      }
       // Restore viz state — the next roadSystem.update(streamCenter) re-streams the new seed's
       // network and (because _debugVisible is set) rebuilds the centerline lines.
       roadSystem.setDebugVisible(wasVisible)
@@ -969,12 +992,19 @@ roadSystem.setRadius(320)
 // Constructed after both terrainSystem and roadSystem exist.
 // setRoadSystem() wires the carve hook in analyticHeight so physics feels the road surface.
 terrainSystem.setRoadSystem(roadSystem)
-// PERF-03 WS-A: let the road pre-warm its centerline cache off-thread via the terrain Worker, so the
-// per-crossing arc-search hitch never lands on the main thread. RoadSystem no-ops this when no
-// dispatcher is set (headless gates), keeping their behaviour unchanged.
-// BUG-26: DISABLED — sharing the Worker for routing starves terrain generation (WORKER-STARVED → void).
-// Route on the main thread only until routing gets its own Worker. See USE_WORKER_ROUTING.
-if (USE_WORKER_ROUTING) roadSystem.setRouteDispatcher((jobs, epoch) => terrainSystem.postRouteJobs(jobs, epoch))
+// QUAL-08: the road pre-warms its centerline cache off-thread via a DEDICATED road-network Worker
+// (not the terrain Worker — that's the BUG-26 fix), so the per-crossing arc-search hitch never lands on
+// the main thread AND route jobs never starve terrain generate. RoadSystem no-ops the dispatcher when
+// unset (headless gates / USE_WORKER_ROUTING=false), keeping the synchronous fallback behaviour.
+let roadWorker = null
+if (USE_WORKER_ROUTING) {
+  roadWorker = new RoadRouteWorker()
+  roadWorker.init(worldSeed, RANGER_PARAMS)
+  roadWorker.registerClient('play', roadSystem)
+  roadSystem.setRouteDispatcher((jobs, epoch) => roadWorker.postRouteJobs('play', jobs, epoch))
+  // QUAL-08: the Map2D dev overlay routes its own read-only network off the same Worker (client 'map').
+  map2d.setRouteWorker(roadWorker)
+}
 roadMeshSystem = new RoadMeshSystem(
   scene, roadSystem,
   (x, z) => terrainSystem.rawHeightWorld(x, z),  // CR-04: carve-free — no crown/camber/pothole baked into design-grade window

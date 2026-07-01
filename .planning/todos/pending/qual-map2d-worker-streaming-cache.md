@@ -117,3 +117,146 @@ it's ~3.4 ms/frame main-thread today with no frame drops, cheaper to leave put. 
 
 The gameplay map-prop itself (FEAT-16 Future) — this ticket is the streaming/perf plumbing that makes
 it viable, not the prop.
+
+---
+
+## STATUS (2026-07-01 — CORE LANDED, uncommitted)
+
+**Done (the BUG-26 long-term fix + play pre-warm re-enabled):**
+- NEW `src/road-worker.js` — dedicated road-network routing Worker (`ROAD_WORKER_SOURCE` + `RoadRouteWorker`
+  main-thread transport). Generated from the gate-passing pieces (scratchpad `gen-road-worker.mjs`) so the
+  ROUTE SYNC region is byte-identical. Client-tagged envelope (`'play'` / `'map'`).
+- `src/terrain.js` — route handler + ROUTE SYNC region + `postRouteJobs` + the `routed` reply branch
+  REMOVED. Terrain Worker is heightfield-only now (no shared FIFO → BUG-26 root gone). `_roadSystem`/
+  `setRoadSystem`/carve path untouched.
+- `src/main.js` — `USE_WORKER_ROUTING = true`; `RoadRouteWorker` instantiated, play RoadSystem registered
+  as `'play'`, dispatcher re-pointed; re-seed + re-register on seed-change rebuild. Kill-switch retained.
+- `src/map2d.js` — `setRouteWorker()` + registers its read-only RoadSystem as client `'map'` + pre-warms
+  off-thread in `_pump` (routes decoupled from the play/terrain pipeline).
+- `test/route-worker-sync.mjs` — re-pointed to `src/road-worker.js`; **PASS** (468 lines byte-identical).
+- `npm test`: 26/27 gates green. The one red — `arc-router.mjs` `PERF:search-time` (~68–75 ms/conn) — is a
+  wall-clock perf assertion on `road-carve.js` (which QUAL-08 does NOT touch); machine-speed flake, not a
+  regression. All invariance / carve / smoothness / physics gates green.
+- **Not committed** — the tree also holds concurrent QUAL-10 work on disjoint files (road.js/road-mesh.js/
+  ranger.js/debug.js). QUAL-08 files (road-worker.js, terrain.js, main.js, map2d.js, route-worker-sync.mjs)
+  are cleanly separable. Commit order per COORDINATION: QUAL-10 first, then this.
+
+**Deferred (Map2D acceptance items 1–3 — the "background warm" half):**
+- Full **drive-follow background trickle** (warm the map network as the player DRIVES, no open-time) and the
+  **persistent incremental region cache** (extend into newly-revealed ring on pan; don't restart
+  `MAP_RADIUS_STEPS` from step 0). Reason: the naive "warm a 1500 m band every frame" risks a *new* hitch
+  (ironic vs BUG-26) and the ticket itself says **measure before building a region store** (Open Q1). What
+  landed gives the map its **own off-thread routing + kept-alive persistent route cache** (reopen/re-pan
+  over a warmed region is cheap); the drive-follow cadence + incremental-pan store need in-browser
+  profiling to tune safely. Keep this ticket OPEN for that half.
+
+**In-browser verification — BUG-26 CONFIRMED FIXED (2026-07-01, user).** Abusing the road-rebuild sliders
+and moving around quickly can no longer reproduce the stuck-in-the-void behaviour — terrain never starves.
+The dedicated route Worker fully resolves BUG-26 (stopgap `cac64db` → this dedicated Worker → browser pass).
+Remaining browser check (non-blocking): the Map2D "background warm" half (deferred above) — confirm the map
+fills without a main-thread hitch once that half is built.
+
+## Implementation Plan (2026-07-01 — lead session)
+
+### Shape of the fix
+
+Stand up **ONE new dedicated worker** — `src/road-worker.js`, a Blob classic worker built from an
+embedded source string (same pattern as `terrain.js`'s `WORKER_SOURCE`). It is a **pure route-job
+server**: it holds no network, no state beyond the seeded coarse-noise closure; it takes route jobs and
+returns arc-primitive descriptors. The routing code **moves OUT** of `terrain.js`'s `WORKER_SOURCE` so
+the terrain worker is heightfield-only again — that removal is the real BUG-26 cure (no shared FIFO to
+starve). Both consumers (play network + Map2D) use the **same job contract**; a `client` tag on the
+envelope routes each reply back to the correct `RoadSystem` instance.
+
+Mechanically this is the **existing PERF-03 pre-warm path, re-pointed** — not a new algorithm. The
+main-thread synchronous router stays as the cold-load / teleport / cache-miss fallback (headless gates,
+which have no Worker, are unaffected).
+
+### Files
+
+- **NEW `src/road-worker.js`** — two things:
+  1. `ROAD_WORKER_SOURCE` template string (the worker body). Embeds, verbatim from canonical:
+     - seed helpers `mulberry32` / `seedFor` / `createNoise2D` (canonical `src/seed.js`, CARVE SYNC),
+     - `coarseHeight` (canonical `src/terrain.js`, SYNC RULE — routing samples coarse only, not fine/regional),
+     - the **`ROUTE SYNC` region** — `arcPrimitiveConnect` + dubins helpers + search scratch (canonical
+       `src/road-carve.js`).
+  2. A thin main-thread wrapper `RoadRouteWorker` — spawns the Blob worker, `init(seed, coarseParams)`,
+     `postRouteJobs(client, jobs, epoch)`, and `onmessage` → look up the registered client by `client`
+     tag → `client.ingestRoutedConnections(results, epoch)`. `registerClient(id, roadSystem)` /
+     `reinit(seed, params)`.
+
+- **EDIT `src/terrain.js`** — DELETE from `WORKER_SOURCE`: the `'route'` message branch (L758–775) and
+  the entire `ROUTE SYNC` mirror region (L739–742 + the spliced arcPrimitive block above it). DELETE on
+  the class: `postRouteJobs` (L1112), the `if (e.data.routed)` branch in the main-thread `onmessage`
+  (L968–973), and `_roadSystem` / `setRoadSystem` plumbing. Terrain worker is now `init` + `generate`
+  only. (Net: terrain.js shrinks; `coarseHeight` stays — the heightfield still needs it.)
+
+- **EDIT `src/main.js`** — instantiate `RoadRouteWorker`; register the play `roadSystem` as client
+  `'play'`; set `USE_WORKER_ROUTING = true` and point the dispatcher at
+  `roadWorker.postRouteJobs('play', jobs, epoch)` (NOT `terrainSystem.postRouteJobs`). Re-init the road
+  worker on seed change alongside the terrain worker. Keep `USE_WORKER_ROUTING` as the kill-switch
+  (flip false → fully synchronous, the current BUG-26-safe state).
+
+- **EDIT `src/road.js`** — the dispatcher surface (`setRouteDispatcher` / `warmRoutes` /
+  `ingestRoutedConnections`, L1145–1240) is **unchanged in shape**. Only the dispatch target differs, and
+  it's already an injected `fn`. No structural road.js change needed for the play side. (This region does
+  NOT overlap the uncommitted QUAL-10 node-junction edits at L2740–2980 — see COORDINATION handoff.)
+
+- **EDIT `src/map2d.js`** — give the map's kept-alive `RoadSystem` a route dispatcher pointed at the same
+  worker as client `'map'`. Warm on a **drive-follow trickle** (low priority; no open-time deadline per
+  the 2026-06-30 reframe). Make panning **incremental**: don't restart `MAP_RADIUS_STEPS` growth from the
+  smallest step around each new center — extend into the newly-revealed ring only. The persistent
+  region cache is mostly free already (instance kept alive → per-connection route cache persists); measure
+  before building a real tile/ring store (see Open Q1).
+
+- **EDIT `test/route-worker-sync.mjs`** — re-point the "worker copy" region from `src/terrain.js` to
+  `src/road-worker.js` (START marker + a new END marker). Still an `npm test` gate; now it guards
+  `road-worker.js` byte-equality with `road-carve.js` canonical.
+
+### Job contract (same mechanism, new envelope)
+
+```
+main → worker : { type:'route', client, jobs:[{key,ax,az,bx,bz,opts}], epoch }
+worker → main : { routed:true, client, epoch, results:[{key,prims}] }
+```
+`RoadRouteWorker.onmessage` forwards `results` to the client registered under `client` via its existing
+`ingestRoutedConnections(results, epoch)` — which already rejects stale epochs **per instance**, so the
+play and map epochs never cross-contaminate. Not-yet-init'd → echo keys with `prims:null` (existing
+pattern) so the client releases them from `_pendingRoutes` and re-warms after init.
+
+### Starvation / priority
+
+The route worker is bursty and latency-tolerant; the synchronous main-thread router remains the fallback
+for any cache miss. Two clients share one FIFO — play throttled by `PREWARM_MAX_JOBS`, map by its own
+trickle. Worst case if map warm ever contends = a play cache-miss routes synchronously on the main thread
+(today's behaviour), and terrain is **never** touched (separate worker). If map warm ever visibly delays
+play warm, add a 2-lane priority (play ahead of map). Ship v1 with the shared FIFO; note the lane as v2.
+
+### Acceptance mapping
+
+- "never stutters the game" → routing is off terrain's worker (BUG-26 root removed) and on its own.
+- "region driven through already populated" → play + map both warm on a drive-follow trickle.
+- "generated once, persists for session" → map `RoadSystem` kept alive (route cache persists) + incremental pan.
+- "window-invariant + read-only" → the worker routes the same pure fn (ROUTE SYNC → byte-identical to the
+  synchronous fallback); the map instance stays read-only, no effect on play physics.
+- "render decoupled" → untouched; map still paints to its own canvas.
+
+### Open questions (decide at execution)
+
+1. **Does Map2D need a real tile/ring store, or is "keep instance alive + don't restart radius growth"
+   enough?** Ticket profiling says `_sliceNetwork` / `crossingList` / assembly are ~free and the route
+   cache already persists → probably enough. Measure a far-pan-and-return before building a store.
+2. **Keep `USE_WORKER_ROUTING` kill-switch?** Yes — retain it as a one-line fallback to fully-synchronous
+   (the current, verified-safe BUG-26 state) in case the new worker regresses.
+3. **Client registry lifetime** — the map's `RoadSystem` is recreated on seed/param change (`_rebuildRoad`);
+   re-register it with the worker each rebuild (or key the registry by a stable `'map'` id and swap the
+   instance). Prefer the stable-id swap so in-flight replies for the old instance are dropped by epoch.
+
+### Sequencing vs the other three workers
+
+All four efforts touch `road.js` + `main.js`, but in **non-overlapping regions** (this ticket:
+dispatcher L1145–1240 + terrain-worker split; QUAL-10: node junctions L2740–2980; ponds: route-around
+exclusion; streams: bridge/crossing). The one genuinely shared string is `terrain.js`'s `WORKER_SOURCE`:
+**this ticket REMOVES the route region from it**, while **FEAT-18 streams may ADD a carve body to it**
+(CARVE SYNC) — independent regions of the same literal, coordinate the diffs. Land order: commit the
+in-flight QUAL-10 work first, then this. See `.planning/handoffs/2026-07-01-COORDINATION.md`.
