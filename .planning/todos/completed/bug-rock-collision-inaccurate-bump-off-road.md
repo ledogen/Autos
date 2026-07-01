@@ -1,7 +1,9 @@
 ---
 id: BUG-22
 type: bug
-status: open
+status: completed
+resolved: 2026-06-30
+resolution: "Two iterations. (a) BUG-22b: sphere proxy refit to the 90th-percentile flank of the actual baked mesh (commit b0d3c41) — still felt inside on big boulders. (b) BUG-22c: boulders now collide against their ACTUAL triangle mesh (sphereVsMesh/sphereVsMeshInstance in prop-collider.js; boulders bake kind 'mesh'; queryProps mesh branch), commit a90ea38 — collision lands exactly on the visible surface, no sphere overshoot/inset. New gate test/rock-collision-mesh.mjs. Rocks keep the (improved) sphere proxy. Verified in-browser by user. Note: mesh path assumes the probe is outside the boulder (fine for a grazing vehicle); deep interior penetration not special-cased."
 opened: 2026-06-27
 severity: medium
 source: user-observation
