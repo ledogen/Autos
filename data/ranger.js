@@ -286,6 +286,18 @@ export const RANGER_PARAMS = {
   // overpass Step 3; NEAR_PARALLEL = glancing graze). Set false to hide the pads.
   roadJunctionFootprints: true,
 
+  // QUAL-10 apron: the junction footprint is a "cut-back-and-fill" GRADED apron (buildJunctionFootprint).
+  // Each leg's mouth is pulled back from the node and its corners rounded (Bézier fillet); the interior
+  // is densely ring-tessellated and every vertex rides the real asphalt-top surface (road.sampleRoadTopY,
+  // folding FEAT-19's grade line + crown/camber), so roads flow together on one continuous, smoothly-shaded
+  // surface (physics unaffected). The apron overlaps the ribbons COPLANARLY and draws with a stronger
+  // polygonOffset (roadJunctionPolyOffsetFactor/Units, defaulted in road-mesh.js _getJunctionMaterial) so
+  // it wins the depth test seamlessly — no lift needed. roadJunctionApronLift is an optional hair of Y
+  // over the ribbon (0 = coplanar; raise only if a pad z-fights). roadJunctionRadiusScale sets how far the
+  // mouths pull back / how generous the flare (auto-grown further when the crossing angle is acute).
+  roadJunctionApronLift: 0.0,
+  roadJunctionRadiusScale: 1.35,
+
   // ── Crossing classifier (FEAT-07/08/11/13 foundation) ───────────────────────────────────────────
   // road.js _detectJunctions() finds every inter-run / self-run XZ crossing and CLASSIFIES each by the
   // strand-to-strand elevation gap (dY) and crossing angle. The class drives what later steps build:

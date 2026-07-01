@@ -2743,6 +2743,27 @@ export class RoadSystem {
         return this.runProfile(arcSEff, runKey).gradeY + crownY + tiltY - clearanceMargin
     }
 
+    // ── QUAL-10: asphalt-TOP surface sampler (junction apron) ─────────────────────────────────
+    /**
+     * The road's asphalt-TOP Y at any world XZ near the network — the surface the ribbon MESH and the
+     * truck both ride (= _carveDirtY + clearanceMargin, i.e. run grade + crown + camber, extrapolated
+     * laterally past halfWidth, folding FEAT-19's junction grade line). QUAL-10's junction apron samples
+     * this per-vertex so the pad rides the SAME graded surface as the ribbons it overlaps → one
+     * continuous surface + merged normals instead of a flat nodeY pad. Unlike _sampleCarveWorld this
+     * adds clearance EVERYWHERE (the whole apron is asphalt, not dirt) and omits pothole micro-noise
+     * (the apron stays clean/smooth). Pure fn of the network (window-invariant). Returns null beyond the
+     * road footprint (caller falls back to nodeY).
+     */
+    sampleRoadTopY(wx, wz) {
+        const nr = this._resolveRoadSurface(wx, wz)
+        if (!nr) return null
+        const dx = wx - nr.point.x, dz = wz - nr.point.z
+        const arcSEff   = (nr.arcS ?? 0) + dx * nr.tangent.x + dz * nr.tangent.z
+        const signedLat = dx * nr.tangent.z - dz * nr.tangent.x
+        const clearanceMargin = this._params.roadClearanceMargin ?? 0.25
+        return this._carveDirtY(signedLat, arcSEff, nr.runKey ?? '', nr.camberSign ?? 1) + clearanceMargin
+    }
+
     // ── QUAL-07: the ONE road-carve cross-section function ───────────────────────────────────
     /**
      * Resolve the carve DIRT-trough surface + shoulder blend at a point already resolved to a run.

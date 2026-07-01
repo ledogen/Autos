@@ -159,6 +159,15 @@ function computeStaticEquilibrium (p) {
   return { bodyY, strutComp }
 }
 
+// BUG-26: the road router and terrain heightfield generation SHARE one Web Worker (FIFO). Dispatching
+// route pre-warm jobs to it FLOODS the queue and STARVES terrain `generate` for seconds after a road
+// param change / while flying (probe: WORKER-STARVED, +recv=0, terrain void). Main-thread gating can't
+// fix it — once route jobs are in the Worker's FIFO they block later generates. So route ONLY on the main
+// thread (road.streamNetwork, ~3.5 ms/frame, no frame drops) and keep the Worker terrain-only: leave the
+// route dispatcher UNSET, so warmRoutes() no-ops and _streamNetwork routes synchronously on cache miss.
+// Flip to true only once routing has its OWN worker (so the two job classes never contend) — see BUG-26.
+const USE_WORKER_ROUTING = false
+
 // ── resolveSpawn (D-14 / D-16) ───────────────────────────────────────────────────────────
 // Phase 8 COMPLETE (D-07 / D-16): Body now probes the road graph first (nearest road node +
 // tangent heading), with the Phase 7 terrain-only body preserved as a fallback.
@@ -306,7 +315,8 @@ function debouncedRebuildFull () {
       roadSystem.setSurfaceSampler((x, z) => terrainSystem.analyticHeight(x, z))
       roadSystem.setRawHeightSampler((x, z) => terrainSystem.rawHeightWorld(x, z))  // CR-01: carve-free sampler for sampleDesignGradeAt
       roadSystem.setRadius(320)   // PERF (Tier 1): match the terrain ring, not 640 m — see initial setup
-      roadSystem.setRouteDispatcher((jobs, epoch) => terrainSystem.postRouteJobs(jobs, epoch))  // PERF-03 WS-A
+      // BUG-26: only share the Worker for routing if it won't starve terrain (see USE_WORKER_ROUTING).
+      if (USE_WORKER_ROUTING) roadSystem.setRouteDispatcher((jobs, epoch) => terrainSystem.postRouteJobs(jobs, epoch))  // PERF-03 WS-A
       // Restore viz state — the next roadSystem.update(streamCenter) re-streams the new seed's
       // network and (because _debugVisible is set) rebuilds the centerline lines.
       roadSystem.setDebugVisible(wasVisible)
@@ -959,7 +969,9 @@ terrainSystem.setRoadSystem(roadSystem)
 // PERF-03 WS-A: let the road pre-warm its centerline cache off-thread via the terrain Worker, so the
 // per-crossing arc-search hitch never lands on the main thread. RoadSystem no-ops this when no
 // dispatcher is set (headless gates), keeping their behaviour unchanged.
-roadSystem.setRouteDispatcher((jobs, epoch) => terrainSystem.postRouteJobs(jobs, epoch))
+// BUG-26: DISABLED — sharing the Worker for routing starves terrain generation (WORKER-STARVED → void).
+// Route on the main thread only until routing gets its own Worker. See USE_WORKER_ROUTING.
+if (USE_WORKER_ROUTING) roadSystem.setRouteDispatcher((jobs, epoch) => terrainSystem.postRouteJobs(jobs, epoch))
 roadMeshSystem = new RoadMeshSystem(
   scene, roadSystem,
   (x, z) => terrainSystem.rawHeightWorld(x, z),  // CR-04: carve-free — no crown/camber/pothole baked into design-grade window
@@ -1366,8 +1378,9 @@ function loop () {
   perfAdd('frame.road.update', performance.now() - _pt)
   // FEAT-06: stream props around the same center (diff is cheap when no chunk crossed).
   if (propSystem) propSystem.update(streamCenter.x, streamCenter.z, _propRing)
-  // PERF-03 WS-A: pre-warm the road centerline cache off-thread ahead of the streamer (throttled,
-  // self-limiting — no-op until the view moves PREWARM_WARM_MOVE). Removes the macro-cell routing hitch.
+  // PERF-03 WS-A: pre-warm the road centerline cache off-thread ahead of the streamer. BUG-26: no-ops
+  // now (USE_WORKER_ROUTING=false → no dispatcher) so it never starves terrain on the shared Worker;
+  // _streamNetwork routes synchronously on the main thread instead. Kept wired for the future own-worker.
   if (roadSystem) roadSystem.warmRoutes(streamCenter)
   // Phase 9 (SURF-01): sync road ribbon tiles with the active terrain chunk ring.
   // syncToChunkRing enqueues new tiles and disposes evicted ones co-located with chunk lifetime.

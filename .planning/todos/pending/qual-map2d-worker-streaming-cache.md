@@ -5,8 +5,8 @@ status: open
 opened: 2026-06-28
 severity: minor
 source: user-request (2026-06-28 — after FEAT-16 2D map landed; map open/pan perf)
-relates: FEAT-16 (2D top-down map — .planning/todos/completed/feat-2d-map-dev-tool.md), PERF-03 (Worker route dispatcher / warmRoutes)
-updated: 2026-06-30 (user reframe — see "Reframe" below: warming can be FULLY BACKGROUND / no open-time race; warm progressively as the player drives; persistent generate-once region cache)
+relates: FEAT-16 (2D top-down map — .planning/todos/completed/feat-2d-map-dev-tool.md), PERF-03 (Worker route dispatcher / warmRoutes), BUG-26 (shared-Worker routing DISABLED — see Convergence)
+updated: 2026-07-01 (see Convergence — BUG-26 disabled shared-Worker routing; a dedicated ROAD-NETWORK Worker now serves BOTH this ticket AND re-enabling play-network pre-warm). Prior 2026-06-30 user reframe below (background warm, drive-around, persistent cache).
 ---
 
 # QUAL-08: Map2D — own Worker + incremental pan caching
@@ -57,6 +57,24 @@ Two clarifications that make this both easier and more clearly worth doing:
 These don't change the mechanism QUAL-08 already proposes (off-thread build + incremental region
 cache) — they relax the timing bar (background trickle, no deadline) and make the caching goal explicit
 (persistent, generate-once, accumulate-as-you-drive).
+
+## Convergence with BUG-26 (2026-07-01) — a dedicated ROAD-NETWORK Worker serves both
+
+BUG-26 found that the road router and terrain heightfield gen **share one Worker (FIFO)**, and route
+pre-warm jobs **starved terrain generation → white void**. The fix (`USE_WORKER_ROUTING=false` in main.js)
+**disabled the PERF-03 shared-Worker route pre-warm** and routes on the main thread instead — so this
+ticket's note #2 option (a) "reuse that dispatcher" is now **moot** (the dispatcher is off). BUG-26's own
+long-term fix and this ticket are now the **same underlying work**: stand up a **dedicated road-network
+Worker**, separate from the terrain-heightfield Worker, that can route/build `_network` + crossings for an
+arbitrary region off-thread. That one Worker would serve BOTH:
+- **Re-enable play-network pre-warm** without starving terrain (routing on its OWN Worker, not terrain's)
+  → flip `USE_WORKER_ROUTING` back on, pointed at the new Worker (not `terrainSystem.postRouteJobs`).
+- **Map2D background warming** (this ticket) — the map builds its read-only network on that same Worker.
+
+So do this ticket as **"dedicated road-network Worker"** (option (b)), not "reuse the terrain dispatcher."
+The `ROUTE SYNC` region of `src/road-carve.js` is already mirrored into a Worker template — the new Worker
+reuses that routing code; window-invariance (pure fn of seed+coords) is what makes an off-thread build
+byte-identical to the main thread.
 
 ## Notes / direction (from FEAT-16 profiling)
 

@@ -1,13 +1,29 @@
 ---
 id: FEAT-13
 type: feature
-status: open
+status: closed
 opened: 2026-06-28
+closed: 2026-06-30
 severity: major
 source: user-observation (in-sim 2026-06-28 — roads run parallel, few intersections, unnatural)
 builds_on: FEAT-10 (merge graph + smooth navigable junctions + COVER deletion — the rendering foundation)
 relates: FEAT-12 (earthwork routing — lets cross-roads climb ridges), QUAL-03 (graph re-architecture), FEAT-08 (overpasses)
 ---
+
+## RESOLUTION (2026-06-30)
+
+Graph road network shipped as the default (`roadNetworkMode: 'graph'`, commit e5ff1ef).
+Windiness tuning landed and committed. Real T/X junctions, varied directions, dead-end
+spurs, window-invariant, 23 gates green. Goal achieved.
+
+Deferred work split out rather than left dangling on this ticket:
+- **POIs along edges** → new ticket FEAT-21 (`feat-road-poi-scatter.md`).
+- **Dead-end spur thinning** → still deferred, no ticket yet (revisit if density feels off
+  in-sim; not blocking).
+
+Related open follow-ups surfaced by shipping the graph default: BUG-25 (crossing-cull
+render-radius residual), BUG-26 (terrain stall on network-param switch).
+
 
 ## STATUS 2026-06-29 — v2 CLEAN + SPARSE on main (through 3eafd05); NEXT = restore windiness
 
