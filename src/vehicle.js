@@ -40,7 +40,11 @@ export const SPAWN_STATE = {
   // 0-placeholders overwritten by main.js computeStaticEquilibrium at init/reset.
   strutComp:    [0, 0, 0, 0],   // m   — strut compression per corner (D-01)
   strutCompVel: [0, 0, 0, 0],   // m/s — strut compression velocity per corner (D-01)
-  handbrake: false
+  handbrake: false,
+  // FEAT-22: water submersion flag — set per-frame by main.js from WaterSystem.submergedAt(CG).
+  // v1 SETS the flag only; buoyancy/hydrolock/drag consume it later.
+  submerged: false,
+  submergedDepth: 0             // m — CG depth below the water surface (0 when not submerged)
 }
 
 /**

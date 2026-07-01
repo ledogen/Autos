@@ -42,6 +42,8 @@ import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated r
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
 import { FLORA_PARAMS } from '../data/flora.js'
+import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
+import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond discs + stream ribbons
 
 // World seed — parsed from URL ?seed= parameter, defaulting to '6'.
 // Plan 04: changed to `let` so debug panel seed field can mutate it (SEED-04).
@@ -82,6 +84,20 @@ let propSystem = null
 // PERF-06: prop render radius in chunks — written by applyQuality (Low=1, Normal/High=2, Ultra=3),
 // read by the frame loop's propSystem.update(). Mutable so the Quality selector can thin out props.
 let _propRing = 2
+
+// FEAT-22/17/18: WaterSystem (pond/stream detection over RAW carve-free height) + its renderer.
+// Like props: decoupled leaves, samplers injected at construction, rebuilt on seed change.
+let waterSystem = null
+let waterRenderer = null
+const WATER_SYNC_RADIUS = 640   // m — water render bbox half-width around the stream center
+function rebuildWaterSystem () {
+  if (waterRenderer) { scene.remove(waterRenderer.group); waterRenderer.dispose() }
+  // rawHeightWorld (carve-free), NOT analyticHeight — detection was gated against raw height;
+  // carve-baked height would drift pond levels off the rendered terrain surface.
+  waterSystem   = new WaterSystem(worldSeed, RANGER_PARAMS, (x, z) => terrainSystem.rawHeightWorld(x, z))
+  waterRenderer = new WaterRenderer(waterSystem, {})
+  scene.add(waterRenderer.group)
+}
 const _bushDragF = { x: 0, y: 0, z: 0 }   // FEAT-06b: reused bush soft-drag accumulator (no per-substep alloc)
 const makePropSamplers = () => ({
   heightAt:    (x, z) => terrainSystem.analyticHeight(x, z),
@@ -364,6 +380,8 @@ function debouncedRebuildFull () {
       propSystem.dispose()
       propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
     }
+    // FEAT-22/17/18: water is seed-deterministic — rebuild it on a new seed or it shows stale water.
+    if (waterSystem) rebuildWaterSystem()
     _reseatTruckAtSpawn()
   }, 150)
 }
@@ -459,6 +477,8 @@ function _reseatTruckAtSpawn () {
   vehicleState.handbrake      = false
   vehicleState.strutComp      = [...eq.strutComp]
   vehicleState.strutCompVel   = [0, 0, 0, 0]
+  vehicleState.submerged      = false   // FEAT-22
+  vehicleState.submergedDepth = 0
 }
 
 // ── Fixed-timestep loop constants (RESEARCH §Pattern 2) ─────────────────────
@@ -506,6 +526,8 @@ const vehicleState = {
   wheelDebug:      [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ],  // per-wheel debug data written by stepPhysics; read by logger; fz=tire spring force (D-12)
   wheelOmega:      [0, 0, 0, 0],                   // per-wheel angular velocity [rad/s]; integrated by physics.js omega integrator
   handbrake:       false,                            // Space key handbrake state; written by updateVehicle, read by getBrakeTorque
+  submerged:       false,                            // FEAT-22: CG below a water surface (set per-frame from WaterSystem.submergedAt)
+  submergedDepth:  0,                                // FEAT-22: m below the water surface (0 when dry)
 }
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
@@ -1014,6 +1036,8 @@ roadMeshSystem = new RoadMeshSystem(
 
 // FEAT-06: prop system — needs terrain (height/normal) + road (exclusion) samplers, both alive now.
 propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
+// FEAT-22/17/18: water — needs terrainSystem.rawHeightWorld, alive now. Seed-deterministic like props.
+rebuildWaterSystem()
 // FEAT-06: live-tuning GUI (self-contained — attaches to the existing _gui, doesn't touch debug.js).
 addPropGui(_gui, {
   params: FLORA_PARAMS,
@@ -1131,6 +1155,8 @@ function enterGridWorld () {
   vehicleState.slipLong       = [0, 0, 0, 0]
   vehicleState.slipLat        = [0, 0, 0, 0]
   vehicleState.handbrake      = false
+  vehicleState.submerged      = false   // FEAT-22
+  vehicleState.submergedDepth = 0
 
   _hidePauseMenu()
 }
@@ -1322,6 +1348,15 @@ function loop () {
     accumulator -= PHYSICS_DT
   }
 
+  // FEAT-22: water submersion flag — CG vs the local water surface (pond plane). Once per render
+  // frame (not per physics substep): v1 only SETS the flag; nothing in stepPhysics consumes it yet.
+  if (waterSystem && !_gridWorldActive) {
+    const cgY = vehicleState.position.y + (RANGER_PARAMS.cgHeight ?? 0)
+    const sub = waterSystem.submergedAt(vehicleState.position.x, cgY, vehicleState.position.z)
+    vehicleState.submerged = sub.submerged
+    vehicleState.submergedDepth = sub.depth
+  }
+
   // Interpolate rendered position/quaternion between the last two physics steps.
   // accumulator is the residual time since the last step; alpha=0 → last step, alpha→1 → next step.
   const _renderAlpha = accumulator / PHYSICS_DT
@@ -1411,6 +1446,13 @@ function loop () {
   perfAdd('frame.road.update', performance.now() - _pt)
   // FEAT-06: stream props around the same center (diff is cheap when no chunk crossed).
   if (propSystem) propSystem.update(streamCenter.x, streamCenter.z, _propRing)
+  // FEAT-17/18: sync pond/stream meshes to the view region (bbox-culled, keyed — no churn when still).
+  if (waterRenderer) {
+    waterRenderer.sync(
+      streamCenter.x - WATER_SYNC_RADIUS, streamCenter.z - WATER_SYNC_RADIUS,
+      streamCenter.x + WATER_SYNC_RADIUS, streamCenter.z + WATER_SYNC_RADIUS
+    )
+  }
   // PERF-03 WS-A: pre-warm the road centerline cache off-thread ahead of the streamer. BUG-26: no-ops
   // now (USE_WORKER_ROUTING=false → no dispatcher) so it never starves terrain on the shared Worker;
   // _streamNetwork routes synchronously on the main thread instead. Kept wired for the future own-worker.

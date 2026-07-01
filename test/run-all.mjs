@@ -40,6 +40,7 @@ const GATES = [
     'rock-collision-mesh.mjs',  // BUG-22c: BOULDERS collide vs their actual triangle mesh (exact visible surface, no sphere overshoot)
     'penetration-failsafe.mjs', // BUG-24: catastrophic-penetration failsafe fires only on true tunnels (depth>wheelRadius), not resolvable deep contact — no body teleport on the shoulder step
     'body-contact-energy.mjs',  // BUG-27: hard body slams are strictly dissipative (restitution≈0, accumulated-impulse solver, tamed Baumgarte) — no phantom spin, no launch, rest stays stable
+    'water-invariance.mjs',     // FEAT-22/17/18: basins/saddles/ponds/streams deterministic + window-invariant; ponds rim-contained; streams descend + end at basins; submerged hook
 ]
 
 let failed = []
