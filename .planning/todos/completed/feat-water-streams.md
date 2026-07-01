@@ -1,7 +1,8 @@
 ---
+closed: 2026-07-01
 id: FEAT-18
 type: feature
-status: open
+status: closed
 opened: 2026-06-30
 severity: minor
 source: user-request
@@ -104,3 +105,23 @@ placement and the terrain-carve machinery.
   span counterpart to tunnels' bore.
 - Terrain carve + Worker/CARVE SYNC discipline: CLAUDE.md "Terrain Worker" +
   [[project_terrain_worker_constraints]]; carve internals [[project_carve_invisible_cliff]].
+
+## RESOLUTION (2026-07-01) — CLOSED, shipped (minimal-v1 bridges per user decision)
+
+Generation landed in 27908e7 (saddle→traceFlow streams, ~59 on seed 6). Carve + crossings
+completed 2026-07-01 in 203f7e1:
+- Channel carve applied MAIN-THREAD ONLY (terrain Worker returns raw heights — confirmed at
+  planning, per COORDINATION), so streamCarveSample stays canonical in src/water.js (leaf,
+  injected via terrain.setWaterCarve) with NO WORKER_SOURCE mirror. Multi-stream seams fixed by
+  deepest-composed-section-wins (min of continuous surfaces — no Voronoi bed step).
+- Bridges v1 (user-selected minimal scope): MESH composition suppresses the road carve inside a
+  channel (continuous notch); PHYSICS (analyticHeight) uses the un-suppressed blend so the road
+  core holds gradeY — the road RIBBON spans the notch as the deck, wheels ride it, in fill and
+  cut. Gate test/stream-carve.mjs: 26/26 road-core crossings hold grade, channel resumes both
+  sides, bank C0, bounded, deterministic. In-browser verified (channel at 396,−596; crossing at
+  368,−410).
+
+Deferred (FEAT-08 shared span builder, when it happens): real deck/abutment/pier geometry,
+driving UNDER a bridge (physics deck fills the under-span), stream-water ribbon clipping at the
+shoulder blend (small water patch can overlap the shoulder at a crossing edge). Also unticketed
+polish: trees can still scatter inside stream channels (only pond water is excluded).

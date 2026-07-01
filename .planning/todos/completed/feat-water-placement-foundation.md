@@ -1,7 +1,8 @@
 ---
+closed: 2026-07-01
 id: FEAT-22
 type: feature
-status: open
+status: closed
 opened: 2026-07-01
 severity: minor
 source: scoped from FEAT-17/FEAT-18 (shared detection layer both water features need)
@@ -88,3 +89,12 @@ not pop.
 - **FEAT-18** streams — consumer (flow trace from saddles + channel carve + bridges).
 - Terrain analytic sampling + Worker/CARVE SYNC discipline: CLAUDE.md "Terrain Worker",
   [[project_terrain_worker_constraints]], [[project_carve_invisible_cliff]].
+
+## RESOLUTION (2026-07-01) — CLOSED, shipped
+
+Generation landed in 27908e7 (src/water.js — basins/saddles/traceFlow + submerged hook, 9-gate
+test/water-invariance.mjs). Wired into the game 2026-07-01: b31b60c (WaterSystem/WaterRenderer in
+main.js over rawHeightWorld, submerged/submergedDepth on vehicleState in all four state sites,
+per-frame CG test; water-invariance registered in run-all). Acceptance met: deterministic +
+window-invariant basin/saddle/flow API from any stream center, submerged flag flips (gate
+SUBMERGED-HOOK), npm test green.

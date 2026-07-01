@@ -1,5 +1,12 @@
 # HANDOFF → merge the water code into the running game (FEAT-22 / FEAT-17 ponds / FEAT-18 streams)
 
+> **✅ COMPLETED 2026-07-01** — all four layers landed: b31b60c (L1+L2 wiring + submerged),
+> cdc8093 (L3 pond route-around), 203f7e1 (L4 stream carve + ribbon-deck bridges). 30 gates green.
+> One deviation from the plan below: Layer 4 does NOT mirror the stream carve into WORKER_SOURCE —
+> the terrain Worker returns RAW heights and all carve is a main-thread blend (this doc's own
+> terrain.js:1399 note was right; the CARVE SYNC instruction was moot). streamCarveSample stays
+> canonical in water.js, injected via terrain.setWaterCarve. Tickets closed with resolution notes.
+
 **From:** lead session (2026-07-01)
 **To:** whoever cuts the water generation into mainline (the ponds + streams work)
 **Type:** integration / merge request

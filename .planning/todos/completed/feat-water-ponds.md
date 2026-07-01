@@ -1,7 +1,8 @@
 ---
+closed: 2026-07-01
 id: FEAT-17
 type: feature
-status: open
+status: closed
 opened: 2026-06-30
 severity: minor
 source: user-request
@@ -111,3 +112,16 @@ side; streams are the *channel-carve + bridge* side.
   router/graph that must learn the pond no-go region.
 - Terrain carve + Worker sync discipline: CLAUDE.md "Terrain Worker" + [[project_terrain_worker_constraints]];
   carve internals [[project_carve_invisible_cliff]].
+
+## RESOLUTION (2026-07-01) — CLOSED, shipped
+
+Generation landed in 27908e7 (Plan-B rim-fill ponds, pondMaxRadius 50 m, simple transparent disc
+material). Wired + route-around completed 2026-07-01: b31b60c (render sync + seed rebuild),
+cdc8093 + 203f7e1 (roads route AROUND ponds — RoadSystem.setWaterNoGo: anchor-site filter +
+opts.pondDiscs hard rejection inside arcPrimitiveConnect, both router copies, byte-identical
+mirror; map2d gets the same injection; prop scatter excludes pond water via waterAt sampler).
+New gate test/pond-route-around.mjs: baseline 201 pond-crossing centerline points → 0 with water,
+0 wet graph nodes. In-browser verified at seed-6 pond (139,341).
+
+Residual polish (no ticket): scatter only EXCLUDES water — no shoreline density boost on the
+skirt yet; pondSkirtAt is already in the samplers when someone wants it.
