@@ -89,6 +89,15 @@ export class Map2D {
     // the map falls back to synchronous routing (its prior behaviour). Wired in _buildRoad on (re)build.
     setRouteWorker(rw) { this._routeWorker = rw }
 
+    // FEAT-17: the same water no-go injection the play RoadSystem gets (see main.js
+    // rebuildWaterSystem) — the map must route with the identical pond exclusion or the network it
+    // validates differs from the one the player drives. Stored + applied to the current instance
+    // and every rebuild.
+    setWaterNoGo(noGoFn, discsFn) {
+        this._waterNoGoFns = [noGoFn, discsFn]
+        if (this._road) this._road.setWaterNoGo(noGoFn, discsFn)
+    }
+
     isOpen() { return this._open }
 
     toggle() { this._open ? this.hide() : this.show() }
@@ -162,6 +171,8 @@ export class Map2D {
             this._routeWorker.registerClient('map', this._road)
             this._road.setRouteDispatcher((jobs, epoch) => this._routeWorker.postRouteJobs('map', jobs, epoch))
         }
+        // FEAT-17: re-apply the water no-go so the fresh instance routes around ponds like play does.
+        if (this._waterNoGoFns) this._road.setWaterNoGo(this._waterNoGoFns[0], this._waterNoGoFns[1])
     }
 
     // Begin/restart the chunked stream around the current pan center: grow the radius through

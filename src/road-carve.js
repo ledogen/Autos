@@ -636,6 +636,21 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     const startHeading = opts.startHeading
     const goalHeading  = opts.goalHeading
     const goalBlend    = opts.goalBlend ?? 20   // m — distance over which the arrival is blended into goalHeading
+    // FEAT-17: pond route-around. opts.pondDiscs = flat [cx, cz, r, ...] no-go discs (pond + skirt,
+    // world XZ) attached to the route spec by road.js as pure DATA — never code — so the Worker mirror
+    // and the synchronous fallback read the SAME array and pre-warmed routes stay byte-identical to
+    // the fallback. Rejection must be HARD (not a cost): ponds sit at valley floors — the wAlt
+    // valley-seeking term's lowest-cost cells — so the router is actively drawn through them, and the
+    // Dubins terminal can't repair a centerline that entered water. Same per-primitive rejection
+    // pattern as the lattice bounds / hardR floor. undefined/empty → no exclusion (headless gates).
+    const pondDiscs = (opts.pondDiscs && opts.pondDiscs.length) ? opts.pondDiscs : null
+    const inPondNoGo = (x, z) => {
+        for (let i = 0; i < pondDiscs.length; i += 3) {
+            const dx = x - pondDiscs[i], dz = z - pondDiscs[i + 1], r = pondDiscs[i + 2]
+            if (dx * dx + dz * dz <= r * r) return true
+        }
+        return false
+    }
 
     const minX = Math.min(ax, bx) - margin, maxX = Math.max(ax, bx) + margin
     const minZ = Math.min(az, bz) - margin, maxZ = Math.max(az, bz) + margin
@@ -795,6 +810,15 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             const L = primLen(k)   // fixed-angle: straight = stepLen, turns = turnAngle/|k| (∝ radius)
             const [nx, nz, nth] = arcEnd(cx, cz, cth, k, L)
             if (nx < minX || nx > maxX || nz < minZ || nz > maxZ) continue
+            // FEAT-17: reject primitives entering a pond+skirt disc. Endpoint + midpoint samples
+            // suffice: the longest primitive (largest radius × turnAngle) is shorter than any pond
+            // diameter, so a ≤ L/2 sample spacing cannot tunnel a disc — worst case is a metre-scale
+            // graze of the skirt edge, which the skirt buffer absorbs.
+            if (pondDiscs) {
+                if (inPondNoGo(nx, nz)) continue
+                const mid = arcEnd(cx, cz, cth, k, L * 0.5)
+                if (inPondNoGo(mid[0], mid[1])) continue
+            }
             const nst = stateOf(nx, nz, nth)
             if (CL[nst] === gen) continue
             const nHraw = hAt(nx, nz)

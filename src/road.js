@@ -1148,6 +1148,42 @@ export class RoadSystem {
     routeEpoch() { return this._routeEpoch }
 
     /**
+     * FEAT-17: pond route-around injection. Roads route AROUND ponds (streams are bridged instead).
+     * Kept decoupled — main.js hands the water queries in; road.js never imports water.js. Both parts
+     * of the exclusion ride this one call:
+     *   Part B (anchor filter): noGoFn(x,z)→bool — anchor SITES inside a pond+skirt disc are dropped
+     *     from the alive set (_aliveSitesIn), keeping graph nodes/junctions out of the water.
+     *   Part A (arc exclusion, the actual guarantee): discsFn(minX,minZ,maxX,maxZ)→flat [cx,cz,r,...]
+     *     — pond+skirt discs attached to every route SPEC as pure DATA (opts.pondDiscs), so the
+     *     Worker pre-warm and the synchronous fallback route with the SAME exclusion and the cache
+     *     stays byte-identical. arcPrimitiveConnect hard-rejects primitives entering a disc.
+     * Both fns must be pure fns of (seed, coords, params) — window-invariance rides on it (the
+     * WaterSystem is; see test/water-invariance.mjs). Invalidates the proto caches: the network
+     * derives from the anchor set + route specs, so changing the filter changes the network.
+     * Unset (headless gates) → behaviour byte-unchanged.
+     */
+    setWaterNoGo(noGoFn, discsFn) {
+        this._waterNoGo = noGoFn
+        this._pondDiscsInBBox = discsFn
+        this._invalidateProto()
+    }
+
+    // FEAT-17 Part A data: pond+skirt discs overlapping edge c1→c2's routing search area (edge bbox
+    // + the router's detour margin — any primitive the search can reach lies inside it). Flat
+    // [cx,cz,r,...] world-XZ array: structured-clone-cheap for the Worker route job. undefined when
+    // no water is injected, so route specs (and their cache keys' meaning) stay identical for gates.
+    _pondDiscsForEdge(c1, c2) {
+        if (!this._pondDiscsInBBox) return undefined
+        const a = this._nodePos(c1), b = this._nodePos(c2)
+        const m = PROTO_MARGIN
+        const discs = this._pondDiscsInBBox(
+            Math.min(a.x, b.x) - m, Math.min(a.z, b.z) - m,
+            Math.max(a.x, b.x) + m, Math.max(a.z, b.z) + m
+        )
+        return (discs && discs.length) ? discs : undefined
+    }
+
+    /**
      * Macro-column band half-width (cells each side of the center column), SCALED to the active road
      * radius so the registered network always covers the carved disc at every draw-distance preset.
      * See the ROAD_BAND_MARGIN block: ceil(R / spacing) covers the disc, +margin absorbs a west-anchored
@@ -1417,11 +1453,15 @@ export class RoadSystem {
     }
 
     // The alive sites in macro-cell (cmx,cmz) (post Poisson-disk thinning). Cached per cell.
+    // FEAT-17: sites inside a pond+skirt no-go disc are dropped AFTER Poisson acceptance (a drowned
+    // site still suppresses its neighbours — keeps acceptance independent of whether water is wired).
+    // setWaterNoGo cleared this cache, so the filter applies from the first post-injection query.
     _aliveSitesIn(cmx, cmz) {
         const ckey = `${cmx},${cmz}`
         const cached = this._proto.aliveSites.get(ckey)
         if (cached) return cached
-        const out = this._anchorSites(cmx, cmz).filter(s => this._siteAlive(s))
+        const out = this._anchorSites(cmx, cmz).filter(s =>
+            this._siteAlive(s) && !(this._waterNoGo && this._waterNoGo(s.pos.x, s.pos.z)))
         this._proto.aliveSites.set(ckey, out)
         return out
     }
@@ -1644,6 +1684,10 @@ export class RoadSystem {
             // no loops reintroduced. Rows keep the tight 20 m blend (collinear rows never overshoot).
             goalBlend: isGraph ? (pp.roadGraphGoalBlend ?? 60) : 20,
             emitPrimitives: true,
+            // FEAT-17: pond+skirt no-go discs for this edge's search area as pure DATA (see
+            // setWaterNoGo). Baked into the shared spec so the Worker pre-warm job and the
+            // synchronous fallback route with the identical exclusion. undefined when unwired.
+            pondDiscs: this._pondDiscsForEdge(c1, c2),
         }
     }
 

@@ -60,6 +60,12 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
   // predate roadClear (keepOut then ignored — they only exercise determinism, not the inflated mask).
   const roadClear = roadClearFn || ((x, z) => !roadBlocked(x, z))
 
+  // FEAT-17: optional pond sampler (waterAt(x,z) → {inWater, inSkirt}) — nothing scatters IN a pond
+  // (underwater trees). The skirt stays plantable (vegetated shoreline). Absent (older fixtures /
+  // gates) → no exclusion, placements byte-unchanged. Pure fn of seed/coords → window-invariant.
+  const waterAt = samplers.waterAt || null
+  const inPondWater = (x, z) => { const w = waterAt && waterAt(x, z); return !!(w && w.inWater) }
+
   // Max world horizontal bounding radius of a blob category — an UPPER bound over its variants +
   // instance scale: widest drawn radius × widest ground-plane axis × the irregularity peak × max
   // scale. Used to inflate the road keep-out so no part of a placed blob overhangs the lane (BUG-23).
@@ -76,6 +82,7 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
     // prop's own bounding radius so a big rock/boulder whose CENTRE sits just off the ribbon can no
     // longer overhang (and wall off) the driveable lane. Pure fn of seed/coords (window-invariant).
     if (!ignoreRoad && !roadClear(x, z, S.roadExclusion + blobBoundR(cfg))) return
+    if (inPondWater(x, z)) return   // FEAT-17: no rocks/bushes under the pond plane
     const variant = (rng() * cfg.variants) | 0
     const scale = frange(rng, cfg.instScale)
     const bury = frange(rng, buryRange)
@@ -92,6 +99,7 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
 
   const placeTree = (cat, x, z) => {
     if (roadBlocked(x, z)) return
+    if (inPondWater(x, z)) return   // FEAT-17: no trees standing in the pond
     const slope = slopeAt(x, z)
     if (slope > S.slopeRejectMax) return
     const cfg = P[cat]
