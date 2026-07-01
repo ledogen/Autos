@@ -286,17 +286,26 @@ export const RANGER_PARAMS = {
   // overpass Step 3; NEAR_PARALLEL = glancing graze). Set false to hide the pads.
   roadJunctionFootprints: true,
 
-  // QUAL-10 apron: the junction footprint is a "cut-back-and-fill" GRADED apron (buildJunctionFootprint).
-  // Each leg's mouth is pulled back from the node and its corners rounded (Bézier fillet); the interior
-  // is densely ring-tessellated and every vertex rides the real asphalt-top surface (road.sampleRoadTopY,
-  // folding FEAT-19's grade line + crown/camber), so roads flow together on one continuous, smoothly-shaded
-  // surface (physics unaffected). The apron overlaps the ribbons COPLANARLY and draws with a stronger
-  // polygonOffset (roadJunctionPolyOffsetFactor/Units, defaulted in road-mesh.js _getJunctionMaterial) so
-  // it wins the depth test seamlessly — no lift needed. roadJunctionApronLift is an optional hair of Y
-  // over the ribbon (0 = coplanar; raise only if a pad z-fights). roadJunctionRadiusScale sets how far the
-  // mouths pull back / how generous the flare (auto-grown further when the crossing angle is acute).
+  // QUAL-10 "cut-back-and-fill" junctions (buildJunctionFootprint + _detectNodeJunctions): the swept
+  // ribbons are TRIMMED back from each graph node and a radiused GRADED pad drops into the cleared room,
+  // riding the real asphalt-top surface (road.sampleRoadTopY, FEAT-19 grade line) and drawing with a
+  // stronger polygonOffset (road-mesh.js _getJunctionMaterial) so it overlaps the trimmed ribbon ends
+  // seamlessly. roadJunctionApronLift is an optional hair of Y over the ribbon (0 = coplanar; raise only
+  // if a pad z-fights).
   roadJunctionApronLift: 0.0,
-  roadJunctionRadiusScale: 1.35,
+  // roadJunctionCutback: how many metres the swept ribbons are cut back from each junction node so the
+  // radiused pad has clean room (the pad mouths meet the trimmed ribbon ends). The single "intersection
+  // size" knob. Bigger = more open intersection; too big eats short links node↔node.
+  roadJunctionCutback: 10,
+  // roadJunctionFlare: the pad mouth half-width as a multiple of the road half-width (1 = same as the
+  // ribbon). >1 FLARES the mouth wider than the road so the pad generously covers the trimmed ribbon end
+  // even where a curved approach offsets it laterally — roads fan into the junction, hiding the seam.
+  roadJunctionFlare: 1.6,
+  // roadJunctionCarveRadius: near a junction the terrain carve holds the road grade FLAT out to
+  // (carve core + this radius) and eases crown/camber to flat, so terrain is dug/filled to the plaza
+  // instead of clipping up through the pad. Keep ≈ the pad extent (≈ cutback) to avoid a bare-dirt ring
+  // around the pad. 0 = off (no junction carve).
+  roadJunctionCarveRadius: 7,
 
   // ── Crossing classifier (FEAT-07/08/11/13 foundation) ───────────────────────────────────────────
   // road.js _detectJunctions() finds every inter-run / self-run XZ crossing and CLASSIFIES each by the

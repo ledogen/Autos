@@ -421,7 +421,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // = more generous flare); Apron Lift is a hair of Y over the ribbon (0 relies on the pad's stronger
   // polygonOffset to win the depth test — raise a touch only if you see z-fight flicker at a pad).
   const junctionFolder = roadFolder.addFolder('Junctions')
-  junctionFolder.add(params, 'roadJunctionRadiusScale', 0.8, 3.0, 0.05).name('Junction Size').onChange(fireSurface)
+  junctionFolder.add(params, 'roadJunctionCutback',     0,   25,  1   ).name('Ribbon Cutback (m)').onChange(fireSurface)
+  junctionFolder.add(params, 'roadJunctionFlare',       1.0, 2.5, 0.1 ).name('Mouth Flare (×road)').onChange(fireSurface)
+  junctionFolder.add(params, 'roadJunctionCarveRadius', 0,  25,  1   ).name('Terrain Carve Radius (m)').onChange(fireSurface)
   junctionFolder.add(params, 'roadJunctionApronLift',   0,   0.05, 0.001).name('Apron Lift (m)').onChange(fireSurface)
 
   // Plan 09-11 — Cheap below-margin carve params.

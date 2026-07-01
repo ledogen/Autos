@@ -20,7 +20,10 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics } from './physics.js'
 import { getBodyContactPoints, getWheelPosition } from './suspension.js'
 import { updateVehicle, SPAWN_STATE } from './vehicle.js'
-import { updateCamera, getCameraMode, getFreecamPosition } from './camera.js'
+import { updateCamera, getCameraMode, getFreecamPosition, placeFreecam } from './camera.js'
+// Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
+// window.__view(x, y, z, yaw, pitch) — used by test/screenshot.mjs (headless CDP) and the browser console.
+window.__view = placeFreecam
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext } from './logger.js'
 import { buildPlaceCapture } from './capture.js'

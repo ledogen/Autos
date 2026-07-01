@@ -38,7 +38,7 @@
 import * as THREE from 'three'
 import { CHUNK_SIZE } from './terrain.js'
 import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: shared procedural detail
-import { crownProfile, potholeNoise, signedCurvature } from './road-carve.js'
+import { crownProfile, potholeNoise, signedCurvature, earClip } from './road-carve.js'
 // roadQuality / hashRunKey / constants moved to road-quality.js (Plan 09-06) to break the
 // terrain.js → road-mesh.js → terrain.js circular import that SURF-06 would otherwise create.
 // Re-exported here so existing callers (test harness, road.js) can still import from road-mesh.js.
@@ -759,6 +759,9 @@ export class RoadMeshSystem {
         // ensure the current network is sliced (idempotent, ~0.05ms) and read this tile's slices directly.
         const _ptE = performance.now()
         this._road._sliceNetwork()
+        // QUAL-10: build the node-junction set (+ per-run cutback arcs) before sweeping so the ribbon
+        // trim below sees this run's junction endpoints. Cached by network revision (cheap re-call).
+        if (this._road._detectNodeJunctions) this._road._detectNodeJunctions()
         perfAdd('ribbon.sliceNetwork', performance.now() - _ptE)
         const segs = this._road._tiles.get(key)
         if (!segs || segs.length === 0) {
@@ -806,8 +809,37 @@ export class RoadMeshSystem {
             const arcS0 = seg.arcS0 ?? 0
             const arcS1 = seg.arcS1 ?? 0
 
+            // ── QUAL-10: cut the ribbon back near junction nodes so the radiused pad has room ──────
+            // Node junctions sit at run ENDPOINTS, so trimming just shortens the slice end that touches
+            // the node (contiguous — no mid-run split). Drop samples whose run-global arc is within
+            // `cutback` of a junction endpoint arc for this run; buildJunctionFootprint fills the cleared
+            // disc at the same cutback. Skip the slice entirely if nothing survives (short run node↔node).
+            let usePoints = points, useGrade = designGradeY, useArcS0 = arcS0, useArcS1 = arcS1
+            const jArcs = this._road._junctionCarveArcs ? this._road._junctionCarveArcs.get(runKey) : null
+            if (jArcs && jArcs.length) {
+                const cutback = this._road.junctionCutbackDist()
+                const Np = points.length
+                const cum = new Float32Array(Np)
+                for (let _i = 1; _i < Np; _i++) cum[_i] = cum[_i - 1] + Math.hypot(points[_i].x - points[_i - 1].x, points[_i].z - points[_i - 1].z)
+                const tot = cum[Np - 1] || 1
+                let k0 = -1, k1 = -1
+                for (let _i = 0; _i < Np; _i++) {
+                    const aS = arcS0 + (arcS1 - arcS0) * (cum[_i] / tot)
+                    let trimmed = false
+                    for (const j of jArcs) { if (Math.abs(aS - j.arc) < cutback) { trimmed = true; break } }
+                    if (!trimmed) { if (k0 < 0) k0 = _i; k1 = _i }
+                }
+                if (k0 < 0 || k1 - k0 < 1) continue   // fully trimmed → the pad(s) cover this stub
+                if (k0 > 0 || k1 < Np - 1) {
+                    useArcS0  = arcS0 + (arcS1 - arcS0) * (cum[k0] / tot)
+                    useArcS1  = arcS0 + (arcS1 - arcS0) * (cum[k1] / tot)
+                    usePoints = points.slice(k0, k1 + 1)
+                    useGrade  = designGradeY.slice(k0, k1 + 1)
+                }
+            }
+
             const _ptS = performance.now()
-            const geo  = this.sweepRibbon(spline, designGradeY, points, this._params, runKey, arcS0, arcS1)
+            const geo  = this.sweepRibbon(spline, useGrade, usePoints, this._params, runKey, useArcS0, useArcS1)
             perfAdd('ribbon.sweepRibbon', performance.now() - _ptS)
             const mesh = new THREE.Mesh(geo, this._material)
 
@@ -835,19 +867,15 @@ export class RoadMeshSystem {
         // sampleRoadTopY per vertex), so it rides the same FEAT-19-graded ribbon surface it overlaps
         // (mesh == collision surface). GRADE_SEP nodes are overpasses (Step 3) and NEAR_PARALLEL nodes are
         // glancing grazes — neither gets a pad.
-        if (this._params.roadJunctionFootprints && this._road._detectJunctions) {
-            const junctions = this._road._detectJunctions()
+        if (this._params.roadJunctionFootprints) {
             const tileWorldX = tileX * CHUNK_SIZE
             const tileWorldZ = tileZ * CHUNK_SIZE
-            const halfWidth = this._params.roadHalfWidth ?? 5
-
-            for (const [, node] of junctions) {
-                if (node.kind !== 'AT_GRADE') continue   // only flat junctions; overpass/graze get no pad
+            const buildPad = (node) => {
+                if (node.kind !== 'AT_GRADE') return   // only flat junctions; overpass/graze get no pad
                 const nx = node.pos.x, nz = node.pos.z
                 // Assign to tile if node falls inside this tile's bounds.
                 if (nx >= tileWorldX && nx < tileWorldX + CHUNK_SIZE &&
                     nz >= tileWorldZ && nz < tileWorldZ + CHUNK_SIZE) {
-
                     const geo = this.buildJunctionFootprint(node, this._params)
                     if (geo) {
                         const mesh = new THREE.Mesh(geo, this._getJunctionMaterial())
@@ -859,6 +887,12 @@ export class RoadMeshSystem {
                     }
                 }
             }
+            // QUAL-10: NODE junctions are the real graph T/X/Y intersections (≥3 runs meeting at a shared
+            // anchor). _detectJunctions only finds mid-span CROSSINGS, which graph mode culls — so without
+            // this the shipped network gets no pads at all. Build both (they never coincide: node = run
+            // endpoint, crossing = run interior); in graph mode _detectJunctions is empty.
+            if (this._road._detectNodeJunctions) for (const [, node] of this._road._detectNodeJunctions()) buildPad(node)
+            if (this._road._detectJunctions)     for (const [, node] of this._road._detectJunctions())     buildPad(node)
         }
 
         // D1 (plan 09-19): stamp the road generation this tile was built against so
@@ -913,20 +947,17 @@ export class RoadMeshSystem {
     /**
      * Build the junction footprint geometry for a single junction node (QUAL-10 "cut-back-and-fill").
      *
-     * The pad HUGS the roads: each leg's mouth is pulled back distance T from the node and the corners
-     * between adjacent legs are rounded with a quadratic Bézier tangent to both ribbon edges (real
-     * corner radii). The Bézier degenerates to a straight line for a straight-through (180°) pair, so a
-     * through road grows NO phantom bulge behind it. The interior is then densely tessellated as
-     * concentric rings from the centroid and EVERY vertex rides the real asphalt-top surface
-     * (this._road.sampleRoadTopY — FEAT-19 grade line + crown/camber), so the apron is ONE continuous,
-     * smoothly-shaded surface with the ribbons it overlaps (indexed → computeVertexNormals welds the
-     * normals) rather than a flat faceted patch. The pad draws with _getJunctionMaterial (stronger
-     * polygonOffset) so the coplanar overlap is seamless — no lift, no lip, no z-fight.
+     * The ribbons are cut back `cutback` from the node (RoadMeshSystem._buildRoadTile); this pad fills
+     * that cleared disc. Each leg's mouth sits a hair past the cut (full road width); adjacent mouths are
+     * joined by a bounded node-centred corner arc (straight across a through road's back → no phantom
+     * bulge). The boundary is then bearing-sorted about the node + deduped into a star polygon and fanned
+     * from the NODE (guaranteed valid → no flipped-sliver "spikes"), every vertex riding the real
+     * asphalt-top surface (this._road.sampleRoadTopY — FEAT-19 grade line; the junction carve eases
+     * crown/camber to flat here). Draws with _getJunctionMaterial (stronger polygonOffset) so the coplanar
+     * overlap with the trimmed ribbon ends is seamless — no lift, no lip, no z-fight. Returns null if
+     * degenerate.
      *
-     * T grows when adjacent legs are acute (halfWidth/tan(θ/2)) → a bigger junction, not an
-     * over-constrained tight fillet (the QUAL-10 rule). Returns null if degenerate.
-     *
-     * @param {object} node — junction node record from _detectJunctions
+     * @param {object} node — junction node record ({pos,nodeY,legs,kind}) from _detectNodeJunctions
      * @param {object} params — RANGER_PARAMS
      * @returns {THREE.BufferGeometry|null}
      *
@@ -937,57 +968,67 @@ export class RoadMeshSystem {
         const nx = node.pos.x
         const nz = node.pos.z
         const nodeY = node.nodeY
-        const legs  = node.legs
-        if (!legs || legs.length < 2) return null
-        const n = legs.length
+        if (!node.legs || node.legs.length < 2) return null
 
-        const radiusScale = params.roadJunctionRadiusScale ?? 1.35
-        const apronLift    = params.roadJunctionApronLift    ?? 0.0
-
+        const apronLift = params.roadJunctionApronLift ?? 0.0
         // Per-vertex asphalt-TOP Y — the surface the ribbon mesh + truck ride (FEAT-19 grade + crown/camber).
         const sampleY = (x, z) => {
             const y = this._road.sampleRoadTopY ? this._road.sampleRoadTopY(x, z) : null
             return (y != null && isFinite(y) ? y : nodeY) + apronLift
         }
 
-        // Trim distance T: pull each mouth back far enough that adjacent legs' inner edges clear the
-        // node. For an adjacent interior angle θ the inner edges cross at halfWidth/tan(θ/2); take the
-        // MAX over corners → a uniform cut that grows when any pair is acute (bigger junction). * margin.
-        let minClear = halfWidth
+        // Merge near-parallel legs: the graph sometimes routes two runs out of a node in almost the same
+        // direction — their overlapping mouths would self-intersect the boundary (→ flipped-sliver spikes).
+        const legs = []
+        for (const leg of node.legs) {
+            let m = null
+            for (const e of legs) { if (e.dir.x * leg.dir.x + e.dir.z * leg.dir.z > 0.94) { m = e; break } }
+            if (m) { m.dir.x += leg.dir.x; m.dir.z += leg.dir.z; const L = Math.hypot(m.dir.x, m.dir.z) || 1; m.dir.x /= L; m.dir.z /= L }
+            else legs.push({ dir: { x: leg.dir.x, z: leg.dir.z } })
+        }
+        legs.sort((a, b) => Math.atan2(a.dir.x, a.dir.z) - Math.atan2(b.dir.x, b.dir.z))
+        const n = legs.length
+        if (n < 2) return null
+        // Skip ONE-SIDED pseudo-junctions (all legs splay one way → node on the pad edge → crescent spike).
+        let sx = 0, sz = 0
+        for (const l of legs) { sx += l.dir.x; sz += l.dir.z }
+        if (Math.hypot(sx, sz) / n > 0.55) return null
+
+        // Pad mouth: STRAIGHT node+dir·T placement (keeps the boundary topologically simple → robust, no
+        // self-intersection). T is a hair past the ribbon cut so the pad overlaps the trimmed ribbon end.
+        // The mouth is FLARED wider than the ribbon (flareHW > halfWidth) so it generously covers the
+        // trimmed end even where a curved approach offsets it laterally — roads fan into the junction and
+        // the seam is hidden, riding the carved-flat plaza (_junctionCarve).
+        const cutback = this._road.junctionCutbackDist ? this._road.junctionCutbackDist() : halfWidth * 2
+        const T = cutback + halfWidth * 0.5
+        // Adaptive flare: aim for roadJunctionFlare× the road half-width, but CAP it so adjacent mouths
+        // (θ apart, T out) never collide — a wide mouth at a tight corner would self-intersect the
+        // boundary (spike). So open junctions get the full flare (covers the curved-end seam); tight ones
+        // narrow automatically.
+        let minHalf = Math.PI / 2
         for (let i = 0; i < n; i++) {
             const a = legs[i].dir, b = legs[(i + 1) % n].dir
             const dot = Math.max(-1, Math.min(1, a.x * b.x + a.z * b.z))
-            const tan = Math.tan(Math.acos(dot) * 0.5)
-            if (tan > 1e-3) minClear = Math.max(minClear, halfWidth / tan)
+            minHalf = Math.min(minHalf, Math.acos(dot) * 0.5)
         }
-        // Clamp the angle-driven pullback BEFORE the size knob so radiusScale always has effect
-        // (a shallow-angle Y otherwise pins T at the cap and the slider does nothing). Shallow
-        // crossings are angle-limited: the pad can only get so tight before adjacent edges overlap.
-        minClear = Math.min(minClear, halfWidth * 3)
-        const T = Math.min(minClear * radiusScale, halfWidth * 8)
-
-        // Ribbon edge point of `leg` at the trimmed mouth, on the perpendicular side `side` (±1).
+        const flareCap = Math.max(halfWidth, T * Math.sin(minHalf) * 0.9)
+        const flareHW = Math.min(halfWidth * (params.roadJunctionFlare ?? 1.6), flareCap)
         const legEdge = (leg, side) => {
             const d = leg.dir
-            return {
-                x: nx + d.x * T + (-d.z) * side * halfWidth,
-                z: nz + d.z * T + ( d.x) * side * halfWidth,
-            }
+            return { x: nx + d.x * T + (-d.z) * side * flareHW, z: nz + d.z * T + (d.x) * side * flareHW }
         }
         // Which perpendicular side (±1) of `leg` faces `other`.
         const faceSide = (leg, other) =>
             ((-leg.dir.z) * other.dir.x + (leg.dir.x) * other.dir.z) >= 0 ? 1 : -1
-        // Intersection of line (p,dp) with line (q,dq); null if ~parallel (→ straight-through).
-        const lineX = (p, dp, q, dq) => {
-            const den = dp.x * dq.z - dp.z * dq.x
-            if (Math.abs(den) < 1e-6) return null
-            const t = ((q.x - p.x) * dq.z - (q.z - p.z) * dq.x) / den
-            return { x: p.x + dp.x * t, z: p.z + dp.z * t }
-        }
 
         // ── Boundary polygon: leg mouths + rounded corners ─────────────────────────────────────
+        // Corner between adjacent legs = a node-centred circular arc between their facing mouth edges
+        // (bounded → no spike, unlike an edge-line intersection which flies to infinity at shallow
+        // angles). If the angular gap is wide (> STRAIGHT_GAP, i.e. a through road's back side with no
+        // road between the two legs) connect STRAIGHT so there's no phantom bulge behind the through road.
+        const STRAIGHT_GAP = 2.7   // rad (~155°): beyond this the two legs are ~antiparallel (through road)
+        const ARC_SAMPLES = 5
         const poly = []
-        const FILLET = 6
         for (let i = 0; i < n; i++) {
             const legA = legs[i]
             const legB = legs[(i + 1) % n]
@@ -996,59 +1037,70 @@ export class RoadMeshSystem {
             poly.push(legEdge(legA, faceSide(legA, legP)))
             const eA = legEdge(legA, faceSide(legA, legB))
             poly.push(eA)
-            // Rounded corner: Bézier from legA's facing edge to legB's facing edge (control = sharp corner).
             const eB = legEdge(legB, faceSide(legB, legA))
-            const corner = lineX(eA, legA.dir, eB, legB.dir)
-            if (corner) {
-                for (let s = 1; s < FILLET; s++) {
-                    const t = s / FILLET, mt = 1 - t
-                    poly.push({
-                        x: mt * mt * eA.x + 2 * mt * t * corner.x + t * t * eB.x,
-                        z: mt * mt * eA.z + 2 * mt * t * corner.z + t * t * eB.z,
-                    })
+            // Angular gap between the two legs around the node.
+            let gap = Math.atan2(legB.dir.x, legB.dir.z) - Math.atan2(legA.dir.x, legA.dir.z)
+            while (gap < 0) gap += 2 * Math.PI
+            while (gap > 2 * Math.PI) gap -= 2 * Math.PI
+            const wide = Math.min(gap, 2 * Math.PI - gap) > STRAIGHT_GAP
+            if (!wide) {
+                // Node-centred arc from eA to eB (short way).
+                const rA = Math.hypot(eA.x - nx, eA.z - nz), rB = Math.hypot(eB.x - nx, eB.z - nz)
+                const r = (rA + rB) * 0.5
+                const bA = Math.atan2(eA.x - nx, eA.z - nz)
+                let dB = Math.atan2(eB.x - nx, eB.z - nz) - bA
+                while (dB >  Math.PI) dB -= 2 * Math.PI
+                while (dB < -Math.PI) dB += 2 * Math.PI
+                for (let s = 1; s < ARC_SAMPLES; s++) {
+                    const bear = bA + dB * (s / ARC_SAMPLES)
+                    poly.push({ x: nx + Math.sin(bear) * r, z: nz + Math.cos(bear) * r })
                 }
             }
-            // eB is pushed by the next iteration as legB's "facing previous" mouth start (no dup).
+            // else: straight — eB is pushed by the next iteration as legB's "facing previous" mouth start.
         }
         if (poly.length < 3) return null
-        if (this._polySignedArea(poly) < 0) poly.reverse()   // ensure CCW (Pitfall 6)
+        // The boundary was walked in leg order (mouth → corner → next mouth …), so it is ALREADY an
+        // ordered simple ring — do NOT bearing-sort it (that assumes the node is interior, which fails for
+        // a one-sided "pitchfork" junction where all legs splay to one side, scrambling it into a
+        // self-intersecting polygon → spikes). Just drop consecutive duplicates (incl. the wrap seam).
+        const ring0 = []
+        for (const p of poly) {
+            const q = ring0[ring0.length - 1]
+            if (!q || Math.hypot(p.x - q.x, p.z - q.z) > 0.05) ring0.push(p)
+        }
+        while (ring0.length >= 2 && Math.hypot(ring0[0].x - ring0[ring0.length - 1].x, ring0[0].z - ring0[ring0.length - 1].z) <= 0.05) ring0.pop()
+        if (ring0.length < 3) return null
 
-        // ── Concentric-ring tessellation from centroid → dense, surface-following, smooth normals ──
-        const B = poly.length
-        const RINGS = 5
-        const cx = poly.reduce((s, p) => s + p.x, 0) / B
-        const cz = poly.reduce((s, p) => s + p.z, 0) / B
-        const nVerts = 1 + RINGS * B
-        const positions = new Float32Array(nVerts * 3)
-        const colors    = new Float32Array(nVerts * 3)
-        const setV = (idx, x, z) => {
-            positions[idx * 3    ] = x
-            positions[idx * 3 + 1] = sampleY(x, z)
-            positions[idx * 3 + 2] = z
-            colors[idx * 3] = 0.15; colors[idx * 3 + 1] = 0.15; colors[idx * 3 + 2] = 0.17
+        // ── Triangulate the (bearing-sorted → simple, non-self-intersecting) boundary with ear clipping.
+        //    Robust for any simple polygon — no star-shape / interior-node assumption, so no flipped
+        //    slivers ("spikes") even for lopsided or near-overlapping-leg junctions. The surface is
+        //    flat-ish here (the junction carve eases crown/camber to 0), so the boundary polygon alone
+        //    (no interior fan verts) tessellates smoothly enough. Winding is forced UP below. ───────────
+        const B = ring0.length
+        const positions = new Float32Array(B * 3)
+        const colors    = new Float32Array(B * 3)
+        for (let b = 0; b < B; b++) {
+            positions[b * 3    ] = ring0[b].x
+            positions[b * 3 + 1] = sampleY(ring0[b].x, ring0[b].z)
+            positions[b * 3 + 2] = ring0[b].z
+            colors[b * 3] = 0.15; colors[b * 3 + 1] = 0.15; colors[b * 3 + 2] = 0.17
         }
-        setV(0, cx, cz)
-        for (let r = 1; r <= RINGS; r++) {
-            const f = r / RINGS
-            for (let b = 0; b < B; b++) {
-                setV(1 + (r - 1) * B + b, cx + (poly[b].x - cx) * f, cz + (poly[b].z - cz) * f)
-            }
+        const tri = earClip(ring0)
+        if (!tri || tri.length < 3) return null
+        // Force UP-facing winding: sum triangle XZ signed area; if it came out CW (faces down), flip every
+        // triangle so computeVertexNormals yields +Y normals (FrontSide → pad visible, not backface-black).
+        let area2 = 0
+        for (let t = 0; t < tri.length; t += 3) {
+            const a = ring0[tri[t]], b = ring0[tri[t + 1]], c = ring0[tri[t + 2]]
+            area2 += (b.x - a.x) * (c.z - a.z) - (c.x - a.x) * (b.z - a.z)
         }
-        const ring = (r, b) => 1 + (r - 1) * B + (b % B)   // r ≥ 1
-        const tri = []
-        for (let b = 0; b < B; b++) tri.push(0, ring(1, b), ring(1, b + 1))            // centroid fan
-        for (let r = 1; r < RINGS; r++) {                                              // ring strips
-            for (let b = 0; b < B; b++) {
-                const a0 = ring(r, b), a1 = ring(r, b + 1), c0 = ring(r + 1, b), c1 = ring(r + 1, b + 1)
-                tri.push(a0, c0, c1, a0, c1, a1)
-            }
-        }
+        if (area2 > 0) for (let t = 0; t < tri.length; t += 3) { const tmp = tri[t + 1]; tri[t + 1] = tri[t + 2]; tri[t + 2] = tmp }
 
         const geo = new THREE.BufferGeometry()
         geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
         geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3))
         // BUG-28: pads share the road shader (reads aMark). All-zero aMark (markEnable=0) → no stripes.
-        geo.setAttribute('aMark',    new THREE.BufferAttribute(new Float32Array(nVerts * 4), 4))
+        geo.setAttribute('aMark',    new THREE.BufferAttribute(new Float32Array(B * 4), 4))
         geo.setIndex(new THREE.BufferAttribute(new Uint32Array(tri), 1))
         geo.computeVertexNormals()
 

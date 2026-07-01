@@ -41,6 +41,9 @@ import { delaunay, urquhartEdges } from './road-graph.js'
 
 // FEAT-13 v2: total order on site ids [cmx,cmz,k] — the Poisson-disk priority tie-break.
 function idLess(a, b) { return a[0] !== b[0] ? a[0] < b[0] : (a[1] !== b[1] ? a[1] < b[1] : a[2] < b[2]) }
+
+// QUAL-10: shared no-influence result for _junctionCarve (allocation-free hot-path default).
+const _ZERO_JC = { frac: 0, widen: 0 }
 // roadQuality imported for SURF-06 D-03: pothole severity uses the same per-stretch
 // quality hook as markings. Importing from road-quality.js (not road-mesh.js) avoids
 // the road-mesh.js → terrain.js → road.js chain issues.
@@ -2737,10 +2740,106 @@ export class RoadSystem {
         const halfWidth     = p.roadHalfWidth      ?? 5
         const crownHeight   = p.crownHeight         ?? 0.05
         const clearanceMargin = p.roadClearanceMargin ?? 0.25
-        const crownY = crownProfile(signedLat, halfWidth, crownHeight)
+        let crownY = crownProfile(signedLat, halfWidth, crownHeight)
         const camberAngle = camberSign * this.camberProfile(arcSEff, runKey)
-        const tiltY = signedLat * Math.sin(camberAngle)
+        let tiltY = signedLat * Math.sin(camberAngle)
+        // QUAL-10: ease crown+camber to FLAT through a junction — a crossing is a flat plaza, and the
+        // crown/camber extrapolated across the widened junction carve core (below) would dome/tilt.
+        const jc = this._junctionCarve(runKey, arcSEff)
+        if (jc.frac > 0) { const k = 1 - jc.frac; crownY *= k; tiltY *= k }
         return this.runProfile(arcSEff, runKey).gradeY + crownY + tiltY - clearanceMargin
+    }
+
+    // ── QUAL-10: junction carve influence ────────────────────────────────────────────────────
+    /**
+     * Junction carve influence for a point at run-arc `arcSEff` on `runKey`. Near an AT_GRADE crossing
+     * (FEAT-19's _crossingsByRun) the carve holds the road grade FLAT out to a WIDENED core (`widen`)
+     * so the terrain is dug/filled to the junction pad instead of clipping through it, and the
+     * cross-section eases crown/camber to flat (`frac`) so a crown isn't extrapolated across that wide
+     * core. `frac` = 1 at the node, 0 at radius R along the run. Two crossing runs each widen their own
+     * band → the union covers the pad disc. Pure fn of the network (window-invariant); 0 if no crossings.
+     */
+    _junctionCarve(runKey, arcSEff) {
+        // Node junctions (graph T/X + rows cross-anchors) carry the pad locations as per-run ENDPOINT arcs.
+        if (this._nodeJunctionsRev !== this._networkRev) this._detectNodeJunctions()
+        const arcs = this._junctionCarveArcs && this._junctionCarveArcs.get(runKey)
+        if (!arcs || arcs.length === 0) return _ZERO_JC
+        // R read FRESH from params (NOT baked into the _networkRev-cached arc list) so the carve-radius
+        // slider takes effect on a surface rebuild without a full re-route.
+        const R = this._params.roadJunctionCarveRadius ?? (this._params.roadHalfWidth ?? 5) * 2.5
+        if (R <= 0) return _ZERO_JC
+        let best = 0
+        for (let i = 0; i < arcs.length; i++) {
+            const along = Math.abs(arcSEff - arcs[i].arc)
+            if (along < R) { const f = 1 - along / R; if (f > best) best = f }
+        }
+        return best > 0 ? { frac: best, widen: best * R } : _ZERO_JC
+    }
+
+    // QUAL-10: how far the swept ribbons are cut back from a junction node (metres) to clear room for the
+    // radiused intersection pad. ONE source shared by the ribbon trim (RoadMeshSystem._buildRoadTile) and
+    // the pad mouth distance (buildJunctionFootprint) so the pad meets the trimmed ribbon end exactly.
+    junctionCutbackDist() {
+        return this._params.roadJunctionCutback ?? 10
+    }
+
+    // ── QUAL-10: NODE junctions (the actual graph T/X/Y intersections) ─────────────────────────
+    /**
+     * Where ≥3 streamed runs meet at a shared ANCHOR — the real intersections of the shipped graph
+     * network. Unlike _detectJunctions (mid-span CROSSINGS, which are culled/absent in graph mode) these
+     * are found by clustering streamed run ENDPOINTS (the run-join seal welds them to one point), so it
+     * needs no abstract-graph incidence and is a pure fn of the streamed network. Also builds
+     * _junctionCarveArcs (runKey → {endpoint arc, radius}) so the terrain carve (_junctionCarve) flattens
+     * and widens the plaza at these nodes. Cached by _networkRev.
+     *
+     * Records match buildJunctionFootprint's shape: { pos, nodeY, legs:[{runKey,dir}], kind, simpleMerge }.
+     * @returns {Map<string, object>} nodeKey → node record
+     */
+    _detectNodeJunctions() {
+        if (this._nodeJunctionsRev === this._networkRev && this._nodeJunctions) return this._nodeJunctions
+        const halfWidth = this._params.roadHalfWidth ?? 5
+        const EPS2 = Math.pow(Math.max(2, halfWidth * 0.75), 2)
+
+        // Cluster every streamed run's two ENDPOINTS; each carries an OUTWARD unit dir + endpoint arc.
+        const clusters = []   // { x, z, ys:[], legs:[{runKey,dir}], arcs:[{runKey,arc}] }
+        const addEnd = (x, z, y, dir, runKey, arc) => {
+            for (const c of clusters) {
+                const dx = c.x - x, dz = c.z - z
+                if (dx * dx + dz * dz < EPS2) { c.ys.push(y); c.legs.push({ runKey, dir }); c.arcs.push({ runKey, arc }); return }
+            }
+            clusters.push({ x, z, ys: [y], legs: [{ runKey, dir }], arcs: [{ runKey, arc }] })
+        }
+        for (const [runKey, e] of this._network) {
+            const pts = e.points
+            if (!pts || pts.length < 2) continue
+            const cum = e.polyCum
+            const len = cum ? cum[cum.length - 1] : 0
+            const a0 = pts[0], b0 = pts[1]
+            const d0 = Math.hypot(b0.x - a0.x, b0.z - a0.z) || 1
+            addEnd(a0.x, a0.z, a0.y, { x: (b0.x - a0.x) / d0, z: (b0.z - a0.z) / d0 }, runKey, 0)
+            const n = pts.length, an = pts[n - 1], bn = pts[n - 2]
+            const dn = Math.hypot(bn.x - an.x, bn.z - an.z) || 1
+            addEnd(an.x, an.z, an.y, { x: (bn.x - an.x) / dn, z: (bn.z - an.z) / dn }, runKey, len)
+        }
+
+        const nodes = new Map()
+        const carveArcs = new Map()
+        for (const c of clusters) {
+            if (c.legs.length < 3) continue   // only real junctions; a 2-leg cluster is a road continuing
+            const nodeY = c.ys.reduce((s, v) => s + v, 0) / c.ys.length
+            const legs = c.legs.slice().sort((p, q) => Math.atan2(p.dir.x, p.dir.z) - Math.atan2(q.dir.x, q.dir.z))
+            nodes.set(`${Math.round(c.x)},${Math.round(c.z)}`, {
+                pos: new THREE.Vector3(c.x, nodeY, c.z), nodeY, legs, kind: 'AT_GRADE', simpleMerge: legs.length > 4,
+            })
+            for (const a of c.arcs) {
+                let arr = carveArcs.get(a.runKey); if (!arr) { arr = []; carveArcs.set(a.runKey, arr) }
+                arr.push({ arc: a.arc })   // radius read fresh in _junctionCarve (live slider)
+            }
+        }
+        this._nodeJunctions = nodes
+        this._junctionCarveArcs = carveArcs
+        this._nodeJunctionsRev = this._networkRev
+        return nodes
     }
 
     // ── QUAL-10: asphalt-TOP surface sampler (junction apron) ─────────────────────────────────
@@ -2795,7 +2894,11 @@ export class RoadSystem {
         // ribbon, then ramp to raw over the variable toe. Same extent the mesh carve uses.
         const carveExtraWidth = p.roadCarveExtraWidth ?? 3.0
         const minRadius       = p.roadMinTurnRadius   ?? 12
-        const carveHalfWidth  = Math.min(halfWidth + carveExtraWidth, minRadius)
+        // QUAL-10: near a junction, WIDEN the flat road-level core so terrain is carved to the pad disc
+        // (union of the crossing runs' widened bands) instead of leaving the fillet corners at embankment
+        // height where they clip through the pad. _carveDirtY has already eased crown/camber to flat here.
+        const jc = this._junctionCarve(runKey, arcSEff)
+        const carveHalfWidth  = Math.min(halfWidth + carveExtraWidth, minRadius) + jc.widen
 
         const latDist = Math.abs(signedLat)
 

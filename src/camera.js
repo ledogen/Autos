@@ -336,3 +336,10 @@ export function getCameraMode () {
 export function getFreecamPosition () {
   return freecamPos.clone()
 }
+
+// Dev handle: place the freecam programmatically (world pos + yaw/pitch, radians). Exposed on
+// `window.__view` in main.js — used by the headless screenshot tool (test/screenshot.mjs) and the browser
+// console to jump to a spot for visual troubleshooting. Mirrors the window.terrain / window.sky handles.
+export function placeFreecam (x, y, z, yaw, pitch) {
+  freecamPos.set(x, y, z); freecamYaw = yaw; freecamPitch = pitch; cameraMode = 'freecam'
+}
