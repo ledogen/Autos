@@ -120,6 +120,7 @@ export class WaterSystem {
         this._cellCache = new Map()   // "cx,cz" -> { minima:[], saddles:[] } (raw critical points)
         this._pondCache = new Map()   // floorKey -> pond | null
         this._streamCache = new Map() // saddleKey -> stream | null
+        this._refineCache = new Map() // "qx,qz" -> refined basin floor {x,z,y} (memoizes the descent)
     }
 
     // ── Terrain reads ─────────────────────────────────────────────────────────
@@ -206,7 +207,19 @@ export class WaterSystem {
     }
 
     // Refine a coarse lattice minimum onto the true local floor. Pure fn of the start.
-    _refineMin(sx, sz) { return this._greedyDescend(sx, sz) }
+    // PERF: memoized by quantized start — pondsInBBox re-iterates the SAME cached cell
+    // minima on every call (the router queries pond discs per edge → thousands of calls),
+    // and the descent ran on every _pondForBasin BEFORE its floor-key cache check. Keyed
+    // on a deterministic source over the world's fixed height field → safe for the world's
+    // life, like the other caches. Callers must not mutate the returned floor object.
+    _refineMin(sx, sz) {
+        const key = `${q(sx)},${q(sz)}`
+        const hit = this._refineCache.get(key)
+        if (hit) return hit
+        const floor = this._greedyDescend(sx, sz)
+        this._refineCache.set(key, floor)
+        return floor
+    }
 
     // ── Public: raw critical points over a bbox ───────────────────────────────
     _cellsForBBox(minX, minZ, maxX, maxZ, marginCells) {
