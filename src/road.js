@@ -1684,6 +1684,12 @@ export class RoadSystem {
             // no loops reintroduced. Rows keep the tight 20 m blend (collinear rows never overshoot).
             goalBlend: isGraph ? (pp.roadGraphGoalBlend ?? 60) : 20,
             emitPrimitives: true,
+            // BUG-16/FEAT-20 de-quantize refit (road-carve.js refit block): corridor Dubins
+            // shortcut (straightens the greedy quantized-heading bow, continuous radii) + κ
+            // box-filter clothoid re-emit (smooth curvature transitions). Read straight off the
+            // live params like the other roadArc* knobs so the debug sliders re-route through
+            // the normal onRoadParamChange → _invalidateProto path.
+            refitShortcut: pp.roadRefitShortcut ?? false, refitWindow: pp.roadRefitWindow ?? 0,
             // FEAT-17: pond+skirt no-go discs for this edge's search area as pure DATA (see
             // setWaterNoGo). Baked into the shared spec so the Worker pre-warm job and the
             // synchronous fallback route with the identical exclusion. undefined when unwired.

@@ -101,3 +101,29 @@ different fixes; addressing only one won't feel natural.
 - **BUG-16** heading-quantization zigzag (`bug-road-heading-dither-zigzag.md`) — the other symptom of the
   same heading-lattice quantization; a continuous refit may subsume it.
 - Curvature/camber-cost history: [[project_road_camber_curvature]], [[project_arc_primitive_router]].
+
+## Resolution (2026-07-01)
+
+**Shipped** as the two-pass de-quantize refit inside `arcPrimitiveConnect` (`src/road-carve.js`,
+mirrored into `src/road-worker.js` ROUTE SYNC), params `roadRefitShortcut`/`roadRefitWindow`
+(data/ranger.js + debug sliders), wired through `_routeOptsBetween`.
+
+- **Smoothness** — κ(s) box-filter (`roadRefitWindow`, default 30 m; shrinking symmetric half-window,
+  no replicate padding) re-emitted as merged clothoid/arc descriptors: curvature now RAMPS
+  (transition spirals) instead of jumping at primitive boundaries. Measured max |Δκ| per 2 m sample:
+  0.125 (raw palette jumps) → 0.025. Averaging can only shrink |κ| ⇒ min-radius stays ≥ hardR by
+  construction (exact `minRadius()` gate). The terminal Dubins runs at ADAPTIVE rho
+  (max(goalBlend,40)…hardR), erasing the κ=1/hardR blip a fixed-hardR terminal left on
+  near-straight roads.
+- **Variety** — the corridor Dubins shortcut (see BUG-16 resolution) produces continuous
+  chord-derived radii (0.8/0.4/0.2·chord clamped ≥ hardR), so curves are no longer drawn from the
+  4-entry palette alone.
+- **Palette densification (the "cheap experiment") evaluated and DEFERRED**: the shortcut + filter
+  deliver variety + smoothness without the A*-branching cost, and without touching the roadArcRadii
+  debug sliders, which bind palette entries BY INDEX (`params.roadArcRadii[0..3]`, debug.js) — a
+  denser palette would break that coupling; revisit only if the look still reads quantized in-game.
+
+Window-invariant + deterministic (pure fn of the primitive chain + opts + heightFn; both Worker
+pre-warm and sync fallback refit identically). Gate `test/road-dequantize.mjs`; all 31 gates green.
+Cold-route perf: refit ON measured ~4.6% FASTER end-to-end (fewer emitted primitives shrink
+downstream assembly), router-only overhead ≈ 0–6% — within the ≤ +25% budget.

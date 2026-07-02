@@ -14,6 +14,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 
 const GATES = [
     'arc-router.mjs',       // arc-primitive router: valid-by-construction (Phase 09-31)
+    'road-dequantize.mjs',  // BUG-16+FEAT-20: de-quantize refit — shortcut straightens the bow, κ-filter clothoids, switchbacks preserved, endpoint-exact
     'road-minradius.mjs',   // BUG-12: DENSE centerline min-radius the ribbon sweeps (incl. capture fixtures) — RED until Phase B
     'centerline-curvature.mjs', // Road Overhaul Phase A: EXACT primitive min-radius + D-16 invariance (new path, beside old)
     'defect-b-grade.mjs',   // smoothGradeInPlace window-invariance (defect B)

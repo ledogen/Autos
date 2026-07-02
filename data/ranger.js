@@ -464,6 +464,23 @@ export const RANGER_PARAMS = {
   roadArcHeadingBins: 24,          // heading discretization (15°); one bin turned per turn primitive
   roadArcGradeSamples: 2,          // grade samples along each primitive arc (≥2 for long sweeps)
 
+  // ── De-quantize refit (BUG-16 + FEAT-20) — post-passes on the routed primitive chain ────────────
+  // roadRefitShortcut (BUG-16): corridor Dubins shortcut. The greedy weighted-A* holds a quantized
+  // heading when the canonical startHeading is off the chord bearing → a long-wavelength bow
+  // (~22–36 m lateral over a 500 m connection) that reads as a serpentine. The shortcut replaces any
+  // span with a shorter continuous-radius Dubins word; acceptance is HARD (length ≤ raw·1.02, max
+  // sampled grade ≤ raw + slack, pond-clear, in-bounds) so switchback stacks are never cut through
+  // the hillside. Continuous chord-derived radii also break the 4-radius palette look.
+  // roadRefitWindow (FEAT-20): κ box-filter window (m), re-emitted as clothoid ramps — smooth
+  // curvature transitions instead of instant κ jumps at primitive boundaries. Averaging can only
+  // shrink max |κ| ⇒ min-radius stays ≥ roadArcHardRadius BY CONSTRUCTION. Larger = smoother but
+  // more far-end drift for the terminal Dubins to absorb (superlinear in W — keep ≤ ~40).
+  // Palette densification was evaluated for FEAT-20 and DEFERRED: the shortcut already yields
+  // continuous radii and the filter yields spirals, without the A*-branching cost or touching the
+  // index-bound roadArcRadii debug sliders.
+  roadRefitShortcut: true,  // BUG-16 — straighten near-straight roads (corridor Dubins shortcut)
+  roadRefitWindow: 30,      // m — FEAT-20 κ-smoothing window (0 = off)
+
   // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
   // Retained for the DEFERRED D-01 spur pass (trunk-only ships first). D-01 / RESEARCH A1.
   spurProbability: 0.15, // ratio [0,1] — spur chance (deferred D-01 spur pass)

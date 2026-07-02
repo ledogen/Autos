@@ -78,3 +78,24 @@ arc-router defect alongside the (now-addressed) anchor-join kinks and vertical b
 - `src/road-carve.js` — `arcPrimitiveConnect` (`:728`), `hbins`/`stepLen`/`binOf`/`stateOf` discretization
   (`:732`/`:755`); `arcFilletWaypoints` / `filletMinRadius` / `smoothGradeInPlace` as smoothing-pass tools.
 - `src/road.js` — `_protoConnect` (`:1262`, calls the router), `_limitCurvature` (`:1212`) context.
+
+## Resolution (2026-07-01)
+
+**Fixed** by the corridor Dubins shortcut pass inside `arcPrimitiveConnect` (BUG-16/FEAT-20 refit,
+`src/road-carve.js`), enabled via `roadRefitShortcut` (data/ranger.js, debug slider "Refit Shortcut").
+
+**Root cause CORRECTED during planning** — the ticket's diagnosis above is wrong in one important way:
+the router stores CONTINUOUS headings per state (only the state *keys* are binned by `binOf`), so there
+is no per-primitive alternation between adjacent 15° bins. The real artifact is a single
+long-wavelength BOW/S (~22–36 m lateral over a ~500 m connection, measured headlessly): when the
+canonical `startHeading` differs from the chord bearing (the normal case), the greedy weighted-A*
+(wHeur 1.5) holds a quantized heading through long runs and defers the correction — consecutive
+connections then read as the periodic serpentine. A κ box-filter alone cannot fix this (it preserves
+∫κ / the long-wavelength shape: 33 m bow → 32.7 m at W=30); the shortcut was measured to fix it
+(28.9 m → 1.57 m at 5° offset, 21.7 m → 3.46 m at 7.5°, endpoint pose error ~1e-14).
+
+Acceptance is HARD per span — length ≤ raw·1.02, max sampled grade ≤ raw + slack AND grade-excess
+∫max(0, g−maxGrade)ds ≤ raw + 1 m (the integral is what actually protects switchback stacks), pond
+discs clear, lattice bounds — else split-and-recurse; a failed final validation falls back
+deterministically. Gate: `test/road-dequantize.mjs` (registered in run-all), including the ≥10 m
+negative control with the refit off.

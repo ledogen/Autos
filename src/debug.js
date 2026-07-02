@@ -360,6 +360,14 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(params, 'roadArcGradeSamples', 1, 6, 1 ).name('Arc Grade Samples').onChange(fireRoadParam)
   roadFolder.add(params, 'roadArcHeurWeight',   1, 3, 0.1).name('Arc Heur Weight (speed)').onChange(fireRoadParam)
 
+  // De-quantize refit (BUG-16 + FEAT-20) — post-passes on the routed chain (road-carve.js).
+  //   Refit Shortcut: corridor Dubins shortcut — straightens the quantized-heading bow on
+  //                   near-straight roads and yields continuous (chord-derived) turn radii.
+  //   Refit Smooth Window: κ box-filter window re-emitted as clothoid ramps; 0 = off. Larger =
+  //                   smoother curvature but more far-end drift for the terminal to absorb.
+  roadFolder.add(params, 'roadRefitShortcut').name('Refit Shortcut (straighten)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadRefitWindow', 0, 100, 5).name('Refit Smooth Window (m)').onChange(fireRoadParam)
+
   // ── Road Surface sub-folder (D-04/D-07 — Plan 09-05 surface sliders) ────────────
   // These sliders change ROAD GEOMETRY (width, crown, camber, carve slopes, shoulder, etc.)
   // and fire onRoadSurfaceChange which triggers a full debounced road-mesh + carve rebuild.

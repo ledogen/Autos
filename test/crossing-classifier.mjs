@@ -116,7 +116,10 @@ const mapA  = listToMap(listA)
     const roadB = new RoadSystem(SEED, ROWS); roadB.update(new THREE.Vector3(4756, 0, 600))
     const mapB = listToMap(roadB.crossingList())
     // Interior region safely inside both ±~512 m bands (A@4500, B@4756; z centre shared).
-    const inRegion = (r) => r.point.x >= 4350 && r.point.x <= 4900 && r.point.z >= 200 && r.point.z <= 1000
+    // Region widened 2026-07-01 (BUG-16/FEAT-20 refit): straightened rows weave/cross less, so the
+    // old x[4350,4900] z[200,1000] box holds only 1 crossing — sample-size fix only, the invariance
+    // assertions themselves (onlyA/onlyB/classMismatch = 0) are unchanged and still bind.
+    const inRegion = (r) => r.point.x >= 4350 && r.point.x <= 4950 && r.point.z >= -250 && r.point.z <= 1000
     const regA = [...mapA.values()].filter(inRegion), regB = [...mapB.values()].filter(inRegion)
     const setA = new Set(regA.map(keyOf)), setB = new Set(regB.map(keyOf))
     let onlyA = 0, onlyB = 0, sample = ''
@@ -145,7 +148,11 @@ const mapA  = listToMap(listA)
 {
     const counts = { NEAR_PARALLEL: 0, AT_GRADE: 0, GRADE_SEP: 0 }
     const seen = new Set()
-    for (const c of [[4500, 600], [-300, 220], [-900, 150], [800, 440], [5300, 850]]) {
+    // Center list extended 2026-07-01 (BUG-16/FEAT-20 refit): straightened rows cross less often
+    // (the serpentine weave WAS a crossing factory), so the original 5 centers dropped to 14 total
+    // crossings. More centers restore the >20 sample; the class-span assertions are unchanged.
+    for (const c of [[4500, 600], [-300, 220], [-900, 150], [800, 440], [5300, 850],
+                     [1500, 300], [2500, 700], [-2000, 400], [-1500, 800], [6000, 400], [-3000, 600]]) {
         const r = new RoadSystem(SEED, ROWS); r.update(new THREE.Vector3(c[0], 0, c[1]))
         for (const rec of r.crossingList()) {
             const gk = `${Math.round(rec.point.x)},${Math.round(rec.point.z)}`

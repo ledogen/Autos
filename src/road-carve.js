@@ -905,6 +905,257 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             if (dub) for (const p of dub) pushArc(p.x0, p.z0, p.theta0, p.kappa0, p.length)
             else { const dx = bx - cx, dz = bz - cz, L = Math.hypot(dx, dz); pushArc(cx, cz, Math.atan2(dz, dx), 0, L) }
         }
+
+        // ── De-quantize refit (BUG-16 + FEAT-20) ──────────────────────────────────────────────
+        // Two deterministic post-passes over the routed chain, both OFF unless opted in (bare
+        // router stays byte-identical — arc-router.mjs). Pure fns of the chain + opts + heightFn
+        // → window-invariant; the Worker pre-warm and the sync fallback refit identically.
+        //   1. Corridor Dubins SHORTCUT (opts.refitShortcut — BUG-16): the greedy weighted-A*
+        //      holds a quantized heading when startHeading is off the chord bearing and defers
+        //      correction → a long-wavelength bow (~22–36 m lateral / 500 m connection) that reads
+        //      as a serpentine across consecutive connections. Divide-and-conquer: replace a span
+        //      with the shortest Dubins word at DESCENDING rho (0.8/0.4/0.2·chord → hardR —
+        //      continuous chord-derived radii, FEAT-20 variety) iff it is not longer (≤ raw·1.02),
+        //      not steeper (max sampled grade ≤ raw + slack AND grade-EXCESS ∫max(0, g−maxGrade)ds
+        //      ≤ raw + 1 m — the integral is what actually protects switchback stacks: a short
+        //      steep stub in the raw span must not license a long steep cut-through the hillside),
+        //      pond-clear and in-bounds; else split at the span's arc-length midpoint and recurse
+        //      (spans < MIN_SPAN keep their raw primitives).
+        //   2. κ BOX-FILTER re-emitted as clothoids (opts.refitWindow m — FEAT-20 smoothness):
+        //      sample κ(s), average with a shrinking symmetric half-window h_i = min(H, i, N−1−i)
+        //      (endpoint κ exact; NO replicate padding — padding biases ∫κ → heading drift),
+        //      re-integrate from the EXACT original start pose, emit merged clothoid/arc
+        //      descriptors. Averaging can only shrink max |κ| ⇒ |κ̄| ≤ 1/hardR everywhere:
+        //      min-radius stays valid BY CONSTRUCTION.
+        //   3. TERMINAL: re-integration drifts the far end (~0.5 m at W=30, superlinear in W —
+        //      keep W small; the shortcut owns BUG-16). Cut back max(goalBlend, 40) m and Dubins
+        //      at ADAPTIVE rho (C, C/2, C/4, hardR — first word ≤ 1.25× the gap; fallback hardR)
+        //      to the EXACT original end pose, so adjacent connections still join G1 at shared
+        //      anchors. Adaptive rho also erases the κ=1/hardR blip a fixed-hardR terminal leaves
+        //      visible on near-straight roads.
+        //   4. VALIDATE the refit chain (pond/bounds per ≤refitDs sample); any violation → the
+        //      span-checked post-shortcut chain, else the raw chain (deterministic fallback).
+        if ((opts.refitShortcut || (opts.refitWindow ?? 0) > 0) && prims.length > 1) {
+            const refitDs = opts.refitDs ?? 2       // m — refit sampling spacing
+            const refitW  = opts.refitWindow ?? 0   // m — κ box-filter window (0 = shortcut only)
+            const GRADE_SLACK  = 0.02               // a shortcut may steepen max grade by ≤ this
+            const EXCESS_SLACK = 1.0                // m — allowed growth of ∫max(0, g−maxGrade)ds
+            const MIN_SPAN     = 24                 // m — spans shorter than this keep raw prims
+            // Refit grade measure: the low-passed design line in earthwork mode (what the carve
+            // actually grades to), else the EXACT heightFn. NOT hAt: its 8 m cell staircase makes
+            // sampled grade pure aliasing noise (0 within a cell, Δcell/ds at crossings), so a
+            // raw-vs-candidate comparison on it is meaningless and switchback stacks get cut.
+            const hh = earthwork ? designH : heightFn
+            const badXZ = (x, z) => x < minX || x > maxX || z < minZ || z > maxZ
+                                 || (pondDiscs !== null && inPondNoGo(x, z))
+            const primEndPose = (p) => arcEnd(p.x0, p.z0, p.theta0, p.kappa0, p.length)  // const-κ only
+            const startPose = prims[0]                          // exact original start pose (G1 contract)
+            const rawEnd = primEndPose(prims[prims.length - 1]) // exact original end pose (G1 contract)
+
+            // Raw grade stats per primitive, ONE sequential pass (≤refitDs sampling, prev-height
+            // carried across prim boundaries): primG[i] = max grade, primEx[i] = grade EXCESS
+            // ∫max(0, g−maxGrade)ds within prims[i]. Span stats combine as max/sum, so the
+            // divide-and-conquer never re-samples the raw chain. The excess integral is the real
+            // switchback guard — the raw route's short steep terminal stub gives it a nonzero max
+            // grade, and max-grade alone would license a LONG cut-through at that same grade.
+            const primG = new Float64Array(prims.length), primEx = new Float64Array(prims.length)
+            {
+                let ph = hh(prims[0].x0, prims[0].z0)
+                for (let i = 0; i < prims.length; i++) {
+                    const p = prims[i]
+                    const n = Math.max(1, Math.ceil(p.length / refitDs)), dsp = p.length / n
+                    let g = 0, ex = 0
+                    for (let j = 1; j <= n; j++) {
+                        const e = arcEnd(p.x0, p.z0, p.theta0, p.kappa0, dsp * j)
+                        const h2 = hh(e[0], e[1])
+                        const gg = Math.abs(h2 - ph) / dsp
+                        if (gg > g) g = gg
+                        if (gg > maxGrade) ex += (gg - maxGrade) * dsp
+                        ph = h2
+                    }
+                    primG[i] = g; primEx[i] = ex
+                }
+            }
+            const spanGrade = (a, b) => {
+                let g = 0, ex = 0
+                for (let i = a; i < b; i++) { if (primG[i] > g) g = primG[i]; ex += primEx[i] }
+                return [g, ex]
+            }
+            // Shortest Dubins replacement for one span, or null. Acceptance = length + grade +
+            // excess + pond + bounds (see pass-1 header note); first passing rho (largest) wins.
+            const dubinsSpan = (x0, z0, th0, x1, z1, th1, rawLen, rawG, rawEx) => {
+                const chord = Math.hypot(x1 - x0, z1 - z0)
+                if (chord < 1e-6) return null
+                let prevRho = -1
+                for (const rr of [0.8 * chord, 0.4 * chord, 0.2 * chord, hardR]) {
+                    const rho = Math.max(hardR, rr)
+                    if (rho === prevRho) continue
+                    prevRho = rho
+                    const best = _dubinsBest(x0, z0, th0, x1, z1, th1, rho)
+                    if (!best || best.len * rho > rawLen * 1.02) continue
+                    let ok = true, g = 0, ex = 0, sx = x0, sz = z0, sth = th0, ph = hh(x0, z0)
+                    for (const [kSign, lenR] of best.segs) {
+                        const L2 = lenR * rho
+                        if (L2 < 1e-9) continue
+                        const k = kSign / rho
+                        const n = Math.max(1, Math.ceil(L2 / refitDs)), dsp = L2 / n
+                        for (let j = 1; j <= n; j++) {
+                            const e = arcEnd(sx, sz, sth, k, dsp * j)
+                            if (badXZ(e[0], e[1])) { ok = false; break }
+                            const h2 = hh(e[0], e[1])
+                            const gg = Math.abs(h2 - ph) / dsp
+                            if (gg > g) g = gg
+                            if (gg > maxGrade) ex += (gg - maxGrade) * dsp
+                            ph = h2
+                        }
+                        if (!ok) break
+                        const e = arcEnd(sx, sz, sth, k, L2)
+                        sx = e[0]; sz = e[1]; sth = e[2]
+                    }
+                    if (!ok || g > rawG + GRADE_SLACK || ex > rawEx + EXCESS_SLACK) continue
+                    return dubinsPrimitives(x0, z0, th0, x1, z1, th1, rho)
+                }
+                return null
+            }
+            // Divide-and-conquer over PRIMITIVE indices (splits land on primitive boundaries, so
+            // kept spans are the raw primitives verbatim). Pure fn of the chain → deterministic.
+            const shortcutSpan = (a, b, out) => {
+                let rawLen = 0
+                for (let i = a; i < b; i++) rawLen += prims[i].length
+                if (b - a >= 2 && rawLen >= MIN_SPAN) {
+                    const p0 = prims[a], pe = primEndPose(prims[b - 1])
+                    const [rawG, rawEx] = spanGrade(a, b)
+                    const dub = dubinsSpan(p0.x0, p0.z0, p0.theta0, pe[0], pe[1], pe[2], rawLen, rawG, rawEx)
+                    if (dub) { for (const d of dub) out.push(d); return }
+                    let acc = 0, mid = a + 1
+                    for (let i = a; i < b - 1; i++) { acc += prims[i].length; if (acc >= rawLen * 0.5) { mid = i + 1; break } }
+                    shortcutSpan(a, mid, out)
+                    shortcutSpan(mid, b, out)
+                    return
+                }
+                for (let i = a; i < b; i++) out.push(prims[i])
+            }
+
+            let refChain = prims
+            if (opts.refitShortcut) {
+                const out = []
+                shortcutSpan(0, prims.length, out)
+                if (out.length) refChain = out
+            }
+            const shortcutChain = refChain   // validation-fallback tier (spans already pond/bounds-checked)
+
+            // Pass 2 — κ box-filter → clothoid re-emit.
+            if (refitW > 0) {
+                let Ltot = 0
+                for (const p of refChain) Ltot += p.length
+                if (Ltot > refitDs * 4) {
+                    const N = Math.max(3, Math.round(Ltot / refitDs) + 1)
+                    const ds = Ltot / (N - 1)
+                    // κ(s) samples (refChain is const-κ per prim here) + prefix sums.
+                    const ks = new Float64Array(N)
+                    {
+                        let pi = 0, s0 = 0
+                        for (let i = 0; i < N; i++) {
+                            const s = ds * i
+                            while (pi < refChain.length - 1 && s > s0 + refChain[pi].length + 1e-9) { s0 += refChain[pi].length; pi++ }
+                            ks[i] = refChain[pi].kappa0
+                        }
+                    }
+                    const pre = new Float64Array(N + 1)
+                    for (let i = 0; i < N; i++) pre[i + 1] = pre[i] + ks[i]
+                    const H = Math.max(1, Math.round(refitW / (2 * ds)))   // half-window: 2H+1 samples ≈ refitW
+                    const kb = new Float64Array(N)
+                    for (let i = 0; i < N; i++) {
+                        const h = Math.min(H, Math.min(i, N - 1 - i))     // shrinking symmetric half-window
+                        kb[i] = (pre[i + h + 1] - pre[i - h]) / (2 * h + 1)
+                    }
+                    // Re-integrate from the EXACT original start pose; emit descriptors at ~8 m
+                    // granularity, greedy-merging near-constant-κ runs (bounds the clothoid-table
+                    // count downstream). Clothoid end poses use the same 0.5 m trapezoid quadrature
+                    // as centerline.js buildClothoidTable, so descriptor joins are seamless there.
+                    const MERGE_LEN = 8, MERGE_TOL = 1e-4
+                    const stepN = Math.max(1, Math.round(MERGE_LEN / ds))
+                    const out = []
+                    let x = startPose.x0, z = startPose.z0, th = startPose.theta0
+                    let i = 0
+                    while (i < N - 1) {
+                        let j = Math.min(N - 1, i + stepN)
+                        while (j < N - 1 && Math.abs(kb[j + 1] - kb[i]) < MERGE_TOL) j++
+                        const segL = (j - i) * ds, k0 = kb[i], k1 = kb[j]
+                        out.push({ x0: x, z0: z, theta0: th, length: segL, kappa0: k0, kappa1: k1 })
+                        if (Math.abs(k1 - k0) < 1e-9) {
+                            const e = arcEnd(x, z, th, k0, segL); x = e[0]; z = e[1]; th = e[2]
+                        } else {
+                            const n = Math.max(1, Math.ceil(segL / 0.5)), hstep = segL / n
+                            const dk = (k1 - k0) / segL
+                            let cP = Math.cos(th), sP = Math.sin(th)
+                            for (let q = 1; q <= n; q++) {
+                                const s = q * hstep
+                                const t2 = th + k0 * s + 0.5 * dk * s * s
+                                const c = Math.cos(t2), sn = Math.sin(t2)
+                                x += 0.5 * (cP + c) * hstep
+                                z += 0.5 * (sP + sn) * hstep
+                                cP = c; sP = sn
+                            }
+                            th = th + k0 * segL + 0.5 * (k1 - k0) * segL
+                        }
+                        i = j
+                    }
+                    if (out.length) refChain = out
+                }
+            }
+
+            // Pass 3 — terminal: cut back C whole descriptors and re-target the EXACT original end
+            // pose. The cut pose is the stored start pose of the first dropped descriptor (always
+            // exists: C > 0 drops at least one), so no re-integration is needed here.
+            const C = Math.max(goalBlend, 40)
+            let cut = refChain.length, freed = 0
+            while (cut > 0 && freed < C) { freed += refChain[cut - 1].length; cut-- }
+            const cp = refChain[cut]
+            const gap = Math.hypot(rawEnd[0] - cp.x0, rawEnd[1] - cp.z0)
+            let term = null, prevRho = -1
+            for (const rr of [C, C * 0.5, C * 0.25, hardR]) {
+                const rho = Math.max(hardR, rr)
+                if (rho === prevRho) continue
+                prevRho = rho
+                const best = _dubinsBest(cp.x0, cp.z0, cp.theta0, rawEnd[0], rawEnd[1], rawEnd[2], rho)
+                if (best && best.len * rho <= gap * 1.25) {
+                    term = dubinsPrimitives(cp.x0, cp.z0, cp.theta0, rawEnd[0], rawEnd[1], rawEnd[2], rho)
+                    break
+                }
+            }
+            if (!term) term = dubinsPrimitives(cp.x0, cp.z0, cp.theta0, rawEnd[0], rawEnd[1], rawEnd[2], hardR)
+            const refit = refChain.slice(0, cut)
+            if (term) { for (const p of term) refit.push(p) }
+            else if (gap > 1e-6) refit.push({ x0: cp.x0, z0: cp.z0, theta0: Math.atan2(rawEnd[1] - cp.z0, rawEnd[0] - cp.x0), length: gap, kappa0: 0, kappa1: 0 })
+
+            // Pass 4 — final validation (pond/bounds; grade+length were span-checked in pass 1).
+            let valid = refit.length > 0
+            for (const p of refit) {
+                if (!valid) break
+                const n = Math.max(1, Math.ceil(p.length / refitDs))
+                if (Math.abs(p.kappa1 - p.kappa0) < 1e-9) {
+                    for (let j = 1; j <= n; j++) {
+                        const e = arcEnd(p.x0, p.z0, p.theta0, p.kappa0, p.length * j / n)
+                        if (badXZ(e[0], e[1])) { valid = false; break }
+                    }
+                } else {
+                    const hstep = p.length / n, dk = (p.kappa1 - p.kappa0) / p.length
+                    let vx = p.x0, vz = p.z0
+                    let cP = Math.cos(p.theta0), sP = Math.sin(p.theta0)
+                    for (let q = 1; q <= n; q++) {
+                        const s = q * hstep
+                        const t2 = p.theta0 + p.kappa0 * s + 0.5 * dk * s * s
+                        const c = Math.cos(t2), sn = Math.sin(t2)
+                        vx += 0.5 * (cP + c) * hstep
+                        vz += 0.5 * (sP + sn) * hstep
+                        cP = c; sP = sn
+                        if (badXZ(vx, vz)) { valid = false; break }
+                    }
+                }
+            }
+            return valid ? refit : shortcutChain
+        }
         return prims
     }
 
