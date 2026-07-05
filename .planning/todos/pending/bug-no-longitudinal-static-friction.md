@@ -59,3 +59,53 @@ BUG-03 tire slosh.
 Found while investigating the spawn "rubber-band" (capture 1782373729245). NOT the cause of that
 report — that was the over-steep bench-cut road geometry (separate road fix). Deferred by user
 2026-06-25: "genuinely on my list to fix but not right now."
+
+## Fix implemented 2026-07-05 (branch fix/bug-20-static-friction, uncommitted — pending feel-test)
+
+**The ticket's root cause was right but its evidence was bogus.** `steep-rest.mjs`'s `brake` arg is the
+S key = REVERSE in this model (getDriveTorque applies -maxReverseTorque at low speed), not a park brake —
+so the "41 m/s on 25°" runaway was the car held in reverse gear, not braking. The real park brake is
+`vehicleState.handbrake` (rear-only). Under handbrake the car crept 0.2–0.75 m/s down 5–25° (the user's
+"slowly slides downhill") — that is the true bug.
+
+**Fix (physics.js, BUG-20 tags):**
+- SLIP_EPSILON 3.0 → 0.05 (numeric floor only) so the carcass relaxation spring accumulates at rest.
+- Replaced the lateral steady-state (sLatSS) anti-slosh clamp with a **friction-circle break-away clamp**:
+  cap combined |(sLong,sLat)| ≤ `tireBreakawaySlip` (0.18 m, new ranger.js param ≈ Pacejka-peak slip;
+  slider in debug.js). Mirrored in the ω Newton loop + ω=0 recompute. Gives honest static friction and
+  replaces the floor's blow-up protection.
+- steep-rest.mjs: added `park` (arg5=1 → handbrake) + corrected the misleading `brake` comment.
+
+**Results:** handbrake creep 0.2–0.75 → ~0.002–0.04 m/s (holds 5–25°, slides smoothly at 30° — rear-only
+is expected); lateral rest 0.28 → 0.01 (no BUG-03 slosh regression, no chatter); normal launch/driving
+identical; penetration-failsafe + body-contact-energy gates PASS.
+
+**Left OPEN** pending user in-browser feel-test (gridmap + sloped terrain). `tireBreakawaySlip` is the
+grip/drift-feel knob to tune.
+
+## Slosh RESOLVED via carcass re-parameterization (2026-07-05, no input-gating band-aid)
+
+The handbrake slide-to-stop longitudinal slosh (twin of BUG-03) was the break-away spring ringing at
+rest. Two damper approaches were built and REVERTED as band-aids (they gate on input conditions / mask
+the symptom): a LuGre σ1 `F+=c·ds/dt` (numerically unstable, injects energy) and a handbrake-gated
+`−c·v` settle damper. User rejected both — wanted the behavior to emerge from more accurate parameters.
+
+Root insight: the steady-state grip curve depends only on the RATIO `L/vRef` (= Pacejka(κ·L/vRef)),
+while the stored carcass displacement — and thus the slosh energy — scales with `L` alone. So shrink L
+and vRef together (0.3/1.0 → 0.1/0.3333, ratio held at 0.3): identical grip, ~1/3 the carcass
+displacement → slosh gone (user confirmed in-browser, "solved 99%"), force builds snappier. No damping,
+no gating.
+
+Two knock-on changes:
+- **Break-away moved to Pacejka-ARGUMENT space** (`sBreak = tireBreakawaySlip · vRef`, physics.js x2).
+  The friction limit is a fixed point on the grip curve (the peak, x≈0.18), not a fixed displacement;
+  with the smaller vRef a fixed-displacement clamp sat deep in the unstable post-peak region and the
+  steep-slope hold crept. Now it auto-scales with vRef and stays at the peak as the sliders retune.
+- **GUI: coupled sliders** (debug.js). Removed the independent L / vRef sliders (moving one alone
+  silently rescales grip). Added "Carcass Length / Slosh" (drives L, moves vRef with it → grip held,
+  only sloshiness changes) + "Relax:VRef Ratio (grip)" (changes L/vRef at fixed L).
+
+Residual tradeoff (now a tunable, not a bug): shorter L = stiffer carcass = less "catch range", so the
+rear-only handbrake hold on 20–25° slopes loosens (creep ~0.04→~0.3 m/s at L=0.1 vs L=0.3). The slosh
+slider exposes this directly — nudge it up for a tighter steep-hill hold at the cost of a little slosh.
+A future stick-slip Coulomb model would remove the tradeoff entirely but is not needed now.
