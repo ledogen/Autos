@@ -1559,6 +1559,11 @@ function loop () {
   const fpsEl = document.getElementById('fpsVal')
   if (fpsEl) fpsEl.textContent = Math.round(_fpsEma)
 
+  // Road-Feel QoL: seed / x / z OSD — correlates screenshots and in-game sightings with the
+  // headless report's coords (test/road-character.mjs prints worst-offender x/z in world space).
+  const posEl = document.getElementById('posVal')
+  if (posEl) posEl.textContent = `seed ${_seedString} / ${vehicleState.position.x.toFixed(0)} / ${vehicleState.position.z.toFixed(0)}`
+
   // M3-09: Pacejka curve plot — called once per render frame OUTSIDE the fixed accumulator (constraint #10)
   updatePacejkaCurve(vehicleState, RANGER_PARAMS)
 

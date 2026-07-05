@@ -257,6 +257,11 @@ export class Map2D {
     }
 
     _onMouseMove(e) {
+        // Road-Feel QoL: remember the hover position so render() can show world coords under the
+        // cursor (correlates the map with test/road-character.mjs worst-offender x/z listings).
+        const rect = this._canvas.getBoundingClientRect()
+        this._hoverX = e.clientX - rect.left
+        this._hoverY = e.clientY - rect.top
         if (!this._dragging) return
         const dx = e.clientX - this._lastX
         const dy = e.clientY - this._lastY
@@ -318,7 +323,22 @@ export class Map2D {
 
         this._drawCar(ctx)
         this._drawLegend(ctx)
+        this._drawCursorCoords(ctx)
         if (this._streaming) this._drawStreamingBadge(ctx)
+    }
+
+    // Road-Feel QoL: seed / x / z of the world point under the cursor, bottom-left. Same
+    // screen→world transform as the wheel-zoom anchor.
+    _drawCursorCoords(ctx) {
+        if (this._hoverX === undefined) return
+        const W = this._canvas.clientWidth, H = this._canvas.clientHeight
+        const wx = (this._hoverX - W / 2) / this._zoom + this._panX
+        const wz = (this._hoverY - H / 2) / this._zoom + this._panZ
+        const txt = `seed ${this._getSeed()} / ${wx.toFixed(0)} / ${wz.toFixed(0)}`
+        ctx.font = '13px monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'
+        const w = ctx.measureText(txt).width + 16
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(10, H - 36, w, 24)
+        ctx.fillStyle = '#d8d8d0'; ctx.fillText(txt, 18, H - 24)
     }
 
     // Small bottom-center badge while the network is still filling in (chunked stream in flight).
