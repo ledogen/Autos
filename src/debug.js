@@ -138,10 +138,25 @@ export function initDebug (params, callbacks = {}, options = {}) {
   tiresFolder.add(params, 'pacejkaC', 1.0, 1.99, 0.01).name('C - Shape [1.0-1.99]')
   tiresFolder.add(params, 'pacejkaD', 0.5, 2.0, 0.05).name('D - Peak Factor')
   tiresFolder.add(params, 'pacejkaE', -1.0, 1.0, 0.05).name('E - Curvature')
-  tiresFolder.add(params, 'tireRelaxationLength', 0.05, 1.5, 0.05).name('Relaxation Length L (m)')
-  tiresFolder.add(params, 'tireSlipVelRef', 0.2, 5.0, 0.1).name('Slip Vel Ref (m/s)')
+  // BUG-20: carcass length (L) and slip-vel ref (vRef) are tuned as a COUPLED pair, never
+  // independently — moving one alone silently rescales grip. The grip curve depends only on the ratio
+  // L/vRef; the stored carcass displacement (slide-to-stop slosh energy) scales with L. So:
+  //   • "Carcass Length / Slosh" drives L and moves vRef with it (ratio held) → grip unchanged, only
+  //     sloshiness changes (lower = shorter carcass, less slosh, snappier build).
+  //   • "Relax:VRef Ratio (grip)" changes L/vRef at fixed L → the grip-character knob.
+  const carcass = {
+    slosh: params.tireRelaxationLength,                          // = L
+    ratio: params.tireRelaxationLength / params.tireSlipVelRef,  // = L/vRef (grip-curve shape)
+  }
+  const applyCarcass = () => {
+    params.tireRelaxationLength = carcass.slosh
+    params.tireSlipVelRef       = carcass.slosh / carcass.ratio
+  }
+  tiresFolder.add(carcass, 'slosh', 0.03, 0.4, 0.005).name('Carcass Length / Slosh').onChange(applyCarcass)
+  tiresFolder.add(carcass, 'ratio', 0.15, 0.6, 0.01).name('Relax:VRef Ratio (grip)').onChange(applyCarcass)
   tiresFolder.add(params, 'tireStiffnessLong', 0.3, 2.0, 0.05).name('Stiffness Long ×')
   tiresFolder.add(params, 'tireStiffnessLat', 0.3, 2.0, 0.05).name('Stiffness Lat ×')
+  tiresFolder.add(params, 'tireBreakawaySlip', 0.05, 0.5, 0.01).name('Break-away (curve x)')
 
   // Phase 4 (D-11): Suspension folder — 8 sliders for spring/damper/rest-length/ARB per axle.
   // Ranges per PATTERNS §lil-gui slider range/step convention (2× default within range, D-10 stability).

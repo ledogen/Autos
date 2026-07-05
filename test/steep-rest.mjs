@@ -12,7 +12,11 @@ import { RANGER_PARAMS as P } from '../data/ranger.js'
 
 const slopeDeg   = Number(process.argv[2] ?? 18)
 const headingDeg = Number(process.argv[3] ?? 0)   // 0 = facing downhill (+z), 90 = across slope
-const brake      = Number(process.argv[4] ?? 0)   // 0..1 brake hold (parks the wheels)
+// NOTE: `brake` is the S-key input — in this vehicle model that is REVERSE, not a park brake
+// (getDriveTorque applies -maxReverseTorque at low speed). It does NOT park the car. To test the
+// real park brake (rear-only handbrake that holds on a slope), pass park=1. BUG-20 uses park.
+const brake      = Number(process.argv[4] ?? 0)   // 0..1 S-key = reverse/brake-when-moving-fwd
+const park       = Number(process.argv[5] ?? 0)   // 1 = hold handbrake (rear-only park brake)
 const theta = slopeDeg * Math.PI / 180
 
 // Scratch arrays the suspension substep expects on params (main.js:85-94).
@@ -63,11 +67,11 @@ const vs = {
   wheelAngles:[0,0,0,0], wheelSteerAngles:[0,0,0,0],
   wheelDebug:[0,1,2,3].map(()=>({fn:0,fy:0,sa:0,c:0,omega:0,fz:0})),
   wheelOmega:[0,0,0,0], slipLong:[0,0,0,0], slipLat:[0,0,0,0],
-  strutComp:[...eq.strutComp], strutCompVel:[0,0,0,0], handbrake:false,
+  strutComp:[...eq.strutComp], strutCompVel:[0,0,0,0], handbrake:!!park,
 }
 
 const DT = 1/60, STEPS = 360
-console.log(`slope ${slopeDeg}°  heading ${headingDeg}°  mu=${P.frictionCoeff}  friction-angle ${(Math.atan(P.frictionCoeff)*180/Math.PI).toFixed(1)}°`)
+console.log(`slope ${slopeDeg}°  heading ${headingDeg}°  ${park?'HANDBRAKE(park)':brake?'S/reverse':'no-input'}  mu=${P.frictionCoeff}  friction-angle ${(Math.atan(P.frictionCoeff)*180/Math.PI).toFixed(1)}°`)
 console.log(`  t    speed   downhillV |  FL_fn  FR_fn  RL_fn  RR_fn  | airborne-wheels | maxDepth`)
 let chatterSteps = 0
 for (let s=1; s<=STEPS; s++){

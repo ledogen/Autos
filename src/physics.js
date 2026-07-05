@@ -325,10 +325,13 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
     if (!vehicleState.slipLong) vehicleState.slipLong = [0, 0, 0, 0]
     if (!vehicleState.slipLat)  vehicleState.slipLat  = [0, 0, 0, 0]
 
-    // 3.0 m/s floor prevents vCon→0 at rest (coasting wheels have near-zero omega,
-    // which would let sLat accumulate to latVelCur*L/epsilon → several meters of
-    // stored spring energy that releases as yaw oscillation after a slide stops).
-    const SLIP_EPSILON = 3.0
+    // BUG-20: numeric floor only (keeps the relaxation denominator well-conditioned near rest).
+    // Was 3.0 m/s — that large floor forced the stored slip displacement to bleed toward zero
+    // below ~3 m/s, so the carcass spring could not hold at rest (no static friction: a braked
+    // car ran away downhill) and the tire felt slippery under ~11 km/h. The blow-up at rest that
+    // the old floor guarded against is now bounded by the friction-circle break-away clamp on
+    // |(sLong,sLat)| below (sBreak) — the physically correct limiter.
+    const SLIP_EPSILON = 0.05
 
     // Per-step bookkeeping for the ω integrator (Newton-iterated implicit Euler below).
     // Zero / null when airborne so road reaction = 0.
@@ -389,14 +392,22 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
       const relaxDen   = 1 + dt * vCon / L
       const sLongPrev  = vehicleState.slipLong[i]
       let   sLatNew    = (vehicleState.slipLat[i] + dt * latVelCur) / relaxDen
-      const sLatSS    = latVelCur * L / vCon  // current-velocity steady state
-      // Wrong-direction clamp: old slip opposes current motion — reset to SS.
-      if (latVelCur * sLatNew < 0) sLatNew = sLatSS
-      // Overshoot clamp: sLat exceeds SS in same direction — snap down to SS.
-      // Together these ensure sLat never stores more spring energy than the current
-      // velocity warrants, eliminating the springback yaw oscillation post-slide.
-      if (Math.abs(sLatNew) > Math.abs(sLatSS)) sLatNew = sLatSS
-      const sLongCur   = (sLongPrev + dt * (omegaCur - longVelCur)) / relaxDen
+      let   sLongCur   = (sLongPrev + dt * (omegaCur - longVelCur)) / relaxDen
+      // BUG-20 friction-circle break-away clamp. The carcass stores deflection up to the static-
+      // friction limit, then it slides. This gives honest static friction — the relaxation spring holds
+      // up to ≈μ·Fn at rest so the car rests on any slope below atan(μ) — and bounds the stored
+      // deflection so it can't blow up at low speed (the job the old 3.0 m/s SLIP_EPSILON floor did).
+      // Clamping the COMBINED magnitude is the friction circle: longitudinal and lateral grip trade
+      // against one shared limit. Replaces the old lateral steady-state (sLatSS) anti-slosh clamp.
+      // The limit is expressed in Pacejka-ARGUMENT space (x = s/vRef ≈ slip-curve position), so
+      // tireBreakawaySlip pins the break-away to a fixed point on the grip curve (≈ the peak) and the
+      // actual displacement limit auto-scales with vRef. That keeps the break-away AT the peak as the
+      // L/vRef "sloshiness" pair is retuned — otherwise a smaller vRef would push the clamp past the
+      // peak into the unstable post-peak region and the static hold would creep on steep slopes.
+      const vRef   = params.tireSlipVelRef || 1.0
+      const sBreak = (params.tireBreakawaySlip || 0.18) * vRef
+      const sMag   = Math.hypot(sLongCur, sLatNew)
+      if (sMag > sBreak) { const k = sBreak / sMag; sLongCur *= k; sLatNew *= k }
       vehicleState.slipLat[i] = sLatNew
 
       const { Flong, Flat } = computeTireForces(sLongCur, sLatNew, Fn, params)
@@ -448,11 +459,18 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
       const spinSign     = omega0 >= 0 ? 1 : -1
       const brakeSigned  = brakeTorque * spinSign
 
+      // BUG-20: friction-circle limit, same as the force block (in Pacejka-argument space × vRef, so
+      // it auto-scales with vRef). Lateral leg is fixed here (lastSLatNew), so the longitudinal leg
+      // gets the remaining room on the circle.
+      const sBreak    = (params.tireBreakawaySlip || 0.18) * (params.tireSlipVelRef || 1.0)
+      const sLongMax  = Math.sqrt(Math.max(0, sBreak * sBreak - lastSLatNew * lastSLatNew))
       let omegaNew = omega0
       let sLongFinal = lastSLongPrev
       for (let iter = 0; iter < 4; iter++) {
         const omegaR    = omegaNew * params.wheelRadius
-        const sLongIter = (lastSLongPrev + dt * (omegaR - lastLongVelCur)) / lastRelaxDen
+        let   sLongIter = (lastSLongPrev + dt * (omegaR - lastLongVelCur)) / lastRelaxDen
+        if (sLongIter >  sLongMax) sLongIter =  sLongMax
+        if (sLongIter < -sLongMax) sLongIter = -sLongMax
         sLongFinal = sLongIter
         if (lastFn <= 0) break  // airborne: no road reaction; Newton trivially converged
         const { Flong, dFmagDs } = computeTireForces(sLongIter, lastSLatNew, lastFn, params)
@@ -473,6 +491,8 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
         vehicleState.wheelOmega[i] = 0
         // Recompute sLong at omega=0 so slip state matches actual wheel speed.
         sLongFinal = (lastSLongPrev + dt * (0 - lastLongVelCur)) / lastRelaxDen
+        if (sLongFinal >  sLongMax) sLongFinal =  sLongMax
+        if (sLongFinal < -sLongMax) sLongFinal = -sLongMax
       } else {
         vehicleState.wheelOmega[i] = omegaNew
       }

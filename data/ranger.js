@@ -70,11 +70,22 @@ export const RANGER_PARAMS = {
   pacejkaD:   1.0,   // peak factor — peak force = frictionCoeff × D × Fn
   pacejkaE:  0.97,   // curvature — near 1.0 produces realistic post-peak falloff
 
-  // Slip-velocity tire model parameters (added with combined-slip rewrite)
-  tireRelaxationLength: 0.3,   // m — characteristic distance over which tire force builds; ~0.3 for road tires
-  tireSlipVelRef:       1.0,   // m/s — slip velocity at which Pacejka curve approaches peak
+  // Slip-velocity tire model parameters (added with combined-slip rewrite).
+  // BUG-20: the steady-state grip curve depends only on the RATIO tireRelaxationLength/tireSlipVelRef
+  // (= Pacejka(κ·L/vRef)), while the stored carcass displacement — and hence the slide-to-stop slosh
+  // energy — scales with L alone. So L and vRef are shrunk together from the old 0.3/1.0 (ratio 0.3),
+  // holding the ratio at 0.3: identical grip, ~1/3 the carcass displacement → the slosh is gone and
+  // force builds snappier. Tune these via the coupled "Carcass Length / Slosh" + "Relax:VRef Ratio"
+  // sliders (debug.js), NOT independently — moving one alone silently rescales grip.
+  tireRelaxationLength: 0.1,     // m — carcass length / "sloshiness" (× vRef sets grip via the ratio)
+  tireSlipVelRef:       0.3333,  // m/s — slip velocity ref; L/vRef = 0.3 reproduces the original grip curve
   tireStiffnessLong:    1.0,   // anisotropy hook — scale longitudinal slip component (default 1.0 isotropic)
   tireStiffnessLat:     1.0,   // anisotropy hook — scale lateral slip component (real tires ≈ 0.7×Long)
+  tireBreakawaySlip:    0.18,  // BUG-20: friction-circle break-away, in Pacejka-ARGUMENT space (x =
+                               // slip/vRef), so it pins to a fixed point on the grip curve (≈ the peak,
+                               // x≈0.18 for B/C/E above) and its displacement limit auto-scales with
+                               // vRef as the slosh/ratio sliders retune. Lower = lets go before peak;
+                               // higher pushes past the peak into the unstable post-peak region.
 
   // Wheel angular dynamics (D-02)
   // I = 0.5 × mass_wheel × r²; mass_wheel ≈ 18 kg (245/75R16 truck tire+wheel assembly)
