@@ -284,7 +284,11 @@ export const RANGER_PARAMS = {
   roadEarthworkWindow: 120,
   // roadWDeviation: weight on the per-metre |design − terrain| earthwork penalty. Higher = hugs terrain
   // more (less fill/cut, windier); lower = straighter (more earthwork). 0 = OFF.
-  roadWDeviation: 3,
+  // Road-Feel Phase 2 (measured, seed 6/3/11 via test/road-character.mjs): 3→12 with roadGraphWTurn 1500
+  // is the tuned pair — straights>200m 45%→35%, switchbacks 3→13 (10 on steep terrain), mean earthwork
+  // 6.6→6.1 m, loopers unchanged. (roadWGrade beyond 100 measured useless-to-harmful: 960 kills all
+  // switchbacks and worsens crest-g. maxGrade 0.12 interacts badly with this pair — do not stack.)
+  roadWDeviation: 12,
   // roadDeviationCap: max |design − terrain| (m) the router/profile will build — bounds fill/cut depth so
   // the carve can construct it. On terrain taller than this the design grade falls back to terrain grade
   // and the road still switchbacks (the genuinely-forced loops).
@@ -374,8 +378,9 @@ export const RANGER_PARAMS = {
   roadGraphGoalBlend: 20,
   // roadGraphWTurn: the router's curvature penalty (wCurv). Lower = cheaper bends = the router accepts
   // more/tighter curves = windier. 3000 (windiness stage) noticeably loosens the roads without tripping
-  // the min-radius or no-loop gates.
-  roadGraphWTurn: 3000,
+  // the min-radius or no-loop gates. Road-Feel Phase 2: 3000→1500 paired with roadWDeviation 12 (see
+  // that knob's note for the measured wins); detour 1.11→1.20 — distance traded for terrain-following.
+  roadGraphWTurn: 1500,
   // roadGraphWAlt: the router's valley-seeking weight (wAlt). Higher = roads dive harder for low ground =
   // more terrain-hugging wander. 2.0 (windiness stage).
   roadGraphWAlt: 2.0,
