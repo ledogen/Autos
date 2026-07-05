@@ -1,11 +1,19 @@
 ---
 id: BUG-20
 type: bug
-status: open
+status: closed
 opened: 2026-06-25
+closed: 2026-07-05
 source: spawn-rubberband-investigation
 severity: medium
 capture: Logs/rangersim-capture-1782373729245.json
+resolution: >
+  Fixed on fix/bug-20-static-friction (65011a0), merged to road-feel-phase-1-2 (4aa33c3).
+  SLIP_EPSILON floor removed + friction-circle break-away clamp in Pacejka-argument space;
+  slosh resolved by carcass re-parameterization (L+vRef shrunk together at fixed ratio —
+  identical grip, 1/3 the stored displacement). USER-CONFIRMED in-browser 2026-07-05
+  ("solved 99%", closed). Residual: rear-only handbrake hold on 20-25° is a tunable
+  (Carcass Length / Slosh slider), not a bug.
 ---
 
 # BUG-20: No longitudinal static friction — a car can't rest (or brake-hold) facing down a slope
