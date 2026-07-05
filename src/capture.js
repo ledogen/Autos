@@ -34,6 +34,13 @@ export function serializableParams(params) {
     for (const k of Object.keys(params || {})) {
         const v = params[k]
         if (typeof v === 'number' && Number.isFinite(v)) out[k] = v
+        // BOOLEAN toggles must survive too — e.g. roadSiteValleySnap / roadRefitShortcut / roadGraph*.
+        // replay.mjs does `new RoadSystem(seed, params)` with NO merge over RANGER_PARAMS, so a dropped
+        // boolean falls back to road.js's inline `?? default` — which does NOT match the game (valley
+        // snap: game false / fallback true; refit shortcut: game true / fallback false). Dropping them
+        // replayed a DIFFERENT node field + centerline than the game ran (same class of bug as the
+        // roadArcRadii array drop below).
+        else if (typeof v === 'boolean') out[k] = v
         // Number ARRAYS must survive too — e.g. roadArcRadii (the fixed-angle curvature palette).
         // Dropping it made replay.mjs route with arcPrimitiveConnect's [gentleR,hardR] fallback, i.e.
         // a DIFFERENT road than the game ran, so every road capture replayed against the wrong surface.

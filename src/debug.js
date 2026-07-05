@@ -273,8 +273,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //
   // D-05: _roadState.roadViz is UI-only state (not a params field) — mirrors the _seedState
   //   pattern above. Default false = clean (no lines on load).
-  // D-03: maxRoadGrade live slider → debouncedRoadRebuild() in main.js (same 150ms pattern
-  //   as terrainFolder sliders). debug.js fires callbacks unconditionally on onChange;
+  // D-03: road routing sliders → onRoadParamChange → debouncedRoadRebuild() in main.js (same 150ms
+  //   pattern as terrainFolder sliders). debug.js fires callbacks unconditionally on onChange;
   //   debounce lives in main.js (consistent with D-09 / rebuildTerrainFull convention).
   // D-04/D-07: surface geometry sliders fire onRoadSurfaceChange → main.js debounced rebuild
   //   (re-bake carve tables + rebuildAllChunksFromWorker + re-sweep road mesh tiles).
@@ -283,50 +283,36 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(_roadState, 'roadViz').name('Show Road Splines').onChange(v => {
     if (typeof callbacks.onRoadVizToggle === 'function') callbacks.onRoadVizToggle(v)
   })
-  // FEAT-10: range widened to 0.35 — Max Grade is the spiral↔steepness lever (higher = straighter
-  // roads but steeper climbs; lower = gentler but more switchback spiral).
-  roadFolder.add(params, 'maxRoadGrade', 0.08, 0.35, 0.01).name('Max Grade (ratio)').onChange(() => {
-    if (typeof callbacks.onRoadParamChange === 'function') callbacks.onRoadParamChange()
-  })
   // D-09 dominant cost-weight sliders (08-07): bound directly to the live `params` object, each
   // firing onRoadParamChange so main.js invalidates + re-streams the valley-trunk network with the
   // updated weights (D-03 deterministic re-route). These replace the retired roadSlopePenalty /
   // roadAltWeight sliders (per-tile router params, removed in 08-05). The full "Valley Trunk (proto)"
   // subfolder is gone — there is ONE road system and ONE viz now (Show Road Splines above).
   const fireRoadParam = () => { if (typeof callbacks.onRoadParamChange === 'function') callbacks.onRoadParamChange() }
-  // FEAT-13 topology: 'rows' = parallel E-W rows (historical); 'graph' = per-anchor directional graph
-  // (varied directions, real T/X junctions, not parallel). Diagonals = orthogonal(off)/8-way(on).
-  roadFolder.add(params, 'roadNetworkMode', ['rows', 'graph']).name('Network Mode').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadSiteCandidates', 1, 4, 1).name('Graph Site Candidates').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadSiteSpacing', 256, 900, 32).name('Graph Density (cell m)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadSiteMinDist', 120, 600, 20).name('Graph Node Min-Gap (m)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadSiteValleySnap').name('Graph Valley Snap').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadGraphMargin', 1, 6, 1).name('Graph Margin (cells)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadGraphFlatMerges').name('Graph Flat Merges (no overpass)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadGraphDeviationCap', 0, 12, 0.5).name('Graph Earthwork Cap (m)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadGraphMaxGrade', 0.15, 0.45, 0.01).name('Graph Max Grade (windiness)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadGraphGoalBlend', 20, 200, 10).name('Graph Goal Blend (anti-overshoot)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadGraphWTurn', 0, 12000, 250).name('Graph Curve Penalty (windiness)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadGraphWAlt', 0, 6, 0.1).name('Graph wAlt (valley-seek)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadGraphCullCrossings').name('Graph Cull Crossings').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadWAlt',   0, 3,     0.05).name('wAlt (stay low)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadWGrade', 0, 2000,  20  ).name('wGrade (gentle)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadWOver',  0, 40000, 500 ).name('wOver (soft cap)').onChange(fireRoadParam)
-  // QUAL-05: wCurv·κ² curvature penalty — higher = gentler/straighter roads, tight radii only where
-  // grade forces them. Range widened from the old linear-model 0–800 to the κ² scale (default 8000).
-  roadFolder.add(params, 'roadWTurn',  0, 50000, 500 ).name('Curve Penalty (wCurv·κ²)').onChange(fireRoadParam)
-  // Valley-seek depth cap (m below the anchor baseline that still rewards descending). Higher =
+  // FEAT-13 v2 URQUHART/blue-noise graph topology knobs (the sole road network — QUAL-12 removed rows).
+  roadFolder.add(params, 'roadSiteCandidates', 1, 4, 1).name('Site Candidates').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadSiteSpacing', 256, 900, 32).name('Density (cell m)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadSiteMinDist', 120, 600, 20).name('Node Min-Gap (m)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadSiteValleySnap').name('Valley Snap').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadGraphMargin', 1, 6, 1).name('Margin (cells)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadGraphFlatMerges').name('Flat Merges').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadGraphDeviationCap', 0, 12, 0.5).name('Earthwork Cap (m)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadGraphMaxGrade', 0.05, 0.25, 0.01).name('Max Grade').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadGraphGoalBlend', 20, 200, 10).name('Goal Blend').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadGraphWTurn', 0, 12000, 250).name('Curve Penalty').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadGraphWAlt', 0, 6, 0.1).name('wAlt').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadGraphCullCrossings').name('Cull Crossings').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadWGrade', 0, 2000,  20  ).name('wGrade').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadWOver',  0, 40000, 500 ).name('wOver').onChange(fireRoadParam)
+  // Valley-seek depth cap (m below the straight edge baseline that still rewards descending). Higher =
   // more decisive valley-following / less squiggly (slightly more detour); the cap bounds wander.
   roadFolder.add(params, 'roadValleyDepthCap', 0, 120, 5).name('Valley Depth Cap (m)').onChange(fireRoadParam)
   // FEAT-10 earthwork routing levers (re-route + re-stream + carve rebuild on change via fireRoadParam).
   // Window 0 = OFF (terrain-following / old spiral behaviour). These trade loops vs earthwork depth.
-  roadFolder.add(params, 'roadEarthworkWindow', 0, 250, 10).name('Earthwork Window (m, 0=off)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadWDeviation',      0, 20,  0.5).name('wDev (hug terrain ↑)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadDeviationCap',    0, 25,  1  ).name('Deviation Cap (max fill/cut m)').onChange(fireRoadParam)
-  // FEAT-10 merge graph: converging anchors collapse to one shared node (kills duplicates + the
-  // run-join tears). Radius 0 = merge off. Band = "same node" tolerance for dropping degenerate /
-  // redundant edges. Re-routes on change.
-  roadFolder.add(params, 'roadNodeMergeRadius', 0, 200, 5).name('Node Merge Radius (m, 0=off)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadEarthworkWindow', 0, 250, 10).name('Earthwork Window (m)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadWDeviation',      0, 20,  0.5).name('wDev').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadDeviationCap',    0, 25,  1  ).name('Deviation Cap (m)').onChange(fireRoadParam)
+  // roadMergeBand = "same node" tolerance for skipping a degenerate (collapsed) graph edge. Re-routes.
   roadFolder.add(params, 'roadMergeBand', 4, 60, 2).name('Merge Band (m)').onChange(fireRoadParam)
   // D0 — min turn radius (m); arc-fillet rounds corners tighter than this (higher = wider hairpins).
   // Floor: 6 m (UI lower bound; road.js _refreshParams further clamps to ≥ roadHalfWidth+clearance+ε).
@@ -356,16 +342,16 @@ export function initDebug (params, callbacks = {}, options = {}) {
     params.roadArcRadii[3] = params.roadArcHardRadius   // keep the palette tail pinned to the min-radius floor
     fireRoadParam()
   })
-  roadFolder.add(params, 'roadArcHeadingBins', 8, 48, 1 ).name('Arc Heading Bins (coarser=sweepier)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadArcHeadingBins', 8, 48, 1 ).name('Arc Heading Bins').onChange(fireRoadParam)
   roadFolder.add(params, 'roadArcGradeSamples', 1, 6, 1 ).name('Arc Grade Samples').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadArcHeurWeight',   1, 3, 0.1).name('Arc Heur Weight (speed)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadArcHeurWeight',   1, 3, 0.1).name('Arc Heur Weight').onChange(fireRoadParam)
 
   // De-quantize refit (BUG-16 + FEAT-20) — post-passes on the routed chain (road-carve.js).
   //   Refit Shortcut: corridor Dubins shortcut — straightens the quantized-heading bow on
   //                   near-straight roads and yields continuous (chord-derived) turn radii.
   //   Refit Smooth Window: κ box-filter window re-emitted as clothoid ramps; 0 = off. Larger =
   //                   smoother curvature but more far-end drift for the terminal to absorb.
-  roadFolder.add(params, 'roadRefitShortcut').name('Refit Shortcut (straighten)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadRefitShortcut').name('Refit Shortcut').onChange(fireRoadParam)
   roadFolder.add(params, 'roadRefitWindow', 0, 100, 5).name('Refit Smooth Window (m)').onChange(fireRoadParam)
 
   // ── Road Surface sub-folder (D-04/D-07 — Plan 09-05 surface sliders) ────────────
@@ -460,6 +446,106 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // rebuilds and the new skirt vertex colours take effect immediately.
   // No asset files — colour is applied as vertex colour on the skirt apron verts only.
   surfaceFolder.addColor(params, 'roadDirtColor').name('Dirt Shoulder Color').onChange(fireSurface)
+
+  // Road-knob hover hints. The labels above are kept SHORT so the slider control stays usable, so a
+  // one-line "what does this do" lives behind a hover instead. addInfo prepends a dimmed "ⓘ" to a
+  // controller's label (at the START, where lil-gui's right-side ellipsis can't clip it) carrying a
+  // native title tooltip. Keyed by the bound property so the blurbs survive label renames. Applied to
+  // the three Road folders below (their subfolders' controllers are listed on each folder separately).
+  const ROAD_INFO = {
+    roadViz:               'Draws the road centerline splines in the 3D scene (debug overlay). Visual only — no effect on the road itself.',
+    roadSiteCandidates:    'How many node placements the graph tries per cell before picking one. Higher = denser, more varied junctions.',
+    roadSiteSpacing:       'Target spacing between graph nodes (cell size, m). Larger = sparser network with fewer intersections.',
+    roadSiteMinDist:       'Minimum distance allowed between two graph nodes — stops junctions from clustering too tightly.',
+    roadSiteValleySnap:    'Nudges graph nodes toward nearby valley floors so roads settle into low ground.',
+    roadGraphMargin:       'Extra cells beyond the streamed area the graph is built into, so edges near the border still connect.',
+    roadGraphFlatMerges:   'When on, crossings on flat ground merge into an at-grade junction instead of building an overpass.',
+    roadGraphDeviationCap: 'Max earthwork (m of cut/fill) the graph router spends to hold grade before it detours instead.',
+    roadGraphMaxGrade:     'Steepest grade the graph router permits. Higher = straighter/steeper; lower = windier routes that stay gentle.',
+    roadGraphGoalBlend:    'How hard the router aims straight at the destination near the end. Higher = less weaving as it arrives.',
+    roadGraphWTurn:        'Curve penalty for the graph router — higher = straighter roads with fewer, gentler turns.',
+    roadGraphWAlt:         'Reward for staying low / following valleys. Higher = roads hug the low ground more.',
+    roadGraphCullCrossings:'Drops redundant crossings from the graph, thinning tangled intersection clusters.',
+    roadWGrade:            'Cost weight for steepness — higher trades distance for gentler grades.',
+    roadWOver:             'Soft-cap penalty once grade exceeds Max Grade — discourages, but does not forbid, over-steep segments.',
+    roadValleyDepthCap:    'How far below baseline (m) descending still earns reward. Higher = more decisive valley-following, less squiggle.',
+    roadEarthworkWindow:   'Look-ahead window (m) for planning cut/fill to smooth grade. 0 = off (the road just follows the terrain).',
+    roadWDeviation:        'Weight pulling the road to hug existing terrain (less earthwork). Higher = fewer, smaller cuts and fills.',
+    roadDeviationCap:      'Max cut or fill depth (m) the earthwork pass may use at any point.',
+    roadMergeBand:         'Tolerance (m) for treating an edge\'s two endpoints as the "same" node (skips a collapsed edge).',
+    roadMinTurnRadius:     'Tightest corner the road can make (m). The fillet rounds sharper corners up to this radius.',
+    '0':                   'Widest radius in the turn palette (m) — used for sweeping turns on mild ground.',
+    '1':                   'Second-widest turn radius in the palette (m).',
+    '2':                   'Mid turn radius in the palette (m).',
+    roadArcHardRadius:     'Tightest radius the router can express (m) — the real switchback floor. Also pins the palette tail.',
+    roadArcHeadingBins:    'Heading-lattice resolution; one bin is turned per turn. Fewer bins = longer, sweepier arcs.',
+    roadArcGradeSamples:   'Grade sample points along each arc. Use ≥2 so long sweeps read grade correctly.',
+    roadArcHeurWeight:     'Weighted-A* speed knob. Higher = faster routing, slightly less optimal roads.',
+    roadRefitShortcut:     'Post-pass that straightens the quantized-heading "bow" on near-straight roads via a Dubins shortcut.',
+    roadRefitWindow:       'Smoothing window (m) that re-emits curvature as clothoid ramps. 0 = off; larger = smoother but more end drift.',
+    // Road Surface
+    roadWidth:             'Total drivable width of the road surface (m).',
+    crownHeight:           'Height of the centerline crown (m) — the slight peak that sheds water to the edges.',
+    camberStrength:        'How much the road banks into turns. Higher = more lean through corners.',
+    roadFillHeight:        'Height (m) of the raised embankment the road sits on over low ground.',
+    roadCutSlope:          'Steepness of cut banks where the road slices into a hill, as H:V (lower = steeper).',
+    roadFillSlope:         'Steepness of fill banks where the road is built up, as H:V (lower = steeper).',
+    roadMaxEmbankmentToe:  'Caps how far (m) the embankment apron spreads past the road. Lower = tighter banks, fewer shards at tight turns.',
+    roadShoulderWidth:     'Width (m) of the dirt shoulder flanking each side of the paved surface.',
+    designGradeWindow:     "Smoothing window (m) for the road's lengthwise grade profile. Larger = smoother rises and dips.",
+    roadFilletRadius:      'Corner-rounding radius (m) applied to the centerline before carving.',
+    roadCliffSlopeLo:      'Lower slope threshold where terrain starts shading as cliff rock.',
+    roadCliffSlopeHi:      'Upper slope threshold where terrain is fully cliff rock.',
+    roadSkirtDepth:        'How far (m) the road-edge skirt drops below the ribbon to hide seams against terrain.',
+    roadPolygonOffsetFactor:'Depth-bias factor pushing the road decal above terrain to prevent z-fighting.',
+    roadPolygonOffsetUnits: 'Depth-bias units for the road decal (pairs with PolyOffset Factor).',
+    roadClearanceMargin:   'Extra headroom (m) carved below the road so it never pokes through terrain on banked turns.',
+    roadCarveExtraWidth:   'Widens the carved trough (m) beyond the road. Effective width is capped at Min Turn Radius.',
+    roadTileKeepMargin:    'Hysteresis (in tiles) before a streamed road tile is dropped — reduces churn at the ring edge.',
+    roadCamberRate:        'Max rate the camber may change along the road (°/m). Lower = smoother banking across seams.',
+    roadDirtColor:         'Colour of the dirt shoulder apron.',
+    // Junctions
+    roadJunctionCutback:     'How far (m) the ribbon legs pull back from a junction to make room for the apron pad.',
+    roadJunctionFlare:       'How much the leg mouths widen approaching a junction (× road width). Bigger = more generous flare.',
+    roadJunctionCarveRadius: 'Radius (m) of terrain flattening around a junction pad.',
+    roadJunctionApronLift:   'Tiny Y lift (m) of the junction pad over the ribbon to avoid z-fight flicker.',
+  }
+  // Native `title=` proved unreliable here (it needs the pointer dead-still and lil-gui's repaints
+  // reset the browser's hover timer), so we render our OWN tooltip: one reused fixed-position div on
+  // <body> (escaping the panel's overflow clip), shown instantly on the icon's mouseenter and placed
+  // to the LEFT of the cursor since the panel hugs the right screen edge.
+  let _tip = null
+  const _showTip = (e, text) => {
+    if (!_tip) {
+      _tip = document.createElement('div')
+      _tip.style.cssText = 'position:fixed;z-index:100000;max-width:280px;padding:6px 9px;' +
+        'background:rgba(20,20,24,0.96);color:#e8e8e8;font:12px/1.35 sans-serif;border:1px solid #555;' +
+        'border-radius:4px;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,0.5)'
+      document.body.appendChild(_tip)
+    }
+    _tip.textContent = text
+    _tip.style.display = 'block'
+    const w = _tip.offsetWidth, h = _tip.offsetHeight
+    let x = e.clientX - w - 14; if (x < 8) x = e.clientX + 14
+    let y = e.clientY + 6;      if (y + h > window.innerHeight - 8) y = window.innerHeight - h - 8
+    _tip.style.left = x + 'px'
+    _tip.style.top  = y + 'px'
+  }
+  const _hideTip = () => { if (_tip) _tip.style.display = 'none' }
+  const addInfo = (ctrl, text) => {
+    if (!ctrl || !ctrl.$name || !text || ctrl.$name.querySelector('.info-i')) return
+    const icon = document.createElement('span')
+    icon.className = 'info-i'
+    icon.textContent = 'ⓘ'
+    icon.style.cssText = 'margin-right:5px;opacity:0.5;cursor:help'
+    icon.addEventListener('mouseenter', e => _showTip(e, text))
+    icon.addEventListener('mousemove',  e => _showTip(e, text))
+    icon.addEventListener('mouseleave', _hideTip)
+    ctrl.$name.insertBefore(icon, ctrl.$name.firstChild)
+  }
+  for (const folder of [roadFolder, surfaceFolder, junctionFolder]) {
+    for (const ctrl of folder.controllers) addInfo(ctrl, ROAD_INFO[ctrl.property])
+  }
 
   // D-04: Read-only Logger hint — shows the \ key without being interactive
   const _loggerHint = { hint: '\\ to record' }

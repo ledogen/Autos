@@ -243,20 +243,8 @@ export const RANGER_PARAMS = {
   // global magnet (km wander) from coming back. ~40 m re-activates the spine over ~all road length.
   roadValleyDepthCap: 40,  // m below baseline that still rewards descending (bounded valley-seek)
 
-  // FEAT-10 merge graph (replaces the deleted COVER suppression).
-  // roadNodeMergeRadius: a macro-anchor ADOPTS the position of a strictly-higher-priority neighbour
-  //   anchor (lower (mz,mx)) whose raw valley-snap lies within this radius (±1-cell window) → converging
-  //   anchors collapse to ONE shared graph node. Kills the spiral/duplicate stacking at the source and
-  //   removes the over-constrained short stubs whose ribbon tears. Must be < PROTO_ANCHOR_SPACING (256);
-  //   too large collapses roads into one trunk, too small leaves duplicates. 0 = merge off.
-  //   Tuned to 50: collapses genuinely-coincident anchors (the ~27 m degenerate stubs whose ribbon
-  //   tears) without merging distinct anchors that sit on a bend (which would concentrate the bend into
-  //   a sharp hairpin — measured 68° at R=90 vs ~34° pre-existing at R=50). The spiral/duplicate bulk is
-  //   already handled upstream by FEAT-12 earthwork routing, so this is the residual same-basin collapse.
-  roadNodeMergeRadius: 50,
-  // roadMergeBand: how close two merged endpoints count as the "same node" when dropping a DEGENERATE
-  //   edge (both endpoints coincide → collapsed stub) or a REDUNDANT edge (same node-pair already
-  //   connected by a higher-priority edge → parallel duplicate). m.
+  // roadMergeBand: how close an edge's two endpoints count as the "same node" — a DEGENERATE (collapsed)
+  //   edge whose endpoints coincide within this band is skipped at graph assembly. m.
   roadMergeBand: 24,
 
   // roadWGrade: gentle-grade weight — quadratic (grade²) cost. 2× grade → 4× penalty; shapes
@@ -271,7 +259,7 @@ export const RANGER_PARAMS = {
   // roadWOver: FINITE over-cap penalty — roadWOver·max(0, grade − maxRoadGrade). Strongly (but
   // never infinitely) discourages exceeding maxRoadGrade; forces switchbacks where the grade
   // would otherwise blow past the target. NEVER Infinity (D-02 REVISED). D-09 default 8000.
-  roadWOver: 2500,      // cost units/m over-grade — SOFT over-cap penalty, per-metre (×L) (FEAT-10: 5000→2500 — let roads take a steeper line instead of spiralling)
+  roadWOver: 18500,     // cost units/m over-grade — SOFT over-cap penalty, per-metre (×L) (2500→18500 — harder soft-cap: force terrain-following/switchbacks the instant grade exceeds maxGrade)
 
   // roadWTurn: curvature penalty weight (wCurv) in the arc router. QUAL-05: the per-primitive cost is
   // wCurv·κ²·L (curvature SQUARED — "bending energy"), so for a given heading change the cost is
@@ -350,17 +338,12 @@ export const RANGER_PARAMS = {
   roadCrossAngleMin: 12,   // deg — crossings shallower than this are near-parallel grazes, not junctions.
   roadCrossOverpassClearance: 4.5, // m — deck underside clearance above the lower strand (truck + deck). RESERVED for Step 3.
 
-  // ── Road network topology (FEAT-13) ─────────────────────────────────────────────────────────────
-  // roadNetworkMode: how the macro-anchor field is turned into roads.
-  //   'rows'  — one E-W run per macro-row anchor(mx,mz)→anchor(mx+1,mz). Parallel by construction (the
-  //             historical generator; every existing gate validates this mode).
-  //   'graph' — FEAT-13 v2: an URQUHART graph (Delaunay minus each triangle's longest edge) over a
-  //             BLUE-NOISE anchor set. No parallel rows (blue-noise has no rows), varied-angle real T/X
-  //             intersections at nodes, sparse with route-choice cycles, CONNECTED by construction
-  //             (Urquhart ⊇ Euclidean MST), window-invariant. (Replaced the v1 lattice/spanning-forest
-  //             draft; see .planning/ROAD-GRAPH-HANDOFF.md.)
-  roadNetworkMode: 'graph',
-  // roadGraphFlatMerges: graph mode — force EVERY crossing to a flat at-grade intersection (no dynamic
+  // ── Road network topology (FEAT-13 v2) ──────────────────────────────────────────────────────────
+  // The network is an URQUHART graph (Delaunay minus each triangle's longest edge) over a BLUE-NOISE
+  // anchor set: varied-angle real T/X intersections at nodes, sparse with route-choice cycles, CONNECTED
+  // by construction (Urquhart ⊇ Euclidean MST), window-invariant. (QUAL-12 removed the historical parallel-
+  // rows generator; the graph is now the sole topology. See .planning/ROAD-GRAPH-HANDOFF.md.)
+  // roadGraphFlatMerges: force EVERY crossing to a flat at-grade intersection (no dynamic
   // overpasses). Roads meet/merge at one shared height instead of one floating over another. Real
   // grade-separation is deferred to future prefab intersections (cloverleaf etc.), not the dynamic
   // system. true is strongly recommended: dynamic overpasses produce intense Z geometry at junctions.
@@ -374,29 +357,29 @@ export const RANGER_PARAMS = {
   // and flat patches 7→0. Junction endpoints are reconciled separately (_applyJunctionBlend), so a looser
   // mid-edge cap does not float merges. Lower only if you want tighter terrain-hug AND accept the steps.
   roadGraphDeviationCap: 8,
-  // roadGraphMaxGrade: SOFT grade target for the GRAPH-mode router only (rows uses maxRoadGrade). This is
-  // the DOMINANT WINDINESS lever (windiness-stage finding): lower target ⇒ more chords exceed it ⇒ the
-  // over-cap penalty forces terrain-following detours/switchbacks ⇒ windier, more rows-like roads. 0.20
+  // roadGraphMaxGrade: the SOFT grade target for the router. This is the DOMINANT WINDINESS lever
+  // (windiness-stage finding): lower target ⇒ more chords exceed it ⇒ the over-cap penalty forces
+  // terrain-following detours/switchbacks ⇒ windier, more terrain-following roads. 0.20
   // (matching rows' maxRoadGrade) lifts seed-6 detour 1.13→1.22 and stays loop-free across seeds 3/6/7/11/42
   // (paired with roadGraphWTurn 3000 + roadGraphWAlt 2.0 + goalBlend 60). Raising it back toward 0.30
   // straightens roads (short connectors run direct); much below 0.20 reintroduces 360° spiral loops.
-  roadGraphMaxGrade: 0.20,
+  roadGraphMaxGrade: 0.15,
   // roadGraphGoalBlend: how many metres of an edge's tail are routed as a clean GEOMETRIC Dubins curve INTO
-  // the goal node (graph mode only; rows use a tight 20 m). NOTE (windiness-stage): this is NOT a windiness
+  // the goal node. NOTE (windiness-stage): this is NOT a windiness
   // lever — sweeping 140→20 barely moves detour (the straightness lives in the SEARCH cost, not the tail).
   // Its real job is taming overshoot: the hybrid-A* can sail past a short edge's goal node, bowing the road
   // past it to cross a sibling near the junction; replacing the tail with a direct Dubins curve erases that.
   // 60 m keeps overshoot low while letting more of the tail follow terrain; <40 m reintroduces a couple of
   // routed crossings (cullable). 140 m was the old straightener-era value.
-  roadGraphGoalBlend: 60,
-  // roadGraphWTurn: graph-mode curvature penalty (wCurv), overriding the shared roadWTurn (8000) for graph
-  // edges only. Lower = cheaper bends = the router accepts more/tighter curves = windier. 3000 (windiness
-  // stage) noticeably loosens the roads without tripping the min-radius or no-loop gates. Rows keep 8000.
+  roadGraphGoalBlend: 20,
+  // roadGraphWTurn: the router's curvature penalty (wCurv). Lower = cheaper bends = the router accepts
+  // more/tighter curves = windier. 3000 (windiness stage) noticeably loosens the roads without tripping
+  // the min-radius or no-loop gates.
   roadGraphWTurn: 3000,
-  // roadGraphWAlt: graph-mode valley-seeking weight, overriding the shared roadWAlt (1.0) for graph edges
-  // only. Higher = roads dive harder for low ground = more terrain-hugging wander. 2.0 (windiness stage).
+  // roadGraphWAlt: the router's valley-seeking weight (wAlt). Higher = roads dive harder for low ground =
+  // more terrain-hugging wander. 2.0 (windiness stage).
   roadGraphWAlt: 2.0,
-  // roadGraphCullCrossings: graph mode — SAFE-PRUNE the redundant edge of every routed at-grade crossing
+  // roadGraphCullCrossings: SAFE-PRUNE the redundant edge of every routed at-grade crossing
   // (they read as ugly mid-span intersections; the graph is planar-abstract so a routed cross means one
   // edge took a redundant excursion). Only dropped if the far endpoint keeps a detour (≤ cull max hops),
   // so dead ends + bridges are never cut. seed-set: routed crossings 7→1 (the 1 is a true bridge, kept).
@@ -420,7 +403,7 @@ export const RANGER_PARAMS = {
   roadSiteMinDist: 420,
   // roadSiteValleySnap: gradient-descend each site onto the local valley floor (like the rows anchors) so
   // roads still favour valleys. false = sites stay at their seeded jitter position (more even, less natural).
-  roadSiteValleySnap: true,
+  roadSiteValleySnap: false,
   // roadGraphMargin: cells of padding around the stream band over which the Urquhart graph is computed, so
   // an interior edge's membership is independent of the stream center (window-invariance). 3 is ample for
   // blue-noise spacing; raise only if the invariance gate reports center-dependent interior edges.
@@ -568,7 +551,7 @@ export const RANGER_PARAMS = {
   roadJunctionBlendLength: 30,  // m — grade-blend reach toward junction node (D-14 / A8)
 
   // FEAT-10: roadJoinWeldLength — how far from a run's endpoints the ribbon cross-section tangent
-  // blends toward the shared canonical node heading (_protoAnchorHeading), so adjacent runs build the
+  // blends toward the node's edge heading (_edgeTerminalHeading), so adjacent runs build the
   // SAME endpoint cross-section and their ribbon edges line up (seals the outside-of-bend wedge at run
   // joins). m. 0 = off (endpoint tangent = local last-segment direction, the un-sealed default).
   roadJoinWeldLength: 6,

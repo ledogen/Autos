@@ -11,19 +11,14 @@
 // Any dense radius below the fold-safe floor (roadHalfWidth + clearance) folds the ribbon's inner
 // edge = the BUG-12 tear. RED before the heading-continuous-routing fix, GREEN after.
 //
-// Fixtures: (1) the synthetic headless network (broad coverage, every run), (2) the 3 captured
-// seed-6 place-dumps in Logs/ whose marks are the known failure sites.
+// Fixture: the synthetic headless graph network over several stream centers (broad coverage — every run
+// of every window). (QUAL-12 retired the 3 rows-era place-dump captures: their marks were rows fold
+// sites with no deterministic graph road, and this whole-network sweep already covers min-radius validity
+// over the shipped graph topology.)
 //
 // Run: node test/road-minradius.mjs   (exit 0 = all green)
 
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
-import * as THREE from 'three'
-import { RoadSystem } from '../src/road.js'
 import { buildNetwork, TEST_PARAMS } from './lib/road-headless.mjs'
-
-const HERE = dirname(fileURLToPath(import.meta.url))
 
 let pass = 0, fail = 0
 const log = (ok, name, msg) => {
@@ -108,30 +103,6 @@ const foldFloor = (params) => (params.roadHalfWidth ?? 5) + (params.roadClearanc
         `worst dense centerline radius = ${worst.min === Infinity ? '∞' : worst.min.toFixed(2)}m ` +
         `(fold floor ${FLOOR}m, hardR target ${HARD}m) at run ${worst.runKey} near ` +
         `(${worst.atX.toFixed(0)},${worst.atZ.toFixed(0)}), stream center (${worst.center?.x},${worst.center?.z})`)
-}
-
-// ── Fixture 2: the 3 captured seed-6 place-dumps (known failure sites) ───────────────────────────
-const CAPTURES = [
-    'rangersim-capture-1782102756225.json',   // mark (-39, 184)
-    'rangersim-capture-1782102776290.json',   // mark (-291, 224)
-    'rangersim-capture-1782102824634.json',   // mark (-724, 280)
-]
-for (const file of CAPTURES) {
-    let cap
-    try { cap = JSON.parse(readFileSync(join(HERE, '..', 'Logs', file), 'utf8')) }
-    catch (e) { log(false, `CAPTURE:${file}`, `cannot read fixture: ${e.message}`); continue }
-    const { seed, params } = cap.world
-    const { mark } = cap.place
-    const FLOOR = foldFloor(params)
-    const road = new RoadSystem(seed, params)                       // real seeded coarse height (replay.mjs:39)
-    road.update(new THREE.Vector3(mark.x, 0, mark.z))
-    const dump = road.debugDumpNearestRun(mark.x, mark.z)           // sanctioned nearest-run lookup
-    if (!dump) { log(false, `CAPTURE:${file}`, `no run found near mark (${mark.x.toFixed(0)},${mark.z.toFixed(0)})`); continue }
-    const r = worstSliceRadius(collectRun(road, dump.runKey))
-    log(r.min >= FLOOR, `CAPTURE:${file.replace('rangersim-capture-', '').replace('.json', '')}`,
-        `mark (${mark.x.toFixed(0)},${mark.z.toFixed(0)}) run ${dump.runKey}: dense radius = ` +
-        `${r.min === Infinity ? '∞' : r.min.toFixed(2)}m (fold floor ${FLOOR}m) — in-game probe reported ` +
-        `${cap.place.observed.minRadius?.toFixed(2)}m`)
 }
 
 console.log(`\n================================================================`)

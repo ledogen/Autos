@@ -222,10 +222,6 @@ const PROTO_MARGIN         = 120   // m — N/S detour room so a connection can 
                                    // 120 m still clears the DETOURS-AROUND-PEAK gate (119 m detour).
 const PROTO_REGEN_MOVE     = 96    // m — re-stream the trunk once the view center moves this far
 const PROTO_SAMPLE_DS      = 4     // m — centerline → polyline sampling spacing (profile/slice/query density)
-// FEAT-10: redundant/degenerate-edge drop neighbour window (cells each side) in _streamNetwork. The
-// merged node-pair's canonical owner edge sits within ±1 cell (node-merge reaches only ±1); 2
-// over-covers safely. Replaces COVER's PROTO_COVER_* (deleted): node-identity, not 50%/heading overlap.
-const MERGE_DROP_W         = 2
 const PROTO_SNAP_CAP       = PROTO_ANCHOR_SPACING * 0.45  // m — max anchor gradient-descent displacement (keeps anchors in their lane → fewer parallel/duplicate roads)
 const PROTO_PARAM_DEBOUNCE = 160   // ms — coalesce slider drags before re-routing
 // 8-connectivity direction vectors (index 0..7); used for the turn-penalty A* state.
@@ -257,17 +253,6 @@ const USE_CENTERLINE_RIBBON = true
 // validated: replay window-invariance on the disappearing-road capture passes with gradeΔ=hitΔ=0.]
 const ROAD_BAND_MARGIN = 1  // extra macro-cols beyond ceil(R/spacing) each side (run east-reach + snap + bulge)
 
-// ── D-16: grade-smoothing pad for band-edge gradeY invariance ──────────────────
-// The longitudinal grade moving-average (smoothGradeInPlace, ±designGradeWindow m) reaches ACROSS
-// connection joins for C0 continuity. A connection at the band edge (mx0/mx1) would otherwise get a
-// TRUNCATED averaging window → its smoothed gradeY (and the terrain carve cut to it) shifts as the
-// player moves and the band slides → window-VARIANT drivable surface (terrain holes / floating road
-// on fly-over, not self-healing on drive-over). _streamNetwork assembles + grades PROTO_GRADE_PAD
-// extra connections beyond the band on EACH side (pure fns of (mx,mz), identical from any center),
-// then registers only the in-band connections — so every registered run is INTERIOR to the smoother
-// and its gradeY is invariant. One connection (~256 m) already dwarfs the ±50 m window; 2 covers
-// valley-snapped short connections too.
-const PROTO_GRADE_PAD = 2
 
 // ── Off-thread route pre-warm tuning (PERF-03 Workstream A) ───────────────────
 const PREWARM_MARGIN    = 2   // extra macro-cols/rows beyond the streamer band to route AHEAD of need
@@ -1219,34 +1204,18 @@ export class RoadSystem {
         const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING) + PREWARM_MARGIN
 
         const jobs = []
-        // Nearest macro-row first so the connections under/ahead of the view warm before the fringe.
-        const center_mz = Math.floor(center.z / PROTO_ANCHOR_SPACING)
-        const rows = []
-        for (let mz = mz0; mz <= mz1; mz++) rows.push(mz)
-        rows.sort((a, b) => Math.abs(a - center_mz) - Math.abs(b - center_mz))
-        const graph = (this._params?.roadNetworkMode ?? 'rows') === 'graph'
         const addJob = (spec) => {
             if (this._proto.cls?.has(spec.key) || this._pendingRoutes.has(spec.key)) return
             this._pendingRoutes.add(spec.key)
             jobs.push({ key: spec.key, ax: spec.ax, az: spec.az, bx: spec.bx, bz: spec.bz, opts: spec.opts })
         }
-        if (graph) {
-            // FEAT-13 v2: warm every Urquhart edge in the band (same edge set _assembleGraphEdges will
-            // register → the pre-warmed routes are exact cache hits). Edge SELECTION stays main-thread;
-            // only arcPrimitiveConnect runs on the Worker (no WORKER_SOURCE / ROUTE SYNC change).
-            const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)   // persist=false: don't clobber the streaming graph
-            for (const [c1, c2] of g.edges) {
-                if (jobs.length >= PREWARM_MAX_JOBS) break
-                addJob(this._edgeRouteSpec(c1, c2))
-            }
-        } else {
-            for (const mz of rows) {
-                for (let mx = mx0; mx <= mx1; mx++) {
-                    if (jobs.length >= PREWARM_MAX_JOBS) break
-                    addJob(this._connRouteSpec(mx, mz))
-                }
-                if (jobs.length >= PREWARM_MAX_JOBS) break
-            }
+        // FEAT-13 v2: warm every Urquhart edge in the band (same edge set _assembleGraphEdges will
+        // register → the pre-warmed routes are exact cache hits). Edge SELECTION stays main-thread;
+        // only arcPrimitiveConnect runs on the Worker (no WORKER_SOURCE / ROUTE SYNC change).
+        const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)   // persist=false: don't clobber the streaming graph
+        for (const [c1, c2] of g.edges) {
+            if (jobs.length >= PREWARM_MAX_JOBS) break
+            addJob(this._edgeRouteSpec(c1, c2))
         }
         // Only advance the throttle anchor once the visible band is fully warmed/pending — otherwise a
         // single move could leave fringe connections un-dispatched until the NEXT PREWARM_WARM_MOVE.
@@ -1272,105 +1241,13 @@ export class RoadSystem {
         }
     }
 
-    // Deterministic RAW valley anchor for macro-cell (mx,mz): seeded candidate in the cell, then
-    // gradient-descended onto the local valley floor (pure function of seed+coords). This is the
-    // PRE-MERGE position; the merged graph node is _protoAnchor below (FEAT-10).
-    _protoAnchorRaw(mx, mz) {
-        const key = `${mx},${mz}`
-        const cached = this._proto.anchors.get(key)
-        if (cached) return cached
-        const rng = mulberry32(seedFor(this._worldSeed, 'roadanchor', mx, mz))
-        let wx = (mx + rng()) * PROTO_ANCHOR_SPACING
-        let wz = (mz + rng()) * PROTO_ANCHOR_SPACING
-        let h  = this._coarseH(wx, wz)
-        const ox = wx, oz = wz   // original candidate — cap displacement so anchors stay in their lane
-        // Gradient descent to a local minimum (bounded so adjacent cells don't collapse to one valley).
-        for (let s = 0; s < 48; s++) {
-            const step = 8
-            let bx = wx, bz = wz, bh = h
-            for (let a = 0; a < 8; a++) {
-                const ang = a / 8 * Math.PI * 2
-                const nx = wx + Math.cos(ang) * step, nz = wz + Math.sin(ang) * step
-                const nh = this._coarseH(nx, nz)
-                if (nh < bh) { bh = nh; bx = nx; bz = nz }
-            }
-            if (bh >= h) break
-            if (Math.hypot(bx - ox, bz - oz) > PROTO_SNAP_CAP) break  // lane cap (reduces duplicate roads)
-            wx = bx; wz = bz; h = bh
-        }
-        const v = new THREE.Vector3(wx, h, wz)
-        this._proto.anchors.set(key, v)
-        return v
-    }
 
-    // FEAT-10: merged GRAPH NODE for cell (mx,mz). Adjacent cells whose raw anchors snapped into the
-    // same basin would otherwise route stacked/degenerate duplicates (the source of the run-join ribbon
-    // tears); here (mx,mz) ADOPTS the position of the strictly-higher-priority anchor (lowest (mz,mx)
-    // lexicographic) whose RAW snap lies within roadNodeMergeRadius, scanning a fixed ±1-cell window.
-    // Pure fn of (seed,coords,params): the decision reads only raw anchors in that fixed window (each
-    // itself a pure fn) — never the stream center or a merged position — so it is window-invariant and
-    // order-independent (the final pick is the min-priority over a fixed set; single-hop, no recursion).
-    // roadNodeMergeRadius < PROTO_ANCHOR_SPACING keeps every mergeable neighbour inside the ±1 window
-    // (a 2-cell-away anchor is ≥ 256 − 2·SNAP_CAP ≈ 282 m off). Everything downstream (_connRouteSpec,
-    // _protoAnchorHeading, the Worker route job) reads this merged node, so the merge propagates with
-    // NO router / ROUTE-SYNC change. roadNodeMergeRadius ≤ 0 ⇒ merge off (raw == merged).
-    _protoAnchor(mx, mz) {
-        const key = `${mx},${mz}`
-        const cached = this._proto.mergedAnchors.get(key)
-        if (cached) return cached
-        const self = this._protoAnchorRaw(mx, mz)
-        const Rm = this._params?.roadNodeMergeRadius ?? 0
-        let best = self, bestMz = mz, bestMx = mx
-        if (Rm > 0) {
-            const R2 = Rm * Rm
-            for (let dz = -1; dz <= 1; dz++) {
-                for (let dx = -1; dx <= 1; dx++) {
-                    if (dx === 0 && dz === 0) continue
-                    const nmx = mx + dx, nmz = mz + dz
-                    // Only a STRICTLY higher-priority neighbour (lower (mz,mx)) can absorb us.
-                    if (nmz > bestMz || (nmz === bestMz && nmx >= bestMx)) continue
-                    const nr = this._protoAnchorRaw(nmx, nmz)
-                    const ex = nr.x - self.x, ez = nr.z - self.z
-                    if (ex * ex + ez * ez <= R2) { best = nr; bestMz = nmz; bestMx = nmx }
-                }
-            }
-        }
-        this._proto.mergedAnchors.set(key, best)
-        return best
-    }
-
-    // BUG-12: canonical per-anchor heading — the chord direction through the row neighbors
-    // (anchor(mx-1) → anchor(mx+1)). A PURE function of world anchors (each itself a deterministic
-    // function of grid coords), so it is window-invariant: every segment touching anchor (mx,mz) —
-    // on either side — independently targets this SAME heading there, so consecutive arc segments
-    // meet G1 (shared tangent) instead of at a sharp corner. No runtime pose is threaded across the
-    // window, which is what keeps the join fix invariant (D-16).
-    // FEAT-10: when a node is shared by several MERGED cells, the immediate mx±1 neighbour may have
-    // merged INTO this node (coincident) → its chord would differ per cell and break the G1 join (a
-    // kink/wedge at the merged node). Look THROUGH coincident neighbours to the nearest DISTINCT anchor
-    // on each side so every cell mapping to one node returns the SAME heading. Still pure/window-invariant.
-    _protoAnchorHeading(mx, mz) {
-        const here = this._protoAnchor(mx, mz)
-        const same = (p) => Math.abs(p.x - here.x) < 0.5 && Math.abs(p.z - here.z) < 0.5
-        let pi = mx - 1, prev = this._protoAnchor(pi, mz)
-        while (same(prev) && pi > mx - 4) { pi--; prev = this._protoAnchor(pi, mz) }
-        let ni = mx + 1, next = this._protoAnchor(ni, mz)
-        while (same(next) && ni < mx + 4) { ni++; next = this._protoAnchor(ni, mz) }
-        return Math.atan2(next.z - prev.z, next.x - prev.x)
-    }
-
-    // FEAT-13: the canonical "through" heading at an anchor cell, used as the routing terminal heading
-    // and the ribbon-weld target. Rows mode = the row chord (_protoAnchorHeading). Graph mode = a chord
-    // through the cell's graph neighbours when it is a degree-2 pass-through (G1 flow), else this edge's
-    // own direction (junction flatten/weld owns continuity at degree-1/≥3 nodes). Pure / window-invariant.
-    // The terminal heading the routed edge `at → toward` leaves the anchor `at` with (and the ribbon-weld
-    // target there). Rows mode = the row chord (_protoAnchorHeading — all E edges of a row stay collinear,
-    // byte-identical to the old behaviour). Graph mode = the EDGE's OWN direction toward its neighbour, so
-    // edges meeting at a junction DIVERGE toward their neighbours (a shared per-cell heading made them all
-    // leave parallel and overlap — the near-parallel-graze step bug). A straight pass-through still gets
-    // ~G1 for free (the two opposite edges' headings are collinear); corners/junctions bend/diverge.
+    // FEAT-13: the terminal heading the routed edge `at → toward` leaves the anchor `at` with (and the
+    // ribbon-weld target there) = the EDGE's OWN direction toward its neighbour, so edges meeting at a
+    // junction DIVERGE toward their neighbours (a shared per-cell heading made them all leave parallel and
+    // overlap — the near-parallel-graze step bug). A straight pass-through still gets ~G1 for free (the two
+    // opposite edges' headings are collinear); corners/junctions bend/diverge. Pure / window-invariant.
     _edgeTerminalHeading(at, toward) {
-        if ((this._params?.roadNetworkMode ?? 'rows') !== 'graph') return this._protoAnchorHeading(at[0], at[1])
         const a = this._nodePos(at), b = this._nodePos(toward)
         return Math.atan2(b.z - a.z, b.x - a.x)
     }
@@ -1383,13 +1260,12 @@ export class RoadSystem {
     //       band+margin neighbourhood — sparse, varied-angle, CONNECTED by construction (Urquhart ⊇ MST),
     //       and window-invariant (the Delaunay of a fixed point set is unique; the margin makes interior
     //       edges independent of the stream center — verified by test/graph-topology.mjs).
-    // A node id is a SITE id `[cmx, cmz, k]` (macro-cell + candidate index), generalising the rows
-    // `[mx, mz]` cell id. _nodePos resolves either to a world position; everything downstream
-    // (_edgeRouteSpec, headings, junction blend) reads positions through it.
+    // A node id is a SITE id `[cmx, cmz, k]` (macro-cell + candidate index). _nodePos resolves it to a
+    // world position; everything downstream (_edgeRouteSpec, headings, junction blend) reads through it.
 
     // The seeded candidate sites for macro-cell (cmx,cmz): roadSiteCandidates points jittered across the
-    // whole cell, each optionally valley-snapped (reusing the _protoAnchorRaw gradient-descent so sites
-    // still favour valley floors). Pure fn of (seed, cell) → window-invariant. Cached per cell.
+    // whole cell, each optionally valley-snapped (a bounded gradient-descent so sites still favour valley
+    // floors). Pure fn of (seed, cell) → window-invariant. Cached per cell.
     _anchorSites(cmx, cmz) {
         const ckey = `${cmx},${cmz}`
         const cached = this._proto.sites.get(ckey)
@@ -1426,7 +1302,7 @@ export class RoadSystem {
 
     // Poisson-disk acceptance: a site is ALIVE iff no STRICTLY higher-priority accepted site lies within
     // roadSiteMinDist. Acceptance reads only higher-priority sites in the bounded ±W-cell window covering
-    // minDist (each a pure fn) — same argument as the _protoAnchor merge (line ~1254) → window-invariant.
+    // minDist (each a pure fn) → window-invariant, order-independent (min-priority over a fixed set).
     _siteAlive(site) {
         if (site._alive !== undefined) return site._alive   // memoized (DAG over strict priority → cycle-free)
         const minD = this._params?.roadSiteMinDist ?? 90
@@ -1479,7 +1355,7 @@ export class RoadSystem {
 
     // Generalised node-position lookup: rows id [mx,mz] → merged grid anchor; graph site id [cmx,cmz,k]
     // → blue-noise site. The single seam between the two topologies — every graph helper reads here.
-    _nodePos(id) { return id.length >= 3 ? this._siteAt(id) : this._protoAnchor(id[0], id[1]) }
+    _nodePos(id) { return this._siteAt(id) }
 
     // Build (or reuse) the Urquhart graph over the band [mx0,mx1]×[mz0,mz1] padded by roadGraphMargin
     // cells. Returns { edges:[[idA,idB]...], adj:Map(key→Set(key)), key(id) }. Interior edges are
@@ -1624,40 +1500,30 @@ export class RoadSystem {
     }
 
     // (Road Overhaul Phase C: _protoConnect / _protoSimplify / _removeLoops / _removeSelfCrossings
-    // deleted. The routed centerline (_protoConnectCenterline below) is now the SOLE representation;
-    // _streamNetwork samples it into the run polyline (Y = coarse height), so the separate point-mode
-    // search + collinear-simplify + loop/self-crossing cleanup are all gone — and routing runs ONCE
-    // per connection, not twice. _segCrossParam stays (module scope, _detectJunctions crossings).)
+    // deleted; the routed primitive centerline is now the SOLE representation. _streamNetwork samples it
+    // into the run polyline (Y = coarse height), so the separate point-mode search + collinear-simplify +
+    // loop/self-crossing cleanup are all gone. _segCrossParam stays (module scope, _detectJunctions).)
 
-    // Road Overhaul — the connection's primitive centerline (THE routed representation). Same anchors,
-    // same canonical headings, same
-    // router cost model — but emitPrimitives:true so the result is the EXACT curvature-bounded curve
-    // (line/arc/Dubins-terminal primitives, radius ≥ hardR by construction) carried end-to-end with
-    // no Catmull-Rom re-fit. Returns a Centerline; window-invariant (pure fn of the anchor pair).
-    // Deterministic route SPEC for east connection (mx,mz)→(mx+1,mz): the cls cache key, anchor
-    // endpoints, and the exact arcPrimitiveConnect opts. Shared by _protoConnectCenterline (synchronous
-    // compute) and warmRoutes (the off-thread Worker job) so the pre-warmed route is byte-identical to
-    // the synchronous fallback — same anchors, same canonical headings, same cost weights.
-    // Shared arcPrimitiveConnect opts for an edge between two anchor CELLS c1,c2 (terminal headings from
-    // _anchorThroughHeading — rows mode == _protoAnchorHeading, byte-identical; graph mode == the graph
-    // through-heading). Used by both the rows _connRouteSpec and the graph _edgeRouteSpec.
+    // arcPrimitiveConnect opts for an edge between two graph node ids c1,c2 (terminal headings from
+    // _edgeTerminalHeading — the edge's own direction toward its neighbour). emitPrimitives:true so the
+    // result is the EXACT curvature-bounded curve (line/arc/Dubins-terminal, radius ≥ hardR by
+    // construction), carried end-to-end with no Catmull-Rom re-fit. Shared by _edgeCenterline (synchronous
+    // compute) and warmRoutes (the off-thread Worker job) so the pre-warmed route is byte-identical to the
+    // synchronous fallback — same nodes, same headings, same cost weights. Window-invariant (pure fn).
     _routeOptsBetween(c1, c2) {
         const P = this._proto.params
         const pp = this._params || {}
-        const isGraph = (this._params?.roadNetworkMode ?? 'rows') === 'graph'
         const halfW = pp.roadHalfWidth ?? 5, clearance = pp.roadClearanceMargin ?? 0.5
         const hardR = Math.max(pp.roadArcHardRadius ?? 8, halfW + clearance + 0.1)
         return {
             hardR, gentleR: pp.roadArcGentleRadius ?? 30, margin: PROTO_MARGIN,
-            // WINDINESS stage (FEAT-13): graph mode gets its own valley-seeking + curvature weights so the
-            // graph roads can be tuned windier (rows-like) without disturbing the rows defaults. Lower wCurv
-            // = cheaper bends; higher wAlt = harder valley-diving. Rows keep the shared P.wTurn / P.wAlt.
-            wDist: P.wDist, wAlt: isGraph ? (pp.roadGraphWAlt ?? P.wAlt) : P.wAlt, wGrade: P.wGrade, wOver: P.wOver,
+            // WINDINESS stage (FEAT-13): the graph router's valley-seeking + curvature weights. Lower wCurv
+            // = cheaper bends; higher wAlt = harder valley-diving (windier, more terrain-following roads).
+            wDist: P.wDist, wAlt: pp.roadGraphWAlt ?? P.wAlt, wGrade: P.wGrade, wOver: P.wOver,
             // The SOFT grade target is the dominant windiness lever: a lower target makes more chords exceed
-            // it, so the over-cap penalty forces terrain-following detours/switchbacks (windier roads). Graph
-            // uses its own roadGraphMaxGrade (default 0.20, == rows) so it can be tuned independently.
-            maxGrade: isGraph ? (pp.roadGraphMaxGrade ?? 0.20) : P.maxGrade,
-            wCurv: isGraph ? (pp.roadGraphWTurn ?? P.wTurn) : P.wTurn, wHeur: pp.roadArcHeurWeight ?? 1.5,
+            // it, so the over-cap penalty forces terrain-following detours/switchbacks (windier roads).
+            maxGrade: pp.roadGraphMaxGrade ?? 0.20,
+            wCurv: pp.roadGraphWTurn ?? P.wTurn, wHeur: pp.roadArcHeurWeight ?? 1.5,
             valleyDepthCap: pp.roadValleyDepthCap ?? 40,
             // QUAL-05 follow-up: fixed-angle palette → large sweeping radii (see ranger.js roadArc*).
             radii: pp.roadArcRadii, hbins: pp.roadArcHeadingBins, gradeSamples: pp.roadArcGradeSamples,
@@ -1668,21 +1534,19 @@ export class RoadSystem {
             // |lowpass − raw| (the fill/cut earthwork). Default 0 = off (terrain-following, unchanged).
             earthworkWindow: pp.roadEarthworkWindow ?? 0, wDev: pp.roadWDeviation ?? 0,
             deviationCap: pp.roadDeviationCap ?? Infinity,
-            // The router's goalHeading is the TRAVEL direction ARRIVING at c2 (= bearing c1→c2). Rows'
-            // _edgeTerminalHeading returns the through-chord, which already points forward (east), so it
-            // needs no flip. Graph's _edgeTerminalHeading(c2,c1) is the LEAVE direction at c2 (bearing
-            // c2→c1) = the reverse of arrival, so a directed router would loop around to approach c2 from
-            // the wrong side (the "enter from the wrong side" / shallow near-node crossing). +π flips it
-            // to the arrival direction. (startHeading is already the leave-at-c1 = forward direction.)
+            // The router's goalHeading is the TRAVEL direction ARRIVING at c2 (= bearing c1→c2).
+            // _edgeTerminalHeading(c2,c1) is the LEAVE direction at c2 (bearing c2→c1) = the reverse of
+            // arrival, so a directed router would loop around to approach c2 from the wrong side (the "enter
+            // from the wrong side" / shallow near-node crossing). +π flips it to the arrival direction.
+            // (startHeading is already the leave-at-c1 = forward direction.)
             startHeading: this._edgeTerminalHeading(c1, c2),
-            goalHeading:  this._edgeTerminalHeading(c2, c1) + (isGraph ? Math.PI : 0),
-            // Graph mode (FEAT-13): a WIDE goal blend. The hybrid-A* search overshoots short edges' goal
-            // node (wanders past it, then the terminal reels back) → the edge bows past the node and crosses
-            // a sibling TWICE (the "happens twice" double-cross the user flagged). Cutting back a wide tail
-            // (~140 m) and replacing it with the clean Dubins terminal-into-node erases that overshoot: the
-            // edge runs straight in. Robust across seeds (seed 6 crossings 6→2, overshoot 5→0; seed 3 →0),
-            // no loops reintroduced. Rows keep the tight 20 m blend (collinear rows never overshoot).
-            goalBlend: isGraph ? (pp.roadGraphGoalBlend ?? 60) : 20,
+            goalHeading:  this._edgeTerminalHeading(c2, c1) + Math.PI,
+            // FEAT-13: a WIDE goal blend. The hybrid-A* search overshoots short edges' goal node (wanders
+            // past it, then the terminal reels back) → the edge bows past the node and crosses a sibling
+            // TWICE (the "happens twice" double-cross the user flagged). Cutting back a wide tail (~140 m)
+            // and replacing it with the clean Dubins terminal-into-node erases that overshoot: the edge runs
+            // straight in. Robust across seeds (seed 6 crossings 6→2, overshoot 5→0; seed 3 →0), no loops.
+            goalBlend: pp.roadGraphGoalBlend ?? 60,
             emitPrimitives: true,
             // BUG-16/FEAT-20 de-quantize refit (road-carve.js refit block): corridor Dubins
             // shortcut (straightens the greedy quantized-heading bow, continuous radii) + κ
@@ -1697,14 +1561,8 @@ export class RoadSystem {
         }
     }
 
-    _connRouteSpec(mx, mz) {
-        const a = this._protoAnchor(mx, mz), b = this._protoAnchor(mx + 1, mz)
-        const key = `${mx},${mz}:${a.x.toFixed(0)},${a.z.toFixed(0)}>${b.x.toFixed(0)},${b.z.toFixed(0)}`
-        return { key, ax: a.x, az: a.z, bx: b.x, bz: b.z, opts: this._routeOptsBetween([mx, mz], [mx + 1, mz]) }
-    }
-
-    // FEAT-13 graph mode: route SPEC for an arbitrary node-id edge c1→c2 (canonical 'g' cache key).
-    // Node ids are blue-noise site ids [cmx,cmz,k]; the key joins their components so it is unique.
+    // FEAT-13: route SPEC for a node-id edge c1→c2 (canonical 'g' cache key). Node ids are blue-noise
+    // site ids [cmx,cmz,k]; the key joins their components so it is unique.
     _edgeRouteSpec(c1, c2) {
         const a = this._nodePos(c1), b = this._nodePos(c2)
         const key = `g${c1.join('_')}>${c2.join('_')}:${a.x.toFixed(0)},${a.z.toFixed(0)}>${b.x.toFixed(0)},${b.z.toFixed(0)}`
@@ -1723,21 +1581,6 @@ export class RoadSystem {
         return cl
     }
 
-    _protoConnectCenterline(mx, mz) {
-        if (!this._proto.cls) this._proto.cls = new Map()
-        const spec = this._connRouteSpec(mx, mz)
-        const cached = this._proto.cls.get(spec.key)
-        if (cached) return cached
-        // Synchronous miss: the pre-warm Worker didn't reach this connection in time (cold load / fast
-        // teleport / no dispatcher) — route it now. Same spec the Worker uses → identical result, so
-        // the cache value is the same whichever path populates it (and gates, which never set a
-        // dispatcher, always take this path → unchanged behaviour).
-        const descs = arcPrimitiveConnect(spec.ax, spec.az, spec.bx, spec.bz, (x, z) => this._coarseH(x, z), spec.opts)
-        const cl = centerlineFromDescriptors(descs)
-        this._proto.cls.set(spec.key, cl)
-        this._pendingRoutes.delete(spec.key)   // a still-in-flight Worker reply for this key is now redundant
-        return cl
-    }
 
     // Smooth a polyline's Y in place (shared by the rows row-polyline and the graph per-edge polyline).
     // Off-earthwork: legacy ±designGradeWindow terrain-following smoothing. Earthwork: (1) wide-smooth raw
@@ -1801,25 +1644,6 @@ export class RoadSystem {
         }
     }
 
-    // Road Overhaul, Phase B — a primitive centerline over the ABSOLUTE column span [mxLo, mxHi],
-    // concatenating each east connection's primitives. They join G1 at the shared anchors (canonical
-    // headings), so the concatenation is the EXACT curve the row polyline samples. A COVER-split run
-    // restricts it to its own span (subrange) → the run centerline the ribbon/carve/query sample
-    // instead of re-fitting Catmull-Rom (BUG-12 fold fix).
-    //
-    // D-16: the span MUST be derived from the run's own (window-invariant) geometry, NOT the streaming
-    // band [mx0,mx1] — a band-relative span makes the centerline length (and thus nearest()'s
-    // coarse-scan resolution) center-dependent, drifting the subrange clip points and breaking
-    // arcS/gradeY invariance. Per-connection centerlines are cached, so per-run rebuild is cheap.
-    _buildRowCenterline(mxLo, mxHi, mz) {
-        const prims = []
-        for (let mx = mxLo; mx <= mxHi; mx++) {
-            const cl = this._protoConnectCenterline(mx, mz)
-            for (const p of cl.primitives) prims.push(p)
-        }
-        return new Centerline(prims)
-    }
-
     // ── Canonical network builder (D-08) ────────────────────────────────────────
     /**
      * Build the canonical valley-trunk network around `center` into this._network — the
@@ -1827,13 +1651,13 @@ export class RoadSystem {
      * allocates NO scene lines and applies NO visual y-lift (those are render-only, 08-07);
      * the network y is the raw routed height.
      *
-     * Pipeline (Road Overhaul): over the streamed macro-cell window, each east connection
-     * _protoConnect(_protoAnchor(mx,mz), _protoAnchor(mx+1,mz)) is ONE run keyed "<mz>:<mx>" —
-     * a pure function of the anchor pair, band-independent → window-invariant by construction
-     * (no COVER overlap split, no loop-removal, no owner-ratio origin). Grade is smoothed over the
-     * whole row then split at anchors (C0 at the shared point). Each run is stored as
-     * this._network["<mz>:<mx>"] = { points, arcOrigin:0, centerline, polyCum, clArc }, where
-     * `centerline` is the connection's exact curvature-bounded primitive curve the ribbon samples.
+     * Pipeline (FEAT-13 v2): over the streamed macro-cell window, each URQUHART edge between two
+     * blue-noise site ids is ONE run keyed "g:<idA>:<idB>" — a pure function of the site pair,
+     * band-independent → window-invariant by construction (no COVER overlap split, no loop-removal, no
+     * owner-ratio origin). Each edge is graded standalone; shared nodes are reconciled by the junction
+     * blend. Each run is stored as this._network["g:<idA>:<idB>"] = { points, arcOrigin:0, centerline,
+     * polyCum, clArc, cellA, cellB }, where `centerline` is the edge's exact curvature-bounded primitive
+     * curve the ribbon samples and cellA/cellB are its two site ids.
      *
      * Lazy streaming: honors PROTO_REGEN_MOVE move-threshold, the dirty flag, and
      * PROTO_PARAM_DEBOUNCE slider-settle gating. On a real re-stream this._network is cleared
@@ -1913,139 +1737,15 @@ export class RoadSystem {
         // rebuild changes is run EXTENT at the frontier; the rev bump re-derives those lazily.
         this._designGradeCache = new WeakMap()
 
-        // ── Per-connection run assembly (Road Overhaul, Phase B/C) ────────────────
-        // Each east connection anchor(mx,mz)→anchor(mx+1,mz) is ONE run, keyed "<mz>:<mx>".
-        // This identity is a PURE function of world coords (the anchor pair) — band-INDEPENDENT,
-        // so it is window-invariant BY CONSTRUCTION. There is no COVER overlap split, no owner-ratio
-        // threshold, and no loop/self-crossing removal — all of which depended on the routed geometry
-        // (and on the transient band) and were the source of the BUG-14/invariance fragility: a
-        // routing change flipped a near-threshold decision and the runKey/arcS moved. With bounded-
-        // wAlt routing (road-carve.js) the centerline no longer wanders/self-crosses, so the cleanup
-        // stack is unnecessary and the connection IS the world-fixed unit of identity.
-        //
-        // arcS is LOCAL to the connection (0 at anchor mx) ⇒ arcOrigin = 0, no global-row arc to
-        // track. Grade is smoothed over the WHOLE row polyline FIRST (so the shared anchor point gets
-        // ONE continuous smoothed Y), THEN the row is split per connection at the anchor boundaries ⇒
-        // gradeY is C0 across the join. Each run carries its connection's EXACT primitive centerline
-        // (radius ≥ hardR by construction) so the ribbon/carve sample it directly (the BUG-12 fold
-        // fix), never a Catmull-Rom re-fit.
-        if ((this._params?.roadNetworkMode ?? 'rows') === 'graph') {
-            this._assembleGraphEdges(mx0, mx1, mz0, mz1)
-        } else
-        for (let mz = mz0; mz <= mz1; mz++) {
-            // Sample each east connection's EXACT primitive centerline (a SINGLE arc-search, cached)
-            // into a polyline; Y = coarse terrain height (graded below). The centerline is the sole
-            // routed representation — the polyline is merely its dense sampling — so the polyline→
-            // centerline arc correspondence is EXACT by construction (no projection search): the
-            // centerline arc at sample i is simply s_i = i·(L/n). Connections share their terminal
-            // anchor with the next connection's start anchor (skipped on append).
-            // D-16: build PROTO_GRADE_PAD extra connections beyond the band on each side so the
-            // grade smoother (below) sees a fully-fed window at every IN-BAND connection's start/end;
-            // the pad spans are graded for continuity but NOT registered (skipped in the loop below).
-            let rowPts = []
-            const spans = []   // { mx, i0, i1, clArc } — run index range in rowPts + per-sample centerline arc
-            const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
-            for (let mx = mx0 - PROTO_GRADE_PAD; mx <= mx1 + PROTO_GRADE_PAD; mx++) {
-                // FEAT-10: skip a DEGENERATE connection whose two merged anchors coincide (a collapsed
-                // stub). Routing it would emit a Dubins loop (it must leave + re-enter one point at two
-                // different canonical headings); once the stub edge is dropped that loop becomes a grade
-                // gap. Excluding it here keeps the row polyline C0 across the shared node — the prev
-                // connection's end anchor == the next connection's start anchor — so gradeY has no step.
-                {
-                    const mA = this._protoAnchor(mx, mz), mB = this._protoAnchor(mx + 1, mz)
-                    const ex = mA.x - mB.x, ez = mA.z - mB.z
-                    if (ex * ex + ez * ez <= _mband2) continue
-                }
-                const cl = this._protoConnectCenterline(mx, mz)
-                if (!cl || cl.length < 1e-6) continue
-                const n = Math.max(1, Math.ceil(cl.length / PROTO_SAMPLE_DS))
-                const i0 = rowPts.length ? rowPts.length - 1 : 0   // share anchor mx with the prev connection's end
-                const clArc = new Float64Array(n + 1)
-                const startK = rowPts.length ? 1 : 0               // skip the shared start anchor on append
-                for (let i = 0; i <= n; i++) {
-                    const s = cl.length * i / n
-                    clArc[i] = s
-                    if (i >= startK) { const p = cl.pointAt(s); rowPts.push(new THREE.Vector3(p.x, this._coarseH(p.x, p.z), p.z)) }
-                }
-                spans.push({ mx, i0, i1: rowPts.length - 1, clArc })
-            }
-            if (rowPts.length < 2 || spans.length === 0) continue
-
-            // Grade the continuous row Y in one pass (so the shared anchor point gets ONE smoothed Y →
-            // gradeY is C0 across every join), then split per connection at the anchor boundaries.
-            // FEAT-10 earthwork: when earthwork routing is on, the road must follow the DESIGN line, not
-            // raw terrain — otherwise the straighter route just dives into valleys / over ridges (steeper,
-            // dippy). Smooth the row Y over the WIDER earthwork window so the road bridges valleys and cuts
-            // ridges at a gentle grade (the carve then fills/cuts to it), and clamp the smoothed Y to
-            // ±deviationCap of raw so fills/cuts stay within what the carve can build (matches the router's
-            // designH). Off → legacy ±designGradeWindow terrain-following smoothing, unchanged.
-            this._gradeEdgeInPlace(rowPts)
-
-            for (const { mx, i0, i1, clArc } of spans) {
-                if (mx < mx0 || mx > mx1) continue   // pad connection: graded for window-invariance, not registered
-                if (i1 - i0 < 1) continue
-                const M = i1 - i0 + 1
-                const run = new Array(M)
-                const polyCum = new Float64Array(M)   // cumulative-XZ (chord) arc from run[0]
-                for (let i = 0; i < M; i++) {
-                    run[i] = rowPts[i0 + i].clone()
-                    if (i > 0) polyCum[i] = polyCum[i - 1] + Math.hypot(run[i].x - run[i - 1].x, run[i].z - run[i - 1].z)
-                }
-                const centerline = this._protoConnectCenterline(mx, mz)
-                // cellA/cellB: the run's two anchor CELLS (FEAT-13). Rows mode = the E pair; graph mode
-                // sets the edge's cells. Consumers read these instead of parsing the "mz:mx" runKey, so
-                // both topology modes share one code path.
-                this._network.set(`${mz}:${mx}`, { points: run, arcOrigin: 0, centerline, polyCum, clArc,
-                    cellA: [mx, mz], cellB: [mx + 1, mz] })
-            }
-        }
-
-        // ── FEAT-10: redundant / degenerate edge drop (node-identity; replaces COVER) ──────────
-        // The merged graph (above) turns converging anchors into shared nodes. Two cases are now pure
-        // duplicates and are dropped (this is the collinear exclusion + the run-join tear fix):
-        //   (1) DEGENERATE — an edge whose two merged endpoints {A,B} coincide (within roadMergeBand):
-        //       a collapsed stub (e.g. two anchors that snapped ~27 m apart and merged). Dropping it
-        //       removes the over-constrained short connection whose ribbon tore.
-        //   (2) REDUNDANT — an edge whose merged node-pair {A,B} is already connected by a strictly
-        //       HIGHER-priority edge (lower (mz,mx)). The higher road already joins those two graph
-        //       nodes, so this one is a parallel duplicate; the lower row still reaches both nodes via
-        //       its kept neighbour edges → a clean T/Y junction instead of a stacked ribbon.
-        //
-        // WINDOW-INVARIANT: each decision is a pure fn of its own merged endpoints + a FIXED
-        // ±MERGE_DROP_W window of CANONICAL higher-priority edges' merged endpoints (computed even for
-        // out-of-band cells — _protoAnchor is pure/cached and needs NO routing, unlike COVER's
-        // centerline sampling) + the deterministic (mz,mx) priority. No dependence on stream center or
-        // build order. Node-merge reaches only ±1 cell, so an owner endpoint sits within ±1 of
-        // (mx,mz)/(mx+1,mz) → W=2 over-covers safely.
-        // ROWS mode only: this parallel-duplicate drop is specific to the per-row E-edge pattern. Graph
-        // mode emits each undirected edge once (canonical key) and skips degenerate edges at assembly,
-        // so it needs no post-hoc redundant drop.
-        if ((this._params?.roadNetworkMode ?? 'rows') !== 'graph') {
-        const band  = this._params?.roadMergeBand ?? 24
-        const band2 = band * band
-        const _coin = (p, qx, qz) => { const ex = p.x - qx, ez = p.z - qz; return ex * ex + ez * ez <= band2 }
-        const toDrop = []
-        for (const key of this._network.keys()) {
-            const c = key.indexOf(':'); const mz = +key.slice(0, c), mx = +key.slice(c + 1)
-            if (!Number.isInteger(mz) || !Number.isInteger(mx)) continue
-            const A = this._protoAnchor(mx, mz), B = this._protoAnchor(mx + 1, mz)
-            if (_coin(A, B.x, B.z)) { toDrop.push(key); continue }   // (1) degenerate (collapsed) edge
-            let redundant = false
-            for (let dmz = -MERGE_DROP_W; dmz <= MERGE_DROP_W && !redundant; dmz++) {
-                for (let dmx = -MERGE_DROP_W; dmx <= MERGE_DROP_W; dmx++) {
-                    const nmx = mx + dmx, nmz = mz + dmz
-                    // strictly higher priority only (lower (mz,mx)); skip self + lower-priority cells.
-                    if (nmz > mz || (nmz === mz && nmx >= mx)) continue
-                    const nA = this._protoAnchor(nmx, nmz), nB = this._protoAnchor(nmx + 1, nmz)
-                    // same UNORDERED node pair {A,B} == {nA,nB} within band ⇒ (2) redundant
-                    if ((_coin(A, nA.x, nA.z) && _coin(B, nB.x, nB.z)) ||
-                        (_coin(A, nB.x, nB.z) && _coin(B, nA.x, nA.z))) { redundant = true; break }
-                }
-            }
-            if (redundant) toDrop.push(key)
-        }
-        for (const key of toDrop) this._network.delete(key)
-        }
+        // ── Graph edge assembly (FEAT-13 v2) ─────────────────────────────────────
+        // Build the URQUHART network into this._network: each undirected edge is routed once (canonical
+        // key), sampled, graded STANDALONE, and registered with cellA/cellB = blue-noise site ids.
+        // Window-invariant BY CONSTRUCTION — the Delaunay of a fixed point set is unique and the
+        // band+margin neighbourhood makes interior edges center-independent (no COVER split, no owner-
+        // ratio threshold, no loop/self-crossing removal). Each run carries its edge's EXACT primitive
+        // centerline (radius ≥ hardR by construction) so the ribbon/carve sample it directly (the BUG-12
+        // fold fix), never a Catmull-Rom re-fit. Consumers read cellA/cellB, never a parsed runKey.
+        this._assembleGraphEdges(mx0, mx1, mz0, mz1)
 
         // FEAT-07 Step 2: run the crossing classifier now (bounded + cached) so _crossingsByRun is
         // populated BEFORE any run profile is built — the AT_GRADE mid-span flatten in _buildRunProfile/
@@ -2055,11 +1755,11 @@ export class RoadSystem {
         // RUNKEY-SET-INVARIANT guarantee), so the flatten is window-invariant where it is consumed; a
         // frontier crossing's short ramp (roadJunctionBlendLength) never reaches loaded geometry.
         this._detectJunctions()
-        // FEAT-13: graph mode safe-prunes the redundant edge of each routed crossing (at-grade
-        // intersections read as ugly; the graph is planar-abstract so a routed cross = a redundant
-        // excursion). Connectivity-preserving (bounded detour test) + window-invariant. Re-detect on the
-        // culled network so _crossingsByRun / the flatten reflect the survivors.
-        if ((this._params?.roadNetworkMode ?? 'rows') === 'graph' && (this._params?.roadGraphCullCrossings ?? true)) {
+        // FEAT-13: safe-prune the redundant edge of each routed crossing (at-grade intersections read as
+        // ugly; the graph is planar-abstract so a routed cross = a redundant excursion). Connectivity-
+        // preserving (bounded detour test) + window-invariant. Re-detect on the culled network so
+        // _crossingsByRun / the flatten reflect the survivors.
+        if (this._params?.roadGraphCullCrossings ?? true) {
             if (this._cullCrossings(mx0, mx1, mz0, mz1)) { this._junctionsFrom = null; this._detectJunctions() }
         }
 
@@ -2207,9 +1907,9 @@ export class RoadSystem {
         const p = this._params || {}
         const mergeDY  = p.roadCrossMergeDY  ?? 2.5
         const angleMin = p.roadCrossAngleMin ?? 12
-        // FEAT-13: in graph mode, force every crossing FLAT (no dynamic overpasses) — roads merge at one
-        // shared height. Grade-separation is left to future prefab intersections, not the dynamic system.
-        const forceFlat = (p.roadNetworkMode === 'graph') && (p.roadGraphFlatMerges ?? true)
+        // FEAT-13: force every crossing FLAT (no dynamic overpasses) — roads merge at one shared height.
+        // Grade-separation is left to future prefab intersections, not the dynamic system.
+        const forceFlat = p.roadGraphFlatMerges ?? true
 
         // ── Broad phase: bucket every run segment into the CHUNK_SIZE tiles its AABB touches. ──
         // Each seg record carries what the narrow phase + classifier need: world endpoints, endpoint Ys,
@@ -3323,73 +3023,32 @@ export class RoadSystem {
         return { arcPos, camberRad }
     }
 
-    // ── FEAT-10 junction surface: flatten grade + camber at merged junction nodes ─────────────
-    // A merged graph node where roads from ≥2 different macro-rows meet is a real intersection. Each
-    // run is graded/banked independently, so the runs arrive at different Ys / banking there → an
-    // invisible collision step (road-smoothness) + a banking jolt. Near such a node we ease this run's
-    // camber → 0 and its grade → nodeY (the shared merged-anchor Y) so ALL crossing runs AGREE at the
-    // node — one flat, continuous, navigable pad (the "smooth navigable intersection"). Canonical (pure
-    // fn of merged anchors in a bounded window) → window-invariant, so the invariance gates still hold.
+    // ── FEAT-10/13 junction surface: flatten grade + camber at graph junction nodes ─────────────
+    // A graph node where ≥2 edges meet is a real intersection. Each run is graded/banked independently,
+    // so the runs arrive at different Ys / banking there → an invisible collision step (road-smoothness)
+    // + a banking jolt. Near such a node we ease this run's camber → 0 and its grade → nodeY (the mean
+    // incident road grade, _graphJunctionGradeY) so ALL edges AGREE at the node — one flat, continuous,
+    // navigable pad. Canonical (pure fn of the incidence map) → window-invariant.
 
-    // True iff the merged node at cell (mx,mz) is shared by cells from ≥2 different macro-rows.
-    _isJunctionNode(mx, mz) {
-        const P = this._protoAnchor(mx, mz)
-        let rows = 0
-        for (let cz = mz - 2; cz <= mz + 2; cz++) {
-            let here = false
-            for (let cx = mx - 2; cx <= mx + 2; cx++) {
-                const q = this._protoAnchor(cx, cz)
-                if (Math.abs(q.x - P.x) < 0.5 && Math.abs(q.z - P.z) < 0.5) { here = true; break }
-            }
-            if (here) rows++
-        }
-        return rows >= 2
-    }
-
-    // Shared elevation a junction node should sit at: the AVERAGE GRADE Y of every road that meets there
-    // — NOT the merged anchor's terrain Y. The anchor is gradient-descended to a terrain valley minimum
-    // (_protoAnchorRaw), so easing the road grade toward it collapses junctions down to the valley floor
-    // even when all incoming roads are on a fill bridging the valley (a ~10 m hump/dip — user 2026-06-28).
-    // Averaging the incident runs' endpoint grade Ys puts the node at the mean ROAD height, minimising
-    // humping. Pure fn of the network endpoints coincident with the anchor (window-invariant). Falls back
-    // to the anchor terrain Y only if no incident run is registered (shouldn't happen at a real junction).
-    _anchorJunctionGradeY(mx, mz) {
-        const P = this._protoAnchor(mx, mz)
-        let sum = 0, n = 0
-        for (let cz = mz - 2; cz <= mz + 2; cz++) {
-            for (let cx = mx - 2; cx <= mx + 2; cx++) {
-                const e = this._network?.get(`${cz}:${cx}`)
-                if (!e || !e.points || e.points.length < 2) continue
-                const a0 = this._protoAnchor(cx, cz), a1 = this._protoAnchor(cx + 1, cz)
-                if (Math.abs(a0.x - P.x) < 0.5 && Math.abs(a0.z - P.z) < 0.5) { sum += e.points[0].y; n++ }
-                if (Math.abs(a1.x - P.x) < 0.5 && Math.abs(a1.z - P.z) < 0.5) { sum += e.points[e.points.length - 1].y; n++ }
-            }
-        }
-        return n > 0 ? sum / n : P.y
-    }
-
-    // Per-run endpoint junction info: the two endpoint anchor CELLS come from netEntry.cellA/cellB
-    // (FEAT-13 — works for both rows and graph topology; no runKey parsing).
-    // nodeY = the shared junction Y both runs ease toward — the AVERAGE incident road grade (not terrain).
-    // FEAT-19: each endpoint also carries `slopeAway` (dGradeY per metre moving AWAY from the node along
-    // THIS run) so the blend eases toward a grade LINE (nodeY + slopeAway·d), keeping the through road's
-    // slope/inclination through the node instead of collapsing it to a level pad.
+    // Per-run endpoint junction info: the two endpoint node ids come from netEntry.cellA/cellB (FEAT-13 —
+    // no runKey parsing). nodeY = the shared junction Y both runs ease toward — the AVERAGE incident road
+    // grade (not terrain). FEAT-19: each endpoint also carries `slopeAway` (dGradeY per metre moving AWAY
+    // from the node along THIS run) so the blend eases toward a grade LINE (nodeY + slopeAway·d), keeping
+    // the through road's slope/inclination through the node instead of collapsing it to a level pad.
     _runEndpointJunctions(runKey) {
         const NONE = { is: false, y: 0, flatCamber: false, slopeAway: 0 }
         const e = this._network?.get(runKey)
         if (!e || !e.cellA || !e.cellB || !e.points || e.points.length < 2) return { jStart: NONE, jEnd: NONE }
-        const graph = (this._params?.roadNetworkMode ?? 'rows') === 'graph'
         // `is` = needs grade reconciliation (ease toward the shared mean for C0); `flatCamber` = also kill
-        // camber + read as a full intersection. Rows: a cross-row merge is both. Graph: degree ≥ 2 joins
-        // reconcile grade (per-edge grading leaves a small step otherwise), but only degree ≥ 3 are true
-        // junctions that flatten camber — a degree-2 pass-through keeps its banking/flow. (id = a site id
-        // [cmx,cmz,k] in graph mode, a grid cell [mx,mz] in rows mode.)
+        // camber + read as a full intersection. Degree ≥ 2 joins reconcile grade (per-edge grading leaves a
+        // small step otherwise), but only degree ≥ 3 are true junctions that flatten camber — a degree-2
+        // pass-through keeps its banking/flow. (id = a blue-noise site id [cmx,cmz,k].)
         // `thisStrand` = this run's away-from-node tangent at the endpoint; slopeAway projects the node's
         // dominant grade VECTOR onto it (FEAT-19) — the through axis's slope, carried into this run.
         const nodeInfo = (id, thisStrand) => {
-            let is, flatCamber, y, strands
-            if (graph) { const d = this._graphDegreeOf(id); is = d >= 2; flatCamber = d >= 3; y = this._graphJunctionGradeY(id); strands = is ? this._graphNodeStrands(id) : null }
-            else { const j = this._isJunctionNode(id[0], id[1]); is = j; flatCamber = j; y = this._anchorJunctionGradeY(id[0], id[1]); strands = is ? this._anchorNodeStrands(id[0], id[1]) : null }
+            const d = this._graphDegreeOf(id)
+            const is = d >= 2, flatCamber = d >= 3, y = this._graphJunctionGradeY(id)
+            const strands = is ? this._graphNodeStrands(id) : null
             let slopeAway = 0
             if (is && strands && thisStrand) { const G = this._junctionGradeVector(strands); slopeAway = G.gx * thisStrand.wx + G.gz * thisStrand.wz }
             return { is, flatCamber, y, slopeAway }
@@ -3426,23 +3085,6 @@ export class RoadSystem {
         return out
     }
 
-    // FEAT-19: incident strands at a ROWS-mode anchor node (mirrors _anchorJunctionGradeY's cell scan).
-    _anchorNodeStrands(mx, mz) {
-        const P = this._protoAnchor(mx, mz)
-        const out = []
-        for (let cz = mz - 2; cz <= mz + 2; cz++) {
-            for (let cx = mx - 2; cx <= mx + 2; cx++) {
-                const runKey = `${cz}:${cx}`
-                const e = this._network?.get(runKey)
-                if (!e || !e.points || e.points.length < 2) continue
-                const a0 = this._protoAnchor(cx, cz), a1 = this._protoAnchor(cx + 1, cz)
-                if (Math.abs(a0.x - P.x) < 0.5 && Math.abs(a0.z - P.z) < 0.5) { const s = this._strandAtEnd(e.points, true);  if (s) { s.key = runKey; out.push(s) } }
-                if (Math.abs(a1.x - P.x) < 0.5 && Math.abs(a1.z - P.z) < 0.5) { const s = this._strandAtEnd(e.points, false); if (s) { s.key = runKey; out.push(s) } }
-            }
-        }
-        return out
-    }
-
     // FEAT-19: the dominant grade VECTOR at a junction node (world XZ, dGradeY per horizontal metre). The
     // node's THROUGH axis = the most anti-collinear pair of incident strands (a T-junction's crossbar
     // arms, or a degree-2 pass-through's two arms); the steeper of that pair (tie-break lower runKey)
@@ -3466,8 +3108,8 @@ export class RoadSystem {
 
     // FEAT-13 v2 graph-mode junction Y: the AVERAGE endpoint grade-Y of every registered run incident to
     // this site (via the _assembleGraphEdges incidence map) — the mean ROAD height, so easing toward it
-    // doesn't collapse the junction to the terrain valley floor (the rows _anchorJunctionGradeY rationale,
-    // but keyed on site ids instead of scanning grid keys). Falls back to the site terrain Y.
+    // doesn't collapse the junction to the terrain valley floor even when all incident roads bridge the
+    // valley on a fill (the ~10 m hump/dip regression). Falls back to the site terrain Y if no incident run.
     _graphJunctionGradeY(id) {
         const g = this._proto.graph
         const inc = g ? this._proto.nodeInc.get(g.key(id)) : null
@@ -3661,8 +3303,8 @@ export class RoadSystem {
         // FEAT-10: seal the ribbon across run joins. The ribbon cross-section frame is runProfile.tx/tz;
         // at a run's endpoints the LOCAL last-segment direction kinks vs the neighbour run, so the two
         // runs' ±halfWidth edge vertices don't meet → an outside-of-bend wedge (terrain shows through),
-        // even though the centerline is continuous. Every run touching a node shares ONE canonical node
-        // heading (_protoAnchorHeading, with merged-node look-through), so blending each run's endpoint
+        // even though the centerline is continuous. Every run touching a node targets that node's edge
+        // heading (_edgeTerminalHeading toward the neighbour), so blending each run's endpoint
         // tangent toward it over roadJoinWeldLength makes adjacent endpoint cross-sections COINCIDE → the
         // edges line up → the join seals. Not an average/weld: it's the shared node tangent both runs
         // already agree on. (Guarded against a reverse-stored run by the forward-dot check.)

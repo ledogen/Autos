@@ -29,12 +29,10 @@ const GATES = [
     'road-apex-sliver.mjs', // BUG-21: no off-road sliver at a shared hairpin anchor (radial end-fallback in _resolveRoadSurface) — no jolt crossing run boundaries
     'replay-selftest.mjs',  // capture↔replay round-trip (Phase 4 place path) — src/capture.js + replay.mjs
     'route-worker-sync.mjs',// PERF-03 WS-A: worker routing copy == road-carve.js canonical (byte-identical)
-    'camber-continuity.mjs',// BUG-19: banking carries continuously across continuing run boundaries (cross-run seed sync)
-    'route-merge.mjs',      // FEAT-10: merge drops degenerate stubs (the run-join tear) + preserves connectivity
-    'crossing-classifier.mjs', // FEAT-07/08/11/13 foundation: bounded crossing classifier == brute force + window-invariant + class span
-    'junction-atgrade.mjs', // FEAT-07 Step 2: AT_GRADE mid-span flatten — strands meet (driveable), GRADE_SEP not flattened, window-invariant
+    'route-merge.mjs',      // FEAT-10: no collinear duplicates + connectivity (graph emits each edge once)
+    'crossing-classifier.mjs', // FEAT-07/08/11/13 foundation: bounded crossing classifier == brute force (graph, cull-off) + once-per-build identity
     'road-graph.mjs',       // FEAT-13 v2: Delaunay/Urquhart primitives — empty-circumcircle, Urquhart⊇MST (connected), order-invariant
-    'graph-topology.mjs',   // FEAT-13 v2: graph mode (roadNetworkMode:graph) — blue-noise + Urquhart: reachability, window-invariance, direction variety, step-free inter-edge surface
+    'graph-topology.mjs',   // FEAT-13 v2: blue-noise + Urquhart: reachability, window-invariance, direction variety, step-free inter-edge surface, junction-at-road-grade
     'props.mjs',            // FEAT-06: prop geometry sanity + scatter determinism/window-invariance + slot accounting
     'prop-road-clearance.mjs', // BUG-23: no hard-collidable prop (centre-or-overhang) on the road footprint (inflated keep-out)
     'rock-collision-proxy.mjs', // BUG-22: ROCK hard-contact sphere proxy fits the visible surface (no overshoot air-gap → no spurious sideways shove)

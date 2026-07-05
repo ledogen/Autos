@@ -10,7 +10,7 @@
  * lookup (terrain.js analyticHeight / rawHeightWorld). So water detection is NOT
  * limited to loaded chunks: any algorithm over a BOUNDED region is computable
  * anywhere and is window-invariant by construction — the same discipline the road
- * router uses when it valley-seeks (road.js _protoAnchorRaw).
+ * router uses when it valley-seeks (road.js _anchorSites).
  *
  * This module reads the terrain ONLY through an injected `heightFn(wx, wz)` — the
  * raw, amplitude-applied, carve-free height sampler:

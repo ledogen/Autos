@@ -168,5 +168,36 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
         `routed crossings: cull-off=${uncut} → cull-on=${culled} (survivors are un-cullable bridges)`)
 }
 
+// (i) JUNCTION-AT-ROAD-GRADE — a degree≥2 node sits at the MEAN incident road grade, NOT collapsed to the
+// terrain valley floor (the ~10 m hump/dip regression). _graphJunctionGradeY must equal the mean of the
+// incident edges' endpoint Ys. Folded here from the retired rows junction-atgrade gate (QUAL-12); the
+// graph analog (_graphJunctionGradeY, keyed on the incidence map) is otherwise ungated — (d) SMOOTHNESS
+// would miss a UNIFORM collapse (all incident edges dip together = no step, just a wrong hump).
+{
+    const nodes = new Map()   // posKey → { id, ys:[incident endpoint grade Ys] }
+    for (const [, e] of roadA._network) {
+        const ends = [[e.cellA, e.points[0].y], [e.cellB, e.points[e.points.length - 1].y]]
+        for (const [cell, y] of ends) {
+            const k = posKey(roadA._nodePos(cell))
+            const rec = nodes.get(k) || nodes.set(k, { id: cell, ys: [] }).get(k)
+            rec.ys.push(y)
+        }
+    }
+    let checked = 0, worstErr = 0, maxOffTerrain = 0, sample = ''
+    for (const { id, ys } of nodes.values()) {
+        if (ys.length < 2) continue   // degree ≥ 2 → a real junction/pass-through that reconciles grade
+        const mean = ys.reduce((a, b) => a + b, 0) / ys.length
+        const nodeY = roadA._graphJunctionGradeY(id)
+        const terrainY = roadA._siteAt(id).y
+        checked++
+        const err = Math.abs(nodeY - mean)
+        if (err > worstErr) { worstErr = err; sample = `${posKey(roadA._nodePos(id))} nodeY=${nodeY.toFixed(1)} mean=${mean.toFixed(1)} terrain=${terrainY.toFixed(1)}` }
+        maxOffTerrain = Math.max(maxOffTerrain, Math.abs(nodeY - terrainY))
+    }
+    log(checked >= 3 && worstErr < 1e-6, 'JUNCTION-AT-ROAD-GRADE',
+        `${checked} degree≥2 nodes; nodeY == mean incident road grade (worstErr=${worstErr.toFixed(4)} m); ` +
+        `max |nodeY−terrain|=${maxOffTerrain.toFixed(1)} m (rides road grade, not the valley floor)${sample ? ` | ${sample}` : ''}`)
+}
+
 console.log(`\nGRAPH-TOPOLOGY: ${pass}/${pass + fail} checks green`)
 process.exit(fail === 0 ? 0 : 1)

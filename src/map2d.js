@@ -37,7 +37,7 @@ export class Map2D {
      * @param {object}   o
      * @param {HTMLCanvasElement} o.canvas   — the #map2d overlay canvas
      * @param {() => number}      o.getSeed  — current world seed (numeric); map rebuilds its instance on change
-     * @param {() => object}      o.getParams— live RANGER_PARAMS ref (so the map mirrors roadNetworkMode etc.)
+     * @param {() => object}      o.getParams— live RANGER_PARAMS ref (so the map mirrors the graph knobs)
      * @param {() => {x:number,z:number,fx:number,fz:number}} o.getCar — car world XZ + world-forward XZ
      */
     constructor({ canvas, getSeed, getParams, getCar }) {
@@ -53,6 +53,7 @@ export class Map2D {
         this._sig        = null          // seed+road-param signature the current _road was built for
         this._streamAt   = null          // THREE.Vector3 the network was last streamed around
         this._streamTimer = 0            // pan-debounce handle
+        this._paramTimer  = 0            // road-slider-change debounce handle (live rebuild while open)
         this._centeredOnce = false       // pan is centred on the car on the FIRST open only
 
         // Progressive (chunked) streaming state — see MAP_RADIUS_STEPS.
@@ -109,7 +110,7 @@ export class Map2D {
         this._resize()
 
         // Rebuild the map's RoadSystem only when the seed or a road param actually changed (so the
-        // tool always reflects the roadNetworkMode / graph knobs being validated) — otherwise REUSE
+        // tool always reflects the graph knobs being validated) — otherwise REUSE
         // the kept instance, whose warm route cache makes a reopen instant. The terrain layer paints
         // immediately; the network then streams in progressively (see _startStream).
         const sig = this._paramSig()
@@ -140,6 +141,7 @@ export class Map2D {
         this._streaming = false
         clearTimeout(this._pumpTimer)
         clearTimeout(this._streamTimer)
+        clearTimeout(this._paramTimer)
         this._canvas.style.display = 'none'
         this._canvas.removeEventListener('mousedown', this._onDown)
         window.removeEventListener('mousemove', this._onMove)
@@ -155,6 +157,22 @@ export class Map2D {
         let s = 'seed=' + this._getSeed()
         for (const k of Object.keys(p)) if (/^road/i.test(k) && typeof p[k] !== 'function') s += '|' + k + '=' + p[k]
         return s
+    }
+
+    // Called each render frame while open: if the seed / a road* param changed since the current
+    // instance was built, adopt the new signature immediately (so we don't re-queue every frame) and
+    // debounce a full rebuild + restream. Adopting the sig up front means a settled value fires the
+    // timer once, while a still-dragging slider keeps producing new sigs → the timer keeps resetting.
+    _checkParamChange() {
+        const sig = this._paramSig()
+        if (sig === this._sig) return
+        this._sig = sig
+        clearTimeout(this._paramTimer)
+        this._paramTimer = setTimeout(() => {
+            if (!this._open) return
+            this._buildRoad()     // fresh instance off the new params (resets the progressive cursor)
+            this._startStream()   // restart the chunked stream around the current pan center
+        }, 150)
     }
 
     // Fresh instance — wholly independent of the live play network. Cheap (constructor is ~0); the
@@ -284,6 +302,12 @@ export class Map2D {
     // transform/network changed, then blits it and draws the (moving) car marker + legend on top.
     render() {
         if (!this._open) return
+        // Live road-param tracking: show() only checks the signature on OPEN, so a road-slider change
+        // made WHILE the map is open would otherwise leave the map's own read-only RoadSystem stale
+        // (the play network rebuilds via main.js debouncedRoadRebuild; the map is decoupled). Re-check
+        // each frame and rebuild+restream when the seed or a road* param drifts. Debounced (like
+        // main.js's 150ms road rebuild) so dragging a slider doesn't thrash the expensive stream.
+        this._checkParamChange()
         if (this._canvas.width !== Math.round(window.innerWidth * (window.devicePixelRatio || 1))) this._resize()
         if (this._bgDirty) { this._drawBackground(); this._bgDirty = false }
 
@@ -381,8 +405,8 @@ export class Map2D {
                 const key = cell.join(',')
                 if (seen.has(key)) continue
                 seen.add(key)
-                // FEAT-13 v2: node id is a site id [cmx,cmz,k] (graph) or a grid cell [mx,mz] (rows).
-                const a = typeof road._nodePos === 'function' ? road._nodePos(cell) : road._protoAnchor(cell[0], cell[1])
+                // FEAT-13 v2: node id is a blue-noise site id [cmx,cmz,k].
+                const a = road._nodePos(cell)
                 const deg = typeof road._graphDegreeOf === 'function' && cell.length >= 3 ? road._graphDegreeOf(cell) : 2
                 // leaf (deg≤1) dim, degree-2 pass-through mid, hub (deg≥3) bright cyan.
                 ctx.fillStyle = deg >= 3 ? '#46c8ff' : deg === 2 ? '#7088a0' : '#506070'

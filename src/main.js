@@ -267,27 +267,22 @@ function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
     const baseTX = Math.floor(baseX / CHUNK_SIZE)
     const baseTZ = Math.floor(baseZ / CHUNK_SIZE)
     // FEAT-13 graph spawn: the graph network is SPARSE (roadSiteSpacing ≈ 640 m), so the nearest road to
-    // the seeded ±100 m spawn offset can be 500 m+ away (seed "witch" → 531 m). The old fixed 200 m probe
-    // (fine for the dense rows network) then found nothing → off-road terrain fallback. Widen the search
-    // to ~1.5× the site spacing in graph mode, AND widen the streamed radius to match (ensureTile streams
-    // at _proto.radius, which is the play radius ~320 m — too small to even contain a 531 m road), then
-    // restore the play radius so the first frame streams normally. Rows mode keeps the tight 200 m probe.
-    const _graphSpawn = (params.roadNetworkMode ?? 'rows') === 'graph'
-    const _spawnR = _graphSpawn ? Math.max(200, Math.round((params.roadSiteSpacing ?? 256) * 1.5)) : 200
+    // the seeded ±100 m spawn offset can be 500 m+ away (seed "witch" → 531 m). A fixed 200 m probe would
+    // find nothing → off-road terrain fallback. Widen the search to ~1.5× the site spacing, AND widen the
+    // streamed radius to match (ensureTile streams at _proto.radius, the play radius ~320 m — too small to
+    // even contain a 531 m road), then restore the play radius so the first frame streams normally.
+    const _spawnR = Math.max(200, Math.round((params.roadSiteSpacing ?? 256) * 1.5))
     const _savedRadius = roadSystem._proto.radius
-    // PERF (spawn pre-bake): the cold spawn stream cost scales with radius² (routing area). In graph mode
-    // the network is sparse, so the old single stream (query _spawnR=1.5×spacing + 200 m pad ≈ 1160 m)
-    // routed ~13× the play footprint synchronously — ~5–7 s of the load hitch. Probe a TIGHT radius first
-    // (~0.85× site spacing ≈ 544 m): it resolves the vast majority of seeds ~2× faster, and only widens to
-    // the full _spawnR horizon when the tight probe misses a sparse blue-noise gap. The WIDE tier is
-    // byte-identical to the old behaviour, so no seed that spawned on-road can now spawn off-road; the
-    // per-connection route cache persists across the two streams, so the widen only routes the new annulus.
-    // Headless-verified (scratchpad probe-spawn-final.mjs): 0 off-road / 15 seeds; 14 spawn IDENTICAL, the
-    // 1 that differs lands on a CLOSER on-road point (confirmed by the BUG-11 re-stream reconcile below).
+    // PERF (spawn pre-bake): the cold spawn stream cost scales with radius² (routing area). The network is
+    // sparse, so a single wide stream (query _spawnR=1.5×spacing + 200 m pad ≈ 1160 m) routes ~13× the play
+    // footprint synchronously — ~5–7 s of the load hitch. Probe a TIGHT radius first (~0.85× site spacing ≈
+    // 544 m): it resolves the vast majority of seeds ~2× faster, and only widens to the full _spawnR horizon
+    // when the tight probe misses a sparse blue-noise gap. The WIDE tier is byte-identical to the single-
+    // stream behaviour, so no seed that spawned on-road can now spawn off-road; the per-connection route
+    // cache persists across the two streams, so the widen only routes the new annulus. Headless-verified
+    // (0 off-road / 15 seeds; 14 spawn IDENTICAL, the 1 that differs lands on a CLOSER on-road point).
     const _tightR = Math.max(320, Math.round((params.roadSiteSpacing ?? 256) * 0.85))
-    const _spawnTiers = _graphSpawn
-      ? [[_tightR, _tightR + 128], [_spawnR, _spawnR + 200]]   // tight ≈672/544 → wide ≈1160/960 (== old)
-      : [[200, _savedRadius]]                                  // rows: unchanged — play radius, 200 m probe
+    const _spawnTiers = [[_tightR, _tightR + 128], [_spawnR, _spawnR + 200]]   // tight ≈672/544 → wide ≈1160/960
     let nearest = null
     perfMark('resolveSpawn: before ensureTile (cold network stream)')  // TEMP (D-arc)
     for (const [_qR, _streamR] of _spawnTiers) {
