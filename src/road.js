@@ -1534,6 +1534,9 @@ export class RoadSystem {
             // |lowpass − raw| (the fill/cut earthwork). Default 0 = off (terrain-following, unchanged).
             earthworkWindow: pp.roadEarthworkWindow ?? 0, wDev: pp.roadWDeviation ?? 0,
             deviationCap: pp.roadDeviationCap ?? Infinity,
+            // The router's design line must clamp against the SAME narrow smooth reference the builder
+            // (_gradeEdgeInPlace) clamps against, or the search prices a different road than gets built.
+            gradeWindow: pp.designGradeWindow ?? 50,
             // The router's goalHeading is the TRAVEL direction ARRIVING at c2 (= bearing c1→c2).
             // _edgeTerminalHeading(c2,c1) is the LEAVE direction at c2 (bearing c2→c1) = the reverse of
             // arrival, so a directed router would loop around to approach c2 from the wrong side (the "enter

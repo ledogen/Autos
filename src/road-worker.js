@@ -173,7 +173,7 @@ let _workerParams = null
 // ONCE (grown as needed), reused across every call. A per-call generation stamp (_apcGen) marks which
 // entries are live this call, so we never memset the (large) arrays between calls.
 let _apcCap = 0
-let _apcG, _apcGStamp, _apcClosed, _apcX, _apcZ, _apcTh, _apcSh, _apcKi, _apcParent
+let _apcG, _apcGStamp, _apcClosed, _apcX, _apcZ, _apcTh, _apcSh, _apcRf, _apcKi, _apcParent
 let _apcGen = 0
 const _apcHPri = [], _apcHSt = []   // heap as parallel arrays (reset length each call; no per-node alloc)
 function _apcEnsure(n) {
@@ -181,7 +181,7 @@ function _apcEnsure(n) {
     _apcCap = n
     _apcG = new Float64Array(n); _apcGStamp = new Uint32Array(n); _apcClosed = new Uint32Array(n)
     _apcX = new Float64Array(n); _apcZ = new Float64Array(n); _apcTh = new Float64Array(n)
-    _apcSh = new Float64Array(n); _apcKi = new Int8Array(n); _apcParent = new Int32Array(n)
+    _apcSh = new Float64Array(n); _apcRf = new Float64Array(n); _apcKi = new Int8Array(n); _apcParent = new Int32Array(n)
 }
 
 // ── Dubins shortest path (BUG-12 terminal connector) ───────────────────────────────────────────
@@ -334,6 +334,7 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     const earthworkWindow = opts.earthworkWindow ?? 0
     const wDev            = opts.wDev            ?? 0
     const deviationCap    = opts.deviationCap    ?? Infinity   // m — max |design − terrain| the carve will build
+    const gradeWindow     = opts.gradeWindow     ?? 50         // m — narrow reference blur for the cap clamp (must match the builder's designGradeWindow)
     const earthwork       = earthworkWindow > 1e-6 && wDev > 0
     // BUG-12: canonical join headings. The segment STARTS along startHeading (so its DEPARTURE from
     // the anchor is the canonical heading) and, when goalHeading is set, its ARRIVAL is blended into
@@ -382,42 +383,12 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         return hH[ci]
     }
 
-    // FEAT-10 earthwork: spatial LOW-PASS of terrain via a summed-area table (built once, O(1) box query).
-    // loH(x,z) = mean terrain over a (2·loR+1)² cell window ≈ the design grade line the carve smooths to,
-    // so the router follows it (gentle) instead of every bump. SAT needs the full hH grid → eager-fill it
-    // (NX·NZ heightFn calls, same as the lazy worst case; only when earthwork is on). Pure fn of terrain.
-    const loR = Math.max(1, Math.round(earthworkWindow / cell))
-    let loSAT = null
-    const buildLoSAT = () => {
-        for (let i = 0; i < NX * NZ; i++) if (!hSeen[i]) { hH[i] = heightFn(minX + (i % NX) * cell, minZ + ((i / NX) | 0) * cell); hSeen[i] = 1 }
-        // integral image with a zero-padded top/left row → (NX+1)·(NZ+1)
-        const W1 = NX + 1
-        loSAT = new Float64Array(W1 * (NZ + 1))
-        for (let z = 0; z < NZ; z++) {
-            let rowSum = 0
-            for (let x = 0; x < NX; x++) {
-                rowSum += hH[z * NX + x]
-                loSAT[(z + 1) * W1 + (x + 1)] = loSAT[z * W1 + (x + 1)] + rowSum
-            }
-        }
-    }
-    const loH = (x, z) => {
-        const cxi = cxOf(x), czi = czOf(z)
-        const x0 = Math.max(0, cxi - loR), x1 = Math.min(NX - 1, cxi + loR)
-        const z0 = Math.max(0, czi - loR), z1 = Math.min(NZ - 1, czi + loR)
-        const W1 = NX + 1
-        const s = loSAT[(z1 + 1) * W1 + (x1 + 1)] - loSAT[z0 * W1 + (x1 + 1)]
-              - loSAT[(z1 + 1) * W1 + x0] + loSAT[z0 * W1 + x0]
-        return s / ((x1 - x0 + 1) * (z1 - z0 + 1))
-    }
-    // The DESIGN line: low-pass terrain clamped to ±deviationCap of raw, so the road can flatten bumps
-    // up to a fill/cut the carve can actually build but on a genuinely tall hill stays within the cap
-    // (grade then ≈ terrain grade → it still switchbacks where the terrain truly forces it).
-    const designH = (x, z) => {
-        const r = hAt(x, z), lo = loH(x, z)
-        return lo > r + deviationCap ? r + deviationCap : (lo < r - deviationCap ? r - deviationCap : lo)
-    }
-    if (earthwork) buildLoSAT()
+    // (FEAT-10's 2-D summed-area-table low-pass — loSAT/loBox/designH — is GONE. Both the search
+    // and the refit now price grade/deviation on the 1-D ALONG-PATH design profile (the causal EMA
+    // construction below), which is what road.js _gradeEdgeInPlace actually builds. The 2-D field
+    // under-read along-path grade — a box mean includes a ridge's low flanks, and clamping to raw
+    // ±cap hid short tall pitches — which is how dead-straight max-earthwork climbs routed as
+    // nearly free and the Max Grade slider was powerless. See the emaW/emaR block.)
 
     // Bounded valley-seeking altitude cost (D-arc REVISED²). Reference = the straight a→b altitude
     // baseline (linear height interp along the chord). δ = nH − baseline; cost = wAlt·max(0, δ +
@@ -447,6 +418,26 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     for (const R of radii) { kappas.push(1 / R, -1 / R) }
     const primLen = (k) => (Math.abs(k) < 1e-12) ? stepLen : (turnAngle / Math.abs(k))
 
+    // ── Along-path design profile (the honest grade — earthwork mode) ───────────────────────────
+    // road.js _gradeEdgeInPlace builds the run profile in 1-D ALONG the polyline: wide smooth of raw
+    // → design, clamped to ±deviationCap of the designGradeWindow smooth reference. The search
+    // replicates that construction CAUSALLY per candidate path with two running exponential averages
+    // of raw height (τ = the two window widths), carried in the state (SSh = wide, SRf = narrow):
+    //     design = clamp(EMA_wide, EMA_narrow ± deviationCap);  grade = |Δdesign| / L
+    // so the grade/deviation priced is the grade/deviation of the road that would be BUILT along
+    // that path. The old form (2-D blur clamped to RAW ± cap at each sample) hid short tall pitches —
+    // a step of height h over length L read as (h − 2·cap)/L, a 74% coarse pitch priced as ~8% — so
+    // maxGrade/wOver never fired, wDev saw ≤ cap where the carve then built 30 m+ of fill/cut, and
+    // dead-straight max-earthwork climbs were nearly free (the Max Grade slider was powerless).
+    // Per-κ EMA blend factors (primitive lengths are fixed per κ): α = 1 − exp(−L/τ).
+    const emaW = new Float64Array(kappas.length), emaR = new Float64Array(kappas.length)
+    if (earthwork) for (let ki = 0; ki < kappas.length; ki++) {
+        const L = primLen(kappas[ki])
+        emaW[ki] = 1 - Math.exp(-L / earthworkWindow)
+        emaR[ki] = 1 - Math.exp(-L / gradeWindow)
+    }
+    const dClamp = (w, r) => w > r + deviationCap ? r + deviationCap : (w < r - deviationCap ? r - deviationCap : w)
+
     const arcEnd = (x, z, th, k, L) => {
         if (Math.abs(k) < 1e-12) return [x + L * Math.cos(th), z + L * Math.sin(th), th]
         const th2 = th + k * L
@@ -470,7 +461,7 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     _apcEnsure(NSTATES)
     const gen = ++_apcGen
     const G = _apcG, GS = _apcGStamp, CL = _apcClosed
-    const SX = _apcX, SZ = _apcZ, STh = _apcTh, SSh = _apcSh, SKi = _apcKi, SP = _apcParent
+    const SX = _apcX, SZ = _apcZ, STh = _apcTh, SSh = _apcSh, SRf = _apcRf, SKi = _apcKi, SP = _apcParent
     const HP = _apcHPri, HS = _apcHSt
     HP.length = 0; HS.length = 0
     let hlen = 0
@@ -498,7 +489,9 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     const goalR = Math.max(cell, stepLen), goalR2 = goalR * goalR
     const startState = stateOf(ax, az, th0)
     G[startState] = 0; GS[startState] = gen
-    SX[startState] = ax; SZ[startState] = az; STh[startState] = th0; SSh[startState] = earthwork ? designH(ax, az) : hAt(ax, az)
+    // Earthwork: SSh/SRf seed both profile EMAs at the raw anchor height (design ≡ raw at the start,
+    // like the builder's window collapsing at the polyline end). Off-earthwork: SSh = raw height chain.
+    SX[startState] = ax; SZ[startState] = az; STh[startState] = th0; SSh[startState] = hAt(ax, az); SRf[startState] = SSh[startState]
     SP[startState] = -1; SKi[startState] = 0
     hpush(heur(ax, az), startState)
 
@@ -508,7 +501,7 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         const sid = hpopState()
         if (CL[sid] === gen) continue
         CL[sid] = gen
-        const cx = SX[sid], cz = SZ[sid], cth = STh[sid], csh = SSh[sid], cg = G[sid]
+        const cx = SX[sid], cz = SZ[sid], cth = STh[sid], csh = SSh[sid], crf = SRf[sid], cg = G[sid]
         const dgx = bx - cx, dgz = bz - cz, d2 = dgx * dgx + dgz * dgz
         if (d2 < bestD2) { bestD2 = d2; bestState = sid }
         if (d2 <= goalR2) { goalState = sid; break }
@@ -530,40 +523,48 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             const nst = stateOf(nx, nz, nth)
             if (CL[nst] === gen) continue
             const nHraw = hAt(nx, nz)
-            // FEAT-10 earthwork: cost grade + altitude against the LOW-PASSED design line (loH), not raw
-            // terrain, so bumps the carve will fill/cut don't force a switchback. nHc is the height used
-            // for grade/alt (stored in SSh so the grade chain stays consistent); deviation = |nHc − raw|.
-            const nHc = earthwork ? designH(nx, nz) : nHraw
-            // Grade along the primitive. Endpoint-to-endpoint by default; multi-point MAX along the arc
-            // when gradeSamples>1, so a long large-radius arc isn't blind to intra-arc steepness. In
-            // earthwork mode the design line is already smooth → endpoint grade suffices (skip sampling).
-            let grade
-            if (!earthwork && gradeSamples > 1 && Math.abs(k) >= 1e-12) {
-                let prevH = csh, gm = 0
-                const nseg = Math.max(1, Math.min(gradeSamples, Math.ceil(L / 8)))
-                for (let gi = 1; gi <= nseg; gi++) {
-                    const ss = L * gi / nseg
-                    const th2 = cth + k * ss
-                    const gx = cx + (Math.sin(th2) - Math.sin(cth)) / k
-                    const gz = cz - (Math.cos(th2) - Math.cos(cth)) / k
-                    const gh = hAt(gx, gz)
-                    const seg = Math.abs(gh - prevH) / (L / nseg)
-                    if (seg > gm) gm = seg
-                    prevH = gh
-                }
-                grade = gm
+            // FEAT-10 earthwork (honest form): extend the two along-path raw-height EMAs and take
+            // grade/altitude/deviation from the clamped 1-D design profile — the road the builder
+            // would actually construct along this candidate path (see the block above emaW/emaR).
+            let grade, nSh, nRf, nHc
+            if (earthwork) {
+                nSh = csh + emaW[ki] * (nHraw - csh)          // wide design EMA
+                nRf = crf + emaR[ki] * (nHraw - crf)          // narrow reference EMA
+                nHc = dClamp(nSh, nRf)                        // built design height here
+                grade = Math.abs(nHc - dClamp(csh, crf)) / L
             } else {
-                grade = Math.abs(nHc - csh) / L
+                nSh = nHraw; nRf = nHraw; nHc = nHraw
+                // Grade along the primitive. Endpoint-to-endpoint by default; multi-point MAX along the
+                // arc when gradeSamples>1, so a long large-radius arc isn't blind to intra-arc steepness.
+                if (gradeSamples > 1 && Math.abs(k) >= 1e-12) {
+                    let prevH = csh, gm = 0
+                    const nseg = Math.max(1, Math.min(gradeSamples, Math.ceil(L / 8)))
+                    for (let gi = 1; gi <= nseg; gi++) {
+                        const ss = L * gi / nseg
+                        const th2 = cth + k * ss
+                        const gx = cx + (Math.sin(th2) - Math.sin(cth)) / k
+                        const gz = cz - (Math.cos(th2) - Math.cos(cth)) / k
+                        const gh = hAt(gx, gz)
+                        const seg = Math.abs(gh - prevH) / (L / nseg)
+                        if (seg > gm) gm = seg
+                        prevH = gh
+                    }
+                    grade = gm
+                } else {
+                    grade = Math.abs(nHraw - csh) / L
+                }
             }
             // Per-METRE accrual × L (primitives now vary in length) so cost is length-consistent.
-            // earthwork adds wDev·|design − raw| (the fill/cut depth) per metre — the deviation penalty.
+            // earthwork adds wDev·|design − raw| (the fill/cut depth) per metre — the deviation penalty,
+            // now the TRUE depth (no longer bounded by deviationCap: the builder clamps against the
+            // smooth reference, so real fill/cut can far exceed the cap and must be priced as such).
             let perM = wDist + wGrade * grade * grade + wOver * Math.max(0, grade - maxGrade)
                      + wAlt * Math.max(0, nHc - baselineAt(nx, nz) + valleyCap) + wCurv * k * k
             if (earthwork) perM += wDev * Math.abs(nHc - nHraw)
             const ng = cg + L * perM
             if (GS[nst] !== gen || ng < G[nst]) {
                 G[nst] = ng; GS[nst] = gen
-                SX[nst] = nx; SZ[nst] = nz; STh[nst] = nth; SSh[nst] = nHc; SP[nst] = sid; SKi[nst] = ki
+                SX[nst] = nx; SZ[nst] = nz; STh[nst] = nth; SSh[nst] = nSh; SRf[nst] = nRf; SP[nst] = sid; SKi[nst] = ki
                 hpush(ng + heur(nx, nz), nst)
             }
         }
@@ -649,40 +650,59 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             const GRADE_SLACK  = 0.02               // a shortcut may steepen max grade by ≤ this
             const EXCESS_SLACK = 1.0                // m — allowed growth of ∫max(0, g−maxGrade)ds
             const MIN_SPAN     = 24                 // m — spans shorter than this keep raw prims
-            // Refit grade measure: the low-passed design line in earthwork mode (what the carve
-            // actually grades to), else the EXACT heightFn. NOT hAt: its 8 m cell staircase makes
-            // sampled grade pure aliasing noise (0 within a cell, Δcell/ds at crossings), so a
-            // raw-vs-candidate comparison on it is meaningless and switchback stacks get cut.
-            const hh = earthwork ? designH : heightFn
+            // Refit grade measure: the SAME 1-D causal EMA design profile the search prices (see
+            // the emaW/emaR block) — raw heights fed along the span, design = clamp(EMA_wide,
+            // EMA_narrow ± deviationCap), grade = |Δdesign|/ds. Sampled with the EXACT heightFn,
+            // NOT hAt: its 8 m cell staircase makes sampled grade pure aliasing noise (0 within a
+            // cell, Δcell/ds at crossings), so a raw-vs-candidate comparison on it is meaningless.
+            // A 2-D FIELD measure (the old designH sampling) cannot represent switchback legality
+            // either: a stack traversing a steep field band repeatedly collects more field "excess"
+            // than a straight cut crossing it once, so the shortcut licensed dead-straight cliff
+            // cuts that erased 1000°+ of intentional switchbacks (the straight-climb bug's second
+            // head — the search routed the alpine stack, the refit flattened it).
+            // Non-earthwork: design ≡ raw heightFn (legacy semantics).
             const badXZ = (x, z) => x < minX || x > maxX || z < minZ || z > maxZ
                                  || (pondDiscs !== null && inPondNoGo(x, z))
             const primEndPose = (p) => arcEnd(p.x0, p.z0, p.theta0, p.kappa0, p.length)  // const-κ only
             const startPose = prims[0]                          // exact original start pose (G1 contract)
             const rawEnd = primEndPose(prims[prims.length - 1]) // exact original end pose (G1 contract)
 
-            // Raw grade stats per primitive, ONE sequential pass (≤refitDs sampling, prev-height
+            // Raw grade stats per primitive, ONE sequential pass (≤refitDs sampling, profile state
             // carried across prim boundaries): primG[i] = max grade, primEx[i] = grade EXCESS
             // ∫max(0, g−maxGrade)ds within prims[i]. Span stats combine as max/sum, so the
-            // divide-and-conquer never re-samples the raw chain. The excess integral is the real
-            // switchback guard — the raw route's short steep terminal stub gives it a nonzero max
-            // grade, and max-grade alone would license a LONG cut-through at that same grade.
+            // divide-and-conquer never re-samples the raw chain. PW/PR/PD snapshot the profile
+            // state at each primitive boundary so a CANDIDATE span seeds from the exact state the
+            // raw span had there — raw vs candidate stay measured by one construction. The excess
+            // integral is the real switchback guard — the raw route's short steep terminal stub
+            // gives it a nonzero max grade, and max-grade alone would license a LONG cut-through
+            // at that same grade.
             const primG = new Float64Array(prims.length), primEx = new Float64Array(prims.length)
+            const PW = new Float64Array(prims.length + 1), PR = new Float64Array(prims.length + 1),
+                  PD = new Float64Array(prims.length + 1)
             {
-                let ph = hh(prims[0].x0, prims[0].z0)
+                const h0 = heightFn(prims[0].x0, prims[0].z0)
+                let w = h0, r = h0, d = h0
                 for (let i = 0; i < prims.length; i++) {
+                    PW[i] = w; PR[i] = r; PD[i] = d
                     const p = prims[i]
                     const n = Math.max(1, Math.ceil(p.length / refitDs)), dsp = p.length / n
+                    const aW2 = earthwork ? 1 - Math.exp(-dsp / earthworkWindow) : 0
+                    const aR2 = earthwork ? 1 - Math.exp(-dsp / gradeWindow) : 0
                     let g = 0, ex = 0
                     for (let j = 1; j <= n; j++) {
                         const e = arcEnd(p.x0, p.z0, p.theta0, p.kappa0, dsp * j)
-                        const h2 = hh(e[0], e[1])
-                        const gg = Math.abs(h2 - ph) / dsp
+                        const h2 = heightFn(e[0], e[1])
+                        let d2
+                        if (earthwork) { w += aW2 * (h2 - w); r += aR2 * (h2 - r); d2 = dClamp(w, r) }
+                        else d2 = h2
+                        const gg = Math.abs(d2 - d) / dsp
                         if (gg > g) g = gg
                         if (gg > maxGrade) ex += (gg - maxGrade) * dsp
-                        ph = h2
+                        d = d2
                     }
                     primG[i] = g; primEx[i] = ex
                 }
+                PW[prims.length] = w; PR[prims.length] = r; PD[prims.length] = d
             }
             const spanGrade = (a, b) => {
                 let g = 0, ex = 0
@@ -691,7 +711,7 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             }
             // Shortest Dubins replacement for one span, or null. Acceptance = length + grade +
             // excess + pond + bounds (see pass-1 header note); first passing rho (largest) wins.
-            const dubinsSpan = (x0, z0, th0, x1, z1, th1, rawLen, rawG, rawEx) => {
+            const dubinsSpan = (a, x0, z0, th0, x1, z1, th1, rawLen, rawG, rawEx) => {
                 const chord = Math.hypot(x1 - x0, z1 - z0)
                 if (chord < 1e-6) return null
                 let prevRho = -1
@@ -701,20 +721,28 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
                     prevRho = rho
                     const best = _dubinsBest(x0, z0, th0, x1, z1, th1, rho)
                     if (!best || best.len * rho > rawLen * 1.02) continue
-                    let ok = true, g = 0, ex = 0, sx = x0, sz = z0, sth = th0, ph = hh(x0, z0)
+                    // Candidate profile seeds from the raw chain's snapshot at the span start (PW/PR/PD)
+                    // so both spans carry the same upstream profile memory into the comparison.
+                    let ok = true, g = 0, ex = 0, sx = x0, sz = z0, sth = th0
+                    let w = PW[a], r = PR[a], d = PD[a]
                     for (const [kSign, lenR] of best.segs) {
                         const L2 = lenR * rho
                         if (L2 < 1e-9) continue
                         const k = kSign / rho
                         const n = Math.max(1, Math.ceil(L2 / refitDs)), dsp = L2 / n
+                        const aW2 = earthwork ? 1 - Math.exp(-dsp / earthworkWindow) : 0
+                        const aR2 = earthwork ? 1 - Math.exp(-dsp / gradeWindow) : 0
                         for (let j = 1; j <= n; j++) {
                             const e = arcEnd(sx, sz, sth, k, dsp * j)
                             if (badXZ(e[0], e[1])) { ok = false; break }
-                            const h2 = hh(e[0], e[1])
-                            const gg = Math.abs(h2 - ph) / dsp
+                            const h2 = heightFn(e[0], e[1])
+                            let d2
+                            if (earthwork) { w += aW2 * (h2 - w); r += aR2 * (h2 - r); d2 = dClamp(w, r) }
+                            else d2 = h2
+                            const gg = Math.abs(d2 - d) / dsp
                             if (gg > g) g = gg
                             if (gg > maxGrade) ex += (gg - maxGrade) * dsp
-                            ph = h2
+                            d = d2
                         }
                         if (!ok) break
                         const e = arcEnd(sx, sz, sth, k, L2)
@@ -733,7 +761,7 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
                 if (b - a >= 2 && rawLen >= MIN_SPAN) {
                     const p0 = prims[a], pe = primEndPose(prims[b - 1])
                     const [rawG, rawEx] = spanGrade(a, b)
-                    const dub = dubinsSpan(p0.x0, p0.z0, p0.theta0, pe[0], pe[1], pe[2], rawLen, rawG, rawEx)
+                    const dub = dubinsSpan(a, p0.x0, p0.z0, p0.theta0, pe[0], pe[1], pe[2], rawLen, rawG, rawEx)
                     if (dub) { for (const d of dub) out.push(d); return }
                     let acc = 0, mid = a + 1
                     for (let i = a; i < b - 1; i++) { acc += prims[i].length; if (acc >= rawLen * 0.5) { mid = i + 1; break } }
