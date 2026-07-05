@@ -3,9 +3,15 @@ id: QUAL-13
 type: quality
 status: pending
 severity: major
+depends: QUAL-14
 ---
 
 # Junctions phase: sloped pads + network hygiene after honest-grade router
+
+> RESCOPED 2026-07-05: items 2 & 3 (self-intersection/crossing hygiene + NO-LOOPS gate rework)
+> moved to QUAL-14 (route clearance), which runs FIRST — user decision, junction pads should
+> land on stabilized routes. This ticket keeps sloped pads (item 1) + junction grade artifacts
+> (item 4).
 
 The honest-grade router (fix committed on road-feel-phase-1-2: 1-D along-path EMA design
 profile in search + refit; straights >200m 35%→5%, switchbacks 13→39, grade p95 36.7%→21.4%)
