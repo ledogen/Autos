@@ -265,12 +265,20 @@ export const RANGER_PARAMS = {
   // rescaled accordingly (they were per-8m-primitive before). Tuned via a headless radius+grade sweep
   // on seed 6 + lone-pine to give sweeping radii on mild ground (avg ~130 m, ~50% of road ≥100 m) while
   // switchbacking where grade forces it.
-  roadWGrade: 100,      // cost units/m — quadratic grade² penalty (gentle climbs); per-metre (×L)
+  // Road-Feel Phase 2 sweep vs the HONEST cost model (93d61a6, test/road-character.mjs OFAT+combos,
+  // seed 6): 100→960 as part of the shipped preset (with roadGraphWTurn 800 + roadGraphMaxGrade 0.12
+  // + roadWOver 30000): built grade p95 21.4%→20.6%, switchbacks 39→62, straights>200m ~5%, +6% km.
+  // The more aggressive maxGrade 0.10 variant scored better still (straights 3.4%, p95 16.5%, sw 80)
+  // but put 40 invisible collision steps into seed 6 (road-smoothness.mjs RED) — retry after QUAL-13.
+  // One-factor wins do NOT stack naively (wCurv800+wGrade960 at mg0.15 REGRESSED straights to 7.5%);
+  // change these four together or re-sweep.
+  roadWGrade: 960,      // cost units/m — quadratic grade² penalty (gentle climbs); per-metre (×L)
 
   // roadWOver: FINITE over-cap penalty — roadWOver·max(0, grade − maxRoadGrade). Strongly (but
   // never infinitely) discourages exceeding maxRoadGrade; forces switchbacks where the grade
   // would otherwise blow past the target. NEVER Infinity (D-02 REVISED). D-09 default 8000.
-  roadWOver: 18500,     // cost units/m over-grade — SOFT over-cap penalty, per-metre (×L) (2500→18500 — harder soft-cap: force terrain-following/switchbacks the instant grade exceeds maxGrade)
+  roadWOver: 30000,     // cost units/m over-grade — SOFT over-cap penalty, per-metre (×L) (2500→18500 harder
+                        // soft-cap; Road-Feel Phase 2: →30000 paired with roadGraphMaxGrade 0.12, see roadWGrade note)
 
   // roadWTurn: curvature penalty weight (wCurv) in the arc router. QUAL-05: the per-primitive cost is
   // wCurv·κ²·L (curvature SQUARED — "bending energy"), so for a given heading change the cost is
@@ -378,7 +386,10 @@ export const RANGER_PARAMS = {
   // (matching rows' maxRoadGrade) lifts seed-6 detour 1.13→1.22 and stays loop-free across seeds 3/6/7/11/42
   // (paired with roadGraphWTurn 3000 + roadGraphWAlt 2.0 + goalBlend 60). Raising it back toward 0.30
   // straightens roads (short connectors run direct); much below 0.20 reintroduces 360° spiral loops.
-  roadGraphMaxGrade: 0.15,
+  // Road-Feel Phase 2 (honest cost model): 0.15→0.12 (with roadWOver 30000 — see roadWGrade note)
+  // toward the user's "full alpine" target. 0.10 scored better on character but trips
+  // road-smoothness.mjs (invisible collision steps at seed-6 switchback density) — retry post-QUAL-13.
+  roadGraphMaxGrade: 0.12,
   // roadGraphGoalBlend: how many metres of an edge's tail are routed as a clean GEOMETRIC Dubins curve INTO
   // the goal node. NOTE (windiness-stage): this is NOT a windiness
   // lever — sweeping 140→20 barely moves detour (the straightness lives in the SEARCH cost, not the tail).
@@ -391,7 +402,8 @@ export const RANGER_PARAMS = {
   // more/tighter curves = windier. 3000 (windiness stage) noticeably loosens the roads without tripping
   // the min-radius or no-loop gates. Road-Feel Phase 2: 3000→1500 paired with roadWDeviation 12 (see
   // that knob's note for the measured wins); detour 1.11→1.20 — distance traded for terrain-following.
-  roadGraphWTurn: 1500,
+  // Road-Feel Phase 2 (honest cost model): 1500→800 as part of the shipped preset (see roadWGrade note).
+  roadGraphWTurn: 800,
   // roadGraphWAlt: the router's valley-seeking weight (wAlt). Higher = roads dive harder for low ground =
   // more terrain-hugging wander. 2.0 (windiness stage).
   roadGraphWAlt: 2.0,
