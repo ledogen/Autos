@@ -30,7 +30,6 @@ import { stepDrivetrain } from './drivetrain.js'
 // FEAT-23 removed FWD_THRESHOLD (the W-brake / drive-cut deadband); the drivetrain now supplies
 // forward torque continuously through the torque converter, so there is no roll-back drive cutoff.
 const REV_THRESHOLD =  2 / 3.6   //  0.556 m/s: S switches from braking to reverse above this
-const HB_RAMP       =  0.3       // m/s: handbrake ramps from 0 at rest to full at this speed
 
 /**
  * Read the per-wheel drive torque computed once per step by stepDrivetrain (FEAT-23).
@@ -73,12 +72,15 @@ function getBrakeTorque (wheelIndex, vehicleState, params) {
     return vehicleState.brake * maxBt
   }
 
-  // Handbrake: rear wheels only. Ramps from 0 to full over HB_RAMP m/s to avoid impulse
-  // artifacts at launch, but applies full torque at rest so the car can be held on a slope.
+  // Handbrake: rear wheels only, FULL clamping torque at all speeds. A handbrake is a fixed brake, so
+  // it must apply full torque at low speed / rest — that is exactly when you park on a hill. The old
+  // speed-ramp (scale = |v|/HB_RAMP below 0.3 m/s) faded the torque toward zero right where holding
+  // matters, and the `|v| === 0 ? full` guard almost never fires in floating point, so a car creeping
+  // on a slope sat in the weak zone and the rear wheels ROLLED instead of locking → it slid downhill on
+  // grades far below the friction angle. Full torque locks the rears; the tire then holds (static) or
+  // skids (kinetic) per the slope vs friction angle, which is the correct behaviour.
   if (vehicleState.handbrake && isRear) {
-    const absVel = Math.abs(longVel)
-    const scale  = absVel === 0 ? 1.0 : Math.min(absVel / HB_RAMP, 1.0)
-    return params.maxHandbrakeTorque * scale
+    return params.maxHandbrakeTorque
   }
 
   return 0
