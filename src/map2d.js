@@ -487,6 +487,8 @@ export class Map2D {
             ['#e0c83c', 'NEAR_PARALLEL'],
             ['#e0543c', 'GRADE_SEP'],
             ['#46c8ff', 'hub (deg≥3)'],
+            ['#7088a0', 'node (deg 2)'],
+            ['#506070', 'leaf (deg≤1)'],
             ['#ff5a3c', 'car'],
         ]
         const x0 = 16, y0 = 16, lh = 18
