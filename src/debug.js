@@ -466,6 +466,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   junctionFolder.add(params, 'roadFilletRadius',        0.5, 10,  0.5 ).name('Pad Fillet Radius (m)').onChange(fireSurface)
   junctionFolder.add(params, 'roadJunctionCarveRadius', 0,  25,  1   ).name('Terrain Carve Radius (m)').onChange(fireSurface)
   junctionFolder.add(params, 'roadJunctionApronLift',   0,   0.05, 0.001).name('Apron Lift (m)').onChange(fireSurface)
+  // QUAL-16 — deg-2 kink pads. Changes WHICH nodes are junctions (_detectNodeJunctions is
+  // _networkRev-guarded) → needs fireRoadParam's rev bump, same as the QUAL-13 sliders below.
+  junctionFolder.add(params, 'roadJunctionKinkDeg',        0, 45,   1    ).name('Deg-2 Kink Pad (°)').onChange(fireRoadParam)
   // QUAL-13 — sloped pad planes. These reshape the run GRADE profiles (rev-guarded caches), so they
   // need the full re-route path (fireRoadParam bumps _networkRev), not just a surface rebuild.
   junctionFolder.add(params, 'roadJunctionPadMaxGrade',    0, 0.15, 0.005).name('Pad Max Grade').onChange(fireRoadParam)
@@ -560,6 +563,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
     roadFilletRadius:        'Corner rounding (m) of the junction pad — the tangent arc joining adjacent legs\' road edges. Auto-shrinks at tight corners.',
     roadJunctionCarveRadius: 'Radius (m) of terrain flattening around a junction pad.',
     roadJunctionApronLift:   'Tiny Y lift (m) of the junction pad over the ribbon to avoid z-fight flicker.',
+    roadJunctionKinkDeg:     'Heading kink (°) at a degree-2 node above which the corner gets a mini-junction pad. 0 = off.',
     roadJunctionPadMaxGrade:    'Max slope of a junction pad plane (rise/run). 0 = flat pads. Pads tilt with the hillside up to this, shrinking uphill cut walls.',
     roadJunctionPadTerrainBias: 'How far (m) a pad may shift up/down toward the local terrain to reduce cut/fill. 0 = pad stays at the mean approach height.',
     roadJunctionBlendMaxGrade:  'Steepest artificial grade a junction approach blend may add. Bigger corrections stretch the blend further up the road instead of spiking.',

@@ -1,7 +1,8 @@
 ---
 id: QUAL-16
 type: quality
-status: open
+status: completed
+closed: 2026-07-06
 opened: 2026-07-06
 severity: minor
 source: user-request
@@ -78,3 +79,26 @@ admit 2-leg clusters above the kink threshold) plus the n=2 boundary case.
 - QUAL-13 resolution (completed) — sloped pad planes + adaptive grade blend; the deg-2 grade
   line (FEAT-19 through-axis) already handles Y continuity, this ticket is about XZ heading.
 - QUAL-15 — router-level terrain awareness; if Option A ever happens it belongs in that campaign.
+
+## RESOLVED (2026-07-06)
+
+Option B as recommended — kinked deg-2 nodes are mini-junctions on the QUAL-11 machinery.
+
+- `_detectNodeJunctions` (road.js) now admits 2-leg clusters when the away-heading kink exceeds
+  `roadJunctionKinkDeg` (new param, default 9°; 0 = off; kinks > 75° never padded — degenerate
+  strands). Admission registers the same cutback/carve arcs, so the ribbon trim, `_junctionCarve`
+  crown/camber ease (= the "ease banking → 0 over the cutback zone" choice), terrain widen, and
+  markings feather all apply automatically.
+- The QUAL-11 generic corner walk handles n = 2 with NO special casing: mouth → inside tangent
+  fillet → mouth → outside join (the outside of the bend falls to the fillet/Hermite path, not the
+  n≥3 straight back-side rule). Deg-2 nodes get `plane = null` (nodeY = endpoint mean) — the
+  FEAT-19 through-axis grade line already owns Y continuity, exactly as the ticket said.
+- Probe (seed 6, R900 sweep): 10 deg-2 kink pads admitted incl. both captured marks — all
+  exact-weld, 0 fallbacks, 0 failures; straight pass-throughs untouched (no pad spam).
+- Screenshots: (-586,562) 19.1° kink reads as one continuous widened bend (markings feather
+  through); (-1138,667) 36.3° kink S-curve flows with no wedge notch. npm test 30/31 (red =
+  pre-existing GRAPH-REACHABILITY, accepted QUAL-14/15). Slider Roads→Junctions→"Deg-2 Kink Pad
+  (°)" on fireRoadParam (node set is _networkRev-guarded); route bundle regenerated for the new
+  road* param (routes byte-identical, parity green).
+- Note: node detection is a pure fn of the STREAMED window (D-16 caveat, pre-existing) — a node at
+  the stream edge can transiently miss legs; tiles rebuild with the full set as the player nears.

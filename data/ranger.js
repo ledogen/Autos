@@ -418,6 +418,13 @@ export const RANGER_PARAMS = {
   // instead of clipping up through the pad. Keep ≈ the pad extent (≈ cutback) to avoid a bare-dirt ring
   // around the pad. 0 = off (no junction carve).
   roadJunctionCarveRadius: 7,
+  // roadJunctionKinkDeg (QUAL-16): degree-2 graph nodes are a road CONTINUING through the node, but
+  // each edge is routed independently so the two arrival tangents meet at a heading KINK. Above this
+  // threshold (°) the node becomes a mini-junction — ribbons cut back, QUAL-11 weld/fillet pad fills
+  // the corner (n=2: mouth → inside fillet → mouth → outside join) — so the driven surface is wide
+  // and continuous through the kink. Below it (and for straight pass-throughs) ribbons stay
+  // untouched: no pad spam. 0 = off. Kinks > 75° are never padded (degenerate strands).
+  roadJunctionKinkDeg: 9,
 
   // ── Crossing classifier (FEAT-07/08/11/13 foundation) ───────────────────────────────────────────
   // road.js _detectJunctions() finds every inter-run / self-run XZ crossing and CLASSIFIES each by the
