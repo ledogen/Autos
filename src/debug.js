@@ -468,6 +468,11 @@ export function initDebug (params, callbacks = {}, options = {}) {
   junctionFolder.add(params, 'roadJunctionFlare',       1.0, 2.5, 0.1 ).name('Mouth Flare (×road)').onChange(fireSurface)
   junctionFolder.add(params, 'roadJunctionCarveRadius', 0,  25,  1   ).name('Terrain Carve Radius (m)').onChange(fireSurface)
   junctionFolder.add(params, 'roadJunctionApronLift',   0,   0.05, 0.001).name('Apron Lift (m)').onChange(fireSurface)
+  // QUAL-13 — sloped pad planes. These reshape the run GRADE profiles (rev-guarded caches), so they
+  // need the full re-route path (fireRoadParam bumps _networkRev), not just a surface rebuild.
+  junctionFolder.add(params, 'roadJunctionPadMaxGrade',    0, 0.15, 0.005).name('Pad Max Grade').onChange(fireRoadParam)
+  junctionFolder.add(params, 'roadJunctionPadTerrainBias', 0, 10,   0.5  ).name('Pad Terrain Bias (m)').onChange(fireRoadParam)
+  junctionFolder.add(params, 'roadJunctionBlendMaxGrade',  0, 0.30, 0.01 ).name('Blend Max Grade').onChange(fireRoadParam)
 
   // Plan 09-11 — Cheap below-margin carve params.
   // Both are geometry params → full road rebuild via fireSurface.
@@ -558,6 +563,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
     roadJunctionFlare:       'How much the leg mouths widen approaching a junction (× road width). Bigger = more generous flare.',
     roadJunctionCarveRadius: 'Radius (m) of terrain flattening around a junction pad.',
     roadJunctionApronLift:   'Tiny Y lift (m) of the junction pad over the ribbon to avoid z-fight flicker.',
+    roadJunctionPadMaxGrade:    'Max slope of a junction pad plane (rise/run). 0 = flat pads. Pads tilt with the hillside up to this, shrinking uphill cut walls.',
+    roadJunctionPadTerrainBias: 'How far (m) a pad may shift up/down toward the local terrain to reduce cut/fill. 0 = pad stays at the mean approach height.',
+    roadJunctionBlendMaxGrade:  'Steepest artificial grade a junction approach blend may add. Bigger corrections stretch the blend further up the road instead of spiking.',
   }
   // Native `title=` proved unreliable here (it needs the pointer dead-still and lil-gui's repaints
   // reset the browser's hover timer), so we render our OWN tooltip: one reused fixed-position div on

@@ -971,10 +971,16 @@ export class RoadMeshSystem {
         if (!node.legs || node.legs.length < 2) return null
 
         const apronLift = params.roadJunctionApronLift ?? 0.0
+        // QUAL-13: beyond the road footprint the fallback rides the node's sloped pad PLANE (when
+        // present) instead of the flat nodeY, so an apron corner on the uphill side doesn't sink
+        // below the tilted plaza the approaches blend onto.
+        const fallbackY = (x, z) => node.plane
+            ? node.plane.y0 + node.plane.gx * (x - node.plane.cx) + node.plane.gz * (z - node.plane.cz)
+            : nodeY
         // Per-vertex asphalt-TOP Y — the surface the ribbon mesh + truck ride (FEAT-19 grade + crown/camber).
         const sampleY = (x, z) => {
             const y = this._road.sampleRoadTopY ? this._road.sampleRoadTopY(x, z) : null
-            return (y != null && isFinite(y) ? y : nodeY) + apronLift
+            return (y != null && isFinite(y) ? y : fallbackY(x, z)) + apronLift
         }
 
         // Merge near-parallel legs: the graph sometimes routes two runs out of a node in almost the same

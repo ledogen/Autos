@@ -3008,10 +3008,26 @@ export class RoadSystem {
         const carveArcs = new Map()
         for (const c of clusters) {
             if (c.legs.length < 3) continue   // only real junctions; a 2-leg cluster is a road continuing
-            const nodeY = c.ys.reduce((s, v) => s + v, 0) / c.ys.length
+            // QUAL-13: sloped pad — resolve the cluster's graph node id via any leg's netEntry
+            // (endpoint arc 0 → cellA, else cellB) and ride its pad PLANE. nodeY/pos.y become the
+            // plane at the cluster centre so the pad-mesh fallback + carve agree with the blended
+            // approaches instead of the flat endpoint mean. plane = null keeps the flat behavior
+            // (rows mode / degenerate strands).
+            let plane = null
+            if (this._proto?.graph) {
+                for (const a of c.arcs) {
+                    const e = this._network.get(a.runKey)
+                    if (!e || !e.cellA || !e.cellB) continue
+                    const id = a.arc < 1e-6 ? e.cellA : e.cellB
+                    if (this._graphDegreeOf(id) >= 3) { plane = this._junctionPadPlane(id); if (plane) break }
+                }
+            }
+            const nodeY = plane
+                ? this._padPlaneY(plane, c.x, c.z)
+                : c.ys.reduce((s, v) => s + v, 0) / c.ys.length
             const legs = c.legs.slice().sort((p, q) => Math.atan2(p.dir.x, p.dir.z) - Math.atan2(q.dir.x, q.dir.z))
             nodes.set(`${Math.round(c.x)},${Math.round(c.z)}`, {
-                pos: new THREE.Vector3(c.x, nodeY, c.z), nodeY, legs, kind: 'AT_GRADE', simpleMerge: legs.length > 4,
+                pos: new THREE.Vector3(c.x, nodeY, c.z), nodeY, plane, legs, kind: 'AT_GRADE', simpleMerge: legs.length > 4,
             })
             for (const a of c.arcs) {
                 let arr = carveArcs.get(a.runKey); if (!arr) { arr = []; carveArcs.set(a.runKey, arr) }
@@ -3479,10 +3495,20 @@ export class RoadSystem {
         // dominant grade VECTOR onto it (FEAT-19) — the through axis's slope, carried into this run.
         const nodeInfo = (id, thisStrand) => {
             const d = this._graphDegreeOf(id)
-            const is = d >= 2, flatCamber = d >= 3, y = this._graphJunctionGradeY(id)
-            const strands = is ? this._graphNodeStrands(id) : null
+            const is = d >= 2, flatCamber = d >= 3
+            let y = this._graphJunctionGradeY(id)
             let slopeAway = 0
-            if (is && strands && thisStrand) { const G = this._junctionGradeVector(strands); slopeAway = G.gx * thisStrand.wx + G.gz * thisStrand.wz }
+            // QUAL-13: a true ≥3-way junction eases onto its sloped PAD PLANE — y = plane at the
+            // node, slopeAway = plane grade along this strand — so every leg lands tangent to ONE
+            // shared tilted plaza. Degree-2 pass-throughs keep the FEAT-19 through-axis line.
+            const plane = flatCamber ? this._junctionPadPlane(id) : null
+            if (plane && thisStrand) {
+                y = plane.y0
+                slopeAway = plane.gx * thisStrand.wx + plane.gz * thisStrand.wz
+            } else if (is && thisStrand) {
+                const strands = this._graphNodeStrands(id)
+                if (strands) { const G = this._junctionGradeVector(strands); slopeAway = G.gx * thisStrand.wx + G.gz * thisStrand.wz }
+            }
             return { is, flatCamber, y, slopeAway }
         }
         return { jStart: nodeInfo(e.cellA, this._strandAtEnd(e.points, true)), jEnd: nodeInfo(e.cellB, this._strandAtEnd(e.points, false)) }
@@ -3557,6 +3583,96 @@ export class RoadSystem {
         return n > 0 ? sum / n : this._siteAt(id).y
     }
 
+    // ── QUAL-13: sloped junction pad plane ──────────────────────────────────────────────────
+    /**
+     * The pad PLANE for a ≥3-way graph junction: { cx, cz, y0, gx, gz } with
+     * padY(x,z) = y0 + gx·(x−cx) + gz·(z−cz). Replaces the flat nodeY = mean(end Ys) disc that
+     * dug huge uphill cut walls wherever a junction sits on a hillside (the pad held the DOWNHILL
+     * mean while the uphill terrain towered over it).
+     *
+     * Grade vector: least-squares fit of the incident strands' arrival slopes — solve
+     * min Σ (G·dir_i − mAway_i)² over the node's strands, so the pad tilts the way the roads
+     * already climb (emergent from the graded network, not injected). Clamped to
+     * roadJunctionPadMaxGrade so the plaza stays drivable. Collinear/degenerate strand sets fall
+     * back to the FEAT-19 through-axis vector.
+     *
+     * Elevation: mean approach Y (the old nodeY), then biased toward the L1-best fit of the raw
+     * coarse terrain over the pad disc (median of plane-residuals at a fixed ring pattern),
+     * capped at ±roadJunctionPadTerrainBias. All Ys live in the pre-amplitude routed/points
+     * space (network point Ys ARE _coarseH values — same field the router prices).
+     *
+     * Pure fn of the streamed incident runs + coarse noise + params → deterministic and
+     * window-invariant over the domain where the node's edges are streamed (same guarantee as
+     * _graphJunctionGradeY). Cached per node key, rev-guarded like the profile caches.
+     * @param {Array} id — graph site id [cmx,cmz,k]
+     * @returns {{cx:number,cz:number,y0:number,gx:number,gz:number}|null} null → caller keeps
+     *   the flat/through-axis behavior
+     */
+    _junctionPadPlane(id) {
+        const g = this._proto.graph
+        if (!g) return null
+        const key = g.key(id)
+        if (!this._padPlaneCache) this._padPlaneCache = new Map()
+        const hit = this._padPlaneCache.get(key)
+        if (hit && hit.rev === this._networkRev) return hit.plane
+        const plane = this._computePadPlane(id)
+        this._padPlaneCache.set(key, { rev: this._networkRev, plane })
+        return plane
+    }
+
+    _computePadPlane(id) {
+        const p = this._params || {}
+        const maxG = p.roadJunctionPadMaxGrade ?? 0.07
+        const strands = this._graphNodeStrands(id)
+        if (!strands || strands.length < 2) return null
+        const site = this._siteAt(id)
+        const cx = site.x, cz = site.z
+        // Least-squares grade vector from arrival slopes (2×2 normal equations).
+        let sxx = 0, sxz = 0, szz = 0, bx = 0, bz = 0
+        for (const s of strands) {
+            sxx += s.wx * s.wx; sxz += s.wx * s.wz; szz += s.wz * s.wz
+            bx  += s.wx * s.mAway; bz += s.wz * s.mAway
+        }
+        let gx, gz
+        const det = sxx * szz - sxz * sxz
+        if (det > 1e-4) {
+            gx = (szz * bx - sxz * bz) / det
+            gz = (sxx * bz - sxz * bx) / det
+        } else {
+            const G = this._junctionGradeVector(strands)   // near-collinear legs: through-axis
+            gx = G.gx; gz = G.gz
+        }
+        const mag = Math.hypot(gx, gz)
+        if (maxG <= 0) { gx = 0; gz = 0 }
+        else if (mag > maxG) { const k = maxG / mag; gx *= k; gz *= k }
+
+        let y0 = this._graphJunctionGradeY(id)
+        const biasCap = p.roadJunctionPadTerrainBias ?? 3.0
+        if (biasCap > 0) {
+            // Median plane-residual of raw coarse terrain over the pad disc: centre + two fixed
+            // 8-point rings at R/2 and R (R = the pad's physical extent — cutback + halfWidth).
+            const R = (p.roadJunctionCutback ?? 10) + (p.roadHalfWidth ?? 5)
+            const res = [this._coarseH(cx, cz)]
+            for (const r of [R * 0.5, R]) {
+                for (let a = 0; a < 8; a++) {
+                    const ang = a / 8 * Math.PI * 2
+                    const dx = Math.cos(ang) * r, dz = Math.sin(ang) * r
+                    res.push(this._coarseH(cx + dx, cz + dz) - (gx * dx + gz * dz))
+                }
+            }
+            res.sort((a, b) => a - b)
+            const median = res[(res.length - 1) >> 1]
+            y0 += Math.max(-biasCap, Math.min(biasCap, median - y0))
+        }
+        return { cx, cz, y0, gx, gz }
+    }
+
+    // QUAL-13: evaluate a pad plane at world XZ (shared by the blend, _detectNodeJunctions and the
+    // pad-mesh fallback so every consumer reads ONE surface).
+    _padPlaneY(plane, x, z) {
+        return plane.y0 + plane.gx * (x - plane.cx) + plane.gz * (z - plane.cz)
+    }
+
     // Mutate gradeY (→ a grade LINE) and/or camberRad (→0) in place within roadJunctionBlendLength of a
     // junction endpoint, via a smoothstep ramp. Pass null for whichever array isn't being flattened.
     // FEAT-19: the grade target is the LINE `endpoint.y + slopeAway·d` (d = distance from the node along
@@ -3570,13 +3686,35 @@ export class RoadSystem {
         const Rj = this._params?.roadJunctionBlendLength ?? 30
         if (Rj <= 0) return
         const N = arcPos.length, aStart = arcPos[0], aEnd = arcPos[N - 1]
+        // QUAL-13: adaptive GRADE reach. When the pad target sits far above/below this run's own
+        // graded endpoint, easing the full ΔY over the fixed 30 m manufactures a 60–130% grade
+        // spike at the mouth (the road-character "max grade pinned at junction blends" artifact).
+        // Stretch each endpoint's grade blend so the correction grade itself stays ≤
+        // roadJunctionBlendMaxGrade, capped at 45% of the run so both ends never fight across the
+        // middle. Camber keeps the fixed Rj reach (banking should still recover near the pad).
+        const maxBG = this._params?.roadJunctionBlendMaxGrade ?? 0.12
+        const reachCap = Math.max(Rj, (aEnd - aStart) * 0.45)
+        const gradeReach = (j, yEndpoint) => {
+            if (!j.is || !gradeY || maxBG <= 0) return Rj
+            return Math.min(reachCap, Math.max(Rj, Math.abs(yEndpoint - j.y) / maxBG))
+        }
+        const RgS = gradeReach(ej.jStart, gradeY ? gradeY[0] : 0)
+        const RgE = gradeReach(ej.jEnd,   gradeY ? gradeY[N - 1] : 0)
         for (let i = 0; i < N; i++) {
             // fG = grade-reconcile weight (any junction endpoint); fC = camber-kill weight (only a
             // flatCamber endpoint, i.e. a true ≥3-way intersection — a degree-2 graph pass-through keeps
             // its banking while still reconciling grade to C0).
             let fG = 0, ny = 0, fC = 0
-            if (ej.jStart.is) { const d = arcPos[i] - aStart; if (d < Rj) { const t = 1 - d / Rj; const fs = t * t * (3 - 2 * t); if (fs > fG) { fG = fs; ny = ej.jStart.y + ej.jStart.slopeAway * d } if (ej.jStart.flatCamber && fs > fC) fC = fs } }
-            if (ej.jEnd.is)   { const d = aEnd - arcPos[i];   if (d < Rj) { const t = 1 - d / Rj; const fs = t * t * (3 - 2 * t); if (fs > fG) { fG = fs; ny = ej.jEnd.y + ej.jEnd.slopeAway * d } if (ej.jEnd.flatCamber && fs > fC) fC = fs } }
+            if (ej.jStart.is) {
+                const d = arcPos[i] - aStart
+                if (d < RgS) { const t = 1 - d / RgS; const fs = t * t * (3 - 2 * t); if (fs > fG) { fG = fs; ny = ej.jStart.y + ej.jStart.slopeAway * d } }
+                if (ej.jStart.flatCamber && d < Rj) { const t = 1 - d / Rj; const fs = t * t * (3 - 2 * t); if (fs > fC) fC = fs }
+            }
+            if (ej.jEnd.is) {
+                const d = aEnd - arcPos[i]
+                if (d < RgE) { const t = 1 - d / RgE; const fs = t * t * (3 - 2 * t); if (fs > fG) { fG = fs; ny = ej.jEnd.y + ej.jEnd.slopeAway * d } }
+                if (ej.jEnd.flatCamber && d < Rj) { const t = 1 - d / Rj; const fs = t * t * (3 - 2 * t); if (fs > fC) fC = fs }
+            }
             if (gradeY && fG > 0)    gradeY[i] += (ny - gradeY[i]) * fG
             if (camberRad && fC > 0) camberRad[i] *= (1 - fC)
         }

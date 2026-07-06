@@ -679,6 +679,21 @@ export const RANGER_PARAMS = {
   // 30 m default — enough to smooth the grade ramp without extending far into approach lanes.
   roadJunctionBlendLength: 30,  // m — grade-blend reach toward junction node (D-14 / A8)
 
+  // ── QUAL-13: sloped junction pads ────────────────────────────────────────────
+  // A ≥3-way junction pad is a PLANE, not a level disc. Its grade vector is least-squares fit
+  // from the incident roads' arrival slopes (the pad "splits the difference" of what the roads
+  // are already doing), clamped to roadJunctionPadMaxGrade. 0 = flat pads (pre-QUAL-13).
+  roadJunctionPadMaxGrade: 0.07,   // rise/run — max pad plane grade (~7%, drivable intersection)
+  // The pad's elevation may shift from the mean approach-Y toward the terrain median over the pad
+  // disc (L1 fit) by at most this many metres — shrinks uphill cut walls without letting the pad
+  // chase a gully/ridge far from every approach road. 0 = off (elevation = mean approach Y).
+  roadJunctionPadTerrainBias: 3.0, // m — cap on terrain-seeking pad elevation shift
+  // Adaptive approach-blend reach: when a run's own graded endpoint sits far above/below the pad
+  // plane, easing it over the fixed roadJunctionBlendLength would create a 60–130% artificial
+  // grade spike (the QUAL-13 junction grade artifact). The grade blend stretches so the
+  // correction itself never exceeds this grade (camber blend keeps the fixed reach).
+  roadJunctionBlendMaxGrade: 0.12, // rise/run — max artificial grade the junction blend may add
+
   // FEAT-10: roadJoinWeldLength — how far from a run's endpoints the ribbon cross-section tangent
   // blends toward the node's edge heading (_edgeTerminalHeading), so adjacent runs build the
   // SAME endpoint cross-section and their ribbon edges line up (seals the outside-of-bend wedge at run
