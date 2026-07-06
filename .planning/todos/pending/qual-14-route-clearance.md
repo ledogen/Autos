@@ -107,3 +107,60 @@ concatenate internally.
 - No edge pair closer than corridor clearance outside merge zones (new gate green).
 - graph-topology.mjs 9/9; npm test 29/29 (or same-or-better than 28/29 with only pre-existing
   flakes); the four bad landmark spots visually clean; the three good ones unchanged.
+
+---
+
+## STATUS 2026-07-05: clearance LANDED (e31fa8c + 9736165), PERF PHASE REMAINS
+
+USER VERDICT (drove it): "roads look really good, fun to drive, connectivity is good" —
+but "way too slow": cold load 26 s (perf log: resolveSpawn cold network stream is one
+synchronous main-thread block), 4–5 s hangs exploring (macro-cell re-streams routing new edges
+synchronously when prewarm lags), map basically unusable. Per-frame cost is FINE (road.update
+0.7 ms/180 frames) — the problem is routing bursts, not frame rate.
+
+What landed (differs from the plan above — read the commit messages):
+- Part A: self-clearance enforced by an ITERATIVE NO-GO REPAIR loop (discs on violation
+  midpoints, ≤16 re-searches), NOT the wCurv/maxGrade ladder — the ladder is whack-a-mole
+  against pigtail hairpins (router loops >270° to gain elevation; crossing free, length =
+  cheap grade relief). hardR 8→10.
+- Part B: corridor discs come from dep SOLO routes (clsSolo, dep-free) — ONE-LEVEL deps only;
+  transitive final-route deps PERCOLATE (>3000-edge closures, OOM). Exemption around shared
+  nodes AND own anchors; foreign-node discs (NODE_CLEAR_R 60); escape hatch; _cullClearance
+  backstop; 'S|' solo pre-warm jobs (two-phase warm).
+- Part C/D: gates GRAPH-SELF-CLEARANCE + GRAPH-CORRIDOR-CLEARANCE green (9/10; REACHABILITY
+  red pre-existing); sliders shipped. npm test 28/29.
+
+### Perf plan (agreed with user 2026-07-05 — do BEFORE closing this ticket)
+
+Root cost: ~80% of routing time is a few mountainous edges paying the repair loop — up to 16
+full re-searches × 2 (solo+final). Generate-test-retry where each retry is a whole search.
+
+1. **IN-SEARCH SELF-PROXIMITY REJECTION (the core fix — prevention, not repair).** During
+   expansion, walk the candidate's OWN ancestor chain (parent pointers) and reject a primitive
+   whose endpoint lands within D_self of any ancestor more than selfClearGap back along the
+   path. Pigtails become illegal moves — routed around in the SAME pass. ~1.5–2× tax on the
+   base search, deletes the 16× multiplier. Repair loop demotes to a thin backstop (cap ~4)
+   for violations the REFIT passes introduce (shortcut/terminal aren't ancestor-checked).
+   Deterministic pure fn; lives in ROUTE SYNC (re-mirror road-worker.js; scratchpad
+   gen-road-worker.mjs pattern). Expect full-band 88 s → ~15 s.
+2. **Route worker POOL (2–4 workers).** Edges are pure/independent — near-linear prewarm +
+   cold-load scaling. RoadRouteWorker grows a pool; job batches round-robin.
+3. **Async cold spawn.** resolveSpawn must not route the band synchronously on the main
+   thread — route the spawn band on the pool behind the load moment.
+4. **Share the route cache between play and Map2D RoadSystems** (identical pure fns of
+   seed+params; map currently recomputes everything at map radius into its own cls).
+5. **Persist the cache (IndexedDB), keyed by seed + params hash.** Risk-free (pure fn);
+   second visit ≈ instant; makes the map usable.
+6. Micro: faster repair-disc escalation + lower cap; PREWARM_MAX_JOBS ↑ so two-phase warm
+   doesn't starve the pipeline.
+
+Do NOT drop corridor avoidance in favour of cull-only — that re-fragments connectivity
+(user explicitly likes connectivity now).
+
+Target: cold load 26 s → 3–5 s; exploration hangs gone; map usable.
+
+### Open lever (user decision, separate from perf)
+
+roadCorridorExempt 50 + roadGraphGoalBlend 60 measured best at the tangle center (4500,600):
+crossings 40→33, comps [33,5,5,2,2,2]→[46,2,2] (92% ≥ the 85% REACHABILITY bar — would likely
+green the last gate). goalBlend 20→60 changes road feel near junctions → needs a drive check.
