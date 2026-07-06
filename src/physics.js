@@ -24,39 +24,28 @@
 import * as THREE from 'three'
 import { computeTireForces } from './tire.js'
 import { computeNormalForce, getWheelPosition, getBodyContactPoints, stepSuspensionSubsteps } from './suspension.js'
+import { stepDrivetrain } from './drivetrain.js'
 
-// Speed thresholds for input routing (rule-based, no dead-zone oscillation)
-const FWD_THRESHOLD = -2 / 3.6   // -0.556 m/s: W drives above this, brakes only when clearly rolling back (mirrors REV deadband)
+// Speed threshold for input routing (rule-based, no dead-zone oscillation).
+// FEAT-23 removed FWD_THRESHOLD (the W-brake / drive-cut deadband); the drivetrain now supplies
+// forward torque continuously through the torque converter, so there is no roll-back drive cutoff.
 const REV_THRESHOLD =  2 / 3.6   //  0.556 m/s: S switches from braking to reverse above this
 const HB_RAMP       =  0.3       // m/s: handbrake ramps from 0 at rest to full at this speed
 
 /**
- * Compute drive torque for a single wheel (positive = accelerate forward spin).
- * Handles W (forward drive) and S (reverse) only — braking is in getBrakeTorque.
- *
- * W above FWD_THRESHOLD (-2 km/h): drive rear wheels forward.
- * S below REV_THRESHOLD (+2 km/h): drive rear wheels backward.
+ * Read the per-wheel drive torque computed once per step by stepDrivetrain (FEAT-23).
+ * The engine → torque-converter → automatic-gearbox → final-drive chain (drivetrain.js) runs once
+ * before the per-wheel loop and writes params._driveTorque[4]; this is just the accessor so the
+ * ω integrator (grounded + airborne branches) reads a consistent value for every wheel.
  *
  * @param {number} wheelIndex - 0-3 per GLOSSARY.md §Wheel Index (0=FL, 1=FR, 2=RL, 3=RR).
- * @param {object} vehicleState - Full vehicleState; uses .throttle and .brake.
- * @param {object} params - RANGER_PARAMS augmented with params._longitudinalVelocity [m/s].
- * @returns {number} Torque [N·m]. Positive = drive forward.
+ * @param {object} vehicleState - unused (kept for signature stability with getBrakeTorque).
+ * @param {object} params - RANGER_PARAMS; reads params._driveTorque (set by stepDrivetrain).
+ * @returns {number} Torque [N·m]. Positive = drive forward, negative = reverse.
  */
 export function getDriveTorque (wheelIndex, vehicleState, params) {
-  const isRear  = wheelIndex === 2 || wheelIndex === 3
-  const longVel = params._longitudinalVelocity || 0
-
-  // W: forward drive when speed is above -5 km/h
-  if (vehicleState.throttle > 0 && longVel >= FWD_THRESHOLD) {
-    return isRear ? vehicleState.throttle * params.maxDriveTorque : 0
-  }
-
-  // S: reverse drive when speed is below +2 km/h
-  if (vehicleState.brake > 0 && longVel <= REV_THRESHOLD) {
-    return isRear ? -vehicleState.brake * params.maxReverseTorque : 0
-  }
-
-  return 0
+  const dt = params._driveTorque
+  return dt ? (dt[wheelIndex] || 0) : 0
 }
 
 /**
@@ -66,21 +55,22 @@ export function getDriveTorque (wheelIndex, vehicleState, params) {
  *
  * @param {number} wheelIndex - 0-3 per GLOSSARY.md §Wheel Index.
  * @param {object} vehicleState - Full vehicleState; uses .throttle, .brake, .handbrake.
- * @param {object} params - RANGER_PARAMS; uses .maxBrakeTorque, .maxHandbrakeTorque.
+ * @param {object} params - RANGER_PARAMS; uses .maxBrakeTorqueFront/.maxBrakeTorqueRear, .maxHandbrakeTorque.
  * @returns {number} Brake torque [N·m]. Positive = resists current wheel spin direction.
  */
 function getBrakeTorque (wheelIndex, vehicleState, params) {
   const isRear  = wheelIndex === 2 || wheelIndex === 3
   const longVel = params._longitudinalVelocity || 0
 
-  // W below FWD_THRESHOLD (-2 km/h): brake all wheels to slow backward motion
-  if (vehicleState.throttle > 0 && longVel < FWD_THRESHOLD) {
-    return vehicleState.throttle * params.maxBrakeTorque
-  }
+  // FEAT-23: the old "W below FWD_THRESHOLD → brake" branch is gone. The torque-converter drivetrain
+  // now delivers forward torque whenever the throttle is down (even while rolling backward), so it
+  // arrests and reverses a hill roll-back itself — braking there would fight the drive torque and
+  // re-create the drive/brake oscillation this feature fixes.
 
-  // S above REV_THRESHOLD: brake all wheels to slow forward motion
+  // S above REV_THRESHOLD: brake all wheels to slow forward motion (front/rear-split service brake).
   if (vehicleState.brake > 0 && longVel > REV_THRESHOLD) {
-    return vehicleState.brake * params.maxBrakeTorque
+    const maxBt = isRear ? (params.maxBrakeTorqueRear ?? 800) : (params.maxBrakeTorqueFront ?? 1200)
+    return vehicleState.brake * maxBt
   }
 
   // Handbrake: rear wheels only. Ramps from 0 to full over HB_RAMP m/s to avoid impulse
@@ -157,6 +147,16 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
   const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(vehicleState.quaternion)
   const right   = new THREE.Vector3(1, 0, 0).applyQuaternion(vehicleState.quaternion)
   const up      = new THREE.Vector3(0, 1, 0).applyQuaternion(vehicleState.quaternion)
+
+  // ── Step 2.1: Drivetrain (FEAT-23) ─────────────────────────────────────────
+  // Engine → torque converter → automatic gearbox → final drive, stepped ONCE per physics step from
+  // the start-of-step rear-axle ω (consistent with the operator-splitting the ω integrator already
+  // uses). Writes params._driveTorque[4]; getDriveTorque (grounded + airborne branches) reads it.
+  // vForward is the CG longitudinal speed (velocity · forward), which decides forward-vs-reverse.
+  const vForward = vehicleState.velocity.x * forward.x +
+                   vehicleState.velocity.y * forward.y +
+                   vehicleState.velocity.z * forward.z
+  stepDrivetrain(vehicleState, params, dt, vForward)
 
   // ── Step 2.5: Suspension substep loop (Phase 4.1) ──────────────────────────────────────────
   // Integrates strutComp/strutCompVel at dt/N substeps. Writes:
@@ -519,6 +519,26 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
       const vHoriz = Math.sqrt(vx * vx + vz * vz)
       if (vHoriz > 0.05) {
         const dragMag = Cr * totalGroundFn
+        totalForce.x -= dragMag * vx / vHoriz
+        totalForce.z -= dragMag * vz / vHoriz
+      }
+    }
+  }
+
+  // ── Step 3a-aero: Quadratic aerodynamic drag (FEAT-23) ─────────────────────
+  // F_aero = -½·ρ·(Cd·A)·|v|·v on the horizontal velocity. Without it the geared drivetrain would
+  // keep accelerating to an unrealistic top speed (rolling resistance alone is near-constant); this
+  // is what settles top-gear cruise at a believable terminal speed. Applies in air too (body drag).
+  // aeroDragArea is the lumped Cd·A [m²]; 0 disables. ρ ≈ 1.225 kg/m³ (sea-level air) folded into ½ρ.
+  {
+    const CdA = params.aeroDragArea || 0
+    if (CdA > 0) {
+      const HALF_RHO = 0.6125   // ½ · 1.225 kg/m³
+      const vx = vehicleState.velocity.x
+      const vz = vehicleState.velocity.z
+      const vHoriz = Math.sqrt(vx * vx + vz * vz)
+      if (vHoriz > 0.1) {
+        const dragMag = HALF_RHO * CdA * vHoriz * vHoriz
         totalForce.x -= dragMag * vx / vHoriz
         totalForce.z -= dragMag * vz / vHoriz
       }

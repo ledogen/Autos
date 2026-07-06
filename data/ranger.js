@@ -29,14 +29,92 @@ export const RANGER_PARAMS = {
   inertiaPitch: (1 / 12) * 1360 * (4.61 ** 2 + 1.60 ** 2),  // kg·m² (Iyy — pitch, ≈ 3300)
   inertiaYaw:   (1 / 12) * 1360 * (4.61 ** 2 + 1.85 ** 2),  // kg·m² (Izz — yaw,   ≈ 3700)
 
-  // ── Drivetrain ────────────────────────────────────────────────────────────
-  // Phase 1 placeholder; Phase 2+ replaces drivetrain model.
-  // Values consumed by getDriveTorque stub.
-  maxDriveTorque:  800,   // N·m — flat throttle torque for Phase 1 response
-  maxBrakeTorque:  1700,  // N·m — flat brake deceleration placeholder
-  // Bug 4 fix: reverse uses maxReverseTorque (symmetric to forward), not maxBrakeTorque
-  maxReverseTorque: 800,  // N·m — matches maxDriveTorque; used by getDriveTorque for reverse
+  // ── Drivetrain (FEAT-23 Phase 1: engine → torque converter → automatic gearbox → final drive) ──
+  // Replaces the old flat maxDriveTorque/maxReverseTorque stub. The chain lives in src/drivetrain.js,
+  // stepped once per physics step; getDriveTorque reads the per-wheel result. All fields are debug-
+  // tunable (Drivetrain & Brakes folder). Numbers picked for a 2002 Ranger 3.0L V6 + 4R44E 4-speed
+  // auto so the climbing/taper behavior EMERGES from the model (not injected).
+  //
+  // Engine torque curve: ascending [rpm, N·m] control points (piecewise-linear lookup in drivetrain.js).
+  // 2002 Ranger 3.0L Vulcan V6 ≈ 250 N·m (185 lb·ft) peak @ ~3750 rpm, ~145 hp @ 4750. Edit these points
+  // to reshape the curve; engineTorqueScale is the global slider multiplier over the whole curve.
+  engineTorqueCurve: [
+    [ 800, 160], [1200, 195], [2000, 225], [2800, 242], [3750, 250],
+    [4500, 240], [5200, 215], [5800, 150],
+  ],
+  engineTorqueScale:  1.0,   // [-] global multiplier over the torque curve (slider)
+  engineIdleRPM:      750,   // rpm — governed idle floor; engine never drops below this
+  engineRedlineRPM:  5500,   // rpm — rev limiter cuts torque above this (over 200 rpm band)
+  engineIdleThrottle:  0.0,  // [-] idle-throttle floor for creep torque; 0 = no creep (keeps BUG-20 slope-hold at zero input). Raise (~0.04) for authentic automatic idle-creep.
+  engineRpmLag:        0.0,  // s — first-order lag on engine RPM (0 = instant; ~0.1 adds rev-flare feel)
+
+  // Torque converter (simplified quasi-static slip model): torque ratio = converterStallTorqueRatio
+  // at zero speed ratio, falling to 1.0 at converterCouplingSR. converterStallRPM is the WOT stall
+  // speed the engine holds against a locked turbine (the low-speed torque multiplication that launches
+  // the truck off a steep grade).
+  converterStallTorqueRatio: 2.0,   // [-] torque multiplication at stall (SR=0)
+  converterCouplingSR:       0.86,  // [-] speed ratio at/above which the converter couples 1:1 (TR=1)
+  converterStallRPM:         2400,  // rpm — WOT stall speed (turbine held, foot flat)
+
+  // Automatic gearbox + final drive (4R44E-like). gearRatios[0] is 1st; wheel/axle torque =
+  // turbineTorque × gearRatio × finalDrive, split open-diff across the two rear wheels (RWD Phase 1).
+  gearRatios:   [2.47, 1.47, 1.00, 0.71],  // 4-speed ratios (1st→4th)
+  finalDrive:   3.73,   // [-] axle final-drive ratio
+  reverseRatio: 2.47,   // [-] reverse gear reduction (S-pedal is the reverse throttle)
+
+  // Automatic shift schedule. Thresholds are in COUPLED (locked/no-slip) engine RPM = road-speed-in-gear,
+  // NOT the converter-slipping engineRPM — see drivetrain.js (else the box lugs in top gear on a climb
+  // because the stall speed floors engineRPM above the downshift point). Hysteresis: an upshift is blocked
+  // if it would immediately fall below (shiftDownEff + 200); shiftHoldTime is the min dwell after any shift.
+  shiftUpRPM:    5400,  // rpm(coupled) — upshift near redline (always-WOT play use, redline 5500)
+  shiftDownRPM:  1300,  // rpm(coupled) — light-throttle/cruise downshift floor
+  // kickdownRPM: WOT downshift point. The downshift threshold scales with throttle from shiftDownRPM (lift)
+  // up to kickdownRPM (floored), so flooring it on a grade drops a gear into the power band. Keep below
+  // ~shiftUpRPM/1.7 so a fresh upshift doesn't immediately re-trigger a downshift (hunting).
+  kickdownRPM:   2400,  // rpm(coupled) — downshift point at wide-open throttle (kickdown)
+  // shiftHysteresis: the PRIMARY anti-hunt lever. An upshift only fires if the NEXT gear's coupled RPM
+  // would sit this far ABOVE the current downshift point — so the box only upshifts into a gear it can
+  // actually hold. Bigger = firmer, hunts less (holds lower gears longer on grades); too big delays
+  // upshifts on the flat. rpm(coupled).
+  shiftHysteresis: 800, // rpm(coupled) — headroom the higher gear must clear before upshifting
+  shiftHoldTime: 0.6,   // s — minimum dwell between shifts (anti-hunt timer)
+
+  // Wheelspin shift-lock (FEAT-23): on an open-diff RWD burnout the rear wheels spin faster than the
+  // truck moves, inflating the coupled RPM past the upshift point → the box hunts mid-slide. When the
+  // driven-axle surface speed exceeds the ground reference (front wheels / CG speed) by more than
+  // wheelspinThreshold [m/s], shifts are held. Measured normal grip slip p90 ≈ 6.7 m/s, burnout ≈
+  // 10–20 m/s, so 7.5 locks only genuine wheelspin (not a gripping corner exit). Hook for a future
+  // traction-control system (reads the same signal, exposed as vehicleState.drivetrain.wheelspin).
+  wheelspinShiftLock: true, // master toggle for the wheelspin shift-lock
+  wheelspinThreshold: 7.5,  // m/s — driven-vs-ground surface-speed excess above which shifts are held
+
+  // Service brake, split front/rear (front-biased like a real car — more clamp up front where weight
+  // transfers under braking). Consumed per-wheel by getBrakeTorque (front = wheels 0/1, rear = 2/3).
+  maxBrakeTorqueFront: 1200,  // N·m — front axle service-brake torque per wheel-pair path
+  maxBrakeTorqueRear:   550,  // N·m — rear axle service-brake torque (reduced to curb rear lockup)
   maxHandbrakeTorque: 4000, // N·m — rear-only handbrake; doubled from 2000 to actually lock rears; exposed as slider (D-16)
+
+  // ── Rear differential (FEAT-23 Phase 2 seed) ──────────────────────────────────────────────────
+  // rearDiffMode: 'open' | 'lsd' | 'locked'. Selected in the debug panel (Vehicle → Differentials →
+  // Rear Differential). Open = equal torque split, wheels spin independently. LSD/locked add an internal
+  // coupling torque ∝ the rear wheels' speed difference that shuttles torque from the faster (spinning)
+  // wheel to the slower (gripping) one — a CLAMPED viscous coupling for LSD, a stiff one for locked.
+  // Total axle torque is preserved (coupling only redistributes). Front diff + a per-axle final-drive
+  // slider come later; kept intentionally minimal for now.
+  rearDiffMode: 'open',
+  diffLsdCoupling:  25,   // N·m per rad/s — LSD viscous coupling (torque per unit rear speed difference)
+  diffLsdMaxTorque: 400,  // N·m — LSD coupling clamp (the "limited" in limited-slip; bias cap)
+  diffLockCoupling: 30,   // N·m per rad/s — locked-diff coupling (stiff; ≤ ~36 keeps the explicit step stable)
+
+  // Aerodynamic drag (FEAT-23): lumped Cd·A [m²]; F = ½·ρ·CdA·v² opposing horizontal velocity (ρ≈1.225).
+  // Without it the geared drivetrain would accelerate to an unrealistic top speed; ~1.2 m² (Cd≈0.45 ×
+  // ~2.7 m² frontal for a compact truck) settles top-gear cruise near ~150 km/h. 0 disables. Slider.
+  aeroDragArea: 1.2,   // m² — lumped drag area Cd·A
+
+  // Engine audio (FEAT-23, src/engine-audio.js): a simple WebAudio oscillator drone whose pitch tracks
+  // engine RPM. Starts on the first keypress (browser autoplay gate). Placeholder sound — revisit later.
+  engineAudioEnabled: true,  // master toggle for engine sound
+  engineAudioVolume:  0.5,   // 0..1 volume
 
   // ── Tire Spring-Damper ───────────────────────────────────────────────────
   // tireStiffness: radial spring constant. At rest, each corner compresses ~38mm (mg/4 / k).

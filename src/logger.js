@@ -76,6 +76,9 @@ const FIELDS = [
   // self-check looks for. fl_gh..rr_gh = ground height under each WHEEL hub (airborne-safe: sampled from
   // getWheelPosition, not contact state), so a jamming/floating wheel on steep terrain is visible directly.
   'rd_gh', 'fl_gh', 'fr_gh', 'rl_gh', 'rr_gh',
+  // FEAT-23 additions — drivetrain (appended at END): active gear (0=reverse) + engine RPM + the
+  // coupled (locked/no-slip) RPM the shift schedule keys off + wheelspin (driven-vs-ground m/s excess).
+  'gear', 'eng_rpm', 'coupled_rpm', 'wheelspin',
 ]
 
 // ── Private helpers ───────────────────────────────────────────────────────────
@@ -214,6 +217,8 @@ export function captureFrame (simTime, vehicleState, wheelDebug, roadDebug) {
     // (e.g. grid world) — the replay self-check treats a missing/null rd_gh as "older capture, skip".
     rd.gh ?? null,
     wgh[0] ?? null, wgh[1] ?? null, wgh[2] ?? null, wgh[3] ?? null,
+    // FEAT-23 drivetrain (appended at END): active gear (0=reverse) + engine RPM + coupled RPM + wheelspin.
+    vehicleState.drivetrain?.activeGear ?? 0, vehicleState.drivetrain?.engineRPM ?? 0, vehicleState.drivetrain?.coupledRPM ?? 0, vehicleState.drivetrain?.wheelspin ?? 0,
   ])
 }
 
