@@ -507,9 +507,13 @@ export const RANGER_PARAMS = {
   roadSelfClearGap: 80,       // m — arc window within which self-proximity is legitimate (one bend)
   roadSelfClearMargin: 3,     // m — clearance beyond the carve footprint (D_self = 10 + 5 + 3 = 18)
   roadCorridorClearance: 20,  // m — min XZ distance between two edges' centerlines outside merge zones
-  // roadCorridorExempt (optional override, unset by default): radius around the pair's endpoint
-  // nodes within which corridor discs / the clearance cull / the gate do NOT apply (junction
-  // approaches may converge). Unset → max(goalBlend, junctionBlend, 60) + 20 = 80 m.
+  // roadCorridorExempt: radius around the pair's endpoint nodes within which corridor discs /
+  // the clearance cull / the gate do NOT apply (junction approaches may converge). 80 = the old
+  // implicit formula max(goalBlend, junctionBlend, 60) + 20. Lowering it (e.g. 50, paired with
+  // roadGraphGoalBlend 60) pushes approaches apart earlier — measured to cut near-junction
+  // crossings 40→33 and reconnect the streamed window (comps [33,5,5,2,2,2]→[46,2,2]) at the
+  // seed-6 tangle center (4500,600). Live-tunable ("Corridor Exempt (m)" slider).
+  roadCorridorExempt: 80,  // m — junction-approach exemption radius for corridor clearance
 
   // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
   // Retained for the DEFERRED D-01 spur pass (trunk-only ships first). D-01 / RESEARCH A1.

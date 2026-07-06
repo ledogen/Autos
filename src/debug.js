@@ -323,6 +323,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(params, 'roadSelfClearMargin', 0, 10, 0.5).name('Self-Clear Margin (m)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadSelfClearGap', 40, 200, 10).name('Self-Clear Gap (m)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadCorridorClearance', 10, 40, 1).name('Corridor Clearance (m)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadCorridorExempt', 30, 150, 5).name('Corridor Exempt (m)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWGrade', 0, 2000,  20  ).name('wGrade').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWOver',  0, 40000, 500 ).name('wOver').onChange(fireRoadParam)
   // Valley-seek depth cap (m below the straight edge baseline that still rewards descending). Higher =
