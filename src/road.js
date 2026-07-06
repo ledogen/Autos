@@ -1557,6 +1557,13 @@ export class RoadSystem {
             // live params like the other roadArc* knobs so the debug sliders re-route through
             // the normal onRoadParamChange → _invalidateProto path.
             refitShortcut: pp.roadRefitShortcut ?? false, refitWindow: pp.roadRefitWindow ?? 0,
+            // QUAL-14 self-clearance: the emitted chain may not approach ITSELF closer than the
+            // full carve footprint (road width + both shoulders + margin) outside a selfClearGap
+            // arc window — kills lollipop self-intersections and hairpin legs sharing a carve wall.
+            // Violations re-route with no-go discs on the violation sites (deterministic iterative
+            // repair — see SELF_CLEAR_MAX_REPAIR in road-carve.js).
+            selfClearDist: 2 * halfW + 2 * (pp.roadShoulderWidth ?? 2.5) + (pp.roadSelfClearMargin ?? 3),
+            selfClearGap: pp.roadSelfClearGap ?? 80,
             // FEAT-17: pond+skirt no-go discs for this edge's search area as pure DATA (see
             // setWaterNoGo). Baked into the shared spec so the Worker pre-warm job and the
             // synchronous fallback route with the identical exclusion. undefined when unwired.

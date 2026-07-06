@@ -455,7 +455,9 @@ export const RANGER_PARAMS = {
   // D-arc (2026-06-16) — arc-primitive router knobs (arcPrimitiveConnect). The road is min-radius-VALID
   // by construction: roadArcHardRadius is the HARDEST (tightest) turn the router can express — the real
   // fold floor — while roadArcGentleRadius + wTurn (curvature cost) bias toward gentle/straight runs.
-  roadArcHardRadius:   8,   // m — tightest switchback radius (≥ roadHalfWidth+clearance ≈ 5.6 m floor). Higher = no tight turns.
+  roadArcHardRadius:   10,  // m — tightest switchback radius (≥ roadHalfWidth+clearance ≈ 5.6 m floor). Higher = no tight
+                            // turns. QUAL-14: 8→10 so a legal hairpin's legs (2·hardR = 20 m apart) clear the
+                            // self-clearance footprint D_self = roadWidth + 2·shoulder + margin = 18 m BY CONSTRUCTION.
   roadArcGentleRadius: 75,  // m — gentle-turn primitive radius (the preferred, cheap curve). 75 m
                             // sweeps wider → fewer tight loopbacks; the loopbacks that remain read as
                             // natural cloverleaf/on-ramp curves (see feat-road-self-overpass ticket).
@@ -471,7 +473,7 @@ export const RANGER_PARAMS = {
   // COARSER heading bins give LONGER (sweepier) arcs — finer bins (the old anti-zigzag intuition) is not
   // needed and is slower; 24 bins (15°) is the sweet spot. gradeSamples>1 samples grade along the long
   // arcs so the search isn't blind to intra-arc steepness.
-  roadArcRadii: [200, 90, 35, 8],  // m — curvature palette (sweep / gentle / medium / hard floor)
+  roadArcRadii: [200, 90, 35, 10], // m — curvature palette (sweep / gentle / medium / hard floor = roadArcHardRadius)
   roadArcHeadingBins: 24,          // heading discretization (15°); one bin turned per turn primitive
   roadArcGradeSamples: 2,          // grade samples along each primitive arc (≥2 for long sweeps)
 
@@ -491,6 +493,20 @@ export const RANGER_PARAMS = {
   // index-bound roadArcRadii debug sliders.
   roadRefitShortcut: true,  // BUG-16 — straighten near-straight roads (corridor Dubins shortcut)
   roadRefitWindow: 30,      // m — FEAT-20 κ-smoothing window (0 = off)
+
+  // ── QUAL-14 route clearance — routes may not touch themselves or each other ─────────────────────
+  // Self-clearance: no two samples of ONE edge's centerline with arc-separation > roadSelfClearGap
+  // may lie closer than D_self = roadWidth + 2·roadShoulderWidth + roadSelfClearMargin in XZ (kills
+  // lollipop self-intersections and hairpin legs stacking their carve walls). Violations re-route
+  // with no-go discs dropped on the violation sites (deterministic iterative repair riding the
+  // pondDiscs rejection — SELF_CLEAR_MAX_REPAIR, road-carve.js).
+  // Corridor clearance: an edge routes with no-go discs (radius roadCorridorClearance, ~12 m spacing)
+  // sampled from the final centerlines of HIGHER-PRIORITY sibling edges (canonical edge-key order),
+  // except near a node both edges share (merge exemption) — kills parallel runs with a shared cut
+  // wall. The Urquhart graph is planar, so edge-edge proximity is always route wander, never needed.
+  roadSelfClearGap: 80,       // m — arc window within which self-proximity is legitimate (one bend)
+  roadSelfClearMargin: 3,     // m — clearance beyond the carve footprint (D_self = 10 + 5 + 3 = 18)
+  roadCorridorClearance: 20,  // m — min XZ distance between two edges' centerlines outside merge zones
 
   // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
   // Retained for the DEFERRED D-01 spur pass (trunk-only ships first). D-01 / RESEARCH A1.

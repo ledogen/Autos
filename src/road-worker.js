@@ -184,6 +184,94 @@ function _apcEnsure(n) {
     _apcSh = new Float64Array(n); _apcRf = new Float64Array(n); _apcKi = new Int8Array(n); _apcParent = new Int32Array(n)
 }
 
+// ── QUAL-14 self-clearance (route may not graze/cross ITSELF) ───────────────────────────────────
+// The hybrid-A* state is (cell, heading-bin) — it has no memory of its own path, so a route
+// crossing or hugging itself (lollipop loop, pigtail hairpin, legs sharing a carve wall) is free.
+// The fix is ITERATIVE NO-GO REPAIR riding the existing pondDiscs hard-rejection: when the
+// emitted chain violates the clearance contract, drop a small no-go disc on each (clustered)
+// violation midpoint and re-route — the search then cannot thread that spot and the topology
+// re-forms from the cost model (same philosophy as the pond route-around: hard-forbid the
+// artifact site, never inject geometry). Repeat until clean or SELF_CLEAR_MAX_REPAIR, accepting
+// the fewest-violations attempt if never clean (never fail to emit a road). Deterministic pure
+// fn of the edge + opts → cache/window-invariant. A weight-nudge retry ladder (wCurv/maxGrade/
+// hardR variants) was tried first and is whack-a-mole across edges: wander lollipops price out
+// under wCurv, but pigtail hairpins (the router loops >270° to gain elevation in place — the
+// crossing is free and the extra length is cheap grade relief) each want a different rung.
+// Measured (seed 6/7 violating edges): repair converges in 1–13 iterations on all of them; only
+// violating edges pay for retries, and the Worker pre-warm absorbs the cost off-thread.
+const SELF_CLEAR_MAX_REPAIR = 16  // re-route attempts before accepting fewest-violations
+const SELF_CLEAR_DS = 4           // m — chain sampling spacing for the clearance check
+const SELF_CLEAR_DISC_R = 0.6    // × selfClearDist — repair no-go disc radius
+
+// Scan an emitted primitive chain for clearance violations: pairs of samples with arc-separation
+// > gap that lie closer than D in XZ. Samples the descriptors (const-κ arcs AND refit clothoids)
+// at SELF_CLEAR_DS; spatial hash with cell = D compares only the 3×3 neighbourhood, and only
+// against EARLIER samples (each pair counted once) → O(n). Returns { v, mids }: the violation
+// count and the violation midpoints clustered to one per D-sized cell (the repair disc sites) —
+// each cluster is the CENTROID of its cell's midpoints, so the disc site is independent of the
+// pair visit order. Pure.
+function _selfClearScan(prims, D, gap) {
+    if (!prims || prims.length === 0) return { v: 0, mids: [] }
+    const xs = [], zs = [], ss = []
+    let s0 = 0
+    for (const p of prims) {
+        const n = Math.max(1, Math.ceil(p.length / SELF_CLEAR_DS))
+        if (Math.abs(p.kappa1 - p.kappa0) < 1e-9) {
+            const k = p.kappa0
+            for (let j = 1; j <= n; j++) {
+                const t = p.length * j / n
+                if (Math.abs(k) < 1e-12) { xs.push(p.x0 + t * Math.cos(p.theta0)); zs.push(p.z0 + t * Math.sin(p.theta0)) }
+                else { const th2 = p.theta0 + k * t; xs.push(p.x0 + (Math.sin(th2) - Math.sin(p.theta0)) / k); zs.push(p.z0 - (Math.cos(th2) - Math.cos(p.theta0)) / k) }
+                ss.push(s0 + t)
+            }
+        } else {
+            // Clothoid: same 0.5·(cos+cos) trapezoid pose integration as the refit validator.
+            const hstep = p.length / n, dk = (p.kappa1 - p.kappa0) / p.length
+            let x = p.x0, z = p.z0
+            let cP = Math.cos(p.theta0), sP = Math.sin(p.theta0)
+            for (let q = 1; q <= n; q++) {
+                const s = q * hstep
+                const t2 = p.theta0 + p.kappa0 * s + 0.5 * dk * s * s
+                const c = Math.cos(t2), sn = Math.sin(t2)
+                x += 0.5 * (cP + c) * hstep
+                z += 0.5 * (sP + sn) * hstep
+                cP = c; sP = sn
+                xs.push(x); zs.push(z); ss.push(s0 + s)
+            }
+        }
+        s0 += p.length
+    }
+    const inv = 1 / D, D2 = D * D
+    const grid = new Map()
+    let viol = 0
+    const mids = new Map()   // violation midpoints, clustered one per D-sized cell
+    for (let i = 0; i < xs.length; i++) {
+        const cx = Math.floor(xs[i] * inv), cz = Math.floor(zs[i] * inv)
+        for (let ox = -1; ox <= 1; ox++) for (let oz = -1; oz <= 1; oz++) {
+            const bucket = grid.get((cx + ox) * 73856093 ^ (cz + oz) * 19349663)
+            if (!bucket) continue
+            for (const j of bucket) {
+                if (ss[i] - ss[j] <= gap) continue   // same stretch of road (ss is monotone: i > j)
+                const dx = xs[i] - xs[j], dz = zs[i] - zs[j]
+                if (dx * dx + dz * dz < D2) {
+                    viol++
+                    const mx = (xs[i] + xs[j]) * 0.5, mz = (zs[i] + zs[j]) * 0.5
+                    const mk = Math.round(mx * inv) * 73856093 ^ Math.round(mz * inv) * 19349663
+                    const acc = mids.get(mk)
+                    if (acc) { acc[0] += mx; acc[1] += mz; acc[2]++ }
+                    else mids.set(mk, [mx, mz, 1])
+                }
+            }
+        }
+        const hk = cx * 73856093 ^ cz * 19349663
+        const bucket = grid.get(hk)
+        if (bucket) bucket.push(i); else grid.set(hk, [i])
+    }
+    const out = []
+    for (const acc of mids.values()) out.push([acc[0] / acc[2], acc[1] / acc[2]])
+    return { v: viol, mids: out }
+}
+
 // ── Dubins shortest path (BUG-12 terminal connector) ───────────────────────────────────────────
 // Returns dense [x,z] points (excluding the start, including the exact goal) from pose (x0,z0,th0)
 // to pose (x1,z1,th1) using arcs of radius \`rho\` (left/right) and straights — so curvature is
@@ -298,6 +386,32 @@ function dubinsPrimitives(x0, z0, th0, x1, z1, th1, rho) {
  * @returns {Array<{x:number,y:number,z:number}>} dense valid-radius centerline from a to b (y = heightFn)
  */
 function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
+    // ── QUAL-14 self-clearance repair loop (wrapper; the single-attempt search starts below) ──
+    // Contract: on the FINAL emitted chain (post-refit, incl. the Dubins tail), no two centerline
+    // samples with arc-separation > selfClearGap may lie closer than selfClearDist in XZ — a route
+    // may not cross itself or run its own legs closer than the carve footprint. Violations drop
+    // no-go discs on the violation sites and re-route (see the SELF_CLEAR_MAX_REPAIR header).
+    // opts.selfClearDist undefined/0 → wrapper inert (bare router byte-identical —
+    // arc-router.mjs). Primitive emission only: the dense-point legacy path has no game consumers
+    // that carve.
+    if (opts.emitPrimitives && (opts.selfClearDist ?? 0) > 0 && !opts._scPass) {
+        const D = opts.selfClearDist, gap = opts.selfClearGap ?? 80
+        const run = (discs) => arcPrimitiveConnect(ax, az, bx, bz, heightFn,
+            Object.assign({}, opts, { _scPass: true }, discs ? { pondDiscs: discs } : null))
+        const discs = (opts.pondDiscs && opts.pondDiscs.length) ? opts.pondDiscs.slice() : []
+        let best = null, bestV = Infinity
+        for (let it = 0; it < SELF_CLEAR_MAX_REPAIR; it++) {
+            const cand = run(it === 0 ? null : discs)
+            const { v, mids } = _selfClearScan(cand, D, gap)
+            if (v < bestV) { best = cand; bestV = v }
+            if (v === 0) break
+            // Escalating disc radius: if the search keeps re-threading near earlier repair sites
+            // (thrash), later discs blockade a wider area and force a genuinely different topology.
+            const rr = D * SELF_CLEAR_DISC_R * (1 + 0.25 * it)
+            for (const m of mids) discs.push(m[0], m[1], rr)
+        }
+        return best
+    }
     const hardR    = opts.hardR    ?? 8       // m — tightest turn (hardest primitive); ≥ geometric floor
     const gentleR  = opts.gentleR  ?? 30      // m — gentle turn radius (fallback palette member)
     const stepLen  = opts.stepLen  ?? 8       // m — STRAIGHT primitive length (turn primitives are fixed-ANGLE; see below)
