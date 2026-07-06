@@ -417,7 +417,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   roadFillSlope:       1.5–5 H:V (default 3.0, step 0.1 — D-08)
   //   roadShoulderWidth:   1–6 m (default 2.5, step 0.5 — D-05)
   //   designGradeWindow:   10–150 m (default 50, step 5 — D-06)
-  //   roadFilletRadius:    0.5–10 m (default 5, step 0.5 — D-13)
   //   roadCliffSlopeLo/Hi: slope thresholds for cliff shading (D-11)
   const fireSurface = () => { if (typeof callbacks.onRoadSurfaceChange === 'function') callbacks.onRoadSurfaceChange() }
   const surfaceFolder = roadFolder.addFolder('Road Surface')
@@ -436,7 +435,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
   surfaceFolder.add(params, 'roadMaxEmbankmentToe', 3,   20,    0.5 ).name('Max Embankment Toe (m)').onChange(fireSurface)
   surfaceFolder.add(params, 'roadShoulderWidth',    1,    6,    0.5 ).name('Shoulder Width (m)').onChange(fireSurface)
   surfaceFolder.add(params, 'designGradeWindow',   10,  150,   5   ).name('Grade Window (m)').onChange(fireSurface)
-  surfaceFolder.add(params, 'roadFilletRadius',     0.5, 10,    0.5 ).name('Fillet Radius (m)').onChange(fireSurface)
   surfaceFolder.add(params, 'roadCliffSlopeLo',     0,    0.5,  0.02).name('Cliff Slope Lo').onChange(fireSurface)
   surfaceFolder.add(params, 'roadCliffSlopeHi',     0.3,  0.9,  0.02).name('Cliff Slope Hi').onChange(fireSurface)
 
@@ -459,13 +457,13 @@ export function initDebug (params, callbacks = {}, options = {}) {
     fireSurface()
   })
 
-  // QUAL-10 — junction apron look. Both are pad GEOMETRY → full road rebuild via fireSurface so the
-  // AT_GRADE pads re-tessellate. Junction Size pulls the leg mouths back / rounds the corners (bigger
-  // = more generous flare); Apron Lift is a hair of Y over the ribbon (0 relies on the pad's stronger
-  // polygonOffset to win the depth test — raise a touch only if you see z-fight flicker at a pad).
+  // QUAL-10/11 — junction pad look. Pad GEOMETRY params → full road rebuild via fireSurface so the
+  // AT_GRADE pads re-tessellate. Fillet Radius rounds the welded pad corners (QUAL-11); Apron Lift is
+  // a hair of Y over the ribbon (0 relies on the pad's stronger polygonOffset to win the depth test —
+  // raise a touch only if you see z-fight flicker at a pad).
   const junctionFolder = roadFolder.addFolder('Junctions')
   junctionFolder.add(params, 'roadJunctionCutback',     0,   25,  1   ).name('Ribbon Cutback (m)').onChange(fireSurface)
-  junctionFolder.add(params, 'roadJunctionFlare',       1.0, 2.5, 0.1 ).name('Mouth Flare (×road)').onChange(fireSurface)
+  junctionFolder.add(params, 'roadFilletRadius',        0.5, 10,  0.5 ).name('Pad Fillet Radius (m)').onChange(fireSurface)
   junctionFolder.add(params, 'roadJunctionCarveRadius', 0,  25,  1   ).name('Terrain Carve Radius (m)').onChange(fireSurface)
   junctionFolder.add(params, 'roadJunctionApronLift',   0,   0.05, 0.001).name('Apron Lift (m)').onChange(fireSurface)
   // QUAL-13 — sloped pad planes. These reshape the run GRADE profiles (rev-guarded caches), so they
@@ -547,7 +545,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
     roadMaxEmbankmentToe:  'Caps how far (m) the embankment apron spreads past the road. Lower = tighter banks, fewer shards at tight turns.',
     roadShoulderWidth:     'Width (m) of the dirt shoulder flanking each side of the paved surface.',
     designGradeWindow:     "Smoothing window (m) for the road's lengthwise grade profile. Larger = smoother rises and dips.",
-    roadFilletRadius:      'Corner-rounding radius (m) applied to the centerline before carving.',
     roadCliffSlopeLo:      'Lower slope threshold where terrain starts shading as cliff rock.',
     roadCliffSlopeHi:      'Upper slope threshold where terrain is fully cliff rock.',
     roadSkirtDepth:        'How far (m) the road-edge skirt drops below the ribbon to hide seams against terrain.',
@@ -559,8 +556,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
     roadCamberRate:        'Max rate the camber may change along the road (°/m). Lower = smoother banking across seams.',
     roadDirtColor:         'Colour of the dirt shoulder apron.',
     // Junctions
-    roadJunctionCutback:     'How far (m) the ribbon legs pull back from a junction to make room for the apron pad.',
-    roadJunctionFlare:       'How much the leg mouths widen approaching a junction (× road width). Bigger = more generous flare.',
+    roadJunctionCutback:     'How far (m) the ribbon legs pull back from a junction to make room for the pad.',
+    roadFilletRadius:        'Corner rounding (m) of the junction pad — the tangent arc joining adjacent legs\' road edges. Auto-shrinks at tight corners.',
     roadJunctionCarveRadius: 'Radius (m) of terrain flattening around a junction pad.',
     roadJunctionApronLift:   'Tiny Y lift (m) of the junction pad over the ribbon to avoid z-fight flicker.',
     roadJunctionPadMaxGrade:    'Max slope of a junction pad plane (rise/run). 0 = flat pads. Pads tilt with the hillside up to this, shrinking uphill cut walls.',

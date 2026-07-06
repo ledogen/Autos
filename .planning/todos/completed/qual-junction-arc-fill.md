@@ -1,9 +1,10 @@
 ---
 id: QUAL-11
 type: quality
-status: open
+status: completed
 opened: 2026-07-01
 rewritten: 2026-07-06
+closed: 2026-07-06
 severity: minor
 source: user-request
 note: "REWRITTEN 2026-07-06 post-QUAL-13 (sloped pads). Goal in the user's words: pads that blend
@@ -105,3 +106,33 @@ the graded 3D pad. Not the current convex circle-ish blob with straight flared m
   rides that surface.
 - QUAL-16 (`qual-deg2-node-kink.md`): degree-2 node kinks — same fillet machinery applied at
   n=2; sequence AFTER this ticket and reuse its boundary/fill code path.
+
+## RESOLVED (2026-07-06)
+
+Shipped as designed — exact-weld boundary + fillet corners + fallback ladder + subdivided fill.
+
+- **Weld**: `road.runPointAt(runKey, arc)` (new) + endpoint `arc` on `_detectNodeJunctions` legs;
+  `_junctionRingWeld` places each mouth at `cutback + halfWidth/2` on the run's own frame
+  (runPointAt centre + runProfile tangent — the frame sweepRibbon sections use), overlapping the
+  ≤2 m-quantised ribbon trim. Probe (18 seed-6 nodes): worst mouth-edge weld error **0.038 m**.
+- **Corners**: `_cornerJoin` — true tangent-arc fillet (`roadFilletRadius`, shrink-to-fit) where
+  the facing edge lines properly intersect; tangent-matched cubic Hermite where ill-defined;
+  straight across wide back-side gaps (> STRAIGHT_GAP, n ≥ 3). Walk order = CCW by MOUTH bearing;
+  corner sides are walk-order ±1 (replaces faceSide cross-product, which degenerates for the
+  anti-parallel legs of a through road).
+- **Ladder**: explicit XZ self-intersection check → fillet ×0.5 retry → `_junctionRingLegacy`
+  (QUAL-10 circle pad, flare hardcoded 1.6). Seed-6 sweep: 17/18 weld, 1 legacy, 0 none.
+- **Fill**: `_buildPadGeometry` — earClip + forced up-winding + red-green midpoint subdivision
+  (per-EDGE split decisions → crack-free) to ≤3 m edges; every vertex on `sampleRoadTopY`.
+- **Markings feather (ex-QUAL-10 scope)**: aMark.w is now a 0–1 stripe-alpha feather in the road
+  shader; sweepRibbon ramps it 0→1 over 8 m past each junction cutback. Pads stay 0.
+- **Housekeeping**: `roadJunctionFlare` param + slider REMOVED; `roadFilletRadius` (was dead)
+  repurposed as the pad fillet radius, slider moved to Roads→Junctions; route bundle regenerated
+  (sig-only change, 74 edges byte-identical, parity gate green).
+- **Verified**: npm test 30/31 (red = pre-existing GRAPH-REACHABILITY, QUAL-14/15 item);
+  screenshot sweep (-884,-487) T, (122,-738) 4-way near-parallel, (-98,172) 4-way + stream,
+  (41,619) curved Y — welds read seamless, no spikes/holes.
+- **Known residual (NOT this ticket)**: near-parallel duplicate runs (e.g. east of (122,-738))
+  still tear terrain along their overlap — FEAT-10 parallel-dedup residual.
+- **Deviation from ticket text**: interior Steiner points via midpoint subdivision instead of a
+  clipped grid (same ~2–3 m density, crack-free by construction, no point-in-polygon test).

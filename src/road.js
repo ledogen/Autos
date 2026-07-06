@@ -2982,14 +2982,16 @@ export class RoadSystem {
         const halfWidth = this._params.roadHalfWidth ?? 5
         const EPS2 = Math.pow(Math.max(2, halfWidth * 0.75), 2)
 
-        // Cluster every streamed run's two ENDPOINTS; each carries an OUTWARD unit dir + endpoint arc.
-        const clusters = []   // { x, z, ys:[], legs:[{runKey,dir}], arcs:[{runKey,arc}] }
+        // Cluster every streamed run's two ENDPOINTS; each leg carries an OUTWARD unit dir + its
+        // endpoint arc (QUAL-11: buildJunctionFootprint welds the pad mouth to the ribbon's real
+        // end cross-section at leg.arc ± cutback, so legs must know WHICH endpoint the node owns).
+        const clusters = []   // { x, z, ys:[], legs:[{runKey,dir,arc}] }
         const addEnd = (x, z, y, dir, runKey, arc) => {
             for (const c of clusters) {
                 const dx = c.x - x, dz = c.z - z
-                if (dx * dx + dz * dz < EPS2) { c.ys.push(y); c.legs.push({ runKey, dir }); c.arcs.push({ runKey, arc }); return }
+                if (dx * dx + dz * dz < EPS2) { c.ys.push(y); c.legs.push({ runKey, dir, arc }); return }
             }
-            clusters.push({ x, z, ys: [y], legs: [{ runKey, dir }], arcs: [{ runKey, arc }] })
+            clusters.push({ x, z, ys: [y], legs: [{ runKey, dir, arc }] })
         }
         for (const [runKey, e] of this._network) {
             const pts = e.points
@@ -3006,16 +3008,31 @@ export class RoadSystem {
 
         const nodes = new Map()
         const carveArcs = new Map()
+        // QUAL-16: a 2-leg cluster is a road continuing through the node — but each graph edge is
+        // routed INDEPENDENTLY, so nothing makes the two arrival tangents anti-parallel. Above
+        // roadJunctionKinkDeg the centerline heading KINK reads as a corner (wedge notch + abrupt
+        // camber slew), so admit those as mini-junctions: same cutback + pad machinery, n = 2.
+        // Straight pass-throughs stay untouched ribbons (no pad spam along every road); extreme
+        // kinks (> 75°, degenerate strands) are left alone — a pad there would be a hairpin crescent.
+        const kinkMin = (this._params.roadJunctionKinkDeg ?? 0) * Math.PI / 180
+        const KINK_MAX = 75 * Math.PI / 180
         for (const c of clusters) {
-            if (c.legs.length < 3) continue   // only real junctions; a 2-leg cluster is a road continuing
+            if (c.legs.length < 2) continue
+            if (c.legs.length === 2) {
+                if (kinkMin <= 0) continue   // slider 0 = deg-2 pads off
+                const [A, B] = c.legs
+                const dot = Math.max(-1, Math.min(1, A.dir.x * B.dir.x + A.dir.z * B.dir.z))
+                const kink = Math.PI - Math.acos(dot)   // away-heading kink: 0 = perfectly continuous
+                if (kink <= kinkMin || kink > KINK_MAX) continue
+            }
             // QUAL-13: sloped pad — resolve the cluster's graph node id via any leg's netEntry
             // (endpoint arc 0 → cellA, else cellB) and ride its pad PLANE. nodeY/pos.y become the
             // plane at the cluster centre so the pad-mesh fallback + carve agree with the blended
             // approaches instead of the flat endpoint mean. plane = null keeps the flat behavior
-            // (rows mode / degenerate strands).
+            // (deg-2 kink nodes / degenerate strands).
             let plane = null
             if (this._proto?.graph) {
-                for (const a of c.arcs) {
+                for (const a of c.legs) {
                     const e = this._network.get(a.runKey)
                     if (!e || !e.cellA || !e.cellB) continue
                     const id = a.arc < 1e-6 ? e.cellA : e.cellB
@@ -3029,7 +3046,7 @@ export class RoadSystem {
             nodes.set(`${Math.round(c.x)},${Math.round(c.z)}`, {
                 pos: new THREE.Vector3(c.x, nodeY, c.z), nodeY, plane, legs, kind: 'AT_GRADE', simpleMerge: legs.length > 4,
             })
-            for (const a of c.arcs) {
+            for (const a of c.legs) {
                 let arr = carveArcs.get(a.runKey); if (!arr) { arr = []; carveArcs.set(a.runKey, arr) }
                 arr.push({ arc: a.arc })   // radius read fresh in _junctionCarve (live slider)
             }
@@ -3038,6 +3055,32 @@ export class RoadSystem {
         this._junctionCarveArcs = carveArcs
         this._nodeJunctionsRev = this._networkRev
         return nodes
+    }
+
+    // ── QUAL-11: run centerline XZ at a run-global arc ─────────────────────────────────────────
+    /**
+     * World XZ of a run's centerline at run-global arc `arcS` — the same cumulative-XZ polyline
+     * metric the ribbon trim (_buildRoadTile) and runProfile use. buildJunctionFootprint samples
+     * this to place each pad mouth ON the run so the mouth cross-section coincides with the swept
+     * ribbon (exact weld — no flare needed to hide the seam). Pure fn of the streamed network
+     * (window-invariant, D-16). Returns null for an unknown/degenerate run; arcS is clamped.
+     *
+     * @param {string} runKey
+     * @param {number} arcS — run-global arc (m)
+     * @returns {{x:number,z:number}|null}
+     */
+    runPointAt(runKey, arcS) {
+        const e = this._network.get(runKey)
+        const pts = e?.points, cum = e?.polyCum
+        if (!pts || pts.length < 2 || !cum) return null
+        const n = pts.length
+        const s = Math.max(0, Math.min(cum[n - 1], arcS))
+        let lo = 0, hi = n - 1
+        while (lo + 1 < hi) { const mid = (lo + hi) >> 1; if (cum[mid] <= s) lo = mid; else hi = mid }
+        const span = cum[lo + 1] - cum[lo] || 1
+        const t = (s - cum[lo]) / span
+        const a = pts[lo], b = pts[lo + 1]
+        return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t }
     }
 
     // ── QUAL-10: asphalt-TOP surface sampler (junction apron) ─────────────────────────────────

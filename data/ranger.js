@@ -399,21 +399,20 @@ export const RANGER_PARAMS = {
   // overpass Step 3; NEAR_PARALLEL = glancing graze). Set false to hide the pads.
   roadJunctionFootprints: true,
 
-  // QUAL-10 "cut-back-and-fill" junctions (buildJunctionFootprint + _detectNodeJunctions): the swept
-  // ribbons are TRIMMED back from each graph node and a radiused GRADED pad drops into the cleared room,
-  // riding the real asphalt-top surface (road.sampleRoadTopY, FEAT-19 grade line) and drawing with a
-  // stronger polygonOffset (road-mesh.js _getJunctionMaterial) so it overlaps the trimmed ribbon ends
-  // seamlessly. roadJunctionApronLift is an optional hair of Y over the ribbon (0 = coplanar; raise only
-  // if a pad z-fights).
+  // QUAL-10/11 "cut-back-and-weld" junctions (buildJunctionFootprint + _detectNodeJunctions): the swept
+  // ribbons are TRIMMED back from each graph node and a GRADED pad drops into the cleared room. QUAL-11:
+  // the pad boundary is welded to each leg's real ribbon end cross-section and adjacent legs join with
+  // tangent-arc fillets (roadFilletRadius) — no flare hiding the seam any more (roadJunctionFlare
+  // removed; the QUAL-10 circle pad survives only as the self-intersection fallback). The fill rides the
+  // real asphalt-top surface (road.sampleRoadTopY, FEAT-19 grade line) and draws with a stronger
+  // polygonOffset (road-mesh.js _getJunctionMaterial) so it overlaps the trimmed ribbon ends seamlessly.
+  // roadJunctionApronLift is an optional hair of Y over the ribbon (0 = coplanar; raise only if a pad
+  // z-fights).
   roadJunctionApronLift: 0.0,
   // roadJunctionCutback: how many metres the swept ribbons are cut back from each junction node so the
-  // radiused pad has clean room (the pad mouths meet the trimmed ribbon ends). The single "intersection
-  // size" knob. Bigger = more open intersection; too big eats short links node↔node.
+  // pad has clean room (the pad mouths overlap the trimmed ribbon ends by halfWidth/2). The single
+  // "intersection size" knob. Bigger = more open intersection; too big eats short links node↔node.
   roadJunctionCutback: 10,
-  // roadJunctionFlare: the pad mouth half-width as a multiple of the road half-width (1 = same as the
-  // ribbon). >1 FLARES the mouth wider than the road so the pad generously covers the trimmed ribbon end
-  // even where a curved approach offsets it laterally — roads fan into the junction, hiding the seam.
-  roadJunctionFlare: 1.6,
   // roadJunctionCarveRadius: near a junction the terrain carve holds the road grade FLAT out to
   // (carve core + this radius) and eases crown/camber to flat, so terrain is dug/filled to the plaza
   // instead of clipping up through the pad. Keep ≈ the pad extent (≈ cutback) to avoid a bare-dirt ring
@@ -700,10 +699,10 @@ export const RANGER_PARAMS = {
   // joins). m. 0 = off (endpoint tangent = local last-segment direction, the un-sealed default).
   roadJoinWeldLength: 6,
 
-  // roadFilletRadius: default corner fillet radius for junction footprints (D-13 / A5).
-  // Used as a slider default; actual per-junction R_f is computed from halfWidth*tan(theta/2).
-  // Default 5 = roadHalfWidth default, produces quarter-circle fillets at 90° crossings.
-  roadFilletRadius: 5,          // m — junction corner fillet radius default (D-13 / A5)
+  // roadFilletRadius: junction pad corner fillet radius (QUAL-11). The tangent arc joining two
+  // adjacent legs' facing ribbon-edge lines — how rounded the pad corners are. Shrunk automatically
+  // where a corner is too tight to fit (and ×0.5 once more if the boundary self-intersects).
+  roadFilletRadius: 5,          // m — junction pad corner fillet radius (QUAL-11)
 
   // ── Phase 9 Plan 05 — Road Quality Markings (D-02/D-03) ───────────────────
   // roadQualityStretch: arc-length per quality tier (metres). Each stretch gets a deterministic

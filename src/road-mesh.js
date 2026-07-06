@@ -63,6 +63,21 @@ const MAX_CAMBER_RAD = 6 * (Math.PI / 180)
 // Build cap: one road tile per frame alongside terrain's MAX_BUILDS_PER_FRAME.
 const MAX_ROAD_BUILDS_PER_FRAME = 1
 
+// ── Junction pad constants (QUAL-10/11) ──────────────────────────────────────
+// STRAIGHT_GAP: angular gap (rad, ~155°) between consecutive legs beyond which the corner is a
+// through road's back side — connect straight (n ≥ 3), no phantom bulge behind the through road.
+const STRAIGHT_GAP = 2.7
+// PAD_FILL_MAX_EDGE: red-green subdivision target (m) for the non-planar pad fill — interior
+// verts every ~3 m so the lifted surface follows the sloped pad plane + crown (QUAL-13 field).
+const PAD_FILL_MAX_EDGE = 3.0
+// LEGACY_PAD_FLARE: mouth flare (× halfWidth) for the QUAL-10 circle-pad fallback ring. The weld
+// path needs no flare (the mouth IS the ribbon cross-section); this only serves the ladder's
+// last rung, so it is a constant, not a param (roadJunctionFlare removed with QUAL-11).
+const LEGACY_PAD_FLARE = 1.6
+// MARK_JUNCTION_FEATHER: metres over which lane markings fade back in past a junction cutback —
+// real intersections lose the centerline gradually instead of hard-stopping (QUAL-11/QUAL-10).
+const MARK_JUNCTION_FEATHER = 8
+
 // ── Road quality lane-marking thresholds ─────────────────────────────────────
 // Markings are evaluated PER-FRAGMENT in the road shader (BUG-28), not painted as
 // vertex colours — vertex spacing (~1.1 m) is far wider than the stripe (0.3 m), so
@@ -193,7 +208,11 @@ export class RoadMeshSystem {
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <color_fragment>',
                 `#include <color_fragment>
-                if (vMark.w > 0.5) {
+                if (vMark.w > 0.003) {
+                    // vMark.w is a 0..1 FEATHER, not a binary gate (QUAL-11): 1 on open road,
+                    // ramping to 0 over MARK_JUNCTION_FEATHER m into a junction mouth (and 0 on
+                    // skirts/pads) — markings fade into the junction instead of hard-stopping.
+                    float mFeather = clamp(vMark.w, 0.0, 1.0);
                     float uLat = vMark.x;
                     float arcS = vMark.y;
                     float q    = vMark.z;
@@ -207,8 +226,8 @@ export class RoadMeshSystem {
                     float edgeB   = q >= 0.66 ? 0.9 : 0.65;
                     float edgeGate = q >= 0.66 ? 1.0 : (q >= 0.33 ? rsDash(arcS, RS_E_PERIOD, RS_E_ON) : 0.0);
                     float centerDash = rsDash(arcS, RS_C_PERIOD, RS_C_ON);
-                    float centerAlpha = centerSpatial * centerDash;
-                    float edgeAlpha   = edgeSpatial   * edgeGate;
+                    float centerAlpha = centerSpatial * centerDash * mFeather;
+                    float edgeAlpha   = edgeSpatial   * edgeGate   * mFeather;
                     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(centerB), centerAlpha);
                     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(edgeB),   edgeAlpha);
                 }`
@@ -331,6 +350,23 @@ export class RoadMeshSystem {
         }
         const totXZ = cumXZ[N_LONG - 1] || 1
 
+        // QUAL-11: markings FEATHER into junction mouths. The trim (_buildRoadTile) already removed
+        // sections within `cutback` of a junction endpoint arc; surviving sections ramp markEnable
+        // (vMark.w, now a 0..1 stripe-alpha multiplier) from 0 at the cut to 1 over
+        // MARK_JUNCTION_FEATHER m, so the centerline fades out approaching the pad instead of
+        // hard-stopping at the seam.
+        const jArcs = this._road._junctionCarveArcs ? this._road._junctionCarveArcs.get(runKey) : null
+        const jCutback = jArcs && jArcs.length && this._road.junctionCutbackDist ? this._road.junctionCutbackDist() : 0
+        const markFeather = (aS) => {
+            if (!jArcs || jArcs.length === 0) return 1
+            let f = 1
+            for (const j of jArcs) {
+                const d = (Math.abs(aS - j.arc) - jCutback) / MARK_JUNCTION_FEATHER
+                if (d < f) f = d
+            }
+            return f < 0 ? 0 : (f > 1 ? 1 : f)
+        }
+
         for (let i = 0; i < N_LONG; i++) {
             // Arc-length-correct position at this section.
             _scratchPt.copy(points[i])
@@ -417,13 +453,14 @@ export class RoadMeshSystem {
                 colors[idx + 1] = GC
                 colors[idx + 2] = BC
 
-                // ── Marking coord (BUG-28): vec4(uLat, arcS, q, markEnable=1) ───
+                // ── Marking coord (BUG-28): vec4(uLat, arcS, q, markEnable) ───
                 // Top-surface verts are markable; the shader masks the stripe spatially.
+                // markEnable = junction feather (QUAL-11): 1 on open road, →0 at a pad mouth.
                 const midx = (i * vertsPerSection + j) * 4
                 marks[midx    ] = uLat
                 marks[midx + 1] = arcS
                 marks[midx + 2] = q
-                marks[midx + 3] = 1
+                marks[midx + 3] = markFeather(arcS)
 
                 // Capture edge vert positions for skirt generation below.
                 if (j === 0)          { leftEdgeVx  = vx; leftEdgeVy  = vy; leftEdgeVz  = vz }
@@ -506,7 +543,7 @@ export class RoadMeshSystem {
                 marks[bndMidx    ] = uLat
                 marks[bndMidx + 1] = bndArcS
                 marks[bndMidx + 2] = bndQ
-                marks[bndMidx + 3] = 1
+                marks[bndMidx + 3] = markFeather(bndArcS)   // QUAL-11: junction feather
             }
             // Re-snap the skirt verts at this boundary section too.
             // Left skirt: j=0 edge
@@ -945,32 +982,42 @@ export class RoadMeshSystem {
     }
 
     /**
-     * Build the junction footprint geometry for a single junction node (QUAL-10 "cut-back-and-fill").
+     * Build the junction pad geometry for a single junction node (QUAL-11 pad v2).
      *
-     * The ribbons are cut back `cutback` from the node (RoadMeshSystem._buildRoadTile); this pad fills
-     * that cleared disc. Each leg's mouth sits a hair past the cut (full road width); adjacent mouths are
-     * joined by a bounded node-centred corner arc (straight across a through road's back → no phantom
-     * bulge). The boundary is then bearing-sorted about the node + deduped into a star polygon and fanned
-     * from the NODE (guaranteed valid → no flipped-sliver "spikes"), every vertex riding the real
-     * asphalt-top surface (this._road.sampleRoadTopY — FEAT-19 grade line; the junction carve eases
-     * crown/camber to flat here). Draws with _getJunctionMaterial (stronger polygonOffset) so the coplanar
-     * overlap with the trimmed ribbon ends is seamless — no lift, no lip, no z-fight. Returns null if
-     * degenerate.
+     * The ribbons are cut back `cutback` from the node (RoadMeshSystem._buildRoadTile); this pad
+     * fills the cleared area. QUAL-11: the boundary is built from the legs' REAL trimmed-end
+     * cross-sections — each mouth is the run's own frame (runPointAt centre + runProfile tangent,
+     * the SAME frame sweepRibbon sections use) a hair past the ribbon cut, so the pad edge
+     * COINCIDES with the swept ribbon's end cross-section (exact weld — no flare hiding a seam).
+     * Adjacent legs' facing ribbon-edge lines are joined by a tangent ARC (true fillet — concave
+     * between legs, the pad hugs the roads); ill-conditioned corners get a tangent-matched cubic
+     * Hermite; a through road's wide back side connects straight (no phantom bulge).
      *
-     * @param {object} node — junction node record ({pos,nodeY,legs,kind}) from _detectNodeJunctions
+     * Simplicity ladder (the first QUAL-10 exact-weld attempt self-intersected 19/24 boundaries —
+     * so guarantee constructively, then VERIFY): the assembled ring gets an explicit XZ
+     * self-intersection check; on failure the fillets shrink ×0.5 and retry once; on second
+     * failure the node falls back to the QUAL-10 circle pad (_junctionRingLegacy) — failure is
+     * graceful, never a spike, never a hole.
+     *
+     * Fill is NON-PLANAR: earClip triangulates the ring in XZ, interior detail comes from
+     * red-green midpoint subdivision (_buildPadGeometry), and every vertex rides
+     * this._road.sampleRoadTopY — the QUAL-13 sloped-pad/blended height field IS the pad surface
+     * (mesh == collision by construction; the boundary/fill here is GEOMETRY only).
+     *
+     * Handles n = 2 legs too (QUAL-16 deg-2 kink mini-junctions): the generic corner walk yields
+     * mouth → inside fillet → mouth → outside Hermite/fillet with no special casing.
+     *
+     * @param {object} node — junction node record ({pos,nodeY,plane,legs,kind}) from _detectNodeJunctions
      * @param {object} params — RANGER_PARAMS
      * @returns {THREE.BufferGeometry|null}
      *
-     * Deterministic (D-16): pure function of node + params.
+     * Deterministic (D-16): pure function of node + params + streamed network.
      */
     buildJunctionFootprint(node, params) {
-        const halfWidth = params.roadHalfWidth ?? 5
-        const nx = node.pos.x
-        const nz = node.pos.z
-        const nodeY = node.nodeY
         if (!node.legs || node.legs.length < 2) return null
 
         const apronLift = params.roadJunctionApronLift ?? 0.0
+        const nodeY = node.nodeY
         // QUAL-13: beyond the road footprint the fallback rides the node's sloped pad PLANE (when
         // present) instead of the flat nodeY, so an apron corner on the uphill side doesn't sink
         // below the tilted plaza the approaches blend onto.
@@ -982,6 +1029,198 @@ export class RoadMeshSystem {
             const y = this._road.sampleRoadTopY ? this._road.sampleRoadTopY(x, z) : null
             return (y != null && isFinite(y) ? y : fallbackY(x, z)) + apronLift
         }
+
+        // ── Boundary ladder: exact weld → shrunk fillets → legacy circle pad ──
+        let ring = this._junctionRingWeld(node, params, 1.0)
+        if (ring && this._ringSelfIntersects(ring)) ring = null
+        if (!ring) {
+            ring = this._junctionRingWeld(node, params, 0.5)
+            if (ring && this._ringSelfIntersects(ring)) ring = null
+        }
+        if (!ring) ring = this._junctionRingLegacy(node, params)
+        if (!ring || ring.length < 3) return null
+
+        return this._buildPadGeometry(ring, sampleY)
+    }
+
+    /**
+     * QUAL-11 exact-weld pad boundary. Each leg's mouth is the run's own cross-section chord at
+     * cutback + halfWidth/2 from the node (overlapping the trimmed ribbon end by halfWidth/2, so
+     * the ribbon's ragged ~2 m trim quantisation is always covered). Corners between consecutive
+     * legs — sorted CCW by MOUTH bearing about the node (leg-dir bearing misorders side-by-side
+     * near-parallel mouths) — connect A's departing ribbon-edge line to B's arriving edge line
+     * via _cornerJoin. edgePt side +1/−1 is the arriving/departing side of each leg in walk
+     * order, so a corner always spans the angular sector between consecutive mouths (no faceSide
+     * cross-product, which degenerates for the anti-parallel legs of a through road). A wide
+     * back-side gap (> STRAIGHT_GAP, n ≥ 3) connects straight — no phantom bulge behind a
+     * through road; at n = 2 the outside of the bend takes the corner join instead.
+     *
+     * Returns the XZ boundary ring (open, deduped) or null: crossing-classifier legs (no
+     * endpoint arc to weld to), degenerate frames, or a one-sided "pitchfork" cluster
+     * (QUAL-10 guard kept as-is: the node would sit on the pad edge → crescent spike).
+     * Pure fn of node + params + streamed network (window-invariant, D-16).
+     */
+    _junctionRingWeld(node, params, filletScale) {
+        const road = this._road
+        if (!road.runPointAt || !road.runProfile || !road._network) return null
+        const halfWidth = params.roadHalfWidth ?? 5
+        const nx = node.pos.x, nz = node.pos.z
+        const cutback = road.junctionCutbackDist ? road.junctionCutbackDist() : halfWidth * 2
+        const T = cutback + halfWidth * 0.5
+
+        const legs = []
+        for (const leg of node.legs) {
+            if (leg.arc === undefined || !leg.runKey) return null
+            const e = road._network.get(leg.runKey)
+            const cum = e?.polyCum
+            const len = cum ? cum[cum.length - 1] : 0
+            if (!(len > 1e-3)) return null
+            const s = leg.arc < 1e-6 ? 1 : -1                       // +arc direction away from node?
+            const mouthArc = leg.arc + s * Math.min(T, len * 0.45)  // short node↔node run: pull the mouth in
+            const c = road.runPointAt(leg.runKey, mouthArc)
+            if (!c) return null
+            const prof = road.runProfile(mouthArc, leg.runKey)
+            let dx = prof.tx * s, dz = prof.tz * s                  // outward unit dir (away from node)
+            const dl = Math.hypot(dx, dz)
+            if (dl < 1e-6) return null
+            dx /= dl; dz /= dl
+            legs.push({ cx: c.x, cz: c.z, dx, dz, bear: Math.atan2(c.x - nx, c.z - nz) })
+        }
+        legs.sort((a, b) => a.bear - b.bear)
+        const n = legs.length
+        if (n >= 3) {
+            let sx = 0, sz = 0
+            for (const l of legs) { sx += l.dx; sz += l.dz }
+            if (Math.hypot(sx, sz) / n > 0.55) return null   // pitchfork guard (QUAL-10)
+        }
+
+        const edgePt = (l, side) => ({ x: l.cx + (-l.dz) * side * halfWidth, z: l.cz + (l.dx) * side * halfWidth })
+        const filletR = (params.roadFilletRadius ?? 5) * filletScale
+        const ring = []
+        for (let i = 0; i < n; i++) {
+            const A = legs[i], B = legs[(i + 1) % n]
+            // Mouth chord of A: arriving-corner edge (+1) → departing-corner edge (−1). This IS
+            // the ribbon end cross-section in XZ — the exact weld.
+            ring.push(edgePt(A, 1))
+            const eA = edgePt(A, -1)
+            ring.push(eA)
+            const eB = edgePt(B, 1)
+            let gap = B.bear - A.bear
+            while (gap <= 0) gap += 2 * Math.PI
+            if (gap > STRAIGHT_GAP && n >= 3) continue   // straight back side; eB is pushed next iteration
+            for (const p of this._cornerJoin(eA, A, eB, B, filletR, T)) ring.push(p)
+        }
+        // Drop consecutive duplicates (incl. the wrap seam) — a shrunk fillet can land on a mouth corner.
+        const out = []
+        for (const p of ring) {
+            const q = out[out.length - 1]
+            if (!q || Math.hypot(p.x - q.x, p.z - q.z) > 0.05) out.push(p)
+        }
+        while (out.length >= 2 && Math.hypot(out[0].x - out[out.length - 1].x, out[0].z - out[out.length - 1].z) <= 0.05) out.pop()
+        return out.length >= 3 ? out : null
+    }
+
+    /**
+     * Corner points joining leg A's departing ribbon-edge line to leg B's arriving edge line
+     * (QUAL-11). eA/eB are the mouth edge endpoints; returned points lie BETWEEN them (both
+     * exclusive). A true tangent-arc fillet where the two edge lines properly intersect on the
+     * node side (radius shrunk to fit short mouth edges); otherwise a tangent-matched cubic
+     * Hermite (near-parallel non-collinear edges, divergent lines, or an intersection so far out
+     * the fillet would excurse — e.g. the outside of a deg-2 kink bend).
+     */
+    _cornerJoin(eA, A, eB, B, filletR, T) {
+        // Edge lines walked toward the node: LA(t) = eA − t·dA, LB(u) = eB − u·dB (t, u > 0).
+        // Intersection C solves t·dA − u·dB = eA − eB.
+        const qx = eA.x - eB.x, qz = eA.z - eB.z
+        const det = B.dx * A.dz - A.dx * B.dz
+        if (Math.abs(det) > 1e-4) {
+            const t = (B.dx * qz - B.dz * qx) / det
+            const u = (A.dx * qz - A.dz * qx) / det
+            const tMax = T * 3.5
+            if (t > 0.5 && u > 0.5 && t < tMax && u < tMax) {
+                const C = { x: eA.x - A.dx * t, z: eA.z - A.dz * t }
+                const cosPhi = Math.max(-1, Math.min(1, A.dx * B.dx + A.dz * B.dz))
+                const phi = Math.acos(cosPhi)   // angle between rays C→eA (+dA) and C→eB (+dB)
+                if (phi > 0.06 && phi < Math.PI - 0.06) {
+                    const tanHalf = Math.tan(phi / 2)
+                    const r = Math.min(filletR, Math.min(t, u) * tanHalf * 0.95)
+                    if (r < 0.15) return [C]   // too tight to round — sharp apex
+                    const L = r / tanHalf
+                    const TA = { x: C.x + A.dx * L, z: C.z + A.dz * L }
+                    const TB = { x: C.x + B.dx * L, z: C.z + B.dz * L }
+                    let bx = A.dx + B.dx, bz = A.dz + B.dz
+                    const bl = Math.hypot(bx, bz) || 1
+                    const h = r / Math.sin(phi / 2)
+                    const O = { x: C.x + (bx / bl) * h, z: C.z + (bz / bl) * h }
+                    const a0 = Math.atan2(TA.x - O.x, TA.z - O.z)
+                    let dAng = Math.atan2(TB.x - O.x, TB.z - O.z) - a0
+                    while (dAng > Math.PI) dAng -= 2 * Math.PI
+                    while (dAng < -Math.PI) dAng += 2 * Math.PI
+                    const steps = Math.max(2, Math.min(16, Math.ceil(Math.abs(dAng) * r / 1.2)))
+                    const arc = [TA]
+                    for (let k = 1; k < steps; k++) {
+                        const ang = a0 + dAng * (k / steps)
+                        arc.push({ x: O.x + Math.sin(ang) * r, z: O.z + Math.cos(ang) * r })
+                    }
+                    arc.push(TB)
+                    return arc
+                }
+            }
+        }
+        // Cubic Hermite matching both endpoints + edge tangents (a single tangent arc is
+        // ill-defined here). Boundary travel: leave eA inward (−dA), arrive at eB outward (+dB).
+        const dist = Math.hypot(eB.x - eA.x, eB.z - eA.z)
+        if (dist < 0.05) return []
+        const m0x = -A.dx * dist, m0z = -A.dz * dist
+        const m1x = B.dx * dist,  m1z = B.dz * dist
+        const K = Math.max(4, Math.min(16, Math.ceil(dist / 1.5)))
+        const pts = []
+        for (let k = 1; k < K; k++) {
+            const tt = k / K, t2 = tt * tt, t3 = t2 * tt
+            const h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + tt, h01 = -2 * t3 + 3 * t2, h11 = t3 - t2
+            pts.push({
+                x: h00 * eA.x + h10 * m0x + h01 * eB.x + h11 * m1x,
+                z: h00 * eA.z + h10 * m0z + h01 * eB.z + h11 * m1z,
+            })
+        }
+        return pts
+    }
+
+    /**
+     * XZ self-intersection test for an assembled pad boundary (QUAL-11 simplicity check —
+     * guarantee constructively, then VERIFY; a failing ring falls down the fallback ladder).
+     * Proper-crossing test over all non-adjacent segment pairs, O(m²) with m ≲ 80 — once per
+     * node per build.
+     */
+    _ringSelfIntersects(ring) {
+        const m = ring.length
+        const cross = (ax, az, bx, bz) => ax * bz - az * bx
+        for (let i = 0; i < m; i++) {
+            const a = ring[i], b = ring[(i + 1) % m]
+            for (let j = i + 2; j < m; j++) {
+                if (i === 0 && j === m - 1) continue   // wrap-adjacent pair
+                const c = ring[j], d = ring[(j + 1) % m]
+                const d1 = cross(b.x - a.x, b.z - a.z, c.x - a.x, c.z - a.z)
+                const d2 = cross(b.x - a.x, b.z - a.z, d.x - a.x, d.z - a.z)
+                const d3 = cross(d.x - c.x, d.z - c.z, a.x - c.x, a.z - c.z)
+                const d4 = cross(d.x - c.x, d.z - c.z, b.x - c.x, b.z - c.z)
+                if (((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0))) return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * QUAL-10 circle-pad boundary — the fallback ladder's last rung, and the only path for
+     * crossing-classifier nodes (run-interior legs carry no endpoint arc to weld to). Straight
+     * node+dir·T mouths flared 1.6× (adaptively capped so tight corners can't collide), joined
+     * by node-centred corner arcs — topologically simple by construction, at the cost of the
+     * flare-hidden seam QUAL-11 removes on the weld path. Original inline version: 9337959.
+     */
+    _junctionRingLegacy(node, params) {
+        const halfWidth = params.roadHalfWidth ?? 5
+        const nx = node.pos.x
+        const nz = node.pos.z
 
         // Merge near-parallel legs: the graph sometimes routes two runs out of a node in almost the same
         // direction — their overlapping mouths would self-intersect the boundary (→ flipped-sliver spikes).
@@ -1007,7 +1246,7 @@ export class RoadMeshSystem {
         // the seam is hidden, riding the carved-flat plaza (_junctionCarve).
         const cutback = this._road.junctionCutbackDist ? this._road.junctionCutbackDist() : halfWidth * 2
         const T = cutback + halfWidth * 0.5
-        // Adaptive flare: aim for roadJunctionFlare× the road half-width, but CAP it so adjacent mouths
+        // Adaptive flare: aim for LEGACY_PAD_FLARE× the road half-width, but CAP it so adjacent mouths
         // (θ apart, T out) never collide — a wide mouth at a tight corner would self-intersect the
         // boundary (spike). So open junctions get the full flare (covers the curved-end seam); tight ones
         // narrow automatically.
@@ -1018,7 +1257,7 @@ export class RoadMeshSystem {
             minHalf = Math.min(minHalf, Math.acos(dot) * 0.5)
         }
         const flareCap = Math.max(halfWidth, T * Math.sin(minHalf) * 0.9)
-        const flareHW = Math.min(halfWidth * (params.roadJunctionFlare ?? 1.6), flareCap)
+        const flareHW = Math.min(halfWidth * LEGACY_PAD_FLARE, flareCap)
         const legEdge = (leg, side) => {
             const d = leg.dir
             return { x: nx + d.x * T + (-d.z) * side * flareHW, z: nz + d.z * T + (d.x) * side * flareHW }
@@ -1032,7 +1271,6 @@ export class RoadMeshSystem {
         // (bounded → no spike, unlike an edge-line intersection which flies to infinity at shallow
         // angles). If the angular gap is wide (> STRAIGHT_GAP, i.e. a through road's back side with no
         // road between the two legs) connect STRAIGHT so there's no phantom bulge behind the through road.
-        const STRAIGHT_GAP = 2.7   // rad (~155°): beyond this the two legs are ~antiparallel (through road)
         const ARC_SAMPLES = 5
         const poly = []
         for (let i = 0; i < n; i++) {
@@ -1075,39 +1313,97 @@ export class RoadMeshSystem {
             if (!q || Math.hypot(p.x - q.x, p.z - q.z) > 0.05) ring0.push(p)
         }
         while (ring0.length >= 2 && Math.hypot(ring0[0].x - ring0[ring0.length - 1].x, ring0[0].z - ring0[ring0.length - 1].z) <= 0.05) ring0.pop()
-        if (ring0.length < 3) return null
+        return ring0.length >= 3 ? ring0 : null
+    }
 
-        // ── Triangulate the (bearing-sorted → simple, non-self-intersecting) boundary with ear clipping.
-        //    Robust for any simple polygon — no star-shape / interior-node assumption, so no flipped
-        //    slivers ("spikes") even for lopsided or near-overlapping-leg junctions. The surface is
-        //    flat-ish here (the junction carve eases crown/camber to 0), so the boundary polygon alone
-        //    (no interior fan verts) tessellates smoothly enough. Winding is forced UP below. ───────────
-        const B = ring0.length
-        const positions = new Float32Array(B * 3)
-        const colors    = new Float32Array(B * 3)
-        for (let b = 0; b < B; b++) {
-            positions[b * 3    ] = ring0[b].x
-            positions[b * 3 + 1] = sampleY(ring0[b].x, ring0[b].z)
-            positions[b * 3 + 2] = ring0[b].z
-            colors[b * 3] = 0.15; colors[b * 3 + 1] = 0.15; colors[b * 3 + 2] = 0.17
-        }
-        const tri = earClip(ring0)
-        if (!tri || tri.length < 3) return null
+    /**
+     * Triangulate + lift a pad boundary ring (QUAL-11 non-planar fill). Topology is solved in
+     * XZ: earClip the (verified-simple) ring, force up-facing winding, then red-green midpoint
+     * subdivision — any edge longer than PAD_FILL_MAX_EDGE splits, and the split decision is
+     * PER-EDGE so neighbouring triangles always agree (crack-free) — giving the interior detail
+     * the lifted surface needs to follow the sloped pad plane + crown smoothly. Every vertex Y
+     * comes from sampleY (the asphalt-top surface → mesh == collision by construction). Vertex
+     * colours = ribbon asphalt base; aMark all-zero → no stripes on the pad (BUG-28 contract).
+     *
+     * @param {Array<{x:number,z:number}>} ring — simple XZ boundary (open)
+     * @param {(x:number,z:number)=>number} sampleY
+     * @returns {THREE.BufferGeometry|null}
+     */
+    _buildPadGeometry(ring, sampleY) {
+        const tri0 = earClip(ring)
+        if (!tri0 || tri0.length < 3) return null
+        let tris = Array.from(tri0)
         // Force UP-facing winding: sum triangle XZ signed area; if it came out CW (faces down), flip every
         // triangle so computeVertexNormals yields +Y normals (FrontSide → pad visible, not backface-black).
         let area2 = 0
-        for (let t = 0; t < tri.length; t += 3) {
-            const a = ring0[tri[t]], b = ring0[tri[t + 1]], c = ring0[tri[t + 2]]
+        for (let t = 0; t < tris.length; t += 3) {
+            const a = ring[tris[t]], b = ring[tris[t + 1]], c = ring[tris[t + 2]]
             area2 += (b.x - a.x) * (c.z - a.z) - (c.x - a.x) * (b.z - a.z)
         }
-        if (area2 > 0) for (let t = 0; t < tri.length; t += 3) { const tmp = tri[t + 1]; tri[t + 1] = tri[t + 2]; tri[t + 2] = tmp }
+        if (area2 > 0) for (let t = 0; t < tris.length; t += 3) { const tmp = tris[t + 1]; tris[t + 1] = tris[t + 2]; tris[t + 2] = tmp }
 
+        // Red-green refinement: split every edge > PAD_FILL_MAX_EDGE at its midpoint (midpoints
+        // deduped per-edge → no T-junction cracks); 1/2/3-split triangle patterns keep winding.
+        const verts = ring.map(p => ({ x: p.x, z: p.z }))
+        const MAX_E2 = PAD_FILL_MAX_EDGE * PAD_FILL_MAX_EDGE
+        for (let pass = 0; pass < 3; pass++) {
+            const mid = new Map()
+            let split = false
+            const needs = (i, j) => {
+                const dx = verts[i].x - verts[j].x, dz = verts[i].z - verts[j].z
+                return dx * dx + dz * dz > MAX_E2
+            }
+            const midIdx = (i, j) => {
+                const k = i < j ? `${i},${j}` : `${j},${i}`
+                let v = mid.get(k)
+                if (v === undefined) {
+                    v = verts.length
+                    verts.push({ x: (verts[i].x + verts[j].x) * 0.5, z: (verts[i].z + verts[j].z) * 0.5 })
+                    mid.set(k, v)
+                    split = true
+                }
+                return v
+            }
+            const out = []
+            for (let t = 0; t < tris.length; t += 3) {
+                let a = tris[t], b = tris[t + 1], c = tris[t + 2]
+                let sab = needs(a, b), sbc = needs(b, c), sca = needs(c, a)
+                const cnt = (sab ? 1 : 0) + (sbc ? 1 : 0) + (sca ? 1 : 0)
+                if (cnt === 0) { out.push(a, b, c); continue }
+                // Rotate (cyclic — winding preserved) until edge ab is a split edge.
+                while (!sab) { const ta = a; a = b; b = c; c = ta; const s = sab; sab = sbc; sbc = sca; sca = s }
+                if (cnt === 3) {
+                    const mab = midIdx(a, b), mbc = midIdx(b, c), mca = midIdx(c, a)
+                    out.push(a, mab, mca, mab, b, mbc, mca, mbc, c, mab, mbc, mca)
+                } else if (cnt === 2) {
+                    // Rotate so the two split edges are ab and bc.
+                    if (sca) { const tc = c; c = b; b = a; a = tc; sbc = true; sca = false }
+                    const mab = midIdx(a, b), mbc = midIdx(b, c)
+                    out.push(mab, b, mbc, a, mab, mbc, a, mbc, c)
+                } else {
+                    const mab = midIdx(a, b)
+                    out.push(a, mab, c, mab, b, c)
+                }
+            }
+            tris = out
+            if (!split) break
+        }
+
+        const V = verts.length
+        const positions = new Float32Array(V * 3)
+        const colors    = new Float32Array(V * 3)
+        for (let v = 0; v < V; v++) {
+            positions[v * 3    ] = verts[v].x
+            positions[v * 3 + 1] = sampleY(verts[v].x, verts[v].z)
+            positions[v * 3 + 2] = verts[v].z
+            colors[v * 3] = 0.15; colors[v * 3 + 1] = 0.15; colors[v * 3 + 2] = 0.17
+        }
         const geo = new THREE.BufferGeometry()
         geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
         geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3))
-        // BUG-28: pads share the road shader (reads aMark). All-zero aMark (markEnable=0) → no stripes.
-        geo.setAttribute('aMark',    new THREE.BufferAttribute(new Float32Array(B * 4), 4))
-        geo.setIndex(new THREE.BufferAttribute(new Uint32Array(tri), 1))
+        // BUG-28: pads share the road shader (reads aMark). All-zero aMark (feather 0) → no stripes.
+        geo.setAttribute('aMark',    new THREE.BufferAttribute(new Float32Array(V * 4), 4))
+        geo.setIndex(new THREE.BufferAttribute(new Uint32Array(tris), 1))
         geo.computeVertexNormals()
 
         return geo
