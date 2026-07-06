@@ -8,7 +8,9 @@ severity: minor
 source: user-request
 note: "REWRITTEN 2026-07-06 post-QUAL-13 (sloped pads). Goal in the user's words: pads that blend
 nicely from one road into the others like a real intersection. Replace the circular pad with an
-edge-tangent filleted boundary + non-planar fill."
+edge-tangent filleted boundary + non-planar fill. ABSORBS QUAL-10 (qual-junction-visual-blend.md,
+merged 2026-07-06 — user: too similar): its residual visual-blend scope (seam shading/colour
+continuity, markings feather) is folded in below."
 ---
 
 # QUAL-11: Intersection pad v2 — edge-tangent filleted boundary, riding the sloped pad plane
@@ -61,7 +63,12 @@ the graded 3D pad. Not the current convex circle-ish blob with straight flared m
    simplicity check stays fine); add interior Steiner points (clipped grid ~2–3 m) so the lifted
    surface follows the sloped pad plane + crown smoothly; set every vertex Y via
    `sampleRoadTopY` (physics surface → mesh == collision by construction); force up-winding.
-5. **Housekeeping.** `roadJunctionFlare` likely becomes dead (exact weld replaces flare) — remove
+5. **Seam shading + markings (absorbed from QUAL-10).** The pad↔ribbon seam must also read
+   continuous in SHADING: same material family / vertex-colour treatment as the ribbon asphalt
+   (today the pad is a distinct flat colour → visible break even where geometry welds), normals
+   merged across the weld. Lane markings currently hard-stop at `inJunction` — feather them out
+   over the mouth (real intersections lose the centerline gradually, so a short fade is enough).
+6. **Housekeeping.** `roadJunctionFlare` likely becomes dead (exact weld replaces flare) — remove
    the param+slider if so. Once-per-build cached (`_networkRev` guard, house pattern).
 
 ## Hard-won constraints (violate these and it regresses)
@@ -81,6 +88,8 @@ the graded 3D pad. Not the current convex circle-ish blob with straight flared m
 
 - Boundary hugs the roads (concave between legs), welds to the ribbon edges — no seam gap/notch
   at straight OR curved approaches; matches the user's sketch-2 intent.
+- Pad↔ribbon seam reads continuous in shading (no colour/material break); markings feather into
+  the junction instead of hard-stopping (QUAL-10 scope).
 - Holds at T / Y / 4-way / near-parallel / acute junctions: no spikes, no holes, no
   self-intersections (fallback ladder makes failure graceful, not spiky).
 - Window-invariant, mesh == collision, once-per-build cached, npm test green.
@@ -88,8 +97,10 @@ the graded 3D pad. Not the current convex circle-ish blob with straight flared m
 
 ## Related
 
-- QUAL-10 first pass (completed): `buildJunctionFootprint` / `_detectNodeJunctions` /
-  `_junctionCarve` entry points; sliders Ribbon Cutback / Mouth Flare / Terrain Carve Radius.
+- QUAL-10 (merged into this ticket 2026-07-06; first pass shipped 9337959):
+  `buildJunctionFootprint` / `_detectNodeJunctions` / `_junctionCarve` entry points; sliders
+  Ribbon Cutback / Mouth Flare / Terrain Carve Radius. Original problem statement kept in
+  `.planning/todos/completed/qual-junction-visual-blend.md`.
 - QUAL-13 (completed, f15c8af): sloped pad planes + adaptive approach blends — this ticket's fill
   rides that surface.
 - QUAL-16 (`qual-deg2-node-kink.md`): degree-2 node kinks — same fillet machinery applied at
