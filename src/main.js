@@ -43,7 +43,7 @@ import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedura
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
 import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
-import { loadRouteCache, saveRouteCache } from './route-store.js'  // QUAL-14 perf: IndexedDB route-cache persistence
+import { loadBundledRouteCache } from './route-store.js'  // QUAL-14 perf: bundled default-world route cache
 import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond discs + stream ribbons
 
 // World seed — parsed from URL ?seed= parameter, defaulting to '6'.
@@ -272,43 +272,21 @@ function _spawnProbeBase (wseed, params) {
 // stays alive. resolveSpawn's stream then finds every connection in _proto.cls (pure cache hits).
 // Warms the TIGHT tier only — the wide tier fires for rare sparse-gap seeds and falls back to the
 // synchronous router exactly as before. Bounded wait: correctness NEVER depends on the warm.
-// ── QUAL-14 perf: route-cache persistence signature ─────────────────────────────────────
-// Everything a routed centerline is a function of: the seed plus every routing-relevant param —
-// road* (router weights/geometry), water* (pond no-go discs), coarse*/ridgeSharpness (the terrain
-// heightFn the router samples), the proto cost weights, and the design-grade window. A persisted
-// record is imported ONLY when this signature matches exactly, so a stale record can never inject
-// routes the current params wouldn't produce (same identity argument as the QUAL-08 worker cache).
-function _routeCacheSig () {
-  let s = 'v1|seed=' + worldSeed
-  for (const k of Object.keys(RANGER_PARAMS).sort()) {
-    const v = RANGER_PARAMS[k]
-    if (typeof v === 'function') continue
-    if (/^road|^water|^pond|^stream|^coarse|^w[A-Z]|^ridgeSharpness$|^designGradeWindow$|^maxGrade$/.test(k)) {
-      s += '|' + k + '=' + (typeof v === 'object' ? JSON.stringify(v) : v)   // roadArcRadii is an array
-    }
-  }
-  return s
-}
-let _routeCacheSavedSize = -1
-// Import a matching persisted cache into the live roadSystem (fire-and-forget on failure).
-async function _loadPersistedRoutes () {
+// ── QUAL-14 perf: route-cache import (bundled default world + in-session seeds) ─────────
+// Nothing persists on the player's machine (user decision 2026-07-06). The shipped default
+// world's routes come from the bundled static asset (route-store.js — sig-guarded, baked at
+// commit time); every other seed caches in this in-session Map: a regen stashes the outgoing
+// RoadSystem's routes here, so toggling back to a seed already visited this session is instant.
+const _sessionRouteCache = new Map()   // String(seed) → exportRouteCache() payload
+async function _importSessionOrBundledRoutes () {
   if (!roadSystem) return
-  const data = await loadRouteCache(String(worldSeed), _routeCacheSig())
-  if (data && roadSystem) {
-    roadSystem.importRouteCache(data)
-    _routeCacheSavedSize = (roadSystem._proto.cls?.size ?? 0) + (roadSystem._proto.clsSolo?.size ?? 0)
-  }
+  const mem = _sessionRouteCache.get(String(worldSeed))
+  if (mem) { roadSystem.importRouteCache(mem); return }
+  const bundled = await loadBundledRouteCache(worldSeed, RANGER_PARAMS)
+  if (bundled && roadSystem) roadSystem.importRouteCache(bundled)
 }
-function _savePersistedRoutes () {
-  if (!roadSystem?._proto?.cls) return
-  const n = roadSystem._proto.cls.size + (roadSystem._proto.clsSolo?.size ?? 0)
-  if (n === _routeCacheSavedSize || n === 0) return   // nothing new routed since the last save
-  _routeCacheSavedSize = n
-  saveRouteCache(String(worldSeed), _routeCacheSig(), roadSystem.exportRouteCache())
-}
-// Periodic top-up while exploring (new edges routed → persist), plus a flush on tab-hide.
-setInterval(_savePersistedRoutes, 30000)
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') _savePersistedRoutes() })
+// One-time cleanup of the short-lived IndexedDB persistence experiment (32cde75, reverted same day).
+try { indexedDB.deleteDatabase('rangersim-routes') } catch { /* private mode etc. */ }
 
 let _spawnWarmActive = false   // frame loop skips road stream/warm while a spawn-band warm is pumping
 // ── QUAL-14 perf: async spawn-band warm ─────────────────────────────────────────────────
@@ -465,11 +443,16 @@ function debouncedRebuildFull () {
   _rebuildDebounceTimer = setTimeout(async () => {
     if (!terrainSystem) return
     terrainSystem.reinitWorker(worldSeed, RANGER_PARAMS)
-    terrainSystem.rebuildAllChunksFromWorker()
+    // (rebuildAllChunksFromWorker moved BELOW the reseat — see the ORDER MATTERS note there.)
     // Phase 8: re-init RoadSystem with new seed — roads are pure fns of (worldSeed, coords, params)
     // so a new seed produces a different deterministic road network. Preserve viz state.
     if (roadSystem && scene) {
       const wasVisible = roadSystem._debugVisible
+      // QUAL-14 perf: stash the outgoing instance's routes so toggling back to this seed later
+      // in the session is instant (in-session cache only — nothing persists to disk).
+      if (roadSystem._proto?.cls?.size) {
+        _sessionRouteCache.set(String(roadSystem._worldSeed), roadSystem.exportRouteCache())
+      }
       roadSystem = new RoadSystem(worldSeed, RANGER_PARAMS)
       roadSystem.init(scene)
       // Re-apply the new-API config the initial instance got (surface placement + stream radius).
@@ -509,14 +492,18 @@ function debouncedRebuildFull () {
       propSystem.dispose()
       propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
     }
-    // QUAL-14 perf: same persisted-cache import + async reseat as the initial load — the new
-    // seed's spawn bands route on the worker pool inside resolveSpawn (frames keep rendering)
-    // before each synchronous stream. AFTER rebuildWaterSystem above: the warm and the
-    // persistence sig must carry the new seed's pond no-go discs.
-    _routeCacheSavedSize = -1   // new seed → new record; force the next save
-    await _loadPersistedRoutes()
+    // QUAL-14 perf: same cache import + async reseat as the initial load — the new seed's spawn
+    // bands route on the worker pool inside resolveSpawn (frames keep rendering) before each
+    // synchronous stream. AFTER rebuildWaterSystem above: the warm must carry the new seed's
+    // pond no-go discs.
+    await _importSessionOrBundledRoutes()
     await _reseatTruckAtSpawn()
-    _savePersistedRoutes()
+    // ORDER MATTERS (same rule as debouncedRoadRebuild): terrain chunks rebuild AFTER the new
+    // road network is streamed — _flushPendingQueue bakes carve tables at chunk-request time, so
+    // chunks rebuilt against a not-yet-streamed network get NO road carve and the world looks
+    // stale until something forces another rebuild (the "toggle the seed to fix it" symptom).
+    // Until this line runs the OLD seed's chunks stay visible; the flip is the clean-start moment.
+    terrainSystem.rebuildAllChunksFromWorker()
   }, 150)
 }
 
@@ -590,7 +577,16 @@ function debouncedRoadRebuild () {
 // Used at: (1) initial load, (2) R-reset, (3) every debounced Path-B regenerate.
 // Free-cam position is NOT affected — only vehicleState is modified.
 // 3-PLACES NOTE: This plan adds NO new vehicleState fields; all fields below already exist.
-async function _reseatTruckAtSpawn () {
+// SERIALIZED: concurrent calls (e.g. R pressed while a seed-regen's spawn warm is still pumping)
+// queue behind the in-flight seat instead of interleaving two async spawn probes' setRadius/warm
+// state — the R lands right after the current one finishes, on the fully-loaded road.
+let _reseatChain = Promise.resolve()
+function _reseatTruckAtSpawn () {
+  const run = () => _reseatTruckAtSpawnInner()
+  _reseatChain = _reseatChain.then(run, run)
+  return _reseatChain
+}
+async function _reseatTruckAtSpawnInner () {
   const { position: spawnPos, heading } = await resolveSpawn(worldSeed, RANGER_PARAMS)
   const eq = computeStaticEquilibrium(RANGER_PARAMS)
   vehicleState.position.set(spawnPos.x, spawnPos.y + eq.bodyY, spawnPos.z)
@@ -1196,14 +1192,14 @@ _gui.foldersRecursive().forEach((f) => f.close())
 // TerrainSystem is now alive and analyticHeight is immediately available (no chunk load required).
 // This overrides the vehicleState.position set during declaration (which used origin + _spawnEq.bodyY).
 perfMark('init: systems created, before spawn reseat')  // TEMP (D-arc)
-// QUAL-14 perf: import any persisted route cache for this seed+params (second visit ≈ instant),
-// then reseat (top-level await — main.js is a module, so everything below, including the render
-// loop start, waits). resolveSpawn warms each band it streams on the worker POOL before touching
-// it, so the old 20 s+ synchronous cold-load block becomes a parallel, event-loop-friendly wait.
-await _loadPersistedRoutes()
+// QUAL-14 perf: import the bundled default-world route cache (shipped world boots without
+// routing at all; other seeds miss and route on the pool), then reseat (top-level await —
+// main.js is a module, so everything below, including the render loop start, waits).
+// resolveSpawn warms each band it streams on the worker POOL before touching it, so the old
+// 20 s+ synchronous cold-load block becomes a parallel, event-loop-friendly wait.
+await _importSessionOrBundledRoutes()
 await _reseatTruckAtSpawn()
 perfMark('init: spawn reseated')  // TEMP (D-arc)
-_savePersistedRoutes()   // persist what the spawn warm just routed (fire-and-forget)
 
 // ── Body contact point debug spheres ──────────────────────────────────────────
 // 14 translucent orange spheres — one per probe in getBodyContactPoints.
