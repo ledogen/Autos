@@ -30,10 +30,12 @@ export const VEHICLES = {
     inertiaYaw:   (1 / 12) * 1190 * (4.44 ** 2 + 1.61 ** 2),
 
     // ── Drivetrain ───────────────────────────────────────────────────────────
-    maxDriveTorque:      700,
-    maxBrakeTorque:     1700,
-    maxReverseTorque:    700,
+    // FEAT-23: inherits the engine/converter/gearbox chain from RANGER_PARAMS (spread above).
+    // A 240sx-specific engine/gearing tune is deferred to the FEAT-23 parts-selector phase.
+    maxBrakeTorqueFront: 1300,
+    maxBrakeTorqueRear:   900,
     maxHandbrakeTorque: 5000,   // stronger for drift initiation
+    rearDiffMode: 'lsd',        // a drift car wants a limited-slip rear by default
 
     // ── Wheels ───────────────────────────────────────────────────────────────
     wheelMass:    14,

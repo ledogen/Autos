@@ -13,8 +13,8 @@ import { RANGER_PARAMS as P } from '../data/ranger.js'
 const slopeDeg   = Number(process.argv[2] ?? 18)
 const headingDeg = Number(process.argv[3] ?? 0)   // 0 = facing downhill (+z), 90 = across slope
 // NOTE: `brake` is the S-key input — in this vehicle model that is REVERSE, not a park brake
-// (getDriveTorque applies -maxReverseTorque at low speed). It does NOT park the car. To test the
-// real park brake (rear-only handbrake that holds on a slope), pass park=1. BUG-20 uses park.
+// (FEAT-23: it drives the drivetrain's reverse gear at low speed). It does NOT park the car. To test
+// the real park brake (rear-only handbrake that holds on a slope), pass park=1. BUG-20 uses park.
 const brake      = Number(process.argv[4] ?? 0)   // 0..1 S-key = reverse/brake-when-moving-fwd
 const park       = Number(process.argv[5] ?? 0)   // 1 = hold handbrake (rear-only park brake)
 const theta = slopeDeg * Math.PI / 180

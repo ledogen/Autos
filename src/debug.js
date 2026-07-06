@@ -5,7 +5,7 @@
  *   (plus a slider that was removed in Phase 2 per D-09).
  * Phase 2 (M2-05, M2-06): Removes fixed-field slider per D-09. Relabels lateralDampingCoeff
  *   as '(unused)' (D-11). Adds 7 new D-08 sliders:
- *   mass, frictionCoeff, maxDriveTorque, maxBrakeTorque, bodyContactStiffness,
+ *   mass, frictionCoeff, brake torque (front/rear), bodyContactStiffness,
  *   bodyContactDamping, corneringStiffness. Adds disabled Logger hint label (D-04).
  * Phase 3 (D-08, D-11, D-12, D-13, D-16): Removes corneringStiffness and lateralDampingCoeff
  *   sliders. Adds Lateral Tire (Pacejka) and Longitudinal Tire (Pacejka) folders with
@@ -118,11 +118,38 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // ── Drivetrain & Brakes ─────────────────────────────────────────────────────────
   // D-08 / D-16: all write directly to RANGER_PARAMS (live mutation).
   const driveFolder = vehicleFolder.addFolder('Drivetrain & Brakes')
-  driveFolder.add(params, 'maxDriveTorque', 100, 2000, 50).name('Max Drive Torque (N·m)')
-  driveFolder.add(params, 'maxBrakeTorque', 500, 8000, 100).name('Max Brake Torque (N·m)')
+  // FEAT-23 engine → torque converter → automatic gearbox → final drive (src/drivetrain.js).
+  driveFolder.add(params, 'engineTorqueScale', 0.3, 2.0, 0.05).name('Engine Torque ×')
+  driveFolder.add(params, 'engineIdleRPM', 500, 1200, 25).name('Idle RPM')
+  driveFolder.add(params, 'engineRedlineRPM', 4000, 7000, 100).name('Redline RPM')
+  driveFolder.add(params, 'engineIdleThrottle', 0, 0.15, 0.005).name('Idle Creep')
+  driveFolder.add(params, 'engineRpmLag', 0, 0.4, 0.01).name('Rev Lag (s)')
+  driveFolder.add(params, 'converterStallTorqueRatio', 1.0, 3.0, 0.05).name('Converter Stall TR')
+  driveFolder.add(params, 'converterStallRPM', 1200, 3500, 50).name('Converter Stall RPM')
+  driveFolder.add(params, 'converterCouplingSR', 0.7, 0.98, 0.01).name('Converter Couple SR')
+  driveFolder.add(params, 'finalDrive', 2.5, 5.5, 0.01).name('Final Drive')
+  driveFolder.add(params, 'reverseRatio', 1.5, 4.0, 0.01).name('Reverse Ratio')
+  driveFolder.add(params, 'shiftUpRPM', 2500, 6500, 50).name('Upshift RPM')
+  driveFolder.add(params, 'shiftDownRPM', 800, 3500, 50).name('Downshift RPM (cruise)')
+  driveFolder.add(params, 'kickdownRPM', 1200, 4000, 50).name('Downshift RPM (WOT kickdown)')
+  driveFolder.add(params, 'shiftHysteresis', 200, 2000, 50).name('Shift Hysteresis (RPM)')
+  driveFolder.add(params, 'shiftHoldTime', 0.1, 1.5, 0.05).name('Shift Hold (s)')
+  driveFolder.add(params, 'wheelspinShiftLock').name('Wheelspin Shift-Lock')
+  driveFolder.add(params, 'wheelspinThreshold', 1, 20, 0.5).name('Wheelspin Lock (m/s)')
+  driveFolder.add(params, 'maxBrakeTorqueFront', 200, 4000, 50).name('Brake Torque Front (N·m)')
+  driveFolder.add(params, 'maxBrakeTorqueRear', 200, 4000, 50).name('Brake Torque Rear (N·m)')
   driveFolder.add(params, 'maxHandbrakeTorque', 500, 5000, 100).name('Handbrake Torque (Nm)')
-  // Rolling resistance — horizontal drag scaled by ground load; tunable for coast feel
+  // Rolling resistance + aero drag — coast/top-speed feel
   driveFolder.add(params, 'rollingResistanceCoeff', 0, 0.05, 0.001).name('Rolling Resistance Cr')
+  driveFolder.add(params, 'aeroDragArea', 0, 3.0, 0.05).name('Aero Drag Cd·A (m²)')
+  driveFolder.add(params, 'engineAudioEnabled').name('Engine Audio')
+  driveFolder.add(params, 'engineAudioVolume', 0, 1, 0.05).name('Engine Volume')
+
+  // ── Differentials (FEAT-23) ───────────────────────────────────────────────────────
+  // Rear diff mode: open / limited-slip / locked (src/drivetrain.js couples the rear wheels).
+  // Front differential + a per-axle final-drive slider will join this folder in a later phase.
+  const diffFolder = vehicleFolder.addFolder('Differentials')
+  diffFolder.add(params, 'rearDiffMode', { Open: 'open', 'Limited Slip': 'lsd', Locked: 'locked' }).name('Rear Differential')
 
   // ── Tires ───────────────────────────────────────────────────────────────────────
   // Vertical tire spring (stiffness/damping) + ground friction + the Pacejka force-curve model

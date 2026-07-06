@@ -27,6 +27,7 @@ window.__view = placeFreecam
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
+import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume } from './engine-audio.js'
 import { TerrainSystem } from './terrain.js'
 import { RoadSystem, CHUNK_SIZE } from './road.js'
 import { perfAdd, perfMark, perfDump, perfReset } from './perf.js'  // TEMP perf triage (D-arc)
@@ -602,6 +603,7 @@ async function _reseatTruckAtSpawnInner () {
   vehicleState.wheelSteerAngles = [0, 0, 0, 0]
   vehicleState.wheelDebug     = [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ]
   vehicleState.wheelOmega     = [0, 0, 0, 0]
+  vehicleState.drivetrain     = { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 }
   vehicleState.slipLong       = [0, 0, 0, 0]
   vehicleState.slipLat        = [0, 0, 0, 0]
   vehicleState.handbrake      = false
@@ -655,6 +657,7 @@ const vehicleState = {
   strutCompVel: [0, 0, 0, 0],            // m/s — strut compression velocity per corner (D-01)
   wheelDebug:      [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ],  // per-wheel debug data written by stepPhysics; read by logger; fz=tire spring force (D-12)
   wheelOmega:      [0, 0, 0, 0],                   // per-wheel angular velocity [rad/s]; integrated by physics.js omega integrator
+  drivetrain:      { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },  // FEAT-23 engine/converter/gearbox state; stepped by stepDrivetrain, read by HUD/logger
   handbrake:       false,                            // Space key handbrake state; written by updateVehicle, read by getBrakeTorque
   submerged:       false,                            // FEAT-22: CG below a water surface (set per-frame from WaterSystem.submergedAt)
   submergedDepth:  0,                                // FEAT-22: m below the water surface (0 when dry)
@@ -1292,6 +1295,7 @@ function enterGridWorld () {
   vehicleState.strutCompVel   = [0, 0, 0, 0]
   vehicleState.wheelDebug     = [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ]
   vehicleState.wheelOmega     = [0, 0, 0, 0]
+  vehicleState.drivetrain     = { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 }
   vehicleState.slipLong       = [0, 0, 0, 0]
   vehicleState.slipLat        = [0, 0, 0, 0]
   vehicleState.handbrake      = false
@@ -1383,6 +1387,7 @@ function _downloadJSON (obj, name) {
 }
 
 document.addEventListener('keydown', e => {
+  ensureEngineAudio()   // FEAT-23: first keypress is the user gesture that unlocks WebAudio
   if (e.key === '\\') toggleRecording()
   if (e.key === 'i' && e.ctrlKey) openInitialCondition(vehicleState, RANGER_PARAMS)
   // 'p' = MARK THIS PLACE: write a kind:"place" capture at the truck — the replayable spatial bug
@@ -1631,6 +1636,25 @@ function loop () {
   // M1-11: live speed readout. velocity.length() = magnitude in m/s; * 3.6 converts to km/h.
   const speedKmh = vehicleState.velocity.length() * 3.6
   document.getElementById('speedVal').textContent = speedKmh.toFixed(1)
+
+  // FEAT-23: gear + engine RPM readout (activeGear 0 = reverse, 1..N = forward gear).
+  const dtrain = vehicleState.drivetrain
+  if (dtrain) {
+    const gEl = document.getElementById('gearVal')
+    if (gEl) gEl.textContent = dtrain.activeGear === 0 ? 'R' : String(dtrain.activeGear)
+    const rEl = document.getElementById('rpmVal')
+    if (rEl) rEl.textContent = Math.round(dtrain.engineRPM)
+    const spEl = document.getElementById('spinVal')
+    if (spEl) {
+      const spin = dtrain.wheelspin || 0
+      spEl.textContent = spin.toFixed(1)
+      spEl.style.color = spin > (RANGER_PARAMS.wheelspinThreshold ?? 7.5) ? '#ff2222' : '#00ff88'
+    }
+    // FEAT-23: engine audio tracks RPM + throttle (no-op until the first keypress unlocks WebAudio).
+    setEngineAudioEnabled(RANGER_PARAMS.engineAudioEnabled !== false)
+    setEngineAudioVolume(RANGER_PARAMS.engineAudioVolume ?? 0.5)
+    updateEngineAudio(dtrain.engineRPM, vehicleState.throttle)
+  }
 
   // M4-09 / D-12: per-wheel Fz HUD — tire spring force per corner, updated each render frame.
   // Uses ?. / ?? 0 nullish-default per PATTERNS §Logger field append-at-end + nullish-coalesce.
