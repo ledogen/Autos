@@ -174,32 +174,40 @@ let _workerParams = null
 // entries are live this call, so we never memset the (large) arrays between calls.
 let _apcCap = 0
 let _apcG, _apcGStamp, _apcClosed, _apcX, _apcZ, _apcTh, _apcSh, _apcRf, _apcKi, _apcParent
+let _apcLen, _apcMx, _apcMz   // QUAL-14 perf: cumulative arc length + entering-primitive midpoint per state (self-proximity walk)
 let _apcGen = 0
 const _apcHPri = [], _apcHSt = []   // heap as parallel arrays (reset length each call; no per-node alloc)
+const _scNX = [], _scNZ = [], _scNS = []   // per-expansion nearby-ancestor scratch (self-clearance prefilter)
 function _apcEnsure(n) {
     if (n <= _apcCap) return
     _apcCap = n
     _apcG = new Float64Array(n); _apcGStamp = new Uint32Array(n); _apcClosed = new Uint32Array(n)
     _apcX = new Float64Array(n); _apcZ = new Float64Array(n); _apcTh = new Float64Array(n)
     _apcSh = new Float64Array(n); _apcRf = new Float64Array(n); _apcKi = new Int8Array(n); _apcParent = new Int32Array(n)
+    _apcLen = new Float64Array(n); _apcMx = new Float64Array(n); _apcMz = new Float64Array(n)
 }
 
 // ── QUAL-14 self-clearance (route may not graze/cross ITSELF) ───────────────────────────────────
 // The hybrid-A* state is (cell, heading-bin) — it has no memory of its own path, so a route
 // crossing or hugging itself (lollipop loop, pigtail hairpin, legs sharing a carve wall) is free.
-// The fix is ITERATIVE NO-GO REPAIR riding the existing pondDiscs hard-rejection: when the
-// emitted chain violates the clearance contract, drop a small no-go disc on each (clustered)
-// violation midpoint and re-route — the search then cannot thread that spot and the topology
-// re-forms from the cost model (same philosophy as the pond route-around: hard-forbid the
-// artifact site, never inject geometry). Repeat until clean or SELF_CLEAR_MAX_REPAIR, accepting
-// the fewest-violations attempt if never clean (never fail to emit a road). Deterministic pure
-// fn of the edge + opts → cache/window-invariant. A weight-nudge retry ladder (wCurv/maxGrade/
-// hardR variants) was tried first and is whack-a-mole across edges: wander lollipops price out
-// under wCurv, but pigtail hairpins (the router loops >270° to gain elevation in place — the
-// crossing is free and the extra length is cheap grade relief) each want a different rung.
-// Measured (seed 6/7 violating edges): repair converges in 1–13 iterations on all of them; only
-// violating edges pay for retries, and the Worker pre-warm absorbs the cost off-thread.
-const SELF_CLEAR_MAX_REPAIR = 16  // re-route attempts before accepting fewest-violations
+// PRIMARY enforcement is IN-SEARCH (QUAL-14 perf phase): expansion rejects a primitive whose
+// endpoint/midpoint lands within selfClearDist of the candidate's OWN ancestor chain more than
+// selfClearGap back along the path (see the selfHit block inside arcPrimitiveConnect) — pigtails
+// become illegal moves and the topology re-forms in the SAME pass. The wrapper below is the thin
+// BACKSTOP for what the ancestor walk cannot see: violations the refit passes introduce (shortcut/
+// terminal are not ancestor-checked) and mid-arc grazes finer than its half-primitive sampling.
+// Backstop = ITERATIVE NO-GO REPAIR riding the existing pondDiscs hard-rejection: drop a small
+// no-go disc on each (clustered) violation midpoint and re-route (same philosophy as the pond
+// route-around: hard-forbid the artifact site, never inject geometry). Repeat until clean or
+// SELF_CLEAR_MAX_REPAIR, accepting the fewest-violations attempt if never clean (never fail to
+// emit a road). Deterministic pure fn of the edge + opts → cache/window-invariant. History: a
+// wCurv/maxGrade retry ladder was whack-a-mole; repair-only converged (1–13 iterations) but each
+// iteration is a FULL re-search — a few mountain edges paying ≤16×2 searches were ~80% of the
+// 26 s cold load. In-search prevention deletes that multiplier: clean edges (the vast majority)
+// never enter this loop, so the cap only prices the rare corridor-congested edge (measured seed 6:
+// one edge, ≤9 iterations to clean). Do NOT lower the cap below ~10 — a cap-4 experiment shipped
+// fewest-violations chains and flipped GRAPH-SELF-CLEARANCE red.
+const SELF_CLEAR_MAX_REPAIR = 16  // backstop re-route attempts before accepting fewest-violations
 const SELF_CLEAR_DS = 4           // m — chain sampling spacing for the clearance check
 const SELF_CLEAR_DISC_R = 0.6    // × selfClearDist — repair no-go disc radius
 
@@ -407,7 +415,9 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             if (v === 0) break
             // Escalating disc radius: if the search keeps re-threading near earlier repair sites
             // (thrash), later discs blockade a wider area and force a genuinely different topology.
-            const rr = D * SELF_CLEAR_DISC_R * (1 + 0.25 * it)
+            // Steeper than the pre-prevention 0.25/it: with only 4 backstop attempts each one must
+            // move the topology decisively.
+            const rr = D * SELF_CLEAR_DISC_R * (1 + 0.5 * it)
             for (const m of mids) discs.push(m[0], m[1], rr)
         }
         return best
@@ -607,6 +617,7 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     const gen = ++_apcGen
     const G = _apcG, GS = _apcGStamp, CL = _apcClosed
     const SX = _apcX, SZ = _apcZ, STh = _apcTh, SSh = _apcSh, SRf = _apcRf, SKi = _apcKi, SP = _apcParent
+    const SL = _apcLen, SMx = _apcMx, SMz = _apcMz
     const HP = _apcHPri, HS = _apcHSt
     HP.length = 0; HS.length = 0
     let hlen = 0
@@ -629,6 +640,53 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         return top
     }
 
+    // ── QUAL-14 perf: IN-SEARCH SELF-PROXIMITY REJECTION (prevention; the wrapper is a backstop) ──
+    // Reject a primitive whose endpoint or midpoint lands within selfClearDist of the candidate's
+    // OWN ancestor chain more than selfClearGap back along the path — a pigtail (looping >270° to
+    // gain elevation in place) becomes an illegal move and the search routes around it in the SAME
+    // pass, instead of the emitted chain failing the post-hoc scan and paying a full re-search per
+    // repair iteration (≤16×: the old 26 s cold load). Ancestor endpoints + entering-primitive
+    // midpoints are stored per state (SL/SMx/SMz) so the walk is pure array reads — no trig.
+    // Sample spacing is one point per half-primitive (≤ ~26 m for the largest palette arc), coarser
+    // than the emitted-chain scan's 4 m — residual fine grazes fall to the backstop. The walk gates
+    // on the MIDPOINT's arc position (the smaller), so pairs within (gap, gap+L/2] of the endpoint
+    // are permissively skipped — also backstop territory. Deterministic pure fn of the candidate
+    // path → cache/window-invariant. Only candidates that would actually be stored pay the walk.
+    const scD = (opts.emitPrimitives && (opts.selfClearDist ?? 0) > 0) ? opts.selfClearDist : 0
+    const scD2 = scD * scD, scGap = opts.selfClearGap ?? 80
+    // Longest primitive in the palette bounds how far any candidate sample can land from the
+    // expanded node — the prefilter radius below. Ancestors outside (scMaxL + scD) of the node, or
+    // within scGap of the SHORTEST candidate's midpoint arc position, can never reject a candidate.
+    let scMaxL = stepLen
+    if (scD > 0) for (const kk of kappas) if (Math.abs(kk) >= 1e-12) { const LL = turnAngle / Math.abs(kk); if (LL > scMaxL) scMaxL = LL }
+    const scReach2 = (scMaxL + scD) * (scMaxL + scD)
+    // Per-EXPANSION prefilter (the perf shape that makes this affordable): walk the ancestor chain
+    // ONCE per popped node — not once per stored candidate — collecting endpoint + entering-midpoint
+    // samples within reach into _scN*. Candidates then check only that (usually EMPTY) short list,
+    // so the naive per-candidate O(chain) walk collapses to O(chain)/expansion + O(near)/candidate
+    // with an IDENTICAL rejection set (both filters are supersets of the exact per-sample test).
+    let scN = 0
+    // Per-pair EXACT arc-separation gating (entries carry their true arc position — midpoint
+    // entries at (SL[st]+SL[parent])/2): a conservative per-entry gate left a (gap, gap+L/2]
+    // slop band that admitted tight curls just past the exemption window (measured: a radius-14
+    // turnaround at arcSep 85–105 slid through and cost the backstop 9 repair searches). Tight
+    // curls are built from the SHORT palette primitives, so sampling there is dense and exact
+    // gating closes the band; only long-arc between-sample grazes remain for the backstop.
+    const selfHit = (ex, ez, eLen, mx, mz, mLen) => {
+        for (let i = 0; i < scN; i++) {
+            const pos = _scNS[i], px = _scNX[i], pz = _scNZ[i]
+            if (eLen - pos > scGap) {
+                const dx = ex - px, dz = ez - pz
+                if (dx * dx + dz * dz < scD2) return true
+            }
+            if (mLen - pos > scGap) {
+                const dx = mx - px, dz = mz - pz
+                if (dx * dx + dz * dz < scD2) return true
+            }
+        }
+        return false
+    }
+
     const heur = (x, z) => wHeur * wDist * Math.hypot(bx - x, bz - z)
     const th0 = startHeading ?? Math.atan2(bz - az, bx - ax)
     const goalR = Math.max(cell, stepLen), goalR2 = goalR * goalR
@@ -638,6 +696,7 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     // like the builder's window collapsing at the polyline end). Off-earthwork: SSh = raw height chain.
     SX[startState] = ax; SZ[startState] = az; STh[startState] = th0; SSh[startState] = hAt(ax, az); SRf[startState] = SSh[startState]
     SP[startState] = -1; SKi[startState] = 0
+    SL[startState] = 0; SMx[startState] = ax; SMz[startState] = az
     hpush(heur(ax, az), startState)
 
     let goalState = -1, expanded = 0
@@ -646,11 +705,27 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         const sid = hpopState()
         if (CL[sid] === gen) continue
         CL[sid] = gen
-        const cx = SX[sid], cz = SZ[sid], cth = STh[sid], csh = SSh[sid], crf = SRf[sid], cg = G[sid]
+        const cx = SX[sid], cz = SZ[sid], cth = STh[sid], csh = SSh[sid], crf = SRf[sid], cg = G[sid], cLen = SL[sid]
         const dgx = bx - cx, dgz = bz - cz, d2 = dgx * dgx + dgz * dgz
         if (d2 < bestD2) { bestD2 = d2; bestState = sid }
         if (d2 <= goalR2) { goalState = sid; break }
         expanded++
+        // Self-clearance prefilter: gather this node's conflict-relevant ancestors (see selfHit).
+        scN = 0
+        if (scD > 0 && cLen + scMaxL - scGap > 0) {
+            const lim = cLen + scMaxL - scGap
+            for (let st = sid; st !== -1; st = SP[st]) {
+                const sl = SL[st], par = SP[st]
+                const mpos = par === -1 ? 0 : (sl + SL[par]) * 0.5   // exact entering-midpoint arc position
+                if (mpos >= lim) continue   // within one bend of every candidate sample (mpos ≤ sl)
+                let dx = cx - SMx[st], dz = cz - SMz[st]
+                if (dx * dx + dz * dz < scReach2) { _scNX[scN] = SMx[st]; _scNZ[scN] = SMz[st]; _scNS[scN] = mpos; scN++ }
+                if (sl < lim) {
+                    dx = cx - SX[st]; dz = cz - SZ[st]
+                    if (dx * dx + dz * dz < scReach2) { _scNX[scN] = SX[st]; _scNZ[scN] = SZ[st]; _scNS[scN] = sl; scN++ }
+                }
+            }
+        }
         for (let ki = 0; ki < kappas.length; ki++) {
             const k = kappas[ki]
             const L = primLen(k)   // fixed-angle: straight = stepLen, turns = turnAngle/|k| (∝ radius)
@@ -659,11 +734,16 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             // FEAT-17: reject primitives entering a pond+skirt disc. Endpoint + midpoint samples
             // suffice: the longest primitive (largest radius × turnAngle) is shorter than any pond
             // diameter, so a ≤ L/2 sample spacing cannot tunnel a disc — worst case is a metre-scale
-            // graze of the skirt edge, which the skirt buffer absorbs.
+            // graze of the skirt edge, which the skirt buffer absorbs. (Midpoint hoisted: the
+            // self-proximity walk below samples the same two points per primitive.)
+            let mx = 0, mz = 0
+            if (pondDiscs || scD > 0) {
+                const mid = arcEnd(cx, cz, cth, k, L * 0.5)
+                mx = mid[0]; mz = mid[1]
+            }
             if (pondDiscs) {
                 if (inPondNoGo(nx, nz)) continue
-                const mid = arcEnd(cx, cz, cth, k, L * 0.5)
-                if (inPondNoGo(mid[0], mid[1])) continue
+                if (inPondNoGo(mx, mz)) continue
             }
             const nst = stateOf(nx, nz, nth)
             if (CL[nst] === gen) continue
@@ -708,8 +788,11 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             if (earthwork) perM += wDev * Math.abs(nHc - nHraw)
             const ng = cg + L * perM
             if (GS[nst] !== gen || ng < G[nst]) {
+                // Self-proximity: checked only for candidates that would actually be stored.
+                if (scN > 0 && selfHit(nx, nz, cLen + L, mx, mz, cLen + L * 0.5)) continue
                 G[nst] = ng; GS[nst] = gen
                 SX[nst] = nx; SZ[nst] = nz; STh[nst] = nth; SSh[nst] = nSh; SRf[nst] = nRf; SP[nst] = sid; SKi[nst] = ki
+                SL[nst] = cLen + L; SMx[nst] = mx; SMz[nst] = mz
                 hpush(ng + heur(nx, nz), nst)
             }
         }
@@ -816,6 +899,17 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             // Non-earthwork: design ≡ raw heightFn (legacy semantics).
             const badXZ = (x, z) => x < minX || x > maxX || z < minZ || z > maxZ
                                  || (pondDiscs !== null && inPondNoGo(x, z))
+            // QUAL-14 perf: the shortcut/terminal rewrites are not ancestor-checked, so in a
+            // corridor-congested field a Dubins span can slice across another part of the route
+            // (measured: 216 violating pairs on a chain whose search output had 7) — and every such
+            // chain costs the backstop wrapper a full repair re-search. Cheap guard: if the refit
+            // INTRODUCED self-clearance violations, ship the pre-refit chain instead (one O(n) scan
+            // per side; losing the serpentine-bow polish on these rare congested edges is invisible
+            // next to their corridor detours). scD=0 → inert (bare router byte-identical).
+            const scPick = (cand) => {
+                if (scD <= 0 || cand === prims) return cand
+                return _selfClearScan(cand, scD, scGap).v <= _selfClearScan(prims, scD, scGap).v ? cand : prims
+            }
             const primEndPose = (p) => arcEnd(p.x0, p.z0, p.theta0, p.kappa0, p.length)  // const-κ only
             const startPose = prims[0]                          // exact original start pose (G1 contract)
             const rawEnd = primEndPose(prims[prims.length - 1]) // exact original end pose (G1 contract)
@@ -1043,7 +1137,7 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
                     }
                 }
             }
-            return valid ? refit : shortcutChain
+            return scPick(valid ? refit : shortcutChain)
         }
         return prims
     }
@@ -1123,21 +1217,38 @@ self.onmessage = function(e) {
 `
 
 /**
- * Main-thread transport for the dedicated road-network routing Worker. Owns the Blob worker and a
+ * Main-thread transport for the dedicated road-network routing Workers. Owns a small POOL of Blob
+ * workers (QUAL-14 perf: route jobs are pure and independent — the two-phase dependency-aware
+ * dispatch in warmRoutes only ships a job once its corridor-disc inputs are already cached data —
+ * so batches split round-robin across workers for near-linear pre-warm/cold-load scaling) and a
  * registry of route CLIENTS (RoadSystem instances keyed by id). Each client dispatches through
- * postRouteJobs(id, jobs, epoch); replies are routed back to that client's ingestRoutedConnections.
+ * postRouteJobs(id, jobs, epoch); replies are routed back to that client's ingestRoutedConnections
+ * (which tolerates any reply order: results are keyed, stale epochs rejected per instance).
  */
 export class RoadRouteWorker {
-    constructor() {
+    constructor(size) {
+        const n = size ?? RoadRouteWorker.defaultPoolSize()
         const blob   = new Blob([ROAD_WORKER_SOURCE], { type: 'application/javascript' })
         this._url    = URL.createObjectURL(blob)
-        this._worker = new Worker(this._url)
         this._clients = new Map()   // clientId -> RoadSystem
-        this._worker.onmessage = (e) => {
+        this._next    = 0           // round-robin cursor (rotates across calls so small batches spread)
+        this._workers = []
+        const onmessage = (e) => {
             if (!e.data || !e.data.routed) return
             const client = this._clients.get(e.data.client)
             client?.ingestRoutedConnections(e.data.results, e.data.epoch)
         }
+        for (let i = 0; i < n; i++) {
+            const w = new Worker(this._url)
+            w.onmessage = onmessage
+            this._workers.push(w)
+        }
+    }
+
+    /** 2–4 workers: leave headroom for the terrain worker + main thread on small machines. */
+    static defaultPoolSize() {
+        const hc = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4
+        return Math.max(2, Math.min(4, hc - 2))
     }
 
     /** Register (or replace) a route client. The dispatcher closure passes this id in postRouteJobs. */
@@ -1149,7 +1260,7 @@ export class RoadRouteWorker {
      * project_terrain_worker_constraints). Routing only reads the coarse fields.
      */
     init(worldSeed, params) {
-        this._worker.postMessage({
+        const msg = {
             type: 'init',
             worldSeed,
             params: {
@@ -1158,16 +1269,32 @@ export class RoadRouteWorker {
                 coarseOctaves:   params.coarseOctaves,
                 ridgeSharpness:  params.ridgeSharpness,
             },
-        })
+        }
+        for (const w of this._workers) w.postMessage(msg)
     }
 
-    /** Dispatch route jobs for a client. jobs = [{key, ax, az, bx, bz, opts}]. */
+    /** Dispatch route jobs for a client, split round-robin across the pool. jobs = [{key, ax, az, bx, bz, opts}]. */
     postRouteJobs(client, jobs, epoch) {
-        this._worker.postMessage({ type: 'route', client, jobs, epoch })
+        const n = this._workers.length
+        if (n === 1 || jobs.length === 1) {
+            this._workers[this._next++ % n].postMessage({ type: 'route', client, jobs, epoch })
+            this._next %= n
+            return
+        }
+        const buckets = []
+        for (let i = 0; i < jobs.length; i++) {
+            const wi = (this._next + i) % n
+            ;(buckets[wi] ??= []).push(jobs[i])
+        }
+        this._next = (this._next + jobs.length) % n
+        for (let wi = 0; wi < n; wi++) {
+            if (buckets[wi]?.length) this._workers[wi].postMessage({ type: 'route', client, jobs: buckets[wi], epoch })
+        }
     }
 
     dispose() {
-        this._worker.terminate()
+        for (const w of this._workers) w.terminate()
+        this._workers.length = 0
         URL.revokeObjectURL(this._url)
         this._clients.clear()
     }

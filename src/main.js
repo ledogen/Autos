@@ -43,6 +43,7 @@ import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedura
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
 import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
+import { loadRouteCache, saveRouteCache } from './route-store.js'  // QUAL-14 perf: IndexedDB route-cache persistence
 import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond discs + stream ribbons
 
 // World seed — parsed from URL ?seed= parameter, defaulting to '6'.
@@ -250,10 +251,88 @@ const USE_WORKER_ROUTING = true
 //      down the road (D-07).
 //   5. Null result or absent roadSystem → console.warn + Phase 7 terrain-only fallback
 //      (bounded ≤50 tries, deterministic — T-07-04-SPAWN guarantee preserved).
-function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
+// Spawn probe geometry shared by resolveSpawn and _warmSpawnRoutes (QUAL-14 perf) — one source
+// so the async pre-warm covers exactly the band the synchronous stream will route.
+function _spawnProbeBase (wseed, params) {
   const spawnSeed = seedFor(wseed, 'spawn')
-  const baseX = ((spawnSeed & 0xFFFF) / 0xFFFF - 0.5) * 200   // ±100 m initial offset
-  const baseZ = (((spawnSeed >>> 16) & 0xFFFF) / 0xFFFF - 0.5) * 200
+  return {
+    spawnSeed,
+    baseX: ((spawnSeed & 0xFFFF) / 0xFFFF - 0.5) * 200,   // ±100 m initial offset
+    baseZ: (((spawnSeed >>> 16) & 0xFFFF) / 0xFFFF - 0.5) * 200,
+    tightR: Math.max(320, Math.round((params.roadSiteSpacing ?? 256) * 0.85)),
+    spawnR: Math.max(200, Math.round((params.roadSiteSpacing ?? 256) * 1.5)),
+  }
+}
+
+// ── QUAL-14 perf: async cold-spawn route warm ────────────────────────────────────────────
+// resolveSpawn's ensureTile used to route the whole spawn band SYNCHRONOUSLY on the main thread —
+// the one 20 s+ cold-load block (perf log: "resolveSpawn: cold network stream"). Instead, before
+// the initial reseat, pump the normal warmRoutes pre-warm at the spawn stream radius on the route
+// worker POOL and await settlement: the searches split across 2–4 workers and the event loop
+// stays alive. resolveSpawn's stream then finds every connection in _proto.cls (pure cache hits).
+// Warms the TIGHT tier only — the wide tier fires for rare sparse-gap seeds and falls back to the
+// synchronous router exactly as before. Bounded wait: correctness NEVER depends on the warm.
+// ── QUAL-14 perf: route-cache persistence signature ─────────────────────────────────────
+// Everything a routed centerline is a function of: the seed plus every routing-relevant param —
+// road* (router weights/geometry), water* (pond no-go discs), coarse*/ridgeSharpness (the terrain
+// heightFn the router samples), the proto cost weights, and the design-grade window. A persisted
+// record is imported ONLY when this signature matches exactly, so a stale record can never inject
+// routes the current params wouldn't produce (same identity argument as the QUAL-08 worker cache).
+function _routeCacheSig () {
+  let s = 'v1|seed=' + worldSeed
+  for (const k of Object.keys(RANGER_PARAMS).sort()) {
+    const v = RANGER_PARAMS[k]
+    if (typeof v === 'function') continue
+    if (/^road|^water|^pond|^stream|^coarse|^w[A-Z]|^ridgeSharpness$|^designGradeWindow$|^maxGrade$/.test(k)) {
+      s += '|' + k + '=' + (typeof v === 'object' ? JSON.stringify(v) : v)   // roadArcRadii is an array
+    }
+  }
+  return s
+}
+let _routeCacheSavedSize = -1
+// Import a matching persisted cache into the live roadSystem (fire-and-forget on failure).
+async function _loadPersistedRoutes () {
+  if (!roadSystem) return
+  const data = await loadRouteCache(String(worldSeed), _routeCacheSig())
+  if (data && roadSystem) {
+    roadSystem.importRouteCache(data)
+    _routeCacheSavedSize = (roadSystem._proto.cls?.size ?? 0) + (roadSystem._proto.clsSolo?.size ?? 0)
+  }
+}
+function _savePersistedRoutes () {
+  if (!roadSystem?._proto?.cls) return
+  const n = roadSystem._proto.cls.size + (roadSystem._proto.clsSolo?.size ?? 0)
+  if (n === _routeCacheSavedSize || n === 0) return   // nothing new routed since the last save
+  _routeCacheSavedSize = n
+  saveRouteCache(String(worldSeed), _routeCacheSig(), roadSystem.exportRouteCache())
+}
+// Periodic top-up while exploring (new edges routed → persist), plus a flush on tab-hide.
+setInterval(_savePersistedRoutes, 30000)
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') _savePersistedRoutes() })
+
+let _spawnWarmActive = false   // frame loop skips road stream/warm while a spawn-band warm is pumping
+// ── QUAL-14 perf: async spawn-band warm ─────────────────────────────────────────────────
+// Pump RoadSystem.warmSpawnBand — the registered-band-exact, uncapped dispatch — for the tile
+// ensureTile(tx,tz) is about to stream, at the CURRENT road radius, until every band route is
+// cached (or a bounded wait expires; correctness never depends on the warm — the sync router
+// finishes any stragglers). The searches split across the worker pool and the event loop stays
+// alive. No-op without worker routing (headless gates / USE_WORKER_ROUTING=false).
+async function _warmTileBand (tx, tz) {
+  if (!roadSystem || !roadWorker) return
+  const c = new THREE.Vector3((tx + 0.5) * CHUNK_SIZE, 0, (tz + 0.5) * CHUNK_SIZE)
+  const t0 = performance.now()
+  _spawnWarmActive = true
+  try {
+    while (!roadSystem.warmSpawnBand(c) && performance.now() - t0 < 45000) {
+      await new Promise(r => setTimeout(r, 25))   // let route replies land between pump passes
+    }
+  } finally {
+    _spawnWarmActive = false
+  }
+}
+
+async function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
+  const { spawnSeed, baseX, baseZ, tightR, spawnR } = _spawnProbeBase(wseed, params)
 
   // ── Phase 8: road-graph probe (D-07) ─────────────────────────────────────────
   if (roadSystem) {
@@ -271,7 +350,7 @@ function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
     // find nothing → off-road terrain fallback. Widen the search to ~1.5× the site spacing, AND widen the
     // streamed radius to match (ensureTile streams at _proto.radius, the play radius ~320 m — too small to
     // even contain a 531 m road), then restore the play radius so the first frame streams normally.
-    const _spawnR = Math.max(200, Math.round((params.roadSiteSpacing ?? 256) * 1.5))
+    const _spawnR = spawnR
     const _savedRadius = roadSystem._proto.radius
     // PERF (spawn pre-bake): the cold spawn stream cost scales with radius² (routing area). The network is
     // sparse, so a single wide stream (query _spawnR=1.5×spacing + 200 m pad ≈ 1160 m) routes ~13× the play
@@ -281,12 +360,13 @@ function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
     // stream behaviour, so no seed that spawned on-road can now spawn off-road; the per-connection route
     // cache persists across the two streams, so the widen only routes the new annulus. Headless-verified
     // (0 off-road / 15 seeds; 14 spawn IDENTICAL, the 1 that differs lands on a CLOSER on-road point).
-    const _tightR = Math.max(320, Math.round((params.roadSiteSpacing ?? 256) * 0.85))
+    const _tightR = tightR
     const _spawnTiers = [[_tightR, _tightR + 128], [_spawnR, _spawnR + 200]]   // tight ≈672/544 → wide ≈1160/960
     let nearest = null
     perfMark('resolveSpawn: before ensureTile (cold network stream)')  // TEMP (D-arc)
     for (const [_qR, _streamR] of _spawnTiers) {
       roadSystem.setRadius(Math.max(_savedRadius, _streamR))
+      await _warmTileBand(baseTX, baseTZ)   // QUAL-14 perf: route this tier's band on the pool first
       roadSystem.ensureTile(baseTX, baseTZ)
       nearest = roadSystem.queryNearest(baseX, baseZ, _qR)
       if (nearest) break   // tight tier hit → skip the wide stream entirely (the common, fast path)
@@ -304,6 +384,10 @@ function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
       // the spawn point is actually far enough from baseTile to matter.
       const spawnTX = Math.floor(nearest.point.x / CHUNK_SIZE)
       const spawnTZ = Math.floor(nearest.point.z / CHUNK_SIZE)
+      // QUAL-14 perf: the spawn point can sit across an anchor band from baseTile, so this
+      // re-center streams a SHIFTED band — warm the shifted band on the pool too (measured:
+      // this ensureTile alone was 8.8 s of synchronous routing on a cold load).
+      await _warmTileBand(spawnTX, spawnTZ)
       roadSystem.ensureTile(spawnTX, spawnTZ)
       nearest = roadSystem.queryNearest(nearest.point.x, nearest.point.z, 100) || nearest
       // analyticHeight for placement so the truck rests on the rendered terrain surface.
@@ -378,7 +462,7 @@ function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
 let _rebuildDebounceTimer = null
 function debouncedRebuildFull () {
   clearTimeout(_rebuildDebounceTimer)
-  _rebuildDebounceTimer = setTimeout(() => {
+  _rebuildDebounceTimer = setTimeout(async () => {
     if (!terrainSystem) return
     terrainSystem.reinitWorker(worldSeed, RANGER_PARAMS)
     terrainSystem.rebuildAllChunksFromWorker()
@@ -425,7 +509,14 @@ function debouncedRebuildFull () {
       propSystem.dispose()
       propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
     }
-    _reseatTruckAtSpawn()
+    // QUAL-14 perf: same persisted-cache import + async reseat as the initial load — the new
+    // seed's spawn bands route on the worker pool inside resolveSpawn (frames keep rendering)
+    // before each synchronous stream. AFTER rebuildWaterSystem above: the warm and the
+    // persistence sig must carry the new seed's pond no-go discs.
+    _routeCacheSavedSize = -1   // new seed → new record; force the next save
+    await _loadPersistedRoutes()
+    await _reseatTruckAtSpawn()
+    _savePersistedRoutes()
   }, 150)
 }
 
@@ -499,8 +590,8 @@ function debouncedRoadRebuild () {
 // Used at: (1) initial load, (2) R-reset, (3) every debounced Path-B regenerate.
 // Free-cam position is NOT affected — only vehicleState is modified.
 // 3-PLACES NOTE: This plan adds NO new vehicleState fields; all fields below already exist.
-function _reseatTruckAtSpawn () {
-  const { position: spawnPos, heading } = resolveSpawn(worldSeed, RANGER_PARAMS)
+async function _reseatTruckAtSpawn () {
+  const { position: spawnPos, heading } = await resolveSpawn(worldSeed, RANGER_PARAMS)
   const eq = computeStaticEquilibrium(RANGER_PARAMS)
   vehicleState.position.set(spawnPos.x, spawnPos.y + eq.bodyY, spawnPos.z)
   vehicleState.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), heading)
@@ -1069,6 +1160,8 @@ if (USE_WORKER_ROUTING) {
   roadSystem.setRouteDispatcher((jobs, epoch) => roadWorker.postRouteJobs('play', jobs, epoch))
   // QUAL-08: the Map2D dev overlay routes its own read-only network off the same Worker (client 'map').
   map2d.setRouteWorker(roadWorker)
+  // QUAL-14 perf: map shares the play route cache (getter — play swaps instances on seed regen).
+  map2d.setSharedRouteSource(() => roadSystem)
 }
 roadMeshSystem = new RoadMeshSystem(
   scene, roadSystem,
@@ -1103,8 +1196,14 @@ _gui.foldersRecursive().forEach((f) => f.close())
 // TerrainSystem is now alive and analyticHeight is immediately available (no chunk load required).
 // This overrides the vehicleState.position set during declaration (which used origin + _spawnEq.bodyY).
 perfMark('init: systems created, before spawn reseat')  // TEMP (D-arc)
-_reseatTruckAtSpawn()
+// QUAL-14 perf: import any persisted route cache for this seed+params (second visit ≈ instant),
+// then reseat (top-level await — main.js is a module, so everything below, including the render
+// loop start, waits). resolveSpawn warms each band it streams on the worker POOL before touching
+// it, so the old 20 s+ synchronous cold-load block becomes a parallel, event-loop-friendly wait.
+await _loadPersistedRoutes()
+await _reseatTruckAtSpawn()
 perfMark('init: spawn reseated')  // TEMP (D-arc)
+_savePersistedRoutes()   // persist what the spawn warm just routed (fire-and-forget)
 
 // ── Body contact point debug spheres ──────────────────────────────────────────
 // 14 translucent orange spheres — one per probe in getBodyContactPoints.
@@ -1220,8 +1319,10 @@ function returnToWorld () {
     terrainSystem.setChunksVisible(true)
   }
 
-  // Re-seat truck at canonical spawn (Plan 04 — resolveSpawn + analyticHeight ground-probe)
-  _reseatTruckAtSpawn()
+  // Re-seat truck at canonical spawn (Plan 04 — resolveSpawn + analyticHeight ground-probe).
+  // Async since QUAL-14 (spawn bands warm on the worker pool); fire-and-forget — the sim keeps
+  // running on the old state for the few frames until the seat lands (usually pure cache hits).
+  void _reseatTruckAtSpawn()
 
   _hidePauseMenu()
 }
@@ -1352,7 +1453,9 @@ function loop () {
       // Phase 7 (D-15): canonical re-seat via resolveSpawn + analyticHeight ground-probe.
       // _reseatTruckAtSpawn() replaces the former inline reset block — picks a low-slope spawn
       // using the current worldSeed, seats at static equilibrium height, zeros all motion.
-      _reseatTruckAtSpawn()
+      // Async since QUAL-14 (spawn bands warm on the worker pool); fire-and-forget — with the
+      // route cache warm this resolves within a frame or two.
+      void _reseatTruckAtSpawn()
     }
 
     _prevRenderPos.copy(vehicleState.position)
@@ -1487,7 +1590,9 @@ function loop () {
   // Phase 8: stream the valley-trunk network around the same center as terrain (08-07: the
   // unified update() replaces the retired updateProto — streams + slices + redraws viz if visible).
   _pt = performance.now()
-  if (roadSystem) roadSystem.update(streamCenter)
+  // QUAL-14 perf: while a spawn warm holds the enlarged radius (seed regen), a re-stream here
+  // would synchronously route the enlarged band — skip until the warm restores the play radius.
+  if (roadSystem && !_spawnWarmActive) roadSystem.update(streamCenter)
   perfAdd('frame.road.update', performance.now() - _pt)
   // FEAT-06: stream props around the same center (diff is cheap when no chunk crossed).
   if (propSystem) propSystem.update(streamCenter.x, streamCenter.z, _propRing)
@@ -1501,7 +1606,7 @@ function loop () {
   // PERF-03 WS-A: pre-warm the road centerline cache off-thread ahead of the streamer. BUG-26: no-ops
   // now (USE_WORKER_ROUTING=false → no dispatcher) so it never starves terrain on the shared Worker;
   // _streamNetwork routes synchronously on the main thread instead. Kept wired for the future own-worker.
-  if (roadSystem) roadSystem.warmRoutes(streamCenter)
+  if (roadSystem && !_spawnWarmActive) roadSystem.warmRoutes(streamCenter)   // don't fight a spawn warm's anchor
   // Phase 9 (SURF-01): sync road ribbon tiles with the active terrain chunk ring.
   // syncToChunkRing enqueues new tiles and disposes evicted ones co-located with chunk lifetime.
   // flushPendingQueue builds up to MAX_ROAD_BUILDS_PER_FRAME tiles per frame.
@@ -1602,6 +1707,9 @@ function loop () {
 }
 
 perfMark('init: synchronous bootstrap done, requesting first frame')  // TEMP (D-arc)
+// Dev handle (like __view above): init — including the QUAL-14 async spawn warm — is complete and
+// the render loop is starting. Read by the headless boot-timing probes.
+window.__rsReady = true
 requestAnimationFrame(loop)
 
 // ── Resize handler ───────────────────────────────────────────────────────────

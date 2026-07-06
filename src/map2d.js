@@ -50,6 +50,7 @@ export class Map2D {
         this._open       = false
         this._road       = null          // the map's own RoadSystem; KEPT ALIVE across opens (route cache)
         this._routeWorker = null         // QUAL-08: dedicated road-network Worker (client 'map'); set via setRouteWorker
+        this._sharedRouteSource = null   // QUAL-14 perf: getter for the play RoadSystem (shared route cache)
         this._sig        = null          // seed+road-param signature the current _road was built for
         this._streamAt   = null          // THREE.Vector3 the network was last streamed around
         this._streamTimer = 0            // pan-debounce handle
@@ -89,6 +90,14 @@ export class Map2D {
     // OFF the main thread (client 'map'), decoupled from the play/terrain pipeline. Optional — without it
     // the map falls back to synchronous routing (its prior behaviour). Wired in _buildRoad on (re)build.
     setRouteWorker(rw) { this._routeWorker = rw }
+
+    // QUAL-14 perf: share the PLAY RoadSystem's per-connection route cache. Centerlines are pure
+    // fns of (seed, road params) and this map rebuilds its instance on any sig change, so aliasing
+    // the two instances' cache Maps is safe — the map never re-routes a connection play already
+    // paid for (cold map open stops recomputing the whole play band), and map panning pre-fills
+    // the cache play will stream into later. A GETTER, not an instance: play swaps RoadSystem
+    // instances on seed regen and the map must re-adopt the live one on its own rebuild.
+    setSharedRouteSource(fn) { this._sharedRouteSource = fn }
 
     // FEAT-17: the same water no-go injection the play RoadSystem gets (see main.js
     // rebuildWaterSystem) — the map must route with the identical pond exclusion or the network it
@@ -191,6 +200,16 @@ export class Map2D {
         }
         // FEAT-17: re-apply the water no-go so the fresh instance routes around ponds like play does.
         if (this._waterNoGoFns) this._road.setWaterNoGo(this._waterNoGoFns[0], this._waterNoGoFns[1])
+        // QUAL-14 perf: adopt the play instance's route-cache Maps — strictly AFTER setWaterNoGo
+        // above (it calls _invalidateProto, which CLEARS the caches it can see; it must not wipe
+        // play's warm entries). Guarded on seed match; params match by construction (both read the
+        // live RANGER_PARAMS, and a road-param change rebuilds this instance via _paramSig).
+        const src = this._sharedRouteSource?.()
+        if (src && src._worldSeed === this._getSeed()) {
+            const p = src._proto, q = this._road._proto
+            q.cls = (p.cls ??= new Map())
+            q.clsSolo = (p.clsSolo ??= new Map())
+        }
     }
 
     // Begin/restart the chunked stream around the current pan center: grow the radius through

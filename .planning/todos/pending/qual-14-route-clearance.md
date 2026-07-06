@@ -164,3 +164,39 @@ Target: cold load 26 s → 3–5 s; exploration hangs gone; map usable.
 roadCorridorExempt 50 + roadGraphGoalBlend 60 measured best at the tangle center (4500,600):
 crossings 40→33, comps [33,5,5,2,2,2]→[46,2,2] (92% ≥ the 85% REACHABILITY bar — would likely
 green the last gate). goalBlend 20→60 changes road feel near junctions → needs a drive check.
+
+---
+
+## STATUS 2026-07-05 (later): PERF PHASE IMPLEMENTED — needs user drive/load check
+
+Headless-Chrome measurements (test rig; user's M4 in a real browser should be ≥ this):
+**cold load 26 s-class → 5.9 s; second visit (IndexedDB hit) 0.9 s.** Seed-6 full-band synchronous
+routing (the fallback path) 89.3 s → 44 s. graph-topology 9/10 (REACHABILITY = pre-existing red,
+owned by the goalBlend-60 lever above); GRAPH-CROSSINGS-CULLED improved to 0 surviving crossings.
+Road character intact (straights >200 m: 3.6%, 57 switchbacks).
+
+What landed (perf plan items 1–6):
+1. **In-search self-proximity rejection** (ROUTE SYNC): expansion rejects primitives landing
+   within D_self of the candidate's OWN ancestor chain at arcSep>gap — pigtails are illegal moves,
+   routed around in the SAME pass. Per-EXPANSION ancestor prefilter (endpoint+midpoint samples,
+   exact per-pair arc positions — a conservative gate left a slop band that admitted radius-14
+   curls at arcSep 85–105). Plus a REFIT GUARD: if shortcut/terminal rewrites introduce clearance
+   violations, ship the pre-refit chain (a corridor-congested Dubins span sliced the route: 216
+   violations from a 7-violation search output). Repair loop demoted to backstop, cap KEPT at 16
+   (cap-4 experiment shipped fewest-violations chains → gate regression; only dirty edges pay).
+2. **Route worker POOL** (2–4 by hardwareConcurrency, round-robin batches) + PREWARM_MAX_JOBS
+   4→16 + steeper repair-disc escalation (0.5/it).
+3. **Async cold spawn**: resolveSpawn is async and pumps `RoadSystem.warmSpawnBand` (NEW:
+   registered-band-EXACT, uncapped dispatch — warmRoutes' prewarm superset was 167 edges/~490
+   searches for a 25-edge band) before EVERY ensureTile, including the spawn-point re-center
+   (which alone was 8.8 s of sync routing). Top-level await in main.js; regen/R-reset use the
+   same path; `_spawnWarmActive` guards the frame loop during a warm.
+4. **Play↔Map2D route-cache sharing**: map2d adopts the play instance's cls/clsSolo Maps
+   (after setWaterNoGo — it clears what it sees), via getter (play swaps instances on regen).
+5. **IndexedDB persistence** (src/route-store.js): one record per seed keyed by a full
+   routing-param signature (road*/water*/coarse*/weights/designGradeWindow, arrays JSONed);
+   import at init + regen, save post-warm + every 30 s + on tab-hide. Pure-fn identity ⇒ a sig
+   hit can never inject routes the current params wouldn't produce.
+
+Remaining before closing the ticket: user drive check (load feel + roads unchanged-good), then
+the goalBlend-60/exempt-50 lever decision, then retry the maxGrade 0.10 preset, then QUAL-13.

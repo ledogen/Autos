@@ -256,8 +256,10 @@ const ROAD_BAND_MARGIN = 1  // extra macro-cols beyond ceil(R/spacing) each side
 
 // ── Off-thread route pre-warm tuning (PERF-03 Workstream A) ───────────────────
 const PREWARM_MARGIN    = 2   // extra macro-cols/rows beyond the streamer band to route AHEAD of need
-const PREWARM_MAX_JOBS  = 4   // route jobs dispatched per warmRoutes() call — trickle, so they interleave
-                              // with terrain heightmap generation on the shared Worker (no head-of-line stall)
+const PREWARM_MAX_JOBS  = 16  // route jobs dispatched per warmRoutes() call. Routing has its OWN worker
+                              // pool since QUAL-08/QUAL-14 (terrain generation can't be starved), so the
+                              // cap is only back-pressure: enough in flight to keep 2–4 workers busy
+                              // through the two-phase (solo→final) warm without flooding a stale epoch.
 const PREWARM_WARM_MOVE = 32  // m — only rescan/redispatch the pre-warm band after the center moves this far
 
 // QUAL-14 Part B: spacing of corridor-avoidance no-go discs sampled along a higher-priority
@@ -1219,21 +1221,34 @@ export class RoadSystem {
         const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING) - PREWARM_MARGIN
         const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING) + PREWARM_MARGIN
 
-        const jobs = []
         // FEAT-13 v2: warm every Urquhart edge in the band (same edge set _assembleGraphEdges will
         // register → the pre-warmed routes are exact cache hits). Edge SELECTION stays main-thread;
         // only arcPrimitiveConnect runs on the Worker (no WORKER_SOURCE / ROUTE SYNC change).
-        // QUAL-14 Part B: dispatch is DEPENDENCY-AWARE — an edge's job ships only when every
-        // higher-priority overlapping sibling is already cached (its corridor discs are then pure
-        // data, identical to what the sync fallback would compute). Unready deps are dispatched
-        // first (they may lie outside the band); the dependent edge retries on a later pass once
-        // the replies land. Any deferral keeps the throttle anchor un-advanced so the next
-        // warmRoutes() call rescans instead of waiting for a PREWARM_WARM_MOVE.
+        const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)   // persist=false: don't clobber the streaming graph
+        const { jobs, deferred } = this._warmScan(g.edges, PREWARM_MAX_JOBS)
+        // Only advance the throttle anchor once the visible band is fully warmed/pending — otherwise a
+        // single move could leave fringe connections un-dispatched until the NEXT PREWARM_WARM_MOVE.
+        if (jobs.length < PREWARM_MAX_JOBS && !deferred) this._lastWarmCenter = center.clone()
+        if (jobs.length > 0) this._routeDispatch(jobs, this._routeEpoch)
+    }
+
+    /**
+     * Shared warm-scan core (QUAL-14 perf refactor — extracted verbatim from warmRoutes). Walks
+     * `edges` trying to make each cache-complete, collecting ≤ `cap` dispatchable route jobs.
+     * QUAL-14 Part B: dispatch is DEPENDENCY-AWARE — an edge's FINAL job ships only when every
+     * higher-priority overlapping sibling's SOLO route is already cached (its corridor discs are
+     * then pure data, identical to what the sync fallback would compute); unready deps get SOLO
+     * jobs first (they may lie outside the band) and the dependent edge retries on a later scan
+     * once the replies land. Returns { jobs, deferred } — deferred means the set is not yet
+     * cache-complete (replies in flight, deps pending, or the cap bit): callers must rescan.
+     */
+    _warmScan(edges, cap) {
+        const jobs = []
         let deferred = false
         const seen = new Set()
         // Dispatch a SOLO route job (no corridor discs) for a dep edge — fills clsSolo on reply.
         const warmSolo = (c1, c2) => {
-            if (jobs.length >= PREWARM_MAX_JOBS) { deferred = true; return }
+            if (jobs.length >= cap) { deferred = true; return }
             const skey = 'S|' + this._edgeClsKey(c1, c2)
             if (seen.has(skey) || this._pendingRoutes.has(skey)) { deferred = true; return }
             seen.add(skey)
@@ -1242,7 +1257,7 @@ export class RoadSystem {
             jobs.push({ key: skey, ax: spec.ax, az: spec.az, bx: spec.bx, bz: spec.bz, opts: spec.opts })
         }
         const tryWarm = (c1, c2) => {
-            if (jobs.length >= PREWARM_MAX_JOBS) { deferred = true; return }
+            if (jobs.length >= cap) { deferred = true; return }
             const key = this._edgeClsKey(c1, c2)
             if (this._proto.cls?.has(key)) return
             if (seen.has(key)) { deferred = true; return }   // dispatched/deferred earlier this pass
@@ -1262,15 +1277,66 @@ export class RoadSystem {
             this._pendingRoutes.add(spec.key)
             jobs.push({ key: spec.key, ax: spec.ax, az: spec.az, bx: spec.bx, bz: spec.bz, opts: spec.opts })
         }
-        const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)   // persist=false: don't clobber the streaming graph
-        for (const [c1, c2] of g.edges) {
-            if (jobs.length >= PREWARM_MAX_JOBS) break
+        for (const [c1, c2] of edges) {
+            if (jobs.length >= cap) { deferred = true; break }
             tryWarm(c1, c2)
         }
-        // Only advance the throttle anchor once the visible band is fully warmed/pending — otherwise a
-        // single move could leave fringe connections un-dispatched until the NEXT PREWARM_WARM_MOVE.
-        if (jobs.length < PREWARM_MAX_JOBS && !deferred) this._lastWarmCenter = center.clone()
+        return { jobs, deferred }
+    }
+
+    /**
+     * QUAL-14 perf: warm exactly the REGISTERED band around `center` — the edge set the next
+     * _streamNetwork/ensureTile at the CURRENT radius will register — dispatching every missing
+     * route job at once so the worker POOL chews them in parallel. warmRoutes above is the
+     * MOVEMENT pre-warm: it trickles a superset band (prewarm + graph margins ≈ 3–6× the
+     * registered searches) capped per call — right for play, wrong for the cold spawn, which
+     * paid ~490 margin searches for a 25-edge band (the 30 s "warm" that then still missed).
+     * Returns true once every band edge (and its corridor-dep solos) is cached with no replies
+     * outstanding — the caller pumps this until true, then streams synchronously as pure cache
+     * hits. Without a dispatcher → true immediately (sync fallback owns routing; headless gates).
+     */
+    warmSpawnBand(center) {
+        if (!this._routeDispatch) return true
+        this._refreshParams()
+        const R = this._proto.radius
+        const center_mx = Math.floor(center.x / PROTO_ANCHOR_SPACING)
+        const HW = this._bandHalfWidth()
+        const mx0 = center_mx - HW, mx1 = center_mx + HW
+        const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING)
+        const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING)
+        const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)
+        // Same registration filter as _assembleGraphEdges: fully-margin edges never register.
+        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
+        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
+        const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
+        const edges = g.edges.filter(([c1, c2]) => inBand(c1) || inBand(c2))
+        const { jobs, deferred } = this._warmScan(edges, Infinity)
         if (jobs.length > 0) this._routeDispatch(jobs, this._routeEpoch)
+        return jobs.length === 0 && !deferred
+    }
+
+    /**
+     * QUAL-14 perf: export the route caches as plain primitive-descriptor entries (structured-
+     * clonable) for IndexedDB persistence (src/route-store.js). Centerlines rebuild losslessly
+     * from their descriptors, so this is the whole cache state.
+     */
+    exportRouteCache() {
+        const dump = (m) => m ? [...m.entries()].map(([k, cl]) => [k, cl.primitives]) : []
+        return { cls: dump(this._proto.cls), clsSolo: dump(this._proto.clsSolo) }
+    }
+
+    /** QUAL-14 perf: import a persisted route cache (fills only missing keys — live entries win). */
+    importRouteCache(data) {
+        if (!data) return
+        if (!this._proto.cls) this._proto.cls = new Map()
+        if (!this._proto.clsSolo) this._proto.clsSolo = new Map()
+        const load = (m, entries) => {
+            for (const [k, prims] of entries || []) {
+                if (!m.has(k) && prims && prims.length) m.set(k, centerlineFromDescriptors(prims))
+            }
+        }
+        load(this._proto.cls, data.cls)
+        load(this._proto.clsSolo, data.clsSolo)
     }
 
     /**
