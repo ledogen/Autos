@@ -260,6 +260,18 @@ const PREWARM_MAX_JOBS  = 4   // route jobs dispatched per warmRoutes() call —
                               // with terrain heightmap generation on the shared Worker (no head-of-line stall)
 const PREWARM_WARM_MOVE = 32  // m — only rescan/redispatch the pre-warm band after the center moves this far
 
+// QUAL-14 Part B: spacing of corridor-avoidance no-go discs sampled along a higher-priority
+// sibling's centerline. Discs of radius roadCorridorClearance (20 m) at 12 m spacing overlap
+// heavily → the corridor is a solid capsule, no gap a primitive can thread.
+const CORRIDOR_DISC_DS = 12  // m
+// QUAL-14 Part B: radius of the no-go disc every route keeps around FOREIGN graph nodes (all
+// alive sites except the edge's own two endpoints). Kills shallow near-node crossings at the
+// source (a road no longer cuts through someone else's junction neighborhood) and keeps sibling
+// corridors out of the anchor-exemption zone (60 + the 26 m disc reach < the 80 m exemption), so
+// an edge's own start/goal can never be walled by a corridor. < roadSiteMinDist (90), so a node
+// disc can never cover an adjacent node.
+const NODE_CLEAR_R = 60  // m
+
 // ── Module-scope pure height function ─────────────────────────────────────────
 /**
  * Raw coarse terrain height at world (wx, wz), pre-amplitude.
@@ -997,6 +1009,8 @@ export class RoadSystem {
             graph:    null,                                  // FEAT-13 v2: current band Urquhart {sig, edges, adj, key}
             nodeInc:  new Map(),                             // FEAT-13 v2: site-key → [runKey,…] incident registered edges
             cls:      new Map(),                             // "mx,mz:…" → Centerline (per-connection primitive curve)
+            clsSolo:  new Map(),                             // QUAL-14: edge key → SOLO centerline (routed with no corridor avoidance; what siblings avoid)
+            edgeDeps: new Map(),                             // QUAL-14: edge key → higher-priority node-sharing edges (corridor deps)
             lastCenter: null,
             dirty:    true,
             surfaceY: null,                                  // optional (x,z)=>renderedHeight for visual line placement
@@ -1112,6 +1126,8 @@ export class RoadSystem {
         // Param changes affect routing results → drop the per-connection centerline cache
         // (a pure fn of params, so the next miss recomputes the new value).
         if (this._proto.cls) this._proto.cls.clear()
+        if (this._proto.clsSolo) this._proto.clsSolo.clear()     // QUAL-14: solo routes derive from params too
+        if (this._proto.edgeDeps) this._proto.edgeDeps.clear()   // QUAL-14: deps derive from sites+params
         // Off-thread routing (PERF-03 WS-A): the cleared cache must be re-warmable, and any Worker
         // reply still in flight was routed against the OLD params → bump the epoch so it's discarded
         // as stale, and clear pending so the new params' connections get re-dispatched.
@@ -1204,22 +1220,56 @@ export class RoadSystem {
         const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING) + PREWARM_MARGIN
 
         const jobs = []
-        const addJob = (spec) => {
-            if (this._proto.cls?.has(spec.key) || this._pendingRoutes.has(spec.key)) return
-            this._pendingRoutes.add(spec.key)
-            jobs.push({ key: spec.key, ax: spec.ax, az: spec.az, bx: spec.bx, bz: spec.bz, opts: spec.opts })
-        }
         // FEAT-13 v2: warm every Urquhart edge in the band (same edge set _assembleGraphEdges will
         // register → the pre-warmed routes are exact cache hits). Edge SELECTION stays main-thread;
         // only arcPrimitiveConnect runs on the Worker (no WORKER_SOURCE / ROUTE SYNC change).
+        // QUAL-14 Part B: dispatch is DEPENDENCY-AWARE — an edge's job ships only when every
+        // higher-priority overlapping sibling is already cached (its corridor discs are then pure
+        // data, identical to what the sync fallback would compute). Unready deps are dispatched
+        // first (they may lie outside the band); the dependent edge retries on a later pass once
+        // the replies land. Any deferral keeps the throttle anchor un-advanced so the next
+        // warmRoutes() call rescans instead of waiting for a PREWARM_WARM_MOVE.
+        let deferred = false
+        const seen = new Set()
+        // Dispatch a SOLO route job (no corridor discs) for a dep edge — fills clsSolo on reply.
+        const warmSolo = (c1, c2) => {
+            if (jobs.length >= PREWARM_MAX_JOBS) { deferred = true; return }
+            const skey = 'S|' + this._edgeClsKey(c1, c2)
+            if (seen.has(skey) || this._pendingRoutes.has(skey)) { deferred = true; return }
+            seen.add(skey)
+            const spec = this._edgeRouteSpec(c1, c2)
+            this._pendingRoutes.add(skey)
+            jobs.push({ key: skey, ax: spec.ax, az: spec.az, bx: spec.bx, bz: spec.bz, opts: spec.opts })
+        }
+        const tryWarm = (c1, c2) => {
+            if (jobs.length >= PREWARM_MAX_JOBS) { deferred = true; return }
+            const key = this._edgeClsKey(c1, c2)
+            if (this._proto.cls?.has(key)) return
+            if (seen.has(key)) { deferred = true; return }   // dispatched/deferred earlier this pass
+            seen.add(key)
+            if (this._pendingRoutes.has(key)) { deferred = true; return }
+            // Phase 1: every dep's SOLO route must be cached before this edge's discs are data.
+            let ready = true
+            for (const [d1, d2] of this._edgeDeps(c1, c2)) {
+                if (!this._proto.clsSolo?.has(this._edgeClsKey(d1, d2))) { ready = false; warmSolo(d1, d2) }
+            }
+            if (!ready) { deferred = true; return }
+            // Phase 2: deps solo-cached → discs are pure data; ship the final job.
+            const avoid = this._corridorDiscsFor(c1, c2, false)
+            if (avoid === null) { deferred = true; return }   // raced: dep evicted since the check
+            const spec = this._edgeRouteSpec(c1, c2)
+            if (avoid) spec.opts.avoidDiscs = spec.opts.avoidDiscs ? spec.opts.avoidDiscs.concat(avoid) : avoid
+            this._pendingRoutes.add(spec.key)
+            jobs.push({ key: spec.key, ax: spec.ax, az: spec.az, bx: spec.bx, bz: spec.bz, opts: spec.opts })
+        }
         const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)   // persist=false: don't clobber the streaming graph
         for (const [c1, c2] of g.edges) {
             if (jobs.length >= PREWARM_MAX_JOBS) break
-            addJob(this._edgeRouteSpec(c1, c2))
+            tryWarm(c1, c2)
         }
         // Only advance the throttle anchor once the visible band is fully warmed/pending — otherwise a
         // single move could leave fringe connections un-dispatched until the NEXT PREWARM_WARM_MOVE.
-        if (jobs.length < PREWARM_MAX_JOBS) this._lastWarmCenter = center.clone()
+        if (jobs.length < PREWARM_MAX_JOBS && !deferred) this._lastWarmCenter = center.clone()
         if (jobs.length > 0) this._routeDispatch(jobs, this._routeEpoch)
     }
 
@@ -1234,10 +1284,15 @@ export class RoadSystem {
     ingestRoutedConnections(results, epoch) {
         if (epoch !== this._routeEpoch) return   // routed against stale params — discard
         if (!this._proto.cls) this._proto.cls = new Map()
+        if (!this._proto.clsSolo) this._proto.clsSolo = new Map()
         for (const { key, prims } of results) {
             this._pendingRoutes.delete(key)
             if (!prims) continue
-            if (!this._proto.cls.has(key)) this._proto.cls.set(key, centerlineFromDescriptors(prims))
+            // QUAL-14: 'S|'-prefixed keys are SOLO route pre-warms (corridor-dep inputs) → clsSolo.
+            const solo = key.startsWith('S|')
+            const map = solo ? this._proto.clsSolo : this._proto.cls
+            const k = solo ? key.slice(2) : key
+            if (!map.has(k)) map.set(k, centerlineFromDescriptors(prims))
         }
     }
 
@@ -1493,6 +1548,119 @@ export class RoadSystem {
         return dropped.length > 0
     }
 
+    // ── QUAL-14 Part B backstop: cull residual clearance violations ───────────────────────────────
+    // Corridor avoidance is preventive but not airtight: the router's escape hatch can drop the
+    // corridors wholesale (goal walled), and a higher-priority sibling's FINAL route can leave the
+    // SOLO lane the dependent avoided (one-level deps — see the scheme header). Any registered pair
+    // still hugging closer than the carve footprint (D_self, the same floor self-clearance uses)
+    // outside the shared-node merge exemption is an artifact the graph doesn't need (planar ⇒
+    // proximity is wander): drop ONE of the pair — the lower-priority edge when it has a bounded-hop
+    // detour, else the higher one, else keep both (connectivity wins; same guardrail as
+    // _cullCrossings). Deterministic (canonical pair order + priority) → window-invariant for
+    // interior pairs. Returns true if it dropped anything (caller re-detects junctions).
+    _cullClearance(mx0, mx1, mz0, mz1) {
+        const g = this._proto.graph
+        if (!g || this._network.size < 2) return false
+        const pp = this._params || {}
+        const D = 2 * (pp.roadHalfWidth ?? 5) + 2 * (pp.roadShoulderWidth ?? 2.5) + (pp.roadSelfClearMargin ?? 3)
+        const EXEMPT = pp.roadCorridorExempt ?? (Math.max(pp.roadGraphGoalBlend ?? 60, pp.roadJunctionBlendLength ?? 30, 60) + 20)
+        // Spatial hash of every registered polyline point (cell = D) → candidate cross-edge pairs.
+        const grid = new Map()
+        const runs = [...this._network.entries()]
+        for (let ri = 0; ri < runs.length; ri++) {
+            const pts = runs[ri][1].points
+            for (let pi = 0; pi < pts.length; pi++) {
+                const hk = Math.floor(pts[pi].x / D) * 73856093 ^ Math.floor(pts[pi].z / D) * 19349663
+                const bkt = grid.get(hk)
+                if (bkt) bkt.push(ri, pi); else grid.set(hk, [ri, pi])
+            }
+        }
+        // Exemption zone = around ANY of the pair's four endpoint nodes (mirrors the disc-side
+        // exemption: shared-node merges AND near-anchor convergence are expected geometry).
+        const exemptPtsOf = (ea, eb) => [
+            this._nodePos(ea.cellA), this._nodePos(ea.cellB),
+            this._nodePos(eb.cellA), this._nodePos(eb.cellB),
+        ]
+        const violPairs = new Map()   // "loKey#hiKey" → [ri, rj]
+        for (let ri = 0; ri < runs.length; ri++) {
+            const pts = runs[ri][1].points
+            for (let pi = 0; pi < pts.length; pi++) {
+                const p = pts[pi]
+                const cx = Math.floor(p.x / D), cz = Math.floor(p.z / D)
+                for (let ox = -1; ox <= 1; ox++) for (let oz = -1; oz <= 1; oz++) {
+                    const bkt = grid.get((cx + ox) * 73856093 ^ (cz + oz) * 19349663)
+                    if (!bkt) continue
+                    for (let bi = 0; bi < bkt.length; bi += 2) {
+                        const rj = bkt[bi]
+                        if (rj >= ri) continue   // each edge pair once; skip same edge
+                        const q = runs[rj][1].points[bkt[bi + 1]]
+                        if ((p.x - q.x) ** 2 + (p.z - q.z) ** 2 >= D * D) continue
+                        const exemptPts = exemptPtsOf(runs[ri][1], runs[rj][1])
+                        let exempt = false
+                        for (const sp of exemptPts) {
+                            if ((p.x - sp.x) ** 2 + (p.z - sp.z) ** 2 < EXEMPT * EXEMPT
+                             || (q.x - sp.x) ** 2 + (q.z - sp.z) ** 2 < EXEMPT * EXEMPT) { exempt = true; break }
+                        }
+                        if (exempt) continue
+                        const lo = runs[ri][0] < runs[rj][0] ? runs[ri][0] : runs[rj][0]
+                        const hi = runs[ri][0] < runs[rj][0] ? runs[rj][0] : runs[ri][0]
+                        violPairs.set(lo + '#' + hi, [lo, hi])
+                    }
+                }
+            }
+        }
+        if (!violPairs.size) return false
+        // Detour BFS over the same wide window-invariant graph _cullCrossings uses.
+        const maxHops = this._params?.roadGraphCullMaxHops ?? 4
+        const dg = (mx0 != null)
+            ? this._buildUrquhart(mx0, mx1, mz0, mz1, false, (this._params?.roadGraphMargin ?? 3) + maxHops + 1)
+            : g
+        const adj = new Map()
+        const addj = (x, y) => { (adj.get(x) || adj.set(x, new Set()).get(x)).add(y) }
+        for (const [x, y] of dg.edges) { addj(dg.key(x), dg.key(y)); addj(dg.key(y), dg.key(x)) }
+        const detour = (x, y) => {
+            const q = [[x, 0]], seen = new Set([x])
+            while (q.length) {
+                const [u, d] = q.shift()
+                if (d >= maxHops) continue
+                for (const v of adj.get(u) || []) {
+                    if (u === x && v === y) continue
+                    if (v === y) return d + 1
+                    if (!seen.has(v)) { seen.add(v); q.push([v, d + 1]) }
+                }
+            }
+            return -1
+        }
+        const pairs = [...violPairs.values()].sort((x, y) => x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : (x[1] < y[1] ? -1 : 1))
+        const dropEdge = (rk, e) => {
+            this._network.delete(rk)
+            adj.get(g.key(e.cellA))?.delete(g.key(e.cellB))
+            adj.get(g.key(e.cellB))?.delete(g.key(e.cellA))
+            g.adj.get(g.key(e.cellA))?.delete(g.key(e.cellB))
+            g.adj.get(g.key(e.cellB))?.delete(g.key(e.cellA))
+        }
+        let dropped = 0
+        for (const [ka, kb] of pairs) {
+            const ea = this._network.get(ka), eb = this._network.get(kb)
+            if (!ea || !eb) continue   // resolved by an earlier drop
+            // Prefer dropping the LOWER-priority edge (the wanderer that failed to yield).
+            const aLower = RoadSystem._sitePairCmp(ea.cellA, ea.cellB, eb.cellA, eb.cellB) > 0
+            const first = aLower ? [ka, ea] : [kb, eb], second = aLower ? [kb, eb] : [ka, ea]
+            if (detour(g.key(first[1].cellA), g.key(first[1].cellB)) >= 0) { dropEdge(first[0], first[1]); dropped++ }
+            else if (detour(g.key(second[1].cellA), g.key(second[1].cellB)) >= 0) { dropEdge(second[0], second[1]); dropped++ }
+            // else: both are bridges — keep both, connectivity wins
+        }
+        if (dropped) {   // rebuild the junction-Y incidence index over the survivors
+            this._proto.nodeInc.clear()
+            for (const [rk, e] of this._network) {
+                const ka = g.key(e.cellA), kb = g.key(e.cellB)
+                ;(this._proto.nodeInc.get(ka) || this._proto.nodeInc.set(ka, []).get(ka)).push(rk)
+                ;(this._proto.nodeInc.get(kb) || this._proto.nodeInc.set(kb, []).get(kb)).push(rk)
+            }
+        }
+        return dropped > 0
+    }
+
     _protoEdgeCost(fromH, toH, horiz, P) {
         const grade = Math.abs(toH - fromH) / horiz
         const over  = Math.max(0, grade - P.maxGrade)
@@ -1568,26 +1736,208 @@ export class RoadSystem {
             // setWaterNoGo). Baked into the shared spec so the Worker pre-warm job and the
             // synchronous fallback route with the identical exclusion. undefined when unwired.
             pondDiscs: this._pondDiscsForEdge(c1, c2),
+            // QUAL-14 Part B: foreign-node no-go discs (see _nodeAvoidDiscs) — every route (solo
+            // AND final) stays out of other junctions' neighborhoods. _edgeCenterline/warmRoutes
+            // CONCATENATE the per-edge corridor discs onto this base.
+            avoidDiscs: this._nodeAvoidDiscs(c1, c2),
         }
     }
 
     // FEAT-13: route SPEC for a node-id edge c1→c2 (canonical 'g' cache key). Node ids are blue-noise
     // site ids [cmx,cmz,k]; the key joins their components so it is unique.
+    _edgeClsKey(c1, c2) {
+        const a = this._nodePos(c1), b = this._nodePos(c2)
+        return `g${c1.join('_')}>${c2.join('_')}:${a.x.toFixed(0)},${a.z.toFixed(0)}>${b.x.toFixed(0)},${b.z.toFixed(0)}`
+    }
+
     _edgeRouteSpec(c1, c2) {
         const a = this._nodePos(c1), b = this._nodePos(c2)
-        const key = `g${c1.join('_')}>${c2.join('_')}:${a.x.toFixed(0)},${a.z.toFixed(0)}>${b.x.toFixed(0)},${b.z.toFixed(0)}`
-        return { key, ax: a.x, az: a.z, bx: b.x, bz: b.z, opts: this._routeOptsBetween(c1, c2) }
+        return { key: this._edgeClsKey(c1, c2), ax: a.x, az: a.z, bx: b.x, bz: b.z, opts: this._routeOptsBetween(c1, c2) }
+    }
+
+    // ── QUAL-14 Part B: cross-edge corridor avoidance ─────────────────────────────────────────────
+    // Edges route INDEPENDENTLY (per-edge purity — cache/worker/window-invariance), so no edge knows
+    // its siblings exist and two edges can carve parallel corridors sharing a cut wall. The Urquhart
+    // graph is a Delaunay subgraph ⇒ PLANAR ⇒ edge CHORDS never cross — any routed edge-edge
+    // crossing/hug is route-wander artifact, so hard-forbidding proximity is topologically sound.
+    // Scheme: a CANONICAL PRIORITY orders all edges (pure fn of the world-stable site ids); an edge
+    // routes with no-go discs sampled from the SOLO centerlines (routed with no avoidance — a pure
+    // per-edge fn) of every higher-priority edge SHARING A NODE with it (see _edgeDeps for why
+    // adjacency is the dep set), except near the shared node itself (merge exemption: approaches
+    // into a common junction may converge; everywhere else they may not). Discs come from SOLO
+    // routes, not final ones, deliberately: dep-of-dep resolution makes an edge's result depend on
+    // a TRANSITIVE closure of monotone-decreasing-priority paths, and that closure percolates
+    // (measured: >3000 edges — unbounded on an endless map). Solo routes cut the chain at depth 1:
+    // every edge's discs derive only from its immediate siblings' dep-free routes. The final
+    // network can still deviate from a solo corridor second-order (a sibling itself displaced),
+    // which the clearance gate watches; connectivity is guarded by the router's escape hatch.
+
+    // Canonical priority: numeric-lexicographic on the edge's two site ids, pair canonicalized so
+    // the comparison is orientation-independent. Returns <0 if edge A outranks (routes before) B.
+    static _sitePairCmp(a1, a2, b1, b2) {
+        const idCmp = (p, q) => (p[0] - q[0]) || (p[1] - q[1]) || (p[2] - q[2])
+        let aLo = a1, aHi = a2; if (idCmp(a2, a1) < 0) { aLo = a2; aHi = a1 }
+        let bLo = b1, bHi = b2; if (idCmp(b2, b1) < 0) { bLo = b2; bHi = b1 }
+        return idCmp(aLo, bLo) || idCmp(aHi, bHi)
+    }
+
+    // Higher-priority edges whose SEARCH AREA (endpoint bbox + PROTO_MARGIN) overlaps this edge's —
+    // the siblings whose corridors it must avoid. The wide bbox relation is affordable because deps
+    // are ONE LEVEL deep (an edge avoids dep SOLO routes, never dep finals — see the scheme header;
+    // a transitive dep-of-dep design percolated across the unbounded map and OOMed). Enumerated
+    // over an EDGE-CENTRED Urquhart build (pure fn of the edge + params → window-invariant, unlike
+    // the streaming band graph). Memoized per edge key.
+    _edgeDeps(c1, c2) {
+        const memoKey = this._edgeClsKey(c1, c2)
+        const memo = this._proto.edgeDeps.get(memoKey)
+        if (memo) return memo
+        const S = this._params?.roadSiteSpacing ?? PROTO_ANCHOR_SPACING
+        const a = this._nodePos(c1), b = this._nodePos(c2)
+        // Candidate range: this edge's search bbox + its margin + a sibling's margin + max edge reach.
+        const pad = 2 * PROTO_MARGIN + 2 * S
+        const mx0 = Math.floor((Math.min(a.x, b.x) - pad) / PROTO_ANCHOR_SPACING)
+        const mx1 = Math.floor((Math.max(a.x, b.x) + pad) / PROTO_ANCHOR_SPACING)
+        const mz0 = Math.floor((Math.min(a.z, b.z) - pad) / PROTO_ANCHOR_SPACING)
+        const mz1 = Math.floor((Math.max(a.z, b.z) + pad) / PROTO_ANCHOR_SPACING)
+        const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)
+        const ex0 = Math.min(a.x, b.x) - PROTO_MARGIN, ex1 = Math.max(a.x, b.x) + PROTO_MARGIN
+        const ez0 = Math.min(a.z, b.z) - PROTO_MARGIN, ez1 = Math.max(a.z, b.z) + PROTO_MARGIN
+        const deps = []
+        for (const [d1, d2] of g.edges) {
+            if (RoadSystem._sitePairCmp(d1, d2, c1, c2) >= 0) continue   // only strictly higher priority
+            const p = this._nodePos(d1), q = this._nodePos(d2)
+            if (Math.min(p.x, q.x) - PROTO_MARGIN > ex1 || Math.max(p.x, q.x) + PROTO_MARGIN < ex0) continue
+            if (Math.min(p.z, q.z) - PROTO_MARGIN > ez1 || Math.max(p.z, q.z) + PROTO_MARGIN < ez0) continue
+            deps.push([d1, d2])
+        }
+        // Deterministic dep order (g.edges order varies with the build window; disc order must not).
+        deps.sort((e, f) => RoadSystem._sitePairCmp(e[0], e[1], f[0], f[1]))
+        this._proto.edgeDeps.set(memoKey, deps)
+        return deps
+    }
+
+    /**
+     * Corridor no-go discs for edge (c1,c2): every dep's SOLO centerline sampled at
+     * CORRIDOR_DISC_DS, radius roadCorridorClearance, pruned to this edge's search bbox, minus the
+     * MERGE EXEMPTION (samples within EXEMPT_R of a node both edges share — approaches into a
+     * common junction may converge). syncResolve=true computes unready solo routes on the spot
+     * (a solo route is dep-free, so depth is bounded); syncResolve=false (Worker pre-warm)
+     * returns null when a dep's solo route is not yet cached, so the caller dispatches the solo
+     * job and defers this edge instead of blocking the frame. Pure data from window-invariant
+     * solo centerlines → the pre-warm job and the sync fallback carry identical discs.
+     * undefined = no deps/no discs (spec shape unchanged for gates).
+     */
+    _corridorDiscsFor(c1, c2, syncResolve) {
+        const deps = this._edgeDeps(c1, c2)
+        if (!deps.length) return undefined
+        const pp = this._params || {}
+        // Disc radius = clearance + half the disc spacing (SAG COMPENSATION): rejection guarantees
+        // ≥ r to the disc CENTERS (the solo curve's samples); a point can sit half a spacing along
+        // the curve from the nearest sample, so guaranteeing ≥ clearance to the CURVE needs the
+        // half-spacing added (measured residuals sat exactly in the 20−6 … 20 m sag band).
+        const R = (pp.roadCorridorClearance ?? 20) + CORRIDOR_DISC_DS * 0.5
+        const EXEMPT = pp.roadCorridorExempt ?? (Math.max(pp.roadGraphGoalBlend ?? 60, pp.roadJunctionBlendLength ?? 30, 60) + 20)
+        const a = this._nodePos(c1), b = this._nodePos(c2)
+        const ex0 = Math.min(a.x, b.x) - PROTO_MARGIN, ex1 = Math.max(a.x, b.x) + PROTO_MARGIN
+        const ez0 = Math.min(a.z, b.z) - PROTO_MARGIN, ez1 = Math.max(a.z, b.z) + PROTO_MARGIN
+        const k1 = `${c1[0]},${c1[1]},${c1[2]}`, k2 = `${c2[0]},${c2[1]},${c2[2]}`
+        const discs = []
+        for (const [d1, d2] of deps) {
+            let cl
+            if (syncResolve) cl = this._soloCenterline(d1, d2)
+            else {
+                cl = this._proto.clsSolo?.get(this._edgeClsKey(d1, d2))
+                if (!cl) return null   // dep solo not warmed yet — defer this edge's job
+            }
+            if (!cl || !(cl.length > 1e-6)) continue
+            // Exemption zones: nodes the two edges SHARE (merge exemption) AND this edge's OWN two
+            // anchors regardless of sharing — the edge MUST reach its anchors, and a non-shared
+            // sibling's corridor passing near them would otherwise wall the start/goal outright
+            // (measured: mass escape-hatch fallbacks → hugs → culls in dense junction areas).
+            // Near-junction convergence is expected geometry (QUAL-13's business, not stacking).
+            const exemptPts = [a, b]
+            const kd1 = `${d1[0]},${d1[1]},${d1[2]}`, kd2 = `${d2[0]},${d2[1]},${d2[2]}`
+            if (kd1 === k1 || kd1 === k2) exemptPts.push(this._nodePos(d1))
+            if (kd2 === k1 || kd2 === k2) exemptPts.push(this._nodePos(d2))
+            const n = Math.max(1, Math.ceil(cl.length / CORRIDOR_DISC_DS))
+            for (let i = 0; i <= n; i++) {
+                const p = cl.pointAt(cl.length * i / n)
+                if (p.x < ex0 || p.x > ex1 || p.z < ez0 || p.z > ez1) continue
+                let exempt = false
+                for (const sp of exemptPts) {
+                    if ((p.x - sp.x) * (p.x - sp.x) + (p.z - sp.z) * (p.z - sp.z) < EXEMPT * EXEMPT) { exempt = true; break }
+                }
+                if (!exempt) discs.push(p.x, p.z, R)
+            }
+        }
+        return discs.length ? discs : undefined
+    }
+
+    // No-go discs around every FOREIGN graph node in the edge's search area (all alive sites
+    // except the edge's own endpoints). Applies to EVERY route (solo and final — baked into the
+    // route spec): roads don't cut through someone else's junction neighborhood, so shallow
+    // near-node crossings stop forming, and sibling corridors (derived from these routes) can
+    // never reach into an edge's own anchor-exemption zone. Pure fn of the alive-site field →
+    // window-invariant; escapable (rides opts.avoidDiscs) — connectivity still wins.
+    _nodeAvoidDiscs(c1, c2) {
+        const S = this._params?.roadSiteSpacing ?? PROTO_ANCHOR_SPACING
+        const a = this._nodePos(c1), b = this._nodePos(c2)
+        const ex0 = Math.min(a.x, b.x) - PROTO_MARGIN - NODE_CLEAR_R, ex1 = Math.max(a.x, b.x) + PROTO_MARGIN + NODE_CLEAR_R
+        const ez0 = Math.min(a.z, b.z) - PROTO_MARGIN - NODE_CLEAR_R, ez1 = Math.max(a.z, b.z) + PROTO_MARGIN + NODE_CLEAR_R
+        const k1 = `${c1[0]},${c1[1]},${c1[2]}`, k2 = `${c2[0]},${c2[1]},${c2[2]}`
+        const discs = []
+        const cx0 = Math.floor(ex0 / S), cx1 = Math.floor(ex1 / S)
+        const cz0 = Math.floor(ez0 / S), cz1 = Math.floor(ez1 / S)
+        for (let cz = cz0; cz <= cz1; cz++) for (let cx = cx0; cx <= cx1; cx++) {
+            for (const s of this._aliveSitesIn(cx, cz)) {
+                if (s.pos.x < ex0 || s.pos.x > ex1 || s.pos.z < ez0 || s.pos.z > ez1) continue
+                const sk = `${s.id[0]},${s.id[1]},${s.id[2]}`
+                if (sk === k1 || sk === k2) continue   // own endpoints stay reachable
+                discs.push(s.pos.x, s.pos.z, NODE_CLEAR_R)
+            }
+        }
+        return discs.length ? discs : undefined
+    }
+
+    // SOLO centerline for an edge: routed with NO corridor avoidance (ponds + self-clearance and
+    // the foreign-node discs still apply) — the dep-free pure per-edge route that lower-priority
+    // siblings avoid. Cached in clsSolo; the Worker pre-warm fills the same cache via
+    // 'S|'-prefixed jobs.
+    _soloCenterline(c1, c2) {
+        if (!this._proto.clsSolo) this._proto.clsSolo = new Map()
+        const key = this._edgeClsKey(c1, c2)
+        const cached = this._proto.clsSolo.get(key)
+        if (cached) return cached
+        const spec = this._edgeRouteSpec(c1, c2)
+        const descs = arcPrimitiveConnect(spec.ax, spec.az, spec.bx, spec.bz, (x, z) => this._coarseH(x, z), spec.opts)
+        const cl = centerlineFromDescriptors(descs)
+        this._proto.clsSolo.set(key, cl)
+        this._pendingRoutes.delete('S|' + key)
+        return cl
     }
 
     _edgeCenterline(c1, c2) {
         if (!this._proto.cls) this._proto.cls = new Map()
-        const spec = this._edgeRouteSpec(c1, c2)
-        const cached = this._proto.cls.get(spec.key)
+        const key = this._edgeClsKey(c1, c2)
+        const cached = this._proto.cls.get(key)
         if (cached) return cached
+        // QUAL-14 Part B: avoid the corridors of higher-priority siblings (their SOLO routes —
+        // dep-free, so no recursion past depth 2).
+        const avoid = this._corridorDiscsFor(c1, c2, true)
+        if (avoid === undefined) {
+            // Nothing to avoid → final ≡ solo (identical opts). Share the solo cache entry
+            // instead of paying the search twice.
+            const cl = this._soloCenterline(c1, c2)
+            this._proto.cls.set(key, cl)
+            this._pendingRoutes.delete(key)
+            return cl
+        }
+        const spec = this._edgeRouteSpec(c1, c2)
+        if (avoid) spec.opts.avoidDiscs = spec.opts.avoidDiscs ? spec.opts.avoidDiscs.concat(avoid) : avoid
         const descs = arcPrimitiveConnect(spec.ax, spec.az, spec.bx, spec.bz, (x, z) => this._coarseH(x, z), spec.opts)
         const cl = centerlineFromDescriptors(descs)
-        this._proto.cls.set(spec.key, cl)
-        this._pendingRoutes.delete(spec.key)
+        this._proto.cls.set(key, cl)
+        this._pendingRoutes.delete(key)
         return cl
     }
 
@@ -1722,6 +2072,8 @@ export class RoadSystem {
         // function of seed+center+params, caches are memoization only).
         if (this._proto.anchors.size > 4000) { this._proto.anchors.clear(); this._proto.mergedAnchors.clear() }
         if (this._proto.cls && this._proto.cls.size > 1500) this._proto.cls.clear()
+        if (this._proto.clsSolo && this._proto.clsSolo.size > 1500) this._proto.clsSolo.clear()
+        if (this._proto.edgeDeps && this._proto.edgeDeps.size > 3000) this._proto.edgeDeps.clear()
         this._network.clear()
         // D1: do NOT bump _generation here. A positional re-stream produces window-INVARIANT
         // geometry (D-16: the network is a pure function of seed+world-coords+params), so an
@@ -1770,7 +2122,11 @@ export class RoadSystem {
         // preserving (bounded detour test) + window-invariant. Re-detect on the culled network so
         // _crossingsByRun / the flatten reflect the survivors.
         if (this._params?.roadGraphCullCrossings ?? true) {
-            if (this._cullCrossings(mx0, mx1, mz0, mz1)) { this._junctionsFrom = null; this._detectJunctions() }
+            let culled = this._cullCrossings(mx0, mx1, mz0, mz1)
+            // QUAL-14 Part B backstop: also cull residual sub-footprint hugs corridor avoidance
+            // couldn't prevent (escape hatch / solo-vs-final displacement — see _cullClearance).
+            if (this._cullClearance(mx0, mx1, mz0, mz1)) culled = true
+            if (culled) { this._junctionsFrom = null; this._detectJunctions() }
         }
 
         // NOTE (CR-02): no post-build cache eviction. _network is .clear()-ed + rebuilt for the

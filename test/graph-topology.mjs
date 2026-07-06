@@ -147,15 +147,54 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
         `leave-bearing vs chord: avg=${avg.toFixed(1)}° worst=${worst.toFixed(0)}° over ${m} endpoints (reversed goalHeading would be ~150°)`)
 }
 
-// (g) NO LOOPS — no edge's routed centerline curls into a near-full loop. A short edge that climbs just
-// over the grade target used to spiral a 360° loop (an ugly pseudo-switchback) instead of running direct;
-// roadGraphMaxGrade fixes it. Guard: total absolute turning along any edge stays well under a full turn.
+// (g) SELF-CLEARANCE (QUAL-14, replaces the ≤200°-turn NO-LOOPS check — that bound was
+// anti-switchback by design once the honest-grade router made 300°+ alpine stacks intentional).
+// The contract the router's repair loop enforces: no two samples of ONE edge's centerline with
+// arc-separation > roadSelfClearGap may lie closer than D_self = roadWidth + 2·shoulder +
+// selfClearMargin in XZ — no lollipop self-intersections, no hairpin legs sharing a carve wall.
+// 0.5 m tolerance absorbs polyline-vs-primitive sampling phase noise.
 {
-    const turning = (pts) => { let t = 0; for (let i = 1; i < pts.length - 1; i++) { const ax = pts[i].x - pts[i - 1].x, az = pts[i].z - pts[i - 1].z, bx = pts[i + 1].x - pts[i].x, bz = pts[i + 1].z - pts[i].z; t += Math.atan2(ax * bz - az * bx, ax * bx + az * bz) } return Math.abs(t * 180 / Math.PI) }
-    let loopers = 0, worst = 0, worstKey = ''
-    for (const [k, e] of roadA._network) { const t = turning(e.points); if (t > worst) { worst = t; worstKey = k } if (t > 200) loopers++ }
-    log(loopers === 0, 'GRAPH-NO-LOOPS',
-        `edges turning >200°=${loopers}; worst=${worst.toFixed(0)}° (${worstKey}) — no 360° spiral routes`)
+    const D = 2 * (P.roadHalfWidth ?? 5) + 2 * (P.roadShoulderWidth ?? 2.5) + (P.roadSelfClearMargin ?? 3) - 0.5
+    const GAP = P.roadSelfClearGap ?? 80
+    let viol = 0, worst = 1e9, worstAt = ''
+    for (const [k, e] of roadA._network) {
+        const pts = e.points, ss = new Float64Array(pts.length)
+        for (let i = 1; i < pts.length; i++) ss[i] = ss[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
+        for (let i = 0; i < pts.length; i++) for (let j = 0; j < i; j++) {
+            if (ss[i] - ss[j] <= GAP) continue
+            const d = Math.hypot(pts[i].x - pts[j].x, pts[i].z - pts[j].z)
+            if (d < D) { viol++; if (d < worst) { worst = d; worstAt = `${k} @(${pts[i].x.toFixed(0)},${pts[i].z.toFixed(0)})` } }
+        }
+    }
+    log(viol === 0, 'GRAPH-SELF-CLEARANCE',
+        `sample pairs closer than ${D.toFixed(1)} m at arcSep>${GAP} m: ${viol}${viol ? ` worst=${worst.toFixed(1)} m ${worstAt}` : ''} — no self-intersection / carve-wall stacking`)
+}
+
+// (j) CORRIDOR-CLEARANCE (QUAL-14 Part B) — no two REGISTERED edges run closer than the carve
+// footprint (D_self, the _cullClearance floor) outside the exemption zone around the pair's
+// endpoint nodes (merges/approaches into junctions may converge; mid-span they may not).
+// Corridor avoidance prevents this at routing time; the clearance cull backstops it — this
+// asserts the end result. Same 0.5 m sampling tolerance as (g).
+{
+    const D = 2 * (P.roadHalfWidth ?? 5) + 2 * (P.roadShoulderWidth ?? 2.5) + (P.roadSelfClearMargin ?? 3) - 0.5
+    const EXEMPT = P.roadCorridorExempt ?? (Math.max(P.roadGraphGoalBlend ?? 60, P.roadJunctionBlendLength ?? 30, 60) + 20)
+    const runs = [...roadA._network.entries()]
+    let viol = 0, worst = 1e9, worstAt = ''
+    for (let x = 0; x < runs.length; x++) for (let y = 0; y < x; y++) {
+        const ea = runs[x][1], eb = runs[y][1]
+        const ex = [ea.cellA, ea.cellB, eb.cellA, eb.cellB].map(n => roadA._nodePos(n))
+        const isEx = (p) => ex.some(q => (p.x - q.x) ** 2 + (p.z - q.z) ** 2 < EXEMPT * EXEMPT)
+        for (const p of ea.points) {
+            if (isEx(p)) continue
+            for (const q of eb.points) {
+                if (isEx(q)) continue
+                const d = Math.hypot(p.x - q.x, p.z - q.z)
+                if (d < D) { viol++; if (d < worst) { worst = d; worstAt = `${runs[x][0]} × ${runs[y][0]} @(${p.x.toFixed(0)},${p.z.toFixed(0)})` } }
+            }
+        }
+    }
+    log(viol === 0, 'GRAPH-CORRIDOR-CLEARANCE',
+        `cross-edge sample pairs closer than ${D.toFixed(1)} m outside ${EXEMPT} m endpoint exemption: ${viol}${viol ? ` worst=${worst.toFixed(1)} m ${worstAt}` : ''} — no parallel runs sharing a cut wall`)
 }
 
 // (h) CROSSINGS CULLED — the safe-prune drops redundant routed crossings (at-grade intersections read

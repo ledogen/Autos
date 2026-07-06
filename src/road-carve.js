@@ -758,12 +758,43 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     // valley-seeking term's lowest-cost cells — so the router is actively drawn through them, and the
     // Dubins terminal can't repair a centerline that entered water. Same per-primitive rejection
     // pattern as the lattice bounds / hardR floor. undefined/empty → no exclusion (headless gates).
-    const pondDiscs = (opts.pondDiscs && opts.pondDiscs.length) ? opts.pondDiscs : null
-    const inPondNoGo = (x, z) => {
+    // QUAL-14 Part B: opts.avoidDiscs = corridor-avoidance discs (same flat format) sampled from
+    // higher-priority sibling edges' final centerlines — concatenated into the SAME rejection array
+    // so search sampling AND refit badXZ cover them for free. Kept as a separate opts name because
+    // the escape hatch below drops corridor discs (advisory relative to connectivity) while ponds
+    // (physical) are never dropped.
+    const avoidDiscs = (opts.avoidDiscs && opts.avoidDiscs.length) ? opts.avoidDiscs : null
+    const pondOnly = (opts.pondDiscs && opts.pondDiscs.length) ? opts.pondDiscs : null
+    const pondDiscs = avoidDiscs ? (pondOnly ? pondOnly.concat(avoidDiscs) : avoidDiscs) : pondOnly
+    // Spatial hash over the discs when there are many — corridor discs number in the hundreds, and
+    // the linear scan per primitive/refit sample would dominate the search. Cell = max disc radius,
+    // so any disc containing a point is registered in the 3×3 neighbourhood of that point's cell.
+    let discGrid = null, discCell = 0
+    if (pondDiscs && pondDiscs.length > 72) {
+        let maxR = 0
+        for (let i = 2; i < pondDiscs.length; i += 3) if (pondDiscs[i] > maxR) maxR = pondDiscs[i]
+        discCell = Math.max(1, maxR)
+        discGrid = new Map()
         for (let i = 0; i < pondDiscs.length; i += 3) {
-            const dx = x - pondDiscs[i], dz = z - pondDiscs[i + 1], r = pondDiscs[i + 2]
-            if (dx * dx + dz * dz <= r * r) return true
+            const hk = Math.floor(pondDiscs[i] / discCell) * 73856093 ^ Math.floor(pondDiscs[i + 1] / discCell) * 19349663
+            const bkt = discGrid.get(hk)
+            if (bkt) bkt.push(i); else discGrid.set(hk, [i])
         }
+    }
+    const discHit = (x, z, i) => {
+        const dx = x - pondDiscs[i], dz = z - pondDiscs[i + 1], r = pondDiscs[i + 2]
+        return dx * dx + dz * dz <= r * r
+    }
+    const inPondNoGo = (x, z) => {
+        if (discGrid) {
+            const cx = Math.floor(x / discCell), cz = Math.floor(z / discCell)
+            for (let ox = -1; ox <= 1; ox++) for (let oz = -1; oz <= 1; oz++) {
+                const bkt = discGrid.get((cx + ox) * 73856093 ^ (cz + oz) * 19349663)
+                if (bkt) for (const i of bkt) if (discHit(x, z, i)) return true
+            }
+            return false
+        }
+        for (let i = 0; i < pondDiscs.length; i += 3) if (discHit(x, z, i)) return true
         return false
     }
 
@@ -974,6 +1005,14 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
                 hpush(ng + heur(nx, nz), nst)
             }
         }
+    }
+
+    // QUAL-14 Part B ESCAPE HATCH: corridor discs are advisory relative to CONNECTIVITY — if they
+    // (unlike ponds) walled off the goal, retry once with the corridor discs dropped (ponds and
+    // self-clearance repair discs are kept): a real crossing then forms and the existing crossing
+    // classifier/culler owns it. Deterministic (pure retry of the same inputs minus avoidDiscs).
+    if (goalState === -1 && avoidDiscs) {
+        return arcPrimitiveConnect(ax, az, bx, bz, heightFn, Object.assign({}, opts, { avoidDiscs: undefined }))
     }
 
     // Fallback: if the goal was never captured (capped/blocked), end at the closest expanded node.

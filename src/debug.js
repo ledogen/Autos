@@ -317,6 +317,12 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(params, 'roadGraphWTurn', 0, 12000, 250).name('Curve Penalty').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphWAlt', 0, 6, 0.1).name('wAlt').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphCullCrossings').name('Cull Crossings').onChange(fireRoadParam)
+  // QUAL-14 route clearance: self-clearance contract (D_self = roadWidth + 2·shoulder + margin over
+  // arc-separations > gap; violations re-route via the router's no-go repair loop) and the corridor
+  // clearance kept between an edge and its higher-priority siblings' solo lanes. Re-routes.
+  roadFolder.add(params, 'roadSelfClearMargin', 0, 10, 0.5).name('Self-Clear Margin (m)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadSelfClearGap', 40, 200, 10).name('Self-Clear Gap (m)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadCorridorClearance', 10, 40, 1).name('Corridor Clearance (m)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWGrade', 0, 2000,  20  ).name('wGrade').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWOver',  0, 40000, 500 ).name('wOver').onChange(fireRoadParam)
   // Valley-seek depth cap (m below the straight edge baseline that still rewards descending). Higher =
