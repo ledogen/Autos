@@ -1,8 +1,10 @@
 ---
 id: QUAL-10
 type: quality
-status: open
+status: merged
+merged_into: QUAL-11
 opened: 2026-06-30
+resolved: 2026-07-06
 severity: minor
 source: user-request
 note: "Intersections need a nice visual BLEND. Right now the road ribbons all just terminate at the same
@@ -13,6 +15,13 @@ and the pad↔ribbon seam is a hard shading/colour break. Pairs with FEAT-19 (gr
 ---
 
 # QUAL-10: Nice visual blend at intersections — ribbons should flow together, not butt-end at a pad
+
+> MERGED INTO QUAL-11 2026-07-06 (user: "too similar"). The first-pass pad shipped 2026-07-01
+> (9337959: node detect, terrain carve, ribbon cutback, graded apron riding sampleRoadTopY) and
+> QUAL-13 (f15c8af) added the sloped pad planes. Everything still outstanding here — true tangent
+> fillets landing exactly on the ribbon edges, exact leg trim/weld, pad↔ribbon seam
+> shading/colour continuity, lane-markings feather instead of a hard stop — now lives in
+> `qual-junction-arc-fill.md` (QUAL-11). This file is kept as the original problem statement.
 
 ## Problem
 

@@ -1,12 +1,20 @@
 ---
 id: QUAL-14
 type: quality
-status: pending
+status: done
 severity: major
 blocks: QUAL-13
+resolved: 2026-07-06
 ---
 
 # QUAL-14: Route clearance — kill self-intersections and parallel-run mesh stacking
+
+> CLOSED 2026-07-06 — USER-VERIFIED working as intended (the open drive/load check). Everything
+> shipped across e31fa8c + 9736165 (clearance Parts A–D) and 32cde75 + f2fc05b (perf phase +
+> bundled default-world route cache); the STATUS sections below are the full record. Levers
+> deliberately NOT pulled: goalBlend-60 + corridorExempt-50 (would likely green the
+> GRAPH-REACHABILITY gate but changes feel — sliders exist) and the maxGrade 0.10 preset retry.
+> With QUAL-15 cancelled, the REACHABILITY red stays an accepted known-red gate.
 
 USER-APPROVED PLAN 2026-07-05 (do BEFORE QUAL-13 sloped pads — junction work should land on
 stable routes). Road FEEL is good post honest-grade router (93d61a6) + Phase 2 defaults (0cd39a1);

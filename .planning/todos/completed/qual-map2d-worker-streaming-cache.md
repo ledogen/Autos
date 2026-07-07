@@ -1,7 +1,8 @@
 ---
 id: QUAL-08
 type: quality
-status: open
+status: done
+resolved: 2026-07-06
 opened: 2026-06-28
 severity: minor
 source: user-request (2026-06-28 — after FEAT-16 2D map landed; map open/pan perf)
@@ -10,6 +11,13 @@ updated: 2026-07-01 (see Convergence — BUG-26 disabled shared-Worker routing; 
 ---
 
 # QUAL-08: Map2D — own Worker + incremental pan caching
+
+> CLOSED 2026-07-06 — user-verified done. Landed via the QUAL-08/QUAL-14 worker work rather than a
+> map2d-specific implementation: routing runs on the dedicated RoadRouteWorker POOL
+> (src/road-worker.js, 2–4 workers), and map2d shares play's per-connection route caches
+> (map2d.setSharedRouteSource adopting cls/clsSolo — QUAL-14, f2fc05b), with the bundled
+> default-world cache making the shipped world's map effectively pre-warmed. Map open/pan perf
+> confirmed acceptable in-game by the user.
 
 ## Problem
 

@@ -1,11 +1,18 @@
 ---
 id: QUAL-15
 type: quality
-status: pending
+status: cancelled
 severity: minor
+resolved: 2026-07-06
 ---
 
 # QUAL-15: Mountain-crossing edges take near-worst passes (no pass-seeking; graph is terrain-blind)
+
+> CANCELLED 2026-07-06 — user decision. The measured ablation data below (terrain-blind Urquhart
+> edges + no pass-seeking under wHeur greed) stays as the record if router-level terrain awareness
+> is ever revisited. Note: cancelling this leaves the graph-topology GRAPH-REACHABILITY red and
+> the QUAL-13 residual (junctions placed on steep hillsides ⇒ structural cut walls) without an
+> active ticket — both accepted as-is.
 
 User report 2026-07-06 ("definitely still some blind spots as far as routing") with place capture
 `Logs/rangersim-capture-1783322161474.json`: seed `pinto` (187972457), edge `[0,-1,1]→[0,0,1]`,
