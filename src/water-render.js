@@ -52,12 +52,12 @@ export function buildPondMesh(pond, material, segments = 48) {
 export function buildStreamMesh(stream, material) {
     const pts = stream.points
     if (pts.length < 2) return null
-    const half = stream.width
     const surfaceLift = stream.waterDepth - stream.depth   // relative to centerline terrain y
     const positions = new Float32Array(pts.length * 2 * 3)
 
     for (let i = 0; i < pts.length; i++) {
         const p = pts[i]
+        const half = p.w ?? stream.width                   // FEAT-24: per-point channel half-width
         // Tangent from neighbours (central where possible).
         const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)]
         let tx = b.x - a.x, tz = b.z - a.z

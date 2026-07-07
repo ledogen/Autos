@@ -8,8 +8,9 @@
 //     hPhys   = max(hMesh, raw + bw·(gradeY − raw))         bridge deck floors the physics surface
 //
 // Checks (seed 6):
-//   1. CHANNEL-CUT   — far from roads, the bed sits ~streamDepth below raw terrain and descends
-//                      downstream; outside width+bank the terrain is untouched.
+//   1. CHANNEL-CUT   — far from roads, the bed sits ≥ streamDepth below raw terrain (deeper is
+//                      legal where the FEAT-24 monotone profile incises a meadow hummock) and
+//                      descends downstream; outside width+bank the terrain is untouched.
 //   2. BANK-C0       — the cross-section is continuous (no step > the sample-spacing slope bound):
 //                      no invisible cliff at the channel lip (the BUG-15 class of defect).
 //   3. BRIDGE-DECK   — at every real road×stream crossing, the physics surface holds ROAD GRADE
@@ -82,9 +83,12 @@ const roadBW = (x, z) => road._sampleCarveWorld(x, z, rawHeightWorld(x, z))?.ble
             probes++
             const raw = rawHeightWorld(p.x, p.z)
             const h = H(p.x, p.z)
-            // Bed ≈ centerline terrain − depth (tolerance: bed follows the centerline profile,
-            // raw varies slightly off the exact trace point).
-            if (Math.abs((raw - h) - streamDepth) < 1.0) cutOK++; else cutBad++
+            // Bed ≥ streamDepth below raw (−1 m lattice/profile slack). FEAT-24: the bed is the
+            // MONOTONE running-min of the traced profile, so where the trace crested a meadow
+            // hummock the channel legitimately INCISES deeper than streamDepth — depth is
+            // one-sided-bounded, with a generous sanity cap against runaway composition bugs.
+            const depthHere = raw - h
+            if (depthHere > streamDepth - 1.0 && depthHere < streamDepth + 6.0) cutOK++; else cutBad++
             if (h > prevBedH + 0.75) descBad++   // descending (float/lattice slack)
             prevBedH = h
             // Outside EVERY channel (sampler says sw=0, no road): untouched terrain — the carve
@@ -106,7 +110,7 @@ const roadBW = (x, z) => road._sampleCarveWorld(x, z, rawHeightWorld(x, z))?.ble
         }
     }
     log(probes > 100 && cutBad === 0, 'CHANNEL-CUT',
-        `${probes} road-free probes: bed −${streamDepth} m (±1) ${cutOK}/${cutOK + cutBad}, ${descBad} non-descending`)
+        `${probes} road-free probes: bed depth in (−1, +6) of ${streamDepth} m: ${cutOK}/${cutOK + cutBad}, ${descBad} non-descending`)
     log(outsideBad === 0, 'CHANNEL-BOUNDED', `terrain beyond width+bank untouched (${outsideBad} violations)`)
     // Steepest legitimate step at 0.5 m spacing: bank ramp slope (depth/bankWidth) + terrain slope.
     const c0Bound = 0.5 * (streamDepth / streamBankWidth) + 1.25

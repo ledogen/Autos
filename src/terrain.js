@@ -1047,7 +1047,10 @@ export class TerrainSystem {
         if (!this._waterCarve) return null
         const N = GRID_SAMPLES, S = CHUNK_SIZE, cell = S / (N - 1)
         const ox = cx * S, oz = cz * S
-        const PAD = 16   // m — > streamWidth + streamBankWidth: any channel reaching into the chunk
+        // m — must cover the widest channel + bank so any channel reaching into the chunk is
+        // fetched. FEAT-24 widths are slope-scaled, so the bound comes from the injected hook
+        // (main.js computes it from the water params); 16 covers the pre-FEAT-24 defaults.
+        const PAD = Math.max(16, this._waterCarve.maxReach ? this._waterCarve.maxReach() : 0)
         const streams = this._waterCarve.streamsNear(ox - PAD, oz - PAD, ox + S + PAD, oz + S + PAD)
         if (!streams || streams.length === 0) return null
         const amp = this._params.terrainAmplitude ?? 1.0

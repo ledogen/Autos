@@ -127,6 +127,11 @@ function rebuildWaterSystem () {
   const WC_FETCH_R = 512, WC_EDGE = 64
   terrainSystem.setWaterCarve({
     streamsNear: (x0, z0, x1, z1) => waterSystem.streamsInBBox(x0, z0, x1, z1),
+    // FEAT-24: widest possible channel half-width + bank — the stream-table fetch pad bound.
+    maxReach: () => {
+      const k = waterSystem.k
+      return k.streamWidth * Math.max(k.widthFlatScale ?? 1, 1) + k.streamBankWidth
+    },
     sampleAt: (x, z, streams, raw) => {
       let list = streams
       if (!list) {

@@ -303,6 +303,22 @@ export function initDebug (params, callbacks = {}, options = {}) {
   lookFolder.add(params, 'terrainBumpStrength', 0, 2.0, 0.05).name('Rock bump strength').onChange(v => _setU('uBump', v))
   lookFolder.add(params, 'roadShoulderBump', 0, 2.0, 0.05).name('Shoulder bump').onChange(v => _setU('uShoulderBump', v))
 
+  // ── Water folder (FEAT-24 meadow meander streams; FEAT-17/18 rarity dials) ────────────
+  // Every dial reshapes the deterministic water records + the terrain stream carve, so all
+  // fire the FULL Path-B rebuild (Worker re-init + water + chunks) — same contract as the
+  // Coarse Layer sliders. onFinishChange (not onChange): a full rebuild per keystroke hurts.
+  const waterFolder = gui.addFolder('Water')
+  const _waterRebuild = () => { if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull() }
+  waterFolder.add(params.water, 'streamKeepFraction', 0, 1, 0.05).name('Stream keep fraction').onFinishChange(_waterRebuild)
+  waterFolder.add(params.water, 'saddleMinDrop', 5, 60, 1).name('Stream min drop (m)').onFinishChange(_waterRebuild)
+  waterFolder.add(params.water, 'meanderStrength', 0, 2, 0.05).name('Meander strength').onFinishChange(_waterRebuild)
+  waterFolder.add(params.water, 'meanderWavelength', 30, 200, 5).name('Meander wavelength (m)').onFinishChange(_waterRebuild)
+  waterFolder.add(params.water, 'meanderAmplitude', 0, 1.5, 0.05).name('Meander amplitude (rad)').onFinishChange(_waterRebuild)
+  waterFolder.add(params.water, 'meanderSlopeRef', 0.02, 0.2, 0.005).name('Meadow slope threshold').onFinishChange(_waterRebuild)
+  waterFolder.add(params.water, 'streamWidth', 1, 6, 0.25).name('Channel half-width (m)').onFinishChange(_waterRebuild)
+  waterFolder.add(params.water, 'widthFlatScale', 1, 4, 0.1).name('Width × on flats').onFinishChange(_waterRebuild)
+  waterFolder.add(params.water, 'streamDepth', 0.5, 5, 0.1).name('Bed depth (m)').onFinishChange(_waterRebuild)
+
   // ── Roads folder (Phase 8 / D-03 / D-05 / D-04 / D-07 / D-09) ─────────────────
   // Road viz checkbox + max-grade slider + cost-weight sliders + surface tuning sliders.
   // Placed AFTER the Terrain folder — do not reorder existing sliders.
