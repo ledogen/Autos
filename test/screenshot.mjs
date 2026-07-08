@@ -28,9 +28,23 @@ const pos = argv.filter(a => !a.startsWith('--'))
 const flag = (k, d) => { const f = argv.find(a => a.startsWith(`--${k}=`)); return f ? f.split('=')[1] : d }
 if (pos.length < 2) { console.error('usage: node test/screenshot.mjs <x> <z> [y] [--height=40] [--pitch=-0.9] [--zoff=32] [--seed=6] [--wait=6500] [--out=path]'); process.exit(1) }
 
-const X = Number(pos[0]), Z = Number(pos[1]), Y = pos[2] !== undefined ? Number(pos[2]) : 110
+const X = Number(pos[0]), Z = Number(pos[1])
 const HEIGHT = Number(flag('height', 40)), PITCH = Number(flag('pitch', -0.9)), ZOFF = Number(flag('zoff', 32))
 const SEED = flag('seed', '6'), WAIT = Number(flag('wait', 6500))
+// Camera base Y: GROUND-RELATIVE by default. The old fixed default (110) sat BELOW the terrain
+// over most of the seed-6 map (spawn area is ~150–190 m) — the camera ended up inside the
+// mountain and every shot came back sky-white, which cost a whole false "renderer is broken"
+// investigation (2026-07-08). Sample the raw terrain under the camera AND the look target
+// headlessly and float HEIGHT above the higher of the two; an explicit [y] positional still wins.
+let Y
+if (pos[2] !== undefined) { Y = Number(pos[2]) } else {
+    const { RANGER_PARAMS } = await import('../data/ranger.js')
+    const { parseWorldSeed } = await import('../src/seed.js')
+    const { makeTerrainHeadless } = await import('./lib/terrain-headless.mjs')
+    const { rawHeightWorld } = makeTerrainHeadless(parseWorldSeed(SEED), RANGER_PARAMS, null)
+    Y = Math.max(rawHeightWorld(X, Z + ZOFF), rawHeightWorld(X, Z))
+    console.log(`ground-relative Y: terrain ${Y.toFixed(1)} m + height ${HEIGHT} m`)
+}
 const OUT = flag('out', join(process.cwd(), `screenshot_${X}_${Z}.png`))
 // --port: point at a different server (e.g. a worktree's own `npx serve . -l 8017`) — the
 // default :8000 is usually the MAIN checkout, not necessarily the code you just edited.

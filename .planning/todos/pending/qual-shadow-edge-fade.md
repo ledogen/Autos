@@ -10,8 +10,8 @@ note-reopen: "Shipped bundled with the PERF-07 blob bake in cc28322; morning ver
 'shadows are totally busted there's just a half-artifact present' — can't attribute between the
 blob bake and this fade, so BOTH were reverted to restore the known-good look (revert commit,
 2026-07-08). src/shadow-fade.js was deleted with the revert — recover it from git history
-(cc28322) when re-landing. Re-land SOLO, after BUG-34 unblocks the screenshot harness, with its
-own visual verify."
+(cc28322) when re-landing. Re-land SOLO with its own visual verify — the screenshot harness
+works again (BUG-34 closed same-day: tool defect, camera was under the terrain)."
 first-pass: "src/shadow-fade.js patched THREE.ShaderChunk.shadowmap_pars_fragment: shadow
   intensity fades to zero over the outer band (fadeStart 0.72) of the shadow box via a
   Chebyshev-distance smoothstep in shadow-map space — the hard moving 'shadows end here' line

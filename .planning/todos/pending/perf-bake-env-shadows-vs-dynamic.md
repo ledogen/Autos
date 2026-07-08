@@ -60,10 +60,11 @@ Action taken 2026-07-08: reverted the DEFAULTS to the old working look — castR
 The blob system + GUI toggle stay in the tree as the A/B harness for the next attempt.
 
 The 1.86 ms/frame measurement stands — the bake is still worth having, but the blob look must
-be iterated WITH a working visual loop (blocked by BUG-34: the screenshot harness launches
-Chrome 150 which renders black). Next attempt: fix BUG-34 first, then iterate blob
-opacity/scale/shape against screenshots, and only flip the default back when the user signs
-off on the look.
+be iterated WITH a working visual loop. (The loop is working again same-day: the "Chrome 150
+renders black" scare was the screenshot tool's camera sitting under the terrain — BUG-34
+closed as a tool defect, screenshot.mjs now places the camera ground-relative.) Next attempt:
+iterate blob opacity/scale/shape against screenshots, and only flip the default back when the
+user signs off on the look.
 
 ## Measure first (don't bake blind — per CLAUDE.md, prove perf claims headlessly/with the profiler)
 
