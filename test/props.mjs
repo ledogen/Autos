@@ -183,5 +183,38 @@ console.log('6. fallen logs — general capsule collision (FEAT-15)')
   sys.dispose()
 }
 
+console.log('7. riverbed medium stones (FEAT-25 rework)')
+{
+  // Fake flat terrain + a stream channel strip at x ∈ (10, 22) with banks 4 m each side —
+  // clear of the fake road at |x| < 9 so the road keep-out doesn't mask the channel.
+  const inCh = (x) => x > 10 && x < 22
+  const samplers = {
+    heightAt: (x, z) => 30,
+    normalAt: () => ({ x: 0, y: 1, z: 0 }),
+    roadBlocked: (x, z) => Math.abs(x) < 9,
+    streamAt: (x, z) => inCh(x) ? { inChannel: true, inBank: false }
+      : (x > 6 && x < 26 ? { inChannel: false, inBank: true } : null),
+  }
+  // chunk (0,0) spans world [0,64] so the fake channel strip actually lies inside it
+  const base = { ...FLORA_PARAMS, scatter: { ...FLORA_PARAMS.scatter, streamMedRockBoost: 0 } }
+  const A = scatterChunk(0, 0, 909, samplers, base)
+  const B = scatterChunk(0, 0, 909, samplers, FLORA_PARAMS)   // default boost (10)
+  const bedStones = B.filter(p => p.cat === 'rock' && inCh(p.x))
+  ok(A.filter(p => p.cat === 'rock' && inCh(p.x)).length === 0,
+    'boost 0 → no medium rocks in the channel (ambient exclusion holds)')
+  ok(bedStones.length >= 12, `default boost fills the bed with medium stones (${bedStones.length})`)
+  // Additive/separate-rng discipline: stripping the bed stones from B reproduces A exactly.
+  const Bstripped = B.filter(p => !(p.cat === 'rock' && inCh(p.x)))
+  let sameB = Bstripped.length === A.length
+  for (let i = 0; sameB && i < A.length; i++) {
+    const u = A[i], w = Bstripped[i]
+    if (u.cat !== w.cat || u.variant !== w.variant || u.x !== w.x || u.z !== w.z || u.y !== w.y) sameB = false
+  }
+  ok(sameB, 'bed-stone pass is purely additive (pre-existing placements byte-identical)')
+  const B2 = scatterChunk(0, 0, 909, samplers, FLORA_PARAMS)
+  ok(B2.length === B.length && B2.every((p, i) => p.x === B[i].x && p.z === B[i].z && p.cat === B[i].cat),
+    'bed-stone scatter deterministic across runs')
+}
+
 console.log(fails === 0 ? '\nPROPS GATE: PASS' : `\nPROPS GATE: FAIL (${fails})`)
 process.exit(fails === 0 ? 0 : 1)

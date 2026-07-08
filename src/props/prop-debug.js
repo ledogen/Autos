@@ -21,10 +21,10 @@ export function addPropGui(gui, { params, rebuild, getPropSystem }) {
   const done = () => rebuild()
   const S = params.scatter
 
-  // PERF-07: prop shadow bake toggle. OFF (default) = props out of the sun's shadow pass + baked
-  // contact-shadow blobs; ON = realtime casting (blobs hidden). Read live off the current PropSystem
-  // (getPropSystem() survives rebuilds); the fresh system re-reads params.shadows.castRealtime on
-  // rebuild, so the state persists either way.
+  // PERF-07: prop shadow mode toggle. ON (default — the bake was reverted after user verify) =
+  // realtime casting, blobs hidden; OFF = props out of the sun's shadow pass + baked contact-shadow
+  // blobs. Read live off the current PropSystem (getPropSystem() survives rebuilds); the fresh
+  // system re-reads params.shadows.castRealtime on rebuild, so the state persists either way.
   f.add(params.shadows, 'castRealtime').name('Realtime prop shadows').onChange((v) => {
     const sys = getPropSystem && getPropSystem()
     if (sys) sys.setShadowCasting(v)
@@ -37,6 +37,9 @@ export function addPropGui(gui, { params, rebuild, getPropSystem }) {
   density.add(S.smallRocksPerChunk, '1', 0, 120, 1).name('small rocks max').onFinishChange(done)
   density.add(S.bushesPerChunk, '1', 0, 40, 1).name('bushes max').onFinishChange(done)
   density.add(S, 'boulderChance', 0, 1, 0.01).name('boulder chance').onFinishChange(done)
+  density.add(S.logsPerChunk, '1', 0, 8, 1).name('logs max').onFinishChange(done)
+  density.add(S, 'streamRockBoost', 0, 12, 0.5).name('bed small-rock boost').onFinishChange(done)
+  density.add(S, 'streamMedRockBoost', 0, 30, 1).name('bed med-stone boost').onFinishChange(done)
 
   const place = f.addFolder('Placement'); place.close()
   place.add(S, 'groundSink', 0, 2, 0.05).name('ground sink (m)').onFinishChange(done)

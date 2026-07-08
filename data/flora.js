@@ -26,6 +26,8 @@ export const FLORA_PARAMS = {
     smallRocksPerChunk:[30, 60],// decorative <0.1 m rocks (non-collidable; also shoulder + road)
     streamRockBoost:  3,        // FEAT-25: extra channel-rock attempts = base small-rock attempts × this
                                 //   (denser cobble scatter in stream beds/banks; USER-OWNED density dial)
+    streamMedRockBoost: 10,     // FEAT-25 rework: MEDIUM ('rock' class) stones in the channel bed —
+                                //   in-bed density ≈ this × ambient rock density (USER-OWNED, "10x med stones")
     bushesPerChunk:   [6, 14],
     boulderChance:    0.04,     // per chunk, a rare large buried boulder
     logsPerChunk:     [0, 2],   // FEAT-15: fallen trunks (hard obstacle) — sparse forest debris

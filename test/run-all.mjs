@@ -44,6 +44,7 @@ const GATES = [
     'water-invariance.mjs',     // FEAT-22/17/18: basins/saddles/ponds/streams deterministic + window-invariant; ponds rim-contained; streams descend + end at basins; submerged hook
     'pond-route-around.mjs',    // FEAT-17: roads route AROUND ponds — setWaterNoGo site filter + opts.pondDiscs arc rejection: zero centerline points/nodes in any pond+skirt disc
     'stream-carve.mjs',         // FEAT-18: stream channels cut bed+banks (C0, bounded, descending); every road×stream crossing holds road grade for physics (ribbon-deck) with the channel notch continuous both sides
+    'stream-bed-drape.mjs',     // FEAT-25: cobble bed ribbon drapes the carved channel — dry shoulders above the waterline (user-visible), center under water, deterministic
 ]
 
 let failed = []

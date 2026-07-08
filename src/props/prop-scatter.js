@@ -85,16 +85,17 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
   // ── helper: place a single prop of category `cat` at (x,z) if terrain allows ──────────
   // rngArg lets the FEAT-25 channel-rock boost pass draw from its OWN seeded stream (so the extra
   // rocks never perturb the main scatter's rng draws → existing placements stay byte-identical).
-  const placeBlob = (cat, x, z, buryRange, ignoreRoad = false, rngArg = rng) => {
+  const placeBlob = (cat, x, z, buryRange, ignoreRoad = false, rngArg = rng, allowChannel = false) => {
     const cfg = P[cat]
     // BUG-23: exclude road-respecting props from the road FOOTPRINT, inflating the keep-out by the
     // prop's own bounding radius so a big rock/boulder whose CENTRE sits just off the ribbon can no
     // longer overhang (and wall off) the driveable lane. Pure fn of seed/coords (window-invariant).
     if (!ignoreRoad && !roadClear(x, z, S.roadExclusion + blobBoundR(cfg))) return
     if (inPondWater(x, z)) return   // FEAT-17: no rocks/bushes under the pond plane
-    // FEAT-25: keep boulders + collidable rocks + bushes out of the underwater channel (a hard prop
-    // mid-creek reads broken / walls the channel). Decorative small rocks are ALLOWED — densified.
-    if (cat !== 'smallRock' && inStreamChannel(x, z)) return
+    // FEAT-25: keep boulders + AMBIENT collidable rocks + bushes out of the underwater channel (a
+    // random hard prop mid-creek reads broken). Decorative small rocks are allowed everywhere, and
+    // the dedicated bed-stone pass opts in explicitly (allowChannel) — creek stones ARE the point.
+    if (!allowChannel && cat !== 'smallRock' && inStreamChannel(x, z)) return
     const variant = (rngArg() * cfg.variants) | 0
     const scale = frange(rngArg, cfg.instScale)
     const bury = frange(rngArg, buryRange)
@@ -190,6 +191,26 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
       const s = streamAt(x, z)
       if (!s || !(s.inChannel || s.inBank)) continue
       placeBlob('smallRock', x, z, P.smallRock.buryFrac, true, srng)
+    }
+  }
+
+  // FEAT-25 rework (2026-07-08): MEDIUM stones in the CHANNEL bed — the user-visible "rocky
+  // creek" read ("i want like 10x med stones in beds"). Same additive/separate-rng discipline
+  // as the small-rock boost above so every pre-existing placement keeps its exact draws.
+  // attempts = a fresh rocksPerChunk draw × streamMedRockBoost, kept only where they land IN
+  // the channel — so in-bed medium-stone DENSITY lands at ~boost× the ambient rock density.
+  // placeBlob opts into the channel (allowChannel) but keeps the road keep-out: no stones
+  // poking through bridge decks where a road fills the channel. Bury range is tighter than
+  // ambient rocks ([0.2,0.9]) — creek stones should read as seated but EXPOSED, not vanish.
+  const medBoost = S.streamMedRockBoost ?? 0
+  if (streamAt && medBoost > 0) {
+    const mrng = mulberry32(seedFor(worldSeed, 'streamMedRocks', cx, cz))
+    const attempts = Math.round(irange(mrng, S.rocksPerChunk) * medBoost)
+    for (let i = 0; i < attempts; i++) {
+      const x = ox + mrng() * size, z = oz + mrng() * size
+      const s = streamAt(x, z)
+      if (!s || !s.inChannel) continue
+      placeBlob('rock', x, z, [0.25, 0.65], false, mrng, true)
     }
   }
   // Bushes sink slightly into the ground (kills slope-float, matches groundSink intent).

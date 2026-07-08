@@ -186,13 +186,20 @@ export function buildStreamMesh(stream, material, bbox, groundAt, roadBlendAt) {
     return mesh
 }
 
-// ── FEAT-25: cobbled riverbed ribbon under the water surface ─────────────────────────────────
-// Same strip construction as buildStreamMesh, but sunk to the CARVED bed and textured with the
-// shared cobble material. Key differences from the water ribbon:
-//   - y = p.y − depth + 0.06 : 6 cm above the carved bed (streamCarveSample sinks terrain to
-//     p.y − depth), a thin z-fight guard so the opaque bed never fights the terrain floor.
-//   - half-width = (p.w ?? width) + 1.0 : ~1 m WIDER than the channel so the bed tucks under the
-//     bank toe and no bare-terrain gap shows at the waterline where the water ribbon ends.
+// ── FEAT-25: cobbled riverbed ribbon DRAPED over the carved channel ──────────────────────────
+// Same span machinery as buildStreamMesh, but the geometry hugs the composed terrain instead of
+// floating at a flat bed plane. The first cut (flat strip at bedY + 6 cm, +1 m margin) was
+// invisible in-game: everything inside the channel sits under the 0.72-opacity water, and the
+// flat margins were BURIED inside the rising bank ramps — so no dry cobble ever showed
+// (FEAT-25 reopen, 2026-07-08). Instead:
+//   - 5 columns per row at cross-offsets {0, ±w, ±(w + margin)} — matching the carve's
+//     piecewise-linear cross-section (flat bed to ±w, bank ramp beyond) so the drape never
+//     chords across a kink.
+//   - y = groundAt(x,z) + 0.06 : 6 cm above the COMPOSED terrain (analyticHeight includes the
+//     stream carve), so the margins climb the bank toe and read as dry cobble shoulders above
+//     the waterline — the visible part of the riverbed. Falls back to the flat bed plane when
+//     no groundAt sampler is injected (headless fixtures).
+//   - margin = bankWidth/2 : the lower half of each bank ramp gets cobbled.
 //   - UVs : u = 0..1 across the strip, v = arcS / 12 → one cobble repeat per ~12 m of stream.
 // It reuses computeStreamSpans with the WATER-surface lift (waterDepth − depth) so the bed is
 // suppressed on the IDENTICAL spans as the water — never visible over a road deck or lifted pad.
@@ -204,10 +211,12 @@ export function buildStreamBedMesh(stream, material, bbox, groundAt, roadBlendAt
     const spans = computeStreamSpans(stream, surfaceLift, bbox, groundAt, roadBlendAt)
     if (!spans) return null
 
+    const margin = (stream.bankWidth ?? 5) * 0.5
+    const COLS = 5
     let nPts = 0
     for (const [a, b] of spans) nPts += b - a + 1
-    const positions = new Float32Array(nPts * 2 * 3)
-    const uvs = new Float32Array(nPts * 2 * 2)
+    const positions = new Float32Array(nPts * COLS * 3)
+    const uvs = new Float32Array(nPts * COLS * 2)
     const indices = []
     let row = 0
 
@@ -215,25 +224,31 @@ export function buildStreamBedMesh(stream, material, bbox, groundAt, roadBlendAt
         const rowStart = row
         for (let i = i0; i <= i1; i++, row++) {
             const p = pts[i]
-            const half = (p.w ?? stream.width) + 1.0        // FEAT-25: +1 m so the bed tucks under the bank toe
+            const w = p.w ?? stream.width
+            const half = w + margin
             // Tangent from neighbours (central where possible).
             const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)]
             let tx = b.x - a.x, tz = b.z - a.z
             const tl = Math.hypot(tx, tz) || 1
             tx /= tl; tz /= tl
             const nx = -tz, nz = tx                         // left-perpendicular in XZ
-            const y = p.y - stream.depth + 0.06             // 6 cm above the carved bed
+            const bedFallbackY = p.y - stream.depth + 0.06  // flat bed plane (no-sampler fixtures)
             const v = p.s / 12                              // one cobble repeat per ~12 m of arc
-            const o = row * 6
-            positions[o + 0] = p.x + nx * half; positions[o + 1] = y; positions[o + 2] = p.z + nz * half
-            positions[o + 3] = p.x - nx * half; positions[o + 4] = y; positions[o + 5] = p.z - nz * half
-            const u = row * 4
-            uvs[u + 0] = 0; uvs[u + 1] = v
-            uvs[u + 2] = 1; uvs[u + 3] = v
+            for (let c = 0; c < COLS; c++) {
+                const off = [half, w, 0, -w, -half][c]      // kink-aligned cross offsets, left → right
+                const px = p.x + nx * off, pz = p.z + nz * off
+                const y = groundAt ? groundAt(px, pz) + 0.06 : bedFallbackY
+                const o = (row * COLS + c) * 3
+                positions[o + 0] = px; positions[o + 1] = y; positions[o + 2] = pz
+                const u = (row * COLS + c) * 2
+                uvs[u + 0] = (off + half) / (2 * half); uvs[u + 1] = v
+            }
         }
         for (let r = rowStart; r < row - 1; r++) {
-            const l0 = r * 2, r0 = r * 2 + 1, l1 = (r + 1) * 2, r1 = (r + 1) * 2 + 1
-            indices.push(l0, r0, l1,  r0, r1, l1)
+            for (let c = 0; c < COLS - 1; c++) {
+                const l0 = r * COLS + c, r0 = l0 + 1, l1 = (r + 1) * COLS + c, r1 = l1 + 1
+                indices.push(l0, r0, l1,  r0, r1, l1)
+            }
         }
     }
 

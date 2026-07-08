@@ -42,3 +42,23 @@ plus a higher density of stone PROPS in stream channels for variety. No asset fi
   (shared texture, one draw per stream ribbon or merged).
 - No asset files; window-invariant scatter; `npm test` green.
 - Depends on FEAT-24 (final channel geometry) and BUG-33 (bed ribbon must respect road decks).
+
+## REWORK SHIPPED 2026-07-08 — awaiting user in-game verify
+
+Root causes of "can't see any of it":
+- The flat bed ribbon (bedY + 6 cm, +1 m margin) lay ENTIRELY under the 0.72-opacity water
+  (channel = 2.5 m gash with 0.6 m water at the bottom; ribbon spans the full wet width), and
+  its flat margins were buried INSIDE the rising bank ramps — zero dry cobble anywhere.
+- The rock boost only densified smallRock (< 0.1 m decorative pebbles) — no medium stones.
+
+Fixes:
+- buildStreamBedMesh now DRAPES 5 columns per row over the composed terrain (groundAt + 6 cm;
+  columns at {0, ±w, ±(w + bankWidth/2)} — on the carve cross-section kinks so the drape never
+  chords). The bankWidth/2 margins climb the bank toe → dry cobble shoulders above the
+  waterline. NEW GATE test/stream-bed-drape.mjs: 97.6 % of rows show shoulder above the water
+  (flat first cut = 0 %), center stays submerged, deterministic.
+- NEW scatter pass: MEDIUM 'rock'-class stones inside channels, streamMedRockBoost = 10
+  (in-bed density ≈ 10× ambient rock density, per the user's "10x med stones"). Separate seeded
+  rng (existing placements byte-identical — props.mjs §7), exposed bury range [0.25, 0.65] so
+  they read, road keep-out intact (nothing pokes through bridge decks). GUI sliders added:
+  bed small-rock boost, bed med-stone boost, logs max (handoff housekeeping item).
