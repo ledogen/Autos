@@ -49,31 +49,59 @@ export function buildPondMesh(pond, material, segments = 48) {
 // Builds a triangle strip: at each centerline point, offset ± streamWidth perpendicular to
 // the local tangent (XZ), at y = centerlineY − depth + waterDepth (the water surface, which
 // sits above the carved bed and descends with the channel).
-export function buildStreamMesh(stream, material) {
+//
+// BUG-32: an optional bbox CLIPS the ribbon to the render window — a stream can run 1.4 km
+// while the terrain ring shows ~200 m, and unclipped ribbons hang in the void. Points are
+// grouped into contiguous in-window spans (one strip each, one point of overhang per end so
+// the cut edge sits past the window, under fog); indices never bridge span gaps.
+export function buildStreamMesh(stream, material, bbox) {
     const pts = stream.points
     if (pts.length < 2) return null
     const surfaceLift = stream.waterDepth - stream.depth   // relative to centerline terrain y
-    const positions = new Float32Array(pts.length * 2 * 3)
 
-    for (let i = 0; i < pts.length; i++) {
-        const p = pts[i]
-        const half = p.w ?? stream.width                   // FEAT-24: per-point channel half-width
-        // Tangent from neighbours (central where possible).
-        const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)]
-        let tx = b.x - a.x, tz = b.z - a.z
-        const tl = Math.hypot(tx, tz) || 1
-        tx /= tl; tz /= tl
-        const nx = -tz, nz = tx                            // left-perpendicular in XZ
-        const y = p.y + surfaceLift
-        const o = i * 6
-        positions[o + 0] = p.x + nx * half; positions[o + 1] = y; positions[o + 2] = p.z + nz * half
-        positions[o + 3] = p.x - nx * half; positions[o + 4] = y; positions[o + 5] = p.z - nz * half
+    // Contiguous index spans to emit. Without a bbox: the whole polyline.
+    const spans = []
+    if (!bbox) {
+        spans.push([0, pts.length - 1])
+    } else {
+        const pad = (stream.maxWidth ?? stream.width)
+        const inWin = (p) => p.x >= bbox.minX - pad && p.x <= bbox.maxX + pad &&
+                             p.z >= bbox.minZ - pad && p.z <= bbox.maxZ + pad
+        let start = -1
+        for (let i = 0; i < pts.length; i++) {
+            if (inWin(pts[i])) { if (start < 0) start = i }
+            else if (start >= 0) { spans.push([Math.max(0, start - 1), i]); start = -1 }
+        }
+        if (start >= 0) spans.push([Math.max(0, start - 1), pts.length - 1])
+        if (spans.length === 0) return null
     }
 
+    let nPts = 0
+    for (const [a, b] of spans) nPts += b - a + 1
+    const positions = new Float32Array(nPts * 2 * 3)
     const indices = []
-    for (let i = 0; i < pts.length - 1; i++) {
-        const l0 = i * 2, r0 = i * 2 + 1, l1 = (i + 1) * 2, r1 = (i + 1) * 2 + 1
-        indices.push(l0, r0, l1,  r0, r1, l1)
+    let row = 0
+
+    for (const [i0, i1] of spans) {
+        const rowStart = row
+        for (let i = i0; i <= i1; i++, row++) {
+            const p = pts[i]
+            const half = p.w ?? stream.width               // FEAT-24: per-point channel half-width
+            // Tangent from neighbours (central where possible).
+            const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)]
+            let tx = b.x - a.x, tz = b.z - a.z
+            const tl = Math.hypot(tx, tz) || 1
+            tx /= tl; tz /= tl
+            const nx = -tz, nz = tx                        // left-perpendicular in XZ
+            const y = p.y + surfaceLift
+            const o = row * 6
+            positions[o + 0] = p.x + nx * half; positions[o + 1] = y; positions[o + 2] = p.z + nz * half
+            positions[o + 3] = p.x - nx * half; positions[o + 4] = y; positions[o + 5] = p.z - nz * half
+        }
+        for (let r = rowStart; r < row - 1; r++) {
+            const l0 = r * 2, r0 = r * 2 + 1, l1 = (r + 1) * 2, r1 = (r + 1) * 2 + 1
+            indices.push(l0, r0, l1,  r0, r1, l1)
+        }
     }
 
     const geom = new THREE.BufferGeometry()
@@ -98,11 +126,26 @@ export class WaterRenderer {
         this.group.name = 'water'
         this.material = makeWaterMaterial(opts.material || {})
         this._meshes = new Map()   // feature key -> mesh (dedup / reuse)
+        this._winKey = ''          // BUG-32: chunk-quantized clip window of the current stream meshes
     }
 
     // Ensure meshes exist for every pond/stream overlapping the bbox; drop meshes whose
     // feature left the region. Cheap because feature keys are deterministic + stable.
+    // BUG-32: stream ribbons are CLIPPED to the bbox, so their geometry depends on the
+    // window — quantizing the window to the 64 m chunk grid keys the rebuild to chunk
+    // crossings (a still camera re-syncs for free; driving rebuilds a handful of small
+    // strips per crossing, same cadence as terrain chunk streaming). Ponds are compact
+    // discs — built whole, reused across windows.
     sync(minX, minZ, maxX, maxZ) {
+        const winKey = `${Math.floor(minX / 64)},${Math.floor(minZ / 64)},${Math.floor(maxX / 64)},${Math.floor(maxZ / 64)}`
+        if (winKey !== this._winKey) {
+            this._winKey = winKey
+            for (const [key, mesh] of this._meshes) {
+                if (mesh.userData.water.kind === 'stream') {
+                    this.group.remove(mesh); mesh.geometry.dispose(); this._meshes.delete(key)
+                }
+            }
+        }
         const wanted = new Set()
         for (const pond of this.water.pondsInBBox(minX, minZ, maxX, maxZ)) {
             wanted.add(pond.key)
@@ -114,7 +157,7 @@ export class WaterRenderer {
         for (const st of this.water.streamsInBBox(minX, minZ, maxX, maxZ)) {
             wanted.add(st.key)
             if (!this._meshes.has(st.key)) {
-                const m = buildStreamMesh(st, this.material)
+                const m = buildStreamMesh(st, this.material, { minX, minZ, maxX, maxZ })
                 if (m) { this._meshes.set(st.key, m); this.group.add(m) }
             }
         }

@@ -91,7 +91,11 @@ let _propRing = 2
 // Like props: decoupled leaves, samplers injected at construction, rebuilt on seed change.
 let waterSystem = null
 let waterRenderer = null
-const WATER_SYNC_RADIUS = 640   // m — water render bbox half-width around the stream center
+// BUG-32: water render bbox tracks the TERRAIN draw distance (ring × 64 m chunks + one chunk
+// of margin) instead of a fixed 640 m — unclipped ribbons used to hang in the void past the
+// loaded terrain. Reads the live ring so quality-preset changes (applyQuality → setRingRadius)
+// take effect on the next sync.
+const waterSyncRadius = () => ((terrainSystem?._ringRadius ?? 2) + 1) * 64
 function rebuildWaterSystem () {
   if (waterRenderer) { scene.remove(waterRenderer.group); waterRenderer.dispose() }
   // rawHeightWorld (carve-free), NOT analyticHeight — detection was gated against raw height;
@@ -1604,9 +1608,10 @@ function loop () {
   if (propSystem) propSystem.update(streamCenter.x, streamCenter.z, _propRing)
   // FEAT-17/18: sync pond/stream meshes to the view region (bbox-culled, keyed — no churn when still).
   if (waterRenderer) {
+    const wr = waterSyncRadius()
     waterRenderer.sync(
-      streamCenter.x - WATER_SYNC_RADIUS, streamCenter.z - WATER_SYNC_RADIUS,
-      streamCenter.x + WATER_SYNC_RADIUS, streamCenter.z + WATER_SYNC_RADIUS
+      streamCenter.x - wr, streamCenter.z - wr,
+      streamCenter.x + wr, streamCenter.z + wr
     )
   }
   // PERF-03 WS-A: pre-warm the road centerline cache off-thread ahead of the streamer. BUG-26: no-ops

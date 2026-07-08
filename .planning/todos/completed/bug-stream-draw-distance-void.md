@@ -1,7 +1,11 @@
 ---
 id: BUG-32
 type: bug
-status: open
+status: closed
+closed: 2026-07-07
+resolution: "Water sync bbox now tracks the live terrain ring ((ring+1)×64 m); stream ribbons
+  clipped to the window as contiguous spans (one point overhang per cut end), rebuilt only on
+  64 m chunk crossings. Verified headless: all ribbons clip, zero vertices beyond pad."
 opened: 2026-07-07
 severity: minor
 source: user-observation
