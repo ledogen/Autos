@@ -70,9 +70,10 @@ export class PropSystem {
     const { variants, material } = buildPalette(this._seed, params)
     this._material = material
 
-    // PERF-07: prop shadow mode. castRealtime=false (default) drops props from the sun's shadow pass
-    // and shows baked contact-shadow blobs instead (setShadowCasting flips both live).
-    const shadowsP = params.shadows || { castRealtime: false, blobOpacity: 0.32, blobScale: 1.15 }
+    // PERF-07: prop shadow mode. castRealtime=true (default — the bake was reverted after user
+    // verify) keeps props in the sun's shadow pass; false swaps to baked contact-shadow blobs
+    // (setShadowCasting flips both live via the GUI checkbox).
+    const shadowsP = params.shadows || { castRealtime: true, blobOpacity: 0.32, blobScale: 1.15 }
     const castRealtime = !!shadowsP.castRealtime
 
     // meshes: key "cat#v" -> { mesh, free:[], used:0 };  collision: key -> descriptor | null
@@ -84,7 +85,7 @@ export class PropSystem {
       entries.forEach((entry, v) => {
         const mesh = new THREE.InstancedMesh(entry.geo, material, perVariant)
         mesh.frustumCulled = false           // PERF-05: chunk streaming bounds these
-        mesh.castShadow = castRealtime       // PERF-07: OFF by default (baked blobs stand in)
+        mesh.castShadow = castRealtime       // PERF-07: realtime by default; blobs stand in when off
         mesh.receiveShadow = true
         mesh.count = perVariant
         // start all slots hidden
@@ -110,7 +111,7 @@ export class PropSystem {
     const blobCap = Object.entries(CAPACITY).reduce((s, [k, v]) => s + (k === 'smallRock' ? 0 : v), 0)
     this._blobs = new ShadowBlobSystem(scene, shadowsP, blobCap)
     this._chunkBlobs = new Map()   // "cx,cz" -> [blobSlot, ...]  (parallel to _chunks; released together)
-    this.setShadowCasting(castRealtime)   // initial mode: bake by default, blobs visible
+    this.setShadowCasting(castRealtime)   // initial mode from params.shadows (realtime default)
 
     // ── FEAT-06b collision index ──────────────────────────────────────────────────────
     // Per-chunk collidable lists are the source of truth; a uniform grid (rebuilt lazily when chunk

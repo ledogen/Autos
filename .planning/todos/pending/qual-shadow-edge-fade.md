@@ -1,17 +1,23 @@
 ---
 id: QUAL-18
 type: quality
-status: closed
+status: open
 opened: 2026-07-07
-closed: 2026-07-07
+reopened: 2026-07-08
 severity: minor
 source: user-request
-resolution: "src/shadow-fade.js patches THREE.ShaderChunk.shadowmap_pars_fragment: shadow
+note-reopen: "Shipped bundled with the PERF-07 blob bake in cc28322; morning verify came back
+'shadows are totally busted there's just a half-artifact present' — can't attribute between the
+blob bake and this fade, so BOTH were reverted to restore the known-good look (revert commit,
+2026-07-08). src/shadow-fade.js was deleted with the revert — recover it from git history
+(cc28322) when re-landing. Re-land SOLO, after BUG-34 unblocks the screenshot harness, with its
+own visual verify."
+first-pass: "src/shadow-fade.js patched THREE.ShaderChunk.shadowmap_pars_fragment: shadow
   intensity fades to zero over the outer band (fadeStart 0.72) of the shadow box via a
   Chebyshev-distance smoothstep in shadow-map space — the hard moving 'shadows end here' line
   becomes a distance dissolve. All SHADOWMAP_TYPE branches patched in one replaceAll; idempotent;
   fails soft (console warning, unfaded shadows) if a three.js upgrade changes the chunk shape.
-  Installed in main.js before the first render. Visual verify in-game: user, morning."
+  Installed in main.js before the first render."
 ---
 
 # QUAL-18: Shadow LOD — fade the shadow-map edge instead of a hard cutoff

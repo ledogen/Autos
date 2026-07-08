@@ -48,6 +48,23 @@ baked contact-shadow blobs (prop-shadow-blobs.js), live 'Realtime prop shadows' 
 prop GUI for A/B. Remaining before close: user visual verify of blob grounding + a morning
 re-measure on the iGPU floor if available.
 
+## USER VERIFY 2026-07-08 — FAILED, defaults reverted to realtime casting
+
+User (on Chrome 148, where rendering works — see BUG-34 for the separate Chrome-150 disaster):
+"shadows are currently totally busted there's just a half-artifact present. either implement
+baked shadows that look good or revert to the old working cast shadows."
+
+Action taken 2026-07-08: reverted the DEFAULTS to the old working look — castRealtime: true
+(props cast realtime again, blobs hidden) and the QUAL-18 shadow-edge fade uninstalled
+(bundled in the same commit, unverifiable independently — reopened as its own ticket).
+The blob system + GUI toggle stay in the tree as the A/B harness for the next attempt.
+
+The 1.86 ms/frame measurement stands — the bake is still worth having, but the blob look must
+be iterated WITH a working visual loop (blocked by BUG-34: the screenshot harness launches
+Chrome 150 which renders black). Next attempt: fix BUG-34 first, then iterate blob
+opacity/scale/shape against screenshots, and only flip the default back when the user signs
+off on the look.
+
 ## Measure first (don't bake blind — per CLAUDE.md, prove perf claims headlessly/with the profiler)
 
 - The frame loop already has a perf harness (`perfAdd`/`perfDump`, auto-dumps at frame 180 / 600 —

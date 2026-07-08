@@ -140,14 +140,15 @@ export const FLORA_PARAMS = {
   },
 
   // ── PERF-07 shadow bake — USER-OWNED ────────────────────────────────────────────────────
-  // Every scattered prop is otherwise a realtime shadow CASTER: each tree/rock/log re-renders into
-  // the sun's 2048² directional shadow map every frame (measured ~1.86 ms/frame on an M4 —
-  // test/perf-prop-shadows.mjs). So by DEFAULT props are dropped from the shadow pass and a cheap
-  // baked contact-shadow blob (a soft radial decal laid flat under the base) stands in for grounding
-  // (prop-shadow-blobs.js). Flip castRealtime true to restore free dynamic day/night prop shadows
-  // (and hide the blobs). Trade-off: baked blobs don't follow the sun; that's the accepted cost.
+  // Every scattered prop is a realtime shadow CASTER: each tree/rock/log re-renders into the sun's
+  // 2048² directional shadow map every frame (measured ~1.86 ms/frame on an M4 —
+  // test/perf-prop-shadows.mjs). castRealtime=false swaps that pass for baked contact-shadow blobs
+  // (a soft radial decal laid flat under each base — prop-shadow-blobs.js). The bake default was
+  // tried 2026-07-07 and REVERTED after user verify ("totally busted — half-artifact"); realtime
+  // stays the default until the blob look passes user sign-off (PERF-07 ticket). The GUI checkbox
+  // 'Realtime prop shadows' A/Bs the two modes live.
   shadows: {
-    castRealtime: false,   // false = baked blobs (props out of the shadow pass); true = realtime casting
+    castRealtime: true,    // true = realtime casting (default); false = baked blobs (props out of the shadow pass)
     blobOpacity:  0.32,    // contact-shadow blob material opacity (0 invisible → 1 solid black)
     blobScale:    1.15,    // global multiplier on every blob's footprint radius
   },

@@ -50,7 +50,6 @@ import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
 import { loadBundledRouteCache } from './route-store.js'  // QUAL-14 perf: bundled default-world route cache
 import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond discs + stream ribbons
-import { installShadowEdgeFade } from './shadow-fade.js'    // QUAL-18: dissolve the shadow-box edge
 
 // World seed — parsed from URL ?seed= parameter, defaulting to '6'.
 // Plan 04: changed to `let` so debug panel seed field can mutate it (SEED-04).
@@ -698,10 +697,6 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, canvas })
 renderer.setPixelRatio(window.devicePixelRatio)
 renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
-// QUAL-18: fade shadow intensity to zero over the outer band of the ±220 m shadow box — the
-// hard "shadows end here" line becomes a dissolve. Patches THREE.ShaderChunk, so it MUST run
-// before the first render compiles any shadow-receiving material.
-installShadowEdgeFade()
 
 // ── Camera ───────────────────────────────────────────────────────────────────
 // Spring-follow camera managed by src/camera.js (Plan 04). updateCamera() called each frame.
