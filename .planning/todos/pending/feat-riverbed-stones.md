@@ -1,15 +1,19 @@
 ---
 id: FEAT-25
 type: feature
-status: closed
-closed: 2026-07-07
-resolution: "Implemented by Opus subagent, reviewed + committed by orchestrator. (A) stone-texture.js
-  toroidal cobble heightfield -> color+normal CanvasTextures; buildStreamBedMesh bed ribbon at
-  p.y-depth+0.06, width w+1m, one repeat per 12m arc, sharing computeStreamSpans with the water so
-  suppression can't drift. (B) streamChannelAt membership sampler; trees/bushes/boulders/collidable
-  rocks excluded from channels; smallRock boost pass (streamRockBoost=3, separate seeded rng ->
-  base placements byte-identical). Verified: channel rock density 3.28x outside; determinism +
-  4 gates + full suite green (30/31, known REACHABILITY red). Visual verify in-game: user, morning."
+status: open
+reopened: 2026-07-08
+note-reopen: "USER VERIFY 2026-07-08 FAILED: 'no cobble texture is present and no medium stones
+are in riverbeds as far as i can tell. i want like 10x med stones in beds.' Two gaps: (1) the
+bed-texture ribbon isn't visible in-game — find out why (not built? under the terrain? suppressed
+by the water/bed span logic? too subtle?); (2) the rock boost only scattered smallRock (<0.1 m
+decorative) — the user wants MEDIUM stones (visible cobbles, 'rock'-class scale) in the beds at
+~10x the current stone density."
+first-pass: "2026-07-07 f12998a by Opus subagent: (A) stone-texture.js toroidal cobble
+  heightfield -> color+normal CanvasTextures; buildStreamBedMesh bed ribbon at p.y-depth+0.06,
+  width w+1m, one repeat per 12m arc, sharing computeStreamSpans with the water. (B)
+  streamChannelAt membership sampler; smallRock boost pass streamRockBoost=3 (measured 3.28x
+  channel density). Gates green — but the user can't see any of it in-game."
 
 opened: 2026-07-07
 severity: minor
