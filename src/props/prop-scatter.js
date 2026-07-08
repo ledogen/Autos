@@ -195,5 +195,36 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
   // Bushes sink slightly into the ground (kills slope-float, matches groundSink intent).
   scatterN(irange(rng, S.bushesPerChunk),     (x, z) => placeBlob('bush', x, z, [0.18, 0.34]))
 
+  // ── FEAT-15: fallen logs — downed trunks resting on (and pitched to) the terrain ─────────
+  // LAST scatter pass so every pre-existing placement keeps its exact rng draws (logs are purely
+  // additive to the world). The log lies along its local +X; a THREE yaw rotY maps that axis to
+  // world (cos rotY, −sin rotY). Both ends are grounded with heightAt (the carved/composed
+  // surface) and the instance is pitched via the existing tilt machinery (tiltAz = π/2 → local Z
+  // → pitch), so the trunk follows the slope instead of floating at one end. Hard obstacle ⇒
+  // full road keep-out inflated by the half-length (BUG-23 discipline).
+  const placeLog = (x, z) => {
+    const cfg = P.log
+    if (!roadClear(x, z, S.roadExclusion + (cfg.length / 2) * cfg.instScale[1])) return
+    if (inPondWater(x, z) || inStreamChannel(x, z)) return
+    if (slopeAt(x, z) > S.logSlopeMax) return
+    const variant = (rng() * cfg.variants) | 0
+    const scale = frange(rng, cfg.instScale)
+    const rotY = rng() * Math.PI * 2
+    const hl = (cfg.length / 2) * scale
+    const ux = Math.cos(rotY), uz = -Math.sin(rotY)
+    const yA = heightAt(x - ux * hl, z - uz * hl)
+    const yB = heightAt(x + ux * hl, z + uz * hl)
+    const pitch = Math.atan2(yB - yA, 2 * hl)
+    if (Math.abs(pitch) > S.logPitchMax) return   // ends span a step/bank — it would float; skip
+    out.push({
+      cat: 'log', variant, x, z,
+      y: (yA + yB) / 2 - 0.06 * scale,   // slight settle so the tube digs in on uneven ground
+      scale, rotY,
+      tilt: pitch, tiltAz: Math.PI / 2,  // pitch about local Z: +X end toward the higher sample
+      tint: tintFor(rng, cfg.color, cfg.colorJitter),
+    })
+  }
+  scatterN(irange(rng, S.logsPerChunk), placeLog)
+
   return out
 }

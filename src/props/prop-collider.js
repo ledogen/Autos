@@ -126,6 +126,22 @@ export function sphereVsCapsuleY(cx, cy, cz, r, capX, capZ, baseY, topY, capR) {
 }
 
 /**
+ * FEAT-15: sphere vs GENERAL capsule — swept sphere of radius capR along the arbitrary world
+ * segment A(ax,ay,az)–B(bx,by,bz). Fallen logs lie at any heading/pitch, which the vertical-only
+ * capsule above can't represent. Closest point on the segment (clamped projection), then the
+ * same sphere-vs-sphere test there — so wheels contact a log from the side, the top, or an end
+ * cap with a correct outward normal.
+ * @returns {{nx:number,ny:number,nz:number,depth:number}|null}
+ */
+export function sphereVsCapsule(cx, cy, cz, r, ax, ay, az, bx, by, bz, capR) {
+  const abx = bx - ax, aby = by - ay, abz = bz - az
+  const len2 = abx * abx + aby * aby + abz * abz
+  let t = len2 > 1e-9 ? ((cx - ax) * abx + (cy - ay) * aby + (cz - az) * abz) / len2 : 0
+  t = t < 0 ? 0 : t > 1 ? 1 : t
+  return sphereVsSphere(cx, cy, cz, r, ax + abx * t, ay + aby * t, az + abz * t, capR)
+}
+
+/**
  * Bush soft drag — NOT a contact. If the point (cx,cy,cz) is inside the bush sphere and moving,
  * return a resistive force opposing velocity: F = clamp(k · |v| · effRadius, 0, fMax), capped low.
  * @returns {{x:number,y:number,z:number}|null}

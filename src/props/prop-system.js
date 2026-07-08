@@ -29,13 +29,14 @@
 import * as THREE from 'three'
 import { buildPalette } from './prop-palette.js'
 import { scatterChunk } from './prop-scatter.js'
-import { sphereVsSphere, sphereVsCapsuleY, sphereVsMeshInstance, bushDrag } from './prop-collider.js'
+import { sphereVsSphere, sphereVsCapsuleY, sphereVsCapsule, sphereVsMeshInstance, bushDrag } from './prop-collider.js'
 import { FLORA_PARAMS } from '../../data/flora.js'
 
 // Per-category global instance capacity (split evenly across that category's variants). Sized for
 // the ring-4 (Ultra, 81-chunk) worst case; pure typed-array memory (64 B/instance), cheap.
 const CAPACITY = {
   aspen: 4000, pine: 4000, rock: 3000, boulder: 200, smallRock: 9000, bush: 4000,
+  log: 300,   // FEAT-15: sparse ([0,2]/chunk) — 300 covers a ring-4 Ultra window with slack
 }
 
 const _m = new THREE.Matrix4()
@@ -138,7 +139,26 @@ export class PropSystem {
 
       // FEAT-06b: record the collidable (capsule for trees, sphere for rocks, bush for soft-drag)
       const col = this._collision.get(key)
-      if (col) collidables.push({
+      if (col && col.kind === 'logCapsule') {
+        // FEAT-15: bake WORLD capsule endpoints from the placement transform — the same
+        // local→world mapping the instance matrix applies (pitch about local Z by pl.tilt,
+        // then yaw pl.rotY), to the tube-axis ends (±length/2, radius, 0) in local space.
+        const hl = (col.length / 2) * pl.scale
+        const rAxis = col.radius * pl.scale
+        const cp = Math.cos(pl.tilt || 0), sp = Math.sin(pl.tilt || 0)
+        const cy = Math.cos(pl.rotY), sy = Math.sin(pl.rotY)
+        const end = (d) => {
+          const lx = d * cp - rAxis * sp          // pitch about Z: (d, rAxis) → …
+          const ly = d * sp + rAxis * cp
+          return { x: pl.x + lx * cy, y: pl.y + ly, z: pl.z - lx * sy }   // yaw about Y
+        }
+        const A = end(-hl), B = end(hl)
+        collidables.push({
+          kind: col.kind, x: pl.x, y: pl.y, z: pl.z,
+          ax: A.x, ay: A.y, az: A.z, bx: B.x, by: B.y, bz: B.z,
+          radius: col.radius, boundR: col.boundR, scale: pl.scale,
+        })
+      } else if (col) collidables.push({
         kind: col.kind, x: pl.x, y: pl.y, z: pl.z,
         radius: col.radius, height: col.height || 0, scale: pl.scale,
         rotY: pl.rotY, tris: col.tris,   // rotY/tris used by 'mesh' (boulder) contacts; undefined otherwise
@@ -202,7 +222,9 @@ export class PropSystem {
     const cs = this._gridCell
     for (const list of this._collidables.values()) {
       for (const c of list) {
-        const R = c.radius * c.scale * 2   // generous footprint (covers live scale-factor changes)
+        // generous footprint (covers live scale-factor changes); logs use their half-length
+        // bound (boundR) — the tube radius alone would miss grid cells the trunk crosses.
+        const R = (c.boundR ?? c.radius) * c.scale * 2
         const gx0 = Math.floor((c.x - R) / cs), gx1 = Math.floor((c.x + R) / cs)
         const gz0 = Math.floor((c.z - R) / cs), gz1 = Math.floor((c.z + R) / cs)
         for (let gx = gx0; gx <= gx1; gx++) for (let gz = gz0; gz <= gz1; gz++) {
@@ -244,6 +266,11 @@ export class PropSystem {
       if (c.kind === 'capsule') {
         const capR = c.radius * c.scale * C.trunkRadiusScale
         hit = sphereVsCapsuleY(cx, cy, cz, r, c.x, c.z, c.y, c.y + c.height * c.scale, capR)
+      } else if (c.kind === 'logCapsule') {
+        // FEAT-15: fallen log — general capsule between the baked world endpoints. Same live
+        // trunkRadiusScale as standing trunks (bark + slop), so one slider tunes both.
+        const capR = c.radius * c.scale * C.trunkRadiusScale
+        hit = sphereVsCapsule(cx, cy, cz, r, c.ax, c.ay, c.az, c.bx, c.by, c.bz, capR)
       } else if (c.kind === 'sphere') {
         hit = sphereVsSphere(cx, cy, cz, r, c.x, c.y, c.z, c.radius * c.scale * C.rockRadiusScale)
       } else if (c.kind === 'mesh') {

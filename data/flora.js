@@ -28,6 +28,9 @@ export const FLORA_PARAMS = {
                                 //   (denser cobble scatter in stream beds/banks; USER-OWNED density dial)
     bushesPerChunk:   [6, 14],
     boulderChance:    0.04,     // per chunk, a rare large buried boulder
+    logsPerChunk:     [0, 2],   // FEAT-15: fallen trunks (hard obstacle) — sparse forest debris
+    logSlopeMax:      0.45,     // FEAT-15: no logs on near-cliffs (they'd visibly float/slide)
+    logPitchMax:      0.55,     // rad — reject a log whose two ends span a step this steep (float guard)
     roadExclusion:    9,        // m — reject TREES + collidable rocks within this of the road
     groundSink:       0.3,      // m — sink trees + bushes so the base digs in (kills slope-float)
     treeTiltMax:      0.18,     // rad (~10°) — per-tree random lean from vertical (pivots at base)
@@ -101,6 +104,20 @@ export const FLORA_PARAMS = {
     color: 0x8a8782, colorJitter: 0.12,
     buryFrac: [0.1, 0.4],
     instScale: [0.8, 1.4],
+  },
+
+  // ── Fallen logs (FEAT-15): downed trunks lying on the terrain — HARD drivable obstacle ──
+  // One FIXED nominal length across variants so the scatter can ground both ends and bake exact
+  // collision endpoints without reproducing the palette rng — per-variant variety comes from
+  // kink/radius, per-instance from scale (small climbable saplings → genuinely blocking trunks).
+  log: {
+    variants: 3,
+    length: 7,               // m — nominal trunk length (pre-instance-scale); ALL variants share it
+    trunk: { segCount: [4, 6], baseRadius: [0.26, 0.42],
+             taperPow: 1.25, topFrac: 0.45, bend: 0.14, sides: 6 },
+    barkColor: 0x6f5c46, barkFleck: 0x40362b, fleckChance: 0.30,   // weathered dead wood
+    color: 0x6f5c46, colorJitter: 0.10,   // instance tint (multiplies the baked bark colours)
+    instScale: [0.65, 1.5],
   },
 
   // ── Bushes: squat blobs, 0.5–1.5 m (06b: soft velocity-drag, size-proportional) ─
