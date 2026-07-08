@@ -54,25 +54,78 @@ export function buildPondMesh(pond, material, segments = 48) {
 // while the terrain ring shows ~200 m, and unclipped ribbons hang in the void. Points are
 // grouped into contiguous in-window spans (one strip each, one point of overhang per end so
 // the cut edge sits past the window, under fog); indices never bridge span gaps.
-export function buildStreamMesh(stream, material, bbox) {
+//
+// BUG-33: two optional samplers suppress ribbon spans that would paint the road blue:
+//  - roadBlendAt(x, z): the road-carve blend. Where a road core covers a probe (blend > 0.5)
+//    and the water level is not clearly BELOW the deck surface, the span is suppressed —
+//    the deck fills the channel, so real water could not stand there at all. Water clearly
+//    below the deck keeps rendering (the opaque deck occludes it via the depth buffer).
+//  - groundAt(x, z): the COMPOSED driving surface. Backstop for surfaces the road blend
+//    doesn't cover (junction pads): in an honest channel the water sits exactly waterDepth
+//    above the carved bed, so waterY > ground + waterDepth + slack means SOMETHING was
+//    pulled up through the channel.
+export function buildStreamMesh(stream, material, bbox, groundAt, roadBlendAt) {
     const pts = stream.points
     if (pts.length < 2) return null
     const surfaceLift = stream.waterDepth - stream.depth   // relative to centerline terrain y
 
-    // Contiguous index spans to emit. Without a bbox: the whole polyline.
+    // Contiguous index spans to emit. Without bbox/samplers: the whole polyline.
     const spans = []
-    if (!bbox) {
+    if (!bbox && !groundAt && !roadBlendAt) {
         spans.push([0, pts.length - 1])
     } else {
         const pad = (stream.maxWidth ?? stream.width)
-        const inWin = (p) => p.x >= bbox.minX - pad && p.x <= bbox.maxX + pad &&
-                             p.z >= bbox.minZ - pad && p.z <= bbox.maxZ + pad
-        let start = -1
-        for (let i = 0; i < pts.length; i++) {
-            if (inWin(pts[i])) { if (start < 0) start = i }
-            else if (start >= 0) { spans.push([Math.max(0, start - 1), i]); start = -1 }
+        const STAND_SLACK = 0.25   // m — composition tolerance above the honest waterDepth stand
+        const ACTIVE = 0, OUT_WINDOW = 1, OVER_ROAD = 2
+        const classify = (p, i) => {
+            if (bbox && (p.x < bbox.minX - pad || p.x > bbox.maxX + pad ||
+                         p.z < bbox.minZ - pad || p.z > bbox.maxZ + pad)) return OUT_WINDOW
+            if (groundAt || roadBlendAt) {
+                const waterY = p.y + surfaceLift
+                const ceiling = stream.waterDepth + STAND_SLACK
+                // Probe the centerline and BOTH ribbon edges — a road grazing one side of
+                // the channel lifts the ground under that edge while the centerline still
+                // reads the honest bed. Edge probes at the FULL half-width: the road rule
+                // below is immune to bank grazing (banks have no road blend), and the
+                // ceiling rule needs the true edge to catch decks clipping the ribbon rim.
+                const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)]
+                let tx = b.x - a.x, tz = b.z - a.z
+                const tl = Math.hypot(tx, tz) || 1
+                const nx = -tz / tl, nz = tx / tl
+                const half = p.w ?? stream.width
+                for (let e = -1; e <= 1; e++) {
+                    const px = p.x + nx * half * e, pz = p.z + nz * half * e
+                    // Road rule: a road core under the probe, with water NOT clearly below
+                    // the deck → the deck fills the channel; water cannot stand there.
+                    if (roadBlendAt && roadBlendAt(px, pz) > 0.5 &&
+                        (!groundAt || waterY > groundAt(px, pz) - 0.1)) return OVER_ROAD
+                    // Pad backstop: water standing impossibly above the composed ground.
+                    // Skipped at the exact edges when the bend swings the perpendicular
+                    // into the rising bank (ground > bed is honest there): only fire when
+                    // the probe ground is BELOW the water minus the honest stand — i.e.,
+                    // something flat was pulled up under standing water.
+                    if (groundAt && waterY > groundAt(px, pz) + ceiling &&
+                        (e === 0 || waterY > groundAt(px, pz) + ceiling + 0.5)) return OVER_ROAD
+                }
+            }
+            return ACTIVE
         }
-        if (start >= 0) spans.push([Math.max(0, start - 1), pts.length - 1])
+        const cls = new Array(pts.length)
+        for (let i = 0; i < pts.length; i++) cls[i] = classify(pts[i], i)
+        // Spans of ACTIVE points. A span end extends one point of overhang ONLY into an
+        // OUT_WINDOW neighbour (the cut hides past the window, under fog) — never into an
+        // OVER_ROAD one (that would put the cut edge back on the visible road surface).
+        let start = -1
+        for (let i = 0; i <= pts.length; i++) {
+            const c = i < pts.length ? cls[i] : OUT_WINDOW
+            if (c === ACTIVE) { if (start < 0) start = i }
+            else if (start >= 0) {
+                const s0 = (start > 0 && cls[start - 1] === OUT_WINDOW) ? start - 1 : start
+                const s1 = (i < pts.length && c === OUT_WINDOW) ? i : i - 1
+                if (s1 > s0) spans.push([s0, s1])
+                start = -1
+            }
+        }
         if (spans.length === 0) return null
     }
 
@@ -127,6 +180,8 @@ export class WaterRenderer {
         this.material = makeWaterMaterial(opts.material || {})
         this._meshes = new Map()   // feature key -> mesh (dedup / reuse)
         this._winKey = ''          // BUG-32: chunk-quantized clip window of the current stream meshes
+        this._groundAt = opts.groundAt ?? null         // BUG-33: composed driving-surface sampler
+        this._roadBlendAt = opts.roadBlendAt ?? null   // BUG-33: road-carve blend sampler
     }
 
     // Ensure meshes exist for every pond/stream overlapping the bbox; drop meshes whose
@@ -157,7 +212,7 @@ export class WaterRenderer {
         for (const st of this.water.streamsInBBox(minX, minZ, maxX, maxZ)) {
             wanted.add(st.key)
             if (!this._meshes.has(st.key)) {
-                const m = buildStreamMesh(st, this.material, { minX, minZ, maxX, maxZ })
+                const m = buildStreamMesh(st, this.material, { minX, minZ, maxX, maxZ }, this._groundAt, this._roadBlendAt)
                 if (m) { this._meshes.set(st.key, m); this.group.add(m) }
             }
         }

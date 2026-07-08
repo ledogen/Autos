@@ -1,7 +1,18 @@
 ---
 id: BUG-33
 type: bug
-status: open
+status: closed
+closed: 2026-07-07
+resolution: "Render-side fix (physics was already correct — deck holds, channel resumes, gates
+  prove it). buildStreamMesh now takes roadBlendAt + groundAt samplers: spans are suppressed
+  where a road core covers a probe and water is not clearly below the deck (a solid deck fills
+  the channel — water cannot stand there), with a composed-ground ceiling backstop for junction
+  pads. Probes at centerline + both ribbon edges; road-side span cuts get NO overhang (window
+  cuts keep theirs, hidden by fog). Verified headless at the capture site (seed testig,
+  -679/750): water-over-road verts 8 -> 0. The ticket's 'deepen bed at crossings' idea was NOT
+  done: the v1 deck is solid terrain (no cavity), so deepening buys nothing until FEAT-08 builds
+  real spans. In-game visual verify: user, morning."
+
 opened: 2026-07-07
 severity: major
 source: user-observation

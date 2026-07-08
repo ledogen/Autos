@@ -101,7 +101,19 @@ function rebuildWaterSystem () {
   // rawHeightWorld (carve-free), NOT analyticHeight — detection was gated against raw height;
   // carve-baked height would drift pond levels off the rendered terrain surface.
   waterSystem   = new WaterSystem(worldSeed, RANGER_PARAMS, (x, z) => terrainSystem.rawHeightWorld(x, z))
-  waterRenderer = new WaterRenderer(waterSystem, {})
+  // BUG-33: the renderer suppresses ribbon spans whose water level would stand above the
+  // COMPOSED driving surface (road decks/pads pulled through the channel) — inject the same
+  // physics surface the wheels ride. Safe ordering: the frame loop streams the road network
+  // (roadSystem.update) before waterRenderer.sync, so any window the ribbons build against
+  // already has its roads streamed.
+  waterRenderer = new WaterRenderer(waterSystem, {
+    groundAt: (x, z) => terrainSystem.analyticHeight(x, z),
+    // Road-carve blend at a point (0 = no road). Reads module-scope roadSystem at call time
+    // (same convention as makePropSamplers) so it survives seed rebuilds without re-injection.
+    roadBlendAt: (x, z) => roadSystem
+      ? (roadSystem._sampleCarveWorld(x, z, terrainSystem.rawHeightWorld(x, z))?.blendW ?? 0)
+      : 0,
+  })
   scene.add(waterRenderer.group)
   // FEAT-17: roads route AROUND ponds — inject the water no-go into the (current) RoadSystem as pure
   // queries/data; road.js never imports water.js. Called here so BOTH the initial wiring and every
