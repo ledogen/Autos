@@ -285,9 +285,13 @@ export const RANGER_PARAMS = {
     streamBankWidth:  5,    // m — bank ramp width (each side)
     streamWaterDepth: 0.6,  // m — water surface above the bed (render ribbon)
     // Meander / width character (FEAT-24 — Kennedy-Meadows meadow streams):
-    meanderSlopeRef:  0.10, // slope below which the meander oscillator engages (meadow regime)
-    meanderStrength:  1.2,  // 0..2 — master windiness dial (deviation amplitude scale)
-    meanderWavelength: 60,  // m — meander bend spacing (limit-cycle arc wavelength)
+    meanderSlopeRef:  0.32, // VALLEY slope below which the meander engages (rework 2026-07-08:
+                            //   alpine "flat" floors measure 12–30% at the 64 m scale — 0.10 meant
+                            //   windiness almost never engaged; full meadow mode now below ~16%)
+    meanderStrength:  1.5,  // 0..2 — master windiness dial (deviation amplitude scale)
+    meanderWavelength: 90,  // m — meander bend spacing (rework 2026-07-08: 60 m lobes were barely
+                            //   wider than the ~15 m flat-ground channel — telephone-cord read; 90 m
+                            //   gives lazy loops at the same angular amplitude/sinuosity)
     meanderAmplitude: 1.35, // rad — limit-cycle deviation amplitude at full meadow factor
     meanderForce:     0.001,// rad/m² — fine-terrain phase coupling (keep small)
     meanderFineEps:   3,    // m — fine-gradient sample offset (senses the ripple layer)

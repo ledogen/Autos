@@ -54,6 +54,45 @@ weight → ~1 on low coarse slope (and stays significant at moderate slopes), no
 nudge. Remember: water params feed routeCacheSig → regenerate data/route-cache-default.json.gz
 with any default change.
 
+## REWORK SHIPPED 2026-07-08 — awaiting user in-game verify
+
+MEASURED root cause (scratchpad sinuosity.mjs, seeds 6/testig/42): stream windows run on
+12–45 % VALLEY-scale slope — in this alpine terrain the "flat" meadow floors the user sees are
+12–30 % at the 64 m scale. With meanderSlopeRef 0.10, the meadow factor was ~0 nearly everywhere
+the streams flow (and the gm16 < 0.15 pre-gate rarely even opened over ~0.1–0.16 ripple noise) —
+the oscillator was implemented but effectively never engaged. Mechanism unchanged (limit cycle
+stays); the REGIME was retuned so it actually occurs:
+
+- traceFlow meadow pre-gate gm16 0.15 → 0.45 (valley-scale check now runs on all non-steep ground)
+- meanderSlopeRef 0.10 → 0.32 (full meadow mode below ~16 % valley slope, taper to 0 at 32 %)
+- meanderStrength 1.2 → 1.5; meanderWavelength 60 → 90 m (lobes were barely wider than the ~15 m
+  flat-ground channel — telephone-cord read; longer λ = lazy loops at the same sinuosity)
+- NEW output-deviation cap |a| ≤ 1.2 rad (~69°): at 1.5 × 1.35 the swing passed 90° and traces
+  looped into knots on the flattest floors; capped, every step still descends the smooth field
+- debug.js Meadow-slope-threshold slider max 0.2 → 0.5
+
+Measured after (200 m-window sinuosity p50): 12–20 % band 1.08 → 1.35–1.6 across seeds;
+6–12 % band ~1.6–2.3 healthy meanders (was a 6.6 scribble outlier); >30 % chutes unchanged
+(1.0–1.1). SVG renders (scratchpad stream-svg.mjs): sustained S-meanders along valley runs, no
+knots. Route bundle REGENERATED (28.4 s, 42+55 entries — routing reads ponds only, so the
+later fixes below did not need another regen).
+
+Second-round fixes (same day — real meanders exposed two latent interactions):
+- streamCarveSample SELF-SEAM: "nearest centerline segment wins" stepped the bed 4.5 m at
+  meander necks (two lobes, metres apart in bed height). Now min-composes across every
+  in-range SEGMENT (the multi-stream seam rule extended within one stream) — where two passes
+  of the same trace overlap, the deeper cut wins; merged sections verified in-game as natural
+  entrenched-meander gorge (screenshot at seed 6 ~(258,−1014)).
+- Meadow-factor low-end taper (× clamp01(vgm/0.02)): windiness needs THROUGH-FLOW — the old
+  factor peaked exactly on pond-basin approach flats, orbit-guard-trimming traces short of the
+  floor. Visible meanders unaffected (stream windows sit above 6 % valley slope).
+- Gate updates with derivations recorded inline: stream-carve CHANNEL-CUT depth cap +6 → +18
+  (≈ λ·slope self-overlap allowance) + BANK-C0 excludes road-influenced walk samples
+  (bridge-deck side walls are honest verticals) + bound scales with the deepest legal cut;
+  water-invariance FLOW-SETTLES pond-coupling now tested on a rarity-neutral clone (kept-set
+  coverage was luck-based — the raw windy trace still reaches its pond, it was merely culled
+  by streamMinLength).
+
 ## Acceptance
 
 - Headless before/after: sinuosity (arc/chord) of traces over low-slope terrain increases

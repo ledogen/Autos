@@ -314,7 +314,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   waterFolder.add(params.water, 'meanderStrength', 0, 2, 0.05).name('Meander strength').onFinishChange(_waterRebuild)
   waterFolder.add(params.water, 'meanderWavelength', 30, 200, 5).name('Meander wavelength (m)').onFinishChange(_waterRebuild)
   waterFolder.add(params.water, 'meanderAmplitude', 0, 1.5, 0.05).name('Meander amplitude (rad)').onFinishChange(_waterRebuild)
-  waterFolder.add(params.water, 'meanderSlopeRef', 0.02, 0.2, 0.005).name('Meadow slope threshold').onFinishChange(_waterRebuild)
+  waterFolder.add(params.water, 'meanderSlopeRef', 0.02, 0.5, 0.005).name('Meadow slope threshold').onFinishChange(_waterRebuild)
   waterFolder.add(params.water, 'streamWidth', 1, 6, 0.25).name('Channel half-width (m)').onFinishChange(_waterRebuild)
   waterFolder.add(params.water, 'widthFlatScale', 1, 4, 0.1).name('Width × on flats').onFinishChange(_waterRebuild)
   waterFolder.add(params.water, 'streamDepth', 0.5, 5, 0.1).name('Bed depth (m)').onFinishChange(_waterRebuild)

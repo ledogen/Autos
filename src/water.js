@@ -84,9 +84,16 @@ export const WATER_DEFAULTS = {
     // limit-cycle oscillation (a discrete curvature-instability model of real meandering)
     // whose PHASE is driven by the fine terrain gradient — deterministic, window-invariant,
     // and different in every meadow. See traceFlow for the full mechanism.
-    meanderSlopeRef:  0.10,  // slope below which the meander takes hold (meadow threshold).
-    meanderStrength:  1.2,   // 0..2 — master windiness dial (scales the deviation amplitude).
-    meanderWavelength: 60,   // m — arc wavelength of the meander oscillation (bend spacing).
+    meanderSlopeRef:  0.32,  // VALLEY slope below which the meander takes hold. Rework 2026-07-08:
+                             //     was 0.10, but measured stream windows run on 12–45% valley slope
+                             //     (alpine "flat" floors are 12–30%) → windiness almost never engaged
+                             //     ("only very rarely does windiness prevail" — user). 0.32 puts full
+                             //     meadow mode (f>0.5) below ~16% and a taper to zero at 32%.
+    meanderStrength:  1.5,   // 0..2 — master windiness dial (scales the deviation amplitude).
+    meanderWavelength: 90,   // m — arc wavelength of the meander oscillation (bend spacing).
+                             //     Rework 2026-07-08: was 60 — lobes barely cleared the ~15 m
+                             //     flat-ground channel width (telephone-cord read); 90 gives lazy
+                             //     loops at identical angular amplitude (sinuosity unchanged).
     meanderAmplitude: 1.35,  // rad — limit-cycle deviation amplitude (≈77°) at full meadow factor.
     meanderForce:     0.001, // rad/m² — fine-terrain phase coupling: nudges the oscillator so each
                              //     meadow's bend phasing is set by the local terrain (deterministic,
@@ -435,12 +442,24 @@ export class WaterSystem {
             let { gx, gz } = this._grad(x, z)
             let gm = Math.hypot(gx, gz)
             let fRaw = 0
-            if (gm < 0.15) {                               // possibly meadow — check smooth scale
+            // FEAT-24 rework (2026-07-08): the 0.15 gate almost never opened — measured over
+            // seeds 6/testig/42, stream windows run on 12–45% VALLEY slope (alpine "flat" floors
+            // are 12–30%), and the 16 m field carries ~0.1–0.16 of ripple noise on top. Gate 0.45
+            // so every plausibly-meadow step gets the valley-scale check (cost: one extra _grad
+            // on non-steep ground, build-time only).
+            if (gm < 0.45) {                               // possibly meadow — check smooth scale
                 const vg = this._grad(x, z, VALLEY_EPS)
                 const vgm = Math.hypot(vg.gx, vg.gz)
                 if (vgm > 1e-4) {
                     gx = vg.gx; gz = vg.gz; gm = vgm       // valley drift
-                    fRaw = Math.max(0, Math.min(1, 1 - vgm / meanderSlopeRef))
+                    // Meadow factor: tapers to 0 at meanderSlopeRef (chutes stay straight) AND
+                    // below 2% valley slope (FEAT-24 rework: meandering needs THROUGH-FLOW — the
+                    // old 1 − vgm/ref peaked exactly as the gradient vanished, i.e. on the flat
+                    // approach INTO pond basins, so the oscillator swung hardest where the trace
+                    // should run straight to the floor; the orbit guard then trimmed it short
+                    // and killed the streams-end-at-ponds coupling. Measured stream windows sit
+                    // almost entirely above 6% valley slope, so visible meanders are unaffected).
+                    fRaw = Math.max(0, Math.min(1, 1 - vgm / meanderSlopeRef, vgm / 0.02))
                 }
             }
             if (gm < 1e-4) { stop = 'flat'; break }       // no drainage signal at ANY scale
@@ -476,7 +495,11 @@ export class WaterSystem {
                 else if (phi < -PHI_MAX) { phi = -PHI_MAX; if (dphi < 0) dphi = 0 }
                 // Heading = drift rotated by the (strength- and meadow-scaled) deviation.
                 // sqrt(f): moderate slopes attenuate the swing gently; f alone crushes it.
-                const a = phi * Math.sqrt(f) * Math.min(2, meanderStrength)
+                // Output cap 1.2 rad (~69°): past 90° the heading points UP-valley and the trace
+                // loops into knots on the flattest floors (seen at strength 1.5 × amplitude 1.35
+                // = 2.0 rad swing). Capped, every step still descends the smoothed field.
+                const aRaw = phi * Math.sqrt(f) * Math.min(2, meanderStrength)
+                const a = Math.max(-1.2, Math.min(1.2, aRaw))
                 const ca = Math.cos(a), sa = Math.sin(a)
                 dx = ddx * ca - ddz * sa
                 dz = ddx * sa + ddz * ca
@@ -835,18 +858,22 @@ export class WaterSystem {
     // via analyticHeight — the per-stream bbox reject below keeps the common
     // (nowhere-near-water) case at a few float compares per stream.
     //
-    // MULTI-STREAM SEAMS: where two channels overlap (parallel traces into the same
-    // basin), "nearest centerline wins" would step the bed at the Voronoi seam
-    // between them (same defect class as the carve invisible-cliff bug). Instead
-    // each stream's cross-section is composed against `raw` and the DEEPEST result
-    // (minimum height) wins — a min of continuous surfaces is continuous, so the
-    // union of channels is seam-free. `raw` (world-space terrain at x,z) is passed
-    // by the terrain paths that already have it; falls back to this WaterSystem's
-    // own heightFn when omitted (legacy callers).
+    // SEAM RULE (multi-stream AND self): every candidate cross-section is composed against
+    // `raw` and the DEEPEST result (minimum height) wins — a min of continuous surfaces is
+    // continuous, so channel unions are seam-free. This must hold WITHIN one stream too
+    // (FEAT-24 rework 2026-07-08): with real meanders, "nearest centerline segment wins"
+    // stepped the bed at MEANDER NECKS — the two lobes of an S sit metres apart in bed height
+    // (descending profile), and the nearest-segment switch across the neck was a 4.5 m lip
+    // cliff (stream-carve BANK-C0). So the min runs over every in-range SEGMENT, not just the
+    // nearest: where two passes of the same channel overlap, the deeper cut wins — honestly
+    // river-like at a neck about to cut off. Consumers recompose h = raw + blendW·(bedY − raw)
+    // from the returned pair, so returning the min-h segment's (blendW, bedY) preserves both
+    // the contract and continuity. `raw` (world-space terrain at x,z) is passed by the terrain
+    // paths that already have it; falls back to this WaterSystem's own heightFn when omitted.
     streamCarveSample(x, z, streams, raw) {
         const list = streams || this.streamsInBBox(x, z, x, z)
         let rawH
-        let best = null   // { h, blendW, bedY } — minimum composed height across streams
+        let best = null   // { h, blendW, bedY } — minimum composed height across streams + segments
         for (const st of list) {
             const pad = (st.maxWidth ?? st.width) + st.bankWidth
             // Lazy cached centerline bbox (window-invariant: pure fn of the cached record).
@@ -860,10 +887,9 @@ export class WaterSystem {
                 st._bb = bb
             }
             if (x < bb.x0 - pad || x > bb.x1 + pad || z < bb.z0 - pad || z > bb.z1 + pad) continue
-            // This stream's nearest-segment cross-section. FEAT-24: the half-width is
-            // interpolated per-point (w) along the nearest segment, not a constant.
+            // FEAT-24: the half-width is interpolated per-point (w) along each segment.
             const pts = st.points
-            let d2min = Infinity, bedY = 0, wAt = st.width
+            const pad2 = pad * pad
             for (let i = 1; i < pts.length; i++) {
                 const a = pts[i - 1], b = pts[i]
                 const abx = b.x - a.x, abz = b.z - a.z
@@ -873,19 +899,16 @@ export class WaterSystem {
                 t = Math.max(0, Math.min(1, t))
                 const px = a.x + abx * t, pz = a.z + abz * t
                 const d2 = (x - px) * (x - px) + (z - pz) * (z - pz)
-                if (d2 < d2min) {
-                    d2min = d2
-                    bedY = (a.y + (b.y - a.y) * t) - st.depth
-                    wAt = (a.w !== undefined && b.w !== undefined) ? a.w + (b.w - a.w) * t : st.width
-                }
+                if (d2 >= pad2) continue                       // cheap reject before the sqrt
+                const wAt = (a.w !== undefined && b.w !== undefined) ? a.w + (b.w - a.w) * t : st.width
+                const dist = Math.sqrt(d2)
+                if (dist >= wAt + st.bankWidth) continue
+                const bedY = (a.y + (b.y - a.y) * t) - st.depth
+                const sw = dist <= wAt ? 1 : 1 - (dist - wAt) / st.bankWidth
+                if (rawH === undefined) rawH = (raw !== undefined) ? raw : this._h(x, z)
+                const h = rawH + sw * (bedY - rawH)
+                if (best === null || h < best.h) best = { h, blendW: sw, bedY }
             }
-            if (d2min === Infinity) continue
-            const dist = Math.sqrt(d2min)
-            if (dist >= wAt + st.bankWidth) continue
-            const sw = dist <= wAt ? 1 : 1 - (dist - wAt) / st.bankWidth
-            if (rawH === undefined) rawH = (raw !== undefined) ? raw : this._h(x, z)
-            const h = rawH + sw * (bedY - rawH)
-            if (best === null || h < best.h) best = { h, blendW: sw, bedY }
         }
         if (best === null) return { blendW: 0, bedY: 0 }
         return { blendW: best.blendW, bedY: best.bedY }

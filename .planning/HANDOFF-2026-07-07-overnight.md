@@ -79,3 +79,32 @@ Measured (test/perf-prop-shadows.mjs, unlocked-fps A/B/A): **prop shadow casting
 - `test/perf-prop-shadows.mjs` is the PERF-07 harness (not a gate) — needs the unlocked-fps
   flags baked into it; vsync-locked runs show zero delta.
 - Memory file `project_feat24_meander_streams.md` has the full mechanism + iteration lessons.
+
+---
+
+# ADDENDUM — 2026-07-08 verify-feedback rework session
+
+Your morning verdicts, actioned same-day (commits on this branch past cc28322):
+
+1. **Shadows** — REVERTED to realtime casting (castRealtime=true default; QUAL-18 fade
+   uninstalled, src/shadow-fade.js deleted — recover from cc28322). PERF-07 + QUAL-18 tickets
+   reopened; blob A/B toggle still in the prop GUI.
+2. **FEAT-25 cobbles/stones** — bed ribbon now DRAPES the carved channel (5 columns on the
+   cross-section kinks, bankWidth/2 margins) → dry cobble shoulders above the waterline (the
+   old flat ribbon was 100 % underwater/buried — that's why you saw nothing). NEW: medium
+   'rock'-class stones inside channels, `streamMedRockBoost` = 10 (slider: "bed med-stone
+   boost"; also added "bed small-rock boost" + "logs max" sliders). New gate stream-bed-drape.
+3. **FEAT-24 windiness** — root cause MEASURED: alpine "flat" floors are 12–30 % valley slope;
+   the old meadow threshold (0.10) meant the oscillator basically never engaged. Retuned
+   (slopeRef 0.32, gate 0.45, strength 1.5, wavelength 90, 69° deviation cap + <2 % through-flow
+   taper). Sinuosity on the flat bands 1.08 → 1.4–1.6 p50; verified in-game — streams now wind
+   properly (see FEAT-24 ticket for screenshots/details). Deep "entrenched gorge" sections where
+   meander passes merge are intentional (min-composed carve — seam-free).
+4. **BONUS: BUG-34 filed and CLOSED** — the screenshot harness default camera height sat below
+   the terrain at spawn (white frames = camera inside the mountain). A false "Chrome 150 broke
+   rendering" scare died on inspection; screenshot.mjs is now ground-relative. The game is fine
+   on Chrome 150.
+
+Route bundle regenerated for the new water params. `npm test` green (32 gates + the known
+GRAPH-REACHABILITY red) — see final commit. VERIFY: fly the flats (meanders), creek beds
+(dry cobble shoulders + med stones), shadows back to the old look.

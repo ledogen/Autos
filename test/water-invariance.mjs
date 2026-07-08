@@ -135,7 +135,7 @@ log(ponds0.length > 0 && streams0.length > 0, 'NON-VACUOUS',
     const ws = mk()
     const streams = streamsOverlappingR(ws, R)
     const step = WATER_GRID / 2   // the greedy-descent tail's operating scale
-    let notMin = 0, notDescending = 0, endInPond = 0, meetsWater = 0
+    let notMin = 0, notDescending = 0
     for (const st of streams) {
         const end = st.points[st.points.length - 1]
         if (st.drop <= 0) notDescending++
@@ -145,14 +145,30 @@ log(ponds0.length > 0 && streams0.length > 0, 'NON-VACUOUS',
             const ang = a / 8 * Math.PI * 2
             if (ws._height(end.x + Math.cos(ang) * step, end.z + Math.sin(ang) * step) < end.y - 1e-6) { notMin++; break }
         }
-        // Coupling (ponds-for-free): a stream whose mouth lands in a pond footprint
-        // must actually enter its water (endpoint below the pond plane).
-        const pond = ws.pondAt(end.x, end.z)
-        if (pond) { endInPond++; if (ws._height(end.x, end.z) < pond.waterLevel) meetsWater++ }
+    }
+    // Coupling (ponds-for-free): a trace whose mouth lands in a pond footprint must actually
+    // enter its water (endpoint below the pond plane). Tested on a RARITY-NEUTRAL clone (keep
+    // fraction 1, no min length/drop) so coverage exercises the physical traceFlow↔pond keying,
+    // not the spawn-rate dials — FEAT-24's windier traces changed arc lengths enough that the
+    // KEPT set in this region can legitimately hold zero pond-enders (the raw trace still
+    // reaches the pond; it's just culled by streamMinLength), which starved the old version of
+    // this check into a false red (2026-07-08).
+    const { rawHeightWorld } = makeTerrainHeadless(SEED, RANGER_PARAMS, null)
+    const wsAll = new WaterSystem(SEED, {
+        ...RANGER_PARAMS,
+        water: { ...RANGER_PARAMS.water, streamKeepFraction: 1, streamMinLength: 0, saddleMinDrop: 1 },
+    }, rawHeightWorld)
+    let endInPond = 0, meetsWater = 0, allStreams = 0
+    for (const st of wsAll.streamsInBBox(R.x0, R.z0, R.x1, R.z1)) {
+        allStreams++
+        const end = st.points[st.points.length - 1]
+        const pond = wsAll.pondAt(end.x, end.z)
+        if (pond) { endInPond++; if (wsAll._height(end.x, end.z) < pond.waterLevel) meetsWater++ }
     }
     const ok = notMin === 0 && notDescending === 0 && endInPond > 0 && meetsWater === endInPond
     log(ok, 'FLOW-SETTLES-AT-BASIN',
-        `${streams.length} streams: ${notMin} not-settled, ${notDescending} not-descending; ${endInPond} end in a pond, ${meetsWater} of those enter its water`)
+        `${streams.length} streams: ${notMin} not-settled, ${notDescending} not-descending; ` +
+        `rarity-neutral ${allStreams} traces: ${endInPond} end in a pond, ${meetsWater} of those enter its water`)
 }
 
 // ── 7. SUBMERGED hook flips at the pond plane ─────────────────────────────────────────────
