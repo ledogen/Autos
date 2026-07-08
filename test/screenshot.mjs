@@ -32,7 +32,9 @@ const X = Number(pos[0]), Z = Number(pos[1]), Y = pos[2] !== undefined ? Number(
 const HEIGHT = Number(flag('height', 40)), PITCH = Number(flag('pitch', -0.9)), ZOFF = Number(flag('zoff', 32))
 const SEED = flag('seed', '6'), WAIT = Number(flag('wait', 6500))
 const OUT = flag('out', join(process.cwd(), `screenshot_${X}_${Z}.png`))
-const PORT = 8000, CDP = 9222
+// --port: point at a different server (e.g. a worktree's own `npx serve . -l 8017`) — the
+// default :8000 is usually the MAIN checkout, not necessarily the code you just edited.
+const PORT = Number(flag('port', 8000)), CDP = 9222
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 // default seed is 6 (main.js `_urlSeed ?? '6'`) — only add the query when overriding, so the common case
 // loads the bare URL (a ?seed= query has proven flaky to load headlessly).

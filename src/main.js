@@ -24,6 +24,10 @@ import { updateCamera, getCameraMode, getFreecamPosition, placeFreecam } from '.
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
 // window.__view(x, y, z, yaw, pitch) — used by test/screenshot.mjs (headless CDP) and the browser console.
 window.__view = placeFreecam
+// PERF-07 measurement handles (lazy getters — survive seed rebuilds): the headless CDP perf
+// harness toggles prop shadow casting and reads renderer.info through these.
+window.__props = () => propSystem
+window.__renderer = () => renderer
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
@@ -46,6 +50,7 @@ import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
 import { loadBundledRouteCache } from './route-store.js'  // QUAL-14 perf: bundled default-world route cache
 import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond discs + stream ribbons
+import { installShadowEdgeFade } from './shadow-fade.js'    // QUAL-18: dissolve the shadow-box edge
 
 // World seed — parsed from URL ?seed= parameter, defaulting to '6'.
 // Plan 04: changed to `let` so debug panel seed field can mutate it (SEED-04).
@@ -693,6 +698,10 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, canvas })
 renderer.setPixelRatio(window.devicePixelRatio)
 renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
+// QUAL-18: fade shadow intensity to zero over the outer band of the ±220 m shadow box — the
+// hard "shadows end here" line becomes a dissolve. Patches THREE.ShaderChunk, so it MUST run
+// before the first render compiles any shadow-receiving material.
+installShadowEdgeFade()
 
 // ── Camera ───────────────────────────────────────────────────────────────────
 // Spring-follow camera managed by src/camera.js (Plan 04). updateCamera() called each frame.
@@ -1206,6 +1215,7 @@ addPropGui(_gui, {
     propSystem.dispose()
     propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
   },
+  getPropSystem: () => propSystem,   // PERF-07: live handle for the shadow-cast toggle (survives rebuild)
 })
 // QUAL-02: sky/lighting tuning folder (self-contained — attaches to _gui like the props folder).
 skySystem.addGui(_gui)

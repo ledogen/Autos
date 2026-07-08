@@ -12,13 +12,23 @@
 
 /**
  * @param {GUI} gui    the lil-gui instance returned by initDebug()
- * @param {{ params: object, rebuild: () => void }} opts
+ * @param {{ params: object, rebuild: () => void, getPropSystem?: () => object }} opts
+ *   getPropSystem: live-handle accessor (survives rebuild) for the PERF-07 shadow toggle.
  */
-export function addPropGui(gui, { params, rebuild }) {
+export function addPropGui(gui, { params, rebuild, getPropSystem }) {
   const f = gui.addFolder('Props (FEAT-06)')
   f.close()                              // collapsed by default
   const done = () => rebuild()
   const S = params.scatter
+
+  // PERF-07: prop shadow bake toggle. OFF (default) = props out of the sun's shadow pass + baked
+  // contact-shadow blobs; ON = realtime casting (blobs hidden). Read live off the current PropSystem
+  // (getPropSystem() survives rebuilds); the fresh system re-reads params.shadows.castRealtime on
+  // rebuild, so the state persists either way.
+  f.add(params.shadows, 'castRealtime').name('Realtime prop shadows').onChange((v) => {
+    const sys = getPropSystem && getPropSystem()
+    if (sys) sys.setShadowCasting(v)
+  })
 
   const density = f.addFolder('Density'); density.close()
   density.add(S, 'clustersPerChunk', 0, 12, 1).name('tree clusters').onFinishChange(done)

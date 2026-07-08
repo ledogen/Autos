@@ -30,6 +30,24 @@ free dynamic day/night shadow motion; re-bake (or sample) infrequently instead.
 User is explicit they're **not sure it's actually a win** — so this is a MEASURE-FIRST investigation,
 not a commitment.
 
+## MEASURED 2026-07-07 (overnight session, worktree visual-polish)
+
+`test/perf-prop-shadows.mjs` (headless CDP, A/B/A castShadow toggle, unlocked frame rate,
+M4/Metal, Normal quality, spawn vantage, 400 frames/phase):
+
+    A  cast=on : mean=6.72 ms  p50=7.10  p95=7.50
+    B  cast=off: mean=4.86 ms  p50=4.80  p95=7.00
+    A' cast=on : mean=6.72 ms  (A/A' spread 0.00 — clean)
+    → prop shadow casting costs ≈ 1.86 ms/frame (~28 % of the render) on the FAST machine.
+
+NOTE: a vsync-locked run reads exactly 16.67 ms in every phase — measure with
+--disable-frame-rate-limit (baked into the harness) or the delta is invisible.
+
+DECISION: bake adopted (user pre-approved "implement if win"). castShadow=false default +
+baked contact-shadow blobs (prop-shadow-blobs.js), live 'Realtime prop shadows' toggle in the
+prop GUI for A/B. Remaining before close: user visual verify of blob grounding + a morning
+re-measure on the iGPU floor if available.
+
 ## Measure first (don't bake blind — per CLAUDE.md, prove perf claims headlessly/with the profiler)
 
 - The frame loop already has a perf harness (`perfAdd`/`perfDump`, auto-dumps at frame 180 / 600 —

@@ -138,4 +138,17 @@ export const FLORA_PARAMS = {
     rockRadiusScale:  0.92,   // sphere radius  = blob boundingSphere × instScale × this (lumpy, inset)
     bush: { k: 1350, fMax: 12000 }, // soft drag: F = clamp(k · |v| · effRadius, 0, fMax) N, opposing v
   },
+
+  // ── PERF-07 shadow bake — USER-OWNED ────────────────────────────────────────────────────
+  // Every scattered prop is otherwise a realtime shadow CASTER: each tree/rock/log re-renders into
+  // the sun's 2048² directional shadow map every frame (measured ~1.86 ms/frame on an M4 —
+  // test/perf-prop-shadows.mjs). So by DEFAULT props are dropped from the shadow pass and a cheap
+  // baked contact-shadow blob (a soft radial decal laid flat under the base) stands in for grounding
+  // (prop-shadow-blobs.js). Flip castRealtime true to restore free dynamic day/night prop shadows
+  // (and hide the blobs). Trade-off: baked blobs don't follow the sun; that's the accepted cost.
+  shadows: {
+    castRealtime: false,   // false = baked blobs (props out of the shadow pass); true = realtime casting
+    blobOpacity:  0.32,    // contact-shadow blob material opacity (0 invisible → 1 solid black)
+    blobScale:    1.15,    // global multiplier on every blob's footprint radius
+  },
 }
