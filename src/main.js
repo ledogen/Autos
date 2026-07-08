@@ -181,6 +181,9 @@ const makePropSamplers = () => ({
   // FEAT-17: pond/skirt membership — the scatter rejects placements inWater (no underwater trees)
   // and keeps the skirt plantable. Reads module-scope waterSystem at call time like the rest.
   waterAt:     (x, z) => waterSystem ? waterSystem.pondSkirtAt(x, z) : null,
+  // FEAT-25: stream channel membership ({inChannel,inBank,stream}) — the scatter keeps trees/rocks
+  // out of the channel and BOOSTS decorative small-rock density inside it. Same call-time convention.
+  streamAt:    (x, z) => waterSystem ? waterSystem.streamChannelAt(x, z) : null,
 })
 
 // Grid-world mode flag (D-18 / D-19).

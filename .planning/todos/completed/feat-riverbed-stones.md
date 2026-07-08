@@ -1,7 +1,16 @@
 ---
 id: FEAT-25
 type: feature
-status: open
+status: closed
+closed: 2026-07-07
+resolution: "Implemented by Opus subagent, reviewed + committed by orchestrator. (A) stone-texture.js
+  toroidal cobble heightfield -> color+normal CanvasTextures; buildStreamBedMesh bed ribbon at
+  p.y-depth+0.06, width w+1m, one repeat per 12m arc, sharing computeStreamSpans with the water so
+  suppression can't drift. (B) streamChannelAt membership sampler; trees/bushes/boulders/collidable
+  rocks excluded from channels; smallRock boost pass (streamRockBoost=3, separate seeded rng ->
+  base placements byte-identical). Verified: channel rock density 3.28x outside; determinism +
+  4 gates + full suite green (30/31, known REACHABILITY red). Visual verify in-game: user, morning."
+
 opened: 2026-07-07
 severity: minor
 source: user-request

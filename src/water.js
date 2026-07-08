@@ -733,6 +733,50 @@ export class WaterSystem {
         return { inWater: false, inSkirt: false, pond: null }
     }
 
+    // FEAT-25: stream channel membership for the prop scatter (riverbed rock density boost).
+    // Returns { inChannel, inBank, stream } — mirrors streamCarveSample's nearest-segment walk
+    // (including the per-stream _bb bbox reject) with the per-point interpolated half-width w:
+    //   inChannel = dist ≤ w              (over the flat bed — underwater; boost small rocks here)
+    //   inBank    = w < dist ≤ w + bankWidth (the ramp shoulder up to grade)
+    // Pure fn of (seed, x, z, params) via the cached stream records → window-invariant, no caching.
+    streamChannelAt(x, z) {
+        for (const st of this.streamsInBBox(x, z, x, z)) {
+            const pad = (st.maxWidth ?? st.width) + st.bankWidth
+            // Lazy cached centerline bbox (shared with streamCarveSample; pure fn of the record).
+            let bb = st._bb
+            if (!bb) {
+                bb = { x0: Infinity, z0: Infinity, x1: -Infinity, z1: -Infinity }
+                for (const p of st.points) {
+                    if (p.x < bb.x0) bb.x0 = p.x; if (p.x > bb.x1) bb.x1 = p.x
+                    if (p.z < bb.z0) bb.z0 = p.z; if (p.z > bb.z1) bb.z1 = p.z
+                }
+                st._bb = bb
+            }
+            if (x < bb.x0 - pad || x > bb.x1 + pad || z < bb.z0 - pad || z > bb.z1 + pad) continue
+            const pts = st.points
+            let d2min = Infinity, wAt = st.width
+            for (let i = 1; i < pts.length; i++) {
+                const a = pts[i - 1], b = pts[i]
+                const abx = b.x - a.x, abz = b.z - a.z
+                const len2 = abx * abx + abz * abz
+                if (len2 < 1e-9) continue
+                let t = ((x - a.x) * abx + (z - a.z) * abz) / len2
+                t = Math.max(0, Math.min(1, t))
+                const px = a.x + abx * t, pz = a.z + abz * t
+                const d2 = (x - px) * (x - px) + (z - pz) * (z - pz)
+                if (d2 < d2min) {
+                    d2min = d2
+                    wAt = (a.w !== undefined && b.w !== undefined) ? a.w + (b.w - a.w) * t : st.width
+                }
+            }
+            if (d2min === Infinity) continue
+            const dist = Math.sqrt(d2min)
+            if (dist <= wAt) return { inChannel: true, inBank: false, stream: st }
+            if (dist <= wAt + st.bankWidth) return { inChannel: false, inBank: true, stream: st }
+        }
+        return { inChannel: false, inBank: false, stream: null }
+    }
+
     // ── Coordinated public API (2026-07-01 handoff naming) ────────────────────
     // Thin aliases so consumers (router route-around, scatter, streams-side bridge
     // detection) speak the documented contract. bbox = (minX, minZ, maxX, maxZ).

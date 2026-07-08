@@ -24,6 +24,8 @@ export const FLORA_PARAMS = {
     treesPerCluster:  [4, 11],  // [min,max] individuals per cluster
     rocksPerChunk:    [12, 26], // collidable rocks (independent scatter) — denser per user
     smallRocksPerChunk:[30, 60],// decorative <0.1 m rocks (non-collidable; also shoulder + road)
+    streamRockBoost:  3,        // FEAT-25: extra channel-rock attempts = base small-rock attempts × this
+                                //   (denser cobble scatter in stream beds/banks; USER-OWNED density dial)
     bushesPerChunk:   [6, 14],
     boulderChance:    0.04,     // per chunk, a rare large buried boulder
     roadExclusion:    9,        // m — reject TREES + collidable rocks within this of the road
