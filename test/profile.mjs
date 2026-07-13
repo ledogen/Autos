@@ -43,7 +43,7 @@ const NOAA     = has('noaa')
 const LEVERS   = argv.filter(a => a.startsWith('--lever=')).map(a => { const [n, v] = a.slice(8).split(':'); return { name: n, value: Number(v) } })
 const OUT_BASE = flag('out', join(process.cwd(), 'perf-runs'))
 const LABEL    = flag('label', '')
-const PORT = 8000, CDP_PORT = Number(flag('cdp', 9222))
+const PORT = Number(flag('port', 8000)), CDP_PORT = Number(flag('cdp', 9222))
 if (!['coldload', 'idle', 'drive', 'stream'].includes(SCENARIO)) { console.error(`unknown scenario ${SCENARIO}`); process.exit(1) }
 
 const qs = new URLSearchParams({ prof: '1' })

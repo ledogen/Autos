@@ -1231,21 +1231,30 @@ export class RoadRouteWorker {
         const blob   = new Blob([ROAD_WORKER_SOURCE], { type: 'application/javascript' })
         this._url    = URL.createObjectURL(blob)
         this._clients = new Map()   // clientId -> RoadSystem
-        this._next    = 0           // round-robin cursor (rotates across calls so small batches spread)
+        // PERF-15: PULL-model dispatch (replaces bulk round-robin). Jobs queue centrally; each
+        // worker holds ≤ INFLIGHT_DEPTH single-job messages and is refilled on reply. Round-robin
+        // pre-split made the SLOWEST worker the critical path (an E-core, or one that drew several
+        // 16-retry mountain edges) while the rest idled — measured as a 2× cold-load REGRESSION
+        // when the pool grew to 8 on the M4's heterogeneous cores.
+        this._queue    = []         // [{ client, job, epoch }]
+        this._inflight = new Array(n).fill(0)
         this._workers = []
-        const onmessage = (e) => {
-            if (!e.data || !e.data.routed) return
-            const client = this._clients.get(e.data.client)
-            client?.ingestRoutedConnections(e.data.results, e.data.epoch)
-        }
         for (let i = 0; i < n; i++) {
             const w = new Worker(this._url)
-            w.onmessage = onmessage
+            w.onmessage = (e) => {
+                if (!e.data || !e.data.routed) return
+                this._inflight[i] = Math.max(0, this._inflight[i] - 1)
+                this._pump()
+                const client = this._clients.get(e.data.client)
+                client?.ingestRoutedConnections(e.data.results, e.data.epoch)
+            }
             this._workers.push(w)
         }
     }
 
-    /** 2–4 workers: leave headroom for the terrain worker + main thread on small machines. */
+    /** 2–4 workers: leave headroom for the terrain worker + main thread. The cap stays 4: raising
+     *  it to 8 on the M4 (4P+6E) was MEASURED SLOWER for the cold spawn warm even with pull
+     *  dispatch territory — E-core stragglers + fanless thermal spike beat the extra throughput. */
     static defaultPoolSize() {
         const hc = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4
         return Math.max(2, Math.min(4, hc - 2))
@@ -1273,22 +1282,27 @@ export class RoadRouteWorker {
         for (const w of this._workers) w.postMessage(msg)
     }
 
-    /** Dispatch route jobs for a client, split round-robin across the pool. jobs = [{key, ax, az, bx, bz, opts}]. */
+    /** Queue route jobs for a client; the pull pump feeds idle workers one job at a time.
+     *  jobs = [{key, ax, az, bx, bz, opts}]. Reply routing/dedup is the client's job (epoch +
+     *  _pendingRoutes), exactly as before — only the worker assignment strategy changed. */
     postRouteJobs(client, jobs, epoch) {
+        for (const job of jobs) this._queue.push({ client, job, epoch })
+        this._pump()
+    }
+
+    // Feed every worker up to INFLIGHT_DEPTH single-job messages. Depth 2 hides the reply→refill
+    // message latency without re-creating the round-robin straggler problem (≤1 queued job can be
+    // stuck behind a slow search, vs. a whole bucket before).
+    _pump() {
+        const DEPTH = 2
         const n = this._workers.length
-        if (n === 1 || jobs.length === 1) {
-            this._workers[this._next++ % n].postMessage({ type: 'route', client, jobs, epoch })
-            this._next %= n
-            return
-        }
-        const buckets = []
-        for (let i = 0; i < jobs.length; i++) {
-            const wi = (this._next + i) % n
-            ;(buckets[wi] ??= []).push(jobs[i])
-        }
-        this._next = (this._next + jobs.length) % n
-        for (let wi = 0; wi < n; wi++) {
-            if (buckets[wi]?.length) this._workers[wi].postMessage({ type: 'route', client, jobs: buckets[wi], epoch })
+        while (this._queue.length) {
+            let wi = -1, best = DEPTH
+            for (let i = 0; i < n; i++) if (this._inflight[i] < best) { best = this._inflight[i]; wi = i }
+            if (wi === -1) return   // every worker is full — replies will re-pump
+            const { client, job, epoch } = this._queue.shift()
+            this._inflight[wi]++
+            this._workers[wi].postMessage({ type: 'route', client, jobs: [job], epoch })
         }
     }
 
