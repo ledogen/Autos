@@ -215,19 +215,43 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // to keep rampMesh.visible in sync; also guards RAMP_TRIS loops in queryContacts.
   //
   // Phase 7 (TERR-06 / SEED-04): World Seed text field + Coarse/Fine/Regional sub-folders.
-  // Path A: terrainAmplitude slider → callbacks.rebuildTerrain() (instant Y-rescale, no Worker churn)
-  //   PLUS callbacks.onRoadSurfaceChange() (BUG-31): amplitude feeds the road design grade
-  //   (road.js sampleDesignGradeAt reads amp-applied rawHeightWorld), so the debounced surface
-  //   rebuild must re-bake carve tables + drop the design-grade cache + re-sweep ribbons — without
-  //   it roads/carve stay at the old amplitude and the world visibly shears (props/water still lag
-  //   until they cycle: documented FEAT-18 dev-slider limitation).
-  // Path B: coarse/fine/regional sliders + seed field → callbacks.rebuildTerrainFull() (debounced ~150ms
-  //   in main.js: reinitWorker → rebuildAllChunksFromWorker → re-seat truck).
-  // Debounce lives in main.js.rebuildTerrainFull; debug.js fires callbacks unconditionally on onChange.
+  //
+  // BUG-31 FULL FIX — "Terrain Amplitude" is now a WORLD-SCALE MACRO over the coarse + fine LAYER
+  // amplitudes, not the visual-only params.terrainAmplitude Y-rescale it used to drive.
+  //   Why this is byte-equivalent to the old Y-scale AND honest to the router:
+  //   terrain height = coarseHeight + fineHeight·regionalModulator (terrain.js:192-231). coarseHeight
+  //   and fineHeight are EXACTLY LINEAR in coarseAmplitude / fineAmplitude (the ridge+pow shaping acts
+  //   on the raw noise BEFORE the amplitude multiply; the modulator depends on neither). So scaling
+  //   BOTH layer amplitudes by k scales the final height by k — the same geometry the old Y-scale
+  //   produced — but through params the road router ALREADY prices (coarseAmplitude feeds _coarseHeight),
+  //   the routing worker ALREADY ships (init), and routeCacheSig ALREADY keys (^coarse). Result: taller
+  //   mountains RE-ROUTE (switchbacks, grade caps respected) with ZERO router/sig/worker/bundle changes,
+  //   and the shipped default-world bundle still matches at k=1 (coarseAmplitude unchanged). The router
+  //   only prices the coarse layer, so scaling fineAmplitude alters visual detail but never routes.
+  //   params.terrainAmplitude stays permanently 1.0 (the internal visual/physics multiply), unless set
+  //   programmatically elsewhere.
+  //
+  //   STALE-BASE contract: the macro is INCREMENTAL. It stores the last-applied k (_worldScale.lastK)
+  //   and on each change multiplies the CURRENT coarse/fine amplitudes by k/lastK. So if the user nudges
+  //   the raw Coarse/Fine Amplitude sliders in between, the macro simply scales from whatever those
+  //   values are now — no stale captured baseline, always internally consistent. The raw sliders'
+  //   displays are refreshed after each macro step (updateDisplay).
+  //
+  //   Fires callbacks.rebuildTerrainFull → debouncedRebuildFull (main.js: reinitWorker + new RoadSystem
+  //   + _importSessionOrBundledRoutes + rebuildAllChunksFromWorker + truck re-seat) — the same
+  //   full-rebuild path the coarse/fine/regional shape sliders use.
   const terrainFolder = gui.addFolder('Terrain')
-  terrainFolder.add(params, 'terrainAmplitude', 0, 3.0, 0.05).name('Terrain Amplitude (Y-scale)').onChange(() => {
-    if (typeof callbacks.rebuildTerrain === 'function') callbacks.rebuildTerrain()
-    if (typeof callbacks.onRoadSurfaceChange === 'function') callbacks.onRoadSurfaceChange()
+  let _coarseAmpCtrl = null, _fineAmpCtrl = null   // assigned when the sub-folder sliders are built below
+  const _worldScale = { k: 1, lastK: 1 }
+  terrainFolder.add(_worldScale, 'k', 0, 3.0, 0.05).name('Terrain Amplitude (world scale)').onChange(v => {
+    const k = v <= 0 ? 1e-3 : v            // avoid collapsing amplitudes to 0 (unrecoverable ratio)
+    const r = k / _worldScale.lastK
+    params.coarseAmplitude *= r
+    params.fineAmplitude   *= r
+    _worldScale.lastK = k
+    if (_coarseAmpCtrl) _coarseAmpCtrl.updateDisplay()
+    if (_fineAmpCtrl) _fineAmpCtrl.updateDisplay()
+    if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull()
   })
   terrainFolder.add(params, 'rampEnabled').name('Ramp Visible').onChange(v => {
     if (typeof callbacks.setRampVisible === 'function') callbacks.setRampVisible(v)
@@ -246,7 +270,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // ── Coarse Layer sub-folder (ridged-multifractal — TERR-01, D-08 ranges) ────────────────
   // All sliders fire rebuildTerrainFull (Path B) — shape changes require Worker re-init.
   const coarseFolder = terrainFolder.addFolder('Coarse Layer')
-  coarseFolder.add(params, 'coarseAmplitude', 50, 500, 10).name('Amplitude (m)').onChange(() => {
+  _coarseAmpCtrl = coarseFolder.add(params, 'coarseAmplitude', 50, 500, 10).name('Amplitude (m)').onChange(() => {
     if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull()
   })
   // Coarse frequency exposed in cycles per kilometre (friendlier than the raw 1/m param).
@@ -266,7 +290,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
 
   // ── Fine Layer sub-folder (FBM suspension texture — TERR-02, D-10) ────────────────────
   const fineFolder = terrainFolder.addFolder('Fine Layer')
-  fineFolder.add(params, 'fineAmplitude', 0, 10, 0.1).name('Amplitude (m)').onChange(() => {
+  _fineAmpCtrl = fineFolder.add(params, 'fineAmplitude', 0, 10, 0.1).name('Amplitude (m)').onChange(() => {
     if (typeof callbacks.rebuildTerrainFull === 'function') callbacks.rebuildTerrainFull()
   })
   fineFolder.add(params, 'fineFreq', 0.01, 0.2, 0.005).name('Frequency (1/m)').onChange(() => {
