@@ -66,6 +66,13 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
   const waterAt = samplers.waterAt || null
   const inPondWater = (x, z) => { const w = waterAt && waterAt(x, z); return !!(w && w.inWater) }
 
+  // FEAT-25: optional stream-channel sampler (streamAt(x,z) → {inChannel, inBank, stream}). Trees,
+  // bushes, boulders and collidable rocks are excluded from the underwater CHANNEL (broken-looking
+  // submerged props); the decorative small-rock category is instead DENSIFIED there (boost pass
+  // below). Absent (older fixtures / gates) → no exclusion/boost, placements byte-unchanged.
+  const streamAt = samplers.streamAt || null
+  const inStreamChannel = (x, z) => { const s = streamAt && streamAt(x, z); return !!(s && s.inChannel) }
+
   // Max world horizontal bounding radius of a blob category — an UPPER bound over its variants +
   // instance scale: widest drawn radius × widest ground-plane axis × the irregularity peak × max
   // scale. Used to inflate the road keep-out so no part of a placed blob overhangs the lane (BUG-23).
@@ -76,30 +83,37 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
   const slopeAt = (x, z) => 1 - Math.max(0, Math.min(1, normalAt(x, z).y))
 
   // ── helper: place a single prop of category `cat` at (x,z) if terrain allows ──────────
-  const placeBlob = (cat, x, z, buryRange, ignoreRoad = false) => {
+  // rngArg lets the FEAT-25 channel-rock boost pass draw from its OWN seeded stream (so the extra
+  // rocks never perturb the main scatter's rng draws → existing placements stay byte-identical).
+  const placeBlob = (cat, x, z, buryRange, ignoreRoad = false, rngArg = rng, allowChannel = false) => {
     const cfg = P[cat]
     // BUG-23: exclude road-respecting props from the road FOOTPRINT, inflating the keep-out by the
     // prop's own bounding radius so a big rock/boulder whose CENTRE sits just off the ribbon can no
     // longer overhang (and wall off) the driveable lane. Pure fn of seed/coords (window-invariant).
     if (!ignoreRoad && !roadClear(x, z, S.roadExclusion + blobBoundR(cfg))) return
     if (inPondWater(x, z)) return   // FEAT-17: no rocks/bushes under the pond plane
-    const variant = (rng() * cfg.variants) | 0
-    const scale = frange(rng, cfg.instScale)
-    const bury = frange(rng, buryRange)
+    // FEAT-25: keep boulders + AMBIENT collidable rocks + bushes out of the underwater channel (a
+    // random hard prop mid-creek reads broken). Decorative small rocks are allowed everywhere, and
+    // the dedicated bed-stone pass opts in explicitly (allowChannel) — creek stones ARE the point.
+    if (!allowChannel && cat !== 'smallRock' && inStreamChannel(x, z)) return
+    const variant = (rngArg() * cfg.variants) | 0
+    const scale = frange(rngArg, cfg.instScale)
+    const bury = frange(rngArg, buryRange)
     // approximate exposed half-height from the variant's nominal radius * axis-y
     const halfH = cfg.blob.radius[1] * cfg.blob.axisScale[1] * scale
-    const gy = heightAt(x, z)
+    const gy = heightAt(x, z)          // analyticHeight → includes the stream carve, so channel rocks sit on the bed
     out.push({
       cat, variant, x, z,
       y: gy + halfH * (0.5 - bury),     // bury 0.5 → centre at ground; →1 sinks it
-      scale, rotY: rng() * Math.PI * 2,
-      tint: tintFor(rng, cfg.color, cfg.colorJitter),
+      scale, rotY: rngArg() * Math.PI * 2,
+      tint: tintFor(rngArg, cfg.color, cfg.colorJitter),
     })
   }
 
   const placeTree = (cat, x, z) => {
     if (roadBlocked(x, z)) return
     if (inPondWater(x, z)) return   // FEAT-17: no trees standing in the pond
+    if (inStreamChannel(x, z)) return   // FEAT-25: no trees standing in the stream channel
     const slope = slopeAt(x, z)
     if (slope > S.slopeRejectMax) return
     const cfg = P[cat]
@@ -157,13 +171,81 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
   }
 
   // Small rocks IGNORE the road exclusion — dense on the shoulder, sparse ON the road surface.
-  scatterN(irange(rng, S.smallRocksPerChunk), (x, z) => {
+  const smallRockAttempts = irange(rng, S.smallRocksPerChunk)   // captured for the FEAT-25 boost pass
+  scatterN(smallRockAttempts, (x, z) => {
     const d = roadDist ? roadDist(x, z) : Infinity
     if (d < S.roadHalfWidth && rng() > S.smallRockOnRoadKeep) return   // sparse on the road itself
     placeBlob('smallRock', x, z, P.smallRock.buryFrac, true)
   })
+
+  // FEAT-25: denser small rocks inside stream channels. An ADDITIVE pass (the base scatter above
+  // still keeps whatever small rocks it placed in-channel) drawing from a SEPARATE seeded stream so
+  // it can't shift the main scatter's rng. attempts = base small-rock attempts × streamRockBoost;
+  // a rock is kept only where it lands in a channel bed or bank. Deterministic + window-invariant.
+  const streamRockBoost = S.streamRockBoost ?? 0
+  if (streamAt && streamRockBoost > 0) {
+    const srng = mulberry32(seedFor(worldSeed, 'streamRocks', cx, cz))
+    const attempts = Math.round(smallRockAttempts * streamRockBoost)
+    for (let i = 0; i < attempts; i++) {
+      const x = ox + srng() * size, z = oz + srng() * size
+      const s = streamAt(x, z)
+      if (!s || !(s.inChannel || s.inBank)) continue
+      placeBlob('smallRock', x, z, P.smallRock.buryFrac, true, srng)
+    }
+  }
+
+  // FEAT-25 rework (2026-07-08): MEDIUM stones in the CHANNEL bed — the user-visible "rocky
+  // creek" read ("i want like 10x med stones in beds"). Same additive/separate-rng discipline
+  // as the small-rock boost above so every pre-existing placement keeps its exact draws.
+  // attempts = a fresh rocksPerChunk draw × streamMedRockBoost, kept only where they land IN
+  // the channel — so in-bed medium-stone DENSITY lands at ~boost× the ambient rock density.
+  // placeBlob opts into the channel (allowChannel) but keeps the road keep-out: no stones
+  // poking through bridge decks where a road fills the channel. Bury range is tighter than
+  // ambient rocks ([0.2,0.9]) — creek stones should read as seated but EXPOSED, not vanish.
+  const medBoost = S.streamMedRockBoost ?? 0
+  if (streamAt && medBoost > 0) {
+    const mrng = mulberry32(seedFor(worldSeed, 'streamMedRocks', cx, cz))
+    const attempts = Math.round(irange(mrng, S.rocksPerChunk) * medBoost)
+    for (let i = 0; i < attempts; i++) {
+      const x = ox + mrng() * size, z = oz + mrng() * size
+      const s = streamAt(x, z)
+      if (!s || !s.inChannel) continue
+      placeBlob('rock', x, z, [0.25, 0.65], false, mrng, true)
+    }
+  }
   // Bushes sink slightly into the ground (kills slope-float, matches groundSink intent).
   scatterN(irange(rng, S.bushesPerChunk),     (x, z) => placeBlob('bush', x, z, [0.18, 0.34]))
+
+  // ── FEAT-15: fallen logs — downed trunks resting on (and pitched to) the terrain ─────────
+  // LAST scatter pass so every pre-existing placement keeps its exact rng draws (logs are purely
+  // additive to the world). The log lies along its local +X; a THREE yaw rotY maps that axis to
+  // world (cos rotY, −sin rotY). Both ends are grounded with heightAt (the carved/composed
+  // surface) and the instance is pitched via the existing tilt machinery (tiltAz = π/2 → local Z
+  // → pitch), so the trunk follows the slope instead of floating at one end. Hard obstacle ⇒
+  // full road keep-out inflated by the half-length (BUG-23 discipline).
+  const placeLog = (x, z) => {
+    const cfg = P.log
+    if (!roadClear(x, z, S.roadExclusion + (cfg.length / 2) * cfg.instScale[1])) return
+    if (inPondWater(x, z) || inStreamChannel(x, z)) return
+    if (slopeAt(x, z) > S.logSlopeMax) return
+    const variant = (rng() * cfg.variants) | 0
+    const scale = frange(rng, cfg.instScale)
+    const rotY = rng() * Math.PI * 2
+    const hl = (cfg.length / 2) * scale
+    const ux = Math.cos(rotY), uz = -Math.sin(rotY)
+    const yA = heightAt(x - ux * hl, z - uz * hl)
+    const yB = heightAt(x + ux * hl, z + uz * hl)
+    const pitch = Math.atan2(yB - yA, 2 * hl)
+    if (Math.abs(pitch) > S.logPitchMax) return   // ends span a step/bank — it would float; skip
+    out.push({
+      cat: 'log', variant, x, z,
+      y: (yA + yB) / 2 - 0.06 * scale,   // slight settle so the tube digs in on uneven ground
+      scale, rotY,
+      tilt: pitch, tiltAz: Math.PI / 2,  // pitch about local Z: +X end toward the higher sample
+      tint: tintFor(rng, cfg.color, cfg.colorJitter),
+    })
+  }
+  scatterN(irange(rng, S.logsPerChunk), placeLog)
 
   return out
 }

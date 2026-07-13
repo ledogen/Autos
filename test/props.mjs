@@ -15,7 +15,7 @@ import { makeBlob, makeKinkedTube, makeConeStack } from '../src/props/prop-geome
 import { buildPalette } from '../src/props/prop-palette.js'
 import { scatterChunk } from '../src/props/prop-scatter.js'
 import { PropSystem } from '../src/props/prop-system.js'
-import { sphereVsSphere, sphereVsCapsuleY, bushDrag } from '../src/props/prop-collider.js'
+import { sphereVsSphere, sphereVsCapsuleY, sphereVsCapsule, bushDrag } from '../src/props/prop-collider.js'
 import { FLORA_PARAMS } from '../data/flora.js'
 import { mulberry32 } from '../src/seed.js'
 
@@ -143,6 +143,77 @@ console.log('5. collision math + PropSystem queries (FEAT-06b)')
     ok(m > 0 && m <= FLORA_PARAMS.collision.bush.fMax + 1e-6, 'bushDragForce applies + caps at fMax')
   } else { ok(true, '(no bush in sample — drag integration skipped)') }
   sys.dispose()
+}
+
+console.log('6. fallen logs — general capsule collision (FEAT-15)')
+{
+  // Pure math: a horizontal capsule along X from (-3,1,0) to (3,1,0), tube radius 0.4.
+  const side = sphereVsCapsule(0, 1, 0.6, 0.3, -3, 1, 0, 3, 1, 0, 0.4)
+  ok(side && side.depth > 0 && Math.abs(side.nz - 1) < 1e-9, 'side hit → +Z normal (steer-around)')
+  const top = sphereVsCapsule(1, 1.6, 0, 0.3, -3, 1, 0, 3, 1, 0, 0.4)
+  ok(top && top.depth > 0 && Math.abs(top.ny - 1) < 1e-9, 'top hit → +Y normal (ride-over)')
+  const end = sphereVsCapsule(3.5, 1, 0, 0.3, -3, 1, 0, 3, 1, 0, 0.4)
+  ok(end && end.depth > 0 && end.nx > 0.99, 'end-cap hit → axial normal')
+  ok(sphereVsCapsule(0, 3, 0, 0.3, -3, 1, 0, 3, 1, 0, 0.4) === null, 'clear above → no contact')
+  // A PITCHED capsule (one end raised): contact point tracks the tilted axis.
+  const mid = sphereVsCapsule(0, 1.5, 0.5, 0.3, -3, 0, 0, 3, 3, 0, 0.4)
+  ok(mid && mid.depth > 0, 'pitched log mid-span contact')
+
+  // Integration: scattered logs exist, rest on the terrain, and are queryable.
+  const scene = new THREE.Scene()
+  const H = (x, z) => 10 + 0.05 * x   // gentle analytic slope so pitch is exercised
+  const samplers = { heightAt: H, normalAt: () => ({ x: -0.05, y: 0.998, z: 0 }), roadBlocked: () => false }
+  const sys = new PropSystem({ scene, worldSeed: 21, samplers })
+  sys.update(0, 0, 2)                  // 5×5 chunks — enough attempts for [0,2]/chunk to land some
+  let log = null, nLogs = 0
+  for (const list of sys._collidables.values()) {
+    for (const c of list) if (c.kind === 'logCapsule') { nLogs++; if (!log) log = c }
+  }
+  ok(nLogs > 0, `scattered log collidables present (${nLogs})`)
+  if (log) {
+    // Endpoints must sit near the terrain (axis ≈ ground + tube radius, ± pitch/settle slack).
+    const eA = Math.abs(log.ay - (H(log.ax, log.az) + log.radius * log.scale))
+    const eB = Math.abs(log.by - (H(log.bx, log.bz) + log.radius * log.scale))
+    ok(eA < 0.75 && eB < 0.75, `log endpoints rest on terrain (errA=${eA.toFixed(2)} errB=${eB.toFixed(2)} m)`)
+    // A probe at the midpoint of the axis must contact; far away must not.
+    const mx = (log.ax + log.bx) / 2, my = (log.ay + log.by) / 2, mz = (log.az + log.bz) / 2
+    ok(sys.queryProps(mx, my, mz, 0.3).length > 0, 'queryProps on the trunk axis → contact')
+    ok(sys.queryProps(mx + 9999, my, mz, 0.3).length === 0, 'queryProps far away → nothing')
+  }
+  sys.dispose()
+}
+
+console.log('7. riverbed medium stones (FEAT-25 rework)')
+{
+  // Fake flat terrain + a stream channel strip at x ∈ (10, 22) with banks 4 m each side —
+  // clear of the fake road at |x| < 9 so the road keep-out doesn't mask the channel.
+  const inCh = (x) => x > 10 && x < 22
+  const samplers = {
+    heightAt: (x, z) => 30,
+    normalAt: () => ({ x: 0, y: 1, z: 0 }),
+    roadBlocked: (x, z) => Math.abs(x) < 9,
+    streamAt: (x, z) => inCh(x) ? { inChannel: true, inBank: false }
+      : (x > 6 && x < 26 ? { inChannel: false, inBank: true } : null),
+  }
+  // chunk (0,0) spans world [0,64] so the fake channel strip actually lies inside it
+  const base = { ...FLORA_PARAMS, scatter: { ...FLORA_PARAMS.scatter, streamMedRockBoost: 0 } }
+  const A = scatterChunk(0, 0, 909, samplers, base)
+  const B = scatterChunk(0, 0, 909, samplers, FLORA_PARAMS)   // default boost (10)
+  const bedStones = B.filter(p => p.cat === 'rock' && inCh(p.x))
+  ok(A.filter(p => p.cat === 'rock' && inCh(p.x)).length === 0,
+    'boost 0 → no medium rocks in the channel (ambient exclusion holds)')
+  ok(bedStones.length >= 12, `default boost fills the bed with medium stones (${bedStones.length})`)
+  // Additive/separate-rng discipline: stripping the bed stones from B reproduces A exactly.
+  const Bstripped = B.filter(p => !(p.cat === 'rock' && inCh(p.x)))
+  let sameB = Bstripped.length === A.length
+  for (let i = 0; sameB && i < A.length; i++) {
+    const u = A[i], w = Bstripped[i]
+    if (u.cat !== w.cat || u.variant !== w.variant || u.x !== w.x || u.z !== w.z || u.y !== w.y) sameB = false
+  }
+  ok(sameB, 'bed-stone pass is purely additive (pre-existing placements byte-identical)')
+  const B2 = scatterChunk(0, 0, 909, samplers, FLORA_PARAMS)
+  ok(B2.length === B.length && B2.every((p, i) => p.x === B[i].x && p.z === B[i].z && p.cat === B[i].cat),
+    'bed-stone scatter deterministic across runs')
 }
 
 console.log(fails === 0 ? '\nPROPS GATE: PASS' : `\nPROPS GATE: FAIL (${fails})`)

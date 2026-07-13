@@ -1,7 +1,19 @@
 ---
 id: FEAT-15
 type: feature
-status: open
+status: closed
+closed: 2026-07-07
+resolution: "Implemented per scoped design. sphereVsCapsule (general segment) in prop-collider;
+  'logCapsule' collidable kind with world endpoints baked in ensureChunk from the placement
+  transform; palette bakes 3 horizontal kinked-trunk variants (FIXED 7 m nominal length so the
+  scatter can ground both ends without reproducing palette rng; variety = kink/radius/scale
+  0.65-1.5). Scatter grounds both ends via heightAt, pitches via the existing tilt machinery
+  (tiltAz=pi/2), rejects: road keep-out + half-length (BUG-23), pond/stream channels, steep
+  ground, float-guard pitch cap. Grid insertion uses boundR (half-length). LAST scatter pass ->
+  all pre-existing placements keep exact rng draws. props.mjs section 6 covers side/top/end-cap
+  normals + pitched span + scattered-log grounding (err 0.07 m) + query integration. Suite 30/31
+  (known REACHABILITY red). Climb-over FEEL needs in-game verify: user, morning."
+
 opened: 2026-06-28
 severity: minor
 source: user-request

@@ -24,8 +24,15 @@ export const FLORA_PARAMS = {
     treesPerCluster:  [4, 11],  // [min,max] individuals per cluster
     rocksPerChunk:    [12, 26], // collidable rocks (independent scatter) — denser per user
     smallRocksPerChunk:[30, 60],// decorative <0.1 m rocks (non-collidable; also shoulder + road)
+    streamRockBoost:  3,        // FEAT-25: extra channel-rock attempts = base small-rock attempts × this
+                                //   (denser cobble scatter in stream beds/banks; USER-OWNED density dial)
+    streamMedRockBoost: 10,     // FEAT-25 rework: MEDIUM ('rock' class) stones in the channel bed —
+                                //   in-bed density ≈ this × ambient rock density (USER-OWNED, "10x med stones")
     bushesPerChunk:   [6, 14],
     boulderChance:    0.04,     // per chunk, a rare large buried boulder
+    logsPerChunk:     [0, 2],   // FEAT-15: fallen trunks (hard obstacle) — sparse forest debris
+    logSlopeMax:      0.45,     // FEAT-15: no logs on near-cliffs (they'd visibly float/slide)
+    logPitchMax:      0.55,     // rad — reject a log whose two ends span a step this steep (float guard)
     roadExclusion:    9,        // m — reject TREES + collidable rocks within this of the road
     groundSink:       0.3,      // m — sink trees + bushes so the base digs in (kills slope-float)
     treeTiltMax:      0.18,     // rad (~10°) — per-tree random lean from vertical (pivots at base)
@@ -101,6 +108,20 @@ export const FLORA_PARAMS = {
     instScale: [0.8, 1.4],
   },
 
+  // ── Fallen logs (FEAT-15): downed trunks lying on the terrain — HARD drivable obstacle ──
+  // One FIXED nominal length across variants so the scatter can ground both ends and bake exact
+  // collision endpoints without reproducing the palette rng — per-variant variety comes from
+  // kink/radius, per-instance from scale (small climbable saplings → genuinely blocking trunks).
+  log: {
+    variants: 3,
+    length: 7,               // m — nominal trunk length (pre-instance-scale); ALL variants share it
+    trunk: { segCount: [4, 6], baseRadius: [0.26, 0.42],
+             taperPow: 1.25, topFrac: 0.45, bend: 0.14, sides: 6 },
+    barkColor: 0x6f5c46, barkFleck: 0x40362b, fleckChance: 0.30,   // weathered dead wood
+    color: 0x6f5c46, colorJitter: 0.10,   // instance tint (multiplies the baked bark colours)
+    instScale: [0.65, 1.5],
+  },
+
   // ── Bushes: squat blobs, 0.5–1.5 m (06b: soft velocity-drag, size-proportional) ─
   bush: {
     variants: 4,
@@ -118,5 +139,19 @@ export const FLORA_PARAMS = {
     trunkRadiusScale: 1.15,   // capsule radius = trunkRadius × instScale × this (bark + slop)
     rockRadiusScale:  0.92,   // sphere radius  = blob boundingSphere × instScale × this (lumpy, inset)
     bush: { k: 1350, fMax: 12000 }, // soft drag: F = clamp(k · |v| · effRadius, 0, fMax) N, opposing v
+  },
+
+  // ── PERF-07 shadow bake — USER-OWNED ────────────────────────────────────────────────────
+  // Every scattered prop is a realtime shadow CASTER: each tree/rock/log re-renders into the sun's
+  // 2048² directional shadow map every frame (measured ~1.86 ms/frame on an M4 —
+  // test/perf-prop-shadows.mjs). castRealtime=false swaps that pass for baked contact-shadow blobs
+  // (a soft radial decal laid flat under each base — prop-shadow-blobs.js). The bake default was
+  // tried 2026-07-07 and REVERTED after user verify ("totally busted — half-artifact"); realtime
+  // stays the default until the blob look passes user sign-off (PERF-07 ticket). The GUI checkbox
+  // 'Realtime prop shadows' A/Bs the two modes live.
+  shadows: {
+    castRealtime: true,    // true = realtime casting (default); false = baked blobs (props out of the shadow pass)
+    blobOpacity:  0.32,    // contact-shadow blob material opacity (0 invisible → 1 solid black)
+    blobScale:    1.15,    // global multiplier on every blob's footprint radius
   },
 }

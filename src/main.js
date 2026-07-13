@@ -24,6 +24,10 @@ import { updateCamera, getCameraMode, getFreecamPosition, placeFreecam } from '.
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
 // window.__view(x, y, z, yaw, pitch) — used by test/screenshot.mjs (headless CDP) and the browser console.
 window.__view = placeFreecam
+// PERF-07 measurement handles (lazy getters — survive seed rebuilds): the headless CDP perf
+// harness toggles prop shadow casting and reads renderer.info through these.
+window.__props = () => propSystem
+window.__renderer = () => renderer
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
@@ -91,13 +95,29 @@ let _propRing = 2
 // Like props: decoupled leaves, samplers injected at construction, rebuilt on seed change.
 let waterSystem = null
 let waterRenderer = null
-const WATER_SYNC_RADIUS = 640   // m — water render bbox half-width around the stream center
+// BUG-32: water render bbox tracks the TERRAIN draw distance (ring × 64 m chunks + one chunk
+// of margin) instead of a fixed 640 m — unclipped ribbons used to hang in the void past the
+// loaded terrain. Reads the live ring so quality-preset changes (applyQuality → setRingRadius)
+// take effect on the next sync.
+const waterSyncRadius = () => ((terrainSystem?._ringRadius ?? 2) + 1) * 64
 function rebuildWaterSystem () {
   if (waterRenderer) { scene.remove(waterRenderer.group); waterRenderer.dispose() }
   // rawHeightWorld (carve-free), NOT analyticHeight — detection was gated against raw height;
   // carve-baked height would drift pond levels off the rendered terrain surface.
   waterSystem   = new WaterSystem(worldSeed, RANGER_PARAMS, (x, z) => terrainSystem.rawHeightWorld(x, z))
-  waterRenderer = new WaterRenderer(waterSystem, {})
+  // BUG-33: the renderer suppresses ribbon spans whose water level would stand above the
+  // COMPOSED driving surface (road decks/pads pulled through the channel) — inject the same
+  // physics surface the wheels ride. Safe ordering: the frame loop streams the road network
+  // (roadSystem.update) before waterRenderer.sync, so any window the ribbons build against
+  // already has its roads streamed.
+  waterRenderer = new WaterRenderer(waterSystem, {
+    groundAt: (x, z) => terrainSystem.analyticHeight(x, z),
+    // Road-carve blend at a point (0 = no road). Reads module-scope roadSystem at call time
+    // (same convention as makePropSamplers) so it survives seed rebuilds without re-injection.
+    roadBlendAt: (x, z) => roadSystem
+      ? (roadSystem._sampleCarveWorld(x, z, terrainSystem.rawHeightWorld(x, z))?.blendW ?? 0)
+      : 0,
+  })
   scene.add(waterRenderer.group)
   // FEAT-17: roads route AROUND ponds — inject the water no-go into the (current) RoadSystem as pure
   // queries/data; road.js never imports water.js. Called here so BOTH the initial wiring and every
@@ -127,6 +147,11 @@ function rebuildWaterSystem () {
   const WC_FETCH_R = 512, WC_EDGE = 64
   terrainSystem.setWaterCarve({
     streamsNear: (x0, z0, x1, z1) => waterSystem.streamsInBBox(x0, z0, x1, z1),
+    // FEAT-24: widest possible channel half-width + bank — the stream-table fetch pad bound.
+    maxReach: () => {
+      const k = waterSystem.k
+      return k.streamWidth * Math.max(k.widthFlatScale ?? 1, 1) + k.streamBankWidth
+    },
     sampleAt: (x, z, streams, raw) => {
       let list = streams
       if (!list) {
@@ -160,6 +185,9 @@ const makePropSamplers = () => ({
   // FEAT-17: pond/skirt membership — the scatter rejects placements inWater (no underwater trees)
   // and keeps the skirt plantable. Reads module-scope waterSystem at call time like the rest.
   waterAt:     (x, z) => waterSystem ? waterSystem.pondSkirtAt(x, z) : null,
+  // FEAT-25: stream channel membership ({inChannel,inBank,stream}) — the scatter keeps trees/rocks
+  // out of the channel and BOOSTS decorative small-rock density inside it. Same call-time convention.
+  streamAt:    (x, z) => waterSystem ? waterSystem.streamChannelAt(x, z) : null,
 })
 
 // Grid-world mode flag (D-18 / D-19).
@@ -1182,6 +1210,7 @@ addPropGui(_gui, {
     propSystem.dispose()
     propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
   },
+  getPropSystem: () => propSystem,   // PERF-07: live handle for the shadow-cast toggle (survives rebuild)
 })
 // QUAL-02: sky/lighting tuning folder (self-contained — attaches to _gui like the props folder).
 skySystem.addGui(_gui)
@@ -1599,9 +1628,10 @@ function loop () {
   if (propSystem) propSystem.update(streamCenter.x, streamCenter.z, _propRing)
   // FEAT-17/18: sync pond/stream meshes to the view region (bbox-culled, keyed — no churn when still).
   if (waterRenderer) {
+    const wr = waterSyncRadius()
     waterRenderer.sync(
-      streamCenter.x - WATER_SYNC_RADIUS, streamCenter.z - WATER_SYNC_RADIUS,
-      streamCenter.x + WATER_SYNC_RADIUS, streamCenter.z + WATER_SYNC_RADIUS
+      streamCenter.x - wr, streamCenter.z - wr,
+      streamCenter.x + wr, streamCenter.z + wr
     )
   }
   // PERF-03 WS-A: pre-warm the road centerline cache off-thread ahead of the streamer. BUG-26: no-ops

@@ -30,6 +30,42 @@ free dynamic day/night shadow motion; re-bake (or sample) infrequently instead.
 User is explicit they're **not sure it's actually a win** — so this is a MEASURE-FIRST investigation,
 not a commitment.
 
+## MEASURED 2026-07-07 (overnight session, worktree visual-polish)
+
+`test/perf-prop-shadows.mjs` (headless CDP, A/B/A castShadow toggle, unlocked frame rate,
+M4/Metal, Normal quality, spawn vantage, 400 frames/phase):
+
+    A  cast=on : mean=6.72 ms  p50=7.10  p95=7.50
+    B  cast=off: mean=4.86 ms  p50=4.80  p95=7.00
+    A' cast=on : mean=6.72 ms  (A/A' spread 0.00 — clean)
+    → prop shadow casting costs ≈ 1.86 ms/frame (~28 % of the render) on the FAST machine.
+
+NOTE: a vsync-locked run reads exactly 16.67 ms in every phase — measure with
+--disable-frame-rate-limit (baked into the harness) or the delta is invisible.
+
+DECISION: bake adopted (user pre-approved "implement if win"). castShadow=false default +
+baked contact-shadow blobs (prop-shadow-blobs.js), live 'Realtime prop shadows' toggle in the
+prop GUI for A/B. Remaining before close: user visual verify of blob grounding + a morning
+re-measure on the iGPU floor if available.
+
+## USER VERIFY 2026-07-08 — FAILED, defaults reverted to realtime casting
+
+User (on Chrome 148, where rendering works — see BUG-34 for the separate Chrome-150 disaster):
+"shadows are currently totally busted there's just a half-artifact present. either implement
+baked shadows that look good or revert to the old working cast shadows."
+
+Action taken 2026-07-08: reverted the DEFAULTS to the old working look — castRealtime: true
+(props cast realtime again, blobs hidden) and the QUAL-18 shadow-edge fade uninstalled
+(bundled in the same commit, unverifiable independently — reopened as its own ticket).
+The blob system + GUI toggle stay in the tree as the A/B harness for the next attempt.
+
+The 1.86 ms/frame measurement stands — the bake is still worth having, but the blob look must
+be iterated WITH a working visual loop. (The loop is working again same-day: the "Chrome 150
+renders black" scare was the screenshot tool's camera sitting under the terrain — BUG-34
+closed as a tool defect, screenshot.mjs now places the camera ground-relative.) Next attempt:
+iterate blob opacity/scale/shape against screenshots, and only flip the default back when the
+user signs off on the look.
+
 ## Measure first (don't bake blind — per CLAUDE.md, prove perf claims headlessly/with the profiler)
 
 - The frame loop already has a perf harness (`perfAdd`/`perfDump`, auto-dumps at frame 180 / 600 —

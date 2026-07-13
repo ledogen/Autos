@@ -70,6 +70,35 @@ function bakePine(P, rng) {
   return out
 }
 
+// FEAT-15: fallen log — a kinked trunk tube LAID DOWN. Authored horizontal along +X, resting on
+// the y=0 plane (tube axis at y = baseRadius), midpoint at the origin so the instance pivot is
+// the log's centre (scatter grounds both ends and pitches the instance about local Z via the
+// existing tilt machinery). Collision is a GENERAL capsule (kind 'logCapsule'): prop-system bakes
+// world endpoints per instance from length/radius here + the placement transform.
+function bakeLogs(P, rng) {
+  const out = []
+  for (let i = 0; i < P.variants; i++) {
+    const t = P.trunk
+    const segCount = Math.round(rr(rng, t.segCount))
+    const baseRadius = rr(rng, t.baseRadius)
+    const trunk = makeKinkedTube({
+      segCount, segLen: P.length / segCount,   // FIXED nominal length (see data/flora.js log note)
+      baseRadius, taperPow: t.taperPow, topFrac: t.topFrac, bend: t.bend, sides: t.sides,
+    }, rng)
+    fleckColor(trunk.geo, P.barkColor, P.barkFleck, P.fleckChance, rng)
+    const geo = trunk.geo
+    geo.rotateZ(-Math.PI / 2)                  // stand → lie: +Y (up the trunk) → +X
+    geo.translate(-trunk.topY / 2, baseRadius, 0)   // centre the length; rest the tube on y=0
+    out.push({ geo, collision: {
+      kind: 'logCapsule',
+      radius: baseRadius,          // tube radius (trunkRadiusScale applies live at query time)
+      length: trunk.topY,          // actual kinked length (≤ nominal; capsule never outgrows the visual)
+      boundR: trunk.topY / 2 + baseRadius,   // grid-insertion bounding radius (half-length + tube)
+    } })
+  }
+  return out
+}
+
 // kind: 'sphere' (collidable rock/boulder), 'bush' (soft drag), 'none' (small rock, decorative).
 function bakeBlobs(P, rng, kind) {
   const out = []
@@ -139,6 +168,7 @@ export function buildPalette(worldSeed, params = FLORA_PARAMS) {
     boulder:   bakeBlobs(params.boulder, rng, 'mesh'),
     smallRock: bakeBlobs(params.smallRock, rng, 'none'),
     bush:      bakeBlobs(params.bush, rng, 'bush'),
+    log:       bakeLogs(params.log, rng),   // FEAT-15: fallen trunks (hard logCapsule obstacle)
   }
   const material = new THREE.MeshLambertMaterial({ vertexColors: true })
   return { variants, material, params }
