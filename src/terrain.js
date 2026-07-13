@@ -394,6 +394,7 @@ export class TerrainSystem {
         this._warmMargin = 1
 
         // Private state
+        this._initialFillDone = false     // PERF-13: false → burst budgets until the first full ring lands
         this._chunkMap      = new Map()   // key → { mesh, heights, carveData? }
         this._pendingWorker = new Set()   // keys requested but not yet received
         this._pendingQueue  = []          // FIFO of received {key,cx,cz,heights} awaiting geometry build
@@ -560,6 +561,12 @@ export class TerrainSystem {
         _pt = performance.now()
         this._flushPendingQueue(ccx, ccz)
         perfAdd('terrain.flushPendingQueue', performance.now() - _pt) // TEMP: mesh build (geometry+carve+normals+colors)
+        // PERF-13: initial-fill burst ends once the first full generated ring is built — from then
+        // on the strict per-frame budgets own the frame (hitches only matter once the player can see).
+        if (!this._initialFillDone) {
+            const n = 2 * (this._ringRadius + this._warmMargin) + 1
+            if (this._chunkMap.size >= n * n) this._initialFillDone = true
+        }
     }
 
     /**
@@ -653,6 +660,7 @@ export class TerrainSystem {
             this._releaseChunkGeometry(chunk.mesh.geometry)  // PERF-05: recycle for the imminent re-stream
         }
         this._chunkMap.clear()
+        this._initialFillDone = false   // PERF-13: a full regen is a load — burst the refill too
 
         // Clear pending state — Worker will process new generate requests after reinit
         this._pendingWorker.clear()
@@ -1495,7 +1503,13 @@ export class TerrainSystem {
      * @private
      */
     _flushPendingQueue(ccx = 0, ccz = 0) {
-        const deadline = performance.now() + BUILD_MS_BUDGET   // PERF-02: time-slice the build (vs a fixed count)
+        // PERF-13: burst mode during the initial fill — nobody sees a hitch before the world exists,
+        // so spend ~a frame per tick building (8 chunks / 16 ms vs the steady 1 / 3 ms) and cut the
+        // ready→ring-complete trickle. Reverts to the strict PERF-02/05 budgets once the ring lands
+        // (and re-arms on rebuildAllChunksFromWorker — a full regen is a load, not play).
+        const burst = !this._initialFillDone
+        const maxBuilds = burst ? 8 : MAX_BUILDS_PER_FRAME
+        const deadline = performance.now() + (burst ? 16 : BUILD_MS_BUDGET)   // PERF-02: time-slice the build (vs a fixed count)
         // PERF-02: nearest-first drain. Replies usually arrive nearest-first already (worker FIFO over
         // nearest-first dispatch), but sort defensively so a future worker pool / out-of-order arrival
         // still builds the truck's surroundings before the periphery.
@@ -1505,7 +1519,7 @@ export class TerrainSystem {
         }
         let built = 0
         // Deadline checked AFTER the first build so at least one chunk always lands per frame.
-        while (this._pendingQueue.length > 0 && built < MAX_BUILDS_PER_FRAME &&
+        while (this._pendingQueue.length > 0 && built < maxBuilds &&
                (built === 0 || performance.now() < deadline)) {
             const { key, cx, cz, heights } = this._pendingQueue.shift()
             built++

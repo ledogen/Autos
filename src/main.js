@@ -740,7 +740,8 @@ scene.add(sun.target)   // FEAT-06: target must be in-scene for the per-frame sh
 
 // BUG-29: world-size of one shadow-map texel + scratch vectors for texel-snapping the shadow frustum
 // centre each frame (see the follow in loop()). frustumWidth / mapSize ≈ 440 / 2048 ≈ 0.215 m/texel.
-const SHADOW_TEXEL  = (sun.shadow.camera.right - sun.shadow.camera.left) / sun.shadow.mapSize.width
+// PERF-12: `let` + recomputed by applyShadowQuality — presets now scale map size and extent.
+let SHADOW_TEXEL  = (sun.shadow.camera.right - sun.shadow.camera.left) / sun.shadow.mapSize.width
 const _shadowFwd    = new THREE.Vector3()
 const _shadowRight  = new THREE.Vector3()
 const _shadowUp     = new THREE.Vector3()
@@ -1048,9 +1049,9 @@ let _fpsLastTime = 0   // will be set to currentTime on first frame
 // D-10: passes mutable RANGER_PARAMS ref so sliders write directly to the object physics.js reads.
 // Quality presets (PERF-06, supersedes the PERF-03 draw-distance dropdown): ONE master tier bundles the
 // terrain ring + warm margin + fog density + detail-shader scale (the old draw-distance fields) PLUS
-// dynamic shadows, prop render radius, and an internal render-resolution cap. Normal == today's shipped
-// defaults (ring 2 / fog 0.006 / detail 1.0 / shadows on / props 2 / native res), so on-load behaviour
-// is unchanged. LOW is the only genuinely new tier — it strips every non-gameplay GPU cost.
+// dynamic shadows, prop render radius, an internal render-resolution cap, and (PERF-12) the shadow
+// map size + ortho extent. Normal is the boot default (applied via applyQuality at bootstrap) and is
+// the thermal-friendly laptop tier; LOW strips every non-gameplay GPU cost.
 //   `warm` = rings GENERATED beyond the visible ring (pop-in lead). It grows with draw distance: the
 //   higher tiers run lighter fog (you see further), so the build frontier must sit further out to stay
 //   hidden — a flat 1-ring margin left obvious pop-in at High/Ultra. Sized so build radius (ring+warm)
@@ -1061,14 +1062,20 @@ let _fpsLastTime = 0   // will be set to currentTime on first frame
 // shadows: drives sun.castShadow (toggled in applyQuality, NOT renderer.shadowMap.enabled — see there).
 // propRing: chunk radius passed to propSystem.update() via _propRing.
 // resHeight: internal render-resolution cap in px (see applyRenderResolution). null = device-native.
-//   Only Low caps (720p) — Normal/High/Ultra stay native so on-load + the "high/ultra are fine" tiers
-//   are byte-identical to today (today's renderer.setPixelRatio(devicePixelRatio) == resHeight null).
 // roadRadius is NOT stored: it is DERIVED from the ring in applyQuality (see there).
+// NB the "Normal == construction defaults" convention is GONE — applyQuality('Normal') runs once at
+// boot (see the bootstrap, before the route-cache import), so the preset table is authoritative.
+// PERF-11: resHeight caps Normal at 1200 lines (~1.5× ratio on the Air's Retina panel — native 2×
+// shades ~4× the fragments of 1× for no perceptible gain at game viewing distance; user-approved
+// thermal lever 2026-07-13). High/Ultra stay native as the "I have GPU to burn" tiers.
+// PERF-12: shadowMap/shadowExtent scale with the tier. Normal's world is a ±160 m ring-2 window,
+// so the old fixed ±220/2048 wasted texels and casters; 1536@±160 keeps texel size (~0.21 m)
+// while shrinking the shadow pass. High/Ultra keep the wide frustum for their bigger rings.
 const QUALITY_PRESETS = {
-  Low:    { ring: 1, warm: 1, fogDensity: 0.012, detailScale: 0,   shadows: false, propRing: 1, resHeight: 720  },
-  Normal: { ring: 2, warm: 1, fogDensity: 0.006, detailScale: 1.0, shadows: true,  propRing: 2, resHeight: null },
-  High:   { ring: 3, warm: 3, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 2, resHeight: null },
-  Ultra:  { ring: 4, warm: 4, fogDensity: 0.003, detailScale: 1.0, shadows: true,  propRing: 3, resHeight: null },
+  Low:    { ring: 1, warm: 1, fogDensity: 0.012, detailScale: 0,   shadows: false, propRing: 1, resHeight: 720,  shadowMap: 1024, shadowExtent: 160 },
+  Normal: { ring: 2, warm: 1, fogDensity: 0.006, detailScale: 1.0, shadows: true,  propRing: 2, resHeight: 1200, shadowMap: 1536, shadowExtent: 160 },
+  High:   { ring: 3, warm: 3, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 2, resHeight: null, shadowMap: 2048, shadowExtent: 220 },
+  Ultra:  { ring: 4, warm: 4, fogDensity: 0.003, detailScale: 1.0, shadows: true,  propRing: 3, resHeight: null, shadowMap: 2048, shadowExtent: 220 },
 }
 
 // PERF-06: internal render-resolution cap for the CURRENT tier (px height; null = device-native). Held
@@ -1109,6 +1116,19 @@ function applyQuality (name) {
   // sun.castShadow just skips the shadow pass for that light. Receivers keep receiveShadow → they simply
   // receive no shadow when the caster is off. The frame loop also skips the shadow-frustum-follow then.
   sun.castShadow = p.shadows
+  // PERF-12: per-tier shadow map size + ortho extent. A mapSize change needs the allocated render
+  // target disposed so Three reallocates at the new size (cheap one-off; no material recompile).
+  // SHADOW_TEXEL feeds the per-frame texel-snap follow (BUG-29) — recompute or snapping shimmers.
+  if (p.shadowMap && sun.shadow.mapSize.width !== p.shadowMap) {
+    sun.shadow.mapSize.set(p.shadowMap, p.shadowMap)
+    if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null }
+  }
+  if (p.shadowExtent && sun.shadow.camera.right !== p.shadowExtent) {
+    sun.shadow.camera.left = sun.shadow.camera.bottom = -p.shadowExtent
+    sun.shadow.camera.right = sun.shadow.camera.top   =  p.shadowExtent
+    sun.shadow.camera.updateProjectionMatrix()
+  }
+  SHADOW_TEXEL = (sun.shadow.camera.right - sun.shadow.camera.left) / sun.shadow.mapSize.width
   // PERF-06 prop radius: thin out the scattered-prop ring on Low (read by the loop's propSystem.update).
   _propRing = p.propRing
   // PERF-06 render resolution: stash the tier's cap, then apply (also re-applied on window resize).
@@ -1130,6 +1150,29 @@ if (_PROF) {
     programs: renderer.info.programs?.length ?? 0,
   })
   window.__perfData = () => perfSnapshot()
+  // Route-dispatch probe: wraps _routeDispatch on first call to count per-key dispatches —
+  // diagnoses warm-loop re-dispatch churn (a key dispatched >2× means a warm scan is spinning).
+  let _rdWrap = null
+  window.__road = () => {
+    const rs = roadSystem
+    if (!rs) return null
+    if (!_rdWrap && rs._routeDispatch) {
+      const orig = rs._routeDispatch
+      _rdWrap = { count: 0, keys: new Map() }
+      rs._routeDispatch = (jobs, epoch) => {
+        _rdWrap.count += jobs.length
+        for (const j of jobs) _rdWrap.keys.set(j.key, (_rdWrap.keys.get(j.key) ?? 0) + 1)
+        return orig(jobs, epoch)
+      }
+    }
+    return {
+      pending: rs._pendingRoutes.size,
+      cls: rs._proto.cls?.size ?? 0, clsSolo: rs._proto.clsSolo?.size ?? 0,
+      lastWarm: !!rs._lastWarmCenter, epoch: rs._routeEpoch,
+      dispatched: _rdWrap?.count ?? 0,
+      hot: _rdWrap ? [..._rdWrap.keys.entries()].filter(([, n]) => n > 2).sort((a, b) => b[1] - a[1]).slice(0, 8) : [],
+    }
+  }
   // World-fill snapshot: harness polls this for time-to-ring-complete + drive telemetry.
   window.__world = () => ({
     chunks: terrainSystem ? terrainSystem._chunkMap.size : 0,
@@ -1147,9 +1190,9 @@ if (_PROF) {
     // Re-enabling culling needs real instance bounds (geometry bounds ≠ world spread). Hidden
     // zero-scale slots collapse to origin, inflating the sphere — acceptable for an A/B.
     propFrustumCulled: v => _eachPropMesh(r => { if (v) r.mesh.computeBoundingSphere(); r.mesh.frustumCulled = !!v }),
-    // Compact draw range to the used slot count. Approximation: the free list fills low slots
-    // first, but churn can fragment — a few props may vanish. Measurement lever, not a fix.
-    propCountCompact: v => _eachPropMesh(r => { r.mesh.count = v ? r.used : r.cap }),
+    // PERF-10 shipped native compaction (mesh.count tracks the occupied prefix `top`); this lever
+    // now A/Bs the OLD full-capacity draw (v=0) against the compacted default (v=1).
+    propCountCompact: v => _eachPropMesh(r => { r.mesh.count = v ? r.top : r.cap }),
     detailScale:      v => {
       RANGER_PARAMS.terrainDetailScale = v
       if (terrainSystem?._terrainUniforms?.uDetailScale) terrainSystem._terrainUniforms.uDetailScale.value = v
@@ -1286,6 +1329,11 @@ _gui.foldersRecursive().forEach((f) => f.close())
 // TerrainSystem is now alive and analyticHeight is immediately available (no chunk load required).
 // This overrides the vehicleState.position set during declaration (which used origin + _spawnEq.bodyY).
 perfMark('init: systems created, before spawn reseat')  // TEMP (D-arc)
+// PERF-11/12: apply the default tier ONCE at boot. Until now "Normal == construction defaults"
+// held by convention; Normal now differs (resHeight 1200, shadow 1536@±160), so the preset must
+// actually run. Idempotent for the fields that do match; systems exist at this point, so the
+// ring/radius calls are real (and no-ops at the default ring).
+applyQuality('Normal')
 // QUAL-14 perf: import the bundled default-world route cache (shipped world boots without
 // routing at all; other seeds miss and route on the pool), then reseat (top-level await —
 // main.js is a module, so everything below, including the render loop start, waits).

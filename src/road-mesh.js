@@ -120,6 +120,7 @@ export class RoadMeshSystem {
         // Pending queue: tile keys waiting to be built.
         this._pendingQueue = []
         this._pendingSet   = new Set()
+        this._initialFillDone = false   // PERF-13: burst tile builds until the first full drain
 
         // Shared material — one instance reused across all road tiles.
         // Do NOT dispose per-tile (matches terrain._material shared pattern).
@@ -674,13 +675,18 @@ export class RoadMeshSystem {
      * Called once per frame from the streaming loop in main.js.
      */
     flushPendingQueue() {
+        // PERF-13: initial-fill burst — until the queue first drains empty (the spawn ring's tiles
+        // have all been built once), build up to 8 tiles/frame; pre-drivable hitches are free.
+        // After that the steady MAX_ROAD_BUILDS_PER_FRAME=1 cap owns the frame.
+        const cap = this._initialFillDone ? MAX_ROAD_BUILDS_PER_FRAME : 8
         let built = 0
-        while (this._pendingQueue.length > 0 && built < MAX_ROAD_BUILDS_PER_FRAME) {
+        while (this._pendingQueue.length > 0 && built < cap) {
             const { tileX, tileZ, key } = this._pendingQueue.shift()
             this._pendingSet.delete(key)
             this._buildRoadTile(tileX, tileZ, key)
             built++
         }
+        if (!this._initialFillDone && built > 0 && this._pendingQueue.length === 0) this._initialFillDone = true
     }
 
     /**
@@ -772,6 +778,7 @@ export class RoadMeshSystem {
         }
         this._pendingQueue = []
         this._pendingSet.clear()
+        this._initialFillDone = false   // PERF-13: a full clear precedes a regen — burst the refill
     }
 
     // ── Private ───────────────────────────────────────────────────────────────

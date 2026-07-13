@@ -96,6 +96,10 @@ if (SCENARIO === 'coldload') {
     const ok = await evalOk(`window.__lever(${JSON.stringify(l.name)}, ${l.value})`)
     if (!ok) { console.error(`unknown lever: ${l.name}`); process.exit(1) }
   }
+  // Drain the route-warm tail before opening the window (PERF-09 closure: spawn-band + prewarm
+  // legitimately route ~25 s post-load; measuring earlier books load work as "steady state").
+  await waitFor('(()=>{ const r = window.__road && window.__road(); return r ? (r.pending === 0 && r.lastWarm) : true })()', 90000, 500)
+    .catch(() => console.error('warn: route warm never drained; window includes warm tail'))
   await sleep(4000)   // let preset/lever churn (shadow realloc, ring builds) settle out of the window
 }
 

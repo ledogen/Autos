@@ -87,7 +87,12 @@ export class PropSystem {
         mesh.frustumCulled = false           // PERF-05: chunk streaming bounds these
         mesh.castShadow = castRealtime       // PERF-07: realtime by default; blobs stand in when off
         mesh.receiveShadow = true
-        mesh.count = perVariant
+        // PERF-10: draw only the occupied slot prefix. mesh.count is maintained at `top` (the
+        // high-water occupied index + 1) by _flush(); drawing full capacity pushed EVERY hidden
+        // zero-scale slot through the vertex stage of the main AND shadow passes — measured 85 %
+        // of all scene triangles (2.26M → 0.35M at Normal). Slots stay pre-hidden so anything
+        // inside the prefix that is free still renders as degenerate.
+        mesh.count = 0
         // start all slots hidden
         for (let i = 0; i < perVariant; i++) mesh.setMatrixAt(i, _HIDDEN)
         mesh.instanceMatrix.needsUpdate = true
@@ -95,7 +100,8 @@ export class PropSystem {
         const free = []
         for (let i = perVariant - 1; i >= 0; i--) free.push(i)
         const key = cat + '#' + v
-        this._meshes.set(key, { mesh, free, used: 0, cap: perVariant })
+        // occ/top: occupancy bitmap + high-water mark for PERF-10 count compaction.
+        this._meshes.set(key, { mesh, free, used: 0, cap: perVariant, occ: new Uint8Array(perVariant), top: 0 })
         this._collision.set(key, entry.collision || null)
         scene.add(mesh)
       })
@@ -189,6 +195,8 @@ export class PropSystem {
       }
       const slot = rec.free.pop()
       rec.used++
+      rec.occ[slot] = 1                                  // PERF-10: track occupancy for count compaction
+      if (slot >= rec.top) rec.top = slot + 1
       _p.set(pl.x, pl.y, pl.z)
       _e.set(0, pl.rotY, 0)
       _q.setFromEuler(_e)
@@ -254,6 +262,8 @@ export class PropSystem {
       rec.mesh.setMatrixAt(slot, _HIDDEN)
       rec.free.push(slot)
       rec.used--
+      rec.occ[slot] = 0                                  // PERF-10: shrink the draw prefix when the top frees
+      while (rec.top > 0 && !rec.occ[rec.top - 1]) rec.top--
       this._dirty.add(key)
     }
     this._chunks.delete(ck)
@@ -290,6 +300,7 @@ export class PropSystem {
       if (!rec) continue
       rec.mesh.instanceMatrix.needsUpdate = true
       if (rec.mesh.instanceColor) rec.mesh.instanceColor.needsUpdate = true
+      rec.mesh.count = rec.top   // PERF-10: draw the occupied prefix only (read at draw time, no flag needed)
     }
     this._dirty.clear()
     this._blobs.flush()   // PERF-07: upload any pending blob matrix writes

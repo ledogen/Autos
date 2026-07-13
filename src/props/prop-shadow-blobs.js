@@ -75,7 +75,7 @@ export class ShadowBlobSystem {
     mesh.frustumCulled = false     // PERF-05: chunk streaming bounds these
     mesh.castShadow = false        // a shadow decal never casts …
     mesh.receiveShadow = false     // … and never receives
-    mesh.count = capacity
+    mesh.count = 0                 // PERF-10: draw the occupied prefix only (maintained in flush)
     for (let i = 0; i < capacity; i++) mesh.setMatrixAt(i, _HIDDEN)   // all slots start hidden
     mesh.instanceMatrix.needsUpdate = true
     this._mesh = mesh
@@ -86,6 +86,8 @@ export class ShadowBlobSystem {
     for (let i = capacity - 1; i >= 0; i--) this._free.push(i)
     this._used = 0
     this._cap = capacity
+    this._occ = new Uint8Array(capacity)   // PERF-10: occupancy + high-water, matches prop-system
+    this._top = 0
     this._dirty = false
     this._overflowWarned = false
   }
@@ -104,6 +106,8 @@ export class ShadowBlobSystem {
     const slot = this._free.pop()
     this._mesh.setMatrixAt(slot, m)
     this._used++
+    this._occ[slot] = 1
+    if (slot >= this._top) this._top = slot + 1
     this._dirty = true
     return slot
   }
@@ -112,6 +116,8 @@ export class ShadowBlobSystem {
     this._mesh.setMatrixAt(slot, _HIDDEN)
     this._free.push(slot)
     this._used--
+    this._occ[slot] = 0
+    while (this._top > 0 && !this._occ[this._top - 1]) this._top--
     this._dirty = true
   }
 
@@ -119,6 +125,7 @@ export class ShadowBlobSystem {
   flush() {
     if (!this._dirty) return
     this._mesh.instanceMatrix.needsUpdate = true
+    this._mesh.count = this._top   // PERF-10: occupied prefix only
     this._dirty = false
   }
 
