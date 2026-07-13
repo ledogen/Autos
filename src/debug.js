@@ -215,13 +215,19 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // to keep rampMesh.visible in sync; also guards RAMP_TRIS loops in queryContacts.
   //
   // Phase 7 (TERR-06 / SEED-04): World Seed text field + Coarse/Fine/Regional sub-folders.
-  // Path A: terrainAmplitude slider → callbacks.rebuildTerrain() (instant Y-rescale, no Worker churn).
+  // Path A: terrainAmplitude slider → callbacks.rebuildTerrain() (instant Y-rescale, no Worker churn)
+  //   PLUS callbacks.onRoadSurfaceChange() (BUG-31): amplitude feeds the road design grade
+  //   (road.js sampleDesignGradeAt reads amp-applied rawHeightWorld), so the debounced surface
+  //   rebuild must re-bake carve tables + drop the design-grade cache + re-sweep ribbons — without
+  //   it roads/carve stay at the old amplitude and the world visibly shears (props/water still lag
+  //   until they cycle: documented FEAT-18 dev-slider limitation).
   // Path B: coarse/fine/regional sliders + seed field → callbacks.rebuildTerrainFull() (debounced ~150ms
   //   in main.js: reinitWorker → rebuildAllChunksFromWorker → re-seat truck).
   // Debounce lives in main.js.rebuildTerrainFull; debug.js fires callbacks unconditionally on onChange.
   const terrainFolder = gui.addFolder('Terrain')
   terrainFolder.add(params, 'terrainAmplitude', 0, 3.0, 0.05).name('Terrain Amplitude (Y-scale)').onChange(() => {
     if (typeof callbacks.rebuildTerrain === 'function') callbacks.rebuildTerrain()
+    if (typeof callbacks.onRoadSurfaceChange === 'function') callbacks.onRoadSurfaceChange()
   })
   terrainFolder.add(params, 'rampEnabled').name('Ramp Visible').onChange(v => {
     if (typeof callbacks.setRampVisible === 'function') callbacks.setRampVisible(v)
