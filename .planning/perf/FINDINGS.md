@@ -125,3 +125,27 @@ Drive Normal post-fix: p99 18.6 ms, dropped 0.65 %. Cold seed 6: ready ~1.68 s, 
 PERF-11 Retina fragment win is NOT in these headless numbers — expect the largest thermal
 improvement on-device from the Normal 1200-line cap. **User verification: play at Normal on the
 Air and judge sharpness + chassis temperature; if soft, raise resHeight 1200 → 1300–1440.**
+(User-confirmed 2026-07-13: GPU power at Normal idle gameplay ~8 W → ~0.8 W after PERF-10..12.)
+
+## PERF-14/15 addendum (streaming stutter + cold-load investigation, 2026-07-13 evening)
+
+- **Streaming stutter FIXED (PERF-14, c964e4a):** hitch attribution showed prop scatter ran
+  100–190 ms synchronously per chunk-row entry (4.68 s of 4.9 s hitch time at 60 m/s freecam);
+  sub-causes: lazy water detection first-touch (13–58 ms) + un-yielded FEAT-25 boost passes.
+  Fixed with generator-sliced scatter (3 ms/frame budget, hard 3×3 around the vehicle), water
+  `warmRegion` pump (2 ms/frame, 768 m lookahead). Result: 60 m/s sweep 39 hitches → 2 (dropped
+  0.06 %), 120 m/s dropped 0.17 %. Residual rare hitches: single `_buildCarveTable` (~16 ms) and
+  a single flow-trace unit — slice those if ever needed.
+- **Cold load for NON-default seeds: ACCEPTED at 7–16 s (user decision 2026-07-13).** Bisect
+  (worktree A/B, alternating runs) proved NO code regression — HEAD == a4828d8 == 0baf3b6; the
+  spread is thermal-environment variance on the fanless Air. The cost is ~139 route jobs
+  (~44–80 s worker CPU, dominated by a few 16-retry mountain edges per QUAL-14). Pool 4→8 was a
+  measured REGRESSION (E-core stragglers + thermal spike) — cap stays 4; dispatch is now
+  pull-model with in-flight 2 (PERF-15, 1075294), which removes bucket stragglers. Rejected
+  structural options (recorded for posterity): async road pop-in (~2 s playable), smaller probe
+  tier (spawn shift), IndexedDB persistence (vetoed 2026-07-06, not reopened).
+- **Measurement discipline gotchas (fanless M4):** never measure with `npm test` or another
+  Chrome running; the machine self-heats from repeated cold-load runs (each is ~1 min × 4 cores)
+  — interleave A/B variants and treat >2× day-to-day swings as thermal until bisected.
+  `npx serve` 301-strips query strings from /index.html URLs — profile/screenshot runs against a
+  worktree need `python3 -m http.server` (or test/nocache-server.py).
