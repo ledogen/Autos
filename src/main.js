@@ -34,7 +34,7 @@ import { buildPlaceCapture } from './capture.js'
 import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume } from './engine-audio.js'
 import { TerrainSystem } from './terrain.js'
 import { RoadSystem, CHUNK_SIZE } from './road.js'
-import { perfAdd, perfMark, perfDump, perfReset } from './perf.js'  // TEMP perf triage (D-arc)
+import { perfAdd, perfMark, perfDump, perfReset, perfSnapshot, perfEnableUserTiming, perfFrameDt } from './perf.js'  // TEMP perf triage (D-arc / PERF-08)
 let _perfFrame = 0  // TEMP: frame counter for auto-dump at load
 let _firstFrameMarked = false  // TEMP: mark the first animate frame to isolate init vs loop time
 import { RoadMeshSystem } from './road-mesh.js'
@@ -54,7 +54,15 @@ import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond d
 // World seed — parsed from URL ?seed= parameter, defaulting to '6'.
 // Plan 04: changed to `let` so debug panel seed field can mutate it (SEED-04).
 // Refreshing the same ?seed= URL reproduces the same terrain (SEED-01/03).
-const _urlSeed = new URLSearchParams(window.location.search).get('seed')
+const _urlParams = new URLSearchParams(window.location.search)
+const _urlSeed = _urlParams.get('seed')
+// PERF-08 harness flags: ?prof=1 exposes the window.__q/__ri/__perfData/__lever dev handles +
+// mirrors perf buckets into performance.measure (trace user_timing). ?noaa=1 disables MSAA at
+// renderer construction (AA can't toggle live — context creation flag). Both are TEMP, removed
+// with src/perf.js when PERF-04 resolves. Zero cost when absent.
+const _PROF = _urlParams.get('prof') === '1'
+const _NOAA = _urlParams.get('noaa') === '1'
+if (_PROF) perfEnableUserTiming()
 let worldSeed = parseWorldSeed(_urlSeed ?? '6')
 let _seedString = _urlSeed ?? '6'   // current seed STRING (reference for captures; numeric worldSeed drives repro)
 
@@ -693,7 +701,7 @@ const vehicleState = {
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
 const canvas = document.querySelector('canvas')
-const renderer = new THREE.WebGLRenderer({ antialias: true, canvas })
+const renderer = new THREE.WebGLRenderer({ antialias: !_NOAA, canvas })  // ?noaa=1 → AA off (PERF-08 A/B)
 renderer.setPixelRatio(window.devicePixelRatio)
 renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
@@ -1108,6 +1116,60 @@ function applyQuality (name) {
   applyRenderResolution()
 }
 
+// ── PERF-08 profiling dev handles (TEMP — ?prof=1 only, removed with src/perf.js) ──────────────
+// External harness surface (test/profile.mjs over CDP). Same precedent as window.__view: init-time
+// one-liners, no frame-loop plumbing. Closures read module-scope systems at CALL time, so they
+// survive the seed-rebuild reassignment of terrainSystem/roadSystem/propSystem.
+if (_PROF) {
+  window.__q = (name) => applyQuality(name)
+  // renderer.info snapshot — draw calls / triangles / programs / GPU memory handles.
+  window.__ri = () => ({
+    calls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
+    points: renderer.info.render.points, lines: renderer.info.render.lines,
+    geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures,
+    programs: renderer.info.programs?.length ?? 0,
+  })
+  window.__perfData = () => perfSnapshot()
+  // World-fill snapshot: harness polls this for time-to-ring-complete + drive telemetry.
+  window.__world = () => ({
+    chunks: terrainSystem ? terrainSystem._chunkMap.size : 0,
+    ring:   terrainSystem ? terrainSystem._ringRadius : 0,
+    warm:   terrainSystem ? terrainSystem._warmMargin : 0,
+    pos:    { x: vehicleState.position.x, y: vehicleState.position.y, z: vehicleState.position.z },
+    speed:  Math.hypot(vehicleState.velocity.x, vehicleState.velocity.y, vehicleState.velocity.z),
+  })
+  // Single-lever A/B toggles: isolate one cost axis at a time at a fixed preset. Each returns true
+  // if applied. NOT persisted anywhere — page reload restores the preset's values.
+  const _eachPropMesh = (fn) => { if (propSystem) for (const rec of propSystem._meshes.values()) fn(rec) }
+  const LEVERS = {
+    sunShadow:        v => { sun.castShadow = !!v },
+    propCastShadow:   v => _eachPropMesh(r => { r.mesh.castShadow = !!v }),
+    // Re-enabling culling needs real instance bounds (geometry bounds ≠ world spread). Hidden
+    // zero-scale slots collapse to origin, inflating the sphere — acceptable for an A/B.
+    propFrustumCulled: v => _eachPropMesh(r => { if (v) r.mesh.computeBoundingSphere(); r.mesh.frustumCulled = !!v }),
+    // Compact draw range to the used slot count. Approximation: the free list fills low slots
+    // first, but churn can fragment — a few props may vanish. Measurement lever, not a fix.
+    propCountCompact: v => _eachPropMesh(r => { r.mesh.count = v ? r.used : r.cap }),
+    detailScale:      v => {
+      RANGER_PARAMS.terrainDetailScale = v
+      if (terrainSystem?._terrainUniforms?.uDetailScale) terrainSystem._terrainUniforms.uDetailScale.value = v
+      if (roadMeshSystem?._roadUniforms?.uDetailScale)   roadMeshSystem._roadUniforms.uDetailScale.value   = v
+    },
+    pixelRatio:       v => { renderer.setPixelRatio(Math.min(window.devicePixelRatio, v)); renderer.setSize(window.innerWidth, window.innerHeight) },
+    // mapSize change requires disposing the allocated target so Three reallocates at the new size.
+    // (SHADOW_TEXEL stays computed for 2048 — snap granularity is slightly off under this lever; fine for A/B.)
+    shadowMapSize:    v => { sun.shadow.mapSize.set(v, v); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null } },
+    shadowExtent:     v => {
+      sun.shadow.camera.left = sun.shadow.camera.bottom = -v
+      sun.shadow.camera.right = sun.shadow.camera.top   =  v
+      sun.shadow.camera.updateProjectionMatrix()
+    },
+    fogDensity:       v => { if (scene.fog) scene.fog.density = v },
+    ring:             v => { if (terrainSystem) terrainSystem.setRingRadius(v, 1); if (roadSystem) roadSystem.setRadius((v + 0.5) * 2 * CHUNK_SIZE) },
+  }
+  window.__lever = (name, value) => { const fn = LEVERS[name]; if (!fn) return false; fn(value); return true }
+}
+
 // Phase 6 (TERR-06): pass setRampVisible callback so the Ramp Visible toggle in debug.js
 // can control rampMesh visibility without requiring debug.js to import rampMesh directly.
 // Phase 7 (SEED-04 / D-09): rebuildTerrainFull = Path B debounced rebuild (Worker reinit + re-seat);
@@ -1466,6 +1528,7 @@ function loop () {
   if (_fpsLastTime > 0 && frameTime > 0) {
     const instantFps = 1 / frameTime
     _fpsEma = _fpsEma * 0.9 + instantFps * 0.1
+    if (_PROF) perfFrameDt(frameTime * 1000)   // PERF-08: dt ring buffer (post-clamp dt is fine — clamp only fires on tab-hide spikes)
   }
   _fpsLastTime = newTime
 

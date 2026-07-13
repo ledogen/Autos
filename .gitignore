@@ -41,3 +41,6 @@ node_modules/
 screenshots/
 captures/
 *.screenshot.*
+
+# PERF-08 profiling harness output (test/profile.mjs) — traces are tens of MB, per-machine
+perf-runs/

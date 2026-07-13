@@ -1,6 +1,6 @@
 // test/screenshot.mjs — headless in-browser screenshot tool for RangerSim (visual troubleshooting).
 //
-// Drives Chrome over the DevTools Protocol (node's built-in global WebSocket + fetch — no playwright)
+// Drives Chrome over the DevTools Protocol (shared client in test/lib/cdp.mjs — no playwright)
 // to load the running app, jump the freecam to a world position, and save a PNG. Use it to eyeball any
 // visual change (junctions, ribbons, carve, props, sky) without hand-driving the truck.
 //
@@ -18,10 +18,9 @@
 //
 // Prints the saved PNG path on success. Not a gate — never run by `npm test`.
 
-import { writeFileSync, mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { spawn } from 'node:child_process'
+import { launchChrome, connect, sleep } from './lib/cdp.mjs'
 
 const argv = process.argv.slice(2)
 const pos = argv.filter(a => !a.startsWith('--'))
@@ -49,43 +48,29 @@ const OUT = flag('out', join(process.cwd(), `screenshot_${X}_${Z}.png`))
 // --port: point at a different server (e.g. a worktree's own `npx serve . -l 8017`) — the
 // default :8000 is usually the MAIN checkout, not necessarily the code you just edited.
 const PORT = Number(flag('port', 8000)), CDP = 9222
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 // default seed is 6 (main.js `_urlSeed ?? '6'`) — only add the query when overriding, so the common case
 // loads the bare URL (a ?seed= query has proven flaky to load headlessly).
 const APP = (SEED && SEED !== '6') ? `http://localhost:${PORT}/index.html?seed=${SEED}` : `http://localhost:${PORT}/index.html`
-const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 // Server up?
 try { const r = await fetch(APP); if (!r.ok) throw 0 } catch { console.error(`No server on :${PORT}. Run \`npx serve .\` first.`); process.exit(1) }
 
-const userDir = mkdtempSync(join(tmpdir(), 'rangersim-cdp-'))
-const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${CDP}`, `--user-data-dir=${userDir}`, '--use-angle=metal', '--window-size=1400,900', APP], { stdio: 'ignore' })
-const cleanup = () => { try { chrome.kill() } catch {} try { rmSync(userDir, { recursive: true, force: true }) } catch {} }
-process.on('exit', cleanup); process.on('SIGINT', () => { cleanup(); process.exit(1) })
+launchChrome(APP, { port: CDP })
+const client = await connect({ port: CDP })
 
-async function pageWs () { for (let i = 0; i < 60; i++) { try { const t = await (await fetch(`http://localhost:${CDP}/json/list`)).json(); const p = t.find(x => x.type === 'page' && x.webSocketDebuggerUrl); if (p) return p.webSocketDebuggerUrl } catch {} await sleep(250) } throw new Error('no page target') }
-
-const ws = new WebSocket(await pageWs()); await new Promise(r => ws.onopen = r)
-let _id = 0; const pend = new Map()
-ws.onmessage = e => { const m = JSON.parse(e.data); if (m.id && pend.has(m.id)) { pend.get(m.id)(m); pend.delete(m.id) } }
-const cmd = (method, params = {}) => new Promise(res => { const id = ++_id; pend.set(id, res); ws.send(JSON.stringify({ id, method, params })) })
-// CDP nests the payload: message.result = { result: {type,value}, exceptionDetails }.
-const evalJS = async expr => { const m = await cmd('Runtime.evaluate', { expression: expr, returnByValue: true }); const R = m.result || {}; if (R.exceptionDetails) return { err: R.exceptionDetails.text || JSON.stringify(R.exceptionDetails) }; return { val: R.result?.value } }
-
-await cmd('Page.enable'); await cmd('Runtime.enable')
 // chrome was launched with APP already; wait for the initial terrain + road stream, then place the cam.
 await sleep(10000)
 let placed = null
 for (let i = 0; i < 20; i++) {   // the module sets window.__view once main.js finishes importing
-  const r = await evalJS(`(()=>{ if(typeof window.__view==='function'){ window.__view(${X}, ${Y + HEIGHT}, ${Z + ZOFF}, 0, ${PITCH}); return 'ok' } return 'pending' })()`)
-  if (r.err) { console.error('eval error:', r.err); ws.close(); process.exit(1) }
+  const r = await client.evalJS(`(()=>{ if(typeof window.__view==='function'){ window.__view(${X}, ${Y + HEIGHT}, ${Z + ZOFF}, 0, ${PITCH}); return 'ok' } return 'pending' })()`)
+  if (r.err) { console.error('eval error:', r.err); client.close(); process.exit(1) }
   if (r.val === 'ok') { placed = 'ok'; break }
   await sleep(500)
 }
-if (placed !== 'ok') { console.error('window.__view handle never appeared'); ws.close(); process.exit(1) }
+if (placed !== 'ok') { console.error('window.__view handle never appeared'); client.close(); process.exit(1) }
 await sleep(WAIT)    // stream terrain+roads around the new camera position
-const shot = await cmd('Page.captureScreenshot', { format: 'png' })
+const shot = await client.cmd('Page.captureScreenshot', { format: 'png' })
 writeFileSync(OUT, Buffer.from(shot.result.data, 'base64'))
-ws.close()
+client.close()
 console.log(OUT)
 process.exit(0)

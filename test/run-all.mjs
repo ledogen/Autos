@@ -1,12 +1,21 @@
-// test/run-all.mjs — the `npm test` entry point. Runs every headless gate in sequence,
-// each in its own node child process (so a process.exit(1) in one gate doesn't abort the
-// runner, and gates stay isolated). Exits non-zero if ANY gate fails.
+// test/run-all.mjs — the `npm test` entry point. Runs every headless gate, each in its own
+// node child process (so a process.exit(1) in one gate doesn't abort the runner, and gates
+// stay isolated). Exits non-zero if ANY gate fails.
+//
+// PERF-08: gates run CONCURRENTLY on a small pool (they are isolated pure-node processes —
+// no ports, no shared files, deterministic math), which cuts the wall time from the sum of
+// all gates to roughly the slowest gate. Output is buffered per gate and printed whole on
+// completion, so logs stay grouped exactly like the old sequential runner. Each gate's wall
+// time is printed and the slowest are summarized at the end — if the suite creeps, the table
+// names the culprit. `--serial` restores one-at-a-time (e.g. when timing a single gate
+// without pool contention); `--only=<substr>[,<substr>]` filters gates by name.
 //
 // Gates are listed explicitly (not glob-discovered) because test/ also holds libraries
 // (lib/*.mjs) and rainy-day manual scripts (assert-m4-*.mjs, need a recorded log) that are
 // NOT pass/fail gates. Add a gate here when you write one.
 
-import { spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
+import { availableParallelism } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -48,16 +57,51 @@ const GATES = [
     'stream-bed-drape.mjs',     // FEAT-25: cobble bed ribbon drapes the carved channel — dry shoulders above the waterline (user-visible), center under water, deterministic
 ]
 
-let failed = []
-for (const gate of GATES) {
-    console.log(`\n${'━'.repeat(64)}\n▶ ${gate}\n${'━'.repeat(64)}`)
-    const res = spawnSync('node', [join(HERE, gate)], { stdio: 'inherit' })
-    if (res.status !== 0) failed.push(gate)
-}
+const argv = process.argv.slice(2)
+const SERIAL = argv.includes('--serial')
+const only = argv.find(a => a.startsWith('--only='))?.slice(7).split(',')
+const gates = only ? GATES.filter(g => only.some(s => g.includes(s))) : GATES
+if (only && gates.length === 0) { console.error(`--only matched no gates`); process.exit(1) }
 
+// Pool size: leave headroom for the OS; serial mode = 1. CPU-heavy gates scale ~linearly
+// until memory bandwidth saturates, so cap rather than using every core.
+const POOL = SERIAL ? 1 : Math.max(2, Math.min(8, availableParallelism() - 2))
+
+const runGate = gate => new Promise(resolve => {
+    const t0 = performance.now()
+    const child = spawn('node', [join(HERE, gate)], { stdio: ['ignore', 'pipe', 'pipe'] })
+    let out = ''
+    child.stdout.on('data', d => out += d)
+    child.stderr.on('data', d => out += d)
+    child.on('close', status => {
+        const secs = (performance.now() - t0) / 1000
+        console.log(`\n${'━'.repeat(64)}\n▶ ${gate} — ${secs.toFixed(1)}s ${status === 0 ? '✓' : '✗ FAILED'}\n${'━'.repeat(64)}`)
+        process.stdout.write(out)
+        resolve({ gate, status, secs })
+    })
+})
+
+// Gates with wall-clock timing ASSERTIONS (e.g. arc-router's PERF:search-time < 60 ms/connection)
+// go RED under pool contention — 8 CPU-heavy siblings triple their measured times. They run
+// serially AFTER the pool drains so their clocks are honest.
+const TIMING_GATES = new Set(['arc-router.mjs'])
+
+const queue = gates.filter(g => !TIMING_GATES.has(g))
+const results = []
+const suiteT0 = performance.now()
+await Promise.all(Array.from({ length: Math.min(POOL, queue.length) }, async () => {
+    while (queue.length) results.push(await runGate(queue.shift()))
+}))
+for (const gate of gates.filter(g => TIMING_GATES.has(g))) results.push(await runGate(gate))
+
+const failed = results.filter(r => r.status !== 0).map(r => r.gate)
+const suiteSecs = (performance.now() - suiteT0) / 1000
+const cpuSecs = results.reduce((s, r) => s + r.secs, 0)
 console.log(`\n${'═'.repeat(64)}`)
+console.log(`slowest gates: ${[...results].sort((a, b) => b.secs - a.secs).slice(0, 5).map(r => `${r.gate} ${r.secs.toFixed(0)}s`).join(' · ')}`)
+console.log(`wall ${suiteSecs.toFixed(0)}s (pool ${POOL}) · gate-cpu ${cpuSecs.toFixed(0)}s`)
 if (failed.length) {
-    console.log(`RUN-ALL: ${GATES.length - failed.length}/${GATES.length} gates green — FAILED: ${failed.join(', ')}`)
+    console.log(`RUN-ALL: ${gates.length - failed.length}/${gates.length} gates green — FAILED: ${failed.join(', ')}`)
     process.exit(1)
 }
-console.log(`RUN-ALL: all ${GATES.length} gates green ✓`)
+console.log(`RUN-ALL: all ${gates.length} gates green ✓`)
