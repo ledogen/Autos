@@ -115,7 +115,7 @@ if (SCENARIO === 'drive') await keyEvent(client, 'w', true)
 let sweep = null
 if (SCENARIO === 'stream') {
   const w = await evalOk('window.__world()')
-  sweep = { x0: w.pos.x, z0: w.pos.z, speed: 20 }   // m/s along +X — crosses macro-cells (256 m grid)
+  sweep = { x0: w.pos.x, z0: w.pos.z, speed: Number(flag('speed', 20)) }   // m/s along +X — crosses macro-cells (256 m grid)
 }
 
 while (performance.now() - t0 < DURATION * 1000) {

@@ -56,18 +56,29 @@ async function pageWs (port) {
 //   evalJS(expr)         — Runtime.evaluate returnByValue; resolves { val } or { err }
 //   on(method, cb)       — subscribe to a CDP event (e.g. 'Tracing.dataCollected')
 //   close()              — close the socket
-export async function connect ({ port = 9222 } = {}) {
+export async function connect ({ port = 9222, cmdTimeoutMs = 60000 } = {}) {
   const ws = new WebSocket(await pageWs(port))
   await new Promise(r => ws.onopen = r)
   let _id = 0
-  const pend = new Map()
+  const pend = new Map()        // id -> { res, rej, timer }
   const listeners = new Map()   // method -> Set<cb>
+  // A dropped socket or a lost response must REJECT, never hang — an unattended profiling run
+  // once sat on a pending cmd() for 3 hours. Every command carries a deadline; socket
+  // close/error rejects everything in flight.
+  const failAll = why => { for (const [, p] of pend) { clearTimeout(p.timer); p.rej(new Error(why)) } pend.clear() }
+  ws.onclose = () => failAll('CDP socket closed')
+  ws.onerror = () => failAll('CDP socket error')
   ws.onmessage = e => {
     const m = JSON.parse(e.data)
-    if (m.id && pend.has(m.id)) { pend.get(m.id)(m); pend.delete(m.id); return }
+    if (m.id && pend.has(m.id)) { const p = pend.get(m.id); clearTimeout(p.timer); pend.delete(m.id); p.res(m); return }
     if (m.method && listeners.has(m.method)) for (const cb of listeners.get(m.method)) cb(m.params)
   }
-  const cmd = (method, params = {}) => new Promise(res => { const id = ++_id; pend.set(id, res); ws.send(JSON.stringify({ id, method, params })) })
+  const cmd = (method, params = {}, { timeoutMs = cmdTimeoutMs } = {}) => new Promise((res, rej) => {
+    const id = ++_id
+    const timer = setTimeout(() => { pend.delete(id); rej(new Error(`CDP timeout: ${method} after ${timeoutMs} ms`)) }, timeoutMs)
+    pend.set(id, { res, rej, timer })
+    ws.send(JSON.stringify({ id, method, params }))
+  })
   // CDP nests the payload: message.result = { result: {type,value}, exceptionDetails }.
   const evalJS = async expr => {
     const m = await cmd('Runtime.evaluate', { expression: expr, returnByValue: true })
@@ -107,8 +118,13 @@ export async function startTracing (client, outPath, { categories = TRACE_CATEGO
   await client.cmd('Tracing.start', { categories, transferMode: 'ReportEvents' })
   return {
     async stop () {
-      const done = new Promise(r => { const offEnd = client.on('Tracing.tracingComplete', () => { offEnd(); r() }) })
-      await client.cmd('Tracing.end')
+      // Big traces take a while to flush; give the end+complete handshake its own generous
+      // deadline rather than the default cmd timeout, and never wait forever on the complete event.
+      const done = new Promise((r, rej) => {
+        const offEnd = client.on('Tracing.tracingComplete', () => { offEnd(); clearTimeout(t); r() })
+        const t = setTimeout(() => { offEnd(); rej(new Error('Tracing.tracingComplete never arrived (180 s)')) }, 180000)
+      })
+      await client.cmd('Tracing.end', {}, { timeoutMs: 120000 })
       await done
       off()
       writeFileSync(outPath, JSON.stringify({ traceEvents: events }))

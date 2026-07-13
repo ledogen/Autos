@@ -92,16 +92,52 @@ const mainBusyUs = [...selfUs.values()].reduce((s, v) => s + v.us, 0)
 
 // ── user_timing (performance.measure mirror of src/perf.js buckets) ──────────
 // measures arrive as async nestable pairs (ph 'b'/'e', cat blink.user_timing) or 'X'.
-const timing = new Map()   // name -> { us, n }
-const openB = new Map()    // name:id -> ts
+const timing = new Map()      // name -> { us, n }
+const timingIv = []           // { name, ts, dur } — kept for hitch-window intersection below
+const openB = new Map()       // name:id -> ts
+const addTiming = (name, ts, dur) => {
+  const s = timing.get(name) ?? { us: 0, n: 0 }; s.us += dur; s.n++; timing.set(name, s)
+  timingIv.push({ name, ts, dur })
+}
 for (const e of events) {
   if (!e.cat || !e.cat.includes('blink.user_timing')) continue
-  if (e.ph === 'X' && e.dur > 0) { const s = timing.get(e.name) ?? { us: 0, n: 0 }; s.us += e.dur; s.n++; timing.set(e.name, s) }
+  if (e.ph === 'X' && e.dur > 0) addTiming(e.name, e.ts, e.dur)
   else if (e.ph === 'b') openB.set(`${e.name}:${e.id}`, e.ts)
   else if (e.ph === 'e') {
     const k = `${e.name}:${e.id}`
-    if (openB.has(k)) { const s = timing.get(e.name) ?? { us: 0, n: 0 }; s.us += e.ts - openB.get(k); s.n++; timing.set(e.name, s); openB.delete(k) }
+    if (openB.has(k)) { addTiming(e.name, openB.get(k), e.ts - openB.get(k)); openB.delete(k) }
   }
+}
+
+// ── hitch attribution ────────────────────────────────────────────────────────
+// A "hitch" = a TOP-LEVEL main-thread task > HITCH_US (a >20 ms task at 60 Hz guarantees a
+// missed vsync). For each, intersect the src/perf.js user_timing intervals (?prof=1 emits one
+// per perfAdd call, real timestamps) to name whose time it was; top child X events cover the
+// uninstrumented remainder (GC, layout, shader compile, texture upload...).
+const HITCH_US = 20000
+const hitches = []
+{
+  const ends = []   // stack of enclosing-event end timestamps → empty = top-level
+  for (const e of mainX) {
+    while (ends.length && ends[ends.length - 1] <= e.ts) ends.pop()
+    if (ends.length === 0 && e.dur > HITCH_US) hitches.push({ ts: e.ts, dur: e.dur })
+    ends.push(e.ts + e.dur)
+  }
+}
+for (const h of hitches) {
+  const inWin = new Map()
+  for (const iv of timingIv) {
+    const o = Math.min(h.ts + h.dur, iv.ts + iv.dur) - Math.max(h.ts, iv.ts)
+    if (o > 0) inWin.set(iv.name, (inWin.get(iv.name) ?? 0) + o)
+  }
+  const childs = new Map()
+  for (const e of mainX) {
+    if (e.ts > h.ts && e.ts + e.dur <= h.ts + h.dur && e.dur > 1000) {
+      childs.set(e.name, (childs.get(e.name) ?? 0) + e.dur)
+    }
+  }
+  h.buckets = [...inWin.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4)
+  h.childs = [...childs.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
 }
 
 // ── GPU process busy ─────────────────────────────────────────────────────────
@@ -133,6 +169,17 @@ lines.push('', '## Threads', '', '| process | thread | busy ms |', '|---|---|---
 for (const [k, n] of [...threadNames.entries()].filter(([k]) => (busyByThread.get(k) ?? 0) > 1000).sort((a, b) => (busyByThread.get(b[0]) ?? 0) - (busyByThread.get(a[0]) ?? 0)).slice(0, 12)) {
   const pid = k.split(':')[0]
   lines.push(`| ${procNames.get(Number(pid)) ?? pid}${k === mainKey ? ' ◀ main' : k === gpuKey ? ' ◀ gpu' : ''} | ${n} | ${ms(busyByThread.get(k) ?? 0)} |`)
+}
+lines.push('', `## Hitches (top-level main tasks > ${HITCH_US / 1000} ms): ${hitches.length}`)
+if (hitches.length) {
+  lines.push('', '| t (s) | dur ms | perf buckets inside | biggest child events |', '|---|---|---|---|')
+  for (const h of hitches.slice(0, 25)) {
+    lines.push(`| ${((h.ts - tMin) / 1e6).toFixed(1)} | ${ms(h.dur)} | ${h.buckets.map(([n, u]) => `${n} ${ms(u)}`).join(' · ') || '—'} | ${h.childs.map(([n, u]) => `${n} ${ms(u)}`).join(' · ') || '—'} |`)
+  }
+  // aggregate: which bucket dominates hitches overall
+  const agg = new Map()
+  for (const h of hitches) for (const [n, u] of h.buckets) agg.set(n, (agg.get(n) ?? 0) + u)
+  lines.push('', `**Hitch-time by bucket:** ${[...agg.entries()].sort((a, b) => b[1] - a[1]).map(([n, u]) => `${n} ${ms(u)} ms`).join(' · ') || 'uninstrumented'}`)
 }
 lines.push('', `## Renderer main self-time (top ${TOP})`, '', '| event | self ms | count | % busy |', '|---|---|---|---|')
 for (const [name, s] of [...selfUs.entries()].sort((a, b) => b[1].us - a[1].us).slice(0, TOP)) {

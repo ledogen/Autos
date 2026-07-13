@@ -1735,9 +1735,14 @@ function loop () {
   // would synchronously route the enlarged band — skip until the warm restores the play radius.
   if (roadSystem && !_spawnWarmActive) roadSystem.update(streamCenter)
   perfAdd('frame.road.update', performance.now() - _pt)
-  // FEAT-06: stream props around the same center (diff is cheap when no chunk crossed).
-  if (propSystem) propSystem.update(streamCenter.x, streamCenter.z, _propRing)
+  // FEAT-06: stream props around the same center. PERF-14: scatter is queued + time-sliced inside
+  // update(); the vehicle position is the HARD radius — its 3×3 chunks force-complete so prop
+  // collision always exists under the truck, while the visual ring drips in budget-bound.
+  _pt = performance.now()
+  if (propSystem) propSystem.update(streamCenter.x, streamCenter.z, _propRing, vehicleState.position.x, vehicleState.position.z)
+  perfAdd('frame.props.update', performance.now() - _pt)   // TEMP (D-arc)
   // FEAT-17/18: sync pond/stream meshes to the view region (bbox-culled, keyed — no churn when still).
+  _pt = performance.now()
   if (waterRenderer) {
     const wr = waterSyncRadius()
     waterRenderer.sync(
@@ -1745,6 +1750,18 @@ function loop () {
       streamCenter.x + wr, streamCenter.z + wr
     )
   }
+  perfAdd('frame.water.sync', performance.now() - _pt)   // TEMP (D-arc)
+  // PERF-14: pump the water-detection pre-warm ahead of every consumer (prop scatter ring
+  // ≤160 m, terrain carve fetch 512 m). 768 m lookahead ≈ 6-12 s of lead at freecam speeds;
+  // 2 ms/frame budget. Without this, the first query into a fresh WATER_CELL paid a 13-58 ms
+  // lazy detection (pond rim casts + stream traces) inside the scatter/carve — the measured
+  // dominant streaming hitch.
+  _pt = performance.now()
+  if (waterSystem) {
+    const WW = 768
+    waterSystem.warmRegion(streamCenter.x - WW, streamCenter.z - WW, streamCenter.x + WW, streamCenter.z + WW, 2)
+  }
+  perfAdd('frame.water.warm', performance.now() - _pt)   // TEMP (D-arc)
   // PERF-03 WS-A: pre-warm the road centerline cache off-thread ahead of the streamer. BUG-26: no-ops
   // now (USE_WORKER_ROUTING=false → no dispatcher) so it never starves terrain on the shared Worker;
   // _streamNetwork routes synchronously on the main thread instead. Kept wired for the future own-worker.

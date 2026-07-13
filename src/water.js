@@ -800,6 +800,37 @@ export class WaterSystem {
         return { inChannel: false, inBank: false, stream: null }
     }
 
+    // ── PERF-14: budget-pumped detection pre-warm ─────────────────────────────
+    // Detection is LAZY: the first pondSkirtAt/streamChannelAt/carve query touching a new
+    // WATER_CELL pays the cell lattice scan + pond rim casts + stream traces synchronously —
+    // measured 13–58 ms worst-case inside whichever consumer got there first (prop scatter,
+    // terrain carve blend): THE dominant streaming hitch. warmRegion fills exactly the caches
+    // those queries read (cellData / _pondForBasin / _streamForSaddle), one expensive unit at a
+    // time, until the deadline. Returns true when the region (with the streamsInBBox margin) is
+    // fully warmed. Pure cache priming: consumers that outrun the warm pay the sync path with
+    // byte-identical results — determinism/window-invariance untouched.
+    warmRegion(minX, minZ, maxX, maxZ, deadlineMs = 2) {
+        const deadline = performance.now() + deadlineMs
+        const marginCells = Math.ceil(this.k.streamMaxLength / WATER_CELL) + 1
+        for (const [cx, cz] of this._cellsForBBox(minX, minZ, maxX, maxZ, marginCells)) {
+            const ck = `${cx},${cz}`
+            if (this._warmedCells?.has(ck)) continue
+            if (performance.now() >= deadline) return false
+            const cd = this._cellData(cx, cz)                       // unit: lattice scan (cached)
+            for (const m of cd.minima) {
+                if (performance.now() >= deadline) return false
+                this._pondForBasin(m)                               // unit: rim cast (cached)
+            }
+            for (const s of cd.saddles) {
+                if (performance.now() >= deadline) return false
+                this._streamForSaddle(s)                            // unit: flow trace (cached)
+            }
+            if (!this._warmedCells) this._warmedCells = new Set()
+            this._warmedCells.add(ck)                               // skip-list: cells fully primed
+        }
+        return true
+    }
+
     // ── Coordinated public API (2026-07-01 handoff naming) ────────────────────
     // Thin aliases so consumers (router route-around, scatter, streams-side bridge
     // detection) speak the documented contract. bbox = (minX, minZ, maxX, maxZ).

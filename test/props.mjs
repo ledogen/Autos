@@ -98,9 +98,11 @@ console.log('4. PropSystem slot allocation')
   }
   const sys = new PropSystem({ scene, worldSeed: 5, samplers })
   sys.update(0, 0, 1)                // 3x3 chunks
+  sys.drainScatter()   // PERF-14: scatter is time-sliced; gates assert on the committed state
   const live1 = sys.liveCount()
   ok(live1 > 0, `update populated instances (${live1} live)`)
   sys.update(10000, 10000, 1)        // move far away → old chunks released, new ones built
+  sys.drainScatter()   // PERF-14: scatter is time-sliced; gates assert on the committed state
   const live2 = sys.liveCount()
   ok(live2 > 0, `after teleport still populated (${live2} live)`)
   // slot accounting: free + used == cap for every mesh (no leaks)
@@ -126,6 +128,7 @@ console.log('5. collision math + PropSystem queries (FEAT-06b)')
   const samplers = { heightAt: () => 0, normalAt: () => ({ x: 0, y: 1, z: 0 }), roadBlocked: () => false }
   const sys = new PropSystem({ scene, worldSeed: 11, samplers })
   sys.update(0, 0, 1)
+  sys.drainScatter()   // PERF-14: scatter is time-sliced; gates assert on the committed state
   ok(sys.collidableCount() > 0, `collidable index populated (${sys.collidableCount()})`)
   let rock = null
   for (const list of sys._collidables.values()) { rock = list.find((c) => c.kind === 'sphere'); if (rock) break }
@@ -165,6 +168,7 @@ console.log('6. fallen logs — general capsule collision (FEAT-15)')
   const samplers = { heightAt: H, normalAt: () => ({ x: -0.05, y: 0.998, z: 0 }), roadBlocked: () => false }
   const sys = new PropSystem({ scene, worldSeed: 21, samplers })
   sys.update(0, 0, 2)                  // 5×5 chunks — enough attempts for [0,2]/chunk to land some
+  sys.drainScatter()   // PERF-14: scatter is time-sliced; gates assert on the committed state
   let log = null, nLogs = 0
   for (const list of sys._collidables.values()) {
     for (const c of list) if (c.kind === 'logCapsule') { nLogs++; if (!log) log = c }

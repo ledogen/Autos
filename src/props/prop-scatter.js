@@ -39,7 +39,7 @@ function tintFor(rng, hex, jitter) {
 }
 
 /**
- * Scatter one chunk.
+ * Scatter one chunk — synchronous wrapper over the generator below (identical output).
  * @param {number} cx integer chunk X
  * @param {number} cz integer chunk Z
  * @param {number} worldSeed
@@ -48,6 +48,21 @@ function tintFor(rng, hex, jitter) {
  * @returns {Array} placement records
  */
 export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS) {
+  const g = scatterChunkGen(cx, cz, worldSeed, samplers, params)
+  let r
+  do { r = g.next() } while (!r.done)
+  return r.value
+}
+
+/**
+ * PERF-14: resumable scatter. Same draws, same order, same output as the old synchronous
+ * scatterChunk — but a GENERATOR that yields every few candidates so PropSystem can time-slice
+ * one chunk's scatter across frames (a whole chunk was 20–40 ms of sampler calls: the measured
+ * cause of the one-hitch-per-chunk-crossing stutter). Yields carry no value; the final `return`
+ * is the placement list. Determinism/window-invariance untouched: the rng streams and candidate
+ * order are byte-identical to the wrapper above, only wall-clock interleaving changes.
+ */
+export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PARAMS) {
   const P = params, S = P.scatter
   const rng = mulberry32(seedFor(worldSeed, P.worldSeedTag, cx, cz))
   const size = P.chunkSize
@@ -105,6 +120,7 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
     out.push({
       cat, variant, x, z,
       y: gy + halfH * (0.5 - bury),     // bury 0.5 → centre at ground; →1 sinks it
+      gy,                               // PERF-14: ground Y captured here so commit never re-samples
       scale, rotY: rngArg() * Math.PI * 2,
       tint: tintFor(rngArg, cfg.color, cfg.colorJitter),
     })
@@ -153,13 +169,18 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
       // jittered offset within cluster radius (sqrt for area-uniform)
       const ang = rng() * Math.PI * 2, rad = Math.sqrt(rng()) * S.clusterRadius
       placeTree(cat, ccx + Math.cos(ang) * rad, ccz + Math.sin(ang) * rad)
+      yield   // PERF-14: slice point — EVERY candidate (a single sampler chain can run ms-scale)
     }
   }
 
   // ── rocks (slope-weighted), boulders, small rocks, bushes — independent scatter ────────
-  const scatterN = (count, fn) => { for (let i = 0; i < count; i++) fn(ox + rng() * size, oz + rng() * size) }
+  // PERF-14: generator helper — yields EVERY candidate; sampler chains (analytic height + road
+  // scan + water/stream lookups) can individually run ms-scale, so coarser slices blow the budget.
+  function* scatterN (count, fn) {
+    for (let i = 0; i < count; i++) { fn(ox + rng() * size, oz + rng() * size); yield }
+  }
 
-  scatterN(irange(rng, S.rocksPerChunk), (x, z) => {
+  yield* scatterN(irange(rng, S.rocksPerChunk), (x, z) => {
     // large rocks more common on steeper ground
     const keep = (1 - P.rock.slopeBias) + P.rock.slopeBias * (slopeAt(x, z) / S.slopeRejectMax + 0.3)
     if (rng() < Math.max(0.1, Math.min(1, keep))) placeBlob('rock', x, z, P.rock.buryFrac)
@@ -172,7 +193,7 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
 
   // Small rocks IGNORE the road exclusion — dense on the shoulder, sparse ON the road surface.
   const smallRockAttempts = irange(rng, S.smallRocksPerChunk)   // captured for the FEAT-25 boost pass
-  scatterN(smallRockAttempts, (x, z) => {
+  yield* scatterN(smallRockAttempts, (x, z) => {
     const d = roadDist ? roadDist(x, z) : Infinity
     if (d < S.roadHalfWidth && rng() > S.smallRockOnRoadKeep) return   // sparse on the road itself
     placeBlob('smallRock', x, z, P.smallRock.buryFrac, true)
@@ -187,6 +208,10 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
     const srng = mulberry32(seedFor(worldSeed, 'streamRocks', cx, cz))
     const attempts = Math.round(smallRockAttempts * streamRockBoost)
     for (let i = 0; i < attempts; i++) {
+      // PERF-14: yield BEFORE the channel-miss continue — with boost ~10× the attempts run into
+      // the hundreds, and a no-channel chunk otherwise burns the WHOLE pass (hundreds of streamAt
+      // walks, 12-19 ms measured) inside one un-sliceable step.
+      if ((i & 3) === 3) yield
       const x = ox + srng() * size, z = oz + srng() * size
       const s = streamAt(x, z)
       if (!s || !(s.inChannel || s.inBank)) continue
@@ -207,6 +232,7 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
     const mrng = mulberry32(seedFor(worldSeed, 'streamMedRocks', cx, cz))
     const attempts = Math.round(irange(mrng, S.rocksPerChunk) * medBoost)
     for (let i = 0; i < attempts; i++) {
+      if ((i & 3) === 3) yield   // PERF-14: before the miss-continue (see small-rock boost above)
       const x = ox + mrng() * size, z = oz + mrng() * size
       const s = streamAt(x, z)
       if (!s || !s.inChannel) continue
@@ -214,7 +240,7 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
     }
   }
   // Bushes sink slightly into the ground (kills slope-float, matches groundSink intent).
-  scatterN(irange(rng, S.bushesPerChunk),     (x, z) => placeBlob('bush', x, z, [0.18, 0.34]))
+  yield* scatterN(irange(rng, S.bushesPerChunk),     (x, z) => placeBlob('bush', x, z, [0.18, 0.34]))
 
   // ── FEAT-15: fallen logs — downed trunks resting on (and pitched to) the terrain ─────────
   // LAST scatter pass so every pre-existing placement keeps its exact rng draws (logs are purely
@@ -240,12 +266,13 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
     out.push({
       cat: 'log', variant, x, z,
       y: (yA + yB) / 2 - 0.06 * scale,   // slight settle so the tube digs in on uneven ground
+      gy: (yA + yB) / 2,                 // PERF-14: mid-span ground Y for the blob (avoids commit-time resample)
       scale, rotY,
       tilt: pitch, tiltAz: Math.PI / 2,  // pitch about local Z: +X end toward the higher sample
       tint: tintFor(rng, cfg.color, cfg.colorJitter),
     })
   }
-  scatterN(irange(rng, S.logsPerChunk), placeLog)
+  yield* scatterN(irange(rng, S.logsPerChunk), placeLog)
 
   return out
 }

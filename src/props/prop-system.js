@@ -28,7 +28,7 @@
 
 import * as THREE from 'three'
 import { buildPalette } from './prop-palette.js'
-import { scatterChunk } from './prop-scatter.js'
+import { scatterChunk, scatterChunkGen } from './prop-scatter.js'
 import { sphereVsSphere, sphereVsCapsuleY, sphereVsCapsule, sphereVsMeshInstance, bushDrag } from './prop-collider.js'
 import { ShadowBlobSystem } from './prop-shadow-blobs.js'   // PERF-07: baked contact-shadow blobs
 import { FLORA_PARAMS } from '../../data/flora.js'
@@ -111,6 +111,18 @@ export class PropSystem {
     this._dirty = new Set()        // mesh keys needing instanceMatrix/instanceColor upload
     this._overflowWarned = false
 
+    // PERF-14: time-sliced scatter. A whole chunk's scatter is 20–40 ms of sampler calls
+    // (analyticHeight/roadClear per candidate) — running it synchronously on chunk entry was THE
+    // measured streaming hitch (100–190 ms when a ring row enters). Chunks are queued nearest-
+    // first and their scatter generators are stepped under a per-frame ms budget; placements
+    // commit atomically per chunk when the generator finishes. Determinism untouched (same rng
+    // stream + order — see scatterChunkGen). The 3×3 around the VEHICLE is force-completed
+    // synchronously (collision correctness beats a rare hitch); everything else drips in.
+    this._scatterQueue = []        // [{ ck, cx, cz, d2 }] nearest-first
+    this._scatterSet = new Set()   // cks queued or active (dedup)
+    this._activeScatter = null     // { ck, cx, cz, gen } — the generator being stepped
+    this._scatterFillDone = false  // false → burst budget until the first queue drain (PERF-13 spirit)
+
     // ── PERF-07 baked contact-shadow blobs ────────────────────────────────────────────
     // One InstancedMesh of flat ground decals, one per non-smallRock prop. Capacity = Σ of the
     // prop capacity pools minus smallRock (which gets no blob) — the exact upper bound of blobs.
@@ -157,12 +169,14 @@ export class PropSystem {
       y = pl.y + 0.05                                      // pl.y is the (sunk) trunk base
     } else if (pl.cat === 'rock' || pl.cat === 'boulder') {
       hx = hz = (col ? col.radius : 1) * pl.scale * bs      // ≈ collision radius
-      y = this._samplers.heightAt(pl.x, pl.z) + 0.05        // buried: pl.y is the blob CENTRE, not ground
+      // PERF-14: pl.gy is the scatter-time ground sample — re-sampling heightAt here (an
+      // analytic road-scan per placement) made the COMMIT phase itself a 10-30 ms hitch.
+      y = (pl.gy ?? this._samplers.heightAt(pl.x, pl.z)) + 0.05   // buried: pl.y is the blob CENTRE, not ground
     } else if (pl.cat === 'log') {
       hx = (col.length / 2) * pl.scale + 0.4                // elongated along the trunk axis
       hz = col.radius * pl.scale * 2.5
       yaw = pl.rotY
-      y = this._samplers.heightAt(pl.x, pl.z) + 0.05
+      y = (pl.gy ?? this._samplers.heightAt(pl.x, pl.z)) + 0.05
     } else if (pl.cat === 'bush') {
       hx = hz = (col ? col.radius : 0.5) * pl.scale * bs    // small faint circle (soft prop)
       y = pl.y + 0.05
@@ -177,10 +191,34 @@ export class PropSystem {
   }
 
   // ── chunk lifecycle ─────────────────────────────────────────────────────────────────
+  // Synchronous ensure — the hard-radius / gate path. If this chunk's scatter is mid-flight or
+  // queued, it is completed HERE and now; otherwise scatter runs whole. Normal streaming goes
+  // through the queued path in update() instead.
   ensureChunk(cx, cz) {
     const ck = cx + ',' + cz
     if (this._chunks.has(ck)) return
-    const placements = scatterChunk(cx, cz, this._seed, this._samplers, this._params)
+    let placements
+    if (this._activeScatter && this._activeScatter.ck === ck) {
+      const gen = this._activeScatter.gen
+      let r; do { r = gen.next() } while (!r.done)
+      placements = r.value
+      this._activeScatter = null
+      this._scatterSet.delete(ck)
+    } else {
+      this._dequeueScatter(ck)
+      placements = scatterChunk(cx, cz, this._seed, this._samplers, this._params)
+    }
+    this._commitChunk(ck, placements)
+  }
+
+  _dequeueScatter(ck) {
+    if (!this._scatterSet.has(ck)) return
+    this._scatterSet.delete(ck)
+    const i = this._scatterQueue.findIndex(j => j.ck === ck)
+    if (i >= 0) this._scatterQueue.splice(i, 1)
+  }
+
+  _commitChunk(ck, placements) {
     const owned = []
     const collidables = []
     const blobSlots = []   // PERF-07: contact-shadow blob slots owned by this chunk
@@ -278,18 +316,92 @@ export class PropSystem {
    * per frame (cheap when nothing changed) or whenever the stream centre moves a chunk.
    * @param {number} worldX @param {number} worldZ @param {number} ringChunks
    */
-  update(worldX, worldZ, ringChunks) {
+  /**
+   * Stream the prop ring around (worldX, worldZ). PERF-14: scatter is QUEUED and time-sliced —
+   * missing chunks enqueue nearest-first and their generators are stepped under a per-frame ms
+   * budget, so entering a chunk row never blocks the frame. Pass the VEHICLE position via
+   * (hardX, hardZ) to force-complete the 3×3 chunks around it synchronously (prop collision must
+   * exist under the truck; freecam passes nothing and just streams visually).
+   */
+  update(worldX, worldZ, ringChunks, hardX = null, hardZ = null) {
     const cs = this._chunkSize
     const ccx = Math.floor(worldX / cs), ccz = Math.floor(worldZ / cs)
     const want = new Set()
+    let enqueued = false
     for (let dz = -ringChunks; dz <= ringChunks; dz++)
       for (let dx = -ringChunks; dx <= ringChunks; dx++) {
         const cx = ccx + dx, cz = ccz + dz
-        want.add(cx + ',' + cz)
-        this.ensureChunk(cx, cz)
+        const ck = cx + ',' + cz
+        want.add(ck)
+        if (!this._chunks.has(ck) && !this._scatterSet.has(ck)) {
+          this._scatterQueue.push({ ck, cx, cz, d2: dx * dx + dz * dz })
+          this._scatterSet.add(ck)
+          enqueued = true
+        }
       }
+    if (enqueued) this._scatterQueue.sort((a, b) => a.d2 - b.d2)
+    // Drop queued/active work that scrolled out of the ring.
+    for (let i = this._scatterQueue.length - 1; i >= 0; i--) {
+      if (!want.has(this._scatterQueue[i].ck)) {
+        this._scatterSet.delete(this._scatterQueue[i].ck)
+        this._scatterQueue.splice(i, 1)
+      }
+    }
+    if (this._activeScatter && !want.has(this._activeScatter.ck)) {
+      this._scatterSet.delete(this._activeScatter.ck)
+      this._activeScatter = null
+    }
     for (const ck of [...this._chunks.keys()]) {
       if (!want.has(ck)) { const [x, z] = ck.split(',').map(Number); this.releaseChunk(x, z) }
+    }
+
+    // Hard radius: the truck's 3×3 must be collision-complete THIS frame (rare synchronous
+    // scatter — only when driving outruns the drip feed).
+    if (hardX != null) {
+      const hcx = Math.floor(hardX / cs), hcz = Math.floor(hardZ / cs)
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const cx = hcx + dx, cz = hcz + dz
+        if (want.has(cx + ',' + cz)) this.ensureChunk(cx, cz)
+      }
+    }
+
+    // Budgeted scatter: step the active generator (then the queue) until the deadline. Burst
+    // until the first full drain (initial fill — PERF-13 spirit: pre-drivable hitches are free).
+    const budgetMs = this._scatterFillDone ? 3 : 50
+    const deadline = performance.now() + budgetMs
+    while (performance.now() < deadline) {
+      if (!this._activeScatter) {
+        const next = this._scatterQueue.shift()
+        if (!next) break
+        this._activeScatter = { ...next, gen: scatterChunkGen(next.cx, next.cz, this._seed, this._samplers, this._params) }
+      }
+      const job = this._activeScatter
+      let r = null
+      while (performance.now() < deadline) { r = job.gen.next(); if (r.done) break }
+      if (r && r.done) {
+        this._activeScatter = null
+        this._scatterSet.delete(job.ck)
+        this._commitChunk(job.ck, r.value)
+      }
+    }
+    if (!this._scatterFillDone && !this._activeScatter && this._scatterQueue.length === 0) this._scatterFillDone = true
+
+    this._flush()
+  }
+
+  /** Drain all queued/in-flight scatter synchronously (gates + teleports). */
+  drainScatter() {
+    if (this._activeScatter) {
+      const job = this._activeScatter
+      let r; do { r = job.gen.next() } while (!r.done)
+      this._activeScatter = null
+      this._scatterSet.delete(job.ck)
+      this._commitChunk(job.ck, r.value)
+    }
+    while (this._scatterQueue.length) {
+      const { ck, cx, cz } = this._scatterQueue.shift()
+      this._scatterSet.delete(ck)
+      this._commitChunk(ck, scatterChunk(cx, cz, this._seed, this._samplers, this._params))
     }
     this._flush()
   }
