@@ -34,6 +34,7 @@ const GATES = [
     'crossing-classifier.mjs', // FEAT-07/08/11/13 foundation: bounded crossing classifier == brute force (graph, cull-off) + once-per-build identity
     'road-graph.mjs',       // FEAT-13 v2: Delaunay/Urquhart primitives — empty-circumcircle, Urquhart⊇MST (connected), order-invariant
     'graph-topology.mjs',   // FEAT-13 v2: blue-noise + Urquhart: reachability, window-invariance, direction variety, step-free inter-edge surface, junction-at-road-grade
+    'graph-cull-radius-invariance.mjs', // BUG-25: crossing cull is render-radius- + approach-history-invariant (320 m vs 1500 m edge sets agree; drive-out-and-back reproduces the network)
     'props.mjs',            // FEAT-06: prop geometry sanity + scatter determinism/window-invariance + slot accounting
     'prop-road-clearance.mjs', // BUG-23: no hard-collidable prop (centre-or-overhang) on the road footprint (inflated keep-out)
     'rock-collision-proxy.mjs', // BUG-22: ROCK hard-contact sphere proxy fits the visible surface (no overshoot air-gap → no spurious sideways shove)

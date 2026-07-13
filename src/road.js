@@ -1310,6 +1310,19 @@ export class RoadSystem {
         const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
         const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
         const edges = g.edges.filter(([c1, c2]) => inBand(c1) || inBand(c2))
+        // BUG-25: the cull routes the ONE-RING of the registered edges over the wide detour graph
+        // (_oneRingEdges) — warm those too, or the first _streamNetwork pays synchronous main-thread
+        // routing for them (would regress the QUAL-14 cold-spawn win). Same wide graph the cull builds.
+        const maxHops = this._params?.roadGraphCullMaxHops ?? 4
+        const dg = this._buildUrquhart(mx0, mx1, mz0, mz1, false, (this._params?.roadGraphMargin ?? 3) + maxHops + 1)
+        const ringNodes = new Set()
+        for (const [c1, c2] of edges) { ringNodes.add(dg.key(c1)); ringNodes.add(dg.key(c2)) }
+        const seenKeys = new Set(edges.map(([c1, c2]) => `${dg.key(c1)}:${dg.key(c2)}`))
+        for (const [c1, c2] of dg.edges) {
+            const ek = `${dg.key(c1)}:${dg.key(c2)}`
+            if (seenKeys.has(ek)) continue
+            if (ringNodes.has(dg.key(c1)) || ringNodes.has(dg.key(c2))) { seenKeys.add(ek); edges.push([c1, c2]) }
+        }
         const { jobs, deferred } = this._warmScan(edges, Infinity)
         if (jobs.length > 0) this._routeDispatch(jobs, this._routeEpoch)
         return jobs.length === 0 && !deferred
@@ -1530,39 +1543,112 @@ export class RoadSystem {
         return g.adj.get(g.key(id))?.size ?? 0
     }
 
-    // FEAT-13: SAFE-PRUNE the redundant edge of every routed crossing. Two edges whose centerlines cross
-    // mid-span are an at-grade intersection the user finds ugly; since the graph is planar-ABSTRACT, a
-    // routed crossing means one of the two edges is taking a redundant excursion. Drop the redundant one —
-    // but ONLY if the other endpoint keeps a bounded-hop DETOUR, so connectivity is preserved (dead ends
-    // and bridge edges have no detour → kept). Deterministic (canonical crossing order + key tie-break)
-    // and bounded (≤ roadGraphCullMaxHops BFS) → window-invariant for interior crossings; verified by the
-    // graph invariance gate. Reads this._crossingList (must run after _detectJunctions); returns true if it
-    // dropped anything (caller re-detects on the culled network). Pure topology — runs before slicing.
-    _cullCrossings(mx0, mx1, mz0, mz1) {
+    // BUG-25: XZ polyline of a graph edge for the cull's window-invariant crossing detection. Reuses the
+    // registered (already routed + sampled) points when the edge is in this._network; otherwise routes the
+    // SAME window-invariant _edgeCenterline the assemble path uses (cached in _proto.cls; prewarmed
+    // off-thread by warmRoutes so the one-ring edges are cache hits in-game — no synchronous routing hitch)
+    // and samples it at PROTO_SAMPLE_DS. Returns [{x,z}…] (Y is irrelevant to XZ crossing) or null.
+    _edgeXZPolyline(c1, c2, key) {
+        const net = this._network.get(key)
+        if (net) return net.points               // Vector3[]; only .x/.z read below
+        const cl = this._edgeCenterline(c1, c2)
+        if (!cl || cl.length < 1e-6) return null
+        const n = Math.max(1, Math.ceil(cl.length / PROTO_SAMPLE_DS))
+        const out = new Array(n + 1)
+        for (let i = 0; i <= n; i++) { const p = cl.pointAt(cl.length * i / n); out[i] = { x: p.x, z: p.z } }
+        return out
+    }
+
+    // BUG-25: the window-invariant candidate UNIVERSE for both culls — the ONE-RING of the registered
+    // edges: every wide-graph (dg) edge incident to a registered edge's endpoint node, with its routed XZ
+    // polyline. Pre-fix, both culls sourced their candidate pairs from render-bounded structures
+    // (this._crossingList / the registered polylines), so at a small play radius a crossing/clearance
+    // partner outside the window was missed and a DIFFERENT survivor was dropped than at the wide map
+    // radius — whole edges flipped in/out when the same area re-streamed. NB the graph is PLANAR
+    // (Urquhart ⊆ Delaunay), so straight node→node CHORDS never cross — every real crossing is a routing
+    // EXCURSION between two edges that SHARE a junction node (empirically 100% node-sharing), which only
+    // the routed centerlines reveal (chords would find zero). The ring is a pure function of
+    // (seed, params, region): a one-ring-only strand (not in this._network) still counts as a crossing/
+    // clearance PARTNER so a registered strand's fate is decided the same way the wide window would; only
+    // this._network edges are actually deletable. Returns Map runKey → { cells:[idA,idB], pts }.
+    _oneRingEdges(g, dg) {
+        const netNodes = new Set()
+        for (const [, e] of this._network) { netNodes.add(g.key(e.cellA)); netNodes.add(g.key(e.cellB)) }
+        const ring = new Map()
+        if (!netNodes.size) return ring
+        const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
+        for (const [c1, c2] of dg.edges) {
+            const ka = dg.key(c1), kb = dg.key(c2)
+            if (!netNodes.has(ka) && !netNodes.has(kb)) continue   // not incident to any registered edge → can't touch one
+            const key = `g:${ka}:${kb}`
+            if (ring.has(key)) continue
+            { const A = this._nodePos(c1), B = this._nodePos(c2); const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }   // degenerate (coincident) edge
+            const pts = this._edgeXZPolyline(c1, c2, key)
+            if (!pts || pts.length < 2) continue
+            ring.set(key, { cells: [c1, c2], pts })
+        }
+        return ring
+    }
+
+    // BUG-25: canonical crossing pairs over the one-ring — seg×seg over CHUNK_SIZE tile buckets (broad
+    // phase mirrors _detectJunctions), each crossing edge-pair recorded once. NOT this._crossingList
+    // (which detects only among in-band edges → render-radius-bounded → flipped the survivor between
+    // windows). Returns [{ ka, kb, aCells, bCells }] sorted by (ka, kb), ka < kb — order-independent.
+    _cullCandidatePairs(ring) {
+        const buckets = new Map()
+        for (const [key, { pts }] of ring) {
+            for (let i = 0; i < pts.length - 1; i++) {
+                const x0 = pts[i].x, z0 = pts[i].z, x1 = pts[i + 1].x, z1 = pts[i + 1].z
+                const seg = { key, x0, z0, x1, z1 }
+                const txLo = Math.floor(Math.min(x0, x1) / CHUNK_SIZE), txHi = Math.floor(Math.max(x0, x1) / CHUNK_SIZE)
+                const tzLo = Math.floor(Math.min(z0, z1) / CHUNK_SIZE), tzHi = Math.floor(Math.max(z0, z1) / CHUNK_SIZE)
+                for (let tx = txLo; tx <= txHi; tx++) for (let tz = tzLo; tz <= tzHi; tz++) {
+                    const bk = `${tx},${tz}`; let arr = buckets.get(bk); if (!arr) { arr = []; buckets.set(bk, arr) } arr.push(seg)
+                }
+            }
+        }
+        const pairMap = new Map()
+        for (const arr of buckets.values()) {
+            for (let i = 0; i < arr.length - 1; i++) {
+                const S = arr[i]
+                for (let j = i + 1; j < arr.length; j++) {
+                    const T = arr[j]
+                    if (S.key === T.key) continue   // same edge (self-crossing is not a cull candidate)
+                    const lo = S.key < T.key ? S.key : T.key, hi = S.key < T.key ? T.key : S.key
+                    const pk = lo + '#' + hi
+                    if (pairMap.has(pk)) continue
+                    if (!_segCrossParam(S.x0, S.z0, S.x1, S.z1, T.x0, T.z0, T.x1, T.z1)) continue
+                    pairMap.set(pk, { ka: lo, kb: hi, aCells: ring.get(lo).cells, bCells: ring.get(hi).cells })
+                }
+            }
+        }
+        const out = [...pairMap.values()]
+        out.sort((x, y) => x.ka < y.ka ? -1 : x.ka > y.ka ? 1 : (x.kb < y.kb ? -1 : 1))
+        return out
+    }
+
+    // Cull orchestrator: SAFE-PRUNE redundant crossing strands (FEAT-13) + residual clearance
+    // violations (QUAL-14 Part B) from the registered network. BUG-25 rebuild: both passes share ONE
+    // window-invariant candidate universe (the one-ring, _oneRingEdges), ONE static detour BFS over the
+    // DEDICATED wide Urquhart graph (margin = roadGraphMargin + maxHops + 1 site cells — the maxHops
+    // detour neighbourhood of any in-band pair is fully contained regardless of render radius), and ONE
+    // droppedSet, so every drop DECISION is a pure function of (seed, params, region) — identical at the
+    // 320 m play radius, the ~1500 m map radius, and any re-stream approach history. The detour adjacency
+    // is NEVER mutated mid-pass (a static graph): mutating it made each decision depend on which OTHER
+    // pairs the window happened to process — the exact residual flip BUG-25 chased. Junction-degree
+    // mutation still targets g (this._proto.graph). Returns true if any REGISTERED edge was dropped
+    // (caller re-detects junctions on the culled network). Pure topology + cached routes — runs before
+    // slicing, once per real re-stream.
+    _cullNetwork(mx0, mx1, mz0, mz1) {
         const g = this._proto.graph
-        if (!g || !this._crossingList?.length) return false
-        // The detour BFS runs over a DEDICATED wide Urquhart graph (margin = roadGraphMargin + maxHops site
-        // cells) so the maxHops detour neighbourhood of any in-band crossing is fully contained REGARDLESS
-        // of the render radius — the streaming graph `g` (margin 3) is only ~2 km wide at the 320 m play
-        // radius, too narrow for a 4-hop detour, so long-detour crossings were culled on the wide map but
-        // not in-world. This wide graph is window-invariant per region, so map↔world now agree. Topology
-        // only (no routing) → cheap. Junction-degree mutation still targets g (this._proto.graph) below.
-        const maxHops0 = this._params?.roadGraphCullMaxHops ?? 4
+        if (!g || this._network.size < 2) return false
+        const maxHops = this._params?.roadGraphCullMaxHops ?? 4
         const dg = (mx0 != null)
-            ? this._buildUrquhart(mx0, mx1, mz0, mz1, false, (this._params?.roadGraphMargin ?? 3) + maxHops0 + 1)
+            ? this._buildUrquhart(mx0, mx1, mz0, mz1, false, (this._params?.roadGraphMargin ?? 3) + maxHops + 1)
             : g
-        // WINDOW-INVARIANCE (map↔world desync fix): the detour search MUST run over the window-invariant
-        // Urquhart graph `g` (band + roadGraphMargin, ~2 km even at the 320 m play radius), NOT the
-        // render-bounded `this._network`. Built from this._network, a small play-radius window has too few
-        // edges for the BFS to find any detour → every crossing looks like a bridge → 0 culls; the wide map
-        // window finds detours → culls more. Same seed/center, different cull = the "map culls roads the 3D
-        // doesn't" desync. g is the SAME graph in any window's overlap, so the detour answer is now
-        // render-radius-independent. (Crossings the play window doesn't even reach aren't shown, so they
-        // can't desync.) The drop still deletes only from this._network — the rendered edge set.
         const adj = new Map()
         const addj = (a, b) => { (adj.get(a) || adj.set(a, new Set()).get(a)).add(b) }
         for (const [c1, c2] of dg.edges) { addj(dg.key(c1), dg.key(c2)); addj(dg.key(c2), dg.key(c1)) }
-        const maxHops = maxHops0
         // shortest #hops a→b NOT using the direct edge (a,b); -1 if none within maxHops (≈ a bridge/leaf).
         const detour = (a, b) => {
             const q = [[a, 0]], seen = new Set([a])
@@ -1577,33 +1663,20 @@ export class RoadSystem {
             }
             return -1
         }
-        const pairs = [], seen = new Set()
-        for (const c of this._crossingList) {
-            if (c.selfCrossing) continue
-            const lo = c.runA < c.runB ? c.runA : c.runB, hi = c.runA < c.runB ? c.runB : c.runA
-            const pk = lo + '#' + hi
-            if (!seen.has(pk)) { seen.add(pk); pairs.push([lo, hi]) }
+        const ring = this._oneRingEdges(g, dg)
+        const droppedSet = new Set()
+        let registeredDrops = 0
+        // Deleting from this._network is a no-op when the culled strand is one-ring-only (not rendered
+        // here); g.adj is updated regardless so junction degree reflects the removal identically anywhere.
+        const dropEdge = (key, cells) => {
+            if (this._network.delete(key)) registeredDrops++
+            const dka = g.key(cells[0]), dkb = g.key(cells[1])
+            g.adj.get(dka)?.delete(dkb); g.adj.get(dkb)?.delete(dka)
+            droppedSet.add(key)
         }
-        pairs.sort((x, y) => x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : (x[1] < y[1] ? -1 : 1))
-        const dropped = []
-        for (const [ka, kb] of pairs) {
-            const ea = this._network.get(ka), eb = this._network.get(kb)
-            if (!ea || !eb) continue   // one strand already dropped → crossing resolved
-            const da = detour(g.key(ea.cellA), g.key(ea.cellB)), db = detour(g.key(eb.cellA), g.key(eb.cellB))
-            let drop = null
-            if (da >= 0 && db >= 0) drop = da !== db ? (da < db ? ka : kb) : (ka < kb ? ka : kb)   // prefer shorter detour (more redundant)
-            else if (da >= 0) drop = ka
-            else if (db >= 0) drop = kb
-            else continue   // neither has a safe detour (both bridges) → keep both, connectivity wins
-            const e = drop === ka ? ea : eb
-            this._network.delete(drop)
-            adj.get(g.key(e.cellA))?.delete(g.key(e.cellB))
-            adj.get(g.key(e.cellB))?.delete(g.key(e.cellA))
-            g.adj.get(g.key(e.cellA))?.delete(g.key(e.cellB))
-            g.adj.get(g.key(e.cellB))?.delete(g.key(e.cellA))
-            dropped.push(drop)
-        }
-        if (dropped.length) {   // rebuild the junction-Y incidence index over the survivors
+        this._cullCrossingsPass(ring, detour, g, dropEdge, droppedSet)
+        this._cullClearancePass(ring, detour, g, dropEdge, droppedSet)
+        if (registeredDrops) {   // rebuild the junction-Y incidence index over the survivors
             this._proto.nodeInc.clear()
             for (const [rk, e] of this._network) {
                 const ka = g.key(e.cellA), kb = g.key(e.cellB)
@@ -1611,30 +1684,47 @@ export class RoadSystem {
                 ;(this._proto.nodeInc.get(kb) || this._proto.nodeInc.set(kb, []).get(kb)).push(rk)
             }
         }
-        return dropped.length > 0
+        return registeredDrops > 0
     }
 
-    // ── QUAL-14 Part B backstop: cull residual clearance violations ───────────────────────────────
-    // Corridor avoidance is preventive but not airtight: the router's escape hatch can drop the
-    // corridors wholesale (goal walled), and a higher-priority sibling's FINAL route can leave the
-    // SOLO lane the dependent avoided (one-level deps — see the scheme header). Any registered pair
-    // still hugging closer than the carve footprint (D_self, the same floor self-clearance uses)
-    // outside the shared-node merge exemption is an artifact the graph doesn't need (planar ⇒
+    // FEAT-13 crossing pass: two edges whose centerlines cross mid-span are an at-grade intersection the
+    // user finds ugly; since the graph is planar-ABSTRACT, a routed crossing means one of the two edges is
+    // taking a redundant excursion. Drop the redundant one — but ONLY if its endpoints keep a bounded-hop
+    // DETOUR, so connectivity is preserved (dead ends and bridge edges have no detour → kept).
+    // Deterministic: canonical pair order + key tie-break + static detour (see _cullNetwork).
+    _cullCrossingsPass(ring, detour, g, dropEdge, droppedSet) {
+        for (const { ka, kb, aCells, bCells } of this._cullCandidatePairs(ring)) {
+            if (droppedSet.has(ka) || droppedSet.has(kb)) continue   // a strand already culled → crossing resolved
+            const da = detour(g.key(aCells[0]), g.key(aCells[1])), db = detour(g.key(bCells[0]), g.key(bCells[1]))
+            if (da >= 0 && db >= 0) {
+                const drop = da !== db ? (da < db ? ka : kb) : (ka < kb ? ka : kb)   // prefer shorter detour (more redundant)
+                dropEdge(drop, drop === ka ? aCells : bCells)
+            }
+            else if (da >= 0) dropEdge(ka, aCells)
+            else if (db >= 0) dropEdge(kb, bCells)
+            // else: neither has a safe detour (both bridges) → keep both, connectivity wins
+        }
+    }
+
+    // QUAL-14 Part B clearance pass: corridor avoidance is preventive but not airtight — the router's
+    // escape hatch can drop the corridors wholesale (goal walled), and a higher-priority sibling's FINAL
+    // route can leave the SOLO lane the dependent avoided (one-level deps — see the scheme header). Any
+    // one-ring pair still hugging closer than the carve footprint (D_self, the same floor self-clearance
+    // uses) outside the shared-node merge exemption is an artifact the graph doesn't need (planar ⇒
     // proximity is wander): drop ONE of the pair — the lower-priority edge when it has a bounded-hop
-    // detour, else the higher one, else keep both (connectivity wins; same guardrail as
-    // _cullCrossings). Deterministic (canonical pair order + priority) → window-invariant for
-    // interior pairs. Returns true if it dropped anything (caller re-detects junctions).
-    _cullClearance(mx0, mx1, mz0, mz1) {
-        const g = this._proto.graph
-        if (!g || this._network.size < 2) return false
+    // detour, else the higher one, else keep both (connectivity wins — same guardrail as the crossing
+    // pass). BUG-25: the pair scan runs over the one-ring (a registered edge hugging a NOT-YET-RENDERED
+    // sibling is decided the same way the wide window decides it), skipping strands the crossing pass
+    // already culled.
+    _cullClearancePass(ring, detour, g, dropEdge, droppedSet) {
         const pp = this._params || {}
         const D = 2 * (pp.roadHalfWidth ?? 5) + 2 * (pp.roadShoulderWidth ?? 2.5) + (pp.roadSelfClearMargin ?? 3)
         const EXEMPT = pp.roadCorridorExempt ?? (Math.max(pp.roadGraphGoalBlend ?? 60, pp.roadJunctionBlendLength ?? 30, 60) + 20)
-        // Spatial hash of every registered polyline point (cell = D) → candidate cross-edge pairs.
+        // Spatial hash of every live one-ring polyline point (cell = D) → candidate cross-edge pairs.
+        const runs = [...ring.entries()].filter(([k]) => !droppedSet.has(k))
         const grid = new Map()
-        const runs = [...this._network.entries()]
         for (let ri = 0; ri < runs.length; ri++) {
-            const pts = runs[ri][1].points
+            const pts = runs[ri][1].pts
             for (let pi = 0; pi < pts.length; pi++) {
                 const hk = Math.floor(pts[pi].x / D) * 73856093 ^ Math.floor(pts[pi].z / D) * 19349663
                 const bkt = grid.get(hk)
@@ -1643,13 +1733,9 @@ export class RoadSystem {
         }
         // Exemption zone = around ANY of the pair's four endpoint nodes (mirrors the disc-side
         // exemption: shared-node merges AND near-anchor convergence are expected geometry).
-        const exemptPtsOf = (ea, eb) => [
-            this._nodePos(ea.cellA), this._nodePos(ea.cellB),
-            this._nodePos(eb.cellA), this._nodePos(eb.cellB),
-        ]
-        const violPairs = new Map()   // "loKey#hiKey" → [ri, rj]
+        const violPairs = new Map()   // "loKey#hiKey" → [lo, hi]
         for (let ri = 0; ri < runs.length; ri++) {
-            const pts = runs[ri][1].points
+            const pts = runs[ri][1].pts
             for (let pi = 0; pi < pts.length; pi++) {
                 const p = pts[pi]
                 const cx = Math.floor(p.x / D), cz = Math.floor(p.z / D)
@@ -1659,9 +1745,9 @@ export class RoadSystem {
                     for (let bi = 0; bi < bkt.length; bi += 2) {
                         const rj = bkt[bi]
                         if (rj >= ri) continue   // each edge pair once; skip same edge
-                        const q = runs[rj][1].points[bkt[bi + 1]]
+                        const q = runs[rj][1].pts[bkt[bi + 1]]
                         if ((p.x - q.x) ** 2 + (p.z - q.z) ** 2 >= D * D) continue
-                        const exemptPts = exemptPtsOf(runs[ri][1], runs[rj][1])
+                        const exemptPts = [...runs[ri][1].cells, ...runs[rj][1].cells].map(c => this._nodePos(c))
                         let exempt = false
                         for (const sp of exemptPts) {
                             if ((p.x - sp.x) ** 2 + (p.z - sp.z) ** 2 < EXEMPT * EXEMPT
@@ -1675,56 +1761,17 @@ export class RoadSystem {
                 }
             }
         }
-        if (!violPairs.size) return false
-        // Detour BFS over the same wide window-invariant graph _cullCrossings uses.
-        const maxHops = this._params?.roadGraphCullMaxHops ?? 4
-        const dg = (mx0 != null)
-            ? this._buildUrquhart(mx0, mx1, mz0, mz1, false, (this._params?.roadGraphMargin ?? 3) + maxHops + 1)
-            : g
-        const adj = new Map()
-        const addj = (x, y) => { (adj.get(x) || adj.set(x, new Set()).get(x)).add(y) }
-        for (const [x, y] of dg.edges) { addj(dg.key(x), dg.key(y)); addj(dg.key(y), dg.key(x)) }
-        const detour = (x, y) => {
-            const q = [[x, 0]], seen = new Set([x])
-            while (q.length) {
-                const [u, d] = q.shift()
-                if (d >= maxHops) continue
-                for (const v of adj.get(u) || []) {
-                    if (u === x && v === y) continue
-                    if (v === y) return d + 1
-                    if (!seen.has(v)) { seen.add(v); q.push([v, d + 1]) }
-                }
-            }
-            return -1
-        }
         const pairs = [...violPairs.values()].sort((x, y) => x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : (x[1] < y[1] ? -1 : 1))
-        const dropEdge = (rk, e) => {
-            this._network.delete(rk)
-            adj.get(g.key(e.cellA))?.delete(g.key(e.cellB))
-            adj.get(g.key(e.cellB))?.delete(g.key(e.cellA))
-            g.adj.get(g.key(e.cellA))?.delete(g.key(e.cellB))
-            g.adj.get(g.key(e.cellB))?.delete(g.key(e.cellA))
-        }
-        let dropped = 0
         for (const [ka, kb] of pairs) {
-            const ea = this._network.get(ka), eb = this._network.get(kb)
-            if (!ea || !eb) continue   // resolved by an earlier drop
+            if (droppedSet.has(ka) || droppedSet.has(kb)) continue   // resolved by an earlier drop
+            const aCells = ring.get(ka).cells, bCells = ring.get(kb).cells
             // Prefer dropping the LOWER-priority edge (the wanderer that failed to yield).
-            const aLower = RoadSystem._sitePairCmp(ea.cellA, ea.cellB, eb.cellA, eb.cellB) > 0
-            const first = aLower ? [ka, ea] : [kb, eb], second = aLower ? [kb, eb] : [ka, ea]
-            if (detour(g.key(first[1].cellA), g.key(first[1].cellB)) >= 0) { dropEdge(first[0], first[1]); dropped++ }
-            else if (detour(g.key(second[1].cellA), g.key(second[1].cellB)) >= 0) { dropEdge(second[0], second[1]); dropped++ }
+            const aLower = RoadSystem._sitePairCmp(aCells[0], aCells[1], bCells[0], bCells[1]) > 0
+            const first = aLower ? [ka, aCells] : [kb, bCells], second = aLower ? [kb, bCells] : [ka, aCells]
+            if (detour(g.key(first[1][0]), g.key(first[1][1])) >= 0) dropEdge(first[0], first[1])
+            else if (detour(g.key(second[1][0]), g.key(second[1][1])) >= 0) dropEdge(second[0], second[1])
             // else: both are bridges — keep both, connectivity wins
         }
-        if (dropped) {   // rebuild the junction-Y incidence index over the survivors
-            this._proto.nodeInc.clear()
-            for (const [rk, e] of this._network) {
-                const ka = g.key(e.cellA), kb = g.key(e.cellB)
-                ;(this._proto.nodeInc.get(ka) || this._proto.nodeInc.set(ka, []).get(ka)).push(rk)
-                ;(this._proto.nodeInc.get(kb) || this._proto.nodeInc.set(kb, []).get(kb)).push(rk)
-            }
-        }
-        return dropped > 0
     }
 
     _protoEdgeCost(fromH, toH, horiz, P) {
@@ -2183,16 +2230,14 @@ export class RoadSystem {
         // RUNKEY-SET-INVARIANT guarantee), so the flatten is window-invariant where it is consumed; a
         // frontier crossing's short ramp (roadJunctionBlendLength) never reaches loaded geometry.
         this._detectJunctions()
-        // FEAT-13: safe-prune the redundant edge of each routed crossing (at-grade intersections read as
-        // ugly; the graph is planar-abstract so a routed cross = a redundant excursion). Connectivity-
-        // preserving (bounded detour test) + window-invariant. Re-detect on the culled network so
-        // _crossingsByRun / the flatten reflect the survivors.
+        // FEAT-13 + QUAL-14 Part B: safe-prune redundant crossing strands (at-grade intersections read as
+        // ugly; the graph is planar-abstract so a routed cross = a redundant excursion) and residual
+        // sub-footprint hugs corridor avoidance couldn't prevent. Connectivity-preserving (bounded detour
+        // test) + window-invariant (BUG-25: both passes decide over the one-ring candidate universe —
+        // see _cullNetwork). Re-detect on the culled network so _crossingsByRun / the flatten reflect
+        // the survivors.
         if (this._params?.roadGraphCullCrossings ?? true) {
-            let culled = this._cullCrossings(mx0, mx1, mz0, mz1)
-            // QUAL-14 Part B backstop: also cull residual sub-footprint hugs corridor avoidance
-            // couldn't prevent (escape hatch / solo-vs-final displacement — see _cullClearance).
-            if (this._cullClearance(mx0, mx1, mz0, mz1)) culled = true
-            if (culled) { this._junctionsFrom = null; this._detectJunctions() }
+            if (this._cullNetwork(mx0, mx1, mz0, mz1)) { this._junctionsFrom = null; this._detectJunctions() }
         }
 
         // NOTE (CR-02): no post-build cache eviction. _network is .clear()-ed + rebuilt for the
