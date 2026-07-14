@@ -572,61 +572,6 @@ function _selfClearScan(prims, D, gap) {
     return { v: viol, mids: out }
 }
 
-// ── PERF-17 hierarchical corridor routing ───────────────────────────────────────────────────────
-// The dominant non-default-seed cold-load cost is the hybrid-A* search FLOODING a large region
-// between an edge's anchors. This collapses it: each edge routes in TWO passes. A cheap COARSE pass
-// (coarser lattice cell + heading bins + longer straight step, no self-clearance / refit / avoidance)
-// picks the right VALLEY/SADDLE; its centerline, inflated to a CORRIDOR of half-width
-// corridorHalfWidth, becomes a stay-inside constraint for the UNCHANGED fine pass — so the fine
-// search only explores the ~2·halfWidth capsule around the coarse line instead of the full a–b bbox.
-// The corridor is the pond-disc mechanism INVERTED: a chain of overlapping discs along the coarse
-// route (radius = halfWidth, centres ≤ CORRIDOR_DISC_SPACING apart so the union is a solid capsule of
-// half-width ≈ √(R²−(spacing/2)²) ≈ R), and the fine search rejects any primitive endpoint that lies
-// OUTSIDE every disc (vs pond's reject-if-INSIDE-any). Escape hatch: if the fine search fails to
-// capture the goal inside the corridor it retries ONCE with the corridor dropped — exactly today's
-// un-corridored search — bounding the worst case at today's per-edge cost. Determinism/window-
-// invariance: the coarse route (and thus the corridor) is a pure fn of (anchors, params, heightFn),
-// built WITHOUT avoidDiscs so it is IDENTICAL for an edge's SOLO and FINAL searches (QUAL-14 corridor-
-// dep symmetry — the route cache's solo/final identity depends on this).
-const CORRIDOR_STEP_MULT     = 4     // coarse STRAIGHT-primitive length = this × the fine stepLen
-const CORRIDOR_CELL_MULT     = 3     // coarse position-lattice cell = this × the fine cell (big state-count cut; at width 60 measured MORE character-faithful than 2× on the seed-6 junction hairpin — coarse fidelity is not the binding constraint, corridor WIDTH is)
-const CORRIDOR_MIN_HBINS     = 8     // coarse heading bins = max(this, fine hbins >> 1) — halved, floored
-const CORRIDOR_DISC_SPACING  = 8     // m — coarse-route sample spacing → corridor-disc centres (≤ halfWidth so the capsule has no gap)
-const CORRIDOR_SELFCLEAR_MAXIT = 3   // self-clearance repair iterations that keep the corridor; beyond this the repair discs may pin the route to the wall → drop it (fold into the escape philosophy)
-// Diagnostic counters — NOT a route input (routes stay pure); read by perf-runs/bench-corridor.mjs
-// via the exported getters below ROUTE SYNC END. The Worker's dead copy is harmless.
-let _apcCorrTotal = 0, _apcCorrEscape = 0
-
-// Sample coarse primitive descriptors into a flat [cx,cz,r,...] corridor-disc capsule (r = halfWidth,
-// centres ≤ spacing apart). Same const-κ / clothoid sampler as _selfClearScan. Pure.
-function _corridorDiscsFromPrims(prims, halfWidth, spacing) {
-    if (!prims || prims.length === 0) return null
-    const discs = []
-    const push = (x, z) => { discs.push(x, z, halfWidth) }
-    for (const p of prims) {
-        const n = Math.max(1, Math.ceil(p.length / spacing))
-        if (discs.length === 0) push(p.x0, p.z0)
-        if (Math.abs(p.kappa1 - p.kappa0) < 1e-9) {
-            const k = p.kappa0
-            for (let j = 1; j <= n; j++) {
-                const t = p.length * j / n
-                if (Math.abs(k) < 1e-12) push(p.x0 + t * Math.cos(p.theta0), p.z0 + t * Math.sin(p.theta0))
-                else { const th2 = p.theta0 + k * t; push(p.x0 + (Math.sin(th2) - Math.sin(p.theta0)) / k, p.z0 - (Math.cos(th2) - Math.cos(p.theta0)) / k) }
-            }
-        } else {
-            const dk = (p.kappa1 - p.kappa0) / p.length, hstep = p.length / n
-            let x = p.x0, z = p.z0, cP = Math.cos(p.theta0), sP = Math.sin(p.theta0)
-            for (let q = 1; q <= n; q++) {
-                const s = q * hstep, t2 = p.theta0 + p.kappa0 * s + 0.5 * dk * s * s
-                const c = Math.cos(t2), sn = Math.sin(t2)
-                x += 0.5 * (cP + c) * hstep; z += 0.5 * (sP + sn) * hstep; cP = c; sP = sn
-                push(x, z)
-            }
-        }
-    }
-    return discs
-}
-
 // ── Dubins shortest path (BUG-12 terminal connector) ───────────────────────────────────────────
 // Returns dense [x,z] points (excluding the start, including the exact goal) from pose (x0,z0,th0)
 // to pose (x1,z1,th1) using arcs of radius `rho` (left/right) and straights — so curvature is
@@ -741,33 +686,6 @@ function dubinsPrimitives(x0, z0, th0, x1, z1, th1, rho) {
  * @returns {Array<{x:number,y:number,z:number}>} dense valid-radius centerline from a to b (y = heightFn)
  */
 export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
-    // ── PERF-17 corridor: coarse pass → corridor → fine pass (outermost; wraps self-clearance) ──
-    // Runs once per top-level edge call: route a cheap COARSE pass, inflate its centerline into a
-    // stay-inside corridor, then run the real fine pass constrained to it. corridorHalfWidth undefined/0
-    // → inert (bare router byte-identical — arc-router.mjs). `_corridorDiscs` defined (even null) on the
-    // fine recursion + `_coarsePass` on the coarse recursion both prevent re-entry here. The coarse pass
-    // drops selfClearDist/refit/avoidDiscs (kept OUT so the corridor is identical for solo & final) and
-    // keeps pondDiscs (topology stays hard) + the cost weights (so it picks the fine pass's own valley).
-    if (opts.emitPrimitives && (opts.corridorHalfWidth ?? 0) > 0 && !opts._coarsePass && opts._corridorDiscs === undefined) {
-        _apcCorrTotal++
-        const fineHbins = opts.hbins ?? 24, fineCell = opts.cell ?? 8, fineStep = opts.stepLen ?? 8
-        const coarse = arcPrimitiveConnect(ax, az, bx, bz, heightFn, Object.assign({}, opts, {
-            _coarsePass: true, corridorHalfWidth: 0,
-            // Coarse only needs TOPOLOGY (which valley/saddle), not clean geometry: drop self-clearance
-            // (its repair loop is the cold-load cost we are cutting), refit (de-quantization), avoidDiscs
-            // (excluded so the corridor is identical for an edge's solo & final searches — cache identity),
-            // and multi-sample grade. Keep pondDiscs + the cost weights so the coarse route picks the same
-            // valley the fine pass would. NOTE: the coarse lattice cannot reproduce the tightest terrain
-            // switchbacks, so corridorHalfWidth must stay wide enough (≈60 m) to let the fine pass re-form
-            // them — narrower visibly straightens seed-6 junction hairpins (PERF-17 measurement).
-            selfClearDist: 0, avoidDiscs: undefined, refitShortcut: false, refitWindow: 0, gradeSamples: 1,
-            stepLen: fineStep * CORRIDOR_STEP_MULT,
-            cell: fineCell * CORRIDOR_CELL_MULT,
-            hbins: Math.max(CORRIDOR_MIN_HBINS, fineHbins >> 1),
-        }))
-        const cd = _corridorDiscsFromPrims(coarse, opts.corridorHalfWidth, CORRIDOR_DISC_SPACING)
-        return arcPrimitiveConnect(ax, az, bx, bz, heightFn, Object.assign({}, opts, { _corridorDiscs: cd || null }))
-    }
     // ── QUAL-14 self-clearance repair loop (wrapper; the single-attempt search starts below) ──
     // Contract: on the FINAL emitted chain (post-refit, incl. the Dubins tail), no two centerline
     // samples with arc-separation > selfClearGap may lie closer than selfClearDist in XZ — a route
@@ -778,15 +696,12 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     // that carve.
     if (opts.emitPrimitives && (opts.selfClearDist ?? 0) > 0 && !opts._scPass) {
         const D = opts.selfClearDist, gap = opts.selfClearGap ?? 80
-        // PERF-17: `dropCorr` drops the corridor for late repair iterations — the repair no-go discs
-        // can pin the route against the corridor wall, so beyond CORRIDOR_SELFCLEAR_MAXIT let it use
-        // the full search area (folds into the corridor escape philosophy; deterministic).
-        const run = (discs, dropCorr) => arcPrimitiveConnect(ax, az, bx, bz, heightFn,
-            Object.assign({}, opts, { _scPass: true }, dropCorr ? { _corridorDiscs: null } : null, discs ? { pondDiscs: discs } : null))
+        const run = (discs) => arcPrimitiveConnect(ax, az, bx, bz, heightFn,
+            Object.assign({}, opts, { _scPass: true }, discs ? { pondDiscs: discs } : null))
         const discs = (opts.pondDiscs && opts.pondDiscs.length) ? opts.pondDiscs.slice() : []
         let best = null, bestV = Infinity
         for (let it = 0; it < SELF_CLEAR_MAX_REPAIR; it++) {
-            const cand = run(it === 0 ? null : discs, it > CORRIDOR_SELFCLEAR_MAXIT)
+            const cand = run(it === 0 ? null : discs)
             const { v, mids } = _selfClearScan(cand, D, gap)
             if (v < bestV) { best = cand; bestV = v }
             if (v === 0) break
@@ -890,30 +805,6 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             return false
         }
         for (let i = 0; i < pondDiscs.length; i += 3) if (discHit(x, z, i)) return true
-        return false
-    }
-    // PERF-17: stay-inside corridor (fine pass only). _corridorDiscs is a flat [cx,cz,r,...] capsule
-    // chain from the COARSE route (all discs share r = corridorHalfWidth); a primitive endpoint OUTSIDE
-    // every disc is rejected — the pond mechanism INVERTED. Same uniform-radius spatial hash (cell =
-    // halfWidth, so any disc reaching a point registers in the 3×3 of that point's cell). Null/absent →
-    // inCorridor ≡ true (coarse pass, bare router, and the escape-hatch retry all pass null).
-    const corrDiscs = (opts._corridorDiscs && opts._corridorDiscs.length) ? opts._corridorDiscs : null
-    let corrGrid = null, corrCell = 0
-    if (corrDiscs) {
-        corrCell = Math.max(1, corrDiscs[2])
-        corrGrid = new Map()
-        for (let i = 0; i < corrDiscs.length; i += 3) {
-            const hk = Math.floor(corrDiscs[i] / corrCell) * 73856093 ^ Math.floor(corrDiscs[i + 1] / corrCell) * 19349663
-            const bkt = corrGrid.get(hk); if (bkt) bkt.push(i); else corrGrid.set(hk, [i])
-        }
-    }
-    const inCorridor = (x, z) => {
-        if (!corrGrid) return true
-        const cx = Math.floor(x / corrCell), cz = Math.floor(z / corrCell)
-        for (let ox = -1; ox <= 1; ox++) for (let oz = -1; oz <= 1; oz++) {
-            const bkt = corrGrid.get((cx + ox) * 73856093 ^ (cz + oz) * 19349663)
-            if (bkt) for (const i of bkt) { const dx = x - corrDiscs[i], dz = z - corrDiscs[i + 1]; if (dx * dx + dz * dz <= corrCell * corrCell) return true }
-        }
         return false
     }
 
@@ -1146,9 +1037,6 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
                 if (inPondNoGo(nx, nz)) continue
                 if (inPondNoGo(mx, mz)) continue
             }
-            // PERF-17: reject a primitive whose endpoint leaves the coarse-route corridor (endpoint
-            // suffices — fine primitives are short vs the ~2·halfWidth capsule). Inert when corrGrid null.
-            if (corrGrid && !inCorridor(nx, nz)) continue
             const nst = stateOf(nx, nz, nth)
             if (CL[nst] === gen) continue
             const nHraw = hAt(nx, nz)
@@ -1200,16 +1088,6 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
                 hpush(ng + heur(nx, nz), nst)
             }
         }
-    }
-
-    // PERF-17 CORRIDOR ESCAPE HATCH: the coarse-route corridor is advisory relative to CONNECTIVITY —
-    // if it walled off the goal (the fine search could not reach it inside the capsule), retry ONCE with
-    // the corridor dropped (exactly today's full un-corridored search; ponds/avoidDiscs stay). Fires
-    // BEFORE the avoidDiscs hatch so a doubly-constrained edge peels the tighter (corridor) constraint
-    // first. Deterministic (pure retry minus _corridorDiscs).
-    if (goalState === -1 && corrGrid) {
-        _apcCorrEscape++
-        return arcPrimitiveConnect(ax, az, bx, bz, heightFn, Object.assign({}, opts, { _corridorDiscs: null }))
     }
 
     // QUAL-14 Part B ESCAPE HATCH: corridor discs are advisory relative to CONNECTIVITY — if they
@@ -1600,10 +1478,3 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     return out
 }
 // ROUTE SYNC END
-
-// PERF-17 corridor diagnostics (NOT part of ROUTE SYNC — main-thread bench read-out only; the Worker
-// mirror keeps its own dead counter copies). Routes are unaffected — these count how many top-level
-// edge routes built a corridor and how many hit the escape hatch (dropped it because the goal was
-// walled), so perf-runs/bench-corridor.mjs can assert the <5% escape-rate acceptance bound.
-export function _corridorStats() { return { total: _apcCorrTotal, escapes: _apcCorrEscape } }
-export function _resetCorridorStats() { _apcCorrTotal = 0; _apcCorrEscape = 0 }

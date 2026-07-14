@@ -196,3 +196,14 @@ Air and judge sharpness + chassis temperature; if soft, raise resHeight 1200 →
   separately-launched processes (esp. right after a CPU-heavy run). Interleave OLD/NEW via
   `git stash` within one shell session and take best-of-N; a single cross-process delta < ~5 % is
   noise. (Router bench profiles: profile-selfclear/split/pcoarse/ab-quick/item4-heur.mjs.)
+
+## PERF-17 REVERTED (2026-07-14, user verdict)
+
+The corridor router shipped in `aebc443` was fully reverted: the user found a road-character
+regression at the seed-6 SPAWN area (in addition to the relocated hairpin already flagged in
+review). "Interesting experiment, not what I want." Old router + old bundled cache restored
+together; the ticket in pending/ keeps the full design + measurements for any future retry.
+Cold-load numbers return to the pre-corridor baseline (seed-42 ready ~6.6-6.9 s same-conditions).
+The PERF-18 decomposition remains valid FOR THE CORRIDOR CONFIG it measured; the bare-router
+floor anatomy (prevention walk + repair loop dominate; scan/refit negligible) is
+config-independent and still the guide for any future routing perf work.
