@@ -434,11 +434,22 @@ export class TerrainSystem {
             uCliffHi:     { value: params.roadCliffSlopeHi       ?? 0.6  },
             uTreeLo:      { value: params.terrainTreelineLo      ?? 60   },
             uTreeHi:      { value: params.terrainTreelineHi      ?? 105  },
+            // PERF-07: baked prop-shadow atlas (toroidal clipmap; prop-shadow-bake.js). setShadowAtlas
+            // wires the live texture + strength; uShadowStrength 0 (default / headless) skips the sample.
+            uShadowAtlas:    { value: null },
+            uShadowAtlasN:   { value: 16.0 },   // ATLAS_N — tiles per side
+            uShadowTilePx:   { value: 128.0 },  // TILE_PX — texels per tile (for the in-tile blur)
+            uShadowStrength: { value: 0.0 },
+            // QUAL-18: baked shadows dissolve with view distance (LOD) so the far ring softens into
+            // fog instead of ending on a line. View-space distance in metres.
+            uShadowFadeStart:{ value: 150.0 },
+            uShadowFadeEnd:  { value: 240.0 },
         }
         this._material.onBeforeCompile = (shader) => {
             Object.assign(shader.uniforms, this._terrainUniforms)
             addWorldVaryings(shader)
-            shader.fragmentShader = 'uniform float uDetailScale, uNoiseScale, uMottle, uBump, uCliffLo, uCliffHi, uTreeLo, uTreeHi;\n' + shader.fragmentShader
+            shader.fragmentShader = 'uniform float uDetailScale, uNoiseScale, uMottle, uBump, uCliffLo, uCliffHi, uTreeLo, uTreeHi;\n' +
+                'uniform sampler2D uShadowAtlas; uniform float uShadowAtlasN, uShadowTilePx, uShadowStrength, uShadowFadeStart, uShadowFadeEnd;\n' + shader.fragmentShader
             // Albedo mottle (after vColor is folded into diffuseColor).
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <color_fragment>',
@@ -446,6 +457,29 @@ export class TerrainSystem {
                 if (uDetailScale > 0.0) {
                     float td_n = tdFbm(vWorldPos.xz * uNoiseScale);
                     diffuseColor.rgb *= 1.0 + uMottle * uDetailScale * (td_n - 0.5);
+                }
+                // PERF-07: baked prop-shadow atlas. World XZ → toroidal tile (cx,cz mod N) → atlas UV
+                // (a pure fn of position, so no per-chunk uniform). A 5-tap in-tile blur softens the
+                // 0.5 m/texel silhouette; inTile is clamped to the tile interior so linear filtering
+                // never bleeds across the (non-adjacent) neighbouring atlas tile.
+                if (uShadowStrength > 0.0) {
+                    vec2 sh_cf   = vWorldPos.xz / ${CHUNK_SIZE.toFixed(1)};
+                    vec2 sh_tile = mod(floor(sh_cf), uShadowAtlasN);
+                    vec2 sh_in   = fract(sh_cf);
+                    float sh_htx = 0.5 / uShadowTilePx;                 // half-texel in tile-UV units
+                    float sh_stp = 1.0 / uShadowTilePx;                 // one texel in tile-UV units
+                    float sh_a = 0.0;
+                    vec2 sh_off[5];
+                    sh_off[0] = vec2(0.0);        sh_off[1] = vec2( sh_stp, 0.0); sh_off[2] = vec2(-sh_stp, 0.0);
+                    sh_off[3] = vec2(0.0, sh_stp); sh_off[4] = vec2(0.0, -sh_stp);
+                    for (int si = 0; si < 5; si++) {
+                        vec2 sh_c = clamp(sh_in + sh_off[si], sh_htx, 1.0 - sh_htx);
+                        sh_a += texture2D(uShadowAtlas, (sh_tile + sh_c) / uShadowAtlasN).a;
+                    }
+                    sh_a *= 0.2;                                        // average of the 5 taps
+                    // QUAL-18: fade the baked shadow out with view distance (LOD dissolve).
+                    float sh_fade = 1.0 - smoothstep(uShadowFadeStart, uShadowFadeEnd, length(vViewPosition));
+                    diffuseColor.rgb *= 1.0 - sh_a * uShadowStrength * sh_fade;
                 }`
             )
             // Normal bump (after the geometric normal is established). Rockiness = max(steepness,
@@ -506,6 +540,19 @@ export class TerrainSystem {
 
         // Initialize every Worker and the main-thread noise closures with the starting seed.
         this.reinitWorker(this._worldSeed, params)
+    }
+
+    /**
+     * PERF-07: wire the baked prop-shadow atlas into the shared terrain material. `tex` is the
+     * atlas texture (prop-shadow-bake.js), `atlasN`/`tilePx` its layout, `strength` the shadow
+     * darkness (0 disables the sample). Called by main.js once the bake system exists; no-op paths
+     * (headless, realtime-shadow mode) simply never call it, so uShadowStrength stays 0.
+     */
+    setShadowAtlas(tex, atlasN, tilePx, strength) {
+        this._terrainUniforms.uShadowAtlas.value    = tex
+        this._terrainUniforms.uShadowAtlasN.value   = atlasN
+        this._terrainUniforms.uShadowTilePx.value   = tilePx
+        this._terrainUniforms.uShadowStrength.value = strength
     }
 
     /**

@@ -30,7 +30,7 @@ import * as THREE from 'three'
 import { buildPalette } from './prop-palette.js'
 import { scatterChunk, scatterChunkGen } from './prop-scatter.js'
 import { sphereVsSphere, sphereVsCapsuleY, sphereVsCapsule, sphereVsMeshInstance, bushDrag } from './prop-collider.js'
-import { ShadowBlobSystem } from './prop-shadow-blobs.js'   // PERF-07: baked contact-shadow blobs
+import { BAKE_LAYER } from './prop-shadow-bake.js'   // PERF-07: baked prop-shadow atlas (main.js owns the system)
 import { FLORA_PARAMS } from '../../data/flora.js'
 
 // Per-category global instance capacity (split evenly across that category's variants). Sized for
@@ -49,12 +49,6 @@ const _p = new THREE.Vector3()
 const _s = new THREE.Vector3()
 const _col = new THREE.Color()
 const _HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0)
-// PERF-07: scratch for composing a contact-shadow blob's flat-plane instance matrix.
-const _bm = new THREE.Matrix4()
-const _bp = new THREE.Vector3()
-const _bq = new THREE.Quaternion()
-const _bs = new THREE.Vector3()
-const _be = new THREE.Euler()
 
 export class PropSystem {
   /**
@@ -70,10 +64,10 @@ export class PropSystem {
     const { variants, material } = buildPalette(this._seed, params)
     this._material = material
 
-    // PERF-07: prop shadow mode. castRealtime=true (default — the bake was reverted after user
-    // verify) keeps props in the sun's shadow pass; false swaps to baked contact-shadow blobs
-    // (setShadowCasting flips both live via the GUI checkbox).
-    const shadowsP = params.shadows || { castRealtime: true, blobOpacity: 0.32, blobScale: 1.15 }
+    // PERF-07: prop shadow mode. castRealtime=false (default) drops props from the sun's realtime
+    // shadow pass and stands in the baked shadow atlas (prop-shadow-bake.js, owned by main.js);
+    // true keeps the old per-frame realtime casting. Flipped live via the GUI checkbox.
+    const shadowsP = params.shadows || { castRealtime: false }
     const castRealtime = !!shadowsP.castRealtime
 
     // meshes: key "cat#v" -> { mesh, free:[], used:0 };  collision: key -> descriptor | null
@@ -85,8 +79,9 @@ export class PropSystem {
       entries.forEach((entry, v) => {
         const mesh = new THREE.InstancedMesh(entry.geo, material, perVariant)
         mesh.frustumCulled = false           // PERF-05: chunk streaming bounds these
-        mesh.castShadow = castRealtime       // PERF-07: realtime by default; blobs stand in when off
+        mesh.castShadow = castRealtime       // PERF-07: realtime shadow only when baking is off
         mesh.receiveShadow = true
+        mesh.layers.enable(BAKE_LAYER)       // PERF-07: also visible to the shadow-bake camera
         // PERF-10: draw only the occupied slot prefix. mesh.count is maintained at `top` (the
         // high-water occupied index + 1) by _flush(); drawing full capacity pushed EVERY hidden
         // zero-scale slot through the vertex stage of the main AND shadow passes — measured 85 %
@@ -123,13 +118,13 @@ export class PropSystem {
     this._activeScatter = null     // { ck, cx, cz, gen } — the generator being stepped
     this._scatterFillDone = false  // false → burst budget until the first queue drain (PERF-13 spirit)
 
-    // ── PERF-07 baked contact-shadow blobs ────────────────────────────────────────────
-    // One InstancedMesh of flat ground decals, one per non-smallRock prop. Capacity = Σ of the
-    // prop capacity pools minus smallRock (which gets no blob) — the exact upper bound of blobs.
-    const blobCap = Object.entries(CAPACITY).reduce((s, [k, v]) => s + (k === 'smallRock' ? 0 : v), 0)
-    this._blobs = new ShadowBlobSystem(scene, shadowsP, blobCap)
-    this._chunkBlobs = new Map()   // "cx,cz" -> [blobSlot, ...]  (parallel to _chunks; released together)
-    this.setShadowCasting(castRealtime)   // initial mode from params.shadows (realtime default)
+    // ── PERF-07 baked prop shadows ──────────────────────────────────────────────────────
+    // The shadow-bake system (world atlas) is owned by main.js (it needs the WebGL renderer, absent
+    // headless). setShadowBake wires it; _commitChunk marks a chunk's tile (+ neighbours) dirty so
+    // its silhouettes bake once. Caster meshes are already on BAKE_LAYER above; castShadow follows
+    // the mode (realtime OR baked, never both).
+    this._shadowBake = null
+    this.setShadowCasting(castRealtime)   // initial mode from params.shadows
 
     // ── FEAT-06b collision index ──────────────────────────────────────────────────────
     // Per-chunk collidable lists are the source of truth; a uniform grid (rebuilt lazily when chunk
@@ -144,50 +139,25 @@ export class PropSystem {
 
   // ── PERF-07 shadow bake ───────────────────────────────────────────────────────────────
   /**
-   * Live toggle between realtime prop shadow casting and the baked contact-shadow blobs.
-   *   v=true  → props cast into the sun's 2048² shadow map, blobs hidden (free day/night shadows).
-   *   v=false → props dropped from the shadow pass (the perf win), blobs shown for grounding.
+   * Attach the main-thread shadow-bake system (main.js owns it). Marks every already-committed
+   * chunk dirty so existing props bake in (props scattered before the wiring landed).
    */
-  setShadowCasting(v) {
-    for (const rec of this._meshes.values()) rec.mesh.castShadow = v
-    this._blobs.setVisible(!v)
+  setShadowBake(bake) {
+    this._shadowBake = bake
+    if (bake) for (const ck of this._chunks.keys()) {
+      const comma = ck.indexOf(',')
+      bake.markWithNeighbors(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10))
+    }
   }
 
   /**
-   * Compose one prop's flat contact-shadow blob matrix into `out`. Returns false for categories
-   * that get no blob (smallRock — too small + too numerous to matter). The unit plane spans ±0.5,
-   * so an instance scale of 2× the half-extent gives the footprint.
-   * @param {object} pl   placement record (x,y,z,scale,rotY,cat)
-   * @param {object|null} col  the prop's collision descriptor (radius/length), null for smallRock
-   * @param {THREE.Matrix4} out
+   * Live toggle between realtime prop shadow casting and the baked shadow atlas.
+   *   v=true  → props cast into the sun's realtime shadow map (free day/night; the per-frame cost).
+   *   v=false → props dropped from the shadow pass (the perf win); the baked atlas stands in.
+   * The terrain-atlas strength + bake activity are toggled by the caller (main.js) alongside this.
    */
-  _composeBlobMatrix(pl, col, out) {
-    const bs = this._blobs._params.blobScale
-    let hx, hz, y, yaw = 0
-    if (pl.cat === 'aspen' || pl.cat === 'pine') {
-      hx = hz = 2.0 * pl.scale * bs                        // canopy-reach circle at the trunk base
-      y = pl.y + 0.05                                      // pl.y is the (sunk) trunk base
-    } else if (pl.cat === 'rock' || pl.cat === 'boulder') {
-      hx = hz = (col ? col.radius : 1) * pl.scale * bs      // ≈ collision radius
-      // PERF-14: pl.gy is the scatter-time ground sample — re-sampling heightAt here (an
-      // analytic road-scan per placement) made the COMMIT phase itself a 10-30 ms hitch.
-      y = (pl.gy ?? this._samplers.heightAt(pl.x, pl.z)) + 0.05   // buried: pl.y is the blob CENTRE, not ground
-    } else if (pl.cat === 'log') {
-      hx = (col.length / 2) * pl.scale + 0.4                // elongated along the trunk axis
-      hz = col.radius * pl.scale * 2.5
-      yaw = pl.rotY
-      y = (pl.gy ?? this._samplers.heightAt(pl.x, pl.z)) + 0.05
-    } else if (pl.cat === 'bush') {
-      hx = hz = (col ? col.radius : 0.5) * pl.scale * bs    // small faint circle (soft prop)
-      y = pl.y + 0.05
-    } else {
-      return false   // smallRock — no blob
-    }
-    _bp.set(pl.x, y, pl.z)
-    _be.set(0, yaw, 0); _bq.setFromEuler(_be)
-    _bs.set(hx * 2, 1, hz * 2)
-    out.compose(_bp, _bq, _bs)
-    return true
+  setShadowCasting(v) {
+    for (const rec of this._meshes.values()) rec.mesh.castShadow = v
   }
 
   // ── chunk lifecycle ─────────────────────────────────────────────────────────────────
@@ -221,7 +191,6 @@ export class PropSystem {
   _commitChunk(ck, placements) {
     const owned = []
     const collidables = []
-    const blobSlots = []   // PERF-07: contact-shadow blob slots owned by this chunk
     for (const pl of placements) {
       const key = pl.cat + '#' + pl.variant
       const rec = this._meshes.get(key)
@@ -277,17 +246,16 @@ export class PropSystem {
         radius: col.radius, height: col.height || 0, scale: pl.scale,
         rotY: pl.rotY, tris: col.tris,   // rotY/tris used by 'mesh' (boulder) contacts; undefined otherwise
       })
-
-      // PERF-07: baked contact-shadow blob for this prop (skip smallRock). Owned per chunk exactly
-      // like the mesh slot, released together in releaseChunk.
-      if (this._composeBlobMatrix(pl, col, _bm)) {
-        const bslot = this._blobs.acquire(_bm)
-        if (bslot >= 0) blobSlots.push(bslot)
-      }
     }
     this._chunks.set(ck, owned)
     if (collidables.length) { this._collidables.set(ck, collidables); this._gridDirty = true }
-    if (blobSlots.length) this._chunkBlobs.set(ck, blobSlots)
+
+    // PERF-07: this chunk's props changed → (re)bake its shadow tile and its neighbours' (silhouettes
+    // cross chunk seams). The bake system slices the work; a no-op when realtime casting / headless.
+    if (this._shadowBake) {
+      const comma = ck.indexOf(',')
+      this._shadowBake.markWithNeighbors(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10))
+    }
   }
 
   releaseChunk(cx, cz) {
@@ -306,9 +274,10 @@ export class PropSystem {
     }
     this._chunks.delete(ck)
     if (this._collidables.delete(ck)) this._gridDirty = true
-    // PERF-07: return this chunk's contact-shadow blob slots to the pool.
-    const bslots = this._chunkBlobs.get(ck)
-    if (bslots) { for (const s of bslots) this._blobs.release(s); this._chunkBlobs.delete(ck) }
+    // PERF-07: this chunk's props are gone → re-bake still-live neighbours so their tiles drop the
+    // departed silhouettes (a neighbour still in-ring re-bakes without them; its own tile is reused
+    // by whichever chunk lands on the toroidal slot next).
+    if (this._shadowBake) this._shadowBake.markWithNeighbors(cx, cz)
   }
 
   /**
@@ -415,7 +384,6 @@ export class PropSystem {
       rec.mesh.count = rec.top   // PERF-10: draw the occupied prefix only (read at draw time, no flag needed)
     }
     this._dirty.clear()
-    this._blobs.flush()   // PERF-07: upload any pending blob matrix writes
   }
 
   // ── FEAT-06b collision queries ──────────────────────────────────────────────────────────
@@ -534,8 +502,6 @@ export class PropSystem {
       rec.mesh.dispose()
     }
     this._material.dispose()
-    this._blobs.dispose()          // PERF-07
-    this._chunkBlobs.clear()
     this._meshes.clear()
     this._chunks.clear()
     this._collidables.clear()

@@ -12,23 +12,23 @@
 
 /**
  * @param {GUI} gui    the lil-gui instance returned by initDebug()
- * @param {{ params: object, rebuild: () => void, getPropSystem?: () => object }} opts
+ * @param {{ params: object, rebuild: () => void, getPropSystem?: () => object,
+ *           onShadowModeChange?: () => void }} opts
  *   getPropSystem: live-handle accessor (survives rebuild) for the PERF-07 shadow toggle.
+ *   onShadowModeChange: main.js hook that syncs prop castShadow + baked-atlas strength to the params.
  */
-export function addPropGui(gui, { params, rebuild, getPropSystem }) {
+export function addPropGui(gui, { params, rebuild, getPropSystem, onShadowModeChange }) {
   const f = gui.addFolder('Props (FEAT-06)')
   f.close()                              // collapsed by default
   const done = () => rebuild()
   const S = params.scatter
 
-  // PERF-07: prop shadow mode toggle. ON (default — the bake was reverted after user verify) =
-  // realtime casting, blobs hidden; OFF = props out of the sun's shadow pass + baked contact-shadow
-  // blobs. Read live off the current PropSystem (getPropSystem() survives rebuilds); the fresh
-  // system re-reads params.shadows.castRealtime on rebuild, so the state persists either way.
-  f.add(params.shadows, 'castRealtime').name('Realtime prop shadows').onChange((v) => {
-    const sys = getPropSystem && getPropSystem()
-    if (sys) sys.setShadowCasting(v)
-  })
+  // PERF-07: prop shadow mode. castRealtime OFF (default) = props baked into the world shadow atlas
+  // (prop-shadow-bake.js), out of the per-frame sun pass; ON = old realtime per-frame casting.
+  // main.js's onShadowModeChange flips prop castShadow + the terrain atlas strength together.
+  const syncMode = () => { if (onShadowModeChange) onShadowModeChange() }
+  f.add(params.shadows, 'castRealtime').name('Realtime prop shadows').onChange(syncMode)
+  f.add(params.shadows, 'strength', 0, 1, 0.01).name('Baked shadow strength').onChange(syncMode)
 
   const density = f.addFolder('Density'); density.close()
   density.add(S, 'clustersPerChunk', 0, 12, 1).name('tree clusters').onFinishChange(done)
