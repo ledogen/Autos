@@ -136,3 +136,8 @@ scoped around them (NOT the scan/refit micro-ops this ticket assumed):
 No src change ships from PERF-18. GRAPH-REACHABILITY unchanged (no route change) — 70 % post-corridor
 (known-red BUG-35). Bench/profile scripts: perf-runs/profile-selfclear.mjs, profile-split.mjs,
 pcoarse.mjs, ab-quick.mjs, item4-heur.mjs.
+
+### Post-revert note (2026-07-14): PERF-17 corridor REVERTED by user (road character at seed-6
+spawn). The corridor-kept-repair lever above is moot; the incremental ancestor-proximity index
+lever still applies to the bare router (the prevention walk + repair loop dominate there too).
+Cold load stands at the pre-corridor baseline by choice.

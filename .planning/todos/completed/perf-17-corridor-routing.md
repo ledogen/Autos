@@ -1,7 +1,7 @@
 ---
 id: PERF-17
 type: perf
-status: pending
+status: closed-reverted
 severity: major
 created: 2026-07-13
 source: user-request
@@ -136,3 +136,15 @@ Two-pass per edge, both passes inside `arcPrimitiveConnect`'s file/mirror discip
 - Prior art for "constrain the search with discs": pond route-around (`opts.pondDiscs`) and
   QUAL-14 corridor discs (`opts.avoidDiscs`) — the corridor is the same mechanism inverted
   (stay-inside vs stay-outside).
+
+---
+
+## CLOSED-REVERTED 2026-07-14 (user verdict)
+
+Shipped in `aebc443` at 1.5-2× (target 3× missed), reverted in `f6b3aa1`: the user found a road-
+character regression at the seed-6 SPAWN area on top of the relocated hairpin — "interesting
+experiment, not what I want." Old router + old bundled cache restored together; gates green;
+landmark screenshot byte-matches the pre-corridor world. The design, measurements, and the
+PERF-18 floor decomposition above remain the record for any future retry — the honest summary is
+that corridor width is character-bound at 60 m on this world, which caps the win below the point
+where the route changes pay for themselves.
