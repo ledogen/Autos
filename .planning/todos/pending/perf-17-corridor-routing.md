@@ -6,9 +6,11 @@ severity: major
 created: 2026-07-13
 source: user-request
 note: "Scoped for an Opus agent pickup. Attacks the seed-miss cold-load cost (7–16 s on the M4,
-worse on slow hardware) at its root: hybrid-A* search area. Phase 0 (cheap dials) gates whether
-the corridor rewrite is even needed — do NOT skip it. The user accepts routes CHANGING once
-(like the honest-grade rework) but NOT any loss of determinism/window-invariance."
+worse on slow hardware) at its root: hybrid-A* search area. USER DECISION 2026-07-13: skip the
+Phase-0 dial gate — build the corridor directly (the dials remain listed below as optional
+stacking levers AFTER the corridor ships, and roadArcHeurWeight is still worth capturing in the
+baseline table for context). The user accepts routes CHANGING once (like the honest-grade
+rework) but NOT any loss of determinism/window-invariance."
 ---
 
 # PERF-17: Hierarchical corridor routing — cut per-edge search cost 5–10× for cold load
@@ -37,31 +39,22 @@ Key code (all in the ROUTE SYNC region of `src/road-carve.js`, mirrored byte-ide
   connection) and `PERF:search-time` — these encode current per-edge cost expectations and WILL
   need re-blessing.
 
-## Phase 0 — cheap dials first (measurement gate for the whole ticket)
+## Step 1 — baseline bench (required before touching the router)
 
-Before any rewrite, measure how far the EXISTING knobs go. Headless protocol (no browser):
-build a bench on `test/lib/road-headless.mjs` + `RANGER_PARAMS` (real coarse closure — construct
-`new RoadSystem(seed, RANGER_PARAMS)`, time `warmSpawnBand`-equivalent work: `ensureTile` 3×3 at
-origin for seeds 42, 1337, 9001; `perf-runs/bench-worldgen.mjs` pattern from PERF-08 exists as
-prior art).
+Headless protocol (no browser): build a bench on `test/lib/road-headless.mjs` + `RANGER_PARAMS`
+(real coarse closure — construct `new RoadSystem(seed, RANGER_PARAMS)`, time
+`warmSpawnBand`-equivalent work: `ensureTile` 3×3 at origin for seeds 42, 1337, 9001;
+`perf-runs/bench-worldgen.mjs` pattern from PERF-08 exists as prior art). Record per-seed total
+routing ms + per-edge distribution (the corridor's win is measured against THIS, and the
+escape-hatch rate needs the per-edge view). Also record road-quality baseline: grade-excess
+distribution, curvature histogram, total network length, and screenshots at 2–3 landmark
+junctions (seed 6: `node test/screenshot.mjs -38 183`).
 
-Dials, measured one at a time then combined:
-1. `roadArcHeurWeight` 1.5 → 2.0 / 2.5 (greedier A\* = smaller flood; existing opt, slider
-   exists). Suspected 1.5–2.5×.
-2. Search lattice coarsening: primitive step length (`primLen`) and heading-bin count in
-   `arcPrimitiveConnect` — 1.25× / 1.5× step. Suspected ~step² fewer expansions.
-3. Grade-sample spacing along primitives (the per-expansion heightFn loop).
+(The former Phase-0 dial experiments — roadArcHeurWeight 2.0+, lattice step coarsening, grade
+sample spacing — are SKIPPED by user decision. They stack multiplicatively with the corridor and
+remain available as follow-on levers if the corridor alone falls short of target.)
 
-For each: record (a) total routing ms for the band, (b) road-quality metrics — grade excess
-distribution, curvature histogram, total length delta vs baseline (sample the routed centerlines;
-`road-character` style stats), (c) screenshots of 2–3 landmark junctions (seed 6:
-`node test/screenshot.mjs -38 183`) after regenerating the bundled cache.
-
-**Decision gate: if combined dials reach ≥3× with visually-acceptable roads (user eyeball), STOP
-— ship the dials as PERF-17 and do not build the corridor.** The corridor is only worth its risk
-below that.
-
-## Corridor design (Phase 1+, only if Phase 0 insufficient)
+## Corridor design (the plan of record)
 
 Two-pass per edge, both passes inside `arcPrimitiveConnect`'s file/mirror discipline:
 
@@ -103,8 +96,9 @@ Two-pass per edge, both passes inside `arcPrimitiveConnect`'s file/mirror discip
   `project_centerline_validity_mandate`).
 
 ### Measurement / acceptance
-- [ ] Phase 0 table (dials × time × quality) recorded in this ticket; decision documented.
-- [ ] If corridor built: headless band-routing time for seeds 42/1337/9001 ≥3× faster than
+- [ ] Step-1 baseline table (per-seed routing ms + per-edge distribution + quality metrics)
+      recorded in this ticket.
+- [ ] Headless band-routing time for seeds 42/1337/9001 ≥3× faster than
       baseline (target 5×); browser cold load seed 42 measured via
       `node test/profile.mjs --scenario=coldload --seed=42` (quiet, cooled machine — see
       FINDINGS.md measurement gotchas; expect thermal variance, compare interleaved runs).
