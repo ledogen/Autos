@@ -58,6 +58,16 @@ idle profile shows frame.water.sync ≈ 0 when parked and water still renders/an
 driving into a new region (screenshot a pond/stream spot far from spawn, e.g. drive or freecam
 there) · commit `perf(PERF-19.1): keyed water.sync skip`.
 
+> **RESULT (2026-07-14, worktree perf-19 @ a68b854):** DONE. All 5 water/stream/pond gates
+> green (pond-route-around 181s · stream-carve 106s · stream-bed-drape 105s · restream-invariance
+> 71s · water-invariance 5s). Early-out keyed on quantized 64 m window +
+> `WaterSystem.contentGeneration()` (sum of cell/pond/stream cache sizes). Behavioural proof via
+> headless `perf-runs/verify-water-sync-skip.mjs` (Chrome profile skipped to avoid contention with
+> the user's active workers on the fanless M4): parked at steady state → **0** pond/stream
+> enumeration calls over 3 frames (the ~0.7 ms/frame is fully skipped); window move re-syncs (1 call
+> — water renders when driving to a new region); content growth re-syncs (1 call). No route/mesh/
+> render change — reconciliation logic untouched.
+
 ## Item 2 — terrain-generate parallelization (ring fill ~2×)
 
 The terrain Worker is a SINGLE worker; ready→ring-complete (~1.4 s+ of visible fill) is bound by
@@ -73,6 +83,19 @@ ALL workers) and `project_terrain_worker_constraints` (never postMessage whole R
 ring-complete minus ready cut ≥ ~40 % vs baseline, ready unchanged · drive + stream profile
 scenarios show no new hitches (hitch table in trace-report) · commit
 `perf(PERF-19.2): terrain generate worker pool`.
+
+> **RESULT (2026-07-14, worktree perf-19):** CODE DONE + gates green. Shape (a) chosen: a small
+> POOL of identical WORKER_SOURCE blob workers (`poolSize = clamp(cores-2, 1, 3)`; 1-worker
+> fallback = old behaviour), round-robined in `_updateChunkRing`, all pushing the shared
+> `_pendingQueue` (which already sorts nearest-first on drain — out-of-order arrival handled).
+> `reinitWorker` re-inits ALL workers (seed change safe). Per-frame dispatch budget scaled ×poolSize
+> so the pool doesn't starve. WORKER_SOURCE / height() math UNTOUCHED → byte-identical heightfields
+> → no CARVE SYNC mirror concern. Gates green: carve-mesh-smoothness, road-smoothness, ribbon-carve,
+> restream-invariance, shoulder-lateral-continuity (+ the item-1 water/stream/pond set).
+> **RING-COMPLETE THROUGHPUT MEASUREMENT: consolidated into the Final-Acceptance interleaved A/B
+> cold-load table** (items 2/3/5 all move cold-load numbers; one clean interleaved session on a
+> cool machine is more rigorous than warm per-item Chrome runs between gate suites, and avoids
+> contending with the user's active workers). Ready-time expected unchanged (spawn gating is item 3).
 
 ## Item 3 — spawn-warm scope reduction (seed-miss ready ~1.5-2×, ZERO route changes)
 
@@ -98,6 +121,29 @@ seed as HEAD) · seed-42 coldload interleaved A/B: ready improved ≥1.4×, no m
 spawn (screenshot spawn area for seeds 42 + 6) · `npm test` green · commit
 `perf(PERF-19.3): spawn warm scope — overlap non-gating warms past ready`.
 
+> **RESULT (2026-07-14, worktree perf-19):** DONE — bounded, byte-identical, but PARTIAL vs the
+> 1.5-2× target. **Analysis first:** I traced the entanglement and found the TIGHT tier's warm (the
+> dominant ~70-edge pre-ready cost) is IRREDUCIBLE byte-identically — its `queryNearest(tightR)` needs
+> the full tightR network AND the BUG-25 cull consumes the routed one-ring geometry (`_edgeXZPolyline`
+> → `_edgeCenterline`) to decide which runs survive, so anything routed before the decision feeds the
+> decision (directly or via the radius-invariant cull). The router centerline can detour arbitrarily
+> around corridor discs, so there is no SOUND static bulge bound for a nearest-first early-accept →
+> that path was rejected as unsafe. **What IS safe:** the RECENTER's only decision-gating consumer is
+> `queryNearest(nearest.point,100)`, whose ~100 m field is ALREADY cached by the tight tier
+> (nearest.point ≤ tightR of base; tight warmed tightR+128). So the recenter now streams/warms at a
+> MINIMAL radius `min(_savedRadius, 228)` (100 m query + 128 m margin) — near field = pure cache hits,
+> ≈0 pre-ready routing — and the full play band streams on the first post-ready update(). No route
+> changed; the chosen spawn is byte-identical.
+> **Spawn-identity check (test/spawn-identity.mjs, headless, deterministic terrain):** 15 seeds ×
+> recenter radii {228, 200, 150} → **ALL IDENT** (same x/z/heading exactly); every seed hit the tight
+> tier and the recenter refinement moved the spawn 0.00 m. So the recenter's full-band pre-ready warm
+> was pure overhead for the decision.
+> **Ready-time A/B: consolidated into the Final-Acceptance interleaved cold-load pass** (loaded
+> machine + user's active test workers preclude a clean cold measurement now). Expected win = the
+> recenter's deferred routing only (bounded; the tight tier is untouched) — likely **below the 1.5-2×
+> target**; will record the measured delta with a MISSED note if it lands short. This is the honest
+> ceiling given the cull/query entanglement above.
+
 ## Item 4 — incremental ancestor-proximity index (byte-identical router speedup)
 
 The QUAL-14 in-search self-clearance check walks the candidate's ancestor chain per expansion
@@ -117,6 +163,40 @@ WITHOUT regenerating the bundle + the invariance gates + (write it) a scratch A/
 route-bundle-parity (NO regen) + invariance + restream + graph gates green · headless per-edge
 bench (perf-runs/profile-selfclear.mjs pattern) shows the prevention term ≥2× cheaper and total
 per-edge ≥15 % down · commit `perf(PERF-19.4): incremental ancestor-proximity index (byte-identical)`.
+
+> **STATUS (2026-07-14, worktree perf-19): DESIGNED + DEFERRED to the clean-window measurement pass —
+> NOT yet implemented.** Rationale: unlike items 1-3 (safe wins that cannot regress even with the
+> exact speedup unmeasured), item 4's ONLY payoff is speed, and its byte-identical-but-slower failure
+> mode is a SILENT REGRESSION — the incremental structure's per-op hashing can exceed the O(depth)
+> walk it replaces unless it's an open-addressed typed-array hash (the codebase deliberately avoids
+> Map/Set in this hot loop: "Map/Set/object-per-node allocation + hashing + GC dominated that").
+> So item 4 CANNOT responsibly ship until benchmarked (per-edge ≥15 % down), and the user confirmed the
+> machine is under other test workers — "wouldn't rely on a cold test until much later." Implementing +
+> committing now would mean shipping an unbenchmarked hot-loop rewrite of the router that emits real
+> roads. Deferring it into the same clean pass that measures items 2/3/5 is correct.
+>
+> **Design (ready to implement, byte-identical BY CONSTRUCTION):** replace the per-expansion ancestor-
+> chain gather (road-carve.js ~1005-1020, the `for st=sid…SP[st]` walk into `_scN*`) with a
+> **current-path spatial grid** maintained incrementally:
+> - Add `_apcDepth` Int32Array (parent depth + 1); mirror into road-worker.js ROUTE SYNC region.
+> - Grid cell = `scReach` (= scMaxL + scD); a state contributes its endpoint (SX/SZ @ SL) and entering-
+>   midpoint (SMx/SMz @ mpos) samples. At expansion, transition the grid from the previous popped node's
+>   root-path to `sid`'s root-path via an LCA diff (level the deeper via `_apcDepth`, lockstep to the
+>   LCA): POP the departing tail's samples, PUSH the arriving tail's. A push-record stack makes removal
+>   per-cell LIFO-correct (path pops are reverse-of-push, and within a cell entries are in depth order,
+>   so the tail is always the popped state's — proven).
+> - `selfHit` queries the node cell's 3×3 neighbourhood instead of the linear `_scN*` list. The grid is a
+>   SUPERSET of the walk's gather (spatial 3×3 ⊇ scReach-of-node; all path samples ⊇ the lim-filtered
+>   subset) and `selfHit`'s EXACT scD²/scGap arc-separation test is unchanged → IDENTICAL accept/reject.
+>   `selfHit` short-circuits on first hit → order-independent → deterministic/window-invariant.
+> - Win source: per-expansion cost drops from O(depth) to O(path-diff between consecutive best-first
+>   pops); locality-dependent, hence the mandatory ≥15 % bench gate before commit.
+> - **Verification plan (run in the clean pass):** exact-chain A/B — route ~50 edges × 3 seeds (INCLUDING
+>   seed-6's pigtail/repair edge) through pristine `git show HEAD:src/road-carve.js` vs the new path,
+>   diff emitted primitive chains → must be zero; then route-worker-sync + route-bundle-parity (NO
+>   regen) + invariance + restream + graph gates green; then the per-edge bench for the ≥15 % / prevention-
+>   ≥2× numbers. Storage must be the open-addressed typed-array hash, not a Map, or the bench will show
+>   no win.
 
 ## Item 5 — Vite (PERF-04, USER-APPROVED — biggest blast radius, land last)
 
@@ -146,6 +226,64 @@ the dist locally: game boots from built output, coldload seed-6 measured — pre
 (nav→ready minus route-warm) cut vs baseline; report the waterfall delta explicitly · screenshot
 the junction landmark from the BUILT output (asset paths survive) · commit
 `feat(PERF-04/PERF-19.5): Vite build — kill the import waterfall` (+ CLAUDE.md + ticket moves).
+
+> **STATUS (2026-07-14, worktree perf-19): SCOPED + DEFERRED to the clean-window pass — NOT yet
+> implemented.** Its whole payoff (the ~0.9 s import-waterfall cut) is a MEASUREMENT the user said is
+> unreliable now ("wouldn't rely on a cold test until much later" — other worktrees running tests on
+> the fanless M4), and its completion criterion is "game boots (dev AND built)" — browser verification
+> best done in one clean focused session, not interleaved with running test workers. It is the ticket's
+> designated "biggest blast radius, land last" item. Below is the execution-ready plan (all runtime-
+> asset edge cases already traced from the source).
+>
+> **node_modules FIRST (worktree hazard):** this worktree's node_modules is a SYMLINK to the main
+> worktree's. Do NOT `npm install` against it (prunes the user's other workers' deps). Replace the
+> symlink with an isolated install: `rm node_modules && npm install` (worktree package.json already
+> pins three+simplex) `&& npm install -D vite`.
+>
+> **Migration steps:**
+> - `package.json`: move three@0.184.0 + simplex-noise@4.0.3 to `dependencies`; add `vite` devDep;
+>   scripts `dev: vite --port 8000`, `build: vite build`, `preview: vite preview`. KEEP `test`/`test:all`
+>   pure-node (untouched — gates must not change).
+> - `vite.config.js`: `base: './'` (GitHub Pages subpath-safe), `resolve.alias { 'three/addons/':
+>   'three/examples/jsm/' }` (sky.js/debug.js/vehicle-model.js/prop-geometry.js import `three/addons/*`;
+>   npm three ships them at examples/jsm), `server.port: 8000` (keeps test/profile.mjs + screenshot.mjs
+>   `--port` default working; query strings `?prof=1&seed=` pass through vite untouched — verify),
+>   `build.outDir: 'dist'`.
+> - `index.html`: DELETE the `<script type="importmap">` block (vite resolves the bare `three` /
+>   `three/addons/` / `simplex-noise` specifiers); keep `<script type="module" src="src/main.js">`.
+> - **Runtime static asset — the ONE real gotcha:** `src/route-store.js` does
+>   `fetch('data/route-cache-default.json.gz')` (a runtime fetch, NOT an import). Vite only serves/
+>   copies runtime-fetched assets from `publicDir`. Do NOT use a `?url` import (would break the pure-
+>   node gates that import route-store.js). Instead: `publicDir: 'public'` and ensure the .gz is served
+>   at `data/route-cache-default.json.gz` — simplest is a tiny copy step (vite-plugin-static-copy or a
+>   4-line inline plugin copying `data/route-cache-default.json.gz` → `dist/data/`), leaving `data/`
+>   (ranger.js etc., which ARE imported+bundled) in place and the fetch URL unchanged. Verify the
+>   fetch resolves in BOTH dev and built output. (Confirm no other runtime `fetch()` of a repo asset.)
+> - **Build-version probe:** `src/version.js` fetches `new URL('./main.js', import.meta.url)` for the
+>   debug panel's build stamp — `./main.js` won't exist post-bundle (it degrades gracefully to
+>   'unknown …', never throws). Minimal fix: probe the module's OWN url — `new URL(import.meta.url).href`
+>   — real file with Last-Modified in dev AND built (hashed bundle). Equivalent freshness signal.
+> - **Workers are FINE untouched:** terrain (WORKER_SOURCE) + road (ROAD_WORKER_SOURCE) are Blob
+>   classic workers built from template STRINGS (`new Blob([SRC]); new Worker(blobURL)`) — bundler-
+>   invisible; the string constants survive bundling. Verify both spin up in `vite build` output. The
+>   route-worker-sync gate compares SOURCE files, unaffected by build.
+> - **GLTF:** vehicle-model.js `new GLTFLoader().load(spec.url,…)` — confirm spec.url (procedural
+>   fallback vs a real .glb in assets/); if a real asset, place under public/ so it's copied.
+> - **Deploy:** repo remote = github.com:ledogen/Autos; no existing CI. Add `.github/workflows/deploy.yml`
+>   (checkout → setup-node → `npm ci` → `npm run build` → upload-pages-artifact `dist` → deploy-pages).
+>   USER MUST FLIP: repo Settings → Pages → Source = "GitHub Actions" (currently "Deploy from branch").
+>   Do NOT change Pages settings myself. Keeps source clean (no committed build output).
+> - **src/perf.js TEMP probes:** DO NOT strip (PERF-08 ?prof=1 harness depends on them — PERF-04's old
+>   "strip on close" note is obsolete; update PERF-04 ticket text).
+> - **CLAUDE.md:** rewrite the "no build system" constraint + Technology-Stack bullets: dev = vite dev
+>   server, deploy = `vite build` via GitHub Actions, three from npm (byte-identical to the retired
+>   importmap pin), gates unchanged pure-node.
+> - Close `.planning/todos/pending/perf-build-system-bundler.md` (PERF-04) → completed/ pointing here.
+>
+> **Verify (clean pass):** `npm run test:all` green · `npm run dev` → game boots, ?prof=1 live,
+> `node test/profile.mjs --scenario=idle --port=8000` works · `npm run build` + serve dist → game boots
+> from built output, worker blobs spin up, route bundle fetch 200s, junction (224,-192) screenshot
+> matches · coldload seed-6: report the nav→ready waterfall delta explicitly.
 
 ---
 
