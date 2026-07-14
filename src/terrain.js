@@ -471,25 +471,40 @@ export class TerrainSystem {
         }
         this._material.customProgramCacheKey = () => 'feat05-alpine-terrain'
 
-        // Spawn Blob classic worker from inlined source string
-        // RESEARCH.md Pattern 3: classic worker avoids module-worker CORS restrictions
+        // PERF-19.2: spawn a small POOL of identical Blob workers (was a single worker). The
+        // ready→ring-complete fill is bound by the SERIAL per-chunk `generate` cadence, not the
+        // build budget (PERF-13), so fanning `generate` requests across N workers cuts that trickle
+        // ~N×. All workers share the byte-identical WORKER_SOURCE (same seeded noise → identical
+        // heightfields regardless of which worker serves a chunk), push into the SAME _pendingQueue
+        // (replies carry the chunk key; _flushPendingQueue sorts nearest-first, so out-of-order
+        // arrival across the pool is already handled), and are round-robined below. Pool size leaves
+        // headroom for the main thread + the separate road worker; a 1-worker fallback keeps
+        // low-core machines at parity with the old single-worker behaviour.
+        // RESEARCH.md Pattern 3: classic worker avoids module-worker CORS restrictions.
+        const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4
+        const poolSize = Math.max(1, Math.min(3, cores - 2))
         const blob    = new Blob([WORKER_SOURCE], { type: 'application/javascript' })
         const blobURL = URL.createObjectURL(blob)
-        this._worker  = new Worker(blobURL)
-        URL.revokeObjectURL(blobURL)  // safe to revoke after Worker construction
-
-        // Worker message handler: push received heightmaps into FIFO queue.
+        this._workers = []
+        this._rrCursor = 0            // round-robin dispatch cursor across the pool
+        // Worker message handler: push received heightmaps into the shared FIFO queue.
         // The key deliberately stays reserved in _pendingWorker here — it is only
         // removed once _flushPendingQueue actually builds and tracks the chunk in
         // _chunkMap. This keeps the !_pendingWorker.has(key) guard in
         // _updateChunkRing effective for the full request→built window, preventing
         // the duplicate-request race that orphaned spawn-chunk meshes.
-        this._worker.onmessage = (e) => {
+        const onMsg = (e) => {
             const { key, cx, cz, heights } = e.data
             this._pendingQueue.push({ key, cx, cz, heights })
         }
+        for (let i = 0; i < poolSize; i++) {
+            const w = new Worker(blobURL)
+            w.onmessage = onMsg
+            this._workers.push(w)
+        }
+        URL.revokeObjectURL(blobURL)  // safe to revoke after all Worker constructions
 
-        // Initialize Worker and main-thread noise closures with the starting seed.
+        // Initialize every Worker and the main-thread noise closures with the starting seed.
         this.reinitWorker(this._worldSeed, params)
     }
 
@@ -606,7 +621,8 @@ export class TerrainSystem {
             regionalStrength: params.regionalStrength,
             regionalScale:    params.regionalScale
         }
-        this._worker.postMessage({ type: 'init', worldSeed, params: workerParams })
+        // PERF-19.2: reinit ALL pool workers so a seed/param change re-seeds every worker's noise.
+        for (const w of this._workers) w.postMessage({ type: 'init', worldSeed, params: workerParams })
     }
 
     /**
@@ -1005,11 +1021,19 @@ export class TerrainSystem {
             }
         }
         missing.sort((a, b) => a.d2 - b.d2)
-        const reqBudget = Math.min(missing.length, MAX_REQUESTS_PER_FRAME)
+        // PERF-19.2: scale the per-frame dispatch budget with the pool size so N workers stay fed
+        // (an 8/frame cap would leave a 3-worker pool starved — dispatch, not generation, would
+        // become the limiter). ×1 for the single-worker fallback = the old PERF-02 behaviour.
+        const reqBudget = Math.min(missing.length, MAX_REQUESTS_PER_FRAME * this._workers.length)
+        // PERF-19.2: round-robin the nearest-first requests across the worker pool so N chunks
+        // generate concurrently. Nearest-first ordering is preserved in aggregate (adjacent chunks
+        // land on different workers and finish in ~parallel); _flushPendingQueue re-sorts on drain.
         for (let i = 0; i < reqBudget; i++) {
             const { key, cx, cz } = missing[i]
             this._pendingWorker.add(key)
-            this._worker.postMessage({ type: 'generate', cx, cz, key })
+            const w = this._workers[this._rrCursor]
+            this._rrCursor = (this._rrCursor + 1) % this._workers.length
+            w.postMessage({ type: 'generate', cx, cz, key })
         }
     }
 
