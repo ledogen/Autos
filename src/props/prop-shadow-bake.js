@@ -33,10 +33,10 @@
 import * as THREE from 'three'
 
 export const BAKE_LAYER = 2          // props enable this layer; the bake camera renders only it
-export const ATLAS_N    = 16         // tiles per side (toroidal). Ring diameter ≤ 9 (Ultra) ⊂ 16.
-export const TILE_PX    = 128        // px per chunk tile → 0.5 m/texel at CHUNK_SIZE 64
+export const ATLAS_N    = 12         // tiles per side (toroidal). Ring diameter ≤ 9 (Ultra) ⊂ 12.
+export const TILE_PX    = 256        // px per chunk tile → 0.25 m/texel at CHUNK_SIZE 64 (atlas 3072²)
 const CHUNK             = 64         // world metres per chunk side (matches terrain CHUNK_SIZE)
-const MAX_BAKES_PER_CALL = 6         // tiles baked per update() — sliced to avoid a stream hitch
+const MAX_BAKES_PER_CALL = 8         // tiles baked per update() — sliced to avoid a stream hitch
 
 // Positive modulo (cx can be negative).
 const pmod = (a, n) => ((a % n) + n) % n
@@ -54,9 +54,12 @@ export class ShadowBakeSystem {
     })
     this._rt.texture.colorSpace = THREE.NoColorSpace   // alpha is data, not colour
 
-    // Top-down ortho camera covering one chunk (±32 m). up = +Z so world +X → tile U, +Z → tile V,
-    // matching the terrain sample (atlasUV built from world xz). Looks straight down (-Y).
-    this._cam = new THREE.OrthographicCamera(-CHUNK / 2, CHUNK / 2, CHUNK / 2, -CHUNK / 2, 1, 4000)
+    // Top-down ortho camera covering one chunk (±32 m), looking straight down (-Y) with up = +Z.
+    // A downward look-at with up=+Z makes the camera's local +X = world -X (an unavoidable handedness
+    // flip: world +X, +Z, +Y is left-handed viewed from above). We UN-FLIP X by swapping the ortho
+    // left/right (32, -32) so that world +X → tile U and world +Z → tile V — matching the terrain
+    // sample exactly (atlasUV from world xz). DoubleSide covers the winding flip the swap introduces.
+    this._cam = new THREE.OrthographicCamera(CHUNK / 2, -CHUNK / 2, CHUNK / 2, -CHUNK / 2, 1, 4000)
     this._cam.up.set(0, 0, 1)
     this._cam.layers.set(BAKE_LAYER)
 
@@ -121,17 +124,23 @@ export class ShadowBakeSystem {
     return changed
   }
 
-  /** Queue a chunk (and its 8 neighbours, since shadows cross seams) for baking. */
+  /**
+   * Queue a chunk (and its 8 neighbours, since shadows cross seams) for baking. The chunk's OWN tile
+   * is prioritised (front of the queue) so its trees' shadows land first; neighbours (only relevant
+   * for cross-seam silhouettes) trail behind — cuts the visible "shadow lags the tree" pop-in.
+   */
   markWithNeighbors(cx, cz) {
+    this._mark(cx, cz, true)                                  // own tile first
     for (let dz = -1; dz <= 1; dz++)
-      for (let dx = -1; dx <= 1; dx++) this._mark(cx + dx, cz + dz)
+      for (let dx = -1; dx <= 1; dx++)
+        if (dx || dz) this._mark(cx + dx, cz + dz, false)     // neighbours after
   }
 
-  _mark(cx, cz) {
+  _mark(cx, cz, front) {
     const k = cx + ',' + cz
     if (this._dirtySet.has(k)) return
     this._dirtySet.add(k)
-    this._dirty.push(k)
+    if (front) this._dirty.unshift(k); else this._dirty.push(k)
   }
 
   hasWork() { return this._dirty.length > 0 }
