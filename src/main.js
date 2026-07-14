@@ -402,8 +402,21 @@ async function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-
       // QUAL-14 perf: the spawn point can sit across an anchor band from baseTile, so this
       // re-center streams a SHIFTED band — warm the shifted band on the pool too (measured:
       // this ensureTile alone was 8.8 s of synchronous routing on a cold load).
+      // PERF-19.3: BOUND what blocks `ready` without changing what is ROUTED overall. The recenter's
+      // only decision-gating consumer is the queryNearest(100) refinement below — and the ~100 m field
+      // around the spawn point is ALREADY cached by the tight tier (nearest.point is within tightR of
+      // base, which the tight warm covered at tightR+128). So stream/warm the recenter at a MINIMAL
+      // radius covering that query instead of the full play band: the near field is pure cache hits
+      // (≈0 pre-ready routing) and the chosen spawn is byte-identical (headless 15-seed × 3-radius
+      // spawn-identity check — test/spawn-identity.mjs). The full play band around the spawn streams on
+      // the FIRST post-ready update()/warmRoutes (near roads complete; distant roads pop in slightly
+      // later — acceptable). The tight tier above is left intact: its queryNearest(tightR) + the BUG-25
+      // cull one-ring make it irreducibly decision-gating, so it is NOT trimmed.
+      const _recenterR = Math.min(_savedRadius, 100 + 128)   // 100 m query + registration/cull margin
+      roadSystem.setRadius(_recenterR)
       await _warmTileBand(spawnTX, spawnTZ)
       roadSystem.ensureTile(spawnTX, spawnTZ)
+      roadSystem.setRadius(_savedRadius)   // restore play radius; next update() streams the full band
       nearest = roadSystem.queryNearest(nearest.point.x, nearest.point.z, 100) || nearest
       // analyticHeight for placement so the truck rests on the rendered terrain surface.
       // (router used raw coarseHeight for grade; spawn PLACEMENT uses analyticHeight — visual match)

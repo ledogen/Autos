@@ -285,6 +285,7 @@ export class WaterRenderer {
         })
         this._meshes = new Map()   // feature key -> mesh (dedup / reuse); bed ribbons keyed "<key>|bed"
         this._winKey = ''          // BUG-32: chunk-quantized clip window of the current stream meshes
+        this._contentGen = -1      // PERF-19.1: water content-generation stamp at the last sync
         this._groundAt = opts.groundAt ?? null         // BUG-33: composed driving-surface sampler
         this._roadBlendAt = opts.roadBlendAt ?? null   // BUG-33: road-carve blend sampler
     }
@@ -298,6 +299,12 @@ export class WaterRenderer {
     // discs — built whole, reused across windows.
     sync(minX, minZ, maxX, maxZ) {
         const winKey = `${Math.floor(minX / 64)},${Math.floor(minZ / 64)},${Math.floor(maxX / 64)},${Math.floor(maxZ / 64)}`
+        // PERF-19.1: early-out when neither the quantized window nor the water system's
+        // discovered content changed since the last sync — the pond/stream enumeration and
+        // mesh reconciliation below would reproduce exactly the meshes already present.
+        const contentGen = this.water.contentGeneration()
+        if (winKey === this._winKey && contentGen === this._contentGen) return
+        this._contentGen = contentGen
         if (winKey !== this._winKey) {
             this._winKey = winKey
             for (const [key, mesh] of this._meshes) {
