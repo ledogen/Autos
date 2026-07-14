@@ -1149,18 +1149,19 @@ export class TerrainSystem {
 
         const halfWidth       = p.roadHalfWidth      ?? 5
         const shoulderWidth   = p.roadShoulderWidth   ?? 2.5
-        const fillHeight      = p.roadFillHeight      ?? 2.0
         const fillSlope       = p.roadFillSlope       ?? 3.0
         const cutSlope        = p.roadCutSlope        ?? 1.0
         // QUAL-07: crown/camber/clearance fold + fill/cut toe + blend now live in the ONE shared
         // RoadSystem._carveCrossSection (the same fn physics uses). The per-vertex loop only RESOLVES
         // (signedLat, arcS) and calls it; crownHeight/clearanceMargin/maxEmbankmentToe/carveHalfWidth are
         // read inside that fn. carveExtraWidth stays here for the conservative query-radius bound (maxExt).
-        const carveExtraWidth = p.roadCarveExtraWidth ?? 3.0
+        const carveExtraWidth   = p.roadCarveExtraWidth  ?? 3.0
+        const maxEmbankmentToe  = p.roadMaxEmbankmentToe ?? 10
 
-        // Maximum lateral extent to bother querying: ribbon + shoulder + max fill toe + extra width
-        // fillToe = halfWidth + shoulderWidth + fillHeight * fillSlope
-        const maxExt = halfWidth + shoulderWidth + fillHeight * fillSlope + 4 + carveExtraWidth
+        // Maximum lateral extent to bother querying: ribbon + carve core + the capped embankment apron.
+        // Mirrors the toe cap in _carveCrossSection (carveHalfWidth + maxEmbankmentToe) — the real bound
+        // on how far the fill/cut bank spreads — so no carved vertex is ever missed by this early-reject.
+        const maxExt = halfWidth + shoulderWidth + carveExtraWidth + maxEmbankmentToe + 4
 
         const originX = cx * S
         const originZ = cz * S
