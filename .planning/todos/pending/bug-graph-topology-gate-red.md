@@ -66,3 +66,11 @@ re-verify feel.
   motivated INFRA-02. Keep them separate: INFRA-02 must not silently stop running graph-topology
   and thereby hide this. Until BUG-35 closes, graph-topology stays in the road/graph subsystem set.
 - Memory `project_qual14_route_clearance.md` — prior context on accepted REACHABILITY red.
+
+## Decision 2026-07-14: KEEP the fragments for now (user)
+
+A window-invariant fragment cull (bounded-component flood over the BUG-25 one-ring data, gate
+flipped to "largest = 100% of kept nodes") was designed and about to be implemented; the user
+called it off — unreachable fragments stay in the world for now. GRAPH-REACHABILITY remains the
+accepted known-red at 78% largest-component. If this is picked up later, the design sketch lives
+in this session's record; the acceptance remains as written above (fix or encode the tolerance).
