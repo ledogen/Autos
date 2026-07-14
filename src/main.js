@@ -705,6 +705,13 @@ const renderer = new THREE.WebGLRenderer({ antialias: !_NOAA, canvas })  // ?noa
 renderer.setPixelRatio(window.devicePixelRatio)
 renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
+// PERF-16: stop re-rendering the sun's whole shadow pass every frame. Three defaults autoUpdate=true,
+// so the 1536²/2048² shadow map is re-rendered each frame even parked under a static sun (measured
+// ~9 pp renderer-main, ~3 pp GPU). We drive needsUpdate on-demand from the shadow-follow block in
+// loop() instead — re-armed only when the shadow could actually change (camera crossed a texel, the
+// sun moved, world geometry streamed, or the vehicle is in motion). First frame needs one render.
+renderer.shadowMap.autoUpdate  = false
+renderer.shadowMap.needsUpdate = true
 
 // ── Camera ───────────────────────────────────────────────────────────────────
 // Spring-follow camera managed by src/camera.js (Plan 04). updateCamera() called each frame.
@@ -746,6 +753,12 @@ const _shadowFwd    = new THREE.Vector3()
 const _shadowRight  = new THREE.Vector3()
 const _shadowUp     = new THREE.Vector3()
 const _shadowCenter = new THREE.Vector3()
+// PERF-16: last-applied shadow-render triggers, compared each frame to decide whether to re-arm the
+// on-demand shadow pass (renderer.shadowMap.autoUpdate is false). NaN forces the first render.
+let _lastShadowSnapR   = NaN            // texel-snapped frustum centre (light right axis)
+let _lastShadowSnapU   = NaN            // texel-snapped frustum centre (light up axis)
+const _lastSunDir      = new THREE.Vector3(NaN, NaN, NaN)   // key-light direction (day/night future-proof)
+let _lastShadowGeomSig = NaN            // cheap poll-and-compare of streamed-geometry counts
 
 // QUAL-02: atmospheric skybox + sun-driven lighting. Drives the sun light, hemisphere fill and fog
 // tint from ONE sun elevation/azimuth (the static base a day/night cycle plugs into). SkySystem adds
@@ -1044,6 +1057,7 @@ scene.add(rampMesh)
 // Placed here (module scope) so it persists across frames without closure overhead.
 let _fpsEma = 60       // initial estimate: 60 fps
 let _fpsLastTime = 0   // will be set to currentTime on first frame
+let _lastHudWrite = 0  // PERF-16: wall-clock (ms) of the last HUD DOM/canvas write — throttled to ~10 Hz
 
 // ── Debug panel ──────────────────────────────────────────────────────────────
 // D-10: passes mutable RANGER_PARAMS ref so sliders write directly to the object physics.js reads.
@@ -1129,6 +1143,9 @@ function applyQuality (name) {
     sun.shadow.camera.updateProjectionMatrix()
   }
   SHADOW_TEXEL = (sun.shadow.camera.right - sun.shadow.camera.left) / sun.shadow.mapSize.width
+  // PERF-16: a caster toggle, map-target dispose, or extent change invalidates the frozen shadow —
+  // re-arm the on-demand render so the next frame rebuilds it at the new size/extent.
+  renderer.shadowMap.needsUpdate = true
   // PERF-06 prop radius: thin out the scattered-prop ring on Low (read by the loop's propSystem.update).
   _propRing = p.propRing
   // PERF-06 render resolution: stash the tier's cap, then apply (also re-applied on window resize).
@@ -1185,7 +1202,7 @@ if (_PROF) {
   // if applied. NOT persisted anywhere — page reload restores the preset's values.
   const _eachPropMesh = (fn) => { if (propSystem) for (const rec of propSystem._meshes.values()) fn(rec) }
   const LEVERS = {
-    sunShadow:        v => { sun.castShadow = !!v },
+    sunShadow:        v => { sun.castShadow = !!v; renderer.shadowMap.needsUpdate = true },   // PERF-16 re-arm
     propCastShadow:   v => _eachPropMesh(r => { r.mesh.castShadow = !!v }),
     // Re-enabling culling needs real instance bounds (geometry bounds ≠ world spread). Hidden
     // zero-scale slots collapse to origin, inflating the sphere — acceptable for an A/B.
@@ -1201,11 +1218,12 @@ if (_PROF) {
     pixelRatio:       v => { renderer.setPixelRatio(Math.min(window.devicePixelRatio, v)); renderer.setSize(window.innerWidth, window.innerHeight) },
     // mapSize change requires disposing the allocated target so Three reallocates at the new size.
     // (SHADOW_TEXEL stays computed for 2048 — snap granularity is slightly off under this lever; fine for A/B.)
-    shadowMapSize:    v => { sun.shadow.mapSize.set(v, v); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null } },
+    shadowMapSize:    v => { sun.shadow.mapSize.set(v, v); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null } renderer.shadowMap.needsUpdate = true },   // PERF-16 re-arm
     shadowExtent:     v => {
       sun.shadow.camera.left = sun.shadow.camera.bottom = -v
       sun.shadow.camera.right = sun.shadow.camera.top   =  v
       sun.shadow.camera.updateProjectionMatrix()
+      renderer.shadowMap.needsUpdate = true   // PERF-16 re-arm
     },
     fogDensity:       v => { if (scene.fog) scene.fog.density = v },
     ring:             v => { if (terrainSystem) terrainSystem.setRingRadius(v, 1); if (roadSystem) roadSystem.setRadius((v + 0.5) * 2 * CHUNK_SIZE) },
@@ -1724,6 +1742,36 @@ function loop () {
     )
     sun.target.position.copy(_shadowCenter)
     sun.target.updateMatrixWorld()
+
+    // PERF-16: re-arm the on-demand shadow render only when the shadow could actually change.
+    //   1. texel-snapped frustum centre moved (camera crossed a shadow texel),
+    //   2. the sun/key-light direction moved (day/night cycle is future work — this trigger batches
+    //      shadow refreshes to however often SkySystem moves the sun; no per-frame updates when it's
+    //      static, no plumbing when it starts moving),
+    //   3. world geometry streamed — a poll-and-compare of the generation/count signals that already
+    //      exist (terrain chunks, road generation + built tiles, prop chunks + shadow blobs). Any pop-in
+    //      changes one of these, so a chunk/tile/prop that streamed in while parked refreshes its shadow.
+    //   4. the vehicle is in motion — mark dirty every frame so the truck's own shadow tracks it; when
+    //      parked it stays frozen (correct). Quality/lever changes re-arm at their own sites (applyQuality
+    //      + __lever shadow paths).
+    const geomSig = (terrainSystem?._chunkMap.size ?? 0)
+      +     7919 * (roadSystem?.roadGeneration?.() ?? 0)
+      +   104729 * (roadMeshSystem?._tileMeshMap.size ?? 0)
+      +  1299709 * (propSystem?._chunks.size ?? 0)
+      + 15485863 * (propSystem?._blobs?._used ?? 0)
+    const sd = skySystem.sunDirection
+    const moving = vehicleState.velocity.lengthSq() > 0.0025            // > 0.05 m/s
+      || Math.abs(vehicleState.drivetrain?.wheelspin ?? 0) > 0.1        // wheels spinning in place
+    if (moving
+      || snapR !== _lastShadowSnapR || snapU !== _lastShadowSnapU
+      || sd.x !== _lastSunDir.x || sd.y !== _lastSunDir.y || sd.z !== _lastSunDir.z
+      || geomSig !== _lastShadowGeomSig) {
+      renderer.shadowMap.needsUpdate = true
+      _lastShadowSnapR = snapR
+      _lastShadowSnapU = snapU
+      _lastSunDir.copy(sd)
+      _lastShadowGeomSig = geomSig
+    }
   }
   let _pt = performance.now()
   terrainSystem.update(streamCenter)
@@ -1791,74 +1839,87 @@ function loop () {
     _gridGroundPlane.position.set(streamCenter.x, 0, streamCenter.z)
   }
 
-  // M1-11: live speed readout. velocity.length() = magnitude in m/s; * 3.6 converts to km/h.
-  const speedKmh = vehicleState.velocity.length() * 3.6
-  document.getElementById('speedVal').textContent = speedKmh.toFixed(1)
-
-  // FEAT-23: gear + engine RPM readout (activeGear 0 = reverse, 1..N = forward gear).
+  // FEAT-23: engine audio tracks RPM + throttle EVERY frame (no-op until the first keypress unlocks
+  // WebAudio). PERF-16: deliberately OUTSIDE the throttled HUD block below — a 10 Hz pitch update would
+  // make the engine note step audibly. Audio is not a DOM write, so the throttle does not apply to it.
   const dtrain = vehicleState.drivetrain
   if (dtrain) {
-    const gEl = document.getElementById('gearVal')
-    if (gEl) gEl.textContent = dtrain.activeGear === 0 ? 'R' : String(dtrain.activeGear)
-    const rEl = document.getElementById('rpmVal')
-    if (rEl) rEl.textContent = Math.round(dtrain.engineRPM)
-    const spEl = document.getElementById('spinVal')
-    if (spEl) {
-      const spin = dtrain.wheelspin || 0
-      spEl.textContent = spin.toFixed(1)
-      spEl.style.color = spin > (RANGER_PARAMS.wheelspinThreshold ?? 7.5) ? '#ff2222' : '#00ff88'
-    }
-    // FEAT-23: engine audio tracks RPM + throttle (no-op until the first keypress unlocks WebAudio).
     setEngineAudioEnabled(RANGER_PARAMS.engineAudioEnabled !== false)
     setEngineAudioVolume(RANGER_PARAMS.engineAudioVolume ?? 0.5)
     updateEngineAudio(dtrain.engineRPM, vehicleState.throttle)
   }
 
-  // M4-09 / D-12: per-wheel Fz HUD — tire spring force per corner, updated each render frame.
-  // Uses ?. / ?? 0 nullish-default per PATTERNS §Logger field append-at-end + nullish-coalesce.
-  // toFixed(0) = whole newtons (Fz is in thousands; decimals add noise).
-  document.getElementById('flFzVal').textContent = (vehicleState.wheelDebug[0]?.fz ?? 0).toFixed(0)
-  document.getElementById('frFzVal').textContent = (vehicleState.wheelDebug[1]?.fz ?? 0).toFixed(0)
-  document.getElementById('rlFzVal').textContent = (vehicleState.wheelDebug[2]?.fz ?? 0).toFixed(0)
-  document.getElementById('rrFzVal').textContent = (vehicleState.wheelDebug[3]?.fz ?? 0).toFixed(0)
+  // PERF-16: throttle all HUD DOM + debug-canvas writes to ~10 Hz. These are human-readable readouts;
+  // rewriting the spans and repainting the Pacejka/travel/slip canvases every frame cost Layout+Paint
+  // +PrePaint (~1.7% of wall) for numbers a human reads a few times a second. Physics reads, the
+  // fixed-step accumulator, captureFrame and the logger are untouched (they run every frame above/below).
+  // The Pacejka/travel/slip canvases already early-out when hidden (T-03-09 etc.); this just caps their
+  // rate when visible — still called once per render pass OUTSIDE the fixed accumulator (constraint #10).
+  const _hudNow = performance.now()
+  if (_hudNow - _lastHudWrite >= 100) {
+    _lastHudWrite = _hudNow
 
-  // M3-07: front slip velocity HUD — sa field stores slip-velocity magnitude in m/s (not slip angle).
-  // See physics.js: "sa field now stores SLIP VELOCITY magnitude (m/s) instead of slip angle (rad)".
-  // Thresholds: ~0.5 m/s = light slip (green), ~1.5 m/s = heavy slip (red).
-  const slipMps = (vehicleState.wheelDebug?.[0]?.sa || 0)
-  const slipEl = document.getElementById('slipVal')
-  if (slipEl) {
-    slipEl.textContent = slipMps.toFixed(2) + ' m/s'
-    slipEl.style.color = slipMps < 0.5 ? '#00ff88' : slipMps < 1.5 ? '#ffaa00' : '#ff2222'
+    // M1-11: live speed readout. velocity.length() = magnitude in m/s; * 3.6 converts to km/h.
+    document.getElementById('speedVal').textContent = (vehicleState.velocity.length() * 3.6).toFixed(1)
+
+    // FEAT-23: gear + engine RPM readout (activeGear 0 = reverse, 1..N = forward gear).
+    if (dtrain) {
+      const gEl = document.getElementById('gearVal')
+      if (gEl) gEl.textContent = dtrain.activeGear === 0 ? 'R' : String(dtrain.activeGear)
+      const rEl = document.getElementById('rpmVal')
+      if (rEl) rEl.textContent = Math.round(dtrain.engineRPM)
+      const spEl = document.getElementById('spinVal')
+      if (spEl) {
+        const spin = dtrain.wheelspin || 0
+        spEl.textContent = spin.toFixed(1)
+        spEl.style.color = spin > (RANGER_PARAMS.wheelspinThreshold ?? 7.5) ? '#ff2222' : '#00ff88'
+      }
+    }
+
+    // M4-09 / D-12: per-wheel Fz HUD — tire spring force per corner.
+    // Uses ?. / ?? 0 nullish-default per PATTERNS §Logger field append-at-end + nullish-coalesce.
+    // toFixed(0) = whole newtons (Fz is in thousands; decimals add noise).
+    document.getElementById('flFzVal').textContent = (vehicleState.wheelDebug[0]?.fz ?? 0).toFixed(0)
+    document.getElementById('frFzVal').textContent = (vehicleState.wheelDebug[1]?.fz ?? 0).toFixed(0)
+    document.getElementById('rlFzVal').textContent = (vehicleState.wheelDebug[2]?.fz ?? 0).toFixed(0)
+    document.getElementById('rrFzVal').textContent = (vehicleState.wheelDebug[3]?.fz ?? 0).toFixed(0)
+
+    // M3-07: front slip velocity HUD — sa field stores slip-velocity magnitude in m/s (not slip angle).
+    // See physics.js: "sa field now stores SLIP VELOCITY magnitude (m/s) instead of slip angle (rad)".
+    // Thresholds: ~0.5 m/s = light slip (green), ~1.5 m/s = heavy slip (red).
+    const slipMps = (vehicleState.wheelDebug?.[0]?.sa || 0)
+    const slipEl = document.getElementById('slipVal')
+    if (slipEl) {
+      slipEl.textContent = slipMps.toFixed(2) + ' m/s'
+      slipEl.style.color = slipMps < 0.5 ? '#00ff88' : slipMps < 1.5 ? '#ffaa00' : '#ff2222'
+    }
+
+    // M3-08: throttle and brake percentage HUD
+    const thrEl = document.getElementById('thrVal')
+    if (thrEl) thrEl.textContent = (vehicleState.throttle * 100).toFixed(0)
+    const brkEl = document.getElementById('brkVal')
+    if (brkEl) brkEl.textContent = (vehicleState.brake * 100).toFixed(0)
+
+    // FPS HUD
+    const fpsEl = document.getElementById('fpsVal')
+    if (fpsEl) fpsEl.textContent = Math.round(_fpsEma)
+
+    // Road-Feel QoL: seed / x / z OSD — correlates screenshots and in-game sightings with the
+    // headless report's coords (test/road-character.mjs prints worst-offender x/z in world space).
+    const posEl = document.getElementById('posVal')
+    if (posEl) {
+      // Freecam shows the CAMERA's position (you fly to a defect, the OSD must name that spot,
+      // not wherever the truck was left) — same source the capture mark uses.
+      const posSrc = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
+      posEl.textContent = `seed ${_seedString} / ${posSrc.x.toFixed(0)} / ${posSrc.z.toFixed(0)}`
+    }
+
+    // M3-09 / D-13: Pacejka curve + 4-corner travel bars + slip vectors — canvas repaints, throttled
+    // with the HUD. Each early-returns when its canvas is hidden (constraint #10: outside accumulator).
+    updatePacejkaCurve(vehicleState, RANGER_PARAMS)
+    updateTravelBars(vehicleState, RANGER_PARAMS)
+    updateSlipVectors(vehicleState)
   }
-
-  // M3-08: throttle and brake percentage HUD
-  const thrEl = document.getElementById('thrVal')
-  if (thrEl) thrEl.textContent = (vehicleState.throttle * 100).toFixed(0)
-  const brkEl = document.getElementById('brkVal')
-  if (brkEl) brkEl.textContent = (vehicleState.brake * 100).toFixed(0)
-
-  // FPS HUD
-  const fpsEl = document.getElementById('fpsVal')
-  if (fpsEl) fpsEl.textContent = Math.round(_fpsEma)
-
-  // Road-Feel QoL: seed / x / z OSD — correlates screenshots and in-game sightings with the
-  // headless report's coords (test/road-character.mjs prints worst-offender x/z in world space).
-  const posEl = document.getElementById('posVal')
-  if (posEl) {
-    // Freecam shows the CAMERA's position (you fly to a defect, the OSD must name that spot,
-    // not wherever the truck was left) — same source the capture mark uses.
-    const posSrc = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
-    posEl.textContent = `seed ${_seedString} / ${posSrc.x.toFixed(0)} / ${posSrc.z.toFixed(0)}`
-  }
-
-  // M3-09: Pacejka curve plot — called once per render frame OUTSIDE the fixed accumulator (constraint #10)
-  updatePacejkaCurve(vehicleState, RANGER_PARAMS)
-
-  // D-13: 4-corner travel bar visualization — called once per render frame, outside accumulator.
-  // Reflects most recent strutComp state (written by stepPhysics via wheelDebug each step).
-  updateTravelBars(vehicleState, RANGER_PARAMS)
-  updateSlipVectors(vehicleState)
 
   updateCamera(camera, vehicleState, frameTime)
 
