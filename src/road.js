@@ -1832,6 +1832,11 @@ export class RoadSystem {
             // straight in. Robust across seeds (seed 6 crossings 6→2, overshoot 5→0; seed 3 →0), no loops.
             goalBlend: pp.roadGraphGoalBlend ?? 60,
             emitPrimitives: true,
+            // PERF-17 hierarchical corridor routing: route a cheap coarse pass, inflate it to a
+            // stay-inside corridor of this half-width, and confine the fine search to it (the
+            // coarse pass excludes avoidDiscs so the corridor is identical for solo & final — see
+            // road-carve.js). 0 → single-pass (pre-PERF-17). Read straight off the live params.
+            corridorHalfWidth: pp.roadRouteCorridorHalfWidth ?? 0,
             // BUG-16/FEAT-20 de-quantize refit (road-carve.js refit block): corridor Dubins
             // shortcut (straightens the greedy quantized-heading bow, continuous radii) + κ
             // box-filter clothoid re-emit (smooth curvature transitions). Read straight off the

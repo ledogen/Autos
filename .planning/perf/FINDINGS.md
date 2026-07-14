@@ -149,3 +149,20 @@ Air and judge sharpness + chassis temperature; if soft, raise resHeight 1200 →
   — interleave A/B variants and treat >2× day-to-day swings as thermal until bisected.
   `npx serve` 301-strips query strings from /index.html URLs — profile/screenshot runs against a
   worktree need `python3 -m http.server` (or test/nocache-server.py).
+
+## PERF-17 addendum (hierarchical corridor routing, 2026-07-13)
+
+- **Corridor shipped at 60 m half-width** (`roadRouteCorridorHalfWidth`, slider): coarse pass
+  (step ×4, cell ×2, hbins ÷2) → stay-inside disc capsule → unchanged fine pass + escape hatch.
+  Headless band routing seeds 42/1337/9001: **1.5–1.9×** (median per-edge 152→90 ms); browser
+  cold load seed 42 interleaved A/B: **ready 6.9 s → 4.4–4.8 s (~1.5×)**, ring 7.8 → 5.5 s.
+  Escape rate ≤0.7 % of edges. GRAPH-REACHABILITY largest-component 78 % → 70 % at the shipped
+  CELL_MULT 3 (red flag, reported; the CELL_MULT-2 variant measured 81 % but erased the seed-6
+  junction hairpin — character won the trade). Routes changed once (accepted); landmark
+  before/afters in perf-runs/.
+- **Why not the 3× target:** corridor width is character-bound — 30–40 m reaches 2.7–3.4× but
+  erases the seed-6 junction hairpin at (224,−192) regardless of coarse-pass fidelity (its loop
+  needs ≈60 m half-width). And the corridor only cuts the SEARCH (~2×: 118.6→60.5 ms/edge);
+  self-clearance + refit are a ~42 ms/edge fixed floor that now dominates. Next levers: dial
+  experiments (stack multiplicatively), refit/self-clearance cost, or per-seed-class widths.
+- Bench + regen scripts: perf-runs/bench-corridor.mjs, perf-runs/gen-default-route-cache.mjs.

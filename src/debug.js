@@ -397,6 +397,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(params, 'roadSelfClearGap', 40, 200, 10).name('Self-Clear Gap (m)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadCorridorClearance', 10, 40, 1).name('Corridor Clearance (m)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadCorridorExempt', 30, 150, 5).name('Corridor Exempt (m)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadRouteCorridorHalfWidth', 0, 150, 5).name('Route Corridor (m)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWGrade', 0, 2000,  20  ).name('wGrade').onChange(fireRoadParam)
   roadFolder.add(params, 'roadWOver',  0, 40000, 500 ).name('wOver').onChange(fireRoadParam)
   // Valley-seek depth cap (m below the straight edge baseline that still rewards descending). Higher =
@@ -582,6 +583,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
     roadArcHeadingBins:    'Heading-lattice resolution; one bin is turned per turn. Fewer bins = longer, sweepier arcs.',
     roadArcGradeSamples:   'Grade sample points along each arc. Use ≥2 so long sweeps read grade correctly.',
     roadArcHeurWeight:     'Weighted-A* speed knob. Higher = faster routing, slightly less optimal roads.',
+    roadRouteCorridorHalfWidth: 'PERF-17: coarse pass picks the valley, fine search stays inside this half-width corridor. Faster cold load. 0 = single-pass.',
     roadRefitShortcut:     'Post-pass that straightens the quantized-heading "bow" on near-straight roads via a Dubins shortcut.',
     roadRefitWindow:       'Smoothing window (m) that re-emits curvature as clothoid ramps. 0 = off; larger = smoother but more end drift.',
     // Road Surface

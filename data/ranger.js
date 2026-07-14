@@ -617,6 +617,12 @@ export const RANGER_PARAMS = {
   // crossings 40→33 and reconnect the streamed window (comps [33,5,5,2,2,2]→[46,2,2]) at the
   // seed-6 tangle center (4500,600). Live-tunable ("Corridor Exempt (m)" slider).
   roadCorridorExempt: 80,  // m — junction-approach exemption radius for corridor clearance
+  // PERF-17 hierarchical corridor routing: each edge routes a cheap COARSE pass first, then inflates
+  // its centerline to a stay-inside corridor of THIS half-width and runs the real fine search only
+  // inside it — collapsing the hybrid-A* search area (the non-default-seed cold-load cost). 0 = off
+  // (single-pass, pre-PERF-17 behaviour). Widen if the escape-hatch rate exceeds ~5% of edges (the
+  // coarse route then walls the fine goal too often); narrow trades a smaller search for more escapes.
+  roadRouteCorridorHalfWidth: 60,  // m — half-width of the coarse-route corridor the fine search stays inside
 
   // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
   // Retained for the DEFERRED D-01 spur pass (trunk-only ships first). D-01 / RESEARCH A1.
