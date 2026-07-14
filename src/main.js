@@ -45,6 +45,8 @@ import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
+import { ShadowBakeSystem, ATLAS_N, TILE_PX } from './props/prop-shadow-bake.js'  // PERF-07: baked prop-shadow atlas
+import { installShadowEdgeFade } from './shadow-fade.js'   // QUAL-18: soft realtime shadow-map edge
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
 import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
@@ -528,6 +530,8 @@ function debouncedRebuildFull () {
     if (propSystem) {
       propSystem.dispose()
       propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
+      // PERF-07: wipe the old seed's baked shadow tiles and re-arm baking for the fresh props.
+      if (shadowBake) { shadowBake.clear(); propSystem.setShadowBake(shadowBake) }
     }
     // QUAL-14 perf: same cache import + async reseat as the initial load — the new seed's spawn
     // bands route on the worker pool inside resolveSpawn (frames keep rendering) before each
@@ -705,6 +709,10 @@ const renderer = new THREE.WebGLRenderer({ antialias: !_NOAA, canvas })  // ?noa
 renderer.setPixelRatio(window.devicePixelRatio)
 renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
+// QUAL-18: patch THREE.ShaderChunk so the realtime shadow-map edge dissolves instead of drawing a
+// hard line. MUST run before any material compiles (first render). Baked prop shadows (PERF-07) have
+// their own distance fade in the terrain shader; this covers the truck's realtime map.
+installShadowEdgeFade()
 // PERF-16: stop re-rendering the sun's whole shadow pass every frame. Three defaults autoUpdate=true,
 // so the 1536²/2048² shadow map is re-rendered each frame even parked under a static sun (measured
 // ~9 pp renderer-main, ~3 pp GPU). We drive needsUpdate on-demand from the shadow-follow block in
@@ -1326,14 +1334,38 @@ roadMeshSystem = new RoadMeshSystem(
 rebuildWaterSystem()
 // FEAT-06: prop system — needs terrain (height/normal) + road (exclusion) + water samplers, all alive now.
 propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
+
+// PERF-07: baked prop-shadow atlas. Needs the WebGL renderer (absent headless — this whole block is
+// browser-only). Wires the atlas texture into the terrain sampler, the bake triggers into the prop
+// system, and the static sun direction into the projection shear. In realtime-cast mode the terrain
+// strength is 0 (props keep casting into the sun's shadow map instead).
+const shadowBake = new ShadowBakeSystem(renderer)
+shadowBake.setSun(skySystem.sunDirection)
+const propShadowStrength = () => (FLORA_PARAMS.shadows?.castRealtime ? 0 : (FLORA_PARAMS.shadows?.strength ?? 0.34))
+terrainSystem.setShadowAtlas(shadowBake.atlasTexture, ATLAS_N, TILE_PX, propShadowStrength())
+propSystem.setShadowBake(shadowBake)
+// Keep terrain strength in lockstep with the mode toggle + strength slider (prop-debug 'Realtime
+// prop shadows' / 'Baked shadow strength' write FLORA_PARAMS.shadows and call this).
+const applyPropShadowMode = () => {
+  const realtime = !!FLORA_PARAMS.shadows?.castRealtime
+  propSystem.setShadowCasting(realtime)
+  terrainSystem.setShadowAtlas(shadowBake.atlasTexture, ATLAS_N, TILE_PX, propShadowStrength())
+}
+// PERF-07 dev handle: A/B baked vs realtime prop shadows from the console / CDP harness.
+window.__propShadows = (realtime) => { FLORA_PARAMS.shadows.castRealtime = !!realtime; applyPropShadowMode() }
+
 // FEAT-06: live-tuning GUI (self-contained — attaches to the existing _gui, doesn't touch debug.js).
 addPropGui(_gui, {
   params: FLORA_PARAMS,
   rebuild: () => {
     propSystem.dispose()
     propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
+    shadowBake.clear()
+    propSystem.setShadowBake(shadowBake)
+    applyPropShadowMode()
   },
   getPropSystem: () => propSystem,   // PERF-07: live handle for the shadow-cast toggle (survives rebuild)
+  onShadowModeChange: applyPropShadowMode,   // PERF-07: mode/strength toggle → sync casting + atlas strength
 })
 // QUAL-02: sky/lighting tuning folder (self-contained — attaches to _gui like the props folder).
 skySystem.addGui(_gui)
@@ -1754,11 +1786,12 @@ function loop () {
     //   4. the vehicle is in motion — mark dirty every frame so the truck's own shadow tracks it; when
     //      parked it stays frozen (correct). Quality/lever changes re-arm at their own sites (applyQuality
     //      + __lever shadow paths).
+    // PERF-07: props no longer cast into the realtime map (they're baked), so a prop streaming in no
+    // longer needs a realtime re-arm — only the truck (motion) + view texel-snap drive it. Terrain/
+    // road stay in the signature for the rare non-prop caster + safety.
     const geomSig = (terrainSystem?._chunkMap.size ?? 0)
       +     7919 * (roadSystem?.roadGeneration?.() ?? 0)
       +   104729 * (roadMeshSystem?._tileMeshMap.size ?? 0)
-      +  1299709 * (propSystem?._chunks.size ?? 0)
-      + 15485863 * (propSystem?._blobs?._used ?? 0)
     const sd = skySystem.sunDirection
     const moving = vehicleState.velocity.lengthSq() > 0.0025            // > 0.05 m/s
       || Math.abs(vehicleState.drivetrain?.wheelspin ?? 0) > 0.1        // wheels spinning in place
@@ -1789,6 +1822,11 @@ function loop () {
   _pt = performance.now()
   if (propSystem) propSystem.update(streamCenter.x, streamCenter.z, _propRing, vehicleState.position.x, vehicleState.position.z)
   perfAdd('frame.props.update', performance.now() - _pt)   // TEMP (D-arc)
+  // PERF-07: bake freshly-committed chunks' prop shadows into the world atlas (sliced; no-op when the
+  // queue is empty, i.e. the steady state). Off the frame's shadow pass entirely once baked.
+  _pt = performance.now()
+  if (shadowBake && shadowBake.hasWork()) shadowBake.update(scene)
+  perfAdd('frame.shadowBake', performance.now() - _pt)
   // FEAT-17/18: sync pond/stream meshes to the view region (bbox-culled, keyed — no churn when still).
   _pt = performance.now()
   if (waterRenderer) {

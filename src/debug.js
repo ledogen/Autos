@@ -458,7 +458,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   roadWidth:           6–14 m (default 10 m, 0.5 step — D-04)
   //   crownHeight:         0–0.2 m (default 0.05 m, 0.005 step — D-04)
   //   camberStrength:      0.5–10 (default 4, step 0.5 — D-04; gain is in RADIANS, was mis-set to 200)
-  //   roadFillHeight:      0–4 m (default 2.0, step 0.1 — D-07)
   //   roadCutSlope:        0.5–2 H:V (default 1.0, step 0.05 — D-08)
   //   roadFillSlope:       1.5–5 H:V (default 3.0, step 0.1 — D-08)
   //   roadShoulderWidth:   1–6 m (default 2.5, step 0.5 — D-05)
@@ -473,7 +472,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
   })
   surfaceFolder.add(params, 'crownHeight',         0,    0.2,  0.005).name('Crown Height (m)').onChange(fireSurface)
   surfaceFolder.add(params, 'camberStrength',      0.5,  10,   0.5  ).name('Camber Strength').onChange(fireSurface)
-  surfaceFolder.add(params, 'roadFillHeight',       0,    4,    0.1 ).name('Fill Height (m)').onChange(fireSurface)
   surfaceFolder.add(params, 'roadCutSlope',         0.5,  2,    0.05).name('Cut Slope (H:V)').onChange(fireSurface)
   surfaceFolder.add(params, 'roadFillSlope',        1.5,  5,    0.1 ).name('Fill Slope (H:V)').onChange(fireSurface)
   // FEAT-10: caps how far the fill/cut embankment apron extends past the carve core. Lower = tighter
@@ -588,7 +586,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
     roadWidth:             'Total drivable width of the road surface (m).',
     crownHeight:           'Height of the centerline crown (m) — the slight peak that sheds water to the edges.',
     camberStrength:        'How much the road banks into turns. Higher = more lean through corners.',
-    roadFillHeight:        'Height (m) of the raised embankment the road sits on over low ground.',
     roadCutSlope:          'Steepness of cut banks where the road slices into a hill, as H:V (lower = steeper).',
     roadFillSlope:         'Steepness of fill banks where the road is built up, as H:V (lower = steeper).',
     roadMaxEmbankmentToe:  'Caps how far (m) the embankment apron spreads past the road. Lower = tighter banks, fewer shards at tight turns.',
