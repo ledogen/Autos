@@ -92,10 +92,19 @@ scenarios show no new hitches (hitch table in trace-report) · commit
 > so the pool doesn't starve. WORKER_SOURCE / height() math UNTOUCHED → byte-identical heightfields
 > → no CARVE SYNC mirror concern. Gates green: carve-mesh-smoothness, road-smoothness, ribbon-carve,
 > restream-invariance, shoulder-lateral-continuity (+ the item-1 water/stream/pond set).
-> **RING-COMPLETE THROUGHPUT MEASUREMENT: consolidated into the Final-Acceptance interleaved A/B
-> cold-load table** (items 2/3/5 all move cold-load numbers; one clean interleaved session on a
-> cool machine is more rigorous than warm per-item Chrome runs between gate suites, and avoids
-> contending with the user's active workers). Ready-time expected unchanged (spawn gating is item 3).
+> **MEASURED (2026-07-14, interleaved seed-change A/B, NEW :8002 vs OLD baseline :8001, Ultra preset
+> = 289-chunk ring, cache-miss distinct seeds 42/100/7/13/21/99):** terrain-rebuild (`fill`) median
+> OLD 1789 ms → NEW 1510 ms (**~18% median / ~8% mean faster**); 5 of 6 seeds NEW-faster. **MISSED the
+> ~40% target.** Root cause found: the 289-chunk fill is dominated by MAIN-THREAD build work (geometry
+> build + carve-table + grid normals + vertex colors in _flushPendingQueue), NOT worker heightfield
+> generation — the pool parallelizes only generation, so it shaves only the generation slice (~8-18%).
+> At the DEFAULT ring (49 chunks) fill is ~500 ms and build-bound → the pool is NEUTRAL (clean A/B:
+> OLD 502 ms vs NEW 504 ms). PERF-13's "generation is the ring-fill bottleneck" held under thermal
+> load, not in clean conditions. VERDICT: real but sub-target win that scales with ring size; byte-
+> identical (3-worker init confirmed in-browser); KEEP (zero downside). Measurement method: runtime
+> `window.__changeSeed` regen (user's idea) to skip the import-waterfall + Chrome-boot common-mode —
+> the fanless M4 was heavily contended by macOS mediaanalysisd/mds (Photos+Spotlight) for hours; an
+> auto-idle watcher (perf-runs/auto-retry-ab.mjs, load1/5/15 gate) caught the clean window.
 
 ## Item 3 — spawn-warm scope reduction (seed-miss ready ~1.5-2×, ZERO route changes)
 
@@ -138,11 +147,16 @@ spawn (screenshot spawn area for seeds 42 + 6) · `npm test` green · commit
 > recenter radii {228, 200, 150} → **ALL IDENT** (same x/z/heading exactly); every seed hit the tight
 > tier and the recenter refinement moved the spawn 0.00 m. So the recenter's full-band pre-ready warm
 > was pure overhead for the decision.
-> **Ready-time A/B: consolidated into the Final-Acceptance interleaved cold-load pass** (loaded
-> machine + user's active test workers preclude a clean cold measurement now). Expected win = the
-> recenter's deferred routing only (bounded; the tight tier is untouched) — likely **below the 1.5-2×
-> target**; will record the measured delta with a MISSED note if it lands short. This is the honest
-> ceiling given the cull/query entanglement above.
+> **MEASURED (2026-07-14, interleaved Ultra A/B, cache-miss distinct seeds 42/100/7/13/21/99):**
+> spawn-routing (`seat` = trigger → truck reseated at new spawn) median OLD 23021 ms → NEW 19320 ms
+> (**~1.19× / 19% median faster**; mean 22973→17983 ≈ 22%); ALL 6 seeds NEW-faster (42:−36%, 100:−14%,
+> 7:−16%, 13:−25%, 21:−30%, 99:−11%) — consistent, not noise. **MISSED the 1.5-2× target** (~1.2×
+> actual). Win SCALES WITH ROAD RADIUS: the recenter cap is min(_savedRadius, 228), so High/Ultra (big
+> play radius) get the full 19-36% cut, Low (radius ≤ 228) gets none, default is in between. VERDICT:
+> real, consistent, byte-identical (15-seed spawn-identity + in-browser boot confirmed) win, below
+> target but free; KEEP. NOTE: an earlier single contended sample hinted NEW-slower — that was noise;
+> the 6-seed interleaved run is unambiguous. The tight tier stays irreducible (BUG-25 cull), so this is
+> the honest ceiling.
 
 ## Item 4 — incremental ancestor-proximity index (byte-identical router speedup)
 
