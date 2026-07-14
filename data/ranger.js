@@ -91,7 +91,7 @@ export const RANGER_PARAMS = {
   // Service brake, split front/rear (front-biased like a real car — more clamp up front where weight
   // transfers under braking). Consumed per-wheel by getBrakeTorque (front = wheels 0/1, rear = 2/3).
   maxBrakeTorqueFront: 1200,  // N·m — front axle service-brake torque per wheel-pair path
-  maxBrakeTorqueRear:   550,  // N·m — rear axle service-brake torque (reduced to curb rear lockup)
+  maxBrakeTorqueRear:   450,  // N·m — rear axle service-brake torque (reduced to curb rear lockup)
   maxHandbrakeTorque: 4000, // N·m — rear-only handbrake; doubled from 2000 to actually lock rears; exposed as slider (D-16)
 
   // ── Rear differential (FEAT-23 Phase 2 seed) ──────────────────────────────────────────────────
@@ -641,12 +641,6 @@ export const RANGER_PARAMS = {
   // 2.5 m gives a 1:2 blend fade for a standard paved shoulder width. D-05.
   roadShoulderWidth: 2.5,   // m — shoulder blend zone width beyond ribbon edge (D-05)
 
-  // roadFillHeight: maximum fill embankment height (delta cap).
-  // When the road design grade is ABOVE the terrain (fill), the height difference is clamped
-  // to this value before computing the fill-toe distance. Prevents extreme causeways.
-  // Default 2.0 m — ~one-storey raised causeway, tunable up to 4 m. D-07.
-  roadFillHeight: 2.0,      // m — max fill embankment height cap (D-07)
-
   // roadCutSlope: H:V ratio for the cut face (terrain higher than design grade).
   // 1.0 = 45° — moderate rocky cut slope. Range: 0.5:1 (steep) to 2:1 (gentle). D-08.
   roadCutSlope: 1.0,        // H:V ratio — cut face slope ~45° (D-08)
@@ -789,9 +783,11 @@ export const RANGER_PARAMS = {
   // D3 (plan 09-22): carve trough tilts WITH the ribbon (crown + camber), so clearance
   // is now uniform on banked turns — inside-edge clip and outside-edge gap are eliminated.
   // Also the ROAD-EDGE DROPOFF height: physics rides the road on-ribbon and drops to the carved dirt
-  // (this far below) off the ribbon edge, so clipping the edge is punishing (BUG-15). 0.25 m = a
-  // realistic, jolting-but-not-launching edge. Range: 0–1.5 m. Exposed as a Road Surface debug slider.
-  roadClearanceMargin: 0.25,    // m — terrain (and physics shoulder) sits this far BELOW the ribbon (Plan 09-11 / D3)
+  // (this far below) off the ribbon edge, so clipping the edge is punishing (BUG-15). 0.15 m = a
+  // gentle edge that settles the car on shoulder↔road transitions (was 0.25 m — a taller, jolting lip)
+  // while still keeping enough dropoff that the decal never clips terrain on banked turns.
+  // Range: 0–1.5 m. Exposed as a Road Surface debug slider ("Clearance Margin (m)").
+  roadClearanceMargin: 0.15,    // m — terrain (and physics shoulder) sits this far BELOW the ribbon (Plan 09-11 / D3)
 
   // roadCarveExtraWidth: extra lateral width beyond roadHalfWidth + roadShoulderWidth
   // that the terrain carve footprint covers. Ensures the carved depression is wider than
