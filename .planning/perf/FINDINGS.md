@@ -166,3 +166,33 @@ Air and judge sharpness + chassis temperature; if soft, raise resHeight 1200 →
   self-clearance + refit are a ~42 ms/edge fixed floor that now dominates. Next levers: dial
   experiments (stack multiplicatively), refit/self-clearance cost, or per-seed-class widths.
 - Bench + regen scripts: perf-runs/bench-corridor.mjs, perf-runs/gen-default-route-cache.mjs.
+
+## PERF-18 addendum (per-edge fixed-floor attack — negative result, 2026-07-13)
+
+- **The "42 ms/edge floor" is self-clearance PREVENTION + REPAIR, not scan/refit.** Decomposed
+  (seed 42, corridor active, per-edge; perf-runs/profile-selfclear.mjs): bare search **65.8**,
+  in-search self-clear prevention (per-expansion ancestor walk) **+18.9** (every edge), refit
+  **+0.7**, post-emit `_selfClearScan` **+0.05**, self-clear repair re-searches **+20.3** (avg;
+  ~20/143 edges dirty, each ≤16 full re-searches) → ~101 ms/edge. So the floor ≈ 40 ms is A(18.9)
+  + repairs(20.3), NOT the scan (0.05) + refit (0.7) the ticket assumed.
+- **Items 1/2a target sub-ms costs → rejected.** Item 2b (refit must not introduce grazes) was
+  **already implemented** (the `scPick` guard in the refit block ships the pre-refit chain when
+  refit would raise the self-clear violation count) — route-change count 0.
+- **Item 3 (segment coarse pass) is a NET REGRESSION.** A 2-radius `[gentle,hard]` palette + hbins=8
+  cut the coarse pass **5.73 → 2.32 ms/edge** deterministically, but the changed coarse route
+  perturbs the corridor → downstream fine-search + repair cost rose MORE: interleaved seed-42
+  full-flow **OLD 100.6/100.8 vs NEW 104.4/104.5 ms/edge (~+4 ms)**. Character held (hairpin intact,
+  parity green after regen) but no speed win → reverted. LESSON: cheapening the coarse pass is a
+  false economy — it is ~5 % of the total and any change to it re-shapes the corridor, and the
+  corridor shape drives the self-clear repair count that dominates.
+- **Item 4 (heur dial) spent post-corridor.** `roadArcHeurWeight` 1.5→2.5: 102.4 → 101.9 ms/edge.
+  The corridor already bounds the search; the A* heuristic-inflation lever (a pre-corridor speedup)
+  has nothing left to prune.
+- **Verdict: ≥3× is unreachable without weakening in-search self-clearance (forbidden).** No src
+  change shipped. Real follow-on levers live inside the prevention/repair machinery: a byte-identical
+  incremental ancestor-proximity index for the 18.9 ms in-search walk, or corridor-kept repair
+  re-searches for the 20.3 ms repair loop — both need dedicated invariance work.
+- **Measurement gotcha reinforced:** fanless-M4 node benchmarks still drift ~±4 ms/edge across
+  separately-launched processes (esp. right after a CPU-heavy run). Interleave OLD/NEW via
+  `git stash` within one shell session and take best-of-N; a single cross-process delta < ~5 % is
+  noise. (Router bench profiles: profile-selfclear/split/pcoarse/ab-quick/item4-heur.mjs.)
