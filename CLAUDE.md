@@ -66,8 +66,15 @@ loop. (Full rationale + version-verification + sources: `.planning/research/STAC
 - **Physics behaviors** (load transfer, wheel independence, wheel lift, damping, ramp slide):
   `test/assert-m4-*.mjs` — rainy-day manual scripts; each needs a recorded scenario log. Not in
   `npm test`.
-- **Regression gates:** `npm test` runs `test/run-all.mjs` (6 headless gates). Add a gate there when
-  you write one; `test/` also holds libs (`lib/*.mjs`) and the rainy-day scripts, which are not gates.
+- **Regression gates (33, in `test/gates.mjs`):** `npm test` runs **only the AFFECTED gates** — those
+  whose transitive import closure (computed live by `run-all.mjs`, + each gate's `extraDeps`) intersects
+  your `git diff`. So a physics edit runs the physics gates, a prop-slider tweak the prop gates, a
+  skybox edit nothing. Keeps the nominal loop fast; heavy road/terrain/water gates run only when you
+  touch that code. `npm run test:all` runs the full suite (do this pre-commit / on the desktop —
+  see INFRA-01). Preview what a change hits: `node test/run-all.mjs --list [--changed=<paths>]`.
+  Add a gate in `test/gates.mjs` (with `subsystem`/`cost`/`desc`/`extraDeps`); `test/` also holds libs
+  (`lib/*.mjs`) and rainy-day scripts, which are not gates. Wall-clock assertions are report-only
+  (flaky) — real timing budgets live in the PERF-08 profiling harness, not the gates.
 
 ### Terrain Worker
 
