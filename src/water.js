@@ -700,6 +700,16 @@ export class WaterSystem {
 
     // ── Query API (consumed later by router / physics / render) ───────────────
 
+    // PERF-19.1: monotonic content-generation stamp. Grows only as new critical points,
+    // ponds, or streams are committed to the deterministic caches. WaterRenderer.sync keys
+    // its per-frame rebuild on (quantized window + this) so a parked camera whose window and
+    // discovered content are both unchanged skips the pond/stream enumeration entirely. It is
+    // a conservative OVER-approximation: any cache growth anywhere (even outside the synced
+    // window) forces one re-sync, which is correct because a new feature could fall in-window.
+    contentGeneration() {
+        return this._cellCache.size + this._pondCache.size + this._streamCache.size
+    }
+
     // Pond containing (x,z) within its water radius, or null. For submerged/render.
     pondAt(x, z) {
         for (const pond of this.pondsInBBox(x, z, x, z)) {
