@@ -118,3 +118,24 @@ user signs off on the look.
   the shadow pass is worth measuring; includes the Chrome-trace gotcha.
 - **PERF-06** Quality selector already gates `sun.castShadow` per tier (`main.js:868–872`).
 - **QUAL-02** SkySystem / time-of-day ([[project_qual02_skybox]]) — the day/night the bake trades against.
+
+## INTERACTION WITH PERF-16 (2026-07-14) — PERF-16 does NOT cover this; it raises PERF-07's value
+
+PERF-16 (shipped, 803c174) made the sun shadow pass on-demand (`renderer.shadowMap.autoUpdate =
+false`, re-armed only when the shadow can change). One might assume that subsumes the prop-caster
+cost — it does NOT for this game:
+
+- PERF-16's re-arm includes a **vehicle-in-motion trigger** (`main.js:1763`): velocity > 0.05 m/s
+  marks the shadow dirty EVERY frame. RangerSim is always in motion by design, so during actual
+  driving the shadow pass re-renders every frame — same as the old always-on behavior.
+- PERF-16's measured win (renderer −5.2pp / GPU −3.5pp) was the **Idle Normal (parked)** scenario;
+  it applies to spawn/cold-load/pause/vista, not steady-state play.
+- Therefore the ~1.86 ms/frame prop-caster cost this ticket measured is **still paid every frame you
+  drive**. The only way to cut it is fewer casters (this ticket's bake), because you cannot make the
+  render less frequent while the truck is moving (Three re-renders the whole shadow camera / all
+  casters, not just the truck).
+
+Net: the always-in-motion reality makes PERF-07 the real steady-state shadow lever, not a parked-only
+nicety. Still blocked on the same thing as before — the baked contact-shadow blobs must LOOK
+acceptable (2026-07-08 user reject) before the `castRealtime` default can flip. See
+[[perf-16-shadow-hud-throttle]].

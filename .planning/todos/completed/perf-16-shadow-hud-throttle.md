@@ -106,3 +106,23 @@ Correctness:
   candidates for a future keyed-skip like the shadow re-arm.
 - `FunctionCall` self-time is ~85% of main busy (the loop body) — expected; the wins shaved its Layout/
   Paint children and the shadow setup, not the JS itself.
+
+## LIMITATION NOTE (2026-07-14): shadow half is idle-only — near-moot during driving BY DESIGN
+
+The before/after in this ticket ("renderer main 22.2→17.0%, GPU 11.5→8.0%") was measured on the
+**Idle Normal** profiling scenario — i.e. the vehicle PARKED under a static sun. Do NOT read those
+numbers as a gameplay figure. RangerSim is an always-in-motion driving game, and the on-demand
+re-arm's vehicle-motion trigger (`main.js:1763`, velocity > 0.05 m/s → `needsUpdate = true` every
+frame) fires the entire time you're actually driving. So during steady-state play the shadow map
+re-renders every frame — behaviorally identical to Three's default `autoUpdate = true`. The shadow
+win lands ONLY in genuinely-stationary windows: spawn/cold-load (world streaming before you take
+control), pause, stopped at a vista, menus. It is never a regression (strict subset of always-on),
+just far smaller in play than the idle headline.
+
+- The **HUD 10 Hz throttle** (Win 2, ~6.6× fewer Layouts) is the part of this commit that pays off
+  every frame regardless of motion — that always-on win is real.
+- Steady-state driving shadow cost is NOT addressable by making the pass LESS FREQUENT (that lever is
+  spent — the moving truck legitimately needs a per-frame shadow, and Three re-renders the whole
+  shadow camera / all casters, not just the truck). The remaining lever is making each unavoidable
+  per-frame render CHEAPER by pulling props out of the caster set → that's **PERF-07**. The
+  always-in-motion reality RAISES PERF-07's value relative to this ticket. See [[perf-bake-env-shadows-vs-dynamic]].
