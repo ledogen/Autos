@@ -222,6 +222,12 @@ const PROTO_MARGIN         = 120   // m — N/S detour room so a connection can 
                                    // 120 m still clears the DETOURS-AROUND-PEAK gate (119 m detour).
 const PROTO_REGEN_MOVE     = 96    // m — re-stream the trunk once the view center moves this far
 const PROTO_SAMPLE_DS      = 4     // m — centerline → polyline sampling spacing (profile/slice/query density)
+// Corner-facet fix: _resolveRoadSurface refines the WINNING run's frame onto its exact primitive
+// centerline (the same curve the ribbon samples) instead of the 4 m polyline, which faceted the dirt
+// and staircased collision on sharp corners. W = ±window around the polyline foot; DS = coarse scan
+// pitch inside it (Centerline.nearest then does one projection refine). Single-minimum at radius ≥ 12 m.
+const ANALYTIC_REFINE_WINDOW = 6   // m
+const ANALYTIC_REFINE_DS     = 1.0 // m
 const PROTO_SNAP_CAP       = PROTO_ANCHOR_SPACING * 0.45  // m — max anchor gradient-descent displacement (keeps anchors in their lane → fewer parallel/duplicate roads)
 const PROTO_PARAM_DEBOUNCE = 160   // ms — coalesce slider drags before re-routing
 // 8-connectivity direction vectors (index 0..7); used for the turn-penalty A* state.
@@ -2755,13 +2761,23 @@ export class RoadSystem {
             ((wx - pts[0].x) * bestTx + (wz - pts[0].z) * bestTz) < 0
         const overAfter  = bestI === N - 2 && bestTclamp === 1 &&
             ((wx - pts[N - 1].x) * bestTx + (wz - pts[N - 1].z) * bestTz) > 0
+        // sCL: centerline TRUE-arc at the projected foot — the window center for _resolveRoadSurface's
+        // analytic refine. clArc[i] is the exact arc-length at polyline vertex i (see _assembleGraphEdges);
+        // interpolate by the winning segment's clamped fraction. Falls back to chord-cum (≈ true-arc on
+        // straights) if a run predates the analytic centerline (clArc absent).
+        const clArc = netEntry.clArc
+        let sCL = bestCum
+        if (clArc && bestI + 1 < clArc.length) {
+            sCL = clArc[bestI] + (clArc[bestI + 1] - clArc[bestI]) * bestTclamp
+        }
         return {
             fx: bestFx, fz: bestFz, tx: bestTx, tz: bestTz,
             arcS: bestCum - arcOrigin,
             // signedLat sign convention matches _sampleCarveWorld: (query − foot) cross tangent.
             signedLat: (wx - bestFx) * bestTz - (wz - bestFz) * bestTx,
             d2: bestD2,
-            offEnd: overBefore || overAfter
+            offEnd: overBefore || overAfter,
+            sCL
         }
     }
 
@@ -2847,13 +2863,42 @@ export class RoadSystem {
         }
         if (!bestPr && bestEndPr) { bestPr = bestEndPr; bestRunKey = bestEndRunKey }  // BUG-21: fill the apex sliver
         if (!bestPr) return null
+
+        // Default to the polyline frame (the apex-sliver offEnd fallback and any run lacking a centerline
+        // stay on it). fx/fz/tx/tz/arcS come straight from the selected _projectOntoRun result.
+        let fx = bestPr.fx, fz = bestPr.fz, tx = bestPr.tx, tz = bestPr.tz, arcS = bestPr.arcS
+
+        // ── Analytic frame refinement (corner-facet fix) ─────────────────────────────────────────
+        // The polyline projection gives a piecewise-constant tangent that jumps ~19° per 4 m chord on
+        // radius-12 corners, faceting the dirt and staircasing collision. Refine the WINNER only onto its
+        // exact primitive centerline (the SAME curve the visual ribbon samples) so the frame is smooth and
+        // the dirt/asphalt seam stops tearing. Both carve consumers (terrain _buildCarveTable, physics
+        // _sampleCarveWorld) rebuild signedLat/arcSEff from point+tangent, so they inherit the fix for free.
+        // NOT applied to the offEnd apex-sliver candidate: its arcS is intentionally clamped to the run end
+        // to stay C0 with the sibling arm at the shared anchor (BUG-21) — leave it on the polyline frame.
+        const ce = this._network.get(bestRunKey)
+        if (!bestPr.offEnd && ce && ce.centerline && ce.centerline.length > 1e-6 && ce.clArc && ce.polyCum) {
+            const hit = ce.centerline.nearest(wx, wz, ANALYTIC_REFINE_DS,
+                                              bestPr.sCL - ANALYTIC_REFINE_WINDOW,
+                                              bestPr.sCL + ANALYTIC_REFINE_WINDOW)
+            if (hit) {
+                fx = hit.x; fz = hit.z
+                tx = hit.tangent.x; tz = hit.tangent.z
+                // Remap analytic TRUE-arc → polyline chord-arc (the runProfile/camberProfile domain), then
+                // origin-shift. clArc↔polyCum are the paired per-run arrays; _interpArcTable is the same
+                // helper the ribbon uses in the opposite direction (chord→true).
+                const arcOrigin = ce.arcOrigin ?? 0
+                arcS = _interpArcTable(ce.clArc, ce.polyCum, hit.s) - arcOrigin
+            }
+        }
+
         // camberSign = 1: the projection uses the run's own canonical polyline direction (arcS increases
         // along it), so run-frame camber maps to the world frame directly (no E→W slice reversal here).
         return {
-            point:      new THREE.Vector3(bestPr.fx, this.runProfile(bestPr.arcS, bestRunKey).gradeY, bestPr.fz),
-            tangent:    new THREE.Vector3(bestPr.tx, 0, bestPr.tz),
+            point:      new THREE.Vector3(fx, this.runProfile(arcS, bestRunKey).gradeY, fz),
+            tangent:    new THREE.Vector3(tx, 0, tz),
             runKey:     bestRunKey,
-            arcS:       bestPr.arcS,
+            arcS:       arcS,
             camberSign: 1
         }
     }
