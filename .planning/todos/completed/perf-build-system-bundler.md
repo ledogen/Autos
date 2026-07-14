@@ -1,8 +1,23 @@
 ---
 id: PERF-04
 type: perf
-status: open
+status: completed
 opened: 2026-06-25
+resolved: 2026-07-14
+resolution: "SHIPPED as PERF-20 item 5. Vite adopted (three+simplex from npm, byte-identical to the
+  retired CDN importmap pin); index.html importmap removed; vite.config.js aliases three/addons/→
+  three/examples/jsm/, base:'./' for GH-Pages subpath, es2022 target (main.js top-level await), copy
+  plugin ships the two runtime-fetched assets (data/route-cache-default.json.gz + assets/models/
+  hilux.glb) into dist/ at unchanged paths. version.js probe → self import.meta.url. GitHub Actions
+  deploy workflow added (USER must flip Pages Source → 'GitHub Actions'). CLAUDE.md 'no build system'
+  constraint rewritten. Both Blob workers (terrain WORKER_SOURCE + road ROAD_WORKER_SOURCE) survive
+  bundling untouched — boot-diag confirmed all 3 terrain workers + road routing spin up in dev AND
+  built. npm test gates stay pure-node (unaffected). DEVIATIONS from the original plan: (1) debug.js
+  code-split NOT done — the import-waterfall win is fully realized by bundling alone; lazy-splitting
+  the debug layer is an optional byte-trim follow-on, not required for the cold-load goal. (2) The
+  'strip src/perf.js on close' followup is SUPERSEDED — the PERF-08 ?prof=1 profiling harness now
+  depends on src/perf.js perfMark, so it STAYS. QUAL-04 relationship: version.js still probes the
+  served bundle's Last-Modified (now the hashed chunk), so the build marker keeps working."
 severity: minor
 source: user-request
 note: "DECISION ticket, not a blind do — adopting a bundler OVERRIDES the documented CLAUDE.md 'no build system / opens from GitHub Pages without install' constraint. Needs explicit sign-off before implementing; CLAUDE.md + the deploy flow update in the same change. Targets COLD first-load only (the black-screen-before-first-paint), NOT runtime fps — see PERF-05 for the runtime stutter, which a bundler does nothing for."

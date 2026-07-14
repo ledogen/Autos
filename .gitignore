@@ -5,8 +5,12 @@
 Logs/
 *.log
 
-# Node test-harness deps (browser runtime uses the index.html CDN importmap, not these)
+# npm deps (three/simplex for the runtime bundle + vite; also the pure-node test gates)
 node_modules/
+
+# Vite build output — rebuilt by .github/workflows/deploy.yml and deployed as a Pages artifact;
+# never committed (keeps source clean, per the PERF-04/PERF-20.5 deploy design).
+dist/
 
 # Claude Code local harness state (volatile / per-machine)
 .claude/worktrees/

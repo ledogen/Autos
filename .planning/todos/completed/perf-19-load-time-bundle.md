@@ -1,9 +1,15 @@
 ---
 id: PERF-19
 type: perf
-status: pending
+status: completed
 severity: major
 created: 2026-07-14
+resolved: 2026-07-14
+resolution: "Items 1-3 SHIPPED + merged to main (3cb6627): water.sync keyed skip, terrain worker
+  pool (cores-2 clamp 1-3), spawn recenter scope. All byte-identical, measured real-but-sub-target
+  (see the ticket's RESULT blocks + memory project_perf19_load_bundle). Items 4+5 handed off as
+  PERF-20 and now resolved there: item 4 (router index) WONTFIX after profiling, item 5 (Vite)
+  SHIPPED — see PERF-04 (completed/perf-build-system-bundler.md)."
 source: user-request
 note: "Bundle of five approved optimizations for an Opus agent with FRESH CONTEXT — this ticket
 is self-contained; read .planning/perf/FINDINGS.md (esp. the measurement-gotchas addendum) and

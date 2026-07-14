@@ -9,7 +9,7 @@ A browser-based 6DOF rigid body car physics simulation built in JavaScript with 
 
 ### Constraints
 
-- **Tech stack**: Three.js + vanilla JS, no build system — must open from GitHub Pages without install
+- **Tech stack**: Three.js + vanilla JS, Vite build (PERF-04/PERF-20.5) — `npm run dev` locally, `npm run build` → `dist/` deployed to GitHub Pages via GitHub Actions. (Was a no-bundler CDN importmap; bundling was adopted to kill the ~0.9 s per-load import waterfall. three/simplex resolve from npm, byte-identical to the retired pins; the `test/*.mjs` gates stay pure-node and never touch Vite.)
 - **Runtime**: Browser only, single origin — no server, no WebSocket, no backend
 - **File structure**: ES6 modules in a `src/` directory, single `index.html` entry point
 - **Physics**: Hand-rolled, no physics library — required for learning, tuning transparency, and terrain control
@@ -20,13 +20,17 @@ A browser-based 6DOF rigid body car physics simulation built in JavaScript with 
 <!-- GSD:stack-start source:research/STACK.md -->
 ## Technology Stack
 
-Three.js r184 (ESM via CDN importmap, no bundler) · vanilla JS · lil-gui + stats.js (from `three/addons`).
-Hand-rolled 6DOF physics (Pacejka tires, spring-damper suspension) using Three.js math primitives.
-Hosted on GitHub Pages; local dev needs an HTTP server (`npx serve .`) — `file://` breaks ES modules.
+Three.js r184 (ESM from npm, bundled by Vite) · vanilla JS · lil-gui + stats.js (from `three/addons`,
+aliased to `three/examples/jsm/` in vite.config.js). Hand-rolled 6DOF physics (Pacejka tires,
+spring-damper suspension) using Three.js math primitives. Local dev: `npm run dev` (Vite on :8000).
+Deploy: `npm run build` → `dist/` shipped to GitHub Pages by `.github/workflows/deploy.yml` (Pages
+Source must be set to "GitHub Actions"). Runtime assets fetched by URL — `data/route-cache-default
+.json.gz` and `assets/models/*.glb` — are copied into `dist/` by an inline plugin at their existing
+paths (NOT ES imports; do not convert to `?url`, that breaks the pure-node gates that read them).
 
 **Do NOT use:** physics libs (Cannon/Rapier/Ammo), dat.GUI, global `<script>` Three.js, Web Workers
-for physics, OffscreenCanvas, a bundler, or Euler angles for body rotation. Fixed-timestep accumulator
-loop. (Full rationale + version-verification + sources: `.planning/research/STACK.md`.)
+for physics, OffscreenCanvas, or Euler angles for body rotation. Fixed-timestep accumulator loop.
+(Full rationale + version-verification + sources: `.planning/research/STACK.md`.)
 
 ### Module Structure
 | Module | Responsibility | Imports from |

@@ -1,10 +1,22 @@
 ---
 id: PERF-20
 type: perf
-status: pending
+status: completed
 severity: major
 created: 2026-07-14
-source: PERF-19 continuation
+resolved: 2026-07-14
+resolution: "Item 5 (Vite) SHIPPED — see PERF-04 (perf-build-system-bundler.md) resolution for the full
+  change + verify. Item 4 (ancestor-proximity index) WONTFIX after profiling: on a clean machine the
+  prefilter walk it targets is only ~31-34 ms/edge (~19%% of a single search) at 6 ns/iteration — a
+  tight cache-linear typed-array loop. An open-addressed hash-grid maintained by LCA path-diff must
+  beat 6 ns/iter amortized to clear the mandated bench gate, but its per-sample constant (hash+probe+
+  bucket-append+removal-record, 3x3 query) almost certainly exceeds that, and O(path-diff) is not
+  reliably < O(depth) for best-first pops (avg depth ~54, frontier jumps). Even the free-maintenance
+  ceiling (~31 ms/edge -> ~2 s/world) is OFF the main thread (road worker) and PRE-WARMED (warmRoutes)
+  — invisible to the frame budget; per PERF-19, cold load is fill/seat-bound, not routing-bound. High
+  risk (byte-identical mirror into 2 sync regions, likely bench-gate rejection) for a marginal off-hot-
+  path gain. User agreed to skip. Measurement kept: perf-runs/probe-walk.mjs (+ the __PROBE edit was
+  reverted from src/road-carve.js)."
 note: "Handoff for the two DEFERRED items of the PERF-19 bundle — item 4 (byte-identical router
 speedup) and item 5 (Vite build). Self-contained for a FRESH Opus session. PERF-19.1-3 shipped +
 merged to main (3cb6627); read perf-19-load-time-bundle.md for their measured results and the

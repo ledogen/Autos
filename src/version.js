@@ -11,9 +11,13 @@
 // RUNNING — if the page is executing a stale cached bundle, the marker reads the stale date, which is
 // precisely the signal we want. One request at panel-open; nothing in the frame loop.
 //
-// `import.meta.url` is this module's own URL; `main.js` sits beside it in src/, so this resolves to the
-// served entry bundle regardless of where the app is hosted (GitHub Pages subpath, localhost, etc.).
-const BUILD_PROBE_URL = new URL('./main.js', import.meta.url).href
+// Probe THIS module's own served URL (`import.meta.url`). In dev that's src/version.js; after a Vite
+// build it's this module's hashed bundle chunk — either way the browser answers from the same HTTP
+// cache entry the running code was loaded from, so the header identifies the build actually EXECUTING
+// (a stale cached bundle reads its stale date). Resolves regardless of host (GH Pages subpath, etc.).
+// (Was `new URL('./main.js', import.meta.url)` under the importmap — post-bundle main.js is hashed and
+// no longer sits at that path, which would degrade the marker to 'unknown'.)
+const BUILD_PROBE_URL = import.meta.url
 
 function fmt (date) {
   // Compact UTC stamp, e.g. "2026-06-30 14:23 UTC" — unambiguous across the human's timezone.

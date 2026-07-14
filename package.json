@@ -1,16 +1,22 @@
 {
-  "name": "rangersim-tests",
+  "name": "rangersim",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Headless test harness for RangerSim. The browser runtime uses the CDN importmap in index.html and does NOT depend on these devDependencies — they exist only so test/*.mjs gates can `import 'three'` / 'simplex-noise' under node. Versions pinned to match the index.html importmap exactly (byte-identical math).",
+  "description": "Browser 6DOF car physics sim (Three.js). Runtime is bundled by Vite (PERF-04/PERF-20.5) — three + simplex-noise resolve from node_modules (byte-identical to the retired CDN importmap pin). `npm run dev` serves on :8000; `npm run build` emits dist/ for the GitHub Actions Pages deploy. The test/*.mjs gates are pure-node and import 'three'/'simplex-noise' directly — they do NOT go through Vite.",
   "scripts": {
+    "dev": "vite --port 8000",
+    "build": "vite build",
+    "preview": "vite preview",
     "test": "node test/run-all.mjs",
     "test:all": "node test/run-all.mjs --all",
     "test:affected": "node test/run-all.mjs --affected"
   },
+  "dependencies": {
+    "simplex-noise": "4.0.3",
+    "three": "0.184.0"
+  },
   "devDependencies": {
-    "three": "0.184.0",
-    "simplex-noise": "4.0.3"
+    "vite": "^6.4.3"
   }
 }

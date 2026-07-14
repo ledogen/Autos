@@ -60,16 +60,8 @@
       border-color: #888;
     }
   </style>
-  <!-- importmap MUST appear before any <script type="module"> (Pitfall 6) -->
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
-      "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/dist/esm/simplex-noise.js"
-    }
-  }
-  </script>
+  <!-- Bare specifiers ('three', 'three/addons/*', 'simplex-noise') are resolved by Vite from
+       node_modules (PERF-04/PERF-20.5) — the old CDN importmap is retired. See vite.config.js. -->
 </head>
 <body>
   <!-- Canvas queried by main.js via document.querySelector('canvas') — no id required -->
