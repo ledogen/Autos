@@ -55,11 +55,19 @@ export class ShadowBakeSystem {
     this._rt.texture.colorSpace = THREE.NoColorSpace   // alpha is data, not colour
 
     // Top-down ortho camera covering one chunk (±32 m), looking straight down (-Y) with up = +Z.
-    // A downward look-at with up=+Z makes the camera's local +X = world -X (an unavoidable handedness
-    // flip: world +X, +Z, +Y is left-handed viewed from above). We UN-FLIP X by swapping the ortho
-    // left/right (32, -32) so that world +X → tile U and world +Z → tile V — matching the terrain
-    // sample exactly (atlasUV from world xz). DoubleSide covers the winding flip the swap introduces.
-    this._cam = new THREE.OrthographicCamera(CHUNK / 2, -CHUNK / 2, CHUNK / 2, -CHUNK / 2, 1, 4000)
+    // A true top-down MAP (world +X → tile U increasing, world +Z → tile V increasing, to match the
+    // terrain sampler's atlasUV-from-world-xz) is an IMPROPER (mirrored) view — you cannot have
+    // +X-right, +Z-up and -Y-forward as a proper rotation — so exactly ONE ortho axis must be
+    // mirrored. Empirically (per-axis shear probe, straight-down freecam, seed 6): with up=+Z the
+    // downward look-at already maps world +X → tile U correctly, but world +Z comes out FLIPPED. So
+    // negate ONLY the top/bottom pair (left/right kept as the natural +X→+U). ortho(l,r,t,b) =
+    // (C/2, -C/2, -C/2, C/2): left/right kept swapped for the +X→+U match; top/bottom swapped to
+    // un-flip +Z→+V. Verified in-browser against the realtime shadow (A/B): a prop's baked shadow
+    // anchors at its base and falls in the same direction/length as its realtime cast, and pure +X /
+    // +Z test shears push the shadow to world +X / +Z respectively. DoubleSide covers the winding the
+    // frustum flips introduce. (History: an earlier fix mistakenly flipped BOTH axes, which only
+    // moved the mirror from Z to X — the shadows stayed misaligned, just on the other axis.)
+    this._cam = new THREE.OrthographicCamera(CHUNK / 2, -CHUNK / 2, -CHUNK / 2, CHUNK / 2, 1, 4000)
     this._cam.up.set(0, 0, 1)
     this._cam.layers.set(BAKE_LAYER)
 

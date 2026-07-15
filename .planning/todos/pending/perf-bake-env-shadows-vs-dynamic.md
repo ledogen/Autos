@@ -139,3 +139,21 @@ Net: the always-in-motion reality makes PERF-07 the real steady-state shadow lev
 nicety. Still blocked on the same thing as before — the baked contact-shadow blobs must LOOK
 acceptable (2026-07-08 user reject) before the `castRealtime` default can flip. See
 [[perf-16-shadow-hud-throttle]].
+
+## BAKE-ALIGNMENT REGRESSION FIXED (2026-07-15)
+
+The per-chunk baked atlas (prop-shadow-bake.js, shipped a52c62e) had its shadows falling in the
+WRONG direction and detached from the props (user report, seed 6). Root cause: the bake ortho
+camera mirrored the **Z (top/bottom) axis** vs the terrain sampler — a true top-down map (world
++X→U, +Z→V) is an IMPROPER view, so exactly one ortho axis must be mirrored; with up=+Z the
+downward look-at already gets +X→+U right, but +Z→+V came out flipped. Fix: negate ONLY top/bottom,
+`OrthographicCamera(C/2, -C/2, -C/2, C/2)`.
+
+VERIFICATION was iterative and worth recording: a first attempt flipped BOTH ortho axes, which
+only MOVED the mirror from Z to X (shadows still misaligned, just on the other axis) — the
+low-angle A/B didn't expose it, but a straight-down per-axis shear probe did (+X shear → shadow to
+−X). The per-axis probe (bake with uShearXZ=(±k,0)/(0,±k) at pitch≈−1.52, screen-right=+X,
+screen-down=+Z) is the decisive test; the real-sun baked-vs-realtime A/B confirms the final look.
+Both now agree: baked shadows anchor at the base and match the realtime cast in direction/length.
+props gate green. Alignment fix only — the `castRealtime` default-flip decision is unchanged and
+still needs the user's sign-off on the baked LOOK.
