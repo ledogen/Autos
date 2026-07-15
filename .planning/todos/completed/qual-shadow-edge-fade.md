@@ -1,7 +1,9 @@
 ---
 id: QUAL-18
 type: quality
-status: open
+status: completed
+closed: 2026-07-14
+resolution: "USER-VERIFIED good in-game 2026-07-14. Re-landed solo (recovered src/shadow-fade.js from cc28322) after the 2026-07-08 bundled-revert; verified independently of the PERF-07 blob bake this time. The shadowmap_pars_fragment Chebyshev smoothstep dissolve replaces the hard moving shadow-box edge. Shipped in a52c62e (shadow-map edge fade). Closing accepted."
 opened: 2026-07-07
 reopened: 2026-07-08
 severity: minor

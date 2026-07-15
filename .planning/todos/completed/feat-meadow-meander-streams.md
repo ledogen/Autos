@@ -1,7 +1,9 @@
 ---
 id: FEAT-24
 type: feature
-status: open
+status: completed
+closed: 2026-07-14
+resolution: "USER-VERIFIED good in-game 2026-07-14. The 2026-07-08 rework (meander regime retune: gm16 pre-gate 0.15→0.45, meanderSlopeRef 0.10→0.32, strength 1.5, wavelength 90 m, |a|≤1.2 rad cap; streamCarveSample self-seam min-compose; low-end taper) landed the meadow meanders, slope-varying width, and reduced spawn rate. Route bundle regenerated. Closing accepted."
 opened: 2026-07-07
 severity: minor
 source: user-request

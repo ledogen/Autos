@@ -1,7 +1,9 @@
 ---
 id: FEAT-25
 type: feature
-status: open
+status: completed
+closed: 2026-07-14
+resolution: "USER-VERIFIED good in-game 2026-07-14. The 2026-07-08 rework fixed both reject reasons: buildStreamBedMesh now drapes 5 columns/row over composed terrain (dry cobble shoulders above the waterline, stream-bed-drape gate) and the scatter adds MEDIUM 'rock'-class stones in-channel at streamMedRockBoost=10 (~10x ambient). Cobble texture + med stones now visible. Closing accepted."
 reopened: 2026-07-08
 note-reopen: "USER VERIFY 2026-07-08 FAILED: 'no cobble texture is present and no medium stones
 are in riverbeds as far as i can tell. i want like 10x med stones in beds.' Two gaps: (1) the
