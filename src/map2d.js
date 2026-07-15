@@ -418,11 +418,11 @@ export class Map2D {
         }
     }
 
-    // (3) Classified crossings — colored by kind (the v2 grade-separation / parallel signal).
+    // (3) Classified crossings — colored by kind (at-grade junction vs near-parallel graze).
     _drawCrossings(ctx) {
         const road = this._road
         if (!road || typeof road.crossingList !== 'function') return
-        const col = { AT_GRADE: '#3fd06a', NEAR_PARALLEL: '#e0c83c', GRADE_SEP: '#e0543c' }
+        const col = { AT_GRADE: '#3fd06a', NEAR_PARALLEL: '#e0c83c' }
         for (const c of road.crossingList()) {
             const p = c.point; if (!p) continue
             ctx.fillStyle = col[c.kind] || '#aaaaaa'
@@ -485,7 +485,6 @@ export class Map2D {
             ['#d8d8d0', 'road'],
             ['#3fd06a', 'AT_GRADE'],
             ['#e0c83c', 'NEAR_PARALLEL'],
-            ['#e0543c', 'GRADE_SEP'],
             ['#46c8ff', 'hub (deg≥3)'],
             ['#7088a0', 'node (deg 2)'],
             ['#506070', 'leaf (deg≤1)'],

@@ -909,13 +909,12 @@ export class RoadMeshSystem {
         // rescan that cost the 296 ms Ultra stall — _streamNetwork warms it, so this is a cache hit).
         // Only AT_GRADE nodes get a pad. QUAL-10: the pad is a GRADED apron (buildJunctionFootprint samples
         // sampleRoadTopY per vertex), so it rides the same FEAT-19-graded ribbon surface it overlaps
-        // (mesh == collision surface). GRADE_SEP nodes are overpasses (Step 3) and NEAR_PARALLEL nodes are
-        // glancing grazes — neither gets a pad.
+        // (mesh == collision surface). NEAR_PARALLEL nodes are glancing grazes — they get no pad.
         if (this._params.roadJunctionFootprints) {
             const tileWorldX = tileX * CHUNK_SIZE
             const tileWorldZ = tileZ * CHUNK_SIZE
             const buildPad = (node) => {
-                if (node.kind !== 'AT_GRADE') return   // only flat junctions; overpass/graze get no pad
+                if (node.kind !== 'AT_GRADE') return   // only flat junctions; a near-parallel graze gets no pad
                 const nx = node.pos.x, nz = node.pos.z
                 // Assign to tile if node falls inside this tile's bounds.
                 if (nx >= tileWorldX && nx < tileWorldX + CHUNK_SIZE &&

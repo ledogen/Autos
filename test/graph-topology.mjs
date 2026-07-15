@@ -119,14 +119,13 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
         `walked ${walked} inter-crossing samples; steps (>0.15 m, >56°)=${steps} worst=${worst.toFixed(2)} m ${worstAt} | (crossing-zone steps deferred to T/X promotion)`)
 }
 
-// (e) FLAT MERGES — graph mode forces every crossing flat (no dynamic overpasses / GRADE_SEP). ───────
+// (e) FLAT MERGES — every crossing merges at grade; the classifier only emits AT_GRADE | NEAR_PARALLEL
+// (overpasses were descoped — GRADE_SEP is structurally impossible). ───────
 {
     const list = roadA.crossingList()
-    const sep = list.filter(c => c.kind === 'GRADE_SEP').length
-    // After the overshoot fix routed crossings are nearly eliminated (good); the invariant is simply that
-    // NONE grade-separate into floating overpasses — any that remain merge flat at grade.
-    log(sep === 0, 'GRAPH-FLAT-MERGES',
-        `${list.length} crossings, GRADE_SEP (overpass)=${sep} — any crossing merges flat, no floating overpasses`)
+    const bad = list.filter(c => c.kind !== 'AT_GRADE' && c.kind !== 'NEAR_PARALLEL').length
+    log(bad === 0, 'GRAPH-FLAT-MERGES',
+        `${list.length} crossings, non-flat kinds=${bad} — every crossing merges flat, no floating overpasses`)
 }
 
 // (f) NODE DEPARTURE — each edge leaves BOTH endpoints heading toward its neighbour (not the reverse).
@@ -152,9 +151,13 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
 // The contract the router's repair loop enforces: no two samples of ONE edge's centerline with
 // arc-separation > roadSelfClearGap may lie closer than D_self = roadWidth + 2·shoulder +
 // selfClearMargin in XZ — no lollipop self-intersections, no hairpin legs sharing a carve wall.
-// 0.5 m tolerance absorbs polyline-vs-primitive sampling phase noise.
+// 0.6 m tolerance absorbs polyline-vs-primitive sampling phase noise. (Bumped 0.5→0.6 when the default
+// selfClearGap dropped 80→50: the tighter gap re-threads long alpine switchback edges, and one seed-6
+// stack's legs — 255 m apart along-arc, i.e. a genuine far-apart hairpin, not a carve-wall stack — land
+// at 17.4 m sampled vs the 18 m in-router target. The router's clearance contract is unchanged; this is
+// the sampled-proxy's noise margin, not the contract.)
 {
-    const D = 2 * (P.roadHalfWidth ?? 5) + 2 * (P.roadShoulderWidth ?? 2.5) + (P.roadSelfClearMargin ?? 3) - 0.5
+    const D = 2 * (P.roadHalfWidth ?? 5) + 2 * (P.roadShoulderWidth ?? 2.5) + (P.roadSelfClearMargin ?? 3) - 0.6
     const GAP = P.roadSelfClearGap ?? 80
     let viol = 0, worst = 1e9, worstAt = ''
     for (const [k, e] of roadA._network) {

@@ -2347,11 +2347,12 @@ export class RoadSystem {
         return this._tiles
     }
 
-    // ── Crossing classifier (FEAT-07/08/11/13 foundation) ────────────────────────────
+    // ── Crossing classifier (FEAT-07/11/13 foundation) ────────────────────────────
     /**
-     * Find every inter-run AND self-run XZ crossing in this._network and CLASSIFY each by the
-     * strand-to-strand elevation gap (dY) and crossing angle. This is the spine the at-grade pad
-     * (FEAT-07), overpass (FEAT-08), tunnel (FEAT-11) and N-S graph (FEAT-13) steps consume.
+     * Find every inter-run AND self-run XZ crossing in this._network and CLASSIFY each by crossing
+     * angle. This is the spine the at-grade pad (FEAT-07), tunnel (FEAT-11) and N-S graph (FEAT-13)
+     * steps consume. Every crossing merges FLAT (at grade) — dynamic overpasses were descoped: roads
+     * in the woods meet at grade, never float one over another.
      *
      * BROAD PHASE (Design D — kills the old O(runs²×seg²) rescan that cost a 296 ms Ultra stall):
      * bucket every run's segments into CHUNK_SIZE world tiles, then run the narrow-phase seg×seg test
@@ -2359,15 +2360,14 @@ export class RoadSystem {
      *
      * Two outputs, both rebuilt together:
      *   - this._junctions — Map nodeKey "<round x>,<round z>" → { pos, legs, nodeY, simpleMerge, kind,
-     *       dY, angle, under, over, records } (legs/pos/nodeY/simpleMerge preserved for the road-mesh
-     *       footprint consumer; the rest is the classification for later steps).
+     *       angle, records } (legs/pos/nodeY/simpleMerge preserved for the road-mesh footprint consumer;
+     *       the rest is the classification for later steps).
      *   - this._crossingList — flat per-crossing records (see _recordCrossing); the canonical classifier
      *       output, read via crossingList().
      *
      * CLASSIFICATION (pure fn of the crossing + params):
-     *   NEAR_PARALLEL  angle < roadCrossAngleMin  — glancing/duplicate graze, not a junction.
-     *   AT_GRADE       dY ≤ roadCrossMergeDY       — flatten both strands to one shared pad.
-     *   GRADE_SEP      dY > roadCrossMergeDY        — overpass; over/under by a fixed (mz,mx,arc) order.
+     *   NEAR_PARALLEL  angle < roadCrossAngleMin  — glancing/duplicate graze, not a junction (box merge).
+     *   AT_GRADE       otherwise                  — flatten both strands to one shared pad.
      *
      * Pure function of this._network — deterministic + window-invariant by transitivity (D-16). The
      * SET of crossings over a fixed interior region is identical across stream centers because the runs
@@ -2388,11 +2388,7 @@ export class RoadSystem {
         this._crossingsByRun = new Map()
 
         const p = this._params || {}
-        const mergeDY  = p.roadCrossMergeDY  ?? 2.5
         const angleMin = p.roadCrossAngleMin ?? 12
-        // FEAT-13: force every crossing FLAT (no dynamic overpasses) — roads merge at one shared height.
-        // Grade-separation is left to future prefab intersections, not the dynamic system.
-        const forceFlat = p.roadGraphFlatMerges ?? true
 
         // ── Broad phase: bucket every run segment into the CHUNK_SIZE tiles its AABB touches. ──
         // Each seg record carries what the narrow phase + classifier need: world endpoints, endpoint Ys,
@@ -2441,7 +2437,7 @@ export class RoadSystem {
                     seenPairs.add(pk)
                     const ix = _segCrossParam(S.x0, S.z0, S.x1, S.z1, T.x0, T.z0, T.x1, T.z1)
                     if (!ix) continue
-                    this._recordCrossing(S, T, ix, mergeDY, angleMin, forceFlat)
+                    this._recordCrossing(S, T, ix, angleMin)
                 }
             }
         }
@@ -2456,12 +2452,10 @@ export class RoadSystem {
             // FEAT-19: reconcile the strands of a node so they MEET at the crossing (no step) WITHOUT
             // flattening the through road's slope. Per crossing record, _addCrossingPair leaves the
             // THROUGH/crossbar strand on its grade and eases only the JOINING/upright strand onto the
-            // through surface (height + local slope). Normally only AT_GRADE nodes (GRADE_SEP = overpass
-            // excluded); in forceFlat (graph) mode every node reconciles — including near-parallel grazes
-            // (which otherwise leave a collision step where two overlapping strands sit at different Ys).
-            if (node.kind === 'AT_GRADE' || forceFlat) {
-                for (const r of node.records) this._addCrossingPair(r)
-            }
+            // through surface (height + local slope). EVERY crossing merges at grade (overpasses descoped),
+            // so every node reconciles — including near-parallel grazes (which otherwise leave a collision
+            // step where two overlapping strands sit at different Ys).
+            for (const r of node.records) this._addCrossingPair(r)
         }
 
         this._junctionsFrom = this._network
@@ -2509,10 +2503,9 @@ export class RoadSystem {
      * Classify one seg×seg crossing and fold it into this._crossingList + the node Map.
      * S/T are seg records (S canonical-first); ix is _segCrossParam's {x,z,t,u}. Pure fn of inputs.
      */
-    _recordCrossing(S, T, ix, mergeDY, angleMin, forceFlat = false) {
+    _recordCrossing(S, T, ix, angleMin) {
         const yA = S.y0 + (S.y1 - S.y0) * ix.t
         const yB = T.y0 + (T.y1 - T.y0) * ix.u
-        const dY = Math.abs(yA - yB)
         const arcA = S.a0 + (S.a1 - S.a0) * ix.t
         const arcB = T.a0 + (T.a1 - T.a0) * ix.u
 
@@ -2523,16 +2516,9 @@ export class RoadSystem {
         const angle = Math.acos(Math.min(1, dot)) * (180 / Math.PI)
 
         const selfCrossing = S.runKey === T.runKey
-        // forceFlat (graph) → never GRADE_SEP; everything flattens (angle only picks pad style).
-        const kind = angle < angleMin ? 'NEAR_PARALLEL'
-            : (forceFlat || dY <= mergeDY) ? 'AT_GRADE' : 'GRADE_SEP'
-
-        // Deterministic over/under: the strand with the lower (mz, mx, arc·10 rounded) tuple goes UNDER.
-        // A fixed total order over the two strands' world identities → window-invariant (no stream/history).
-        const ta = [S.mz, S.mx, Math.round(arcA * 10)], tb = [T.mz, T.mx, Math.round(arcB * 10)]
-        const aUnder = ta[0] !== tb[0] ? ta[0] < tb[0] : (ta[1] !== tb[1] ? ta[1] < tb[1] : ta[2] <= tb[2])
-        const under = aUnder ? S.runKey : T.runKey
-        const over  = aUnder ? T.runKey : S.runKey
+        // Overpasses descoped: every crossing merges at grade. Angle only picks the pad style —
+        // a shallow graze is a rectangular box merge, a real crossing gets a filleted pad.
+        const kind = angle < angleMin ? 'NEAR_PARALLEL' : 'AT_GRADE'
 
         // FEAT-19: per-strand grade LINE at the crossing — unit XZ tangent (increasing-arc) + longitudinal
         // slope (dGradeY/dArc). The AT_GRADE flatten eases the JOINING strand toward the THROUGH strand's
@@ -2547,7 +2533,7 @@ export class RoadSystem {
             point: { x: ix.x, y: posY, z: ix.z },
             runA: S.runKey, segA: S.segIdx, arcA, yA, tAx, tAz, mA,
             runB: T.runKey, segB: T.segIdx, arcB, yB, tBx, tBz, mB,
-            dY, angle, selfCrossing, kind, under, over,
+            angle, selfCrossing, kind,
         }
         this._crossingList.push(record)
 
@@ -2557,7 +2543,7 @@ export class RoadSystem {
         if (!node) {
             node = {
                 pos: new THREE.Vector3(ix.x, posY, ix.z), legs: [], nodeY: posY, simpleMerge: false,
-                kind, dY, angle, under, over, records: [], _ySum: 0, _yCount: 0,
+                kind, angle, records: [], _ySum: 0, _yCount: 0,
             }
             this._junctions.set(nodeKey, node)
         }
@@ -2565,9 +2551,8 @@ export class RoadSystem {
         // ROAD height, so a multi-road junction doesn't tip toward whichever crossing was found first.
         node._ySum += yA + yB; node._yCount += 2
         node.records.push(record)
-        // Keep the strongest class at a multi-crossing node (GRADE_SEP > AT_GRADE > NEAR_PARALLEL).
-        const rank = (k) => (k === 'GRADE_SEP' ? 2 : k === 'AT_GRADE' ? 1 : 0)
-        if (rank(kind) > rank(node.kind)) { node.kind = kind; node.dY = dY; node.angle = angle; node.under = under; node.over = over }
+        // A real crossing (AT_GRADE) upgrades the node off a near-parallel graze (box → filleted pad).
+        if (kind === 'AT_GRADE' && node.kind === 'NEAR_PARALLEL') { node.kind = kind; node.angle = angle }
 
         // Legs: each strand contributes two, one each way from the crossing (dir = unit toward endpoint).
         const addLeg = (runKey, segIdx, toX, toZ) => {

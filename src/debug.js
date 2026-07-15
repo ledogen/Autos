@@ -383,7 +383,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(params, 'roadSiteMinDist', 120, 600, 20).name('Node Min-Gap (m)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadSiteValleySnap').name('Valley Snap').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphMargin', 1, 6, 1).name('Margin (cells)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadGraphFlatMerges').name('Flat Merges').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphDeviationCap', 0, 12, 0.5).name('Earthwork Cap (m)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphMaxGrade', 0.05, 0.25, 0.01).name('Max Grade').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphGoalBlend', 20, 200, 10).name('Goal Blend').onChange(fireRoadParam)
@@ -558,13 +557,14 @@ export function initDebug (params, callbacks = {}, options = {}) {
     roadSiteMinDist:       'Minimum distance allowed between two graph nodes — stops junctions from clustering too tightly.',
     roadSiteValleySnap:    'Nudges graph nodes toward nearby valley floors so roads settle into low ground.',
     roadGraphMargin:       'Extra cells beyond the streamed area the graph is built into, so edges near the border still connect.',
-    roadGraphFlatMerges:   'When on, crossings on flat ground merge into an at-grade junction instead of building an overpass.',
     roadGraphDeviationCap: 'Max earthwork (m of cut/fill) the graph router spends to hold grade before it detours instead.',
     roadGraphMaxGrade:     'Steepest grade the graph router permits. Higher = straighter/steeper; lower = windier routes that stay gentle.',
     roadGraphGoalBlend:    'How hard the router aims straight at the destination near the end. Higher = less weaving as it arrives.',
     roadGraphWTurn:        'Curve penalty for the graph router — higher = straighter roads with fewer, gentler turns.',
     roadGraphWAlt:         'Reward for staying low / following valleys. Higher = roads hug the low ground more.',
     roadGraphCullCrossings:'Drops redundant crossings from the graph, thinning tangled intersection clusters.',
+    roadSelfClearMargin:   'Extra clearance (m) beyond the road+shoulder footprint a road must keep from ITSELF. Higher = wider berth where a road loops back near itself.',
+    roadSelfClearGap:      'Arc window (m) within which a road passing close to itself is treated as one natural bend (exempt). Below it = expected switchback; beyond it, a close approach is a self-overlap and the route re-threads wider. Lower = tighter hairpins get flagged and un-knotted.',
     roadWGrade:            'Cost weight for steepness — higher trades distance for gentler grades.',
     roadWOver:             'Soft-cap penalty once grade exceeds Max Grade — discourages, but does not forbid, over-steep segments.',
     roadValleyDepthCap:    'How far below baseline (m) descending still earns reward. Higher = more decisive valley-following, less squiggle.',

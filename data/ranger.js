@@ -414,8 +414,8 @@ export const RANGER_PARAMS = {
   // pad sits coplanar with the two strands the mid-span flatten eased to node.nodeY, so the crossing reads
   // as one paved intersection (mesh == the flattened collision surface). The old 296 ms stall is gone —
   // _detectJunctions() is the bounded, once-per-build, identity-cached crossing classifier (warmed by
-  // _streamNetwork), so the per-tile build is a cache hit. Only AT_GRADE nodes get a pad (GRADE_SEP =
-  // overpass Step 3; NEAR_PARALLEL = glancing graze). Set false to hide the pads.
+  // _streamNetwork), so the per-tile build is a cache hit. Only AT_GRADE nodes get a pad (NEAR_PARALLEL =
+  // glancing graze — no pad). Set false to hide the pads.
   roadJunctionFootprints: true,
 
   // QUAL-10/11 "cut-back-and-weld" junctions (buildJunctionFootprint + _detectNodeJunctions): the swept
@@ -445,35 +445,19 @@ export const RANGER_PARAMS = {
   // untouched: no pad spam. 0 = off. Kinks > 75° are never padded (degenerate strands).
   roadJunctionKinkDeg: 9,
 
-  // ── Crossing classifier (FEAT-07/08/11/13 foundation) ───────────────────────────────────────────
-  // road.js _detectJunctions() finds every inter-run / self-run XZ crossing and CLASSIFIES each by the
-  // strand-to-strand elevation gap (dY) and crossing angle. The class drives what later steps build:
-  //   NEAR_PARALLEL (angle < roadCrossAngleMin) — a glancing/duplicate graze, NOT a junction (no pad/bridge).
-  //   AT_GRADE      (dY ≤ roadCrossMergeDY)      — flatten both strands to one shared pad (FEAT-07).
-  //   GRADE_SEP     (dY >  roadCrossMergeDY)     — overpass: one strand bridges the other (FEAT-08); the
-  //                                                cut-side counterpart is a tunnel (FEAT-11).
-  // roadCrossMergeDY is COUPLED to roadCrossOverpassClearance: a grade-separation only makes physical
-  // sense when the natural strand gap is already big enough to fit the lower truck UNDER the upper deck
-  // (deck thickness + truck height ≈ roadCrossOverpassClearance). Below that you can't build a bridge
-  // there anyway → flatten both strands into one at-grade pad (these are service roads — the pad must
-  // clear a large truck + deck). So default mergeDY ≈ clearance (4.5 m): dY < 4.5 m merges, dY ≥ 4.5 m
-  // overpasses. At current earthwork params (roadDeviationCap 8 m) that grade-separates ~27% of inter-row
-  // crossings (the genuinely tall gaps, up to ~10 m); the rest flatten. Raise to flatten still more.
-  // USER-OWNED — tune to taste; live-tunable sliders are a later step.
-  roadCrossMergeDY:  4.5,  // m  — strand dY at/below which a crossing flattens to one pad vs grade-separates (≈ clearance).
+  // ── Crossing classifier (FEAT-07/11/13 foundation) ──────────────────────────────────────────────
+  // road.js _detectJunctions() finds every inter-run / self-run XZ crossing and CLASSIFIES each by
+  // crossing angle. Every crossing merges FLAT (at grade) — dynamic overpasses were descoped (roads in
+  // the woods meet at grade, never float one over another). The class drives the pad style:
+  //   NEAR_PARALLEL (angle < roadCrossAngleMin) — a glancing/duplicate graze, NOT a junction (no pad).
+  //   AT_GRADE      (otherwise)                 — flatten both strands to one shared pad (FEAT-07).
   roadCrossAngleMin: 12,   // deg — crossings shallower than this are near-parallel grazes, not junctions.
-  roadCrossOverpassClearance: 4.5, // m — deck underside clearance above the lower strand (truck + deck). RESERVED for Step 3.
 
   // ── Road network topology (FEAT-13 v2) ──────────────────────────────────────────────────────────
   // The network is an URQUHART graph (Delaunay minus each triangle's longest edge) over a BLUE-NOISE
   // anchor set: varied-angle real T/X intersections at nodes, sparse with route-choice cycles, CONNECTED
   // by construction (Urquhart ⊇ Euclidean MST), window-invariant. (QUAL-12 removed the historical parallel-
   // rows generator; the graph is now the sole topology. See .planning/ROAD-GRAPH-HANDOFF.md.)
-  // roadGraphFlatMerges: force EVERY crossing to a flat at-grade intersection (no dynamic
-  // overpasses). Roads meet/merge at one shared height instead of one floating over another. Real
-  // grade-separation is deferred to future prefab intersections (cloverleaf etc.), not the dynamic
-  // system. true is strongly recommended: dynamic overpasses produce intense Z geometry at junctions.
-  roadGraphFlatMerges: true,
   // roadGraphDeviationCap: graph-mode earthwork fill/cut cap (m) — how far the smooth design grade may
   // deviate from terrain before the clamp pulls it back. CAUTION: too TIGHT is the jarring "level-patch"
   // staircase — the clamp slams the gentle wide-window design line back onto steep raw grade wherever a
@@ -563,7 +547,7 @@ export const RANGER_PARAMS = {
                             // self-clearance footprint D_self = roadWidth + 2·shoulder + margin = 18 m BY CONSTRUCTION.
   roadArcGentleRadius: 75,  // m — gentle-turn primitive radius (the preferred, cheap curve). 75 m
                             // sweeps wider → fewer tight loopbacks; the loopbacks that remain read as
-                            // natural cloverleaf/on-ramp curves (see feat-road-self-overpass ticket).
+                            // natural cloverleaf/on-ramp curves.
   roadArcHeurWeight:   1.5, // weighted-A* heuristic inflation — PERF knob: higher = faster streaming, slightly less optimal routing.
 
   // ── Fixed-angle motion-primitive palette (QUAL-05 follow-up: large sweeping radii) ──────────────
@@ -607,7 +591,10 @@ export const RANGER_PARAMS = {
   // sampled from the final centerlines of HIGHER-PRIORITY sibling edges (canonical edge-key order),
   // except near a node both edges share (merge exemption) — kills parallel runs with a shared cut
   // wall. The Urquhart graph is planar, so edge-edge proximity is always route wander, never needed.
-  roadSelfClearGap: 80,       // m — arc window within which self-proximity is legitimate (one bend)
+  roadSelfClearGap: 50,       // m — arc window within which self-proximity is legitimate (one bend).
+                              //      80 let tight hairpins (legs ~60 m apart along-arc) hug at ~5 m and
+                              //      merge into a self-overlap blob (seed 7); 50 flags them so the route
+                              //      re-threads wider (worst self-proximity 5→20 m, clear of the footprint).
   roadSelfClearMargin: 3,     // m — clearance beyond the carve footprint (D_self = 10 + 5 + 3 = 18)
   roadCorridorClearance: 20,  // m — min XZ distance between two edges' centerlines outside merge zones
   // roadCorridorExempt: radius around the pair's endpoint nodes within which corridor discs /

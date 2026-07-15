@@ -142,3 +142,27 @@ fresh-replay strand); replay of that capture is deterministic (3 identical runs)
 **Open follow-up:** `data/route-cache-default.json.gz` doesn't contain the one-ring routes
 (route-bundle-parity only checks the intersection, so it stays green); regenerating the bundle
 with the new warmSpawnBand edge set would shave the worker warm at cold boot.
+
+## Reclassification 2026-07-15 (user decision — benign residual demoted to a WATCH, not a hard gate)
+
+The `roadSelfClearGap` default drop 80→50 (fixes seed-7 self-overlap blobs) re-threads long alpine
+switchback edges and re-surfaced ONE testig radius-flip: `g:1,2,2:1,3,2` @(1668,713) is `worldOnly`
+(320-kept / 1500-culled). Investigated to ground truth before accepting:
+
+- **Direction is the benign one.** `worldOnly` = a real, DRIVABLE, *redundant* (has-a-detour) road
+  present at play radius but omitted by the 1500 m 2D-map view. The dangerous inverse `mapOnlyNear`
+  (a road drawn on the map that isn't there when you drive up) stays **0**.
+- **The play world never culls it.** Play road-radius is a fixed player-centred window
+  `(ring+0.5)·2·CHUNK_SIZE` → 320 m Normal … **576 m Ultra (ceiling)**; it does not grow as the world
+  loads. Measured at the edge's own center: present at r=320/448/576/768/1024, only culled at ~1500 m.
+  So the edge is reachable + stable at every play tier and approach — the in-play re-carve/disappear
+  bug (the 2026-07-07 escalation) does NOT occur here; only the separate map RoadSystem under-draws it.
+- **APPROACH-invariance still passes** (the actual in-play guard) — drive-out-and-back reproduces the
+  same network.
+
+**Gate change (`test/graph-cull-radius-invariance.mjs`):** made check (1) asymmetric by real-world risk.
+`mapOnlyNear` (phantom map roads) and the APPROACH check stay **HARD FAIL**. `worldOnly` (benign map
+omission of a redundant drivable road) is now a **non-blocking `[WARN]`** — printed every run so a
+regression still surfaces, but it doesn't red the suite. Net: BUG-25's gameplay-affecting cases remain
+gated; the cosmetic map-omission is a documented watch. Possible future cleanup: give the map's 1500 m
+RoadSystem the same play-radius cull behavior (or none) so map == world exactly.
