@@ -1,10 +1,16 @@
 ---
 id: PERF-07
 type: perf
-status: open
+status: done
 opened: 2026-06-30
+resolved: 2026-07-15
 severity: minor
 source: user-idea
+resolution: "Baked per-chunk prop-shadow atlas shipped (merge a52c62e), then three stacked alignment
+bugs fixed in d9f159f — tile Z-mirror (ortho frustum), flat-plane-vs-slope projection (per-instance
+aShadowK ground fit), and HiDPI tile addressing (renderer.setViewport multiplies by pixelRatio; use
+renderTarget.viewport/scissor). Gate test/prop-shadow-alignment.mjs pins all three. Verified via CDP
+A/B at DPR 1 + forced DPR 2; user-verified in-game 2026-07-15."
 note: "Idea, perf-uncertain — MEASURE before committing. Consider pre-baking environment lighting/shadows
 (static AO / contact shadows / lightmaps) for props instead of every prop being a real-time shadow
 CASTER in the sun's shadow pass. Today every scattered prop has castShadow=true (prop-system.js:74) →
