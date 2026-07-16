@@ -49,6 +49,8 @@ export const GATES = [
     desc: 'BUG-21: no off-road sliver at a shared hairpin anchor (radial end-fallback) — no jolt crossing run boundaries' },
   { file: 'replay-selftest.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'capture↔replay round-trip (Phase 4 place path) — guards src/capture.js + replay.mjs tooling' },
+  { file: 'prop-shadow-alignment.mjs', subsystem: 'props', cost: 'fast', extraDeps: ['src/main.js', 'src/terrain.js'],
+    desc: 'PERF-07: bake-camera UV == terrain-sampler UV per axis (the twice-shipped mirror bug), shear == sun-ray ground hit, prop ring ⊂ atlas' },
   { file: 'route-worker-sync.mjs', subsystem: 'road', cost: 'fast', extraDeps: ['src/road-carve.js', 'src/road-worker.js'],
     desc: 'PERF-03 WS-A: worker routing copy (road-worker.js ROAD_WORKER_SOURCE) byte-identical to road-carve.js canonical' },
   { file: 'route-bundle-parity.mjs', subsystem: 'road', cost: 'heavy', extraDeps: ['data/route-cache-default.json'],

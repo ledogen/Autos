@@ -30,7 +30,7 @@ import * as THREE from 'three'
 import { buildPalette } from './prop-palette.js'
 import { scatterChunk, scatterChunkGen } from './prop-scatter.js'
 import { sphereVsSphere, sphereVsCapsuleY, sphereVsCapsule, sphereVsMeshInstance, bushDrag } from './prop-collider.js'
-import { BAKE_LAYER } from './prop-shadow-bake.js'   // PERF-07: baked prop-shadow atlas (main.js owns the system)
+import { BAKE_LAYER, shadowShearScale } from './prop-shadow-bake.js'   // PERF-07: baked prop-shadow atlas (main.js owns the system)
 import { FLORA_PARAMS } from '../../data/flora.js'
 
 // Per-category global instance capacity (split evenly across that category's variants). Sized for
@@ -94,9 +94,17 @@ export class PropSystem {
         // free list (use high indices first so low slots fill contiguously)
         const free = []
         for (let i = perVariant - 1; i >= 0; i--) free.push(i)
+        // PERF-07: per-instance shadow ground-fit factor for the bake shear (default 1 = flat
+        // ground; written per slot in _commitChunk). Lives on the variant geometry like any
+        // instanced attribute; the main Phong material simply ignores it. geoMaxY caches the
+        // unscaled prop height for the canopy-centre h0.
+        const kAttr = new THREE.InstancedBufferAttribute(new Float32Array(perVariant).fill(1), 1)
+        kAttr.setUsage(THREE.DynamicDrawUsage)
+        entry.geo.setAttribute('aShadowK', kAttr)
+        if (!entry.geo.boundingBox) entry.geo.computeBoundingBox()
         const key = cat + '#' + v
         // occ/top: occupancy bitmap + high-water mark for PERF-10 count compaction.
-        this._meshes.set(key, { mesh, free, used: 0, cap: perVariant, occ: new Uint8Array(perVariant), top: 0 })
+        this._meshes.set(key, { mesh, free, used: 0, cap: perVariant, occ: new Uint8Array(perVariant), top: 0, geoMaxY: entry.geo.boundingBox.max.y })
         this._collision.set(key, entry.collision || null)
         scene.add(mesh)
       })
@@ -217,6 +225,21 @@ export class PropSystem {
       rec.mesh.setMatrixAt(slot, _m)
       _col.setRGB(pl.tint[0], pl.tint[1], pl.tint[2])
       rec.mesh.setColorAt(slot, _col)
+      // PERF-07: per-instance ground fit for the shadow bake — scale the flat-plane sun shear so
+      // THIS prop's baked shadow lands on the real sloped terrain (shadowShearScale). h0 = canopy
+      // centre (0.65 × geometry height × scale); flat ground → k = 1. sunShear is absent headless
+      // (no sky) — the attribute default 1 then matches the old flat projection.
+      if (this._samplers.sunShear) {
+        const shear = this._samplers.sunShear()
+        const h0 = rec.geoMaxY * 0.65 * pl.scale
+        // March only the props whose shadows are long enough for slope error to show (trees,
+        // boulders); small rocks/bushes keep the flat default — ~17 height samples each would
+        // dominate the commit for zero visible gain.
+        const k = (h0 > 2 && shear.lengthSq() > 1e-6)
+          ? shadowShearScale(pl.x, pl.y, pl.z, h0, shear.x, shear.y, this._samplers.heightAt)
+          : 1
+        rec.mesh.geometry.attributes.aShadowK.setX(slot, k)
+      }
       owned.push({ key, slot })
       this._dirty.add(key)
 
@@ -381,6 +404,7 @@ export class PropSystem {
       if (!rec) continue
       rec.mesh.instanceMatrix.needsUpdate = true
       if (rec.mesh.instanceColor) rec.mesh.instanceColor.needsUpdate = true
+      rec.mesh.geometry.attributes.aShadowK.needsUpdate = true   // PERF-07 ground-fit factors
       rec.mesh.count = rec.top   // PERF-10: draw the occupied prefix only (read at draw time, no flag needed)
     }
     this._dirty.clear()

@@ -41,6 +41,76 @@ const MAX_BAKES_PER_CALL = 8         // tiles baked per update() — sliced to a
 // Positive modulo (cx can be negative).
 const pmod = (a, n) => ((a % n) + n) % n
 
+/**
+ * Build the top-down bake camera for one chunk tile. Exported as a pure factory so the headless
+ * alignment gate (test/prop-shadow-alignment.mjs) can assert, in node, that a world point projects
+ * to EXACTLY the tile UV the terrain shader samples for that point — this is the axis-mirror trap
+ * that shipped twice (see below), now pinned numerically instead of by eyeball.
+ *
+ * Derivation (don't trust intuition here — compute it): camera at chunk centre looking straight
+ * down with up=+Z gives the view basis X_cam = world −X, Y_cam = world +Z. The terrain sampler maps
+ * world +X → tile U and world +Z → tile V, so NDC must satisfy ndc_x = +dx·2/C and ndc_y = +dz·2/C.
+ *   ndc_x = 2·x_view/(r−l) with x_view = −dx  ⇒  r−l must be negative  ⇒  left=+C/2, right=−C/2.
+ *   ndc_y = 2·y_view/(t−b) with y_view = +dz  ⇒  t−b must be positive  ⇒  top=+C/2, bottom=−C/2.
+ * i.e. ONLY the left/right pair is mirrored. (History: the first ship mirrored neither and read
+ * X-flipped; the "fix" 9615b6e/5555890 mirrored BOTH pairs, which moved the mirror onto Z — shadows
+ * detached from their props by up to a chunk. Both slipped because alignment was judged from
+ * screenshots; the gate makes it arithmetic.)
+ * @param {number} chunk — chunk side in metres
+ */
+export function makeBakeCamera(chunk = CHUNK) {
+  const cam = new THREE.OrthographicCamera(chunk / 2, -chunk / 2, chunk / 2, -chunk / 2, 1, 4000)
+  cam.up.set(0, 0, 1)
+  return cam
+}
+
+/**
+ * Sun direction → ground shear (metres of XZ shadow offset per metre of caster height). `sunDir`
+ * points from ground toward the sun (sky.js sunDirection); the shadow falls opposite, so the offset
+ * is -dir.xz/|dir.y| — magnitude cot(elevation), matching the realtime shadow map's geometry. The
+ * near-horizon clamp bounds shadow length. One formula, three consumers (setSun, the per-instance
+ * ground-fit in prop-system, the alignment gate) — keep them on this function.
+ * @param {THREE.Vector3} sunDir @param {THREE.Vector2} out
+ */
+export function shearFromSun(sunDir, out) {
+  const y = Math.max(Math.abs(sunDir.y), 0.05)
+  return out.set(-sunDir.x / y, -sunDir.z / y)
+}
+
+/**
+ * Per-instance ground fit for the bake's shear projection. The projection shader flattens a prop
+ * onto the HORIZONTAL plane through its base — but the realtime shadow map intersects the sun ray
+ * with the actual TERRAIN, and on a grade those differ by up to |shear|·slope per metre of height
+ * (with a low sun on a steep hillside the true landing point is 2–3× the flat offset — shadows
+ * visibly detach downhill / bunch uphill; found live at seed 6 (334,-108)).
+ *
+ * This returns the scalar k such that offsetting by h·shear·k lands the point h0 above (bx,by,bz)
+ * exactly on the terrain: walking the sun ray down from that point, after descending Δ metres its
+ * ground track is at base.xz + Δ·shear and its height is by + h0 − Δ; find the terrain crossing by
+ * expansion + bisection and return k = Δhit/h0 (flat ground → Δhit = h0 → k = 1). Applied per INSTANCE
+ * at the canopy centre h0, so each prop's shadow lands where the realtime one does; the residual
+ * within one silhouette is second-order. Pure — gate-tested against analytic slopes.
+ * @param {number} bx @param {number} by @param {number} bz — prop base (on the ground)
+ * @param {number} h0 — representative caster height above the base (canopy centre), > 0
+ * @param {number} sx @param {number} sz — shear vector (shearFromSun)
+ * @param {(x:number,z:number)=>number} heightAt — terrain height sampler
+ */
+export function shadowShearScale(bx, by, bz, h0, sx, sz, heightAt) {
+  const f = (d) => (by + h0 - d) - heightAt(bx + d * sx, bz + d * sz)
+  // Expand past the crossing (downhill shadows reach beyond the flat solution Δ=h0), then bisect.
+  const MAX_DROP = h0 + 48                       // bound runaway marches off cliff edges
+  let lo = 0, hi = h0
+  let fh = f(hi)
+  let guard = 0
+  while (fh > 0 && hi < MAX_DROP && guard++ < 24) { lo = hi; hi = Math.min(hi + Math.max(1, 0.5 * h0), MAX_DROP); fh = f(hi) }
+  if (fh > 0) return hi / h0                     // never landed (cliff) — clamp at the bound
+  for (let i = 0; i < 10; i++) {                 // ≤ ~0.06 m — well under the atlas 0.25 m/texel
+    const mid = (lo + hi) / 2
+    if (f(mid) > 0) lo = mid; else hi = mid
+  }
+  return ((lo + hi) / 2) / h0
+}
+
 export class ShadowBakeSystem {
   /** @param {THREE.WebGLRenderer} renderer */
   constructor(renderer) {
@@ -55,20 +125,10 @@ export class ShadowBakeSystem {
     this._rt.texture.colorSpace = THREE.NoColorSpace   // alpha is data, not colour
 
     // Top-down ortho camera covering one chunk (±32 m), looking straight down (-Y) with up = +Z.
-    // A true top-down MAP (world +X → tile U increasing, world +Z → tile V increasing, to match the
-    // terrain sampler's atlasUV-from-world-xz) is an IMPROPER (mirrored) view — you cannot have
-    // +X-right, +Z-up and -Y-forward as a proper rotation — so exactly ONE ortho axis must be
-    // mirrored. Empirically (per-axis shear probe, straight-down freecam, seed 6): with up=+Z the
-    // downward look-at already maps world +X → tile U correctly, but world +Z comes out FLIPPED. So
-    // negate ONLY the top/bottom pair (left/right kept as the natural +X→+U). ortho(l,r,t,b) =
-    // (C/2, -C/2, -C/2, C/2): left/right kept swapped for the +X→+U match; top/bottom swapped to
-    // un-flip +Z→+V. Verified in-browser against the realtime shadow (A/B): a prop's baked shadow
-    // anchors at its base and falls in the same direction/length as its realtime cast, and pure +X /
-    // +Z test shears push the shadow to world +X / +Z respectively. DoubleSide covers the winding the
-    // frustum flips introduce. (History: an earlier fix mistakenly flipped BOTH axes, which only
-    // moved the mirror from Z to X — the shadows stayed misaligned, just on the other axis.)
-    this._cam = new THREE.OrthographicCamera(CHUNK / 2, -CHUNK / 2, -CHUNK / 2, CHUNK / 2, 1, 4000)
-    this._cam.up.set(0, 0, 1)
+    // The frustum mirrors ONLY the left/right pair — see makeBakeCamera() for the derivation and
+    // the gate that pins it. DoubleSide on the projection material covers the winding flip the
+    // mirrored frustum introduces.
+    this._cam = makeBakeCamera(CHUNK)
     this._cam.layers.set(BAKE_LAYER)
 
     // Projection material: shear each vertex onto the ground along the sun ray, output union alpha.
@@ -76,6 +136,10 @@ export class ShadowBakeSystem {
       uniforms: { uShearXZ: { value: new THREE.Vector2(0, 0) } },
       vertexShader: /* glsl */`
         uniform vec2 uShearXZ;
+        // Per-instance ground fit (shadowShearScale, written by prop-system at commit): scales the
+        // flat-plane shear so this prop's shadow lands on the real sloped terrain like the realtime
+        // map's would. Prop pool geometries always carry the attribute (default 1 = flat ground).
+        attribute float aShadowK;
         void main() {
           #ifdef USE_INSTANCING
             mat4 im = instanceMatrix;
@@ -85,7 +149,7 @@ export class ShadowBakeSystem {
           vec4 wp   = modelMatrix * im * vec4( position, 1.0 );
           vec4 base = modelMatrix * im * vec4( 0.0, 0.0, 0.0, 1.0 );  // instance origin = trunk base ≈ ground
           float h   = max( wp.y - base.y, 0.0 );                      // height above the prop's base
-          wp.xz    += h * uShearXZ;                                   // project along sun onto ground
+          wp.xz    += h * uShearXZ * aShadowK;                        // project along sun onto terrain
           gl_Position = projectionMatrix * viewMatrix * wp;
         }`,
       fragmentShader: /* glsl */`
@@ -98,8 +162,6 @@ export class ShadowBakeSystem {
     this._shear    = new THREE.Vector2(0, 0)
     this._haveSun  = false
     this._prevClear = new THREE.Color()     // scratch for save/restore of the renderer clear colour
-    this._prevView  = new THREE.Vector4()   // scratch for save/restore of the renderer viewport
-    this._prevScis  = new THREE.Vector4()   // scratch for save/restore of the renderer scissor
 
     // Clear the whole atlas to alpha 0 once (untouched tiles read "no shadow").
     const prevTarget = renderer.getRenderTarget()
@@ -120,11 +182,7 @@ export class ShadowBakeSystem {
    * @param {THREE.Vector3} sunDir
    */
   setSun(sunDir) {
-    const y = Math.max(Math.abs(sunDir.y), 0.05)       // clamp near-horizon to bound shadow length
-    // sky.js sunDirection points from ground toward the sun; the shadow falls opposite, so the
-    // ground offset per metre of height is -dir.xz / |dir.y|. Full magnitude = |dir.xz|/dir.y =
-    // cot(elevation) — matches the realtime shadow length/direction (verified via PERF-07 A/B).
-    this._shear.set(-sunDir.x / y, -sunDir.z / y)
+    shearFromSun(sunDir, this._shear)                  // -dir.xz/|dir.y| — see shearFromSun
     const changed = !this._haveSun ||
       this._mat.uniforms.uShearXZ.value.distanceToSquared(this._shear) > 1e-8
     this._mat.uniforms.uShearXZ.value.copy(this._shear)
@@ -165,10 +223,7 @@ export class ShadowBakeSystem {
     const prevOverride = propScene.overrideMaterial
     const prevBg       = propScene.background
     const prevClearA   = r.getClearAlpha()
-    const prevScissorTest = r.getScissorTest()
     r.getClearColor(this._prevClear)
-    r.getViewport(this._prevView)     // main-pass viewport — MUST be restored or the frame draws into a tile
-    r.getScissor(this._prevScis)
     // Isolate the bake: only props (BAKE_LAYER) render via the bake camera, and the sky background
     // would otherwise fill every tile (it ignores camera layers), so null it for the pass.
     propScene.overrideMaterial = this._mat
@@ -190,24 +245,24 @@ export class ShadowBakeSystem {
       this._cam.lookAt(wx, 0, wz)
       this._cam.updateMatrixWorld(true)
 
-      // Target the tile: setRenderTarget resets the viewport to full, so set it after. autoClear
-      // (on) clears only the scissored tile to (0,0,0,0) before drawing this chunk's silhouettes.
+      // Target the tile via the RENDER TARGET's own viewport/scissor — these are RAW pixels.
+      // renderer.setViewport/setScissor must NOT be used here: they multiply by the canvas
+      // pixelRatio, so on a HiDPI display (DPR 2) every tile was written at 2× its offset/size —
+      // shadows landed in other chunks' tiles (or off-atlas) on Retina while DPR-1 headless runs
+      // looked perfect. setRenderTarget applies rt.viewport/rt.scissor each call, so set them
+      // before it; autoClear then clears only the scissored tile before drawing the silhouettes.
+      this._rt.viewport.set(px, py, TILE_PX, TILE_PX)
+      this._rt.scissor.set(px, py, TILE_PX, TILE_PX)
+      this._rt.scissorTest = true
       r.setRenderTarget(this._rt)
-      r.setViewport(px, py, TILE_PX, TILE_PX)
-      r.setScissor(px, py, TILE_PX, TILE_PX)
-      r.setScissorTest(true)
       r.render(propScene, this._cam)
     }
 
     propScene.overrideMaterial = prevOverride
     propScene.background = prevBg
     r.setClearColor(this._prevClear, prevClearA)
+    // Restores the canvas viewport/scissor automatically (they were never touched — only rt state).
     r.setRenderTarget(prevTarget)
-    // Restore the main-pass viewport/scissor — setRenderTarget above reset them to the target size,
-    // and leaving the tile viewport in place would draw the whole frame into a 128×128 corner.
-    r.setViewport(this._prevView)
-    r.setScissor(this._prevScis)
-    r.setScissorTest(prevScissorTest)
   }
 
   /** Full reset (seed change): drop the queue; caller re-commits chunks which re-mark tiles. */
@@ -216,8 +271,11 @@ export class ShadowBakeSystem {
     this._dirtySet.clear()
     const r = this._renderer
     const prevTarget = r.getRenderTarget()
+    const size = ATLAS_N * TILE_PX
+    this._rt.viewport.set(0, 0, size, size)   // full-atlas clear (rt state, raw pixels — see update)
+    this._rt.scissor.set(0, 0, size, size)
+    this._rt.scissorTest = false
     r.setRenderTarget(this._rt)
-    r.setScissorTest(false)
     r.setClearColor(0x000000, 0)
     r.clear(true, false, false)
     r.setRenderTarget(prevTarget)

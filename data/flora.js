@@ -152,5 +152,10 @@ export const FLORA_PARAMS = {
   shadows: {
     castRealtime: false,   // false = baked atlas (default, the perf win); true = realtime per-frame casting
     strength:     0.34,    // baked shadow darkness on the ground (0 invisible → 1 fully black)
+    // QUAL-18: baked shadows dissolve with view distance so the ring edge softens into fog instead
+    // of ending on a line. Sized to cover at least the realtime shadow map's reach (shadowExtent
+    // 160–220 m) so the baked mode never shows LESS shadow than realtime did at the same vantage.
+    fadeStart:    240,     // view-distance (m) where the dissolve begins
+    fadeEnd:      380,     // fully faded
   },
 }

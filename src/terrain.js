@@ -555,6 +555,12 @@ export class TerrainSystem {
         this._terrainUniforms.uShadowStrength.value = strength
     }
 
+    /** QUAL-18: baked-shadow view-distance dissolve bounds (m). Params: FLORA_PARAMS.shadows. */
+    setShadowFade(start, end) {
+        this._terrainUniforms.uShadowFadeStart.value = start
+        this._terrainUniforms.uShadowFadeEnd.value   = Math.max(end, start + 1)
+    }
+
     /**
      * Enable or disable terrain streaming.
      * When disabled, update() early-returns — _updateChunkRing and _flushPendingQueue do not run.

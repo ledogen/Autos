@@ -45,7 +45,7 @@ import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
-import { ShadowBakeSystem, ATLAS_N, TILE_PX } from './props/prop-shadow-bake.js'  // PERF-07: baked prop-shadow atlas
+import { ShadowBakeSystem, ATLAS_N, TILE_PX, shearFromSun } from './props/prop-shadow-bake.js'  // PERF-07: baked prop-shadow atlas
 import { installShadowEdgeFade } from './shadow-fade.js'   // QUAL-18: soft realtime shadow-map edge
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
 import { FLORA_PARAMS } from '../data/flora.js'
@@ -198,7 +198,12 @@ const makePropSamplers = () => ({
   // FEAT-25: stream channel membership ({inChannel,inBank,stream}) — the scatter keeps trees/rocks
   // out of the channel and BOOSTS decorative small-rock density inside it. Same call-time convention.
   streamAt:    (x, z) => waterSystem ? waterSystem.streamChannelAt(x, z) : null,
+  // PERF-07: sun shear for the per-instance shadow ground-fit (shadowShearScale at prop commit).
+  // Reads the live key-light direction at call time (same convention); absent headless (gates build
+  // PropSystem without this key → the bake attribute stays at its flat-ground default).
+  sunShear:    () => shearFromSun(skySystem.sunDirection, _sunShearScratch),
 })
+const _sunShearScratch = new THREE.Vector2()
 
 // Grid-world mode flag (D-18 / D-19).
 // When true: terrain streaming paused, Sierra chunks hidden, ramp visible/collidable,
@@ -1363,7 +1368,9 @@ const applyPropShadowMode = () => {
   const realtime = !!FLORA_PARAMS.shadows?.castRealtime
   propSystem.setShadowCasting(realtime)
   terrainSystem.setShadowAtlas(shadowBake.atlasTexture, ATLAS_N, TILE_PX, propShadowStrength())
+  terrainSystem.setShadowFade(FLORA_PARAMS.shadows?.fadeStart ?? 240, FLORA_PARAMS.shadows?.fadeEnd ?? 380)
 }
+applyPropShadowMode()   // apply the params' fade bounds at boot (uniform defaults are placeholders)
 // PERF-07 dev handle: A/B baked vs realtime prop shadows from the console / CDP harness.
 window.__propShadows = (realtime) => { FLORA_PARAMS.shadows.castRealtime = !!realtime; applyPropShadowMode() }
 

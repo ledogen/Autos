@@ -157,3 +157,24 @@ screen-down=+Z) is the decisive test; the real-sun baked-vs-realtime A/B confirm
 Both now agree: baked shadows anchor at the base and match the realtime cast in direction/length.
 props gate green. Alignment fix only — the `castRealtime` default-flip decision is unchanged and
 still needs the user's sign-off on the baked LOOK.
+
+## UPDATE 2026-07-15 — THREE stacked alignment bugs found + fixed (pending user in-game verify)
+
+1. **Z-mirror**: bake ortho camera's top/bottom pair was `(-C/2, +C/2)`; the correct improper frustum
+   mirrors ONLY left/right → `(C/2, -C/2, C/2, -C/2)` (derivation on `makeBakeCamera()`). Prior
+   "fixes" 9615b6e/5555890 flipped the wrong pair (screenshot-judged).
+2. **Flat-plane projection**: the bake sheared props onto the horizontal plane at their base; the
+   realtime map intersects the sun ray with the sloped terrain — 0.25–2.5× displacement error on the
+   seed-6 hillsides. Fixed with a per-instance ground fit (`shadowShearScale()` ray-march at prop
+   commit → `aShadowK` instanced attribute; trees/boulders only).
+3. **HiDPI tile addressing** (the "why does the user see broken while headless sees fixed" bug):
+   tiles were targeted with `renderer.setViewport/setScissor`, which multiply by the canvas
+   pixelRatio — on a Retina display (DPR 2) every tile wrote at 2× its offset/size, so shadows
+   landed in other chunks' tiles ("shadows with no trees, trees with no shadows") while every DPR-1
+   headless verification looked perfect. Fixed by addressing tiles via `renderTarget.viewport/
+   scissor` (raw pixels). Reproduced + verified headless with `--force-device-scale-factor=2`.
+
+Also: QUAL-18 fade raised 150/240 → 240/380 m + sliders (Props → Baked fade start/end). All pinned by
+`test/prop-shadow-alignment.mjs`: camera UV == sampler UV per axis, shear == sun-ray ground hit,
+ground-fit == analytic plane intersections, prop ring ⊂ atlas, and a source tripwire banning the
+DPR-scaled renderer viewport API in the bake. Verified via CDP A/B at DPR 1 AND forced DPR 2.

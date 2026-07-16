@@ -29,6 +29,8 @@ export function addPropGui(gui, { params, rebuild, getPropSystem, onShadowModeCh
   const syncMode = () => { if (onShadowModeChange) onShadowModeChange() }
   f.add(params.shadows, 'castRealtime').name('Realtime prop shadows').onChange(syncMode)
   f.add(params.shadows, 'strength', 0, 1, 0.01).name('Baked shadow strength').onChange(syncMode)
+  f.add(params.shadows, 'fadeStart', 50, 600, 10).name('Baked fade start (m)').onChange(syncMode)
+  f.add(params.shadows, 'fadeEnd', 100, 800, 10).name('Baked fade end (m)').onChange(syncMode)
 
   const density = f.addFolder('Density'); density.close()
   density.add(S, 'clustersPerChunk', 0, 12, 1).name('tree clusters').onFinishChange(done)
