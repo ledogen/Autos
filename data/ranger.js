@@ -596,14 +596,14 @@ export const RANGER_PARAMS = {
                               //      merge into a self-overlap blob (seed 7); 50 flags them so the route
                               //      re-threads wider (worst self-proximity 5→20 m, clear of the footprint).
   roadSelfClearMargin: 3,     // m — clearance beyond the carve footprint (D_self = 10 + 5 + 3 = 18)
-  roadCorridorClearance: 20,  // m — min XZ distance between two edges' centerlines outside merge zones
+  roadCorridorClearance: 15,  // m — min XZ distance between two edges' centerlines outside merge zones (QUAL-19: 20→15)
   // roadCorridorExempt: radius around the pair's endpoint nodes within which corridor discs /
   // the clearance cull / the gate do NOT apply (junction approaches may converge). 80 = the old
   // implicit formula max(goalBlend, junctionBlend, 60) + 20. Lowering it (e.g. 50, paired with
   // roadGraphGoalBlend 60) pushes approaches apart earlier — measured to cut near-junction
   // crossings 40→33 and reconnect the streamed window (comps [33,5,5,2,2,2]→[46,2,2]) at the
   // seed-6 tangle center (4500,600). Live-tunable ("Corridor Exempt (m)" slider).
-  roadCorridorExempt: 80,  // m — junction-approach exemption radius for corridor clearance
+  roadCorridorExempt: 50,  // m — junction-approach exemption radius for corridor clearance (QUAL-19: 80→50, paired with roadCorridorClearance 20→15, pushes shared-node approaches apart earlier)
 
   // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
   // Retained for the DEFERRED D-01 spur pass (trunk-only ships first). D-01 / RESEARCH A1.

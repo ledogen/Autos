@@ -1,8 +1,9 @@
 ---
 id: QUAL-19
 type: quality
-status: open
+status: deferred
 opened: 2026-07-15
+closed: 2026-07-16
 severity: major
 source: user-observation (seed 7 torn junction, freecam place-capture) + headless investigation
 relates_to: QUAL-14 (corridor clearance + merge exemption — the system being refined), QUAL-11/13/16 (junction pads), FEAT-13 (graph road network), descope-overpasses branch (this surfaced while chasing seed-7 junction ugliness)
@@ -12,6 +13,52 @@ was implemented and DISPROVEN (see impetus) — do not retry that lever."
 ---
 
 # QUAL-19: Junction-approach legs cross each other — make the corridor-clearance exemption directional (heading-gated), not a fat positional ball
+
+## Resolution — DEFERRED (2026-07-16): Architecture A DISPROVEN by measurement; shipped a param tune instead
+
+Prototyped Architecture A (heading-gated exemption) in `_corridorDiscsFor` — a directional cone
+replacing the fat 80 m ball — and measured it headlessly on seeds 6/7/8/13/42 (worktree `feature/qual-19`,
+A/B via `roadJunctionApproachCone` 35° vs 180°≡old). **It does not fix the tears that exist on current
+main, and regressed one seed.** Key findings:
+
+- **Zero genuine planar crossings anywhere** (segment-intersection = 0→0, all seeds). The "roads cross"
+  invariant already holds on main. The **captured seed-7 tear at node `-1,-3,0` no longer reproduces**
+  (now 14–15 m leg separation, no overlap) — the `selfClearGap 80→50` + overpass descope (aaab73d/cde27b5)
+  that merged after the capture already dissolved that specific case.
+- **The real defect is co-radial ribbon overlap + a height gap**, not a crossing: two legs sharing a node
+  overlap in XZ (sep ≈ road width) **30–50 m out** from the node with a **10–19 m Δy** ("one runs under the
+  other"). At that distance both legs point *at* the node → both are inside any radial cone → the heading
+  gate exempts both exactly as the fat ball did. Result: seeds 7/8/13 tears **literally unchanged**
+  (10.4/19.2/18.7 m), seed 6 only partial (17.6→13.7 m), and **seed 42 regressed** (5.9→12.4 m — the
+  reroute's non-local side effects relocated the worst tear to another junction). A "point at the node"
+  gate structurally cannot separate two co-radial legs.
+- **Overhead was minimal** (as expected for a rare case): +8.7% corridor disc load, +0.2% routing
+  wall-clock — but bought no reliable tear reduction, so not worth the route-cache regen.
+
+**Shipped instead (param tune, no architecture change):** `roadCorridorClearance` 20→15 m,
+`roadCorridorExempt` 80→**50** m — pushes shared-node approaches apart earlier via existing levers, and
+route bundle `data/route-cache-default.json.gz` regenerated to match (sig covers `road*`). NB: distinct
+from the DISPROVEN `roadCorridorMergeGap` split-lever (reverted earlier — do not retry).
+
+**Why 50, not 40:** `roadCorridorExempt` is also the CULL's exemption, so shrinking it drops converging
+junction edges → disconnection. A 3-seed × 2-window reachability sweep showed 40 fails badly (largest
+component 59–76% across windows, well below the 85% floor), while **50 is a net connectivity IMPROVEMENT
+over current main** — better-or-equal to the 20/80 baseline in 5 of 6 windows (e.g. seed 7 @4500,600:
+82%→86%), and clears the `GRAPH-REACHABILITY` gate's seed-6 window at 92%. Also confirmed the metric is
+window-noisy: even unchanged main (20/80) dips below 85% in some windows (seed 7 @4500,600 = 82%, testig
+@4500,600 = 66%) — those are sparse-blue-noise edge-of-window artifacts, not real disconnections. The gate
+samples only seed 6 @(4500,600). Seed-7 node visually verified clean at 15/50 (CDP screenshot, no
+overlapping-ribbon tear).
+
+**If revisited:** the tear has two halves — *overlap* and *height gap*. Architecture A/B/C all attack the
+overlap half via routing (A disproven; B/C untried, perturb routes). The likely-simpler untried direction
+attacks the **height-gap half**: extend the junction grade-blend (`roadJunctionBlendLength` 30 m) to cover
+the 30–50 m overlap reach so co-radial legs reconcile to one grade over the overlap → no "under" look even
+when ribbons touch. No reroute, no cache regen. Reopen with a **fresh reproducing capture on current main**
+before spending more — the original ground truth is stale.
+
+---
+
 
 ## Request
 
