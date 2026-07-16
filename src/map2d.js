@@ -31,6 +31,7 @@ const STREAM_DEBOUNCE = 120    // ms — re-stream only after a pan settles (a s
 const RESTREAM_MOVE   = 300    // m — re-stream when the pan center has drifted past this since last stream
 const COARSE_DIV      = 250    // m — coarse-height normaliser for terrain shading (≈ full range, see ranger.js)
 const BG_CELL_PX      = 18     // px — terrain shading sample cell (coarser = cheaper)
+const TELEPORT_SNAP_RADIUS = 500  // m — double-click snaps to the nearest road within this range
 
 export class Map2D {
     /**
@@ -39,13 +40,18 @@ export class Map2D {
      * @param {() => number}      o.getSeed  — current world seed (numeric); map rebuilds its instance on change
      * @param {() => object}      o.getParams— live RANGER_PARAMS ref (so the map mirrors the graph knobs)
      * @param {() => {x:number,z:number,fx:number,fz:number}} o.getCar — car world XZ + world-forward XZ
+     * @param {(pose:{x:number,z:number,roadTopY:?number,heading:?number}) => void} [o.onTeleport]
+     *        — called on double-click with the nearest-road snap (roadTopY/heading null when no road near)
+     * @param {() => boolean} [o.canTeleport] — gate: teleport prompt + double-click only when true (free-roam)
      */
-    constructor({ canvas, getSeed, getParams, getCar }) {
+    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport }) {
         this._canvas    = canvas
         this._ctx       = canvas.getContext('2d')
         this._getSeed   = getSeed
         this._getParams = getParams
         this._getCar    = getCar
+        this._onTeleport  = onTeleport   || null
+        this._canTeleport = canTeleport  || (() => false)
 
         this._open       = false
         this._road       = null          // the map's own RoadSystem; KEPT ALIVE across opens (route cache)
@@ -84,6 +90,7 @@ export class Map2D {
         this._onMove  = this._onMouseMove.bind(this)
         this._onUp    = this._onMouseUp.bind(this)
         this._onWheel = this._onWheelEvent.bind(this)
+        this._onDbl   = this._onDblClick.bind(this)
     }
 
     // QUAL-08: attach the dedicated road-network routing Worker so the map's read-only RoadSystem routes
@@ -140,6 +147,7 @@ export class Map2D {
         window.addEventListener('mousemove', this._onMove)
         window.addEventListener('mouseup', this._onUp)
         this._canvas.addEventListener('wheel', this._onWheel, { passive: false })
+        this._canvas.addEventListener('dblclick', this._onDbl)
         this._bgDirty = true
     }
 
@@ -156,6 +164,7 @@ export class Map2D {
         window.removeEventListener('mousemove', this._onMove)
         window.removeEventListener('mouseup', this._onUp)
         this._canvas.removeEventListener('wheel', this._onWheel)
+        this._canvas.removeEventListener('dblclick', this._onDbl)
     }
 
     // ── RoadSystem (the map's own read-only instance) ────────────────────────────────────────
@@ -321,6 +330,28 @@ export class Map2D {
         this._bgDirty = true
     }
 
+    // Double-click → teleport the truck here (free-roam only). Snaps to the nearest road within
+    // TELEPORT_SNAP_RADIUS using the map's OWN read-only network (window-invariant, so world coords
+    // resolve identically to play), passing the road-top Y + tangent heading to main.js. When no
+    // road is near, passes the raw clicked XZ (main drops on terrain, keeps the current heading).
+    _onDblClick(e) {
+        if (!this._canTeleport() || !this._onTeleport || !this._road) return
+        const rect = this._canvas.getBoundingClientRect()
+        const W = this._canvas.clientWidth, H = this._canvas.clientHeight
+        const wx = (e.clientX - rect.left - W / 2) / this._zoom + this._panX
+        const wz = (e.clientY - rect.top  - H / 2) / this._zoom + this._panZ
+        const near = typeof this._road.queryNearest === 'function'
+            ? this._road.queryNearest(wx, wz, TELEPORT_SNAP_RADIUS) : null
+        if (near && near.point) {
+            const roadTopY = typeof this._road.sampleRoadTopY === 'function'
+                ? this._road.sampleRoadTopY(near.point.x, near.point.z) : null
+            const heading = near.tangent ? Math.atan2(near.tangent.x, near.tangent.z) : null
+            this._onTeleport({ x: near.point.x, z: near.point.z, roadTopY, heading })
+        } else {
+            this._onTeleport({ x: wx, z: wz, roadTopY: null, heading: null })
+        }
+    }
+
     // ── Render ────────────────────────────────────────────────────────────────────────────────
     // Called each frame from the main loop ONLY while open. Rebuilds the cached bg layer when the
     // transform/network changed, then blits it and draws the (moving) car marker + legend on top.
@@ -343,7 +374,19 @@ export class Map2D {
         this._drawCar(ctx)
         this._drawLegend(ctx)
         this._drawCursorCoords(ctx)
+        if (this._canTeleport()) this._drawTeleportPrompt(ctx)
         if (this._streaming) this._drawStreamingBadge(ctx)
+    }
+
+    // Top-center hint that double-clicking teleports (free-roam only).
+    _drawTeleportPrompt(ctx) {
+        const W = this._canvas.clientWidth
+        const txt = 'double click to teleport'
+        ctx.font = '14px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+        const w = ctx.measureText(txt).width + 24
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(W / 2 - w / 2, 12, w, 26)
+        ctx.fillStyle = '#d8d8d0'; ctx.fillText(txt, W / 2, 26)
+        ctx.textAlign = 'left'
     }
 
     // Road-Feel QoL: seed / x / z of the world point under the cursor, bottom-left. Same

@@ -20,7 +20,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics } from './physics.js'
 import { getBodyContactPoints, getWheelPosition } from './suspension.js'
 import { updateVehicle, SPAWN_STATE } from './vehicle.js'
-import { updateCamera, getCameraMode, getFreecamPosition, placeFreecam } from './camera.js'
+import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
 // window.__view(x, y, z, yaw, pitch) — used by test/screenshot.mjs (headless CDP) and the browser console.
 window.__view = placeFreecam
@@ -645,11 +645,100 @@ function _reseatTruckAtSpawn () {
   _reseatChain = _reseatChain.then(run, run)
   return _reseatChain
 }
+
+// ── Free-roam teleport / custom spawn point (feature/teleport) ────────────────────────────
+// _spawnOverride, when non-null, is the BODY-CENTER pose the R-key respawn returns to instead of
+// the seed-derived resolveSpawn placement: { x, y, z, heading }. Set by the map double-click
+// teleport, the free-cam "teleport here" button, and Shift+R (set spawn to current pose). It is
+// cleared on seed change / world regen (a stale point in a fresh world makes no sense).
+let _spawnOverride = null
+
+// Extract the truck's current heading (Y-yaw, radians) from its quaternion, inverse of
+// setFromAxisAngle(Y, h): body forward is (0,0,-1) → world (-sin h, 0, -cos h) ⇒ h = atan2(-fx, -fz).
+const _headingProbe = new THREE.Vector3()
+function _currentHeading () {
+  _headingProbe.set(0, 0, -1).applyQuaternion(vehicleState.quaternion)
+  return Math.atan2(-_headingProbe.x, -_headingProbe.z)
+}
+
+// A road tangent yields two opposite headings (h, h+π). Return whichever is closer to `ref`
+// (the truck's current facing) so a map-teleport aligns to the road without a needless 180° flip.
+function _pickRoadDir (h, ref) {
+  const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a))   // → (-π, π]
+  return Math.abs(wrap(h - ref)) <= Math.abs(wrap(h + Math.PI - ref)) ? h : h + Math.PI
+}
+
+// Surface height the tires rest on at a world XZ: the road top when on a road (so a spawn/teleport
+// follows road grade + camber), else the terrain. Road sampling falls back to terrain when the play
+// network isn't streamed there yet (e.g. a far map-teleport) — analyticHeight is defined everywhere.
+function _groundSampleY (x, z) {
+  if (roadSystem && typeof roadSystem.sampleRoadTopY === 'function') {
+    const ry = roadSystem.sampleRoadTopY(x, z)
+    if (ry != null) return ry
+  }
+  return terrainSystem ? terrainSystem.analyticHeight(x, z) : 0
+}
+
+// Fit the truck to the LOCAL GROUND PLANE at (cx,cz) facing `heading`, so it rests on a slope
+// instead of being placed dead-level and clipping the uphill corners into the ground. Samples the
+// surface at the four tire contact XZ (yaw-projected), fits a plane, and returns the body-center Y
+// + an orientation whose up = plane normal and forward = `heading` projected onto the plane.
+// `drop` (m) lifts it that much above the surface so it settles cleanly (teleport uses 0.5).
+const _seatFwd = new THREE.Vector3(), _seatRight = new THREE.Vector3(), _seatNormal = new THREE.Vector3()
+const _seatX = new THREE.Vector3(), _seatZ = new THREE.Vector3(), _seatMat = new THREE.Matrix4()
+function _seatOnGroundPlane (cx, cz, heading, eq, drop) {
+  const p = RANGER_PARAMS
+  const ch = Math.cos(heading), sh = Math.sin(heading)
+  const frontZ = -(p.wheelbase * p.weightRear)    // body -Z = forward → front axle at negative Z
+  const rearZ  =  (p.wheelbase * p.weightFront)
+  const tf = p.trackFront / 2, tr = p.trackRear / 2
+  // 0=FL 1=FR 2=RL 3=RR — body-space (lx, lz) rotated into world XZ by yaw only.
+  const corners = [[-tf, frontZ], [tf, frontZ], [-tr, rearZ], [tr, rearZ]]
+  const oy = [], ox = [], oz = []
+  for (const [lx, lz] of corners) {
+    const wx =  lx * ch + lz * sh   // rotate about +Y by heading
+    const wz = -lx * sh + lz * ch
+    ox.push(wx); oz.push(wz); oy.push(_groundSampleY(cx + wx, cz + wz))
+  }
+  // Plane basis from midpoint spans (front↔rear = forward, right↔left = right).
+  _seatFwd.set((ox[0] + ox[1]) / 2 - (ox[2] + ox[3]) / 2,
+               (oy[0] + oy[1]) / 2 - (oy[2] + oy[3]) / 2,
+               (oz[0] + oz[1]) / 2 - (oz[2] + oz[3]) / 2).normalize()   // body -Z on the plane
+  _seatRight.set((ox[1] + ox[3]) / 2 - (ox[0] + ox[2]) / 2,
+                 (oy[1] + oy[3]) / 2 - (oy[0] + oy[2]) / 2,
+                 (oz[1] + oz[3]) / 2 - (oz[0] + oz[2]) / 2).normalize()
+  _seatNormal.crossVectors(_seatRight, _seatFwd).normalize()
+  if (_seatNormal.y < 0) _seatNormal.negate()
+  _seatX.crossVectors(_seatFwd, _seatNormal).normalize()   // body +X (orthonormalised)
+  _seatZ.copy(_seatFwd).negate()                            // body +Z (backward)
+  _seatMat.makeBasis(_seatX, _seatNormal, _seatZ)
+  const quat = new THREE.Quaternion().setFromRotationMatrix(_seatMat)
+  // Body center = the plane point under (cx,cz) lifted (bodyY + drop) along the plane NORMAL, so the
+  // ride height is perpendicular to the slope (no belly-clip). Flat ⇒ normal=(0,1,0) ⇒ pure vertical.
+  const meanGy = (oy[0] + oy[1] + oy[2] + oy[3]) / 4
+  const lift = eq.bodyY + drop
+  return { x: cx + _seatNormal.x * lift, y: meanGy + _seatNormal.y * lift, z: cz + _seatNormal.z * lift, quat }
+}
+
 async function _reseatTruckAtSpawnInner () {
-  const { position: spawnPos, heading } = await resolveSpawn(worldSeed, RANGER_PARAMS)
   const eq = computeStaticEquilibrium(RANGER_PARAMS)
-  vehicleState.position.set(spawnPos.x, spawnPos.y + eq.bodyY, spawnPos.z)
-  vehicleState.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), heading)
+  if (_spawnOverride && _spawnOverride.align === false) {
+    // Exact pose (free-cam "teleport here", Shift+R) — floating/off-road allowed, applied verbatim.
+    vehicleState.position.set(_spawnOverride.x, _spawnOverride.y, _spawnOverride.z)
+    vehicleState.quaternion.copy(_spawnOverride.quat)
+  } else {
+    // Ground-aligned seat: normal seed spawn, or a map double-click drop. Fit to the local plane.
+    let cx, cz, heading, drop
+    if (_spawnOverride) {   // align === true
+      cx = _spawnOverride.x; cz = _spawnOverride.z; heading = _spawnOverride.heading; drop = _spawnOverride.drop || 0
+    } else {
+      const { position: spawnPos, heading: h } = await resolveSpawn(worldSeed, RANGER_PARAMS)
+      cx = spawnPos.x; cz = spawnPos.z; heading = h; drop = 0
+    }
+    const seat = _seatOnGroundPlane(cx, cz, heading, eq, drop)
+    vehicleState.position.set(seat.x, seat.y, seat.z)
+    vehicleState.quaternion.copy(seat.quat)
+  }
   vehicleState.velocity.set(0, 0, 0)
   vehicleState.angularVelocity.set(0, 0, 0)
   vehicleState.steerAngle    = 0
@@ -665,10 +754,56 @@ async function _reseatTruckAtSpawnInner () {
   vehicleState.slipLong       = [0, 0, 0, 0]
   vehicleState.slipLat        = [0, 0, 0, 0]
   vehicleState.handbrake      = false
+  vehicleState.parked         = true   // hold the truck at the fresh spawn/teleport until the driver takes over
   vehicleState.strutComp      = [...eq.strutComp]
   vehicleState.strutCompVel   = [0, 0, 0, 0]
   vehicleState.submerged      = false   // FEAT-22
   vehicleState.submergedDepth = 0
+}
+
+// ── Gameplay mode gate (feature/teleport) ─────────────────────────────────────────────────
+// Free-roam is the only mode today. Teleport controls (map double-click, free-cam button,
+// Shift+R) are ENABLED only in free-roam; the future story / scenario modes will flip this and
+// the teleport affordances disappear. Exposed on window so a mode manager can flip it later.
+let _gameMode = 'freeroam'   // 'freeroam' | 'story' | 'scenario'
+function isTeleportEnabled () { return _gameMode === 'freeroam' }
+window.__setGameMode = (m) => { _gameMode = m }
+
+// ── "spawn point set" toast (feature/teleport) ────────────────────────────────────────────
+// Full-opacity immediately, then fades out starting 3 s later (CSS 1 s opacity transition).
+// Shown on ANY spawn-point change (teleport or Shift+R).
+let _spawnToastTimer = null
+function showSpawnToast () {
+  const el = document.getElementById('spawn-toast')
+  if (!el) return
+  clearTimeout(_spawnToastTimer)
+  el.style.transition = 'none'     // snap back to full opacity even if a previous fade is mid-flight
+  el.style.opacity = '1'
+  // Force a reflow so the opacity:1 lands before we re-enable the transition (else no fade).
+  void el.offsetWidth
+  el.style.transition = 'opacity 1s ease'
+  _spawnToastTimer = setTimeout(() => { el.style.opacity = '0' }, 3000)
+}
+
+// ── Teleport / set-spawn primitives (feature/teleport) ────────────────────────────────────
+// Two flavours of spawn override (see _reseatTruckAtSpawnInner):
+//   align:true  — snap to the local ground plane at (x,z)+heading (map double-click, seed spawn).
+//   align:false — exact body pose (free-cam "teleport here", Shift+R): floating/off-road preserved.
+// teleport* both move the truck NOW and make R return here; setSpawnHere only records the pose.
+function teleportToGround (x, z, heading, drop) {
+  _spawnOverride = { align: true, x, z, heading, drop }
+  void _reseatTruckAtSpawn()
+  showSpawnToast()
+}
+function teleportToPose (x, y, z, quat) {
+  _spawnOverride = { align: false, x, y, z, quat: quat.clone() }
+  void _reseatTruckAtSpawn()
+  showSpawnToast()
+}
+function setSpawnHere () {
+  const p = vehicleState.position
+  _spawnOverride = { align: false, x: p.x, y: p.y, z: p.z, quat: vehicleState.quaternion.clone() }
+  showSpawnToast()
 }
 
 // ── Fixed-timestep loop constants (RESEARCH §Pattern 2) ─────────────────────
@@ -717,6 +852,7 @@ const vehicleState = {
   wheelOmega:      [0, 0, 0, 0],                   // per-wheel angular velocity [rad/s]; integrated by physics.js omega integrator
   drivetrain:      { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },  // FEAT-23 engine/converter/gearbox state; stepped by stepDrivetrain, read by HUD/logger
   handbrake:       false,                            // Space key handbrake state; written by updateVehicle, read by getBrakeTorque
+  parked:          true,                              // spawn/teleport hold (feature/teleport): handbrake held until first driver input
   submerged:       false,                            // FEAT-22: CG below a water surface (set per-frame from WaterSystem.submergedAt)
   submergedDepth:  0,                                // FEAT-22: m below the water surface (0 when dry)
 }
@@ -824,6 +960,17 @@ const map2d = new Map2D({
   getCar:    () => {
     _mapFwd.set(0, 0, -1).applyQuaternion(vehicleState.quaternion)
     return { x: vehicleState.position.x, z: vehicleState.position.z, fx: _mapFwd.x, fz: _mapFwd.z }
+  },
+  // Double-click teleport (free-roam only). The map snaps to the nearest road and hands us the
+  // road-top Y; we drop the truck 0.5 m above it (or on terrain when off-road) and set the spawn.
+  canTeleport: isTeleportEnabled,
+  onTeleport: ({ x, z, heading }) => {
+    // Snap to the road orientation, but a road tangent has TWO directions — pick the one closest
+    // to the truck's current heading so the teleport doesn't spin it 180°. Off-road: keep heading.
+    // teleportToGround fits the truck to the local ground plane (no clip) and drops it 0.5 m.
+    const h = heading != null ? _pickRoadDir(heading, _currentHeading()) : _currentHeading()
+    teleportToGround(x, z, h, 0.5)
+    map2d.hide()   // close the map so the teleport is immediately visible
   }
 })
 
@@ -1266,7 +1413,7 @@ const _gui = initDebug(RANGER_PARAMS, {
   applyQuality:        (name) => applyQuality(name),   // PERF-06: master Quality tier (draw distance + shadows + props + res)
   rebuildTerrain:      ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() },
   rebuildTerrainFull:  ()  => debouncedRebuildFull(),
-  changeSeed:          (v) => { worldSeed = parseWorldSeed(v); _seedString = String(v); debouncedRebuildFull() },
+  changeSeed:          (v) => { worldSeed = parseWorldSeed(v); _seedString = String(v); _spawnOverride = null; debouncedRebuildFull() },
   // Phase 8 (D-03 / D-05): road viz toggle + D-09 cost-weight param-change debounce.
   // (08-07: proto wiring retired — there is ONE road system + ONE viz now.)
   onRoadVizToggle:     (v) => { if (roadSystem) roadSystem.setDebugVisible(v) },
@@ -1553,6 +1700,40 @@ function _hidePauseMenu () {
 document.getElementById('pm-resume')?.addEventListener('click', () => _hidePauseMenu())
 document.getElementById('pm-grid')?.addEventListener('click', () => enterGridWorld())
 document.getElementById('pm-return')?.addEventListener('click', () => returnToWorld())
+
+// ── Free-cam "teleport here" button (feature/teleport) ────────────────────────────────────
+// Drops the truck at the EXACT free-cam position (off-road / floating allowed) facing the camera
+// heading, and sets that as the spawn. The button's visibility is driven by the render loop
+// (shown only in free-cam + free-roam). T fires the same action while flying (pointer-lock hides
+// the cursor, so the on-screen button is only clickable after releasing lock with Esc).
+let _tpBtnShown = false   // tracks the teleport button's DOM display state (toggled on change in loop)
+function _teleportToFreecam () {
+  if (!isTeleportEnabled() || getCameraMode() !== 'freecam') return
+  const p = getFreecamPosition()
+  // Exact spot the camera is (off-road / floating allowed), level and facing the camera heading.
+  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), getFreecamYaw())
+  teleportToPose(p.x, p.y, p.z, q)
+  exitFreecam()   // drop straight into chase behind the truck at the new spot
+}
+document.getElementById('teleport-btn')?.addEventListener('click', _teleportToFreecam)
+
+// ── Controls cheat-sheet collapse toggle (feature/teleport) ───────────────────────────────
+{
+  const box = document.getElementById('controls')
+  const toggle = document.getElementById('controls-toggle')
+  toggle?.addEventListener('click', () => {
+    const collapsed = box.classList.toggle('collapsed')
+    toggle.innerHTML = collapsed ? 'controls &#9656;' : 'controls &#9662;'   // ▸ collapsed / ▾ open
+  })
+}
+document.addEventListener('keydown', e => {
+  // T → free-cam teleport (usable while pointer-locked, where the button can't be clicked).
+  if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey) _teleportToFreecam()
+  // Shift+R → set the spawn point to the truck's current pose (does not move the truck).
+  if (e.shiftKey && (e.key === 'r' || e.key === 'R')) {
+    if (isTeleportEnabled()) setSpawnHere()
+  }
+})
 
 // ── Esc handler — pause menu (D-17 / RESEARCH §Pitfall 3) ────────────────────
 // Gate: only open the menu when NOT in free-cam mode.
@@ -1997,6 +2178,15 @@ function loop () {
 
   // FEAT-16: redraw the 2D map overlay only while it's open (off the hot path otherwise).
   if (map2d.isOpen()) map2d.render()
+
+  // feature/teleport: show the "teleport here" button only in free-cam + free-roam. Toggle on
+  // change to avoid touching the DOM every frame.
+  const _showTpBtn = isTeleportEnabled() && getCameraMode() === 'freecam'
+  if (_showTpBtn !== _tpBtnShown) {
+    _tpBtnShown = _showTpBtn
+    const btn = document.getElementById('teleport-btn')
+    if (btn) btn.style.display = _showTpBtn ? 'block' : 'none'
+  }
 
   const _ptR = performance.now()
   renderer.render(scene, camera)

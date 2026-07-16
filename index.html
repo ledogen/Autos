@@ -59,6 +59,75 @@
       color: #ffffff;
       border-color: #888;
     }
+    /* Freecam "teleport here" button — shown only while in free-cam (free-roam mode). */
+    #teleport-btn {
+      display: none;
+      position: fixed;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.72);
+      border: 1px solid #888;
+      color: #d8d8d0;
+      font-family: monospace;
+      font-size: 15px;
+      padding: 10px 22px;
+      cursor: pointer;
+      z-index: 95;
+      user-select: none;
+      transition: background 0.1s, color 0.1s;
+    }
+    #teleport-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #ffffff;
+    }
+    /* Controls cheat-sheet, lower-left. Click the header to collapse/expand. Sits BELOW the
+       map overlay (z 90) so it hides while the map is open. Map-legend design language. */
+    #controls {
+      position: fixed;
+      left: 20px;
+      bottom: 20px;
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid #888;
+      color: #d8d8d0;
+      font-family: monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      z-index: 85;
+      user-select: none;
+      max-width: 220px;
+    }
+    #controls-toggle {
+      cursor: pointer;
+      padding: 5px 10px;
+      color: #ffffff;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      font-size: 11px;
+    }
+    #controls-toggle:hover { background: rgba(255, 255, 255, 0.08); }
+    #controls-body { padding: 2px 10px 8px 10px; }
+    #controls-body .k { color: #ffffff; display: inline-block; min-width: 62px; }
+    #controls.collapsed #controls-body { display: none; }
+    /* "spawn point set" toast — fades out; shown whenever the spawn point changes. */
+    #spawn-toast {
+      position: fixed;
+      top: 40%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.7);
+      border: 1px solid #888;
+      color: #d8d8d0;
+      font-family: monospace;
+      font-size: 18px;
+      letter-spacing: 1px;
+      padding: 12px 26px;
+      z-index: 96;
+      pointer-events: none;
+      user-select: none;
+      opacity: 0;
+      transition: opacity 1s ease;
+    }
   </style>
   <!-- Bare specifiers ('three', 'three/addons/*', 'simplex-noise') are resolved by Vite from
        node_modules (PERF-04/PERF-20.5) — the old CDN importmap is retired. See vite.config.js. -->
@@ -92,6 +161,31 @@
     <button id="pm-resume">resume</button>
     <button id="pm-grid">grid world</button>
     <button id="pm-return">return to world</button>
+  </div>
+
+  <!-- Free-cam teleport affordance — shown only in free-cam / free-roam mode (main.js loop
+       toggles display). Click (cursor must be free; press Esc to release pointer-lock) or press
+       T while flying to drop the truck at the camera position. -->
+  <button id="teleport-btn">teleport here</button>
+
+  <!-- Spawn-point-set toast — fades out ~3 s after any spawn change (main.js showSpawnToast). -->
+  <div id="spawn-toast">spawn point set</div>
+
+  <!-- Controls cheat-sheet (lower-left, click header to collapse). Wired in main.js. -->
+  <div id="controls">
+    <div id="controls-toggle">controls &#9662;</div>
+    <div id="controls-body">
+      <div><span class="k">WASD</span>drive</div>
+      <div><span class="k">Space</span>handbrake</div>
+      <div><span class="k">R</span>reset to spawn</div>
+      <div><span class="k">Shift+R</span>set spawn here</div>
+      <div><span class="k">C</span>camera view</div>
+      <div><span class="k">Shift+C</span>free-cam</div>
+      <div><span class="k">T</span>teleport (free-cam)</div>
+      <div><span class="k">M</span>map (dbl-click TP)</div>
+      <div><span class="k">Esc</span>pause menu</div>
+      <div><span class="k">&#96;</span>debug panel</div>
+    </div>
   </div>
 
   <script type="module" src="src/main.js"></script>

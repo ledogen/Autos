@@ -337,6 +337,26 @@ export function getFreecamPosition () {
   return freecamPos.clone()
 }
 
+/**
+ * Returns the freecam yaw (radians, world-Y rotation). Used by the freecam "teleport here"
+ * feature so the truck faces the direction the camera was looking. YXZ forward at pitch 0 is
+ * (-sinψ, 0, -cosψ), which matches the truck's setFromAxisAngle(Y, heading) forward exactly —
+ * so heading = freecamYaw with no conversion.
+ *
+ * @returns {number} freecam yaw in radians
+ */
+export function getFreecamYaw () {
+  return freecamYaw
+}
+
+/**
+ * Exit free-cam back to chase (no-op if not in free-cam). Used by the free-cam "teleport here"
+ * action so the player is dropped straight behind the truck at the new spot.
+ */
+export function exitFreecam () {
+  if (cameraMode === 'freecam') _exitFreecam()
+}
+
 // Dev handle: place the freecam programmatically (world pos + yaw/pitch, radians). Exposed on
 // `window.__view` in main.js — used by the headless screenshot tool (test/screenshot.mjs) and the browser
 // console to jump to a spot for visual troubleshooting. Mirrors the window.terrain / window.sky handles.

@@ -15,9 +15,12 @@ import { getCameraMode } from './camera.js'
 
 // ── Keyboard input state (module-private) ────────────────────────────────────
 const keys = { w: false, s: false, a: false, d: false, r: false, ' ': false }
+let _prevHandKey = false   // Space state last frame — rising-edge (tap) detection for the parking-brake toggle
 
 // Register listeners at module load (module scripts run after parse — no DOMContentLoaded needed).
-document.addEventListener('keydown', e => { const k = e.key === ' ' ? ' ' : e.key.toLowerCase(); if (k in keys) keys[k] = true })
+// Shift+R is the "set spawn point here" control (handled in main.js) — it must NOT trigger the
+// R-key respawn, so swallow it before it can set keys.r. Plain R still respawns.
+document.addEventListener('keydown', e => { if (e.shiftKey && e.key.toLowerCase() === 'r') return; const k = e.key === ' ' ? ' ' : e.key.toLowerCase(); if (k in keys) keys[k] = true })
 document.addEventListener('keyup',   e => { const k = e.key === ' ' ? ' ' : e.key.toLowerCase(); if (k in keys) keys[k] = false })
 
 // ── SPAWN_STATE ───────────────────────────────────────────────────────────────
@@ -41,6 +44,7 @@ export const SPAWN_STATE = {
   strutComp:    [0, 0, 0, 0],   // m   — strut compression per corner (D-01)
   strutCompVel: [0, 0, 0, 0],   // m/s — strut compression velocity per corner (D-01)
   handbrake: false,
+  parked: true,                 // spawn/teleport hold — updateVehicle keeps the handbrake on until first driver input
   // FEAT-22: water submersion flag — set per-frame by main.js from WaterSystem.submergedAt(CG).
   // v1 SETS the flag only; buoyancy/hydrolock/drag consume it later.
   submerged: false,
@@ -84,7 +88,23 @@ export function updateVehicle (vehicleState, params, dt) {
   vehicleState.throttle  = vehicleState.smoothThrottle
   // S key: sets brake=1; getDriveTorque uses maxReverseTorque for rear wheels (Bug 4 fix in physics.js)
   vehicleState.brake     = vehicleState.smoothBrake
-  vehicleState.handbrake = (!freecamActive && keys[' ']) || false
+  // ── Handbrake / parking-brake state machine (feature/teleport) ──────────────
+  // Moving (>2 km/h): the handbrake is momentary — rear torque only while Space is held.
+  // Near rest (<2 km/h): a Space TAP latches vehicleState.parked ON, so it keeps holding after
+  // release (the same held state a spawn/teleport starts in — see _reseatTruckAtSpawn). While
+  // parked, another Space tap — or pressing W/S — toggles it fully OFF so the truck can roll again.
+  // Steering (A/D) does NOT release it. Held through free-cam so the truck stays put while you fly.
+  const PARK_SPEED = 0.556   // m/s ≈ 2 km/h
+  const spd     = Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z)
+  const handKey = !freecamActive && keys[' ']
+  const handTap = handKey && !_prevHandKey                       // rising edge (press this frame)
+  if (vehicleState.parked) {
+    if (handTap || (!freecamActive && (keys.w || keys.s))) vehicleState.parked = false
+  } else if (handTap && spd < PARK_SPEED) {
+    vehicleState.parked = true                                   // latch when tapped near rest
+  }
+  vehicleState.handbrake = handKey || vehicleState.parked
+  _prevHandKey = handKey
 
   // ── 2. Speed-scaled steer limit (M1-08) ────────────────────────────────────
   // Compute current horizontal speed in m/s (ignore vertical for steering math).
