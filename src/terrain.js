@@ -695,18 +695,18 @@ export class TerrainSystem {
      * The carve is blended MAIN-THREAD ONLY (the Worker returns raw heights — see WORKER_SOURCE
      * "DOES NOT bake carve into heights"), so no WORKER_SOURCE mirror exists or is needed.
      *
-     * THE height composition:
-     *     hStream = raw + sw·(bedY − raw)                    stream channel cuts RAW terrain
-     *     MESH    = hStream + bw·(1−sw)·(gradeY − hStream)   sampleHeight + the three chunk-Y
-     *                                                        writers (_composeCarvedY): the road
-     *                                                        carve is suppressed inside a channel,
-     *                                                        so the crossing shows a channel NOTCH
-     *     PHYSICS = hStream + bw·(gradeY − hStream)          analyticHeight: UN-suppressed — the
-     *                                                        road core pulls the surface to gradeY
-     * At a crossing the road RIBBON mesh (which follows gradeY, not terrain) spans the mesh
-     * notch = the bridge deck; physics rides it (fill AND cut). Collision agrees with the
-     * union of terrain mesh + ribbon mesh — the FEAT-18 "roads always bridge streams" v1
-     * (proper deck/abutment geometry is the FEAT-08 shared span builder, later).
+     * THE height composition (CAUSEWAY, 2026-07-16 — MESH and PHYSICS are now IDENTICAL):
+     *     hStream = raw + sw·(bedY − raw)          stream channel cuts RAW terrain
+     *     surface = hStream + bw·(gradeY − hStream) road carve fills the cut back to gradeY,
+     *                                               un-suppressed, in sampleHeight + the three
+     *                                               chunk-Y writers (_composeCarvedY) AND
+     *                                               analyticHeight (physics)
+     * At a crossing the road embankment fills the channel to grade, forming a continuous causeway;
+     * the stream is culverted under it (the water ribbon is suppressed over the crossing by BUG-33)
+     * and resumes on the far side. The road RIBBON mesh seats on the filled terrain like everywhere
+     * else — no floating deck, no raw channel-wall notch. Replaced the old (1−sw) notch-and-bridge
+     * composition, which left the road embankment un-graded inside the channel (a dark vertical cut
+     * at the deck edges).
      *
      * @param {object|null} waterCarve — { streamsNear(x0,z0,x1,z1)→streams,
      *   sampleAt(x,z,streams?,raw?)→{blendW,bedY} } (bedY + raw WORLD-space), or null to detach.
@@ -816,12 +816,11 @@ export class TerrainSystem {
         // Phase 9 carve hook (SURF-04): blend road design grade into terrain height at on-road positions.
         // CARVE SYNC: identical blend formula as _flushPendingQueue, sampleHeight, and Worker height loop.
         // rawAmp is passed to _sampleCarveWorld to avoid re-calling analyticHeight (infinite recursion).
-        // FEAT-18 bridge deck: the PHYSICS surface uses the UN-suppressed road blend over the
-        // stream-carved terrain — at a crossing the road core pulls the surface to gradeY (wheels
-        // ride the ribbon-deck, in fill AND in cut), the channel holds off-road, and the blend is
-        // smooth between. The terrain MESH uses the (1−sw)-suppressed formula instead (the channel
-        // notch the ribbon spans) — see _composeCarvedY; the rendered deck at the crossing is the
-        // road RIBBON mesh, which follows gradeY, so collision agrees with the union of the meshes.
+        // FEAT-18 CAUSEWAY: the road carve fills the stream-carved terrain back to gradeY, un-suppressed
+        // — at a crossing the road core pulls the surface to gradeY (a filled embankment causeway; the
+        // channel holds off-road, and the blend is smooth between). MESH == PHYSICS: the terrain mesh
+        // (_composeCarvedY / sampleHeight) uses this same un-suppressed blend, so the ribbon deck seats
+        // on the filled terrain and collision agrees with the rendered surface.
         if (this._roadSystem) {
             const c = this._roadSystem._sampleCarveWorld(wx, wz, raw, nrHint)
             if (c && c.blendW > 1e-6) return hs + c.blendW * (c.gradeY - hs)
@@ -906,29 +905,30 @@ export class TerrainSystem {
 
         // Phase 9 carve hook (SURF-04/SURF-05): same blend as analyticHeight (height-agreement path).
         // CARVE SYNC: identical blend formula as analyticHeight, _flushPendingQueue, Worker height loop.
-        // FEAT-18: composed with the per-chunk stream table exactly as the mesh Y write (this is the
-        // MESH surface — no bridge-deck floor here; physics rides analyticHeight).
+        // FEAT-18 CAUSEWAY: composed with the per-chunk stream table exactly as the mesh Y write —
+        // the road carve fills the channel back to gradeY un-suppressed (see _composeCarvedY), so
+        // MESH == PHYSICS (analyticHeight) here.
         const i00  = (zi       * N +  xi   ) * 2
         const i10  = (zi       * N + (xi+1)) * 2
         const i01  = ((zi + 1) * N +  xi   ) * 2
         const i11  = ((zi + 1) * N + (xi+1)) * 2
         const cw00 = (1-fx) * (1-fz), cw10 = fx * (1-fz)
         const cw01 = (1-fx) * fz,     cw11 = fx * fz
-        let sw = 0, hs = rawAmp
+        let hs = rawAmp
         if (chunk.streamData) {
             const sd = chunk.streamData
-            sw = sd[i00]*cw00 + sd[i10]*cw10 + sd[i01]*cw01 + sd[i11]*cw11
+            const sw = sd[i00]*cw00 + sd[i10]*cw10 + sd[i01]*cw01 + sd[i11]*cw11
             if (sw > 1e-6) {
                 const bedY = sd[i00+1]*cw00 + sd[i10+1]*cw10 + sd[i01+1]*cw01 + sd[i11+1]*cw11  // world-space
                 hs = rawAmp + sw * (bedY - rawAmp)
-            } else sw = 0
+            }
         }
         if (chunk.carveData) {
             const cd   = chunk.carveData
             const blendW = cd[i00]*cw00 + cd[i10]*cw10 + cd[i01]*cw01 + cd[i11]*cw11
             // gradeY_preamp → world-space by multiplying by amp (CARVE SYNC)
             const gradeY = (cd[i00+1]*cw00 + cd[i10+1]*cw10 + cd[i01+1]*cw01 + cd[i11+1]*cw11) * (this._params.terrainAmplitude ?? 1.0)
-            if (blendW > 1e-6) return hs + blendW * (1 - sw) * (gradeY - hs)
+            if (blendW > 1e-6) return hs + blendW * (gradeY - hs)
         }
         return hs
     }
@@ -1159,16 +1159,23 @@ export class TerrainSystem {
      * FEAT-18: THE mesh vertex-height composition (see setWaterCarve for the derivation) — shared
      * by the three mesh Y-write loops (_flushPendingQueue, recarve, rebuildAllChunks) so they can
      * never drift. raw + streamData bedY world-space; carveData gradeY pre-amp (×amp here). @private
+     *
+     * CAUSEWAY (2026-07-16): the road carve is composed over the stream-carved terrain WITHOUT
+     * suppression — where a road core covers a channel it fills the cut back to gradeY, forming a
+     * continuous embankment causeway (the stream is culverted under the crossing; the water ribbon
+     * is suppressed there by BUG-33). This makes MESH == PHYSICS (analyticHeight uses the same
+     * un-suppressed blend), so the road ribbon deck seats on the terrain instead of floating over a
+     * raw channel-wall notch. Replaced the old (1−sw) notch-and-bridge composition.
      */
     _composeCarvedY(raw, carveData, streamData, i, amp) {
-        let sw = 0, h = raw
+        let h = raw
         if (streamData) {
-            sw = streamData[i * 2]
-            if (sw > 1e-6) h = raw + sw * (streamData[i * 2 + 1] - raw); else sw = 0
+            const sw = streamData[i * 2]
+            if (sw > 1e-6) h = raw + sw * (streamData[i * 2 + 1] - raw)
         }
         if (carveData) {
             const bw = carveData[i * 2]
-            if (bw > 1e-6) h = h + bw * (1 - sw) * (carveData[i * 2 + 1] * amp - h)
+            if (bw > 1e-6) h = h + bw * (carveData[i * 2 + 1] * amp - h)
         }
         return h
     }
