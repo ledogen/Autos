@@ -1,4 +1,3 @@
-<!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
 **RangerSim**
@@ -15,9 +14,7 @@ A browser-based 6DOF rigid body car physics simulation built in JavaScript with 
 - **Physics**: Hand-rolled, no physics library — required for learning, tuning transparency, and terrain control
 - **Performance**: Target 60fps on a mid-range laptop with terrain active — physics must be lightweight
 - **LLM maintainability**: Code is primarily maintained by LLM sessions (Claude Sonnet 4.6, `claude-sonnet-4-6`). Conventions must be explicit, self-documenting, and resistant to drift across sessions.
-<!-- GSD:project-end -->
 
-<!-- GSD:stack-start source:research/STACK.md -->
 ## Technology Stack
 
 Three.js r184 (ESM from npm, bundled by Vite) · vanilla JS · lil-gui + stats.js (from `three/addons`,
@@ -43,9 +40,7 @@ for physics, OffscreenCanvas, or Euler angles for body rotation. Fixed-timestep 
 | `src/debug.js` | lil-gui panel, scenario logger, HUD | `vehicle.js` (reads state) |
 | `src/main.js` | Entry point, scene setup, game loop | All of the above |
 | `data/ranger.js` | Ford Ranger specs as exported const object | Nothing |
-<!-- GSD:stack-end -->
 
-<!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
 ### src/ is the product
@@ -96,21 +91,21 @@ template literal; `test/route-worker-sync.mjs` (a `npm test` gate) asserts it st
 the canonical (modulo `export` + template escaping). Edit the `ROUTE SYNC` region and re-mirror it in
 the same commit. The main thread keeps the synchronous router as the cold-load/teleport fallback, so
 headless gates (no Worker, no dispatcher) are unaffected.
-<!-- GSD:conventions-end -->
 
-<!-- GSD:architecture-start source:ARCHITECTURE.md -->
-<!-- Architecture not mapped — follow existing patterns in the codebase. -->
-<!-- GSD:architecture-end -->
+## Story Mode (design intent)
 
-<!-- GSD:skills-start source:skills/ -->
-<!-- No project skills. Add a SKILL.md under .claude/skills/ (or .agents/.cursor/.github/.codex) to register one. -->
-<!-- GSD:skills-end -->
+Story mode (roguelike runs, sleep/doze clock, par-based mission economy, region unlocking via
+FEAT-28) is framed but not yet scheduled. **Intent and invariants live in
+`.planning/story-mode/DESIGN.md`** (cite invariants as `SM-INV-N`); milestones + ticket map in
+`.planning/story-mode/MILESTONES.md`. Read DESIGN.md before any gameplay/mission/progression/
+sleep/economy work — if an implementation satisfies its ticket but violates an invariant there,
+the invariant wins; stop and flag it. Open design questions listed there are the user's to
+answer, not yours.
 
-<!-- GSD:workflow-start source:customized 2026-06-21 (right-sized for maintenance stage) -->
 ## Workflow
 
 This project is in **maintenance / polish stage**. Work the lightweight loop — direct edits are the
-norm; you do NOT need to route every change through a `/gsd-*` command.
+norm.
 
 - **Capture** bugs/features/ideas as tickets in `.planning/todos/pending/` (frontmatter: `id`, `type`,
   `status`, `severity`, plus a clear acceptance section). This tracker is the live source of truth for
@@ -123,13 +118,6 @@ norm; you do NOT need to route every change through a `/gsd-*` command.
 - **Commit** with conventional messages (`feat(NN)` / `fix(NN)` / `perf(NN)` / `docs`), only at a
   task/phase boundary or when asked.
 
-The full GSD skills (`/gsd-execute-phase`, executors, discuss/verify) remain available and are worth it
-for a large structured effort — but they are **opt-in, not required**. The `.planning/` phase artifacts
-are historical record; `.planning/todos/` is the live tracker.
-<!-- GSD:workflow-end -->
-
-
-
-<!-- GSD:profile-start -->
-<!-- Developer Profile not configured. Run /gsd-profile-user. Managed by generate-claude-profile — do not edit manually. -->
-<!-- GSD:profile-end -->
+For a large structured effort, lean on plan mode and stage the work in `.planning/`. The `.planning/`
+phase artifacts (`phases/`, `milestones/`, handoffs) are historical record; `.planning/todos/` is the
+live tracker.
