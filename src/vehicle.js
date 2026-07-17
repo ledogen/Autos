@@ -89,12 +89,12 @@ export function updateVehicle (vehicleState, params, dt) {
   // S key: sets brake=1; getDriveTorque uses maxReverseTorque for rear wheels (Bug 4 fix in physics.js)
   vehicleState.brake     = vehicleState.smoothBrake
   // ── Handbrake / parking-brake state machine (feature/teleport) ──────────────
-  // Moving (>2 km/h): the handbrake is momentary — rear torque only while Space is held.
-  // Near rest (<2 km/h): a Space TAP latches vehicleState.parked ON, so it keeps holding after
+  // Moving (>5 km/h): the handbrake is momentary — rear torque only while Space is held.
+  // Near rest (<5 km/h): a Space TAP latches vehicleState.parked ON, so it keeps holding after
   // release (the same held state a spawn/teleport starts in — see _reseatTruckAtSpawn). While
   // parked, another Space tap — or pressing W/S — toggles it fully OFF so the truck can roll again.
   // Steering (A/D) does NOT release it. Held through free-cam so the truck stays put while you fly.
-  const PARK_SPEED = 0.556   // m/s ≈ 2 km/h
+  const PARK_SPEED = 1.389   // m/s ≈ 5 km/h
   const spd     = Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z)
   const handKey = !freecamActive && keys[' ']
   const handTap = handKey && !_prevHandKey                       // rising edge (press this frame)
