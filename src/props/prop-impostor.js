@@ -39,8 +39,8 @@ export const IMPOSTOR_CATS = ['aspen', 'pine']
 
 const TILE_PX = 256            // px per variant tile (atlas ~16 MB RGBA16F at 11 variants; 128 showed
                                // visible stair-step cutout edges on mid-distance trees at 1200p)
-const LIT_GAIN = 1.1           // sun-side brightening strength (× max(view·sunXZ, 0)); the 3D lit
-                               // face is roughly hemi+sun vs hemi-only — tune vs 3D via screenshots
+const LIT_GAIN = 2.0           // default sun-side brightening strength (× max(view·sunXZ, 0)) —
+                               // live-tunable via the Props GUI 'billboard lit gain' slider
 
 export class PropImpostors {
   /**
@@ -57,6 +57,19 @@ export class PropImpostors {
     this._rt = null
     this._cols = 0
     this._rows = 0
+    this._litGain = LIT_GAIN
+  }
+
+  /** Live sun-side brightening strength (uniforms only — no rebake needed). */
+  setLitGain (v) {
+    this._litGain = Math.max(0, v)
+    const sd = this._lights.sunDir
+    const litNorm = 1 / (1 + this._litGain * Math.max(sd ? sd.z : 0, 0))   // bake view dir is +Z
+    for (const e of this._entries.values()) {
+      if (!e.material) continue
+      e.material.uniforms.uLitK.value = this._litGain
+      e.material.uniforms.uLitNorm.value = litNorm
+    }
   }
 
   /**
@@ -153,10 +166,11 @@ export class PropImpostors {
     // uLitNorm renormalizes so the bake azimuth (0,1) stays exactly as captured.
     const sd = this._lights.sunDir
     const sunXZ = new THREE.Vector2(sd ? sd.x : 0, sd ? sd.z : 0)
-    const litNorm = 1 / (1 + LIT_GAIN * Math.max(sunXZ.y, 0))     // bake view dir is +Z = (0,1)
+    const litNorm = 1 / (1 + this._litGain * Math.max(sunXZ.y, 0))   // bake view dir is +Z = (0,1)
     for (const e of this._entries.values()) {
       if (!e.material) continue
       e.material.uniforms.uSunXZ.value.copy(sunXZ)
+      e.material.uniforms.uLitK.value = this._litGain
       e.material.uniforms.uLitNorm.value = litNorm
     }
     const r = this._renderer

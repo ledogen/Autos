@@ -267,6 +267,7 @@ export class PropSystem {
     if (this._impostors || !renderer) return
     this._impostors = new PropImpostors(renderer, lights)
     const entries = this._impostors.build(this._variants)
+    if (this._params.lod && this._params.lod.litGain != null) this._impostors.setLitGain(this._params.lod.litGain)
     this._impMeshes = new Map()
     const base = new THREE.PlaneGeometry(1, 1)      // shared unit quad (position/uv/index reused)
     for (const [key, e] of entries) {
@@ -304,6 +305,9 @@ export class PropSystem {
 
   /** Re-bake the impostor atlas (sky look changed). No-op when impostors are off. */
   rebakeImpostors() { if (this._impostors) this._impostors.rebake() }
+
+  /** Live billboard sun-side brightening (GUI slider). No-op when impostors are off. */
+  setImpostorLitGain(v) { if (this._impostors) this._impostors.setLitGain(v) }
 
   /** 3D-prop ring radius in chunks (quality tier / GUI). Chunks beyond it billboard. */
   setLodRing(n) { this._lodRing = Math.max(0, Math.round(n)) }

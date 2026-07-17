@@ -41,6 +41,11 @@ export function addPropGui(gui, { params, rebuild, getPropSystem, onShadowModeCh
     const ps = getPropSystem && getPropSystem()
     if (ps) ps.setLodRing(v)
   })
+  // Billboard sun-side brightening — uniforms only, updates live while you orbit a tree.
+  f.add(params.lod, 'litGain', 0, 8, 0.1).name('billboard lit gain').onChange((v) => {
+    const ps = getPropSystem && getPropSystem()
+    if (ps) ps.setImpostorLitGain(v)
+  })
 
   const density = f.addFolder('Density'); density.close()
   density.add(S, 'clustersPerChunk', 0, 12, 1).name('tree clusters').onFinishChange(done)
