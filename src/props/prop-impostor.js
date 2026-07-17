@@ -89,7 +89,12 @@ export class PropImpostors {
     for (const e of this._entries.values()) {
       const cx = e.tilesIx % this._cols, cy = Math.floor(e.tilesIx / this._cols)
       e.uTile.set(cx / this._cols, cy / this._rows, 1 / this._cols, 1 / this._rows)
-      e.material = this._makeBillboardMaterial(e.uTile)
+      // Vertical anchor correction: the square capture region's bottom sits at (h−S)/2 in prop-local
+      // Y — BELOW the base for wide-format props (squat aspens, and boulders whose blob geometry is
+      // origin-centred so h/2 ≪ their visual middle). Without this the texture bottom was pinned to
+      // the anchor, floating wide props by up to half the width/height difference.
+      e.y0n = (e.height - e.size) / (2 * e.size)          // capture-bottom offset ÷ S (≤ 0)
+      e.material = this._makeBillboardMaterial(e.uTile, e.y0n)
     }
     this.rebake()
     return this._entries
@@ -143,17 +148,19 @@ export class PropImpostors {
     mat.dispose()
   }
 
-  _makeBillboardMaterial (uTile) {
+  _makeBillboardMaterial (uTile, y0n) {
     return new THREE.ShaderMaterial({
       uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
         uAtlas: { value: null },      // bound lazily below (merge() would clone the texture ref)
         uTile: { value: uTile },
+        uY0n: { value: y0n },         // capture-bottom offset ÷ S (see build()) — exact vertical anchor
       }]),
       vertexShader: /* glsl */`
         attribute vec3 aPos;          // anchor: trunk base / prop origin (world)
         attribute float aSize;        // world side of the square quad (variant S × instance scale)
         attribute vec3 aTint;
         uniform vec4 uTile;           // u0, v0, uSpan, vSpan
+        uniform float uY0n;
         varying vec2 vUv;
         varying vec3 vTint;
         #include <fog_pars_vertex>
@@ -165,7 +172,15 @@ export class PropImpostors {
           float len = max(length(toCam.xz), 1e-4);
           vec2 fwd = toCam.xz / len;
           vec3 right = vec3(fwd.y, 0.0, -fwd.x);       // cross(+Y, fwd)
-          vec3 wp = aPos + right * (position.x * aSize) + vec3(0.0, (position.y + 0.5) * aSize, 0.0);
+          vec3 wp = aPos + right * (position.x * aSize)
+                  + vec3(0.0, (position.y + 0.5 + uY0n) * aSize, 0.0);
+          // Slope de-burial: pull the quad toward the camera (horizontally) by ~20% of its size.
+          // A flat slice through the trunk axis gets depth-clipped by uphill terrain on cross-slopes
+          // (a 3D canopy also enters the hill, but wraps visibly above it) — trees read as sunk to
+          // the canopy. Shifting the plane a couple of metres camera-ward stands it clear of the
+          // hillside; at billboard distances (≥ ~96 m) the parallax shift is invisible.
+          wp.x += fwd.x * (aSize * 0.2);
+          wp.z += fwd.y * (aSize * 0.2);
           vec4 mvPosition = viewMatrix * vec4(wp, 1.0);
           gl_Position = projectionMatrix * mvPosition;
           #include <fog_vertex>
