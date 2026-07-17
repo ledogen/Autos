@@ -97,14 +97,25 @@ function getBrakeTorque (wheelIndex, vehicleState, params) {
  *   single-contact interface to support walls, slopes, and multiple contacts per wheel.
  * @returns {void}
  */
-// BUG-27: body (frame/bumper/undercarriage) contact is fully PLASTIC — restitution 0.
-// A real steel frame slamming the ground deforms and absorbs the impact; it does not rebound.
-// The old 0.05 restitution only ever fired on FAST contacts (the REST_VEL_THRESHOLD gate set
-// e=0 for slow/resting contacts), so it added bounce to exactly the hard slams that should be
-// the most inelastic — and that 0.05 target was amplified to ~0.15 effective by the 6 coincident
-// undercarriage probes × 8 Gauss-Seidel passes, launching the car. e=0 makes the normal impulse
-// kill all approach velocity (maximally dissipative) while leaving resting contact dead-stopped.
-const BODY_RESTITUTION  = 0.0   // fully plastic: hard hits thud and stay, no rebound (BUG-27)
+// Body (frame/bumper/undercarriage) contact restitution — DEFAULT for params.bodyRestitution.
+//
+// BUG-27 history: this was pinned to 0 because the solver AMPLIFIED any e > 0. The old sweep did
+// `dN = -(1+e)·vn` off the CURRENT vn every pass, so restitution was re-applied 8 passes × 6
+// coincident undercarriage probes — a nominal 0.05 landed at ~0.15 effective and launched the car.
+// The conclusion drawn then ("a steel frame does not rebound") was really a workaround for that
+// amplification: e=0 is the one value the buggy formulation happens to handle correctly, because
+// driving vn → 0 is idempotent no matter how many times you re-apply it.
+//
+// Fixed properly (2026-07-16) with the standard restitution BIAS: each contact's approach velocity
+// is sampled ONCE before the solver and the passes drive vn toward a FIXED target (−e·vnApproach)
+// instead of recomputing the target from the velocity the previous pass just changed. Convergence
+// is now to that target, so e means what it says and does not compound with probe count or pass
+// count. That makes restitution a real, tunable parameter — hence the slider.
+const BODY_RESTITUTION_DEFAULT = 0.21   // slight rebound on hard slams; 0 = the old fully-plastic thud
+// Restitution applies only to genuine IMPACTS. Below this approach speed the bias is 0, so resting /
+// settling contact stays dead-stopped and cannot jitter or creep (the job the removed BUG-27-era
+// REST_VEL_THRESHOLD used to do, reinstated now that e > 0 is back on the table).
+const REST_VEL_THRESHOLD = 1.0   // m/s — |vn| below this → no bounce, pure plastic stop
 // BUG-27b: body contact is SLIPPERY — damp the NORMAL (arrest sink-in, no launch) but do NOT
 // arrest tangential/forward slide. At mu=0.6 a bumper grazing the road while crossing the shoulder
 // saturated friction (jf = vt/invEffMassT ≤ 0.6·accumN) and stopped the truck DEAD. A low mu caps
@@ -121,15 +132,23 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
   // instead of a flat y=0 half-space check (Phase 6 fix: TERR-FIX-01).
   // Old code: embed = wheelRadius - hub.y assumed flat ground at y=0 — always fired on terrain.
   //
-  // BUG-24: the trigger is now `depth > wheelRadius` (the hub CENTER is below the surface), NOT a flat
-  // 0.3 m. 0.3 m sat BELOW the wheel radius (0.368 m), so a deeply-compressed-but-normal contact would
-  // fire it: e.g. a wheel crossing the intended ~0.25 m road-over-shoulder step has contact depth
-  // ~0.25 m + ~0.06 m loaded tire deflection ≈ 0.31 m > 0.3, yet its hub center is still ~0.06 m ABOVE
-  // ground — a resolvable contact the suspension (Step 2.5) handles via tire→strut→body force. The old
-  // threshold preempted that chain and hard-teleported the body (position write + vy=0) → the observed
-  // "teleport instead of a natural bump". depth > wheelRadius is the physical line between a compressed
-  // tire and a wheel actually inside the ground (true tunnel, e.g. driven through a wall) that the force
-  // solver cannot recover in one step.
+  // BUG-24: the trigger stopped being a flat 0.3 m. 0.3 m sat BELOW the wheel radius (0.368 m), so a
+  // deeply-compressed-but-normal contact would fire it: e.g. a wheel crossing the intended ~0.25 m
+  // road-over-shoulder step has contact depth ~0.25 m + ~0.06 m loaded tire deflection ≈ 0.31 m > 0.3,
+  // yet its hub center is still ~0.06 m ABOVE ground — a resolvable contact the suspension (Step 2.5)
+  // handles via tire→strut→body force. That threshold preempted the force chain and hard-teleported the
+  // body (position write + vy=0) → the observed "teleport instead of a natural bump".
+  //
+  // The trigger is now `depth > 2·wheelRadius` — the hub CENTER a full wheel radius BELOW the surface,
+  // i.e. the whole wheel swallowed. `depth > wheelRadius` (hub center merely AT the surface) still fired
+  // on hits the solvers recover from on their own; the teleport is a last-resort escape hatch for a true
+  // tunnel (driven through a wall), and everything short of that belongs to Step 3b's Baumgarte, which
+  // bleeds penetration out at ≤ MAX_CORRECTION per step instead of snapping.
+  //
+  // Only the TERRAIN contact can reach this line: its depth is a half-space measure (terrainH + r − cy)
+  // that grows without bound as the hub sinks. Mesh/prop contacts compute depth = r − dist, capped at r,
+  // so they never trip the failsafe at any threshold ≥ r — they rely on Step 3b (as they already did
+  // under the old wheelRadius threshold).
   {
     let maxEmbed = 0
     for (let i = 0; i < 4; i++) {
@@ -139,7 +158,8 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
         if (depth > maxEmbed) maxEmbed = depth
       }
     }
-    if (maxEmbed > params.wheelRadius) {
+    // Lifting by maxEmbed puts the hub back at terrainH + wheelRadius — the wheel resting ON the surface.
+    if (maxEmbed > 2 * params.wheelRadius) {
       vehicleState.position.y += maxEmbed
       vehicleState.velocity.y  = 0
     }
@@ -597,7 +617,17 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
           rCrossN.z / params.inertiaPitch
         )
         const invEffMass = 1 / params.mass + rCrossN.dot(iInvRCrossN)
-        bodyContacts.push({ normal, depth, rContact, iInvRCrossN, invEffMass })
+        // Restitution bias, sampled ONCE here from the pre-solve approach velocity (see
+        // BODY_RESTITUTION_DEFAULT). vnApproach < 0 = closing on the surface; the solver then drives
+        // vn up to +bias instead of merely to 0. Computing it here — not inside the pass loop — is
+        // what stops e from compounding across passes/probes (the BUG-27 launch).
+        const vApproach = vehicleState.velocity.clone().add(
+          new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rContact)
+        )
+        const vnApproach = vApproach.dot(normal)
+        const e = params.bodyRestitution ?? BODY_RESTITUTION_DEFAULT
+        const bias = vnApproach < -REST_VEL_THRESHOLD ? -e * vnApproach : 0
+        bodyContacts.push({ normal, depth, rContact, iInvRCrossN, invEffMass, bias })
       }
     }
 
@@ -615,14 +645,18 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
 
     for (let iter = 0; iter < SOLVER_ITERATIONS; iter++) {
       for (const c of bodyContacts) {
-        const { normal, rContact, iInvRCrossN, invEffMass } = c
+        const { normal, rContact, iInvRCrossN, invEffMass, bias } = c
 
-        // ── Normal impulse: drive vn → 0 (restitution 0 = fully plastic), accumulate & clamp ≥ 0 ──
+        // ── Normal impulse: drive vn → the fixed bias target, accumulate & clamp ≥ 0 ──
+        // bias = 0 (resting / slow contact) → vn → 0, the old fully-plastic behaviour, unchanged.
+        // bias > 0 (impact)                → vn → +bias, i.e. it leaves with e × its approach speed.
+        // The target is a CONSTANT for the whole solve, so re-running this pass is idempotent once
+        // converged — that's why restitution no longer amplifies with pass/probe count (BUG-27).
         let vertVel = vehicleState.velocity.clone().add(
           new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rContact)
         )
         const vn = vertVel.dot(normal)
-        let dN = -(1 + BODY_RESTITUTION) * vn / invEffMass
+        let dN = -(vn - bias) / invEffMass
         const newN = Math.max(0, c.accumN + dN)   // total normal impulse can never pull the body down
         dN = newN - c.accumN
         c.accumN = newN
