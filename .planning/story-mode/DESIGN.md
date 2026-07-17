@@ -15,7 +15,8 @@ before building anything expensive on top of one.
 game-mode split defined (see "Game modes" below); debug lockout in story mode ratified
 (ex-open-question 8); timers amended — NOT off the table, just not the universal driver
 (SM-INV-3 rewritten, ex-open-question 2); damage/wear model confirmed required and expected
-to be hard (see "The economy").
+to be hard (see "The economy"); character dialog channel defined — RPG-style chat pane, no
+options, sequential cards (see "Characters and dialog"; SM-INV-11 scoped to the world-story).
 
 ---
 
@@ -114,12 +115,16 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   Power mods on an open-diff RWD truck are a *worse car* for a driver without the literacy —
   that's a cursed item nobody had to author, and it only works because nothing is hidden.
   [DEFAULT]
-- **SM-INV-11 — Story is delivered through generator parameter states and the doze, never
-  scripted events.** The leaning trees, the enormous moon, dark at noon, people missing —
+- **SM-INV-11 — The world-story is delivered through generator parameter states and the doze,
+  never scripted events.** The leaning trees, the enormous moon, dark at noon, people missing —
   parameter states, several already reachable with what's in the game. The doze (eyes
   closed for ~400 ms) is the only moment the game controls what the player sees — a frame
   of *something*. Pushing sleep is how you learn the story; the transgression *is* the
-  looking. [RATIFIED premise / DEFAULT mechanism]
+  looking. [RATIFIED premise / DEFAULT mechanism] *Scope (2026-07-16): this governs the
+  surreal world-story — atmosphere, the through-line, what is happening TO the world. It does
+  NOT forbid characters speaking to the player; that rides a separate channel, the **chat
+  pane** (see "Characters and dialog"). "Never scripted events" means the world doesn't stop
+  to narrate itself, not that a mission-giver can't tell you the milk's at the store.*
 - **SM-INV-12 — Determinism discipline extends, not breaks.** [RATIFIED 2026-07-16] The
   split: **world, seed, terrain, and router generation stay deterministic** — pure functions
   of `(worldSeed, metaState, coords)` where `metaState` (unlocks, story parameter states) is
@@ -191,6 +196,32 @@ roll over that same architecture space. Mid-run finds (an LSD in a barn) are eve
   (SM-INV-9). The player accumulated the weirdness voluntarily by going too far; there is
   no button to put it back.
 
+### Characters and dialog: the chat pane [RATIFIED 2026-07-16]
+
+Characters speak to the player through an **RPG-style chat pane** — a card surface, not a
+conversation tree.
+
+- **No dialog options.** The player never picks a reply. Dialog is *received*, not negotiated.
+- **Sequential cards.** A line of dialog is a sequence of cards advanced one at a time (tap /
+  key to continue), each a beat of what the character says. The card order is the whole content
+  — no branching, so no per-choice state to author or balance.
+
+This posture is deliberate and on-tone: receiving a line and moving on is the same passive
+stance as the doze (SM-INV-11) and the same no-menus ethos as camping-is-a-place (SM-INV-6) and
+the no-countdown HUD (SM-INV-3). The player drives; they don't manage conversations.
+
+**What the chat pane carries — and what it doesn't.** The chat pane is the **character** channel:
+mission-givers, people you meet, whoever spawns at a place (e.g. a logging site, FEAT-32). It is
+deliberately distinct from the **world-story** channel, which stays parameter states + the doze
+(SM-INV-11). The trees leaning, the moon, dark at noon are never chat cards. The chat pane is who
+is talking to you; the world is what is happening to it.
+
+**Boundary to confirm (owner) — flagged, not resolved:** how much *story* (versus mission framing
+and character banter) the cards may carry before they become the "scripted events" SM-INV-11
+forbids. Default read: cards frame missions and give characters a voice; the surreal through-line
+stays in parameter states and the doze. If a story beat wants a card to carry the world-story
+itself, stop and escalate rather than assuming the pane is licensed for it.
+
 ## Failure modes to watch (from the design conversation)
 
 - **Par-scoring eats the tone.** If every mission is the same number, this is a time trial
@@ -230,3 +261,4 @@ parameter states come from hard tooling, not realtime slider manipulation).
 | Core value "physics that feel honest" | — | Alignment: missions reward driving at the limit; parts change behavior, not numbers |
 | No damage model exists (noted in FEAT-26) | Breakdown death needs one | Build ONE wear/condition model (SM milestone 3) shared by economy wear and hazard impacts; **confirmed required 2026-07-16**, expected hard |
 | Timers impossible to tune fairly in procedural world | Some missions want hard timers | **RATIFIED as amended 2026-07-16**: timed mission types allowed (reward decays/zeroes); timers must never drive ALL missions; par itself is never a clock (SM-INV-3) |
+| `SM-INV-11` world-story = parameter states + doze, never scripted events | Character dialog is authored text | **RATIFIED 2026-07-16**: character/mission dialog rides a distinct **chat pane** (sequential cards, no options — see "Characters and dialog"); the world-story channel stays parameter states + doze. Boundary — how much story cards may carry — flagged for owner, not resolved |
