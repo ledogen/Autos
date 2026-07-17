@@ -916,7 +916,7 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         coarse: !!opts._coarsePass, tube: !!tubeXs, hGuided: !!hF, flood: !!opts._costFieldOut,
     })
     // Corridor-heuristic mode: the backward flood returns its per-XZ-cell min cost as the field
-    // the fine search reads through `heur` — no path is emitted from a flood.
+    // the fine search reads through \`heur\` — no path is emitted from a flood.
     if (opts._costFieldOut) {
         const hFOut = new Float64Array(NX * NZ).fill(Infinity)
         for (let ci = 0; ci < NX * NZ; ci++) {
