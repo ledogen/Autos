@@ -1258,12 +1258,22 @@ let _lastHudWrite = 0  // PERF-16: wall-clock (ms) of the last HUD DOM/canvas wr
 // PERF-12: shadowMap/shadowExtent scale with the tier. Normal's world is a ±160 m ring-2 window,
 // so the old fixed ±220/2048 wasted texels and casters; 1536@±160 keeps texel size (~0.21 m)
 // while shrinking the shadow pass. High/Ultra keep the wide frustum for their bigger rings.
+// shadowTilePx: baked prop-shadow atlas resolution, texels per 64 m chunk (prop-shadow-bake.js).
+//   Low = 0 → baked shadows OFF entirely (the tier already kills the realtime sun pass; the atlas is
+//   freed, not just hidden). Normal 256 (0.25 m/texel, the shipped look); High 384 and Ultra 512 are
+//   the 1.5×/2× density steps the GPU-to-burn tiers can afford (atlas VRAM 85 / 151 MB vs 37 MB —
+//   it grows with the SQUARE of this). Applied like detailScale: the tier writes the param, then the
+//   sync hook pushes it into the bake system + terrain sampler; the GUI slider overrides live.
 const QUALITY_PRESETS = {
-  Low:    { ring: 1, warm: 1, fogDensity: 0.012, detailScale: 0,   shadows: false, propRing: 1, resHeight: 720,  shadowMap: 1024, shadowExtent: 160 },
-  Normal: { ring: 2, warm: 1, fogDensity: 0.006, detailScale: 1.0, shadows: true,  propRing: 2, resHeight: 1200, shadowMap: 1536, shadowExtent: 160 },
-  High:   { ring: 3, warm: 3, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 2, resHeight: null, shadowMap: 2048, shadowExtent: 220 },
-  Ultra:  { ring: 4, warm: 4, fogDensity: 0.003, detailScale: 1.0, shadows: true,  propRing: 3, resHeight: null, shadowMap: 2048, shadowExtent: 220 },
+  Low:    { ring: 1, warm: 1, fogDensity: 0.012, detailScale: 0,   shadows: false, propRing: 1, resHeight: 720,  shadowMap: 1024, shadowExtent: 160, shadowTilePx: 0   },
+  Normal: { ring: 2, warm: 1, fogDensity: 0.006, detailScale: 1.0, shadows: true,  propRing: 2, resHeight: 1200, shadowMap: 1536, shadowExtent: 160, shadowTilePx: 256 },
+  High:   { ring: 3, warm: 3, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 2, resHeight: null, shadowMap: 2048, shadowExtent: 220, shadowTilePx: 384 },
+  Ultra:  { ring: 4, warm: 4, fogDensity: 0.003, detailScale: 1.0, shadows: true,  propRing: 3, resHeight: null, shadowMap: 2048, shadowExtent: 220, shadowTilePx: 512 },
 }
+
+// PERF-07: set once the bake system exists (browser only — headless never constructs it), so
+// applyQuality can push a tier's shadowTilePx without referencing the not-yet-initialised const.
+let _syncBakedShadows = null
 
 // PERF-06: internal render-resolution cap for the CURRENT tier (px height; null = device-native). Held
 // at module scope so the resize handler can re-apply the clamp (which depends on innerHeight) without
@@ -1321,6 +1331,12 @@ function applyQuality (name) {
   renderer.shadowMap.needsUpdate = true
   // PERF-06 prop radius: thin out the scattered-prop ring on Low (read by the loop's propSystem.update).
   _propRing = p.propRing
+  // PERF-07 baked prop shadows: the tier owns the atlas density (0 on Low = off). Write the param
+  // (source of truth + what the GUI slider binds to), then let the sync hook reallocate + re-bake.
+  if (p.shadowTilePx !== undefined && FLORA_PARAMS.shadows) {
+    FLORA_PARAMS.shadows.tilePx = p.shadowTilePx
+    if (_syncBakedShadows) _syncBakedShadows()
+  }
   // PERF-06 render resolution: stash the tier's cap, then apply (also re-applied on window resize).
   _qualityResHeight = p.resHeight
   applyRenderResolution()
@@ -1504,19 +1520,26 @@ propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
 // browser-only). Wires the atlas texture into the terrain sampler, the bake triggers into the prop
 // system, and the static sun direction into the projection shear. In realtime-cast mode the terrain
 // strength is 0 (props keep casting into the sun's shadow map instead).
-const shadowBake = new ShadowBakeSystem(renderer)
+const shadowBake = new ShadowBakeSystem(renderer, FLORA_PARAMS.shadows?.tilePx ?? TILE_PX)
 shadowBake.setSun(skySystem.sunDirection)
-const propShadowStrength = () => (FLORA_PARAMS.shadows?.castRealtime ? 0 : (FLORA_PARAMS.shadows?.strength ?? 0.34))
-terrainSystem.setShadowAtlas(shadowBake.atlasTexture, ATLAS_N, TILE_PX, propShadowStrength())
-propSystem.setShadowBake(shadowBake)
-// Keep terrain strength in lockstep with the mode toggle + strength slider (prop-debug 'Realtime
-// prop shadows' / 'Baked shadow strength' write FLORA_PARAMS.shadows and call this).
+// Baked strength is 0 whenever the bake can't stand in: realtime-cast mode, or tilePx 0 (Low tier
+// turns baked prop shadows off outright — no atlas exists to sample).
+const propShadowStrength = () =>
+  (FLORA_PARAMS.shadows?.castRealtime || !shadowBake.enabled) ? 0 : (FLORA_PARAMS.shadows?.strength ?? 0.34)
+// Keep the bake system + terrain sampler in lockstep with FLORA_PARAMS.shadows (prop-debug's mode
+// toggle / strength / fade / resolution sliders and applyQuality's tier all write the params then
+// call this). A tilePx change reallocates the atlas, so every live chunk must re-mark its tile —
+// that is exactly what setShadowBake() does, so re-run it.
 const applyPropShadowMode = () => {
+  const resized = shadowBake.setTilePx(FLORA_PARAMS.shadows?.tilePx ?? TILE_PX)
   const realtime = !!FLORA_PARAMS.shadows?.castRealtime
   propSystem.setShadowCasting(realtime)
-  terrainSystem.setShadowAtlas(shadowBake.atlasTexture, ATLAS_N, TILE_PX, propShadowStrength())
+  if (resized) propSystem.setShadowBake(shadowBake)   // re-mark live chunks into the new atlas
+  terrainSystem.setShadowAtlas(shadowBake.atlasTexture, ATLAS_N, shadowBake.tilePx, propShadowStrength())
   terrainSystem.setShadowFade(FLORA_PARAMS.shadows?.fadeStart ?? 240, FLORA_PARAMS.shadows?.fadeEnd ?? 380)
 }
+_syncBakedShadows = applyPropShadowMode   // lets applyQuality push a tier's shadowTilePx (see there)
+propSystem.setShadowBake(shadowBake)
 applyPropShadowMode()   // apply the params' fade bounds at boot (uniform defaults are placeholders)
 // PERF-07 dev handle: A/B baked vs realtime prop shadows from the console / CDP harness.
 window.__propShadows = (realtime) => { FLORA_PARAMS.shadows.castRealtime = !!realtime; applyPropShadowMode() }

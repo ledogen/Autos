@@ -90,7 +90,7 @@ export const RANGER_PARAMS = {
 
   // Service brake, split front/rear (front-biased like a real car — more clamp up front where weight
   // transfers under braking). Consumed per-wheel by getBrakeTorque (front = wheels 0/1, rear = 2/3).
-  maxBrakeTorqueFront: 1200,  // N·m — front axle service-brake torque per wheel-pair path
+  maxBrakeTorqueFront: 1300,  // N·m — front axle service-brake torque per wheel-pair path
   maxBrakeTorqueRear:   450,  // N·m — rear axle service-brake torque (reduced to curb rear lockup)
   maxHandbrakeTorque: 4000, // N·m — rear-only handbrake; doubled from 2000 to actually lock rears; exposed as slider (D-16)
 

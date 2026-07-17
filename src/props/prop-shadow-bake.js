@@ -34,7 +34,9 @@ import * as THREE from 'three'
 
 export const BAKE_LAYER = 2          // props enable this layer; the bake camera renders only it
 export const ATLAS_N    = 12         // tiles per side (toroidal). Ring diameter ≤ 9 (Ultra) ⊂ 12.
-export const TILE_PX    = 256        // px per chunk tile → 0.25 m/texel at CHUNK_SIZE 64 (atlas 3072²)
+export const TILE_PX    = 256        // DEFAULT px per chunk tile → 0.25 m/texel at CHUNK_SIZE 64 (atlas 3072²).
+                                     // Live value is per-instance (setTilePx; quality tier + GUI slider
+                                     // drive it via FLORA_PARAMS.shadows.tilePx). 0 = baked shadows off.
 const CHUNK             = 64         // world metres per chunk side (matches terrain CHUNK_SIZE)
 const MAX_BAKES_PER_CALL = 8         // tiles baked per update() — sliced to avoid a stream hitch
 
@@ -112,17 +114,14 @@ export function shadowShearScale(bx, by, bz, h0, sx, sz, heightAt) {
 }
 
 export class ShadowBakeSystem {
-  /** @param {THREE.WebGLRenderer} renderer */
-  constructor(renderer) {
+  /**
+   * @param {THREE.WebGLRenderer} renderer
+   * @param {number} tilePx — texels per chunk tile (0 = disabled; no atlas allocated until enabled)
+   */
+  constructor(renderer, tilePx = TILE_PX) {
     this._renderer = renderer
-    const size = ATLAS_N * TILE_PX
-    this._rt = new THREE.WebGLRenderTarget(size, size, {
-      depthBuffer: false, stencilBuffer: false,
-      minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
-      wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping,
-      format: THREE.RGBAFormat, type: THREE.UnsignedByteType, generateMipmaps: false,
-    })
-    this._rt.texture.colorSpace = THREE.NoColorSpace   // alpha is data, not colour
+    this._tilePx = 0
+    this._rt = null
 
     // Top-down ortho camera covering one chunk (±32 m), looking straight down (-Y) with up = +Z.
     // The frustum mirrors ONLY the left/right pair — see makeBakeCamera() for the derivation and
@@ -163,15 +162,41 @@ export class ShadowBakeSystem {
     this._haveSun  = false
     this._prevClear = new THREE.Color()     // scratch for save/restore of the renderer clear colour
 
-    // Clear the whole atlas to alpha 0 once (untouched tiles read "no shadow").
-    const prevTarget = renderer.getRenderTarget()
-    renderer.setRenderTarget(this._rt)
-    renderer.setClearColor(0x000000, 0)
-    renderer.clear(true, false, false)
-    renderer.setRenderTarget(prevTarget)
+    this.setTilePx(tilePx)        // allocates + clears the atlas (no-op when tilePx = 0)
   }
 
-  get atlasTexture() { return this._rt.texture }
+  get atlasTexture() { return this._rt ? this._rt.texture : null }
+  get tilePx() { return this._tilePx }
+  get enabled() { return this._tilePx > 0 }
+
+  /**
+   * Set the atlas tile resolution (texels per 64 m chunk); 0 disables baked shadows entirely and
+   * frees the atlas (Low tier). Reallocates the render target — the old contents are GONE, so the
+   * caller must re-mark live chunks (propSystem.setShadowBake(bake) does exactly that) and re-push
+   * the new tilePx into the terrain sampler (terrainSystem.setShadowAtlas). VRAM is (ATLAS_N·tilePx)²
+   * RGBA8: 256→37 MB, 384→85 MB, 512→151 MB — which is why only the High/Ultra tiers go past 256.
+   * @param {number} tilePx @returns {boolean} true if it changed (caller re-marks/re-wires)
+   */
+  setTilePx(tilePx) {
+    const px = Math.max(0, Math.round(tilePx) || 0)
+    if (px === this._tilePx) return false
+    this._tilePx = px
+    if (this._rt) { this._rt.dispose(); this._rt = null }
+    this._dirty.length = 0
+    this._dirtySet.clear()
+    if (px === 0) return true                       // disabled: no atlas, update()/marks are no-ops
+
+    const size = ATLAS_N * px
+    this._rt = new THREE.WebGLRenderTarget(size, size, {
+      depthBuffer: false, stencilBuffer: false,
+      minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+      wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping,
+      format: THREE.RGBAFormat, type: THREE.UnsignedByteType, generateMipmaps: false,
+    })
+    this._rt.texture.colorSpace = THREE.NoColorSpace   // alpha is data, not colour
+    this.clear()                                       // alpha 0 everywhere = "no shadow"
+    return true
+  }
 
   /**
    * Set the sun (key-light) direction — horizontal projection ratio for the shear. `sunDir` points
@@ -196,7 +221,8 @@ export class ShadowBakeSystem {
    * for cross-seam silhouettes) trail behind — cuts the visible "shadow lags the tree" pop-in.
    */
   markWithNeighbors(cx, cz) {
-    this._mark(cx, cz, true)                                  // own tile first
+    if (!this._rt) return                                     // baked shadows off (tilePx 0)
+    this._mark(cx, cz, true)                                // own tile first
     for (let dz = -1; dz <= 1; dz++)
       for (let dx = -1; dx <= 1; dx++)
         if (dx || dz) this._mark(cx + dx, cz + dz, false)     // neighbours after
@@ -217,7 +243,7 @@ export class ShadowBakeSystem {
    * prop streaming so freshly-committed chunks bake within a frame or two.
    */
   update(propScene) {
-    if (!this._dirty.length) return
+    if (!this._dirty.length || !this._rt) return
     const r = this._renderer
     const prevTarget   = r.getRenderTarget()
     const prevOverride = propScene.overrideMaterial
@@ -237,8 +263,9 @@ export class ShadowBakeSystem {
       const comma = k.indexOf(',')
       const cx = parseInt(k.slice(0, comma), 10)
       const cz = parseInt(k.slice(comma + 1), 10)
+      const tp = this._tilePx
       const tx = pmod(cx, ATLAS_N), tz = pmod(cz, ATLAS_N)
-      const px = tx * TILE_PX, py = tz * TILE_PX
+      const px = tx * tp, py = tz * tp
 
       const wx = cx * CHUNK + CHUNK / 2, wz = cz * CHUNK + CHUNK / 2
       this._cam.position.set(wx, 2000, wz)
@@ -251,8 +278,8 @@ export class ShadowBakeSystem {
       // shadows landed in other chunks' tiles (or off-atlas) on Retina while DPR-1 headless runs
       // looked perfect. setRenderTarget applies rt.viewport/rt.scissor each call, so set them
       // before it; autoClear then clears only the scissored tile before drawing the silhouettes.
-      this._rt.viewport.set(px, py, TILE_PX, TILE_PX)
-      this._rt.scissor.set(px, py, TILE_PX, TILE_PX)
+      this._rt.viewport.set(px, py, tp, tp)
+      this._rt.scissor.set(px, py, tp, tp)
       this._rt.scissorTest = true
       r.setRenderTarget(this._rt)
       r.render(propScene, this._cam)
@@ -269,9 +296,10 @@ export class ShadowBakeSystem {
   clear() {
     this._dirty.length = 0
     this._dirtySet.clear()
+    if (!this._rt) return                     // baked shadows off (tilePx 0) — nothing to clear
     const r = this._renderer
     const prevTarget = r.getRenderTarget()
-    const size = ATLAS_N * TILE_PX
+    const size = ATLAS_N * this._tilePx
     this._rt.viewport.set(0, 0, size, size)   // full-atlas clear (rt state, raw pixels — see update)
     this._rt.scissor.set(0, 0, size, size)
     this._rt.scissorTest = false
@@ -281,5 +309,5 @@ export class ShadowBakeSystem {
     r.setRenderTarget(prevTarget)
   }
 
-  dispose() { this._rt.dispose(); this._mat.dispose() }
+  dispose() { if (this._rt) this._rt.dispose(); this._mat.dispose() }
 }

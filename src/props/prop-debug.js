@@ -29,6 +29,9 @@ export function addPropGui(gui, { params, rebuild, getPropSystem, onShadowModeCh
   const syncMode = () => { if (onShadowModeChange) onShadowModeChange() }
   f.add(params.shadows, 'castRealtime').name('Realtime prop shadows').onChange(syncMode)
   f.add(params.shadows, 'strength', 0, 1, 0.01).name('Baked shadow strength').onChange(syncMode)
+  // Atlas density (texels per 64 m chunk): 0 = off, 256 = 0.25 m/texel. Each step reallocates the
+  // atlas and re-bakes every live chunk (VRAM grows with the square), so fire on RELEASE only.
+  f.add(params.shadows, 'tilePx', 0, 512, 128).name('Baked shadow res (px/chunk)').onFinishChange(syncMode)
   f.add(params.shadows, 'fadeStart', 50, 600, 10).name('Baked fade start (m)').onChange(syncMode)
   f.add(params.shadows, 'fadeEnd', 100, 800, 10).name('Baked fade end (m)').onChange(syncMode)
 

@@ -152,6 +152,12 @@ export const FLORA_PARAMS = {
   shadows: {
     castRealtime: false,   // false = baked atlas (default, the perf win); true = realtime per-frame casting
     strength:     0.34,    // baked shadow darkness on the ground (0 invisible → 1 fully black)
+    // Atlas tile resolution in texels per 64 m chunk (0 = baked shadows OFF). 256 → 0.25 m/texel.
+    // Written by applyQuality from the tier's shadowTilePx (Low 0 / Normal 256 / High 384 / Ultra
+    // 512, i.e. 1.5×/2× density) and overridable live by the 'Baked shadow res' slider; a change
+    // reallocates the atlas (ATLAS_N² tiles) and re-bakes every live chunk, so it is not free.
+    tilePx:       256,
+
     // QUAL-18: baked shadows dissolve with view distance so the ring edge softens into fog instead
     // of ending on a line. Sized to cover at least the realtime shadow map's reach (shadowExtent
     // 160–220 m) so the baked mode never shows LESS shadow than realtime did at the same vantage.
