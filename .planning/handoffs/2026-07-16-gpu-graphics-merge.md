@@ -1,5 +1,14 @@
 # Merge handoff — feature/gpu-graphics (PERF-21 GPU optimization pass)
 
+> **2026-07-17 addendum (user-feedback round, commits `ccac49e` + `456f169`):** the impostor bake
+> ortho frustum was written in WORLD space (camera-space is correct) — every tile captured the
+> tree's top half only, planting canopies at ground level ("buried billboards"). Fixed + verified
+> via new CDP handles `__impAtlasDump` / `__impAtlasStats` (keep these — they're the fast probe
+> for any future atlas bug). Also per user: boulders no longer billboard; sun-side brightness
+> modulation on billboards (uSunXZ/uLitK); propRing == terrain ring on all tiers (billboards to
+> full draw distance, Ultra 4); baked sky gained a below-horizon fog-coloured ground-fill disc
+> (GROUND_FILL_LIFT in sky.js is the eyeball-tuned brightness constant).
+
 **Branch:** `feature/gpu-graphics` (worktree `../CarGame-gpu-graphics`), based on main `4ad7a9f`
 (includes the causeway merge + the 32a438f tunable-atlas commit).
 **Scope:** GPU-side only — lighting, shadows, sky, props, dust, quality tiers. No routing, carve,
