@@ -1278,11 +1278,14 @@ export class RoadSystem {
             // Phase 2: deps solo-cached → discs are pure data; ship the final job.
             const avoid = this._corridorDiscsFor(c1, c2, false)
             if (avoid === null) { deferred = true; return }   // raced: dep evicted since the check
-            // Solo-reuse precheck (see _edgeCenterline): discs never touch the cached solo →
-            // adopt it as the final right here — no worker job at all.
+            // Solo-reuse precheck (see _edgeCenterline): discs never touch the solo → adopt it
+            // as the final right here — no worker job at all. The edge's OWN solo is a dispatch
+            // dependency exactly like the sibling solos above (window-invariance: adoption must
+            // be a pure fn of the edge, never of what some wider stream happened to cache).
             if (avoid && this._params?.roadSoloReuse) {
                 const solo = this._proto.clsSolo?.get(key)
-                if (solo && solo.length > 1e-6 && this._soloClearOf(solo, avoid)) {
+                if (!solo) { warmSolo(c1, c2); deferred = true; return }
+                if (solo.length > 1e-6 && this._soloClearOf(solo, avoid)) {
                     this._proto.cls.set(key, solo)
                     this._pendingRoutes.delete(key)
                     return
@@ -2090,9 +2093,12 @@ export class RoadSystem {
             return cl
         }
         if (this._params?.roadSoloReuse) {
-            // Only an ALREADY-CACHED solo qualifies — computing one here would ADD a search when
-            // the discs then bite. (Most edges are some sibling's dep, so the hit rate is high.)
-            const solo = this._proto.clsSolo?.get(key)
+            // ALWAYS resolve the solo (computing it if missing): adoption must be a pure fn of
+            // the edge, or it becomes WINDOW-DEPENDENT — a wide stream caches solos a narrow one
+            // doesn't, and the same edge routes differently per window (caught by BUNDLE-PARITY:
+            // bake radius 1160 vs gate radius 480 disagreed on one edge). When the discs then
+            // bite we pay solo + final, but most edges' solos are sibling-dep inputs anyway.
+            const solo = this._soloCenterline(c1, c2)
             if (solo && solo.length > 1e-6 && this._soloClearOf(solo, avoid)) {
                 this._proto.cls.set(key, solo)
                 this._pendingRoutes.delete(key)

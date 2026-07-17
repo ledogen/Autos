@@ -1,5 +1,14 @@
 # Worldgen cold-load proposals (road routing first)
 
+> **STATUS 2026-07-17:** user drove the candidates and APPROVED the shipped preset:
+> `roadCorridorTwoPass=true` (heuristic, hScale 1.0) + `roadSoloReuse=true` +
+> `roadGraphWTurn=1750` (was 800 — straighter, fewer-turn roads chosen as part of the same
+> feel pass). Defaults flipped, bundle re-baked (8.9 s — the new router baking itself),
+> BUNDLE-SIG + PARITY green. Solo-reuse gained a window-invariance fix during the rebake:
+> adoption now ALWAYS resolves the edge's own solo (pure per-edge fn) — an adopted-vs-searched
+> decision must never depend on what a wider stream window happened to cache.
+> P0 (IndexedDB cache) is the next build item; P3/P4/P5 remain open options.
+
 Session 2026-07-16, worktree `CarGame-perf-worldgen`. All numbers measured on the M4 Air,
 headless node harness, seed 6 unless noted. Two windows used: the **bench window** (spawn-style
 stream at origin, ~50 edges, baseline **26.8 s** single-threaded) and the **landmark window**
