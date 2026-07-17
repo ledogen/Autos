@@ -22,6 +22,15 @@
  * the shader pins fragments to the far plane (gl_Position.z = w), so it reads as infinite regardless
  * of box size or camera.far (we keep far=1000 for road-decal depth precision — do not bump it).
  *
+ * PERF-21 BAKED MODE (default): the Preetham shader is a full-screen per-frame fragment cost — every
+ * sky pixel evaluates the whole scattering model even though the look only changes on preset/cycle
+ * edits. Baked mode renders the Sky mesh ONCE per look change into an HDR (HalfFloat) cubemap and
+ * sets it as scene.background: the per-frame cost drops to one cube-texture fetch per sky pixel.
+ * Rendering to a target skips renderer tone mapping (three gates it on render-to-canvas), so the
+ * cubemap stores linear HDR and the background pass applies the same ACES + exposure as the live
+ * mesh — the two modes match except for cubemap resolution (the ~0.5° sun disc spans ~3 texels at
+ * 512/face; bump bakeRes, or switch to live mode, if a crisp disc matters — tier-wireable).
+ *
  * TONE MAPPING: the Sky shader output is HDR and includes <tonemapping_fragment>, so it needs renderer
  * tone mapping or it clips to white. We enable ACESFilmicToneMapping; this applies to the WHOLE scene,
  * so the per-look light intensities are authored brighter than the pre-tone-mapping FEAT-05 values.
@@ -121,10 +130,59 @@ export class SkySystem {
     this.sky = new Sky()
     this.sky.scale.setScalar(900)             // fits inside camera.far=1000 (corner 779 m); follows camera
     this.sky.frustumCulled = false            // it's always at the camera; never cull it
-    scene.add(this.sky)
-    scene.background = null                    // the Sky mesh is the background now (was a flat Color)
+    scene.background = null                    // live mode: the Sky mesh is the background
+
+    // PERF-21 baked mode (see header). The Sky mesh lives in a private scene; a CubeCamera bakes it
+    // into an HDR cubemap on look change, which becomes scene.background. Lazy-allocated in _bakeSky.
+    this._mode = 'baked'                       // 'baked' | 'live'
+    this._bakeRes = 512                        // px per cube face (VRAM: 6·res²·8 B — 512 → 12.6 MB)
+    this._bakeScene = new THREE.Scene()
+    this._cubeRT = null
+    this._cubeCam = null
+    if (this._mode === 'baked') this._bakeScene.add(this.sky)
+    else scene.add(this.sky)
 
     this.apply()                               // push SKY_PARAMS (the `day` clone) into the scene
+  }
+
+  /** 'baked' (default — one cubemap bake per look change) or 'live' (per-frame Preetham shader). */
+  setMode (mode) {
+    if (mode !== 'baked' && mode !== 'live') return
+    if (mode === this._mode) return
+    this._mode = mode
+    if (mode === 'baked') {
+      this.scene.remove(this.sky)
+      this._bakeScene.add(this.sky)
+      this.sky.position.set(0, 0, 0)
+      this._bakeSky()
+    } else {
+      this._bakeScene.remove(this.sky)
+      this.scene.add(this.sky)
+      this.scene.background = null
+    }
+  }
+
+  /** Cube-face resolution for baked mode (crisper sun disc ↔ more VRAM). Rebakes when baked. */
+  setBakeRes (px) {
+    px = Math.max(64, Math.round(px) || 0)
+    if (px === this._bakeRes) return
+    this._bakeRes = px
+    if (this._cubeRT) { this._cubeRT.dispose(); this._cubeRT = null; this._cubeCam = null }
+    if (this._mode === 'baked') this._bakeSky()
+  }
+
+  /** Render the Sky mesh into the background cubemap (linear HDR — see header re tone mapping). */
+  _bakeSky () {
+    if (!this._cubeRT) {
+      this._cubeRT = new THREE.WebGLCubeRenderTarget(this._bakeRes, {
+        type: THREE.HalfFloatType, generateMipmaps: false,
+        minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+      })
+      this._cubeCam = new THREE.CubeCamera(0.1, 3000, this._cubeRT)
+      this._bakeScene.add(this._cubeCam)
+    }
+    this._cubeCam.update(this.renderer, this._bakeScene)
+    this.scene.background = this._cubeRT.texture
   }
 
   /** Push the entire active look (SKY_PARAMS) into the sky shader, lights, fog and exposure. */
@@ -148,6 +206,7 @@ export class SkySystem {
     this.ambient.intensity = p.hemiIntensity
     if (this.scene.fog) this.scene.fog.color.setHex(p.fogColor)
     this.renderer.toneMappingExposure = p.exposure
+    if (this._mode === 'baked') this._bakeSky()   // PERF-21: look changed → refresh the cubemap
   }
 
   /** Load a named preset into the live look and apply it. */
@@ -193,7 +252,7 @@ export class SkySystem {
    * delta (decoupled from the physics timestep) so a paused sim doesn't freeze the sky.
    */
   update (cameraPosition) {
-    this.sky.position.copy(cameraPosition)
+    if (this._mode === 'live') this.sky.position.copy(cameraPosition)   // baked: background is view-independent
     const now = (typeof performance !== 'undefined') ? performance.now() : this._lastTime
     const dtSec = Math.min(0.1, (now - this._lastTime) / 1000)   // clamp tab-switch hitches
     this._lastTime = now
@@ -218,6 +277,11 @@ export class SkySystem {
     const f = gui.addFolder('Sky / Lighting (QUAL-02)')
     f.close()
     const reapply = () => this.apply()
+
+    // PERF-21: baked-vs-live sky + cubemap res (see header). Live = per-frame Preetham shader.
+    const perf = { baked: this._mode === 'baked', res: this._bakeRes }
+    f.add(perf, 'baked').name('baked sky (perf)').onChange(v => this.setMode(v ? 'baked' : 'live'))
+    f.add(perf, 'res', [256, 512, 1024]).name('sky bake res').onChange(r => this.setBakeRes(r))
 
     // Scene preset buttons — load a named look to view / start tuning it.
     const presets = f.addFolder('Scene presets'); presets.close()

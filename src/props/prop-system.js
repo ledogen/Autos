@@ -104,7 +104,9 @@ export class PropSystem {
         if (!entry.geo.boundingBox) entry.geo.computeBoundingBox()
         const key = cat + '#' + v
         // occ/top: occupancy bitmap + high-water mark for PERF-10 count compaction.
-        this._meshes.set(key, { mesh, free, used: 0, cap: perVariant, occ: new Uint8Array(perVariant), top: 0, geoMaxY: entry.geo.boundingBox.max.y })
+        // dirtyLo/dirtyHi: slot span touched since the last _flush — PERF-21 partial uploads
+        // (a one-chunk stream used to re-upload the species' whole capacity buffer, 256 KB).
+        this._meshes.set(key, { mesh, free, used: 0, cap: perVariant, occ: new Uint8Array(perVariant), top: 0, geoMaxY: entry.geo.boundingBox.max.y, dirtyLo: Infinity, dirtyHi: -1 })
         this._collision.set(key, entry.collision || null)
         scene.add(mesh)
       })
@@ -152,10 +154,76 @@ export class PropSystem {
    */
   setShadowBake(bake) {
     this._shadowBake = bake
-    if (bake) for (const ck of this._chunks.keys()) {
-      const comma = ck.indexOf(',')
-      bake.markWithNeighbors(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10))
+    if (bake) {
+      // PERF-21: hand the bake system a per-tile caster source so one tile bake shades only the
+      // 3×3 chunks around it (~1k instances) instead of every live prop in the ring (~25k). This
+      // was the stream-in hitch: 8 tiles/frame × the full population through the vertex stage.
+      if (bake.setTileSource) {
+        if (!this._bakeScene) this._buildBakeScene()
+        bake.setTileSource((cx, cz) => this._fillBakeScene(cx, cz))
+      }
+      for (const ck of this._chunks.keys()) {
+        const comma = ck.indexOf(',')
+        bake.markWithNeighbors(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10))
+      }
     }
+  }
+
+  /**
+   * PERF-21: scratch scene for per-tile shadow bakes — one InstancedMesh per (cat#variant) that
+   * SHARES the palette's vertex position buffer (uploaded once) but owns small instanceMatrix /
+   * aShadowK buffers, refilled per bake from the live chunks' slots. Material is irrelevant (the
+   * bake overrides it); layers must include BAKE_LAYER for the bake camera's mask.
+   */
+  _buildBakeScene() {
+    this._bakeScene = new THREE.Scene()
+    this._bakeMeshes = new Map()
+    for (const [key, rec] of this._meshes) {
+      const src = rec.mesh.geometry
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', src.getAttribute('position'))   // shared — no duplicate VRAM
+      const kAttr = new THREE.InstancedBufferAttribute(new Float32Array(rec.cap).fill(1), 1)
+      kAttr.setUsage(THREE.DynamicDrawUsage)
+      geo.setAttribute('aShadowK', kAttr)
+      const mesh = new THREE.InstancedMesh(geo, this._material, rec.cap)
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+      mesh.frustumCulled = false
+      mesh.castShadow = false
+      mesh.receiveShadow = false
+      mesh.layers.set(BAKE_LAYER)
+      mesh.count = 0
+      this._bakeScene.add(mesh)
+      this._bakeMeshes.set(key, { mesh, kAttr, n: 0 })
+    }
+  }
+
+  /** Refill the scratch scene with the instances of the 3×3 chunks around (cx,cz). */
+  _fillBakeScene(cx, cz) {
+    for (const dst of this._bakeMeshes.values()) dst.n = 0
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const owned = this._chunks.get((cx + dx) + ',' + (cz + dz))
+      if (!owned) continue
+      for (const { key, slot } of owned) {
+        const rec = this._meshes.get(key)
+        const dst = this._bakeMeshes.get(key)
+        if (!rec || !dst) continue
+        const s = rec.mesh.instanceMatrix.array, si = slot * 16
+        const d = dst.mesh.instanceMatrix.array, di = dst.n * 16
+        for (let f = 0; f < 16; f++) d[di + f] = s[si + f]
+        dst.kAttr.array[dst.n] = rec.mesh.geometry.attributes.aShadowK.array[slot]
+        dst.n++
+      }
+    }
+    for (const dst of this._bakeMeshes.values()) {
+      dst.mesh.count = dst.n
+      if (dst.n > 0) {
+        dst.mesh.instanceMatrix.addUpdateRange(0, dst.n * 16)
+        dst.mesh.instanceMatrix.needsUpdate = true
+        dst.kAttr.addUpdateRange(0, dst.n)
+        dst.kAttr.needsUpdate = true
+      }
+    }
+    return this._bakeScene
   }
 
   /**
@@ -242,6 +310,8 @@ export class PropSystem {
       }
       owned.push({ key, slot })
       this._dirty.add(key)
+      if (slot < rec.dirtyLo) rec.dirtyLo = slot
+      if (slot > rec.dirtyHi) rec.dirtyHi = slot
 
       // FEAT-06b: record the collidable (capsule for trees, sphere for rocks, bush for soft-drag)
       const col = this._collision.get(key)
@@ -294,6 +364,8 @@ export class PropSystem {
       rec.occ[slot] = 0                                  // PERF-10: shrink the draw prefix when the top frees
       while (rec.top > 0 && !rec.occ[rec.top - 1]) rec.top--
       this._dirty.add(key)
+      if (slot < rec.dirtyLo) rec.dirtyLo = slot
+      if (slot > rec.dirtyHi) rec.dirtyHi = slot
     }
     this._chunks.delete(ck)
     if (this._collidables.delete(ck)) this._gridDirty = true
@@ -402,6 +474,20 @@ export class PropSystem {
     for (const key of this._dirty) {
       const rec = this._meshes.get(key)
       if (!rec) continue
+      // PERF-21: upload only the touched slot span. Without ranges, three re-uploads the WHOLE
+      // capacity buffer per dirty mesh (aspen/pine: 4000×64 B = 256 KB) on every chunk stream.
+      // The min/max span may cover untouched slots between two dirty chunks — still far smaller,
+      // and their array contents are valid, so over-uploading is harmless. First-ever upload
+      // (buffer creation) always sends the full array regardless of ranges. NEVER clear ranges
+      // here: the renderer merges + clears them on upload, and two flushes can land between
+      // renders (drainScatter + update in one frame) — clearing would drop the first span.
+      if (rec.dirtyHi >= 0) {
+        const lo = rec.dirtyLo, n = rec.dirtyHi - rec.dirtyLo + 1
+        rec.mesh.instanceMatrix.addUpdateRange(lo * 16, n * 16)
+        if (rec.mesh.instanceColor) rec.mesh.instanceColor.addUpdateRange(lo * 3, n * 3)
+        rec.mesh.geometry.attributes.aShadowK.addUpdateRange(lo, n)
+        rec.dirtyLo = Infinity; rec.dirtyHi = -1
+      }
       rec.mesh.instanceMatrix.needsUpdate = true
       if (rec.mesh.instanceColor) rec.mesh.instanceColor.needsUpdate = true
       rec.mesh.geometry.attributes.aShadowK.needsUpdate = true   // PERF-07 ground-fit factors
@@ -524,6 +610,11 @@ export class PropSystem {
       this._scene.remove(rec.mesh)
       rec.mesh.geometry.dispose()
       rec.mesh.dispose()
+    }
+    if (this._bakeMeshes) {
+      for (const dst of this._bakeMeshes.values()) { dst.mesh.geometry.dispose(); dst.mesh.dispose() }
+      this._bakeMeshes = null
+      this._bakeScene = null
     }
     this._material.dispose()
     this._meshes.clear()

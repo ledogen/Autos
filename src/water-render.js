@@ -1,7 +1,7 @@
 /**
  * src/water-render.js — procedural water surfaces for FEAT-17 ponds + FEAT-18 streams.
  *
- * STATUS: NOT wired into main.js yet (water is unwired — see the 2026-07-01 water handoffs).
+ * STATUS: wired into main.js (constructed at boot, added to the scene, sync()'d every frame).
  * Render is deliberately DECOUPLED from detection: src/water.js stays a THREE-free,
  * headless-testable leaf; this module turns its pure pond/stream records into meshes.
  *

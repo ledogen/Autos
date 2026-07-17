@@ -21,8 +21,14 @@
  *     blend, no depth) so overlaps stay solid. Props outside the 64 m frustum whose sheared shadow
  *     enters it still rasterize (meshes are frustumCulled=false), so shadows cross chunk seams
  *     continuously — that's why a committed chunk marks its 8 neighbours dirty too.
- *   • The terrain shader multiplies ground albedo by (1 − atlas.a · strength), softened by a small
+ *   • The terrain shader multiplies ground albedo by (1 − atlas.r · strength), softened by a small
  *     in-tile blur. No per-frame prop shadow cost; only the moving truck keeps a realtime shadow.
+ *   • PERF-21: each tile bake renders a per-tile SCRATCH scene (built by prop-system's tile source,
+ *     setTileSource) holding only the 3×3 chunks around the tile — NOT the main prop meshes. The
+ *     global meshes are frustumCulled=false with count=top, so rendering them re-shaded EVERY live
+ *     instance in the ring (~25k at Ultra) per tile × 8 tiles/frame — the measured stream-in hitch.
+ *     The scratch path bounds a tile bake to ~1k instances. Falls back to the full scene when no
+ *     tile source is wired (identical output — the scissor already clipped rasterization).
  *
  * Isolation: props are additionally on BAKE_LAYER; the bake camera renders ONLY that layer, so
  * terrain/vehicle/water are invisible to the bake. scene.overrideMaterial swaps in the projection
@@ -151,13 +157,15 @@ export class ShadowBakeSystem {
           wp.xz    += h * uShearXZ * aShadowK;                        // project along sun onto terrain
           gl_Position = projectionMatrix * viewMatrix * wp;
         }`,
+      // The atlas is single-channel (R8) — the mask lives in .r; terrain samples .r.
       fragmentShader: /* glsl */`
-        void main() { gl_FragColor = vec4( 0.0, 0.0, 0.0, 1.0 ); }`,
+        void main() { gl_FragColor = vec4( 1.0, 0.0, 0.0, 1.0 ); }`,
       depthTest: false, depthWrite: false, side: THREE.DoubleSide,
     })
 
     this._dirty    = []           // FIFO of "cx,cz" keys awaiting bake
     this._dirtySet = new Set()
+    this._tileSource = null       // PERF-21: (cx,cz) => THREE.Scene with only that tile's casters
     this._shear    = new THREE.Vector2(0, 0)
     this._haveSun  = false
     this._prevClear = new THREE.Color()     // scratch for save/restore of the renderer clear colour
@@ -174,7 +182,7 @@ export class ShadowBakeSystem {
    * frees the atlas (Low tier). Reallocates the render target — the old contents are GONE, so the
    * caller must re-mark live chunks (propSystem.setShadowBake(bake) does exactly that) and re-push
    * the new tilePx into the terrain sampler (terrainSystem.setShadowAtlas). VRAM is (ATLAS_N·tilePx)²
-   * RGBA8: 256→37 MB, 384→85 MB, 512→151 MB — which is why only the High/Ultra tiers go past 256.
+   * R8 (single-channel — the mask only needs one): 256→9 MB, 384→21 MB, 512→38 MB.
    * @param {number} tilePx @returns {boolean} true if it changed (caller re-marks/re-wires)
    */
   setTilePx(tilePx) {
@@ -191,9 +199,11 @@ export class ShadowBakeSystem {
       depthBuffer: false, stencilBuffer: false,
       minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
       wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping,
-      format: THREE.RGBAFormat, type: THREE.UnsignedByteType, generateMipmaps: false,
+      // Single-channel: the shadow mask is 1-bit-ish coverage; RGBA8 wasted 4× the VRAM (a 512
+      // Ultra atlas was 151 MB — R8 is 38 MB). WebGL2 R8 is colour-renderable, so an RT is fine.
+      format: THREE.RedFormat, type: THREE.UnsignedByteType, generateMipmaps: false,
     })
-    this._rt.texture.colorSpace = THREE.NoColorSpace   // alpha is data, not colour
+    this._rt.texture.colorSpace = THREE.NoColorSpace   // mask is data, not colour
     this.clear()                                       // alpha 0 everywhere = "no shadow"
     return true
   }
@@ -238,6 +248,13 @@ export class ShadowBakeSystem {
   hasWork() { return this._dirty.length > 0 }
 
   /**
+   * PERF-21: wire a per-tile caster source — fn(cx, cz) returns a THREE.Scene containing ONLY the
+   * instances whose shadows can reach that tile (the 3×3 chunk neighbourhood; sheared shadow length
+   * is bounded well under one 64 m chunk). prop-system.setShadowBake wires this automatically.
+   */
+  setTileSource(fn) { this._tileSource = fn }
+
+  /**
    * Bake up to MAX_BAKES_PER_CALL queued tiles. `propScene` is the main scene (props live on it,
    * flagged BAKE_LAYER); everything else is invisible to the bake camera. Called each frame after
    * prop streaming so freshly-committed chunks bake within a frame or two.
@@ -245,6 +262,7 @@ export class ShadowBakeSystem {
   update(propScene) {
     if (!this._dirty.length || !this._rt) return
     const r = this._renderer
+    const useTiles     = !!this._tileSource
     const prevTarget   = r.getRenderTarget()
     const prevOverride = propScene.overrideMaterial
     const prevBg       = propScene.background
@@ -252,8 +270,11 @@ export class ShadowBakeSystem {
     r.getClearColor(this._prevClear)
     // Isolate the bake: only props (BAKE_LAYER) render via the bake camera, and the sky background
     // would otherwise fill every tile (it ignores camera layers), so null it for the pass.
-    propScene.overrideMaterial = this._mat
-    propScene.background = null
+    // (Skipped on the PERF-21 tile-source path — the scratch scene holds nothing but casters.)
+    if (!useTiles) {
+      propScene.overrideMaterial = this._mat
+      propScene.background = null
+    }
     r.setClearColor(0x000000, 0)
 
     const n = Math.min(MAX_BAKES_PER_CALL, this._dirty.length)
@@ -282,7 +303,16 @@ export class ShadowBakeSystem {
       this._rt.scissor.set(px, py, tp, tp)
       this._rt.scissorTest = true
       r.setRenderTarget(this._rt)
-      r.render(propScene, this._cam)
+      if (useTiles) {
+        // PERF-21: render only the 3×3-chunk scratch scene for this tile (~1k instances) instead
+        // of the whole prop population (~25k). Same silhouettes — casters farther than one chunk
+        // can't reach this tile (shear length ≪ 64 m), and the old path scissored them out anyway.
+        const tileScene = this._tileSource(cx, cz)
+        tileScene.overrideMaterial = this._mat
+        r.render(tileScene, this._cam)
+      } else {
+        r.render(propScene, this._cam)
+      }
     }
 
     propScene.overrideMaterial = prevOverride
