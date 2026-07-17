@@ -207,6 +207,7 @@ export class SkySystem {
     if (this.scene.fog) this.scene.fog.color.setHex(p.fogColor)
     this.renderer.toneMappingExposure = p.exposure
     if (this._mode === 'baked') this._bakeSky()   // PERF-21: look changed → refresh the cubemap
+    if (this.onLookApplied) this.onLookApplied()  // PERF-21: consumers with look-baked assets (prop impostors)
   }
 
   /** Load a named preset into the live look and apply it. */

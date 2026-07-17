@@ -138,6 +138,10 @@ export class DustSystem {
         void main () {
           vec4 tex = texture2D(uMap, vUv);
           gl_FragColor = vec4(vColor * tex.rgb, tex.a * vOpacity);
+          // ShaderMaterial does NOT auto-append these (built-ins do): keep dust inside the same
+          // ACES + colour pipeline as the SpriteMaterial it replaced, fog last like the built-ins.
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
           #include <fog_fragment>
         }`,
       transparent: true,

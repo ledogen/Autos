@@ -550,6 +550,7 @@ function debouncedRebuildFull () {
       propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
       // PERF-07: wipe the old seed's baked shadow tiles and re-arm baking for the fresh props.
       if (shadowBake) { shadowBake.clear(); propSystem.setShadowBake(shadowBake) }
+      if (_syncImpostors) _syncImpostors()   // PERF-21: re-activate billboards on the fresh instance
     }
     // QUAL-14 perf: same cache import + async reseat as the initial load — the new seed's spawn
     // bands route on the worker pool inside resolveSpawn (frames keep rendering) before each
@@ -945,7 +946,7 @@ const dustSystem = new DustSystem(scene, RANGER_PARAMS)
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
 // src/vehicle-model.js. carGroup/bodyMesh/wheelMeshes are returned for back-compat;
 // syncMeshesToState(state) is called once per render frame below.
-const { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor } = createVehicleModel(scene, RANGER_PARAMS)
+const { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, prewarmLightPrograms } = createVehicleModel(scene, RANGER_PARAMS)
 
 // ── FEAT-16: 2D top-down map (dev/validation overlay, toggle M) ──────────────────
 // Owns a SEPARATE read-only RoadSystem instance streamed around its own pan cursor — it never
@@ -1264,16 +1265,24 @@ let _lastHudWrite = 0  // PERF-16: wall-clock (ms) of the last HUD DOM/canvas wr
 //   the 1.5×/2× density steps the GPU-to-burn tiers can afford (atlas VRAM 85 / 151 MB vs 37 MB —
 //   it grows with the SQUARE of this). Applied like detailScale: the tier writes the param, then the
 //   sync hook pushes it into the bake system + terrain sampler; the GUI slider overrides live.
+// PERF-21 lodRing: chunks of full-3D props around the camera; beyond it (out to propRing) trees/
+//   boulders render as billboard impostors (~2 tris vs ~150–200). The 3D reach of every tier is
+//   PRESERVED or extended vs the pre-impostor values (Low/Normal kept their old all-3D radius as
+//   lodRing; High/Ultra keep 5×5 3D); propRing then EXTENDS past it with near-free billboard rings —
+//   Normal's outer ring drops ~64 % of its tree triangles, Low/High gain a distant tree ring that
+//   didn't exist before at ~2 tris/tree.
 const QUALITY_PRESETS = {
-  Low:    { ring: 1, warm: 1, fogDensity: 0.012, detailScale: 0,   shadows: false, propRing: 1, resHeight: 720,  shadowMap: 1024, shadowExtent: 160, shadowTilePx: 0   },
-  Normal: { ring: 2, warm: 1, fogDensity: 0.006, detailScale: 1.0, shadows: true,  propRing: 2, resHeight: 1200, shadowMap: 1536, shadowExtent: 160, shadowTilePx: 256 },
-  High:   { ring: 3, warm: 3, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 2, resHeight: null, shadowMap: 2048, shadowExtent: 220, shadowTilePx: 384 },
-  Ultra:  { ring: 4, warm: 4, fogDensity: 0.003, detailScale: 1.0, shadows: true,  propRing: 3, resHeight: null, shadowMap: 2048, shadowExtent: 220, shadowTilePx: 512 },
+  Low:    { ring: 1, warm: 1, fogDensity: 0.012, detailScale: 0,   shadows: false, propRing: 2, lodRing: 1, resHeight: 720,  shadowMap: 1024, shadowExtent: 160, shadowTilePx: 0   },
+  Normal: { ring: 2, warm: 1, fogDensity: 0.006, detailScale: 1.0, shadows: true,  propRing: 2, lodRing: 1, resHeight: 1200, shadowMap: 1536, shadowExtent: 160, shadowTilePx: 256 },
+  High:   { ring: 3, warm: 3, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, resHeight: null, shadowMap: 2048, shadowExtent: 220, shadowTilePx: 384 },
+  Ultra:  { ring: 4, warm: 4, fogDensity: 0.003, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, resHeight: null, shadowMap: 2048, shadowExtent: 220, shadowTilePx: 512 },
 }
 
 // PERF-07: set once the bake system exists (browser only — headless never constructs it), so
 // applyQuality can push a tier's shadowTilePx without referencing the not-yet-initialised const.
 let _syncBakedShadows = null
+// PERF-21: same pattern for the prop billboard impostors (activation + tier lodRing push).
+let _syncImpostors = null
 
 // PERF-06: internal render-resolution cap for the CURRENT tier (px height; null = device-native). Held
 // at module scope so the resize handler can re-apply the clamp (which depends on innerHeight) without
@@ -1331,6 +1340,11 @@ function applyQuality (name) {
   renderer.shadowMap.needsUpdate = true
   // PERF-06 prop radius: thin out the scattered-prop ring on Low (read by the loop's propSystem.update).
   _propRing = p.propRing
+  // PERF-21 billboard takeover ring: write the param (GUI slider binds to it), push via the hook.
+  if (p.lodRing !== undefined && FLORA_PARAMS.lod) {
+    FLORA_PARAMS.lod.ring3d = p.lodRing
+    if (_syncImpostors) _syncImpostors()
+  }
   // PERF-07 baked prop shadows: the tier owns the atlas density (0 on Low = off). Write the param
   // (source of truth + what the GUI slider binds to), then let the sync hook reallocate + re-bake.
   if (p.shadowTilePx !== undefined && FLORA_PARAMS.shadows) {
@@ -1544,6 +1558,17 @@ applyPropShadowMode()   // apply the params' fade bounds at boot (uniform defaul
 // PERF-07 dev handle: A/B baked vs realtime prop shadows from the console / CDP harness.
 window.__propShadows = (realtime) => { FLORA_PARAMS.shadows.castRealtime = !!realtime; applyPropShadowMode() }
 
+// PERF-21: billboard impostors for distant props (browser-only — needs the renderer for the atlas
+// bake). Re-run after any PropSystem recreation (GUI rebuild / seed change) — the fresh instance
+// boots impostor-less. The atlas is lit by the current sky look; re-bake it when the look changes.
+const applyPropImpostors = () => {
+  propSystem.setImpostors(renderer, { sun, ambient, sunDir: skySystem.sunDirection })
+  propSystem.setLodRing(FLORA_PARAMS.lod?.ring3d ?? 2)
+}
+_syncImpostors = applyPropImpostors
+applyPropImpostors()
+skySystem.onLookApplied = () => propSystem.rebakeImpostors()
+
 // FEAT-06: live-tuning GUI (self-contained — attaches to the existing _gui, doesn't touch debug.js).
 addPropGui(_gui, {
   params: FLORA_PARAMS,
@@ -1553,6 +1578,7 @@ addPropGui(_gui, {
     shadowBake.clear()
     propSystem.setShadowBake(shadowBake)
     applyPropShadowMode()
+    applyPropImpostors()   // PERF-21: fresh instance boots impostor-less
   },
   getPropSystem: () => propSystem,   // PERF-07: live handle for the shadow-cast toggle (survives rebuild)
   onShadowModeChange: applyPropShadowMode,   // PERF-07: mode/strength toggle → sync casting + atlas strength
@@ -2221,6 +2247,9 @@ perfMark('init: synchronous bootstrap done, requesting first frame')  // TEMP (D
 // the render loop is starting. Read by the headless boot-timing probes.
 window.__rsReady = true
 requestAnimationFrame(loop)
+// PERF-21: precompile the light-count shader variants (lamps off/brake/night/reverse) off the
+// critical path so the first brake or headlight toggle doesn't compile shaders mid-drive.
+prewarmLightPrograms(renderer, scene, camera)
 
 // ── Resize handler ───────────────────────────────────────────────────────────
 window.addEventListener('resize', () => {
