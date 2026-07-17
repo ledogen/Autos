@@ -1278,6 +1278,16 @@ export class RoadSystem {
             // Phase 2: deps solo-cached → discs are pure data; ship the final job.
             const avoid = this._corridorDiscsFor(c1, c2, false)
             if (avoid === null) { deferred = true; return }   // raced: dep evicted since the check
+            // Solo-reuse precheck (see _edgeCenterline): discs never touch the cached solo →
+            // adopt it as the final right here — no worker job at all.
+            if (avoid && this._params?.roadSoloReuse) {
+                const solo = this._proto.clsSolo?.get(key)
+                if (solo && solo.length > 1e-6 && this._soloClearOf(solo, avoid)) {
+                    this._proto.cls.set(key, solo)
+                    this._pendingRoutes.delete(key)
+                    return
+                }
+            }
             const spec = this._edgeRouteSpec(c1, c2)
             if (avoid) spec.opts.avoidDiscs = spec.opts.avoidDiscs ? spec.opts.avoidDiscs.concat(avoid) : avoid
             this._pendingRoutes.add(spec.key)
@@ -1851,6 +1861,14 @@ export class RoadSystem {
             // repair — see SELF_CLEAR_MAX_REPAIR in road-carve.js).
             selfClearDist: 2 * halfW + 2 * (pp.roadShoulderWidth ?? 2.5) + (pp.roadSelfClearMargin ?? 3),
             selfClearGap: pp.roadSelfClearGap ?? 80,
+            // PERF corridor two-pass (EXPERIMENTAL — see the block header in road-carve.js):
+            // coarse-lattice pass guiding the fine search ('heuristic' = cost-to-go field,
+            // 'tube' = hard lattice restriction). Off unless the preset opts in.
+            corridorCoarse: pp.roadCorridorTwoPass ? {
+                mode: pp.roadCorridorMode ?? 'heuristic',
+                tubeR: pp.roadCorridorTubeR ?? 100,
+                hScale: pp.roadCorridorHScale ?? 1.0,
+            } : undefined,
             // FEAT-17: pond+skirt no-go discs for this edge's search area as pure DATA (see
             // setWaterNoGo). Baked into the shared spec so the Worker pre-warm job and the
             // synchronous fallback route with the identical exclusion. undefined when unwired.
@@ -2035,6 +2053,26 @@ export class RoadSystem {
         return cl
     }
 
+    // PERF (cold-load) solo-reuse precheck: adopt an edge's cached SOLO route as its FINAL when the
+    // corridor discs never come near it — the constrained search would be solving a problem whose
+    // constraints don't bind (measured: half of all final searches returned a byte-identical copy
+    // of the solo). Sampling at 2 m matches the refit validator's resolution, strictly finer than
+    // the search's endpoint/midpoint rejection sampling, so adoption is CONSERVATIVE: any disc the
+    // search could have seen forces the full search. Not byte-guaranteed vs. searching (a disc can
+    // reshape the flood without touching the winning path); gated by roadSoloReuse until the feel
+    // delta is user-approved. Pure fn of (solo route, discs) → window/worker/cache-invariant.
+    _soloClearOf(cl, discs) {
+        const n = Math.max(1, Math.ceil(cl.length / 2))
+        for (let i = 0; i <= n; i++) {
+            const p = cl.pointAt(cl.length * i / n)
+            for (let d = 0; d < discs.length; d += 3) {
+                const dx = p.x - discs[d], dz = p.z - discs[d + 1]
+                if (dx * dx + dz * dz <= discs[d + 2] * discs[d + 2]) return false
+            }
+        }
+        return true
+    }
+
     _edgeCenterline(c1, c2) {
         if (!this._proto.cls) this._proto.cls = new Map()
         const key = this._edgeClsKey(c1, c2)
@@ -2050,6 +2088,16 @@ export class RoadSystem {
             this._proto.cls.set(key, cl)
             this._pendingRoutes.delete(key)
             return cl
+        }
+        if (this._params?.roadSoloReuse) {
+            // Only an ALREADY-CACHED solo qualifies — computing one here would ADD a search when
+            // the discs then bite. (Most edges are some sibling's dep, so the hit rate is high.)
+            const solo = this._proto.clsSolo?.get(key)
+            if (solo && solo.length > 1e-6 && this._soloClearOf(solo, avoid)) {
+                this._proto.cls.set(key, solo)
+                this._pendingRoutes.delete(key)
+                return solo
+            }
         }
         const spec = this._edgeRouteSpec(c1, c2)
         if (avoid) spec.opts.avoidDiscs = spec.opts.avoidDiscs ? spec.opts.avoidDiscs.concat(avoid) : avoid

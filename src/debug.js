@@ -440,6 +440,15 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(params, 'roadArcGradeSamples', 1, 6, 1 ).name('Arc Grade Samples').onChange(fireRoadParam)
   roadFolder.add(params, 'roadArcHeurWeight',   1, 3, 0.1).name('Arc Heur Weight').onChange(fireRoadParam)
 
+  // PERF routing experiments (perf-worldgen worktree — see .planning/perf-worldgen/PROPOSALS.md).
+  //   Corridor 2-Pass: coarse backward flood feeds the fine search's heuristic (×2.5–3 cold
+  //                    load; same character bands, different individual roads — drive it).
+  //   Corridor HScale: guidance strength — lower = closer to the shipped optimum, slower.
+  //   Solo Reuse:      adopt an edge's solo route as final when sibling corridors don't bind.
+  roadFolder.add(params, 'roadCorridorTwoPass').name('Corridor 2-Pass (perf)').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadCorridorHScale', 0.5, 1.2, 0.05).name('Corridor HScale').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadSoloReuse').name('Solo Reuse (perf)').onChange(fireRoadParam)
+
   // De-quantize refit (BUG-16 + FEAT-20) — post-passes on the routed chain (road-carve.js).
   //   Refit Shortcut: corridor Dubins shortcut — straightens the quantized-heading bow on
   //                   near-straight roads and yields continuous (chord-derived) turn radii.
@@ -582,6 +591,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
     roadArcHeurWeight:     'Weighted-A* speed knob. Higher = faster routing, slightly less optimal roads.',
     roadRefitShortcut:     'Post-pass that straightens the quantized-heading "bow" on near-straight roads via a Dubins shortcut.',
     roadRefitWindow:       'Smoothing window (m) that re-emits curvature as clothoid ramps. 0 = off; larger = smoother but more end drift.',
+    roadCorridorTwoPass:   'PERF experiment: coarse pass guides the router (×2.5–3 cold load). Same road style, different individual roads.',
+    roadCorridorHScale:    'Corridor guidance strength. 1.0 = fastest; lower = closer to the shipped routes but slower.',
+    roadSoloReuse:         'PERF experiment: skip the constrained re-route when sibling corridors don\'t bind. Near-identical network.',
     // Road Surface
     roadWidth:             'Total drivable width of the road surface (m).',
     crownHeight:           'Height of the centerline crown (m) — the slight peak that sheds water to the edges.',

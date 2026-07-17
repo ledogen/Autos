@@ -494,6 +494,20 @@ export const RANGER_PARAMS = {
   // roadGraphWAlt: the router's valley-seeking weight (wAlt). Higher = roads dive harder for low ground =
   // more terrain-hugging wander. 2.0 (windiness stage).
   roadGraphWAlt: 2.0,
+  // roadSoloReuse: PERF cold-load — adopt an edge's cached SOLO route as its FINAL when the sibling
+  // corridor discs never come within 2 m-sampled reach of it (the constrained re-search solves a
+  // problem whose constraints don't bind; measured ~50% of final searches return the solo
+  // byte-identical anyway). OFF until the feel delta is user-approved (perf-worldgen worktree).
+  roadSoloReuse: false,
+  // roadCorridorTwoPass: PERF cold-load — coarse-lattice corridor pass guiding the fine search
+  // (road-carve.js corridor block). roadCorridorMode 'heuristic' feeds the coarse backward-flood
+  // cost-to-go to the fine search as its heuristic (roadCorridorHScale scales it: higher = more
+  // guidance = faster + less optimal); 'tube' hard-restricts the fine lattice to roadCorridorTubeR
+  // metres around the coarse path. OFF until the feel delta is user-approved.
+  roadCorridorTwoPass: false,
+  roadCorridorMode: 'heuristic',
+  roadCorridorHScale: 1.0,
+  roadCorridorTubeR: 100,
   // roadGraphCullCrossings: SAFE-PRUNE the redundant edge of every routed at-grade crossing
   // (they read as ugly mid-span intersections; the graph is planar-abstract so a routed cross means one
   // edge took a redundant excursion). Only dropped if the far endpoint keeps a detour (≤ cull max hops),
