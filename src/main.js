@@ -1265,17 +1265,17 @@ let _lastHudWrite = 0  // PERF-16: wall-clock (ms) of the last HUD DOM/canvas wr
 //   the 1.5×/2× density steps the GPU-to-burn tiers can afford (atlas VRAM 85 / 151 MB vs 37 MB —
 //   it grows with the SQUARE of this). Applied like detailScale: the tier writes the param, then the
 //   sync hook pushes it into the bake system + terrain sampler; the GUI slider overrides live.
-// PERF-21 lodRing: chunks of full-3D props around the camera; beyond it (out to propRing) trees/
-//   boulders render as billboard impostors (~2 tris vs ~150–200). The 3D reach of every tier is
-//   PRESERVED or extended vs the pre-impostor values (Low/Normal kept their old all-3D radius as
-//   lodRing; High/Ultra keep 5×5 3D); propRing then EXTENDS past it with near-free billboard rings —
-//   Normal's outer ring drops ~64 % of its tree triangles, Low/High gain a distant tree ring that
-//   didn't exist before at ~2 tris/tree.
+// PERF-21 lodRing: chunks of full-3D props around the camera; beyond it (out to propRing) trees
+//   render as billboard impostors (~2 tris vs ~150–200). propRing == terrain ring on every tier
+//   (user call 2026-07-17: trees to full draw distance — bare distant mountainsides read wrong) —
+//   never PAST it, or billboards float in the sky where terrain isn't drawn. The 3D reach: Normal
+//   keeps its old all-3D radius as lodRing; High/Ultra keep 5×5 3D; Low billboards beyond the
+//   camera chunk (billboards are what its hardware can afford).
 const QUALITY_PRESETS = {
-  Low:    { ring: 1, warm: 1, fogDensity: 0.012, detailScale: 0,   shadows: false, propRing: 2, lodRing: 1, resHeight: 720,  shadowMap: 1024, shadowExtent: 160, shadowTilePx: 0   },
+  Low:    { ring: 1, warm: 1, fogDensity: 0.012, detailScale: 0,   shadows: false, propRing: 1, lodRing: 0, resHeight: 720,  shadowMap: 1024, shadowExtent: 160, shadowTilePx: 0   },
   Normal: { ring: 2, warm: 1, fogDensity: 0.006, detailScale: 1.0, shadows: true,  propRing: 2, lodRing: 1, resHeight: 1200, shadowMap: 1536, shadowExtent: 160, shadowTilePx: 256 },
   High:   { ring: 3, warm: 3, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, resHeight: null, shadowMap: 2048, shadowExtent: 220, shadowTilePx: 384 },
-  Ultra:  { ring: 4, warm: 4, fogDensity: 0.003, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, resHeight: null, shadowMap: 2048, shadowExtent: 220, shadowTilePx: 512 },
+  Ultra:  { ring: 4, warm: 4, fogDensity: 0.003, detailScale: 1.0, shadows: true,  propRing: 4, lodRing: 2, resHeight: null, shadowMap: 2048, shadowExtent: 220, shadowTilePx: 512 },
 }
 
 // PERF-07: set once the bake system exists (browser only — headless never constructs it), so

@@ -101,6 +101,11 @@ export const SKY_CYCLE = {
 const _scratchA = new THREE.Color()
 const _scratchB = new THREE.Color()
 
+// Pre-compensation for the baked ground-fill disc: the background pass tone-maps (ACES ×
+// exposure ~0.5) what the bake stored linearly, so an unlifted fog colour lands too dark next to
+// the actual fogged terrain it should blend into. Tuned by eyeball against the fog band.
+const GROUND_FILL_LIFT = 2.2
+
 /** Direction (origin→point) on the unit sphere from elevation/azimuth degrees, written into `out`. */
 function dirFromAngles (elevationDeg, azimuthDeg, out) {
   const phi = THREE.MathUtils.degToRad(90 - elevationDeg)   // polar from +Y
@@ -180,7 +185,22 @@ export class SkySystem {
       })
       this._cubeCam = new THREE.CubeCamera(0.1, 3000, this._cubeRT)
       this._bakeScene.add(this._cubeCam)
+      // Below-horizon ground fill (user call 2026-07-17): the Preetham shader renders the lower
+      // hemisphere as dark void, so from any height the world reads as a floating tile against
+      // sky. A huge fog-coloured disc in the BAKE scene paints the below-horizon background as
+      // misty ground — no scene geometry, no camera.far interaction, always behind real terrain.
+      // Radius ≫ depth keeps the gap between disc edge and true horizon under ~0.1°.
+      this._groundFill = new THREE.Mesh(
+        new THREE.CircleGeometry(2900, 48).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: 0xffffff })
+      )
+      this._groundFill.position.y = -5
+      this._bakeScene.add(this._groundFill)
     }
+    // Match the fully-fogged terrain the disc extends: fog colour, lifted for the ACES + exposure
+    // the background pass applies (the scene fog itself is mixed POST-tone-mapping, so the baked
+    // disc needs pre-compensation to land near the same displayed colour).
+    this._groundFill.material.color.setHex(SKY_PARAMS.fogColor).multiplyScalar(GROUND_FILL_LIFT)
     this._cubeCam.update(this.renderer, this._bakeScene)
     this.scene.background = this._cubeRT.texture
   }

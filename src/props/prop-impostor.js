@@ -30,11 +30,17 @@
 
 import * as THREE from 'three'
 
-/** Categories worth billboarding: tall + heavy. Rocks/bushes are squat and cheap — excluded. */
-export const IMPOSTOR_CATS = ['aspen', 'pine', 'boulder']
+/**
+ * Categories worth billboarding: tall + numerous. Rocks/bushes are squat and cheap — excluded.
+ * Boulders excluded too (user call 2026-07-17): ≤200 exist world-wide, so the tri savings are
+ * noise, and a huge single-quad boulder reads terribly at any angle.
+ */
+export const IMPOSTOR_CATS = ['aspen', 'pine']
 
 const TILE_PX = 256            // px per variant tile (atlas ~16 MB RGBA16F at 11 variants; 128 showed
                                // visible stair-step cutout edges on mid-distance trees at 1200p)
+const LIT_GAIN = 1.1           // sun-side brightening strength (× max(view·sunXZ, 0)); the 3D lit
+                               // face is roughly hemi+sun vs hemi-only — tune vs 3D via screenshots
 
 export class PropImpostors {
   /**
@@ -97,12 +103,62 @@ export class PropImpostors {
       e.material = this._makeBillboardMaterial(e.uTile, e.y0n)
     }
     this.rebake()
+    if (typeof window !== 'undefined') {
+      window.__impAtlasDump = () => this.dumpAtlas()      // CDP debug handles
+      window.__impAtlasStats = () => this.atlasStats()
+    }
     return this._entries
+  }
+
+  /**
+   * Dev handle: per-tile content bounds (alpha > 0.5) as tile-UV fractions, plus the expected
+   * content bottom (−y0n). If measured vMin ≉ expected, the bake placement is off; if the two
+   * differ between devicePixelRatios, the bake has a DPR dependency.
+   */
+  atlasStats () {
+    const rt = this._rt
+    if (!rt) return null
+    const w = rt.width, h = rt.height
+    const buf = new Uint16Array(w * h * 4)
+    this._renderer.readRenderTargetPixels(rt, 0, 0, w, h, buf)
+    const aHalf = 0x3800    // half-float 0.5 — alpha threshold compare works on raw bits (positive)
+    const out = {}
+    for (const [key, e] of this._entries) {
+      const cx = e.tilesIx % this._cols, cy = Math.floor(e.tilesIx / this._cols)
+      const x0 = cx * TILE_PX, y0 = cy * TILE_PX
+      let rMin = Infinity, rMax = -1, cMin = Infinity, cMax = -1
+      for (let r = 0; r < TILE_PX; r++) for (let c = 0; c < TILE_PX; c++) {
+        const a = buf[((y0 + r) * w + (x0 + c)) * 4 + 3]
+        if (a >= aHalf) {
+          if (r < rMin) rMin = r; if (r > rMax) rMax = r
+          if (c < cMin) cMin = c; if (c > cMax) cMax = c
+        }
+      }
+      out[key] = rMax < 0 ? 'EMPTY' : {
+        vMin: +(rMin / TILE_PX).toFixed(3), vMax: +((rMax + 1) / TILE_PX).toFixed(3),
+        uMin: +(cMin / TILE_PX).toFixed(3), uMax: +((cMax + 1) / TILE_PX).toFixed(3),
+        expectedVMin: +(-e.y0n).toFixed(3), size: +e.size.toFixed(2), height: +e.height.toFixed(2),
+      }
+    }
+    return { dpr: (typeof window !== 'undefined') ? window.devicePixelRatio : 1, tiles: out }
   }
 
   /** (Re)render every variant tile with the CURRENT sky-look lighting. Cheap — call on look change. */
   rebake () {
     if (!this._rt) return
+    // Sun-side brightness modulation (user report 2026-07-17): the atlas is ONE view, baked from
+    // +Z — roughly the shade side under the day look. Viewed from the sun's side, real 3D canopies
+    // are much brighter (sun ≫ hemi), so the shader scales texel brightness by the view-vs-sun
+    // azimuth: uSunXZ is the RAW horizontal sun component (a high sun self-attenuates the effect),
+    // uLitNorm renormalizes so the bake azimuth (0,1) stays exactly as captured.
+    const sd = this._lights.sunDir
+    const sunXZ = new THREE.Vector2(sd ? sd.x : 0, sd ? sd.z : 0)
+    const litNorm = 1 / (1 + LIT_GAIN * Math.max(sunXZ.y, 0))     // bake view dir is +Z = (0,1)
+    for (const e of this._entries.values()) {
+      if (!e.material) continue
+      e.material.uniforms.uSunXZ.value.copy(sunXZ)
+      e.material.uniforms.uLitNorm.value = litNorm
+    }
     const r = this._renderer
     const scene = new THREE.Scene()
     const mat = new THREE.MeshLambertMaterial({ vertexColors: true })
@@ -129,8 +185,13 @@ export class PropImpostors {
     for (const e of this._entries.values()) {
       holder.geometry = e.geo
       const S = e.size, cy = e.height / 2
-      cam.left = -S / 2; cam.right = S / 2; cam.top = cy + S / 2; cam.bottom = cy - S / 2
-      cam.position.set(0, cy, 100)                     // side view down -Z
+      // Frustum extents are CAMERA-space — the camera already sits at y = cy, so top/bottom are
+      // ±S/2, NOT cy ± S/2. The world-space version double-counted cy: every tile captured the
+      // band [h−S/2, h+S/2] — the tree's TOP half, bottom-pinned — so billboards planted the
+      // canopy at ground level with no trunk ("buried trees", user report 2026-07-17; confirmed
+      // numerically by __impAtlasStats content span [0, 0.5] on every tile).
+      cam.left = -S / 2; cam.right = S / 2; cam.top = S / 2; cam.bottom = -S / 2
+      cam.position.set(0, cy, 100)                     // side view down -Z, centred on the capture band
       cam.lookAt(0, cy, 0)
       cam.updateProjectionMatrix()
       cam.updateMatrixWorld(true)
@@ -154,6 +215,9 @@ export class PropImpostors {
         uAtlas: { value: null },      // bound lazily below (merge() would clone the texture ref)
         uTile: { value: uTile },
         uY0n: { value: y0n },         // capture-bottom offset ÷ S (see build()) — exact vertical anchor
+        uSunXZ: { value: new THREE.Vector2(0, 0) },   // horizontal sun component (set in rebake)
+        uLitK: { value: LIT_GAIN },
+        uLitNorm: { value: 1 },
       }]),
       vertexShader: /* glsl */`
         attribute vec3 aPos;          // anchor: trunk base / prop origin (world)
@@ -161,8 +225,10 @@ export class PropImpostors {
         attribute vec3 aTint;
         uniform vec4 uTile;           // u0, v0, uSpan, vSpan
         uniform float uY0n;
+        uniform vec2 uSunXZ;
         varying vec2 vUv;
         varying vec3 vTint;
+        varying float vLit;           // view-vs-sun azimuth alignment (see rebake)
         #include <fog_pars_vertex>
         void main () {
           vUv = vec2(uTile.x + uv.x * uTile.z, uTile.y + uv.y * uTile.w);
@@ -171,6 +237,7 @@ export class PropImpostors {
           vec3 toCam = cameraPosition - aPos;
           float len = max(length(toCam.xz), 1e-4);
           vec2 fwd = toCam.xz / len;
+          vLit = dot(fwd, uSunXZ);
           vec3 right = vec3(fwd.y, 0.0, -fwd.x);       // cross(+Y, fwd)
           vec3 wp = aPos + right * (position.x * aSize)
                   + vec3(0.0, (position.y + 0.5 + uY0n) * aSize, 0.0);
@@ -187,13 +254,19 @@ export class PropImpostors {
         }`,
       fragmentShader: /* glsl */`
         uniform sampler2D uAtlas;
+        uniform float uLitK;
+        uniform float uLitNorm;
         varying vec2 vUv;
         varying vec3 vTint;
+        varying float vLit;
         #include <fog_pars_fragment>
         void main () {
           vec4 texel = texture2D(uAtlas, vUv);
           if (texel.a < 0.5) discard;                  // cutout — stays in the opaque pass
-          gl_FragColor = vec4(texel.rgb * vTint, 1.0);
+          // Approximate the sun-lit face: brighten as the camera moves to the sun's side of the
+          // tree (the bake shows the shade-ish side); renormalized so the bake azimuth matches 1:1.
+          float lit = (1.0 + uLitK * max(vLit, 0.0)) * uLitNorm;
+          gl_FragColor = vec4(texel.rgb * vTint * lit, 1.0);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
           #include <fog_fragment>
@@ -206,6 +279,35 @@ export class PropImpostors {
 
   /** Bind the atlas into a billboard material (call after build(); kept out of merge()'s clone). */
   bindAtlas (material) { material.uniforms.uAtlas.value = this._rt.texture }
+
+  /**
+   * Dev handle: dump the atlas to a PNG data-URL (half-float → 8-bit, no tone map). Wired onto
+   * window in build() — same precedent as main.js's __ri/__propShadows CDP handles.
+   */
+  dumpAtlas () {
+    const rt = this._rt
+    if (!rt) return null
+    const w = rt.width, h = rt.height
+    const buf = new Uint16Array(w * h * 4)
+    this._renderer.readRenderTargetPixels(rt, 0, 0, w, h, buf)
+    const halfToFloat = (n) => {
+      const s = (n & 0x8000) ? -1 : 1, e = (n >> 10) & 0x1f, f = n & 0x3ff
+      if (e === 0) return s * f * 2 ** -24
+      if (e === 31) return f ? NaN : s * Infinity
+      return s * (1 + f / 1024) * 2 ** (e - 15)
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = w; canvas.height = h
+    const ctx = canvas.getContext('2d')
+    const img = ctx.createImageData(w, h)
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const si = ((h - 1 - y) * w + x) * 4        // flip: GL row 0 is the bottom
+      const di = (y * w + x) * 4
+      for (let c = 0; c < 4; c++) img.data[di + c] = Math.min(255, Math.round(halfToFloat(buf[si + c]) * 255))
+    }
+    ctx.putImageData(img, 0, 0)
+    return canvas.toDataURL('image/png')
+  }
 
   dispose () {
     if (this._rt) this._rt.dispose()
