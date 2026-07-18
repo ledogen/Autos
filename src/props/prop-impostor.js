@@ -31,11 +31,14 @@
 import * as THREE from 'three'
 
 /**
- * Categories worth billboarding: tall + numerous. Rocks/bushes are squat and cheap — excluded.
- * Boulders excluded too (user call 2026-07-17): ≤200 exist world-wide, so the tri savings are
- * noise, and a huge single-quad boulder reads terribly at any angle.
+ * Categories worth billboarding: tall/large + visible at range. Rocks/bushes are squat and
+ * cheap — excluded. Boulders are back in (user call 2026-07-18): not for the tri savings
+ * (≤200 world-wide) but because the billboard-only outer ring means a 20 m landmark boulder
+ * would otherwise pop out of existence beyond propRing. (Their earlier "atrocious" look was
+ * the world-space bake frustum + bottom-anchor bugs, both fixed — origin-centred blob
+ * geometry is exactly what the uY0n mapping handles.)
  */
-export const IMPOSTOR_CATS = ['aspen', 'pine']
+export const IMPOSTOR_CATS = ['aspen', 'pine', 'boulder']
 
 const TILE_PX = 256            // px per variant tile (atlas ~16 MB RGBA16F at 11 variants; 128 showed
                                // visible stair-step cutout edges on mid-distance trees at 1200p)
