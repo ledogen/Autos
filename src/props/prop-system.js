@@ -37,7 +37,10 @@ import { FLORA_PARAMS } from '../../data/flora.js'
 // Per-category global instance capacity (split evenly across that category's variants). Sized for
 // the ring-4 (Ultra, 81-chunk) worst case; pure typed-array memory (64 B/instance), cheap.
 const CAPACITY = {
-  aspen: 4000, pine: 4000, rock: 3000, boulder: 200, smallRock: 9000, bush: 4000,
+  // Trees sized for the PERF-21 billboard-only outer ring: Ultra streams trees out to the built-
+  // terrain edge (ring+warm = 8 → 17² = 289 chunks × ~30 trees ≈ 8.7k, biome-split aspen/pine).
+  // Other categories only live within the full propRing (≤ ring-4, 81 chunks) as before.
+  aspen: 8000, pine: 8000, rock: 3000, boulder: 200, smallRock: 9000, bush: 4000,
   log: 300,   // FEAT-15: sparse ([0,2]/chunk) — 300 covers a ring-4 Ultra window with slack
 }
 
@@ -130,6 +133,7 @@ export class PropSystem {
     this._impMeshes = null         // key "cat#v" -> { mesh, aPos, aSize, aTint, size, free, occ, top, cap, dirtyLo, dirtyHi }
     this._impDirty = new Set()
     this._lodRing = (params.lod && params.lod.ring3d != null) ? params.lod.ring3d : 2
+    this._fullRing = Infinity      // full-prop radius (set each update); beyond → billboard-only
     this._ccx = null               // camera chunk (set each update; null = everything 'near')
     this._ccz = null
 
@@ -283,10 +287,11 @@ export class PropSystem {
         a.setUsage(THREE.DynamicDrawUsage)
         return a
       }
-      const aPos = mk(3), aSize = mk(1), aTint = mk(3)
+      const aPos = mk(3), aSize = mk(1), aTint = mk(3), aAxis = mk(3)
       geo.setAttribute('aPos', aPos)
       geo.setAttribute('aSize', aSize)
       geo.setAttribute('aTint', aTint)
+      geo.setAttribute('aAxis', aAxis)   // per-instance trunk axis — billboards lean like their 3D tree
       geo.instanceCount = 0
       this._impostors.bindAtlas(e.material)
       const mesh = new THREE.Mesh(geo, e.material)
@@ -297,7 +302,7 @@ export class PropSystem {
       const free = []
       for (let i = cap - 1; i >= 0; i--) free.push(i)
       this._impMeshes.set(key, {
-        mesh, aPos, aSize, aTint, size: e.size,
+        mesh, aPos, aSize, aTint, aAxis, size: e.size,
         free, occ: new Uint8Array(cap), top: 0, cap, dirtyLo: Infinity, dirtyHi: -1,
       })
     }
@@ -415,21 +420,35 @@ export class PropSystem {
 
     // PERF-07: this chunk's props changed → (re)bake its shadow tile and its neighbours' (silhouettes
     // cross chunk seams). The bake system slices the work; a no-op when realtime casting / headless.
-    if (this._shadowBake) this._shadowBake.markWithNeighbors(cx, cz)
+    // Billboard-only ring chunks take NO tiles (see _chunkMode) — they mark on promotion instead.
+    if (this._shadowBake && chunk.mode !== 'bbonly') this._shadowBake.markWithNeighbors(cx, cz)
   }
 
-  /** PERF-21: which render pool a chunk belongs to, by Chebyshev ring distance from the camera. */
+  /**
+   * PERF-21: a chunk's render mode by Chebyshev ring distance from the camera:
+   *   'near'   (d ≤ lodRing)  — every category as full 3D instances.
+   *   'far'    (d ≤ fullRing) — billboardable categories as impostors, the rest 3D.
+   *   'bbonly' (d > fullRing) — TREES ONLY, as impostors; rocks/bushes/logs get no render slots
+   *            at all (they'd be sub-pixel 3D noise), and the chunk takes no shadow-bake tiles
+   *            (beyond the QUAL-18 fade reach anyway, and marking it would overflow the toroidal
+   *            atlas at Ultra's billboard radius). This is the ring that carries trees out to the
+   *            full drawn-terrain distance (user call 2026-07-17).
+   */
   _chunkMode(cx, cz) {
     if (!this._impMeshes || this._ccx === null) return 'near'
-    return Math.max(Math.abs(cx - this._ccx), Math.abs(cz - this._ccz)) <= this._lodRing ? 'near' : 'far'
+    const d = Math.max(Math.abs(cx - this._ccx), Math.abs(cz - this._ccz))
+    if (d <= this._lodRing) return 'near'
+    return d <= this._fullRing ? 'far' : 'bbonly'
   }
 
-  /** Allocate render-pool slots for a chunk's retained placements ('near' = 3D, 'far' = billboards). */
+  /** Allocate render-pool slots for a chunk's retained placements (see _chunkMode for modes). */
   _placeChunk(chunk, mode) {
     chunk.mode = mode
     for (const pr of chunk.places) {
-      // Billboardable categories go to the impostor pool when far; anything else stays 3D.
-      if (mode === 'far' && this._impMeshes) {
+      // Billboardable categories go to the impostor pool when far; anything else stays 3D —
+      // except in the billboard-only outer ring, where non-billboardable categories are skipped.
+      if (mode === 'bbonly' && this._impMeshes && !this._impMeshes.has(pr.key)) continue
+      if ((mode === 'far' || mode === 'bbonly') && this._impMeshes) {
         const irec = this._impMeshes.get(pr.key)
         if (irec && irec.free.length > 0) {
           const slot = irec.free.pop()
@@ -439,6 +458,11 @@ export class PropSystem {
           irec.aPos.array[i3] = pr.x; irec.aPos.array[i3 + 1] = pr.y; irec.aPos.array[i3 + 2] = pr.z
           irec.aSize.array[slot] = irec.size * pr.scale
           irec.aTint.array[i3] = pr.tint[0]; irec.aTint.array[i3 + 1] = pr.tint[1]; irec.aTint.array[i3 + 2] = pr.tint[2]
+          // Trunk axis = the placement matrix's local +Y column, normalized — carries the
+          // per-tree parametric lean into the billboard so the LOD swap doesn't snap upright.
+          const m = pr.mat
+          const al = Math.hypot(m[4], m[5], m[6]) || 1
+          irec.aAxis.array[i3] = m[4] / al; irec.aAxis.array[i3 + 1] = m[5] / al; irec.aAxis.array[i3 + 2] = m[6] / al
           if (slot < irec.dirtyLo) irec.dirtyLo = slot
           if (slot > irec.dirtyHi) irec.dirtyHi = slot
           this._impDirty.add(pr.key)
@@ -510,10 +534,16 @@ export class PropSystem {
     if (!this._impMeshes || this._ccx === null) return
     for (const [ck, chunk] of this._chunks) {
       const comma = ck.indexOf(',')
-      const want = this._chunkMode(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10))
+      const cx = parseInt(ck.slice(0, comma), 10), cz = parseInt(ck.slice(comma + 1), 10)
+      const want = this._chunkMode(cx, cz)
       if (want === chunk.mode) continue
+      const promoted = chunk.mode === 'bbonly' && want !== 'bbonly'
       this._unplaceChunk(chunk)
       this._placeChunk(chunk, want)
+      // Promotion out of the billboard-only ring: the chunk skipped its shadow bake at commit —
+      // bake now that its ground shadows are within the visible/fade range. (Demotion needs no
+      // mark: the trees haven't moved, the already-baked tile stays valid.)
+      if (promoted && this._shadowBake) this._shadowBake.markWithNeighbors(cx, cz)
       if (--budget <= 0) break
     }
   }
@@ -523,12 +553,13 @@ export class PropSystem {
     const chunk = this._chunks.get(ck)
     if (!chunk) return
     this._unplaceChunk(chunk)
+    const wasBBOnly = chunk.mode === 'bbonly'
     this._chunks.delete(ck)
     if (this._collidables.delete(ck)) this._gridDirty = true
     // PERF-07: this chunk's props are gone → re-bake still-live neighbours so their tiles drop the
     // departed silhouettes (a neighbour still in-ring re-bakes without them; its own tile is reused
-    // by whichever chunk lands on the toroidal slot next).
-    if (this._shadowBake) this._shadowBake.markWithNeighbors(cx, cz)
+    // by whichever chunk lands on the toroidal slot next). Billboard-only chunks never baked.
+    if (this._shadowBake && !wasBBOnly) this._shadowBake.markWithNeighbors(cx, cz)
   }
 
   /**
@@ -543,14 +574,18 @@ export class PropSystem {
    * (hardX, hardZ) to force-complete the 3×3 chunks around it synchronously (prop collision must
    * exist under the truck; freecam passes nothing and just streams visually).
    */
-  update(worldX, worldZ, ringChunks, hardX = null, hardZ = null) {
+  update(worldX, worldZ, ringChunks, hardX = null, hardZ = null, bbRingChunks = null) {
     const cs = this._chunkSize
     const ccx = Math.floor(worldX / cs), ccz = Math.floor(worldZ / cs)
     this._ccx = ccx; this._ccz = ccz               // PERF-21: LOD ring centre
+    this._fullRing = ringChunks                    // beyond this (to bbRing) = billboard-only trees
+    // The billboard-only outer ring streams ONLY when impostors are active — headless (gates) and
+    // pre-wire boots keep the classic full-prop ring exactly as before.
+    const outer = (this._impMeshes && bbRingChunks != null) ? Math.max(ringChunks, bbRingChunks) : ringChunks
     const want = new Set()
     let enqueued = false
-    for (let dz = -ringChunks; dz <= ringChunks; dz++)
-      for (let dx = -ringChunks; dx <= ringChunks; dx++) {
+    for (let dz = -outer; dz <= outer; dz++)
+      for (let dx = -outer; dx <= outer; dx++) {
         const cx = ccx + dx, cz = ccz + dz
         const ck = cx + ',' + cz
         want.add(ck)
@@ -661,11 +696,13 @@ export class PropSystem {
         irec.aPos.addUpdateRange(lo * 3, n * 3)
         irec.aSize.addUpdateRange(lo, n)
         irec.aTint.addUpdateRange(lo * 3, n * 3)
+        irec.aAxis.addUpdateRange(lo * 3, n * 3)
         irec.dirtyLo = Infinity; irec.dirtyHi = -1
       }
       irec.aPos.needsUpdate = true
       irec.aSize.needsUpdate = true
       irec.aTint.needsUpdate = true
+      irec.aAxis.needsUpdate = true
       irec.mesh.geometry.instanceCount = irec.top
     }
     this._impDirty.clear()

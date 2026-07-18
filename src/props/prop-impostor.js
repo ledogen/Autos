@@ -39,7 +39,7 @@ export const IMPOSTOR_CATS = ['aspen', 'pine']
 
 const TILE_PX = 256            // px per variant tile (atlas ~16 MB RGBA16F at 11 variants; 128 showed
                                // visible stair-step cutout edges on mid-distance trees at 1200p)
-const LIT_GAIN = 2.0           // default sun-side brightening strength (× max(view·sunXZ, 0)) —
+const LIT_GAIN = 4.0           // default sun-side brightening strength (× max(view·sunXZ, 0)) —
                                // live-tunable via the Props GUI 'billboard lit gain' slider
 
 export class PropImpostors {
@@ -237,6 +237,7 @@ export class PropImpostors {
         attribute vec3 aPos;          // anchor: trunk base / prop origin (world)
         attribute float aSize;        // world side of the square quad (variant S × instance scale)
         attribute vec3 aTint;
+        attribute vec3 aAxis;         // trunk axis (unit) — the 3D tree's parametric lean
         uniform vec4 uTile;           // u0, v0, uSpan, vSpan
         uniform float uY0n;
         uniform vec2 uSunXZ;
@@ -247,14 +248,19 @@ export class PropImpostors {
         void main () {
           vUv = vec2(uTile.x + uv.x * uTile.z, uTile.y + uv.y * uTile.w);
           vTint = aTint;
-          // Cylindrical billboard: face the camera in XZ only, stay world-upright.
+          // Cylindrical billboard around the tree's OWN trunk axis (aAxis), not world-up — the
+          // 3D trees carry a parametric lean, and an upright billboard snaps visibly at the LOD
+          // swap. Building the quad along the leaned axis also projects correctly: viewed along
+          // the lean the tree reads near-straight, exactly like its 3D original.
           vec3 toCam = cameraPosition - aPos;
           float len = max(length(toCam.xz), 1e-4);
           vec2 fwd = toCam.xz / len;
           vLit = dot(fwd, uSunXZ);
-          vec3 right = vec3(fwd.y, 0.0, -fwd.x);       // cross(+Y, fwd)
+          vec3 r3 = cross(aAxis, toCam / max(length(toCam), 1e-4));
+          float rl = length(r3);
+          vec3 right = rl > 1e-4 ? r3 / rl : vec3(1.0, 0.0, 0.0);
           vec3 wp = aPos + right * (position.x * aSize)
-                  + vec3(0.0, (position.y + 0.5 + uY0n) * aSize, 0.0);
+                  + aAxis * ((position.y + 0.5 + uY0n) * aSize);
           // Slope de-burial: pull the quad toward the camera (horizontally) by ~20% of its size.
           // A flat slice through the trunk axis gets depth-clipped by uphill terrain on cross-slopes
           // (a 3D canopy also enters the hill, but wraps visibly above it) — trees read as sunk to
