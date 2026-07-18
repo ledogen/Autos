@@ -138,6 +138,12 @@ export const RANGER_PARAMS = {
   bodyContactStiffness: 200000,  // N/m — stiffer than tire; metal-on-terrain response
   bodyContactDamping:     1000,  // N·s/m
   bodyContactRadius:      0.15,  // m — effective sphere radius for bumper corner points
+  // Rebound on a frame/undercarriage slam: the body leaves at this fraction of its approach speed.
+  // 0 = fully plastic (the old BUG-27 thud — all impact energy absorbed, no bounce); 1 = perfectly
+  // elastic. Only applies above REST_VEL_THRESHOLD (physics.js), so resting contact is untouched.
+  // Tunable now that the solver uses a sampled-once bias (see BODY_RESTITUTION_DEFAULT) — the value
+  // no longer compounds with probe/pass count the way BUG-27's did.
+  bodyRestitution:        0.21,  // slight bounce — a 10 m drop rebounds instead of dead-stopping
 
   // ── Phase 3 Pacejka Tire Model (D-07) ────────────────────────────────────
   // Combined-slip Pacejka in SLIP-VELOCITY space (m/s). One isotropic curve, evaluated at
