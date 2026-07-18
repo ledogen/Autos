@@ -714,6 +714,84 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         }
         return best
     }
+    // ── PERF corridor two-pass (EXPERIMENTAL — opts.corridorCoarse / roadCorridorTwoPass) ────────
+    // The fine search's heuristic prices only distance while the real per-metre cost is dominated
+    // by the grade/valley terms, so it floods the lattice near-Dijkstra (measured ~94k expansions/
+    // search). Two-pass: a COARSE search (3× cell, 12 heading bins, 2-radius palette — same cost
+    // model, same discs) finds the corridor at ~1/15 the state count, then the fine search is
+    // restricted to a tube of radius corridorCoarse.tubeR around the coarse path. When the global
+    // fine optimum lies inside the tube the result is character-equivalent; if the tube walls the
+    // goal (coarse partial, repair discs inside the tube) the fine pass returns null and we fall
+    // back to the FULL fine search — never a different route than tube-success, only a slower one.
+    // Deterministic: pure fn of (anchors, opts, heightFn). Sits INSIDE the self-clear wrapper so
+    // each repair attempt re-derives its tube around that attempt's discs.
+    if (opts.corridorCoarse && !opts._coarsePass && !opts._tubeXs && !opts._hField) {
+        const cc = opts.corridorCoarse
+        const cCell = cc.cell ?? 24, cStep = cc.stepLen ?? 24
+        const coarseOpts = Object.assign({}, opts, {
+            _coarsePass: true,
+            cell: cCell, stepLen: cStep, hbins: cc.hbins ?? 12,
+            radii: cc.radii ?? [200, 35], maxNodes: cc.maxNodes ?? 60000,
+            emitPrimitives: false, selfClearDist: 0, refitShortcut: false, refitWindow: 0,
+            goalHeading: undefined,   // the C0 legacy terminal is fine for a corridor estimate
+        })
+        if (cc.mode === 'heuristic') {
+            // HEURISTIC mode: flood the coarse lattice BACKWARD from the goal (no early exit) and
+            // hand the per-cell min cost field to the fine search as its cost-to-go heuristic. The
+            // fine search then prices the REAL remaining terrain cost (grade/valley/earthwork — the
+            // terms the distance heuristic is blind to) and stops flooding. Approximate (coarse
+            // lattice, direction-symmetry assumption) ⇒ mildly inadmissible ⇒ same suboptimality
+            // class as the existing weighted-A* inflation; hScale trades guidance vs. optimality.
+            const field = arcPrimitiveConnect(bx, bz, ax, az, heightFn,
+                Object.assign({}, coarseOpts, { _costFieldOut: true, startHeading: undefined }))
+            if (field) {
+                // P4 unreachable-skip: the flood ran to exhaustion, so an Infinity at the START
+                // cell means no coarse path goal→start exists under the current discs — the
+                // guided fine search (and the full fallback) would burn their node caps and fail.
+                // Skip straight to what that failure chain would do anyway: with corridor discs
+                // present, the escape hatch's drop-the-advisory-discs retry (re-floods without
+                // them); without, the full disc-laden search below, whose best-effort partial
+                // chain is today's output for genuinely walled goals. Approximate only in the
+                // coarse-blocked-but-fine-passable direction (a gap narrower than the coarse
+                // cell) — feel-diff-verified no network change on the seed set.
+                let sx = Math.round((ax - field.hMinX) / field.hCell)
+                if (sx < 0) sx = 0; else if (sx > field.hNX - 1) sx = field.hNX - 1
+                let sz = Math.round((az - field.hMinZ) / field.hCell)
+                if (sz < 0) sz = 0; else if (sz > field.hNZ - 1) sz = field.hNZ - 1
+                if (field.hF[sz * field.hNX + sx] === Infinity) {
+                    if (opts.avoidDiscs && opts.avoidDiscs.length) return arcPrimitiveConnect(ax, az, bx, bz, heightFn,
+                        Object.assign({}, opts, { avoidDiscs: undefined }))
+                } else {
+                    const fine = arcPrimitiveConnect(ax, az, bx, bz, heightFn, Object.assign({}, opts, {
+                        _hField: field.hF, _hMinX: field.hMinX, _hMinZ: field.hMinZ,
+                        _hCell: field.hCell, _hNX: field.hNX, _hNZ: field.hNZ,
+                        _hScale: cc.hScale ?? 1.0,
+                    }))
+                    if (fine) return fine   // null = heuristic-guided search never captured the goal
+                }
+            }
+            return arcPrimitiveConnect(ax, az, bx, bz, heightFn, Object.assign({}, opts, { corridorCoarse: undefined }))
+        }
+        // TUBE mode: restrict the fine lattice to a tube around the coarse path.
+        const tubeR = cc.tubeR ?? 100
+        const coarse = arcPrimitiveConnect(ax, az, bx, bz, heightFn, coarseOpts)
+        // The tube is only usable if the coarse pass actually reached the goal neighborhood.
+        const last = coarse.length ? coarse[coarse.length - 1] : null
+        if (last && Math.hypot(bx - last.x, bz - last.z) <= Math.max(cCell, cStep) + 1) {
+            const xs = [ax], zs = [az]
+            let accD = 0
+            for (let i = 1; i < coarse.length; i++) {
+                accD += Math.hypot(coarse[i].x - coarse[i - 1].x, coarse[i].z - coarse[i - 1].z)
+                if (accD >= tubeR * 0.5) { xs.push(coarse[i].x); zs.push(coarse[i].z); accD = 0 }
+            }
+            xs.push(bx); zs.push(bz)
+            const fine = arcPrimitiveConnect(ax, az, bx, bz, heightFn,
+                Object.assign({}, opts, { _tubeXs: xs, _tubeZs: zs, _tubeR: tubeR }))
+            if (fine) return fine   // null = the tube-restricted search never captured the goal
+        }
+        return arcPrimitiveConnect(ax, az, bx, bz, heightFn, Object.assign({}, opts, { corridorCoarse: undefined }))
+    }
+    const _statT0 = (globalThis.__apcStats) ? performance.now() : 0
     const hardR    = opts.hardR    ?? 8       // m — tightest turn (hardest primitive); ≥ geometric floor
     const gentleR  = opts.gentleR  ?? 30      // m — gentle turn radius (fallback palette member)
     const stepLen  = opts.stepLen  ?? 8       // m — STRAIGHT primitive length (turn primitives are fixed-ANGLE; see below)
@@ -776,6 +854,23 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     const avoidDiscs = (opts.avoidDiscs && opts.avoidDiscs.length) ? opts.avoidDiscs : null
     const pondOnly = (opts.pondDiscs && opts.pondDiscs.length) ? opts.pondDiscs : null
     const pondDiscs = avoidDiscs ? (pondOnly ? pondOnly.concat(avoidDiscs) : avoidDiscs) : pondOnly
+    // PERF (cold-load): flat Float64Array [x, z, r²] triples (r pre-squared — discHit was ~16% of
+    // the cold stream), plus a global bbox over the inflated discs — discs cluster near nodes/ponds
+    // while the search floods the whole lattice, so most probes exit on 4 compares.
+    let _dArr = null, _dMinX = 0, _dMaxX = 0, _dMinZ = 0, _dMaxZ = 0
+    if (pondDiscs) {
+        const n = pondDiscs.length
+        _dArr = new Float64Array(n)
+        _dMinX = Infinity; _dMaxX = -Infinity; _dMinZ = Infinity; _dMaxZ = -Infinity
+        for (let i = 0; i < n; i += 3) {
+            const x = pondDiscs[i], z = pondDiscs[i + 1], r = pondDiscs[i + 2]
+            _dArr[i] = x; _dArr[i + 1] = z; _dArr[i + 2] = r * r
+            if (x - r < _dMinX) _dMinX = x - r
+            if (x + r > _dMaxX) _dMaxX = x + r
+            if (z - r < _dMinZ) _dMinZ = z - r
+            if (z + r > _dMaxZ) _dMaxZ = z + r
+        }
+    }
     // Spatial hash over the discs when there are many — corridor discs number in the hundreds, and
     // the linear scan per primitive/refit sample would dominate the search. Cell = max disc radius,
     // so any disc containing a point is registered in the 3×3 neighbourhood of that point's cell.
@@ -792,10 +887,11 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         }
     }
     const discHit = (x, z, i) => {
-        const dx = x - pondDiscs[i], dz = z - pondDiscs[i + 1], r = pondDiscs[i + 2]
-        return dx * dx + dz * dz <= r * r
+        const dx = x - _dArr[i], dz = z - _dArr[i + 1]
+        return dx * dx + dz * dz <= _dArr[i + 2]
     }
     const inPondNoGo = (x, z) => {
+        if (x < _dMinX || x > _dMaxX || z < _dMinZ || z > _dMaxZ) return false
         if (discGrid) {
             const cx = Math.floor(x / discCell), cz = Math.floor(z / discCell)
             for (let ox = -1; ox <= 1; ox++) for (let oz = -1; oz <= 1; oz++) {
@@ -804,7 +900,7 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             }
             return false
         }
-        for (let i = 0; i < pondDiscs.length; i += 3) if (discHit(x, z, i)) return true
+        for (let i = 0; i < _dArr.length; i += 3) if (discHit(x, z, i)) return true
         return false
     }
 
@@ -818,6 +914,25 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     const czOf  = (z) => Math.max(0, Math.min(NZ - 1, Math.round((z - minZ) / cell)))
     const cellOf = (x, z) => czOf(z) * NX + cxOf(x)
     const stateOf = (x, z, th) => cellOf(x, z) * hbins + binOf(th)
+
+    // PERF corridor two-pass: lazy per-cell tube membership (0 unknown / 1 in / 2 out). A cell is
+    // in the tube when its CENTER is within tubeR of any coarse-path sample (samples are spaced
+    // tubeR/2, so true path distance ≤ tubeR·1.25 — a deterministic, slightly generous tube).
+    const tubeXs = opts._tubeXs || null, tubeZs = opts._tubeZs || null
+    const tubeR2 = tubeXs ? opts._tubeR * opts._tubeR : 0
+    const tubeSeen = tubeXs ? new Uint8Array(NX * NZ) : null
+    const inTube = (x, z) => {
+        const ci = cellOf(x, z)
+        const s = tubeSeen[ci]
+        if (s) return s === 1
+        const ccx = minX + (ci % NX) * cell, ccz = minZ + ((ci / NX) | 0) * cell
+        for (let i = 0; i < tubeXs.length; i++) {
+            const dx = ccx - tubeXs[i], dz = ccz - tubeZs[i]
+            if (dx * dx + dz * dz <= tubeR2) { tubeSeen[ci] = 1; return true }
+        }
+        tubeSeen[ci] = 2
+        return false
+    }
 
     // PERF: cache terrain height per lattice cell (compute heightFn once per cell, not per node
     // expansion). _coarseHeight is multi-octave ridged noise — recomputing it for every one of the
@@ -979,7 +1094,19 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         return false
     }
 
-    const heur = (x, z) => wHeur * wDist * Math.hypot(bx - x, bz - z)
+    // PERF corridor-heuristic mode: h = the coarse backward flood's cost-to-go at this XZ (the
+    // REAL remaining terrain cost — grade/valley/earthwork — that the distance heuristic can't
+    // see), floored by the distance heuristic; cells the flood never reached fall back to it.
+    const hF = opts._hField || null
+    const hMinXf = opts._hMinX, hMinZf = opts._hMinZ, hCellf = opts._hCell, hNXf = opts._hNX, hNZf = opts._hNZ
+    const hScale = opts._hScale ?? 1.0
+    const heur = hF ? (x, z) => {
+        const d = wHeur * wDist * Math.hypot(bx - x, bz - z)
+        let hx = Math.round((x - hMinXf) / hCellf); if (hx < 0) hx = 0; else if (hx > hNXf - 1) hx = hNXf - 1
+        let hz = Math.round((z - hMinZf) / hCellf); if (hz < 0) hz = 0; else if (hz > hNZf - 1) hz = hNZf - 1
+        const v = hF[hz * hNXf + hx]
+        return v < Infinity ? Math.max(d, hScale * v) : d
+    } : (x, z) => wHeur * wDist * Math.hypot(bx - x, bz - z)
     const th0 = startHeading ?? Math.atan2(bz - az, bx - ax)
     const goalR = Math.max(cell, stepLen), goalR2 = goalR * goalR
     const startState = stateOf(ax, az, th0)
@@ -1000,7 +1127,7 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         const cx = SX[sid], cz = SZ[sid], cth = STh[sid], csh = SSh[sid], crf = SRf[sid], cg = G[sid], cLen = SL[sid]
         const dgx = bx - cx, dgz = bz - cz, d2 = dgx * dgx + dgz * dgz
         if (d2 < bestD2) { bestD2 = d2; bestState = sid }
-        if (d2 <= goalR2) { goalState = sid; break }
+        if (d2 <= goalR2 && !opts._costFieldOut) { goalState = sid; break }   // flood mode: no early exit
         expanded++
         // Self-clearance prefilter: gather this node's conflict-relevant ancestors (see selfHit).
         scN = 0
@@ -1023,6 +1150,7 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             const L = primLen(k)   // fixed-angle: straight = stepLen, turns = turnAngle/|k| (∝ radius)
             const [nx, nz, nth] = arcEnd(cx, cz, cth, k, L)
             if (nx < minX || nx > maxX || nz < minZ || nz > maxZ) continue
+            if (tubeSeen && !inTube(nx, nz)) continue   // corridor two-pass: stay in the tube
             // FEAT-17: reject primitives entering a pond+skirt disc. Endpoint + midpoint samples
             // suffice: the longest primitive (largest radius × turnAngle) is shorter than any pond
             // diameter, so a ≤ L/2 sample spacing cannot tunnel a disc — worst case is a metre-scale
@@ -1090,6 +1218,29 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         }
     }
 
+    if (globalThis.__apcStats) globalThis.__apcStats.push({
+        ms: performance.now() - _statT0, expanded, goal: goalState !== -1,
+        nstates: NSTATES, discs: pondDiscs ? pondDiscs.length / 3 : 0,
+        chord: Math.hypot(bx - ax, bz - az), scPass: !!opts._scPass,
+        escape: goalState === -1 && !!avoidDiscs,
+        coarse: !!opts._coarsePass, tube: !!tubeXs, hGuided: !!hF, flood: !!opts._costFieldOut,
+    })
+    // Corridor-heuristic mode: the backward flood returns its per-XZ-cell min cost as the field
+    // the fine search reads through `heur` — no path is emitted from a flood.
+    if (opts._costFieldOut) {
+        const hFOut = new Float64Array(NX * NZ).fill(Infinity)
+        for (let ci = 0; ci < NX * NZ; ci++) {
+            let m = Infinity
+            const base = ci * hbins
+            for (let b = 0; b < hbins; b++) { const st = base + b; if (GS[st] === gen && G[st] < m) m = G[st] }
+            hFOut[ci] = m
+        }
+        return { hF: hFOut, hMinX: minX, hMinZ: minZ, hCell: cell, hNX: NX, hNZ: NZ }
+    }
+    // Corridor two-pass: a tube-restricted or heuristic-guided search that never captured the goal
+    // signals failure — the corridor block above falls back to the full-lattice search (a partial
+    // best-effort chain must not be emitted as a road).
+    if (goalState === -1 && (tubeXs || hF)) return null
     // QUAL-14 Part B ESCAPE HATCH: corridor discs are advisory relative to CONNECTIVITY — if they
     // (unlike ponds) walled off the goal, retry once with the corridor discs dropped (ponds and
     // self-clearance repair discs are kept): a real crossing then forms and the existing crossing

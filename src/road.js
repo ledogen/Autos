@@ -1278,6 +1278,19 @@ export class RoadSystem {
             // Phase 2: deps solo-cached → discs are pure data; ship the final job.
             const avoid = this._corridorDiscsFor(c1, c2, false)
             if (avoid === null) { deferred = true; return }   // raced: dep evicted since the check
+            // Solo-reuse precheck (see _edgeCenterline): discs never touch the solo → adopt it
+            // as the final right here — no worker job at all. The edge's OWN solo is a dispatch
+            // dependency exactly like the sibling solos above (window-invariance: adoption must
+            // be a pure fn of the edge, never of what some wider stream happened to cache).
+            if (avoid && this._params?.roadSoloReuse) {
+                const solo = this._proto.clsSolo?.get(key)
+                if (!solo) { warmSolo(c1, c2); deferred = true; return }
+                if (solo.length > 1e-6 && this._soloClearOf(solo, avoid)) {
+                    this._proto.cls.set(key, solo)
+                    this._pendingRoutes.delete(key)
+                    return
+                }
+            }
             const spec = this._edgeRouteSpec(c1, c2)
             if (avoid) spec.opts.avoidDiscs = spec.opts.avoidDiscs ? spec.opts.avoidDiscs.concat(avoid) : avoid
             this._pendingRoutes.add(spec.key)
@@ -1680,8 +1693,16 @@ export class RoadSystem {
             g.adj.get(dka)?.delete(dkb); g.adj.get(dkb)?.delete(dka)
             droppedSet.add(key)
         }
-        this._cullCrossingsPass(ring, detour, g, dropEdge, droppedSet)
-        this._cullClearancePass(ring, detour, g, dropEdge, droppedSet)
+        // Degree pass runs FIRST, on the PRISTINE graph: the crossing/clearance passes are
+        // ring-scoped (window-asymmetric by design — the BUG-25 WATCH), so feeding their drops
+        // into the degree decision would inherit that asymmetry and promote it from a cosmetic
+        // map omission to a hard phantom road (measured: seed-67 cull-radius red). Pristine-first
+        // keeps every degree decision a pure fn of the window-invariant graph.
+        this._cullDegreePass(ring, dg, g, dropEdge, droppedSet)
+        if (this._params?.roadGraphCullCrossings ?? true) {
+            this._cullCrossingsPass(ring, detour, g, dropEdge, droppedSet)
+            this._cullClearancePass(ring, detour, g, dropEdge, droppedSet)
+        }
         if (registeredDrops) {   // rebuild the junction-Y incidence index over the survivors
             this._proto.nodeInc.clear()
             for (const [rk, e] of this._network) {
@@ -1780,6 +1801,100 @@ export class RoadSystem {
         }
     }
 
+    // PERF-worldgen degree pass (user connectivity preference): at any node whose surviving graph
+    // degree exceeds roadGraphMaxDegree, drop incident edges LONGEST CHORD FIRST (the long
+    // diagonal is the redundant triangle hypotenuse — the shorter legs already connect it), each
+    // drop allowed only if the edge's endpoints keep a bounded-hop detour AFTER every earlier
+    // drop (detourLive) — connectivity always wins, same guardrail as the other passes. 0 = off.
+    // Deterministic: canonical node order + (detour, chord, key) candidate order. Runs AFTER the
+    // crossing/clearance passes so artifact drops count toward the degree before taste drops.
+    _cullDegreePass(ring, dg, g, dropEdge, droppedSet) {
+        const maxDeg = this._params?.roadGraphMaxDegree ?? 0
+        if (!maxDeg) return
+        // Tight detour cap: only an edge whose endpoints reconnect within THIS many hops is
+        // "redundant enough" to lose to the degree cap. Low = only near-triangle diagonals (some
+        // 4-ways survive — the user wants fewer, not none); toward roadGraphCullMaxHops =
+        // progressively more aggressive thinning.
+        const hopCap = this._params?.roadGraphDegreeDetourHops ?? 4
+        // WINDOW-INVARIANCE (two failed designs taught this — both caught by the cull-radius
+        // gate as phantom map roads, the BUG-25 class):
+        //   v1 decided over the stream window's one-ring → boundary nodes saw window-dependent
+        //      candidate sets.
+        //   v2 decided over the wide graph but updated degrees SEQUENTIALLY → each drop changed
+        //      the next node's decision, an influence chain of unbounded reach that no margin
+        //      absorbs (the QUAL-14 percolation trap).
+        // v3 (this) is ORDER-FREE, every term a bounded-radius pure fn of the post-earlier-passes
+        // graph:
+        //   Phase 1 — CANDIDATES: at every node with degree > maxDeg, its (degree − maxDeg)
+        //     longest incident edges are candidates (pure local rule, 1-hop information).
+        //   Phase 2 — SAFETY: a candidate actually drops iff its endpoints reconnect within
+        //     hopCap hops in (graph − ALL candidates). The subtracted set is itself
+        //     window-invariant, so the check is too; and every dropped edge keeps a detour that
+        //     uses NO dropped edge ⇒ connectivity of the survivors is guaranteed outright.
+        // The stream window then merely APPLIES each decision to the edges it has registered.
+        const pairK = (a, b) => a + '|' + b
+        const ringByPair = new Map()   // dg node-key pair → registered runKey
+        for (const [key, e] of ring) {
+            const ka = dg.key(e.cells[0]), kb = dg.key(e.cells[1])
+            ringByPair.set(pairK(ka, kb), key); ringByPair.set(pairK(kb, ka), key)
+        }
+        // Adjacency + incidence over the PRISTINE dg (this pass runs before the ring-scoped
+        // passes precisely so this graph is window-invariant — see the call-site note).
+        const dgAdj = new Map()
+        const incAll = new Map()   // nodeKey → [{other, cells, chord}]
+        const addAdj = (a, b) => { (dgAdj.get(a) || dgAdj.set(a, new Set()).get(a)).add(b) }
+        for (const [a, b] of dg.edges) {
+            const ka = dg.key(a), kb = dg.key(b)
+            const pa = this._nodePos(a), pb = this._nodePos(b)
+            const chord = Math.hypot(pb.x - pa.x, pb.z - pa.z)
+            addAdj(ka, kb); addAdj(kb, ka)
+            ;(incAll.get(ka) || incAll.set(ka, []).get(ka)).push({ other: kb, cells: [a, b], chord })
+            ;(incAll.get(kb) || incAll.set(kb, []).get(kb)).push({ other: ka, cells: [b, a], chord })
+        }
+        // Phase 1: candidate pairs (canonicalized), no mutation anywhere.
+        const candSet = new Set()
+        const candList = []   // [{ka, kb, cells}] canonical ka < kb, deterministic order
+        for (const nk of [...dgAdj.keys()].sort()) {
+            const excess = dgAdj.get(nk).size - maxDeg
+            if (excess <= 0) continue
+            const cands = incAll.get(nk)
+                .sort((x, y) => (y.chord - x.chord) || (pairK(nk, x.other) < pairK(nk, y.other) ? -1 : 1))
+                .slice(0, excess)
+            for (const c of cands) {
+                const lo = nk < c.other ? nk : c.other, hi = nk < c.other ? c.other : nk
+                if (candSet.has(pairK(lo, hi))) continue
+                candSet.add(pairK(lo, hi)); candSet.add(pairK(hi, lo))
+                candList.push({ ka: nk, kb: c.other, cells: c.cells, lo, hi })
+            }
+        }
+        // Phase 2: BFS in (graph − candidates); drop each candidate whose endpoints reconnect.
+        const detourSafe = (a, b) => {
+            const q = [[a, 0]], seen = new Set([a])
+            while (q.length) {
+                const [u, d] = q.shift()
+                if (d >= hopCap) continue
+                for (const v of dgAdj.get(u) || []) {
+                    if (candSet.has(pairK(u, v))) continue   // no candidate edge may serve as detour
+                    if (v === b) return true
+                    if (!seen.has(v)) { seen.add(v); q.push([v, d + 1]) }
+                }
+            }
+            return false
+        }
+        candList.sort((x, y) => (pairK(x.lo, x.hi) < pairK(y.lo, y.hi) ? -1 : 1))
+        for (const c of candList) {
+            if (!detourSafe(c.ka, c.kb)) continue   // load-bearing → survives the cap
+            const rk = ringByPair.get(pairK(c.ka, c.kb))
+            if (rk && !droppedSet.has(rk)) {
+                dropEdge(rk, c.cells)   // registered here → full drop (network + graph)
+            } else {
+                // Decision applies but the edge isn't registered in this window: record it in the
+                // graph state so junction degrees agree with what wide windows would build.
+                g.adj.get(c.ka)?.delete(c.kb); g.adj.get(c.kb)?.delete(c.ka)
+            }
+        }
+    }
+
     _protoEdgeCost(fromH, toH, horiz, P) {
         const grade = Math.abs(toH - fromH) / horiz
         const over  = Math.max(0, grade - P.maxGrade)
@@ -1851,6 +1966,14 @@ export class RoadSystem {
             // repair — see SELF_CLEAR_MAX_REPAIR in road-carve.js).
             selfClearDist: 2 * halfW + 2 * (pp.roadShoulderWidth ?? 2.5) + (pp.roadSelfClearMargin ?? 3),
             selfClearGap: pp.roadSelfClearGap ?? 80,
+            // PERF corridor two-pass (EXPERIMENTAL — see the block header in road-carve.js):
+            // coarse-lattice pass guiding the fine search ('heuristic' = cost-to-go field,
+            // 'tube' = hard lattice restriction). Off unless the preset opts in.
+            corridorCoarse: pp.roadCorridorTwoPass ? {
+                mode: pp.roadCorridorMode ?? 'heuristic',
+                tubeR: pp.roadCorridorTubeR ?? 100,
+                hScale: pp.roadCorridorHScale ?? 1.0,
+            } : undefined,
             // FEAT-17: pond+skirt no-go discs for this edge's search area as pure DATA (see
             // setWaterNoGo). Baked into the shared spec so the Worker pre-warm job and the
             // synchronous fallback route with the identical exclusion. undefined when unwired.
@@ -2035,6 +2158,26 @@ export class RoadSystem {
         return cl
     }
 
+    // PERF (cold-load) solo-reuse precheck: adopt an edge's cached SOLO route as its FINAL when the
+    // corridor discs never come near it — the constrained search would be solving a problem whose
+    // constraints don't bind (measured: half of all final searches returned a byte-identical copy
+    // of the solo). Sampling at 2 m matches the refit validator's resolution, strictly finer than
+    // the search's endpoint/midpoint rejection sampling, so adoption is CONSERVATIVE: any disc the
+    // search could have seen forces the full search. Not byte-guaranteed vs. searching (a disc can
+    // reshape the flood without touching the winning path); gated by roadSoloReuse until the feel
+    // delta is user-approved. Pure fn of (solo route, discs) → window/worker/cache-invariant.
+    _soloClearOf(cl, discs) {
+        const n = Math.max(1, Math.ceil(cl.length / 2))
+        for (let i = 0; i <= n; i++) {
+            const p = cl.pointAt(cl.length * i / n)
+            for (let d = 0; d < discs.length; d += 3) {
+                const dx = p.x - discs[d], dz = p.z - discs[d + 1]
+                if (dx * dx + dz * dz <= discs[d + 2] * discs[d + 2]) return false
+            }
+        }
+        return true
+    }
+
     _edgeCenterline(c1, c2) {
         if (!this._proto.cls) this._proto.cls = new Map()
         const key = this._edgeClsKey(c1, c2)
@@ -2050,6 +2193,19 @@ export class RoadSystem {
             this._proto.cls.set(key, cl)
             this._pendingRoutes.delete(key)
             return cl
+        }
+        if (this._params?.roadSoloReuse) {
+            // ALWAYS resolve the solo (computing it if missing): adoption must be a pure fn of
+            // the edge, or it becomes WINDOW-DEPENDENT — a wide stream caches solos a narrow one
+            // doesn't, and the same edge routes differently per window (caught by BUNDLE-PARITY:
+            // bake radius 1160 vs gate radius 480 disagreed on one edge). When the discs then
+            // bite we pay solo + final, but most edges' solos are sibling-dep inputs anyway.
+            const solo = this._soloCenterline(c1, c2)
+            if (solo && solo.length > 1e-6 && this._soloClearOf(solo, avoid)) {
+                this._proto.cls.set(key, solo)
+                this._pendingRoutes.delete(key)
+                return solo
+            }
         }
         const spec = this._edgeRouteSpec(c1, c2)
         if (avoid) spec.opts.avoidDiscs = spec.opts.avoidDiscs ? spec.opts.avoidDiscs.concat(avoid) : avoid
@@ -2242,7 +2398,7 @@ export class RoadSystem {
         // test) + window-invariant (BUG-25: both passes decide over the one-ring candidate universe —
         // see _cullNetwork). Re-detect on the culled network so _crossingsByRun / the flatten reflect
         // the survivors.
-        if (this._params?.roadGraphCullCrossings ?? true) {
+        if ((this._params?.roadGraphCullCrossings ?? true) || (this._params?.roadGraphMaxDegree ?? 0) > 0) {
             if (this._cullNetwork(mx0, mx1, mz0, mz1)) { this._junctionsFrom = null; this._detectJunctions() }
         }
 

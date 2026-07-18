@@ -496,10 +496,27 @@ export const RANGER_PARAMS = {
   // the min-radius or no-loop gates. Road-Feel Phase 2: 3000→1500 paired with roadWDeviation 12 (see
   // that knob's note for the measured wins); detour 1.11→1.20 — distance traded for terrain-following.
   // Road-Feel Phase 2 (honest cost model): 1500→800 as part of the shipped preset (see roadWGrade note).
-  roadGraphWTurn: 800,
+  // PERF-worldgen 2026-07-17: 800→1750 user-approved in the same drive test that adopted the
+  // corridor-heuristic router + solo-reuse (the three ship as one preset — retune together).
+  roadGraphWTurn: 1750,
   // roadGraphWAlt: the router's valley-seeking weight (wAlt). Higher = roads dive harder for low ground =
   // more terrain-hugging wander. 2.0 (windiness stage).
   roadGraphWAlt: 2.0,
+  // roadSoloReuse: PERF cold-load — adopt an edge's cached SOLO route as its FINAL when the sibling
+  // corridor discs never come within 2 m-sampled reach of it (the constrained re-search solves a
+  // problem whose constraints don't bind; measured ~50% of final searches return the solo
+  // byte-identical anyway). ×1.24. User-approved 2026-07-17.
+  roadSoloReuse: true,
+  // roadCorridorTwoPass: PERF cold-load — coarse-lattice corridor pass guiding the fine search
+  // (road-carve.js corridor block). roadCorridorMode 'heuristic' feeds the coarse backward-flood
+  // cost-to-go to the fine search as its heuristic (roadCorridorHScale scales it: higher = more
+  // guidance = faster + less optimal); 'tube' hard-restricts the fine lattice to roadCorridorTubeR
+  // metres around the coarse path. ×2.5–3.2 across seeds. User-approved 2026-07-17 at hScale 1.0
+  // (paired with roadGraphWTurn 1750 + roadSoloReuse — the shipped feel preset).
+  roadCorridorTwoPass: true,
+  roadCorridorMode: 'heuristic',
+  roadCorridorHScale: 1.0,
+  roadCorridorTubeR: 100,
   // roadGraphCullCrossings: SAFE-PRUNE the redundant edge of every routed at-grade crossing
   // (they read as ugly mid-span intersections; the graph is planar-abstract so a routed cross means one
   // edge took a redundant excursion). Only dropped if the far endpoint keeps a detour (≤ cull max hops),
@@ -510,6 +527,17 @@ export const RANGER_PARAMS = {
   // accepts bigger detours); lower = keeps more crossings but never risks a long way round. 8 clears all
   // but genuine bridges while connectivity holds.
   roadGraphCullMaxHops: 8,
+  // roadGraphMaxDegree: cap on junction connectivity (2026-07-17/18 user preference: FEWER
+  // 4-ways, not none — β-lune thinning was a no-op here because the blue-noise field makes
+  // Urquhart ≈ RNG already). Nodes above this degree lose incident edges longest-chord-first,
+  // each drop connectivity-safe (drop-aware detour, evaluated live). 0 = off. Pair with
+  // roadGraphDegreeDetourHops to control HOW redundant an edge must be to qualify.
+  roadGraphMaxDegree: 3,
+  // roadGraphDegreeDetourHops: the degree pass may only drop an edge whose endpoints reconnect
+  // within this many hops — the partial-thinning dial. Measured, seed-6 landmark window at
+  // cap 3: hops 2 = no-op (no 4-way there is a trivial triangle diagonal), hops 3 = 4-ways
+  // 6→3 (half thin, half survive load-bearing), hops 8 = all gone (the reverted hard cap).
+  roadGraphDegreeDetourHops: 4,
   // ── FEAT-13 v2 blue-noise anchor + Urquhart knobs (graph mode only) ──
   // roadSiteSpacing: the PRIMARY density knob — cell size (m) the blue-noise anchor sites are seeded over
   // (≈ one site per cell after Poisson thinning), DECOUPLED from the 256 m macro-grid. 640 m ≈ a sparse
