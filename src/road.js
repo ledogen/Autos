@@ -1687,14 +1687,38 @@ export class RoadSystem {
         let registeredDrops = 0
         // Deleting from this._network is a no-op when the culled strand is one-ring-only (not rendered
         // here); g.adj is updated regardless so junction degree reflects the removal identically anywhere.
+        const droppedPairs = new Set()   // node-key pairs of dropped edges (degree pass's live detour)
         const dropEdge = (key, cells) => {
             if (this._network.delete(key)) registeredDrops++
             const dka = g.key(cells[0]), dkb = g.key(cells[1])
             g.adj.get(dka)?.delete(dkb); g.adj.get(dkb)?.delete(dka)
+            droppedPairs.add(dka + '|' + dkb); droppedPairs.add(dkb + '|' + dka)
             droppedSet.add(key)
         }
-        this._cullCrossingsPass(ring, detour, g, dropEdge, droppedSet)
-        this._cullClearancePass(ring, detour, g, dropEdge, droppedSet)
+        // Drop-AWARE detour for the degree pass: same BFS, but never routes through an edge a
+        // previous drop removed — stacked drops at one node must not justify each other — and
+        // hop-capped by `limit` (the degree pass passes a TIGHT cap so only genuinely redundant
+        // edges qualify). The crossing/clearance passes keep the static variant above
+        // (byte-identical behavior).
+        const detourLive = (a, b, limit = maxHops) => {
+            const q = [[a, 0]], seen = new Set([a])
+            while (q.length) {
+                const [u, d] = q.shift()
+                if (d >= limit) continue
+                for (const v of adj.get(u) || []) {
+                    if (u === a && v === b) continue
+                    if (droppedPairs.has(u + '|' + v)) continue
+                    if (v === b) return d + 1
+                    if (!seen.has(v)) { seen.add(v); q.push([v, d + 1]) }
+                }
+            }
+            return -1
+        }
+        if (this._params?.roadGraphCullCrossings ?? true) {
+            this._cullCrossingsPass(ring, detour, g, dropEdge, droppedSet)
+            this._cullClearancePass(ring, detour, g, dropEdge, droppedSet)
+        }
+        this._cullDegreePass(ring, detourLive, g, dropEdge, droppedSet)
         if (registeredDrops) {   // rebuild the junction-Y incidence index over the survivors
             this._proto.nodeInc.clear()
             for (const [rk, e] of this._network) {
@@ -1790,6 +1814,51 @@ export class RoadSystem {
             if (detour(g.key(first[1][0]), g.key(first[1][1])) >= 0) dropEdge(first[0], first[1])
             else if (detour(g.key(second[1][0]), g.key(second[1][1])) >= 0) dropEdge(second[0], second[1])
             // else: both are bridges — keep both, connectivity wins
+        }
+    }
+
+    // PERF-worldgen degree pass (user connectivity preference): at any node whose surviving graph
+    // degree exceeds roadGraphMaxDegree, drop incident edges LONGEST CHORD FIRST (the long
+    // diagonal is the redundant triangle hypotenuse — the shorter legs already connect it), each
+    // drop allowed only if the edge's endpoints keep a bounded-hop detour AFTER every earlier
+    // drop (detourLive) — connectivity always wins, same guardrail as the other passes. 0 = off.
+    // Deterministic: canonical node order + (detour, chord, key) candidate order. Runs AFTER the
+    // crossing/clearance passes so artifact drops count toward the degree before taste drops.
+    _cullDegreePass(ring, detourLive, g, dropEdge, droppedSet) {
+        const maxDeg = this._params?.roadGraphMaxDegree ?? 0
+        if (!maxDeg) return
+        // Tight detour cap: only an edge whose endpoints reconnect within THIS many hops is
+        // "redundant enough" to lose to the degree cap. 2 = only true triangle diagonals (some
+        // 4-ways survive — the user wants fewer, not none); raise toward roadGraphCullMaxHops
+        // for progressively more aggressive thinning.
+        const hopCap = this._params?.roadGraphDegreeDetourHops ?? 2
+        const inc = new Map()   // nodeKey → [{key, cells}] over surviving one-ring edges
+        for (const [key, e] of ring) {
+            if (droppedSet.has(key)) continue
+            for (const c of [e.cells[0], e.cells[1]]) {
+                const nk = g.key(c)
+                ;(inc.get(nk) || inc.set(nk, []).get(nk)).push({ key, cells: e.cells })
+            }
+        }
+        for (const nk of [...inc.keys()].sort()) {
+            let deg = g.adj.get(nk)?.size ?? 0
+            if (deg <= maxDeg) continue
+            const cands = inc.get(nk)
+                .filter(c => !droppedSet.has(c.key))
+                .map(c => {
+                    const a = this._nodePos(c.cells[0]), b = this._nodePos(c.cells[1])
+                    return { ...c, chord: Math.hypot(b.x - a.x, b.z - a.z) }
+                })
+                .sort((x, y) => (y.chord - x.chord) || (x.key < y.key ? -1 : 1))
+            for (const c of cands) {
+                if (deg <= maxDeg) break
+                if (droppedSet.has(c.key)) continue
+                // Detour evaluated at drop time (live): reflects every drop made so far.
+                const det = detourLive(g.key(c.cells[0]), g.key(c.cells[1]), hopCap)
+                if (det < 0) continue   // no tight detour → this edge is load-bearing, keep it
+                dropEdge(c.key, c.cells)
+                deg = g.adj.get(nk)?.size ?? 0
+            }
         }
     }
 
@@ -2296,7 +2365,7 @@ export class RoadSystem {
         // test) + window-invariant (BUG-25: both passes decide over the one-ring candidate universe —
         // see _cullNetwork). Re-detect on the culled network so _crossingsByRun / the flatten reflect
         // the survivors.
-        if (this._params?.roadGraphCullCrossings ?? true) {
+        if ((this._params?.roadGraphCullCrossings ?? true) || (this._params?.roadGraphMaxDegree ?? 0) > 0) {
             if (this._cullNetwork(mx0, mx1, mz0, mz1)) { this._junctionsFrom = null; this._detectJunctions() }
         }
 

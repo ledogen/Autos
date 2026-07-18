@@ -389,6 +389,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(params, 'roadGraphWTurn', 0, 12000, 250).name('Curve Penalty').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphWAlt', 0, 6, 0.1).name('wAlt').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphCullCrossings').name('Cull Crossings').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadGraphMaxDegree', 0, 6, 1).name('Max Junction Degree').onChange(fireRoadParam)
+  roadFolder.add(params, 'roadGraphDegreeDetourHops', 2, 8, 1).name('Degree Cull Strictness').onChange(fireRoadParam)
   // QUAL-14 route clearance: self-clearance contract (D_self = roadWidth + 2·shoulder + margin over
   // arc-separations > gap; violations re-route via the router's no-go repair loop) and the corridor
   // clearance kept between an edge and its higher-priority siblings' solo lanes. Re-routes.
@@ -570,6 +572,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
     roadGraphMaxGrade:     'Steepest grade the graph router permits. Higher = straighter/steeper; lower = windier routes that stay gentle.',
     roadGraphGoalBlend:    'How hard the router aims straight at the destination near the end. Higher = less weaving as it arrives.',
     roadGraphWTurn:        'Curve penalty for the graph router — higher = straighter roads with fewer, gentler turns.',
+    roadGraphMaxDegree:    'Cap junction connectivity: nodes above this degree lose their longest redundant edge (detour-safe). 0 = off; 3 = thin 4-ways.',
+    roadGraphDegreeDetourHops: 'How redundant an edge must be before the degree cap may drop it. 3 = thin about half the 4-ways (measured); 8 = drop any edge with a detour (kills all 4-ways).',
     roadGraphWAlt:         'Reward for staying low / following valleys. Higher = roads hug the low ground more.',
     roadGraphCullCrossings:'Drops redundant crossings from the graph, thinning tangled intersection clusters.',
     roadSelfClearMargin:   'Extra clearance (m) beyond the road+shoulder footprint a road must keep from ITSELF. Higher = wider berth where a road loops back near itself.',
