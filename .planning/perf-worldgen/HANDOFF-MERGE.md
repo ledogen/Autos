@@ -77,9 +77,10 @@ would collide even though the committed histories don't.
 - IndexedDB per-seed cache and story-seed pre-bakes (P0/P5) are **DESCOPED 2026-07-18**
   (user: too much storage; every story run is a random seed — a persistent per-seed cache
   never re-hits). The `indexedDB.deleteDatabase('rangersim-routes')` cleanup line in main.js
-  stays. Random-seed runs mean FIRST-generation cost is the whole cost: remaining levers are
-  P3 (wHeur 2.0, needs re-measure against the corridor router) and P4 (skip the fine search
-  when the coarse flood proves the goal unreachable — small, free, no feel risk).
+  stays. Random-seed runs mean FIRST-generation cost is the whole cost. P3 re-measured DEAD
+  (×1.00 under the corridor field); P4 unreachable-skip SHIPPED (no-op on tested windows,
+  structural worst-case insurance, byte-identical). The routing-perf effort is CLOSED —
+  remaining load-time work, if any, is outside routing.
 - `test/_prof-stats.mjs`, `test/_count-junctions.mjs`, `test/_gen-default-route-cache.mjs`
   are `_`-prefixed workbench scripts (not gates); `dump-network.mjs`/`feel-diff.mjs` are the
   durable feel-comparison tools.

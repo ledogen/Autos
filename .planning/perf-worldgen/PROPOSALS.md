@@ -108,18 +108,23 @@ Multi-seed (landmark windows, vs each seed's own baseline): seed 42 **×3.16**
 sample — volatile by construction) moved +26 pt on 42 and −15 pt on 1337 while grade p95
 stayed within ±1.3 pt — check 42's worst spot on the map during the drive test.
 
-### P3 — wHeur 1.5 → 2.0 (`roadArcHeurWeight`). ×1.37, smallest feel delta of the lot.
+### P3 — wHeur 1.5 → 2.0. **DEAD 2026-07-18: re-measured on the shipped corridor defaults —
+×1.00, exactly as the interaction warning below predicted (the flood field swamps the distance
+floor wHeur scales). 52/52 same edges, 51/52 byte-identical. Not shipped.** Original
+(pre-corridor) measurement kept below for the record.
 Topology identical, 40/43 runs byte-identical, 3 runs move (worst 51 m), character Δ ≤ 1 pt.
 Cheapest approval: no code, one param. Stacks with P1 (multiplicative, both touch different
 waste). Does NOT stack well with P2 (P2's field replaces the distance heuristic's role;
 re-measure the pair if P2 is adopted).
 
-### P4 — Prune the not-found tail. 13 searches/stream burn caps without reaching the goal
-(some at the full 300 k maxNodes ≈ 0.7 s each). Options, all deterministic: (a) escape-hatch
-earlier via a stall detector (bestD2 not improving for N expansions); (b) in corridor-heuristic
-mode the backward flood already knows unreachability — skip the fine search outright when the
-start cell's field is Infinity. (b) is free with P2 and exact; (a) needs feel-diff validation.
-Est. ~5–10% on top of whatever else ships.
+### P4 — Prune the not-found tail. **SHIPPED 2026-07-18 as insurance, measured no-op today:**
+variant (b) — the corridor flood's start-cell Infinity skips the doomed guided+full searches
+and jumps straight to the escape-hatch retry (or the best-effort full search when no advisory
+discs exist). A/B on current defaults: identical expansions — the corridor field already
+guides every search home on the tested windows; the original 13 doomed searches/stream were a
+pre-corridor phenomenon. Kept because it structurally caps the worst case (self-clear repair
+discs walling a goal = the old 16-retry mountain edges) at one cheap lookup, byte-identical
+when dormant (52/52 feel-diff). Variant (a) stall detector: NOT pursued.
 
 ### P5 — Pre-baked route bundles for curated story seeds. **DEAD by the same 2026-07-18
 decision:** every story run is a random seed, so there is no curated list to bake.

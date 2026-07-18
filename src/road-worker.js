@@ -453,12 +453,30 @@ function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             const field = arcPrimitiveConnect(bx, bz, ax, az, heightFn,
                 Object.assign({}, coarseOpts, { _costFieldOut: true, startHeading: undefined }))
             if (field) {
-                const fine = arcPrimitiveConnect(ax, az, bx, bz, heightFn, Object.assign({}, opts, {
-                    _hField: field.hF, _hMinX: field.hMinX, _hMinZ: field.hMinZ,
-                    _hCell: field.hCell, _hNX: field.hNX, _hNZ: field.hNZ,
-                    _hScale: cc.hScale ?? 1.0,
-                }))
-                if (fine) return fine   // null = heuristic-guided search never captured the goal
+                // P4 unreachable-skip: the flood ran to exhaustion, so an Infinity at the START
+                // cell means no coarse path goal→start exists under the current discs — the
+                // guided fine search (and the full fallback) would burn their node caps and fail.
+                // Skip straight to what that failure chain would do anyway: with corridor discs
+                // present, the escape hatch's drop-the-advisory-discs retry (re-floods without
+                // them); without, the full disc-laden search below, whose best-effort partial
+                // chain is today's output for genuinely walled goals. Approximate only in the
+                // coarse-blocked-but-fine-passable direction (a gap narrower than the coarse
+                // cell) — feel-diff-verified no network change on the seed set.
+                let sx = Math.round((ax - field.hMinX) / field.hCell)
+                if (sx < 0) sx = 0; else if (sx > field.hNX - 1) sx = field.hNX - 1
+                let sz = Math.round((az - field.hMinZ) / field.hCell)
+                if (sz < 0) sz = 0; else if (sz > field.hNZ - 1) sz = field.hNZ - 1
+                if (field.hF[sz * field.hNX + sx] === Infinity) {
+                    if (opts.avoidDiscs && opts.avoidDiscs.length) return arcPrimitiveConnect(ax, az, bx, bz, heightFn,
+                        Object.assign({}, opts, { avoidDiscs: undefined }))
+                } else {
+                    const fine = arcPrimitiveConnect(ax, az, bx, bz, heightFn, Object.assign({}, opts, {
+                        _hField: field.hF, _hMinX: field.hMinX, _hMinZ: field.hMinZ,
+                        _hCell: field.hCell, _hNX: field.hNX, _hNZ: field.hNZ,
+                        _hScale: cc.hScale ?? 1.0,
+                    }))
+                    if (fine) return fine   // null = heuristic-guided search never captured the goal
+                }
             }
             return arcPrimitiveConnect(ax, az, bx, bz, heightFn, Object.assign({}, opts, { corridorCoarse: undefined }))
         }
