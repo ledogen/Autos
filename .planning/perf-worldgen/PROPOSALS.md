@@ -7,7 +7,8 @@
 > BUNDLE-SIG + PARITY green. Solo-reuse gained a window-invariance fix during the rebake:
 > adoption now ALWAYS resolves the edge's own solo (pure per-edge fn) — an adopted-vs-searched
 > decision must never depend on what a wider stream window happened to cache.
-> P0 (IndexedDB cache) is the next build item; P3/P4/P5 remain open options.
+> **2026-07-18:** P0 + P5 DESCOPED (random seed every run — persistence never re-hits);
+> junction thinning shipped default-on. Open: P3 (re-measure) + P4.
 
 Session 2026-07-16, worktree `CarGame-perf-worldgen`. All numbers measured on the M4 Air,
 headless node harness, seed 6 unless noted. Two windows used: the **bench window** (spawn-style
@@ -62,7 +63,12 @@ adoption. `test/road-character.mjs --json` remains the deep-dive tool; these two
 
 ## Proposals, ranked
 
-### P0 — Per-seed persistent route cache (IndexedDB). No feel risk. Repeat loads ≈ instant.
+### P0 — Per-seed persistent route cache (IndexedDB). **DESCOPED 2026-07-18 (user):** too
+much data storage, and story-mode runs will use a "random" seed every run — a per-seed
+persistent cache never gets a second hit. The 2026-07-06 "no IndexedDB hoard" decision
+stands after all; the in-session Map + bundled default-seed asset remain the only caches.
+Consequence: FIRST-generation cost is THE cost — the router speedups (shipped) and P4 are
+the whole game. Original proposal kept below for the record.
 `exportRouteCache()`/`importRouteCache()` + `routeCacheSig()` already exist; an in-session Map
 already does this for seed toggles, and the default seed ships as a bundled asset. Add an IDB
 layer keyed by `routeCacheSig(seed, params)` (same staleness guard: sig mismatch = miss).
@@ -115,9 +121,8 @@ mode the backward flood already knows unreachability — skip the fine search ou
 start cell's field is Infinity. (b) is free with P2 and exact; (a) needs feel-diff validation.
 Est. ~5–10% on top of whatever else ships.
 
-### P5 — Pre-baked route bundles for curated story seeds. If story-mode region worlds come from
-a curated seed list (FEAT-28 design question — user's to answer), bake their route caches at
-commit time like the default world. First-ever load of a story region ≈ instant. Zero feel risk.
+### P5 — Pre-baked route bundles for curated story seeds. **DEAD by the same 2026-07-18
+decision:** every story run is a random seed, so there is no curated list to bake.
 
 ## Quality presets (low / med / high / ultra)
 

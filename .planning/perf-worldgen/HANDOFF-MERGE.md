@@ -74,12 +74,12 @@ would collide even though the committed histories don't.
 
 ## Known follow-ups (not blockers)
 
-- P0 IndexedDB per-seed route cache — next build item (user re-approved persistence
-  2026-07-16; supersedes the 2026-07-06 "no hoard" decision; a leftover
-  `indexedDB.deleteDatabase('rangersim-routes')` cleanup line in main.js should be removed
-  when it lands).
-- PROPOSALS.md P3 (wHeur 2.0), P4 (not-found pruning — free with corridor mode: skip fine
-  search when the flood never reaches the start), P5 (story-seed pre-bakes) remain open.
+- IndexedDB per-seed cache and story-seed pre-bakes (P0/P5) are **DESCOPED 2026-07-18**
+  (user: too much storage; every story run is a random seed — a persistent per-seed cache
+  never re-hits). The `indexedDB.deleteDatabase('rangersim-routes')` cleanup line in main.js
+  stays. Random-seed runs mean FIRST-generation cost is the whole cost: remaining levers are
+  P3 (wHeur 2.0, needs re-measure against the corridor router) and P4 (skip the fine search
+  when the coarse flood proves the goal unreachable — small, free, no feel risk).
 - `test/_prof-stats.mjs`, `test/_count-junctions.mjs`, `test/_gen-default-route-cache.mjs`
   are `_`-prefixed workbench scripts (not gates); `dump-network.mjs`/`feel-diff.mjs` are the
   durable feel-comparison tools.
