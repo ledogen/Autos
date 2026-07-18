@@ -526,12 +526,12 @@ export const RANGER_PARAMS = {
   // Urquhart ≈ RNG already). Nodes above this degree lose incident edges longest-chord-first,
   // each drop connectivity-safe (drop-aware detour, evaluated live). 0 = off. Pair with
   // roadGraphDegreeDetourHops to control HOW redundant an edge must be to qualify.
-  roadGraphMaxDegree: 0,
+  roadGraphMaxDegree: 3,
   // roadGraphDegreeDetourHops: the degree pass may only drop an edge whose endpoints reconnect
   // within this many hops — the partial-thinning dial. Measured, seed-6 landmark window at
   // cap 3: hops 2 = no-op (no 4-way there is a trivial triangle diagonal), hops 3 = 4-ways
   // 6→3 (half thin, half survive load-bearing), hops 8 = all gone (the reverted hard cap).
-  roadGraphDegreeDetourHops: 3,
+  roadGraphDegreeDetourHops: 4,
   // ── FEAT-13 v2 blue-noise anchor + Urquhart knobs (graph mode only) ──
   // roadSiteSpacing: the PRIMARY density knob — cell size (m) the blue-noise anchor sites are seeded over
   // (≈ one site per cell after Poisson thinning), DECOUPLED from the 256 m macro-grid. 640 m ≈ a sparse

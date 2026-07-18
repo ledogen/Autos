@@ -1687,38 +1687,22 @@ export class RoadSystem {
         let registeredDrops = 0
         // Deleting from this._network is a no-op when the culled strand is one-ring-only (not rendered
         // here); g.adj is updated regardless so junction degree reflects the removal identically anywhere.
-        const droppedPairs = new Set()   // node-key pairs of dropped edges (degree pass's live detour)
         const dropEdge = (key, cells) => {
             if (this._network.delete(key)) registeredDrops++
             const dka = g.key(cells[0]), dkb = g.key(cells[1])
             g.adj.get(dka)?.delete(dkb); g.adj.get(dkb)?.delete(dka)
-            droppedPairs.add(dka + '|' + dkb); droppedPairs.add(dkb + '|' + dka)
             droppedSet.add(key)
         }
-        // Drop-AWARE detour for the degree pass: same BFS, but never routes through an edge a
-        // previous drop removed — stacked drops at one node must not justify each other — and
-        // hop-capped by `limit` (the degree pass passes a TIGHT cap so only genuinely redundant
-        // edges qualify). The crossing/clearance passes keep the static variant above
-        // (byte-identical behavior).
-        const detourLive = (a, b, limit = maxHops) => {
-            const q = [[a, 0]], seen = new Set([a])
-            while (q.length) {
-                const [u, d] = q.shift()
-                if (d >= limit) continue
-                for (const v of adj.get(u) || []) {
-                    if (u === a && v === b) continue
-                    if (droppedPairs.has(u + '|' + v)) continue
-                    if (v === b) return d + 1
-                    if (!seen.has(v)) { seen.add(v); q.push([v, d + 1]) }
-                }
-            }
-            return -1
-        }
+        // Degree pass runs FIRST, on the PRISTINE graph: the crossing/clearance passes are
+        // ring-scoped (window-asymmetric by design — the BUG-25 WATCH), so feeding their drops
+        // into the degree decision would inherit that asymmetry and promote it from a cosmetic
+        // map omission to a hard phantom road (measured: seed-67 cull-radius red). Pristine-first
+        // keeps every degree decision a pure fn of the window-invariant graph.
+        this._cullDegreePass(ring, dg, g, dropEdge, droppedSet)
         if (this._params?.roadGraphCullCrossings ?? true) {
             this._cullCrossingsPass(ring, detour, g, dropEdge, droppedSet)
             this._cullClearancePass(ring, detour, g, dropEdge, droppedSet)
         }
-        this._cullDegreePass(ring, detourLive, g, dropEdge, droppedSet)
         if (registeredDrops) {   // rebuild the junction-Y incidence index over the survivors
             this._proto.nodeInc.clear()
             for (const [rk, e] of this._network) {
@@ -1824,40 +1808,89 @@ export class RoadSystem {
     // drop (detourLive) — connectivity always wins, same guardrail as the other passes. 0 = off.
     // Deterministic: canonical node order + (detour, chord, key) candidate order. Runs AFTER the
     // crossing/clearance passes so artifact drops count toward the degree before taste drops.
-    _cullDegreePass(ring, detourLive, g, dropEdge, droppedSet) {
+    _cullDegreePass(ring, dg, g, dropEdge, droppedSet) {
         const maxDeg = this._params?.roadGraphMaxDegree ?? 0
         if (!maxDeg) return
         // Tight detour cap: only an edge whose endpoints reconnect within THIS many hops is
-        // "redundant enough" to lose to the degree cap. 2 = only true triangle diagonals (some
-        // 4-ways survive — the user wants fewer, not none); raise toward roadGraphCullMaxHops
-        // for progressively more aggressive thinning.
-        const hopCap = this._params?.roadGraphDegreeDetourHops ?? 2
-        const inc = new Map()   // nodeKey → [{key, cells}] over surviving one-ring edges
+        // "redundant enough" to lose to the degree cap. Low = only near-triangle diagonals (some
+        // 4-ways survive — the user wants fewer, not none); toward roadGraphCullMaxHops =
+        // progressively more aggressive thinning.
+        const hopCap = this._params?.roadGraphDegreeDetourHops ?? 4
+        // WINDOW-INVARIANCE (two failed designs taught this — both caught by the cull-radius
+        // gate as phantom map roads, the BUG-25 class):
+        //   v1 decided over the stream window's one-ring → boundary nodes saw window-dependent
+        //      candidate sets.
+        //   v2 decided over the wide graph but updated degrees SEQUENTIALLY → each drop changed
+        //      the next node's decision, an influence chain of unbounded reach that no margin
+        //      absorbs (the QUAL-14 percolation trap).
+        // v3 (this) is ORDER-FREE, every term a bounded-radius pure fn of the post-earlier-passes
+        // graph:
+        //   Phase 1 — CANDIDATES: at every node with degree > maxDeg, its (degree − maxDeg)
+        //     longest incident edges are candidates (pure local rule, 1-hop information).
+        //   Phase 2 — SAFETY: a candidate actually drops iff its endpoints reconnect within
+        //     hopCap hops in (graph − ALL candidates). The subtracted set is itself
+        //     window-invariant, so the check is too; and every dropped edge keeps a detour that
+        //     uses NO dropped edge ⇒ connectivity of the survivors is guaranteed outright.
+        // The stream window then merely APPLIES each decision to the edges it has registered.
+        const pairK = (a, b) => a + '|' + b
+        const ringByPair = new Map()   // dg node-key pair → registered runKey
         for (const [key, e] of ring) {
-            if (droppedSet.has(key)) continue
-            for (const c of [e.cells[0], e.cells[1]]) {
-                const nk = g.key(c)
-                ;(inc.get(nk) || inc.set(nk, []).get(nk)).push({ key, cells: e.cells })
+            const ka = dg.key(e.cells[0]), kb = dg.key(e.cells[1])
+            ringByPair.set(pairK(ka, kb), key); ringByPair.set(pairK(kb, ka), key)
+        }
+        // Adjacency + incidence over the PRISTINE dg (this pass runs before the ring-scoped
+        // passes precisely so this graph is window-invariant — see the call-site note).
+        const dgAdj = new Map()
+        const incAll = new Map()   // nodeKey → [{other, cells, chord}]
+        const addAdj = (a, b) => { (dgAdj.get(a) || dgAdj.set(a, new Set()).get(a)).add(b) }
+        for (const [a, b] of dg.edges) {
+            const ka = dg.key(a), kb = dg.key(b)
+            const pa = this._nodePos(a), pb = this._nodePos(b)
+            const chord = Math.hypot(pb.x - pa.x, pb.z - pa.z)
+            addAdj(ka, kb); addAdj(kb, ka)
+            ;(incAll.get(ka) || incAll.set(ka, []).get(ka)).push({ other: kb, cells: [a, b], chord })
+            ;(incAll.get(kb) || incAll.set(kb, []).get(kb)).push({ other: ka, cells: [b, a], chord })
+        }
+        // Phase 1: candidate pairs (canonicalized), no mutation anywhere.
+        const candSet = new Set()
+        const candList = []   // [{ka, kb, cells}] canonical ka < kb, deterministic order
+        for (const nk of [...dgAdj.keys()].sort()) {
+            const excess = dgAdj.get(nk).size - maxDeg
+            if (excess <= 0) continue
+            const cands = incAll.get(nk)
+                .sort((x, y) => (y.chord - x.chord) || (pairK(nk, x.other) < pairK(nk, y.other) ? -1 : 1))
+                .slice(0, excess)
+            for (const c of cands) {
+                const lo = nk < c.other ? nk : c.other, hi = nk < c.other ? c.other : nk
+                if (candSet.has(pairK(lo, hi))) continue
+                candSet.add(pairK(lo, hi)); candSet.add(pairK(hi, lo))
+                candList.push({ ka: nk, kb: c.other, cells: c.cells, lo, hi })
             }
         }
-        for (const nk of [...inc.keys()].sort()) {
-            let deg = g.adj.get(nk)?.size ?? 0
-            if (deg <= maxDeg) continue
-            const cands = inc.get(nk)
-                .filter(c => !droppedSet.has(c.key))
-                .map(c => {
-                    const a = this._nodePos(c.cells[0]), b = this._nodePos(c.cells[1])
-                    return { ...c, chord: Math.hypot(b.x - a.x, b.z - a.z) }
-                })
-                .sort((x, y) => (y.chord - x.chord) || (x.key < y.key ? -1 : 1))
-            for (const c of cands) {
-                if (deg <= maxDeg) break
-                if (droppedSet.has(c.key)) continue
-                // Detour evaluated at drop time (live): reflects every drop made so far.
-                const det = detourLive(g.key(c.cells[0]), g.key(c.cells[1]), hopCap)
-                if (det < 0) continue   // no tight detour → this edge is load-bearing, keep it
-                dropEdge(c.key, c.cells)
-                deg = g.adj.get(nk)?.size ?? 0
+        // Phase 2: BFS in (graph − candidates); drop each candidate whose endpoints reconnect.
+        const detourSafe = (a, b) => {
+            const q = [[a, 0]], seen = new Set([a])
+            while (q.length) {
+                const [u, d] = q.shift()
+                if (d >= hopCap) continue
+                for (const v of dgAdj.get(u) || []) {
+                    if (candSet.has(pairK(u, v))) continue   // no candidate edge may serve as detour
+                    if (v === b) return true
+                    if (!seen.has(v)) { seen.add(v); q.push([v, d + 1]) }
+                }
+            }
+            return false
+        }
+        candList.sort((x, y) => (pairK(x.lo, x.hi) < pairK(y.lo, y.hi) ? -1 : 1))
+        for (const c of candList) {
+            if (!detourSafe(c.ka, c.kb)) continue   // load-bearing → survives the cap
+            const rk = ringByPair.get(pairK(c.ka, c.kb))
+            if (rk && !droppedSet.has(rk)) {
+                dropEdge(rk, c.cells)   // registered here → full drop (network + graph)
+            } else {
+                // Decision applies but the edge isn't registered in this window: record it in the
+                // graph state so junction degrees agree with what wide windows would build.
+                g.adj.get(c.ka)?.delete(c.kb); g.adj.get(c.kb)?.delete(c.ka)
             }
         }
     }
