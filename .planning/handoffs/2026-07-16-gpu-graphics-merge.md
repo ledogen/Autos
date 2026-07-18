@@ -1,121 +1,119 @@
 # Merge handoff — feature/gpu-graphics (PERF-21 GPU optimization pass)
 
-> **2026-07-17 addendum (user-feedback round, commits `ccac49e` + `456f169`):** the impostor bake
-> ortho frustum was written in WORLD space (camera-space is correct) — every tile captured the
-> tree's top half only, planting canopies at ground level ("buried billboards"). Fixed + verified
-> via new CDP handles `__impAtlasDump` / `__impAtlasStats` (keep these — they're the fast probe
-> for any future atlas bug). Also per user: boulders no longer billboard; sun-side brightness
-> modulation on billboards (uSunXZ/uLitK); propRing == terrain ring on all tiers (billboards to
-> full draw distance, Ultra 4); baked sky gained a below-horizon fog-coloured ground-fill disc
-> (GROUND_FILL_LIFT in sky.js is the eyeball-tuned brightness constant).
-
-**Branch:** `feature/gpu-graphics` (worktree `../CarGame-gpu-graphics`), based on main `4ad7a9f`
-(includes the causeway merge + the 32a438f tunable-atlas commit).
+**Branch:** `feature/gpu-graphics` (worktree `../CarGame-gpu-graphics`), 10 commits, rebased onto
+main `7366b70` (2026-07-18). All work user-reviewed live over three feedback rounds; the final
+prop-LOD design below is the user's settled call.
 **Scope:** GPU-side only — lighting, shadows, sky, props, dust, quality tiers. No routing, carve,
-physics, or world-gen changes. Written for the merge agent; a world-gen/CPU worktree is in flight
-in parallel — overlap analysis at the bottom.
+physics, or world-gen changes. A world-gen/CPU worktree (corridor-heuristic router etc.) is in
+flight in parallel — overlap analysis at the bottom.
 
-## What changed and why
+## Final prop-LOD design (the biggest piece — read this before touching props)
 
-### 1. Baked prop-shadow stream-in hitch — root-caused and fixed (`prop-shadow-bake.js`, `prop-system.js`)
-Each tile bake rendered the ENTIRE live prop population (~25k instances at Ultra; scissor clips
-rasterization, not vertex work) × up to 8 tiles per stream-in frame. Now each bake renders a
-per-tile scratch scene holding only the 3×3-chunk neighbourhood (~1k instances): `setTileSource`
-hook on ShadowBakeSystem, wired automatically by `propSystem.setShadowBake`. Falls back to the old
-full-scene path if unwired — headless gates unaffected.
+Three chunk-ring zones around the camera, per quality tier (`QUALITY_PRESETS`, main.js):
 
-### 2. Shadow atlas RGBA8 → R8 (`prop-shadow-bake.js`, `terrain.js` one line)
-The atlas is a 1-channel mask; RGBA8 wasted 4× VRAM (Ultra 151 MB → 38 MB). Terrain samples `.r`
-now; the bake projection shader writes red. **Terrain.js has exactly one changed line (`.a`→`.r`
-at the atlas 5-tap)** — trivial to reconcile if the world-gen branch touches the same region.
+| Zone | Radius (chunks) | Trees (aspen/pine) | Boulders | Bushes / rocks / small rocks / logs |
+|------|-----------------|--------------------|----------|--------------------------------------|
+| near | ≤ `lodRing` (L0/N1/H2/U2) | full 3D | full 3D | full 3D |
+| far  | ≤ `propRing` (L1/N2/H3/U4) | **billboard impostors** | full 3D | full 3D |
+| billboard-only | ≤ `bbRing` = ring+warm (L2/N3/H6/U8) | billboard impostors | **full 3D** (`BBONLY_3D_CATS`) | **not rendered** (sub-pixel at that range) |
 
-### 3. Partial instance-buffer uploads (`prop-system.js`)
-Streaming one chunk re-uploaded whole per-species capacity buffers (256 KB each). Dirty-span
-tracking + `addUpdateRange` uploads only the touched slot range. Note: ranges are only ADDED at
-flush (never cleared) — the renderer merges + clears on upload; clearing at flush would drop spans
-when two flushes land between renders.
+- Impostors: one instanced-quad mesh per tree variant sampling a per-variant atlas
+  (`src/props/prop-impostor.js`), baked in-browser at boot with the live sky-look lighting,
+  re-baked on look change (`skySystem.onLookApplied`). Quads are cylindrical billboards built
+  along each tree's OWN trunk axis (`aAxis` from the placement matrix) so the parametric lean
+  survives the LOD swap; sun-side brightness modulation (`lod.litGain`, default 4.0, live GUI
+  slider) approximates the lit face; quads pull 0.2×size toward the camera so cross-slope
+  terrain doesn't depth-clip them ("buried" look).
+- Boulders NEVER billboard (wide horizontal masses read badly as vertical quads from above) but
+  persist as 3D to full `bbRing` distance — landmark visibility, ≤200 world-wide.
+- Billboard-only chunks take **no shadow-bake tiles** (beyond the QUAL-18 fade reach; also keeps
+  Ultra's radius from wrapping the 12×12 toroidal atlas). They bake on promotion into `propRing`.
+- The outer ring streams ONLY when impostors are active → headless gates see the classic
+  full-prop ring, byte-identical behavior. Tree capacities raised 4000→8000 per species for the
+  Ultra 17²-chunk worst case.
 
-### 4. Baked sky (`sky.js`)
-The Preetham shader was a full-screen per-frame fragment cost with a static sun. Default is now
-baked mode: sky rendered once per look change into a HalfFloat cubemap (`scene.background`).
-Live mode kept (GUI: Sky folder → "baked sky (perf)"); bake res selectable (256/512/1024, default
-512). Sun disc is ~3 texels at 512 — if the user wants a crisper disc on Ultra, flip Ultra to live
-or 1024 (see tier proposals). New `onLookApplied` hook on SkySystem (used by impostor rebake).
+## Everything else on the branch
 
-### 5. Prop billboard impostor LOD — FEAT-06c shipped (`prop-impostor.js` NEW, `prop-system.js`, `data/flora.js`, `prop-debug.js`)
-Trees/boulders beyond `lodRing` chunks of the camera render as single cylindrical-billboard quads
-sampling a per-variant atlas baked in-browser at boot (lit by the live sky look via
-`skySystem.sunDirection` — NOT `sun.position`, which is a boot placeholder). Chunk-granular
-re-pooling from retained placement records; baked ground shadows preserved (bake tile source reads
-the records, not the pools). Headless-inert: without `setImpostors(renderer, …)` everything renders
-3D exactly as before. A/B at Normal: −23% scene triangles at a static viewpoint, more in forest.
-Ticket `feat-prop-lod-impostors.md` moved to completed (Mid-tier + cross-fade descoped).
+1. **Baked-shadow stream-in hitch — root-caused and fixed** (`prop-shadow-bake.js`,
+   `prop-system.js`): each tile bake was re-vertex-shading ALL ~25k live prop instances × 8
+   tiles/frame. Now a per-tile scratch scene (3×3 chunk neighbourhood, ~1k instances) via
+   `setTileSource`, fed from retained per-chunk placement records — so billboarded trees keep
+   their baked ground shadows. Falls back to the old full-scene path if unwired (headless).
+2. **Shadow atlas RGBA8 → R8** (Ultra 151 MB → 38 MB). `terrain.js` has exactly ONE changed
+   line: the atlas sample `.a`→`.r` (search `PERF-21`).
+3. **Partial instance uploads**: dirty-span `addUpdateRange` instead of full-capacity buffer
+   re-uploads per chunk stream. Never `clearUpdateRanges` at flush — the renderer merges+clears
+   on upload; clearing would drop spans when two flushes land between renders.
+4. **Baked sky** (`sky.js`): Preetham rendered once per look change into a HalfFloat cubemap
+   background (was a full-screen per-frame fragment cost). Live mode + bake res in the Sky GUI.
+   Plus a below-horizon fog-coloured ground-fill disc in the bake scene (`GROUND_FILL_LIFT`
+   eyeball constant) so the world doesn't read as a floating tile from altitude.
+5. **Vehicle spotlights** (`vehicle-model.js`): `visible=false` at intensity 0 (6 spots + 2
+   cookie samples were in every lit fragment's loop while dark); light-count shader variants
+   precompiled at boot via `prewarmLightPrograms`/compileAsync (~55 programs post-boot is
+   expected, not a leak).
+6. **Dust**: 180 per-Sprite draw calls → 1 instanced billboard mesh. Custom ShaderMaterials must
+   include `tonemapping_fragment`/`colorspace_fragment` manually (built-ins auto-append; dust and
+   the impostor shader both do this).
+7. **Tickets**: FEAT-06c (prop impostors) closed with resolution; PERF-22 (terrain geometry LOD
+   — the last big vertex lever) and QUAL-20 (bake impostors from the sun's azimuth for a true lit
+   face — deferred by user) opened.
 
-### 6. Vehicle spotlight culling + program prewarm (`vehicle-model.js`, `main.js`)
-Six SpotLights at intensity 0 still occupied every lit material's per-fragment spotlight loop (+2
-cookie samples). Spots now set `visible=false` at zero intensity; the light-count shader variants
-(lamps off / brake / night / reverse) are precompiled at boot with `compileAsync`
-(`prewarmLightPrograms`) so toggling never compiles mid-drive. ~55 programs after boot is expected.
+## Debug/CDP handles added (keep — they're the fast probe for atlas bugs)
 
-### 7. Dust: 180 draw calls → 1 (`dust.js`)
-Sprite pool replaced with one instanced billboard mesh (custom shader with fog + ACES chunks —
-ShaderMaterial does not auto-append tonemapping; without them dust would read brighter than the
-SpriteMaterial it replaced). Emission/physics logic untouched.
+- `window.__impAtlasDump()` → PNG data-URL of the impostor atlas.
+- `window.__impAtlasStats()` → per-tile content bounds vs expected (a healthy tile spans
+  v ≈ [0.01, 0.99]; the "buried billboards" bug measured [0, 0.5] — camera-space vs world-space
+  ortho frustum, see 456f169).
 
-### 8. Quality tiers (`main.js` QUALITY_PRESETS)
-New `lodRing` per tier; `propRing` extended where billboards make it near-free:
+## Files touched
 
-| Tier   | lodRing (3D chunks) | propRing (was) | net effect |
-|--------|--------------------|----------------|------------|
-| Low    | 1                  | 2 (1)          | same 3D as before + NEW billboard ring |
-| Normal | 1                  | 2 (2)          | outer prop ring → billboards (~64% of its tree tris) |
-| High   | 2                  | 3 (2)          | same 3D as before + NEW billboard ring |
-| Ultra  | 2                  | 3 (3)          | outer prop ring → billboards |
-
-## Files touched (this branch, both commits + this doc's commit)
-
-- `src/props/prop-shadow-bake.js` — tile source hook, R8 atlas, comment updates
-- `src/props/prop-system.js` — placement records, dual pools, LOD sync, partial uploads, scratch bake scene
-- `src/props/prop-impostor.js` — NEW
-- `src/props/prop-debug.js` — "3D prop ring" slider
-- `src/sky.js` — baked mode, setMode/setBakeRes, onLookApplied hook, GUI rows
+- `src/props/prop-system.js` — placement records, 3-mode pools, LOD sync, partial uploads,
+  scratch bake scene, BBONLY_3D_CATS, capacities
+- `src/props/prop-impostor.js` — NEW (atlas bake + billboard materials + debug handles)
+- `src/props/prop-shadow-bake.js` — tile-source hook, R8 atlas
+- `src/props/prop-debug.js` — '3D prop ring' + 'billboard lit gain' sliders
+- `src/sky.js` — baked mode, ground fill, onLookApplied hook, GUI rows
 - `src/dust.js` — instanced rewrite
 - `src/vehicle-model.js` — spot visibility + prewarmLightPrograms
-- `src/terrain.js` — ONE line (atlas sample `.a`→`.r`)
-- `src/water-render.js` — stale "not wired" header comment fixed
-- `src/main.js` — destructure prewarmLightPrograms + boot call; `_syncImpostors` hook +
-  applyPropImpostors (boot / GUI rebuild / seed rebuild); QUALITY_PRESETS lodRing + applyQuality push
-- `data/flora.js` — `lod: { ring3d }` param block
-- `.planning/todos/` — FEAT-06c closed, PERF-22 (terrain geometry LOD) opened
+- `src/main.js` — QUALITY_PRESETS (lodRing/bbRing/propRing), applyQuality pushes, `_bbRing`,
+  applyPropImpostors + `_syncImpostors` hook (boot / GUI rebuild / seed rebuild), prewarm call,
+  loop passes `_bbRing` to propSystem.update
+- `src/terrain.js` — ONE line (`.a`→`.r`)
+- `src/water-render.js` — stale header comment only
+- `data/flora.js` — `lod: { ring3d, litGain }` block
+- `.planning/` — this handoff, tickets
 
 ## Overlap risks with the world-gen/CPU worktree
 
-- **`src/terrain.js`**: my single line at the shadow-atlas sample (search `PERF-21`). If their
-  branch rewrites the terrain fragment shader region, keep BOTH: their structure + `.r` swatch.
-- **`src/main.js`**: my edits are additive and localized (QUALITY_PRESETS row values, one block in
-  applyQuality, the applyPropImpostors block after applyPropShadowMode, one line in the seed-rebuild
-  prop block, prewarm call after the first rAF). Conflicts should resolve by taking both sides.
-- **`data/flora.js` / `data/ranger.js`**: flora gained the `lod` block at the tail; ranger untouched.
-- Everything under `src/props/`, `sky.js`, `dust.js`, `vehicle-model.js` should be mine alone this cycle.
+- **`src/terrain.js`**: my single line at the shadow-atlas 5-tap. If their branch touches that
+  shader region, keep their structure + my `.r`.
+- **`src/main.js`**: additive, localized edits (preset table values, one block in applyQuality,
+  the applyPropImpostors block after applyPropShadowMode, one line each in the seed-rebuild prop
+  block / GUI rebuild / frame-loop update call, prewarm call after the first rAF). Take both sides.
+- **`data/flora.js`**: `lod` block appended at the tail.
+- If their branch re-baked the route cache / changed road params: no interaction — this branch
+  never touches routing or the route bundle.
+- Everything under `src/props/`, `sky.js`, `dust.js`, `vehicle-model.js` is mine alone this cycle.
 
 ## Verify after merge
 
-1. `npm run test:all` (33+ gates).
-2. Boot the game: baked shadows under trees, distant trees billboard (toggle the Props →
-   "3D prop ring" slider to 0 to see them near — they should read like pale-correct flat trees).
-3. Sky: toggle Sky → "baked sky (perf)" off/on — horizon should not change.
-4. Drive into a fresh region at Normal — the shadow snap-in hitch should be gone.
-5. Headlights L-cycle + brake at night — no hitch (programs prewarmed).
+1. `npm run test:all` (34 gates — full suite was green on this branch 2026-07-17 pre-rebase;
+   affected gates green after every later commit).
+2. Boot at Normal: distant trees billboard past ~96 m and continue over ridge crests to the fog;
+   trees LEAN with variety at all distances; no buried/floating trees on cross-slopes; boulders
+   keep 3D shape at every distance.
+3. Drive fast into fresh terrain: no shadow snap-in hitch.
+4. Sky GUI → "baked sky (perf)" off/on: horizon unchanged. From a high peak, below-horizon shows
+   the misty ground fill, not sky-void.
+5. Headlight L-cycle + brake at night: no shader-compile hitch.
+6. Perf sanity vs pre-branch main (A/B measured 2026-07-16: 255k→196k tris at a Normal static
+   viewpoint, before the bbRing tree extension traded some of that back for draw distance).
 
-## Further tier-scaling proposals (NOT implemented — user decisions)
+## Known follow-ups (tickets filed, not blockers)
 
-- **`LIGHT_ENV.dayScale` → 0 on Low/Normal**: kills all 6 spotlight fragments by day even with
-  lamps on (currently 0.1 → subtle daytime pools cost full spotlight loop when headlights are on,
-  which is the default). Biggest remaining daytime fragment lever after the sky bake.
-- **Sky bake res / live per tier**: Low 256, Normal 512, High 512, Ultra live (crisp sun disc).
-- **PERF-22 terrain geometry LOD** (ticket filed): the last big vertex lever — High/Ultra resident
-  terrain is 1.4M/2.4M tris of uniform 1 m grid. Needs coordination with the world-gen worktree.
-- **Water tessellation** (`water-render.js` segments=48) and **dust pool size** per tier — small,
-  only worth wiring if the tier table grows anyway.
-- **`detailScale` 0.5 on Normal**: halves the terrain fbm bump strength cost visually gently —
-  cheap A/B via the existing slider if the Air still runs warm at Normal.
+- QUAL-20: sun-azimuth impostor bake (billboards still darker than 3D from the sun side; the
+  litGain slider is the stopgap).
+- PERF-22: terrain geometry LOD (needs coordination with the world-gen worktree).
+- Ultra's outer ring is ~289 scattered chunks (was 81) — time-sliced, but if fast driving at
+  Ultra shows streaming cost, trim `bbRing` or add a trees-only scatter fast path.
