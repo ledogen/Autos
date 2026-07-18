@@ -164,4 +164,14 @@ export const FLORA_PARAMS = {
     fadeStart:    240,     // view-distance (m) where the dissolve begins
     fadeEnd:      380,     // fully faded
   },
+
+  // ── PERF-21 billboard impostor LOD ─────────────────────────────────────────────────────────
+  // Chunks farther than ring3d (Chebyshev, in 64 m chunks) from the camera's chunk render their
+  // trees/boulders as single camera-facing quads (prop-impostor.js atlas) instead of 3D instances
+  // (~150–200 tris each). Written by applyQuality per tier (closer takeover on lower tiers) and
+  // overridable live by the '3D prop ring' slider. Baked ground shadows are unaffected.
+  lod: {
+    ring3d: 2,             // chunks of full-3D props around the camera; beyond → billboards
+    litGain: 4.0,          // billboard sun-side brightening (× max(view·sunXZ, 0)); GUI slider
+  },
 }

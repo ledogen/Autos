@@ -1,8 +1,20 @@
 ---
 id: FEAT-06c
 type: feature
-status: open
+status: closed
+resolution: |
+  SHIPPED 2026-07-16 (branch feature/gpu-graphics, PERF-21 pass). Two-tier LOD: full 3D palette
+  within lodRing chunks of the camera (tier-wired: Low/Normal 1, High/Ultra 2), single-quad
+  billboard impostors beyond, out to propRing (extended per tier — billboards are ~2 tris).
+  Atlas baked in-browser at boot from the palette (src/props/prop-impostor.js, RGBA16F 256px
+  tiles, lit by the live sky look via skySystem.sunDirection; re-baked on look change). Chunk-
+  granular re-pooling from retained placement records (prop-system.js), alphaTest cutout (no
+  alpha blend), baked ground shadows preserved. DESCOPED: the Mid reduced-geometry tier and
+  dither/cross-fade transitions — the chunk swap at >=96 m under fog reads clean (verified vs
+  main via A/B screenshots); revisit only if popping is reported. A/B at Normal: -23 % scene
+  triangles at a static viewpoint. iGPU-floor (HD 620) acceptance NOT re-measured — M4 only.
 opened: 2026-06-26
+closed: 2026-07-16
 severity: minor
 source: user-decision
 parent: FEAT-06

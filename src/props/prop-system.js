@@ -31,12 +31,20 @@ import { buildPalette } from './prop-palette.js'
 import { scatterChunk, scatterChunkGen } from './prop-scatter.js'
 import { sphereVsSphere, sphereVsCapsuleY, sphereVsCapsule, sphereVsMeshInstance, bushDrag } from './prop-collider.js'
 import { BAKE_LAYER, shadowShearScale } from './prop-shadow-bake.js'   // PERF-07: baked prop-shadow atlas (main.js owns the system)
+import { PropImpostors } from './prop-impostor.js'                     // PERF-21: distant-prop billboards
 import { FLORA_PARAMS } from '../../data/flora.js'
 
 // Per-category global instance capacity (split evenly across that category's variants). Sized for
 // the ring-4 (Ultra, 81-chunk) worst case; pure typed-array memory (64 B/instance), cheap.
+// PERF-21: categories that keep rendering FULL 3D even in the billboard-only outer ring (rare,
+// landmark-scale, and shaped wrong for a vertical quad — boulders are wide horizontal masses).
+const BBONLY_3D_CATS = new Set(['boulder'])
+
 const CAPACITY = {
-  aspen: 4000, pine: 4000, rock: 3000, boulder: 200, smallRock: 9000, bush: 4000,
+  // Trees sized for the PERF-21 billboard-only outer ring: Ultra streams trees out to the built-
+  // terrain edge (ring+warm = 8 → 17² = 289 chunks × ~30 trees ≈ 8.7k, biome-split aspen/pine).
+  // Other categories only live within the full propRing (≤ ring-4, 81 chunks) as before.
+  aspen: 8000, pine: 8000, rock: 3000, boulder: 200, smallRock: 9000, bush: 4000,
   log: 300,   // FEAT-15: sparse ([0,2]/chunk) — 300 covers a ring-4 Ultra window with slack
 }
 
@@ -63,6 +71,7 @@ export class PropSystem {
 
     const { variants, material } = buildPalette(this._seed, params)
     this._material = material
+    this._variants = variants          // PERF-21: impostor bake needs the variant geometries
 
     // PERF-07: prop shadow mode. castRealtime=false (default) drops props from the sun's realtime
     // shadow pass and stands in the baked shadow atlas (prop-shadow-bake.js, owned by main.js);
@@ -104,15 +113,33 @@ export class PropSystem {
         if (!entry.geo.boundingBox) entry.geo.computeBoundingBox()
         const key = cat + '#' + v
         // occ/top: occupancy bitmap + high-water mark for PERF-10 count compaction.
-        this._meshes.set(key, { mesh, free, used: 0, cap: perVariant, occ: new Uint8Array(perVariant), top: 0, geoMaxY: entry.geo.boundingBox.max.y })
+        // dirtyLo/dirtyHi: slot span touched since the last _flush — PERF-21 partial uploads
+        // (a one-chunk stream used to re-upload the species' whole capacity buffer, 256 KB).
+        this._meshes.set(key, { mesh, free, used: 0, cap: perVariant, occ: new Uint8Array(perVariant), top: 0, geoMaxY: entry.geo.boundingBox.max.y, dirtyLo: Infinity, dirtyHi: -1 })
         this._collision.set(key, entry.collision || null)
         scene.add(mesh)
       })
     }
 
-    this._chunks = new Map()       // "cx,cz" -> [{ key, slot }, ...]
-    this._dirty = new Set()        // mesh keys needing instanceMatrix/instanceColor upload
+    // "cx,cz" -> { places: [placement records], owned: [{key, slot, imp}], mode: 'near'|'far' }.
+    // `places` (matrix/tint/k per prop) is RETAINED for the chunk's lifetime — PERF-21 LOD swaps
+    // re-place a chunk between the 3D and impostor pools without re-scattering, and the shadow
+    // bake's tile source reads matrices from here (pool-independent).
+    this._chunks = new Map()
+    this._dirty = new Set()        // 3D mesh keys needing instanceMatrix/instanceColor upload
     this._overflowWarned = false
+
+    // ── PERF-21 billboard impostor LOD ─────────────────────────────────────────────────
+    // Inactive (everything renders 3D) until main.js wires the renderer via setImpostors().
+    // Chunks with Chebyshev ring distance > _lodRing from the camera chunk render their
+    // billboardable categories (IMPOSTOR_CATS) as instanced quads instead of 3D instances.
+    this._impostors = null
+    this._impMeshes = null         // key "cat#v" -> { mesh, aPos, aSize, aTint, size, free, occ, top, cap, dirtyLo, dirtyHi }
+    this._impDirty = new Set()
+    this._lodRing = (params.lod && params.lod.ring3d != null) ? params.lod.ring3d : 2
+    this._fullRing = Infinity      // full-prop radius (set each update); beyond → billboard-only
+    this._ccx = null               // camera chunk (set each update; null = everything 'near')
+    this._ccz = null
 
     // PERF-14: time-sliced scatter. A whole chunk's scatter is 20–40 ms of sampler calls
     // (analyticHeight/roadClear per candidate) — running it synchronously on chunk entry was THE
@@ -152,10 +179,77 @@ export class PropSystem {
    */
   setShadowBake(bake) {
     this._shadowBake = bake
-    if (bake) for (const ck of this._chunks.keys()) {
-      const comma = ck.indexOf(',')
-      bake.markWithNeighbors(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10))
+    if (bake) {
+      // PERF-21: hand the bake system a per-tile caster source so one tile bake shades only the
+      // 3×3 chunks around it (~1k instances) instead of every live prop in the ring (~25k). This
+      // was the stream-in hitch: 8 tiles/frame × the full population through the vertex stage.
+      if (bake.setTileSource) {
+        if (!this._bakeScene) this._buildBakeScene()
+        bake.setTileSource((cx, cz) => this._fillBakeScene(cx, cz))
+      }
+      for (const ck of this._chunks.keys()) {
+        const comma = ck.indexOf(',')
+        bake.markWithNeighbors(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10))
+      }
     }
+  }
+
+  /**
+   * PERF-21: scratch scene for per-tile shadow bakes — one InstancedMesh per (cat#variant) that
+   * SHARES the palette's vertex position buffer (uploaded once) but owns small instanceMatrix /
+   * aShadowK buffers, refilled per bake from the live chunks' slots. Material is irrelevant (the
+   * bake overrides it); layers must include BAKE_LAYER for the bake camera's mask.
+   */
+  _buildBakeScene() {
+    this._bakeScene = new THREE.Scene()
+    this._bakeMeshes = new Map()
+    for (const [key, rec] of this._meshes) {
+      const src = rec.mesh.geometry
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', src.getAttribute('position'))   // shared — no duplicate VRAM
+      const kAttr = new THREE.InstancedBufferAttribute(new Float32Array(rec.cap).fill(1), 1)
+      kAttr.setUsage(THREE.DynamicDrawUsage)
+      geo.setAttribute('aShadowK', kAttr)
+      const mesh = new THREE.InstancedMesh(geo, this._material, rec.cap)
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+      mesh.frustumCulled = false
+      mesh.castShadow = false
+      mesh.receiveShadow = false
+      mesh.layers.set(BAKE_LAYER)
+      mesh.count = 0
+      this._bakeScene.add(mesh)
+      this._bakeMeshes.set(key, { mesh, kAttr, n: 0 })
+    }
+  }
+
+  /**
+   * Refill the scratch scene with the instances of the 3×3 chunks around (cx,cz). Reads the
+   * RETAINED placement records, not the render pools — a billboarded (far-LOD) tree keeps
+   * casting its baked ground shadow.
+   */
+  _fillBakeScene(cx, cz) {
+    for (const dst of this._bakeMeshes.values()) dst.n = 0
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const chunk = this._chunks.get((cx + dx) + ',' + (cz + dz))
+      if (!chunk) continue
+      for (const pr of chunk.places) {
+        const dst = this._bakeMeshes.get(pr.key)
+        if (!dst) continue
+        dst.mesh.instanceMatrix.array.set(pr.mat, dst.n * 16)
+        dst.kAttr.array[dst.n] = pr.k
+        dst.n++
+      }
+    }
+    for (const dst of this._bakeMeshes.values()) {
+      dst.mesh.count = dst.n
+      if (dst.n > 0) {
+        dst.mesh.instanceMatrix.addUpdateRange(0, dst.n * 16)
+        dst.mesh.instanceMatrix.needsUpdate = true
+        dst.kAttr.addUpdateRange(0, dst.n)
+        dst.kAttr.needsUpdate = true
+      }
+    }
+    return this._bakeScene
   }
 
   /**
@@ -167,6 +261,66 @@ export class PropSystem {
   setShadowCasting(v) {
     for (const rec of this._meshes.values()) rec.mesh.castShadow = v
   }
+
+  // ── PERF-21 billboard impostors ───────────────────────────────────────────────────────
+  /**
+   * Activate distant-prop billboards (main.js owns the renderer — headless never calls this).
+   * Bakes the per-variant impostor atlas with the CURRENT sky-look lighting and creates one
+   * instanced-quad mesh per billboardable variant. Live chunks re-pool over the next frames
+   * via _syncChunkLod.
+   * @param {THREE.WebGLRenderer} renderer
+   * @param {{sun: THREE.DirectionalLight, ambient: THREE.HemisphereLight}} lights
+   */
+  setImpostors(renderer, lights) {
+    if (this._impostors || !renderer) return
+    this._impostors = new PropImpostors(renderer, lights)
+    const entries = this._impostors.build(this._variants)
+    if (this._params.lod && this._params.lod.litGain != null) this._impostors.setLitGain(this._params.lod.litGain)
+    this._impMeshes = new Map()
+    const base = new THREE.PlaneGeometry(1, 1)      // shared unit quad (position/uv/index reused)
+    for (const [key, e] of entries) {
+      const rec3d = this._meshes.get(key)
+      if (!rec3d) continue
+      const cap = rec3d.cap
+      const geo = new THREE.InstancedBufferGeometry()
+      geo.index = base.index
+      geo.setAttribute('position', base.getAttribute('position'))
+      geo.setAttribute('uv', base.getAttribute('uv'))
+      const mk = (itemSize) => {
+        const a = new THREE.InstancedBufferAttribute(new Float32Array(cap * itemSize), itemSize)
+        a.setUsage(THREE.DynamicDrawUsage)
+        return a
+      }
+      const aPos = mk(3), aSize = mk(1), aTint = mk(3), aAxis = mk(3)
+      geo.setAttribute('aPos', aPos)
+      geo.setAttribute('aSize', aSize)
+      geo.setAttribute('aTint', aTint)
+      geo.setAttribute('aAxis', aAxis)   // per-instance trunk axis — billboards lean like their 3D tree
+      geo.instanceCount = 0
+      this._impostors.bindAtlas(e.material)
+      const mesh = new THREE.Mesh(geo, e.material)
+      mesh.frustumCulled = false                    // same PERF-05 reasoning as the 3D pools
+      mesh.castShadow = false                       // ground shadow comes from the baked atlas
+      mesh.receiveShadow = false
+      this._scene.add(mesh)
+      const free = []
+      for (let i = cap - 1; i >= 0; i--) free.push(i)
+      this._impMeshes.set(key, {
+        mesh, aPos, aSize, aTint, aAxis, size: e.size,
+        free, occ: new Uint8Array(cap), top: 0, cap, dirtyLo: Infinity, dirtyHi: -1,
+      })
+    }
+  }
+
+  /** Re-bake the impostor atlas (sky look changed). No-op when impostors are off. */
+  rebakeImpostors() { if (this._impostors) this._impostors.rebake() }
+
+  /** Live billboard sun-side brightening (GUI slider). No-op when impostors are off. */
+  setImpostorLitGain(v) { if (this._impostors) this._impostors.setLitGain(v) }
+
+  /** 3D-prop ring radius in chunks (quality tier / GUI). Chunks beyond it billboard. */
+  setLodRing(n) { this._lodRing = Math.max(0, Math.round(n)) }
+  get lodRing() { return this._lodRing }
 
   // ── chunk lifecycle ─────────────────────────────────────────────────────────────────
   // Synchronous ensure — the hard-radius / gate path. If this chunk's scatter is mid-flight or
@@ -197,21 +351,12 @@ export class PropSystem {
   }
 
   _commitChunk(ck, placements) {
-    const owned = []
+    const places = []
     const collidables = []
     for (const pl of placements) {
       const key = pl.cat + '#' + pl.variant
       const rec = this._meshes.get(key)
-      if (!rec || rec.free.length === 0) {
-        if (!this._overflowWarned) {
-          console.warn('[PropSystem] instance pool full for', key, '— raise CAPACITY'); this._overflowWarned = true
-        }
-        continue
-      }
-      const slot = rec.free.pop()
-      rec.used++
-      rec.occ[slot] = 1                                  // PERF-10: track occupancy for count compaction
-      if (slot >= rec.top) rec.top = slot + 1
+      if (!rec) continue
       _p.set(pl.x, pl.y, pl.z)
       _e.set(0, pl.rotY, 0)
       _q.setFromEuler(_e)
@@ -222,26 +367,26 @@ export class PropSystem {
       }
       _s.setScalar(pl.scale)
       _m.compose(_p, _q, _s)
-      rec.mesh.setMatrixAt(slot, _m)
-      _col.setRGB(pl.tint[0], pl.tint[1], pl.tint[2])
-      rec.mesh.setColorAt(slot, _col)
       // PERF-07: per-instance ground fit for the shadow bake — scale the flat-plane sun shear so
       // THIS prop's baked shadow lands on the real sloped terrain (shadowShearScale). h0 = canopy
       // centre (0.65 × geometry height × scale); flat ground → k = 1. sunShear is absent headless
-      // (no sky) — the attribute default 1 then matches the old flat projection.
+      // (no sky) — the default 1 then matches the old flat projection. Computed ONCE here and
+      // kept on the placement record — LOD re-places never re-march.
+      let k = 1
       if (this._samplers.sunShear) {
         const shear = this._samplers.sunShear()
         const h0 = rec.geoMaxY * 0.65 * pl.scale
         // March only the props whose shadows are long enough for slope error to show (trees,
         // boulders); small rocks/bushes keep the flat default — ~17 height samples each would
         // dominate the commit for zero visible gain.
-        const k = (h0 > 2 && shear.lengthSq() > 1e-6)
-          ? shadowShearScale(pl.x, pl.y, pl.z, h0, shear.x, shear.y, this._samplers.heightAt)
-          : 1
-        rec.mesh.geometry.attributes.aShadowK.setX(slot, k)
+        if (h0 > 2 && shear.lengthSq() > 1e-6) {
+          k = shadowShearScale(pl.x, pl.y, pl.z, h0, shear.x, shear.y, this._samplers.heightAt)
+        }
       }
-      owned.push({ key, slot })
-      this._dirty.add(key)
+      places.push({
+        key, mat: Float32Array.from(_m.elements), k,
+        x: pl.x, y: pl.y, z: pl.z, scale: pl.scale, tint: pl.tint,
+      })
 
       // FEAT-06b: record the collidable (capsule for trees, sphere for rocks, bush for soft-drag)
       const col = this._collision.get(key)
@@ -270,22 +415,107 @@ export class PropSystem {
         rotY: pl.rotY, tris: col.tris,   // rotY/tris used by 'mesh' (boulder) contacts; undefined otherwise
       })
     }
-    this._chunks.set(ck, owned)
+    const comma = ck.indexOf(',')
+    const cx = parseInt(ck.slice(0, comma), 10), cz = parseInt(ck.slice(comma + 1), 10)
+    const chunk = { places, owned: [], mode: this._chunkMode(cx, cz) }
+    this._chunks.set(ck, chunk)
+    this._placeChunk(chunk, chunk.mode)
     if (collidables.length) { this._collidables.set(ck, collidables); this._gridDirty = true }
 
     // PERF-07: this chunk's props changed → (re)bake its shadow tile and its neighbours' (silhouettes
     // cross chunk seams). The bake system slices the work; a no-op when realtime casting / headless.
-    if (this._shadowBake) {
-      const comma = ck.indexOf(',')
-      this._shadowBake.markWithNeighbors(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10))
+    // Billboard-only ring chunks take NO tiles (see _chunkMode) — they mark on promotion instead.
+    if (this._shadowBake && chunk.mode !== 'bbonly') this._shadowBake.markWithNeighbors(cx, cz)
+  }
+
+  /**
+   * PERF-21: a chunk's render mode by Chebyshev ring distance from the camera:
+   *   'near'   (d ≤ lodRing)  — every category as full 3D instances.
+   *   'far'    (d ≤ fullRing) — billboardable categories as impostors, the rest 3D.
+   *   'bbonly' (d > fullRing) — TREES ONLY, as impostors; rocks/bushes/logs get no render slots
+   *            at all (they'd be sub-pixel 3D noise), and the chunk takes no shadow-bake tiles
+   *            (beyond the QUAL-18 fade reach anyway, and marking it would overflow the toroidal
+   *            atlas at Ultra's billboard radius). This is the ring that carries trees out to the
+   *            full drawn-terrain distance (user call 2026-07-17).
+   */
+  _chunkMode(cx, cz) {
+    if (!this._impMeshes || this._ccx === null) return 'near'
+    const d = Math.max(Math.abs(cx - this._ccx), Math.abs(cz - this._ccz))
+    if (d <= this._lodRing) return 'near'
+    return d <= this._fullRing ? 'far' : 'bbonly'
+  }
+
+  /** Allocate render-pool slots for a chunk's retained placements (see _chunkMode for modes). */
+  _placeChunk(chunk, mode) {
+    chunk.mode = mode
+    for (const pr of chunk.places) {
+      // Billboardable categories go to the impostor pool when far; anything else stays 3D —
+      // except in the billboard-only outer ring, where non-billboardable categories are skipped
+      // (sub-pixel 3D noise at that range) UNLESS they're landmark-scale (BBONLY_3D_CATS).
+      if (mode === 'bbonly' && this._impMeshes && !this._impMeshes.has(pr.key)
+          && !BBONLY_3D_CATS.has(pr.key.slice(0, pr.key.indexOf('#')))) continue
+      if ((mode === 'far' || mode === 'bbonly') && this._impMeshes) {
+        const irec = this._impMeshes.get(pr.key)
+        if (irec && irec.free.length > 0) {
+          const slot = irec.free.pop()
+          irec.occ[slot] = 1
+          if (slot >= irec.top) irec.top = slot + 1
+          const i3 = slot * 3
+          irec.aPos.array[i3] = pr.x; irec.aPos.array[i3 + 1] = pr.y; irec.aPos.array[i3 + 2] = pr.z
+          irec.aSize.array[slot] = irec.size * pr.scale
+          irec.aTint.array[i3] = pr.tint[0]; irec.aTint.array[i3 + 1] = pr.tint[1]; irec.aTint.array[i3 + 2] = pr.tint[2]
+          // Trunk axis = the placement matrix's local +Y column, normalized — carries the
+          // per-tree parametric lean into the billboard so the LOD swap doesn't snap upright.
+          const m = pr.mat
+          const al = Math.hypot(m[4], m[5], m[6]) || 1
+          irec.aAxis.array[i3] = m[4] / al; irec.aAxis.array[i3 + 1] = m[5] / al; irec.aAxis.array[i3 + 2] = m[6] / al
+          if (slot < irec.dirtyLo) irec.dirtyLo = slot
+          if (slot > irec.dirtyHi) irec.dirtyHi = slot
+          this._impDirty.add(pr.key)
+          chunk.owned.push({ key: pr.key, slot, imp: true })
+          continue
+        }
+        if (irec && !this._overflowWarned) {
+          console.warn('[PropSystem] impostor pool full for', pr.key, '— falling back to 3D'); this._overflowWarned = true
+        }
+      }
+      const rec = this._meshes.get(pr.key)
+      if (!rec || rec.free.length === 0) {
+        if (!this._overflowWarned) {
+          console.warn('[PropSystem] instance pool full for', pr.key, '— raise CAPACITY'); this._overflowWarned = true
+        }
+        continue
+      }
+      const slot = rec.free.pop()
+      rec.used++
+      rec.occ[slot] = 1                                  // PERF-10: track occupancy for count compaction
+      if (slot >= rec.top) rec.top = slot + 1
+      rec.mesh.instanceMatrix.array.set(pr.mat, slot * 16)
+      _col.setRGB(pr.tint[0], pr.tint[1], pr.tint[2])
+      rec.mesh.setColorAt(slot, _col)
+      rec.mesh.geometry.attributes.aShadowK.setX(slot, pr.k)
+      this._dirty.add(pr.key)
+      if (slot < rec.dirtyLo) rec.dirtyLo = slot
+      if (slot > rec.dirtyHi) rec.dirtyHi = slot
+      chunk.owned.push({ key: pr.key, slot, imp: false })
     }
   }
 
-  releaseChunk(cx, cz) {
-    const ck = cx + ',' + cz
-    const owned = this._chunks.get(ck)
-    if (!owned) return
-    for (const { key, slot } of owned) {
+  /** Free a chunk's render-pool slots (both pools). Retains `places` — LOD swaps re-place. */
+  _unplaceChunk(chunk) {
+    for (const { key, slot, imp } of chunk.owned) {
+      if (imp) {
+        const irec = this._impMeshes.get(key)
+        if (!irec) continue
+        irec.aSize.array[slot] = 0                       // degenerate quad — no fragments
+        irec.free.push(slot)
+        irec.occ[slot] = 0
+        while (irec.top > 0 && !irec.occ[irec.top - 1]) irec.top--
+        this._impDirty.add(key)
+        if (slot < irec.dirtyLo) irec.dirtyLo = slot
+        if (slot > irec.dirtyHi) irec.dirtyHi = slot
+        continue
+      }
       const rec = this._meshes.get(key)
       if (!rec) continue
       rec.mesh.setMatrixAt(slot, _HIDDEN)
@@ -294,13 +524,48 @@ export class PropSystem {
       rec.occ[slot] = 0                                  // PERF-10: shrink the draw prefix when the top frees
       while (rec.top > 0 && !rec.occ[rec.top - 1]) rec.top--
       this._dirty.add(key)
+      if (slot < rec.dirtyLo) rec.dirtyLo = slot
+      if (slot > rec.dirtyHi) rec.dirtyHi = slot
     }
+    chunk.owned.length = 0
+  }
+
+  /**
+   * PERF-21: re-pool chunks whose camera ring distance crossed _lodRing. Chunk-granular — a 64 m
+   * chunk's billboardable props swap together, ~1–2 chunk-rows per camera chunk crossing, budgeted
+   * so a fast drive never spends more than `budget` re-places in one frame. The swap is a pure
+   * slot move from retained records (no scatter, no samplers, no shadow re-bake).
+   */
+  _syncChunkLod(budget = 6) {
+    if (!this._impMeshes || this._ccx === null) return
+    for (const [ck, chunk] of this._chunks) {
+      const comma = ck.indexOf(',')
+      const cx = parseInt(ck.slice(0, comma), 10), cz = parseInt(ck.slice(comma + 1), 10)
+      const want = this._chunkMode(cx, cz)
+      if (want === chunk.mode) continue
+      const promoted = chunk.mode === 'bbonly' && want !== 'bbonly'
+      this._unplaceChunk(chunk)
+      this._placeChunk(chunk, want)
+      // Promotion out of the billboard-only ring: the chunk skipped its shadow bake at commit —
+      // bake now that its ground shadows are within the visible/fade range. (Demotion needs no
+      // mark: the trees haven't moved, the already-baked tile stays valid.)
+      if (promoted && this._shadowBake) this._shadowBake.markWithNeighbors(cx, cz)
+      if (--budget <= 0) break
+    }
+  }
+
+  releaseChunk(cx, cz) {
+    const ck = cx + ',' + cz
+    const chunk = this._chunks.get(ck)
+    if (!chunk) return
+    this._unplaceChunk(chunk)
+    const wasBBOnly = chunk.mode === 'bbonly'
     this._chunks.delete(ck)
     if (this._collidables.delete(ck)) this._gridDirty = true
     // PERF-07: this chunk's props are gone → re-bake still-live neighbours so their tiles drop the
     // departed silhouettes (a neighbour still in-ring re-bakes without them; its own tile is reused
-    // by whichever chunk lands on the toroidal slot next).
-    if (this._shadowBake) this._shadowBake.markWithNeighbors(cx, cz)
+    // by whichever chunk lands on the toroidal slot next). Billboard-only chunks never baked.
+    if (this._shadowBake && !wasBBOnly) this._shadowBake.markWithNeighbors(cx, cz)
   }
 
   /**
@@ -315,13 +580,18 @@ export class PropSystem {
    * (hardX, hardZ) to force-complete the 3×3 chunks around it synchronously (prop collision must
    * exist under the truck; freecam passes nothing and just streams visually).
    */
-  update(worldX, worldZ, ringChunks, hardX = null, hardZ = null) {
+  update(worldX, worldZ, ringChunks, hardX = null, hardZ = null, bbRingChunks = null) {
     const cs = this._chunkSize
     const ccx = Math.floor(worldX / cs), ccz = Math.floor(worldZ / cs)
+    this._ccx = ccx; this._ccz = ccz               // PERF-21: LOD ring centre
+    this._fullRing = ringChunks                    // beyond this (to bbRing) = billboard-only trees
+    // The billboard-only outer ring streams ONLY when impostors are active — headless (gates) and
+    // pre-wire boots keep the classic full-prop ring exactly as before.
+    const outer = (this._impMeshes && bbRingChunks != null) ? Math.max(ringChunks, bbRingChunks) : ringChunks
     const want = new Set()
     let enqueued = false
-    for (let dz = -ringChunks; dz <= ringChunks; dz++)
-      for (let dx = -ringChunks; dx <= ringChunks; dx++) {
+    for (let dz = -outer; dz <= outer; dz++)
+      for (let dx = -outer; dx <= outer; dx++) {
         const cx = ccx + dx, cz = ccz + dz
         const ck = cx + ',' + cz
         want.add(ck)
@@ -378,6 +648,7 @@ export class PropSystem {
     }
     if (!this._scatterFillDone && !this._activeScatter && this._scatterQueue.length === 0) this._scatterFillDone = true
 
+    this._syncChunkLod()                            // PERF-21: pool swaps after streaming settles
     this._flush()
   }
 
@@ -402,12 +673,45 @@ export class PropSystem {
     for (const key of this._dirty) {
       const rec = this._meshes.get(key)
       if (!rec) continue
+      // PERF-21: upload only the touched slot span. Without ranges, three re-uploads the WHOLE
+      // capacity buffer per dirty mesh (aspen/pine: 4000×64 B = 256 KB) on every chunk stream.
+      // The min/max span may cover untouched slots between two dirty chunks — still far smaller,
+      // and their array contents are valid, so over-uploading is harmless. First-ever upload
+      // (buffer creation) always sends the full array regardless of ranges. NEVER clear ranges
+      // here: the renderer merges + clears them on upload, and two flushes can land between
+      // renders (drainScatter + update in one frame) — clearing would drop the first span.
+      if (rec.dirtyHi >= 0) {
+        const lo = rec.dirtyLo, n = rec.dirtyHi - rec.dirtyLo + 1
+        rec.mesh.instanceMatrix.addUpdateRange(lo * 16, n * 16)
+        if (rec.mesh.instanceColor) rec.mesh.instanceColor.addUpdateRange(lo * 3, n * 3)
+        rec.mesh.geometry.attributes.aShadowK.addUpdateRange(lo, n)
+        rec.dirtyLo = Infinity; rec.dirtyHi = -1
+      }
       rec.mesh.instanceMatrix.needsUpdate = true
       if (rec.mesh.instanceColor) rec.mesh.instanceColor.needsUpdate = true
       rec.mesh.geometry.attributes.aShadowK.needsUpdate = true   // PERF-07 ground-fit factors
       rec.mesh.count = rec.top   // PERF-10: draw the occupied prefix only (read at draw time, no flag needed)
     }
     this._dirty.clear()
+    // PERF-21: impostor pools — same dirty-span partial upload, prefix-count draw.
+    for (const key of this._impDirty) {
+      const irec = this._impMeshes && this._impMeshes.get(key)
+      if (!irec) continue
+      if (irec.dirtyHi >= 0) {
+        const lo = irec.dirtyLo, n = irec.dirtyHi - irec.dirtyLo + 1
+        irec.aPos.addUpdateRange(lo * 3, n * 3)
+        irec.aSize.addUpdateRange(lo, n)
+        irec.aTint.addUpdateRange(lo * 3, n * 3)
+        irec.aAxis.addUpdateRange(lo * 3, n * 3)
+        irec.dirtyLo = Infinity; irec.dirtyHi = -1
+      }
+      irec.aPos.needsUpdate = true
+      irec.aSize.needsUpdate = true
+      irec.aTint.needsUpdate = true
+      irec.aAxis.needsUpdate = true
+      irec.mesh.geometry.instanceCount = irec.top
+    }
+    this._impDirty.clear()
   }
 
   // ── FEAT-06b collision queries ──────────────────────────────────────────────────────────
@@ -525,6 +829,16 @@ export class PropSystem {
       rec.mesh.geometry.dispose()
       rec.mesh.dispose()
     }
+    if (this._bakeMeshes) {
+      for (const dst of this._bakeMeshes.values()) { dst.mesh.geometry.dispose(); dst.mesh.dispose() }
+      this._bakeMeshes = null
+      this._bakeScene = null
+    }
+    if (this._impMeshes) {
+      for (const irec of this._impMeshes.values()) { this._scene.remove(irec.mesh); irec.mesh.geometry.dispose() }
+      this._impMeshes = null
+    }
+    if (this._impostors) { this._impostors.dispose(); this._impostors = null }
     this._material.dispose()
     this._meshes.clear()
     this._chunks.clear()

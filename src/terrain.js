@@ -474,7 +474,7 @@ export class TerrainSystem {
                     sh_off[3] = vec2(0.0, sh_stp); sh_off[4] = vec2(0.0, -sh_stp);
                     for (int si = 0; si < 5; si++) {
                         vec2 sh_c = clamp(sh_in + sh_off[si], sh_htx, 1.0 - sh_htx);
-                        sh_a += texture2D(uShadowAtlas, (sh_tile + sh_c) / uShadowAtlasN).a;
+                        sh_a += texture2D(uShadowAtlas, (sh_tile + sh_c) / uShadowAtlasN).r;   // atlas is R8 (PERF-21)
                     }
                     sh_a *= 0.2;                                        // average of the 5 taps
                     // QUAL-18: fade the baked shadow out with view distance (LOD dissolve).

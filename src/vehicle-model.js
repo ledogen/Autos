@@ -490,6 +490,15 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
     const tailCast = braking ? REAR_TUNE.tailBrakeIntensity : (lightsRunning ? REAR_TUNE.tailRunIntensity : 0)
     for (const s of tailSpots) s.intensity = tailCast * castScale
     for (const s of reverseSpots) s.intensity = (reversing ? REAR_TUNE.reverseIntensity : 0) * castScale
+    // PERF-21: a spotlight at intensity 0 still occupies the per-fragment spotlight loop of EVERY
+    // lit material in the scene (terrain, all prop meshes, road, water) — 6 spots + 2 cookie samples
+    // paid on every pixel with the lamps dark. visible=false removes them from the light state, so
+    // the common lamps-off program has zero spotlights. The light-count program variants this
+    // toggling switches between are precompiled at boot (prewarmLightPrograms) — after that a
+    // toggle is just a cached-program bind, not the shader recompile the old design avoided.
+    for (const s of headlightSpots) s.visible = s.intensity > 1e-4
+    for (const s of tailSpots) s.visible = s.intensity > 1e-4
+    for (const s of reverseSpots) s.visible = s.intensity > 1e-4
 
     if (modelActive) {
       // Imported model: drive the GLB rear-lamp material's emissive. Bright red on brake,
@@ -653,5 +662,27 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
     modelActive = true
   }, undefined, (err) => console.warn('[vehicle-model] GLB load failed; keeping primitive truck:', err))
 
-  return { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor }
+  /**
+   * PERF-21: precompile the shader-program variants that light-visibility toggling switches
+   * between (lamps off / brake tails / head+tail / all six). Spot visibility changes the light
+   * count in every lit material's program — compiling those lazily would hitch the first brake
+   * or headlight toggle of a session. Call once at boot, after the scene is populated; async
+   * (KHR_parallel_shader_compile) so it never blocks a frame.
+   */
+  async function prewarmLightPrograms (renderer, scene, camera) {
+    const all = [...headlightSpots, ...tailSpots, ...reverseSpots]
+    const states = [
+      tailSpots,                                          // braking, lamps off (daytime brake)
+      [...headlightSpots, ...tailSpots],                  // lamps on (night driving)
+      all,                                                // lamps on + reversing
+      [],                                                 // everything off (daytime coasting)
+    ]
+    for (const on of states) {
+      for (const s of all) s.visible = on.includes(s)
+      try { await renderer.compileAsync(scene, camera) } catch (_) { /* prewarm is best-effort */ }
+    }
+    // syncMeshesToState re-asserts real visibility from intensities on the next frame.
+  }
+
+  return { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, prewarmLightPrograms }
 }

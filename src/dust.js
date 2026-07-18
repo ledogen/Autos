@@ -2,13 +2,23 @@
  * src/dust.js — RangerSim wheel dust trails (FEAT — visual polish)
  *
  * Dirt-cheap, self-contained dust/dirt kick-up behind the wheels. Stylized soft
- * sprite puffs (camera-facing billboards) drawn from a fixed pool — no per-frame
- * allocation, one shared procedural texture (no image assets — matches the project's
- * D-01 "procedural vertex colour only" discipline in road-mesh.js / terrain.js).
+ * billboard puffs drawn from a fixed pool — no per-frame allocation, one shared
+ * procedural texture (no image assets — matches the project's D-01 "procedural
+ * vertex colour only" discipline in road-mesh.js / terrain.js).
+ *
+ * RENDERING (PERF-21): ONE InstancedMesh of camera-facing quads — a custom shader
+ * billboards each instance in view space. The previous implementation used one
+ * THREE.Sprite (+ its own SpriteMaterial) per puff: up to 180 separate transparent
+ * draw calls, the largest draw-call block in the game after props. Now it is 1 draw
+ * call and a ~6 KB dynamic attribute upload per frame. Per-instance state (position,
+ * scale, spin, tint, opacity) rides in instanced attributes packed from the live
+ * pool each frame; count = live puffs, so dead slots cost nothing. Within-cloud
+ * blend order is unsorted (sprites were per-object sorted) — invisible at the
+ * 0.22-peak-alpha haze this system draws.
  *
  * Design goals (per request):
- *  - Cheap: fixed Sprite pool (POOL_SIZE), recycled. No GC churn, ~one tiny draw
- *    call per live sprite, depthWrite:false so they never disturb the depth buffer.
+ *  - Cheap: fixed pool (POOL_SIZE), recycled. No GC churn, one draw call,
+ *    depthWrite:false so puffs never disturb the depth buffer.
  *  - Honest colour: puffs are tinted to the dirt we're driving on (params.dustColor,
  *    defaulting near the terrain warm-brown / roadDirtColor family). Catches a little
  *    light (slightly lifted toward white) so airborne dust reads brighter than ground.
@@ -48,8 +58,8 @@ const TRAIL_BACK     = 0.45    // fraction of car velocity the puff inherits bac
 
 /**
  * Build the soft round puff texture once on a small canvas (procedural — no asset file).
- * White radial gradient, fully transparent at the rim, so SpriteMaterial.color tints it
- * to the dirt colour and per-sprite opacity fades it out.
+ * White radial gradient, fully transparent at the rim, so the per-instance tint colours it
+ * to the dirt and per-instance opacity fades it out.
  */
 function makePuffTexture () {
   const S = 64
@@ -78,29 +88,84 @@ export class DustSystem {
     this._params = params
     this._tex = makePuffTexture()
 
-    // Parallel particle state. Each slot owns one Sprite (with its own material so
-    // opacity/colour/rotation are independent) plus integrator scratch.
+    // ── Single instanced billboard mesh (PERF-21 — see header) ────────────────
+    // Base quad in [-0.5, 0.5]²; instanced attributes carry per-puff pose/tint/alpha.
+    const base = new THREE.PlaneGeometry(1, 1)
+    const geo = new THREE.InstancedBufferGeometry()
+    geo.index = base.index
+    geo.setAttribute('position', base.getAttribute('position'))
+    geo.setAttribute('uv', base.getAttribute('uv'))
+    const mk = (itemSize) => {
+      const a = new THREE.InstancedBufferAttribute(new Float32Array(POOL_SIZE * itemSize), itemSize)
+      a.setUsage(THREE.DynamicDrawUsage)
+      return a
+    }
+    this._aPos   = mk(3)   // world position
+    this._aParam = mk(3)   // x: scale (m), y: rotation (rad), z: opacity
+    this._aColor = mk(3)   // tint
+    geo.setAttribute('aPos', this._aPos)
+    geo.setAttribute('aParam', this._aParam)
+    geo.setAttribute('aColor', this._aColor)
+    geo.instanceCount = 0
+
+    const mat = new THREE.ShaderMaterial({
+      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uMap: { value: this._tex } }]),
+      vertexShader: /* glsl */`
+        attribute vec3 aPos;
+        attribute vec3 aParam;   // scale, rotation, opacity
+        attribute vec3 aColor;
+        varying vec2 vUv;
+        varying vec3 vColor;
+        varying float vOpacity;
+        #include <fog_pars_vertex>
+        void main () {
+          vUv = uv;
+          vColor = aColor;
+          vOpacity = aParam.z;
+          float c = cos(aParam.y), s = sin(aParam.y);
+          vec2 corner = mat2(c, s, -s, c) * (position.xy * aParam.x);   // spin, then scale
+          vec4 mvPosition = viewMatrix * vec4(aPos, 1.0);               // mesh sits at the origin
+          mvPosition.xy += corner;                                      // view-space billboard
+          gl_Position = projectionMatrix * mvPosition;
+          #include <fog_vertex>
+        }`,
+      fragmentShader: /* glsl */`
+        uniform sampler2D uMap;
+        varying vec2 vUv;
+        varying vec3 vColor;
+        varying float vOpacity;
+        #include <fog_pars_fragment>
+        void main () {
+          vec4 tex = texture2D(uMap, vUv);
+          gl_FragColor = vec4(vColor * tex.rgb, tex.a * vOpacity);
+          // ShaderMaterial does NOT auto-append these (built-ins do): keep dust inside the same
+          // ACES + colour pipeline as the SpriteMaterial it replaced, fog last like the built-ins.
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+          #include <fog_fragment>
+        }`,
+      transparent: true,
+      depthWrite: false,   // transparent puffs must not write depth (no haloing)
+      depthTest: true,     // but terrain/road still occlude them
+      fog: true,           // fade into scene.fog like everything else
+    })
+    this._mesh = new THREE.Mesh(geo, mat)
+    this._mesh.frustumCulled = false   // positions ride with the truck; cull math not worth it
+    this._mesh.renderOrder = 2         // after terrain (0) and water/road decals (1)
+    scene.add(this._mesh)
+
+    // Parallel particle state (pure JS — no per-puff THREE objects).
     this._p = []
     for (let i = 0; i < POOL_SIZE; i++) {
-      const mat = new THREE.SpriteMaterial({
-        map: this._tex,
-        transparent: true,
-        depthWrite: false,   // transparent puffs must not write depth (no haloing)
-        depthTest: true,     // but terrain/road still occlude them
-        opacity: 0,
-        fog: true,           // fade into scene.fog like everything else
-      })
-      const sprite = new THREE.Sprite(mat)
-      sprite.visible = false
-      sprite.frustumCulled = false  // cheap pool; skip per-sprite cull math
-      scene.add(sprite)
       this._p.push({
-        sprite,
         active: false,
         age: 0,
         life: 1,
+        x: 0, y: 0, z: 0,
         vx: 0, vy: 0, vz: 0,
         scale0: 0.5,
+        rot: 0,
+        r: 1, g: 1, b: 1,
         peak: PEAK_OPACITY,
       })
     }
@@ -131,8 +196,8 @@ export class DustSystem {
     this._dustColor.set(p.dustColor ?? 0xc9b79a)
     const jitter = 0.85 + Math.random() * 0.3
     this._tmpColor.copy(this._dustColor).lerp(WHITE, 0.18).multiplyScalar(jitter)
-    part.sprite.material.color.copy(this._tmpColor)
-    part.sprite.material.rotation = Math.random() * Math.PI * 2
+    part.r = this._tmpColor.r; part.g = this._tmpColor.g; part.b = this._tmpColor.b
+    part.rot = Math.random() * Math.PI * 2
 
     part.active = true
     part.age = 0
@@ -143,21 +208,42 @@ export class DustSystem {
     part.peak = PEAK_OPACITY * Math.min(1, 0.35 + intensity) * (opacityScale ?? 1)
 
     // Spawn just above the contact patch with a little random offset so puffs don't stack.
-    part.sprite.position.set(
-      x + (Math.random() - 0.5) * 0.3,
-      y + 0.08 + Math.random() * 0.12,
-      z + (Math.random() - 0.5) * 0.3
-    )
+    part.x = x + (Math.random() - 0.5) * 0.3
+    part.y = y + 0.08 + Math.random() * 0.12
+    part.z = z + (Math.random() - 0.5) * 0.3
 
     // Velocity: upward billow + lateral scatter + a backward drag of the car's own motion
     // so the trail lags behind the truck instead of riding with it.
     part.vx = (Math.random() - 0.5) * SPREAD - carVx * TRAIL_BACK
     part.vy = RISE_MIN + (RISE_MAX - RISE_MIN) * Math.random()
     part.vz = (Math.random() - 0.5) * SPREAD - carVz * TRAIL_BACK
+  }
 
-    part.sprite.scale.setScalar(part.scale0)
-    part.sprite.material.opacity = part.peak
-    part.sprite.visible = true
+  /** Pack live puffs into the instanced attributes and upload only the used prefix. */
+  _pack () {
+    const pos = this._aPos.array, par = this._aParam.array, col = this._aColor.array
+    let n = 0
+    for (let i = 0; i < POOL_SIZE; i++) {
+      const part = this._p[i]
+      if (!part.active) continue
+      const t = part.age / part.life
+      const fade = (1 - t) * (1 - t)
+      const rampIn = Math.min(1, t * 6)  // quick fade-in over first ~1/6 of life
+      const j3 = n * 3
+      pos[j3] = part.x; pos[j3 + 1] = part.y; pos[j3 + 2] = part.z
+      par[j3] = part.scale0 * (1 + SCALE_GROW * t)
+      par[j3 + 1] = part.rot
+      par[j3 + 2] = part.peak * fade * rampIn
+      col[j3] = part.r; col[j3 + 1] = part.g; col[j3 + 2] = part.b
+      n++
+    }
+    this._mesh.geometry.instanceCount = n
+    if (n > 0) {
+      for (const a of [this._aPos, this._aParam, this._aColor]) {
+        a.addUpdateRange(0, n * 3)
+        a.needsUpdate = true
+      }
+    }
   }
 
   /**
@@ -182,33 +268,22 @@ export class DustSystem {
       const part = this._p[i]
       if (!part.active) continue
       part.age += dt
-      const t = part.age / part.life
-      if (t >= 1) {
-        part.active = false
-        part.sprite.visible = false
-        continue
-      }
+      if (part.age >= part.life) { part.active = false; continue }
       // Settle + horizontal drag.
       part.vy -= SETTLE * dt
       const dragF = Math.max(0, 1 - DRAG * dt)
       part.vx *= dragF
       part.vz *= dragF
-      const s = part.sprite
-      s.position.x += part.vx * dt
-      s.position.y += part.vy * dt
-      s.position.z += part.vz * dt
-      // Grow + fade. Opacity rises briefly then fades to zero (ease-out on t).
-      s.scale.setScalar(part.scale0 * (1 + SCALE_GROW * t))
-      const fade = (1 - t) * (1 - t)
-      const rampIn = Math.min(1, t * 6)  // quick fade-in over first ~1/6 of life
-      s.material.opacity = part.peak * fade * rampIn
+      part.x += part.vx * dt
+      part.y += part.vy * dt
+      part.z += part.vz * dt
     }
 
     // ── Emit from wheels in ground contact ────────────────────────────────────
-    if (!enabled) return
+    if (!enabled) { this._pack(); return }
 
     const speed = Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z)
-    if (speed < SPEED_FLOOR && !_anySlip(vehicleState)) return
+    if (speed < SPEED_FLOOR && !_anySlip(vehicleState)) { this._pack(); return }
 
     const px = vehicleState.position.x
     const py = vehicleState.position.y
@@ -259,6 +334,8 @@ export class DustSystem {
       }
       if (this._emitAccum[i] > 2) this._emitAccum[i] = 2  // don't bank a backlog
     }
+
+    this._pack()
   }
 }
 

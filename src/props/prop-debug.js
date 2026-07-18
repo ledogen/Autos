@@ -35,6 +35,18 @@ export function addPropGui(gui, { params, rebuild, getPropSystem, onShadowModeCh
   f.add(params.shadows, 'fadeStart', 50, 600, 10).name('Baked fade start (m)').onChange(syncMode)
   f.add(params.shadows, 'fadeEnd', 100, 800, 10).name('Baked fade end (m)').onChange(syncMode)
 
+  // PERF-21: billboard takeover ring (chunks of full-3D props around the camera). Live — the
+  // system re-pools chunks over the next few frames, no rebuild. Tiers also write this.
+  f.add(params.lod, 'ring3d', 0, 5, 1).name('3D prop ring (chunks)').onChange((v) => {
+    const ps = getPropSystem && getPropSystem()
+    if (ps) ps.setLodRing(v)
+  })
+  // Billboard sun-side brightening — uniforms only, updates live while you orbit a tree.
+  f.add(params.lod, 'litGain', 0, 8, 0.1).name('billboard lit gain').onChange((v) => {
+    const ps = getPropSystem && getPropSystem()
+    if (ps) ps.setImpostorLitGain(v)
+  })
+
   const density = f.addFolder('Density'); density.close()
   density.add(S, 'clustersPerChunk', 0, 12, 1).name('tree clusters').onFinishChange(done)
   density.add(S.treesPerCluster, '1', 0, 24, 1).name('trees/cluster max').onFinishChange(done)
