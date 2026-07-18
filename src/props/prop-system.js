@@ -36,6 +36,10 @@ import { FLORA_PARAMS } from '../../data/flora.js'
 
 // Per-category global instance capacity (split evenly across that category's variants). Sized for
 // the ring-4 (Ultra, 81-chunk) worst case; pure typed-array memory (64 B/instance), cheap.
+// PERF-21: categories that keep rendering FULL 3D even in the billboard-only outer ring (rare,
+// landmark-scale, and shaped wrong for a vertical quad — boulders are wide horizontal masses).
+const BBONLY_3D_CATS = new Set(['boulder'])
+
 const CAPACITY = {
   // Trees sized for the PERF-21 billboard-only outer ring: Ultra streams trees out to the built-
   // terrain edge (ring+warm = 8 → 17² = 289 chunks × ~30 trees ≈ 8.7k, biome-split aspen/pine).
@@ -446,8 +450,10 @@ export class PropSystem {
     chunk.mode = mode
     for (const pr of chunk.places) {
       // Billboardable categories go to the impostor pool when far; anything else stays 3D —
-      // except in the billboard-only outer ring, where non-billboardable categories are skipped.
-      if (mode === 'bbonly' && this._impMeshes && !this._impMeshes.has(pr.key)) continue
+      // except in the billboard-only outer ring, where non-billboardable categories are skipped
+      // (sub-pixel 3D noise at that range) UNLESS they're landmark-scale (BBONLY_3D_CATS).
+      if (mode === 'bbonly' && this._impMeshes && !this._impMeshes.has(pr.key)
+          && !BBONLY_3D_CATS.has(pr.key.slice(0, pr.key.indexOf('#')))) continue
       if ((mode === 'far' || mode === 'bbonly') && this._impMeshes) {
         const irec = this._impMeshes.get(pr.key)
         if (irec && irec.free.length > 0) {
