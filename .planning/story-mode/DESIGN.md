@@ -11,12 +11,49 @@ Decisions marked **[DEFAULT]** are strong proposals built on in design conversat
 explicitly ratified — treat them as the plan of record, but surface them for confirmation
 before building anything expensive on top of one.
 
+**How to amend this document (living-doc discipline).** This is not a frozen meeting transcript;
+it grows. Match the ceremony to the layer you're touching:
+- **Mechanics reference sections** (the "day and clock," "economy," "car," etc.) are the
+  fleshing-out surface — edit them freely and often, no tags, no log. This is where new detail
+  and revised sketches live. Most changes belong here.
+- **Open questions** (bottom): when one is answered, delete it there and promote the answer up
+  into the relevant mechanics section (or, rarely, into a new invariant).
+- **Invariants (`SM-INV-N`)** are load-bearing walls — change them *only* through the ritual:
+  edit the invariant, set/date its tag (`[RATIFIED <date>]` when the owner decided it), add a
+  dated **Ratification pass** paragraph below logging what changed, and fix any downstream
+  references to it. A new hard rule is a new `SM-INV-N` the same way.
+- **Provenance tags are mandatory and never silently dropped.** `[RATIFIED]` = the owner
+  decided it; `[DEFAULT]` = proposed in conversation, pending confirmation. A future session
+  must never overwrite a `[RATIFIED]` rule without a new dated ratification pass.
+- **Keep this doc "why," not "what/when."** The moment a mechanic is concrete enough to build,
+  it becomes a ticket in `.planning/todos/pending/` or a line in `MILESTONES.md` — not a task
+  list here. The stacked **Ratification pass** notes below are this doc's changelog; read them
+  top-to-bottom for the evolution.
+
 **Ratification pass 2026-07-16** (project owner): determinism amendment blessed (SM-INV-12);
 game-mode split defined (see "Game modes" below); debug lockout in story mode ratified
 (ex-open-question 8); timers amended — NOT off the table, just not the universal driver
 (SM-INV-3 rewritten, ex-open-question 2); damage/wear model confirmed required and expected
 to be hard (see "The economy"); character dialog channel defined — RPG-style chat pane, no
 options, sequential cards (see "Characters and dialog"; SM-INV-11 scoped to the world-story).
+
+**Ratification pass 2026-07-19** (project owner): four amendments blessed. (1) **SM-INV-6
+reversed** — camping is now an explicit *button* gated by campable regions, with a worldgen-scored
+quality preview (shade, flatness, water proximity); was "a place, not a button." (2) **Mid-mission
+camping no longer auto-cancels the job** — it's job-dependent: short/perishable missions die
+overnight, longer hauls permit next-day delivery (see "The day and the clock"). (3) **Wear rescoped
+to time + engine-torque intensity, not abuse-events alone** (SM-INV-5) — hours and torque both
+integrated; this is the lever that splits intense mission driving from casual point-to-point
+freeroam. (4) **Par may scale with run duration** (SM-INV-2) — a global difficulty ramp keyed off
+run age, still blind to the car.
+
+**Ratification pass 2026-07-19 (b)** (project owner): **meta-progression model set — roguelike
+breadth, not power floor** (Binding of Isaac / Enter the Gungeon). SM-INV-9 sharpened: replaying
+deepens the game by widening the loot/mod pool and unlocking new run archetypes / objective-reshaping
+spirits (e.g. a camping spirit that re-points a run toward chasing a good night's sleep instead of
+wicked missions), never by raising where the player starts (SM-INV-7 first-run winnability preserved).
+Guardrail: objective-reshapers must *re-weight* what's worth doing, not staple a flat bonus onto a
+normal run. See "The world: regions, story states, spirits."
 
 ---
 
@@ -68,11 +105,17 @@ not the answer to *this* problem.) Three moves answer it together:
 2. **Bare completion pays nothing.** Payout is margin against par. Deliver at 0.6× par and
    you earn a pittance — and your brake pads wore out anyway. Safe driving isn't punished;
    it just doesn't pay.
-3. **Wear runs on time and abuse, not distance.** Two hours at 3000 rpm is two hours on the
-   engine whether you covered 40 km or 90. Honest, and it means crawling costs *more* per mile.
+3. **Wear runs on time and intensity, not distance.** Two hours at 3000 rpm is *not* the same
+   two hours at idle-and-coast — both hours and engine torque are tracked and integrated, so
+   wear compounds with how hard you drive as well as how long. This is what splits the game
+   into two driving modes: intense mission driving (par is a friction-circle deadline, wear be
+   damned) and casual point-to-point travel — picking your next mission, exploring, drifting
+   into camp — where easing off the throttle is how you protect the truck. Crawling still costs
+   *more* per mile than a fast, clean run, but a gentle freeroam leg between missions is cheap.
 
 Together: the safe strategy is a slow bleed. The player does the arithmetic around day three
-and starts driving at the limit **by choice**. The game never asked.
+and starts driving at the limit **by choice** — hard during missions, easy in between. The game
+never asked.
 
 ## Invariants
 
@@ -85,7 +128,11 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   only. If a better build raises par, every upgrade quietly hands back its own reward and
   the flywheel stalls. A better car raises *payout*, not lowers *risk* — the player drives
   at their own limit regardless of what's underneath, which is where crashes live. Godlike
-  runs stay lethal. [DEFAULT — load-bearing]
+  runs stay lethal. *Par MAY scale with run duration* — it tightens ("gets lower") the longer
+  a run survives, a global difficulty ramp keyed off run age, not the build. That's the sanctioned
+  scaling axis: it pushes a maturing run harder without ever handing an upgrade back its own
+  reward, because it's blind to what the player is driving. [DEFAULT — load-bearing; run-duration
+  scaling clause RATIFIED 2026-07-19]
 - **SM-INV-3 — Par is never rendered as a countdown; timers are a flavor, not the driver.**
   [RATIFIED as amended 2026-07-16] The par economy is a payout curve, felt as *how hard am I
   willing to push*, never *3:41 remaining* — putting par on the HUD makes the whole game a
@@ -94,10 +141,19 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   that timers must never become the main driver of all missions — they're one authored
   flavor among the mission types, and the default mission has no clock.
 - **SM-INV-4 — Payout is margin against par; bare completion pays ~nothing.** [DEFAULT]
-- **SM-INV-5 — Wear accrues on time + abuse, never distance.** [DEFAULT]
-- **SM-INV-6 — Camping is a place, not a button.** You sleep only at sites the worldgen
-  made (lakes, meadows, flat ground). The first yawn must mean "I am N km from anywhere
-  I'd want to wake up," not a menu prompt. The last leg of the day is the game. [DEFAULT]
+- **SM-INV-5 — Wear accrues on time + intensity, never distance.** Hours and engine torque
+  are both integrated; wear compounds with how hard you drive, not just how long. This is
+  the lever that separates intense mission driving from casual point-to-point freeroam
+  between missions — easing off the throttle on the way to the next job is how the player
+  protects the truck. [RATIFIED 2026-07-19]
+- **SM-INV-6 — Camping is a button, but the place decides the quality.** You commit to
+  sleep with an explicit action, and the game previews the campsite's quality where you
+  stand — scored from shade, flatness, proximity to streams and lakes, and other worldgen
+  factors. Some regions are campable and some are not, so the button is gated by where you
+  are, not always available. The night you get is the place you chose: a good spot means a
+  good night; a bad one (or the last campable ground far behind you) means waking half-tired.
+  The first yawn still means "I am N km from anywhere I'd want to wake up" — the last leg of
+  the day is finding good ground before you camp, not the press itself. [RATIFIED 2026-07-19]
 - **SM-INV-7 — Every run starts in a randomized jalopy, and every run is technically
   capable of beating the game.** No meta power curve that makes early runs uncompletable
   or late runs comfortable. The randomized bad car forces the player to re-read the truck
@@ -109,7 +165,17 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   an unlock hands out resources, SM-INV-7 softens into "late runs are comfortable" and the
   jalopy pool stops mattering. The fire keeps burning while you sleep; you dream something;
   it moves your truck. Ambiguous benefit is still benefit. This is the most likely invariant
-  to erode quietly, one reasonable-seeming buff at a time — watch it. [DEFAULT — load-bearing]
+  to erode quietly, one reasonable-seeming buff at a time — watch it. **The sanctioned axis of
+  meta-progression is *breadth*, not *floor*** (Binding of Isaac / Enter the Gungeon model):
+  replaying the game deepens it by widening what a run can *be* — more mods in the loot pool,
+  more spirits, more unlockable run archetypes — never by raising where the player *starts*.
+  A first run must stay technically winnable (SM-INV-7); a hundredth run is not stronger, it's
+  *deeper* — more variety in the deck, more shapes a run can take. A spirit that reshapes the
+  run's objective (e.g. "good camping matters more than wicked missions this run") is a legal
+  rule-change; a spirit that just pays out more currency for the same actions is a balance-sheet
+  handout and is forbidden. Litmus test for any unlock: *does it raise the floor / make late
+  runs comfortable?* If yes, it's illegal regardless of how it's dressed. [DEFAULT — load-bearing;
+  breadth-not-floor / roguelike-unlock model RATIFIED 2026-07-19]
 - **SM-INV-10 — Parts are described, never scored.** No number on a part, ever. An LSD
   doesn't grant +5 handling; it changes what the truck does when you get greedy mid-corner.
   Power mods on an open-diff RWD truck are a *worse car* for a driver without the literacy —
@@ -146,10 +212,14 @@ Sleepiness is the per-run clock — soft, diegetic, no arrival deadlines. Get sl
 start **dozing**: eyes close, controls drop, periods lengthen. Not a fail state (SM-INV-1);
 the physics does the rest. Coffee is a loan: alert now, sleepy earlier tomorrow.
 
-Camping is a place (SM-INV-6). The day's shape: work → read your eyelids → break off →
-hunt a site → arrive before you're dangerous. Accepting a mission is a bet against
-remaining alertness. Camping mid-mission kills the job — milk spoils, the guy gets away;
-the fiction supplies the penalty, no payout math needed. Sleep somewhere bad → bad night:
+Camping commits you to sleep where you stand, and the place sets the night's quality
+(SM-INV-6). The day's shape: work → read your eyelids → break off → hunt good ground in
+a campable region → camp before you're dangerous. Accepting a mission is a bet against
+remaining alertness. Camping mid-mission doesn't automatically kill the job — it depends on
+the job. Short, perishable ones die overnight (the milk spoils, the guy gets away; the fiction
+supplies the penalty, no payout math needed); longer hauls permit the delivery to be made the
+next day, so camping is a legitimate rest stop on a multi-day run. The mission's own fiction
+says which it is. Sleep somewhere bad → bad night:
 no fire, no fish, wake half-tired, tomorrow's budget already in debt — a run ending in
 slow motion, legible the whole way down.
 
@@ -160,10 +230,15 @@ slow motion, legible the whole way down.
   with region difficulty. See ticket FEAT-29.
 - **Payout = margin against par** (SM-INV-4). Currency rates must net **negative on a lazy
   day, positive on a brave one** — that's the whole balance problem in one line.
-- **Wear = f(time, abuse)** (SM-INV-5): rpm-hours, redline time, hard impacts, curb strikes,
-  over-temp. Breakdown (wear floor) is the second death. There is no damage model today —
-  this is a new, cheap, out-of-hot-loop subsystem, and it should be ONE model shared with
-  hazard impacts (FEAT-26 asks "what does a rock hit do" — same answer).
+- **Wear = f(time, intensity)** (SM-INV-5): hours driven and engine torque are both tracked
+  and integrated over the run — rpm-hours, redline time, hard impacts, curb strikes,
+  over-temp all feed the same accumulator. Breakdown (wear floor) is the second death. There
+  is no damage model today — this is a new, cheap, out-of-hot-loop subsystem, and it should
+  be ONE model shared with hazard impacts (FEAT-26 asks "what does a rock hit do" — same
+  answer). Practically, this is the mechanism behind the two driving modes: mission legs run
+  hot against a par deadline and eat wear; the freeroam legs picking the next mission or
+  exploring between jobs are where a player who wants to protect the truck backs off the
+  throttle and drives casually.
 - **Damage/wear is confirmed required and expected to be hard to get right** [RATIFIED
   2026-07-16]. Two owner-stated calibration anchors:
   - **Severity thresholds, not linear accumulation.** Hitting the bump stops lightly should
@@ -190,11 +265,36 @@ roll over that same architecture space. Mid-run finds (an LSD in a barn) are eve
   (recorded in FEAT-28) — it buys "every unlocked area is fully drivable," which infinite
   streaming can never promise.
 - **Story = parameter states** (SM-INV-11), keyed off metaState (SM-INV-12). Sky/time-of-day
-  (src/sky.js), prop palette params, terrain params are the delivery surface.
+  (src/sky.js), prop palette params, terrain params, prop history states (FEAT-32 logged
+  forest), and **road surface class** (FEAT-38 dirt-road prevalence) are the delivery surface —
+  a region reading civilised-and-paved vs. wild-and-dirt is a baked per-region parameter, not
+  authored text.
+- **Dispersed-camping spurs (FEAT-38)** are a diegetic campsite feeder. Dirt tracks grow off the
+  network into the empty back-country and peter out at scored clearings — the worldgen designating
+  campable ground (SM-INV-6), with the dirt spur *being* the access. Prefer a spur-endpoint score
+  that shares the camp-quality signal (flat, shade, water proximity) so FEAT-38 and the SM-1
+  campsite placer / FEAT-21 siting rules read the same "good ground" field.
 - **Spirits** are permanent, unremovable, player-earned world additions (found the rare
   campsite once → the camping spirit is in every run, forever). Rules, not resources
   (SM-INV-9). The player accumulated the weirdness voluntarily by going too far; there is
   no button to put it back.
+- **Meta-progression is roguelike breadth, not a power curve** (SM-INV-9, Isaac / Gungeon
+  model). Replaying deepens the game by widening the pool of things a run can contain and the
+  *shapes* a run can take — never by making you start stronger (SM-INV-7 keeps the first run
+  winnable). Two expanding pools:
+  - **Loot / mod pool.** Unlocks add new parts, hazards, mission dressings, and spirits to the
+    randomized pool a run draws from. More replays → a richer, weirder deck — more variety, not
+    a higher floor. An unlocked part is *another option in the jalopy roll*, not a strictly
+    better one (SM-INV-10: it changes what the truck does, it isn't scored).
+  - **Run archetypes / objective-reshapers.** Some unlocks are spirits that, when they show up
+    in a run and the player finds them, *re-point what the run is about*. Example: unlock the
+    camping spirit, and on runs where he appears, finding good sleep is worth chasing — the run
+    optimizes toward a good night rather than the most wicked missions. The player's optimal
+    play *changes shape* run to run instead of accreting power. **Design guardrail:** an
+    objective-reshaper must genuinely re-weight what's worth doing (a trade — this over that),
+    not staple a flat bonus onto an otherwise-normal run; "same run, +20% payout when the spirit
+    is present" is the balance-sheet erosion SM-INV-9 forbids. The spirit changes the *question*
+    the run poses, not your bank balance.
 
 ### Characters and dialog: the chat pane [RATIFIED 2026-07-16]
 
@@ -207,8 +307,9 @@ conversation tree.
   — no branching, so no per-choice state to author or balance.
 
 This posture is deliberate and on-tone: receiving a line and moving on is the same passive
-stance as the doze (SM-INV-11) and the same no-menus ethos as camping-is-a-place (SM-INV-6) and
-the no-countdown HUD (SM-INV-3). The player drives; they don't manage conversations.
+stance as the doze (SM-INV-11) and the same low-interaction ethos as the single-action commit
+of camping (SM-INV-6) and the no-countdown HUD (SM-INV-3). The player drives; they don't manage
+conversations.
 
 **What the chat pane carries — and what it doesn't.** The chat pane is the **character** channel:
 mission-givers, people you meet, whoever spawns at a place (e.g. a logging site, FEAT-32). It is
