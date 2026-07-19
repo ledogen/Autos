@@ -41,8 +41,8 @@ export function addPropGui(gui, { params, rebuild, getPropSystem, onShadowModeCh
     const ps = getPropSystem && getPropSystem()
     if (ps) ps.setLodRing(v)
   })
-  // Billboard sun-side brightening — uniforms only, updates live while you orbit a tree.
-  f.add(params.lod, 'litGain', 0, 8, 0.1).name('billboard lit gain').onChange((v) => {
+  // Billboard sun-contrast scale (1 = physical) — uniforms only, updates live while you orbit a tree.
+  f.add(params.lod, 'litGain', 0, 3, 0.05).name('billboard sun contrast').onChange((v) => {
     const ps = getPropSystem && getPropSystem()
     if (ps) ps.setImpostorLitGain(v)
   })
