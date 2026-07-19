@@ -1,7 +1,7 @@
 ---
 id: BUG-35
 type: bug
-status: open
+status: closed
 opened: 2026-07-13
 severity: major
 source: test-run
@@ -74,3 +74,15 @@ flipped to "largest = 100% of kept nodes") was designed and about to be implemen
 called it off — unreachable fragments stay in the world for now. GRAPH-REACHABILITY remains the
 accepted known-red at 78% largest-component. If this is picked up later, the design sketch lives
 in this session's record; the acceptance remains as written above (fix or encode the tolerance).
+
+## Resolution (2026-07-19)
+
+Closed after the feature/perf-worldgen merge (d731cb3). The failing sub-assertion was
+GRAPH-REACHABILITY — confirmed above as the long-standing accepted red (78% largest component,
+4 components), not a new regression. The new routing defaults (corridor-heuristic router +
+wTurn 1750 + junction thinning v3) changed the network character such that the gate now passes
+honestly: nodes=51 orphans=0 #comps=2 largest=49 (96%) vs the 85% threshold. Verified 2026-07-19
+via `node test/run-all.mjs --serial --only=graph-topology` (10/10 checks) and the post-merge full
+suite (34/34). The gate file itself was NOT modified — no tolerance was encoded; the world greened it.
+Residual risk (window-noisy boundary dips, per project_reachability_window_noise memory) is owned
+by FEAT-28 region-gated connectivity, which remains open.
