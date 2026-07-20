@@ -40,12 +40,11 @@ export const IMPOSTOR_CATS = ['aspen', 'pine']
 
 const TILE_PX = 256            // px per variant tile (atlas ~16 MB RGBA16F at 11 variants; 128 showed
                                // visible stair-step cutout edges on mid-distance trees at 1200p)
-const LIT_GAIN = 1.0           // sun-term scale in the view-relit ratio (1 = physical Lambert average) —
+const LIT_GAIN = 1.7           // sun-term scale in the view-relit ratio (1 = physical; 1.7 user-tuned) —
                                // live-tunable via the Props GUI 'billboard sun contrast' slider
-const FLATTEN = 0.6            // baked-gradient flatten strength at sun-on views: the tile shows the
-                               // SHADE-side facet pattern, which is the wrong pattern for a sun-lit
-                               // face — blend texels toward the tile mean as the view swings sun-ward
-                               // (0 at the bake view). 1 = full flatten (featureless — too far).
+const FLATTEN = 0              // baked-gradient flatten strength at sun-on views (blend toward the
+                               // tile mean, ramped from 0 at the bake view). User-tuned OFF — kept as
+                               // a live GUI lever ('billboard sun-side flatten').
 
 export class PropImpostors {
   /**
