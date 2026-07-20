@@ -35,8 +35,9 @@ for (const pad of PADS) {
   const v = Math.sqrt(0.55 * G * pad.r)          // a plausible mu 0.55 lap for this radius
   const lapT = 2 * Math.PI * pad.r / v
   const omega = v / pad.r
-  // Start on the timing radial (the -Z point of the ring) and go round twice.
-  let theta = -Math.PI / 2
+  // Start on the timing radial (the +Z point of the ring — the pad's strip-side edge) and go
+  // round twice.
+  let theta = Math.PI / 2
   const steps = Math.ceil(lapT * 2.2 / DT)
   for (let i = 0; i < steps; i++) {
     car.x = pad.cx + pad.r * Math.cos(theta)
@@ -61,7 +62,7 @@ for (const pad of PADS) {
   // Sit ON the timing radial jittering across it — the classic double-trigger.
   for (let i = 0; i < 600; i++) {
     car.x = pad.cx + (i % 2 ? 0.05 : -0.05)
-    car.z = pad.cz - pad.r
+    car.z = pad.cz + pad.r
     car.speed = 0.4
     lab.update(DT)
   }

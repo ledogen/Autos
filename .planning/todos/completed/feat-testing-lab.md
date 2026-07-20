@@ -48,8 +48,20 @@ perpendicular to the pads, which spread the site over two axes for no reason.
  z=+58  ────────────  rumble: small  ( 50 mm @ 250 mm)
  z=+40  ============  DRAG STRIP →  start ▏100 200 300▕ finish(400) ▕ brake board(470)
  z=  0     ▲ ramp     (the D-19 jump rig)
- z=-300      (25)      (  60  )        (      150      )   skidpads
+ z=-35  ─────────────  every pad's NEAR EDGE lines up here
+          (25)  (  60  )      (        150        )   skidpads
 ```
+
+Each pad carries its own centre-z so all three **near edges** share one tangent 75 m off the strip.
+A shared centre-z (the first cut) pushed the 25 m pad's entry 125 m further out than the 150 m
+pad's and forced the site to sprawl to fit the biggest ring. Footprint went from x 0..770 /
+z −450..+90 to x 0..550 / z −335..+90. The lap timing radial also moved to each pad's near side, so
+a lap starts where you join from the strip rather than half a lap later.
+
+**Distance legibility.** Flat paint 400 m down the strip is a couple of pixels from the seat — the
+strip's length was genuinely unreadable. Each 100 m mark carries its hundreds as upright **posts**
+beside the lane (one at 100, two at 200, three at 300, four in red at the 400 m finish). Posts hold
+a silhouette against the sky and stay countable; no font atlas needed.
 
 **Tracks**, all auto-timed on gate crossing (no button to fumble mid-run):
 - **Drag strip** 400 m with 100 m marks; truck stages on the start line. Reports time, trap speed,
@@ -118,6 +130,24 @@ The lab is inert unless entered: `labSystem.update()` runs only under `_labActiv
 group is `visible = false`, and the HUD panel is hidden. It is reachable only from the pause menu,
 and every other pause-menu destination (story mode, grid world, return to world) calls `exitLab()`
 first, so modes can never stack.
+
+## The grid aliasing (owner-reported, long-standing in grid world)
+
+`THREE.GridHelper` draws 1-pixel `LineSegments`. At a grazing angle the cell spacing goes sub-pixel,
+the rasteriser keeps or drops each line arbitrarily, and entire families of lines vanish or shimmer.
+It is the wrong primitive; no tuning fixes it.
+
+Replaced by drawing the grid **into the floor's fragment shader**, antialiased by the screen-space
+derivative (`fwidth`) of the cell coordinate: the line widens to at least a pixel as it recedes, so
+a distant grid fades to flat tone instead of tearing. Fine 5 m cells retire first, 25 m majors
+persist further, then both dissolve. Bonus: the grid is computed from world XZ so it is welded to
+the world — the old helper had to be snapped to its cell size each frame or its lines crawled.
+
+**Not quality-gated, deliberately.** The owner asked for a gate if it were expensive; measured, it
+is *cheaper* than what it replaced (one material on one quad, ~30 ALU ops, vs 402 line segments) and
+lab draw calls went DOWN. Gating something free would be ceremony. Rumble-lane tessellation was also
+halved in the same pass (8→6 samples per crest, 6→4 rows): 106 k → 55 k triangles, no visible
+difference; the physics surface is analytic and untouched.
 
 ## Gate
 

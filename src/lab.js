@@ -32,9 +32,10 @@
  *      z=+86  ────────────  rumble: large  (150 mm @ 500 mm)
  *      z=+72  ────────────  rumble: med    (100 mm @ 350 mm)
  *      z=+58  ────────────  rumble: small  ( 50 mm @ 250 mm)
- *      z=+40  ============  DRAG STRIP →  start ▏ 100 200 300 ▕ finish(400) ▕ brake board(470)
+ *      z=+40  ============  DRAG STRIP →  start ▏100 200 300▕ finish(400) ▕ brake board(470)
  *      z=  0     ▲ ramp                  (the D-19 jump rig, kept: it is a suspension input too)
- *      z=-300      ( 25 )      (  60  )            (      150      )   skidpads
+ *      z=-35   ── every pad's near edge lines up here ──────────────────────
+ *               ( 25 )   (   60   )        (         150         )   skidpads
  *
  * Timing is fully automatic — gates fire on crossing, there is no button to fumble mid-run.
  */
@@ -72,14 +73,20 @@ const RUMBLES = [
     { name: 'large', z: 86, amp: 0.15, spacing: 0.50 },
 ]
 
-// Skidpad rings: radius + centre, strung along +X below the strip with clear gaps.
+// Skidpad rings: radius + centre, strung along +X just below the strip.
 // 25 m ≈ a tight switchback, 60 m ≈ a typical mountain corner, 150 m ≈ a fast sweeper —
 // bracketing the radii the router actually produces (hard floor 8 m, most corners 20–120 m).
-const PAD_Z = -300
+//
+// Each pad gets its OWN centre-z so that all three NEAR EDGES line up on PAD_NEAR_Z — a common
+// tangent 75 m off the strip. Sharing one centre-z instead would push the near edge of the 25 m
+// pad 125 m further out than the 150 m pad's, and the whole site would sprawl to fit the biggest
+// ring. This way you turn off the strip and the entry to every pad is the same distance away.
+const PAD_NEAR_Z = -35        // z of every pad's strip-side edge
+const _pad = (r, cx, name) => ({ r, cx, cz: PAD_NEAR_Z - r, name })
 const PADS = [
-    { r: 25,  cx: 60,  cz: PAD_Z, name: 'skidpad 25 m' },
-    { r: 60,  cx: 240, cz: PAD_Z, name: 'skidpad 60 m' },
-    { r: 150, cx: 620, cz: PAD_Z, name: 'skidpad 150 m' },
+    _pad(25,   40, 'skidpad 25 m'),
+    _pad(60,  150, 'skidpad 60 m'),
+    _pad(150, 400, 'skidpad 150 m'),
 ]
 
 const COL = { paint: 0xe8e8e0, start: 0x5ad06a, finish: 0xff5a3c, brake: 0xffcf3c, lane: 0x8a8a80 }
@@ -189,6 +196,20 @@ export class LabSystem {
         return m
     }
 
+    /**
+     * Upright distance post. Flat paint vanishes into a couple of pixels down a 400 m strip; a
+     * 3 m post keeps its silhouette against the sky and stays countable from the seat.
+     */
+    _post(x, z, color, h = 3.0) {
+        const m = new THREE.Mesh(
+            new THREE.BoxGeometry(0.45, h, 0.45),
+            new THREE.MeshBasicMaterial({ color, toneMapped: false }),
+        )
+        m.position.set(x, h / 2, z)
+        this._group.add(m)
+        return m
+    }
+
     _ring(cx, cz, r, color, w = 0.35) {
         const geo = new THREE.RingGeometry(r - w / 2, r + w / 2, 192)
         const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, toneMapped: false }))
@@ -204,8 +225,11 @@ export class LabSystem {
      * for repeatedly on the road (see QUAL-07, BUG-15, the carve/ribbon gates).
      */
     _rumbleMesh(r) {
-        const segsX = Math.ceil(RUMBLE_LEN / (r.spacing / 8))   // 8 samples per crest
-        const segsZ = 6
+        // 6 samples per crest is plenty for a 25–50 cm bump on screen; 8 × 6 rows cost ~102 k
+        // triangles across the three lanes for no visible gain. The PHYSICS surface is analytic
+        // (rumbleSurface) and is not affected by this tessellation at all.
+        const segsX = Math.ceil(RUMBLE_LEN / (r.spacing / 6))
+        const segsZ = 4
         const geo = new THREE.PlaneGeometry(RUMBLE_LEN, RUMBLE_W, segsX, segsZ)
         geo.rotateX(-Math.PI / 2)
         geo.translate(RUMBLE_LEN / 2, 0, r.z)
@@ -234,7 +258,22 @@ export class LabSystem {
         // ── drag strip: +X, lane edges + 100 m marks + start/finish/brake boards ────────────
         this._line(0, zL, DRAG_LEN + STRIP_RUNOFF, zL, COL.lane, W_LANE)
         this._line(0, zR, DRAG_LEN + STRIP_RUNOFF, zR, COL.lane, W_LANE)
-        for (let d = 100; d < DRAG_LEN; d += 100) this._line(d, zL, d, zR, COL.paint, W_MARK)
+        // Distance marks. A bare line at 100/200/300 tells you nothing about WHICH mark it is, and
+        // flat paint 400 m away is a few pixels from the driver's seat — the strip's length was
+        // genuinely unreadable in screenshots. So each mark carries its hundreds as a row of
+        // upright POSTS beside the lane: one post at 100 m, two at 200, three at 300, four at the
+        // 400 m finish (those in red). Posts have height, so they stand against the sky and stay
+        // countable the length of the strip; and it needs no font atlas.
+        for (let d = 100; d <= DRAG_LEN; d += 100) {
+            const isFinish = d === DRAG_LEN
+            if (!isFinish) this._line(d, zL, d, zR, COL.paint, W_MARK)
+            const n = d / 100
+            for (let b = 0; b < n; b++) {
+                const off = 4 + b * 4.5                     // m outboard of the lane edge, per post
+                this._post(d, zL - off, isFinish ? COL.finish : COL.paint)
+                this._post(d, zR + off, isFinish ? COL.finish : COL.paint)
+            }
+        }
         this._line(0, zL, 0, zR, COL.start, W_GATE)                  // start
         this._line(DRAG_LEN, zL, DRAG_LEN, zR, COL.finish, W_GATE)   // finish
         this._line(BRAKE_MARK, zL, BRAKE_MARK, zR, COL.brake, W_GATE) // "brake here" board
@@ -247,8 +286,9 @@ export class LabSystem {
             this._ring(p.cx, p.cz, p.r, COL.paint, W_RING)              // the line to follow
             this._ring(p.cx, p.cz, p.r - 3, COL.lane, W_LANE)           // lane band, inner
             this._ring(p.cx, p.cz, p.r + 3, COL.lane, W_LANE)           // lane band, outer
-            // Timing line: radial on the -Z side, spanning the lane. Crossing it either way laps.
-            this._line(p.cx, p.cz - (p.r - 4.5), p.cx, p.cz - (p.r + 4.5), COL.start, W_GATE)
+            // Timing line: radial on the pad's NEAR (+Z) side — the edge you meet coming off the
+            // strip, so the lap starts where you join rather than half a lap later.
+            this._line(p.cx, p.cz + (p.r - 4.5), p.cx, p.cz + (p.r + 4.5), COL.start, W_GATE)
         }
 
         this._scene.add(this._group)
@@ -364,7 +404,7 @@ export class LabSystem {
                 live.theta = th
             }
             const x = pad.cx
-            if (!this._crossed(p0, p1, x, pad.cz - (pad.r - 4.5), x, pad.cz - (pad.r + 4.5))) continue
+            if (!this._crossed(p0, p1, x, pad.cz + (pad.r - 4.5), x, pad.cz + (pad.r + 4.5))) continue
             const start = () => this._laps.set(pad.name, {
                 t: 0, swept: 0, theta: Math.atan2(p1.z - pad.cz, p1.x - pad.cx),
             })

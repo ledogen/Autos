@@ -1779,17 +1779,68 @@ document.addEventListener('keydown', e => {
 // A metre grid and a ground plane at y=0, shown only in the testing lab. Both recenter on the view
 // each frame (the grid snapped to its cell size so its lines appear stationary rather than
 // crawling) so the floor reads as INFINITE while driving — see the loop.
-const LAB_FLOOR_SIZE = 1000       // m span; large enough that the snapped follow never shows an edge
-const LAB_FLOOR_DIVISIONS = 200   // → 5 m cells
-const _gridHelper = new THREE.GridHelper(LAB_FLOOR_SIZE, LAB_FLOOR_DIVISIONS, 0xc8c8c8, 0x707070)
-_gridHelper.visible = false
-scene.add(_gridHelper)
+const LAB_FLOOR_SIZE = 1000       // m span; large enough that the follow never shows an edge
 
-// The pad the tracks are painted on. Colour is set per-mode in enterLab (asphalt grey — you have to
-// SEE the line you are following); physics never reads this mesh, it reads LabSystem.groundHeight.
+// The pad the tracks are painted on, with the reference grid drawn INTO it by the fragment shader
+// rather than as geometry. THREE.GridHelper draws 1-px LineSegments: at a grazing angle the cell
+// spacing goes sub-pixel, the rasteriser keeps or drops each line arbitrarily, and whole families of
+// lines vanish or shimmer (the long-standing grid-world aliasing). A shader grid measures the cell
+// coordinate's screen-space derivative (fwidth) and widens the line to at least one pixel, so a
+// receding grid fades smoothly to a flat tone instead of tearing itself apart. It is also cheaper
+// than the geometry it replaces — one extra material on one quad against 402 line segments — so it
+// is NOT quality-gated; there is nothing to save by turning it off.
+// Physics never reads this mesh; it reads LabSystem.groundHeight.
+const LAB_GRID_FINE = 5           // m — minor cell
+const LAB_GRID_MAJOR = 25         // m — major cell
+const _labFloorMaterial = new THREE.ShaderMaterial({
+  uniforms: {
+    uBase:  { value: new THREE.Color(0x33373c) },
+    uMinor: { value: new THREE.Color(0x4c525a) },
+    uMajor: { value: new THREE.Color(0x79828c) },
+    uFine:  { value: LAB_GRID_FINE },
+    uCoarse:{ value: LAB_GRID_MAJOR },
+    uFade:  { value: 700 },        // m — beyond this only the major grid survives, then nothing
+  },
+  vertexShader: `
+    varying vec3 vWorld;
+    varying float vDist;
+    void main () {
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vWorld = w.xyz;
+      vec4 mv = viewMatrix * w;
+      vDist = -mv.z;
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: `
+    uniform vec3 uBase, uMinor, uMajor;
+    uniform float uFine, uCoarse, uFade;
+    varying vec3 vWorld;
+    varying float vDist;
+    // Coverage of a grid line at cell size s, antialiased by the screen-space derivative of the
+    // cell coordinate. This is the whole trick: near the camera fwidth is tiny and the line is
+    // crisp; far away fwidth grows, the line widens to a pixel and then washes out, so the grid
+    // dissolves instead of moireing.
+    float gridCoverage (vec2 p, float s, float widthPx) {
+      vec2 c = p / s;
+      vec2 g = abs(fract(c - 0.5) - 0.5) / fwidth(c);
+      return 1.0 - min(min(g.x, g.y) / widthPx, 1.0);
+    }
+    void main () {
+      float fine  = gridCoverage(vWorld.xz, uFine,   1.0);
+      float major = gridCoverage(vWorld.xz, uCoarse, 1.4);
+      // Retire the fine grid first — it is the one that goes sub-pixel soonest.
+      fine  *= 1.0 - smoothstep(uFade * 0.10, uFade * 0.40, vDist);
+      major *= 1.0 - smoothstep(uFade * 0.45, uFade,        vDist);
+      vec3 col = mix(uBase, uMinor, fine);
+      col = mix(col, uMajor, major);
+      gl_FragColor = vec4(col, 1.0);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
+})
 const _gridGroundPlane = new THREE.Mesh(
   new THREE.PlaneGeometry(LAB_FLOOR_SIZE * 2, LAB_FLOOR_SIZE * 2),
-  new THREE.MeshPhongMaterial({ color: 0x33373c })
+  _labFloorMaterial
 )
 _gridGroundPlane.rotation.x = -Math.PI / 2
 _gridGroundPlane.receiveShadow = true
@@ -1828,7 +1879,6 @@ function enterLab () {
 
   if (terrainSystem) terrainSystem.setEnabled(false)   // stop streaming, not just drawing
   _setWorldgenVisible(false)
-  _gridHelper.visible = true
   _gridGroundPlane.visible = true
   rampMesh.visible = RANGER_PARAMS.rampEnabled !== false   // D-19 jump rig, kept as a lab feature
 
@@ -1851,7 +1901,6 @@ function exitLab () {
   if (scene.fog && _labFogDensity != null) { scene.fog.density = _labFogDensity; _labFogDensity = null }
 
   labSystem.exit()
-  _gridHelper.visible = false
   _gridGroundPlane.visible = false
   rampMesh.visible = false
   if (terrainSystem) terrainSystem.setEnabled(true)
@@ -2300,14 +2349,11 @@ function loop () {
   if (_perfFrame === 180) { perfDump('load ~3s'); perfReset() }
   else if (_perfFrame === 600) { perfDump('steady ~10s') }
 
-  // Lab: recenter the floor grid + pad on the view each frame so they read as infinite. The grid
-  // snaps to the cell size so its lines appear stationary (no crawling); the pad follows
-  // continuously so its edges never enter view.
-  if (_labActive) {
-    const cell = LAB_FLOOR_SIZE / LAB_FLOOR_DIVISIONS
-    _gridHelper.position.set(Math.round(streamCenter.x / cell) * cell, 0, Math.round(streamCenter.z / cell) * cell)
-    _gridGroundPlane.position.set(streamCenter.x, 0, streamCenter.z)
-  }
+  // Lab: recenter the floor pad on the view each frame so it reads as infinite. No snapping is
+  // needed any more — the grid is drawn from WORLD xz in the fragment shader, so it stays welded to
+  // the world however the quad moves (the old GridHelper had to be snapped to its cell size or its
+  // lines crawled).
+  if (_labActive) _gridGroundPlane.position.set(streamCenter.x, 0, streamCenter.z)
 
   // FEAT-23: engine audio tracks RPM + throttle EVERY frame (no-op until the first keypress unlocks
   // WebAudio). PERF-16: deliberately OUTSIDE the throttled HUD block below — a 10 Hz pitch update would
