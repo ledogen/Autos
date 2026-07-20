@@ -46,6 +46,11 @@ export function addPropGui(gui, { params, rebuild, getPropSystem, onShadowModeCh
     const ps = getPropSystem && getPropSystem()
     if (ps) ps.setImpostorLitGain(v)
   })
+  // Sun-on gradient flatten (baked facet pattern → tile mean as the view swings sun-ward).
+  f.add(params.lod, 'flatten', 0, 1, 0.05).name('billboard sun-side flatten').onChange((v) => {
+    const ps = getPropSystem && getPropSystem()
+    if (ps) ps.setImpostorFlatten(v)
+  })
 
   const density = f.addFolder('Density'); density.close()
   density.add(S, 'clustersPerChunk', 0, 12, 1).name('tree clusters').onFinishChange(done)

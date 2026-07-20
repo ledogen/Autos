@@ -42,6 +42,10 @@ const TILE_PX = 256            // px per variant tile (atlas ~16 MB RGBA16F at 1
                                // visible stair-step cutout edges on mid-distance trees at 1200p)
 const LIT_GAIN = 1.0           // sun-term scale in the view-relit ratio (1 = physical Lambert average) —
                                // live-tunable via the Props GUI 'billboard sun contrast' slider
+const FLATTEN = 0.6            // baked-gradient flatten strength at sun-on views: the tile shows the
+                               // SHADE-side facet pattern, which is the wrong pattern for a sun-lit
+                               // face — blend texels toward the tile mean as the view swings sun-ward
+                               // (0 at the bake view). 1 = full flatten (featureless — too far).
 
 export class PropImpostors {
   /**
@@ -59,12 +63,21 @@ export class PropImpostors {
     this._cols = 0
     this._rows = 0
     this._litGain = LIT_GAIN
+    this._flatten = FLATTEN
   }
 
   /** Live sun-contrast scale (uniforms only — no rebake needed). 1 = physical. */
   setLitGain (v) {
     this._litGain = Math.max(0, v)
     this._updateLightUniforms()
+  }
+
+  /** Live gradient-flatten strength at sun-on views (uniforms only). See FLATTEN. */
+  setFlatten (v) {
+    this._flatten = Math.max(0, Math.min(1, v))
+    for (const e of this._entries.values()) {
+      if (e.material) e.material.uniforms.uFlat.value = this._flatten
+    }
   }
 
   /**
@@ -89,6 +102,8 @@ export class PropImpostors {
     for (const e of this._entries.values()) {
       if (!e.material) continue
       const u = e.material.uniforms
+      u.uG0.value = g0
+      u.uFlat.value = this._flatten
       u.uSunDir.value.copy(dir)
       u.uHemi.value.set(hemiT.r, hemiT.g, hemiT.b)
       u.uSunT.value.set(sunT.r, sunT.g, sunT.b)
@@ -241,6 +256,36 @@ export class PropImpostors {
     r.setClearColor(prevClear, prevClearA)
     r.setRenderTarget(prevTarget)
     mat.dispose()
+    this._computeTileMeans()
+  }
+
+  /**
+   * Per-tile mean foliage colour (unpremultiplied, over a ≥ 0.5 texels) → uTileMean, the flatten
+   * target. One whole-atlas readback per bake (boot / sky-look change), not per frame.
+   */
+  _computeTileMeans () {
+    const rt = this._rt
+    const w = rt.width, h = rt.height
+    const buf = new Uint16Array(w * h * 4)
+    this._renderer.readRenderTargetPixels(rt, 0, 0, w, h, buf)
+    const aHalf = 0x3800                                 // half-float 0.5 (positive-range bit compare)
+    for (const e of this._entries.values()) {
+      const x0 = (e.tilesIx % this._cols) * TILE_PX
+      const y0 = Math.floor(e.tilesIx / this._cols) * TILE_PX
+      // LUMINANCE-WEIGHTED mean: a plain mean skews dark on pines (deep shade texels + trunk
+      // dominate the tile), so sun-on flattening turned billboard pines darker than their lit 3D
+      // originals. Weighting by luminance biases the target toward the canopy's lit body — the
+      // thing a sun-facing view actually shows — and barely moves near-uniform tiles (aspens).
+      let sr = 0, sg = 0, sb = 0, wsum = 0
+      for (let row = 0; row < TILE_PX; row++) for (let col = 0; col < TILE_PX; col++) {
+        const i = ((y0 + row) * w + (x0 + col)) * 4
+        if (buf[i + 3] < aHalf) continue
+        const r0 = halfToFloat(buf[i]), g0 = halfToFloat(buf[i + 1]), b0 = halfToFloat(buf[i + 2])
+        const wgt = 0.2126 * r0 + 0.7152 * g0 + 0.0722 * b0
+        sr += r0 * wgt; sg += g0 * wgt; sb += b0 * wgt; wsum += wgt
+      }
+      if (wsum > 0 && e.material) e.material.uniforms.uTileMean.value.set(sr / wsum, sg / wsum, sb / wsum)
+    }
   }
 
   _makeBillboardMaterial (uTile, y0n) {
@@ -254,6 +299,9 @@ export class PropImpostors {
         uHemi: { value: new THREE.Vector3(1, 1, 1) },    // hemi colour × intensity
         uSunT: { value: new THREE.Vector3(0, 0, 0) },    // sun colour × intensity × litGain
         uInvDenom: { value: new THREE.Vector3(1, 1, 1) },// 1/(hemi + sun·g(bake view))
+        uG0: { value: 0 },                               // g at the bake view (flatten ramp zero)
+        uFlat: { value: FLATTEN },                       // sun-on gradient flatten strength
+        uTileMean: { value: new THREE.Vector3(0.1, 0.15, 0.08) }, // tile mean colour (set in rebake)
       }]),
       vertexShader: /* glsl */`
         attribute vec3 aPos;          // anchor: trunk base / prop origin (world)
@@ -266,9 +314,12 @@ export class PropImpostors {
         uniform vec3 uHemi;
         uniform vec3 uSunT;
         uniform vec3 uInvDenom;
+        uniform float uG0;
+        uniform float uFlat;
         varying vec2 vUv;
         varying vec3 vTint;
         varying vec3 vLit;            // per-channel view-relighting ratio (see _updateLightUniforms)
+        varying float vFlat;          // sun-on gradient flatten amount (0 at the bake view)
         #include <fog_pars_vertex>
         void main () {
           vTint = aTint;
@@ -288,6 +339,10 @@ export class PropImpostors {
           float th = acos(c);
           float g = (sin(th) + (3.14159265 - th) * c) / 3.14159265;
           vLit = (uHemi + uSunT * g) * uInvDenom;
+          // The baked facet pattern is the BAKE view's shading — the farther the view swings
+          // toward the sun-lit face, the more wrong (too directional) that pattern is. Ramp a
+          // blend toward the tile's mean colour with the same g that drives the brightness.
+          vFlat = uFlat * clamp((g - uG0) / max(1.0 - uG0, 1e-3), 0.0, 1.0);
           vec3 r3 = cross(aAxis, toCam / max(length(toCam), 1e-4));
           float rl = length(r3);
           vec3 right = rl > 1e-4 ? r3 / rl : vec3(1.0, 0.0, 0.0);
@@ -318,9 +373,11 @@ export class PropImpostors {
         }`,
       fragmentShader: /* glsl */`
         uniform sampler2D uAtlas;
+        uniform vec3 uTileMean;
         varying vec2 vUv;
         varying vec3 vTint;
         varying vec3 vLit;
+        varying float vFlat;
         #include <fog_pars_fragment>
         void main () {
           vec4 texel = texture2D(uAtlas, vUv);
@@ -328,6 +385,7 @@ export class PropImpostors {
           // Un-premultiply: the atlas clears to BLACK/alpha-0, so filtered/mip edge samples are
           // (fg·a, a) — dividing recovers the true foliage colour with no clear-colour fringe.
           vec3 rgb = texel.rgb / max(texel.a, 1e-3);
+          rgb = mix(rgb, uTileMean, vFlat);            // sun-on views: soften the baked gradient
           // Screen-space alpha sharpening → alpha-to-coverage: re-narrow the filtered cutout edge
           // to ~1 px and let MSAA coverage dither it (renderer AA is on by default; without MSAA
           // this degrades to the plain cutout). Fixes the stair-stepped sprite edges.
@@ -357,12 +415,6 @@ export class PropImpostors {
     const w = rt.width, h = rt.height
     const buf = new Uint16Array(w * h * 4)
     this._renderer.readRenderTargetPixels(rt, 0, 0, w, h, buf)
-    const halfToFloat = (n) => {
-      const s = (n & 0x8000) ? -1 : 1, e = (n >> 10) & 0x1f, f = n & 0x3ff
-      if (e === 0) return s * f * 2 ** -24
-      if (e === 31) return f ? NaN : s * Infinity
-      return s * (1 + f / 1024) * 2 ** (e - 15)
-    }
     const canvas = document.createElement('canvas')
     canvas.width = w; canvas.height = h
     const ctx = canvas.getContext('2d')
@@ -385,6 +437,13 @@ export class PropImpostors {
 
 const ZERO = new THREE.Vector3()
 const _v3 = new THREE.Vector3()
+
+function halfToFloat (n) {
+  const s = (n & 0x8000) ? -1 : 1, e = (n >> 10) & 0x1f, f = n & 0x3ff
+  if (e === 0) return s * f * 2 ** -24
+  if (e === 31) return f ? NaN : s * Infinity
+  return s * (1 + f / 1024) * 2 ** (e - 15)
+}
 const _c1 = new THREE.Color()
 const _c2 = new THREE.Color()
 

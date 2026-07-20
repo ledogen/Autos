@@ -174,5 +174,8 @@ export const FLORA_PARAMS = {
     ring3d: 2,             // chunks of full-3D props around the camera; beyond → billboards
     litGain: 1.0,          // billboard sun-contrast scale in the view-relight ratio (1 = physical
                            // Lambert average — see prop-impostor._updateLightUniforms); GUI slider
+    flatten: 0.6,          // sun-on gradient flatten: the baked tile carries the SHADE-side facet
+                           // pattern, wrong for a sun-lit face — blend toward the tile mean as the
+                           // view swings sun-ward (0 = off, 1 = featureless); GUI slider
   },
 }
