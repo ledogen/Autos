@@ -1634,7 +1634,12 @@ document.addEventListener('keydown', e => {
     _dbgSpheres.forEach(m => { m.visible = _dbgSpheresOn })
   }
   // FEAT-16: M toggles the 2D top-down map overlay (sim keeps running underneath).
-  if (e.key === 'm' || e.key === 'M') map2d.toggle()
+  if (e.key === 'm' || e.key === 'M') {
+    map2d.toggle()
+    // Freecam pointer-lock swallows the mouse for FPS look — release it so the map is
+    // interactive. The canvas click handler in camera.js re-locks it on return to freecam.
+    if (document.pointerLockElement) document.exitPointerLock()
+  }
 })
 
 // ── Grid-world flat grid helper (D-18) ────────────────────────────────────────
