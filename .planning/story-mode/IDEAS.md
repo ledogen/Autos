@@ -1,15 +1,18 @@
-# Ideas — the low-ceremony scratchpad
+# Story Mode — Ideas scratchpad
 
-A running list of **neat ideas not yet worth a ticket**. Drop a line or a short paragraph; no
-frontmatter, no ritual. This is the surface *below* `.planning/todos/pending/` — when an idea
-firms up into something buildable, promote it into a pending ticket (`feat-*.md`) and delete it
-here (or leave a one-line "→ FEAT-NN" pointer).
+The low-ceremony companion to [DESIGN.md](DESIGN.md) and [MILESTONES.md](MILESTONES.md): a running
+list of **neat ideas not yet worth a ticket**. Drop a line or a short paragraph; no frontmatter, no
+ritual. This is the surface *below* `.planning/todos/pending/` — when an idea firms up into
+something buildable, promote it into a pending ticket (`feat-*.md`) and delete it here (or leave a
+one-line "→ FEAT-NN" pointer).
 
 Conventions (keep them light):
 - One `##` entry per idea. Date it. Link the invariants / tickets it touches so a future session
-  can place it (`SM-INV-N`, `FEAT-NN`, `.planning/story-mode/DESIGN.md`).
+  can place it (`SM-INV-N`, `FEAT-NN`, `DESIGN.md`).
 - Design-level story-mode *unknowns* still go in DESIGN.md "Open questions"; *buildable* things
   still go in pending tickets. This file is for the in-between: "wouldn't it be cool if…".
+- Scoped to story-mode ideas (it lives here); a general non-story idea can still land as a pending
+  ticket.
 
 ---
 
