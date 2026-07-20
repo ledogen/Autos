@@ -81,6 +81,8 @@ export const GATES = [
     desc: 'FEAT-23: auto-trans + torque-converter climbs 20–30% grades from a stop, no drive/brake oscillation; accel tapers; 4-gear progression, no shift hunting' },
   { file: 'par-oracle.mjs', subsystem: 'story', cost: 'fast', extraDeps: [],
     desc: 'FEAT-29 par oracle: SM-INV-2 (par never reads the car), determinism, closed-form flat-straight time, curvature/grade monotonicity, mid-edge arc-range splitting, junction penalty' },
+  { file: 'lab-timing.mjs', subsystem: 'story', cost: 'fast', extraDeps: [],
+    desc: 'FEAT-31 testing-lab gates: skidpad lap time + derived mu vs closed form, no phantom laps from line jitter, directional drag start, braking armed on input and voided by throttle' },
   { file: 'water-invariance.mjs', subsystem: 'water', cost: 'heavy', extraDeps: [],
     desc: 'FEAT-22/17/18: basins/saddles/ponds/streams deterministic + window-invariant; ponds rim-contained; streams descend + end at basins; submerged hook' },
   { file: 'pond-route-around.mjs', subsystem: 'water', cost: 'heavy', extraDeps: [],

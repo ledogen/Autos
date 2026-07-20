@@ -176,6 +176,9 @@ export class DustSystem {
   }
 
   /** Grab the next pool slot (oldest is overwritten when the pool is saturated). */
+  /** Show/hide the dust sheet (testing lab / grid world teardown — visibility only). */
+  setVisible (visible) { this._mesh.visible = visible }
+
   _alloc () {
     for (let n = 0; n < POOL_SIZE; n++) {
       const idx = (this._cursor + n) % POOL_SIZE

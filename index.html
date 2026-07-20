@@ -127,6 +127,37 @@
     }
     #mission-hud .mh-count { font-size: 44px; color: #ffcf3c; }
 
+    /* FEAT-31 testing lab readout — top-right, out of the way of the left-hand debug HUD. */
+    #lab-panel {
+      display: none;
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      background: rgba(0, 0, 0, 0.72);
+      border: 1px solid #3a4450;
+      padding: 12px 16px;
+      font-family: monospace;
+      font-size: 13px;
+      color: #cfd6dd;
+      z-index: 88;
+      pointer-events: none;
+      min-width: 380px;
+    }
+    #lab-panel .lb-title {
+      color: #7fc2ff;
+      font-size: 11px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    #lab-status { color: #ffcf3c; margin-bottom: 8px; }
+    #lab-panel table { border-collapse: collapse; width: 100%; }
+    #lab-panel td { padding: 2px 8px 2px 0; vertical-align: top; }
+    #lab-panel .lb-num { color: #ffffff; text-align: right; white-space: nowrap; }
+    #lab-panel .lb-dim { color: #8a939c; }
+    #lab-panel .lb-hi  { color: #8ce99a; white-space: nowrap; }
+    #lab-panel .lb-foot { margin-top: 8px; font-size: 11px; }
+
     /* Freecam "teleport here" button — shown only while in free-cam (free-roam mode). */
     #teleport-btn {
       display: none;
@@ -226,6 +257,7 @@
     <div class="pm-title">paused</div>
     <button id="pm-resume">resume</button>
     <button id="pm-story">story mode (beta)</button>
+    <button id="pm-lab">testing lab</button>
     <button id="pm-grid">grid world</button>
     <button id="pm-return">return to world</button>
   </div>
@@ -243,6 +275,16 @@
     </div>
   </div>
   <div id="mission-hud"></div>
+
+  <!-- FEAT-31 testing lab: live status + best-of-each-track table. The right-hand column is the
+       point of the whole mode — the derived number (implied accel/decel, realized skidpad mu)
+       that calibrates PAR_REF against a human driver. Wired in main.js (_renderLabUI). -->
+  <div id="lab-panel">
+    <div class="lb-title">testing lab</div>
+    <div id="lab-status">—</div>
+    <table><tbody id="lab-rows"></tbody></table>
+    <div class="lb-dim lb-foot">green line starts a run · Esc &rarr; testing lab to leave</div>
+  </div>
 
   <!-- Free-cam teleport affordance — shown only in free-cam / free-roam mode (main.js loop
        toggles display). Click (cursor must be free; press Esc to release pointer-lock) or press

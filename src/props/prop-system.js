@@ -177,6 +177,17 @@ export class PropSystem {
    * Attach the main-thread shadow-bake system (main.js owns it). Marks every already-committed
    * chunk dirty so existing props bake in (props scattered before the wiring landed).
    */
+  /**
+   * Show/hide every prop mesh (3D instanced pools AND the PERF-21 billboard impostor pools).
+   * Used by the testing lab / grid world to tear the generated world down to a bare plane —
+   * visibility only, nothing is disposed or re-scattered, so returning is instant.
+   */
+  setVisible(visible) {
+    this._propsVisible = visible
+    for (const e of this._meshes.values()) if (e.mesh) e.mesh.visible = visible
+    if (this._impMeshes) for (const e of this._impMeshes.values()) if (e.mesh) e.mesh.visible = visible
+  }
+
   setShadowBake(bake) {
     this._shadowBake = bake
     if (bake) {

@@ -44,6 +44,7 @@ import { parseWorldSeed, seedFor } from './seed.js'
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { MissionSystem } from './mission.js'             // story mode (beta): par-graded A→B missions
+import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
@@ -215,6 +216,11 @@ const _sunShearScratch = new THREE.Vector2()
 // When false (default / Sierra world): terrain streams normally, ramp invisible and non-collidable.
 // enterGridWorld() and returnToWorld() (below initDebug) are the only write sites.
 let _gridWorldActive = false
+// FEAT-31: the testing lab is a flat world too (it reuses every _gridWorldActive physics gate —
+// ground at y=0, no carve/prop/water queries), PLUS a full worldgen teardown and NO ramp rig.
+let _labActive = false
+let _labFogDensity = null    // player's fog density, saved across a lab visit
+let _labSavedSpawn = null    // player's spawn override, saved across a lab visit
 
 // Manual verification hook — console.log confirms importmap loaded r184 (FOUND-02)
 console.log('THREE.REVISION', THREE.REVISION)
@@ -677,6 +683,10 @@ function _pickRoadDir (h, ref) {
 // follows road grade + camber), else the terrain. Road sampling falls back to terrain when the play
 // network isn't streamed there yet (e.g. a far map-teleport) — analyticHeight is defined everywhere.
 function _groundSampleY (x, z) {
+  // Flat worlds (grid world / FEAT-31 testing lab) have ground at y=0 everywhere. Without this the
+  // seat probe would return the REAL terrain/road height (~150 m over most of seed 6) and a lab
+  // teleport would drop the truck out of the sky onto the plane.
+  if (_gridWorldActive) return 0
   if (roadSystem && typeof roadSystem.sampleRoadTopY === 'function') {
     const ry = roadSystem.sampleRoadTopY(x, z)
     if (ry != null) return ry
@@ -1113,7 +1123,7 @@ function queryVertexContacts (px, py, pz) {
 
   // Ramp face contacts — skipped when not in grid-world mode (D-19: ramp retired from Sierra world)
   // _gridWorldActive is the authoritative gate; RANGER_PARAMS.rampEnabled is a secondary debug toggle.
-  if (_gridWorldActive && RANGER_PARAMS.rampEnabled !== false) {
+  if (_gridWorldActive && !_labActive && RANGER_PARAMS.rampEnabled !== false) {
     // Ramp top incline face — half-space below the inclined plane, within ramp footprint
     if (px >= -_hw && px <= _hw && pz <= RAMP_TOE_Z && pz >= RAMP_END_Z) {
       const rampSurfaceY = RAMP_MAX_H + (RAMP_END_Z - pz) * Math.tan(RAMP_ANGLE)
@@ -1183,7 +1193,7 @@ function queryContacts (cx, cy, cz, r) {
 
   // Triangle mesh contacts — skipped when not in grid-world mode (D-19: ramp retired from Sierra world)
   // _gridWorldActive is the authoritative gate; RANGER_PARAMS.rampEnabled is a secondary debug toggle.
-  if (_gridWorldActive && RANGER_PARAMS.rampEnabled !== false) {
+  if (_gridWorldActive && !_labActive && RANGER_PARAMS.rampEnabled !== false) {
     for (const [[ax, ay, az], [bx, by, bz], [ex, ey, ez]] of RAMP_TRIS) {
       const cp = closestPointOnTriangle(cx, cy, cz, ax, ay, az, bx, by, bz, ex, ey, ez)
       const dx = cx - cp.x, dy = cy - cp.y, dz = cz - cp.z
@@ -1531,6 +1541,19 @@ missionSystem = new MissionSystem({
   onChange: () => _renderMissionUI(),
 })
 
+// ── FEAT-31: the testing lab ─────────────────────────────────────────────────
+// An isolated flat world with painted, auto-timed tracks. Grid world only ever hid the TERRAIN
+// chunks, so the ribbons/props/water stayed floating at their real elevations and every worldgen
+// system kept streaming — the flat world read as "parked underneath the real one". enterLab()
+// tears the generated world down properly (see below) and puts a bare plane + tracks in its place.
+const labSystem = new LabSystem(scene, () => ({
+  x: vehicleState.position.x,
+  z: vehicleState.position.z,
+  speed: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z),
+  brake: vehicleState.brake,
+  throttle: vehicleState.throttle,
+}))
+
 // Story-mode DOM. Two surfaces: the offer/result panel (over the map) and the in-run HUD.
 // SM-INV-3 — par NEVER appears while driving; the result card is the only place it is shown.
 function _renderMissionUI () {
@@ -1845,6 +1868,90 @@ function returnToWorld () {
   _hidePauseMenu()
 }
 
+// ── FEAT-31: enter / exit the testing lab ────────────────────────────────────
+// The teardown grid world never did. Two halves that BOTH matter:
+//   VISUAL — hide the terrain chunks (as before) AND the road ribbons, props, water and dust.
+//     Without this the generated world hangs ~150 m overhead and the flat plane reads as a
+//     basement. Visibility only; nothing is disposed, so returning to the world is instant.
+//   WORK — stop terrain streaming and road streaming/route dispatch. The lab is where physics is
+//     measured, so leaving worldgen churning in the background would put its cost inside every
+//     measurement. This is the half a visibility flag can't buy.
+// Physics needs no special casing: the lab sets _gridWorldActive, which every contact-query gate
+// already reads (ground at y=0, normal up, no carve/prop/water). _labActive additionally
+// suppresses the ramp rig, which would otherwise sit across the drag strip at the origin.
+function _setWorldgenVisible (visible) {
+  if (terrainSystem) terrainSystem.setChunksVisible(visible)
+  if (roadMeshSystem) roadMeshSystem.setVisible(visible)
+  if (propSystem) propSystem.setVisible(visible)
+  if (waterRenderer) waterRenderer.group.visible = visible
+  if (dustSystem) dustSystem.setVisible(visible)
+}
+
+function enterLab () {
+  _labActive = true
+  _gridWorldActive = true            // reuse every flat-world physics gate
+  window.__setGameMode('lab')
+
+  // Fog is tuned for worldgen draw distances (FogExp2 ~0.006), which swallows the far end of a
+  // 400 m strip and hides the 150 m skidpad entirely from any useful vantage. The lab is a clean
+  // room: thin it right out and restore the player's setting on the way back.
+  if (scene.fog) { _labFogDensity = scene.fog.density; scene.fog.density = 0.00035 }
+
+  if (terrainSystem) terrainSystem.setEnabled(false)   // stop streaming, not just drawing
+  _setWorldgenVisible(false)
+  _gridHelper.visible = true
+  _gridGroundPlane.visible = true
+  rampMesh.visible = false
+
+  labSystem.enter()
+  // Staging the truck on the strip sets _spawnOverride, which would otherwise eat a spawn point
+  // the player had set with Shift+R — and leaving the lab would re-seat them at the LAB's
+  // coordinates out in the real world. Save it going in, restore it coming out.
+  _labSavedSpawn = _spawnOverride
+  const pose = labSystem.spawnPose()
+  teleportToGround(pose.x, pose.z, pose.heading, 0.5)
+  _hidePauseMenu()
+  _renderLabUI()
+}
+
+function exitLab () {
+  _labActive = false
+  _gridWorldActive = false
+  window.__setGameMode('freeroam')
+
+  if (scene.fog && _labFogDensity != null) { scene.fog.density = _labFogDensity; _labFogDensity = null }
+
+  labSystem.exit()
+  _gridHelper.visible = false
+  _gridGroundPlane.visible = false
+  if (terrainSystem) terrainSystem.setEnabled(true)
+  _setWorldgenVisible(true)
+
+  _spawnOverride = _labSavedSpawn   // null ⇒ _reseatTruckAtSpawn resolves the canonical seed spawn
+  _labSavedSpawn = null
+  void _reseatTruckAtSpawn()
+  _hidePauseMenu()
+  _renderLabUI()
+}
+
+// Lab readout: live status, the best of each track, and the DERIVED number each track exists to
+// produce (implied accel / decel, and the skidpad's realized mu). The mu column is the point —
+// compared against test/measure-vehicle-limits.mjs's steady-state mu it gives the k factor that
+// sets PAR_REF (FEAT-30).
+function _renderLabUI () {
+  const el = document.getElementById('lab-panel')
+  if (!el) return
+  if (!labSystem.isActive()) { el.style.display = 'none'; return }
+  el.style.display = 'block'
+  const rows = [...labSystem.best.values()]
+    .map(r => `<tr><td>${r.track}</td><td class="lb-num">${r.value.toFixed(r.unit === 's' ? 2 : 1)} ${r.unit}</td>`
+      + `<td class="lb-dim">${r.detail || ''}</td><td class="lb-hi">${r.derived || ''}</td></tr>`)
+    .join('')
+  document.getElementById('lab-status').textContent = labSystem.status
+  document.getElementById('lab-rows').innerHTML = rows
+    || '<tr><td colspan="4" class="lb-dim">no runs yet — drive through a green line</td></tr>'
+}
+
 // ── Pause-menu helpers ────────────────────────────────────────────────────────
 function _showPauseMenu () {
   const el = document.getElementById('pause-menu')
@@ -1863,6 +1970,9 @@ document.getElementById('pm-resume')?.addEventListener('click', () => _hidePause
 // Story mode is opt-in from this menu ONLY — a first-time visitor lands in free roam and is
 // never thrust into an unfinished mode. Switching the game mode also disables free-roam-only
 // affordances (teleport), which is the point of _gameMode existing.
+document.getElementById('pm-lab')?.addEventListener('click', () => {
+  if (_labActive) exitLab(); else enterLab()
+})
 document.getElementById('pm-story')?.addEventListener('click', () => {
   _hidePauseMenu()
   window.__setGameMode('story')
@@ -2019,6 +2129,10 @@ function loop () {
       // route cache warm this resolves within a frame or two.
       void _reseatTruckAtSpawn()
     }
+
+    // FEAT-31: lab gate crossings. One segment test per gate, clocked off the fixed step so a
+    // frame spike can't skip a gate the truck actually drove through.
+    if (_labActive) labSystem.update(PHYSICS_DT)
 
     // Story mode (beta): countdown tick + arrival check. Two distance checks — no routing, no
     // par math (that ran once at mission-offer time). Clocked off the fixed step, not wall time.
@@ -2276,6 +2390,8 @@ function loop () {
   const _hudNow = performance.now()
   if (_hudNow - _lastHudWrite >= 100) {
     _lastHudWrite = _hudNow
+
+    if (_labActive) _renderLabUI()
 
     // Story mode (beta): the countdown digit and the elapsed/distance readout are live values,
     // so they repaint on the HUD's ~10 Hz cadence rather than per physics step.

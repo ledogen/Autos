@@ -652,6 +652,19 @@ export class RoadMeshSystem {
     }
 
     /**
+     * Show/hide every road mesh currently in the scene. The testing lab (and grid world) tear the
+     * generated world down to a bare plane; before this existed only the TERRAIN chunks were
+     * hidden, so the ribbons and junction pads stayed floating at their real elevations and the
+     * flat world read as "parked underneath the real one". Visibility only — nothing is disposed,
+     * so returning to the world is instant.
+     */
+    setVisible(visible) {
+        this._meshesVisible = visible
+        for (const entry of this._tileMeshMap.values())
+            for (const mesh of entry.meshes) mesh.visible = visible
+    }
+
+    /**
      * Dispose a road tile: remove its meshes from the scene, dispose geometry.
      * Material is shared — never disposed here (matches terrain.js dispose pattern).
      *
@@ -893,6 +906,7 @@ export class RoadMeshSystem {
             // depth-biased road surface wins over terrain at the same Z range.
             mesh.renderOrder = 1
             mesh.receiveShadow = true
+            if (this._meshesVisible === false) mesh.visible = false   // built while the lab is up
 
             this._scene.add(mesh)
             meshes.push(mesh)
@@ -924,6 +938,7 @@ export class RoadMeshSystem {
                         const mesh = new THREE.Mesh(geo, this._getJunctionMaterial())
                         mesh.renderOrder = 1  // Plan 09-10: ribbon draws after terrain
                         mesh.receiveShadow = true
+                        if (this._meshesVisible === false) mesh.visible = false
                         this._scene.add(mesh)
                         meshes.push(mesh)
                         geometries.push(geo)
