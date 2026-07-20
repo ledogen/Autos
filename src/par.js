@@ -28,12 +28,22 @@
  * NOT the Ranger, and deliberately not tied to it: these are design knobs for the payout curve.
  */
 export const PAR_REF = {
-    // CALIBRATION NOTE: these are first-pass numbers. Par currently prices a winding mountain
-    // leg at ~55-60 km/h average, which is a hard but not absurd target in the Ranger. They are
-    // meant to be re-tuned against recorded human drives (FEAT-29 acceptance: "within plausible
-    // bounds of a recorded human drive, report-only") — that is what the beta mission harness is
-    // for. Tune HERE, never by touching the vehicle (SM-INV-2).
-    mu: 0.75,          // reference friction coefficient (dimensionless)
+    // CALIBRATION (FEAT-30, 2026-07-20). `mu` is now measurement-derived; the rest are still the
+    // first-pass guess.
+    //
+    // test/measure-vehicle-limits.mjs measured the stock truck's steady-state cornering envelope
+    // headlessly (open-loop constant-steer skidpad): mu 0.51–0.66 across radii 8–103 m, mean
+    // **0.577**, notably flat with radius. The shipped 0.75 was therefore ABOVE what the truck can
+    // do at any skill level — par was asking for corner speeds that are not merely hard but
+    // impossible. 0.49 = 0.577 × 0.85, where 0.85 is a PROVISIONAL guess at the fraction of the
+    // steady-state envelope a human realizes through transitions (turn-in, trail-braking, an
+    // open-diff RWD truck back on the power at exit). The testing lab's skidpads measure that
+    // fraction for real — mu_realized / 0.577 — and this number should be re-set from those laps.
+    //
+    // Note from the same work: mu is the DOMINANT dial. vMax is nearly free (these roads are
+    // curvature-limited essentially everywhere — 42.6 vs 30.0 m/s moved par by under a second),
+    // and accel/brake are secondary. Tune HERE, never by touching the vehicle (SM-INV-2).
+    mu: 0.49,          // reference friction coefficient (measured 0.577 × 0.85 provisional k)
     accel: 2.8,        // powertrain-limited longitudinal accel on the flat (m/s²)
     brake: 5.5,        // braking decel cap (m/s²) — also friction-circle limited below
     vMax: 28.0,        // reference top/cruise speed (m/s ≈ 101 km/h)
