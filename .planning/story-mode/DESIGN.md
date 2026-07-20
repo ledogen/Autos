@@ -232,13 +232,16 @@ slow motion, legible the whole way down.
   day, positive on a brave one** — that's the whole balance problem in one line.
 - **Wear = f(time, intensity)** (SM-INV-5): hours driven and engine torque are both tracked
   and integrated over the run — rpm-hours, redline time, hard impacts, curb strikes,
-  over-temp all feed the same accumulator. Breakdown (wear floor) is the second death. There
-  is no damage model today — this is a new, cheap, out-of-hot-loop subsystem, and it should
-  be ONE model shared with hazard impacts (FEAT-26 asks "what does a rock hit do" — same
-  answer). Practically, this is the mechanism behind the two driving modes: mission legs run
-  hot against a par deadline and eat wear; the freeroam legs picking the next mission or
-  exploring between jobs are where a player who wants to protect the truck backs off the
-  throttle and drives casually.
+  over-temp all feed the condition model. Breakdown is the second death. There is no damage
+  model today — this is a new, cheap, out-of-hot-loop subsystem. It is **ONE framework** (one
+  condition-tracking system, shared with hazard impacts — FEAT-26 "what does a rock hit do"
+  resolves here) but **multiple per-component condition tracks**, not a single scalar: tires,
+  engine, air filter, suspension, brakes, radiator each carry their own 0–100% condition and
+  read their own honest physics signal. See **Damage, wear & repair** below for the full model.
+  Practically, this is the mechanism behind the two driving modes: mission legs run hot against
+  a par deadline and eat wear; the freeroam legs picking the next mission or exploring between
+  jobs are where a player who wants to protect the truck backs off the throttle and drives
+  casually.
 - **Damage/wear is confirmed required and expected to be hard to get right** [RATIFIED
   2026-07-16]. Two owner-stated calibration anchors:
   - **Severity thresholds, not linear accumulation.** Hitting the bump stops lightly should
@@ -250,12 +253,101 @@ slow motion, legible the whole way down.
     driver that pushes the player to chase good mission rewards. Honest *mechanism*,
     tuned *rate*.
 
+### Damage, wear & repair [DEFAULT — owner brain-dump 2026-07-19, mechanism proposals mine]
+
+The second death (breakdown) lives here. **One framework, per-component condition tracks** (see the
+economy note above): each component below carries an independent 0–100% condition, integrated cheaply
+out of the physics hot loop, and every track reads an **honest signal the sim already produces**
+(rpm, load, bump-stop force, brake torque, coolant temp, impact magnitude) rather than an invented
+proxy — emergent-over-injected ([[feedback_emergent_over_injected]]) applied to the damage model.
+Nothing here persists across runs (SM-INV-8) — condition is per-run state on the current truck. All
+tracks obey SM-INV-5 (time + intensity, never distance).
+
+**Tires — four independent tracks.**
+- **Gradual wear lowers peak grip**, applied by directly scaling the per-wheel friction coefficient
+  (this rides the same per-contact-patch μ plumbing FEAT-38 introduces for dirt: `frictionCoeff ×
+  surfaceMuScale × tireWearScale`). Wear runs **accelerated vs realism** on purpose (ratified economic
+  anchor — pushes the player to chase good mission rewards).
+- **Independent per corner** → the player manages grip *balance* (keep the fresher rubber where they
+  want bite — e.g. front). Because each wheel's grip feeds the physics directly, an uneven set changes
+  the truck's handling honestly, no bookkeeping.
+- **Puncture = binary, probability on a wear→fragility curve** (owner-set, 2026-07-19): the insult
+  needed to pop a tire shrinks as it wears. Below ~15% condition a tire can blow **on a smooth road**
+  (spontaneous); below ~50% a *moderate* bump *could* pop it but very unlikely; fresh rubber only goes
+  on a real hazard. Hazards (landslide/debris — FEAT-26/09) always carry puncture risk, scaled up by
+  wear.
+- **Repair = roadside self-change.** Pull over and swap the tire — **not a minigame**, it just burns
+  ~1–2 in-game hours (OEM kit) and **requires a spare/replacement tire in inventory**. A found/bought
+  **quick-jack or breaker-bar item cuts the time** (you still need a tire ready).
+- **Inventory weight is real load** (honest physics): carried spare tires and the quick-change tool have
+  mass, shifting the truck's CoG and handling while stowed — a load, never a stat (SM-INV-10).
+
+**Engine.**
+- **Wear = f(rpm, load, time)** — gentle cruising costs far less than aggressive driving; both integrate
+  over time (SM-INV-5). rpm-hours + load are the signals.
+- **Air filter condition** is its own track and the one the player must *watch*: it does ~nothing until
+  ~20%, then **sharply accelerates engine wear**. **Dusty / dirt roads degrade it faster** — the direct
+  FEAT-38 tie (dust exposure feeds filter degradation). It's a cheap consumable to replace; letting it
+  bottom out silently kills the engine. The diagnostic screen (below) exists largely to flag this.
+- **Overheating** (see radiator) causes temporary power loss **and** heavy engine wear; prolonged or
+  repeated overheat blows the head gasket (a hard engine failure).
+
+**Suspension.**
+- Wear primarily degrades **shock damping** (the damper coefficient drops → floatier, worse-controlled
+  truck). Ratified anchor: **severity-thresholded, no-harm floor** — light bump-stop contact is
+  harmless; hard hits damage. Trigger reads an honest signal — either **bump-stop over-travel past a
+  distance** or a **suspension-velocity component threshold** (open sub-question, both are honest;
+  probably the bump-stop force the physics already computes).
+
+**Brakes — front pair + rear pair (two tracks, deliberately coarse).**
+- Wear = **∫(brake torque × time)** (N·m·time). Worn pads = less stopping power. Simple.
+- Pairs (not four corners) so the player can **mix pad grades front vs rear** (standard / sport / race)
+  to tune **brake bias** — a big handling lever (bias shifts lock-up and rotation). Pads are
+  *described, never scored* (SM-INV-10): a race pad changes what the truck does under braking, it
+  isn't "+10 braking."
+
+**Radiator — a swappable mod, not just a wear item.**
+- **Early-game cooling is deliberately marginal**: the starting radiators barely keep up, so the engine
+  runs near its thermal limit under sustained load. This is an intended early-run pressure — a lever to
+  balance the game around, not a bug.
+- **Overheat → temp power loss + engine wear**; repeated/long overheat → **blown head gasket**.
+  *Proposed gasket metric (mine, needs owner OK):* an **overheat integral** — accumulate time-above-
+  threshold weighted by how far over the limit (severity), a hidden meter; crossing it blows the gasket.
+  Emergent from the honest temp signal, same shape as the other severity-integrated tracks.
+- **Front-end collisions damage radiator condition** → worse cooling; a **strong front hit punctures it**
+  → drastically reduced cooling and a fast overheat spiral. Reads collision magnitude from the contact
+  pipeline (FEAT-09).
+
+**Death & the tow decision (SM-INV-1 — still exactly two fail states).**
+- You die **one of two ways**: (1) a **crash impact hard enough to be fatal** — "You died"; or (2) you
+  **break down and can't recover** — if the truck can't continue and you **can't afford a tow**, the run
+  auto-ends ("you crashed" / "you broke down" per circumstance).
+- **A survivable crash or breakdown is NOT a fail state — it's a *predicament*.** The moment-to-moment
+  tension the owner wants: *call a tow (time + money) or try to limp it to a shop and eat more damage?*
+  The **tow fast-travels to the nearest town** but is priced **near-prohibitively** — usually the
+  economically run-ending choice, a genuine last resort — so the player is forced to weigh limping vs.
+  paying. Can't afford it → automatic run-end.
+- **Fatal-crash threshold:** a deceleration / G threshold (e.g. Δv ≈ 60 mph shed in ~0.1 s). Acknowledged
+  hard to tune and dependent on the collision model (FEAT-09/26); a raw Δv-over-Δt threshold is the
+  fallback. This is the **crash** death — SM-INV-1 is unchanged, no new fail state.
+
+**Repair & maintenance venues.**
+- **Roadside self-service** for tires (and likely the filter): burn hours, need the part on hand.
+- **Service station in town** for the heavy repairs (engine, suspension, brakes, radiator, gasket) — costs
+  money + time; reached by driving or by tow.
+- **Diagnostic screen:** a condition panel — the **FEAT-34 instrument cluster is its natural home** —
+  surfaces every track, with the **air-filter warning** the critical, can't-miss one.
+
 ### The car: jalopy + parts [RATIFIED premise, DEFAULT details]
 
 Run start: parts randomized from a pool of crap (SM-INV-7). Parts are architecture choices,
-not stat sticks (SM-INV-10) — open vs LSD diff, power, tires. FEAT-23's drivetrain
-architecture + parts-selector phases are the substrate; the jalopy generator is a seeded
-roll over that same architecture space. Mid-run finds (an LSD in a barn) are events.
+not stat sticks (SM-INV-10) — open vs LSD diff, power, tires, plus the wear-model parts:
+brake-pad grades per axle (bias), radiator (cooling headroom), and starting condition on every
+track (a jalopy rolls in already half-worn). Consumables/tools ride here too — spare tires, air
+filters, a quick-jack/breaker-bar — and, stowed, they are **real mass** that shifts CoG and
+handling (honest physics, not a stat). FEAT-23's drivetrain architecture + parts-selector phases
+are the substrate; the jalopy generator is a seeded roll over that same architecture space, now
+including starting wear. Mid-run finds (an LSD in a barn, a better radiator) are events.
 
 ### The world: regions, story states, spirits
 
@@ -345,6 +437,41 @@ itself, stop and escalate rather than assuming the pane is licensed for it.
    the work) — or means there's no reason not to accept every job and bail. Unresolved.
    (Timed mission types partially answer this — their reward decays/zeroes — but the
    no-clock default mission still has no bail cost.)
+7. **Maintenance time + the day-cost of waiting** (owner, 2026-07-19). How long does a station
+   repair take — especially a busted engine — in in-game hours, and what does burning a day (or
+   part of one) actually cost the run? The day-cost isn't just the clock: par may tighten with
+   run age (SM-INV-2), sleepiness accrues, and missions expire — so "wait a day at the shop" has
+   to hurt enough to make the tow-vs-limp-vs-repair decision real without being run-ending on its
+   own. Tuning, not structure; log until the economy is being balanced.
+8. **Two damage-model mechanisms flagged for owner OK** (proposals in "Damage, wear & repair"):
+   the **head-gasket metric** (proposed: an overheat integral — time-above-threshold × severity)
+   and the **suspension-damage trigger** (bump-stop over-travel distance vs. suspension-velocity
+   threshold). Both read honest signals; pick at SM-3 planning.
+9. **Forced progression: what pushes the player out of the easy early zones?** (owner, 2026-07-19,
+   UNDECIDED — two live options, not mutually exclusive.) The problem: with a good car a player
+   could grind zone 1 forever and never climb. Funds exist primarily to repair wear, secondarily
+   for upgrade parts, so the lever is the repair economy. Two approaches on the table:
+   - **(A) Cost-function escalation.** Service/parts costs climb over run-time (fiction: shortage /
+     fuel prices / the world thinning out), while higher zones pay proportionally more — so zone 1
+     goes net-negative and the mountains are where income outruns the rising floor. Number-go-*up*;
+     old zones stay *accessible but unprofitable to grind*, preserving a rare reason to return (a
+     specific mission item only found back down low). Owner likes this.
+   - **(B) Spreading miasma / "storm."** A run-layer advancing front *consumes POIs*, pulling them
+     out of the mission-producing and service-providing pools — the cheap early stations go out of
+     business and the starter mission-givers go *missing* as it reaches them. This makes SM-INV-11's
+     "people missing" the literal cause of A's effects (service effectively costlier because the
+     cheap garage is gone; easy jobs dry because the giver is gone). Forced progression = fleeing
+     the front. Could be the spatial *cause* behind (A) rather than an alternative to it.
+   - **Shared constraints either way:** escalation is *within a run* (resets each run — SM-INV-7/8),
+     not a meta power curve; it must **never be a direct kill** (SM-INV-1 — pressure routes through
+     breakdown [no affordable/reachable service] or crash [in-storm hazard], never fog-instadeath);
+     it must **not be a rendered countdown** (SM-INV-3 — the squeeze/front is chosen pressure, the
+     economy can *be* the "quota" un-obfuscated without a meter); if built as a live front it's a
+     **run-layer, flag-gated system** (SM-INV-12, doze/ambush precedent — POI positions stay
+     deterministic, only alive/consumed status is run-layer); and old zones must stay reachable for
+     the return-visit hook. **Resolving this likely retires the SM-INV-2 run-duration par clause** —
+     escalation would move onto the cost/POI side (which has a story) off the par side (which has
+     none). See also Q7 (day-cost of waiting).
 
 **Resolved 2026-07-16:** timers (ex-Q2 → SM-INV-3 as amended); debug-panel ownership
 (ex-Q8 → "Game modes": story mode locks out debug tooling, sliders fixed, story/difficulty

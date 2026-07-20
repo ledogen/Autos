@@ -43,7 +43,8 @@ no economy attached. The last leg of the day is the game (SM-INV-6).
 - **Campsite = place**: seeded, window-invariant campable-site detection from worldgen (flat
   ground, lake/stream adjacency, meadows — water + flat-ground data all exist). Camp action
   only at a site → sleep → next day. Site quality stub (good/bad night) OK; full quality
-  dimensions are open question 6.
+  dimensions are open question 6. If **FEAT-38 dispersed-camping spurs** exist by now, their
+  scored clearings are ready-made campsite candidates — share one "good ground" score.
 - Exit criteria: a player naturally plans their day around getting somewhere sleepable; dozing
   on a mountain road is terrifying; no HUD countdown anywhere (SM-INV-3).
 
@@ -68,13 +69,31 @@ no economy attached. The last leg of the day is the game (SM-INV-6).
 
 **Goal:** the second death condition exists, and every run starts in a different bad truck.
 
-- **Wear/condition model**: ONE subsystem, `f(time, abuse)` never distance (SM-INV-5) —
-  rpm-hours, redline, hard impacts (shared with FEAT-26 rock hits). Breakdown = death.
-  Cheap, out of the physics hot loop. Confirmed required 2026-07-16 and expected hard to
-  get right. Calibration anchors (owner): severity thresholds with a no-harm floor — light
-  bump-stop contact is harmless, hard bump-stop hits damage suspension (read the real
-  bump-stop forces the physics already computes); tire wear deliberately accelerated vs
-  realism as an economic driver toward chasing good mission rewards.
+- **Wear/condition model**: ONE framework, `f(time, intensity)` never distance (SM-INV-5), but
+  **multiple per-component condition tracks** (owner brain-dump 2026-07-19 — see DESIGN.md
+  "Damage, wear & repair" for the full model). Each reads an honest physics signal the sim
+  already produces; cheap, out of the hot loop; shared with FEAT-26 rock hits. Breakdown = death.
+  The tracks:
+  - **Tires ×4 independent** — gradual wear scales per-wheel μ (rides FEAT-38's per-contact-patch
+    friction plumbing); binary punctures on a wear→fragility curve (<15% pops on smooth road,
+    <50% a moderate bump might); roadside self-change needs a spare in inventory, quick-jack/
+    breaker-bar item speeds it; carried tires + tool have real mass → CoG/handling.
+  - **Engine** — `f(rpm, load, time)`; **air-filter** sub-track does ~nothing until ~20% then
+    sharply accelerates engine wear (dusty/dirt roads degrade it faster — FEAT-38 tie); overheat
+    → power loss + wear → blown head gasket.
+  - **Suspension** — degrades shock damping; severity-triggered off bump-stop over-travel or
+    suspension-velocity (no-harm floor — ratified anchor).
+  - **Brakes** front-pair + rear-pair — `∫(brake torque·time)`; pad grades (standard/sport/race)
+    per axle set brake bias (SM-INV-10 described-not-scored).
+  - **Radiator** (swappable mod) — early-game cooling deliberately marginal; front collisions
+    damage/puncture it (FEAT-09 contact magnitude).
+  - Tire wear deliberately accelerated vs realism as an economic driver (ratified anchor).
+- **Repair, tow & death**: roadside self-service (tires) vs. town service station (heavy repairs),
+  both cost time + money. **Tow** = fast-travel to nearest town, priced near-prohibitively (usually
+  run-ending) — forces the in-the-moment tow-vs-limp decision; can't-afford-tow auto-ends the run.
+  Two deaths only (SM-INV-1): fatal crash impact (G/Δv threshold) or unrecoverable breakdown.
+- **Diagnostic screen** (FEAT-34 instrument cluster is its home): surfaces every condition track,
+  air-filter warning the critical one.
 - **Jalopy generator**: seeded roll over FEAT-23's parts/architecture space + starting wear.
   Every roll technically run-winning (SM-INV-7).
 - Parts as found/bought items, **described never scored** (SM-INV-10).
