@@ -33,6 +33,7 @@
 import * as THREE from 'three'
 import { stepPhysics } from '../src/physics.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
+import { PAR_REF } from '../src/par.js'
 
 const DT = 1 / 60
 const G = 9.81
@@ -255,5 +256,7 @@ if (rows.length) {
   if (acc.aEquiv100) console.log(`   accel: ${(acc.aEquiv100 * kAccel).toFixed(2)}      (measured ${acc.aEquiv100.toFixed(2)} × ${kAccel})`)
   console.log(`   brake: ${(brk.aFromDist * kBrake).toFixed(2)}      (measured ${brk.aFromDist.toFixed(2)} × ${kBrake})`)
   console.log(`   vMax:  ${(acc.vMax * kVmax).toFixed(1)}      (measured ${acc.vMax.toFixed(1)} × ${kVmax})`)
-  console.log('\n   Current PAR_REF: mu 0.75 / accel 2.8 / brake 5.5 / vMax 28.0')
+  // Read the LIVE constants — a hardcoded copy here goes stale the moment PAR_REF is tuned, and
+  // then this footer quietly reports the wrong baseline to the next person calibrating.
+  console.log(`\n   Current PAR_REF: mu ${PAR_REF.mu} / accel ${PAR_REF.accel} / brake ${PAR_REF.brake} / vMax ${PAR_REF.vMax}`)
 }

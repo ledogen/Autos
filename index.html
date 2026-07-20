@@ -251,15 +251,14 @@
   </div>
 
   <!-- Pause menu overlay (D-17) — shown on Esc from chase/hood mode; hidden in free-cam.
-       Labels are fixed: "grid world" (exactly, D-18), "return to world", "resume".
-       Button ids are wired in main.js: pm-resume, pm-grid, pm-return. -->
+       Button ids are wired in main.js: pm-resume, pm-story, pm-lab.
+       (D-18 "grid world" / "return to world" were removed 2026-07-20 — the testing lab
+       superseded grid world, which only ever hid the terrain chunks and had no instruments.) -->
   <div id="pause-menu">
     <div class="pm-title">paused</div>
     <button id="pm-resume">resume</button>
     <button id="pm-story">story mode (beta)</button>
     <button id="pm-lab">testing lab</button>
-    <button id="pm-grid">grid world</button>
-    <button id="pm-return">return to world</button>
   </div>
 
   <!-- Story-mode beta: mission offer panel (shown over the 2D map before the start countdown)

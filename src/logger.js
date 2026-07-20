@@ -214,7 +214,7 @@ export function captureFrame (simTime, vehicleState, wheelDebug, roadDebug) {
     // BUG-12 diagnostic (open): local centerline turn radius near truck
     rd.minR ?? 9999,
     // Harness-fidelity surface samples (2026-06-25): CG + per-wheel ground height. null when no terrain
-    // (e.g. grid world) — the replay self-check treats a missing/null rd_gh as "older capture, skip".
+    // (e.g. the testing lab) — the replay self-check treats a missing/null rd_gh as "older capture, skip".
     rd.gh ?? null,
     wgh[0] ?? null, wgh[1] ?? null, wgh[2] ?? null, wgh[3] ?? null,
     // FEAT-23 drivetrain (appended at END): active gear (0=reverse) + engine RPM + coupled RPM + wheelspin.

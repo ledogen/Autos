@@ -210,18 +210,15 @@ const makePropSamplers = () => ({
 })
 const _sunShearScratch = new THREE.Vector2()
 
-// Grid-world mode flag (D-18 / D-19).
-// When true: terrain streaming paused, Sierra chunks hidden, ramp visible/collidable,
-//            car placed at origin on a flat grid for clean physics tuning.
-// When false (default / Sierra world): terrain streams normally, ramp invisible and non-collidable.
-// enterGridWorld() and returnToWorld() (below initDebug) are the only write sites.
-let _gridWorldActive = false
-// FEAT-31: the testing lab is a flat world too (it reuses every _gridWorldActive physics gate —
-// ground at y=0, no carve/prop/water queries), PLUS a full worldgen teardown and NO ramp rig.
+// FEAT-31 testing-lab mode flag. When true: the world is torn down (streaming stopped AND meshes
+// hidden — see enterLab), the ground is the lab's own surface (flat, except the rumble lanes), the
+// ramp rig is collidable, and carve/prop/water queries are skipped.
+// This replaced grid world (D-18/D-19, retired 2026-07-20): grid world only ever hid the terrain
+// CHUNKS, so the rest of worldgen hung overhead and kept streaming, and it had no instrumentation.
+// enterLab() and exitLab() are the only write sites.
 let _labActive = false
 let _labFogDensity = null    // player's fog density, saved across a lab visit
 let _labSavedSpawn = null    // player's spawn override, saved across a lab visit
-let _labGroundColor = null   // grid-world ground colour, saved across a lab visit
 
 // Manual verification hook — console.log confirms importmap loaded r184 (FOUND-02)
 console.log('THREE.REVISION', THREE.REVISION)
@@ -684,10 +681,10 @@ function _pickRoadDir (h, ref) {
 // follows road grade + camber), else the terrain. Road sampling falls back to terrain when the play
 // network isn't streamed there yet (e.g. a far map-teleport) — analyticHeight is defined everywhere.
 function _groundSampleY (x, z) {
-  // Flat worlds (grid world / FEAT-31 testing lab) have ground at y=0 everywhere. Without this the
-  // seat probe would return the REAL terrain/road height (~150 m over most of seed 6) and a lab
-  // teleport would drop the truck out of the sky onto the plane.
-  if (_gridWorldActive) return 0
+  // In the lab the ground is the lab's own surface. Without this the seat probe would return the
+  // REAL terrain/road height (~150 m over most of seed 6) and a lab teleport would drop the truck
+  // out of the sky onto the plane.
+  if (_labActive) return labSystem ? labSystem.groundHeight(x, z) : 0
   if (roadSystem && typeof roadSystem.sampleRoadTopY === 'function') {
     const ry = roadSystem.sampleRoadTopY(x, z)
     if (ry != null) return ry
@@ -972,6 +969,10 @@ const _mapFwd = new THREE.Vector3()
 // Story mode (beta) — constructed below, after roadSystem exists. Declared here so map2d can
 // read its markers without the two modules knowing about each other.
 let missionSystem = null
+// FEAT-31 testing lab — assigned below, after the scene exists. Declared here (not `const` at the
+// construction site) because the contact queries above reference it: a const would sit in the
+// temporal dead zone and throw if anything probed the ground during boot.
+let labSystem = null
 const map2d = new Map2D({
   canvas:    document.getElementById('map2d'),
   getSeed:   () => worldSeed,
@@ -1114,17 +1115,21 @@ function closestPointOnTriangle (px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz)
 function queryVertexContacts (px, py, pz) {
   const hits = []
 
-  // Ground surface — flat y=0 in grid world; analytic terrain height in Sierra world.
-  // Grid-world uses flat ground so body vertex contacts are correct on the clean flat plane (D-18).
-  const terrainH = _gridWorldActive ? 0 : (terrainSystem ? terrainSystem.analyticHeight(px, pz) : 0)
+  // Ground surface — the lab's own surface (flat, except its rumble lanes) in the testing lab;
+  // analytic terrain height in the generated world.
+  const terrainH = _labActive ? labSystem.groundHeight(px, pz)
+                              : (terrainSystem ? terrainSystem.analyticHeight(px, pz) : 0)
   if (py < terrainH) {
-    const terrainN = _gridWorldActive ? { x: 0, y: 1, z: 0 } : (terrainSystem ? terrainSystem.analyticNormal(px, pz) : { x: 0, y: 1, z: 0 })
+    const terrainN = _labActive ? labSystem.groundNormal(px, pz)
+                                : (terrainSystem ? terrainSystem.analyticNormal(px, pz) : { x: 0, y: 1, z: 0 })
     hits.push({ normal: new THREE.Vector3(terrainN.x, terrainN.y, terrainN.z), depth: terrainH - py })
   }
 
-  // Ramp face contacts — skipped when not in grid-world mode (D-19: ramp retired from Sierra world)
-  // _gridWorldActive is the authoritative gate; RANGER_PARAMS.rampEnabled is a secondary debug toggle.
-  if (_gridWorldActive && !_labActive && RANGER_PARAMS.rampEnabled !== false) {
+  // Ramp face contacts — lab only (D-19: the ramp was never part of the generated world). Kept
+  // when grid world was retired: a jump is a legitimate suspension/damage input, which is exactly
+  // what the lab's rumble lanes are also for.
+  // _labActive is the authoritative gate; RANGER_PARAMS.rampEnabled is a secondary debug toggle.
+  if (_labActive && RANGER_PARAMS.rampEnabled !== false) {
     // Ramp top incline face — half-space below the inclined plane, within ramp footprint
     if (px >= -_hw && px <= _hw && pz <= RAMP_TOE_Z && pz >= RAMP_END_Z) {
       const rampSurfaceY = RAMP_MAX_H + (RAMP_END_Z - pz) * Math.tan(RAMP_ANGLE)
@@ -1172,7 +1177,7 @@ function queryVertexContacts (px, py, pz) {
 function queryContacts (cx, cy, cz, r) {
   const hits = []
 
-  // Ground surface — flat y=0 in grid world; analytic terrain height in Sierra world.
+  // Ground surface — the lab's own surface in the testing lab; analytic terrain height otherwise.
   // Grid-world uses flat ground so physics contacts are correct on the clean flat plane (D-18).
   // PERF (contact path): resolve the road run ONCE (memoized carveHint) and thread it into BOTH the
   // height and the normal (which finite-differences 4 more heights). That collapses the per-wheel
@@ -1180,11 +1185,13 @@ function queryContacts (cx, cy, cz, r) {
   // ~300 queryContacts/frame at a near-stationary wheel reuse one query instead of each re-scanning a
   // switchback's many slices (the slow-CPU 5fps lock that recovers airborne). Height stays accurate:
   // at the query center the projection is ~0 (perp foot) so rest height ≈ exact (≤~5 mm via the memo).
-  const _hint = (!_gridWorldActive && roadSystem) ? roadSystem.carveHint(cx, cz) : undefined
-  const terrainH = _gridWorldActive ? 0 : (terrainSystem ? terrainSystem.analyticHeight(cx, cz, _hint) : 0)
+  const _hint = (!_labActive && roadSystem) ? roadSystem.carveHint(cx, cz) : undefined
+  const terrainH = _labActive ? labSystem.groundHeight(cx, cz)
+                              : (terrainSystem ? terrainSystem.analyticHeight(cx, cz, _hint) : 0)
   const gd = terrainH + r - cy
   if (gd > 0) {
-    const n = _gridWorldActive ? { x: 0, y: 1, z: 0 } : (terrainSystem ? terrainSystem.analyticNormal(cx, cz, _hint) : { x: 0, y: 1, z: 0 })
+    const n = _labActive ? labSystem.groundNormal(cx, cz)
+                         : (terrainSystem ? terrainSystem.analyticNormal(cx, cz, _hint) : { x: 0, y: 1, z: 0 })
     hits.push({
       normal:       new THREE.Vector3(n.x, n.y, n.z),
       depth:        gd,
@@ -1192,9 +1199,9 @@ function queryContacts (cx, cy, cz, r) {
     })
   }
 
-  // Triangle mesh contacts — skipped when not in grid-world mode (D-19: ramp retired from Sierra world)
-  // _gridWorldActive is the authoritative gate; RANGER_PARAMS.rampEnabled is a secondary debug toggle.
-  if (_gridWorldActive && !_labActive && RANGER_PARAMS.rampEnabled !== false) {
+  // Ramp triangle contacts — lab only (see queryVertexContacts above).
+  // _labActive is the authoritative gate; RANGER_PARAMS.rampEnabled is a secondary debug toggle.
+  if (_labActive && RANGER_PARAMS.rampEnabled !== false) {
     for (const [[ax, ay, az], [bx, by, bz], [ex, ey, ez]] of RAMP_TRIS) {
       const cp = closestPointOnTriangle(cx, cy, cz, ax, ay, az, bx, by, bz, ex, ey, ez)
       const dx = cx - cp.x, dy = cy - cp.y, dz = cz - cp.z
@@ -1217,9 +1224,9 @@ function queryContacts (cx, cy, cz, r) {
 
   // FEAT-06b: prop hard contacts (tree trunks = capsule, rocks/boulders = sphere). Local query
   // against the per-chunk collidable grid — bushes are NOT here (soft-drag is applied separately
-  // once per substep in the loop). Skipped in grid-world (no props there). Same {normal,depth,
+  // once per substep in the loop). Skipped in the lab (no props there). Same {normal,depth,
   // contactPoint} shape, so the wheel + body solvers consume them unchanged.
-  if (!_gridWorldActive && propSystem) {
+  if (!_labActive && propSystem) {
     const propHits = propSystem.queryProps(cx, cy, cz, r)
     for (let i = 0; i < propHits.length; i++) hits.push(propHits[i])
   }
@@ -1241,8 +1248,8 @@ rampMesh.position.set(
   (RAMP_TOE_Z + RAMP_END_Z) / 2
 )
 rampMesh.receiveShadow = true
-// D-19: ramp is NOT visible in the Sierra terrain world — only in grid world.
-// Authoritative gate is _gridWorldActive; debug toggle (RANGER_PARAMS.rampEnabled) is secondary.
+// D-19: the ramp is NOT part of the generated world — it exists only in the FEAT-31 testing lab.
+// Authoritative gate is _labActive; debug toggle (RANGER_PARAMS.rampEnabled) is secondary.
 rampMesh.visible = false
 scene.add(rampMesh)
 
@@ -1547,7 +1554,7 @@ missionSystem = new MissionSystem({
 // chunks, so the ribbons/props/water stayed floating at their real elevations and every worldgen
 // system kept streaming — the flat world read as "parked underneath the real one". enterLab()
 // tears the generated world down properly (see below) and puts a bare plane + tracks in its place.
-const labSystem = new LabSystem(scene, () => ({
+labSystem = new LabSystem(scene, () => ({
   x: vehicleState.position.x,
   z: vehicleState.position.z,
   speed: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z),
@@ -1768,116 +1775,37 @@ document.addEventListener('keydown', e => {
   }
 })
 
-// ── Grid-world flat grid helper (D-18) ────────────────────────────────────────
-// A THREE.GridHelper at y=0 — shown only in grid-world mode. The grid recenters on the
-// view each frame (snapped to cell size) so it reads as INFINITE while driving (see loop).
-// 5 m cells; bright lines on a near-black ground for high contrast while tuning.
-const GRID_WORLD_SIZE = 1000       // m span; large enough that the snapped follow never shows an edge
-const GRID_WORLD_DIVISIONS = 200   // → 5 m cells
-const _gridHelper = new THREE.GridHelper(GRID_WORLD_SIZE, GRID_WORLD_DIVISIONS, 0xc8c8c8, 0x707070)
+// ── FEAT-31: the lab floor (grid + pad) ──────────────────────────────────────
+// A metre grid and a ground plane at y=0, shown only in the testing lab. Both recenter on the view
+// each frame (the grid snapped to its cell size so its lines appear stationary rather than
+// crawling) so the floor reads as INFINITE while driving — see the loop.
+const LAB_FLOOR_SIZE = 1000       // m span; large enough that the snapped follow never shows an edge
+const LAB_FLOOR_DIVISIONS = 200   // → 5 m cells
+const _gridHelper = new THREE.GridHelper(LAB_FLOOR_SIZE, LAB_FLOOR_DIVISIONS, 0xc8c8c8, 0x707070)
 _gridHelper.visible = false
 scene.add(_gridHelper)
 
-// ── Grid-world: flat ground plane ────────────────────────────────────────────
-// A white-ish flat plane at y=0 — provides collision surface in grid world
-// (analyticHeight returns real terrain height; a flat plane at 0 keeps the truck grounded
-// when terrain streaming is paused and the terrain height is well above origin).
-// In grid world the car is placed at origin where analyticHeight ≈ valid terrain level,
-// but since grid world uses the ANALYTIC height at (0,0), it is always grounded correctly.
-// No separate flat plane physics is needed — analyticHeight always returns the correct surface.
-// This plane is visual only: adds a visible ground surface reference.
+// The pad the tracks are painted on. Colour is set per-mode in enterLab (asphalt grey — you have to
+// SEE the line you are following); physics never reads this mesh, it reads LabSystem.groundHeight.
 const _gridGroundPlane = new THREE.Mesh(
-  new THREE.PlaneGeometry(GRID_WORLD_SIZE * 2, GRID_WORLD_SIZE * 2),
-  new THREE.MeshPhongMaterial({ color: 0x141414 })  // near-black so the bright grid lines pop
+  new THREE.PlaneGeometry(LAB_FLOOR_SIZE * 2, LAB_FLOOR_SIZE * 2),
+  new THREE.MeshPhongMaterial({ color: 0x33373c })
 )
 _gridGroundPlane.rotation.x = -Math.PI / 2
 _gridGroundPlane.receiveShadow = true
 _gridGroundPlane.visible = false
 scene.add(_gridGroundPlane)
 
-// ── enterGridWorld / returnToWorld (D-17 / D-18 / D-19) ─────────────────────
-// enterGridWorld: pause streaming, hide Sierra chunks, show flat grid + ramp,
-//   place car at origin on flat ground.
-// returnToWorld: hide flat grid + ramp, re-enable streaming, show Sierra chunks,
-//   re-seat truck at canonical spawn via _reseatTruckAtSpawn().
-// Physics loop is NOT frozen — truck continues to settle while menu is open or
-// after teleport (CAM-02 spirit; RESEARCH §Pause Menu).
-
-function enterGridWorld () {
-  _gridWorldActive = true
-
-  // Pause terrain streaming and hide Sierra chunks
-  if (terrainSystem) {
-    terrainSystem.setEnabled(false)
-    terrainSystem.setChunksVisible(false)
-  }
-
-  // Show flat grid and ground plane
-  _gridHelper.visible = true
-  _gridGroundPlane.visible = true
-
-  // Show ramp rig (D-19: ramp lives in grid world, not Sierra world)
-  rampMesh.visible = RANGER_PARAMS.rampEnabled !== false
-
-  // Place car at origin at static-equilibrium height above y=0 flat ground
-  // Grid world y=0 is flat; computeStaticEquilibrium gives the correct body height.
-  const eq = computeStaticEquilibrium(RANGER_PARAMS)
-  vehicleState.position.set(0, eq.bodyY, 0)
-  vehicleState.quaternion.identity()
-  vehicleState.velocity.set(0, 0, 0)
-  vehicleState.angularVelocity.set(0, 0, 0)
-  vehicleState.steerAngle     = 0
-  vehicleState.throttle       = 0
-  vehicleState.brake          = 0
-  vehicleState.smoothThrottle = 0
-  vehicleState.smoothBrake    = 0
-  vehicleState.wheelAngles    = [0, 0, 0, 0]
-  vehicleState.wheelSteerAngles = [0, 0, 0, 0]
-  vehicleState.strutComp      = [...eq.strutComp]
-  vehicleState.strutCompVel   = [0, 0, 0, 0]
-  vehicleState.wheelDebug     = [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ]
-  vehicleState.wheelOmega     = [0, 0, 0, 0]
-  vehicleState.drivetrain     = { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 }
-  vehicleState.slipLong       = [0, 0, 0, 0]
-  vehicleState.slipLat        = [0, 0, 0, 0]
-  vehicleState.handbrake      = false
-  vehicleState.submerged      = false   // FEAT-22
-  vehicleState.submergedDepth = 0
-
-  _hidePauseMenu()
-}
-
-function returnToWorld () {
-  _gridWorldActive = false
-
-  // Hide flat grid and ramp
-  _gridHelper.visible = false
-  _gridGroundPlane.visible = false
-  rampMesh.visible = false
-
-  // Re-enable terrain streaming and show Sierra chunks
-  if (terrainSystem) {
-    terrainSystem.setEnabled(true)
-    terrainSystem.setChunksVisible(true)
-  }
-
-  // Re-seat truck at canonical spawn (Plan 04 — resolveSpawn + analyticHeight ground-probe).
-  // Async since QUAL-14 (spawn bands warm on the worker pool); fire-and-forget — the sim keeps
-  // running on the old state for the few frames until the seat lands (usually pure cache hits).
-  void _reseatTruckAtSpawn()
-
-  _hidePauseMenu()
-}
-
 // ── FEAT-31: enter / exit the testing lab ────────────────────────────────────
-// The teardown grid world never did. Two halves that BOTH matter:
-//   VISUAL — hide the terrain chunks (as before) AND the road ribbons, props, water and dust.
-//     Without this the generated world hangs ~150 m overhead and the flat plane reads as a
-//     basement. Visibility only; nothing is disposed, so returning to the world is instant.
+// Supersedes grid world (D-18/D-19, deleted 2026-07-20), which did neither half of this.
+// Two halves that BOTH matter:
+//   VISUAL — hide the terrain chunks AND the road ribbons, props, water and dust. Without this
+//     the generated world hangs ~150 m overhead and the flat plane reads as a basement.
+//     Visibility only; nothing is disposed, so returning to the world is instant.
 //   WORK — stop terrain streaming and road streaming/route dispatch. The lab is where physics is
 //     measured, so leaving worldgen churning in the background would put its cost inside every
 //     measurement. This is the half a visibility flag can't buy.
-// Physics needs no special casing: the lab sets _gridWorldActive, which every contact-query gate
+// Physics needs no special casing: the lab sets _labActive, which every contact-query gate
 // already reads (ground at y=0, normal up, no carve/prop/water). _labActive additionally
 // suppresses the ramp rig, which would otherwise sit across the drag strip at the origin.
 function _setWorldgenVisible (visible) {
@@ -1890,24 +1818,19 @@ function _setWorldgenVisible (visible) {
 
 function enterLab () {
   _labActive = true
-  _gridWorldActive = true            // reuse every flat-world physics gate
+  _labActive = true            // reuse every flat-world physics gate
   window.__setGameMode('lab')
 
   // Fog is tuned for worldgen draw distances (FogExp2 ~0.006), which swallows the far end of a
   // 400 m strip and hides the 150 m skidpad entirely from any useful vantage. The lab is a clean
   // room: thin it right out and restore the player's setting on the way back.
   if (scene.fog) { _labFogDensity = scene.fog.density; scene.fog.density = 0.00035 }
-  // Grid world's near-black ground (0x141414) exists to make bright grid lines pop. The lab's job
-  // is the opposite — you have to SEE the painted line you're following at 400 m or across a 150 m
-  // ring — so it gets an asphalt-grey pad instead. Restored on exit.
-  _labGroundColor = _gridGroundPlane.material.color.getHex()
-  _gridGroundPlane.material.color.setHex(0x33373c)
 
   if (terrainSystem) terrainSystem.setEnabled(false)   // stop streaming, not just drawing
   _setWorldgenVisible(false)
   _gridHelper.visible = true
   _gridGroundPlane.visible = true
-  rampMesh.visible = false
+  rampMesh.visible = RANGER_PARAMS.rampEnabled !== false   // D-19 jump rig, kept as a lab feature
 
   labSystem.enter()
   // Staging the truck on the strip sets _spawnOverride, which would otherwise eat a spawn point
@@ -1922,15 +1845,15 @@ function enterLab () {
 
 function exitLab () {
   _labActive = false
-  _gridWorldActive = false
+  _labActive = false
   window.__setGameMode('freeroam')
 
   if (scene.fog && _labFogDensity != null) { scene.fog.density = _labFogDensity; _labFogDensity = null }
-  if (_labGroundColor != null) { _gridGroundPlane.material.color.setHex(_labGroundColor); _labGroundColor = null }
 
   labSystem.exit()
   _gridHelper.visible = false
   _gridGroundPlane.visible = false
+  rampMesh.visible = false
   if (terrainSystem) terrainSystem.setEnabled(true)
   _setWorldgenVisible(true)
 
@@ -1988,10 +1911,8 @@ document.getElementById('pm-story')?.addEventListener('click', () => {
   window.__setGameMode('story')
   missionSystem.enter()
 })
-// Every other destination LEAVES the lab first — otherwise you'd stack a mode on top of it and
-// end up with lab geometry, a torn-down world, and a story mission all live at once.
-document.getElementById('pm-grid')?.addEventListener('click', () => { if (_labActive) exitLab(); enterGridWorld() })
-document.getElementById('pm-return')?.addEventListener('click', () => { if (_labActive) exitLab(); returnToWorld() })
+// (grid world's "grid world" / "return to world" buttons were removed with it — the lab's own
+// toggle is the way in and out of a flat world now.)
 
 // ── Free-cam "teleport here" button (feature/teleport) ────────────────────────────────────
 // Drops the truck at the EXACT free-cam position (off-road / floating allowed) facing the camera
@@ -2075,7 +1996,7 @@ document.addEventListener('keydown', e => {
   // 'p' = MARK THIS PLACE: write a kind:"place" capture at the truck — the replayable spatial bug
   // report (kink / fold / grade / tear). test/replay.mjs rebuilds the road here from seed+params and
   // diffs what the game observed. Supersedes the old road-run-dump (geometry lives in the capture).
-  if (e.key === 'p' && roadSystem && !_gridWorldActive) {
+  if (e.key === 'p' && roadSystem && !_labActive) {
     // Mark from the freecam when it's active (lets you fly to a defect and capture it), else the truck.
     const markPos = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
     const px = markPos.x, pz = markPos.z
@@ -2162,7 +2083,7 @@ function loop () {
     // overlaps a bush volume (never a hard contact). Applied as an impulse on the body velocity
     // each substep: dv = F/m · dt. propSystem caps F at collision.bush.fMax (~200 N) so it's a
     // felt drag, not a stop. No-op (returns 0) when no bush overlaps the CG.
-    if (!_gridWorldActive && propSystem) {
+    if (!_labActive && propSystem) {
       const p = vehicleState.position, v = vehicleState.velocity
       const f = propSystem.bushDragForce(p.x, p.y, p.z, v.x, v.y, v.z, _bushDragF)
       if (f.x || f.y || f.z) {
@@ -2177,7 +2098,7 @@ function loop () {
     // to localize ribbon folds. Gated on isRecording() so normal play pays nothing (queryNearest
     // scans a 3×3 tile block). The post-hoc road-resolution path lives in test/replay.mjs.
     let roadDebug = null
-    if (isRecording() && !_gridWorldActive) {
+    if (isRecording() && !_labActive) {
       const px = vehicleState.position.x, pz = vehicleState.position.z
       // Surface fidelity (2026-06-25): record the ground the browser actually sampled — CG + each wheel
       // hub — so test/replay.mjs can diff it against the headless terrain instead of guessing. Per-wheel
@@ -2195,7 +2116,7 @@ function loop () {
 
   // FEAT-22: water submersion flag — CG vs the local water surface (pond plane). Once per render
   // frame (not per physics substep): v1 only SETS the flag; nothing in stepPhysics consumes it yet.
-  if (waterSystem && !_gridWorldActive) {
+  if (waterSystem && !_labActive) {
     const cgY = vehicleState.position.y + (RANGER_PARAMS.cgHeight ?? 0)
     const sub = waterSystem.submergedAt(vehicleState.position.x, cgY, vehicleState.position.z)
     vehicleState.submerged = sub.submerged
@@ -2220,15 +2141,15 @@ function loop () {
 
   // Wheel dust trails — advance + emit using the interpolated render pose (vehicleState is
   // still the render copy here; restored below). Ground sampler mirrors queryContacts: flat
-  // y=0 in grid world, analytic terrain height otherwise. Cheap no-op when no wheel is working.
+  // the lab surface in the lab, analytic terrain height otherwise. Cheap no-op when no wheel is working.
   dustSystem.update(frameTime, vehicleState, RANGER_PARAMS,
-    (x, z) => _gridWorldActive ? 0 : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0),
+    (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0) : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0),
     // On-road factor: dust is reduced on the paved ribbon. carveHint is the memoized nearest-road
     // query the physics path already warmed at these wheel positions, so this is ~free. Lateral
     // distance from the wheel to the centerline point < roadHalfWidth ⇒ on asphalt; ramp smoothly
     // up to 1 across a band into the dirt shoulder so the edge isn't a hard line.
     (x, z) => {
-      if (_gridWorldActive || !roadSystem) return 1
+      if (_labActive || !roadSystem) return 1
       const nr = roadSystem.carveHint(x, z)
       if (!nr || !nr.point) return 1                         // off-road → full dirt dust
       const lat = Math.hypot(x - nr.point.x, z - nr.point.z)
@@ -2379,11 +2300,11 @@ function loop () {
   if (_perfFrame === 180) { perfDump('load ~3s'); perfReset() }
   else if (_perfFrame === 600) { perfDump('steady ~10s') }
 
-  // Grid world: recenter the dev grid + ground on the view each frame so they read as
-  // infinite. The grid snaps to the cell size so its lines appear stationary (no crawling);
-  // the ground plane follows continuously so its edges never enter view.
-  if (_gridWorldActive) {
-    const cell = GRID_WORLD_SIZE / GRID_WORLD_DIVISIONS
+  // Lab: recenter the floor grid + pad on the view each frame so they read as infinite. The grid
+  // snaps to the cell size so its lines appear stationary (no crawling); the pad follows
+  // continuously so its edges never enter view.
+  if (_labActive) {
+    const cell = LAB_FLOOR_SIZE / LAB_FLOOR_DIVISIONS
     _gridHelper.position.set(Math.round(streamCenter.x / cell) * cell, 0, Math.round(streamCenter.z / cell) * cell)
     _gridGroundPlane.position.set(streamCenter.x, 0, streamCenter.z)
   }

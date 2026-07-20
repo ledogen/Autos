@@ -10,7 +10,7 @@
 // This drives LabSystem with synthetic, exactly-known car paths and checks the numbers it reports.
 // Pure node — LabSystem builds THREE geometry but never needs a renderer.
 import * as THREE from 'three'
-import { LabSystem, PADS } from '../src/lab.js'
+import { LabSystem, PADS, RUMBLES, STRIP_Z, DRAG_LEN, RUMBLE_LEN, RUMBLE_W, rumbleSurface } from '../src/lab.js'
 
 const DT = 1 / 60
 const G = 9.81
@@ -70,11 +70,13 @@ for (const pad of PADS) {
 }
 
 // ── 3. drag strip: 400 m at constant speed times exactly ────────────────────────────────────────
+// The strip runs along +X at z = STRIP_Z (rotated 2026-07-20 to share the skidpads' axis and keep
+// the facility compact).
 {
   const { lab, car } = makeLab()
   const v = 20                                    // m/s, constant → 400 m in exactly 20 s
-  car.x = 0; car.z = 5; car.speed = v
-  for (let i = 0; i < Math.ceil(30 / DT); i++) { car.z -= v * DT; lab.update(DT) }
+  car.x = -5; car.z = STRIP_Z; car.speed = v
+  for (let i = 0; i < Math.ceil(30 / DT); i++) { car.x += v * DT; lab.update(DT) }
   const best = lab.best.get('drag 400 m')
   check('drag 400 m is timed', !!best)
   if (best) check('drag time within 1% of 400/v', Math.abs(best.value - 20) / 20 < 0.01,
@@ -86,19 +88,27 @@ for (const pad of PADS) {
 // ── 4. drag strip is directional — rolling backwards over the line starts nothing ───────────────
 {
   const { lab, car } = makeLab()
-  car.x = 0; car.z = -50; car.speed = 10
-  for (let i = 0; i < Math.ceil(20 / DT); i++) { car.z += 10 * DT; lab.update(DT) }
+  car.x = 50; car.z = STRIP_Z; car.speed = 10
+  for (let i = 0; i < Math.ceil(20 / DT); i++) { car.x -= 10 * DT; lab.update(DT) }
   check('crossing the start line backwards does not arm a run', !lab.best.get('drag 400 m'))
+}
+
+// ── 4b. driving the strip's length OFF the strip must not trigger it ────────────────────────────
+{
+  const { lab, car } = makeLab()
+  car.x = -5; car.z = STRIP_Z + 40; car.speed = 20     // parallel, 40 m to the side
+  for (let i = 0; i < Math.ceil(30 / DT); i++) { car.x += 20 * DT; lab.update(DT) }
+  check('a parallel run beside the strip does not trigger the gates', !lab.best.get('drag 400 m'))
 }
 
 // ── 5. braking arms on the brake input, and voids if the throttle comes back ────────────────────
 {
   const { lab, car } = makeLab()
   const v0 = 30, a = 7
-  car.x = 0; car.z = 0; car.speed = v0; car.brake = 1; car.throttle = 0
+  car.x = 0; car.z = STRIP_Z; car.speed = v0; car.brake = 1; car.throttle = 0
   let v = v0
   for (let i = 0; i < Math.ceil(10 / DT) && v > 0; i++) {
-    car.z -= v * DT; v = Math.max(0, v - a * DT); car.speed = v
+    car.x += v * DT; v = Math.max(0, v - a * DT); car.speed = v
     lab.update(DT)
   }
   const best = lab.best.get('braking')
@@ -114,10 +124,10 @@ for (const pad of PADS) {
 }
 {
   const { lab, car } = makeLab()
-  car.x = 0; car.z = 0; car.speed = 30; car.brake = 1; car.throttle = 0
-  for (let i = 0; i < 60; i++) { car.z -= 0.5; lab.update(DT) }
+  car.x = 0; car.z = STRIP_Z; car.speed = 30; car.brake = 1; car.throttle = 0
+  for (let i = 0; i < 60; i++) { car.x += 0.5; lab.update(DT) }
   car.throttle = 1; car.brake = 0
-  for (let i = 0; i < 60; i++) { car.z -= 0.5; lab.update(DT) }
+  for (let i = 0; i < 60; i++) { car.x += 0.5; lab.update(DT) }
   car.brake = 1; car.throttle = 0; car.speed = 0.1
   lab.update(DT)
   check('a braking run that gets back on the throttle is voided', !lab.best.get('braking'),
@@ -128,9 +138,66 @@ for (const pad of PADS) {
 {
   const { lab, car } = makeLab()
   let v = 10
-  car.x = 0; car.z = 0; car.speed = v; car.brake = 1
-  for (let i = 0; i < 200 && v > 0; i++) { car.z -= v * DT; v = Math.max(0, v - 5 * DT); car.speed = v; lab.update(DT) }
+  car.x = 0; car.z = STRIP_Z; car.speed = v; car.brake = 1
+  for (let i = 0; i < 200 && v > 0; i++) { car.x += v * DT; v = Math.max(0, v - 5 * DT); car.speed = v; lab.update(DT) }
   check('a low-speed stop does not register as a braking test', !lab.best.get('braking'))
+}
+
+// ── 7. rumble lanes: the surface the suspension will be measured against ────────────────────────
+// These feed the damage/wear model (SM-INV-5), whose calibration anchor is a severity THRESHOLD —
+// light bump-stop contact must not damage, hard contact must. That only means anything if the
+// ladder of inputs is exactly what it claims to be, so amplitude, period, and the C1 continuity
+// that keeps the solver honest are all asserted here rather than eyeballed.
+{
+  for (const r of RUMBLES) {
+    const at = (x, z = r.z) => rumbleSurface(x, z).y
+    // Amplitude + period, sampled in the middle of the lane away from the fades.
+    let peak = 0, trough = 1
+    for (let x = 20; x < 100; x += 0.002) { const y = at(x); if (y > peak) peak = y; if (y < trough) trough = y }
+    check(`rumble ${r.name}: peak height is ${r.amp * 1000} mm`,
+      Math.abs(peak - r.amp) < 1e-4, `got ${(peak * 1000).toFixed(1)} mm`)
+    check(`rumble ${r.name}: troughs return to the plane`, trough < 1e-6, `got ${trough}`)
+    check(`rumble ${r.name}: crest spacing is ${r.spacing * 1000} mm`,
+      Math.abs(at(50 + r.spacing / 2) - at(50 + r.spacing * 1.5)) < 1e-9
+      && Math.abs(at(50) - at(50 + r.spacing)) < 1e-9)
+
+    // C1 continuity: a sawtooth would hand the solver an unbounded impulse and we would be
+    // measuring the integrator, not the suspension. Bound the second difference.
+    let worst = 0
+    for (let x = 20; x < 100; x += 0.005) {
+      const d2 = (at(x + 0.005) - 2 * at(x) + at(x - 0.005)) / (0.005 * 0.005)
+      worst = Math.max(worst, Math.abs(d2))
+    }
+    const bound = r.amp * 0.5 * (2 * Math.PI / r.spacing) ** 2 * 1.05   // |y''| of a raised cosine
+    check(`rumble ${r.name}: profile is C1 (curvature bounded, no sawtooth)`, worst <= bound,
+      `worst |y''| ${worst.toFixed(1)} vs bound ${bound.toFixed(1)}`)
+
+    // Lateral feather: full height mid-lane, exactly zero outside it.
+    check(`rumble ${r.name}: zero outside the lane`,
+      at(50, r.z + RUMBLE_W / 2 + 0.01) === 0 && at(50, r.z - RUMBLE_W / 2 - 0.01) === 0)
+    check(`rumble ${r.name}: no cliff at the lane edge`,
+      at(50 + r.spacing / 2, r.z + RUMBLE_W / 2 - 0.05) < r.amp * 0.15,
+      `edge height ${at(50 + r.spacing / 2, r.z + RUMBLE_W / 2 - 0.05).toFixed(4)}`)
+
+    // Longitudinal fade so entering the lane is not a kerb strike.
+    check(`rumble ${r.name}: fades in at the lane start`, at(0.05) < r.amp * 0.15)
+    check(`rumble ${r.name}: zero before and after the lane`,
+      at(-1) === 0 && at(RUMBLE_LEN + 1) === 0)
+  }
+  // The lanes must not overlap each other, nor the drag strip.
+  for (const r of RUMBLES) {
+    check(`rumble ${r.name}: clear of the drag strip`, rumbleSurface(50, STRIP_Z).y === 0)
+  }
+  const zs = RUMBLES.map(r => r.z).sort((a, b) => a - b)
+  check('rumble lanes do not overlap', zs.every((z, i) => i === 0 || z - zs[i - 1] > RUMBLE_W))
+}
+
+// ── 8. the flat parts of the lab are actually flat ──────────────────────────────────────────────
+{
+  const pts = [[0, 0], [200, STRIP_Z], [DRAG_LEN, STRIP_Z], ...PADS.map(p => [p.cx, p.cz])]
+  check('drag strip and skidpads sit on the flat plane',
+    pts.every(([x, z]) => rumbleSurface(x, z).y === 0),
+    JSON.stringify(pts.map(([x, z]) => rumbleSurface(x, z).y)))
 }
 
 console.log(fails === 0 ? '\nPASS lab-timing' : `\nFAIL lab-timing (${fails})`)

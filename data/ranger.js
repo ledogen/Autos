@@ -311,7 +311,7 @@ export const RANGER_PARAMS = {
 
   // rampEnabled: when false, ramp triangles are skipped in queryContacts + queryVertexContacts,
   // and rampMesh.visible is set false via the setRampVisible callback in debug.js.
-  rampEnabled: true,       // ramp collision + visibility toggle
+  rampEnabled: true,       // ramp collision + visibility toggle (FEAT-31 testing lab only)
 
   // ── Input Ramp Rates (FEAT-01) ───────────────────────────────────────────
   // Smoothed throttle/brake accumulators in vehicle.js ramp at these rates (1/s).

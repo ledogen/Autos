@@ -176,7 +176,7 @@ export class DustSystem {
   }
 
   /** Grab the next pool slot (oldest is overwritten when the pool is saturated). */
-  /** Show/hide the dust sheet (testing lab / grid world teardown — visibility only). */
+  /** Show/hide the dust sheet (FEAT-31 testing-lab teardown — visibility only). */
   setVisible (visible) { this._mesh.visible = visible }
 
   _alloc () {

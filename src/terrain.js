@@ -565,7 +565,7 @@ export class TerrainSystem {
      * Enable or disable terrain streaming.
      * When disabled, update() early-returns — _updateChunkRing and _flushPendingQueue do not run.
      * Existing chunk meshes remain in the scene (not disposed) so they can be restored instantly.
-     * Called by grid-world mode (D-18 / D-19): disable on enterGridWorld, re-enable on returnToWorld.
+     * Called by the FEAT-31 testing lab: disable on enterLab, re-enable on exitLab.
      *
      * @param {boolean} flag - true = streaming active (default); false = streaming paused.
      */
@@ -602,7 +602,7 @@ export class TerrainSystem {
 
     /**
      * Show or hide all currently-loaded chunk meshes without disposing them.
-     * Used by grid-world mode to hide Sierra terrain while keeping chunks in memory
+     * Used by the FEAT-31 testing lab to hide terrain while keeping chunks in memory
      * so they reappear immediately on returnToWorld without requiring re-streaming.
      *
      * @param {boolean} flag - true = visible (default); false = hidden.
@@ -620,7 +620,7 @@ export class TerrainSystem {
      * @param {{ x: number, y: number, z: number }} carPos - Current car/camera world position.
      */
     update(carPos) {
-        // Streaming paused (grid-world mode) — no-op to prevent chunk ring changes while in grid world.
+        // Streaming paused (FEAT-31 testing lab) — no-op to prevent chunk ring changes while there.
         if (this._enabled === false) return
         const { cx: ccx, cz: ccz } = this._worldToChunk(carPos.x, carPos.z)
         let _pt = performance.now()

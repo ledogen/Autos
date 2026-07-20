@@ -38,6 +38,19 @@ restored on exit. Physics needed no new cases — the lab sets `_gridWorldActive
 contact-query gate already reads; `_labActive` additionally suppresses the ramp rig, which would
 otherwise sit across the drag strip at the origin.
 
+**Layout (revised 2026-07-20).** Everything shares the **+X axis** so the facility stays compact —
+drive right to go faster, turn off into a lane or a pad. The drag strip originally ran along −Z,
+perpendicular to the pads, which spread the site over two axes for no reason.
+
+```
+ z=+86  ────────────  rumble: large  (150 mm @ 500 mm)
+ z=+72  ────────────  rumble: med    (100 mm @ 350 mm)
+ z=+58  ────────────  rumble: small  ( 50 mm @ 250 mm)
+ z=+40  ============  DRAG STRIP →  start ▏100 200 300▕ finish(400) ▕ brake board(470)
+ z=  0     ▲ ramp     (the D-19 jump rig)
+ z=-300      (25)      (  60  )        (      150      )   skidpads
+```
+
 **Tracks**, all auto-timed on gate crossing (no button to fumble mid-run):
 - **Drag strip** 400 m with 100 m marks; truck stages on the start line. Reports time, trap speed,
   0–100 split and implied accel. A flying pass is flagged ROLLING and derives no accel.
@@ -46,6 +59,24 @@ otherwise sit across the drag strip at the origin.
   if the throttle comes back. Reports distance and implied decel.
 - **Skidpads** at R = 25 / 60 / 150 m, bracketing the radii the router actually produces. A lap
   gives `v = 2πR/t`, hence **`mu_realized = v²/(g·R)`** — the number the whole mode exists for.
+- **Rumble lanes** ×3, parallel to the strip, for the damage/wear model (SM-INV-5). Crest heights
+  50 / 100 / 150 mm at 250 / 350 / 500 mm spacing (owner-specified small and large; med
+  interpolated). They are REAL geometry: physics and mesh both read one `rumbleSurface(x, z)`
+  function, so collision and visual cannot drift apart — the failure this codebase has paid for
+  repeatedly on the road side. Profile is a **raised cosine, not a sawtooth**: a discontinuous
+  slope hands the solver an unbounded impulse and you measure the integrator, not the suspension.
+  Lanes feather laterally and fade longitudinally so entering one is not a kerb strike.
+
+  Measured in-game (body Y peak-to-peak, driven across all three): strip baseline 0.009 m →
+  small 0.025 → med 0.048 → large 0.090. Monotonic, and the suspension filters roughly half the
+  crest height through to the body. That is the severity ladder the damage model's threshold
+  (light bump-stop contact must NOT damage, hard contact must) gets placed against.
+
+**Grid world (D-18/D-19) deleted, not deprecated.** `enterGridWorld`/`returnToWorld`, both pause-menu
+buttons and the `_gridWorldActive` flag are gone; every physics gate that read it now reads
+`_labActive`. The pause menu is `resume / story mode (beta) / testing lab`. The **ramp rig was kept**
+and moved into the lab — it would have died with grid world, but a jump is a legitimate suspension
+and damage input, the same purpose the rumble lanes serve.
 
 ## Why it matters (FEAT-30)
 
@@ -91,9 +122,22 @@ first, so modes can never stack.
 ## Gate
 
 `test/lab-timing.mjs` (registered, subsystem `story`, cost `fast`) drives LabSystem with synthetic
-exactly-known paths. It caught a real bug during development: idling near the timing line and
-wobbling across it banked a phantom 4.02 s lap (a mu of ~4). Fixed by requiring the swept angle
-about the pad centre to reach ~2π, not merely two line crossings.
+exactly-known paths. It caught two real bugs during development:
+- Idling near the timing line and wobbling across it banked a phantom 4.02 s lap (a mu of ~4).
+  Fixed by requiring the swept angle about the pad centre to reach ~2π, not merely two crossings.
+- A `smoothstep` guard (`if (e1 <= e0) …`) broke descending edges, silently flattening **every
+  rumble lane to zero**. It reads fine in review and would look fine in a screenshot from any
+  distance. The gate now pins amplitude, crest spacing, a C1 curvature bound, the lane-edge
+  feather and lane separation for all three lanes.
+
+38 checks total.
+
+## Regression check across the rotation
+
+Rotating the strip and relocating the pads must not change any measurement, and did not:
+drag 400 m 16.60 → 16.58 s · 0–100 9.08 → 9.07 s · implied accel 3.06 → 3.06 m/s² ·
+braking 96.3 → 96.1 m at 7.19 → 7.19 m/s². The headless envelope harness re-ran byte-identical.
+Full `test:all` green (36/36).
 
 ## Follow-ups (not blocking)
 

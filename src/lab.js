@@ -1,11 +1,12 @@
 /**
  * src/lab.js — the testing lab: an isolated flat world with instrumented tracks.
  *
- * WHY THIS EXISTS. Grid world (D-18) hid the terrain chunks and nothing else, so the road ribbons,
- * props and water stayed floating at their real elevations while the truck sat on a plane at y=0 —
- * the flat world read as "parked underneath the real one", and every worldgen system kept streaming
- * and drawing. The lab is a real mode: the generated world is torn down (hidden AND stopped), and
- * what's left is a bare plane with painted tracks.
+ * WHY THIS EXISTS. Grid world (D-18, retired 2026-07-20) hid the terrain chunks and nothing else,
+ * so the road ribbons, props and water stayed floating at their real elevations while the truck sat
+ * on a plane at y=0 — the flat world read as "parked underneath the real one" — and every worldgen
+ * system kept streaming and drawing underneath it. The lab is a real mode: the generated world is
+ * torn down (hidden AND stopped, see enterLab in main.js), and what's left is a bare plane with
+ * instrumented tracks. It replaces grid world outright.
  *
  * WHAT IT MEASURES. `test/measure-vehicle-limits.mjs` measures the truck's ENVELOPE headlessly —
  * the ceiling. It cannot measure transitions (turn-in, trail-braking, getting an open-diff RWD
@@ -17,8 +18,23 @@
  * The skidpad is the money test: a lap time gives `v = 2πR / t`, hence `mu_realized = v² / (g·R)`,
  * directly comparable to the harness's steady-state `mu`. Their ratio IS k, per radius.
  *
+ * The rumble lanes are for the damage/wear model (SM-INV-5, DESIGN.md "Damage, wear & repair"),
+ * whose stated calibration anchor is severity thresholds, not linear accumulation: light bump-stop
+ * contact must NOT damage the suspension, hard contact must. Three graded lanes give a repeatable
+ * ladder of input severity to place that threshold against.
+ *
  * SM-INV-2: nothing here feeds par at runtime. It prints numbers for a human to freeze into
  * PAR_REF by hand.
+ *
+ * LAYOUT (everything shares the +X axis so the facility stays compact — drive right to go faster,
+ * turn off into a lane or a pad):
+ *
+ *      z=+86  ────────────  rumble: large  (150 mm @ 500 mm)
+ *      z=+72  ────────────  rumble: med    (100 mm @ 350 mm)
+ *      z=+58  ────────────  rumble: small  ( 50 mm @ 250 mm)
+ *      z=+40  ============  DRAG STRIP →  start ▏ 100 200 300 ▕ finish(400) ▕ brake board(470)
+ *      z=  0     ▲ ramp                  (the D-19 jump rig, kept: it is a suspension input too)
+ *      z=-300      ( 25 )      (  60  )            (      150      )   skidpads
  *
  * Timing is fully automatic — gates fire on crossing, there is no button to fumble mid-run.
  */
@@ -26,7 +42,6 @@
 import * as THREE from 'three'
 
 const G = 9.81
-const LANE = 8            // m — drag-strip lane width
 const PAINT_Y = 0.02      // m — paint sits just above the plane (avoids z-fighting)
 const MIN_LAP = 4.0       // s — secondary sanity floor on lap time
 // A lap must actually GO AROUND. Timing purely on line crossings lets a driver idling near the
@@ -34,17 +49,37 @@ const MIN_LAP = 4.0       // s — secondary sanity floor on lap time
 // 60 m pad, which would report a mu of ~4). We accumulate the unwrapped angle swept about the pad
 // centre and require very nearly a full turn.
 const LAP_ANGLE = 1.9 * Math.PI   // rad — swept angle required to count a lap
+
+// ── drag strip: runs along +X at z = STRIP_Z ────────────────────────────────────────────────────
+const STRIP_Z = 40        // m — clear of the ramp rig at the origin
+const LANE = 8            // m — drag-strip lane width
 const DRAG_LEN = 400      // m — the timed acceleration run
-const BRAKE_MARK = -450   // z — painted "brake here" board (visual aid only; see the braking test)
+const STRIP_RUNOFF = 140  // m — pavement past the finish
+const BRAKE_MARK = 470    // x — painted "brake here" board (visual aid only; see the braking test)
 const BRAKE_ARM_V = 27    // m/s (~97 km/h) — braking test arms above this speed
 
-// Skidpad rings: radius + center, laid out along +X with clear gaps between them.
+// ── rumble lanes: parallel to the strip, for suspension / damage-model testing ──────────────────
+// Amplitude is peak height above the plane; spacing is crest-to-crest. The profile is a raised
+// cosine (C1 continuous), NOT a sawtooth: a discontinuous slope would hand the solver an unbounded
+// impulse and measure the integrator rather than the suspension.
+const RUMBLE_LEN = 120        // m — long enough to hold a steady speed across many crests
+const RUMBLE_W = 6            // m — lane width
+const RUMBLE_FADE = 2.0       // m — longitudinal ramp-in/out so entering a lane is not a kerb
+const RUMBLE_EDGE = 1.0       // m — lateral feather at the lane edges
+const RUMBLES = [
+    { name: 'small', z: 58, amp: 0.05, spacing: 0.25 },
+    { name: 'med',   z: 72, amp: 0.10, spacing: 0.35 },
+    { name: 'large', z: 86, amp: 0.15, spacing: 0.50 },
+]
+
+// Skidpad rings: radius + centre, strung along +X below the strip with clear gaps.
 // 25 m ≈ a tight switchback, 60 m ≈ a typical mountain corner, 150 m ≈ a fast sweeper —
 // bracketing the radii the router actually produces (hard floor 8 m, most corners 20–120 m).
+const PAD_Z = -300
 const PADS = [
-    { r: 25,  cx: 120, cz: 0, name: 'skidpad 25 m' },
-    { r: 60,  cx: 300, cz: 0, name: 'skidpad 60 m' },
-    { r: 150, cx: 650, cz: 0, name: 'skidpad 150 m' },
+    { r: 25,  cx: 60,  cz: PAD_Z, name: 'skidpad 25 m' },
+    { r: 60,  cx: 240, cz: PAD_Z, name: 'skidpad 60 m' },
+    { r: 150, cx: 620, cz: PAD_Z, name: 'skidpad 150 m' },
 ]
 
 const COL = { paint: 0xe8e8e0, start: 0x5ad06a, finish: 0xff5a3c, brake: 0xffcf3c, lane: 0x8a8a80 }
@@ -52,6 +87,55 @@ const COL = { paint: 0xe8e8e0, start: 0x5ad06a, finish: 0xff5a3c, brake: 0xffcf3
 // ring, a realistically-thin 0.15 m line is sub-pixel and you cannot see the thing you are meant
 // to be following. This is an instrument, not a photograph.
 const W_GATE = 1.4, W_MARK = 0.7, W_RING = 1.0, W_LANE = 0.45
+
+// Note e1 < e0 is legal and means a DESCENDING edge (1 below e1, 0 above e0) — the lateral lane
+// feather is written that way. Only the degenerate e0 === e1 needs a guard; an earlier
+// `if (e1 <= e0) …` bailout silently flattened every rumble lane to zero.
+const smoothstep = (e0, e1, x) => {
+    if (e0 === e1) return x < e0 ? 0 : 1
+    const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)))
+    return t * t * (3 - 2 * t)
+}
+
+/**
+ * Rumble-lane surface height at a world XZ, and its gradient.
+ * Pure math, exported so the physics contact query and the visual mesh are guaranteed to be the
+ * SAME surface (the road system's whole history is bugs where mesh and collision disagreed).
+ * Returns { y, dydx, dydz } — y is 0 everywhere outside a lane.
+ */
+export function rumbleSurface(x, z) {
+    for (const r of RUMBLES) {
+        const dz = Math.abs(z - r.z)
+        const half = RUMBLE_W / 2
+        if (dz > half || x < 0 || x > RUMBLE_LEN) continue
+
+        // Lateral feather and longitudinal fade — both smoothstep, so the lane edge is a ramp,
+        // not a step the tyre would slam into.
+        const wz = smoothstep(half, half - RUMBLE_EDGE, dz)
+        const wx = smoothstep(0, RUMBLE_FADE, x) * smoothstep(RUMBLE_LEN, RUMBLE_LEN - RUMBLE_FADE, x)
+        const w = wz * wx
+        if (w <= 0) continue
+
+        const k = 2 * Math.PI / r.spacing
+        const prof = 0.5 * (1 - Math.cos(k * x))          // 0 … 1
+        const dprof = 0.5 * k * Math.sin(k * x)
+        const y = r.amp * prof * w
+
+        // d/dx of (amp·prof·wz·wx): wz has no x dependence; wx's derivative is only non-zero in the
+        // 2 m fades, where prof·dwx is a small correction — include it for an honest normal.
+        const eps = 1e-3
+        const wxF = smoothstep(0, RUMBLE_FADE, x + eps) * smoothstep(RUMBLE_LEN, RUMBLE_LEN - RUMBLE_FADE, x + eps)
+        const wxB = smoothstep(0, RUMBLE_FADE, x - eps) * smoothstep(RUMBLE_LEN, RUMBLE_LEN - RUMBLE_FADE, x - eps)
+        const dwx = (wxF - wxB) / (2 * eps)
+        const dydx = r.amp * (dprof * wz * wx + prof * wz * dwx)
+
+        const wzF = smoothstep(half, half - RUMBLE_EDGE, Math.abs(z + eps - r.z))
+        const wzB = smoothstep(half, half - RUMBLE_EDGE, Math.abs(z - eps - r.z))
+        const dydz = r.amp * prof * wx * (wzF - wzB) / (2 * eps)
+        return { y, dydx, dydz }
+    }
+    return { y: 0, dydx: 0, dydz: 0 }
+}
 
 export class LabSystem {
     /**
@@ -72,10 +156,25 @@ export class LabSystem {
         this.best = new Map()        // track name → best result
 
         // Live run state
-        this._drag = null            // { t, v100: number|null }
-        this._brake = null           // { z0, v0 }
+        this._drag = null            // { t, v100, v0 }
+        this._brake = null           // { x0, z0, v0 }
         this._laps = new Map()       // pad name → { t, swept, theta }
         this.status = 'drive through a green gate to start timing'
+    }
+
+    // ── ground surface (physics + visual read the same function) ────────────────────────────
+    /** Surface height at a world XZ inside the lab. Flat except on the rumble lanes. */
+    groundHeight(x, z) { return this._active ? rumbleSurface(x, z).y : 0 }
+
+    /** Surface normal at a world XZ inside the lab. Straight up except on the rumble lanes. */
+    groundNormal(x, z, out) {
+        const n = out || { x: 0, y: 1, z: 0 }
+        if (!this._active) { n.x = 0; n.y = 1; n.z = 0; return n }
+        const { dydx, dydz } = rumbleSurface(x, z)
+        if (dydx === 0 && dydz === 0) { n.x = 0; n.y = 1; n.z = 0; return n }
+        const inv = 1 / Math.hypot(dydx, 1, dydz)
+        n.x = -dydx * inv; n.y = inv; n.z = -dydz * inv
+        return n
     }
 
     // ── geometry ────────────────────────────────────────────────────────────────────────────
@@ -99,17 +198,49 @@ export class LabSystem {
         return m
     }
 
+    /**
+     * Rumble-lane mesh, built by SAMPLING rumbleSurface — the same function the contact query
+     * uses. Mesh and collision cannot drift apart, which is the failure this codebase has paid
+     * for repeatedly on the road (see QUAL-07, BUG-15, the carve/ribbon gates).
+     */
+    _rumbleMesh(r) {
+        const segsX = Math.ceil(RUMBLE_LEN / (r.spacing / 8))   // 8 samples per crest
+        const segsZ = 6
+        const geo = new THREE.PlaneGeometry(RUMBLE_LEN, RUMBLE_W, segsX, segsZ)
+        geo.rotateX(-Math.PI / 2)
+        geo.translate(RUMBLE_LEN / 2, 0, r.z)
+        const pos = geo.attributes.position
+        for (let i = 0; i < pos.count; i++) {
+            pos.setY(i, rumbleSurface(pos.getX(i), pos.getZ(i)).y)
+        }
+        geo.computeVertexNormals()
+        const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+            color: 0x6a6f75, roughness: 0.95, metalness: 0,
+        }))
+        m.receiveShadow = true
+        this._group.add(m)
+        // Edge stripes so the lane reads from a distance, plus a start bar.
+        this._line(0, r.z - RUMBLE_W / 2, RUMBLE_LEN, r.z - RUMBLE_W / 2, COL.lane, W_LANE)
+        this._line(0, r.z + RUMBLE_W / 2, RUMBLE_LEN, r.z + RUMBLE_W / 2, COL.lane, W_LANE)
+        this._line(0, r.z - RUMBLE_W / 2, 0, r.z + RUMBLE_W / 2, COL.brake, W_GATE)
+        return m
+    }
+
     _build() {
         if (this._built) return
         this._built = true
+        const zL = STRIP_Z - LANE / 2, zR = STRIP_Z + LANE / 2
 
-        // ── drag strip: origin → -Z, lane edges + 100 m marks + start/finish gates ──────────
-        this._line(-LANE / 2, 0, -LANE / 2, -DRAG_LEN - 120, COL.lane, W_LANE)
-        this._line(LANE / 2, 0, LANE / 2, -DRAG_LEN - 120, COL.lane, W_LANE)
-        for (let d = 100; d < DRAG_LEN; d += 100) this._line(-LANE / 2, -d, LANE / 2, -d, COL.paint, W_MARK)
-        this._line(-LANE / 2, 0, LANE / 2, 0, COL.start, W_GATE)                  // start
-        this._line(-LANE / 2, -DRAG_LEN, LANE / 2, -DRAG_LEN, COL.finish, W_GATE) // finish
-        this._line(-LANE / 2, BRAKE_MARK, LANE / 2, BRAKE_MARK, COL.brake, W_GATE) // "brake here" board
+        // ── drag strip: +X, lane edges + 100 m marks + start/finish/brake boards ────────────
+        this._line(0, zL, DRAG_LEN + STRIP_RUNOFF, zL, COL.lane, W_LANE)
+        this._line(0, zR, DRAG_LEN + STRIP_RUNOFF, zR, COL.lane, W_LANE)
+        for (let d = 100; d < DRAG_LEN; d += 100) this._line(d, zL, d, zR, COL.paint, W_MARK)
+        this._line(0, zL, 0, zR, COL.start, W_GATE)                  // start
+        this._line(DRAG_LEN, zL, DRAG_LEN, zR, COL.finish, W_GATE)   // finish
+        this._line(BRAKE_MARK, zL, BRAKE_MARK, zR, COL.brake, W_GATE) // "brake here" board
+
+        // ── rumble lanes ───────────────────────────────────────────────────────────────────
+        for (const r of RUMBLES) this._rumbleMesh(r)
 
         // ── skidpads: the ring to follow, a lane band either side, and a timing radial ──────
         for (const p of PADS) {
@@ -142,11 +273,12 @@ export class LabSystem {
     isActive() { return this._active }
 
     /**
-     * Spawn pose: on the drag strip, a little behind the start line, pointing down it.
-     * heading 0 = body forward (-Z) points at -Z — see _seatOnGroundPlane in main.js, which
-     * places the front axle at local -Z and rotates by heading about +Y.
+     * Spawn pose: staged on the drag-strip start line, pointing down it (+X).
+     * heading is the map2d/teleport convention, atan2(tangentX, tangentZ); -π/2 aims body-forward
+     * (-Z) at +X. See _seatOnGroundPlane in main.js, which puts the front axle at local -Z and
+     * rotates by heading about +Y.
      */
-    spawnPose() { return { x: 0, z: 0.35, heading: 0 } }   // staged AT the line (body center)
+    spawnPose() { return { x: -0.35, z: STRIP_Z, heading: -Math.PI / 2 } }
 
     results() { return this._runs }
 
@@ -161,6 +293,7 @@ export class LabSystem {
         const p0 = this._prev
         this._prev = p1
         if (!p0) return
+        const zL = STRIP_Z - LANE / 2, zR = STRIP_Z + LANE / 2
 
         // Advance live timers first, so a gate that closes this step reports the right total.
         if (this._drag) {
@@ -175,11 +308,11 @@ export class LabSystem {
         // speed is recorded and reported either way: a rolling start flatters the 0–100 badly
         // (30 m of run-up turned 9.5 s into 5.7 s in testing), and a number that silently means
         // two different things is worse than no number.
-        if (this._crossed(p0, p1, -LANE / 2, 0, LANE / 2, 0)) {
-            // Only arm when heading down the strip (-Z), so rolling back to the line doesn't start a run.
-            if (p1.z < p0.z) { this._drag = { t: 0, v100: null, v0: car.speed }; this.status = 'timing: drag 400 m' }
+        if (this._crossed(p0, p1, 0, zL, 0, zR)) {
+            // Only arm when heading down the strip (+X), so rolling back over the line is inert.
+            if (p1.x > p0.x) { this._drag = { t: 0, v100: null, v0: car.speed }; this.status = 'timing: drag 400 m' }
         }
-        if (this._drag && this._crossed(p0, p1, -LANE / 2, -DRAG_LEN, LANE / 2, -DRAG_LEN)) {
+        if (this._drag && this._crossed(p0, p1, DRAG_LEN, zL, DRAG_LEN, zR)) {
             const d = this._drag; this._drag = null
             // 8 km/h, not 0: the truck stages with its BODY CENTER on the line, and releasing the
             // parking brake rolls it ~0.35 m before the center crosses — inherently ~6 km/h. That
@@ -231,7 +364,7 @@ export class LabSystem {
                 live.theta = th
             }
             const x = pad.cx
-            if (!this._crossed(p0, p1, x, pad.cz - (pad.r - 4), x, pad.cz - (pad.r + 4))) continue
+            if (!this._crossed(p0, p1, x, pad.cz - (pad.r - 4.5), x, pad.cz - (pad.r + 4.5))) continue
             const start = () => this._laps.set(pad.name, {
                 t: 0, swept: 0, theta: Math.atan2(p1.z - pad.cz, p1.x - pad.cx),
             })
@@ -275,4 +408,4 @@ export class LabSystem {
     }
 }
 
-export { PADS }
+export { PADS, RUMBLES, STRIP_Z, LANE, DRAG_LEN, RUMBLE_LEN, RUMBLE_W }

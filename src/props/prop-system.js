@@ -179,7 +179,7 @@ export class PropSystem {
    */
   /**
    * Show/hide every prop mesh (3D instanced pools AND the PERF-21 billboard impostor pools).
-   * Used by the testing lab / grid world to tear the generated world down to a bare plane —
+   * Used by the FEAT-31 testing lab to tear the generated world down to a bare plane —
    * visibility only, nothing is disposed or re-scattered, so returning is instant.
    */
   setVisible(visible) {

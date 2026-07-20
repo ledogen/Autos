@@ -652,7 +652,7 @@ export class RoadMeshSystem {
     }
 
     /**
-     * Show/hide every road mesh currently in the scene. The testing lab (and grid world) tear the
+     * Show/hide every road mesh currently in the scene. The FEAT-31 testing lab tears the
      * generated world down to a bare plane; before this existed only the TERRAIN chunks were
      * hidden, so the ribbons and junction pads stayed floating at their real elevations and the
      * flat world read as "parked underneath the real one". Visibility only — nothing is disposed,
