@@ -40,8 +40,11 @@ export const IMPOSTOR_CATS = ['aspen', 'pine']
 
 const TILE_PX = 256            // px per variant tile (atlas ~16 MB RGBA16F at 11 variants; 128 showed
                                // visible stair-step cutout edges on mid-distance trees at 1200p)
-const LIT_GAIN = 4.0           // default sun-side brightening strength (× max(view·sunXZ, 0)) —
-                               // live-tunable via the Props GUI 'billboard lit gain' slider
+const LIT_GAIN = 1.7           // sun-term scale in the view-relit ratio (1 = physical; 1.7 user-tuned) —
+                               // live-tunable via the Props GUI 'billboard sun contrast' slider
+const FLATTEN = 0              // baked-gradient flatten strength at sun-on views (blend toward the
+                               // tile mean, ramped from 0 at the bake view). User-tuned OFF — kept as
+                               // a live GUI lever ('billboard sun-side flatten').
 
 export class PropImpostors {
   /**
@@ -59,17 +62,54 @@ export class PropImpostors {
     this._cols = 0
     this._rows = 0
     this._litGain = LIT_GAIN
+    this._flatten = FLATTEN
   }
 
-  /** Live sun-side brightening strength (uniforms only — no rebake needed). */
+  /** Live sun-contrast scale (uniforms only — no rebake needed). 1 = physical. */
   setLitGain (v) {
     this._litGain = Math.max(0, v)
+    this._updateLightUniforms()
+  }
+
+  /** Live gradient-flatten strength at sun-on views (uniforms only). See FLATTEN. */
+  setFlatten (v) {
+    this._flatten = Math.max(0, Math.min(1, v))
+    for (const e of this._entries.values()) {
+      if (e.material) e.material.uniforms.uFlat.value = this._flatten
+    }
+  }
+
+  /**
+   * View-relighting uniforms, derived from the LIVE rig (not hand-tuned): the baked texel is
+   * albedo × (hemi + sun·g(c0)) for the bake view; a view from alignment c sees albedo ×
+   * (hemi + sun·g(c)). The shader multiplies by the per-channel ratio of the two, so billboards
+   * brighten AND warm toward the sun side, darken AND cool on the shade side, and pass through
+   * exactly 1.0 at the bake azimuth. g(c) = (sinθ + (π−θ)cosθ)/π is the average clamped-cosine
+   * sun response over the camera-facing hemisphere of facet normals (convex-canopy Lambert
+   * average): g(1)=1 (sun behind camera), g(0)=1/π, g(−1)=0 (looking into the sun).
+   * The old flat ×(1+4·max(view·sun,0)) gain crushed shade-side views to ~1/3 brightness
+   * (near-black billboard pines, user report 2026-07-19) — this ratio replaces it.
+   */
+  _updateLightUniforms () {
     const sd = this._lights.sunDir
-    const litNorm = 1 / (1 + this._litGain * Math.max(sd ? sd.z : 0, 0))   // bake view dir is +Z
+    const sun = this._lights.sun, amb = this._lights.ambient
+    const dir = (sd && sd.lengthSq() > 1e-6) ? _v3.copy(sd).normalize() : _v3.set(0, 1, 0)
+    const sunT = _c1.copy(sun.color).multiplyScalar(sun.intensity * this._litGain)
+    // Canopy facets see roughly half sky, half ground — average the hemisphere colours.
+    const hemiT = _c2.copy(amb.color).add(amb.groundColor).multiplyScalar(0.5 * amb.intensity)
+    const g0 = gWrap(Math.max(-1, Math.min(1, dir.z)))       // bake view dir is +Z
     for (const e of this._entries.values()) {
       if (!e.material) continue
-      e.material.uniforms.uLitK.value = this._litGain
-      e.material.uniforms.uLitNorm.value = litNorm
+      const u = e.material.uniforms
+      u.uG0.value = g0
+      u.uFlat.value = this._flatten
+      u.uSunDir.value.copy(dir)
+      u.uHemi.value.set(hemiT.r, hemiT.g, hemiT.b)
+      u.uSunT.value.set(sunT.r, sunT.g, sunT.b)
+      u.uInvDenom.value.set(
+        1 / Math.max(hemiT.r + sunT.r * g0, 1e-3),
+        1 / Math.max(hemiT.g + sunT.g * g0, 1e-3),
+        1 / Math.max(hemiT.b + sunT.b * g0, 1e-3))
     }
   }
 
@@ -100,10 +140,13 @@ export class PropImpostors {
     const n = this._entries.size
     this._cols = Math.ceil(Math.sqrt(n))
     this._rows = Math.ceil(n / this._cols)
+    // Mipmapped: distant billboards are heavily minified (a 20 m tree at 300 m is ~40 px against a
+    // 256 px tile) — trilinear minification kills the cutout shimmer. Regenerated per tile render
+    // at bake time only (boot / sky-look change), never per frame.
     this._rt = new THREE.WebGLRenderTarget(this._cols * TILE_PX, this._rows * TILE_PX, {
       depthBuffer: true, stencilBuffer: false,
-      minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
-      format: THREE.RGBAFormat, type: THREE.HalfFloatType, generateMipmaps: false,
+      minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat, type: THREE.HalfFloatType, generateMipmaps: true,
     })
     this._rt.texture.colorSpace = THREE.NoColorSpace
     for (const e of this._entries.values()) {
@@ -160,20 +203,7 @@ export class PropImpostors {
   /** (Re)render every variant tile with the CURRENT sky-look lighting. Cheap — call on look change. */
   rebake () {
     if (!this._rt) return
-    // Sun-side brightness modulation (user report 2026-07-17): the atlas is ONE view, baked from
-    // +Z — roughly the shade side under the day look. Viewed from the sun's side, real 3D canopies
-    // are much brighter (sun ≫ hemi), so the shader scales texel brightness by the view-vs-sun
-    // azimuth: uSunXZ is the RAW horizontal sun component (a high sun self-attenuates the effect),
-    // uLitNorm renormalizes so the bake azimuth (0,1) stays exactly as captured.
-    const sd = this._lights.sunDir
-    const sunXZ = new THREE.Vector2(sd ? sd.x : 0, sd ? sd.z : 0)
-    const litNorm = 1 / (1 + this._litGain * Math.max(sunXZ.y, 0))   // bake view dir is +Z = (0,1)
-    for (const e of this._entries.values()) {
-      if (!e.material) continue
-      e.material.uniforms.uSunXZ.value.copy(sunXZ)
-      e.material.uniforms.uLitK.value = this._litGain
-      e.material.uniforms.uLitNorm.value = litNorm
-    }
+    this._updateLightUniforms()   // view-relighting ratio (see _updateLightUniforms)
     const r = this._renderer
     const scene = new THREE.Scene()
     const mat = new THREE.MeshLambertMaterial({ vertexColors: true })
@@ -194,8 +224,11 @@ export class PropImpostors {
     const prevClear = new THREE.Color()
     const prevClearA = r.getClearAlpha()
     r.getClearColor(prevClear)
-    // Neutral dark-foliage clear (alpha 0) so linear-filter fringes don't ring black.
-    r.setClearColor(0x2a3524, 0)
+    // BLACK clear, alpha 0: linear filtering (and mip generation) across the cutout edge then
+    // yields exactly premultiplied samples — (fg·w, w) — and the billboard shader recovers the
+    // foliage colour with rgb/a. Any non-black clear bleeds its own colour into edge texels
+    // (the previous neutral-green clear left a dark fringe on every sprite edge).
+    r.setClearColor(0x000000, 0)
 
     for (const e of this._entries.values()) {
       holder.geometry = e.geo
@@ -222,6 +255,36 @@ export class PropImpostors {
     r.setClearColor(prevClear, prevClearA)
     r.setRenderTarget(prevTarget)
     mat.dispose()
+    this._computeTileMeans()
+  }
+
+  /**
+   * Per-tile mean foliage colour (unpremultiplied, over a ≥ 0.5 texels) → uTileMean, the flatten
+   * target. One whole-atlas readback per bake (boot / sky-look change), not per frame.
+   */
+  _computeTileMeans () {
+    const rt = this._rt
+    const w = rt.width, h = rt.height
+    const buf = new Uint16Array(w * h * 4)
+    this._renderer.readRenderTargetPixels(rt, 0, 0, w, h, buf)
+    const aHalf = 0x3800                                 // half-float 0.5 (positive-range bit compare)
+    for (const e of this._entries.values()) {
+      const x0 = (e.tilesIx % this._cols) * TILE_PX
+      const y0 = Math.floor(e.tilesIx / this._cols) * TILE_PX
+      // LUMINANCE-WEIGHTED mean: a plain mean skews dark on pines (deep shade texels + trunk
+      // dominate the tile), so sun-on flattening turned billboard pines darker than their lit 3D
+      // originals. Weighting by luminance biases the target toward the canopy's lit body — the
+      // thing a sun-facing view actually shows — and barely moves near-uniform tiles (aspens).
+      let sr = 0, sg = 0, sb = 0, wsum = 0
+      for (let row = 0; row < TILE_PX; row++) for (let col = 0; col < TILE_PX; col++) {
+        const i = ((y0 + row) * w + (x0 + col)) * 4
+        if (buf[i + 3] < aHalf) continue
+        const r0 = halfToFloat(buf[i]), g0 = halfToFloat(buf[i + 1]), b0 = halfToFloat(buf[i + 2])
+        const wgt = 0.2126 * r0 + 0.7152 * g0 + 0.0722 * b0
+        sr += r0 * wgt; sg += g0 * wgt; sb += b0 * wgt; wsum += wgt
+      }
+      if (wsum > 0 && e.material) e.material.uniforms.uTileMean.value.set(sr / wsum, sg / wsum, sb / wsum)
+    }
   }
 
   _makeBillboardMaterial (uTile, y0n) {
@@ -230,9 +293,14 @@ export class PropImpostors {
         uAtlas: { value: null },      // bound lazily below (merge() would clone the texture ref)
         uTile: { value: uTile },
         uY0n: { value: y0n },         // capture-bottom offset ÷ S (see build()) — exact vertical anchor
-        uSunXZ: { value: new THREE.Vector2(0, 0) },   // horizontal sun component (set in rebake)
-        uLitK: { value: LIT_GAIN },
-        uLitNorm: { value: 1 },
+        // View-relighting rig terms (set in _updateLightUniforms, refreshed on rebake/slider):
+        uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+        uHemi: { value: new THREE.Vector3(1, 1, 1) },    // hemi colour × intensity
+        uSunT: { value: new THREE.Vector3(0, 0, 0) },    // sun colour × intensity × litGain
+        uInvDenom: { value: new THREE.Vector3(1, 1, 1) },// 1/(hemi + sun·g(bake view))
+        uG0: { value: 0 },                               // g at the bake view (flatten ramp zero)
+        uFlat: { value: FLATTEN },                       // sun-on gradient flatten strength
+        uTileMean: { value: new THREE.Vector3(0.1, 0.15, 0.08) }, // tile mean colour (set in rebake)
       }]),
       vertexShader: /* glsl */`
         attribute vec3 aPos;          // anchor: trunk base / prop origin (world)
@@ -241,13 +309,18 @@ export class PropImpostors {
         attribute vec3 aAxis;         // trunk axis (unit) — the 3D tree's parametric lean
         uniform vec4 uTile;           // u0, v0, uSpan, vSpan
         uniform float uY0n;
-        uniform vec2 uSunXZ;
+        uniform vec3 uSunDir;
+        uniform vec3 uHemi;
+        uniform vec3 uSunT;
+        uniform vec3 uInvDenom;
+        uniform float uG0;
+        uniform float uFlat;
         varying vec2 vUv;
         varying vec3 vTint;
-        varying float vLit;           // view-vs-sun azimuth alignment (see rebake)
+        varying vec3 vLit;            // per-channel view-relighting ratio (see _updateLightUniforms)
+        varying float vFlat;          // sun-on gradient flatten amount (0 at the bake view)
         #include <fog_pars_vertex>
         void main () {
-          vUv = vec2(uTile.x + uv.x * uTile.z, uTile.y + uv.y * uTile.w);
           vTint = aTint;
           // Cylindrical billboard around the tree's OWN trunk axis (aAxis), not world-up — the
           // 3D trees carry a parametric lean, and an upright billboard snaps visibly at the LOD
@@ -256,43 +329,73 @@ export class PropImpostors {
           vec3 toCam = cameraPosition - aPos;
           float len = max(length(toCam.xz), 1e-4);
           vec2 fwd = toCam.xz / len;
-          vLit = dot(fwd, uSunXZ);
+          // Relight the baked texel for THIS view: ratio of the convex-canopy Lambert average
+          // seen from here vs from the bake view. g(c) = (sinθ + (π−θ)c)/π, c = view·sun using
+          // the HORIZONTAL view direction only — the quad is a cylindrical billboard and the bake
+          // view is horizontal, so tilting the camera down must not inflate the ratio (a raised
+          // sun already shrinks |sun.xz|, self-attenuating the azimuth swing).
+          float c = clamp(dot(fwd, uSunDir.xz), -1.0, 1.0);
+          float th = acos(c);
+          float g = (sin(th) + (3.14159265 - th) * c) / 3.14159265;
+          vLit = (uHemi + uSunT * g) * uInvDenom;
+          // The baked facet pattern is the BAKE view's shading — the farther the view swings
+          // toward the sun-lit face, the more wrong (too directional) that pattern is. Ramp a
+          // blend toward the tile's mean colour with the same g that drives the brightness.
+          vFlat = uFlat * clamp((g - uG0) / max(1.0 - uG0, 1e-3), 0.0, 1.0);
           vec3 r3 = cross(aAxis, toCam / max(length(toCam), 1e-4));
           float rl = length(r3);
           vec3 right = rl > 1e-4 ? r3 / rl : vec3(1.0, 0.0, 0.0);
+          // Sun-side texture flip: the quad's local +X is ALWAYS the viewer's screen-right, so
+          // the baked shading gradient would sit on the same screen side from EVERY azimuth
+          // (the "fixed upper-right highlight" user report, 2026-07-19). The bake camera's right
+          // is world +X, so the tile's highlight side is sign(sun.x); mirror U whenever the
+          // sun's actual screen side disagrees with it, so the highlight tracks the true sun.
+          // The flip snaps only when the sun crosses dead-ahead/behind, where the gradient is
+          // horizontally symmetric anyway.
+          float sunRight = right.x * uSunDir.x + right.z * uSunDir.z;
+          float ux = mix(1.0 - uv.x, uv.x, step(0.0, sunRight * uSunDir.x));
+          vUv = vec2(uTile.x + ux * uTile.z, uTile.y + uv.y * uTile.w);
           vec3 wp = aPos + right * (position.x * aSize)
                   + aAxis * ((position.y + 0.5 + uY0n) * aSize);
-          // Slope de-burial: pull the quad toward the camera (horizontally) by ~20% of its size.
-          // A flat slice through the trunk axis gets depth-clipped by uphill terrain on cross-slopes
-          // (a 3D canopy also enters the hill, but wraps visibly above it) — trees read as sunk to
-          // the canopy. Shifting the plane a couple of metres camera-ward stands it clear of the
-          // hillside; at billboard distances (≥ ~96 m) the parallax shift is invisible.
-          wp.x += fwd.x * (aSize * 0.2);
-          wp.z += fwd.y * (aSize * 0.2);
+          // Slope de-burial: pull the quad toward the camera (horizontally) by ~20% of its size,
+          // CAPPED at 2.5 m. A flat slice through the trunk axis gets depth-clipped by uphill
+          // terrain on cross-slopes (a 3D canopy also enters the hill, but wraps visibly above
+          // it) — trees read as sunk to the canopy. A couple of metres stands the plane clear of
+          // the hillside; the old uncapped 0.2·size pulled a 31 m pine 6 m off its anchor, a
+          // visible position pop at the LOD swap (headless A/B centroid shift, 2026-07-19).
+          float pull = min(aSize * 0.2, 2.5);
+          wp.x += fwd.x * pull;
+          wp.z += fwd.y * pull;
           vec4 mvPosition = viewMatrix * vec4(wp, 1.0);
           gl_Position = projectionMatrix * mvPosition;
           #include <fog_vertex>
         }`,
       fragmentShader: /* glsl */`
         uniform sampler2D uAtlas;
-        uniform float uLitK;
-        uniform float uLitNorm;
+        uniform vec3 uTileMean;
         varying vec2 vUv;
         varying vec3 vTint;
-        varying float vLit;
+        varying vec3 vLit;
+        varying float vFlat;
         #include <fog_pars_fragment>
         void main () {
           vec4 texel = texture2D(uAtlas, vUv);
-          if (texel.a < 0.5) discard;                  // cutout — stays in the opaque pass
-          // Approximate the sun-lit face: brighten as the camera moves to the sun's side of the
-          // tree (the bake shows the shade-ish side); renormalized so the bake azimuth matches 1:1.
-          float lit = (1.0 + uLitK * max(vLit, 0.0)) * uLitNorm;
-          gl_FragColor = vec4(texel.rgb * vTint * lit, 1.0);
+          if (texel.a < 0.125) discard;                // kill fully-transparent texels (opaque pass)
+          // Un-premultiply: the atlas clears to BLACK/alpha-0, so filtered/mip edge samples are
+          // (fg·a, a) — dividing recovers the true foliage colour with no clear-colour fringe.
+          vec3 rgb = texel.rgb / max(texel.a, 1e-3);
+          rgb = mix(rgb, uTileMean, vFlat);            // sun-on views: soften the baked gradient
+          // Screen-space alpha sharpening → alpha-to-coverage: re-narrow the filtered cutout edge
+          // to ~1 px and let MSAA coverage dither it (renderer AA is on by default; without MSAA
+          // this degrades to the plain cutout). Fixes the stair-stepped sprite edges.
+          float aa = clamp((texel.a - 0.5) / max(fwidth(texel.a), 1e-4) + 0.5, 0.0, 1.0);
+          gl_FragColor = vec4(rgb * vTint * vLit, aa);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
           #include <fog_fragment>
         }`,
       transparent: false,
+      alphaToCoverage: true,         // smooth cutout edges via MSAA coverage (opaque pass, depth intact)
       fog: true,
       side: THREE.DoubleSide,        // quad must read from both sides while it swings to face the camera
     })
@@ -311,12 +414,6 @@ export class PropImpostors {
     const w = rt.width, h = rt.height
     const buf = new Uint16Array(w * h * 4)
     this._renderer.readRenderTargetPixels(rt, 0, 0, w, h, buf)
-    const halfToFloat = (n) => {
-      const s = (n & 0x8000) ? -1 : 1, e = (n >> 10) & 0x1f, f = n & 0x3ff
-      if (e === 0) return s * f * 2 ** -24
-      if (e === 31) return f ? NaN : s * Infinity
-      return s * (1 + f / 1024) * 2 ** (e - 15)
-    }
     const canvas = document.createElement('canvas')
     canvas.width = w; canvas.height = h
     const ctx = canvas.getContext('2d')
@@ -338,3 +435,23 @@ export class PropImpostors {
 }
 
 const ZERO = new THREE.Vector3()
+const _v3 = new THREE.Vector3()
+
+function halfToFloat (n) {
+  const s = (n & 0x8000) ? -1 : 1, e = (n >> 10) & 0x1f, f = n & 0x3ff
+  if (e === 0) return s * f * 2 ** -24
+  if (e === 31) return f ? NaN : s * Infinity
+  return s * (1 + f / 1024) * 2 ** (e - 15)
+}
+const _c1 = new THREE.Color()
+const _c2 = new THREE.Color()
+
+/**
+ * Average clamped-cosine sun response over the camera-facing hemisphere of facet normals for a
+ * convex canopy, normalized to 1 when the sun is behind the camera: (sinθ + (π−θ)cosθ)/π.
+ * The JS twin of the vertex-shader g(c) — keep them identical.
+ */
+function gWrap (c) {
+  const th = Math.acos(c)
+  return (Math.sin(th) + (Math.PI - th) * c) / Math.PI
+}
