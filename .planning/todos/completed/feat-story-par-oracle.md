@@ -1,8 +1,9 @@
 ---
 id: FEAT-29
 type: feature
-status: open
+status: completed
 opened: 2026-07-16
+closed: 2026-07-20
 severity: minor
 source: story-mode design (.planning/story-mode/DESIGN.md — read it first)
 relates_to: STORY MODE SM-2 (.planning/story-mode/MILESTONES.md), router arc primitives
@@ -38,6 +39,16 @@ regional difficulty (see DESIGN.md, "The organizing problem").
   (window-invariance discipline). Par must be computed from the routed centerline (the same
   arc/clothoid data the carve uses), not from a live-sampled drive.
 
+## Amendment 2026-07-20 — endpoints are mid-edge, so par takes an arc range
+
+DESIGN.md ("Where missions and POIs live", RATIFIED 2026-07-20) binds mission starts/ends and
+POIs to **arbitrary `(runKey, arcS)` points on an edge**, never snapped to graph nodes. So the
+oracle's unit of work is a **half-open arc range on one centerline**, not a whole edge:
+`parForRange(centerline, gradeAt, s0, s1, refParams)`. Whole-edge par is the `s0=0, s1=length`
+case. A multi-edge route is a chain of ranges (first and last partial), with the speed profile
+carried *across* the joins — the backward brake pass must reach back into the previous edge, or
+a fast approach to a slow corner one edge later prices as free.
+
 ## Open questions (scope in plan mode when picked up)
 
 - Input representation: per-connection run centerlines already carry arcS/curvature/gradeY —
@@ -63,3 +74,24 @@ regional difficulty (see DESIGN.md, "The organizing problem").
 - [ ] Registered in test/gates.mjs with subsystem/cost/desc.
 - [ ] No per-frame cost — par computed at mission-offer time (or cached per edge), never in
       the physics loop.
+
+
+## Resolution (2026-07-20)
+
+**Shipped** as `src/par.js` + gate `test/par-oracle.mjs` (registered in `test/gates.mjs`,
+subsystem `story`, cost `fast`), together with the beta mission harness that consumes it
+(`src/mission.js`, pause-menu entry "story mode (beta)").
+
+- `computePar(segments, ref)` takes a chain of **arc ranges** (`{centerline, gradeAt, s0, s1}`),
+  per the 2026-07-20 amendment — mid-edge endpoints, reverse traversal, and multi-edge routes all
+  fall out of the same call. Three passes: curvature envelope (`v² ≤ μ·g·cosθ·R`), accel-limited
+  forward, brake-limited backward, friction-circle coupled longitudinally, grade in both. The
+  speed profile carries across segment joins; junction corners are priced from the heading change
+  between consecutive edges.
+- `RoadSystem.missionGraph(cx, cz, r)` and `RoadSystem.edgeParData(c1, c2)` are the two seams added
+  to road.js — a side-effect-free node graph over arbitrary bounds, and routed-centerline +
+  elevation-sampler for one edge (reusing the streamed entry when present).
+- Acceptance met, with one carry-over: **the "par vs a recorded human drive" check is still
+  report-only and uncalibrated.** `PAR_REF` is a first pass (μ 0.75 / accel 2.8 / brake 5.5 /
+  vMax 28) pricing a winding leg at ~55-60 km/h average. Calibrating it against real drives is
+  the follow-up ticket **FEAT-30**, and is precisely what the beta harness exists to enable.

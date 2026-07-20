@@ -43,8 +43,10 @@ export class Map2D {
      * @param {(pose:{x:number,z:number,roadTopY:?number,heading:?number}) => void} [o.onTeleport]
      *        — called on double-click with the nearest-road snap (roadTopY/heading null when no road near)
      * @param {() => boolean} [o.canTeleport] — gate: teleport prompt + double-click only when true (free-roam)
+     * @param {() => ?{start:{x,z}, end:{x,z}, poly:{x,z}[]}} [o.getMission]
+     *        — story-mode mission overlay (route + start/end pins); null when no mission is live
      */
-    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport }) {
+    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission }) {
         this._canvas    = canvas
         this._ctx       = canvas.getContext('2d')
         this._getSeed   = getSeed
@@ -52,6 +54,7 @@ export class Map2D {
         this._getCar    = getCar
         this._onTeleport  = onTeleport   || null
         this._canTeleport = canTeleport  || (() => false)
+        this._getMission  = getMission   || (() => null)
 
         this._open       = false
         this._road       = null          // the map's own RoadSystem; KEPT ALIVE across opens (route cache)
@@ -148,6 +151,24 @@ export class Map2D {
         window.addEventListener('mouseup', this._onUp)
         this._canvas.addEventListener('wheel', this._onWheel, { passive: false })
         this._canvas.addEventListener('dblclick', this._onDbl)
+        this._bgDirty = true
+    }
+
+    /**
+     * Center + zoom so a world-XZ box fits on screen (story-mode mission framing: the whole
+     * route should be readable the moment the offer appears, not somewhere off the edge).
+     * Call AFTER show() — it needs the resized canvas. Sets _zoomInit so the first background
+     * draw doesn't stomp the fit with the default whole-radius zoom.
+     */
+    frameBounds(minX, minZ, maxX, maxZ, marginFrac = 0.22) {
+        const w = this._canvas.clientWidth, h = this._canvas.clientHeight
+        if (!w || !h) return
+        this._panX = (minX + maxX) / 2
+        this._panZ = (minZ + maxZ) / 2
+        const spanX = Math.max(1, maxX - minX), spanZ = Math.max(1, maxZ - minZ)
+        const fit = Math.min(w / spanX, h / spanZ) * (1 - marginFrac)
+        this._zoom = Math.max(0.005, Math.min(4, fit))
+        this._zoomInit = true
         this._bgDirty = true
     }
 
@@ -371,6 +392,7 @@ export class Map2D {
         ctx.clearRect(0, 0, this._canvas.clientWidth, this._canvas.clientHeight)
         ctx.drawImage(this._bg, 0, 0, this._canvas.clientWidth, this._canvas.clientHeight)
 
+        this._drawMission(ctx)   // under the car marker, over the cached bg
         this._drawCar(ctx)
         this._drawLegend(ctx)
         this._drawCursorCoords(ctx)
@@ -497,6 +519,37 @@ export class Map2D {
                 ctx.fill()
             }
         }
+    }
+
+    // Story-mode mission overlay: the planned route + start/end pins. Per-frame layer (NOT the
+    // cached bg) so re-rolling a mission repaints without a background rebuild. Endpoints are
+    // arbitrary points on an edge, not nodes (DESIGN.md "Where missions and POIs live") — the pins
+    // land mid-road on purpose.
+    _drawMission(ctx) {
+        const m = this._getMission()
+        if (!m) return
+        if (m.poly && m.poly.length > 1) {
+            ctx.strokeStyle = 'rgba(90,180,255,0.85)'
+            ctx.lineWidth = 3
+            ctx.lineJoin = 'round'
+            ctx.beginPath()
+            ctx.moveTo(this._sx(m.poly[0].x), this._sy(m.poly[0].z))
+            for (let i = 1; i < m.poly.length; i++) ctx.lineTo(this._sx(m.poly[i].x), this._sy(m.poly[i].z))
+            ctx.stroke()
+        }
+        const pin = (p, fill, label) => {
+            if (!p) return
+            const sx = this._sx(p.x), sy = this._sy(p.z)
+            ctx.beginPath(); ctx.arc(sx, sy, 7, 0, Math.PI * 2)
+            ctx.fillStyle = fill; ctx.fill()
+            ctx.strokeStyle = '#101010'; ctx.lineWidth = 2; ctx.stroke()
+            ctx.fillStyle = '#f0f0e8'; ctx.font = 'bold 11px monospace'
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+            ctx.fillText(label, sx, sy - 15)
+            ctx.textAlign = 'left'
+        }
+        pin(m.start, '#5ad06a', 'START')
+        pin(m.end, '#ffcf3c', 'DROP')
     }
 
     // (5) Car marker — a triangle at the car's world XZ, pointing along its world-forward XZ.

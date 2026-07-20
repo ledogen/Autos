@@ -79,6 +79,8 @@ export const GATES = [
     desc: 'BUG-27: hard body slams honor params.bodyRestitution without amplifying it (sampled-once bias, accumulated-impulse solver, tamed Baumgarte) — no phantom spin/launch, no energy gain, rest stable' },
   { file: 'drivetrain-climb.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'FEAT-23: auto-trans + torque-converter climbs 20–30% grades from a stop, no drive/brake oscillation; accel tapers; 4-gear progression, no shift hunting' },
+  { file: 'par-oracle.mjs', subsystem: 'story', cost: 'fast', extraDeps: [],
+    desc: 'FEAT-29 par oracle: SM-INV-2 (par never reads the car), determinism, closed-form flat-straight time, curvature/grade monotonicity, mid-edge arc-range splitting, junction penalty' },
   { file: 'water-invariance.mjs', subsystem: 'water', cost: 'heavy', extraDeps: [],
     desc: 'FEAT-22/17/18: basins/saddles/ponds/streams deterministic + window-invariant; ponds rim-contained; streams descend + end at basins; submerged hook' },
   { file: 'pond-route-around.mjs', subsystem: 'water', cost: 'heavy', extraDeps: [],

@@ -70,6 +70,16 @@ is adopted** — classes unlocked by meeting spirits and other one-time achievem
 with their reconciliation against SM-INV-7 flagged as a new open question. The "car is your horse"
 framing is recorded as the thematic keystone that retro-motivates the entire wear/breakdown economy.
 
+**Ratification pass 2026-07-20 (b)** (project owner): **mission endpoints and POIs are arbitrary
+points on road edges, never snapped to graph nodes.** Nodes are a routing artifact, not places —
+real stores/homes/parking lots are no likelier at an intersection than mid-edge. New section "Where
+missions and POIs live" records the rule and its three consequences (par integrates over arc-length
+ranges; path search splices endpoints into the graph; arrival is a radius on a point). Also scoped:
+the **beta mission generator** (a testing harness for the par economy, not final gameplay) presents
+a mission on the 2D map with an **accept** button before its start countdown, and later a
+**regenerate** button that re-rolls start/end. Regenerate is explicitly a *testing* affordance —
+**real story mode has no do-overs.**
+
 ---
 
 ## The premise [RATIFIED]
@@ -343,6 +353,31 @@ slow motion, legible the whole way down.
   - **Tire wear runs accelerated relative to realism**, deliberately — it's an economic
     driver that pushes the player to chase good mission rewards. Honest *mechanism*,
     tuned *rate*.
+
+### Where missions and POIs live: anywhere on a road, not at nodes [RATIFIED 2026-07-20]
+
+**A mission start, a mission end, and every POI is an arbitrary point on a road edge — a
+`(runKey, arcS)` pair — never "the nearest graph node."** Graph nodes are a *routing* artifact
+(blue-noise anchor sites, ~640 m apart, mostly junctions); they are not places. In the real world,
+a store, a house, a trailhead, a parking lot is no more likely to sit at an intersection than
+halfway down a stretch of road, and snapping destinations to junctions would make every mission
+start and end at a T — a tell the player would read within three missions.
+
+The architecture already supports this and nothing needs to change to allow it: a routed edge is a
+`Centerline` with exact `pointAt(s)` / `tangentAt(s)` / `curvatureAt(s)`, so a point mid-edge is as
+well-defined as an endpoint. The consequences that *do* need honoring:
+
+- **Par integrates over arc-length ranges, not whole edges.** The first and last edge of a
+  mission route are partial: par is the integral from `arcS_start` to the edge end (and from the
+  edge start to `arcS_end`). Whole-edge par is just the special case where the range is the whole
+  edge. FEAT-29's oracle must take `(centerline, s0, s1)`, not `(edge)`.
+- **Path search runs over a graph with the two endpoints spliced in.** A mid-edge endpoint splits
+  its edge into two virtual half-edges joining both of that edge's nodes; the degenerate case
+  (start and end on the same edge) is a single arc-range with no node in it at all.
+- **Arrival is a radius on the point, not "reached node X."**
+- **POIs (FEAT-21) place mid-edge by the same rule**, and mission endpoints should eventually *be*
+  POIs — the random-point generator is the stand-in until FEAT-21 gives the world real destinations
+  worth naming ("the milk's at the store" needs a store).
 
 ### Damage, wear & repair [DEFAULT — owner brain-dump 2026-07-19, mechanism proposals mine]
 

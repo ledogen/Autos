@@ -390,6 +390,23 @@ class MinHeap {
  * new RoadSystem(ws, params, mockCoarseHeight) — replaces the simplex closure
  * with the provided function, allowing switchback tests on synthetic terrain.
  */
+// Elevation sampler over a graded edge polyline: centerline arc s → routed design Y.
+// `clArc` is the (monotone) centerline arc position of each polyline point, so this is the exact
+// inverse of the sampling in _assembleGraphEdges. Used by edgeParData → par oracle (FEAT-29).
+function _gradeSampler(points, clArc) {
+    const n = clArc.length
+    return (s) => {
+        if (n === 0) return 0
+        if (s <= clArc[0]) return points[0].y
+        if (s >= clArc[n - 1]) return points[n - 1].y
+        let lo = 0, hi = n - 1
+        while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (clArc[mid] <= s) lo = mid; else hi = mid }
+        const span = clArc[hi] - clArc[lo]
+        const t = span > 1e-9 ? (s - clArc[lo]) / span : 0
+        return points[lo].y + (points[hi].y - points[lo].y) * t
+    }
+}
+
 export class RoadSystem {
     /**
      * @param {number} worldSeed — uint32 from parseWorldSeed()
@@ -1345,6 +1362,56 @@ export class RoadSystem {
         const { jobs, deferred } = this._warmScan(edges, Infinity)
         if (jobs.length > 0) this._routeDispatch(jobs, this._routeEpoch)
         return jobs.length === 0 && !deferred
+    }
+
+    // ── Story mode: mission geometry (FEAT-29 par oracle support) ───────────────
+    /**
+     * The node graph over an arbitrary radius around (cx, cz), with NO side effects on the
+     * streaming graph (persist=false) — missions reach well past the play stream radius, and
+     * building this is cheap: blue-noise anchors + Delaunay, no routing.
+     *
+     * @returns {{ edges: Array<[id,id]>, adj: Map<string,Set<string>>, key: (id)=>string,
+     *             pos: (id)=>THREE.Vector3 }}
+     */
+    missionGraph(cx, cz, radiusM) {
+        this._refreshParams()
+        const mx0 = Math.floor((cx - radiusM) / PROTO_ANCHOR_SPACING)
+        const mx1 = Math.ceil((cx + radiusM) / PROTO_ANCHOR_SPACING)
+        const mz0 = Math.floor((cz - radiusM) / PROTO_ANCHOR_SPACING)
+        const mz1 = Math.ceil((cz + radiusM) / PROTO_ANCHOR_SPACING)
+        const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)
+        return { edges: g.edges, adj: g.adj, key: g.key, pos: (id) => this._nodePos(id) }
+    }
+
+    /**
+     * Routed geometry for one graph edge, in the form the par oracle consumes:
+     * `{ centerline, gradeAt(s), key }`. Reuses the registered network entry when the edge is
+     * streamed; otherwise routes it (cached in _proto.cls) and grades a fresh sample — the same
+     * five lines _assembleGraphEdges uses, so par is computed on the SAME curve the carve builds.
+     *
+     * EXPENSIVE on a cache miss (arcPrimitiveConnect, tens of ms). Mission-offer time only —
+     * never the frame loop (FEAT-29 acceptance).
+     */
+    edgeParData(c1, c2) {
+        const kf = (id) => `${id[0]},${id[1]},${id[2]}`
+        const key = `g:${kf(c1)}:${kf(c2)}`
+        const alt = `g:${kf(c2)}:${kf(c1)}`
+        const hit = this._network.get(key) || this._network.get(alt)
+        if (hit) return { key, centerline: hit.centerline, gradeAt: _gradeSampler(hit.points, hit.clArc) }
+
+        const cl = this._edgeCenterline(c1, c2)
+        if (!cl || cl.length < 1e-6) return null
+        const n = Math.max(1, Math.ceil(cl.length / PROTO_SAMPLE_DS))
+        const pts = new Array(n + 1)
+        const clArc = new Float64Array(n + 1)
+        for (let i = 0; i <= n; i++) {
+            const s = cl.length * i / n
+            clArc[i] = s
+            const p = cl.pointAt(s)
+            pts[i] = new THREE.Vector3(p.x, this._coarseH(p.x, p.z), p.z)
+        }
+        this._gradeEdgeInPlace(pts, this._params?.roadGraphDeviationCap ?? 2)
+        return { key, centerline: cl, gradeAt: _gradeSampler(pts, clArc) }
     }
 
     /**

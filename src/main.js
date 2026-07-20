@@ -43,6 +43,8 @@ import { SkySystem } from './sky.js'                        // QUAL-02: atmosphe
 import { parseWorldSeed, seedFor } from './seed.js'
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
+import { MissionSystem } from './mission.js'             // story mode (beta): par-graded A→B missions
+import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
 import { ShadowBakeSystem, ATLAS_N, TILE_PX, shearFromSun } from './props/prop-shadow-bake.js'  // PERF-07: baked prop-shadow atlas
@@ -956,6 +958,9 @@ const { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, addLig
 // stays decoupled from main's module state. Body forward is the -Z axis (vehicle.js); we pass
 // the world-forward XZ so the marker's heading is convention-agnostic.
 const _mapFwd = new THREE.Vector3()
+// Story mode (beta) — constructed below, after roadSystem exists. Declared here so map2d can
+// read its markers without the two modules knowing about each other.
+let missionSystem = null
 const map2d = new Map2D({
   canvas:    document.getElementById('map2d'),
   getSeed:   () => worldSeed,
@@ -967,6 +972,7 @@ const map2d = new Map2D({
   // Double-click teleport (free-roam only). The map snaps to the nearest road and hands us the
   // road-top Y; we drop the truck 0.5 m above it (or on terrain when off-road) and set the spawn.
   canTeleport: isTeleportEnabled,
+  getMission: () => missionSystem?.markers() ?? null,
   onTeleport: ({ x, z, heading }) => {
     // Snap to the road orientation, but a road tangent has TWO directions — pick the one closest
     // to the truck's current heading so the teleport doesn't spin it 180°. Off-road: keep heading.
@@ -1503,6 +1509,102 @@ roadSystem.setRawHeightSampler((x, z) => terrainSystem.rawHeightWorld(x, z))  //
 // the visible terrain ring with margin while cutting cold-stream + per-crossing re-stream cost.
 roadSystem.setRadius(320)
 
+// ── Story mode (beta): par-graded missions ───────────────────────────────────
+// The testing harness for the par economy — see src/mission.js and .planning/story-mode/DESIGN.md.
+// Entered from the pause menu so a visitor is never dropped into an unfinished mode by default.
+// getRoad is a GETTER: roadSystem is swapped on seed regen (see the regen path above).
+missionSystem = new MissionSystem({
+  getRoad:  () => roadSystem,
+  getCar:   () => ({ x: vehicleState.position.x, z: vehicleState.position.z }),
+  teleport: (x, z, heading) => teleportToGround(x, z, heading, 0.5),
+  setMapOpen: (open) => {
+    if (!open) { map2d.hide(); return }
+    map2d.show()
+    // Frame the whole job so the route reads at a glance instead of running off the edge.
+    const mk = missionSystem?.markers()
+    if (mk?.poly?.length) {
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity
+      for (const p of mk.poly) { if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x; if (p.z < z0) z0 = p.z; if (p.z > z1) z1 = p.z }
+      map2d.frameBounds(x0, z0, x1, z1)
+    }
+  },
+  onChange: () => _renderMissionUI(),
+})
+
+// Story-mode DOM. Two surfaces: the offer/result panel (over the map) and the in-run HUD.
+// SM-INV-3 — par NEVER appears while driving; the result card is the only place it is shown.
+function _renderMissionUI () {
+  const panel = document.getElementById('mission-panel')
+  const body  = document.getElementById('mp-body')
+  const hud   = document.getElementById('mission-hud')
+  const acts  = document.getElementById('mp-actions')
+  if (!panel || !body || !hud) return
+  const m = missionSystem
+  const show = (el, on, disp = 'block') => { el.style.display = on ? disp : 'none' }
+  const km = (mm) => (mm / 1000).toFixed(2) + ' km'
+
+  const btn = (id, on) => { const b = document.getElementById(id); if (b) b.style.display = on ? '' : 'none' }
+
+  switch (m.state) {
+    case 'generating':
+      show(panel, true); show(hud, false)
+      body.innerHTML = 'planning a job&hellip;'
+      show(acts, false, 'flex')
+      break
+    case 'offer': {
+      show(panel, true); show(hud, false); show(acts, true, 'flex')
+      const j = m.mission
+      body.innerHTML = `<span class="mp-big">${km(j.distance)}</span> &nbsp;<span class="mp-dim">`
+        + `${j.edges} leg${j.edges === 1 ? '' : 's'}</span><br>`
+        + `<span class="mp-dim">green pin is the start &mdash; you'll be moved there</span>`
+      btn('mp-accept', true); btn('mp-regen', true); btn('mp-quit', true)
+      break
+    }
+    case 'countdown':
+      show(panel, false); show(hud, true)
+      hud.innerHTML = `<span class="mh-count">${Math.max(1, Math.ceil(m.countdown))}</span>`
+      break
+    case 'running':
+      show(panel, false); show(hud, true)
+      // Elapsed + distance to go. No par, no target — SM-INV-3.
+      hud.textContent = `${formatTime(m.elapsed)}   ${km(m.distanceToGo())} to go`
+      break
+    case 'done': {
+      show(panel, true); show(hud, false); show(acts, true, 'flex')
+      const r = m.result
+      const sign = r.margin >= 0 ? '+' : '−'
+      const col = r.margin >= 0 ? '#8ce99a' : '#ff8f7a'
+      body.innerHTML = `<span class="mp-big" style="color:${col}">${r.letter}</span><br>`
+        + `your time <b>${formatTime(r.elapsed)}</b> &nbsp;<span class="mp-dim">/</span>&nbsp; `
+        + `par <b>${formatTime(r.par)}</b><br>`
+        + `<span style="color:${col}">${sign}${formatTime(Math.abs(r.margin))} vs par</span>`
+      btn('mp-accept', false); btn('mp-regen', false); btn('mp-quit', true)
+      // Reuse the accept button as "next job" so there's one obvious forward action.
+      const nb = document.getElementById('mp-accept')
+      if (nb) { nb.style.display = ''; nb.textContent = 'next job' }
+      break
+    }
+    default:
+      show(panel, false); show(hud, false)
+      if (m.error) console.info('[mission]', m.error)
+      break
+  }
+  if (m.state === 'offer') {
+    const nb = document.getElementById('mp-accept')
+    if (nb) nb.textContent = 'accept mission'
+  }
+}
+
+// Buttons. Same null-guarded module-eval wiring as every other control in this file (WR-04).
+document.getElementById('mp-accept')?.addEventListener('click', () => {
+  if (missionSystem.state === 'done') missionSystem.next(); else missionSystem.accept()
+})
+document.getElementById('mp-regen')?.addEventListener('click', () => missionSystem.regenerate())
+document.getElementById('mp-quit')?.addEventListener('click', () => {
+  missionSystem.exit()
+  window.__setGameMode('freeroam')
+})
+
 // Phase 9 (SURF-01 / SURF-03): RoadMeshSystem — ribbon mesh sweep with crown + camber.
 // Constructed after both terrainSystem and roadSystem exist.
 // setRoadSystem() wires the carve hook in analyticHeight so physics feels the road surface.
@@ -1758,6 +1860,14 @@ function _hidePauseMenu () {
 // an unguarded deref would throw at module-eval and abort the whole sim if an id is
 // renamed/removed from index.html (WR-04).
 document.getElementById('pm-resume')?.addEventListener('click', () => _hidePauseMenu())
+// Story mode is opt-in from this menu ONLY — a first-time visitor lands in free roam and is
+// never thrust into an unfinished mode. Switching the game mode also disables free-roam-only
+// affordances (teleport), which is the point of _gameMode existing.
+document.getElementById('pm-story')?.addEventListener('click', () => {
+  _hidePauseMenu()
+  window.__setGameMode('story')
+  missionSystem.enter()
+})
 document.getElementById('pm-grid')?.addEventListener('click', () => enterGridWorld())
 document.getElementById('pm-return')?.addEventListener('click', () => returnToWorld())
 
@@ -1908,6 +2018,15 @@ function loop () {
       // Async since QUAL-14 (spawn bands warm on the worker pool); fire-and-forget — with the
       // route cache warm this resolves within a frame or two.
       void _reseatTruckAtSpawn()
+    }
+
+    // Story mode (beta): countdown tick + arrival check. Two distance checks — no routing, no
+    // par math (that ran once at mission-offer time). Clocked off the fixed step, not wall time.
+    if (missionSystem?.isActive()) {
+      // The start countdown holds the truck: re-latch the handbrake each step so an early W
+      // press can't roll before "go" (the latch releases naturally on the first input after).
+      if (missionSystem.isHeld()) vehicleState.parked = true
+      missionSystem.update(PHYSICS_DT)
     }
 
     _prevRenderPos.copy(vehicleState.position)
@@ -2157,6 +2276,10 @@ function loop () {
   const _hudNow = performance.now()
   if (_hudNow - _lastHudWrite >= 100) {
     _lastHudWrite = _hudNow
+
+    // Story mode (beta): the countdown digit and the elapsed/distance readout are live values,
+    // so they repaint on the HUD's ~10 Hz cadence rather than per physics step.
+    if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'running')) _renderMissionUI()
 
     // M1-11: live speed readout. velocity.length() = magnitude in m/s; * 3.6 converts to km/h.
     document.getElementById('speedVal').textContent = (vehicleState.velocity.length() * 3.6).toFixed(1)

@@ -59,6 +59,74 @@
       color: #ffffff;
       border-color: #888;
     }
+    /* Story-mode beta: mission offer panel. Sits above the 2D map (z 90) so the route and
+       start/drop pins are visible behind it; the panel is bottom-anchored, not centered. */
+    #mission-panel {
+      display: none;
+      position: fixed;
+      left: 50%;
+      bottom: 26px;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.86);
+      border: 1px solid #4a5a6a;
+      padding: 16px 22px;
+      font-family: monospace;
+      font-size: 14px;
+      color: #cfd6dd;
+      z-index: 95;
+      min-width: 380px;
+      text-align: center;
+    }
+    #mission-panel .mp-title {
+      color: #7fc2ff;
+      font-size: 12px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    #mission-panel .mp-beta {
+      color: #101418;
+      background: #ffcf3c;
+      padding: 1px 5px;
+      border-radius: 2px;
+      letter-spacing: 1px;
+    }
+    #mp-body { line-height: 1.7; }
+    #mp-body .mp-big { font-size: 22px; color: #ffffff; }
+    #mp-body .mp-dim { color: #8a939c; }
+    #mp-actions { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
+    #mission-panel button {
+      background: none;
+      border: 1px solid #55606b;
+      color: #cfd6dd;
+      font-family: monospace;
+      font-size: 13px;
+      padding: 7px 14px;
+      cursor: pointer;
+      transition: background 0.1s, color 0.1s;
+    }
+    #mission-panel button:hover { background: rgba(255,255,255,0.09); color: #fff; border-color: #8fa2b4; }
+    #mp-accept { border-color: #5ad06a; color: #b6f0be; }
+    /* In-run mission HUD (top-center): elapsed + distance to go. NEVER par — SM-INV-3. */
+    #mission-hud {
+      display: none;
+      position: fixed;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid #3a4450;
+      padding: 8px 18px;
+      font-family: monospace;
+      font-size: 16px;
+      color: #e6ecf2;
+      z-index: 88;
+      pointer-events: none;
+      text-align: center;
+      white-space: pre;
+    }
+    #mission-hud .mh-count { font-size: 44px; color: #ffcf3c; }
+
     /* Freecam "teleport here" button — shown only while in free-cam (free-roam mode). */
     #teleport-btn {
       display: none;
@@ -157,9 +225,24 @@
   <div id="pause-menu">
     <div class="pm-title">paused</div>
     <button id="pm-resume">resume</button>
+    <button id="pm-story">story mode (beta)</button>
     <button id="pm-grid">grid world</button>
     <button id="pm-return">return to world</button>
   </div>
+
+  <!-- Story-mode beta: mission offer panel (shown over the 2D map before the start countdown)
+       and the in-run / result HUD. Wired in main.js from src/mission.js state.
+       SM-INV-3: par is NEVER shown while driving — only in the result card. -->
+  <div id="mission-panel">
+    <div class="mp-title">story mode <span class="mp-beta">beta</span></div>
+    <div id="mp-body">rolling a job&hellip;</div>
+    <div id="mp-actions">
+      <button id="mp-accept">accept mission</button>
+      <button id="mp-regen" title="testing only — real story mode has no do-overs">regenerate</button>
+      <button id="mp-quit">back to free roam</button>
+    </div>
+  </div>
+  <div id="mission-hud"></div>
 
   <!-- Free-cam teleport affordance — shown only in free-cam / free-roam mode (main.js loop
        toggles display). Click (cursor must be free; press Esc to release pointer-lock) or press
