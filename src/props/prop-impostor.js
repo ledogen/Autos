@@ -271,7 +271,6 @@ export class PropImpostors {
         varying vec3 vLit;            // per-channel view-relighting ratio (see _updateLightUniforms)
         #include <fog_pars_vertex>
         void main () {
-          vUv = vec2(uTile.x + uv.x * uTile.z, uTile.y + uv.y * uTile.w);
           vTint = aTint;
           // Cylindrical billboard around the tree's OWN trunk axis (aAxis), not world-up — the
           // 3D trees carry a parametric lean, and an upright billboard snaps visibly at the LOD
@@ -292,6 +291,16 @@ export class PropImpostors {
           vec3 r3 = cross(aAxis, toCam / max(length(toCam), 1e-4));
           float rl = length(r3);
           vec3 right = rl > 1e-4 ? r3 / rl : vec3(1.0, 0.0, 0.0);
+          // Sun-side texture flip: the quad's local +X is ALWAYS the viewer's screen-right, so
+          // the baked shading gradient would sit on the same screen side from EVERY azimuth
+          // (the "fixed upper-right highlight" user report, 2026-07-19). The bake camera's right
+          // is world +X, so the tile's highlight side is sign(sun.x); mirror U whenever the
+          // sun's actual screen side disagrees with it, so the highlight tracks the true sun.
+          // The flip snaps only when the sun crosses dead-ahead/behind, where the gradient is
+          // horizontally symmetric anyway.
+          float sunRight = right.x * uSunDir.x + right.z * uSunDir.z;
+          float ux = mix(1.0 - uv.x, uv.x, step(0.0, sunRight * uSunDir.x));
+          vUv = vec2(uTile.x + ux * uTile.z, uTile.y + uv.y * uTile.w);
           vec3 wp = aPos + right * (position.x * aSize)
                   + aAxis * ((position.y + 0.5 + uY0n) * aSize);
           // Slope de-burial: pull the quad toward the camera (horizontally) by ~20% of its size,
