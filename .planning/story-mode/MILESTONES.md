@@ -106,7 +106,11 @@ no economy attached. The last leg of the day is the game (SM-INV-6).
 
 - Run lifecycle: death → run summary → new run in a fresh jalopy.
 - XP earned from payout margin; XP/story beats trigger **FEAT-28 region unlocks** (the brief
-  validation load is the level-up moment — diegetic barrier lifts).
+  validation load is the level-up moment — diegetic barrier lifts). Story frame (DESIGN.md
+  "The Roamer"): the barriers are the **Roamer's old trails**, and expansion is **gated by authored
+  "main missions"** that drive the player to a place — so the level-up moment has a diegetic cause,
+  not just an XP threshold. Authoring the main missions themselves lands in SM-5 (they carry the
+  through-line); SM-4 wires the unlock trigger.
 - **metaState**: versioned persistent profile (localStorage — single-origin constraint), the
   explicit generator input of SM-INV-12. Gates pin a default metaState.
 - What persists: unlocks + world parameter states + region progress. What doesn't: car, parts,
@@ -114,16 +118,41 @@ no economy attached. The last leg of the day is the game (SM-INV-6).
 
 ## SM-5 — The World Turns (story delivery, spirits, horror)
 
-**Goal:** the game is *about* something. Requires open questions 1/4/6 answered first.
+**Goal:** the game is *about* something. The through-line is now defined — **The Roamer** (DESIGN.md
+"The Roamer — the story spine"): a spirit of your own past self, who once roamed these lands on
+horseback, guiding you. This milestone builds the channels that deliver it. Q1 is mostly resolved
+(spine set); still needs its residual (Roamer's motives + concrete endgame beat) plus Q4/Q6 answered
+before the whole milestone can close.
 
+- **The Roamer as the thing being delivered.** Everything below is a *channel*; the content is the
+  gradual reveal that you are being guided by (and are becoming) the Roamer. "Car is your horse" is
+  the keystone — SM-3's wear/breakdown work is what gives this milestone its emotional stakes
+  (breakdown = the horse dying under you), so lean on it here.
 - Story parameter states: staged generator params (leaning trees, moon, dark-at-noon, absence)
-  keyed off metaState (SM-INV-11).
+  keyed off metaState (SM-INV-11) — the **ambient** channel, still emergent.
 - Doze as delivery vehicle: the ~400 ms eyes-closed frames show *something*; pushing sleep is
-  how you learn the story.
+  how you learn the story. This is where **the Roamer visits** (*something comes to you when you
+  doze off*).
+- **Authored in-world beats** (new channel — SM-INV-11 relaxed 2026-07-20): cutscenes,
+  dialogue-over-gameplay, and structured story moments, **staged in real world-space** (carve out
+  empty ground for a camera/subject scene), not a bolted-on cutscene layer. The **main missions**
+  that gate region unlocks (SM-4) are the primary carriers. Canonical setup: the dark-at-8am morning
+  → drive out → the world delivers the encounter.
 - **Spirits**: permanent, player-earned, unremovable, rule-changing-not-resource-granting
-  (SM-INV-9). First spirit: the camping spirit (rare campsite discovery).
+  (SM-INV-9). First spirit: the camping spirit (rare campsite discovery). The **Roamer is the
+  meta-spirit** the individual spirits read as facets of (DESIGN.md); the night-owl/camper pair
+  (IDEAS.md) live under it.
+- **Classes** (new — RATIFIED 2026-07-20, DESIGN.md "Classes"): RPG-style roles unlocked by
+  *meeting spirits* and other one-time achievements (camp 10×, drive 5 km sleepy, …), main story
+  beats, and region completions. Breadth, not floor (SM-INV-9/7). *Structure open (Open Q10)* —
+  how a class stays strictly breadth is unresolved; scope carefully here.
+- **The Roamer's economy of gifts:** the Roamer hands out **meta-progression unlocks and story keys
+  only — never resources or run-layer power** (SM-INV-8/9). Build the "where to look" hint surface as
+  literacy transfer, not a loot faucet.
 - Camp quality full dimensions; fishing; bad-night spiral tuning.
-- Endgame definition — whatever "beating the game" turns out to mean.
+- Endgame definition — whatever "beating the game" turns out to mean (residual of Q1: completing the
+  Roamer's arc — reopening the trails, some reunion or release — is the direction; the concrete final
+  beat and the Roamer's motives are owner-only, escalate).
 
 ---
 

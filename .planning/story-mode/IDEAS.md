@@ -53,3 +53,31 @@ Guardrails to honor when this gets real:
 Related: DESIGN.md SM-INV-9 (spirits = rules not resources / breadth-not-floor), SM-INV-1 (doze),
 SM-INV-6 (camping-is-a-place), the meta-progression section; `.planning/story-mode/MILESTONES.md`
 SM-5 (spirits land here). Naming decision (*spirits* vs *sprites*) is open.
+
+**Update 2026-07-20:** these two now sit under **The Roamer** (DESIGN.md "The Roamer — the story
+spine"), the meta-spirit the individual spirits read as facets of. The camper's "different ending"
+hook feeds Q1's residual (concrete endgame) — still escalate. Also new: *meeting* a spirit is now
+one of the ways a **class** unlocks (DESIGN.md "Classes"), so the night-owl and camper double as
+class-unlock sources.
+
+---
+
+## The Roamer — story spine now ratified → this file's ideas hang off it — 2026-07-20
+
+Pointer, not a new idea: the story through-line is set and lives in **DESIGN.md → "The Roamer — the
+story spine"** [RATIFIED 2026-07-20]. You are subtly guided by a spirit of your own past self who
+roamed these lands on horseback; the car is your horse; the reveal is gradual (normal life → subtle
+weirdness → louder). It resolved most of DESIGN.md Open Q1 and relaxed SM-INV-11 (authored in-world
+beats now allowed at threshold moments). Delivery lands in MILESTONES SM-5.
+
+When dropping story-mode ideas here now, place them against the Roamer: is this a **parameter-state**
+beat (ambient), a **doze** visitation, an **authored in-world beat** (a main mission / staged scene),
+a **spirit** (rule-change), or a **class** unlock? And remember the Roamer's economy: it trades in
+**knowledge + unlocks + story keys**, never resources or run-layer power (SM-INV-8/9).
+
+Two things still open and owner-only (don't invent them in an idea): the **Roamer's motives**
+(benevolent BoTW-guide vs. self-interested/with-teeth — DESIGN.md Open Q1) and **how classes stay
+strictly breadth** vs SM-INV-7 (DESIGN.md Open Q10).
+
+Related: DESIGN.md "The Roamer", SM-INV-11 (relaxed), SM-INV-8/9, "Classes", Open Q1 & Q10;
+MILESTONES.md SM-4 (region unlock = Roamer's old trails, main-mission gated) and SM-5 (delivery).

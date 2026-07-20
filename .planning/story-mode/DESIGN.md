@@ -55,6 +55,21 @@ wicked missions), never by raising where the player starts (SM-INV-7 first-run w
 Guardrail: objective-reshapers must *re-weight* what's worth doing, not staple a flat bonus onto a
 normal run. See "The world: regions, story states, spirits."
 
+**Ratification pass 2026-07-20** (project owner): **story spine set — "The Roamer."** The game's
+through-line is now defined: you are subtly guided by a spirit of your own past self, who once roamed
+these lands on horseback (working title *The Roamer*). Five decisions blessed. (1) **New section
+"The Roamer — the story spine"** added, resolving most of ex-Open-Question 1. (2) **SM-INV-11's
+"never scripted events" wall relaxed deliberately** — authored, *in-world* story beats (cutscenes
+staged in real world-space, dialogue-over-gameplay, doze visitations) are now permitted at threshold
+moments; the *ambient* world-story stays emergent. (3) **Region unlock reframed** as the Roamer's
+old trails reopening, and **gated by authored "main missions"** that drive the player to a place
+(SM-INV-13 / FEAT-28 unchanged in mechanism). (4) **The Roamer hands out meta-progression unlocks and
+story keys only — never resources or run-layer power** (SM-INV-8/9 preserved). (5) **A class system
+is adopted** — classes unlocked by meeting spirits and other one-time achievements (camp 10×, drive
+5 km sleepy, …), main story beats, and region completions; classes are *breadth, not floor* (SM-INV-9),
+with their reconciliation against SM-INV-7 flagged as a new open question. The "car is your horse"
+framing is recorded as the thematic keystone that retro-motivates the entire wear/breakdown economy.
+
 ---
 
 ## The premise [RATIFIED]
@@ -116,6 +131,74 @@ not the answer to *this* problem.) Three moves answer it together:
 Together: the safe strategy is a slow bleed. The player does the arithmetic around day three
 and starts driving at the limit **by choice** — hard during missions, easy in between. The game
 never asked.
+
+## The Roamer — the story spine [RATIFIED 2026-07-20]
+
+Story mode has a spine, and it fills the biggest hole this doc had (most of ex-Open-Question 1).
+Working title: **The Roamer**.
+
+**The premise.** Long ago, a version of *you* roamed these same lands — on horseback, before there
+were roads. That past self persists as a **spirit**, and reaches forward through the world to guide
+the present-day you: where to look, where the good ground is, where the old ways still run. Their
+help is real. Their motives are not settled (see below) — the guide may need something from you as
+much as you need them.
+
+**The reveal is gradual.** Life starts completely normal. The supernatural unfolds in small ways you
+begin to notice, then in larger ones — the escalation *is* the Roamer getting closer to reaching you.
+This is exactly the parameter-state escalation SM-INV-11 already describes (leaning trees → dark at
+noon → people missing); the Roamer is the *why* beneath it. You do **not** meet your past self
+directly in the early phases — for the first stretch the game withholds them entirely, and the
+weirdness is ambient before it is ever a face.
+
+**The car is your horse — the thematic keystone.** The Roamer rode these lands; you drive them. The
+whole wear / breakdown / mechanical-sympathy economy (SM-INV-5, the damage model, breakdown as the
+second death) is retroactively *motivated* by this: breakdown is the horse dying under you, and
+learning to **listen** to the truck — the rattle that worsens, the temp needle near its limit, the
+pull of an uneven tire set — is the same literacy the Roamer had for their mount. Anything that grows
+the player's mechanical sympathy for the vehicle serves the story directly. Literacy-as-what-survives
+(SM-INV-8) is the mechanical face of *you are becoming the Roamer*.
+
+**Delivery channels (post-2026-07-20).** The through-line surfaces three ways, now that SM-INV-11's
+wall is deliberately relaxed:
+
+- **Parameter states** — the ambient world-story, still emergent and unauthored (SM-INV-11's core):
+  the leaning trees, the enormous moon, dark at noon, people missing.
+- **The doze** — the beloved channel: *something comes to you when you doze off*. The ~400 ms
+  eyes-closed frames are where the Roamer visits. Pushing sleep is still how you learn the story; the
+  transgression *is* the looking.
+- **Authored in-world beats** — cutscenes, dialogue-over-gameplay, and structured story moments are
+  now permitted (SM-INV-11 amended). The surviving constraint: they are **staged in the world**, not
+  a separate cutscene layer — carve out empty world-space for a structured camera/subject scene. The
+  Roamer need not seize driving control ("we don't have to have the Roamer drive"); a beat can play
+  over gameplay or in a staged clearing.
+
+*Canonical setup — the dark-at-8am morning.* Your alarm goes off at 8am but you wake to full dark.
+Nothing to do but take the car out; a short drive in, the world itself delivers the encounter as a
+staged, in-world beat rather than a bolted-on cutscene. This is the template for a threshold beat set
+up diegetically: the world is *wrong* first, and the meeting follows.
+
+**What the Roamer hands out — knowledge and unlocks, never resources.** The Roamer gives
+**meta-progression "items" and story unlocks only** — breadth in the deck (SM-INV-9): new run
+archetypes, spirits, classes, and story keys that advance the through-line, plus *where to look*. They
+**never** hand out currency, parts, or run-layer power (SM-INV-8/9). "Where to look" is literally
+literacy transfer (SM-INV-8) — the Roamer is its diegetic embodiment — and is perfectly legal; "here
+is a better engine" is forbidden.
+
+**Reciprocity — reopening the old trails.** The Roamer needs something back: the **region unlocks are
+the old trails they used to ride**, closed now, and reopening them is both the progression primitive
+(FEAT-28 trail-closed barriers, SM-INV-13) and the thing the Roamer wants of you. **Region expansion
+is gated by "main missions"** — authored beats that drive the player to a place — so the story pulls
+you outward through the world rather than an abstract XP wall doing it. Motivation and mechanic are
+the same object.
+
+**Motives — deliberately unsettled [OPEN].** Whether the Roamer is a purely benevolent, Nintendo-style
+spirit guide (BoTW's Zelda) or carries self-interested, not-fully-noble motives that add tension is
+**not decided** (see Open Questions). SM-INV-9 already blesses ambiguity — "ambiguous benefit is still
+benefit" — so a guide whose help might not *be* help is supported by the architecture, not fighting it.
+This choice colors tone, the doze frames, and whether reopening the trails is a gift or a mistake; it
+is flagged, not resolved. The knife the with-teeth version buys: if the horse-that-is-your-car can be
+*ridden to death* by a guide who needs you more than they love you, the wear economy gains stakes no
+timer could give it.
 
 ## Invariants
 
@@ -181,16 +264,24 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   Power mods on an open-diff RWD truck are a *worse car* for a driver without the literacy —
   that's a cursed item nobody had to author, and it only works because nothing is hidden.
   [DEFAULT]
-- **SM-INV-11 — The world-story is delivered through generator parameter states and the doze,
-  never scripted events.** The leaning trees, the enormous moon, dark at noon, people missing —
-  parameter states, several already reachable with what's in the game. The doze (eyes
-  closed for ~400 ms) is the only moment the game controls what the player sees — a frame
+- **SM-INV-11 — The *ambient* world-story is emergent (parameter states + the doze); authored
+  story beats are permitted, but stay in-world.** The leaning trees, the enormous moon, dark at
+  noon, people missing — parameter states, several already reachable with what's in the game. The
+  doze (eyes closed for ~400 ms) is a moment the game controls what the player sees — a frame
   of *something*. Pushing sleep is how you learn the story; the transgression *is* the
-  looking. [RATIFIED premise / DEFAULT mechanism] *Scope (2026-07-16): this governs the
-  surreal world-story — atmosphere, the through-line, what is happening TO the world. It does
-  NOT forbid characters speaking to the player; that rides a separate channel, the **chat
-  pane** (see "Characters and dialog"). "Never scripted events" means the world doesn't stop
-  to narrate itself, not that a mission-giver can't tell you the milk's at the store.*
+  looking. [RATIFIED premise / DEFAULT mechanism; wall relaxed 2026-07-20] *Scope (2026-07-16): this
+  governs the surreal world-story — atmosphere, the through-line, what is happening TO the world. It
+  does NOT forbid characters speaking to the player; that rides a separate channel, the **chat
+  pane** (see "Characters and dialog"). The world doesn't stop to narrate itself moment-to-moment,
+  but a mission-giver can tell you the milk's at the store.* **Relaxation (2026-07-20, RATIFIED):
+  the old "never scripted events" absolute is lifted. The Roamer through-line (see "The Roamer") may
+  surface through authored beats — cutscenes, dialogue-over-gameplay, doze visitations — at deliberate
+  threshold moments (e.g. the region-gating main missions). Three constraints survive: (1) authored
+  beats are *staged in the world*, not an abstract cutscene layer — carve out real world-space for a
+  structured camera/subject scene; the beat need not seize driving control; (2) the *ambient*
+  world-story — the surreal texture and the through-line's atmosphere — stays emergent (parameter
+  states + doze); the world still doesn't narrate itself moment-to-moment; (3) the doze remains the
+  everyday channel. Authored beats are the exception at gates, not the texture.*
 - **SM-INV-12 — Determinism discipline extends, not breaks.** [RATIFIED 2026-07-16] The
   split: **world, seed, terrain, and router generation stay deterministic** — pure functions
   of `(worldSeed, metaState, coords)` where `metaState` (unlocks, story parameter states) is
@@ -355,7 +446,11 @@ including starting wear. Mid-run finds (an LSD in a barn, a better radiator) are
   the same mechanism and the same in-world object (trail-closed barrier). Story beats/XP
   trigger unlock; unlock triggers validation. Bounded-but-expanding is an accepted trade
   (recorded in FEAT-28) — it buys "every unlocked area is fully drivable," which infinite
-  streaming can never promise.
+  streaming can never promise. **Story frame (2026-07-20):** the closed region barriers are the
+  **Roamer's old trails**, shut since they last rode them; reopening one is what the Roamer wants of
+  you (see "The Roamer"). Expansion is **gated by authored "main missions"** that drive the player to
+  a place — the story pulls you outward, rather than a bare XP threshold. Mechanism is unchanged
+  (FEAT-28 barrier, SM-INV-13); this is the diegetic frame on top of it.
 - **Story = parameter states** (SM-INV-11), keyed off metaState (SM-INV-12). Sky/time-of-day
   (src/sky.js), prop palette params, terrain params, prop history states (FEAT-32 logged
   forest), and **road surface class** (FEAT-38 dirt-road prevalence) are the delivery surface —
@@ -369,11 +464,13 @@ including starting wear. Mid-run finds (an LSD in a barn, a better radiator) are
 - **Spirits** are permanent, unremovable, player-earned world additions (found the rare
   campsite once → the camping spirit is in every run, forever). Rules, not resources
   (SM-INV-9). The player accumulated the weirdness voluntarily by going too far; there is
-  no button to put it back.
+  no button to put it back. **The Roamer is the meta-spirit that unifies them** — the source the
+  individual spirits read as facets of — and *meeting* spirits is one of the ways a **class** unlocks
+  (see "Classes" below).
 - **Meta-progression is roguelike breadth, not a power curve** (SM-INV-9, Isaac / Gungeon
   model). Replaying deepens the game by widening the pool of things a run can contain and the
   *shapes* a run can take — never by making you start stronger (SM-INV-7 keeps the first run
-  winnable). Two expanding pools:
+  winnable). Three expanding pools:
   - **Loot / mod pool.** Unlocks add new parts, hazards, mission dressings, and spirits to the
     randomized pool a run draws from. More replays → a richer, weirder deck — more variety, not
     a higher floor. An unlocked part is *another option in the jalopy roll*, not a strictly
@@ -387,6 +484,15 @@ including starting wear. Mid-run finds (an LSD in a barn, a better radiator) are
     not staple a flat bonus onto an otherwise-normal run; "same run, +20% payout when the spirit
     is present" is the balance-sheet erosion SM-INV-9 forbids. The spirit changes the *question*
     the run poses, not your bank balance.
+  - **Classes.** [RATIFIED 2026-07-20] A class is another *shape* a run can take — an RPG-style role
+    the player unlocks into the roster and can bring into a run. Classes unlock through **one-time
+    achievements**: *meeting spirits* (each spirit met is an unlock), milestone feats (camp 10×,
+    drive 5 km sleepy, and the like), **main story beats**, and **region completions**. Like the
+    other pools, classes are **breadth, not floor** (SM-INV-9): more classes means more ways to play,
+    never a higher starting power, and the first available class must keep run 1 winnable (SM-INV-7).
+    *Open (see Open Questions):* whether a class is chosen at run start, exactly what it changes
+    (objective framing? the jalopy roll-space it draws from? which spirits appear?), and how it is
+    kept strictly breadth so no class is simply stronger than another — flagged, not resolved.
 
 ### Characters and dialog: the chat pane [RATIFIED 2026-07-16]
 
@@ -410,10 +516,12 @@ deliberately distinct from the **world-story** channel, which stays parameter st
 is talking to you; the world is what is happening to it.
 
 **Boundary to confirm (owner) — flagged, not resolved:** how much *story* (versus mission framing
-and character banter) the cards may carry before they become the "scripted events" SM-INV-11
-forbids. Default read: cards frame missions and give characters a voice; the surreal through-line
-stays in parameter states and the doze. If a story beat wants a card to carry the world-story
-itself, stop and escalate rather than assuming the pane is licensed for it.
+and character banter) the cards may carry. Note (2026-07-20): SM-INV-11's "never scripted events"
+absolute is now relaxed, but the relaxation licenses **staged in-world beats**, not the chat pane —
+the *ambient* through-line still stays out of the cards. Default read: cards frame missions and give
+characters a voice; the surreal through-line lives in parameter states, the doze, and authored
+in-world Roamer beats. If a story beat wants a *card* to carry the world-story itself, stop and
+escalate rather than assuming the pane is licensed for it.
 
 ## Failure modes to watch (from the design conversation)
 
@@ -425,7 +533,12 @@ itself, stop and escalate rather than assuming the pane is licensed for it.
 
 ## Open questions (do NOT resolve unilaterally in a ticket — escalate)
 
-1. Where the story actually goes; whether "beating the game" means anything concrete.
+1. **The Roamer's motives, and the concrete endgame beat.** *(Mostly resolved 2026-07-20 — the story
+   spine is set; see "The Roamer.")* The through-line now has a direction and "beating the game" has a
+   shape — completing the Roamer's arc: reopening the old trails, some reunion or release. Residual
+   and still owner-only: (a) whether the Roamer is a benevolent guide or self-interested/not-fully-noble
+   (colors tone, the doze frames, and whether reopening the trails is a gift or a mistake); (b) what
+   the concrete *final* beat actually is. Do not invent the ending in a ticket.
 2. XP → region unlock: unit, curve, radius vs discrete regions (FEAT-28 assumes discrete
    macro-tile regions — the likely answer).
 3. Whether region unlocks persist across runs. SM-INV-8 says the world persists; SM-INV-7
@@ -473,6 +586,14 @@ itself, stop and escalate rather than assuming the pane is licensed for it.
      escalation would move onto the cost/POI side (which has a story) off the par side (which has
      none). See also Q7 (day-cost of waiting).
 
+10. **Classes vs SM-INV-7 first-run winnability** (owner, 2026-07-20). A class system is ratified
+    (breadth, not floor — see "Classes"). Unresolved: is a class chosen at run start, or does it
+    apply some other way? What does a class actually change — the objective it frames, the jalopy
+    roll-space it draws from, which spirits/missions appear — and how is it kept *strictly breadth*
+    so no class is simply stronger than another and the first available class keeps run 1 winnable
+    (SM-INV-7)? And do classes gate content or only reshape play? Structure, not tuning — resolve at
+    SM-4/SM-5 planning; escalate rather than deciding in a ticket.
+
 **Resolved 2026-07-16:** timers (ex-Q2 → SM-INV-3 as amended); debug-panel ownership
 (ex-Q8 → "Game modes": story mode locks out debug tooling, sliders fixed, story/difficulty
 parameter states come from hard tooling, not realtime slider manipulation).
@@ -490,3 +611,6 @@ parameter states come from hard tooling, not realtime slider manipulation).
 | No damage model exists (noted in FEAT-26) | Breakdown death needs one | Build ONE wear/condition model (SM milestone 3) shared by economy wear and hazard impacts; **confirmed required 2026-07-16**, expected hard |
 | Timers impossible to tune fairly in procedural world | Some missions want hard timers | **RATIFIED as amended 2026-07-16**: timed mission types allowed (reward decays/zeroes); timers must never drive ALL missions; par itself is never a clock (SM-INV-3) |
 | `SM-INV-11` world-story = parameter states + doze, never scripted events | Character dialog is authored text | **RATIFIED 2026-07-16**: character/mission dialog rides a distinct **chat pane** (sequential cards, no options — see "Characters and dialog"); the world-story channel stays parameter states + doze. Boundary — how much story cards may carry — flagged for owner, not resolved |
+| `SM-INV-11` "never scripted events" (absolute) | The Roamer through-line wants authored beats (cutscenes, dialogue-over-gameplay, doze visitations) | **RATIFIED 2026-07-20**: wall relaxed — authored beats permitted at deliberate threshold moments (e.g. region-gating main missions), **staged in-world** (carved world-space, not a separate cutscene layer); ambient world-story stays emergent. See "The Roamer" and amended SM-INV-11 |
+| Meta-progression = breadth, not floor (SM-INV-9) | New **class system** (RPG-style roles unlocked by spirits/achievements/story/regions) | **RATIFIED 2026-07-20** in principle: classes are breadth (more shapes a run can take), never a power floor; first class keeps run 1 winnable (SM-INV-7). *How* a class stays strictly breadth is Open Question 10 |
+| Region unlock = abstract gate (FEAT-28/SM-INV-13) | Story wants motivated, diegetic expansion | **RATIFIED 2026-07-20**: region barriers are the Roamer's **old trails**; expansion gated by authored **main missions**; FEAT-28 mechanism unchanged, story frame added |
