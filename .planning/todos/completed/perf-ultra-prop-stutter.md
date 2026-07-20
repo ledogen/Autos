@@ -1,8 +1,13 @@
 ---
 id: PERF-23
 type: perf
-status: open
+status: closed-invalid
 opened: 2026-07-19
+closed: 2026-07-19
+resolution: "Misdiagnosis — not a RangerSim issue. The Claude Electron app was consuming nearly
+  all GPU on the M4 Air; restarting it fixed the stutter. Ultra at full draw with all prop LOD
+  rings resident runs fine on its own. No code or preset changes made. If Ultra stutter recurs
+  on a clean system, reopen (the levers listed below still apply)."
 severity: minor
 source: user-observation (M4 MacBook Air, Ultra tier)
 relates_to: PERF-21 (GPU pass / prop-LOD rings, merged 50a8913), FEAT-06c (billboard impostors),
