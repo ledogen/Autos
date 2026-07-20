@@ -267,6 +267,9 @@ export class MissionSystem {
             distance,
             poly,
             edges: segments.length,
+            // The priced route, retained so par can be recomputed under a different PAR_REF
+            // without re-routing (FEAT-30 calibration). Not read by gameplay.
+            segments,
         }
     }
 }
