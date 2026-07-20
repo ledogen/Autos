@@ -221,6 +221,7 @@ let _gridWorldActive = false
 let _labActive = false
 let _labFogDensity = null    // player's fog density, saved across a lab visit
 let _labSavedSpawn = null    // player's spawn override, saved across a lab visit
+let _labGroundColor = null   // grid-world ground colour, saved across a lab visit
 
 // Manual verification hook — console.log confirms importmap loaded r184 (FOUND-02)
 console.log('THREE.REVISION', THREE.REVISION)
@@ -1896,6 +1897,11 @@ function enterLab () {
   // 400 m strip and hides the 150 m skidpad entirely from any useful vantage. The lab is a clean
   // room: thin it right out and restore the player's setting on the way back.
   if (scene.fog) { _labFogDensity = scene.fog.density; scene.fog.density = 0.00035 }
+  // Grid world's near-black ground (0x141414) exists to make bright grid lines pop. The lab's job
+  // is the opposite — you have to SEE the painted line you're following at 400 m or across a 150 m
+  // ring — so it gets an asphalt-grey pad instead. Restored on exit.
+  _labGroundColor = _gridGroundPlane.material.color.getHex()
+  _gridGroundPlane.material.color.setHex(0x33373c)
 
   if (terrainSystem) terrainSystem.setEnabled(false)   // stop streaming, not just drawing
   _setWorldgenVisible(false)
@@ -1920,6 +1926,7 @@ function exitLab () {
   window.__setGameMode('freeroam')
 
   if (scene.fog && _labFogDensity != null) { scene.fog.density = _labFogDensity; _labFogDensity = null }
+  if (_labGroundColor != null) { _gridGroundPlane.material.color.setHex(_labGroundColor); _labGroundColor = null }
 
   labSystem.exit()
   _gridHelper.visible = false
@@ -1971,15 +1978,20 @@ document.getElementById('pm-resume')?.addEventListener('click', () => _hidePause
 // never thrust into an unfinished mode. Switching the game mode also disables free-roam-only
 // affordances (teleport), which is the point of _gameMode existing.
 document.getElementById('pm-lab')?.addEventListener('click', () => {
-  if (_labActive) exitLab(); else enterLab()
+  if (_labActive) { exitLab(); return }
+  if (missionSystem?.isActive()) missionSystem.exit()   // don't run a mission inside the lab
+  enterLab()
 })
 document.getElementById('pm-story')?.addEventListener('click', () => {
+  if (_labActive) exitLab()
   _hidePauseMenu()
   window.__setGameMode('story')
   missionSystem.enter()
 })
-document.getElementById('pm-grid')?.addEventListener('click', () => enterGridWorld())
-document.getElementById('pm-return')?.addEventListener('click', () => returnToWorld())
+// Every other destination LEAVES the lab first — otherwise you'd stack a mode on top of it and
+// end up with lab geometry, a torn-down world, and a story mission all live at once.
+document.getElementById('pm-grid')?.addEventListener('click', () => { if (_labActive) exitLab(); enterGridWorld() })
+document.getElementById('pm-return')?.addEventListener('click', () => { if (_labActive) exitLab(); returnToWorld() })
 
 // ── Free-cam "teleport here" button (feature/teleport) ────────────────────────────────────
 // Drops the truck at the EXACT free-cam position (off-road / floating allowed) facing the camera
@@ -2300,30 +2312,35 @@ function loop () {
       _lastShadowGeomSig = geomSig
     }
   }
+  // FEAT-31: in the testing lab NONE of the worldgen streaming block below runs. The lab is where
+  // vehicle behaviour is measured, so leaving terrain/road/prop/water generation churning in the
+  // background would put its cost inside every measurement — and hiding the meshes (which
+  // enterLab also does) buys only the draw calls, not the generation. Gate the WORK, not just the
+  // pixels. Nothing is disposed, so leaving the lab re-streams from warm caches.
   let _pt = performance.now()
-  terrainSystem.update(streamCenter)
+  if (!_labActive) terrainSystem.update(streamCenter)
   perfAdd('frame.terrain.update', performance.now() - _pt)
   // Phase 8: stream the valley-trunk network around the same center as terrain (08-07: the
   // unified update() replaces the retired updateProto — streams + slices + redraws viz if visible).
   _pt = performance.now()
   // QUAL-14 perf: while a spawn warm holds the enlarged radius (seed regen), a re-stream here
   // would synchronously route the enlarged band — skip until the warm restores the play radius.
-  if (roadSystem && !_spawnWarmActive) roadSystem.update(streamCenter)
+  if (roadSystem && !_spawnWarmActive && !_labActive) roadSystem.update(streamCenter)
   perfAdd('frame.road.update', performance.now() - _pt)
   // FEAT-06: stream props around the same center. PERF-14: scatter is queued + time-sliced inside
   // update(); the vehicle position is the HARD radius — its 3×3 chunks force-complete so prop
   // collision always exists under the truck, while the visual ring drips in budget-bound.
   _pt = performance.now()
-  if (propSystem) propSystem.update(streamCenter.x, streamCenter.z, _propRing, vehicleState.position.x, vehicleState.position.z, _bbRing)
+  if (propSystem && !_labActive) propSystem.update(streamCenter.x, streamCenter.z, _propRing, vehicleState.position.x, vehicleState.position.z, _bbRing)
   perfAdd('frame.props.update', performance.now() - _pt)   // TEMP (D-arc)
   // PERF-07: bake freshly-committed chunks' prop shadows into the world atlas (sliced; no-op when the
   // queue is empty, i.e. the steady state). Off the frame's shadow pass entirely once baked.
   _pt = performance.now()
-  if (shadowBake && shadowBake.hasWork()) shadowBake.update(scene)
+  if (shadowBake && shadowBake.hasWork() && !_labActive) shadowBake.update(scene)
   perfAdd('frame.shadowBake', performance.now() - _pt)
   // FEAT-17/18: sync pond/stream meshes to the view region (bbox-culled, keyed — no churn when still).
   _pt = performance.now()
-  if (waterRenderer) {
+  if (waterRenderer && !_labActive) {
     const wr = waterSyncRadius()
     waterRenderer.sync(
       streamCenter.x - wr, streamCenter.z - wr,
@@ -2337,7 +2354,7 @@ function loop () {
   // lazy detection (pond rim casts + stream traces) inside the scatter/carve — the measured
   // dominant streaming hitch.
   _pt = performance.now()
-  if (waterSystem) {
+  if (waterSystem && !_labActive) {
     const WW = 768
     waterSystem.warmRegion(streamCenter.x - WW, streamCenter.z - WW, streamCenter.x + WW, streamCenter.z + WW, 2)
   }
@@ -2345,11 +2362,11 @@ function loop () {
   // PERF-03 WS-A: pre-warm the road centerline cache off-thread ahead of the streamer. BUG-26: no-ops
   // now (USE_WORKER_ROUTING=false → no dispatcher) so it never starves terrain on the shared Worker;
   // _streamNetwork routes synchronously on the main thread instead. Kept wired for the future own-worker.
-  if (roadSystem && !_spawnWarmActive) roadSystem.warmRoutes(streamCenter)   // don't fight a spawn warm's anchor
+  if (roadSystem && !_spawnWarmActive && !_labActive) roadSystem.warmRoutes(streamCenter)   // don't fight a spawn warm's anchor
   // Phase 9 (SURF-01): sync road ribbon tiles with the active terrain chunk ring.
   // syncToChunkRing enqueues new tiles and disposes evicted ones co-located with chunk lifetime.
   // flushPendingQueue builds up to MAX_ROAD_BUILDS_PER_FRAME tiles per frame.
-  if (roadMeshSystem && terrainSystem) {
+  if (roadMeshSystem && terrainSystem && !_labActive) {
     _pt = performance.now()
     roadMeshSystem.syncToChunkRing(terrainSystem.getActiveChunkKeys())
     perfAdd('frame.ribbon.sync', performance.now() - _pt)

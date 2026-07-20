@@ -27,7 +27,12 @@ system kept streaming and drawing, so its cost sat inside anything measured ther
 
 **Teardown, both halves.** Visual: terrain chunks, road meshes, props, water, dust all hidden
 (new `setVisible()` on RoadMeshSystem / PropSystem / DustSystem — the seam grid world always
-needed). Work: terrain streaming stopped, not just drawn-hidden. Fog thinned from the worldgen
+needed). Work: the ENTIRE worldgen streaming block is skipped in the loop —
+`terrainSystem.update`, `roadSystem.update`, `roadSystem.warmRoutes`, `propSystem.update`,
+`shadowBake.update`, `waterRenderer.sync`, `waterSystem.warmRegion`,
+`roadMeshSystem.syncToChunkRing`. (First pass only cleared terrain's internal `_enabled` flag and
+hid meshes, which bought the draw calls but left road routing, prop scatter and water warming
+churning in the background — corrected before ship.) Fog thinned from the worldgen
 FogExp2 0.006 (which swallowed the far end of a 400 m strip and hid the 150 m skidpad entirely) and
 restored on exit. Physics needed no new cases — the lab sets `_gridWorldActive`, which every
 contact-query gate already reads; `_labActive` additionally suppresses the ramp rig, which would
@@ -62,6 +67,26 @@ per radius.
 The residual is the ~6 km/h of stage creep (the truck is tracked by body centre, which rolls ~0.35 m
 before crossing). The harness and the real game loop agree — which is what makes the headless
 envelope numbers usable for calibration at all.
+
+## Measured teardown (Chrome, `?prof=1`, `window.__ri()` / `window.__world()`)
+
+| | draw calls | triangles | geometries |
+|---|---|---|---|
+| free-roam | 71 | 213,126 | 100 |
+| in lab | 25 | 1,634 | 114 |
+| in lab, after driving 600 m | 17 | 1,618 | **114** |
+
+Geometry count is the decisive number: unchanged across 600 m of driving, i.e. nothing is being
+generated. Cycling in/out four times settles at 157 geometries (100 → 154 → 155 → 157 → 157) with
+draw calls pinned at 71 and textures flat — a one-time rebuild of road-ribbon tiles on the return
+path, bounded, not a leak.
+
+## Mode exclusion
+
+The lab is inert unless entered: `labSystem.update()` runs only under `_labActive`, its geometry
+group is `visible = false`, and the HUD panel is hidden. It is reachable only from the pause menu,
+and every other pause-menu destination (story mode, grid world, return to world) calls `exitLab()`
+first, so modes can never stack.
 
 ## Gate
 

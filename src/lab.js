@@ -47,7 +47,11 @@ const PADS = [
     { r: 150, cx: 650, cz: 0, name: 'skidpad 150 m' },
 ]
 
-const COL = { paint: 0xd8d8d0, start: 0x5ad06a, finish: 0xff5a3c, brake: 0xffcf3c, lane: 0x606058 }
+const COL = { paint: 0xe8e8e0, start: 0x5ad06a, finish: 0xff5a3c, brake: 0xffcf3c, lane: 0x8a8a80 }
+// Line weights are generous on purpose: at 400 m down the strip, or on the far side of the 150 m
+// ring, a realistically-thin 0.15 m line is sub-pixel and you cannot see the thing you are meant
+// to be following. This is an instrument, not a photograph.
+const W_GATE = 1.4, W_MARK = 0.7, W_RING = 1.0, W_LANE = 0.45
 
 export class LabSystem {
     /**
@@ -100,20 +104,20 @@ export class LabSystem {
         this._built = true
 
         // ── drag strip: origin → -Z, lane edges + 100 m marks + start/finish gates ──────────
-        this._line(-LANE / 2, 0, -LANE / 2, -DRAG_LEN - 120, COL.lane, 0.2)
-        this._line(LANE / 2, 0, LANE / 2, -DRAG_LEN - 120, COL.lane, 0.2)
-        for (let d = 100; d < DRAG_LEN; d += 100) this._line(-LANE / 2, -d, LANE / 2, -d, COL.paint, 0.25)
-        this._line(-LANE / 2, 0, LANE / 2, 0, COL.start, 0.6)                  // start
-        this._line(-LANE / 2, -DRAG_LEN, LANE / 2, -DRAG_LEN, COL.finish, 0.6) // finish
-        this._line(-LANE / 2, BRAKE_MARK, LANE / 2, BRAKE_MARK, COL.brake, 0.6) // "brake here" board
+        this._line(-LANE / 2, 0, -LANE / 2, -DRAG_LEN - 120, COL.lane, W_LANE)
+        this._line(LANE / 2, 0, LANE / 2, -DRAG_LEN - 120, COL.lane, W_LANE)
+        for (let d = 100; d < DRAG_LEN; d += 100) this._line(-LANE / 2, -d, LANE / 2, -d, COL.paint, W_MARK)
+        this._line(-LANE / 2, 0, LANE / 2, 0, COL.start, W_GATE)                  // start
+        this._line(-LANE / 2, -DRAG_LEN, LANE / 2, -DRAG_LEN, COL.finish, W_GATE) // finish
+        this._line(-LANE / 2, BRAKE_MARK, LANE / 2, BRAKE_MARK, COL.brake, W_GATE) // "brake here" board
 
         // ── skidpads: the ring to follow, a lane band either side, and a timing radial ──────
         for (const p of PADS) {
-            this._ring(p.cx, p.cz, p.r, COL.paint, 0.4)
-            this._ring(p.cx, p.cz, p.r - 3, COL.lane, 0.15)
-            this._ring(p.cx, p.cz, p.r + 3, COL.lane, 0.15)
+            this._ring(p.cx, p.cz, p.r, COL.paint, W_RING)              // the line to follow
+            this._ring(p.cx, p.cz, p.r - 3, COL.lane, W_LANE)           // lane band, inner
+            this._ring(p.cx, p.cz, p.r + 3, COL.lane, W_LANE)           // lane band, outer
             // Timing line: radial on the -Z side, spanning the lane. Crossing it either way laps.
-            this._line(p.cx, p.cz - (p.r - 4), p.cx, p.cz - (p.r + 4), COL.start, 0.5)
+            this._line(p.cx, p.cz - (p.r - 4.5), p.cx, p.cz - (p.r + 4.5), COL.start, W_GATE)
         }
 
         this._scene.add(this._group)
