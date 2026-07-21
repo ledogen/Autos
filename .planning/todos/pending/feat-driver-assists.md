@@ -124,14 +124,21 @@ assists are *player* settings, not debug tuning, so they probably survive the lo
 
 ## Progress
 
-- **2026-07-21 — GPS assist (#5) SHIPPED** on `feature/gps`: `src/gps.js` plus four additive hooks in
-  `src/main.js`, gated by `test/gps-route.mjs`. Chevrons hovering over the route ahead, one flat
-  curved arrow over the next junction (18° straight deadband, so gentle kinks raise nothing), and a
-  ring at the destination. It reads `mission.segments` — the route the mission already computed — so
-  there is no new routing and no per-frame `RoadSystem` query. Default **ON** (playtesting + FEAT-30
-  par calibration); `window.__setGpsEnabled(v)` and a lil-gui toggle are the seams FEAT-41's assists
-  page will drive. The presentation question above is answered: **in-world arrows, no mini-map or
-  HUD ribbon.**
+- **2026-07-21 — GPS assist (#5) SHIPPED** on `feature/gps`: `src/gps.js` plus additive hooks in
+  `src/main.js` and one line in `src/mission.js`, gated by `test/gps-route.mjs`. Two cues —
+  chevrons on a fixed world lattice just above the road ahead (you drive *into* them), and an
+  **upright arrow board** standing at the next real intersection, aimed straight down the road to
+  take — plus a ring at the destination. It reads `mission.segments`, the route the mission already
+  computed, so there is no new routing and no per-frame `RoadSystem` query. Default **ON**
+  (playtesting + FEAT-30 par calibration); `window.__setGpsEnabled(v)` and a lil-gui toggle are the
+  seams FEAT-41's assists page will drive.
+  Two questions this ticket left open are now **answered by the owner**:
+  - Presentation: **in-world arrows only** — no mini-map, no HUD ribbon.
+  - The cue is **upright, not flat**, and appears **only at graph nodes of degree 3+**. Both were
+    corrected after seeing screenshots: a flat glyph is met edge-on from the chase cam, and a
+    turn-angle deadband cannot tell a degree-2 kink from a junction (~42% of the arrows the angle
+    filter raised on seed 6 were at plain bends). Full reasoning in
+    `.planning/handoffs/2026-07-21-feat-39-gps-assist.md`.
 - The four handling assists (#1–#4) and the Assists menu page remain open.
 
 ## Acceptance

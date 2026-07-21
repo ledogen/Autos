@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-21 · **Branch:** `feature/gps` · **Worktree:** `/Users/ledogen/CodeShit/CarGame-gps`
 **Base:** local `main` @ `dd80649` · **Status:** complete, user-previewed, unpushed, ready to merge.
-**Re-run `npm run test:all` before merging** — the full suite predates the `src/mission.js` edit.
+**All 38 gates green on the final code** (`npm run test:all` at `ff6a836`) — nothing to re-run.
 
 ## Merge it
 
@@ -19,19 +19,21 @@ line) — nothing existing was restructured.
 > commits behind local `main`**. The branch was reset onto `dd80649` before any work. If you spin
 > up another worktree here, check that first — `origin/main` is stale.
 
-## Commits (5)
+## Commits (6)
 
 | | |
 |---|---|
 | `96623d7` | feat: GPS navigation assist — in-world route chevrons + junction turn arrows |
 | `e9bc56d` | feat: chevrons static on a world lattice, lifted clear of the road |
+| `39f7031` | docs: merge handoff (superseded by `ff6a836`) |
 | `514356b` | fix: chevrons back to road level; turn arrow bends to the real angle |
 | `4cca27e` | feat: arrows only at real intersections, as an upright board down the exit road |
-| `39f7031`, this file | docs: merge handoff |
+| `ff6a836` | docs: refresh the handoff for the shipped design |
 
 The later commits are **iteration on the owner's eye**, not separate features — each replaced part of
 the one before after seeing it in-game. Read `4cca27e` for the design that actually shipped; the
-curved-arrow machinery in `96623d7`/`514356b` no longer exists.
+curved-arrow machinery in `96623d7`/`514356b` no longer exists. Squashing on merge is fine and
+probably kinder to `main`'s history — but keep `4cca27e`'s message, it carries the reasoning.
 
 A commit reordering the mission-panel export fields was made and then **reverted at the owner's
 request** — `git reset --hard`, not a revert commit, so it leaves no trace. Do not resurrect it.
@@ -73,12 +75,12 @@ no streaming coupling.** Instrumented as `frame.gps.update` in the PERF-08 harne
 | File | Change |
 |---|---|
 | `src/gps.js` | **new** — the whole feature (`bakeRoute` / `advanceProgress` / `sampleRoute` are pure + exported; `GpsSystem` + `addGpsGui` are the THREE half) |
-| `src/main.js` | 6 additive hooks: import (`:47`), `let gpsSystem` (`:983`), construction after `missionSystem` (`~:1648`), `window.__setGpsEnabled` (`~:1664`), `addGpsGui` (`~:1915`), per-frame `update` before `map2d.render()` (`~:2670`), `clearRoute()` on seed change (`~:558`) |
+| `src/main.js` | 7 additive hooks: import (`:48`), `clearRoute()` on seed change (`:560`), `let gpsSystem` (`:986`), construction after `missionSystem` (`:1656`), `window.__setGpsEnabled` (`:1664`), `addGpsGui` (`:1917`), per-frame `update` before `map2d.render()` (`:2673`) |
 | `src/mission.js` | **one line** in `_roll()`: tags each segment with `endDeg`. The only edit outside gps.js's own files, and the only thing GPS needs that the mission did not already compute |
 | `test/gps-route.mjs` | **new** gate |
 | `test/mission-network.mjs` | asserts `endDeg` is actually tagged (see Verification) |
 | `test/gates.mjs` | registers gps-route (`story` / `fast`, `extraDeps: ['src/main.js']`) |
-| `.planning/todos/pending/feat-driver-assists.md` | **Progress** section — FEAT-39 stays OPEN |
+| `.planning/todos/pending/feat-driver-assists.md` | **Progress** section, incl. the two owner answers — FEAT-39 stays OPEN |
 
 ## Ticket state
 
@@ -92,10 +94,8 @@ understeer/oversteer reduction) and the Assists menu page are untouched and the 
 
 ## Verification done
 
-- **All 38 gates green** (`npm run test:all`, 363 s) as of `96623d7`. `npm test` (affected → 3 gates
-  incl. the heavy `mission-network`, 51 s) green on `4cca27e`. **Re-run `test:all` before merging** —
-  the full suite has not been run since `mission.js` was touched, though nothing outside `story`
-  imports it.
+- **All 38 gates green on the final code** — `npm run test:all`, 168 s wall / 988 s gate-CPU, run at
+  `ff6a836` (i.e. after the `src/mission.js` edit). Nothing needs re-running before the merge.
 - `test/gps-route.mjs` pins what fails *silently*: travel order through reversed edges (`s1 < s0`)
   and partial first/last arc ranges; the degree filter (a 90° bend at a degree-2 node raises
   nothing, the same geometry at degree 3 does, a straight-through crossroads still does); windowed
