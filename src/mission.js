@@ -24,11 +24,16 @@
 import { computePar, sampleRoute, gradeRun, formatTime, PAR_REF } from './par.js'
 import { roadQuality } from './road-quality.js'
 
-const MISSION_GRAPH_RADIUS = 4500   // m — node-graph band to plan within (anchors only, cheap)
+// Planning radius for the dedicated planner RoadSystem. The planner must stream the network for
+// real — cull included — so it can only ever propose roads that exist. That costs a one-off load,
+// which story mode can afford; it is then REUSED across regenerates and only re-streamed when the
+// seed changes or the player leaves PLAN_RESTREAM_MOVE behind.
+const MISSION_PLAN_RADIUS = 2200    // m
+const PLAN_RESTREAM_MOVE = 700      // m — drift before the planner re-streams
 // Leg bounds are measured on STRAIGHT-LINE graph distance (the planner's cheap metric); the
-// routed road is empirically ~1.5× that, so these bracket a ~2-5 km drive.
-const LEG_MIN = 1200                // m
-const LEG_MAX = 3200                // m
+// routed road is empirically ~1.5× that, so these bracket a ~1.4-3 km drive that fits the radius.
+const LEG_MIN = 900                 // m
+const LEG_MAX = 2000                // m
 const MAX_EDGES = 9                 // routing cap: each edge is tens of ms on a cache miss
 const ARRIVE_RADIUS = 28            // m — you're there
 const COUNTDOWN = 3.0               // s — the start countdown (a START count, not a par clock)
@@ -65,8 +70,10 @@ export class MissionSystem {
      * @param {()=>number} [o.getSeed] — world seed; road-surface quality is seeded from it
      * @param {()=>void} [o.onChange] — called whenever the UI-visible state changes
      */
-    constructor({ getRoad, getCar, getSeed, teleport, setMapOpen, onChange }) {
+    constructor({ getRoad, makePlanner, getCar, getSeed, teleport, setMapOpen, onChange }) {
         this._getRoad = getRoad
+        this._makePlanner = makePlanner || null
+        this._plan = null            // { road, seed, center } — the streamed planning network
         this._getCar = getCar
         this._getSeed = getSeed || (() => 0)
         this._teleport = teleport
@@ -84,13 +91,41 @@ export class MissionSystem {
     }
 
     // ── lifecycle ───────────────────────────────────────────────────────────────────────────
+    /**
+     * The planning network: a dedicated read-only RoadSystem streamed around the player, exactly
+     * the way map2d gets trustworthy data. It is the ONLY way the planner sees the same roads the
+     * player does — the play RoadSystem only holds a ~320 m window, and widening THAT would
+     * re-shape the road under the truck (the cull is window-sensitive; see BUG-25).
+     *
+     * Streamed once and reused: regenerating a mission is then instant, and only a seed change or
+     * walking PLAN_RESTREAM_MOVE away pays the load again.
+     */
+    _planner() {
+        if (!this._makePlanner) return this._getRoad()      // headless/tests: use what we're given
+        const car = this._getCar()
+        const seed = this._getSeed()
+        const stale = !this._plan || this._plan.seed !== seed
+            || Math.hypot(this._plan.center.x - car.x, this._plan.center.z - car.z) > PLAN_RESTREAM_MOVE
+        if (stale) {
+            // main.js owns the streaming call: RoadSystem.update wants a THREE.Vector3 (it calls
+            // distanceTo on it), and keeping THREE out of this module keeps it cheap to import.
+            const road = this._makePlanner(seed, car.x, car.z, MISSION_PLAN_RADIUS)
+            if (!road) return null
+            this._plan = { road, seed, center: { x: car.x, z: car.z } }
+        }
+        return this._plan.road
+    }
+
+    /** Drop the planning network (seed change / explicit reset) so the next roll re-streams. */
+    invalidatePlan() { this._plan = null }
+
     /** Enter story mode: roll a mission and offer it on the map. */
     enter() {
         this.state = 'generating'
         this.result = null
         this.error = null
         this._onChange()
-        // Yield one frame so the "generating" panel paints before the (blocking) routing pass.
+        // Yield one frame so the "planning" panel paints before the (blocking) stream + routing.
         setTimeout(() => this._generate(), 0)
     }
 
@@ -303,8 +338,11 @@ export class MissionSystem {
      */
     _roll() {
         const car = this._getCar()
-        const road = this._getRoad()
-        const g = road.missionGraph(car.x, car.z, MISSION_GRAPH_RADIUS)
+        const road = this._planner()
+        if (!road) return null
+        // The POST-CULL registered network — the roads that actually exist. Planning off the raw
+        // Urquhart set (what this did originally) invents routes across empty hillsides.
+        const g = road.networkGraph()
         if (!g.edges.length) return null
 
         // Adjacency with positions, keyed by node key.

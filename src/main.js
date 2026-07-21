@@ -153,6 +153,10 @@ function rebuildWaterSystem () {
   // The map's own read-only RoadSystem must route with the identical exclusion (it validates the
   // network the player drives).
   map2d.setWaterNoGo(waterNoGoFn, pondDiscsFn)
+  // Same for the story-mode mission planner: it proposes routes the player then drives, so it has
+  // to route around exactly the same ponds. Stashed because the planner is built lazily.
+  _waterNoGoFns = [waterNoGoFn, pondDiscsFn]
+  missionSystem?.invalidatePlan()
   // FEAT-18: stream channels carve the terrain (bed + banks) — inject the pure sampler into the
   // terrain height paths (see terrain.setWaterCarve for the composition + bridge-deck rule).
   // sampleAt keeps a 1-entry windowed stream cache: physics contact queries are spatially coherent,
@@ -965,6 +969,7 @@ const { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, addLig
 // touches the live roadSystem/play network (see src/map2d.js). Accessors are injected so map2d
 // stays decoupled from main's module state. Body forward is the -Z axis (vehicle.js); we pass
 // the world-forward XZ so the marker's heading is convention-agnostic.
+let _waterNoGoFns = null   // [noGoFn, pondDiscsFn] — see rebuildWaterSystem
 const _mapFwd = new THREE.Vector3()
 // Story mode (beta) — constructed below, after roadSystem exists. Declared here so map2d can
 // read its markers without the two modules knowing about each other.
@@ -1535,6 +1540,28 @@ const _misFwd = new THREE.Vector3()
 missionSystem = new MissionSystem({
   getRoad:  () => roadSystem,
   getSeed:  () => worldSeed,
+  // A DEDICATED read-only RoadSystem for planning, built the same way map2d builds its own.
+  // The play instance only holds a ~320 m window, and widening it would re-shape the road under
+  // the truck (the crossing cull is window-sensitive — BUG-25). The planner streams a real,
+  // CULLED network so a mission can only ever propose roads that actually exist.
+  makePlanner: (seed, cx, cz, radius) => {
+    const r = new RoadSystem(seed, RANGER_PARAMS)
+    if (roadWorker) {
+      roadWorker.registerClient('mission', r)
+      r.setRouteDispatcher((jobs, epoch) => roadWorker.postRouteJobs('mission', jobs, epoch))
+    }
+    // Ponds first: setWaterNoGo calls _invalidateProto, which clears the route caches it can see —
+    // it must run BEFORE adopting play's warm ones or it would wipe them.
+    if (_waterNoGoFns) r.setWaterNoGo(_waterNoGoFns[0], _waterNoGoFns[1])
+    if (roadSystem && roadSystem._worldSeed === seed) {
+      const p = roadSystem._proto, q = r._proto
+      q.cls = (p.cls ??= new Map())
+      q.clsSolo = (p.clsSolo ??= new Map())
+    }
+    r.setRadius(radius)
+    r.update(new THREE.Vector3(cx, 0, cz))   // the one-off load; reused across regenerates
+    return r
+  },
   // Richer than the arrival check needs: the run export records a driven trace, and throttle /
   // brake / steer are what make it useful for fitting anything later.
   getCar:   () => {
@@ -1556,6 +1583,14 @@ missionSystem = new MissionSystem({
       let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity
       for (const p of mk.poly) { if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x; if (p.z < z0) z0 = p.z; if (p.z > z1) z1 = p.z }
       map2d.frameBounds(x0, z0, x1, z1)
+      // The mission plans over a wider network than the map streams by default, so tell the map how
+      // far it has to build. Otherwise the route runs past the edge of the drawn network and looks
+      // like an invented road.
+      const car = vehicleState.position
+      const reach = Math.max(
+        Math.hypot(x0 - car.x, z0 - car.z), Math.hypot(x1 - car.x, z1 - car.z),
+        Math.hypot(x0 - car.x, z1 - car.z), Math.hypot(x1 - car.x, z0 - car.z))
+      map2d.setRadiusTarget(reach + 300)
     }
   },
   onChange: () => _renderMissionUI(),
@@ -1591,8 +1626,12 @@ function _renderMissionUI () {
   switch (m.state) {
     case 'generating':
       show(panel, true); show(hud, false)
-      body.innerHTML = 'planning a job&hellip;'
+      // The planner streams a real, culled network the first time (and after a seed change or a
+      // long walk), which takes a few seconds — say so rather than looking hung.
+      body.innerHTML = 'planning a job&hellip;<br><span class="mp-dim">building the road network for this area</span>'
       show(acts, false, 'flex')
+      show(document.getElementById('mp-seed-row'), false)
+      show(document.getElementById('mp-export-row'), false)
       break
     case 'offer': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
@@ -1602,6 +1641,8 @@ function _renderMissionUI () {
         + `<span class="mp-dim">green pin is the start &mdash; you'll be moved there</span>`
       btn('mp-accept', true); btn('mp-regen', true); btn('mp-quit', true)
       show(document.getElementById('mp-export-row'), false)
+      show(document.getElementById('mp-seed-row'), true, 'flex')
+      _syncSeedField()
       break
     }
     case 'countdown':
@@ -1624,6 +1665,7 @@ function _renderMissionUI () {
         + `<span style="color:${col}">${sign}${formatTime(Math.abs(r.margin))} vs par</span>`
       btn('mp-accept', false); btn('mp-regen', false); btn('mp-quit', true)
       show(document.getElementById('mp-export-row'), true)
+      show(document.getElementById('mp-seed-row'), false)
       // Reuse the accept button as "next job" so there's one obvious forward action.
       const nb = document.getElementById('mp-accept')
       if (nb) { nb.style.display = ''; nb.textContent = 'next job' }
@@ -1631,6 +1673,8 @@ function _renderMissionUI () {
     }
     default:
       show(panel, false); show(hud, false)
+      show(document.getElementById('mp-seed-row'), false)
+      show(document.getElementById('mp-export-row'), false)
       if (m.error) console.info('[mission]', m.error)
       break
   }
@@ -1639,6 +1683,38 @@ function _renderMissionUI () {
     if (nb) nb.textContent = 'accept mission'
   }
 }
+
+// Seed field: pre-populated with the live seed so the panel always shows the world you're in.
+function _syncSeedField () {
+  const el = document.getElementById('mp-seed')
+  if (el && document.activeElement !== el) el.value = _seedString
+}
+// Applying a seed goes through the SAME path as the debug panel's seed field — one code path for
+// world regeneration, not a second one that could drift. The mission planner is invalidated so the
+// next roll re-streams against the new world.
+function _applyStorySeed () {
+  const el = document.getElementById('mp-seed')
+  const hint = document.getElementById('mp-seed-hint')
+  if (!el) return
+  const v = el.value.trim()
+  if (!v || v === _seedString) { if (hint) hint.textContent = 'same seed — nothing to do'; return }
+  worldSeed = parseWorldSeed(v)
+  _seedString = String(v)
+  _spawnOverride = null
+  missionSystem.invalidatePlan()
+  debouncedRebuildFull()
+  if (hint) hint.textContent = 'regenerating world…'
+  // The world rebuild is debounced + async; give it room, then roll a mission in the new world.
+  setTimeout(() => {
+    if (hint) hint.textContent = 'enter a new seed to regenerate the world'
+    if (missionSystem.state !== 'idle') missionSystem.enter()
+  }, 2500)
+}
+document.getElementById('mp-seed-go')?.addEventListener('click', _applyStorySeed)
+document.getElementById('mp-seed')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); _applyStorySeed() }
+  e.stopPropagation()          // keep WASD/M/Esc out of the world while typing a seed
+})
 
 // Buttons. Same null-guarded module-eval wiring as every other control in this file (WR-04).
 document.getElementById('mp-accept')?.addEventListener('click', () => {

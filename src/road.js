@@ -1366,21 +1366,36 @@ export class RoadSystem {
 
     // ── Story mode: mission geometry (FEAT-29 par oracle support) ───────────────
     /**
-     * The node graph over an arbitrary radius around (cx, cz), with NO side effects on the
-     * streaming graph (persist=false) — missions reach well past the play stream radius, and
-     * building this is cheap: blue-noise anchors + Delaunay, no routing.
+     * The graph the world ACTUALLY BUILT — the registered post-cull network, not the raw Urquhart
+     * edge set.
      *
-     * @returns {{ edges: Array<[id,id]>, adj: Map<string,Set<string>>, key: (id)=>string,
-     *             pos: (id)=>THREE.Vector3 }}
+     * This distinction is load-bearing and cost a real bug. `_streamNetwork` runs
+     * `_assembleGraphEdges` (registers every Urquhart edge) and THEN `_cullNetwork` (drops
+     * crossings, clearance violations, excess degree). The roads that exist in the world are
+     * Urquhart MINUS the cull. A planner that reads `_buildUrquhart` directly — as missionGraph
+     * originally did — routes over edges the world deletes, and draws confident blue lines across
+     * empty hillsides.
+     *
+     * Reading `_network` instead means the planner can only ever propose roads that were actually
+     * built, and `edgeParData` returns their REGISTERED centerlines (identical to the ones the
+     * ribbon and carve use) rather than re-routing them without their neighbours' context.
+     *
+     * @returns {{ edges: Array<[id,id,string]>, adj: Map<string,Set<string>>, key: (id)=>string,
+     *             pos: (id)=>THREE.Vector3, idOf: Map<string,any> }}
      */
-    missionGraph(cx, cz, radiusM) {
-        this._refreshParams()
-        const mx0 = Math.floor((cx - radiusM) / PROTO_ANCHOR_SPACING)
-        const mx1 = Math.ceil((cx + radiusM) / PROTO_ANCHOR_SPACING)
-        const mz0 = Math.floor((cz - radiusM) / PROTO_ANCHOR_SPACING)
-        const mz1 = Math.ceil((cz + radiusM) / PROTO_ANCHOR_SPACING)
-        const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)
-        return { edges: g.edges, adj: g.adj, key: g.key, pos: (id) => this._nodePos(id) }
+    networkGraph() {
+        const key = (id) => `${id[0]},${id[1]},${id[2]}`
+        const edges = [], adj = new Map(), idOf = new Map()
+        for (const [runKey, e] of this._network) {
+            if (!e.cellA || !e.cellB) continue
+            const ka = key(e.cellA), kb = key(e.cellB)
+            idOf.set(ka, e.cellA); idOf.set(kb, e.cellB)
+            if (!adj.has(ka)) adj.set(ka, new Set())
+            if (!adj.has(kb)) adj.set(kb, new Set())
+            adj.get(ka).add(kb); adj.get(kb).add(ka)
+            edges.push([e.cellA, e.cellB, runKey])
+        }
+        return { edges, adj, key, idOf, pos: (id) => this._nodePos(id) }
     }
 
     /**
@@ -1396,8 +1411,18 @@ export class RoadSystem {
         const kf = (id) => `${id[0]},${id[1]},${id[2]}`
         const key = `g:${kf(c1)}:${kf(c2)}`
         const alt = `g:${kf(c2)}:${kf(c1)}`
-        const hit = this._network.get(key) || this._network.get(alt)
-        if (hit) return { key, centerline: hit.centerline, gradeAt: _gradeSampler(hit.points, hit.clArc) }
+        // Return the REGISTERED key, not the one the caller happened to build. An edge is stored
+        // under whichever endpoint order _assembleGraphEdges saw first, so `g:A:B` and `g:B:A` name
+        // the same road — but road-quality HASHES the runKey, so handing back the reversed spelling
+        // yields a different surface-quality series for the same stretch of tarmac.
+        if (this._network.has(key)) {
+            const hit = this._network.get(key)
+            return { key, centerline: hit.centerline, gradeAt: _gradeSampler(hit.points, hit.clArc) }
+        }
+        if (this._network.has(alt)) {
+            const hit = this._network.get(alt)
+            return { key: alt, centerline: hit.centerline, gradeAt: _gradeSampler(hit.points, hit.clArc) }
+        }
 
         const cl = this._edgeCenterline(c1, c2)
         if (!cl || cl.length < 1e-6) return null

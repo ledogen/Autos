@@ -26,6 +26,11 @@ const MAP_RADIUS      = 1500   // m — target streamed radius of the map's own 
 // steps fills the network incrementally (first ring paints in ~1.5 s, then the rest streams in across
 // frames) instead of one long freeze. Each step yields a frame between chunks (PROGRESSIVE_GAP).
 const MAP_RADIUS_STEPS = [400, 650, 900, 1150, 1500]
+// Story mode plans over a WIDER network than the map streams by default (MISSION_PLAN_RADIUS in
+// mission.js), so a mission route can run past the edge of what the map has built — which reads
+// exactly like the route being drawn over empty ground. setRadiusTarget lets the mission tell the
+// map how far it must reach; the extra rings are appended to the progressive stream.
+const MAP_RADIUS_MAX = 3000
 const PROGRESSIVE_GAP  = 16    // ms — yield between stream chunks so the page stays responsive
 const STREAM_DEBOUNCE = 120    // ms — re-stream only after a pan settles (a stream is expensive)
 const RESTREAM_MOVE   = 300    // m — re-stream when the pan center has drifted past this since last stream
@@ -69,6 +74,7 @@ export class Map2D {
         // Progressive (chunked) streaming state — see MAP_RADIUS_STEPS.
         this._streaming   = false        // a chunked stream is in flight
         this._streamStep  = 0            // next index into MAP_RADIUS_STEPS to stream
+        this._radiusTarget = MAP_RADIUS  // grown by setRadiusTarget (story mode)
         this._streamFull  = false        // network is streamed out to the final radius around _streamAt
         this._pumpTimer   = 0            // setTimeout handle between chunks
 
@@ -100,6 +106,27 @@ export class Map2D {
     // OFF the main thread (client 'map'), decoupled from the play/terrain pipeline. Optional — without it
     // the map falls back to synchronous routing (its prior behaviour). Wired in _buildRoad on (re)build.
     setRouteWorker(rw) { this._routeWorker = rw }
+
+    /**
+     * Ensure the map streams at least `r` metres around the pan cursor. Used by story mode so the
+     * white network always extends past the blue route — without this the map looks like it is
+     * missing roads the mission "invented", when in fact it simply had not built that far.
+     * Only ever grows, and re-streams if the current pass already finished short of the new target.
+     */
+    setRadiusTarget(r) {
+        const want = Math.max(MAP_RADIUS, Math.min(MAP_RADIUS_MAX, r))
+        if (want <= this._radiusTarget) return
+        this._radiusTarget = want
+        this._streamFull = false
+        if (this._open) this._startStream()
+    }
+
+    _radiusSteps() {
+        const steps = [...MAP_RADIUS_STEPS]
+        for (let r = MAP_RADIUS + 500; r <= this._radiusTarget + 1e-6; r += 500) steps.push(r)
+        if (steps[steps.length - 1] < this._radiusTarget) steps.push(this._radiusTarget)
+        return steps
+    }
 
     // QUAL-14 perf: share the PLAY RoadSystem's per-connection route cache. Centerlines are pure
     // fns of (seed, road params) and this map rebuilds its instance on any sig change, so aliasing
@@ -260,7 +287,7 @@ export class Map2D {
 
     _pump() {
         if (!this._open || !this._streaming) { this._streaming = false; return }
-        const R = MAP_RADIUS_STEPS[this._streamStep]
+        const R = this._radiusSteps()[this._streamStep]
         this._road.setRadius(R)
         // QUAL-08: kick off-thread routing for this radius so the worker fills the map's route cache;
         // the synchronous update below still routes on cache miss (fallback), but subsequent steps / pans
@@ -270,7 +297,7 @@ export class Map2D {
         this._streamAt = this._streamCenter
         this._bgDirty = true
         this._streamStep++
-        if (this._streamStep < MAP_RADIUS_STEPS.length) {
+        if (this._streamStep < this._radiusSteps().length) {
             this._pumpTimer = setTimeout(() => this._pump(), PROGRESSIVE_GAP)
         } else {
             this._streaming = false
@@ -428,7 +455,7 @@ export class Map2D {
     // Small bottom-center badge while the network is still filling in (chunked stream in flight).
     _drawStreamingBadge(ctx) {
         const W = this._canvas.clientWidth, H = this._canvas.clientHeight
-        const txt = `streaming network… ${Math.round(100 * this._streamStep / MAP_RADIUS_STEPS.length)}%`
+        const txt = `streaming network… ${Math.round(100 * this._streamStep / this._radiusSteps().length)}%`
         ctx.font = '13px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
         const w = ctx.measureText(txt).width + 24
         ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(W / 2 - w / 2, 14, w, 26)

@@ -108,6 +108,16 @@
     #mission-panel button:hover { background: rgba(255,255,255,0.09); color: #fff; border-color: #8fa2b4; }
     #mp-accept { border-color: #5ad06a; color: #b6f0be; }
     #mp-export-row { display: none; margin-top: 12px; border-top: 1px solid #2c343d; padding-top: 12px; }
+    #mp-seed-row {
+      display: none; margin-top: 12px; border-top: 1px solid #2c343d; padding-top: 10px;
+      font-size: 12px; color: #8a939c; align-items: center; gap: 8px; justify-content: center;
+    }
+    #mp-seed {
+      background: rgba(255,255,255,0.05); border: 1px solid #3a4450; color: #cfd6dd;
+      font-family: monospace; font-size: 12px; padding: 4px 8px; width: 90px; text-align: center;
+    }
+    #mission-panel #mp-seed-go { font-size: 12px; padding: 4px 10px; }
+    #mp-seed-hint { font-size: 11px; }
     #mp-note {
       width: 100%; background: rgba(255,255,255,0.05); border: 1px solid #3a4450;
       color: #cfd6dd; font-family: monospace; font-size: 12px; padding: 5px 8px; margin-top: 10px;
@@ -295,6 +305,14 @@
       <button id="mp-accept">accept mission</button>
       <button id="mp-regen" title="testing only — real story mode has no do-overs">regenerate</button>
       <button id="mp-quit">back to free roam</button>
+    </div>
+    <!-- Seed control (testing). Pre-populated with the live seed; Enter regenerates the world,
+         which invalidates the mission planner, then a new mission can be rolled. -->
+    <div id="mp-seed-row">
+      <label for="mp-seed">seed</label>
+      <input id="mp-seed" type="text" maxlength="24" spellcheck="false">
+      <button id="mp-seed-go">load world</button>
+      <span id="mp-seed-hint" class="mp-dim">enter a new seed to regenerate the world</span>
     </div>
   </div>
   <div id="mission-hud"></div>
