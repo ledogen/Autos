@@ -20,8 +20,22 @@ let _prevHandKey = false   // Space state last frame — rising-edge (tap) detec
 // Register listeners at module load (module scripts run after parse — no DOMContentLoaded needed).
 // Shift+R is the "set spawn point here" control (handled in main.js) — it must NOT trigger the
 // R-key respawn, so swallow it before it can set keys.r. Plain R still respawns.
+// keyUP is registered in the CAPTURE phase: lil-gui's root stops propagation of key events once
+// focus is inside the panel, and a bubble-phase keyup that never arrives leaves a driving key
+// STUCK ON (hold W, click a slider, release W → full throttle with no key down). Releases must
+// always land; presses stay bubble-phase so genuine text fields can still swallow them.
 document.addEventListener('keydown', e => { if (e.shiftKey && e.key.toLowerCase() === 'r') return; const k = e.key === ' ' ? ' ' : e.key.toLowerCase(); if (k in keys) keys[k] = true })
-document.addEventListener('keyup',   e => { const k = e.key === ' ' ? ' ' : e.key.toLowerCase(); if (k in keys) keys[k] = false })
+document.addEventListener('keyup',   e => { const k = e.key === ' ' ? ' ' : e.key.toLowerCase(); if (k in keys) keys[k] = false }, true)
+
+// ── Launch hold (story-mode countdown) ───────────────────────────────────────
+// While set, the handbrake is forced ON regardless of driver input — the truck sits at the start
+// during the mission 3-2-1 while the driver is free to rev against it; main.js clears it at zero
+// and the launch is instant. This is a dedicated flag, NOT the `parked` latch: updateVehicle
+// computes handbrake AFTER the parked latch clears on driver input, so main.js re-latching
+// `parked` later in the frame arrived one step too late and the countdown never actually held
+// (the truck could simply drive off mid-count).
+let _launchHold = false
+export function setLaunchHold (on) { _launchHold = on }
 
 // ── SPAWN_STATE ───────────────────────────────────────────────────────────────
 // Plain scalar values — main.js copies these into THREE.Vector3 / THREE.Quaternion
@@ -103,7 +117,9 @@ export function updateVehicle (vehicleState, params, dt) {
   } else if (handTap && spd < PARK_SPEED) {
     vehicleState.parked = true                                   // latch when tapped near rest
   }
-  vehicleState.handbrake = handKey || vehicleState.parked
+  // _launchHold (mission countdown) forces the handbrake regardless of the latch — revving against
+  // it is allowed and expected; the hold clears at zero and the brake releases the same step.
+  vehicleState.handbrake = handKey || vehicleState.parked || _launchHold
   _prevHandKey = handKey
 
   // ── 2. Speed-scaled steer limit (M1-08) ────────────────────────────────────

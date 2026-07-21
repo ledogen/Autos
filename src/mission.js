@@ -148,6 +148,7 @@ export class MissionSystem {
         this._teleport(s.x, s.z, s.heading)
         this._setMapOpen(false)
         this.state = 'countdown'
+        this._polyIdx = 0            // route-remaining projection restarts at the start pin
         this.countdown = COUNTDOWN
         this.elapsed = 0
         this._trace = []
@@ -274,11 +275,37 @@ export class MissionSystem {
         }
     }
 
-    /** Metres remaining, as the crow flies. */
+    /** Metres remaining, as the crow flies. Used for the ARRIVAL check (a radius on a point). */
     distanceToGo() {
         if (!this.mission) return 0
         const c = this._getCar(), e = this.mission.end
         return Math.hypot(c.x - e.x, c.z - e.z)
+    }
+
+    /**
+     * Metres remaining ALONG THE ROUTE — the honest HUD number. Crow-flies distance INCREASES
+     * while you drive a winding route correctly, which reads as "going the wrong way" (and once
+     * broke a verification run). Projects the car onto the mission polyline (windowed around the
+     * last match, full re-scan when the window loses the car) and reports the arc left from there.
+     * Arrival still uses distanceToGo() — this is display, not game state.
+     */
+    routeRemaining() {
+        const m = this.mission
+        if (!m || !m.poly || m.poly.length < 2 || !m.polyCum) return this.distanceToGo()
+        const c = this._getCar()
+        const poly = m.poly, cum = m.polyCum
+        const last = this._polyIdx ?? 0
+        let bi = last, bd = Infinity
+        const scan = (lo, hi) => {
+            for (let i = lo; i <= hi; i++) {
+                const d = (poly[i].x - c.x) ** 2 + (poly[i].z - c.z) ** 2
+                if (d < bd) { bd = d; bi = i }
+            }
+        }
+        scan(Math.max(0, last - 20), Math.min(poly.length - 1, last + 40))
+        if (bd > 200 * 200) scan(0, poly.length - 1)     // off the window (teleport, big shortcut)
+        this._polyIdx = bi
+        return Math.max(this.distanceToGo(), cum[cum.length - 1] - cum[bi])
     }
 
     // ── per-frame ───────────────────────────────────────────────────────────────────────────
@@ -435,6 +462,12 @@ export class MissionSystem {
         const { time, distance } = computePar(segments)
         if (!(time > 0)) return null
 
+        // Cumulative XZ arc along the map polyline, for the HUD's route-remaining readout.
+        const polyCum = [0]
+        for (let i = 1; i < poly.length; i++) {
+            polyCum.push(polyCum[i - 1] + Math.hypot(poly[i].x - poly[i - 1].x, poly[i].z - poly[i - 1].z))
+        }
+
         const first = segments[0], last = segments[segments.length - 1]
         const sp = first.centerline.pointAt(first.s0)
         const st = first.centerline.tangentAt(first.s0)
@@ -447,6 +480,7 @@ export class MissionSystem {
             par: time,
             distance,
             poly,
+            polyCum,
             edges: segments.length,
             // The priced route, retained so par can be recomputed under a different PAR_REF
             // without re-routing (FEAT-30 calibration). Not read by gameplay.

@@ -84,7 +84,7 @@ export const GATES = [
   { file: 'par-oracle.mjs', subsystem: 'story', cost: 'fast', extraDeps: ['src/main.js'],
     desc: 'FEAT-29 par oracle: SM-INV-2 (par never reads the car), determinism, independent time-marched check, SIGNED grade (downhill faster), curvature monotonicity, mid-edge arc-range splitting, junction penalty, spawn-heading convention' },
   { file: 'lab-timing.mjs', subsystem: 'story', cost: 'fast', extraDeps: [],
-    desc: 'FEAT-31 testing-lab gates: skidpad lap time + derived mu vs closed form, no phantom laps from line jitter, directional drag start, braking armed on input and voided by throttle' },
+    desc: 'FEAT-31 testing-lab gates: skidpad lap time + derived mu vs closed form, no phantom laps from line jitter, staged drag start (hold-still + count, false start voids, unstaged crossings inert), braking measured 100→0 in the strip corridor and voided by throttle' },
   { file: 'water-invariance.mjs', subsystem: 'water', cost: 'heavy', extraDeps: [],
     desc: 'FEAT-22/17/18: basins/saddles/ponds/streams deterministic + window-invariant; ponds rim-contained; streams descend + end at basins; submerged hook' },
   { file: 'pond-route-around.mjs', subsystem: 'water', cost: 'heavy', extraDeps: [],

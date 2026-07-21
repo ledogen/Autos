@@ -711,6 +711,20 @@ export function initDebug (params, callbacks = {}, options = {}) {
     }
   })
 
+  // Keyboard must stay with the GAME after clicking the panel. lil-gui's root element calls
+  // stopPropagation on EVERY keydown/keyup once focus is inside it, so a click on any slider /
+  // checkbox / folder header silently froze driving, respawn (R) and pause (Esc) until the user
+  // happened to click back out. Only genuine text entry (the World Seed field, typing a number)
+  // should hold the keyboard — so after any click whose target is not a text input, drop focus
+  // back to the page. Clicking INTO a text input keeps focus, as it should.
+  gui.domElement.addEventListener('pointerup', (e) => {
+    const t = e.target
+    const isTextEntry = t instanceof HTMLInputElement && (t.type === 'text' || t.type === 'number')
+    if (isTextEntry) return
+    const ae = document.activeElement
+    if (ae && ae !== document.body && gui.domElement.contains(ae)) ae.blur()
+  })
+
   return gui
 }
 

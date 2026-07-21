@@ -170,6 +170,26 @@
       margin-bottom: 6px;
     }
     #lab-status { color: #ffcf3c; margin-bottom: 8px; }
+    #lab-live { display: none; color: #8ce99a; margin-bottom: 8px; }
+    /* Lab big-center overlay: staging countdown / GO / FALSE START / NEW BEST. */
+    #lab-hud {
+      display: none;
+      position: fixed;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid #3a4450;
+      padding: 8px 24px;
+      font-family: monospace;
+      z-index: 88;
+      pointer-events: none;
+      text-align: center;
+    }
+    #lab-hud .lh-count { font-size: 44px; color: #ffcf3c; }
+    #lab-hud .lh-go    { font-size: 44px; color: #8ce99a; }
+    #lab-hud .lh-foul  { font-size: 30px; color: #ff8f7a; }
+    #lab-hud .lh-dim   { font-size: 16px; color: #8a939c; }
     #lab-panel table { border-collapse: collapse; width: 100%; }
     #lab-panel td { padding: 2px 8px 2px 0; vertical-align: top; }
     #lab-panel .lb-num { color: #ffffff; text-align: right; white-space: nowrap; }
@@ -324,9 +344,11 @@
   <div id="lab-panel">
     <div class="lb-title">testing lab</div>
     <div id="lab-status">—</div>
+    <div id="lab-live"></div>
     <table><tbody id="lab-rows"></tbody></table>
-    <div class="lb-dim lb-foot">green line starts a run · Esc &rarr; testing lab to leave</div>
+    <div class="lb-dim lb-foot">drag: park in the staging box &middot; skidpad/braking start themselves &middot; Esc &rarr; exit testing lab</div>
   </div>
+  <div id="lab-hud"></div>
 
   <!-- Free-cam teleport affordance — shown only in free-cam / free-roam mode (main.js loop
        toggles display). Click (cursor must be free; press Esc to release pointer-lock) or press

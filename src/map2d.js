@@ -19,13 +19,18 @@
 
 import * as THREE from 'three'
 import { RoadSystem } from './road.js'
+import { MISSION_PLAN_RADIUS } from './mission.js'
 
-const MAP_RADIUS      = 1500   // m — target streamed radius of the map's own RoadSystem around the pan cursor
-// Progressive (chunked) streaming radii. Routing the full 1500 m radius synchronously is ~10 s; the
-// per-connection ROUTE CACHE persists across re-streams on one instance, so growing the radius in
-// steps fills the network incrementally (first ring paints in ~1.5 s, then the rest streams in across
-// frames) instead of one long freeze. Each step yields a frame between chunks (PROGRESSIVE_GAP).
-const MAP_RADIUS_STEPS = [400, 650, 900, 1150, 1500]
+// Streamed radius of the map's own RoadSystem around the pan cursor. UNIFIED with the story-mode
+// planner's radius: the two are the big read-only networks in the app and they share route caches,
+// so matching radii means whichever streams first pays and the other rides warm — mismatched radii
+// (map 1500 vs planner 1400, as shipped) made the map re-route a ring the planner never covers.
+const MAP_RADIUS      = MISSION_PLAN_RADIUS
+// Progressive (chunked) streaming radii. Growing the radius in steps fills the network
+// incrementally (first ring paints fast, then the rest streams in) instead of one long freeze.
+// Each step yields between chunks (PROGRESSIVE_GAP), and each step's routing is warmed on the
+// road Worker BEFORE the synchronous update runs — see _pump.
+const MAP_RADIUS_STEPS = [400, 650, 900, 1150, MAP_RADIUS]
 // Story mode plans over a WIDER network than the map streams by default (MISSION_PLAN_RADIUS in
 // mission.js), so a mission route can run past the edge of what the map has built — which reads
 // exactly like the route being drawn over empty ground. setRadiusTarget lets the mission tell the
@@ -81,6 +86,7 @@ export class Map2D {
         this._radiusTarget = MAP_RADIUS  // grown by setRadiusTarget (story mode)
         this._streamFull  = false        // network is streamed out to the final radius around _streamAt
         this._pumpTimer   = 0            // setTimeout handle between chunks
+        this._pumpToken   = 0            // invalidates in-flight warm polls when a new stream starts
 
         // View transform: pan = world center of the view; zoom = px per world metre.
         this._panX = 0
@@ -90,8 +96,18 @@ export class Map2D {
         // Cached background layer (terrain + roads + nodes + crossings) — only depends on the
         // transform + streamed network, NOT the car. Rebuilt when dirty; the moving car marker
         // is drawn on top each frame, so an idle (non-panning) map costs ~nothing per frame.
+        //
+        // Pan/zoom do NOT rebuild it per-move (that redraw — terrain shading + every road — is the
+        // stutter the owner reported while dragging). Instead render() BLITS the cached bitmap with
+        // an offset/scale derived from (bg transform → current transform), and a short idle timer
+        // triggers one sharp rebuild after the gesture settles. Content changes (stream chunks,
+        // params) still set _bgDirty for an immediate rebuild.
         this._bg      = document.createElement('canvas')
         this._bgDirty = true
+        this._bgPanX  = 0                // transform the cached bg was rendered at
+        this._bgPanZ  = 0
+        this._bgZoom  = 0
+        this._bgTimer = 0                // settle-redraw debounce handle
 
         // Drag-pan state.
         this._dragging = false
@@ -218,6 +234,7 @@ export class Map2D {
         clearTimeout(this._pumpTimer)
         clearTimeout(this._streamTimer)
         clearTimeout(this._paramTimer)
+        clearTimeout(this._bgTimer)
         this._canvas.style.display = 'none'
         this._canvas.removeEventListener('mousedown', this._onDown)
         window.removeEventListener('mousemove', this._onMove)
@@ -300,20 +317,32 @@ export class Map2D {
         if (!this._open || !this._streaming) { this._streaming = false; return }
         const R = this._radiusSteps()[this._streamStep]
         this._road.setRadius(R)
-        // QUAL-08: kick off-thread routing for this radius so the worker fills the map's route cache;
-        // the synchronous update below still routes on cache miss (fallback), but subsequent steps / pans
-        // / reopens over the same region hit the warmed cache instead of re-routing on the main thread.
-        this._road.warmRoutes(this._streamCenter)
-        this._road.update(this._streamCenter)
-        this._streamAt = this._streamCenter
-        this._bgDirty = true
-        this._streamStep++
-        if (this._streamStep < this._radiusSteps().length) {
-            this._pumpTimer = setTimeout(() => this._pump(), PROGRESSIVE_GAP)
-        } else {
-            this._streaming = false
-            this._streamFull = true
+        // Route OFF-THREAD first (owner-reported freeze fix): poll warmBandComplete until the road
+        // Worker has cached every connection in this radius band, and only THEN run the synchronous
+        // update — with a warm cache it is the cheap registration pass (~0.2 s at full radius), not
+        // the multi-second routing hang that froze panning. Without a worker, warmBandComplete
+        // returns true immediately and this collapses to the old sync path (headless/tests).
+        const token = ++this._pumpToken
+        const t0 = performance.now()
+        const poll = () => {
+            if (!this._open || !this._streaming || token !== this._pumpToken) return
+            let done = true
+            try { done = this._road.warmBandComplete(this._streamCenter) } catch (e) { console.warn('[map2d] warm failed', e) }
+            // Safety valve: if the worker wedges, fall through to the sync path rather than a map
+            // that never finishes painting.
+            if (!done && performance.now() - t0 < 20000) { this._pumpTimer = setTimeout(poll, 120); return }
+            this._road.update(this._streamCenter)
+            this._streamAt = this._streamCenter
+            this._bgDirty = true
+            this._streamStep++
+            if (this._streamStep < this._radiusSteps().length) {
+                this._pumpTimer = setTimeout(() => this._pump(), PROGRESSIVE_GAP)
+            } else {
+                this._streaming = false
+                this._streamFull = true
+            }
         }
+        poll()
     }
 
     // ── Transform helpers ────────────────────────────────────────────────────────────────────
@@ -357,7 +386,15 @@ export class Map2D {
         // Drag moves the world under the cursor: pan center shifts opposite the drag, scaled by zoom.
         this._panX -= dx / this._zoom
         this._panZ -= dy / this._zoom
-        this._bgDirty = true   // transform changed → bg re-projects this frame
+        this._deferBgRedraw()   // render() blits the cached bg at an offset; sharp redraw on settle
+    }
+
+    // Transform gesture in progress: don't rebuild the (expensive) background per move — schedule
+    // one sharp rebuild shortly after the gesture goes quiet. render() blits the stale bitmap with
+    // the right offset/scale in the meantime, so dragging stays smooth even mid-stream.
+    _deferBgRedraw() {
+        clearTimeout(this._bgTimer)
+        this._bgTimer = setTimeout(() => { this._bgDirty = true }, 140)
     }
 
     _onMouseUp() {
@@ -386,7 +423,7 @@ export class Map2D {
         // Keep that same world point under the cursor after zoom.
         this._panX = wx - (mx - this._canvas.clientWidth / 2) / this._zoom
         this._panZ = wz - (my - this._canvas.clientHeight / 2) / this._zoom
-        this._bgDirty = true
+        this._deferBgRedraw()   // scale-blit until the wheel goes quiet, then one sharp redraw
     }
 
     // Double-click → teleport the truck here (free-roam only). Snaps to the nearest road within
@@ -426,9 +463,16 @@ export class Map2D {
         if (this._bgDirty) { this._drawBackground(); this._bgDirty = false }
 
         const ctx = this._ctx
+        const W = this._canvas.clientWidth, H = this._canvas.clientHeight
         ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0)
-        ctx.clearRect(0, 0, this._canvas.clientWidth, this._canvas.clientHeight)
-        ctx.drawImage(this._bg, 0, 0, this._canvas.clientWidth, this._canvas.clientHeight)
+        ctx.clearRect(0, 0, W, H)
+        // Blit the cached bg through the delta between its transform and the current one — during a
+        // drag/zoom gesture this is the whole cost of the background (the sharp rebuild waits for
+        // the gesture to settle; see _deferBgRedraw). At rest the delta is identity.
+        const k = this._bgZoom ? this._zoom / this._bgZoom : 1
+        const dx = W / 2 - k * W / 2 + (this._bgPanX - this._panX) * this._zoom
+        const dy = H / 2 - k * H / 2 + (this._bgPanZ - this._panZ) * this._zoom
+        ctx.drawImage(this._bg, dx, dy, W * k, H * k)
 
         this._drawMission(ctx)   // under the car marker, over the cached bg
         this._drawCar(ctx)
@@ -479,6 +523,8 @@ export class Map2D {
         ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0)
         const W = this._canvas.clientWidth, H = this._canvas.clientHeight
         ctx.clearRect(0, 0, W, H)
+        // Record the transform this bitmap is valid for — render() blits through the delta.
+        this._bgPanX = this._panX; this._bgPanZ = this._panZ; this._bgZoom = this._zoom
 
         this._drawTerrain(ctx, W, H)
         this._drawRoads(ctx)

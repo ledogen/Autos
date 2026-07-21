@@ -70,20 +70,51 @@ for (const pad of PADS) {
     `recorded ${lab.best.get(pad.name)?.value.toFixed(2)}s`)
 }
 
-// ── 3. drag strip: 400 m at constant speed times exactly ────────────────────────────────────────
-// The strip runs along +X at z = STRIP_Z (rotated 2026-07-20 to share the skidpads' axis and keep
-// the facility compact).
+// ── 3. drag strip: a run must START from the staging box (2026-07-21 rework) ────────────────────
+// Park in the box, hold still 1 s, sit through the 3 s count, then launch. The clock starts on the
+// start-line crossing; reaction time and the 60-foot split ride along in the detail.
 {
   const { lab, car } = makeLab()
-  const v = 20                                    // m/s, constant → 400 m in exactly 20 s
+  const a = 4                                     // m/s² constant launch acceleration
+  car.x = -8; car.z = STRIP_Z; car.speed = 0
+  for (let i = 0; i < Math.ceil(4.6 / DT); i++) lab.update(DT)          // hold + count + margin
+  for (let i = 0; i < Math.ceil(0.3 / DT); i++) lab.update(DT)          // 0.3 s reaction dawdle
+  let v = 0
+  while (car.x < 420) { v += a * DT; car.x += v * DT; car.speed = v; lab.update(DT) }
+  const best = lab.best.get('drag 400 m')
+  check('staged drag run is timed', !!best)
+  if (best) {
+    // From x=-8 at constant a: line-crossing at √(2·8/a), finish at √(2·408/a).
+    const expect = Math.sqrt(2 * 408 / a) - Math.sqrt(2 * 8 / a)
+    check('drag time within 2% of closed form', Math.abs(best.value - expect) / expect < 0.02,
+      `got ${best.value.toFixed(2)}s expect ${expect.toFixed(2)}s`)
+    check('reaction time and 60-foot split are reported',
+      /RT [\d.]+ s/.test(best.detail) && /60 ft [\d.]+ s/.test(best.detail), best.detail)
+  }
+}
+
+// ── 3b. an UNSTAGED (flying) crossing must record nothing ───────────────────────────────────────
+// The old behaviour timed ANY forward crossing, so idling over the line began a "run".
+{
+  const { lab, car } = makeLab()
+  const v = 20
   car.x = -5; car.z = STRIP_Z; car.speed = v
   for (let i = 0; i < Math.ceil(30 / DT); i++) { car.x += v * DT; lab.update(DT) }
-  const best = lab.best.get('drag 400 m')
-  check('drag 400 m is timed', !!best)
-  if (best) check('drag time within 1% of 400/v', Math.abs(best.value - 20) / 20 < 0.01,
-    `got ${best.value.toFixed(2)}s`)
-  if (best) check('a flying start is flagged ROLLING, and no accel is derived',
-    /ROLLING/.test(best.detail) && !best.derived, best.detail)
+  check('a flying (unstaged) start records nothing', !lab.best.get('drag 400 m'),
+    `recorded ${lab.best.get('drag 400 m')?.value}`)
+}
+
+// ── 3c. creeping during the count is a FALSE START — the run is void ────────────────────────────
+{
+  const { lab, car } = makeLab()
+  car.x = -8; car.z = STRIP_Z; car.speed = 0
+  for (let i = 0; i < Math.ceil(2.0 / DT); i++) lab.update(DT)          // hold 1 s + 1 s of count
+  car.speed = 1.0
+  for (let i = 0; i < Math.ceil(1.0 / DT); i++) { car.x += 1.0 * DT; lab.update(DT) }  // creep 1 m
+  let v = 4
+  while (car.x < 420) { car.x += v * DT; car.speed = v; lab.update(DT) }
+  check('a false start voids the run (crossing after it records nothing)',
+    !lab.best.get('drag 400 m'), `recorded ${lab.best.get('drag 400 m')?.value}`)
 }
 
 // ── 4. drag strip is directional — rolling backwards over the line starts nothing ───────────────
@@ -102,46 +133,64 @@ for (const pad of PADS) {
   check('a parallel run beside the strip does not trigger the gates', !lab.best.get('drag 400 m'))
 }
 
-// ── 5. braking arms on the brake input, and voids if the throttle comes back ────────────────────
+// ── 5. braking: measured from EXACTLY 100 km/h to a full stop (2026-07-21 rework) ───────────────
+// Starts at the interpolated downward 100 km/h crossing with the brake on, so every run measures
+// the same thing regardless of entry speed.
+const BRAKE_V = 100 / 3.6
 {
   const { lab, car } = makeLab()
-  const v0 = 30, a = 7
+  const v0 = 30, a = 7                            // enter at 108 km/h; measured part is 100→0
   car.x = 0; car.z = STRIP_Z; car.speed = v0; car.brake = 1; car.throttle = 0
   let v = v0
   for (let i = 0; i < Math.ceil(10 / DT) && v > 0; i++) {
     car.x += v * DT; v = Math.max(0, v - a * DT); car.speed = v
     lab.update(DT)
   }
-  const best = lab.best.get('braking')
+  const best = lab.best.get('braking 100–0')
   check('braking run is captured', !!best)
   if (best) {
-    const expect = v0 * v0 / (2 * a)
-    check('braking distance within 3% of v²/2a', Math.abs(best.value - expect) / expect < 0.03,
+    const expect = BRAKE_V * BRAKE_V / (2 * a)    // distance from the 100 km/h point, not v0
+    check('braking distance within 3% of (100 km/h)²/2a', Math.abs(best.value - expect) / expect < 0.03,
       `got ${best.value.toFixed(1)}m expect ${expect.toFixed(1)}m`)
     const gotA = parseFloat(best.derived.match(/([\d.]+) m\/s/)[1])
-    check('derived decel recovers the input decel', Math.abs(gotA - a) / a < 0.02,
+    check('derived decel recovers the input decel', Math.abs(gotA - a) / a < 0.03,
       `got ${gotA} expect ${a}`)
   }
 }
 {
   const { lab, car } = makeLab()
-  car.x = 0; car.z = STRIP_Z; car.speed = 30; car.brake = 1; car.throttle = 0
-  for (let i = 0; i < 60; i++) { car.x += 0.5; lab.update(DT) }
+  const v0 = 30, a = 7
+  car.x = 0; car.z = STRIP_Z; car.speed = v0; car.brake = 1; car.throttle = 0
+  let v = v0
+  while (v > 15) { car.x += v * DT; v -= a * DT; car.speed = v; lab.update(DT) }   // armed, mid-stop
   car.throttle = 1; car.brake = 0
-  for (let i = 0; i < 60; i++) { car.x += 0.5; lab.update(DT) }
+  for (let i = 0; i < 60; i++) { car.x += v * DT; lab.update(DT) }                 // back on throttle
   car.brake = 1; car.throttle = 0; car.speed = 0.1
   lab.update(DT)
-  check('a braking run that gets back on the throttle is voided', !lab.best.get('braking'),
-    `recorded ${lab.best.get('braking')?.value}`)
+  check('a braking run that gets back on the throttle is voided', !lab.best.get('braking 100–0'),
+    `recorded ${lab.best.get('braking 100–0')?.value}`)
 }
 
-// ── 6. braking below the arming speed is ignored (a parking-lot stop is not a brake test) ───────
+// ── 6. braking below the measured-from speed is ignored (a parking-lot stop is not a test) ──────
 {
   const { lab, car } = makeLab()
   let v = 10
   car.x = 0; car.z = STRIP_Z; car.speed = v; car.brake = 1
   for (let i = 0; i < 200 && v > 0; i++) { car.x += v * DT; v = Math.max(0, v - 5 * DT); car.speed = v; lab.update(DT) }
-  check('a low-speed stop does not register as a braking test', !lab.best.get('braking'))
+  check('a low-speed stop does not register as a braking test', !lab.best.get('braking 100–0'))
+}
+
+// ── 6b. off the strip corridor (e.g. lapping the 150 m pad at >100 km/h) must not arm ───────────
+{
+  const { lab, car } = makeLab()
+  const v0 = 30, a = 7
+  car.x = 300; car.z = STRIP_Z - 60; car.speed = v0; car.brake = 1; car.throttle = 0
+  let v = v0
+  for (let i = 0; i < Math.ceil(10 / DT) && v > 0; i++) {
+    car.x += v * DT; v = Math.max(0, v - a * DT); car.speed = v
+    lab.update(DT)
+  }
+  check('a 100→0 stop away from the strip corridor does not arm', !lab.best.get('braking 100–0'))
 }
 
 // ── 7. rumble lanes: the surface the suspension will be measured against ────────────────────────

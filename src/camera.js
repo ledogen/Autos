@@ -142,6 +142,9 @@ document.addEventListener('keydown', e => {
     case 'Shift':       freecamKeys.shift = true; break
   }
 })
+// Capture phase: key RELEASES must land even when focus sits inside the lil-gui panel (its root
+// stops propagation of key events, which would otherwise leave a fly key stuck on) — see the
+// matching listener in vehicle.js.
 document.addEventListener('keyup', e => {
   switch (e.key) {
     case 'w': case 'W': freecamKeys.w     = false; break
@@ -152,7 +155,7 @@ document.addEventListener('keyup', e => {
     case 'Control':     freecamKeys.ctrl  = false; break
     case 'Shift':       freecamKeys.shift = false; break
   }
-})
+}, true)
 
 // C-key listener — upgraded from the original single-mode toggle.
 // D-01: Shift+C enters/exits freecam. C alone cycles chase↔hood when not in freecam,

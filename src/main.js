@@ -19,7 +19,7 @@ import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics } from './physics.js'
 import { getBodyContactPoints, getWheelPosition } from './suspension.js'
-import { updateVehicle, SPAWN_STATE } from './vehicle.js'
+import { updateVehicle, setLaunchHold, SPAWN_STATE } from './vehicle.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
 // window.__view(x, y, z, yaw, pitch) — used by test/screenshot.mjs (headless CDP) and the browser console.
@@ -1701,8 +1701,9 @@ function _renderMissionUI () {
       break
     case 'running':
       show(panel, false); show(hud, true)
-      // Elapsed + distance to go. No par, no target — SM-INV-3.
-      hud.textContent = `${formatTime(m.elapsed)}   ${km(m.distanceToGo())} to go`
+      // Elapsed + distance to go ALONG THE ROUTE (crow-flies grew while driving a winding route
+      // correctly, which read as "wrong way"). No par, no target — SM-INV-3.
+      hud.textContent = `${formatTime(m.elapsed)}   ${km(m.routeRemaining())} to go`
       break
     case 'done': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
@@ -2052,6 +2053,9 @@ function enterLab () {
   _gridGroundPlane.visible = true
   rampMesh.visible = RANGER_PARAMS.rampEnabled !== false   // D-19 jump rig, kept as a lab feature
 
+  const pmLab = document.getElementById('pm-lab')
+  if (pmLab) pmLab.textContent = 'exit testing lab'
+
   labSystem.enter()
   // Staging the truck on the strip sets _spawnOverride, which would otherwise eat a spawn point
   // the player had set with Shift+R — and leaving the lab would re-seat them at the LAB's
@@ -2069,6 +2073,9 @@ function exitLab () {
   window.__setGameMode('freeroam')
 
   if (scene.fog && _labFogDensity != null) { scene.fog.density = _labFogDensity; _labFogDensity = null }
+
+  const pmLab = document.getElementById('pm-lab')
+  if (pmLab) pmLab.textContent = 'testing lab'
 
   labSystem.exit()
   _gridGroundPlane.visible = false
@@ -2089,16 +2096,46 @@ function exitLab () {
 // sets PAR_REF (FEAT-30).
 function _renderLabUI () {
   const el = document.getElementById('lab-panel')
+  const hudEl = document.getElementById('lab-hud')
   if (!el) return
-  if (!labSystem.isActive()) { el.style.display = 'none'; return }
+  if (!labSystem.isActive()) {
+    el.style.display = 'none'
+    if (hudEl) hudEl.style.display = 'none'
+    return
+  }
   el.style.display = 'block'
   const rows = [...labSystem.best.values()]
     .map(r => `<tr><td>${r.track}</td><td class="lb-num">${r.value.toFixed(r.unit === 's' ? 2 : 1)} ${r.unit}</td>`
       + `<td class="lb-dim">${r.detail || ''}</td><td class="lb-hi">${r.derived || ''}</td></tr>`)
     .join('')
   document.getElementById('lab-status').textContent = labSystem.status
+  // Live skidpad readout (L2): radius error vs the ring, speed, and instantaneous mu — the
+  // feedback that makes limit-finding possible while the lap is still running.
+  const liveEl = document.getElementById('lab-live')
+  if (liveEl) {
+    const l = labSystem.liveLap()
+    if (l) {
+      const dr = l.radius - l.targetR
+      liveEl.style.display = 'block'
+      liveEl.textContent = `${l.name} lap ${l.t.toFixed(1)} s · ${Math.round(l.frac * 100)}%`
+        + ` · line ${dr >= 0 ? '+' : ''}${dr.toFixed(1)} m · ${(l.speed * 3.6).toFixed(0)} km/h`
+        + ` · live mu ${l.mu.toFixed(2)}`
+    } else {
+      liveEl.style.display = 'none'
+    }
+  }
   document.getElementById('lab-rows').innerHTML = rows
-    || '<tr><td colspan="4" class="lb-dim">no runs yet — drive through a green line</td></tr>'
+    || '<tr><td colspan="4" class="lb-dim">no runs yet — stage in the box or cross a green line</td></tr>'
+  // Big center overlay: staging countdown / GO / FALSE START / NEW BEST.
+  if (hudEl) {
+    const h = labSystem.hud()
+    if (h) {
+      hudEl.style.display = 'block'
+      hudEl.innerHTML = `<span class="lh-${h.cls}">${h.text}</span>`
+    } else {
+      hudEl.style.display = 'none'
+    }
+  }
 }
 
 // ── Pause-menu helpers ────────────────────────────────────────────────────────
@@ -2168,21 +2205,20 @@ document.addEventListener('keydown', e => {
 })
 
 // ── Esc handler — pause menu (D-17 / RESEARCH §Pitfall 3) ────────────────────
-// Gate: only open the menu when NOT in free-cam mode.
-// In free-cam, Esc triggers a browser-forced pointer-lock release first; opening the
-// menu on the same Esc event causes an immediate flash-open/close. The user must press C
-// to exit free-cam, then Esc to open the menu from chase/hood mode.
-// (RESEARCH §Pitfall 3 / 07-PATTERNS.md §Esc/keyboard listener coexistence)
+// Gate on the POINTER LOCK, not the camera mode: while locked, the browser consumes Esc to
+// release the lock (acting here too caused the flash-open/close of Pitfall 3) — but an UNLOCKED
+// freecam has no such conflict, and blocking Esc there just made the pause key feel broken
+// (owner-reported). So: locked → let the browser release the lock; next Esc pauses, from any
+// camera. (RESEARCH §Pitfall 3 / 07-PATTERNS.md §Esc/keyboard listener coexistence)
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return
-  if (getCameraMode() !== 'freecam') {  // gate: only open menu when NOT in free-cam (Pitfall 3)
-    const el = document.getElementById('pause-menu')
-    if (!el) return
-    if (el.style.display === 'none' || el.style.display === '') {
-      _showPauseMenu()
-    } else {
-      _hidePauseMenu()
-    }
+  if (document.pointerLockElement) return   // this Esc is the browser's lock-release
+  const el = document.getElementById('pause-menu')
+  if (!el) return
+  if (el.style.display === 'none' || el.style.display === '') {
+    _showPauseMenu()
+  } else {
+    _hidePauseMenu()
   }
 })
 
@@ -2269,6 +2305,13 @@ function loop () {
     // Terrain stub call retained for M1-13 verification (Phase 6 replaces body, not call site).
     const _surface = terrain(vehicleState.position.x, vehicleState.position.z)  // eslint-disable-line no-unused-vars
 
+    // Story-mode countdown hold — set BEFORE updateVehicle, which is where handbrake is computed.
+    // (The old approach re-latched vehicleState.parked AFTER updateVehicle had already computed
+    // handbrake=false for the step, so the countdown never actually held and the player could
+    // drive off mid-count.) The hold forces the handbrake only: revving against it is allowed,
+    // and the release at zero is the launch.
+    setLaunchHold(!!missionSystem?.isHeld())
+
     const resetRequested = updateVehicle(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     if (resetRequested) {
       // R re-seats the truck to a driveable state ONLY — it does NOT touch any tunable
@@ -2289,9 +2332,6 @@ function loop () {
     // Story mode (beta): countdown tick + arrival check. Two distance checks — no routing, no
     // par math (that ran once at mission-offer time). Clocked off the fixed step, not wall time.
     if (missionSystem?.isActive()) {
-      // The start countdown holds the truck: re-latch the handbrake each step so an early W
-      // press can't roll before "go" (the latch releases naturally on the first input after).
-      if (missionSystem.isHeld()) vehicleState.parked = true
       missionSystem.update(PHYSICS_DT)
     }
 

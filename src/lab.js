@@ -38,6 +38,9 @@
  *               ( 25 )   (   60   )        (         150         )   skidpads
  *
  * Timing is fully automatic — gates fire on crossing, there is no button to fumble mid-run.
+ * The one ceremony is the drag STAGING BOX behind the start line (park + hold still → 3-2-1 →
+ * green): it exists so a run can only start deliberately, and it is where reaction time comes from.
+ * The spawn sits behind the box so rolling forward at spawn no longer begins a run by accident.
  */
 
 import * as THREE from 'three'
@@ -57,7 +60,31 @@ const LANE = 8            // m — drag-strip lane width
 const DRAG_LEN = 400      // m — the timed acceleration run
 const STRIP_RUNOFF = 140  // m — pavement past the finish
 const BRAKE_MARK = 470    // x — painted "brake here" board (visual aid only; see the braking test)
-const BRAKE_ARM_V = 27    // m/s (~97 km/h) — braking test arms above this speed
+
+// ── drag staging (owner-requested UX rework, 2026-07-21) ────────────────────────────────────────
+// A timed run must START from the staging box: park inside it, hold still, and a 3-2-1 count
+// arms the run. Untimed crossings of the start line are inert (the old behaviour timed ANY
+// forward crossing, so idling over the line "started a drag run" you never meant to drive).
+// Staying still through the count is ON THE DRIVER here — creeping forward is a FALSE START
+// (story-mode missions hold the handbrake for the player instead; the lab does not).
+const STAGE_X0 = -14      // m — staging box, rear edge
+const STAGE_X1 = -3       // m — staging box, front edge (clear of the start line at x=0)
+const STAGE_HOLD = 1.0    // s — stationary in the box before the count begins
+const STAGE_COUNT = 3.0   // s — the count itself
+const STAGE_STILL_V = 0.4 // m/s — "parked" threshold for staging
+const FALSE_START_MOVE = 0.4  // m of forward creep during the count = false start
+const LAUNCH_V = 2 / 3.6  // m/s — reaction time stops at this speed (or LAUNCH_MOVE, whichever first)
+const LAUNCH_MOVE = 0.5   // m — travelled since green
+const GO_EXPIRE = 20      // s — a green you never launch on quietly expires
+const FT60 = 18.288       // m — the 60-foot split (timing-light bones for later)
+
+// ── braking test (owner-requested rework) ───────────────────────────────────────────────────────
+// Measured from EXACTLY 100 km/h down to a full stop, so every run is comparable. Arms only in the
+// strip corridor (the 150 m skidpad sustains >100 km/h, and a lap there must not arm it), starts at
+// the interpolated downward 100 km/h crossing with the brake applied, is voided by throttle, and
+// records ONLY on a complete stop — a half-stop can never overwrite a real result.
+const BRAKE_V = 100 / 3.6     // m/s — the measured-from speed
+const BRAKE_CORRIDOR = 12     // m — |z − STRIP_Z| within which the test may arm
 
 // ── rumble lanes: parallel to the strip, for suspension / damage-model testing ──────────────────
 // Amplitude is peak height above the plane; spacing is crest-to-crest. The profile is a raised
@@ -184,10 +211,13 @@ export class LabSystem {
         this.best = new Map()        // track name → best result
 
         // Live run state
-        this._drag = null            // { t, v100, v0 }
-        this._brake = null           // { x0, z0, v0 }
+        this._drag = null            // { t, v100, t60, rt }
+        this._brake = null           // { x0, z0 }
+        this._stage = null           // drag staging: { phase:'hold'|'count'|'go', t, x0, rt }
+        this._flash = null           // transient big-HUD text: { text, t }
+        this._prevSpeed = 0          // last step's speed (for the exact 100 km/h crossing)
         this._laps = new Map()       // pad name → { t, swept, theta }
-        this.status = 'drive through a green gate to start timing'
+        this.status = 'park in the staging box for a drag run, or drive through a green line'
     }
 
     // ── ground surface (physics + visual read the same function) ────────────────────────────
@@ -230,6 +260,34 @@ export class LabSystem {
             new THREE.MeshBasicMaterial({ color, toneMapped: false }),
         )
         m.position.set(x, h / 2, z)
+        this._group.add(m)
+        return m
+    }
+
+    /**
+     * Floating text sign — a canvas-textured quad hung in the air at a test's entry, so you can
+     * read WHERE each test is from the spawn without a font atlas in the world. Hung high enough
+     * that the truck drives under/past it (no collision mesh — signs are paint, not obstacles).
+     * No-op headless (gates run LabSystem in node, where there is no document).
+     */
+    _sign(text, x, z, ry = 0, y = 4.6) {
+        if (typeof document === 'undefined') return null
+        const c = document.createElement('canvas')
+        c.width = 512; c.height = 96
+        const g = c.getContext('2d')
+        g.fillStyle = 'rgba(12,14,16,0.82)'; g.fillRect(0, 0, 512, 96)
+        g.strokeStyle = '#e8e8e0'; g.lineWidth = 4; g.strokeRect(2, 2, 508, 92)
+        g.fillStyle = '#e8e8e0'; g.font = 'bold 52px monospace'
+        g.textAlign = 'center'; g.textBaseline = 'middle'
+        g.fillText(text, 256, 50)
+        const tex = new THREE.CanvasTexture(c)
+        tex.anisotropy = 4
+        const m = new THREE.Mesh(
+            new THREE.PlaneGeometry(11, 2.06),
+            new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false, side: THREE.DoubleSide }),
+        )
+        m.position.set(x, y, z)
+        m.rotation.y = ry
         this._group.add(m)
         return m
     }
@@ -346,9 +404,25 @@ export class LabSystem {
         this._line(0, zL, 0, zR, COL.start, W_GATE)                  // start
         this._line(DRAG_LEN, zL, DRAG_LEN, zR, COL.finish, W_GATE)   // finish
         this._line(BRAKE_MARK, zL, BRAKE_MARK, zR, COL.brake, W_GATE) // "brake here" board
+        this._line(FT60, zL, FT60, zR, COL.paint, W_MARK)             // 60-foot split mark
+
+        // Staging box: park inside, hold still, and the 3-2-1 count arms the run.
+        this._line(STAGE_X0, zL, STAGE_X1, zL, COL.brake, W_MARK)
+        this._line(STAGE_X0, zR, STAGE_X1, zR, COL.brake, W_MARK)
+        this._line(STAGE_X0, zL, STAGE_X0, zR, COL.brake, W_MARK)
+        this._line(STAGE_X1, zL, STAGE_X1, zR, COL.brake, W_MARK)
+
+        // Signs — readable from the spawn / on approach, so the facility explains itself.
+        // ry=-π/2 faces -X (toward a driver heading up the strip); ry=0 faces +Z (toward the strip).
+        this._sign('STAGE HERE · HOLD STILL', (STAGE_X0 + STAGE_X1) / 2, zL - 7, -Math.PI / 2)
+        this._sign('DRAG STRIP 400 m →', 2, zL - 14, -Math.PI / 2)
+        this._sign('BRAKING 100–0', BRAKE_MARK, zL - 8, -Math.PI / 2)
 
         // ── rumble lanes ───────────────────────────────────────────────────────────────────
-        for (const r of RUMBLES) this._rumbleMesh(r)
+        for (const r of RUMBLES) {
+            this._rumbleMesh(r)
+            this._sign(`RUMBLE ${r.name} · ${Math.round(r.amp * 1000)} mm`, -5, r.z, -Math.PI / 2)
+        }
 
         // ── skidpads: the ring to follow, a lane band either side, and a timing radial ──────
         for (const p of PADS) {
@@ -358,6 +432,7 @@ export class LabSystem {
             // Timing line: radial on the pad's NEAR (+Z) side — the edge you meet coming off the
             // strip, so the lap starts where you join rather than half a lap later.
             this._line(p.cx, p.cz + (p.r - 4.5), p.cx, p.cz + (p.r + 4.5), COL.start, W_GATE)
+            this._sign(`SKIDPAD ${p.r} m`, p.cx, p.cz + p.r + 9, 0)
         }
 
         this._scene.add(this._group)
@@ -369,25 +444,31 @@ export class LabSystem {
         this._group.visible = true
         this._active = true
         this._prev = null
-        this._drag = null; this._brake = null; this._laps.clear()
-        this.status = 'drive through a green gate to start timing'
+        this._prevSpeed = 0
+        this._drag = null; this._brake = null; this._stage = null; this._flash = null
+        this._laps.clear()
+        this.status = 'park in the staging box for a drag run, or drive through a green line'
     }
 
     exit() {
         this._group.visible = false
         this._active = false
-        this._drag = null; this._brake = null; this._laps.clear()
+        this._drag = null; this._brake = null; this._stage = null; this._flash = null
+        this._laps.clear()
     }
 
     isActive() { return this._active }
 
     /**
-     * Spawn pose: staged on the drag-strip start line, pointing down it (+X).
+     * Spawn pose: on the strip axis but BEHIND the staging box, pointing down it (+X). Deliberately
+     * not on the start line: spawning there meant any forward roll began a drag run you never meant
+     * to drive. From here every test is a short, signposted drive: strip ahead, rumble lanes left,
+     * skidpads right.
      * heading is the map2d/teleport convention, atan2(tangentX, tangentZ); -π/2 aims body-forward
      * (-Z) at +X. See _seatOnGroundPlane in main.js, which puts the front axle at local -Z and
      * rotates by heading about +Y.
      */
-    spawnPose() { return { x: -0.35, z: STRIP_Z, heading: -Math.PI / 2 } }
+    spawnPose() { return { x: STAGE_X0 - 14, z: STRIP_Z, heading: -Math.PI / 2 } }
 
     results() { return this._runs }
 
@@ -412,52 +493,94 @@ export class LabSystem {
         }
         for (const l of this._laps.values()) l.t += dt
 
-        // ── drag strip ──────────────────────────────────────────────────────────────────────
-        // The truck stages ON the line (spawnPose), so a run normally begins from rest. The entry
-        // speed is recorded and reported either way: a rolling start flatters the 0–100 badly
-        // (30 m of run-up turned 9.5 s into 5.7 s in testing), and a number that silently means
-        // two different things is worse than no number.
-        if (this._crossed(p0, p1, 0, zL, 0, zR)) {
-            // Only arm when heading down the strip (+X), so rolling back over the line is inert.
-            if (p1.x > p0.x) { this._drag = { t: 0, v100: null, v0: car.speed }; this.status = 'timing: drag 400 m' }
+        // Transient big-HUD text (false start / new best) decays here.
+        if (this._flash && (this._flash.t -= dt) <= 0) this._flash = null
+
+        // ── drag staging: park in the box → hold still → 3-2-1 → green ──────────────────────
+        const inBox = p1.x >= STAGE_X0 && p1.x <= STAGE_X1 && p1.z >= zL && p1.z <= zR
+        const still = car.speed < STAGE_STILL_V
+        const st = this._stage
+        if (!st) {
+            if (inBox && still && !this._drag) {
+                this._stage = { phase: 'hold', t: 0, x0: p1.x }
+                this.status = 'staged — hold still'
+            }
+        } else if (st.phase === 'hold') {
+            if (!inBox || !still) this._stage = null
+            else if ((st.t += dt) >= STAGE_HOLD) {
+                this._stage = { phase: 'count', t: STAGE_COUNT, x0: p1.x }
+                this.status = 'counting down'
+            }
+        } else if (st.phase === 'count') {
+            if (p1.x - st.x0 < -0.8) {
+                this._stage = null                                 // rolled backwards out — quiet cancel
+            } else if (p1.x - st.x0 > FALSE_START_MOVE) {
+                this._stage = null
+                this._flash = { text: 'FALSE START', t: 2.5, cls: 'foul' }
+                this.status = 'false start — restage in the box'
+            } else if ((st.t -= dt) <= 0) {
+                this._stage = { phase: 'go', t: 0, x0: p1.x, rt: null }
+                this.status = 'GO'
+            }
+        } else if (st.phase === 'go') {
+            st.t += dt
+            // Reaction time: green → first movement (timing-light bones; a real tree comes later).
+            if (st.rt == null && (car.speed >= LAUNCH_V || p1.x - st.x0 >= LAUNCH_MOVE)) st.rt = st.t
+            if (st.t > GO_EXPIRE) { this._stage = null; this.status = 'run expired — restage in the box' }
+        }
+
+        // ── drag strip: the clock starts on the line, but ONLY from a staged launch ─────────
+        if (this._crossed(p0, p1, 0, zL, 0, zR) && p1.x > p0.x) {
+            if (this._stage?.phase === 'go') {
+                this._drag = { t: 0, v100: null, t60: null, rt: this._stage.rt ?? this._stage.t }
+                this._stage = null
+                this.status = 'timing: drag 400 m'
+            } else if (!this._drag) {
+                this.status = 'not staged — park in the box behind the line for a timed run'
+            }
+        }
+        if (this._drag && this._drag.t60 == null && this._crossed(p0, p1, FT60, zL, FT60, zR)) {
+            this._drag.t60 = this._drag.t
         }
         if (this._drag && this._crossed(p0, p1, DRAG_LEN, zL, DRAG_LEN, zR)) {
             const d = this._drag; this._drag = null
-            // 8 km/h, not 0: the truck stages with its BODY CENTER on the line, and releasing the
-            // parking brake rolls it ~0.35 m before the center crosses — inherently ~6 km/h. That
-            // costs ~0.4 s on the 0–100 split (9.08 s in the lab vs 9.48 s from rest headless).
-            const standing = d.v0 < 8 / 3.6
             this._finish('drag 400 m', d.t, {
                 detail: `trap ${(car.speed * 3.6).toFixed(0)} km/h`
-                    + (d.v100 ? ` · 0–100 in ${d.v100.toFixed(2)} s` : '')
-                    + (standing ? '' : ` · ROLLING from ${(d.v0 * 3.6).toFixed(0)} km/h`),
-                derived: (d.v100 && standing) ? `implied accel ${((100 / 3.6) / d.v100).toFixed(2)} m/s²` : null,
+                    + (d.rt != null ? ` · RT ${d.rt.toFixed(2)} s` : '')
+                    + (d.t60 != null ? ` · 60 ft ${d.t60.toFixed(2)} s` : '')
+                    + (d.v100 ? ` · 0–100 in ${d.v100.toFixed(2)} s` : ''),
+                derived: d.v100 ? `implied accel ${((100 / 3.6) / d.v100).toFixed(2)} m/s²` : null,
             })
         }
 
-        // ── braking: armed by the DRIVER'S BRAKE INPUT at speed, not by a line ──────────────
-        // A trigger line is gameable — you can cross it and keep accelerating, which is exactly
-        // what happened in testing (a 210 m "braking distance" that was mostly throttle). Arming on
-        // "brake applied above BRAKE_ARM_V, and stay off the throttle" measures the thing itself.
-        // The painted yellow board stays as a visual "brake here" cue for a repeatable entry point.
-        if (!this._brake && car.brake > 0.5 && car.speed >= BRAKE_ARM_V) {
-            this._brake = { x0: p1.x, z0: p1.z, v0: car.speed }
-            this.status = `timing: braking from ${(car.speed * 3.6).toFixed(0)} km/h`
+        // ── braking: exactly 100 km/h → 0, armed only in the strip corridor ─────────────────
+        // Starts at the interpolated downward 100 km/h crossing with the brake on, so every run
+        // measures the same thing. Throttle voids it; only a COMPLETE stop records — a half-stop
+        // can never overwrite a real result (best is kept, like every other track).
+        const onStrip = Math.abs(p1.z - STRIP_Z) < BRAKE_CORRIDOR
+        if (!this._brake && !this._drag && onStrip && car.speed >= BRAKE_V) {
+            this.status = 'braking test armed — brake to a full stop (throttle voids)'
+        }
+        if (!this._brake && onStrip && car.brake > 0.05 && car.throttle <= 0.1
+            && this._prevSpeed >= BRAKE_V && car.speed < BRAKE_V) {
+            const f = (this._prevSpeed - BRAKE_V) / Math.max(1e-6, this._prevSpeed - car.speed)
+            this._brake = { x0: p0.x + (p1.x - p0.x) * f, z0: p0.z + (p1.z - p0.z) * f }
+            this.status = 'timing: braking 100–0'
         }
         if (this._brake) {
             if (car.throttle > 0.1) { this._brake = null; this.status = 'braking run voided (throttle)' }
-            else if (car.speed < 0.5) {
+            else if (car.speed < 0.15) {
                 const b = this._brake; this._brake = null
                 const dist = Math.hypot(p1.x - b.x0, p1.z - b.z0)
                 if (dist > 3) {
-                    this._finish('braking', dist, {
+                    this._finish('braking 100–0', dist, {
                         unit: 'm',
-                        detail: `from ${(b.v0 * 3.6).toFixed(0)} km/h`,
-                        derived: `implied decel ${(b.v0 * b.v0 / (2 * dist)).toFixed(2)} m/s²`,
+                        derived: `implied decel ${(BRAKE_V * BRAKE_V / (2 * dist)).toFixed(2)} m/s²`,
                     })
                 }
             }
         }
+        this._prevSpeed = car.speed
 
         // ── skidpad laps ────────────────────────────────────────────────────────────────────
         for (const pad of PADS) {
@@ -471,6 +594,13 @@ export class LabSystem {
                 while (d < -Math.PI) d += 2 * Math.PI
                 live.swept += d
                 live.theta = th
+                // Driving away from the ring voids the lap — otherwise a stale lap keeps timing
+                // forever and the next gate crossing "closes" a nonsense multi-minute lap.
+                if (Math.hypot(p1.x - pad.cx, p1.z - pad.cz) > pad.r + 25) {
+                    this._laps.delete(pad.name)
+                    this.status = `${pad.name}: lap void (left the pad)`
+                    continue
+                }
             }
             const x = pad.cx
             if (!this._crossed(p0, p1, x, pad.cz + (pad.r - 4.5), x, pad.cz + (pad.r + 4.5))) continue
@@ -495,11 +625,46 @@ export class LabSystem {
         const rec = { track, value, unit, detail, derived, mu, at: this._runs.length }
         this._runs.unshift(rec)
         if (this._runs.length > 12) this._runs.pop()
-        // Best = lowest for times AND for braking distance (both are "less is better").
+        // Best = lowest for times AND for braking distance (both are "less is better"). A worse
+        // run never overwrites the best row — it lands in results() history only.
         const prev = this.best.get(track)
-        if (!prev || value < prev.value) this.best.set(track, rec)
+        rec.newBest = !prev || value < prev.value
+        if (rec.newBest) this.best.set(track, rec)
         this.status = `${track}: ${value.toFixed(unit === 's' ? 2 : 1)} ${unit}`
             + (derived ? ` — ${derived}` : '')
+            + (rec.newBest && prev ? ' — NEW BEST' : '')
+        if (rec.newBest && prev) this._flash = { text: 'NEW BEST', t: 2.0, cls: 'go' }
+    }
+
+    /**
+     * Live skidpad readout: the pad with a lap in progress, or null. Radius/speed/mu are
+     * instantaneous — the live feedback that makes limit-finding possible (you learn you are
+     * 2 m wide of the ring NOW, not after the lap).
+     */
+    liveLap() {
+        if (!this._prev) return null
+        for (const pad of PADS) {
+            const l = this._laps.get(pad.name)
+            if (!l) continue
+            const r = Math.hypot(this._prev.x - pad.cx, this._prev.z - pad.cz)
+            const v = this._prevSpeed
+            return {
+                name: pad.name, t: l.t, targetR: pad.r, radius: r, speed: v,
+                mu: r > 1 ? v * v / (G * r) : 0,
+                frac: Math.abs(l.swept) / (2 * Math.PI),
+            }
+        }
+        return null
+    }
+
+    /** Big-HUD overlay: countdown digits, GO, FALSE START / NEW BEST flashes. Null when quiet. */
+    hud() {
+        if (this._flash) return { text: this._flash.text, cls: this._flash.cls || 'foul' }
+        const st = this._stage
+        if (st?.phase === 'hold') return { text: 'staged', cls: 'dim' }
+        if (st?.phase === 'count') return { text: String(Math.max(1, Math.ceil(st.t))), cls: 'count' }
+        if (st?.phase === 'go' && st.t < 1.5) return { text: 'GO', cls: 'go' }
+        return null
     }
 
     /**
