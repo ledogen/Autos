@@ -144,6 +144,22 @@ export class MissionSystem {
     /** Take the job: teleport to the start point and start the countdown. */
     accept() {
         if (this.state !== 'offer' || !this.mission) return
+        this._launch()
+    }
+
+    /**
+     * Re-run the SAME mission from its start line. TESTING ONLY, like regenerate — real story
+     * mode has no do-overs — but for calibration it is exactly what you want: a second lap of a
+     * route you now know isolates "learning the road" from everything else.
+     */
+    retry() {
+        if (this.state !== 'done' || !this.mission) return
+        this.result = null
+        this._launch()
+    }
+
+    // Shared start path for accept/retry: seat at the start pin, reset the run state, count down.
+    _launch() {
         const s = this.mission.start
         this._teleport(s.x, s.z, s.heading)
         this._setMapOpen(false)

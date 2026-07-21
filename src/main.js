@@ -1685,7 +1685,7 @@ function _renderMissionUI () {
       body.innerHTML = `<span class="mp-big">${km(j.distance)}</span> &nbsp;<span class="mp-dim">`
         + `${j.edges} leg${j.edges === 1 ? '' : 's'}</span><br>`
         + `<span class="mp-dim">green pin is the start &mdash; you'll be moved there</span>`
-      btn('mp-accept', true); btn('mp-regen', true); btn('mp-quit', true)
+      btn('mp-accept', true); btn('mp-retry', false); btn('mp-regen', true); btn('mp-quit', true)
       show(document.getElementById('mp-export-row'), false)
       show(document.getElementById('mp-seed-row'), true, 'flex')
       _syncSeedField()
@@ -1714,10 +1714,11 @@ function _renderMissionUI () {
         + `your time <b>${formatTime(r.elapsed)}</b> &nbsp;<span class="mp-dim">/</span>&nbsp; `
         + `par <b>${formatTime(r.par)}</b><br>`
         + `<span style="color:${col}">${sign}${formatTime(Math.abs(r.margin))} vs par</span>`
-      btn('mp-accept', false); btn('mp-regen', false); btn('mp-quit', true)
+      btn('mp-accept', false); btn('mp-retry', true); btn('mp-regen', false); btn('mp-quit', true)
       show(document.getElementById('mp-export-row'), true)
       show(document.getElementById('mp-seed-row'), false)
-      // Reuse the accept button as "next job" so there's one obvious forward action.
+      // Reuse the accept button as "next job" so there's one obvious forward action; "retry"
+      // sits beside it to re-run the same route (testing/calibration — a known-road second lap).
       const nb = document.getElementById('mp-accept')
       if (nb) { nb.style.display = ''; nb.textContent = 'next job' }
       break
@@ -1777,6 +1778,7 @@ document.getElementById('mp-accept')?.addEventListener('click', () => {
   if (missionSystem.state === 'done') missionSystem.next(); else missionSystem.accept()
 })
 document.getElementById('mp-regen')?.addEventListener('click', () => missionSystem.regenerate())
+document.getElementById('mp-retry')?.addEventListener('click', () => missionSystem.retry())
 // FEAT-30 calibration: dump the finished run's route shape + score to a file. A score alone can't
 // explain "felt slow, got S" — the grade and curvature profile par actually priced is what does.
 // The `felt` label rides along because it IS the calibration target: par is being fitted to make
