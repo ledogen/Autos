@@ -67,7 +67,7 @@ const RUMBLE_LEN = 120        // m — nominal length; each lane is snapped to w
 const RUMBLE_W = 6            // m — lane width
 const RUMBLE_FADE = 2.0       // m — longitudinal ramp-in/out so entering a lane is not a kerb
 const RUMBLE_EDGE = 1.0       // m — lateral feather at the lane edges
-const RUMBLE_SAMPLES = 6      // mesh samples per crest
+const RUMBLE_SAMPLES = 12     // mesh samples per crest
 
 // Each lane is snapped to a WHOLE NUMBER OF CRESTS, and tessellated at exactly RUMBLE_SAMPLES per
 // crest. Without the snap the sample grid drifts against the crest spacing and the mesh quietly
@@ -241,8 +241,18 @@ export class LabSystem {
      */
     _rumbleMesh(r) {
         // Exactly RUMBLE_SAMPLES per crest over a whole number of crests, so every peak and every
-        // trough lands ON a vertex row. 6 is plenty for a 25–50 cm bump on screen; 8 samples × 6
-        // rows cost ~102 k triangles across the three lanes for no visible gain.
+        // trough lands ON a vertex row — heights are then exact and only the chord between peak and
+        // trough is approximated.
+        //
+        // 12 samples/crest, measured on an M4 Air with the camera down on the lane deck: doubling
+        // from 6 took the scene 43 k → 81 k triangles with NO measurable frame-time change (dt p50
+        // 16.6 → 16.7 ms, i.e. still vsync-locked; 48 samples/crest and 309 k triangles was also
+        // free). Geometry density is simply not the constraint at lab scale — three static meshes
+        // built once. The budget worth guarding is terrain/props at world scale, where vertex count
+        // multiplies by ~49 live chunks that regenerate as you drive (see PERF-22).
+        //
+        // Silhouette is the only thing this buys. computeVertexNormals already smooths the INTERIOR
+        // shading, but no normal trick fixes an outline against the sky — that needs real edges.
         const segsX = r.crests * RUMBLE_SAMPLES
         const segsZ = 4
         const geo = new THREE.PlaneGeometry(r.len, RUMBLE_W, segsX, segsZ)
