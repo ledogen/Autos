@@ -1440,6 +1440,33 @@ export class RoadSystem {
     }
 
     /**
+     * Pre-route this instance's whole registered band OFF-THREAD, and report when nothing is left.
+     *
+     * Routing is ~99% of the cost of a cold stream (measured: 19.5 s cold at 2200 m radius vs
+     * 0.21 s once the per-connection route cache is populated). So a large read-only network — the
+     * story-mode mission planner — becomes essentially free to build IF its routes are warmed in
+     * advance on the road Worker. This is the completion-aware sibling of warmRoutes(), which is
+     * throttled by move distance and gives no "done" signal.
+     *
+     * @returns {boolean} true once every connection in the band is cached (nothing dispatched, no
+     *   replies outstanding, no deferred dependencies) — callers pump until it returns true.
+     */
+    warmBandComplete(center) {
+        if (!this._routeDispatch) return true        // no worker (headless/tests): nothing to warm
+        this._refreshParams()
+        const R = this._proto.radius
+        const cmx = Math.floor(center.x / PROTO_ANCHOR_SPACING)
+        const HW = this._bandHalfWidth()
+        const mx0 = cmx - HW - PREWARM_MARGIN, mx1 = cmx + HW + PREWARM_MARGIN
+        const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING) - PREWARM_MARGIN
+        const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING) + PREWARM_MARGIN
+        const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)
+        const { jobs, deferred } = this._warmScan(g.edges, Infinity)
+        if (jobs.length > 0) this._routeDispatch(jobs, this._routeEpoch)
+        return jobs.length === 0 && !deferred
+    }
+
+    /**
      * QUAL-14 perf: export the route caches as plain primitive-descriptor entries (structured-
      * clonable) for IndexedDB persistence (src/route-store.js). Centerlines rebuild losslessly
      * from their descriptors, so this is the whole cache state.

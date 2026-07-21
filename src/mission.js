@@ -28,8 +28,12 @@ import { roadQuality } from './road-quality.js'
 // real — cull included — so it can only ever propose roads that exist. That costs a one-off load,
 // which story mode can afford; it is then REUSED across regenerates and only re-streamed when the
 // seed changes or the player leaves PLAN_RESTREAM_MOVE behind.
-const MISSION_PLAN_RADIUS = 2200    // m
-const PLAN_RESTREAM_MOVE = 700      // m — drift before the planner re-streams
+// Sized by the AREA it covers, not the radius: the streamed band carries a wide margin, so
+// radius 2200 actually built a 6.3 × 6.2 km network — far more than missions need, and every
+// extra edge is routing time and bundle bytes. Measured coverage vs radius (default-seed spawn):
+//   1200 → 4.0 × 3.6 km (38 edges) · 1400 → ~4.3 × 4.0 km · 1800 → 5.6 × 4.8 km · 2200 → 6.3 × 6.2 km
+export const MISSION_PLAN_RADIUS = 1400   // m — ≈ 4 × 4 km of network
+export const PLAN_RESTREAM_MOVE = 700     // m — drift before the planner re-streams
 // Leg bounds are measured on STRAIGHT-LINE graph distance (the planner's cheap metric); the
 // routed road is empirically ~1.5× that, so these bracket a ~1.4-3 km drive that fits the radius.
 const LEG_MIN = 1500                // m

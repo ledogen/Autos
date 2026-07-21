@@ -19,7 +19,7 @@
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { MissionSystem } from '../src/mission.js'
+import { MissionSystem, MISSION_PLAN_RADIUS } from '../src/mission.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -29,7 +29,7 @@ const check = (label, ok, detail = '') => {
 
 const C = { x: 4500, z: 600 }
 const road = new RoadSystem(6, RANGER_PARAMS)
-road.setRadius(2200)
+road.setRadius(MISSION_PLAN_RADIUS)
 road.update(new THREE.Vector3(C.x, 0, C.z))
 
 // ── 0. the gap the bug drove through actually exists ────────────────────────────────────────────
@@ -111,8 +111,8 @@ const ms = new MissionSystem({
 }
 
 // ── 4. the far end must still be there when you DRIVE to it ─────────────────────────────────────
-// The planner streams a 2.2 km band around the player; the play system streams ~320 m around the
-// truck. If the cull disagreed between those windows, a mission could be planned onto a road that
+// The planner streams a MISSION_PLAN_RADIUS band around the player; the play system streams ~320 m
+// around the truck. If the cull disagreed between those windows, a mission could be planned onto a road that
 // evaporates on arrival — which is exactly what "freecamming confirms it" would look like. Routes
 // now reach ~5.6 km, so this is worth pinning rather than assuming.
 {
