@@ -25,13 +25,12 @@ import * as THREE from 'three'
 
 // ── tuning ──────────────────────────────────────────────────────────────────────────────────
 const BAKE_DS      = 6      // m between baked route vertices
-const CHEV_COUNT   = 10     // chevrons alive at once
-const CHEV_LEAD    = 18     // m ahead of the truck the first chevron sits
-const CHEV_SPACING = 15     // m between chevrons
-const CHEV_HOVER   = 0.9    // m above the routed road surface
-const CHEV_FADE    = 3      // trailing chevrons that ramp down to CHEV_DIM
-const CHEV_DIM     = 0.15
-const ARROW_HOVER  = 4.0    // m above the junction
+const CHEV_COUNT   = 10     // chevrons alive at once (the pool that gets recycled forward)
+const CHEV_SPACING = 15     // m between chevrons — also the world lattice they are pinned to
+const CHEV_HOVER   = 3.9    // m above the routed road surface
+const CHEV_FADE    = 3      // chevrons over which the far end ramps in
+const CHEV_NEAR    = 20     // m: a chevron fades out over the last stretch as you drive into it
+const ARROW_HOVER  = 6.0    // m above the junction — stays clear of the chevron plane
 const ARROW_IN     = 140    // m: arrow starts fading in
 const ARROW_FULL   = 110    // m: fully opaque
 const ARROW_PAST   = 12     // m past the node before it is dropped
@@ -325,14 +324,27 @@ export class GpsSystem {
     this._placeRing(route, prog.s)
   }
 
+  /**
+   * Chevrons are pinned to a FIXED lattice in world space — arc `k * CHEV_SPACING` along the
+   * route — not to an offset ahead of the truck. So they hold still and you drive into them,
+   * rather than gliding along in front of you like a tow rope. The ten instances are just a pool
+   * recycled forward: as `s` crosses a lattice step every instance shifts one slot, and the
+   * lattice positions themselves never move.
+   */
   _placeChevrons (route, s) {
+    const k0 = Math.floor(s / CHEV_SPACING)
     let hint = this._idx
     let any = false
     for (let i = 0; i < CHEV_COUNT; i++) {
-      const sc = s + CHEV_LEAD + i * CHEV_SPACING
+      const sc = (k0 + i) * CHEV_SPACING
+      // Fade in at the far end, and fade OUT over the last CHEV_NEAR metres — the one you are
+      // about to reach dissolves instead of vanishing under the bumper.
+      const far  = Math.min(1, (CHEV_COUNT - 1 - i) / CHEV_FADE)
+      const near = Math.min(1, Math.max(0, (sc - s) / CHEV_NEAR))
+      const k = Math.min(far, near)
       const d = this._dummy
-      if (sc > route.length) {
-        d.scale.setScalar(0)                      // past the destination — nothing to point at
+      if (sc > route.length || k <= 0.01) {
+        d.scale.setScalar(0)          // past the destination, or already driven through
         d.position.set(0, -1e4, 0)
         d.updateMatrix()
         this._chev.setMatrixAt(i, d.matrix)
@@ -345,9 +357,6 @@ export class GpsSystem {
       d.scale.setScalar(1)
       d.updateMatrix()
       this._chev.setMatrixAt(i, d.matrix)
-      const k = i >= CHEV_COUNT - CHEV_FADE
-        ? 1 - (1 - CHEV_DIM) * ((i - (CHEV_COUNT - CHEV_FADE) + 1) / CHEV_FADE)
-        : 1
       this._chev.setColorAt(i, this._col.setScalar(k))
       any = true
     }

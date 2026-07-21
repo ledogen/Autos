@@ -164,15 +164,44 @@ const seg = (centerline, s0, s1, gradeAt = level) => ({ centerline, gradeAt, s0,
 
   const m = new THREE.Matrix4(), pos = new THREE.Vector3()
   const quat = new THREE.Quaternion(), scl = new THREE.Vector3(), fwd = new THREE.Vector3()
-  gps._chev.getMatrixAt(0, m); m.decompose(pos, quat, scl)
-  check('chevrons are shown while a route is live', gps._chev.visible)
-  check('first chevron sits CHEV_LEAD ahead, on the route, hovering',
-    Math.abs(pos.x - (-300 + 18)) < 0.5 && Math.abs(pos.z) < 0.01 && Math.abs(pos.y - 0.9) < 1e-6,
-    `at (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`)
-  fwd.set(0, 0, 1).applyQuaternion(quat)
+  // Chevrons live on a fixed world lattice (arc = k * CHEV_SPACING), NOT at an offset ahead of
+  // the truck. Every visible one must land on a 15 m multiple of route arc — here, x ≡ 0 (mod 15).
+  // NB: read the raw basis, not Matrix4.decompose — decompose reports scale (1,1,1) for a
+  // degenerate zero-scale matrix, so it cannot tell a hidden instance from a live one.
+  const visible = () => {
+    const out = []
+    for (let i = 0; i < gps._chev.count; i++) {
+      gps._chev.getMatrixAt(i, m)
+      const e = m.elements
+      if (Math.hypot(e[0], e[1], e[2]) < 0.5) continue      // scaled to zero == hidden
+      m.decompose(pos, quat, scl)
+      out.push({ x: +pos.x.toFixed(3), y: +pos.y.toFixed(3), z: +pos.z.toFixed(3), q: quat.clone() })
+    }
+    return out
+  }
+  check('chevrons are shown while a route is live', gps._chev.visible && visible().length > 0)
+  const lattice0 = visible()
+  check('every chevron sits on the fixed 15 m route lattice',
+    lattice0.every(c => Math.abs(((c.x % 15) + 15) % 15) < 0.02),
+    JSON.stringify(lattice0.map(c => c.x)))
+  check('chevrons hover CHEV_HOVER above the routed surface',
+    lattice0.every(c => Math.abs(c.y - 3.9) < 1e-6), `y=${lattice0[0]?.y}`)
+  fwd.set(0, 0, 1).applyQuaternion(lattice0[0].q)
   check('chevron local +Z points along travel (rotY convention)',
     Math.abs(fwd.x - 1) < 1e-6 && Math.abs(fwd.z) < 1e-6,
     `local +Z → (${fwd.x.toFixed(3)}, ${fwd.z.toFixed(3)})`)
+
+  // THE point of the lattice: drive 7 m (less than one step) and the chevrons must not have
+  // budged. If they track the truck they slide 7 m and this fails.
+  car.x = -293
+  gps.update(1 / 60)
+  const lattice1 = visible()
+  const held = lattice0.filter(a => lattice1.some(b => Math.abs(a.x - b.x) < 1e-6))
+  check('chevrons are STATIC in world space as the truck advances',
+    held.length >= lattice0.length - 1,
+    `${held.length}/${lattice0.length} held: ${JSON.stringify(lattice0.map(c => c.x))} → ${JSON.stringify(lattice1.map(c => c.x))}`)
+  car.x = -300
+  gps.update(1 / 60)
 
   check('no arrow while the junction is beyond ARROW_IN', !gps._arrow.visible)
 
@@ -182,7 +211,7 @@ const seg = (centerline, s0, s1, gradeAt = level) => ({ centerline, gradeAt, s0,
   check('turn arrow uses the RIGHT-turn geometry', gps._arrow.geometry === gps._arrowGeo.right)
   check('turn arrow hangs over the junction, not the car',
     Math.abs(gps._arrow.position.x) < 1e-6 && Math.abs(gps._arrow.position.z) < 1e-6 &&
-    gps._arrow.position.y > 3.8 && gps._arrow.position.y < 4.2,
+    gps._arrow.position.y > 5.8 && gps._arrow.position.y < 6.2,
     `at (${gps._arrow.position.x.toFixed(2)}, ${gps._arrow.position.y.toFixed(2)}, ${gps._arrow.position.z.toFixed(2)})`)
   fwd.set(0, 0, 1).applyQuaternion(gps._arrow.quaternion)
   check('turn arrow tail is aligned with the INCOMING travel direction',
