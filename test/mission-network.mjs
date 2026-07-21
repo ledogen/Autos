@@ -110,5 +110,37 @@ const ms = new MissionSystem({
     wrong === 0, `${wrong}/${checked} wrong spelling`)
 }
 
+// ── 4. the far end must still be there when you DRIVE to it ─────────────────────────────────────
+// The planner streams a 2.2 km band around the player; the play system streams ~320 m around the
+// truck. If the cull disagreed between those windows, a mission could be planned onto a road that
+// evaporates on arrival — which is exactly what "freecamming confirms it" would look like. Routes
+// now reach ~5.6 km, so this is worth pinning rather than assuming.
+{
+  let missing = 0, total = 0
+  const bad = []
+  for (let i = 0; i < 6; i++) {
+    const m = ms._roll()
+    if (!m) continue
+    const last = m.segments[m.segments.length - 1]
+    const play = new RoadSystem(6, RANGER_PARAMS)
+    play.setRadius(320)
+    play.update(new THREE.Vector3(m.end.x, 0, m.end.z))
+    total++
+    if (!play._network.has(last.runKey)) { missing++; if (bad.length < 3) bad.push(last.runKey) }
+  }
+  check('the drop-point road still exists when the PLAY system streams there',
+    total > 0 && missing === 0, `${missing}/${total} evaporated: ${bad.join(' ')}`)
+}
+
+// ── 5. mission size envelope ────────────────────────────────────────────────────────────────────
+{
+  const lens = []
+  for (let i = 0; i < 10; i++) { const m = ms._roll(); if (m) lens.push(m.distance / 1000) }
+  const lo = Math.min(...lens), hi = Math.max(...lens)
+  check('missions land in a sane length envelope', lens.length >= 8 && lo > 1.0 && hi < 9.0,
+    `${lens.length} rolls, ${lo.toFixed(1)}-${hi.toFixed(1)} km`)
+  console.log(`       ${lens.length} rolls, ${lo.toFixed(1)}-${hi.toFixed(1)} km`)
+}
+
 console.log(fails === 0 ? '\nPASS mission-network' : `\nFAIL mission-network (${fails})`)
 process.exit(fails === 0 ? 0 : 1)

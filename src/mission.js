@@ -32,8 +32,8 @@ const MISSION_PLAN_RADIUS = 2200    // m
 const PLAN_RESTREAM_MOVE = 700      // m — drift before the planner re-streams
 // Leg bounds are measured on STRAIGHT-LINE graph distance (the planner's cheap metric); the
 // routed road is empirically ~1.5× that, so these bracket a ~1.4-3 km drive that fits the radius.
-const LEG_MIN = 900                 // m
-const LEG_MAX = 2000                // m
+const LEG_MIN = 1500                // m
+const LEG_MAX = 4000                // m
 const MAX_EDGES = 9                 // routing cap: each edge is tens of ms on a cache miss
 const ARRIVE_RADIUS = 28            // m — you're there
 const COUNTDOWN = 3.0               // s — the start countdown (a START count, not a par clock)
