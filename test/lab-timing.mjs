@@ -173,12 +173,29 @@ for (const pad of PADS) {
     check(`rumble ${r.name}: profile is C1 (curvature bounded, no sawtooth)`, worst <= bound,
       `worst |y''| ${worst.toFixed(1)} vs bound ${bound.toFixed(1)}`)
 
-    // Lateral feather: full height mid-lane, exactly zero outside it.
+    // CONSTANT HEIGHT ACROSS THE LANE. This is the property that silently broke: the feather was
+    // 1 m wide AND the mesh only had 4 rows across 6 m, so bumps visibly ramped down toward both
+    // edges instead of holding their height. Assert the crest is flat across the whole working
+    // width, not merely "full height somewhere in the middle".
+    const half = RUMBLE_W / 2
+    const crestX = 50 + r.spacing / 2
+    let minAcross = Infinity, maxAcross = 0
+    for (let dz = -(half - 0.25); dz <= half - 0.25 + 1e-9; dz += 0.05) {
+      const y = at(crestX, r.z + dz)
+      minAcross = Math.min(minAcross, y); maxAcross = Math.max(maxAcross, y)
+    }
+    check(`rumble ${r.name}: crest is CONSTANT height across the working width`,
+      Math.abs(maxAcross - r.amp) < 1e-9 && Math.abs(minAcross - r.amp) < 1e-9,
+      `across-lane range ${(minAcross * 1000).toFixed(1)}–${(maxAcross * 1000).toFixed(1)} mm, want ${(r.amp * 1000).toFixed(0)}`)
+    check(`rumble ${r.name}: full height holds to within 25 cm of the edge`,
+      Math.abs(at(crestX, r.z + half - 0.25) - r.amp) < 1e-9)
+
+    // Lateral feather: exactly zero outside the lane, and no vertical wall at the edge.
     check(`rumble ${r.name}: zero outside the lane`,
-      at(50, r.z + RUMBLE_W / 2 + 0.01) === 0 && at(50, r.z - RUMBLE_W / 2 - 0.01) === 0)
+      at(50, r.z + half + 0.01) === 0 && at(50, r.z - half - 0.01) === 0)
     check(`rumble ${r.name}: no cliff at the lane edge`,
-      at(50 + r.spacing / 2, r.z + RUMBLE_W / 2 - 0.05) < r.amp * 0.15,
-      `edge height ${at(50 + r.spacing / 2, r.z + RUMBLE_W / 2 - 0.05).toFixed(4)}`)
+      at(crestX, r.z + half - 0.02) < r.amp * 0.25,
+      `edge height ${at(crestX, r.z + half - 0.02).toFixed(4)}`)
 
     // Longitudinal fade so entering the lane is not a kerb strike.
     check(`rumble ${r.name}: fades in at the lane start`, at(0.05) < r.amp * 0.15)

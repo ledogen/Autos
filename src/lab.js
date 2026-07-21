@@ -66,7 +66,13 @@ const BRAKE_ARM_V = 27    // m/s (~97 km/h) — braking test arms above this spe
 const RUMBLE_LEN = 120        // m — nominal length; each lane is snapped to whole crests (below)
 const RUMBLE_W = 6            // m — lane width
 const RUMBLE_FADE = 2.0       // m — longitudinal ramp-in/out so entering a lane is not a kerb
-const RUMBLE_EDGE = 1.0       // m — lateral feather at the lane edges
+// Lateral feather at the lane edges. Deliberately NARROW: the crests must be CONSTANT HEIGHT
+// across the working width — a bump that ramps down toward both edges is not the input we want to
+// measure, and at the old 1.0 m it read as the whole lane sloping into the ground. The feather
+// exists only so the surface has no vertical wall at the lane edge: a step discontinuity would
+// give the contact normal an undefined (infinite-gradient) direction exactly where a tyre
+// straddles the edge. 25 cm out of 6 m ⇒ 5.5 m at full height.
+const RUMBLE_EDGE = 0.25      // m
 const RUMBLE_SAMPLES = 12     // mesh samples per crest
 
 // Each lane is snapped to a WHOLE NUMBER OF CRESTS, and tessellated at exactly RUMBLE_SAMPLES per
@@ -203,7 +209,10 @@ export class LabSystem {
     _line(x0, z0, x1, z1, color, w = 0.35) {
         const len = Math.hypot(x1 - x0, z1 - z0)
         const geo = new THREE.PlaneGeometry(len, w)
-        const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, toneMapped: false }))
+        const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+            color, toneMapped: false,
+            polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+        }))
         m.rotation.x = -Math.PI / 2
         m.rotation.z = -Math.atan2(z1 - z0, x1 - x0)
         m.position.set((x0 + x1) / 2, PAINT_Y, (z0 + z1) / 2)
@@ -227,7 +236,10 @@ export class LabSystem {
 
     _ring(cx, cz, r, color, w = 0.35) {
         const geo = new THREE.RingGeometry(r - w / 2, r + w / 2, 192)
-        const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, toneMapped: false }))
+        const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+            color, side: THREE.DoubleSide, toneMapped: false,
+            polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+        }))
         m.rotation.x = -Math.PI / 2
         m.position.set(cx, PAINT_Y, cz)
         this._group.add(m)
@@ -254,17 +266,49 @@ export class LabSystem {
         // Silhouette is the only thing this buys. computeVertexNormals already smooths the INTERIOR
         // shading, but no normal trick fixes an outline against the sky — that needs real edges.
         const segsX = r.crests * RUMBLE_SAMPLES
-        const segsZ = 4
-        const geo = new THREE.PlaneGeometry(r.len, RUMBLE_W, segsX, segsZ)
-        geo.rotateX(-Math.PI / 2)
-        geo.translate(r.len / 2, 0, r.z)
-        const pos = geo.attributes.position
-        for (let i = 0; i < pos.count; i++) {
-            pos.setY(i, rumbleSurface(pos.getX(i), pos.getZ(i)).y)
+        const half = RUMBLE_W / 2
+
+        // NON-UNIFORM rows across the lane. A uniform PlaneGeometry cannot do this job: at 4 rows
+        // across 6 m the vertices sit at z = ±3, ±1.5, 0, so the mesh linearly interpolated the
+        // edge feather across a metre and a half and every bump visibly ramped down to the ground
+        // long before the lane edge — the surface was constant-height, the MESH was not. Put the
+        // rows where the surface actually varies (a few across the 25 cm feather) and span the
+        // constant-height interior with a single row of quads.
+        const zs = []
+        const EDGE_ROWS = 4
+        for (let i = 0; i <= EDGE_ROWS; i++) zs.push(-half + RUMBLE_EDGE * (i / EDGE_ROWS))
+        for (let i = EDGE_ROWS; i >= 0; i--) zs.push(half - RUMBLE_EDGE * (i / EDGE_ROWS))
+        const nz = zs.length, nx = segsX + 1
+
+        const verts = new Float32Array(nx * nz * 3)
+        for (let iz = 0; iz < nz; iz++) {
+            const wz = r.z + zs[iz]
+            for (let ix = 0; ix < nx; ix++) {
+                const wx = r.len * ix / segsX
+                const o = (iz * nx + ix) * 3
+                verts[o] = wx; verts[o + 1] = rumbleSurface(wx, wz).y; verts[o + 2] = wz
+            }
         }
+        const idx = []
+        for (let iz = 0; iz < nz - 1; iz++) {
+            for (let ix = 0; ix < nx - 1; ix++) {
+                const a = iz * nx + ix, b = a + 1, c = a + nx, d = c + 1
+                idx.push(a, c, b, b, c, d)
+            }
+        }
+        const geo = new THREE.BufferGeometry()
+        geo.setAttribute('position', new THREE.BufferAttribute(verts, 3))
+        geo.setIndex(idx)
         geo.computeVertexNormals()
+        geo.computeBoundingSphere()
+
         const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
             color: 0x6a6f75, roughness: 0.95, metalness: 0,
+            // The troughs sit at exactly y=0, coplanar with the lab floor, and coplanar surfaces
+            // z-fight: which one wins is decided by float rounding, so it flickers per-pixel as the
+            // camera moves. Bias this mesh toward the viewer in the DEPTH BUFFER ONLY — the geometry
+            // does not move, so physics and the visual surface stay identical.
+            polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
         }))
         m.receiveShadow = true
         this._group.add(m)
