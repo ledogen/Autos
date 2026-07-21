@@ -122,7 +122,7 @@
       width: 100%; background: rgba(255,255,255,0.05); border: 1px solid #3a4450;
       color: #cfd6dd; font-family: monospace; font-size: 12px; padding: 5px 8px; margin-top: 8px;
     }
-    .mp-ask { font-size: 13px; color: #cfd6dd; line-height: 1.5; margin-bottom: 10px; }
+    .mp-ask { font-size: 13px; color: #cfd6dd; line-height: 1.5; margin: 12px 0 10px; }
     #mp-note::placeholder, #mp-driver::placeholder { color: #6b747d; }
     .mp-felt-row { display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; }
     #mission-panel button.mp-felt { font-size: 12px; padding: 4px 10px; }
@@ -310,6 +310,8 @@
          is captured AT export time in one click rather than left to be remembered later. The
          prompt states the standard explicitly — without it the scale drifts between sessions. -->
     <div id="mp-export-row">
+      <input id="mp-driver" type="text" maxlength="40" placeholder="your name — please use the same name every time">
+      <input id="mp-note" type="text" maxlength="140" placeholder="optional note — what the road was like, what went wrong">
       <div class="mp-ask">How fast do you feel like you drove the course?<br>
         <span class="mp-dim">par time is supposed to be challenging but not impossible.</span></div>
       <div class="mp-felt-row">
@@ -319,8 +321,6 @@
         <button class="mp-felt" data-felt="fast">fast</button>
         <button class="mp-felt" data-felt="very_fast">very fast</button>
       </div>
-      <input id="mp-driver" type="text" maxlength="40" placeholder="your name — please use the same name every time">
-      <input id="mp-note" type="text" maxlength="140" placeholder="optional note — what the road was like, what went wrong">
     </div>
     <div id="mp-actions">
       <button id="mp-accept">accept mission</button>
