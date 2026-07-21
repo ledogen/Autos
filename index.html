@@ -107,6 +107,14 @@
     }
     #mission-panel button:hover { background: rgba(255,255,255,0.09); color: #fff; border-color: #8fa2b4; }
     #mp-accept { border-color: #5ad06a; color: #b6f0be; }
+    #mp-export-row { display: none; margin-top: 12px; border-top: 1px solid #2c343d; padding-top: 12px; }
+    #mp-note {
+      width: 100%; background: rgba(255,255,255,0.05); border: 1px solid #3a4450;
+      color: #cfd6dd; font-family: monospace; font-size: 12px; padding: 5px 8px; margin-bottom: 8px;
+    }
+    #mp-note::placeholder { color: #6b747d; }
+    .mp-felt-row { font-size: 12px; color: #8a939c; display: flex; gap: 6px; align-items: center; justify-content: center; }
+    #mission-panel button.mp-felt { font-size: 12px; padding: 4px 10px; }
     /* In-run mission HUD (top-center): elapsed + distance to go. NEVER par — SM-INV-3. */
     #mission-hud {
       display: none;
@@ -267,10 +275,19 @@
   <div id="mission-panel">
     <div class="mp-title">story mode <span class="mp-beta">beta</span></div>
     <div id="mp-body">rolling a job&hellip;</div>
+    <!-- FEAT-30 calibration: the subjective read is the ground truth PAR_REF is fitted to, so it
+         is captured AT export time in one click rather than left to be remembered later. -->
+    <div id="mp-export-row">
+      <input id="mp-note" type="text" maxlength="140" placeholder="optional note — what the road was like, what went wrong">
+      <div class="mp-felt-row">export run as:
+        <button class="mp-felt" data-felt="fast">felt fast</button>
+        <button class="mp-felt" data-felt="par">felt on par</button>
+        <button class="mp-felt" data-felt="slow">felt slow</button>
+      </div>
+    </div>
     <div id="mp-actions">
       <button id="mp-accept">accept mission</button>
       <button id="mp-regen" title="testing only — real story mode has no do-overs">regenerate</button>
-      <button id="mp-export" title="download this run's route + score as JSON for par calibration">export run</button>
       <button id="mp-quit">back to free roam</button>
     </div>
   </div>

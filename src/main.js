@@ -1588,7 +1588,8 @@ function _renderMissionUI () {
       body.innerHTML = `<span class="mp-big">${km(j.distance)}</span> &nbsp;<span class="mp-dim">`
         + `${j.edges} leg${j.edges === 1 ? '' : 's'}</span><br>`
         + `<span class="mp-dim">green pin is the start &mdash; you'll be moved there</span>`
-      btn('mp-accept', true); btn('mp-regen', true); btn('mp-quit', true); btn('mp-export', false)
+      btn('mp-accept', true); btn('mp-regen', true); btn('mp-quit', true)
+      show(document.getElementById('mp-export-row'), false)
       break
     }
     case 'countdown':
@@ -1609,7 +1610,8 @@ function _renderMissionUI () {
         + `your time <b>${formatTime(r.elapsed)}</b> &nbsp;<span class="mp-dim">/</span>&nbsp; `
         + `par <b>${formatTime(r.par)}</b><br>`
         + `<span style="color:${col}">${sign}${formatTime(Math.abs(r.margin))} vs par</span>`
-      btn('mp-accept', false); btn('mp-regen', false); btn('mp-quit', true); btn('mp-export', true)
+      btn('mp-accept', false); btn('mp-regen', false); btn('mp-quit', true)
+      show(document.getElementById('mp-export-row'), true)
       // Reuse the accept button as "next job" so there's one obvious forward action.
       const nb = document.getElementById('mp-accept')
       if (nb) { nb.style.display = ''; nb.textContent = 'next job' }
@@ -1633,17 +1635,26 @@ document.getElementById('mp-accept')?.addEventListener('click', () => {
 document.getElementById('mp-regen')?.addEventListener('click', () => missionSystem.regenerate())
 // FEAT-30 calibration: dump the finished run's route shape + score to a file. A score alone can't
 // explain "felt slow, got S" — the grade and curvature profile par actually priced is what does.
-document.getElementById('mp-export')?.addEventListener('click', () => {
-  const data = missionSystem.exportRun()
-  if (!data) return
-  data.seed = worldSeed
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = `rangersim-run-${data.result.letter ?? 'x'}-${Math.round(data.result.elapsed_s)}s.json`
-  a.click()
-  URL.revokeObjectURL(a.href)
-})
+// The `felt` label rides along because it IS the calibration target: par is being fitted to make
+// "felt on par" land at ratio 1.00. Capturing it here, in the same click, is the only way it
+// reliably survives to the dataset. See runs/README.md and `npm run runs:report`.
+for (const b of document.querySelectorAll('.mp-felt')) {
+  b.addEventListener('click', () => {
+    const note = document.getElementById('mp-note')?.value?.trim() ?? ''
+    const data = missionSystem.exportRun(note)
+    if (!data) return
+    data.felt = b.dataset.felt
+    data.seed = worldSeed
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `rangersim-run-${data.felt}-${data.result.letter ?? 'x'}-${Math.round(data.result.elapsed_s)}s.json`
+    a.click()
+    URL.revokeObjectURL(a.href)
+    b.textContent = 'exported ✓'
+    setTimeout(() => { b.textContent = `felt ${b.dataset.felt === 'par' ? 'on par' : b.dataset.felt}` }, 1500)
+  })
+}
 document.getElementById('mp-quit')?.addEventListener('click', () => {
   missionSystem.exit()
   window.__setGameMode('freeroam')

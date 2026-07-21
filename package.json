@@ -3,14 +3,16 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Browser 6DOF car physics sim (Three.js). Runtime is bundled by Vite (PERF-04/PERF-20.5) — three + simplex-noise resolve from node_modules (byte-identical to the retired CDN importmap pin). `npm run dev` serves on :8000; `npm run build` emits dist/ for the GitHub Actions Pages deploy. The test/*.mjs gates are pure-node and import 'three'/'simplex-noise' directly — they do NOT go through Vite.",
+  "description": "Browser 6DOF car physics sim (Three.js). Runtime is bundled by Vite (PERF-04/PERF-20.5) \u2014 three + simplex-noise resolve from node_modules (byte-identical to the retired CDN importmap pin). `npm run dev` serves on :8000; `npm run build` emits dist/ for the GitHub Actions Pages deploy. The test/*.mjs gates are pure-node and import 'three'/'simplex-noise' directly \u2014 they do NOT go through Vite.",
   "scripts": {
     "dev": "vite --port 8000",
     "build": "vite build",
     "preview": "vite preview",
     "test": "node test/run-all.mjs",
     "test:all": "node test/run-all.mjs --all",
-    "test:affected": "node test/run-all.mjs --affected"
+    "test:affected": "node test/run-all.mjs --affected",
+    "runs:add": "node test/runs-add.mjs",
+    "runs:report": "node test/runs-report.mjs"
   },
   "dependencies": {
     "simplex-noise": "4.0.3",
