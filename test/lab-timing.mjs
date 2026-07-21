@@ -183,7 +183,12 @@ for (const pad of PADS) {
     // Longitudinal fade so entering the lane is not a kerb strike.
     check(`rumble ${r.name}: fades in at the lane start`, at(0.05) < r.amp * 0.15)
     check(`rumble ${r.name}: zero before and after the lane`,
-      at(-1) === 0 && at(RUMBLE_LEN + 1) === 0)
+      at(-1) === 0 && at(r.len + 1) === 0)
+    // Whole crests + an exact samples-per-crest tessellation is what keeps the MESH honest:
+    // a drifting sample grid silently clipped the med lane's crests to 93.3% of spec.
+    check(`rumble ${r.name}: lane is a whole number of crests`,
+      Math.abs(r.len / r.spacing - Math.round(r.len / r.spacing)) < 1e-9,
+      `${r.len} / ${r.spacing} = ${r.len / r.spacing}`)
   }
   // The lanes must not overlap each other, nor the drag strip.
   for (const r of RUMBLES) {

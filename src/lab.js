@@ -29,9 +29,9 @@
  * LAYOUT (everything shares the +X axis so the facility stays compact — drive right to go faster,
  * turn off into a lane or a pad):
  *
- *      z=+86  ────────────  rumble: large  (150 mm @ 500 mm)
- *      z=+72  ────────────  rumble: med    (100 mm @ 350 mm)
- *      z=+58  ────────────  rumble: small  ( 50 mm @ 250 mm)
+ *      z=+86  ────────────  rumble: large  (200 mm @ 1000 mm)
+ *      z=+72  ────────────  rumble: med    (125 mm @  625 mm)
+ *      z=+58  ────────────  rumble: small  ( 50 mm @  250 mm)
  *      z=+40  ============  DRAG STRIP →  start ▏100 200 300▕ finish(400) ▕ brake board(470)
  *      z=  0     ▲ ramp                  (the D-19 jump rig, kept: it is a suspension input too)
  *      z=-35   ── every pad's near edge lines up here ──────────────────────
@@ -63,14 +63,29 @@ const BRAKE_ARM_V = 27    // m/s (~97 km/h) — braking test arms above this spe
 // Amplitude is peak height above the plane; spacing is crest-to-crest. The profile is a raised
 // cosine (C1 continuous), NOT a sawtooth: a discontinuous slope would hand the solver an unbounded
 // impulse and measure the integrator rather than the suspension.
-const RUMBLE_LEN = 120        // m — long enough to hold a steady speed across many crests
+const RUMBLE_LEN = 120        // m — nominal length; each lane is snapped to whole crests (below)
 const RUMBLE_W = 6            // m — lane width
 const RUMBLE_FADE = 2.0       // m — longitudinal ramp-in/out so entering a lane is not a kerb
 const RUMBLE_EDGE = 1.0       // m — lateral feather at the lane edges
+const RUMBLE_SAMPLES = 6      // mesh samples per crest
+
+// Each lane is snapped to a WHOLE NUMBER OF CRESTS, and tessellated at exactly RUMBLE_SAMPLES per
+// crest. Without the snap the sample grid drifts against the crest spacing and the mesh quietly
+// misses the peaks: at the nominal 120 m, 0.35 m crests do not divide evenly and the med lane's
+// worst visual crest measured 93.3% of its specified 100 mm (small and large happened to divide
+// exactly and were fine). The physics surface is analytic and was never affected — this is purely
+// about the mesh telling the truth about the surface it depicts.
+const _lane = (name, z, amp, spacing) => {
+    const crests = Math.round(RUMBLE_LEN / spacing)
+    return { name, z, amp, spacing, crests, len: crests * spacing }
+}
+// small / med / large all share the SAME crest STEEPNESS (amp / spacing = 0.2) and differ only in
+// scale and wavelength — so a run across the three isolates the wavelength variable instead of
+// confounding it with slope aggression. med is the arithmetic midpoint of the other two.
 const RUMBLES = [
-    { name: 'small', z: 58, amp: 0.05, spacing: 0.25 },
-    { name: 'med',   z: 72, amp: 0.10, spacing: 0.35 },
-    { name: 'large', z: 86, amp: 0.15, spacing: 0.50 },
+    _lane('small', 58, 0.050, 0.250),
+    _lane('med',   72, 0.125, 0.625),
+    _lane('large', 86, 0.200, 1.000),
 ]
 
 // Skidpad rings: radius + centre, strung along +X just below the strip.
@@ -114,12 +129,12 @@ export function rumbleSurface(x, z) {
     for (const r of RUMBLES) {
         const dz = Math.abs(z - r.z)
         const half = RUMBLE_W / 2
-        if (dz > half || x < 0 || x > RUMBLE_LEN) continue
+        if (dz > half || x < 0 || x > r.len) continue
 
         // Lateral feather and longitudinal fade — both smoothstep, so the lane edge is a ramp,
         // not a step the tyre would slam into.
         const wz = smoothstep(half, half - RUMBLE_EDGE, dz)
-        const wx = smoothstep(0, RUMBLE_FADE, x) * smoothstep(RUMBLE_LEN, RUMBLE_LEN - RUMBLE_FADE, x)
+        const wx = smoothstep(0, RUMBLE_FADE, x) * smoothstep(r.len, r.len - RUMBLE_FADE, x)
         const w = wz * wx
         if (w <= 0) continue
 
@@ -131,8 +146,8 @@ export function rumbleSurface(x, z) {
         // d/dx of (amp·prof·wz·wx): wz has no x dependence; wx's derivative is only non-zero in the
         // 2 m fades, where prof·dwx is a small correction — include it for an honest normal.
         const eps = 1e-3
-        const wxF = smoothstep(0, RUMBLE_FADE, x + eps) * smoothstep(RUMBLE_LEN, RUMBLE_LEN - RUMBLE_FADE, x + eps)
-        const wxB = smoothstep(0, RUMBLE_FADE, x - eps) * smoothstep(RUMBLE_LEN, RUMBLE_LEN - RUMBLE_FADE, x - eps)
+        const wxF = smoothstep(0, RUMBLE_FADE, x + eps) * smoothstep(r.len, r.len - RUMBLE_FADE, x + eps)
+        const wxB = smoothstep(0, RUMBLE_FADE, x - eps) * smoothstep(r.len, r.len - RUMBLE_FADE, x - eps)
         const dwx = (wxF - wxB) / (2 * eps)
         const dydx = r.amp * (dprof * wz * wx + prof * wz * dwx)
 
@@ -225,14 +240,14 @@ export class LabSystem {
      * for repeatedly on the road (see QUAL-07, BUG-15, the carve/ribbon gates).
      */
     _rumbleMesh(r) {
-        // 6 samples per crest is plenty for a 25–50 cm bump on screen; 8 × 6 rows cost ~102 k
-        // triangles across the three lanes for no visible gain. The PHYSICS surface is analytic
-        // (rumbleSurface) and is not affected by this tessellation at all.
-        const segsX = Math.ceil(RUMBLE_LEN / (r.spacing / 6))
+        // Exactly RUMBLE_SAMPLES per crest over a whole number of crests, so every peak and every
+        // trough lands ON a vertex row. 6 is plenty for a 25–50 cm bump on screen; 8 samples × 6
+        // rows cost ~102 k triangles across the three lanes for no visible gain.
+        const segsX = r.crests * RUMBLE_SAMPLES
         const segsZ = 4
-        const geo = new THREE.PlaneGeometry(RUMBLE_LEN, RUMBLE_W, segsX, segsZ)
+        const geo = new THREE.PlaneGeometry(r.len, RUMBLE_W, segsX, segsZ)
         geo.rotateX(-Math.PI / 2)
-        geo.translate(RUMBLE_LEN / 2, 0, r.z)
+        geo.translate(r.len / 2, 0, r.z)
         const pos = geo.attributes.position
         for (let i = 0; i < pos.count; i++) {
             pos.setY(i, rumbleSurface(pos.getX(i), pos.getZ(i)).y)
@@ -244,8 +259,8 @@ export class LabSystem {
         m.receiveShadow = true
         this._group.add(m)
         // Edge stripes so the lane reads from a distance, plus a start bar.
-        this._line(0, r.z - RUMBLE_W / 2, RUMBLE_LEN, r.z - RUMBLE_W / 2, COL.lane, W_LANE)
-        this._line(0, r.z + RUMBLE_W / 2, RUMBLE_LEN, r.z + RUMBLE_W / 2, COL.lane, W_LANE)
+        this._line(0, r.z - RUMBLE_W / 2, r.len, r.z - RUMBLE_W / 2, COL.lane, W_LANE)
+        this._line(0, r.z + RUMBLE_W / 2, r.len, r.z + RUMBLE_W / 2, COL.lane, W_LANE)
         this._line(0, r.z - RUMBLE_W / 2, 0, r.z + RUMBLE_W / 2, COL.brake, W_GATE)
         return m
     }
