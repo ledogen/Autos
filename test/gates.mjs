@@ -83,6 +83,8 @@ export const GATES = [
     desc: 'story missions route ONLY over the post-cull registered network (raw Urquhart has ~15% phantom edges), use the registered centerline object, and edgeParData reports the registered runKey either way round' },
   { file: 'par-oracle.mjs', subsystem: 'story', cost: 'fast', extraDeps: ['src/main.js'],
     desc: 'FEAT-29 par oracle: SM-INV-2 (par never reads the car), determinism, independent time-marched check, SIGNED grade (downhill faster), curvature monotonicity, mid-edge arc-range splitting, junction penalty, spawn-heading convention' },
+  { file: 'gps-route.mjs', subsystem: 'story', cost: 'fast', extraDeps: ['src/main.js'],
+    desc: 'FEAT-39 GPS assist route bake: travel order (reversed edges + partial first/last ranges), turn sign (+ve = right) + the straight deadband, windowed progress monotonic + full-scan re-acquire, 3-D arc from gradeAt' },
   { file: 'lab-timing.mjs', subsystem: 'story', cost: 'fast', extraDeps: [],
     desc: 'FEAT-31 testing-lab gates: skidpad lap time + derived mu vs closed form, no phantom laps from line jitter, staged drag start (hold-still + count, false start voids, unstaged crossings inert), braking measured 100→0 in the strip corridor and voided by throttle' },
   { file: 'water-invariance.mjs', subsystem: 'water', cost: 'heavy', extraDeps: [],

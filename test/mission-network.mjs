@@ -63,6 +63,7 @@ const ms = new MissionSystem({
 })
 {
   let phantom = 0, present = 0, rolls = 0
+  let untagged = 0, minDeg = Infinity, realJunctions = 0
   const bad = []
   for (let i = 0; i < 20; i++) {
     const m = ms._roll()
@@ -71,11 +72,20 @@ const ms = new MissionSystem({
     for (const sg of m.segments) {
       if (road._network.has(sg.runKey)) present++
       else { phantom++; if (bad.length < 4) bad.push(sg.runKey) }
+      // FEAT-39: the GPS assist decides where to raise a junction arrow from this tag alone. If it
+      // ever stops being written, gps.js fails OPEN and puts an arrow on every bend in the road —
+      // a silent regression the gps-route gate cannot see, because it feeds synthetic segments.
+      if (typeof sg.endDeg !== 'number') untagged++
+      else { minDeg = Math.min(minDeg, sg.endDeg); if (sg.endDeg >= 3) realJunctions++ }
     }
   }
   check('every mission edge exists in the CULLED network', phantom === 0 && present > 0,
     `${phantom} phantom of ${present + phantom} over ${rolls} rolls: ${bad.join(' ')}`)
-  console.log(`       ${rolls} missions, ${present} edges, ${phantom} phantom`)
+  check('every mission segment carries its end-node DEGREE (FEAT-39 GPS junction filter)',
+    untagged === 0 && present > 0, `${untagged} untagged of ${present + phantom}`)
+  check('degrees are plausible: >=1 everywhere, and SOME joins are real junctions',
+    minDeg >= 1 && realJunctions > 0, `minDeg=${minDeg}, ${realJunctions} joins of degree 3+`)
+  console.log(`       ${rolls} missions, ${present} edges, ${phantom} phantom, ${realJunctions} deg-3+ joins`)
 }
 
 // ── 2. the route uses the world's OWN centerline, not a re-route ─────────────────────────────────
