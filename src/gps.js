@@ -2,9 +2,9 @@
  * src/gps.js — FEAT-39 GPS navigation assist: a minimal in-world route overlay.
  *
  * Two cues, nothing else:
- *   1. CHEVRONS — a short run of flat "V" glyphs hovering just above the ribbon ahead of you,
- *      sliding along as you drive and fading out at the far end. They say "you are on the route",
- *      and they survive crests (road paint would not).
+ *   1. CHEVRONS — flat "V" glyphs painted just above the ribbon, pinned to a fixed lattice in
+ *      world space so you drive INTO them rather than pushing them along ahead of you. They say
+ *      "you are on the route", and each dissolves as you reach it.
  *   2. TURN ARROW — one flat curved arrow lying horizontally over the NEXT junction, pointing into
  *      the road you should take. Shown only where a decision actually exists: segment joins whose
  *      turn angle is inside STRAIGHT_DEG are gentle kinks and get nothing. That deadband is what
@@ -27,13 +27,17 @@ import * as THREE from 'three'
 const BAKE_DS      = 6      // m between baked route vertices
 const CHEV_COUNT   = 10     // chevrons alive at once (the pool that gets recycled forward)
 const CHEV_SPACING = 15     // m between chevrons — also the world lattice they are pinned to
-const CHEV_HOVER   = 3.9    // m above the routed road surface
+// Low and flat, like road paint. Height is a trap for these: lifted clear of the surface they
+// float above crests instead of following them, and a horizontal glyph seen from a low chase cam
+// is nearly edge-on, so the higher it sits the thinner it reads.
+const CHEV_HOVER   = 0.35   // m above the routed road surface
 const CHEV_FADE    = 3      // chevrons over which the far end ramps in
 const CHEV_NEAR    = 20     // m: a chevron fades out over the last stretch as you drive into it
-const ARROW_HOVER  = 6.0    // m above the junction — stays clear of the chevron plane
+const ARROW_HOVER  = 4.0    // m above the junction — the one cue that DOES hang in the air
 const ARROW_IN     = 140    // m: arrow starts fading in
 const ARROW_FULL   = 110    // m: fully opaque
 const ARROW_PAST   = 12     // m past the node before it is dropped
+const ARROW_MAX_DEG = 150   // sweep cap — past this the band would overlap its own tail
 const RING_HOVER   = 1.4
 const STRAIGHT_DEG = 18     // |turn| under this is a kink, not a decision — no arrow
 const TAN_SPAN     = 20     // m of route averaged into the in/out tangents at a junction
@@ -202,25 +206,43 @@ function _chevronGeometry () {
 }
 
 /**
- * A flat curved turn arrow: a straight tail entering along local +Z, a quarter-arc band, and a
- * head pointing local ±X. `sign` = +1 right, -1 left. The 90° depiction is a symbol, not a
- * survey — the real turn angle varies, but a GPS glyph reads as direction, not degrees.
+ * A flat curved turn arrow: a straight tail entering along local +Z, a banded arc, and a head
+ * that ends up pointing along the EXIT direction.
+ *
+ * The sweep is the real turn angle, not a fixed 90°. A fixed quarter-turn glyph is fine on a
+ * textbook crossroads and actively wrong on this road network — at a hairpin it points into open
+ * hillside, which is worse guidance than none. Built by sampling the band rather than absarc +
+ * hardcoded corners, so any sweep works.
+ *
+ * @param {number} sign  +1 right, -1 left
+ * @param {number} sweep turn magnitude in radians
  */
-function _turnArrowGeometry (sign) {
-  const R = 5, w = 1.6, tail = 3.2, hw = 1.5, hl = 2.2
-  const sx = (x) => sign * x            // mirror about the travel axis for a left turn
+function _turnArrowGeometry (sign, sweep) {
+  const R = 5, w = 1.6, tail = 3.2, hw = 1.5, hl = 2.2, SEG = 20
+  // Band centre is `R` to the turn side of the entry point, so the arc leaves along +y (travel).
+  const cx = sign * R, cy = -R
+  const a0 = sign > 0 ? Math.PI : 0
+  const at = (t) => a0 - sign * sweep * t                      // arc angle at fraction t
+  const pt = (a, r) => [cx + r * Math.cos(a), cy + r * Math.sin(a)]
+  const a1 = at(1)
+  const ex = sign * Math.sin(a1), ey = sign * -Math.cos(a1)    // unit exit direction
+  const nx = -ey, ny = ex                                      // its left normal (head barbs)
+  const [pcx, pcy] = pt(a1, R)
+
   const s = new THREE.Shape()
-  s.moveTo(sx(-w / 2), -R - tail)
-  s.lineTo(sx(-w / 2), -R)
-  s.absarc(sx(R), -R, R + w / 2, sign > 0 ? Math.PI : 0, Math.PI / 2, sign > 0)
-  s.lineTo(sx(R), hw)
-  s.lineTo(sx(R + hl), 0)
-  s.lineTo(sx(R), -hw)
-  s.lineTo(sx(R), -w / 2)
-  s.absarc(sx(R), -R, R - w / 2, Math.PI / 2, sign > 0 ? Math.PI : 0, sign < 0)
-  s.lineTo(sx(w / 2), -R - tail)
+  s.moveTo(-sign * w / 2, -R - tail)                           // tail, outer side
+  for (let i = 0; i <= SEG; i++) s.lineTo(...pt(at(i / SEG), R + w / 2))
+  s.lineTo(pcx + nx * hw, pcy + ny * hw)                       // head: barb, tip, barb
+  s.lineTo(pcx + ex * hl, pcy + ey * hl)
+  s.lineTo(pcx - nx * hw, pcy - ny * hw)
+  for (let i = SEG; i >= 0; i--) s.lineTo(...pt(at(i / SEG), R - w / 2))
+  s.lineTo(sign * w / 2, -R - tail)                            // tail, inner side
   s.closePath()
   const g = new THREE.ShapeGeometry(s, 24)
+  // Put the BEND on the origin, not the shape's corner. The mesh is positioned at the junction
+  // node, so without this the whole glyph hangs off to one side of it and sits over the verge.
+  const [mx, my] = pt(at(0.5), R)
+  g.translate(-mx, -my, 0)
   // ShapeGeometry lies in XY; rotate so shape-y becomes local +Z (travel) and it lies flat.
   g.rotateX(Math.PI / 2)
   return g
@@ -266,9 +288,11 @@ export class GpsSystem {
     for (let i = 0; i < CHEV_COUNT; i++) this._chev.setColorAt(i, new THREE.Color(1, 1, 1))
     this.group.add(this._chev)
 
-    this._arrowGeo = { right: _turnArrowGeometry(1), left: _turnArrowGeometry(-1) }
+    // Arrow geometry is per turn ANGLE, cached by 15° bin — a route only ever produces a handful.
+    this._arrowGeo = new Map()
+    this._arrowKey = null
     this._arrowMat = mat()
-    this._arrow = new THREE.Mesh(this._arrowGeo.right, this._arrowMat)
+    this._arrow = new THREE.Mesh(this._arrowGeometryFor('right', Math.PI / 2), this._arrowMat)
     this._arrow.frustumCulled = false
     this._arrow.renderOrder = 3
     this._arrow.visible = false
@@ -365,6 +389,23 @@ export class GpsSystem {
     this._chev.visible = any
   }
 
+  /**
+   * Arrow geometry bent to the actual turn, quantised to 15° so a route reuses a handful of
+   * geometries instead of rebuilding one per junction. Swept past ARROW_MAX_DEG the band starts
+   * eating its own tail, so a hairpin is drawn at the cap — still unambiguous which way to go.
+   */
+  _arrowGeometryFor (turn, angle) {
+    const deg = Math.min(ARROW_MAX_DEG, Math.max(30, Math.round(angle * 180 / Math.PI / 15) * 15))
+    const key = `${turn}:${deg}`
+    let g = this._arrowGeo.get(key)
+    if (!g) {
+      g = _turnArrowGeometry(turn === 'right' ? 1 : -1, deg * Math.PI / 180)
+      this._arrowGeo.set(key, g)
+    }
+    this._arrowKey = key
+    return g
+  }
+
   _placeArrow (route, s) {
     // Next junction that is an actual decision. Straights are skipped entirely — that deadband is
     // what keeps this from littering the drive with arrows at every gentle kink.
@@ -380,7 +421,7 @@ export class GpsSystem {
     const fade = dist > ARROW_FULL
       ? 1 - (dist - ARROW_FULL) / (ARROW_IN - ARROW_FULL)
       : Math.min(1, (dist + ARROW_PAST) / ARROW_PAST)      // fades back out just past the node
-    const geo = j.turn === 'right' ? this._arrowGeo.right : this._arrowGeo.left
+    const geo = this._arrowGeometryFor(j.turn, Math.abs(j.angle))
     if (this._arrow.geometry !== geo) this._arrow.geometry = geo
     const din = _dirBack(route, j.i, TAN_SPAN) || { x: 0, z: 1 }
     this._arrow.position.set(
@@ -405,7 +446,8 @@ export class GpsSystem {
   dispose () {
     this.group.removeFromParent()
     this._chevGeo.dispose(); this._chevMat.dispose()
-    this._arrowGeo.right.dispose(); this._arrowGeo.left.dispose(); this._arrowMat.dispose()
+    for (const g of this._arrowGeo.values()) g.dispose()
+    this._arrowGeo.clear(); this._arrowMat.dispose()
     this._ringGeo.dispose(); this._ringMat.dispose()
     this._chev.dispose()
     this._route = null; this._src = null

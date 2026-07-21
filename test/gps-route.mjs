@@ -185,7 +185,7 @@ const seg = (centerline, s0, s1, gradeAt = level) => ({ centerline, gradeAt, s0,
     lattice0.every(c => Math.abs(((c.x % 15) + 15) % 15) < 0.02),
     JSON.stringify(lattice0.map(c => c.x)))
   check('chevrons hover CHEV_HOVER above the routed surface',
-    lattice0.every(c => Math.abs(c.y - 3.9) < 1e-6), `y=${lattice0[0]?.y}`)
+    lattice0.every(c => Math.abs(c.y - 0.35) < 1e-6), `y=${lattice0[0]?.y}`)
   fwd.set(0, 0, 1).applyQuaternion(lattice0[0].q)
   check('chevron local +Z points along travel (rotY convention)',
     Math.abs(fwd.x - 1) < 1e-6 && Math.abs(fwd.z) < 1e-6,
@@ -208,10 +208,26 @@ const seg = (centerline, s0, s1, gradeAt = level) => ({ centerline, gradeAt, s0,
   car.x = -40                                        // 40 m short of the junction at (0,0)
   gps.update(1 / 60)
   check('turn arrow raises inside ARROW_IN', gps._arrow.visible)
-  check('turn arrow uses the RIGHT-turn geometry', gps._arrow.geometry === gps._arrowGeo.right)
+  // The glyph must bend to the ACTUAL turn, not a fixed 90°: a fixed quarter-turn at a hairpin
+  // points into open ground, which is worse guidance than none.
+  check('turn arrow uses a RIGHT-turn geometry bent to the real angle (90°)',
+    gps._arrowKey === 'right:90', `key=${gps._arrowKey}`)
+  {
+    const hairpin = { segments: [
+      seg(straight(300, -300, 0, 1, 0), 0, 300),
+      seg(straight(300, 0, 0, -Math.cos(Math.PI / 6), -Math.sin(Math.PI / 6)), 0, 300),
+    ] }
+    const g2 = new GpsSystem(new THREE.Scene(), { getRoute: () => hairpin, getCar: () => ({ x: -40, z: 0 }) })
+    g2.update(1 / 60)
+    check('a 150° hairpin bends the glyph, capped at ARROW_MAX_DEG',
+      g2._arrowKey === 'left:150', `key=${g2._arrowKey}`)
+    check('each distinct turn angle is built once and cached', g2._arrowGeo.size === 2,
+      `${g2._arrowGeo.size} geometries`)
+    g2.dispose()
+  }
   check('turn arrow hangs over the junction, not the car',
     Math.abs(gps._arrow.position.x) < 1e-6 && Math.abs(gps._arrow.position.z) < 1e-6 &&
-    gps._arrow.position.y > 5.8 && gps._arrow.position.y < 6.2,
+    gps._arrow.position.y > 3.8 && gps._arrow.position.y < 4.2,
     `at (${gps._arrow.position.x.toFixed(2)}, ${gps._arrow.position.y.toFixed(2)}, ${gps._arrow.position.z.toFixed(2)})`)
   fwd.set(0, 0, 1).applyQuaternion(gps._arrow.quaternion)
   check('turn arrow tail is aligned with the INCOMING travel direction',
