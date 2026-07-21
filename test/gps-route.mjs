@@ -6,9 +6,10 @@
 //      BACKWARDS, and the first/last edge are partial arc ranges (DESIGN.md "Where missions and
 //      POIs live"). Baking in centerline order instead of travel order points every chevron the
 //      wrong way down half the route — and it looks fine on any route that happens to run forward.
-//   2. TURN SIGN. +ve = right. Driver forward × up = right (X × Y = Z), so with forward = +X the
-//      right-hand direction is +Z. Getting this backwards sends every playtester the wrong way at
-//      every junction, which is worse than no GPS at all.
+//   2. WHAT COUNTS AS AN INTERSECTION. Only graph nodes of degree 3+ — places the driver actually
+//      has a choice. A degree-2 node is the road bending through, and this network bends HARD at
+//      those (QUAL-16 kinks), so no turn-angle threshold can separate the two. Get this wrong and
+//      the overlay litters every curve with arrows, which is the failure mode it exists to avoid.
 //   3. PROGRESS RE-ACQUISITION. The windowed nearest search must stay monotonic while you drive
 //      the route, and must recover the right place after a wrong turn — otherwise a tester who
 //      strays once gets chevrons for the rest of the run pointing at a stale index.
@@ -17,7 +18,7 @@
 // THREE is imported only for the placement section — its scene graph is renderer-free, so the
 // real GpsSystem runs headlessly and the arrow/chevron transforms can be asserted, not eyeballed.
 import * as THREE from 'three'
-import { GpsSystem, bakeRoute, classifyTurn, advanceProgress, sampleRoute } from '../src/gps.js'
+import { GpsSystem, bakeRoute, advanceProgress, sampleRoute } from '../src/gps.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -66,36 +67,41 @@ const seg = (centerline, s0, s1, gradeAt = level) => ({ centerline, gradeAt, s0,
     `got ${part.length}`)
 }
 
-// ── 2. turn classification ──────────────────────────────────────────────────────────────────────
+// ── 2. only REAL intersections raise an arrow ───────────────────────────────────────────────────
 {
-  // +X then +Z: forward × up = right ⇒ right is +Z ⇒ this is a RIGHT turn.
-  const right = bakeRoute([
+  // A hard 90° bend at a DEGREE-2 node is the road turning, not a junction. No angle threshold can
+  // tell that apart from a T — this network kinks hard at degree-2 nodes (QUAL-16) — so the filter
+  // is the node degree that mission.js tags onto each segment.
+  const bend = bakeRoute([
+    { ...seg(straight(200, -200, 0, 1, 0), 0, 200), endDeg: 2 },
+    seg(straight(200, 0, 0, 0, 1), 0, 200),
+  ])
+  check('a 90° bend at a degree-2 node raises NO arrow', bend.junctions.length === 0,
+    `${bend.junctions.length} junctions`)
+
+  const tee = bakeRoute([
+    { ...seg(straight(200, -200, 0, 1, 0), 0, 200), endDeg: 3 },
+    seg(straight(200, 0, 0, 0, 1), 0, 200),
+  ])
+  check('the same geometry at a degree-3 node DOES raise one', tee.junctions.length === 1)
+  check('the junction records the EXIT direction, not the entry',
+    Math.abs(tee.junctions[0].ox) < 1e-9 && Math.abs(tee.junctions[0].oz - 1) < 1e-9,
+    `exit=(${tee.junctions[0].ox.toFixed(3)}, ${tee.junctions[0].oz.toFixed(3)})`)
+
+  // A crossroads driven STRAIGHT through is still a decision — you must not turn — so it keeps
+  // its arrow. Degree, not angle, is the whole test.
+  const cross = bakeRoute([
+    { ...seg(straight(200, -200, 0, 1, 0), 0, 200), endDeg: 4 },
+    seg(straight(200, 0, 0, 1, 0), 0, 200),
+  ])
+  check('a straight-through crossroads still raises an arrow', cross.junctions.length === 1)
+
+  // A missing tag must fail LOUD (shown), not silently swallow every arrow.
+  const untagged = bakeRoute([
     seg(straight(200, -200, 0, 1, 0), 0, 200),
     seg(straight(200, 0, 0, 0, 1), 0, 200),
   ])
-  check('+X → +Z classifies as a RIGHT turn',
-    right.junctions[0].turn === 'right' && right.junctions[0].angle > 0,
-    `turn=${right.junctions[0].turn} angle=${(right.junctions[0].angle * 180 / Math.PI).toFixed(1)}°`)
-
-  const left = bakeRoute([
-    seg(straight(200, -200, 0, 1, 0), 0, 200),
-    seg(straight(200, 0, 0, 0, -1), 0, 200),
-  ])
-  check('+X → -Z classifies as a LEFT turn',
-    left.junctions[0].turn === 'left' && left.junctions[0].angle < 0,
-    `turn=${left.junctions[0].turn}`)
-
-  // A gentle kink must NOT raise an arrow — that deadband is what keeps the overlay minimal.
-  const kinkA = 6 * Math.PI / 180
-  const kink = bakeRoute([
-    seg(straight(200, -200, 0, 1, 0), 0, 200),
-    seg(straight(200, 0, 0, Math.cos(kinkA), Math.sin(kinkA)), 0, 200),
-  ])
-  check('a 6° kink classifies as straight (no arrow)', kink.junctions[0].turn === 'straight',
-    `turn=${kink.junctions[0].turn}`)
-  check('classifyTurn deadband is symmetric',
-    classifyTurn(0.1) === 'straight' && classifyTurn(-0.1) === 'straight' &&
-    classifyTurn(1) === 'right' && classifyTurn(-1) === 'left')
+  check('an untagged join defaults to being shown', untagged.junctions.length === 1)
 }
 
 // ── 3. progress: monotonic along the route, re-acquires after a detour ──────────────────────────
@@ -109,8 +115,9 @@ const seg = (centerline, s0, s1, gradeAt = level) => ({ centerline, gradeAt, s0,
     seg(straight(300, 0, 120, -1, 0), 0, 300),       // (0,120)  → (-300,120)
   ])
   check('three-edge route bakes two junctions', route.junctions.length === 2)
-  check('both hairpin joins are right turns', route.junctions.every(j => j.turn === 'right'),
-    route.junctions.map(j => `${j.turn}@${j.s.toFixed(0)}`).join(' '))
+  check('junctions land at the right arc positions',
+    Math.abs(route.junctions[0].s - 300) < 1e-6 && Math.abs(route.junctions[1].s - 420) < 1e-6,
+    route.junctions.map(j => j.s.toFixed(0)).join(' '))
 
   let idx = 0, prevS = -1, mono = true, worstLat = 0
   for (let s = 0; s <= route.length; s += 3) {
@@ -207,32 +214,29 @@ const seg = (centerline, s0, s1, gradeAt = level) => ({ centerline, gradeAt, s0,
 
   car.x = -40                                        // 40 m short of the junction at (0,0)
   gps.update(1 / 60)
-  check('turn arrow raises inside ARROW_IN', gps._arrow.visible)
-  // The glyph must bend to the ACTUAL turn, not a fixed 90°: a fixed quarter-turn at a hairpin
-  // points into open ground, which is worse guidance than none.
-  check('turn arrow uses a RIGHT-turn geometry bent to the real angle (90°)',
-    gps._arrowKey === 'right:90', `key=${gps._arrowKey}`)
-  {
-    const hairpin = { segments: [
-      seg(straight(300, -300, 0, 1, 0), 0, 300),
-      seg(straight(300, 0, 0, -Math.cos(Math.PI / 6), -Math.sin(Math.PI / 6)), 0, 300),
-    ] }
-    const g2 = new GpsSystem(new THREE.Scene(), { getRoute: () => hairpin, getCar: () => ({ x: -40, z: 0 }) })
-    g2.update(1 / 60)
-    check('a 150° hairpin bends the glyph, capped at ARROW_MAX_DEG',
-      g2._arrowKey === 'left:150', `key=${g2._arrowKey}`)
-    check('each distinct turn angle is built once and cached', g2._arrowGeo.size === 2,
-      `${g2._arrowGeo.size} geometries`)
-    g2.dispose()
-  }
-  check('turn arrow hangs over the junction, not the car',
+  check('junction arrow raises inside ARROW_IN', gps._arrow.visible)
+  check('junction arrow stands at the junction, not at the car',
     Math.abs(gps._arrow.position.x) < 1e-6 && Math.abs(gps._arrow.position.z) < 1e-6 &&
-    gps._arrow.position.y > 3.8 && gps._arrow.position.y < 4.2,
+    gps._arrow.position.y > 1.0 && gps._arrow.position.y < 1.4,
     `at (${gps._arrow.position.x.toFixed(2)}, ${gps._arrow.position.y.toFixed(2)}, ${gps._arrow.position.z.toFixed(2)})`)
-  fwd.set(0, 0, 1).applyQuaternion(gps._arrow.quaternion)
-  check('turn arrow tail is aligned with the INCOMING travel direction',
-    Math.abs(fwd.x - 1) < 1e-6 && Math.abs(fwd.z) < 1e-6,
-    `local +Z → (${fwd.x.toFixed(3)}, ${fwd.z.toFixed(3)})`)
+
+  // THE point of the board: its tip aims down the EXIT road (here +Z), and it stands UPRIGHT —
+  // local +Y must still be world up, or it lies flat and the driver meets it edge-on again.
+  fwd.set(1, 0, 0).applyQuaternion(gps._arrow.quaternion)
+  check('arrow tip points down the EXIT road',
+    Math.abs(fwd.x) < 1e-6 && Math.abs(fwd.z - 1) < 1e-6,
+    `local +X → (${fwd.x.toFixed(3)}, ${fwd.z.toFixed(3)})`)
+  fwd.set(0, 1, 0).applyQuaternion(gps._arrow.quaternion)
+  check('arrow board stands upright (local +Y is world up)', Math.abs(fwd.y - 1) < 1e-6,
+    `local +Y → (${fwd.x.toFixed(3)}, ${fwd.y.toFixed(3)}, ${fwd.z.toFixed(3)})`)
+  {
+    // Its geometry must live in a vertical plane: zero depth along local Z, real height along Y.
+    gps._arrow.geometry.computeBoundingBox()
+    const b = gps._arrow.geometry.boundingBox
+    check('arrow geometry is a vertical board (flat in local Z, tall in local Y)',
+      Math.abs(b.max.z - b.min.z) < 1e-9 && b.max.y - b.min.y > 2 && Math.abs(b.min.y) < 1e-6,
+      `size (${(b.max.x - b.min.x).toFixed(1)}, ${(b.max.y - b.min.y).toFixed(1)}, ${(b.max.z - b.min.z).toFixed(1)}), minY=${b.min.y.toFixed(2)}`)
+  }
 
   // Approaching the drop: the destination ring appears; disabling kills the whole overlay.
   car.x = 0; car.z = 200

@@ -5,10 +5,11 @@
  *   1. CHEVRONS — flat "V" glyphs painted just above the ribbon, pinned to a fixed lattice in
  *      world space so you drive INTO them rather than pushing them along ahead of you. They say
  *      "you are on the route", and each dissolves as you reach it.
- *   2. TURN ARROW — one flat curved arrow lying horizontally over the NEXT junction, pointing into
- *      the road you should take. Shown only where a decision actually exists: segment joins whose
- *      turn angle is inside STRAIGHT_DEG are gentle kinks and get nothing. That deadband is what
- *      keeps the overlay non-invasive.
+ *   2. JUNCTION ARROW — a flat board standing UPRIGHT at the next intersection, aimed straight
+ *      down the road you should take. Upright because a horizontal glyph is met almost exactly
+ *      edge-on from a chase cam, which is the one orientation a driver cannot read. Shown only at
+ *      REAL intersections — graph nodes of degree 3+ — never at a degree-2 node where the road is
+ *      just bending through. That filter is what keeps the overlay non-invasive.
  * Plus a slow ring at the destination, so the last leg has a target (mission arrival is a bare
  * 28 m radius otherwise).
  *
@@ -17,7 +18,7 @@
  * mission.js `_roll()`) and nothing else — no RoadSystem query per frame, so it is also free of
  * road-streaming coupling.
  *
- * The route math (bakeRoute / classifyTurn / advanceProgress) is deliberately THREE-free and
+ * The route math (bakeRoute / advanceProgress / sampleRoute) is deliberately THREE-free and
  * exported, so test/gps-route.mjs can exercise it headlessly.
  */
 
@@ -33,14 +34,12 @@ const CHEV_SPACING = 15     // m between chevrons — also the world lattice the
 const CHEV_HOVER   = 0.35   // m above the routed road surface
 const CHEV_FADE    = 3      // chevrons over which the far end ramps in
 const CHEV_NEAR    = 20     // m: a chevron fades out over the last stretch as you drive into it
-const ARROW_HOVER  = 4.0    // m above the junction — the one cue that DOES hang in the air
+const ARROW_HOVER  = 1.2    // m: the board's bottom edge clears the road by this much
 const ARROW_IN     = 140    // m: arrow starts fading in
 const ARROW_FULL   = 110    // m: fully opaque
 const ARROW_PAST   = 12     // m past the node before it is dropped
-const ARROW_MAX_DEG = 150   // sweep cap — past this the band would overlap its own tail
 const RING_HOVER   = 1.4
-const STRAIGHT_DEG = 18     // |turn| under this is a kink, not a decision — no arrow
-const TAN_SPAN     = 20     // m of route averaged into the in/out tangents at a junction
+const TAN_SPAN     = 20     // m of route averaged into the exit direction at a junction
 const REACQUIRE_M  = 40     // lateral error that forces a full-route re-scan
 const GPS_COLOR    = 0x66e0ff
 
@@ -82,24 +81,19 @@ export function bakeRoute (segments) {
   }
   const route = { px, py, pz, cum, n, length: cum[n - 1], junctions: [] }
 
-  for (const i of joinIdx) {
-    const din = _dirBack(route, i, TAN_SPAN)
+  // Only REAL intersections get an arrow. `endDeg` is the degree of the graph node the edge ends
+  // at (tagged in mission.js `_roll()`); degree 2 is the road bending through, and no angle
+  // threshold can distinguish that from a junction — this network kinks hard at degree-2 nodes.
+  // A missing tag is treated as a junction so a plumbing break is visible rather than silent.
+  for (let k = 0; k < joinIdx.length; k++) {
+    const i = joinIdx[k]
+    const deg = segments[k].endDeg ?? 3
+    if (deg < 3) continue
     const out = _dirFwd(route, i, TAN_SPAN)
-    if (!din || !out) continue
-    // Signed turn, +ve = right. Driver forward × up = right (X × Y = Z), so with forward = +X the
-    // right-hand direction is +Z, and cross = ix*oz - iz*ox is positive for a right turn.
-    const cross = din.x * out.z - din.z * out.x
-    const dot   = din.x * out.x + din.z * out.z
-    const angle = Math.atan2(cross, dot)
-    route.junctions.push({ i, s: cum[i], angle, turn: classifyTurn(angle) })
+    if (!out) continue
+    route.junctions.push({ i, s: cum[i], deg, ox: out.x, oz: out.z })
   }
   return route
-}
-
-/** Signed turn angle (rad, +ve = right) → 'left' | 'right' | 'straight'. */
-export function classifyTurn (angle) {
-  if (Math.abs(angle) < STRAIGHT_DEG * Math.PI / 180) return 'straight'
-  return angle > 0 ? 'right' : 'left'
 }
 
 /**
@@ -140,13 +134,6 @@ function _scanNearest (route, x, z, i0, i1) {
     if (lat < blat) { blat = lat; bs = cum[j] + (cum[j + 1] - cum[j]) * t; bi = j }
   }
   return { idx: bi, s: bs, lat: blat }
-}
-
-/** Unit XZ direction arriving at vertex `i`, averaged back over `span` metres. */
-function _dirBack (route, i, span) {
-  let j = i
-  while (j > 0 && route.cum[i] - route.cum[j] < span) j--
-  return _unit(route.px[i] - route.px[j], route.pz[i] - route.pz[j])
 }
 
 /** Unit XZ direction leaving vertex `i`, averaged forward over `span` metres. */
@@ -206,45 +193,32 @@ function _chevronGeometry () {
 }
 
 /**
- * A flat curved turn arrow: a straight tail entering along local +Z, a banded arc, and a head
- * that ends up pointing along the EXIT direction.
+ * The junction arrow: a plain flat arrow standing UPRIGHT on its edge, like a sign board, tip
+ * pointing along local +X.
  *
- * The sweep is the real turn angle, not a fixed 90°. A fixed quarter-turn glyph is fine on a
- * textbook crossroads and actively wrong on this road network — at a hairpin it points into open
- * hillside, which is worse guidance than none. Built by sampling the band rather than absarc +
- * hardcoded corners, so any sweep works.
+ * It stands vertically because a horizontal glyph is the one thing a driver cannot see — from a
+ * chase cam you meet it almost exactly edge-on, which is what killed the earlier flat curved
+ * version. Standing up, it presents its face; and because the whole board is aimed straight down
+ * the road you are meant to take, the direction it indicates IS its orientation. No left/right
+ * variants, no turn-angle sweep — the road does the talking.
  *
- * @param {number} sign  +1 right, -1 left
- * @param {number} sweep turn magnitude in radians
+ * Built in XY (x = along the arrow, y = up) with its bottom edge on y = 0, so the mesh position
+ * is where it stands.
  */
-function _turnArrowGeometry (sign, sweep) {
-  const R = 5, w = 1.6, tail = 3.2, hw = 1.5, hl = 2.2, SEG = 20
-  // Band centre is `R` to the turn side of the entry point, so the arc leaves along +y (travel).
-  const cx = sign * R, cy = -R
-  const a0 = sign > 0 ? Math.PI : 0
-  const at = (t) => a0 - sign * sweep * t                      // arc angle at fraction t
-  const pt = (a, r) => [cx + r * Math.cos(a), cy + r * Math.sin(a)]
-  const a1 = at(1)
-  const ex = sign * Math.sin(a1), ey = sign * -Math.cos(a1)    // unit exit direction
-  const nx = -ey, ny = ex                                      // its left normal (head barbs)
-  const [pcx, pcy] = pt(a1, R)
-
+function _arrowGeometry () {
+  const L = 7.5, hl = 3.2, shaft = 1.5, hw = 3.2   // total length, head length, shaft/head heights
   const s = new THREE.Shape()
-  s.moveTo(-sign * w / 2, -R - tail)                           // tail, outer side
-  for (let i = 0; i <= SEG; i++) s.lineTo(...pt(at(i / SEG), R + w / 2))
-  s.lineTo(pcx + nx * hw, pcy + ny * hw)                       // head: barb, tip, barb
-  s.lineTo(pcx + ex * hl, pcy + ey * hl)
-  s.lineTo(pcx - nx * hw, pcy - ny * hw)
-  for (let i = SEG; i >= 0; i--) s.lineTo(...pt(at(i / SEG), R - w / 2))
-  s.lineTo(sign * w / 2, -R - tail)                            // tail, inner side
+  s.moveTo(0, -shaft / 2)
+  s.lineTo(L - hl, -shaft / 2)
+  s.lineTo(L - hl, -hw / 2)
+  s.lineTo(L, 0)
+  s.lineTo(L - hl, hw / 2)
+  s.lineTo(L - hl, shaft / 2)
+  s.lineTo(0, shaft / 2)
   s.closePath()
-  const g = new THREE.ShapeGeometry(s, 24)
-  // Put the BEND on the origin, not the shape's corner. The mesh is positioned at the junction
-  // node, so without this the whole glyph hangs off to one side of it and sits over the verge.
-  const [mx, my] = pt(at(0.5), R)
-  g.translate(-mx, -my, 0)
-  // ShapeGeometry lies in XY; rotate so shape-y becomes local +Z (travel) and it lies flat.
-  g.rotateX(Math.PI / 2)
+  const g = new THREE.ShapeGeometry(s)
+  // Centre it on the node along its length, and lift so the board sits ON the mesh origin.
+  g.translate(-L / 2, hw / 2, 0)
   return g
 }
 
@@ -288,11 +262,9 @@ export class GpsSystem {
     for (let i = 0; i < CHEV_COUNT; i++) this._chev.setColorAt(i, new THREE.Color(1, 1, 1))
     this.group.add(this._chev)
 
-    // Arrow geometry is per turn ANGLE, cached by 15° bin — a route only ever produces a handful.
-    this._arrowGeo = new Map()
-    this._arrowKey = null
+    this._arrowGeo = _arrowGeometry()
     this._arrowMat = mat()
-    this._arrow = new THREE.Mesh(this._arrowGeometryFor('right', Math.PI / 2), this._arrowMat)
+    this._arrow = new THREE.Mesh(this._arrowGeo, this._arrowMat)
     this._arrow.frustumCulled = false
     this._arrow.renderOrder = 3
     this._arrow.visible = false
@@ -389,29 +361,12 @@ export class GpsSystem {
     this._chev.visible = any
   }
 
-  /**
-   * Arrow geometry bent to the actual turn, quantised to 15° so a route reuses a handful of
-   * geometries instead of rebuilding one per junction. Swept past ARROW_MAX_DEG the band starts
-   * eating its own tail, so a hairpin is drawn at the cap — still unambiguous which way to go.
-   */
-  _arrowGeometryFor (turn, angle) {
-    const deg = Math.min(ARROW_MAX_DEG, Math.max(30, Math.round(angle * 180 / Math.PI / 15) * 15))
-    const key = `${turn}:${deg}`
-    let g = this._arrowGeo.get(key)
-    if (!g) {
-      g = _turnArrowGeometry(turn === 'right' ? 1 : -1, deg * Math.PI / 180)
-      this._arrowGeo.set(key, g)
-    }
-    this._arrowKey = key
-    return g
-  }
-
   _placeArrow (route, s) {
-    // Next junction that is an actual decision. Straights are skipped entirely — that deadband is
-    // what keeps this from littering the drive with arrows at every gentle kink.
+    // The next real intersection ahead. bakeRoute has already dropped degree-2 nodes, so every
+    // entry here is somewhere the driver genuinely has a choice.
     let j = null
     for (const jn of route.junctions) {
-      if (jn.s - s < -ARROW_PAST || jn.turn === 'straight') continue
+      if (jn.s - s < -ARROW_PAST) continue
       if (jn.s - s > ARROW_IN) break
       j = jn; break
     }
@@ -421,14 +376,13 @@ export class GpsSystem {
     const fade = dist > ARROW_FULL
       ? 1 - (dist - ARROW_FULL) / (ARROW_IN - ARROW_FULL)
       : Math.min(1, (dist + ARROW_PAST) / ARROW_PAST)      // fades back out just past the node
-    const geo = this._arrowGeometryFor(j.turn, Math.abs(j.angle))
-    if (this._arrow.geometry !== geo) this._arrow.geometry = geo
-    const din = _dirBack(route, j.i, TAN_SPAN) || { x: 0, z: 1 }
     this._arrow.position.set(
       route.px[j.i],
       route.py[j.i] + ARROW_HOVER + Math.sin(this._t * 1.6) * 0.12,
       route.pz[j.i])
-    this._arrow.rotation.set(0, Math.atan2(din.x, din.z), 0)
+    // Board stands upright, aimed straight down the EXIT road: rotY maps local +X onto
+    // (cos, -sin), so yaw = atan2(-oz, ox) puts the tip on the outgoing direction.
+    this._arrow.rotation.set(0, Math.atan2(-j.oz, j.ox), 0)
     this._arrowMat.opacity = Math.max(0, Math.min(1, fade))
     this._arrow.visible = this._arrowMat.opacity > 0.02
   }
@@ -446,8 +400,7 @@ export class GpsSystem {
   dispose () {
     this.group.removeFromParent()
     this._chevGeo.dispose(); this._chevMat.dispose()
-    for (const g of this._arrowGeo.values()) g.dispose()
-    this._arrowGeo.clear(); this._arrowMat.dispose()
+    this._arrowGeo.dispose(); this._arrowMat.dispose()
     this._ringGeo.dispose(); this._ringMat.dispose()
     this._chev.dispose()
     this._route = null; this._src = null

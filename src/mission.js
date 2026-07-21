@@ -421,7 +421,12 @@ export class MissionSystem {
                 const t = EDGE_T_MARGIN + Math.random() * (0.55 - EDGE_T_MARGIN)
                 s1 = forward ? L * (1 - t) : L * t
             }
-            segments.push({ centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key })
+            // FEAT-39: DEGREE of the node this edge ends at. A join is a real intersection — a
+            // place the driver has a choice — only when that node carries three or more edges; a
+            // degree-2 node is just the road bending through (QUAL-16 made those first-class), and
+            // the turn angle alone cannot tell the two apart. The GPS assist filters on this.
+            const endDeg = (adj.get(nodePath[i + 1]) || []).length
+            segments.push({ centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key, endDeg })
 
             // Map polyline for this traversed range.
             const n = Math.max(2, Math.ceil(Math.abs(s1 - s0) / 25))
