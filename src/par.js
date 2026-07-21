@@ -28,8 +28,23 @@
  * NOT the Ranger, and deliberately not tied to it: these are design knobs for the payout curve.
  */
 export const PAR_REF = {
-    // CALIBRATION (FEAT-30, 2026-07-20). `mu` is now measurement-derived; the rest are still the
-    // first-pass guess.
+    // CALIBRATION (FEAT-30, 2026-07-20). Two passes:
+    //
+    // (1) The headless constant-steer harness measured steady-state mu 0.577 mean, and I set
+    //     mu = 0.577 × 0.85 = 0.49 on the assumption that a human realizes only a FRACTION of the
+    //     steady-state envelope. That assumption was WRONG IN SIGN. Driving the lab skidpads, the
+    //     owner recorded mu 0.743 at R=25 m and 0.724 at R=60 m — comfortably ABOVE the harness.
+    //     So the harness is a LOWER bound on cornering, not the ceiling: its "settled trim" test
+    //     (radius drift < 12%, speed held < 12%) rejects exactly the ragged, slightly-sliding,
+    //     throttle-steered line a human actually corners on, and its coarse speed sweep only ever
+    //     reports the last speed that passed.
+    //
+    // (2) mu = 0.62 ≈ 0.73 (human skidpad) × 0.85, the fraction of a dedicated-skidpad limit that
+    //     survives real corners — transitions, sight lines, unknown camber, road width.
+    //
+    // NOTE the R=150 m skidpad reading (mu 0.647) is NOT a grip measurement and must not be
+    // averaged in: at that radius the truck is POWER limited (full throttle the whole lap) and
+    // never reaches the friction limit at all. Only the 25 m and 60 m laps bound grip.
     //
     // test/measure-vehicle-limits.mjs measured the stock truck's steady-state cornering envelope
     // headlessly (open-loop constant-steer skidpad): mu 0.51–0.66 across radii 8–103 m, mean
@@ -43,10 +58,16 @@ export const PAR_REF = {
     // Note from the same work: mu is the DOMINANT dial. vMax is nearly free (these roads are
     // curvature-limited essentially everywhere — 42.6 vs 30.0 m/s moved par by under a second),
     // and accel/brake are secondary. Tune HERE, never by touching the vehicle (SM-INV-2).
-    mu: 0.49,          // reference friction coefficient (measured 0.577 × 0.85 provisional k)
+    mu: 0.62,          // reference friction coefficient — see below
     accel: 2.8,        // powertrain-limited longitudinal accel on the flat (m/s²)
     brake: 5.5,        // braking decel cap (m/s²) — also friction-circle limited below
-    vMax: 28.0,        // reference top/cruise speed (m/s ≈ 101 km/h)
+    // vMax is the FLAT terminal speed, and it sets the drag coefficient (k = accel / vMax²)
+    // rather than acting as a hard clamp. That matters: with a hard clamp, par hit the cap and
+    // cruised regardless of gravity, so a long descent priced the same as flat ground — measured
+    // at 0.3 s per 1500 m, against a driver who was demolishing par on downhill routes. With drag,
+    // terminal speed solves a_pt + g·sin(-θ) = k·v² and rises downhill / falls uphill on its own.
+    vMax: 28.0,        // m/s ≈ 101 km/h — terminal speed ON THE FLAT
+    vCeil: 46.0,       // m/s — hard ceiling; the measured stock-truck vMax, never exceeded
     vMin: 2.5,         // speed floor so a hairpin can't price as infinite time (m/s)
     junctionRadius: 18, // effective corner radius when turning through a node (m)
     junctionDeadband: 0.14, // heading change below this (rad, ~8°) is not a corner at all
@@ -68,11 +89,12 @@ const EPS = 1e-9
  */
 
 /**
- * Sample a route into a flat profile in travel order.
+ * Sample a route into a flat profile in travel order. Exported so the run-export can report the
+ * same curvature/grade profile par actually priced, rather than a re-derivation that could drift.
  * Returns parallel arrays: `d` (3D distance travelled to sample i), `kappa` (|1/m|),
  * `sinT`/`cosT` (grade), plus `capIdx`/`capV` for junction speed caps at segment joins.
  */
-function sampleRoute(segments) {
+export function sampleRoute(segments) {
     const d = [], kappa = [], sinT = [], cosT = []
     const caps = []            // { i, v } hard speed caps injected at segment joins
     let dist = 0
@@ -144,11 +166,17 @@ export function computePar(segments, ref = PAR_REF) {
     const gmu = ref.mu * ref.g
     const v = new Float64Array(n)
 
-    // 1. Curvature envelope.
+    // Drag coefficient implied by the flat terminal speed: at v = vMax on the flat, powertrain
+    // accel is exactly cancelled by drag. Everything downhill/uphill then falls out of the physics.
+    const kDrag = ref.accel / (ref.vMax * ref.vMax)
+    const vCeil = ref.vCeil ?? ref.vMax
+
+    // 1. Curvature envelope. Capped by the hard ceiling, NOT by vMax — on a descent the reference
+    // is allowed past its flat cruise speed, which is the whole point.
     for (let i = 0; i < n; i++) {
         const kap = kappa[i]
         const vCorner = kap < EPS ? Infinity : Math.sqrt((gmu * cosT[i]) / kap)
-        v[i] = Math.max(ref.vMin, Math.min(ref.vMax, vCorner))
+        v[i] = Math.max(ref.vMin, Math.min(vCeil, vCorner))
     }
     // Junction caps sit on top of the envelope.
     for (const c of caps) {
@@ -156,21 +184,30 @@ export function computePar(segments, ref = PAR_REF) {
         v[i] = Math.max(ref.vMin, Math.min(v[i], c.v))
     }
 
-    // 2. Forward (accel-limited), from rest.
+    // 2. Forward (accel-limited), from rest. `a` may be NEGATIVE — above terminal speed, or on a
+    // climb steeper than the powertrain can hold — and the reference then slows, which is correct.
     v[0] = 0
     for (let i = 1; i < n; i++) {
         const ds = d[i] - d[i - 1]
-        const a = longCap(v[i - 1], kappa[i - 1], ref.accel, ref, sinT[i - 1], +1)
-        const vf = Math.sqrt(Math.max(0, v[i - 1] * v[i - 1] + 2 * a * ds))
+        const vv = v[i - 1]
+        const a = Math.min(ref.accel, gripLimit(vv, kappa[i - 1], gmu))   // powertrain, grip-capped
+            - ref.g * sinT[i - 1]                                        // gravity along the road
+            - kDrag * vv * vv                                            // drag
+        const vf = Math.sqrt(Math.max(ref.vMin * ref.vMin, vv * vv + 2 * a * ds))
         if (vf < v[i]) v[i] = vf
     }
 
-    // 3. Backward (brake-limited), to rest.
+    // 3. Backward (brake-limited), to rest. Gravity and drag BOTH help you slow going uphill and
+    // hinder you going down, so they enter with the opposite sign to the forward pass.
     v[n - 1] = 0
     for (let i = n - 2; i >= 0; i--) {
         const ds = d[i + 1] - d[i]
-        const a = longCap(v[i + 1], kappa[i + 1], ref.brake, ref, sinT[i + 1], -1)
-        const vb = Math.sqrt(Math.max(0, v[i + 1] * v[i + 1] + 2 * a * ds))
+        const vv = v[i + 1]
+        const a = Math.max(0.15,
+            Math.min(ref.brake, gripLimit(vv, kappa[i + 1], gmu))
+            + ref.g * sinT[i + 1]
+            + kDrag * vv * vv)
+        const vb = Math.sqrt(Math.max(0, vv * vv + 2 * a * ds))
         if (vb < v[i]) v[i] = vb
     }
 
@@ -185,19 +222,13 @@ export function computePar(segments, ref = PAR_REF) {
 }
 
 /**
- * Longitudinal accel available at speed `vv` on a corner of curvature `kap`, given a
- * powertrain/brake cap and the grade. `sign` is +1 accelerating, -1 braking (the returned
- * magnitude is always ≥ 0 in the direction of travel of that pass).
- * Friction circle: a_long ≤ √((μg)² − a_lat²), a_lat = v²κ. Grade adds/removes g·sinθ.
+ * Longitudinal grip still available at speed `vv` on a corner of curvature `kap`.
+ * Friction circle: a_long ≤ √((μg)² − a_lat²), with a_lat = v²·κ — whatever grip the corner is
+ * already spending is not available to accelerate or brake with.
  */
-function longCap(vv, kap, cap, ref, sinTheta, sign) {
-    const gmu = ref.mu * ref.g
+function gripLimit(vv, kap, gmu) {
     const aLat = vv * vv * kap
-    const grip = Math.sqrt(Math.max(0, gmu * gmu - aLat * aLat))
-    let a = Math.min(cap, grip)
-    // Uphill costs the forward pass and helps the backward (braking) pass, and vice versa.
-    a -= sign * ref.g * sinTheta
-    return Math.max(0.15, a)   // floor: the reference never stalls outright
+    return Math.sqrt(Math.max(0, gmu * gmu - aLat * aLat))
 }
 
 /**

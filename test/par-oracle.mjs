@@ -15,6 +15,7 @@
 // the whole point of par.js taking geometry by interface.
 import { computePar, PAR_REF, gradeRun, formatTime } from '../src/par.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
+import { headingToFace, facingFromHeading } from '../src/mission.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -46,18 +47,54 @@ const slope = (grade) => (s) => s * grade
 
 const seg = (centerline, gradeAt = flat, s0 = 0, s1 = centerline.length) => ({ centerline, gradeAt, s0, s1 })
 
-// ── 1. Flat straight matches the closed-form accel → cruise → brake time ─────────────────────────
+// ── 1. Flat straight matches an INDEPENDENT time-marched integration ────────────────────────────
+// par.js solves this by marching in SPACE (forward accel pass, backward brake pass). This check
+// marches in TIME with a plain ODE and a "brake when you must" rule — a different algorithm over
+// the same physics, so agreement is evidence rather than tautology.
+// (The previous closed form assumed no drag and went stale the moment terminal speed became a
+// drag balance instead of a hard cap — it read 2% fast.)
 {
   const L = 2000
   const { time, distance } = computePar([seg(straight(L))])
-  const { accel: a, brake: b, vMax: vm } = PAR_REF
-  // Closed form: accelerate to vm, cruise, brake to rest.
-  const dA = vm * vm / (2 * a), dB = vm * vm / (2 * b)
-  const expect = vm / a + vm / b + (L - dA - dB) / vm
-  check('flat straight par matches closed-form accel/cruise/brake',
-    Math.abs(time - expect) / expect < 0.02, `got ${time.toFixed(2)}s expect ${expect.toFixed(2)}s`)
+  const { accel: a, brake: bk, vMax: vm } = PAR_REF
+  const k = a / (vm * vm)                       // same drag coefficient par derives
+  const dt = 1e-4
+  let v = 0, x = 0, t = 0
+  while (x < L && t < 600) {
+    // Distance still needed to stop from here, decelerating at `bk` plus drag (drag ignored ⇒
+    // slightly conservative ⇒ brakes a touch early, worth well under the tolerance).
+    const stopDist = v * v / (2 * bk)
+    const acc = (L - x <= stopDist) ? -(bk + k * v * v) : (a - k * v * v)
+    v = Math.max(0, v + acc * dt)
+    x += v * dt
+    t += dt
+    if (v <= 0 && L - x > 1) break              // shouldn't happen; guard against a stall
+  }
+  check('flat straight par matches an independent time-marched integration',
+    Math.abs(time - t) / t < 0.03, `par ${time.toFixed(2)}s vs march ${t.toFixed(2)}s`)
   check('flat straight distance == centerline length',
     Math.abs(distance - L) < 1e-6, `got ${distance}`)
+}
+
+// ── 1b. Grade is signed: downhill must be FASTER than flat, uphill slower ────────────────────────
+// This was the defect the owner reported — par was effectively grade-blind on descents (0.3 s per
+// 1500 m) because vMax was a HARD cap, so the reference hit it and cruised no matter what gravity
+// was doing. Terminal speed is now a drag balance, so gravity shifts it.
+{
+  const L = 1500
+  const t = (g) => computePar([seg(straight(L), slope(g))]).time
+  const flat = t(0), down5 = t(-0.05), down10 = t(-0.10), up10 = t(0.10)
+  check('downhill is faster than flat', down10 < flat, `${down10.toFixed(1)}s vs ${flat.toFixed(1)}s`)
+  check('steeper downhill is faster still', down10 < down5, `${down10.toFixed(1)}s vs ${down5.toFixed(1)}s`)
+  check('uphill is slower than flat', up10 > flat, `${up10.toFixed(1)}s vs ${flat.toFixed(1)}s`)
+  // Magnitude, not just sign: a 10% descent is worth real time on a straight.
+  check('a 10% descent is worth >5% of the flat time', (flat - down10) / flat > 0.05,
+    `saved ${(100 * (flat - down10) / flat).toFixed(1)}%`)
+  // And the reference is allowed past its flat cruise speed on the way down.
+  const peak = Math.max(...computePar([seg(straight(L), slope(-0.12))]).speeds)
+  check('a descent lets par exceed the flat terminal speed', peak > PAR_REF.vMax * 1.05,
+    `peak ${(peak * 3.6).toFixed(0)} km/h vs flat vMax ${(PAR_REF.vMax * 3.6).toFixed(0)}`)
+  check('but never past the hard ceiling', peak <= PAR_REF.vCeil + 1e-6)
 }
 
 // ── 2. Monotonicity: curvature and grade only ever cost time ────────────────────────────────────
@@ -140,6 +177,31 @@ const seg = (centerline, gradeAt = flat, s0 = 0, s1 = centerline.length) => ({ c
   check('grade D is well over par', gradeRun(500, par).letter === 'D')
   check('margin is par − elapsed', Math.abs(gradeRun(280, par).margin - 20) < 1e-9)
   check('formatTime pads seconds', formatTime(65.4) === '1:05.4', formatTime(65.4))
+}
+
+// ── 8. Spawn heading convention ─────────────────────────────────────────────────────────────────
+// Missions shipped spawning the player 180° out on every single run. Nothing crashed, the map drew
+// the route correctly, and the only symptom was a U-turn — which then inflated every calibration
+// time measured against it. Pin the convention both ways.
+//
+// The ground truth lives in _seatOnGroundPlane (src/main.js): the front axle sits at body-local -Z
+// and the body yaws by `heading`, so front-minus-rear points along (-sin h, -cos h). That file is
+// in this gate's extraDeps so an edit to the seat re-runs this check.
+{
+  const dirs = [[1, 0], [0, 1], [-1, 0], [0, -1], [0.6, 0.8], [-0.28, -0.96]]
+  let worst = 0
+  for (const [tx, tz] of dirs) {
+    const f = facingFromHeading(headingToFace(tx, tz))
+    worst = Math.max(worst, Math.hypot(f.x - tx, f.z - tz))
+  }
+  check('a truck seated at headingToFace(t) actually faces t', worst < 1e-12,
+    `worst error ${worst}`)
+  // The specific failure that shipped: atan2(tx, tz) instead of atan2(-tx, -tz) is exactly 180° out.
+  const naive = Math.atan2(1, 0), correct = headingToFace(1, 0)
+  const fN = facingFromHeading(naive)
+  check('the naive atan2(tx,tz) form faces BACKWARDS (regression pin)',
+    Math.abs(fN.x - (-1)) < 1e-12 && Math.abs(correct - Math.atan2(-1, -0)) < 1e-12,
+    `naive faces (${fN.x.toFixed(2)}, ${fN.z.toFixed(2)})`)
 }
 
 // ── report ──────────────────────────────────────────────────────────────────────────────────────

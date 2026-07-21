@@ -21,7 +21,7 @@
  * loop. update() is a couple of distance checks per frame.
  */
 
-import { computePar, gradeRun, formatTime } from './par.js'
+import { computePar, sampleRoute, gradeRun, formatTime, PAR_REF } from './par.js'
 
 const MISSION_GRAPH_RADIUS = 4500   // m — node-graph band to plan within (anchors only, cheap)
 // Leg bounds are measured on STRAIGHT-LINE graph distance (the planner's cheap metric); the
@@ -32,6 +32,23 @@ const MAX_EDGES = 9                 // routing cap: each edge is tens of ms on a
 const ARRIVE_RADIUS = 28            // m — you're there
 const COUNTDOWN = 3.0               // s — the start countdown (a START count, not a par clock)
 const EDGE_T_MARGIN = 0.12          // keep endpoints off the junction pads at both ends
+
+/**
+ * Heading that makes the truck FACE the direction (tx, tz).
+ *
+ * THE CONVENTION, because getting it backwards is silent and expensive: `_seatOnGroundPlane` in
+ * main.js puts the front axle at body-local -Z and yaws the body by `heading` with
+ * `wx = lx·cos h + lz·sin h`, `wz = -lx·sin h + lz·cos h`. Front-minus-rear therefore points along
+ * **(-sin h, -cos h)** — so to face (tx, tz) you need `h = atan2(-tx, -tz)`, not `atan2(tx, tz)`.
+ *
+ * Missions shipped with the naive version and spawned the player facing backwards EVERY time. It
+ * hid well: the map showed the route correctly, the truck sat on the road, and the only symptom
+ * was a U-turn that also quietly inflated every calibration time it was measured against.
+ */
+export function headingToFace(tx, tz) { return Math.atan2(-tx, -tz) }
+
+/** Inverse of headingToFace: the unit direction a truck seated at `heading` will point. */
+export function facingFromHeading(h) { return { x: -Math.sin(h), z: -Math.cos(h) } }
 
 export class MissionSystem {
     /**
@@ -107,6 +124,103 @@ export class MissionSystem {
     markers() {
         if (!this.mission) return null
         return { start: this.mission.start, end: this.mission.end, poly: this.mission.poly }
+    }
+
+    /**
+     * FEAT-30 calibration: everything needed to work out WHY a run scored the way it did, as a
+     * downloadable blob. The point is to close the loop on subjective reports ("felt slow, got S")
+     * — which need the route's shape, not just the score, to explain.
+     *
+     * Reports the profile par ACTUALLY priced (via par.js's own sampleRoute) rather than
+     * re-deriving it here, so the export can't drift from the thing it is describing.
+     */
+    exportRun(note = '') {
+        if (!this.mission) return null
+        const segs = this.mission.segments
+        const { d, kappa, sinT } = sampleRoute(segs)
+        const par = computePar(segs)
+        const n = d.length
+        if (n < 2) return null
+
+        // Climb / descent and the grade distribution.
+        let climb = 0, descent = 0, up = 0, down = 0, flat = 0
+        const grades = []
+        for (let i = 1; i < n; i++) {
+            const ds = d[i] - d[i - 1]
+            const dy = sinT[i] * ds
+            if (dy > 0) climb += dy; else descent += -dy
+            const g = sinT[i] / Math.sqrt(Math.max(1e-9, 1 - sinT[i] * sinT[i]))
+            grades.push(g)
+            if (g > 0.02) up += ds; else if (g < -0.02) down += ds; else flat += ds
+        }
+        const sorted = [...grades].sort((a, b) => a - b)
+        const q = (p) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] : 0
+
+        // Curvature: how much of the route is in each radius band.
+        const bands = { hairpin_lt25: 0, tight_25_60: 0, medium_60_150: 0, open_150_400: 0, straight_gt400: 0 }
+        let minR = Infinity, sumAbsK = 0
+        for (let i = 1; i < n; i++) {
+            const ds = d[i] - d[i - 1], k = kappa[i]
+            const R = k < 1e-6 ? Infinity : 1 / k
+            minR = Math.min(minR, R); sumAbsK += k * ds
+            if (R < 25) bands.hairpin_lt25 += ds
+            else if (R < 60) bands.tight_25_60 += ds
+            else if (R < 150) bands.medium_60_150 += ds
+            else if (R < 400) bands.open_150_400 += ds
+            else bands.straight_gt400 += ds
+        }
+        const total = d[n - 1] || 1
+        const pct = (o) => Object.fromEntries(Object.entries(o).map(([k2, v]) => [k2, +(100 * v / total).toFixed(1)]))
+
+        // Par's own speed profile, every ~25 m — shows WHERE par thinks you should be quick.
+        const prof = []
+        let next = 0
+        for (let i = 0; i < n; i++) {
+            if (d[i] < next) continue
+            next = d[i] + 25
+            const k = kappa[i]
+            prof.push({
+                s_m: +d[i].toFixed(0),
+                par_kmh: +(par.speeds[i] * 3.6).toFixed(1),
+                grade_pct: +(100 * sinT[i] / Math.sqrt(Math.max(1e-9, 1 - sinT[i] * sinT[i]))).toFixed(1),
+                radius_m: k < 1e-6 ? null : +(1 / k).toFixed(0),
+            })
+        }
+
+        return {
+            format: 'rangersim-run-export/1',
+            note,
+            result: this.result
+                ? { elapsed_s: +this.result.elapsed.toFixed(2), par_s: +this.result.par.toFixed(2),
+                    ratio: +this.result.ratio.toFixed(3), letter: this.result.letter,
+                    margin_s: +this.result.margin.toFixed(2) }
+                : { elapsed_s: +this.elapsed.toFixed(2), par_s: +this.mission.par.toFixed(2), incomplete: true },
+            par_ref: { ...PAR_REF },
+            route: {
+                distance_m: +total.toFixed(1),
+                edges: this.mission.edges,
+                start: { x: +this.mission.start.x.toFixed(1), z: +this.mission.start.z.toFixed(1) },
+                end: { x: +this.mission.end.x.toFixed(1), z: +this.mission.end.z.toFixed(1) },
+                par_avg_kmh: +(total / par.time * 3.6).toFixed(1),
+            },
+            terrain: {
+                climb_m: +climb.toFixed(1), descent_m: +descent.toFixed(1),
+                net_m: +(climb - descent).toFixed(1),
+                grade_pct: { p10: +(100 * q(0.1)).toFixed(1), median: +(100 * q(0.5)).toFixed(1),
+                             p90: +(100 * q(0.9)).toFixed(1),
+                             max_up: +(100 * Math.max(...grades)).toFixed(1),
+                             max_down: +(100 * Math.min(...grades)).toFixed(1) },
+                pct_uphill: +(100 * up / total).toFixed(1),
+                pct_downhill: +(100 * down / total).toFixed(1),
+                pct_flat: +(100 * flat / total).toFixed(1),
+            },
+            corners: {
+                min_radius_m: isFinite(minR) ? +minR.toFixed(1) : null,
+                mean_curvature_per_m: +(sumAbsK / total).toFixed(5),
+                pct_by_radius: pct(bands),
+            },
+            par_profile: prof,
+        }
     }
 
     /** Metres remaining, as the crow flies. */
@@ -261,7 +375,7 @@ export class MissionSystem {
         const ep = last.centerline.pointAt(last.s1)
 
         return {
-            start: { x: sp.x, z: sp.z, heading: Math.atan2(st.x * dir, st.z * dir) },
+            start: { x: sp.x, z: sp.z, heading: headingToFace(st.x * dir, st.z * dir) },
             end: { x: ep.x, z: ep.z },
             par: time,
             distance,
