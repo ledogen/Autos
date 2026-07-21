@@ -45,6 +45,7 @@ import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { MissionSystem, MISSION_PLAN_RADIUS, PLAN_RESTREAM_MOVE } from './mission.js'  // story mode (beta)
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
+import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
@@ -554,6 +555,9 @@ function debouncedRebuildFull () {
     // BEFORE props: the scatter's waterAt sampler must read the NEW seed's ponds, and setWaterNoGo
     // (inside) must reshape the fresh roadSystem's network before anything streams it.
     if (waterSystem) rebuildWaterSystem()
+    // FEAT-39: the baked route belongs to the OLD seed's network — drop it rather than draw
+    // arrows over roads that no longer exist.
+    if (gpsSystem) gpsSystem.clearRoute()
     // FEAT-06: props are seed-deterministic, so a new seed must rebuild them or they show stale
     // scatter. The samplers read the (now-reassigned) module-scope systems, so makePropSamplers()
     // picks up the fresh terrain/road/water instances.
@@ -978,6 +982,8 @@ let missionSystem = null
 // construction site) because the contact queries above reference it: a const would sit in the
 // temporal dead zone and throw if anything probed the ground during boot.
 let labSystem = null
+// FEAT-39 GPS assist — constructed with missionSystem below (it reads the mission's route).
+let gpsSystem = null
 const map2d = new Map2D({
   canvas:    document.getElementById('map2d'),
   getSeed:   () => worldSeed,
@@ -1642,6 +1648,21 @@ missionSystem = new MissionSystem({
   onChange: () => _renderMissionUI(),
 })
 
+// ── FEAT-39: GPS navigation assist ───────────────────────────────────────────
+// A pure guidance overlay: chevrons along the route ahead + a turn arrow over the next junction.
+// It reads the route the mission ALREADY computed (mission.segments) — no routing, no RoadSystem
+// query, and nothing anywhere near the input/physics path. Shown only once the run is live: during
+// 'offer' the truck has not been teleported to the start yet, so arrows would point off elsewhere.
+gpsSystem = new GpsSystem(scene, {
+  getRoute: () => {
+    const s = missionSystem?.state
+    return (s === 'countdown' || s === 'running') ? missionSystem.mission : null
+  },
+  getCar: () => vehicleState.position,
+})
+// FEAT-41 seam: the story-mode assists page will flip this (mirrors window.__setGameMode).
+window.__setGpsEnabled = (v) => gpsSystem?.setEnabled(v)
+
 // ── FEAT-31: the testing lab ─────────────────────────────────────────────────
 // An isolated flat world with painted, auto-timed tracks. Grid world only ever hid the TERRAIN
 // chunks, so the ribbons/props/water stayed floating at their real elevations and every worldgen
@@ -1892,6 +1913,8 @@ addPropGui(_gui, {
   getPropSystem: () => propSystem,   // PERF-07: live handle for the shadow-cast toggle (survives rebuild)
   onShadowModeChange: applyPropShadowMode,   // PERF-07: mode/strength toggle → sync casting + atlas strength
 })
+// FEAT-39: GPS assist toggle (self-contained folder, same pattern as the props one).
+addGpsGui(_gui, gpsSystem)
 // QUAL-02: sky/lighting tuning folder (self-contained — attaches to _gui like the props folder).
 skySystem.addGui(_gui)
 // FEAT-14: vehicle cast-light tuning folder (headlight beams + rear lamp pools).
@@ -2642,6 +2665,14 @@ function loop () {
 
   // QUAL-02: keep the (finite) sky box centred on the camera so it always surrounds the view.
   skySystem.update(camera.position)
+
+  // FEAT-39: GPS overlay. Early-outs to nothing when no mission is live, so free roam pays a
+  // null check. Off in the lab, which has no road network to navigate.
+  if (gpsSystem && !_labActive) {
+    const _ptG = performance.now()
+    gpsSystem.update(frameTime)
+    perfAdd('frame.gps.update', performance.now() - _ptG)
+  }
 
   // FEAT-16: redraw the 2D map overlay only while it's open (off the hot path otherwise).
   if (map2d.isOpen()) map2d.render()

@@ -122,6 +122,18 @@ explicit accessibility layer), full range in free roam. Where the assists menu l
 story-mode **debug lockout** (RATIFIED 2026-07-16 — sliders fixed in story mode) needs an owner call:
 assists are *player* settings, not debug tuning, so they probably survive the lockout — but confirm.
 
+## Progress
+
+- **2026-07-21 — GPS assist (#5) SHIPPED** on `feature/gps`: `src/gps.js` plus four additive hooks in
+  `src/main.js`, gated by `test/gps-route.mjs`. Chevrons hovering over the route ahead, one flat
+  curved arrow over the next junction (18° straight deadband, so gentle kinks raise nothing), and a
+  ring at the destination. It reads `mission.segments` — the route the mission already computed — so
+  there is no new routing and no per-frame `RoadSystem` query. Default **ON** (playtesting + FEAT-30
+  par calibration); `window.__setGpsEnabled(v)` and a lil-gui toggle are the seams FEAT-41's assists
+  page will drive. The presentation question above is answered: **in-world arrows, no mini-map or
+  HUD ribbon.**
+- The four handling assists (#1–#4) and the Assists menu page remain open.
+
 ## Acceptance
 
 - Four handling assists implemented as input-modulation passes in `src/vehicle.js`, each toggleable
