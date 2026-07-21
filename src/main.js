@@ -1689,6 +1689,10 @@ function _renderMissionUI () {
       show(document.getElementById('mp-export-row'), false)
       show(document.getElementById('mp-seed-row'), true, 'flex')
       _syncSeedField()
+      // Clear the per-run note so the previous run's note cannot ride along with the next export.
+      // The DRIVER name is deliberately NOT cleared — it is per-session, and re-typing it every run
+      // is exactly how you end up with three spellings of one person in the dataset.
+      const _n = document.getElementById('mp-note'); if (_n) _n.value = ''
       break
     }
     case 'countdown':
@@ -1758,6 +1762,10 @@ function _applyStorySeed () {
   }, 2500)
 }
 document.getElementById('mp-seed-go')?.addEventListener('click', _applyStorySeed)
+// Keep typed text out of the world (WASD/M/Esc would otherwise drive/toggle while typing).
+for (const id of ['mp-note', 'mp-driver']) {
+  document.getElementById(id)?.addEventListener('keydown', (e) => e.stopPropagation())
+}
 document.getElementById('mp-seed')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); _applyStorySeed() }
   e.stopPropagation()          // keep WASD/M/Esc out of the world while typing a seed
@@ -1779,11 +1787,13 @@ for (const b of document.querySelectorAll('.mp-felt')) {
     const data = missionSystem.exportRun(note)
     if (!data) return
     data.felt = b.dataset.felt
+    data.driver = document.getElementById('mp-driver')?.value?.trim() || null
     data.seed = worldSeed
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `rangersim-run-${data.felt}-${data.result.letter ?? 'x'}-${Math.round(data.result.elapsed_s)}s.json`
+    a.download = `rangersim-run-${data.driver ? data.driver.replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-' : ''}`
+      + `${data.felt}-${data.result.letter ?? 'x'}-${Math.round(data.result.elapsed_s)}s.json`
     a.click()
     URL.revokeObjectURL(a.href)
     const label = b.textContent

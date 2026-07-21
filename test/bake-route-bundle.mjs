@@ -55,12 +55,40 @@ const baseZ = (((ss >>> 16) & 0xFFFF) / 0xFFFF - 0.5) * 200
 // than one cold pass at the final radius, and it keeps memory flat.
 // Derived from the target, never hardcoded past it — a stale literal above MISSION_PLAN_RADIUS
 // silently bakes (and ships) a bigger network than the game will ever ask for.
-const RINGS = [480, 900, 1200].filter(r => r < MISSION_PLAN_RADIUS).concat([MISSION_PLAN_RADIUS])
+// +BAKE_MARGIN because the bake centres on the seed's spawn BASE point while the game centres the
+// planner on the RESOLVED spawn (resolveSpawn nudges it to low-slope ground — ~155 m away on the
+// default seed). Without the margin the planner's band pokes past the baked one and routes live.
+const BAKE_MARGIN = 300
+const TARGET = MISSION_PLAN_RADIUS + BAKE_MARGIN
+const RINGS = [480, 900, 1200].filter(r => r < TARGET).concat([TARGET])
 for (const R of RINGS) {
     const t = Date.now()
     road.setRadius(R)
     road.update(new THREE.Vector3(baseX, 0, baseZ))
     console.log(`  ring ${String(R).padStart(4)} m … ${((Date.now() - t) / 1000).toFixed(1)} s  (cls ${road._proto.cls.size})`)
+}
+
+// Also route everything the RUNTIME WARM will ask for (warmBandComplete's in-band edge set), or the
+// game still routes on first open despite the bundle. update() only routes the registered edges and
+// their direct dependencies; the warm additionally covers edges that register from a band centred
+// slightly differently.
+{
+    const t = Date.now()
+    const cmx = Math.floor(baseX / 256), HW = road._bandHalfWidth()
+    const PM = 2
+    const g = road._buildUrquhart(cmx - HW - PM, cmx + HW + PM,
+        Math.floor((baseZ - TARGET) / 256) - PM, Math.ceil((baseZ + TARGET) / 256) + PM, false)
+    const wx0 = (cmx - HW - PM) * 256, wx1 = (cmx + HW + PM + 1) * 256
+    const wz0 = (Math.floor((baseZ - TARGET) / 256) - PM) * 256
+    const wz1 = (Math.ceil((baseZ + TARGET) / 256) + PM + 1) * 256
+    const inBand = (c) => { const p = road._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
+    let n = 0
+    for (const [c1, c2] of g.edges) {
+        if (!inBand(c1) && !inBand(c2)) continue
+        road._edgeCenterline(c1, c2)   // synchronous route → fills the cache we are about to export
+        n++
+    }
+    console.log(`  warm set  … ${((Date.now() - t) / 1000).toFixed(1)} s  (${n} in-band edges, cls ${road._proto.cls.size})`)
 }
 
 const dump = road.exportRouteCache()

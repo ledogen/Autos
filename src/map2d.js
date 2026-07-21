@@ -30,7 +30,11 @@ const MAP_RADIUS_STEPS = [400, 650, 900, 1150, 1500]
 // mission.js), so a mission route can run past the edge of what the map has built — which reads
 // exactly like the route being drawn over empty ground. setRadiusTarget lets the mission tell the
 // map how far it must reach; the extra rings are appended to the progressive stream.
-const MAP_RADIUS_MAX = 3000
+// Capped so the map never streams more than ~4 x 4 km of world: at 3000 m it built a 6 km-wide
+// network and took 20+ s, which is the load the owner was seeing. The mission ROUTE is drawn from
+// the planner's own data regardless, so the map's network is context, not the subject — it does not
+// need to reach the far end of every route.
+const MAP_RADIUS_MAX = 2000
 const PROGRESSIVE_GAP  = 16    // ms — yield between stream chunks so the page stays responsive
 const STREAM_DEBOUNCE = 120    // ms — re-stream only after a pan settles (a stream is expensive)
 const RESTREAM_MOVE   = 300    // m — re-stream when the pan center has drifted past this since last stream
@@ -197,6 +201,13 @@ export class Map2D {
         this._zoom = Math.max(0.005, Math.min(4, fit))
         this._zoomInit = true
         this._bgDirty = true
+        // A programmatic pan has no mouse-up to hang the usual debounced re-stream off, so without
+        // this the route would be drawn over blank noise until the user nudged the map by hand
+        // (owner-reported after hitting "regenerate" while panned away).
+        if (!this._streamAt || Math.hypot(this._panX - this._streamAt.x, this._panZ - this._streamAt.z) > RESTREAM_MOVE) {
+            this._streamFull = false
+            if (this._open) this._startStream()
+        }
     }
 
     hide() {

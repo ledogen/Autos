@@ -1461,7 +1461,15 @@ export class RoadSystem {
         const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING) - PREWARM_MARGIN
         const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING) + PREWARM_MARGIN
         const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)
-        const { jobs, deferred } = this._warmScan(g.edges, Infinity)
+        // Only the edges that will actually REGISTER — same in-band filter _assembleGraphEdges
+        // applies. The raw band+margin Urquhart set is ~5x larger (260 vs 50 edges at a 1400 m
+        // radius), and warming all of it routes roads no mission can ever use. _warmScan still
+        // pulls in whatever SOLO dependencies these need, including ones outside the band.
+        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
+        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
+        const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
+        const edges = g.edges.filter(([c1, c2]) => inBand(c1) || inBand(c2))
+        const { jobs, deferred } = this._warmScan(edges, Infinity)
         if (jobs.length > 0) this._routeDispatch(jobs, this._routeEpoch)
         return jobs.length === 0 && !deferred
     }
