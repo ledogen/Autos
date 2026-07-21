@@ -91,6 +91,14 @@ versus par.
 `mu 0.49` is still comparable later, because its ratio can be recomputed against whatever constants
 were actually in force.
 
+## Lab baselines (`lab-baselines.json`)
+
+Human skill spread on the FEAT-31 testing-lab tracks — vehicle-capability measurements, independent
+of `PAR_REF`, used to bound the `k` factor. Two drivers at opposite ends of the range (expert and
+novice) plus the headless harness for reference. See the `observations` array in the file; the short
+version is that the drag strip is nearly skill-blind while the skidpads span up to 3.3x, and the
+novice's large-radius laps are almost certainly not limit laps.
+
 ## Pre-export anecdotes (2026-07-20, no JSON — these predate the export button)
 
 Both were driven with the 180° spawn bug live, so each includes an unmodelled U-turn (~8–10 s) and

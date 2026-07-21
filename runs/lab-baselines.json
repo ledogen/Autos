@@ -1,0 +1,49 @@
+{
+  "format": "rangersim-lab-baselines/1",
+  "purpose": "Human skill spread on the FEAT-31 testing-lab tracks. These are vehicle-capability measurements (independent of PAR_REF) used to bound the k factor in PAR_REF = k x measured (FEAT-30). Two drivers at opposite ends of the skill range.",
+  "reference_headless": {
+    "source": "test/measure-vehicle-limits.mjs (open-loop constant-steer, no driver)",
+    "note": "Steady-state envelope, mu 0.51-0.66 across radii 8-103 m, mean 0.577. Lower bound on cornering: the settled-trim test rejects the ragged, throttle-steered line a human corners on.",
+    "mu_mean": 0.577,
+    "accel_equiv_100_ms2": 2.93,
+    "brake_ms2": 7.04,
+    "vmax_ms": 46.3,
+    "drag_400m_s": 16.98,
+    "zero_to_100_s": 9.48
+  },
+  "sessions": [
+    {
+      "driver": "owner",
+      "skill": "expert — self-described pro-gamer level at racing games",
+      "date": "2026-07-20",
+      "results": [
+        { "track": "skidpad 25 m",  "lap_s": 11.63, "speed_kmh": 48.6,  "mu": 0.743 },
+        { "track": "skidpad 60 m",  "lap_s": 18.27, "speed_kmh": 74.3,  "mu": 0.724 },
+        { "track": "skidpad 150 m", "lap_s": 30.53, "speed_kmh": 111.1, "mu": 0.647,
+          "invalid_for_grip": true,
+          "why": "POWER limited, not grip limited — full throttle the whole lap, the truck never reaches the friction limit at this radius. Excluded from any mu fit." },
+        { "track": "braking", "distance_m": 57.1, "from_kmh": 102, "decel_ms2": 7.00 },
+        { "track": "drag 400 m", "time_s": 16.03, "trap_kmh": 131, "zero_to_100_s": 8.47,
+          "rolling_start_kmh": 17, "note": "ROLLING start — the 0-100 split is flattered" }
+      ]
+    },
+    {
+      "driver": "child",
+      "skill": "novice — lower-skill end of the range",
+      "date": "2026-07-21",
+      "results": [
+        { "track": "skidpad 25 m",  "lap_s": 11.92, "speed_kmh": 47.5, "mu": 0.708 },
+        { "track": "skidpad 60 m",  "lap_s": 33.13, "speed_kmh": 41.0, "mu": 0.220 },
+        { "track": "skidpad 150 m", "lap_s": 51.82, "speed_kmh": 65.5, "mu": 0.225 },
+        { "track": "drag 400 m", "time_s": 16.60, "trap_kmh": 131, "zero_to_100_s": 9.08, "implied_accel_ms2": 3.06 }
+      ]
+    }
+  ],
+  "observations": [
+    "Arithmetic checks out on every lap: v = 2*pi*R/t and mu = v^2/(g*R) reproduce all reported figures to 3 dp.",
+    "The DRAG strip is nearly skill-blind: 16.03 s (expert) vs 16.60 s (novice), 3.5% apart, and both within 4% of the headless 16.98 s. It measures the truck, not the driver — so it is a poor discriminator for calibration but a good sanity check that the lab and the harness agree.",
+    "The SKIDPADS are where skill lives, and the spread is enormous but NOT uniform: at R=25 m the two drivers are nearly identical (mu 0.743 vs 0.708, 5% apart), while at R=60 m they differ by 3.3x (0.724 vs 0.220) and at R=150 m by 2.9x (0.647 vs 0.225).",
+    "DATA-QUALITY CAVEAT on the novice's large pads: they lapped the 25 m pad FASTER in absolute speed (47.5 km/h) than the 60 m pad (41.0 km/h). A larger radius permits more speed, so the 60 m and 150 m laps are almost certainly not limit laps at all — they look like comfortable cruising rather than a measured maximum. Treat 0.220 / 0.225 as a floor on effort, not a measurement of the driver's grip ceiling.",
+    "Consequence for FEAT-30: par cannot be fitted to a single k. The tight-radius end is skill-insensitive (both drivers near the truck's limit), while the medium/large radii span at least 3x. Whatever par targets, it will feel very different at the two ends of this range."
+  ]
+}
