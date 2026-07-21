@@ -22,6 +22,7 @@
  */
 
 import { computePar, sampleRoute, gradeRun, formatTime, PAR_REF } from './par.js'
+import { roadQuality } from './road-quality.js'
 
 const MISSION_GRAPH_RADIUS = 4500   // m — node-graph band to plan within (anchors only, cheap)
 // Leg bounds are measured on STRAIGHT-LINE graph distance (the planner's cheap metric); the
@@ -32,6 +33,9 @@ const MAX_EDGES = 9                 // routing cap: each edge is tens of ms on a
 const ARRIVE_RADIUS = 28            // m — you're there
 const COUNTDOWN = 3.0               // s — the start countdown (a START count, not a par clock)
 const EDGE_T_MARGIN = 0.12          // keep endpoints off the junction pads at both ends
+const TRACE_HZ = 10                 // driven-trace sample rate
+const TRACE_DIV = Math.round(60 / TRACE_HZ)
+const TOPO_DS = 2.0                 // m — topology export spacing (matches par's own sampling)
 
 /**
  * Heading that makes the truck FACE the direction (tx, tz).
@@ -58,11 +62,13 @@ export class MissionSystem {
      * @param {() => {x:number,z:number}} o.getCar
      * @param {(x:number,z:number,heading:number)=>void} o.teleport
      * @param {(open:boolean)=>void} o.setMapOpen
+     * @param {()=>number} [o.getSeed] — world seed; road-surface quality is seeded from it
      * @param {()=>void} [o.onChange] — called whenever the UI-visible state changes
      */
-    constructor({ getRoad, getCar, teleport, setMapOpen, onChange }) {
+    constructor({ getRoad, getCar, getSeed, teleport, setMapOpen, onChange }) {
         this._getRoad = getRoad
         this._getCar = getCar
+        this._getSeed = getSeed || (() => 0)
         this._teleport = teleport
         this._setMapOpen = setMapOpen
         this._onChange = onChange || (() => {})
@@ -73,6 +79,8 @@ export class MissionSystem {
         this.countdown = 0
         this.result = null       // { elapsed, par, letter, ratio, margin }
         this.error = null
+        this._trace = []         // driven trace rows (see update); reset on accept
+        this._traceTick = 0
     }
 
     // ── lifecycle ───────────────────────────────────────────────────────────────────────────
@@ -103,6 +111,8 @@ export class MissionSystem {
         this.state = 'countdown'
         this.countdown = COUNTDOWN
         this.elapsed = 0
+        this._trace = []
+        this._traceTick = 0
         this._onChange()
     }
 
@@ -137,58 +147,69 @@ export class MissionSystem {
     exportRun(note = '') {
         if (!this.mission) return null
         const segs = this.mission.segments
-        const { d, kappa, sinT } = sampleRoute(segs)
         const par = computePar(segs)
-        const n = d.length
-        if (n < 2) return null
+        const seed = this._getSeed()
 
-        // Climb / descent and the grade distribution.
-        let climb = 0, descent = 0, up = 0, down = 0, flat = 0
-        const grades = []
-        for (let i = 1; i < n; i++) {
-            const ds = d[i] - d[i - 1]
-            const dy = sinT[i] * ds
+        // ── TOPOLOGY: the road itself, sampled along the driven route ──────────────────────
+        // Columnar (a `columns` header + numeric rows) rather than an array of objects: same
+        // information, a fraction of the bytes, and it drops straight into a dataframe.
+        //
+        // Sampled at TOPO_DS along each segment's traversed arc range, in TRAVEL order, so index
+        // order is the order you drove it. Everything here is the ROAD, not the drive:
+        //   s_m          cumulative 3D distance along the route
+        //   x, z, elev_m world position and routed design elevation
+        //   heading_rad  atan2 of the travel-direction tangent
+        //   curv_1pm     SIGNED curvature (left/right matters; +ve = left, router convention)
+        //   grade        dElev/ds, signed (+ve = climbing)
+        //   quality      0..1 per-500 m road-surface tier; drives pothole severity (road-quality.js)
+        //   par_ms       what par thinks you should be doing here
+        // Camber is deliberately NOT a column: it is a deterministic slew-limited function of
+        // curv_1pm (road.js `rawCamber = camberStrength · kappa`, clamped), so storing it would
+        // just be a second copy of the curvature column.
+        const cols = ['s_m', 'x', 'z', 'elev_m', 'heading_rad', 'curv_1pm', 'grade', 'quality', 'par_ms']
+        const rows = []
+        let sAcc = 0, prevX = null, prevZ = null, prevY = null
+        for (const sg of segs) {
+            const dir = sg.s1 >= sg.s0 ? 1 : -1
+            const span = Math.abs(sg.s1 - sg.s0)
+            const nS = Math.max(1, Math.ceil(span / TOPO_DS))
+            for (let i = 0; i <= nS; i++) {
+                if (i === 0 && rows.length) continue          // shared join sample
+                const sc = sg.s0 + dir * span * (i / nS)      // arc position on THIS centerline
+                const p = sg.centerline.pointAt(sc)
+                const t = sg.centerline.tangentAt(sc)
+                const y = sg.gradeAt(sc)
+                if (prevX !== null) sAcc += Math.hypot(p.x - prevX, p.z - prevZ, y - prevY)
+                prevX = p.x; prevZ = p.z; prevY = y
+                // Local grade from a centred difference on the design elevation.
+                const ds = span / nS
+                const yF = sg.gradeAt(Math.max(0, Math.min(sg.centerline.length, sc + dir * ds * 0.5)))
+                const yB = sg.gradeAt(Math.max(0, Math.min(sg.centerline.length, sc - dir * ds * 0.5)))
+                rows.push([
+                    +sAcc.toFixed(2), +p.x.toFixed(2), +p.z.toFixed(2), +y.toFixed(2),
+                    +Math.atan2(t.x * dir, t.z * dir).toFixed(4),
+                    +(sg.centerline.curvatureAt(sc) * dir).toFixed(6),
+                    +((yF - yB) / ds).toFixed(4),
+                    +roadQuality(sc, sg.runKey ?? '', seed).toFixed(3),
+                    0,   // par_ms filled below
+                ])
+            }
+        }
+        // Par's speed target, resampled onto the topology rows by arc position.
+        for (let i = 0, j = 0; i < rows.length; i++) {
+            while (j < par.dist.length - 1 && par.dist[j] < rows[i][0]) j++
+            rows[i][8] = +par.speeds[j].toFixed(2)
+        }
+
+        const total = sAcc || 1
+        let climb = 0, descent = 0
+        for (let i = 1; i < rows.length; i++) {
+            const dy = rows[i][3] - rows[i - 1][3]
             if (dy > 0) climb += dy; else descent += -dy
-            const g = sinT[i] / Math.sqrt(Math.max(1e-9, 1 - sinT[i] * sinT[i]))
-            grades.push(g)
-            if (g > 0.02) up += ds; else if (g < -0.02) down += ds; else flat += ds
-        }
-        const sorted = [...grades].sort((a, b) => a - b)
-        const q = (p) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] : 0
-
-        // Curvature: how much of the route is in each radius band.
-        const bands = { hairpin_lt25: 0, tight_25_60: 0, medium_60_150: 0, open_150_400: 0, straight_gt400: 0 }
-        let minR = Infinity, sumAbsK = 0
-        for (let i = 1; i < n; i++) {
-            const ds = d[i] - d[i - 1], k = kappa[i]
-            const R = k < 1e-6 ? Infinity : 1 / k
-            minR = Math.min(minR, R); sumAbsK += k * ds
-            if (R < 25) bands.hairpin_lt25 += ds
-            else if (R < 60) bands.tight_25_60 += ds
-            else if (R < 150) bands.medium_60_150 += ds
-            else if (R < 400) bands.open_150_400 += ds
-            else bands.straight_gt400 += ds
-        }
-        const total = d[n - 1] || 1
-        const pct = (o) => Object.fromEntries(Object.entries(o).map(([k2, v]) => [k2, +(100 * v / total).toFixed(1)]))
-
-        // Par's own speed profile, every ~25 m — shows WHERE par thinks you should be quick.
-        const prof = []
-        let next = 0
-        for (let i = 0; i < n; i++) {
-            if (d[i] < next) continue
-            next = d[i] + 25
-            const k = kappa[i]
-            prof.push({
-                s_m: +d[i].toFixed(0),
-                par_kmh: +(par.speeds[i] * 3.6).toFixed(1),
-                grade_pct: +(100 * sinT[i] / Math.sqrt(Math.max(1e-9, 1 - sinT[i] * sinT[i]))).toFixed(1),
-                radius_m: k < 1e-6 ? null : +(1 / k).toFixed(0),
-            })
         }
 
         return {
-            format: 'rangersim-run-export/1',
+            format: 'rangersim-run-export/2',
             note,
             result: this.result
                 ? { elapsed_s: +this.result.elapsed.toFixed(2), par_s: +this.result.par.toFixed(2),
@@ -199,27 +220,18 @@ export class MissionSystem {
             route: {
                 distance_m: +total.toFixed(1),
                 edges: this.mission.edges,
-                start: { x: +this.mission.start.x.toFixed(1), z: +this.mission.start.z.toFixed(1) },
+                start: { x: +this.mission.start.x.toFixed(1), z: +this.mission.start.z.toFixed(1),
+                         heading_rad: +this.mission.start.heading.toFixed(4) },
                 end: { x: +this.mission.end.x.toFixed(1), z: +this.mission.end.z.toFixed(1) },
+                climb_m: +climb.toFixed(1), descent_m: +descent.toFixed(1),
                 par_avg_kmh: +(total / par.time * 3.6).toFixed(1),
             },
-            terrain: {
-                climb_m: +climb.toFixed(1), descent_m: +descent.toFixed(1),
-                net_m: +(climb - descent).toFixed(1),
-                grade_pct: { p10: +(100 * q(0.1)).toFixed(1), median: +(100 * q(0.5)).toFixed(1),
-                             p90: +(100 * q(0.9)).toFixed(1),
-                             max_up: +(100 * Math.max(...grades)).toFixed(1),
-                             max_down: +(100 * Math.min(...grades)).toFixed(1) },
-                pct_uphill: +(100 * up / total).toFixed(1),
-                pct_downhill: +(100 * down / total).toFixed(1),
-                pct_flat: +(100 * flat / total).toFixed(1),
+            topology: { spacing_m: TOPO_DS, columns: cols, rows },
+            trace: {
+                hz: TRACE_HZ,
+                columns: ['t_s', 'x', 'y', 'z', 'speed_ms', 'heading_rad', 'throttle', 'brake', 'steer_rad'],
+                rows: this._trace,
             },
-            corners: {
-                min_radius_m: isFinite(minR) ? +minR.toFixed(1) : null,
-                mean_curvature_per_m: +(sumAbsK / total).toFixed(5),
-                pct_by_radius: pct(bands),
-            },
-            par_profile: prof,
         }
     }
 
@@ -242,6 +254,19 @@ export class MissionSystem {
         }
         if (this.state !== 'running') return
         this.elapsed += dt
+
+        // Driven trace — where you actually were and what you were doing, at TRACE_HZ. This is the
+        // richest single signal for fitting anything later: it says WHERE time went, not just how
+        // much. Downsampled off the 60 Hz physics step; a 3-minute run is ~1800 rows, small next to
+        // the topology array.
+        if ((this._traceTick++ % TRACE_DIV) === 0) {
+            const c = this._getCar()
+            this._trace.push([
+                +this.elapsed.toFixed(2), +c.x.toFixed(2), +(c.y ?? 0).toFixed(2), +c.z.toFixed(2),
+                +c.speed.toFixed(2), +(c.heading ?? 0).toFixed(3),
+                +(c.throttle ?? 0).toFixed(2), +(c.brake ?? 0).toFixed(2), +(c.steer ?? 0).toFixed(3),
+            ])
+        }
         if (this.distanceToGo() <= ARRIVE_RADIUS) {
             const par = this.mission.par
             this.result = { elapsed: this.elapsed, par, ...gradeRun(this.elapsed, par) }
@@ -354,7 +379,7 @@ export class MissionSystem {
                 const t = EDGE_T_MARGIN + Math.random() * (0.55 - EDGE_T_MARGIN)
                 s1 = forward ? L * (1 - t) : L * t
             }
-            segments.push({ centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1 })
+            segments.push({ centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key })
 
             // Map polyline for this traversed range.
             const n = Math.max(2, Math.ceil(Math.abs(s1 - s0) / 25))

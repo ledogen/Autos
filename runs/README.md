@@ -5,16 +5,26 @@ dumped there vanish from history; these are a growing dataset and need to outliv
 
 ## What they're for
 
-Calibrating `PAR_REF` in `src/par.js` (ticket FEAT-30). A score on its own can't explain "felt slow,
-got S" — the route's *shape* can. Each export carries the geometry par actually priced alongside the
-result and, critically, **the driver's subjective read** (`felt`: `slow` / `par` / `fast`). That
-subjective label is the ground truth the reference constants are being fitted to; a run without one
-is nearly useless for calibration.
+Calibrating `PAR_REF` in `src/par.js` (ticket FEAT-30), and — longer term — as a dataset to fit a
+frozen model or tune weights against. So the files are deliberately **data-rich rather than
+summarised**: the analysis happens later, offline, and a summary computed today would only constrain
+the questions that could be asked tomorrow.
+
+Each run carries the full road topology par priced, the driven trace, and **the driver's subjective
+read** (`felt`, five levels). That label is the ground truth the constants are fitted to; a run
+without one is nearly useless for calibration.
+
+In game the prompt is stated explicitly, because an unstated scale drifts between sessions:
+
+> **How fast do you feel like you drove the course?**
+> par time is supposed to be challenging but not impossible.
+>
+> `very slow` · `slow` · `on par` · `fast` · `very fast`
 
 ## Adding runs
 
-In game: finish a mission → the result card's **export run as: slow / on par / fast** row → the file
-lands in your downloads. Then:
+In game: finish a mission → answer the prompt on the result card → the file lands in your
+downloads. Then:
 
 ```
 npm run runs:add                      # imports every rangersim-run-*.json from ~/Downloads
@@ -36,18 +46,46 @@ below it and `slow` above.
 
 ## Schema
 
-`format: "rangersim-run-export/1"` — written by `MissionSystem.exportRun()` in `src/mission.js`.
+`format: "rangersim-run-export/2"` — written by `MissionSystem.exportRun()` in `src/mission.js`.
+A typical 2.5 km run is ~80 KB.
 
 | field | meaning |
 |---|---|
-| `felt` | driver's subjective read: `slow` \| `par` \| `fast`. The calibration target. |
+| `felt` | `very_slow` \| `slow` \| `par` \| `fast` \| `very_fast`. The calibration target. |
 | `note` | free text (what went wrong, what the road was like) |
 | `result` | `elapsed_s`, `par_s`, `ratio` (elapsed/par), `letter`, `margin_s` |
-| `par_ref` | the `PAR_REF` constants in force for that run — so old runs stay interpretable after retuning |
-| `route` | `distance_m`, `edges`, `start`/`end`, `par_avg_kmh` |
-| `terrain` | `climb_m`, `descent_m`, `net_m`, grade percentiles, `pct_uphill`/`downhill`/`flat` |
-| `corners` | `min_radius_m`, `mean_curvature_per_m`, `pct_by_radius` (5 bands) |
-| `par_profile` | par's own speed target every ~25 m: `s_m`, `par_kmh`, `grade_pct`, `radius_m` |
+| `par_ref` | the `PAR_REF` constants in force for that run |
+| `route` | `distance_m`, `edges`, `start` (incl. spawn `heading_rad`), `end`, `climb_m`, `descent_m`, `par_avg_kmh` |
+| `topology` | **the road itself** — see below |
+| `trace` | **the drive** — see below |
+
+### `topology` — the road, every 2 m, in travel order
+
+Columnar (`columns` + numeric `rows`): same information as an array of objects at a fraction of the
+bytes, and it loads straight into a dataframe.
+
+| column | meaning |
+|---|---|
+| `s_m` | cumulative **3D** distance along the route |
+| `x`, `z` | world position |
+| `elev_m` | routed design elevation |
+| `heading_rad` | `atan2` of the travel-direction tangent |
+| `curv_1pm` | **signed** curvature, 1/m (+ve = left, router convention) — left/right is real information |
+| `grade` | d`elev`/d`s`, signed (+ve = climbing) |
+| `quality` | 0..1 road-surface tier (500 m stretches, `road-quality.js`); drives pothole severity |
+| `par_ms` | what par thought you should be doing at this point |
+
+**Camber is deliberately absent.** It is a deterministic slew-limited function of `curv_1pm`
+(`rawCamber = camberStrength · kappa`, clamped — `road.js`), so a camber column would be a second
+copy of the curvature column. Reconstruct it from `curv_1pm` if a model needs it.
+
+### `trace` — the drive, 10 Hz
+
+`t_s`, `x`, `y`, `z`, `speed_ms`, `heading_rad`, `throttle`, `brake`, `steer_rad`.
+
+This is what makes the dataset worth more than (features → one scalar): it says **where** time went,
+not just how much. Aligning `trace` against `topology` by position gives per-corner speed deltas
+versus par.
 
 `par_ref` is recorded per run deliberately: it makes the library **retune-proof**. A run taken under
 `mu 0.49` is still comparable later, because its ratio can be recomputed against whatever constants

@@ -49,16 +49,18 @@ if (refs.length > 1 || refs[0] !== current) {
 
 // ── the headline: does par agree with how it felt? ───────────────────────────────────────────────
 const GROUPS = [
-  ['fast', 'felt FAST  — should sit BELOW 1.00'],
-  ['par',  'felt ON PAR — should sit NEAR  1.00'],
-  ['slow', 'felt SLOW  — should sit ABOVE 1.00'],
+  ['very_fast', 'felt VERY FAST — well below 1.00'],
+  ['fast',      'felt FAST      — below 1.00'],
+  ['par',       'felt ON PAR    — near  1.00'],
+  ['slow',      'felt SLOW      — above 1.00'],
+  ['very_slow', 'felt VERY SLOW — well above 1.00'],
 ]
 console.log('ratio = your time / par     (lower = you beat par)\n')
 for (const [key, label] of GROUPS) {
   const g = runs.filter(r => r.felt === key)
-  if (!g.length) { console.log(`  ${label.padEnd(38)}  no runs yet`); continue }
+  if (!g.length) { console.log(`  ${label.padEnd(32)}  no runs yet`); continue }
   const rs = g.map(r => r.result.ratio)
-  console.log(`  ${label.padEnd(38)}  n=${String(g.length).padStart(2)}  mean ${mean(rs).toFixed(3)}  range ${Math.min(...rs).toFixed(2)}–${Math.max(...rs).toFixed(2)}`)
+  console.log(`  ${label.padEnd(32)}  n=${String(g.length).padStart(2)}  mean ${mean(rs).toFixed(3)}  range ${Math.min(...rs).toFixed(2)}–${Math.max(...rs).toFixed(2)}`)
 }
 const unlabelled = runs.filter(r => !GROUPS.some(([k]) => r.felt === k))
 if (unlabelled.length) console.log(`  (${unlabelled.length} run(s) with no felt label — not usable for calibration)`)
@@ -79,7 +81,7 @@ if (onPar.length >= 3) {
 const usable = runs.filter(r => GROUPS.some(([k]) => r.felt === k))
 if (usable.length >= 3) {
   // Residual: how much par disagreed, sign-corrected for what the driver expected.
-  const expect = { fast: 0.90, par: 1.00, slow: 1.10 }
+  const expect = { very_fast: 0.82, fast: 0.91, par: 1.00, slow: 1.10, very_slow: 1.25 }
   const resid = usable.map(r => r.result.ratio - expect[r.felt])
   const feats = {
     'descent fraction   → grade/drag response': usable.map(r => r.terrain.pct_downhill),

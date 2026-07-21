@@ -1531,9 +1531,21 @@ roadSystem.setRadius(320)
 // The testing harness for the par economy — see src/mission.js and .planning/story-mode/DESIGN.md.
 // Entered from the pause menu so a visitor is never dropped into an unfinished mode by default.
 // getRoad is a GETTER: roadSystem is swapped on seed regen (see the regen path above).
+const _misFwd = new THREE.Vector3()
 missionSystem = new MissionSystem({
   getRoad:  () => roadSystem,
-  getCar:   () => ({ x: vehicleState.position.x, z: vehicleState.position.z }),
+  getSeed:  () => worldSeed,
+  // Richer than the arrival check needs: the run export records a driven trace, and throttle /
+  // brake / steer are what make it useful for fitting anything later.
+  getCar:   () => {
+    _misFwd.set(0, 0, -1).applyQuaternion(vehicleState.quaternion)
+    return {
+      x: vehicleState.position.x, y: vehicleState.position.y, z: vehicleState.position.z,
+      speed: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z),
+      heading: Math.atan2(_misFwd.x, _misFwd.z),
+      throttle: vehicleState.throttle, brake: vehicleState.brake, steer: vehicleState.steerAngle,
+    }
+  },
   teleport: (x, z, heading) => teleportToGround(x, z, heading, 0.5),
   setMapOpen: (open) => {
     if (!open) { map2d.hide(); return }
@@ -1651,8 +1663,9 @@ for (const b of document.querySelectorAll('.mp-felt')) {
     a.download = `rangersim-run-${data.felt}-${data.result.letter ?? 'x'}-${Math.round(data.result.elapsed_s)}s.json`
     a.click()
     URL.revokeObjectURL(a.href)
-    b.textContent = 'exported ✓'
-    setTimeout(() => { b.textContent = `felt ${b.dataset.felt === 'par' ? 'on par' : b.dataset.felt}` }, 1500)
+    const label = b.textContent
+    b.textContent = 'saved ✓'
+    setTimeout(() => { b.textContent = label }, 1500)
   })
 }
 document.getElementById('mp-quit')?.addEventListener('click', () => {
