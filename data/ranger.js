@@ -462,7 +462,10 @@ export const RANGER_PARAMS = {
   // routed XZ centerlines are untouched, so these params are DELIBERATELY tunnel*-prefixed
   // (a road* key would spuriously invalidate the bundled route cache — see routeCacheSig).
   tunnelsEnabled: true,     // bool — master toggle for the tunnel pass
-  tunnelMinDepth: 8,        // m — stage 1: min profile summit above the taut string to cut it
+  tunnelMinDepth: 25,       // m — min dirt above the road deck (peak, somewhere in the span)
+                            //     that JUSTIFIES a tunnel — shallower crests stay earthwork
+                            //     cuts. Also the stage-1 summit-cut trigger. The tunnel-count
+                            //     lever: higher = only the juicy deep bores survive.
   tunnelMinLen: 15,         // m — MIN BORE LENGTH; shorter covered stretches stay open cuttings
   tunnelPortalDepth: 1.5,   // m — terrain cover required ABOVE THE TUBE CROWN to bore (portal
                             //     line sits where the hill genuinely swallows the tube)

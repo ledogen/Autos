@@ -929,11 +929,16 @@ export class RoadMeshSystem {
                     meshes.push(m)
                     geometries.push(g)
                 }
+                // Slices can be stored REVERSED (E→W: arcS0 > arcS1) — normalize before the
+                // overlap/containment tests or bores in reversed slices silently get no tube
+                // (the missing-pipe bug: whichever direction the slicer happened to run decided
+                // whether a tunnel's lining existed).
+                const sLo = Math.min(arcS0, arcS1), sHi = Math.max(arcS0, arcS1)
                 for (const sp of tSpans) {
-                    const a = Math.max(sp.s0, arcS0), b = Math.min(sp.s1, arcS1)
+                    const a = Math.max(sp.s0, sLo), b = Math.min(sp.s1, sHi)
                     if (b - a > 0.5) addTMesh(this.buildTunnelTube(runKey, a, b, sp, this._params), this._getTunnelMaterial())
-                    if (sp.s0 >= arcS0 && sp.s0 < arcS1) addTMesh(this.buildPortalRing(runKey, sp.s0, -1, this._params), this._getPortalMaterial())
-                    if (sp.s1 >= arcS0 && sp.s1 < arcS1) addTMesh(this.buildPortalRing(runKey, sp.s1, +1, this._params), this._getPortalMaterial())
+                    if (sp.s0 >= sLo && sp.s0 < sHi) addTMesh(this.buildPortalRing(runKey, sp.s0, -1, this._params), this._getPortalMaterial())
+                    if (sp.s1 >= sLo && sp.s1 < sHi) addTMesh(this.buildPortalRing(runKey, sp.s1, +1, this._params), this._getPortalMaterial())
                 }
             }
         }

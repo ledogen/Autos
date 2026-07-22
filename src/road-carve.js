@@ -413,28 +413,33 @@ export function applyTunnelPassInPlace(pts, opts, heightAt) {
     // cover_i = terrain − (final profile + boreRadius); contiguous stretches with cover ≥
     // portalDepth, boundaries interpolated at the exact crossing so portals don't quantize
     // to the 4 m sampling. A double summit naturally yields two bores with open sky between.
+    // DEPTH CULL: a span is only WORTH a tunnel if somewhere along it the dirt above the road
+    // deck reaches minDepth — a crest that shallow is better dug out by earthwork than bored.
+    // (Same slider as the stage-1 summit trigger: one knob = "how deep the road must want to
+    // run under terrain before a tunnel is justified".)
     let spans = null
     const need = boreRadius + portalDepth
-    let s0 = -1, dPrev = 0
+    let s0 = -1, dPrev = 0, dMax = 0
+    const close = (s1) => {
+        const c0 = Math.max(s0, endMargin), c1 = Math.min(s1, total - endMargin)
+        if (c1 - c0 >= minBore && c1 - c0 <= maxLen && dMax + need >= minDepth)
+            (spans ??= []).push({ s0: c0, s1: c1 })
+        s0 = -1
+    }
     for (let i = 0; i < N; i++) {
         const d = terr[i] - pts[i].y - need       // > 0 ⇒ crown buried by ≥ portalDepth
         const inside = d >= 0
         if (inside && s0 < 0) {
-            s0 = arc[i]
+            s0 = arc[i]; dMax = d
             if (i > 0 && dPrev < 0) s0 = arc[i - 1] + (arc[i] - arc[i - 1]) * (-dPrev / (d - dPrev))
-        } else if (!inside && s0 >= 0) {
-            let s1 = arc[i]
-            if (dPrev > 0) s1 = arc[i - 1] + (arc[i] - arc[i - 1]) * (dPrev / (dPrev - d))
-            const c0 = Math.max(s0, endMargin), c1 = Math.min(s1, total - endMargin)
-            if (c1 - c0 >= minBore && c1 - c0 <= maxLen) (spans ??= []).push({ s0: c0, s1: c1 })
-            s0 = -1
+        } else if (inside) {
+            if (d > dMax) dMax = d
+        } else if (s0 >= 0) {
+            close(dPrev > 0 ? arc[i - 1] + (arc[i] - arc[i - 1]) * (dPrev / (dPrev - d)) : arc[i])
         }
         dPrev = d
     }
-    if (s0 >= 0) {   // covered through the run end: close at the end margin
-        const c0 = Math.max(s0, endMargin), c1 = total - endMargin
-        if (c1 - c0 >= minBore && c1 - c0 <= maxLen) (spans ??= []).push({ s0: c0, s1: c1 })
-    }
+    if (s0 >= 0) close(total)   // covered through the run end: close at the end margin
     return spans
 }
 

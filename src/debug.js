@@ -421,7 +421,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // FEAT-40 tunnels — taut-string summit cut (profile-only; routed XZ untouched). fireRoadParam is
   // the one lever that re-streams the network AND rebuilds carve + ribbon, all of which read spans.
   roadFolder.add(params, 'tunnelsEnabled').name('Tunnels').onChange(fireRoadParam)
-  roadFolder.add(params, 'tunnelMinDepth', 2, 30, 1).name('Summit Cut Depth (m)').onChange(fireRoadParam)
+  roadFolder.add(params, 'tunnelMinDepth', 5, 45, 1).name('Tunnel Min Depth (m)').onChange(fireRoadParam)
   roadFolder.add(params, 'tunnelMinLen', 8, 100, 1).name('Min Bore Len (m)').onChange(fireRoadParam)
   roadFolder.add(params, 'tunnelMaxLen', 100, 2000, 50).name('Max Bore Len (m)').onChange(fireRoadParam)
   roadFolder.add(params, 'tunnelPortalDepth', 0, 6, 0.25).name('Crown Cover (m)').onChange(fireRoadParam)

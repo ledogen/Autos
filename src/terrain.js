@@ -639,38 +639,53 @@ export class TerrainSystem {
      *
      * @param {{ x: number, y: number, z: number }} carPos - Current car/camera world position.
      */
-    // FEAT-40: refresh the tunnel-mouth cutout uniforms when the road network changes. Cheap
-    // (rev-guarded); pos.w = hole radius overlapped by the portal ring's outer band, axis.w =
-    // inward capsule length (covers the skin crossing the tube near the mouth).
-    _syncTunnelUniforms() {
+    // FEAT-40: refresh the tunnel-mouth cutout uniforms. The full portal list rebuilds when the
+    // road network changes (rev-guarded); the 24 uniform slots are then filled with the portals
+    // NEAREST the car, re-selected when the car has moved — a dense region can carry far more
+    // than 24 mouths, and first-in-map-order left distant ones cut and nearby ones sealed.
+    // pos.w = hole radius overlapped by the portal ring's outer band, axis.w = inward capsule
+    // length (covers the skin crossing the tube near the mouth).
+    _syncTunnelUniforms(carPos) {
         const rs = this._roadSystem
-        if (!rs || !rs._network || this._tunnelUniformRev === rs._networkRev) return
-        this._tunnelUniformRev = rs._networkRev
-        const posArr = this._terrainUniforms.uTunnelPos.value
-        const axArr  = this._terrainUniforms.uTunnelAxis.value
-        const R = (this._params.tunnelBoreRadius ?? 6.5) + 0.45
-        let n = 0
-        for (const [runKey, e] of rs._network) {
-            if (!e.tunnelSpans) continue
-            for (const sp of e.tunnelSpans) {
-                for (const [s, inward] of [[sp.s0, 1], [sp.s1, -1]]) {
-                    if (n >= 24) break
-                    const p = rs.runPointAt(runKey, s)
-                    if (!p) continue
-                    const pr = rs.runProfile(s, runKey)
-                    posArr[n].set(p.x, pr.gradeY + 0.4, p.z, R)
-                    axArr[n].set(pr.tx * inward, 0, pr.tz * inward, 16)
-                    n++
+        if (!rs || !rs._network) return
+        if (this._tunnelUniformRev !== rs._networkRev) {
+            this._tunnelUniformRev = rs._networkRev
+            this._tunnelPortalList = []
+            const R = (this._params.tunnelBoreRadius ?? 6.5) + 0.45
+            for (const [runKey, e] of rs._network) {
+                if (!e.tunnelSpans) continue
+                for (const sp of e.tunnelSpans) {
+                    for (const [s, inward] of [[sp.s0, 1], [sp.s1, -1]]) {
+                        const p = rs.runPointAt(runKey, s)
+                        if (!p) continue
+                        const pr = rs.runProfile(s, runKey)
+                        this._tunnelPortalList.push({ x: p.x, y: pr.gradeY + 0.4, z: p.z, r: R, ax: pr.tx * inward, az: pr.tz * inward })
+                    }
                 }
             }
+            this._tunnelSyncX = Infinity   // force the slot refill below
         }
-        this._terrainUniforms.uTunnelN.value = n
+        const list = this._tunnelPortalList
+        if (!list) return
+        const moved = Math.hypot(carPos.x - (this._tunnelSyncX ?? Infinity), carPos.z - (this._tunnelSyncZ ?? 0))
+        if (!(moved > 100) && this._terrainUniforms.uTunnelN.value === Math.min(24, list.length)) return
+        this._tunnelSyncX = carPos.x; this._tunnelSyncZ = carPos.z
+        const sel = list.length > 24
+            ? [...list].sort((a, b) => ((a.x - carPos.x) ** 2 + (a.z - carPos.z) ** 2) - ((b.x - carPos.x) ** 2 + (b.z - carPos.z) ** 2)).slice(0, 24)
+            : list
+        const posArr = this._terrainUniforms.uTunnelPos.value
+        const axArr  = this._terrainUniforms.uTunnelAxis.value
+        for (let i = 0; i < sel.length; i++) {
+            posArr[i].set(sel[i].x, sel[i].y, sel[i].z, sel[i].r)
+            axArr[i].set(sel[i].ax, 0, sel[i].az, 16)
+        }
+        this._terrainUniforms.uTunnelN.value = sel.length
     }
 
     update(carPos) {
         // Streaming paused (FEAT-31 testing lab) — no-op to prevent chunk ring changes while there.
         if (this._enabled === false) return
-        this._syncTunnelUniforms()
+        this._syncTunnelUniforms(carPos)
         const { cx: ccx, cz: ccz } = this._worldToChunk(carPos.x, carPos.z)
         let _pt = performance.now()
         this._updateChunkRing(ccx, ccz)
