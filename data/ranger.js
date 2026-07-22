@@ -451,6 +451,25 @@ export const RANGER_PARAMS = {
   // untouched: no pad spam. 0 = off. Kinks > 75° are never padded (degenerate strands).
   roadJunctionKinkDeg: 9,
 
+  // ── Tunnels (FEAT-40) ───────────────────────────────────────────────────────────────────────────
+  // After grading, a taut string is pulled under each edge's profile (lower convex hull in (arc, y));
+  // summits the profile climbs ≥ tunnelMinDepth above that string over ≥ tunnelMinLen get CUT to the
+  // string's chord — the deep interior (cover ≥ tunnelPortalDepth) becomes a bored tunnel (raw hill
+  // kept overhead, concrete half-tube lining, stone portal headwalls), the shallow ends an open
+  // cutting. Profile-only pass: routed XZ centerlines are untouched, so these params are DELIBERATELY
+  // tunnel*-prefixed (a road* key would spuriously invalidate the bundled route cache — see
+  // routeCacheSig in route-store.js).
+  tunnelsEnabled: true,     // bool — master toggle for the tunnel pass
+  tunnelMinDepth: 8,        // m — min summit height above the taut string to cut it at all
+  tunnelMinLen: 40,         // m — min chord length considered for a cut
+  tunnelPortalDepth: 8,     // m — cover depth at which the open cut becomes a bored tunnel (portal
+                            //     line). MUST stay ≥ tunnelBoreRadius + ~1.5 or the tube crown pokes
+                            //     out of the hillside near the portals.
+  tunnelMaxGrade: 0.12,     // abs grade cap on the chord (vetoes degenerate steep chords)
+  tunnelMaxLen: 700,        // m — longest single bore; a chord that would bore longer is skipped
+                            //     whole (tunnels are spur shortcuts, not kilometre subways)
+  tunnelBoreRadius: 6.5,    // m — half-tube lining radius; also the physics bore-apex clearance
+
   // ── Crossing classifier (FEAT-07/11/13 foundation) ──────────────────────────────────────────────
   // road.js _detectJunctions() finds every inter-run / self-run XZ crossing and CLASSIFIES each by
   // crossing angle. Every crossing merges FLAT (at grade) — dynamic overpasses were descoped (roads in

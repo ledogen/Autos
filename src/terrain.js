@@ -799,7 +799,10 @@ export class TerrainSystem {
     // nrHint (optional): a precomputed roadSystem.carveHint(wx,wz) result, threaded through so a tight
     // cluster of samples (analyticNormal's ±0.5 m offsets, queryContacts' height+normal for one wheel)
     // shares ONE road tile-scan instead of re-querying per call. undefined = query internally (legacy).
-    analyticHeight(wx, wz, nrHint) {
+    // queryY (optional): the querying probe's own world Y. Only physics contact queries pass it —
+    // inside a FEAT-40 bore span it disambiguates the two stacked surfaces (bore floor vs the raw
+    // hill overhead). Callers without a Y (props, camera, map) always get the terrain skin.
+    analyticHeight(wx, wz, nrHint, queryY) {
         // Precondition: reinitWorker (called synchronously in the constructor) must have built
         // the noise closures. Throw rather than silently returning 0 — a 0 here would seat the
         // truck at sea level inside the terrain and violate the "never returns 0" contract (WR-07).
@@ -821,8 +824,11 @@ export class TerrainSystem {
         // channel holds off-road, and the blend is smooth between). MESH == PHYSICS: the terrain mesh
         // (_composeCarvedY / sampleHeight) uses this same un-suppressed blend, so the ribbon deck seats
         // on the filled terrain and collision agrees with the rendered surface.
+        // FEAT-40: queryY threads into the road resolve — inside a bore span the road only owns
+        // below-apex probes; above-apex or Y-less queries fall through to a neighbouring surface
+        // run or raw terrain (the hill overhead) inside _sampleCarveWorld.
         if (this._roadSystem) {
-            const c = this._roadSystem._sampleCarveWorld(wx, wz, raw, nrHint)
+            const c = this._roadSystem._sampleCarveWorld(wx, wz, raw, nrHint, queryY)
             if (c && c.blendW > 1e-6) return hs + c.blendW * (c.gradeY - hs)
         }
         return hs
@@ -838,7 +844,7 @@ export class TerrainSystem {
      * @param {number} wz - World Z coordinate.
      * @returns {{ x: number, y: number, z: number }} Unit normal pointing away from surface.
      */
-    analyticNormal(wx, wz, nrHint) {
+    analyticNormal(wx, wz, nrHint, queryY) {
         const EPS = 0.5
         // PERF (contact path): find the road run ONCE (at the center) and reuse it for all 4 offsets,
         // collapsing ~5 road queries/wheel-contact → 1. The offsets project onto this run, so the
@@ -846,10 +852,10 @@ export class TerrainSystem {
         // over ±0.5 m). When called WITHOUT a hint, derive one here so any normal-only caller benefits.
         const hint = (nrHint !== undefined) ? nrHint
             : (this._roadSystem ? this._roadSystem.carveHint(wx, wz) : null)
-        const hL  = this.analyticHeight(wx - EPS, wz, hint)
-        const hR  = this.analyticHeight(wx + EPS, wz, hint)
-        const hD  = this.analyticHeight(wx,       wz - EPS, hint)
-        const hU  = this.analyticHeight(wx,       wz + EPS, hint)
+        const hL  = this.analyticHeight(wx - EPS, wz, hint, queryY)
+        const hR  = this.analyticHeight(wx + EPS, wz, hint, queryY)
+        const hD  = this.analyticHeight(wx,       wz - EPS, hint, queryY)
+        const hU  = this.analyticHeight(wx,       wz + EPS, hint, queryY)
         const nx  = -(hR - hL) / (2 * EPS)
         const ny  = 1
         const nz  = -(hU - hD) / (2 * EPS)
@@ -1318,7 +1324,21 @@ export class TerrainSystem {
                 // tessellation is too (this is NOT the hand-rolled point-to-segment projection that tore
                 // the mesh — it's physics' own resolver). No mesh-only D3 max-floor: physics doesn't do it,
                 // and _resolveRoadSurface already picks ONE run, so we match _sampleCarveWorld exactly.
-                const nr = this._roadSystem._resolveRoadSurface(wx, wz)
+                // FEAT-40 bore span: the terrain MESH keeps the raw hill over a bore (no carve) —
+                // a bored run never owns a mesh vertex. Fall through to the next-nearest surface
+                // run (parallel corridor) exactly like the Y-less physics path in _sampleCarveWorld,
+                // else leave the vertex raw. The abrupt carved→raw step at a portal is the portal
+                // face; the headwall mesh covers it.
+                let nr = this._roadSystem._resolveRoadSurface(wx, wz)
+                let _excl = null
+                while (nr) {
+                    const adx = wx - nr.point.x, adz = wz - nr.point.z
+                    const aArc = (nr.arcS ?? 0) + adx * nr.tangent.x + adz * nr.tangent.z
+                    if (!this._roadSystem.tunnelSpanAt(nr.runKey ?? '', aArc, 4)) break
+                    ;(_excl ??= new Set()).add(nr.runKey ?? '')
+                    if (_excl.size > 3) { nr = null; break }
+                    nr = this._roadSystem._resolveRoadSurface(wx, wz, _excl)
+                }
                 if (!nr) { table[idx] = 0; table[idx + 1] = 0; continue }
                 const dx = wx - nr.point.x, dz = wz - nr.point.z
                 const arcSEff   = (nr.arcS ?? 0) + dx * nr.tangent.x + dz * nr.tangent.z

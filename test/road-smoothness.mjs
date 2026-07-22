@@ -42,7 +42,7 @@ function streamSpawnRegion (seedStr) {
 function scanSeed (seedStr) {
   const { road, terr } = streamSpawnRegion(seedStr)
   let steps = 0, worst = 0, worstAt = null, scannedM = 0
-  for (const [, { points }] of road._network) {
+  for (const [runKey, { points, polyCum }] of road._network) {
     for (let i = 0; i < points.length - 1; i++) {
       const a = points[i], b = points[i + 1]
       const segLen = Math.hypot(b.x - a.x, b.z - a.z)
@@ -52,7 +52,14 @@ function scanSeed (seedStr) {
       for (let k = 0; k <= n; k++) {
         const t = k / n
         const x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t
-        const h = terr.analyticHeight(x, z)
+        // FEAT-40: probe at wheel height — the DRIVEN profile (runProfile, junction-blended;
+        // near nodes it diverges up to ~10 m from raw points[].y) + 1 m, like the truck's
+        // contact query. Inside a bore span analyticHeight serves the bore floor to below-apex
+        // probes and the raw hill overhead to Y-less/above-apex callers.
+        const qy = polyCum
+          ? road.runProfile(polyCum[i] + (polyCum[i + 1] - polyCum[i]) * t, runKey).gradeY + 1
+          : a.y + (b.y - a.y) * t + 1
+        const h = terr.analyticHeight(x, z, undefined, qy)
         if (prev !== null) {
           const d = Math.abs(h - prev)
           if (d > WALL) { steps++; if (d > worst) { worst = d; worstAt = { x, z } } }

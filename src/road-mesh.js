@@ -38,6 +38,7 @@
 import * as THREE from 'three'
 import { CHUNK_SIZE } from './terrain.js'
 import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: shared procedural detail
+import { makeCobbleTextures } from './stone-texture.js' // FEAT-40: portal headwall masonry
 import { crownProfile, potholeNoise, signedCurvature, earClip } from './road-carve.js'
 // roadQuality / hashRunKey / constants moved to road-quality.js (Plan 09-06) to break the
 // terrain.js → road-mesh.js → terrain.js circular import that SURF-06 would otherwise create.
@@ -911,6 +912,30 @@ export class RoadMeshSystem {
             this._scene.add(mesh)
             meshes.push(mesh)
             geometries.push(geo)
+
+            // ── FEAT-40: tunnel bore lining + portal headwalls over this slice ──────────────
+            // Spans live on the net entry (run-global arc, set by the assembly tunnel pass).
+            // Each slice builds only its own overlap [arcS0,arcS1]∩[s0,s1] and each portal is
+            // built by the ONE slice whose arc range contains it — streams with the tile like
+            // everything else. (Untrimmed arcS0/arcS1: bores are ≥ endMargin from junctions.)
+            const tSpans = this._road._network?.get(runKey)?.tunnelSpans
+            if (tSpans) {
+                const addTMesh = (g, mat) => {
+                    if (!g) return
+                    const m = new THREE.Mesh(g, mat)
+                    m.receiveShadow = true
+                    if (this._meshesVisible === false) m.visible = false
+                    this._scene.add(m)
+                    meshes.push(m)
+                    geometries.push(g)
+                }
+                for (const sp of tSpans) {
+                    const a = Math.max(sp.s0, arcS0), b = Math.min(sp.s1, arcS1)
+                    if (b - a > 0.5) addTMesh(this.buildTunnelTube(runKey, a, b, sp, this._params), this._getTunnelMaterial())
+                    if (sp.s0 >= arcS0 && sp.s0 < arcS1) addTMesh(this.buildTunnelPortal(runKey, sp.s0, -1, this._params), this._getPortalMaterial())
+                    if (sp.s1 >= arcS0 && sp.s1 < arcS1) addTMesh(this.buildTunnelPortal(runKey, sp.s1, +1, this._params), this._getPortalMaterial())
+                }
+            }
         }
 
         // ── Junction footprints for nodes assigned to this tile ────────────────
@@ -956,6 +981,184 @@ export class RoadMeshSystem {
         // D1 (plan 09-19): stamp the road generation this tile was built against so
         // syncToChunkRing can detect stale tiles and re-enqueue them on mismatch.
         this._tileMeshMap.set(key, { meshes, geometries, builtGeneration: this._road.roadGeneration() })
+    }
+
+    // ── FEAT-40: tunnel bore lining + portal headwalls ────────────────────────
+    // Reference look: short mountain cut tunnel — semicircular concrete half-tube bore (dark
+    // interior, daylight visible at the far end), rough-stone headwall face at each portal,
+    // raw hillside running over the top (the terrain skin is NOT carved over a bore span).
+
+    /**
+     * Concrete half-tube lining swept along [sA,sB] of a run (world-space geometry).
+     * Cross-section: semicircular arch of tunnelBoreRadius springing at road level ±R, plus a
+     * short skirt below springing so the wall base is buried in the carved shoulder. Vertex
+     * colors fake the bore's darkness: full brightness at the portals easing to ~25 % deep
+     * inside, so the interior reads dark while headlights (real spotlights) still light it.
+     * Frame per ring = runPointAt centre + runProfile tangent — the exact ribbon frame, so the
+     * tube tracks the road through curves. Pure fn of the network + params (D-16).
+     *
+     * @returns {THREE.BufferGeometry|null}
+     */
+    buildTunnelTube(runKey, sA, sB, span, params) {
+        const road = this._road
+        if (!road.runPointAt || !road.runProfile) return null
+        const R = params.tunnelBoreRadius ?? 6.5
+        const SEG = 20                       // arch segments (θ 0..π)
+        const SKIRT = 1.5                    // m below springing
+        const rings = Math.max(2, Math.ceil((sB - sA) / 3) + 1)
+        const vpr = SEG + 3                  // skirtR + (SEG+1 arch verts) + skirtL
+
+        const pos = new Float32Array(rings * vpr * 3)
+        const col = new Float32Array(rings * vpr * 3)
+        const uv  = new Float32Array(rings * vpr * 2)
+        const prof = { gradeY: 0, camberRad: 0, tx: 1, tz: 0 }
+        let vi = 0, ui = 0
+        for (let r = 0; r < rings; r++) {
+            const s = sA + (sB - sA) * (r / (rings - 1))
+            const c = road.runPointAt(runKey, s)
+            if (!c) return null
+            road.runProfile(s, runKey, prof)
+            // rightDir chosen so a vertex at lateral L has signedLat = L (matches the carve frame).
+            const rx = prof.tz, rz = -prof.tx
+            // Brightness: 1 at the portals → 0.25 deep inside (25 m ramp, smoothstep).
+            const dPortal = Math.min(s - span.s0, span.s1 - s)
+            const t = Math.max(0, Math.min(1, dPortal / 25))
+            const shade = 1 - 0.75 * (t * t * (3 - 2 * t))
+            for (let k = 0; k < vpr; k++) {
+                let lat, h
+                if (k === 0)            { lat =  R; h = -SKIRT }
+                else if (k === vpr - 1) { lat = -R; h = -SKIRT }
+                else {
+                    const th = Math.PI * (k - 1) / SEG
+                    lat = R * Math.cos(th); h = R * Math.sin(th)
+                }
+                pos[vi]     = c.x + rx * lat
+                pos[vi + 1] = prof.gradeY + h
+                pos[vi + 2] = c.z + rz * lat
+                col[vi] = col[vi + 1] = col[vi + 2] = shade
+                vi += 3
+                uv[ui] = s * 0.08; uv[ui + 1] = k / (vpr - 1); ui += 2
+            }
+        }
+        const idx = []
+        for (let r = 0; r < rings - 1; r++) {
+            for (let k = 0; k < vpr - 1; k++) {
+                const a = r * vpr + k, b = a + vpr
+                idx.push(a, b, a + 1, a + 1, b, b + 1)
+            }
+        }
+        const geo = new THREE.BufferGeometry()
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+        geo.setAttribute('color',    new THREE.BufferAttribute(col, 3))
+        geo.setAttribute('uv',       new THREE.BufferAttribute(uv, 2))
+        geo.setIndex(idx)
+        geo.computeVertexNormals()
+        return geo
+    }
+
+    /**
+     * Stone portal headwall at run-arc `pArc` — a wall perpendicular to the road with a
+     * semicircular arch opening, spanning from the cut walls to just above the arch crown, plus
+     * side skirts below road level so the base is buried. `outSign` = which way along the run is
+     * OUT of the hill (−1 at s0, +1 at s1); the wall face is nudged that way so it caps the tube
+     * rim. The annulus is built by casting arch-sample rays out to a rectangle boundary.
+     *
+     * @returns {THREE.BufferGeometry|null}
+     */
+    buildTunnelPortal(runKey, pArc, outSign, params) {
+        const road = this._road
+        if (!road.runPointAt || !road.runProfile) return null
+        const R  = (params.tunnelBoreRadius ?? 6.5) + 0.15   // opening hugs the tube rim
+        const DN = 2.5                                       // wall base below road level (buried)
+        const SEG = 20
+        const c = road.runPointAt(runKey, pArc)
+        if (!c) return null
+        const prof = { gradeY: 0, camberRad: 0, tx: 1, tz: 0 }
+        road.runProfile(pArc, runKey, prof)
+        // Wall extent adapts to the actual rock face: the raw hill a few metres INTO the bore can
+        // tower well above the portal-line cover (steep summits), and a fixed-size wall left a bare
+        // stretched terrain cliff above the arch. Sample the coarse terrain just inside and size the
+        // face to bury its top edge into the hillside (clamped so gentle portals stay modest).
+        let H = R + 3.5, W = R + 5
+        if (road._coarseH) {
+            const inx = c.x - prof.tx * outSign * 8, inz = c.z - prof.tz * outSign * 8
+            const cover = road._coarseH(inx, inz) - prof.gradeY
+            H = Math.max(R + 3.5, Math.min(cover + 3, 22))
+            W = R + 5 + (H - (R + 3.5)) * 0.6
+        }
+        const rx = prof.tz, rz = -prof.tx
+        const ox = prof.tx * outSign * 0.25, oz = prof.tz * outSign * 0.25   // face nudge
+        const cx = c.x + ox, cz = c.z + oz, cy = prof.gradeY
+
+        const verts = []   // [lat, h] wall-plane coords
+        const push2 = (lat, h) => { verts.push(lat, h); return verts.length / 2 - 1 }
+        // inner arch ring then matching outer-boundary ring
+        const inner = [], outer = []
+        for (let k = 0; k <= SEG; k++) {
+            const th = Math.PI * k / SEG
+            const dx = Math.cos(th), dy = Math.sin(th)
+            inner.push(push2(dx * R, dy * R))
+            // Ray from arch centre to the rectangle [-W..W]×[·..H]: nearest positive boundary hit.
+            let t = Infinity
+            if (Math.abs(dx) > 1e-6) t = Math.min(t, W / Math.abs(dx))
+            if (dy > 1e-6)           t = Math.min(t, H / dy)
+            outer.push(push2(dx * t, dy * t))
+        }
+        const idx = []
+        for (let k = 0; k < SEG; k++) {
+            idx.push(inner[k], outer[k], inner[k + 1], inner[k + 1], outer[k], outer[k + 1])
+        }
+        // Side skirts below road level: (±R..±W) × (0..−DN)
+        for (const sgn of [1, -1]) {
+            const a = push2(sgn * R, 0), b = push2(sgn * W, 0)
+            const d = push2(sgn * R, -DN), e = push2(sgn * W, -DN)
+            if (sgn > 0) idx.push(a, d, b, b, d, e); else idx.push(a, b, d, d, b, e)
+        }
+        const n = verts.length / 2
+        const pos = new Float32Array(n * 3)
+        const uv  = new Float32Array(n * 2)
+        for (let i = 0; i < n; i++) {
+            const lat = verts[i * 2], h = verts[i * 2 + 1]
+            pos[i * 3]     = cx + rx * lat
+            pos[i * 3 + 1] = cy + h
+            pos[i * 3 + 2] = cz + rz * lat
+            uv[i * 2] = lat * 0.12 + 0.5; uv[i * 2 + 1] = h * 0.12
+        }
+        const geo = new THREE.BufferGeometry()
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+        geo.setAttribute('uv',       new THREE.BufferAttribute(uv, 2))
+        geo.setIndex(idx)
+        geo.computeVertexNormals()
+        return geo
+    }
+
+    // Bore lining: matte concrete, double-sided (seen from inside; outside is buried except at
+    // the portal rim), vertex-colored for the interior darkness ramp.
+    _getTunnelMaterial() {
+        if (!this._tunnelMaterial) {
+            this._tunnelMaterial = new THREE.MeshStandardMaterial({
+                color: 0x8f8d86, roughness: 0.95, metalness: 0,
+                side: THREE.DoubleSide, vertexColors: true,
+            })
+        }
+        return this._tunnelMaterial
+    }
+
+    // Portal headwall: the procedural cobble/masonry texture (FEAT-25) tinted toward dry granite.
+    _getPortalMaterial() {
+        if (!this._portalMaterial) {
+            const tex = makeCobbleTextures(4021)
+            tex.map.wrapS = tex.map.wrapT = THREE.RepeatWrapping
+            tex.normalMap.wrapS = tex.normalMap.wrapT = THREE.RepeatWrapping
+            this._portalMaterial = new THREE.MeshStandardMaterial({
+                map: tex.map, normalMap: tex.normalMap,
+                // Bright base + a whisper of emissive: the face is usually in the cut's shade and
+                // the cobble map is dark — without the lift it reads as a black void, not masonry.
+                color: 0xe8e2d4, emissive: 0x232220, roughness: 1.0, metalness: 0,
+                side: THREE.DoubleSide,
+            })
+        }
+        return this._portalMaterial
     }
 
     // ── Junction footprint helpers ────────────────────────────────────────────

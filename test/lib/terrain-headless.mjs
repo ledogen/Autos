@@ -141,23 +141,25 @@ export function makeTerrainHeadless(seed, params, road) {
     // rawHeightWorld — carve-free terrain height (terrain.js:579).
     const rawHeightWorld = (wx, wz) => height(wx, wz, noiseCoarse, noiseFine, noiseRegional, params) * amp
 
-    // analyticHeight — raw, then the road carve blend EXACTLY as terrain.js:587-596.
-    const analyticHeight = (wx, wz) => {
+    // analyticHeight — raw, then the road carve blend EXACTLY as terrain.js (incl. FEAT-40:
+    // queryY threads into _sampleCarveWorld, which gives bored runs only their below-apex probes).
+    // _nrHint accepted for signature parity with the real terrain (unused — no memo here).
+    const analyticHeight = (wx, wz, _nrHint, queryY) => {
         const raw = rawHeightWorld(wx, wz)
         if (road) {
-            const c = road._sampleCarveWorld(wx, wz, raw)
+            const c = road._sampleCarveWorld(wx, wz, raw, undefined, queryY)
             if (c && c.blendW > 1e-6) return raw + c.blendW * (c.gradeY - raw)
         }
         return raw
     }
 
     // analyticNormal — central difference over analyticHeight, EPS=0.5 (terrain.js:609-620).
-    const analyticNormal = (wx, wz) => {
+    const analyticNormal = (wx, wz, _nrHint, queryY) => {
         const EPS = 0.5
-        const hL = analyticHeight(wx - EPS, wz)
-        const hR = analyticHeight(wx + EPS, wz)
-        const hD = analyticHeight(wx, wz - EPS)
-        const hU = analyticHeight(wx, wz + EPS)
+        const hL = analyticHeight(wx - EPS, wz, undefined, queryY)
+        const hR = analyticHeight(wx + EPS, wz, undefined, queryY)
+        const hD = analyticHeight(wx, wz - EPS, undefined, queryY)
+        const hU = analyticHeight(wx, wz + EPS, undefined, queryY)
         const nx = -(hR - hL) / (2 * EPS)
         const ny = 1
         const nz = -(hU - hD) / (2 * EPS)

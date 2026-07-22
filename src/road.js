@@ -35,7 +35,7 @@
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
-import { crownProfile, potholeNoise, signedCurvature, arcPrimitiveConnect, smoothGradeInPlace } from './road-carve.js'
+import { crownProfile, potholeNoise, signedCurvature, arcPrimitiveConnect, smoothGradeInPlace, applyTunnelPassInPlace } from './road-carve.js'
 import { centerlineFromDescriptors, CenterlineCurve, Centerline } from './centerline.js'
 import { delaunay, urquhartEdges } from './road-graph.js'
 
@@ -2366,6 +2366,48 @@ export class RoadSystem {
         }
     }
 
+    // FEAT-40: knobs for the taut-string tunnel pass (applyTunnelPassInPlace). minDepth 0
+    // (or tunnelsEnabled=false) disables the pass entirely. endMargin keeps bores clear of the
+    // junction grade blend (_applyJunctionBlend) so node reconciliation never reaches a bore.
+    // NOTE: deliberately `tunnel*`-prefixed, NOT `road*` — the pass never touches routed XZ
+    // centerlines, so these params must stay OUT of routeCacheSig (a road* key would spuriously
+    // invalidate the bundled default-world route cache).
+    _tunnelPassOpts() {
+        const p = this._params || {}
+        return {
+            minDepth:    (p.tunnelsEnabled ?? true) ? (p.tunnelMinDepth ?? 8) : 0,
+            minLen:      p.tunnelMinLen ?? 40,
+            portalDepth: p.tunnelPortalDepth ?? 4,
+            maxGrade:    p.tunnelMaxGrade ?? 0.12,
+            maxLen:      p.tunnelMaxLen ?? 700,
+            endMargin:   (p.roadJunctionBlendLength ?? 30) + 6,
+        }
+    }
+
+    // FEAT-40: remove bore coverage around AT_GRADE crossings (see call site in _streamNetwork).
+    // Window-invariant: pure function of _network tunnelSpans (per-edge) + _crossingsByRun (RUNKEY-
+    // SET-INVARIANT within loaded tiles). Splits spans around each crossing ± the junction blend
+    // reach; sub-spans shorter than 12 m are dropped (a bore that short reads as noise).
+    _clipTunnelSpansAtCrossings() {
+        if (!this._crossingsByRun || !this._network) return
+        const R = (this._params?.roadJunctionBlendLength ?? 30) + 10
+        for (const [runKey, xs] of this._crossingsByRun) {
+            const e = this._network.get(runKey)
+            if (!e || !e.tunnelSpans) continue
+            let spans = e.tunnelSpans
+            for (const x of xs) {
+                const out = []
+                for (const s of spans) {
+                    if (x.arc - R >= s.s1 || x.arc + R <= s.s0) { out.push(s); continue }
+                    if (x.arc - R - s.s0 >= 12) out.push({ s0: s.s0, s1: x.arc - R })
+                    if (s.s1 - (x.arc + R) >= 12) out.push({ s0: x.arc + R, s1: s.s1 })
+                }
+                spans = out
+            }
+            e.tunnelSpans = spans.length ? spans : null
+        }
+    }
+
     // FEAT-13 v2 graph mode: build the Urquhart network into this._network over the band
     // [mx0,mx1]×[mz0,mz1]. _buildUrquhart computes the edge set over band+margin so every undirected edge
     // is emitted identically from any stream center (window-invariant). Each edge with ≥1 in-band endpoint
@@ -2399,9 +2441,13 @@ export class RoadSystem {
                 pts[i] = new THREE.Vector3(p.x, this._coarseH(p.x, p.z), p.z)
             }
             this._gradeEdgeInPlace(pts, this._params?.roadGraphDeviationCap ?? 2)
+            // FEAT-40: taut-string summit cut — bores the profile through summits the grade
+            // smoother had to climb. Mutates pts.y only; spans (bore stretches, cumulative-XZ
+            // arc == run-global arcS since arcOrigin=0) drive carve-skip/physics/tube mesh.
+            const tunnelSpans = applyTunnelPassInPlace(pts, this._tunnelPassOpts())
             const polyCum = new Float64Array(n + 1)
             for (let i = 1; i <= n; i++) polyCum[i] = polyCum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
-            this._network.set(key, { points: pts, arcOrigin: 0, centerline: cl, polyCum, clArc, cellA: c1, cellB: c2 })
+            this._network.set(key, { points: pts, arcOrigin: 0, centerline: cl, polyCum, clArc, cellA: c1, cellB: c2, tunnelSpans })
             addInc(g.key(c1), key); addInc(g.key(c2), key)
         }
     }
@@ -2528,6 +2574,13 @@ export class RoadSystem {
         if ((this._params?.roadGraphCullCrossings ?? true) || (this._params?.roadGraphMaxDegree ?? 0) > 0) {
             if (this._cullNetwork(mx0, mx1, mz0, mz1)) { this._junctionsFrom = null; this._detectJunctions() }
         }
+
+        // FEAT-40: crossings are only known now — a bore span may not contain an AT_GRADE crossing
+        // (every crossing reconciles both strands to one Y with no ΔY gate, which would ramp a
+        // surface road 30 m down into a bore). Clip bores clear of each crossing; the road there
+        // reverts to an open cut and the normal junction reconciliation applies. The chord profile
+        // itself stays — only the bore treatment (carve-skip/physics split/tube mesh) is withdrawn.
+        this._clipTunnelSpansAtCrossings()
 
         // NOTE (CR-02): no post-build cache eviction. _network is .clear()-ed + rebuilt for the
         // current window at the top of every real re-stream, so its size is window-bounded. The
@@ -3070,7 +3123,10 @@ export class RoadSystem {
      * Candidates come from the 3×3 tile block (footprint ≤ halfWidth+shoulder ≈ 7.5 m ≪ 64 m tile, so
      * any run that can carve here has a slice in-block). Returns null off all road → raw terrain.
      */
-    _resolveRoadSurface(wx, wz) {
+    // excludeKeys (FEAT-40, optional Set<runKey>): candidates to skip — _sampleCarveWorld retries
+    // without a bored run when the probe is above its apex, so the next-nearest SURFACE run (e.g. a
+    // parallel corridor within the 18 m footprint) can own the point instead of a bore 30 m below.
+    _resolveRoadSurface(wx, wz, excludeKeys = null) {
         if (!this._tiles || !this._network) return null
         const p = this._params
         const halfWidth     = p.roadHalfWidth     ?? 5
@@ -3115,6 +3171,7 @@ export class RoadSystem {
                     const runKey = s.runKey ?? ''
                     if (seen.has(runKey)) continue
                     seen.add(runKey)
+                    if (excludeKeys && excludeKeys.has(runKey)) continue
                     const netEntry = this._network.get(runKey)
                     if (!netEntry) continue
                     const pr = this._projectOntoRun(netEntry, wx, wz)
@@ -3215,14 +3272,32 @@ export class RoadSystem {
      *   run (arcSEff/signedLat) — so the 4 offsets of one normal share one tile scan, accurately
      *   (projection error over ±0.5 m on radius≥8 m is sub-mm; no position quantization → no stepping).
      */
-    _sampleCarveWorld(wx, wz, rawAmp, nrHint) {
+    _sampleCarveWorld(wx, wz, rawAmp, nrHint, queryY) {
         const p             = this._params
         const halfWidth     = p.roadHalfWidth     ?? 5
         const clearanceMargin = p.roadClearanceMargin ?? 0.25
 
         // Continuous-projection road resolver replaces queryNearest in the carve path —
         // see _resolveRoadSurface. nrHint (from carveHint) is already a _resolveRoadSurface result.
-        const nr = (nrHint !== undefined) ? nrHint : this._resolveRoadSurface(wx, wz)
+        let nr = (nrHint !== undefined) ? nrHint : this._resolveRoadSurface(wx, wz)
+
+        // FEAT-40 bore ownership: a run in a bore span only owns probes BELOW its apex (a wheel in
+        // the tube). Anything else — a probe on the hill overhead, or a Y-less caller (mesh carve
+        // table, props, camera; their undefined comparison is false) — falls through to the next-
+        // nearest SURFACE run (parallel corridors sit within the 18 m resolver footprint), or to raw
+        // terrain if no other run claims the point. Without the retry, walking a surface road beside
+        // a bore snapped the carve to "raw hill" mid-shoulder (a 7 m collision step, road-smoothness).
+        let _excl = null
+        while (nr) {
+            const adx = wx - nr.point.x, adz = wz - nr.point.z
+            const aArc = (nr.arcS ?? 0) + adx * nr.tangent.x + adz * nr.tangent.z
+            if (!this.tunnelSpanAt(nr.runKey ?? '', aArc)) break
+            const topY = this.runProfile(aArc, nr.runKey).gradeY + (p.tunnelBoreRadius ?? 6.5)
+            if (queryY < topY) break                     // in the bore: this run owns the probe
+            (_excl ??= new Set()).add(nr.runKey ?? '')
+            if (_excl.size > 3) { nr = null; break }     // stacked-bore backstop
+            nr = this._resolveRoadSurface(wx, wz, _excl)
+        }
         if (!nr) return null
 
         const dx = wx - nr.point.x
@@ -3262,6 +3337,21 @@ export class RoadSystem {
         }
 
         return { blendW: cs.blendW, gradeY }
+    }
+
+    // FEAT-40: the bore span containing run-arc `arcS` on `runKey`, or null. Spans are per-edge,
+    // few (usually 0–2), and window-invariant (set by applyTunnelPassInPlace at assembly).
+    // `inset` (m, optional) shrinks the span from both ends — the terrain-mesh carve table passes
+    // ~4 so the open cut continues INTO the bore mouth and the ragged carved→raw vertex boundary
+    // lands inside the tube (hidden by the lining + headwall) instead of spiking at the portal.
+    tunnelSpanAt(runKey, arcS, inset = 0) {
+        const spans = this._network?.get(runKey)?.tunnelSpans
+        if (!spans) return null
+        for (let i = 0; i < spans.length; i++) {
+            const s = spans[i]
+            if (arcS >= s.s0 + inset && arcS <= s.s1 - inset) return s
+        }
+        return null
     }
 
     // ── QUAL-07: dirt-surface helper (the crown/camber/clearance fold, shared) ───────────────

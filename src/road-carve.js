@@ -299,6 +299,125 @@ export function smoothGradeInPlace(pts, window) {
     }
 }
 
+/**
+ * FEAT-40: tunnel pass — taut-string summit cut, IN PLACE.
+ *
+ * After grading, a road that crests a hill carries the full climb in its profile (the
+ * design line is deviation-capped to smoothed terrain, so it can never bore). This pass
+ * pulls a taut string under the graded profile (the LOWER CONVEX HULL in (arc, y)): hull
+ * chords that the profile rises above by ≥ minDepth over ≥ minLen become summit cuts —
+ * pts.y is replaced by the chord across the gap. The deep interior of each cut (cover ≥
+ * portalDepth) is returned as tunnel spans [{s0, s1}] in cumulative-XZ-arc metres
+ * (== run-global arcS for graph edges, arcOrigin 0); the carve/mesh/physics layers bore
+ * those spans. Between chord-touch and portal the road is an open cutting (normal carve).
+ *
+ * The chord continues the approach grades by construction (it is the hull edge), so no
+ * grade re-smoothing is needed; endpoints are hull vertices → profile is C0 everywhere.
+ * Hull endpoints include the run endpoints, so node Ys are NEVER altered (junction
+ * consistency preserved). Spans are kept ≥ endMargin from run ends so the junction
+ * grade blend never reaches into a bore.
+ *
+ * Only `.y` is touched; XZ untouched (same discipline as smoothGradeInPlace).
+ * Pure per-edge function of pts → window-invariant. Deterministic (D-16).
+ *
+ * @param {Array<{x:number,z:number,y:number}>} pts — graded polyline (mutated: only .y)
+ * @param {object} opts
+ * @param {number} opts.minDepth    — m; min peak (profile − chord) to cut a summit
+ * @param {number} opts.minLen     — m; min chord length considered
+ * @param {number} opts.portalDepth — m; cover depth at which the cut becomes a bore
+ * @param {number} opts.maxGrade   — abs grade cap on the chord (veto degenerate chords)
+ * @param {number} opts.maxLen    — m; longest single bore allowed — a chord that would bore
+ *                                  longer than this is skipped whole (the road keeps climbing
+ *                                  over: tunnels are spur shortcuts, not kilometre subways)
+ * @param {number} opts.endMargin  — m; tunnel spans clamped this far from run ends
+ * @returns {Array<{s0:number,s1:number}>|null} tunnel spans, or null if none
+ */
+export function applyTunnelPassInPlace(pts, opts) {
+    const N = pts.length
+    if (N < 4) return null
+    const minDepth    = opts.minDepth    ?? 8
+    const minLen      = opts.minLen      ?? 40
+    const portalDepth = opts.portalDepth ?? 4
+    const maxGrade    = opts.maxGrade    ?? 0.12
+    const maxLen      = opts.maxLen      ?? 700
+    const endMargin   = opts.endMargin   ?? 36
+    if (!(minDepth > 0)) return null
+
+    const arc = new Float64Array(N)
+    const y   = new Float64Array(N)
+    y[0] = pts[0].y
+    for (let i = 1; i < N; i++) {
+        const dx = pts[i].x - pts[i - 1].x
+        const dz = pts[i].z - pts[i - 1].z
+        arc[i] = arc[i - 1] + Math.sqrt(dx * dx + dz * dz)
+        y[i]   = pts[i].y
+    }
+    const total = arc[N - 1]
+    if (total < minLen + 2 * endMargin) return null
+
+    // Lower convex hull (Andrew monotone chain over x-sorted points; arc is monotone).
+    // cross > 0 keeps the middle point BELOW the chord → pop when it is on/above.
+    const hull = [0]
+    for (let i = 1; i < N; i++) {
+        while (hull.length >= 2) {
+            const o = hull[hull.length - 2], a = hull[hull.length - 1]
+            const cross = (arc[a] - arc[o]) * (y[i] - y[o]) - (y[a] - y[o]) * (arc[i] - arc[o])
+            if (cross <= 0) hull.pop(); else break
+        }
+        hull.push(i)
+    }
+
+    let spans = null
+    for (let h = 1; h < hull.length; h++) {
+        const a = hull[h - 1], b = hull[h]
+        if (b - a < 2) continue                                   // no interior points
+        const chordLen = arc[b] - arc[a]
+        if (chordLen < minLen) continue
+        const slope = (y[b] - y[a]) / chordLen
+        if (Math.abs(slope) > maxGrade) continue
+        // Peak cover above the chord across the gap.
+        let peak = 0
+        for (let i = a + 1; i < b; i++) {
+            const d = y[i] - (y[a] + slope * (arc[i] - arc[a]))
+            if (d > peak) peak = d
+        }
+        if (peak < minDepth) continue
+        // Bore spans (dry pass, no mutation yet): contiguous stretches where cover ≥ portalDepth
+        // (a double summit yields two bores with open sky between). Interpolate the exact portal
+        // arc at the portalDepth crossing so span ends don't quantize to the 4 m sampling.
+        const cand = []
+        let s0 = -1
+        for (let i = a; i <= b; i++) {
+            const d = y[i] - (y[a] + slope * (arc[i] - arc[a]))
+            const inside = d >= portalDepth
+            if (inside && s0 < 0) {
+                s0 = arc[i]
+                if (i > a) {
+                    const dp = y[i - 1] - (y[a] + slope * (arc[i - 1] - arc[a]))
+                    const t = (portalDepth - dp) / (d - dp)
+                    s0 = arc[i - 1] + t * (arc[i] - arc[i - 1])
+                }
+            } else if (!inside && s0 >= 0) {
+                let s1 = arc[i]
+                const dp = y[i - 1] - (y[a] + slope * (arc[i - 1] - arc[a]))
+                if (dp > d) { const t = (dp - portalDepth) / (dp - d); s1 = arc[i - 1] + t * (arc[i] - arc[i - 1]) }
+                const c0 = Math.max(s0, endMargin), c1 = Math.min(s1, total - endMargin)
+                if (c1 - c0 >= Math.max(8, minLen * 0.25)) cand.push({ s0: c0, s1: c1 })
+                s0 = -1
+            }
+        }
+        // Over-long bore → skip the whole chord: the road keeps its over-the-top character.
+        if (cand.some(c => c.s1 - c.s0 > maxLen)) continue
+        // Cut the summit: profile follows the chord across the gap.
+        for (let i = a + 1; i < b; i++) {
+            const cy = y[a] + slope * (arc[i] - arc[a])
+            if (cy < pts[i].y) pts[i].y = cy
+        }
+        if (cand.length) (spans ??= []).push(...cand)
+    }
+    return spans
+}
+
 // ── Junction polygon utilities (P9 plan 04) ──────────────────────────────────
 // No imports — Worker-safe discipline maintained for future use.
 // NOTE: junction footprint is main-thread only; these are NOT synced into WORKER_SOURCE.
