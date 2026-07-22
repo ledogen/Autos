@@ -18,6 +18,9 @@ const RUNS = resolve(new URL('..', import.meta.url).pathname, 'runs')
 const VERBOSE = process.argv.includes('--verbose')
 const runs = readdirSync(RUNS).filter(f => f.endsWith('.json'))
   .map(f => ({ file: f, ...JSON.parse(readFileSync(join(RUNS, f), 'utf8')) }))
+  // Only mission run-exports are calibration data; the library also holds other artifacts
+  // (e.g. lab-baselines.json) that carry no result/felt — exclude them.
+  .filter(r => /^rangersim-run-export\/\d+$/.test(r.format ?? ''))
 
 if (!runs.length) {
   console.log('run library is empty — drive a mission, hit "export run as", then `npm run runs:add`.')
@@ -33,6 +36,41 @@ const pearson = (xs, ys) => {
   return (dx && dy) ? num / Math.sqrt(dx * dy) : null
 }
 const f2 = (v) => (v == null ? '  n/a' : (v >= 0 ? ' ' : '') + v.toFixed(2))
+
+// Calibration features per run, schema-agnostic. Legacy /1 exports carried pre-baked `terrain` +
+// `corners` blocks; /2 carries raw `topology.rows` (cols s_m,x,z,elev_m,heading_rad,curv_1pm,grade,
+// quality,par_ms) and we derive the same summaries here — keeping stored runs raw (runs/README.md).
+const FLAT_GRADE = 0.005          // |grade| below this reads as level, not slope
+function features (r) {
+  if (r.terrain && r.corners) {   // /1: pre-summarised
+    const c = r.corners.pct_by_radius ?? {}
+    return {
+      pct_downhill: r.terrain.pct_downhill, pct_uphill: r.terrain.pct_uphill, net_m: r.terrain.net_m,
+      mean_curvature_per_m: r.corners.mean_curvature_per_m,
+      hairpin_lt25: c.hairpin_lt25, tight_25_60: c.tight_25_60, straight_gt400: c.straight_gt400,
+      distance_m: r.route?.distance_m,
+    }
+  }
+  const rows = r.topology?.rows ?? []           // /2: derive from raw topology (curv=idx5, grade=idx6, elev=idx3)
+  const n = rows.length || 1
+  let down = 0, up = 0, sumK = 0, hair = 0, tight = 0, straight = 0
+  for (const row of rows) {
+    const k = Math.abs(row[5]), g = row[6]
+    if (g <= -FLAT_GRADE) down++; else if (g >= FLAT_GRADE) up++
+    sumK += k
+    if (k > 1 / 25) hair++                       // radius < 25 m
+    else if (k > 1 / 60) tight++                 // 25–60 m
+    if (k < 1 / 400) straight++                  // radius > 400 m
+  }
+  const pct = (x) => +(100 * x / n).toFixed(1)
+  return {
+    pct_downhill: pct(down), pct_uphill: pct(up),
+    net_m: rows.length ? +(rows[rows.length - 1][3] - rows[0][3]).toFixed(1) : 0,
+    mean_curvature_per_m: +(sumK / n).toFixed(6),
+    hairpin_lt25: pct(hair), tight_25_60: pct(tight), straight_gt400: pct(straight),
+    distance_m: r.route?.distance_m,
+  }
+}
 
 console.log(`RUN LIBRARY — ${runs.length} run${runs.length === 1 ? '' : 's'}\n`)
 
@@ -83,13 +121,14 @@ if (usable.length >= 3) {
   // Residual: how much par disagreed, sign-corrected for what the driver expected.
   const expect = { very_fast: 0.82, fast: 0.91, par: 1.00, slow: 1.10, very_slow: 1.25 }
   const resid = usable.map(r => r.result.ratio - expect[r.felt])
+  const fx = usable.map(features)
   const feats = {
-    'descent fraction   → grade/drag response': usable.map(r => r.terrain.pct_downhill),
-    'net elevation /km  → grade/drag response': usable.map(r => 1000 * r.terrain.net_m / r.route.distance_m),
-    'mean curvature     → mu':                   usable.map(r => r.corners.mean_curvature_per_m),
-    'tight+hairpin %    → mu at small radius':   usable.map(r => r.corners.pct_by_radius.hairpin_lt25 + r.corners.pct_by_radius.tight_25_60),
-    'straight %         → accel / vMax / drag':  usable.map(r => r.corners.pct_by_radius.straight_gt400),
-    'distance           → (should be ~0)':       usable.map(r => r.route.distance_m),
+    'descent fraction   → grade/drag response': fx.map(f => f.pct_downhill),
+    'net elevation /km  → grade/drag response': fx.map(f => 1000 * f.net_m / f.distance_m),
+    'mean curvature     → mu':                   fx.map(f => f.mean_curvature_per_m),
+    'tight+hairpin %    → mu at small radius':   fx.map(f => f.hairpin_lt25 + f.tight_25_60),
+    'straight %         → accel / vMax / drag':  fx.map(f => f.straight_gt400),
+    'distance           → (should be ~0)':       fx.map(f => f.distance_m),
   }
   console.log('\nwhere the error comes from (corr of residual vs feature; |r| > 0.6 with n ≥ 6 is worth acting on)')
   for (const [name, xs] of Object.entries(feats)) {
@@ -103,9 +142,10 @@ if (usable.length >= 3) {
 if (VERBOSE) {
   console.log('\nper-run:')
   for (const r of runs.sort((a, b) => a.file.localeCompare(b.file))) {
+    const f = features(r)
     console.log(`  ${r.file}`)
-    console.log(`    ${r.result.elapsed_s}s vs par ${r.result.par_s}s = ${r.result.ratio} (${r.result.letter}) · felt ${r.felt ?? '—'}`)
-    console.log(`    ${(r.route.distance_m / 1000).toFixed(2)} km · ${r.terrain.pct_downhill}% down / ${r.terrain.pct_uphill}% up · net ${r.terrain.net_m} m · straight ${r.corners.pct_by_radius.straight_gt400}%`)
+    console.log(`    ${r.result.elapsed_s}s vs par ${r.result.par_s}s = ${r.result.ratio} (${r.result.letter}) · felt ${r.felt ?? '—'}${r.driver ? ` · ${r.driver}` : ''}`)
+    console.log(`    ${(r.route.distance_m / 1000).toFixed(2)} km · ${f.pct_downhill}% down / ${f.pct_uphill}% up · net ${f.net_m} m · straight ${f.straight_gt400}%`)
     if (r.note) console.log(`    note: ${r.note}`)
   }
 }

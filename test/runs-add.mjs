@@ -33,7 +33,9 @@ let added = 0, skipped = 0
 for (const src of sources) {
   let run
   try { run = JSON.parse(readFileSync(src, 'utf8')) } catch { console.log(`skip (unparseable): ${basename(src)}`); skipped++; continue }
-  if (run.format !== 'rangersim-run-export/1') { console.log(`skip (not a run export): ${basename(src)}`); skipped++; continue }
+  // Accept any run-export version (/1 pre-baked terrain+corners, /2 raw topology rows). runs-report
+  // derives the calibration features from whichever shape a run carries.
+  if (!/^rangersim-run-export\/\d+$/.test(run.format ?? '')) { console.log(`skip (not a run export): ${basename(src)}`); skipped++; continue }
 
   // Same route + same time = same run; don't let a re-download duplicate the dataset.
   const dup = existing.find(f => {
