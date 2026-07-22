@@ -2376,10 +2376,11 @@ export class RoadSystem {
         const p = this._params || {}
         return {
             minDepth:    (p.tunnelsEnabled ?? true) ? (p.tunnelMinDepth ?? 8) : 0,
-            minLen:      p.tunnelMinLen ?? 40,
-            portalDepth: p.tunnelPortalDepth ?? 4,
+            minLen:      p.tunnelMinLen ?? 15,
+            portalDepth: p.tunnelPortalDepth ?? 1.5,
             maxGrade:    p.tunnelMaxGrade ?? 0.12,
             maxLen:      p.tunnelMaxLen ?? 700,
+            boreRadius:  p.tunnelBoreRadius ?? 6.5,
             endMargin:   (p.roadJunctionBlendLength ?? 30) + 6,
         }
     }
@@ -2441,10 +2442,11 @@ export class RoadSystem {
                 pts[i] = new THREE.Vector3(p.x, this._coarseH(p.x, p.z), p.z)
             }
             this._gradeEdgeInPlace(pts, this._params?.roadGraphDeviationCap ?? 2)
-            // FEAT-40: taut-string summit cut — bores the profile through summits the grade
-            // smoother had to climb. Mutates pts.y only; spans (bore stretches, cumulative-XZ
-            // arc == run-global arcS since arcOrigin=0) drive carve-skip/physics/tube mesh.
-            const tunnelSpans = applyTunnelPassInPlace(pts, this._tunnelPassOpts())
+            // FEAT-40: taut-string summit cut + crown-cover bore detection. Mutates pts.y only;
+            // spans (bore stretches, cumulative-XZ arc == run-global arcS since arcOrigin=0)
+            // drive carve-skip/physics/tube mesh. _coarseH is the router's own world-fixed
+            // terrain sampler → the pass stays window-invariant.
+            const tunnelSpans = applyTunnelPassInPlace(pts, this._tunnelPassOpts(), (x, z) => this._coarseH(x, z))
             const polyCum = new Float64Array(n + 1)
             for (let i = 1; i <= n; i++) polyCum[i] = polyCum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
             this._network.set(key, { points: pts, arcOrigin: 0, centerline: cl, polyCum, clArc, cellA: c1, cellB: c2, tunnelSpans })

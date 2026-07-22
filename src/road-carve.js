@@ -300,47 +300,58 @@ export function smoothGradeInPlace(pts, window) {
 }
 
 /**
- * FEAT-40: tunnel pass — taut-string summit cut, IN PLACE.
+ * FEAT-40: tunnel pass — taut-string summit cut + crown-cover bore detection, IN PLACE.
  *
- * After grading, a road that crests a hill carries the full climb in its profile (the
- * design line is deviation-capped to smoothed terrain, so it can never bore). This pass
- * pulls a taut string under the graded profile (the LOWER CONVEX HULL in (arc, y)): hull
- * chords that the profile rises above by ≥ minDepth over ≥ minLen become summit cuts —
- * pts.y is replaced by the chord across the gap. The deep interior of each cut (cover ≥
- * portalDepth) is returned as tunnel spans [{s0, s1}] in cumulative-XZ-arc metres
- * (== run-global arcS for graph edges, arcOrigin 0); the carve/mesh/physics layers bore
- * those spans. Between chord-touch and portal the road is an open cutting (normal carve).
+ * TWO decoupled stages:
  *
- * The chord continues the approach grades by construction (it is the hull edge), so no
- * grade re-smoothing is needed; endpoints are hull vertices → profile is C0 everywhere.
- * Hull endpoints include the run endpoints, so node Ys are NEVER altered (junction
- * consistency preserved). Spans are kept ≥ endMargin from run ends so the junction
- * grade blend never reaches into a bore.
+ * STAGE 1 — summit cut (profile-based). A road that crests a hill carries the climb in its
+ * profile. Pull a taut string under it (the LOWER CONVEX HULL in (arc, y)): hull chords the
+ * profile rises ≥ minDepth above (over a chord ≥ 40 m, |grade| ≤ maxGrade) get pts.y replaced
+ * by the chord. The chord continues the approach grades by construction; hull endpoints
+ * include the run endpoints so node Ys are NEVER altered (junction consistency preserved).
+ *
+ * STAGE 2 — bore spans (REAL-terrain-based). Walk the (possibly cut) profile and probe
+ * `heightAt` at the tube CROWN: wherever raw terrain covers (profileY + boreRadius) by
+ * ≥ portalDepth for a contiguous stretch ∈ [minLen, maxLen], that stretch is a bore span.
+ * Decoupled from stage 1 on purpose: the grade smoother flattens a short sharp spur almost
+ * entirely OUT of the profile (deviation cap vs SMOOTHED terrain), so a profile-only trigger
+ * never sees it — the road became a deep trench instead of the 15–50 m spur tunnel it wants
+ * to be. Probing real terrain also parks the portals where the hill genuinely swallows the
+ * tube (the old profile-proxy portals let the mouth poke far out of the hillside).
+ *
+ * Spans are [{s0, s1}] in cumulative-XZ-arc metres (== run-global arcS for graph edges,
+ * arcOrigin 0), clamped ≥ endMargin from run ends so the junction grade blend never reaches
+ * a bore. Between a stage-1 chord touch and a portal the road is an open cutting (normal carve).
  *
  * Only `.y` is touched; XZ untouched (same discipline as smoothGradeInPlace).
- * Pure per-edge function of pts → window-invariant. Deterministic (D-16).
+ * heightAt must be a pure world-fixed sampler (the router's coarse height) → the pass stays
+ * window-invariant and deterministic (D-16). Without heightAt (synthetic tests), the
+ * PRE-CUT profile serves as the terrain proxy.
  *
  * @param {Array<{x:number,z:number,y:number}>} pts — graded polyline (mutated: only .y)
  * @param {object} opts
- * @param {number} opts.minDepth    — m; min peak (profile − chord) to cut a summit
- * @param {number} opts.minLen     — m; min chord length considered
- * @param {number} opts.portalDepth — m; cover depth at which the cut becomes a bore
- * @param {number} opts.maxGrade   — abs grade cap on the chord (veto degenerate chords)
- * @param {number} opts.maxLen    — m; longest single bore allowed — a chord that would bore
- *                                  longer than this is skipped whole (the road keeps climbing
- *                                  over: tunnels are spur shortcuts, not kilometre subways)
+ * @param {number} opts.minDepth    — m; min profile summit above the taut string to cut (stage 1)
+ * @param {number} opts.minLen     — m; MIN BORE LENGTH — shorter covered stretches stay cuttings
+ * @param {number} opts.portalDepth — m; terrain cover required ABOVE THE TUBE CROWN to bore
+ * @param {number} opts.maxGrade   — abs grade cap on a stage-1 chord (veto degenerate chords)
+ * @param {number} opts.maxLen    — m; longest single bore — longer covered stretches stay
+ *                                  open (tunnels are spur shortcuts, not kilometre subways)
+ * @param {number} opts.boreRadius — m; tube radius (crown = profileY + boreRadius)
  * @param {number} opts.endMargin  — m; tunnel spans clamped this far from run ends
+ * @param {(x:number,z:number)=>number} [heightAt] — raw terrain sampler (world-fixed, pure)
  * @returns {Array<{s0:number,s1:number}>|null} tunnel spans, or null if none
  */
-export function applyTunnelPassInPlace(pts, opts) {
+export function applyTunnelPassInPlace(pts, opts, heightAt) {
     const N = pts.length
     if (N < 4) return null
     const minDepth    = opts.minDepth    ?? 8
-    const minLen      = opts.minLen      ?? 40
-    const portalDepth = opts.portalDepth ?? 4
+    const minBore     = opts.minLen      ?? 15
+    const portalDepth = opts.portalDepth ?? 1.5
     const maxGrade    = opts.maxGrade    ?? 0.12
     const maxLen      = opts.maxLen      ?? 700
+    const boreRadius  = opts.boreRadius  ?? 6.5
     const endMargin   = opts.endMargin   ?? 36
+    const CHORD_MIN   = 40                       // m — stage-1 summit chords shorter than this are noise
     if (!(minDepth > 0)) return null
 
     const arc = new Float64Array(N)
@@ -353,9 +364,13 @@ export function applyTunnelPassInPlace(pts, opts) {
         y[i]   = pts[i].y
     }
     const total = arc[N - 1]
-    if (total < minLen + 2 * endMargin) return null
+    if (total < minBore + 2 * endMargin) return null
 
-    // Lower convex hull (Andrew monotone chain over x-sorted points; arc is monotone).
+    // Raw terrain per sample (or the pre-cut profile as proxy when no sampler is given).
+    const terr = new Float64Array(N)
+    for (let i = 0; i < N; i++) terr[i] = heightAt ? heightAt(pts[i].x, pts[i].z) : y[i]
+
+    // ── STAGE 1: lower convex hull summit cut (Andrew monotone chain; arc is monotone). ──
     // cross > 0 keeps the middle point BELOW the chord → pop when it is on/above.
     const hull = [0]
     for (let i = 1; i < N; i++) {
@@ -366,54 +381,59 @@ export function applyTunnelPassInPlace(pts, opts) {
         }
         hull.push(i)
     }
-
-    let spans = null
     for (let h = 1; h < hull.length; h++) {
         const a = hull[h - 1], b = hull[h]
         if (b - a < 2) continue                                   // no interior points
         const chordLen = arc[b] - arc[a]
-        if (chordLen < minLen) continue
+        if (chordLen < CHORD_MIN) continue
         const slope = (y[b] - y[a]) / chordLen
         if (Math.abs(slope) > maxGrade) continue
-        // Peak cover above the chord across the gap.
-        let peak = 0
+        // Peak profile summit above the chord, and the longest crown-covered stretch the cut
+        // would create (real terrain vs the chord) — a stretch beyond maxLen vetoes the cut so
+        // the road keeps its over-the-top character instead of becoming a kilometre subway.
+        let peak = 0, runLen = 0, runS = -1, worstRun = 0
         for (let i = a + 1; i < b; i++) {
-            const d = y[i] - (y[a] + slope * (arc[i] - arc[a]))
+            const cy = y[a] + slope * (arc[i] - arc[a])
+            const d = y[i] - cy
             if (d > peak) peak = d
+            const covered = terr[i] - cy >= boreRadius + portalDepth
+            if (covered) { if (runS < 0) runS = arc[i]; runLen = arc[i] - runS; if (runLen > worstRun) worstRun = runLen }
+            else runS = -1
         }
         if (peak < minDepth) continue
-        // Bore spans (dry pass, no mutation yet): contiguous stretches where cover ≥ portalDepth
-        // (a double summit yields two bores with open sky between). Interpolate the exact portal
-        // arc at the portalDepth crossing so span ends don't quantize to the 4 m sampling.
-        const cand = []
-        let s0 = -1
-        for (let i = a; i <= b; i++) {
-            const d = y[i] - (y[a] + slope * (arc[i] - arc[a]))
-            const inside = d >= portalDepth
-            if (inside && s0 < 0) {
-                s0 = arc[i]
-                if (i > a) {
-                    const dp = y[i - 1] - (y[a] + slope * (arc[i - 1] - arc[a]))
-                    const t = (portalDepth - dp) / (d - dp)
-                    s0 = arc[i - 1] + t * (arc[i] - arc[i - 1])
-                }
-            } else if (!inside && s0 >= 0) {
-                let s1 = arc[i]
-                const dp = y[i - 1] - (y[a] + slope * (arc[i - 1] - arc[a]))
-                if (dp > d) { const t = (dp - portalDepth) / (dp - d); s1 = arc[i - 1] + t * (arc[i] - arc[i - 1]) }
-                const c0 = Math.max(s0, endMargin), c1 = Math.min(s1, total - endMargin)
-                if (c1 - c0 >= Math.max(8, minLen * 0.25)) cand.push({ s0: c0, s1: c1 })
-                s0 = -1
-            }
-        }
-        // Over-long bore → skip the whole chord: the road keeps its over-the-top character.
-        if (cand.some(c => c.s1 - c.s0 > maxLen)) continue
+        if (worstRun > maxLen) continue
         // Cut the summit: profile follows the chord across the gap.
         for (let i = a + 1; i < b; i++) {
             const cy = y[a] + slope * (arc[i] - arc[a])
             if (cy < pts[i].y) pts[i].y = cy
         }
-        if (cand.length) (spans ??= []).push(...cand)
+    }
+
+    // ── STAGE 2: bore spans wherever real terrain buries the tube crown. ──
+    // cover_i = terrain − (final profile + boreRadius); contiguous stretches with cover ≥
+    // portalDepth, boundaries interpolated at the exact crossing so portals don't quantize
+    // to the 4 m sampling. A double summit naturally yields two bores with open sky between.
+    let spans = null
+    const need = boreRadius + portalDepth
+    let s0 = -1, dPrev = 0
+    for (let i = 0; i < N; i++) {
+        const d = terr[i] - pts[i].y - need       // > 0 ⇒ crown buried by ≥ portalDepth
+        const inside = d >= 0
+        if (inside && s0 < 0) {
+            s0 = arc[i]
+            if (i > 0 && dPrev < 0) s0 = arc[i - 1] + (arc[i] - arc[i - 1]) * (-dPrev / (d - dPrev))
+        } else if (!inside && s0 >= 0) {
+            let s1 = arc[i]
+            if (dPrev > 0) s1 = arc[i - 1] + (arc[i] - arc[i - 1]) * (dPrev / (dPrev - d))
+            const c0 = Math.max(s0, endMargin), c1 = Math.min(s1, total - endMargin)
+            if (c1 - c0 >= minBore && c1 - c0 <= maxLen) (spans ??= []).push({ s0: c0, s1: c1 })
+            s0 = -1
+        }
+        dPrev = d
+    }
+    if (s0 >= 0) {   // covered through the run end: close at the end margin
+        const c0 = Math.max(s0, endMargin), c1 = total - endMargin
+        if (c1 - c0 >= minBore && c1 - c0 <= maxLen) (spans ??= []).push({ s0: c0, s1: c1 })
     }
     return spans
 }

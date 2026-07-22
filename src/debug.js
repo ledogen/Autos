@@ -421,10 +421,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // FEAT-40 tunnels — taut-string summit cut (profile-only; routed XZ untouched). fireRoadParam is
   // the one lever that re-streams the network AND rebuilds carve + ribbon, all of which read spans.
   roadFolder.add(params, 'tunnelsEnabled').name('Tunnels').onChange(fireRoadParam)
-  roadFolder.add(params, 'tunnelMinDepth', 2, 30, 1).name('Tunnel Min Depth (m)').onChange(fireRoadParam)
-  roadFolder.add(params, 'tunnelMinLen', 20, 200, 10).name('Tunnel Min Len (m)').onChange(fireRoadParam)
-  roadFolder.add(params, 'tunnelMaxLen', 100, 2000, 50).name('Tunnel Max Len (m)').onChange(fireRoadParam)
-  roadFolder.add(params, 'tunnelPortalDepth', 2, 12, 0.5).name('Portal Cover (m)').onChange(fireRoadParam)
+  roadFolder.add(params, 'tunnelMinDepth', 2, 30, 1).name('Summit Cut Depth (m)').onChange(fireRoadParam)
+  roadFolder.add(params, 'tunnelMinLen', 8, 100, 1).name('Min Bore Len (m)').onChange(fireRoadParam)
+  roadFolder.add(params, 'tunnelMaxLen', 100, 2000, 50).name('Max Bore Len (m)').onChange(fireRoadParam)
+  roadFolder.add(params, 'tunnelPortalDepth', 0, 6, 0.25).name('Crown Cover (m)').onChange(fireRoadParam)
   roadFolder.add(params, 'tunnelBoreRadius', 5, 9, 0.25).name('Bore Radius (m)').onChange(fireRoadParam)
 
   // D-arc (2026-06-16) / fixed-angle palette (QUAL-05 follow-up, 2026-06-24) — arc-primitive router knobs.

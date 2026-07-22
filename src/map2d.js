@@ -244,12 +244,14 @@ export class Map2D {
     }
 
     // ── RoadSystem (the map's own read-only instance) ────────────────────────────────────────
-    // A signature over the seed + every road* param, so the kept instance is rebuilt iff the network
-    // it represents could have changed (mode/graph-knob tuning) — and reused (instant) otherwise.
+    // A signature over the seed + every road*/tunnel* param, so the kept instance is rebuilt iff
+    // the network it represents could have changed (mode/graph-knob/tunnel tuning) — and reused
+    // (instant) otherwise. tunnel* is separate from road* on purpose (routeCacheSig must not see
+    // it — FEAT-40), but the tunnel pass DOES change spans/profiles, so the map must re-stream.
     _paramSig() {
         const p = this._getParams()
         let s = 'seed=' + this._getSeed()
-        for (const k of Object.keys(p)) if (/^road/i.test(k) && typeof p[k] !== 'function') s += '|' + k + '=' + p[k]
+        for (const k of Object.keys(p)) if (/^road|^tunnel/i.test(k) && typeof p[k] !== 'function') s += '|' + k + '=' + p[k]
         return s
     }
 
@@ -565,6 +567,38 @@ export class Map2D {
             for (let i = 1; i < points.length; i++) ctx.lineTo(this._sx(points[i].x), this._sy(points[i].z))
             ctx.stroke()
         }
+        this._drawTunnels(ctx)
+    }
+
+    // FEAT-40: one arch icon centered on each tunnel bore (span midpoint). Spans live on the net
+    // entries (netEntry.tunnelSpans, run-arc metres in the polyCum domain set at assembly).
+    _drawTunnels(ctx) {
+        const road = this._road
+        const lerpAt = (points, cum, s) => {
+            let lo = 0, hi = points.length - 1
+            while (lo + 1 < hi) { const m = (lo + hi) >> 1; if (cum[m] <= s) lo = m; else hi = m }
+            const t = (s - cum[lo]) / ((cum[lo + 1] - cum[lo]) || 1)
+            const a = points[lo], b = points[lo + 1]
+            return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t }
+        }
+        for (const e of road._network.values()) {
+            if (!e.tunnelSpans || !e.points || !e.polyCum) continue
+            for (const sp of e.tunnelSpans) {
+                const p = lerpAt(e.points, e.polyCum, (sp.s0 + sp.s1) / 2)
+                const x = this._sx(p.x), y = this._sy(p.z)
+                // Portal-arch glyph: filled amber semicircle on a flat base, dark inner bore.
+                ctx.fillStyle = '#ffb84a'
+                ctx.beginPath()
+                ctx.arc(x, y + 3, 6.5, Math.PI, 0)
+                ctx.closePath()
+                ctx.fill()
+                ctx.fillStyle = '#1c1c1c'
+                ctx.beginPath()
+                ctx.arc(x, y + 3, 3.5, Math.PI, 0)
+                ctx.closePath()
+                ctx.fill()
+            }
+        }
     }
 
     // (3) Classified crossings — colored by kind (at-grade junction vs near-parallel graze).
@@ -663,6 +697,7 @@ export class Map2D {
         ctx.textBaseline = 'middle'
         const rows = [
             ['#d8d8d0', 'road'],
+            ['#ffb84a', 'tunnel'],
             ['#3fd06a', 'AT_GRADE'],
             ['#e0c83c', 'NEAR_PARALLEL'],
             ['#46c8ff', 'hub (deg≥3)'],

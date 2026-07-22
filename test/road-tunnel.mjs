@@ -42,7 +42,10 @@ const nSpans = tunneled.reduce((n, [, e]) => n + e.tunnelSpans.length, 0)
 check(tunneled.length >= 1, `seed ${SEED} region has tunneled edges: ${tunneled.length} edges / ${nSpans} bores`)
 
 // ── (2) tunneled profiles stay driveable ───────────────────────────────────────────────────────
-const maxGrade = (P.tunnelMaxGrade ?? 0.12) + 0.02
+// Stage-1 chords are capped at tunnelMaxGrade; stage-2 bores follow the road's own profile
+// (grade-smoothed, but a bored stretch can legally carry the network max grade) — so the bound
+// here is a driveability sanity ceiling, not the chord cap.
+const maxGrade = 0.20
 let worstG = 0, worstStep = 0
 for (const [, e] of tunneled) {
   const pts = e.points, cum = e.polyCum
@@ -70,8 +73,8 @@ for (const [runKey, e] of tunneled) {
     const skin  = terr.analyticHeight(c.x, c.z)                          // Y-less → raw hill
     const floor = terr.analyticHeight(c.x, c.z, undefined, floorY + 1)   // in-bore probe
     sampled++
-    // Hill overhead: portalDepth of cover minus the deviation-cap slack the pass's proxy allows.
-    if (skin - floor >= (P.tunnelPortalDepth ?? 4) - 2.5) coverOK++
+    // Hill overhead: crown cover (boreRadius + portalDepth) with slack for coarse-vs-fine noise.
+    if (skin - floor >= (P.tunnelBoreRadius ?? 6.5) + (P.tunnelPortalDepth ?? 1.5) - 2.5) coverOK++
     if (Math.abs(floor - (floorY + (P.roadClearanceMargin ?? 0.25))) < 1.5) floorOK++
   }
 }

@@ -444,12 +444,32 @@ export class TerrainSystem {
             // fog instead of ending on a line. View-space distance in metres.
             uShadowFadeStart:{ value: 150.0 },
             uShadowFadeEnd:  { value: 240.0 },
+            // FEAT-40: tunnel-mouth cutouts. The terrain SKIN is fragment-discarded inside a capsule
+            // at each bore portal (pos.xyz = mouth centre, pos.w = hole radius; axis.xyz = unit
+            // inward tangent, axis.w = inward length) so the camera can see into the tube. Visual
+            // only — physics/height sampling never read this. Synced in _syncTunnelUniforms.
+            uTunnelN:    { value: 0 },
+            uTunnelPos:  { value: Array.from({ length: 24 }, () => new THREE.Vector4()) },
+            uTunnelAxis: { value: Array.from({ length: 24 }, () => new THREE.Vector4()) },
         }
         this._material.onBeforeCompile = (shader) => {
             Object.assign(shader.uniforms, this._terrainUniforms)
             addWorldVaryings(shader)
             shader.fragmentShader = 'uniform float uDetailScale, uNoiseScale, uMottle, uBump, uCliffLo, uCliffHi, uTreeLo, uTreeHi;\n' +
-                'uniform sampler2D uShadowAtlas; uniform float uShadowAtlasN, uShadowTilePx, uShadowStrength, uShadowFadeStart, uShadowFadeEnd;\n' + shader.fragmentShader
+                'uniform sampler2D uShadowAtlas; uniform float uShadowAtlasN, uShadowTilePx, uShadowStrength, uShadowFadeStart, uShadowFadeEnd;\n' +
+                'uniform int uTunnelN; uniform vec4 uTunnelPos[24]; uniform vec4 uTunnelAxis[24];\n' + shader.fragmentShader
+            // FEAT-40: cut the skin at tunnel mouths — capsule test in world space, then discard.
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <clipping_planes_fragment>',
+                `#include <clipping_planes_fragment>
+                for (int ti = 0; ti < 24; ti++) {
+                    if (ti >= uTunnelN) break;
+                    vec3 tq = vWorldPos - uTunnelPos[ti].xyz;
+                    float tt = clamp(dot(tq, uTunnelAxis[ti].xyz), -2.5, uTunnelAxis[ti].w);
+                    tq -= uTunnelAxis[ti].xyz * tt;
+                    if (dot(tq, tq) < uTunnelPos[ti].w * uTunnelPos[ti].w) discard;
+                }`
+            )
             // Albedo mottle (after vColor is folded into diffuseColor).
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <color_fragment>',
@@ -619,9 +639,38 @@ export class TerrainSystem {
      *
      * @param {{ x: number, y: number, z: number }} carPos - Current car/camera world position.
      */
+    // FEAT-40: refresh the tunnel-mouth cutout uniforms when the road network changes. Cheap
+    // (rev-guarded); pos.w = hole radius overlapped by the portal ring's outer band, axis.w =
+    // inward capsule length (covers the skin crossing the tube near the mouth).
+    _syncTunnelUniforms() {
+        const rs = this._roadSystem
+        if (!rs || !rs._network || this._tunnelUniformRev === rs._networkRev) return
+        this._tunnelUniformRev = rs._networkRev
+        const posArr = this._terrainUniforms.uTunnelPos.value
+        const axArr  = this._terrainUniforms.uTunnelAxis.value
+        const R = (this._params.tunnelBoreRadius ?? 6.5) + 0.45
+        let n = 0
+        for (const [runKey, e] of rs._network) {
+            if (!e.tunnelSpans) continue
+            for (const sp of e.tunnelSpans) {
+                for (const [s, inward] of [[sp.s0, 1], [sp.s1, -1]]) {
+                    if (n >= 24) break
+                    const p = rs.runPointAt(runKey, s)
+                    if (!p) continue
+                    const pr = rs.runProfile(s, runKey)
+                    posArr[n].set(p.x, pr.gradeY + 0.4, p.z, R)
+                    axArr[n].set(pr.tx * inward, 0, pr.tz * inward, 16)
+                    n++
+                }
+            }
+        }
+        this._terrainUniforms.uTunnelN.value = n
+    }
+
     update(carPos) {
         // Streaming paused (FEAT-31 testing lab) — no-op to prevent chunk ring changes while there.
         if (this._enabled === false) return
+        this._syncTunnelUniforms()
         const { cx: ccx, cz: ccz } = this._worldToChunk(carPos.x, carPos.z)
         let _pt = performance.now()
         this._updateChunkRing(ccx, ccz)
