@@ -65,16 +65,11 @@ const MAX_CAMBER_RAD = 6 * (Math.PI / 180)
 const MAX_ROAD_BUILDS_PER_FRAME = 1
 
 // ── Junction pad constants (QUAL-10/11) ──────────────────────────────────────
-// STRAIGHT_GAP: angular gap (rad, ~155°) between consecutive legs beyond which the corner is a
-// through road's back side — connect straight (n ≥ 3), no phantom bulge behind the through road.
-const STRAIGHT_GAP = 2.7
 // PAD_FILL_MAX_EDGE: red-green subdivision target (m) for the non-planar pad fill — interior
 // verts every ~3 m so the lifted surface follows the sloped pad plane + crown (QUAL-13 field).
+// (The pad BOUNDARY ring — weld/fillet/legacy ladder, STRAIGHT_GAP, LEGACY_PAD_FLARE — moved to
+// road.js so the collision carve and this mesh share ONE ring; see RoadSystem._buildJunctionRing.)
 const PAD_FILL_MAX_EDGE = 3.0
-// LEGACY_PAD_FLARE: mouth flare (× halfWidth) for the QUAL-10 circle-pad fallback ring. The weld
-// path needs no flare (the mouth IS the ribbon cross-section); this only serves the ladder's
-// last rung, so it is a constant, not a param (roadJunctionFlare removed with QUAL-11).
-const LEGACY_PAD_FLARE = 1.6
 // MARK_JUNCTION_FEATHER: metres over which lane markings fade back in past a junction cutback —
 // real intersections lose the centerline gradually instead of hard-stopping (QUAL-11/QUAL-10).
 const MARK_JUNCTION_FEATHER = 8
@@ -822,17 +817,17 @@ export class RoadMeshSystem {
         if (this._road._detectNodeJunctions) this._road._detectNodeJunctions()
         perfAdd('ribbon.sliceNetwork', performance.now() - _ptE)
         const segs = this._road._tiles.get(key)
-        if (!segs || segs.length === 0) {
-            // No road on this tile — mark as processed so we don't re-queue it.
-            // D1 (plan 09-19): stamp generation so a later re-route triggers a re-check.
-            this._tileMeshMap.set(key, { meshes: [], geometries: [], builtGeneration: this._road.roadGeneration() })
-            return
-        }
 
         const meshes     = []
         const geometries = []
 
-        for (const seg of segs) {
+        // NB: do NOT early-return when segs is empty. A junction NODE's tile can legitimately have zero
+        // ribbon slices — the ribbons are trimmed back (roadJunctionCutback) from the node, so when the
+        // node sits near a tile corner (e.g. seed-6 node 253,-131 is ~3 m from both edges of tile 3,-3),
+        // every trimmed leg stub falls in the NEIGHBOUR tiles and this tile gets no slice. The old
+        // early-return then skipped the junction-pad loop below → the pad was never built (bare-terrain
+        // hole where three roads meet). Falling through builds the pad; an empty ribbon loop is a no-op.
+        for (const seg of (segs || [])) {
             const { spline } = seg
             if (!spline) continue
 
@@ -1266,7 +1261,9 @@ export class RoadMeshSystem {
         const fallbackY = (x, z) => node.plane
             ? node.plane.y0 + node.plane.gx * (x - node.plane.cx) + node.plane.gz * (z - node.plane.cz)
             : nodeY
-        // Per-vertex asphalt-TOP Y — the surface the ribbon mesh + truck ride (FEAT-19 grade + crown/camber).
+        // Per-vertex asphalt-TOP Y — the graded surface the ribbon mesh + collision carve ride
+        // (sampleRoadTopY = FEAT-19 grade + crown/camber), plane fallback beyond the road footprint.
+        // Kept identical to the collision surface (mesh == collision).
         const sampleY = (x, z) => {
             const y = this._road.sampleRoadTopY ? this._road.sampleRoadTopY(x, z) : null
             return (y != null && isFinite(y) ? y : fallbackY(x, z)) + apronLift
@@ -1275,21 +1272,19 @@ export class RoadMeshSystem {
         // QUAL-16 rework: a degree-2 node is a road BENDING THROUGH, not a plaza. Instead of a
         // wedge pad (which reads as a blob and leaves triangulation/weld gaps on the outside of the
         // bend), sweep a full-width ribbon along the cheapest circular fillet joining the two mouth
-        // cross-sections — so the kink looks like any other curved road. Falls through to the pad
-        // ladder below only if the fillet is degenerate (near-collinear / mouths on the wrong side).
+        // cross-sections (the arc is cached on the node by road.js _buildDeg2ArcGeom) — so the kink
+        // looks like any other curved road. Falls through to the cached pad ring below only if the
+        // fillet is degenerate (near-collinear / mouths on the wrong side).
         if (node.legs.length === 2) {
             const g = this._buildDeg2Ribbon(node, params, sampleY)
             if (g) return g
         }
 
-        // ── Boundary ladder: exact weld → shrunk fillets → legacy circle pad ──
-        let ring = this._junctionRingWeld(node, params, 1.0)
-        if (ring && this._ringSelfIntersects(ring)) ring = null
-        if (!ring) {
-            ring = this._junctionRingWeld(node, params, 0.5)
-            if (ring && this._ringSelfIntersects(ring)) ring = null
-        }
-        if (!ring) ring = this._junctionRingLegacy(node, params)
+        // ── Boundary: the welded pad ring is now built + cached in road.js (_buildJunctionRing, by
+        // _networkRev) so it is the SINGLE source shared by the collision carve (_junctionPadCarve) and
+        // this mesh — mesh == collision by construction. The fallback ladder (exact weld → shrunk fillets
+        // → legacy circle pad) + _ringSelfIntersects gate all live there now (road.js).
+        const ring = node.ring
         if (!ring || ring.length < 3) return null
 
         return this._buildPadGeometry(ring, sampleY)
@@ -1679,14 +1674,19 @@ export class RoadMeshSystem {
         const tri0 = earClip(ring)
         if (!tri0 || tri0.length < 3) return null
         let tris = Array.from(tri0)
-        // Force UP-facing winding: sum triangle XZ signed area; if it came out CW (faces down), flip every
-        // triangle so computeVertexNormals yields +Y normals (FrontSide → pad visible, not backface-black).
-        let area2 = 0
+        // Force UP-facing winding PER TRIANGLE. A single global sum-of-areas flip assumes earClip emits
+        // uniformly-wound triangles, but on a strongly NON-CONVEX ring (the open-side back-arc bulb + the
+        // narrow inter-leg crotches of this one-sided trident) earClip returns MIXED winding — here 56 of
+        // 609 tris came out reversed. The global flip then aligns only the majority, leaving those 56
+        // BACK-facing; with the FrontSide pad material they're CULLED, so the terrain/dirt behind the pad
+        // shows THROUGH the holes (the tan wedges) with a dark backing (the "black gash"). Normalising each
+        // triangle independently (UP-facing = CW in XZ, i.e. signed area < 0) makes the whole pad
+        // watertight regardless of earClip's per-tri winding; the red-green split below preserves it.
         for (let t = 0; t < tris.length; t += 3) {
             const a = ring[tris[t]], b = ring[tris[t + 1]], c = ring[tris[t + 2]]
-            area2 += (b.x - a.x) * (c.z - a.z) - (c.x - a.x) * (b.z - a.z)
+            const areaXZ = (b.x - a.x) * (c.z - a.z) - (c.x - a.x) * (b.z - a.z)
+            if (areaXZ > 0) { const tmp = tris[t + 1]; tris[t + 1] = tris[t + 2]; tris[t + 2] = tmp }
         }
-        if (area2 > 0) for (let t = 0; t < tris.length; t += 3) { const tmp = tris[t + 1]; tris[t + 1] = tris[t + 2]; tris[t + 2] = tmp }
 
         // Red-green refinement: split every edge > PAD_FILL_MAX_EDGE at its midpoint (midpoints
         // deduped per-edge → no T-junction cracks); 1/2/3-split triangle patterns keep winding.

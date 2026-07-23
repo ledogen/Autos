@@ -1304,13 +1304,31 @@ export class TerrainSystem {
         const originX = cx * S
         const originZ = cz * S
 
+        // Junction-pad footprints (incl. the open-side back-arc bulb) are a first-class carve region that
+        // can reach BEYOND the nearest road SAMPLE — the open sector has no ribbon nearby — so the
+        // sample-distance skip (and the chunk early-rejects) would wrongly cull the pad rim. Collect pad
+        // nodes (reach = ringMaxR + shoulder + maxToe) whose reach overlaps this chunk; a vertex within
+        // one's reach is never skipped, and _junctionPadCarve (read from road.js's cached ring) covers it.
+        // Same ring the pad MESH reads → mesh == collision on the whole footprint.
+        const _padNodes = this._roadSystem.junctionPadNodes ? this._roadSystem.junctionPadNodes() : []
+        const _chunkPad = []
+        for (const nd of _padNodes) {
+            const cxp = Math.max(originX, Math.min(originX + (N - 1) * cell, nd.x))
+            const czp = Math.max(originZ, Math.min(originZ + (N - 1) * cell, nd.z))
+            if (Math.hypot(nd.x - cxp, nd.z - czp) <= nd.reach + cell) _chunkPad.push(nd)
+        }
+        const _nearPad = (wx, wz) => {
+            for (const nd of _chunkPad) { const r = nd.reach; if ((nd.x - wx) ** 2 + (nd.z - wz) ** 2 <= r * r) return true }
+            return false
+        }
+
         // Quick bounding-box check: does any road come within maxExt of this chunk?
         // (Runs ONCE per chunk — not the lag. The lag was per-vertex queryNearest below, now removed.)
         const chunkCX = originX + S * 0.5
         const chunkCZ = originZ + S * 0.5
         const queryRadius = maxExt + S * 0.71  // half-diagonal of chunk + maxExt
         const nearest = this._roadSystem.queryNearest(chunkCX, chunkCZ, queryRadius)
-        if (!nearest) return null  // no road near this chunk
+        if (!nearest && _chunkPad.length === 0) return null  // no road AND no pad near this chunk
 
         // ── Plan 09-16: Pre-sample spline points ONCE per chunk (SURF-04 perf fix) ──
         //
@@ -1335,7 +1353,7 @@ export class TerrainSystem {
         const _connSamples = this._roadSystem.collectConnectorSamples(chunkCX, chunkCZ, queryRadius)
         for (let k = 0; k < _connSamples.length; k++) samples.push(_connSamples[k])
         perfAdd('carve.collectSplines', performance.now() - _ptC)
-        if (samples.length === 0) return null  // early-reject passed but no actual points sampled
+        if (samples.length === 0 && _chunkPad.length === 0) return null  // no spline points AND no pad here
 
         const table = new Float32Array(N * N * 2)
         let anyNonZero = false
@@ -1385,7 +1403,8 @@ export class TerrainSystem {
                     const d2 = sdx * sdx + sdz * sdz
                     if (d2 < extBestD2) extBestD2 = d2
                 }
-                if (extBestD2 > _maxToe2) { table[idx] = 0; table[idx + 1] = 0; continue }
+                const nearPad = _nearPad(wx, wz)
+                if (extBestD2 > _maxToe2 && !nearPad) { table[idx] = 0; table[idx + 1] = 0; continue }
 
                 // Raw terrain height at this vertex (world-space, with amplitude).
                 const rawPre = rawHeights ? rawHeights[zi * N + xi]
@@ -1428,16 +1447,18 @@ export class TerrainSystem {
                     if (notch.blendW > 1e-6) anyNonZero = true
                     continue
                 }
-                // NB (QUAL-16 × FEAT-40): no early `if (!nr) continue` here — the deg-2 connector
-                // overlay below still carves the bend-outside void where no run resolves. The run
-                // cross-section is guarded by `if (nr)` and null flows through to the connector.
+                // NB (QUAL-16 × FEAT-40 × junction pad): no early `if (!nr) continue` here — the deg-2
+                // connector overlay AND the junction-pad carve below still cover the bend-outside void /
+                // open-side pad rim where no run resolves. cs is guarded by `if (nr)`; null flows through.
+                // Composed EXACTLY as physics (_sampleCarveWorld) does → mesh == collision.
                 let cs = null
                 if (nr) {
                     const dx = wx - nr.point.x, dz = wz - nr.point.z
                     const arcSEff   = (nr.arcS ?? 0) + dx * nr.tangent.x + dz * nr.tangent.z
                     const signedLat = dx * nr.tangent.z - dz * nr.tangent.x
-                    // FEAT-40: rival blend so self-overlap / bore seams match the physics carve.
-                    cs = this._roadSystem._carveCrossSectionBlended(nr, signedLat, arcSEff, rawH)
+                    // FEAT-40 rival blend (self-overlap/bore seams) + QUAL-10 pad-plane inter-leg ruled
+                    // blend (wx,wz forwarded to _carveDirtY). queryY undefined — the mesh is the Y-less path.
+                    cs = this._roadSystem._carveCrossSectionBlended(nr, signedLat, arcSEff, rawH, undefined, wx, wz)
                 }
                 // QUAL-16: compose the deg-2 kink CONNECTOR's full cross-section over the run surface —
                 // identical composition to _sampleCarveWorld (mesh == collision). Connector grade
@@ -1448,11 +1469,15 @@ export class TerrainSystem {
                     const domGrade = cs ? co.gradeY * co.dom + cs.gradeY * (1 - co.dom) : co.gradeY
                     cs = { blendW: Math.max(cs ? cs.blendW : 0, co.blendW), gradeY: domGrade }
                 }
-                if (!cs) { table[idx] = 0; table[idx + 1] = 0; continue }
+                // Junction-pad carve composed with the leg + connector carve. The MESH uses the default
+                // PAD_DUCK_CAP (1.2); physics uses the tighter PAD_DUCK_CAP_PHYS (0.55) — the sanctioned
+                // camber-era pad-rim mesh↔collision difference. Covers the open-side rim no run reaches.
+                const csP = this._roadSystem._mergeCarve(cs, this._roadSystem._junctionPadCarve(wx, wz, rawH))
+                if (!csP) { table[idx] = 0; table[idx + 1] = 0; continue }
 
-                table[idx]     = cs.blendW
-                table[idx + 1] = amp > 0 ? cs.gradeY / amp : cs.gradeY
-                if (cs.blendW > 1e-6) anyNonZero = true
+                table[idx]     = csP.blendW
+                table[idx + 1] = amp > 0 ? csP.gradeY / amp : csP.gradeY
+                if (csP.blendW > 1e-6) anyNonZero = true
             }
         }
 
