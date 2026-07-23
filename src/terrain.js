@@ -1226,13 +1226,31 @@ export class TerrainSystem {
         const originX = cx * S
         const originZ = cz * S
 
+        // Junction-pad footprints (incl. the open-side back-arc bulb) are a first-class carve region that
+        // can reach BEYOND the nearest road SAMPLE — the open sector has no ribbon nearby — so the
+        // sample-distance skip (and the chunk early-rejects) would wrongly cull the pad rim. Collect pad
+        // nodes (reach = ringMaxR + shoulder + maxToe) whose reach overlaps this chunk; a vertex within
+        // one's reach is never skipped, and _junctionPadCarve (read from road.js's cached ring) covers it.
+        // Same ring the pad MESH reads → mesh == collision on the whole footprint.
+        const _padNodes = this._roadSystem.junctionPadNodes ? this._roadSystem.junctionPadNodes() : []
+        const _chunkPad = []
+        for (const nd of _padNodes) {
+            const cxp = Math.max(originX, Math.min(originX + (N - 1) * cell, nd.x))
+            const czp = Math.max(originZ, Math.min(originZ + (N - 1) * cell, nd.z))
+            if (Math.hypot(nd.x - cxp, nd.z - czp) <= nd.reach + cell) _chunkPad.push(nd)
+        }
+        const _nearPad = (wx, wz) => {
+            for (const nd of _chunkPad) { const r = nd.reach; if ((nd.x - wx) ** 2 + (nd.z - wz) ** 2 <= r * r) return true }
+            return false
+        }
+
         // Quick bounding-box check: does any road come within maxExt of this chunk?
         // (Runs ONCE per chunk — not the lag. The lag was per-vertex queryNearest below, now removed.)
         const chunkCX = originX + S * 0.5
         const chunkCZ = originZ + S * 0.5
         const queryRadius = maxExt + S * 0.71  // half-diagonal of chunk + maxExt
         const nearest = this._roadSystem.queryNearest(chunkCX, chunkCZ, queryRadius)
-        if (!nearest) return null  // no road near this chunk
+        if (!nearest && _chunkPad.length === 0) return null  // no road AND no pad near this chunk
 
         // ── Plan 09-16: Pre-sample spline points ONCE per chunk (SURF-04 perf fix) ──
         //
@@ -1252,7 +1270,7 @@ export class TerrainSystem {
         const _ptC = performance.now()
         const { pts: samples } = this._roadSystem.collectChunkSplinePoints(chunkCX, chunkCZ, queryRadius)
         perfAdd('carve.collectSplines', performance.now() - _ptC)
-        if (samples.length === 0) return null  // early-reject passed but no actual points sampled
+        if (samples.length === 0 && _chunkPad.length === 0) return null  // no spline points AND no pad here
 
         const table = new Float32Array(N * N * 2)
         let anyNonZero = false
@@ -1302,7 +1320,8 @@ export class TerrainSystem {
                     const d2 = sdx * sdx + sdz * sdz
                     if (d2 < extBestD2) extBestD2 = d2
                 }
-                if (extBestD2 > _maxToe2) { table[idx] = 0; table[idx + 1] = 0; continue }
+                const nearPad = _nearPad(wx, wz)
+                if (extBestD2 > _maxToe2 && !nearPad) { table[idx] = 0; table[idx + 1] = 0; continue }
 
                 // Raw terrain height at this vertex (world-space, with amplitude).
                 const rawPre = rawHeights ? rawHeights[zi * N + xi]
@@ -1318,18 +1337,22 @@ export class TerrainSystem {
                 // tessellation is too (this is NOT the hand-rolled point-to-segment projection that tore
                 // the mesh — it's physics' own resolver). No mesh-only D3 max-floor: physics doesn't do it,
                 // and _resolveRoadSurface already picks ONE run, so we match _sampleCarveWorld exactly.
+                // The pad rim may have NO run under it (open sector) → nr null; the junction-pad carve
+                // still covers it, so we compose the two EXACTLY as physics (_sampleCarveWorld) does.
                 const nr = this._roadSystem._resolveRoadSurface(wx, wz)
-                if (!nr) { table[idx] = 0; table[idx + 1] = 0; continue }
-                const dx = wx - nr.point.x, dz = wz - nr.point.z
-                const arcSEff   = (nr.arcS ?? 0) + dx * nr.tangent.x + dz * nr.tangent.z
-                const signedLat = dx * nr.tangent.z - dz * nr.tangent.x
+                let cs = null
+                if (nr) {
+                    const dx = wx - nr.point.x, dz = wz - nr.point.z
+                    const arcSEff   = (nr.arcS ?? 0) + dx * nr.tangent.x + dz * nr.tangent.z
+                    const signedLat = dx * nr.tangent.z - dz * nr.tangent.x
+                    cs = this._roadSystem._carveCrossSection(signedLat, arcSEff, nr.runKey ?? '', nr.camberSign ?? 1, rawH, wx, wz)
+                }
+                const csP = this._roadSystem._mergeCarve(cs, this._roadSystem._junctionPadCarve(wx, wz, rawH))
+                if (!csP) { table[idx] = 0; table[idx + 1] = 0; continue }
 
-                const cs = this._roadSystem._carveCrossSection(signedLat, arcSEff, nr.runKey ?? '', nr.camberSign ?? 1, rawH)
-                if (!cs) { table[idx] = 0; table[idx + 1] = 0; continue }
-
-                table[idx]     = cs.blendW
-                table[idx + 1] = amp > 0 ? cs.gradeY / amp : cs.gradeY
-                if (cs.blendW > 1e-6) anyNonZero = true
+                table[idx]     = csP.blendW
+                table[idx + 1] = amp > 0 ? csP.gradeY / amp : csP.gradeY
+                if (csP.blendW > 1e-6) anyNonZero = true
             }
         }
 

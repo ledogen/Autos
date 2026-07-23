@@ -44,6 +44,81 @@ function idLess(a, b) { return a[0] !== b[0] ? a[0] < b[0] : (a[1] !== b[1] ? a[
 
 // QUAL-10: shared no-influence result for _junctionCarve (allocation-free hot-path default).
 const _ZERO_JC = { frac: 0, widen: 0 }
+// Inter-leg CREASE fix ("ruled surface" grade blend): near a ≥2-leg node the RULED inter-leg blend
+// (_carveDirtY) reaches (roadJunctionCarveRadius × this) as an ARC distance along the winning leg. The
+// Voronoi step between two legs GROWS with radius, so the blend must reach well past the crown/camber-ease
+// + widen core (R) — set to fully cover the observed crease (≥ r≈28 on the seed-6 trident). Deliberately a
+// hardcoded const, NOT a road* param — route-store.js routeCacheSig() bakes every ^road key into the
+// bundled route-cache signature, so a new road* param would invalidate data/route-cache-default.json.gz and
+// silently revert cold load ~1.6 s → ~26 s. Carve-time only (zero routing effect), so it must not touch the
+// sig. (Same rationale as KINK_MAX in road-mesh.js.)
+const BLEND_REACH_MULT = 10.0
+// Ruled inter-leg blend (_carveDirtY): BARYCENTRIC weights w_i = taper_i · ∏_{j≠i}(gap_j + RULE_EPS), where
+// gap = distance to the leg's nearest centerline point − halfWidth (clamped ≥0). This is the LINEAR ruled
+// interpolation between the legs (constant-slope banked gore, no local steepening — an exp/inverse-distance
+// weight concentrates the whole grade change at the Voronoi crossover, a steep lateral step; inverse-distance
+// also spikes at each asphalt edge). RULE_EPS keeps weights finite where two asphalts overlap in the near-node
+// throat (both gaps 0) and sets how sharply a leg dominates on its own ribbon (small ⇒ near-exact ribbons).
+// RULE_LEG_REACH is the in-range cutoff (a leg past it is a separate road); RULE_TAPER eases a leg's weight to
+// 0 over the last metres before that cutoff so it can't POP in (barycentric weight doesn't decay with its own
+// distance, so the cutoff needs an explicit smooth taper).
+const RULE_EPS = 0.2
+const RULE_TAPER = 4.0
+const RULE_LEG_REACH = 14.0
+// Arc half-window (m) for the near-node leg projection: confine each leg's nearest-foot search to this much
+// of the leg either side of its node endpoint, so a curving/looping leg can't contribute a far-branch grade
+// (bimodal foot → torn surface). Comfortably covers the pad + gore radius; beyond it a leg has left the node.
+const RULE_NODE_WINDOW = 40.0
+// Max plausible road grade (rise/run) a leg can climb away from its node — used to reject wrong-branch
+// projected grades (a leg looping back, or an unrelated road crossing at a very different height within the
+// window). Generous vs the router's real grade cap so it never rejects a genuine leg.
+const MAX_LEG_SLOPE = 0.30
+// Radial fade (m from node centre) of the junction blend: full inside JN_FADE_IN, gone by JN_FADE_OUT. The
+// plaza/gore is a local feature; past FADE_OUT the legs have diverged into separate roads and must NOT be
+// blended (that raised gore steps where two unrelated roads cross far from the node). FADE_IN covers the
+// pad + near gore; FADE_OUT is set past the trident's slow-diverging crease (~r24) but short of where legs
+// become distinct roads (~r40+).
+const JN_FADE_IN = 22.0
+const JN_FADE_OUT = 34.0
+// Junction-pad ring geometry (moved from road-mesh.js so the CARVE path is the single source of the
+// welded pad boundary — the mesh now reads road.js's cached node.ring). Not road* params (no route-sig
+// effect). STRAIGHT_GAP: angular gap (rad, ~155°) past which a consecutive-leg corner is a through
+// road's back side. LEGACY_PAD_FLARE: mouth flare (× halfWidth) for the circle-pad fallback ring.
+const STRAIGHT_GAP = 2.7
+const LEGACY_PAD_FLARE = 1.6
+// THROAT_*: narrow-gore paving for a Y-throat. When two consecutive legs diverge slowly (small gap),
+// the node-centred corner arc cuts across the throat far too close to the node, leaving the gore (the V
+// between the two diverging ribbons) as raw terrain even though it's carved flush — a tan wedge piercing
+// the asphalt (seed-6 node 253,-131, E↔SE mouths). Fix: when the gap is narrow AND the two facing mouth
+// edges start closer than THROAT_SEP, sweep the boundary OUT along both ribbon inner edges until they
+// separate by THROAT_SEP (a full road-width — past that the ribbons are genuinely distinct roads and the
+// median between them is legit terrain), then cap across. Hardcoded consts, NOT road* params (carve-time
+// geometry only, no route-cache-signature effect — same rationale as STRAIGHT_GAP).
+const THROAT_GAP = 1.9        // rad (~109°): only narrow road-side gaps get the outward sweep
+const THROAT_SEP_MULT = 2.0   // × halfWidth: pave the gore until the ribbon inner edges are this far apart
+const THROAT_TRIG_MULT = 1.0  // × halfWidth: TRIGGER the sweep only when the mouths start closer than this —
+                              // ribbons basically merged (trident E↔SE wedge, sep 4.0). Ordinary crossroad
+                              // corners (sep 6.6–9.6 at seed-6 939,-1410) take the interior fillet instead;
+                              // the old trigger (= THROAT_SEP_MULT) swallowed them and swept their corners out.
+// PAD_RIM_HOLD: full-depth carve band OUTSIDE the pad ring (m) — ≥ the terrain-grid cell diagonal
+// (1 m grid → 1.42 m) so no terrain triangle straddling the ring boundary can interpolate above the
+// pad asphalt (see _junctionPadCarve). Hardcoded: geometry only, no route-cache-signature effect.
+const PAD_RIM_HOLD = 1.6
+// PAD_DIRT_EXTRA: extra dirt depth (m, beyond roadClearanceMargin) under the pad + rim-hold band, and
+// PAD_TOP_MIN_R: half-terrain-cell radius (m) of the 5-point neighbourhood MIN of sampleRoadTopY used
+// as the pad dirt's design base. Together they keep the 1 m-grid terrain triangles ≥ ~0.2 m below the
+// asphalt even where the ruled plaza surface CREASES inside one cell (the blended top can dip ~0.3 m
+// between grid vertices; linear dirt interpolation rides the crease's convex hull and pokes through a
+// bare clearanceMargin=0.15). Physics is unaffected: inside the ring the truck rides the asphalt top
+// (padTopY overlay in _sampleCarveWorld), not this dirt. Hardcoded (no route-cache-signature effect).
+const PAD_DIRT_EXTRA = 0.15
+const PAD_TOP_MIN_R = 0.5
+// PAD_DUCK_CAP: max the pad may LOWER dirt below the leg cross-section's own design (m). The pad's
+// crease-duck free-resolves the top field, which carries pre-existing multi-metre tears at a couple of
+// degenerate steep nodes; uncapped, those tears leak into an otherwise-smooth pinned cross-section
+// (shoulder-lateral-continuity's plaza tolerance is 0.70 m). 0.55 covers every real crease measured
+// across seeds 6+7 (≤ ~0.45) while keeping any leaked step under the plaza tolerance.
+const PAD_DUCK_CAP = 0.55
 // roadQuality imported for SURF-06 D-03: pothole severity uses the same per-stretch
 // quality hook as markings. Importing from road-quality.js (not road-mesh.js) avoids
 // the road-mesh.js → terrain.js → road.js chain issues.
@@ -3050,6 +3125,41 @@ export class RoadSystem {
     }
 
     /**
+     * Nearest foot on a run's centerline polyline RESTRICTED to the arc window near a node endpoint
+     * (`nodeArc` = 0 or the run length, in the polyCum domain; `win` metres each side). Used by the ruled
+     * inter-leg blend (_carveDirtY): a full-run projection picks the globally nearest foot, which on a leg
+     * that curves or loops back can JUMP a metre (bimodal minimum) or land hundreds of metres along the run
+     * — sampling the leg's grade there tears the blended surface. The leg leaves its node MONOTONICALLY, so
+     * confining the search to [nodeArc−win, nodeArc+win] makes the foot (and its grade) continuous. Returns
+     * { d2, arcS } | null.
+     */
+    _projectLegNearNode(netEntry, wx, wz, nodeArc, win) {
+        const pts = netEntry.points
+        const N = pts ? pts.length : 0
+        if (N < 2) return null
+        const arcOrigin = netEntry.arcOrigin ?? 0
+        const lo = nodeArc - win, hi = nodeArc + win
+        let bestD2 = Infinity, bestCum = 0, cum = 0
+        for (let i = 0; i < N - 1; i++) {
+            const ax = pts[i].x, az = pts[i].z
+            const ex = pts[i + 1].x - ax, ez = pts[i + 1].z - az
+            const segLen2 = ex * ex + ez * ez
+            const segLen = Math.sqrt(segLen2) || 1e-8
+            if (cum + segLen >= lo && cum <= hi) {           // segment overlaps the node-arc window
+                let t = segLen2 > 1e-12 ? ((wx - ax) * ex + (wz - az) * ez) / segLen2 : 0
+                if (t < 0) t = 0; else if (t > 1) t = 1
+                const fx = ax + t * ex, fz = az + t * ez
+                const ddx = wx - fx, ddz = wz - fz
+                const d2 = ddx * ddx + ddz * ddz
+                if (d2 < bestD2) { bestD2 = d2; bestCum = cum + t * segLen }
+            }
+            cum += segLen
+        }
+        if (bestD2 === Infinity) return null
+        return { d2: bestD2, arcS: bestCum - arcOrigin }
+    }
+
+    /**
      * Resolve WHICH road the physics carve sits on at (wx,wz) — the nearest run whose footprint contains
      * the point — via the continuous polyline projection, returned in queryNearest's shape so
      * _sampleCarveWorld can consume it. This replaces queryNearest in the carve path.
@@ -3222,29 +3332,32 @@ export class RoadSystem {
 
         // Continuous-projection road resolver replaces queryNearest in the carve path —
         // see _resolveRoadSurface. nrHint (from carveHint) is already a _resolveRoadSurface result.
+        // NB: nr may be null on the open-side pad rim (outside every run footprint) — the JUNCTION-PAD
+        // carve below still covers those points, so do NOT early-return on a null nr.
         const nr = (nrHint !== undefined) ? nrHint : this._resolveRoadSurface(wx, wz)
-        if (!nr) return null
 
-        const dx = wx - nr.point.x
-        const dz = wz - nr.point.z
-        const tx = nr.tangent.x, tz = nr.tangent.z
+        // ── QUAL-07: leg-corridor carve (the shared cross-section) — null when nr is null or beyond toe ──
+        let cs = null, latDist = Infinity, arcSEff = 0, runKey = ''
+        if (nr) {
+            const dx = wx - nr.point.x
+            const dz = wz - nr.point.z
+            const tx = nr.tangent.x, tz = nr.tangent.z
+            // Per-point arc via projection onto the run tangent (recovers the offset's true along-run arc
+            // for a cache hit → correct longitudinal grade in analyticNormal's finite differences).
+            arcSEff = (nr.arcS ?? 0) + dx * tx + dz * tz
+            // Signed lateral distance (positive = right of road heading).
+            const signedLat = dx * tz - dz * tx
+            latDist = Math.abs(signedLat)
+            runKey  = nr.runKey ?? ''
+            // It returns the DIRT-trough surface (clearanceMargin ALWAYS subtracted) + the shoulder blend.
+            cs = this._carveCrossSection(signedLat, arcSEff, runKey, nr.camberSign ?? 1, rawAmp, wx, wz)
+        }
 
-        // Per-point arc via projection onto the run tangent. For a FRESH query nr.point is the exact
-        // foot of perpendicular so this is ~0 (no change). For a CACHE HIT at a nearby quantized cell
-        // it recovers the offset's true along-run arc, so analyticNormal's ±0.5 m finite differences
-        // still see the road's longitudinal GRADE (not just lateral crown/camber) → correct normal
-        // from ONE query instead of 4. (signedLat below already varies via dx,dz for the lateral term.)
-        const arcSEff = (nr.arcS ?? 0) + dx * tx + dz * tz
-
-        // Signed lateral distance (positive = right of road heading, negative = left).
-        // signedLat = dx*tz - dz*tx (positive = right side of travel direction).
-        const signedLat = dx * tz - dz * tx
-        const latDist   = Math.abs(signedLat)
-
-        // QUAL-07: one carve cross-section function shared with the terrain mesh (_buildCarveTable).
-        // It returns the DIRT-trough surface (clearanceMargin ALWAYS subtracted) + the shoulder blend.
-        const cs = this._carveCrossSection(signedLat, arcSEff, nr.runKey ?? '', nr.camberSign ?? 1, rawAmp)
-        if (!cs) return null   // beyond the fill/cut toe — unaffected terrain
+        // Junction-pad carve (first-class pad footprint, incl. the back-arc bulb) composed with the leg
+        // carve — never LESS coverage than either alone, and smooth where they overlap (both ride the pad
+        // plane near the node). This is what covers the open-side rim the leg corridors miss.
+        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp))
+        if (!cs2) return null   // beyond the fill/cut toe of both — unaffected terrain
 
         // ── Physics-only on-ribbon overlay (the one intentional mesh↔collision difference) ──
         // The terrain mesh draws the dirt trough everywhere; ON the ribbon the truck instead rides the
@@ -3252,16 +3365,27 @@ export class RoadSystem {
         // ribbon the wheel drops onto the lower carved dirt). So on-ribbon we add clearanceMargin back
         // (ride the decal) + the SURF-06 pothole micro-noise (D-03, physics-only, on-ribbon only). Off
         // the ribbon the surface == the mesh dirt by construction (QUAL-07 agreement).
-        let gradeY = cs.gradeY
-        if (latDist < halfWidth) {
+        let gradeY = cs2.gradeY
+        if (nr && latDist < halfWidth) {
             gradeY += clearanceMargin
             if (p.potholeEnabled) {
-                const rq = roadQuality(arcSEff, nr.runKey ?? '', this._worldSeed)
+                const rq = roadQuality(arcSEff, runKey, this._worldSeed)
                 gradeY += potholeNoise(wx, wz, rq, p)
             }
+        } else if (cs2.padTopY != null) {
+            // ── Physics-only on-PAD overlay ── inside the junction pad ring but beyond every ribbon's
+            // halfWidth (the plaza interior / open sector) the truck rides the pad ASPHALT, not the
+            // deepened carve dirt below it — the exact analogue of the on-ribbon decal overlay above,
+            // and continuous with it at lat == halfWidth. Where a leg cross-section resolved, its own
+            // design + clearance IS the asphalt top along THAT run (pin-consistent: a hinted/pinned
+            // resolve stays on its pinned cross-section — no free-resolve leak); only where no run
+            // resolves at all (the far open-side rim) fall back to the pad's free-sampled top. Off the
+            // ring the wheel drops onto the carved dirt, the same intended edge dropoff as a ribbon
+            // shoulder (BUG-15).
+            gradeY = Math.max(gradeY, cs ? cs.gradeY + clearanceMargin : cs2.padTopY)
         }
 
-        return { blendW: cs.blendW, gradeY }
+        return { blendW: cs2.blendW, gradeY }
     }
 
     // ── QUAL-07: dirt-surface helper (the crown/camber/clearance fold, shared) ───────────────
@@ -3275,7 +3399,7 @@ export class RoadSystem {
      * rawAmp + fillHeight. BUG-15: crown/camber fold across the WHOLE footprint with full signedLat
      * (same formula as sweepRibbon) so the surface is C0 at the ribbon edge into the shoulder.
      */
-    _carveDirtY(signedLat, arcSEff, runKey, camberSign) {
+    _carveDirtY(signedLat, arcSEff, runKey, camberSign, wx, wz) {
         const p = this._params
         const halfWidth     = p.roadHalfWidth      ?? 5
         const crownHeight   = p.crownHeight         ?? 0.05
@@ -3287,7 +3411,95 @@ export class RoadSystem {
         // crown/camber extrapolated across the widened junction carve core (below) would dome/tilt.
         const jc = this._junctionCarve(runKey, arcSEff)
         if (jc.frac > 0) { const k = 1 - jc.frac; crownY *= k; tiltY *= k }
-        return this.runProfile(arcSEff, runKey).gradeY + crownY + tiltY - clearanceMargin
+        let gradeY = this.runProfile(arcSEff, runKey).gradeY
+        // Inter-leg CREASE fix — the "ruled surface" grade blend. Each ≥2-leg node's runs leave the shared
+        // node INDEPENDENTLY, so _resolveRoadSurface hard-switching to the nearest leg leaves a STEP at the
+        // Voronoi boundary between two legs (their grades diverge — up to ~4.5 m at r=24 on the seed-6 sloped
+        // trident). Replace the hard switch with a ruled surface: blend EVERY nearby leg's centerline grade,
+        // weighted by an EXPONENTIAL falloff of the point's GAP to that leg's asphalt (gap = distance to the
+        // leg's nearest centerline point − halfWidth, clamped ≥0). exp(−gap/scale) is smooth EVERYWHERE — in
+        // particular it has NO cliff at the asphalt edge (an inverse-distance 1/(gap+ε) collapses ~10× over
+        // 0.25 m there and pops siblings in → a lateral shoulder step the shoulder-continuity gate catches);
+        // and it decays a far leg to ~0 by itself, so a separate road (or a far bimodal branch of a looping
+        // leg) never perturbs the surface. The blend is a PURE FUNCTION OF POSITION — it does NOT privilege
+        // the "winning" leg — so it hands off CONTINUOUSLY across the Voronoi boundary (a winning-privileged
+        // variant SNAPPED to the dominant leg, re-introducing the crease). On a real ribbon (one leg within
+        // ~halfWidth) that leg's gap→0 gives weight 1 while siblings are exp-suppressed, so the ribbon stays
+        // put; in the throat near the node (trimmed-back ribbons overlap) it averages toward the shared node
+        // grade = the flat plaza. Shared fn ⇒ mesh (pad + apron via sampleRoadTopY / _carveCrossSection) and
+        // physics agree. Window-invariant. Needs (wx,wz).
+        if (jc.node && wx !== undefined) {
+            // Collect each in-range leg's clamped gap-to-asphalt, grade, and reach-taper, then blend by
+            // BARYCENTRIC weights w_i = taper_i · ∏_{j≠i}(gap_j + RULE_EPS). This is the LINEAR ruled
+            // interpolation between the legs (for two legs w_A = gap_B, w_B = gap_A ⇒ blend rides the straight
+            // line between the two ribbon edges), so the gore is a CONSTANT-slope banked ramp — no local
+            // steepening. That is what lets it span the whole plaza out to r≈24: an exp/inverse-distance weight
+            // CONCENTRATES the entire grade change at the Voronoi crossover (a steep local lateral step) even
+            // when the average ruled slope is gentle; the linear ramp spreads it evenly (≈ Δgrade / gore-width).
+            // It also has NO 1/gap edge spike — as a point reaches a leg's asphalt (gap_i → 0) every OTHER
+            // weight carries that gap_i factor → 0, so w_i alone survives ⇒ that leg's grade exactly, smoothly
+            // (the ribbon never moves). Pure function of position ⇒ continuous across every Voronoi switch.
+            const nodeLegs = jc.node.legs
+            const gaps = [], grades = [], tapers = []
+            for (const leg of nodeLegs) {
+                const ne = this._network.get(leg.runKey)
+                if (!ne) continue
+                // Project onto the leg's NEAR-NODE arc window only (smooth foot — no bimodal / far-branch jump).
+                const pr = this._projectLegNearNode(ne, wx, wz, leg.arc, RULE_NODE_WINDOW)
+                if (!pr) continue
+                const gap = Math.sqrt(pr.d2) - halfWidth
+                if (gap >= RULE_LEG_REACH) continue                      // out of range: not a co-leg here
+                const legGrade = leg.runKey === runKey ? gradeY : this.runProfile(pr.arcS, leg.runKey).gradeY
+                // Plausibility guard: every leg leaves the node welded at nodeY with a bounded road grade, so
+                // at arc distance `along` its grade must lie within nodeY ± MAX_LEG_SLOPE·along. A projected
+                // grade outside that is a WRONG-BRANCH artifact (the leg loops back / another road crosses at a
+                // very different height within the window) — blending it would raise a tall ramp between two
+                // roads that merely pass near. Reject it. (Uses the node's own grade → window-invariant.)
+                const along = Math.abs(pr.arcS - leg.arc)
+                if (Math.abs(legGrade - jc.node.nodeY) > MAX_LEG_SLOPE * along + halfWidth) continue
+                gaps.push(Math.max(0, gap) + RULE_EPS); grades.push(legGrade)
+                // Smooth in-range taper (1 → 0 across the last RULE_TAPER m before the cutoff). Barycentric
+                // weight does NOT decay with a leg's OWN distance, so without this a leg crossing RULE_LEG_REACH
+                // would POP in with a non-trivial weight (a lateral shoulder step). The taper eases its weight
+                // to 0 at the cutoff so it fades in/out; at its own asphalt (gap 0) the taper is 1.
+                const tu = Math.min(1, Math.max(0, (RULE_LEG_REACH - gap) / RULE_TAPER))
+                tapers.push(tu * tu * (3 - 2 * tu))
+            }
+            let wSum = 0, gSum = 0, wMax = 0
+            for (let i = 0; i < gaps.length; i++) {
+                let w = tapers[i]
+                for (let j = 0; j < gaps.length; j++) if (j !== i) w *= gaps[j]   // taper_i · ∏_{j≠i} gap_j
+                wSum += w; if (w > wMax) wMax = w
+                gSum += w * grades[i]
+            }
+            // Apply the ruled blend (NO single/blend crossfade — that leaked a partial crease wherever the
+            // "winning" single flipped at a Voronoi switch). On a CLEAN open ribbon (only one leg in range) wSum
+            // reduces to that leg's weight ⇒ its grade exactly, so the driving ribbon never moves. It bends
+            // toward the shared grade only where a sibling is genuinely close (the plaza approach).
+            if (wSum > 0) {
+                // RADIAL fade of the junction influence, centred on the node. The blend is found via the
+                // winning run's ARC distance (generous, so the gate never switches the blend off mid-carve),
+                // but arc ≠ radial on a curving leg, so without this a leg that has diverged into a SEPARATE
+                // road 40 m out would still be blended (a 0.5 m gore step where two unrelated roads' grades
+                // cross). Fade to the pure single-leg surface between FADE_IN and FADE_OUT so the plaza/gore
+                // influence is confined to the actual intersection; beyond it the ribbon is its ordinary self.
+                // fade → single is safe here (unlike a lateral crossfade) because by FADE_OUT the legs have
+                // diverged past co-dominance, so blendGrade ≈ single already — no crease is re-exposed.
+                const radial = Math.hypot(wx - jc.node.pos.x, wz - jc.node.pos.z)
+                const fu = Math.min(1, Math.max(0, (radial - JN_FADE_IN) / (JN_FADE_OUT - JN_FADE_IN)))
+                const fade = 1 - fu * fu * (3 - 2 * fu)                   // 1 at the node → 0 past FADE_OUT
+                gradeY += fade * (gSum / wSum - gradeY)
+                // Ease the single-ribbon CROSS-SLOPE (crown + camber tilt) to flat by blend PURITY p (the
+                // dominant leg's weight share) IN the faded junction region: on a clean ribbon/shoulder p ≈ 1
+                // (or fade 0) ⇒ crown/camber untouched = the ordinary cross-section; where legs are co-dominant
+                // near the node (p < 1) they ease to the flat ruled plaza, killing the camber FLIP at the
+                // Voronoi boundary. Both p and fade are position-continuous.
+                const p = wMax / wSum
+                const k = 1 - fade * (1 - p)
+                crownY *= k; tiltY *= k
+            }
+        }
+        return gradeY + crownY + tiltY - clearanceMargin
     }
 
     // ── QUAL-10: junction carve influence ────────────────────────────────────────────────────
@@ -3308,12 +3520,22 @@ export class RoadSystem {
         // slider takes effect on a surface rebuild without a full re-route.
         const R = this._params.roadJunctionCarveRadius ?? (this._params.roadHalfWidth ?? 5) * 2.5
         if (R <= 0) return _ZERO_JC
-        let best = 0
+        // Blend reach: the ruled inter-leg blend (_carveDirtY) that kills the Voronoi crease must reach much
+        // FURTHER than the crown/camber-ease + widen core (R), because the step grows with radius. Tracks R
+        // via a multiplier so it scales with junction size; live-tunable (not baked in the arc list).
+        const Rb = R * BLEND_REACH_MULT
+        let minAlong = Infinity, near = null
         for (let i = 0; i < arcs.length; i++) {
             const along = Math.abs(arcSEff - arcs[i].arc)
-            if (along < R) { const f = 1 - along / R; if (f > best) best = f }
+            if (along < minAlong) { minAlong = along; near = arcs[i] }
         }
-        return best > 0 ? { frac: best, widen: best * R } : _ZERO_JC
+        if (!near || minAlong >= Rb) return _ZERO_JC
+        const frac = minAlong < R ? 1 - minAlong / R : 0        // crown/camber ease + widen (core reach R)
+        // node ref lets _carveDirtY enumerate the sibling legs for the ruled inter-leg grade blend. The blend
+        // WEIGHT is per-leg LATERAL (gap to each leg's asphalt), not this arc distance — a lateral weight is
+        // symmetric for both legs at their shared Voronoi boundary and so welds exactly to each ribbon, which
+        // an arc-distance weight (different arc-along per leg) can't.
+        return { frac, widen: frac * R, node: near.node }
     }
 
     // QUAL-10: how far the swept ribbons are cut back from a junction node (metres) to clear room for the
@@ -3401,18 +3623,569 @@ export class RoadSystem {
                 ? this._padPlaneY(plane, c.x, c.z)
                 : c.ys.reduce((s, v) => s + v, 0) / c.ys.length
             const legs = c.legs.slice().sort((p, q) => Math.atan2(p.dir.x, p.dir.z) - Math.atan2(q.dir.x, q.dir.z))
-            nodes.set(`${Math.round(c.x)},${Math.round(c.z)}`, {
+            const node = {
                 pos: new THREE.Vector3(c.x, nodeY, c.z), nodeY, plane, legs, kind: 'AT_GRADE', simpleMerge: legs.length > 4,
-            })
+            }
+            nodes.set(`${Math.round(c.x)},${Math.round(c.z)}`, node)
+            // Build + cache the welded pad-boundary RING here (single source of truth): the terrain carve
+            // (_junctionPadCarve) reads it to guarantee the whole pad footprint is a first-class carve
+            // region, and the mesh (buildJunctionFootprint) reads the SAME ring so mesh == collision. Cached
+            // by _networkRev with the rest of _nodeJunctions. ringMaxR = pad reach for the carve quick-reject.
+            node.ring = this._buildJunctionRing(node)
+            if (node.ring) {
+                let mr = 0
+                for (const rp of node.ring) { const r = Math.hypot(rp.x - c.x, rp.z - c.z); if (r > mr) mr = r }
+                node.ringMaxR = mr
+            }
             for (const a of c.legs) {
                 let arr = carveArcs.get(a.runKey); if (!arr) { arr = []; carveArcs.set(a.runKey, arr) }
-                arr.push({ arc: a.arc })   // radius read fresh in _junctionCarve (live slider)
+                // node ref rides along so _carveDirtY can enumerate the SIBLING legs and blend their grades
+                // by lateral proximity (the ruled inter-leg surface that kills the Voronoi crease). The node
+                // carries pos + legs + plane; the open-rim fallback still reads node.plane in _junctionPadCarve.
+                arr.push({ arc: a.arc, node })
             }
         }
         this._nodeJunctions = nodes
         this._junctionCarveArcs = carveArcs
         this._nodeJunctionsRev = this._networkRev
         return nodes
+    }
+
+    // ── Junction pad boundary + carve (single source of truth, shared by mesh + collision) ──────
+    /**
+     * Assemble the welded pad-boundary RING for a node via the fallback ladder (exact weld →
+     * shrunk fillets → legacy circle pad), verifying each rung with _ringSelfIntersects. Moved here
+     * from RoadMeshSystem.buildJunctionFootprint so the CARVE path owns the ring; the mesh reads the
+     * cached node.ring. Returns an open XZ boundary polygon or null.
+     */
+    _buildJunctionRing(node) {
+        if (!node.legs || node.legs.length < 2) return null
+        let ring = this._junctionRingWeld(node, 1.0)
+        if (ring && this._ringSelfIntersects(ring)) ring = null
+        if (!ring) {
+            ring = this._junctionRingWeld(node, 0.5)
+            if (ring && this._ringSelfIntersects(ring)) ring = null
+        }
+        if (!ring) ring = this._junctionRingLegacy(node)
+        return (ring && ring.length >= 3) ? ring : null
+    }
+
+    /**
+     * QUAL-11 exact-weld pad boundary — each leg's mouth is its own run cross-section chord welded to
+     * the trimmed ribbon end; corners between consecutive mouths round the throat; a wide back gap gets
+     * a node-centred bulb (open sector) or a straight chord (through road). Pure fn of node + streamed
+     * network (window-invariant, D-16). (Formerly RoadMeshSystem._junctionRingWeld.)
+     */
+    _junctionRingWeld(node, filletScale) {
+        const road = this
+        const params = this._params
+        if (!road.runPointAt || !road.runProfile || !road._network) return null
+        const halfWidth = params.roadHalfWidth ?? 5
+        const nx = node.pos.x, nz = node.pos.z
+        const cutback = road.junctionCutbackDist ? road.junctionCutbackDist() : halfWidth * 2
+        const T = cutback + halfWidth * 0.5
+
+        const legs = []
+        for (const leg of node.legs) {
+            if (leg.arc === undefined || !leg.runKey) return null
+            const e = road._network.get(leg.runKey)
+            const cum = e?.polyCum
+            const len = cum ? cum[cum.length - 1] : 0
+            if (!(len > 1e-3)) return null
+            const s = leg.arc < 1e-6 ? 1 : -1                       // +arc direction away from node?
+            const mouthArc = leg.arc + s * Math.min(T, len * 0.45)  // short node↔node run: pull the mouth in
+            const c = road.runPointAt(leg.runKey, mouthArc)
+            if (!c) return null
+            const prof = road.runProfile(mouthArc, leg.runKey)
+            let dx = prof.tx * s, dz = prof.tz * s                  // outward unit dir (away from node)
+            const dl = Math.hypot(dx, dz)
+            if (dl < 1e-6) return null
+            dx /= dl; dz /= dl
+            legs.push({ cx: c.x, cz: c.z, dx, dz, bear: Math.atan2(c.x - nx, c.z - nz), runKey: leg.runKey, mouthArc, s, len })
+        }
+        legs.sort((a, b) => a.bear - b.bear)
+        const n = legs.length
+        // NOTE: the old "pitchfork guard" (reject when Σleg-dirs / n > 0.55) was removed — it rejected
+        // valid one-sided tridents whose weld is a clean, non-self-intersecting pad (seed-6 node 253,-131).
+        // The real correctness gate is _ringSelfIntersects() in _buildJunctionRing.
+
+        const edgePt = (l, side) => ({ x: l.cx + (-l.dz) * side * halfWidth, z: l.cz + (l.dx) * side * halfWidth })
+        const filletR = (params.roadFilletRadius ?? 5) * filletScale
+        const ring = []
+        for (let i = 0; i < n; i++) {
+            const A = legs[i], B = legs[(i + 1) % n]
+            // Mouth chord of A: arriving-corner edge (+1) → departing-corner edge (−1) — the exact weld.
+            ring.push(edgePt(A, 1))
+            const eA = edgePt(A, -1)
+            ring.push(eA)
+            const eB = edgePt(B, 1)
+            let gap = B.bear - A.bear
+            while (gap <= 0) gap += 2 * Math.PI
+            if (gap > STRAIGHT_GAP && n >= 3) {
+                // Wide back gap: through-road back (anti-parallel legs) keeps a straight chord; an OPEN
+                // sector gets a node-centred bulb through the roadless gap so the whole throat is tiled.
+                if (A.dx * B.dx + A.dz * B.dz < -0.85) continue   // through-road back: straight chord
+                for (const p of this._nodeBackArc(nx, nz, eA, eB, A.bear + gap / 2)) ring.push(p)
+                continue
+            }
+            // Narrow Y-throat: two slowly-diverging legs. If their facing mouth edges start closer than
+            // THROAT_SEP, the corner arc would cut across the throat near the node and leave the diverging
+            // gore as raw terrain — sweep the boundary OUT along both ribbon inner edges instead so the pad
+            // hugs both ribbons out to where they part by a road-width. (Paves seed-6 253,-131 E↔SE wedge.)
+            const throatSep = halfWidth * THROAT_SEP_MULT
+            if (n >= 3 && gap < THROAT_GAP && Math.hypot(eA.x - eB.x, eA.z - eB.z) < halfWidth * THROAT_TRIG_MULT) {
+                const sweep = this._throatSweep(A, B, halfWidth, throatSep, T)
+                if (sweep) { for (const p of sweep) ring.push(p); continue }
+            }
+            // Deg-2 kink corners: keep the legacy farther-from-node pick, but with a DIRECTION-CORRECT
+            // node arc — _nodeBackArc sweeps through THIS corner's own angular sector (midBear), where
+            // the old short-way _nodeCornerArc ran a reflex corner's arc through the OPPOSITE (crotch)
+            // sector and left a hairpin apex unpaved (seed-7 709,-256, ~13 m hole). A kink's convex
+            // side needs the outward arc (a straight-chord join cuts the bend's sagitta out of the
+            // pavement); its concave side keeps the corner join. n≥3 never lands here with a reflex
+            // gap (STRAIGHT_GAP < π), so this stays a deg-2-only rule.
+            if (n === 2) {
+                const corner = this._cornerJoin(eA, A, eB, B, filletR, T)
+                const arc = this._nodeBackArc(nx, nz, eA, eB, A.bear + gap / 2)
+                const minR = (pts) => pts.reduce((m, p) => Math.min(m, Math.hypot(p.x - nx, p.z - nz)), Infinity)
+                for (const p of (minR(corner) < minR(arc) - 1e-3 ? arc : corner)) ring.push(p)
+                continue
+            }
+            // Road-side crotch: INTERIOR fillet — tuck the pad boundary concavely into the crotch,
+            // tangent to both ribbon edges (a real curb return). The old node-centred OUTWARD-arc
+            // override made every corner bulge; the "exposed flat throat" it guarded against is covered
+            // by the pad fill itself and by _throatSweep for genuinely narrow gores. Prefer the TRUE-edge
+            // walk (_cornerEdgeFillet): on curved legs the straight edge-LINE intersection _cornerJoin
+            // uses lands wrong (or misses) and un-tucks the corner; the walk follows the real ribbon
+            // edges to the real crotch apex. _ringSelfIntersects remains the gate.
+            const ce = this._cornerEdgeFillet(A, B, halfWidth, filletR, T)
+            if (ce) { for (const p of ce) ring.push(p); continue }
+            for (const p of this._cornerJoin(eA, A, eB, B, filletR, T)) ring.push(p)
+        }
+        // Drop consecutive duplicates (incl. the wrap seam).
+        const out = []
+        for (const p of ring) {
+            const q = out[out.length - 1]
+            if (!q || Math.hypot(p.x - q.x, p.z - q.z) > 0.05) out.push(p)
+        }
+        while (out.length >= 2 && Math.hypot(out[0].x - out[out.length - 1].x, out[0].z - out[out.length - 1].z) <= 0.05) out.pop()
+        return out.length >= 3 ? out : null
+    }
+
+    /**
+     * Corner points joining leg A's departing ribbon-edge line to leg B's arriving edge line: a true
+     * tangent-arc fillet where the edge lines intersect node-side, else a tangent-matched cubic Hermite.
+     * (Formerly RoadMeshSystem._cornerJoin — pure geometry.)
+     */
+    _cornerJoin(eA, A, eB, B, filletR, T) {
+        const qx = eA.x - eB.x, qz = eA.z - eB.z
+        const det = B.dx * A.dz - A.dx * B.dz
+        if (Math.abs(det) > 1e-4) {
+            const t = (B.dx * qz - B.dz * qx) / det
+            const u = (A.dx * qz - A.dz * qx) / det
+            const tMax = T * 3.5
+            if (t > 0.5 && u > 0.5 && t < tMax && u < tMax) {
+                const C = { x: eA.x - A.dx * t, z: eA.z - A.dz * t }
+                const cosPhi = Math.max(-1, Math.min(1, A.dx * B.dx + A.dz * B.dz))
+                const phi = Math.acos(cosPhi)
+                if (phi > 0.06 && phi < Math.PI - 0.06) {
+                    const tanHalf = Math.tan(phi / 2)
+                    const r = Math.min(filletR, Math.min(t, u) * tanHalf * 0.95)
+                    if (r < 0.15) return [C]
+                    const L = r / tanHalf
+                    const TA = { x: C.x + A.dx * L, z: C.z + A.dz * L }
+                    const TB = { x: C.x + B.dx * L, z: C.z + B.dz * L }
+                    let bx = A.dx + B.dx, bz = A.dz + B.dz
+                    const bl = Math.hypot(bx, bz) || 1
+                    const h = r / Math.sin(phi / 2)
+                    const O = { x: C.x + (bx / bl) * h, z: C.z + (bz / bl) * h }
+                    const a0 = Math.atan2(TA.x - O.x, TA.z - O.z)
+                    let dAng = Math.atan2(TB.x - O.x, TB.z - O.z) - a0
+                    while (dAng > Math.PI) dAng -= 2 * Math.PI
+                    while (dAng < -Math.PI) dAng += 2 * Math.PI
+                    const steps = Math.max(2, Math.min(16, Math.ceil(Math.abs(dAng) * r / 1.2)))
+                    const arc = [TA]
+                    for (let k = 1; k < steps; k++) {
+                        const ang = a0 + dAng * (k / steps)
+                        arc.push({ x: O.x + Math.sin(ang) * r, z: O.z + Math.cos(ang) * r })
+                    }
+                    arc.push(TB)
+                    return arc
+                }
+            }
+        }
+        const dist = Math.hypot(eB.x - eA.x, eB.z - eA.z)
+        if (dist < 0.05) return []
+        const m0x = -A.dx * dist, m0z = -A.dz * dist
+        const m1x = B.dx * dist,  m1z = B.dz * dist
+        const K = Math.max(4, Math.min(16, Math.ceil(dist / 1.5)))
+        const pts = []
+        for (let k = 1; k < K; k++) {
+            const tt = k / K, t2 = tt * tt, t3 = t2 * tt
+            const h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + tt, h01 = -2 * t3 + 3 * t2, h11 = t3 - t2
+            pts.push({
+                x: h00 * eA.x + h10 * m0x + h01 * eB.x + h11 * m1x,
+                z: h00 * eA.z + h10 * m0z + h01 * eB.z + h11 * m1z,
+            })
+        }
+        return pts
+    }
+
+    /**
+     * Narrow-throat OUTWARD sweep between two slowly-diverging legs. Walks each leg's ribbon INNER edge
+     * (A's departing side −1, B's arriving side +1) outward from its mouth, following the true curved
+     * centerline offset by halfWidth, until the two edges part by `throatSep`; then caps straight across.
+     * Returns the boundary points strictly BETWEEN eA and eB (both pushed by the caller) tracing out one
+     * ribbon edge, across the throat cap, and back down the other — paving the gore. null if the walk
+     * can't advance (caller falls back to the corner/arc). Pure fn of the streamed network (D-16).
+     */
+    _throatSweep(A, B, halfWidth, throatSep, T) {
+        const walk = (l, side, maxExt) => {
+            const pts = []
+            for (let ext = 0; ext <= maxExt + 1e-6; ext += 1.5) {
+                const a = l.mouthArc + l.s * ext
+                if (a < 0 || a > l.len) break
+                const c = this.runPointAt(l.runKey, a)
+                if (!c) break
+                const prof = this.runProfile(a, l.runKey)
+                let dx = prof.tx * l.s, dz = prof.tz * l.s
+                const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl
+                pts.push({ x: c.x + (-dz) * side * halfWidth, z: c.z + dx * side * halfWidth })
+            }
+            return pts
+        }
+        const maxExt = T * 1.6
+        const wA = walk(A, -1, maxExt)
+        const wB = walk(B, +1, maxExt)
+        if (wA.length < 2 || wB.length < 2) return null
+        let k = 0
+        const kMax = Math.min(wA.length, wB.length) - 1
+        while (k < kMax && Math.hypot(wA[k].x - wB[k].x, wA[k].z - wB[k].z) < throatSep) k++
+        const out = []
+        for (let j = 1; j <= k; j++) out.push(wA[j])   // out along A's inner edge (eA already pushed)
+        for (let j = k; j >= 1; j--) out.push(wB[j])    // cap + back down B's inner edge (eB pushed next)
+        return out.length ? out : null
+    }
+
+    /**
+     * Interior corner via TRUE ribbon edges: walk leg A's departing edge (side −1) and leg B's
+     * arriving edge (side +1) from the node out to their mouths along the real curved centerlines
+     * (runPointAt/runProfile — same frame family as _throatSweep, but inbound of the mouths), find
+     * the OUTERMOST crossing of the two edge polylines (the real crotch apex), and join with a small
+     * tangent fillet built from the crossing's LOCAL edge directions. Straight edge-LINE intersection
+     * (_cornerJoin) gets this wrong on curved legs — three of four corners at seed-6 (939,−1410)
+     * missed their fillet window and fell to the fat Hermite, leaving the pad bulged. Returns ring
+     * points strictly between eA and eB (mouth edge points, pushed by the caller): down A's true edge
+     * → fillet → back up B's true edge. null when the edges never cross inside the walk (diverging
+     * gore — caller falls back to _cornerJoin). Pure fn of the streamed network (D-16).
+     */
+    _cornerEdgeFillet(A, B, halfWidth, filletR, T) {
+        const STEP = 1.0
+        const walkIn = (l, side) => {
+            const a0 = l.s > 0 ? 0 : l.len            // node-end arc of this leg
+            const extMax = Math.abs(l.mouthArc - a0)  // mouth sits at ext = extMax
+            if (!(extMax > STEP)) return null
+            const pts = []
+            for (let ext = 0; ; ext += STEP) {
+                const e = Math.min(ext, extMax)
+                const a = a0 + l.s * e
+                const c = this.runPointAt(l.runKey, a)
+                if (!c) return null
+                const prof = this.runProfile(a, l.runKey)
+                let dx = prof.tx * l.s, dz = prof.tz * l.s
+                const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl
+                pts.push({ x: c.x + (-dz) * side * halfWidth, z: c.z + dx * side * halfWidth, ext: e, dx, dz })
+                if (e >= extMax) break
+            }
+            return pts.length >= 2 ? pts : null
+        }
+        const pA = walkIn(A, -1), pB = walkIn(B, +1)
+        if (!pA || !pB) return null
+        // Outermost polyline crossing (max combined ext = nearest the mouths) — the crotch apex.
+        let best = null
+        for (let i = 0; i < pA.length - 1; i++) for (let j = 0; j < pB.length - 1; j++) {
+            const ax = pA[i].x, az = pA[i].z, bx = pA[i + 1].x, bz = pA[i + 1].z
+            const cx = pB[j].x, cz = pB[j].z, dx = pB[j + 1].x, dz = pB[j + 1].z
+            const den = (bx - ax) * (dz - cz) - (bz - az) * (dx - cx)
+            if (Math.abs(den) < 1e-9) continue
+            const t = ((cx - ax) * (dz - cz) - (cz - az) * (dx - cx)) / den
+            const u = ((cx - ax) * (bz - az) - (cz - az) * (bx - ax)) / den
+            if (t < -1e-6 || t > 1 + 1e-6 || u < -1e-6 || u > 1 + 1e-6) continue
+            const extA = pA[i].ext + t * (pA[i + 1].ext - pA[i].ext)
+            const extB = pB[j].ext + u * (pB[j + 1].ext - pB[j].ext)
+            if (!best || extA + extB > best.extA + best.extB) best = { extA, extB, x: ax + t * (bx - ax), z: az + t * (bz - az) }
+        }
+        if (!best) return null
+        const extMaxA = pA[pA.length - 1].ext, extMaxB = pB[pB.length - 1].ext
+        // Hand the fillet off to the straight-line builder a few metres up each edge from the apex,
+        // using the LOCAL sample positions/tangents there (the edges are locally straight over ≤6 m).
+        const hand = Math.min(6, (extMaxA - best.extA) * 0.8, (extMaxB - best.extB) * 0.8)
+        if (hand < 0.5) return [{ x: best.x, z: best.z }]   // apex at the mouths: sharp corner point
+        let ia = pA.length - 1; while (ia > 0 && pA[ia - 1].ext >= best.extA + hand) ia--
+        let ib = pB.length - 1; while (ib > 0 && pB[ib - 1].ext >= best.extB + hand) ib--
+        const hA = pA[ia], hB = pB[ib]
+        const corner = this._cornerJoin(hA, hA, hB, hB, filletR, T)
+        const out = []
+        for (let i = pA.length - 2; i >= ia; i--) out.push(pA[i])   // down A's edge (mouth pt = eA, already pushed)
+        for (const p of corner) out.push(p)
+        for (let j = ib; j <= pB.length - 2; j++) out.push(pB[j])   // back up B's edge (eB pushed next)
+        return out
+    }
+
+    /** Node-centred OUTWARD arc across an OPEN back sector (LONG way through the roadless gap). Detours
+     *  the boundary around the node so the whole throat is tiled (one-sided trident). (Formerly _nodeBackArc.) */
+    _nodeBackArc(nx, nz, eA, eB, midBear) {
+        const rA = Math.hypot(eA.x - nx, eA.z - nz), rB = Math.hypot(eB.x - nx, eB.z - nz)
+        const r = (rA + rB) * 0.5
+        const bA = Math.atan2(eA.x - nx, eA.z - nz)
+        const bB = Math.atan2(eB.x - nx, eB.z - nz)
+        const norm = (a) => { while (a < 0) a += 2 * Math.PI; while (a >= 2 * Math.PI) a -= 2 * Math.PI; return a }
+        const dPos = norm(bB - bA)
+        const dB = (norm(midBear - bA) < dPos) ? dPos : dPos - 2 * Math.PI
+        const steps = Math.max(2, Math.min(20, Math.ceil(Math.abs(dB) * r / 1.2)))
+        const pts = []
+        for (let s = 1; s < steps; s++) { const bear = bA + dB * (s / steps); pts.push({ x: nx + Math.sin(bear) * r, z: nz + Math.cos(bear) * r }) }
+        return pts
+    }
+
+    /** XZ self-intersection test for an assembled pad boundary. (Formerly _ringSelfIntersects.) */
+    _ringSelfIntersects(ring) {
+        const m = ring.length
+        const cross = (ax, az, bx, bz) => ax * bz - az * bx
+        for (let i = 0; i < m; i++) {
+            const a = ring[i], b = ring[(i + 1) % m]
+            for (let j = i + 2; j < m; j++) {
+                if (i === 0 && j === m - 1) continue
+                const c = ring[j], d = ring[(j + 1) % m]
+                const d1 = cross(b.x - a.x, b.z - a.z, c.x - a.x, c.z - a.z)
+                const d2 = cross(b.x - a.x, b.z - a.z, d.x - a.x, d.z - a.z)
+                const d3 = cross(d.x - c.x, d.z - c.z, a.x - c.x, a.z - c.z)
+                const d4 = cross(d.x - c.x, d.z - c.z, b.x - c.x, b.z - c.z)
+                if (((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0))) return true
+            }
+        }
+        return false
+    }
+
+    /** QUAL-10 circle-pad boundary — the fallback ladder's last rung. (Formerly _junctionRingLegacy.) */
+    _junctionRingLegacy(node) {
+        const params = this._params
+        const halfWidth = params.roadHalfWidth ?? 5
+        const nx = node.pos.x
+        const nz = node.pos.z
+
+        const legs = []
+        for (const leg of node.legs) {
+            let m = null
+            for (const e of legs) { if (e.dir.x * leg.dir.x + e.dir.z * leg.dir.z > 0.94) { m = e; break } }
+            if (m) { m.dir.x += leg.dir.x; m.dir.z += leg.dir.z; const L = Math.hypot(m.dir.x, m.dir.z) || 1; m.dir.x /= L; m.dir.z /= L }
+            else legs.push({ dir: { x: leg.dir.x, z: leg.dir.z } })
+        }
+        legs.sort((a, b) => Math.atan2(a.dir.x, a.dir.z) - Math.atan2(b.dir.x, b.dir.z))
+        const n = legs.length
+        if (n < 2) return null
+        let sx = 0, sz = 0
+        for (const l of legs) { sx += l.dir.x; sz += l.dir.z }
+        if (Math.hypot(sx, sz) / n > 0.55) return null
+
+        const cutback = this.junctionCutbackDist ? this.junctionCutbackDist() : halfWidth * 2
+        const T = cutback + halfWidth * 0.5
+        let minHalf = Math.PI / 2
+        for (let i = 0; i < n; i++) {
+            const a = legs[i].dir, b = legs[(i + 1) % n].dir
+            const dot = Math.max(-1, Math.min(1, a.x * b.x + a.z * b.z))
+            minHalf = Math.min(minHalf, Math.acos(dot) * 0.5)
+        }
+        const flareCap = Math.max(halfWidth, T * Math.sin(minHalf) * 0.9)
+        const flareHW = Math.min(halfWidth * LEGACY_PAD_FLARE, flareCap)
+        const legEdge = (leg, side) => {
+            const d = leg.dir
+            return { x: nx + d.x * T + (-d.z) * side * flareHW, z: nz + d.z * T + (d.x) * side * flareHW }
+        }
+        const faceSide = (leg, other) =>
+            ((-leg.dir.z) * other.dir.x + (leg.dir.x) * other.dir.z) >= 0 ? 1 : -1
+
+        const ARC_SAMPLES = 5
+        const poly = []
+        for (let i = 0; i < n; i++) {
+            const legA = legs[i]
+            const legB = legs[(i + 1) % n]
+            const legP = legs[(i - 1 + n) % n]
+            poly.push(legEdge(legA, faceSide(legA, legP)))
+            const eA = legEdge(legA, faceSide(legA, legB))
+            poly.push(eA)
+            const eB = legEdge(legB, faceSide(legB, legA))
+            let gap = Math.atan2(legB.dir.x, legB.dir.z) - Math.atan2(legA.dir.x, legA.dir.z)
+            while (gap < 0) gap += 2 * Math.PI
+            while (gap > 2 * Math.PI) gap -= 2 * Math.PI
+            const wide = Math.min(gap, 2 * Math.PI - gap) > STRAIGHT_GAP
+            if (!wide) {
+                const rA = Math.hypot(eA.x - nx, eA.z - nz), rB = Math.hypot(eB.x - nx, eB.z - nz)
+                const r = (rA + rB) * 0.5
+                const bA = Math.atan2(eA.x - nx, eA.z - nz)
+                let dB = Math.atan2(eB.x - nx, eB.z - nz) - bA
+                while (dB >  Math.PI) dB -= 2 * Math.PI
+                while (dB < -Math.PI) dB += 2 * Math.PI
+                for (let s = 1; s < ARC_SAMPLES; s++) {
+                    const bear = bA + dB * (s / ARC_SAMPLES)
+                    poly.push({ x: nx + Math.sin(bear) * r, z: nz + Math.cos(bear) * r })
+                }
+            }
+        }
+        if (poly.length < 3) return null
+        const ring0 = []
+        for (const p of poly) {
+            const q = ring0[ring0.length - 1]
+            if (!q || Math.hypot(p.x - q.x, p.z - q.z) > 0.05) ring0.push(p)
+        }
+        while (ring0.length >= 2 && Math.hypot(ring0[0].x - ring0[ring0.length - 1].x, ring0[0].z - ring0[ring0.length - 1].z) <= 0.05) ring0.pop()
+        return ring0.length >= 3 ? ring0 : null
+    }
+
+    /**
+     * Signed XZ distance from an open boundary ring to (x,z): NEGATIVE inside, POSITIVE outside (= min
+     * distance to any boundary edge, incl. the implicit closing edge). Even-odd point-in-polygon for the
+     * sign; per-segment closest-point for the magnitude.
+     */
+    _signedRingDist(ring, x, z) {
+        const n = ring.length
+        let inside = false, minD2 = Infinity
+        for (let i = 0, j = n - 1; i < n; j = i++) {
+            const xi = ring[i].x, zi = ring[i].z, xj = ring[j].x, zj = ring[j].z
+            if (((zi > z) !== (zj > z)) && (x < (xj - xi) * (z - zi) / (zj - zi) + xi)) inside = !inside
+            const dx = xj - xi, dz = zj - zi
+            const l2 = dx * dx + dz * dz || 1
+            let t = ((x - xi) * dx + (z - zi) * dz) / l2
+            t = t < 0 ? 0 : t > 1 ? 1 : t
+            const px = xi + t * dx, pz = zi + t * dz
+            const d2 = (x - px) * (x - px) + (z - pz) * (z - pz)
+            if (d2 < minD2) minD2 = d2
+        }
+        const d = Math.sqrt(minD2)
+        return inside ? -d : d
+    }
+
+    /**
+     * Junction PAD carve at world (wx,wz): makes the entire welded pad footprint (node.ring, incl. the
+     * back-arc bulb) a first-class carve region so mesh == collision everywhere on the pad — not just
+     * along the leg corridors. It only EXTENDS COVERAGE; the design SURFACE it carves to is the SAME
+     * graded apron the pad MESH rides — sampleRoadTopY − clearance (= _carveDirtY, the FEAT-19-graded,
+     * plane-blended surface), falling back to the fitted pad plane only where no run resolves (the far
+     * open-side rim). So where the leg carve already covers, pad designY == leg designY (no seam, no
+     * mesh/physics step on climbing/descending legs); where the leg carve returned null (beyond its toe
+     * or outside every run footprint — the open sector), pad supplies full coverage. INSIDE the ring
+     * blendW = 1; OUTSIDE it ramps designY → raw over shoulder + fill/cut toe (the SAME run params
+     * _carveCrossSection uses), driven by distance outside the ring. DIRT convention (clearance
+     * subtracted), composed with the leg carve by _mergeCarve. Returns {blendW,gradeY}|null (raw terrain).
+     */
+    _junctionPadCarve(wx, wz, rawAmp) {
+        if (this._nodeJunctionsRev !== this._networkRev) this._detectNodeJunctions()
+        const nodes = this._nodeJunctions
+        if (!nodes || nodes.size === 0) return null
+        const p = this._params
+        const shoulderWidth = p.roadShoulderWidth   ?? 2.5
+        const fillSlope     = p.roadFillSlope        ?? 3.0
+        const cutSlope      = p.roadCutSlope         ?? 1.0
+        const maxToe        = p.roadMaxEmbankmentToe ?? 10
+        const clearanceMargin = p.roadClearanceMargin ?? 0.25
+        const reachCap = PAD_RIM_HOLD + shoulderWidth + maxToe
+
+        // Pick the ring this point is most inside (or nearest outside) among nearby nodes.
+        let best = null, bestSd = Infinity
+        for (const node of nodes.values()) {
+            if (!node.ring) continue
+            const cd = Math.hypot(wx - node.pos.x, wz - node.pos.z)
+            if (cd > (node.ringMaxR ?? 0) + reachCap + 1) continue
+            const sd = this._signedRingDist(node.ring, wx, wz)
+            if (sd < bestSd) { bestSd = sd; best = node }
+        }
+        if (!best) return null
+
+        // Design surface = the graded apron the pad MESH rides (sampleRoadTopY − clearance = _carveDirtY),
+        // so mesh == collision. Fall back to the fitted pad plane only where NO run resolves (far open rim).
+        // DIRT BASE = the 5-point neighbourhood MIN of the asphalt top: the ruled plaza surface can
+        // CREASE inside one 1 m terrain cell (adjacent grid vertices resolve to different legs, spread
+        // ~0.4 m), and linear dirt interpolation between those vertices rides ABOVE the dipping asphalt —
+        // the tan slivers. Sampling the top at ± half a terrain cell and taking the min ducks each dirt
+        // vertex under the whole cell it touches. PAD_DIRT_EXTRA adds fixed margin on top of clearance,
+        // feathered out with the rim ramp so the toe still lands exactly on raw terrain.
+        const planeTop = best.plane ? this._padPlaneY(best.plane, wx, wz) : best.nodeY
+        const top = this.sampleRoadTopY(wx, wz)
+        const topC = (top != null && isFinite(top)) ? top : planeTop
+        let topMin = topC
+        for (const [ox, oz] of [[PAD_TOP_MIN_R, 0], [-PAD_TOP_MIN_R, 0], [0, PAD_TOP_MIN_R], [0, -PAD_TOP_MIN_R]]) {
+            const t = this.sampleRoadTopY(wx + ox, wz + oz)
+            if (t != null && isFinite(t) && t < topMin) topMin = t
+        }
+        // RIM HOLD: keep full pad depth (blendW=1) out to PAD_RIM_HOLD beyond the ring, not just inside
+        // it. The terrain grid is 1 m; without the hold, a vertex just OUTSIDE the ring already rides
+        // partway up the cut bank, and the triangle it shares with an inside vertex interpolates ABOVE
+        // the pad surface up to a cell-diagonal (~1.4 m) INSIDE the ring. Holding full depth for ≥ one
+        // cell diagonal guarantees every triangle touching the pad interior has ALL its vertices at the
+        // deepened design dirt, so the fill/cut feather starts one cell out. padTopY (inside the ring
+        // only) is the asphalt surface physics rides — see the pad overlay in _sampleCarveWorld.
+        const padTopY = bestSd <= 0 ? topC : null
+        if (bestSd <= PAD_RIM_HOLD) return { blendW: 1.0, gradeY: topMin - clearanceMargin - PAD_DIRT_EXTRA, padTopY }
+
+        // Outside the hold band: ramp designY → raw over shoulder + fill/cut toe, mirroring
+        // _carveCrossSection (which ramps beyond carveHalfWidth). `over` = distance past the hold.
+        const designY = topMin - clearanceMargin
+        const over = bestSd - PAD_RIM_HOLD
+        const fillReach = shoulderWidth + Math.max(0, designY - rawAmp) * fillSlope
+        const cutReach  = shoulderWidth + Math.max(0, rawAmp - designY) * cutSlope
+        const beyondToe = Math.min(Math.max(fillReach, cutReach), maxToe)
+        if (over >= beyondToe) return null
+        const ramp = Math.max(shoulderWidth, beyondToe)
+        const u = Math.min(1, over / ramp)
+        // Feather PAD_DIRT_EXTRA away with the same smoothstep so the dirt is continuous at the hold
+        // boundary (full depth there) and the toe still lands exactly on raw terrain.
+        const w = 1.0 - u * u * (3.0 - 2.0 * u)
+        return { blendW: w, gradeY: designY - PAD_DIRT_EXTRA * w, padTopY: null }
+    }
+
+    /**
+     * Compose the leg-corridor carve `a` (_carveCrossSection) with the junction-pad carve `b`
+     * (_junctionPadCarve), both DIRT-convention {blendW,gradeY}|null. The pad only EXTENDS COVERAGE: when
+     * the leg carve is present, keep ITS gradeY — that cross-section is C0 laterally (BUG-15) and pinned
+     * to the resolved run, so the pad (which does its own, possibly different, resolve) must NOT override
+     * it or it tears the shoulder (shoulder-lateral-continuity). Take the MAX blendW so the pad fills the
+     * carved core over the WHOLE footprint (never LESS coverage than either alone). The pad supplies
+     * gradeY ONLY where the leg carve is absent (nr null / beyond the leg toe — the open-side rim), which
+     * is exactly the surface the pad MESH rides there (sampleRoadTopY / plane), so mesh == collision.
+     */
+    _mergeCarve(a, b) {
+        if (!a) return b || null
+        if (!b) return a
+        // Where the pad is at FULL depth (inside ring + rim hold, blendW 1) take the LOWER dirt: the
+        // pad's crease-ducking design (topMin − clearance − PAD_DIRT_EXTRA) must not be overridden by
+        // the leg's shallower cross-section or the tan slivers return. min(a,b) is continuous (both
+        // fields are), never RAISES dirt, and only applies under/beside the asphalt pad; everywhere the
+        // pad ramp is partial the leg gradeY still wins (its cross-section is C0 laterally, BUG-15).
+        // PAD_DUCK_CAP bounds how far b (a free resolve) may drag a pinned cross-section down, so the
+        // top field's pre-existing degenerate-node tears can't tear an otherwise-smooth shoulder; and
+        // the duck FADES with b's own blendW (1 on the pad + rim hold, smoothstepping to 0 at the pad
+        // toe) so there is no step where the full-depth band ends — the duck is C0 everywhere.
+        const low = Math.max(Math.min(a.gradeY, b.gradeY), a.gradeY - PAD_DUCK_CAP)
+        const gradeY = a.gradeY + (low - a.gradeY) * b.blendW
+        return { blendW: Math.max(a.blendW, b.blendW), gradeY, padTopY: b.padTopY ?? null }
+    }
+
+    /**
+     * Junction pad nodes for the terrain carve-table skip guard: {x,z,reach} where reach = ringMaxR +
+     * shoulder + maxToe. A vertex within `reach` of a node may be pad-carved even if it's beyond the
+     * nearest road SAMPLE (the open-side rim has no ribbon nearby), so the sample-distance skip must
+     * not cull it. Cached with _nodeJunctions (by _networkRev).
+     */
+    junctionPadNodes() {
+        if (this._nodeJunctionsRev !== this._networkRev) this._detectNodeJunctions()
+        const out = []
+        const p = this._params
+        const extra = PAD_RIM_HOLD + (p.roadShoulderWidth ?? 2.5) + (p.roadMaxEmbankmentToe ?? 10)
+        if (this._nodeJunctions) for (const n of this._nodeJunctions.values()) {
+            if (!n.ring) continue
+            out.push({ x: n.pos.x, z: n.pos.z, reach: (n.ringMaxR ?? 0) + extra })
+        }
+        return out
     }
 
     // ── QUAL-11: run centerline XZ at a run-global arc ─────────────────────────────────────────
@@ -3459,7 +4232,7 @@ export class RoadSystem {
         const arcSEff   = (nr.arcS ?? 0) + dx * nr.tangent.x + dz * nr.tangent.z
         const signedLat = dx * nr.tangent.z - dz * nr.tangent.x
         const clearanceMargin = this._params.roadClearanceMargin ?? 0.25
-        return this._carveDirtY(signedLat, arcSEff, nr.runKey ?? '', nr.camberSign ?? 1) + clearanceMargin
+        return this._carveDirtY(signedLat, arcSEff, nr.runKey ?? '', nr.camberSign ?? 1, wx, wz) + clearanceMargin
     }
 
     // ── QUAL-07: the ONE road-carve cross-section function ───────────────────────────────────
@@ -3484,7 +4257,7 @@ export class RoadSystem {
      *   _carveDirtY; physics (single-arm) leaves it at the default.
      * @returns {{ blendW:number, gradeY:number } | null}  null = beyond the fill/cut toe (raw terrain)
      */
-    _carveCrossSection(signedLat, arcSEff, runKey, camberSign, rawAmp, floorY = -Infinity) {
+    _carveCrossSection(signedLat, arcSEff, runKey, camberSign, rawAmp, wx, wz, floorY = -Infinity) {
         const p             = this._params
         const halfWidth     = p.roadHalfWidth      ?? 5
         const shoulderWidth = p.roadShoulderWidth   ?? 2.5
@@ -3502,7 +4275,7 @@ export class RoadSystem {
         const latDist = Math.abs(signedLat)
 
         // Dirt surface (run grade + crown/camber − clearance). D3: a higher overlapping arm raises it.
-        let designY = this._carveDirtY(signedLat, arcSEff, runKey, camberSign)
+        let designY = this._carveDirtY(signedLat, arcSEff, runKey, camberSign, wx, wz)
         if (floorY > designY) designY = floorY
 
         // Fill/cut toe + blend (FEAT-10): the embankment ramps at its SLOPE over the variable toe so a
@@ -3511,8 +4284,15 @@ export class RoadSystem {
         const fillSlope = p.roadFillSlope ?? 3.0
         const cutSlope  = p.roadCutSlope  ?? 1.0
         const maxEmbankmentToe = p.roadMaxEmbankmentToe ?? 10
-        const fillToe = halfWidth + shoulderWidth + Math.max(0, designY - rawAmp) * fillSlope
-        const cutToe  = halfWidth + shoulderWidth + Math.max(0, rawAmp - designY) * cutSlope
+        // Anchor the toe at carveHalfWidth (the ACTUAL flat-core edge, which _junctionCarve WIDENS near a
+        // node by jc.widen) + shoulderWidth — NOT the bare halfWidth. Otherwise, where the junction widen
+        // pushes carveHalfWidth past a shallow fill/cut toe, `toeExt < carveHalfWidth`: the core (blendW=1
+        // out to carveHalfWidth) extends beyond toeExt, so `latDist > toeExt → null` clips it and the flat
+        // plaza butts STRAIGHT onto raw terrain — a near-vertical embankment wall around the pad (the truck
+        // flips / falls through it). Anchoring here guarantees the smoothstep ramp band always exists beyond
+        // the widened core, so the bank descends at its slope. Shared fn ⇒ mesh + physics stay in agreement.
+        const fillToe = carveHalfWidth + shoulderWidth + Math.max(0, designY - rawAmp) * fillSlope
+        const cutToe  = carveHalfWidth + shoulderWidth + Math.max(0, rawAmp - designY) * cutSlope
         const toeExt  = Math.min(Math.max(fillToe, cutToe), carveHalfWidth + maxEmbankmentToe)
         if (latDist > toeExt) return null   // beyond the fill/cut toe — unaffected terrain
 
