@@ -601,10 +601,17 @@ function debouncedRoadSurfaceRebuild () {
     terrainSystem.reinitWorker(worldSeed, RANGER_PARAMS)
     terrainSystem.rebuildAllChunksFromWorker()
     // CR-04 stale-cache fix: drop memoized design-grade entries so the next ribbon sweep
-    // recomputes smoothed grade against the new params (crownHeight / terrainAmplitude /
-    // camberStrength). Spline objects persist across rebuilds — WeakMap would return stale
-    // pre-change profiles without this invalidation call.
-    if (roadSystem) roadSystem.invalidateDesignGradeCache()
+    // recomputes smoothed grade against the new params (crownHeight / terrainAmplitude).
+    // Spline objects persist across rebuilds — WeakMap would return stale pre-change profiles
+    // without this invalidation call.
+    if (roadSystem) {
+      roadSystem.invalidateDesignGradeCache()
+      // Camber (camberMaxAngleDeg / camberKneeRadiusM / roadCamberRate) is baked into the
+      // _networkRev-keyed run/camber
+      // profile caches, which a surface-param change does NOT otherwise invalidate — bump the rev
+      // so camber recomputes on demand instead of re-reading the stale pre-change value.
+      roadSystem.invalidateProfileCaches()
+    }
     // Re-sweep the road ribbon tiles with the updated geometry params.
     if (roadMeshSystem) {
       roadMeshSystem.clearAll()
