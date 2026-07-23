@@ -33,9 +33,14 @@ with the incoming segments, through the hill.
 
 ## Acceptance
 
-- [x] Gate `test/road-tunnel.mjs` (registered): pass fires on seed 6 region, bore grades ≤
-      tunnelMaxGrade, C0 profile, floor/hill physics divergence in-span only, two-center
-      span invariance. All green.
-- [ ] `npm run test:all` green.
-- [ ] Live verify (user): drive run 0004's route on seed 6 — summit replaced by a bore with
-      portal per the reference photo (Smokies-style stone headwall, dark half-tube).
+- [x] Gate `test/road-tunnel.mjs` (registered): pass fires on seed 6 region, bore grades
+      driveable, C0 profile, floor/hill physics divergence in-span only, two-center span
+      invariance. Green (re-run at depth-25 defaults).
+- [x] `npm run test:all` 39/39 green at 9514514. Re-run at HEAD before merge (defaults
+      changed in 7f0b635; only the tunnel gate re-ran).
+- [x] Live verify (user): driven 2026-07-22, "chefs kiss" — crown-cover rework produced the
+      wanted 15–50 m spur tunnels; depth-25 cull keeps only deep bores; masonry rings +
+      terrain cutouts in place of the rejected flat headwall.
+- [ ] Merge `feature/tunnels` → main, move this ticket to completed.
+
+See `.planning/handoffs/2026-07-22-feat40-tunnels.md` for the full state + root causes.
