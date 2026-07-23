@@ -451,6 +451,29 @@ export const RANGER_PARAMS = {
   // untouched: no pad spam. 0 = off. Kinks > 75° are never padded (degenerate strands).
   roadJunctionKinkDeg: 9,
 
+  // ── Tunnels (FEAT-40) ───────────────────────────────────────────────────────────────────────────
+  // Two decoupled stages (applyTunnelPassInPlace): (1) taut-string SUMMIT CUT — profile summits
+  // ≥ tunnelMinDepth above the lower convex hull get cut to the hull chord; (2) BORE DETECTION —
+  // wherever RAW terrain (router coarse height) covers the tube CROWN (profile + boreRadius) by
+  // ≥ tunnelPortalDepth for ≥ tunnelMinLen, that stretch becomes a bored tunnel (raw hill kept
+  // overhead, concrete half-tube lining, masonry portal rings). Stage 2 probes real terrain on
+  // purpose: the grade smoother flattens short sharp spurs out of the profile entirely, so a
+  // profile-only trigger turned 15–50 m spur tunnels into open trenches. Profile-only pass:
+  // routed XZ centerlines are untouched, so these params are DELIBERATELY tunnel*-prefixed
+  // (a road* key would spuriously invalidate the bundled route cache — see routeCacheSig).
+  tunnelsEnabled: true,     // bool — master toggle for the tunnel pass
+  tunnelMinDepth: 25,       // m — min dirt above the road deck (peak, somewhere in the span)
+                            //     that JUSTIFIES a tunnel — shallower crests stay earthwork
+                            //     cuts. Also the stage-1 summit-cut trigger. The tunnel-count
+                            //     lever: higher = only the juicy deep bores survive.
+  tunnelMinLen: 26,         // m — MIN BORE LENGTH; shorter covered stretches stay open cuttings
+  tunnelPortalDepth: 1.5,   // m — terrain cover required ABOVE THE TUBE CROWN to bore (portal
+                            //     line sits where the hill genuinely swallows the tube)
+  tunnelMaxGrade: 0.12,     // abs grade cap on a stage-1 chord (vetoes degenerate steep chords)
+  tunnelMaxLen: 200,        // m — longest single bore; longer covered stretches stay open
+                            //     (tunnels are spur shortcuts, not kilometre subways)
+  tunnelBoreRadius: 8,      // m — half-tube lining radius; also the physics bore-apex clearance
+
   // ── Crossing classifier (FEAT-07/11/13 foundation) ──────────────────────────────────────────────
   // road.js _detectJunctions() finds every inter-run / self-run XZ crossing and CLASSIFIES each by
   // crossing angle. Every crossing merges FLAT (at grade) — dynamic overpasses were descoped (roads in
