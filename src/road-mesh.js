@@ -1272,6 +1272,16 @@ export class RoadMeshSystem {
             return (y != null && isFinite(y) ? y : fallbackY(x, z)) + apronLift
         }
 
+        // QUAL-16 rework: a degree-2 node is a road BENDING THROUGH, not a plaza. Instead of a
+        // wedge pad (which reads as a blob and leaves triangulation/weld gaps on the outside of the
+        // bend), sweep a full-width ribbon along the cheapest circular fillet joining the two mouth
+        // cross-sections — so the kink looks like any other curved road. Falls through to the pad
+        // ladder below only if the fillet is degenerate (near-collinear / mouths on the wrong side).
+        if (node.legs.length === 2) {
+            const g = this._buildDeg2Ribbon(node, params, sampleY)
+            if (g) return g
+        }
+
         // ── Boundary ladder: exact weld → shrunk fillets → legacy circle pad ──
         let ring = this._junctionRingWeld(node, params, 1.0)
         if (ring && this._ringSelfIntersects(ring)) ring = null
@@ -1283,6 +1293,100 @@ export class RoadMeshSystem {
         if (!ring || ring.length < 3) return null
 
         return this._buildPadGeometry(ring, sampleY)
+    }
+
+    /**
+     * QUAL-16: degree-2 kink as a swept curved ribbon (not a pad polygon).
+     *
+     * The two legs are one road bending through the node. Each mouth is the run's own cross-section
+     * at cutback + halfWidth/2 (the exact-weld point the pad also uses, overlapping the trimmed
+     * ribbon end). We fit the CHEAPEST circular arc tangent to both centerlines — the largest radius
+     * that still fits between the mouths, i.e. the gentlest, most driveable curve — then sweep a
+     * full-width strip [cA → tangentA → arc → tangentB → cB] along it. Vertex Y rides `sampleY`
+     * (the same asphalt-top field the ribbons + pads use → mesh == collision), so the connector is
+     * continuous with the two ribbons it welds to. Solid asphalt, aMark = 0 (markings feather out at
+     * junctions anyway — matches the pad's stripe contract).
+     *
+     * Returns a BufferGeometry, or null (degenerate fillet → caller falls back to the pad ladder):
+     * near-collinear legs (det ≈ 0), a mouth on the wrong side (t/r ≤ 0), or a radius so tight the
+     * inside edge would pinch (R < halfWidth). Pure fn of node + params + streamed network (D-16).
+     */
+    _buildDeg2Ribbon(node, params, sampleY) {
+        // QUAL-16: the fillet arc geometry is computed ONCE in road.js (_buildDeg2ArcGeom, cached on the
+        // node per _networkRev) so the mesh sweep here AND the terrain earthwork / collision
+        // (_resolveRoadSurface projects onto node.deg2) follow the SAME arc — mesh == collision through
+        // the bend, no scoop/facets. Null (degenerate/pinched fillet) → caller falls back to the pad ladder.
+        const arc = node.deg2
+        if (!arc || !arc.points || arc.points.length < 2) return null
+        const halfWidth = arc.halfWidth
+        // Longitudinal chord subdivision (mesh-only — arc.points, which the carve/physics
+        // projection consumes, is untouched): splits the ~3 m rung chords into SUB pieces so the
+        // strip tracks the curved connector-overlay grade field (the 1/(d²+1) leg blend curves
+        // sharply where the footprint passes close to a leg) to ~1 cm along-arc. XZ stays on the
+        // chords (sub-decimetre from the true arc); Y is re-sampled from the field per vertex,
+        // which is what kills the chord sag that let dirt poke through the ribbon.
+        const SUB = 4
+        const center = []
+        for (let i = 0; i < arc.points.length; i++) {
+            if (i > 0) {
+                const a = arc.points[i - 1], b = arc.points[i]
+                for (let k = 1; k < SUB; k++) {
+                    const f = k / SUB
+                    center.push({ x: a.x + (b.x - a.x) * f, z: a.z + (b.z - a.z) * f })
+                }
+            }
+            center.push(arc.points[i])
+        }
+
+        // ── Sweep a full-width strip. Per-vertex lateral = tangent rotated +90° (central differences). ──
+        // COLS interior columns (not just the two edges): the connector asphalt-top field
+        // (sampleRoadTopY now folds the QUAL-16 connector-overlay dom-blend grade) is CURVED both
+        // along and across the bend; a single 10 m-wide linear chord dips up to ~0.3 m below it
+        // mid-rung, dropping the drawn ribbon under the carved dirt (the z-fighting dirt interleave
+        // at sharp kinks). 9 columns bound the chord sag to ~1 cm — safely inside clearanceMargin.
+        const COLS = 9
+        const V = center.length * COLS
+        const positions = new Float32Array(V * 3)
+        const colors    = new Float32Array(V * 3)
+        for (let i = 0; i < center.length; i++) {
+            const p = center[i]
+            const a = center[Math.max(0, i - 1)], b = center[Math.min(center.length - 1, i + 1)]
+            let tx = b.x - a.x, tz = b.z - a.z
+            const tl = Math.hypot(tx, tz) || 1
+            tx /= tl; tz /= tl
+            const lx = -tz, lz = tx                       // +90° → left side of travel
+            for (let c = 0; c < COLS; c++) {
+                const off = halfWidth * (1 - 2 * c / (COLS - 1))   // +halfWidth (left) → −halfWidth (right)
+                const X = p.x + lx * off, Z = p.z + lz * off
+                const vi = i * COLS + c
+                positions[vi * 3] = X; positions[vi * 3 + 1] = sampleY(X, Z); positions[vi * 3 + 2] = Z
+                colors[vi * 3] = 0.15; colors[vi * 3 + 1] = 0.15; colors[vi * 3 + 2] = 0.17
+            }
+        }
+        const tris = []
+        for (let i = 0; i < center.length - 1; i++) {
+            for (let c = 0; c < COLS - 1; c++) {
+                const l0 = i * COLS + c, r0 = l0 + 1
+                const l1 = (i + 1) * COLS + c, r1 = l1 + 1
+                tris.push(l0, r0, l1, r0, r1, l1)
+            }
+        }
+        // Force UP-facing winding (same guard as the pad fill — flip if the strip came out CW).
+        let area2 = 0
+        for (let k = 0; k < tris.length; k += 3) {
+            const a = tris[k], b = tris[k + 1], c = tris[k + 2]
+            area2 += (positions[b * 3] - positions[a * 3]) * (positions[c * 3 + 2] - positions[a * 3 + 2])
+                   - (positions[c * 3] - positions[a * 3]) * (positions[b * 3 + 2] - positions[a * 3 + 2])
+        }
+        if (area2 > 0) for (let k = 0; k < tris.length; k += 3) { const tmp = tris[k + 1]; tris[k + 1] = tris[k + 2]; tris[k + 2] = tmp }
+
+        const geo = new THREE.BufferGeometry()
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+        geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3))
+        geo.setAttribute('aMark',    new THREE.BufferAttribute(new Float32Array(V * 4), 4))
+        geo.setIndex(new THREE.BufferAttribute(new Uint32Array(tris), 1))
+        geo.computeVertexNormals()
+        return geo
     }
 
     /**

@@ -1329,6 +1329,11 @@ export class TerrainSystem {
         // resolve for vertices too far from any road. The actual surface comes from _resolveRoadSurface.
         const _ptC = performance.now()
         const { pts: samples } = this._roadSystem.collectChunkSplinePoints(chunkCX, chunkCZ, queryRadius)
+        // QUAL-16: append deg-2 connector centreline points so the per-vertex distance SKIP below doesn't
+        // drop a connector's outer flank (far from every RUN sample) → its fill/cut bench gets carved
+        // (mesh == collision; no wall at the asphalt edge). Same stride-5 layout as the run samples.
+        const _connSamples = this._roadSystem.collectConnectorSamples(chunkCX, chunkCZ, queryRadius)
+        for (let k = 0; k < _connSamples.length; k++) samples.push(_connSamples[k])
         perfAdd('carve.collectSplines', performance.now() - _ptC)
         if (samples.length === 0) return null  // early-reject passed but no actual points sampled
 
@@ -1423,12 +1428,26 @@ export class TerrainSystem {
                     if (notch.blendW > 1e-6) anyNonZero = true
                     continue
                 }
-                if (!nr) { table[idx] = 0; table[idx + 1] = 0; continue }
-                const dx = wx - nr.point.x, dz = wz - nr.point.z
-                const arcSEff   = (nr.arcS ?? 0) + dx * nr.tangent.x + dz * nr.tangent.z
-                const signedLat = dx * nr.tangent.z - dz * nr.tangent.x
-
-                const cs = this._roadSystem._carveCrossSectionBlended(nr, signedLat, arcSEff, rawH)
+                // NB (QUAL-16 × FEAT-40): no early `if (!nr) continue` here — the deg-2 connector
+                // overlay below still carves the bend-outside void where no run resolves. The run
+                // cross-section is guarded by `if (nr)` and null flows through to the connector.
+                let cs = null
+                if (nr) {
+                    const dx = wx - nr.point.x, dz = wz - nr.point.z
+                    const arcSEff   = (nr.arcS ?? 0) + dx * nr.tangent.x + dz * nr.tangent.z
+                    const signedLat = dx * nr.tangent.z - dz * nr.tangent.x
+                    // FEAT-40: rival blend so self-overlap / bore seams match the physics carve.
+                    cs = this._roadSystem._carveCrossSectionBlended(nr, signedLat, arcSEff, rawH)
+                }
+                // QUAL-16: compose the deg-2 kink CONNECTOR's full cross-section over the run surface —
+                // identical composition to _sampleCarveWorld (mesh == collision). Connector grade
+                // dominates its core (one flat graded bench, no wall/sawtooth at the asphalt edge from the
+                // cliff-y run-vs-run surface at a sharp kink) and feathers back to the run grade at its toe.
+                const co = this._roadSystem._connectorCarve(wx, wz, rawH)
+                if (co) {
+                    const domGrade = cs ? co.gradeY * co.dom + cs.gradeY * (1 - co.dom) : co.gradeY
+                    cs = { blendW: Math.max(cs ? cs.blendW : 0, co.blendW), gradeY: domGrade }
+                }
                 if (!cs) { table[idx] = 0; table[idx + 1] = 0; continue }
 
                 table[idx]     = cs.blendW
