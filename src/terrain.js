@@ -466,7 +466,11 @@ export class TerrainSystem {
                 for (int ti = 0; ti < 24; ti++) {
                     if (ti >= uTunnelN) break;
                     vec3 tq = vWorldPos - uTunnelPos[ti].xyz;
-                    float tt = clamp(dot(tq, uTunnelAxis[ti].xyz), -2.5, uTunnelAxis[ti].w);
+                    float ta = dot(tq, uTunnelAxis[ti].xyz);
+                    // FLAT outside end just beyond the tube's proud lip: a capsule end-cap sphere
+                    // bulged ~R beyond the mouth and ate a whole disc of ground outside it.
+                    if (ta < -1.2) continue;
+                    float tt = clamp(ta, -1.2, uTunnelAxis[ti].w);
                     tq -= uTunnelAxis[ti].xyz * tt;
                     // tq.y gate: only cut skin ABOVE the apron plane — a full capsule also ate the
                     // carved ground beside/below the road just outside the mouth (visible hole).
