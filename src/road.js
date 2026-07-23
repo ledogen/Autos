@@ -116,9 +116,32 @@ const PAD_TOP_MIN_R = 0.5
 // PAD_DUCK_CAP: max the pad may LOWER dirt below the leg cross-section's own design (m). The pad's
 // crease-duck free-resolves the top field, which carries pre-existing multi-metre tears at a couple of
 // degenerate steep nodes; uncapped, those tears leak into an otherwise-smooth pinned cross-section
-// (shoulder-lateral-continuity's plaza tolerance is 0.70 m). 0.55 covers every real crease measured
-// across seeds 6+7 (≤ ~0.45) while keeping any leaked step under the plaza tolerance.
-const PAD_DUCK_CAP = 0.55
+// (shoulder-lateral-continuity's plaza tolerance is 0.70 m). The two CONSUMERS of the duck need
+// different caps — that's why there are two constants (the pad rim is a sanctioned mesh↔physics
+// difference region, same class as the on-ribbon decal overlay):
+//   - MESH dirt (terrain _buildCarveTable → _mergeCarve default): must get fully UNDER the creased
+//     asphalt or the tan interp slivers poke through the pad (the rim earthwork fix). Pre-camber-rework
+//     creases measured ≤ ~0.45 (old cap 0.55 was enough), but the saturating-camber model
+//     (camberFromCurvature) banks sweeper leg mouths harder — legitimate creases now reach ~1.05 m at
+//     the seed-6 trident rim. 1.2 admits every measured camber-era crease with margin while still
+//     clamping the multi-metre degenerate-node tear leak.
+//   - PHYSICS (_sampleCarveWorld passes PAD_DUCK_CAP_PHYS): a pinned/hinted resolve's cross-section is
+//     SMOOTH by design (BUG-15), and the duck's reference field (free-sampled topMin) JUMPS at crease/
+//     tear lines — any duck deeper than ~0.55 puts that jump into the pinned cross-section as a single
+//     step > the 0.70 plaza tolerance. 0.55 keeps every pinned step under it; the wheel consequence is
+//     only that in tiny crease∩rim-hold dirt patches physics rides ≤ ~0.65 above the drawn dirt
+//     (momentary, at pad rims — the same accepted trade as the decal overlay riding above the trough).
+const PAD_DUCK_CAP = 1.2
+const PAD_DUCK_CAP_PHYS = 0.55
+// PAD_EDGE_FEATHER: band (m) inside the ring across which the on-PAD physics overlay feathers the
+// PINNED-resolve excess away (see _sampleCarveWorld). A pinned/hinted resolve extends ONE leg's
+// superelevated cross-section across the plaza; under the saturating-camber model that extension can
+// ride ~1 m above the free pad top near the ring edge, and carrying it to sd=0 before dropping onto
+// the ducked dirt would put a >1 m single step in every pinned cross-section that exits the ring
+// (shoulder-lateral-continuity's plaza tolerance is 0.70 m). Feathering the overlay's lift above the
+// merged carve DIRT to zero at the ring edge makes the field exactly C0 at the exit; interior wheels
+// (f=1) still ride the full asphalt overlay unchanged. Hardcoded: physics-only, no route-cache effect.
+const PAD_EDGE_FEATHER = 1.6
 // roadQuality imported for SURF-06 D-03: pothole severity uses the same per-stretch
 // quality hook as markings. Importing from road-quality.js (not road-mesh.js) avoids
 // the road-mesh.js → terrain.js → road.js chain issues.
@@ -3168,9 +3191,17 @@ export class RoadSystem {
      * (`nodeArc` = 0 or the run length, in the polyCum domain; `win` metres each side). Used by the ruled
      * inter-leg blend (_carveDirtY): a full-run projection picks the globally nearest foot, which on a leg
      * that curves or loops back can JUMP a metre (bimodal minimum) or land hundreds of metres along the run
-     * — sampling the leg's grade there tears the blended surface. The leg leaves its node MONOTONICALLY, so
-     * confining the search to [nodeArc−win, nodeArc+win] makes the foot (and its grade) continuous. Returns
-     * { d2, arcS } | null.
+     * — sampling the leg's grade there tears the blended surface.
+     *
+     * The window ALONE cannot make the foot continuous: a leg can curve AROUND the gore inside 40 m
+     * (min turn radius 8), holding TWO genuine distance-minima at once (seed-6 (132,−744): feet at
+     * 0 m and 39.8 m along, grades 5.7 m apart, both limbs really are the adjacent road). An argmin
+     * that picks ONE of them flips discontinuously as the query crosses the equidistance locus — a
+     * >1 m lateral step in the blended gore (the MAX_LEG_SLOPE guard is too loose to catch a
+     * plausibly-graded second limb). So this returns EVERY distance-local-minimum foot in the window
+     * (deduped within 4 m of arc), and the caller blends each as its own pseudo-leg: with all limbs
+     * contributing simultaneously there is no switch — each foot, gap, and grade varies continuously
+     * with the query. Returns an array of { d2, arcS } (ordered along the leg) | null.
      */
     _projectLegNearNode(netEntry, wx, wz, nodeArc, win) {
         const pts = netEntry.points
@@ -3178,7 +3209,20 @@ export class RoadSystem {
         if (N < 2) return null
         const arcOrigin = netEntry.arcOrigin ?? 0
         const lo = nodeArc - win, hi = nodeArc + win
-        let bestD2 = Infinity, bestCum = 0, cum = 0
+        // March the window's segments in order, tracking each segment's nearest foot; a foot is kept
+        // when it is a local minimum of the per-segment distance sequence (plateau-tolerant ≤). The
+        // final in-window foot is kept when the sequence was still descending (window-edge minimum —
+        // the limb continues beyond, but its nearest in-window point is a legitimate candidate whose
+        // position and grade vary continuously with the query).
+        let out = null
+        let prevD2 = Infinity, prevPrevD2 = Infinity, prevCum = 0
+        let cum = 0
+        const keep = (d2, cumT) => {
+            if (!out) out = []
+            const last = out[out.length - 1]
+            if (last && cumT - (last.arcS + arcOrigin) < 4) { if (d2 < last.d2) { last.d2 = d2; last.arcS = cumT - arcOrigin } }
+            else out.push({ d2, arcS: cumT - arcOrigin })
+        }
         for (let i = 0; i < N - 1; i++) {
             const ax = pts[i].x, az = pts[i].z
             const ex = pts[i + 1].x - ax, ez = pts[i + 1].z - az
@@ -3190,12 +3234,13 @@ export class RoadSystem {
                 const fx = ax + t * ex, fz = az + t * ez
                 const ddx = wx - fx, ddz = wz - fz
                 const d2 = ddx * ddx + ddz * ddz
-                if (d2 < bestD2) { bestD2 = d2; bestCum = cum + t * segLen }
+                if (prevD2 !== Infinity && prevD2 <= prevPrevD2 && prevD2 <= d2) keep(prevD2, prevCum)
+                prevPrevD2 = prevD2; prevD2 = d2; prevCum = cum + t * segLen
             }
             cum += segLen
         }
-        if (bestD2 === Infinity) return null
-        return { d2: bestD2, arcS: bestCum - arcOrigin }
+        if (prevD2 !== Infinity && prevD2 <= prevPrevD2) keep(prevD2, prevCum)
+        return out
     }
 
     /**
@@ -3395,7 +3440,7 @@ export class RoadSystem {
         // Junction-pad carve (first-class pad footprint, incl. the back-arc bulb) composed with the leg
         // carve — never LESS coverage than either alone, and smooth where they overlap (both ride the pad
         // plane near the node). This is what covers the open-side rim the leg corridors miss.
-        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp))
+        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp), PAD_DUCK_CAP_PHYS)
         if (!cs2) return null   // beyond the fill/cut toe of both — unaffected terrain
 
         // ── Physics-only on-ribbon overlay (the one intentional mesh↔collision difference) ──
@@ -3421,7 +3466,19 @@ export class RoadSystem {
             // resolves at all (the far open-side rim) fall back to the pad's free-sampled top. Off the
             // ring the wheel drops onto the carved dirt, the same intended edge dropoff as a ribbon
             // shoulder (BUG-15).
-            gradeY = Math.max(gradeY, cs ? cs.gradeY + clearanceMargin : cs2.padTopY)
+            //
+            // CAMBER-ERA RIM HANDOFF: near the ring edge, feather the overlay's LIFT above the carve
+            // dirt away over the last PAD_EDGE_FEATHER m inside the ring, so the field is exactly C0
+            // at the ring exit (overlay(sd→0⁻) == dirt(sd=0⁺)). Under the saturating-camber model a
+            // pinned resolve's superelevated cross-section can ride ~1 m above the plaza near the rim;
+            // carrying it to sd=0 and dropping onto the dirt put a >1 m single step into every pinned
+            // cross-section exiting the ring (shoulder gate plaza tol 0.70). The feather target is the
+            // merged DIRT (not the free pad top — that field JUMPS multi-metre at the degenerate-node
+            // tear lines and would drag the jump into the overlay). Interior (f=1) is byte-identical
+            // to the pre-feather overlay.
+            const asphalt = cs ? cs.gradeY + clearanceMargin : cs2.padTopY
+            const f = Math.min(1, Math.max(0, -(cs2.padSd ?? -PAD_EDGE_FEATHER) / PAD_EDGE_FEATHER))
+            gradeY = Math.max(gradeY, cs2.gradeY + Math.max(0, asphalt - cs2.gradeY) * f)
         }
 
         return { blendW: cs2.blendW, gradeY }
@@ -3483,26 +3540,44 @@ export class RoadSystem {
             for (const leg of nodeLegs) {
                 const ne = this._network.get(leg.runKey)
                 if (!ne) continue
-                // Project onto the leg's NEAR-NODE arc window only (smooth foot — no bimodal / far-branch jump).
-                const pr = this._projectLegNearNode(ne, wx, wz, leg.arc, RULE_NODE_WINDOW)
-                if (!pr) continue
-                const gap = Math.sqrt(pr.d2) - halfWidth
-                if (gap >= RULE_LEG_REACH) continue                      // out of range: not a co-leg here
-                const legGrade = leg.runKey === runKey ? gradeY : this.runProfile(pr.arcS, leg.runKey).gradeY
-                // Plausibility guard: every leg leaves the node welded at nodeY with a bounded road grade, so
-                // at arc distance `along` its grade must lie within nodeY ± MAX_LEG_SLOPE·along. A projected
-                // grade outside that is a WRONG-BRANCH artifact (the leg loops back / another road crosses at a
-                // very different height within the window) — blending it would raise a tall ramp between two
-                // roads that merely pass near. Reject it. (Uses the node's own grade → window-invariant.)
-                const along = Math.abs(pr.arcS - leg.arc)
-                if (Math.abs(legGrade - jc.node.nodeY) > MAX_LEG_SLOPE * along + halfWidth) continue
-                gaps.push(Math.max(0, gap) + RULE_EPS); grades.push(legGrade)
-                // Smooth in-range taper (1 → 0 across the last RULE_TAPER m before the cutoff). Barycentric
-                // weight does NOT decay with a leg's OWN distance, so without this a leg crossing RULE_LEG_REACH
-                // would POP in with a non-trivial weight (a lateral shoulder step). The taper eases its weight
-                // to 0 at the cutoff so it fades in/out; at its own asphalt (gap 0) the taper is 1.
-                const tu = Math.min(1, Math.max(0, (RULE_LEG_REACH - gap) / RULE_TAPER))
-                tapers.push(tu * tu * (3 - 2 * tu))
+                // Project onto the leg's NEAR-NODE arc window only. EVERY distance-local-minimum limb is
+                // returned and blended as its own pseudo-leg (see _projectLegNearNode: a curving leg can
+                // hold two genuine minima at once, and picking one by argmin tears the gore at the flip).
+                const prs = this._projectLegNearNode(ne, wx, wz, leg.arc, RULE_NODE_WINDOW)
+                if (!prs) continue
+                // The branch nearest the RESOLVED arc of the query's own run rides the already-computed
+                // gradeY (the resolved cross-section's grade — keeps the pinned/hinted surface exact);
+                // every other branch samples the profile at its own foot.
+                let ownIdx = -1
+                if (leg.runKey === runKey) {
+                    let bestDa = Infinity
+                    for (let bi = 0; bi < prs.length; bi++) {
+                        const da = Math.abs(prs[bi].arcS - arcSEff)
+                        if (da < bestDa) { bestDa = da; ownIdx = bi }
+                    }
+                }
+                for (let bi = 0; bi < prs.length; bi++) {
+                    const pr = prs[bi]
+                    const gap = Math.sqrt(pr.d2) - halfWidth
+                    if (gap >= RULE_LEG_REACH) continue                  // out of range: not a co-leg here
+                    const legGrade = bi === ownIdx ? gradeY : this.runProfile(pr.arcS, leg.runKey).gradeY
+                    // Plausibility guard: every leg leaves the node welded at nodeY with a bounded road
+                    // grade, so at arc distance `along` its grade must lie within nodeY ± MAX_LEG_SLOPE·
+                    // along. A projected grade outside that is a WRONG-BRANCH artifact (an unrelated road
+                    // crossing at a very different height within the window) — blending it would raise a
+                    // tall ramp between two roads that merely pass near. Reject it. (Uses the node's own
+                    // grade → window-invariant.)
+                    const along = Math.abs(pr.arcS - leg.arc)
+                    if (Math.abs(legGrade - jc.node.nodeY) > MAX_LEG_SLOPE * along + halfWidth) continue
+                    gaps.push(Math.max(0, gap) + RULE_EPS); grades.push(legGrade)
+                    // Smooth in-range taper (1 → 0 across the last RULE_TAPER m before the cutoff).
+                    // Barycentric weight does NOT decay with a leg's OWN distance, so without this a leg
+                    // crossing RULE_LEG_REACH would POP in with a non-trivial weight (a lateral shoulder
+                    // step). The taper eases its weight to 0 at the cutoff so it fades in/out; at its own
+                    // asphalt (gap 0) the taper is 1.
+                    const tu = Math.min(1, Math.max(0, (RULE_LEG_REACH - gap) / RULE_TAPER))
+                    tapers.push(tu * tu * (3 - 2 * tu))
+                }
             }
             let wSum = 0, gSum = 0, wMax = 0
             for (let i = 0; i < gaps.length; i++) {
@@ -3528,13 +3603,20 @@ export class RoadSystem {
                 const fu = Math.min(1, Math.max(0, (radial - JN_FADE_IN) / (JN_FADE_OUT - JN_FADE_IN)))
                 const fade = 1 - fu * fu * (3 - 2 * fu)                   // 1 at the node → 0 past FADE_OUT
                 gradeY += fade * (gSum / wSum - gradeY)
-                // Ease the single-ribbon CROSS-SLOPE (crown + camber tilt) to flat by blend PURITY p (the
-                // dominant leg's weight share) IN the faded junction region: on a clean ribbon/shoulder p ≈ 1
-                // (or fade 0) ⇒ crown/camber untouched = the ordinary cross-section; where legs are co-dominant
-                // near the node (p < 1) they ease to the flat ruled plaza, killing the camber FLIP at the
-                // Voronoi boundary. Both p and fade are position-continuous.
-                const p = wMax / wSum
-                const k = 1 - fade * (1 - p)
+                // Ease the single-ribbon CROSS-SLOPE (crown + camber tilt) to flat by blend PURITY (the
+                // dominant leg's weight share) IN the faded junction region: on a clean ribbon/shoulder
+                // purity ≈ 1 (or fade 0) ⇒ crown/camber untouched = the ordinary cross-section; where legs
+                // are co-dominant near the node they ease to the flat ruled plaza, killing the camber FLIP
+                // at the Voronoi boundary. The remap max(0, 2·pur − 1) is what makes the kill COMPLETE: raw
+                // purity only reaches 1/2 at a two-leg crease, and multiplying the tilt by 1/2 still leaks
+                // half the flip — pre-camber-rework tilts were small enough (≤ ~0.5 m) to hide that, but the
+                // saturating-camber model banks sweeper legs to ~±1.5 m of edge tilt, and half a flip is a
+                // >1 m lateral step at every gore crease (shoulder gate plaza tol 0.70). Remapped, purity 1
+                // (own asphalt: every sibling weight carries this leg's gap→0 factor) still gives exactly the
+                // ordinary cross-section, while ≤ 1/2 (two or more co-dominant legs) is fully flat — the
+                // crease line carries NO cross-slope jump at all. Both purity and fade are position-continuous.
+                const pur = wMax / wSum
+                const k = 1 - fade * (1 - Math.max(0, 2 * pur - 1))
                 crownY *= k; tiltY *= k
             }
         }
@@ -4164,7 +4246,7 @@ export class RoadSystem {
         // deepened design dirt, so the fill/cut feather starts one cell out. padTopY (inside the ring
         // only) is the asphalt surface physics rides — see the pad overlay in _sampleCarveWorld.
         const padTopY = bestSd <= 0 ? topC : null
-        if (bestSd <= PAD_RIM_HOLD) return { blendW: 1.0, gradeY: topMin - clearanceMargin - PAD_DIRT_EXTRA, padTopY }
+        if (bestSd <= PAD_RIM_HOLD) return { blendW: 1.0, gradeY: topMin - clearanceMargin - PAD_DIRT_EXTRA, padTopY, padSd: bestSd }
 
         // Outside the hold band: ramp designY → raw over shoulder + fill/cut toe, mirroring
         // _carveCrossSection (which ramps beyond carveHalfWidth). `over` = distance past the hold.
@@ -4192,7 +4274,7 @@ export class RoadSystem {
      * gradeY ONLY where the leg carve is absent (nr null / beyond the leg toe — the open-side rim), which
      * is exactly the surface the pad MESH rides there (sampleRoadTopY / plane), so mesh == collision.
      */
-    _mergeCarve(a, b) {
+    _mergeCarve(a, b, duckCap = PAD_DUCK_CAP) {
         if (!a) return b || null
         if (!b) return a
         // Where the pad is at FULL depth (inside ring + rim hold, blendW 1) take the LOWER dirt: the
@@ -4204,9 +4286,9 @@ export class RoadSystem {
         // top field's pre-existing degenerate-node tears can't tear an otherwise-smooth shoulder; and
         // the duck FADES with b's own blendW (1 on the pad + rim hold, smoothstepping to 0 at the pad
         // toe) so there is no step where the full-depth band ends — the duck is C0 everywhere.
-        const low = Math.max(Math.min(a.gradeY, b.gradeY), a.gradeY - PAD_DUCK_CAP)
+        const low = Math.max(Math.min(a.gradeY, b.gradeY), a.gradeY - duckCap)
         const gradeY = a.gradeY + (low - a.gradeY) * b.blendW
-        return { blendW: Math.max(a.blendW, b.blendW), gradeY, padTopY: b.padTopY ?? null }
+        return { blendW: Math.max(a.blendW, b.blendW), gradeY, padTopY: b.padTopY ?? null, padSd: b.padSd }
     }
 
     /**
