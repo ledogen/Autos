@@ -1101,7 +1101,9 @@ export class RoadMeshSystem {
         const road = this._road
         if (!road.runPointAt || !road.runProfile) return null
         const R    = params.tunnelBoreRadius ?? 8
-        const RIN  = R + 0.05, ROUT = R + 0.95    // reveal hugs the tube; band overlaps the skin hole
+        // ROUT covers the portal-neck width (carve necks the cut to ~R+2.5 at the mouth — road.js
+        // PORTAL_TAPER_LEN) so the carved→raw stop at the portal line hides behind the collar.
+        const RIN  = R + 0.05, ROUT = R + 2.6     // reveal hugs the tube; wide headwall collar
         const D0 = -0.8, D1 = 1.35                // extrusion: buried into the hill → proud of it
         const SEG = 20
         const c = road.runPointAt(runKey, pArc)

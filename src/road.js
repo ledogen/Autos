@@ -228,6 +228,22 @@ const PROTO_SAMPLE_DS      = 4     // m — centerline → polyline sampling spa
 // pitch inside it (Centerline.nearest then does one projection refine). Single-minimum at radius ≥ 12 m.
 const ANALYTIC_REFINE_WINDOW = 6   // m
 const ANALYTIC_REFINE_DS     = 1.0 // m
+// FEAT-40 self-overlap crease blend: a winding run that passes ITSELF within the resolver
+// footprint (switchback wrapping a spur) makes the nearest-pass projection FLIP arcs at the
+// equidistant line — with tunnel-era deep earthwork (15–25 m cuts/fills) that flip is a 25 m
+// surface cliff the terrain grid renders as accordion pleats. The resolver therefore also
+// projects the winning run EXCLUDING ±RIVAL_ARC_SEP around the winning arc; when that far pass
+// lands within CROSS_BLEND_BAND of the winner's lateral distance, the two cross-sections are
+// cross-faded (off-ribbon only) so the seam is a bank, not a teleport.
+const RIVAL_ARC_SEP    = 40   // m — min arc separation for a projection to count as a distinct pass
+const CROSS_BLEND_BAND = 12   // m — lateral-distance band over which the two passes cross-fade
+// FEAT-40 bore notch: inside a bore span the terrain SKIN (Y-less / above-apex probes) is not
+// simply raw — near each mouth the open cut's cross-section continues with its floor RISING at
+// this V:H slope per metre into the span, capped at raw. The mouth face is therefore a graded
+// funnel (renders clean on the height grid) instead of a footprint-wide vertical stop face at
+// the portal line, and the surface is C0 straight through the portal. The below-crown part of
+// the funnel sits inside the shader discard capsule; the collar hides the fringe.
+const BORE_NOTCH_SLOPE = 1.2  // V:H — mouth-funnel floor rise per metre into the bore
 const PROTO_SNAP_CAP       = PROTO_ANCHOR_SPACING * 0.45  // m — max anchor gradient-descent displacement (keeps anchors in their lane → fewer parallel/duplicate roads)
 const PROTO_PARAM_DEBOUNCE = 160   // ms — coalesce slider drags before re-routing
 // 8-connectivity direction vectors (index 0..7); used for the turn-penalty A* state.
@@ -3048,9 +3064,13 @@ export class RoadSystem {
      * continuous in (wx,wz). arcS = (cumulative chord to foot) − arcOrigin, exactly the runProfile arc
      * domain (arcPos[0] = −arcOrigin, arcPos[i] = arcPos[i−1] + chord).
      *
+     * @param {number} [avoidCum=-1] — FEAT-40 rival pass: when ≥ 0, candidates whose chord-cum lies
+     *   within ±avoidSep of this value are SKIPPED, so the projection finds the run's next-nearest
+     *   DISTINCT pass (self-overlap switchbacks). −1 = normal global-nearest behavior.
+     * @param {number} [avoidSep=0]
      * @returns {{ fx,fz, tx,tz, arcS, signedLat, d2 } | null}
      */
-    _projectOntoRun(netEntry, wx, wz) {
+    _projectOntoRun(netEntry, wx, wz, avoidCum = -1, avoidSep = 0) {
         const pts = netEntry.points
         const N = pts ? pts.length : 0
         if (N < 2) return null
@@ -3065,17 +3085,20 @@ export class RoadSystem {
             const segLen = Math.sqrt(segLen2) || 1e-8
             let t = segLen2 > 1e-12 ? ((wx - ax) * ex + (wz - az) * ez) / segLen2 : 0
             if (t < 0) t = 0; else if (t > 1) t = 1
+            const cumT = cum + t * segLen
+            cum += segLen
+            if (avoidCum >= 0 && Math.abs(cumT - avoidCum) < avoidSep) continue
             const fx = ax + t * ex, fz = az + t * ez
             const ddx = wx - fx, ddz = wz - fz
             const d2 = ddx * ddx + ddz * ddz
             if (d2 < bestD2) {
                 bestD2 = d2; bestFx = fx; bestFz = fz
                 bestTx = ex / segLen; bestTz = ez / segLen
-                bestCum = cum + t * segLen
+                bestCum = cumT
                 bestI = i; bestTclamp = t
             }
-            cum += segLen
         }
+        if (bestD2 === Infinity) return null
         // Terminus overshoot: nearest foot is the run's very first/last vertex AND the query lies
         // longitudinally BEYOND that end (not beside the ribbon). Such a point is off the end of THIS
         // run — its continuation run (junction neighbour) owns the surface there — so reject it rather
@@ -3160,6 +3183,10 @@ export class RoadSystem {
         // wrong-height runs that merely pass nearby.) Where genuinely overlapping runs at different
         // heights remain, this leaves at most a localized crease, not the old sampled-spline cliff.
         let bestLat = Infinity, bestPr = null, bestRunKey = ''
+        // FEAT-40: second-best interior RUN — cross-run twin of the self-overlap rival. Where two
+        // edges' carve footprints overlap at different heights, ownership flips at the equidistant
+        // line; _carveCrossSectionBlended cross-fades toward this rival so the flip isn't a cliff.
+        let secondLat = Infinity, secondPr = null, secondRunKey = ''
         // BUG-21: terminal-vertex sliver fallback. At a shared hairpin apex BOTH continuation arms treat
         // the wedge just beyond the anchor as off-their-end (_projectOntoRun offEnd), so the primary
         // interior pass finds nothing and the surface pops to raw terrain (the +0.6 m jolt). Collect
@@ -3190,7 +3217,12 @@ export class RoadSystem {
                         continue
                     }
                     if (latDist > footHW) continue
-                    if (latDist < bestLat) { bestLat = latDist; bestPr = pr; bestRunKey = runKey }
+                    if (latDist < bestLat) {
+                        secondLat = bestLat; secondPr = bestPr; secondRunKey = bestRunKey
+                        bestLat = latDist; bestPr = pr; bestRunKey = runKey
+                    } else if (latDist < secondLat) {
+                        secondLat = latDist; secondPr = pr; secondRunKey = runKey
+                    }
                 }
             }
         }
@@ -3225,6 +3257,28 @@ export class RoadSystem {
             }
         }
 
+        // FEAT-40 rival pass: the nearest DISTINCT competing carve field — either the winning
+        // run's own next-nearest pass (arc ≥ RIVAL_ARC_SEP away; self-overlap switchback) or the
+        // second-best RUN (overlapping corridors). _carveCrossSectionBlended cross-fades toward
+        // it near the equidistant line so an ownership flip isn't a surface teleport. offEnd
+        // passes and passes beyond the interior footprint don't count.
+        let rival = null
+        if (ce && !bestPr.offEnd) {
+            const pr2 = this._projectOntoRun(ce, wx, wz, bestPr.arcS + (ce.arcOrigin ?? 0), RIVAL_ARC_SEP)
+            if (pr2 && !pr2.offEnd) {
+                // Gate on true RADIAL distance, and reject clamped projections (the avoid window
+                // cuts the polyline mid-approach; a clamped vertex has a tiny perpendicular
+                // signedLat but a large along-offset — using it would fake a nearby deep pass).
+                const d2 = pr2.d2, latP = pr2.signedLat
+                if (d2 - latP * latP < 4 && d2 <= footHW * footHW) {
+                    rival = { runKey: bestRunKey, arcS: pr2.arcS, signedLat: latP, lat: Math.sqrt(d2) }
+                }
+            }
+        }
+        if (secondPr && (!rival || secondLat < rival.lat)) {
+            rival = { runKey: secondRunKey, arcS: secondPr.arcS, signedLat: secondPr.signedLat, lat: secondLat }
+        }
+
         // camberSign = 1: the projection uses the run's own canonical polyline direction (arcS increases
         // along it), so run-frame camber maps to the world frame directly (no E→W slice reversal here).
         return {
@@ -3232,7 +3286,8 @@ export class RoadSystem {
             tangent:    new THREE.Vector3(tx, 0, tz),
             runKey:     bestRunKey,
             arcS:       arcS,
-            camberSign: 1
+            camberSign: 1,
+            rival
         }
     }
 
@@ -3302,7 +3357,12 @@ export class RoadSystem {
             if (!this.tunnelSpanAt(nr.runKey ?? '', aArc)) break
             const topY = this.runProfile(aArc, nr.runKey).gradeY + (p.tunnelBoreRadius ?? 8)
             if (queryY < topY) break                     // in the bore: this run owns the probe
-            (_excl ??= new Set()).add(nr.runKey ?? '')
+            // FEAT-40: skin probe over a bore — mouth-funnel notch (no decal/pothole overlay:
+            // this is the cutting face over the tube, not a drivable deck).
+            const aLat = adx * nr.tangent.z - adz * nr.tangent.x
+            const notch = this._boreNotchCS(nr.runKey ?? '', nr.camberSign ?? 1, aArc, aLat, rawAmp)
+            if (notch) return notch
+            ;(_excl ??= new Set()).add(nr.runKey ?? '')
             if (_excl.size > 3) { nr = null; break }     // stacked-bore backstop
             nr = this._resolveRoadSurface(wx, wz, _excl)
         }
@@ -3326,7 +3386,8 @@ export class RoadSystem {
 
         // QUAL-07: one carve cross-section function shared with the terrain mesh (_buildCarveTable).
         // It returns the DIRT-trough surface (clearanceMargin ALWAYS subtracted) + the shoulder blend.
-        const cs = this._carveCrossSection(signedLat, arcSEff, nr.runKey ?? '', nr.camberSign ?? 1, rawAmp)
+        // FEAT-40: routed through the rival blend so self-overlap seams match the mesh.
+        const cs = this._carveCrossSectionBlended(nr, signedLat, arcSEff, rawAmp, queryY)
         if (!cs) return null   // beyond the fill/cut toe — unaffected terrain
 
         // ── Physics-only on-ribbon overlay (the one intentional mesh↔collision difference) ──
@@ -3633,6 +3694,75 @@ export class RoadSystem {
         }
 
         return { blendW, gradeY: designY }
+    }
+
+    // ── FEAT-40: mouth-funnel notch over a bore span ─────────────────────────────────────────
+    /**
+     * The terrain-SKIN surface over a bore span for Y-less / above-apex probes: the open cut's
+     * own cross-section with its floor LIFTED by dIn·BORE_NOTCH_SLOPE (dIn = arc distance into
+     * the span from the nearer portal), capped at raw. C0 with the approach trough at the portal
+     * line (lift 0), and it self-retires mid-bore (lifted floor ≥ raw ⇒ returns null ⇒ the raw
+     * hill stays overhead). The below-crown part of the funnel is inside the mouth's shader
+     * discard capsule, so what renders is a graded V-cutting funneling into the arch — replacing
+     * the old footprint-wide vertical stop face at the portal line that staircased on the grid.
+     * Shared by physics (_sampleCarveWorld) and the mesh (_buildCarveTable): mesh == collision.
+     *
+     * @returns {{ blendW:number, gradeY:number } | null}  null = raw hill / not applicable
+     */
+    _boreNotchCS(runKey, camberSign, aArc, signedLat, rawAmp) {
+        const sp = this.tunnelSpanAt(runKey, aArc)
+        if (!sp) return null
+        const dIn = Math.min(aArc - sp.s0, sp.s1 - aArc)
+        const cs = this._carveCrossSection(signedLat, aArc, runKey, camberSign, rawAmp)
+        if (!cs) return null
+        const liftedY = cs.gradeY + dIn * BORE_NOTCH_SLOPE
+        if (liftedY >= rawAmp) return null
+        return { blendW: cs.blendW, gradeY: liftedY }
+    }
+
+    // ── FEAT-40: cross-section with self-overlap rival blend ─────────────────────────────────
+    /**
+     * _carveCrossSection, cross-faded toward the winning run's rival pass (nr.rival, set by
+     * _resolveRoadSurface) near the equidistant line between two passes of a self-overlapping
+     * run. Without this, the nearest-pass flip is a surface TELEPORT — up to 25 m where the
+     * tunnel pass dug deep earthwork — that the terrain grid renders as accordion pleats.
+     *
+     * mix = 0.5 at the equidistant line, easing to 0 once the rival is CROSS_BLEND_BAND farther
+     * away; additionally faded to 0 at the winner's ribbon edge (the road deck itself is never
+     * blended — a wheel on the ribbon must ride exactly its run's surface). A rival pass inside
+     * a bore span contributes RAW unless the probe is below its apex (same bore-ownership rule
+     * as the resolver's exclusion loop). Blending the SURFACES (not the raw cs fields) keeps the
+     * caller identity h = raw + blendW·(gradeY − raw) exact. Shared by physics
+     * (_sampleCarveWorld) and the terrain mesh (_buildCarveTable) so mesh == collision holds.
+     *
+     * @returns {{ blendW:number, gradeY:number } | null}
+     */
+    _carveCrossSectionBlended(nr, signedLat, arcSEff, rawAmp, queryY) {
+        const cs = this._carveCrossSection(signedLat, arcSEff, nr.runKey ?? '', nr.camberSign ?? 1, rawAmp)
+        const rv = nr.rival
+        if (!rv) return cs
+        const halfWidth = this._params.roadHalfWidth ?? 5
+        const latDist = Math.abs(signedLat)
+        // Fade in over 1.5 m past the ribbon edge (C0 with the unblended on-ribbon surface).
+        const fadeU = Math.max(0, Math.min(1, (latDist - halfWidth) / 1.5))
+        if (fadeU <= 0) return cs
+        const u = Math.max(0, Math.min(1, (rv.lat - latDist) / CROSS_BLEND_BAND))
+        const mix = 0.5 * (1 - u * u * (3 - 2 * u)) * (fadeU * fadeU * (3 - 2 * fadeU))
+        if (mix <= 1e-4) return cs
+        // Rival surface under the bore-ownership rule.
+        let csR = null
+        const inBore = this.tunnelSpanAt(rv.runKey, rv.arcS)
+        if (!inBore || (queryY !== undefined &&
+                        queryY < this.runProfile(rv.arcS, rv.runKey).gradeY + (this._params.tunnelBoreRadius ?? 8))) {
+            csR = this._carveCrossSection(rv.signedLat, rv.arcS, rv.runKey, 1, rawAmp)
+        }
+        const wB = cs ? cs.blendW : 0, wR = csR ? csR.blendW : 0
+        const hB = cs  ? rawAmp + wB * (cs.gradeY  - rawAmp) : rawAmp
+        const hR = csR ? rawAmp + wR * (csR.gradeY - rawAmp) : rawAmp
+        const w = wB + (wR - wB) * mix
+        if (!(w > 1e-4)) return null
+        const h = hB + (hR - hB) * mix
+        return { blendW: w, gradeY: rawAmp + (h - rawAmp) / w }
     }
 
     // ── Phase 9: Design grade smoothing (D-06) ────────────────────────────────────

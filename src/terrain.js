@@ -468,7 +468,9 @@ export class TerrainSystem {
                     vec3 tq = vWorldPos - uTunnelPos[ti].xyz;
                     float tt = clamp(dot(tq, uTunnelAxis[ti].xyz), -2.5, uTunnelAxis[ti].w);
                     tq -= uTunnelAxis[ti].xyz * tt;
-                    if (dot(tq, tq) < uTunnelPos[ti].w * uTunnelPos[ti].w) discard;
+                    // tq.y gate: only cut skin ABOVE the apron plane — a full capsule also ate the
+                    // carved ground beside/below the road just outside the mouth (visible hole).
+                    if (tq.y > -0.7 && dot(tq, tq) < uTunnelPos[ti].w * uTunnelPos[ti].w) discard;
                 }`
             )
             // Albedo mottle (after vColor is folded into diffuseColor).
@@ -1396,21 +1398,33 @@ export class TerrainSystem {
                 // else leave the vertex raw. The abrupt carved→raw step at a portal is the portal
                 // face; the headwall mesh covers it.
                 let nr = this._roadSystem._resolveRoadSurface(wx, wz)
-                let _excl = null
+                let _excl = null, notch = null
                 while (nr) {
                     const adx = wx - nr.point.x, adz = wz - nr.point.z
                     const aArc = (nr.arcS ?? 0) + adx * nr.tangent.x + adz * nr.tangent.z
-                    if (!this._roadSystem.tunnelSpanAt(nr.runKey ?? '', aArc, 4)) break
+                    if (!this._roadSystem.tunnelSpanAt(nr.runKey ?? '', aArc)) break
+                    // FEAT-40: skin vertex over a bore — mouth-funnel notch (same rule as the
+                    // Y-less physics path in _sampleCarveWorld), else fall through to the
+                    // next-nearest surface run / raw hill.
+                    const aLat = adx * nr.tangent.z - adz * nr.tangent.x
+                    notch = this._roadSystem._boreNotchCS(nr.runKey ?? '', nr.camberSign ?? 1, aArc, aLat, rawH)
+                    if (notch) break
                     ;(_excl ??= new Set()).add(nr.runKey ?? '')
                     if (_excl.size > 3) { nr = null; break }
                     nr = this._roadSystem._resolveRoadSurface(wx, wz, _excl)
+                }
+                if (notch) {
+                    table[idx]     = notch.blendW
+                    table[idx + 1] = amp > 0 ? notch.gradeY / amp : notch.gradeY
+                    if (notch.blendW > 1e-6) anyNonZero = true
+                    continue
                 }
                 if (!nr) { table[idx] = 0; table[idx + 1] = 0; continue }
                 const dx = wx - nr.point.x, dz = wz - nr.point.z
                 const arcSEff   = (nr.arcS ?? 0) + dx * nr.tangent.x + dz * nr.tangent.z
                 const signedLat = dx * nr.tangent.z - dz * nr.tangent.x
 
-                const cs = this._roadSystem._carveCrossSection(signedLat, arcSEff, nr.runKey ?? '', nr.camberSign ?? 1, rawH)
+                const cs = this._roadSystem._carveCrossSectionBlended(nr, signedLat, arcSEff, rawH)
                 if (!cs) { table[idx] = 0; table[idx + 1] = 0; continue }
 
                 table[idx]     = cs.blendW
