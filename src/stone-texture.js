@@ -130,3 +130,104 @@ export function makeCobbleTextures(seed = 1234, size = 256) {
   normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping
   return { map, normalMap }
 }
+
+/**
+ * FEAT-40: procedural MASONRY texture — running-bond stone blocks with recessed mortar joints
+ * (the tunnel portal ring; the cobble texture above reads as loose river pebbles there).
+ *
+ * Same recipe discipline as makeCobbleTextures: (1) heightfield — beveled block plateaus over a
+ * half-offset course grid, mortar lines recessed; (2) color — per-block granite tint drawn from
+ * the shared palette, mortar dark; (3) normal map — central difference over the wrapped field.
+ * Toroidal by construction (block grid divides the texture size) → tiles seamlessly.
+ *
+ * Browser-only (2D canvas → THREE.CanvasTexture); never imported by headless gates at call time.
+ *
+ * @returns {{ map: THREE.CanvasTexture, normalMap: THREE.CanvasTexture }}
+ */
+export function makeMasonryTextures(seed = 7130, size = 256) {
+  const rng = mulberry32(seed >>> 0)
+  const COURSE_H = 32, BLOCK_W = 64          // px — 8 courses × 4 blocks; divides size → seamless
+  const MORTAR = 3                           // px — half-width of the recessed joint
+  const nCourses = size / COURSE_H, nBlocks = size / BLOCK_W
+
+  // Per-block tint + height jitter, indexed [course][block].
+  const tints = [], bumps = []
+  for (let c = 0; c < nCourses; c++) {
+    tints.push([]); bumps.push([])
+    for (let b = 0; b < nBlocks; b++) {
+      const tsel = rng() * 2 - 1
+      const tgt = tsel >= 0 ? TAN : COOL
+      const amt = Math.abs(tsel) * 0.8
+      tints[c].push([
+        BASE[0] + (tgt[0] - BASE[0]) * amt,
+        BASE[1] + (tgt[1] - BASE[1]) * amt,
+        BASE[2] + (tgt[2] - BASE[2]) * amt,
+      ])
+      bumps[c].push(0.82 + rng() * 0.18)     // slight per-block face-height variation
+    }
+  }
+
+  const H = new Float32Array(size * size)
+  const cCanvas = document.createElement('canvas')
+  cCanvas.width = cCanvas.height = size
+  const cCtx = cCanvas.getContext('2d')
+  const cImg = cCtx.createImageData(size, size)
+  const cData = cImg.data
+  for (let z = 0; z < size; z++) {
+    const course = Math.floor(z / COURSE_H)
+    const offset = (course % 2) * (BLOCK_W / 2)          // running bond: half-block per course
+    const zin = z % COURSE_H                             // position within the course
+    for (let x = 0; x < size; x++) {
+      const xo = (x + offset) % size
+      const block = Math.floor(xo / BLOCK_W)
+      const xin = xo % BLOCK_W
+      // Distance to the nearest joint (course edge or block edge), 0 at the joint centre.
+      const dj = Math.min(zin, COURSE_H - 1 - zin, xin, BLOCK_W - 1 - xin)
+      // Beveled plateau: mortar floor → chamfer over ~4 px → block face (per-block height).
+      const face = bumps[course % nCourses][block % nBlocks]
+      const t = clamp01((dj - MORTAR) / 4)
+      const h = 0.25 + smooth(t) * (face - 0.25)
+      // Gentle per-pixel roughness on the face so blocks don't read machine-flat.
+      const rough = (rng() - 0.5) * 0.05 * t
+      H[z * size + x] = h + rough
+
+      const [r, g, b] = t > 0 ? tints[course % nCourses][block % nBlocks] : [0x4c, 0x49, 0x44]
+      const n = 0.82 + 0.36 * (h)                         // crevices darken, faces lift
+      const j = (z * size + x) * 4
+      cData[j + 0] = clamp01(r * n / 255) * 255
+      cData[j + 1] = clamp01(g * n / 255) * 255
+      cData[j + 2] = clamp01(b * n / 255) * 255
+      cData[j + 3] = 255
+    }
+  }
+  cCtx.putImageData(cImg, 0, 0)
+
+  // Normal map — same central-difference encoder as the cobble field.
+  const STRENGTH = 2.2
+  const nCanvas = document.createElement('canvas')
+  nCanvas.width = nCanvas.height = size
+  const nCtx = nCanvas.getContext('2d')
+  const nImg = nCtx.createImageData(size, size)
+  const nData = nImg.data
+  const at = (x, z) => H[(((z % size) + size) % size) * size + (((x % size) + size) % size)]
+  for (let z = 0; z < size; z++) {
+    for (let x = 0; x < size; x++) {
+      const dX = (at(x - 1, z) - at(x + 1, z)) * STRENGTH
+      const dY = (at(x, z - 1) - at(x, z + 1)) * STRENGTH
+      const inv = 1 / Math.sqrt(dX * dX + dY * dY + 1)
+      const j = (z * size + x) * 4
+      nData[j + 0] = (dX * inv * 0.5 + 0.5) * 255
+      nData[j + 1] = (dY * inv * 0.5 + 0.5) * 255
+      nData[j + 2] = (inv * 0.5 + 0.5) * 255
+      nData[j + 3] = 255
+    }
+  }
+  nCtx.putImageData(nImg, 0, 0)
+
+  const map = new THREE.CanvasTexture(cCanvas)
+  map.colorSpace = THREE.SRGBColorSpace
+  map.wrapS = map.wrapT = THREE.RepeatWrapping
+  const normalMap = new THREE.CanvasTexture(nCanvas)
+  normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping
+  return { map, normalMap }
+}

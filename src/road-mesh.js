@@ -38,6 +38,7 @@
 import * as THREE from 'three'
 import { CHUNK_SIZE } from './terrain.js'
 import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: shared procedural detail
+import { makeMasonryTextures } from './stone-texture.js' // FEAT-40: portal-ring masonry
 import { crownProfile, potholeNoise, signedCurvature, earClip } from './road-carve.js'
 // roadQuality / hashRunKey / constants moved to road-quality.js (Plan 09-06) to break the
 // terrain.js → road-mesh.js → terrain.js circular import that SURF-06 would otherwise create.
@@ -906,6 +907,35 @@ export class RoadMeshSystem {
             this._scene.add(mesh)
             meshes.push(mesh)
             geometries.push(geo)
+
+            // ── FEAT-40: tunnel bore lining + portal headwalls over this slice ──────────────
+            // Spans live on the net entry (run-global arc, set by the assembly tunnel pass).
+            // Each slice builds only its own overlap [arcS0,arcS1]∩[s0,s1] and each portal is
+            // built by the ONE slice whose arc range contains it — streams with the tile like
+            // everything else. (Untrimmed arcS0/arcS1: bores are ≥ endMargin from junctions.)
+            const tSpans = this._road._network?.get(runKey)?.tunnelSpans
+            if (tSpans) {
+                const addTMesh = (g, mat) => {
+                    if (!g) return
+                    const m = new THREE.Mesh(g, mat)
+                    m.receiveShadow = true
+                    if (this._meshesVisible === false) m.visible = false
+                    this._scene.add(m)
+                    meshes.push(m)
+                    geometries.push(g)
+                }
+                // Slices can be stored REVERSED (E→W: arcS0 > arcS1) — normalize before the
+                // overlap/containment tests or bores in reversed slices silently get no tube
+                // (the missing-pipe bug: whichever direction the slicer happened to run decided
+                // whether a tunnel's lining existed).
+                const sLo = Math.min(arcS0, arcS1), sHi = Math.max(arcS0, arcS1)
+                for (const sp of tSpans) {
+                    const a = Math.max(sp.s0, sLo), b = Math.min(sp.s1, sHi)
+                    if (b - a > 0.5) addTMesh(this.buildTunnelTube(runKey, a, b, sp, this._params), this._getTunnelMaterial())
+                    if (sp.s0 >= sLo && sp.s0 < sHi) addTMesh(this.buildPortalRing(runKey, sp.s0, -1, this._params), this._getPortalMaterial())
+                    if (sp.s1 >= sLo && sp.s1 < sHi) addTMesh(this.buildPortalRing(runKey, sp.s1, +1, this._params), this._getPortalMaterial())
+                }
+            }
         }
 
         // ── Junction footprints for nodes assigned to this tile ────────────────
@@ -951,6 +981,197 @@ export class RoadMeshSystem {
         // D1 (plan 09-19): stamp the road generation this tile was built against so
         // syncToChunkRing can detect stale tiles and re-enqueue them on mismatch.
         this._tileMeshMap.set(key, { meshes, geometries, builtGeneration: this._road.roadGeneration() })
+    }
+
+    // ── FEAT-40: tunnel bore lining + portal headwalls ────────────────────────
+    // Reference look: short mountain cut tunnel — semicircular concrete half-tube bore (dark
+    // interior, daylight visible at the far end), rough-stone headwall face at each portal,
+    // raw hillside running over the top (the terrain skin is NOT carved over a bore span).
+
+    /**
+     * Concrete half-tube lining swept along [sA,sB] of a run (world-space geometry).
+     * Cross-section: semicircular arch of tunnelBoreRadius springing at road level ±R, plus a
+     * DIRT APRON from under the ribbon edge out to the wall base. The apron rides the exact
+     * carve dirt surface (_carveDirtY formula: gradeY + crown + camber tilt − clearance) so it
+     * meets the carved open cut flush at the mouths AND floors the bore interior — the terrain
+     * mesh deliberately keeps the raw hill over a bore span (no carve), so without the apron
+     * the ribbon floats over a void between its edge and the tube wall. Nudged 5 cm below the
+     * carve dirt so it never z-fights the carved terrain inside the 4 m portal inset. Vertex
+     * colors fake the bore's darkness: full brightness at the portals easing to ~25 % deep
+     * inside, so the interior reads dark while headlights (real spotlights) still light it.
+     * Frame per ring = runPointAt centre + runProfile tangent — the exact ribbon frame, so the
+     * tube tracks the road through curves. Pure fn of the network + params (D-16).
+     *
+     * @returns {THREE.BufferGeometry|null}
+     */
+    buildTunnelTube(runKey, sA, sB, span, params) {
+        const road = this._road
+        if (!road.runPointAt || !road.runProfile) return null
+        const R = params.tunnelBoreRadius ?? 8
+        const SEG = 20                       // arch segments (θ 0..π)
+        const halfWidth   = params.roadHalfWidth       ?? 5
+        const crownH      = params.crownHeight          ?? 0.05
+        const clearance   = params.roadClearanceMargin  ?? 0.25
+        const APRON_IN    = Math.min(halfWidth - 0.8, R - 0.5)  // tucked under the ribbon edge
+        const APRON_DROP  = 0.05             // m below carve dirt (kills mouth z-fight)
+        const inner = Math.max(2, Math.ceil((sB - sA) / 3) + 1)
+        // Proud mouth: at a true span end (portal), one extra ring extruded 1.5 m OUT along the end
+        // tangent so the tube exits the shader-cut terrain hole and meets the masonry ring.
+        const extA = Math.abs(sA - span.s0) < 1e-6, extB = Math.abs(sB - span.s1) < 1e-6
+        const rings = inner + (extA ? 1 : 0) + (extB ? 1 : 0)
+        const vpr = SEG + 5                  // apronR(2) + (SEG+1 arch verts) + apronL(2)
+
+        const pos = new Float32Array(rings * vpr * 3)
+        const col = new Float32Array(rings * vpr * 3)
+        const uv  = new Float32Array(rings * vpr * 2)
+        const prof = { gradeY: 0, camberRad: 0, tx: 1, tz: 0 }
+        let vi = 0, ui = 0
+        for (let r = 0; r < rings; r++) {
+            const ir = Math.min(inner - 1, Math.max(0, r - (extA ? 1 : 0)))
+            const s = sA + (sB - sA) * (ir / (inner - 1))
+            const c = road.runPointAt(runKey, s)
+            if (!c) return null
+            road.runProfile(s, runKey, prof)
+            // Extrusion rings reuse the end frame, pushed out along the tangent.
+            const ext = (extA && r === 0) ? -1.5 : (extB && r === rings - 1) ? 1.5 : 0
+            if (ext) { c.x += prof.tx * ext; c.z += prof.tz * ext }
+            // rightDir chosen so a vertex at lateral L has signedLat = L (matches the carve frame).
+            const rx = prof.tz, rz = -prof.tx
+            // Brightness: 1 at the portals → 0.25 deep inside (25 m ramp, smoothstep).
+            const dPortal = Math.min(s - span.s0, span.s1 - s)
+            const t = Math.max(0, Math.min(1, dPortal / 25))
+            const shade = 1 - 0.75 * (t * t * (3 - 2 * t))
+            // Dirt-apron Y (relative to gradeY) — the _carveDirtY fold at lateral L, minus the drop.
+            const sinCam = Math.sin(prof.camberRad)
+            const dirtH = (L) => crownProfile(L, halfWidth, crownH) + L * sinCam - clearance - APRON_DROP
+            for (let k = 0; k < vpr; k++) {
+                let lat, h
+                if (k === 0)            { lat =  APRON_IN; h = dirtH(lat) }
+                else if (k === 1)       { lat =  R;        h = dirtH(lat) }
+                else if (k === vpr - 2) { lat = -R;        h = dirtH(lat) }
+                else if (k === vpr - 1) { lat = -APRON_IN; h = dirtH(lat) }
+                else {
+                    const th = Math.PI * (k - 2) / SEG
+                    lat = R * Math.cos(th); h = R * Math.sin(th)
+                }
+                pos[vi]     = c.x + rx * lat
+                pos[vi + 1] = prof.gradeY + h
+                pos[vi + 2] = c.z + rz * lat
+                // Apron verts tint dirt-brown (vertex color × concrete base ≈ shoulder dirt).
+                const apron = k < 2 || k > vpr - 3
+                col[vi]     = shade * (apron ? 0.80 : 1)
+                col[vi + 1] = shade * (apron ? 0.66 : 1)
+                col[vi + 2] = shade * (apron ? 0.52 : 1)
+                vi += 3
+                uv[ui] = s * 0.08; uv[ui + 1] = k / (vpr - 1); ui += 2
+            }
+        }
+        const idx = []
+        for (let r = 0; r < rings - 1; r++) {
+            for (let k = 0; k < vpr - 1; k++) {
+                const a = r * vpr + k, b = a + vpr
+                idx.push(a, b, a + 1, a + 1, b, b + 1)
+            }
+        }
+        const geo = new THREE.BufferGeometry()
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+        geo.setAttribute('color',    new THREE.BufferAttribute(col, 3))
+        geo.setAttribute('uv',       new THREE.BufferAttribute(uv, 2))
+        geo.setIndex(idx)
+        geo.computeVertexNormals()
+        return geo
+    }
+
+    /**
+     * Masonry portal RING at run-arc `pArc` — no flat headwall (that read as a billboard slapped
+     * on the hillside). Instead a proud collar around the tube mouth, per the reference: a short
+     * extruded arch ring (outer band + front annulus + inner reveal), stone-textured. The terrain
+     * skin is shader-cut around the mouth (terrain.js uTunnelPos/uTunnelAxis discard), and the
+     * ring's outer radius overlaps that hole edge so the ragged cut hides behind it.
+     * `outSign` = which way along the run is OUT of the hill (−1 at s0, +1 at s1).
+     *
+     * @returns {THREE.BufferGeometry|null}
+     */
+    buildPortalRing(runKey, pArc, outSign, params) {
+        const road = this._road
+        if (!road.runPointAt || !road.runProfile) return null
+        const R    = params.tunnelBoreRadius ?? 8
+        // ROUT covers the portal-neck width (carve necks the cut to ~R+2.5 at the mouth — road.js
+        // PORTAL_TAPER_LEN) so the carved→raw stop at the portal line hides behind the collar.
+        const RIN  = R + 0.05, ROUT = R + 2.6     // reveal hugs the tube; wide headwall collar
+        const D0 = -0.8, D1 = 1.35                // extrusion: buried into the hill → proud of it
+        const SEG = 20
+        const c = road.runPointAt(runKey, pArc)
+        if (!c) return null
+        const prof = { gradeY: 0, camberRad: 0, tx: 1, tz: 0 }
+        road.runProfile(pArc, runKey, prof)
+        const rx = prof.tz, rz = -prof.tx
+        const ox = prof.tx * outSign, oz = prof.tz * outSign
+
+        // Three quad strips with duplicated verts (crisp edges): outer band (R_OUT, D0→D1),
+        // front annulus (D1, R_OUT→R_IN), inner reveal (R_IN, D1→D0). Rows are [r, d, v] where v
+        // is the CUMULATIVE cross-section distance — and u uses ONE shared reference radius for
+        // every row (per-row θ·r sheared the courses diagonally across the strips).
+        const RMID = (RIN + ROUT) / 2
+        const rows = [
+            [ROUT, D0, 0], [ROUT, D1, D1 - D0],
+            [ROUT, D1, D1 - D0], [RIN, D1, (D1 - D0) + (ROUT - RIN)],
+            [RIN, D1, (D1 - D0) + (ROUT - RIN)], [RIN, D0, 2 * (D1 - D0) + (ROUT - RIN)],
+        ]
+        const nTheta = SEG + 1
+        const pos = new Float32Array(rows.length * nTheta * 3)
+        const uv  = new Float32Array(rows.length * nTheta * 2)
+        let vi = 0, ui = 0
+        for (const [r, d, vRow] of rows) {
+            for (let k = 0; k < nTheta; k++) {
+                const th = Math.PI * k / SEG
+                const lat = r * Math.cos(th), h = r * Math.sin(th)
+                pos[vi]     = c.x + rx * lat + ox * d
+                pos[vi + 1] = prof.gradeY + h
+                pos[vi + 2] = c.z + rz * lat + oz * d
+                vi += 3
+                uv[ui] = th * RMID * 0.22; uv[ui + 1] = vRow * 0.22; ui += 2
+            }
+        }
+        const idx = []
+        for (let s = 0; s < rows.length; s += 2) {      // strip = row pair (s, s+1)
+            for (let k = 0; k < SEG; k++) {
+                const a = s * nTheta + k, b = (s + 1) * nTheta + k
+                idx.push(a, b, a + 1, a + 1, b, b + 1)
+            }
+        }
+        const geo = new THREE.BufferGeometry()
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+        geo.setAttribute('uv',       new THREE.BufferAttribute(uv, 2))
+        geo.setIndex(idx)
+        geo.computeVertexNormals()
+        return geo
+    }
+
+    // Bore lining: matte concrete, double-sided (seen from inside; outside is buried except at
+    // the portal rim), vertex-colored for the interior darkness ramp.
+    _getTunnelMaterial() {
+        if (!this._tunnelMaterial) {
+            this._tunnelMaterial = new THREE.MeshStandardMaterial({
+                color: 0xaaa7a0, roughness: 0.95, metalness: 0,
+                side: THREE.DoubleSide, vertexColors: true,
+            })
+        }
+        return this._tunnelMaterial
+    }
+
+    // Portal ring: procedural running-bond masonry (stone blocks + recessed mortar joints).
+    _getPortalMaterial() {
+        if (!this._portalMaterial) {
+            const tex = makeMasonryTextures(7130)
+            this._portalMaterial = new THREE.MeshStandardMaterial({
+                map: tex.map, normalMap: tex.normalMap,
+                // Slight lift + a whisper of emissive: the ring usually sits in the cut's shade.
+                color: 0xd6d0c2, emissive: 0x1c1b19, roughness: 1.0, metalness: 0,
+                side: THREE.DoubleSide,
+            })
+        }
+        return this._portalMaterial
     }
 
     // ── Junction footprint helpers ────────────────────────────────────────────
@@ -1048,14 +1269,392 @@ export class RoadMeshSystem {
             return (y != null && isFinite(y) ? y : fallbackY(x, z)) + apronLift
         }
 
+        // QUAL-16 rework: a degree-2 node is a road BENDING THROUGH, not a plaza. Instead of a
+        // wedge pad (which reads as a blob and leaves triangulation/weld gaps on the outside of the
+        // bend), sweep a full-width ribbon along the cheapest circular fillet joining the two mouth
+        // cross-sections (the arc is cached on the node by road.js _buildDeg2ArcGeom) — so the kink
+        // looks like any other curved road. Falls through to the cached pad ring below only if the
+        // fillet is degenerate (near-collinear / mouths on the wrong side).
+        if (node.legs.length === 2) {
+            const g = this._buildDeg2Ribbon(node, params, sampleY)
+            if (g) return g
+        }
+
         // ── Boundary: the welded pad ring is now built + cached in road.js (_buildJunctionRing, by
         // _networkRev) so it is the SINGLE source shared by the collision carve (_junctionPadCarve) and
         // this mesh — mesh == collision by construction. The fallback ladder (exact weld → shrunk fillets
-        // → legacy circle pad) + _ringSelfIntersects gate all live there now.
+        // → legacy circle pad) + _ringSelfIntersects gate all live there now (road.js).
         const ring = node.ring
         if (!ring || ring.length < 3) return null
 
         return this._buildPadGeometry(ring, sampleY)
+    }
+
+    /**
+     * QUAL-16: degree-2 kink as a swept curved ribbon (not a pad polygon).
+     *
+     * The two legs are one road bending through the node. Each mouth is the run's own cross-section
+     * at cutback + halfWidth/2 (the exact-weld point the pad also uses, overlapping the trimmed
+     * ribbon end). We fit the CHEAPEST circular arc tangent to both centerlines — the largest radius
+     * that still fits between the mouths, i.e. the gentlest, most driveable curve — then sweep a
+     * full-width strip [cA → tangentA → arc → tangentB → cB] along it. Vertex Y rides `sampleY`
+     * (the same asphalt-top field the ribbons + pads use → mesh == collision), so the connector is
+     * continuous with the two ribbons it welds to. Solid asphalt, aMark = 0 (markings feather out at
+     * junctions anyway — matches the pad's stripe contract).
+     *
+     * Returns a BufferGeometry, or null (degenerate fillet → caller falls back to the pad ladder):
+     * near-collinear legs (det ≈ 0), a mouth on the wrong side (t/r ≤ 0), or a radius so tight the
+     * inside edge would pinch (R < halfWidth). Pure fn of node + params + streamed network (D-16).
+     */
+    _buildDeg2Ribbon(node, params, sampleY) {
+        // QUAL-16: the fillet arc geometry is computed ONCE in road.js (_buildDeg2ArcGeom, cached on the
+        // node per _networkRev) so the mesh sweep here AND the terrain earthwork / collision
+        // (_resolveRoadSurface projects onto node.deg2) follow the SAME arc — mesh == collision through
+        // the bend, no scoop/facets. Null (degenerate/pinched fillet) → caller falls back to the pad ladder.
+        const arc = node.deg2
+        if (!arc || !arc.points || arc.points.length < 2) return null
+        const halfWidth = arc.halfWidth
+        // Longitudinal chord subdivision (mesh-only — arc.points, which the carve/physics
+        // projection consumes, is untouched): splits the ~3 m rung chords into SUB pieces so the
+        // strip tracks the curved connector-overlay grade field (the 1/(d²+1) leg blend curves
+        // sharply where the footprint passes close to a leg) to ~1 cm along-arc. XZ stays on the
+        // chords (sub-decimetre from the true arc); Y is re-sampled from the field per vertex,
+        // which is what kills the chord sag that let dirt poke through the ribbon.
+        const SUB = 4
+        const center = []
+        for (let i = 0; i < arc.points.length; i++) {
+            if (i > 0) {
+                const a = arc.points[i - 1], b = arc.points[i]
+                for (let k = 1; k < SUB; k++) {
+                    const f = k / SUB
+                    center.push({ x: a.x + (b.x - a.x) * f, z: a.z + (b.z - a.z) * f })
+                }
+            }
+            center.push(arc.points[i])
+        }
+
+        // ── Sweep a full-width strip. Per-vertex lateral = tangent rotated +90° (central differences). ──
+        // COLS interior columns (not just the two edges): the connector asphalt-top field
+        // (sampleRoadTopY now folds the QUAL-16 connector-overlay dom-blend grade) is CURVED both
+        // along and across the bend; a single 10 m-wide linear chord dips up to ~0.3 m below it
+        // mid-rung, dropping the drawn ribbon under the carved dirt (the z-fighting dirt interleave
+        // at sharp kinks). 9 columns bound the chord sag to ~1 cm — safely inside clearanceMargin.
+        const COLS = 9
+        const V = center.length * COLS
+        const positions = new Float32Array(V * 3)
+        const colors    = new Float32Array(V * 3)
+        for (let i = 0; i < center.length; i++) {
+            const p = center[i]
+            const a = center[Math.max(0, i - 1)], b = center[Math.min(center.length - 1, i + 1)]
+            let tx = b.x - a.x, tz = b.z - a.z
+            const tl = Math.hypot(tx, tz) || 1
+            tx /= tl; tz /= tl
+            const lx = -tz, lz = tx                       // +90° → left side of travel
+            for (let c = 0; c < COLS; c++) {
+                const off = halfWidth * (1 - 2 * c / (COLS - 1))   // +halfWidth (left) → −halfWidth (right)
+                const X = p.x + lx * off, Z = p.z + lz * off
+                const vi = i * COLS + c
+                positions[vi * 3] = X; positions[vi * 3 + 1] = sampleY(X, Z); positions[vi * 3 + 2] = Z
+                colors[vi * 3] = 0.15; colors[vi * 3 + 1] = 0.15; colors[vi * 3 + 2] = 0.17
+            }
+        }
+        const tris = []
+        for (let i = 0; i < center.length - 1; i++) {
+            for (let c = 0; c < COLS - 1; c++) {
+                const l0 = i * COLS + c, r0 = l0 + 1
+                const l1 = (i + 1) * COLS + c, r1 = l1 + 1
+                tris.push(l0, r0, l1, r0, r1, l1)
+            }
+        }
+        // Force UP-facing winding (same guard as the pad fill — flip if the strip came out CW).
+        let area2 = 0
+        for (let k = 0; k < tris.length; k += 3) {
+            const a = tris[k], b = tris[k + 1], c = tris[k + 2]
+            area2 += (positions[b * 3] - positions[a * 3]) * (positions[c * 3 + 2] - positions[a * 3 + 2])
+                   - (positions[c * 3] - positions[a * 3]) * (positions[b * 3 + 2] - positions[a * 3 + 2])
+        }
+        if (area2 > 0) for (let k = 0; k < tris.length; k += 3) { const tmp = tris[k + 1]; tris[k + 1] = tris[k + 2]; tris[k + 2] = tmp }
+
+        const geo = new THREE.BufferGeometry()
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+        geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3))
+        geo.setAttribute('aMark',    new THREE.BufferAttribute(new Float32Array(V * 4), 4))
+        geo.setIndex(new THREE.BufferAttribute(new Uint32Array(tris), 1))
+        geo.computeVertexNormals()
+        return geo
+    }
+
+    /**
+     * QUAL-11 exact-weld pad boundary. Each leg's mouth is the run's own cross-section chord at
+     * cutback + halfWidth/2 from the node (overlapping the trimmed ribbon end by halfWidth/2, so
+     * the ribbon's ragged ~2 m trim quantisation is always covered). Corners between consecutive
+     * legs — sorted CCW by MOUTH bearing about the node (leg-dir bearing misorders side-by-side
+     * near-parallel mouths) — connect A's departing ribbon-edge line to B's arriving edge line
+     * via _cornerJoin. edgePt side +1/−1 is the arriving/departing side of each leg in walk
+     * order, so a corner always spans the angular sector between consecutive mouths (no faceSide
+     * cross-product, which degenerates for the anti-parallel legs of a through road). A wide
+     * back-side gap (> STRAIGHT_GAP, n ≥ 3) connects straight — no phantom bulge behind a
+     * through road; at n = 2 the outside of the bend takes the corner join instead.
+     *
+     * Returns the XZ boundary ring (open, deduped) or null: crossing-classifier legs (no
+     * endpoint arc to weld to), degenerate frames, or a one-sided "pitchfork" cluster
+     * (QUAL-10 guard kept as-is: the node would sit on the pad edge → crescent spike).
+     * Pure fn of node + params + streamed network (window-invariant, D-16).
+     */
+    _junctionRingWeld(node, params, filletScale) {
+        const road = this._road
+        if (!road.runPointAt || !road.runProfile || !road._network) return null
+        const halfWidth = params.roadHalfWidth ?? 5
+        const nx = node.pos.x, nz = node.pos.z
+        const cutback = road.junctionCutbackDist ? road.junctionCutbackDist() : halfWidth * 2
+        const T = cutback + halfWidth * 0.5
+
+        const legs = []
+        for (const leg of node.legs) {
+            if (leg.arc === undefined || !leg.runKey) return null
+            const e = road._network.get(leg.runKey)
+            const cum = e?.polyCum
+            const len = cum ? cum[cum.length - 1] : 0
+            if (!(len > 1e-3)) return null
+            const s = leg.arc < 1e-6 ? 1 : -1                       // +arc direction away from node?
+            const mouthArc = leg.arc + s * Math.min(T, len * 0.45)  // short node↔node run: pull the mouth in
+            const c = road.runPointAt(leg.runKey, mouthArc)
+            if (!c) return null
+            const prof = road.runProfile(mouthArc, leg.runKey)
+            let dx = prof.tx * s, dz = prof.tz * s                  // outward unit dir (away from node)
+            const dl = Math.hypot(dx, dz)
+            if (dl < 1e-6) return null
+            dx /= dl; dz /= dl
+            legs.push({ cx: c.x, cz: c.z, dx, dz, bear: Math.atan2(c.x - nx, c.z - nz) })
+        }
+        legs.sort((a, b) => a.bear - b.bear)
+        const n = legs.length
+        if (n >= 3) {
+            let sx = 0, sz = 0
+            for (const l of legs) { sx += l.dx; sz += l.dz }
+            if (Math.hypot(sx, sz) / n > 0.55) return null   // pitchfork guard (QUAL-10)
+        }
+
+        const edgePt = (l, side) => ({ x: l.cx + (-l.dz) * side * halfWidth, z: l.cz + (l.dx) * side * halfWidth })
+        const filletR = (params.roadFilletRadius ?? 5) * filletScale
+        const ring = []
+        for (let i = 0; i < n; i++) {
+            const A = legs[i], B = legs[(i + 1) % n]
+            // Mouth chord of A: arriving-corner edge (+1) → departing-corner edge (−1). This IS
+            // the ribbon end cross-section in XZ — the exact weld.
+            ring.push(edgePt(A, 1))
+            const eA = edgePt(A, -1)
+            ring.push(eA)
+            const eB = edgePt(B, 1)
+            let gap = B.bear - A.bear
+            while (gap <= 0) gap += 2 * Math.PI
+            if (gap > STRAIGHT_GAP && n >= 3) continue   // straight back side; eB is pushed next iteration
+            for (const p of this._cornerJoin(eA, A, eB, B, filletR, T)) ring.push(p)
+        }
+        // Drop consecutive duplicates (incl. the wrap seam) — a shrunk fillet can land on a mouth corner.
+        const out = []
+        for (const p of ring) {
+            const q = out[out.length - 1]
+            if (!q || Math.hypot(p.x - q.x, p.z - q.z) > 0.05) out.push(p)
+        }
+        while (out.length >= 2 && Math.hypot(out[0].x - out[out.length - 1].x, out[0].z - out[out.length - 1].z) <= 0.05) out.pop()
+        return out.length >= 3 ? out : null
+    }
+
+    /**
+     * Corner points joining leg A's departing ribbon-edge line to leg B's arriving edge line
+     * (QUAL-11). eA/eB are the mouth edge endpoints; returned points lie BETWEEN them (both
+     * exclusive). A true tangent-arc fillet where the two edge lines properly intersect on the
+     * node side (radius shrunk to fit short mouth edges); otherwise a tangent-matched cubic
+     * Hermite (near-parallel non-collinear edges, divergent lines, or an intersection so far out
+     * the fillet would excurse — e.g. the outside of a deg-2 kink bend).
+     */
+    _cornerJoin(eA, A, eB, B, filletR, T) {
+        // Edge lines walked toward the node: LA(t) = eA − t·dA, LB(u) = eB − u·dB (t, u > 0).
+        // Intersection C solves t·dA − u·dB = eA − eB.
+        const qx = eA.x - eB.x, qz = eA.z - eB.z
+        const det = B.dx * A.dz - A.dx * B.dz
+        if (Math.abs(det) > 1e-4) {
+            const t = (B.dx * qz - B.dz * qx) / det
+            const u = (A.dx * qz - A.dz * qx) / det
+            const tMax = T * 3.5
+            if (t > 0.5 && u > 0.5 && t < tMax && u < tMax) {
+                const C = { x: eA.x - A.dx * t, z: eA.z - A.dz * t }
+                const cosPhi = Math.max(-1, Math.min(1, A.dx * B.dx + A.dz * B.dz))
+                const phi = Math.acos(cosPhi)   // angle between rays C→eA (+dA) and C→eB (+dB)
+                if (phi > 0.06 && phi < Math.PI - 0.06) {
+                    const tanHalf = Math.tan(phi / 2)
+                    const r = Math.min(filletR, Math.min(t, u) * tanHalf * 0.95)
+                    if (r < 0.15) return [C]   // too tight to round — sharp apex
+                    const L = r / tanHalf
+                    const TA = { x: C.x + A.dx * L, z: C.z + A.dz * L }
+                    const TB = { x: C.x + B.dx * L, z: C.z + B.dz * L }
+                    let bx = A.dx + B.dx, bz = A.dz + B.dz
+                    const bl = Math.hypot(bx, bz) || 1
+                    const h = r / Math.sin(phi / 2)
+                    const O = { x: C.x + (bx / bl) * h, z: C.z + (bz / bl) * h }
+                    const a0 = Math.atan2(TA.x - O.x, TA.z - O.z)
+                    let dAng = Math.atan2(TB.x - O.x, TB.z - O.z) - a0
+                    while (dAng > Math.PI) dAng -= 2 * Math.PI
+                    while (dAng < -Math.PI) dAng += 2 * Math.PI
+                    const steps = Math.max(2, Math.min(16, Math.ceil(Math.abs(dAng) * r / 1.2)))
+                    const arc = [TA]
+                    for (let k = 1; k < steps; k++) {
+                        const ang = a0 + dAng * (k / steps)
+                        arc.push({ x: O.x + Math.sin(ang) * r, z: O.z + Math.cos(ang) * r })
+                    }
+                    arc.push(TB)
+                    return arc
+                }
+            }
+        }
+        // Cubic Hermite matching both endpoints + edge tangents (a single tangent arc is
+        // ill-defined here). Boundary travel: leave eA inward (−dA), arrive at eB outward (+dB).
+        const dist = Math.hypot(eB.x - eA.x, eB.z - eA.z)
+        if (dist < 0.05) return []
+        const m0x = -A.dx * dist, m0z = -A.dz * dist
+        const m1x = B.dx * dist,  m1z = B.dz * dist
+        const K = Math.max(4, Math.min(16, Math.ceil(dist / 1.5)))
+        const pts = []
+        for (let k = 1; k < K; k++) {
+            const tt = k / K, t2 = tt * tt, t3 = t2 * tt
+            const h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + tt, h01 = -2 * t3 + 3 * t2, h11 = t3 - t2
+            pts.push({
+                x: h00 * eA.x + h10 * m0x + h01 * eB.x + h11 * m1x,
+                z: h00 * eA.z + h10 * m0z + h01 * eB.z + h11 * m1z,
+            })
+        }
+        return pts
+    }
+
+    /**
+     * XZ self-intersection test for an assembled pad boundary (QUAL-11 simplicity check —
+     * guarantee constructively, then VERIFY; a failing ring falls down the fallback ladder).
+     * Proper-crossing test over all non-adjacent segment pairs, O(m²) with m ≲ 80 — once per
+     * node per build.
+     */
+    _ringSelfIntersects(ring) {
+        const m = ring.length
+        const cross = (ax, az, bx, bz) => ax * bz - az * bx
+        for (let i = 0; i < m; i++) {
+            const a = ring[i], b = ring[(i + 1) % m]
+            for (let j = i + 2; j < m; j++) {
+                if (i === 0 && j === m - 1) continue   // wrap-adjacent pair
+                const c = ring[j], d = ring[(j + 1) % m]
+                const d1 = cross(b.x - a.x, b.z - a.z, c.x - a.x, c.z - a.z)
+                const d2 = cross(b.x - a.x, b.z - a.z, d.x - a.x, d.z - a.z)
+                const d3 = cross(d.x - c.x, d.z - c.z, a.x - c.x, a.z - c.z)
+                const d4 = cross(d.x - c.x, d.z - c.z, b.x - c.x, b.z - c.z)
+                if (((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0))) return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * QUAL-10 circle-pad boundary — the fallback ladder's last rung, and the only path for
+     * crossing-classifier nodes (run-interior legs carry no endpoint arc to weld to). Straight
+     * node+dir·T mouths flared 1.6× (adaptively capped so tight corners can't collide), joined
+     * by node-centred corner arcs — topologically simple by construction, at the cost of the
+     * flare-hidden seam QUAL-11 removes on the weld path. Original inline version: 9337959.
+     */
+    _junctionRingLegacy(node, params) {
+        const halfWidth = params.roadHalfWidth ?? 5
+        const nx = node.pos.x
+        const nz = node.pos.z
+
+        // Merge near-parallel legs: the graph sometimes routes two runs out of a node in almost the same
+        // direction — their overlapping mouths would self-intersect the boundary (→ flipped-sliver spikes).
+        const legs = []
+        for (const leg of node.legs) {
+            let m = null
+            for (const e of legs) { if (e.dir.x * leg.dir.x + e.dir.z * leg.dir.z > 0.94) { m = e; break } }
+            if (m) { m.dir.x += leg.dir.x; m.dir.z += leg.dir.z; const L = Math.hypot(m.dir.x, m.dir.z) || 1; m.dir.x /= L; m.dir.z /= L }
+            else legs.push({ dir: { x: leg.dir.x, z: leg.dir.z } })
+        }
+        legs.sort((a, b) => Math.atan2(a.dir.x, a.dir.z) - Math.atan2(b.dir.x, b.dir.z))
+        const n = legs.length
+        if (n < 2) return null
+        // Skip ONE-SIDED pseudo-junctions (all legs splay one way → node on the pad edge → crescent spike).
+        let sx = 0, sz = 0
+        for (const l of legs) { sx += l.dir.x; sz += l.dir.z }
+        if (Math.hypot(sx, sz) / n > 0.55) return null
+
+        // Pad mouth: STRAIGHT node+dir·T placement (keeps the boundary topologically simple → robust, no
+        // self-intersection). T is a hair past the ribbon cut so the pad overlaps the trimmed ribbon end.
+        // The mouth is FLARED wider than the ribbon (flareHW > halfWidth) so it generously covers the
+        // trimmed end even where a curved approach offsets it laterally — roads fan into the junction and
+        // the seam is hidden, riding the carved-flat plaza (_junctionCarve).
+        const cutback = this._road.junctionCutbackDist ? this._road.junctionCutbackDist() : halfWidth * 2
+        const T = cutback + halfWidth * 0.5
+        // Adaptive flare: aim for LEGACY_PAD_FLARE× the road half-width, but CAP it so adjacent mouths
+        // (θ apart, T out) never collide — a wide mouth at a tight corner would self-intersect the
+        // boundary (spike). So open junctions get the full flare (covers the curved-end seam); tight ones
+        // narrow automatically.
+        let minHalf = Math.PI / 2
+        for (let i = 0; i < n; i++) {
+            const a = legs[i].dir, b = legs[(i + 1) % n].dir
+            const dot = Math.max(-1, Math.min(1, a.x * b.x + a.z * b.z))
+            minHalf = Math.min(minHalf, Math.acos(dot) * 0.5)
+        }
+        const flareCap = Math.max(halfWidth, T * Math.sin(minHalf) * 0.9)
+        const flareHW = Math.min(halfWidth * LEGACY_PAD_FLARE, flareCap)
+        const legEdge = (leg, side) => {
+            const d = leg.dir
+            return { x: nx + d.x * T + (-d.z) * side * flareHW, z: nz + d.z * T + (d.x) * side * flareHW }
+        }
+        // Which perpendicular side (±1) of `leg` faces `other`.
+        const faceSide = (leg, other) =>
+            ((-leg.dir.z) * other.dir.x + (leg.dir.x) * other.dir.z) >= 0 ? 1 : -1
+
+        // ── Boundary polygon: leg mouths + rounded corners ─────────────────────────────────────
+        // Corner between adjacent legs = a node-centred circular arc between their facing mouth edges
+        // (bounded → no spike, unlike an edge-line intersection which flies to infinity at shallow
+        // angles). If the angular gap is wide (> STRAIGHT_GAP, i.e. a through road's back side with no
+        // road between the two legs) connect STRAIGHT so there's no phantom bulge behind the through road.
+        const ARC_SAMPLES = 5
+        const poly = []
+        for (let i = 0; i < n; i++) {
+            const legA = legs[i]
+            const legB = legs[(i + 1) % n]
+            const legP = legs[(i - 1 + n) % n]
+            // Mouth of legA: edge facing the previous leg → edge facing legB (spans the road width).
+            poly.push(legEdge(legA, faceSide(legA, legP)))
+            const eA = legEdge(legA, faceSide(legA, legB))
+            poly.push(eA)
+            const eB = legEdge(legB, faceSide(legB, legA))
+            // Angular gap between the two legs around the node.
+            let gap = Math.atan2(legB.dir.x, legB.dir.z) - Math.atan2(legA.dir.x, legA.dir.z)
+            while (gap < 0) gap += 2 * Math.PI
+            while (gap > 2 * Math.PI) gap -= 2 * Math.PI
+            const wide = Math.min(gap, 2 * Math.PI - gap) > STRAIGHT_GAP
+            if (!wide) {
+                // Node-centred arc from eA to eB (short way).
+                const rA = Math.hypot(eA.x - nx, eA.z - nz), rB = Math.hypot(eB.x - nx, eB.z - nz)
+                const r = (rA + rB) * 0.5
+                const bA = Math.atan2(eA.x - nx, eA.z - nz)
+                let dB = Math.atan2(eB.x - nx, eB.z - nz) - bA
+                while (dB >  Math.PI) dB -= 2 * Math.PI
+                while (dB < -Math.PI) dB += 2 * Math.PI
+                for (let s = 1; s < ARC_SAMPLES; s++) {
+                    const bear = bA + dB * (s / ARC_SAMPLES)
+                    poly.push({ x: nx + Math.sin(bear) * r, z: nz + Math.cos(bear) * r })
+                }
+            }
+            // else: straight — eB is pushed by the next iteration as legB's "facing previous" mouth start.
+        }
+        if (poly.length < 3) return null
+        // The boundary was walked in leg order (mouth → corner → next mouth …), so it is ALREADY an
+        // ordered simple ring — do NOT bearing-sort it (that assumes the node is interior, which fails for
+        // a one-sided "pitchfork" junction where all legs splay to one side, scrambling it into a
+        // self-intersecting polygon → spikes). Just drop consecutive duplicates (incl. the wrap seam).
+        const ring0 = []
+        for (const p of poly) {
+            const q = ring0[ring0.length - 1]
+            if (!q || Math.hypot(p.x - q.x, p.z - q.z) > 0.05) ring0.push(p)
+        }
+        while (ring0.length >= 2 && Math.hypot(ring0[0].x - ring0[ring0.length - 1].x, ring0[0].z - ring0[ring0.length - 1].z) <= 0.05) ring0.pop()
+        return ring0.length >= 3 ? ring0 : null
     }
 
     /**
