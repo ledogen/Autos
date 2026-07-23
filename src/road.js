@@ -35,7 +35,7 @@
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
-import { crownProfile, potholeNoise, signedCurvature, arcPrimitiveConnect, smoothGradeInPlace, applyTunnelPassInPlace } from './road-carve.js'
+import { crownProfile, potholeNoise, signedCurvature, arcPrimitiveConnect, smoothGradeInPlace, applyTunnelPassInPlace, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
 import { centerlineFromDescriptors, CenterlineCurve, Centerline } from './centerline.js'
 import { delaunay, urquhartEdges } from './road-graph.js'
 
@@ -2376,11 +2376,11 @@ export class RoadSystem {
         const p = this._params || {}
         return {
             minDepth:    (p.tunnelsEnabled ?? true) ? (p.tunnelMinDepth ?? 8) : 0,
-            minLen:      p.tunnelMinLen ?? 15,
+            minLen:      p.tunnelMinLen ?? 26,
             portalDepth: p.tunnelPortalDepth ?? 1.5,
             maxGrade:    p.tunnelMaxGrade ?? 0.12,
-            maxLen:      p.tunnelMaxLen ?? 700,
-            boreRadius:  p.tunnelBoreRadius ?? 6.5,
+            maxLen:      p.tunnelMaxLen ?? 200,
+            boreRadius:  p.tunnelBoreRadius ?? 8,
             endMargin:   (p.roadJunctionBlendLength ?? 30) + 6,
         }
     }
@@ -3143,7 +3143,13 @@ export class RoadSystem {
         // resolver footprint must extend to the SAME toe — otherwise a wheel on the far fill embankment
         // (>carveHalfWidth + shoulderWidth lateral) returns "no road" and drops through the raised dirt.
         const maxEmbankmentToe = p.roadMaxEmbankmentToe ?? 10
-        const footHW = Math.min(halfWidth + carveExtraWidth, minRadius) + maxEmbankmentToe
+        // FEAT-40: the interior footprint must reach the deep-bank toe (base cap + extension) or
+        // the outer half of a deep cut wall resolves "no road" and the mesh/physics bank truncates
+        // to raw mid-slope. The BUG-21 offEnd apex-sliver gate deliberately stays at the BASE
+        // footprint (endHW): widening the radial fallback would resurrect the "run merely ending
+        // ~40 m off the query" teleport artifact it exists to reject.
+        const endHW  = Math.min(halfWidth + carveExtraWidth, minRadius) + maxEmbankmentToe
+        const footHW = endHW + DEEP_BANK_TOE_EXTRA
 
         const qtx = Math.floor(wx / CHUNK_SIZE)
         const qtz = Math.floor(wz / CHUNK_SIZE)
@@ -3164,7 +3170,7 @@ export class RoadSystem {
         // candidate's arcS is already clamped to the run end, so runProfile gives the endpoint gradeY —
         // C0 with the sibling arm, which shares the anchor (synced run-end camber, BUG-19/QUAL-05).
         let bestEndD2 = Infinity, bestEndPr = null, bestEndRunKey = ''
-        const footHW2 = footHW * footHW
+        const endHW2 = endHW * endHW
         for (let dx = -1; dx <= 1; dx++) {
             for (let dz = -1; dz <= 1; dz++) {
                 const segs = this._tiles.get(`${qtx + dx},${qtz + dz}`)
@@ -3180,7 +3186,7 @@ export class RoadSystem {
                     if (!pr) continue
                     const latDist = Math.abs(pr.signedLat)
                     if (pr.offEnd) {   // BUG-21 apex-sliver candidate (radial gate, weakest priority)
-                        if (pr.d2 <= footHW2 && pr.d2 < bestEndD2) { bestEndD2 = pr.d2; bestEndPr = pr; bestEndRunKey = runKey }
+                        if (pr.d2 <= endHW2 && pr.d2 < bestEndD2) { bestEndD2 = pr.d2; bestEndPr = pr; bestEndRunKey = runKey }
                         continue
                     }
                     if (latDist > footHW) continue
@@ -3294,7 +3300,7 @@ export class RoadSystem {
             const adx = wx - nr.point.x, adz = wz - nr.point.z
             const aArc = (nr.arcS ?? 0) + adx * nr.tangent.x + adz * nr.tangent.z
             if (!this.tunnelSpanAt(nr.runKey ?? '', aArc)) break
-            const topY = this.runProfile(aArc, nr.runKey).gradeY + (p.tunnelBoreRadius ?? 6.5)
+            const topY = this.runProfile(aArc, nr.runKey).gradeY + (p.tunnelBoreRadius ?? 8)
             if (queryY < topY) break                     // in the bore: this run owns the probe
             (_excl ??= new Set()).add(nr.runKey ?? '')
             if (_excl.size > 3) { nr = null; break }     // stacked-bore backstop
@@ -3605,7 +3611,11 @@ export class RoadSystem {
         const maxEmbankmentToe = p.roadMaxEmbankmentToe ?? 10
         const fillToe = halfWidth + shoulderWidth + Math.max(0, designY - rawAmp) * fillSlope
         const cutToe  = halfWidth + shoulderWidth + Math.max(0, rawAmp - designY) * cutSlope
-        const toeExt  = Math.min(Math.max(fillToe, cutToe), carveHalfWidth + maxEmbankmentToe)
+        // FEAT-40: DEEP_BANK_TOE_EXTRA lets tunnel-scale cuts (15–25 m) keep their design slope
+        // instead of compressing into a near-vertical staircased face at the base cap. Shallow
+        // banks never reach the base cap, so this only widens genuinely deep walls. Must stay
+        // ≤ the _resolveRoadSurface interior footprint (same constant folded there).
+        const toeExt  = Math.min(Math.max(fillToe, cutToe), carveHalfWidth + maxEmbankmentToe + DEEP_BANK_TOE_EXTRA)
         if (latDist > toeExt) return null   // beyond the fill/cut toe — unaffected terrain
 
         const ramp = Math.max(shoulderWidth, toeExt - carveHalfWidth)

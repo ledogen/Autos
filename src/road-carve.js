@@ -11,6 +11,19 @@
  * Pure functions — deterministic (D-16). No Math.random, no Date, no session state.
  */
 
+// ── FEAT-40: deep-bank toe extension ─────────────────────────────────────────────────────
+// How far the fill/cut toe cap may stretch BEYOND carveHalfWidth + roadMaxEmbankmentToe when
+// the bank is deep. Normal road earthwork stays under the grade-deviation cap, so its toe
+// never hits the base cap and nothing changes; the tunnel pass's summit cuts run 15–25 m deep,
+// and squeezing that wall into the 10 m base apron made a near-vertical face that staircased
+// on the terrain grid (QUAL-06 residual). The extension lets a deep cut keep its design slope
+// (roadCutSlope) out to ~28 m of depth. ONE constant, THREE synced consumers (they must agree
+// or a wheel on the outer bank falls through the mesh):
+//   road.js _carveCrossSection  (toe cap)  ·  road.js _resolveRoadSurface (interior footprint)
+//   terrain.js _buildCarveTable (maxExt query bound)
+// NOT worker-mirrored (the carve table is main-thread; the Worker stores raw heights).
+export const DEEP_BANK_TOE_EXTRA = 18  // m
+
 // ── CARVE SYNC: function bodies below are embedded verbatim in terrain.js WORKER_SOURCE ──
 
 /**
@@ -345,11 +358,11 @@ export function applyTunnelPassInPlace(pts, opts, heightAt) {
     const N = pts.length
     if (N < 4) return null
     const minDepth    = opts.minDepth    ?? 8
-    const minBore     = opts.minLen      ?? 15
+    const minBore     = opts.minLen      ?? 26
     const portalDepth = opts.portalDepth ?? 1.5
     const maxGrade    = opts.maxGrade    ?? 0.12
-    const maxLen      = opts.maxLen      ?? 700
-    const boreRadius  = opts.boreRadius  ?? 6.5
+    const maxLen      = opts.maxLen      ?? 200
+    const boreRadius  = opts.boreRadius  ?? 8
     const endMargin   = opts.endMargin   ?? 36
     const CHORD_MIN   = 40                       // m — stage-1 summit chords shorter than this are noise
     if (!(minDepth > 0)) return null

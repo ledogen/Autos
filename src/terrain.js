@@ -32,6 +32,7 @@ import * as THREE from 'three'
 // QUAL-07: crownProfile no longer imported — the crown/camber fold moved into the one shared
 // RoadSystem._carveCrossSection; the mesh resolves (signedLat, arcS) per vertex and calls it.
 import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
+import { DEEP_BANK_TOE_EXTRA } from './road-carve.js'   // FEAT-40: deep-bank toe (carve maxExt sync)
 import { perfAdd } from './perf.js'  // TEMP perf triage (D-arc)
 
 // ── Module constants ───────────────────────────────────────────────────────
@@ -651,7 +652,7 @@ export class TerrainSystem {
         if (this._tunnelUniformRev !== rs._networkRev) {
             this._tunnelUniformRev = rs._networkRev
             this._tunnelPortalList = []
-            const R = (this._params.tunnelBoreRadius ?? 6.5) + 0.45
+            const R = (this._params.tunnelBoreRadius ?? 8) + 0.45
             for (const [runKey, e] of rs._network) {
                 if (!e.tunnelSpans) continue
                 for (const sp of e.tunnelSpans) {
@@ -1289,9 +1290,10 @@ export class TerrainSystem {
         const maxEmbankmentToe  = p.roadMaxEmbankmentToe ?? 10
 
         // Maximum lateral extent to bother querying: ribbon + carve core + the capped embankment apron.
-        // Mirrors the toe cap in _carveCrossSection (carveHalfWidth + maxEmbankmentToe) — the real bound
-        // on how far the fill/cut bank spreads — so no carved vertex is ever missed by this early-reject.
-        const maxExt = halfWidth + shoulderWidth + carveExtraWidth + maxEmbankmentToe + 4
+        // Mirrors the toe cap in _carveCrossSection (carveHalfWidth + maxEmbankmentToe +
+        // DEEP_BANK_TOE_EXTRA, FEAT-40 deep banks) — the real bound on how far the fill/cut bank
+        // spreads — so no carved vertex is ever missed by this early-reject.
+        const maxExt = halfWidth + shoulderWidth + carveExtraWidth + maxEmbankmentToe + DEEP_BANK_TOE_EXTRA + 4
 
         const originX = cx * S
         const originZ = cz * S

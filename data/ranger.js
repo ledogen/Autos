@@ -466,13 +466,13 @@ export const RANGER_PARAMS = {
                             //     that JUSTIFIES a tunnel — shallower crests stay earthwork
                             //     cuts. Also the stage-1 summit-cut trigger. The tunnel-count
                             //     lever: higher = only the juicy deep bores survive.
-  tunnelMinLen: 15,         // m — MIN BORE LENGTH; shorter covered stretches stay open cuttings
+  tunnelMinLen: 26,         // m — MIN BORE LENGTH; shorter covered stretches stay open cuttings
   tunnelPortalDepth: 1.5,   // m — terrain cover required ABOVE THE TUBE CROWN to bore (portal
                             //     line sits where the hill genuinely swallows the tube)
   tunnelMaxGrade: 0.12,     // abs grade cap on a stage-1 chord (vetoes degenerate steep chords)
-  tunnelMaxLen: 700,        // m — longest single bore; longer covered stretches stay open
+  tunnelMaxLen: 200,        // m — longest single bore; longer covered stretches stay open
                             //     (tunnels are spur shortcuts, not kilometre subways)
-  tunnelBoreRadius: 6.5,    // m — half-tube lining radius; also the physics bore-apex clearance
+  tunnelBoreRadius: 8,      // m — half-tube lining radius; also the physics bore-apex clearance
 
   // ── Crossing classifier (FEAT-07/11/13 foundation) ──────────────────────────────────────────────
   // road.js _detectJunctions() finds every inter-run / self-run XZ crossing and CLASSIFIES each by

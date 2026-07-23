@@ -996,7 +996,12 @@ export class RoadMeshSystem {
     /**
      * Concrete half-tube lining swept along [sA,sB] of a run (world-space geometry).
      * Cross-section: semicircular arch of tunnelBoreRadius springing at road level ±R, plus a
-     * short skirt below springing so the wall base is buried in the carved shoulder. Vertex
+     * DIRT APRON from under the ribbon edge out to the wall base. The apron rides the exact
+     * carve dirt surface (_carveDirtY formula: gradeY + crown + camber tilt − clearance) so it
+     * meets the carved open cut flush at the mouths AND floors the bore interior — the terrain
+     * mesh deliberately keeps the raw hill over a bore span (no carve), so without the apron
+     * the ribbon floats over a void between its edge and the tube wall. Nudged 5 cm below the
+     * carve dirt so it never z-fights the carved terrain inside the 4 m portal inset. Vertex
      * colors fake the bore's darkness: full brightness at the portals easing to ~25 % deep
      * inside, so the interior reads dark while headlights (real spotlights) still light it.
      * Frame per ring = runPointAt centre + runProfile tangent — the exact ribbon frame, so the
@@ -1007,15 +1012,19 @@ export class RoadMeshSystem {
     buildTunnelTube(runKey, sA, sB, span, params) {
         const road = this._road
         if (!road.runPointAt || !road.runProfile) return null
-        const R = params.tunnelBoreRadius ?? 6.5
+        const R = params.tunnelBoreRadius ?? 8
         const SEG = 20                       // arch segments (θ 0..π)
-        const SKIRT = 1.5                    // m below springing
+        const halfWidth   = params.roadHalfWidth       ?? 5
+        const crownH      = params.crownHeight          ?? 0.05
+        const clearance   = params.roadClearanceMargin  ?? 0.25
+        const APRON_IN    = Math.min(halfWidth - 0.8, R - 0.5)  // tucked under the ribbon edge
+        const APRON_DROP  = 0.05             // m below carve dirt (kills mouth z-fight)
         const inner = Math.max(2, Math.ceil((sB - sA) / 3) + 1)
         // Proud mouth: at a true span end (portal), one extra ring extruded 1.5 m OUT along the end
         // tangent so the tube exits the shader-cut terrain hole and meets the masonry ring.
         const extA = Math.abs(sA - span.s0) < 1e-6, extB = Math.abs(sB - span.s1) < 1e-6
         const rings = inner + (extA ? 1 : 0) + (extB ? 1 : 0)
-        const vpr = SEG + 3                  // skirtR + (SEG+1 arch verts) + skirtL
+        const vpr = SEG + 5                  // apronR(2) + (SEG+1 arch verts) + apronL(2)
 
         const pos = new Float32Array(rings * vpr * 3)
         const col = new Float32Array(rings * vpr * 3)
@@ -1037,18 +1046,27 @@ export class RoadMeshSystem {
             const dPortal = Math.min(s - span.s0, span.s1 - s)
             const t = Math.max(0, Math.min(1, dPortal / 25))
             const shade = 1 - 0.75 * (t * t * (3 - 2 * t))
+            // Dirt-apron Y (relative to gradeY) — the _carveDirtY fold at lateral L, minus the drop.
+            const sinCam = Math.sin(prof.camberRad)
+            const dirtH = (L) => crownProfile(L, halfWidth, crownH) + L * sinCam - clearance - APRON_DROP
             for (let k = 0; k < vpr; k++) {
                 let lat, h
-                if (k === 0)            { lat =  R; h = -SKIRT }
-                else if (k === vpr - 1) { lat = -R; h = -SKIRT }
+                if (k === 0)            { lat =  APRON_IN; h = dirtH(lat) }
+                else if (k === 1)       { lat =  R;        h = dirtH(lat) }
+                else if (k === vpr - 2) { lat = -R;        h = dirtH(lat) }
+                else if (k === vpr - 1) { lat = -APRON_IN; h = dirtH(lat) }
                 else {
-                    const th = Math.PI * (k - 1) / SEG
+                    const th = Math.PI * (k - 2) / SEG
                     lat = R * Math.cos(th); h = R * Math.sin(th)
                 }
                 pos[vi]     = c.x + rx * lat
                 pos[vi + 1] = prof.gradeY + h
                 pos[vi + 2] = c.z + rz * lat
-                col[vi] = col[vi + 1] = col[vi + 2] = shade
+                // Apron verts tint dirt-brown (vertex color × concrete base ≈ shoulder dirt).
+                const apron = k < 2 || k > vpr - 3
+                col[vi]     = shade * (apron ? 0.80 : 1)
+                col[vi + 1] = shade * (apron ? 0.66 : 1)
+                col[vi + 2] = shade * (apron ? 0.52 : 1)
                 vi += 3
                 uv[ui] = s * 0.08; uv[ui + 1] = k / (vpr - 1); ui += 2
             }
@@ -1082,7 +1100,7 @@ export class RoadMeshSystem {
     buildPortalRing(runKey, pArc, outSign, params) {
         const road = this._road
         if (!road.runPointAt || !road.runProfile) return null
-        const R    = params.tunnelBoreRadius ?? 6.5
+        const R    = params.tunnelBoreRadius ?? 8
         const RIN  = R + 0.05, ROUT = R + 0.95    // reveal hugs the tube; band overlaps the skin hole
         const D0 = -0.8, D1 = 1.35                // extrusion: buried into the hill → proud of it
         const SEG = 20
