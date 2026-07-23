@@ -7,8 +7,8 @@
 // produce (breaking the cache↔fallback byte-identity invariant everything downstream leans on).
 // This gate closes that hole: re-route a sample of bundled edges with the LIVE router (identical
 // wiring to the bake script: WaterSystem on headless rawHeightWorld + setWaterNoGo) and assert
-// byte-parity of the primitive descriptors. Fails ⇒ regenerate the asset (scratchpad
-// gen-default-route-cache.mjs pattern) in the same commit as the router change.
+// byte-parity of the primitive descriptors. Fails ⇒ regenerate the asset (node
+// test/bake-route-bundle.mjs) in the same commit as the router change.
 //
 // Run: node test/route-bundle-parity.mjs
 import { readFileSync } from 'node:fs'

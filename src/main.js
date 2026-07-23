@@ -1135,11 +1135,13 @@ function queryVertexContacts (px, py, pz) {
 
   // Ground surface — the lab's own surface (flat, except its rumble lanes) in the testing lab;
   // analytic terrain height in the generated world.
+  // FEAT-40: pass the vertex's own Y so a body inside a bore span rides the bore floor instead of
+  // seeing the raw hill overhead as a 30 m phantom penetration.
   const terrainH = _labActive ? labSystem.groundHeight(px, pz)
-                              : (terrainSystem ? terrainSystem.analyticHeight(px, pz) : 0)
+                              : (terrainSystem ? terrainSystem.analyticHeight(px, pz, undefined, py) : 0)
   if (py < terrainH) {
     const terrainN = _labActive ? labSystem.groundNormal(px, pz)
-                                : (terrainSystem ? terrainSystem.analyticNormal(px, pz) : { x: 0, y: 1, z: 0 })
+                                : (terrainSystem ? terrainSystem.analyticNormal(px, pz, undefined, py) : { x: 0, y: 1, z: 0 })
     hits.push({ normal: new THREE.Vector3(terrainN.x, terrainN.y, terrainN.z), depth: terrainH - py })
   }
 
@@ -1204,12 +1206,13 @@ function queryContacts (cx, cy, cz, r) {
   // switchback's many slices (the slow-CPU 5fps lock that recovers airborne). Height stays accurate:
   // at the query center the projection is ~0 (perp foot) so rest height ≈ exact (≤~5 mm via the memo).
   const _hint = (!_labActive && roadSystem) ? roadSystem.carveHint(cx, cz) : undefined
+  // FEAT-40: cy disambiguates the two stacked surfaces in a bore span (floor vs hill overhead).
   const terrainH = _labActive ? labSystem.groundHeight(cx, cz)
-                              : (terrainSystem ? terrainSystem.analyticHeight(cx, cz, _hint) : 0)
+                              : (terrainSystem ? terrainSystem.analyticHeight(cx, cz, _hint, cy) : 0)
   const gd = terrainH + r - cy
   if (gd > 0) {
     const n = _labActive ? labSystem.groundNormal(cx, cz)
-                         : (terrainSystem ? terrainSystem.analyticNormal(cx, cz, _hint) : { x: 0, y: 1, z: 0 })
+                         : (terrainSystem ? terrainSystem.analyticNormal(cx, cz, _hint, cy) : { x: 0, y: 1, z: 0 })
     hits.push({
       normal:       new THREE.Vector3(n.x, n.y, n.z),
       depth:        gd,
@@ -1449,6 +1452,12 @@ if (_PROF) {
     pos:    { x: vehicleState.position.x, y: vehicleState.position.y, z: vehicleState.position.z },
     speed:  Math.hypot(vehicleState.velocity.x, vehicleState.velocity.y, vehicleState.velocity.z),
   })
+  // FEAT-39: the GPS system, so the CDP harness can inspect the baked route + live arrow/chevrons
+  // (the overlay only draws near the car, so it can't otherwise be probed without driving a run).
+  window.__gps = () => gpsSystem
+  // FEAT-39 harness: drop the CAR at a spot (unlike __view, which only moves the freecam). Lets the
+  // CDP probe frame the real chase-cam approach to a junction without hand-driving there.
+  window.__tp = (x, z, heading = 0) => teleportToGround(x, z, heading, 0.5)
   // Single-lever A/B toggles: isolate one cost axis at a time at a fixed preset. Each returns true
   // if applied. NOT persisted anywhere — page reload restores the preset's values.
   const _eachPropMesh = (fn) => { if (propSystem) for (const rec of propSystem._meshes.values()) fn(rec) }

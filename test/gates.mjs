@@ -39,6 +39,8 @@ export const GATES = [
     desc: 'synthetic ribbon↔carve agreement (dump-free; replaced seam-grade.mjs)' },
   { file: 'road-smoothness.mjs', subsystem: 'terrain', cost: 'heavy', extraDeps: [],
     desc: 'collision surface has no invisible step the visual ribbon lacks (carve continuity)' },
+  { file: 'road-tunnel.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'FEAT-40: taut-string summit cut fires on seed 6, bores stay driveable (grade/C0), physics floor vs raw-hill skin diverge only in-bore, spans window-invariant' },
   { file: 'shoulder-lateral-continuity.mjs', subsystem: 'terrain', cost: 'heavy', extraDeps: [],
     desc: 'BUG-15: carve cross-section is C0 across the shoulder edge (no camber-tilt cliff → no airborne/slam in hairpins)' },
   { file: 'road-fill-support.mjs', subsystem: 'terrain', cost: 'heavy', extraDeps: [],

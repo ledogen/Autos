@@ -32,6 +32,7 @@ import * as THREE from 'three'
 // QUAL-07: crownProfile no longer imported — the crown/camber fold moved into the one shared
 // RoadSystem._carveCrossSection; the mesh resolves (signedLat, arcS) per vertex and calls it.
 import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
+import { DEEP_BANK_TOE_EXTRA } from './road-carve.js'   // FEAT-40: deep-bank toe (carve maxExt sync)
 import { perfAdd } from './perf.js'  // TEMP perf triage (D-arc)
 
 // ── Module constants ───────────────────────────────────────────────────────
@@ -444,12 +445,38 @@ export class TerrainSystem {
             // fog instead of ending on a line. View-space distance in metres.
             uShadowFadeStart:{ value: 150.0 },
             uShadowFadeEnd:  { value: 240.0 },
+            // FEAT-40: tunnel-mouth cutouts. The terrain SKIN is fragment-discarded inside a capsule
+            // at each bore portal (pos.xyz = mouth centre, pos.w = hole radius; axis.xyz = unit
+            // inward tangent, axis.w = inward length) so the camera can see into the tube. Visual
+            // only — physics/height sampling never read this. Synced in _syncTunnelUniforms.
+            uTunnelN:    { value: 0 },
+            uTunnelPos:  { value: Array.from({ length: 24 }, () => new THREE.Vector4()) },
+            uTunnelAxis: { value: Array.from({ length: 24 }, () => new THREE.Vector4()) },
         }
         this._material.onBeforeCompile = (shader) => {
             Object.assign(shader.uniforms, this._terrainUniforms)
             addWorldVaryings(shader)
             shader.fragmentShader = 'uniform float uDetailScale, uNoiseScale, uMottle, uBump, uCliffLo, uCliffHi, uTreeLo, uTreeHi;\n' +
-                'uniform sampler2D uShadowAtlas; uniform float uShadowAtlasN, uShadowTilePx, uShadowStrength, uShadowFadeStart, uShadowFadeEnd;\n' + shader.fragmentShader
+                'uniform sampler2D uShadowAtlas; uniform float uShadowAtlasN, uShadowTilePx, uShadowStrength, uShadowFadeStart, uShadowFadeEnd;\n' +
+                'uniform int uTunnelN; uniform vec4 uTunnelPos[24]; uniform vec4 uTunnelAxis[24];\n' + shader.fragmentShader
+            // FEAT-40: cut the skin at tunnel mouths — capsule test in world space, then discard.
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <clipping_planes_fragment>',
+                `#include <clipping_planes_fragment>
+                for (int ti = 0; ti < 24; ti++) {
+                    if (ti >= uTunnelN) break;
+                    vec3 tq = vWorldPos - uTunnelPos[ti].xyz;
+                    float ta = dot(tq, uTunnelAxis[ti].xyz);
+                    // FLAT outside end just beyond the tube's proud lip: a capsule end-cap sphere
+                    // bulged ~R beyond the mouth and ate a whole disc of ground outside it.
+                    if (ta < -1.2) continue;
+                    float tt = clamp(ta, -1.2, uTunnelAxis[ti].w);
+                    tq -= uTunnelAxis[ti].xyz * tt;
+                    // tq.y gate: only cut skin ABOVE the apron plane — a full capsule also ate the
+                    // carved ground beside/below the road just outside the mouth (visible hole).
+                    if (tq.y > -0.7 && dot(tq, tq) < uTunnelPos[ti].w * uTunnelPos[ti].w) discard;
+                }`
+            )
             // Albedo mottle (after vColor is folded into diffuseColor).
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <color_fragment>',
@@ -619,9 +646,53 @@ export class TerrainSystem {
      *
      * @param {{ x: number, y: number, z: number }} carPos - Current car/camera world position.
      */
+    // FEAT-40: refresh the tunnel-mouth cutout uniforms. The full portal list rebuilds when the
+    // road network changes (rev-guarded); the 24 uniform slots are then filled with the portals
+    // NEAREST the car, re-selected when the car has moved — a dense region can carry far more
+    // than 24 mouths, and first-in-map-order left distant ones cut and nearby ones sealed.
+    // pos.w = hole radius overlapped by the portal ring's outer band, axis.w = inward capsule
+    // length (covers the skin crossing the tube near the mouth).
+    _syncTunnelUniforms(carPos) {
+        const rs = this._roadSystem
+        if (!rs || !rs._network) return
+        if (this._tunnelUniformRev !== rs._networkRev) {
+            this._tunnelUniformRev = rs._networkRev
+            this._tunnelPortalList = []
+            const R = (this._params.tunnelBoreRadius ?? 8) + 0.45
+            for (const [runKey, e] of rs._network) {
+                if (!e.tunnelSpans) continue
+                for (const sp of e.tunnelSpans) {
+                    for (const [s, inward] of [[sp.s0, 1], [sp.s1, -1]]) {
+                        const p = rs.runPointAt(runKey, s)
+                        if (!p) continue
+                        const pr = rs.runProfile(s, runKey)
+                        this._tunnelPortalList.push({ x: p.x, y: pr.gradeY + 0.4, z: p.z, r: R, ax: pr.tx * inward, az: pr.tz * inward })
+                    }
+                }
+            }
+            this._tunnelSyncX = Infinity   // force the slot refill below
+        }
+        const list = this._tunnelPortalList
+        if (!list) return
+        const moved = Math.hypot(carPos.x - (this._tunnelSyncX ?? Infinity), carPos.z - (this._tunnelSyncZ ?? 0))
+        if (!(moved > 100) && this._terrainUniforms.uTunnelN.value === Math.min(24, list.length)) return
+        this._tunnelSyncX = carPos.x; this._tunnelSyncZ = carPos.z
+        const sel = list.length > 24
+            ? [...list].sort((a, b) => ((a.x - carPos.x) ** 2 + (a.z - carPos.z) ** 2) - ((b.x - carPos.x) ** 2 + (b.z - carPos.z) ** 2)).slice(0, 24)
+            : list
+        const posArr = this._terrainUniforms.uTunnelPos.value
+        const axArr  = this._terrainUniforms.uTunnelAxis.value
+        for (let i = 0; i < sel.length; i++) {
+            posArr[i].set(sel[i].x, sel[i].y, sel[i].z, sel[i].r)
+            axArr[i].set(sel[i].ax, 0, sel[i].az, 16)
+        }
+        this._terrainUniforms.uTunnelN.value = sel.length
+    }
+
     update(carPos) {
         // Streaming paused (FEAT-31 testing lab) — no-op to prevent chunk ring changes while there.
         if (this._enabled === false) return
+        this._syncTunnelUniforms(carPos)
         const { cx: ccx, cz: ccz } = this._worldToChunk(carPos.x, carPos.z)
         let _pt = performance.now()
         this._updateChunkRing(ccx, ccz)
@@ -799,7 +870,10 @@ export class TerrainSystem {
     // nrHint (optional): a precomputed roadSystem.carveHint(wx,wz) result, threaded through so a tight
     // cluster of samples (analyticNormal's ±0.5 m offsets, queryContacts' height+normal for one wheel)
     // shares ONE road tile-scan instead of re-querying per call. undefined = query internally (legacy).
-    analyticHeight(wx, wz, nrHint) {
+    // queryY (optional): the querying probe's own world Y. Only physics contact queries pass it —
+    // inside a FEAT-40 bore span it disambiguates the two stacked surfaces (bore floor vs the raw
+    // hill overhead). Callers without a Y (props, camera, map) always get the terrain skin.
+    analyticHeight(wx, wz, nrHint, queryY) {
         // Precondition: reinitWorker (called synchronously in the constructor) must have built
         // the noise closures. Throw rather than silently returning 0 — a 0 here would seat the
         // truck at sea level inside the terrain and violate the "never returns 0" contract (WR-07).
@@ -821,8 +895,11 @@ export class TerrainSystem {
         // channel holds off-road, and the blend is smooth between). MESH == PHYSICS: the terrain mesh
         // (_composeCarvedY / sampleHeight) uses this same un-suppressed blend, so the ribbon deck seats
         // on the filled terrain and collision agrees with the rendered surface.
+        // FEAT-40: queryY threads into the road resolve — inside a bore span the road only owns
+        // below-apex probes; above-apex or Y-less queries fall through to a neighbouring surface
+        // run or raw terrain (the hill overhead) inside _sampleCarveWorld.
         if (this._roadSystem) {
-            const c = this._roadSystem._sampleCarveWorld(wx, wz, raw, nrHint)
+            const c = this._roadSystem._sampleCarveWorld(wx, wz, raw, nrHint, queryY)
             if (c && c.blendW > 1e-6) return hs + c.blendW * (c.gradeY - hs)
         }
         return hs
@@ -838,7 +915,7 @@ export class TerrainSystem {
      * @param {number} wz - World Z coordinate.
      * @returns {{ x: number, y: number, z: number }} Unit normal pointing away from surface.
      */
-    analyticNormal(wx, wz, nrHint) {
+    analyticNormal(wx, wz, nrHint, queryY) {
         const EPS = 0.5
         // PERF (contact path): find the road run ONCE (at the center) and reuse it for all 4 offsets,
         // collapsing ~5 road queries/wheel-contact → 1. The offsets project onto this run, so the
@@ -846,10 +923,10 @@ export class TerrainSystem {
         // over ±0.5 m). When called WITHOUT a hint, derive one here so any normal-only caller benefits.
         const hint = (nrHint !== undefined) ? nrHint
             : (this._roadSystem ? this._roadSystem.carveHint(wx, wz) : null)
-        const hL  = this.analyticHeight(wx - EPS, wz, hint)
-        const hR  = this.analyticHeight(wx + EPS, wz, hint)
-        const hD  = this.analyticHeight(wx,       wz - EPS, hint)
-        const hU  = this.analyticHeight(wx,       wz + EPS, hint)
+        const hL  = this.analyticHeight(wx - EPS, wz, hint, queryY)
+        const hR  = this.analyticHeight(wx + EPS, wz, hint, queryY)
+        const hD  = this.analyticHeight(wx,       wz - EPS, hint, queryY)
+        const hU  = this.analyticHeight(wx,       wz + EPS, hint, queryY)
         const nx  = -(hR - hL) / (2 * EPS)
         const ny  = 1
         const nz  = -(hU - hD) / (2 * EPS)
@@ -1219,9 +1296,10 @@ export class TerrainSystem {
         const maxEmbankmentToe  = p.roadMaxEmbankmentToe ?? 10
 
         // Maximum lateral extent to bother querying: ribbon + carve core + the capped embankment apron.
-        // Mirrors the toe cap in _carveCrossSection (carveHalfWidth + maxEmbankmentToe) — the real bound
-        // on how far the fill/cut bank spreads — so no carved vertex is ever missed by this early-reject.
-        const maxExt = halfWidth + shoulderWidth + carveExtraWidth + maxEmbankmentToe + 4
+        // Mirrors the toe cap in _carveCrossSection (carveHalfWidth + maxEmbankmentToe +
+        // DEEP_BANK_TOE_EXTRA, FEAT-40 deep banks) — the real bound on how far the fill/cut bank
+        // spreads — so no carved vertex is ever missed by this early-reject.
+        const maxExt = halfWidth + shoulderWidth + carveExtraWidth + maxEmbankmentToe + DEEP_BANK_TOE_EXTRA + 4
 
         const originX = cx * S
         const originZ = cz * S
@@ -1318,13 +1396,39 @@ export class TerrainSystem {
                 // tessellation is too (this is NOT the hand-rolled point-to-segment projection that tore
                 // the mesh — it's physics' own resolver). No mesh-only D3 max-floor: physics doesn't do it,
                 // and _resolveRoadSurface already picks ONE run, so we match _sampleCarveWorld exactly.
-                const nr = this._roadSystem._resolveRoadSurface(wx, wz)
+                // FEAT-40 bore span: the terrain MESH keeps the raw hill over a bore (no carve) —
+                // a bored run never owns a mesh vertex. Fall through to the next-nearest surface
+                // run (parallel corridor) exactly like the Y-less physics path in _sampleCarveWorld,
+                // else leave the vertex raw. The abrupt carved→raw step at a portal is the portal
+                // face; the headwall mesh covers it.
+                let nr = this._roadSystem._resolveRoadSurface(wx, wz)
+                let _excl = null, notch = null
+                while (nr) {
+                    const adx = wx - nr.point.x, adz = wz - nr.point.z
+                    const aArc = (nr.arcS ?? 0) + adx * nr.tangent.x + adz * nr.tangent.z
+                    if (!this._roadSystem.tunnelSpanAt(nr.runKey ?? '', aArc)) break
+                    // FEAT-40: skin vertex over a bore — mouth-funnel notch (same rule as the
+                    // Y-less physics path in _sampleCarveWorld), else fall through to the
+                    // next-nearest surface run / raw hill.
+                    const aLat = adx * nr.tangent.z - adz * nr.tangent.x
+                    notch = this._roadSystem._boreNotchCS(nr.runKey ?? '', nr.camberSign ?? 1, aArc, aLat, rawH)
+                    if (notch) break
+                    ;(_excl ??= new Set()).add(nr.runKey ?? '')
+                    if (_excl.size > 3) { nr = null; break }
+                    nr = this._roadSystem._resolveRoadSurface(wx, wz, _excl)
+                }
+                if (notch) {
+                    table[idx]     = notch.blendW
+                    table[idx + 1] = amp > 0 ? notch.gradeY / amp : notch.gradeY
+                    if (notch.blendW > 1e-6) anyNonZero = true
+                    continue
+                }
                 if (!nr) { table[idx] = 0; table[idx + 1] = 0; continue }
                 const dx = wx - nr.point.x, dz = wz - nr.point.z
                 const arcSEff   = (nr.arcS ?? 0) + dx * nr.tangent.x + dz * nr.tangent.z
                 const signedLat = dx * nr.tangent.z - dz * nr.tangent.x
 
-                const cs = this._roadSystem._carveCrossSection(signedLat, arcSEff, nr.runKey ?? '', nr.camberSign ?? 1, rawH)
+                const cs = this._roadSystem._carveCrossSectionBlended(nr, signedLat, arcSEff, rawH)
                 if (!cs) { table[idx] = 0; table[idx + 1] = 0; continue }
 
                 table[idx]     = cs.blendW
