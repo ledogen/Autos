@@ -220,7 +220,7 @@ export class MissionSystem {
         //   quality      0..1 per-500 m road-surface tier; drives pothole severity (road-quality.js)
         //   par_ms       what par thinks you should be doing here
         // Camber is deliberately NOT a column: it is a deterministic slew-limited function of
-        // curv_1pm (road.js `rawCamber = camberStrength · kappa`, clamped), so storing it would
+        // curv_1pm (road.js camberFromCurvature — saturating superelevation), so storing it would
         // just be a second copy of the curvature column.
         const cols = ['s_m', 'x', 'z', 'elev_m', 'heading_rad', 'curv_1pm', 'grade', 'quality', 'par_ms']
         const rows = []

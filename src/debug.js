@@ -477,7 +477,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // Ranges use Claude's-discretion realistic defaults with 2× headroom above default (D-09):
   //   roadWidth:           6–14 m (default 10 m, 0.5 step — D-04)
   //   crownHeight:         0–0.2 m (default 0.05 m, 0.005 step — D-04)
-  //   camberStrength:      0.5–10 (default 4, step 0.5 — D-04; gain is in RADIANS, was mis-set to 200)
+  //   camberMaxAngleDeg:   0–30° (default 20, step 1) — asymptotic max bank on tight hairpins
+  //   camberKneeRadiusM:   20–200 m (default 60, step 5) — radius that gets HALF of max bank; raise
+  //                        to push strong banking out to gentler curves (saturating model, road.js)
   //   roadCutSlope:        0.5–2 H:V (default 1.0, step 0.05 — D-08)
   //   roadFillSlope:       1.5–5 H:V (default 3.0, step 0.1 — D-08)
   //   roadShoulderWidth:   1–6 m (default 2.5, step 0.5 — D-05)
@@ -491,7 +493,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
     fireSurface()
   })
   surfaceFolder.add(params, 'crownHeight',         0,    0.2,  0.005).name('Crown Height (m)').onChange(fireSurface)
-  surfaceFolder.add(params, 'camberStrength',      0.5,  10,   0.5  ).name('Camber Strength').onChange(fireSurface)
+  surfaceFolder.add(params, 'camberMaxAngleDeg',   0,    30,   1    ).name('Camber Max (°)').onChange(fireSurface)
+  surfaceFolder.add(params, 'camberKneeRadiusM',   20,   200,  5    ).name('Camber Knee (m)').onChange(fireSurface)
   surfaceFolder.add(params, 'roadCutSlope',         0.5,  2,    0.05).name('Cut Slope (H:V)').onChange(fireSurface)
   surfaceFolder.add(params, 'roadFillSlope',        1.5,  5,    0.1 ).name('Fill Slope (H:V)').onChange(fireSurface)
   // FEAT-10: caps how far the fill/cut embankment apron extends past the carve core. Lower = tighter
@@ -611,7 +614,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
     // Road Surface
     roadWidth:             'Total drivable width of the road surface (m).',
     crownHeight:           'Height of the centerline crown (m) — the slight peak that sheds water to the edges.',
-    camberStrength:        'How much the road banks into turns. Higher = more lean through corners.',
+    camberMaxAngleDeg:     'Steepest bank the tightest hairpins approach (degrees). Raises lean on all corners.',
+    camberKneeRadiusM:     'Corner radius that gets half the max bank. Raise to bank gentle sweepers/long curves harder; lower to concentrate banking on tight corners.',
     roadCutSlope:          'Steepness of cut banks where the road slices into a hill, as H:V (lower = steeper).',
     roadFillSlope:         'Steepness of fill banks where the road is built up, as H:V (lower = steeper).',
     roadMaxEmbankmentToe:  'Caps how far (m) the embankment apron spreads past the road. Lower = tighter banks, fewer shards at tight turns.',
@@ -728,9 +732,18 @@ export function initDebug (params, callbacks = {}, options = {}) {
   gui.domElement.addEventListener('pointerup', (e) => {
     const t = e.target
     const isTextEntry = t instanceof HTMLInputElement && (t.type === 'text' || t.type === 'number')
-    if (isTextEntry) return
+    // A <select> (Quality, Vehicle preset, …) MUST keep focus while its native dropdown is open —
+    // blurring it here snaps the popup shut on mouse-release before the user can pick an option.
+    // Dropdowns instead release the keyboard on their 'change' below, once a value is chosen.
+    const isSelect = t instanceof HTMLSelectElement
+    if (isTextEntry || isSelect) return
     const ae = document.activeElement
     if (ae && ae !== document.body && gui.domElement.contains(ae)) ae.blur()
+  })
+  // Return the keyboard to the game after a dropdown selection completes (the pointerup handler
+  // above deliberately leaves an open <select> focused so its popup survives to be clicked).
+  gui.domElement.addEventListener('change', (e) => {
+    if (e.target instanceof HTMLSelectElement) e.target.blur()
   })
 
   return gui

@@ -114,6 +114,37 @@ function _lerpVec3(a, b, t) {
     )
 }
 
+// ── Curvature → camber (saturating superelevation model) ─────────────────────
+/**
+ * Road banking angle as a SATURATING function of curvature, replacing the old linear
+ * `camberStrength·κ` (which grew unboundedly with curvature and had to be hard-clamped, so a
+ * single gain over-banked hairpins the moment gentle curves got any bank at all).
+ *
+ *   camber(κ) = maxRad · |κ| / (|κ| + κ_half)      (sign carried from κ)
+ *
+ * Properties (this is the "fundamental change", not a variable-rate patch):
+ *   • Straight (κ→0):        camber → 0, linear with gain maxRad/κ_half.
+ *   • Knee (|κ| = κ_half):   camber = maxRad/2  — κ_half = 1/kneeRadius sets where half-bank lands.
+ *   • Tight (|κ|→∞):         camber → maxRad (asymptote) — hairpins PLATEAU, never exceed maxRad,
+ *                            so no separate clamp is needed (the function is self-bounding).
+ *   • Effective gain camber/κ = maxRad/(|κ|+κ_half) DECREASES with curvature → more bank per unit
+ *     curvature on sweepers/long curves, less on hairpins (the requested feel).
+ *
+ * Defaults maxAngle 20° + kneeRadius 60 m fit ~4/10/15 effective strength at hairpin/50 m/long.
+ * SHARED by _computeCamberArrays (ribbon/carve) and _buildRunProfile (physics) so the two stay
+ * byte-identical (restream-invariance / mesh==physics).
+ *
+ * @param {number} kappa   — signed curvature (1/m)
+ * @param {number} maxRad  — asymptotic max bank (radians)
+ * @param {number} kHalf   — half-saturation curvature (1/m) = 1/kneeRadius
+ * @returns {number} banking angle (radians), |result| < maxRad
+ */
+function camberFromCurvature(kappa, maxRad, kHalf) {
+    const a = Math.abs(kappa)
+    const mag = maxRad * a / (a + kHalf)
+    return kappa < 0 ? -mag : mag
+}
+
 // ── D2 camberProfile binary-search interpolation (plan 09-21) ─────────────────
 /**
  * Binary-search + linear interpolation on a camber profile array pair.
@@ -2362,9 +2393,16 @@ export class RoadSystem {
 
     // Smooth a polyline's Y in place (shared by the rows row-polyline and the graph per-edge polyline).
     // Off-earthwork: legacy ±designGradeWindow terrain-following smoothing. Earthwork: (1) wide-smooth raw
-    // → the gentle bridged/cut design line; (2) a legacy-window-smooth terrain reference; (3) clamp the
-    // design to ±deviationCap of that SMOOTH reference — clamping against raw would let the design follow
+    // → the gentle bridged/cut design line; (2) a legacy-window-smooth terrain reference; (3) SOFT-clamp the
+    // design toward ±deviationCap of that SMOOTH reference — clamping against raw would let the design follow
     // raw bumps where the cap bites, putting near-vertical steps into the collision surface (road-smoothness).
+    //
+    // The clamp is a tanh saturation, NOT a hard min/max. A hard clamp injects a C1 (slope) discontinuity at
+    // the exact arc where the design first crosses ±cap: the profile snaps from the flat design line onto the
+    // terrain-tracking `ref±cap` line, a felt "bump" the router never priced (the router chose the gentle
+    // design; the cap yanks it back). tanh approaches ±cap asymptotically instead, so the profile bends into
+    // the terrain-following region smoothly. Bounded by ±cap (never floats past it), near-identity for
+    // |dev|≪cap so unclamped roads are unchanged, and window-invariant (pointwise fn of two box means). D-16.
     _gradeEdgeInPlace(pts, capOverride = null) {
         const ewWindow = this._params?.roadEarthworkWindow ?? 0
         const ewActive = ewWindow > 0 && (this._params?.roadWDeviation ?? 0) > 0
@@ -2376,9 +2414,10 @@ export class RoadSystem {
         for (let i = 0; i < pts.length; i++) pts[i].y = raw[i]
         smoothGradeInPlace(pts, legacyWin)           // pts.y = smooth terrain reference
         const cap = capOverride ?? this._params?.roadDeviationCap ?? Infinity
+        if (!(cap < Infinity)) { for (let i = 0; i < pts.length; i++) pts[i].y = design[i]; return }
         for (let i = 0; i < pts.length; i++) {
-            const ref = pts[i].y, y = design[i]
-            pts[i].y = y > ref + cap ? ref + cap : (y < ref - cap ? ref - cap : y)
+            const ref = pts[i].y
+            pts[i].y = ref + cap * Math.tanh((design[i] - ref) / cap)
         }
     }
 
@@ -3875,12 +3914,25 @@ export class RoadSystem {
 
     /**
      * Drop all memoized design-grade entries so the next ribbon sweep recomputes smoothed grade.
-     * Call this whenever surface-param sliders (crownHeight, terrainAmplitude, camberStrength)
-     * change via debouncedRoadSurfaceRebuild — the spline objects persist across rebuilds, so
-     * the WeakMap would otherwise return stale pre-change profiles (CR-04 stale-cache fix).
+     * Call this whenever surface-param sliders (crownHeight, terrainAmplitude) change via
+     * debouncedRoadSurfaceRebuild — the spline objects persist across rebuilds, so the WeakMap
+     * would otherwise return stale pre-change profiles (CR-04 stale-cache fix).
      */
     invalidateDesignGradeCache() {
         this._designGradeCache = new WeakMap()
+    }
+
+    /**
+     * Invalidate the per-run profile caches (runProfile/camberProfile/adjacency/junction), which
+     * bake camber (camberMaxAngleDeg/camberKneeRadiusM/roadCamberRate) into camberRad. These key off
+     * _networkRev, which normally bumps only on a re-route or real re-stream — NOT on a surface-param
+     * slider change. So bumping
+     * it here (without touching _generation — topology is unchanged) forces the next profile query
+     * to lazily rebuild camber against the new params. Without this the Camber Strength / Camber Rate
+     * sliders recompute carve tables + clear ribbon tiles but re-read the OLD cached camber → no-op.
+     */
+    invalidateProfileCaches() {
+        this._networkRev++
     }
 
     // ── P4: Run-adjacency index (plan 09-29) ─────────────────────────────────────
@@ -4014,8 +4066,8 @@ export class RoadSystem {
      * Algorithm:
      *   1. Walk the network run's control points, computing arc positions and
      *      tangents (finite-difference between adjacent points).
-     *   2. At each sample i, compute raw camber = clamp(camberStrength·κ_i, ±6°)
-     *      where κ_i = signedCurvature(T_{i-1}, T_i, ds_i).
+     *   2. At each sample i, compute raw camber = camberFromCurvature(κ_i) — the saturating
+     *      superelevation model (see that helper); κ_i = signedCurvature(T_{i-1}, T_i, ds_i).
      *   3. Forward-march a slew-rate limit: the stored camber at i+1 cannot change
      *      by more than roadCamberRate·Δs from the stored camber at i.
      *   4. Return { arcPos: Float64Array, camberRad: Float64Array } arrays.
@@ -4035,8 +4087,9 @@ export class RoadSystem {
      */
     /**
      * BUG-19: the SINGLE canonical camber computation for a run's centerline points. Arc-length-WINDOWED
-     * curvature (camberArcWindow m — spacing-invariant, the BUG-12 camber fix) → ±6° clamp → forward
-     * slew-rate march from `seed`. Shared by _buildCamberProfile (the profile the carve/ribbon read) AND
+     * curvature (camberArcWindow m — spacing-invariant, the BUG-12 camber fix) → camberFromCurvature
+     * (saturating superelevation) → forward slew-rate march from `seed`. Shared by _buildCamberProfile
+     * (the profile the carve/ribbon read) AND
      * _runEndCamber (the cross-run seed source) so the two can NEVER desync. They HAD desynced —
      * _runEndCamber used a per-adjacent-point finite difference while _buildCamberProfile used the
      * window — so the seed handed to each run didn't match the predecessor's real end camber and banking
@@ -4050,9 +4103,9 @@ export class RoadSystem {
     _computeCamberArrays(pts, arcOrigin, seed) {
         const N = pts.length
         const p = this._params || {}
-        const camberStrength  = p.camberStrength ?? 200
+        const maxCamberRad    = (p.camberMaxAngleDeg ?? 20) * (Math.PI / 180)   // asymptotic max bank
+        const kHalf           = 1 / (p.camberKneeRadiusM ?? 60)                 // half-bank curvature
         const slewRateRadPerM = (p.roadCamberRate ?? 1.5) * (Math.PI / 180)
-        const MAX_CAMBER      = 6 * (Math.PI / 180)   // ±6° clamp
         const windowM         = p.camberArcWindow ?? 20  // m — arc-length curvature window
 
         // Arc-position LUT (D-16 Phase 2: owner-origined so arcS indexes the slicer's frame).
@@ -4083,7 +4136,7 @@ export class RoadSystem {
             return { tx: dx / len, tz: dz / len }
         }
 
-        // Windowed curvature → clamp → forward slew-rate march, seeded at sample 0.
+        // Windowed curvature → saturating camber → forward slew-rate march, seeded at sample 0.
         const camberRad = new Array(N)
         camberRad[0] = seed
         let prev = seed
@@ -4093,7 +4146,7 @@ export class RoadSystem {
             const sB = Math.min(totalArc, s + windowM / 2)
             const tA = tangentAtArcS(sA), tB = tangentAtArcS(sB)
             const kappa = signedCurvature(tA.tx, tA.tz, tB.tx, tB.tz, sB - sA)
-            const raw = Math.max(-MAX_CAMBER, Math.min(MAX_CAMBER, camberStrength * kappa))
+            const raw = camberFromCurvature(kappa, maxCamberRad, kHalf)
             const maxDelta = slewRateRadPerM * (arcPos[i] - arcPos[i - 1])
             const delta = raw - prev
             if      (delta >  maxDelta) prev = prev + maxDelta
@@ -4427,9 +4480,9 @@ export class RoadSystem {
         const N = pts.length
 
         const p = this._params || {}
-        const camberStrength  = p.camberStrength ?? 200
+        const maxCamberRad    = (p.camberMaxAngleDeg ?? 20) * (Math.PI / 180)   // asymptotic max bank
+        const kHalf           = 1 / (p.camberKneeRadiusM ?? 60)                 // half-bank curvature
         const slewRateRadPerM = (p.roadCamberRate ?? 1.5) * (Math.PI / 180)
-        const MAX_CAMBER      = 6 * (Math.PI / 180)   // ±6° clamp
 
         const arcPos    = new Array(N)
         const gradeY    = new Array(N)
@@ -4482,8 +4535,7 @@ export class RoadSystem {
             }
 
             const kappa = signedCurvature(t0x, t0z, t1x, t1z, effectiveDs)
-            const raw   = camberStrength * kappa
-            rawCamber[i] = Math.max(-MAX_CAMBER, Math.min(MAX_CAMBER, raw))
+            rawCamber[i] = camberFromCurvature(kappa, maxCamberRad, kHalf)
         }
 
         // Last sample: replicate tangent from second-to-last segment.

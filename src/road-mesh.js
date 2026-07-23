@@ -104,7 +104,7 @@ export class RoadMeshSystem {
      * @param {THREE.Scene}     scene      — Three.js scene to add/remove road meshes
      * @param {object}          roadSystem — RoadSystem instance (provides _tiles, ensureTile, _smoothDesignGrade)
      * @param {Function}        terrainRef — (wx,wz)=>number  analytic height sampler
-     * @param {object}          params     — RANGER_PARAMS (roadWidth, roadHalfWidth, crownHeight, camberStrength, ...)
+     * @param {object}          params     — RANGER_PARAMS (roadWidth, roadHalfWidth, crownHeight, camberMaxAngleDeg, ...)
      * @param {number}          [worldSeed=0] — world seed for roadQuality determinism (D-03)
      */
     constructor(scene, roadSystem, terrainRef, params, worldSeed = 0) {
@@ -310,7 +310,7 @@ export class RoadMeshSystem {
         const halfWidth      = params.roadHalfWidth    ?? 5
         const roadWidth      = params.roadWidth        ?? 10
         const crownHeightVal = params.crownHeight      ?? 0.05
-        // camberStrength now consumed by this._road.camberProfile() — not needed here (D2, plan 09-21)
+        // camber params now consumed by this._road.camberProfile() — not needed here (D2, plan 09-21)
         const skirtDepth     = params.roadSkirtDepth   ?? 0.4
         const arcLen = spline.getLength ? spline.getLength() : 64
 

@@ -4,8 +4,8 @@
 // surface (_sampleCarveWorld) folds the road crown + camber in across the ribbon, then blends to raw
 // terrain across the shoulder band [halfWidth, halfWidth+shoulderWidth]. The old code applied crown/
 // camber ONLY for latDist < halfWidth and dropped them at the edge, so on a banked section the ribbon's
-// raised outer edge (±halfWidth·sin(camber), ≈0.5 m at the ±6° hairpin camber clamp) fell off a vertical
-// cliff into the shoulder → wheel loses contact → slams down on re-contact. The fix carries the edge-
+// raised outer edge (±halfWidth·sin(camber) — up to ≈1.7 m at the ±20° hairpin camber clamp) fell off a
+// vertical cliff into the shoulder → wheel loses contact → slams down on re-contact. The fix carries the edge-
 // clamped crown/camber through the shoulder so the surface is C0 across the threshold.
 //
 // This gate marches LATERALLY (perpendicular to the road) across the full footprint at many on-road
@@ -26,12 +26,17 @@ const SEEDS    = [6, 7]          // real-noise networks (seed 6 = the reported h
 const DLAT     = 0.2             // m — lateral march step
 const ARC_DS   = 8               // m — along-run sampling spacing
 const CLEAR    = RANGER_PARAMS.roadClearanceMargin ?? 0.25
+// The physics/ribbon max banking angle (data/ranger.js camberMaxAngleDeg — the saturating camber
+// model's asymptote). A steeper legal bank makes the edge-band step legitimately bigger, so EDGE_TOL
+// below scales with it — the gate tracks the model param instead of hard-coding a magic number.
+const MAX_CAMBER = (RANGER_PARAMS.camberMaxAngleDeg ?? 20) * (Math.PI / 180)
 // Tolerances: the carve cross-section must be C0 (≤ FLAT_TOL) EVERYWHERE except the ribbon edge, where
 // the intended road-edge dropoff (≈ clearanceMargin: off-ribbon the wheel rides the carved dirt, BUG-15)
-// is allowed. EDGE_TOL covers that dropoff plus the tilt/crown increment the 0.2 m march bundles at the
-// threshold. The ~0.5 m camber-tilt cliff this gate guards exceeds EDGE_TOL and still fails.
+// is allowed. EDGE_TOL covers that dropoff plus the banked-surface tilt increment the 0.2 m march bundles
+// at the threshold (sin(maxCamber)·DLAT) plus slop. A true VERTICAL cliff (the BUG-15 failure) is a
+// single-step discontinuity that exceeds this and still fails; a merely steeper-but-continuous bank does not.
 const FLAT_TOL = 0.10
-const EDGE_TOL = CLEAR + 0.08
+const EDGE_TOL = CLEAR + Math.sin(MAX_CAMBER) * DLAT + 0.06
 // FEAT-40: where the resolver reports a rival carve pass (self-overlap switchback / overlapping
 // corridor), the cross-section deliberately cross-fades to the rival's field — a graded bank
 // (C0; steps scale with DLAT) that REPLACED the vertical ownership-flip cliff. Allow bank-grade
@@ -77,9 +82,8 @@ for (const seed of SEEDS) {
             // wheel on THIS arm feels). The pinned hint isolates the single cross-section under test.
             const nr0 = road._resolveRoadSurface(fx, fz)
             if (!nr0 || (nr0.runKey ?? '') !== runKey) continue
-            // FEAT-40 portal neck: near a bore the cut toe deliberately necks to the tube width
-            // (road.js PORTAL_TAPER_LEN) — the resulting headwall-cutting face is steep by design
-            // and (at the mouth itself) hidden behind the masonry collar. Bank tier for the sweep.
+            // FEAT-40 bore notch: near/over a bore the skin is the mouth-funnel cutting
+            // (road.js _boreNotchCS) — steep by design, C0, collar-fringed. Bank tier for the sweep.
             let neckNear = false
             const tSpans = entry.tunnelSpans
             if (tSpans) {
