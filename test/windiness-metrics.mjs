@@ -1,18 +1,16 @@
 // Windiness / character metrics harness for the road network (FEAT-13 windiness stage).
 // Builds a RoadSystem at a center, walks _network edges, and reports the character signals the
 // handoff §6 names: turning angle (windiness), chord-deviation (bow), detour ratio, crossings,
-// overshoot edges, min radius, loopers. Mode-agnostic (uses edge.points endpoints as the chord).
+// overshoot edges, min radius, loopers. (QUAL-12: the graph is the sole topology — rows removed.)
 //
-//   node windiness-metrics.mjs                 # default graph at current knobs
-//   node windiness-metrics.mjs rows            # rows mode (the target character)
-//   node windiness-metrics.mjs graph k=v k=v   # graph with knob overrides (numbers/bools)
+//   node windiness-metrics.mjs                 # graph at current knobs
+//   node windiness-metrics.mjs k=v k=v         # graph with knob overrides (numbers/bools)
 
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 
 const argv = process.argv.slice(2)
-const mode = (argv[0] === 'rows' || argv[0] === 'graph') ? argv[0] : 'graph'
 const overrides = {}
 for (const a of argv) {
     const m = a.match(/^([A-Za-z]+)=(.+)$/)
@@ -21,7 +19,7 @@ for (const a of argv) {
     overrides[m[1]] = v
 }
 
-const P = { ...RANGER_PARAMS, roadNetworkMode: mode, ...overrides }
+const P = { ...RANGER_PARAMS, ...overrides }
 const SEED = Number(process.env.SEED ?? 6)
 const r = new RoadSystem(SEED, P)
 r.setRadius(1600)
@@ -91,7 +89,7 @@ const median = turns.length ? turns[turns.length >> 1] : 0
 const crossings = r.crossingList().length
 
 const f = (x, d = 1) => x.toFixed(d)
-console.log(`\n=== ${mode}  seed=${SEED}  ${JSON.stringify(overrides)} ===`)
+console.log(`\n=== graph  seed=${SEED}  ${JSON.stringify(overrides)} ===`)
 console.log(`edges=${n}  avgChord=${f(sumChord / n)}m  crossings=${crossings}`)
 console.log(`WINDINESS turn/edge: avg=${f(sumTurn / n)}°  median=${f(median)}°  max=${f(maxTurn)}°`)
 console.log(`BOW chordDev: avg=${f(sumDev / n)}m   DETOUR routed/chord: avg=${f(sumDetour / n, 3)}`)

@@ -81,3 +81,58 @@ strictly breadth** vs SM-INV-7 (DESIGN.md Open Q10).
 
 Related: DESIGN.md "The Roamer", SM-INV-11 (relaxed), SM-INV-8/9, "Classes", Open Q1 & Q10;
 MILESTONES.md SM-4 (region unlock = Roamer's old trails, main-mission gated) and SM-5 (delivery).
+
+---
+
+## The road-bender spirit: camber as the thing that shifts — 2026-07-21
+
+A **spirit** (rule-change facet of the Roamer, per SM-INV-9) whose whole signature is that it
+**bends the roads themselves**. The world already banks its corners from curvature
+(`camberStrength · κ`, clamped ±20°, live-tunable via the Road Surface slider); this spirit reaches
+into that dial as its way of re-pointing a run.
+
+Flavours, weakest → boldest:
+- **Working-with-it raises the bank.** The more you travel with / earn favor from this spirit across
+  a run, the more it tilts the roads into their corners — banking climbs toward the ±20° ceiling.
+  High bank = you can carry more speed through a curve without the tires letting go, so par-beating
+  lines open up. This is the "makes it easier to drive fast" reading.
+- **…but bank is double-edged (the trade that keeps it SM-INV-9-legal).** Camber is not free speed.
+  Past a point the same tilt that saves a grippy corner **invites rollover** on the truck's high CoG
+  (this is exactly the over-bank failure the physics note in `data/ranger.js` warns about), and it
+  bites hardest on tight hairpins where the clamp saturates. So a road-bender run isn't "+grip"; it's
+  "the roads now reward commitment and punish sloppiness" — a reshaped run, not a raised floor.
+- **The adversarial twin — it banks the roads *against* you.** The mirror spirit tilts camber the
+  *wrong* way (off-camber / reverse-banked corners), or randomizes it corner-to-corner so you can't
+  trust the road to hold you. A "harder to drive quickly" run you opt into for a bigger reward.
+- **Camber that progresses over the day (couples to the doze clock).** Rather than a fixed bank, the
+  tilt **drifts as the day wears on** — mellow and forgiving in the morning, steepening toward
+  evening as you get sleepy. Now the sleep/doze axis (SM-INV-1) and the road's drivability move
+  together: the world literally leans harder the longer you push past rest. Ties this spirit to the
+  night-owl/camper pair above (reckless-nights ↔ restful-days).
+- **Randomized per-run camber as a run seed.** A run where the spirit rolls a camber *character*
+  (mild / aggressive / off-camber / progressing) — variety in what the roads feel like, unlocked into
+  the deck like any other spirit facet.
+
+Why it's a natural fit right now: camber just became a **real-time, on-demand dial** (the slider
+recomputes banking live via `invalidateProfileCaches` / `_networkRev`, and the clamp went ±6°→±20°),
+so a story system *can* drive it per-run/over-time without a regen. The mechanism a spirit would need
+already exists.
+
+Guardrails when this gets real:
+- **SM-INV-9 — re-weight, don't hand out.** More bank must stay *bought with risk* (rollover
+  exposure, off-camber elsewhere, or the day-progression tax), never a flat "+cornering" buff. If it
+  reads as free speed, it's the balance-sheet erosion the invariant forbids.
+- **SM-INV-7/8 — breadth, not floor.** The bent roads are a run *shape*; nothing about the tilt
+  persists as power between runs.
+- **SM-INV-1 — dozing stays real.** The day-progression flavour leans on the doze clock; it must
+  couple to it, never soften or cancel the "eyes shut on a mountain road, physics decides" reality.
+- **Honest-emergence (repo feedback `emergent_over_injected`).** Prefer driving the *existing*
+  `camberStrength` / `MAX_CAMBER` / sign so the character *emerges* from the physics the player
+  already trusts, rather than bolting on a bespoke "story camber" layer beside it.
+
+Owner-only, don't invent: whether the road-bender is benevolent (guide) or has teeth (Roamer motive,
+Open Q1), and how the adversarial twin's reward is priced.
+
+Related: DESIGN.md "The Roamer", SM-INV-9 (spirits = rules not resources), SM-INV-7/8 (breadth), 
+SM-INV-1 (doze); the night-owl/camper pair above (day-progression ties them together); MILESTONES.md
+SM-5 (spirits land here). Naming (*spirit* vs *sprite*) still unsettled per the pair above.
