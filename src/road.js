@@ -859,6 +859,39 @@ export class RoadSystem {
     }
 
     /**
+     * QUAL-16: connector-arc centreline points near a chunk, in the SAME flat stride-5 layout
+     * ([x, y=grade, z, 0, 0]) as collectChunkSplinePoints. The terrain carve (_buildCarveTable) appends
+     * these to its run-sample probe so its per-vertex distance SKIP doesn't drop a connector's OUTER
+     * flank (a bend-outside toe vertex is far from every RUN sample, so without this the mesh leaves the
+     * connector's fill/cut bench uncarved → a wall at the asphalt edge, while physics — which has no skip
+     * — carves it, breaking mesh == collision). Pure fn of the streamed network (window-invariant).
+     */
+    collectConnectorSamples(centerX, centerZ, radiusM) {
+        if (this._nodeJunctionsRev !== this._networkRev) this._detectNodeJunctions()
+        if (!this._deg2ArcTiles || !this._deg2ArcTiles.size) return []
+        const out = []
+        const r2 = radiusM * radiusM
+        const seen = new Set()
+        const blk = Math.ceil(radiusM / CHUNK_SIZE)
+        const qTileX = Math.floor(centerX / CHUNK_SIZE), qTileZ = Math.floor(centerZ / CHUNK_SIZE)
+        for (let dx = -blk; dx <= blk; dx++) for (let dz = -blk; dz <= blk; dz++) {
+            const list = this._deg2ArcTiles.get(`${qTileX + dx},${qTileZ + dz}`)
+            if (!list) continue
+            for (const arc of list) {
+                if (seen.has(arc)) continue
+                seen.add(arc)
+                for (let i = 0; i < arc.points.length; i++) {
+                    const px = arc.points[i].x, pz = arc.points[i].z
+                    const ex = px - centerX, ez = pz - centerZ
+                    if (ex * ex + ez * ez > r2) continue
+                    out.push(px, arc.grades[i], pz, 0, 0)   // stride 5: [x, y, z, tx, tz]
+                }
+            }
+        }
+        return out
+    }
+
+    /**
      * Clear cached road data and remove any debug lines from the scene.
      * Clears the valley-trunk network and proto caches (the per-tile caches are gone).
      */
@@ -3050,6 +3083,48 @@ export class RoadSystem {
     }
 
     /**
+     * QUAL-16: continuous nearest-point projection of (wx,wz) onto a deg-2 kink CONNECTOR arc's
+     * centreline polyline (arc.points / arc.polyCum, built in _buildDeg2ArcGeom). Same math as
+     * _projectOntoRun but on the cached connector centreline (no run arcOrigin — arc.polyCum starts
+     * at 0). Rejects longitudinal overshoot past either anchor (there the continuation run owns the
+     * surface, so the arc must not claim it). Returns { fx,fz,tx,tz,arcS,signedLat,d2 } or null.
+     */
+    _projectOntoDeg2Arc(arc, wx, wz) {
+        const pts = arc.points, cum = arc.polyCum, N = pts.length
+        if (N < 2) return null
+        let bestD2 = Infinity, bestFx = 0, bestFz = 0, bestTx = 1, bestTz = 0, bestCum = 0
+        let bestI = 0, bestT = 0
+        for (let i = 0; i < N - 1; i++) {
+            const ax = pts[i].x, az = pts[i].z
+            const ex = pts[i + 1].x - ax, ez = pts[i + 1].z - az
+            const segLen2 = ex * ex + ez * ez
+            const segLen = Math.sqrt(segLen2) || 1e-8
+            let t = segLen2 > 1e-12 ? ((wx - ax) * ex + (wz - az) * ez) / segLen2 : 0
+            if (t < 0) t = 0; else if (t > 1) t = 1
+            const fx = ax + t * ex, fz = az + t * ez
+            const ddx = wx - fx, ddz = wz - fz
+            const d2 = ddx * ddx + ddz * ddz
+            if (d2 < bestD2) {
+                bestD2 = d2; bestFx = fx; bestFz = fz
+                bestTx = ex / segLen; bestTz = ez / segLen
+                bestCum = cum[i] + t * segLen
+                bestI = i; bestT = t
+            }
+        }
+        const overBefore = bestI === 0 && bestT === 0 &&
+            ((wx - pts[0].x) * bestTx + (wz - pts[0].z) * bestTz) < 0
+        const overAfter  = bestI === N - 2 && bestT === 1 &&
+            ((wx - pts[N - 1].x) * bestTx + (wz - pts[N - 1].z) * bestTz) > 0
+        if (overBefore || overAfter) return null
+        return {
+            fx: bestFx, fz: bestFz, tx: bestTx, tz: bestTz,
+            arcS: bestCum,
+            signedLat: (wx - bestFx) * bestTz - (wz - bestFz) * bestTx,
+            d2: bestD2,
+        }
+    }
+
+    /**
      * Resolve WHICH road the physics carve sits on at (wx,wz) — the nearest run whose footprint contains
      * the point — via the continuous polyline projection, returned in queryNearest's shape so
      * _sampleCarveWorld can consume it. This replaces queryNearest in the carve path.
@@ -3223,28 +3298,53 @@ export class RoadSystem {
         // Continuous-projection road resolver replaces queryNearest in the carve path —
         // see _resolveRoadSurface. nrHint (from carveHint) is already a _resolveRoadSurface result.
         const nr = (nrHint !== undefined) ? nrHint : this._resolveRoadSurface(wx, wz)
-        if (!nr) return null
 
-        const dx = wx - nr.point.x
-        const dz = wz - nr.point.z
-        const tx = nr.tangent.x, tz = nr.tangent.z
+        let cs = null, arcSEff = 0, latDist = 0, runKey = ''
+        if (nr) {
+            const dx = wx - nr.point.x
+            const dz = wz - nr.point.z
+            const tx = nr.tangent.x, tz = nr.tangent.z
+            // Per-point arc via projection onto the run tangent. For a FRESH query nr.point is the exact
+            // foot of perpendicular so this is ~0 (no change). For a CACHE HIT at a nearby quantized cell
+            // it recovers the offset's true along-run arc, so analyticNormal's ±0.5 m finite differences
+            // still see the road's longitudinal GRADE (not just lateral crown/camber) → correct normal
+            // from ONE query instead of 4. (signedLat below already varies via dx,dz for the lateral term.)
+            arcSEff = (nr.arcS ?? 0) + dx * tx + dz * tz
+            // Signed lateral distance (positive = right of road heading, negative = left).
+            const signedLat = dx * tz - dz * tx
+            latDist = Math.abs(signedLat)
+            // QUAL-07: one carve cross-section function shared with the terrain mesh (_buildCarveTable).
+            // It returns the DIRT-trough surface (clearanceMargin ALWAYS subtracted) + the shoulder blend.
+            cs = this._carveCrossSection(signedLat, arcSEff, nr.runKey ?? '', nr.camberSign ?? 1, rawAmp)
+            runKey = nr.runKey ?? ''
+        }
 
-        // Per-point arc via projection onto the run tangent. For a FRESH query nr.point is the exact
-        // foot of perpendicular so this is ~0 (no change). For a CACHE HIT at a nearby quantized cell
-        // it recovers the offset's true along-run arc, so analyticNormal's ±0.5 m finite differences
-        // still see the road's longitudinal GRADE (not just lateral crown/camber) → correct normal
-        // from ONE query instead of 4. (signedLat below already varies via dx,dz for the lateral term.)
-        const arcSEff = (nr.arcS ?? 0) + dx * tx + dz * tz
-
-        // Signed lateral distance (positive = right of road heading, negative = left).
-        // signedLat = dx*tz - dz*tx (positive = right side of travel direction).
-        const signedLat = dx * tz - dz * tx
-        const latDist   = Math.abs(signedLat)
-
-        // QUAL-07: one carve cross-section function shared with the terrain mesh (_buildCarveTable).
-        // It returns the DIRT-trough surface (clearanceMargin ALWAYS subtracted) + the shoulder blend.
-        const cs = this._carveCrossSection(signedLat, arcSEff, nr.runKey ?? '', nr.camberSign ?? 1, rawAmp)
-        if (!cs) return null   // beyond the fill/cut toe — unaffected terrain
+        // QUAL-16: compose the deg-2 kink CONNECTOR's own FULL run-style cross-section (flat core →
+        // smoothstep shoulder → fill/cut toe, _connectorCarve) over the run surface. Coverage = max
+        // (blendW), so the connector corridor is never LESS carved than the connector standing alone — no
+        // scoop / poke-through. The connector grade DOMINATES its own core (co.blendW≈1) so the swept
+        // corridor gets one flat graded bench instead of the cliff-y run-vs-run Voronoi surface + junction
+        // step the two straight legs leave at a sharp kink (the walls at the asphalt edge); it feathers
+        // (co.blendW→0) back to the run grade at the connector toe, C0. Off a connector co is null → run
+        // surface unchanged. Both inputs continuous → no dithering.
+        const co = this._connectorCarve(wx, wz, rawAmp)
+        if (co) {
+            // Connector grade is the design target across its WHOLE footprint (flat core + smoothstep
+            // shoulder + toe); blendW = max(run, connector) feathers it to raw at the toe. This replaces
+            // the cliff-y run-vs-run Voronoi surface + junction step at the sharp kink with one smooth
+            // graded bench, all the way from the asphalt edge out to the connector toe (co.gradeY follows
+            // the legs' grades so it matches the ribbons at the weld). Run surface unchanged off connectors.
+            const domGrade = cs ? co.gradeY * co.dom + cs.gradeY * (1 - co.dom) : co.gradeY
+            cs = { blendW: Math.max(cs ? cs.blendW : 0, co.blendW), gradeY: domGrade }
+            // On-ribbon decal (clearance) edge: where a run overlaps the connector, keep the RUN's edge
+            // (latDist = run lat) rather than min(run,connector). The connector centreline is inset from
+            // the run near the node, so min() would move the decal dropoff to run-lat ~5.6 — a ~0.15 m
+            // step in the "flat" band the shoulder-lateral gate tolerances tightly, offset from the real
+            // road edge. Only where there is NO run (the bend-outside void) does the connector's own edge
+            // (co.lat) govern its decal.
+            if (!nr) { latDist = co.lat; arcSEff = co.arcS; runKey = '' }
+        }
+        if (!cs) return null   // no run and no connector — unaffected terrain
 
         // ── Physics-only on-ribbon overlay (the one intentional mesh↔collision difference) ──
         // The terrain mesh draws the dirt trough everywhere; ON the ribbon the truck instead rides the
@@ -3256,7 +3356,7 @@ export class RoadSystem {
         if (latDist < halfWidth) {
             gradeY += clearanceMargin
             if (p.potholeEnabled) {
-                const rq = roadQuality(arcSEff, nr.runKey ?? '', this._worldSeed)
+                const rq = roadQuality(arcSEff, runKey, this._worldSeed)
                 gradeY += potholeNoise(wx, wz, rq, p)
             }
         }
@@ -3366,14 +3466,17 @@ export class RoadSystem {
 
         const nodes = new Map()
         const carveArcs = new Map()
+        const deg2ArcTiles = new Map()   // QUAL-16: tileKey → [connector arc] for _resolveRoadSurface
         // QUAL-16: a 2-leg cluster is a road continuing through the node — but each graph edge is
         // routed INDEPENDENTLY, so nothing makes the two arrival tangents anti-parallel. Above
         // roadJunctionKinkDeg the centerline heading KINK reads as a corner (wedge notch + abrupt
-        // camber slew), so admit those as mini-junctions: same cutback + pad machinery, n = 2.
-        // Straight pass-throughs stay untouched ribbons (no pad spam along every road); extreme
-        // kinks (> 75°, degenerate strands) are left alone — a pad there would be a hairpin crescent.
+        // camber slew), so admit those as mini-junctions: same cutback + carve machinery, n = 2.
+        // Straight pass-throughs stay untouched ribbons (no pad spam along every road). The mesh
+        // connector for n = 2 is a swept fillet ARC (_buildDeg2Ribbon), not a pad — so sharp kinks
+        // are fine (they just curve tighter, no hairpin crescent). Admit up to KINK_MAX; beyond that
+        // the fitted arc pinches (R < halfWidth) and the code falls back to the pad ladder anyway.
         const kinkMin = (this._params.roadJunctionKinkDeg ?? 0) * Math.PI / 180
-        const KINK_MAX = 75 * Math.PI / 180
+        const KINK_MAX = 120 * Math.PI / 180
         for (const c of clusters) {
             if (c.legs.length < 2) continue
             if (c.legs.length === 2) {
@@ -3401,9 +3504,28 @@ export class RoadSystem {
                 ? this._padPlaneY(plane, c.x, c.z)
                 : c.ys.reduce((s, v) => s + v, 0) / c.ys.length
             const legs = c.legs.slice().sort((p, q) => Math.atan2(p.dir.x, p.dir.z) - Math.atan2(q.dir.x, q.dir.z))
-            nodes.set(`${Math.round(c.x)},${Math.round(c.z)}`, {
+            const node = {
                 pos: new THREE.Vector3(c.x, nodeY, c.z), nodeY, plane, legs, kind: 'AT_GRADE', simpleMerge: legs.length > 4,
-            })
+            }
+            // QUAL-16: build the deg-2 connector fillet arc ONCE here (cached per _networkRev). The mesh
+            // (_buildDeg2Ribbon) reads node.deg2.points/halfWidth to sweep the strip, and _resolveRoadSurface
+            // projects onto it so the terrain earthwork + collision follow the same arc → no scoop on sharp
+            // bends. null (degenerate/pinched fillet) → mesh falls back to the pad ladder, no carve candidate.
+            if (legs.length === 2) {
+                const arc = this._buildDeg2ArcGeom(node)
+                if (arc) {
+                    node.deg2 = arc
+                    const seenTiles = new Set()
+                    for (const pt of arc.points) {
+                        const key = `${Math.floor(pt.x / CHUNK_SIZE)},${Math.floor(pt.z / CHUNK_SIZE)}`
+                        if (seenTiles.has(key)) continue
+                        seenTiles.add(key)
+                        let arr = deg2ArcTiles.get(key); if (!arr) { arr = []; deg2ArcTiles.set(key, arr) }
+                        arr.push(arc)
+                    }
+                }
+            }
+            nodes.set(`${Math.round(c.x)},${Math.round(c.z)}`, node)
             for (const a of c.legs) {
                 let arr = carveArcs.get(a.runKey); if (!arr) { arr = []; carveArcs.set(a.runKey, arr) }
                 arr.push({ arc: a.arc })   // radius read fresh in _junctionCarve (live slider)
@@ -3411,8 +3533,243 @@ export class RoadSystem {
         }
         this._nodeJunctions = nodes
         this._junctionCarveArcs = carveArcs
+        this._deg2ArcTiles = deg2ArcTiles
         this._nodeJunctionsRev = this._networkRev
         return nodes
+    }
+
+    // ── QUAL-16: deg-2 kink connector fillet arc geometry ──────────────────────────────────────
+    /**
+     * Fit the cheapest circular fillet joining a deg-2 node's two mouth cross-sections and return the
+     * swept connector CENTRELINE (densified ≤ 3 m) plus the data the carve/mesh need. Formerly lived
+     * inside road-mesh.js `_buildDeg2Ribbon`; moved here so it is computed ONCE (cached on the node per
+     * _networkRev) and shared by the mesh (sweep) AND _resolveRoadSurface (earthwork/collision), so
+     * mesh == collision through the bend. gStart/gEnd are the run grades at the two centreline
+     * endpoints (anchor points on the real ribbons) → the connector's flat grade interp is C0 with the
+     * ribbons it welds to. Pure fn of node + params + streamed network (window-invariant, D-16).
+     *
+     * Returns { points:[{x,z}], polyCum:Float64Array, halfWidth, gStart, gEnd, totalLen, key } or null
+     * (degenerate/pinched fillet → caller keeps the pad-ladder fallback, no carve candidate).
+     */
+    _buildDeg2ArcGeom(node) {
+        if (!node.legs || node.legs.length !== 2 || !this._network) return null
+        const halfWidth = this._params.roadHalfWidth ?? 5
+        const cutback = this.junctionCutbackDist()
+        const T = cutback + halfWidth * 0.5
+
+        const mouth = []
+        for (const leg of node.legs) {
+            if (leg.arc === undefined || !leg.runKey) return null
+            const e = this._network.get(leg.runKey)
+            const cum = e?.polyCum
+            const len = cum ? cum[cum.length - 1] : 0
+            if (!(len > 1e-3)) return null
+            const s = leg.arc < 1e-6 ? 1 : -1
+            const mouthArc = leg.arc + s * Math.min(T, len * 0.45)
+            const c = this.runPointAt(leg.runKey, mouthArc)
+            if (!c) return null
+            const prof = this.runProfile(mouthArc, leg.runKey)
+            let ox = prof.tx * s, oz = prof.tz * s
+            const ol = Math.hypot(ox, oz)
+            if (ol < 1e-6) return null
+            const anchorArc = leg.arc + s * Math.min(cutback + halfWidth * 2, len * 0.45)
+            mouth.push({ runKey: leg.runKey, cx: c.x, cz: c.z, ox: ox / ol, oz: oz / ol, mouthArc, anchorArc })
+        }
+        const [A, B] = mouth
+        const uAx = -A.ox, uAz = -A.oz
+        const uBx =  B.ox, uBz =  B.oz
+        const qx = B.cx - A.cx, qz = B.cz - A.cz
+        const det = uAx * uBz - uAz * uBx
+        if (Math.abs(det) < 1e-4) return null
+        const t = (qx * uBz - qz * uBx) / det
+        const r = (uAx * qz - uAz * qx) / det
+        if (!(t > 0.5) || !(r > 0.5)) return null
+        const Ix = A.cx + uAx * t, Iz = A.cz + uAz * t
+        const cosD = Math.max(-1, Math.min(1, uAx * uBx + uAz * uBz))
+        const delta = Math.acos(cosD)
+        const tanH = Math.tan(delta / 2)
+        if (tanH < 1e-4) return null
+        const Lt = Math.min(t, r) - halfWidth * 0.5
+        if (Lt < 0.5) return null
+        const R = Lt / tanH
+        if (R < halfWidth) return null   // too tight — inside edge would pinch; let the pad handle it
+        const PAx = Ix - uAx * Lt, PAz = Iz - uAz * Lt
+        const PBx = Ix + uBx * Lt, PBz = Iz + uBz * Lt
+        let bx = -uAx + uBx, bz = -uAz + uBz
+        const bl = Math.hypot(bx, bz)
+        if (bl < 1e-6) return null
+        bx /= bl; bz /= bl
+        const h = R / Math.cos(delta / 2)
+        const Ox = Ix + bx * h, Oz = Iz + bz * h
+        const a0 = Math.atan2(PAx - Ox, PAz - Oz)
+        const a1 = Math.atan2(PBx - Ox, PBz - Oz)
+        let dAng = a1 - a0
+        while (dAng >  Math.PI) dAng -= 2 * Math.PI
+        while (dAng < -Math.PI) dAng += 2 * Math.PI
+
+        const SEG = 3
+        const center = []
+        const pushStraight = (x0, z0, x1, z1, includeStart) => {
+            const d = Math.hypot(x1 - x0, z1 - z0)
+            const n = Math.max(1, Math.ceil(d / SEG))
+            for (let k = includeStart ? 0 : 1; k <= n; k++) {
+                const f = k / n
+                center.push({ x: x0 + (x1 - x0) * f, z: z0 + (z1 - z0) * f })
+            }
+        }
+        const pushRun = (runKey, from, to, includeStart) => {
+            const d = Math.abs(to - from)
+            const n = Math.max(1, Math.ceil(d / SEG))
+            for (let k = includeStart ? 0 : 1; k <= n; k++) {
+                const p = this.runPointAt(runKey, from + (to - from) * (k / n))
+                if (p) center.push({ x: p.x, z: p.z })
+            }
+        }
+        pushRun(A.runKey, A.anchorArc, A.mouthArc, true)   // anchorA → cA, on the ribbon
+        pushStraight(A.cx, A.cz, PAx, PAz, false)          // cA → PA (short entry into the fillet)
+        const arcSteps = Math.max(2, Math.ceil(Math.abs(dAng) * R / SEG))
+        for (let k = 1; k <= arcSteps; k++) {
+            const ang = a0 + dAng * (k / arcSteps)
+            center.push({ x: Ox + Math.sin(ang) * R, z: Oz + Math.cos(ang) * R })
+        }
+        pushStraight(PBx, PBz, B.cx, B.cz, false)          // PB → cB
+        pushRun(B.runKey, B.mouthArc, B.anchorArc, false)  // cB → anchorB, on the ribbon
+        if (center.length < 2) return null
+
+        const polyCum = new Float64Array(center.length)
+        for (let i = 1; i < center.length; i++) {
+            polyCum[i] = polyCum[i - 1] + Math.hypot(center[i].x - center[i - 1].x, center[i].z - center[i - 1].z)
+        }
+
+        // Per-vertex grade = distance-weighted blend of the TWO legs' run grades sampled at that centreline
+        // vertex (project onto each run → runProfile grade, weight 1/(d²+1)). The connector carve rides this,
+        // so at the connector↔ribbon boundary the height matches the runs (both → nodeY at the node, where
+        // the legs are welded); the blend is smooth and needs no crown/camber (a kink is a flat plaza).
+        const netA = this._network.get(A.runKey), netB = this._network.get(B.runKey)
+        const grades = new Float64Array(center.length)
+        for (let i = 0; i < center.length; i++) {
+            const prA = netA ? this._projectOntoRun(netA, center[i].x, center[i].z) : null
+            const prB = netB ? this._projectOntoRun(netB, center[i].x, center[i].z) : null
+            const gA = prA ? this.runProfile(prA.arcS, A.runKey).gradeY : null
+            const gB = prB ? this.runProfile(prB.arcS, B.runKey).gradeY : null
+            if (gA != null && gB != null) {
+                const wA = 1 / (prA.d2 + 1), wB = 1 / (prB.d2 + 1)
+                grades[i] = (gA * wA + gB * wB) / (wA + wB)
+            } else grades[i] = gA != null ? gA : (gB != null ? gB : node.nodeY)
+        }
+        return {
+            points: center,
+            polyCum,
+            grades,
+            halfWidth,
+            netKeys: [A.runKey, B.runKey],   // the two legs — _connectorCarve blends their grades in WORLD space
+            totalLen: polyCum[center.length - 1],
+            key: `@deg2:${node.pos.x.toFixed(1)},${node.pos.z.toFixed(1)}`,
+        }
+    }
+
+    /**
+     * QUAL-16: smooth run grade at a WORLD point on `runKey` — the same ANALYTIC-centerline refinement
+     * _resolveRoadSurface uses. The raw polyline projection (_projectOntoRun) snaps its foot between
+     * segments for a point far off a CURVED run, jumping arcS ~2 m (→ a grade step); refining onto the
+     * exact primitive centreline removes that. Returns { grade, d2 } (d2 = squared distance, for blending)
+     * or null. Pure fn of the streamed network.
+     */
+    _runGradeAt(runKey, wx, wz) {
+        const ce = this._network.get(runKey)
+        if (!ce) return null
+        const pr = this._projectOntoRun(ce, wx, wz)
+        if (!pr) return null
+        let arcS = pr.arcS
+        if (ce.centerline && ce.centerline.length > 1e-6 && ce.clArc && ce.polyCum) {
+            // FINE DS (0.25 m vs _resolveRoadSurface's 1.0 m) + a wide window: the connector grade is
+            // sampled up to ~15 m OFF a leg (the footprint), where (a) the polyline foot (pr.sCL, the
+            // window centre) snaps ~2 m between segments on a curved leg — a wide window still brackets the
+            // true nearest — and (b) a coarse DS quantises the analytic arcS to ~1 m, stepping the grade
+            // ~0.18 m per snap (the residual shoulder-lateral step). Fine DS keeps the leg grade smooth.
+            const hit = ce.centerline.nearest(wx, wz, 0.25, pr.sCL - 20, pr.sCL + 20)
+            if (hit) arcS = _interpArcTable(ce.clArc, ce.polyCum, hit.s) - (ce.arcOrigin ?? 0)
+        }
+        return { grade: this.runProfile(arcS, runKey).gradeY, d2: pr.d2 }
+    }
+
+    /**
+     * QUAL-16: connector design grade at a WORLD point — distance-weighted blend of the two legs' run
+     * grades (weight 1/(d²+1)). Evaluated in world space (not from the connector's own arc-length) so it
+     * is CONTINUOUS across a tight kink where the fillet centreline curves back within the footprint width
+     * — projecting onto the connector's own arc-length would flip to the far limb and jump the grade (a
+     * lateral cliff at the asphalt edge). Each leg grade is the ANALYTIC-refined run grade (_runGradeAt),
+     * so it doesn't step where the polyline foot snaps far off a curved leg. → node grade near the node
+     * (legs welded), → each leg's grade near that leg (C0 with the ribbon).
+     */
+    _connectorGradeAt(arc, wx, wz) {
+        const a = this._runGradeAt(arc.netKeys[0], wx, wz)
+        const b = this._runGradeAt(arc.netKeys[1], wx, wz)
+        if (a && b) {
+            const wA = 1 / (a.d2 + 1), wB = 1 / (b.d2 + 1)
+            return (a.grade * wA + b.grade * wB) / (wA + wB)
+        }
+        return a ? a.grade : (b ? b.grade : null)
+    }
+
+    /**
+     * QUAL-16: the deg-2 kink CONNECTOR's own carve cross-section at (wx,wz) — used ONLY as a fallback
+     * where the run scan leaves the connector footprint uncarved (the void on a sharp bend, off both
+     * straight corridors and beyond their toes → the mesh connector floats over raw terrain / terrain
+     * pokes through the asphalt). Flat plaza grade (_connectorGradeAt, run-following) + the standard fill/cut
+     * toe ramp to raw, so it is C0 with the surrounding terrain (both → raw where the toes meet) and with
+     * the ribbons (grade → run grade near the node). Returns { blendW, gradeY } (DIRT, clearance already
+     * folded out) or null (no connector near, off its footprint, or beyond the toe). Window-invariant.
+     */
+    _connectorCarve(wx, wz, rawAmp) {
+        if (!this._deg2ArcTiles || !this._deg2ArcTiles.size) return null
+        const p = this._params
+        const halfWidth     = p.roadHalfWidth      ?? 5
+        const shoulderWidth = p.roadShoulderWidth   ?? 2.5
+        const clearanceMargin = p.roadClearanceMargin ?? 0.25
+        const carveExtraWidth = p.roadCarveExtraWidth ?? 3.0
+        const minRadius       = p.roadMinTurnRadius   ?? 12
+        const carveHalfWidth  = Math.min(halfWidth + carveExtraWidth, minRadius)
+        const maxEmbankmentToe = p.roadMaxEmbankmentToe ?? 10
+        const qtx = Math.floor(wx / CHUNK_SIZE), qtz = Math.floor(wz / CHUNK_SIZE)
+        // Nearest connector arc in the 3×3 block.
+        let bestArc = null, bestPr = null, bestLat = Infinity
+        for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+            const list = this._deg2ArcTiles.get(`${qtx + dx},${qtz + dz}`)
+            if (!list) continue
+            for (const arc of list) {
+                const pr = this._projectOntoDeg2Arc(arc, wx, wz)
+                if (!pr) continue
+                const lat = Math.abs(pr.signedLat)
+                if (lat < bestLat) { bestLat = lat; bestArc = arc; bestPr = pr }
+            }
+        }
+        if (!bestArc) return null
+        const g = this._connectorGradeAt(bestArc, wx, wz)
+        if (g == null) return null
+        const designY = g - clearanceMargin
+        const fillSlope = p.roadFillSlope ?? 3.0, cutSlope = p.roadCutSlope ?? 1.0
+        const fillToe = halfWidth + shoulderWidth + Math.max(0, designY - rawAmp) * fillSlope
+        const cutToe  = halfWidth + shoulderWidth + Math.max(0, rawAmp - designY) * cutSlope
+        const toeExt  = Math.min(Math.max(fillToe, cutToe), carveHalfWidth + maxEmbankmentToe)
+        if (bestLat > toeExt) return null
+        // blendW: 1 across the flat core (carveHalfWidth), then the SAME smoothstep shoulder→toe falloff
+        // _carveCrossSection uses (QUAL-06/07) — ramp = max(shoulderWidth, toeExt−carveHalfWidth), C1 at
+        // both ends. So the connector flanks get an ordinary graded road cut/fill bench (no wall/sawtooth
+        // at the asphalt edge), identical in shape to a run's embankment.
+        const ramp = Math.max(shoulderWidth, toeExt - carveHalfWidth)
+        let blendW
+        if (bestLat < carveHalfWidth) blendW = 1.0
+        else { const u = Math.min(1, (bestLat - carveHalfWidth) / ramp); blendW = 1.0 - u * u * (3.0 - 2.0 * u) }
+        // Longitudinal end-feather `dom`: the connector rides ONTO each leg over its ribbon-ride ends, so
+        // near arc-length 0 / totalLen the connector grade should hand back to the RUN grade rather than
+        // hard-cut to null at the anchor (where a run grazing the connector's end saw a step, co(flat) vs
+        // run(crowned)). dom = 1 in the interior, smoothstep to 0 within END_FEATHER m of either end.
+        const END_FEATHER = 6
+        const endDist = Math.min(bestPr.arcS, bestArc.totalLen - bestPr.arcS)
+        let dom = 1.0
+        if (endDist < END_FEATHER) { const u = Math.max(0, endDist) / END_FEATHER; dom = u * u * (3.0 - 2.0 * u) }
+        return { blendW, gradeY: designY, lat: bestLat, arcS: bestPr.arcS, dom }
     }
 
     // ── QUAL-11: run centerline XZ at a run-global arc ─────────────────────────────────────────
@@ -3454,12 +3811,29 @@ export class RoadSystem {
      */
     sampleRoadTopY(wx, wz) {
         const nr = this._resolveRoadSurface(wx, wz)
-        if (!nr) return null
-        const dx = wx - nr.point.x, dz = wz - nr.point.z
-        const arcSEff   = (nr.arcS ?? 0) + dx * nr.tangent.x + dz * nr.tangent.z
-        const signedLat = dx * nr.tangent.z - dz * nr.tangent.x
         const clearanceMargin = this._params.roadClearanceMargin ?? 0.25
-        return this._carveDirtY(signedLat, arcSEff, nr.runKey ?? '', nr.camberSign ?? 1) + clearanceMargin
+        let runTop = null
+        if (nr) {
+            const dx = wx - nr.point.x, dz = wz - nr.point.z
+            const arcSEff   = (nr.arcS ?? 0) + dx * nr.tangent.x + dz * nr.tangent.z
+            const signedLat = dx * nr.tangent.z - dz * nr.tangent.x
+            runTop = this._carveDirtY(signedLat, arcSEff, nr.runKey ?? '', nr.camberSign ?? 1) + clearanceMargin
+        }
+        // QUAL-16: compose the deg-2 kink CONNECTOR overlay — the SAME dom-blended design grade the
+        // carve (_sampleCarveWorld / terrain _buildCarveTable) rides — so the connector ribbon mesh
+        // (_buildDeg2Ribbon samples this per vertex) sits exactly clearanceMargin above the carved
+        // dirt through the bend. Without this the ribbon rode the run-Voronoi field while the dirt
+        // rode the connector blend; where the two legs' grades differ across a sharp kink the dirt
+        // rose above the drawn asphalt (the z-fighting dirt interleave at the 87° kink). Weight =
+        // blendW·dom: under the asphalt blendW = 1 so this IS the physics composition (mesh ==
+        // collision); it feathers C1 to the run/raw field at the connector toe and ends.
+        const co = this._connectorCarve(wx, wz, this._coarseH(wx, wz) * (this._params.terrainAmplitude ?? 1))
+        if (co) {
+            const coTop = co.gradeY + clearanceMargin
+            const w = runTop != null ? co.blendW * co.dom : 1
+            return runTop != null ? coTop * w + runTop * (1 - w) : coTop
+        }
+        return runTop
     }
 
     // ── QUAL-07: the ONE road-carve cross-section function ───────────────────────────────────
