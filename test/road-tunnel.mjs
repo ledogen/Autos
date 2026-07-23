@@ -16,8 +16,12 @@ import { RANGER_PARAMS as P } from '../data/ranger.js'
 
 const CS = 64
 const SEED = '6'
-// Centers spanning the run-0004 mission region (start ~(2140,1682) → dump ~(1476,2585)).
-const CENTERS = [[1808, 2133], [2140, 1682]]
+// Centers spanning a bore-rich seed-6 mountain region whose stream windows SHARE tunneled
+// edges (needed by the two-center invariance check). Originally the run-0004 mission region
+// ((1808,2133)/(2140,1682)) — its lone bore vanished when main's d570ef7 soft grade-clamp
+// shifted the profile there; tunnels remain healthy elsewhere (2–6 bores per window), so the
+// gate was repointed rather than the knobs retuned.
+const CENTERS = [[148, -732], [1006, -973]]
 
 function streamAt (cx, cz) {
   const ws = parseWorldSeed(SEED)

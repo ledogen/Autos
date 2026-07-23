@@ -430,8 +430,13 @@ export function applyTunnelPassInPlace(pts, opts, heightAt) {
     // deck reaches minDepth — a crest that shallow is better dug out by earthwork than bored.
     // (Same slider as the stage-1 summit trigger: one knob = "how deep the road must want to
     // run under terrain before a tunnel is justified".)
+    // GRADE GATE: a covered stretch only bores while the profile's local |grade| stays
+    // ≤ boreMaxGrade — nobody bores a 35 % tunnel; a steep covered pitch stays an open cut.
+    // (Stage-1 chords are capped harder at maxGrade, but stage-2 follows the road's OWN
+    // profile, which the network's soft grade-clamp legally lets run steeper in places.)
     let spans = null
     const need = boreRadius + portalDepth
+    const boreMaxGrade = opts.boreMaxGrade ?? 0.18
     let s0 = -1, dPrev = 0, dMax = 0
     const close = (s1) => {
         const c0 = Math.max(s0, endMargin), c1 = Math.min(s1, total - endMargin)
@@ -441,14 +446,19 @@ export function applyTunnelPassInPlace(pts, opts, heightAt) {
     }
     for (let i = 0; i < N; i++) {
         const d = terr[i] - pts[i].y - need       // > 0 ⇒ crown buried by ≥ portalDepth
-        const inside = d >= 0
+        const seg = i > 0 ? arc[i] - arc[i - 1] : 0
+        const gradeOK = seg > 1e-6 ? Math.abs(pts[i].y - pts[i - 1].y) / seg <= boreMaxGrade : true
+        const inside = d >= 0 && gradeOK
         if (inside && s0 < 0) {
             s0 = arc[i]; dMax = d
             if (i > 0 && dPrev < 0) s0 = arc[i - 1] + (arc[i] - arc[i - 1]) * (-dPrev / (d - dPrev))
         } else if (inside) {
             if (d > dMax) dMax = d
         } else if (s0 >= 0) {
-            close(dPrev > 0 ? arc[i - 1] + (arc[i] - arc[i - 1]) * (dPrev / (dPrev - d)) : arc[i])
+            // Cover exit interpolates the exact crossing; a grade exit (still covered) closes
+            // at the last in-grade sample instead.
+            close(d < 0 && dPrev > 0 ? arc[i - 1] + (arc[i] - arc[i - 1]) * (dPrev / (dPrev - d))
+                : d < 0 ? arc[i] : arc[i - 1])
         }
         dPrev = d
     }
