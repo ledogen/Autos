@@ -7,6 +7,42 @@ Companion: `ROUTER-PERF-EXPLORATION.md` (where the 25 s goes; why Option 1 is cl
 
 ---
 
+## 0. REVISED MECHANISM (2026-07-24) — shared per-node headings, NOT stroke-unit routing
+
+**This supersedes §2/§3/§6 below.** Zoom-out finding (user-prompted): every edge already routes
+with PRESCRIBED terminal headings (`startHeading`/`goalHeading` in `_edgeRouteSpec`, honored
+analytically by the Dubins terminal) — and both prescriptions are just the edge's own chord
+bearing. The deg-2 kink is therefore a DATA disagreement (two edges prescribing two different
+bearings at one node), not an architectural fact. So strokes are never ROUTED as units:
+
+- **Mechanism:** at each node, MAXIMAL PAIRING (§7.2) decides which legs continue through; each
+  through-pair (A,B) at node N gets ONE canonical heading = bearing(A→B) (site positions — pure,
+  local, window-invariant). Both incident edges prescribe that heading at N → exact tangent
+  continuity by construction. Branch legs keep today's chord-bearing prescriptions.
+- **Deleted from the old plan:** whole-stroke searches, chained segment routing, bounded
+  out-of-window routing, `maxLen` caps + canonical splits + the split-heading fix, the worker
+  chain-job type, the stroke-level single grade pass (the existing junction height blend — which
+  survives for branches anyway — ties node heights across a now-kink-free tangent). `formStrokes`'
+  chain/loop/split machinery becomes spike-only; production needs only the per-node pairing core.
+- **Invariance:** trivially per-node-local (bearing of two neighbour sites) — no chain-level
+  reasoning, no frontier truncation cases.
+- **Risk:** a prescribed through-heading can deviate up to ~half the node bend (~55° at the worst
+  measured deg-2 node) from the edge's own chord; the router handles arbitrary terminal headings
+  but sharp cases may sweep wider / search longer near the node. Gates + the A/B drive decide.
+- **Context (already shipped, checked 2026-07-24):** `roadSoloReuse: true` (duplicate-final skip),
+  corridor heuristic, `roadSiteValleySnap: true` (nodes already sit in local terrain lows, so
+  through-pair chords tend to run along valleys — maximal pairing is terrain-aligned at the input).
+
+Stage 1 therefore = pairing core (pure fn) + heading override in `_edgeRouteSpec` behind
+`roadStrokeRouting` (default off) + full gates + A/B drive. Stage 2 (delete deg-2 connector +
+collapse the fillet ladder to stem-meets-through / through×through) unchanged.
+
+Related shelf idea (separate ticket QUAL-22): terrain-cost Urquhart pruning — prune each
+triangle's most-EXPENSIVE edge (coarse-height line integral) instead of longest-by-distance, so
+topology itself becomes cost-emergent. Not a QUAL-21 rider (re-shapes the whole map).
+
+---
+
 ## 1. The problem this attacks
 
 Each Urquhart edge `g:<idA>:<idB>` is routed **independently** and graded **standalone**
