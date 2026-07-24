@@ -14,7 +14,7 @@
 
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
-import { formStrokes } from '../src/road-graph.js'
+import { formStrokes, throughPairsAt } from '../src/road-graph.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 
 const P = { ...RANGER_PARAMS, roadNetworkMode: 'graph' }
@@ -198,4 +198,106 @@ const SA = strokesOf(A)
     const { edges = 0, searches = 0, repairs = 0, unclean = 0 } = STATS
     console.log(`   cold build ${dt.toFixed(1)}s · routes=${edges} searches=${searches} REPAIR re-searches=${repairs} (${(100 * repairs / Math.max(1, searches)).toFixed(0)}% of searches) · unclean-accepted=${unclean}`)
     console.log(`   (repairs is the Task B floor; Stage 1 strokes should push it toward 0)`)
+}
+
+// ── (4) QUAL-21 Stage 1 KINK CENSUS (flag ON) ───────────────────────────────────
+// With roadStrokeRouting on, both edges at a through-paired node prescribe the same canonical
+// heading — so the per-deg-2-node kink between the two REGISTERED runs (measured from routed
+// points, not chords) should sit ≈100% under the 9° deg-2 connector admission
+// (roadJunctionKinkDeg), i.e. the connector no-ops network-wide. Also reports the worst
+// through-pair CHORD bend at deg-3/4 (the maximal-pairing risk metric — a pair the κ² router
+// must absorb as one continuous curve) and the self-clear repair count vs the flag-off
+// baseline in (3).
+{
+    console.log(`\n━━ (4) STAGE 1 KINK CENSUS (fresh cold build, roadStrokeRouting: true) ━━`)
+    const STATS = {}
+    const r4 = new RoadSystem(6, { ...P, roadStrokeRouting: true })
+    const orig = r4._edgeRouteSpec.bind(r4)
+    r4._edgeRouteSpec = (c1, c2) => { const s = orig(c1, c2); s.opts.scStats = STATS; return s }
+    t0 = Date.now()
+    r4.setRadius(1600)
+    r4.update(new THREE.Vector3(4500, 0, 600))
+    console.log(`   cold build ${((Date.now() - t0) / 1000).toFixed(1)}s`)
+
+    const g = r4._proto.graph
+    // Registered runs incident to each node key.
+    const runsAt = new Map()
+    for (const [, e] of r4._network) {
+        if (!e.cellA || !e.cellB || !e.points || e.points.length < 2) continue
+        for (const id of [e.cellA, e.cellB]) {
+            const k = g.key(id)
+            if (!runsAt.has(k)) runsAt.set(k, [])
+            runsAt.get(k).push({ e, id })
+        }
+    }
+    // Routed leave-heading of run e at its endpoint node id (from the sampled points).
+    const leaveHeading = (e, id) => {
+        const pts = e.points, P = r4._nodePos(id)
+        const d0 = Math.hypot(pts[0].x - P.x, pts[0].z - P.z)
+        const dN = Math.hypot(pts[pts.length - 1].x - P.x, pts[pts.length - 1].z - P.z)
+        const [a, b] = d0 <= dN ? [pts[0], pts[1]] : [pts[pts.length - 1], pts[pts.length - 2]]
+        return Math.atan2(b.z - a.z, b.x - a.x)
+    }
+    const KINK_ADMIT = 9   // deg — the deg-2 connector's roadJunctionKinkDeg admission
+    const kinkBetween = (h1, h2) => {
+        let d = Math.abs(h1 - h2) * 180 / Math.PI
+        d = d % 360; if (d > 180) d = 360 - d
+        return Math.abs(180 - d)   // 0 = the two legs leave in exactly opposite directions
+    }
+    // Two kink measures per deg-2 node:
+    //   prescribed — from _edgeLeaveHeading (the route-spec terminal headings). 0 = the Stage 1
+    //     mechanism landed (both legs through-paired with each other). >0 = the pairing MISSED the
+    //     registered topology — in practice a leg the crossing/clearance cull removed after
+    //     routing (those passes read routed geometry, so the pure pairing cannot see them).
+    //   measured — from the routed points' first chord, which is exactly what the connector
+    //     admission tests. Includes legitimate in-run curvature at the node (a hardR Dubins arc
+    //     ending at the node reads as ~ds/(2R) ≈ 11° of chord deflection with zero actual
+    //     tangent kink), so it overshoots prescribed at curvy endpoints.
+    const kinks = [], kinksPresc = []
+    let over = 0, prescMiss = 0
+    for (const [k, runs] of runsAt) {
+        if ((g.adj.get(k)?.size ?? 0) !== 2 || runs.length !== 2) continue
+        const id = k.split(',').map(Number)
+        const other = (x) => x.id === x.e.cellA ? x.e.cellB : x.e.cellA
+        const kM = kinkBetween(leaveHeading(runs[0].e, runs[0].id), leaveHeading(runs[1].e, runs[1].id))
+        const kP = kinkBetween(r4._edgeLeaveHeading(id, other(runs[0])), r4._edgeLeaveHeading(id, other(runs[1])))
+        kinks.push(kM); kinksPresc.push(kP)
+        if (kM >= KINK_ADMIT) over++
+        if (kP > 0.5) prescMiss++
+    }
+    kinks.sort((a, b) => a - b); kinksPresc.sort((a, b) => a - b)
+    const pct = (arr, p) => arr.length ? arr[Math.min(arr.length - 1, Math.floor(arr.length * p))] : NaN
+    console.log(`   deg-2 nodes measured: ${kinks.length}`)
+    console.log(`   PRESCRIBED kink (mechanism): p50 ${pct(kinksPresc, 0.5).toFixed(2)}° · max ${kinksPresc.length ? kinksPresc[kinksPresc.length - 1].toFixed(2) : '—'}° · pairing-missed nodes: ${prescMiss}/${kinksPresc.length} (cull-created deg-2s)`)
+    console.log(`   MEASURED first-chord kink (connector admission): p50 ${pct(kinks, 0.5).toFixed(2)}° · p90 ${pct(kinks, 0.9).toFixed(2)}° · max ${kinks.length ? kinks[kinks.length - 1].toFixed(2) : '—'}°`)
+    console.log(`   under ${KINK_ADMIT}° admission: ${kinks.length - over}/${kinks.length} (${(100 * (kinks.length - over) / Math.max(1, kinks.length)).toFixed(1)}%)`)
+    if (over) for (const kk of kinks.filter(x => x >= KINK_ADMIT).slice(-5)) console.log(`     over-admission kink: ${kk.toFixed(1)}°`)
+
+    // STAGE 2 PREVIEW: worst through-pair chord bend at deg-3/4 under maximal pairing (computed
+    // directly with throughPairsAt over the band adjacency — the SHIPPED Stage 1 override is
+    // deg-2-only, so these pairs are what the Stage 2 junction rework would absorb).
+    const AMP2 = P.terrainAmplitude ?? 1
+    const bends = []
+    for (const k of runsAt.keys()) {
+        const nbrs = g.adj.get(k)
+        if ((nbrs?.size ?? 0) < 3) continue
+        const id = k.split(',').map(Number)
+        const N = r4._nodePos(id)
+        const node = { x: N.x, z: N.z, h: r4._coarseH(N.x, N.z) * AMP2 }
+        const legs = [...nbrs].sort().map(nk2 => {
+            const q = r4._nodePos(nk2.split(',').map(Number))
+            return { key: nk2, x: q.x, z: q.z, h: r4._coarseH(q.x, q.z) * AMP2 }
+        })
+        for (const [a, b] of throughPairsAt(node, legs)) {
+            const A = r4._nodePos(a.split(',').map(Number)), B = r4._nodePos(b.split(',').map(Number))
+            const ux = N.x - A.x, uz = N.z - A.z, vx = B.x - N.x, vz = B.z - N.z
+            const lu = Math.hypot(ux, uz) || 1, lv = Math.hypot(vx, vz) || 1
+            bends.push(Math.acos(Math.min(1, Math.max(-1, (ux * vx + uz * vz) / (lu * lv)))) * 180 / Math.PI)
+        }
+    }
+    bends.sort((a, b) => a - b)
+    console.log(`   deg-≥3 through-pair chord bend (STAGE 2 preview, not routed): n=${bends.length} · p50 ${pct(bends, 0.5).toFixed(0)}° · p90 ${pct(bends, 0.9).toFixed(0)}° · max ${bends.length ? bends[bends.length - 1].toFixed(0) : '—'}°`)
+
+    const { searches = 0, repairs = 0, unclean = 0 } = STATS
+    console.log(`   self-clear: searches=${searches} REPAIR re-searches=${repairs} unclean-accepted=${unclean} (vs the flag-off baseline in (3))`)
 }

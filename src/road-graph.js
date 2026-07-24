@@ -114,6 +114,62 @@ export function urquhartEdges(pts, tris) {
     return out
 }
 
+// ── QUAL-21 Stage 1 pairing core ─────────────────────────────────────────────────
+// throughPairsAt — MAXIMAL greedy through-pairing of the legs at one graph node (design doc
+// §0 REVISED MECHANISM + §7 locked decisions): pair score = bearing deviation from straight
+// (deg) + gradePenaltyDegPerSlope · |slopeIn − slopeOut| — grade picks WHICH legs pair, never
+// WHETHER a node pairs. Greedy best-score-first while ≥2 legs remain unpaired, so every node of
+// degree ≥2 gets ⌊deg/2⌋ through-pairs: deg-2 always continues (the deg-2 connector then
+// no-ops), deg-3 = through-road + T-branch, deg-4 = two crossing through-roads. PURE fn of
+// (node, legs, opts) with lexicographic tie-breaks on leg keys → deterministic and
+// window-invariant. The threshold knobs (maxDevDeg / gradeJump / runnerUpMargin) are
+// EXPERIMENT-ONLY leftovers of the Stage 0 spike sweeps — production callers pass no opts
+// (maximal pairing, no vetoes).
+//   node: {x, z, h}          — h in METRES (amplitude-scaled coarse height)
+//   legs: [{key, x, z, h}]   — the neighbour sites
+//   → [[keyA, keyB], ...]    — paired leg keys
+export function throughPairsAt(node, legs, opts = {}) {
+    const gp = opts.gradePenaltyDegPerSlope ?? 100
+    const maxDevDeg = opts.maxDevDeg ?? Infinity
+    const gradeJump = opts.gradeJump ?? Infinity
+    const runnerUpMargin = opts.runnerUpMargin ?? 0
+    const L = legs.map(l => {
+        const dx = l.x - node.x, dz = l.z - node.z
+        const len = Math.hypot(dx, dz) || 1
+        return { key: l.key, ux: dx / len, uz: dz / len, slope: (l.h - node.h) / len }
+    })
+    const cand = []
+    for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) {
+        const a = L[i], b = L[j]
+        // deviation from straight: angle between −a and b directions (0 = collinear pass-through)
+        const dot = -(a.ux * b.ux + a.uz * b.uz)
+        const dev = Math.acos(Math.min(1, Math.max(-1, dot))) * 180 / Math.PI
+        // continuing a→node→b: slope in along a = −a.slope, slope out along b = b.slope
+        const sJump = Math.abs(a.slope + b.slope)
+        if (dev > maxDevDeg || sJump > gradeJump) continue
+        const [lo, hi] = a.key < b.key ? [a.key, b.key] : [b.key, a.key]
+        cand.push({ i, j, dev, score: dev + gp * sJump, lo, hi })
+    }
+    cand.sort((p, q) => (p.score - q.score) || (p.lo < q.lo ? -1 : p.lo > q.lo ? 1 : p.hi < q.hi ? -1 : 1))
+    // Legacy Stage-0 semantics for the spike's sensitivity sweeps ONLY: at most one through-pair
+    // per deg-≥3 node, vetoed entirely when a conflicting qualifying pair sits within
+    // runnerUpMargin of the best (no clear through-road → all legs stay branches).
+    if (runnerUpMargin > 0 && L.length >= 3) {
+        if (!cand.length) return []
+        const best = cand[0]
+        const rival = cand.find(p => p !== best && (p.i === best.i || p.j === best.j || p.i === best.j || p.j === best.i))
+        if (rival && rival.dev - best.dev < runnerUpMargin) return []
+        return [[L[best.i].key, L[best.j].key]]
+    }
+    const used = new Set(), pairs = []
+    for (const c of cand) {
+        if (used.has(c.i) || used.has(c.j)) continue
+        used.add(c.i); used.add(c.j)
+        pairs.push([L[c.i].key, L[c.j].key])
+    }
+    return pairs
+}
+
 // ── QUAL-21 stroke formation ─────────────────────────────────────────────────────
 // Decompose the Urquhart edge set into STROKES: maximal chains of edges a road naturally
 // continues along, later routed as ONE continuous curvature-bounded curve (Stage 1) and split
@@ -122,14 +178,12 @@ export function urquhartEdges(pts, tris) {
 // the same interior chain forms the same stroke from any stream center (the D-16 make-or-break;
 // see .planning/research/STROKE-ROUTING-DESIGN.md §3).
 //
-// Pairing rules (user-approved 2026-07-23):
+// Pairing rules (Stage 1, locked — see throughPairsAt above):
 //  - deg-2 node: ALWAYS pass through — a single curvature-bounded curve absorbs any bend angle
 //    (κ² prices it), and this is what lets the deg-2 connector subsystem be deleted outright.
-//  - deg-≥3 node: at most ONE through-pair — the straightest qualifying leg pair, where
-//    qualifying means (a) deviation from straight ≤ maxDevDeg, (b) grade continuity
-//    |slopeIn − slopeOut| ≤ gradeJump (a road doesn't "continue through" into a leg that dives),
-//    and (c) it beats every CONFLICTING qualifying pair by runnerUpMargin (an ambiguous
-//    symmetric Y stays a junction of three T-ing branches rather than an arbitrary through-road).
+//  - deg-≥3 node: MAXIMAL pairing via throughPairsAt (defaults — no thresholds/vetoes). The
+//    Stage-0 threshold knobs (maxDevDeg / gradeJump / runnerUpMargin) still pass through as
+//    experiment-only opts for sensitivity sweeps.
 //  - Chains longer than maxLen (XZ chord sum) split at canonical interior nodes; closed loops
 //    (pure deg-2 rings — Urquhart has cycles) split at the lexicographically-lowest node and at
 //    the node nearest half the ring length, so every stroke is an open, boundedly-long, routable
@@ -139,10 +193,7 @@ export function urquhartEdges(pts, tris) {
 //   edges: Array<[keyA, keyB]>   — undirected, deduped (the Urquhart edge list)
 //   → Array<{ nodes: [key...], len: number, loop: boolean }>  (stroke node chains, in order)
 export function formStrokes(nodes, edges, opts = {}) {
-    const maxDevDeg     = opts.maxDevDeg     ?? 40    // through-pair: max deviation from straight
-    const gradeJump     = opts.gradeJump     ?? 0.08  // through-pair: max |slopeIn − slopeOut| (m/m)
-    const runnerUpMargin = opts.runnerUpMargin ?? 12  // deg: best pair must beat conflicting rival by this
-    const maxLen        = opts.maxLen        ?? 1500  // m: cap on stroke XZ chord length before canonical split
+    const maxLen = opts.maxLen ?? 1500  // m: cap on stroke XZ chord length before canonical split
 
     // Adjacency: node key → sorted list of neighbour keys (sorted for deterministic iteration).
     const adj = new Map()
@@ -164,33 +215,14 @@ export function formStrokes(nodes, edges, opts = {}) {
             continue
         }
         if (nbrs.length < 3) continue                  // deg-1 terminal: no pairing
-        // deg-≥3: score every leg pair; keep the single best qualifying pair if unambiguous.
+        // deg-≥3: delegate to the Stage 1 pairing core (maximal by default; opts pass the
+        // experiment-only Stage-0 threshold knobs straight through for sensitivity sweeps).
         const N = nodes.get(k)
-        const legs = nbrs.map(nk => {
-            const P = nodes.get(nk), dx = P.x - N.x, dz = P.z - N.z
-            const L = Math.hypot(dx, dz) || 1
-            return { nk, ux: dx / L, uz: dz / L, slope: (P.h - N.h) / L }
-        })
-        const cand = []
-        for (let i = 0; i < legs.length; i++) for (let j = i + 1; j < legs.length; j++) {
-            const a = legs[i], b = legs[j]
-            // deviation from straight: angle between -a and b directions
-            const dot = -(a.ux * b.ux + a.uz * b.uz)
-            const dev = Math.acos(Math.min(1, Math.max(-1, dot))) * 180 / Math.PI
-            // continuing a→node→b: slope in along a = −a.slope, slope out along b = b.slope
-            const sJump = Math.abs(a.slope + b.slope)
-            if (dev <= maxDevDeg && sJump <= gradeJump) cand.push({ i, j, dev })
+        const legs = nbrs.map(nk => { const P = nodes.get(nk); return { key: nk, x: P.x, z: P.z, h: P.h } })
+        for (const [ka, kb] of throughPairsAt(N, legs, opts)) {
+            pairAt.set(`${k}|${ka}`, kb)
+            pairAt.set(`${k}|${kb}`, ka)
         }
-        if (!cand.length) continue
-        cand.sort((p, q) => (p.dev - q.dev) || (legs[p.i].nk < legs[q.i].nk ? -1 : 1) || (legs[p.j].nk < legs[q.j].nk ? -1 : 1))
-        const best = cand[0]
-        // Ambiguity veto: a CONFLICTING qualifying pair (shares a leg) within runnerUpMargin means
-        // there is no clear through-road here — leave all legs as branches.
-        const rival = cand.find(p => p !== best && (p.i === best.i || p.j === best.j || p.i === best.j || p.j === best.i))
-        if (rival && rival.dev - best.dev < runnerUpMargin) continue
-        const ka = legs[best.i].nk, kb = legs[best.j].nk
-        pairAt.set(`${k}|${ka}`, kb)
-        pairAt.set(`${k}|${kb}`, ka)
     }
 
     // Walk chains. A directed half-edge (from,to) is consumed once; chains start at every
