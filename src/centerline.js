@@ -244,33 +244,82 @@ export class Centerline {
         return maxAbsK < EPS_K ? Infinity : 1 / maxAbsK
     }
 
+    // PERF-25: alloc-free pose evaluation — the SAME maths as _locate + primPose (and the
+    // tangent/curvature reads that share them), fused into one scratch write so the hot
+    // `nearest` scan below doesn't allocate 3 objects per sample. Bit-identical by construction:
+    // every expression is copied verbatim from _locate/primPose/constKappaPose.
+    _poseInto(s, out) {
+        const n = this.primitives.length
+        if (n === 0) { out.x = 0; out.z = 0; out.theta = 0; out.kappa = 0; return out }
+        let i, ls
+        if (s <= 0) { i = 0; ls = 0 }
+        else if (s >= this.length) { i = n - 1; ls = this.primitives[n - 1].length }
+        else {
+            let lo = 0, hi = n - 1
+            while (lo < hi) {
+                const mid = (lo + hi + 1) >> 1
+                if (this.starts[mid] <= s) lo = mid; else hi = mid - 1
+            }
+            i = lo; ls = s - this.starts[lo]
+        }
+        const p = this.primitives[i]
+        const L = p.length
+        if (ls <= 0) { out.x = p.x0; out.z = p.z0; out.theta = p.theta0; out.kappa = p.kappa0; return out }
+        if (ls >= L) { out.x = p.x1; out.z = p.z1; out.theta = p.theta1; out.kappa = p.kappa1; return out }
+        out.kappa = p.kappa0 + (p.kappa1 - p.kappa0) * ls / L
+        if (p.type !== 'clothoid') {
+            const k = p.kappa0
+            if (Math.abs(k) < EPS_K) {
+                out.x = p.x0 + ls * Math.cos(p.theta0)
+                out.z = p.z0 + ls * Math.sin(p.theta0)
+                out.theta = p.theta0
+            } else {
+                const th2 = p.theta0 + k * ls
+                out.x = p.x0 + (Math.sin(th2) - Math.sin(p.theta0)) / k
+                out.z = p.z0 - (Math.cos(th2) - Math.cos(p.theta0)) / k
+                out.theta = th2
+            }
+            return out
+        }
+        const { tab, h, n: tn } = p._tab
+        const fi = ls / h
+        const ti = Math.min(tn - 1, Math.floor(fi))
+        const t = fi - ti
+        out.x = tab[ti * 2] * (1 - t) + tab[(ti + 1) * 2] * t
+        out.z = tab[ti * 2 + 1] * (1 - t) + tab[(ti + 1) * 2 + 1] * t
+        out.theta = p.theta0 + p.kappa0 * ls + 0.5 * (p.kappa1 - p.kappa0) * ls * ls / L
+        return out
+    }
+
     // Nearest point on the centerline to (x,z): coarse arc-length scan + one Newton refine.
     // Optional [sMin, sMax] window bounds the scan (cheaper, and disambiguates switchbacks/loops by
     // searching only near an expected arc) — used by per-slice projection in road.js.
+    // PERF-25: runs on _poseInto (fused _locate+primPose, zero-alloc) — identical scan grid,
+    // identical refine, identical returned values; only the intermediate allocations are gone.
     nearest(x, z, ds = 1.0, sMin = 0, sMax = this.length) {
         if (this.primitives.length === 0) return null
         const lo = Math.max(0, Math.min(this.length, sMin))
         const hi = Math.max(lo, Math.min(this.length, sMax))
         let bestS = lo, bestD2 = Infinity
         const n = Math.max(1, Math.ceil((hi - lo) / ds))
+        const q = this._scratchPose || (this._scratchPose = { x: 0, z: 0, theta: 0, kappa: 0 })
         for (let i = 0; i <= n; i++) {
             const s = lo + (hi - lo) * i / n
-            const q = this.pointAt(s)
+            this._poseInto(s, q)
             const d2 = (q.x - x) * (q.x - x) + (q.z - z) * (q.z - z)
             if (d2 < bestD2) { bestD2 = d2; bestS = s }
         }
         // One projection refine: step along/against the tangent toward the foot of the perpendicular.
-        const q = this.pointAt(bestS)
-        const t = this.tangentAt(bestS)
-        const along = (x - q.x) * t.x + (z - q.z) * t.z
+        this._poseInto(bestS, q)
+        const along = (x - q.x) * Math.cos(q.theta) + (z - q.z) * Math.sin(q.theta)
         bestS = Math.max(lo, Math.min(hi, bestS + along))
-        const fp = this.pointAt(bestS)
+        this._poseInto(bestS, q)
         return {
             s: bestS,
-            x: fp.x, z: fp.z,
-            dist: Math.hypot(fp.x - x, fp.z - z),
-            tangent: this.tangentAt(bestS),
-            curvature: this.curvatureAt(bestS),
+            x: q.x, z: q.z,
+            dist: Math.hypot(q.x - x, q.z - z),
+            tangent: { x: Math.cos(q.theta), z: Math.sin(q.theta) },
+            curvature: q.kappa,
         }
     }
 }

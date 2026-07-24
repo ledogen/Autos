@@ -357,6 +357,23 @@ const PROTO_SAMPLE_DS      = 4     // m — centerline → polyline sampling spa
 // pitch inside it (Centerline.nearest then does one projection refine). Single-minimum at radius ≥ 12 m.
 const ANALYTIC_REFINE_WINDOW = 6   // m
 const ANALYTIC_REFINE_DS     = 1.0 // m
+// PERF-25: spatial-cell candidate cache for _resolveRoadSurface. The resolver's cost is dominated by
+// _projectOntoRun walking the FULL polyline of every run in the 3×3 tile block (hundreds of segments)
+// for every physics sample — on a junction pad that is 6 resolves per wheel query (centre + the pad's
+// 5-point neighbourhood-MIN), and mm suspension jitter defeats any result memo (PERF-24's exact-key
+// memo only collapses EXACT repeats). Fix: cache, per RESOLVE_CELL-sized cell, the candidate runs and
+// the SEGMENT-INDEX WINDOWS that can possibly matter for any query in the cell, then evaluate the
+// exact projection at (wx,wz) restricted to those windows. The QUERY is never quantized (the PERF-24
+// hard rule) — the cell key only selects which precomputed windows to scan; the maths at (wx,wz) is
+// bit-identical to the full scan whenever a candidate is accepted (proof at _resolveCellCands).
+const RESOLVE_CELL       = 8    // m — cell size; must divide CHUNK_SIZE so a cell never straddles blocks
+// Acceptance-radius safety factor: every candidate _resolveRoadSurface can ACCEPT lies within
+// ~1.14 × footHW of the query (interior feet have dist == |lat| ≤ footHW; vertex-clamped feet on a
+// smooth polyline (PROTO_SAMPLE_DS 4 m at min radius ≥ 8 → per-vertex turn ≤ ~29°) satisfy
+// lat ≥ dist·cos 29°; run-END clamps are offEnd-gated at endHW < footHW; rival vertex clamps are
+// rejected by its own along<2 m gate). 1.2 covers the bound with margin.
+const RESOLVE_ACC_SAFETY = 1.2
+const RESOLVE_CELL_CAP   = 384  // cells kept before the map is cleared (bounded, like carveHint)
 // FEAT-40 self-overlap crease blend: a winding run that passes ITSELF within the resolver
 // footprint (switchback wrapping a spur) makes the nearest-pass projection FLIP arcs at the
 // equidistant line — with tunnel-era deep earthwork (15–25 m cuts/fills) that flip is a 25 m
@@ -3608,6 +3625,139 @@ export class RoadSystem {
     }
 
     /**
+     * PERF-25: windowed twin of _projectOntoRun — identical per-segment maths, but only the cached
+     * segment-index ranges of one cell candidate are scanned, and any result farther than the cell's
+     * proof gate (√gate2) is dropped. Whenever this returns non-null the result is BIT-IDENTICAL to
+     * the full _projectOntoRun (same argmin: see the proof at _resolveCellCands); a null means the
+     * full scan's result would have been rejected by every acceptance gate downstream.
+     * `cand` = { pts, ranges:[i0,i1,...], cum0:[cumAt(i0)...] } from _resolveCellCands.
+     */
+    _projectOntoRunRanges(netEntry, cand, wx, wz, avoidCum, avoidSep, gate2) {
+        const pts = netEntry.points
+        const N = pts ? pts.length : 0
+        if (N < 2 || pts !== cand.pts) return this._projectOntoRun(netEntry, wx, wz, avoidCum, avoidSep) // stale guard
+        const arcOrigin = netEntry.arcOrigin ?? 0
+        let bestD2 = Infinity, bestFx = 0, bestFz = 0, bestTx = 1, bestTz = 0, bestCum = 0
+        let bestI = 0, bestTclamp = 0
+        // Flat segment table [ax,az,ex,ez,segLen,cumStart]×n — same coordinates, same sqrt, same
+        // running-sum cum values as the full scan (built by one walk in _resolveCellCands), so every
+        // arithmetic result below is bit-identical to _projectOntoRun's.
+        const seg = cand.seg, segIdx = cand.segIdx, nSeg = segIdx.length
+        for (let k = 0; k < nSeg; k++) {
+            const o = k * 6
+            const ax = seg[o], az = seg[o + 1], ex = seg[o + 2], ez = seg[o + 3]
+            const segLen = seg[o + 4], cum = seg[o + 5]
+            const segLen2 = ex * ex + ez * ez
+            let t = segLen2 > 1e-12 ? ((wx - ax) * ex + (wz - az) * ez) / segLen2 : 0
+            if (t < 0) t = 0; else if (t > 1) t = 1
+            const cumT = cum + t * segLen
+            if (avoidCum >= 0 && Math.abs(cumT - avoidCum) < avoidSep) continue
+            const fx = ax + t * ex, fz = az + t * ez
+            const ddx = wx - fx, ddz = wz - fz
+            const d2 = ddx * ddx + ddz * ddz
+            if (d2 < bestD2) {
+                bestD2 = d2; bestFx = fx; bestFz = fz
+                bestTx = ex / segLen; bestTz = ez / segLen
+                bestCum = cumT
+                bestI = segIdx[k]; bestTclamp = t
+            }
+        }
+        if (bestD2 === Infinity || bestD2 > gate2) return null
+        const overBefore = bestI === 0 && bestTclamp === 0 &&
+            ((wx - pts[0].x) * bestTx + (wz - pts[0].z) * bestTz) < 0
+        const overAfter  = bestI === N - 2 && bestTclamp === 1 &&
+            ((wx - pts[N - 1].x) * bestTx + (wz - pts[N - 1].z) * bestTz) > 0
+        const clArc = netEntry.clArc
+        let sCL = bestCum
+        if (clArc && bestI + 1 < clArc.length) {
+            sCL = clArc[bestI] + (clArc[bestI + 1] - clArc[bestI]) * bestTclamp
+        }
+        return {
+            fx: bestFx, fz: bestFz, tx: bestTx, tz: bestTz,
+            arcS: bestCum - arcOrigin,
+            signedLat: (wx - bestFx) * bestTz - (wz - bestFz) * bestTx,
+            d2: bestD2,
+            offEnd: overBefore || overAfter,
+            sCL
+        }
+    }
+
+    /**
+     * PERF-25: per-cell resolver candidates — the expensive intermediate of _resolveRoadSurface,
+     * cached per (RESOLVE_CELL cell, _networkRev, footHW) and evaluated EXACTLY at each query.
+     * For the cell containing (wx,wz), scan the same 3×3 tile block the full resolver scans (same
+     * first-seen run order, so tie-breaks are preserved) and record, per run, the contiguous
+     * segment-index ranges within rInc of the cell centre plus the chord-cum at each range start.
+     *
+     * BIT-IDENTITY PROOF (why windowed == full for every ACCEPTED candidate): let gate =
+     * RESOLVE_ACC_SAFETY·footHW + 1 and rInc = gate + cellDiag/2. Every segment NOT in a window is
+     * > rInc from the cell centre, hence > gate from any query in the cell. (1) If the windowed
+     * best foot has d ≤ gate, the full scan's argmin (d ≤ windowed d ≤ gate) is inside a window, so
+     * both scans see it → identical result, including tie order (ascending i over a superset member).
+     * (2) If the windowed best has d > gate (or no window exists), the full argmin either equals it
+     * or is excluded (d > gate either way) — and no candidate with d > gate is ever accepted
+     * downstream (see RESOLVE_ACC_SAFETY), so dropping the run changes nothing. The offEnd flags,
+     * sCL, and rival avoid-skip all ride the identical argmin. Queries with excludeKeys (FEAT-40
+     * bore retries) bypass the cache and take the full scan.
+     */
+    _resolveCellCands(wx, wz, footHW) {
+        const gate = RESOLVE_ACC_SAFETY * footHW + 1
+        let cache = this._cellCands
+        if (!cache || cache.rev !== this._networkRev || cache.gate !== gate) {
+            cache = this._cellCands = { rev: this._networkRev, gate, map: new Map() }
+        }
+        const cellX = Math.floor(wx / RESOLVE_CELL), cellZ = Math.floor(wz / RESOLVE_CELL)
+        const key = `${cellX},${cellZ}`
+        let cell = cache.map.get(key)
+        if (cell !== undefined) return cell
+        const cx = (cellX + 0.5) * RESOLVE_CELL, cz = (cellZ + 0.5) * RESOLVE_CELL
+        const rInc = gate + RESOLVE_CELL * Math.SQRT1_2   // + half the cell diagonal
+        const rInc2 = rInc * rInc
+        const qtx = Math.floor(wx / CHUNK_SIZE), qtz = Math.floor(wz / CHUNK_SIZE)
+        const seen = new Set()
+        const list = []
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dz = -1; dz <= 1; dz++) {
+                const segs = this._tiles.get(`${qtx + dx},${qtz + dz}`)
+                if (!segs) continue
+                for (const s of segs) {
+                    const runKey = s.runKey ?? ''
+                    if (seen.has(runKey)) continue
+                    seen.add(runKey)
+                    const netEntry = this._network.get(runKey)
+                    const pts = netEntry?.points
+                    if (!pts || pts.length < 2) continue
+                    // One full walk per run per cell (amortized over every query the cell serves):
+                    // emit a flat table [ax,az,ex,ez,segLen,cumStart] per in-range segment (+ its global
+                    // index for offEnd/sCL). segLen/cumStart come from the SAME sqrt + running sum the
+                    // full scan computes, so windowed projections reproduce its floats exactly.
+                    const flat = [], idx = []
+                    let cum = 0
+                    for (let i = 0; i < pts.length - 1; i++) {
+                        const ax = pts[i].x, az = pts[i].z
+                        const ex = pts[i + 1].x - ax, ez = pts[i + 1].z - az
+                        const segLen2 = ex * ex + ez * ez
+                        const segLen = Math.sqrt(segLen2) || 1e-8
+                        let t = segLen2 > 1e-12 ? ((cx - ax) * ex + (cz - az) * ez) / segLen2 : 0
+                        if (t < 0) t = 0; else if (t > 1) t = 1
+                        const ddx = cx - (ax + t * ex), ddz = cz - (az + t * ez)
+                        if (ddx * ddx + ddz * ddz <= rInc2) {
+                            flat.push(ax, az, ex, ez, segLen, cum)
+                            idx.push(i)
+                        }
+                        cum += segLen
+                    }
+                    if (idx.length) list.push({ runKey, pts, seg: Float64Array.from(flat), segIdx: Int32Array.from(idx) })
+                }
+            }
+        }
+        cell = list.length ? { list, gate2: gate * gate, byKey: new Map(list.map(c => [c.runKey, c])) } : null
+        if (cache.map.size >= RESOLVE_CELL_CAP) cache.map.clear()
+        cache.map.set(key, cell)
+        return cell
+    }
+
+    /**
      * Nearest foot on a run's centerline polyline RESTRICTED to the arc window near a node endpoint
      * (`nodeArc` = 0 or the run length, in the polyCum domain; `win` metres each side). Used by the ruled
      * inter-leg blend (_carveDirtY): a full-run projection picks the globally nearest foot, which on a leg
@@ -3624,11 +3774,20 @@ export class RoadSystem {
      * contributing simultaneously there is no switch — each foot, gap, and grade varies continuously
      * with the query. Returns an array of { d2, arcS } (ordered along the leg) | null.
      */
-    _projectLegNearNode(netEntry, wx, wz, nodeArc, win) {
+    _projectLegNearNode(netEntry, wx, wz, nodeArc, win, legWin) {
         const pts = netEntry.points
         const N = pts ? pts.length : 0
         if (N < 2) return null
         const arcOrigin = netEntry.arcOrigin ?? 0
+        // PERF-25: the in-window segment range [i0,i1] and the chord-cum at i0 depend only on
+        // (netEntry, nodeArc, win) — the caller caches them per node leg (_legProjWin) so the march
+        // below starts at the window instead of walking the whole run polyline to find it. Identical
+        // segment sequence → identical local-minimum bookkeeping → identical feet.
+        let i0 = 0, iEnd = N - 2, cum = 0
+        if (legWin && legWin.pts === pts) {
+            if (legWin.i0 > legWin.i1) return null
+            i0 = legWin.i0; iEnd = legWin.i1; cum = legWin.cum0
+        }
         const lo = nodeArc - win, hi = nodeArc + win
         // March the window's segments in order, tracking each segment's nearest foot; a foot is kept
         // when it is a local minimum of the per-segment distance sequence (plateau-tolerant ≤). The
@@ -3637,14 +3796,13 @@ export class RoadSystem {
         // position and grade vary continuously with the query).
         let out = null
         let prevD2 = Infinity, prevPrevD2 = Infinity, prevCum = 0
-        let cum = 0
         const keep = (d2, cumT) => {
             if (!out) out = []
             const last = out[out.length - 1]
             if (last && cumT - (last.arcS + arcOrigin) < 4) { if (d2 < last.d2) { last.d2 = d2; last.arcS = cumT - arcOrigin } }
             else out.push({ d2, arcS: cumT - arcOrigin })
         }
-        for (let i = 0; i < N - 1; i++) {
+        for (let i = i0; i <= iEnd; i++) {
             const ax = pts[i].x, az = pts[i].z
             const ex = pts[i + 1].x - ax, ez = pts[i + 1].z - az
             const segLen2 = ex * ex + ez * ez
@@ -3662,6 +3820,31 @@ export class RoadSystem {
         }
         if (prevD2 !== Infinity && prevD2 <= prevPrevD2) keep(prevD2, prevCum)
         return out
+    }
+
+    // PERF-25: build (and cache on the leg record) the _projectLegNearNode segment window for one
+    // node leg — the contiguous run of segment indices overlapping [nodeArc−win, nodeArc+win] plus
+    // the chord-cum at the first one. Leg records are rebuilt with _detectNodeJunctions per
+    // _networkRev; the pts identity check catches a re-streamed network entry at the same rev.
+    _legProjWin(netEntry, leg, win) {
+        let w = leg._plw
+        const pts = netEntry.points
+        if (w && w.pts === pts) return w
+        const N = pts ? pts.length : 0
+        const lo = leg.arc - win, hi = leg.arc + win
+        let i0 = -1, i1 = -2, cum0 = 0, cum = 0
+        for (let i = 0; i < N - 1; i++) {
+            const ex = pts[i + 1].x - pts[i].x, ez = pts[i + 1].z - pts[i].z
+            const segLen = Math.sqrt(ex * ex + ez * ez) || 1e-8
+            if (cum + segLen >= lo && cum <= hi) {
+                if (i0 < 0) { i0 = i; cum0 = cum }
+                i1 = i
+            } else if (i0 >= 0) break   // window is one contiguous arc interval
+            cum += segLen
+        }
+        w = { pts, i0: i0 < 0 ? 1 : i0, i1, cum0 }
+        leg._plw = w
+        return w
     }
 
     /**
@@ -3777,30 +3960,46 @@ export class RoadSystem {
         // C0 with the sibling arm, which shares the anchor (synced run-end camber, BUG-19/QUAL-05).
         let bestEndD2 = Infinity, bestEndPr = null, bestEndRunKey = ''
         const endHW2 = endHW * endHW
-        for (let dx = -1; dx <= 1; dx++) {
-            for (let dz = -1; dz <= 1; dz++) {
-                const segs = this._tiles.get(`${qtx + dx},${qtz + dz}`)
-                if (!segs) continue
-                for (const s of segs) {
-                    const runKey = s.runKey ?? ''
-                    if (seen.has(runKey)) continue
-                    seen.add(runKey)
-                    if (excludeKeys && excludeKeys.has(runKey)) continue
-                    const netEntry = this._network.get(runKey)
-                    if (!netEntry) continue
-                    const pr = this._projectOntoRun(netEntry, wx, wz)
-                    if (!pr) continue
-                    const latDist = Math.abs(pr.signedLat)
-                    if (pr.offEnd) {   // BUG-21 apex-sliver candidate (radial gate, weakest priority)
-                        if (pr.d2 <= endHW2 && pr.d2 < bestEndD2) { bestEndD2 = pr.d2; bestEndPr = pr; bestEndRunKey = runKey }
-                        continue
-                    }
-                    if (latDist > footHW) continue
-                    if (latDist < bestLat) {
-                        secondLat = bestLat; secondPr = bestPr; secondRunKey = bestRunKey
-                        bestLat = latDist; bestPr = pr; bestRunKey = runKey
-                    } else if (latDist < secondLat) {
-                        secondLat = latDist; secondPr = pr; secondRunKey = runKey
+        const consider = (runKey, pr) => {
+            const latDist = Math.abs(pr.signedLat)
+            if (pr.offEnd) {   // BUG-21 apex-sliver candidate (radial gate, weakest priority)
+                if (pr.d2 <= endHW2 && pr.d2 < bestEndD2) { bestEndD2 = pr.d2; bestEndPr = pr; bestEndRunKey = runKey }
+                return
+            }
+            if (latDist > footHW) return
+            if (latDist < bestLat) {
+                secondLat = bestLat; secondPr = bestPr; secondRunKey = bestRunKey
+                bestLat = latDist; bestPr = pr; bestRunKey = runKey
+            } else if (latDist < secondLat) {
+                secondLat = latDist; secondPr = pr; secondRunKey = runKey
+            }
+        }
+        // PERF-25: cell-candidate fast path — same runs, same order, windowed projection (bit-identical
+        // for every accepted candidate; see _resolveCellCands proof). FEAT-40 bore retries (excludeKeys)
+        // take the full scan: they are rare and the exclusion set would poison a shared cache entry.
+        const cands = excludeKeys ? undefined : this._resolveCellCands(wx, wz, footHW)
+        if (cands !== undefined) {
+            if (!cands) return null   // no run within reach of this cell — full scan finds nothing too
+            for (const c of cands.list) {
+                const netEntry = this._network.get(c.runKey)
+                if (!netEntry) continue
+                const pr = this._projectOntoRunRanges(netEntry, c, wx, wz, -1, 0, cands.gate2)
+                if (pr) consider(c.runKey, pr)
+            }
+        } else {
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dz = -1; dz <= 1; dz++) {
+                    const segs = this._tiles.get(`${qtx + dx},${qtz + dz}`)
+                    if (!segs) continue
+                    for (const s of segs) {
+                        const runKey = s.runKey ?? ''
+                        if (seen.has(runKey)) continue
+                        seen.add(runKey)
+                        if (excludeKeys && excludeKeys.has(runKey)) continue
+                        const netEntry = this._network.get(runKey)
+                        if (!netEntry) continue
+                        const pr = this._projectOntoRun(netEntry, wx, wz)
+                        if (pr) consider(runKey, pr)
                     }
                 }
             }
@@ -3843,7 +4042,12 @@ export class RoadSystem {
         // passes and passes beyond the interior footprint don't count.
         let rival = null
         if (ce && !bestPr.offEnd) {
-            const pr2 = this._projectOntoRun(ce, wx, wz, bestPr.arcS + (ce.arcOrigin ?? 0), RIVAL_ARC_SEP)
+            // PERF-25: the rival pass rides the same cell windows (accepted rivals need d ≤ footHW,
+            // covered by the same proof; its own along<2 m gate rejects window-edge vertex clamps).
+            const cc = cands ? cands.byKey.get(bestRunKey) : null
+            const pr2 = cc
+                ? this._projectOntoRunRanges(ce, cc, wx, wz, bestPr.arcS + (ce.arcOrigin ?? 0), RIVAL_ARC_SEP, cands.gate2)
+                : this._projectOntoRun(ce, wx, wz, bestPr.arcS + (ce.arcOrigin ?? 0), RIVAL_ARC_SEP)
             if (pr2 && !pr2.offEnd) {
                 // Gate on true RADIAL distance, and reject clamped projections (the avoid window
                 // cuts the polyline mid-approach; a clamped vertex has a tiny perpendicular
@@ -4187,7 +4391,8 @@ export class RoadSystem {
                 // Project onto the leg's NEAR-NODE arc window only. EVERY distance-local-minimum limb is
                 // returned and blended as its own pseudo-leg (see _projectLegNearNode: a curving leg can
                 // hold two genuine minima at once, and picking one by argmin tears the gore at the flip).
-                const prs = this._projectLegNearNode(ne, wx, wz, leg.arc, RULE_NODE_WINDOW)
+                const prs = this._projectLegNearNode(ne, wx, wz, leg.arc, RULE_NODE_WINDOW,
+                                                     this._legProjWin(ne, leg, RULE_NODE_WINDOW))
                 if (!prs) continue
                 // The branch nearest the RESOLVED arc of the query's own run rides the already-computed
                 // gradeY (the resolved cross-section's grade — keeps the pinned/hinted surface exact);
