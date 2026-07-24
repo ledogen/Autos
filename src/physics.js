@@ -153,7 +153,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
     let maxEmbed = 0
     for (let i = 0; i < 4; i++) {
       const hub      = getWheelPosition(i, vehicleState, params)
-      const contacts = queryContacts(hub.x, hub.y, hub.z, params.wheelRadius)
+      const contacts = queryContacts(hub.x, hub.y, hub.z, params.wheelRadius, true)
       for (const { depth } of contacts) {
         if (depth > maxEmbed) maxEmbed = depth
       }
@@ -363,29 +363,40 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
     let lastLongVelCur  = 0
     let lastRelaxDen    = 1
 
-    // Query every surface this wheel sphere overlaps
-    const contacts = queryContacts(hub.x, hub.y, hub.z, params.wheelRadius)
+    // Query every surface this wheel sphere overlaps (footprint=true: tire-envelope ground sampling)
+    const contacts = queryContacts(hub.x, hub.y, hub.z, params.wheelRadius, true)
 
-    for (const { normal, depth, contactPoint } of contacts) {
+    // BUG-38: the Pacejka tire is a per-WHEEL model with ONE slip state, so its friction must be
+    // evaluated ONCE per wheel — NOT once per contact. Pick the support surface (normal most aligned
+    // with world-up) as the tire patch. Wall / prop / ramp contacts already contributed their push-out
+    // via _hubNormalXZ (stepSuspensionSubsteps) and must NOT each re-apply Pacejka grip — doing so
+    // double-counted lateral + longitudinal force whenever a wheel straddled ground + a hard obstacle.
+    // Fn (_tireFz[i]) is the SUMMED strut-axis load and is already ground-dominated: a wall's near-
+    // horizontal normal projects ≈0 onto the strut axis, so it adds ~nothing to the tire's vertical load.
+    let ground = null
+    let bestUp = -Infinity
+    for (const c of contacts) {
+      if (c.normal.y > bestUp) { bestUp = c.normal.y; ground = c }
+    }
+
+    // Phase 4: Fn for Pacejka comes from params._tireFz[i] (computed by stepSuspensionSubsteps, per
+    // D-03). computeNormalForce is a shim that reads _tireFz[i]. Body normal force is applied via
+    // suspBodyForce above, NOT here. totalGroundFn (rolling-resistance gating) is accrued once per wheel.
+    const Fn = computeNormalForce(i, vehicleState, params)
+    if (ground && Fn > 0) {
+      totalGroundFn += Fn
+
       const rContact = new THREE.Vector3(
-        contactPoint.x - vehicleState.position.x,
-        contactPoint.y - vehicleState.position.y,
-        contactPoint.z - vehicleState.position.z
+        ground.contactPoint.x - vehicleState.position.x,
+        ground.contactPoint.y - vehicleState.position.y,
+        ground.contactPoint.z - vehicleState.position.z
       )
       const contactVel = vehicleState.velocity.clone().add(
         new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rContact)
       )
 
-      params._compression         = depth
-      params._compressionVelocity = -contactVel.dot(normal)
-
-      // Phase 4: Fn for Pacejka comes from params._tireFz[i] (computed by stepSuspensionSubsteps,
-      // per D-03). computeNormalForce is now a shim that reads _tireFz[i].
-      // Phase 4: body normal (vertical) force is applied via suspBodyForce above, NOT here.
-      // We still track totalGroundFn for rolling resistance gating.
-      const Fn = computeNormalForce(i, vehicleState, params)
-      if (Fn <= 0) continue
-      totalGroundFn += Fn
+      params._compression         = ground.depth
+      params._compressionVelocity = -contactVel.dot(ground.normal)
 
       // Phase 4.1 NOTE (D-06): do NOT add Fn*normal to totalForce here.
       // The strut-axis component of the contact normal flows through _suspForceAccum (spring pathway),
@@ -448,7 +459,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
       totalForce.add(wheelForce)
       totalTorque.add(new THREE.Vector3().crossVectors(rContact, wheelForce))
 
-      // Write debug data for logger — last contact wins (most steps have exactly one contact).
+      // Write debug data for logger — evaluated once per wheel against the chosen support surface (BUG-38).
       // NOTE: `sa` field now stores SLIP VELOCITY magnitude (m/s) instead of slip angle (rad).
       // Field name kept for log format stability; semantics document in GLOSSARY.
       if (vehicleState.wheelDebug) {

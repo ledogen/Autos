@@ -209,6 +209,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   suspFolder.add(params, 'suspensionBodyOffsetFront', -0.10, 0.10,   0.005).name('Front Body Offset (m)')
   suspFolder.add(params, 'suspensionBodyOffsetRear',  -0.10, 0.10,   0.005).name('Rear Body Offset (m)')
   suspFolder.add(params, 'bumpStopStiffness',         10000, 500000, 5000).name('Bump Stop Stiffness (N/m)')
+  suspFolder.add(params, 'wheelFootprint').name('Tire Footprint (envelope)')
 
   // Phase 6 (TERR-06): Terrain folder — amplitude tuning + ramp visibility toggle.
   // terrainAmplitude is read by TerrainSystem._flushPendingQueue during geometry build;
