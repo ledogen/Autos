@@ -1203,29 +1203,60 @@ function queryVertexContacts (px, py, pz) {
  * Called by stepPhysics once per wheel each physics step.
  * Phase 6: extend to query the terrain height-field for rough terrain surfaces.
  */
-function queryContacts (cx, cy, cz, r) {
+function queryContacts (cx, cy, cz, r, footprint = false) {
   const hits = []
 
   // Ground surface — the lab's own surface in the testing lab; analytic terrain height otherwise.
   // Grid-world uses flat ground so physics contacts are correct on the clean flat plane (D-18).
-  // PERF (contact path): resolve the road run ONCE (memoized carveHint) and thread it into BOTH the
-  // height and the normal (which finite-differences 4 more heights). That collapses the per-wheel
-  // road tile-scans to ~1, and — crucially — carveHint is memoized per 0.1 m cell, so the death-spiral's
-  // ~300 queryContacts/frame at a near-stationary wheel reuse one query instead of each re-scanning a
-  // switchback's many slices (the slow-CPU 5fps lock that recovers airborne). Height stays accurate:
-  // at the query center the projection is ~0 (perp foot) so rest height ≈ exact (≤~5 mm via the memo).
+  // PERF (contact path): resolve the road run ONCE (memoized carveHint) and thread it into EVERY
+  // height/normal sample below. That collapses the per-wheel road tile-scans to ~1, and — crucially —
+  // carveHint is memoized per 0.1 m cell, so the death-spiral's ~300 queryContacts/frame at a
+  // near-stationary wheel reuse one query instead of each re-scanning a switchback's many slices
+  // (the slow-CPU 5fps lock that recovers airborne). Height stays accurate: at the query center the
+  // projection is ~0 (perp foot) so rest height ≈ exact (≤~5 mm via the memo).
   const _hint = (!_labActive && roadSystem) ? roadSystem.carveHint(cx, cz) : undefined
   // FEAT-40: cy disambiguates the two stacked surfaces in a bore span (floor vs hill overhead).
-  const terrainH = _labActive ? labSystem.groundHeight(cx, cz)
-                              : (terrainSystem ? terrainSystem.analyticHeight(cx, cz, _hint, cy) : 0)
-  const gd = terrainH + r - cy
+  const groundH = (x, z) => _labActive ? labSystem.groundHeight(x, z)
+                                       : (terrainSystem ? terrainSystem.analyticHeight(x, z, _hint, cy) : 0)
+
+  // TIRE-ENVELOPE (footprint sampling). A wheel is a disc of radius r; it rests on the HIGHEST
+  // terrain its circular profile can touch, NOT the single point under the hub. The legacy probe
+  // sampled only the centre column, so the tire sank into troughs (rumble strips) and clipped through
+  // crests / the downhill face of a slope. Here we sweep a small direction-agnostic stencil and take
+  // the ENVELOPE max of  h(sample) + sqrt(r² − d²)  — the wheel-centre rest height each sample implies
+  // (d = horizontal offset; the sqrt is the circle's height above ground at that offset). The winning
+  // sample sets penetration depth, contact point, and surface normal. At d=0 this reduces EXACTLY to
+  // the old  terrainH + r − cy, so flat ground and the m4-* assertions are unchanged.
+  // PERF: _hint is threaded into every sample, so the whole stencil costs ONE road resolve (PERF-24) —
+  // only the cheap noise eval multiplies. Wheel callers pass footprint=true; body probes do not.
+  const doFootprint = footprint && r > 0 && RANGER_PARAMS.wheelFootprint !== false
+  let bestH   = groundH(cx, cz)
+  let bestTop = bestH + r        // d=0 term — identical to the legacy single probe
+  let bestX = cx, bestZ = cz
+  if (doFootprint) {
+    // Cardinal cross at 0.55 r and 0.9 r (8 offsets). Direction-agnostic so it bridges bumps and
+    // slopes in any orientation without knowing the wheel's heading.
+    const STEN = [0.55, 0.9]
+    for (let k = 0; k < STEN.length; k++) {
+      const d    = STEN[k] * r
+      const lift = Math.sqrt(Math.max(0, r * r - d * d))
+      const offs = [[d, 0], [-d, 0], [0, d], [0, -d]]
+      for (let o = 0; o < 4; o++) {
+        const sx = cx + offs[o][0], sz = cz + offs[o][1]
+        const h   = groundH(sx, sz)
+        const top = h + lift
+        if (top > bestTop) { bestTop = top; bestH = h; bestX = sx; bestZ = sz }
+      }
+    }
+  }
+  const gd = bestTop - cy
   if (gd > 0) {
-    const n = _labActive ? labSystem.groundNormal(cx, cz)
-                         : (terrainSystem ? terrainSystem.analyticNormal(cx, cz, _hint, cy) : { x: 0, y: 1, z: 0 })
+    const n = _labActive ? labSystem.groundNormal(bestX, bestZ)
+                         : (terrainSystem ? terrainSystem.analyticNormal(bestX, bestZ, _hint, cy) : { x: 0, y: 1, z: 0 })
     hits.push({
       normal:       new THREE.Vector3(n.x, n.y, n.z),
       depth:        gd,
-      contactPoint: new THREE.Vector3(cx, terrainH, cz)
+      contactPoint: new THREE.Vector3(bestX, bestH, bestZ)
     })
   }
 

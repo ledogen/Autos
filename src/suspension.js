@@ -326,7 +326,7 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       const springTerm = strutCompI > 0 ? k_S * strutCompI : 0
 
       // Phase 4.1 D-06: Contact normal split into strut-axis component (tireFz) and X/Z residual (_hubNormalXZ).
-      const hubContacts = queryContacts(hubWorldX, hubWorldY, hubWorldZ, params.wheelRadius)
+      const hubContacts = queryContacts(hubWorldX, hubWorldY, hubWorldZ, params.wheelRadius, true)
       let tireFz = 0
       for (const c of hubContacts) {
         // compressionVel sign convention: positive = hub approaching ground = tire compressing.
