@@ -130,13 +130,24 @@ junction path where the through-stroke removes corner cases. Re-run full `test:a
 **Stage 3 — measure + decide on crossing-detector / BUG-25** with real data (only if they actually became
 removable; otherwise leave them).
 
-## 7. Open questions for the user (before Stage 1)
+## 7. Open questions — ALL RESOLVED (user decisions 2026-07-23/24)
 
-1. Sign-off to run **Stage 0 (read-only spike)** — it changes nothing, just measures whether strokes are
-   window-invariant and how much they'd fold. Strong recommend.
-2. Through-pair test: straightest-continuation by **bearing angle threshold** (e.g. continue if the
-   straightest leg is within X° of straight AND clearly straighter than the runner-up). Your call on
-   whether a stroke should also refuse to continue across a big **grade** discontinuity (a road probably
-   shouldn't "continue through" a node where one leg dives into a valley). Cheap to include.
-3. Acceptable to route a bounded amount **outside the visible window** to keep strokes invariant (step 3
-   above)? It's the crux of the invariance guarantee.
+1. Stage 0 spike: **DONE** (commit bf25e79; results in the QUAL-21 ticket). Invariance holds.
+2. Through-pair test: **SUPERSEDED by MAXIMAL PAIRING** (user proposal 2026-07-24, replaces the
+   threshold design above): every node pairs up as many legs as it can, greedily best-score-first —
+   deg-2 = pass through, deg-3 = through + T-branch, deg-4 = two through-roads crossing (deg ≥5
+   unobserved; rule generalizes). **No thresholds, no vetoes, no escape hatches** (rejected as extra
+   code). Pair score = bearing deviation from straight + a grade-discontinuity penalty (grade
+   influences WHICH pair continues, never WHETHER pairing happens). Consequences: every junction
+   reduces to two canonical shapes (stem-meets-through / through×through crossing) — the fillet
+   ladder's general N-ribbon case is deleted by construction, and the threshold params never exist.
+3. Bounded out-of-window routing: **YES** (canonical maxLen split + prescribed shared terminal
+   heading at split nodes — Stage 0 found the split-kink gotcha; heading prescription is mandatory
+   or the deg-2 connector survives at splits).
+4. Tight radii (user dislikes tiny arcs): rely on **κ² pricing only** (shipped wTurn 1750) — no
+   stroke min-radius param (would also invalidate the baked route bundle). Judge in the A/B drive.
+5. Junction node height with multiple strokes (deg-4 X): **AVERAGE the two strokes' design heights**
+   at the shared node, each stroke locally blending to the average — symmetric (no ownership rule,
+   no discrete closest-to-terrain selector), halves the per-stroke adjustment, and both grades are
+   already terrain-hugging (EMA + deviationCap) so the average stays near terrain. At deg-3 the
+   single through-stroke owns the node height; branch strokes terminate onto it.

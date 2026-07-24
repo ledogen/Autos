@@ -38,6 +38,19 @@ junction-simplification applies to a quarter-to-third of junctions (threshold-de
 aesthetic call at Stage 1 A/B); search-count perf bonus modest (244→187 at defaults). Awaiting
 Stage 1 sign-off + threshold choice (dev/gradeJump are aesthetics, drivable via A/B).
 
+## PLAN PIVOT (2026-07-24, user decision) — MAXIMAL PAIRING replaces thresholds
+
+The 18–38% junction-coverage ceiling was a consequence of thresholded through-pair admission. User
+direction: **every node pairs maximally** — deg-2 pass-through, deg-3 through + T-branch, deg-4 two
+crossing through-roads. No thresholds/vetoes/escape hatches. Junction machinery then only ever
+handles TWO canonical shapes; through-coverage is 100% by construction. Locked sub-decisions
+(full rationale in STROKE-ROUTING-DESIGN.md §7): pair score = bearing deviation + grade penalty
+(grade picks WHICH pair, never whether); κ²-only for bend sharpness (no stroke min-radius param);
+deg-4 node height = AVERAGE of the two strokes' designs (deg-3: through-stroke owns). Residuals
+that survive: pad pavement/blend at branches, mid-span crossing detector, BUG-25 cull.
+Stage 1 pre-step: re-run the spike with maximal pairing to record bend-angle distributions
+(deg-3, worst-of-two at deg-4) + fold + invariance before touching routing.
+
 Two related tasks under one ticket. Both live in the router/graph subsystem and share the same
 investigation. Detailed design + measured evidence: **`.planning/research/STROKE-ROUTING-DESIGN.md`**
 and **`.planning/research/ROUTER-PERF-EXPLORATION.md`** (measured cold-load profile, the character
