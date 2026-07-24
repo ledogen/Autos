@@ -1803,3 +1803,9 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
     return out
 }
 // ROUTE SYNC END
+
+// QUAL-21 Stage 2 Phase 4: the terminal-splice repair (road.js _spliceOrphanedPairs) re-emits a
+// run's last ~goalBlend metres as an analytic Dubins run into the node at the corrected through
+// heading. Re-exported HERE — outside the ROUTE SYNC region — so the mirrored worker copy and the
+// route-worker-sync byte-equality gate stay untouched.
+export { dubinsPrimitives }
