@@ -1426,7 +1426,14 @@ export class RoadSystem {
         // register → the pre-warmed routes are exact cache hits). Edge SELECTION stays main-thread;
         // only arcPrimitiveConnect runs on the Worker (no WORKER_SOURCE / ROUTE SYNC change).
         const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)   // persist=false: don't clobber the streaming graph
-        const { jobs, deferred } = this._warmScan(g.edges, PREWARM_MAX_JOBS)
+        // QUAL-21 Stage 2: degree-capped edges are settled OUT spec-time (_degreeDropSet) — never
+        // registered, never routed — so warming them would burn worker searches on roads that
+        // cannot exist. (Their SOLOS may still warm via _warmScan's dep chain when a SURVIVOR
+        // avoids their corridor — deps are enumerated on the raw graph, deliberately: survivor
+        // routes must stay byte-identical to the route-then-cull era.)
+        const { drop } = this._degreeDrops(mx0, mx1, mz0, mz1)
+        const wEdges = g.edges.filter(([c1, c2]) => !drop.has(g.key(c1) + '|' + g.key(c2)))
+        const { jobs, deferred } = this._warmScan(wEdges, PREWARM_MAX_JOBS)
         // Only advance the throttle anchor once the visible band is fully warmed/pending — otherwise a
         // single move could leave fringe connections un-dispatched until the NEXT PREWARM_WARM_MOVE.
         if (jobs.length < PREWARM_MAX_JOBS && !deferred) this._lastWarmCenter = center.clone()
@@ -1523,18 +1530,22 @@ export class RoadSystem {
         const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
         const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
         const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
-        const edges = g.edges.filter(([c1, c2]) => inBand(c1) || inBand(c2))
+        // QUAL-21 Stage 2: skip degree-capped edges (settled spec-time — never registered/routed).
+        const dd = this._degreeDrops(mx0, mx1, mz0, mz1)
+        const dropped = ([c1, c2]) => dd.drop.has(g.key(c1) + '|' + g.key(c2))
+        const edges = g.edges.filter((e) => !dropped(e) && (inBand(e[0]) || inBand(e[1])))
         // BUG-25: the cull routes the ONE-RING of the registered edges over the wide detour graph
         // (_oneRingEdges) — warm those too, or the first _streamNetwork pays synchronous main-thread
-        // routing for them (would regress the QUAL-14 cold-spawn win). Same wide graph the cull builds.
-        const maxHops = this._params?.roadGraphCullMaxHops ?? 4
-        const dg = this._buildUrquhart(mx0, mx1, mz0, mz1, false, (this._params?.roadGraphMargin ?? 3) + maxHops + 1)
+        // routing for them (would regress the QUAL-14 cold-spawn win). Same wide graph the cull builds
+        // (shared via the _degreeDrops memo).
+        const dg = dd.dg
         const ringNodes = new Set()
         for (const [c1, c2] of edges) { ringNodes.add(dg.key(c1)); ringNodes.add(dg.key(c2)) }
         const seenKeys = new Set(edges.map(([c1, c2]) => `${dg.key(c1)}:${dg.key(c2)}`))
         for (const [c1, c2] of dg.edges) {
             const ek = `${dg.key(c1)}:${dg.key(c2)}`
             if (seenKeys.has(ek)) continue
+            if (dropped([c1, c2])) continue
             if (ringNodes.has(dg.key(c1)) || ringNodes.has(dg.key(c2))) { seenKeys.add(ek); edges.push([c1, c2]) }
         }
         const { jobs, deferred } = this._warmScan(edges, Infinity)
@@ -1646,7 +1657,9 @@ export class RoadSystem {
         const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
         const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
         const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
-        const edges = g.edges.filter(([c1, c2]) => inBand(c1) || inBand(c2))
+        // QUAL-21 Stage 2: skip degree-capped edges (settled spec-time — never registered/routed).
+        const { drop } = this._degreeDrops(mx0, mx1, mz0, mz1)
+        const edges = g.edges.filter(([c1, c2]) => !drop.has(g.key(c1) + '|' + g.key(c2)) && (inBand(c1) || inBand(c2)))
         const { jobs, deferred } = this._warmScan(edges, Infinity)
         if (jobs.length > 0) this._routeDispatch(jobs, this._routeEpoch)
         return jobs.length === 0 && !deferred
@@ -1710,23 +1723,23 @@ export class RoadSystem {
         return Math.atan2(b.z - a.z, b.x - a.x)
     }
 
-    // ── QUAL-21 Stage 1: stroke-routing heading override ─────────────────────────────────────────
+    // ── QUAL-21 stroke-routing: through-pairing over the settled topology ────────────────────────
     // _nodeThroughPairs — the maximal through-pairing (road-graph.js throughPairsAt) of a node's
-    // alive DEGREE-CULLED Urquhart legs, as Map nbrKey → partnerKey. Built over a NODE-CENTRED
-    // _buildUrquhart neighbourhood (persist=false — the same window-invariance trick as _edgeDeps;
-    // reading the streaming band graph would make the pairing depend on the stream center), with
-    // the SAME wide margin the cull's dedicated graph uses so the degree simulation below sees the
-    // full detour neighbourhood. Leg heights are amplitude-scaled coarse heights (real metres) so
-    // the pair score's grade penalty speaks m/m. Memoized per _networkRev (param/route changes
-    // bump it — see _refreshParams).
+    // SETTLED Urquhart legs (raw adjacency minus the spec-time degree drops — the same canonical
+    // _degreeDropSet decisions assembly/warm/cull apply), as Map nbrKey → partnerKey. Built over a
+    // NODE-CENTRED _buildUrquhart neighbourhood (persist=false — the same window-invariance trick
+    // as _edgeDeps; reading the streaming band graph would make the pairing depend on the stream
+    // center), with the SAME wide margin the cull's dedicated graph uses so the degree decisions
+    // see the full detour neighbourhood. Leg heights are amplitude-scaled coarse heights (real
+    // metres) so the pair score's grade penalty speaks m/m. Memoized per _networkRev.
     //
-    // WHY the degree simulation: the registered network is raw Urquhart MINUS _cullNetwork's
-    // passes, and pairing against a culled leg aims the through-road at a sibling that does not
-    // exist (measured: 65–108° kinks at deg-2 nodes whose raw degree was 3). The DEGREE pass is
-    // pure topology (chords + candidate-free detour BFS — v3 in _cullDegreePass, window-invariant
-    // by design), so it can be reproduced here exactly, keeping the heading a pure fn of
-    // (seed, params, node). The ring-scoped crossing/clearance passes DO read routed geometry and
-    // are window-asymmetric (the BUG-25 WATCH) — they cannot participate without circularity.
+    // WHY pairing must apply the degree drops: the built world is raw Urquhart MINUS the culls,
+    // and pairing against a dropped leg aims the through-road at a sibling that does not exist
+    // (measured: 65–108° kinks at deg-2 nodes whose raw degree was 3). The degree pass is pure
+    // topology, so the pairing here is still a pure fn of (seed, params, node). The ring-scoped
+    // crossing/clearance passes DO read routed geometry and are window-asymmetric (the BUG-25
+    // WATCH) — they cannot participate without circularity; where they orphan a pairing, the
+    // Stage-2 Phase 4 terminal splice repairs the survivors post-cull.
     //
     // SHIPPED STAGE 1 SCOPE = DEG-2 NODES ONLY (a measured cutback from the plan's all-degree
     // maximal pairing — 2026-07-25):
@@ -1756,7 +1769,9 @@ export class RoadSystem {
         // decisions this window computes for edges near the node then match the cull's own.
         const M = (this._params?.roadGraphMargin ?? 3) + (this._params?.roadGraphCullMaxHops ?? 4) + 1
         const g = this._buildUrquhart(mx, mx, mz, mz, false, M)
-        const nbrs = this._degreeCulledNbrsAt(g, nk)
+        const drop = this._degreeDropSet(g)
+        const nbrs0 = g.adj.get(nk)
+        const nbrs = (nbrs0 && drop.size) ? new Set([...nbrs0].filter(o => !drop.has(nk + '|' + o))) : nbrs0
         if (nbrs && nbrs.size === 2) {   // deg-2 ONLY (Stage 1 shipped scope — see header)
             const amp = this._params?.terrainAmplitude ?? 1
             const node = { x: p.x, z: p.z, h: this._coarseH(p.x, p.z) * amp }
@@ -1769,60 +1784,6 @@ export class RoadSystem {
         }
         memo.set(nk, m)
         return m
-    }
-
-    // The degree-pass decisions of _cullDegreePass, reproduced as a pure fn over a node-centred
-    // graph `g`, returning nodeKey `nk`'s surviving neighbour set. MUST mirror _cullDegreePass
-    // phases 1+2 exactly (same candidate rule, same order-free candidate-excluded BFS) — if that
-    // pass changes, change this too (search: DEGREE SIM SYNC).
-    _degreeCulledNbrsAt(g, nk) {
-        const nbrs = g.adj.get(nk)
-        const maxDeg = this._params?.roadGraphMaxDegree ?? 0
-        if (!nbrs || !maxDeg) return nbrs
-        const hopCap = this._params?.roadGraphDegreeDetourHops ?? 4
-        const pairK = (a, b) => a + '|' + b
-        const incAll = new Map()   // nodeKey → [{other, chord}]
-        for (const [a, b] of g.edges) {
-            const ka = g.key(a), kb = g.key(b)
-            const pa = this._nodePos(a), pb = this._nodePos(b)
-            const chord = Math.hypot(pb.x - pa.x, pb.z - pa.z)
-            ;(incAll.get(ka) || incAll.set(ka, []).get(ka)).push({ other: kb, chord })
-            ;(incAll.get(kb) || incAll.set(kb, []).get(kb)).push({ other: ka, chord })
-        }
-        // Phase 1: at every node with degree > maxDeg, its (degree − maxDeg) longest incident
-        // edges are candidates (pure local rule).
-        const candSet = new Set()
-        for (const k of [...incAll.keys()].sort()) {
-            const inc = incAll.get(k)
-            const excess = inc.length - maxDeg
-            if (excess <= 0) continue
-            const cands = inc
-                .slice().sort((x, y) => (y.chord - x.chord) || (pairK(k, x.other) < pairK(k, y.other) ? -1 : 1))
-                .slice(0, excess)
-            for (const c of cands) { candSet.add(pairK(k, c.other)); candSet.add(pairK(c.other, k)) }
-        }
-        if (!candSet.size) return nbrs
-        // Phase 2: a candidate drops iff its endpoints reconnect within hopCap hops in
-        // (graph − ALL candidates).
-        const detourSafe = (a, b) => {
-            const q = [[a, 0]], seen = new Set([a])
-            while (q.length) {
-                const [u, d] = q.shift()
-                if (d >= hopCap) continue
-                for (const v of g.adj.get(u) || []) {
-                    if (candSet.has(pairK(u, v))) continue
-                    if (v === b) return true
-                    if (!seen.has(v)) { seen.add(v); q.push([v, d + 1]) }
-                }
-            }
-            return false
-        }
-        const out = new Set()
-        for (const other of nbrs) {
-            if (candSet.has(pairK(nk, other)) && detourSafe(nk, other)) continue   // dropped by the cap
-            out.add(other)
-        }
-        return out
     }
 
     // The canonical LEAVE-heading override at `nodeId` toward `otherId`: when the leg toward
@@ -2041,7 +2002,7 @@ export class RoadSystem {
     // (seed, params, region): a one-ring-only strand (not in this._network) still counts as a crossing/
     // clearance PARTNER so a registered strand's fate is decided the same way the wide window would; only
     // this._network edges are actually deletable. Returns Map runKey → { cells:[idA,idB], pts }.
-    _oneRingEdges(g, dg) {
+    _oneRingEdges(g, dg, drop) {
         const netNodes = new Set()
         for (const [, e] of this._network) { netNodes.add(g.key(e.cellA)); netNodes.add(g.key(e.cellB)) }
         const ring = new Map()
@@ -2049,6 +2010,7 @@ export class RoadSystem {
         const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
         for (const [c1, c2] of dg.edges) {
             const ka = dg.key(c1), kb = dg.key(c2)
+            if (drop && drop.has(ka + '|' + kb)) continue   // degree-capped spec-time: not part of the built world
             if (!netNodes.has(ka) && !netNodes.has(kb)) continue   // not incident to any registered edge → can't touch one
             const key = `g:${ka}:${kb}`
             if (ring.has(key)) continue
@@ -2112,10 +2074,14 @@ export class RoadSystem {
     _cullNetwork(mx0, mx1, mz0, mz1) {
         const g = this._proto.graph
         if (!g || this._network.size < 2) return false
+        // QUAL-21 Stage 2: the degree pass moved to _assembleGraphEdges (spec-time, pre-routing);
+        // this orchestrator now runs only the GEOMETRY passes (crossing + clearance — they read
+        // routed polylines, so post-routing is their natural home). The memoized wide graph +
+        // degree drops are shared with assembly; the ring below excludes degree-dropped edges
+        // exactly as the old degree-first ordering did (pristine-graph decisions, ring applies).
+        const dd = (mx0 != null) ? this._degreeDrops(mx0, mx1, mz0, mz1) : { dg: g, drop: this._degreeDropSet(g) }
+        const dg = dd.dg
         const maxHops = this._params?.roadGraphCullMaxHops ?? 4
-        const dg = (mx0 != null)
-            ? this._buildUrquhart(mx0, mx1, mz0, mz1, false, (this._params?.roadGraphMargin ?? 3) + maxHops + 1)
-            : g
         const adj = new Map()
         const addj = (a, b) => { (adj.get(a) || adj.set(a, new Set()).get(a)).add(b) }
         for (const [c1, c2] of dg.edges) { addj(dg.key(c1), dg.key(c2)); addj(dg.key(c2), dg.key(c1)) }
@@ -2133,7 +2099,7 @@ export class RoadSystem {
             }
             return -1
         }
-        const ring = this._oneRingEdges(g, dg)
+        const ring = this._oneRingEdges(g, dg, dd.drop)
         const droppedSet = new Set()
         let registeredDrops = 0
         // Deleting from this._network is a no-op when the culled strand is one-ring-only (not rendered
@@ -2144,12 +2110,10 @@ export class RoadSystem {
             g.adj.get(dka)?.delete(dkb); g.adj.get(dkb)?.delete(dka)
             droppedSet.add(key)
         }
-        // Degree pass runs FIRST, on the PRISTINE graph: the crossing/clearance passes are
-        // ring-scoped (window-asymmetric by design — the BUG-25 WATCH), so feeding their drops
-        // into the degree decision would inherit that asymmetry and promote it from a cosmetic
-        // map omission to a hard phantom road (measured: seed-67 cull-radius red). Pristine-first
-        // keeps every degree decision a pure fn of the window-invariant graph.
-        this._cullDegreePass(ring, dg, g, dropEdge, droppedSet)
+        // (Degree decisions were applied at assembly, on the PRISTINE graph — the crossing/
+        // clearance passes are ring-scoped and window-asymmetric by design (the BUG-25 WATCH), so
+        // feeding their drops into the degree decision would inherit that asymmetry and promote it
+        // from a cosmetic map omission to a hard phantom road — measured: seed-67 cull-radius red.)
         if (this._params?.roadGraphCullCrossings ?? true) {
             this._cullCrossingsPass(ring, detour, g, dropEdge, droppedSet)
             this._cullClearancePass(ring, detour, g, dropEdge, droppedSet)
@@ -2252,59 +2216,58 @@ export class RoadSystem {
         }
     }
 
-    // PERF-worldgen degree pass (user connectivity preference): at any node whose surviving graph
-    // degree exceeds roadGraphMaxDegree, drop incident edges LONGEST CHORD FIRST (the long
-    // diagonal is the redundant triangle hypotenuse — the shorter legs already connect it), each
-    // drop allowed only if the edge's endpoints keep a bounded-hop detour AFTER every earlier
-    // drop (detourLive) — connectivity always wins, same guardrail as the other passes. 0 = off.
-    // Deterministic: canonical node order + (detour, chord, key) candidate order. Runs AFTER the
-    // crossing/clearance passes so artifact drops count toward the degree before taste drops.
-    _cullDegreePass(ring, dg, g, dropEdge, droppedSet) {
+    // PERF-worldgen degree pass (user connectivity preference): at any node whose graph degree
+    // exceeds roadGraphMaxDegree, drop incident edges LONGEST CHORD FIRST (the long diagonal is
+    // the redundant triangle hypotenuse — the shorter legs already connect it), each drop allowed
+    // only if the edge's endpoints keep a bounded-hop detour — connectivity always wins. 0 = off.
+    //
+    // QUAL-21 Stage 2: this is the SINGLE canonical implementation of the degree decisions —
+    // returned as a drop-pair-key Set (both orders) over a wide graph. It is PURE TOPOLOGY (chords
+    // + candidate-excluded BFS — no routed geometry), so it runs at SPEC TIME: _assembleGraphEdges
+    // applies the drops BEFORE routing (doomed edges are never routed — was: route then cull),
+    // the warm paths skip them, _cullNetwork's ring excludes them, and _nodeThroughPairs pairs
+    // over the settled adjacency. This replaced the Stage-1 _degreeCulledNbrsAt SIMULATION (a
+    // hand-mirrored copy under a DEGREE SIM SYNC rule — a drift hazard with no reason to exist).
+    //
+    // WINDOW-INVARIANCE (two failed designs taught this — both caught by the cull-radius gate as
+    // phantom map roads, the BUG-25 class):
+    //   v1 decided over the stream window's one-ring → boundary nodes saw window-dependent
+    //      candidate sets.
+    //   v2 decided over the wide graph but updated degrees SEQUENTIALLY → each drop changed
+    //      the next node's decision, an influence chain of unbounded reach that no margin
+    //      absorbs (the QUAL-14 percolation trap).
+    // v3 (this) is ORDER-FREE, every term a bounded-radius pure fn of the graph:
+    //   Phase 1 — CANDIDATES: at every node with degree > maxDeg, its (degree − maxDeg)
+    //     longest incident edges are candidates (pure local rule, 1-hop information).
+    //   Phase 2 — SAFETY: a candidate actually drops iff its endpoints reconnect within
+    //     hopCap hops in (graph − ALL candidates). The subtracted set is itself
+    //     window-invariant, so the check is too; and every dropped edge keeps a detour that
+    //     uses NO dropped edge ⇒ connectivity of the survivors is guaranteed outright.
+    // Every consumer window then merely APPLIES each decision to the edges it can see.
+    _degreeDropSet(dg) {
+        const drops = new Set()
         const maxDeg = this._params?.roadGraphMaxDegree ?? 0
-        if (!maxDeg) return
+        if (!maxDeg) return drops
         // Tight detour cap: only an edge whose endpoints reconnect within THIS many hops is
         // "redundant enough" to lose to the degree cap. Low = only near-triangle diagonals (some
         // 4-ways survive — the user wants fewer, not none); toward roadGraphCullMaxHops =
         // progressively more aggressive thinning.
         const hopCap = this._params?.roadGraphDegreeDetourHops ?? 4
-        // WINDOW-INVARIANCE (two failed designs taught this — both caught by the cull-radius
-        // gate as phantom map roads, the BUG-25 class):
-        //   v1 decided over the stream window's one-ring → boundary nodes saw window-dependent
-        //      candidate sets.
-        //   v2 decided over the wide graph but updated degrees SEQUENTIALLY → each drop changed
-        //      the next node's decision, an influence chain of unbounded reach that no margin
-        //      absorbs (the QUAL-14 percolation trap).
-        // v3 (this) is ORDER-FREE, every term a bounded-radius pure fn of the post-earlier-passes
-        // graph:
-        //   Phase 1 — CANDIDATES: at every node with degree > maxDeg, its (degree − maxDeg)
-        //     longest incident edges are candidates (pure local rule, 1-hop information).
-        //   Phase 2 — SAFETY: a candidate actually drops iff its endpoints reconnect within
-        //     hopCap hops in (graph − ALL candidates). The subtracted set is itself
-        //     window-invariant, so the check is too; and every dropped edge keeps a detour that
-        //     uses NO dropped edge ⇒ connectivity of the survivors is guaranteed outright.
-        // The stream window then merely APPLIES each decision to the edges it has registered.
         const pairK = (a, b) => a + '|' + b
-        const ringByPair = new Map()   // dg node-key pair → registered runKey
-        for (const [key, e] of ring) {
-            const ka = dg.key(e.cells[0]), kb = dg.key(e.cells[1])
-            ringByPair.set(pairK(ka, kb), key); ringByPair.set(pairK(kb, ka), key)
-        }
-        // Adjacency + incidence over the PRISTINE dg (this pass runs before the ring-scoped
-        // passes precisely so this graph is window-invariant — see the call-site note).
         const dgAdj = new Map()
-        const incAll = new Map()   // nodeKey → [{other, cells, chord}]
+        const incAll = new Map()   // nodeKey → [{other, chord}]
         const addAdj = (a, b) => { (dgAdj.get(a) || dgAdj.set(a, new Set()).get(a)).add(b) }
         for (const [a, b] of dg.edges) {
             const ka = dg.key(a), kb = dg.key(b)
             const pa = this._nodePos(a), pb = this._nodePos(b)
             const chord = Math.hypot(pb.x - pa.x, pb.z - pa.z)
             addAdj(ka, kb); addAdj(kb, ka)
-            ;(incAll.get(ka) || incAll.set(ka, []).get(ka)).push({ other: kb, cells: [a, b], chord })
-            ;(incAll.get(kb) || incAll.set(kb, []).get(kb)).push({ other: ka, cells: [b, a], chord })
+            ;(incAll.get(ka) || incAll.set(ka, []).get(ka)).push({ other: kb, chord })
+            ;(incAll.get(kb) || incAll.set(kb, []).get(kb)).push({ other: ka, chord })
         }
         // Phase 1: candidate pairs (canonicalized), no mutation anywhere.
         const candSet = new Set()
-        const candList = []   // [{ka, kb, cells}] canonical ka < kb, deterministic order
+        const candList = []   // [{ka, kb}] canonical lo/hi, deterministic order
         for (const nk of [...dgAdj.keys()].sort()) {
             const excess = dgAdj.get(nk).size - maxDeg
             if (excess <= 0) continue
@@ -2315,9 +2278,10 @@ export class RoadSystem {
                 const lo = nk < c.other ? nk : c.other, hi = nk < c.other ? c.other : nk
                 if (candSet.has(pairK(lo, hi))) continue
                 candSet.add(pairK(lo, hi)); candSet.add(pairK(hi, lo))
-                candList.push({ ka: nk, kb: c.other, cells: c.cells, lo, hi })
+                candList.push({ ka: nk, kb: c.other, lo, hi })
             }
         }
+        if (!candList.length) return drops
         // Phase 2: BFS in (graph − candidates); drop each candidate whose endpoints reconnect.
         const detourSafe = (a, b) => {
             const q = [[a, 0]], seen = new Set([a])
@@ -2335,15 +2299,28 @@ export class RoadSystem {
         candList.sort((x, y) => (pairK(x.lo, x.hi) < pairK(y.lo, y.hi) ? -1 : 1))
         for (const c of candList) {
             if (!detourSafe(c.ka, c.kb)) continue   // load-bearing → survives the cap
-            const rk = ringByPair.get(pairK(c.ka, c.kb))
-            if (rk && !droppedSet.has(rk)) {
-                dropEdge(rk, c.cells)   // registered here → full drop (network + graph)
-            } else {
-                // Decision applies but the edge isn't registered in this window: record it in the
-                // graph state so junction degrees agree with what wide windows would build.
-                g.adj.get(c.ka)?.delete(c.kb); g.adj.get(c.kb)?.delete(c.ka)
-            }
+            drops.add(pairK(c.lo, c.hi)); drops.add(pairK(c.hi, c.lo))
         }
+        return drops
+    }
+
+    // Memoized degree decisions for a stream/warm window: the wide dedicated graph (margin =
+    // roadGraphMargin + cullMaxHops + 1 — the detour neighbourhood of any in-window pair is fully
+    // contained regardless of render radius, same recipe _cullNetwork always used) + its drop set.
+    // Keyed by (window, _networkRev) — warm scans repeat the same window between move thresholds.
+    _degreeDrops(mx0, mx1, mz0, mz1) {
+        const sig = `${mx0}:${mx1}:${mz0}:${mz1}`
+        if (!this._degreeDropsMemo || this._degreeDropsMemo.rev !== this._networkRev)
+            this._degreeDropsMemo = { rev: this._networkRev, map: new Map() }
+        const memo = this._degreeDropsMemo.map
+        const hit = memo.get(sig)
+        if (hit) return hit
+        const maxHops = this._params?.roadGraphCullMaxHops ?? 4
+        const dg = this._buildUrquhart(mx0, mx1, mz0, mz1, false, (this._params?.roadGraphMargin ?? 3) + maxHops + 1)
+        const entry = { dg, drop: this._degreeDropSet(dg) }
+        if (memo.size > 6) memo.clear()   // warm/stream/spawn windows alternate — keep a handful
+        memo.set(sig, entry)
+        return entry
     }
 
     _protoEdgeCost(fromH, toH, horiz, P) {
@@ -2790,9 +2767,22 @@ export class RoadSystem {
         const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
         const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
         const g = this._buildUrquhart(mx0, mx1, mz0, mz1)
+        // QUAL-21 Stage 2: the degree pass is pure topology, so its drops apply HERE — before any
+        // routing — instead of inside _cullNetwork after every edge already paid its route search.
+        // Doomed edges never register AND never route; g.adj is updated for every dropped pair the
+        // streaming graph can see (junction degrees agree with what wide windows build — the old
+        // pass's unregistered-edge branch). _cullNetwork's ring + the warm paths apply the same
+        // memoized decisions, and _nodeThroughPairs pairs over this settled adjacency.
+        const { drop } = this._degreeDrops(mx0, mx1, mz0, mz1)
+        for (const [c1, c2] of g.edges) {
+            if (drop.has(g.key(c1) + '|' + g.key(c2))) {
+                g.adj.get(g.key(c1))?.delete(g.key(c2)); g.adj.get(g.key(c2))?.delete(g.key(c1))
+            }
+        }
         this._proto.nodeInc.clear()
         const addInc = (idKey, runKey) => { const a = this._proto.nodeInc.get(idKey) || this._proto.nodeInc.set(idKey, []).get(idKey); a.push(runKey) }
         for (const [c1, c2] of g.edges) {
+            if (drop.has(g.key(c1) + '|' + g.key(c2))) continue   // degree-capped: settled spec-time, never routed
             if (!inBand(c1) && !inBand(c2)) continue   // fully-margin edge: not registered (frontier, like rows pad)
             const A = this._nodePos(c1), B = this._nodePos(c2)
             { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }   // degenerate (coincident) edge
@@ -2940,7 +2930,9 @@ export class RoadSystem {
         // test) + window-invariant (BUG-25: both passes decide over the one-ring candidate universe —
         // see _cullNetwork). Re-detect on the culled network so _crossingsByRun / the flatten reflect
         // the survivors.
-        if ((this._params?.roadGraphCullCrossings ?? true) || (this._params?.roadGraphMaxDegree ?? 0) > 0) {
+        // (Degree-cap drops are applied inside _assembleGraphEdges — spec-time, pre-routing;
+        // _cullNetwork now runs only the routed-geometry passes.)
+        if (this._params?.roadGraphCullCrossings ?? true) {
             if (this._cullNetwork(mx0, mx1, mz0, mz1)) { this._junctionsFrom = null; this._detectJunctions() }
         }
 

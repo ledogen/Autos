@@ -32,6 +32,7 @@ const SEEDS = [6, 3]
 const PALETTES = [[200, 35], [200, 50], [200]]
 const CX = 4500, CZ = 600, R = 1600
 const AGREEMENT_ONLY = process.argv.includes('--agreement-only')   // skip (2)/(3) re-measures
+const BASELINE_ONLY = process.argv.includes('--baseline-only')     // only (2) — cold-build timing
 
 // Coarse VARIANTS for (1): the corridor block's recipe strips goalHeading (C0 legacy terminal is
 // fine for a HEURISTIC-flood estimate) — but for the CULL consumer that reintroduces the exact
@@ -179,7 +180,7 @@ const pairKey = (p) => p.ka + '#' + p.kb
 
 // ── (1)+(3a) crossing agreement, per seed × palette ─────────────────────────────
 
-for (const seed of SEEDS) {
+for (const seed of BASELINE_ONLY ? [] : SEEDS) {
     console.log(`\n━━ (1) CROSSING AGREEMENT — seed ${seed} (pre-crossing-cull fine network) ━━`)
     let t0 = Date.now()
     const r = new RoadSystem(seed, { ...P, roadGraphCullCrossings: false })
@@ -262,6 +263,7 @@ for (let i = 0; i < 3; i++) {
 }
 const charBase = characterOf(rBase)
 console.log(`   baseline character: ${charLine(charBase)}`)
+if (BASELINE_ONLY) process.exit(0)
 
 // ── (3b) fine-route quality per heuristic-flood palette (seed 6 full builds) ────
 // The SECOND coarse consumer: the backward flood feeding the fine search's cost-to-go. A gentler
