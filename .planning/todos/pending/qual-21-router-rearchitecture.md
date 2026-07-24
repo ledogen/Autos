@@ -85,6 +85,57 @@ positional jitter; parked-on-pad within ~1.5× of off-pad per-sample cost. Full 
 measurement, and acceptance harness: `perf-25-pad-resolve-parked-jitter.md` (do not work it
 standalone; close it with Stage 2).
 
+## Stage 2 Phase 0 RESULTS (2026-07-24) — ENTRY CHECKPOINT: cull-on-coarse FAILS its bar
+
+Script: `test/stage2-crossing-agreement.mjs` (rainy-day; `--agreement-only` skips the slow
+sections). Seeds 6 + 3, r1600, center (4500,600), both toggles ON. Measured per the plan
+(`2026-07-25-qual21-stage2-plan.md` Phase 0), including the decoupled-weights tuning license
+(palette sweep, goalHeading kept vs stripped, shared-node exemption radius sweep E∈{0,60,100,140}).
+
+**Cold-build baseline (Phase 3 ceiling, 3×):** 11.8 / 12.3 / 12.3 s · routes 162 · searches 168 ·
+repairs 6 · unclean 0. Baseline character: 50.5 km, 56 runs, straights>200 m 8.3%, bands
+sweep/gentle/medium/hairpin 49.4/13.2/26.3/11.1%. Coarse forward route costs 3–4 ms/edge
+(palette [200,35]) — affordability was never the problem.
+
+**Crossing agreement — the bet does not survive measurement:**
+- **Every fine crossing (7/7 across both seeds) is between edges SHARING a graph node, 0–39 m
+  from that shared node** — sub-lattice micro-geometry (whether two legs converging into one
+  node cross once just outside the pad), not the ~100 m corridor excursions the architecture
+  assumed. Mid-span corridor-level disagreement is near zero (0–4 pairs) — the coarse pass
+  agrees with fine WHERE IT CAN SEE; crossings live below its 24 m cell.
+- Raw coarse detection: 13–38 crossings vs 6/1 fine — false positives are ~all near-node
+  (seed 6 [200,35]: 26/26 near-node). Simulated crossing-pass outcomes: 8–25 WRONGLY
+  early-culled edges per band to predict the 1–2 real drops. goalHeading-kept coarse routing
+  (killing terminal wander) changes nothing material.
+- The shared-node exemption (clearance-pass style, applied to coarse detection) trades catch
+  DIRECTLY against false positives — same population, no operating point: best case (seed 6,
+  [200,50]+gh, E=100) 83% catch with still 8 wrong drops vs 2 right; **seed 3's single fine
+  crossing (0 m, shared) is caught by NO variant at NO radius (0% everywhere)**.
+- Clearance pass on coarse is dead BY CONSTRUCTION: its proximity threshold D≈18 m is below
+  the 24 m coarse lattice cell — coarse polylines cannot resolve it.
+- The prize was small anyway: post-degree-pass, crossing+clearance drop only ~6 registered
+  band edges (62→56, seed 6; crossing component 2, seed 3: 1) — the "10–14 fine-routed just
+  to delete" figure is dominated by the DEGREE pass, which is pure topology and needs no
+  coarse geometry at all.
+
+**Heuristic-flood palette (second coarse consumer, full fine builds seed 6):** [200,50] and
+[200] both CHANGE topology (kept 53, added 2–6, removed 3) with ~2–3 pt character shifts
+(straights 8.3→9.8/10.2%). No quality win to buy — **the flood palette stays [200,35]**; with
+cull-on-coarse dead there is no remaining consumer for a `roadCorridorRadii` param (not added).
+
+**VERDICT / RECOMMENDATION (needs user sign-off — this deviates from the locked Phase 1):**
+skip "cull on coarse". Keep the architecture's intent with the passes in their natural homes:
+- The topology that pairing needs settled IS already settled spec-time: degree pass + QUAL-22
+  cost-prune are pure topology (window-invariant, no routed geometry). Run pairing on THAT
+  adjacency (still deletes _nodeThroughPairs/_degreeCulledNbrsAt — Phase 2 unchanged), then
+  fine-route once with final headings (Phase 3 unchanged).
+- Crossing/clearance culls stay POST-routing as the backstop they already are; the ~6
+  drops/band orphan ~10 pairings/band (matches the Stage 1 census: 10/14 in-band deg-2s were
+  cull-created) — **Phase 4's analytic Dubins splices absorb exactly these** (zero searches).
+- Net vs the locked plan: no early-cull routing savings (was ~2 crossing-doomed edges/band —
+  noise next to 162 routes), no wrongly-culled roads, no BUG-25 asymmetry inherited into a
+  NEW pass, and Phases 2/3/4/5 (+PERF-25 exit criterion) proceed unchanged.
+
 ## Stage 0 RESULTS (2026-07-23, commit bf25e79) — read-only spike DONE
 
 `formStrokes` (pure, src/road-graph.js) + `test/stroke-spike.mjs` (rainy-day script). User-approved
