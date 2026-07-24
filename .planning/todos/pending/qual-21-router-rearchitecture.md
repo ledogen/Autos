@@ -136,6 +136,46 @@ skip "cull on coarse". Keep the architecture's intent with the passes in their n
   noise next to 162 routes), no wrongly-culled roads, no BUG-25 asymmetry inherited into a
   NEW pass, and Phases 2/3/4/5 (+PERF-25 exit criterion) proceed unchanged.
 
+## Stage 2 Phases 2+4 IMPLEMENTED (2026-07-24, commits 1da347f + c7fbe38) — user approved skip-Phase-1
+
+**Phase 2 (flag-independent, byte-stable):** one canonical `_degreeDropSet` (extracted verbatim
+from `_cullDegreePass` phases 1+2) applies the degree-cap at `_assembleGraphEdges` — BEFORE
+routing. Doomed edges never route/register; the three warm paths skip them; `_cullNetwork` keeps
+only the geometry passes (ring excludes degree drops; detour adjacency stays pristine-static);
+`_nodeThroughPairs` pairs over the same settled decisions. `_degreeCulledNbrsAt` (the DEGREE SIM
+SYNC hand-mirror) DELETED. Measured: routes 162→153, searches 168→159, cold build 11.8→11.2 s
+(~5%), character byte-identical, route-bundle-parity green.
+
+**Phase 4 (flag-gated `roadStrokeRouting`):** `_spliceOrphanedPairs` — post-cull, at nodes whose
+surviving degree is 2, each survivor's terminal (goalBlend of whole primitives) is re-emitted as
+an analytic Dubins run into the node at the corrected through heading (chord between far
+endpoints — the `_throughHeadingAt` formula, survivors as partners). Zero searches. Descending-
+rho ladder [80,50,30,hardR] + a 2×-cut retry tier: a through-road bends at the node as gently as
+the freed span allows (hardR-only splices read ~23° on the connector's chord proxy; the ladder
+lands ≤13°). Ribbon weld reads per-entry `spliceLeaveA/B` overrides. `dubinsPrimitives`
+re-exported OUTSIDE the ROUTE SYNC region (worker mirror + sync gate untouched). Route caches
+(`_proto.cls`) never touched — the splice decorates only registered entries; deterministic per
+re-stream, inherits the cull's ring-scoped asymmetry (BUG-25 WATCH class, same as the elbow pad).
+
+**Census after (seed 6, r1600):** cull-created deg-2 measured kink p50 37.7°→5.2°, max
+75.2°→13.2°; 11/14 under the 9° connector admission (was 2/14). The 3 residuals are the
+PRE-EXISTING chord-proxy overshoot (true tangent kink ≈0 — router hardR terminals read ~11-13°
+on first-chord; the same class Stage 1 documented at raw paired nodes). Fixing THAT class =
+Phase 5 (junction rework / admission on true tangents), not more splicing. Cold build flag-on
+13.6→13.8 s (splice rebuild cost ~0.2 s). All 27 affected gates green (serial), both flag
+states.
+
+**Diagnostic note:** stroke-spike §(2) band-graph stroke-chain invariance now reports frontier
+split mismatches under the maximal-default `formStrokes` rules (B-only stroke + 3 TERMINAL
+flips). DIAGNOSTIC-ONLY: the shipped pairing is per-node/node-centred (window-invariant — both
+invariance gates green); formStrokes chains are not a product artifact. Ignore unless Stage 2
+later routes whole strokes.
+
+**Remaining for the merge gate:** Phase 5 (junction rework: two canonical shapes, rotated-
+arrival support, PERF-25 ≤1.5× parked-pad harness, deg-2 connector deletion once the census
+shows it no-ops, then deg-3/4 pairing flip) · full `test:all` both flag states · flag-on 9-gate
+matrix + seed-6 bank marginal re-check · user A/B drive · default-on decision as its own step.
+
 ## Stage 0 RESULTS (2026-07-23, commit bf25e79) — read-only spike DONE
 
 `formStrokes` (pure, src/road-graph.js) + `test/stroke-spike.mjs` (rainy-day script). User-approved
