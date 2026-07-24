@@ -47,6 +47,35 @@ connector for cull-created deg-2 nodes or the crossing-cull interaction gets a r
 (e.g. pairing-aware drop selection — pure direction, no circularity); (c) the seed-6 bank
 marginal verdict. Kink census re-runs via `node test/stroke-spike.mjs` section (4).
 
+## STAGE 2 ARCHITECTURE (user-approved 2026-07-25) — settle topology coarse, fine-route ONCE
+
+HARD CONSTRAINT: **routing cost must not increase; no full-network re-route, ever.** Routing is
+the dominant cost in the codebase; the pipeline below reuses first-pass cycles everywhere.
+
+1. **Coarse routing** (exists — the roadCorridorTwoPass coarse-lattice pass, ROUTE SYNC region).
+   Modify: gentle-curves-only palette. The coarse palette is already `radii: [200, 35]`
+   (road-carve.js ~line 908) — make the floor a first-class tuning point and TEST raising it
+   (drop the 35 m entry / try [200, 50]): with the limited data a coarse router sees, it must
+   not promise grade optimization (switchback-dense plans) the fine pass gets steered into.
+2. **Cull on coarse** (new, cheap — SAVES routing): degree pass is pure topology (no geometry);
+   crossing detection runs on the COARSE polylines (crossings are ~100 m excursions — coarse
+   captures them). Doomed edges die BEFORE fine routing pays for them (today we fine-route
+   10–14 edges/band just to delete them).
+3. **Pair on the settled post-coarse-cull topology, then fine-route ONCE** with final paired
+   headings + the existing corridor reuse. No second fine pass. Deletes the Stage-1 spec-time
+   override AND the _nodeThroughPairs/_degreeCulledNbrsAt cull-prediction machinery (they exist
+   only because pairing ran before culls). Whole chain is worker-runnable (coarse flood already
+   lives in ROUTE SYNC) → prewarm delivers final routes directly.
+4. **Junction repairs are LOCAL SPLICES, never searches**: where the fine-level cull backstop
+   still fires (coarse/fine crossing disagreement) and orphans a pairing, cut the surviving
+   route at the mouth (~cutback + goalBlend, last ~60 m) and re-emit an analytic Dubins terminal
+   at the corrected heading — the goal-blend machinery already does exactly this. Anything still
+   unpaired keeps the deg-2 elbow-pad fallback (2da62fb).
+
+ENTRY CHECKPOINT before committing: measure the coarse-vs-fine crossing-agreement rate (route
+one band both ways, count crossing-set disagreements) — it bounds how often stage 4 fires.
+WATCH: moving the crossing decision to coarse inherits today's BUG-25 ring-scoped asymmetry.
+
 **Stage 2 HARD REQUIREMENT (user decision 2026-07-25): PERF-25 folds in** — the reworked
 junction surface must be cheaply evaluable per physics sample (or memoizable per node) under
 positional jitter; parked-on-pad within ~1.5× of off-pad per-sample cost. Full context,
