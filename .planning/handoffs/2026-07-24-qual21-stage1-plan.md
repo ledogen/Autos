@@ -1,101 +1,95 @@
-# QUAL-21 Stage 1: shared per-node headings + QUAL-22 ticket
+# QUAL-21 Stage 1 — strokes classify & absorb intersection types (EXECUTION PLAN)
 
-## Context
+Handoff 2026-07-24. Planning is DONE (design: `.planning/research/STROKE-ROUTING-DESIGN.md`,
+esp. **§0 REVISED MECHANISM** + §7 locked decisions; Stage 0 results in the QUAL-21 ticket).
+This file is the self-contained implementation plan — execute top to bottom.
+(The related-but-separate topology idea is its own ticket: QUAL-22 terrain-cost Urquhart pruning.
+It is NOT part of this plan.)
 
-QUAL-21 (stroke routing) planning is complete. The Stage 0 spike (committed `bf25e79`) proved
-window-invariance; the user then pivoted the design twice, both locked in
-`.planning/research/STROKE-ROUTING-DESIGN.md`:
+## Context — what Stage 1 does and why
 
-1. **Maximal pairing** (2026-07-24): every node pairs as many legs as it can — deg-2 pass-through,
-   deg-3 through + T-branch, deg-4 two crossing through-roads. No thresholds/vetoes/escape hatches.
-   Pair score = bearing deviation + grade penalty (grade picks WHICH pair, never whether).
-2. **Revised mechanism §0** (zoom-out finding, already folded into the design doc this session):
-   strokes are never ROUTED as units. Every edge already routes with prescribed terminal headings
-   (`startHeading`/`goalHeading` in `_edgeRouteSpec`, road.js:2252-2253) that are just its own chord
-   bearing — the deg-2 kink is a data disagreement, not architecture. Stage 1 = give both edges of a
-   through-pair the SAME canonical heading at their shared node (bearing between the two paired
-   neighbour sites). Tangent continuity by construction; per-edge routing, caches, worker, and
-   window-invariance untouched.
+Today every Urquhart edge routes independently and ~3,200 lines of junction machinery reconcile
+the mismatched arrivals afterward. Stage 1 makes intersections **classified and absorbed at
+route time** via maximal pairing:
 
-Locked sub-decisions: κ²-only for bend sharpness (no min-radius param); deg-4 node height = existing
-junction blend (averaging refinement deferred — blend already reconciles); tight radii judged in the
-A/B drive. `roadSoloReuse`, corridor heuristic, valley-snap already shipped — no router cost levers
-to add.
+| node degree | classification | result |
+|---|---|---|
+| 2 | ABSORBED — road continues through | no kink → deg-2 connector no-ops (Stage 2 deletes it) |
+| 3 | through-road + T-branch | fillet ladder's only case: stem meets a smooth road |
+| 4 | two crossing through-roads | the only other case: through×through crossing |
 
-## Step A — docs (finish the user's current ask)
+Key mechanism fact (found in zoom-out, verified in code): edges ALREADY route with prescribed
+terminal headings — `startHeading`/`goalHeading` in `_routeOptsBetween` (src/road.js:2252-2253),
+honored analytically by the Dubins terminal — and both are just the edge's own chord bearing.
+The deg-2 kink is a DATA disagreement, not architecture. **Stage 1 = make the paired edges at a
+node prescribe the SAME canonical heading.** No stroke-unit routing, no chained searches, no
+out-of-window routing, no maxLen splits, no stroke-level grade pass, no ROUTE SYNC / worker
+edits. Per-edge routing, caches, worker prewarm, and window-invariance are untouched.
 
-1. **Create `.planning/todos/pending/qual-22-terrain-cost-urquhart.md`** — the shelved "topology
-   from cost" idea (user: "document 4. as a ticket"):
-   - id QUAL-22, type qual, status open, severity minor, relates FEAT-13/QUAL-21.
-   - Idea: `urquhartEdges` (src/road-graph.js) prunes each Delaunay triangle's longest edge by
-     EUCLIDEAN length — terrain-blind. Prune the most-EXPENSIVE edge instead, cost = cheap line
-     integral of the coarse height field along the chord (pure fn of sites + seed → deterministic,
-     window-invariant). Roads then connect where connecting is cheap; mountain crossings emerge only
-     without alternatives — topology-level terrain character (aligns with emergent-over-injected).
-   - Connectivity survives: Urquhart ⊇ MST holds per weight function (prune max-weight edge of each
-     triangle under the SAME weight).
-   - Blast radius (why it is NOT a QUAL-21 rider): re-shapes the entire network → route-bundle
-     regen, reachability/gate re-baseline, full feel pass. Do after QUAL-21 lands.
-2. Commit docs: the already-edited STROKE-ROUTING-DESIGN.md §0 + the new ticket
-   (`docs(QUAL-21/22): ...`).
+Locked decisions (design doc §7): maximal pairing, no thresholds/vetoes/escape hatches; pair
+score = bearing deviation + grade penalty (grade picks WHICH pair, never whether); κ²-only for
+bend sharpness (no min-radius param); node heights keep riding the existing junction blend.
 
-## Step B — Stage 1 implementation (behind `roadStrokeRouting`, default off)
+## Implementation
 
-### B1. Pairing core (src/road-graph.js)
-Replace `formStrokes`' single-best-pair block with GREEDY MAXIMAL pairing and export the per-node
-core the runtime needs:
+### 1. Pairing core — src/road-graph.js
+- New pure export `throughPairsAt(node, legs, opts)` (~30 lines): `node = {x,z,h}`,
+  `legs = [{key,x,z,h}]` (neighbour sites, h in metres = coarseH × terrainAmplitude).
+  Greedy best-score-first over all leg pairs while ≥2 legs remain unpaired;
+  `score = bearingDeviationDeg + (opts.gradePenaltyDegPerSlope ?? 100) · |slopeIn − slopeOut|`
+  (slopes per leg chord). Deterministic lexicographic tie-breaks on leg keys (copy the Stage 0
+  `cand.sort` pattern in `formStrokes`). Returns pairs as `[ [keyA,keyB], ... ]`.
+- Refactor `formStrokes` to delegate its per-node pairing to `throughPairsAt` (thresholded opts
+  become experiment-only knobs; defaults = maximal). Chain/loop/split machinery stays for the
+  spike, which is its only consumer now.
 
-- `throughPairsAt(nodePos, legs)` (new, pure, ~30 lines): legs = [{key, x, z, h}] of neighbour
-  sites; returns pairs greedily by score = bearing deviation from straight (deg) +
-  `gradePenaltyWeight` · |slopeIn − slopeOut| (slopes from site heights/chord lengths, h in metres).
-  Deterministic lexicographic tie-breaks (Stage 0 pattern). No thresholds — pair while ≥2 legs
-  remain.
-- `formStrokes` keeps its chain/loop/split machinery but delegates pairing to the same core
-  (spike-only consumer now; keep for reporting).
+### 2. Heading override — src/road.js
+- `_throughHeadingAt(nodeId, otherId)` (new, memoized per `_networkRev` like `_edgeDeps`):
+  build the node's alive-neighbour legs from an EDGE-CENTRED `_buildUrquhart` neighbourhood
+  (persist=false — same window-invariance trick as `_edgeDeps`, road.js:2337; do NOT use the
+  streaming band graph or the heading becomes window-dependent). Heights via
+  `_coarseH(x,z) × (params.terrainAmplitude ?? 1)`. Run `throughPairsAt`; if the leg toward
+  `otherId` is paired with neighbour P → return `atan2(other.z − P.z, other.x − P.x)` (bearing
+  P→other, the through chord, oriented as LEAVE-toward-other). Unpaired (branch) → null.
+- In `_routeOptsBetween` (road.js:2252-2253), when `params.roadStrokeRouting`:
+  `startHeading = _throughHeadingAt(c1, c2) ?? today's chord bearing` and
+  `goalHeading = (_throughHeadingAt(c2, c1) ?? chord) + π` — preserving the existing
+  arrival-direction `+π` convention exactly (see the comment block there).
+- The heading rides the route spec, and `_edgeRouteSpec` is the single source for BOTH the
+  worker prewarm and the sync fallback — so worker/sync parity is free. Verify nothing else
+  derives terminal headings independently (grep `_edgeTerminalHeading` call sites; the ribbon
+  weld target mentioned in its header comment must follow the same override or welds shift —
+  if a call site exists outside the route spec, thread the same `?? chord` override through it).
 
-### B2. Heading override (src/road.js)
-- New cached helper `_throughHeadingAt(nodeId, edgeOtherId)`: build the node's alive-neighbour leg
-  list from the persisted graph (`this._proto.graph.adj` — NOT the streaming band check; fall back
-  to an edge-centred `_buildUrquhart` neighbourhood like `_edgeDeps` does, so it stays
-  window-invariant), run `throughPairsAt`, and if the edge toward `edgeOtherId` is paired with
-  neighbour P, return `atan2` bearing P→other (the through chord) oriented for that terminal;
-  otherwise null (branch leg → today's behaviour).
-- In `_routeOptsBetween` (road.js:2252-2253): when `this._params.roadStrokeRouting` is on, replace
-  `startHeading`/`goalHeading` chord bearings with the through-heading where one exists (mind the
-  existing `+ Math.PI` arrival-direction convention at the goal end).
-- IMPORTANT invariance note: heading must be a pure fn of (seed, params, node neighbourhood) —
-  identical from any window and identical between worker prewarm and sync fallback (it rides the
-  route spec, which both paths share — `_edgeRouteSpec` is the single source, so this is free).
-- `roadStrokeRouting` param: add to data/ranger.js default `false` + a debug-menu toggle in the road
-  folder (feedback_phase_housekeeping). It is a `road*` param → it enters `routeCacheSig`; verify
-  the bundled default-world route cache still loads with the flag OFF (sig unchanged when the key is
-  absent/false — check how routeCacheSig serializes; if adding the key alone changes the sig, regen
-  the bundle in the same commit).
+### 3. Param + housekeeping
+- `roadStrokeRouting: false` in data/ranger.js (documented comment block, QUAL-21 tag).
+- Debug-menu toggle in the road folder (src/debug.js) wired like other re-route params
+  (onRoadParamChange → invalidate). [feedback: end-of-phase slider audit]
+- routeCacheSig: confirm adding the key with value `false` does not change the sig of the baked
+  default bundle (check how the sig serializes road* params — if it enumerates keys, regen
+  `data/route-cache-default.json.gz` in the same commit; if it reads values with defaults, OFF
+  is a no-op).
 
-### B3. What is NOT touched in Stage 1
-No carve/mesh/junction-blend/connector changes: with matched tangents the deg-2 connector
-(`roadJunctionKinkDeg: 9` admission, road.js:4055) no-ops naturally when the kink < 9°. Deletion is
-Stage 2, after the user's A/B drive.
+### 4. What is NOT touched
+Carve, mesh, pads, junction blend, deg-2 connector code (roadJunctionKinkDeg 9 admission,
+road.js:4055 — it no-ops naturally when the kink < 9°), crossing detector, BUG-25 cull,
+ROUTE SYNC region, road-worker.js. Deletion happens in Stage 2 after the drive sign-off.
 
 ## Verification
 
-1. `node test/stroke-spike.mjs` still green (Stage 0 regression: formStrokes output with explicit
-   threshold opts unchanged; add a maximal-pairing stats line — bend-angle distributions incl.
-   worst-of-two at deg-4 — for the drive discussion).
-2. Flag OFF: `npm test` (affected gates) must be byte-stable — no route changes.
-3. Flag ON (headless): run the key gates with `roadStrokeRouting: true` — `graph-topology`
-   (window-invariance D-16), `centerline-curvature`, `road-minradius`, `road-smoothness`,
-   `shoulder-lateral-continuity`, `carve-mesh-smoothness`, `road-tunnel`, `windiness-metrics`,
-   `road-character`. Gates read RANGER_PARAMS, so run via a small env/param override the same way
-   the spike overrides P (`{...RANGER_PARAMS, roadStrokeRouting: true}` in a scratch runner if a
-   gate has no param hook).
-4. Measure the deg-2 kink with flag ON: count deg-2 nodes whose heading kink exceeds
-   `roadJunctionKinkDeg` (should be ≈0 → connector no-ops). Report self-clear repair count vs the
-   Stage 0 baseline (18) via the scStats hook.
-5. User A/B drive (flag toggle in debug menu) — sign-off gate for Stage 2.
+1. **Flag OFF**: `npm test` byte-stable (no route changes — the override must be strictly gated).
+2. **Flag ON, headless**: run the road gates with `{...RANGER_PARAMS, roadStrokeRouting:true}`
+   (scratch runner per gate if no param hook): `graph-topology` (D-16 two-center invariance),
+   `centerline-curvature`, `road-minradius`, `road-smoothness`, `shoulder-lateral-continuity`,
+   `carve-mesh-smoothness`, `road-tunnel`, `windiness-metrics`, `road-character`.
+3. **Kink census** (extend test/stroke-spike.mjs): with flag ON, measure per-deg-2-node heading
+   kink between the two registered runs — expect ≈100% under the 9° connector admission (i.e.
+   connector no-ops network-wide). Also report worst through-pair bend at deg-3/4 (the
+   maximal-pairing risk metric) + self-clear repairs vs the 18/158 Stage 0 baseline (scStats).
+4. **A/B drive** (user): toggle in debug menu; judge through-road feel, tight radii, junction
+   look. USER SIGN-OFF HERE gates Stage 2 (delete deg-2 connector, collapse fillet ladder to
+   the two canonical shapes).
 
-## Sequencing
-
-Step A (docs) → B1+B2 (+ mirror nothing: no ROUTE SYNC edits needed — heading logic lives in
-road.js spec-building, outside the synced router) → verification 1-4 → hand to user for the drive.
-Commit at boundaries: docs, then Stage 1 code+gates.
+## Commit boundaries
+(1) pairing core + spike update, gates green flag-off · (2) heading override + param + toggle,
+gates green both ways + kink census numbers in the commit message.
