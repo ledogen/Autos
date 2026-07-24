@@ -1,8 +1,14 @@
 ---
 id: FEAT-40
 type: feature
-status: in-progress
+status: completed
 severity: major
+resolution: "Shipped. Summit-cut bores, portals + terrain cutouts, masonry, map icons, grade-gated
+  stage-2 bores. Landed on main 2026-07-23 (merge c10597c) as the first of the junction merge train;
+  full test:all 39/39 green (incl. the new road-tunnel gate). Reconciled downstream with QUAL-16
+  deg-2 connector + junction-fix pad carve — the three carve overlays compose bore-ownership resolve →
+  blended run cross-section → deg-2 connector → junction-pad merge in both _sampleCarveWorld and
+  terrain _buildCarveTable. See .planning/handoffs/2026-07-23-feat40-merge.md + 2026-07-23-junction-merge-plan.md."
 ---
 
 # FEAT-40 — Tunnels: taut-string summit cut + concrete half-tube bore

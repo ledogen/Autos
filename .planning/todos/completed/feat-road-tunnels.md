@@ -1,11 +1,15 @@
 ---
 id: FEAT-11
 type: feature
-status: open
+status: completed
 opened: 2026-06-27
 severity: minor
 source: user-observation
 phase_origin: earthwork-routing
+resolution: "Fulfilled by FEAT-40 (Tunnels: taut-string summit cut + concrete half-tube bore), landed
+  on main 2026-07-23 (merge c10597c). FEAT-40 delivered this request's core ask — deep sustained cuts
+  bore through the ridge with the terrain roof intact instead of an open trench. Closing the original
+  request against the shipped implementation."
 note: "Request, scoped not built. Surfaced right after earthwork routing landed (FEAT-10): the
 deviation-capped design line now drives roads through deep CUTS where terrain rises above the road
 (see capture — a deep slot cut between two ridges). Where the cut would be very deep, a TUNNEL reads

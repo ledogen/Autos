@@ -1,5 +1,20 @@
 # Merge plan — deg2-fit + junction-fix → main (2026-07-23)
 
+> **✅ COMPLETE 2026-07-23.** All three worktrees landed on main in the amended order, full test:all
+> 39/39 after each:
+> - tunnels → main (merge **c10597c**)
+> - deg2-fit → main (main-in merge 78dda31, land merge **12b452f**) — deg-2 connector composes after
+>   the FEAT-40 bore-ownership resolve.
+> - junction-fix → main (main-in merge 5366d25, land merge **c8ba85a**) — the heavy reconcile: three
+>   carve overlays compose bore-resolve → blended run cross-section (rival + pad-plane ruled blend via
+>   `wx,wz`) → deg-2 connector → junction-pad merge, mirrored in `_sampleCarveWorld` and terrain
+>   `_buildCarveTable`. `_carveCrossSectionBlended` gained `wx,wz`; toe cap folds the `carveHalfWidth`
+>   anchor + `DEEP_BANK_TOE_EXTRA`; mesh keeps `PAD_DUCK_CAP` / physics `PAD_DUCK_CAP_PHYS`. Shoulder
+>   gate worst 0.066 m vs strict 0.10 flat tol (not leaning on the plaza/bank exemptions).
+>
+> Cleanup done: FEAT-40 + FEAT-11 tickets closed; straggler `test/_*.mjs` probes deleted; all three
+> worktrees + branches removed. The plan below is the historical HOW.
+
 Supersedes the merge section of `2026-07-22-junction-earthwork-state.md` (state addendums there are
 still authoritative for WHAT changed; this file is HOW to land it). User has visually approved the
 kink z-fight fix (:8010), the trident earthwork, and the round-2 interior fillets (:3615 4-way).

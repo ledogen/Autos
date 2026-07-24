@@ -1,6 +1,12 @@
 # Handoff — junction earthwork: deg2-fit + junction-fix state (2026-07-22)
 
-Coordinator session ended mid-flight; this is the authoritative state. Both branches UNCOMMITTED.
+> **LANDED 2026-07-23.** Both branches are committed and merged to main (deg2-fit merge 12b452f,
+> junction-fix merge c8ba85a), each reconciled against FEAT-40 tunnels and re-proven at test:all
+> 39/39. The "UNCOMMITTED / merge-ready" language below is the point-in-time state when this was
+> written — retained as historical record. See `2026-07-23-junction-merge-plan.md` for the HOW and
+> the final landing log.
+
+Coordinator session ended mid-flight; this is the authoritative state (as of 2026-07-22).
 
 ## Branch 1: `feature/deg2-fit` (worktree `../CarGame-deg2-fit`, dev server :8010)
 
