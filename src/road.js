@@ -4231,10 +4231,15 @@ export class RoadSystem {
         // camber slew), so admit those as mini-junctions: same cutback + carve machinery, n = 2.
         // Straight pass-throughs stay untouched ribbons (no pad spam along every road). The mesh
         // connector for n = 2 is a swept fillet ARC (_buildDeg2Ribbon), not a pad — so sharp kinks
-        // are fine (they just curve tighter, no hairpin crescent). Admit up to KINK_MAX; beyond that
-        // the fitted arc pinches (R < halfWidth) and the code falls back to the pad ladder anyway.
+        // are fine (they just curve tighter, no hairpin crescent). NO upper kink cap (QUAL-21
+        // follow-up, 2026-07-25): a 120° KINK_MAX used to skip the cluster entirely on the theory
+        // that the fitted arc pinches there — but skipping built NOTHING (no fillet, no pad, no
+        // camber flatten): a naked >120° elbow with a multi-metre plaza-rim step and a full camber
+        // flip. Cost-pruned topology (QUAL-22) makes such elbows common (valley confluences whose
+        // third leg the crossing cull removed — user captures 1784910746309/1784910841316). Admit
+        // every kinked 2-leg cluster; _buildDeg2ArcGeom's own guards (R < halfWidth → null) decide
+        // arc vs pad-ladder fallback, exactly as the deg-3 ladder would.
         const kinkMin = (this._params.roadJunctionKinkDeg ?? 0) * Math.PI / 180
-        const KINK_MAX = 120 * Math.PI / 180
         for (const c of clusters) {
             if (c.legs.length < 2) continue
             if (c.legs.length === 2) {
@@ -4242,7 +4247,7 @@ export class RoadSystem {
                 const [A, B] = c.legs
                 const dot = Math.max(-1, Math.min(1, A.dir.x * B.dir.x + A.dir.z * B.dir.z))
                 const kink = Math.PI - Math.acos(dot)   // away-heading kink: 0 = perfectly continuous
-                if (kink <= kinkMin || kink > KINK_MAX) continue
+                if (kink <= kinkMin) continue
             }
             // QUAL-13: sloped pad — resolve the cluster's graph node id via any leg's netEntry
             // (endpoint arc 0 → cellA, else cellB) and ride its pad PLANE. nodeY/pos.y become the
@@ -5684,7 +5689,23 @@ export class RoadSystem {
         // dominant grade VECTOR onto it (FEAT-19) — the through axis's slope, carried into this run.
         const nodeInfo = (id, thisStrand) => {
             const d = this._graphDegreeOf(id)
-            const is = d >= 2, flatCamber = d >= 3
+            const is = d >= 2
+            let flatCamber = d >= 3
+            // QUAL-21 follow-up (2026-07-25): an admitted deg-2 ELBOW — kink beyond the old 120°
+            // fillet ceiling, where the connector takes the PAD-LADDER fallback instead of a swept
+            // fillet — must ALSO kill camber: the fillet used to carry banking across the bend, but
+            // a flat pad meeting two ribbons banked ±15° the opposite way is a full camber flip at
+            // the rim (user captures 1784910746309/1784910841316, cost-pruned valley confluences).
+            // Gentle kinks (≤120°) keep their banking — the fillet arc sweeps it, bit-identical to
+            // the old behaviour. Pure fn of the registered endpoint tangents (window-invariant).
+            if (d === 2) {
+                const strands = this._graphNodeStrands(id)
+                if (strands && strands.length === 2) {
+                    const dot = strands[0].wx * strands[1].wx + strands[0].wz * strands[1].wz
+                    const kink = Math.PI - Math.acos(Math.max(-1, Math.min(1, dot)))
+                    if (kink > 120 * Math.PI / 180) flatCamber = true
+                }
+            }
             let y = this._graphJunctionGradeY(id)
             let slopeAway = 0
             // QUAL-13: a true ≥3-way junction eases onto its sloped PAD PLANE — y = plane at the
