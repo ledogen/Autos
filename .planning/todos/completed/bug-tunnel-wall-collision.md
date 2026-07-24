@@ -1,8 +1,9 @@
 ---
 id: BUG-37
 type: bug
-status: open
+status: resolved
 opened: 2026-07-23
+resolved: 2026-07-23
 severity: major
 source: user-observation (post-FEAT-40 merge re-drive)
 relates_to: FEAT-40
@@ -14,6 +15,18 @@ leaves the road floor laterally passes through where the wall visually is."
 ---
 
 # BUG-37: No collision with tunnel bore walls (car drives through the tube sides)
+
+## RESOLUTION (2026-07-23, commit af9fcd9)
+
+`RoadSystem.queryTunnelWallContact()` — a cylinder-containment contact test in the bore's own
+cross-section frame (same `rightDir` as `buildTunnelTube`, so collision == rendered tube), returning
+the `{normal, depth, contactPoint}` shape the wheel/body contact solver already consumes. Wired into
+`queryContacts` (reusing the already-resolved carve hint — no extra tile scan) and
+`queryVertexContacts`. FULL-cylinder test, not upper-arch-only: camber tilts the physics floor but
+not the rendered arch, so on the low side of a banked bore the wheel legitimately sits below the
+springline right at the wall — a hard `h<0` cutoff killed contact exactly there (caught in the
+follow-up drive). `road-tunnel` gate grew 4 checks: wall contact at ρ≈R, below-springline contact,
+no false hit above the crown, no false hit outside the span — all green, floor checks unchanged.
 
 ## Observed
 
