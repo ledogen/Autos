@@ -104,15 +104,16 @@ const THROAT_TRIG_MULT = 1.0  // × halfWidth: TRIGGER the sweep only when the m
 // (1 m grid → 1.42 m) so no terrain triangle straddling the ring boundary can interpolate above the
 // pad asphalt (see _junctionPadCarve). Hardcoded: geometry only, no route-cache-signature effect.
 const PAD_RIM_HOLD = 1.6
-// PAD_DIRT_EXTRA: extra dirt depth (m, beyond roadClearanceMargin) under the pad + rim-hold band, and
-// PAD_TOP_MIN_R: half-terrain-cell radius (m) of the 5-point neighbourhood MIN of sampleRoadTopY used
-// as the pad dirt's design base. Together they keep the 1 m-grid terrain triangles ≥ ~0.2 m below the
-// asphalt even where the ruled plaza surface CREASES inside one cell (the blended top can dip ~0.3 m
-// between grid vertices; linear dirt interpolation rides the crease's convex hull and pokes through a
-// bare clearanceMargin=0.15). Physics is unaffected: inside the ring the truck rides the asphalt top
-// (padTopY overlay in _sampleCarveWorld), not this dirt. Hardcoded (no route-cache-signature effect).
+// PAD_DIRT_EXTRA: extra dirt depth (m, beyond roadClearanceMargin) under the pad + rim-hold band —
+// keeps the 1 m-grid terrain triangles below the asphalt where the ruled plaza surface bends inside
+// one cell (linear dirt interpolation rides the bend's convex hull and would poke through a bare
+// clearanceMargin=0.15). PERF-25: this used to be paired with a 5-point neighbourhood-MIN of the top
+// field (PAD_TOP_MIN_R) that dynamically ducked the dirt under free-resolve creases; the pad surface
+// is now the resolve-free, position-continuous _nodeSurfaceTop, which has no free-resolve crease
+// class, so the fixed margin is the whole armor. Physics is unaffected: inside the ring the truck
+// rides the asphalt top (padTopY overlay in _sampleCarveWorld), not this dirt. Hardcoded (no
+// route-cache-signature effect).
 const PAD_DIRT_EXTRA = 0.15
-const PAD_TOP_MIN_R = 0.5
 // PAD_DUCK_CAP: max the pad may LOWER dirt below the leg cross-section's own design (m). The pad's
 // crease-duck free-resolves the top field, which carries pre-existing multi-metre tears at a couple of
 // degenerate steep nodes; uncapped, those tears leak into an otherwise-smooth pinned cross-section
@@ -3795,12 +3796,17 @@ export class RoadSystem {
         // the limb continues beyond, but its nearest in-window point is a legitimate candidate whose
         // position and grade vary continuously with the query).
         let out = null
-        let prevD2 = Infinity, prevPrevD2 = Infinity, prevCum = 0
-        const keep = (d2, cumT) => {
+        let prevD2 = Infinity, prevPrevD2 = Infinity, prevCum = 0, prevI = 0, prevT = 0
+        // Each kept foot also records its segment index + clamped fraction (i, t) so callers that
+        // need the foot POSITION/tangent (the pad's _nodeSurfaceTop base pick) can reconstruct them
+        // exactly without re-projecting. Existing consumers read only { d2, arcS }.
+        const keep = (d2, cumT, ki, kt) => {
             if (!out) out = []
             const last = out[out.length - 1]
-            if (last && cumT - (last.arcS + arcOrigin) < 4) { if (d2 < last.d2) { last.d2 = d2; last.arcS = cumT - arcOrigin } }
-            else out.push({ d2, arcS: cumT - arcOrigin })
+            if (last && cumT - (last.arcS + arcOrigin) < 4) {
+                if (d2 < last.d2) { last.d2 = d2; last.arcS = cumT - arcOrigin; last.i = ki; last.t = kt }
+            }
+            else out.push({ d2, arcS: cumT - arcOrigin, i: ki, t: kt })
         }
         for (let i = i0; i <= iEnd; i++) {
             const ax = pts[i].x, az = pts[i].z
@@ -3813,13 +3819,25 @@ export class RoadSystem {
                 const fx = ax + t * ex, fz = az + t * ez
                 const ddx = wx - fx, ddz = wz - fz
                 const d2 = ddx * ddx + ddz * ddz
-                if (prevD2 !== Infinity && prevD2 <= prevPrevD2 && prevD2 <= d2) keep(prevD2, prevCum)
-                prevPrevD2 = prevD2; prevD2 = d2; prevCum = cum + t * segLen
+                if (prevD2 !== Infinity && prevD2 <= prevPrevD2 && prevD2 <= d2) keep(prevD2, prevCum, prevI, prevT)
+                prevPrevD2 = prevD2; prevD2 = d2; prevCum = cum + t * segLen; prevI = i; prevT = t
             }
             cum += segLen
         }
-        if (prevD2 !== Infinity && prevD2 <= prevPrevD2) keep(prevD2, prevCum)
+        if (prevD2 !== Infinity && prevD2 <= prevPrevD2) keep(prevD2, prevCum, prevI, prevT)
         return out
+    }
+
+    // PERF-25: per-leg single-slot projection memo — one _sampleCarveWorld query evaluates the ruled
+    // blend for the leg cross-section AND the pad surface at the SAME exact (wx,wz); the second call
+    // reuses the first's feet. Exact-key (no quantization); leg records live per _networkRev.
+    _projectLegMemo(netEntry, leg, wx, wz) {
+        const m = leg._lpq
+        if (m && m.wx === wx && m.wz === wz && m.pts === netEntry.points) return m.prs
+        const prs = this._projectLegNearNode(netEntry, wx, wz, leg.arc, RULE_NODE_WINDOW,
+                                             this._legProjWin(netEntry, leg, RULE_NODE_WINDOW))
+        leg._lpq = { wx, wz, pts: netEntry.points, prs }
+        return prs
     }
 
     // PERF-25: build (and cache on the leg record) the _projectLegNearNode segment window for one
@@ -4110,30 +4128,6 @@ export class RoadSystem {
         return nr
     }
 
-    // PERF-24: EXACT-position resolve memo for the junction-pad neighbourhood-MIN. Unlike carveHint this
-    // does NOT quantize — the key is the exact (wx,wz) — so it returns the identical result a fresh
-    // _resolveRoadSurface would (byte-for-byte; the pad's crease-duck at a Voronoi knife-edge is never
-    // shifted, so the drivable surface is unchanged). It still collapses the pad cost because
-    // _junctionPadCarve samples sampleRoadTopY at {centre, ±0.5 m} and analyticNormal calls
-    // _sampleCarveWorld at the SAME ±0.5 m offsets → the 5 pad calls of one wheel-contact query a shared
-    // ±0.5 m lattice (25 calls → 13 distinct points), and a dwelling truck re-hits identical points across
-    // substeps. Rev-keyed + size-bounded exactly like carveHint (pure fn of (pos,rev) → a hit == a fresh
-    // resolve at that point). Separate map from carveHint so its exact keys don't evict carveHint's cells.
-    _resolveRoadSurfaceMemo(wx, wz) {
-        if (!this._resolveMemo || this._resolveMemo.rev !== this._networkRev) {
-            this._resolveMemo = { rev: this._networkRev, map: new Map() }
-        }
-        const m = this._resolveMemo.map
-        const key = `${wx},${wz}`
-        let nr = m.get(key)
-        if (nr === undefined) {
-            nr = this._resolveRoadSurface(wx, wz)
-            if (m.size > 256) m.clear()
-            m.set(key, nr)
-        }
-        return nr
-    }
-
     /**
      * @param {number} wx @param {number} wz
      * @param {number} rawAmp
@@ -4226,11 +4220,9 @@ export class RoadSystem {
         // Junction-pad carve (first-class pad footprint, incl. the back-arc bulb) composed with the leg
         // + connector carve — never LESS coverage than any alone, and smooth where they overlap (all ride
         // the pad plane near the node). This is what covers the open-side rim the corridors miss.
-        // PERF-24: resolve the pad's 5-point neighbourhood-MIN through the EXACT-position resolve memo
-        // (_resolveRoadSurfaceMemo, memo=true) instead of 5 fresh _resolveRoadSurface per query — that
-        // resolve was ~90% of the on-kink physics cost. Byte-identical (exact keys), physics-only; the
-        // mesh carve table (_buildCarveTable) calls _junctionPadCarve with no memo → fresh exact resolve.
-        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp, true), PAD_DUCK_CAP_PHYS)
+        // PERF-24/25: the pad surface is the resolve-free _nodeSurfaceTop (one ruled-blend evaluation,
+        // feet shared with the leg cross-section above via the per-leg memo) — no extra resolves at all.
+        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp), PAD_DUCK_CAP_PHYS)
         if (!cs2) return null   // beyond the fill/cut toe of all three — unaffected terrain
 
         // ── Physics-only on-ribbon overlay (the one intentional mesh↔collision difference) ──
@@ -4391,8 +4383,7 @@ export class RoadSystem {
                 // Project onto the leg's NEAR-NODE arc window only. EVERY distance-local-minimum limb is
                 // returned and blended as its own pseudo-leg (see _projectLegNearNode: a curving leg can
                 // hold two genuine minima at once, and picking one by argmin tears the gore at the flip).
-                const prs = this._projectLegNearNode(ne, wx, wz, leg.arc, RULE_NODE_WINDOW,
-                                                     this._legProjWin(ne, leg, RULE_NODE_WINDOW))
+                const prs = this._projectLegMemo(ne, leg, wx, wz)
                 if (!prs) continue
                 // The branch nearest the RESOLVED arc of the query's own run rides the already-computed
                 // gradeY (the resolved cross-section's grade — keeps the pinned/hinted surface exact);
@@ -5075,7 +5066,7 @@ export class RoadSystem {
      * _carveCrossSection uses), driven by distance outside the ring. DIRT convention (clearance
      * subtracted), composed with the leg carve by _mergeCarve. Returns {blendW,gradeY}|null (raw terrain).
      */
-    _junctionPadCarve(wx, wz, rawAmp, memo) {
+    _junctionPadCarve(wx, wz, rawAmp) {
         if (this._nodeJunctionsRev !== this._networkRev) this._detectNodeJunctions()
         const nodes = this._nodeJunctions
         if (!nodes || nodes.size === 0) return null
@@ -5098,24 +5089,20 @@ export class RoadSystem {
         }
         if (!best) return null
 
-        // Design surface = the graded apron the pad MESH rides (sampleRoadTopY − clearance = _carveDirtY),
-        // so mesh == collision. Fall back to the fitted pad plane only where NO run resolves (far open rim).
-        // DIRT BASE = the 5-point neighbourhood MIN of the asphalt top: the ruled plaza surface can
-        // CREASE inside one 1 m terrain cell (adjacent grid vertices resolve to different legs, spread
-        // ~0.4 m), and linear dirt interpolation between those vertices rides ABOVE the dipping asphalt —
-        // the tan slivers. Sampling the top at ± half a terrain cell and taking the min ducks each dirt
-        // vertex under the whole cell it touches. PAD_DIRT_EXTRA adds fixed margin on top of clearance,
-        // feathered out with the rim ramp so the toe still lands exactly on raw terrain.
+        // Design surface = the resolve-FREE node surface (_nodeSurfaceTop): the SAME ruled inter-leg
+        // blend the leg cross-sections ride (_carveDirtY), but based on the node's OWN nearest leg
+        // branch instead of a free _resolveRoadSurface — a pure, position-continuous function of the
+        // node record. PERF-25: this replaced the 5-point neighbourhood-MIN of sampleRoadTopY (5 full
+        // resolves + 5 blends per physics sample, unmemoizable under mm suspension jitter). The min's
+        // crease duck armored against free-resolve tears (adjacent samples resolving to different,
+        // possibly UNRELATED runs); with the base pinned to the node's own legs that tear source is
+        // gone, and the fixed PAD_DIRT_EXTRA margin (feathered with the rim ramp) keeps the dirt under
+        // the asphalt across a terrain cell. Fall back to the fitted pad plane where no leg is in
+        // range (degenerate strands). Mesh (_buildCarveTable) evaluates the same function ⇒
+        // mesh == collision unchanged as an invariant.
         const planeTop = best.plane ? this._padPlaneY(best.plane, wx, wz) : best.nodeY
-        // memo (physics): resolve the centre + 4 neighbourhood-min samples through the exact-position
-        // resolve memo instead of 5 fresh resolves (PERF-24). Mesh (_buildCarveTable) passes no memo.
-        const top = this.sampleRoadTopY(wx, wz, memo)
-        const topC = (top != null && isFinite(top)) ? top : planeTop
-        let topMin = topC
-        for (const [ox, oz] of [[PAD_TOP_MIN_R, 0], [-PAD_TOP_MIN_R, 0], [0, PAD_TOP_MIN_R], [0, -PAD_TOP_MIN_R]]) {
-            const t = this.sampleRoadTopY(wx + ox, wz + oz, memo)
-            if (t != null && isFinite(t) && t < topMin) topMin = t
-        }
+        const ns = this._nodeSurfaceTop(best, wx, wz)
+        const topC = (ns != null && isFinite(ns)) ? ns : planeTop
         // RIM HOLD: keep full pad depth (blendW=1) out to PAD_RIM_HOLD beyond the ring, not just inside
         // it. The terrain grid is 1 m; without the hold, a vertex just OUTSIDE the ring already rides
         // partway up the cut bank, and the triangle it shares with an inside vertex interpolates ABOVE
@@ -5124,11 +5111,11 @@ export class RoadSystem {
         // deepened design dirt, so the fill/cut feather starts one cell out. padTopY (inside the ring
         // only) is the asphalt surface physics rides — see the pad overlay in _sampleCarveWorld.
         const padTopY = bestSd <= 0 ? topC : null
-        if (bestSd <= PAD_RIM_HOLD) return { blendW: 1.0, gradeY: topMin - clearanceMargin - PAD_DIRT_EXTRA, padTopY, padSd: bestSd }
+        if (bestSd <= PAD_RIM_HOLD) return { blendW: 1.0, gradeY: topC - clearanceMargin - PAD_DIRT_EXTRA, padTopY, padSd: bestSd }
 
         // Outside the hold band: ramp designY → raw over shoulder + fill/cut toe, mirroring
         // _carveCrossSection (which ramps beyond carveHalfWidth). `over` = distance past the hold.
-        const designY = topMin - clearanceMargin
+        const designY = topC - clearanceMargin
         const over = bestSd - PAD_RIM_HOLD
         const fillReach = shoulderWidth + Math.max(0, designY - rawAmp) * fillSlope
         const cutReach  = shoulderWidth + Math.max(0, rawAmp - designY) * cutSlope
@@ -5140,6 +5127,58 @@ export class RoadSystem {
         // boundary (full depth there) and the toe still lands exactly on raw terrain.
         const w = 1.0 - u * u * (3.0 - 2.0 * u)
         return { blendW: w, gradeY: designY - PAD_DIRT_EXTRA * w, padTopY: null }
+    }
+
+    /**
+     * PERF-25: the node's asphalt-top surface at (wx,wz), resolve-free. Projects the query onto the
+     * node's OWN legs (cached windows + the per-leg single-slot memo — a _sampleCarveWorld query
+     * shares feet with the leg cross-section's ruled blend), picks the globally nearest branch as
+     * the base cross-section, and evaluates the SAME _carveDirtY ruled blend the ribbons ride —
+     * ONE blend per sample, no _resolveRoadSurface. Where the nearest branch coincides with what a
+     * free resolve would pick (everywhere except the old degenerate-node tear lines) this equals the
+     * old sampleRoadTopY within float noise; at the tear lines it is the CONTINUOUS leg-based value
+     * instead of the jumping free-resolve one. Returns asphalt top (clearance included) or null when
+     * no leg branch is in range (caller falls back to the pad plane).
+     */
+    _nodeSurfaceTop(node, wx, wz) {
+        const legs = node.legs
+        if (!legs || !this._network) return null
+        let bestD2 = Infinity, bestPr = null, bestLeg = null, bestNe = null
+        for (const leg of legs) {
+            const ne = this._network.get(leg.runKey)
+            if (!ne) continue
+            const prs = this._projectLegMemo(ne, leg, wx, wz)
+            if (!prs) continue
+            for (let bi = 0; bi < prs.length; bi++) {
+                if (prs[bi].d2 < bestD2) { bestD2 = prs[bi].d2; bestPr = prs[bi]; bestLeg = leg; bestNe = ne }
+            }
+        }
+        const clearanceMargin = this._params.roadClearanceMargin ?? 0.25
+        let runTop = null
+        if (bestPr) {
+            // Reconstruct the winning foot's frame from its recorded (segment, fraction) — the exact
+            // values the projection computed, no re-walk.
+            const pts = bestNe.points
+            const i = Math.min(bestPr.i, pts.length - 2)
+            const ax = pts[i].x, az = pts[i].z
+            const ex = pts[i + 1].x - ax, ez = pts[i + 1].z - az
+            const segLen = Math.hypot(ex, ez) || 1e-8
+            const tx = ex / segLen, tz = ez / segLen
+            const fx = ax + bestPr.t * ex, fz = az + bestPr.t * ez
+            const signedLat = (wx - fx) * tz - (wz - fz) * tx
+            runTop = this._carveDirtY(signedLat, bestPr.arcS, bestLeg.runKey, 1, wx, wz) + clearanceMargin
+        }
+        // QUAL-16 deg-2 elbows: compose the kink CONNECTOR overlay exactly as sampleRoadTopY does —
+        // the connector's flat graded bench DOMINATES its own core and feathers to the leg field at
+        // its toe. Without this the elbow pad carved to the raw 2-leg ruled blend, metres off the
+        // bench on steep kinks (measured 4.1 m at seed-6 683,-417). Cheap: no resolve involved.
+        const co = this._connectorCarve(wx, wz, this._coarseH(wx, wz) * (this._params.terrainAmplitude ?? 1))
+        if (co) {
+            const coTop = co.gradeY + clearanceMargin
+            const w = runTop != null ? co.blendW * co.dom : 1
+            return runTop != null ? coTop * w + runTop * (1 - w) : coTop
+        }
+        return runTop
     }
 
     /**
@@ -5458,16 +5497,8 @@ export class RoadSystem {
      * (the apron stays clean/smooth). Pure fn of the network (window-invariant). Returns null beyond the
      * road footprint (caller falls back to nodeY).
      */
-    sampleRoadTopY(wx, wz, memo) {
-        // memo (physics carve path, optional): resolve the run through the EXACT-position resolve memo
-        // (_resolveRoadSurfaceMemo) instead of a fresh _resolveRoadSurface. This stops _junctionPadCarve's
-        // 5-point neighbourhood-MIN paying 5× the (~7 µs) resolve on every physics frame (PERF-24: that
-        // resolve WAS ~90% of the on-kink cost). The memo keys on the EXACT (wx,wz) — NOT quantized — so
-        // it is byte-identical to a fresh resolve (no crease-duck defeated, no surface change); its hits
-        // come from the neighbourhood-min offsets (±0.5 m) coinciding EXACTLY with the analyticNormal
-        // offsets across the wheel-contact's 25 sampleRoadTopY calls (the ±0.5 m grid is IEEE-exact since
-        // 0.5 is a power of two), plus exact-repeat dwelling samples. undefined = fresh (mesh apron, exact).
-        const nr = memo ? this._resolveRoadSurfaceMemo(wx, wz) : this._resolveRoadSurface(wx, wz)
+    sampleRoadTopY(wx, wz) {
+        const nr = this._resolveRoadSurface(wx, wz)
         const clearanceMargin = this._params.roadClearanceMargin ?? 0.25
         let runTop = null
         if (nr) {
