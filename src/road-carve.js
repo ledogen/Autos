@@ -866,9 +866,15 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
         const run = (discs) => arcPrimitiveConnect(ax, az, bx, bz, heightFn,
             Object.assign({}, opts, { _scPass: true }, discs ? { pondDiscs: discs } : null))
         const discs = (opts.pondDiscs && opts.pondDiscs.length) ? opts.pondDiscs.slice() : []
+        // QUAL-21 baseline instrumentation: opts.scStats (when present) accumulates wrapper-level
+        // counters — edges routed, total searches, repair re-searches, edges ending unclean. Zero
+        // cost when absent; never changes routing (read-only tallies).
+        const stats = opts.scStats
+        if (stats) stats.edges = (stats.edges || 0) + 1
         let best = null, bestV = Infinity
         for (let it = 0; it < SELF_CLEAR_MAX_REPAIR; it++) {
             const cand = run(it === 0 ? null : discs)
+            if (stats) { stats.searches = (stats.searches || 0) + 1; if (it > 0) stats.repairs = (stats.repairs || 0) + 1 }
             const { v, mids } = _selfClearScan(cand, D, gap)
             if (v < bestV) { best = cand; bestV = v }
             if (v === 0) break
@@ -879,6 +885,7 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
             const rr = D * SELF_CLEAR_DISC_R * (1 + 0.5 * it)
             for (const m of mids) discs.push(m[0], m[1], rr)
         }
+        if (stats && bestV > 0) stats.unclean = (stats.unclean || 0) + 1
         return best
     }
     // ── PERF corridor two-pass (EXPERIMENTAL — opts.corridorCoarse / roadCorridorTwoPass) ────────

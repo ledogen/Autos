@@ -114,6 +114,157 @@ export function urquhartEdges(pts, tris) {
     return out
 }
 
+// ── QUAL-21 stroke formation ─────────────────────────────────────────────────────
+// Decompose the Urquhart edge set into STROKES: maximal chains of edges a road naturally
+// continues along, later routed as ONE continuous curvature-bounded curve (Stage 1) and split
+// back into per-edge runs. PURE function of (node table, edge list, opts) — bearings and grades
+// come from SITE positions + coarse heights, never routed geometry or the streaming window, so
+// the same interior chain forms the same stroke from any stream center (the D-16 make-or-break;
+// see .planning/research/STROKE-ROUTING-DESIGN.md §3).
+//
+// Pairing rules (user-approved 2026-07-23):
+//  - deg-2 node: ALWAYS pass through — a single curvature-bounded curve absorbs any bend angle
+//    (κ² prices it), and this is what lets the deg-2 connector subsystem be deleted outright.
+//  - deg-≥3 node: at most ONE through-pair — the straightest qualifying leg pair, where
+//    qualifying means (a) deviation from straight ≤ maxDevDeg, (b) grade continuity
+//    |slopeIn − slopeOut| ≤ gradeJump (a road doesn't "continue through" into a leg that dives),
+//    and (c) it beats every CONFLICTING qualifying pair by runnerUpMargin (an ambiguous
+//    symmetric Y stays a junction of three T-ing branches rather than an arbitrary through-road).
+//  - Chains longer than maxLen (XZ chord sum) split at canonical interior nodes; closed loops
+//    (pure deg-2 rings — Urquhart has cycles) split at the lexicographically-lowest node and at
+//    the node nearest half the ring length, so every stroke is an open, boundedly-long, routable
+//    curve. All tie-breaks are lexicographic on node keys → deterministic + window-invariant.
+//
+//   nodes: Map<key, {x, z, h}>   — h in METRES (amplitude-scaled coarse height at the site)
+//   edges: Array<[keyA, keyB]>   — undirected, deduped (the Urquhart edge list)
+//   → Array<{ nodes: [key...], len: number, loop: boolean }>  (stroke node chains, in order)
+export function formStrokes(nodes, edges, opts = {}) {
+    const maxDevDeg     = opts.maxDevDeg     ?? 40    // through-pair: max deviation from straight
+    const gradeJump     = opts.gradeJump     ?? 0.08  // through-pair: max |slopeIn − slopeOut| (m/m)
+    const runnerUpMargin = opts.runnerUpMargin ?? 12  // deg: best pair must beat conflicting rival by this
+    const maxLen        = opts.maxLen        ?? 1500  // m: cap on stroke XZ chord length before canonical split
+
+    // Adjacency: node key → sorted list of neighbour keys (sorted for deterministic iteration).
+    const adj = new Map()
+    const addA = (a, b) => { (adj.get(a) ?? adj.set(a, []).get(a)).push(b) }
+    for (const [a, b] of edges) { addA(a, b); addA(b, a) }
+    for (const l of adj.values()) l.sort()
+
+    const chord = (a, b) => {
+        const A = nodes.get(a), B = nodes.get(b)
+        return Math.hypot(A.x - B.x, A.z - B.z)
+    }
+
+    // Per-node leg pairing: pairAt maps `${nodeKey}|${nbrKey}` → the paired-through neighbour key.
+    const pairAt = new Map()
+    for (const [k, nbrs] of adj) {
+        if (nbrs.length === 2) {                       // deg-2: always continue
+            pairAt.set(`${k}|${nbrs[0]}`, nbrs[1])
+            pairAt.set(`${k}|${nbrs[1]}`, nbrs[0])
+            continue
+        }
+        if (nbrs.length < 3) continue                  // deg-1 terminal: no pairing
+        // deg-≥3: score every leg pair; keep the single best qualifying pair if unambiguous.
+        const N = nodes.get(k)
+        const legs = nbrs.map(nk => {
+            const P = nodes.get(nk), dx = P.x - N.x, dz = P.z - N.z
+            const L = Math.hypot(dx, dz) || 1
+            return { nk, ux: dx / L, uz: dz / L, slope: (P.h - N.h) / L }
+        })
+        const cand = []
+        for (let i = 0; i < legs.length; i++) for (let j = i + 1; j < legs.length; j++) {
+            const a = legs[i], b = legs[j]
+            // deviation from straight: angle between -a and b directions
+            const dot = -(a.ux * b.ux + a.uz * b.uz)
+            const dev = Math.acos(Math.min(1, Math.max(-1, dot))) * 180 / Math.PI
+            // continuing a→node→b: slope in along a = −a.slope, slope out along b = b.slope
+            const sJump = Math.abs(a.slope + b.slope)
+            if (dev <= maxDevDeg && sJump <= gradeJump) cand.push({ i, j, dev })
+        }
+        if (!cand.length) continue
+        cand.sort((p, q) => (p.dev - q.dev) || (legs[p.i].nk < legs[q.i].nk ? -1 : 1) || (legs[p.j].nk < legs[q.j].nk ? -1 : 1))
+        const best = cand[0]
+        // Ambiguity veto: a CONFLICTING qualifying pair (shares a leg) within runnerUpMargin means
+        // there is no clear through-road here — leave all legs as branches.
+        const rival = cand.find(p => p !== best && (p.i === best.i || p.j === best.j || p.i === best.j || p.j === best.i))
+        if (rival && rival.dev - best.dev < runnerUpMargin) continue
+        const ka = legs[best.i].nk, kb = legs[best.j].nk
+        pairAt.set(`${k}|${ka}`, kb)
+        pairAt.set(`${k}|${kb}`, ka)
+    }
+
+    // Walk chains. A directed half-edge (from,to) is consumed once; chains start at every
+    // unpaired leg end (terminals + junction branches), then leftover edges are pure loops.
+    const used = new Set()                             // consumed undirected edges "a|b" (a<b)
+    const eKey = (a, b) => a < b ? `${a}|${b}` : `${b}|${a}`
+    const strokes = []
+    const walk = (from, to) => {
+        const chain = [from, to]
+        used.add(eKey(from, to))
+        let prev = from, cur = to
+        for (;;) {
+            const nxt = pairAt.get(`${cur}|${prev}`)
+            if (nxt === undefined || used.has(eKey(cur, nxt))) break
+            used.add(eKey(cur, nxt))
+            chain.push(nxt)
+            prev = cur; cur = nxt
+        }
+        return chain
+    }
+    // Terminal-anchored chains, in deterministic order.
+    const starts = []
+    for (const [k, nbrs] of adj) for (const nk of nbrs) if (!pairAt.has(`${k}|${nk}`)) starts.push([k, nk])
+    starts.sort((p, q) => (p[0] < q[0] ? -1 : p[0] > q[0] ? 1 : p[1] < q[1] ? -1 : 1))
+    for (const [k, nk] of starts) {
+        if (used.has(eKey(k, nk))) continue
+        strokes.push({ nodes: walk(k, nk), loop: false })
+    }
+    // Pure loops: remaining unconsumed edges form deg-2 rings. Split at the lowest node, then at
+    // the node nearest half the ring length (both canonical), yielding two open strokes.
+    const loopEdges = edges.filter(([a, b]) => !used.has(eKey(a, b)))
+    if (loopEdges.length) {
+        const seen = new Set()
+        for (const [a0] of loopEdges) {
+            if (seen.has(a0)) continue
+            // trace the ring from its lowest node
+            let lo = a0
+            { let prev = null, cur = a0
+              do { const nbrs = adj.get(cur); const nxt = nbrs[0] === prev ? nbrs[1] : nbrs[0]; prev = cur; cur = nxt; if (cur < lo) lo = cur } while (cur !== a0) }
+            const ring = [lo]
+            { let prev = null, cur = lo
+              for (;;) { const nbrs = adj.get(cur); const nxt = (nbrs[0] === prev ? nbrs[1] : nbrs[0]); if (nxt === lo) break; ring.push(nxt); prev = cur; cur = nxt } }
+            ring.forEach(k => seen.add(k))
+            for (let i = 0; i < ring.length; i++) used.add(eKey(ring[i], ring[(i + 1) % ring.length]))
+            let total = 0
+            const cum = ring.map((k, i) => { const t = total; total += chord(k, ring[(i + 1) % ring.length]); return t })
+            let cut = 1, bd = Infinity
+            for (let i = 1; i < ring.length; i++) {
+                const d = Math.abs(cum[i] - total / 2)
+                if (d < bd - 1e-9 || (Math.abs(d - bd) <= 1e-9 && ring[i] < ring[cut])) { bd = d; cut = i }
+            }
+            strokes.push({ nodes: [...ring.slice(0, cut + 1)], loop: true })
+            strokes.push({ nodes: [...ring.slice(cut), ring[0]], loop: true })
+        }
+    }
+    // Canonical orientation + maxLen split.
+    const out = []
+    for (const s of strokes) {
+        let ch = s.nodes
+        if (ch[ch.length - 1] < ch[0]) ch = [...ch].reverse()
+        let seg = [ch[0]], segLen = 0
+        for (let i = 1; i < ch.length; i++) {
+            const d = chord(ch[i - 1], ch[i])
+            if (segLen + d > maxLen && seg.length > 1) {
+                out.push({ nodes: seg, len: segLen, loop: s.loop })
+                seg = [ch[i - 1]]; segLen = 0
+            }
+            seg.push(ch[i]); segLen += d
+        }
+        if (seg.length > 1) out.push({ nodes: seg, len: segLen, loop: s.loop })
+    }
+    return out
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────────
 function d2(pts, i, j) { const dx = pts[i][0] - pts[j][0], dy = pts[i][1] - pts[j][1]; return dx * dx + dy * dy }
 
