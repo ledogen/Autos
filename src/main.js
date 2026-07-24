@@ -39,6 +39,7 @@ let _perfFrame = 0  // TEMP: frame counter for auto-dump at load
 let _firstFrameMarked = false  // TEMP: mark the first animate frame to isolate init vs loop time
 import { RoadMeshSystem } from './road-mesh.js'
 import { DustSystem } from './dust.js'
+import { TireSmokeSystem } from './smoke.js'
 import { SkySystem } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
 import { parseWorldSeed, seedFor } from './seed.js'
 import { createVehicleModel } from './vehicle-model.js'
@@ -969,6 +970,9 @@ scene.add(ground)
 // we're driving on; driven each render frame from vehicleState (see loop). Construct here
 // since it only needs the scene + params — no dependency on terrain/road systems.
 const dustSystem = new DustSystem(scene, RANGER_PARAMS)
+
+// Tire smoke (src/smoke.js) — same construction convention as dust: scene + params only.
+const smokeSystem = new TireSmokeSystem(scene, RANGER_PARAMS)
 
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
 // src/vehicle-model.js. carGroup/bodyMesh/wheelMeshes are returned for back-compat;
@@ -2095,6 +2099,7 @@ function _setWorldgenVisible (visible) {
   if (propSystem) propSystem.setVisible(visible)
   if (waterRenderer) waterRenderer.group.visible = visible
   if (dustSystem) dustSystem.setVisible(visible)
+  if (smokeSystem) smokeSystem.setVisible(visible)
 }
 
 function enterLab () {
@@ -2478,6 +2483,11 @@ function loop () {
       if (lat >= hw) return 1
       return paved + (1 - paved) * (lat - (hw - band)) / band
     })
+
+  // Tire smoke — same render-pose timing as dust above; ground sampler shared verbatim (smoke
+  // has no on-road fade, so no third callback).
+  smokeSystem.update(frameTime, vehicleState, RANGER_PARAMS,
+    (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0) : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0))
 
   // Phase 6: update terrain chunk ring each render frame (outside physics accumulator).
   // ground.position.x/z snapping removed — ground mesh removed; terrain chunks replace it.

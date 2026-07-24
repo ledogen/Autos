@@ -877,6 +877,15 @@ export const RANGER_PARAMS = {
   // across the ribbon edge into the dirt shoulder. 0 = none on asphalt, 1 = same as dirt.
   dustPavedFactor: 0.1,        // [-] on-asphalt dust multiplier
 
+  // ── Tire smoke (src/smoke.js — visual polish) ─────────────────────────────────
+  // Grey burnout/wheelspin smoke, structurally reused from dust.js's puff pool but with its
+  // own emission model: quantity needs slip velocity AND normal force together (a loaded,
+  // slipping tyre), not either alone — see smoke.js header. Works on any surface, unlike dust,
+  // which is why there's no on-road fade knob here.
+  smokeEnabled: true,
+  smokeColor: 0xcfcfcf,        // hex RGB — light grey smoke tint
+  smokeAmount: 1.0,            // [-] emission density multiplier
+
   // ── FEAT-05 — Alpine terrain look (procedural biome colour + fbm detail) ─────
   // Palette (hex RGB; decoded as LINEAR /255 in terrain.js _writeChunkVertexColors — these
   // ARE the linear vertex-colour values, NOT sRGB, so a colour picker round-trips exactly).
