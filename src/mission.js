@@ -384,7 +384,6 @@ export class MissionSystem {
      * routes; a cleverer line through the network could beat par for reasons that aren't driving.
      */
     _roll() {
-        const car = this._getCar()
         const road = this._planner()
         if (!road) return null
         // The POST-CULL registered network — the roads that actually exist. Planning off the raw
@@ -406,35 +405,58 @@ export class MissionSystem {
             adj.get(ka).push({ to: kb, w }); adj.get(kb).push({ to: ka, w })
         }
 
-        // Start node: the graph node nearest the car (the player is teleported to the start
-        // anyway, so "near" only keeps the mission in already-warm country).
-        let startK = null, bestD = Infinity
-        for (const [k, p] of posOf) {
-            const d = Math.hypot(p.x - car.x, p.z - car.z)
-            if (d < bestD) { bestD = d; startK = k }
-        }
-        if (!startK) return null
+        // Start node: ANY node in the planned network, not just the one nearest the car. _launch()
+        // teleports the player to the start pin regardless (see accept/retry), so pinning the start
+        // to the car threw away nearly the whole streamed network as possible origins and made every
+        // mission radiate from one point — a handful of shortest-path fans that all shared a long
+        // common prefix ("a couple of options with subtle variations"). Rolling BOTH endpoints freely
+        // turns the pool from O(endpoints) into O(pairs) at zero extra streaming cost (the planner
+        // already holds these roads). The planner still streams AROUND THE CAR, so "the whole network"
+        // is the ~4 km footprint by the player — that windowing, and the shortest-path route body, are
+        // both intentional (a quick job stays in warm near country and takes the natural line).
 
-        // Dijkstra from the start node; harvest every node in the target leg range.
-        const dist = new Map([[startK, 0]]), prev = new Map()
-        const queue = [{ k: startK, d: 0 }]
-        while (queue.length) {
-            queue.sort((a, b) => a.d - b.d)
-            const { k, d } = queue.shift()
-            if (d > (dist.get(k) ?? Infinity)) continue
-            if (d > LEG_MAX) continue
-            for (const e of adj.get(k) || []) {
-                const nd = d + e.w
-                if (nd < (dist.get(e.to) ?? Infinity)) {
-                    dist.set(e.to, nd); prev.set(e.to, k); queue.push({ k: e.to, d: nd })
+        // Dijkstra over straight-line graph edges from one start → reachable nodes in the leg band,
+        // capped at MAX_EDGES hops. No routing here (graph metric only), so it's cheap to run per
+        // start candidate. Returns the parent chain plus the qualifying endpoints.
+        const legCandidates = (startK) => {
+            const dist = new Map([[startK, 0]]), prev = new Map()
+            const queue = [{ k: startK, d: 0 }]
+            while (queue.length) {
+                queue.sort((a, b) => a.d - b.d)
+                const { k, d } = queue.shift()
+                if (d > (dist.get(k) ?? Infinity)) continue
+                if (d > LEG_MAX) continue
+                for (const e of adj.get(k) || []) {
+                    const nd = d + e.w
+                    if (nd < (dist.get(e.to) ?? Infinity)) {
+                        dist.set(e.to, nd); prev.set(e.to, k); queue.push({ k: e.to, d: nd })
+                    }
                 }
             }
+            const ends = [...dist.entries()]
+                .filter(([k, d]) => d >= LEG_MIN && d <= LEG_MAX && k !== startK)
+                .filter(([k]) => _pathLength(prev, k, startK) <= MAX_EDGES)
+            return { prev, ends }
         }
-        const candidates = [...dist.entries()]
-            .filter(([k, d]) => d >= LEG_MIN && d <= LEG_MAX && k !== startK)
-            .filter(([k]) => _pathLength(prev, k, startK) <= MAX_EDGES)
-        if (!candidates.length) return null
-        const endK = candidates[(Math.random() * candidates.length) | 0][0]
+
+        // Shuffle the node set and take the first start with a reachable endpoint in the leg band.
+        // Most nodes qualify; the loop just skips the few dead-end / window-edge nodes whose whole
+        // leg band falls off the streamed network. Mission rolls are run-layer randomness — free to
+        // use Math.random (SM-INV-12).
+        const starts = [...posOf.keys()]
+        for (let i = starts.length - 1; i > 0; i--) {           // Fisher-Yates
+            const j = (Math.random() * (i + 1)) | 0
+            ;[starts[i], starts[j]] = [starts[j], starts[i]]
+        }
+        let startK = null, prev = null, endK = null
+        for (const s of starts) {
+            const c = legCandidates(s)
+            if (!c.ends.length) continue
+            startK = s; prev = c.prev
+            endK = c.ends[(Math.random() * c.ends.length) | 0][0]
+            break
+        }
+        if (startK == null || endK == null) return null
 
         // Node path start → end.
         const nodePath = []
