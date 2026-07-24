@@ -136,6 +136,47 @@ skip "cull on coarse". Keep the architecture's intent with the passes in their n
   noise next to 162 routes), no wrongly-culled roads, no BUG-25 asymmetry inherited into a
   NEW pass, and Phases 2/3/4/5 (+PERF-25 exit criterion) proceed unchanged.
 
+## Stage 2 Phase 5a IMPLEMENTED (2026-07-24, commits 7409a4c + 479dda8) — PERF-25 GREEN
+
+**Two commits, PERF-25 exit bar met: jitter-on-pad 12 vs off-pad 8 µs/frame = 1.45× (baseline
+142 µs / 11.6×; bar ≤ 1.5×).**
+
+1. **`7409a4c` bit-exact resolver acceleration** (surface untouched, proven on 16k-pt sweeps ×
+   2 seeds × both flags): `_resolveCellCands` per-8 m-cell candidate cache + flat segment tables,
+   `_projectOntoRunRanges` windowed projection (bit-identity proof in its docblock),
+   `_legProjWin` per-(node,leg) ruled-blend windows, alloc-free `Centerline._poseInto`.
+   This alone: 142→50 µs (6.1×). **Measured dead end: no bit-exact approach can reach 1.5× —
+   pad EXACT (100% memo hits) was already 33 vs 8 µs; the 6-evaluations-per-query structure
+   (centre + 5-pt neighbourhood-MIN, each resolve + ruled blend) is the floor.**
+2. **`479dda8` resolve-free node pad surface** (the handoff's per-node cached surface):
+   `_nodeSurfaceTop(node,wx,wz)` = ONE `_carveDirtY` ruled-blend evaluation based on the node's
+   own nearest leg branch (cached windows; feet shared with the leg cross-section via a per-leg
+   exact-key single-slot memo) + the deg-2 connector composition. The 5-pt neighbourhood-MIN,
+   `PAD_TOP_MIN_R`, and the PERF-24 exact-position resolve memo are DELETED — the min's crease
+   duck armored against free-resolve tears (samples resolving onto unrelated runs), and the
+   leg-pinned base kills that class at the source. Drawn plaza (`buildJunctionFootprint` ring
+   path) rides the same function; deg-2 swept ribbon keeps `sampleRoadTopY` (its physics twin
+   is the connector composition).
+   - Surface deltas (48.9k-pt sweep over every junction neighbourhood): mean 5 cm (the removed
+     slope-duck), >0.5 m at 88 pts confined to 3 deg-2 elbows + 1 deg-3 rim — all the removed
+     duck/tear class (worst OLD value dove 4.1 m onto the wrong leg's grade at 683,-417).
+     A/B screenshots at the worst nodes visually identical (worktree `abshots/`).
+   - Gates: 23/23 affected green flag-off; flag-on the same 3 PRE-EXISTING known marginals
+     (seed-6 shoulder marginal IMPROVES 0.543→0.510; route-bundle-parity stale-by-design;
+     graph-topology 8/10). Replay 1784909578369 mark values unchanged (its 3.9 mm game-vs-
+     replay gradeY gap pre-exists the phase — capture env artifact). Jitter delta 0.07 mm.
+
+**Rotated-arrival tear RE-MEASURED on the new surface (experiment, reverted):** all-degree
+pairing (`nbrs.size >= 2` at `_nodeThroughPairs`) still fails shoulder-lateral-continuity —
+1.94 m at the SAME deg-4 pad (1116,-171) (was 1.67 m pre-rework) + 1.75 m at seed-7 (256,173).
+The tear is STRUCTURAL in the pad machinery (ring weld / rim overlays / camber at rotated
+mouths), not the removed free-resolve class ⇒ Phase 5a-2's canonical-shapes + rotated-arrival
+weld design remains required before the deg-3/4 flip.
+
+REMAINING (Phase 5): 5a-2 canonical shapes + rotated-arrival welds → 5b-1 true-tangent
+admission + connector deletion (census-driven) → 5b-2 deg-3/4 flip + full test:all matrix +
+cold-build ≤ 11.2 s check + user drive + default-on as its own step.
+
 ## Stage 2 Phases 2+4 IMPLEMENTED (2026-07-24, commits 1da347f + c7fbe38) — user approved skip-Phase-1
 
 **Phase 2 (flag-independent, byte-stable):** one canonical `_degreeDropSet` (extracted verbatim
