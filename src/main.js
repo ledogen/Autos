@@ -1145,6 +1145,15 @@ function queryVertexContacts (px, py, pz) {
     hits.push({ normal: new THREE.Vector3(terrainN.x, terrainN.y, terrainN.z), depth: terrainH - py })
   }
 
+  // BUG-37: bore WALL contact — terrainSystem only resolves the bore floor (bore-ownership rule);
+  // the curved half-tube sides have no matching collision without this. No hint passed (matches this
+  // function's terrain block above, which is also unhinted — vertex contacts fire far less often than
+  // per-wheel sphere contacts, so the memo optimization isn't needed here).
+  if (!_labActive && roadSystem) {
+    const wallHit = roadSystem.queryTunnelWallContact(px, py, pz, 0)
+    if (wallHit) hits.push({ normal: wallHit.normal, depth: wallHit.depth })
+  }
+
   // Ramp face contacts — lab only (D-19: the ramp was never part of the generated world). Kept
   // when grid world was retired: a jump is a legitimate suspension/damage input, which is exactly
   // what the lab's rumble lanes are also for.
@@ -1250,6 +1259,15 @@ function queryContacts (cx, cy, cz, r) {
   if (!_labActive && propSystem) {
     const propHits = propSystem.queryProps(cx, cy, cz, r)
     for (let i = 0; i < propHits.length; i++) hits.push(propHits[i])
+  }
+
+  // BUG-37: bore WALL contact — terrainSystem's ground block above only resolves the bore FLOOR
+  // (bore-ownership rule); the curved half-tube sides have no matching collision without this. Same
+  // {normal,depth,contactPoint} shape as prop hits, so the wheel solver treats a wall like any other
+  // surface. Reuses _hint (already resolved for the ground query above) — no extra tile scan.
+  if (!_labActive && roadSystem) {
+    const wallHit = roadSystem.queryTunnelWallContact(cx, cy, cz, r, _hint)
+    if (wallHit) hits.push(wallHit)
   }
 
   return hits

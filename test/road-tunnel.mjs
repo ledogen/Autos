@@ -98,4 +98,53 @@ for (const [runKey, e] of tunneled) {
 }
 check(shared > 0 && mismatched === 0, `two-center span invariance: ${shared - mismatched}/${shared} shared tunneled edges identical`)
 
+// ── (5) BUG-37: bore WALL containment — queryTunnelWallContact ────────────────────────────────
+const R = P.tunnelBoreRadius ?? 8
+let wSampled = 0, wallOK = 0, belowOK = 0, crownOK = 0, outsideOK = 0
+for (const [runKey, e] of tunneled) {
+  for (const sp of e.tunnelSpans) {
+    const s = (sp.s0 + sp.s1) / 2
+    const c = road.runPointAt(runKey, s)
+    if (!c) continue
+    const prof = road.runProfile(s, runKey)
+    const rx = prof.tz, rz = -prof.tx        // matches buildTunnelTube's rightDir (road-mesh.js)
+    wSampled++
+
+    // Near-wall probe: a wheel-radius-ish sphere grazing the wall just inside the tube.
+    const rr = 0.4
+    const L = R - 0.3, H = 0.5
+    const wx = c.x + rx * L, wz = c.z + rz * L, wy = prof.gradeY + H
+    const hit = road.queryTunnelWallContact(wx, wy, wz, rr)
+    const rightVec = new THREE.Vector3(rx, 0, rz)
+    if (hit && hit.depth > 0 && hit.normal.dot(rightVec) < -1e-6) wallOK++
+
+    // Below-springline probe: same lateral offset, height BELOW gradeY — the camber-tilted physics
+    // floor legitimately sits here on the low side of a banked bore (BUG-37 follow-up: a wheel there
+    // must still see the wall, not fall through it because h<0).
+    const wyBelow = prof.gradeY - 0.8
+    const hitBelow = road.queryTunnelWallContact(wx, wyBelow, wz, rr)
+    if (hitBelow && hitBelow.depth > 0 && hitBelow.normal.dot(rightVec) < -1e-6) belowOK++
+
+    // Above-crown probe: same arc, well above R+r — must NOT read as a wall (raw hill overhead).
+    const wy2 = prof.gradeY + R + 2
+    if (!road.queryTunnelWallContact(c.x, wy2, c.z, rr)) crownOK++
+
+    // Outside-span probe: same lateral/height offset, arc well before the span starts.
+    const sOut = sp.s0 - 20
+    const cOut = road.runPointAt(runKey, sOut)
+    if (cOut) {
+      const profOut = road.runProfile(sOut, runKey)
+      const rxo = profOut.tz, rzo = -profOut.tx
+      const wxo = cOut.x + rxo * L, wzo = cOut.z + rzo * L, wyo = profOut.gradeY + H
+      if (!road.queryTunnelWallContact(wxo, wyo, wzo, rr)) outsideOK++
+    } else {
+      outsideOK++   // no run point that far back (edge of network) — vacuous pass
+    }
+  }
+}
+check(wSampled > 0 && wallOK === wSampled, `bore wall contact at ρ≈R: ${wallOK}/${wSampled}`)
+check(belowOK === wSampled, `bore wall contact still fires below springline (camber floor tilt): ${belowOK}/${wSampled}`)
+check(crownOK === wSampled, `no false contact above the crown: ${crownOK}/${wSampled}`)
+check(outsideOK === wSampled, `no false contact outside the span: ${outsideOK}/${wSampled}`)
+
 process.exit(fail ? 1 : 0)

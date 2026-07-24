@@ -3747,6 +3747,49 @@ export class RoadSystem {
         return null
     }
 
+    // BUG-37: bore WALL contact — the carve heightfield above (_sampleCarveWorld) only resolves the
+    // bore FLOOR (bore-ownership rule); the curved half-tube sides (buildTunnelTube, road-mesh.js)
+    // have no matching collision, so a wheel drove straight through the concrete. This is a half-
+    // cylinder containment test (radius tunnelBoreRadius, axis at gradeY along the run centerline,
+    // upper half only) returning the same {normal,depth,contactPoint} shape queryContacts/propSystem
+    // already push into the wheel/body contact solver — reuse, not a new collision capability.
+    // (lat,h) uses the SAME rightDir (tz,-tx) buildTunnelTube uses for its wall-ring vertices
+    // (road-mesh.js), so the test runs in the mesh's own cross-section frame (mesh == collision).
+    queryTunnelWallContact(wx, wy, wz, r = 0, nrHint) {
+        const nr = nrHint ?? this.carveHint(wx, wz)
+        if (!nr) return null
+        const dx = wx - nr.point.x, dz = wz - nr.point.z
+        const tx = nr.tangent.x,    tz = nr.tangent.z
+        const aArc   = (nr.arcS ?? 0) + dx * tx + dz * tz   // same decomposition as _sampleCarveWorld
+        const lat    = dx * tz - dz * tx                     // signedLat, no extra call
+        const runKey = nr.runKey ?? ''
+        if (!this.tunnelSpanAt(runKey, aArc)) return null     // not inside a bore span
+        const R = this._params.tunnelBoreRadius ?? 8
+        const gradeY = this.runProfile(aArc, runKey).gradeY   // floor Y at this arc
+        const h = wy - gradeY                                  // height above the springline
+        // FULL cylinder, not just the upper arch: camber tilts the physics FLOOR (_carveDirtY's
+        // tiltY = signedLat*sin(camberAngle)) but NOT the rendered arch (buildTunnelTube's h=R·sin(θ)
+        // ignores camberRad) — so on the low side of a banked bore the drivable surface, and the wheel
+        // riding it, legitimately sits at h<0 right where the wall is. A hard h<0 cutoff killed the
+        // wall contact exactly there (BUG-37 follow-up). Symmetric |h|>R+r still excludes raw hillside
+        // overhead (30+ m up) without excluding the below-springline band; a wheel never sits deep
+        // enough below grade (h≈-R) for the lower half to false-fire on ordinary ground contact — at
+        // lat≈0 (floor centre) rho≈|h| stays well under R regardless of sign, so only the region near
+        // the wall (|lat|≈R) actually triggers.
+        if (Math.abs(h) > R + r) return null
+        const rho = Math.hypot(lat, h)
+        const depth = rho + r - R
+        if (depth <= 1e-9) return null
+        const invRho = rho > 1e-9 ? 1 / rho : 0
+        const nLat = -lat * invRho, nH = -h * invRho           // inward unit normal in the (lat,h) plane
+        const normal = new THREE.Vector3(nLat * tz, nH, -nLat * tx)  // right=(tz,0,-tx), up=(0,1,0)
+        const t = r - depth
+        return {
+            normal, depth,
+            contactPoint: new THREE.Vector3(wx - normal.x * t, wy - normal.y * t, wz - normal.z * t)
+        }
+    }
+
     // ── QUAL-07: dirt-surface helper (the crown/camber/clearance fold, shared) ───────────────
     /**
      * The carve DIRT surface at a resolved point: run-global grade + crown + camber tilt − clearance.
