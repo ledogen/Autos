@@ -1,7 +1,7 @@
 ---
 id: BUG-36
 type: bug
-status: open
+status: closed
 opened: 2026-07-18
 severity: major
 source: user-observation + capture analysis
@@ -102,3 +102,10 @@ ticket is diagnosis-only — no terrain/carve edits here, to keep that merge cle
 - BUG-24 penetration failsafe (the mechanism that launches; NOT the cause) — `test/penetration-failsafe.mjs`.
 - QUAL-13 sloped pads / junction grade spikes — [[project_qual13_sloped_pads]].
 - BUG-25 edge flip / crossing-cull window variance — [[project_bug25_edge_flip]].
+
+## Resolution
+
+Confirmed fixed (user report, 2026-07-24). Driving across the fill-meeting spine on seed 6 no longer
+launches the truck. Closed without a recorded root-cause commit here — re-open if it recurs and capture
+a fresh repro (the captures above were from the original report and may no longer reproduce the state
+that triggered it).

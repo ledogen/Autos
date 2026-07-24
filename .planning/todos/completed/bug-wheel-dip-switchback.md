@@ -1,7 +1,7 @@
 ---
 id: BUG-18
 type: bug
-status: open
+status: closed
 opened: 2026-06-24
 severity: minor
 source: user-observation
@@ -48,3 +48,11 @@ footprint approach is the real fix.
 - [ ] Classify the dip: footprint geometry (sphere-edge) vs camber-by-design vs mesh/collider mismatch.
 - [ ] If footprint: multi-point tire contact eliminates the dip on tight switchbacks without destabilizing
       normal-speed feel (gate against `test/assert-m4-*.mjs`).
+
+## Resolution
+
+Fixed by the tire-envelope wheel-footprint ground sampling (bd7621f, merged 9d32b35,
+feature/tire-envelope, 2026-07-24) — the multi-point tire-footprint fix anticipated in this ticket's
+Fix direction. queryContacts is now called with footprint=true for tire-envelope ground sampling
+(src/physics.js), replacing the single-sphere-at-hub-center probe. Also fixed a double-counted
+multi-contact friction bug along the way; gated by test/wheel-multicontact-friction.mjs.
