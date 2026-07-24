@@ -532,6 +532,17 @@ export const RANGER_PARAMS = {
   // roadGraphWAlt: the router's valley-seeking weight (wAlt). Higher = roads dive harder for low ground =
   // more terrain-hugging wander. 2.0 (windiness stage).
   roadGraphWAlt: 2.0,
+  // roadStrokeRouting (QUAL-21 Stage 1): DEG-2 pass-through nodes absorbed AT ROUTE TIME — both
+  // edges at a degree-2 node prescribe the SAME canonical terminal heading (the through chord
+  // between the two neighbours) instead of each edge's own chord bearing, so the road continues
+  // through the node without a heading kink and the deg-2 connector no-ops under its 9°
+  // admission. Deg-≥3 nodes keep today's chord headings: rotated arrivals measurably tear the
+  // junction pads' ruled blends (shoulder-lateral-continuity red at a cleanly-paired deg-4 pad),
+  // so through+branch classification at junctions lands WITH the Stage 2 junction rework — see
+  // road.js _nodeThroughPairs header. Routing stays strictly per-edge — caches, Worker prewarm,
+  // and window-invariance untouched. OFF (bit-exact legacy headings) until the Stage 1 A/B
+  // drive sign-off.
+  roadStrokeRouting: false,
   // roadSoloReuse: PERF cold-load — adopt an edge's cached SOLO route as its FINAL when the sibling
   // corridor discs never come within 2 m-sampled reach of it (the constrained re-search solves a
   // problem whose constraints don't bind; measured ~50% of final searches return the solo

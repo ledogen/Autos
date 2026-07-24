@@ -37,7 +37,7 @@ import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
 import { crownProfile, potholeNoise, signedCurvature, arcPrimitiveConnect, smoothGradeInPlace, applyTunnelPassInPlace, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
 import { centerlineFromDescriptors, CenterlineCurve, Centerline } from './centerline.js'
-import { delaunay, urquhartEdges } from './road-graph.js'
+import { delaunay, urquhartEdges, throughPairsAt } from './road-graph.js'
 
 // FEAT-13 v2: total order on site ids [cmx,cmz,k] — the Poisson-disk priority tie-break.
 function idLess(a, b) { return a[0] !== b[0] ? a[0] < b[0] : (a[1] !== b[1] ? a[1] < b[1] : a[2] < b[2]) }
@@ -1710,6 +1710,146 @@ export class RoadSystem {
         return Math.atan2(b.z - a.z, b.x - a.x)
     }
 
+    // ── QUAL-21 Stage 1: stroke-routing heading override ─────────────────────────────────────────
+    // _nodeThroughPairs — the maximal through-pairing (road-graph.js throughPairsAt) of a node's
+    // alive DEGREE-CULLED Urquhart legs, as Map nbrKey → partnerKey. Built over a NODE-CENTRED
+    // _buildUrquhart neighbourhood (persist=false — the same window-invariance trick as _edgeDeps;
+    // reading the streaming band graph would make the pairing depend on the stream center), with
+    // the SAME wide margin the cull's dedicated graph uses so the degree simulation below sees the
+    // full detour neighbourhood. Leg heights are amplitude-scaled coarse heights (real metres) so
+    // the pair score's grade penalty speaks m/m. Memoized per _networkRev (param/route changes
+    // bump it — see _refreshParams).
+    //
+    // WHY the degree simulation: the registered network is raw Urquhart MINUS _cullNetwork's
+    // passes, and pairing against a culled leg aims the through-road at a sibling that does not
+    // exist (measured: 65–108° kinks at deg-2 nodes whose raw degree was 3). The DEGREE pass is
+    // pure topology (chords + candidate-free detour BFS — v3 in _cullDegreePass, window-invariant
+    // by design), so it can be reproduced here exactly, keeping the heading a pure fn of
+    // (seed, params, node). The ring-scoped crossing/clearance passes DO read routed geometry and
+    // are window-asymmetric (the BUG-25 WATCH) — they cannot participate without circularity.
+    //
+    // SHIPPED STAGE 1 SCOPE = DEG-2 NODES ONLY (a measured cutback from the plan's all-degree
+    // maximal pairing — 2026-07-25):
+    //  · At a (degree-simmed) deg-2 node the pairing is structurally CULL-SAFE: the ring passes
+    //    can only delete a whole leg (node becomes a dead-end stub — no junction left to kink),
+    //    never leave a MISPAIRED junction behind. At deg-≥3, a later crossing/clearance cull of
+    //    the paired leg left the two surviving runs kinked up to ~108° with a heading aimed at
+    //    the ghost edge (5/13 deg-2 nodes on the census band were cull-created this way).
+    //  · Rotated arrivals BREAK THE JUNCTION PADS even when the pairing is clean: with all-degree
+    //    pairing the shoulder-lateral-continuity gate failed at a cleanly-paired deg-4 pad
+    //    (1.67 m lateral step vs the 0.70 m plaza tolerance, seed 6 (1116,-171)) — the pad's
+    //    ruled blend + fillet ladder assume chord arrivals. Absorbing deg-3/4 (through + T-branch,
+    //    through × through) therefore lands WITH the Stage 2 junction rework, not as a
+    //    headings-only override. throughPairsAt (road-graph.js) is already degree-general and
+    //    waits there.
+    _nodeThroughPairs(nodeId) {
+        if (!this._throughPairsMemo || this._throughPairsMemo.rev !== this._networkRev)
+            this._throughPairsMemo = { rev: this._networkRev, map: new Map() }
+        const nk = `${nodeId[0]},${nodeId[1]},${nodeId[2]}`   // matches _buildUrquhart's g.key
+        const memo = this._throughPairsMemo.map
+        let m = memo.get(nk)
+        if (m) return m
+        m = new Map()
+        const p = this._nodePos(nodeId)
+        const mx = Math.floor(p.x / PROTO_ANCHOR_SPACING), mz = Math.floor(p.z / PROTO_ANCHOR_SPACING)
+        // Same margin recipe as _cullNetwork's dedicated detour graph (road.js:2029) — the degree
+        // decisions this window computes for edges near the node then match the cull's own.
+        const M = (this._params?.roadGraphMargin ?? 3) + (this._params?.roadGraphCullMaxHops ?? 4) + 1
+        const g = this._buildUrquhart(mx, mx, mz, mz, false, M)
+        const nbrs = this._degreeCulledNbrsAt(g, nk)
+        if (nbrs && nbrs.size === 2) {   // deg-2 ONLY (Stage 1 shipped scope — see header)
+            const amp = this._params?.terrainAmplitude ?? 1
+            const node = { x: p.x, z: p.z, h: this._coarseH(p.x, p.z) * amp }
+            // Sorted leg order → deterministic candidate tie-breaks regardless of Set iteration.
+            const legs = [...nbrs].sort().map(k => {
+                const q = this._nodePos(k.split(',').map(Number))
+                return { key: k, x: q.x, z: q.z, h: this._coarseH(q.x, q.z) * amp }
+            })
+            for (const [a, b] of throughPairsAt(node, legs)) { m.set(a, b); m.set(b, a) }
+        }
+        memo.set(nk, m)
+        return m
+    }
+
+    // The degree-pass decisions of _cullDegreePass, reproduced as a pure fn over a node-centred
+    // graph `g`, returning nodeKey `nk`'s surviving neighbour set. MUST mirror _cullDegreePass
+    // phases 1+2 exactly (same candidate rule, same order-free candidate-excluded BFS) — if that
+    // pass changes, change this too (search: DEGREE SIM SYNC).
+    _degreeCulledNbrsAt(g, nk) {
+        const nbrs = g.adj.get(nk)
+        const maxDeg = this._params?.roadGraphMaxDegree ?? 0
+        if (!nbrs || !maxDeg) return nbrs
+        const hopCap = this._params?.roadGraphDegreeDetourHops ?? 4
+        const pairK = (a, b) => a + '|' + b
+        const incAll = new Map()   // nodeKey → [{other, chord}]
+        for (const [a, b] of g.edges) {
+            const ka = g.key(a), kb = g.key(b)
+            const pa = this._nodePos(a), pb = this._nodePos(b)
+            const chord = Math.hypot(pb.x - pa.x, pb.z - pa.z)
+            ;(incAll.get(ka) || incAll.set(ka, []).get(ka)).push({ other: kb, chord })
+            ;(incAll.get(kb) || incAll.set(kb, []).get(kb)).push({ other: ka, chord })
+        }
+        // Phase 1: at every node with degree > maxDeg, its (degree − maxDeg) longest incident
+        // edges are candidates (pure local rule).
+        const candSet = new Set()
+        for (const k of [...incAll.keys()].sort()) {
+            const inc = incAll.get(k)
+            const excess = inc.length - maxDeg
+            if (excess <= 0) continue
+            const cands = inc
+                .slice().sort((x, y) => (y.chord - x.chord) || (pairK(k, x.other) < pairK(k, y.other) ? -1 : 1))
+                .slice(0, excess)
+            for (const c of cands) { candSet.add(pairK(k, c.other)); candSet.add(pairK(c.other, k)) }
+        }
+        if (!candSet.size) return nbrs
+        // Phase 2: a candidate drops iff its endpoints reconnect within hopCap hops in
+        // (graph − ALL candidates).
+        const detourSafe = (a, b) => {
+            const q = [[a, 0]], seen = new Set([a])
+            while (q.length) {
+                const [u, d] = q.shift()
+                if (d >= hopCap) continue
+                for (const v of g.adj.get(u) || []) {
+                    if (candSet.has(pairK(u, v))) continue
+                    if (v === b) return true
+                    if (!seen.has(v)) { seen.add(v); q.push([v, d + 1]) }
+                }
+            }
+            return false
+        }
+        const out = new Set()
+        for (const other of nbrs) {
+            if (candSet.has(pairK(nk, other)) && detourSafe(nk, other)) continue   // dropped by the cap
+            out.add(other)
+        }
+        return out
+    }
+
+    // The canonical LEAVE-heading override at `nodeId` toward `otherId`: when the leg toward
+    // `otherId` is through-paired with neighbour P, BOTH edges of the pair prescribe the same
+    // through chord — bearing P→other — so the deg-2 heading kink vanishes as a data agreement
+    // (the deg-2 connector then no-ops under its 9° admission) and paired deg-3/4 legs meet as
+    // one continuous through-road. null when the leg is unpaired (a T-branch keeps its own
+    // chord heading) or the local graph doesn't know the edge.
+    _throughHeadingAt(nodeId, otherId) {
+        const partner = this._nodeThroughPairs(nodeId).get(`${otherId[0]},${otherId[1]},${otherId[2]}`)
+        if (partner === undefined) return null
+        const P = this._nodePos(partner.split(',').map(Number)), o = this._nodePos(otherId)
+        return Math.atan2(o.z - P.z, o.x - P.x)
+    }
+
+    // The leave-heading every consumer must read — the route spec (_routeOptsBetween) AND the
+    // ribbon weld target (_buildRunProfile's join weld) go through here so they always agree:
+    // the stroke-routing override when roadStrokeRouting is on and the leg is paired, else the
+    // edge's own chord bearing (_edgeTerminalHeading — today's behaviour, bit-exact).
+    _edgeLeaveHeading(at, toward) {
+        if (this._params?.roadStrokeRouting) {
+            const h = this._throughHeadingAt(at, toward)
+            if (h !== null) return h
+        }
+        return this._edgeTerminalHeading(at, toward)
+    }
+
     // ── FEAT-13 v2 graph topology — Urquhart graph over a blue-noise anchor set ──────────────────────
     // The lattice (one grid anchor per cell + spanning-forest neighbour edges) is replaced by:
     //   (1) BLUE-NOISE anchor SITES — multiple seeded candidates per macro-cell, Poisson-disk thinned, so
@@ -2248,9 +2388,13 @@ export class RoadSystem {
             // _edgeTerminalHeading(c2,c1) is the LEAVE direction at c2 (bearing c2→c1) = the reverse of
             // arrival, so a directed router would loop around to approach c2 from the wrong side (the "enter
             // from the wrong side" / shallow near-node crossing). +π flips it to the arrival direction.
-            // (startHeading is already the leave-at-c1 = forward direction.)
-            startHeading: this._edgeTerminalHeading(c1, c2),
-            goalHeading:  this._edgeTerminalHeading(c2, c1) + Math.PI,
+            // (startHeading is already the leave-at-c1 = forward direction.) QUAL-21 Stage 1:
+            // both go through _edgeLeaveHeading, which substitutes the canonical through-chord
+            // heading at through-paired legs when roadStrokeRouting is on (flag off = bit-exact
+            // today's chord bearings). The heading rides this spec, and _edgeRouteSpec feeds both
+            // the Worker prewarm and the sync fallback → worker/sync parity is free.
+            startHeading: this._edgeLeaveHeading(c1, c2),
+            goalHeading:  this._edgeLeaveHeading(c2, c1) + Math.PI,
             // FEAT-13: a WIDE goal blend. The hybrid-A* search overshoots short edges' goal node (wanders
             // past it, then the terminal reels back) → the edge bows past the node and crosses a sibling
             // TWICE (the "happens twice" double-cross the user flagged). Cutting back a wide tail (~140 m)
@@ -5888,7 +6032,9 @@ export class RoadSystem {
         {
             const Rw = p.roadJoinWeldLength ?? 6
             if (Rw > 0 && netEntry.cellA && netEntry.cellB) {
-                const hS = this._edgeTerminalHeading(netEntry.cellA, netEntry.cellB), hE = this._edgeTerminalHeading(netEntry.cellB, netEntry.cellA)
+                // QUAL-21: _edgeLeaveHeading, not _edgeTerminalHeading — the weld target must be
+                // the SAME heading the route spec prescribed or stroke-routing shifts the welds.
+                const hS = this._edgeLeaveHeading(netEntry.cellA, netEntry.cellB), hE = this._edgeLeaveHeading(netEntry.cellB, netEntry.cellA)
                 let sx = Math.cos(hS), sz = Math.sin(hS), ex = Math.cos(hE), ez = Math.sin(hE)
                 const fwdS = tx[0] * sx + tz[0] * sz >= 0, fwdE = tx[N - 1] * ex + tz[N - 1] * ez >= 0
                 const aS = arcPos[0], aE = arcPos[N - 1]
