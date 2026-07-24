@@ -85,21 +85,35 @@ export function delaunay(pts) {
     return out
 }
 
-// Urquhart edge set: every Delaunay edge EXCEPT the longest edge of each triangle.
+// Urquhart edge set: every Delaunay edge EXCEPT the heaviest edge of each triangle.
 //   pts, tris (from delaunay)  →  Array<[i, j]> with i < j, deduped.
-// A Delaunay edge survives iff it is NOT the longest edge of ANY triangle that owns it
-// (so an edge shared by two triangles is removed only when longest in both is moot —
-// it's removed if it is the longest of either; we keep it unless it is longest in a
-// triangle and that triangle votes it out). Standard Urquhart: remove the longest edge
-// of each triangle from the Delaunay edge set.
-export function urquhartEdges(pts, tris) {
+// A Delaunay edge survives iff it is NOT the heaviest edge of ANY triangle that owns it
+// (standard Urquhart: remove the max-weight edge of each triangle from the Delaunay edge set).
+// Default weight = squared Euclidean length (the classic graph). QUAL-22: an optional
+// weight(i, j) → number swaps the per-triangle vote to any edge measure — e.g. a terrain-cost
+// chord integral, so valley-following links out-survive mountain crossings and the topology
+// character EMERGES from the cost model. Connectivity holds under ANY weight (Urquhart ⊇ MST
+// for the same weight); the Delaunay itself is unchanged, so the window-invariance argument
+// (unique triangulation + per-triangle local vote) is weight-independent. Weight calls are
+// memoized per canonical pair (an edge sits in ≤2 triangles).
+export function urquhartEdges(pts, tris, weight = null) {
     const removed = new Set()
     const all = new Set()
     const key = (a, b) => a < b ? a * 0x4000000 + b : b * 0x4000000 + a   // i<j packed
+    let wOf = (i, j) => d2(pts, i, j)
+    if (weight) {
+        const wCache = new Map()
+        wOf = (i, j) => {
+            const k = key(i, j)
+            let v = wCache.get(k)
+            if (v === undefined) { v = i < j ? weight(i, j) : weight(j, i); wCache.set(k, v) }
+            return v
+        }
+    }
     for (const [i, j, k] of tris) {
-        const dij = d2(pts, i, j), djk = d2(pts, j, k), dki = d2(pts, k, i)
+        const dij = wOf(i, j), djk = wOf(j, k), dki = wOf(k, i)
         all.add(key(i, j)); all.add(key(j, k)); all.add(key(k, i))
-        // Longest edge of this triangle → removed.
+        // Heaviest edge of this triangle → removed.
         let lk
         if (dij >= djk && dij >= dki) lk = key(i, j)
         else if (djk >= dij && djk >= dki) lk = key(j, k)

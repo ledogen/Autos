@@ -543,6 +543,16 @@ export const RANGER_PARAMS = {
   // and window-invariance untouched. OFF (bit-exact legacy headings) until the Stage 1 A/B
   // drive sign-off.
   roadStrokeRouting: false,
+  // roadGraphCostPrune (QUAL-22): the Urquhart pruning votes by TERRAIN COST instead of length —
+  // each Delaunay triangle drops its most-EXPENSIVE edge, where cost = the coarse-height chord
+  // line integral priced with the router's own proto weights (road.js _chordCost — wDist/wAlt/
+  // wGrade/wOver·maxGrade per 64 m sample). Roads then CONNECT where connecting is cheap:
+  // valley-to-valley links survive, mountain crossings appear only where no cheaper triangle
+  // edge exists — terrain character at the TOPOLOGY level, emergent from the cost model.
+  // Connectivity holds by construction (Urquhart ⊇ MST under any weight); the Delaunay is
+  // unchanged so the D-16 window-invariance argument is too. OFF (classic Euclidean pruning)
+  // until the A/B drive verdict.
+  roadGraphCostPrune: false,
   // roadSoloReuse: PERF cold-load — adopt an edge's cached SOLO route as its FINAL when the sibling
   // corridor discs never come within 2 m-sampled reach of it (the constrained re-search solves a
   // problem whose constraints don't bind; measured ~50% of final searches return the solo

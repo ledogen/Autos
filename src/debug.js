@@ -393,6 +393,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(params, 'roadGraphWAlt', 0, 6, 0.1).name('wAlt').onChange(fireRoadParam)
   // QUAL-21 Stage 1: through-paired canonical terminal headings (A/B drive toggle). Re-routes.
   roadFolder.add(params, 'roadStrokeRouting').name('Stroke Routing (QUAL-21)').onChange(fireRoadParam)
+  // QUAL-22: terrain-cost Urquhart pruning (A/B drive toggle). Re-shapes the whole graph — re-routes.
+  roadFolder.add(params, 'roadGraphCostPrune').name('Cost-Prune Graph (QUAL-22)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphCullCrossings').name('Cull Crossings').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphMaxDegree', 0, 6, 1).name('Max Junction Degree').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphDegreeDetourHops', 2, 8, 1).name('Degree Cull Strictness').onChange(fireRoadParam)
@@ -592,6 +594,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
     roadGraphDegreeDetourHops: 'How redundant an edge must be before the degree cap may drop it. 3 = thin about half the 4-ways (measured); 8 = drop any edge with a detour (kills all 4-ways).',
     roadGraphWAlt:         'Reward for staying low / following valleys. Higher = roads hug the low ground more.',
     roadStrokeRouting:     'QUAL-21: both edges at a degree-2 node share one canonical heading, so the road passes THROUGH without a kink (the deg-2 connector no-ops). Junction (deg-3+) headings unchanged. Off = each edge aims along its own chord.',
+    roadGraphCostPrune:    'QUAL-22: the road network keeps the CHEAPEST-terrain links instead of the shortest — valley-to-valley connections survive, mountain crossings only appear where no cheaper option exists. Re-shapes the whole graph.',
     roadGraphCullCrossings:'Drops redundant crossings from the graph, thinning tangled intersection clusters.',
     roadSelfClearMargin:   'Extra clearance (m) beyond the road+shoulder footprint a road must keep from ITSELF. Higher = wider berth where a road loops back near itself.',
     roadSelfClearGap:      'Arc window (m) within which a road passing close to itself is treated as one natural bend (exempt). Below it = expected switchback; beyond it, a close approach is a self-overlap and the route re-threads wider. Lower = tighter hairpins get flagged and un-knotted.',

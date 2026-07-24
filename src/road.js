@@ -1986,7 +1986,13 @@ export class RoadSystem {
         const edges = []
         if (pts.length >= 3) {
             const tris = delaunay(pts)
-            for (const [i, j] of urquhartEdges(pts, tris)) {
+            // QUAL-22: cost-pruned Urquhart — each triangle votes out its most-EXPENSIVE edge
+            // (terrain-cost chord integral, _chordCost) instead of its longest. null = classic
+            // Euclidean pruning, bit-exact legacy topology.
+            const W = this._params?.roadGraphCostPrune
+                ? (i, j) => this._chordCost(pts[i][0], pts[i][1], pts[j][0], pts[j][1])
+                : null
+            for (const [i, j] of urquhartEdges(pts, tris, W)) {
                 const a = ids[i], b = ids[j], ka = key(a), kb = key(b)
                 if (!adj.has(ka)) adj.set(ka, new Set())
                 if (!adj.has(kb)) adj.set(kb, new Set())
@@ -2344,6 +2350,37 @@ export class RoadSystem {
         const grade = Math.abs(toH - fromH) / horiz
         const over  = Math.max(0, grade - P.maxGrade)
         return P.wDist * horiz + P.wAlt * toH + P.wGrade * grade * grade + P.wOver * over
+    }
+
+    // QUAL-22: terrain cost of a straight chord — the coarse-height line integral priced with
+    // the SAME proto weights the router seeds from (_protoEdgeCost per 64 m sample, heights in
+    // amplitude-scaled metres). Pure fn of (seed, endpoints, params) → deterministic and
+    // window-invariant. Sole consumer: the Urquhart pruning vote in _buildUrquhart when
+    // roadGraphCostPrune is on — the topology then drops each triangle's most-EXPENSIVE edge,
+    // so valley-to-valley links out-survive mountain crossings (character emerges from the cost
+    // model, never injected). Memoized per _networkRev (weights/terrain params can change it).
+    _chordCost(ax, az, bx, bz) {
+        if (!this._chordCostMemo || this._chordCostMemo.rev !== this._networkRev)
+            this._chordCostMemo = { rev: this._networkRev, map: new Map() }
+        const mk = ax < bx || (ax === bx && az <= bz) ? `${ax},${az}>${bx},${bz}` : `${bx},${bz}>${ax},${az}`
+        const memo = this._chordCostMemo.map
+        const hit = memo.get(mk)
+        if (hit !== undefined) return hit
+        const P = this._proto.params
+        const amp = this._params?.terrainAmplitude ?? 1
+        const L = Math.hypot(bx - ax, bz - az)
+        const n = Math.max(1, Math.ceil(L / 64))
+        const ds = L / n
+        let h0 = this._coarseH(ax, az) * amp
+        let cost = 0
+        for (let s = 1; s <= n; s++) {
+            const t = s / n
+            const h1 = this._coarseH(ax + (bx - ax) * t, az + (bz - az) * t) * amp
+            cost += this._protoEdgeCost(h0, h1, ds, P)
+            h0 = h1
+        }
+        memo.set(mk, cost)
+        return cost
     }
 
     // (Road Overhaul Phase C: _protoConnect / _protoSimplify / _removeLoops / _removeSelfCrossings
