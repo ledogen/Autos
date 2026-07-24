@@ -49,12 +49,12 @@ const RISE_MIN       = 0.45    // m/s — initial upward drift
 const RISE_MAX       = 1.20    // m/s
 const SPREAD         = 1.1     // m/s — random lateral scatter
 const SETTLE         = 0.55    // m/s² — gentle downward settle (dust is light, not gravity)
-const DRAG           = 1.7     // 1/s — horizontal velocity damping
-const PEAK_OPACITY   = 0.22    // alpha at a puff's strongest, before intensity/road scaling
-                               // (kept low + dense — many faint puffs read as a soft haze, not pops)
+const DRAG           = 4.0     // 1/s — horizontal velocity damping (high: kills the slip kick fast,
+                               // vertical rise/settle is undamped so puffs still end up floating)
+const PEAK_OPACITY   = 0.38    // alpha at a puff's strongest, before intensity/road scaling
 const CONTACT_BAND   = 0.28    // m — wheel-bottom within this of the ground counts as in-contact
 const SPEED_FLOOR    = 1.6     // m/s — below this a rolling wheel makes no dust
-const TRAIL_BACK     = 0.45    // fraction of car velocity the puff inherits backward (lags the truck)
+const SLIP_KICK       = 0.5    // fraction of contact-patch slip velocity the puff is kicked out backward
 
 /**
  * Build the soft round puff texture once on a small canvas (procedural — no asset file).
@@ -190,7 +190,7 @@ export class DustSystem {
     return this._p[idx]
   }
 
-  _spawn (x, y, z, intensity, carVx, carVz, opacityScale) {
+  _spawn (x, y, z, intensity, slipV, fwdX, fwdZ, opacityScale) {
     const part = this._alloc()
     const p = this._params
 
@@ -215,11 +215,15 @@ export class DustSystem {
     part.y = y + 0.08 + Math.random() * 0.12
     part.z = z + (Math.random() - 0.5) * 0.3
 
-    // Velocity: upward billow + lateral scatter + a backward drag of the car's own motion
-    // so the trail lags behind the truck instead of riding with it.
-    part.vx = (Math.random() - 0.5) * SPREAD - carVx * TRAIL_BACK
+    // Velocity: upward billow + lateral scatter + a kick out behind the truck (opposite its
+    // forward heading) at half the contact-patch slip speed — a wheelspinning-at-standstill
+    // truck now throws dust backward even though ground speed is ~0. High DRAG (above) bleeds
+    // the kick off quickly; RISE/SETTLE below are undamped so the puff still ends up floating
+    // up same as before.
+    const kick = slipV * SLIP_KICK
+    part.vx = (Math.random() - 0.5) * SPREAD - fwdX * kick
     part.vy = RISE_MIN + (RISE_MAX - RISE_MIN) * Math.random()
-    part.vz = (Math.random() - 0.5) * SPREAD - carVz * TRAIL_BACK
+    part.vz = (Math.random() - 0.5) * SPREAD - fwdZ * kick
   }
 
   /** Pack live puffs into the instanced attributes and upload only the used prefix. */
@@ -291,8 +295,13 @@ export class DustSystem {
     const px = vehicleState.position.x
     const py = vehicleState.position.y
     const pz = vehicleState.position.z
-    const carVx = vehicleState.velocity.x
-    const carVz = vehicleState.velocity.z
+
+    // Vehicle forward heading (world-space -Z body axis) — same q*(0,0,-1)*q^-1 formula as
+    // vehicle.js's wheel-spin accumulation. Used to kick dust out behind the truck's nose
+    // rather than behind its (possibly sideways, mid-slide) velocity vector.
+    const q = vehicleState.quaternion
+    const fwdX = 2 * (q.x * q.z + q.y * q.w)
+    const fwdZ = 1 - 2 * (q.x * q.x + q.y * q.y)
 
     // Wheel local offsets (body space) — same geometry as main.js wheelLocalOffsets,
     // recomputed here so dust.js stays import-light. Y uses the level-stance hub height;
@@ -317,10 +326,16 @@ export class DustSystem {
       const wheelBottom = wy - params.wheelRadius
       if (wheelBottom - groundY > CONTACT_BAND) { this._emitAccum[i] = 0; continue }
 
-      // Intensity from slip + speed; driven (rear) wheels weighted up.
-      const slipV = (vehicleState.wheelDebug?.[i]?.sa) || 0
+      // Intensity from slip + speed; driven (rear) wheels weighted up. (sa is a friction-circle-
+      // clamped value hard-capped at ≈0.06 — see smoke.js's note on the same field — so this
+      // term barely moves; intensity here is mostly the speed term. Left as-is: this is the
+      // already-tuned/accepted dust look, unrelated to the backward slip-kick below.)
+      const slipVIntensity = (vehicleState.wheelDebug?.[i]?.sa) || 0
       const driven = isFront ? 1.0 : 1.45
-      let intensity = (slipV * 0.55 + Math.max(0, speed - SPEED_FLOOR) * 0.045) * driven * amount
+      let intensity = (slipVIntensity * 0.55 + Math.max(0, speed - SPEED_FLOOR) * 0.045) * driven * amount
+      // Real (unclamped) contact-patch slip speed — drives the backward kick below, which needs
+      // the actual wheelspin magnitude, not the friction-circle-limited value above.
+      const slipVKick = Math.abs((vehicleState.wheelDebug?.[i]?.vLong) || 0)
       if (intensity <= 0.02) { this._emitAccum[i] = 0; continue }
       if (intensity > 1) intensity = 1
 
@@ -333,7 +348,7 @@ export class DustSystem {
       let budget = 6  // per-wheel per-frame cap (guards against dt spikes)
       while (this._emitAccum[i] >= 1 && budget-- > 0) {
         this._emitAccum[i] -= 1
-        this._spawn(wx, groundY, wz, intensity, carVx, carVz, opacityScale)
+        this._spawn(wx, groundY, wz, intensity, slipVKick, fwdX, fwdZ, opacityScale)
       }
       if (this._emitAccum[i] > 2) this._emitAccum[i] = 2  // don't bank a backlog
     }

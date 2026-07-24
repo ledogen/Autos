@@ -198,12 +198,18 @@ export function updateVehicle (vehicleState, params, dt) {
                     vehicleState.velocity.y * fwdY +
                     vehicleState.velocity.z * fwdZ
 
-  // Spin delta: angular velocity = linear velocity / wheel radius.
-  // Phase 1: all wheels spin at same rate. Phase 2+ drivetrain will differentiate per-wheel omega.
-  const spinDelta = (longSpeed / params.wheelRadius) * dt
+  // Spin delta: per-wheel angular velocity from the physics omega integrator (wheelOmega,
+  // stepPhysics's Newton-solved slip omega), NOT the shared ground-speed estimate — that
+  // uniform fallback made a spinning/slipping wheel visually roll at the same rate as the
+  // ground track, hiding wheelspin the driver could see in the slip-velocity debug readout.
+  // wheelOmega lags one frame behind (stepPhysics runs after updateVehicle each frame), same
+  // as longSpeed already did, so no new staleness. Ground-speed fallback covers cold frames
+  // before wheelOmega is seeded (or airborne wheels with no omega yet).
+  const fallbackDelta = (longSpeed / params.wheelRadius) * dt
 
   for (let i = 0; i < 4; i++) {
-    vehicleState.wheelAngles[i] += spinDelta
+    const omega = vehicleState.wheelOmega ? vehicleState.wheelOmega[i] : undefined
+    vehicleState.wheelAngles[i] += (omega !== undefined ? omega * dt : fallbackDelta)
   }
 
   // ── 6. Reset check (M1-12) ─────────────────────────────────────────────────
