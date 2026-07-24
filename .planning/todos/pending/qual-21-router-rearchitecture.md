@@ -14,6 +14,39 @@ note: "Exploration ticket scoping TWO router improvements found while investigat
 
 # QUAL-21: Router re-architecture — stroke routing + residual cold-load floor
 
+## Stage 1 IMPLEMENTED (2026-07-25, feature/qual-21 — commits 97704b0 + 73dbf41) — awaiting A/B drive
+
+Shipped behind `roadStrokeRouting` (default OFF, debug toggle in the road folder; flag-off routes
+proven byte-identical via bundle-data compare; full suite 29/29 green). **Scope was cut back from
+the locked all-degree maximal pairing to DEG-2 NODES ONLY, on measured evidence:**
+
+1. **Rotated arrivals tear junction pads even when pairing is clean.** With all-degree pairing the
+   shoulder-lateral-continuity gate went red on BOTH seeds — 1.67 m lateral step at a
+   cleanly-paired deg-4 pad (seed 6 (1116,-171)): the pads' ruled blends + fillet ladder assume
+   chord arrivals. Deg-3/4 absorption must land WITH the Stage 2 junction rework, not as a
+   headings-only override. `throughPairsAt` (road-graph.js) is degree-general and ready for it.
+2. **The crossing/clearance culls run POST-routing on routed geometry** — no pure spec-time
+   pairing can see them (circularity). On the census band the crossing pass dropped 10 edges
+   (degree pass 2, clearance 2); each drop at a paired leg leaves a mispaired node with a worse
+   kink than today (65–108° measured) + a heading aimed at the culled ghost. Deg-2-only pairing
+   is structurally CULL-SAFE (a cull can only turn the node into a dead-end stub, never a
+   mispaired junction). The degree-cap pass IS pure topology and is faithfully simulated
+   (road.js `_degreeCulledNbrsAt`, DEGREE SIM SYNC with `_cullDegreePass`).
+3. **Census caveat**: the in-band census OVERSAMPLES cull-created deg-2 nodes (culls act only on
+   registered edges): 10/14 measured nodes were cull-created (keep today's kinks + connector);
+   at every covered node the prescribed kink is exactly 0.00°, with two ~9–11° first-chord
+   readings that are pure hardR-Dubins endpoint curvature (G1, no tangent kink). The world at
+   large is mostly raw deg-2 (44 raw vs ~10 cull-created per band).
+4. **Flag-ON gate matrix 8/9 green**; one KNOWN MARGINAL: shoulder-lateral-continuity seed 6,
+   0.543 m vs the 0.50 m rival-bank tier at (-917,-507) — a crossing-cull outcome FLIP (node
+   deg 2→3, different edge survives) overlapping two corridors. BUG-25-class domino
+   (headings → routes → crossings → cull decisions), deliberately not papered over.
+
+**Open for the drive / Stage 2 decision:** (a) A/B the deg-2 feel; (b) whether Stage 2 keeps a
+connector for cull-created deg-2 nodes or the crossing-cull interaction gets a real design
+(e.g. pairing-aware drop selection — pure direction, no circularity); (c) the seed-6 bank
+marginal verdict. Kink census re-runs via `node test/stroke-spike.mjs` section (4).
+
 ## Stage 0 RESULTS (2026-07-23, commit bf25e79) — read-only spike DONE
 
 `formStrokes` (pure, src/road-graph.js) + `test/stroke-spike.mjs` (rainy-day script). User-approved
