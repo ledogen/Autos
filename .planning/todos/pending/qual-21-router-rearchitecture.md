@@ -14,6 +14,30 @@ note: "Exploration ticket scoping TWO router improvements found while investigat
 
 # QUAL-21: Router re-architecture — stroke routing + residual cold-load floor
 
+## Stage 0 RESULTS (2026-07-23, commit bf25e79) — read-only spike DONE
+
+`formStrokes` (pure, src/road-graph.js) + `test/stroke-spike.mjs` (rainy-day script). User-approved
+rules: deg-2 ALWAYS continues; deg-≥3 through-pair = bearing + grade continuity + ambiguity veto;
+bounded out-of-window routing OK. Measured (seed 6, r1600, defaults dev≤40°/gradeJump 0.08):
+
+- **Window-invariance HOLDS** (the make-or-break): whole strokes 9/9 identical across two centers,
+  per-node pass-through pairings 11/11. Formation is safe to build Stage 1 on.
+- **deg-2 folding works**: 35/44 (80%) deg-2 nodes fold — the connector-deletion claim is real. The
+  9 unfolded are stroke split/frontier endpoints → **Stage 1 must prescribe a canonical shared
+  terminal HEADING at split nodes or the kink (and connector) survives exactly there.** Folded bend
+  angles p50 42° / max 111° — one continuous κ²-priced curve absorbs them.
+- **The graph is junction-dominated** (122/175 nodes deg-≥3; only 44 deg-2), so whole-map fold is
+  modest: ×1.30 (defaults) → ×1.50 (dev≤85°, gradeJump 0.15); junctions gaining a through-road
+  18% → 38% over the same sweep. gradeJump is the dominant lever (mountain legs dive); the
+  ambiguity margin barely binds (symmetric Ys already fail the bearing test).
+- **Self-clear baseline** (scStats hook, ROUTE SYNC region + worker mirror): 140 routes,
+  158 searches, **18 repair re-searches (11%)**, 0 unclean-accepted. Task B's target number.
+
+Honest read: quality/deletion case (deg-2 connector + per-sample pad resolve) fully intact;
+junction-simplification applies to a quarter-to-third of junctions (threshold-dependent, user's
+aesthetic call at Stage 1 A/B); search-count perf bonus modest (244→187 at defaults). Awaiting
+Stage 1 sign-off + threshold choice (dev/gradeJump are aesthetics, drivable via A/B).
+
 Two related tasks under one ticket. Both live in the router/graph subsystem and share the same
 investigation. Detailed design + measured evidence: **`.planning/research/STROKE-ROUTING-DESIGN.md`**
 and **`.planning/research/ROUTER-PERF-EXPLORATION.md`** (measured cold-load profile, the character
