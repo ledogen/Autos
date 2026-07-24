@@ -1,7 +1,7 @@
 ---
 id: QUAL-06
 type: quality
-status: open
+status: closed
 opened: 2026-06-26
 severity: minor
 source: user-observation
@@ -64,3 +64,9 @@ shoulder-to-terrain (and carve-to-terrain) wall blends instead of stepping.
   shoulder wall. Decide at planning.
 - Pure visual polish — minor severity. May get touched anyway by FEAT-07/FEAT-10 junction/merge
   rework, but it's a standalone eyesore worth its own ticket.
+
+## Resolution
+
+Cancelled (user, 2026-07-24): done a long time ago. The residual-on-large-fills caveat this ticket
+was being kept open for never materialized as a real issue worth separate tracking; QUAL-07's fix
+(commit 0cf01ac) is sufficient in practice. Closed without further action.
