@@ -25,7 +25,15 @@ until the merge gate at the bottom passes. Stage 1 (deg-2 spec-time heading over
    per-node cull-outcome agreement. **Proceed bar: coarse catches ≥80% of fine crossings** —
    every miss becomes a Phase 4 splice, every false positive a wrongly-early-culled edge
    (connectivity-guarded by the detour check, so the cost is a missing road, not an island).
-   If <80%: tune coarse resolution/palette and re-measure before any pipeline work.
+   If <80%: tune coarse resolution/palette/weights and re-measure before any pipeline work.
+   **Coarse weights are DECOUPLED (user, 2026-07-25):** the coarse router is NOT required to
+   inherit the fine router's cost weights — if a particular weight (or set) is killing coarse
+   viability or cull accuracy, relax it with alternate coarse-only values so the coarse route
+   thrives and culls accurately. Two coarse consumers, tune separately: the CULL/PAIRING path
+   only needs to predict where the fine route goes (agreement rate is the only judge — relax
+   freely); the HEURISTIC flood feeds the fine search's cost-to-go, where diverging weights
+   trade fine-route optimality for speed (already an accepted approximation — hScale — but
+   watch the windiness/character metrics when touching it).
 2. **Cold-build routing baseline**: time a cold `setRadius(1600); update()` (seed 6, both
    toggles on, scStats injected) 3× — wall time + searches + repairs. This is the number Phase 3
    must not exceed and SHOULD beat (it stops fine-routing doomed edges). Record in the ticket.
@@ -46,6 +54,9 @@ until the merge gate at the bottom passes. Stage 1 (deg-2 spec-time heading over
   topology, unchanged), crossing pass + clearance pass over coarse geometry (same ring/detour/
   droppedSet machinery — parameterize `_cullNetwork`'s polyline source). Edges culled here are
   **never fine-routed** (the measured 10–14 per band savings).
+- Phases 1–4 standing rule: if coarse routes fail/wander under the inherited fine weights,
+  reach for the decoupled coarse-only weights (Phase 0 note) BEFORE adding machinery —
+  agreement rate and cull accuracy are the acceptance judges for any coarse weight change.
 - The fine-level cull stays as BACKSTOP (coarse/fine disagreement residue only). Ring-scoped
   asymmetry (BUG-25 WATCH) moves with the decision — cull-radius-invariance gate must stay green.
 
