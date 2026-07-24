@@ -10,7 +10,8 @@ relates_to: >
   FEAT-28 region-gated connectivity (feat-region-gated-connectivity.md — trail-closed barriers),
   game-mode split (window.__setGameMode seam, teleport feature merged 2026-07-16),
   main-menu / game-menus UI (feat-game-menus-ui.md), road streaming + router (src/road.js,
-  src/road-worker.js), story-mode DESIGN.md ("Game modes", SM-INV-12/13)
+  src/road-worker.js), story-mode DESIGN.md ("Game modes", SM-INV-12/13),
+  FEAT-21 (road POI scatter — feat-road-poi-scatter.md, the eventual real POI siting)
 ---
 
 ## Summary
@@ -48,6 +49,34 @@ churn, no re-stream hitches) and a performance win.
 This also cleanly separates the *testing harness* (Quick Job) from the *shipping gamemode* (Story
 Mode), so the harness can stay a harness (regenerate, retry, teleport — all testing affordances)
 while Story Mode gets no-do-overs discipline.
+
+## Points of interest (Story Mode's mission source, placeholder art)
+
+Story Mode should place a set of **points of interest (POIs)** within the fixed region — placeholder
+visual is a **translucent cube** for now (real art comes later). These are the seed of the real
+mission-giving mechanic:
+
+- Driving up to a POI and pressing a key **receives a mission** that starts from that POI (start point
+  = the POI's location; this is the first concrete "walk up and get a job" interaction, standing in for
+  NPCs/mission-givers before any of that exists).
+- **Quick Job stays anywhere-to-anywhere.** The existing "quick mission" button must keep placing
+  start+end anywhere on the map, independent of POIs — POIs are an *additional*, location-gated way to
+  get a mission inside Story Mode, not a replacement for the free placement Quick Job already does.
+- This is explicitly a **stepping stone toward real story mode**: POI placeholders here are the first
+  piece of the eventual mission-giver / POI system (FEAT-21's road POI scatter is the fuller version —
+  siting, variety, story-region tie-ins). Keep this v1 simple (placeholder cubes, deterministic
+  placement within the fixed region) rather than pulling FEAT-21 forward.
+
+### Acceptance additions (POIs)
+
+- [ ] A small number of POIs (translucent cube placeholder mesh) are placed within the fixed Story
+      Mode region, deterministically (same region → same POIs).
+- [ ] Driving within interaction range of a POI and pressing a key triggers mission generation with
+      that POI's location as the mission start point.
+- [ ] The Quick Job / quick-mission flow is unaffected — it can still place start and end anywhere in
+      the region, with or without POIs present.
+- [ ] POI placement and the interact-to-start-mission flow are scoped to Story Mode only (Quick Job /
+      Free Roam behaviour unchanged).
 
 ## Design constraints (from .planning/story-mode/DESIGN.md — read before building)
 
