@@ -35,12 +35,17 @@ still rejected. The fix must memoize the EXPENSIVE INTERMEDIATE, not snap the qu
 the pad-carve neighbourhood/plane data per (node, coarse cell) so the per-sample work is a cheap
 evaluation, or make the 5-pt MIN field itself memoizable with correct interpolation.
 
-## Will Stage 2 fix it? NO (assessed 2026-07-25)
+## RESOLUTION PATH (user decision 2026-07-25): FOLDED INTO QUAL-21 STAGE 2
 
-Stage 2 (deg-2 connector deletion + fillet-ladder collapse) does not remove deg-3/4 pads or
-change `_junctionPadCarve`'s per-sample cost. Independent work item.
+Stage 2 as originally scoped (deg-2 connector deletion + fillet-ladder collapse) would NOT fix
+this — it rewrites what junction geometry is BUILT, not what a per-sample QUERY costs, and even
+a simpler pad re-composes on every jitter-missed cache lookup. Rather than memoizing the current
+pad composition and throwing that work away in the rework, this ticket becomes a HARD DESIGN
+REQUIREMENT of Stage 2: **the junction surface must be cheaply evaluable per physics sample (or
+memoizable per node) under positional jitter** — priced in from the start, gated by the harness
+below. Do NOT start this ticket standalone; close it with Stage 2 against this acceptance.
 
-## Acceptance
+## Acceptance (now a Stage 2 exit criterion)
 
 - Parked-on-pad with jitter within ~1.5× of off-pad per-sample cost (headless harness above).
 - Surface bit-identical (or within float noise) to the unmemoized path — no 0.7 m-class shifts;

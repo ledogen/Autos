@@ -47,6 +47,12 @@ connector for cull-created deg-2 nodes or the crossing-cull interaction gets a r
 (e.g. pairing-aware drop selection — pure direction, no circularity); (c) the seed-6 bank
 marginal verdict. Kink census re-runs via `node test/stroke-spike.mjs` section (4).
 
+**Stage 2 HARD REQUIREMENT (user decision 2026-07-25): PERF-25 folds in** — the reworked
+junction surface must be cheaply evaluable per physics sample (or memoizable per node) under
+positional jitter; parked-on-pad within ~1.5× of off-pad per-sample cost. Full context,
+measurement, and acceptance harness: `perf-25-pad-resolve-parked-jitter.md` (do not work it
+standalone; close it with Stage 2).
+
 ## Stage 0 RESULTS (2026-07-23, commit bf25e79) — read-only spike DONE
 
 `formStrokes` (pure, src/road-graph.js) + `test/stroke-spike.mjs` (rainy-day script). User-approved
