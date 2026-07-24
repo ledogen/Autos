@@ -171,10 +171,16 @@ flips). DIAGNOSTIC-ONLY: the shipped pairing is per-node/node-centred (window-in
 invariance gates green); formStrokes chains are not a product artifact. Ignore unless Stage 2
 later routes whole strokes.
 
-**Remaining for the merge gate:** Phase 5 (junction rework: two canonical shapes, rotated-
-arrival support, PERF-25 ≤1.5× parked-pad harness, deg-2 connector deletion once the census
-shows it no-ops, then deg-3/4 pairing flip) · full `test:all` both flag states · flag-on 9-gate
-matrix + seed-6 bank marginal re-check · user A/B drive · default-on decision as its own step.
+**Phase 4 A/B: USER PASSED (2026-07-24)** — 6-node screenshot pairs (toggles off/on), verdict
+"they all look totally fine"; visible topology diffs attributed to cost-prune degree changes,
+not junction character. PERF-25 harness landed (ac2904e): parked-pad jitter 142 vs off-pad 13
+µs/frame = **10.8× (exit bar ≤1.5×)** — the Phase 5 baseline.
+
+**Remaining = Phase 5**, staged in
+`.planning/handoffs/2026-07-24-qual21-stage2-phase5-plan.md` (survey pointers, design
+direction, exit criteria, commit boundaries): per-node cached pad surface (PERF-25), two
+canonical shapes with rotated arrivals, admission-on-true-tangents → connector deletion,
+deg-3/4 flip; then full `test:all` both flag states, user drive, default-on as its own step.
 
 ## Stage 0 RESULTS (2026-07-23, commit bf25e79) — read-only spike DONE
 
