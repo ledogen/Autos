@@ -1,8 +1,9 @@
 ---
 id: PERF-24
 type: perf
-status: open
+status: resolved
 opened: 2026-07-23
+resolved: 2026-07-23
 severity: major
 source: user-observation (post-junction-merge re-drive) + test/replay.mjs characterization
 relates: [QUAL-16 (deg-2 kink connector), FEAT-40/junction merge (triple-overlay carve), PERF-08 (profiling harness)]
@@ -15,6 +16,52 @@ note: "Severe frame lag when the car SITS ON a specific tight deg-2 kink corner.
 ---
 
 # PERF-24: Severe on-road lag at a tight deg-2 kink corner
+
+## RESOLUTION (2026-07-23)
+
+**Root cause (measured, not guessed).** A headless micro-benchmark at the captured mark (build the real
+road from seed+params, replay the physics contact pattern `carveHint + 5× _sampleCarveWorld` = the
+`analyticNormal` shape) pinned the cost precisely:
+
+- One wheel-contact at the kink = **273 µs** vs **3 µs** on a plain ribbon 40 m back — **~90×**.
+- Of a single `_sampleCarveWorld` (52.7 µs), **`_junctionPadCarve` was 50.4 µs — essentially ALL of it.**
+- `_junctionPadCarve` does a **5-point neighbourhood-MIN**, each point a full `sampleRoadTopY` whose cost
+  is dominated by a fresh **`_resolveRoadSurface` (7.4 µs — abnormally high here because the tight node
+  packs many overlapping run slices into the 3×3 tile block)**. So one pad carve = 5 resolves, and the
+  pad carve runs on all 5 samples of a wheel-normal → **~25 fresh resolves per wheel-contact.** The
+  `carveHint` memo only collapsed the *centre* resolve, never these.
+
+**Fix (cost-only, surface byte-identical).** Added `_resolveRoadSurfaceMemo` — an **EXACT-position**
+(NOT quantized), rev-keyed, size-bounded resolve memo alongside `carveHint`, and route the pad
+neighbourhood-min through it on the physics path (`_junctionPadCarve(..., memo=true)` from
+`_sampleCarveWorld`; the terrain mesh `_buildCarveTable` passes no memo → exact, untouched). Exact keys
+make every hit identical to a fresh resolve — the neighbourhood-min's crease-duck at a Voronoi knife-edge
+is never shifted. The hits come from the ±0.5 m neighbourhood offsets coinciding IEEE-exactly with the
+`analyticNormal` ±0.5 m offsets across a wheel-contact's 25 calls (0.5 is a power of two), plus
+exact-repeat dwelling samples across the death-spiral's catch-up substeps.
+
+> A first attempt reused `carveHint` (0.05 m-quantized) for the neighbourhood samples — REJECTED: at a
+> degenerate-node Voronoi knife-edge the quantization defeated the crease-duck and shifted the physics
+> surface by **0.7 m**. Exact keying was required. (The neighbourhood-min is a MESH-interpolation fix, so
+> physics arguably doesn't need it at all — but removing it changes the drivable surface, out of scope
+> for a cost-only ticket.)
+
+**Result (patched vs original, same benchmark):**
+- **WARM** (dwelling on the corner — the actual symptom / death-spiral regime): **273 → 83 µs (3.3×)**.
+- **COLD** (fast-driving, no cross-substep reuse — pessimistic bound): **277 → 188 µs (1.47×)**.
+- Surface: a 6936-point grid dump of full `_sampleCarveWorld` gradeY diffed **0.0000 mm** vs the stashed
+  original (byte-identical). `npm test` (25 affected road/terrain/carve gates incl. road-smoothness,
+  shoulder-lateral-continuity, carve-mesh-smoothness, window-invariance) all green.
+
+**Remaining:** in-game 60 fps confirmation on the Mac Air is the user's to eyeball (headless proves the
+on-kink carve cost dropped 3.3× and the surface is unchanged; the actual fps depends on the rest of the
+frame). If still short, the next lever is `_resolveRoadSurface`'s own 7.4 µs at dense nodes (helps
+centre + neighbourhood + mesh, bigger change). Router-side: the 11.1 m kink is below the 15 m design min
+— tightening generation would also cap the worst case (tracked separately; the perf path is cheap now
+regardless).
+
+---
+
 
 ## Observed
 
