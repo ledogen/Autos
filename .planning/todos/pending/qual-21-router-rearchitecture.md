@@ -42,10 +42,13 @@ the locked all-degree maximal pairing to DEG-2 NODES ONLY, on measured evidence:
    deg 2→3, different edge survives) overlapping two corridors. BUG-25-class domino
    (headings → routes → crossings → cull decisions), deliberately not papered over.
 
-**Open for the drive / Stage 2 decision:** (a) A/B the deg-2 feel; (b) whether Stage 2 keeps a
-connector for cull-created deg-2 nodes or the crossing-cull interaction gets a real design
-(e.g. pairing-aware drop selection — pure direction, no circularity); (c) the seed-6 bank
-marginal verdict. Kink census re-runs via `node test/stroke-spike.mjs` section (4).
+**DRIVE VERDICT (user, 2026-07-25):** both toggles ON drive fine — Stage 1 A/B PASSED; n=3/4
+junctions read the same as before (intended). Deg-2 elbow-pad fix (2da62fb) "fine, not great" —
+ACCEPTED for now, polish later (Stage 2's post-cull pairing turns most of those elbows into
+continuous through-roads anyway, so don't invest in pad aesthetics before then). Cull-created
+deg-2 coverage + the seed-6 bank marginal are absorbed by the locked Stage 2 architecture
+(topology settles before fine routing). Defaults remain OFF pending the default-on decision
+(needs: bundle regen + resolving the two flag-ON gate marginals as default-config issues).
 
 ## STAGE 2 ARCHITECTURE (user-approved 2026-07-25) — settle topology coarse, fine-route ONCE
 
