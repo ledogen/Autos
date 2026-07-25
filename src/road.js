@@ -80,6 +80,11 @@ const MAX_LEG_SLOPE = 0.30
 // become distinct roads (~r40+).
 const JN_FADE_IN = 22.0
 const JN_FADE_OUT = 34.0
+// QUAL-21 Stage 2 Phase 5: deg-≥3 through-pairing admission — a leg pair reads as a genuine
+// through-road only when its bearing deviation from straight is ≤ this (deg). Measured bracket:
+// 30 green on both gate seeds, 35 readmits a pairing-induced near-self-approach cliff (full
+// evidence at _nodeThroughPairs). Routing-affecting (part of the pairing pure function).
+const PAIR_MAX_DEV_DEG = 30
 // Junction-pad ring geometry (moved from road-mesh.js so the CARVE path is the single source of the
 // welded pad boundary — the mesh now reads road.js's cached node.ring). Not road* params (no route-sig
 // effect). STRAIGHT_GAP: angular gap (rad, ~155°) past which a consecutive-leg corner is a through
@@ -1759,20 +1764,23 @@ export class RoadSystem {
     // WATCH) — they cannot participate without circularity; where they orphan a pairing, the
     // Stage-2 Phase 4 terminal splice repairs the survivors post-cull.
     //
-    // SHIPPED STAGE 1 SCOPE = DEG-2 NODES ONLY (a measured cutback from the plan's all-degree
-    // maximal pairing — 2026-07-25):
-    //  · At a (degree-simmed) deg-2 node the pairing is structurally CULL-SAFE: the ring passes
-    //    can only delete a whole leg (node becomes a dead-end stub — no junction left to kink),
-    //    never leave a MISPAIRED junction behind. At deg-≥3, a later crossing/clearance cull of
-    //    the paired leg left the two surviving runs kinked up to ~108° with a heading aimed at
-    //    the ghost edge (5/13 deg-2 nodes on the census band were cull-created this way).
-    //  · Rotated arrivals BREAK THE JUNCTION PADS even when the pairing is clean: with all-degree
-    //    pairing the shoulder-lateral-continuity gate failed at a cleanly-paired deg-4 pad
-    //    (1.67 m lateral step vs the 0.70 m plaza tolerance, seed 6 (1116,-171)) — the pad's
-    //    ruled blend + fillet ladder assume chord arrivals. Absorbing deg-3/4 (through + T-branch,
-    //    through × through) therefore lands WITH the Stage 2 junction rework, not as a
-    //    headings-only override. throughPairsAt (road-graph.js) is already degree-general and
-    //    waits there.
+    // SCOPE (Stage 2 Phase 5, 2026-07-25): deg-2 unconditional + deg-≥3 DEVIATION-GATED.
+    //  · Deg-2 pairing is unconditional (Stage 1 shipped scope) — structurally cull-safe (a ring
+    //    cull can only turn the node into a dead-end stub) and any kink size is absorbed by the
+    //    connector/splice machinery.
+    //  · Deg-≥3 legs pair ONLY when the pair reads as a genuine through-road: bearing deviation
+    //    from straight ≤ PAIR_MAX_DEV_DEG. Stage-1's all-degree MAXIMAL pairing (no vetoes) was
+    //    measured to tear pads twice: unconditionally forced pairs prescribe headings far off the
+    //    legs' natural bearings, and the router absorbs the rotation as a hardR terminal S-curl
+    //    that (a) creates a bimodal projection zone past the junction blend's radial fade (1.9 m
+    //    shoulder step at seed-6 (1115,-149)) and (b) can re-route the edge into a near-self-
+    //    approach whose height gap dwarfs the FEAT-40 rival cross-fade band (3.6–10.9 m cliffs at
+    //    seed-7 (243,161), pair dev 30–35°). At ≤30° the prescribed heading stays near-natural —
+    //    measured green: shoulder-lateral-continuity passes BOTH seeds (6: worst 0.066 m, vs
+    //    0.510 marginal deg-2-only; 7: 0.689 = its pre-existing marginal, untouched). 35° readmits
+    //    the seed-7 offender; the sweep bracketed the edge. Unpaired legs stay T-branch chords —
+    //    deg-3 = through + T-branch, deg-4 = through × through where both pairs qualify, so the
+    //    two canonical junction shapes EMERGE from the admission instead of being forced.
     _nodeThroughPairs(nodeId) {
         if (!this._throughPairsMemo || this._throughPairsMemo.rev !== this._networkRev)
             this._throughPairsMemo = { rev: this._networkRev, map: new Map() }
@@ -1790,7 +1798,7 @@ export class RoadSystem {
         const drop = this._degreeDropSet(g)
         const nbrs0 = g.adj.get(nk)
         const nbrs = (nbrs0 && drop.size) ? new Set([...nbrs0].filter(o => !drop.has(nk + '|' + o))) : nbrs0
-        if (nbrs && nbrs.size === 2) {   // deg-2 ONLY (Stage 1 shipped scope — see header)
+        if (nbrs && nbrs.size >= 2) {
             const amp = this._params?.terrainAmplitude ?? 1
             const node = { x: p.x, z: p.z, h: this._coarseH(p.x, p.z) * amp }
             // Sorted leg order → deterministic candidate tie-breaks regardless of Set iteration.
@@ -1798,7 +1806,9 @@ export class RoadSystem {
                 const q = this._nodePos(k.split(',').map(Number))
                 return { key: k, x: q.x, z: q.z, h: this._coarseH(q.x, q.z) * amp }
             })
-            for (const [a, b] of throughPairsAt(node, legs)) { m.set(a, b); m.set(b, a) }
+            // Deg-≥3: admission-gated (see scope note above); deg-2: unconditional maximal.
+            const opts = nbrs.size >= 3 ? { maxDevDeg: PAIR_MAX_DEV_DEG } : {}
+            for (const [a, b] of throughPairsAt(node, legs, opts)) { m.set(a, b); m.set(b, a) }
         }
         memo.set(nk, m)
         return m

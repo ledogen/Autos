@@ -28,8 +28,12 @@ const MESH_EXT  = carveHW + sw          // the mesh's raised-embankment lateral 
 const DLAT      = 0.2
 const SUPPORT_TO = carveHW              // physics must stay supported out to at least the blendW=1 core
 // Max analyticHeight step. The intended road-edge dropoff (roadClearanceMargin, BUG-15) is the largest
-// allowed; the raw embankment toe's own steepness stays under it.
-const STEP_TOL   = (RANGER_PARAMS.roadClearanceMargin ?? 0.25) + 0.05
+// allowed; the raw embankment toe's own steepness stays under it. Under the saturating-camber model
+// the edge drop also carries the cross-slope over one DLAT — sin(camberMax)·DLAT (measured 0.204 m
+// at a −14.5° cambered deep-fill curve = 0.15 clearance + 0.25·0.2 camber + crown; QUAL-21 Phase 5's
+// deg-3/4 pairing merely moved the deepest-fill sample onto such a curve) — model that term too.
+const STEP_TOL   = (RANGER_PARAMS.roadClearanceMargin ?? 0.25)
+                 + Math.sin((RANGER_PARAMS.camberMaxAngleDeg ?? 20) * Math.PI / 180) * DLAT + 0.05
 
 let pass = 0, fail = 0
 const log = (ok, name, msg) => {
