@@ -4575,6 +4575,17 @@ export class RoadSystem {
         // every kinked 2-leg cluster; _buildDeg2ArcGeom's own guards (R < halfWidth → null) decide
         // arc vs pad-ladder fallback, exactly as the deg-3 ladder would.
         const kinkMin = (this._params.roadJunctionKinkDeg ?? 0) * Math.PI / 180
+        // QUAL-21 Phase 5b-1 DECISION (2026-07-25): the admission KEEPS the first-chord proxy.
+        // A true-analytic-tangent admission was implemented and measured — it fails BOTH ways:
+        //  · it drops the connector at G1 S-joints / cull-created corridor welds whose bench was
+        //    covering a real camber/grade SEAM (0.875 m knife-edge at seed-6 (-888,-488) lat 10);
+        //  · it newly admits connectors at true-kink nodes the chord read as smooth, whose bench
+        //    then FLATTENS a legitimately banked sweeper (same node, same step size).
+        // The chord kink ≈ heading kink + curvature/camber activity inside the first chord — an
+        // accidental but empirically better-calibrated "does a bench help here" detector than pure
+        // heading. The two census over-admissions (11.2°/13.5° first-chord, true kink ≈ 0) are
+        // cosmetic paved corners, accepted. Connector DELETION is off the table regardless: 6/12
+        // census deg-2 nodes are cull-created with real kinks (up to 89.5°) that need the bench.
         for (const c of clusters) {
             if (c.legs.length < 2) continue
             if (c.legs.length === 2) {
