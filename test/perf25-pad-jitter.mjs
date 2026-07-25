@@ -6,7 +6,7 @@
 //   (2) parked ON the pad with 3 mm positional jitter (suspension noise — the PERF-25 miss)
 //   (3) parked mid-edge OFF-pad, same jitter (control)
 //
-// Ticket baseline (2026-07-25, flags on): exact 115 · jitter 227 · off-pad 37 µs/frame.
+// Ticket baseline (2026-07-25, pre-fix): exact 115 · jitter 227 · off-pad 37 µs/frame.
 // STAGE 2 PHASE 5 EXIT CRITERION: (2) ≤ 1.5 × (3). Also sanity-prints height agreement between
 // jittered and exact center resolves (no 0.7 m-class quantization shifts — the PERF-24 trap).
 //
@@ -19,12 +19,12 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { parseWorldSeed } from '../src/seed.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
-const P = { ...RANGER_PARAMS, roadNetworkMode: 'graph', roadStrokeRouting: true, roadGraphCostPrune: true }
+const P = { ...RANGER_PARAMS, roadNetworkMode: 'graph' }
 const PAD = { x: -99.9, z: 172.4 }
 const FRAMES = 2000
 const JITTER = 0.003   // m — measured suspension noise scale
 
-console.log('━━ PERF-25 pad-resolve harness — seed 6, both toggles on ━━')
+console.log('━━ PERF-25 pad-resolve harness — seed 6, default params ━━')
 let t0 = Date.now()
 const r = new RoadSystem(6, P)
 r.setRadius(800)

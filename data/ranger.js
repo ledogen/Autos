@@ -532,17 +532,9 @@ export const RANGER_PARAMS = {
   // roadGraphWAlt: the router's valley-seeking weight (wAlt). Higher = roads dive harder for low ground =
   // more terrain-hugging wander. 2.0 (windiness stage).
   roadGraphWAlt: 2.0,
-  // roadStrokeRouting (QUAL-21 Stage 1): DEG-2 pass-through nodes absorbed AT ROUTE TIME — both
-  // edges at a degree-2 node prescribe the SAME canonical terminal heading (the through chord
-  // between the two neighbours) instead of each edge's own chord bearing, so the road continues
-  // through the node without a heading kink and the deg-2 connector no-ops under its 9°
-  // admission. Deg-≥3 nodes keep today's chord headings: rotated arrivals measurably tear the
-  // junction pads' ruled blends (shoulder-lateral-continuity red at a cleanly-paired deg-4 pad),
-  // so through+branch classification at junctions lands WITH the Stage 2 junction rework — see
-  // road.js _nodeThroughPairs header. Routing stays strictly per-edge — caches, Worker prewarm,
-  // and window-invariance untouched. OFF (bit-exact legacy headings) until the Stage 1 A/B
-  // drive sign-off.
-  roadStrokeRouting: false,
+  // (QUAL-21 stroke routing lived here 2026-07-24→25 and was DELETED after the A/B drive verdict:
+  // prescribed through-headings make the router absorb rotations as terminal wiggle — "crunchy"
+  // roads. Full findings in .planning/todos/completed/qual-21-router-rearchitecture.md.)
   // roadGraphCostPrune (QUAL-22): the Urquhart pruning votes by TERRAIN COST instead of length —
   // each Delaunay triangle drops its most-EXPENSIVE edge, where cost = the coarse-height chord
   // line integral priced with the router's own proto weights (road.js _chordCost — wDist/wAlt/

@@ -1,7 +1,7 @@
 ---
 id: QUAL-21
 type: qual
-status: open
+status: closed
 opened: 2026-07-23
 severity: major
 source: user-request (router perf + junction-complexity exploration, feature/router-perf worktree)
@@ -363,3 +363,39 @@ edges re-run the whole search up to 16× (`SELF_CLEAR_MAX_REPAIR`). Un-shipped l
 Coarse cost-to-go heuristic (shipped), hard tube corridor (reverted, character damage), cheapening the
 coarse pass (net regression), wHeur inflation (dead — field replaced it), dendritic/forest topology,
 perturbed-grid anchors, hard grade block, 2-D-blur grade pricing, re-interpolated centerline.
+
+## CLOSED (2026-07-25) — IMPLEMENTED, A/B-REJECTED ON DRIVE FEEL, DELETED
+
+The full Stage 1 + Stage 2 pipeline was implemented, gated green (final matrix: flag-off
+test:all 40/40; flag-on 39/40 with only the stale-by-design bundle gate), and A/B-driven.
+**User verdict: flag-on roads are worse — "the coarse router clearly prefers big long curves
+which make it wiggle constantly, very unsure of itself … crunchy."** The mechanism matches the
+Phase-5 diagnostics: prescribed through-headings force the router to absorb rotations as
+terminal maneuvering (hardR S-curls), and taming that curvature would be router work spent
+fixing a problem the feature itself introduces — while toggles-off intersections already read
+fine (the flag-independent junction work below is what fixed them).
+
+**All stroke-routing machinery DELETED** per the no-dead-code convention (this ticket + git
+history hold the story): `roadStrokeRouting` param/toggle/tooltip, `_nodeThroughPairs` +
+`_throughHeadingAt` + `PAIR_MAX_DEV_DEG`, `_edgeLeaveHeading` (callers back on
+`_edgeTerminalHeading`), `_spliceOrphanedPairs` + `_spliceRunTerminal` + `spliceLeaveA/B`,
+`throughPairsAt` + `formStrokes` (road-graph.js), the road-carve `dubinsPrimitives` re-export,
+`test/stroke-spike.mjs`, `test/stage2-crossing-agreement.mjs`. Route bundle regenerated
+(routes byte-identical; only the param-set signature changed). Full suite 40/40 green.
+
+**KEPT (flag-independent wins, merged to main):**
+- PERF-25 fix: bit-exact resolver acceleration (`_resolveCellCands`/`_projectOntoRunRanges`/
+  `_legProjWin`/`Centerline._poseInto`) + the resolve-free `_nodeSurfaceTop` pad surface
+  (5-pt neighbourhood-MIN + PERF-24 memo deleted). Parked-pad 227→19 µs/frame.
+- Stage 2 Phase 2: spec-time `_degreeDropSet` (doomed edges never route; the Stage-1 degree
+  simulation deleted).
+- Deg-2 elbow admission fix (2da62fb, no upper kink cap) + the QUAL-16 connector, which stays
+  load-bearing (real cull-created elbows) — the 5b-1 finding that the first-chord admission is
+  the right seam detector is recorded inline at `_detectNodeJunctions`.
+- road-fill-support STEP_TOL models the saturating-camber edge-drop term.
+
+Key negative findings for future road work (do NOT re-learn): maximal all-degree pairing
+DISPROVEN twice (pad tears + self-approach cliffs); a 30° deviation admission makes gates
+green but the drive feel stays wiggly — the objection is to prescribed headings as such;
+true-tangent connector admission DISPROVEN both ways (drops seam benches / adds
+bank-flattening benches); cull-on-coarse DISPROVEN (Phase 0).

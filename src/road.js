@@ -35,9 +35,9 @@
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
-import { crownProfile, potholeNoise, signedCurvature, arcPrimitiveConnect, smoothGradeInPlace, applyTunnelPassInPlace, DEEP_BANK_TOE_EXTRA, dubinsPrimitives } from './road-carve.js'
+import { crownProfile, potholeNoise, signedCurvature, arcPrimitiveConnect, smoothGradeInPlace, applyTunnelPassInPlace, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
 import { centerlineFromDescriptors, CenterlineCurve, Centerline } from './centerline.js'
-import { delaunay, urquhartEdges, throughPairsAt } from './road-graph.js'
+import { delaunay, urquhartEdges } from './road-graph.js'
 
 // FEAT-13 v2: total order on site ids [cmx,cmz,k] — the Poisson-disk priority tie-break.
 function idLess(a, b) { return a[0] !== b[0] ? a[0] < b[0] : (a[1] !== b[1] ? a[1] < b[1] : a[2] < b[2]) }
@@ -80,11 +80,6 @@ const MAX_LEG_SLOPE = 0.30
 // become distinct roads (~r40+).
 const JN_FADE_IN = 22.0
 const JN_FADE_OUT = 34.0
-// QUAL-21 Stage 2 Phase 5: deg-≥3 through-pairing admission — a leg pair reads as a genuine
-// through-road only when its bearing deviation from straight is ≤ this (deg). Measured bracket:
-// 30 green on both gate seeds, 35 readmits a pairing-induced near-self-approach cliff (full
-// evidence at _nodeThroughPairs). Routing-affecting (part of the pairing pure function).
-const PAIR_MAX_DEV_DEG = 30
 // Junction-pad ring geometry (moved from road-mesh.js so the CARVE path is the single source of the
 // welded pad boundary — the mesh now reads road.js's cached node.ring). Not road* params (no route-sig
 // effect). STRAIGHT_GAP: angular gap (rad, ~155°) past which a consecutive-leg corner is a through
@@ -1746,99 +1741,6 @@ export class RoadSystem {
         return Math.atan2(b.z - a.z, b.x - a.x)
     }
 
-    // ── QUAL-21 stroke-routing: through-pairing over the settled topology ────────────────────────
-    // _nodeThroughPairs — the maximal through-pairing (road-graph.js throughPairsAt) of a node's
-    // SETTLED Urquhart legs (raw adjacency minus the spec-time degree drops — the same canonical
-    // _degreeDropSet decisions assembly/warm/cull apply), as Map nbrKey → partnerKey. Built over a
-    // NODE-CENTRED _buildUrquhart neighbourhood (persist=false — the same window-invariance trick
-    // as _edgeDeps; reading the streaming band graph would make the pairing depend on the stream
-    // center), with the SAME wide margin the cull's dedicated graph uses so the degree decisions
-    // see the full detour neighbourhood. Leg heights are amplitude-scaled coarse heights (real
-    // metres) so the pair score's grade penalty speaks m/m. Memoized per _networkRev.
-    //
-    // WHY pairing must apply the degree drops: the built world is raw Urquhart MINUS the culls,
-    // and pairing against a dropped leg aims the through-road at a sibling that does not exist
-    // (measured: 65–108° kinks at deg-2 nodes whose raw degree was 3). The degree pass is pure
-    // topology, so the pairing here is still a pure fn of (seed, params, node). The ring-scoped
-    // crossing/clearance passes DO read routed geometry and are window-asymmetric (the BUG-25
-    // WATCH) — they cannot participate without circularity; where they orphan a pairing, the
-    // Stage-2 Phase 4 terminal splice repairs the survivors post-cull.
-    //
-    // SCOPE (Stage 2 Phase 5, 2026-07-25): deg-2 unconditional + deg-≥3 DEVIATION-GATED.
-    //  · Deg-2 pairing is unconditional (Stage 1 shipped scope) — structurally cull-safe (a ring
-    //    cull can only turn the node into a dead-end stub) and any kink size is absorbed by the
-    //    connector/splice machinery.
-    //  · Deg-≥3 legs pair ONLY when the pair reads as a genuine through-road: bearing deviation
-    //    from straight ≤ PAIR_MAX_DEV_DEG. Stage-1's all-degree MAXIMAL pairing (no vetoes) was
-    //    measured to tear pads twice: unconditionally forced pairs prescribe headings far off the
-    //    legs' natural bearings, and the router absorbs the rotation as a hardR terminal S-curl
-    //    that (a) creates a bimodal projection zone past the junction blend's radial fade (1.9 m
-    //    shoulder step at seed-6 (1115,-149)) and (b) can re-route the edge into a near-self-
-    //    approach whose height gap dwarfs the FEAT-40 rival cross-fade band (3.6–10.9 m cliffs at
-    //    seed-7 (243,161), pair dev 30–35°). At ≤30° the prescribed heading stays near-natural —
-    //    measured green: shoulder-lateral-continuity passes BOTH seeds (6: worst 0.066 m, vs
-    //    0.510 marginal deg-2-only; 7: 0.689 = its pre-existing marginal, untouched). 35° readmits
-    //    the seed-7 offender; the sweep bracketed the edge. Unpaired legs stay T-branch chords —
-    //    deg-3 = through + T-branch, deg-4 = through × through where both pairs qualify, so the
-    //    two canonical junction shapes EMERGE from the admission instead of being forced.
-    _nodeThroughPairs(nodeId) {
-        if (!this._throughPairsMemo || this._throughPairsMemo.rev !== this._networkRev)
-            this._throughPairsMemo = { rev: this._networkRev, map: new Map() }
-        const nk = `${nodeId[0]},${nodeId[1]},${nodeId[2]}`   // matches _buildUrquhart's g.key
-        const memo = this._throughPairsMemo.map
-        let m = memo.get(nk)
-        if (m) return m
-        m = new Map()
-        const p = this._nodePos(nodeId)
-        const mx = Math.floor(p.x / PROTO_ANCHOR_SPACING), mz = Math.floor(p.z / PROTO_ANCHOR_SPACING)
-        // Same margin recipe as _cullNetwork's dedicated detour graph (road.js:2029) — the degree
-        // decisions this window computes for edges near the node then match the cull's own.
-        const M = (this._params?.roadGraphMargin ?? 3) + (this._params?.roadGraphCullMaxHops ?? 4) + 1
-        const g = this._buildUrquhart(mx, mx, mz, mz, false, M)
-        const drop = this._degreeDropSet(g)
-        const nbrs0 = g.adj.get(nk)
-        const nbrs = (nbrs0 && drop.size) ? new Set([...nbrs0].filter(o => !drop.has(nk + '|' + o))) : nbrs0
-        if (nbrs && nbrs.size >= 2) {
-            const amp = this._params?.terrainAmplitude ?? 1
-            const node = { x: p.x, z: p.z, h: this._coarseH(p.x, p.z) * amp }
-            // Sorted leg order → deterministic candidate tie-breaks regardless of Set iteration.
-            const legs = [...nbrs].sort().map(k => {
-                const q = this._nodePos(k.split(',').map(Number))
-                return { key: k, x: q.x, z: q.z, h: this._coarseH(q.x, q.z) * amp }
-            })
-            // Deg-≥3: admission-gated (see scope note above); deg-2: unconditional maximal.
-            const opts = nbrs.size >= 3 ? { maxDevDeg: PAIR_MAX_DEV_DEG } : {}
-            for (const [a, b] of throughPairsAt(node, legs, opts)) { m.set(a, b); m.set(b, a) }
-        }
-        memo.set(nk, m)
-        return m
-    }
-
-    // The canonical LEAVE-heading override at `nodeId` toward `otherId`: when the leg toward
-    // `otherId` is through-paired with neighbour P, BOTH edges of the pair prescribe the same
-    // through chord — bearing P→other — so the deg-2 heading kink vanishes as a data agreement
-    // (the deg-2 connector then no-ops under its 9° admission) and paired deg-3/4 legs meet as
-    // one continuous through-road. null when the leg is unpaired (a T-branch keeps its own
-    // chord heading) or the local graph doesn't know the edge.
-    _throughHeadingAt(nodeId, otherId) {
-        const partner = this._nodeThroughPairs(nodeId).get(`${otherId[0]},${otherId[1]},${otherId[2]}`)
-        if (partner === undefined) return null
-        const P = this._nodePos(partner.split(',').map(Number)), o = this._nodePos(otherId)
-        return Math.atan2(o.z - P.z, o.x - P.x)
-    }
-
-    // The leave-heading every consumer must read — the route spec (_routeOptsBetween) AND the
-    // ribbon weld target (_buildRunProfile's join weld) go through here so they always agree:
-    // the stroke-routing override when roadStrokeRouting is on and the leg is paired, else the
-    // edge's own chord bearing (_edgeTerminalHeading — today's behaviour, bit-exact).
-    _edgeLeaveHeading(at, toward) {
-        if (this._params?.roadStrokeRouting) {
-            const h = this._throughHeadingAt(at, toward)
-            if (h !== null) return h
-        }
-        return this._edgeTerminalHeading(at, toward)
-    }
-
     // ── FEAT-13 v2 graph topology — Urquhart graph over a blue-noise anchor set ──────────────────────
     // The lattice (one grid anchor per cell + spanning-forest neighbour edges) is replaced by:
     //   (1) BLUE-NOISE anchor SITES — multiple seeded candidates per macro-cell, Poisson-disk thinned, so
@@ -2244,138 +2146,6 @@ export class RoadSystem {
         }
     }
 
-    // ── QUAL-21 Stage 2 Phase 4: terminal splices at cull-orphaned pairings ──────────────────────
-    // The crossing/clearance culls read ROUTED geometry, so they run post-routing — no spec-time
-    // pairing can see them (measured, Phase 0: their crossings are shared-node sub-lattice
-    // geometry). When they drop a leg at a node whose surviving degree is 2, the two survivor
-    // runs meet with a kink: either their pairing aimed at the now-dead leg, or the node's raw
-    // degree was ≥3 so Stage-1 deg-2 pairing never covered it (10/14 census deg-2 nodes are this
-    // class — the elbow-pad "fine, not great" look). Repair = re-emit each survivor's terminal
-    // (last ~goalBlend m of whole primitives) as an analytic Dubins run into the node at the
-    // corrected through heading (chord between the two far endpoints — the same formula
-    // _throughHeadingAt prescribes). Zero searches, radius-valid by construction (hardR floor).
-    //
-    // Determinism/purity: a pure fn of (survivor routes, node, params). It inherits the cull's
-    // ring-scoped window asymmetry (BUG-25 WATCH) — the same class the elbow-pad fallback already
-    // keys off, no new asymmetry source. The per-edge route caches (_proto.cls) are NEVER touched:
-    // the splice decorates only the REGISTERED entry, and a re-stream re-derives it from the pure
-    // route + the (deterministic) cull outcome. Runs whose kink survives the guards (too short to
-    // cut, degenerate Dubins) keep the elbow-pad fallback — it becomes rare, not load-bearing.
-    _spliceOrphanedPairs() {
-        if (!this._params?.roadStrokeRouting) return false
-        const g = this._proto.graph
-        if (!g || this._network.size < 2) return false
-        const runsAt = new Map()   // nodeKey → [{e, id}]
-        for (const [, e] of this._network) {
-            if (!e.cellA || !e.cellB || !e.centerline?.primitives?.length) continue
-            for (const id of [e.cellA, e.cellB]) {
-                const k = g.key(id)
-                ;(runsAt.get(k) || runsAt.set(k, []).get(k)).push({ e, id })
-            }
-        }
-        const pp = this._params || {}
-        const halfW = pp.roadHalfWidth ?? 5, clearance = pp.roadClearanceMargin ?? 0.5
-        const hardR = Math.max(pp.roadArcHardRadius ?? 8, halfW + clearance + 0.1)
-        const CUT = Math.max(pp.roadGraphGoalBlend ?? 60, 40)
-        let spliced = 0
-        for (const [nk, runs] of [...runsAt.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1)) {
-            if (runs.length !== 2) continue
-            if ((g.adj.get(nk)?.size ?? 0) !== 2) continue
-            const farOf = (r) => (r.id === r.e.cellA ? r.e.cellB : r.e.cellA)
-            const F0 = this._nodePos(farOf(runs[0])), F1 = this._nodePos(farOf(runs[1]))
-            // Corrected leave headings: the through chord between the two far endpoints — leg i
-            // leaves the node in the direction (other leg's far → own far), anti-parallel by
-            // construction (identical to _throughHeadingAt with the survivor as partner).
-            const h0 = Math.atan2(F0.z - F1.z, F0.x - F1.x)
-            if (this._spliceRunTerminal(runs[0].e, runs[0].id, h0, hardR, CUT)) spliced++
-            if (this._spliceRunTerminal(runs[1].e, runs[1].id, h0 + Math.PI, hardR, CUT)) spliced++
-        }
-        return spliced > 0
-    }
-
-    // Splice ONE run's terminal at `nodeId` to leave-heading `hCorr`. No-op (false) when the run
-    // already leaves within SPLICE_EPS of hCorr (raw-deg-2 paired runs — prescribed spec-time,
-    // exactly this chord), is too short to cut, or the Dubins would loop (guards below).
-    _spliceRunTerminal(e, nodeId, hCorr, hardR, CUT) {
-        const SPLICE_EPS = 2 * Math.PI / 180   // rad — below this the connector admission no-ops anyway
-        const cl = e.centerline
-        if (cl.length < 2.5 * CUT) return false
-        const N = this._nodePos(nodeId)
-        const p0 = cl.pointAt(0), pL = cl.pointAt(cl.length)
-        const atStart = (p0.x - N.x) ** 2 + (p0.z - N.z) ** 2 <= (pL.x - N.x) ** 2 + (pL.z - N.z) ** 2
-        const t = atStart ? cl.tangentAt(0) : cl.tangentAt(cl.length)
-        const hCur = atStart ? Math.atan2(t.z, t.x) : Math.atan2(-t.z, -t.x)   // leave = away from node
-        let d = Math.abs(hCur - hCorr) % (2 * Math.PI)
-        if (d > Math.PI) d = 2 * Math.PI - d
-        if (d < SPLICE_EPS) return false
-        const prims = cl.primitives
-        // Attempt ladder (the refit-shortcut descending-rho pattern, plus a deeper-cut tier): the
-        // splice sits AT the node — a through-road should bend there as gently as the freed span
-        // allows, not at hardR (measured: hardR arcs on both legs read ~23° on the connector's
-        // first-chord proxy — over its 9° admission despite exact G1 tangents; ≥30 m radii read
-        // well under it). When a big kink + short freed span rejects every gentle radius (the
-        // Dubins word loops), free TWICE the span before surrendering to hardR — replacing 120 m
-        // of a 500+ m run with one gentle analytic bend beats a min-radius elbow at the node
-        // (measured: 2 nodes/band landed at hardR without this tier).
-        const GENTLE = [80, 50, 30].filter(r => r > hardR)
-        const plans = []
-        for (const cutLen of [CUT, 2 * CUT]) {
-            if (cl.length < 2.5 * cutLen) break
-            for (const rho of GENTLE) plans.push([cutLen, rho])
-        }
-        plans.push([CUT, hardR])
-        let newPrims = null
-        for (const [cutLen, rho] of plans) {
-            if (atStart) {
-                // Drop leading whole primitives until ≥ cutLen is freed; Dubins node→cut-pose.
-                let acc = 0, k = 0
-                while (k < prims.length - 1 && acc < cutLen) { acc += prims[k].length; k++ }
-                const cp = prims[k]   // first KEPT primitive — its start pose is the cut pose
-                const dub = dubinsPrimitives(N.x, N.z, hCorr, cp.x0, cp.z0, cp.theta0, rho)
-                if (!dub || !dub.length) continue
-                let dl = 0; for (const p of dub) dl += p.length
-                if (dl > acc + 6 * hardR + cutLen) continue   // loops at this rho/cut — next attempt
-                newPrims = dub.concat(prims.slice(k))
-            } else {
-                // Drop trailing whole primitives until ≥ cutLen is freed; Dubins cut-pose→node,
-                // arriving in the travel direction INTO the node (= opposite of the leave heading).
-                let acc = 0, k = prims.length
-                while (k > 1 && acc < cutLen) { k--; acc += prims[k].length }
-                const cp = prims[k]   // first DROPPED primitive — its start pose is the cut pose
-                const dub = dubinsPrimitives(cp.x0, cp.z0, cp.theta0, N.x, N.z, hCorr + Math.PI, rho)
-                if (!dub || !dub.length) continue
-                let dl = 0; for (const p of dub) dl += p.length
-                if (dl > acc + 6 * hardR + cutLen) continue
-                newPrims = prims.slice(0, k).concat(dub)
-            }
-            if (newPrims) break
-        }
-        if (!newPrims) return false   // degenerate at every attempt — keep the elbow fallback
-        const ncl = centerlineFromDescriptors(newPrims)
-        if (!ncl || ncl.length < 1e-6) return false
-        // Rebuild the registered entry through the SAME pipeline _assembleGraphEdges runs — sample,
-        // grade, tunnel pass, cumulative arcs — so downstream (slice/carve/physics/profiles) sees a
-        // spliced run exactly as if it had been routed this way.
-        const n = Math.max(1, Math.ceil(ncl.length / PROTO_SAMPLE_DS))
-        const pts = new Array(n + 1)
-        const clArc = new Float64Array(n + 1)
-        for (let i = 0; i <= n; i++) {
-            const s = ncl.length * i / n
-            clArc[i] = s
-            const p = ncl.pointAt(s)
-            pts[i] = new THREE.Vector3(p.x, this._coarseH(p.x, p.z), p.z)
-        }
-        this._gradeEdgeInPlace(pts, this._params?.roadGraphDeviationCap ?? 2)
-        const tunnelSpans = applyTunnelPassInPlace(pts, this._tunnelPassOpts(), (x, z) => this._coarseH(x, z))
-        const polyCum = new Float64Array(n + 1)
-        for (let i = 1; i <= n; i++) polyCum[i] = polyCum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
-        e.points = pts; e.centerline = ncl; e.polyCum = polyCum; e.clArc = clArc; e.tunnelSpans = tunnelSpans
-        // The ribbon weld must target the SPLICED heading, not the stale spec prescription — the
-        // run-profile weld reads these overrides (see the roadJoinWeldLength block).
-        if (atStart) e.spliceLeaveA = hCorr; else e.spliceLeaveB = hCorr
-        return true
-    }
-
     // PERF-worldgen degree pass (user connectivity preference): at any node whose graph degree
     // exceeds roadGraphMaxDegree, drop incident edges LONGEST CHORD FIRST (the long diagonal is
     // the redundant triangle hypotenuse — the shorter legs already connect it), each drop allowed
@@ -2385,8 +2155,7 @@ export class RoadSystem {
     // returned as a drop-pair-key Set (both orders) over a wide graph. It is PURE TOPOLOGY (chords
     // + candidate-excluded BFS — no routed geometry), so it runs at SPEC TIME: _assembleGraphEdges
     // applies the drops BEFORE routing (doomed edges are never routed — was: route then cull),
-    // the warm paths skip them, _cullNetwork's ring excludes them, and _nodeThroughPairs pairs
-    // over the settled adjacency. This replaced the Stage-1 _degreeCulledNbrsAt SIMULATION (a
+    // the warm paths skip them, and _cullNetwork's ring excludes them. This replaced the Stage-1 _degreeCulledNbrsAt SIMULATION (a
     // hand-mirrored copy under a DEGREE SIM SYNC rule — a drift hazard with no reason to exist).
     //
     // WINDOW-INVARIANCE (two failed designs taught this — both caught by the cull-radius gate as
@@ -2562,13 +2331,11 @@ export class RoadSystem {
             // _edgeTerminalHeading(c2,c1) is the LEAVE direction at c2 (bearing c2→c1) = the reverse of
             // arrival, so a directed router would loop around to approach c2 from the wrong side (the "enter
             // from the wrong side" / shallow near-node crossing). +π flips it to the arrival direction.
-            // (startHeading is already the leave-at-c1 = forward direction.) QUAL-21 Stage 1:
-            // both go through _edgeLeaveHeading, which substitutes the canonical through-chord
-            // heading at through-paired legs when roadStrokeRouting is on (flag off = bit-exact
-            // today's chord bearings). The heading rides this spec, and _edgeRouteSpec feeds both
-            // the Worker prewarm and the sync fallback → worker/sync parity is free.
-            startHeading: this._edgeLeaveHeading(c1, c2),
-            goalHeading:  this._edgeLeaveHeading(c2, c1) + Math.PI,
+            // (startHeading is already the leave-at-c1 = forward direction.) The heading rides
+            // this spec, and _edgeRouteSpec feeds both the Worker prewarm and the sync fallback
+            // → worker/sync parity is free.
+            startHeading: this._edgeTerminalHeading(c1, c2),
+            goalHeading:  this._edgeTerminalHeading(c2, c1) + Math.PI,
             // FEAT-13: a WIDE goal blend. The hybrid-A* search overshoots short edges' goal node (wanders
             // past it, then the terminal reels back) → the edge bows past the node and crosses a sibling
             // TWICE (the "happens twice" double-cross the user flagged). Cutting back a wide tail (~140 m)
@@ -3093,12 +2860,7 @@ export class RoadSystem {
         // (Degree-cap drops are applied inside _assembleGraphEdges — spec-time, pre-routing;
         // _cullNetwork now runs only the routed-geometry passes.)
         if (this._params?.roadGraphCullCrossings ?? true) {
-            const culled = this._cullNetwork(mx0, mx1, mz0, mz1)
-            // QUAL-21 Stage 2 Phase 4: repair cull-orphaned pairings (surviving deg-2 elbows)
-            // with analytic terminal splices BEFORE junctions re-detect — the re-detect and every
-            // later consumer (profiles, carve, classifier) then see the continuous through-road.
-            const splicedAny = this._spliceOrphanedPairs()
-            if (culled || splicedAny) { this._junctionsFrom = null; this._detectJunctions() }
+            if (this._cullNetwork(mx0, mx1, mz0, mz1)) { this._junctionsFrom = null; this._detectJunctions() }
         }
 
         // FEAT-40: crossings are only known now — a bore span may not contain an AT_GRADE crossing
@@ -6476,12 +6238,8 @@ export class RoadSystem {
         {
             const Rw = p.roadJoinWeldLength ?? 6
             if (Rw > 0 && netEntry.cellA && netEntry.cellB) {
-                // QUAL-21: _edgeLeaveHeading, not _edgeTerminalHeading — the weld target must be
-                // the SAME heading the route spec prescribed or stroke-routing shifts the welds.
-                // Phase 4: a terminal SPLICE re-aimed the geometry post-cull — its stored heading
-                // overrides the (stale) spec prescription at that end.
-                const hS = netEntry.spliceLeaveA ?? this._edgeLeaveHeading(netEntry.cellA, netEntry.cellB)
-                const hE = netEntry.spliceLeaveB ?? this._edgeLeaveHeading(netEntry.cellB, netEntry.cellA)
+                const hS = this._edgeTerminalHeading(netEntry.cellA, netEntry.cellB)
+                const hE = this._edgeTerminalHeading(netEntry.cellB, netEntry.cellA)
                 let sx = Math.cos(hS), sz = Math.sin(hS), ex = Math.cos(hE), ez = Math.sin(hE)
                 const fwdS = tx[0] * sx + tz[0] * sz >= 0, fwdE = tx[N - 1] * ex + tz[N - 1] * ez >= 0
                 const aS = arcPos[0], aE = arcPos[N - 1]
