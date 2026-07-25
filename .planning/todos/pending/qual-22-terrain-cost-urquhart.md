@@ -12,6 +12,23 @@ note: "Topology-level terrain character: make the GRAPH emerge from cost, not ju
 
 # QUAL-22: Terrain-cost Urquhart pruning — topology from cost
 
+## IMPLEMENTED (2026-07-25, feature/qual-21 commit a23728d) — awaiting A/B drive
+
+Behind `roadGraphCostPrune` (default OFF; debug toggle "Cost-Prune Graph (QUAL-22)"; flag-off
+topology + routes bit-exact, bundle re-baked for the sig key). Cost = `_chordCost` (road.js):
+coarse-height chord integral at 64 m steps priced with the router's proto weights via the
+previously-dormant `_protoEdgeCost` — zero new tuning params, wAlt/wGrade sliders shape the
+topology too. `urquhartEdges(pts, tris, weight)` is the mechanism (per-triangle max-WEIGHT vote).
+
+Measured flag-ON: road-graph 3/3 · cull-radius-invariance 5/5 · centerline-curvature 3/3 ·
+connectivity seeds 6/67/11: band graph ONE component, 0 new orphans (heals seed-67's flag-off
+orphan). Character seed 6: switchbacks 61→27, turn/edge 21.0°→13.1°, detour 1.473→1.373.
+KNOWN: graph-topology GRAPH-REACHABILITY 69% vs 85% bar — WINDOW-METRIC artifact: the band
+graph is fully connected; the 1600 m registration disc truncates a 14-node valley strand whose
+main-body link is a distant cheap pass (the intended "crossings only where cheap" character).
+Decision needed with the drive: accept + re-baseline the metric for cost-pruned topology, or
+treat as an in-window island problem for FEAT-28 region gating.
+
 ## Idea
 
 `urquhartEdges` (src/road-graph.js) prunes each Delaunay triangle's longest edge by **Euclidean

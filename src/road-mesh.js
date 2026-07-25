@@ -1261,11 +1261,18 @@ export class RoadMeshSystem {
         const fallbackY = (x, z) => node.plane
             ? node.plane.y0 + node.plane.gx * (x - node.plane.cx) + node.plane.gz * (z - node.plane.cz)
             : nodeY
-        // Per-vertex asphalt-TOP Y — the graded surface the ribbon mesh + collision carve ride
-        // (sampleRoadTopY = FEAT-19 grade + crown/camber), plane fallback beyond the road footprint.
-        // Kept identical to the collision surface (mesh == collision).
+        // Per-vertex asphalt-TOP Y — the graded surface the ribbon mesh + collision carve ride,
+        // plane fallback beyond the road footprint. Kept identical to the collision surface
+        // (mesh == collision). PERF-25: the PAD ring rides the resolve-free _nodeSurfaceTop — the
+        // same field _junctionPadCarve now carves — while the deg-2 swept ribbon keeps
+        // sampleRoadTopY (its physics counterpart is the connector composition in _sampleCarveWorld,
+        // which still rides the full resolved field).
         const sampleY = (x, z) => {
             const y = this._road.sampleRoadTopY ? this._road.sampleRoadTopY(x, z) : null
+            return (y != null && isFinite(y) ? y : fallbackY(x, z)) + apronLift
+        }
+        const samplePadY = (x, z) => {
+            const y = this._road._nodeSurfaceTop ? this._road._nodeSurfaceTop(node, x, z) : null
             return (y != null && isFinite(y) ? y : fallbackY(x, z)) + apronLift
         }
 
@@ -1287,7 +1294,7 @@ export class RoadMeshSystem {
         const ring = node.ring
         if (!ring || ring.length < 3) return null
 
-        return this._buildPadGeometry(ring, sampleY)
+        return this._buildPadGeometry(ring, samplePadY)
     }
 
     /**

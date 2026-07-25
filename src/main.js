@@ -1542,6 +1542,10 @@ if (_PROF) {
     ring:             v => { if (terrainSystem) terrainSystem.setRingRadius(v, 1); if (roadSystem) roadSystem.setRadius((v + 0.5) * 2 * CHUNK_SIZE) },
   }
   window.__lever = (name, value) => { const fn = LEVERS[name]; if (!fn) return false; fn(value); return true }
+  // QUAL-21 A/B: flip a road param and re-route through the SAME debounced path the debug
+  // sliders take (params mutated in place → debouncedRoadRebuild) — lets the CDP screenshot
+  // harness A/B the road toggles (e.g. roadGraphCostPrune) without the GUI.
+  window.__roadParam = (k, v) => { RANGER_PARAMS[k] = v; debouncedRoadRebuild(); return RANGER_PARAMS[k] }
 }
 
 // Phase 6 (TERR-06): pass setRampVisible callback so the Ramp Visible toggle in debug.js
