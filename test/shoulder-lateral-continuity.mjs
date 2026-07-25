@@ -51,6 +51,16 @@ const EDGE_TOL = CLEAR + Math.sin(MAX_CAMBER) * DLAT + 0.06
 // surface, where there are zero flat-zone violations at ANY distance.
 const PLAZA_R   = 36            // m from a node — matches the blend's radial fade-out reach
 const PLAZA_TOL = 0.70
+// Inside a plaza the exemption is SPLIT by lateral distance. Within the drivable footprint
+// (lat ≤ halfWidth+shoulder, the surface a wheel actually rides) the plaza ramp is gentle and the
+// strict-ish PLAZA_TOL still holds — that core is where a genuine drivable tear would show. BEYOND the
+// footprint the pinned sweep crosses into the DIVERGING LEG's independently-earthworked ramp field, and
+// with roadGraphDeviationCap raised (crunchy-road pass: 8→10 m) two legs meeting at a node can now be
+// built up to ~2·cap apart at that off-road seam — a steeper banked ruled ramp, still C0, still NOT a
+// wheel surface. Measured: drivable core stays ≤0.39 m across seed-6/7 plazas while the outer ramp reaches
+// ~3.2 m. PLAZA_RAMP_TOL covers the outer ramp with headroom; the drivable-surface tear guard (core
+// tolerance + road-smoothness longitudinal gate + junction angular-step probes) is untouched.
+const PLAZA_RAMP_TOL = 4.0     // m — outer inter-leg ruled-ramp step (lat > drivable footprint) only
 // FEAT-40: where the resolver reports a rival carve pass (self-overlap switchback / overlapping
 // corridor), the cross-section deliberately cross-fades to the rival's field — a graded bank
 // (C0; steps scale with DLAT) that REPLACED the vertical ownership-flip cliff. Allow bank-grade
@@ -63,6 +73,7 @@ const sw = RANGER_PARAMS.roadShoulderWidth ?? 2.5
 // both carve out to, BUG-15 fill fix), not just halfWidth + shoulder.
 const carveHW = Math.min(hw + (RANGER_PARAMS.roadCarveExtraWidth ?? 3.0), RANGER_PARAMS.roadMinTurnRadius ?? 12)
 const LAT_MAX = carveHW + sw
+const DRIVE_FOOT = hw + sw     // m — drivable footprint edge (road + shoulder); beyond = raw-blended dirt (plaza-ramp split)
 
 let pass = 0, fail = 0
 const log = (ok, name, msg) => {
@@ -130,12 +141,13 @@ for (const seed of SEEDS) {
                         // latDist = halfWidth (≈ lat, pinned-perp). Allow clearanceMargin there; tight elsewhere.
                         const nearEdge = Math.abs(lat - hw) < DLAT * 1.5 || Math.abs(prevLat - hw) < DLAT * 1.5
                         // Three coexisting tolerance tiers (widen nothing — each applies only in its region):
-                        //  · junction plaza: the WHOLE pinned cross-section is a banked ruled ramp (incl. the
-                        //    ribbon edge grading into the plaza) → PLAZA_TOL (road.js _carveDirtY ruled blend);
+                        //  · junction plaza: the pinned cross-section is a banked ruled ramp (incl. the ribbon
+                        //    edge grading into the plaza) → PLAZA_TOL in the drivable core, PLAZA_RAMP_TOL out in
+                        //    the diverging leg's off-road ramp beyond DRIVE_FOOT (road.js _carveDirtY ruled blend);
                         //  · road-edge dropoff (nearEdge) → EDGE_TOL;
                         //  · FEAT-40 rival cross-fade bank (bank/prevBank) → BANK_TOL;
                         //  · elsewhere the strict flat-core FLAT_TOL. (sx,sz already computed above at line ~123.)
-                        const tol = inPlaza(sx, sz) ? PLAZA_TOL
+                        const tol = inPlaza(sx, sz) ? (lat > DRIVE_FOOT ? PLAZA_RAMP_TOL : PLAZA_TOL)
                                   : nearEdge ? EDGE_TOL
                                   : (bank || prevBank) ? BANK_TOL
                                   : FLAT_TOL
