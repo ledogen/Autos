@@ -173,9 +173,35 @@ The tear is STRUCTURAL in the pad machinery (ring weld / rim overlays / camber a
 mouths), not the removed free-resolve class ⇒ Phase 5a-2's canonical-shapes + rotated-arrival
 weld design remains required before the deg-3/4 flip.
 
-REMAINING (Phase 5): 5a-2 canonical shapes + rotated-arrival welds → 5b-1 true-tangent
-admission + connector deletion (census-driven) → 5b-2 deg-3/4 flip + full test:all matrix +
-cold-build ≤ 11.2 s check + user drive + default-on as its own step.
+## Phase 5 COMPLETE except drive + default-on (2026-07-25, commits d9c5035 + 6a3c525)
+
+**5a-2 + 5b-2 flip (`d9c5035`): deg-3/4 through-pairing behind a 30° admission.** Maximal
+pairing tears pads two ways (both measured on the 5a surface): forced high-deviation pairs
+make the router absorb the rotation as hardR terminal S-curls → (a) bimodal projection zones
+past the junction blend's radial fade (1.9 m step), (b) re-routes into near-self-approaches
+beyond the rival cross-fade band (3.6–10.9 m cliffs, seed-7, dev 30–35°). With
+`PAIR_MAX_DEV_DEG = 30` (throughPairsAt's existing maxDevDeg): shoulder gate GREEN both seeds
+(seed 6 worst 0.510→0.066 m!), graph-topology green (was 8/10), coverage 3/5 deg-3 + 2/2
+deg-4 paired, census kinks unchanged, cold census build 13.8→12.9 s. The canonical shapes
+EMERGE from the admission (through + T-branch / through × through). road-fill-support's
+STEP_TOL now models the saturating-camber edge-drop term (its deepest-fill sample landed on a
+−15° cambered curve after the re-routes; support/up-step checks were green throughout).
+
+**5b-1 (`6a3c525`): DECIDED — chord admission stays; connector deletion off the table.** A
+true-analytic-tangent admission was implemented and measured to fail BOTH ways (drops
+S-joint/corridor-weld benches covering real camber seams — 0.875 m knife-edge; newly admits
+benches that flatten banked sweepers). The first-chord kink accidentally measures heading +
+near-node curvature/camber activity = the better "does a bench help" detector. Deletion moot:
+6/12 census deg-2 nodes are cull-created with real kinks up to 89.5°. Decision inline at the
+admission in _detectNodeJunctions.
+
+**Full matrix:** flag-off `test:all` 40/40 green (routes byte-untouched — pairing is
+flag-gated); flag-on 39/40, sole failure route-bundle-parity (stale-by-design until the
+default-on bundle regen). A/B screenshots: worktree `abshots/` (pairoff_/pairon_ pairs).
+
+REMAINING: user drive sign-off (toggles ON) → default-on as its OWN step (regen
+`data/route-cache-default.json.gz`, re-baseline the flag-on gates, flip
+`roadStrokeRouting: true` default) → merge to main.
 
 ## Stage 2 Phases 2+4 IMPLEMENTED (2026-07-24, commits 1da347f + c7fbe38) — user approved skip-Phase-1
 
