@@ -33,7 +33,7 @@ import * as THREE from 'three'
 // RoadSystem._carveCrossSection; the mesh resolves (signedLat, arcS) per vertex and calls it.
 import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
 import { DEEP_BANK_TOE_EXTRA } from './road-carve.js'   // FEAT-40: deep-bank toe (carve maxExt sync)
-import { perfAdd } from './perf.js'  // TEMP perf triage (D-arc)
+import { perfAdd, perfEvent } from './perf.js'  // TEMP perf triage (D-arc / PERF-26)
 
 // ── Module constants ───────────────────────────────────────────────────────
 
@@ -1119,6 +1119,7 @@ export class TerrainSystem {
                     pos.setY(i, this._composeCarvedY(chunk.heights[i] * amp, newCarveData, chunk.streamData, i, amp))
                 }
                 pos.needsUpdate = true
+                perfEvent('terrain.recarve')   // PERF-26: full-grid Y rewrite + re-upload of a LIVE chunk
                 chunk.mesh.geometry.computeBoundingSphere()  // PERF-05 pooling fix: keep frustum-cull bounds in sync with re-carved Y
                 this._computeGridNormals(chunk.mesh.geometry)  // PERF-03: grid-FD normals
                 this._writeChunkVertexColors(chunk.mesh.geometry, newCarveData, chunk.heights, amp, cx, cz)
@@ -1823,6 +1824,7 @@ export class TerrainSystem {
             }
 
             this._scene.add(mesh)
+            perfEvent('terrain.chunk')   // PERF-26: commit point — the frame this geometry first draws
 
             // Store mesh, raw heights (heights used by sampleHeight for P7-2 test),
             // carveData (used by sampleHeight carve blend path), and builtRoadGeneration

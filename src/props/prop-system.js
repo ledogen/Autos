@@ -33,6 +33,7 @@ import { sphereVsSphere, sphereVsCapsuleY, sphereVsCapsule, sphereVsMeshInstance
 import { BAKE_LAYER, shadowShearScale } from './prop-shadow-bake.js'   // PERF-07: baked prop-shadow atlas (main.js owns the system)
 import { PropImpostors } from './prop-impostor.js'                     // PERF-21: distant-prop billboards
 import { FLORA_PARAMS } from '../../data/flora.js'
+import { perfEvent } from '../perf.js'   // PERF-26: streaming-event tags (zero-dep module; no-op unless ?hitch)
 
 // Per-category global instance capacity (split evenly across that category's variants). Sized for
 // the ring-4 (Ultra, 81-chunk) worst case; pure typed-array memory (64 B/instance), cheap.
@@ -344,6 +345,9 @@ export class PropSystem {
   ensureChunk(cx, cz) {
     const ck = cx + ',' + cz
     if (this._chunks.has(ck)) return
+    // PERF-26: the ONE unbudgeted scatter path. Fires when driving outruns the 3 ms/frame drip and
+    // the truck's 3×3 collision chunks must exist this frame — i.e. exactly on a slow machine.
+    perfEvent('props.hardScatter')
     let placements
     if (this._activeScatter && this._activeScatter.ck === ck) {
       const gen = this._activeScatter.gen
@@ -366,6 +370,7 @@ export class PropSystem {
   }
 
   _commitChunk(ck, placements) {
+    perfEvent('props.chunk')   // PERF-26: commit point — instance slots fill + shadow tile marks dirty
     const places = []
     const collidables = []
     for (const pl of placements) {
@@ -559,6 +564,7 @@ export class PropSystem {
       const want = this._chunkMode(cx, cz)
       if (want === chunk.mode) continue
       const promoted = chunk.mode === 'bbonly' && want !== 'bbonly'
+      perfEvent('props.lodSwap')   // PERF-26: 3D ⇄ billboard re-place of a whole chunk's instances
       this._unplaceChunk(chunk)
       this._placeChunk(chunk, want)
       // Promotion out of the billboard-only ring: the chunk skipped its shadow bake at commit —
