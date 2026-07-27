@@ -30,12 +30,24 @@ const RECIPE = [
   { mult: 2.0,  gain: 0.18, detune: 0,   type: 'square'   }, // upper harmonic → bite at high revs
 ]
 
+/**
+ * The single shared AudioContext for the whole game (created lazily, on a user gesture). Other audio
+ * modules (src/tire-audio.js) hang their own master gain off it rather than opening a second context
+ * — browsers cap live contexts, and independent contexts can't be mixed or resumed together.
+ * Returns null if WebAudio is unavailable.
+ */
+export function getAudioContext () {
+  if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return ctx }
+  const AC = window.AudioContext || window.webkitAudioContext
+  if (!AC) return null
+  ctx = new AC()
+  return ctx
+}
+
 /** Create + start the audio graph (idempotent). Must be called from a user gesture. */
 export function ensureEngineAudio () {
   if (started) { if (ctx && ctx.state === 'suspended') ctx.resume(); return }
-  const AC = window.AudioContext || window.webkitAudioContext
-  if (!AC) return
-  ctx = new AC()
+  if (!getAudioContext()) return
 
   lp = ctx.createBiquadFilter()
   lp.type = 'lowpass'

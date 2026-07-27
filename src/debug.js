@@ -156,6 +156,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   driveFolder.add(params, 'aeroDragArea', 0, 3.0, 0.05).name('Aero Drag Cd·A (m²)')
   driveFolder.add(params, 'engineAudioEnabled').name('Engine Audio')
   driveFolder.add(params, 'engineAudioVolume', 0, 1, 0.05).name('Engine Volume')
+  // Tire-slip audio (src/tire-audio.js) — read live every frame, no rebuild needed.
+  driveFolder.add(params, 'tireAudioEnabled').name('Tire Audio')
+  driveFolder.add(params, 'tireScreechVolume', 0, 1, 0.05).name('Screech Volume')
+  driveFolder.add(params, 'tireDirtVolume', 0, 1, 0.05).name('Dirt Volume')
 
   // ── Differentials (FEAT-23) ───────────────────────────────────────────────────────
   // Rear diff mode: open / limited-slip / locked (src/drivetrain.js couples the rear wheels).
@@ -691,6 +695,29 @@ export function initDebug (params, callbacks = {}, options = {}) {
   for (const folder of [roadFolder, surfaceFolder, junctionFolder]) {
     for (const ctrl of folder.controllers) addInfo(ctrl, ROAD_INFO[ctrl.property])
   }
+
+  // ── Particle FX folder ────────────────────────────────────────────────────────
+  // Live-read params (dust.js / smoke.js / dirt-spray.js all read RANGER_PARAMS every frame),
+  // so no onChange plumbing is needed — the next emitted particle picks the new value up.
+  const fxFolder = gui.addFolder('Particle FX')
+  fxFolder.add(params, 'dirtSprayEnabled').name('Dirt Spray')
+  fxFolder.add(params, 'dirtSprayAmount', 0, 2, 0.05).name('Dirt Spray Amount')
+  fxFolder.addColor(params, 'dirtSprayColor').name('Dirt Spray Color')
+  fxFolder.add(params, 'smokeEnabled').name('Tire Smoke')
+  fxFolder.add(params, 'smokeAmount', 0, 2, 0.05).name('Smoke Amount')
+  fxFolder.add(params, 'dustEnabled').name('Wheel Dust')
+  fxFolder.add(params, 'dustAmount', 0, 2, 0.05).name('Dust Amount')
+  fxFolder.close()
+  const FX_INFO = {
+    dirtSprayEnabled: 'Slip-driven dirt thrown off the tyres on loose surfaces: a stream of dark clods fired backwards out of the contact patch, plus the slow floating dust motes that shed off them. Off on asphalt (tire smoke covers that).',
+    dirtSprayAmount:  'Density multiplier for the dirt clod stream (floaters scale with it). 0 = off, 1 = default.',
+    dirtSprayColor:   'Base tint of thrown earth — clods render darker than this, the floating motes lighter.',
+    smokeEnabled:     'Grey friction smoke off the rubber. Needs a tyre that is BOTH slipping and loaded; works on any surface.',
+    smokeAmount:      'Density multiplier for tire smoke. 0 = off, 1 = default.',
+    dustEnabled:      'Ambient dust haze kicked up by rolling/slipping wheels, faded down on the paved ribbon.',
+    dustAmount:       'Density multiplier for wheel dust. 0 = off, 1 = default.',
+  }
+  for (const ctrl of fxFolder.controllers) addInfo(ctrl, FX_INFO[ctrl.property])
 
   // D-04: Read-only Logger hint — shows the \ key without being interactive
   const _loggerHint = { hint: '\\ to record' }
