@@ -12,6 +12,9 @@
 //   (a) CORRECTNESS  — the tile-bucket broad phase finds EXACTLY the same crossing set + classification
 //                      as a brute-force all-pairs scan (so the perf optimization changes nothing).
 //   (b) IDENTITY     — re-detecting the same network is a no-op (same Map instance returned).
+//   (c) IDENTITY WHEN EMPTY — the memo must ALSO hold when zero crossings is the correct answer
+//                      (the shipped cull-ON case). A memo that treats "empty" as "not computed"
+//                      recomputes forever; (b) cannot see it because its fixture has crossings.
 // (Window-invariance of the crossing set is covered by graph-topology.mjs.)
 //
 // Run: node test/crossing-classifier.mjs   (exit 0 = green; exit 1 = a regression)
@@ -110,6 +113,32 @@ const mapA  = listToMap(listA)
     roadA._detectJunctions(); const l2 = roadA._crossingList
     log(j1 === j2 && l1 === l2, 'ONCE-PER-BUILD-IDENTITY',
         `re-detect returns the cached Map (${j1 === j2}) + stable crossing list (${l1 === l2})`)
+}
+
+// (c) IDENTITY WHEN EMPTY — the memo must hold when ZERO crossings is the CORRECT answer. ────────
+// This is the SHIPPED case, and check (b) structurally cannot reach it: (b) runs with the cull OFF
+// precisely so crossings exist, but the shipped graph topology culls mid-span crossings, so
+// _junctions is legitimately EMPTY in the running game.
+//
+// The regression this guards (found via FEAT-43): the memo was keyed on
+// `_junctionsFrom === _network && _junctions.size > 0`. That size clause cannot distinguish "empty"
+// from "not computed", so under the shipped config the memo NEVER hit and the full O(runs × segs)
+// broad+narrow phase re-ran on every call. RoadMeshSystem._buildRoadTile calls this on EVERY ribbon
+// tile build, so it surfaced as a per-tile hitch scaling with network size — measured 22 ms/call at
+// the 320 m play radius and 91 ms/call at story mode's 2800 m region radius.
+//
+// A never-streamed RoadSystem is the cheapest exact reproduction: empty network ⇒ zero crossings.
+// _crossingList is the load-bearing signal — it is REASSIGNED (a fresh []) on every recompute,
+// whereas _junctions is mutated in place and so compares equal whether or not the memo hit.
+{
+    const empty = new RoadSystem(SEED, P)
+    const j1 = empty._detectJunctions(); const l1 = empty._crossingList
+    const revAfter = empty._junctionsRev
+    const j2 = empty._detectJunctions(); const l2 = empty._crossingList
+    const ok = j1.size === 0 && l1 === l2 && j1 === j2 && revAfter === empty._networkRev
+    log(ok, 'ONCE-PER-BUILD-IDENTITY-WHEN-EMPTY',
+        `zero-crossing network: crossings=${j1.size}, crossing list stable (${l1 === l2}), ` +
+        `memo rev ${revAfter} == networkRev ${empty._networkRev}`)
 }
 
 console.log(`\nCROSSING-CLASSIFIER: ${pass}/${pass + fail} checks green`)

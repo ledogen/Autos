@@ -1274,7 +1274,11 @@ export class RoadSystem {
         // Pure function of this._network — deterministic + window-invariant by transitivity (D-16).
         // Cleared on re-stream (same site as this._tiles.clear()).
         this._junctions = new Map()
-        this._junctionsFrom = null   // identity guard for _detectJunctions memoization
+        // PERF: memo key for _detectJunctions, keyed by _networkRev like every other cache in this
+        // file (_hintCache / _cellCands / _nodeJunctionsRev / _chordCostMemo). -1 = never computed.
+        // Replaced an identity guard whose extra `_junctions.size > 0` clause silently defeated the
+        // whole memo in graph mode (where zero crossings is the CORRECT answer) — see _detectJunctions.
+        this._junctionsRev = -1
         this._crossingList = []      // flat per-crossing classified records (rebuilt with _junctions)
         // FEAT-07 Step 2: per-run index of AT_GRADE mid-span crossings to flatten toward {arc, nodeY}.
         this._crossingsByRun = new Map()   // runKey → [{ arc, nodeY, slope }] (rebuilt with _junctions)
@@ -2824,7 +2828,7 @@ export class RoadSystem {
         if (this._tileObjects) this._tileObjects.clear()
         // Junction cache is a pure function of this._network — clear and rebuild on re-stream.
         if (this._junctions) this._junctions.clear()
-        this._junctionsFrom = null
+        this._junctionsRev = -1
 
         // Per-run profile caches (runProfile/camberProfile) and the run-adjacency cache are keyed by
         // this._networkRev (bumped just above), so this real rebuild lazily invalidates them — no eager
@@ -2860,7 +2864,10 @@ export class RoadSystem {
         // (Degree-cap drops are applied inside _assembleGraphEdges — spec-time, pre-routing;
         // _cullNetwork now runs only the routed-geometry passes.)
         if (this._params?.roadGraphCullCrossings ?? true) {
-            if (this._cullNetwork(mx0, mx1, mz0, mz1)) { this._junctionsFrom = null; this._detectJunctions() }
+            // The cull DELETES from _network without bumping _networkRev, so the memo must be
+            // invalidated explicitly here — a pre-cull _detectJunctions() has already cached at
+            // this rev, and without this the post-cull call would return the pre-cull crossings.
+            if (this._cullNetwork(mx0, mx1, mz0, mz1)) { this._junctionsRev = -1; this._detectJunctions() }
         }
 
         // FEAT-40: crossings are only known now — a bore span may not contain an AT_GRADE crossing
@@ -3002,8 +3009,19 @@ export class RoadSystem {
      * @returns {Map<string, object>} this._junctions
      */
     _detectJunctions() {
-        // Identity guard: re-detecting the same network is a no-op (this._crossingList stays valid too).
-        if (this._junctionsFrom === this._network && this._junctions.size > 0) {
+        // Revision guard: re-detecting the same network is a no-op (this._crossingList stays valid too).
+        //
+        // PERF (FEAT-43): this guard USED to be `_junctionsFrom === _network && _junctions.size > 0`.
+        // The size clause made the memo unreachable in graph mode, where an EMPTY crossing set is the
+        // correct and universal answer (QUAL-12: the graph is the sole topology, so mid-span crossings
+        // are culled and `_junctions` is legitimately empty). "Empty" was indistinguishable from
+        // "not computed", so every caller re-ran the full O(runs × segs) broad+narrow phase.
+        // RoadMeshSystem._buildRoadTile calls this on EVERY ribbon tile build, so the cost landed as a
+        // per-tile hitch that scales with network size: measured 22 ms/call at the 320 m play radius and
+        // 91 ms/call at story mode's 2800 m region radius (node; the browser saw ~4 ms vs ~42 ms per
+        // ribbon tile). Keying on _networkRev — the same key every other cache here uses — makes it a
+        // real memo: computed once per network revision, in BOTH modes.
+        if (this._junctionsRev === this._networkRev) {
             return this._junctions
         }
 
@@ -3082,7 +3100,7 @@ export class RoadSystem {
             for (const r of node.records) this._addCrossingPair(r)
         }
 
-        this._junctionsFrom = this._network
+        this._junctionsRev = this._networkRev
         return this._junctions
     }
 
