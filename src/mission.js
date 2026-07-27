@@ -42,6 +42,15 @@ const MAX_EDGES = 9                 // routing cap: each edge is tens of ms on a
 const ARRIVE_RADIUS = 28            // m — you're there
 const COUNTDOWN = 3.0               // s — the start countdown (a START count, not a par clock)
 const EDGE_T_MARGIN = 0.12          // keep endpoints off the junction pads at both ends
+// FEAT-43: when story mode supplies a region, the whole mission must fit INSIDE its wall.
+// The planner network reaches well past its nominal radius — the streamed band carries a wide
+// margin, and measured on seed 6, MISSION_PLAN_RADIUS 1400 centred ON the region centre still
+// yields nodes out to 2783 m, 4 of 43 beyond the 2500 m wall. _roll picks BOTH endpoints freely
+// from that set, so ~1 roll in 10 landed outside, and worse once the planner re-centred on a car
+// that had driven away. Two guards: node candidates are filtered to the region, and the finished
+// polyline is re-checked — a centerline between two in-region nodes can still bow past the wall.
+const REGION_MARGIN = 100           // m — keep missions this far clear of the wall itself
+const REGION_ROLL_TRIES = 8         // re-rolls before admitting the region has no qualifying leg
 const TRACE_HZ = 10                 // driven-trace sample rate
 const TRACE_DIV = Math.round(60 / TRACE_HZ)
 const TOPO_DS = 2.0                 // m — topology export spacing (matches par's own sampling)
@@ -73,12 +82,16 @@ export class MissionSystem {
      * @param {(open:boolean)=>void} o.setMapOpen
      * @param {()=>number} [o.getSeed] — world seed; road-surface quality is seeded from it
      * @param {()=>void} [o.onChange] — called whenever the UI-visible state changes
+     * @param {()=>({x:number,z:number,r:number}|null)} [o.getRegion] — FEAT-43 story region, when
+     *        one is active. Missions are confined to it, and the planner ANCHORS on its centre
+     *        instead of following the car (see _planner).
      */
-    constructor({ getRoad, makePlanner, getCar, getSeed, teleport, setMapOpen, onChange }) {
+    constructor({ getRoad, makePlanner, getCar, getSeed, getRegion, teleport, setMapOpen, onChange }) {
         this._getRoad = getRoad
         this._makePlanner = makePlanner || null
         this._plan = null            // { road, seed, center } — the streamed planning network
         this._getCar = getCar
+        this._getRegion = getRegion || (() => null)
         this._getSeed = getSeed || (() => 0)
         this._teleport = teleport
         this._setMapOpen = setMapOpen
@@ -106,16 +119,21 @@ export class MissionSystem {
      */
     _planner() {
         if (!this._makePlanner) return this._getRoad()      // headless/tests: use what we're given
-        const car = this._getCar()
         const seed = this._getSeed()
+        // FEAT-43: in story mode the planner ANCHORS on the region centre, not the car. A
+        // car-following window slides outward as you drive, which both re-streams for nothing (the
+        // region's roads are already routed and frozen) and drags the candidate node set past the
+        // wall. Anchored, the window is the same every roll — and PLAN_RESTREAM_MOVE can never fire.
+        const region = this._getRegion()
+        const c = region || this._getCar()
         const stale = !this._plan || this._plan.seed !== seed
-            || Math.hypot(this._plan.center.x - car.x, this._plan.center.z - car.z) > PLAN_RESTREAM_MOVE
+            || Math.hypot(this._plan.center.x - c.x, this._plan.center.z - c.z) > PLAN_RESTREAM_MOVE
         if (stale) {
             // main.js owns the streaming call: RoadSystem.update wants a THREE.Vector3 (it calls
             // distanceTo on it), and keeping THREE out of this module keeps it cheap to import.
-            const road = this._makePlanner(seed, car.x, car.z, MISSION_PLAN_RADIUS)
+            const road = this._makePlanner(seed, c.x, c.z, MISSION_PLAN_RADIUS)
             if (!road) return null
-            this._plan = { road, seed, center: { x: car.x, z: car.z } }
+            this._plan = { road, seed, center: { x: c.x, z: c.z } }
         }
         return this._plan.road
     }
@@ -363,7 +381,14 @@ export class MissionSystem {
     // ── generation ──────────────────────────────────────────────────────────────────────────
     _generate() {
         try {
-            this.mission = this._roll()
+            // A roll can come up empty because the FEAT-43 region rejected the leg it happened to
+            // draw (guard 2 only fires after the route is built), so inside a region we re-roll
+            // before reporting failure. Retries are cheap THERE and only there: the region is
+            // pre-warmed, so every edgeParData is a cache hit. Outside a region a failed roll still
+            // reports immediately — retrying could route live edges and block for seconds.
+            const tries = this._getRegion() ? REGION_ROLL_TRIES : 1
+            this.mission = null
+            for (let i = 0; i < tries && !this.mission; i++) this.mission = this._roll()
             this.state = this.mission ? 'offer' : 'idle'
             if (!this.mission) this.error = 'no route found near here — try again'
             if (this.mission) this._setMapOpen(true)
@@ -391,6 +416,14 @@ export class MissionSystem {
         const g = road.networkGraph()
         if (!g.edges.length) return null
 
+        // FEAT-43 guard 1: drop everything outside the story region before any planning happens.
+        // Filtering EDGES (not just endpoints) is what matters — an edge with one node outside the
+        // wall is a road that leaves the region, and admitting it as a path hop would route the
+        // player straight through the boundary even if both mission pins sat inside.
+        const region = this._getRegion()
+        const rMax = region ? region.r - REGION_MARGIN : Infinity
+        const inRegion = (p) => !region || Math.hypot(p.x - region.x, p.z - region.z) <= rMax
+
         // Adjacency with positions, keyed by node key.
         const posOf = new Map(), idOf = new Map(), adj = new Map()
         const touch = (id) => {
@@ -399,6 +432,7 @@ export class MissionSystem {
             return k
         }
         for (const [a, b] of g.edges) {
+            if (!inRegion(g.pos(a)) || !inRegion(g.pos(b))) continue
             const ka = touch(a), kb = touch(b)
             const pa = posOf.get(ka), pb = posOf.get(kb)
             const w = Math.hypot(pa.x - pb.x, pa.z - pb.z)
@@ -510,6 +544,11 @@ export class MissionSystem {
         for (let i = 1; i < poly.length; i++) {
             polyCum.push(polyCum[i - 1] + Math.hypot(poly[i].x - poly[i - 1].x, poly[i].z - poly[i - 1].z))
         }
+
+        // FEAT-43 guard 2: the routed road between two in-region nodes can still bow past the wall,
+        // so re-check what the player will actually drive. Cheap — poly is already built, and it is
+        // the same 25 m sampling the map draws.
+        if (region && poly.some(p => !inRegion(p))) return null
 
         const first = segments[0], last = segments[segments.length - 1]
         const sp = first.centerline.pointAt(first.s0)

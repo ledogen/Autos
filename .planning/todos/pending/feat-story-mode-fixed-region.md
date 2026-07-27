@@ -111,10 +111,76 @@ against the old guard and passes against the fix.
 Also added `window.__story` under `?prof=1`, so the external profiler can measure inside the mode
 rather than only ever profiling free roam.
 
-**Open:** verify the bundled seed-6 route cache (`data/route-cache-default.json.gz`) actually covers
-a 2800 m warm radius. It is radius-agnostic (`routeCacheSig` excludes radius) but its *coverage* is
-whatever the bake script warmed — if it falls short, seed 6 pays a one-time warm behind the loading
-screen like any other seed, and re-baking it is the fix.
+**Route-cache coverage — CLOSED, it did fall short (2026-07-26).** The open question above resolved
+the bad way. `test/bake-route-bundle.mjs` baked to `MISSION_PLAN_RADIUS + 300 = 1700 m`; entry warms
+to `REGION_RADIUS_M + WARM_MARGIN_M = 2800 m`. Measured against the shipped bundle on seed 6:
+
+| warm radius | in-band edges | not in cache |
+|---|---|---|
+| 1700 m (baked) | 109 | **0** |
+| 2800 m (asked for) | 216 | **104 (48%)** |
+
+So half the region routed live on the worker pool behind the loading screen on *every* entry — the
+"couple of seconds" the owner reported despite seed 6 being pre-baked. The cache was never stale
+(sig matched, parity gate green); it simply *stopped short*.
+
+Fixed by deriving the bake target from its consumers instead of a literal: story.js now exports
+`REGION_WARM_RADIUS_M` (and uses it at the pump site, replacing an inline `this._R + WARM_MARGIN_M`),
+and the bake takes `max(MISSION_PLAN_RADIUS, REGION_WARM_RADIUS_M) + BAKE_MARGIN = 3100 m`, growing
+its ring ladder to suit. Re-baked: **269 routed + 312 solo connections, 8.31 MB gz (was 3.82 MB)** —
+owner accepted the ~4.5 MB one-time download to buy an instant entry. Re-measured: **104 → 0**
+uncached in-band edges at 2800 m. `route-bundle-parity` green against the new asset.
+
+**Superseded the same day — the asset is now SPLIT (PERF-26 item 1).** The 8.31 MB single bundle is
+gone: `route-cache-default.json.gz` is back to a 1700 m BASE (3.64 MB, awaited at boot) and the
+story region's remainder lives in `route-cache-region.json.gz` (4.67 MB, fetched in the background
+after boot, awaited by story entry via the new `ensureRegionRoutes` dep). Story entry measured at
+**1594 ms to `live`** with routing frozen. Read the PERF-26 ticket for the split's rationale — the
+deciding cost turned out to be the main-thread `JSON.parse`, not the download.
+
+**Read that trade correctly (owner framing, same day — now PERF-26).** The route cache is a **DEV
+convenience**, there to make playtest cycles on seed 6 instant. It is *not* a cold-load optimization
+for players: it covers one seed and is fetched on boot by everyone. So the 3.82 → 8.31 MB growth is a
+knowingly-taken cold-load regression bought for the dev loop, **not** something to point at as load
+work. The real target is cold boot → driving **in story mode** on an older machine, since story mode
+is how the intended audience will play — captured as **PERF-26** (`perf-26-cold-load-budget.md`),
+with the obvious first move being to fetch this asset lazily/dev-gated instead of at boot.
+
+**Quick Job escaping the region — FIXED (2026-07-26).** Owner reported that regenerating a Quick
+Job a few times eventually offers one routed outside the world boundary. Root cause is in the
+planner, not the wall: `_roll()` picks **both** endpoints freely from every node in the planner
+network, and that network reaches far past its nominal radius because the streamed band carries a
+wide margin. Measured on seed 6 with the planner centred *exactly* on the region centre — the best
+case — the candidate set held **43 nodes reaching 2783 m, 4 of them (9%) already outside the 2500 m
+wall**. So ~1 roll in 10 escaped, and worse in practice: the planner re-centred on the **car** every
+`PLAN_RESTREAM_MOVE` (700 m), sliding the whole window outward as the player drove.
+
+Three changes, all mission-side (story.js stays the region's only owner):
+- new optional `getRegion()` dep — null in free roam, so Quick Job's original behaviour is untouched;
+- `_planner()` **anchors on the region centre** rather than following the car, which also stops
+  pointless re-streams of an already-frozen network;
+- `_roll()` filters candidate **edges** (not just endpoints — an edge with one node outside is a road
+  that leaves the region) to `r - REGION_MARGIN`, and re-checks the finished **polyline**, since a
+  centerline between two in-region nodes can still bow past the wall. `_generate()` re-rolls up to
+  `REGION_ROLL_TRIES` when a region is active (cache hits only, because the region is pre-warmed);
+  outside a region a failed roll still reports immediately rather than routing live edges for seconds.
+
+Gated: `test/mission-network.mjs` section 6 — 25 confined rolls, every poly point *and* both pins
+inside the wall (**furthest 2199 m of 2500**), 25/25 rolls still produce a mission, and free-roam
+planning unchanged. Verified as a **negative control**: with both guards disabled the same check
+FAILS with 53 escaping points, worst 2774 m (matching the 2783 m measured independently).
+
+**Teleport + debug re-enabled in story mode (owner request, 2026-07-26) — deliberately temporary.**
+Story mode is *designed* to take both away (DESIGN.md "Game modes"), but while the mode is a sandbox
+under construction they are how you inspect what the frozen region built. `isTeleportEnabled()` now
+admits `'story'`, and story.js gates the lockout on a `DEBUG_LOCKOUT = false` constant rather than
+passing `true` — the whole lockout mechanism stays wired, so closing the mode up is two flags.
+Teleport also needed `storySystem.notifyTeleport()`: the wall would otherwise clamp the truck
+straight back on the next tick and the teleport would be a no-op. It disarms the wall exactly the way
+an active Quick Job does, re-arming the moment the player is inside the region again — the fence is
+loosened for the jump, never turned off.
+
+All 40 gates green (`npm run test:all`); Vite build clean.
 
 ## Summary
 

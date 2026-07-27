@@ -39,6 +39,19 @@
 // REGION_RADIUS_M + WARM_MARGIN_M so the network is complete right up to (and just past) the wall.
 export const REGION_RADIUS_M = 2500   // m — a 5 km-wide bounded region
 const WARM_MARGIN_M = 300             // m — route past the wall so the boundary roads are whole
+// THE radius the entry warm routes to — and therefore the radius the bundled route cache must
+// cover, or half the region routes live behind the loading screen. test/bake-route-bundle.mjs
+// imports this so the bake target can never silently fall behind the region again (it did: the
+// bake stopped at 1700 m while entry asked for 2800, leaving 104 of 216 in-band edges uncached).
+export const REGION_WARM_RADIUS_M = REGION_RADIUS_M + WARM_MARGIN_M
+
+// Story mode is DESIGNED to lock the debug GUI out (DESIGN.md "Game modes"): a shipped story run
+// has no sliders. While the mode is a sandbox under construction, though, the panel is the only way
+// to inspect what the frozen region actually built — so the lockout is held OFF (owner decision
+// 2026-07-26), alongside the matching teleport allowance in main.js's isTeleportEnabled().
+// The whole mechanism (debug.js setDebugLockout + the force-hide hook) stays wired and exercised;
+// flip this to true to close the mode up. Teleport is the sibling switch — flip both together.
+const DEBUG_LOCKOUT = false
 
 // Grace after enter() before the region center is captured: the reseat/reseed is async, so the
 // truck is not at the spawn yet. deps.reseat()/applySeed() return promises we await, and this is
@@ -56,6 +69,9 @@ export class StorySystem {
    *   applySeed(seedStr)         — reseed + regenerate the world; resolves when the rebuild settles
    *   reseat()                   — re-seat the truck at the canonical seed spawn; resolves when seated
    *   setDebugLockout(locked)    — hide + disable the debug GUI while true
+   *   ensureRegionRoutes()       — PERF-26: resolve once the story-region route cache is fetched
+   *                                (background since boot) and imported. Optional; a miss just means
+   *                                the region warm routes for real.
    *   hidePauseMenu()            — close the pause menu
    *   setQuickJobVisible(v)      — show/hide the in-mode Quick Job button
    *   setLoading(visible, text)  — the mode-entry loading overlay
@@ -101,6 +117,14 @@ export class StorySystem {
    * true so the two warms don't fight for the same worker pool and stretch the loading screen.
    */
   isEntering () { return this._active && this._phase !== 'live' }
+  /**
+   * A deliberate teleport happened (map double-click, free-cam button, Shift+R). Disarm the wall
+   * the same way an active Quick Job does: the player ASKED to be somewhere, so don't clamp them
+   * back on the next tick. It re-arms the instant they are inside the region again, so this
+   * loosens the fence for the jump only — it never turns it off.
+   */
+  notifyTeleport () { this._armed = false }
+
   /** Region center + radius — for the 2D map boundary overlay and future POIs / FEAT-28 barriers. */
   region () { return this._center ? { x: this._center.x, z: this._center.z, r: this._R } : null }
 
@@ -115,7 +139,7 @@ export class StorySystem {
     const token = ++this._token
     this._d.setGameMode('story')
     this._d.hidePauseMenu()
-    this._d.setDebugLockout(true)
+    this._d.setDebugLockout(DEBUG_LOCKOUT)
 
     this._active = true
     this._frozen = false
@@ -133,6 +157,14 @@ export class StorySystem {
     const settled = reseed ? this._d.applySeed(seed) : this._d.reseat()
     Promise.resolve(settled)
       .catch(e => { console.warn('[story] world settle failed', e) })
+      // PERF-26: the story-region route cache is fetched lazily in the background after boot — it is
+      // not on the boot critical path. Import it HERE, after the settle, for two reasons: the reseed
+      // branch above builds a NEW RoadSystem (importing before it would load into the doomed one),
+      // and this is the last moment before the warm, which is exactly who needs those routes. If the
+      // background fetch is still in flight we wait out its tail behind the loading screen. Never
+      // fatal: without it the warm just routes for real, like any non-default seed.
+      .then(() => this._d.ensureRegionRoutes?.())
+      .catch(e => { console.warn('[story] region route cache unavailable — warming from scratch', e) })
       .then(() => {
         if (this._token !== token || this._phase !== 'settling') return   // superseded
         this._beginWarm()
@@ -201,7 +233,7 @@ export class StorySystem {
       this._pumpAcc = 0
       let done = false
       try {
-        done = this._d.pumpRegionWarm(this._center, this._R + WARM_MARGIN_M)
+        done = this._d.pumpRegionWarm(this._center, REGION_WARM_RADIUS_M)
       } catch (e) {
         console.warn('[story] region warm failed — entering unfrozen', e)
         this._phase = 'live'

@@ -13,7 +13,8 @@ import { dirname, resolve } from 'node:path'
 
 // Runtime assets fetched by URL (NOT ES imports), so the bundler never sees them — they must be
 // copied into dist verbatim at their existing paths so the runtime fetch/loader URLs keep resolving:
-//   data/route-cache-default.json.gz  ← src/route-store.js fetch() (pre-warmed route bundle)
+//   data/route-cache-default.json.gz  ← src/route-store.js fetch() (BASE route bundle, boot)
+//   data/route-cache-region.json.gz   ← src/route-store.js fetch() (story-region delta, lazy)
 //   assets/models/hilux.glb           ← src/vehicle-model.js GLTFLoader().load() (default vehicle)
 //   assets/models/CREDITS.md          ← license attribution shipped beside the model
 // The Vite dev server already serves project-root files, so these 200 in dev with no plugin; this
@@ -22,6 +23,7 @@ import { dirname, resolve } from 'node:path'
 // read data/*.js directly. (route-store.js keeps its fetch URL; do NOT convert it to a ?url import.)
 const RUNTIME_ASSETS = [
   'data/route-cache-default.json.gz',
+  'data/route-cache-region.json.gz',
   'assets/models/hilux.glb',
   'assets/models/CREDITS.md',
 ]

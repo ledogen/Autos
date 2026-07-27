@@ -56,7 +56,7 @@ import { installShadowEdgeFade } from './shadow-fade.js'   // QUAL-18: soft real
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
 import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
-import { loadBundledRouteCache } from './route-store.js'  // QUAL-14 perf: bundled default-world route cache
+import { loadBundledRouteCache, loadRegionRouteCache } from './route-store.js'  // QUAL-14/PERF-26: bundled route caches (BASE at boot, REGION lazily)
 import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond discs + stream ribbons
 
 // World seed — parsed from URL ?seed= parameter, defaulting to '6'.
@@ -343,6 +343,34 @@ async function _importSessionOrBundledRoutes () {
   if (mem) { roadSystem.importRouteCache(mem); return }
   const bundled = await loadBundledRouteCache(worldSeed, RANGER_PARAMS)
   if (bundled && roadSystem) roadSystem.importRouteCache(bundled)
+}
+
+// ── PERF-26: the STORY-REGION route cache, off the boot critical path ────────────────────
+// The bundle is split in two (route-store.js): BASE, awaited above, and this REGION delta, which
+// only story mode's 2800 m entry warm needs. Boot must not wait on it — it is the larger half, and
+// the cost is not just the download: inflate + JSON.parse run on the main thread.
+//
+// So: kick the fetch off once the world is up and idle, and let story entry AWAIT it. By the time
+// the owner clicks into story mode it is already parsed and waiting (the point of doing it at all);
+// if they click sooner, entry blocks on the tail of a download that is already in flight, behind
+// the loading screen it already shows.
+//
+// Fetch and IMPORT are deliberately separate. The download is memoized per seed — the sig check
+// inside is seed-dependent, so a non-default seed resolves null and is never retried — while the
+// import happens only when story mode actually asks, so free roam never merges 4.7 MB of routes it
+// will not use. Correctness never depends on any of this: a miss just routes, like any other seed.
+const _regionRouteFetch = new Map()   // String(seed) → Promise<data|null>
+function _fetchRegionRoutes (seed) {
+  const k = String(seed)
+  if (!_regionRouteFetch.has(k)) _regionRouteFetch.set(k, loadRegionRouteCache(seed, RANGER_PARAMS))
+  return _regionRouteFetch.get(k)
+}
+async function _ensureRegionRoutes () {
+  const seed = worldSeed
+  const data = await _fetchRegionRoutes(seed)
+  // Re-check the seed: the player can reseed while this is in flight, and roadSystem is a DIFFERENT
+  // instance after a reseed — importing seed 6's routes into seed 99's network would be poison.
+  if (data && roadSystem && worldSeed === seed) roadSystem.importRouteCache(data)
 }
 // One-time cleanup of the short-lived IndexedDB persistence experiment (32cde75, reverted same day).
 try { indexedDB.deleteDatabase('rangersim-routes') } catch { /* private mode etc. */ }
@@ -823,11 +851,16 @@ async function _reseatTruckAtSpawnInner () {
 }
 
 // ── Gameplay mode gate (feature/teleport) ─────────────────────────────────────────────────
-// Free-roam is the only mode today. Teleport controls (map double-click, free-cam button,
-// Shift+R) are ENABLED only in free-roam; the future story / scenario modes will flip this and
-// the teleport affordances disappear. Exposed on window so a mode manager can flip it later.
-let _gameMode = 'freeroam'   // 'freeroam' | 'story' | 'scenario'
-function isTeleportEnabled () { return _gameMode === 'freeroam' }
+// Teleport controls (map double-click, free-cam button, Shift+R) are ENABLED per mode here.
+//
+// FEAT-43 (owner decision 2026-07-26): story mode keeps them ON **for now**. Shipping story mode
+// eventually takes them away — teleporting past the region wall is exactly the kind of thing the
+// wall exists to prevent — but while the mode is a sandbox under construction, being able to jump
+// to a spot and inspect it is worth more than the fiction. Drop 'story' from this list to close it.
+// The wall itself still applies: story.js clamps the truck back inside on the next tick, so a
+// teleport outside the region is a look, not a move.
+let _gameMode = 'freeroam'   // 'freeroam' | 'story' | 'scenario' | 'lab'
+function isTeleportEnabled () { return _gameMode === 'freeroam' || _gameMode === 'story' }
 window.__setGameMode = (m) => { _gameMode = m }
 
 // ── "spawn point set" toast (feature/teleport) ────────────────────────────────────────────
@@ -851,13 +884,19 @@ function showSpawnToast () {
 //   align:true  — snap to the local ground plane at (x,z)+heading (map double-click, seed spawn).
 //   align:false — exact body pose (free-cam "teleport here", Shift+R): floating/off-road preserved.
 // teleport* both move the truck NOW and make R return here; setSpawnHere only records the pose.
+// FEAT-43: a deliberate teleport DISARMS the story-mode region wall, exactly the way an active
+// Quick Job does. Without this the wall clamps the truck straight back on the next tick and a
+// teleport outside the region is a no-op. The wall re-arms the moment the player is inside again,
+// so this loosens the fence for the jump only — it never disables it.
 function teleportToGround (x, z, heading, drop) {
   _spawnOverride = { align: true, x, z, heading, drop }
+  storySystem?.notifyTeleport()
   void _reseatTruckAtSpawn()
   showSpawnToast()
 }
 function teleportToPose (x, y, z, quat) {
   _spawnOverride = { align: false, x, y, z, quat: quat.clone() }
+  storySystem?.notifyTeleport()
   void _reseatTruckAtSpawn()
   showSpawnToast()
 }
@@ -1736,6 +1775,10 @@ missionSystem = new MissionSystem({
       throttle: vehicleState.throttle, brake: vehicleState.brake, steer: vehicleState.steerAngle,
     }
   },
+  // FEAT-43: the story region, when one is live. Confines the whole mission inside the wall and
+  // anchors the planner window on the region centre instead of letting it follow the car. Null in
+  // free roam, which leaves Quick Job's original player-centred behaviour exactly as it was.
+  getRegion: () => storySystem?.region() || null,
   teleport: (x, z, heading) => teleportToGround(x, z, heading, 0.5),
   setMapOpen: (open) => {
     if (!open) { map2d.hide(); return }
@@ -2321,6 +2364,7 @@ const storySystem = new StorySystem({
     // spheres left on in free roam don't linger into story mode.
     if (locked && _dbgSpheresOn) { _dbgSpheresOn = false; _dbgSpheres.forEach(m => { m.visible = false }) }
   },
+  ensureRegionRoutes: () => _ensureRegionRoutes(),   // PERF-26: lazy story-region route cache
   hidePauseMenu: () => _hidePauseMenu(),
   setQuickJobVisible: (visible) => { const el = document.getElementById('quickjob-btn'); if (el) el.style.display = visible ? 'block' : 'none' },
   setLoading: (visible, text) => {
@@ -2984,6 +3028,16 @@ perfMark('init: synchronous bootstrap done, requesting first frame')  // TEMP (D
 // the render loop is starting. Read by the headless boot-timing probes.
 window.__rsReady = true
 requestAnimationFrame(loop)
+// PERF-26: start pulling the story-region route cache now that boot is done — download + parse
+// only, no import (see _fetchRegionRoutes). Deferred to idle so it never competes with the initial
+// terrain/prop fill, with a timeout so a permanently-busy machine still gets it. Story entry awaits
+// whatever this leaves in flight, so clicking in early costs the tail of the download, not the whole
+// thing. Fire-and-forget by design: a failure here just means story mode routes as any seed does.
+{
+  const kick = () => { void _fetchRegionRoutes(worldSeed) }
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(kick, { timeout: 4000 })
+  else setTimeout(kick, 2000)
+}
 // PERF-21: precompile the light-count shader variants (lamps off/brake/night/reverse) off the
 // critical path so the first brake or headlight toggle doesn't compile shaders mid-drive.
 prewarmLightPrograms(renderer, scene, camera)
