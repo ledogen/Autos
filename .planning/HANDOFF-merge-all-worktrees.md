@@ -3,14 +3,66 @@
 Written 2026-07-27. Survey is accurate as of that moment — **re-run the survey commands in §1
 before you start**, because two of the three trees had uncommitted work that may have moved.
 
-You are merging two feature branches plus loose work-in-progress in the main tree. The mechanical
-part is easy; three things are not, and they are the reason this document exists:
+**AMENDED 2026-07-26 (session that did the `src/camera.js` work and investigated `roadWOver`)** —
+two things below were wrong or missing when this was first written:
 
+1. §3's instruction to commit `roadWOver: 18500 → 19000` as a routine atomic change is **not
+   safe**. That change is BLOCKED — see the new §0 below, read it before touching `data/ranger.js`.
+2. §3 asked for a description of the `src/camera.js` diff — supplied inline at that section.
+
+You are merging two feature branches plus loose work-in-progress in the main tree. The mechanical
+part is easy; four things are not, and they are the reason this document exists:
+
+- **`roadWOver: 19000` fails a gate with a real, reproduced physics defect — do not commit it
+  as-is.** §0.
 - **`data/route-cache-default.json.gz` is modified in two trees at once and is a binary.** Git
   cannot merge it. Picking a side leaves a cache that silently fails its signature check. §5.
 - **`src/main.js` is edited by both branches**, in ~5 overlapping regions. All are additive on both
   sides, so the resolution is "keep both", but you have to actually look. §4.
 - **Two different tickets both claim `id: PERF-26`.** §6.
+
+---
+
+## 0. BLOCKED: `roadWOver: 19000` — do not land without a fix
+
+The owner asked to bump `roadWOver` (`data/ranger.js`) 18500 → 19000 "anyway" after seeing it drive
+fine on a spot check. It was then re-baked into the route cache and investigated properly, and
+that investigation found a real, reproduced defect — this is not the known/accepted plaza-ramp
+measurement artifact from `905ef27`.
+
+**What's wrong:** at `roadWOver: 19000`, `test/shoulder-lateral-continuity.mjs` fails on seed 6:
+a 2.83 m height step at lateral 1.8 m (well inside the drivable road+shoulder footprint, tol
+0.70 m), at world `(883.7, 907.7)`, on run `g:1,0,0:1,1,2`, arcS≈1557. That point is a real
+on-road station, ~31.5 m from a junction node — inside the junction ruled-blend's fade zone
+(`JN_FADE_IN=22` → `JN_FADE_OUT=34` in `src/road.js`).
+
+**Confirmed physical, not just numerical:** teleported the truck to that exact station with the
+correct road heading (`window.__tp(883.69, 907.72, 1.5820874993547969)` under `?prof=1`) — it
+immediately tips off the road edge onto the embankment slope. Driving a few metres past the
+station and the road is fine again; it's a knife-edge single-station defect, which is exactly why
+a normal drive-by (the owner's spot check landed ~50 m away, near `908,953`) can miss it entirely
+while it's still a real hazard if a player's wheel line happens to cross it.
+
+**Best-guess root cause (unconfirmed, needs real investigation):** the junction ruled inter-leg
+blend (`_carveDirtY` in `src/road.js`, the `JN_FADE_IN`/`JN_FADE_OUT` region around line ~4200)
+fades toward a shared plaza grade by radial distance to the node. At 79% faded toward the pure
+single-leg surface it should be close to continuous — but the barycentric sibling-gap weighting in
+that blend is plausibly sensitive to small lateral shifts near this radius, and raising
+`roadWOver` (interacting with `905ef27`'s already-raised `roadDeviationCap`/`roadGraphDeviationCap`,
+8→10) likely pushed the sibling leg's grade far enough apart that the fade stops being C0 through
+this zone. **Not fixed. Not diagnosed further than this.**
+
+**What to do:**
+- Default to **not** landing `roadWOver: 19000`. Revert `data/ranger.js` to `18500` and drop the
+  re-bake, unless someone has since fixed the junction-blend continuity issue and reverified
+  `shoulder-lateral-continuity.mjs` green.
+- If the owner wants to pursue 19000 anyway, that's real `src/road.js` carve work (the junction
+  blend has already been fought over hard — see `project_junction_fillet_merge_pending`,
+  `project_qual11_qual16_pad_v2` in the owner's memory), not a config bump. Don't re-attempt it as
+  a quick tolerance loosening in the test — the gate is correctly catching a driving hazard here.
+- Either way, `data/ranger.js` and `data/route-cache-default.json.gz` stay a single atomic unit
+  (unchanged from the rest of this doc) — just make sure whatever value ships has a clean
+  `shoulder-lateral-continuity` run behind it, not just `route-bundle-parity`.
 
 ---
 
@@ -33,14 +85,15 @@ Uncommitted, not on any branch:
 
 | file | change |
 |---|---|
-| `src/camera.js` | 3 hunks, +44/-16 — chase-camera work |
-| `data/ranger.js` | `roadWOver: 18500 → 19000` |
-| `data/route-cache-default.json.gz` | re-baked, 3338043 → 3692864 bytes |
-| `.planning/todos/pending/feat-stream-culvert-visual.md` | ticket edit |
+| `src/camera.js` | 3 hunks, +44/-16 — chase-cam drag-orbit snap fix, finished + verified, see §3 |
+| `data/ranger.js` | `roadWOver: 18500 → 19000` — **BLOCKED, see §0**, do not land as routine |
+| `data/route-cache-default.json.gz` | re-baked, 3338043 → 3692864 bytes — tied to the blocked change above |
+| `.planning/todos/pending/feat-stream-culvert-visual.md` | ticket edit (dupe-id fix, unrelated, harmless) |
 
 The `ranger.js` + `.gz` pair go together: `roadWOver` matches `^road` in `routeCacheSig()`
 (`src/route-store.js:22`), so changing it invalidates the bundled cache, and the re-bake is the
-response. **Treat those two files as one atomic change** — never land one without the other.
+response. **Treat those two files as one atomic change** — but per §0, the value they should carry
+is very likely `18500` (i.e. revert both), not `19000`.
 
 ### `feature/story-mode` — `/Users/ledogen/CodeShit/CarGame-story-mode` @ `272e7ce`
 **ahead 2, behind 1.** The big one. Two commits (`f49657d` a `_detectJunctions` memo fix,
@@ -80,6 +133,7 @@ small insertions that are easy to re-apply against a file that has moved under t
 order means hand-resolving the 189-line story-mode diff against a moved file, which is worse.
 
 ```
+-1. resolve the roadWOver blocker    (§0 — revert to 18500 unless it's since been fixed)
 0. commit main's WIP        (§3)
 1. merge feature/story-mode (§4a)  → verify → re-bake cache (§5) → gates
 2. merge feature/stream-hitch (§4b) → verify → gates
@@ -99,15 +153,38 @@ Main's working tree must be clean before any merge. Commit it; do not stash it, 
 
 ```bash
 cd /Users/ledogen/CodeShit/CarGame
-git add data/ranger.js data/route-cache-default.json.gz
-git commit -m "tune(road): roadWOver 18500 -> 19000 + route cache re-bake"
+# roadWOver: see §0 first — do NOT commit 18500 -> 19000 as routine. Revert to 18500 (and drop
+# the re-bake) unless the junction-blend issue in §0 has been fixed and reverified.
+git checkout -- data/ranger.js data/route-cache-default.json.gz   # if reverting per §0
+
 git add src/camera.js .planning/todos/pending/feat-stream-culvert-visual.md
-git commit -m "feat(camera): <describe the chase-camera change>"
+git commit -m "fix(camera): stop chase-cam drag-orbit snapping toward the car at speed"
 ```
 
-Read `git diff src/camera.js` before writing that second message — nobody has described what that
-change does, so do not invent a message for it. If the camera work is unfinished, commit it on a
-throwaway branch instead of main rather than stashing it indefinitely.
+`src/camera.js` is a **finished, verified bug fix**, not WIP — safe to commit as-is:
+
+The chase-cam drag-orbit (hold left mouse to orbit around the car) re-projected the camera at a
+fixed nominal radius (`ORBIT_RADIUS`, ≈6.5 m — the design offset length) whenever a drag started,
+instead of the camera's actual current distance from the car. The follow-mode lerp lags behind the
+car under acceleration, so the real gap grows well past 6.5 m; clicking to orbit then instantly
+snapped the camera back to the fixed 6.5 m radius — the long-standing "camera snaps toward the car
+when you grab it while driving fast" bug. Fix: track the camera's actual distance in a new
+`orbitRadius` variable, synced every follow-mode frame alongside `orbitTheta`/`orbitPhi`, and use
+it (not the fixed constant) when placing the camera in orbit mode.
+
+Verified via headless CDP: reproduced the bug on pre-fix code (camera-to-car distance snapped
+9.45 m → 6.67 m, a 4.1 m jump, on mousedown while accelerating), confirmed the fix holds the
+distance steady (9.3 m → 9.28 m, no jump) under the same conditions. No gate covers `src/camera.js`
+(camera/input glue, not physics/road) — this is expected per this project's gate scope; verification
+was live in-browser.
+
+The `.planning/todos/pending/feat-stream-culvert-visual.md` edit is unrelated and not mine — it
+renames a duplicate ticket id (`FEAT-30` → `FEAT-44`; there were two pending tickets both claiming
+`FEAT-30`, see `feat-par-calibration.md` vs `feat-stream-culvert-visual.md`). Already correct,
+just uncommitted — bundle it into the same commit or its own, either is fine.
+
+If the camera work is unfinished, commit it on a throwaway branch instead of main rather than
+stashing it indefinitely — but as of this writing it's done.
 
 ---
 
