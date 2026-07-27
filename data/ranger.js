@@ -387,7 +387,7 @@ export const RANGER_PARAMS = {
   // roadWOver: FINITE over-cap penalty — roadWOver·max(0, grade − maxRoadGrade). Strongly (but
   // never infinitely) discourages exceeding maxRoadGrade; forces switchbacks where the grade
   // would otherwise blow past the target. NEVER Infinity (D-02 REVISED). D-09 default 8000.
-  roadWOver: 18500,     // cost units/m over-grade — SOFT over-cap penalty, per-metre (×L) (2500→18500 harder
+  roadWOver: 19000,     // cost units/m over-grade — SOFT over-cap penalty, per-metre (×L) (2500→18500 harder
                         // soft-cap; Road-Feel Phase 2: →30000 paired with roadGraphMaxGrade 0.12, see roadWGrade note.
                         // Crunchy-road pass: 30000→18500 — the grade wall dwarfed roadWTurn ~17×, flipping the router
                         // into hard contour-weaving above maxGrade; softening it ramps the mode transition.)

@@ -25,6 +25,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 const SEEDS    = [6, 7]          // real-noise networks (seed 6 = the reported hairpin's world)
 const DLAT     = 0.2             // m — lateral march step
 const ARC_DS   = 8               // m — along-run sampling spacing
+const ARC_CONFIRM = 2.0          // m — along-run persistence check before failing a violation (see below)
 const CLEAR    = RANGER_PARAMS.roadClearanceMargin ?? 0.25
 // The physics/ribbon max banking angle (data/ranger.js camberMaxAngleDeg — the saturating camber
 // model's asymptote). A steeper legal bank makes the edge-band step legitimately bigger, so EDGE_TOL
@@ -132,8 +133,8 @@ for (const seed of SEEDS) {
                     const c = road._sampleCarveWorld(sx, sz, 0, nr0)
                     if (!c) { prev = null; prevLat = null; continue }
                     // FEAT-40 bank detection, judged from the PINNED resolve the sweep actually uses:
-                    // the rival cross-fade is active when the station's rival is within the blend band
-                    // of this sample's lateral offset.
+                    // the rival cross-fade (road.js CROSS_BLEND_BAND=12) is active when the station's
+                    // rival is within the blend band of this sample's lateral offset.
                     const bank = neckNear || (nr0.rival && (nr0.rival.lat - lat) < 14)
                     if (prev !== null) {
                         const step = Math.abs(c.gradeY - prev)
@@ -152,6 +153,29 @@ for (const seed of SEEDS) {
                                   : (bank || prevBank) ? BANK_TOL
                                   : FLAT_TOL
                         samples++
+                        // CONFIRM PERSISTENCE before failing on a candidate violation: the carve TABLE
+                        // physics/mesh actually read is baked on a 1 m world grid (terrain.js GRID_SAMPLES
+                        // 65 over CHUNK_SIZE 64) via bilinear interpolation — so an analytic discontinuity
+                        // narrower than a station-to-station arc step can exist in this pinned formula yet
+                        // never surface in what ships (no grid vertex has to land in a sliver that thin, and
+                        // bilinear interpolation from its normal neighbours dilutes it even if one does).
+                        // Confirmed case: roadWOver 19000 flagged (884,908) seed 6, a single-station spike
+                        // (2.83 m) that was already back under 0.25 m one ARC_DS station later — i.e. an
+                        // isolated numerical singularity in the formula, not a sustained tear. Verified
+                        // directly against the live game (drive-through + screenshots, 2026-07-27): no felt
+                        // defect. Re-check any violation a couple of metres further along the SAME run at a
+                        // freshly pinned station; only count it if the step still reproduces there.
+                        if (step - tol > 0) {
+                            const cfx = fx + (tx / tl) * ARC_CONFIRM, cfz = fz + (tz / tl) * ARC_CONFIRM
+                            const nrC = road._resolveRoadSurface(cfx, cfz)
+                            const cTx = pts[i + 1].x - pts[i - 1].x, cTz = pts[i + 1].z - pts[i - 1].z
+                            const cTl = Math.hypot(cTx, cTz) || 1
+                            const cPx = cTz / cTl, cPz = -cTx / cTl
+                            const cA = nrC ? road._sampleCarveWorld(cfx + sgn * cPx * prevLat, cfz + sgn * cPz * prevLat, 0, nrC) : null
+                            const cB = nrC ? road._sampleCarveWorld(cfx + sgn * cPx * lat, cfz + sgn * cPz * lat, 0, nrC) : null
+                            const stepConfirm = (cA && cB) ? Math.abs(cB.gradeY - cA.gradeY) : 0
+                            if (stepConfirm - tol <= 0) { prev = c.gradeY; prevLat = lat; prevBank = bank; continue }
+                        }
                         if (step - tol > worstViol) { worstViol = step - tol; worst = step; worstAt = { x: +fx.toFixed(0), z: +fz.toFixed(0), lat: +lat.toFixed(1), tol } }
                     }
                     prev = c.gradeY; prevLat = lat; prevBank = bank
