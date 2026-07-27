@@ -38,6 +38,16 @@ let travelCtx = null
 let slipCanvas = null
 let slipCtx = null
 
+// FEAT-43 / "Game modes" (ratified 2026-07-16): the debug GUI is LOCKED OUT in story mode. While
+// locked, the backtick toggle is inert and the panel + its canvases are force-hidden. StorySystem
+// flips this via setDebugLockout() on enter/exit. Assigned inside initDebug once the panel exists.
+let _debugLockout = false
+let _forceHideDebug = () => {}
+export function setDebugLockout (locked) {
+  _debugLockout = locked
+  if (locked) _forceHideDebug()
+}
+
 /**
  * Initialize the debug panel. Creates a lil-gui instance, adds physics sliders,
  * registers the backtick toggle listener, and returns the GUI instance.
@@ -715,10 +725,18 @@ export function initDebug (params, callbacks = {}, options = {}) {
   document.body.appendChild(slipCanvas)
   slipCtx = slipCanvas.getContext('2d')
 
+  // FEAT-43: force-hide hook the story-mode lockout calls. Hides the panel + all three canvases.
+  _forceHideDebug = () => {
+    gui.domElement.style.display = 'none'
+    plotCanvas.style.display = 'none'
+    travelCanvas.style.display = 'none'
+    slipCanvas.style.display = 'none'
+  }
+
   // Backtick toggle listener — toggles gui panel, plotCanvas, travelCanvas, AND slipCanvas in lockstep.
-  // Only ONE backtick listener in this file.
+  // Only ONE backtick listener in this file. Inert while story mode holds the debug lockout (FEAT-43).
   document.addEventListener('keydown', e => {
-    if (e.key === '`') {
+    if (e.key === '`' && !_debugLockout) {
       const hidden = gui.domElement.style.display === 'none'
       gui.domElement.style.display = hidden ? '' : 'none'
       plotCanvas.style.display = hidden ? '' : 'none'

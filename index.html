@@ -59,6 +59,105 @@
       color: #ffffff;
       border-color: #888;
     }
+    /* FEAT-43: Story Mode seed prompt (minimal; full styling deferred to FEAT-41). */
+    #story-seed-modal {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.86);
+      border: 1px solid #4a5a6a;
+      padding: 26px 34px;
+      font-family: monospace;
+      font-size: 14px;
+      color: #cfd6dd;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      z-index: 101;
+      min-width: 220px;
+    }
+    #story-seed-modal .ss-title {
+      color: #00ff88;
+      font-size: 13px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    #story-seed-modal .ss-label { color: #8fa0b0; font-size: 12px; }
+    #story-seed-modal #ss-seed {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid #555;
+      color: #ffffff;
+      font-family: monospace;
+      font-size: 16px;
+      text-align: center;
+      padding: 6px 10px;
+      width: 160px;
+    }
+    #story-seed-modal .ss-actions { display: flex; gap: 10px; }
+    #story-seed-modal button {
+      background: none;
+      border: 1px solid #555;
+      color: #cccccc;
+      font-family: monospace;
+      font-size: 14px;
+      padding: 6px 18px;
+      cursor: pointer;
+      transition: background 0.1s, color 0.1s;
+    }
+    #story-seed-modal button:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+      border-color: #888;
+    }
+    #story-seed-modal #ss-start { border-color: #2f6da4; color: #7fbfff; }
+    #story-seed-modal .ss-hint { color: #6a7a88; font-size: 11px; }
+    /* FEAT-43: Story Mode entry loading screen. Full-cover (not a panel) — the world behind it is
+       mid-reseed and mid-warm, so showing it would read as a broken frame. Opaque, above everything
+       including the pause menu. Minimal styling; FEAT-41 owns the real menu look. */
+    #story-loading {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #05070a;
+      color: #cfd6dd;
+      font-family: monospace;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      z-index: 200;
+    }
+    #story-loading .sl-title {
+      color: #00ff88;
+      font-size: 15px;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+    }
+    #story-loading #sl-text { font-size: 13px; color: #8fa0b0; }
+    #story-loading .sl-hint { font-size: 11px; color: #55636f; max-width: 460px; text-align: center; line-height: 1.6; }
+    /* FEAT-43: Quick Job launcher (in-mode corner button). */
+    #quickjob-btn {
+      display: none;
+      position: fixed;
+      right: 14px;
+      bottom: 14px;
+      background: rgba(0, 0, 0, 0.72);
+      border: 1px solid #4a5a6a;
+      color: #cfd6dd;
+      font-family: monospace;
+      font-size: 13px;
+      padding: 8px 16px;
+      cursor: pointer;
+      z-index: 96;
+      transition: background 0.1s, color 0.1s;
+    }
+    #quickjob-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #ffffff;
+      border-color: #888;
+    }
     /* Story-mode beta: mission offer panel. Sits above the 2D map (z 90) so the route and
        start/drop pins are visible behind it; the panel is bottom-anchored, not centered. */
     #mission-panel {
@@ -292,12 +391,38 @@
   <!-- Pause menu overlay (D-17) — shown on Esc from chase/hood mode; hidden in free-cam.
        Button ids are wired in main.js: pm-resume, pm-story, pm-lab.
        (D-18 "grid world" / "return to world" were removed 2026-07-20 — the testing lab
-       superseded grid world, which only ever hid the terrain chunks and had no instruments.) -->
+       superseded grid world, which only ever hid the terrain chunks and had no instruments.)
+       FEAT-43: pm-story now opens the seed prompt and enters the sandboxed Story Mode gamemode
+       (src/story.js). The beta mission generator it used to launch is now Quick Job, surfaced as a
+       corner button INSIDE story mode (#quickjob-btn), not a pause-menu entry. -->
   <div id="pause-menu">
     <div class="pm-title">paused</div>
     <button id="pm-resume">resume</button>
-    <button id="pm-story">story mode (beta)</button>
+    <button id="pm-story">story mode</button>
     <button id="pm-lab">testing lab</button>
+  </div>
+
+  <!-- FEAT-43: Story Mode seed prompt. Minimal for now (full menu styling is FEAT-41); pre-filled
+       with the pre-baked default seed 6 so it boots instantly for testing. Wired in main.js. -->
+  <div id="story-seed-modal">
+    <div class="ss-title">story mode</div>
+    <div class="ss-label">world seed</div>
+    <input id="ss-seed" type="text" maxlength="24" spellcheck="false" value="6">
+    <div class="ss-actions">
+      <button id="ss-start">start</button>
+      <button id="ss-cancel">cancel</button>
+    </div>
+    <div class="ss-hint">default seed 6 is pre-baked — loads instantly</div>
+  </div>
+
+  <!-- FEAT-43: Story Mode entry loading screen. Covers the reseed + the one-time region routing
+       warm; once it clears, the router is FROZEN for the whole region (no streaming/routing cost
+       while driving). Text is set from src/story.js via the setLoading dep. -->
+  <div id="story-loading">
+    <div class="sl-title">story mode</div>
+    <div id="sl-text">entering the region&hellip;</div>
+    <div class="sl-hint">routing the whole region once, up front — after this the roads are frozen
+      and no routing runs while you drive. A fresh seed pays this once; seed 6 is pre-baked.</div>
   </div>
 
   <!-- Story-mode beta: mission offer panel (shown over the 2D map before the start countdown)
@@ -355,6 +480,11 @@
        toggles display). Click (cursor must be free; press Esc to release pointer-lock) or press
        T while flying to drop the truck at the camera position. -->
   <button id="teleport-btn">Teleport here (T)</button>
+
+  <!-- FEAT-43: Quick Job launcher — the beta mission generator, now surfaced only INSIDE story mode
+       (main.js toggles display by game mode). Later becomes a debug-only affordance once POIs give
+       missions. -->
+  <button id="quickjob-btn">Quick Job</button>
 
   <!-- Spawn-point-set toast — fades out ~3 s after any spawn change (main.js showSpawnToast). -->
   <div id="spawn-toast">spawn point set</div>

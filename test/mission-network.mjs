@@ -152,5 +152,54 @@ const ms = new MissionSystem({
   console.log(`       ${lens.length} rolls, ${lo.toFixed(1)}-${hi.toFixed(1)} km`)
 }
 
+// ── 6. FEAT-43: a story region CONFINES the mission ─────────────────────────────────────────────
+// Story mode fences the player inside REGION_RADIUS_M, but Quick Job rolls BOTH endpoints freely
+// from the planner's node set — and that set reaches well past the planner's nominal radius,
+// because the streamed band carries a wide margin. Measured on seed 6 before the fix: a planner at
+// MISSION_PLAN_RADIUS centred ON the region centre still offered nodes out to 2783 m, 4 of 43
+// beyond a 2500 m wall, so roughly one roll in ten sent the player outside the world they were
+// allowed to be in. Regenerating just re-rolled the dice.
+//
+// Pinned here rather than in a story-mode test because the containment lives in the PLANNER: it is
+// _roll's candidate filter plus the finished-polyline re-check, and both are mission-side.
+{
+  const R = 2500
+  const region = { x: C.x, z: C.z, r: R }
+  const msR = new MissionSystem({
+    getRoad: () => road,
+    makePlanner: () => road,
+    getCar: () => ({ x: C.x, z: C.z, speed: 0 }),
+    getSeed: () => 6,
+    getRegion: () => region,
+    teleport () {}, setMapOpen () {}, onChange () {},
+  })
+  const dist = (p) => Math.hypot(p.x - region.x, p.z - region.z)
+  let rolls = 0, escaped = 0, worst = 0
+  for (let i = 0; i < 25; i++) {
+    const m = msR._roll()
+    if (!m) continue
+    rolls++
+    // The POLYLINE is the claim: pins inside the wall on a road that itself leaves is still an escape.
+    for (const p of [...m.poly, m.start, m.end]) {
+      const d = dist(p)
+      if (d > worst) worst = d
+      if (d > R) escaped++
+    }
+  }
+  check('a region-confined mission never leaves the wall (pins AND driven polyline)',
+    rolls >= 8 && escaped === 0, `${escaped} points outside r=${R} over ${rolls} rolls, worst ${worst.toFixed(0)} m`)
+  console.log(`       ${rolls} confined rolls, furthest point ${worst.toFixed(0)} m of ${R} m`)
+
+  // The filter must not strangle the generator: if confinement left too little network to plan on,
+  // the mode would quietly stop offering jobs, which looks identical to "it's still generating".
+  check('confinement still yields missions at a healthy rate', rolls >= 20, `${rolls}/25 rolls produced a mission`)
+
+  // And it must stay OPT-IN: free roam (no region) keeps the original unconfined behaviour, which
+  // is what every section above has been exercising all along.
+  let free = 0
+  for (let i = 0; i < 6; i++) if (ms._roll()) free++
+  check('no region ⇒ unchanged free-roam planning', free >= 5, `${free}/6 rolls`)
+}
+
 console.log(fails === 0 ? '\nPASS mission-network' : `\nFAIL mission-network (${fails})`)
 process.exit(fails === 0 ? 0 : 1)
