@@ -28,7 +28,7 @@ window.__view = placeFreecam
 // harness toggles prop shadow casting and reads renderer.info through these.
 window.__props = () => propSystem
 window.__renderer = () => renderer
-import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors } from './debug.js'
+import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
 import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume } from './engine-audio.js'
@@ -46,6 +46,7 @@ import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { MissionSystem, MISSION_PLAN_RADIUS, PLAN_RESTREAM_MOVE } from './mission.js'  // story mode (beta)
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
+import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
@@ -508,10 +509,29 @@ async function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-
 // Path B: reinitWorker → rebuildAllChunksFromWorker → re-seat truck at spawn.
 // The amplitude slider (Path A: rebuildAllChunks) bypasses this entirely.
 // Free-cam keeps flying through a regenerate — only the truck is re-seated (D-15).
+// FEAT-43: the rebuild is AWAITABLE. Story-mode entry must not capture its region center (or start
+// the routing warm) until the new seed's world exists and the truck has been re-seated at its spawn
+// — otherwise the region would center on the OLD position. Callers that don't care ignore the
+// returned promise. Coalesced: every call inside one debounce window gets the SAME promise, settled
+// once the body finishes OR throws (a rejection here would only strand the caller; the body logs).
 let _rebuildDebounceTimer = null
+let _rebuildPending = null   // { promise, resolve } for the currently-debounced rebuild
 function debouncedRebuildFull () {
   clearTimeout(_rebuildDebounceTimer)
-  _rebuildDebounceTimer = setTimeout(async () => {
+  if (!_rebuildPending) {
+    let resolve
+    _rebuildPending = { promise: new Promise(r => { resolve = r }), resolve: (...a) => resolve(...a) }
+  }
+  const pending = _rebuildPending
+  _rebuildDebounceTimer = setTimeout(() => {
+    void _rebuildFullNow()
+      .catch(e => console.warn('[main] full rebuild failed', e))
+      .finally(() => { if (_rebuildPending === pending) _rebuildPending = null; pending.resolve() })
+  }, 150)
+  return pending.promise
+}
+
+async function _rebuildFullNow () {
     if (!terrainSystem) return
     terrainSystem.reinitWorker(worldSeed, RANGER_PARAMS)
     // (rebuildAllChunksFromWorker moved BELOW the reseat — see the ORDER MATTERS note there.)
@@ -581,7 +601,19 @@ function debouncedRebuildFull () {
     // stale until something forces another rebuild (the "toggle the seed to fix it" symptom).
     // Until this line runs the OLD seed's chunks stay visible; the flip is the clean-start moment.
     terrainSystem.rebuildAllChunksFromWorker()
-  }, 150)
+}
+
+// Canonical "change the world seed" op: update the seed + reference string, drop the spawn override
+// and mission plan, force a fresh planner warm, and fire the debounced Path-B rebuild. Shared by the
+// debug seed field (changeSeed) and Story Mode's seed prompt (StorySystem) so both reseed identically.
+// Returns the rebuild promise (FEAT-43: story-mode entry awaits it before centering its region).
+function applyWorldSeed (v) {
+  worldSeed = parseWorldSeed(v)
+  _seedString = String(v)
+  _spawnOverride = null
+  missionSystem?.invalidatePlan()
+  _plannerWarm = null; _plannerWarmAt = -Infinity
+  return debouncedRebuildFull()
 }
 
 // ── Debounced road surface rebuild (D-04/D-07 — Plan 09-05) ─────────────────────────────────
@@ -1007,6 +1039,9 @@ const map2d = new Map2D({
   // road-top Y; we drop the truck 0.5 m above it (or on terrain when off-road) and set the spawn.
   canTeleport: isTeleportEnabled,
   getMission: () => missionSystem?.markers() ?? null,
+  // FEAT-43: the story-mode region boundary, so the player can see where the wall is rather than
+  // finding it by driving into it. Null outside story mode (and until the region center is captured).
+  getRegion: () => storySystem?.region() ?? null,
   onTeleport: ({ x, z, heading }) => {
     // Snap to the road orientation, but a road tangent has TWO directions — pick the one closest
     // to the truck's current heading so the teleport doesn't spin it 180°. Off-road: keep heading.
@@ -1474,6 +1509,9 @@ if (_PROF) {
     programs: renderer.info.programs?.length ?? 0,
   })
   window.__perfData = () => perfSnapshot()
+  // FEAT-43: story-mode handle, so the external profiler can measure INSIDE the mode (enter it,
+  // wait out the region warm, then drive) instead of only ever profiling free roam.
+  window.__story = () => storySystem
   // Route-dispatch probe: wraps _routeDispatch on first call to count per-key dispatches —
   // diagnoses warm-loop re-dispatch churn (a key dispatched >2× means a warm scan is spinning).
   let _rdWrap = null
@@ -1557,7 +1595,7 @@ const _gui = initDebug(RANGER_PARAMS, {
   applyQuality:        (name) => applyQuality(name),   // PERF-06: master Quality tier (draw distance + shadows + props + res)
   rebuildTerrain:      ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() },
   rebuildTerrainFull:  ()  => debouncedRebuildFull(),
-  changeSeed:          (v) => { worldSeed = parseWorldSeed(v); _seedString = String(v); _spawnOverride = null; missionSystem?.invalidatePlan(); _plannerWarm = null; _plannerWarmAt = -Infinity; debouncedRebuildFull() },
+  changeSeed:          (v) => applyWorldSeed(v),
   // Phase 8 (D-03 / D-05): road viz toggle + D-09 cost-weight param-change debounce.
   // (08-07: proto wiring retired — there is ONE road system + ONE viz now.)
   onRoadVizToggle:     (v) => { if (roadSystem) roadSystem.setDebugVisible(v) },
@@ -1900,7 +1938,11 @@ for (const b of document.querySelectorAll('.mp-felt')) {
 }
 document.getElementById('mp-quit')?.addEventListener('click', () => {
   missionSystem.exit()
-  window.__setGameMode('freeroam')
+  // FEAT-43: Quick Job runs INSIDE story mode, so "back to free roam" leaves the whole mode —
+  // route through StorySystem.exit() to restore streaming radii + debug tooling. If a mission was
+  // somehow live outside story mode (legacy path), just drop the game mode.
+  if (storySystem.isActive()) storySystem.exit()
+  else window.__setGameMode('freeroam')
 })
 
 // Phase 9 (SURF-01 / SURF-03): RoadMeshSystem — ribbon mesh sweep with crown + camber.
@@ -2031,12 +2073,17 @@ const _dbgSpheres = Array.from({ length: BODY_CONTACT_COUNT }, () => {
 })
 let _dbgSpheresOn = false
 document.addEventListener('keydown', e => {
-  if (e.key === '`') {
+  // FEAT-43: collision-sphere debug is part of the debug tooling locked out in story mode.
+  if (e.key === '`' && !storySystem.isActive()) {
     _dbgSpheresOn = !_dbgSpheresOn
     _dbgSpheres.forEach(m => { m.visible = _dbgSpheresOn })
   }
   // FEAT-16: M toggles the 2D top-down map overlay (sim keeps running underneath).
   if (e.key === 'm' || e.key === 'M') {
+    // FEAT-43: in story mode, make the map build out to the region boundary so the drawn wall sits
+    // on drawn roads instead of on blank map. Cheap here — the region's routes are already cached.
+    const _reg = storySystem.region()
+    if (_reg) { map2d.setRadiusCap(_reg.r + 400); map2d.setRadiusTarget(_reg.r + 200) }
     map2d.toggle()
     // Freecam pointer-lock swallows the mouse for FPS look — release it so the map is
     // interactive. The canvas click handler in camera.js re-locks it on return to freecam.
@@ -2241,12 +2288,109 @@ function _renderLabUI () {
 function _showPauseMenu () {
   const el = document.getElementById('pause-menu')
   if (el) el.style.display = 'flex'
+  // FEAT-43: the pm-story slot is context-aware — it enters story mode from free roam, and offers
+  // the way OUT ("free roam") while story mode is active.
+  const storyBtn = document.getElementById('pm-story')
+  if (storyBtn) storyBtn.textContent = storySystem.isActive() ? 'free roam' : 'story mode'
 }
 
 function _hidePauseMenu () {
   const el = document.getElementById('pause-menu')
   if (el) el.style.display = 'none'
 }
+
+// ── Story Mode (FEAT-43) — sandboxed gamemode ─────────────────────────────────────────────
+// StorySystem owns the whole story-mode lifecycle (src/story.js). main.js only supplies the `deps`
+// adapter so story.js stays free of engine imports; the region radius is story.js's own constant.
+//
+// The mode's defining behaviour is the ROUTING FREEZE: behind the entry loading screen the play
+// RoadSystem is widened to the whole region, every connection in it is warmed on the road Worker,
+// the network is registered once at that wide radius, and thereafter the frame loop makes NO
+// roadSystem.update()/warmRoutes() calls at all (see isRoutingFrozen() at the two call sites in
+// loop()). Terrain/props/water/ribbons keep streaming around the player and build against that
+// frozen network — freezing THEM would pin ~1.4 GB of chunk meshes. See story.js's header.
+const _storyWarmCenter = new THREE.Vector3()   // scratch for the region warm/release calls below
+const storySystem = new StorySystem({
+  setGameMode: (m) => window.__setGameMode(m),
+  getWorldSeed: () => worldSeed,
+  applySeed: (v) => applyWorldSeed(v),     // resolves when the rebuild + reseat have settled
+  reseat: () => _reseatTruckAtSpawn(),     // resolves when the truck is seated at the spawn
+  setDebugLockout: (locked) => {
+    setDebugLockout(locked)
+    // Collision-sphere debug lives in main.js, not the GUI — force it off entering the lockout so
+    // spheres left on in free roam don't linger into story mode.
+    if (locked && _dbgSpheresOn) { _dbgSpheresOn = false; _dbgSpheres.forEach(m => { m.visible = false }) }
+  },
+  hidePauseMenu: () => _hidePauseMenu(),
+  setQuickJobVisible: (visible) => { const el = document.getElementById('quickjob-btn'); if (el) el.style.display = visible ? 'block' : 'none' },
+  setLoading: (visible, text) => {
+    const el = document.getElementById('story-loading')
+    if (el) el.style.display = visible ? 'flex' : 'none'
+    const t = document.getElementById('sl-text')
+    if (t && text) t.textContent = text
+  },
+  getVehiclePosition: () => ({ x: vehicleState.position.x, z: vehicleState.position.z }),
+  isMissionActive: () => !!missionSystem?.isActive(),
+  /**
+   * One step of the region routing warm. Widens the play RoadSystem to the region radius and pumps
+   * warmBandComplete() — the completion-aware sibling of warmRoutes() — which dispatches every
+   * un-cached connection in the band to the road Worker and returns true only when nothing is
+   * outstanding. Mirrors the _startPlannerWarm pump above, but on the PLAY instance, because the
+   * play network is the one the frame loop is about to stop updating.
+   *
+   * On the final step it registers the whole region ONCE at the wide radius (roadSystem.update):
+   * that runs the crossing cull at the wide radius, which post-BUG-25 is a pure fn of (seed,
+   * params, region) and a safe superset of the 320 m window — the invariance gates prove it.
+   * Only after that has run is it safe for story.js to set the freeze.
+   * @returns {boolean} true ⇒ every region route is cached AND the network is registered
+   */
+  pumpRegionWarm: (center, radius) => {
+    if (!roadSystem) return true
+    _storyWarmCenter.set(center.x, 0, center.z)
+    roadSystem.setRadius(radius)
+    if (!roadSystem.warmBandComplete(_storyWarmCenter)) return false
+    roadSystem.update(_storyWarmCenter)   // register + cull the whole region, once
+    // ORDER MATTERS (same rule as debouncedRebuildFull): terrain bakes its carve tables at
+    // chunk-request time, so any chunk built while the region was still warming carries the carve
+    // of the OLD 320 m network. Re-bake the live ring against the now-registered region — ~25
+    // chunks behind the loading screen, and it removes a whole class of "the road is drawn but not
+    // carved" seams near the spawn.
+    terrainSystem?.rebuildAllChunksFromWorker()
+    return true
+  },
+  /** Exit: hand the play RoadSystem back its normal streaming window before the loop resumes. */
+  releaseRegion: () => {
+    if (!roadSystem) return
+    roadSystem.setRadius(320)   // PERF (Tier 1) play radius — matches the terrain ring
+    roadSystem.update(getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position)
+  },
+})
+
+// ── Story-mode seed prompt (FEAT-43) ──────────────────────────────────────────────────────
+function _showSeedModal () {
+  const el = document.getElementById('story-seed-modal')
+  if (el) el.style.display = 'flex'
+  const inp = document.getElementById('ss-seed')
+  if (inp) { inp.value = _seedString; inp.focus(); inp.select() }
+}
+function _hideSeedModal () {
+  const el = document.getElementById('story-seed-modal')
+  if (el) el.style.display = 'none'
+}
+function _startStoryFromModal () {
+  const seed = document.getElementById('ss-seed')?.value ?? '6'
+  _hideSeedModal()
+  storySystem.enter(seed)
+}
+document.getElementById('ss-start')?.addEventListener('click', _startStoryFromModal)
+document.getElementById('ss-cancel')?.addEventListener('click', () => _hideSeedModal())
+document.getElementById('ss-seed')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); _startStoryFromModal() }
+  else if (e.key === 'Escape') { e.preventDefault(); _hideSeedModal() }
+  e.stopPropagation()   // keep WASD/M/Esc out of the world while typing a seed
+})
+// Quick Job launcher — the beta mission generator, now surfaced only inside story mode.
+document.getElementById('quickjob-btn')?.addEventListener('click', () => { if (missionSystem) missionSystem.enter() })
 
 // Wire pause-menu buttons. Null-guarded (?.) like every other DOM lookup in this file:
 // an unguarded deref would throw at module-eval and abort the whole sim if an id is
@@ -2260,11 +2404,20 @@ document.getElementById('pm-lab')?.addEventListener('click', () => {
   if (missionSystem?.isActive()) missionSystem.exit()   // don't run a mission inside the lab
   enterLab()
 })
+// FEAT-43: pm-story is context-aware. From free roam it opens the seed prompt → StorySystem.enter()
+// (the sandboxed gamemode). While story mode is active it reads "free roam" and exits the mode. It no
+// longer launches the beta mission generator directly — that is now Quick Job (#quickjob-btn),
+// surfaced inside story mode.
 document.getElementById('pm-story')?.addEventListener('click', () => {
+  if (storySystem.isActive()) {
+    if (missionSystem?.isActive()) missionSystem.exit()
+    _hidePauseMenu()
+    storySystem.exit()
+    return
+  }
   if (_labActive) exitLab()
   _hidePauseMenu()
-  window.__setGameMode('story')
-  missionSystem.enter()
+  _showSeedModal()
 })
 // (grid world's "grid world" / "return to world" buttons were removed with it — the lab's own
 // toggle is the way in and out of a flat world now.)
@@ -2472,6 +2625,11 @@ function loop () {
     accumulator -= PHYSICS_DT
   }
 
+  // FEAT-43: Story Mode — advance the settle→freeze timer and enforce the region boundary on the
+  // physics pose BEFORE the render interpolation reads it (so the truck is clamped, not just drawn
+  // clamped). No-op unless story mode is active.
+  storySystem.update(frameTime, vehicleState)
+
   // FEAT-22: water submersion flag — CG vs the local water surface (pond plane). Once per render
   // frame (not per physics substep): v1 only SETS the flag; nothing in stepPhysics consumes it yet.
   if (waterSystem && !_labActive) {
@@ -2609,7 +2767,11 @@ function loop () {
   _pt = performance.now()
   // QUAL-14 perf: while a spawn warm holds the enlarged radius (seed regen), a re-stream here
   // would synchronously route the enlarged band — skip until the warm restores the play radius.
-  if (roadSystem && !_spawnWarmActive && !_labActive) roadSystem.update(streamCenter)
+  // FEAT-43: story mode suspends this for the same reason as _spawnWarmActive above — while its
+  // region warm holds the enlarged radius a re-stream here would synchronously route the whole
+  // region every frame; and once frozen, a re-stream would narrow the network back to a 320 m
+  // window and undo the freeze. This skip (and the warmRoutes one below) IS the mode's perf win.
+  if (roadSystem && !_spawnWarmActive && !_labActive && !storySystem.isRoadStreamSuspended()) roadSystem.update(streamCenter)
   perfAdd('frame.road.update', performance.now() - _pt)
   // FEAT-06: stream props around the same center. PERF-14: scatter is queued + time-sliced inside
   // update(); the vehicle position is the HARD radius — its 3×3 chunks force-complete so prop
@@ -2646,7 +2808,10 @@ function loop () {
   // PERF-03 WS-A: pre-warm the road centerline cache off-thread ahead of the streamer. BUG-26: no-ops
   // now (USE_WORKER_ROUTING=false → no dispatcher) so it never starves terrain on the shared Worker;
   // _streamNetwork routes synchronously on the main thread instead. Kept wired for the future own-worker.
-  if (roadSystem && !_spawnWarmActive && !_labActive) roadSystem.warmRoutes(streamCenter)   // don't fight a spawn warm's anchor
+  // FEAT-43: suspended in story mode — during the region warm this would fight pumpRegionWarm for
+  // the same anchor, and once frozen every region route is already cached, so there is nothing left
+  // to pre-warm and no router traffic at all while driving.
+  if (roadSystem && !_spawnWarmActive && !_labActive && !storySystem.isRoadStreamSuspended()) roadSystem.warmRoutes(streamCenter)   // don't fight a spawn warm's anchor
   // Phase 9 (SURF-01): sync road ribbon tiles with the active terrain chunk ring.
   // syncToChunkRing enqueues new tiles and disposes evicted ones co-located with chunk lifetime.
   // flushPendingQueue builds up to MAX_ROAD_BUILDS_PER_FRAME tiles per frame.
@@ -2695,7 +2860,9 @@ function loop () {
     // instantly. Throttled — a re-warm is worker traffic, but there is no point starting one every
     // few seconds while driving across country.
     // Hold off until the spawn band has finished warming so the two do not fight for the Worker.
-    if (roadWorker && !_labActive && !_spawnWarmActive) {
+    // FEAT-43: also hold off while story mode is still entering — its region warm owns the road
+    // Worker until the loading screen clears, and a competing planner warm just stretches it.
+    if (roadWorker && !_labActive && !_spawnWarmActive && !storySystem.isEntering()) {
       const drift = _plannerWarm
         ? Math.hypot(_plannerWarm.center.x - vehicleState.position.x, _plannerWarm.center.z - vehicleState.position.z)
         : Infinity

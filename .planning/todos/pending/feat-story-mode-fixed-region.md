@@ -14,6 +14,108 @@ relates_to: >
   FEAT-21 (road POI scatter — feat-road-poi-scatter.md, the eventual real POI siting)
 ---
 
+## Implementation progress
+
+**Phase 1 — sandbox shell + seed entry + frozen region (in progress, `feature/story-mode`, 2026-07-25).**
+Owner decisions this session: (a) the new Story Mode **replaces** the old `pm-story` pause-menu slot;
+the beta mission generator becomes **Quick Job**, surfaced as an **in-mode corner button**
+(`#quickjob-btn`), *inside* story mode — not a pause-menu entry ("story mode CONTAINS quick job";
+later Quick Job becomes a debug-only affordance once POIs give missions). (b) Entry is a **minimal DOM
+seed prompt** (`#story-seed-modal`) pre-filled with the pre-baked default seed `6` (instant boot; full
+menu styling deferred to FEAT-41). (c) A **hard circular boundary** at `REGION_RADIUS_M = 2500 m`
+(story.js's own constant) around the seed spawn clamps free driving inside the region, and is
+**suspended while a Quick Job is active** so its teleport-to-start + drive-to-end isn't clamped (it
+re-arms once the player is back inside). (d) Entry runs behind a **loading screen** that pre-routes
+the whole region, after which the router is frozen and no routing runs while driving.
+
+**Freeze reversed, then re-landed correctly as "Option A" (2026-07-25).** The first draft froze
+*everything* (terrain + router). Owner feedback: that made the play area tiny (~600 m diameter),
+because a fully-frozen region must be pre-generated in full — and it broke Quick Job (the teleport
+landed outside the wall). Investigation showed **routing and terrain have inverted cost profiles**:
+
+| | compute cost | cost to HOLD frozen | determinism risk |
+|---|---|---|---|
+| Road routing | high, **O(R²)** (~19.5 s cold @2.2 km) | **tiny** (~50 cached centerlines) | none post-BUG-25 |
+| Terrain mesh | ~5.5 ms/chunk | **huge** — 65×65-vert meshes, ~230 KB each | none (pure fn) |
+
+A fully-frozen 5×5 km region is ~6,200 resident chunks ≈ **1.4 GB** — not viable in a browser tab.
+So the freeze is scoped to the expensive-and-window-fragile half: **freeze ROUTING for the whole
+region, keep TERRAIN (+props/water/ribbons) streaming** around the player. That is ~all of the perf
+win with none of the memory problem, and it makes a **2.5 km-radius (5 km-wide) region** affordable.
+Acceptance line "no terrain-worker stream messages after load" is **amended** accordingly — the
+verifiable claim is *no `arcPrimitiveConnect` and no `roadSystem.update`/`warmRoutes` after entry*.
+
+**Determinism (SM-INV-12) — checked, not assumed.** Post-BUG-25 the crossing cull is a pure function
+of (seed, params, region) on a static wide graph with a 3072 m margin, proven by the HARD-passing
+`graph-cull-radius-invariance` + `restream-invariance` gates. Registering the network once at the
+WIDE radius is therefore a safe **superset** of the 320 m play window — boundary edges can only keep
+a real redundant road, never invent or delete one. The single hard requirement is that
+`warmBandComplete()` reach `true` **before** the freeze, or edges the player drives to would have no
+routed centerline. That is exactly what the entry loading screen covers.
+
+Built: `src/story.js` (`StorySystem` — `REGION_RADIUS_M = 2500`, entry state machine
+`settling → warming → live`, routing freeze, boundary, Quick-Job surfacing; imports nothing,
+coordinates via a `deps` adapter). `src/main.js` wires it (seed modal, `pm-story`→modal, Quick Job
+button, `mp-quit`→`storySystem.exit()`, boundary tick in the loop), extracts `applyWorldSeed()`
+shared with the debug seed field, makes `debouncedRebuildFull()` **awaitable** (entry must not
+capture its region center until the reseed + reseat have settled, or the region centers on the old
+position), adds the `pumpRegionWarm`/`releaseRegion` deps, and gates the loop's two road-stream calls
+(`roadSystem.update` / `warmRoutes`) plus the Quick Job planner pre-warm on the freeze/entry flags.
+`src/debug.js` adds `setDebugLockout()`. `index.html` adds the seed modal, the `#story-loading`
+entry screen, and the corner button. `src/map2d.js` adds the **region boundary overlay** (owner
+request: dimmed exterior + boundary ring + km label — the wall is invisible in-world until FEAT-28,
+so the map is where it must be legible) and `setRadiusCap()` so the map builds out to the boundary
+instead of stopping at `MAP_RADIUS_MAX = 2000` (safe in-mode: those rings are route-cache hits).
+
+Build green; **all 40 gates green** (`npm run test:all`), including both invariance gates above.
+
+`REGION_RADIUS_M` is a story-layer value and is **NOT** in `routeCacheSig` — changing it must not
+invalidate the bundled route cache. Debug lockout also force-hides main.js's collision-sphere debug
+(a second backtick handler), not just the lil-gui panel. Entry degrades honestly rather than hanging:
+a settle or warm timeout logs and enters **unfrozen** (streaming still live) instead of stranding the
+player on a loading screen. **POIs (below) + a region-anchored Quick Job planner (missions drawn from
+the fixed region, not a player-centered window) are Phase 2**, built inside this sandbox next.
+
+**Story-mode-only frame hitches — root-caused to a pre-existing dead memo (2026-07-26).** Owner
+reported ~2 s-periodic frame loss in story mode, coinciding with chunk/prop pop-in, absent in free
+roam. A CDP A/B of the same 40 s drive (free roam vs story mode, `window.__perfData` buckets) put it
+in one bucket: **`frame.ribbon.flush` 93 ms → 584 ms**, i.e. **~42 ms per ribbon tile build vs 4.2 ms**
+— everything else got *cheaper* in story mode, confirming the freeze works (`frame.road.update`
+10.3 → 0.4 ms, `road.streamNetwork` 4.7 → 0).
+
+Cause: `RoadSystem._detectJunctions()`'s memo was guarded on
+`_junctionsFrom === _network && _junctions.size > 0`. **The size clause cannot distinguish "empty"
+from "not computed"** — and under the shipped graph topology (QUAL-12) mid-span crossings are culled,
+so zero crossings is the CORRECT and universal answer. The memo therefore never hit, and the full
+O(runs × segs) broad+narrow phase re-ran on **every call**. `RoadMeshSystem._buildRoadTile` calls it
+on **every ribbon tile build**, so the cost scaled with network size and story mode's 2800 m region
+made a long-latent bug finally visible. Measured (node): **22.4 ms/call at r=320, 90.8 ms/call at
+r=2800 → 0.00 ms after the fix**, cache hit in both.
+
+Fix: key the memo on `_networkRev`, the same key every other cache in `road.js` uses
+(`_hintCache` / `_cellCands` / `_nodeJunctionsRev` / `_chordCostMemo`); `_junctionsFrom` → `_junctionsRev`.
+The two explicit invalidation sites are preserved (re-stream, and post-cull — the cull deletes from
+`_network` without bumping the rev, so it must invalidate by hand). **This fixes free roam too** —
+it was paying 22 ms per ribbon tile all along.
+
+Post-fix A/B: `frame.ribbon.flush` **584 → 6.9 ms** in story mode (93 → 12.6 ms in free roam);
+story-mode frames >32 ms **14 → 4**, >50 ms **8 → 1**; every bucket now story ≤ free roam.
+
+Gate gap closed: `test/crossing-classifier.mjs` claimed to cover "once-per-build identity" but its
+assertion (`j1 === j2`) is trivially true — `_detectJunctions` returns the same Map it mutates in
+place — and its fixture deliberately runs with the cull OFF, so it only ever saw the non-empty case.
+Added check **(c) ONCE-PER-BUILD-IDENTITY-WHEN-EMPTY**, which keys on `_crossingList` (reassigned on
+every recompute, so it actually detects one) against a never-streamed RoadSystem. Verified it FAILS
+against the old guard and passes against the fix.
+
+Also added `window.__story` under `?prof=1`, so the external profiler can measure inside the mode
+rather than only ever profiling free roam.
+
+**Open:** verify the bundled seed-6 route cache (`data/route-cache-default.json.gz`) actually covers
+a 2800 m warm radius. It is radius-agnostic (`routeCacheSig` excludes radius) but its *coverage* is
+whatever the bake script warmed — if it falls short, seed 6 pays a one-time warm behind the loading
+screen like any other seed, and re-baking it is the fix.
+
 ## Summary
 
 Split the current single "story mode" surface into two distinct things:

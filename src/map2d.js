@@ -39,6 +39,9 @@ const MAP_RADIUS_STEPS = [400, 650, 900, 1150, MAP_RADIUS]
 // network and took 20+ s, which is the load the owner was seeing. The mission ROUTE is drawn from
 // the planner's own data regardless, so the map's network is context, not the subject — it does not
 // need to reach the far end of every route.
+// FEAT-43 raises this cap in story mode via setRadiusCap(): the 20+ s cost the cap exists to avoid
+// is ROUTING, and story mode has already routed its whole region up front (the warm behind the
+// loading screen). The map adopts the play instance's route cache, so those rings are cache hits.
 const MAP_RADIUS_MAX = 2000
 const PROGRESSIVE_GAP  = 16    // ms — yield between stream chunks so the page stays responsive
 const STREAM_DEBOUNCE = 120    // ms — re-stream only after a pan settles (a stream is expensive)
@@ -60,7 +63,7 @@ export class Map2D {
      * @param {() => ?{start:{x,z}, end:{x,z}, poly:{x,z}[]}} [o.getMission]
      *        — story-mode mission overlay (route + start/end pins); null when no mission is live
      */
-    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission }) {
+    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion }) {
         this._canvas    = canvas
         this._ctx       = canvas.getContext('2d')
         this._getSeed   = getSeed
@@ -69,6 +72,9 @@ export class Map2D {
         this._onTeleport  = onTeleport   || null
         this._canTeleport = canTeleport  || (() => false)
         this._getMission  = getMission   || (() => null)
+        // FEAT-43: story-mode region boundary — {x,z,r} or null. Drawn as a wall + dimmed exterior
+        // so the player can see where the region ends instead of discovering it by hitting it.
+        this._getRegion   = getRegion    || (() => null)
 
         this._open       = false
         this._road       = null          // the map's own RoadSystem; KEPT ALIVE across opens (route cache)
@@ -84,6 +90,7 @@ export class Map2D {
         this._streaming   = false        // a chunked stream is in flight
         this._streamStep  = 0            // next index into MAP_RADIUS_STEPS to stream
         this._radiusTarget = MAP_RADIUS  // grown by setRadiusTarget (story mode)
+        this._radiusCap    = MAP_RADIUS_MAX   // FEAT-43: raised by setRadiusCap inside story mode
         this._streamFull  = false        // network is streamed out to the final radius around _streamAt
         this._pumpTimer   = 0            // setTimeout handle between chunks
         this._pumpToken   = 0            // invalidates in-flight warm polls when a new stream starts
@@ -133,8 +140,17 @@ export class Map2D {
      * missing roads the mission "invented", when in fact it simply had not built that far.
      * Only ever grows, and re-streams if the current pass already finished short of the new target.
      */
+    /**
+     * FEAT-43: raise the streaming cap above MAP_RADIUS_MAX. Story mode calls this so the map can
+     * draw the network out to its region boundary — otherwise the outer ring of a 2.5 km region is
+     * blank map inside a drawn wall, which reads as "the roads stop here" rather than "the map
+     * hasn't built that far". Safe there because the region's routes are already cached; do NOT
+     * call it from free roam, where those rings would route cold.
+     */
+    setRadiusCap(r) { this._radiusCap = Math.max(MAP_RADIUS, r) }
+
     setRadiusTarget(r) {
-        const want = Math.max(MAP_RADIUS, Math.min(MAP_RADIUS_MAX, r))
+        const want = Math.max(MAP_RADIUS, Math.min(this._radiusCap ?? MAP_RADIUS_MAX, r))
         if (want <= this._radiusTarget) return
         this._radiusTarget = want
         this._streamFull = false
@@ -476,6 +492,7 @@ export class Map2D {
         const dy = H / 2 - k * H / 2 + (this._bgPanZ - this._panZ) * this._zoom
         ctx.drawImage(this._bg, dx, dy, W * k, H * k)
 
+        this._drawRegion(ctx)    // under the mission route — it's world furniture, not the subject
         this._drawMission(ctx)   // under the car marker, over the cached bg
         this._drawCar(ctx)
         this._drawLegend(ctx)
@@ -637,6 +654,45 @@ export class Map2D {
                 ctx.fill()
             }
         }
+    }
+
+    // FEAT-43: story-mode region boundary. The hard wall is invisible in-world (FEAT-28's
+    // trail-closed barriers are the diegetic version), so the map is where the player reads it —
+    // without this you only learn where the region ends by driving into it.
+    //
+    // Drawn as: everything OUTSIDE the circle dimmed (the "you can't go there" read, done with an
+    // evenodd fill so it needs no clip/save juggling), a solid boundary ring, and a distance label.
+    // Per-frame layer, not the cached bg: the region is captured after entry and the bg may already
+    // have been baked by then.
+    _drawRegion(ctx) {
+        const reg = this._getRegion()
+        if (!reg) return
+        const cx = this._sx(reg.x), cy = this._sy(reg.z), r = reg.r * this._zoom
+        const W = this._canvas.clientWidth, H = this._canvas.clientHeight
+        // Dim the exterior: full-canvas rect MINUS the region disc (evenodd), so only outside fills.
+        ctx.beginPath()
+        ctx.rect(0, 0, W, H)
+        ctx.arc(cx, cy, r, 0, Math.PI * 2)
+        ctx.fillStyle = 'rgba(8,10,14,0.42)'
+        ctx.fill('evenodd')
+        // The wall itself.
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2)
+        ctx.strokeStyle = 'rgba(255,150,90,0.9)'
+        ctx.lineWidth = 2
+        ctx.stroke()
+        // Region center tick — the spawn, and the anchor the radius is measured from.
+        ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2)
+        ctx.fillStyle = 'rgba(255,150,90,0.9)'; ctx.fill()
+        // Label the boundary where it crosses straight up from the center, clamped into view so it
+        // stays readable when the player has panned/zoomed away from the region edge.
+        const ly = Math.min(H - 10, Math.max(14, cy - r))
+        ctx.font = 'bold 11px monospace'
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+        const txt = `REGION BOUNDARY · ${(reg.r / 1000).toFixed(1)} km`
+        const tw = ctx.measureText(txt).width + 14
+        ctx.fillStyle = 'rgba(8,10,14,0.75)'; ctx.fillRect(cx - tw / 2, ly - 9, tw, 18)
+        ctx.fillStyle = '#ff965a'; ctx.fillText(txt, cx, ly)
+        ctx.textAlign = 'left'
     }
 
     // Story-mode mission overlay: the planned route + start/end pins. Per-frame layer (NOT the
