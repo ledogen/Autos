@@ -833,7 +833,7 @@ function dubinsPrimitives(x0, z0, th0, x1, z1, th1, rho) {
  * previous arc's end heading), the emitted centerline is min-turn-radius-VALID BY CONSTRUCTION:
  * dense XZ radius ≥ hardR everywhere except short endpoint stubs. No fillet/relaxation needed.
  *
- * State = (position-cell, heading-bin). Cost mirrors _protoEdgeCost semantics:
+ * State = (position-cell, heading-bin). Cost mirrors the proto-graph edge cost:
  *   wDist·L + wGrade·grade² + wOver·max(0,grade−maxGrade) + wAlt·height + wCurv·κ²·L
  * The wCurv·κ²·L term (curvature SQUARED — QUAL-05) makes the straight primitive (κ=0) cheapest and,
  * integrated over a turn, costs wCurv·Δθ/R → a TIGHTER radius costs MORE for the same heading change,

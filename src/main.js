@@ -1659,7 +1659,7 @@ if (_PROF) {
   window.__lever = (name, value) => { const fn = LEVERS[name]; if (!fn) return false; fn(value); return true }
   // QUAL-21 A/B: flip a road param and re-route through the SAME debounced path the debug
   // sliders take (params mutated in place → debouncedRoadRebuild) — lets the CDP screenshot
-  // harness A/B the road toggles (e.g. roadGraphCostPrune) without the GUI.
+  // harness A/B the road toggles without the GUI.
   window.__roadParam = (k, v) => { RANGER_PARAMS[k] = v; debouncedRoadRebuild(); return RANGER_PARAMS[k] }
 }
 

@@ -1,8 +1,10 @@
 ---
 id: QUAL-22
 type: qual
-status: open
+status: closed
+resolution: implemented-then-deleted
 opened: 2026-07-24
+closed: 2026-07-27
 severity: minor
 source: user-approved shelf idea from the QUAL-21 zoom-out (router/topology review)
 relates: [FEAT-13 (Urquhart graph), QUAL-21 (stroke routing), FEAT-28 (region gating)]
@@ -12,7 +14,24 @@ note: "Topology-level terrain character: make the GRAPH emerge from cost, not ju
 
 # QUAL-22: Terrain-cost Urquhart pruning — topology from cost
 
-## IMPLEMENTED (2026-07-25, feature/qual-21 commit a23728d) — awaiting A/B drive
+## CLOSED 2026-07-27 — implemented, never shipped default-on, DELETED from src/
+
+Owner call: the A/B drive never happened and the flag sat `false`, so rather than leave a dark
+default-off path in `src/` (no dead code), the implementation was removed and the idea parked here.
+Reopen this ticket if the topology-level character or the routing-cost win is wanted later — the
+measurements below are the starting point, and re-implementing is a small patch, not a redesign.
+
+Removed (2026-07-27): `roadGraphCostPrune` (`data/ranger.js`), `RoadSystem._chordCost` +
+`_protoEdgeCost` + `_chordCostMemo` and the weight plumb at the `_buildUrquhart` call site
+(`src/road.js`), the optional `weight` parameter of `urquhartEdges` (`src/road-graph.js`), and the
+GUI toggle + tooltip (`src/debug.js`). Tombstone comments at each site point back here.
+
+Because `^road*` keys feed `routeCacheSig`, dropping the param re-keyed the signature — **both route
+bundles were re-baked** (`node test/bake-route-bundle.mjs`): routed content is byte-identical
+(112+140 BASE / 157+172 REGION, same as before), the assets shrank only by the ~25-char sig string.
+All 40 gates green (`npm run test:all`), Vite build clean.
+
+## Implementation record (2026-07-25, feature/qual-21 commit a23728d) — measured, not shipped
 
 Behind `roadGraphCostPrune` (default OFF; debug toggle "Cost-Prune Graph (QUAL-22)"; flag-off
 topology + routes bit-exact, bundle re-baked for the sig key). Cost = `_chordCost` (road.js):
