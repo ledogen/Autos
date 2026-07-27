@@ -44,6 +44,7 @@ const        RING_KEEP_MARGIN     = 1   // PERF-02: keep (don't dispose) chunks 
 const        GEOM_POOL_MAX        = 32  // PERF-05: recycled chunk-geometry pool cap. Steady driving keeps it near-empty (build≈evict); it fills only transiently on a full-ring regen, where the cap bounds retained memory. Recycling kills the per-chunk PlaneGeometry alloc + the non-deterministic GC pause (~16% of dropped-frame time on slow GPUs).
 const        MAX_BUILDS_PER_FRAME = 1   // PERF-05: one chunk build/recarve per frame. On slow GPUs a single chunk's carve already blows BUILD_MS_BUDGET, so building 2+ in a frame only deepens the hitch; capping at 1 bounds the worst frame and evens the physics-substep catch-up. Fast machines still fill the ring at 60 chunks/s. (BUILD_MS_BUDGET remains the adaptive limiter.)
 const        BUILD_MS_BUDGET      = 3.0 // PERF-02: per-frame ms budget for geometry build + re-carve — adapts to machine speed (vs a fixed count)
+const        CARVE_ROWS_PER_SLICE = 4   // PERF-26: carve-table rows per resumable slice (65 rows → ~16 slices ≈ 1.5 ms each on a fast machine). Smaller = smoother but more generator overhead; this is the granularity that lets BUILD_MS_BUDGET actually bind.
 const        MAX_REQUESTS_PER_FRAME = 8 // PERF-02: cap worker `generate` dispatches per frame — bounds the postMessage flood at large rings (raised for the deeper warm rings at Far/Ultra)
 
 // ── Embedded worker source ─────────────────────────────────────────────────
@@ -399,6 +400,7 @@ export class TerrainSystem {
         this._chunkMap      = new Map()   // key → { mesh, heights, carveData? }
         this._pendingWorker = new Set()   // keys requested but not yet received
         this._pendingQueue  = []          // FIFO of received {key,cx,cz,heights} awaiting geometry build
+        this._activeBuild   = null        // PERF-26: the chunk whose carve table is mid-build, carried across frames
         this._geomPool      = []          // PERF-05: recycled chunk BufferGeometry (65×65 XZ plane; only Y/normal/color change per chunk) — avoids per-chunk PlaneGeometry alloc + GC
 
         // Main-thread analytic noise closures (seeded same way as Worker — deterministic agreement)
@@ -805,6 +807,7 @@ export class TerrainSystem {
         // Clear pending state — Worker will process new generate requests after reinit
         this._pendingWorker.clear()
         this._pendingQueue.length = 0
+        this._activeBuild = null   // PERF-26: its chunk was just disposed — drop the half-built carve
     }
 
     /**
@@ -1277,6 +1280,32 @@ export class TerrainSystem {
     // just not recomputed. Available now that the table is built in _flushPendingQueue (has the heights)
     // and the re-carve path (chunk.heights). Callers without it (none currently) fall back to height().
     _buildCarveTable(cx, cz, rawHeights = null) {
+        // Reached through the prototype, not `this`: the headless gates and bench-worldgen call this
+        // method as TerrainSystem.prototype._buildCarveTable.call(fakeThis, …) with a plain object
+        // carrying only the fields the carve reads, so `this._carveTableGen` would be undefined.
+        const gen = TerrainSystem.prototype._carveTableGen.call(this, cx, cz, rawHeights)
+        let r; do { r = gen.next() } while (!r.done)
+        return r.value
+    }
+
+    /**
+     * PERF-26: the carve table, built in resumable row slices.
+     *
+     * This is the same code _buildCarveTable always ran — only the scheduling changed. The
+     * per-vertex loop measured 16–25 ms per chunk on a fast machine and up to 118 ms under load,
+     * against a 3 ms BUILD_MS_BUDGET that could not bind: _flushPendingQueue builds at least one
+     * chunk per frame regardless of the deadline, and the chunk was an atomic unit. So every chunk
+     * crossing cost 2–7 dropped frames. Yielding every CARVE_ROWS_PER_SLICE rows makes the unit
+     * divisible, so the budget finally means something and a chunk fades in over a few frames
+     * instead of stalling one.
+     *
+     * The rows are independent and every per-chunk input (spline samples, pad nodes, extent bounds)
+     * is hoisted above the loop, so a slice boundary cannot change the result: the table is
+     * byte-identical to the synchronous build. _buildCarveTable above drains it in one call and
+     * keeps the exact signature the re-carve pass, the headless gates (which reach it through the
+     * prototype) and bench-worldgen rely on.
+     */
+    *_carveTableGen(cx, cz, rawHeights = null) {
         if (!this._roadSystem) return null
 
         const N    = GRID_SAMPLES
@@ -1480,6 +1509,8 @@ export class TerrainSystem {
                 table[idx + 1] = amp > 0 ? csP.gradeY / amp : csP.gradeY
                 if (csP.blendW > 1e-6) anyNonZero = true
             }
+            // PERF-26 slice boundary. Rows are independent, so this is a pure scheduling point.
+            if (zi % CARVE_ROWS_PER_SLICE === CARVE_ROWS_PER_SLICE - 1) yield
         }
 
         // TEMP perf probe (D-arc): log carve cost for this chunk — collect(spline sampling) vs the
@@ -1752,10 +1783,44 @@ export class TerrainSystem {
                 ((a.cx - ccx) ** 2 + (a.cz - ccz) ** 2) - ((b.cx - ccx) ** 2 + (b.cz - ccz) ** 2))
         }
         let built = 0
-        // Deadline checked AFTER the first build so at least one chunk always lands per frame.
-        while (this._pendingQueue.length > 0 && built < maxBuilds &&
+        // Deadline checked AFTER the first iteration so the queue can never starve. PERF-26: that
+        // free first pass is now bounded — it buys one carve SLICE plus (if the carve finishes) the
+        // ~1 ms of finishing stages, not a whole 25–120 ms chunk.
+        while ((this._activeBuild || this._pendingQueue.length > 0) && built < maxBuilds &&
                (built === 0 || performance.now() < deadline)) {
-            const { key, cx, cz, heights } = this._pendingQueue.shift()
+
+            // ── PERF-26 stage 1: the carve table, in resumable row slices ──────────────────
+            if (!this._activeBuild) {
+                const next = this._pendingQueue.shift()
+                this._activeBuild = {
+                    ...next,
+                    gen: this._carveTableGen(next.cx, next.cz, next.heights),   // PERF-03 #1: reuse the Worker's raw heights
+                    roadGen: this._roadSystem?.roadGeneration() ?? -1,
+                    carveData: undefined,
+                }
+            }
+            const job = this._activeBuild
+            // A re-route landing mid-build would splice two road generations into one table — a
+            // visibly torn chunk. Restart the carve against the new generation instead. (The
+            // re-carve pass in _updateChunkRing only fixes chunks that are already committed.)
+            const roadGenNow = this._roadSystem?.roadGeneration() ?? -1
+            if (job.roadGen !== roadGenNow) {
+                job.gen = this._carveTableGen(job.cx, job.cz, job.heights)
+                job.roadGen = roadGenNow
+            }
+            {
+                const _pt = performance.now()
+                let r = job.gen.next()                                    // always advance one slice
+                while (!r.done && performance.now() < deadline) r = job.gen.next()
+                perfAdd('flush.buildCarveTable', performance.now() - _pt)
+                if (!r.done) return          // budget spent mid-chunk — resume this same chunk next frame
+                job.carveData = r.value
+            }
+
+            // ── stage 2: the rest of the build (~1 ms) runs to completion once carve is done ──
+            const { key, cx, cz, heights } = job
+            const carveData = job.carveData
+            this._activeBuild = null
             built++
 
             const N = GRID_SAMPLES
@@ -1770,13 +1835,10 @@ export class TerrainSystem {
             // matches visual geometry at all amplitude settings.
             // Phase 9 carve hook (SURF-05): blend road design grade using chunk.carveData.
             // CARVE SYNC: identical blend formula as analyticHeight, sampleHeight, Worker height loop.
-            // Build carveData for this chunk now (main thread has road access; Worker received a
-            // Transferable copy already consumed — we rebuild here for the _chunkMap reference path).
-            let _pt = performance.now()
-            const carveData = this._buildCarveTable(cx, cz, heights)   // PERF-03 #1: reuse the Worker's raw heights
-            perfAdd('flush.buildCarveTable', performance.now() - _pt)
+            // carveData was built above in resumable slices (PERF-26); the main thread owns it because
+            // it needs road access the Worker does not have.
             // FEAT-18: stream-channel table (null when no channel touches the chunk — the common case).
-            _pt = performance.now()
+            let _pt = performance.now()
             const streamData = this._buildStreamTable(cx, cz, heights)
             perfAdd('flush.buildStreamTable', performance.now() - _pt)
             const pos = geom.attributes.position
