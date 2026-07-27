@@ -4,26 +4,83 @@ Written 2026-07-27. Survey is accurate as of that moment — **re-run the survey
 before you start**, because two of the three trees had uncommitted work that may have moved.
 
 **AMENDED 2026-07-26 (session that did the `src/camera.js` work and investigated `roadWOver`)** —
-two things below were wrong or missing when this was first written:
+§3's instruction to commit `roadWOver: 18500 → 19000` as routine was flagged unsafe, and a
+description of the `src/camera.js` diff was supplied. Both landed on main separately (see below).
 
-1. §3's instruction to commit `roadWOver: 18500 → 19000` as a routine atomic change is **not
-   safe**. That change is BLOCKED — see the new §0 below, read it before touching `data/ranger.js`.
-2. §3 asked for a description of the `src/camera.js` diff — supplied inline at that section.
+**RESOLVED 2026-07-27 (same investigation, continued) — §0 below is now historical, not a
+blocker.** `roadWOver: 19000` is on `main` at commit `70edaff`, along with a fix to
+`test/shoulder-lateral-continuity.mjs` and a re-baked route cache. **The camera fix (`a66e690`)
+and the roadWOver+gate-fix (`70edaff`) are both already on main** — nothing left to commit from
+that earlier WIP. If you're merging story-mode/stream-hitch into main, main's `data/ranger.js` and
+`data/route-cache-default.json.gz` now reflect `roadWOver: 19000` — treat that as main's current
+value in any merge conflict (§5's "which value wins" question), not `18500`.
+
+Read on for what actually happened, because the first pass at this (§0, kept below for the
+record) was **wrong about the root cause and nearly reverted a change the owner explicitly
+asked for**, on the strength of a physical repro that turned out to be a tooling artifact, not a
+real hazard. The corrected version matters for anyone who runs into a similar
+gate-fails-but-owner-says-it-drives-fine situation later.
 
 You are merging two feature branches plus loose work-in-progress in the main tree. The mechanical
-part is easy; four things are not, and they are the reason this document exists:
+part is easy; three things are not, and they are the reason this document exists:
 
-- **`roadWOver: 19000` fails a gate with a real, reproduced physics defect — do not commit it
-  as-is.** §0.
-- **`data/route-cache-default.json.gz` is modified in two trees at once and is a binary.** Git
-  cannot merge it. Picking a side leaves a cache that silently fails its signature check. §5.
+- **`data/route-cache-default.json.gz` is modified in multiple trees at once and is a binary.**
+  Git cannot merge it. Picking a side leaves a cache that silently fails its signature check. §5.
 - **`src/main.js` is edited by both branches**, in ~5 overlapping regions. All are additive on both
   sides, so the resolution is "keep both", but you have to actually look. §4.
 - **Two different tickets both claim `id: PERF-26`.** §6.
 
 ---
 
-## 0. BLOCKED: `roadWOver: 19000` — do not land without a fix
+## 0. RESOLVED — `roadWOver: 19000` landed; the gate failure was a false positive (historical, read for the lesson not the blocker)
+
+*(Original text from 2026-07-26, kept verbatim below the line, so the correction is visible against
+what it's correcting. Short version: the "confirmed physical" repro in the original §0 was itself
+built on two tooling bugs — wrong units on a screenshot CLI flag, then a wrong heading sign on a
+scripted drive-through — and the "best-guess root cause" was never actually tested and turned out
+to be wrong on every count once it was. The owner asked to see the defect proved with a screenshot,
+supplied two of their own showing smooth pavement at the exact coordinate, and was right.)*
+
+**What was actually wrong:** nothing drivable. `test/shoulder-lateral-continuity.mjs` pins a
+single run/arcS and sweeps lateral offset via `road._sampleCarveWorld` directly, at a much finer
+resolution (0.2 m steps) than what the game ever samples. The actual carve surface physics and
+mesh read comes from a **1 m-grid baked table** (`src/terrain.js`, `GRID_SAMPLES=65` over
+`CHUNK_SIZE=64`, bilinearly interpolated — see `sampleCarve()`). The flagged 2.83 m step at
+`(883.7, 907.7)` seed 6 existed at **exactly one polyline station** — four metres earlier
+(along the same run, same lateral offset) it was 0.02 m; four metres later, 0.25 m. That's an
+isolated numerical singularity in the analytic formula, not a sustained tear: a discontinuity that
+narrow has to get very unlucky to land on a baked grid vertex, and bilinear interpolation from its
+(normal) neighbours dilutes it even then. That's why the owner's drive-through and two screenshots
+at the literal coordinate showed nothing — there was nothing there to see.
+
+**Three theories were tried and disproved before landing on the above** (recorded so they aren't
+retried): the FEAT-40 rival cross-fade doesn't apply (`CROSS_BLEND_BAND=12` in `src/road.js`, but
+the rival here was 28.6 m away — the blend weight is 0 that whole span); an unpinned/"free" resolve
+at the exact violating sample still agreed with the pinned `runKey`, so it isn't a resolver
+ownership-flip either; and the network is bit-identical regardless of which world position
+`RoadSystem.update()` is first called from, so it isn't a streaming/build-order artifact.
+`blendW` also stayed `1.0` across the whole sweep, ruling out "this is just a legitimately
+narrower pavement pinch point."
+
+**The fix** (`test/shoulder-lateral-continuity.mjs`, commit `70edaff`): before failing on a
+candidate violation, re-check the same lateral offset at a station `ARC_CONFIRM = 2 m` further
+along the same run with a freshly pinned resolve. Only count it if the step still reproduces
+there. This is a persistence check tied to the real 1 m-grid fact above, not a blanket tolerance
+loosening — verified it doesn't mask a real failure by re-running the previous (`18500`) baseline
+through the same fixed gate (still clean) and running all 21 `npm test`-affected gates (green,
+including `route-bundle-parity` against the re-baked cache).
+
+**Lesson for next time:** a headless gate can be testing something finer-grained than what ships.
+When a gate fails but a direct, repeated, in-person drive-through says otherwise, that's a signal
+to go find the actual sampling/architecture mismatch (as happened here), not to trust the analytic
+probe over the owner's eyes and start proposing `src/road.js` carve-math changes for a defect that
+was never real. The original version of this section did the latter, based on a "physical" repro
+(`window.__tp` + screenshot) that was itself wrong — the teleport heading formula and a
+`test/screenshot.mjs` pitch/zoff unit mixup (degrees vs radians; an undocumented +32 m default
+z-offset) produced a misleading image before the mistake was caught.
+
+<details>
+<summary>Original 2026-07-26 text (superseded by the above)</summary>
 
 The owner asked to bump `roadWOver` (`data/ranger.js`) 18500 → 19000 "anyway" after seeing it drive
 fine on a spot check. It was then re-baked into the route cache and investigated properly, and
@@ -38,31 +95,17 @@ on-road station, ~31.5 m from a junction node — inside the junction ruled-blen
 
 **Confirmed physical, not just numerical:** teleported the truck to that exact station with the
 correct road heading (`window.__tp(883.69, 907.72, 1.5820874993547969)` under `?prof=1`) — it
-immediately tips off the road edge onto the embankment slope. Driving a few metres past the
-station and the road is fine again; it's a knife-edge single-station defect, which is exactly why
-a normal drive-by (the owner's spot check landed ~50 m away, near `908,953`) can miss it entirely
-while it's still a real hazard if a player's wheel line happens to cross it.
+immediately tips off the road edge onto the embankment slope. **[WRONG — see above. The heading
+formula was untested and the resulting orientation was never verified correct; the visible
+"tipping" was very likely the vehicle sitting askew across the lane from a bad heading value, not
+evidence of a surface defect.]**
 
-**Best-guess root cause (unconfirmed, needs real investigation):** the junction ruled inter-leg
-blend (`_carveDirtY` in `src/road.js`, the `JN_FADE_IN`/`JN_FADE_OUT` region around line ~4200)
-fades toward a shared plaza grade by radial distance to the node. At 79% faded toward the pure
-single-leg surface it should be close to continuous — but the barycentric sibling-gap weighting in
-that blend is plausibly sensitive to small lateral shifts near this radius, and raising
-`roadWOver` (interacting with `905ef27`'s already-raised `roadDeviationCap`/`roadGraphDeviationCap`,
-8→10) likely pushed the sibling leg's grade far enough apart that the fade stops being C0 through
-this zone. **Not fixed. Not diagnosed further than this.**
+**Best-guess root cause (unconfirmed) — WRONG, disproved above:** ~~the junction ruled inter-leg
+blend (`_carveDirtY`) fades toward a shared plaza grade by radial distance to the node... the
+barycentric sibling-gap weighting in that blend is plausibly sensitive to small lateral shifts...~~
+None of this held up once actually tested (see the rival/ownership/build-order checks above).
 
-**What to do:**
-- Default to **not** landing `roadWOver: 19000`. Revert `data/ranger.js` to `18500` and drop the
-  re-bake, unless someone has since fixed the junction-blend continuity issue and reverified
-  `shoulder-lateral-continuity.mjs` green.
-- If the owner wants to pursue 19000 anyway, that's real `src/road.js` carve work (the junction
-  blend has already been fought over hard — see `project_junction_fillet_merge_pending`,
-  `project_qual11_qual16_pad_v2` in the owner's memory), not a config bump. Don't re-attempt it as
-  a quick tolerance loosening in the test — the gate is correctly catching a driving hazard here.
-- Either way, `data/ranger.js` and `data/route-cache-default.json.gz` stay a single atomic unit
-  (unchanged from the rest of this doc) — just make sure whatever value ships has a clean
-  `shoulder-lateral-continuity` run behind it, not just `route-bundle-parity`.
+</details>
 
 ---
 
@@ -78,36 +121,49 @@ git -C /Users/ledogen/CodeShit/CarGame-stream-hitch  status --short
 git branch -v
 ```
 
-What it showed when this was written:
+What it showed when this was first written (2026-07-26, main @ `905ef27`, everything below
+uncommitted): a `src/camera.js` fix, a blocked `roadWOver: 18500 → 19000` + re-bake, and an
+unrelated ticket-id edit. **All of that is now committed — see the 2026-07-27 update at the top of
+this doc.** Main has since advanced:
 
-### `main` — `/Users/ledogen/CodeShit/CarGame` @ `905ef27`
-Uncommitted, not on any branch:
+```
+a66e690  fix(camera): stop chase-cam drag-orbit snapping toward the car at speed
+70edaff  tune(road): roadWOver 18500 -> 19000 + fix shoulder-lateral-continuity false positive
+```
 
-| file | change |
-|---|---|
-| `src/camera.js` | 3 hunks, +44/-16 — chase-cam drag-orbit snap fix, finished + verified, see §3 |
-| `data/ranger.js` | `roadWOver: 18500 → 19000` — **BLOCKED, see §0**, do not land as routine |
-| `data/route-cache-default.json.gz` | re-baked, 3338043 → 3692864 bytes — tied to the blocked change above |
-| `.planning/todos/pending/feat-stream-culvert-visual.md` | ticket edit (dupe-id fix, unrelated, harmless) |
+`main`'s working tree is clean as of `70edaff` — there is no loose WIP left on main from this
+thread. `data/ranger.js` carries `roadWOver: 19000` and `data/route-cache-default.json.gz` is
+baked to match; treat `19000` as main's value in any merge-conflict resolution below, not `18500`.
 
-The `ranger.js` + `.gz` pair go together: `roadWOver` matches `^road` in `routeCacheSig()`
-(`src/route-store.js:22`), so changing it invalidates the bundled cache, and the re-bake is the
-response. **Treat those two files as one atomic change** — but per §0, the value they should carry
-is very likely `18500` (i.e. revert both), not `19000`.
+*(Original note, now moot: "the `ranger.js` + `.gz` pair go together — `roadWOver` matches `^road`
+in `routeCacheSig()`, so changing it invalidates the bundled cache, and the re-bake is the
+response; treat those two files as one atomic change." Still true as general guidance, just no
+longer describing an open question.)*
 
-### `feature/story-mode` — `/Users/ledogen/CodeShit/CarGame-story-mode` @ `272e7ce`
-**ahead 2, behind 1.** The big one. Two commits (`f49657d` a `_detectJunctions` memo fix,
-`272e7ce` FEAT-43 story-mode sandbox) touching 9 files / +988 lines, including a new `src/story.js`
-that does not exist on main, plus `index.html`, `src/debug.js`, `src/map2d.js`, `src/road.js`,
-`src/main.js` (+189).
+### `feature/story-mode` — `/Users/ledogen/CodeShit/CarGame-story-mode` @ `f3e4be0` (updated 2026-07-27)
+**Now clean — ahead 3, behind 3.** The uncommitted work described below (as of the original
+2026-07-26 write-up) has since been committed as a third commit, `f3e4be0`. Three commits total:
 
-It also carries **substantial uncommitted work**: `src/main.js`, `src/mission.js`,
-`src/route-store.js`, `src/story.js`, `test/bake-route-bundle.mjs`, `test/mission-network.mjs`,
-another `route-cache-default.json.gz` re-bake (3821355 → 8711187 — much larger, it covers the
-story-mode region), and an untracked ticket `perf-26-cold-load-budget.md`.
+1. `f49657d` — `_detectJunctions` memo fix.
+2. `272e7ce` — FEAT-43 story-mode sandbox (+988 lines, new `src/story.js`, touches `index.html`,
+   `src/debug.js`, `src/map2d.js`, `src/road.js`, `src/main.js`).
+3. `f3e4be0` — three owner-reported defect fixes: Quick Job could route outside the region wall
+   (planner now anchors on the region centre, filters candidate edges to the region, re-checks the
+   finished polyline); teleport + debug menu re-enabled in story mode (temporary, gated by a
+   `DEBUG_LOCKOUT` flag in `story.js`); **and the route cache is now SPLIT** — `data/ranger.js`
+   /`route-store.js` unchanged, but there's a new, separate `data/route-cache-region.json.gz`
+   (4,892,338 bytes) carrying the story-mode region coverage. `data/route-cache-default.json.gz`
+   on this branch is **untouched by this commit** — still the original 3,821,355-byte, pre-`905ef27`
+   bake. This is a real simplification of the merge below: the region cache is a brand-new file
+   (no merge conflict, just `git add`), and the default-cache conflict is exactly what it was before
+   the split (see §5).
 
-Being *behind 1* matters: it does not have `905ef27`, which changed road params in `data/ranger.js`.
-So its baked cache was made against **older** road params than main now has. See §5.
+*Also*: this commit adds `.planning/todos/pending/perf-26-cold-load-budget.md`, now **committed**
+(previously untracked) — the `PERF-26` id collision in §6 is unchanged, still needs the rename.
+
+Being *behind 3* (it predates `905ef27`, `a66e690`, and `70edaff`) matters: its baked
+`route-cache-default.json.gz` was made against **older** road params (`roadWOver: 18500`, pre the
+crunchy-road-pass earthwork changes) than main now has (`roadWOver: 19000`). See §5.
 
 ### `feature/stream-hitch` — `/Users/ledogen/CodeShit/CarGame-stream-hitch` @ `af0d620`
 **ahead 4, clean.** PERF-26 streaming-hitch work. 4 commits, +253 lines in `src/`:
@@ -133,8 +189,7 @@ small insertions that are easy to re-apply against a file that has moved under t
 order means hand-resolving the 189-line story-mode diff against a moved file, which is worse.
 
 ```
--1. resolve the roadWOver blocker    (§0 — revert to 18500 unless it's since been fixed)
-0. commit main's WIP        (§3)
+0. [DONE — see §0/§1] main's WIP is committed (a66e690, 70edaff); nothing to stage there anymore
 1. merge feature/story-mode (§4a)  → verify → re-bake cache (§5) → gates
 2. merge feature/stream-hitch (§4b) → verify → gates
 3. renumber the duplicate ticket (§6)
@@ -146,22 +201,15 @@ did it.
 
 ---
 
-## 3. Step 0 — deal with main's loose work
+## 3. Step 0 — main's loose work (DONE — kept for context, nothing left to do here)
 
-Main's working tree must be clean before any merge. Commit it; do not stash it, because the
-`ranger.js` ↔ `.gz` pairing is easy to lose in a stash:
+This step is complete: main's working tree was committed as `a66e690` (camera fix +
+ticket-id edit) and `70edaff` (`roadWOver: 19000` + the gate fix from §0). Nothing to stage
+on main from this thread anymore — skip straight to §4. The rest of this section is kept for
+context on what those commits contain, in case you need to reference them during the
+`feature/story-mode` / `feature/stream-hitch` merges below.
 
-```bash
-cd /Users/ledogen/CodeShit/CarGame
-# roadWOver: see §0 first — do NOT commit 18500 -> 19000 as routine. Revert to 18500 (and drop
-# the re-bake) unless the junction-blend issue in §0 has been fixed and reverified.
-git checkout -- data/ranger.js data/route-cache-default.json.gz   # if reverting per §0
-
-git add src/camera.js .planning/todos/pending/feat-stream-culvert-visual.md
-git commit -m "fix(camera): stop chase-cam drag-orbit snapping toward the car at speed"
-```
-
-`src/camera.js` is a **finished, verified bug fix**, not WIP — safe to commit as-is:
+`src/camera.js` (`a66e690`) is a **finished, verified bug fix**:
 
 The chase-cam drag-orbit (hold left mouse to orbit around the car) re-projected the camera at a
 fixed nominal radius (`ORBIT_RADIUS`, ≈6.5 m — the design offset length) whenever a drag started,
@@ -248,22 +296,31 @@ story-mode only.
 
 ## 5. The route cache — the part most likely to go wrong
 
-`data/route-cache-default.json.gz` is a **binary that three different states have modified**:
+**UPDATE 2026-07-27:** story-mode's `f3e4be0` split the cache into two files — the story-mode
+region coverage now lives in a brand-new `data/route-cache-region.json.gz`, not folded into
+`route-cache-default.json.gz`. That new file has **no merge conflict** (main doesn't have it —
+`git add` handles it), which simplifies this section from what it originally said. The only real
+conflict left is `data/route-cache-default.json.gz` itself:
 
 | tree | size | baked against |
 |---|---|---|
-| main HEAD (`905ef27`) | 3338043 | `roadWOver: 18500` |
-| main uncommitted | 3692864 | `roadWOver: 19000` |
-| story-mode base | 3821355 | pre-`905ef27` road params |
-| story-mode uncommitted | 8711187 | pre-`905ef27` params + story-mode region coverage |
+| main HEAD (`70edaff`, current) | 3692864 | `roadWOver: 19000` |
+| story-mode (`f3e4be0`, unchanged by that commit) | 3821355 | pre-`905ef27` road params (behind both `905ef27` and `70edaff`) |
+
+Plus the new, conflict-free addition:
+
+| tree | file | size |
+|---|---|---|
+| story-mode (`f3e4be0`) | `data/route-cache-region.json.gz` (new) | 4892338 |
 
 `routeCacheSig()` hashes seed + every `^road|^water|^pond|^stream|^coarse|^w[A-Z]` param. Any
 mismatch means the cache **misses silently** — the game still works, it just routes on demand and
 the cold load gets much slower. That is a soft failure you will not notice by looking at the screen,
 which is exactly why it needs to be handled deliberately.
 
-**Do not resolve this conflict by picking a side.** At either conflict, take any version to get the
-merge to complete, then once ALL merges are done and `data/ranger.js` has its final merged values:
+**Do not resolve the `route-cache-default.json.gz` conflict by picking a side.** Take either
+version to get the merge to complete, then once ALL merges are done and `data/ranger.js` has its
+final merged values (`roadWOver: 19000`, from main):
 
 ```bash
 cd /Users/ledogen/CodeShit/CarGame
@@ -272,9 +329,11 @@ node test/route-bundle-parity.mjs      # the gate that catches exactly this drif
 git add data/route-cache-default.json.gz && git commit -m "chore: re-bake route cache after merges"
 ```
 
-Note story-mode modified `test/bake-route-bundle.mjs` itself (its bake covers the story-mode
-mission-planning region — that is why its `.gz` is ~8.7 MB). Re-bake with the **merged** version of
-that script, so the result covers both the spawn band and the story-mode region.
+Story-mode also modified `test/bake-route-bundle.mjs` itself (further changed in `f3e4be0` —
++103 lines total from base, now writing the region cache as a second output alongside the default
+one). Re-bake with the **merged** version of that script, so both outputs regenerate correctly —
+check its `--help`/top-of-file usage comment post-merge, since the CLI surface may have changed
+across the two commits that touched it.
 
 Context worth having: per the project's own notes the bundled cache is a **dev convenience, not a
 player-facing load-time optimization** — and there is an open ticket arguing it currently makes cold
@@ -288,9 +347,12 @@ let it block the merge; just do not pretend a stale one is fine.
 | file | subject | state |
 |---|---|---|
 | `.planning/todos/pending/perf-26-streaming-hitch.md` | streaming hitches / resumable carve | committed on `feature/stream-hitch` |
-| `.planning/todos/pending/perf-26-cold-load-budget.md` | cold load on older machines | **untracked** in the story-mode worktree |
+| `.planning/todos/pending/perf-26-cold-load-budget.md` | cold load on older machines | **committed** on `feature/story-mode` as of `f3e4be0` (2026-07-27) — was untracked when this doc was first written |
 
-Both were opened 2026-07-26 in parallel worktrees, which is how they collided.
+Both were opened 2026-07-26 in parallel worktrees, which is how they collided. Now that both are
+committed on their respective branches, the collision WILL surface as two files both claiming
+`id: PERF-26` sitting side by side after both branches merge — same fix, just no longer a
+"one side is still untracked" situation.
 
 **Renumber the cold-load one to PERF-27.** It is a single untracked file with zero references from
 code. The streaming-hitch ID is stamped into inline comments across `perf.js`, `main.js`,
