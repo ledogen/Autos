@@ -35,19 +35,33 @@ ms budget can bind.
 Ranked by measured lift at `--cpu=4` after the carve fix:
 
 1. **Road ribbon tile build** — `road-mesh.js flushPendingQueue`, `MAX_ROAD_BUILDS_PER_FRAME = 1`.
-   Same atomic-unit problem: one tile is 8–16 ms unthrottled (25–45 ms at 4×), which no per-frame
-   cap can subdivide. It also lands in the *same* frame as the terrain commit (both are driven off
-   the chunk ring), so the two stack — `road.tile` and `terrain.chunk` have identical stats in every
-   run because they always co-occur. Two fixes available and they compose: slice `_buildRoadTile`
-   the way the carve was sliced, and/or stagger the ribbon flush so it never shares a frame with a
-   terrain commit. Currently the top remaining contributor: lift +10.3 ms at 4×.
-2. **`props.lodSwap` outliers** — `_syncChunkLod(budget = 6)` re-places 6 chunks/frame on a fixed
+   Top remaining contributor: lift ≈ +12 ms at 4×, and it always shares a frame with the terrain
+   commit (both driven off the chunk ring), so `road.tile` and `terrain.chunk` have identical stats
+   in every run.
+
+   **A per-segment slicing attempt was tried and REVERTED — do not repeat it.** `_buildRoadTile`
+   was made resumable exactly like the carve, yielding per ribbon slice and per junction pad, with
+   scene insertion deferred to a single commit. Measured lift across three runs: 10.3 (sliced),
+   11.9 (sliced), 12.9 (unsliced) — indistinguishable. 91 insertions for nothing.
+
+   The reason it failed, which is the useful part: **the cost is not in `sweepRibbon`.** With the
+   hitch record widened to 8 buckets, a 48 ms frame shows `frame.ribbon.flush` at 19.4 ms while
+   `ribbon.sweepRibbon` does not even reach the top 8 (< 1.2 ms), and `ribbon.sliceNetwork` likewise.
+   So ~18 ms of the tile build is in code that is currently *unbucketed*: the `getPointAt` sampling
+   loop that builds `points`/`designGradeY`, the junction cutback trim, or `buildJunctionFootprint`.
+   Instrument those three first. Do not slice anything until a bucket actually names the cost —
+   that was the mistake here.
+2. **The worst frames left are not a streaming cost at all.** At 4× the top frames are 83–89 ms with
+   60–73 ms inside NO bucket, carrying `props.lodSwap×6` while `frame.props.update` reads ~4 ms.
+   Cheapest next investigation, and possibly the only one worth doing — see below.
+
+3. **`props.lodSwap` outliers** — `_syncChunkLod(budget = 6)` re-places 6 chunks/frame on a fixed
    COUNT, not an ms budget. Usually cheap, but it owns the worst frames left in the run (81 ms at
    4×) and those frames carry 60–70 ms of time inside NO bucket, with `frame.props.update` reading
    only ~3 ms. That signature is not the swap work itself — suspect a GC pause triggered by the
    unplace/place churn. Confirm with an allocation profile before optimising; if it is GC, the fix
    is to stop the swap allocating (reuse the placement arrays), not to lower the budget.
-3. **Prop scatter is NOT a problem** — `props.chunk` measures a +0.0 to +0.3 ms lift. Its 3 ms/frame
+4. **Prop scatter is NOT a problem** — `props.chunk` measures a +0.0 to +0.3 ms lift. Its 3 ms/frame
    drip budget works. Do not spend effort here; the original hypothesis pointed at prop loading and
    the data cleared it.
 

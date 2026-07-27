@@ -103,7 +103,9 @@ function _closeFrame(ms) {
     }
     if (isHitch) {
         const all = [..._cur.entries()]
-        const top = all.filter(e => e[1] >= 0.2).sort((a, b) => b[1] - a[1]).slice(0, 5)
+        // 8, not 5: the nested sub-buckets (ribbon.sweepRibbon, flush.gridNormals) rank just below
+        // their frame.* parents, so a shorter list hides exactly the detail that names the cost.
+        const top = all.filter(e => e[1] >= 0.2).sort((a, b) => b[1] - a[1]).slice(0, 8)
         // Only the top-level frame.* buckets are summed — the rest (flush.*, terrain.*, ribbon.*)
         // are nested inside them and would double-count. What's left is CPU inside the loop that no
         // bucket covers: unbucketed loop sections, or a GC pause.
