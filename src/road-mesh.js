@@ -45,7 +45,7 @@ import { crownProfile, potholeNoise, signedCurvature, earClip } from './road-car
 // Re-exported here so existing callers (test harness, road.js) can still import from road-mesh.js.
 export { roadQuality, hashRunKey, ROAD_QUALITY_STRETCH, ROAD_QUALITY_BLEND } from './road-quality.js'
 import { roadQuality, ROAD_QUALITY_STRETCH, ROAD_QUALITY_BLEND } from './road-quality.js'
-import { perfAdd } from './perf.js'  // TEMP perf triage (D-arc)
+import { perfAdd, perfEvent } from './perf.js'  // TEMP perf triage (D-arc / PERF-26)
 
 // ── Module-scope scratch vectors (GC-free per-sample allocation guard) ────────
 // sweepRibbon is called for every tile's every segment, multiple times per stream.
@@ -693,6 +693,7 @@ export class RoadMeshSystem {
             const { tileX, tileZ, key } = this._pendingQueue.shift()
             this._pendingSet.delete(key)
             this._buildRoadTile(tileX, tileZ, key)
+            perfEvent('road.tile')   // PERF-26: commit point — ribbon geometry enters the scene
             built++
         }
         if (!this._initialFillDone && built > 0 && this._pendingQueue.length === 0) this._initialFillDone = true

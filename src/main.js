@@ -34,7 +34,8 @@ import { buildPlaceCapture } from './capture.js'
 import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume } from './engine-audio.js'
 import { TerrainSystem } from './terrain.js'
 import { RoadSystem, CHUNK_SIZE } from './road.js'
-import { perfAdd, perfMark, perfDump, perfReset, perfSnapshot, perfEnableUserTiming, perfFrameDt } from './perf.js'  // TEMP perf triage (D-arc / PERF-08)
+import { perfAdd, perfMark, perfDump, perfReset, perfSnapshot, perfEnableUserTiming, perfFrameDt,
+         perfEnableHitchLog, perfFrameBegin, perfFrameEnd, perfHitchReport, perfHitchDump, perfHitchReset, perfEvent } from './perf.js'  // TEMP perf triage (D-arc / PERF-08 / PERF-26)
 let _perfFrame = 0  // TEMP: frame counter for auto-dump at load
 let _firstFrameMarked = false  // TEMP: mark the first animate frame to isolate init vs loop time
 import { RoadMeshSystem } from './road-mesh.js'
@@ -71,6 +72,12 @@ const _urlSeed = _urlParams.get('seed')
 const _PROF = _urlParams.get('prof') === '1'
 const _NOAA = _urlParams.get('noaa') === '1'
 if (_PROF) perfEnableUserTiming()
+// PERF-26: ?hitch=<ms> turns on per-frame hitch attribution at that frame-period threshold (?hitch=1
+// takes the default 24 ms). Independent of ?prof so it can be left on during ordinary play — the only
+// per-frame cost is two Map writes. ?prof=1 implies it. Read back with __hitchDump() / __hitches().
+const _hitchArg = _urlParams.get('hitch')
+const _HITCH = _hitchArg !== null || _PROF
+if (_HITCH) perfEnableHitchLog(Number(_hitchArg) > 1 ? Number(_hitchArg) : 24)
 let worldSeed = parseWorldSeed(_urlSeed ?? '6')
 let _seedString = _urlSeed ?? '6'   // current seed STRING (reference for captures; numeric worldSeed drives repro)
 
@@ -1538,6 +1545,13 @@ function applyQuality (name) {
 // External harness surface (test/profile.mjs over CDP). Same precedent as window.__view: init-time
 // one-liners, no frame-loop plumbing. Closures read module-scope systems at CALL time, so they
 // survive the seed-rebuild reassignment of terrainSystem/roadSystem/propSystem.
+// PERF-26: hitch attribution read-back. __hitchDump() prints the table in the browser console (play
+// normally with ?hitch=20, then dump); __hitches() is the structured form the CDP harness reads.
+if (_HITCH) {
+  window.__hitchDump = () => perfHitchDump()
+  window.__hitches = () => perfHitchReport()
+  window.__hitchReset = () => { perfHitchReset(); return true }
+}
 if (_PROF) {
   window.__q = (name) => applyQuality(name)
   // renderer.info snapshot — draw calls / triangles / programs / GPU memory handles.
@@ -2576,6 +2590,7 @@ document.addEventListener('keydown', e => {
 // FIXED_DT = 1/60s; MAX_FRAME_TIME = 0.25s (T-01-04: spiral-of-death mitigation)
 function loop () {
   requestAnimationFrame(loop)
+  perfFrameBegin()   // PERF-26: closes out the previous frame's attribution, arms this one (no-op unless ?hitch)
   if (!_firstFrameMarked) { _firstFrameMarked = true; perfMark('first animate frame') }  // TEMP (D-arc)
 
   const newTime = performance.now() / 1000
@@ -2597,6 +2612,10 @@ function loop () {
 
   accumulator += frameTime
 
+  // PERF-26: bucket the whole fixed-step block. Without it the catch-up substeps a hitch frame owes
+  // (a 150 ms frame is followed by one paying ~9 physics steps) land in no bucket at all, and the
+  // hitch report shows a fat frame with nothing explaining it.
+  const _ptP = performance.now()
   while (accumulator >= PHYSICS_DT) {
     // Terrain stub call retained for M1-13 verification (Phase 6 replaces body, not call site).
     const _surface = terrain(vehicleState.position.x, vehicleState.position.z)  // eslint-disable-line no-unused-vars
@@ -2668,6 +2687,7 @@ function loop () {
     captureFrame(simTime, vehicleState, vehicleState.wheelDebug, roadDebug)
     accumulator -= PHYSICS_DT
   }
+  perfAdd('frame.physics', performance.now() - _ptP)
 
   // FEAT-43: Story Mode — advance the settle→freeze timer and enforce the region boundary on the
   // physics pose BEFORE the render interpolation reads it (so the truck is clamped, not just drawn
@@ -2791,6 +2811,11 @@ function loop () {
       || snapR !== _lastShadowSnapR || snapU !== _lastShadowSnapU
       || sd.x !== _lastSunDir.x || sd.y !== _lastSunDir.y || sd.z !== _lastSunDir.z
       || geomSig !== _lastShadowGeomSig) {
+      // PERF-26: tag only the re-arms that are NOT the every-frame `moving` case. Tagging `moving`
+      // would put a tag on every driving frame, collapsing the hitch report's quiet control group
+      // (a tag is only informative if there are frames without it). A geomSig re-arm while parked
+      // IS a pop-in cost and worth its own line.
+      if (!moving) perfEvent(geomSig !== _lastShadowGeomSig ? 'shadow.map.geom' : 'shadow.map.view')
       renderer.shadowMap.needsUpdate = true
       _lastShadowSnapR = snapR
       _lastShadowSnapU = snapU
@@ -2826,7 +2851,7 @@ function loop () {
   // PERF-07: bake freshly-committed chunks' prop shadows into the world atlas (sliced; no-op when the
   // queue is empty, i.e. the steady state). Off the frame's shadow pass entirely once baked.
   _pt = performance.now()
-  if (shadowBake && shadowBake.hasWork() && !_labActive) shadowBake.update(scene)
+  if (shadowBake && shadowBake.hasWork() && !_labActive) { perfEvent('shadow.bake'); shadowBake.update(scene) }   // PERF-26 tag
   perfAdd('frame.shadowBake', performance.now() - _pt)
   // FEAT-17/18: sync pond/stream meshes to the view region (bbox-culled, keyed — no churn when still).
   _pt = performance.now()
@@ -3021,6 +3046,9 @@ function loop () {
   const _ptR = performance.now()
   renderer.render(scene, camera)
   perfAdd('frame.render', performance.now() - _ptR)  // TEMP: the ~8.5s uninstrumented load cost suspect
+  // PERF-26: stamp the frame's CPU span + the program count, so a shader compile shows up as a
+  // +N on the hitch record rather than as unexplained time outside every bucket.
+  perfFrameEnd(renderer.info.programs?.length ?? -1)
 }
 
 perfMark('init: synchronous bootstrap done, requesting first frame')  // TEMP (D-arc)
