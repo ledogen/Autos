@@ -387,8 +387,10 @@ export const RANGER_PARAMS = {
   // roadWOver: FINITE over-cap penalty — roadWOver·max(0, grade − maxRoadGrade). Strongly (but
   // never infinitely) discourages exceeding maxRoadGrade; forces switchbacks where the grade
   // would otherwise blow past the target. NEVER Infinity (D-02 REVISED). D-09 default 8000.
-  roadWOver: 30000,     // cost units/m over-grade — SOFT over-cap penalty, per-metre (×L) (2500→18500 harder
-                        // soft-cap; Road-Feel Phase 2: →30000 paired with roadGraphMaxGrade 0.12, see roadWGrade note)
+  roadWOver: 19000,     // cost units/m over-grade — SOFT over-cap penalty, per-metre (×L) (2500→18500 harder
+                        // soft-cap; Road-Feel Phase 2: →30000 paired with roadGraphMaxGrade 0.12, see roadWGrade note.
+                        // Crunchy-road pass: 30000→18500 — the grade wall dwarfed roadWTurn ~17×, flipping the router
+                        // into hard contour-weaving above maxGrade; softening it ramps the mode transition.)
 
   // roadWTurn: curvature penalty weight (wCurv) in the arc router. QUAL-05: the per-primitive cost is
   // wCurv·κ²·L (curvature SQUARED — "bending energy"), so for a given heading change the cost is
@@ -421,7 +423,7 @@ export const RANGER_PARAMS = {
   // roadDeviationCap: max |design − terrain| (m) the router/profile will build — bounds fill/cut depth so
   // the carve can construct it. On terrain taller than this the design grade falls back to terrain grade
   // and the road still switchbacks (the genuinely-forced loops).
-  roadDeviationCap: 8,
+  roadDeviationCap: 10,   // crunchy-road pass: 8→10 (let the carve bridge/cut more before forced weaving)
 
   // roadJunctionFootprints: render the flat pad mesh at AT_GRADE crossings (FEAT-07 Step 2). Now ON: the
   // pad sits coplanar with the two strands the mid-span flatten eased to node.nodeY, so the crossing reads
@@ -502,7 +504,7 @@ export const RANGER_PARAMS = {
   // design bridge/cut normal undulations smoothly: on the seed-67 complaint edge it cut grade kinks 10→0
   // and flat patches 7→0. Junction endpoints are reconciled separately (_applyJunctionBlend), so a looser
   // mid-edge cap does not float merges. Lower only if you want tighter terrain-hug AND accept the steps.
-  roadGraphDeviationCap: 8,
+  roadGraphDeviationCap: 10,   // crunchy-road pass: 8→10 (design line bridges more undulation before clamping to raw grade)
   // roadGraphMaxGrade: the SOFT grade target for the router. This is the DOMINANT WINDINESS lever
   // (windiness-stage finding): lower target ⇒ more chords exceed it ⇒ the over-cap penalty forces
   // terrain-following detours/switchbacks ⇒ windier, more terrain-following roads. 0.20

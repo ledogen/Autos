@@ -26,16 +26,22 @@ let smoothedPitch = 0               // module-level low-passed car pitch (radian
 
 // ── Drag-orbit state ───────────────────────────────────────────────────────────
 // Spherical coordinates for orbit mode. orbitTheta = yaw (radians around Y axis),
-// orbitPhi = pitch (radians above XZ plane). Synced each chase-follow frame so that
-// when drag begins the camera does not jump.
-const ORBIT_RADIUS    = Math.hypot(0, 2.5, 6.0)  // ≈ 6.5 m, matches CHASE_OFFSET_LOCAL length
-const DRAG_SENSITIVITY = 0.005                     // rad/px
+// orbitPhi = pitch (radians above XZ plane). orbitRadius = actual camera-to-car distance.
+// All three are synced each chase-follow frame so that when drag begins the camera does
+// not jump. orbitRadius in particular MUST track the real (lerp-lagged) distance rather
+// than the nominal CHASE_OFFSET_LOCAL length: the follow-mode lerp trails the car under
+// acceleration, so the true gap is often much larger than the design offset. Re-projecting
+// the orbit at a fixed nominal radius on drag-start snapped the camera toward the car
+// (BUG: freecam-drag-snap) — using the synced actual radius keeps the transition seamless.
+const ORBIT_RADIUS_DEFAULT = Math.hypot(0, 2.5, 6.0)  // ≈ 6.5 m, matches CHASE_OFFSET_LOCAL length
+const DRAG_SENSITIVITY      = 0.005                     // rad/px
 
-let isDragging  = false
-let dragLastX   = 0
-let dragLastY   = 0
-let orbitTheta  = Math.PI   // start directly behind car (+Z world = behind -Z-facing car)
-let orbitPhi    = 0.38      // ≈ 22° elevation, matches rough chase offset angle
+let isDragging   = false
+let dragLastX    = 0
+let dragLastY    = 0
+let orbitTheta   = Math.PI              // start directly behind car (+Z world = behind -Z-facing car)
+let orbitPhi     = 0.38                 // ≈ 22° elevation, matches rough chase offset angle
+let orbitRadius  = ORBIT_RADIUS_DEFAULT // actual camera-to-car distance, synced each follow frame
 
 // ── Hood-cam drag-look state ─────────────────────────────────────────────────────
 // Yaw/pitch offset (radians) layered on top of the body-locked hood orientation. Dragging
@@ -251,12 +257,15 @@ export function updateCamera (camera, vehicleState, dt) {
   if (cameraMode === 'chase') {
     if (isDragging) {
       // ── Orbit mode: place camera at fixed spherical offset in world space ──────
-      // Car continues moving; camera tracks car position but holds the dragged angle.
+      // Car continues moving; camera tracks car position but holds the dragged angle
+      // AND the actual radius captured at drag-start (see orbitRadius comment above) —
+      // using the nominal design radius here would snap the camera on entry whenever the
+      // follow-mode lerp was lagging (e.g. under acceleration).
       const cosP   = Math.cos(orbitPhi)
       const offset = new THREE.Vector3(
-        ORBIT_RADIUS * cosP * Math.sin(orbitTheta),
-        ORBIT_RADIUS * Math.sin(orbitPhi),
-        ORBIT_RADIUS * cosP * Math.cos(orbitTheta)
+        orbitRadius * cosP * Math.sin(orbitTheta),
+        orbitRadius * Math.sin(orbitPhi),
+        orbitRadius * cosP * Math.cos(orbitTheta)
       )
       camera.position.copy(vehicleState.position).add(offset)
       camera.lookAt(vehicleState.position)
@@ -280,10 +289,13 @@ export function updateCamera (camera, vehicleState, dt) {
       camera.position.lerp(goalPos, alpha)
       camera.lookAt(vehicleState.position)
 
-      // Sync orbit angles from current camera position so drag handoff is seamless (no jump).
+      // Sync orbit angles + radius from current camera position so drag handoff is seamless
+      // (no jump). radius uses the ACTUAL distance (not ORBIT_RADIUS_DEFAULT) since the
+      // follow lerp can lag well past the nominal offset length under acceleration.
       const delta = camera.position.clone().sub(vehicleState.position)
+      orbitRadius = Math.max(0.01, delta.length())
       orbitTheta  = Math.atan2(delta.x, delta.z)
-      orbitPhi    = Math.asin(Math.max(-1, Math.min(1, delta.y / ORBIT_RADIUS)))
+      orbitPhi    = Math.asin(Math.max(-1, Math.min(1, delta.y / orbitRadius)))
     }
   } else {
     // Hood cam: fixed offset at the rear edge of the hood, just outside the windshield

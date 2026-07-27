@@ -1,5 +1,5 @@
 ---
-id: FEAT-30
+id: FEAT-44
 type: feature
 status: open
 opened: 2026-07-16
@@ -12,7 +12,7 @@ embankment face, black-capped so the bore reads dark. Explicitly NOT a hole in t
 carve change, no bore, no terrain roof — the pipe is decoration on an untouched causeway."
 ---
 
-# FEAT-30: Visible culvert pipe where a road crosses a stream
+# FEAT-44: Visible culvert pipe where a road crosses a stream
 
 ## Context
 
