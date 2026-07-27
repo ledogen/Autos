@@ -32,6 +32,7 @@ import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors } fr
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
 import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume } from './engine-audio.js'
+import { ensureTireAudio, updateTireAudio, setTireAudioEnabled, setTireAudioVolumes } from './tire-audio.js'
 import { TerrainSystem } from './terrain.js'
 import { RoadSystem, CHUNK_SIZE } from './road.js'
 import { perfAdd, perfMark, perfDump, perfReset, perfSnapshot, perfEnableUserTiming, perfFrameDt } from './perf.js'  // TEMP perf triage (D-arc / PERF-08)
@@ -40,6 +41,7 @@ let _firstFrameMarked = false  // TEMP: mark the first animate frame to isolate 
 import { RoadMeshSystem } from './road-mesh.js'
 import { DustSystem } from './dust.js'
 import { TireSmokeSystem } from './smoke.js'
+import { DirtSpraySystem } from './dirt-spray.js'
 import { SkySystem } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
 import { parseWorldSeed, seedFor } from './seed.js'
 import { createVehicleModel } from './vehicle-model.js'
@@ -225,6 +227,25 @@ const _sunShearScratch = new THREE.Vector2()
 let _labActive = false
 let _labFogDensity = null    // player's fog density, saved across a lab visit
 let _labSavedSpawn = null    // player's spawn override, saved across a lab visit
+
+/**
+ * Loose-surface factor at a world XZ: ~dustPavedFactor on the paved ribbon, 1 off it, feathered
+ * across a band into the shoulder so the edge isn't a hard line. carveHint is the memoized
+ * nearest-road query the physics path already warmed at these wheel positions, so this is ~free.
+ * Shared by the dust system (dust is reduced on asphalt) and tire audio (screech ↔ dirt blend).
+ */
+function looseSurfaceFactor (x, z) {
+  if (_labActive || !roadSystem) return 1
+  const nr = roadSystem.carveHint(x, z)
+  if (!nr || !nr.point) return 1                          // off-road → fully loose
+  const lat = Math.hypot(x - nr.point.x, z - nr.point.z)
+  const hw = RANGER_PARAMS.roadHalfWidth ?? 5
+  const paved = RANGER_PARAMS.dustPavedFactor ?? 0.1
+  const band = 1.5                                        // m — edge feather into the shoulder
+  if (lat <= hw - band) return paved
+  if (lat >= hw) return 1
+  return paved + (1 - paved) * (lat - (hw - band)) / band
+}
 
 // Manual verification hook — console.log confirms importmap loaded r184 (FOUND-02)
 console.log('THREE.REVISION', THREE.REVISION)
@@ -973,6 +994,9 @@ const dustSystem = new DustSystem(scene, RANGER_PARAMS)
 
 // Tire smoke (src/smoke.js) — same construction convention as dust: scene + params only.
 const smokeSystem = new TireSmokeSystem(scene, RANGER_PARAMS)
+
+// Dirt spray (src/dirt-spray.js) — slip-driven clod stream + shed floaters, loose surfaces only.
+const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
 // src/vehicle-model.js. carGroup/bodyMesh/wheelMeshes are returned for back-compat;
@@ -2135,6 +2159,7 @@ function _setWorldgenVisible (visible) {
   if (waterRenderer) waterRenderer.group.visible = visible
   if (dustSystem) dustSystem.setVisible(visible)
   if (smokeSystem) smokeSystem.setVisible(visible)
+  if (dirtSpraySystem) dirtSpraySystem.setVisible(visible)
 }
 
 function enterLab () {
@@ -2345,6 +2370,7 @@ function _downloadJSON (obj, name) {
 
 document.addEventListener('keydown', e => {
   ensureEngineAudio()   // FEAT-23: first keypress is the user gesture that unlocks WebAudio
+  ensureTireAudio()     // tire-slip audio shares that same unlocked AudioContext
   if (e.key === '\\') toggleRecording()
   if (e.key === 'i' && e.ctrlKey) openInitialCondition(vehicleState, RANGER_PARAMS)
   // 'p' = MARK THIS PLACE: write a kind:"place" capture at the truck — the replayable spatial bug
@@ -2502,27 +2528,18 @@ function loop () {
   // the lab surface in the lab, analytic terrain height otherwise. Cheap no-op when no wheel is working.
   dustSystem.update(frameTime, vehicleState, RANGER_PARAMS,
     (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0) : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0),
-    // On-road factor: dust is reduced on the paved ribbon. carveHint is the memoized nearest-road
-    // query the physics path already warmed at these wheel positions, so this is ~free. Lateral
-    // distance from the wheel to the centerline point < roadHalfWidth ⇒ on asphalt; ramp smoothly
-    // up to 1 across a band into the dirt shoulder so the edge isn't a hard line.
-    (x, z) => {
-      if (_labActive || !roadSystem) return 1
-      const nr = roadSystem.carveHint(x, z)
-      if (!nr || !nr.point) return 1                         // off-road → full dirt dust
-      const lat = Math.hypot(x - nr.point.x, z - nr.point.z)
-      const hw = RANGER_PARAMS.roadHalfWidth ?? 5
-      const paved = RANGER_PARAMS.dustPavedFactor ?? 0.1
-      const band = 1.5                                        // m — edge feather into the shoulder
-      if (lat <= hw - band) return paved
-      if (lat >= hw) return 1
-      return paved + (1 - paved) * (lat - (hw - band)) / band
-    })
+    looseSurfaceFactor)
 
   // Tire smoke — same render-pose timing as dust above; ground sampler shared verbatim (smoke
   // has no on-road fade, so no third callback).
   smokeSystem.update(frameTime, vehicleState, RANGER_PARAMS,
     (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0) : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0))
+
+  // Dirt spray — same render-pose timing and ground sampler; additionally gated by
+  // looseSurfaceFactor so clods only fly where there is loose material to throw.
+  dirtSpraySystem.update(frameTime, vehicleState, RANGER_PARAMS,
+    (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0) : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0),
+    looseSurfaceFactor)
 
   // Phase 6: update terrain chunk ring each render frame (outside physics accumulator).
   // ground.position.x/z snapping removed — ground mesh removed; terrain chunks replace it.
@@ -2678,6 +2695,13 @@ function loop () {
     setEngineAudioVolume(RANGER_PARAMS.engineAudioVolume ?? 0.5)
     updateEngineAudio(dtrain.engineRPM, vehicleState.throttle)
   }
+
+  // Tire-slip audio (src/tire-audio.js): screech on pavement / tearing roar on dirt, gated by
+  // per-wheel slip velocity. Same every-frame reasoning as the engine drone above — a throttled
+  // update would step the squeal audibly. No-op until the first keypress unlocks WebAudio.
+  setTireAudioEnabled(RANGER_PARAMS.tireAudioEnabled !== false)
+  setTireAudioVolumes(RANGER_PARAMS.tireScreechVolume ?? 0.5, RANGER_PARAMS.tireDirtVolume ?? 0.6)
+  updateTireAudio(vehicleState, RANGER_PARAMS, looseSurfaceFactor)
 
   // PERF-16: throttle all HUD DOM + debug-canvas writes to ~10 Hz. These are human-readable readouts;
   // rewriting the spans and repainting the Pacejka/travel/slip canvases every frame cost Layout+Paint

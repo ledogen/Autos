@@ -10,7 +10,7 @@
  *
  *   - carGroup            parent Object3D; position/quaternion driven each frame
  *   - bodyMesh            main hull mesh (kept for back-compat / debug references)
- *   - wheelMeshes         [FL, FR, RL, RR] cylinder meshes
+ *   - wheelMeshes         [FL, FR, RL, RR] wheel Groups (tire + steelie rim children)
  *   - syncMeshesToState(state)  call once per render frame; updates transforms + lights
  *
  * Coordinate frame (carGroup local space): origin = CG, forward = -Z, right = +X,
@@ -35,6 +35,7 @@
 
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
 
 // The imported GLB (described by a spec from data/vehicle-models.js) replaces the primitive truck.
@@ -46,6 +47,7 @@ const COLOR_BODY    = 0x2f6da4   // body panels (medium blue)
 const COLOR_TRIM    = 0x1a1a1a   // bumpers, grille, seams (near-black)
 const COLOR_GLASS   = 0x0a1018   // greenhouse / windows (dark)
 const COLOR_TIRE    = 0x111111
+const COLOR_RIM     = 0x8d9297   // steelie wheel disc (plain steel grey, no chrome)
 
 // Emissive light colors
 const HEAD_ON   = 0xfff4d6   // low-beam lens / warm white
@@ -340,20 +342,67 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
     })
   }
 
-  // ── Wheels ─────────────────────────────────────────────────────────────────
-  // Wheels: CylinderGeometry rotated 90° around Z (Pitfall 5 — must do this BEFORE
-  // instantiating meshes or the spin axis will be wrong).
-  // Cylinder default = height along Y. After rotateZ(PI/2), height is along X (lateral).
-  // Wheels then spin around their local X axis, which is the correct lateral roll axis.
-  const wheelGeom = new THREE.CylinderGeometry(
-    params.wheelRadius,  // radiusTop
-    params.wheelRadius,  // radiusBottom
-    0.25,                // height (tire width)
-    16                   // radialSegments
-  )
-  wheelGeom.rotateZ(Math.PI / 2)  // align spin axis — MUST happen before mesh creation
+  // ── Wheels (steelie) ───────────────────────────────────────────────────────
+  // Two shared geometries, built ONCE and referenced by all four wheels:
+  //   tireGeom — near-black 245/75R16 carcass: open tube + outboard sidewall annulus (so the rim
+  //              can sit DOWN inside it) + inboard end caps that stop you seeing through the wheel
+  //   rimGeom  — merged steel "steelie": barrel + dished disc with 5 lightening HOLES + hub boss
+  //              + 5 lug nuts. The holes are the point: they are arc-interrupted detail, so
+  //              wheel spin is legible (a smooth cylinder reads as stationary at any speed).
+  // Both are built with the cylinder's default Y axis and then rotateZ(-PI/2) (Pitfall 5 — must
+  // happen BEFORE mesh creation): height ends up along +X, so wheels spin about their local X
+  // axis, the correct lateral roll axis, and the build-frame +Y face becomes the OUTBOARD (+X)
+  // face. Left-side wheels get the whole tire+rim assembly flipped back out via rotation.y = PI on
+  // an inner group (see below) — never on the wheel group itself, whose quaternion syncMeshesToState owns.
+  const TIRE_W  = 0.25                 // tire section width
+  const HALF_W  = TIRE_W / 2
+  const RIM_R   = 0.203                // 16 in rim ≈ 0.406 m diameter
+  const DISC_T  = 0.012                // disc face thickness
+  const DISC_Y  = HALF_W - 0.042       // inboard side of the disc — the dish: face sits ~30 mm in
+  const wRad    = params.wheelRadius
 
-  const wheelMat = new THREE.MeshStandardMaterial({ color: COLOR_TIRE })
+  const tireParts = [
+    new THREE.CylinderGeometry(wRad, wRad, TIRE_W, 24, 1, true),                     // tread band
+    new THREE.RingGeometry(RIM_R, wRad, 24, 1).rotateX(-Math.PI / 2).translate(0, HALF_W, 0),
+    // Inboard end, closed both ways: the +Y-facing disc is what the lightening holes look through
+    // (dark, not sky), the -Y-facing one keeps the wheel solid when seen from under the truck.
+    new THREE.CircleGeometry(wRad, 24).rotateX(-Math.PI / 2).translate(0, -HALF_W, 0),
+    new THREE.CircleGeometry(wRad, 24).rotateX(Math.PI / 2).translate(0, -HALF_W - 0.001, 0),
+  ]
+  const tireGeom = mergeGeometries(tireParts.map((g) => (g.index ? g.toNonIndexed() : g)))
+  tireGeom.rotateZ(-Math.PI / 2)
+
+  // Disc face: one ExtrudeGeometry from a circular Shape with 5 circular holes punched in it, so
+  // the perforation is real geometry (you see into the dark wheel well — no decal, no alpha).
+  const discShape = new THREE.Shape().absarc(0, 0, RIM_R - 0.006, 0, Math.PI * 2)
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + Math.PI / 5
+    const hole = new THREE.Path().absarc(Math.cos(a) * 0.128, Math.sin(a) * 0.128, 0.042, 0, Math.PI * 2)
+    discShape.holes.push(hole)
+  }
+  const discGeom = new THREE.ExtrudeGeometry(discShape, { depth: DISC_T, bevelEnabled: false, curveSegments: 16 })
+  discGeom.rotateX(-Math.PI / 2).translate(0, DISC_Y, 0)   // extrude axis +Z -> +Y (outboard)
+
+  // Barrel closes the gap between the recessed disc and the tire's outboard annulus — that visible
+  // step of steel wall is what reads as a dished steel wheel.
+  const rimParts = [
+    discGeom,
+    new THREE.CylinderGeometry(RIM_R, RIM_R, TIRE_W, 24, 1, true),   // meets the sidewall annulus
+    new THREE.CylinderGeometry(0.052, 0.052, 0.022, 14).translate(0, DISC_Y + DISC_T + 0.011, 0),  // hub boss
+  ]
+  for (let i = 0; i < 5; i++) {                                                                    // lug nuts
+    const a = (i / 5) * Math.PI * 2
+    rimParts.push(new THREE.CylinderGeometry(0.013, 0.013, 0.014, 6)
+      .translate(Math.cos(a) * 0.068, DISC_Y + DISC_T + 0.007, Math.sin(a) * 0.068))
+  }
+  // mergeGeometries needs a uniform index state; ExtrudeGeometry is non-indexed, cylinders are not.
+  const rimGeom = mergeGeometries(rimParts.map((g) => (g.index ? g.toNonIndexed() : g)))
+  rimGeom.rotateZ(-Math.PI / 2)
+
+  const tireMat = new THREE.MeshStandardMaterial({ color: COLOR_TIRE, roughness: 0.95, metalness: 0 })
+  // DoubleSide on the rim only: the dish recess shows the INSIDE of the barrel, which would
+  // otherwise be culled away into a see-through slot. ~1k tris, so the backfaces cost nothing.
+  const rimMat  = new THREE.MeshStandardMaterial({ color: COLOR_RIM, roughness: 0.55, metalness: 0.2, side: THREE.DoubleSide })
 
   // Local-frame offsets for wheel center positions relative to vehicle CG.
   // Car forward = -Z (GLOSSARY.md §Coordinate System).
@@ -377,14 +426,27 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
   // NOTE (Phase 4.1): hubYRest removed. Wheel mesh position is now derived from strutComp via
   // full world-space hub position inverse-transformed into body-local space (D-07).
   // syncMeshesToState below handles this correctly for any body orientation.
+  // Each wheel is ONE Group (tire + rim children, shared geometry): syncMeshesToState writes the
+  // group's position/quaternion exactly as it did the old single mesh, and the GLB import path
+  // still hides a whole wheel with a single `.visible` toggle.
   const wheelMeshes = wheelLocalOffsets.map((offset) => {
-    const mesh = new THREE.Mesh(wheelGeom, wheelMat)
+    const wheel = new THREE.Group()
     // Wheels are children of carGroup — position is in carGroup local space (body-relative).
     // carGroup carries world position and orientation; wheels follow automatically (Bug 5 fix).
-    mesh.position.set(offset.x, offset.y, offset.z)
-    mesh.castShadow = true
-    carGroup.add(mesh)
-    return mesh
+    wheel.position.set(offset.x, offset.y, offset.z)
+    const tire = new THREE.Mesh(tireGeom, tireMat)
+    const rim  = new THREE.Mesh(rimGeom, rimMat)
+    // Both geometries face outboard = +X, correct for the right-hand wheels. Mirror the WHOLE
+    // assembly (tire is asymmetric too: open outboard annulus vs closed inboard caps) for the left
+    // (negative X) side via an inner group, keeping the outer group's quaternion free for steer∘spin.
+    const assembly = new THREE.Group()
+    if (offset.x < 0) assembly.rotation.y = Math.PI
+    tire.castShadow = true
+    rim.castShadow = true
+    assembly.add(tire, rim)
+    wheel.add(assembly)
+    carGroup.add(wheel)
+    return wheel
   })
 
   // Scratch vectors reused each frame (avoid per-frame allocation churn).
@@ -413,7 +475,10 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
     // wheelLocalOffsets[i] provides rest position; Y is overridden each frame by hub deviation.
     for (let i = 0; i < 4; i++) {
       // Spin quaternion: wheel rolling axis is X (geometry was rotateZ(PI/2) at creation).
-      const spinQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), state.wheelAngles[i])
+      // wheelAngles accumulates positive for forward roll (omega·r ≈ forward speed), but forward
+      // roll is a NEGATIVE rotation about +X: positive X-rotation carries the tire top toward +Z,
+      // which is rearward (forward = −Z). Negate here — visual only, physics owns the sign upstream.
+      const spinQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -state.wheelAngles[i])
 
       if (i < 2) {
         // Front wheels: combine steer (Y) then spin (X). steerQ.multiply(spinQ) = steerQ * spinQ

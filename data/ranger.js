@@ -116,6 +116,12 @@ export const RANGER_PARAMS = {
   engineAudioEnabled: true,  // master toggle for engine sound
   engineAudioVolume:  0.5,   // 0..1 volume
 
+  // Tire-slip audio (src/tire-audio.js): procedural squeal on pavement / noise tear on dirt, gated by
+  // per-wheel slip velocity (silent < 4 m/s, full at 8 m/s). Shares the engine's AudioContext.
+  tireAudioEnabled:   true,  // master toggle for tire-slip sound
+  tireScreechVolume:  0.5,   // 0..1 — pavement squeal
+  tireDirtVolume:     0.6,   // 0..1 — loose-surface roar
+
   // ── Tire Spring-Damper ───────────────────────────────────────────────────
   // tireStiffness: radial spring constant. At rest, each corner compresses ~38mm (mg/4 / k).
   // tireDamping: ζ≈0.56 relative to critical (2·√(k·m)=2683 N·s/m). Kept below critical so
@@ -907,6 +913,17 @@ export const RANGER_PARAMS = {
   smokeEnabled: true,
   smokeColor: 0xcfcfcf,        // hex RGB — light grey smoke tint
   smokeAmount: 1.0,            // [-] emission density multiplier
+
+  // ── Dirt spray (src/dirt-spray.js — visual polish) ────────────────────────────
+  // The loose-surface counterpart to tire smoke: a slipping tyre on dirt throws a dense stream of
+  // dark clods backwards out of the contact patch, and those clods shed slow, draggy dust motes
+  // that hang in the air. Gated by combined contact-patch slip (vLong/vLat) AND the loose-surface
+  // factor, so it is effectively absent on the paved ribbon (where smoke takes over instead).
+  // dirtSprayColor: base tint — clods darken it, floaters lighten it. Defaults to dustColor when
+  // unset so the palettes stay in family.
+  dirtSprayEnabled: true,
+  dirtSprayAmount: 1.0,        // [-] emission density multiplier
+  dirtSprayColor: 0x8a7350,    // hex RGB — thrown-earth tint (between dustColor and roadDirtColor)
 
   // ── FEAT-05 — Alpine terrain look (procedural biome colour + fbm detail) ─────
   // Palette (hex RGB; decoded as LINEAR /255 in terrain.js _writeChunkVertexColors — these
