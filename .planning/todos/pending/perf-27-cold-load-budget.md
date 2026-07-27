@@ -1,5 +1,5 @@
 ---
-id: PERF-26
+id: PERF-27
 type: perf
 status: open
 opened: 2026-07-26
@@ -12,7 +12,7 @@ being mistaken for a shipping load-time optimization — it is a DEV convenience
 making the cold load WORSE for real players."
 ---
 
-# PERF-26: Cold load time on older machines — story mode is the path that has to be fast
+# PERF-27: Cold load time on older machines — story mode is the path that has to be fast
 
 ## Why this exists
 
