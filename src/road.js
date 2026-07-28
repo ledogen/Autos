@@ -2262,10 +2262,23 @@ export class RoadSystem {
         return drops
     }
 
-    // Memoized degree decisions for a stream/warm window: the wide dedicated graph (margin =
-    // roadGraphMargin + cullMaxHops + 1 — the detour neighbourhood of any in-window pair is fully
-    // contained regardless of render radius, same recipe _cullNetwork always used) + its drop set.
-    // Keyed by (window, _networkRev) — warm scans repeat the same window between move thresholds.
+    // Memoized degree decisions for a stream/warm window, as { drop, dg }. Keyed by (window,
+    // _networkRev) — warm scans repeat the same window between move thresholds.
+    //
+    // The two fields want DIFFERENT margins, and conflating them was the streaming hitch:
+    //   drop — _degreeDropSet's Phase-2 BFS reaches at most roadGraphDegreeDetourHops (4), so a
+    //          margin of roadGraphMargin + degreeDetourHops + 1 already contains the detour
+    //          neighbourhood of every in-window candidate. That is the whole window-invariance
+    //          argument; a wider box cannot change an in-window decision, only cost more.
+    //   dg   — _cullNetwork's detour() runs to roadGraphCullMaxHops (8) over this same graph, so
+    //          IT genuinely needs roadGraphMargin + cullMaxHops + 1.
+    //
+    // PERF-26: both used to come from the cullMaxHops-sized build, so warmRoutes — which reads only
+    // `drop` — paid a margin-12 delaunay (1261 edges) every 256 m macro-column crossing when a
+    // margin-8 one (645 edges) decides the identical set. Measured over 6 cold column crossings,
+    // seed 6: 60.1 ms → 16.9 ms (72% cheaper) with ZERO in-window decision mismatches across 107
+    // compared edges. `dg` is now a lazy getter so only the cull/one-ring callers build the wide
+    // graph; when the two margins coincide, _urqMemo returns the same object and nothing is doubled.
     _degreeDrops(mx0, mx1, mz0, mz1) {
         const sig = `${mx0}:${mx1}:${mz0}:${mz1}`
         if (!this._degreeDropsMemo || this._degreeDropsMemo.rev !== this._networkRev)
@@ -2273,9 +2286,18 @@ export class RoadSystem {
         const memo = this._degreeDropsMemo.map
         const hit = memo.get(sig)
         if (hit) return hit
-        const maxHops = this._params?.roadGraphCullMaxHops ?? 4
-        const dg = this._buildUrquhart(mx0, mx1, mz0, mz1, false, (this._params?.roadGraphMargin ?? 3) + maxHops + 1)
-        const entry = { dg, drop: this._degreeDropSet(dg) }
+        const gMargin = this._params?.roadGraphMargin ?? 3
+        const dropMargin = gMargin + (this._params?.roadGraphDegreeDetourHops ?? 4) + 1
+        const cullMargin = gMargin + (this._params?.roadGraphCullMaxHops ?? 4) + 1
+        const self = this
+        const entry = {
+            drop: this._degreeDropSet(this._buildUrquhart(mx0, mx1, mz0, mz1, false, dropMargin)),
+            _dg: null,
+            get dg() {
+                if (!this._dg) this._dg = self._buildUrquhart(mx0, mx1, mz0, mz1, false, cullMargin)
+                return this._dg
+            },
+        }
         if (memo.size > 6) memo.clear()   // warm/stream/spawn windows alternate — keep a handful
         memo.set(sig, entry)
         return entry
