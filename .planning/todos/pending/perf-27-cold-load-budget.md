@@ -67,19 +67,74 @@ critical path. That is the owner's current preference — story mode is where th
 it must be instant on click. Flipping it to story-entry-only is a one-line change: drop the
 `requestIdleCallback` kick in main.js and let `_ensureRegionRoutes()` do the fetch on demand.
 
-## Still open — item 2: measure the real thing
+## DONE — item 2: the baseline exists (2026-07-27)
 
-- Cold boot → driving, in *story mode*, on a low-end machine, with the cache absent (i.e. what a
-  player on any non-default seed already experiences today). `?prof=1` + `perf-runs/boot-diag.mjs`
-  measure free-roam boot; story entry adds the region warm on top and that total is the number.
-- Everything else — how much of the region warm can move off the critical path, whether the region
-  radius is right for a *cold* entry, terrain-side cost (PERF-22) — follows from that measurement
-  rather than from guesses here.
+Tool: **`perf-runs/story-coldload.mjs`** (new). Drives a cold Chrome (throwaway profile ⇒ HTTP cache
+cold every run) against the **built** app via `vite preview`, and — unlike `test/hitch-report.mjs`,
+which throttles *after* settling because it asks about steady-state play — applies the CPU throttle
+**before navigation**, because here the load *is* the measurement. `--cpu=4` stands in for an older
+machine (the host is an M4; this is a simulation, not a real low-end box — treat the ratios as
+sound and the absolute numbers as optimistic).
+
+Four phases, all from `Page.navigate`: `ready` (`__rsReady`, BASE cache awaited) → `ring` (chunk
+ring full) → `live` (`__story()._phase === 'live'`, region routed + frozen) → **`drivable`** (ring
+refilled after entry). That last phase was added when the first run showed `chunks: 0` at `live`:
+**entry reseats/reseeds, which drops the chunk ring**, so "routing frozen" is not yet "can drive".
+Time-to-drive is `drivable`, not `live` — 0.4–3.0 s later depending on throttle.
+
+| run | cpu | story seed | ready | ring | live | **drivable** |
+|---|---|---|---|---|---|---|
+| cold (first launch of the day) | 1× | 6 (baked) | 1.42 s | 2.88 s | 3.71 s | — |
+| | 1× | 6 (baked) | 1.27 s | 2.61 s | 3.57 s | **4.01 s** |
+| | 4× | 6 (baked) | 4.31 s | 10.26 s | 12.47 s | **14.67 s** |
+| | 1× | 811 (uncached) | 1.26 s | 2.74 s | 13.92 s | **14.70 s** |
+| | 4× | 811 (uncached) | 4.32 s | 10.09 s | 39.79 s | **42.78 s** |
+
+Raw JSON in `perf-runs/perf27-*.json`. `?prof=1` is on in all runs (needed for `window.__story`).
+
+**What the numbers say.**
+
+1. **The baked seed is fine even at 4×**: 14.7 s cold → driving, of which story entry is only
+   4.4 s. The BASE/REGION split is doing its job — boot is 4.3 s and the region delta lands during
+   the ring fill.
+2. **The custom seed is the problem, and it is the region warm — nothing else.** Entry goes
+   4.4 s → 32.6 s at 4× purely because 2800 m of region has to route live. Boot is unchanged
+   (1.3 / 4.3 s) since BASE still hits for the free-roam spawn.
+3. **The doomed cache fetch is NOT a meaningful cost — measured, not assumed.** A non-default seed
+   re-fetches and parses both assets only to find `rec.sig` mismatched (the sig lives *inside* the
+   file, so the loader must parse to know). That looked like a headline cost in the resource
+   timings — the BASE re-fetch shows `duration` 20.2 s at 4× — but that duration is main-thread
+   starvation from the concurrent routing, not the fetch. Timed in isolation
+   (`perf-runs/perf27-parse-probe.mjs`): **90 ms at 1×, 206 ms at 4×** for both assets together.
+   A sig sidecar/manifest would be tidy, but it buys ~0.2 s of a 32 s problem. Not the lever.
+4. Caveat on inflate: `vite preview` sets `content-encoding: gzip`, so Chrome inflates transparently
+   and the app's own `DecompressionStream` branch never runs. **GitHub Pages serves the `.gz` raw**,
+   so the deployed app pays an inflate these runs do not measure. Parse (the portable, unavoidably
+   main-thread half) is 13/16 ms at 1×, 51/64 ms at 4×.
+
+## Still open — item 3: the region warm on a cold seed
+
+The measurement pins the target precisely: **32.6 s of story entry at 4× on an unbaked seed**, all
+of it `arcPrimitiveConnect` on the road worker pool behind the loading screen. Options, unranked
+and uncosted — pick after a look at where the warm actually spends:
+
+- Shrink what entry must route: warm a smaller **playable core** and let the rest of the region
+  route during play (it is frozen today precisely so it *cannot*, so this trades the freeze's
+  simplicity for entry latency).
+- Reconsider `REGION_RADIUS_M = 2500` / `REGION_WARM_RADIUS_M = 2800` for a *cold* entry
+  specifically — the radius was picked for play area, never costed against an unbaked load.
+- Ship a route cache per shipped region rather than per default seed, if story mode ends up with a
+  fixed set of regions (ties to FEAT-28's macro-tile model).
+- Terrain-side cost is a separate lever (PERF-22) and does not show up here: the post-entry ring
+  refill is 0.4 s at 1× / 2.2 s at 4×.
 
 ## Acceptance
 
 - ~~The bundled route cache no longer costs a cold load anything for a player who does not use it.~~
   **Partially done:** it no longer costs *time-to-drive* anything. Still downloaded in the
   background for everyone; see the note above for the one-line escalation.
-- A recorded cold-boot → driving-in-story-mode measurement on a low-end target exists, so future
-  load work has a baseline that reflects the intended audience.
+- ~~A recorded cold-boot → driving-in-story-mode measurement on a low-end target exists, so future
+  load work has a baseline that reflects the intended audience.~~ **DONE 2026-07-27** — table above,
+  reproducible via `perf-runs/story-coldload.mjs`, raw JSON committed.
+- [ ] Story entry on an **unbaked seed** is not dominated by the region warm (32.6 s at 4× today).
+      This is the ticket's remaining work — see item 3.
