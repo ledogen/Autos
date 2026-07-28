@@ -117,10 +117,17 @@ export const RANGER_PARAMS = {
   engineAudioVolume:  0.5,   // 0..1 volume
 
   // Tire-slip audio (src/tire-audio.js): procedural squeal on pavement / noise tear on dirt, gated by
-  // per-wheel slip velocity (silent < 4 m/s, full at 8 m/s). Shares the engine's AudioContext.
+  // per-wheel slip velocity (silent < 4 m/s, full at 12 m/s). Shares the engine's AudioContext.
   tireAudioEnabled:   true,  // master toggle for tire-slip sound
   tireScreechVolume:  0.5,   // 0..1 — pavement squeal
-  tireDirtVolume:     0.6,   // 0..1 — loose-surface roar
+  tireDirtVolume:     0.3,   // 0..1 — loose-surface roar
+  // Rolling road noise (no slip required, per-wheel surface): blacktop hum+hiss and a quieter
+  // rendering of the dirt roar. Rides the tireAudioEnabled toggle — it is tyre noise.
+  tireRoadVolume:     0.4,   // 0..1 — rolling road noise, both surfaces
+
+  // Wind noise (src/wind-audio.js): airspeed-driven aero roar + hiss, independent of the ground.
+  windAudioEnabled:   true,  // master toggle for wind sound
+  windVolume:         0.4,   // 0..1 volume
 
   // ── Tire Spring-Damper ───────────────────────────────────────────────────
   // tireStiffness: radial spring constant. At rest, each corner compresses ~38mm (mg/4 / k).

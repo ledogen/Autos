@@ -160,6 +160,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   driveFolder.add(params, 'tireAudioEnabled').name('Tire Audio')
   driveFolder.add(params, 'tireScreechVolume', 0, 1, 0.05).name('Screech Volume')
   driveFolder.add(params, 'tireDirtVolume', 0, 1, 0.05).name('Dirt Volume')
+  driveFolder.add(params, 'tireRoadVolume', 0, 1, 0.05).name('Road Noise Volume')
+  // Wind audio (src/wind-audio.js) — airspeed only, same live-read treatment.
+  driveFolder.add(params, 'windAudioEnabled').name('Wind Audio')
+  driveFolder.add(params, 'windVolume', 0, 1, 0.05).name('Wind Volume')
 
   // ── Differentials (FEAT-23) ───────────────────────────────────────────────────────
   // Rear diff mode: open / limited-slip / locked (src/drivetrain.js couples the rear wheels).

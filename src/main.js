@@ -33,6 +33,7 @@ import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCa
 import { buildPlaceCapture } from './capture.js'
 import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume } from './engine-audio.js'
 import { ensureTireAudio, updateTireAudio, setTireAudioEnabled, setTireAudioVolumes } from './tire-audio.js'
+import { ensureWindAudio, updateWindAudio, setWindAudioEnabled, setWindAudioVolume } from './wind-audio.js'
 import { TerrainSystem } from './terrain.js'
 import { RoadSystem, CHUNK_SIZE } from './road.js'
 import { perfAdd, perfMark, perfDump, perfReset, perfSnapshot, perfEnableUserTiming, perfFrameDt,
@@ -2581,7 +2582,8 @@ function _downloadJSON (obj, name) {
 
 document.addEventListener('keydown', e => {
   ensureEngineAudio()   // FEAT-23: first keypress is the user gesture that unlocks WebAudio
-  ensureTireAudio()     // tire-slip audio shares that same unlocked AudioContext
+  ensureTireAudio()     // tire audio (slip + rolling) shares that same unlocked AudioContext
+  ensureWindAudio()     // wind audio too
   if (e.key === '\\') toggleRecording()
   if (e.key === 'i' && e.ctrlKey) openInitialCondition(vehicleState, RANGER_PARAMS)
   // 'p' = MARK THIS PLACE: write a kind:"place" capture at the truck — the replayable spatial bug
@@ -2949,8 +2951,14 @@ function loop () {
   // per-wheel slip velocity. Same every-frame reasoning as the engine drone above — a throttled
   // update would step the squeal audibly. No-op until the first keypress unlocks WebAudio.
   setTireAudioEnabled(RANGER_PARAMS.tireAudioEnabled !== false)
-  setTireAudioVolumes(RANGER_PARAMS.tireScreechVolume ?? 0.5, RANGER_PARAMS.tireDirtVolume ?? 0.6)
+  setTireAudioVolumes(RANGER_PARAMS.tireScreechVolume ?? 0.5, RANGER_PARAMS.tireDirtVolume ?? 0.3,
+    RANGER_PARAMS.tireRoadVolume ?? 0.4)
   updateTireAudio(vehicleState, RANGER_PARAMS, looseSurfaceFactor)
+
+  // Wind noise (src/wind-audio.js): airspeed only — no ground query, no per-wheel work.
+  setWindAudioEnabled(RANGER_PARAMS.windAudioEnabled !== false)
+  setWindAudioVolume(RANGER_PARAMS.windVolume ?? 0.4)
+  updateWindAudio(vehicleState)
 
   // PERF-16: throttle all HUD DOM + debug-canvas writes to ~10 Hz. These are human-readable readouts;
   // rewriting the spans and repainting the Pacejka/travel/slip canvases every frame cost Layout+Paint

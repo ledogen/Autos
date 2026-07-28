@@ -31,6 +31,15 @@
  * tyre is working against the dirt. Rear (driven) wheels kick harder. No dust when a
  * wheel is airborne or the truck is crawling.
  *
+ * TWO KINDS, ONE POOL, ONE DRAW CALL: a per-particle `kind` flag selects the integrator and fade.
+ * Puffs (kind 0) are the soft drifting haze described above. Grit (kind 1) is a slice of the same
+ * emission budget spawned as small opaque ballistic grains — material a ROLLING tyre lifts and
+ * drops, which is what keeps the no-slip trail from being pure haze. That slice scales with the
+ * surface (GRIT_FRACTION_PAVED → _LOOSE): least on tarmac, more on dirt, and always well short of
+ * the wheelspin case, which is dirt-spray.js's job. Grit is deliberately NOT a dirt-spray clod:
+ * nothing is being flung here, so the throw is a small hop up, a small drift out the back and a
+ * sideways scatter — and it barely fades on tarmac, where the haze all but vanishes.
+ *
  * Conventions: wheel index 0=FL 1=FR 2=RL 3=RR (GLOSSARY.md §Wheel Index).
  * Car forward = -Z, left = -X (GLOSSARY.md §Coordinate System).
  */
@@ -55,6 +64,41 @@ const PEAK_OPACITY   = 0.38    // alpha at a puff's strongest, before intensity/
 const CONTACT_BAND   = 0.28    // m — wheel-bottom within this of the ground counts as in-contact
 const SPEED_FLOOR    = 1.6     // m/s — below this a rolling wheel makes no dust
 const SLIP_KICK       = 0.5    // fraction of contact-patch slip velocity the puff is kicked out backward
+
+// ── Grit: opaque specks lifted by a ROLLING tyre ─────────────────────────────
+// A slice of the emission budget spawns solid little grains instead of haze, so the no-slip
+// on-road trail has something crisp in it. These are NOT dirt-spray clods (dirt-spray.js) —
+// nothing is being flung by a spinning tyre here, the tread is just picking loose surface
+// material up and dropping it, so the throw is a fraction of a clod's and mostly straight up.
+// Share of dust spawns that come out as grit instead of a puff, lerped by surface: tarmac has only
+// the loose scatter lying on it, dirt is loose material all the way down, so a rolling tyre lifts
+// far more of it. The loose end stays well under dirt-spray.js's 90 clods/s/wheel — grit is a tyre
+// picking material up, wheelspin is a tyre digging it out, and they must not read as the same event.
+const GRIT_FRACTION_PAVED = 0.15
+const GRIT_FRACTION_LOOSE = 0.35
+const GRIT_SCALE_MIN = 0.020   // m — grains, smaller than dirt-spray clods
+const GRIT_SCALE_MAX = 0.045   // m
+const GRIT_LIFE_MIN  = 0.35    // s — short: they arc up and land
+const GRIT_LIFE_MAX  = 0.80    // s
+const GRIT_RISE_MIN  = 0.55    // m/s — the whole lift a rolling tyre gives
+const GRIT_RISE_MAX  = 1.40    // m/s
+const GRIT_BACK_MIN  = 0.40    // m/s — trailing off the back of the contact patch
+const GRIT_BACK_MAX  = 1.30    // m/s
+const GRIT_LAT       = 0.85    // m/s — random sideways kick along the wheel's lateral axis, signed
+                               // per grain: without it the whole stream reads as one flat plane
+const GRIT_JITTER    = 0.20    // m/s — small isotropic noise on top so the lateral spread isn't
+                               // a clean two-sided fan
+const GRIT_SPAWN_R   = 0.22    // m — grains spawn anywhere in this disc around the contact patch
+                               // (uniform by area), not at the wheel centreline — a point source
+                               // reads as a fountain, and a real contact patch is a footprint
+const GRIT_GRAVITY   = 9.8     // m/s² — ballistic, no drag
+const GRIT_OPACITY   = 0.92    // near-solid: the point of these is that they read as material
+const GRIT_TINT      = 0.72    // multiplier on dustColor — grains are darker than airborne haze
+const GRIT_PAVED_KEEP = 0.6    // grit only fades this far on tarmac (haze fades to dustPavedFactor):
+                               // loose grit sits on asphalt too, it just isn't a dust cloud
+
+const KIND_PUFF = 0
+const KIND_GRIT = 1
 
 /**
  * Build the soft round puff texture once on a small canvas (procedural — no asset file).
@@ -103,9 +147,11 @@ export class DustSystem {
     this._aPos   = mk(3)   // world position
     this._aParam = mk(3)   // x: scale (m), y: rotation (rad), z: opacity
     this._aColor = mk(3)   // tint
+    this._aShape = mk(1)   // 0 = soft puff, 1 = crisp disc (grit)
     geo.setAttribute('aPos', this._aPos)
     geo.setAttribute('aParam', this._aParam)
     geo.setAttribute('aColor', this._aColor)
+    geo.setAttribute('aShape', this._aShape)
     geo.instanceCount = 0
 
     const mat = new THREE.ShaderMaterial({
@@ -114,14 +160,17 @@ export class DustSystem {
         attribute vec3 aPos;
         attribute vec3 aParam;   // scale, rotation, opacity
         attribute vec3 aColor;
+        attribute float aShape;
         varying vec2 vUv;
         varying vec3 vColor;
         varying float vOpacity;
+        varying float vShape;
         #include <fog_pars_vertex>
         void main () {
           vUv = uv;
           vColor = aColor;
           vOpacity = aParam.z;
+          vShape = aShape;
           float c = cos(aParam.y), s = sin(aParam.y);
           vec2 corner = mat2(c, s, -s, c) * (position.xy * aParam.x);   // spin, then scale
           vec4 mvPosition = viewMatrix * vec4(aPos, 1.0);               // mesh sits at the origin
@@ -134,10 +183,17 @@ export class DustSystem {
         varying vec2 vUv;
         varying vec3 vColor;
         varying float vOpacity;
+        varying float vShape;
         #include <fog_pars_fragment>
         void main () {
           vec4 tex = texture2D(uMap, vUv);
-          gl_FragColor = vec4(vColor * tex.rgb, tex.a * vOpacity);
+          // Grit wants a solid grain, haze the soft radial falloff — one material, blended by the
+          // per-instance shape flag (same trick as dirt-spray.js) rather than a second draw call.
+          float d = length(vUv - 0.5) * 2.0;
+          float disc = 1.0 - smoothstep(0.72, 1.0, d);
+          float a = mix(tex.a, disc, vShape);
+          if (a < 0.01) discard;
+          gl_FragColor = vec4(vColor * mix(tex.rgb, vec3(1.0), vShape), a * vOpacity);
           // ShaderMaterial does NOT auto-append these (built-ins do): keep dust inside the same
           // ACES + colour pipeline as the SpriteMaterial it replaced, fog last like the built-ins.
           #include <tonemapping_fragment>
@@ -159,10 +215,12 @@ export class DustSystem {
     for (let i = 0; i < POOL_SIZE; i++) {
       this._p.push({
         active: false,
+        kind: KIND_PUFF,
         age: 0,
         life: 1,
         x: 0, y: 0, z: 0,
         vx: 0, vy: 0, vz: 0,
+        gy: 0,             // ground height at spawn — grit dies when it falls back to it
         scale0: 0.5,
         rot: 0,
         r: 1, g: 1, b: 1,
@@ -190,9 +248,53 @@ export class DustSystem {
     return this._p[idx]
   }
 
+  /**
+   * Spawn one opaque grain lifted (not flung) by the rolling tyre. Ballistic and short-lived:
+   * a small hop up and a small drift out the back, then it lands and is gone.
+   * @param {number} rgtX,rgtZ  world-space unit vector along the wheel's lateral (body +X) axis
+   */
+  _spawnGrit (x, groundY, z, intensity, fwdX, fwdZ, rgtX, rgtZ, opacityScale) {
+    const part = this._alloc()
+    const p = this._params
+
+    this._dustColor.set(p.dustColor ?? 0xc9b79a)
+    const jitter = 0.8 + Math.random() * 0.35
+    this._tmpColor.copy(this._dustColor).multiplyScalar(GRIT_TINT * jitter)
+    part.r = this._tmpColor.r; part.g = this._tmpColor.g; part.b = this._tmpColor.b
+
+    part.active = true
+    part.kind = KIND_GRIT
+    part.age = 0
+    part.life = GRIT_LIFE_MIN + (GRIT_LIFE_MAX - GRIT_LIFE_MIN) * Math.random()
+    part.scale0 = GRIT_SCALE_MIN + (GRIT_SCALE_MAX - GRIT_SCALE_MIN) * Math.random()
+    part.rot = Math.random() * Math.PI * 2
+    // Barely fades on tarmac (unlike the haze) — grit lying on the road is still grit.
+    part.peak = GRIT_OPACITY * Math.min(1, 0.5 + intensity)
+              * (GRIT_PAVED_KEEP + (1 - GRIT_PAVED_KEEP) * (opacityScale ?? 1))
+    part.gy = groundY
+
+    // Spawn anywhere in a disc around the contact patch. sqrt() on the radius makes it uniform by
+    // AREA — without it grains bunch at the centre and the point-source look survives the change.
+    const sr = GRIT_SPAWN_R * Math.sqrt(Math.random())
+    const sa = Math.random() * Math.PI * 2
+    part.x = x + Math.cos(sa) * sr
+    part.y = groundY + 0.03 + Math.random() * 0.05
+    part.z = z + Math.sin(sa) * sr
+
+    // Velocity: back + up + a signed sideways kick along the wheel's own lateral axis (so the
+    // spread stays lateral through a turn, not stuck to world X/Z), plus a little isotropic noise.
+    const back = GRIT_BACK_MIN + (GRIT_BACK_MAX - GRIT_BACK_MIN) * Math.random()
+    const lat = (Math.random() - 0.5) * 2 * GRIT_LAT
+    part.vx = -fwdX * back + rgtX * lat + (Math.random() - 0.5) * GRIT_JITTER
+    part.vy = GRIT_RISE_MIN + (GRIT_RISE_MAX - GRIT_RISE_MIN) * Math.random()
+    part.vz = -fwdZ * back + rgtZ * lat + (Math.random() - 0.5) * GRIT_JITTER
+  }
+
   _spawn (x, y, z, intensity, slipV, fwdX, fwdZ, opacityScale) {
     const part = this._alloc()
     const p = this._params
+
+    part.kind = KIND_PUFF
 
     // Colour: dirt we're driving on, lifted toward white so airborne dust catches light.
     // Per-puff brightness jitter keeps a stylized cloud from reading as a flat decal.
@@ -229,18 +331,27 @@ export class DustSystem {
   /** Pack live puffs into the instanced attributes and upload only the used prefix. */
   _pack () {
     const pos = this._aPos.array, par = this._aParam.array, col = this._aColor.array
+    const shp = this._aShape.array
     let n = 0
     for (let i = 0; i < POOL_SIZE; i++) {
       const part = this._p[i]
       if (!part.active) continue
       const t = part.age / part.life
-      const fade = (1 - t) * (1 - t)
-      const rampIn = Math.min(1, t * 6)  // quick fade-in over first ~1/6 of life
       const j3 = n * 3
       pos[j3] = part.x; pos[j3 + 1] = part.y; pos[j3 + 2] = part.z
-      par[j3] = part.scale0 * (1 + SCALE_GROW * t)
+      if (part.kind === KIND_GRIT) {
+        // Grit holds its size and stays solid, then blinks out over the last quarter of life.
+        par[j3] = part.scale0
+        par[j3 + 2] = part.peak * Math.min(1, (1 - t) * 4)
+        shp[n] = 1
+      } else {
+        const fade = (1 - t) * (1 - t)
+        const rampIn = Math.min(1, t * 6)  // quick fade-in over first ~1/6 of life
+        par[j3] = part.scale0 * (1 + SCALE_GROW * t)
+        par[j3 + 2] = part.peak * fade * rampIn
+        shp[n] = 0
+      }
       par[j3 + 1] = part.rot
-      par[j3 + 2] = part.peak * fade * rampIn
       col[j3] = part.r; col[j3 + 1] = part.g; col[j3 + 2] = part.b
       n++
     }
@@ -250,6 +361,8 @@ export class DustSystem {
         a.addUpdateRange(0, n * 3)
         a.needsUpdate = true
       }
+      this._aShape.addUpdateRange(0, n)
+      this._aShape.needsUpdate = true
     }
   }
 
@@ -276,6 +389,15 @@ export class DustSystem {
       if (!part.active) continue
       part.age += dt
       if (part.age >= part.life) { part.active = false; continue }
+      if (part.kind === KIND_GRIT) {
+        // Ballistic grain: full gravity, no drag, dies on landing rather than sinking through.
+        part.vy -= GRIT_GRAVITY * dt
+        part.x += part.vx * dt
+        part.y += part.vy * dt
+        part.z += part.vz * dt
+        if (part.vy < 0 && part.y <= part.gy) part.active = false
+        continue
+      }
       // Settle + horizontal drag.
       part.vy -= SETTLE * dt
       const dragF = Math.max(0, 1 - DRAG * dt)
@@ -302,6 +424,9 @@ export class DustSystem {
     const q = vehicleState.quaternion
     const fwdX = 2 * (q.x * q.z + q.y * q.w)
     const fwdZ = 1 - 2 * (q.x * q.x + q.y * q.y)
+    // Body +X (right) rotated into world — the lateral axis grit scatters along.
+    const rgtX = 1 - 2 * (q.y * q.y + q.z * q.z)
+    const rgtZ = 2 * (q.x * q.y + q.z * q.w)
 
     // Wheel local offsets (body space) — same geometry as main.js wheelLocalOffsets,
     // recomputed here so dust.js stays import-light. Y uses the level-stance hub height;
@@ -343,12 +468,24 @@ export class DustSystem {
       // (a thin haze), only opacity drops. Cheap: the sampler reuses the memoized road carveHint.
       const opacityScale = onRoadFactorAt ? onRoadFactorAt(wx, wz) : 1
 
+      // Normalize that factor to a 0 (paved) → 1 (off-road) surface blend. It arrives as
+      // looseSurfaceFactor, which bottoms out at dustPavedFactor rather than 0, so the raw value
+      // would leave the paved end slightly hot — rescale against the same floor main.js uses.
+      const pavedFloor = params.dustPavedFactor ?? 0.1
+      let loose01 = (opacityScale - pavedFloor) / (1 - pavedFloor)
+      if (loose01 < 0) loose01 = 0
+      else if (loose01 > 1) loose01 = 1
+      const gritFraction = GRIT_FRACTION_PAVED + (GRIT_FRACTION_LOOSE - GRIT_FRACTION_PAVED) * loose01
+
       // Accumulate fractional puffs; spawn whole ones at the contact patch.
       this._emitAccum[i] += intensity * MAX_RATE * dt
       let budget = 6  // per-wheel per-frame cap (guards against dt spikes)
       while (this._emitAccum[i] >= 1 && budget-- > 0) {
         this._emitAccum[i] -= 1
-        this._spawn(wx, groundY, wz, intensity, slipVKick, fwdX, fwdZ, opacityScale)
+        // A surface-dependent slice of the SAME budget comes out as opaque grains instead of haze —
+        // the rate (and so the pool/upload cost) is unchanged, part of it just reads as material.
+        if (Math.random() < gritFraction) this._spawnGrit(wx, groundY, wz, intensity, fwdX, fwdZ, rgtX, rgtZ, opacityScale)
+        else this._spawn(wx, groundY, wz, intensity, slipVKick, fwdX, fwdZ, opacityScale)
       }
       if (this._emitAccum[i] > 2) this._emitAccum[i] = 2  // don't bank a backlog
     }

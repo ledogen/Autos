@@ -1,8 +1,15 @@
 /**
- * src/tire-audio.js — procedural tire-slip audio: pavement screech + dirt tear.
+ * src/tire-audio.js — procedural tyre audio: slip (screech / dirt tear) + rolling road noise.
  *
- * Two always-running generators whose gains are driven by per-wheel slip velocity; nothing is ever
- * created or stopped per frame (see QUALITY notes below) — we only modulate AudioParams.
+ * Always-running generators whose gains are driven by per-wheel state; nothing is ever created or
+ * stopped per frame (see QUALITY notes below) — we only modulate AudioParams.
+ *
+ * TWO FAMILIES. The SLIP voices below need the tyre to be sliding. The ROLLING voices need only
+ * contact and road speed, and are what you hear cruising: a blacktop engine (low body + tread-block
+ * impacts, its own chain) and a dirt engine that is literally the wheelspin roar turned down — see
+ * the ROLL_ and ROAD_ constants. Rolling level is computed PER WHEEL (load × the surface under that wheel, averaged),
+ * so straddling the shoulder splits the level across the two engines instead of flipping between
+ * them. Airspeed-driven wind noise is a separate module: src/wind-audio.js.
  *
  *  1) SCREECH (asphalt): tyre squeal is STICK-SLIP oscillation — the tread block grips, deflects,
  *     releases and snaps back at an audible rate, the same physics family as a bowed string. So it
@@ -31,8 +38,16 @@ import { getAudioContext } from './engine-audio.js'
 
 // ── Gating constants (user spec) ──────────────────────────────────────────────────────────
 const SLIP_FLOOR = 4.0     // m/s — combined slip below this is silent
-const SLIP_MAX   = 8.0     // m/s — combined slip at/above this is full volume
+const SLIP_MAX   = 12.0    // m/s — combined slip at/above this is full volume
 const FN_MIN     = 50      // N — normal force below this ⇒ wheel airborne (fn is 0 in the air)
+// Per-wheel load → volume weight, shared by EVERY voice (slip and rolling, both surfaces). Was a
+// plain min(1, fn/fzRef): linear, and clamped at the static load so weight transfer could only ever
+// make a wheel quieter, never louder. Now it curves and is allowed past 1, so a compressed tyre
+// genuinely shouts and an unloaded one nearly drops out. Normalized at fn = fzRef → exactly 1, so
+// the tuned cruise balance is unchanged; only the DYNAMICS around it grow. This is most obvious
+// off-road, where the surface is constantly loading and unloading each corner.
+const LOAD_EXP   = 1.7     // >1 ⇒ light wheels fade faster, loaded wheels push harder
+const LOAD_CAP   = 1.8     // ceiling on that push (landings can spike fn well past static)
 const LOAD_REF_G = 9.81    // m/s² — nominal static per-wheel load = mass·g/4
 const TC         = 0.06    // s — setTargetAtTime time constant for every modulated param
 
@@ -51,15 +66,69 @@ const JUDDER_HZ      = 28      // Hz — amplitude-judder LFO (re-rolled 24-34 H
 const JUDDER_DEPTH   = 0.30    // fraction of current level — depth scales with level, so 0 stays 0
 
 // ── Dirt voicing ──────────────────────────────────────────────────────────────────────────
-const DIRT_LP_BASE = 220       // Hz — lowpass cutoff at the slip floor (low roar)
-const DIRT_LP_RISE = 1100      // Hz — cutoff added at full slip (tearing/brighter)
+// The sweep sits deliberately LOW. Opening the cutoff toward ~1.3 kHz made a spinning tyre get
+// brighter, which reads as spraying/hissing; a tyre tearing into dirt is a low RIP, so the top of
+// the sweep is bass-shifted and the filter is given enough Q to growl at the corner instead.
+const DIRT_LP_BASE = 170       // Hz — lowpass cutoff at the slip floor (low roar)
+const DIRT_LP_RISE = 520       // Hz — cutoff added at full slip (opens to ~690 Hz, not ~1320)
+const DIRT_LP_Q    = 1.2       // resonance at the corner — the growl that keeps the tear defined
+const DIRT_SLIP_GAIN = 0.68    // level at full slip. Up from 0.55: a lower cutoff throws away real
+                               // energy, so holding the old gain would have made the tear quieter
+                               // as well as bassier.
+const SPRAY_F      = 1500      // Hz — thrown-grit band. Pulled down with the roar (was 2600, which
+                               // now floated above it as a separate bright layer).
+const SPRAY_GAIN   = 0.05
 const NOISE_SECONDS = 3        // looped buffer length; long enough to hide the loop period
+
+// ── Rolling road noise (no slip required) ─────────────────────────────────────────────────
+// Level is per wheel: a wheel only contributes while it is loaded and in contact, and its surface
+// is sampled at ITS OWN contact patch — so two wheels on the shoulder and two on tarmac genuinely
+// feed the two engines separately, and a wheel in the air contributes nothing.
+const ROLL_V_FLOOR = 1.0       // m/s — below this a rolling tyre is silent
+const ROLL_V_REF   = 30.0      // m/s (~108 km/h) — speed at which the roll curve reaches 1
+const ROLL_EXP     = 1.4       // level = (v/ROLL_V_REF)^this — rolling noise builds faster than linear
+// Blacktop engine: its OWN voicing, not a re-tint of the dirt roar, and NOT a noise bed. A tyre on
+// tarmac is a series of IMPACTS — each tread block slams the road and the carcass rings — so this is
+// built as a low resonant body plus a hard amplitude modulation at the block-passage rate. Two
+// deliberate choices carry the weight:
+//   · brown noise for BOTH layers, no white anywhere. White noise is flat to 20 kHz and reads as
+//     hiss/static however you filter it; brown falls at 6 dB/octave, so what survives is mass.
+//   · SLAM is AM'd by a sawtooth at a few impacts per wheel revolution — at a crawl you hear the
+//     individual hits, at speed they fuse into a growl. A steady gain cannot do that.
+const ROAD_LP_BASE = 90        // Hz — body cutoff at the floor (was 140: still too papery)
+const ROAD_LP_RISE = 250       // Hz — added at ROLL_V_REF
+const ROAD_SLAM_F    = 135     // Hz — carcass ring the impacts excite
+const ROAD_SLAM_RISE = 90      // Hz — added at ROLL_V_REF
+const ROAD_SLAM_Q    = 3.0     // resonant: it should ring, not shush
+const ROAD_HUM_GAIN  = 0.34    // level of the body bus at full roll, before the user volume
+const ROAD_SLAM_GAIN = 0.30    // level of the impact bus
+const SLAM_PER_REV   = 3       // impacts per wheel revolution — not a real tread count (that would
+                               // land in the hundreds of Hz and buzz); tuned so the rate reads as
+                               // repeated slams across the usable speed range
+const SLAM_HZ_MIN    = 4       // clamp the AM rate: below this it flutters, above it turns tonal
+const SLAM_HZ_MAX    = 60
+const SLAM_DEPTH     = 0.85    // fraction of the current level swung by the AM — deep, so the gaps
+                               // between impacts are real gaps. Scales WITH level, so 0 stays 0.
+// Dirt engine: the SAME brown-noise generator as the wheelspin roar, just turned down — driving on
+// dirt and spinning on dirt are the same material making the same noise at different energies.
+// It gets its OWN filter tap rather than sharing the slip chain's. It shared it at first, and that
+// was wrong: the tear's sweep is deliberately bass-heavy (170 Hz at rest), so rolling — which only
+// cracks the cutoff open a little — sat entirely under ~290 Hz and was inaudible on normal speakers
+// while metering at the same level as the blacktop bus. Bass-shifting the tear made it worse still.
+// Its own band puts rolling gravel where gravel actually lives, and decouples the two voicings so
+// tuning the tear can never silence it again.
+const ROLL_DIRT_LP_BASE = 320  // Hz — rolling-gravel cutoff at the floor
+const ROLL_DIRT_LP_RISE = 780  // Hz — added at full roll (opens to ~1.1 kHz: crunch, not rumble)
+const ROLL_DIRT_Q = 1.0
+const ROAD_DIRT_GAIN = 0.55    // against the slip layer's DIRT_SLIP_GAIN — still clearly the
+                               // "quieter version", now in a band you can actually hear
 
 let ctx = null
 let started = false
 let enabled = true
 let screechVol = 0.5
-let dirtVol = 0.6
+let dirtVol = 0.3
+let roadVol = 0.4
 
 let master = null
 // screech chain
@@ -69,8 +138,12 @@ let breathBp = null                         // noise band, tracks f0
 let screechGain = null                      // level (judder LFO sums into this AudioParam)
 let judderLfo = null, judderDepth = null
 let _wander = 0                             // Hz — smoothed random-walk pitch drift
-// dirt chain
+// dirt chains — same brown-noise source, one tap for the slip tear and one for rolling gravel
 let dirtLp = null, dirtGain = null, sprayGain = null
+let rollDirtLp = null, rollDirtGain = null
+// blacktop rolling chain (its own engine — see ROAD_ constants)
+let roadLp = null, roadHumGain = null
+let roadSlamBp = null, roadSlamGain = null, slamLfo = null, slamDepth = null
 
 /** Fill an AudioBuffer with brown (1/f²) noise: white through a leaky integrator, peak-normalized. */
 function _brownNoise (ac) {
@@ -173,25 +246,68 @@ export function ensureTireAudio () {
   breathGain.connect(screechBp)
 
   // ── Dirt: brown noise → lowpass (cutoff tracks slip) → gain; + bandpassed white "spray" ──
+  const dirtBrown = _brownNoise(ctx)
   dirtGain = ctx.createGain()
   dirtGain.gain.value = 0
   dirtGain.connect(master)
   dirtLp = ctx.createBiquadFilter()
   dirtLp.type = 'lowpass'
   dirtLp.frequency.value = DIRT_LP_BASE
-  dirtLp.Q.value = 0.8
+  dirtLp.Q.value = DIRT_LP_Q
   dirtLp.connect(dirtGain)
-  _loop(ctx, _brownNoise(ctx)).connect(dirtLp)
+  _loop(ctx, dirtBrown).connect(dirtLp)
+
+  // Rolling gravel: the same brown noise, its own (higher, independently swept) lowpass and gain.
+  rollDirtGain = ctx.createGain()
+  rollDirtGain.gain.value = 0
+  rollDirtGain.connect(master)
+  rollDirtLp = ctx.createBiquadFilter()
+  rollDirtLp.type = 'lowpass'
+  rollDirtLp.frequency.value = ROLL_DIRT_LP_BASE
+  rollDirtLp.Q.value = ROLL_DIRT_Q
+  rollDirtLp.connect(rollDirtGain)
+  _loop(ctx, dirtBrown).connect(rollDirtLp)   // same buffer, own source node
 
   sprayGain = ctx.createGain()
   sprayGain.gain.value = 0
   sprayGain.connect(master)
   const sprayBp = ctx.createBiquadFilter()
   sprayBp.type = 'bandpass'
-  sprayBp.frequency.value = 2600
+  sprayBp.frequency.value = SPRAY_F
   sprayBp.Q.value = 0.7
   sprayBp.connect(sprayGain)
   _loop(ctx, white).connect(sprayBp)       // same buffer, own source node — grit on top of the roar
+
+  // ── Blacktop rolling: a low BODY + a resonant IMPACT bus, both off brown noise (no white) ──
+  const roadBrown = _brownNoise(ctx)
+
+  roadHumGain = ctx.createGain()
+  roadHumGain.gain.value = 0
+  roadHumGain.connect(master)
+  roadLp = ctx.createBiquadFilter()
+  roadLp.type = 'lowpass'
+  roadLp.frequency.value = ROAD_LP_BASE
+  roadLp.Q.value = 1.4                     // a little resonance = the weight under the impacts
+  roadLp.connect(roadHumGain)
+  _loop(ctx, roadBrown).connect(roadLp)
+
+  // Impact bus: a resonant band around the carcass ring, hard-AM'd by the block-passage sawtooth.
+  // Same LFO-summed-into-the-gain-param trick the screech judder uses — see the note on _muteAll.
+  roadSlamGain = ctx.createGain()
+  roadSlamGain.gain.value = 0
+  roadSlamGain.connect(master)
+  roadSlamBp = ctx.createBiquadFilter()
+  roadSlamBp.type = 'bandpass'
+  roadSlamBp.frequency.value = ROAD_SLAM_F
+  roadSlamBp.Q.value = ROAD_SLAM_Q
+  roadSlamBp.connect(roadSlamGain)
+  _loop(ctx, roadBrown).connect(roadSlamBp)   // same buffer, own source node
+
+  // Sawtooth, not sine: the sharp edge per cycle is the slam. A sine just pumps.
+  slamLfo = ctx.createOscillator(); slamLfo.type = 'sawtooth'; slamLfo.frequency.value = SLAM_HZ_MIN
+  slamDepth = ctx.createGain(); slamDepth.gain.value = 0
+  slamLfo.connect(slamDepth); slamDepth.connect(roadSlamGain.gain)
+  slamLfo.start()
 
   started = true
 }
@@ -234,6 +350,7 @@ export function updateTireAudio (vehicleState, params, pavedFactorAt) {
   const fzRef = (params.mass * LOAD_REF_G) / 4
 
   let screechLvl = 0, dirtLvl = 0, maxSlip = 0, fnSum = 0
+  let rollPaved = 0, rollLoose = 0                   // rolling noise, summed per wheel then averaged
 
   for (let i = 0; i < 4; i++) {
     const wd = vehicleState.wheelDebug?.[i]
@@ -242,15 +359,11 @@ export function updateTireAudio (vehicleState, params, pavedFactorAt) {
     if (fn <= FN_MIN) continue                       // airborne ⇒ no contact noise
     fnSum += fn                                      // total tyre load — pulls squeal pitch down
 
-    const vLong = wd.vLong || 0, vLat = wd.vLat || 0
-    const slip = Math.hypot(vLong, vLat)
-    const ramp = _slipRamp(slip)
-    if (ramp <= 0) continue
-    if (slip > maxSlip) maxSlip = slip
+    // Load weight — see LOAD_EXP/LOAD_CAP. Feeds the slip voices AND the rolling voices below.
+    const load = Math.min(LOAD_CAP, Math.pow(fn / fzRef, LOAD_EXP))
 
-    const load = Math.min(1, fn / fzRef)             // load-weighted: a light wheel squeals quietly
-    const lvl = ramp * load
-
+    // Surface under THIS wheel. Sampled before the slip gate below, because rolling noise exists
+    // whether or not the tyre is slipping — this is the only per-wheel term road noise has.
     const isFront = i < 2
     const lx = (i === 0 || i === 2) ? -(isFront ? tF : tR) : (isFront ? tF : tR)
     const lz = isFront ? -(L * params.weightRear) : (L * params.weightFront)
@@ -258,9 +371,33 @@ export function updateTireAudio (vehicleState, params, pavedFactorAt) {
     const loose = pavedFactorAt ? pavedFactorAt(px + r.x, pz + r.z) : 1   // 1 = dirt, ~0 = asphalt
     const paved = 1 - loose
 
+    // Rolling contribution SUMS across wheels (÷4 below) rather than taking the max the slip voices
+    // use: four wheels on tarmac should be louder than one, and straddling the shoulder should
+    // genuinely split the level between the two engines.
+    rollPaved += load * paved
+    rollLoose += load * loose
+
+    const vLong = wd.vLong || 0, vLat = wd.vLat || 0
+    const slip = Math.hypot(vLong, vLat)
+    const ramp = _slipRamp(slip)
+    if (ramp <= 0) continue
+    if (slip > maxSlip) maxSlip = slip
+
+    const lvl = ramp * load
+
     if (lvl * paved > screechLvl) screechLvl = lvl * paved
     if (lvl * loose > dirtLvl) dirtLvl = lvl * loose
   }
+  rollPaved *= 0.25
+  rollLoose *= 0.25
+
+  // Road speed drives both rolling engines. XZ ground speed (not the 3-D airspeed wind-audio.js
+  // uses): what a tyre hears is how fast the contact patch is travelling over the surface.
+  const roadSpeed = Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z)
+  let ru = (roadSpeed - ROLL_V_FLOOR) / (ROLL_V_REF - ROLL_V_FLOOR)
+  if (ru < 0) ru = 0
+  else if (ru > 1) ru = 1
+  const roll = Math.pow(ru, ROLL_EXP)
 
   // ── Screech: stick-slip note. Pitch climbs with the worst slipping wheel and is pulled DOWN by
   // total tyre load (a loaded tread block sticks longer ⇒ slower slip cycle). Clamped to the band
@@ -290,10 +427,31 @@ export function updateTireAudio (vehicleState, params, pavedFactorAt) {
   // Irregular judder: re-roll the rate a couple of times a second so the tremolo never sounds metered.
   if (Math.random() < 0.03) judderLfo.frequency.setTargetAtTime(24 + Math.random() * 10, now, 0.2)
 
-  // Dirt opens its lowpass with slip — a dull rumble at the floor, a tearing roar at the top.
+  // ── Dirt slip: the tear. Low sweep + resonance — see the DIRT_ constants.
   dirtLp.frequency.setTargetAtTime(DIRT_LP_BASE + DIRT_LP_RISE * t, now, TC)
-  dirtGain.gain.setTargetAtTime(dirtVol * 0.55 * dirtLvl, now, TC)
-  sprayGain.gain.setTargetAtTime(dirtVol * 0.06 * dirtLvl * t, now, TC)
+  dirtGain.gain.setTargetAtTime(dirtVol * DIRT_SLIP_GAIN * dirtLvl, now, TC)
+  sprayGain.gain.setTargetAtTime(dirtVol * SPRAY_GAIN * dirtLvl * t, now, TC)   // thrown grit: slip only
+
+  // ── Dirt rolling: same generator, own band, swept by road speed rather than slip.
+  rollDirtLp.frequency.setTargetAtTime(ROLL_DIRT_LP_BASE + ROLL_DIRT_LP_RISE * roll, now, TC)
+  rollDirtGain.gain.setTargetAtTime(roadVol * ROAD_DIRT_GAIN * roll * rollLoose, now, TC)
+
+  // ── Blacktop rolling: low body + tread-block impacts.
+  roadLp.frequency.setTargetAtTime(ROAD_LP_BASE + ROAD_LP_RISE * roll, now, TC)
+  roadSlamBp.frequency.setTargetAtTime(ROAD_SLAM_F + ROAD_SLAM_RISE * roll, now, TC)
+  const pavedRoll = roadVol * roll * rollPaved
+  roadHumGain.gain.setTargetAtTime(ROAD_HUM_GAIN * pavedRoll, now, TC)
+
+  // Impact rate rides ACTUAL wheel revolutions (v / 2πr), not the speed ramp — so the slams stay
+  // locked to how fast the tyre is turning and slow down honestly as the truck rolls to a stop.
+  const rev = roadSpeed / (2 * Math.PI * Math.max(0.1, params.wheelRadius))
+  let slamHz = SLAM_PER_REV * rev
+  if (slamHz < SLAM_HZ_MIN) slamHz = SLAM_HZ_MIN
+  else if (slamHz > SLAM_HZ_MAX) slamHz = SLAM_HZ_MAX
+  slamLfo.frequency.setTargetAtTime(slamHz, now, TC)
+  const slamLevel = ROAD_SLAM_GAIN * pavedRoll
+  roadSlamGain.gain.setTargetAtTime(slamLevel, now, TC)
+  slamDepth.gain.setTargetAtTime(SLAM_DEPTH * slamLevel, now, TC)   // AM depth follows the level
 }
 
 /** Ramp every voice to silence. judderDepth MUST go to 0 too, or the AM LFO keeps swinging the
@@ -303,6 +461,11 @@ function _muteAll (now) {
   judderDepth.gain.setTargetAtTime(0, now, TC)
   dirtGain.gain.setTargetAtTime(0, now, TC)
   sprayGain.gain.setTargetAtTime(0, now, TC)
+  rollDirtGain.gain.setTargetAtTime(0, now, TC)
+  roadHumGain.gain.setTargetAtTime(0, now, TC)
+  roadSlamGain.gain.setTargetAtTime(0, now, TC)
+  slamDepth.gain.setTargetAtTime(0, now, TC)   // same rule as judderDepth: a live AM depth would
+                                               // keep swinging the impact gain around zero
 }
 
 export function setTireAudioEnabled (on) {
@@ -310,7 +473,8 @@ export function setTireAudioEnabled (on) {
   if (!on && started) _muteAll(ctx.currentTime)
 }
 
-export function setTireAudioVolumes (screech, dirt) {
+export function setTireAudioVolumes (screech, dirt, road) {
   screechVol = Math.min(1, Math.max(0, screech ?? 0.5))
-  dirtVol = Math.min(1, Math.max(0, dirt ?? 0.6))
+  dirtVol = Math.min(1, Math.max(0, dirt ?? 0.3))
+  roadVol = Math.min(1, Math.max(0, road ?? 0.4))
 }
