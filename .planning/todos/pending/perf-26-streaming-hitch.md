@@ -216,6 +216,74 @@ churn, and the real mechanism is 5 cold window misses, one per 256 m macro-colum
 
 The `warm.*` buckets are shipped, so this starts from the split rather than re-deriving it.
 
+## 2026-07-28 — `warm.degreeDrops` FIXED. The per-candidate cache was the wrong target.
+
+Branch `feature/perf-26`. **Before implementing option 2 above, I benchmarked the inside of
+`_degreeDrops` — and it does not spend its time where this ticket assumed.** Cold-miss split over 6
+marching macro-columns, seed 6, headless 1× (`_urqMemo` cleared each column to reproduce a true
+column crossing):
+
+| term | per cold column | share |
+|---|---|---|
+| `_buildUrquhart` at the wide margin | 6.2–13.1 ms | **~80 %** |
+| `_degreeDropSet` (Phase 1 + Phase 2 BFS) | 1.2–2.1 ms | ~16 % |
+
+So **caching `_degreeDropSet` per candidate pair (option 2) would have attacked 16 % of the cost.**
+The order-freedom / window-invariance reasoning in "Why the fix is safe by construction" is all
+correct — it was just pointed at the small term. Recording this because the same trap (assume, then
+optimise) is what this ticket has now sprung three times.
+
+### The actual cause: one margin serving two consumers with very different reach
+
+`_degreeDrops` built its graph at `roadGraphMargin + roadGraphCullMaxHops + 1` = 3 + **8** + 1 = **12**
+cells of padding. That margin is right for `_cullNetwork`, which runs its `detour()` BFS over the
+returned `dg` out to `roadGraphCullMaxHops` (8). But it is sized for the wrong consumer: the *drop
+set* comes from `_degreeDropSet`, whose Phase-2 BFS reaches only `roadGraphDegreeDetourHops` (**4**),
+so margin 3 + 4 + 1 = **8** already contains the full detour neighbourhood of every in-window
+candidate — exactly the window-invariance argument this ticket already relies on.
+
+`warmRoutes` — the every-32 m caller that owns the hitch — reads only `.drop`. It was paying a
+margin-12 delaunay (1261 edges) every column crossing to compute a set a margin-8 one (645 edges)
+decides identically.
+
+**Fix (`src/road.js`, `_degreeDrops`):** compute `drop` from the margin-8 build, and make `dg` a
+**lazy getter** for the margin-12 build so only the cull / one-ring callers pay for it. When the two
+margins coincide, `_urqMemo` returns the same object and nothing is doubled.
+
+**Verification.**
+- *Decisions unchanged:* margin-12 vs margin-8 drop decisions compared on every edge with both
+  endpoints in the window, across 6 columns — **107 compared, 0 mismatches**.
+- *Cost:* cold `_degreeDrops` **9.6 → 2.7 ms per column crossing** (57.3 → 16.3 ms over 6), −72 %.
+- *Gates:* all **23 affected gates green**, including `graph-cull-radius-invariance`,
+  `graph-topology`, `restream-invariance`, and `centerline-curvature`'s two-center invariance.
+- *In-browser A/B*, back-to-back `--scenario=stream --cpu=4 --duration=60`, Normal, seed 6:
+
+  | | worst warmRoutes frames | `warm.degreeDrops` | `warm.scan` | hitch excess |
+  |---|---|---|---|---|
+  | before | 99.2 / 91.1 ms | **48.1 / 41.4** | 32.6 / 30.6 | 2382 ms |
+  | after  | 121.8 / 64.7 ms | **23.8 / 12.4** | 63.4 / 33.8 | 1443 ms |
+
+  `warm.degreeDrops` falls by half to two-thirds, matching the deterministic headless −72 %. Treat
+  the worst-frame and `warm.scan` columns as noise — a third run showed a 296 ms outlier carrying
+  124 ms of `frame.physics`, nothing to do with this change. The within-mechanism bucket and the
+  headless bench are the load-bearing evidence, per this ticket's own standing warning.
+
+### `warm.scan` is now the whole remaining hitch — and it has a named mechanism
+
+Not fixed here; investigated far enough to hand over cleanly. `_warmScan`'s `cap`
+(`PREWARM_MAX_JOBS` = 16) bounds **dispatched jobs, not work done**. An edge taking a `deferred`
+branch still pays full `_edgeDeps` + `_corridorDiscsFor` (+ `_soloClearOf`) and contributes no job,
+so the expensive-evaluation count is unbounded by `cap` — the same "oversized atomic unit no ms
+budget can bind" shape as the carve and the wide delaunay.
+
+It compounds: `warmRoutes` only advances `_lastWarmCenter` when `!deferred`, so while the set is
+incomplete the **full scan re-runs every frame**, re-evaluating the same deferring edges.
+
+Next step is a *work* budget (edges evaluated, or ms), not a job budget. **Caveat for whoever takes
+it:** a naive eval cap restarts at `edges[0]` every frame and would just re-do the same first N
+forever — it needs a rotating start offset or a persistent cursor, or the tail starves and pre-warm
+never completes. That is why this half was not attempted blind.
+
 ### Still open, unchanged
 
 - **Re-measure `road.tile`** before any ribbon work. It sat at +0.2/+1.7/+0.3 lift across four runs
@@ -267,19 +335,26 @@ is still worth reading before touching the ribbon.
 - Affected gates green; carve/ribbon surface gates must stay green since these are scheduling-only
   changes — any gate movement means the geometry changed and the change is wrong.
 
-## Closing decision
+## Closing decision (updated 2026-07-28)
 
-**Stays open**, but it is now one named subsystem with a measured split, not a hunt. Acceptance
-(no tag above ~5 ms lift) is unmet: `warm.degreeDrops` and `warm.scan` are 32–42 ms at 4×.
+**Stays open, with half the remaining scope closed.** Acceptance (no tag above ~5 ms lift) is still
+unmet, but the ticket is now down to a single named mechanism.
 
-- Remaining scope = `warm.degreeDrops` + `warm.scan` only. Everything else is measured and cleared:
-  GC (no `unattr` left), `props.lodSwap` (co-occurrence), prop scatter (+0.0), the terrain carve
-  (fixed earlier), and — pending one re-measure — the road ribbon.
+- `warm.degreeDrops` — **DONE.** −72 % cold, decisions bit-identical, 23 gates green. See the
+  2026-07-28 section; the margin, not the algorithm, was the cost.
+- `warm.scan` — **the only remaining scope.** Mechanism named (job cap ≠ work cap; full rescan every
+  frame while deferred), fix sketched, starvation caveat written down. Start there, not at diagnosis.
+- Everything else stays measured and cleared: GC (no `unattr` left), `props.lodSwap`
+  (co-occurrence — it still tops the lift table at +15.4 and it still is not the cause), prop scatter
+  (+0.0), the terrain carve (fixed earlier), and — pending one re-measure — the road ribbon.
 - Split nothing off. There is no separate allocation-churn ticket to write; the data killed it.
-- Next session starts at implementing the per-candidate cache (or the budgeted Phase 2), not at
-  diagnosis — the mechanism is now measured end to end: 5 cold `_degreeDrops` misses per 1200 m,
-  one per macro-column crossing, ~40 ms each, in one frame.
 
-The instrumentation branch `perf-26-instrument` / worktree `../CarGame-perf26` has served its
-purpose — everything worth keeping is on main in 629b358 + 55ea827. Safe to delete; its
-`perf-runs/*.json` are gitignored and will go with it, but the numbers are recorded above.
+Standing lesson, now three-for-three on this ticket: **every time someone reasoned about where the
+time went instead of measuring the sub-terms, they picked the wrong term** — the ribbon (reverted for
+nothing), the `_networkRev` churn (never happened), and now the per-candidate cache (16 % of the
+cost). Bench the split first; it took ten minutes here and redirected the whole fix.
+
+The instrumentation branch `perf-26-instrument` / worktree `../CarGame-perf26` served its purpose and
+was **deleted 2026-07-28** — everything worth keeping is on main in 629b358 + 8cd8fb0 (the ticket's
+`55ea827` was re-committed as 8cd8fb0). The dropped heap probe is described above; do not rebuild it,
+headless Chrome reports a static `usedJSHeapSize`.
