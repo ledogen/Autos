@@ -69,7 +69,7 @@ it must be instant on click. Flipping it to story-entry-only is a one-line chang
 
 ## DONE — item 2: the baseline exists (2026-07-27)
 
-Tool: **`perf-runs/story-coldload.mjs`** (new). Drives a cold Chrome (throwaway profile ⇒ HTTP cache
+Tool: **`test/story-coldload.mjs`** (new, not a gate). Drives a cold Chrome (throwaway profile ⇒ HTTP cache
 cold every run) against the **built** app via `vite preview`, and — unlike `test/hitch-report.mjs`,
 which throttles *after* settling because it asks about steady-state play — applies the CPU throttle
 **before navigation**, because here the load *is* the measurement. `--cpu=4` stands in for an older
@@ -90,43 +90,81 @@ Time-to-drive is `drivable`, not `live` — 0.4–3.0 s later depending on throt
 | | 1× | 811 (uncached) | 1.26 s | 2.74 s | 13.92 s | **14.70 s** |
 | | 4× | 811 (uncached) | 4.32 s | 10.09 s | 39.79 s | **42.78 s** |
 
-Raw JSON in `perf-runs/perf27-*.json`. `?prof=1` is on in all runs (needed for `window.__story`).
+`?prof=1` is on in all runs (needed for `window.__story`). Raw JSON went to `perf-runs/`, which is
+gitignored per-machine harness scratch — the numbers below are the record; re-run the tool to
+regenerate them. The three drivers live in `test/` (tracked, alongside `hitch-report.mjs`).
 
 **What the numbers say.**
 
 1. **The baked seed is fine even at 4×**: 14.7 s cold → driving, of which story entry is only
    4.4 s. The BASE/REGION split is doing its job — boot is 4.3 s and the region delta lands during
    the ring fill.
-2. **The custom seed is the problem, and it is the region warm — nothing else.** Entry goes
-   4.4 s → 32.6 s at 4× purely because 2800 m of region has to route live. Boot is unchanged
-   (1.3 / 4.3 s) since BASE still hits for the free-roam spawn.
+2. **The custom seed is the problem.** Entry goes 4.4 s → 32.6 s at 4×; boot is unchanged
+   (1.3 / 4.3 s) since BASE still hits for the free-roam spawn. *This first read blamed the region
+   warm — item 3 measured it and that was wrong: the warm is 5.5 s of it, the world rebuild is the
+   rest.*
 3. **The doomed cache fetch is NOT a meaningful cost — measured, not assumed.** A non-default seed
    re-fetches and parses both assets only to find `rec.sig` mismatched (the sig lives *inside* the
    file, so the loader must parse to know). That looked like a headline cost in the resource
    timings — the BASE re-fetch shows `duration` 20.2 s at 4× — but that duration is main-thread
    starvation from the concurrent routing, not the fetch. Timed in isolation
-   (`perf-runs/perf27-parse-probe.mjs`): **90 ms at 1×, 206 ms at 4×** for both assets together.
+   (`test/route-cache-miss-cost.mjs`): **90 ms at 1×, 206 ms at 4×** for both assets together.
    A sig sidecar/manifest would be tidy, but it buys ~0.2 s of a 32 s problem. Not the lever.
 4. Caveat on inflate: `vite preview` sets `content-encoding: gzip`, so Chrome inflates transparently
    and the app's own `DecompressionStream` branch never runs. **GitHub Pages serves the `.gz` raw**,
    so the deployed app pays an inflate these runs do not measure. Parse (the portable, unavoidably
    main-thread half) is 13/16 ms at 1×, 51/64 ms at 4×.
 
-## Still open — item 3: the region warm on a cold seed
+## Item 3 — attributed 2026-07-27: it is the RESEED, not the region warm
 
-The measurement pins the target precisely: **32.6 s of story entry at 4× on an unbaked seed**, all
-of it `arcPrimitiveConnect` on the road worker pool behind the loading screen. Options, unranked
-and uncosted — pick after a look at where the warm actually spends:
+The 32.6 s looked like region routing. It is not. Two experiments, both at 4× on unbaked seed 811:
 
-- Shrink what entry must route: warm a smaller **playable core** and let the rest of the region
-  route during play (it is frozen today precisely so it *cannot*, so this trades the freeze's
-  simplicity for entry latency).
-- Reconsider `REGION_RADIUS_M = 2500` / `REGION_WARM_RADIUS_M = 2800` for a *cold* entry
-  specifically — the radius was picked for play area, never costed against an unbaked load.
-- Ship a route cache per shipped region rather than per default seed, if story mode ends up with a
-  fixed set of regions (ties to FEAT-28's macro-tile model).
-- Terrain-side cost is a separate lever (PERF-22) and does not show up here: the post-entry ring
-  refill is 0.4 s at 1× / 2.2 s at 4×.
+**A. Halve the region.** `REGION_RADIUS_M` 2500 → 1250 (warm 2800 → 1550), rebuilt, re-measured:
+entry **32.63 s → 30.10 s**. Halving the play area bought 2.5 s. Whatever dominates entry does not
+scale with the region.
+
+**B. Boot already on the seed, then enter it.** `?seed=811` at boot, then `enter('811')` — the same
+seed, so entry skips the world rebuild entirely and `enter → live` is the region warm ALONE:
+
+| | boot (ready) | ring | entry → live | drivable | **total** |
+|---|---|---|---|---|---|
+| boot 6 → enter 6 (baked) | 4.31 s | 10.26 s | 2.15 s | 14.67 s | **14.67 s** |
+| boot 6 → enter 811 (reseed) | 4.32 s | 10.09 s | **29.64 s** | 42.78 s | **42.78 s** |
+| boot 811 → enter 811 (no reseed) | 7.18 s | 15.45 s | **5.49 s** | 23.38 s | **23.38 s** |
+
+So on an unbaked seed the **region warm is ~5.5 s** and the **world rebuild is ~25 s** — the reseed
+tears down and regenerates terrain + graph + spawn-band routes while the loading screen shows, and
+that is the cost QUAL-14's cache hides for seed 6. Booting *into* the seed pays it once, inside a
+boot the player already expects: **42.78 s → 23.38 s for the same destination.**
+
+The node-side radius curve (`test/region-radius-curve.mjs`, seed 811: 209 in-band edges,
+41.1 s single-threaded to 2800 m, outer rings up to 338 ms/edge vs ~150 inner) is still the right
+tool for costing a radius change — it just is not the binding constraint today. Keep it for when
+the region warm actually matters (a slower machine, or after the rebuild is fixed).
+
+### What follows from this
+
+- **The lever is the double world build, not the radius.** A player who picks a story seed today
+  builds the world twice: once at boot in free roam, once on entry. Selecting mode + seed *before*
+  the sim initialises removes the second build — which is exactly what **FEAT-41's boot-to-menu**
+  flow implies. Worth deciding there rather than bolting a special case onto story entry.
+- **Do not shrink `REGION_RADIUS_M` for load reasons.** It costs play area and buys ~2.5 s. If the
+  radius changes, let it be a design call about the play area.
+- If shipped story mode ends up with a fixed set of regions (FEAT-28 macro tiles), baking a cache
+  per region removes the region warm entirely — but that is ~4 MB per region, and the warm is only
+  5.5 s, so it is a poor trade until the rebuild cost is gone.
+- Terrain-side cost (PERF-22) is not implicated: the post-entry ring refill is 0.4 s at 1× / 2.4 s
+  at 4×.
+
+### Not measured / left open
+
+- The reseed's own 25 s is not broken down (terrain regen vs graph vs spawn-band routing). A
+  `--mode=reseed` path exists in the harness but its teardown predicate never fires — the chunk
+  count does not dip the way the probe assumed, so that split is still unmeasured. Worth fixing
+  before anyone optimises the rebuild.
+- All numbers are M4 + CDP throttle. `--cpu=4` does appear to throttle the road workers (browser
+  entry scales with it against the node single-thread baseline), but this is a simulation of an
+  older machine, not one.
 
 ## Acceptance
 
@@ -135,6 +173,10 @@ and uncosted — pick after a look at where the warm actually spends:
   background for everyone; see the note above for the one-line escalation.
 - ~~A recorded cold-boot → driving-in-story-mode measurement on a low-end target exists, so future
   load work has a baseline that reflects the intended audience.~~ **DONE 2026-07-27** — table above,
-  reproducible via `perf-runs/story-coldload.mjs`, raw JSON committed.
-- [ ] Story entry on an **unbaked seed** is not dominated by the region warm (32.6 s at 4× today).
-      This is the ticket's remaining work — see item 3.
+  reproducible via `test/story-coldload.mjs`.
+- ~~Story entry on an unbaked seed is not dominated by the region warm.~~ **Attributed 2026-07-27:**
+  it never was — the region warm is 5.5 s; the world rebuild is ~25 s. See item 3.
+- [ ] Remove the double world build for a player who picks a story seed (42.78 s → 23.38 s at 4×,
+      measured). Belongs with FEAT-41's boot-to-menu flow — decide it there.
+- [ ] Break down the reseed's ~25 s (terrain regen vs graph vs spawn-band routing) before optimising
+      it — the harness's `--mode=reseed` teardown predicate does not fire and needs fixing first.
