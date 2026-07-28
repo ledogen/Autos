@@ -822,6 +822,12 @@ export class RoadMeshSystem {
         const meshes     = []
         const geometries = []
 
+        // PERF-26 INSTRUMENT (measurement only): the sliced-build A/B proved the cost is NOT in
+        // sweepRibbon — a 48 ms frame had frame.ribbon.flush 19.4 ms with ribbon.sweepRibbon < 1.2.
+        // ~18 ms lives in the unbucketed remainder. Accumulate per-section here and emit once at the
+        // end so the `continue` paths below can't leak a bracket.
+        let _bLut = 0, _bSample = 0, _bTrim = 0, _bMesh = 0, _bTunnel = 0, _bPad = 0
+
         // NB: do NOT early-return when segs is empty. A junction NODE's tile can legitimately have zero
         // ribbon slices — the ribbons are trimmed back (roadJunctionCutback) from the node, so when the
         // node sits near a tile corner (e.g. seed-6 node 253,-131 is ~3 m from both edges of tile 3,-3),
@@ -839,7 +845,14 @@ export class RoadMeshSystem {
             // This replaces the per-tile _smoothDesignGrade call (which disagreed at slice
             // boundaries and cache-missed on every stream — the Phase 9 seam-step + lag source).
             // ~2 m longitudinal sampling resolution (same as prior _smoothDesignGrade output).
+            // Split getLength from the sampling loop: getLength() is what BUILDS the Curve
+            // arc-length LUT (getLengths, 200 divisions of getPoint) — getPointAt then only
+            // binary-searches it. If the cost is LUT construction the fix is a different shape
+            // (cache/reuse) than if it is the 256 getPointAt calls.
+            const _ptLen = performance.now()
             const arcLen = spline.getLength ? spline.getLength() : 64
+            _bLut += performance.now() - _ptLen   // PERF-26 INSTRUMENT
+            const _ptSamp = performance.now()
             const N = Math.max(2, Math.min(256, Math.ceil(arcLen / 2) + 1))
             const points = []
             const designGradeY = new Float32Array(N)
@@ -849,6 +862,7 @@ export class RoadMeshSystem {
                 points.push(_pt)
                 designGradeY[_i] = _pt.y
             }
+            _bSample += performance.now() - _ptSamp   // PERF-26 INSTRUMENT
 
             if (points.length < 2) continue
 
@@ -868,6 +882,7 @@ export class RoadMeshSystem {
             // the node (contiguous — no mid-run split). Drop samples whose run-global arc is within
             // `cutback` of a junction endpoint arc for this run; buildJunctionFootprint fills the cleared
             // disc at the same cutback. Skip the slice entirely if nothing survives (short run node↔node).
+            const _ptTrim = performance.now()   // PERF-26 INSTRUMENT
             let usePoints = points, useGrade = designGradeY, useArcS0 = arcS0, useArcS1 = arcS1
             const jArcs = this._road._junctionCarveArcs ? this._road._junctionCarveArcs.get(runKey) : null
             if (jArcs && jArcs.length) {
@@ -883,7 +898,7 @@ export class RoadMeshSystem {
                     for (const j of jArcs) { if (Math.abs(aS - j.arc) < cutback) { trimmed = true; break } }
                     if (!trimmed) { if (k0 < 0) k0 = _i; k1 = _i }
                 }
-                if (k0 < 0 || k1 - k0 < 1) continue   // fully trimmed → the pad(s) cover this stub
+                if (k0 < 0 || k1 - k0 < 1) { _bTrim += performance.now() - _ptTrim; continue }   // fully trimmed → the pad(s) cover this stub
                 if (k0 > 0 || k1 < Np - 1) {
                     useArcS0  = arcS0 + (arcS1 - arcS0) * (cum[k0] / tot)
                     useArcS1  = arcS0 + (arcS1 - arcS0) * (cum[k1] / tot)
@@ -892,9 +907,13 @@ export class RoadMeshSystem {
                 }
             }
 
+            _bTrim += performance.now() - _ptTrim   // PERF-26 INSTRUMENT
+
             const _ptS = performance.now()
             const geo  = this.sweepRibbon(spline, useGrade, usePoints, this._params, runKey, useArcS0, useArcS1)
             perfAdd('ribbon.sweepRibbon', performance.now() - _ptS)
+            const _ptM = performance.now()   // PERF-26 INSTRUMENT: Mesh ctor + scene.add (parent/matrix
+            // bookkeeping, and the first place a fresh BufferGeometry is seen by the renderer graph)
             const mesh = new THREE.Mesh(geo, this._material)
 
             // Road mesh sits at world origin (geometry is already in world space).
@@ -908,7 +927,9 @@ export class RoadMeshSystem {
             this._scene.add(mesh)
             meshes.push(mesh)
             geometries.push(geo)
+            _bMesh += performance.now() - _ptM   // PERF-26 INSTRUMENT
 
+            const _ptT = performance.now()   // PERF-26 INSTRUMENT
             // ── FEAT-40: tunnel bore lining + portal headwalls over this slice ──────────────
             // Spans live on the net entry (run-global arc, set by the assembly tunnel pass).
             // Each slice builds only its own overlap [arcS0,arcS1]∩[s0,s1] and each portal is
@@ -937,6 +958,7 @@ export class RoadMeshSystem {
                     if (sp.s1 >= sLo && sp.s1 < sHi) addTMesh(this.buildPortalRing(runKey, sp.s1, +1, this._params), this._getPortalMaterial())
                 }
             }
+            _bTunnel += performance.now() - _ptT   // PERF-26 INSTRUMENT
         }
 
         // ── Junction footprints for nodes assigned to this tile ────────────────
@@ -950,6 +972,9 @@ export class RoadMeshSystem {
         // Only AT_GRADE nodes get a pad. QUAL-10: the pad is a GRADED apron (buildJunctionFootprint samples
         // sampleRoadTopY per vertex), so it rides the same FEAT-19-graded ribbon surface it overlaps
         // (mesh == collision surface). NEAR_PARALLEL nodes are glancing grazes — they get no pad.
+        const _ptP = performance.now()   // PERF-26 INSTRUMENT: whole pad block, INCLUDING the two
+        // full-map _detect* iterations (a per-tile scan of every junction node in the network, run
+        // once per built tile — a suspect in its own right, not just buildJunctionFootprint).
         if (this._params.roadJunctionFootprints) {
             const tileWorldX = tileX * CHUNK_SIZE
             const tileWorldZ = tileZ * CHUNK_SIZE
@@ -978,6 +1003,17 @@ export class RoadMeshSystem {
             if (this._road._detectNodeJunctions) for (const [, node] of this._road._detectNodeJunctions()) buildPad(node)
             if (this._road._detectJunctions)     for (const [, node] of this._road._detectJunctions())     buildPad(node)
         }
+        _bPad += performance.now() - _ptP   // PERF-26 INSTRUMENT
+
+        // PERF-26 INSTRUMENT: emit the tile's section breakdown. Names must sort under the
+        // frame.ribbon.flush parent in the hitch `top` list. Sub-buckets are NESTED (they are
+        // inside frame.ribbon.flush) so perf.js's frame.* attributed sum does not double-count.
+        if (_bLut    > 0) perfAdd('ribbon.lut',      _bLut)
+        if (_bSample > 0) perfAdd('ribbon.samplePts', _bSample)
+        if (_bTrim   > 0) perfAdd('ribbon.trim',     _bTrim)
+        if (_bMesh   > 0) perfAdd('ribbon.meshAdd',  _bMesh)
+        if (_bTunnel > 0) perfAdd('ribbon.tunnel',   _bTunnel)
+        if (_bPad    > 0) perfAdd('ribbon.pads',     _bPad)
 
         // D1 (plan 09-19): stamp the road generation this tile was built against so
         // syncToChunkRing can detect stale tiles and re-enqueue them on mismatch.

@@ -2715,6 +2715,14 @@ function loop () {
   }
   perfAdd('frame.physics', performance.now() - _ptP)
 
+  // PERF-26 INSTRUMENT (measurement only): close the attribution GAP. The worst frames left in the
+  // run carry 60–73 ms inside NO bucket. That is either (a) an unbucketed section of this loop or
+  // (b) a GC pause — completely different fixes, and the current buckets cannot tell them apart. So
+  // partition the WHOLE loop first: two coarse spans (pre-stream / post-stream) plus the one
+  // unbucketed call inside the streaming block (warmRoutes). After this frame.* covers the loop end
+  // to end, so if `unattr` is STILL ~60 ms it is GC, conclusively, with no guessing.
+  const _ptPre = performance.now()
+
   // FEAT-43: Story Mode — advance the settle→freeze timer and enforce the region boundary on the
   // physics pose BEFORE the render interpolation reads it (so the truck is clamped, not just drawn
   // clamped). No-op unless story mode is active.
@@ -2846,6 +2854,7 @@ function loop () {
   // enterLab also does) buys only the draw calls, not the generation. Gate the WORK, not just the
   // pixels. Nothing is disposed, so leaving the lab re-streams from warm caches.
   let _pt = performance.now()
+  perfAdd('frame.preStream', _pt - _ptPre)   // PERF-26 INSTRUMENT: physics-end → streaming-block start
   if (!_labActive) terrainSystem.update(streamCenter)
   perfAdd('frame.terrain.update', performance.now() - _pt)
   // Phase 8: stream the valley-trunk network around the same center as terrain (08-07: the
@@ -2897,7 +2906,9 @@ function loop () {
   // FEAT-43: suspended in story mode — during the region warm this would fight pumpRegionWarm for
   // the same anchor, and once frozen every region route is already cached, so there is nothing left
   // to pre-warm and no router traffic at all while driving.
+  _pt = performance.now()   // PERF-26 INSTRUMENT: the one unbucketed call in the streaming block
   if (roadSystem && !_spawnWarmActive && !_labActive && !storySystem.isRoadStreamSuspended()) roadSystem.warmRoutes(streamCenter)   // don't fight a spawn warm's anchor
+  perfAdd('frame.road.warmRoutes', performance.now() - _pt)
   // Phase 9 (SURF-01): sync road ribbon tiles with the active terrain chunk ring.
   // syncToChunkRing enqueues new tiles and disposes evicted ones co-located with chunk lifetime.
   // flushPendingQueue builds up to MAX_ROAD_BUILDS_PER_FRAME tiles per frame.
@@ -2913,6 +2924,7 @@ function loop () {
   _perfFrame++
   if (_perfFrame === 180) { perfDump('load ~3s'); perfReset() }
   else if (_perfFrame === 600) { perfDump('steady ~10s') }
+  const _ptPost = performance.now()   // PERF-26 INSTRUMENT: streaming-block end → render start
 
   // Lab: recenter the floor pad on the view each frame so it reads as infinite. No snapping is
   // needed any more — the grid is drawn from WORLD xz in the fragment shader, so it stays welded to
@@ -3052,7 +3064,9 @@ function loop () {
   if (gpsSystem && !_labActive) {
     const _ptG = performance.now()
     gpsSystem.update(frameTime)
-    perfAdd('frame.gps.update', performance.now() - _ptG)
+    // PERF-26 INSTRUMENT: renamed off the `frame.` prefix — it is now NESTED inside frame.postStream,
+    // and perf.js sums every frame.* label to compute `unattr`, so leaving it would double-count.
+    perfAdd('post.gps.update', performance.now() - _ptG)
   }
 
   // FEAT-16: redraw the 2D map overlay only while it's open (off the hot path otherwise).
@@ -3068,6 +3082,7 @@ function loop () {
   }
 
   const _ptR = performance.now()
+  perfAdd('frame.postStream', _ptR - _ptPost)   // PERF-26 INSTRUMENT
   renderer.render(scene, camera)
   perfAdd('frame.render', performance.now() - _ptR)  // TEMP: the ~8.5s uninstrumented load cost suspect
   // PERF-26: stamp the frame's CPU span + the program count, so a shader compile shows up as a
