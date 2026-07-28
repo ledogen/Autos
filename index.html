@@ -245,6 +245,25 @@
     }
     #mission-hud .mh-count { font-size: 44px; color: #ffcf3c; }
 
+    /* FEAT-46: POI interaction prompt (bottom-centre) — shown while stopped within range of a
+       marker cube. Orange, to match the cubes and their map icons. */
+    #poi-prompt {
+      display: none;
+      position: fixed;
+      bottom: 96px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.62);
+      border: 1px solid #ff7a18;
+      padding: 8px 18px;
+      font-family: monospace;
+      font-size: 15px;
+      color: #ffb066;
+      z-index: 88;
+      pointer-events: none;
+      white-space: pre;
+    }
+
     /* FEAT-31 testing lab readout — top-right, out of the way of the left-hand debug HUD. */
     #lab-panel {
       display: none;
@@ -463,6 +482,9 @@
     </div>
   </div>
   <div id="mission-hud"></div>
+
+  <!-- FEAT-46: "press E for a job" prompt, shown when the truck is stopped beside a POI cube. -->
+  <div id="poi-prompt"></div>
 
   <!-- FEAT-31 testing lab: live status + best-of-each-track table. The right-hand column is the
        point of the whole mode — the derived number (implied accel/decel, realized skidpad mu)

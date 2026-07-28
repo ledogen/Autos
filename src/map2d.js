@@ -63,7 +63,7 @@ export class Map2D {
      * @param {() => ?{start:{x,z}, end:{x,z}, poly:{x,z}[]}} [o.getMission]
      *        — story-mode mission overlay (route + start/end pins); null when no mission is live
      */
-    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion }) {
+    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois }) {
         this._canvas    = canvas
         this._ctx       = canvas.getContext('2d')
         this._getSeed   = getSeed
@@ -75,6 +75,9 @@ export class Map2D {
         // FEAT-43: story-mode region boundary — {x,z,r} or null. Drawn as a wall + dimmed exterior
         // so the player can see where the region ends instead of discovering it by hitting it.
         this._getRegion   = getRegion    || (() => null)
+        // FEAT-46: story-mode POIs. This is how the player finds one — see an icon, drive to it,
+        // press E. Empty outside story mode.
+        this._getPois     = getPois      || (() => null)
 
         this._open       = false
         this._road       = null          // the map's own RoadSystem; KEPT ALIVE across opens (route cache)
@@ -493,6 +496,7 @@ export class Map2D {
         ctx.drawImage(this._bg, dx, dy, W * k, H * k)
 
         this._drawRegion(ctx)    // under the mission route — it's world furniture, not the subject
+        this._drawPois(ctx)      // likewise furniture: placed at entry, so not in the cached bg
         this._drawMission(ctx)   // under the car marker, over the cached bg
         this._drawCar(ctx)
         this._drawLegend(ctx)
@@ -726,6 +730,25 @@ export class Map2D {
         pin(m.end, '#ffcf3c', 'DROP')
     }
 
+    // FEAT-46: POI markers — the navigate-to-it affordance. See an orange diamond, drive there,
+    // press E. Drawn as world FURNITURE (with the region ring, under the mission overlay and the
+    // car) rather than into the cached background: POIs are placed at story-mode entry, by which
+    // time the background may already have been baked. Empty outside story mode.
+    _drawPois(ctx) {
+        const list = this._getPois()
+        if (!list || !list.length) return
+        ctx.lineWidth = 1.5
+        ctx.strokeStyle = '#101010'
+        ctx.fillStyle = '#ff7a18'
+        for (const q of list) {
+            const sx = this._sx(q.x), sy = this._sy(q.z), r = 6
+            ctx.beginPath()
+            ctx.moveTo(sx, sy - r); ctx.lineTo(sx + r, sy); ctx.lineTo(sx, sy + r); ctx.lineTo(sx - r, sy)
+            ctx.closePath()
+            ctx.fill(); ctx.stroke()
+        }
+    }
+
     // (5) Car marker — a triangle at the car's world XZ, pointing along its world-forward XZ.
     _drawCar(ctx) {
         const car = this._getCar()
@@ -761,9 +784,10 @@ export class Map2D {
             ['#506070', 'leaf (deg≤1)'],
             ['#ff5a3c', 'car'],
         ]
+        if (this._getPois()?.length) rows.push(['#ff7a18', 'point of interest'])   // FEAT-46
         const x0 = 16, y0 = 16, lh = 18
         ctx.fillStyle = 'rgba(0,0,0,0.45)'
-        ctx.fillRect(x0 - 8, y0 - 8, 168, rows.length * lh + 16)
+        ctx.fillRect(x0 - 8, y0 - 8, 188, rows.length * lh + 16)
         rows.forEach(([c, label], i) => {
             const y = y0 + i * lh + lh / 2
             ctx.fillStyle = c

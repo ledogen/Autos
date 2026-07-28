@@ -151,6 +151,26 @@ export class MissionSystem {
         setTimeout(() => this._generate(), 0)
     }
 
+    /**
+     * FEAT-46: take a job from the POI you are parked at. Same generator, but the start is PINNED to
+     * the marker's own (edge, arc) point and accepting does NOT teleport — you are already standing
+     * there, and the countdown runs out from under you where you sit.
+     *
+     * There is deliberately no `regenerate` from here: rolling the destination again while parked at
+     * a POI would make the marker a slot machine, and DESIGN.md is explicit that real story mode has
+     * no do-overs. Drive away and come back.
+     *
+     * @param {object} poi — a record from PoiSystem.list()
+     */
+    enterFromPoi (poi) {
+        if (!poi) return
+        this.state = 'generating'
+        this.result = null
+        this.error = null
+        this._onChange()
+        setTimeout(() => this._generate({ aId: poi.aId, bId: poi.bId, s: poi.s, poiId: poi.id }), 0)
+    }
+
     /** Re-roll start + end. TESTING ONLY — real story mode has no do-overs. */
     regenerate() {
         if (this.state !== 'offer') return
@@ -177,9 +197,13 @@ export class MissionSystem {
     }
 
     // Shared start path for accept/retry: seat at the start pin, reset the run state, count down.
+    // FEAT-46: a POI job skips the seat — the player drove to the marker themselves and the job
+    // starts from where they are parked. (Owner, 2026-07-28: "no need to teleport the car to the
+    // road. the player should know they need to get outta there quick.") The pad sits beside the
+    // centerline, so the first few metres are the driver's own problem, which is the point.
     _launch() {
         const s = this.mission.start
-        this._teleport(s.x, s.z, s.heading)
+        if (!this.mission.fromPoi) this._teleport(s.x, s.z, s.heading)
         this._setMapOpen(false)
         this.state = 'countdown'
         this._polyIdx = 0            // route-remaining projection restarts at the start pin
@@ -379,7 +403,7 @@ export class MissionSystem {
     isHeld() { return this.state === 'countdown' }
 
     // ── generation ──────────────────────────────────────────────────────────────────────────
-    _generate() {
+    _generate(anchor = null) {
         try {
             // A roll can come up empty because the FEAT-43 region rejected the leg it happened to
             // draw (guard 2 only fires after the route is built), so inside a region we re-roll
@@ -388,7 +412,8 @@ export class MissionSystem {
             // reports immediately — retrying could route live edges and block for seconds.
             const tries = this._getRegion() ? REGION_ROLL_TRIES : 1
             this.mission = null
-            for (let i = 0; i < tries && !this.mission; i++) this.mission = this._roll()
+            for (let i = 0; i < tries && !this.mission; i++) this.mission = this._roll(anchor)
+            if (this.mission) this.mission.fromPoi = anchor ? anchor.poiId : null
             this.state = this.mission ? 'offer' : 'idle'
             if (!this.mission) this.error = 'no route found near here — try again'
             if (this.mission) this._setMapOpen(true)
@@ -407,8 +432,11 @@ export class MissionSystem {
      * Par is the time on THIS route, the geometrically shortest one. That is honest for a beta
      * harness — it's the line a player naturally takes — but note it is not min-par over all
      * routes; a cleverer line through the network could beat par for reasons that aren't driving.
+     *
+     * @param {{aId:any,bId:any,s:number}|null} [anchor] — FEAT-46: pin the START to a POI's exact
+     *   (graph edge, arc) point instead of rolling it. The END still rolls freely.
      */
-    _roll() {
+    _roll(anchor = null) {
         const road = this._planner()
         if (!road) return null
         // The POST-CULL registered network — the roads that actually exist. Planning off the raw
@@ -473,22 +501,44 @@ export class MissionSystem {
             return { prev, ends }
         }
 
-        // Shuffle the node set and take the first start with a reachable endpoint in the leg band.
-        // Most nodes qualify; the loop just skips the few dead-end / window-edge nodes whose whole
-        // leg band falls off the streamed network. Mission rolls are run-layer randomness — free to
-        // use Math.random (SM-INV-12).
-        const starts = [...posOf.keys()]
-        for (let i = starts.length - 1; i > 0; i--) {           // Fisher-Yates
-            const j = (Math.random() * (i + 1)) | 0
-            ;[starts[i], starts[j]] = [starts[j], starts[i]]
-        }
         let startK = null, prev = null, endK = null
-        for (const s of starts) {
-            const c = legCandidates(s)
-            if (!c.ends.length) continue
-            startK = s; prev = c.prev
-            endK = c.ends[(Math.random() * c.ends.length) | 0][0]
-            break
+        // FEAT-46: the anchored roll. A POI sits mid-edge, so the leg LEAVES that edge through one
+        // of its two nodes; that node is the start of the ordinary node-path search, and the partial
+        // stretch from the POI out to it is prepended as a segment afterwards. The player is NOT
+        // teleported — they are already standing on the pad — so unlike the free roll there is no
+        // freedom in where this begins.
+        let exitK = null
+        if (anchor) {
+            const ka = g.key(anchor.aId), kb = g.key(anchor.bId)
+            if (!adj.has(ka) || !adj.has(kb)) return null      // POI edge outside the planner's set
+            const pair = Math.random() < 0.5 ? [[ka, kb], [kb, ka]] : [[kb, ka], [ka, kb]]
+            for (const [ex, other] of pair) {
+                const c = legCandidates(ex)
+                // Reject any leg whose FIRST hop doubles back along the anchor edge — the route
+                // would drive off the pad, past the POI, and traverse the same stretch twice.
+                const ends = c.ends.filter(([k]) => _firstHop(c.prev, k, ex) !== other)
+                if (!ends.length) continue
+                exitK = ex; startK = ex; prev = c.prev
+                endK = ends[(Math.random() * ends.length) | 0][0]
+                break
+            }
+        } else {
+            // Shuffle the node set and take the first start with a reachable endpoint in the leg band.
+            // Most nodes qualify; the loop just skips the few dead-end / window-edge nodes whose whole
+            // leg band falls off the streamed network. Mission rolls are run-layer randomness — free to
+            // use Math.random (SM-INV-12).
+            const starts = [...posOf.keys()]
+            for (let i = starts.length - 1; i > 0; i--) {           // Fisher-Yates
+                const j = (Math.random() * (i + 1)) | 0
+                ;[starts[i], starts[j]] = [starts[j], starts[i]]
+            }
+            for (const s of starts) {
+                const c = legCandidates(s)
+                if (!c.ends.length) continue
+                startK = s; prev = c.prev
+                endK = c.ends[(Math.random() * c.ends.length) | 0][0]
+                break
+            }
         }
         if (startK == null || endK == null) return null
 
@@ -511,8 +561,9 @@ export class MissionSystem {
             const L = ed.centerline.length
             let s0 = forward ? 0 : L, s1 = forward ? L : 0
 
-            // Mid-edge endpoints on the first and last edge.
-            if (i === 0) {
+            // Mid-edge endpoints on the first and last edge. An ANCHORED roll has no freedom at the
+            // start — the POI's own partial stretch is prepended below and IS the first segment.
+            if (i === 0 && !anchor) {
                 const t = EDGE_T_MARGIN + Math.random() * (0.55 - EDGE_T_MARGIN)
                 s0 = forward ? L * t : L * (1 - t)
             }
@@ -534,6 +585,33 @@ export class MissionSystem {
                 const p = ed.centerline.pointAt(s)
                 poly.push({ x: p.x, z: p.z })
             }
+        }
+
+        // FEAT-46: prepend the POI's own partial stretch — from the marker's arc position out to the
+        // node the leg leaves through. DESIGN.md's arc-RANGE rule is exactly what makes this free:
+        // par already integrates partial edges, so a POI start needs no new machinery, just a segment.
+        if (anchor) {
+            const ed = road.edgeParData(anchor.aId, anchor.bId)
+            if (!ed) return null
+            const L = ed.centerline.length
+            const ex = posOf.get(exitK)
+            const pEnd = ed.centerline.pointAt(L), pStart = ed.centerline.pointAt(0)
+            const s1 = Math.hypot(pEnd.x - ex.x, pEnd.z - ex.z) < Math.hypot(pStart.x - ex.x, pStart.z - ex.z) ? L : 0
+            // The POI's arc was measured on the PLAY network's copy of this edge; clamp rather than
+            // trust it blind, so a length that differs in the last ulp can't produce an out-of-range s.
+            const s0 = Math.max(0, Math.min(L, anchor.s))
+            if (Math.abs(s1 - s0) < 1) return null      // the marker sits on top of the exit node
+            const head = []
+            const n = Math.max(2, Math.ceil(Math.abs(s1 - s0) / 25))
+            for (let j = 0; j <= n; j++) {
+                const p = ed.centerline.pointAt(s0 + (s1 - s0) * (j / n))
+                head.push({ x: p.x, z: p.z })
+            }
+            segments.unshift({
+                centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key,
+                endDeg: (adj.get(exitK) || []).length,
+            })
+            poly.unshift(...head)
         }
 
         const { time, distance } = computePar(segments)
@@ -569,6 +647,15 @@ export class MissionSystem {
             segments,
         }
     }
+}
+
+// FEAT-46: the FIRST node stepped to on the way from `root` out to `k` (i.e. the last node before
+// root when the parent chain is walked back). Used to reject an anchored leg that doubles back along
+// the POI's own edge. Returns null if the chain doesn't reach root.
+function _firstHop(prev, k, root) {
+    let last = null, n = 0
+    while (k != null && k !== root && n < 64) { last = k; k = prev.get(k); n++ }
+    return k === root ? last : null
 }
 
 // Hop count from `k` back to `root` through the Dijkstra parent chain (bounded scan).

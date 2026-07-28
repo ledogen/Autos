@@ -1340,7 +1340,10 @@ export class TerrainSystem {
         // nodes (reach = ringMaxR + shoulder + maxToe) whose reach overlaps this chunk; a vertex within
         // one's reach is never skipped, and _junctionPadCarve (read from road.js's cached ring) covers it.
         // Same ring the pad MESH reads → mesh == collision on the whole footprint.
-        const _padNodes = this._roadSystem.junctionPadNodes ? this._roadSystem.junctionPadNodes() : []
+        // FEAT-46: padReachNodes() lists story-mode POI lay-by pads alongside the junction pads, for
+        // exactly the same reason — a lay-by sits off the shoulder, so its rim is routinely beyond
+        // the nearest road sample. Empty of POI entries in free roam and in every headless gate.
+        const _padNodes = this._roadSystem.padReachNodes ? this._roadSystem.padReachNodes() : []
         const _chunkPad = []
         for (const nd of _padNodes) {
             const cxp = Math.max(originX, Math.min(originX + (N - 1) * cell, nd.x))
@@ -1482,10 +1485,12 @@ export class TerrainSystem {
                 // open-side pad rim where no run resolves. cs is guarded by `if (nr)`; null flows through.
                 // Composed EXACTLY as physics (_sampleCarveWorld) does → mesh == collision.
                 let cs = null
+                let latDist = Infinity     // FEAT-46: the POI pad's road gate reads this (see below)
                 if (nr) {
                     const dx = wx - nr.point.x, dz = wz - nr.point.z
                     const arcSEff   = (nr.arcS ?? 0) + dx * nr.tangent.x + dz * nr.tangent.z
                     const signedLat = dx * nr.tangent.z - dz * nr.tangent.x
+                    latDist = Math.abs(signedLat)
                     // FEAT-40 rival blend (self-overlap/bore seams) + QUAL-10 pad-plane inter-leg ruled
                     // blend (wx,wz forwarded to _carveDirtY). queryY undefined — the mesh is the Y-less path.
                     cs = this._roadSystem._carveCrossSectionBlended(nr, signedLat, arcSEff, rawH, undefined, wx, wz)
@@ -1499,6 +1504,17 @@ export class TerrainSystem {
                     const domGrade = cs ? co.gradeY * co.dom + cs.gradeY * (1 - co.dom) : co.gradeY
                     cs = { blendW: Math.max(cs ? cs.blendW : 0, co.blendW), gradeY: domGrade }
                 }
+                // FEAT-46 POI lay-by bench — the SAME dominance composition _sampleCarveWorld uses, so
+                // mesh == collision on the pullout by construction. latDist gates it out of the road's
+                // own cross-section; with no pads set this is a null check.
+                const pq = this._roadSystem._poiPadCarve(wx, wz, rawH, latDist)
+                if (pq) {
+                    cs = {
+                        blendW: Math.max(cs ? cs.blendW : 0, pq.blendW),
+                        gradeY: cs ? pq.gradeY * pq.dom + cs.gradeY * (1 - pq.dom) : pq.gradeY,
+                    }
+                }
+
                 // Junction-pad carve composed with the leg + connector carve. The MESH uses the default
                 // PAD_DUCK_CAP (1.2); physics uses the tighter PAD_DUCK_CAP_PHYS (0.55) — the sanctioned
                 // camber-era pad-rim mesh↔collision difference. Covers the open-side rim no run reaches.
