@@ -1,8 +1,9 @@
 ---
 id: PERF-26
 type: perf
-status: partial
+status: complete
 opened: 2026-07-26
+closed: 2026-07-28
 severity: major
 source: user report — periodic stutter while driving, worst on low-power machines
 relates: [PERF-02 (frame-spread build budgets), PERF-05 (MAX_BUILDS_PER_FRAME=1), PERF-13 (initial-fill burst), PERF-21 (prop LOD ring), PERF-22 (terrain geometry LOD)]
@@ -335,24 +336,88 @@ is still worth reading before touching the ribbon.
 - Affected gates green; carve/ribbon surface gates must stay green since these are scheduling-only
   changes — any gate movement means the geometry changed and the change is wrong.
 
+## 2026-07-28 (later) — `warm.scan` FIXED. Acceptance met; ticket closed.
+
+Branch `feature/perf-26-warmscan`. Same discipline as the `degreeDrops` half: bench the split first.
+
+### Finding 1 — `_edgeDeps` was wiping `_urqMemo` 16× per cold scan (real, but worth ~1 ms)
+
+`_edgeDeps` builds a per-edge Urquhart over its own small window. Those windows are **single-use**: a
+cold macro-column scan issued 115 of them producing **113 distinct sigs with 0 memo hits**. Against a
+6-entry clear-all `_urqMemo` that wiped the memo **16 times per scan**, evicting the big warm-band and
+cull graphs. Verified directly: the warm-band graph went `in memo before dep scan = true → after =
+false`, and re-fetching it cost a cold rebuild.
+
+Fixed with a `cacheable=false` flag on `_buildUrquhart` (reads the memo, never writes it) — `_edgeDeps`
+has its own persistent per-edge memo anyway. **Clears 16 → 0; the graph now survives (0.00 ms hit).**
+
+**But it did not move the in-browser number at all** — `warm.scan` 28.8 → 28.8 ms. Kept because it
+removes a genuine pathology, but recorded honestly: what it protects is only ~1 ms (`warm.urquhart`).
+A pathology being real does not make it the cost. Third time this ticket has taught that.
+
+### Finding 2 — the actual fix: `cap` bounded jobs, nothing bounded work
+
+Confirmed the ticket's hypothesis. The 115 per-edge delaunay builds (~0.33 ms each ≈ 38 ms) all land
+in one frame because a deferring edge pays full `_edgeDeps` + `_corridorDiscsFor` and yields no job.
+
+Added `PREWARM_MAX_EVALS` (a WORK budget) alongside `PREWARM_MAX_JOBS`, with the persistent rotating
+`_warmCursor`. Callers wanting the whole set at once (cold spawn, region warm) pass `Infinity` and
+keep their exact previous edge order.
+
+**The starvation trap was real and is now measured, not just reasoned about.** Over 40 scans of a
+115-edge cold column:
+
+| | uncached edges reached |
+|---|---|
+| with the cursor | **115 / 115 — full sweep** (~15 scans) |
+| cursor pinned to 0 (the naive fix) | **5 / 115 — starved** |
+
+`evalCap` tuned 8 → 4 on measurement: at 8, `warm.scan` was 17.9 ms; at 4 it is 7.5 ms. Convergence
+costs ~29 frames (≈0.5 s), against `PREWARM_MARGIN`'s ~512 m of slack — pre-warm is allowed to lag.
+
+### Result — acceptance MET
+
+Back-to-back `--scenario=stream --cpu=4 --duration=60`, Normal, seed 6, quiet machine:
+
+| | max frame | `frame.road.warmRoutes` | `warm.scan` | `warm.degreeDrops` |
+|---|---|---|---|---|
+| main (before) | 58.2 ms | 41.0 | 29.1 | 10.9 |
+| after | **37.3 ms** | **20.2** | **7.5** | 10.8 |
+
+Full lift table, all tags: `props.lodSwap` **+2.7**, `shadow.bake` +1.4, `shadow.map.view` +0.4,
+`shadow.map.geom` +0.3, `props.chunk` / `terrain.chunk` / `road.tile` +0.0. **No tag above ~5 ms →
+acceptance criterion 1 satisfied** (it was +15.4 for `props.lodSwap` before this session).
+
+Cold load, criterion 2: ready 1395 → 1374 ms, ring-complete 2853 → 2823 ms — no regression.
+Criterion 3: 23 affected gates green, run twice (once after each change).
+
 ## Closing decision (updated 2026-07-28)
 
-**Stays open, with half the remaining scope closed.** Acceptance (no tag above ~5 ms lift) is still
-unmet, but the ticket is now down to a single named mechanism.
+**CLOSED — all three acceptance criteria met.** Both remaining terms are fixed:
 
-- `warm.degreeDrops` — **DONE.** −72 % cold, decisions bit-identical, 23 gates green. See the
-  2026-07-28 section; the margin, not the algorithm, was the cost.
-- `warm.scan` — **the only remaining scope.** Mechanism named (job cap ≠ work cap; full rescan every
-  frame while deferred), fix sketched, starvation caveat written down. Start there, not at diagnosis.
-- Everything else stays measured and cleared: GC (no `unattr` left), `props.lodSwap`
-  (co-occurrence — it still tops the lift table at +15.4 and it still is not the cause), prop scatter
-  (+0.0), the terrain carve (fixed earlier), and — pending one re-measure — the road ribbon.
+- `warm.degreeDrops` — **DONE.** −72 % cold, decisions bit-identical. The margin, not the algorithm,
+  was the cost.
+- `warm.scan` — **DONE.** 29.1 → 7.5 ms. A work budget with a rotating cursor; the job cap never
+  bounded the work.
+- Everything else stays measured and cleared: GC (no `unattr` left), `props.lodSwap` (co-occurrence —
+  now down to +2.7 lift and still not the cause), prop scatter (+0.0), the terrain carve (fixed
+  earlier), and — pending one re-measure — the road ribbon.
 - Split nothing off. There is no separate allocation-churn ticket to write; the data killed it.
 
-Standing lesson, now three-for-three on this ticket: **every time someone reasoned about where the
-time went instead of measuring the sub-terms, they picked the wrong term** — the ribbon (reverted for
-nothing), the `_networkRev` churn (never happened), and now the per-candidate cache (16 % of the
-cost). Bench the split first; it took ten minutes here and redirected the whole fix.
+Two loose threads deliberately NOT carried in this ticket (both listed under "Still open, unchanged"
+above, neither a streaming hitch): re-measure `road.tile` before any ribbon work, and fix or retire
+`--scenario=drive`, which silently reports "no hitches" because the truck sticks ~55 m from spawn.
+Worth their own small ticket if anyone touches the ribbon or trusts a drive-scenario number.
+
+Standing lesson, now four-for-four on this ticket: **every time someone reasoned about where the time
+went instead of measuring the sub-terms, they picked the wrong term** — the ribbon (sliced and
+reverted for nothing), the `_networkRev` churn (never happened), the per-candidate cache (16 % of the
+cost), and the `_urqMemo` thrash (a real 16-clears-per-scan pathology worth ~1 ms). Bench the split
+first; it took ten minutes each time and redirected the fix each time.
+
+Corollary earned here: **a confirmed pathology is not automatically the cost.** The memo thrash was
+exactly as bad as it looked and fixing it changed nothing measurable. Always A/B the fix, not just
+the diagnosis.
 
 The instrumentation branch `perf-26-instrument` / worktree `../CarGame-perf26` served its purpose and
 was **deleted 2026-07-28** — everything worth keeping is on main in 629b358 + 8cd8fb0 (the ticket's
