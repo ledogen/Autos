@@ -116,24 +116,58 @@ what turned "60–73 ms in no bucket" into a named function in a single run. The
 reverted slicing attempt generalises: do not act until a bucket names the cost, and make sure the
 buckets can *reach* every part of the frame — an unbucketed region is indistinguishable from GC.
 
-## Next steps (supersedes the ranking below)
+## Shipped 2026-07-27 — commits 629b358, 55ea827 (both on main)
 
-1. **Fix the stale comment at `main.js:2904`** — it claims warmRoutes no-ops. One line, do it first
-   so the next reader isn't misled the same way.
-2. **Make the warm rescan divisible or cheaper.** Options, cheapest first — measure, don't assume:
-   - Cache/incrementally update the Urquhart graph across warm calls instead of rebuilding the whole
-     band+margin box every 32 m. The band shifts by one macro-column at a time; the rebuild is
-     almost entirely redundant work.
-   - Move `_buildUrquhart` + `_degreeDrops` for the warm scan off the main thread (the router is
-     already on a worker; this is the selection step that stayed behind).
-   - Failing both, make it resumable under an ms budget the way the carve fix was — the pattern that
-     already worked once here.
-   Note `_buildUrquhart(..., persist=false)`, so the warm copy is throwaway and does not touch the
-   streaming graph — that should make caching it safe, but verify against window-invariance
-   (see `project_reachability_window_noise` / the restream-invariance gate) before trusting it.
-3. **Re-measure `road.tile`** before any ribbon work. If it stays ≈ +1 ms, delete item 1 below.
-4. **Fix or retire `--scenario=drive`.** As it stands it silently reports "no hitches" because the
-   truck is stuck, which is worse than not having it.
+**629b358 — instrumentation.** The full-frame partition (`frame.preStream` / `frame.road.warmRoutes`
+/ `frame.postStream`) plus the ribbon tile sub-buckets. Zero-cost when `?hitch` is off. The heap
+probe was built and then dropped before shipping: headless Chrome reports a static `usedJSHeapSize`
+even with `--enable-precise-memory-info`, so it measured nothing and would have misled.
+
+**55ea827 — the contained half of the warmRoutes fix.** `_buildUrquhart` memoised its `persist=true`
+path only, and `warmRoutes` is the `persist=false` caller — so it re-derived the graph every 32 m
+while `sig` is quantised to 256 m, rebuilding a byte-identical Delaunay+Urquhart most calls. Keyed on
+the existing `sig`, cleared from `_invalidateProto` (verified sole path by which sites/params change;
+`setWaterNoGo` routes through it). 30 affected gates green including the invariance gates.
+
+Also fixed the stale `no-ops under BUG-26` comment at the call site.
+
+### What the fix was worth, and what it was NOT
+
+Honest A/B at `--cpu=4`, memo off vs on: `warm.degreeDrops` 89 → 42 ms, `warm.urquhart` ~7 → ~1.4 ms.
+Real, but it did **not** close the ticket — total `warmRoutes` on the worst frames barely moved
+(72.7/68.2/35.6/32.4 with the memo, against 69.6/64.7/34.6/32.0 without). My first hypothesis — that
+the repeated graph rebuild *was* the cost — was wrong, and the memo alone does not fix this.
+Run-to-run variance on the worst frames is high (57–144 ms for the same configuration), so trust the
+within-mechanism split below, not cross-run worst-frame deltas.
+
+### The remaining cost, now named (this is the open work)
+
+`frame.road.warmRoutes` decomposes into three, and the graph build was the small one:
+
+| bucket | worst frames at 4× | what it is |
+|---|---|---|
+| `warm.degreeDrops` | 42.2, 41.4, 40.7, 34.9 ms | `_degreeDropSet` recompute. Its own memo keys on `_networkRev`, which churns while streaming, so it re-runs constantly. |
+| `warm.scan` | 36.2, 32.2 ms | `_warmScan` — `_edgeDeps` / `_corridorDiscsFor` / `_soloClearOf` dependency + corridor-disc work. |
+| `warm.urquhart` | ~1.4 ms | now memoised; done. |
+
+Neither remaining one is a graph rebuild, so **neither is fixable with another cache** — they need
+design, which is why I stopped here rather than improvising a third guess. Directions, in order:
+
+1. Understand why `_networkRev` bumps so often during streaming. If most bumps don't actually change
+   the degree-drop set, key the memo on something stabler and `warm.degreeDrops` mostly vanishes.
+2. Failing that, make `_degreeDropSet` incremental, or move it (and `_warmScan`) to the road Worker —
+   the router is already there; this is the selection step that stayed behind on the main thread.
+3. Failing both, make `warmRoutes` resumable under an ms budget — the pattern that already worked
+   for the carve. `PREWARM_MAX_JOBS` caps the dispatch but nothing caps the work that precedes it.
+
+The `warm.*` buckets are shipped, so step 1 starts with the split rather than re-deriving it.
+
+### Still open, unchanged
+
+- **Re-measure `road.tile`** before any ribbon work. It sat at +0.2/+1.7/+0.3 lift across four runs
+  against the +12 ms originally recorded; on this evidence item 1 below should probably be struck.
+- **Fix or retire `--scenario=drive`.** It silently reports "no hitches" because the truck is stuck
+  ~55 m from spawn, which is worse than not having the scenario at all.
 
 ## Remaining (SUPERSEDED — kept for the reasoning, not the ranking)
 
@@ -181,19 +215,15 @@ is still worth reading before touching the ribbon.
 
 ## Closing decision
 
-Not closeable yet: acceptance requires no tag above ~5 ms lift, and `warmRoutes` is 30–91 ms at 4×.
-But the ticket is now small and specific — one named function, with three ranked fix options — where
-before it was an open-ended hunt. Proposed disposition:
+**Stays open**, but it is now one named subsystem with a measured split, not a hunt. Acceptance
+(no tag above ~5 ms lift) is unmet: `warm.degreeDrops` and `warm.scan` are 32–42 ms at 4×.
 
-- Do next-step 1 (the stale comment) immediately; it is free and it is what caused the miss.
-- Do next-step 2 (the warm rescan). That is the whole remaining ticket.
-- Split nothing off for GC or props — the measurement cleared both.
-- If step 3's re-measure keeps `road.tile` near +1 ms, strike item 1 and shrink acceptance to the
-  warm rescan alone.
+- Remaining scope = `warm.degreeDrops` + `warm.scan` only. Everything else is measured and cleared:
+  GC (no `unattr` left), `props.lodSwap` (co-occurrence), prop scatter (+0.0), the terrain carve
+  (fixed earlier), and — pending one re-measure — the road ribbon.
+- Split nothing off. There is no separate allocation-churn ticket to write; the data killed it.
+- Next session starts at "why does `_networkRev` churn", not at "where is the time going".
 
-**The instrumentation is the durable asset and should probably ship.** It is zero-cost when `?hitch`
-is off (one boolean test per `perfAdd`), and the full-frame partition is what made the diagnosis
-possible at all — leaving it out means the next investigation starts blind again. Decide merge vs
-delete when the fix lands; do not delete the branch before then. Note the branch's
-`post.gps.update` rename and the `--enable-precise-memory-info` flag are the only parts that are
-merely diagnostic scaffolding; the heap probe measured nothing useful and can be dropped.
+The instrumentation branch `perf-26-instrument` / worktree `../CarGame-perf26` has served its
+purpose — everything worth keeping is on main in 629b358 + 55ea827. Safe to delete; its
+`perf-runs/*.json` are gitignored and will go with it, but the numbers are recorded above.
