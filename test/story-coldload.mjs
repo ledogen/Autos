@@ -14,6 +14,10 @@
 //   enter       story entry called (script-side; the human cost before it is menu navigation)
 //   live        __story()._phase === 'live' — region pre-routed, router frozen, wall armed
 //
+// --mode=reseed reports two extra things (PERF-27 item 3): `rebuild`, the moment the awaitable
+// Path-B rebuild promise settles, and a per-step wall breakdown of _rebuildFullNow read back from
+// the perf.js buckets. Between them they answer "which part of the world rebuild owns the ~25 s".
+//
 // Chrome gets a throwaway profile every launch, so the HTTP cache is always cold: both route-cache
 // assets are re-downloaded per run. Serve the BUILT app (npm run build && npx vite preview), not
 // the dev server — players get the bundle, and dev-server module serving is a different cost.
@@ -94,17 +98,54 @@ const tEnter = Date.now() - T0
 // story entry does. Story entry on an unbaked seed = this reseed (cold spawn-band routing, the
 // cost QUAL-14's cache exists to hide) + the region warm. Measuring reseed alone is the only way
 // to attribute the entry cost between them.
-if (MODE === 'reseed') await evalOk(`(window.__lever('changeSeed', ${JSON.stringify(SEED)}), true)`)
+// PERF-27 item 3: `changeSeed` returns the awaitable Path-B rebuild promise (main.js __lever passes
+// promises through), so the reseed is timed by AWAITING it — not by watching for an observable edge.
+// The old teardown probe polled for the chunk ring to dip, which can never fire before the rebuild
+// completes: rebuildAllChunksFromWorker is the last line of _rebuildFullNow.
+// Stamped IN THE PAGE rather than awaited over CDP: the rebuild runs tens of seconds with the main
+// thread starved, and a held-open Runtime.evaluate is exactly the thing that times out under that.
+// Bucket snapshot immediately before the reseed. Diffed against the post-rebuild snapshot below,
+// this attributes the MAIN-THREAD work that runs concurrently with the rebuild — which is the real
+// question once you know routeImport is mostly a starved await, not loader work.
+const bucketsBefore = MODE === 'reseed'
+  ? await evalOk(`(()=>{ const p = window.__perfData(); const o = {};
+      for (const k of Object.keys(p.buckets)) o[k] = p.buckets[k].ms; return o })()`)
+  : null
+if (MODE === 'reseed') {
+  await evalOk(`(window.__reseedDone = null,
+                 window.__lever('changeSeed', ${JSON.stringify(SEED)})
+                   .then(() => { window.__reseedDone = performance.now() }), true)`)
+}
 else await evalOk(`(window.__story().enter(${JSON.stringify(SEED)}), true)`)
 console.log(`  ${MODE === 'reseed' ? 'reseed' : 'enter '}      ${(tEnter / 1000).toFixed(2)} s   ${MODE === 'reseed' ? 'free-roam seed change called' : 'story entry called'}`)
 
 // The reseed is async: the rebuild has not started on the tick the lever returns, so waiting
 // straight for "ring full + warm drained" passes instantly against the OLD world. Wait for the
-// teardown (chunks dropped) first, then for the new world to come back.
+// rebuild promise to settle first, then for the new world to finish streaming in.
+let tRebuild = null
 if (MODE === 'reseed') {
-  await waitFor(`(()=>{ const w = window.__world && window.__world(); if (!w) return false; const n = 2*(w.ring+w.warm)+1; return w.chunks < n*n })()`,
-                BASE_TIMEOUT, 'reseed teardown', 50)
-  console.log(`  teardown    ${((Date.now() - T0) / 1000).toFixed(2)} s   old world dropped — rebuild started`)
+  tRebuild = await waitFor('window.__reseedDone != null', BASE_TIMEOUT * 3, 'reseed rebuild', 100)
+  console.log(`  rebuild     ${(tRebuild / 1000).toFixed(2)} s   Path-B rebuild resolved (${((tRebuild - tEnter) / 1000).toFixed(2)} s of work)`)
+}
+// Main-thread work DURING the rebuild window: the per-frame buckets, differenced. Requires ?prof=1
+// (which suppresses the frame-180 perfReset that would otherwise truncate the baseline).
+let frameDelta = null
+if (MODE === 'reseed' && bucketsBefore) {
+  const after = await evalOk(`(()=>{ const p = window.__perfData(); const o = {};
+    for (const k of Object.keys(p.buckets)) o[k] = p.buckets[k].ms; return o })()`)
+  frameDelta = {}
+  for (const k of Object.keys(after)) {
+    // frame.* is the top-level split; road.*/warm.* are existing sub-buckets INSIDE frame.road.*,
+    // so they double-count against it on purpose — they say what the road step spent its time on.
+    if (!/^(frame|road|warm)\./.test(k)) continue
+    const d = Math.round(after[k] - (bucketsBefore[k] ?? 0))
+    if (d > 5) frameDelta[k] = d
+  }
+  const rows = Object.entries(frameDelta).sort((a, b) => b[1] - a[1])
+  const busy = rows.filter(([k]) => k.startsWith("frame.")).reduce((a, [, v]) => a + v, 0)
+  const window = tRebuild - tEnter
+  console.log(`\n  main-thread work during the rebuild (${(busy / 1000).toFixed(1)} s busy of ${(window / 1000).toFixed(1)} s wall = ${(100 * busy / window).toFixed(0)}%):`)
+  for (const [k, v] of rows.slice(0, 10)) console.log(`    ${k.padEnd(22)} ${String(v).padStart(6)} ms`)
 }
 const LIVE = MODE === 'reseed'
   // Route warm drained AND ring full: the reseed equivalent of story's `live`.
@@ -133,6 +174,19 @@ const assets = await evalOk(`performance.getEntriesByType('resource')
   .map(r => ({ name: r.name.split('/').pop(), startMs: Math.round(r.startTime), durMs: Math.round(r.duration),
                kb: Math.round((r.encodedBodySize || r.transferSize || 0) / 1024) }))`)
 
+// PERF-27 item 3: the per-step wall spans _rebuildFullNow records. This is the breakdown the
+// reseed mode exists to produce — which step of the world rebuild owns the time.
+const reseedSteps = await evalOk(`(()=>{ const p = window.__perfData && window.__perfData();
+  if (!p || !p.buckets) return null; const out = {};
+  for (const k of Object.keys(p.buckets)) if (k.startsWith('reseed.')) out[k] = Math.round(p.buckets[k].ms);
+  return Object.keys(out).length ? out : null })()`)
+if (reseedSteps) {
+  const total = Object.entries(reseedSteps).filter(([k]) => k.startsWith("reseed.")).reduce((a, [, v]) => a + v, 0)
+  console.log(`\n  rebuild breakdown (wall ms, sums to ${(total / 1000).toFixed(2)} s):`)
+  for (const [k, v] of Object.entries(reseedSteps).sort((a, b) => b[1] - a[1]))
+    console.log(`    ${k.padEnd(14)} ${String(v).padStart(6)} ms   ${(100 * v / total).toFixed(1)}%`)
+}
+
 const regionAsset = assets.find(a => a.name.includes('region'))
 if (regionAsset) console.log(`  region prefetch ${regionAsset.startMs + regionAsset.durMs <= tEnter ? 'COMPLETE before entry (realistic: player took a moment to click)' : 'STILL IN FLIGHT at entry (pessimistic: instant click)'}`)
 console.log('  state at live:', JSON.stringify(state))
@@ -141,9 +195,10 @@ if (exceptions.length) console.log(`\n  ⚠ ${exceptions.length} page exception(
 
 const result = {
   meta: { cpu: CPU, seed: SEED, mode: MODE, url, headed: HEADED, at: new Date().toISOString() },
-  ms: { ready: tReady, ring: tRing, enter: tEnter, live: tLive, drivable: tDrivable,
-        storyEntry: tLive - tEnter, entryToDrivable: tDrivable ? tDrivable - tEnter : null },
-  state, assets, exceptions,
+  ms: { ready: tReady, ring: tRing, enter: tEnter, live: tLive, drivable: tDrivable, rebuild: tRebuild,
+        storyEntry: tLive - tEnter, entryToDrivable: tDrivable ? tDrivable - tEnter : null,
+        rebuildWork: tRebuild ? tRebuild - tEnter : null },
+  state, reseedSteps, frameDelta, assets, exceptions,
 }
 const tDrive = tDrivable || tLive
 console.log(`\n  TOTAL cold → driving in story mode: ${(tDrive / 1000).toFixed(2)} s` +

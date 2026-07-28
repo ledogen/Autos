@@ -572,6 +572,7 @@ async function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-
 // returned promise. Coalesced: every call inside one debounce window gets the SAME promise, settled
 // once the body finishes OR throws (a rejection here would only strand the caller; the body logs).
 let _rebuildDebounceTimer = null
+let _reseedRequestedAt = null   // PERF-27: applyWorldSeed → rebuild-body start (debounce + scheduling)
 let _rebuildPending = null   // { promise, resolve } for the currently-debounced rebuild
 function debouncedRebuildFull () {
   clearTimeout(_rebuildDebounceTimer)
@@ -590,7 +591,17 @@ function debouncedRebuildFull () {
 
 async function _rebuildFullNow () {
     if (!terrainSystem) return
+    // PERF-27 item 3: WALL spans per step (not CPU) — the question this instrumentation answers is
+    // "where do the ~25 s of a story-entry reseed go", and most of that time is spent awaiting
+    // worker pools, which no CPU bucket would show. perf.js mirrors these onto the trace's
+    // user_timing track under ?prof=1, so test/trace-report.mjs can put them beside per-thread busy.
+    let _rt = performance.now()
+    const _step = (label) => { const t = performance.now(); perfAdd(`reseed.${label}`, t - _rt); _rt = t }
+    // The 150 ms debounce plus however long a starved main thread takes to actually run the timer.
+    // Broken out so the step spans below account for the WHOLE reseed, with no silent remainder.
+    if (_reseedRequestedAt != null) { perfAdd('reseed.debounceGap', _rt - _reseedRequestedAt); _reseedRequestedAt = null }
     terrainSystem.reinitWorker(worldSeed, RANGER_PARAMS)
+    _step('terrainInit')
     // (rebuildAllChunksFromWorker moved BELOW the reseat — see the ORDER MATTERS note there.)
     // Phase 8: re-init RoadSystem with new seed — roads are pure fns of (worldSeed, coords, params)
     // so a new seed produces a different deterministic road network. Preserve viz state.
@@ -629,10 +640,12 @@ async function _rebuildFullNow () {
       )
       terrainSystem.setRoadSystem(roadSystem)
     }
+    _step('roadInit')
     // FEAT-22/17/18: water is seed-deterministic — rebuild it on a new seed or it shows stale water.
     // BEFORE props: the scatter's waterAt sampler must read the NEW seed's ponds, and setWaterNoGo
     // (inside) must reshape the fresh roadSystem's network before anything streams it.
     if (waterSystem) rebuildWaterSystem()
+    _step('water')
     // FEAT-39: the baked route belongs to the OLD seed's network — drop it rather than draw
     // arrows over roads that no longer exist.
     if (gpsSystem) gpsSystem.clearRoute()
@@ -646,18 +659,22 @@ async function _rebuildFullNow () {
       if (shadowBake) { shadowBake.clear(); propSystem.setShadowBake(shadowBake) }
       if (_syncImpostors) _syncImpostors()   // PERF-21: re-activate billboards on the fresh instance
     }
+    _step('props')
     // QUAL-14 perf: same cache import + async reseat as the initial load — the new seed's spawn
     // bands route on the worker pool inside resolveSpawn (frames keep rendering) before each
     // synchronous stream. AFTER rebuildWaterSystem above: the warm must carry the new seed's
     // pond no-go discs.
     await _importSessionOrBundledRoutes()
+    _step('routeImport')
     await _reseatTruckAtSpawn()
+    _step('reseat')
     // ORDER MATTERS (same rule as debouncedRoadRebuild): terrain chunks rebuild AFTER the new
     // road network is streamed — _flushPendingQueue bakes carve tables at chunk-request time, so
     // chunks rebuilt against a not-yet-streamed network get NO road carve and the world looks
     // stale until something forces another rebuild (the "toggle the seed to fix it" symptom).
     // Until this line runs the OLD seed's chunks stay visible; the flip is the clean-start moment.
     terrainSystem.rebuildAllChunksFromWorker()
+    _step('chunkRebuild')   // dispatch only — the chunks themselves land asynchronously
 }
 
 // Canonical "change the world seed" op: update the seed + reference string, drop the spawn override
@@ -665,6 +682,7 @@ async function _rebuildFullNow () {
 // debug seed field (changeSeed) and Story Mode's seed prompt (StorySystem) so both reseed identically.
 // Returns the rebuild promise (FEAT-43: story-mode entry awaits it before centering its region).
 function applyWorldSeed (v) {
+  _reseedRequestedAt = performance.now()   // PERF-27: start of the debounce+scheduling gap
   worldSeed = parseWorldSeed(v)
   _seedString = String(v)
   _spawnOverride = null
@@ -1618,6 +1636,8 @@ if (_PROF) {
     chunks: terrainSystem ? terrainSystem._chunkMap.size : 0,
     ring:   terrainSystem ? terrainSystem._ringRadius : 0,
     warm:   terrainSystem ? terrainSystem._warmMargin : 0,
+    seed:   worldSeed,   // PERF-27: which world is standing — the reseed harness reads this
+
     pos:    { x: vehicleState.position.x, y: vehicleState.position.y, z: vehicleState.position.z },
     speed:  Math.hypot(vehicleState.velocity.x, vehicleState.velocity.y, vehicleState.velocity.z),
   })
@@ -1656,8 +1676,20 @@ if (_PROF) {
     },
     fogDensity:       v => { if (scene.fog) scene.fog.density = v },
     ring:             v => { if (terrainSystem) terrainSystem.setRingRadius(v, 1); if (roadSystem) roadSystem.setRadius((v + 0.5) * 2 * CHUNK_SIZE) },
+    // PERF-27 item 3: the world reseed, as a lever. It is the same applyWorldSeed() the debug seed
+    // field and Story Mode's seed prompt call, so the harness measures the shipping path — and it
+    // returns the awaitable Path-B rebuild promise (see __lever below).
+    changeSeed:       v => applyWorldSeed(v),
   }
-  window.__lever = (name, value) => { const fn = LEVERS[name]; if (!fn) return false; fn(value); return true }
+  // PERF-27 item 3: levers whose work is ASYNC (changeSeed → the awaitable Path-B rebuild) return
+  // their promise so a CDP harness can await the real completion instead of guessing at an
+  // observable edge. The chunk ring is NOT such an edge: rebuildAllChunksFromWorker is the LAST
+  // line of _rebuildFullNow, so the ring only dips after the rebuild is already paid.
+  window.__lever = (name, value) => {
+    const fn = LEVERS[name]; if (!fn) return false
+    const r = fn(value)
+    return r instanceof Promise ? r.then(() => true) : true
+  }
   // QUAL-21 A/B: flip a road param and re-route through the SAME debounced path the debug
   // sliders take (params mutated in place → debouncedRoadRebuild) — lets the CDP screenshot
   // harness A/B the road toggles without the GUI.
@@ -2927,7 +2959,10 @@ function loop () {
   }
   // TEMP (D-arc): auto-dump the perf profile at ~load (frame 180 ≈ 3s) and steady-state (frame 600).
   _perfFrame++
-  if (_perfFrame === 180) { perfDump('load ~3s'); perfReset() }
+  // PERF-27: the reset is a console-triage convenience, and under ?prof=1 it actively destroys
+  // data — an external harness owns the buckets then, and on a throttled load frame 180 can land
+  // mid-measurement (it wiped the reseed spans at 4×). Dump, but only reset when nobody is watching.
+  if (_perfFrame === 180) { perfDump('load ~3s'); if (!_PROF) perfReset() }
   else if (_perfFrame === 600) { perfDump('steady ~10s') }
   const _ptPost = performance.now()   // PERF-26 INSTRUMENT: streaming-block end → render start
 

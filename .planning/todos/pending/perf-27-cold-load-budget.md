@@ -158,13 +158,78 @@ the region warm actually matters (a slower machine, or after the rebuild is fixe
 
 ### Not measured / left open
 
-- The reseed's own 25 s is not broken down (terrain regen vs graph vs spawn-band routing). A
-  `--mode=reseed` path exists in the harness but its teardown predicate never fires — the chunk
-  count does not dip the way the probe assumed, so that split is still unmeasured. Worth fixing
-  before anyone optimises the rebuild.
 - All numbers are M4 + CDP throttle. `--cpu=4` does appear to throttle the road workers (browser
   entry scales with it against the node single-thread baseline), but this is a simulation of an
   older machine, not one.
+
+## Item 4 — the reseed broken down, 2026-07-28: it is `road.streamNetwork`, not terrain
+
+**First, a correction to item 3's "left open" note.** `--mode=reseed` was not failing because the
+chunk count behaves unexpectedly. `changeSeed` is a **debug.js callback** (`main.js` — the object
+passed to `initDebug`), and was never a member of the `LEVERS` map, so `__lever('changeSeed', …)`
+returned `false` and reseeded **nothing**. The old harness line wrapped it as
+`(window.__lever(…), true)`, which swallowed the `false` — so the teardown predicate was waiting on
+a world rebuild that had never been asked for. The chunk-dip predicate was *also* unreachable (see
+below), but it never got the chance to be wrong.
+
+Fixed, all in the `?prof=1` block or the harness:
+- `changeSeed` added to `LEVERS` — it calls the same `applyWorldSeed()` the debug seed field and
+  Story Mode's seed prompt call, so the harness measures the shipping path.
+- `__lever` now passes a **promise** return through, so an async lever is awaitable. `changeSeed`
+  returns the FEAT-43 awaitable Path-B rebuild promise, which is the exact completion signal —
+  no predicate-guessing. (The chunk-dip probe could never have worked: `rebuildAllChunksFromWorker`
+  is the LAST line of `_rebuildFullNow`, so the ring only drops after the cost is already paid.)
+- The frame-180 `perfReset()` in the game loop is now suppressed under `?prof=1`. On a throttled
+  load frame 180 lands *mid-rebuild* and was wiping the spans; with a harness attached, it owns the
+  buckets.
+- `__world()` reports `seed` (the harness already read `w.seed` and got `undefined`).
+
+**Method.** `_rebuildFullNow` records a `perfAdd` wall span per step, and the harness diffs the
+whole bucket table across the rebuild window — so the steps say *where the wall went* and the diff
+says *what the main thread was doing while it went there*.
+
+**Result — the ~25 s is main-thread road streaming.** Reseed to unbaked seed 811, 4×:
+
+| bucket | ms | share of the 35.2 s rebuild |
+|---|---|---|
+| `frame.road.update` | 23 025 | 65% |
+| ↳ `road.streamNetwork` | 23 017 | (all of it) |
+| `frame.props.update` | 6 766 | 19% |
+| `frame.physics` | 1 378 | 4% |
+| `frame.road.warmRoutes` | 740 | 2% |
+| `frame.terrain.update` | 368 | 1% |
+| main thread busy | 33 300 | **94% of wall** |
+
+So of the three candidates the ticket named: **terrain regen is ~0** on the main thread (it is on the
+Worker; the ring refill was already measured at 0.4–2.4 s), the **route warm is 0.7 s**, and the cost
+is the synchronous **`RoadSystem._streamNetwork`** for the new seed, plus a secondary 6.8 s of prop
+scatter rebuild. Unthrottled it is the same shape — 6.9 s `road.streamNetwork` + 2.7 s props of
+11.3 s busy — but only 66% of wall, the remainder being worker routing awaited inside `reseat`.
+
+**The 25 s "cache fetch" is a mirage, and this is the second time it has fooled a reading of these
+numbers.** The step spans blamed `routeImport` (25.2 s of 33.6 s), and drilling in blamed
+`fetch()` (24.1 s of that). But the same 3.6 MB asset takes **41 ms** at boot from the same server
+in the same run. The fetch is not slow — its promise cannot *resolve* on a main thread that is 94%
+busy streaming road. Item 3 said the resource-timing duration was starvation rather than fetch cost;
+that was right, and this is the mechanism. Do not re-litigate it a third time: **any await that
+spans the rebuild will report ~25 s and none of them are the cause.**
+
+### What follows
+
+- The optimisation target, if the double build is ever not removable, is `_streamNetwork` on a cold
+  seed — not the route cache, not the region radius, not terrain. Note this is the same main-thread
+  streaming work PERF-26 is looking at, arriving all at once instead of spread over driving.
+- The double-build lever (below) still dominates: removing the second build removes 100% of this,
+  which is why it stays the recommendation rather than optimising `_streamNetwork`.
+
+### Measurement caveat for these runs
+
+The box was ~1.5× slower tonight than when item 2's table was recorded (`mediaanalysisd` +
+`mds_stores` reindexing throughout, load ~3.7). A control re-run of the item-2 story path at 4×/811
+gave **64.0 s** against the recorded **42.78 s**. So **the absolute numbers in this section are not
+comparable to the item-2 table** — the shares and the ordering are what this section asserts, and
+those are internal to each run. Re-run the control on a quiet box before treating any absolute here
+as a baseline.
 
 ## Acceptance
 
@@ -178,5 +243,8 @@ the region warm actually matters (a slower machine, or after the rebuild is fixe
   it never was — the region warm is 5.5 s; the world rebuild is ~25 s. See item 3.
 - [ ] Remove the double world build for a player who picks a story seed (42.78 s → 23.38 s at 4×,
       measured). Belongs with FEAT-41's boot-to-menu flow — decide it there.
-- [ ] Break down the reseed's ~25 s (terrain regen vs graph vs spawn-band routing) before optimising
-      it — the harness's `--mode=reseed` teardown predicate does not fire and needs fixing first.
+- ~~Break down the reseed's ~25 s (terrain regen vs graph vs spawn-band routing) before optimising
+      it — the harness's `--mode=reseed` teardown predicate does not fire and needs fixing first.~~
+      **DONE 2026-07-28** — `--mode=reseed` fixed (the lever did not exist; see item 4) and the
+      answer is neither of the three as framed: 65% is main-thread `road.streamNetwork`, 19% prop
+      scatter, terrain ~1%, route warm 2%.
