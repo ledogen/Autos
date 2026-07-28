@@ -78,6 +78,59 @@ bind. `PREWARM_MAX_JOBS` caps the *dispatch*, but nothing caps the graph rebuild
   sub-buckets ever reached a hitch's top-8. The earlier +12 ms is unexplained — possibly a contended
   machine. **Re-measure before touching the ribbon**; on this evidence it is not the problem.
 
+### 2026-07-28 — `_networkRev` does NOT churn. Correcting my own hypothesis.
+
+The "why does `_networkRev` churn during streaming" question above was based on a wrong guess.
+Measured over the same 60 s / 1200 m / `--cpu=4` sweep, with counters on all three bump sites and on
+the `_degreeDrops` memo:
+
+```
+_networkRev bumps:  _streamNetwork=0   invalidateCache=0   invalidateProfileCaches=0
+_degreeDrops:       3530 calls, 3525 hits, 5 MISSES, 0 evictions
+warmRoutes >20 ms:  4 frames (74.8, 29.3, 69.8, 33.7 ms)
+```
+
+`_networkRev` never moved. The `_lastBandSig` gate in `_streamNetwork` works exactly as designed,
+and the memo is 99.86 % effective. **There is no churn and no cache bug to fix.**
+
+The real mechanism: `_degreeDrops` is keyed on the WINDOW `mx0:mx1:mz0:mz1`, and the sweep advances
+the band one macro-column at a time. 1200 m / 256 m = 4.7 columns → **5 cold misses, one per column
+crossing**, each a full `_degreeDropSet` over the whole box, all inside a single frame. The miss sigs
+show it plainly — `-3:7:-3:4`, `-2:8:-3:4`, `-1:9:-3:4`: the box marching east one column at a time.
+4 misses landed on hitch frames; that is the entire warmRoutes problem.
+
+So this is not a caching problem at all. It is the SAME pattern as the terrain-carve fix that already
+worked here: **an oversized atomic unit that no ms budget can bind.** 5 events in 60 s, ~40 ms each.
+
+### Why the fix is safe by construction (the useful part)
+
+`_degreeDropSet` is already documented as ORDER-FREE and WINDOW-INVARIANT — v2 of that algorithm was
+sequential and was abandoned precisely because each drop changed the next node's decision (the
+QUAL-14 percolation trap). v3 makes every decision a bounded-radius pure function of the graph:
+Phase 1 candidates are a 1-hop local rule; Phase 2 drops a candidate iff its endpoints reconnect
+within `hopCap` hops in (graph − ALL candidates).
+
+Two consequences, both free:
+
+1. **It is divisible.** Order-freedom means Phase 2's per-candidate checks can be spread across
+   frames under an ms budget without changing the result. That is exactly the carve fix's shape, and
+   here the correctness argument is already written down and gate-enforced.
+2. **It is incrementally cacheable.** A decision is a pure function of a candidate's bounded
+   neighbourhood, so it is valid in ANY window containing that neighbourhood — which is precisely
+   what window-invariance asserts and what `graph-cull-radius-invariance` gates. Caching per
+   CANDIDATE PAIR instead of per WINDOW would make a one-column shift recompute only the genuinely
+   new candidates, not all of them.
+
+Option 2 is the better fix (removes the work rather than spreading it); option 1 is the safer first
+step and they compose. `warmRoutes` is pre-warm with `PREWARM_MARGIN` of slack by design, so it is
+allowed to lag a few frames — deferring it is legitimate, not a compromise.
+
+Do NOT widen the box or add hysteresis: that makes misses rarer without making the spike smaller,
+and the spike is the complaint.
+
+`warm.scan` spikes on the same 5 frames — a new column brings genuinely new edges to scan and
+dispatch. Budget it the same way; `PREWARM_MAX_JOBS` already caps dispatch but not the scan.
+
 ### Harness defect found: `--scenario=drive` measures nothing
 
 A 60 s `--scenario=drive --cpu=4` run recorded **3602 frames with zero streaming events** (every
@@ -150,17 +203,18 @@ within-mechanism split below, not cross-run worst-frame deltas.
 | `warm.scan` | 36.2, 32.2 ms | `_warmScan` — `_edgeDeps` / `_corridorDiscsFor` / `_soloClearOf` dependency + corridor-disc work. |
 | `warm.urquhart` | ~1.4 ms | now memoised; done. |
 
-Neither remaining one is a graph rebuild, so **neither is fixable with another cache** — they need
-design, which is why I stopped here rather than improvising a third guess. Directions, in order:
+Neither remaining one is a graph rebuild, so neither is fixable with another cache at the window
+level. **Step 1 below has since been answered — see the 2026-07-28 section: `_networkRev` does not
+churn, and the real mechanism is 5 cold window misses, one per 256 m macro-column crossing.**
 
-1. Understand why `_networkRev` bumps so often during streaming. If most bumps don't actually change
-   the degree-drop set, key the memo on something stabler and `warm.degreeDrops` mostly vanishes.
-2. Failing that, make `_degreeDropSet` incremental, or move it (and `_warmScan`) to the road Worker —
-   the router is already there; this is the selection step that stayed behind on the main thread.
-3. Failing both, make `warmRoutes` resumable under an ms budget — the pattern that already worked
-   for the carve. `PREWARM_MAX_JOBS` caps the dispatch but nothing caps the work that precedes it.
+1. ~~Understand why `_networkRev` bumps so often during streaming.~~ ANSWERED: it never bumps.
+2. **Cache `_degreeDropSet` per CANDIDATE PAIR rather than per WINDOW** — sound because the decision
+   is a bounded-radius pure function (see below). A one-column shift then recomputes only the new
+   candidates. This is the fix that removes the work.
+3. **Budget Phase 2 across frames** — safe because the algorithm is order-free by design, and
+   `warmRoutes` is pre-warm with slack. Safer first step; composes with 2.
 
-The `warm.*` buckets are shipped, so step 1 starts with the split rather than re-deriving it.
+The `warm.*` buckets are shipped, so this starts from the split rather than re-deriving it.
 
 ### Still open, unchanged
 
@@ -222,7 +276,9 @@ is still worth reading before touching the ribbon.
   GC (no `unattr` left), `props.lodSwap` (co-occurrence), prop scatter (+0.0), the terrain carve
   (fixed earlier), and — pending one re-measure — the road ribbon.
 - Split nothing off. There is no separate allocation-churn ticket to write; the data killed it.
-- Next session starts at "why does `_networkRev` churn", not at "where is the time going".
+- Next session starts at implementing the per-candidate cache (or the budgeted Phase 2), not at
+  diagnosis — the mechanism is now measured end to end: 5 cold `_degreeDrops` misses per 1200 m,
+  one per macro-column crossing, ~40 ms each, in one frame.
 
 The instrumentation branch `perf-26-instrument` / worktree `../CarGame-perf26` has served its
 purpose — everything worth keeping is on main in 629b358 + 55ea827. Safe to delete; its
