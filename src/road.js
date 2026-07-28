@@ -1295,6 +1295,7 @@ export class RoadSystem {
         this._pendingRoutes  = new Set()   // cls keys requested from the Worker, awaiting a reply
         this._routeEpoch     = 0           // bumped on every _invalidateProto (param/route change)
         this._lastWarmCenter = null        // throttle: only rescan the pre-warm band after moving
+        this._urqMemo        = new Map()   // PERF-26: sig -> graph for the persist=false builds
     }
 
     // (08-07) The proto-only viz API (setProtoEnabled / setProtoParam / setProtoRadius / updateProto)
@@ -1347,6 +1348,7 @@ export class RoadSystem {
         this._proto.sites.clear()           // FEAT-13 v2: sites + Urquhart graph derive from seed + params
         this._proto.aliveSites.clear()
         this._proto.graph = null
+        this._urqMemo.clear()   // PERF-26: the persist=false memo derives from the same sites+params
         this._proto.nodeInc.clear()
         // Param changes affect routing results → drop the per-connection centerline cache
         // (a pure fn of params, so the next miss recomputes the new value).
@@ -1447,15 +1449,23 @@ export class RoadSystem {
         // FEAT-13 v2: warm every Urquhart edge in the band (same edge set _assembleGraphEdges will
         // register → the pre-warmed routes are exact cache hits). Edge SELECTION stays main-thread;
         // only arcPrimitiveConnect runs on the Worker (no WORKER_SOURCE / ROUTE SYNC change).
+        // PERF-26: warmRoutes decomposes into three costs with different fixes — keep them named.
+        // Measured at 4x CPU: urquhart ~1.4 ms (memoised below), degreeDrops 35-42 ms, scan 32-36 ms.
+        const _wU = performance.now()
         const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)   // persist=false: don't clobber the streaming graph
+        perfAdd('warm.urquhart', performance.now() - _wU)
         // QUAL-21 Stage 2: degree-capped edges are settled OUT spec-time (_degreeDropSet) — never
         // registered, never routed — so warming them would burn worker searches on roads that
         // cannot exist. (Their SOLOS may still warm via _warmScan's dep chain when a SURVIVOR
         // avoids their corridor — deps are enumerated on the raw graph, deliberately: survivor
         // routes must stay byte-identical to the route-then-cull era.)
+        const _wD = performance.now()
         const { drop } = this._degreeDrops(mx0, mx1, mz0, mz1)
+        perfAdd('warm.degreeDrops', performance.now() - _wD)
         const wEdges = g.edges.filter(([c1, c2]) => !drop.has(g.key(c1) + '|' + g.key(c2)))
+        const _wS = performance.now()
         const { jobs, deferred } = this._warmScan(wEdges, PREWARM_MAX_JOBS)
+        perfAdd('warm.scan', performance.now() - _wS)
         // Only advance the throttle anchor once the visible band is fully warmed/pending — otherwise a
         // single move could leave fringe connections un-dispatched until the NEXT PREWARM_WARM_MOVE.
         if (jobs.length < PREWARM_MAX_JOBS && !deferred) this._lastWarmCenter = center.clone()
@@ -1872,6 +1882,20 @@ export class RoadSystem {
         const scz0 = Math.floor(wz0 / S) - M, scz1 = Math.floor((wz1 - 1e-6) / S) + M
         const sig = `${S}:${scx0},${scx1},${scz0},${scz1}`
         if (persist && this._proto.graph && this._proto.graph.sig === sig) return this._proto.graph
+        // PERF-26: the persist=false path was the ONLY one without a memo, and it is the hot one —
+        // warmRoutes re-derives the graph every PREWARM_WARM_MOVE (32 m) while `sig` is quantised to
+        // roadSiteSpacing (256 m by default), so ~7 of every 8 warm calls rebuilt a byte-identical
+        // graph: delaunay() + urquhartEdges() over the whole band+margin, 30–91 ms at 4× CPU, and the
+        // single largest remaining streaming hitch (it owned every worst frame in both measured runs).
+        // `sig` already captures site spacing and the margin-expanded cell box, so it is a complete
+        // key; _invalidateProto clears the memo on the same signal that nulls _proto.graph.
+        // Safe to share the object: the persist=true path has always returned one shared _proto.graph
+        // across calls, so callers already treat the result as immutable (verified: no call site
+        // mutates .edges/.adj).
+        if (!persist) {
+            const hit = this._urqMemo.get(sig)
+            if (hit) return hit
+        }
         const key = (id) => `${id[0]},${id[1]},${id[2]}`
         const ids = [], pts = []
         for (let cz = scz0; cz <= scz1; cz++)
@@ -1891,6 +1915,13 @@ export class RoadSystem {
         }
         const g = { sig, edges, adj, key }
         if (persist) this._proto.graph = g
+        else {
+            // Bounded: warm / stream / spawn / map windows alternate between a handful of sigs, the
+            // same reason _degreeDrops keeps ~6. Drop the whole map rather than tracking LRU age —
+            // a rebuild is correct, just slower, so the failure mode of eviction is only perf.
+            if (this._urqMemo.size > 6) this._urqMemo.clear()
+            this._urqMemo.set(sig, g)
+        }
         return g
     }
 

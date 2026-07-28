@@ -2900,9 +2900,12 @@ function loop () {
     waterSystem.warmRegion(streamCenter.x - WW, streamCenter.z - WW, streamCenter.x + WW, streamCenter.z + WW, 2)
   }
   perfAdd('frame.water.warm', performance.now() - _pt)   // TEMP (D-arc)
-  // PERF-03 WS-A: pre-warm the road centerline cache off-thread ahead of the streamer. BUG-26: no-ops
-  // now (USE_WORKER_ROUTING=false → no dispatcher) so it never starves terrain on the shared Worker;
-  // _streamNetwork routes synchronously on the main thread instead. Kept wired for the future own-worker.
+  // PERF-03 WS-A: pre-warm the road centerline cache off-thread ahead of the streamer. This is LIVE:
+  // QUAL-08 gave routing its own Worker and USE_WORKER_ROUTING is true, so the dispatcher is wired and
+  // this runs. (It previously carried a comment claiming it no-ops under BUG-26 — that was stale, and
+  // it cost PERF-26 a whole investigation: the call reads as dead code, so nobody bucketed it, while
+  // it was in fact the largest remaining streaming hitch. The routing is off-thread as designed; the
+  // main-thread cost was the graph rebuild deciding WHAT to route, now memoised in road.js.)
   // FEAT-43: suspended in story mode — during the region warm this would fight pumpRegionWarm for
   // the same anchor, and once frozen every region route is already cached, so there is nothing left
   // to pre-warm and no router traffic at all while driving.
