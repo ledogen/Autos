@@ -266,9 +266,6 @@ export class MissionSystem {
         this._onChange()
     }
 
-    /** Dismiss the result card and roll the next one. */
-    next() { this.enter() }
-
     isActive() { return this.state !== 'idle' }
 
     /** Markers for the 2D map (null when there's nothing to draw). */

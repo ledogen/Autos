@@ -1633,6 +1633,8 @@ if (_PROF) {
   // FEAT-46: the placed POIs, so an external harness can enter the mode and verify the pads/markers
   // without a screenshot. Same read-only precedent as __story / __road.
   window.__poi = () => poiSystem
+  // The live mission/run state, so a harness can reach a result card without driving the route.
+  window.__mission = () => missionSystem
   // Route-dispatch probe: wraps _routeDispatch on first call to count per-key dispatches —
   // diagnoses warm-loop re-dispatch churn (a key dispatched >2× means a warm scan is spinning).
   let _rdWrap = null
@@ -2051,13 +2053,16 @@ function _renderMissionUI () {
         + `your time <b>${formatTime(r.elapsed)}</b> &nbsp;<span class="mp-dim">/</span>&nbsp; `
         + `par <b>${formatTime(r.par)}</b><br>`
         + `<span style="color:${col}">${sign}${formatTime(Math.abs(r.margin))} vs par</span>`
-      btn('mp-accept', false); btn('mp-decline', false); btn('mp-retry', true)
+      // The result card is exactly three actions: retry · continue · back to free roam (that is the
+      // DOM order too). The calibration form above them stays — the subjective read is the ground
+      // truth PAR_REF is fitted to, and it is only reliably captured here, in the same click.
+      btn('mp-accept', true); btn('mp-decline', false); btn('mp-retry', true)
       btn('mp-regen', false); btn('mp-quit', true)
       show(document.getElementById('mp-export-row'), true)
-      // Reuse the accept button as "next job" so there's one obvious forward action; "retry"
-      // sits beside it to re-run the same route (testing/calibration — a known-road second lap).
+      // The accept button doubles as CONTINUE here — one obvious forward action, with "retry"
+      // beside it to re-run the same route (testing/calibration: a known-road second lap).
       const nb = document.getElementById('mp-accept')
-      if (nb) { nb.style.display = ''; nb.textContent = 'next job' }
+      if (nb) nb.textContent = 'continue'
       break
     }
     default:
@@ -2083,7 +2088,10 @@ for (const id of ['mp-note', 'mp-driver']) {
 
 // Buttons. Same null-guarded module-eval wiring as every other control in this file (WR-04).
 document.getElementById('mp-accept')?.addEventListener('click', () => {
-  if (missionSystem.state === 'done') missionSystem.next(); else missionSystem.accept()
+  // On the result card this button is CONTINUE: put the finished run down and carry on driving in
+  // story mode. It no longer auto-rolls the next job — with POIs as the job source, the next one is
+  // something you go and find, not something handed to you at the drop point.
+  if (missionSystem.state === 'done') missionSystem.exit(); else missionSystem.accept()
 })
 // FEAT-46: DECLINE puts the job down and leaves you in story mode with nothing active — it does not
 // leave the mode. (Leaving is the pause menu's job, and #mp-quit in the result card.) Walking away
