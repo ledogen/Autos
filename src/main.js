@@ -31,7 +31,7 @@ window.__renderer = () => renderer
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
-import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume } from './engine-audio.js'
+import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setAudioPageActive } from './engine-audio.js'
 import { ensureTireAudio, updateTireAudio, setTireAudioEnabled, setTireAudioVolumes } from './tire-audio.js'
 import { ensureWindAudio, updateWindAudio, setWindAudioEnabled, setWindAudioVolume } from './wind-audio.js'
 import { TerrainSystem } from './terrain.js'
@@ -1018,7 +1018,10 @@ renderer.shadowMap.enabled = true
 // QUAL-18: patch THREE.ShaderChunk so the realtime shadow-map edge dissolves instead of drawing a
 // hard line. MUST run before any material compiles (first render). Baked prop shadows (PERF-07) have
 // their own distance fade in the terrain shader; this covers the truck's realtime map.
-installShadowEdgeFade()
+// fadeStart 0.82 (up from the 0.72 default): the frustum is tighter now that the presets trade
+// extent for texel size, so the dissolve has to start later or it eats a visible chunk of the
+// shadowed world. 0.82 of ±170 m ⇒ full shadows to ~139 m, gone by 170 m.
+installShadowEdgeFade({ fadeStart: 0.82 })
 // PERF-16: stop re-rendering the sun's whole shadow pass every frame. Three defaults autoUpdate=true,
 // so the 1536²/2048² shadow map is re-rendered each frame even parked under a static sun (measured
 // ~9 pp renderer-main, ~3 pp GPU). We drive needsUpdate on-demand from the shadow-follow block in
@@ -1073,6 +1076,31 @@ let _lastShadowSnapR   = NaN            // texel-snapped frustum centre (light r
 let _lastShadowSnapU   = NaN            // texel-snapped frustum centre (light up axis)
 const _lastSunDir      = new THREE.Vector3(NaN, NaN, NaN)   // key-light direction (day/night future-proof)
 let _lastShadowGeomSig = NaN            // cheap poll-and-compare of streamed-geometry counts
+
+/**
+ * Set the sun shadow map's resolution and its world extent TOGETHER, because only their ratio is
+ * visible: extent/mapSize is the world size of one shadow texel, and that alone governs how crisp
+ * the truck's shadow edge is. (At the old 220 m / 2048 the texel was 0.215 m, so the truck's 1.8 m
+ * width spanned ~8 texels — no amount of filtering makes that read as sharp.)
+ *
+ * One function for all three callers — quality tier, A/B lever, any future slider — because each
+ * MUST do the same three things or it breaks something subtle: dispose the render target on a size
+ * change (Three only reallocates when it is gone), recompute SHADOW_TEXEL (the per-frame texel-snap
+ * follow shimmers if it goes stale — BUG-29), and re-arm the on-demand shadow pass (PERF-16).
+ */
+function applyShadowResolution (mapSize, extent) {
+  if (mapSize && sun.shadow.mapSize.width !== mapSize) {
+    sun.shadow.mapSize.set(mapSize, mapSize)
+    if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null }
+  }
+  if (extent && sun.shadow.camera.right !== extent) {
+    sun.shadow.camera.left = sun.shadow.camera.bottom = -extent
+    sun.shadow.camera.right = sun.shadow.camera.top   =  extent
+    sun.shadow.camera.updateProjectionMatrix()
+  }
+  SHADOW_TEXEL = (sun.shadow.camera.right - sun.shadow.camera.left) / sun.shadow.mapSize.width
+  renderer.shadowMap.needsUpdate = true
+}
 
 // QUAL-02: atmospheric skybox + sun-driven lighting. Drives the sun light, hemisphere fill and fog
 // tint from ONE sun elevation/azimuth (the static base a day/night cycle plugs into). SkySystem adds
@@ -1502,9 +1530,20 @@ let _lastHudWrite = 0  // PERF-16: wall-clock (ms) of the last HUD DOM/canvas wr
 // PERF-11: resHeight caps Normal at 1200 lines (~1.5× ratio on the Air's Retina panel — native 2×
 // shades ~4× the fragments of 1× for no perceptible gain at game viewing distance; user-approved
 // thermal lever 2026-07-13). High/Ultra stay native as the "I have GPU to burn" tiers.
-// PERF-12: shadowMap/shadowExtent scale with the tier. Normal's world is a ±160 m ring-2 window,
-// so the old fixed ±220/2048 wasted texels and casters; 1536@±160 keeps texel size (~0.21 m)
-// while shrinking the shadow pass. High/Ultra keep the wide frustum for their bigger rings.
+// PERF-12: shadowMap/shadowExtent scale with the tier. What matters is only their RATIO — the world
+// size of one shadow texel (extent·2 / mapSize), which is what makes the truck's shadow crisp or
+// mushy. Every tier used to sit near 0.21 m/texel, i.e. the truck's 1.8 m width spanned ~8 texels;
+// these are the sharpened values, and each tier pays for them differently:
+//   Normal 1536@±120 → 0.156 m/texel. Extent only, so it is FREE — same map, same fill, same pass
+//     cost. This is the 60 fps-on-a-mid-laptop tier, so it gets no resolution increase; it trades
+//     shadow RANGE (±160 → ±120 m) for sharpness instead.
+//   High 3072@±170 → 0.111 m/texel, Ultra 4096@±170 → 0.083 m/texel (2.6× sharper than before).
+//     These are the "I have GPU to burn" tiers, so they buy it with map resolution: 2.25× and 4× the
+//     shadow-pass fill respectively (VRAM 36 / 64 MB vs 16). Note the pass re-renders EVERY frame
+//     while the truck moves (PERF-16's `moving` trigger), so that fill is paid continuously when
+//     driving — drop to Normal, or __lever('shadowMapSize', 2048), if a tier costs too much.
+// Range cost is smaller than the extent numbers suggest: QUAL-18's edge fade already dissolved
+// shadows over the outer band, so the old ±220 was only fully shadowed to ~158 m anyway.
 // shadowTilePx: baked prop-shadow atlas resolution, texels per 64 m chunk (prop-shadow-bake.js).
 //   Low = 0 → baked shadows OFF entirely (the tier already kills the realtime sun pass; the atlas is
 //   freed, not just hidden). Normal 256 (0.25 m/texel, the shipped look); High 384 and Ultra 512 are
@@ -1522,9 +1561,9 @@ let _lastHudWrite = 0  // PERF-16: wall-clock (ms) of the last HUD DOM/canvas wr
 //   mountainside is bare. Beyond propRing only trees commit (no rock/bush slots, no shadow tiles).
 const QUALITY_PRESETS = {
   Low:    { ring: 1, warm: 1, fogDensity: 0.012, detailScale: 0,   shadows: false, propRing: 1, lodRing: 0, bbRing: 2, resHeight: 720,  shadowMap: 1024, shadowExtent: 160, shadowTilePx: 0   },
-  Normal: { ring: 2, warm: 1, fogDensity: 0.006, detailScale: 1.0, shadows: true,  propRing: 2, lodRing: 1, bbRing: 3, resHeight: 1200, shadowMap: 1536, shadowExtent: 160, shadowTilePx: 256 },
-  High:   { ring: 3, warm: 3, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, bbRing: 6, resHeight: null, shadowMap: 2048, shadowExtent: 220, shadowTilePx: 384 },
-  Ultra:  { ring: 4, warm: 4, fogDensity: 0.003, detailScale: 1.0, shadows: true,  propRing: 4, lodRing: 2, bbRing: 8, resHeight: null, shadowMap: 2048, shadowExtent: 220, shadowTilePx: 512 },
+  Normal: { ring: 2, warm: 1, fogDensity: 0.006, detailScale: 1.0, shadows: true,  propRing: 2, lodRing: 1, bbRing: 3, resHeight: 1200, shadowMap: 1536, shadowExtent: 120, shadowTilePx: 256 },
+  High:   { ring: 3, warm: 3, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, bbRing: 6, resHeight: null, shadowMap: 3072, shadowExtent: 170, shadowTilePx: 384 },
+  Ultra:  { ring: 4, warm: 4, fogDensity: 0.003, detailScale: 1.0, shadows: true,  propRing: 4, lodRing: 2, bbRing: 8, resHeight: null, shadowMap: 4096, shadowExtent: 170, shadowTilePx: 512 },
 }
 
 // PERF-07: set once the bake system exists (browser only — headless never constructs it), so
@@ -1571,22 +1610,8 @@ function applyQuality (name) {
   // sun.castShadow just skips the shadow pass for that light. Receivers keep receiveShadow → they simply
   // receive no shadow when the caster is off. The frame loop also skips the shadow-frustum-follow then.
   sun.castShadow = p.shadows
-  // PERF-12: per-tier shadow map size + ortho extent. A mapSize change needs the allocated render
-  // target disposed so Three reallocates at the new size (cheap one-off; no material recompile).
-  // SHADOW_TEXEL feeds the per-frame texel-snap follow (BUG-29) — recompute or snapping shimmers.
-  if (p.shadowMap && sun.shadow.mapSize.width !== p.shadowMap) {
-    sun.shadow.mapSize.set(p.shadowMap, p.shadowMap)
-    if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null }
-  }
-  if (p.shadowExtent && sun.shadow.camera.right !== p.shadowExtent) {
-    sun.shadow.camera.left = sun.shadow.camera.bottom = -p.shadowExtent
-    sun.shadow.camera.right = sun.shadow.camera.top   =  p.shadowExtent
-    sun.shadow.camera.updateProjectionMatrix()
-  }
-  SHADOW_TEXEL = (sun.shadow.camera.right - sun.shadow.camera.left) / sun.shadow.mapSize.width
-  // PERF-16: a caster toggle, map-target dispose, or extent change invalidates the frozen shadow —
-  // re-arm the on-demand render so the next frame rebuilds it at the new size/extent.
-  renderer.shadowMap.needsUpdate = true
+  // PERF-12: per-tier shadow map size + ortho extent, applied as one texel-size decision.
+  applyShadowResolution(p.shadowMap, p.shadowExtent)
   // PERF-06 prop radius: thin out the scattered-prop ring on Low (read by the loop's propSystem.update).
   _propRing = p.propRing
   _bbRing = p.bbRing ?? p.propRing   // PERF-21: billboard-only tree ring out to built terrain
@@ -1692,15 +1717,12 @@ if (_PROF) {
       if (roadMeshSystem?._roadUniforms?.uDetailScale)   roadMeshSystem._roadUniforms.uDetailScale.value   = v
     },
     pixelRatio:       v => { renderer.setPixelRatio(Math.min(window.devicePixelRatio, v)); renderer.setSize(window.innerWidth, window.innerHeight) },
-    // mapSize change requires disposing the allocated target so Three reallocates at the new size.
-    // (SHADOW_TEXEL stays computed for 2048 — snap granularity is slightly off under this lever; fine for A/B.)
-    shadowMapSize:    v => { sun.shadow.mapSize.set(v, v); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null } renderer.shadowMap.needsUpdate = true },   // PERF-16 re-arm
-    shadowExtent:     v => {
-      sun.shadow.camera.left = sun.shadow.camera.bottom = -v
-      sun.shadow.camera.right = sun.shadow.camera.top   =  v
-      sun.shadow.camera.updateProjectionMatrix()
-      renderer.shadowMap.needsUpdate = true   // PERF-16 re-arm
-    },
+    // Both shadow levers go through applyShadowResolution, so SHADOW_TEXEL tracks them. It used to be
+    // left computed for the preset while these moved the real values — the snap granularity drifted
+    // and the A/B measured a subtly shimmering shadow. Dial texel size live with these two:
+    //   __lever('shadowExtent', 120)  ·  __lever('shadowMapSize', 4096)
+    shadowMapSize:    v => applyShadowResolution(v, null),
+    shadowExtent:     v => applyShadowResolution(null, v),
     fogDensity:       v => { if (scene.fog) scene.fog.density = v },
     ring:             v => { if (terrainSystem) terrainSystem.setRingRadius(v, 1); if (roadSystem) roadSystem.setRadius((v + 0.5) * 2 * CHUNK_SIZE) },
     // PERF-27 item 3: the world reseed, as a lever. It is the same applyWorldSeed() the debug seed
@@ -2721,6 +2743,17 @@ function _downloadJSON (obj, name) {
     document.body.appendChild(a); a.click(); document.body.removeChild(a)
   } finally { URL.revokeObjectURL(url) }
 }
+
+// ── Background-tab mute ───────────────────────────────────────────────────────
+// Two distinct "we're not looking at it" events, and we need BOTH: alt-tabbing to another app
+// fires window blur but NOT visibilitychange (the tab is still visible), while switching browser
+// tabs / minimising fires visibilitychange. Mute on either; unmute only when focused AND visible,
+// so returning focus to a still-hidden tab doesn't restart the drone.
+const _audioPageActive = () => document.hasFocus() && !document.hidden
+const _syncAudioPageActive = () => setAudioPageActive(_audioPageActive())
+window.addEventListener('blur',  _syncAudioPageActive)
+window.addEventListener('focus', _syncAudioPageActive)
+document.addEventListener('visibilitychange', _syncAudioPageActive)
 
 document.addEventListener('keydown', e => {
   ensureEngineAudio()   // FEAT-23: first keypress is the user gesture that unlocks WebAudio

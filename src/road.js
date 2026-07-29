@@ -433,9 +433,16 @@ const ROAD_BAND_MARGIN = 1  // extra macro-cols beyond ceil(R/spacing) each side
 // ── Off-thread route pre-warm tuning (PERF-03 Workstream A) ───────────────────
 const PREWARM_MARGIN    = 2   // extra macro-cols/rows beyond the streamer band to route AHEAD of need
 const PREWARM_MAX_JOBS  = 16  // route jobs dispatched per warmRoutes() call. Routing has its OWN worker
+// PERF-26: WORK budget for _warmScan, distinct from the JOB budget above. An edge that takes a
+// `deferred` branch pays full _edgeDeps (a per-edge Urquhart build on a cold edge, ~0.33 ms) and
+// _corridorDiscsFor yet produces NO job, so PREWARM_MAX_JOBS never bound it: a cold macro-column
+// crossing evaluated ~115 edges in ONE frame (~38 ms, the whole warm.scan hitch). Capping expensive
+// evaluations spreads that over ~15 frames. Legitimate because warmRoutes is pre-warm with
+// PREWARM_MARGIN of slack by design — it is allowed to lag a few frames behind the streamer.
                               // pool since QUAL-08/QUAL-14 (terrain generation can't be starved), so the
                               // cap is only back-pressure: enough in flight to keep 2–4 workers busy
                               // through the two-phase (solo→final) warm without flooding a stale epoch.
+const PREWARM_MAX_EVALS = 4   // expensive (uncached) edge evaluations per _warmScan call
 const PREWARM_WARM_MOVE = 32  // m — only rescan/redispatch the pre-warm band after the center moves this far
 
 // QUAL-14 Part B: spacing of corridor-avoidance no-go discs sampled along a higher-priority
@@ -1308,6 +1315,7 @@ export class RoadSystem {
         this._pendingRoutes  = new Set()   // cls keys requested from the Worker, awaiting a reply
         this._routeEpoch     = 0           // bumped on every _invalidateProto (param/route change)
         this._lastWarmCenter = null        // throttle: only rescan the pre-warm band after moving
+        this._warmCursor     = 0           // PERF-26: resume index for the eval-budgeted _warmScan
         this._urqMemo        = new Map()   // PERF-26: sig -> graph for the persist=false builds
     }
 
@@ -1374,6 +1382,7 @@ export class RoadSystem {
         this._routeEpoch++
         this._pendingRoutes.clear()
         this._lastWarmCenter = null   // force the next warmRoutes() to rescan against the new params
+        this._warmCursor = 0          // the edge list is about to change — resume from the top
     }
 
     // ── Off-thread route pre-warming API (PERF-03 Workstream A) ──────────────────
@@ -1477,7 +1486,7 @@ export class RoadSystem {
         perfAdd('warm.degreeDrops', performance.now() - _wD)
         const wEdges = g.edges.filter(([c1, c2]) => !drop.has(g.key(c1) + '|' + g.key(c2)))
         const _wS = performance.now()
-        const { jobs, deferred } = this._warmScan(wEdges, PREWARM_MAX_JOBS)
+        const { jobs, deferred } = this._warmScan(wEdges, PREWARM_MAX_JOBS, PREWARM_MAX_EVALS)
         perfAdd('warm.scan', performance.now() - _wS)
         // Only advance the throttle anchor once the visible band is fully warmed/pending — otherwise a
         // single move could leave fringe connections un-dispatched until the NEXT PREWARM_WARM_MOVE.
@@ -1494,11 +1503,26 @@ export class RoadSystem {
      * jobs first (they may lie outside the band) and the dependent edge retries on a later scan
      * once the replies land. Returns { jobs, deferred } — deferred means the set is not yet
      * cache-complete (replies in flight, deps pending, or the cap bit): callers must rescan.
+     *
+     * PERF-26: `evalCap` bounds EXPENSIVE evaluations (edges not already in _proto.cls, which pay
+     * _edgeDeps + _corridorDiscsFor), as opposed to `cap` which bounds dispatched jobs. The two
+     * diverge badly: a deferring edge costs full price and yields no job, so `cap` alone let a cold
+     * macro-column crossing evaluate ~115 edges in one frame. Callers wanting the whole set at once
+     * (cold spawn, region warm) pass Infinity and behave exactly as before.
+     *
+     * The cursor is why this is safe: a fixed-start eval cap would re-evaluate the same first N
+     * edges every frame and the tail would starve forever, since warmRoutes rescans from scratch
+     * while `deferred`. Starting each budgeted scan where the last one stopped (and wrapping) makes
+     * successive frames sweep the whole list. Rotating the start order is behaviour-neutral: a
+     * route is a pure function of its edge, and dep SOLO adoption is documented as a pure function
+     * of the edge too — never of what some wider stream happened to cache — so order changes only
+     * WHEN a job ships, never WHAT it computes.
      */
-    _warmScan(edges, cap) {
+    _warmScan(edges, cap, evalCap = Infinity) {
         const jobs = []
         let deferred = false
         const seen = new Set()
+        let evals = 0
         // Dispatch a SOLO route job (no corridor discs) for a dep edge — fills clsSolo on reply.
         const warmSolo = (c1, c2) => {
             if (jobs.length >= cap) { deferred = true; return }
@@ -1513,6 +1537,7 @@ export class RoadSystem {
             if (jobs.length >= cap) { deferred = true; return }
             const key = this._edgeClsKey(c1, c2)
             if (this._proto.cls?.has(key)) return
+            evals++   // past the cache check ⇒ this edge pays _edgeDeps/_corridorDiscsFor below
             if (seen.has(key)) { deferred = true; return }   // dispatched/deferred earlier this pass
             seen.add(key)
             if (this._pendingRoutes.has(key)) { deferred = true; return }
@@ -1543,10 +1568,18 @@ export class RoadSystem {
             this._pendingRoutes.add(spec.key)
             jobs.push({ key: spec.key, ax: spec.ax, az: spec.az, bx: spec.bx, bz: spec.bz, opts: spec.opts })
         }
-        for (const [c1, c2] of edges) {
+        const n = edges.length
+        // Budgeted scans resume where the last one stopped; unbudgeted ones always start at 0 so
+        // their edge order (and dispatch order) is exactly what it has always been.
+        const start = (evalCap === Infinity || n === 0) ? 0 : this._warmCursor % n
+        let i = 0
+        for (; i < n; i++) {
             if (jobs.length >= cap) { deferred = true; break }
+            if (evals >= evalCap) { deferred = true; break }
+            const [c1, c2] = edges[(start + i) % n]
             tryWarm(c1, c2)
         }
+        if (evalCap !== Infinity && n > 0) this._warmCursor = (start + i) % n
         return { jobs, deferred }
     }
 
@@ -1881,7 +1914,13 @@ export class RoadSystem {
     // assemble path). warmRoutes passes persist=false: it only needs the edge LIST for route jobs and
     // runs on its own prewarm band, so it must NOT clobber the streaming graph (degree would go stale on
     // a rebuild-skip). Window-invariance makes both bands agree on shared interior edges either way.
-    _buildUrquhart(mx0, mx1, mz0, mz1, persist = true, marginOverride = null) {
+    // `cacheable=false` (only _edgeDeps) still READS the memo but never WRITES it. PERF-26: the
+    // per-edge dep windows are single-use — a cold macro-column scan issues ~115 of them and they
+    // produced 113 DISTINCT sigs with 0 memo hits, so caching them buys nothing and costs everything:
+    // at 115 inserts against a 6-entry clear-all memo they wiped it 16 times per scan, evicting the
+    // big warm-band and cull graphs that _degreeDrops depends on. _edgeDeps has its own persistent
+    // per-edge memo (_proto.edgeDeps), so its graph is built once per edge ever regardless.
+    _buildUrquhart(mx0, mx1, mz0, mz1, persist = true, marginOverride = null, cacheable = true) {
         const M = marginOverride != null ? Math.max(1, Math.round(marginOverride)) : Math.max(1, Math.round(this._params?.roadGraphMargin ?? 3))
         // FEAT-13: the SITE grid is decoupled from the 256 m macro-grid. The band [mx0,mx1] is in
         // macro-cells; convert to the band's WORLD extent, then iterate SITE cells at roadSiteSpacing
@@ -1928,7 +1967,7 @@ export class RoadSystem {
         }
         const g = { sig, edges, adj, key }
         if (persist) this._proto.graph = g
-        else {
+        else if (cacheable) {
             // Bounded: warm / stream / spawn / map windows alternate between a handful of sigs, the
             // same reason _degreeDrops keeps ~6. Drop the whole map rather than tracking LRU age —
             // a rebuild is correct, just slower, so the failure mode of eviction is only perf.
@@ -2462,7 +2501,7 @@ export class RoadSystem {
         const mx1 = Math.floor((Math.max(a.x, b.x) + pad) / PROTO_ANCHOR_SPACING)
         const mz0 = Math.floor((Math.min(a.z, b.z) - pad) / PROTO_ANCHOR_SPACING)
         const mz1 = Math.floor((Math.max(a.z, b.z) + pad) / PROTO_ANCHOR_SPACING)
-        const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)
+        const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false, null, false)   // single-use window — read the memo, never pollute it
         const ex0 = Math.min(a.x, b.x) - PROTO_MARGIN, ex1 = Math.max(a.x, b.x) + PROTO_MARGIN
         const ez0 = Math.min(a.z, b.z) - PROTO_MARGIN, ez1 = Math.max(a.z, b.z) + PROTO_MARGIN
         const deps = []

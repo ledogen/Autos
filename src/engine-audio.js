@@ -18,6 +18,7 @@ let oscs = []            // { osc, gain, mult, detune }
 let started = false
 let enabled = true
 let volume = 0.5         // 0..1 user volume (scales the modest internal gains)
+let pageActive = true    // false while the tab is blurred/hidden — see setAudioPageActive()
 
 const RPM_MIN = 500      // idle-ish floor for frequency mapping
 const F_MIN = 22         // Hz — don't let the fundamental sink into sub-audible mud
@@ -37,7 +38,7 @@ const RECIPE = [
  * Returns null if WebAudio is unavailable.
  */
 export function getAudioContext () {
-  if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return ctx }
+  if (ctx) { if (pageActive && ctx.state === 'suspended') ctx.resume(); return ctx }
   const AC = window.AudioContext || window.webkitAudioContext
   if (!AC) return null
   ctx = new AC()
@@ -46,7 +47,7 @@ export function getAudioContext () {
 
 /** Create + start the audio graph (idempotent). Must be called from a user gesture. */
 export function ensureEngineAudio () {
-  if (started) { if (ctx && ctx.state === 'suspended') ctx.resume(); return }
+  if (started) { if (pageActive && ctx && ctx.state === 'suspended') ctx.resume(); return }
   if (!getAudioContext()) return
 
   lp = ctx.createBiquadFilter()
@@ -106,3 +107,23 @@ export function setEngineAudioEnabled (on) {
 }
 
 export function setEngineAudioVolume (v) { volume = Math.min(1, Math.max(0, v)) }
+
+/**
+ * Page-level mute for a backgrounded tab. Suspends/resumes the ONE shared AudioContext, so this
+ * silences engine + tire + wind together (they all hang their master gain off this ctx) and also
+ * parks the audio thread — strictly better than ramping gains to zero, which leaves the graph
+ * running. Called from main.js on blur/focus/visibilitychange.
+ *
+ * Why suspend and not "let the gains settle": rAF is throttled to ~1 Hz in a background tab, so
+ * update*Audio() effectively stops being called and every gain FREEZES at its last value. A tab
+ * backgrounded mid-throttle would otherwise drone at that RPM indefinitely.
+ *
+ * `pageActive` also gates the opportunistic ctx.resume() in getAudioContext()/ensureEngineAudio(),
+ * so a stray call while inactive can't un-mute the page behind this function's back.
+ */
+export function setAudioPageActive (on) {
+  pageActive = !!on
+  if (!ctx) return                                  // no gesture yet — nothing to suspend
+  if (pageActive) { if (ctx.state === 'suspended') ctx.resume() }
+  else if (ctx.state === 'running') ctx.suspend()
+}
