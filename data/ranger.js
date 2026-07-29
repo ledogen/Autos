@@ -119,7 +119,7 @@ export const RANGER_PARAMS = {
   // Tire-slip audio (src/tire-audio.js): procedural squeal on pavement / noise tear on dirt, gated by
   // per-wheel slip velocity (silent < 4 m/s, full at 12 m/s). Shares the engine's AudioContext.
   tireAudioEnabled:   true,  // master toggle for tire-slip sound
-  tireScreechVolume:  0.5,   // 0..1 — pavement squeal
+  tireScreechVolume:  0.7,   // 0..1 — pavement squeal (0.5 -> 0.7, owner: wanted it louder on tarmac)
   tireDirtVolume:     0.3,   // 0..1 — loose-surface roar
   // Rolling road noise (no slip required, per-wheel surface): blacktop hum+hiss and a quieter
   // rendering of the dirt roar. Rides the tireAudioEnabled toggle — it is tyre noise.
