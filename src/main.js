@@ -1911,6 +1911,11 @@ missionSystem = new MissionSystem({
   // free roam, which leaves Quick Job's original player-centred behaviour exactly as it was.
   getRegion: () => storySystem?.region() || null,
   teleport: (x, z, heading) => teleportToGround(x, z, heading, 0.5),
+  // FEAT-46: accepting a job moves the spawn to where the run begins — the POI pad you're parked on,
+  // or the start pin you were just seated at. Taking the job is the commitment, so it is also the
+  // checkpoint: reset (R) puts you back on the job you took, not wherever you last happened to stop.
+  // Reuses setSpawnHere() so there is ONE spawn-override write path, not a second that could drift.
+  setSpawn: () => setSpawnHere(),
   setMapOpen: (open) => {
     if (!open) { map2d.hide(); return }
     map2d.show()
@@ -2005,7 +2010,6 @@ function _renderMissionUI () {
       // long walk), which takes a few seconds — say so rather than looking hung.
       body.innerHTML = 'planning a job&hellip;<br><span class="mp-dim">building the road network for this area</span>'
       show(acts, false, 'flex')
-      show(document.getElementById('mp-seed-row'), false)
       show(document.getElementById('mp-export-row'), false)
       break
     case 'offer': {
@@ -2013,11 +2017,15 @@ function _renderMissionUI () {
       const j = m.mission
       body.innerHTML = `<span class="mp-big">${km(j.distance)}</span> &nbsp;<span class="mp-dim">`
         + `${j.edges} leg${j.edges === 1 ? '' : 's'}</span><br>`
-        + `<span class="mp-dim">green pin is the start &mdash; you'll be moved there</span>`
-      btn('mp-accept', true); btn('mp-retry', false); btn('mp-regen', true); btn('mp-quit', true)
+        // FEAT-46: a POI job does NOT move you — you are already parked at the marker, and claiming
+        // otherwise would have the panel lying about the one thing the player is about to feel.
+        + (j.fromPoi
+          ? `<span class="mp-dim">starts here &mdash; the clock runs from where you're parked</span>`
+          : `<span class="mp-dim">green pin is the start &mdash; you'll be moved there</span>`)
+      // FEAT-46: the offer is exactly three actions — decline · regenerate · accept.
+      btn('mp-accept', true); btn('mp-decline', true); btn('mp-retry', false)
+      btn('mp-regen', true); btn('mp-quit', false)
       show(document.getElementById('mp-export-row'), false)
-      show(document.getElementById('mp-seed-row'), true, 'flex')
-      _syncSeedField()
       // Clear the per-run note so the previous run's note cannot ride along with the next export.
       // The DRIVER name is deliberately NOT cleared — it is per-session, and re-typing it every run
       // is exactly how you end up with three spellings of one person in the dataset.
@@ -2043,9 +2051,9 @@ function _renderMissionUI () {
         + `your time <b>${formatTime(r.elapsed)}</b> &nbsp;<span class="mp-dim">/</span>&nbsp; `
         + `par <b>${formatTime(r.par)}</b><br>`
         + `<span style="color:${col}">${sign}${formatTime(Math.abs(r.margin))} vs par</span>`
-      btn('mp-accept', false); btn('mp-retry', true); btn('mp-regen', false); btn('mp-quit', true)
+      btn('mp-accept', false); btn('mp-decline', false); btn('mp-retry', true)
+      btn('mp-regen', false); btn('mp-quit', true)
       show(document.getElementById('mp-export-row'), true)
-      show(document.getElementById('mp-seed-row'), false)
       // Reuse the accept button as "next job" so there's one obvious forward action; "retry"
       // sits beside it to re-run the same route (testing/calibration — a known-road second lap).
       const nb = document.getElementById('mp-accept')
@@ -2054,7 +2062,6 @@ function _renderMissionUI () {
     }
     default:
       show(panel, false); show(hud, false)
-      show(document.getElementById('mp-seed-row'), false)
       show(document.getElementById('mp-export-row'), false)
       if (m.error) console.info('[mission]', m.error)
       break
@@ -2065,47 +2072,23 @@ function _renderMissionUI () {
   }
 }
 
-// Seed field: pre-populated with the live seed so the panel always shows the world you're in.
-function _syncSeedField () {
-  const el = document.getElementById('mp-seed')
-  if (el && document.activeElement !== el) el.value = _seedString
-}
-// Applying a seed goes through the SAME path as the debug panel's seed field — one code path for
-// world regeneration, not a second one that could drift. The mission planner is invalidated so the
-// next roll re-streams against the new world.
-function _applyStorySeed () {
-  const el = document.getElementById('mp-seed')
-  const hint = document.getElementById('mp-seed-hint')
-  if (!el) return
-  const v = el.value.trim()
-  if (!v || v === _seedString) { if (hint) hint.textContent = 'same seed — nothing to do'; return }
-  worldSeed = parseWorldSeed(v)
-  _seedString = String(v)
-  _spawnOverride = null
-  missionSystem.invalidatePlan()
-  _plannerWarm = null; _plannerWarmAt = -Infinity   // force a fresh warm for the new world
-  debouncedRebuildFull()
-  if (hint) hint.textContent = 'regenerating world…'
-  // The world rebuild is debounced + async; give it room, then roll a mission in the new world.
-  setTimeout(() => {
-    if (hint) hint.textContent = 'enter a new seed to regenerate the world'
-    if (missionSystem.state !== 'idle') missionSystem.enter()
-  }, 2500)
-}
-document.getElementById('mp-seed-go')?.addEventListener('click', _applyStorySeed)
+// FEAT-46: the mission panel's seed control is GONE. You choose the world when you enter story mode
+// (#story-seed-modal), and offering it again in the job panel meant a full world rebuild could fire
+// under a live mission planner mid-run. The debug panel's seed field remains the one testing path.
+
 // Keep typed text out of the world (WASD/M/Esc would otherwise drive/toggle while typing).
 for (const id of ['mp-note', 'mp-driver']) {
   document.getElementById(id)?.addEventListener('keydown', (e) => e.stopPropagation())
 }
-document.getElementById('mp-seed')?.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); _applyStorySeed() }
-  e.stopPropagation()          // keep WASD/M/Esc out of the world while typing a seed
-})
 
 // Buttons. Same null-guarded module-eval wiring as every other control in this file (WR-04).
 document.getElementById('mp-accept')?.addEventListener('click', () => {
   if (missionSystem.state === 'done') missionSystem.next(); else missionSystem.accept()
 })
+// FEAT-46: DECLINE puts the job down and leaves you in story mode with nothing active — it does not
+// leave the mode. (Leaving is the pause menu's job, and #mp-quit in the result card.) Walking away
+// from an offer is an ordinary thing to do; quitting the game mode is not.
+document.getElementById('mp-decline')?.addEventListener('click', () => missionSystem.exit())
 document.getElementById('mp-regen')?.addEventListener('click', () => missionSystem.regenerate())
 document.getElementById('mp-retry')?.addEventListener('click', () => missionSystem.retry())
 // FEAT-30 calibration: dump the finished run's route shape + score to a file. A score alone can't

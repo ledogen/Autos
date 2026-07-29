@@ -79,6 +79,9 @@ export class MissionSystem {
      *        (a getter, not the instance: main.js swaps RoadSystem instances on seed regen)
      * @param {() => {x:number,z:number}} o.getCar
      * @param {(x:number,z:number,heading:number)=>void} o.teleport
+     * @param {()=>void} [o.setSpawn] — FEAT-46: set the spawn point to the truck's current pose.
+     *        Called on ACCEPT only (never retry): taking a job is the commitment, so it is also the
+     *        checkpoint. Optional — headless gates roll missions without ever launching one.
      * @param {(open:boolean)=>void} o.setMapOpen
      * @param {()=>number} [o.getSeed] — world seed; road-surface quality is seeded from it
      * @param {()=>void} [o.onChange] — called whenever the UI-visible state changes
@@ -86,7 +89,7 @@ export class MissionSystem {
      *        one is active. Missions are confined to it, and the planner ANCHORS on its centre
      *        instead of following the car (see _planner).
      */
-    constructor({ getRoad, makePlanner, getCar, getSeed, getRegion, teleport, setMapOpen, onChange }) {
+    constructor({ getRoad, makePlanner, getCar, getSeed, getRegion, teleport, setSpawn, setMapOpen, onChange }) {
         this._getRoad = getRoad
         this._makePlanner = makePlanner || null
         this._plan = null            // { road, seed, center } — the streamed planning network
@@ -94,6 +97,7 @@ export class MissionSystem {
         this._getRegion = getRegion || (() => null)
         this._getSeed = getSeed || (() => 0)
         this._teleport = teleport
+        this._setSpawn = setSpawn || null
         this._setMapOpen = setMapOpen
         this._onChange = onChange || (() => {})
 
@@ -179,10 +183,17 @@ export class MissionSystem {
         setTimeout(() => this._generate(), 0)
     }
 
-    /** Take the job: teleport to the start point and start the countdown. */
+    /**
+     * Take the job. Two things happen here that do NOT happen on retry:
+     *   • a POI job does not seat you at the start pin — you are already standing on the pad, and
+     *     the countdown runs out from under you where you sit;
+     *   • THE SPAWN POINT MOVES TO WHERE YOU ACCEPTED FROM. Accepting a job is the commitment, so
+     *     it is also the checkpoint: reset now and you come back to the job you took, not to
+     *     wherever you last happened to stop.
+     */
     accept() {
         if (this.state !== 'offer' || !this.mission) return
-        this._launch()
+        this._launch({ seat: !this.mission.fromPoi, setSpawn: true })
     }
 
     /**
@@ -193,17 +204,30 @@ export class MissionSystem {
     retry() {
         if (this.state !== 'done' || !this.mission) return
         this.result = null
-        this._launch()
+        // ALWAYS seats, even for a POI job: a retry is a second lap of a known road for calibration,
+        // and it is only comparable if it starts at the same start line. Without this you would
+        // "retry" from wherever the last run ENDED. It does not move the spawn either — retry is a
+        // testing affordance, not a commitment.
+        this._launch({ seat: true, setSpawn: false })
     }
 
-    // Shared start path for accept/retry: seat at the start pin, reset the run state, count down.
-    // FEAT-46: a POI job skips the seat — the player drove to the marker themselves and the job
-    // starts from where they are parked. (Owner, 2026-07-28: "no need to teleport the car to the
-    // road. the player should know they need to get outta there quick.") The pad sits beside the
-    // centerline, so the first few metres are the driver's own problem, which is the point.
-    _launch() {
+    /**
+     * Shared start path for accept/retry: (optionally) seat at the start pin, reset the run state,
+     * count down.
+     *
+     * FEAT-46: a POI job skips the seat on ACCEPT — the player drove to the marker themselves and
+     * the job starts from where they are parked. (Owner, 2026-07-28: "no need to teleport the car to
+     * the road. the player should know they need to get outta there quick.") The pad sits beside the
+     * centerline, so the first few metres are the driver's own problem, which is the point.
+     *
+     * @param {{seat:boolean, setSpawn:boolean}} o
+     */
+    _launch({ seat = true, setSpawn = false } = {}) {
         const s = this.mission.start
-        if (!this.mission.fromPoi) this._teleport(s.x, s.z, s.heading)
+        if (seat) this._teleport(s.x, s.z, s.heading)
+        // AFTER the seat, so this reads "where the run begins" in both cases: the POI pad you are
+        // parked on, or the start pin you were just moved to.
+        if (setSpawn) this._setSpawn?.()
         this._setMapOpen(false)
         this.state = 'countdown'
         this._polyIdx = 0            // route-remaining projection restarts at the start pin
