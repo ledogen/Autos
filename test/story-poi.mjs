@@ -1,6 +1,6 @@
 // GATE (FEAT-46): story-mode POIs on lay-by pads.
 //
-// Four properties, in priority order. The first is the ratified one and the reason this gate is
+// Five properties, in priority order. The first is the ratified one and the reason this gate is
 // heavy rather than a unit test:
 //
 //   1. POIs NEVER INFLUENCE ROUTING DETERMINISM (owner, 2026-07-28). The same seed opened in free
@@ -21,12 +21,17 @@
 //   4. THE REJECT RULES BITE. Nothing on water, nothing stacked on a junction's ground, earthwork
 //      inside the cap.
 //
+//   5. A JOB TAKEN FROM A POI STARTS AT THAT POI — every roll, including every regenerate. The
+//      anchor has to survive a re-roll, or the second offer from a marker is a free Quick Job
+//      starting somewhere across the region while the player is parked in a pullout.
+//
 // Heavy: needs a real streamed, routed network.
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { WaterSystem } from '../src/water.js'
 import { PoiSystem, POI_PARAMS } from '../src/poi.js'
+import { MissionSystem } from '../src/mission.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
 let fails = 0
@@ -234,6 +239,51 @@ const W = makeWorld(C.x, C.z, R)
     check('no POI stacks on a junction pad / connector footprint', onJunction === 0, `${onJunction} overlapping`)
     check('every pad is inside the earthwork cap', overCut === 0,
         `worst cut/fill ${worstCut.toFixed(2)} m vs cap ${POI_PARAMS.poiMaxCutFill} m`)
+}
+
+// ── 6. a job taken from a POI STARTS at that POI — including every regenerate ────────────────────
+// The anchored roll pins the start to the marker's own (edge, arcS) and prepends that partial
+// stretch as the first par segment. Regenerating must re-roll the DESTINATION ONLY: it used to drop
+// the anchor and hand back a free anywhere-to-anywhere Quick Job, so the second offer from a marker
+// had nothing to do with the marker — you would accept a job starting across the region while
+// parked in a pullout. A quest giver offers a different job, not a different place to stand.
+{
+    const ms = new MissionSystem({
+        getRoad: () => W.road,
+        makePlanner: () => W.road,
+        getCar: () => ({ x: C.x, z: C.z, speed: 0 }),
+        getSeed: () => SEED,
+        teleport () {}, setMapOpen () {}, onChange () {},
+    })
+    let rolls = 0, strays = 0, worst = 0, noRoute = 0
+    const tried = []
+    for (const q of W.poi.list()) {
+        const anchor = { aId: q.aId, bId: q.bId, s: q.s, poiId: q.id }
+        // Ten independent rolls per POI stands in for "accept, then hit regenerate nine times":
+        // _roll is what regenerate re-runs, and the destination is Math.random per roll.
+        let got = 0
+        for (let i = 0; i < 10; i++) {
+            const m = ms._roll(anchor)
+            if (!m) { noRoute++; continue }
+            rolls++; got++
+            const d = Math.hypot(m.start.x - q.roadX, m.start.z - q.roadZ)
+            if (d > worst) worst = d
+            if (d > 1.0) strays++
+        }
+        tried.push(got)
+    }
+    check('every anchored roll starts AT the POI (regenerate re-rolls the destination only)',
+        rolls > 0 && strays === 0,
+        `${strays}/${rolls} strayed, worst ${worst.toFixed(2)} m from the marker`)
+    console.log(`       ${rolls} anchored rolls over ${tried.length} POIs `
+        + `(${noRoute} found no qualifying leg — a dead-end marker, not a stray)`)
+
+    // The wiring: _generate must REMEMBER the anchor, or regenerate() has nothing to pass on.
+    const a0 = { aId: W.poi.list()[0].aId, bId: W.poi.list()[0].bId, s: W.poi.list()[0].s, poiId: 'x' }
+    ms._generate(a0)
+    check('the offer remembers its anchor, so regenerate() can re-use it', ms._anchor === a0)
+    ms._generate(null)
+    check('a free Quick Job roll clears the anchor', ms._anchor === null)
 }
 
 console.log(fails === 0 ? '\nALL POI CHECKS PASSED' : `\n${fails} CHECK(S) FAILED`)

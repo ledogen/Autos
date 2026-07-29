@@ -109,6 +109,10 @@ export class MissionSystem {
         this.error = null
         this._trace = []         // driven trace rows (see update); reset on accept
         this._traceTick = 0
+        // FEAT-46: the anchor the CURRENT offer was generated from ({aId,bId,s,poiId}), or null for
+        // a free Quick Job roll. Held so `regenerate` re-rolls the DESTINATION while keeping the
+        // start pinned to the POI you are standing at — see regenerate().
+        this._anchor = null
     }
 
     // ── lifecycle ───────────────────────────────────────────────────────────────────────────
@@ -160,9 +164,10 @@ export class MissionSystem {
      * the marker's own (edge, arc) point and accepting does NOT teleport — you are already standing
      * there, and the countdown runs out from under you where you sit.
      *
-     * There is deliberately no `regenerate` from here: rolling the destination again while parked at
-     * a POI would make the marker a slot machine, and DESIGN.md is explicit that real story mode has
-     * no do-overs. Drive away and come back.
+     * The offer stays ANCHORED for as long as it is on screen: `regenerate` re-rolls the
+     * destination and keeps this start (see regenerate()). Eventually most quest givers lose that
+     * button — DESIGN.md is explicit that real story mode has no do-overs, and a marker you can
+     * re-roll is a slot machine — but while the economy is being calibrated it stays.
      *
      * @param {object} poi — a record from PoiSystem.list()
      */
@@ -175,12 +180,25 @@ export class MissionSystem {
         setTimeout(() => this._generate({ aId: poi.aId, bId: poi.bId, s: poi.s, poiId: poi.id }), 0)
     }
 
-    /** Re-roll start + end. TESTING ONLY — real story mode has no do-overs. */
+    /**
+     * Re-roll the offer. TESTING ONLY — real story mode has no do-overs.
+     *
+     * FEAT-46: an ANCHORED offer re-rolls its DESTINATION ONLY; the start stays pinned to the POI
+     * you are standing at. Regenerating used to drop the anchor and hand back a free
+     * anywhere-to-anywhere Quick Job, which meant the second offer from a marker had nothing to do
+     * with the marker — you would accept a job that started somewhere across the region while
+     * parked in a pullout (owner, 2026-07-28). A quest giver offers you a different job, not a
+     * different place to be standing.
+     *
+     * (Longer term most quest givers lose this button entirely — DESIGN.md is explicit that real
+     * story mode has no do-overs, and a marker you can re-roll is a slot machine.)
+     */
     regenerate() {
         if (this.state !== 'offer') return
         this.state = 'generating'
         this._onChange()
-        setTimeout(() => this._generate(), 0)
+        const anchor = this._anchor
+        setTimeout(() => this._generate(anchor), 0)
     }
 
     /**
@@ -238,11 +256,12 @@ export class MissionSystem {
         this._onChange()
     }
 
-    /** Leave story mode entirely. */
+    /** Put the job down: no offer, no run. (Decline, or leaving the mode.) */
     exit() {
         this.state = 'idle'
         this.mission = null
         this.result = null
+        this._anchor = null      // the next roll is a fresh one, not a re-roll of a POI you left
         this._setMapOpen(false)
         this._onChange()
     }
@@ -428,6 +447,9 @@ export class MissionSystem {
 
     // ── generation ──────────────────────────────────────────────────────────────────────────
     _generate(anchor = null) {
+        // Remember what this offer is anchored to (null = a free Quick Job roll) so `regenerate`
+        // can re-roll the destination without losing the POI start.
+        this._anchor = anchor
         try {
             // A roll can come up empty because the FEAT-43 region rejected the leg it happened to
             // draw (guard 2 only fires after the route is built), so inside a region we re-roll
