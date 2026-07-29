@@ -112,6 +112,14 @@ export class PoiSystem {
             && this._built.r === radius
             && Math.hypot(this._built.x - center.x, this._built.z - center.z) < 1e-6) return this._list
 
+        // CLEAR THE PREVIOUS BUILD'S PADS FIRST. _evaluate's junction reject reads padReachNodes(),
+        // which lists POI pads alongside junction pads — so a REBUILD (a new seed, a re-anchored
+        // region) would site against the pads of the region it is replacing and produce a different,
+        // history-dependent layout. Within one build there is no self-interference: pads are handed
+        // over once at the end. Determinism means the answer depends on (seed, params, network) and
+        // nothing else, including what this system did a minute ago.
+        road.setPoiPads(null)
+
         const g = road.networkGraph()
         const p = this._d.getParams()
         const P = { ...POI_PARAMS, ...p }

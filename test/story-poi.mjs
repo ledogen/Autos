@@ -74,8 +74,8 @@ const W = makeWorld(C.x, C.z, R)
     check('POIs are actually placed — most edges yield one, the rest are rejected on their ground',
         list.length >= 5 && perEdge > 0.2 && perEdge <= 1.0, `${list.length} POIs over r=${R}`)
     console.log(`       ${list.length} POIs from ${W.road._network.size} forced edge slots `
-        + `(${(100 * perEdge).toFixed(0)}% accept ⇒ ~${Math.round(216 * 0.10 * perEdge)} at the shipped `
-        + `density over a 216-edge region)`)
+        + `(${(100 * perEdge).toFixed(0)}% accept ⇒ ~${Math.round(216 * POI_PARAMS.poiEdgeChance * perEdge)} `
+        + `at the shipped density ${POI_PARAMS.poiEdgeChance} over a 216-edge region)`)
 }
 
 // ── 2. THE RATIFIED ONE: the road surface is bit-identical with and without pads ─────────────────
@@ -144,6 +144,46 @@ const W = makeWorld(C.x, C.z, R)
     check('shared POIs sit at exactly the same place (keyed off the graph edge, not the runKey)',
         worst < 1e-6, `worst drift ${worst.toFixed(6)} m over ${shared} shared POIs`)
     console.log(`       ${shared} POIs compared across two stream centres 745 m apart`)
+}
+
+// ── 3b. placement has no HISTORY, and density only adds ─────────────────────────────────────────
+// Two properties that a shared reject list quietly breaks. `_evaluate`'s junction reject reads
+// padReachNodes(), which lists POI pads alongside junction pads — so without clearing the previous
+// build's pads first, a REBUILD sites against the region it is replacing. That is history, not
+// determinism, and it showed up as the density sweep below disagreeing with the forced set (1 POI
+// at chance 0.5, 4 at 0.75). It also validates this gate's own forcing trick: because the chance
+// draw is the FIRST call on each edge's PRNG, forcing the roll cannot shift the candidate stream,
+// so the shipped-density layout is exactly a subset of the forced one — the gate tests a superset
+// of what ships, not a different thing.
+{
+    const mk = (chance) => {
+        const s = new PoiSystem({
+            getRoad: () => W.road, getWater: () => W.water, getTerrain: () => W.terrain,
+            getSeed: () => SEED, getParams: () => ({ ...RANGER_PARAMS, poiEdgeChance: chance }),
+        })
+        return s.build(C, R).map(q => `${q.id}@${q.x.toFixed(6)},${q.z.toFixed(6)}`)
+    }
+    const forced = new Set(mk(1.0))
+    let strays = 0, tested = 0
+    for (const c of [0.35, 0.5, 0.75, 0.9]) {
+        const l = mk(c)
+        tested += l.length
+        strays += l.filter(k => !forced.has(k)).length
+    }
+    check('a lower density only REMOVES POIs — every one it keeps is identical to the forced set',
+        strays === 0, `${strays} of ${tested} differ`)
+
+    const s = new PoiSystem({
+        getRoad: () => W.road, getWater: () => W.water, getTerrain: () => W.terrain,
+        getSeed: () => SEED, getParams: () => ({ ...RANGER_PARAMS, poiEdgeChance: 1.0 }),
+    })
+    const first = s.build(C, R).map(q => `${q.id}@${q.x.toFixed(6)}`).join('|')
+    s.build({ x: C.x + 300, z: C.z }, R)          // a different region in between
+    const again = s.build(C, R).map(q => `${q.id}@${q.x.toFixed(6)}`).join('|')
+    check('rebuilding after a DIFFERENT region reproduces the same layout (no history)',
+        first === again && first.length > 0)
+
+    W.road.setPoiPads(W.poi.list())               // restore the region under test
 }
 
 // ── 4. the pad is a real, flat bench off the shoulder ───────────────────────────────────────────
