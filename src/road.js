@@ -143,6 +143,13 @@ const PAD_DUCK_CAP_PHYS = 0.55
 // merged carve DIRT to zero at the ring edge makes the field exactly C0 at the exit; interior wheels
 // (f=1) still ride the full asphalt overlay unchanged. Hardcoded: physics-only, no route-cache effect.
 const PAD_EDGE_FEATHER = 1.6
+// FEAT-46 POI_ROAD_FEATHER: band (m) OUTSIDE the ribbon+shoulder across which a POI lay-by pad's
+// authority ramps 0 → 1 (see _poiPadCarve). This is not a look tunable — it is the mechanism that
+// makes the ratified "POIs never influence routing determinism" rule structural: a pad has exactly
+// zero authority at and inside the shoulder edge, so it can never move the ribbon, its shoulder or
+// its camber, and the same seed drives identically in free roam and story mode. Gated by the
+// resolved lateral distance, so it holds for every pad position without per-pad tuning.
+const POI_ROAD_FEATHER = 2.0
 // roadQuality imported for SURF-06 D-03: pothole severity uses the same per-stretch
 // quality hook as markings. Importing from road-quality.js (not road-mesh.js) avoids
 // the road-mesh.js → terrain.js → road.js chain issues.
@@ -1289,6 +1296,12 @@ export class RoadSystem {
         this._crossingList = []      // flat per-crossing classified records (rebuilt with _junctions)
         // FEAT-07 Step 2: per-run index of AT_GRADE mid-span crossings to flatten toward {arc, nodeY}.
         this._crossingsByRun = new Map()   // runKey → [{ arc, nodeY, slope }] (rebuilt with _junctions)
+
+        // FEAT-46: story-mode POI lay-by pads, pushed in by src/poi.js AFTER routing (setPoiPads).
+        // null in free roam and in every headless gate ⇒ _poiPadCarve returns immediately and the
+        // carve is bit-identical to a build without POIs. This is the seam that keeps the ratified
+        // "POIs never influence routing determinism" rule true rather than merely intended.
+        this._poiPads = null
 
         // ── Off-thread route pre-warming (PERF-03 Workstream A) ──────────────────
         // warmRoutes() asks a Worker to route the connections the streamer will soon need and posts
@@ -4060,6 +4073,18 @@ export class RoadSystem {
             if (!nr) { latDist = co.lat; arcSEff = co.arcS; runKey = '' }
         }
 
+        // FEAT-46: the POI lay-by bench, composed the same way as the connector above (dominance +
+        // feather), NOT via _mergeCarve — see _poiPadCarve for why the pad must dominate its own
+        // footprint. `latDist` gates it to zero inside the ribbon + shoulder, so this line cannot
+        // change the road surface; with no pads set (free roam, every gate) it is a null check.
+        const pq = this._poiPadCarve(wx, wz, rawAmp, latDist)
+        if (pq) {
+            cs = {
+                blendW: Math.max(cs ? cs.blendW : 0, pq.blendW),
+                gradeY: cs ? pq.gradeY * pq.dom + cs.gradeY * (1 - pq.dom) : pq.gradeY,
+            }
+        }
+
         // Junction-pad carve (first-class pad footprint, incl. the back-arc bulb) composed with the leg
         // + connector carve — never LESS coverage than any alone, and smooth where they overlap (all ride
         // the pad plane near the node). This is what covers the open-side rim the corridors miss.
@@ -5063,12 +5088,15 @@ export class RoadSystem {
     }
 
     /**
-     * Junction pad nodes for the terrain carve-table skip guard: {x,z,reach} where reach = ringMaxR +
-     * shoulder + maxToe. A vertex within `reach` of a node may be pad-carved even if it's beyond the
-     * nearest road SAMPLE (the open-side rim has no ribbon nearby), so the sample-distance skip must
-     * not cull it. Cached with _nodeJunctions (by _networkRev).
+     * PAD reach nodes for the terrain carve-table skip guard: {x,z,reach}. A vertex within `reach`
+     * of one of these may be pad-carved even if it's beyond the nearest road SAMPLE (a junction's
+     * open-side rim, or a POI lay-by, has no ribbon nearby), so the sample-distance skip must not
+     * cull it. Two sources, both listed here so terrain.js has one thing to ask for:
+     *   • junction pads (QUAL-10) — reach = ringMaxR + shoulder + maxToe, cached with _nodeJunctions.
+     *   • FEAT-46 POI lay-by pads — reach = the stadium's own half-diagonal + the same apron.
+     * Also the reject list src/poi.js sites against: a POI never stacks on a junction's ground.
      */
-    junctionPadNodes() {
+    padReachNodes() {
         if (this._nodeJunctionsRev !== this._networkRev) this._detectNodeJunctions()
         const out = []
         const p = this._params
@@ -5077,7 +5105,129 @@ export class RoadSystem {
             if (!n.ring) continue
             out.push({ x: n.pos.x, z: n.pos.z, reach: (n.ringMaxR ?? 0) + extra })
         }
+        if (this._poiPads) for (const q of this._poiPads) {
+            out.push({ x: q.x, z: q.z, reach: Math.hypot(q.halfLen, q.halfWid) + extra })
+        }
         return out
+    }
+
+    /**
+     * FEAT-46: hand the story layer's POI lay-by pads to the carve. Pass null/empty to release them.
+     *
+     * Called ONCE per story-mode entry, after the region is routed and frozen — never during
+     * routing, and never in free roam. Bumping _networkRev is deliberately NOT done here: pads do
+     * not change the network, and the junction/route caches keyed by that rev must not be dropped.
+     * What DOES need invalidating is the physics carve hint memo, whose entries were sampled
+     * before the pads existed.
+     *
+     * @param {Array<{x,z,y,tx,tz,halfLen,halfWid}>|null} pads
+     */
+    setPoiPads(pads) {
+        this._poiPads = (pads && pads.length) ? pads : null
+        this._hintCache = null
+    }
+
+    /**
+     * FEAT-46: is (wx,wz) on (or within `keepOut` of) a POI lay-by pad? The prop scatter treats a
+     * pad exactly like the road — a tree growing out of the pullout blocks the only thing a pullout
+     * is for, and the bench is graded ground, not forest floor. Same stadium test the carve uses.
+     * Always false in free roam (no pads set), so the scatter is unchanged there.
+     */
+    poiPadBlocked(wx, wz, keepOut = 0) {
+        const pads = this._poiPads
+        if (!pads) return false
+        for (const q of pads) {
+            const dx = wx - q.x, dz = wz - q.z
+            const rough = q.halfLen + keepOut
+            if (dx > rough || dx < -rough || dz > rough || dz < -rough) continue
+            const a = Math.max(0, q.halfLen - q.halfWid)
+            let t = dx * q.tx + dz * q.tz
+            t = t < -a ? -a : t > a ? a : t
+            const px = dx - q.tx * t, pz = dz - q.tz * t
+            if (Math.hypot(px, pz) - q.halfWid <= keepOut) return true
+        }
+        return false
+    }
+
+    /**
+     * FEAT-46: the POI lay-by carve at world (wx,wz) — a flat graded bench beside the road, the
+     * pull-off an orange marker cube stands on. Same shape as _junctionPadCarve (full depth inside
+     * the footprint + PAD_RIM_HOLD, then the shared shoulder + fill/cut ramp to the toe) with three
+     * deliberate differences:
+     *
+     *  1. THE FOOTPRINT IS A STADIUM, not a ring — a pullout is longer than it is wide, and it is
+     *     aligned to the road tangent. Signed distance = dist-to-segment − halfWid.
+     *  2. THE DESIGN SURFACE IS FLAT at pad.y − clearanceMargin, where pad.y is the road's asphalt
+     *     top sampled AT THE SHOULDER EDGE on the pad's side (src/poi.js). So the bench is flush
+     *     with the carved shoulder dirt exactly where they meet: you drive onto it, no curb. There
+     *     is no asphalt mesh over a dirt pullout, so it emits NO padTopY — physics rides the same
+     *     carved dirt the mesh draws, and mesh == collision holds with nothing extra to keep in sync.
+     *  3. IT IS GATED OUT OF THE ROAD'S OWN CROSS-SECTION by `latDist` (distance to the resolved
+     *     run). Authority is zero at the shoulder edge and ramps to full ROAD_FEATHER metres beyond,
+     *     which is what makes the ratified guarantee — "the same seed drives identically in free roam
+     *     and story mode" — true BY CONSTRUCTION rather than by tuning. A pad can never move the
+     *     ribbon, its shoulder, or its camber.
+     *
+     * Returned `dom` is the composition weight (see the call sites): the bench DOMINATES its own
+     * footprint and feathers back to the leg cross-section at its rim. It cannot use _mergeCarve —
+     * that gives the leg priority everywhere it reaches, which on a fill embankment is the whole
+     * pad, and the bench would silently do nothing.
+     *
+     * @returns {{blendW:number, gradeY:number, dom:number}|null} DIRT convention, null = untouched.
+     */
+    _poiPadCarve(wx, wz, rawAmp, latDist) {
+        const pads = this._poiPads
+        if (!pads) return null
+        const p = this._params
+        const halfWidth       = p.roadHalfWidth       ?? 5
+        const shoulderWidth   = p.roadShoulderWidth   ?? 2.5
+        const fillSlope       = p.roadFillSlope       ?? 3.0
+        const cutSlope        = p.roadCutSlope        ?? 1.0
+        const maxToe          = p.roadMaxEmbankmentToe ?? 10
+        const clearanceMargin = p.roadClearanceMargin ?? 0.25
+
+        // Road gate: no authority at all inside the ribbon + shoulder, full authority ROAD_FEATHER
+        // beyond it. smoothstep so the handoff is C1, not just C0.
+        const gateLat = halfWidth + shoulderWidth
+        if (latDist <= gateLat) return null
+        const gu = Math.min(1, (latDist - gateLat) / POI_ROAD_FEATHER)
+        const gate = gu * gu * (3 - 2 * gu)
+
+        const reachCap = PAD_RIM_HOLD + shoulderWidth + maxToe
+        let best = null, bestSd = Infinity
+        for (const q of pads) {
+            const dx = wx - q.x, dz = wz - q.z
+            const rough = q.halfLen + reachCap + 1
+            if (dx > rough || dx < -rough || dz > rough || dz < -rough) continue
+            // Stadium: project onto the pad's spine (the segment ± (halfLen − halfWid) along the
+            // tangent), then subtract the half width. Degenerate halfLen ≤ halfWid → a disc.
+            const a = Math.max(0, q.halfLen - q.halfWid)
+            let t = dx * q.tx + dz * q.tz
+            t = t < -a ? -a : t > a ? a : t
+            const px = dx - q.tx * t, pz = dz - q.tz * t
+            const sd = Math.hypot(px, pz) - q.halfWid
+            if (sd < bestSd) { bestSd = sd; best = q }
+        }
+        if (!best || bestSd > reachCap) return null
+
+        const designY = best.y - clearanceMargin
+
+        // Full depth inside the footprint and for PAD_RIM_HOLD beyond it — the same one-cell-diagonal
+        // hold _junctionPadCarve documents: without it a vertex just outside the footprint already
+        // rides the bank, and its shared triangle interpolates above the bench INSIDE the pad.
+        if (bestSd <= PAD_RIM_HOLD) return { blendW: 1.0, gradeY: designY, dom: gate }
+
+        // Outside the hold: ramp designY → raw over shoulder + fill/cut toe, mirroring
+        // _carveCrossSection and _junctionPadCarve so a pad toe looks like every other toe.
+        const over = bestSd - PAD_RIM_HOLD
+        const fillReach = shoulderWidth + Math.max(0, designY - rawAmp) * fillSlope
+        const cutReach  = shoulderWidth + Math.max(0, rawAmp - designY) * cutSlope
+        const beyondToe = Math.min(Math.max(fillReach, cutReach), maxToe)
+        if (over >= beyondToe) return null
+        const ramp = Math.max(shoulderWidth, beyondToe)
+        const u = Math.min(1, over / ramp)
+        const w = 1.0 - u * u * (3.0 - 2.0 * u)
+        return { blendW: w, gradeY: designY, dom: gate * w }
     }
 
     // ── QUAL-16: deg-2 kink connector fillet arc geometry ──────────────────────────────────────

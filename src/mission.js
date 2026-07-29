@@ -79,6 +79,9 @@ export class MissionSystem {
      *        (a getter, not the instance: main.js swaps RoadSystem instances on seed regen)
      * @param {() => {x:number,z:number}} o.getCar
      * @param {(x:number,z:number,heading:number)=>void} o.teleport
+     * @param {()=>void} [o.setSpawn] — FEAT-46: set the spawn point to the truck's current pose.
+     *        Called on ACCEPT only (never retry): taking a job is the commitment, so it is also the
+     *        checkpoint. Optional — headless gates roll missions without ever launching one.
      * @param {(open:boolean)=>void} o.setMapOpen
      * @param {()=>number} [o.getSeed] — world seed; road-surface quality is seeded from it
      * @param {()=>void} [o.onChange] — called whenever the UI-visible state changes
@@ -86,7 +89,7 @@ export class MissionSystem {
      *        one is active. Missions are confined to it, and the planner ANCHORS on its centre
      *        instead of following the car (see _planner).
      */
-    constructor({ getRoad, makePlanner, getCar, getSeed, getRegion, teleport, setMapOpen, onChange }) {
+    constructor({ getRoad, makePlanner, getCar, getSeed, getRegion, teleport, setSpawn, setMapOpen, onChange }) {
         this._getRoad = getRoad
         this._makePlanner = makePlanner || null
         this._plan = null            // { road, seed, center } — the streamed planning network
@@ -94,6 +97,7 @@ export class MissionSystem {
         this._getRegion = getRegion || (() => null)
         this._getSeed = getSeed || (() => 0)
         this._teleport = teleport
+        this._setSpawn = setSpawn || null
         this._setMapOpen = setMapOpen
         this._onChange = onChange || (() => {})
 
@@ -105,6 +109,10 @@ export class MissionSystem {
         this.error = null
         this._trace = []         // driven trace rows (see update); reset on accept
         this._traceTick = 0
+        // FEAT-46: the anchor the CURRENT offer was generated from ({aId,bId,s,poiId}), or null for
+        // a free Quick Job roll. Held so `regenerate` re-rolls the DESTINATION while keeping the
+        // start pinned to the POI you are standing at — see regenerate().
+        this._anchor = null
     }
 
     // ── lifecycle ───────────────────────────────────────────────────────────────────────────
@@ -151,18 +159,59 @@ export class MissionSystem {
         setTimeout(() => this._generate(), 0)
     }
 
-    /** Re-roll start + end. TESTING ONLY — real story mode has no do-overs. */
+    /**
+     * FEAT-46: take a job from the POI you are parked at. Same generator, but the start is PINNED to
+     * the marker's own (edge, arc) point and accepting does NOT teleport — you are already standing
+     * there, and the countdown runs out from under you where you sit.
+     *
+     * The offer stays ANCHORED for as long as it is on screen: `regenerate` re-rolls the
+     * destination and keeps this start (see regenerate()). Eventually most quest givers lose that
+     * button — DESIGN.md is explicit that real story mode has no do-overs, and a marker you can
+     * re-roll is a slot machine — but while the economy is being calibrated it stays.
+     *
+     * @param {object} poi — a record from PoiSystem.list()
+     */
+    enterFromPoi (poi) {
+        if (!poi) return
+        this.state = 'generating'
+        this.result = null
+        this.error = null
+        this._onChange()
+        setTimeout(() => this._generate({ aId: poi.aId, bId: poi.bId, s: poi.s, poiId: poi.id }), 0)
+    }
+
+    /**
+     * Re-roll the offer. TESTING ONLY — real story mode has no do-overs.
+     *
+     * FEAT-46: an ANCHORED offer re-rolls its DESTINATION ONLY; the start stays pinned to the POI
+     * you are standing at. Regenerating used to drop the anchor and hand back a free
+     * anywhere-to-anywhere Quick Job, which meant the second offer from a marker had nothing to do
+     * with the marker — you would accept a job that started somewhere across the region while
+     * parked in a pullout (owner, 2026-07-28). A quest giver offers you a different job, not a
+     * different place to be standing.
+     *
+     * (Longer term most quest givers lose this button entirely — DESIGN.md is explicit that real
+     * story mode has no do-overs, and a marker you can re-roll is a slot machine.)
+     */
     regenerate() {
         if (this.state !== 'offer') return
         this.state = 'generating'
         this._onChange()
-        setTimeout(() => this._generate(), 0)
+        const anchor = this._anchor
+        setTimeout(() => this._generate(anchor), 0)
     }
 
-    /** Take the job: teleport to the start point and start the countdown. */
+    /**
+     * Take the job. Two things happen here that do NOT happen on retry:
+     *   • a POI job does not seat you at the start pin — you are already standing on the pad, and
+     *     the countdown runs out from under you where you sit;
+     *   • THE SPAWN POINT MOVES TO WHERE YOU ACCEPTED FROM. Accepting a job is the commitment, so
+     *     it is also the checkpoint: reset now and you come back to the job you took, not to
+     *     wherever you last happened to stop.
+     */
     accept() {
         if (this.state !== 'offer' || !this.mission) return
-        this._launch()
+        this._launch({ seat: !this.mission.fromPoi, setSpawn: true })
     }
 
     /**
@@ -173,13 +222,30 @@ export class MissionSystem {
     retry() {
         if (this.state !== 'done' || !this.mission) return
         this.result = null
-        this._launch()
+        // ALWAYS seats, even for a POI job: a retry is a second lap of a known road for calibration,
+        // and it is only comparable if it starts at the same start line. Without this you would
+        // "retry" from wherever the last run ENDED. It does not move the spawn either — retry is a
+        // testing affordance, not a commitment.
+        this._launch({ seat: true, setSpawn: false })
     }
 
-    // Shared start path for accept/retry: seat at the start pin, reset the run state, count down.
-    _launch() {
+    /**
+     * Shared start path for accept/retry: (optionally) seat at the start pin, reset the run state,
+     * count down.
+     *
+     * FEAT-46: a POI job skips the seat on ACCEPT — the player drove to the marker themselves and
+     * the job starts from where they are parked. (Owner, 2026-07-28: "no need to teleport the car to
+     * the road. the player should know they need to get outta there quick.") The pad sits beside the
+     * centerline, so the first few metres are the driver's own problem, which is the point.
+     *
+     * @param {{seat:boolean, setSpawn:boolean}} o
+     */
+    _launch({ seat = true, setSpawn = false } = {}) {
         const s = this.mission.start
-        this._teleport(s.x, s.z, s.heading)
+        if (seat) this._teleport(s.x, s.z, s.heading)
+        // AFTER the seat, so this reads "where the run begins" in both cases: the POI pad you are
+        // parked on, or the start pin you were just moved to.
+        if (setSpawn) this._setSpawn?.()
         this._setMapOpen(false)
         this.state = 'countdown'
         this._polyIdx = 0            // route-remaining projection restarts at the start pin
@@ -190,17 +256,15 @@ export class MissionSystem {
         this._onChange()
     }
 
-    /** Leave story mode entirely. */
+    /** Put the job down: no offer, no run. (Decline, or leaving the mode.) */
     exit() {
         this.state = 'idle'
         this.mission = null
         this.result = null
+        this._anchor = null      // the next roll is a fresh one, not a re-roll of a POI you left
         this._setMapOpen(false)
         this._onChange()
     }
-
-    /** Dismiss the result card and roll the next one. */
-    next() { this.enter() }
 
     isActive() { return this.state !== 'idle' }
 
@@ -379,7 +443,10 @@ export class MissionSystem {
     isHeld() { return this.state === 'countdown' }
 
     // ── generation ──────────────────────────────────────────────────────────────────────────
-    _generate() {
+    _generate(anchor = null) {
+        // Remember what this offer is anchored to (null = a free Quick Job roll) so `regenerate`
+        // can re-roll the destination without losing the POI start.
+        this._anchor = anchor
         try {
             // A roll can come up empty because the FEAT-43 region rejected the leg it happened to
             // draw (guard 2 only fires after the route is built), so inside a region we re-roll
@@ -388,7 +455,8 @@ export class MissionSystem {
             // reports immediately — retrying could route live edges and block for seconds.
             const tries = this._getRegion() ? REGION_ROLL_TRIES : 1
             this.mission = null
-            for (let i = 0; i < tries && !this.mission; i++) this.mission = this._roll()
+            for (let i = 0; i < tries && !this.mission; i++) this.mission = this._roll(anchor)
+            if (this.mission) this.mission.fromPoi = anchor ? anchor.poiId : null
             this.state = this.mission ? 'offer' : 'idle'
             if (!this.mission) this.error = 'no route found near here — try again'
             if (this.mission) this._setMapOpen(true)
@@ -407,8 +475,11 @@ export class MissionSystem {
      * Par is the time on THIS route, the geometrically shortest one. That is honest for a beta
      * harness — it's the line a player naturally takes — but note it is not min-par over all
      * routes; a cleverer line through the network could beat par for reasons that aren't driving.
+     *
+     * @param {{aId:any,bId:any,s:number}|null} [anchor] — FEAT-46: pin the START to a POI's exact
+     *   (graph edge, arc) point instead of rolling it. The END still rolls freely.
      */
-    _roll() {
+    _roll(anchor = null) {
         const road = this._planner()
         if (!road) return null
         // The POST-CULL registered network — the roads that actually exist. Planning off the raw
@@ -473,22 +544,44 @@ export class MissionSystem {
             return { prev, ends }
         }
 
-        // Shuffle the node set and take the first start with a reachable endpoint in the leg band.
-        // Most nodes qualify; the loop just skips the few dead-end / window-edge nodes whose whole
-        // leg band falls off the streamed network. Mission rolls are run-layer randomness — free to
-        // use Math.random (SM-INV-12).
-        const starts = [...posOf.keys()]
-        for (let i = starts.length - 1; i > 0; i--) {           // Fisher-Yates
-            const j = (Math.random() * (i + 1)) | 0
-            ;[starts[i], starts[j]] = [starts[j], starts[i]]
-        }
         let startK = null, prev = null, endK = null
-        for (const s of starts) {
-            const c = legCandidates(s)
-            if (!c.ends.length) continue
-            startK = s; prev = c.prev
-            endK = c.ends[(Math.random() * c.ends.length) | 0][0]
-            break
+        // FEAT-46: the anchored roll. A POI sits mid-edge, so the leg LEAVES that edge through one
+        // of its two nodes; that node is the start of the ordinary node-path search, and the partial
+        // stretch from the POI out to it is prepended as a segment afterwards. The player is NOT
+        // teleported — they are already standing on the pad — so unlike the free roll there is no
+        // freedom in where this begins.
+        let exitK = null
+        if (anchor) {
+            const ka = g.key(anchor.aId), kb = g.key(anchor.bId)
+            if (!adj.has(ka) || !adj.has(kb)) return null      // POI edge outside the planner's set
+            const pair = Math.random() < 0.5 ? [[ka, kb], [kb, ka]] : [[kb, ka], [ka, kb]]
+            for (const [ex, other] of pair) {
+                const c = legCandidates(ex)
+                // Reject any leg whose FIRST hop doubles back along the anchor edge — the route
+                // would drive off the pad, past the POI, and traverse the same stretch twice.
+                const ends = c.ends.filter(([k]) => _firstHop(c.prev, k, ex) !== other)
+                if (!ends.length) continue
+                exitK = ex; startK = ex; prev = c.prev
+                endK = ends[(Math.random() * ends.length) | 0][0]
+                break
+            }
+        } else {
+            // Shuffle the node set and take the first start with a reachable endpoint in the leg band.
+            // Most nodes qualify; the loop just skips the few dead-end / window-edge nodes whose whole
+            // leg band falls off the streamed network. Mission rolls are run-layer randomness — free to
+            // use Math.random (SM-INV-12).
+            const starts = [...posOf.keys()]
+            for (let i = starts.length - 1; i > 0; i--) {           // Fisher-Yates
+                const j = (Math.random() * (i + 1)) | 0
+                ;[starts[i], starts[j]] = [starts[j], starts[i]]
+            }
+            for (const s of starts) {
+                const c = legCandidates(s)
+                if (!c.ends.length) continue
+                startK = s; prev = c.prev
+                endK = c.ends[(Math.random() * c.ends.length) | 0][0]
+                break
+            }
         }
         if (startK == null || endK == null) return null
 
@@ -511,8 +604,9 @@ export class MissionSystem {
             const L = ed.centerline.length
             let s0 = forward ? 0 : L, s1 = forward ? L : 0
 
-            // Mid-edge endpoints on the first and last edge.
-            if (i === 0) {
+            // Mid-edge endpoints on the first and last edge. An ANCHORED roll has no freedom at the
+            // start — the POI's own partial stretch is prepended below and IS the first segment.
+            if (i === 0 && !anchor) {
                 const t = EDGE_T_MARGIN + Math.random() * (0.55 - EDGE_T_MARGIN)
                 s0 = forward ? L * t : L * (1 - t)
             }
@@ -534,6 +628,33 @@ export class MissionSystem {
                 const p = ed.centerline.pointAt(s)
                 poly.push({ x: p.x, z: p.z })
             }
+        }
+
+        // FEAT-46: prepend the POI's own partial stretch — from the marker's arc position out to the
+        // node the leg leaves through. DESIGN.md's arc-RANGE rule is exactly what makes this free:
+        // par already integrates partial edges, so a POI start needs no new machinery, just a segment.
+        if (anchor) {
+            const ed = road.edgeParData(anchor.aId, anchor.bId)
+            if (!ed) return null
+            const L = ed.centerline.length
+            const ex = posOf.get(exitK)
+            const pEnd = ed.centerline.pointAt(L), pStart = ed.centerline.pointAt(0)
+            const s1 = Math.hypot(pEnd.x - ex.x, pEnd.z - ex.z) < Math.hypot(pStart.x - ex.x, pStart.z - ex.z) ? L : 0
+            // The POI's arc was measured on the PLAY network's copy of this edge; clamp rather than
+            // trust it blind, so a length that differs in the last ulp can't produce an out-of-range s.
+            const s0 = Math.max(0, Math.min(L, anchor.s))
+            if (Math.abs(s1 - s0) < 1) return null      // the marker sits on top of the exit node
+            const head = []
+            const n = Math.max(2, Math.ceil(Math.abs(s1 - s0) / 25))
+            for (let j = 0; j <= n; j++) {
+                const p = ed.centerline.pointAt(s0 + (s1 - s0) * (j / n))
+                head.push({ x: p.x, z: p.z })
+            }
+            segments.unshift({
+                centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key,
+                endDeg: (adj.get(exitK) || []).length,
+            })
+            poly.unshift(...head)
         }
 
         const { time, distance } = computePar(segments)
@@ -569,6 +690,15 @@ export class MissionSystem {
             segments,
         }
     }
+}
+
+// FEAT-46: the FIRST node stepped to on the way from `root` out to `k` (i.e. the last node before
+// root when the parent chain is walked back). Used to reject an anchored leg that doubles back along
+// the POI's own edge. Returns null if the chain doesn't reach root.
+function _firstHop(prev, k, root) {
+    let last = null, n = 0
+    while (k != null && k !== root && n < 64) { last = k; k = prev.get(k); n++ }
+    return k === root ? last : null
 }
 
 // Hop count from `k` back to `root` through the Dijkstra parent chain (bounded scan).

@@ -206,17 +206,8 @@
     }
     #mission-panel button:hover { background: rgba(255,255,255,0.09); color: #fff; border-color: #8fa2b4; }
     #mp-accept { border-color: #5ad06a; color: #b6f0be; }
+    #mp-decline { border-color: #6b747d; color: #a8b0b8; }
     #mp-export-row { display: none; margin-top: 12px; border-top: 1px solid #2c343d; padding-top: 12px; }
-    #mp-seed-row {
-      display: none; margin-top: 12px; border-top: 1px solid #2c343d; padding-top: 10px;
-      font-size: 12px; color: #8a939c; align-items: center; gap: 8px; justify-content: center;
-    }
-    #mp-seed {
-      background: rgba(255,255,255,0.05); border: 1px solid #3a4450; color: #cfd6dd;
-      font-family: monospace; font-size: 12px; padding: 4px 8px; width: 90px; text-align: center;
-    }
-    #mission-panel #mp-seed-go { font-size: 12px; padding: 4px 10px; }
-    #mp-seed-hint { font-size: 11px; }
     #mp-note, #mp-driver {
       width: 100%; background: rgba(255,255,255,0.05); border: 1px solid #3a4450;
       color: #cfd6dd; font-family: monospace; font-size: 12px; padding: 5px 8px; margin-top: 8px;
@@ -244,6 +235,25 @@
       white-space: pre;
     }
     #mission-hud .mh-count { font-size: 44px; color: #ffcf3c; }
+
+    /* FEAT-46: POI interaction prompt (bottom-centre) — shown while stopped within range of a
+       marker cube. Orange, to match the cubes and their map icons. */
+    #poi-prompt {
+      display: none;
+      position: fixed;
+      bottom: 96px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.62);
+      border: 1px solid #ff7a18;
+      padding: 8px 18px;
+      font-family: monospace;
+      font-size: 15px;
+      color: #ffb066;
+      z-index: 88;
+      pointer-events: none;
+      white-space: pre;
+    }
 
     /* FEAT-31 testing lab readout — top-right, out of the way of the left-hand debug HUD. */
     #lab-panel {
@@ -447,22 +457,22 @@
         <button class="mp-felt" data-felt="very_fast">very fast</button>
       </div>
     </div>
+    <!-- The OFFER shows exactly three: decline · regenerate · accept. Declining drops you back into
+         story mode with no job, not out of the mode — leaving story mode is the pause menu's job.
+         (The seed control that used to sit under here is gone: you chose the world when you entered
+         story mode, and offering it again mid-run invited a world rebuild under a live planner.) -->
     <div id="mp-actions">
-      <button id="mp-accept">accept mission</button>
+      <button id="mp-decline">decline</button>
       <button id="mp-retry" title="testing only — real story mode has no do-overs">retry</button>
       <button id="mp-regen" title="testing only — real story mode has no do-overs">regenerate</button>
+      <button id="mp-accept">accept mission</button>
       <button id="mp-quit">back to free roam</button>
-    </div>
-    <!-- Seed control (testing). Pre-populated with the live seed; Enter regenerates the world,
-         which invalidates the mission planner, then a new mission can be rolled. -->
-    <div id="mp-seed-row">
-      <label for="mp-seed">seed</label>
-      <input id="mp-seed" type="text" maxlength="24" spellcheck="false">
-      <button id="mp-seed-go">load world</button>
-      <span id="mp-seed-hint" class="mp-dim">enter a new seed to regenerate the world</span>
     </div>
   </div>
   <div id="mission-hud"></div>
+
+  <!-- FEAT-46: "press E for a job" prompt, shown when the truck is stopped beside a POI cube. -->
+  <div id="poi-prompt"></div>
 
   <!-- FEAT-31 testing lab: live status + best-of-each-track table. The right-hand column is the
        point of the whole mode — the derived number (implied accel/decel, realized skidpad mu)

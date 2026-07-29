@@ -81,6 +81,9 @@ export class StorySystem {
    *                                returns true once every connection is routed AND the network has
    *                                been registered once at that radius (i.e. safe to freeze)
    *   releaseRegion()            — restore the play RoadSystem's normal streaming radius
+   *   onRegionLive(c, r)         — FEAT-46: the region is routed and about to be handed over. Place
+   *                                POIs here (optional; free roam has none)
+   *   onRegionExit()             — FEAT-46: drop the POIs and their pads on the way out (optional)
    */
   constructor (deps) {
     this._d = deps
@@ -181,10 +184,20 @@ export class StorySystem {
     this._d.setLoading(true, 'building the region…')
   }
 
-  /** Warm done (or timed out): freeze the router and hand the region to the player. */
-  _goLive () {
+  /**
+   * Warm done (or timed out): freeze the router and hand the region to the player.
+   * @param {boolean} frozen — false on the degraded paths (settle threw / warm timed out), where the
+   *   mode enters with streaming still live so missing roads fill in as the player drives.
+   */
+  _goLive (frozen = true) {
     this._phase = 'live'
-    this._frozen = true
+    this._frozen = frozen
+    // FEAT-46: POIs are placed HERE — after routing is complete and (normally) frozen. That ordering
+    // is what makes the ratified "POIs never influence routing determinism" rule structural rather
+    // than merely intended: placement can only ever READ a finished network, never feed it. Still
+    // behind the loading screen, because it re-bakes the carve tables of the chunks already built
+    // around the spawn so the new pads are actually flattened in them.
+    this._d.onRegionLive?.(this._center, this._R)
     this._d.setLoading(false)
     this._d.setQuickJobVisible(true)
   }
@@ -199,6 +212,7 @@ export class StorySystem {
     this._center = null
     this._d.setLoading(false)
     this._d.setQuickJobVisible(false)
+    this._d.onRegionExit?.()  // FEAT-46: drop the POIs + their pads BEFORE the carve re-bakes below
     this._d.releaseRegion()   // back to the 320 m play window BEFORE the loop resumes streaming
     this._d.setDebugLockout(false)
     this._d.setGameMode('freeroam')
@@ -236,9 +250,7 @@ export class StorySystem {
         done = this._d.pumpRegionWarm(this._center, REGION_WARM_RADIUS_M)
       } catch (e) {
         console.warn('[story] region warm failed — entering unfrozen', e)
-        this._phase = 'live'
-        this._d.setLoading(false)
-        this._d.setQuickJobVisible(true)
+        this._goLive(false)
         return
       }
       if (done) { this._goLive(); return }
@@ -246,9 +258,7 @@ export class StorySystem {
         // Don't strand the player on a loading screen. Enter UNFROZEN so the loop keeps streaming
         // and the missing roads fill in as they drive — degraded, but playable and honest.
         console.warn('[story] region warm timed out — entering with streaming still live')
-        this._phase = 'live'
-        this._d.setLoading(false)
-        this._d.setQuickJobVisible(true)
+        this._goLive(false)
       }
       return
     }

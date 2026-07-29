@@ -51,6 +51,7 @@ import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down
 import { MissionSystem, MISSION_PLAN_RADIUS, PLAN_RESTREAM_MOVE } from './mission.js'  // story mode (beta)
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
+import { PoiSystem, POI_PARAMS } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
@@ -204,11 +205,15 @@ const _bushDragF = { x: 0, y: 0, z: 0 }   // FEAT-06b: reused bush soft-drag acc
 const makePropSamplers = () => ({
   heightAt:    (x, z) => terrainSystem.analyticHeight(x, z),
   normalAt:    (x, z) => terrainSystem.analyticNormal(x, z),
-  roadBlocked: (x, z) => !!roadSystem.queryNearest(x, z, FLORA_PARAMS.scatter.roadExclusion),
+  // FEAT-46: a POI lay-by pad counts as road here. It is graded ground with a marker on it, and a
+  // tree in the middle of the pullout blocks the only thing a pullout is for.
+  roadBlocked: (x, z) => !!roadSystem.queryNearest(x, z, FLORA_PARAMS.scatter.roadExclusion)
+    || roadSystem.poiPadBlocked(x, z, FLORA_PARAMS.scatter.roadExclusion),
   // BUG-23: radius-aware road keep-out — true when NO road centreline is within `keepOut` m. Lets the
   // scatter inflate the mask by a prop's own bounding radius so big rocks/boulders can't overhang the
   // lane. queryNearest already sizes its tile-block search from the radius, so large keep-outs are safe.
-  roadClear:   (x, z, keepOut) => !roadSystem.queryNearest(x, z, keepOut),
+  roadClear:   (x, z, keepOut) => !roadSystem.queryNearest(x, z, keepOut)
+    && !roadSystem.poiPadBlocked(x, z, keepOut),
   // distance to the nearest road centreline (Infinity if none within 25 m) — small-rock road bands
   roadDist:    (x, z) => {
     const nr = roadSystem.queryNearest(x, z, 25)
@@ -1159,6 +1164,8 @@ const map2d = new Map2D({
   // FEAT-43: the story-mode region boundary, so the player can see where the wall is rather than
   // finding it by driving into it. Null outside story mode (and until the region center is captured).
   getRegion: () => storySystem?.region() ?? null,
+  // FEAT-46: POI icons — how the player finds one to drive to. Empty outside story mode.
+  getPois: () => poiSystem.list(),
   onTeleport: ({ x, z, heading }) => {
     // Snap to the road orientation, but a road tangent has TWO directions — pick the one closest
     // to the truck's current heading so the teleport doesn't spin it 180°. Off-road: keep heading.
@@ -1448,6 +1455,21 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
     for (let i = 0; i < propHits.length; i++) hits.push(propHits[i])
   }
 
+  // FEAT-46: the POI marker cube is SOLID — a marker you drive through reads as scenery, and this
+  // project's premise is that the physics is honest. Same {nx,ny,nz,depth} convention as the prop
+  // hits above, converted here exactly as prop-system does. Empty list in free roam ⇒ free.
+  if (!_labActive) {
+    const poiHit = poiSystem.queryContact(cx, cy, cz, r)
+    if (poiHit) {
+      const t = r - poiHit.depth   // query centre back along -normal to the solid's surface
+      hits.push({
+        normal: new THREE.Vector3(poiHit.nx, poiHit.ny, poiHit.nz),
+        depth: poiHit.depth,
+        contactPoint: new THREE.Vector3(cx - poiHit.nx * t, cy - poiHit.ny * t, cz - poiHit.nz * t),
+      })
+    }
+  }
+
   // BUG-37: bore WALL contact — terrainSystem's ground block above only resolves the bore FLOOR
   // (bore-ownership rule); the curved half-tube sides have no matching collision without this. Same
   // {normal,depth,contactPoint} shape as prop hits, so the wheel solver treats a wall like any other
@@ -1633,6 +1655,11 @@ if (_PROF) {
   // FEAT-43: story-mode handle, so the external profiler can measure INSIDE the mode (enter it,
   // wait out the region warm, then drive) instead of only ever profiling free roam.
   window.__story = () => storySystem
+  // FEAT-46: the placed POIs, so an external harness can enter the mode and verify the pads/markers
+  // without a screenshot. Same read-only precedent as __story / __road.
+  window.__poi = () => poiSystem
+  // The live mission/run state, so a harness can reach a result card without driving the route.
+  window.__mission = () => missionSystem
   // Route-dispatch probe: wraps _routeDispatch on first call to count per-key dispatches —
   // diagnoses warm-loop re-dispatch churn (a key dispatched >2× means a warm scan is spinning).
   let _rdWrap = null
@@ -1836,6 +1863,41 @@ function _startPlannerWarm (seed, cx, cz) {
   rec.timer = setTimeout(pump, 0)
 }
 
+// ── FEAT-46: story-mode POIs — orange marker cubes on their own lay-by pads ─────────────────
+// Story mode only. The pads are handed to the RoadSystem carve AFTER the region is routed and
+// frozen (story.js's onRegionLive), which is what keeps the ratified rule — POIs never influence
+// routing determinism — structural: free roam never calls build(), so it never sets a pad, and the
+// same seed produces the same roads, the same surface and the same par in both modes.
+//
+// POI knobs live in POI_PARAMS, deliberately NOT in RANGER_PARAMS: that object feeds routeCacheSig,
+// and a poi* key landing in it would re-key every baked route bundle for a marker's size.
+const poiSystem = new PoiSystem({
+  getRoad:    () => roadSystem,
+  getWater:   () => waterSystem,
+  getTerrain: () => terrainSystem,
+  getSeed:    () => worldSeed,
+  getParams:  () => RANGER_PARAMS,
+})
+const _poiGroup = new THREE.Group()
+_poiGroup.name = 'poi-markers'
+scene.add(_poiGroup)
+// Placeholder art (FEAT-43's word): an orange cube standing on the pad. Emissive so it reads at
+// distance under the sky's ACES tone mapping without needing its own light.
+const _poiCubeGeo = new THREE.BoxGeometry(POI_PARAMS.poiCubeSize, POI_PARAMS.poiCubeSize, POI_PARAMS.poiCubeSize)
+const _poiCubeMat = new THREE.MeshStandardMaterial({ color: 0xff7a18, emissive: 0x3a1a00, roughness: 0.55 })
+
+/** Rebuild the marker cubes from the current POI list (cheap: a handful of boxes per region). */
+function _rebuildPoiMarkers () {
+  _poiGroup.clear()   // geometry + material are shared singletons — nothing per-cube to dispose
+  const half = POI_PARAMS.poiCubeSize * 0.5
+  for (const q of poiSystem.list()) {
+    const cube = new THREE.Mesh(_poiCubeGeo, _poiCubeMat)
+    cube.position.set(q.x, q.y + half, q.z)
+    cube.castShadow = true
+    _poiGroup.add(cube)
+  }
+}
+
 const _misFwd = new THREE.Vector3()
 missionSystem = new MissionSystem({
   getRoad:  () => roadSystem,
@@ -1873,6 +1935,11 @@ missionSystem = new MissionSystem({
   // free roam, which leaves Quick Job's original player-centred behaviour exactly as it was.
   getRegion: () => storySystem?.region() || null,
   teleport: (x, z, heading) => teleportToGround(x, z, heading, 0.5),
+  // FEAT-46: accepting a job moves the spawn to where the run begins — the POI pad you're parked on,
+  // or the start pin you were just seated at. Taking the job is the commitment, so it is also the
+  // checkpoint: reset (R) puts you back on the job you took, not wherever you last happened to stop.
+  // Reuses setSpawnHere() so there is ONE spawn-override write path, not a second that could drift.
+  setSpawn: () => setSpawnHere(),
   setMapOpen: (open) => {
     if (!open) { map2d.hide(); return }
     map2d.show()
@@ -1923,6 +1990,29 @@ labSystem = new LabSystem(scene, () => ({
   throttle: vehicleState.throttle,
 }))
 
+// ── FEAT-46: POI interaction ────────────────────────────────────────────────────────────────
+// Stopped beside a marker cube, with no job already in flight → "press E for a job". Requiring
+// the truck to be roughly STOPPED (not merely nearby) is the whole affordance: you pull into the
+// lay-by, which is what the pad is for. The mission that follows starts where you sit — no
+// teleport (owner, 2026-07-28) — so the countdown runs out from under you on the pullout.
+const POI_INTERACT_MAX_SPEED = 2.0   // m/s — "parked", loosely enough that idle creep still counts
+
+/** The POI the player may interact with right now, or null. */
+function _poiInReach () {
+  if (!storySystem.isActive() || storySystem.isEntering()) return null
+  if (missionSystem && missionSystem.state !== 'idle') return null
+  if (Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) > POI_INTERACT_MAX_SPEED) return null
+  return poiSystem.nearest(vehicleState.position.x, vehicleState.position.z)
+}
+
+function _updatePoiPrompt () {
+  const el = document.getElementById('poi-prompt')
+  if (!el) return
+  const poi = _poiInReach()
+  el.style.display = poi ? 'block' : 'none'
+  if (poi) el.textContent = 'press E — take a job from here'
+}
+
 // Story-mode DOM. Two surfaces: the offer/result panel (over the map) and the in-run HUD.
 // SM-INV-3 — par NEVER appears while driving; the result card is the only place it is shown.
 function _renderMissionUI () {
@@ -1944,7 +2034,6 @@ function _renderMissionUI () {
       // long walk), which takes a few seconds — say so rather than looking hung.
       body.innerHTML = 'planning a job&hellip;<br><span class="mp-dim">building the road network for this area</span>'
       show(acts, false, 'flex')
-      show(document.getElementById('mp-seed-row'), false)
       show(document.getElementById('mp-export-row'), false)
       break
     case 'offer': {
@@ -1952,11 +2041,15 @@ function _renderMissionUI () {
       const j = m.mission
       body.innerHTML = `<span class="mp-big">${km(j.distance)}</span> &nbsp;<span class="mp-dim">`
         + `${j.edges} leg${j.edges === 1 ? '' : 's'}</span><br>`
-        + `<span class="mp-dim">green pin is the start &mdash; you'll be moved there</span>`
-      btn('mp-accept', true); btn('mp-retry', false); btn('mp-regen', true); btn('mp-quit', true)
+        // FEAT-46: a POI job does NOT move you — you are already parked at the marker, and claiming
+        // otherwise would have the panel lying about the one thing the player is about to feel.
+        + (j.fromPoi
+          ? `<span class="mp-dim">starts here &mdash; the clock runs from where you're parked</span>`
+          : `<span class="mp-dim">green pin is the start &mdash; you'll be moved there</span>`)
+      // FEAT-46: the offer is exactly three actions — decline · regenerate · accept.
+      btn('mp-accept', true); btn('mp-decline', true); btn('mp-retry', false)
+      btn('mp-regen', true); btn('mp-quit', false)
       show(document.getElementById('mp-export-row'), false)
-      show(document.getElementById('mp-seed-row'), true, 'flex')
-      _syncSeedField()
       // Clear the per-run note so the previous run's note cannot ride along with the next export.
       // The DRIVER name is deliberately NOT cleared — it is per-session, and re-typing it every run
       // is exactly how you end up with three spellings of one person in the dataset.
@@ -1982,18 +2075,20 @@ function _renderMissionUI () {
         + `your time <b>${formatTime(r.elapsed)}</b> &nbsp;<span class="mp-dim">/</span>&nbsp; `
         + `par <b>${formatTime(r.par)}</b><br>`
         + `<span style="color:${col}">${sign}${formatTime(Math.abs(r.margin))} vs par</span>`
-      btn('mp-accept', false); btn('mp-retry', true); btn('mp-regen', false); btn('mp-quit', true)
+      // The result card is exactly three actions: retry · continue · back to free roam (that is the
+      // DOM order too). The calibration form above them stays — the subjective read is the ground
+      // truth PAR_REF is fitted to, and it is only reliably captured here, in the same click.
+      btn('mp-accept', true); btn('mp-decline', false); btn('mp-retry', true)
+      btn('mp-regen', false); btn('mp-quit', true)
       show(document.getElementById('mp-export-row'), true)
-      show(document.getElementById('mp-seed-row'), false)
-      // Reuse the accept button as "next job" so there's one obvious forward action; "retry"
-      // sits beside it to re-run the same route (testing/calibration — a known-road second lap).
+      // The accept button doubles as CONTINUE here — one obvious forward action, with "retry"
+      // beside it to re-run the same route (testing/calibration: a known-road second lap).
       const nb = document.getElementById('mp-accept')
-      if (nb) { nb.style.display = ''; nb.textContent = 'next job' }
+      if (nb) nb.textContent = 'continue'
       break
     }
     default:
       show(panel, false); show(hud, false)
-      show(document.getElementById('mp-seed-row'), false)
       show(document.getElementById('mp-export-row'), false)
       if (m.error) console.info('[mission]', m.error)
       break
@@ -2004,47 +2099,26 @@ function _renderMissionUI () {
   }
 }
 
-// Seed field: pre-populated with the live seed so the panel always shows the world you're in.
-function _syncSeedField () {
-  const el = document.getElementById('mp-seed')
-  if (el && document.activeElement !== el) el.value = _seedString
-}
-// Applying a seed goes through the SAME path as the debug panel's seed field — one code path for
-// world regeneration, not a second one that could drift. The mission planner is invalidated so the
-// next roll re-streams against the new world.
-function _applyStorySeed () {
-  const el = document.getElementById('mp-seed')
-  const hint = document.getElementById('mp-seed-hint')
-  if (!el) return
-  const v = el.value.trim()
-  if (!v || v === _seedString) { if (hint) hint.textContent = 'same seed — nothing to do'; return }
-  worldSeed = parseWorldSeed(v)
-  _seedString = String(v)
-  _spawnOverride = null
-  missionSystem.invalidatePlan()
-  _plannerWarm = null; _plannerWarmAt = -Infinity   // force a fresh warm for the new world
-  debouncedRebuildFull()
-  if (hint) hint.textContent = 'regenerating world…'
-  // The world rebuild is debounced + async; give it room, then roll a mission in the new world.
-  setTimeout(() => {
-    if (hint) hint.textContent = 'enter a new seed to regenerate the world'
-    if (missionSystem.state !== 'idle') missionSystem.enter()
-  }, 2500)
-}
-document.getElementById('mp-seed-go')?.addEventListener('click', _applyStorySeed)
+// FEAT-46: the mission panel's seed control is GONE. You choose the world when you enter story mode
+// (#story-seed-modal), and offering it again in the job panel meant a full world rebuild could fire
+// under a live mission planner mid-run. The debug panel's seed field remains the one testing path.
+
 // Keep typed text out of the world (WASD/M/Esc would otherwise drive/toggle while typing).
 for (const id of ['mp-note', 'mp-driver']) {
   document.getElementById(id)?.addEventListener('keydown', (e) => e.stopPropagation())
 }
-document.getElementById('mp-seed')?.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); _applyStorySeed() }
-  e.stopPropagation()          // keep WASD/M/Esc out of the world while typing a seed
-})
 
 // Buttons. Same null-guarded module-eval wiring as every other control in this file (WR-04).
 document.getElementById('mp-accept')?.addEventListener('click', () => {
-  if (missionSystem.state === 'done') missionSystem.next(); else missionSystem.accept()
+  // On the result card this button is CONTINUE: put the finished run down and carry on driving in
+  // story mode. It no longer auto-rolls the next job — with POIs as the job source, the next one is
+  // something you go and find, not something handed to you at the drop point.
+  if (missionSystem.state === 'done') missionSystem.exit(); else missionSystem.accept()
 })
+// FEAT-46: DECLINE puts the job down and leaves you in story mode with nothing active — it does not
+// leave the mode. (Leaving is the pause menu's job, and #mp-quit in the result card.) Walking away
+// from an offer is an ordinary thing to do; quitting the game mode is not.
+document.getElementById('mp-decline')?.addEventListener('click', () => missionSystem.exit())
 document.getElementById('mp-regen')?.addEventListener('click', () => missionSystem.regenerate())
 document.getElementById('mp-retry')?.addEventListener('click', () => missionSystem.retry())
 // FEAT-30 calibration: dump the finished run's route shape + score to a file. A score alone can't
@@ -2496,6 +2570,36 @@ const storySystem = new StorySystem({
     terrainSystem?.rebuildAllChunksFromWorker()
     return true
   },
+  /**
+   * FEAT-46: the region is routed and about to be handed over — place the POIs, hand their pads to
+   * the carve, and re-bake. The re-bake is required, not belt-and-braces: pumpRegionWarm already
+   * rebuilt the live ring against the registered network, but that ran BEFORE the pads existed, so
+   * without this second pass the cubes stand on unflattened hillside until the player drives far
+   * enough to evict and re-stream those chunks. Both passes are behind the loading screen.
+   */
+  onRegionLive: (center, radius) => {
+    if (!center) return
+    poiSystem.build(center, radius)
+    _rebuildPoiMarkers()
+    terrainSystem?.rebuildAllChunksFromWorker()
+    // Props scattered BEFORE the pads existed are still standing in them (the scatter's road
+    // keep-out now covers a pad, but only for chunks scattered after this point). Release just the
+    // chunks a pad touches so they re-scatter against the finished ground — a handful, not a rebuild.
+    if (propSystem) {
+      const S = CHUNK_SIZE
+      for (const q of poiSystem.list()) {
+        const c0x = Math.floor((q.x - q.halfLen) / S), c1x = Math.floor((q.x + q.halfLen) / S)
+        const c0z = Math.floor((q.z - q.halfLen) / S), c1z = Math.floor((q.z + q.halfLen) / S)
+        for (let cx = c0x; cx <= c1x; cx++) for (let cz = c0z; cz <= c1z; cz++) propSystem.releaseChunk(cx, cz)
+      }
+    }
+  },
+  /** FEAT-46: leaving story mode — drop the pads before releaseRegion() re-bakes without them. */
+  onRegionExit: () => {
+    poiSystem.clear()
+    _rebuildPoiMarkers()
+    terrainSystem?.rebuildAllChunksFromWorker()
+  },
   /** Exit: hand the play RoadSystem back its normal streaming window before the loop resumes. */
   releaseRegion: () => {
     if (!roadSystem) return
@@ -2588,6 +2692,12 @@ document.getElementById('teleport-btn')?.addEventListener('click', _teleportToFr
 document.addEventListener('keydown', e => {
   // T → free-cam teleport (usable while pointer-locked, where the button can't be clicked).
   if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey) _teleportToFreecam()
+  // FEAT-46: E → take a job from the POI you are parked at. The prompt is the only advertisement
+  // of this key, and it is only up when the action is actually available.
+  if ((e.key === 'e' || e.key === 'E') && !e.ctrlKey && !e.metaKey) {
+    const poi = _poiInReach()
+    if (poi) { missionSystem.enterFromPoi(poi); _updatePoiPrompt() }
+  }
   // Shift+R → set the spawn point to the truck's current pose (does not move the truck).
   if (e.shiftKey && (e.key === 'r' || e.key === 'R')) {
     if (isTeleportEnabled()) setSpawnHere()
@@ -3059,6 +3169,9 @@ function loop () {
     // Story mode (beta): the countdown digit and the elapsed/distance readout are live values,
     // so they repaint on the HUD's ~10 Hz cadence rather than per physics step.
     if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'running')) _renderMissionUI()
+
+    // FEAT-46: the POI prompt. Same ~10 Hz cadence — it's a proximity affordance, not a trigger.
+    _updatePoiPrompt()
 
     // M1-11: live speed readout. velocity.length() = magnitude in m/s; * 3.6 converts to km/h.
     document.getElementById('speedVal').textContent = (vehicleState.velocity.length() * 3.6).toFixed(1)

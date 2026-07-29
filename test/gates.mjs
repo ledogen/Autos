@@ -86,6 +86,8 @@ export const GATES = [
     desc: 'BUG-38: Pacejka tire friction is evaluated ONCE per wheel against the support surface — a 2nd contact (wall/prop/ramp) adds only push-out via _hubNormalXZ, never re-applied grip; no double-counted cornering/drive force when a wheel straddles ground + obstacle' },
   { file: 'mission-network.mjs', subsystem: 'story', cost: 'heavy', extraDeps: [],
     desc: 'story missions route ONLY over the post-cull registered network (raw Urquhart has ~15% phantom edges), use the registered centerline object, and edgeParData reports the registered runKey either way round' },
+  { file: 'story-poi.mjs', subsystem: 'story', cost: 'heavy', extraDeps: ['src/terrain.js'],
+    desc: 'FEAT-46 story POIs: a job taken from a POI starts AT that POI on every roll incl. regenerate; the ROAD SURFACE is bit-identical with and without the lay-by pads (free roam == story mode — the ratified rule), placement is downstream of routing and window-invariant (keyed off graph edges; the region clip is a post-filter, never a reject test), pads are flat + fully carved, and the on-water / junction / earthwork-cap rejects bite' },
   { file: 'par-oracle.mjs', subsystem: 'story', cost: 'fast', extraDeps: ['src/main.js'],
     desc: 'FEAT-29 par oracle: SM-INV-2 (par never reads the car), determinism, independent time-marched check, SIGNED grade (downhill faster), curvature monotonicity, mid-edge arc-range splitting, junction penalty, spawn-heading convention' },
   { file: 'gps-route.mjs', subsystem: 'story', cost: 'fast', extraDeps: ['src/main.js'],
