@@ -24,7 +24,7 @@
 
 /** Tunables. Geometry + siting only — none of this may ever enter routeCacheSig. */
 export const POI_PARAMS = {
-    poiEdgeChance:    0.10,   // probability a qualifying graph edge carries a POI
+    poiEdgeChance:    0.20,   // probability a qualifying graph edge carries a POI
     poiCandidates:    6,      // arcS candidates tried per carrying edge before giving up
     poiPadHalfLen:    7.0,    // m — half length of the lay-by, along the road
     poiPadHalfWid:    4.0,    // m — half width, across the road

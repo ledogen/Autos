@@ -198,7 +198,8 @@ story mode.
 
 ## Open (deliberately deferred)
 
-- Density: `poiEdgeChance` 0.10 gives ~4 POIs in a 2500 m region. Sparse by design; raise it if it
-  reads empty in play.
+- Density: `poiEdgeChance` 0.20 gives 10 POIs in the seed-6 2500 m region (was 0.10 / 4 POIs —
+  doubled on owner request 2026-07-28, the original 4 are a subset since the roll is per-edge
+  independent).
 - The prompt is a HUD line, not a world-space label.
 - No POI variety (types, names, differing mission flavours) - that is FEAT-21's remaining scope.
