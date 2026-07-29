@@ -23,7 +23,11 @@ export const sleep = ms => new Promise(r => setTimeout(r, ms))
 export function launchChrome (url, { port = 9222, headed = false, windowSize = '1400,900', extraArgs = [] } = {}) {
   const userDir = mkdtempSync(join(tmpdir(), 'rangersim-cdp-'))
   const args = [
-    ...(headed ? [] : ['--headless=new']),
+    // --mute-audio rides with --headless: CDP-synthesized keydowns count as a user gesture, so the
+    // harness DOES unlock WebAudio and a headless run would otherwise play the engine drone out of
+    // the host's speakers. Deliberately not applied to `headed` runs — that's the in-browser verify
+    // path (see reference: CDP verify), where hearing the audio is the point.
+    ...(headed ? [] : ['--headless=new', '--mute-audio']),
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${userDir}`,
     '--use-angle=metal',

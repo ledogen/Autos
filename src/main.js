@@ -31,7 +31,7 @@ window.__renderer = () => renderer
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
-import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume } from './engine-audio.js'
+import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setAudioPageActive } from './engine-audio.js'
 import { ensureTireAudio, updateTireAudio, setTireAudioEnabled, setTireAudioVolumes } from './tire-audio.js'
 import { ensureWindAudio, updateWindAudio, setWindAudioEnabled, setWindAudioVolume } from './wind-audio.js'
 import { TerrainSystem } from './terrain.js'
@@ -2611,6 +2611,17 @@ function _downloadJSON (obj, name) {
     document.body.appendChild(a); a.click(); document.body.removeChild(a)
   } finally { URL.revokeObjectURL(url) }
 }
+
+// ── Background-tab mute ───────────────────────────────────────────────────────
+// Two distinct "we're not looking at it" events, and we need BOTH: alt-tabbing to another app
+// fires window blur but NOT visibilitychange (the tab is still visible), while switching browser
+// tabs / minimising fires visibilitychange. Mute on either; unmute only when focused AND visible,
+// so returning focus to a still-hidden tab doesn't restart the drone.
+const _audioPageActive = () => document.hasFocus() && !document.hidden
+const _syncAudioPageActive = () => setAudioPageActive(_audioPageActive())
+window.addEventListener('blur',  _syncAudioPageActive)
+window.addEventListener('focus', _syncAudioPageActive)
+document.addEventListener('visibilitychange', _syncAudioPageActive)
 
 document.addEventListener('keydown', e => {
   ensureEngineAudio()   // FEAT-23: first keypress is the user gesture that unlocks WebAudio
