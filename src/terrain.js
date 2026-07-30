@@ -460,7 +460,10 @@ export class TerrainSystem {
             addWorldVaryings(shader)
             shader.fragmentShader = 'uniform float uDetailScale, uNoiseScale, uMottle, uBump, uCliffLo, uCliffHi, uTreeLo, uTreeHi;\n' +
                 'uniform sampler2D uShadowAtlas; uniform float uShadowAtlasN, uShadowTilePx, uShadowStrength, uShadowFadeStart, uShadowFadeEnd;\n' +
-                'uniform int uTunnelN; uniform vec4 uTunnelPos[24]; uniform vec4 uTunnelAxis[24];\n' + shader.fragmentShader
+                'uniform int uTunnelN; uniform vec4 uTunnelPos[24]; uniform vec4 uTunnelAxis[24];\n' +
+                // Baked prop-shadow occlusion, written at <color_fragment> and consumed by the
+                // directional-light patch below. Global because those two chunks are separate scopes.
+                'float rsBakedShade = 1.0;\n' + shader.fragmentShader
             // FEAT-40: cut the skin at tunnel mouths — capsule test in world space, then discard.
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <clipping_planes_fragment>',
@@ -491,6 +494,16 @@ export class TerrainSystem {
                 // (a pure fn of position, so no per-chunk uniform). A 5-tap in-tile blur softens the
                 // 0.5 m/texel silhouette; inTile is clamped to the tile interior so linear filtering
                 // never bleeds across the (non-adjacent) neighbouring atlas tile.
+                //
+                // The sampled occlusion is stashed in rsBakedShade and applied to the DIRECT KEY
+                // LIGHT (see the lights_fragment_begin patch below), NOT multiplied into albedo here
+                // as it used to be. Darkening albedo made a prop's shadow survive everywhere: on
+                // ground the terrain cascade had already put in shadow it double-darkened, and at
+                // night it painted tree shadows the moon could never have cast. Attenuating the sun
+                // instead makes it compose correctly — no sun reaching the ground means no prop
+                // shadow to add — and shadowed ground now falls back to hemisphere fill, which is
+                // both what the realtime shadows do and why it reads cooler rather than just darker.
+                rsBakedShade = 1.0;
                 if (uShadowStrength > 0.0) {
                     vec2 sh_cf   = vWorldPos.xz / ${CHUNK_SIZE.toFixed(1)};
                     vec2 sh_tile = mod(floor(sh_cf), uShadowAtlasN);
@@ -508,9 +521,29 @@ export class TerrainSystem {
                     sh_a *= 0.2;                                        // average of the 5 taps
                     // QUAL-18: fade the baked shadow out with view distance (LOD dissolve).
                     float sh_fade = 1.0 - smoothstep(uShadowFadeStart, uShadowFadeEnd, length(vViewPosition));
-                    diffuseColor.rgb *= 1.0 - sh_a * uShadowStrength * sh_fade;
+                    rsBakedShade = 1.0 - sh_a * uShadowStrength * sh_fade;
                 }`
             )
+            // Apply the baked prop shadow to the DIRECTIONAL lights only (the sun + main.js's
+            // terrain cascade) — never to the headlight spots, which a baked SUN occlusion map says
+            // nothing about. Inlining lights_fragment_begin is what buys per-light targeting: the
+            // chunk's own `RE_Direct(...)` call text is shared by the dir/point/spot blocks, whereas
+            // `getDirectionalLightInfo(...)` appears exactly once, immediately before the directional
+            // RE_Direct. Unroll pragmas still resolve — WebGLProgram expands them on the final string,
+            // after includes. If a three upgrade renames that call this fails LOUD in dev and simply
+            // leaves the baked shadows unapplied in play (no broken shader).
+            {
+                const LFB = THREE.ShaderChunk.lights_fragment_begin
+                const hook = 'getDirectionalLightInfo( directionalLight, directLight );'
+                if (LFB.includes(hook)) {
+                    shader.fragmentShader = shader.fragmentShader.replace(
+                        '#include <lights_fragment_begin>',
+                        LFB.replace(hook, hook + '\n\t\tdirectLight.color *= rsBakedShade;')
+                    )
+                } else {
+                    console.warn('[terrain] lights_fragment_begin shape changed — baked prop shadows not applied')
+                }
+            }
             // Normal bump (after the geometric normal is established). Rockiness = max(steepness,
             // altitude) so the bump is granite-only; flat low meadow stays smooth.
             shader.fragmentShader = shader.fragmentShader.replace(

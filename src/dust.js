@@ -161,6 +161,7 @@ export class DustSystem {
         // These puffs are UNLIT — no normals, no light loop — so without this they keep their full
         // daytime albedo after dark and read as glowing blobs. 1,1,1 = the shipped daylight look.
         uLight: { value: new THREE.Color(1, 1, 1) },
+        uLightA: { value: 1 },
       }]),
       vertexShader: /* glsl */`
         attribute vec3 aPos;
@@ -187,6 +188,7 @@ export class DustSystem {
       fragmentShader: /* glsl */`
         uniform sampler2D uMap;
         uniform vec3 uLight;
+        uniform float uLightA;
         varying vec2 vUv;
         varying vec3 vColor;
         varying float vOpacity;
@@ -200,7 +202,10 @@ export class DustSystem {
           float disc = 1.0 - smoothstep(0.72, 1.0, d);
           float a = mix(tex.a, disc, vShape);
           if (a < 0.01) discard;
-          gl_FragColor = vec4(vColor * mix(tex.rgb, vec3(1.0), vShape) * uLight, a * vOpacity);
+          // Day/night: dim the COLOUR and the ALPHA. Colour alone only greys the puff out, and a
+          // grey puff on a black road is still obvious — what sells "unlit smoke at night" is the
+          // thing becoming transparent. uLightA is luminance(uLight) shaped by its own curve.
+          gl_FragColor = vec4(vColor * mix(tex.rgb, vec3(1.0), vShape) * uLight, a * vOpacity * uLightA);
           // ShaderMaterial does NOT auto-append these (built-ins do): keep dust inside the same
           // ACES + colour pipeline as the SpriteMaterial it replaced, fog last like the built-ins.
           #include <tonemapping_fragment>
@@ -388,8 +393,13 @@ export class DustSystem {
    * Push the day/night irradiance multiplier (SkySystem.particleLight) into the shader. Called once
    * per render frame from main.js — these billboards are unlit, so this is their only light source.
    * @param {THREE.Color} c — linear RGB multiplier; 1,1,1 is the authored daylight look.
+   * @param {number} alpha — opacity multiplier for the same reason (see the shader note).
    */
-  setLight (c) { this._mesh.material.uniforms.uLight.value.copy(c) }
+  setLight (c, alpha) {
+    const u = this._mesh.material.uniforms
+    u.uLight.value.copy(c)
+    u.uLightA.value = alpha
+  }
 
   update (dt, vehicleState, params, groundYAt, onRoadFactorAt) {
     if (dt <= 0) return

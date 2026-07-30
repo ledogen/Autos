@@ -87,7 +87,12 @@ export const SKY_PRESETS = {
     // that the fog no longer (wrongly) lifts the whole distance. Raised from 0.45/0x2a3a55 — with the
     // fog fix in, the old values left the night a silhouette rather than a moonlit landscape.
     sunColor: 0x7488b0, sunIntensity: 0.7, hemiSky: 0x35486b, hemiGround: 0x181c26,
-    hemiIntensity: 0.75, fogColor: 0x3a4a70,   // radiance, RE-AUTHORED (see the note above)
+    // Fog must land near the SKY it blends into or distant terrain reads as a lit haze against a
+    // black sky — the FEAT-05 no-hard-band invariant, and the "distant objects glow" report.
+    // The night sky renders essentially (0,0,0); as a RADIANCE this displays ~(2,5,17), a bare
+    // hint of blue. Measured, not guessed: at 0x3a4a70 the ground saturated to a flat (14,26,53)
+    // everywhere while the sky was (0,0,0) — a 3× step with no distance cue in it at all.
+    hemiIntensity: 0.75, fogColor: 0x1d2740,   // radiance, RE-AUTHORED (see the note above)
   },
 }
 
@@ -107,15 +112,18 @@ export const SKY_CYCLE = {
   // evening 18 / night 24) every single hour was a blend and NO hour was actually the night look:
   // 23:00 was still 17 % evening, which is why the small hours carried a warm dusk haze — half of
   // the "fog is bright at night" report. A repeated preset makes that span flat, so dusk finishes
-  // at 21:00 and dawn starts at 04:00 and the hours between are genuinely `night`.
+  // at 20:00 and dawn starts at 04:00 and the hours between are genuinely `night`.
+  // Dusk is deliberately SHORT (2 h). fogColor lerps linearly but the sky's brightness falls off
+  // a cliff as the sun crosses the horizon, so any long evening→night ramp spends its middle
+  // with fog much brighter than the sky behind it. Keeping the window narrow bounds that.
   keyframes: [
     { hour: 0,  preset: 'night' },
     { hour: 4,  preset: 'night' },      // flat night 00:00–04:00
     { hour: 7,  preset: 'morning' },    // dawn 04:00–07:00
     { hour: 12, preset: 'day' },
     { hour: 18, preset: 'evening' },
-    { hour: 21, preset: 'night' },      // dusk 18:00–21:00
-    { hour: 24, preset: 'night' },      // flat night 21:00–24:00
+    { hour: 20, preset: 'night' },      // dusk 18:00–20:00
+    { hour: 24, preset: 'night' },      // flat night 20:00–24:00
   ],
 }
 
@@ -159,7 +167,11 @@ function acesToneMap (c, exposure) {
  * effectively invisible rather than merely dim. floor keeps a sliver of visibility on the darkest
  * look — kicked-up dust is a gameplay read (traction), not only a decoration.
  */
-export const PARTICLE_LIGHT = { keyWeight: 0.5, hemiWeight: 0.5, gamma: 0.6, floor: 0.06 }
+export const PARTICLE_LIGHT = {
+  keyWeight: 0.5, hemiWeight: 0.5,
+  gamma: 0.8, floor: 0.02,       // COLOUR curve
+  alphaGamma: 1.0, alphaFloor: 0.0,  // OPACITY curve — see particleAlpha
+}
 
 /** Raw (un-normalised) linear irradiance estimate for a look. Shared by the live value + the norm. */
 function rawIrradiance (look, out) {
@@ -332,20 +344,44 @@ export class SkySystem {
   }
 
   /**
+   * Normalise against `day`'s luminance so both particle curves are pure day-relative dimmers (and
+   * the look's colour CAST — cool at night, warm at dawn — survives). Computed once; it depends only
+   * on the `day` preset. Kept separate because it borrows the same module scratch colours as
+   * rawIrradiance, so callers must seed it BEFORE filling their own value.
+   */
+  _ensureParticleNorm () {
+    if (this._particleNorm) return
+    const d = rawIrradiance(SKY_PRESETS.day, _scratchLight)
+    this._particleNorm = 1 / Math.max(1e-6, 0.2126 * d.r + 0.7152 * d.g + 0.0722 * d.b)
+  }
+
+  /**
    * Linear RGB multiplier for the unlit particle systems (see PARTICLE_LIGHT). 1.0 on the `day`
    * look by construction, so daytime dust is bit-identical to what shipped.
    */
   particleLight (out) {
+    this._ensureParticleNorm()
     rawIrradiance(SKY_PARAMS, out)
-    if (!this._particleNorm) {
-      // Normalise against `day`'s luminance so the multiplier is a pure day-relative dimmer and the
-      // look's colour CAST (cool at night, warm at dawn) survives.
-      const d = rawIrradiance(SKY_PRESETS.day, _scratchLight)
-      this._particleNorm = 1 / Math.max(1e-6, 0.2126 * d.r + 0.7152 * d.g + 0.0722 * d.b)
-    }
     const { gamma, floor } = PARTICLE_LIGHT
     const f = (v) => Math.min(1, floor + (1 - floor) * Math.pow(Math.max(0, v * this._particleNorm), gamma))
     return out.setRGB(f(out.r), f(out.g), f(out.b), THREE.LinearSRGBColorSpace)
+  }
+
+  /**
+   * OPACITY multiplier for the same three systems, on the same day-relative scale (1.0 on `day`).
+   *
+   * Dimming only the colour is not enough: it turns a white puff into a GREY puff, and a grey puff
+   * against a near-black night road is still perfectly legible. Unlit smoke in the dark should be
+   * close to absent, so the alpha has to fall too. Colour × alpha compounds, so the two curves are
+   * deliberately gentler than the single aggressive one they replace.
+   */
+  particleAlpha () {
+    this._ensureParticleNorm()      // MUST precede rawIrradiance — it uses the same scratch colours
+    const c = rawIrradiance(SKY_PARAMS, _scratchLight)
+    const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+    const { alphaGamma, alphaFloor } = PARTICLE_LIGHT
+    return Math.min(1, alphaFloor + (1 - alphaFloor) *
+      Math.pow(Math.max(0, lum * this._particleNorm), alphaGamma))
   }
 
   /**

@@ -2304,7 +2304,13 @@ window.__propShadows = (realtime) => { FLORA_PARAMS.shadows.castRealtime = !!rea
 // bake). Re-run after any PropSystem recreation (GUI rebuild / seed change) — the fresh instance
 // boots impostor-less. The atlas is lit by the current sky look; re-bake it when the look changes.
 const applyPropImpostors = () => {
-  propSystem.setImpostors(renderer, { sun, ambient, sunDir: skySystem.sunDirection })
+  // The impostor atlas is BAKED under the live key light, so it must see the WHOLE key light —
+  // not just `sun`, which now carries only (1 - SHADOW_FAR_SPLIT) of it since the terrain cascade
+  // took the rest. Passing `sun` directly baked distant trees at 40 % intensity while the 3D trees
+  // beside them got 100 %, i.e. a brightness step exactly at the LOD swap. The proxy re-sums the
+  // pair on every read, so it stays correct if the split is ever retuned.
+  const _impostorKey = { color: sun.color, get intensity () { return sun.intensity + sunFar.intensity } }
+  propSystem.setImpostors(renderer, { sun: _impostorKey, ambient, sunDir: skySystem.sunDirection })
   propSystem.setLodRing(FLORA_PARAMS.lod?.ring3d ?? 2)
 }
 _syncImpostors = applyPropImpostors
@@ -3385,9 +3391,10 @@ function loop () {
   // Unlit particles get the look's irradiance as a flat multiplier (see SkySystem.particleLight).
   // Pushed here, once, rather than threaded through three different update() signatures.
   skySystem.particleLight(_particleLight)
-  dustSystem.setLight(_particleLight)
-  smokeSystem.setLight(_particleLight)
-  dirtSpraySystem.setLight(_particleLight)
+  const _particleAlpha = skySystem.particleAlpha()
+  dustSystem.setLight(_particleLight, _particleAlpha)
+  smokeSystem.setLight(_particleLight, _particleAlpha)
+  dirtSpraySystem.setLight(_particleLight, _particleAlpha)
 
   // FEAT-39: GPS overlay. Early-outs to nothing when no mission is live, so free roam pays a
   // null check. Off in the lab, which has no road network to navigate.

@@ -131,6 +131,7 @@ export class DirtSpraySystem {
         // Day/night irradiance multiplier (SkySystem.particleLight, pushed via setLight each frame).
         // Unlit billboards: without this they keep full daytime albedo after dark. 1,1,1 = daylight.
         uLight: { value: new THREE.Color(1, 1, 1) },
+        uLightA: { value: 1 },
       }]),
       vertexShader: /* glsl */`
         attribute vec3 aPos;
@@ -157,6 +158,7 @@ export class DirtSpraySystem {
       fragmentShader: /* glsl */`
         uniform sampler2D uMap;
         uniform vec3 uLight;
+        uniform float uLightA;
         varying vec2 vUv;
         varying vec3 vColor;
         varying float vOpacity;
@@ -170,7 +172,10 @@ export class DirtSpraySystem {
           float disc = 1.0 - smoothstep(0.72, 1.0, d);
           float a = mix(tex.a, disc, vShape);
           if (a < 0.01) discard;
-          gl_FragColor = vec4(vColor * uLight, a * vOpacity);
+          // Day/night: dim the COLOUR and the ALPHA. Colour alone only greys the puff out, and a
+          // grey puff on a black road is still obvious — what sells "unlit smoke at night" is the
+          // thing becoming transparent. uLightA is luminance(uLight) shaped by its own curve.
+          gl_FragColor = vec4(vColor * uLight, a * vOpacity * uLightA);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
           #include <fog_fragment>
@@ -355,8 +360,13 @@ export class DirtSpraySystem {
    * Push the day/night irradiance multiplier (SkySystem.particleLight) into the shader. Called once
    * per render frame from main.js — these billboards are unlit, so this is their only light source.
    * @param {THREE.Color} c — linear RGB multiplier; 1,1,1 is the authored daylight look.
+   * @param {number} alpha — opacity multiplier for the same reason (see the shader note).
    */
-  setLight (c) { this._mesh.material.uniforms.uLight.value.copy(c) }
+  setLight (c, alpha) {
+    const u = this._mesh.material.uniforms
+    u.uLight.value.copy(c)
+    u.uLightA.value = alpha
+  }
 
   update (dt, vehicleState, params, groundYAt, looseFactorAt) {
     if (dt <= 0) return

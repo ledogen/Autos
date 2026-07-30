@@ -96,6 +96,7 @@ export class TireSmokeSystem {
         // Day/night irradiance multiplier (SkySystem.particleLight, pushed via setLight each frame).
         // Unlit billboards: without this they keep full daytime albedo after dark. 1,1,1 = daylight.
         uLight: { value: new THREE.Color(1, 1, 1) },
+        uLightA: { value: 1 },
       }]),
       vertexShader: /* glsl */`
         attribute vec3 aPos;
@@ -119,13 +120,17 @@ export class TireSmokeSystem {
       fragmentShader: /* glsl */`
         uniform sampler2D uMap;
         uniform vec3 uLight;
+        uniform float uLightA;
         varying vec2 vUv;
         varying vec3 vColor;
         varying float vOpacity;
         #include <fog_pars_fragment>
         void main () {
           vec4 tex = texture2D(uMap, vUv);
-          gl_FragColor = vec4(vColor * tex.rgb * uLight, tex.a * vOpacity);
+          // Day/night: dim the COLOUR and the ALPHA. Colour alone only greys the puff out, and a
+          // grey puff on a black road is still obvious — what sells "unlit smoke at night" is the
+          // thing becoming transparent. uLightA is luminance(uLight) shaped by its own curve.
+          gl_FragColor = vec4(vColor * tex.rgb * uLight, tex.a * vOpacity * uLightA);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
           #include <fog_fragment>
@@ -242,8 +247,13 @@ export class TireSmokeSystem {
    * Push the day/night irradiance multiplier (SkySystem.particleLight) into the shader. Called once
    * per render frame from main.js — these billboards are unlit, so this is their only light source.
    * @param {THREE.Color} c — linear RGB multiplier; 1,1,1 is the authored daylight look.
+   * @param {number} alpha — opacity multiplier for the same reason (see the shader note).
    */
-  setLight (c) { this._mesh.material.uniforms.uLight.value.copy(c) }
+  setLight (c, alpha) {
+    const u = this._mesh.material.uniforms
+    u.uLight.value.copy(c)
+    u.uLightA.value = alpha
+  }
 
   update (dt, vehicleState, params, groundYAt) {
     if (dt <= 0) return

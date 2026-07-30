@@ -24,21 +24,28 @@
  * PHASE: the surface is generated as a FULL moon (procedural maria + craters over the whole disc)
  * and a separate terminator mask reveals only part of it. `phase` is 0 = new, 0.5 = half (the
  * shipped default), 1 = full — so wiring a lunar cycle later is just animating that one number; the
- * albedo never changes. The dark limb keeps a faint earthshine so the full disc stays readable.
+ * albedo never changes. The unlit limb is drawn additively at zero, so it is genuinely absent
+ * from the sky rather than a dark disc — `earthshine` can lift it if an ashen look is wanted.
  */
 import * as THREE from 'three'
 
 // Metres from the camera. Must be < camera.far (1000) and > the terrain ring (~320 m) so the world
 // occludes the moon but the moon never clips the far plane.
 const MOON_DIST = 800
+// The billboard quad is this many times the disc DIAMETER, leaving room for the halo to fall off
+// outside the limb. The shader rescales by it (see FRAG) so `angularSize` always means the DISC.
+const QUAD_PAD = 1.9
 
 export const MOON_PARAMS = {
   enabled: true,
-  angularSize: 2.2,     // apparent DIAMETER in degrees (the real moon is 0.52° — too small to read in-game)
+  angularSize: 5.5,     // apparent DIAMETER in degrees. The real moon is 0.52°, which is far too
+                        // small to read in-game; this is the size the look was signed off at.
   phase: 0.5,           // 0 = new, 0.5 = half, 1 = full. Animate this for a lunar cycle.
   brightness: 3.0,      // PRE-tone-mapping luminance of the lit limb (see header). Pushed much past
                         // ~4 and ACES saturates the whole disc to flat white, taking the maria with it.
-  earthshine: 0.035,    // brightness of the unlit limb, as a fraction of `brightness`
+  earthshine: 0.0,      // unlit-limb brightness as a fraction of `brightness`. 0 by DEFAULT: any
+                        // visible dark limb reads as a mask over a full disc, not as a phase.
+                        // Dial up only if you want a deliberate 'ashen light' look.
   terminatorSoft: 0.04, // terminator half-width in disc radii (0 = razor edge)
   halo: 0.35,           // strength of the soft glow ring around the disc (0 = off)
   tint: 0xdfe6f2,       // slightly cool white
@@ -54,6 +61,7 @@ const VERT = /* glsl */`
 `
 
 const FRAG = /* glsl */`
+  #define QUAD_PAD ${QUAD_PAD.toFixed(3)}
   uniform float uPhase, uBrightness, uEarthshine, uTermSoft, uHalo, uSeed, uOpacity;
   uniform vec3  uTint;
   varying vec2 vUv;
@@ -73,7 +81,11 @@ const FRAG = /* glsl */`
   }
 
   void main () {
-    vec2 p = (vUv - 0.5) * 2.0;          // unit disc coords
+    // p spans [-1,1] across the QUAD, but the quad is QUAD_PAD× the disc so the halo has somewhere
+    // to live — so rescale into DISC units, where r == 1 is the moon's limb and the quad corner is
+    // at r == QUAD_PAD·√2. (Getting this wrong renders the disc at the full quad size, i.e.
+    // QUAD_PAD× the requested angular size, and leaves the halo entirely outside the geometry.)
+    vec2 p = (vUv - 0.5) * 2.0 * QUAD_PAD;
     float r = length(p);
 
     // ── Soft glow, OUTSIDE the disc only. Sells "bright object seen through atmosphere" and hides
@@ -99,8 +111,11 @@ const FRAG = /* glsl */`
     float lit = smoothstep(-uTermSoft, uTermSoft, p.x - edge);
     float level = mix(uEarthshine, 1.0, lit);
 
+    // ADDITIVE output (see the material): the moon is a light source against the sky, so the
+    // unlit limb must contribute NOTHING. With normal blending it instead painted the disc's dark
+    // half as opaque black — a visible mask sitting over a full circle rather than a phase.
     vec3 col = uTint * uBrightness * (albedo * level * disc + glow);
-    gl_FragColor = vec4(col, uOpacity * max(disc, glow));
+    gl_FragColor = vec4(col, uOpacity);
 
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
@@ -129,7 +144,9 @@ export class MoonSystem {
       depthWrite: false,     // never occlude the world
       depthTest: true,       // ...but let the world occlude IT (see header)
       fog: false,            // REQUIRED at MOON_DIST — see header
-      blending: THREE.NormalBlending,
+      // Additive, so the unlit limb and the halo tail add zero instead of compositing black over
+      // the sky. AdditiveBlending is (SRC_ALPHA, ONE), so uOpacity still drives the nightFactor fade.
+      blending: THREE.AdditiveBlending,
     })
     // The glow extends past the disc, so the quad is oversized and the shader masks it.
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), this._mat)
@@ -163,9 +180,10 @@ export class MoonSystem {
     if (!vis) return
     this.mesh.position.copy(camera.position).addScaledVector(keyDir, MOON_DIST)
     this.mesh.quaternion.copy(camera.quaternion)   // billboard
-    // Quad spans the glow as well as the disc, hence the ×2.6 pad; the shader masks the rest.
+    // Quad spans the halo as well as the disc, hence QUAD_PAD; the shader rescales to match, so
+    // `angularSize` is the DISC's apparent diameter, not the quad's.
     const halfAngle = THREE.MathUtils.degToRad(MOON_PARAMS.angularSize) * 0.5
-    this.mesh.scale.setScalar(2 * MOON_DIST * Math.tan(halfAngle) * 2.6)
+    this.mesh.scale.setScalar(2 * MOON_DIST * Math.tan(halfAngle) * QUAD_PAD)
     this._mat.uniforms.uOpacity.value = Math.min(1, nightFactor)
   }
 
