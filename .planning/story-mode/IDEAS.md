@@ -269,3 +269,18 @@ Open: whether they're single-use per job, degrade over several, or are a tool yo
 
 Related: `missions.md` §3b (fragile delivery — shock/impulse signal, FEAT-38 surface
 interaction); DESIGN.md "The car: jalopy + parts" (consumables/tools as real load); SM-INV-10.
+
+## An exhaustion visual filter — 2026-07-30
+Owner, during the SM-1 ratification: once EXHAUSTED (energy 0, FEAT-47's deepest stage), layer a
+visual filter over the world between the dozes — desaturation / vignette / soft-focus, whatever
+reads as "you should not be driving". The eyelids already carry the mechanics; this is tone.
+Touches SM-INV-3 (it must stay diegetic — a filter, never a meter) and SM-INV-11 (at this energy
+level the world going wrong is also the Roamer's register — could share machinery with the story
+parameter states, SM-5).
+
+## "Ate a home-cooked meal" — waking up at mom's — 2026-07-30
+Owner, same pass: sleeping at mom's house (fixed average vibe, FEAT-45) should probably grant a
+wake-up buff — the home-cooked meal. What it does is open (a few bonus energy hours? the only
+free breakfast in the run?) but the shape is a small, warm, *scripted-feeling* comfort that makes
+returning to mom's a real alternative to a great campsite, not a fallback. Prices/consumables are
+SM-2's; revisit when food items exist (items.md).

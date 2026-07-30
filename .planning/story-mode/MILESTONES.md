@@ -24,11 +24,26 @@ we haven't earned.
 
 ---
 
-## Where we are — build state 2026-07-29
+## Where we are — build state 2026-07-30
 
 Keep this honest; it is the thing that makes the rule checkable.
 
 **Shipped:**
+- **SM-1 — THE DAY IS IN** (FEAT-47 + FEAT-45, both closed 2026-07-30; the owner ratified the
+  concrete mechanics in-session — the closed tickets carry the full spec):
+  - `src/day.js` — the 24-min day on a quantized sky-push ladder; `runState = { day }` (the
+    SM-INV-12 run-layer object, introduced here); **energy** (18 h tank, 1 h/h drain) with the
+    sleepy/tired/exhausted ladder at 14/16/18 h awake; eyelid blinks escalating into 200–600 /
+    400–1000 ms control-loss dozes (flag-gated off by default — the `day-clock.mjs` gate proves
+    inertness); coffee +5 h now / −3 h at wake (net positive).
+  - `src/camp.js` — dispersed-camping zones (~20% global density, ~1 km discs, window-invariant,
+    `camp-zones.mjs` gate) rendered as BLM-style yellow road casings on the map, camping tethered
+    to ≤ 20 m of the road edge; park-to-make-camp on the FEAT-46 brake-latch edge; the **vibe**
+    bar (flat 50 / shade 30 / water 20); a 30-min make-camp that digs a 6 m pad through the
+    unified pad carve; sleep = energy meter + integer-hour timer, `r(vibe)` avg-full-in-8-h /
+    best 2× worst; mom's house at the spawn (fixed average vibe).
+  - Deliberately unbuilt: doze *content* (the Roamer — SM-5, owner-gated), coffee as an item
+    (SM-2/3), tent/campfire visuals (deferred), wear coupling (SM-3).
 - **FEAT-29 par oracle** (`src/par.js`) — the only *completed* story-mode ticket. Built early **by
   design**: pure math, order-independent, and it de-risks the most load-bearing `[DEFAULT]` in the
   economy (physics-honest par).
@@ -40,11 +55,13 @@ Keep this honest; it is the thing that makes the rule checkable.
   Ticket still open; the region-confinement half is in.
 - **POI substrate** — `src/poi.js`, FEAT-46 lay-by pads (merged).
 
-**Not started — nothing of SM-1 exists.** No sleepiness, no doze, no camping anywhere in `src/`.
-This is the next milestone and **FEAT-47** is its ticket.
+**Next: SM-2 — but its `Requires:` are not yet both met.** SM-1 ✓; **FEAT-21 POI scatter is still
+open**, and SM-2 needs it (mission anchors). FEAT-21 is free-lane — building it now is in order,
+and it unlocks the milestone.
 
-**Consequence worth stating:** the par economy can be measured but not yet *pressed against*, because
-the clock it presses against is the day. That is a gap in the build, not a deviation from the plan.
+**Consequence worth stating:** the day now exists for the par economy to press against — the SM-1
+"gap in the build" note from 2026-07-29 is resolved. What money buys and costs is still SM-2's to
+answer; the feel targets (dozing terrifying, site-hunting real) are the owner's drive to judge.
 
 ---
 
