@@ -58,6 +58,7 @@ import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist 
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
+import { scatterTreePositions } from './props/prop-scatter.js'  // FEAT-45: read-only tree re-roll (camp shade score)
 import { ShadowBakeSystem, ATLAS_N, TILE_PX, shearFromSun } from './props/prop-shadow-bake.js'  // PERF-07: baked prop-shadow atlas
 import { installShadowEdgeFade } from './shadow-fade.js'   // QUAL-18: soft realtime shadow-map edge
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
@@ -1177,6 +1178,7 @@ const map2d = new Map2D({
   // FEAT-45: dispersed-camping zones, drawn as a yellow casing on the roads inside them. Empty
   // outside story mode (build() only ever runs from the story deps).
   getCampZones: () => campSystem.zones(),
+  getMomsHouse: () => campSystem.momsHouse(),
   onTeleport: ({ x, z, heading }) => {
     // Snap to the road orientation, but a road tangent has TWO directions — pick the one closest
     // to the truck's current heading so the teleport doesn't spin it 180°. Off-road: keep heading.
@@ -1907,10 +1909,47 @@ const poiSystem = new PoiSystem({
 // never has a zone and pays nothing. Zones are pure f(seed, macro cell) — they read nothing from
 // the world, so unlike POIs there is no carve or re-bake to trigger here.
 const campSystem = new CampSystem({
-  getRoad:   () => roadSystem,
-  getSeed:   () => worldSeed,
-  getParams: () => RANGER_PARAMS,
+  getRoad:    () => roadSystem,
+  getSeed:    () => worldSeed,
+  getParams:  () => RANGER_PARAMS,
+  getTerrain: () => terrainSystem,
+  getWater:   () => waterSystem,
+  treesNear:  (x, z, r) => _treesNear(x, z, r),
 })
+
+// FEAT-45: the SHADE score's tree source. Deliberately NOT the live PropSystem — the streamer is a
+// window artifact (chunks come and go with the camera), and a campsite score that changed with what
+// happened to be resident would not be a property of the site. scatterTreePositions replays the
+// chunk's own first scatter pass read-only, so the trees counted are exactly the trees standing
+// there, from any window, forever.
+//
+// Memoized per chunk because that replay is ~40 sampler chains (a couple of ms): the grading poll
+// runs at 10 Hz and a camp hunt walks the same two or three chunks for minutes. The cache is keyed
+// by seed so a reseed cannot serve another world's forest.
+const _treeChunkCache = new Map()   // `${seed}:${cx},${cz}` → [{x,z}, …]
+function _chunkTrees (cx, cz) {
+  const key = `${worldSeed}:${cx},${cz}`
+  let list = _treeChunkCache.get(key)
+  if (list) return list
+  if (_treeChunkCache.size > 64) _treeChunkCache.clear()   // a camp hunt touches a handful
+  list = scatterTreePositions(cx, cz, worldSeed, makePropSamplers(), FLORA_PARAMS)
+  _treeChunkCache.set(key, list)
+  return list
+}
+function _treesNear (x, z, r) {
+  const S = FLORA_PARAMS.chunkSize
+  const c0x = Math.floor((x - r) / S), c1x = Math.floor((x + r) / S)
+  const c0z = Math.floor((z - r) / S), c1z = Math.floor((z + r) / S)
+  const r2 = r * r
+  let n = 0
+  for (let cx = c0x; cx <= c1x; cx++) for (let cz = c0z; cz <= c1z; cz++) {
+    for (const t of _chunkTrees(cx, cz)) {
+      const dx = t.x - x, dz = t.z - z
+      if (dx * dx + dz * dz <= r2) n++
+    }
+  }
+  return n
+}
 
 const _poiGroup = new THREE.Group()
 _poiGroup.name = 'poi-markers'
@@ -2081,25 +2120,253 @@ function _poiInReach () {
 // at the prompt's ~10 Hz cadence cannot miss a real pull.
 let _prevParkedForPoi = true
 
+// ── FEAT-45 Phase D: making camp, and sleeping ──────────────────────────────────────────────
+//
+// THE PROMPT'S SPEED GATE IS 20 kph (owner, 2026-07-30) — deliberately different from the POI
+// prompt's any-speed rule right above. The two prompts are different kinds of thing: a POI is a
+// LANDMARK you can see from the road, so its prompt is an instruction that must read as you go past;
+// a campsite is a JUDGEMENT about the ground you are on, and the vibe bar it carries is only
+// meaningful when you are crawling along looking for a spot. Advertising a live score at 80 kph
+// would be noise, and would put a meter on the driving HUD (SM-INV-3).
+const CAMP_PROMPT_KPH = 20
+
+// The camp dialogue's state, or null when it is closed. One object so every render reads one thing:
+//   mode  'confirm' (make camp?) | 'camp' (break camp · sleep · fish) | 'sleep' (timer) | 'moms'
+//   site  the graded record the camp was made from (vibe + waterFound + pad); null at mom's
+//   moms  true when this is mom's house — fixed average vibe, no pad, no fish
+let _campUi = null
+let _campBusy = false   // a fade is in flight: no second trigger, no double-dug pad
+
 /**
- * The POI proximity prompt AND the parking-brake trigger behind it. One function because they are
- * one affordance: whatever the prompt is offering is exactly what latching the brake does.
+ * The campsite grade to show for the truck's current position, or null when nothing should show.
+ * In a zone, below 20 kph, story mode, mission idle, dialogue closed. Being outside the tether or
+ * on bad ground does NOT return null — those are the prompt's two failure copies, and telling the
+ * player why they cannot camp here is the entire job of a prompt.
  */
-function _updatePoiPrompt () {
-  const el = document.getElementById('poi-prompt')
+function _campPromptState () {
+  if (!storySystem.isActive() || storySystem.isEntering()) return null
+  if (missionSystem && missionSystem.state !== 'idle') return null
+  if (_campUi || _campBusy) return null
+  if (Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) * 3.6 > CAMP_PROMPT_KPH) return null
+  const g = campSystem.evaluate(vehicleState.position.x, vehicleState.position.z)
+  return g.inZone ? g : null
+}
+
+/** Can the truck knock on mom's door from here? (Same gates, minus the zone and the grading.) */
+function _atMomsHouse () {
+  if (!storySystem.isActive() || storySystem.isEntering()) return false
+  if (missionSystem && missionSystem.state !== 'idle') return false
+  if (_campUi || _campBusy) return false
+  return campSystem.atMoms(vehicleState.position.x, vehicleState.position.z)
+}
+
+/**
+ * THE ONE PARK TRIGGER (FEAT-46's brake latch, now shared). Rising edge of the parking brake, ONE
+ * detector, and a fixed precedence: a POI in reach wins (the 18 m lay-by is the specific
+ * affordance and it is what you drove onto), then making camp, then mom's door. The prompt follows
+ * the same order, so what you see is always what the brake will do.
+ */
+function _updateParkTriggers () {
+  const poiEl  = document.getElementById('poi-prompt')
+  const campEl = document.getElementById('camp-prompt')
   const poi = _poiInReach()
   const parked = !!vehicleState.parked
   const pulled = parked && !_prevParkedForPoi
   _prevParkedForPoi = parked
+
   if (poi && pulled) {
     missionSystem.enterFromPoi(poi)      // leaves 'idle' ⇒ _poiInReach() is null from here on
-    if (el) el.style.display = 'none'
+    if (poiEl) poiEl.style.display = 'none'
+    if (campEl) campEl.style.display = 'none'
     return
   }
-  if (!el) return
-  el.style.display = poi ? 'block' : 'none'
-  if (poi) el.textContent = 'park to begin mission'
+
+  const camp = _campPromptState()
+  const moms = !camp && _atMomsHouse()
+
+  if (pulled) {
+    if (camp && camp.withinTether && camp.flat && camp.pad) {
+      _campUi = { mode: 'confirm', site: camp, moms: false }
+      _renderCampUI()
+    } else if (moms) {
+      _campUi = { mode: 'moms', site: null, moms: true }
+      _renderCampUI()
+    }
+  }
+
+  // Display. The POI prompt wins outright when both apply — see the precedence above.
+  if (poiEl) {
+    poiEl.style.display = poi ? 'block' : 'none'
+    if (poi) poiEl.textContent = 'park to begin mission'
+  }
+  if (!campEl) return
+  const showCamp = !poi && (camp || moms) && !_campUi
+  campEl.style.display = showCamp ? 'block' : 'none'
+  if (!showCamp) return
+  const vibeEl = document.getElementById('camp-vibe')
+  const textEl = document.getElementById('camp-prompt-text')
+  if (moms) {
+    if (vibeEl) vibeEl.style.display = 'none'
+    if (textEl) textEl.textContent = "park to sleep at mom's house"
+    return
+  }
+  if (vibeEl) vibeEl.style.display = 'flex'
+  _renderVibeBar(camp)
+  if (textEl) {
+    textEl.textContent = !camp.withinTether ? 'dispersed camping is limited to 20m from the road edge'
+                       : !camp.flat         ? 'not flat'
+                       :                      'park to make camp'
+  }
 }
+
+/** The stacked vibe bar: three segments whose max widths ARE the 50/30/20 weights. */
+function _renderVibeBar (g, root = document.getElementById('camp-vibe')) {
+  if (!root || !g) return
+  const seg = (cls, v) => { const e = root.querySelector(cls); if (e) e.style.width = (v * 100).toFixed(1) + '%' }
+  seg('.vseg-flat',  g.flatScore)
+  seg('.vseg-shade', g.shadeScore)
+  seg('.vseg-water', g.waterScore)
+}
+
+/**
+ * Run `during` behind a full-screen black fade — the make-camp chore and the night both happen in
+ * it. The fade is what makes a time skip read as elapsed time rather than as a teleport, and it is
+ * also the cover for the terrain re-bake the pad carve needs.
+ */
+function _campFade (during) {
+  const el = document.getElementById('camp-fade')
+  _campBusy = true
+  const finish = () => {
+    try { during() } finally {
+      if (el) setTimeout(() => { el.classList.remove('on'); _campBusy = false }, 120)
+      else _campBusy = false
+    }
+  }
+  if (!el) { finish(); return }
+  el.classList.add('on')
+  setTimeout(finish, 480)   // slightly past the 0.45 s CSS transition
+}
+
+/** Confirmed: 30 in-game minutes pass and a 6 m bench is dug at the graded spot. */
+function _makeCamp () {
+  const site = _campUi?.site
+  if (!site?.pad || _campBusy) return
+  _campFade(() => {
+    daySystem.advanceMinutes(30)   // the chore costs the day 30 minutes of energy, like any 30 min
+    // The bench rides the POI pad carve (RoadSystem._padsAll) — same records, same zero-authority
+    // road gate, so digging a camp can no more move the ribbon than a lay-by can.
+    roadSystem?.setCampPads(campSystem.makeCampAt(site.pad))
+    terrainSystem?.rebuildAllChunksFromWorker()
+    // …and release the covering chunks so the props re-scatter against the finished ground: the
+    // pad keep-out (poiPadBlocked) now covers it, which is what "clears" the site of trees.
+    if (propSystem) {
+      const S = CHUNK_SIZE, r = site.pad.halfLen
+      const c0x = Math.floor((site.pad.x - r) / S), c1x = Math.floor((site.pad.x + r) / S)
+      const c0z = Math.floor((site.pad.z - r) / S), c1z = Math.floor((site.pad.z + r) / S)
+      for (let cx = c0x; cx <= c1x; cx++) for (let cz = c0z; cz <= c1z; cz++) propSystem.releaseChunk(cx, cz)
+    }
+    _campUi = { mode: 'camp', site, moms: false }
+    _renderCampUI()
+  })
+}
+
+/** Sleep the chosen number of hours at this site's vibe (mom's house is a fixed average 0.5). */
+function _sleepAtCamp () {
+  if (!_campUi || _campBusy) return
+  const hours = parseInt(document.getElementById('cp-hours')?.value ?? '8', 10) || 8
+  const vibe = _campUi.moms ? 0.5 : (_campUi.site?.vibe ?? 0.5)
+  const back = _campUi.moms ? 'moms' : 'camp'
+  _campFade(() => {
+    daySystem.sleep(hours, vibe)
+    // You wake WHERE YOU SLEPT: the truck is untouched and the dialogue is still up. Only "break
+    // camp" closes it — and the pad stays dug, because earthwork is not a UI state.
+    _campUi = { ..._campUi, mode: back }
+    _renderCampUI()
+  })
+}
+
+/** Close the dialogue. The pad (if one was dug) stays in the ground. */
+function _closeCampUi () {
+  _campUi = null
+  _renderCampUI()
+}
+
+/** Keep the sleep face's two live numbers in step with the slider. */
+function _syncSleepRow () {
+  const h = parseInt(document.getElementById('cp-hours')?.value ?? '8', 10) || 8
+  const vibe = _campUi?.moms ? 0.5 : (_campUi?.site?.vibe ?? 0.5)
+  const gain = daySystem.recoveryRate(vibe) * h
+  const t = document.getElementById('cp-hours-text')
+  if (t) t.textContent = `${h} h  (+${Math.min(gain, daySystem.fullEnergyH()).toFixed(1)} h)`
+}
+
+/**
+ * Render the camp dialogue. day.js/camp.js stay renderer-agnostic (the mission-panel pattern) —
+ * this is the only place camp state becomes DOM.
+ */
+function _renderCampUI () {
+  const panel = document.getElementById('camp-panel')
+  if (!panel) return
+  const st = _campUi
+  panel.style.display = st ? 'block' : 'none'
+  if (!st) return
+  const show = (id, on) => { const e = document.getElementById(id); if (e) e.style.display = on ? '' : 'none' }
+  const set  = (id, txt) => { const e = document.getElementById(id); if (e) e.textContent = txt }
+  const isSleep = st.mode === 'sleep'
+  const vibe = st.moms ? 0.5 : (st.site?.vibe ?? 0)
+
+  set('cp-title', st.moms ? "mom's house" : 'camp')
+  show('cp-make',   st.mode === 'confirm')
+  show('cp-cancel', st.mode === 'confirm')
+  show('cp-break',  st.mode === 'camp' || st.mode === 'moms')
+  show('cp-sleep',  st.mode === 'camp' || st.mode === 'moms')
+  show('cp-fish',   st.mode === 'camp' && !!st.site?.waterFound)
+  show('cp-sleep-go',   isSleep)
+  show('cp-sleep-back', isSleep)
+  show('cp-sleep-panel', isSleep)
+  set('cp-break', st.moms ? 'leave' : 'break camp')
+
+  const body = document.getElementById('cp-body')
+  if (body) {
+    if (st.mode === 'confirm') {
+      body.innerHTML = 'flat ground, off the road.<br>'
+        + `<span class="cp-dim">vibe ${(vibe * 100) | 0}% &middot; ${st.site.trees} trees`
+        + (st.site.waterFound ? ` &middot; water ${st.site.waterDist.toFixed(0)} m` : '') + '</span>'
+    } else if (isSleep) {
+      body.innerHTML = '<span class="cp-dim">how long?</span>'
+    } else if (st.moms) {
+      body.innerHTML = 'the porch light is on.<br><span class="cp-dim">a bed, and an average night&rsquo;s sleep</span>'
+    } else {
+      body.innerHTML = 'camp is made.<br>'
+        + `<span class="cp-dim">vibe ${(vibe * 100) | 0}%</span>`
+    }
+  }
+
+  if (isSleep) {
+    const e = daySystem.energyH(), full = daySystem.fullEnergyH()
+    const fill = document.getElementById('cp-energy-fill')
+    if (fill) fill.style.width = `${Math.max(0, Math.min(1, e / full)) * 100}%`
+    set('cp-energy-text', `energy ${e.toFixed(1)} / ${full.toFixed(0)} h`
+      + (daySystem.coffeeDebt() > 0 ? `  ·  coffee debt ${daySystem.coffeeDebt().toFixed(0)} h at wake` : ''))
+    _syncSleepRow()
+  }
+}
+
+document.getElementById('cp-make')?.addEventListener('click', _makeCamp)
+document.getElementById('cp-cancel')?.addEventListener('click', _closeCampUi)
+document.getElementById('cp-break')?.addEventListener('click', _closeCampUi)
+document.getElementById('cp-sleep')?.addEventListener('click', () => {
+  if (!_campUi) return
+  _campUi = { ..._campUi, mode: 'sleep' }
+  _renderCampUI()
+})
+document.getElementById('cp-sleep-back')?.addEventListener('click', () => {
+  if (!_campUi) return
+  _campUi = { ..._campUi, mode: _campUi.moms ? 'moms' : 'camp' }
+  _renderCampUI()
+})
+document.getElementById('cp-sleep-go')?.addEventListener('click', _sleepAtCamp)
+document.getElementById('cp-hours')?.addEventListener('input', _syncSleepRow)
 
 // Story-mode DOM. Two surfaces: the offer/result panel (over the map) and the in-run HUD.
 // SM-INV-3 — par NEVER appears while driving; the result card is the only place it is shown.
@@ -2335,6 +2602,16 @@ addGpsGui(_gui, gpsSystem)
 skySystem.addGui(_gui)
 // FEAT-47: story day clock folder (self-contained, same pattern). Hidden by the debug lockout.
 daySystem.addGui(_gui)
+// FEAT-45: camping folder — the live grade at the truck plus the site tunables. The one action is a
+// shortcut INTO the dialogue (skipping the 30-min chore and the carve), so the sleep flow can be
+// exercised without hunting for a legal site first.
+campSystem.addGui(_gui, {
+  openCamp: () => {
+    const g = campSystem.evaluate(vehicleState.position.x, vehicleState.position.z)
+    _campUi = { mode: 'camp', site: g, moms: false }
+    _renderCampUI()
+  },
+})
 // FEAT-14: vehicle cast-light tuning folder (headlight beams + rear lamp pools).
 addLightGui(_gui)
 // User pref: every lil-gui section collapsed by default (the root panel stays open). Runs after ALL
@@ -2694,6 +2971,8 @@ const storySystem = new StorySystem({
     setControlAttenuation(1)            // belt-and-braces: leave the driver's inputs whole
     poiSystem.clear()
     campSystem.clear()   // FEAT-45: no camping zones outside a live story region
+    roadSystem?.setCampPads(null)   // …and no camp benches: free roam's ground is the seed's ground
+    _closeCampUi()
     _rebuildPoiMarkers()
     terrainSystem?.rebuildAllChunksFromWorker()
   },
@@ -2790,7 +3069,7 @@ document.addEventListener('keydown', e => {
   // T → free-cam teleport (usable while pointer-locked, where the button can't be clicked).
   if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey) _teleportToFreecam()
   // FEAT-46's E-to-take-a-job key is GONE (owner, 2026-07-29): latching the parking brake beside a
-  // marker is the trigger now — see _updatePoiPrompt.
+  // marker is the trigger now — see _updateParkTriggers.
   //
   // Space closes the offer panel, same as clicking DECLINE (owner, 2026-07-29). The brake pull opened
   // it, so the brake release is the obvious way out — and vehicle.js drops the park latch on that
@@ -3284,9 +3563,17 @@ function loop () {
     // so they repaint on the HUD's ~10 Hz cadence rather than per physics step.
     if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'running')) _renderMissionUI()
 
-    // FEAT-46: the POI prompt — and, since 2026-07-29, the parking-brake trigger it advertises.
+    // FEAT-46/45: the POI + camping prompts, and the ONE parking-brake trigger behind both.
     // Still the ~10 Hz cadence: the `parked` latch is sticky, so the edge cannot fall between polls.
-    _updatePoiPrompt()
+    _updateParkTriggers()
+    // FEAT-45: the camping folder's read-outs ride the same 10 Hz poll and hit the same memoized
+    // grade the prompt just computed. Gated to the SAME sub-20 kph window as the prompt on purpose:
+    // grading costs a handful of terrain/water/scatter samples, and paying for it at speed to feed a
+    // debug read-out is exactly the frame-loop diagnostic src/ is supposed to be free of.
+    if (storySystem.isActive()
+        && Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) * 3.6 <= CAMP_PROMPT_KPH) {
+      campSystem.syncGui(vehicleState.position.x, vehicleState.position.z)
+    }
 
     // M1-11: live speed readout. velocity.length() = magnitude in m/s; * 3.6 converts to km/h.
     document.getElementById('speedVal').textContent = (vehicleState.velocity.length() * 3.6).toFixed(1)

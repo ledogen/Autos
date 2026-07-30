@@ -160,7 +160,9 @@
     }
     /* Story-mode beta: mission offer panel. Sits above the 2D map (z 90) so the route and
        start/drop pins are visible behind it; the panel is bottom-anchored, not centered. */
-    #mission-panel {
+    /* #camp-panel (FEAT-45) shares the mission panel's chrome by selector rather than by a copied
+       block — one place to restyle a story-mode panel. */
+    #mission-panel, #camp-panel {
       display: none;
       position: fixed;
       left: 50%;
@@ -176,7 +178,7 @@
       min-width: 380px;
       text-align: center;
     }
-    #mission-panel .mp-title {
+    #mission-panel .mp-title, #camp-panel .mp-title {
       color: #7fc2ff;
       font-size: 12px;
       letter-spacing: 2px;
@@ -194,7 +196,7 @@
     #mp-body .mp-big { font-size: 22px; color: #ffffff; }
     #mp-body .mp-dim { color: #8a939c; }
     #mp-actions { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
-    #mission-panel button {
+    #mission-panel button, #camp-panel button {
       background: none;
       border: 1px solid #55606b;
       color: #cfd6dd;
@@ -204,7 +206,8 @@
       cursor: pointer;
       transition: background 0.1s, color 0.1s;
     }
-    #mission-panel button:hover { background: rgba(255,255,255,0.09); color: #fff; border-color: #8fa2b4; }
+    #mission-panel button:hover, #camp-panel button:hover:not(:disabled) { background: rgba(255,255,255,0.09); color: #fff; border-color: #8fa2b4; }
+    #camp-panel button:disabled { color: #5c646c; border-color: #333b43; cursor: default; }
     #mp-accept { border-color: #5ad06a; color: #b6f0be; }
     #mp-decline { border-color: #6b747d; color: #a8b0b8; }
     #mp-export-row { display: none; margin-top: 12px; border-top: 1px solid #2c343d; padding-top: 12px; }
@@ -395,6 +398,73 @@
     }
     #doze-overlay .lid-top    { top: 0;    transform: translateY(-100%); }
     #doze-overlay .lid-bottom { bottom: 0; transform: translateY(100%); }
+
+    /* ── FEAT-45 Phase D: the camping surfaces ─────────────────────────────────────────────
+       SM-INV-3: every one of these is a NEAR-STOPPED surface. Nothing here is ever on the
+       driving HUD — the prompt needs a camp zone under a slow truck, the panel needs a park.
+
+       Camp prompt (its own element, NOT #poi-prompt): yellow to match the map's camping casing,
+       and it carries the vibe bar as a child, which the POI prompt has no notion of. */
+    #camp-prompt {
+      display: none;
+      position: fixed;
+      bottom: 96px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.62);
+      border: 1px solid #ffdc3c;
+      padding: 8px 18px;
+      font-family: monospace;
+      font-size: 15px;
+      color: #ffe89a;
+      z-index: 88;
+      pointer-events: none;
+      white-space: pre;
+      text-align: center;
+    }
+    /* The vibe bar: ONE bar, three stacked segments. Their max widths ARE the score weights
+       (50 / 30 / 20 %) — JS only ever writes the three widths. */
+    .vibe-bar {
+      width: 260px;
+      height: 8px;
+      margin: 0 auto 8px;
+      background: rgba(255,255,255,0.09);
+      border: 1px solid #55606b;
+      display: flex;
+      overflow: hidden;
+    }
+    .vibe-bar .vseg { height: 100%; width: 0%; transition: width 0.12s linear; }
+    .vibe-bar .vseg-flat  { background: #9ad86a; }   /* flatness — up to 50% of the bar */
+    .vibe-bar .vseg-shade { background: #3f9e6a; }   /* shade    — up to 30% */
+    .vibe-bar .vseg-water { background: #4aa8d8; }   /* water    — up to 20% */
+
+    /* Energy meter (sleep dialogue only — never the driving HUD). */
+    .energy-bar {
+      width: 100%;
+      height: 10px;
+      background: rgba(255,255,255,0.09);
+      border: 1px solid #55606b;
+      margin: 6px 0 4px;
+      overflow: hidden;
+    }
+    .energy-bar .efill { height: 100%; width: 0%; background: #ffcf3c; transition: width 0.15s linear; }
+
+    /* Full-screen fade behind the make-camp chore and the night. Plain black, above the panels,
+       below the story loading screen. Opacity is the only thing JS writes. */
+    #camp-fade {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      opacity: 0;
+      z-index: 160;
+      pointer-events: none;
+      transition: opacity 0.45s ease;
+    }
+    #camp-fade.on { opacity: 1; }
+
+    #cp-row { margin-top: 12px; display: flex; gap: 10px; align-items: center; justify-content: center; }
+    #cp-hours { width: 160px; }
+    .cp-dim { color: #8a939c; }
   </style>
   <!-- Bare specifiers ('three', 'three/addons/*', 'simplex-noise') are resolved by Vite from
        node_modules (PERF-04/PERF-20.5) — the old CDN importmap is retired. See vite.config.js. -->
@@ -502,6 +572,47 @@
   <!-- FEAT-46: "park to begin mission" prompt, shown when the truck is stopped beside a POI cube.
        Latching the parking brake (Space) there is what opens the offer — see _updatePoiPrompt. -->
   <div id="poi-prompt"></div>
+
+  <!-- FEAT-45 Phase D: the camping prompt. The vibe bar sits ABOVE the copy — you read the score,
+       then what to do about it. Shown only in a camp zone below 20 kph (see _updateParkTriggers). -->
+  <div id="camp-prompt">
+    <div class="vibe-bar" id="camp-vibe">
+      <div class="vseg vseg-flat"></div>
+      <div class="vseg vseg-shade"></div>
+      <div class="vseg vseg-water"></div>
+    </div>
+    <div id="camp-prompt-text">park to make camp</div>
+  </div>
+
+  <!-- FEAT-45 Phase D: the camp dialogue. One panel, four faces — make-camp confirm, the camp
+       (break camp · sleep · fish), the sleep timer, and mom's house. main.js renders it
+       (_renderCampUI); camp.js and day.js stay renderer-agnostic. -->
+  <div id="camp-panel">
+    <div class="mp-title" id="cp-title">camp</div>
+    <div id="cp-body"></div>
+    <!-- Sleep face: the energy meter + the integer-hour timer. Static markup (the slider keeps its
+         one listener) — only its display and the two live numbers are written. -->
+    <div id="cp-sleep-panel" style="display:none;">
+      <div class="energy-bar"><div class="efill" id="cp-energy-fill"></div></div>
+      <div class="cp-dim" id="cp-energy-text">energy</div>
+      <div id="cp-row">
+        <input id="cp-hours" type="range" min="1" max="14" step="1" value="8">
+        <span id="cp-hours-text">8 h</span>
+      </div>
+    </div>
+    <div id="cp-actions" class="mp-felt-row" style="margin-top:14px; gap:8px;">
+      <button id="cp-make">make camp &middot; 30 min</button>
+      <button id="cp-cancel">cancel</button>
+      <button id="cp-break">break camp</button>
+      <button id="cp-sleep">sleep</button>
+      <button id="cp-fish" disabled title="not implemented yet">fish (wip)</button>
+      <button id="cp-sleep-go">sleep</button>
+      <button id="cp-sleep-back">back</button>
+    </div>
+  </div>
+
+  <!-- The fade the 30-minute chore and the night happen behind. -->
+  <div id="camp-fade"></div>
 
   <!-- FEAT-31 testing lab: live status + best-of-each-track table. The right-hand column is the
        point of the whole mode — the derived number (implied accel/decel, realized skidpad mu)

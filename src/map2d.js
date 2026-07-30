@@ -63,7 +63,7 @@ export class Map2D {
      * @param {() => ?{start:{x,z}, end:{x,z}, poly:{x,z}[]}} [o.getMission]
      *        — story-mode mission overlay (route + start/end pins); null when no mission is live
      */
-    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCampZones }) {
+    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCampZones, getMomsHouse }) {
         this._canvas    = canvas
         this._ctx       = canvas.getContext('2d')
         this._getSeed   = getSeed
@@ -81,6 +81,9 @@ export class Map2D {
         // FEAT-45: story-mode dispersed-camping zones — `{x,z,r}[]`, empty outside story mode. NOT
         // drawn as discs: see _drawCampZones.
         this._getCampZones = getCampZones || (() => null)
+        // FEAT-45 Phase D: mom's house — {x,z} at the region centre, or null outside story mode.
+        // The one guaranteed bed on the map, so it gets its own glyph rather than a POI diamond.
+        this._getMomsHouse = getMomsHouse || (() => null)
 
         this._open       = false
         this._road       = null          // the map's own RoadSystem; KEPT ALIVE across opens (route cache)
@@ -501,6 +504,7 @@ export class Map2D {
         this._drawRegion(ctx)    // under the mission route — it's world furniture, not the subject
         this._drawCampZones(ctx) // FEAT-45: yellow casing on the road stretches inside a camp zone
         this._drawPois(ctx)      // likewise furniture: placed at entry, so not in the cached bg
+        this._drawMomsHouse(ctx) // FEAT-45: the always-available bed
         this._drawMission(ctx)   // under the car marker, over the cached bg
         this._drawCar(ctx)
         this._drawLegend(ctx)
@@ -817,6 +821,32 @@ export class Map2D {
         }
     }
 
+    // FEAT-45 Phase D: mom's house — a little gabled square at the region spawn, labelled. Drawn
+    // after the POIs so it wins the pixels where the spawn happens to sit under one.
+    _drawMomsHouse(ctx) {
+        const m = this._getMomsHouse()
+        if (!m) return
+        const sx = this._sx(m.x), sy = this._sy(m.z), r = 6
+        ctx.lineWidth = 1.5
+        ctx.strokeStyle = '#101010'
+        ctx.fillStyle = '#ff8fd0'
+        ctx.beginPath()
+        ctx.moveTo(sx - r, sy)            // gable: walls up to the eaves, then a peak
+        ctx.lineTo(sx - r, sy + r)
+        ctx.lineTo(sx + r, sy + r)
+        ctx.lineTo(sx + r, sy)
+        ctx.lineTo(sx, sy - r)
+        ctx.closePath()
+        ctx.fill(); ctx.stroke()
+        ctx.font = '10px monospace'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'top'
+        ctx.fillStyle = '#ffb8de'
+        ctx.fillText("MOM'S", sx, sy + r + 3)
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'alphabetic'
+    }
+
     // (5) Car marker — a triangle at the car's world XZ, pointing along its world-forward XZ.
     _drawCar(ctx) {
         const car = this._getCar()
@@ -854,6 +884,7 @@ export class Map2D {
         ]
         if (this._getPois()?.length) rows.push(['#ff7a18', 'point of interest'])   // FEAT-46
         if (this._getCampZones()?.length) rows.push(['#ffdc3c', 'dispersed camping'])   // FEAT-45
+        if (this._getMomsHouse()) rows.push(['#ff8fd0', "mom's house"])   // FEAT-45
         const x0 = 16, y0 = 16, lh = 18
         ctx.fillStyle = 'rgba(0,0,0,0.45)'
         ctx.fillRect(x0 - 8, y0 - 8, 188, rows.length * lh + 16)

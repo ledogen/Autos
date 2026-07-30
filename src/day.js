@@ -32,6 +32,19 @@ export const DAY_PARAMS = {
     coffeeReliefH: 5,
     coffeeDebtH:   3,
 
+    // ── Sleep recovery (FEAT-45 Phase D) — hours of energy bought per hour slept ───────────────
+    // THE ARITHMETIC (ratified 2026-07-30). r(vibe) = lerp(worst, best, vibe), so:
+    //   • an AVERAGE site (vibe 0.5) gives r = (1.5 + 3.0)/2 = 2.25 h/h ⇒ 8 h × 2.25 = 18 h = FULL
+    //     from empty. Eight hours at a decent site is the whole night, exactly as ratified.
+    //   • the BEST site is exactly 2× the worst (3.0 / 1.5), so full-from-empty runs 6 h at best
+    //     and 12 h at worst.
+    // Change these two together or the "average = full in 8 h" contract quietly breaks.
+    sleepRateWorstH: 1.5,
+    sleepRateBestH:  3.0,
+    sleepMinH:       1,    // slider bounds for the sleep timer
+    sleepMaxH:       14,
+    sleepDefaultH:   8,
+
     // Blink cadence — MEAN IN-GAME HOURS BETWEEN BLINKS, per stage (Poisson ⇒ exponential gaps).
     // Ratified default is "on average once per in-game hour" in every blinking stage; kept as three
     // separate knobs so the escalation can be tuned by feel without touching the stage thresholds.
@@ -154,6 +167,9 @@ export class DaySystem {
     /** Energy remaining, in hours of waking. */
     energyH () { return this._energyH }
 
+    /** A full tank, in hours — the denominator of the sleep dialogue's energy meter. */
+    fullEnergyH () { return DAY_PARAMS.fullEnergyH }
+
     /** @returns {'rested'|'sleepy'|'tired'|'exhausted'} */
     stage () {
         const e = this._energyH
@@ -176,6 +192,68 @@ export class DaySystem {
         this._energyH = Math.min(DAY_PARAMS.fullEnergyH, this._energyH + DAY_PARAMS.coffeeReliefH)
         this._coffeeDebt += DAY_PARAMS.coffeeDebtH
         this._syncGui()
+    }
+
+    // ── Time skips: making camp, and sleeping (FEAT-45 Phase D) ───────────────────────────────
+    //
+    // Both are the same shape — the clock jumps, the screen is black across the jump, and NO BLINK
+    // MAY FIRE INSIDE IT. A skip is not lived through, so an eyelid envelope started before it must
+    // not be advanced by it and the scheduler must not deliver the blinks the skipped hours would
+    // have bought. `_endSkip` is what enforces that, and both entry points go through it.
+
+    /**
+     * Advance the clock by `m` in-game MINUTES with no blinks — the make-camp chore (30 min).
+     * Energy drains through exactly the same 1:1 path update() uses: time passed, and being awake
+     * for it cost what being awake always costs.
+     */
+    advanceMinutes (m) {
+        const dH = Math.max(0, m) / 60
+        this._advanceHours(dH)
+        this._energyH = Math.max(0, this._energyH - dH)
+        this._endSkip()
+    }
+
+    /**
+     * A night's sleep: `hours` on the clock, `r(vibe)` hours of energy per hour slept, then the
+     * coffee loan comes due at the moment of waking.
+     *
+     * THE COFFEE LOAN IS CHARGED ONCE, AT WAKE, AND CLEARED. Order matters, and this exact order is
+     * what makes the owner's rule ("sleeping can offset the loan — sleep in a bit more") true: the
+     * night's recovery and the debt are settled UNCAPPED, and only the result is clamped to a full
+     * tank. Clamping to full before charging the debt would price every extra hour at zero once the
+     * tank filled, so no amount of sleeping in could ever pay a cup off. Floors at 0 — a debt can
+     * leave you short of a full day, never below empty.
+     *
+     * @param {number} hours integer hours from the sleep timer
+     * @param {number} vibe  0..1 campsite score (mom's house passes a fixed 0.5)
+     */
+    sleep (hours, vibe) {
+        const h = Math.max(0, hours)
+        this._advanceHours(h)
+        const settled = this._energyH + this.recoveryRate(vibe) * h - this._coffeeDebt
+        this._energyH = Math.max(0, Math.min(DAY_PARAMS.fullEnergyH, settled))
+        this._coffeeDebt = 0
+        this._endSkip()
+    }
+
+    /** Hours of energy one hour of sleep buys at this campsite. See the arithmetic in DAY_PARAMS. */
+    recoveryRate (vibe) {
+        const v = Math.max(0, Math.min(1, vibe ?? 0.5))
+        return DAY_PARAMS.sleepRateWorstH + (DAY_PARAMS.sleepRateBestH - DAY_PARAMS.sleepRateWorstH) * v
+    }
+
+    /** Clock-only jump, sharing update()'s midnight rule (the run boundary SM-INV-12 permits). */
+    _advanceHours (dH) {
+        this._hour += dH
+        while (this._hour >= 24) { this._hour -= 24; runState.day++ }
+    }
+
+    /** Close a time skip: no blink survives it, no blink is owed for it, and the sky jumps at once. */
+    _endSkip () {
+        this._blink = null
+        this._nextBlinkH = Infinity   // re-drawn against the stage the skip left us in
+        this._signalArmed = this._energyH > DAY_PARAMS.tiredAtH
+        this._push(true)
     }
 
     // ── Blinks and dozes ──────────────────────────────────────────────────────────────────────
@@ -322,6 +400,8 @@ export class DaySystem {
         f.add(DAY_PARAMS, 'tiredAtH', 0, 6, 0.5).name('tired at (h left)')
         f.add(DAY_PARAMS, 'coffeeReliefH', 0, 10, 0.5).name('coffee relief (h)')
         f.add(DAY_PARAMS, 'coffeeDebtH', 0, 10, 0.5).name('coffee debt (h)')
+        f.add(DAY_PARAMS, 'sleepRateWorstH', 0.5, 6, 0.05).name('sleep rate worst (h/h)')
+        f.add(DAY_PARAMS, 'sleepRateBestH', 0.5, 6, 0.05).name('sleep rate best (h/h)')
         f.add(DAY_PARAMS, 'blinkMeanSleepyH', 0.1, 4, 0.05).name('sleepy gap (h)')
         f.add(DAY_PARAMS, 'blinkMeanTiredH', 0.1, 4, 0.05).name('tired gap (h)')
         f.add(DAY_PARAMS, 'blinkMeanExhaustedH', 0.1, 4, 0.05).name('exhausted gap (h)')

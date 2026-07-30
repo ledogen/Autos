@@ -37,7 +37,28 @@ export const CAMP_PARAMS = {
     campMinRadiusM: 350,    // zone radius ~ U[min, max]; mean diameter ≈ 1 km (RATIFIED)
     campMaxRadiusM: 650,
     campRoadEdgeM:  20,     // m past the shoulder edge that dispersed camping is allowed
+
+    // ── The site (Phase D) ────────────────────────────────────────────────────────────────────
+    campPadHalfM:    3,     // m — half-extent of the camp bench: a 6 m pad, RATIFIED
+    campPadGapM:     0.6,   // m — gap from the shoulder edge to the pad's near side (poiPadGap's twin)
+    campGradeAreaM:  6,     // m — the square the site is graded over (flatness) and trees counted in
+    campMaxUnevenM:  0.6,   // m — ground spread over that square above which the site is NOT FLAT.
+                            // Best-guess (the plan's number); it is both the prompt's gate and the
+                            // zero point of the flatness score, so one knob moves both together.
+    campShadeFullN:  3,     // trees inside the grading area that earn FULL shade credit
+    campWaterR:      30,    // m — how far out water still counts for anything
+    campWaterBestM:  5,     // m — at or inside this, full water credit (camping ON the bank is best)
+    campMomsRadiusM: 25,    // m — park-trigger radius at mom's house
 }
+
+// Vibe weights, RATIFIED as the bar's three segments: flatness 50%, shade 30%, water 20%. They are
+// the max widths of the stacked bar as well as the score weights, so the bar IS the score — a full
+// flatness segment is visibly half the bar because flatness is half the judgement.
+export const VIBE_W = { flat: 0.5, shade: 0.3, water: 0.2 }
+
+// Grading lattice: 5×5 over the 6 m square (1.5 m spacing). Enough to catch a rock ledge or a ditch
+// lip without turning a 10 Hz poll into a terrain-sampling loop.
+const GRADE_N = 5
 
 // THE COVERAGE ARITHMETIC (target ≈ 20% of map area, owner-ratified).
 //   cell area                = 1024²                       = 1.0486 km²
@@ -55,6 +76,8 @@ export const CAMP_PARAMS = {
 // neighbourhood around the query's own cell. Keep this true if the radii are ever retuned.
 const NEIGHBOR_CELLS = 1
 
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v)
+
 /**
  * The dispersed-camping layer: zone generation, the region-scoped zone list the map and the
  * in-world queries read, and the road-adjacency half of the Phase-D eligibility test.
@@ -62,14 +85,23 @@ const NEIGHBOR_CELLS = 1
 export class CampSystem {
     /**
      * @param {object} deps
-     *   getRoad()   — the play RoadSystem (a getter: main.js swaps instances on reseed)
-     *   getSeed()   — numeric worldSeed
-     *   getParams() — the live params object (road cross-section widths live there)
+     *   getRoad()    — the play RoadSystem (a getter: main.js swaps instances on reseed)
+     *   getSeed()    — numeric worldSeed
+     *   getParams()  — the live params object (road cross-section widths live there)
+     *   getTerrain() — TerrainSystem, for analyticHeight (the flatness grade)   [Phase D]
+     *   getWater()   — WaterSystem, for pondsInBBox / streamChannelAt           [Phase D]
+     *   treesNear(x,z,r) → count — the deterministic scatter re-roll main.js owns [Phase D]
      */
     constructor (deps) {
         this._d = deps
         this._list = []
         this._built = null      // {x,z,r,seed} the current list was built for
+        this._camps = []        // pads dug this run (see makeCampAt) — run state, not worldgen
+        this._moms = null       // {x,z} mom's house, sited at the region centre by build()
+        this._eval = null       // memoized grade (see evaluate)
+        this._rev = 0           // bumped whenever a memoized grade must be thrown away
+        this._ctrls = []
+        this._read = null
     }
 
     /** Every zone in the built region, `{x, z, r}`. Read-only to callers. */
@@ -112,13 +144,22 @@ export class CampSystem {
 
         this._list = out
         this._built = { x: center.x, z: center.z, r: radius, seed }
+        // A new region is a new run's ground: last region's camps are gone, and mom's house is
+        // re-sited at this region's centre (the story spawn — DESIGN decision 6).
+        this._camps = []
+        this._moms = { x: center.x, z: center.z }
+        this._rev++
         return out
     }
 
-    /** Drop the region's zones (leaving story mode). */
+    /** Drop the region's zones and everything hung off them (leaving story mode). */
     clear () {
         this._list = []
         this._built = null
+        this._camps = []
+        this._moms = null
+        this._eval = null
+        this._rev++
     }
 
     /**
@@ -171,10 +212,22 @@ export class CampSystem {
         if (!nr || !nr.point) return { lateral: Infinity, onSurface: false, surfaceY: null }
         const lateral = Math.hypot(nr.point.x - x, nr.point.z - z)
         const surfaceY = road.sampleRoadTopY ? road.sampleRoadTopY(x, z) : null
+
+        // Phase D: the pad also needs the road FRAME here — the tangent, and which side of it we are
+        // standing on — so the bench can be built square to the road on the player's own side. Same
+        // convention poi.js sites its lay-bys with: right-hand normal (tz, −tx), side ∈ {+1, −1}.
+        const t = nr.tangent
+        const tl = t ? (Math.hypot(t.x, t.z) || 1) : 1
+        const tx = t ? t.x / tl : 1, tz = t ? t.z / tl : 0
+        const side = ((x - nr.point.x) * tz - (z - nr.point.z) * tx) < 0 ? -1 : 1
+
         return {
             lateral,
             onSurface: lateral <= this._k('roadHalfWidth', 5),
             surfaceY: surfaceY != null && isFinite(surfaceY) ? surfaceY : null,
+            roadX: nr.point.x, roadZ: nr.point.z,
+            tx, tz, side,
+            nx: tz * side, nz: -tx * side,   // unit normal pointing FROM the road TOWARD the query
         }
     }
 
@@ -182,6 +235,166 @@ export class CampSystem {
     tetherM () {
         return this._k('roadHalfWidth', 5) + this._k('roadShoulderWidth', 2.5)
              + this._k('campRoadEdgeM', CAMP_PARAMS.campRoadEdgeM)
+    }
+
+    // ── The site: grading, the vibe score, camps and mom's house (Phase D) ───────────────────
+    //
+    // WHERE THE SITE IS. Not where the truck is. The truck may legitimately sit on the shoulder —
+    // that is what shoulders are for — but a bench dug there would be half in the road. So the
+    // candidate spot is the truck's position PROJECTED off the pavement to its own side of the road,
+    // exactly the way poi.js sites a lay-by: nearest centerline point, then out along the right-hand
+    // normal by shoulder + gap + half the pad. Grading and pad therefore describe the same ground,
+    // which is the whole point — the score has to be a promise about what gets built.
+
+    /**
+     * Grade the campsite the player would make from (x,z). The one function behind the prompt, the
+     * vibe bar and the pad.
+     *
+     * @returns {{
+     *   inZone:boolean, lateral:number, withinTether:boolean, hasRoad:boolean,
+     *   spread:number, flat:boolean, flatScore:number, shadeScore:number, waterScore:number,
+     *   trees:number, waterDist:number, waterFound:boolean, vibe:number,
+     *   pad:{x,z,y,tx,tz,nx,nz,halfLen,halfWid}|null
+     * }}
+     *
+     * Cadence: the ~10 Hz prompt poll, and memoized until the truck has moved half a metre — the
+     * water ring alone is ~40 stream walks, which is fine once a metre and silly ten times a second.
+     */
+    evaluate (x, z) {
+        const m = this._eval
+        if (m && m.rev === this._rev && Math.abs(m.qx - x) < 0.5 && Math.abs(m.qz - z) < 0.5) return m
+
+        const P = this._P()
+        const zone = this.zoneAt(x, z)
+        const nr = this.nearRoadInfo(x, z)
+        const tether = this.tetherM()
+        const out = {
+            rev: this._rev, qx: x, qz: z,
+            inZone: !!zone, lateral: nr.lateral, withinTether: nr.lateral <= tether,
+            hasRoad: isFinite(nr.lateral),
+            spread: Infinity, flat: false, flatScore: 0, shadeScore: 0, waterScore: 0,
+            trees: 0, waterDist: Infinity, waterFound: false, vibe: 0, pad: null,
+        }
+        this._eval = out
+        if (!out.hasRoad) return out   // nothing to hang a bench off — grading has no spot to grade
+
+        // The candidate pad spot.
+        const lat = this._k('roadHalfWidth', 5) + this._k('roadShoulderWidth', 2.5)
+                  + P.campPadGapM + P.campPadHalfM
+        const cx = nr.roadX + nr.nx * lat, cz = nr.roadZ + nr.nz * lat
+
+        // ── flatness (up to 0.5) ──────────────────────────────────────────────────────────────
+        // Graded against analyticHeight — the CARVED surface, the same reading poi.js's earthwork
+        // cap uses. Raw terrain would bill the site for the road's own cut/fill bench, which is
+        // already-spent earthwork and not the campsite's ground.
+        const terrain = this._d.getTerrain?.()
+        const h = terrain?.analyticHeight ? ((px, pz) => terrain.analyticHeight(px, pz)) : null
+        let lo = Infinity, hi = -Infinity, sum = 0, n = 0
+        if (h) {
+            const half = P.campPadHalfM
+            for (let i = 0; i < GRADE_N; i++) {
+                const u = (i / (GRADE_N - 1) * 2 - 1) * half
+                for (let j = 0; j < GRADE_N; j++) {
+                    const v = (j / (GRADE_N - 1) * 2 - 1) * half
+                    const gy = h(cx + nr.tx * u + nr.nx * v, cz + nr.tz * u + nr.nz * v)
+                    if (!isFinite(gy)) return out          // off the terrain: not a site
+                    if (gy < lo) lo = gy
+                    if (gy > hi) hi = gy
+                    sum += gy; n++
+                }
+            }
+        } else { lo = hi = 0; sum = 0; n = 1 }
+        const spread = hi - lo
+        out.spread = spread
+        out.flat = spread <= P.campMaxUnevenM
+        out.flatScore = VIBE_W.flat * clamp01(1 - spread / Math.max(1e-6, P.campMaxUnevenM))
+
+        // ── shade (up to 0.3) — tree quantity inside the grading area ─────────────────────────
+        out.trees = this._d.treesNear?.(cx, cz, P.campGradeAreaM) ?? 0
+        out.shadeScore = VIBE_W.shade * clamp01(out.trees / Math.max(1, P.campShadeFullN))
+
+        // ── water (up to 0.2) — how close the nearest water is ────────────────────────────────
+        out.waterDist = this._waterDistance(cx, cz, P)
+        out.waterFound = out.waterDist <= P.campWaterR
+        out.waterScore = VIBE_W.water * clamp01(
+            (P.campWaterR - out.waterDist) / Math.max(1e-6, P.campWaterR - P.campWaterBestM))
+
+        out.vibe = out.flatScore + out.shadeScore + out.waterScore
+
+        // The pad record — the POI pad shape verbatim, because it rides the POI pad carve.
+        // y = the graded spot's own ground level (the lattice mean): a camp bench is flattened to
+        // the ground it sits on, not to the road, since it is metres off the shoulder.
+        out.pad = {
+            x: cx, z: cz, y: sum / n,
+            tx: nr.tx, tz: nr.tz, nx: nr.nx, nz: nr.nz,
+            halfLen: P.campPadHalfM, halfWid: P.campPadHalfM,
+        }
+        return out
+    }
+
+    /**
+     * Distance from (x,z) to the nearest water within campWaterR, or Infinity.
+     *
+     * Ponds are exact (centre + radius). Streams are SAMPLED on rings, because streamChannelAt
+     * answers "is this point in a channel?", not "how far is the channel?" — so the finest ring that
+     * reports a channel is the distance, to within the ring spacing. Good enough for a 0.2-weight
+     * score, and it keeps the cost at a few dozen walks.
+     *
+     * NB: streamChannelAt ALWAYS returns a record ({inChannel:false,inBank:false,stream:null} away
+     * from any stream) — it must be READ, never truth-tested.
+     */
+    _waterDistance (x, z, P) {
+        const water = this._d.getWater?.()
+        if (!water) return Infinity
+        const R = P.campWaterR
+        let best = Infinity
+
+        if (water.pondsInBBox) {
+            for (const p of water.pondsInBBox(x - R, z - R, x + R, z + R)) {
+                const d = Math.hypot(p.floorX - x, p.floorZ - z) - p.radius
+                if (d < best) best = Math.max(0, d)
+            }
+        }
+        if (water.streamChannelAt) {
+            const c = water.streamChannelAt(x, z)
+            if (c && (c.inChannel || c.inBank)) return 0
+            const RINGS = 5, SPOKES = 8
+            for (let i = 1; i <= RINGS && best > (i / RINGS) * R; i++) {
+                const r = (i / RINGS) * R
+                for (let k = 0; k < SPOKES; k++) {
+                    const a = (k / SPOKES) * Math.PI * 2
+                    const s = water.streamChannelAt(x + Math.cos(a) * r, z + Math.sin(a) * r)
+                    if (s && (s.inChannel || s.inBank)) { best = Math.min(best, r); break }
+                }
+            }
+        }
+        return best
+    }
+
+    /** Camp pads dug this run. Handed to RoadSystem.setCampPads by main.js — same records. */
+    camps () { return this._camps }
+
+    /**
+     * Record a camp at a graded pad. The pad is EARTHWORK: it is not un-dug on break camp, because
+     * digging a bench is not a UI state (deliberate reading, 2026-07-30 — revisit if the map fills
+     * up with old benches). Returns the full pad list for setCampPads.
+     */
+    makeCampAt (pad) {
+        if (!pad) return this._camps
+        this._camps.push(pad)
+        this._rev++          // the ground just changed under every memoized grade
+        return this._camps
+    }
+
+    /** Mom's house — {x,z} at the region centre — or null outside a live story region. */
+    momsHouse () { return this._moms }
+
+    /** Is (x,z) close enough to mom's house to knock? */
+    atMoms (x, z) {
+        const m = this._moms
+        if (!m) return false
+        const r = this._k('campMomsRadiusM', CAMP_PARAMS.campMomsRadiusM)
+        return Math.hypot(m.x - x, m.z - z) <= r
     }
 
     // ── generation ──────────────────────────────────────────────────────────────────────────
@@ -213,6 +426,50 @@ export class CampSystem {
         const z = (cz + rnd()) * S
         const r = P.campMinRadiusM + rnd() * (P.campMaxRadiusM - P.campMinRadiusM)
         return { x, z, r }
+    }
+
+    /**
+     * Self-contained debug folder (the SkySystem.addGui / DaySystem.addGui pattern — attaches to the
+     * existing panel, no edit to debug.js). Hidden in story mode by the existing setDebugLockout.
+     * Read-outs refresh from the caller's GUI tick via syncGui().
+     *
+     * @param {object} [acts] optional buttons main.js owns: {openCamp} jumps straight to the camp
+     *   dialogue at the truck (skips the 30-min chore) so the sleep flow can be exercised anywhere.
+     */
+    addGui (gui, acts = {}) {
+        if (!gui) return null
+        const f = gui.addFolder('Story · Camp (FEAT-45)')
+        const read = { zone: '—', lateral: '—', spread: '—', trees: '0', water: '—', vibe: '—' }
+        this._ctrls = [
+            f.add(read, 'zone').name('in zone').disable(),
+            f.add(read, 'lateral').name('road lateral').disable(),
+            f.add(read, 'spread').name('spread (m)').disable(),
+            f.add(read, 'trees').name('trees ≤6 m').disable(),
+            f.add(read, 'water').name('water (m)').disable(),
+            f.add(read, 'vibe').name('vibe').disable(),
+        ]
+        this._read = read
+
+        f.add(CAMP_PARAMS, 'campMaxUnevenM', 0.1, 3, 0.05).name('max uneven (m)')
+        f.add(CAMP_PARAMS, 'campShadeFullN', 1, 12, 1).name('trees for full shade')
+        f.add(CAMP_PARAMS, 'campWaterR', 5, 120, 5).name('water reach (m)')
+        f.add(CAMP_PARAMS, 'campMomsRadiusM', 5, 100, 5).name("mom's radius (m)")
+        if (acts.openCamp) f.add({ go: acts.openCamp }, 'go').name('skip to camp dialogue')
+        return f
+    }
+
+    /** Refresh the debug read-outs against the truck's current grade. Safe before addGui(). */
+    syncGui (x, z) {
+        if (!this._read) return
+        const g = this.evaluate(x, z)
+        const r = this._read
+        r.zone = g.inZone ? 'yes' : 'no'
+        r.lateral = isFinite(g.lateral) ? g.lateral.toFixed(1) : '—'
+        r.spread = isFinite(g.spread) ? g.spread.toFixed(2) : '—'
+        r.trees = String(g.trees)
+        r.water = isFinite(g.waterDist) ? g.waterDist.toFixed(1) : '—'
+        r.vibe = g.vibe.toFixed(2)
+        for (const c of this._ctrls) c.updateDisplay()
     }
 
     /**
