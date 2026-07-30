@@ -20,7 +20,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics } from './physics.js'
 import { getBodyContactPoints, getWheelPosition } from './suspension.js'
 import { updateVehicle, setLaunchHold, setControlAttenuation, SPAWN_STATE } from './vehicle.js'
-import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam } from './camera.js'
+import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
 // window.__view(x, y, z, yaw, pitch) — used by test/screenshot.mjs (headless CDP) and the browser console.
 window.__view = placeFreecam
@@ -53,7 +53,7 @@ import { LabSystem } from './lab.js'                     // FEAT-31: isolated fl
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { PoiSystem, POI_PARAMS } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { DaySystem } from './day.js'                     // FEAT-47: story-mode day clock (drives the sky)
-import { CampSystem } from './camp.js'                   // FEAT-45: story-mode dispersed-camping zones
+import { CampSystem, CAMP_PARAMS } from './camp.js'      // FEAT-45: story-mode dispersed-camping zones
 import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
@@ -2130,6 +2130,66 @@ let _prevParkedForPoi = true
 // would be noise, and would put a meter on the driving HUD (SM-INV-3).
 const CAMP_PROMPT_KPH = 20
 
+// ── The camp's world-space furniture (owner's 2026-07-30 pass) ────────────────────────────────
+// Two things, both placeholder art in FEAT-43's sense:
+//   • the SITE MARKER — a ring on the ground at the spot the siting ray picked, shown while the
+//     prompt is up. The ray means the camp no longer lands where the truck is, so without this the
+//     player has no way to read where "make camp" is actually going to put them.
+//   • the CAMP CUBE — a blue box standing on the pad once camp is made, the stand-in for the tent
+//     and fire models that are deferred.
+// camp.js stays THREE-free (the story-layer isolation rule): it hands out a pad record and main.js
+// is the only place that becomes geometry.
+const _campGroup = new THREE.Group()
+_campGroup.name = 'camp'
+scene.add(_campGroup)
+const CAMP_CUBE_SIZE = 1
+const _campCube = new THREE.Mesh(
+  new THREE.BoxGeometry(CAMP_CUBE_SIZE, CAMP_CUBE_SIZE, CAMP_CUBE_SIZE),
+  new THREE.MeshStandardMaterial({ color: 0x3d7fd6, emissive: 0x0a1a33, roughness: 0.6 }))
+_campCube.castShadow = true
+_campCube.visible = false
+_campGroup.add(_campCube)
+// Unit ring (inner 0.86 / outer 1.0), laid flat and scaled to the live pad half-extent, so the
+// campPadHalfM slider moves it without rebuilding geometry. No depth write: it is a read-out, and
+// it must not z-fight the ground it is describing.
+const _campMarker = new THREE.Mesh(
+  new THREE.RingGeometry(0.86, 1, 32),
+  new THREE.MeshBasicMaterial({ color: 0xffdc3c, transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide }))
+_campMarker.rotation.x = -Math.PI / 2
+_campMarker.visible = false
+_campGroup.add(_campMarker)
+
+/** Show/hide the siting ring at the spot the ray picked. Called from the prompt poll (~10 Hz). */
+function _updateCampMarker (site) {
+  const pad = site?.pad
+  _campMarker.visible = !!pad
+  if (!pad) return
+  _campMarker.position.set(pad.x, pad.y + 0.25, pad.z)
+  const s = pad.halfLen || CAMP_PARAMS.campPadHalfM
+  _campMarker.scale.set(s, s, 1)
+}
+
+/**
+ * Camp is established: stand the cube on the pad and put the camera on it. The camera seam is
+ * camera.js's focus override (setCameraFocus) — the minimal one: it reuses the chase cam's existing
+ * drag-orbit angles, so the player can still look around camp, and clearing it hands back to the
+ * follow lerp with no snap. Freecam is untouched and still outranks it.
+ */
+function _enterCampScene (site) {
+  const pad = site?.pad
+  if (!pad) return
+  _campCube.visible = true
+  _campCube.position.set(pad.x, pad.y + CAMP_CUBE_SIZE * 0.5, pad.z)
+  setCameraFocus({ x: pad.x, y: pad.y + 1, z: pad.z })
+}
+
+/** Break camp / leave the region: cube away, camera back on the truck. */
+function _exitCampScene () {
+  _campCube.visible = false
+  _campMarker.visible = false
+  setCameraFocus(null)
+}
+
 // The camp dialogue's state, or null when it is closed. One object so every render reads one thing:
 //   mode  'confirm' (make camp?) | 'camp' (break camp · sleep · fish) | 'sleep' (timer) | 'moms'
 //   site  the graded record the camp was made from (vibe + waterFound + pad); null at mom's
@@ -2202,17 +2262,25 @@ function _updateParkTriggers () {
   if (!campEl) return
   const showCamp = !poi && (camp || moms) && !_campUi
   campEl.style.display = showCamp ? 'block' : 'none'
+  // The world-space ring: only while the camp prompt is offering a spot that could actually be
+  // taken. Not at mom's (no pad), not once the dialogue is up (the cube takes over).
+  _updateCampMarker(showCamp && camp && camp.withinTether && camp.flat ? camp : null)
   if (!showCamp) return
   const vibeEl = document.getElementById('camp-vibe')
+  const legEl  = document.getElementById('camp-vibe-legend')
   const textEl = document.getElementById('camp-prompt-text')
   if (moms) {
     if (vibeEl) vibeEl.style.display = 'none'
+    if (legEl)  legEl.style.display = 'none'
     if (textEl) textEl.textContent = "park to sleep at mom's house"
     return
   }
   if (vibeEl) vibeEl.style.display = 'flex'
+  if (legEl)  legEl.style.display = 'flex'
   _renderVibeBar(camp)
   if (textEl) {
+    // "not flat" now means the WHOLE siting ray failed the flatness gate — every candidate from the
+    // road edge out to the tether — not merely that the verge beside the truck did.
     textEl.textContent = !camp.withinTether ? 'dispersed camping is limited to 20m from the road edge'
                        : !camp.flat         ? 'not flat'
                        :                      'park to make camp'
@@ -2266,6 +2334,7 @@ function _makeCamp () {
       for (let cx = c0x; cx <= c1x; cx++) for (let cz = c0z; cz <= c1z; cz++) propSystem.releaseChunk(cx, cz)
     }
     _campUi = { mode: 'camp', site, moms: false }
+    _enterCampScene(site)   // blue cube on the pad, camera on the camp
     _renderCampUI()
   })
 }
@@ -2285,19 +2354,45 @@ function _sleepAtCamp () {
   })
 }
 
-/** Close the dialogue. The pad (if one was dug) stays in the ground. */
+/**
+ * Close the dialogue. The pad (if one was dug) stays in the ground; the cube and the camera focus do
+ * not — they are UI. The truck hold is released by the frame loop the moment _campUi goes null.
+ */
 function _closeCampUi () {
   _campUi = null
+  _exitCampScene()
   _renderCampUI()
 }
 
-/** Keep the sleep face's two live numbers in step with the slider. */
+/**
+ * THE SLEEP PREVIEW (owner, 2026-07-30). Dragging the timer shows the WAKE energy this many hours
+ * would actually leave you with — recovery at this site's vibe, minus the coffee loan, clamped at a
+ * full tank — so the flow is "drag until the meter looks full, commit" rather than mental arithmetic.
+ *
+ * The number comes from DaySystem.previewWake, which is literally the arithmetic sleep() applies:
+ * one code path, so the preview cannot promise something the night does not deliver.
+ */
 function _syncSleepRow () {
   const h = parseInt(document.getElementById('cp-hours')?.value ?? '8', 10) || 8
   const vibe = _campUi?.moms ? 0.5 : (_campUi?.site?.vibe ?? 0.5)
-  const gain = daySystem.recoveryRate(vibe) * h
+  const full = daySystem.fullEnergyH()
+  const now  = daySystem.energyH()
+  const wake = daySystem.previewWake(h, vibe)
+  const wh   = daySystem.previewWakeHour(h)
+
+  const pct = (v) => `${Math.max(0, Math.min(1, v / full)) * 100}%`
+  const prev = document.getElementById('cp-energy-preview')
+  const fill = document.getElementById('cp-energy-fill')
+  if (prev) prev.style.width = pct(wake)
+  if (fill) fill.style.width = pct(Math.min(now, wake))   // the darker core never overruns the preview
+
   const t = document.getElementById('cp-hours-text')
-  if (t) t.textContent = `${h} h  (+${Math.min(gain, daySystem.fullEnergyH()).toFixed(1)} h)`
+  if (t) t.textContent = `${h} h  ·  wake ${String(Math.floor(wh)).padStart(2, '0')}:${String(Math.floor((wh % 1) * 60)).padStart(2, '0')}`
+  const e = document.getElementById('cp-energy-text')
+  if (e) {
+    e.textContent = `energy ${now.toFixed(1)} → ${wake.toFixed(1)} / ${full.toFixed(0)} h`
+      + (daySystem.coffeeDebt() > 0 ? `  ·  coffee debt ${daySystem.coffeeDebt().toFixed(0)} h at wake` : '')
+  }
 }
 
 /**
@@ -2342,14 +2437,9 @@ function _renderCampUI () {
     }
   }
 
-  if (isSleep) {
-    const e = daySystem.energyH(), full = daySystem.fullEnergyH()
-    const fill = document.getElementById('cp-energy-fill')
-    if (fill) fill.style.width = `${Math.max(0, Math.min(1, e / full)) * 100}%`
-    set('cp-energy-text', `energy ${e.toFixed(1)} / ${full.toFixed(0)} h`
-      + (daySystem.coffeeDebt() > 0 ? `  ·  coffee debt ${daySystem.coffeeDebt().toFixed(0)} h at wake` : ''))
-    _syncSleepRow()
-  }
+  // The meter, the wake readout and the preview are all one write — _syncSleepRow owns them, and it
+  // is the same function the slider's input event calls, so opening the face and dragging it agree.
+  if (isSleep) _syncSleepRow()
 }
 
 document.getElementById('cp-make')?.addEventListener('click', _makeCamp)
@@ -2609,6 +2699,7 @@ campSystem.addGui(_gui, {
   openCamp: () => {
     const g = campSystem.evaluate(vehicleState.position.x, vehicleState.position.z)
     _campUi = { mode: 'camp', site: g, moms: false }
+    _enterCampScene(g)
     _renderCampUI()
   },
 })
@@ -3206,7 +3297,13 @@ function loop () {
     // handbrake=false for the step, so the countdown never actually held and the player could
     // drive off mid-count.) The hold forces the handbrake only: revving against it is allowed,
     // and the release at zero is the launch.
-    setLaunchHold(!!missionSystem?.isHeld())
+    // FEAT-45: the camp UI holds the truck too. You could previously drive away from the camp
+    // screen (owner, 2026-07-30) — every camp face is a near-stopped surface by SM-INV-3, so any of
+    // them being up means the truck stays put. Same mechanism as the countdown: the handbrake is
+    // forced, revving against it is allowed, and dropping the hold on break camp is a clean release
+    // — W then behaves exactly as it does when you pull away from a mission launch, because the
+    // player's own parking-brake latch (the thing that opened the dialogue) is still underneath it.
+    setLaunchHold(!!missionSystem?.isHeld() || !!_campUi || _campBusy)
 
     const resetRequested = updateVehicle(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     if (resetRequested) {

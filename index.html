@@ -438,8 +438,30 @@
     .vibe-bar .vseg-shade { background: #3f9e6a; }   /* shade    — up to 30% */
     .vibe-bar .vseg-water { background: #4aa8d8; }   /* water    — up to 20% */
 
-    /* Energy meter (sleep dialogue only — never the driving HUD). */
+    /* The legend. The bar read as one anonymous fill without it (owner, 2026-07-30) — three
+       segments in three greens/blues tell you nothing about WHICH judgement is short. Swatch
+       colours are the segment colours; keep them in step or the legend lies. */
+    .vibe-legend {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      font-size: 11px;
+      color: #b9c2cb;
+      margin: -4px 0 7px;
+      letter-spacing: 0.04em;
+    }
+    .vibe-legend span { display: flex; align-items: center; gap: 4px; }
+    .vibe-legend i { width: 8px; height: 8px; display: inline-block; font-style: normal; }
+    .vibe-legend .lg-flat  { background: #9ad86a; }
+    .vibe-legend .lg-shade { background: #3f9e6a; }
+    .vibe-legend .lg-water { background: #4aa8d8; }
+
+    /* Energy meter (sleep dialogue only — never the driving HUD). Two stacked absolute layers:
+       the PREVIEW (what the slider's hours would leave you with, in a washed-out shade) sits
+       underneath and the current level paints over it, so the extension reads as "how much further
+       this drag gets you". Both are clamped to full by JS. */
     .energy-bar {
+      position: relative;
       width: 100%;
       height: 10px;
       background: rgba(255,255,255,0.09);
@@ -447,7 +469,12 @@
       margin: 6px 0 4px;
       overflow: hidden;
     }
-    .energy-bar .efill { height: 100%; width: 0%; background: #ffcf3c; transition: width 0.15s linear; }
+    .energy-bar .efill, .energy-bar .epreview {
+      position: absolute; left: 0; top: 0; height: 100%; width: 0%;
+      transition: width 0.15s linear;
+    }
+    .energy-bar .epreview { background: rgba(255, 207, 60, 0.34); }
+    .energy-bar .efill    { background: #ffcf3c; }
 
     /* Full-screen fade behind the make-camp chore and the night. Plain black, above the panels,
        below the story loading screen. Opacity is the only thing JS writes. */
@@ -581,6 +608,11 @@
       <div class="vseg vseg-shade"></div>
       <div class="vseg vseg-water"></div>
     </div>
+    <div class="vibe-legend" id="camp-vibe-legend">
+      <span><i class="lg-flat"></i>flat</span>
+      <span><i class="lg-shade"></i>shade</span>
+      <span><i class="lg-water"></i>water</span>
+    </div>
     <div id="camp-prompt-text">park to make camp</div>
   </div>
 
@@ -593,7 +625,10 @@
     <!-- Sleep face: the energy meter + the integer-hour timer. Static markup (the slider keeps its
          one listener) — only its display and the two live numbers are written. -->
     <div id="cp-sleep-panel" style="display:none;">
-      <div class="energy-bar"><div class="efill" id="cp-energy-fill"></div></div>
+      <div class="energy-bar">
+        <div class="epreview" id="cp-energy-preview"></div>
+        <div class="efill" id="cp-energy-fill"></div>
+      </div>
       <div class="cp-dim" id="cp-energy-text">energy</div>
       <div id="cp-row">
         <input id="cp-hours" type="range" min="1" max="14" step="1" value="8">

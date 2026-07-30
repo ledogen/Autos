@@ -81,3 +81,34 @@ questions:**
 
 Deferred, per the owner: tent model + animated campfire w/ dynamic shadows; the "home-cooked meal"
 wake buff at mom's (→ IDEAS.md); FEAT-38 spur-clearing tie-in when spurs exist.
+
+### Follow-up pass — 2026-07-30, after the owner drove it ("Phase F")
+
+Five ratified refinements, all in this worktree:
+
+1. **Ray-cast siting.** The camp was graded at ONE spot just off the shoulder, so every camp landed
+   on the shoulder ("pretty, not vibey") and hilly zones read as almost entirely uncampable. The
+   site is now chosen by casting a ray from the road edge out to the 20 m tether on the driver's
+   side and grading ~11 candidates 2 m apart; the best FLAT candidate is the site, and "not flat"
+   now means the whole ray failed. Two-pass + branch-and-bound (flatness gates and orders; shade and
+   water run on survivors only, flattest-first, stopping once `flatScore + 0.5` cannot beat the best
+   found). Memoized by DISTANCE MOVED (1.5 m) and road side, never by quantizing the query position
+   — the never-quantize-the-query rule. Cheap fields (zone / lateral / tether) still refresh at the
+   full 10 Hz on a memo hit. A yellow ground ring marks the chosen spot while the prompt is up.
+2. **Vibe legend** — "flat · shade · water" swatches under the bar; it read as one anonymous fill.
+3. **The camp UI holds the truck.** You could drive away from the camp screen. Every camp face now
+   engages the existing `setLaunchHold` seam (the mission-countdown handbrake force), released on
+   break camp / leave / close.
+4. **Camera + placeholder.** Camp established ⇒ `camera.setCameraFocus()` orbits the pad (new,
+   minimal seam: reuses the chase cam's drag-orbit angles, so you can still look around camp;
+   freecam still outranks it) and a 1 m blue cube stands on the pad — the stand-in for the deferred
+   tent/fire. Both cleared on break camp and region exit. No physics contact on the cube yet.
+5. **Live sleep preview.** `DaySystem.previewWake(hours, vibe)` is the settled-then-clamp arithmetic
+   `sleep()` applies — `sleep()` now calls it, so preview and outcome are one code path and cannot
+   drift. The sleep slider projects the wake energy onto the meter (lighter extension shade) with a
+   `wake HH:MM` readout, coffee debt included.
+
+Measured (headless harness, seed 6, real RoadSystem + WaterSystem): full ray re-grade **0.89 ms**
+typical, **3.8 ms** worst case (every rung flat ⇒ the amenity pass runs on all of them); memo hit
+**22 µs**. Primitives: `_gradeFlat` 54 µs, `_gradeAmenity` 299 µs (the ~40 stream probes dominate),
+`nearRoadInfo` 13 µs. At a 20 kph crawl the 1.5 m memo fires ~4 re-grades/s.

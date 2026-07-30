@@ -230,10 +230,35 @@ export class DaySystem {
     sleep (hours, vibe) {
         const h = Math.max(0, hours)
         this._advanceHours(h)
-        const settled = this._energyH + this.recoveryRate(vibe) * h - this._coffeeDebt
-        this._energyH = Math.max(0, Math.min(DAY_PARAMS.fullEnergyH, settled))
+        // ONE CODE PATH with the sleep dialogue's live preview: previewWake IS this arithmetic, and
+        // sleep() is previewWake plus the two mutations (clock already advanced, debt cleared). They
+        // cannot drift because there is only one of them.
+        this._energyH = this.previewWake(h, vibe)
         this._coffeeDebt = 0
         this._endSkip()
+    }
+
+    /**
+     * What energy sleeping `hours` at a site of `vibe` would leave you with — the settled-then-clamp
+     * arithmetic of sleep(), WITHOUT touching the clock, the energy or the coffee debt.
+     *
+     * This is what the sleep slider previews, so the player can just drag until the meter looks full
+     * and commit; it is the same function sleep() applies, so the preview is the outcome and not a
+     * second model of it. See sleep()'s note on why the debt is settled before the clamp.
+     *
+     * @param {number} hours
+     * @param {number} vibe 0..1
+     * @returns {number} energy in hours at wake, in [0, fullEnergyH]
+     */
+    previewWake (hours, vibe) {
+        const settled = this._energyH + this.recoveryRate(vibe) * Math.max(0, hours) - this._coffeeDebt
+        return Math.max(0, Math.min(DAY_PARAMS.fullEnergyH, settled))
+    }
+
+    /** Hour-of-day (0..24) the clock would read after sleeping `hours`. Pure — the slider's readout. */
+    previewWakeHour (hours) {
+        const h = (this._hour + Math.max(0, hours)) % 24
+        return h < 0 ? h + 24 : h
     }
 
     /** Hours of energy one hour of sleep buys at this campsite. See the arithmetic in DAY_PARAMS. */

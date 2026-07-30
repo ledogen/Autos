@@ -71,6 +71,17 @@ const freecamKeys   = { w: false, a: false, s: false, d: false, space: false, ct
 // before any vehicleState is available) can read the truck position for freecam entry.
 let _lastVehicleState = null
 
+// ── Focus override (FEAT-45: camp) ─────────────────────────────────────────────
+// A world point the camera orbits instead of the truck. Set while camp is established so the view
+// is ON the pad — you made camp, you should be looking at it, not at the back of your own tailgate.
+// Deliberately the SMALLEST possible seam: it reuses the drag-orbit angles the chase cam already
+// maintains, so mouse-drag still steers the view at camp, and clearing it hands straight back to
+// the chase follow lerp (which re-syncs orbit theta/phi/radius every frame anyway — no snap).
+// Freecam still wins outright: it is the dev tool and must never be trapped by a game state.
+let focusTarget    = null              // THREE.Vector3 or null
+const FOCUS_RADIUS = 10                // m — far enough back to read a 6 m pad and the truck beside it
+const FOCUS_PHI    = 0.45              // rad — a gentle look-down set on entry; drag from there
+
 // ── Input listeners ────────────────────────────────────────────────────────────
 document.addEventListener('mousedown', e => {
   if (e.button === 0 && (cameraMode === 'chase' || cameraMode === 'hood') && !e.target.closest('.lil-gui')) {
@@ -254,6 +265,21 @@ export function updateCamera (camera, vehicleState, dt) {
     return  // Do not fall through to chase/hood branches
   }
 
+  if (focusTarget) {
+    // ── Camp focus: orbit a fixed world point ────────────────────────────────
+    // Same spherical parameterisation as the drag-orbit branch below, so dragging at camp steers
+    // the same theta/phi and the handoff in either direction is continuous.
+    const cosP   = Math.cos(orbitPhi)
+    const goalPos = new THREE.Vector3(
+      focusTarget.x + FOCUS_RADIUS * cosP * Math.sin(orbitTheta),
+      focusTarget.y + FOCUS_RADIUS * Math.sin(orbitPhi),
+      focusTarget.z + FOCUS_RADIUS * cosP * Math.cos(orbitTheta)
+    )
+    camera.position.lerp(goalPos, 1 - Math.exp(-CHASE_STIFFNESS * dt))
+    camera.lookAt(focusTarget)
+    return
+  }
+
   if (cameraMode === 'chase') {
     if (isDragging) {
       // ── Orbit mode: place camera at fixed spherical offset in world space ──────
@@ -327,6 +353,18 @@ export function updateCamera (camera, vehicleState, dt) {
     )
     camera.quaternion.copy(vehicleState.quaternion).multiply(lookOffset)
   }
+}
+
+/**
+ * Point the camera at a world spot instead of the truck (FEAT-45: the camp pad), or pass null to
+ * hand it back to chase/hood. No-op on the freecam path — the dev camera outranks game states.
+ *
+ * @param {{x:number,y:number,z:number}|null} p
+ */
+export function setCameraFocus (p) {
+  if (!p) { focusTarget = null; return }
+  if (!focusTarget) orbitPhi = FOCUS_PHI   // seat the look-down once, on entry; drag owns it after
+  focusTarget = new THREE.Vector3(p.x, p.y, p.z)
 }
 
 /**

@@ -60,6 +60,25 @@ export const VIBE_W = { flat: 0.5, shade: 0.3, water: 0.2 }
 // lip without turning a 10 Hz poll into a terrain-sampling loop.
 const GRADE_N = 5
 
+// ── THE SITING RAY (owner's post-drive pass, 2026-07-30) ──────────────────────────────────────
+// Grading the ONE spot just off the shoulder made every camp land on the shoulder ("pretty, not
+// vibey"), and on hilly ground it declared most of a zone uncampable because the single spot it
+// looked at happened to be the road's own cut slope. So the site is now chosen by casting a ray
+// straight out from the road edge on the driver's side and grading a ladder of candidates along it.
+//
+//   CAMP_RAY_STEP_M  spacing of the candidates (≈11 of them over the 20 m tether)
+//   CAMP_RESAMPLE_M  how far the truck must move before the ladder is re-graded
+//
+// THE MEMO IS A DISTANCE, NOT A GRID. Quantizing the query position (snapping it to a lattice) would
+// be the cheaper-looking memo and it is the project's standing footgun: worldgen queries must never
+// be fed a rounded position (PERF-24/25's never-quantize-the-query lesson), because two truck
+// positions 10 cm apart would then grade DIFFERENT ground and the score would pop as you crept. So
+// the memo holds the exact position the ladder was graded at and re-grades once the truck has left a
+// CAMP_RESAMPLE_M ball around it — same query, just less often. The road SIDE is part of the memo
+// key too: crossing the centerline flips which way the ray points, and that is a different ladder.
+const CAMP_RAY_STEP_M = 2
+const CAMP_RESAMPLE_M = 1.5
+
 // THE COVERAGE ARITHMETIC (target ≈ 20% of map area, owner-ratified).
 //   cell area                = 1024²                       = 1.0486 km²
 //   E[r²] for r ~ U[350,650] = (a² + ab + b²)/3             = 257 500 m²
@@ -239,54 +258,132 @@ export class CampSystem {
 
     // ── The site: grading, the vibe score, camps and mom's house (Phase D) ───────────────────
     //
-    // WHERE THE SITE IS. Not where the truck is. The truck may legitimately sit on the shoulder —
-    // that is what shoulders are for — but a bench dug there would be half in the road. So the
-    // candidate spot is the truck's position PROJECTED off the pavement to its own side of the road,
-    // exactly the way poi.js sites a lay-by: nearest centerline point, then out along the right-hand
-    // normal by shoulder + gap + half the pad. Grading and pad therefore describe the same ground,
-    // which is the whole point — the score has to be a promise about what gets built.
+    // WHERE THE SITE IS. Not where the truck is, and — since the 2026-07-30 pass — not the single
+    // spot beside it either. The truck may legitimately sit on the shoulder, that is what shoulders
+    // are for, but a bench dug there would be half in the road; and a bench dug one pad-width off it
+    // is still ON the shoulder as far as the player's eye is concerned. So the site is chosen along
+    // a RAY cast from the road edge outward to the tether on the driver's own side: the near end of
+    // that ray is the old single candidate (nearest centerline point, out along the right-hand
+    // normal by shoulder + gap + half the pad, exactly the way poi.js sites a lay-by), and the far
+    // end is the last spot dispersed camping is still permitted at. The BEST flat candidate on that
+    // ladder is the site — so "not flat" now means the whole ray is unusable, not that the shoulder
+    // verge happened to be.
+    //
+    // Grading and pad still describe the same ground, which is the whole point: the score has to be
+    // a promise about what gets built, and now also about WHERE.
 
     /**
      * Grade the campsite the player would make from (x,z). The one function behind the prompt, the
-     * vibe bar and the pad.
+     * vibe bar, the world marker and the pad.
      *
      * @returns {{
-     *   inZone:boolean, lateral:number, withinTether:boolean, hasRoad:boolean,
+     *   inZone:boolean, lateral:number, withinTether:boolean, hasRoad:boolean, side:number,
      *   spread:number, flat:boolean, flatScore:number, shadeScore:number, waterScore:number,
-     *   trees:number, waterDist:number, waterFound:boolean, vibe:number,
+     *   trees:number, waterDist:number, waterFound:boolean, vibe:number, cands:number,
      *   pad:{x,z,y,tx,tz,nx,nz,halfLen,halfWid}|null
      * }}
      *
-     * Cadence: the ~10 Hz prompt poll, and memoized until the truck has moved half a metre — the
-     * water ring alone is ~40 stream walks, which is fine once a metre and silly ten times a second.
+     * Cadence: the ~10 Hz prompt poll. The ladder is graded only when the truck has left the
+     * CAMP_RESAMPLE_M ball it was last graded in (or crossed the centerline); on a memo hit the four
+     * CHEAP fields — zone membership, road lateral, tether, has-road — are refreshed anyway, so the
+     * prompt's gating stays live at 10 Hz while only the expensive judgement is held still.
      */
     evaluate (x, z) {
-        const m = this._eval
-        if (m && m.rev === this._rev && Math.abs(m.qx - x) < 0.5 && Math.abs(m.qz - z) < 0.5) return m
-
         const P = this._P()
         const zone = this.zoneAt(x, z)
         const nr = this.nearRoadInfo(x, z)
         const tether = this.tetherM()
+
+        const m = this._eval
+        if (m && m.rev === this._rev && m.side === nr.side
+            && Math.hypot(m.qx - x, m.qz - z) < CAMP_RESAMPLE_M) {
+            // NB: qx/qz are NOT advanced here. They anchor the ball the ladder was graded in — creep
+            // the anchor along with the truck and it would never re-grade at all.
+            m.inZone = !!zone
+            m.lateral = nr.lateral
+            m.withinTether = nr.lateral <= tether
+            m.hasRoad = isFinite(nr.lateral)
+            return m
+        }
+
         const out = {
-            rev: this._rev, qx: x, qz: z,
+            rev: this._rev, qx: x, qz: z, side: nr.side,
             inZone: !!zone, lateral: nr.lateral, withinTether: nr.lateral <= tether,
             hasRoad: isFinite(nr.lateral),
             spread: Infinity, flat: false, flatScore: 0, shadeScore: 0, waterScore: 0,
-            trees: 0, waterDist: Infinity, waterFound: false, vibe: 0, pad: null,
+            trees: 0, waterDist: Infinity, waterFound: false, vibe: 0, cands: 0, pad: null,
         }
         this._eval = out
         if (!out.hasRoad) return out   // nothing to hang a bench off — grading has no spot to grade
 
-        // The candidate pad spot.
-        const lat = this._k('roadHalfWidth', 5) + this._k('roadShoulderWidth', 2.5)
-                  + P.campPadGapM + P.campPadHalfM
-        const cx = nr.roadX + nr.nx * lat, cz = nr.roadZ + nr.nz * lat
+        // The ray: from the road edge (the near candidate, pad snug against the shoulder gap) out to
+        // the tether limit, one candidate every CAMP_RAY_STEP_M.
+        const lat0 = this._k('roadHalfWidth', 5) + this._k('roadShoulderWidth', 2.5)
+                   + P.campPadGapM + P.campPadHalfM
+        const reach = Math.max(0, P.campRoadEdgeM)
+        const steps = Math.max(1, Math.round(reach / CAMP_RAY_STEP_M))
 
-        // ── flatness (up to 0.5) ──────────────────────────────────────────────────────────────
-        // Graded against analyticHeight — the CARVED surface, the same reading poi.js's earthwork
-        // cap uses. Raw terrain would bill the site for the road's own cut/fill bench, which is
-        // already-spent earthwork and not the campsite's ground.
+        // TWO PASSES, ON PURPOSE. Flatness is the gate and only flat candidates can win, so the
+        // expensive half — shade (a chunked scatter walk) and water (~40 stream probes) — runs on the
+        // survivors only. Then the survivors are taken FLATTEST FIRST and bounded: shade + water can
+        // add at most VIBE_W.shade + VIBE_W.water, so once a candidate's flatness alone cannot reach
+        // the best score already found, neither can any flatter-scoring candidate behind it, and the
+        // pass stops. That is what keeps an 11-rung ladder from costing 11 water searches on the open
+        // flat ground where every rung passes the gate.
+        const AMENITY_MAX = VIBE_W.shade + VIBE_W.water
+        const flats = []
+        let flattest = null
+        for (let i = 0; i <= steps; i++) {
+            const lat = lat0 + (i / steps) * reach
+            const c = this._gradeFlat(nr.roadX + nr.nx * lat, nr.roadZ + nr.nz * lat, nr, P)
+            if (!c) continue                       // off the terrain: not a site
+            out.cands++
+            if (!flattest || c.spread < flattest.spread) flattest = c
+            if (c.flat) flats.push(c)
+        }
+        flats.sort((a, b) => b.flatScore - a.flatScore)
+        let best = null
+        for (const c of flats) {
+            if (best && c.flatScore + AMENITY_MAX <= best.vibe) break
+            this._gradeAmenity(c, P)
+            if (!best || c.vibe > best.vibe) best = c
+        }
+
+        // No flat candidate anywhere on the ray ⇒ "not flat" — and the record reports the flattest
+        // spot found, so the debug spread read-out still describes real ground rather than Infinity.
+        const pick = best || flattest
+        if (!pick) return out
+        if (!best) this._gradeAmenity(pick, P)
+
+        out.spread = pick.spread
+        out.flat = pick.flat
+        out.flatScore = pick.flatScore
+        out.trees = pick.trees
+        out.shadeScore = pick.shadeScore
+        out.waterDist = pick.waterDist
+        out.waterFound = pick.waterFound
+        out.waterScore = pick.waterScore
+        out.vibe = pick.vibe
+
+        // The pad record — the POI pad shape verbatim, because it rides the POI pad carve.
+        // y = the chosen spot's own ground level (its lattice mean): a camp bench is flattened to
+        // the ground it sits on, not to the road, since it is metres off the shoulder.
+        out.pad = {
+            x: pick.x, z: pick.z, y: pick.y,
+            tx: nr.tx, tz: nr.tz, nx: nr.nx, nz: nr.nz,
+            halfLen: P.campPadHalfM, halfWid: P.campPadHalfM,
+        }
+        return out
+    }
+
+    /**
+     * Flatness half of one candidate at (cx,cz), or null when the lattice leaves the terrain.
+     *
+     * Graded against analyticHeight — the CARVED surface, the same reading poi.js's earthwork cap
+     * uses. Raw terrain would bill the site for the road's own cut/fill bench, which is already-spent
+     * earthwork and not the campsite's ground.
+     */
+    _gradeFlat (cx, cz, nr, P) {
         const terrain = this._d.getTerrain?.()
         const h = terrain?.analyticHeight ? ((px, pz) => terrain.analyticHeight(px, pz)) : null
         let lo = Infinity, hi = -Infinity, sum = 0, n = 0
@@ -297,7 +394,7 @@ export class CampSystem {
                 for (let j = 0; j < GRADE_N; j++) {
                     const v = (j / (GRADE_N - 1) * 2 - 1) * half
                     const gy = h(cx + nr.tx * u + nr.nx * v, cz + nr.tz * u + nr.nz * v)
-                    if (!isFinite(gy)) return out          // off the terrain: not a site
+                    if (!isFinite(gy)) return null
                     if (gy < lo) lo = gy
                     if (gy > hi) hi = gy
                     sum += gy; n++
@@ -305,31 +402,29 @@ export class CampSystem {
             }
         } else { lo = hi = 0; sum = 0; n = 1 }
         const spread = hi - lo
-        out.spread = spread
-        out.flat = spread <= P.campMaxUnevenM
-        out.flatScore = VIBE_W.flat * clamp01(1 - spread / Math.max(1e-6, P.campMaxUnevenM))
+        return {
+            x: cx, z: cz, y: sum / n, spread,
+            flat: spread <= P.campMaxUnevenM,
+            flatScore: VIBE_W.flat * clamp01(1 - spread / Math.max(1e-6, P.campMaxUnevenM)),
+            trees: 0, shadeScore: 0, waterDist: Infinity, waterFound: false, waterScore: 0,
+            vibe: 0,
+        }
+    }
 
+    /** Shade + water for a candidate that has already passed _gradeFlat. Mutates `c` in place. */
+    _gradeAmenity (c, P) {
         // ── shade (up to 0.3) — tree quantity inside the grading area ─────────────────────────
-        out.trees = this._d.treesNear?.(cx, cz, P.campGradeAreaM) ?? 0
-        out.shadeScore = VIBE_W.shade * clamp01(out.trees / Math.max(1, P.campShadeFullN))
+        c.trees = this._d.treesNear?.(c.x, c.z, P.campGradeAreaM) ?? 0
+        c.shadeScore = VIBE_W.shade * clamp01(c.trees / Math.max(1, P.campShadeFullN))
 
         // ── water (up to 0.2) — how close the nearest water is ────────────────────────────────
-        out.waterDist = this._waterDistance(cx, cz, P)
-        out.waterFound = out.waterDist <= P.campWaterR
-        out.waterScore = VIBE_W.water * clamp01(
-            (P.campWaterR - out.waterDist) / Math.max(1e-6, P.campWaterR - P.campWaterBestM))
+        c.waterDist = this._waterDistance(c.x, c.z, P)
+        c.waterFound = c.waterDist <= P.campWaterR
+        c.waterScore = VIBE_W.water * clamp01(
+            (P.campWaterR - c.waterDist) / Math.max(1e-6, P.campWaterR - P.campWaterBestM))
 
-        out.vibe = out.flatScore + out.shadeScore + out.waterScore
-
-        // The pad record — the POI pad shape verbatim, because it rides the POI pad carve.
-        // y = the graded spot's own ground level (the lattice mean): a camp bench is flattened to
-        // the ground it sits on, not to the road, since it is metres off the shoulder.
-        out.pad = {
-            x: cx, z: cz, y: sum / n,
-            tx: nr.tx, tz: nr.tz, nx: nr.nx, nz: nr.nz,
-            halfLen: P.campPadHalfM, halfWid: P.campPadHalfM,
-        }
-        return out
+        c.vibe = c.flatScore + c.shadeScore + c.waterScore
+        return c
     }
 
     /**
