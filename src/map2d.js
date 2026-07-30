@@ -76,7 +76,7 @@ export class Map2D {
         // so the player can see where the region ends instead of discovering it by hitting it.
         this._getRegion   = getRegion    || (() => null)
         // FEAT-46: story-mode POIs. This is how the player finds one — see an icon, drive to it,
-        // press E. Empty outside story mode.
+        // park (latch the handbrake). Empty outside story mode.
         this._getPois     = getPois      || (() => null)
 
         this._open       = false
@@ -731,7 +731,7 @@ export class Map2D {
     }
 
     // FEAT-46: POI markers — the navigate-to-it affordance. See an orange diamond, drive there,
-    // press E. Drawn as world FURNITURE (with the region ring, under the mission overlay and the
+    // park. Drawn as world FURNITURE (with the region ring, under the mission overlay and the
     // car) rather than into the cached background: POIs are placed at story-mode entry, by which
     // time the background may already have been baked. Empty outside story mode.
     _drawPois(ctx) {

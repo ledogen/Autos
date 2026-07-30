@@ -42,7 +42,9 @@ export const POI_PARAMS = {
     // corners out without rejecting the ordinary crowned straight.
     poiMaxCrossSlope: 0.12,
     poiEndClearM:     55,     // m — keep clear of both edge ends (junction pads live there)
-    poiInteractR:     18,     // m — press-to-interact radius
+    poiInteractR:     18,     // m — interaction radius: where the prompt shows AND where latching
+                              // the parking brake opens the offer. ONE radius on purpose — a prompt
+                              // visible further out than the trigger works would be a lie.
     poiCubeSize:      1.6,    // m — the placeholder marker cube's edge length
 }
 

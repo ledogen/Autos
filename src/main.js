@@ -2008,26 +2008,56 @@ labSystem = new LabSystem(scene, () => ({
 }))
 
 // ── FEAT-46: POI interaction ────────────────────────────────────────────────────────────────
-// Stopped beside a marker cube, with no job already in flight → "press E for a job". Requiring
-// the truck to be roughly STOPPED (not merely nearby) is the whole affordance: you pull into the
-// lay-by, which is what the pad is for. The mission that follows starts where you sit — no
-// teleport (owner, 2026-07-28) — so the countdown runs out from under you on the pullout.
-const POI_INTERACT_MAX_SPEED = 2.0   // m/s — "parked", loosely enough that idle creep still counts
-
-/** The POI the player may interact with right now, or null. */
+// Within range of a marker cube, with no job already in flight → "park to begin mission". The
+// prompt is NOT speed-gated (owner, 2026-07-29): it is an instruction, and hiding it until you had
+// already slowed down meant the one thing telling you to stop only appeared once you had. So it
+// reads at any speed as you pass the lay-by; what it asks for is what actually arms the offer.
+// The mission that follows starts where you sit — no teleport (owner, 2026-07-28) — so the countdown
+// runs out from under you on the pullout.
+//
+// THE TRIGGER IS THE PARKING BRAKE (owner, 2026-07-29), not a dedicated key: you roll into the
+// lay-by, Space-latch the brake, and the offer opens. That reuses a control the player already has
+// to use to stay put on a graded pad, and it means "taking a job" is the same physical act as
+// parking — no interact key to advertise. Same rule will gate camping (FEAT-45): stop, latch,
+// dialogue. The edge is what fires, so sitting latched next to a marker (or spawning latched) never
+// re-opens an offer you just declined — you must release and re-pull. The run then launches with
+// your own parking brake still latched, which is fine: W both drops the latch and drives away in one
+// motion (vehicle.js's park state machine), the same as pulling away for real.
+/**
+ * The POI whose offer the player could open from here, or null. Proximity + mode only: there is no
+ * speed gate, because the parking-brake latch IS the speed gate — vehicle.js only lets it engage
+ * below ~5 km/h, so a moving truck cannot fire the trigger no matter how close the marker is.
+ */
 function _poiInReach () {
   if (!storySystem.isActive() || storySystem.isEntering()) return null
   if (missionSystem && missionSystem.state !== 'idle') return null
-  if (Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) > POI_INTERACT_MAX_SPEED) return null
   return poiSystem.nearest(vehicleState.position.x, vehicleState.position.z)
 }
 
+// Rising edge of the parking-brake latch (vehicleState.parked), sampled where the prompt is polled.
+// Starts TRUE because a spawn/teleport seats the truck already latched — an offer must never open
+// from a latch the player did not pull. The latch is sticky (a tap sets it and it stays), so polling
+// at the prompt's ~10 Hz cadence cannot miss a real pull.
+let _prevParkedForPoi = true
+
+/**
+ * The POI proximity prompt AND the parking-brake trigger behind it. One function because they are
+ * one affordance: whatever the prompt is offering is exactly what latching the brake does.
+ */
 function _updatePoiPrompt () {
   const el = document.getElementById('poi-prompt')
-  if (!el) return
   const poi = _poiInReach()
+  const parked = !!vehicleState.parked
+  const pulled = parked && !_prevParkedForPoi
+  _prevParkedForPoi = parked
+  if (poi && pulled) {
+    missionSystem.enterFromPoi(poi)      // leaves 'idle' ⇒ _poiInReach() is null from here on
+    if (el) el.style.display = 'none'
+    return
+  }
+  if (!el) return
   el.style.display = poi ? 'block' : 'none'
-  if (poi) el.textContent = 'press E — take a job from here'
+  if (poi) el.textContent = 'park to begin mission'
 }
 
 // Story-mode DOM. Two surfaces: the offer/result panel (over the map) and the in-run HUD.
@@ -2709,12 +2739,14 @@ document.getElementById('teleport-btn')?.addEventListener('click', _teleportToFr
 document.addEventListener('keydown', e => {
   // T → free-cam teleport (usable while pointer-locked, where the button can't be clicked).
   if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey) _teleportToFreecam()
-  // FEAT-46: E → take a job from the POI you are parked at. The prompt is the only advertisement
-  // of this key, and it is only up when the action is actually available.
-  if ((e.key === 'e' || e.key === 'E') && !e.ctrlKey && !e.metaKey) {
-    const poi = _poiInReach()
-    if (poi) { missionSystem.enterFromPoi(poi); _updatePoiPrompt() }
-  }
+  // FEAT-46's E-to-take-a-job key is GONE (owner, 2026-07-29): latching the parking brake beside a
+  // marker is the trigger now — see _updatePoiPrompt.
+  //
+  // Space closes the offer panel, same as clicking DECLINE (owner, 2026-07-29). The brake pull opened
+  // it, so the brake release is the obvious way out — and vehicle.js drops the park latch on that
+  // same tap, which leaves the truck ready to roll AND re-arms the trigger, so another pull re-offers.
+  // preventDefault so the tap can't ALSO activate whichever panel button last took focus.
+  if (e.key === ' ' && missionSystem?.state === 'offer') { e.preventDefault(); missionSystem.exit() }
   // Shift+R → set the spawn point to the truck's current pose (does not move the truck).
   if (e.shiftKey && (e.key === 'r' || e.key === 'R')) {
     if (isTeleportEnabled()) setSpawnHere()
@@ -3194,7 +3226,8 @@ function loop () {
     // so they repaint on the HUD's ~10 Hz cadence rather than per physics step.
     if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'running')) _renderMissionUI()
 
-    // FEAT-46: the POI prompt. Same ~10 Hz cadence — it's a proximity affordance, not a trigger.
+    // FEAT-46: the POI prompt — and, since 2026-07-29, the parking-brake trigger it advertises.
+    // Still the ~10 Hz cadence: the `parked` latch is sticky, so the edge cannot fall between polls.
     _updatePoiPrompt()
 
     // M1-11: live speed readout. velocity.length() = magnitude in m/s; * 3.6 converts to km/h.

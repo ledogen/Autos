@@ -16,6 +16,20 @@ Designate **dispersed camping areas** — the general zones where the player is 
 than at discrete numbered sites). Shown on the 2D map (`M`) as a **yellow overlay** covering
 the permitted area.
 
+## Ratified: the camp dialogue is gated on the parking brake (owner, 2026-07-29)
+
+Establishing camp uses the **same trigger as taking a mission** (shipped for FEAT-46 POIs on
+2026-07-29 — see `_updatePoiPrompt` in `src/main.js`): you must be **stopped**, then **latch the
+parking brake with Space**. The rising edge of the latch — not a dedicated interact key — opens
+the dialogue. Prompt/dialogue copy:
+
+- in a camping area, stopped, brake not latched → prompt reads **"park to establish camp"**
+  (mirrors the mission prompt's "park to begin mission")
+- on the latch edge → dialogue: **"campsite (stats) · establish camp · abandon"**
+
+Reuse the mission trigger's rules verbatim: edge-triggered (so spawning or sitting latched never
+re-opens a dialogue you just abandoned), and a speed gate loose enough that idle creep still counts.
+
 ## Open questions (scope in plan mode when picked up)
 
 - What defines an area's extent — a radius around road edges/spurs, a terrain-derived polygon
@@ -32,3 +46,5 @@ the permitted area.
   stream center), consistent with the rest of worldgen.
 - The 2D map renders them as a legible yellow overlay that reads as "area", not "point".
 - No regression on existing road/terrain/map gates.
+- Camp is established only from a stopped truck with the parking brake latched, and the world-space
+  prompt / dialogue copy matches the ratified section above.

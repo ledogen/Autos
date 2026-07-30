@@ -462,7 +462,7 @@
          (The seed control that used to sit under here is gone: you chose the world when you entered
          story mode, and offering it again mid-run invited a world rebuild under a live planner.) -->
     <div id="mp-actions">
-      <button id="mp-decline">decline</button>
+      <button id="mp-decline" title="the same brake tap that releases the truck">decline (space)</button>
       <button id="mp-retry" title="testing only — real story mode has no do-overs">retry</button>
       <button id="mp-regen" title="testing only — real story mode has no do-overs">regenerate</button>
       <button id="mp-accept">accept mission</button>
@@ -471,7 +471,8 @@
   </div>
   <div id="mission-hud"></div>
 
-  <!-- FEAT-46: "press E for a job" prompt, shown when the truck is stopped beside a POI cube. -->
+  <!-- FEAT-46: "park to begin mission" prompt, shown when the truck is stopped beside a POI cube.
+       Latching the parking brake (Space) there is what opens the offer — see _updatePoiPrompt. -->
   <div id="poi-prompt"></div>
 
   <!-- FEAT-31 testing lab: live status + best-of-each-track table. The right-hand column is the
