@@ -453,7 +453,15 @@ export class CampSystem {
         f.add(CAMP_PARAMS, 'campMaxUnevenM', 0.1, 3, 0.05).name('max uneven (m)')
         f.add(CAMP_PARAMS, 'campShadeFullN', 1, 12, 1).name('trees for full shade')
         f.add(CAMP_PARAMS, 'campWaterR', 5, 120, 5).name('water reach (m)')
+        f.add(CAMP_PARAMS, 'campWaterBestM', 1, 30, 1).name('water full credit (m)')
+        f.add(CAMP_PARAMS, 'campRoadEdgeM', 5, 80, 1).name('road tether (m)')
+        f.add(CAMP_PARAMS, 'campGradeAreaM', 3, 20, 1).name('grade area (m)')
+        f.add(CAMP_PARAMS, 'campPadHalfM', 1, 8, 0.5).name('pad half (m)')
+        f.add(CAMP_PARAMS, 'campPadGapM', 0, 3, 0.1).name('pad gap (m)')
         f.add(CAMP_PARAMS, 'campMomsRadiusM', 5, 100, 5).name("mom's radius (m)")
+        // The zone GENERATOR knobs (campCellM / campZoneChance / radius range) are deliberately not
+        // sliders: zones are laid out once at region entry, so a live tweak would silently lie until
+        // the next re-entry — and the camp-zones gate pins the density they produce.
         if (acts.openCamp) f.add({ go: acts.openCamp }, 'go').name('skip to camp dialogue')
         return f
     }
