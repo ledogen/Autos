@@ -41,7 +41,9 @@ export const CAMP_PARAMS = {
     // ── The site (Phase D) ────────────────────────────────────────────────────────────────────
     campPadHalfM:    3,     // m — half-extent of the camp bench: a 6 m pad, RATIFIED
     campPadGapM:     0.6,   // m — gap from the shoulder edge to the pad's near side (poiPadGap's twin)
-    campGradeAreaM:  6,     // m — the square the site is graded over (flatness) and trees counted in
+    campGradeAreaM:  6,     // m — the square the site is graded over (flatness)
+    campShadeR:      10,    // m — tree-count reach for the shade score (owner, 2026-07-30: shade
+                            // reads a wider ring than flatness — a pine 8 m off still shades the pad)
     campMaxUnevenM:  0.6,   // m — ground spread over that square above which the site is NOT FLAT.
                             // Best-guess (the plan's number); it is both the prompt's gate and the
                             // zero point of the flatness score, so one knob moves both together.
@@ -414,7 +416,7 @@ export class CampSystem {
     /** Shade + water for a candidate that has already passed _gradeFlat. Mutates `c` in place. */
     _gradeAmenity (c, P) {
         // ── shade (up to 0.3) — tree quantity inside the grading area ─────────────────────────
-        c.trees = this._d.treesNear?.(c.x, c.z, P.campGradeAreaM) ?? 0
+        c.trees = this._d.treesNear?.(c.x, c.z, P.campShadeR) ?? 0
         c.shadeScore = VIBE_W.shade * clamp01(c.trees / Math.max(1, P.campShadeFullN))
 
         // ── water (up to 0.2) — how close the nearest water is ────────────────────────────────
@@ -551,6 +553,7 @@ export class CampSystem {
         f.add(CAMP_PARAMS, 'campWaterBestM', 1, 30, 1).name('water full credit (m)')
         f.add(CAMP_PARAMS, 'campRoadEdgeM', 5, 80, 1).name('road tether (m)')
         f.add(CAMP_PARAMS, 'campGradeAreaM', 3, 20, 1).name('grade area (m)')
+        f.add(CAMP_PARAMS, 'campShadeR', 3, 30, 1).name('shade reach (m)')
         f.add(CAMP_PARAMS, 'campPadHalfM', 1, 8, 0.5).name('pad half (m)')
         f.add(CAMP_PARAMS, 'campPadGapM', 0, 3, 0.1).name('pad gap (m)')
         f.add(CAMP_PARAMS, 'campMomsRadiusM', 5, 100, 5).name("mom's radius (m)")
