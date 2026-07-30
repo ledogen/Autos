@@ -102,7 +102,11 @@ no economy attached. The last leg of the day is the game (SM-INV-6).
 
 ## SM-4 — The Run (death, persistence, regions)
 
-**Goal:** the roguelike shell — runs end, the world doesn't reset.
+**Goal:** the roguelike shell — runs end, and the *player* is what carries forward.
+
+> **Rewritten 2026-07-29.** *Was: "runs end, the world doesn't reset."* The world now **does** reset:
+> the run layer resets completely on death, and what survives is literacy plus the garage
+> (SM-INV-8 as narrowed, SM-INV-12 as rewritten). See the state-object bullet below.
 
 - Run lifecycle: death → run summary → new run in a fresh jalopy.
 - XP earned from payout margin; XP/story beats trigger **FEAT-28 region unlocks** (the brief
@@ -111,10 +115,19 @@ no economy attached. The last leg of the day is the game (SM-INV-6).
   "main missions"** that drive the player to a place — so the level-up moment has a diegetic cause,
   not just an XP threshold. Authoring the main missions themselves lands in SM-5 (they carry the
   through-line); SM-4 wires the unlock trigger.
-- **metaState**: versioned persistent profile (localStorage — single-origin constraint), the
-  explicit generator input of SM-INV-12. Gates pin a default metaState.
-- What persists: unlocks + world parameter states + region progress. What doesn't: car, parts,
-  money (SM-INV-8).
+- **Two state objects (rewritten 2026-07-29 — SM-INV-12 no longer feeds meta into worldgen):**
+  - **`runState`**: run age + run progress, the explicit input to *run-layer* world state
+    (`(worldSeed, runState, coords)`). Advances at day/sleep/mission boundaries. **Resets on death.**
+    Gates pin a default `runState` (this is the object gates used to pin as `metaState`).
+  - **`metaState`**: versioned persistent profile (localStorage — single-origin constraint), holding
+    **unlocked starting vehicles and story keys only**. It **never touches generation**.
+- What persists: **literacy + the garage** (unlocked starting vehicles, story keys). What doesn't:
+  car, parts, money, **XP, region/trail clearance, and world parameter states** (SM-INV-8 as
+  narrowed 2026-07-29, SM-INV-14). *Superseded: "unlocks + world parameter states + region progress
+  persist."*
+- **Suspend-and-resume saving** (RATIFIED 2026-07-29, DESIGN.md "Run shape and saving"): one slot,
+  written on quit, **deleted on load**, deleted on death. Cheap to serialize precisely because
+  worldgen is meta-free — the world is never written out.
 
 ## SM-5 — The World Turns (story delivery, spirits, horror)
 
@@ -129,7 +142,8 @@ before the whole milestone can close.
   the keystone — SM-3's wear/breakdown work is what gives this milestone its emotional stakes
   (breakdown = the horse dying under you), so lean on it here.
 - Story parameter states: staged generator params (leaning trees, moon, dark-at-noon, absence)
-  keyed off metaState (SM-INV-11) — the **ambient** channel, still emergent.
+  keyed off **run progress** (`runState`; SM-INV-11 re-keyed 2026-07-29) — the **ambient** channel,
+  still emergent. Escalation happens within a run and resets with it.
 - Doze as delivery vehicle: the ~400 ms eyes-closed frames show *something*; pushing sleep is
   how you learn the story. This is where **the Roamer visits** (*something comes to you when you
   doze off*).
@@ -138,14 +152,21 @@ before the whole milestone can close.
   empty ground for a camera/subject scene), not a bolted-on cutscene layer. The **main missions**
   that gate region unlocks (SM-4) are the primary carriers. Canonical setup: the dark-at-8am morning
   → drive out → the world delivers the encounter.
-- **Spirits**: permanent, player-earned, unremovable, rule-changing-not-resource-granting
-  (SM-INV-9). First spirit: the camping spirit (rare campsite discovery). The **Roamer is the
-  meta-spirit** the individual spirits read as facets of (DESIGN.md); the night-owl/camper pair
-  (IDEAS.md) live under it.
+- **Spirits — DEFERRED 2026-07-29** (DESIGN.md "The garage"): meta-progression is now unlocked
+  *starting vehicles*, not spirits, and under the narrowed SM-INV-8 spirits can no longer be
+  permanent *world* additions. Not deleted; needs a pass reconciling it with the garage before any
+  unlock plumbing is built. Design of record retained: player-earned, rule-changing-not-
+  resource-granting (SM-INV-9); first spirit the camping spirit; the **Roamer is the meta-spirit**
+  the individual spirits read as facets of; the night-owl/camper pair (IDEAS.md) live under it.
+  **The cast and its taxonomy live in `spirits-and-pacts.md`** (Pact/Warden classes, domains,
+  disposition tracks, contact moments, ledger shapes; The Night Owl / The Innkeeper / The Verge /
+  The Confluence) — read its header first, it carries four flagged conflicts with rules ratified
+  after it was written.
 - **Classes** (new — RATIFIED 2026-07-20, DESIGN.md "Classes"): RPG-style roles unlocked by
   *meeting spirits* and other one-time achievements (camp 10×, drive 5 km sleepy, …), main story
   beats, and region completions. Breadth, not floor (SM-INV-9/7). *Structure open (Open Q10)* —
-  how a class stays strictly breadth is unresolved; scope carefully here.
+  how a class stays strictly breadth is unresolved; scope carefully here. **Deferred alongside
+  spirits 2026-07-29** — classes' relationship to the garage needs the same reconciling pass.
 - **The Roamer's economy of gifts:** the Roamer hands out **meta-progression unlocks and story keys
   only — never resources or run-layer power** (SM-INV-8/9). Build the "where to look" hint surface as
   literacy transfer, not a loot faucet.

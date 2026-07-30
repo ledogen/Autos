@@ -100,7 +100,12 @@ FEAT-28) is framed but not yet scheduled. **Intent and invariants live in
 `.planning/story-mode/MILESTONES.md`. Read DESIGN.md before any gameplay/mission/progression/
 sleep/economy work — if an implementation satisfies its ticket but violates an invariant there,
 the invariant wins; stop and flag it. Open design questions listed there are the user's to
-answer, not yours.
+answer, not yours. Companion notes **downstream of DESIGN.md** (where they disagree, DESIGN.md wins):
+`missions.md` (mission taxonomy + XP/payout scoring + the log-drag main mission), `run-shape.md`
+(run/day length, saving), `opening.md` (the day job, the uncle), `items.md` (items catalog —
+consumables/tools/parts/cargo/catch, the asset burn-down surface), `spirits-and-pacts.md` (the spirit
+cast — deferred, and carrying flagged conflicts with later rulings), `IDEAS.md` (scratchpad), and
+`design-amendments-2026-07-29.md` (provenance for the 2026-07-29 ratification pass).
 
 ## Workflow
 
