@@ -52,6 +52,7 @@ import { MissionSystem, MISSION_PLAN_RADIUS, PLAN_RESTREAM_MOVE } from './missio
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { PoiSystem, POI_PARAMS } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
+import { DaySystem } from './day.js'                     // FEAT-47: story-mode day clock (drives the sky)
 import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
@@ -1915,6 +1916,16 @@ function _rebuildPoiMarkers () {
   }
 }
 
+// ── FEAT-47: the story-mode day clock ──────────────────────────────────────────────────────
+// Story mode only: started when the region goes live, stopped on exit (see the story deps below),
+// and a no-op every frame in between in free roam. Its one output today is the sky hour — pushed on
+// a quantized ladder because each push re-bakes the sky cubemap and the prop impostor atlas
+// (skySystem.onLookApplied, below). DAY_PARAMS lives in day.js, out of RANGER_PARAMS/routeCacheSig,
+// for the same reason POI_PARAMS does.
+const daySystem = new DaySystem({
+  setTimeOfDay: (h) => skySystem.setTimeOfDay(h),
+})
+
 const _misFwd = new THREE.Vector3()
 missionSystem = new MissionSystem({
   getRoad:  () => roadSystem,
@@ -2292,6 +2303,8 @@ addPropGui(_gui, {
 addGpsGui(_gui, gpsSystem)
 // QUAL-02: sky/lighting tuning folder (self-contained — attaches to _gui like the props folder).
 skySystem.addGui(_gui)
+// FEAT-47: story day clock folder (self-contained, same pattern). Hidden by the debug lockout.
+daySystem.addGui(_gui)
 // FEAT-14: vehicle cast-light tuning folder (headlight beams + rear lamp pools).
 addLightGui(_gui)
 // User pref: every lil-gui section collapsed by default (the root panel stays open). Runs after ALL
@@ -2626,6 +2639,7 @@ const storySystem = new StorySystem({
    */
   onRegionLive: (center, radius) => {
     if (!center) return
+    daySystem.start()   // FEAT-47: the run's clock opens at dayStartHour and takes over the sky
     poiSystem.build(center, radius)
     _rebuildPoiMarkers()
     terrainSystem?.rebuildAllChunksFromWorker()
@@ -2643,6 +2657,7 @@ const storySystem = new StorySystem({
   },
   /** FEAT-46: leaving story mode — drop the pads before releaseRegion() re-bakes without them. */
   onRegionExit: () => {
+    daySystem.stop()    // FEAT-47: clock off, sky handed back to free roam's noon look
     poiSystem.clear()
     _rebuildPoiMarkers()
     terrainSystem?.rebuildAllChunksFromWorker()
@@ -2953,6 +2968,9 @@ function loop () {
   // physics pose BEFORE the render interpolation reads it (so the truck is clamped, not just drawn
   // clamped). No-op unless story mode is active.
   storySystem.update(frameTime, vehicleState)
+
+  // FEAT-47: advance the story day clock on the same wall-clock delta. No-op outside story mode.
+  daySystem.update(frameTime)
 
   // FEAT-22: water submersion flag — CG vs the local water surface (pond plane). Once per render
   // frame (not per physics substep): v1 only SETS the flag; nothing in stepPhysics consumes it yet.
