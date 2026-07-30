@@ -207,6 +207,34 @@ export class PropSystem {
   }
 
   /**
+   * Re-queue EVERY live prop chunk's shadow tile, nearest-first from chunk (cx,cz). Called when the
+   * key light has moved far enough that the baked projections are stale (day/night cycle) — the
+   * bake system commits the new shear, this supplies the work list, and its own slicer rolls it out
+   * over the following frames.
+   *
+   * Nearest-first is the whole point: a roll takes several frames, so ordering by distance means the
+   * tiles under and ahead of the player re-project first and the ring edge (which is fog-dimmed and
+   * inside QUAL-18's baked-shadow dissolve anyway) trails.
+   *
+   * bbonly chunks are skipped — they never baked a tile, so re-queuing them would burn slicer budget
+   * stamping empty tiles.
+   * @returns {number} queue length after marking (0 if baked shadows are off)
+   */
+  remarkShadowTilesForSun(cx, cz) {
+    if (!this._shadowBake || !this._shadowBake.markAll) return 0
+    const keys = []
+    for (const [ck, chunk] of this._chunks) {
+      if (chunk.mode === 'bbonly') continue
+      const comma = ck.indexOf(',')
+      const kx = parseInt(ck.slice(0, comma), 10)
+      const kz = parseInt(ck.slice(comma + 1), 10)
+      keys.push([ck, Math.max(Math.abs(kx - cx), Math.abs(kz - cz))])
+    }
+    keys.sort((a, b) => a[1] - b[1])
+    return this._shadowBake.markAll(keys.map(e => e[0]))
+  }
+
+  /**
    * PERF-21: scratch scene for per-tile shadow bakes — one InstancedMesh per (cat#variant) that
    * SHARES the palette's vertex position buffer (uploaded once) but owns small instanceMatrix /
    * aShadowK buffers, refilled per bake from the live chunks' slots. Material is irrelevant (the

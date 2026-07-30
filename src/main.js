@@ -1651,6 +1651,8 @@ const QUALITY_PRESETS = {
 // PERF-07: set once the bake system exists (browser only — headless never constructs it), so
 // applyQuality can push a tier's shadowTilePx without referencing the not-yet-initialised const.
 let _syncBakedShadows = null
+// Wall-clock (s) of the last day/night shadow re-bake roll — see the sun-generation block in loop().
+let _lastSunBakeSec = -1e9
 // PERF-21: same pattern for the prop billboard impostors (activation + tier lodRing push).
 let _syncImpostors = null
 
@@ -2280,6 +2282,7 @@ propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
 // system, and the static sun direction into the projection shear. In realtime-cast mode the terrain
 // strength is 0 (props keep casting into the sun's shadow map instead).
 const shadowBake = new ShadowBakeSystem(renderer, FLORA_PARAMS.shadows?.tilePx ?? TILE_PX)
+window.__shadowBake = shadowBake   // dev handle (mirrors window.sky) — inspect/force sun re-bake rolls
 shadowBake.setSun(skySystem.sunDirection)
 // Baked strength is 0 whenever the bake can't stand in: realtime-cast mode, or tilePx 0 (Low tier
 // turns baked prop shadows off outright — no atlas exists to sample).
@@ -3196,6 +3199,28 @@ function loop () {
   perfAdd('frame.props.update', performance.now() - _pt)   // TEMP (D-arc)
   // PERF-07: bake freshly-committed chunks' prop shadows into the world atlas (sliced; no-op when the
   // queue is empty, i.e. the steady state). Off the frame's shadow pass entirely once baked.
+  // Day/night SUN GENERATION. The baked atlas is a projection along the key light, so as the cycle
+  // swings the sun those projections go stale — without this, tree shadows point at dawn all day.
+  // Policy lives here (the bake system deliberately does not track live chunks):
+  //   · trigger on DRIFT IN METRES (shadowDriftFor), not on shear or on an angle — see there;
+  //   · never start a roll while the previous one is still draining, so a fast clock self-throttles
+  //     to the slicer's rate instead of queueing without bound;
+  //   · plus a wall-clock floor, so a debug dayLengthSec of 5 s can't saturate the baker;
+  //   · re-queue NEAREST-FIRST so tiles around the truck re-project before the ring edge.
+  // The roll itself is just the existing MAX_BAKES_PER_CALL slicer draining a longer queue — the
+  // atlas is never restamped in one frame.
+  if (shadowBake && propSystem && !_labActive && shadowBake.enabled && !shadowBake.hasWork()) {
+    const _nowSec = performance.now() / 1000
+    const _fp = FLORA_PARAMS.shadows
+    if (shadowBake.shadowDriftFor(skySystem.sunDirection) > (_fp?.sunRebakeM ?? 0.6)
+      && _nowSec - _lastSunBakeSec > (_fp?.sunRebakeMinSec ?? 2.0)) {
+      _lastSunBakeSec = _nowSec
+      shadowBake.setSun(skySystem.sunDirection)        // commit the new generation
+      const _cx = Math.floor(streamCenter.x / CHUNK_SIZE), _cz = Math.floor(streamCenter.z / CHUNK_SIZE)
+      propSystem.remarkShadowTilesForSun(_cx, _cz)
+      perfEvent('shadow.bake.sun')                     // PERF-26: distinguish a sun roll from stream-in
+    }
+  }
   _pt = performance.now()
   if (shadowBake && shadowBake.hasWork() && !_labActive) { perfEvent('shadow.bake'); shadowBake.update(scene) }   // PERF-26 tag
   perfAdd('frame.shadowBake', performance.now() - _pt)

@@ -40,7 +40,9 @@ export const MOON_PARAMS = {
   enabled: true,
   angularSize: 5.5,     // apparent DIAMETER in degrees. The real moon is 0.52°, which is far too
                         // small to read in-game; this is the size the look was signed off at.
-  phase: 0.5,           // 0 = new, 0.5 = half, 1 = full. Animate this for a lunar cycle.
+  phase: 0.42,          // 0 = new, 0.5 = geometric half, 1 = full. Animate this for a lunar cycle.
+                        // Slightly under half by default: a lit disc on a black sky reads as
+                        // larger than it is, so an exact half looks over-lit. Slider: Moon > phase.
   brightness: 3.0,      // PRE-tone-mapping luminance of the lit limb (see header). Pushed much past
                         // ~4 and ACES saturates the whole disc to flat white, taking the maria with it.
   earthshine: 0.0,      // unlit-limb brightness as a fraction of `brightness`. 0 by DEFAULT: any
