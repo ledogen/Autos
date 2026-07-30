@@ -25,10 +25,19 @@ change the *shape* of a run, not the player's power floor.
 
 > **Update 2026-07-29 — the night-owl is now a named character with a catalog entry.** He is **the
 > Night Owl** (renamed from the working handle *The Passenger*), and his full write-up lives in
-> `spirits-and-pacts.md` #01 — Pact class, fatigue domain (risk side), single-run-total ledger,
-> contact at bedtime then in the doze. **He appears in your passenger seat when he speaks to you.**
+> `spirits-and-pacts.md` #01 — Pact class, fatigue domain (risk side), single-run-total ledger.
 > The two sketches are the same spirit arrived at twice; the catalog entry supersedes this bullet on
 > detail, and this entry stays for the *pairing* against the camper.
+>
+> **Update 2026-07-29 (b) — he is specified now, and two things below are superseded.** A man's body
+> and an owl's head, riding in your passenger seat; summoned by ~10 tired hours **or** ~10 tired km
+> in one run; you talk to him by stopping and **pulling the handbrake**. **His bargain is a nocturnal
+> inversion** — alert dusk-to-dawn, brutally sleepy in daylight, the day clock untouched. So:
+> *"lessens the doze effect"* is **not** how he works (the doze isn't softened, it is **moved into
+> daylight**), and *"pays more for missions run while sleepy"* was never ratified and is now the less
+> likely version — the inversion is the boon, and a payout multiplier on top would be the
+> balance-sheet handout the guardrail below warns about. **The camper half of this pairing is
+> unaffected**, and the reckless-nights ↔ restful-days axis is intact.
 
 - **The deviant / night-owl spirit — rewards staying up dangerously.** On runs where it shows up,
   pushing past sleepy is *encouraged*: it **lessens the doze effect** (a clean rule-change) and
@@ -306,10 +315,20 @@ You find it because you drove somewhere you had no reason to go.
 - **Don't gate it behind rarity so hard it never happens.** A thing 2% of players ever see is a thing
   that didn't get built. Tune toward "most players who explore find one eventually."
 
-Open: is it **one** car or a class of them? Does the found vehicle enter the garage for future runs
-only, or can you drive it *now* — noting SM-INV-15 forbids in-run vehicle purchase, but finding is
-not buying, and "abandon your rig for the barn find mid-run" is a genuinely interesting and
-genuinely dangerous idea that cuts against *the game is about maintaining one rig*. **Owner's call.**
+**You cannot drive it in the run you find it [RATIFIED 2026-07-29].** Finding it unlocks it as a
+**starting vehicle for subsequent runs** — you note where it is, you finish your run in the truck you
+brought, and it's in the garage next time.
+
+That's the right call and it closes a hole cleanly: "abandon your rig for the barn find mid-run"
+would have driven a truck through SM-INV-15 (no in-run vehicle change) and directly contradicted the
+keystone — *the game is about maintaining a rig, not acquiring one. You do not trade horses.* It also
+keeps the find's reward on the meta layer where every other garage entry lives, so there's one rule
+rather than an exception.
+
+And it makes the discovery *better*, not worse: you find the thing, you can't have it, and you have to
+survive the rest of the run knowing it's there. The wanting is the reward.
+
+Open: is it **one** car or a class of them?
 
 Related: `spirits-and-pacts.md` "Career stats" (the other garage-unlock source); DESIGN.md
 "The garage" (lateral-not-upward), SM-INV-8/9/12/15; `missions.md` "The job board" (hidden-until-

@@ -619,6 +619,10 @@ physical and visible, where a perk's are numerical and quiet.
   shown on the map**. Its position is deterministic from `(worldSeed, coords)` like everything else
   (SM-INV-12); only *whether you have found it* persists. Rewards curiosity rather than accumulation
   — the one unlock that pays for leaving the road you were on. See `IDEAS.md`.
+  **You cannot drive it in the run you find it** [RATIFIED 2026-07-29] — finding unlocks it as a
+  *starting* vehicle for later runs. This keeps SM-INV-15 intact (no in-run vehicle change) and
+  honours the keystone: you do not trade horses mid-journey. You find it, you can't have it, and you
+  finish the run knowing it's there.
 
 Both are bound by lateral-never-upward above. A hidden car that is also the strongest car is a power
 floor wearing a mystery costume.

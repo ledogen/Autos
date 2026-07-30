@@ -62,6 +62,13 @@ Career totals survive as an **account-level stats screen** — a player-facing j
 the in-run persona's ledger (that persona is fresh every run). Distinct waters fished, nights camped,
 tired hours driven, runs ended and how.
 
+**Shown post-run** [owner, 2026-07-29], which gives the screen a job beyond bookkeeping: it is where
+the game acknowledges **what you almost did**. Records, not just totals — *"longest distance driven
+tired"* is the ratified example, and it is what a player who died at hour nine of a ten-hour ledger
+sees instead of a consolation prize from the world (see #01, "Should the near-miss leave a mark?").
+Prefer **records and maxima** alongside lifetime sums; a personal best is the honest way to say *you
+were close* without the world ever breaking silence.
+
 - **They are never a spirit's unlock condition.** Spirit ledgers stay run-layer (single-run total /
   single-run streak). Career totals only *observe*.
 - **They may unlock garage entries.** The garage is the one thing that legally persists (SM-INV-8), so
@@ -341,12 +348,29 @@ passenger seat that wasn't empty a moment ago, on the run *after* a near miss. *
 the seat is canonically his** (see "Where he sits") — this isn't a random omen, it's *him*, early,
 before you've earned him.
 
-**Two versions, and only one is settled.** The **same-run** mark — the seat changes at hour nine of
-the run you are *in* — is legal outright, and may be better anyway since you are still alive to be
-unnerved by it. The **next-run** mark needs the profile to remember a near-miss, and a near-miss is
-*not* a "met" story key (you never met him). Making it work needs a second, weaker key — an
-**almost-met** flag. That is legal in principle (it is knowledge, it buys nothing) but it is a **new
-kind of persistent state, so it is the owner's call** — flagged, not assumed.
+**RESOLVED 2026-07-29: the near-miss is acknowledged on the post-run stats screen, not in the
+world.** [owner] The record is **"longest distance driven tired"** — a career stat, so a player who
+died at hour nine sees their own high-water mark and knows exactly how close they came.
+
+This is a better answer than either option that was on the table:
+
+- **No new persistent state.** The cross-run world mark was rejected precisely because it needed the
+  profile to remember a near-miss, and a near-miss is not a "met" story key. The stats screen is
+  *already* ratified account-level persistence (see "Career stats"), so this costs nothing new.
+- **The world stays silent, which is the point.** An omen in the seat would have the world
+  commiserating with you. The stats screen doesn't commiserate — it just shows a number you have to
+  interpret yourself. That is the SM-INV-10 discipline (*described, never scored*) pointed at the
+  player's own history, and it keeps the seat's emptiness meaning exactly one thing.
+- **It gives the stats screen emotional work to do**, rather than leaving it as bookkeeping. The
+  place you go to see what you almost did is a different object than a leaderboard.
+
+**Source data:** FEAT-47's tired ledger already integrates **tired hours and tired distance** as
+run-layer counters (they are the Night Owl's summon condition). The career stat is just the max of
+the distance counter across runs — no new instrumentation, and the distance term is the one that
+resists farming, which makes it the honest thing to record.
+
+*(The same-run mark — the seat changing at hour nine of the run you're in — remains legal and
+optional as foreshadowing. It is not required by this resolution.)*
 
 ### How you talk to him [RATIFIED 2026-07-29 (b)]
 
