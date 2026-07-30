@@ -2315,6 +2315,22 @@ function _campFade (during) {
   setTimeout(finish, 480)   // slightly past the 0.45 s CSS transition
 }
 
+/**
+ * Re-realize the ground around a pad after the carve tables changed (a bench dug OR un-dug):
+ * rebuild the terrain chunks, then release the covering prop chunks so the scatter re-rolls
+ * against the finished ground — digging clears the site of trees via the pad keep-out
+ * (poiPadBlocked); un-digging lets them come back.
+ */
+function _refreshGroundAround (pad) {
+  terrainSystem?.rebuildAllChunksFromWorker()
+  if (propSystem) {
+    const S = CHUNK_SIZE, r = pad.halfLen
+    const c0x = Math.floor((pad.x - r) / S), c1x = Math.floor((pad.x + r) / S)
+    const c0z = Math.floor((pad.z - r) / S), c1z = Math.floor((pad.z + r) / S)
+    for (let cx = c0x; cx <= c1x; cx++) for (let cz = c0z; cz <= c1z; cz++) propSystem.releaseChunk(cx, cz)
+  }
+}
+
 /** Confirmed: 30 in-game minutes pass and a 6 m bench is dug at the graded spot. */
 function _makeCamp () {
   const site = _campUi?.site
@@ -2324,15 +2340,7 @@ function _makeCamp () {
     // The bench rides the POI pad carve (RoadSystem._padsAll) — same records, same zero-authority
     // road gate, so digging a camp can no more move the ribbon than a lay-by can.
     roadSystem?.setCampPads(campSystem.makeCampAt(site.pad))
-    terrainSystem?.rebuildAllChunksFromWorker()
-    // …and release the covering chunks so the props re-scatter against the finished ground: the
-    // pad keep-out (poiPadBlocked) now covers it, which is what "clears" the site of trees.
-    if (propSystem) {
-      const S = CHUNK_SIZE, r = site.pad.halfLen
-      const c0x = Math.floor((site.pad.x - r) / S), c1x = Math.floor((site.pad.x + r) / S)
-      const c0z = Math.floor((site.pad.z - r) / S), c1z = Math.floor((site.pad.z + r) / S)
-      for (let cx = c0x; cx <= c1x; cx++) for (let cz = c0z; cz <= c1z; cz++) propSystem.releaseChunk(cx, cz)
-    }
+    _refreshGroundAround(site.pad)
     _campUi = { mode: 'camp', site, moms: false }
     _enterCampScene(site)   // blue cube on the pad, camera on the camp
     _renderCampUI()
@@ -2347,19 +2355,28 @@ function _sleepAtCamp () {
   const back = _campUi.moms ? 'moms' : 'camp'
   _campFade(() => {
     daySystem.sleep(hours, vibe)
-    // You wake WHERE YOU SLEPT: the truck is untouched and the dialogue is still up. Only "break
-    // camp" closes it — and the pad stays dug, because earthwork is not a UI state.
+    // You wake WHERE YOU SLEPT: the truck is untouched and the dialogue is still up. The pad stays
+    // dug for as long as you stay camped; "break camp" is what closes it AND un-digs the bench.
     _campUi = { ..._campUi, mode: back }
     _renderCampUI()
   })
 }
 
 /**
- * Close the dialogue. The pad (if one was dug) stays in the ground; the cube and the camera focus do
- * not — they are UI. The truck hold is released by the frame loop the moment _campUi goes null.
+ * Close the dialogue — and if it was an ESTABLISHED camp, un-dig the bench. The pad originally
+ * stayed as permanent earthwork, but a leftover bench is perfectly flat ground, so re-camping it
+ * gamed the flatness score (owner, 2026-07-30). Mom's house and the pre-dig confirm screen have
+ * no pad, so they just close. The truck hold is released by the frame loop the moment _campUi
+ * goes null.
  */
 function _closeCampUi () {
+  const st = _campUi
   _campUi = null
+  const pad = (!st?.moms && st?.site?.pad && campSystem.camps().includes(st.site.pad)) ? st.site.pad : null
+  if (pad) {
+    roadSystem?.setCampPads(campSystem.removeCamp(pad))
+    _refreshGroundAround(pad)
+  }
   _exitCampScene()
   _renderCampUI()
 }

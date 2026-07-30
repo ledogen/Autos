@@ -47,7 +47,8 @@ export const CAMP_PARAMS = {
     campMaxUnevenM:  0.6,   // m — ground spread over that square above which the site is NOT FLAT.
                             // Best-guess (the plan's number); it is both the prompt's gate and the
                             // zero point of the flatness score, so one knob moves both together.
-    campShadeFullN:  3,     // trees inside the grading area that earn FULL shade credit
+    campShadeFullN:  5,     // trees inside the shade ring that earn FULL shade credit (owner: 5
+                            // over the 10 m ring — 3 was tuned for the old 6 m reach)
     campWaterR:      30,    // m — how far out water still counts for anything
     campWaterBestM:  5,     // m — at or inside this, full water credit (camping ON the bank is best)
     campMomsRadiusM: 25,    // m — park-trigger radius at mom's house
@@ -472,14 +473,26 @@ export class CampSystem {
     camps () { return this._camps }
 
     /**
-     * Record a camp at a graded pad. The pad is EARTHWORK: it is not un-dug on break camp, because
-     * digging a bench is not a UI state (deliberate reading, 2026-07-30 — revisit if the map fills
-     * up with old benches). Returns the full pad list for setCampPads.
+     * Record a camp at a graded pad. Returns the full pad list for setCampPads.
+     * The bench lasts exactly as long as the camp: breaking camp un-digs it (removeCamp). The
+     * original reading kept old benches as permanent earthwork, but the owner reversed it
+     * (2026-07-30): a leftover pad is perfectly flat ground, so re-camping your own old bench
+     * gamed the flatness score.
      */
     makeCampAt (pad) {
         if (!pad) return this._camps
         this._camps.push(pad)
         this._rev++          // the ground just changed under every memoized grade
+        return this._camps
+    }
+
+    /**
+     * Break camp: drop the pad so the ground reverts to the seed's own shape. Returns the remaining
+     * pad list for setCampPads — the caller re-bakes the covering chunks, same as digging.
+     */
+    removeCamp (pad) {
+        const i = this._camps.indexOf(pad)
+        if (i >= 0) { this._camps.splice(i, 1); this._rev++ }
         return this._camps
     }
 
