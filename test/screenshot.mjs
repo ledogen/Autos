@@ -25,11 +25,15 @@ import { launchChrome, connect, sleep } from './lib/cdp.mjs'
 const argv = process.argv.slice(2)
 const pos = argv.filter(a => !a.startsWith('--'))
 const flag = (k, d) => { const f = argv.find(a => a.startsWith(`--${k}=`)); return f ? f.split('=')[1] : d }
-if (pos.length < 2) { console.error('usage: node test/screenshot.mjs <x> <z> [y] [--height=40] [--pitch=-0.9] [--zoff=32] [--seed=6] [--wait=6500] [--out=path]'); process.exit(1) }
+if (pos.length < 2) { console.error('usage: node test/screenshot.mjs <x> <z> [y] [--height=40] [--pitch=-0.9] [--zoff=32] [--seed=6] [--yaw=0] [--hour=22] [--wait=6500] [--out=path]'); process.exit(1) }
 
 const X = Number(pos[0]), Z = Number(pos[1])
 const HEIGHT = Number(flag('height', 40)), PITCH = Number(flag('pitch', -0.9)), ZOFF = Number(flag('zoff', 32))
+// --yaw: freecam heading in radians (0 = looking toward -Z, the default overhead framing).
+const YAW = Number(flag('yaw', 0))
 const SEED = flag('seed', '6'), WAIT = Number(flag('wait', 6500))
+// --hour: scrub the QUAL-02 day/night cycle before the shot (0..24). Omit to keep the boot look (`day`).
+const HOUR = flag('hour', null) === null ? null : Number(flag('hour'))
 // Camera base Y: GROUND-RELATIVE by default. The old fixed default (110) sat BELOW the terrain
 // over most of the seed-6 map (spawn area is ~150–190 m) — the camera ended up inside the
 // mountain and every shot came back sky-white, which cost a whole false "renderer is broken"
@@ -62,12 +66,18 @@ const client = await connect({ port: CDP })
 await sleep(10000)
 let placed = null
 for (let i = 0; i < 20; i++) {   // the module sets window.__view once main.js finishes importing
-  const r = await client.evalJS(`(()=>{ if(typeof window.__view==='function'){ window.__view(${X}, ${Y + HEIGHT}, ${Z + ZOFF}, 0, ${PITCH}); return 'ok' } return 'pending' })()`)
+  const r = await client.evalJS(`(()=>{ if(typeof window.__view==='function'){ window.__view(${X}, ${Y + HEIGHT}, ${Z + ZOFF}, ${YAW}, ${PITCH}); return 'ok' } return 'pending' })()`)
   if (r.err) { console.error('eval error:', r.err); client.close(); process.exit(1) }
   if (r.val === 'ok') { placed = 'ok'; break }
   await sleep(500)
 }
 if (placed !== 'ok') { console.error('window.__view handle never appeared'); client.close(); process.exit(1) }
+// --hour: scrub the day/night cycle before the shot (window.sky is SkySystem's debug handle).
+// Needed to eyeball anything night-side — the app boots on the `day` look.
+if (HOUR !== null) {
+  const r = await client.evalJS(`(()=>{ if(!window.sky) return 'nosky'; window.sky.setTimeOfDay(${HOUR}); return 'ok' })()`)
+  if (r.val !== 'ok') { console.error('could not set hour (window.sky handle missing)'); client.close(); process.exit(1) }
+}
 await sleep(WAIT)    // stream terrain+roads around the new camera position
 const shot = await client.cmd('Page.captureScreenshot', { format: 'png' })
 writeFileSync(OUT, Buffer.from(shot.result.data, 'base64'))

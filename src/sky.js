@@ -51,31 +51,43 @@ const LOOK_FIELDS = [
 ]
 
 // The four named scenes. Starting points to SWEEP — tune in-GUI, then "log look JSON" to paste back.
+//
+// fogColor IS A RADIANCE VALUE, like sunIntensity — NOT the colour you will see on screen. It is now
+// tone-mapped (ACES × exposure) before it reaches the renderer, exactly like every surface it blends
+// over; see SkySystem._applyFogColor for why that had to change. Consequence: these four numbers were
+// re-authored when the pipeline was fixed. morning/day/evening are the exact radiances that reproduce
+// their previously-shipped DISPLAYED fog (they were tuned to match the sky horizon — the FEAT-05
+// "no hard band" invariant — so their on-screen result had to be preserved to the byte). `night` was
+// NOT preserved: its old value was tuned in the broken pipeline, where fog alone ignored the night
+// exposure drop, which is precisely the "fog is bright at night" bug. It is authored fresh.
 export const SKY_PRESETS = {
   morning: {
     elevation: 11, azimuth: 95, lightEl: 11, lightAz: 95,
     turbidity: 6, rayleigh: 2.6, mieCoefficient: 0.006, mieDirectionalG: 0.86, exposure: 0.46,
     sunColor: 0xffd6a0, sunIntensity: 3.4, hemiSky: 0xbcc6d4, hemiGround: 0x4f463e,
-    hemiIntensity: 1.05, fogColor: 0xc9b79a,
+    hemiIntensity: 1.05, fogColor: 0xffeebe,   // radiance; displays as the shipped 0xc9b79a
   },
   day: {
     elevation: 55, azimuth: 145, lightEl: 55, lightAz: 145,
     turbidity: 5, rayleigh: 2.0, mieCoefficient: 0.005, mieDirectionalG: 0.8, exposure: 0.5,
     sunColor: 0xfff5e8, sunIntensity: 4.8, hemiSky: 0xaccadc, hemiGround: 0x5b5048,
-    hemiIntensity: 1.5, fogColor: 0x9bb8d4,
+    hemiIntensity: 1.5, fogColor: 0xb5e8ff,    // radiance; displays as the shipped 0x9bb8d4
   },
   evening: {
     elevation: 7, azimuth: 255, lightEl: 7, lightAz: 255,
     turbidity: 8, rayleigh: 2.9, mieCoefficient: 0.007, mieDirectionalG: 0.9, exposure: 0.46,
     sunColor: 0xff8a4d, sunIntensity: 3.0, hemiSky: 0xb9a0a8, hemiGround: 0x4a3f3a,
-    hemiIntensity: 0.9, fogColor: 0xcf9f86,
+    hemiIntensity: 0.9, fogColor: 0xffc9a8,    // radiance; displays as the shipped 0xcf9f86
   },
   night: {
     elevation: -8, azimuth: 300,          // sky-sun below horizon → dark sky
     lightEl: 42, lightAz: 210,            // "moon" up and to the side → cool key + real shadows
     turbidity: 3, rayleigh: 1.2, mieCoefficient: 0.003, mieDirectionalG: 0.8, exposure: 0.36,
-    sunColor: 0x7488b0, sunIntensity: 0.7, hemiSky: 0x2a3a55, hemiGround: 0x14171f,
-    hemiIntensity: 0.45, fogColor: 0x1d2740,
+    // Ambient moonlight: the hemisphere fill is what keeps unlit slopes from going to pure black now
+    // that the fog no longer (wrongly) lifts the whole distance. Raised from 0.45/0x2a3a55 — with the
+    // fog fix in, the old values left the night a silhouette rather than a moonlit landscape.
+    sunColor: 0x7488b0, sunIntensity: 0.7, hemiSky: 0x35486b, hemiGround: 0x181c26,
+    hemiIntensity: 0.75, fogColor: 0x3a4a70,   // radiance, RE-AUTHORED (see the note above)
   },
 }
 
@@ -88,23 +100,80 @@ export const SKY_CYCLE = {
   playing: false,
   hour: 12,
   dayLengthSec: 120,
-  // sorted by hour; first/last must be the same look so the wrap (24→0) is seamless.
+  // Sorted by hour; first/last must be the same look so the wrap (24→0) is seamless.
+  //
+  // The REPEATED `night` entries are load-bearing, not redundant. setTimeOfDay blends the two
+  // keyframes bracketing the hour, so with the old four-point table (night 0 / morning 6 / day 12 /
+  // evening 18 / night 24) every single hour was a blend and NO hour was actually the night look:
+  // 23:00 was still 17 % evening, which is why the small hours carried a warm dusk haze — half of
+  // the "fog is bright at night" report. A repeated preset makes that span flat, so dusk finishes
+  // at 21:00 and dawn starts at 04:00 and the hours between are genuinely `night`.
   keyframes: [
     { hour: 0,  preset: 'night' },
-    { hour: 6,  preset: 'morning' },
+    { hour: 4,  preset: 'night' },      // flat night 00:00–04:00
+    { hour: 7,  preset: 'morning' },    // dawn 04:00–07:00
     { hour: 12, preset: 'day' },
     { hour: 18, preset: 'evening' },
-    { hour: 24, preset: 'night' },
+    { hour: 21, preset: 'night' },      // dusk 18:00–21:00
+    { hour: 24, preset: 'night' },      // flat night 21:00–24:00
   ],
 }
 
 const _scratchA = new THREE.Color()
 const _scratchB = new THREE.Color()
+const _scratchFog = new THREE.Color()
+const _scratchLight = new THREE.Color()
 
-// Pre-compensation for the baked ground-fill disc: the background pass tone-maps (ACES ×
-// exposure ~0.5) what the bake stored linearly, so an unlifted fog colour lands too dark next to
-// the actual fogged terrain it should blend into. Tuned by eyeball against the fog band.
-const GROUND_FILL_LIFT = 2.2
+/**
+ * ACES filmic tone map, ported EXACTLY from three's tonemapping_pars_fragment (r184). Operates on a
+ * linear working-space colour in place. Kept byte-faithful to the GLSL — if the two drift, the fog
+ * stops matching the surfaces it blends into, which is precisely the bug this exists to fix.
+ */
+function acesToneMap (c, exposure) {
+  const e = exposure / 0.6
+  let r = c.r * e, g = c.g * e, b = c.b * e
+  // sRGB → AP1 (RRT_SAT)
+  let x = 0.59719 * r + 0.35458 * g + 0.04823 * b
+  let y = 0.07600 * r + 0.90834 * g + 0.01566 * b
+  let z = 0.02840 * r + 0.13383 * g + 0.83777 * b
+  const fit = (v) => (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.432951) + 0.238081)
+  x = fit(x); y = fit(y); z = fit(z)
+  // AP1 → sRGB (ODT_SAT)
+  r =  1.60475 * x - 0.53108 * y - 0.07367 * z
+  g = -0.10208 * x + 1.10813 * y - 0.00605 * z
+  b = -0.00327 * x - 0.07276 * y + 1.07602 * z
+  const s = (v) => (v < 0 ? 0 : v > 1 ? 1 : v)
+  return c.setRGB(s(r), s(g), s(b), THREE.LinearSRGBColorSpace)
+}
+
+/**
+ * Unlit-particle irradiance model (dust / tire smoke / dirt spray). Those three systems draw with
+ * plain textured ShaderMaterials — no lights, no normals — so their albedo is whatever the texture
+ * says regardless of the hour. Tone mapping alone barely touches them (ACES at the night exposure
+ * 0.36 vs day 0.5 is only ~25 % darker), which is why at night they read as glowing white blobs
+ * hanging in a black world. SkySystem.particleLight() hands them a linear RGB multiplier derived
+ * from the ACTIVE look's key + hemisphere lights, normalised so the `day` look is exactly 1.0 (so
+ * the shipped daytime look is untouched).
+ *
+ * gamma < 1 compresses the range: raw irradiance at night is ~2 % of noon, which would make dust
+ * effectively invisible rather than merely dim. floor keeps a sliver of visibility on the darkest
+ * look — kicked-up dust is a gameplay read (traction), not only a decoration.
+ */
+export const PARTICLE_LIGHT = { keyWeight: 0.5, hemiWeight: 0.5, gamma: 0.6, floor: 0.06 }
+
+/** Raw (un-normalised) linear irradiance estimate for a look. Shared by the live value + the norm. */
+function rawIrradiance (look, out) {
+  const key = _scratchA.setHex(look.sunColor).multiplyScalar(look.sunIntensity * PARTICLE_LIGHT.keyWeight)
+  const hemi = _scratchB.setHex(look.hemiSky).multiplyScalar(look.hemiIntensity * PARTICLE_LIGHT.hemiWeight)
+  return out.setRGB(key.r + hemi.r, key.g + hemi.g, key.b + hemi.b, THREE.LinearSRGBColorSpace)
+}
+
+// Pre-compensation for the baked ground-fill disc. The background pass tone-maps (ACES × exposure)
+// what the bake stored linearly. Now that scene.fog carries an ALREADY tone-mapped colour (see
+// _applyFogColor), the disc and the fog agree when the disc is baked with the raw authored colour —
+// both end up as ACES(authored × exposure). The old eyeballed 2.2 lift existed only to paper over
+// the untone-mapped fog it had to sit next to; that mismatch is fixed at the root, so it is gone.
+const GROUND_FILL_LIFT = 1.0
 
 /** Direction (origin→point) on the unit sphere from elevation/azimuth degrees, written into `out`. */
 function dirFromAngles (elevationDeg, azimuthDeg, out) {
@@ -120,10 +189,15 @@ export class SkySystem {
    *   sun/ambient are the lights already in the scene; we drive them from the active look. scene.fog
    *   (FogExp2) is recoloured but its density is left to main.js. renderer gets ACES tone mapping.
    */
-  constructor ({ scene, renderer, sun, ambient }) {
+  constructor ({ scene, renderer, sun, sunFar, farSplit = 0, ambient }) {
     this.scene = scene
     this.renderer = renderer
     this.sun = sun
+    // Optional terrain-shadow cascade (main.js `sunFar`). Shares the key light's colour; the look's
+    // authored sunIntensity is SPLIT between the two so the pair sums to it — adding the cascade
+    // must not change how bright the scene is, only what casts shadows at what scale.
+    this.sunFar = sunFar ?? null
+    this.farSplit = this.sunFar ? farSplit : 0
     this.ambient = ambient
     this.sunDirection = new THREE.Vector3()   // KEY-LIGHT dir; main.js reads it for the shadow-follow
     this._skySunDir = new THREE.Vector3()     // SKY-sun dir (shader); separate so night can differ
@@ -220,21 +294,72 @@ export class SkySystem {
     dirFromAngles(p.lightEl, p.lightAz, this.sunDirection)   // key-light + shadow direction
 
     this.sun.color.setHex(p.sunColor)
-    this.sun.intensity = p.sunIntensity
+    this.sun.intensity = p.sunIntensity * (1 - this.farSplit)
+    if (this.sunFar) {
+      this.sunFar.color.setHex(p.sunColor)
+      this.sunFar.intensity = p.sunIntensity * this.farSplit
+    }
     this.ambient.color.setHex(p.hemiSky)
     this.ambient.groundColor.setHex(p.hemiGround)
     this.ambient.intensity = p.hemiIntensity
-    if (this.scene.fog) this.scene.fog.color.setHex(p.fogColor)
+    this._applyFogColor()
     this.renderer.toneMappingExposure = p.exposure
     if (this._mode === 'baked') this._bakeSky()   // PERF-21: look changed → refresh the cubemap
     if (this.onLookApplied) this.onLookApplied()  // PERF-21: consumers with look-baked assets (prop impostors)
   }
 
-  /** Load a named preset into the live look and apply it. */
+  /**
+   * THE FOG-BRIGHTNESS FIX. three r184 orders the fragment chunks tonemapping → colorspace → fog
+   * (see meshphong.glsl.js), so `fogColor` is mixed into an ALREADY tone-mapped, already sRGB-encoded
+   * pixel. Every surface in the scene therefore goes through ACES × toneMappingExposure and the fog
+   * that blends over it does not. By day that is invisible (exposure 0.5, fog authored to match).
+   * At night exposure drops to 0.36 and the entire world darkens ~3× while the fog colour lands
+   * untouched — the ground washes out to a bright haze under a black sky.
+   *
+   * Fix at the root rather than by re-authoring the night fog darker (which would only move the
+   * error to the dusk/dawn blends): tone-map the AUTHORED colour here, with three's own curve, and
+   * hand the renderer the already-mapped result. `fogColor` in a look keeps meaning "scene radiance",
+   * so it stays comparable to the light intensities beside it and stays correct at every hour.
+   *
+   * three re-encodes fog.color to the output colour space itself (WebGLMaterials → getRGB with the
+   * unlit uniform colour space), so what we store must be the tone-mapped value in LINEAR working
+   * space — hence setRGB(..., LinearSRGBColorSpace) inside acesToneMap.
+   */
+  _applyFogColor () {
+    if (!this.scene.fog) return
+    _scratchFog.setHex(SKY_PARAMS.fogColor)
+    this.scene.fog.color.copy(acesToneMap(_scratchFog, SKY_PARAMS.exposure))
+  }
+
+  /**
+   * Linear RGB multiplier for the unlit particle systems (see PARTICLE_LIGHT). 1.0 on the `day`
+   * look by construction, so daytime dust is bit-identical to what shipped.
+   */
+  particleLight (out) {
+    rawIrradiance(SKY_PARAMS, out)
+    if (!this._particleNorm) {
+      // Normalise against `day`'s luminance so the multiplier is a pure day-relative dimmer and the
+      // look's colour CAST (cool at night, warm at dawn) survives.
+      const d = rawIrradiance(SKY_PRESETS.day, _scratchLight)
+      this._particleNorm = 1 / Math.max(1e-6, 0.2126 * d.r + 0.7152 * d.g + 0.0722 * d.b)
+    }
+    const { gamma, floor } = PARTICLE_LIGHT
+    const f = (v) => Math.min(1, floor + (1 - floor) * Math.pow(Math.max(0, v * this._particleNorm), gamma))
+    return out.setRGB(f(out.r), f(out.g), f(out.b), THREE.LinearSRGBColorSpace)
+  }
+
+  /**
+   * Load a named preset into the live look and apply it. Also moves SKY_CYCLE.hour to that preset's
+   * keyframe, so the hour slider (and anything else reading the clock) agrees with what is on screen
+   * — otherwise clicking "night" left the cycle reading 12:00 and the very next scrub of the hour
+   * slider snapped straight back to `day`.
+   */
   applyPreset (name) {
     const preset = SKY_PRESETS[name]
     if (!preset) return
     Object.assign(SKY_PARAMS, preset)
+    const kf = SKY_CYCLE.keyframes.find(k => k.preset === name)
+    if (kf) SKY_CYCLE.hour = kf.hour % 24
     this.apply()
     this._refreshGui()
   }

@@ -155,7 +155,13 @@ export class DustSystem {
     geo.instanceCount = 0
 
     const mat = new THREE.ShaderMaterial({
-      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uMap: { value: this._tex } }]),
+      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
+        uMap: { value: this._tex },
+        // Day/night irradiance multiplier (SkySystem.particleLight, pushed via setLight each frame).
+        // These puffs are UNLIT — no normals, no light loop — so without this they keep their full
+        // daytime albedo after dark and read as glowing blobs. 1,1,1 = the shipped daylight look.
+        uLight: { value: new THREE.Color(1, 1, 1) },
+      }]),
       vertexShader: /* glsl */`
         attribute vec3 aPos;
         attribute vec3 aParam;   // scale, rotation, opacity
@@ -180,6 +186,7 @@ export class DustSystem {
         }`,
       fragmentShader: /* glsl */`
         uniform sampler2D uMap;
+        uniform vec3 uLight;
         varying vec2 vUv;
         varying vec3 vColor;
         varying float vOpacity;
@@ -193,7 +200,7 @@ export class DustSystem {
           float disc = 1.0 - smoothstep(0.72, 1.0, d);
           float a = mix(tex.a, disc, vShape);
           if (a < 0.01) discard;
-          gl_FragColor = vec4(vColor * mix(tex.rgb, vec3(1.0), vShape), a * vOpacity);
+          gl_FragColor = vec4(vColor * mix(tex.rgb, vec3(1.0), vShape) * uLight, a * vOpacity);
           // ShaderMaterial does NOT auto-append these (built-ins do): keep dust inside the same
           // ACES + colour pipeline as the SpriteMaterial it replaced, fog last like the built-ins.
           #include <tonemapping_fragment>
@@ -377,6 +384,13 @@ export class DustSystem {
    * @param {((x:number,z:number)=>number)} [onRoadFactorAt]  optional 0..1 dust multiplier by
    *        position — < 1 on the paved ribbon so on-road dust is reduced (defaults to 1 = full).
    */
+  /**
+   * Push the day/night irradiance multiplier (SkySystem.particleLight) into the shader. Called once
+   * per render frame from main.js — these billboards are unlit, so this is their only light source.
+   * @param {THREE.Color} c — linear RGB multiplier; 1,1,1 is the authored daylight look.
+   */
+  setLight (c) { this._mesh.material.uniforms.uLight.value.copy(c) }
+
   update (dt, vehicleState, params, groundYAt, onRoadFactorAt) {
     if (dt <= 0) return
     if (dt > 0.1) dt = 0.1  // clamp after a tab-stall so puffs don't teleport

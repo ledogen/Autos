@@ -45,6 +45,7 @@ import { DustSystem } from './dust.js'
 import { TireSmokeSystem } from './smoke.js'
 import { DirtSpraySystem } from './dirt-spray.js'
 import { SkySystem } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
+import { MoonSystem } from './moon.js'                      // QUAL-02: night moon disc on the key-light direction
 import { parseWorldSeed, seedFor } from './seed.js'
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
@@ -1064,6 +1065,61 @@ sun.shadow.camera.right = sun.shadow.camera.top   =  20
 scene.add(sun)
 scene.add(sun.target)   // FEAT-06: target must be in-scene for the per-frame shadow-follow to apply
 
+// ── Terrain shadow cascade (`sunFar`) ────────────────────────────────────────────────────────────
+// A SECOND directional light sharing `sun`'s direction and colour, differing only in shadow framing:
+// `sun` keeps QUAL-18's tight ±20 m box (what makes the truck's shadow crisp), `sunFar` renders a
+// ±SHADOW_FAR_EXTENT box so TERRAIN casts at mountain scale — hills shading valleys at low sun,
+// which the truck-framed frustum structurally could not do.
+//
+// WHY TWO LIGHTS AND NOT ONE WIDE ONE: in three a shadow darkens by removing THAT light's
+// contribution, so the only way to get shadows at two very different scales is two lights. The key
+// intensity is SPLIT between them (SHADOW_FAR_SPLIT) rather than duplicated — together they sum to
+// the look's authored sunIntensity, so adding the cascade does not change overall scene brightness.
+//
+// WHAT THIS COSTS, HONESTLY:
+//  · One extra directional light in EVERY lit material's shader (NUM_DIR_LIGHTS 1→2). Both lights
+//    exist from construction so the cost is paid once at boot, not as a mid-session recompile.
+//  · One extra shadow pass. This is the part that had to be bought down: at 0.25 m/texel a
+//    per-frame re-render of ~25 terrain chunks (8 k tris each) while driving would be real money.
+//    So `sunFar` opts OUT of the global on-demand trigger via its own `shadow.autoUpdate = false`
+//    (per-light gate, three r184 WebGLShadowMap:170) and is re-armed only when its COARSE-snapped
+//    centre moves, the sun direction changes, or geometry streams — see the follow in loop().
+//    Driving in a straight line re-renders it roughly once per SHADOW_FAR_SNAP metres, not per frame.
+//
+// KNOWN TRADE-OFF: three has no per-light caster set (WebGLShadowMap tests object.layers against the
+// VIEW camera, not the light), so the truck casts into BOTH maps. Its far-map shadow is ~0.25 m/texel,
+// which shows up as a soft penumbra around the crisp near shadow. It reads as softening, not as a
+// double shadow, and SHADOW_FAR_SPLIT is the dial if it ever needs pulling back.
+const SHADOW_FAR_EXTENT = 256   // half-width in m (the box is 512 m across)
+const SHADOW_FAR_MAP    = 2048  // 512 m / 2048 = EXACTLY 0.25 m per texel — the round number matters,
+                                // because SHADOW_FAR_SNAP below has to be an integer multiple of it
+const SHADOW_FAR_SNAP   = 64    // follow-centre quantisation (m). MUST be an exact multiple of the
+                                // far texel size (64 / 0.25 = 256 texels) or the snap stops being
+                                // texel-aligned and the shadow shimmers — the BUG-29 failure mode.
+                                // Coverage is still ≥ 224 m with the centre a half-cell off.
+const SHADOW_FAR_SPLIT  = 0.6   // fraction of the look's key intensity carried by the FAR light
+const sunFar = new THREE.DirectionalLight(0xfff2e0, 0)   // colour + intensity driven by SkySystem
+sunFar.castShadow = true
+sunFar.shadow.mapSize.set(SHADOW_FAR_MAP, SHADOW_FAR_MAP)
+sunFar.shadow.camera.left = sunFar.shadow.camera.bottom = -SHADOW_FAR_EXTENT
+sunFar.shadow.camera.right = sunFar.shadow.camera.top   =  SHADOW_FAR_EXTENT
+sunFar.shadow.camera.near = 1
+sunFar.shadow.camera.far  = 2600            // spans the standoff + the world's height range
+// Terrain is a huge, gently-sloped, low-poly heightfield lit at grazing angles at exactly the hours
+// this feature is for — the classic shadow-acne case. normalBias offsets the lookup along the
+// surface normal, which is the right tool for a heightfield (a flat depth bias would peter-pan the
+// mountain shadows off their ridges). ~2 far-texels.
+sunFar.shadow.normalBias = 0.5
+sunFar.shadow.bias = -0.0005
+// PERF: opt out of the global on-demand shadow trigger — re-armed explicitly by the far-follow.
+sunFar.shadow.autoUpdate = false
+sunFar.shadow.needsUpdate = true
+scene.add(sunFar)
+scene.add(sunFar.target)
+// Far-cascade follow state (mirrors the near light's, at the coarse snap).
+let _lastFarSnapR = NaN, _lastFarSnapU = NaN, _lastFarGeomSig = NaN
+const _lastFarSunDir = new THREE.Vector3(NaN, NaN, NaN)
+
 // BUG-29: world-size of one shadow-map texel + scratch vectors for texel-snapping the shadow frustum
 // centre each frame (see the follow in loop()). frustumWidth / mapSize = 40 / 2048 ≈ 0.020 m/texel.
 // This snap is THE anti-shimmer mechanism: it must stay in step with the live extent/mapSize, which
@@ -1111,8 +1167,14 @@ function applyShadowResolution (mapSize, extent) {
 // QUAL-02: atmospheric skybox + sun-driven lighting. Drives the sun light, hemisphere fill and fog
 // tint from ONE sun elevation/azimuth (the static base a day/night cycle plugs into). SkySystem adds
 // the Sky mesh and sets scene.background = null (the mesh is the background now).
-const skySystem = new SkySystem({ scene, renderer, sun, ambient })
+const skySystem = new SkySystem({ scene, renderer, sun, sunFar, farSplit: SHADOW_FAR_SPLIT, ambient })
 window.sky = skySystem   // debug handle (mirrors window.terrain) — drive presets/time-of-day from console
+
+// The moon rides SkySystem's KEY-LIGHT direction, so the disc you see is the thing casting the
+// night's shadows. Placed each frame from the loop (see moonSystem.update).
+const moonSystem = new MoonSystem(scene)
+// Scratch for the per-frame unlit-particle irradiance push (dust / smoke / dirt spray).
+const _particleLight = new THREE.Color(1, 1, 1)
 
 // Ground plane (y=0, 200m × 200m)
 const ground = new THREE.Mesh(
@@ -1627,6 +1689,10 @@ function applyQuality (name) {
   // sun.castShadow just skips the shadow pass for that light. Receivers keep receiveShadow → they simply
   // receive no shadow when the caster is off. The frame loop also skips the shadow-frustum-follow then.
   sun.castShadow = p.shadows
+  // The terrain cascade rides the same tier switch (Low kills both passes). Re-arm its private
+  // needsUpdate on the way back on — it opted out of the global trigger, so nothing else would.
+  sunFar.castShadow = p.shadows
+  if (p.shadows) { sunFar.shadow.needsUpdate = true; renderer.shadowMap.needsUpdate = true }
   // PERF-12: per-tier shadow map size + ortho extent, applied as one texel-size decision.
   applyShadowResolution(p.shadowMap, p.shadowExtent)
   // PERF-06 prop radius: thin out the scattered-prop ring on Low (read by the loop's propSystem.update).
@@ -1720,7 +1786,8 @@ if (_PROF) {
   // if applied. NOT persisted anywhere — page reload restores the preset's values.
   const _eachPropMesh = (fn) => { if (propSystem) for (const rec of propSystem._meshes.values()) fn(rec) }
   const LEVERS = {
-    sunShadow:        v => { sun.castShadow = !!v; renderer.shadowMap.needsUpdate = true },   // PERF-16 re-arm
+    // PERF-16 re-arm. Both cascades move together — the lever means "realtime sun shadows on/off".
+    sunShadow:        v => { sun.castShadow = sunFar.castShadow = !!v; sunFar.shadow.needsUpdate = true; renderer.shadowMap.needsUpdate = true },
     propCastShadow:   v => _eachPropMesh(r => { r.mesh.castShadow = !!v }),
     // Re-enabling culling needs real instance bounds (geometry bounds ≠ world spread). Hidden
     // zero-scale slots collapse to origin, inflating the sphere — acceptable for an A/B.
@@ -2261,7 +2328,8 @@ addPropGui(_gui, {
 // FEAT-39: GPS assist toggle (self-contained folder, same pattern as the props one).
 addGpsGui(_gui, gpsSystem)
 // QUAL-02: sky/lighting tuning folder (self-contained — attaches to _gui like the props folder).
-skySystem.addGui(_gui)
+const _skyFolder = skySystem.addGui(_gui)
+moonSystem.addGui(_skyFolder)   // moon lives under Sky / Lighting — same look, same folder
 // FEAT-14: vehicle cast-light tuning folder (headlight beams + rear lamp pools).
 addLightGui(_gui)
 // User pref: every lil-gui section collapsed by default (the root panel stays open). Runs after ALL
@@ -3048,6 +3116,43 @@ function loop () {
       _lastSunDir.copy(sd)
       _lastShadowGeomSig = geomSig
     }
+
+    // ── Terrain cascade follow (`sunFar`) ──────────────────────────────────────────────────────
+    // Same texel-snapped construction as above, with two deliberate differences:
+    //  1. It centres on the STREAM centre (camera in freecam, truck otherwise), not on the truck.
+    //     This map exists to shade the VIEW — a mountain 200 m away casting into the valley you are
+    //     looking at is the whole point — whereas the near map exists to track the one caster.
+    //  2. It snaps to SHADOW_FAR_SNAP (64 m), not to one texel. At 0.25 m/texel a texel-grade snap
+    //     would re-arm this pass on essentially every driving frame, which is exactly the cost the
+    //     per-light autoUpdate gate is here to avoid. 64 m is an exact multiple of the texel pitch,
+    //     so the sampling grid stays world-locked (no shimmer) while the pass fires a few times a
+    //     minute instead of 60 times a second. The ±256 m extent absorbs the up-to-32 m slop.
+    const fSnapR = Math.round(streamCenter.dot(_shadowRight) / SHADOW_FAR_SNAP) * SHADOW_FAR_SNAP
+    const fSnapU = Math.round(streamCenter.dot(_shadowUp)    / SHADOW_FAR_SNAP) * SHADOW_FAR_SNAP
+    const fKeepF = streamCenter.dot(_shadowFwd)
+    _shadowCenter.set(0, 0, 0)
+      .addScaledVector(_shadowRight, fSnapR)
+      .addScaledVector(_shadowUp,    fSnapU)
+      .addScaledVector(_shadowFwd,   fKeepF)
+    // Standoff must clear the tallest terrain in the box or peaks fall outside the near plane.
+    sunFar.position.set(
+      _shadowCenter.x + sunDir.x * 1200,
+      _shadowCenter.y + sunDir.y * 1200,
+      _shadowCenter.z + sunDir.z * 1200
+    )
+    sunFar.target.position.copy(_shadowCenter)
+    sunFar.target.updateMatrixWorld()
+    if (fSnapR !== _lastFarSnapR || fSnapU !== _lastFarSnapU
+      || sd.x !== _lastFarSunDir.x || sd.y !== _lastFarSunDir.y || sd.z !== _lastFarSunDir.z
+      || geomSig !== _lastFarGeomSig) {
+      perfEvent('shadow.far')
+      sunFar.shadow.needsUpdate = true      // per-light gate (this light opted out of autoUpdate)
+      renderer.shadowMap.needsUpdate = true // ...and the global gate, or the whole pass is skipped
+      _lastFarSnapR = fSnapR
+      _lastFarSnapU = fSnapU
+      _lastFarSunDir.copy(sd)
+      _lastFarGeomSig = geomSig
+    }
   }
   // FEAT-31: in the testing lab NONE of the worldgen streaming block below runs. The lab is where
   // vehicle behaviour is measured, so leaving terrain/road/prop/water generation churning in the
@@ -3274,6 +3379,15 @@ function loop () {
 
   // QUAL-02: keep the (finite) sky box centred on the camera so it always surrounds the view.
   skySystem.update(camera.position)
+  // Moon: billboard onto the key-light direction, faded in by nightFactor. After skySystem.update()
+  // so a playing cycle's new hour is already applied, and after the camera has been posed.
+  moonSystem.update(camera, skySystem.sunDirection, skySystem.nightFactor())
+  // Unlit particles get the look's irradiance as a flat multiplier (see SkySystem.particleLight).
+  // Pushed here, once, rather than threaded through three different update() signatures.
+  skySystem.particleLight(_particleLight)
+  dustSystem.setLight(_particleLight)
+  smokeSystem.setLight(_particleLight)
+  dirtSpraySystem.setLight(_particleLight)
 
   // FEAT-39: GPS overlay. Early-outs to nothing when no mission is live, so free roam pays a
   // null check. Off in the lab, which has no road network to navigate.
