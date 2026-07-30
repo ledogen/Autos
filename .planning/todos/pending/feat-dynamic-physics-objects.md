@@ -5,13 +5,51 @@ status: open
 opened: 2026-07-17
 severity: minor
 source: user-request
-relates_to: FEAT-06 (props), physics.js body-contact solver (BUG-27), FEAT-35 (multi-vehicle), FEAT-26/story (hazards, items)
+relates_to: FEAT-06 (props), FEAT-35 (multi-vehicle), FEAT-26/27 (rockslides), story mode (the log
+  drag + chain constraint; SM-3 wear model for damage coupling)
+depends_on: FEAT-48 (physics engine adapter seam) — this ticket is not startable before it lands
 note: "A couple of dynamic physics objects at a time — rocks, a trash can, barrels — that tumble when
-hit. The machinery mostly exists: physics.js already has a sequential-impulse contact solver with
-friction + restitution (the BUG-27 body-contact code) on a 6DOF quaternion integrator. The new work
-is object↔object and object↔vehicle contacts (today it's body-vs-terrain only) + primitive colliders.
-Load-bearing DECISION: the 'no physics libs' rule was written for the VEHICLE's learning/tuning value
-— it's weakest for a tumbling barrel. Extend our solver vs. scoped exception — decide, don't drift."
+hit. RESCOPED 2026-07-29: the load-bearing architecture decision this ticket escalated has been MADE
+(owner) — a third-party engine becomes the physics core for everything including the vehicle, behind
+a swappable adapter seam (backend: Box3D, fallback Rapier). That work is FEAT-48 and this ticket now
+sits on top of it, which removes most of what was hard here: solver generalization, primitive
+colliders, object↔object narrow phase, sleeping and two-way coupling all come from the engine. What
+remains is authoring: shapes, masses, spawn/despawn, a causesDamage flag."
+---
+
+## ⚠ Rescoped 2026-07-29 — the escalated decision is resolved
+
+This ticket's "Load-bearing decision — the physics-lib ban [ESCALATE]" section below has been
+**decided by the owner: adopt a third-party physics engine as the core for everything, vehicle
+included, behind a thin adapter seam.** Chosen backend **Box3D** (Erin Catto, C17, MIT), fallback
+Rapier. Neither option this ticket framed was chosen — not "extend our solver," not "scoped exception
+for debris only." The reasoning is in **FEAT-48**, which is now a hard prerequisite.
+
+**Build against the FEAT-48 adapter, never against the engine directly.** No engine type may leak
+into this ticket's code — that is what keeps the backend swappable.
+
+**What that removes from this ticket** — nearly all of the original "real work":
+
+| Was the hard part | Now |
+|---|---|
+| Generalize the solver to N bodies | The engine, via the FEAT-48 adapter |
+| Primitive colliders (sphere/capsule/box) | The engine — **and boxes are free**, which was the expensive item |
+| Object↔object narrow phase | The engine |
+| Object↔vehicle two-way coupling | The engine — **two-way by default**, no bridge, no kinematic proxy |
+| Sleeping settled bodies | The engine |
+| Inertia correct enough to tumble | The engine (the hand-rolled world-frame diagonal inertia could not — see FEAT-48) |
+
+**What actually remains here** is authoring and integration, not physics:
+
+- Shape/mass/material choice per debris type; hooking FEAT-06's instanced prop geometry to bodies.
+- **Spawn/despawn against streaming** — deterministic for world fixtures (a rockpile), run-layer for
+  dressing. Still real work, and still the place a leak or a hitch would show up.
+- **A `causesDamage` flag per physics prop** [owner, 2026-07-29] — see the damage section below.
+- Count cap and debug tunables.
+
+**Read the sections below as historical context**, not as the plan. The solver analysis was correct
+when written; the conclusion was superseded.
+
 ---
 
 # FEAT-36: Dynamic physics objects (debris rigid bodies)
@@ -64,9 +102,15 @@ bridge is the ugly part — but it's explicitly the owner's to make.
 
 ## Open design questions (decide at planning)
 
-- **Which decision above**, first and foremost.
-- **How solid, how heavy:** are these hittable hazards (a rock that dents you — ties to FEAT-26 hazard
-  impacts + the shared wear model) or just kickable set dressing? Hazard coupling is a bigger scope.
+- ~~**Which decision above**, first and foremost.~~ **RESOLVED 2026-07-29** — see the rescope note at
+  the top of this file. Third-party engine behind the FEAT-48 adapter; backend Box3D, fallback Rapier.
+- ~~**How solid, how heavy:** hittable hazards or kickable set dressing?~~ **DECIDED 2026-07-29
+  (owner): a per-prop `causesDamage` flag.** Nothing has to hurt for the first pass. Eventually
+  **boxes and trash cans don't hurt; rocks and logs do** — so damage is a selectable property of the
+  prop type, not a property of "being a dynamic body." Implementation note: the flag gates whether a
+  contact impulse is *reported to the wear model*, not whether the contact happens — so the physics is
+  identical either way and only the consumer changes. That keeps this ticket free of a hard dependency
+  on SM-3: emit impulse magnitude at a seam, and let the wear model subscribe when it exists.
 - **Count + settling:** hard cap (single digits); sequential-impulse jitters on piles, so no barrel
   stacks. Sleep/deactivate settled bodies to keep them off the hot loop.
 - **Determinism (SM-INV-12):** world-fixture debris deterministic from `(seed, coords)`; dressing/
@@ -80,7 +124,7 @@ bridge is the ugly part — but it's explicitly the owner's to make.
   them, respond to gravity + friction + restitution, and settle (then sleep).
 - Object↔vehicle contact works both ways (truck shoves barrel; barrel nudges truck plausibly) via the
   shared impulse pass — no separate fragile hack.
-- The physics-lib decision is recorded (extend-vs-exception) before implementation.
+- Built entirely against the FEAT-48 adapter — no direct engine import in this ticket's code.
 - Hard count cap; settled bodies deactivate; run-layer + flag-gated off in headless; `npm test` green.
 - New tunables (mass, restitution, friction, spawn set) exposed where debug is live.
 
