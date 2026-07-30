@@ -443,6 +443,11 @@ export class TerrainSystem {
             uShadowAtlasN:   { value: 16.0 },   // ATLAS_N — tiles per side
             uShadowTilePx:   { value: 128.0 },  // TILE_PX — texels per tile (for the in-tile blur)
             uShadowStrength: { value: 0.0 },
+            // Compensation for applying the baked shadow to the FAR cascade ONLY (see the
+            // lights_fragment_begin patch): that light carries only SHADOW_FAR_SPLIT of the key, so
+            // the strength is divided by that share to keep open-sun prop shadows looking the same
+            // as when it multiplied the whole key. main.js sets it; 1.0 = single-light fallback.
+            uShadowLightGain: { value: 1.0 },
             // QUAL-18: baked shadows dissolve with view distance (LOD) so the far ring softens into
             // fog instead of ending on a line. View-space distance in metres.
             uShadowFadeStart:{ value: 150.0 },
@@ -459,7 +464,7 @@ export class TerrainSystem {
             Object.assign(shader.uniforms, this._terrainUniforms)
             addWorldVaryings(shader)
             shader.fragmentShader = 'uniform float uDetailScale, uNoiseScale, uMottle, uBump, uCliffLo, uCliffHi, uTreeLo, uTreeHi;\n' +
-                'uniform sampler2D uShadowAtlas; uniform float uShadowAtlasN, uShadowTilePx, uShadowStrength, uShadowFadeStart, uShadowFadeEnd;\n' +
+                'uniform sampler2D uShadowAtlas; uniform float uShadowAtlasN, uShadowTilePx, uShadowStrength, uShadowFadeStart, uShadowFadeEnd, uShadowLightGain;\n' +
                 'uniform int uTunnelN; uniform vec4 uTunnelPos[24]; uniform vec4 uTunnelAxis[24];\n' +
                 // Baked prop-shadow occlusion, written at <color_fragment> and consumed by the
                 // directional-light patch below. Global because those two chunks are separate scopes.
@@ -495,14 +500,22 @@ export class TerrainSystem {
                 // 0.5 m/texel silhouette; inTile is clamped to the tile interior so linear filtering
                 // never bleeds across the (non-adjacent) neighbouring atlas tile.
                 //
-                // The sampled occlusion is stashed in rsBakedShade and applied to the DIRECT KEY
-                // LIGHT (see the lights_fragment_begin patch below), NOT multiplied into albedo here
-                // as it used to be. Darkening albedo made a prop's shadow survive everywhere: on
-                // ground the terrain cascade had already put in shadow it double-darkened, and at
-                // night it painted tree shadows the moon could never have cast. Attenuating the sun
-                // instead makes it compose correctly — no sun reaching the ground means no prop
-                // shadow to add — and shadowed ground now falls back to hemisphere fill, which is
-                // both what the realtime shadows do and why it reads cooler rather than just darker.
+                // The sampled occlusion is stashed in rsBakedShade and applied to the FAR (terrain
+                // cascade) DIRECTIONAL LIGHT — see the lights_fragment_begin patch below — NOT
+                // multiplied into albedo here as it used to be.
+                //
+                // Darkening albedo made a prop's shadow survive everywhere: it double-darkened
+                // ground the terrain cascade had already shadowed, and at night it painted tree
+                // shadows the moon could never have cast. Attenuating a LIGHT composes correctly
+                // instead — no light reaching the ground means no prop shadow left to add.
+                //
+                // It must be the FAR light specifically. The near light (main.js sun) frames only
+                // ±20 m around the TRUCK, so terrain 100 m away is never shadowed in its map and it
+                // keeps lighting that ground with its whole (1 - SHADOW_FAR_SPLIT) share. Applying
+                // the baked shadow to it would therefore still draw prop shadows onto ground the
+                // terrain has already occluded from the sun — the exact artefact this fixes. The
+                // far cascade is the light that models terrain-scale sun occlusion, and baked prop
+                // shadows are terrain-scale sun occlusion, so they belong to the same light.
                 rsBakedShade = 1.0;
                 if (uShadowStrength > 0.0) {
                     vec2 sh_cf   = vWorldPos.xz / ${CHUNK_SIZE.toFixed(1)};
@@ -521,7 +534,7 @@ export class TerrainSystem {
                     sh_a *= 0.2;                                        // average of the 5 taps
                     // QUAL-18: fade the baked shadow out with view distance (LOD dissolve).
                     float sh_fade = 1.0 - smoothstep(uShadowFadeStart, uShadowFadeEnd, length(vViewPosition));
-                    rsBakedShade = 1.0 - sh_a * uShadowStrength * sh_fade;
+                    rsBakedShade = 1.0 - min(1.0, sh_a * uShadowStrength * uShadowLightGain) * sh_fade;
                 }`
             )
             // Apply the baked prop shadow to the DIRECTIONAL lights only (the sun + main.js's
@@ -536,9 +549,17 @@ export class TerrainSystem {
                 const LFB = THREE.ShaderChunk.lights_fragment_begin
                 const hook = 'getDirectionalLightInfo( directionalLight, directLight );'
                 if (LFB.includes(hook)) {
+                    // UNROLLED_LOOP_INDEX == 1 selects the SECOND directional light — main.js adds
+                    // `sun` then `sunFar`, so that is the terrain cascade (see the note above for
+                    // why it must be that one). three substitutes the literal when it unrolls the
+                    // light loop, and its own chunks use this same guard, so it is a supported hook.
+                    // The #if makes this a no-op on any build with a single directional light.
                     shader.fragmentShader = shader.fragmentShader.replace(
                         '#include <lights_fragment_begin>',
-                        LFB.replace(hook, hook + '\n\t\tdirectLight.color *= rsBakedShade;')
+                        LFB.replace(hook, hook +
+                            '\n\t\t#if UNROLLED_LOOP_INDEX == 1\n' +
+                            '\t\tdirectLight.color *= rsBakedShade;\n' +
+                            '\t\t#endif')
                     )
                 } else {
                     console.warn('[terrain] lights_fragment_begin shape changed — baked prop shadows not applied')

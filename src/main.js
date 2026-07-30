@@ -1169,6 +1169,9 @@ function applyShadowResolution (mapSize, extent) {
 // the Sky mesh and sets scene.background = null (the mesh is the background now).
 const skySystem = new SkySystem({ scene, renderer, sun, sunFar, farSplit: SHADOW_FAR_SPLIT, ambient })
 window.sky = skySystem   // debug handle (mirrors window.terrain) — drive presets/time-of-day from console
+// NB `window.terrain` is the height-sampler FUNCTION, not the streaming system. This is the system
+// itself — needed to reach _terrainUniforms (e.g. A/B-ing uShadowStrength from a CDP probe).
+window.__terrainSystem = () => terrainSystem
 
 // The moon rides SkySystem's KEY-LIGHT direction, so the disc you see is the thing casting the
 // night's shadows. Placed each frame from the loop (see moonSystem.update).
@@ -2292,6 +2295,11 @@ const applyPropShadowMode = () => {
   propSystem.setShadowCasting(realtime)
   if (resized) propSystem.setShadowBake(shadowBake)   // re-mark live chunks into the new atlas
   terrainSystem.setShadowAtlas(shadowBake.atlasTexture, ATLAS_N, shadowBake.tilePx, propShadowStrength())
+  // The terrain shader applies the baked prop shadow to the FAR cascade only (see terrain.js).
+  // That light carries SHADOW_FAR_SPLIT of the key, so hand it the reciprocal as gain — the
+  // open-sun look then matches what a whole-key multiply produced, while ground the cascade
+  // has already shadowed gets nothing added.
+  terrainSystem._terrainUniforms.uShadowLightGain.value = 1 / SHADOW_FAR_SPLIT
   terrainSystem.setShadowFade(FLORA_PARAMS.shadows?.fadeStart ?? 240, FLORA_PARAMS.shadows?.fadeEnd ?? 380)
 }
 _syncBakedShadows = applyPropShadowMode   // lets applyQuality push a tier's shadowTilePx (see there)
