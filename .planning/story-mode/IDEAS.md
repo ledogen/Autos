@@ -269,3 +269,48 @@ Open: whether they're single-use per job, degrade over several, or are a tool yo
 
 Related: `missions.md` §3b (fragile delivery — shock/impulse signal, FEAT-38 surface
 interaction); DESIGN.md "The car: jalopy + parts" (consumables/tools as real load); SM-INV-10.
+
+---
+
+## The barn find: a car you can only get by going somewhere pointless — 2026-07-29
+
+**The idea** [owner]. A vehicle that unlocks into the **garage** not by achievement but by *discovery*:
+a **rare random spawn in the world, never shown on the map**. No quest, no marker, no stat threshold.
+You find it because you drove somewhere you had no reason to go.
+
+**Why it's a good shape.**
+
+- **It's the only unlock that rewards curiosity rather than accumulation.** Career stats
+  (`spirits-and-pacts.md` → "Career stats") unlock garage entries by *doing more of what you already
+  do*. This one pays for leaving the road you were on. Those are different virtues and the roster is
+  better with both.
+- **It fits the existing spirit rule for free.** Spirits are present in every world from run 1,
+  invisible until met (the visibility model). A barn find is the same rule applied to an object: it
+  was always there, on that seed, in that spot — you just hadn't been.
+- **Legal by construction.** Worldgen stays `(worldSeed, coords)` — the car's *position* is
+  deterministic and meta-free (SM-INV-12); only "have you found it" persists, as a garage entry
+  (SM-INV-8). Nothing about the world changes when you find it.
+- **The absence of a map marker is the whole feature.** FEAT-16's 2D map and FEAT-39's GPS exist to
+  make the world legible; this is the one thing that deliberately isn't. `missions.md` is already
+  circling the same instinct with the hidden job board ("you learn what a POI is offering by driving
+  there") — the barn find is that idea at its purest.
+
+**Guardrails when this gets real:**
+
+- **Lateral, never upward** (SM-INV-9 / the garage rule). The reward for finding it is a *different*
+  truck — a van with cargo room and bad cooling, something light with no bed — never a better one.
+  A hidden car that is also the strongest car is a power floor wearing a mystery costume.
+- **It must be findable without being told.** If the community answer is "look up the coordinates,"
+  it's a checklist item. Prefer siting that rewards a *habit* (following dirt spurs to their end,
+  checking structures) over a single memorizable spot — so the skill transfers to new seeds.
+- **Don't gate it behind rarity so hard it never happens.** A thing 2% of players ever see is a thing
+  that didn't get built. Tune toward "most players who explore find one eventually."
+
+Open: is it **one** car or a class of them? Does the found vehicle enter the garage for future runs
+only, or can you drive it *now* — noting SM-INV-15 forbids in-run vehicle purchase, but finding is
+not buying, and "abandon your rig for the barn find mid-run" is a genuinely interesting and
+genuinely dangerous idea that cuts against *the game is about maintaining one rig*. **Owner's call.**
+
+Related: `spirits-and-pacts.md` "Career stats" (the other garage-unlock source); DESIGN.md
+"The garage" (lateral-not-upward), SM-INV-8/9/12/15; `missions.md` "The job board" (hidden-until-
+visited, the same instinct); FEAT-04a (visual vehicle swap — the substrate).

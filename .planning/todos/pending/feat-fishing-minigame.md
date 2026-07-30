@@ -11,12 +11,12 @@ relates_to: >
   buff-erosion, SM-INV-5 wear, SM-INV-12), spirits-and-pacts.md #04 The Confluence (the water
   spirit this feeds — DEFERRED), items.md §5 (the catch category + the unresolved species axis)
 depends_on: >
-  FEAT-47 (day clock — "tomorrow" and "tonight's alertness" have no referent without it);
-  SM-3 wear model (only if a less-damage perk survives, see reconciliation)
+  FEAT-47 (day clock — "tomorrow" and "tonight's alertness" have no referent without it). Nothing
+  else: the SM-3 wear dependency is gone now that the less-damage perk is dropped (2026-07-29)
 note: "A simple fishing minigame — cast at water, play a catch, reward is a TEMPORARY single-day
 effect paid for with tonight's time/alertness. NOT currency or a grind. Nearly free on the physics
 budget (UI + timing + state). RECONCILED 2026-07-29: the reward model narrowed to RESTORATION
-('coffee is debt, fish is income'), 'less damage tomorrow' is now suspect, and SM-INV-6's
+('coffee is debt, fish is income'), 'less damage tomorrow' is DROPPED, and SM-INV-6's
 camping-is-a-place phrasing here is superseded. The minigame SHELL is still buildable ahead of the
 deferred spirit — see the reconciliation section. Keep it SIMPLE."
 ---
@@ -36,10 +36,11 @@ version of this ticket's own "start tomorrow with more energy" option, and it **
 tension flagged below**: restoration isn't challenge-softening, it's the counterweight to coffee's
 debt spiral, and it's still paid for in tonight's daylight.
 
-**Consequence: "less damage tomorrow" is now the suspect option, not a peer.** A wear-softening perk
-*is* the balance-sheet erosion SM-INV-9 names, it has no thematic anchor in the water, and it drags in
-a dependency on the SM-3 wear model. **Recommendation: drop it.** Fish restores; it does not protect.
-(Owner's call — but the ticket is simpler and safer without it.)
+**"Less damage tomorrow" is DROPPED [owner, 2026-07-29].** A wear-softening perk *is* the
+balance-sheet erosion SM-INV-9 names, it has no thematic anchor in the water, and it dragged in a
+dependency on the SM-3 wear model. **Fish restores; it does not protect.** Remove it from the perk
+menu below — restoration is the only currency this type pays in, and the ticket loses its SM-3
+dependency as a result.
 
 **2. The ledger is *distinct waters*, and greed is punishable.** From #04: count **distinct waters
 visited**, not fish landed or hours fished. Fishing one productive hole repeatedly should **deplete it
@@ -89,8 +90,9 @@ activity between drives — and a modest food/item/currency source — without t
   tap / a reel meter; pick ONE simple mechanic, not a tackle sim).
 - Outcome: caught something / it got away, surfaced through the chat pane or a small result card.
 - A catch is a **camp meal** that confers a **temporary, single-day perk** — the reward is the perk,
-  NOT sellable loot. The fish → tonight's dinner → a small edge tomorrow (e.g. *less damage tomorrow*,
-  *start tomorrow with more energy/alertness*). Diegetic and on-tone with the camp rhythm.
+  NOT sellable loot. The fish → tonight's dinner → **alertness that doesn't have to be repaid**
+  (*start tomorrow with more energy*). Restoration only — see the reconciliation note above.
+  Diegetic and on-tone with the camp rhythm.
 
 ## Design intent
 
@@ -103,7 +105,8 @@ activity between drives — and a modest food/item/currency source — without t
   tonight's daylight/alertness fishing to buy a small edge tomorrow. That tradeoff (time now vs.
   resilience later) is the on-tone shape, and it keeps fishing from fighting the par/payout pressure
   the way a sell-for-currency grind would.
-- **SM-INV-9 tension — flagged, not resolved.** A temporary "less damage / more energy tomorrow" buff
+- **SM-INV-9 tension — RESOLVED 2026-07-29 by narrowing to restoration; retained for its reasoning.**
+  The original worry was that a temporary "less damage / more energy tomorrow" buff
   is challenge-softening, and SM-INV-9 names this exact thing as the invariant most likely to erode
   "one reasonable-seeming buff at a time." The perk is *within-run and temporary* (not a permanent
   spirit/unlock, so SM-INV-9 doesn't forbid it) — but to stay honest it must be: **modest** (a nudge,
@@ -119,7 +122,7 @@ activity between drives — and a modest food/item/currency source — without t
   simplest that feels good.
 - **Where you can fish:** ponds only, or streams too (needs a "fishable water" test — reuse the water
   membership samplers `pondSkirtAt` / `streamChannelAt`)? Depth/size gate?
-- **The perk menu + magnitudes:** which perks (less-damage-tomorrow, more-starting-energy, others?),
+- **Magnitude of the restoration** (the perk *menu* is closed — restoration only, no less-damage),
   how big, and how they read to the player (described, never a number — SM-INV-10). Do different
   catches give different perks, or one catch = one generic "good dinner" buff? Escalate the perk
   *semantics* to DESIGN.md (SM-INV-9), don't invent them here.
@@ -135,8 +138,8 @@ activity between drives — and a modest food/item/currency source — without t
 
 - At fishable water, the player can cast and play one simple catch interaction to a win/lose result,
   surfaced diegetically (card / chat pane).
-- A successful catch confers a **temporary, single-day perk** (e.g. less-damage / more-energy
-  tomorrow), paid for with tonight's time/alertness — modest, non-compounding, expiring next camp; NOT
+- A successful catch confers **restoration only** — unrepaid alertness for tomorrow, never damage
+  mitigation or currency — paid for with tonight's time/alertness — modest, non-compounding, expiring next camp; NOT
   sellable currency, NOT a compounding power curve. Perk semantics ratified in DESIGN.md before build.
 - Zero measurable physics-budget cost (event-driven UI/state; `npm test` unaffected); `SM-INV-12`
   respected (run-layer randomness only).

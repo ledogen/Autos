@@ -98,6 +98,17 @@ maintaining one rig (new **SM-INV-15**). (5) **Run shape fixed** — ~10 regions
 run-layer); SM-INV-11 is re-keyed to run progress; SM-INV-2's run-duration par clause is flagged for
 retirement (see the note there — recommended, not yet ratified).
 
+**Ratification pass 2026-07-29 (b)** (project owner): **The Night Owl fleshed out**, in
+`spirits-and-pacts.md` #01 — the spirit *system* stays deferred, but the character is now specified.
+One amendment reaches this document: **the chat pane's "no dialog options" rule gains a single narrow
+exception — a pact's accept/decline** (see "Characters and dialog"). The rest is companion-doc
+detail and is recorded there: a man's body and an owl's head; summoned by ~10 tired hours **or**
+~10 tired km in one run; talked to by stopping and **pulling the handbrake**; and the bargain
+rewritten from a tempo boon (retired — it was a number on the truck, which SM-INV-10 forbids) to a
+**nocturnal inversion** — alert dusk-to-dawn, brutally sleepy in daylight, **with the day clock
+itself untouched**. Priced in darkness and a hostile morning only; the world does **not** close at
+night.
+
 **Companion design notes** (downstream of this bible; where they disagree with it, *it* wins):
 [missions.md](missions.md) (mission taxonomy, XP/payout scoring, the log-drag main mission),
 [run-shape.md](run-shape.md) (run length, day length, saving), [opening.md](opening.md) (the day job,
@@ -248,16 +259,22 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   only. If a better build raises par, every upgrade quietly hands back its own reward and
   the flywheel stalls. A better car raises *payout*, not lowers *risk* — the player drives
   at their own limit regardless of what's underneath, which is where crashes live. Godlike
-  runs stay lethal. *Par MAY scale with run duration* — it tightens ("gets lower") the longer
-  a run survives, a global difficulty ramp keyed off run age, not the build. That's the sanctioned
-  scaling axis: it pushes a maturing run harder without ever handing an upgrade back its own
-  reward, because it's blind to what the player is driving. [DEFAULT — load-bearing; run-duration
-  scaling clause RATIFIED 2026-07-19] **Flagged for retirement (2026-07-29 — recommended, NOT
-  ratified):** with in-run cost escalation (Q9A) carrying the difficulty ramp and XP being position
-  against that curve (SM-INV-14), the run-duration clause is redundant; Q9 already anticipated
-  retiring it. Retiring it collapses `parGeometric` and `parEffective` into a single par and deletes
-  a class of bookkeeping. **Until the owner rules, assume one par** (that is what `missions.md`
-  assumes) — but do not delete the clause here without a dated ratification pass.
+  runs stay lethal. **There is exactly ONE par**, derived from route geometry. It scales with nothing
+  — not the car, not run age. [DEFAULT — load-bearing]
+
+  > **Run-duration scaling clause RETIRED [RATIFIED 2026-07-29].** *Struck: "Par MAY scale with run
+  > duration — it tightens the longer a run survives, a global difficulty ramp keyed off run age."*
+  > (That clause was itself RATIFIED 2026-07-19; this supersedes it.) **In-run cost escalation
+  > (Q9A) is the difficulty ramp**, with XP as position against that curve (SM-INV-14), which made
+  > the par ramp redundant — Q9 anticipated exactly this. Retiring it **collapses `parGeometric` and
+  > `parEffective` into a single par** and deletes a class of bookkeeping. Par is now a pure
+  > function of road geometry and nothing else, which is a stronger and more explicable rule than
+  > the one it replaces.
+  >
+  > *Boundary for later (owner flagged 2026-07-29 that a spirit might modify cost escalation):*
+  > re-**shaping** the curve is a legal rule-change (steeper early / flatter late — a trade), but
+  > **lowering** it is a power floor and SM-INV-9 forbids it. Whatever touches the escalation curve
+  > must cost something, because that curve is now the only difficulty ramp in the game.
 - **SM-INV-3 — Par is never rendered as a countdown; timers are a flavor, not the driver.**
   [RATIFIED as amended 2026-07-16] The par economy is a payout curve, felt as *how hard am I
   willing to push*, never *3:41 remaining* — putting par on the HUD makes the whole game a
@@ -590,9 +607,50 @@ SM-INV-7's first-run winnability is what it breaks.
 This is a **simplification**, and it is much easier to keep honest: a vehicle's differences are
 physical and visible, where a perk's are numerical and quiet.
 
-*Status of spirits:* the spirit system below is **not deleted — it is deferred.** The roster
-mechanism is now vehicles; how spirits and classes relate to it needs its own pass. **Do not build
-spirit-unlock plumbing against this section.**
+**How a garage entry unlocks** [RATIFIED 2026-07-29] — two sources, deliberately different in kind:
+
+- **Career accumulation.** An **account-level stats screen** (distinct waters fished, nights camped,
+  tired hours driven, runs ended and how) tracks totals across the profile. Crossing a total can open
+  a starting vehicle. This is the legal home for cross-run accumulation: the garage is the one thing
+  that persists (SM-INV-8), so career counters are fine *here* and nowhere else — they must never
+  gate a spirit or buy in-run power. Stats belong to the **account**, not to the run's persona, which
+  is fresh every time.
+- **Discovery — the barn find.** A vehicle that exists as a **rare random spawn in the world, never
+  shown on the map**. Its position is deterministic from `(worldSeed, coords)` like everything else
+  (SM-INV-12); only *whether you have found it* persists. Rewards curiosity rather than accumulation
+  — the one unlock that pays for leaving the road you were on. See `IDEAS.md`.
+
+Both are bound by lateral-never-upward above. A hidden car that is also the strongest car is a power
+floor wearing a mystery costume.
+
+*Status of spirits:* the spirit system below is **not deleted — it is deferred**, but its
+*persistence* question is now settled — see "How spirits exist without persisting" below. The roster
+mechanism is vehicles; how spirits and classes relate to it still needs its own pass. **Do not build
+spirit-unlock plumbing yet.**
+
+### How spirits exist without persisting [RATIFIED 2026-07-29]
+
+Spirits do not need meta-persistence, and do not get it. The model, in four lines:
+
+1. **Every spirit is in every world, from run 1.** Nothing is added to the world by playing —
+   SM-INV-12 (worldgen is meta-free) and SM-INV-8 (the world doesn't persist) hold for free.
+2. **Until you have met one, it is invisible.**
+3. **The first meeting is an authored beat** with unique flavour text, fired when the run-layer
+   ledger is first satisfied. **Once per profile, recorded as a story key** — precisely the currency
+   SM-INV-8 and the Roamer's economy already deal in.
+4. **Thereafter the spirit is present but inert** until each run re-earns its ledger. The Night Owl
+   rides in your passenger seat whenever you are sleepy, every run, saying nothing — until you spend
+   the tired hours again. **The pact is re-earned at full price, every run** (no cheaper re-unlock;
+   that would be a floor).
+
+This buys "the world knows you" with **presence instead of power**, and it is the better horror
+object: a silent figure you must spend ten tired hours to make speak. **The dread persists; the
+power does not.**
+
+*Note the shape:* this is the **beat/labor split** the log-drag main mission already uses (`missions
+.md`) — authored scene once per profile as a story key, the labor re-done every run. Two independent
+problems landed on one pattern; treat it as the idiom for authored content that must survive
+repetition. Full model and the cast: `spirits-and-pacts.md`.
 
 ### Run shape and saving [RATIFIED 2026-07-29]
 
@@ -681,6 +739,13 @@ Characters speak to the player through an **RPG-style chat pane** — a card sur
 conversation tree.
 
 - **No dialog options.** The player never picks a reply. Dialog is *received*, not negotiated.
+  **One exception [RATIFIED 2026-07-29 (b)]: a pact's accept/decline.** A pact is a bargain and a
+  bargain is a yes or a no, so the final card of a pact offer carries that single choice. **Scope it
+  exactly this tightly** — this licenses a binary answer to a spirit's bargain and *nothing else*: no
+  dialog trees, no reply selection, no branching mission conversations, no "options" on any card that
+  is not a pact's last one. Everything the player is *told* is still received. Worked example and the
+  interaction verb that reaches it (stop, pull the handbrake): `spirits-and-pacts.md` #01 The Night
+  Owl, "How you talk to him."
 - **Sequential cards.** A line of dialog is a sequence of cards advanced one at a time (tap /
   key to continue), each a beat of what the character says. The card order is the whole content
   — no branching, so no per-choice state to author or balance.
