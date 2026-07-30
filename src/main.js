@@ -19,7 +19,7 @@ import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics } from './physics.js'
 import { getBodyContactPoints, getWheelPosition } from './suspension.js'
-import { updateVehicle, setLaunchHold, SPAWN_STATE } from './vehicle.js'
+import { updateVehicle, setLaunchHold, setControlAttenuation, SPAWN_STATE } from './vehicle.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
 // window.__view(x, y, z, yaw, pitch) — used by test/screenshot.mjs (headless CDP) and the browser console.
@@ -1926,6 +1926,20 @@ const daySystem = new DaySystem({
   setTimeOfDay: (h) => skySystem.setTimeOfDay(h),
 })
 
+// Eyelid overlay drive (FEAT-47). Elements cached once; the frame loop writes nothing but the two
+// transforms. f = 0 → lids fully retracted off-screen, f = 1 → shut. The lids sit off-screen at
+// rest, so the overlay costs a composited layer and nothing else while no blink is running.
+const _dozeTopLid = document.querySelector('#doze-overlay .lid-top')
+const _dozeBotLid = document.querySelector('#doze-overlay .lid-bottom')
+let _dozeLastF = -1
+function _updateDozeOverlay (f) {
+  if (!_dozeTopLid || f === _dozeLastF) return   // skip the DOM write when nothing moved
+  _dozeLastF = f
+  const pct = (1 - f) * 100
+  _dozeTopLid.style.transform = `translateY(${-pct}%)`
+  _dozeBotLid.style.transform = `translateY(${pct}%)`
+}
+
 const _misFwd = new THREE.Vector3()
 missionSystem = new MissionSystem({
   getRoad:  () => roadSystem,
@@ -2640,6 +2654,7 @@ const storySystem = new StorySystem({
   onRegionLive: (center, radius) => {
     if (!center) return
     daySystem.start()   // FEAT-47: the run's clock opens at dayStartHour and takes over the sky
+    daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
     poiSystem.build(center, radius)
     _rebuildPoiMarkers()
     terrainSystem?.rebuildAllChunksFromWorker()
@@ -2658,6 +2673,8 @@ const storySystem = new StorySystem({
   /** FEAT-46: leaving story mode — drop the pads before releaseRegion() re-bakes without them. */
   onRegionExit: () => {
     daySystem.stop()    // FEAT-47: clock off, sky handed back to free roam's noon look
+    daySystem.setBlinksEnabled(false)   // …and the eyelids can never fire in free roam
+    setControlAttenuation(1)            // belt-and-braces: leave the driver's inputs whole
     poiSystem.clear()
     _rebuildPoiMarkers()
     terrainSystem?.rebuildAllChunksFromWorker()
@@ -2971,6 +2988,11 @@ function loop () {
 
   // FEAT-47: advance the story day clock on the same wall-clock delta. No-op outside story mode.
   daySystem.update(frameTime)
+  // …and hand its two outputs on. Both are PER FRAME, not on the 10 Hz HUD block: a 200 ms doze is
+  // over in a dozen frames, so a 100 ms cadence would quantise the eyelids into a stutter and let
+  // the attenuation lag the blink. Two style writes on cached elements — cheap enough to afford.
+  setControlAttenuation(daySystem.attenuation())   // identically 1 outside a doze
+  _updateDozeOverlay(daySystem.eyelidFactor())
 
   // FEAT-22: water submersion flag — CG vs the local water surface (pond plane). Once per render
   // frame (not per physics substep): v1 only SETS the flag; nothing in stepPhysics consumes it yet.
