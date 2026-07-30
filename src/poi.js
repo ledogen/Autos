@@ -54,8 +54,11 @@ const CUTFILL_NU = 5, CUTFILL_NV = 3
 /**
  * FNV-1a over a string → uint32. Used only to seed the per-edge PRNG; any stable hash would do,
  * but it must stay stable, so do not "improve" it — the POI layout of every existing seed rides on it.
+ *
+ * EXPORTED and shared with src/camp.js (FEAT-45 camping zones), which keys its per-cell PRNG the
+ * same way. Two layouts now ride on this function being byte-stable, not one.
  */
-function hash32 (str) {
+export function hash32 (str) {
     let h = 0x811c9dc5
     for (let i = 0; i < str.length; i++) {
         h ^= str.charCodeAt(i)
@@ -64,8 +67,11 @@ function hash32 (str) {
     return h >>> 0
 }
 
-/** mulberry32 — small, fast, well-distributed. Deterministic stream from one uint32 seed. */
-function mulberry32 (a) {
+/**
+ * mulberry32 — small, fast, well-distributed. Deterministic stream from one uint32 seed.
+ * Exported alongside hash32 and shared with src/camp.js; same stability contract.
+ */
+export function mulberry32 (a) {
     return function () {
         a = (a + 0x6D2B79F5) | 0
         let t = Math.imul(a ^ (a >>> 15), 1 | a)

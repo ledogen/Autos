@@ -53,6 +53,7 @@ import { LabSystem } from './lab.js'                     // FEAT-31: isolated fl
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { PoiSystem, POI_PARAMS } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { DaySystem } from './day.js'                     // FEAT-47: story-mode day clock (drives the sky)
+import { CampSystem } from './camp.js'                   // FEAT-45: story-mode dispersed-camping zones
 import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
@@ -1173,6 +1174,9 @@ const map2d = new Map2D({
   getRegion: () => storySystem?.region() ?? null,
   // FEAT-46: POI icons — how the player finds one to drive to. Empty outside story mode.
   getPois: () => poiSystem.list(),
+  // FEAT-45: dispersed-camping zones, drawn as a yellow casing on the roads inside them. Empty
+  // outside story mode (build() only ever runs from the story deps).
+  getCampZones: () => campSystem.zones(),
   onTeleport: ({ x, z, heading }) => {
     // Snap to the road orientation, but a road tangent has TWO directions — pick the one closest
     // to the truck's current heading so the teleport doesn't spin it 180°. Off-road: keep heading.
@@ -1896,6 +1900,18 @@ const poiSystem = new PoiSystem({
   getSeed:    () => worldSeed,
   getParams:  () => RANGER_PARAMS,
 })
+
+// FEAT-45: dispersed-camping zones. Same isolation + same params discipline as the POI layer above
+// (CAMP_PARAMS is outside RANGER_PARAMS for the routeCacheSig reason), and the same story-only
+// lifecycle: built from the story deps when the region goes live, cleared on exit, so free roam
+// never has a zone and pays nothing. Zones are pure f(seed, macro cell) — they read nothing from
+// the world, so unlike POIs there is no carve or re-bake to trigger here.
+const campSystem = new CampSystem({
+  getRoad:   () => roadSystem,
+  getSeed:   () => worldSeed,
+  getParams: () => RANGER_PARAMS,
+})
+
 const _poiGroup = new THREE.Group()
 _poiGroup.name = 'poi-markers'
 scene.add(_poiGroup)
@@ -2656,6 +2672,7 @@ const storySystem = new StorySystem({
     daySystem.start()   // FEAT-47: the run's clock opens at dayStartHour and takes over the sky
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
     poiSystem.build(center, radius)
+    campSystem.build(center, radius)   // FEAT-45: the region's dispersed-camping zones
     _rebuildPoiMarkers()
     terrainSystem?.rebuildAllChunksFromWorker()
     // Props scattered BEFORE the pads existed are still standing in them (the scatter's road
@@ -2676,6 +2693,7 @@ const storySystem = new StorySystem({
     daySystem.setBlinksEnabled(false)   // …and the eyelids can never fire in free roam
     setControlAttenuation(1)            // belt-and-braces: leave the driver's inputs whole
     poiSystem.clear()
+    campSystem.clear()   // FEAT-45: no camping zones outside a live story region
     _rebuildPoiMarkers()
     terrainSystem?.rebuildAllChunksFromWorker()
   },

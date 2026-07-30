@@ -63,7 +63,7 @@ export class Map2D {
      * @param {() => ?{start:{x,z}, end:{x,z}, poly:{x,z}[]}} [o.getMission]
      *        — story-mode mission overlay (route + start/end pins); null when no mission is live
      */
-    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois }) {
+    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCampZones }) {
         this._canvas    = canvas
         this._ctx       = canvas.getContext('2d')
         this._getSeed   = getSeed
@@ -78,6 +78,9 @@ export class Map2D {
         // FEAT-46: story-mode POIs. This is how the player finds one — see an icon, drive to it,
         // park (latch the handbrake). Empty outside story mode.
         this._getPois     = getPois      || (() => null)
+        // FEAT-45: story-mode dispersed-camping zones — `{x,z,r}[]`, empty outside story mode. NOT
+        // drawn as discs: see _drawCampZones.
+        this._getCampZones = getCampZones || (() => null)
 
         this._open       = false
         this._road       = null          // the map's own RoadSystem; KEPT ALIVE across opens (route cache)
@@ -496,6 +499,7 @@ export class Map2D {
         ctx.drawImage(this._bg, dx, dy, W * k, H * k)
 
         this._drawRegion(ctx)    // under the mission route — it's world furniture, not the subject
+        this._drawCampZones(ctx) // FEAT-45: yellow casing on the road stretches inside a camp zone
         this._drawPois(ctx)      // likewise furniture: placed at entry, so not in the cached bg
         this._drawMission(ctx)   // under the car marker, over the cached bg
         this._drawCar(ctx)
@@ -730,6 +734,70 @@ export class Map2D {
         pin(m.end, '#ffcf3c', 'DROP')
     }
 
+    // FEAT-45: dispersed-camping zones, rendered the way a BLM/forest-service map renders them —
+    // as a coloured CASING along the roads inside the zone, never as a filled blob. That is not a
+    // stylistic choice: camping is tethered to `campRoadEdgeM` of the road edge (camp.js), so the
+    // stretch of road IS the affordance. A filled disc would promise a square kilometre of legal
+    // ground the player can't actually use, which is exactly the wrong read.
+    //
+    // Drawn as world FURNITURE (with the region ring and the POIs) rather than into the cached
+    // background: zones are built at story-mode entry, by which time the bg may already be baked.
+    // Because the roads are already in that baked bitmap, the casing is laid down WIDE and the road
+    // stroke is then re-drawn narrow on top of it — same visual result as an under-stroke, without
+    // needing the bg rebuilt. Cheap at furniture cadence: the region carries ~50 edges and the
+    // membership test is one point-in-disc per polyline vertex.
+    _drawCampZones(ctx) {
+        const zones = this._getCampZones()
+        if (!zones || !zones.length) return
+        const road = this._road
+        if (!road || !road._network) return
+
+        const inZone = (p) => {
+            for (const q of zones) {
+                const dx = q.x - p.x, dz = q.z - p.z
+                if (dx * dx + dz * dz <= q.r * q.r) return true
+            }
+            return false
+        }
+
+        // Collect the in-zone sub-polylines once, then stroke them twice (casing, then road colour).
+        const runs = []
+        for (const { points } of road._network.values()) {
+            if (!points || points.length < 2) continue
+            let cur = null
+            let prevIn = inZone(points[0])
+            for (let i = 1; i < points.length; i++) {
+                const nowIn = inZone(points[i])
+                // A segment belongs to a zone when BOTH endpoints do — the conservative read, so
+                // the casing never claims road that leaves the zone.
+                if (prevIn && nowIn) {
+                    if (!cur) { cur = [points[i - 1]]; runs.push(cur) }
+                    cur.push(points[i])
+                } else {
+                    cur = null
+                }
+                prevIn = nowIn
+            }
+        }
+        if (!runs.length) return
+
+        const stroke = (color, width) => {
+            ctx.strokeStyle = color
+            ctx.lineWidth = width
+            ctx.lineJoin = 'round'
+            ctx.lineCap = 'round'
+            for (const r of runs) {
+                ctx.beginPath()
+                ctx.moveTo(this._sx(r[0].x), this._sy(r[0].z))
+                for (let i = 1; i < r.length; i++) ctx.lineTo(this._sx(r[i].x), this._sy(r[i].z))
+                ctx.stroke()
+            }
+        }
+        stroke('rgba(255,220,60,0.55)', 5)   // the casing — ~2.5x the road stroke
+        stroke('#d8d8d0', 2)                 // the road itself, back on top (matches _drawRoads)
+        ctx.lineCap = 'butt'
+    }
+
     // FEAT-46: POI markers — the navigate-to-it affordance. See an orange diamond, drive there,
     // park. Drawn as world FURNITURE (with the region ring, under the mission overlay and the
     // car) rather than into the cached background: POIs are placed at story-mode entry, by which
@@ -785,6 +853,7 @@ export class Map2D {
             ['#ff5a3c', 'car'],
         ]
         if (this._getPois()?.length) rows.push(['#ff7a18', 'point of interest'])   // FEAT-46
+        if (this._getCampZones()?.length) rows.push(['#ffdc3c', 'dispersed camping'])   // FEAT-45
         const x0 = 16, y0 = 16, lh = 18
         ctx.fillStyle = 'rgba(0,0,0,0.45)'
         ctx.fillRect(x0 - 8, y0 - 8, 188, rows.length * lh + 16)
