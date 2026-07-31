@@ -2281,7 +2281,7 @@ function _updateParkTriggers () {
   if (textEl) {
     // "not flat" now means the WHOLE siting ray failed the flatness gate — every candidate from the
     // road edge out to the tether — not merely that the verge beside the truck did.
-    textEl.textContent = !camp.withinTether ? 'dispersed camping is limited to 20m from the road edge'
+    textEl.textContent = !camp.withinTether ? `dispersed camping is limited to ${CAMP_PARAMS.campRoadEdgeM}m from the road edge`
                        : !camp.flat         ? 'not flat'
                        :                      'park to make camp'
   }

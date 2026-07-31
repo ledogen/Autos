@@ -36,7 +36,9 @@ export const CAMP_PARAMS = {
     campZoneChance: 0.26,   // P(a cell carries a zone) — see THE COVERAGE ARITHMETIC below
     campMinRadiusM: 350,    // zone radius ~ U[min, max]; mean diameter ≈ 1 km (RATIFIED)
     campMaxRadiusM: 650,
-    campRoadEdgeM:  20,     // m past the shoulder edge that dispersed camping is allowed
+    campRoadEdgeM:  40,     // m past the shoulder edge that dispersed camping is allowed (owner
+                            // 2026-07-31: was 20 — the wider tether roughly doubles the siting
+                            // ray's candidate ladder, so watch the re-grade cost if widened again)
 
     // ── The site (Phase D) ────────────────────────────────────────────────────────────────────
     campPadHalfM:    3,     // m — half-extent of the camp bench: a 6 m pad, RATIFIED
