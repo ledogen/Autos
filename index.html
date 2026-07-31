@@ -160,7 +160,9 @@
     }
     /* Story-mode beta: mission offer panel. Sits above the 2D map (z 90) so the route and
        start/drop pins are visible behind it; the panel is bottom-anchored, not centered. */
-    #mission-panel {
+    /* #camp-panel (FEAT-45) shares the mission panel's chrome by selector rather than by a copied
+       block — one place to restyle a story-mode panel. */
+    #mission-panel, #camp-panel {
       display: none;
       position: fixed;
       left: 50%;
@@ -176,7 +178,7 @@
       min-width: 380px;
       text-align: center;
     }
-    #mission-panel .mp-title {
+    #mission-panel .mp-title, #camp-panel .mp-title {
       color: #7fc2ff;
       font-size: 12px;
       letter-spacing: 2px;
@@ -194,7 +196,7 @@
     #mp-body .mp-big { font-size: 22px; color: #ffffff; }
     #mp-body .mp-dim { color: #8a939c; }
     #mp-actions { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
-    #mission-panel button {
+    #mission-panel button, #camp-panel button {
       background: none;
       border: 1px solid #55606b;
       color: #cfd6dd;
@@ -204,7 +206,8 @@
       cursor: pointer;
       transition: background 0.1s, color 0.1s;
     }
-    #mission-panel button:hover { background: rgba(255,255,255,0.09); color: #fff; border-color: #8fa2b4; }
+    #mission-panel button:hover, #camp-panel button:hover:not(:disabled) { background: rgba(255,255,255,0.09); color: #fff; border-color: #8fa2b4; }
+    #camp-panel button:disabled { color: #5c646c; border-color: #333b43; cursor: default; }
     #mp-accept { border-color: #5ad06a; color: #b6f0be; }
     #mp-decline { border-color: #6b747d; color: #a8b0b8; }
     #mp-export-row { display: none; margin-top: 12px; border-top: 1px solid #2c343d; padding-top: 12px; }
@@ -373,6 +376,158 @@
       opacity: 0;
       transition: opacity 1s ease;
     }
+    /* FEAT-47: the doze/blink overlay. Two eyelids that meet in the middle — a crossfade to black
+       reads as a fade-out, closing lids read as a blink, which is the whole point. Above the HUD
+       and panels, below the story loading screen (z 200). JS only ever writes the two transforms
+       (per frame, from DaySystem.eyelidFactor()); everything else is static CSS. */
+    #doze-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 150;
+      pointer-events: none;
+      user-select: none;
+      overflow: hidden;
+    }
+    #doze-overlay .lid {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      height: 52%;        /* >50% so the lids overlap at full closure — no seam of daylight */
+      background: #000000;
+      will-change: transform;
+    }
+    #doze-overlay .lid-top    { top: 0;    transform: translateY(-100%); }
+    #doze-overlay .lid-bottom { bottom: 0; transform: translateY(100%); }
+
+    /* ── FEAT-45 Phase D: the camping surfaces ─────────────────────────────────────────────
+       SM-INV-3: every one of these is a NEAR-STOPPED surface. Nothing here is ever on the
+       driving HUD — the prompt needs a camp zone under a slow truck, the panel needs a park.
+
+       Camp prompt (its own element, NOT #poi-prompt): yellow to match the map's camping casing,
+       and it carries the vibe bar as a child, which the POI prompt has no notion of. */
+    #camp-prompt {
+      display: none;
+      position: fixed;
+      bottom: 96px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.62);
+      border: 1px solid #ffdc3c;
+      /* Vertical padding is deliberately half the horizontal look (owner, 2026-07-31): both prompt
+         states sat too tall over the road. Widths and type sizes are untouched. */
+      padding: 4px 18px;
+      font-family: monospace;
+      font-size: 15px;
+      color: #ffe89a;
+      z-index: 88;
+      pointer-events: none;
+      /* NO white-space:pre here (unlike #poi-prompt): the children are block elements, and pre
+         renders the markup's own newlines between them as literal blank lines — which is exactly
+         the mystery height the owner screenshotted on 2026-07-31. */
+      text-align: center;
+      line-height: 1.3;
+    }
+    /* The seek toggle — the only clickable thing in the prompt (the prompt itself stays
+       pointer-events:none so it never eats a drag on the world). Collapsed, it is the whole UI. */
+    #camp-seek-toggle {
+      pointer-events: auto;
+      display: block;
+      margin: 0 auto 3px;
+      background: none;
+      border: none;
+      color: #ffe89a;
+      font-family: monospace;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      opacity: 0.85;
+    }
+    #camp-seek-toggle:hover { opacity: 1; text-decoration: underline; }
+    #camp-prompt.collapsed { border-color: rgba(255, 220, 60, 0.45); background: rgba(0, 0, 0, 0.45); }
+    #camp-prompt.collapsed #camp-seek-toggle { margin-bottom: 0; }
+    /* The vibe bar: ONE bar, three stacked segments. Their max widths ARE the score weights
+       (50 / 30 / 20 %) — JS only ever writes the three widths. Shared by the prompt and the
+       confirm face; two roots, one renderer (_renderVibeBar). */
+    .vibe-bar {
+      width: 260px;
+      height: 8px;
+      margin: 0 auto 4px;
+      background: rgba(255,255,255,0.09);
+      border: 1px solid #55606b;
+      display: flex;
+      overflow: hidden;
+    }
+    /* ONE COLOUR CODE across the bar, the legend and the confirm face's stats line (owner,
+       2026-07-31): yellow = flatness, green = shade/trees, blue = water/fishable. The yellow is
+       deliberately duller than the #ffdc3c camping border so the two do not read as the same ink;
+       the green was darkened-green before and is now the readable one, since the stats line has to
+       carry it as text. Change one, change all four places. */
+    .vibe-bar .vseg { height: 100%; width: 0%; transition: width 0.12s linear; }
+    .vibe-bar .vseg-flat  { background: #e8d44a; }   /* flatness — up to 50% of the bar */
+    .vibe-bar .vseg-shade { background: #7fd86a; }   /* shade    — up to 30% */
+    .vibe-bar .vseg-water { background: #4aa8d8; }   /* water    — up to 20% */
+
+    /* The legend. The bar read as one anonymous fill without it (owner, 2026-07-30) — three
+       segments in three greens/blues tell you nothing about WHICH judgement is short. Swatch
+       colours are the segment colours; keep them in step or the legend lies. */
+    .vibe-legend {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      font-size: 11px;
+      color: #b9c2cb;
+      margin: -2px 0 3px;
+      letter-spacing: 0.04em;
+    }
+    .vibe-legend span { display: flex; align-items: center; gap: 4px; }
+    .vibe-legend i { width: 8px; height: 8px; display: inline-block; font-style: normal; }
+    .vibe-legend .lg-flat  { background: #e8d44a; }
+    .vibe-legend .lg-shade { background: #7fd86a; }
+    .vibe-legend .lg-water { background: #4aa8d8; }
+
+    /* Energy meter (sleep dialogue only — never the driving HUD). Two stacked absolute layers:
+       the PREVIEW (what the slider's hours would leave you with, in a washed-out shade) sits
+       underneath and the current level paints over it, so the extension reads as "how much further
+       this drag gets you". Both are clamped to full by JS. */
+    .energy-bar {
+      position: relative;
+      width: 100%;
+      height: 10px;
+      background: rgba(255,255,255,0.09);
+      border: 1px solid #55606b;
+      margin: 6px 0 4px;
+      overflow: hidden;
+    }
+    .energy-bar .efill, .energy-bar .epreview {
+      position: absolute; left: 0; top: 0; height: 100%; width: 0%;
+      transition: width 0.15s linear;
+    }
+    .energy-bar .epreview { background: rgba(255, 207, 60, 0.34); }
+    .energy-bar .efill    { background: #ffcf3c; }
+
+    /* Full-screen fade behind the make-camp chore and the night. Plain black, above the panels,
+       below the story loading screen. Opacity is the only thing JS writes. */
+    #camp-fade {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      opacity: 0;
+      z-index: 160;
+      pointer-events: none;
+      transition: opacity 0.45s ease;
+    }
+    #camp-fade.on { opacity: 1; }
+
+    #cp-row { margin-top: 12px; display: flex; gap: 10px; align-items: center; justify-content: center; }
+    #cp-hours { width: 160px; }
+    .cp-dim { color: #8a939c; }
+    /* The confirm face's stats line. The three judgement words wear the vibe bar's colours (see
+       the colour-code note on .vseg-*) so the reader can tie a word to a segment; the vibe number
+       itself is neutral white because it is the sum of all three. */
+    .cp-stat  { color: #ffffff; }
+    .cp-flat  { color: #e8d44a; }
+    .cp-trees { color: #7fd86a; }
+    .cp-water { color: #4aa8d8; }
   </style>
   <!-- Bare specifiers ('three', 'three/addons/*', 'simplex-noise') are resolved by Vite from
        node_modules (PERF-04/PERF-20.5) — the old CDN importmap is retired. See vite.config.js. -->
@@ -385,6 +540,12 @@
        Fullscreen 2d-context canvas above the WebGL canvas but below the pause menu
        (z 100). Hidden by default; src/map2d.js owns its draw + pan/zoom handlers. -->
   <canvas id="map2d" style="position:fixed; inset:0; display:none; z-index:90; background:rgba(10,12,16,0.92); cursor:grab;"></canvas>
+
+  <!-- FEAT-47: story-mode eyelids (blink / doze). Inert until main.js writes the transforms. -->
+  <div id="doze-overlay">
+    <div class="lid lid-top"></div>
+    <div class="lid lid-bottom"></div>
+  </div>
 
   <!-- HUD overlay — Plan 03 wires speed readout; element must exist now -->
   <div id="hud">
@@ -462,7 +623,7 @@
          (The seed control that used to sit under here is gone: you chose the world when you entered
          story mode, and offering it again mid-run invited a world rebuild under a live planner.) -->
     <div id="mp-actions">
-      <button id="mp-decline">decline</button>
+      <button id="mp-decline" title="the same brake tap that releases the truck">decline (space)</button>
       <button id="mp-retry" title="testing only — real story mode has no do-overs">retry</button>
       <button id="mp-regen" title="testing only — real story mode has no do-overs">regenerate</button>
       <button id="mp-accept">accept mission</button>
@@ -471,8 +632,76 @@
   </div>
   <div id="mission-hud"></div>
 
-  <!-- FEAT-46: "press E for a job" prompt, shown when the truck is stopped beside a POI cube. -->
+  <!-- FEAT-46: "park to begin mission" prompt, shown when the truck is stopped beside a POI cube.
+       Latching the parking brake (Space) there is what opens the offer — see _updatePoiPrompt. -->
   <div id="poi-prompt"></div>
+
+  <!-- FEAT-45 Phase D: the camping prompt. The vibe bar sits ABOVE the copy — you read the score,
+       then what to do about it. Shown only in a camp zone below 20 kph (see _updateParkTriggers). -->
+  <div id="camp-prompt">
+    <!-- The seek toggle IS the collapsed state (owner, 2026-07-31): driving through a zone shows
+         only this chip — the bar, legend, copy AND the siting-ray grading all sit behind it, so a
+         drive-through pays nothing and sees almost nothing. Clicking it arms "looking for a
+         campsite" mode, which is also what arms the brake-latch camp trigger. -->
+    <button id="camp-seek-toggle">look for a campsite</button>
+    <div class="vibe-bar" id="camp-vibe">
+      <div class="vseg vseg-flat"></div>
+      <div class="vseg vseg-shade"></div>
+      <div class="vseg vseg-water"></div>
+    </div>
+    <div class="vibe-legend" id="camp-vibe-legend">
+      <span><i class="lg-flat"></i>flat</span>
+      <span><i class="lg-shade"></i>shade</span>
+      <span><i class="lg-water"></i>water</span>
+    </div>
+    <div id="camp-prompt-text">park to make camp</div>
+  </div>
+
+  <!-- FEAT-45 Phase D: the camp dialogue. One panel, four faces — make-camp confirm, the camp
+       (break camp · sleep · fish), the sleep timer, and mom's house. main.js renders it
+       (_renderCampUI); camp.js and day.js stay renderer-agnostic. -->
+  <div id="camp-panel">
+    <div class="mp-title" id="cp-title">camp</div>
+    <!-- The confirm face's copy of the vibe bar (owner, 2026-07-31): the decision to dig is made
+         here, so the score has to be here too. Second root, same renderer — the prompt's instance
+         is untouched. Hidden on every other face. -->
+    <div class="vibe-bar" id="cp-vibe" style="display:none;">
+      <div class="vseg vseg-flat"></div>
+      <div class="vseg vseg-shade"></div>
+      <div class="vseg vseg-water"></div>
+    </div>
+    <div class="vibe-legend" id="cp-vibe-legend" style="display:none;">
+      <span><i class="lg-flat"></i>flat</span>
+      <span><i class="lg-shade"></i>shade</span>
+      <span><i class="lg-water"></i>water</span>
+    </div>
+    <div id="cp-body"></div>
+    <!-- Sleep face: the energy meter + the integer-hour timer. Static markup (the slider keeps its
+         one listener) — only its display and the two live numbers are written. -->
+    <div id="cp-sleep-panel" style="display:none;">
+      <div class="energy-bar">
+        <div class="epreview" id="cp-energy-preview"></div>
+        <div class="efill" id="cp-energy-fill"></div>
+      </div>
+      <div class="cp-dim" id="cp-energy-text">energy</div>
+      <div id="cp-row">
+        <input id="cp-hours" type="range" min="1" max="14" step="1" value="8">
+        <span id="cp-hours-text">8 h</span>
+      </div>
+    </div>
+    <div id="cp-actions" class="mp-felt-row" style="margin-top:14px; gap:8px;">
+      <button id="cp-make">make camp &middot; 30 min</button>
+      <button id="cp-cancel">abandon</button>
+      <button id="cp-break">break camp</button>
+      <button id="cp-sleep">sleep</button>
+      <button id="cp-fish" disabled title="not implemented yet">fish (wip)</button>
+      <button id="cp-sleep-go">sleep</button>
+      <button id="cp-sleep-back">back</button>
+    </div>
+  </div>
+
+  <!-- The fade the 30-minute chore and the night happen behind. -->
+  <div id="camp-fade"></div>
 
   <!-- FEAT-31 testing lab: live status + best-of-each-track table. The right-hand column is the
        point of the whole mode — the derived number (implied accel/decel, realized skidpad mu)

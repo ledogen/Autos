@@ -32,10 +32,100 @@ function biomeNoise(x, z, freq, seed) {
   return (s * 0.5 + 1) * 0.5   // ~[0,1]
 }
 
+// Sampler-derived predicates, defined once at module scope so the tree pass (extracted below for
+// FEAT-45) and the rock/bush/log passes share ONE definition instead of two drifting copies.
+const inPondWaterAt = (samplers, x, z) => { const w = samplers.waterAt && samplers.waterAt(x, z); return !!(w && w.inWater) }
+const inStreamChannelAt = (samplers, x, z) => { const s = samplers.streamAt && samplers.streamAt(x, z); return !!(s && s.inChannel) }
+const slopeFrom = (samplers, x, z) => 1 - Math.max(0, Math.min(1, samplers.normalAt(x, z).y))
+
 function tintFor(rng, hex, jitter) {
   const r = ((hex >> 16) & 255) / 255, g = ((hex >> 8) & 255) / 255, b = (hex & 255) / 255
   const j = () => 1 + (rng() * 2 - 1) * jitter
   return [Math.min(1, r * j()), Math.min(1, g * j()), Math.min(1, b * j())]
+}
+
+/**
+ * The TREE-CLUSTER pass — the first pass of a chunk's scatter, extracted so it has exactly one
+ * definition and two callers: scatterChunkGen (which runs it as the head of the full scatter) and
+ * scatterTreePositions below (FEAT-45's camp shade score, which wants the trees and nothing else).
+ *
+ * It draws from the CALLER's rng so the stream position after it is unchanged — the extraction is
+ * a pure code move, and test/props.mjs's determinism/window-invariance gate is what proves it.
+ *
+ * @param {Function} rng   the chunk's mulberry32 stream, positioned at the start of the chunk
+ * @returns {Array} tree placement records (generator return value; `yield*` it)
+ */
+export function* treeClusterPass (rng, ox, oz, worldSeed, samplers, P = FLORA_PARAMS) {
+  const S = P.scatter
+  const size = P.chunkSize
+  const { heightAt, roadBlocked } = samplers
+  const out = []
+  const slopeAt = (x, z) => slopeFrom(samplers, x, z)
+
+  const placeTree = (cat, x, z) => {
+    if (roadBlocked(x, z)) return
+    if (inPondWaterAt(samplers, x, z)) return       // FEAT-17: no trees standing in the pond
+    if (inStreamChannelAt(samplers, x, z)) return   // FEAT-25: no trees standing in the stream channel
+    const slope = slopeAt(x, z)
+    if (slope > S.slopeRejectMax) return
+    const cfg = P[cat]
+    // Uniform brightness jitter (NO hue shift) — instanceColor multiplies the WHOLE tree, so a
+    // coloured tint would bleed the canopy hue onto the trunk (was greening the white aspen bark).
+    const b = 0.92 + rng() * 0.16
+    out.push({
+      cat, variant: (rng() * cfg.variants) | 0, x, z,
+      y: heightAt(x, z) - S.groundSink,    // sink so the base digs in (kills slope-float)
+      scale: frange(rng, cfg.instScale), rotY: rng() * Math.PI * 2,
+      // per-tree lean from vertical (pivots at the trunk base = geometry origin) — natural variation
+      tilt: rng() * S.treeTiltMax, tiltAz: rng() * Math.PI * 2,
+      tint: [b, b, b],
+    })
+  }
+
+  const nClusters = S.clustersPerChunk
+  for (let ci = 0; ci < nClusters; ci++) {
+    const ccx = ox + rng() * size, ccz = oz + rng() * size
+    const slope = slopeAt(ccx, ccz)
+    const elev = heightAt(ccx, ccz)
+    const biome = biomeNoise(ccx, ccz, S.biomeNoiseFreq, worldSeed)
+
+    // species probability: aspen favoured in meadows (low slope) + at elevation; pine on steeps.
+    let pAspen
+    if (slope <= S.slopeMeadowMax)      pAspen = 0.85
+    else if (slope >= S.slopeSteepMin)  pAspen = 0.15
+    else                                pAspen = lerp(0.85, 0.15,
+                                            (slope - S.slopeMeadowMax) / (S.slopeSteepMin - S.slopeMeadowMax))
+    pAspen *= 1 + S.aspenElevBias * (elev / S.elevRef)   // aspen ↑ with elevation
+    pAspen = Math.max(0.05, Math.min(0.95, pAspen * (0.6 + 0.8 * biome)))
+    const cat = rng() < pAspen ? 'aspen' : 'pine'
+
+    const n = irange(rng, S.treesPerCluster)
+    for (let k = 0; k < n; k++) {
+      // jittered offset within cluster radius (sqrt for area-uniform)
+      const ang = rng() * Math.PI * 2, rad = Math.sqrt(rng()) * S.clusterRadius
+      placeTree(cat, ccx + Math.cos(ang) * rad, ccz + Math.sin(ang) * rad)
+      yield   // PERF-14: slice point — EVERY candidate (a single sampler chain can run ms-scale)
+    }
+  }
+  return out
+}
+
+/**
+ * FEAT-45: the trees of one chunk, and nothing else — the deterministic read-only source the camp
+ * SHADE score counts. Deliberately NOT a query against the live PropSystem: the streamer is a
+ * window artifact (chunks come and go with the camera) and a score that changed with what happened
+ * to be resident would not be a property of the SITE. This replays the chunk's own first pass, so
+ * the trees counted are exactly the trees standing there.
+ *
+ * Cost: clustersPerChunk × treesPerCluster candidates (≤ ~44), each a slope + road + height sample.
+ * Callers are expected to cache per chunk — see CampSystem's tree memo.
+ */
+export function scatterTreePositions (cx, cz, worldSeed, samplers, params = FLORA_PARAMS) {
+  const rng = mulberry32(seedFor(worldSeed, params.worldSeedTag, cx, cz))
+  const g = treeClusterPass(rng, cx * params.chunkSize, cz * params.chunkSize, worldSeed, samplers, params)
+  let r
+  do { r = g.next() } while (!r.done)
+  return r.value
 }
 
 /**
@@ -68,7 +158,7 @@ export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PAR
   const size = P.chunkSize
   const ox = cx * size, oz = cz * size
   const out = []
-  const { heightAt, normalAt, roadBlocked, roadDist, roadClear: roadClearFn } = samplers
+  const { heightAt, roadBlocked, roadDist, roadClear: roadClearFn } = samplers
 
   // BUG-23: radius-aware road keep-out. roadClear(x,z,keepOut) is true when NO road centreline lies
   // within keepOut metres. Falls back to the legacy fixed-radius roadBlocked for older fixtures that
@@ -78,15 +168,14 @@ export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PAR
   // FEAT-17: optional pond sampler (waterAt(x,z) → {inWater, inSkirt}) — nothing scatters IN a pond
   // (underwater trees). The skirt stays plantable (vegetated shoreline). Absent (older fixtures /
   // gates) → no exclusion, placements byte-unchanged. Pure fn of seed/coords → window-invariant.
-  const waterAt = samplers.waterAt || null
-  const inPondWater = (x, z) => { const w = waterAt && waterAt(x, z); return !!(w && w.inWater) }
+  const inPondWater = (x, z) => inPondWaterAt(samplers, x, z)
 
   // FEAT-25: optional stream-channel sampler (streamAt(x,z) → {inChannel, inBank, stream}). Trees,
   // bushes, boulders and collidable rocks are excluded from the underwater CHANNEL (broken-looking
   // submerged props); the decorative small-rock category is instead DENSIFIED there (boost pass
   // below). Absent (older fixtures / gates) → no exclusion/boost, placements byte-unchanged.
   const streamAt = samplers.streamAt || null
-  const inStreamChannel = (x, z) => { const s = streamAt && streamAt(x, z); return !!(s && s.inChannel) }
+  const inStreamChannel = (x, z) => inStreamChannelAt(samplers, x, z)
 
   // Max world horizontal bounding radius of a blob category — an UPPER bound over its variants +
   // instance scale: widest drawn radius × widest ground-plane axis × the irregularity peak × max
@@ -95,7 +184,7 @@ export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PAR
     cfg.blob.radius[1] * Math.max(cfg.blob.axisScale[0], cfg.blob.axisScale[2]) *
     (1 + cfg.blob.irregularity) * cfg.instScale[1]
 
-  const slopeAt = (x, z) => 1 - Math.max(0, Math.min(1, normalAt(x, z).y))
+  const slopeAt = (x, z) => slopeFrom(samplers, x, z)
 
   // ── helper: place a single prop of category `cat` at (x,z) if terrain allows ──────────
   // rngArg lets the FEAT-25 channel-rock boost pass draw from its OWN seeded stream (so the extra
@@ -126,52 +215,12 @@ export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PAR
     })
   }
 
-  const placeTree = (cat, x, z) => {
-    if (roadBlocked(x, z)) return
-    if (inPondWater(x, z)) return   // FEAT-17: no trees standing in the pond
-    if (inStreamChannel(x, z)) return   // FEAT-25: no trees standing in the stream channel
-    const slope = slopeAt(x, z)
-    if (slope > S.slopeRejectMax) return
-    const cfg = P[cat]
-    // Uniform brightness jitter (NO hue shift) — instanceColor multiplies the WHOLE tree, so a
-    // coloured tint would bleed the canopy hue onto the trunk (was greening the white aspen bark).
-    const b = 0.92 + rng() * 0.16
-    out.push({
-      cat, variant: (rng() * cfg.variants) | 0, x, z,
-      y: heightAt(x, z) - S.groundSink,    // sink so the base digs in (kills slope-float)
-      scale: frange(rng, cfg.instScale), rotY: rng() * Math.PI * 2,
-      // per-tree lean from vertical (pivots at the trunk base = geometry origin) — natural variation
-      tilt: rng() * S.treeTiltMax, tiltAz: rng() * Math.PI * 2,
-      tint: [b, b, b],
-    })
-  }
-
   // ── tree clusters (grouping) ──────────────────────────────────────────────────────────
-  const nClusters = S.clustersPerChunk
-  for (let ci = 0; ci < nClusters; ci++) {
-    const ccx = ox + rng() * size, ccz = oz + rng() * size
-    const slope = slopeAt(ccx, ccz)
-    const elev = heightAt(ccx, ccz)
-    const biome = biomeNoise(ccx, ccz, S.biomeNoiseFreq, worldSeed)
-
-    // species probability: aspen favoured in meadows (low slope) + at elevation; pine on steeps.
-    let pAspen
-    if (slope <= S.slopeMeadowMax)      pAspen = 0.85
-    else if (slope >= S.slopeSteepMin)  pAspen = 0.15
-    else                                pAspen = lerp(0.85, 0.15,
-                                            (slope - S.slopeMeadowMax) / (S.slopeSteepMin - S.slopeMeadowMax))
-    pAspen *= 1 + S.aspenElevBias * (elev / S.elevRef)   // aspen ↑ with elevation
-    pAspen = Math.max(0.05, Math.min(0.95, pAspen * (0.6 + 0.8 * biome)))
-    const cat = rng() < pAspen ? 'aspen' : 'pine'
-
-    const n = irange(rng, S.treesPerCluster)
-    for (let k = 0; k < n; k++) {
-      // jittered offset within cluster radius (sqrt for area-uniform)
-      const ang = rng() * Math.PI * 2, rad = Math.sqrt(rng()) * S.clusterRadius
-      placeTree(cat, ccx + Math.cos(ang) * rad, ccz + Math.sin(ang) * rad)
-      yield   // PERF-14: slice point — EVERY candidate (a single sampler chain can run ms-scale)
-    }
-  }
+  // FIRST pass in the chunk's rng stream, and extracted (treeClusterPass) so FEAT-45's camp
+  // shade score can replay JUST the trees without paying for the rocks/bushes/logs behind them.
+  // `yield*` keeps the draws, the order and the yield cadence byte-identical to the inline version.
+  const trees = yield* treeClusterPass(rng, ox, oz, worldSeed, samplers, P)
+  for (const t of trees) out.push(t)
 
   // ── rocks (slope-weighted), boulders, small rocks, bushes — independent scatter ────────
   // PERF-14: generator helper — yields EVERY candidate; sampler chains (analytic height + road

@@ -1302,6 +1302,11 @@ export class RoadSystem {
         // carve is bit-identical to a build without POIs. This is the seam that keeps the ratified
         // "POIs never influence routing determinism" rule true rather than merely intended.
         this._poiPads = null
+        // FEAT-45: camp pads, pushed in by main.js when the player makes camp. Same record shape and
+        // the SAME carve — _padsAll is the merged list every pad consumer reads, so there is exactly
+        // one pad mechanism and a camp bench is a lay-by that happens to have been dug at runtime.
+        this._campPads = null
+        this._padsAll = null
 
         // ── Off-thread route pre-warming (PERF-03 Workstream A) ──────────────────
         // warmRoutes() asks a Worker to route the connections the streamer will soon need and posts
@@ -5105,7 +5110,7 @@ export class RoadSystem {
             if (!n.ring) continue
             out.push({ x: n.pos.x, z: n.pos.z, reach: (n.ringMaxR ?? 0) + extra })
         }
-        if (this._poiPads) for (const q of this._poiPads) {
+        if (this._padsAll) for (const q of this._padsAll) {
             out.push({ x: q.x, z: q.z, reach: Math.hypot(q.halfLen, q.halfWid) + extra })
         }
         return out
@@ -5124,6 +5129,30 @@ export class RoadSystem {
      */
     setPoiPads(pads) {
         this._poiPads = (pads && pads.length) ? pads : null
+        this._syncPads()
+    }
+
+    /**
+     * FEAT-45: hand the story layer's CAMP pads to the same carve. Identical record shape to a POI
+     * pad ({x,z,y,tx,tz,halfLen,halfWid}); the only difference is when they arrive — a camp bench is
+     * dug mid-run, when the player makes camp, so the caller must re-bake the covering chunks after
+     * calling this (main.js does it behind the make-camp fade). Held separately from the POI pads
+     * only so poi.js's `setPoiPads(null)` rebuild-clear cannot take a camp with it.
+     */
+    setCampPads(pads) {
+        this._campPads = (pads && pads.length) ? pads : null
+        this._syncPads()
+    }
+
+    /**
+     * Rebuild the merged pad list every consumer reads (_poiPadCarve, poiPadBlocked, padReachNodes).
+     * Bumping _networkRev is deliberately NOT done here: pads do not change the network, and the
+     * junction/route caches keyed by that rev must not be dropped. What DOES need invalidating is the
+     * physics carve hint memo, whose entries were sampled before the pads existed.
+     */
+    _syncPads() {
+        const all = [...(this._poiPads || []), ...(this._campPads || [])]
+        this._padsAll = all.length ? all : null
         this._hintCache = null
     }
 
@@ -5134,7 +5163,7 @@ export class RoadSystem {
      * Always false in free roam (no pads set), so the scatter is unchanged there.
      */
     poiPadBlocked(wx, wz, keepOut = 0) {
-        const pads = this._poiPads
+        const pads = this._padsAll
         if (!pads) return false
         for (const q of pads) {
             const dx = wx - q.x, dz = wz - q.z
@@ -5173,10 +5202,13 @@ export class RoadSystem {
      * that gives the leg priority everywhere it reaches, which on a fill embankment is the whole
      * pad, and the bench would silently do nothing.
      *
+     * FEAT-45: camp benches ride this exact function (they are just pads in `_padsAll`), which is
+     * why "making camp never moves the road" needs no separate proof — difference (3) covers them.
+     *
      * @returns {{blendW:number, gradeY:number, dom:number}|null} DIRT convention, null = untouched.
      */
     _poiPadCarve(wx, wz, rawAmp, latDist) {
-        const pads = this._poiPads
+        const pads = this._padsAll
         if (!pads) return null
         const p = this._params
         const halfWidth       = p.roadHalfWidth       ?? 5

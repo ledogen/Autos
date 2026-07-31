@@ -37,6 +37,17 @@ document.addEventListener('keyup',   e => { const k = e.key === ' ' ? ' ' : e.ke
 let _launchHold = false
 export function setLaunchHold (on) { _launchHold = on }
 
+// ── Control attenuation (FEAT-47 story-mode doze) ────────────────────────────
+// Scales the DRIVER'S inputs — throttle, brake, and the steer-key integration — by a factor in
+// [0, 1]. main.js drives it from DaySystem.attenuation(): 1 normally, 0 for the length of a doze.
+// INPUTS DROP, THEY NEVER INVERT (SM-INV-1): a doze is the driver's hands going slack, so throttle
+// and brake release along their own ramps and the steer angle decays toward centre through the
+// UNTOUCHED decay path below. The physics decides what happens next; nothing here forces a crash.
+// Same module-flag shape as _launchHold above. Default 1 ⇒ provably inert: every use below is a
+// multiply by 1, so headless gates (which never construct DaySystem) see identical vehicle input.
+let _controlAtten = 1
+export function setControlAttenuation (f) { _controlAtten = Math.max(0, Math.min(1, Number(f) || 0)) }
+
 // ── SPAWN_STATE ───────────────────────────────────────────────────────────────
 // Plain scalar values — main.js copies these into THREE.Vector3 / THREE.Quaternion
 // fields of vehicleState on R-key reset.
@@ -89,8 +100,9 @@ export function updateVehicle (vehicleState, params, dt) {
 
   // ── 1. Throttle / Brake (M1-05, FEAT-01) ──────────────────────────────────
   // Ramp smoothed accumulators toward raw input; fast release, slow press.
-  const rawThrottle = (!freecamActive && keys.w) ? 1 : 0
-  const rawBrake    = (!freecamActive && keys.s) ? 1 : 0
+  // _controlAtten is 1 except during a story-mode doze, when it is 0 (see setControlAttenuation).
+  const rawThrottle = ((!freecamActive && keys.w) ? 1 : 0) * _controlAtten
+  const rawBrake    = ((!freecamActive && keys.s) ? 1 : 0) * _controlAtten
   if (rawThrottle > vehicleState.smoothThrottle)
     vehicleState.smoothThrottle = Math.min(vehicleState.smoothThrottle + params.throttleRampRate * dt, rawThrottle)
   else
@@ -131,8 +143,11 @@ export function updateVehicle (vehicleState, params, dt) {
   const dynamicMaxSteer = params.maxSteerAngle / (1 + speed / params.speedSteerRef)
 
   // ── 3. Steer accumulation (M1-07) ──────────────────────────────────────────
-  if (!freecamActive && keys.a) vehicleState.steerAngle += params.steerRate * dt
-  if (!freecamActive && keys.d) vehicleState.steerAngle -= params.steerRate * dt
+  // Attenuated the same way as throttle/brake: during a doze the steer keys stop feeding the
+  // integration, but the decay branch below is deliberately left alone so the wheels drift back to
+  // centre on their own rather than freezing at whatever lock they were at.
+  if (!freecamActive && keys.a) vehicleState.steerAngle += params.steerRate * dt * _controlAtten
+  if (!freecamActive && keys.d) vehicleState.steerAngle -= params.steerRate * dt * _controlAtten
 
   if (freecamActive || (!keys.a && !keys.d)) {
     // Decay toward zero at steerDecayRate (rad/s)

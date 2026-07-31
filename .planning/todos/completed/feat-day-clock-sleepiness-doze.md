@@ -1,8 +1,9 @@
 ---
 id: FEAT-47
 type: feature
-status: open
+status: completed
 opened: 2026-07-29
+closed: 2026-07-30
 severity: major
 source: roadmap pass 2026-07-29 — the SM-1 gate
 relates_to: >
@@ -135,3 +136,32 @@ own terms.
   somewhere sleepable, and dozing on a mountain road is terrifying.
 - Headless gates unaffected: the doze is flag-gated off, the day clock advances from a pinned
   `runState`, and no existing gate regresses.
+
+## Resolution (2026-07-30, SM-1 worktree feature/sm-1)
+
+Shipped as `src/day.js` (DaySystem + DAY_PARAMS + `runState`) across Phases A/B/D — commits
+204793d (clock), 6ce2ef0 (energy/blinks/doze/coffee), f4bedb1 (sleep). Gate: `test/day-clock.mjs`
+(2594752).
+
+**The owner ratified the concrete mechanics in-session 2026-07-30, superseding this ticket's open
+questions** (the curve-shape question is answered by the ladder, attenuate-vs-cut by "inputs drop
+to zero during the hold"):
+
+- **Energy, not abstract sleepiness**: hours-of-waking remaining, full = 18 h, draining 1:1 with
+  the in-game clock. Stages read the remainder: **sleepy** ≤ 4 h (14 h awake) — eyelid-animation
+  blinks only; **tired** ≤ 2 h (16 h) — one long harmless *signal* blink on entry, then 200–600 ms
+  dozes (control loss for exactly the hold); **exhausted** ≤ 0 (18 h) — 400–1000 ms dozes. Blink
+  cadence ~1 per in-game hour per stage (Poisson, per-stage tunables).
+- **Coffee is a net-positive loan**: +5 h now, −3 h charged once at the next wake (settled
+  *before* the full-tank clamp, so sleeping in genuinely pays it off).
+- **24-min day** on a quantized sky-push ladder (`dayLookQuantH`) because `setTimeOfDay` re-bakes
+  the sky cubemap + impostor atlas per call.
+- **SM-INV-12**: `runState = { day }` introduced here; advances only at midnight/sleep boundaries;
+  blinks flag-gated OFF by default and provably inert (the gate's headline check).
+- **SM-INV-3 held**: no HUD meter anywhere; the eyelids are the readout; numbers live in the
+  'Story · Day (FEAT-47)' debug folder only.
+
+Deliberately NOT built: the doze's eyes-closed *content* (the Roamer's channel — owner-gated,
+SM-5); coffee as an inventory item (SM-2/SM-3 — it is a debug-panel button until items exist);
+any wear/economy coupling. The acceptance line "dozing on a mountain road is frightening and
+survivable" is a feel judgment left to the owner's drive.
