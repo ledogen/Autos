@@ -46,8 +46,10 @@ export const CAMP_PARAMS = {
     campGradeAreaM:  6,     // m — the square the site is graded over (flatness)
     campShadeR:      10,    // m — tree-count reach for the shade score (owner, 2026-07-30: shade
                             // reads a wider ring than flatness — a pine 8 m off still shades the pad)
-    campMaxUnevenM:  0.6,   // m — spread at/above which the flatness SCORE bottoms out at zero.
-                            // (Was also the campable gate; split 2026-07-31 — see campGateUnevenM.)
+    campMaxUnevenM:  0.9,   // m — spread at/above which the flatness SCORE bottoms out at zero.
+                            // (Was also the campable gate; split 2026-07-31 — see campGateUnevenM.
+                            // 0.6 → 0.9 same day: the score curve was too strict — ordinary decent
+                            // ground was reading as mediocre.)
     campGateUnevenM: 1.2,   // m — spread above which a site is NOT campable at all (owner,
                             // 2026-07-31: the shared 0.6 floor made even a crappy site too hard to
                             // find on hilly ground). Between the two, a site camps at zero flatness
@@ -349,11 +351,19 @@ export class CampSystem {
             if (!flattest || c.spread < flattest.spread) flattest = c
             if (c.flat) flats.push(c)
         }
+        // ONE STREAM SCAN PER RAY END, SHARED BY EVERY CANDIDATE (owner, 2026-07-31). Stream probing
+        // was the amenity pass's dominant cost (~40 streamChannelAt per candidate); now two fixed
+        // scans — at the road edge and at the tether limit — collect hit POINTS, and each candidate
+        // just measures distance to them. Two ends rather than one so the far half of a wide tether
+        // can still see water beyond the near scan's reach.
+        const waterPts = []
+        this._streamScan(nr.roadX + nr.nx * lat0, nr.roadZ + nr.nz * lat0, P, waterPts)
+        this._streamScan(nr.roadX + nr.nx * (lat0 + reach), nr.roadZ + nr.nz * (lat0 + reach), P, waterPts)
         flats.sort((a, b) => b.flatScore - a.flatScore)
         let best = null
         for (const c of flats) {
             if (best && c.flatScore + AMENITY_MAX <= best.vibe) break
-            this._gradeAmenity(c, P)
+            this._gradeAmenity(c, P, waterPts)
             if (!best || c.vibe > best.vibe) best = c
         }
 
@@ -361,7 +371,7 @@ export class CampSystem {
         // spot found, so the debug spread read-out still describes real ground rather than Infinity.
         const pick = best || flattest
         if (!pick) return out
-        if (!best) this._gradeAmenity(pick, P)
+        if (!best) this._gradeAmenity(pick, P, waterPts)
 
         out.spread = pick.spread
         out.flat = pick.flat
@@ -420,13 +430,13 @@ export class CampSystem {
     }
 
     /** Shade + water for a candidate that has already passed _gradeFlat. Mutates `c` in place. */
-    _gradeAmenity (c, P) {
+    _gradeAmenity (c, P, waterPts) {
         // ── shade (up to 0.3) — tree quantity inside the grading area ─────────────────────────
         c.trees = this._d.treesNear?.(c.x, c.z, P.campShadeR) ?? 0
         c.shadeScore = VIBE_W.shade * clamp01(c.trees / Math.max(1, P.campShadeFullN))
 
         // ── water (up to 0.2) — how close the nearest water is ────────────────────────────────
-        c.waterDist = this._waterDistance(c.x, c.z, P)
+        c.waterDist = this._waterDistance(c.x, c.z, P, waterPts)
         c.waterFound = c.waterDist <= P.campWaterR
         c.waterScore = VIBE_W.water * clamp01(
             (P.campWaterR - c.waterDist) / Math.max(1e-6, P.campWaterR - P.campWaterBestM))
@@ -446,7 +456,36 @@ export class CampSystem {
      * NB: streamChannelAt ALWAYS returns a record ({inChannel:false,inBank:false,stream:null} away
      * from any stream) — it must be READ, never truth-tested.
      */
-    _waterDistance (x, z, P) {
+    /**
+     * Ring/spoke stream scan around one point, pushing every probe position that lands in a stream
+     * channel or bank into `pts`. No early exit: 40 probes flat, and hits in EVERY direction are
+     * kept — a candidate 30 m along the ray wants the hit on its own side, not just the first one
+     * this scan happened to meet. NB streamChannelAt always returns a record; read it, never
+     * truth-test it.
+     */
+    _streamScan (x, z, P, pts) {
+        const water = this._d.getWater?.()
+        if (!water?.streamChannelAt) return
+        const c = water.streamChannelAt(x, z)
+        if (c && (c.inChannel || c.inBank)) pts.push({ x, z })
+        const R = P.campWaterR, RINGS = 5, SPOKES = 8
+        for (let i = 1; i <= RINGS; i++) {
+            const r = (i / RINGS) * R
+            for (let k = 0; k < SPOKES; k++) {
+                const a = (k / SPOKES) * Math.PI * 2
+                const px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r
+                const s = water.streamChannelAt(px, pz)
+                if (s && (s.inChannel || s.inBank)) pts.push({ x: px, z: pz })
+            }
+        }
+    }
+
+    /**
+     * Nearest water from (x,z): exact pond distance (pondsInBBox is memoized and cheap), one
+     * self-probe for standing in a stream, and the shared per-ray stream points from _streamScan —
+     * the per-candidate ring scan this replaces was the amenity pass's dominant cost.
+     */
+    _waterDistance (x, z, P, waterPts) {
         const water = this._d.getWater?.()
         if (!water) return Infinity
         const R = P.campWaterR
@@ -458,18 +497,11 @@ export class CampSystem {
                 if (d < best) best = Math.max(0, d)
             }
         }
-        if (water.streamChannelAt) {
-            const c = water.streamChannelAt(x, z)
-            if (c && (c.inChannel || c.inBank)) return 0
-            const RINGS = 5, SPOKES = 8
-            for (let i = 1; i <= RINGS && best > (i / RINGS) * R; i++) {
-                const r = (i / RINGS) * R
-                for (let k = 0; k < SPOKES; k++) {
-                    const a = (k / SPOKES) * Math.PI * 2
-                    const s = water.streamChannelAt(x + Math.cos(a) * r, z + Math.sin(a) * r)
-                    if (s && (s.inChannel || s.inBank)) { best = Math.min(best, r); break }
-                }
-            }
+        const c = water.streamChannelAt?.(x, z)
+        if (c && (c.inChannel || c.inBank)) return 0
+        if (waterPts) for (const p of waterPts) {
+            const d = Math.hypot(p.x - x, p.z - z)
+            if (d < best) best = d
         }
         return best
     }
