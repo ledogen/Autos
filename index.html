@@ -421,8 +421,11 @@
       color: #ffe89a;
       z-index: 88;
       pointer-events: none;
-      white-space: pre;
+      /* NO white-space:pre here (unlike #poi-prompt): the children are block elements, and pre
+         renders the markup's own newlines between them as literal blank lines — which is exactly
+         the mystery height the owner screenshotted on 2026-07-31. */
       text-align: center;
+      line-height: 1.3;
     }
     /* The seek toggle — the only clickable thing in the prompt (the prompt itself stays
        pointer-events:none so it never eats a drag on the world). Collapsed, it is the whole UI. */
