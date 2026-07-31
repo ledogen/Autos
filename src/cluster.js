@@ -25,12 +25,20 @@ const DEG = Math.PI / 180
 
 // Layout in CSS pixels (canvas logical size — scaled by devicePixelRatio at construction).
 // Temp and fuel are staggered like the reference — temp high and inboard, fuel low and outboard.
-const W = 400
-const H = 188
-const TEMP  = { cx: 82,  cy: 60,  well: 33, scaleR: 26, start: 215, sweep: 110 }
-const FUEL  = { cx: 58,  cy: 126, well: 33, scaleR: 26, start: 215, sweep: 110 }
-const TACH  = { cx: 176, cy: 92,  well: 62, scaleR: 54, start: 135, sweep: 195, max: 6 }    // ×1000 RPM
-const SPEEDO= { cx: 314, cy: 92,  well: 70, scaleR: 62, start: 135, sweep: 270, max: 120 }  // MPH
+const W = 416
+const H = 192
+const TEMP  = { cx: 86,  cy: 62,  well: 33, scaleR: 26, start: 215, sweep: 110 }
+const FUEL  = { cx: 62,  cy: 128, well: 33, scaleR: 26, start: 215, sweep: 110 }
+const TACH  = { cx: 180, cy: 94,  well: 62, scaleR: 54, start: 135, sweep: 195, max: 6 }    // ×1000 RPM
+const SPEEDO= { cx: 318, cy: 94,  well: 70, scaleR: 62, start: 135, sweep: 270, max: 120 }  // MPH
+
+// Indent geometry (the recessed regions the dials sit in) and the housing margin around them.
+// The housing outline is NOT drawn as its own shape: it is the indent geometry dilated by
+// MARGIN, so it frames every indent with a constant offset and follows their curves — including
+// the concave pinches where neighbouring shapes meet.
+const POD_R    = 39   // radius of the temp/fuel capsule indent
+const DIAL_PAD = 8    // indent ring visible around the tach/speedo wells
+const MARGIN   = 13   // constant housing frame around the indents
 
 const FACE   = '#171412'   // gauge face / panel
 const WHITE  = '#e8e6e0'
@@ -124,24 +132,12 @@ export class GaugeCluster {
     const ctx = this._bg.getContext('2d')
     ctx.scale(this._dpr, this._dpr)
 
-    // Housing: traced to the cluster's clear-plastic lens outline — arched top over the two big
-    // dials, sloping down over the small-gauge pod on the left, rounded end caps, and a gently
-    // bellied bottom edge. Faint inset stroke fakes the lens-edge highlight.
-    this._lensPath(ctx)
-    ctx.fillStyle = '#282320'
-    ctx.fill()
-    ctx.strokeStyle = 'rgba(0,0,0,0.8)'
-    ctx.lineWidth = 2
-    ctx.stroke()
-    ctx.save()
-    ctx.translate(W / 2, H / 2)
-    ctx.scale(0.985, 0.98)
-    ctx.translate(-W / 2, -H / 2)
-    this._lensPath(ctx)
-    ctx.restore()
-    ctx.strokeStyle = 'rgba(255,255,255,0.07)'
-    ctx.lineWidth = 1
-    ctx.stroke()
+    // Housing: successive dilations of the indent geometry. Each layer fully covers the next
+    // larger one except for its outer band, so the visible result is a 2px dark rim, a 1.5px
+    // edge highlight, then the housing face — all as true constant-offset curves of the indents.
+    this._fillDilated(ctx, MARGIN + 2, 'rgba(10,8,7,0.9)')   // outer dark rim
+    this._fillDilated(ctx, MARGIN, '#3a332e')                 // edge highlight band
+    this._fillDilated(ctx, MARGIN - 1.5, '#282320')           // housing face
 
     this._paintIndents(ctx)
     for (const g of [TEMP, FUEL, TACH, SPEEDO]) this._paintWell(ctx, g)
@@ -154,20 +150,24 @@ export class GaugeCluster {
     this._paintSpeedo(ctx)
   }
 
-  // The housing outline (clockwise from the top-right corner), traced from the owner's markup of
-  // the reference: nearly flat top that slopes down over the small-gauge pod, a big rounded nose
-  // on the left end, a gently bellied bottom that rises to the right, and a near-vertical right
-  // edge — the cut line where the oil/battery pod was trimmed off.
-  _lensPath (ctx) {
+  // Fill the indent geometry dilated by `pad`: the pod capsule grows to radius POD_R+pad (a
+  // thick round-capped stroke between the two pod centers IS that capsule), the dial discs grow
+  // to well+DIAL_PAD+pad. Where the dilated shapes overlap they merge into one silhouette, so
+  // the union's outline is a true constant-offset frame around all the indents.
+  _fillDilated (ctx, pad, style) {
+    ctx.strokeStyle = style
+    ctx.fillStyle = style
+    ctx.lineCap = 'round'
+    ctx.lineWidth = (POD_R + pad) * 2
     ctx.beginPath()
-    ctx.moveTo(390, 12)                            // top-right (trim cut corner)
-    ctx.bezierCurveTo(300, 5, 200, 5, 150, 9)      // flat top over speedo + tach
-    ctx.bezierCurveTo(96, 12, 64, 18, 46, 32)      // slope down over the pod
-    ctx.bezierCurveTo(18, 52, 8, 74, 8, 100)       // left nose
-    ctx.bezierCurveTo(8, 130, 20, 158, 50, 170)    // nose rounds into the bottom
-    ctx.bezierCurveTo(90, 182, 150, 186, 220, 184) // bottom belly
-    ctx.bezierCurveTo(290, 182, 350, 174, 388, 166)// bottom rises toward the cut
-    ctx.closePath()                                // straight vertical trim cut back to the top
+    ctx.moveTo(TEMP.cx, TEMP.cy)
+    ctx.lineTo(FUEL.cx, FUEL.cy)
+    ctx.stroke()
+    for (const g of [TACH, SPEEDO]) {
+      ctx.beginPath()
+      ctx.arc(g.cx, g.cy, g.well + DIAL_PAD + pad, 0, Math.PI * 2)
+      ctx.fill()
+    }
   }
 
   // Recessed regions the dial faces sit in (the "indents" on the real cluster): a capsule around
@@ -176,11 +176,9 @@ export class GaugeCluster {
   _paintIndents (ctx) {
     const FILL = '#1a1613'
     const RIM  = 'rgba(0,0,0,0.55)'
-    // Pod capsule: a thick round-capped stroke between the two centers IS the capsule shape;
-    // stroking it 3px wider in the rim color first leaves a 1.5px border ring.
-    const R = 39
+    // Pod capsule: stroking it 3px wider in the rim color first leaves a 1.5px border ring.
     ctx.lineCap = 'round'
-    for (const [style, w] of [[RIM, R * 2 + 3], [FILL, R * 2]]) {
+    for (const [style, w] of [[RIM, POD_R * 2 + 3], [FILL, POD_R * 2]]) {
       ctx.strokeStyle = style
       ctx.lineWidth = w
       ctx.beginPath()
@@ -188,7 +186,7 @@ export class GaugeCluster {
       ctx.lineTo(FUEL.cx, FUEL.cy)
       ctx.stroke()
     }
-    this._dialUnionPath(ctx, TACH, TACH.well + 8, SPEEDO, SPEEDO.well + 8)
+    this._dialUnionPath(ctx, TACH, TACH.well + DIAL_PAD, SPEEDO, SPEEDO.well + DIAL_PAD)
     ctx.fillStyle = FILL
     ctx.fill()
     ctx.strokeStyle = RIM
