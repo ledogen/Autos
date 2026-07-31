@@ -137,12 +137,23 @@
     }
     #story-loading #sl-text { font-size: 13px; color: #8fa0b0; }
     #story-loading .sl-hint { font-size: 11px; color: #55636f; max-width: 460px; text-align: center; line-height: 1.6; }
-    /* FEAT-43: Quick Job launcher (in-mode corner button). */
+    /* FEAT-49: gauge cluster overlay (src/cluster.js draws it). Bottom-right; z 86 keeps it
+       under the map (90), mission panel (95) and quickjob button (96). */
+    #cluster {
+      position: fixed;
+      right: 14px;
+      bottom: 14px;
+      z-index: 86;
+      pointer-events: none;
+      user-select: none;
+    }
+    /* FEAT-43: Quick Job launcher (in-mode corner button). Raised above the gauge cluster
+       (FEAT-49), which owns the bottom-right corner. */
     #quickjob-btn {
       display: none;
       position: fixed;
       right: 14px;
-      bottom: 14px;
+      bottom: 200px;
       background: rgba(0, 0, 0, 0.72);
       border: 1px solid #4a5a6a;
       color: #cfd6dd;
@@ -386,10 +397,10 @@
        (z 100). Hidden by default; src/map2d.js owns its draw + pan/zoom handlers. -->
   <canvas id="map2d" style="position:fixed; inset:0; display:none; z-index:90; background:rgba(10,12,16,0.92); cursor:grab;"></canvas>
 
-  <!-- HUD overlay — Plan 03 wires speed readout; element must exist now -->
+  <!-- Debug HUD overlay. Speed/gear/RPM readouts moved to the gauge cluster (FEAT-49) —
+       this panel keeps only the diagnostics the cluster can't show. -->
   <div id="hud">
-    SPEED: <span id="speedVal">0.0</span> km/h<br>
-    GEAR: <span id="gearVal">1</span> &nbsp; RPM: <span id="rpmVal">750</span> &nbsp; SPIN: <span id="spinVal">0.0</span><br>
+    SPIN: <span id="spinVal">0.0</span><br>
     SLIP: <span id="slipVal">0.0&deg;</span><br>
     THR: <span id="thrVal">0</span>% &nbsp; BRK: <span id="brkVal">0</span>%<br>
     FPS: <span id="fpsVal">60</span><br>
@@ -495,6 +506,10 @@
        (main.js toggles display by game mode). Later becomes a debug-only affordance once POIs give
        missions. -->
   <button id="quickjob-btn">Quick Job</button>
+
+  <!-- FEAT-49: gauge cluster canvas — src/cluster.js sizes and draws it; main.js updates it
+       per frame and hides it while the 2D map is open. -->
+  <canvas id="cluster"></canvas>
 
   <!-- Spawn-point-set toast — fades out ~3 s after any spawn change (main.js showSpawnToast). -->
   <div id="spawn-toast">spawn point set</div>

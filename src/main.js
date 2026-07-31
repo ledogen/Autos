@@ -48,6 +48,7 @@ import { SkySystem } from './sky.js'                        // QUAL-02: atmosphe
 import { parseWorldSeed, seedFor } from './seed.js'
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
+import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger gauge cluster overlay
 import { MissionSystem, MISSION_PLAN_RADIUS, PLAN_RESTREAM_MOVE } from './mission.js'  // story mode (beta)
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
@@ -1181,6 +1182,12 @@ const map2d = new Map2D({
     map2d.hide()   // close the map so the teleport is immediately visible
   }
 })
+
+// FEAT-49: gauge cluster (bottom-right canvas overlay). The odometer seeds to a random jalopy
+// mileage at boot and RE-seeds on every story-mode entry — "the next run's jalopy". Fuel/temp
+// needles are placeholders until the fuel (FEAT-50) and coolant (FEAT-51) models drive them.
+const gaugeCluster = new GaugeCluster(document.getElementById('cluster'))
+gaugeCluster.seedOdometer()
 
 // ── Terrain + ramp ────────────────────────────────────────────────────────────
 // M1-13: terrain query. Phase 6 replaces body, signature unchanged.
@@ -2639,6 +2646,7 @@ function _hideSeedModal () {
 function _startStoryFromModal () {
   const seed = document.getElementById('ss-seed')?.value ?? '6'
   _hideSeedModal()
+  gaugeCluster.seedOdometer()   // FEAT-49: a story entry is a fresh run — fresh jalopy, fresh mileage
   storySystem.enter(seed)
 }
 document.getElementById('ss-start')?.addEventListener('click', _startStoryFromModal)
@@ -3197,15 +3205,9 @@ function loop () {
     // FEAT-46: the POI prompt. Same ~10 Hz cadence — it's a proximity affordance, not a trigger.
     _updatePoiPrompt()
 
-    // M1-11: live speed readout. velocity.length() = magnitude in m/s; * 3.6 converts to km/h.
-    document.getElementById('speedVal').textContent = (vehicleState.velocity.length() * 3.6).toFixed(1)
-
-    // FEAT-23: gear + engine RPM readout (activeGear 0 = reverse, 1..N = forward gear).
+    // FEAT-49: speed/gear/RPM moved off the text HUD onto the gauge cluster; only the wheelspin
+    // diagnostic (no cluster equivalent) stays here.
     if (dtrain) {
-      const gEl = document.getElementById('gearVal')
-      if (gEl) gEl.textContent = dtrain.activeGear === 0 ? 'R' : String(dtrain.activeGear)
-      const rEl = document.getElementById('rpmVal')
-      if (rEl) rEl.textContent = Math.round(dtrain.engineRPM)
       const spEl = document.getElementById('spinVal')
       if (spEl) {
         const spin = dtrain.wheelspin || 0
@@ -3287,6 +3289,11 @@ function loop () {
 
   // FEAT-16: redraw the 2D map overlay only while it's open (off the hot path otherwise).
   if (map2d.isOpen()) map2d.render()
+
+  // FEAT-49: gauge cluster — every frame (needles must be smooth, unlike the 10 Hz text HUD),
+  // hidden while the map is open, live in chase/hood/freecam alike. update() early-outs when hidden.
+  gaugeCluster.setVisible(!map2d.isOpen())
+  gaugeCluster.update(frameTime, vehicleState.velocity.length(), vehicleState.drivetrain?.engineRPM ?? 0)
 
   // feature/teleport: show the "teleport here" button only in free-cam + free-roam. Toggle on
   // change to avoid touching the DOM every frame.
