@@ -176,7 +176,8 @@ export class GaugeCluster {
     const pA = pt(T, nA)
     const pB = pt(S, nB)
     const X = this._lineHit(pA, { x: -nA.y, y: nA.x }, pB, { x: -nB.y, y: nB.x })
-    X.y -= 5
+    X.y -= 22   // visor arc height — the tangent-line intersection sits almost on the chord,
+                // so without this lift the "curve" renders as a straight line
     ctx.fillStyle = style
     ctx.beginPath()
     ctx.arc(T.x, T.y, T.r, ang(nD), ang(nA))   // pod top-left shoulder
