@@ -2276,9 +2276,10 @@ function _updateParkTriggers () {
   const showCamp = !poi && (camp || moms) && !_campUi
   campEl.style.display = showCamp ? 'block' : 'none'
   // The world-space ring: only while the camp prompt is offering a spot that could actually be
-  // taken. Not while collapsed, not at mom's (no pad), not once the dialogue is up (the cube
-  // takes over).
-  _updateCampMarker(showCamp && seeking && camp.withinTether && camp.flat ? camp : null)
+  // taken. Not while collapsed, not at mom's (no pad). Once the dialogue is up the DIALOGUE owns
+  // the ring — the confirm face leaves it standing on the site it is asking about — so this 10 Hz
+  // poll must not stamp it off underneath (showCamp is false whenever _campUi is set).
+  if (!_campUi) _updateCampMarker(showCamp && seeking && camp.withinTether && camp.flat ? camp : null)
   if (!showCamp) return
   const vibeEl = document.getElementById('camp-vibe')
   const legEl  = document.getElementById('camp-vibe-legend')
@@ -2437,6 +2438,13 @@ function _syncSleepRow () {
   }
 }
 
+// Ground flavour for the confirm face's stats line. Both cuts sit well inside camp.js's two
+// spread thresholds — campMaxUnevenM 0.9 m (where the flatness SCORE reaches zero) and
+// campGateUnevenM 1.2 m (where the site stops being campable at all) — so by the time the word
+// reads "hilly" the yellow segment is already nearly gone, and the two agree.
+const CAMP_FLAT_M = 0.2   // m of spread at/below which the ground reads as dead flat
+const CAMP_TILT_M = 0.6   // …and at/below which it is merely inclined; above that, hilly
+
 /**
  * Render the camp dialogue. day.js/camp.js stay renderer-agnostic (the mission-panel pattern) —
  * this is the only place camp state becomes DOM.
@@ -2450,11 +2458,12 @@ function _renderCampUI () {
   const show = (id, on) => { const e = document.getElementById(id); if (e) e.style.display = on ? '' : 'none' }
   const set  = (id, txt) => { const e = document.getElementById(id); if (e) e.textContent = txt }
   const isSleep = st.mode === 'sleep'
+  const isConfirm = st.mode === 'confirm'
   const vibe = st.moms ? 0.5 : (st.site?.vibe ?? 0)
 
   set('cp-title', st.moms ? "mom's house" : 'camp')
-  show('cp-make',   st.mode === 'confirm')
-  show('cp-cancel', st.mode === 'confirm')
+  show('cp-make',   isConfirm)
+  show('cp-cancel', isConfirm)
   show('cp-break',  st.mode === 'camp' || st.mode === 'moms')
   show('cp-sleep',  st.mode === 'camp' || st.mode === 'moms')
   show('cp-fish',   st.mode === 'camp' && !!st.site?.waterFound)
@@ -2462,13 +2471,32 @@ function _renderCampUI () {
   show('cp-sleep-back', isSleep)
   show('cp-sleep-panel', isSleep)
   set('cp-break', st.moms ? 'leave' : 'break camp')
+  show('cp-vibe',        isConfirm)
+  show('cp-vibe-legend', isConfirm)
+  if (isConfirm) _renderVibeBar(st.site, document.getElementById('cp-vibe'))
+
+  // The confirm face LOOKS at the ground it is asking about: camera onto the graded site and the
+  // siting ring left standing on it. Same seam _enterCampScene uses, so committing is a re-target
+  // rather than a hand-off; abandoning goes through _closeCampUi → _exitCampScene, which clears
+  // both. Every other face drops the ring — camp has the cube, mom's and the timer have no site.
+  if (isConfirm && st.site?.pad) {
+    const pad = st.site.pad
+    setCameraFocus({ x: pad.x, y: pad.y + 1, z: pad.z })
+    _updateCampMarker(st.site)
+  } else {
+    _updateCampMarker(null)
+  }
 
   const body = document.getElementById('cp-body')
   if (body) {
-    if (st.mode === 'confirm') {
-      body.innerHTML = 'flat ground, off the road.<br>'
-        + `<span class="cp-dim">vibe ${(vibe * 100) | 0}% &middot; ${st.site.trees} trees`
-        + (st.site.waterFound ? ` &middot; water ${st.site.waterDist.toFixed(0)} m` : '') + '</span>'
+    if (isConfirm) {
+      const sp = st.site.spread
+      const ground = sp <= CAMP_FLAT_M ? 'dead flat' : sp <= CAMP_TILT_M ? 'inclined' : 'hilly'
+      body.innerHTML = `<span class="cp-stat">vibe ${(vibe * 100) | 0}%</span>`
+        + ` &middot; <span class="cp-flat">${ground}</span>`
+        + ` &middot; <span class="cp-trees">${st.site.trees} trees</span>`
+        // No water ⇒ the word is simply absent. A greyed "fishable" would read as a broken promise.
+        + (st.site.waterFound ? ' &middot; <span class="cp-water">fishable</span>' : '')
     } else if (isSleep) {
       body.innerHTML = '<span class="cp-dim">how long?</span>'
     } else if (st.moms) {

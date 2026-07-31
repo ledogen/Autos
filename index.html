@@ -413,7 +413,9 @@
       transform: translateX(-50%);
       background: rgba(0, 0, 0, 0.62);
       border: 1px solid #ffdc3c;
-      padding: 8px 18px;
+      /* Vertical padding is deliberately half the horizontal look (owner, 2026-07-31): both prompt
+         states sat too tall over the road. Widths and type sizes are untouched. */
+      padding: 4px 18px;
       font-family: monospace;
       font-size: 15px;
       color: #ffe89a;
@@ -427,7 +429,7 @@
     #camp-seek-toggle {
       pointer-events: auto;
       display: block;
-      margin: 0 auto 6px;
+      margin: 0 auto 3px;
       background: none;
       border: none;
       color: #ffe89a;
@@ -441,19 +443,25 @@
     #camp-prompt.collapsed { border-color: rgba(255, 220, 60, 0.45); background: rgba(0, 0, 0, 0.45); }
     #camp-prompt.collapsed #camp-seek-toggle { margin-bottom: 0; }
     /* The vibe bar: ONE bar, three stacked segments. Their max widths ARE the score weights
-       (50 / 30 / 20 %) — JS only ever writes the three widths. */
+       (50 / 30 / 20 %) — JS only ever writes the three widths. Shared by the prompt and the
+       confirm face; two roots, one renderer (_renderVibeBar). */
     .vibe-bar {
       width: 260px;
       height: 8px;
-      margin: 0 auto 8px;
+      margin: 0 auto 4px;
       background: rgba(255,255,255,0.09);
       border: 1px solid #55606b;
       display: flex;
       overflow: hidden;
     }
+    /* ONE COLOUR CODE across the bar, the legend and the confirm face's stats line (owner,
+       2026-07-31): yellow = flatness, green = shade/trees, blue = water/fishable. The yellow is
+       deliberately duller than the #ffdc3c camping border so the two do not read as the same ink;
+       the green was darkened-green before and is now the readable one, since the stats line has to
+       carry it as text. Change one, change all four places. */
     .vibe-bar .vseg { height: 100%; width: 0%; transition: width 0.12s linear; }
-    .vibe-bar .vseg-flat  { background: #9ad86a; }   /* flatness — up to 50% of the bar */
-    .vibe-bar .vseg-shade { background: #3f9e6a; }   /* shade    — up to 30% */
+    .vibe-bar .vseg-flat  { background: #e8d44a; }   /* flatness — up to 50% of the bar */
+    .vibe-bar .vseg-shade { background: #7fd86a; }   /* shade    — up to 30% */
     .vibe-bar .vseg-water { background: #4aa8d8; }   /* water    — up to 20% */
 
     /* The legend. The bar read as one anonymous fill without it (owner, 2026-07-30) — three
@@ -465,13 +473,13 @@
       justify-content: center;
       font-size: 11px;
       color: #b9c2cb;
-      margin: -4px 0 7px;
+      margin: -2px 0 3px;
       letter-spacing: 0.04em;
     }
     .vibe-legend span { display: flex; align-items: center; gap: 4px; }
     .vibe-legend i { width: 8px; height: 8px; display: inline-block; font-style: normal; }
-    .vibe-legend .lg-flat  { background: #9ad86a; }
-    .vibe-legend .lg-shade { background: #3f9e6a; }
+    .vibe-legend .lg-flat  { background: #e8d44a; }
+    .vibe-legend .lg-shade { background: #7fd86a; }
     .vibe-legend .lg-water { background: #4aa8d8; }
 
     /* Energy meter (sleep dialogue only — never the driving HUD). Two stacked absolute layers:
@@ -510,6 +518,13 @@
     #cp-row { margin-top: 12px; display: flex; gap: 10px; align-items: center; justify-content: center; }
     #cp-hours { width: 160px; }
     .cp-dim { color: #8a939c; }
+    /* The confirm face's stats line. The three judgement words wear the vibe bar's colours (see
+       the colour-code note on .vseg-*) so the reader can tie a word to a segment; the vibe number
+       itself is neutral white because it is the sum of all three. */
+    .cp-stat  { color: #ffffff; }
+    .cp-flat  { color: #e8d44a; }
+    .cp-trees { color: #7fd86a; }
+    .cp-water { color: #4aa8d8; }
   </style>
   <!-- Bare specifiers ('three', 'three/addons/*', 'simplex-noise') are resolved by Vite from
        node_modules (PERF-04/PERF-20.5) — the old CDN importmap is retired. See vite.config.js. -->
@@ -644,6 +659,19 @@
        (_renderCampUI); camp.js and day.js stay renderer-agnostic. -->
   <div id="camp-panel">
     <div class="mp-title" id="cp-title">camp</div>
+    <!-- The confirm face's copy of the vibe bar (owner, 2026-07-31): the decision to dig is made
+         here, so the score has to be here too. Second root, same renderer — the prompt's instance
+         is untouched. Hidden on every other face. -->
+    <div class="vibe-bar" id="cp-vibe" style="display:none;">
+      <div class="vseg vseg-flat"></div>
+      <div class="vseg vseg-shade"></div>
+      <div class="vseg vseg-water"></div>
+    </div>
+    <div class="vibe-legend" id="cp-vibe-legend" style="display:none;">
+      <span><i class="lg-flat"></i>flat</span>
+      <span><i class="lg-shade"></i>shade</span>
+      <span><i class="lg-water"></i>water</span>
+    </div>
     <div id="cp-body"></div>
     <!-- Sleep face: the energy meter + the integer-hour timer. Static markup (the slider keeps its
          one listener) — only its display and the two live numbers are written. -->
@@ -660,7 +688,7 @@
     </div>
     <div id="cp-actions" class="mp-felt-row" style="margin-top:14px; gap:8px;">
       <button id="cp-make">make camp &middot; 30 min</button>
-      <button id="cp-cancel">cancel</button>
+      <button id="cp-cancel">abandon</button>
       <button id="cp-break">break camp</button>
       <button id="cp-sleep">sleep</button>
       <button id="cp-fish" disabled title="not implemented yet">fish (wip)</button>
