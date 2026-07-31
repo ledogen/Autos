@@ -26,9 +26,9 @@ const DEG = Math.PI / 180
 // Layout in CSS pixels (canvas logical size — scaled by devicePixelRatio at construction).
 // Temp and fuel are staggered like the reference — temp high and inboard, fuel low and outboard.
 const W = 400
-const H = 184
-const TEMP  = { cx: 74,  cy: 48,  well: 34, scaleR: 26, start: 215, sweep: 110 }
-const FUEL  = { cx: 56,  cy: 122, well: 34, scaleR: 26, start: 215, sweep: 110 }
+const H = 188
+const TEMP  = { cx: 82,  cy: 60,  well: 33, scaleR: 26, start: 215, sweep: 110 }
+const FUEL  = { cx: 58,  cy: 126, well: 33, scaleR: 26, start: 215, sweep: 110 }
 const TACH  = { cx: 176, cy: 92,  well: 62, scaleR: 54, start: 135, sweep: 195, max: 6 }    // ×1000 RPM
 const SPEEDO= { cx: 314, cy: 92,  well: 70, scaleR: 62, start: 135, sweep: 270, max: 120 }  // MPH
 
@@ -128,7 +128,7 @@ export class GaugeCluster {
     // dials, sloping down over the small-gauge pod on the left, rounded end caps, and a gently
     // bellied bottom edge. Faint inset stroke fakes the lens-edge highlight.
     this._lensPath(ctx)
-    ctx.fillStyle = '#211d1a'
+    ctx.fillStyle = '#282320'
     ctx.fill()
     ctx.strokeStyle = 'rgba(0,0,0,0.8)'
     ctx.lineWidth = 2
@@ -143,6 +143,7 @@ export class GaugeCluster {
     ctx.lineWidth = 1
     ctx.stroke()
 
+    this._paintIndents(ctx)
     for (const g of [TEMP, FUEL, TACH, SPEEDO]) this._paintWell(ctx, g)
 
     this._paintSmallGauge(ctx, TEMP, 'C', 'H', 1)   // red mark at the H end
@@ -153,19 +154,67 @@ export class GaugeCluster {
     this._paintSpeedo(ctx)
   }
 
-  // The clear-lens outline (clockwise from the left mid-edge). Control points hand-fit to read
-  // as the reference lens: low left shoulder over the temp/fuel pod, high arch spanning the
-  // tach + speedo, rounded caps, bellied bottom.
+  // The housing outline (clockwise from the top-right corner), traced from the owner's markup of
+  // the reference: nearly flat top that slopes down over the small-gauge pod, a big rounded nose
+  // on the left end, a gently bellied bottom that rises to the right, and a near-vertical right
+  // edge — the cut line where the oil/battery pod was trimmed off.
   _lensPath (ctx) {
     ctx.beginPath()
-    ctx.moveTo(10, 96)
-    ctx.bezierCurveTo(10, 52, 26, 34, 52, 26)      // left end cap up to the pod shoulder
-    ctx.bezierCurveTo(110, 10, 150, 6, 220, 6)     // rise onto the main arch
-    ctx.bezierCurveTo(300, 8, 348, 16, 376, 30)    // arch runs over the speedo, eases down
-    ctx.bezierCurveTo(392, 44, 394, 64, 392, 96)   // right end cap
-    ctx.bezierCurveTo(388, 140, 360, 164, 318, 170)
-    ctx.bezierCurveTo(258, 178, 158, 178, 98, 170) // bellied bottom edge
-    ctx.bezierCurveTo(54, 164, 22, 146, 10, 96)    // bottom-left back up to the start
+    ctx.moveTo(390, 12)                            // top-right (trim cut corner)
+    ctx.bezierCurveTo(300, 5, 200, 5, 150, 9)      // flat top over speedo + tach
+    ctx.bezierCurveTo(96, 12, 64, 18, 46, 32)      // slope down over the pod
+    ctx.bezierCurveTo(18, 52, 8, 74, 8, 100)       // left nose
+    ctx.bezierCurveTo(8, 130, 20, 158, 50, 170)    // nose rounds into the bottom
+    ctx.bezierCurveTo(90, 182, 150, 186, 220, 184) // bottom belly
+    ctx.bezierCurveTo(290, 182, 350, 174, 388, 166)// bottom rises toward the cut
+    ctx.closePath()                                // straight vertical trim cut back to the top
+  }
+
+  // Recessed regions the dial faces sit in (the "indents" on the real cluster): a capsule around
+  // the staggered temp/fuel pod, and the UNION of two discs around tach + speedo — the union
+  // outline pinches between the dials exactly like the raised face edge on the reference.
+  _paintIndents (ctx) {
+    const FILL = '#1a1613'
+    const RIM  = 'rgba(0,0,0,0.55)'
+    // Pod capsule: a thick round-capped stroke between the two centers IS the capsule shape;
+    // stroking it 3px wider in the rim color first leaves a 1.5px border ring.
+    const R = 39
+    ctx.lineCap = 'round'
+    for (const [style, w] of [[RIM, R * 2 + 3], [FILL, R * 2]]) {
+      ctx.strokeStyle = style
+      ctx.lineWidth = w
+      ctx.beginPath()
+      ctx.moveTo(TEMP.cx, TEMP.cy)
+      ctx.lineTo(FUEL.cx, FUEL.cy)
+      ctx.stroke()
+    }
+    this._dialUnionPath(ctx, TACH, TACH.well + 8, SPEEDO, SPEEDO.well + 8)
+    ctx.fillStyle = FILL
+    ctx.fill()
+    ctx.strokeStyle = RIM
+    ctx.lineWidth = 1.5
+    ctx.stroke()
+  }
+
+  // Single closed path for the union of two overlapping discs: one arc on each circle between
+  // the two intersection points, running the long way around. Falls back to two full circles
+  // if they don't overlap (layout change safety).
+  _dialUnionPath (ctx, c1, r1, c2, r2) {
+    const dx = c2.cx - c1.cx; const dy = c2.cy - c1.cy
+    const d = Math.hypot(dx, dy)
+    ctx.beginPath()
+    if (d >= r1 + r2) {
+      ctx.arc(c1.cx, c1.cy, r1, 0, Math.PI * 2)
+      ctx.arc(c2.cx, c2.cy, r2, 0, Math.PI * 2)
+      return
+    }
+    const base = Math.atan2(dy, dx)
+    const a = (d * d + r1 * r1 - r2 * r2) / (2 * d)   // distance from c1 to the chord
+    const h = Math.sqrt(Math.max(0, r1 * r1 - a * a))
+    const t1 = Math.atan2(h, a)                        // intersection half-angle seen from c1
+    const t2 = Math.atan2(h, d - a)                    // …and from c2
+    ctx.arc(c1.cx, c1.cy, r1, base - t1, base + t1, true)                          // around c1's far side
+    ctx.arc(c2.cx, c2.cy, r2, base + Math.PI - t2, base + Math.PI + t2, true)      // around c2's far side
     ctx.closePath()
   }
 
