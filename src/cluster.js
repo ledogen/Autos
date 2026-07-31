@@ -26,11 +26,11 @@ const DEG = Math.PI / 180
 // Layout in CSS pixels (canvas logical size — scaled by devicePixelRatio at construction).
 // Temp and fuel are staggered like the reference — temp high and inboard, fuel low and outboard.
 const W = 416
-const H = 192
-const TEMP  = { cx: 86,  cy: 62,  well: 33, scaleR: 26, start: 215, sweep: 110 }
-const FUEL  = { cx: 62,  cy: 128, well: 33, scaleR: 26, start: 215, sweep: 110 }
-const TACH  = { cx: 180, cy: 94,  well: 62, scaleR: 54, start: 135, sweep: 195, max: 6 }    // ×1000 RPM
-const SPEEDO= { cx: 318, cy: 94,  well: 70, scaleR: 62, start: 135, sweep: 270, max: 120 }  // MPH
+const H = 200
+const TEMP  = { cx: 86,  cy: 70,  well: 33, scaleR: 26, start: 215, sweep: 110 }
+const FUEL  = { cx: 62,  cy: 136, well: 33, scaleR: 26, start: 215, sweep: 110 }
+const TACH  = { cx: 180, cy: 102, well: 62, scaleR: 54, start: 135, sweep: 195, max: 6 }    // ×1000 RPM
+const SPEEDO= { cx: 318, cy: 102, well: 70, scaleR: 62, start: 135, sweep: 270, max: 120 }  // MPH
 
 // Indent geometry (the recessed regions the dials sit in) and the housing margin around them.
 // The housing outline is NOT drawn as its own shape: it is the indent geometry dilated by
@@ -168,14 +168,26 @@ export class GaugeCluster {
     const nC = this._tangentNormal(S, F, (n) => n.y > 0)   // bottom, speedo → fuel
     const nD = this._tangentNormal(F, T, (n) => n.x < 0)   // left side, fuel → temp (pod side)
     const ang = (n) => Math.atan2(n.y, n.x)
+    const pt = (c, n) => ({ x: c.x + c.r * n.x, y: c.y + c.r * n.y })
     ctx.fillStyle = style
     ctx.beginPath()
     ctx.arc(T.x, T.y, T.r, ang(nD), ang(nA))   // pod top-left shoulder
+    this._bow(ctx, pt(T, nA), pt(K, nA), nA)   // top edge bows up, following the dash visor
     ctx.arc(K.x, K.y, K.r, ang(nA), ang(nB))   // tach crest
+    this._bow(ctx, pt(K, nB), pt(S, nB), nB)
     ctx.arc(S.x, S.y, S.r, ang(nB), ang(nC))   // speedo right end
-    ctx.arc(F.x, F.y, F.r, ang(nC), ang(nD))   // pod bottom-left nose
+    ctx.arc(F.x, F.y, F.r, ang(nC), ang(nD))   // pod bottom-left nose (bottom stays straight)
     ctx.closePath()
     ctx.fill()
+  }
+
+  // Replace a straight tangent segment with a slightly convex arc: a quadratic bowed outward
+  // along the tangent's normal, proportional to span (sagitta ≈ 4.5% of length). Endpoints are
+  // the exact circle touch points, so the edge stays coincident with the circles.
+  _bow (ctx, p1, p2, n) {
+    const len = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+    const k = len * 0.09
+    ctx.quadraticCurveTo((p1.x + p2.x) / 2 + n.x * k, (p1.y + p2.y) / 2 + n.y * k, p2.x, p2.y)
   }
 
   // Unit normal of the common external tangent line of circles a → b, on the side selected by
