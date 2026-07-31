@@ -98,12 +98,22 @@ maintaining one rig (new **SM-INV-15**). (5) **Run shape fixed** — ~10 regions
 run-layer); SM-INV-11 is re-keyed to run progress; SM-INV-2's run-duration par clause is flagged for
 retirement (see the note there — recommended, not yet ratified).
 
+**Ratification pass 2026-07-31** (project owner): **sleepiness has two bands, not one.** *Sleepy* is
+the warning band (yawns, "I am N km from anywhere I'd want to wake up" — the read SM-INV-6's last leg
+of the day is built on); **tired** is the danger band, where the doze actually begins. The distinction
+is now load-bearing: the Night Owl's ledger counts **only the tired band**, so he can never be reached
+by the careful player who passes through *sleepy* on the way to camp every single night. **His ledger
+is also distance-only — ~10 km driven tired, single run — the hours term is dropped**, because hours
+can be farmed in safety (park, or crawl at 5 km/h) and kilometres cannot. FEAT-47 owns defining the two
+bands; the threshold must be re-derived from wherever it puts the boundary. See `spirits-and-pacts.md`
+#01 "Summoning."
+
 **Ratification pass 2026-07-29 (b)** (project owner): **The Night Owl fleshed out**, in
 `spirits-and-pacts.md` #01 — the spirit *system* stays deferred, but the character is now specified.
 One amendment reaches this document: **the chat pane's "no dialog options" rule gains a single narrow
 exception — a pact's accept/decline** (see "Characters and dialog"). The rest is companion-doc
-detail and is recorded there: a man's body and an owl's head; summoned by ~10 tired hours **or**
-~10 tired km in one run; talked to by stopping and **pulling the handbrake**; and the bargain
+detail and is recorded there: a man's body and an owl's head; summoned by **~10 km driven tired** in
+one run; talked to by stopping and **pulling the handbrake**; and the bargain
 rewritten from a tempo boon (retired — it was a number on the truck, which SM-INV-10 forbids) to a
 **nocturnal inversion** — alert dusk-to-dawn, brutally sleepy in daylight, **with the day clock
 itself untouched**. Priced in darkness and a hostile morning only; the world does **not** close at
@@ -413,9 +423,22 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
 
 ### The day and the clock: sleepiness + doze [RATIFIED]
 
-Sleepiness is the per-run clock — soft, diegetic, no arrival deadlines. Get sleepy and you
-start **dozing**: eyes close, controls drop, periods lengthen. Not a fail state (SM-INV-1);
-the physics does the rest. Coffee is a loan: alert now, sleepy earlier tomorrow.
+Sleepiness is the per-run clock — soft, diegetic, no arrival deadlines. It runs in **two bands**
+[RATIFIED 2026-07-31]:
+
+- **Sleepy** — the warning band. Yawns and heavy eyelids; no doze yet. This is the read the whole
+  day-shape below is built on: *"I am N km from anywhere I'd want to wake up."* A careful player
+  enters this band **every day**, on purpose, as the signal to go find ground.
+- **Tired** — the danger band. This is where **dozing begins**: eyes close, controls drop, periods
+  lengthen. Not a fail state (SM-INV-1); the physics does the rest.
+
+The split exists because the two states have to mean different things to the rest of the design —
+sleepy is *information*, tired is *exposure* — and because anything metering irresponsibility (the
+Night Owl's ledger, career records, any future "driven tired" stat) must count only the second, or it
+counts a state that responsible play passes through nightly. **Where the boundary sits is FEAT-47's
+central tuning decision**, and every threshold keyed to "tired" has to be re-derived from it.
+
+Coffee is a loan: alert now, sleepy earlier tomorrow.
 
 Camping commits you to sleep where you stand, and the place sets the night's quality
 (SM-INV-6). The day's shape: work → read your eyelids → break off → hunt good ground in
@@ -610,7 +633,7 @@ physical and visible, where a perk's are numerical and quiet.
 **How a garage entry unlocks** [RATIFIED 2026-07-29] — two sources, deliberately different in kind:
 
 - **Career accumulation.** An **account-level stats screen** (distinct waters fished, nights camped,
-  tired hours driven, runs ended and how) tracks totals across the profile. Crossing a total can open
+  distance driven tired, runs ended and how) tracks totals across the profile. Crossing a total can open
   a starting vehicle. This is the legal home for cross-run accumulation: the garage is the one thing
   that persists (SM-INV-8), so career counters are fine *here* and nowhere else — they must never
   gate a spirit or buy in-run power. Stats belong to the **account**, not to the run's persona, which
@@ -643,12 +666,12 @@ Spirits do not need meta-persistence, and do not get it. The model, in four line
    ledger is first satisfied. **Once per profile, recorded as a story key** — precisely the currency
    SM-INV-8 and the Roamer's economy already deal in.
 4. **Thereafter the spirit is present but inert** until each run re-earns its ledger. The Night Owl
-   rides in your passenger seat whenever you are sleepy, every run, saying nothing — until you spend
-   the tired hours again. **The pact is re-earned at full price, every run** (no cheaper re-unlock;
+   rides in your passenger seat whenever you are *tired*, every run, saying nothing — until you drive
+   the ten tired kilometres again. **The pact is re-earned at full price, every run** (no cheaper re-unlock;
    that would be a floor).
 
 This buys "the world knows you" with **presence instead of power**, and it is the better horror
-object: a silent figure you must spend ten tired hours to make speak. **The dread persists; the
+object: a silent figure you must drive ten tired kilometres to make speak. **The dread persists; the
 power does not.**
 
 *Note the shape:* this is the **beat/labor split** the log-drag main mission already uses (`missions

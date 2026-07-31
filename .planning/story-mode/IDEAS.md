@@ -30,14 +30,15 @@ change the *shape* of a run, not the player's power floor.
 > detail, and this entry stays for the *pairing* against the camper.
 >
 > **Update 2026-07-29 (b) — he is specified now, and two things below are superseded.** A man's body
-> and an owl's head, riding in your passenger seat; summoned by ~10 tired hours **or** ~10 tired km
-> in one run; you talk to him by stopping and **pulling the handbrake**. **His bargain is a nocturnal
-> inversion** — alert dusk-to-dawn, brutally sleepy in daylight, the day clock untouched. So:
-> *"lessens the doze effect"* is **not** how he works (the doze isn't softened, it is **moved into
-> daylight**), and *"pays more for missions run while sleepy"* was never ratified and is now the less
-> likely version — the inversion is the boon, and a payout multiplier on top would be the
-> balance-sheet handout the guardrail below warns about. **The camper half of this pairing is
-> unaffected**, and the reckless-nights ↔ restful-days axis is intact.
+> and an owl's head, riding in your passenger seat; summoned by **~10 km driven tired** in one run
+> (*distance only, and only in the deep "tired" band — corrected 2026-07-31; the hours term is
+> dropped and "sleepy" is now a separate, milder state*); you talk to him by stopping and **pulling
+> the handbrake**. **His bargain is a nocturnal inversion** — alert dusk-to-dawn, brutally sleepy in
+> daylight, the day clock untouched. So: *"lessens the doze effect"* is **not** how he works (the doze
+> isn't softened, it is **moved into daylight**), and *"pays more for missions run while sleepy"* was
+> never ratified and is now the less likely version — the inversion is the boon, and a payout
+> multiplier on top would be the balance-sheet handout the guardrail below warns about. **The camper
+> half of this pairing is unaffected**, and the reckless-nights ↔ restful-days axis is intact.
 
 - **The deviant / night-owl spirit — rewards staying up dangerously.** On runs where it shows up,
   pushing past sleepy is *encouraged*: it **lessens the doze effect** (a clean rule-change) and

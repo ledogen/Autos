@@ -17,8 +17,8 @@ pass). The document below has been updated; this table records what changed and 
 | 1 | Spirits are the carrier of meta-progression; "Meta" persistence = a spirit "exists in all future worlds" once unlocked | **Spirits are not meta-persistent — and they don't need to be.** Every spirit is present in **every run including the first**. What persists is only whether the player has *met* them (a **story key** — the one thing SM-INV-8 still lets through). See "The visibility model" below. |
 | 2 | Cross-run accumulation ledgers ("a career total that survives death") | **Kept, but moved off the run.** Career totals are an **account-level stats screen**, not the in-run persona's ledger and not a spirit's unlock condition. They may unlock **garage entries** (the garage legally persists), never in-run power. See "Career stats" below. |
 | 3 | "camping is a location and not a menu option" | **Superseded phrasing** — SM-INV-6 reversed 2026-07-19: camping is a **button gated by campable ground**. Argument survives, wording corrected. |
-| 4 | "a 24–48 minute day" | **24-minute days RATIFIED 2026-07-29** (~10–15 days per run). Ten tired hours is *harder* than this doc assumed. |
-| 5 | *(found in this pass)* Re-summon threshold halves, ~10 h → ~5 h, once met | **Dropped — it is always ~10 h.** A permanently cheaper threshold is meta-progression: run 50 would reach the pact in half the tired-hours run 1 needed, which makes late runs comfortable and fails SM-INV-9's litmus test. **This reverts a rule the Provenance section records as owner-ratified**, deliberately. |
+| 4 | "a 24–48 minute day" | **24-minute days RATIFIED 2026-07-29** (~10–15 days per run). The ledger is *harder* than this doc assumed. **Superseded 2026-07-31:** the ledger is **10 km tired**, not hours — see #01 "Summoning". |
+| 5 | *(found in this pass)* Re-summon threshold halves, once met | **Dropped — the first threshold is the full one in every run.** A permanently cheaper threshold is meta-progression: run 50 would reach the pact in half the tired-hours run 1 needed, which makes late runs comfortable and fails SM-INV-9's litmus test. *(Unit corrected 2026-07-31: 10 km, not 10 h.)* **This reverts a rule the Provenance section records as owner-ratified**, deliberately. |
 
 **Net effect: the characters survive completely intact.** The taxonomy, domains, ledger *shapes*,
 contact moments, boon/price currencies and every cross-domain coupling are untouched. Only the
@@ -35,20 +35,21 @@ The elegant part of the ruling, and the thing to build against:
   when the run-layer ledger is first satisfied. **Once per profile**, recorded as a **story key** on
   `metaState`. This is exactly the currency SM-INV-8 and the Roamer's economy already deal in.
 - **In every subsequent run, the spirit is *present but inert* until that run's ledger is met.** The
-  Night Owl sits in your passenger seat whenever you get sleepy — from the very start of the run,
-  every run, forever. He says nothing. He changes nothing. **He is just there.**
+  Night Owl sits in your passenger seat whenever you are **tired** — the deep band where the doze
+  begins, not merely sleepy (see #01, "Sleepy and tired are two stages") — from the very start of the
+  run, every run, forever. He says nothing. He changes nothing. **He is just there.**
 - **The pact itself is re-earned every run**, at the full threshold, every time (see #5).
 
 **Why this is better than what it replaces.** The old model bought "the world knows you" with
 persistent world state, which is illegal now. This buys the same feeling with *presence* — and it is
 strictly more frightening. A silent figure in the seat beside you that you *know* wants something,
-that you have to spend ten tired hours to make speak again, is a better horror object than a
+that you have to spend ten tired kilometres to make speak again, is a better horror object than a
 mechanical unlock. **The dread persists; the power does not.**
 
 > **This is the beat/labor split, used a second time.** `missions.md` splits the log-drag main
 > mission into *the beat* (staged scene, once per profile, a story key) and *the labor* (chaining and
 > clearing, re-driven every run). The Night Owl is the same shape: **first meeting = the beat; the
-> ten tired hours and the pact = the labor.** Two independent design problems landed on one pattern —
+> ten tired kilometres and the pact = the labor.** Two independent design problems landed on one pattern —
 > treat it as the project's idiom for "authored content that must survive repetition."
 
 **Constraint on the first-meeting scene:** SM-INV-11 permits authored beats but requires them
@@ -60,12 +61,13 @@ truck, not in a separate scene graph.
 
 Career totals survive as an **account-level stats screen** — a player-facing journal, explicitly *not*
 the in-run persona's ledger (that persona is fresh every run). Distinct waters fished, nights camped,
-tired hours driven, runs ended and how.
+distance driven tired, runs ended and how.
 
 **Shown post-run** [owner, 2026-07-29], which gives the screen a job beyond bookkeeping: it is where
 the game acknowledges **what you almost did**. Records, not just totals — *"longest distance driven
-tired"* is the ratified example, and it is what a player who died at hour nine of a ten-hour ledger
-sees instead of a consolation prize from the world (see #01, "Should the near-miss leave a mark?").
+tired"* is the ratified example — and it now matches the Night Owl's ledger unit exactly (corrected
+2026-07-31: **10 km tired**, not hours), so it is literally the same measurement. It is what a player
+who died at the ninth kilometre sees instead of a consolation prize from the world (see #01, "Should the near-miss leave a mark?").
 Prefer **records and maxima** alongside lifetime sums; a personal best is the honest way to say *you
 were close* without the world ever breaking silence.
 
@@ -211,7 +213,7 @@ single-run* is unchanged and still load-bearing.
 > **Naming note.** *The Passenger* was the working handle; **Night Owl** is the name [owner,
 > 2026-07-29]. This also **unifies him with the "deviant / night-owl spirit"** already sketched in
 > `IDEAS.md` (2026-07-19) — same character, arrived at twice: rewards staying up dangerously,
-> lessens the doze effect, pays more for missions run while sleepy. Treat that entry and this one as
+> lessens the doze effect, pays more for missions run while tired. Treat that entry and this one as
 > one spirit. *Passenger* survives as **what he is**, not what he's called — see below. The catalog's
 > unnamed-on-first-contact recommendation still applies: he shouldn't introduce himself.
 
@@ -272,26 +274,50 @@ character pipeline. Nothing about this character requires an animation system to
 
 ### Summoning [RATIFIED 2026-07-29 (b)]
 
-**He appears in the passenger seat once you have driven ~10 hours *or* ~10 km while sleepy, within a
-single run.** The counter resets to zero on death. He does not meet people who have been mildly
-irresponsible over a career — he meets people who are destroying themselves right now.
+**He appears in the passenger seat once you have driven ~10 km *tired*, within a single run.** One
+number, one unit: **distance**. The counter resets to zero on death. He does not meet people who have
+been mildly irresponsible over a career — he meets people who are destroying themselves right now.
 
-**The two thresholds are the same threshold.** At 24-minute days (`run-shape.md`, RATIFIED) the clock
-runs **60×**: one real minute is one in-game hour. A truck holding 60 km/h therefore covers 10 km in
-exactly the ten real minutes that are ten in-game hours. The OR is not two conditions — it is one
-condition measured two ways, and whichever you reach first is a statement about *how* you were being
-irresponsible:
+> **Corrected 2026-07-31 [owner], twice over.** The earlier write-up said *"~10 hours **or** ~10 km
+> while **sleepy**"*. Both halves were wrong: **the hours term is dropped — the ledger is kilometres
+> only** — and the state it counts is **tired**, not *sleepy*. Those are now two different things
+> (below). The document has been swept — **the number is 10 km everywhere**; if a stray "tired hours"
+> resurfaces from an older draft, it is stale, not a second rule.
 
-| | catches | says |
+**Sleepy and tired are two stages, not two words** [RATIFIED 2026-07-31]:
+
+| stage | what it is | what it does |
 |---|---|---|
-| **10 km tired** | the fast driver | you covered ground you had no business covering |
-| **10 tired hours** | the slow, twisty-mountain-road driver | 10 km took you all night, and you stayed out for all of it |
+| **Sleepy** | the warning band. Yawns, heavy eyelids, the read that says *"I am N km from anywhere I'd want to wake up"* | tells you to start looking for ground (SM-INV-6's last leg of the day) |
+| **Tired** | the danger band. Where the **doze actually begins** | this — and only this — is what the Night Owl counts |
 
-**Why the distance term matters more than it looks.** A pure hours ledger is farmable *in safety* —
-crawl a meadow at 5 km/h until the counter fills, at no risk. Distance can't be farmed that way:
-covering ten kilometres tired means actually moving, on real road, in the dark. The hours term then
-exists to stop the distance term punishing the player whose country is genuinely slow. Neither term
-alone is right; the OR is.
+**This is the substantive half of the correction.** A ledger that counted the warning band would meet
+everyone eventually; sleepy is a state a careful player passes through *every single day* on the way
+to camp. Counting only the deeper band means the ledger can only be filled by driving in the state
+where your eyes are already closing — so **he cannot meet anyone who hasn't repeatedly chosen the
+dangerous thing.** The unlock condition and the death condition are now literally the same behavior,
+which is what makes it self-limiting with no tuning at all (see below). FEAT-47 has to define the two
+bands for this to exist.
+
+**Why distance and not hours.** Hours are farmable *in safety*: park up, or crawl a meadow at 5 km/h,
+and the counter fills at no risk. Kilometres can't be — covering ten of them tired means actually
+moving, on real road, in the dark, at a speed that can hurt you. **The ledger should only advance
+while the player is exposed to the thing that makes it an achievement**, and distance is the term
+that guarantees it. This also keeps a single-number rule with no OR to explain.
+
+**What it costs, in real terms.** At 24-minute days (`run-shape.md`, RATIFIED) the clock runs **60×**
+— one real minute is one in-game hour. So 10 km reads very differently depending on the country:
+
+| driving | real time | in-game time |
+|---|---|---|
+| 60 km/h on open road | ~10 min | ~10 hours tired |
+| 25 km/h on tight mountain country | ~24 min | most of a day tired |
+
+**The accepted cost of dropping the hours term:** the player whose region is genuinely slow pays more
+for him. That is a real asymmetry and it was chosen anyway, because it errs in the safe direction —
+it makes him *harder* to reach on exactly the roads where driving tired is most likely to kill you,
+and a spirit that is easiest to summon on the deadliest ground would have been the wrong bug to ship.
+If it proves punishing, **the dial is the 10 km, not the reintroduction of an hours term.**
 
 **Nothing is ever displayed.** No counter, no meter, no "8/10" (SM-INV-3). The first evidence the
 ledger exists is that the seat isn't empty.
@@ -301,40 +327,44 @@ is which:
 
 | | first run you ever reach it | every run after | gated by |
 |---|---|---|---|
-| **He is in the seat** | appears at the threshold — *this is the beat* | present whenever you are sleepy, from run start, **silent and inert** | the story key (once per profile) |
-| **He speaks / offers the pact** | at the threshold | at the threshold, **re-earned in full every run** | the run-layer ledger (~10 h / ~10 km) |
+| **He is in the seat** | appears at the threshold — *this is the beat* | present whenever you are **tired**, from run start, **silent and inert** | the story key (once per profile) |
+| **He speaks / offers the pact** | at the threshold | at the threshold, **re-earned in full every run** | the run-layer ledger (**10 km tired**) |
 
-So a first-time player's memory is *"I drove too long and something appeared."* A veteran's is *"he
-has been sitting there since dawn and I know exactly what I have to do to make him talk."* Same
-character, and the second reading is the more frightening one — which is the whole argument in "The
-visibility model." **The 10 h / 10 km ledger is the price of the offer in every run; the appearance
-is only ever bought once.**
+So a first-time player's memory is *"I drove too far into the night and something appeared."* A
+veteran's is *"he has been sitting there since my eyes started closing and I know exactly what I have
+to do to make him talk."* Same character, and the second reading is the more frightening one — which
+is the whole argument in "The visibility model." **The 10 km ledger is the price of the offer in
+every run; the appearance is only ever bought once.**
+
+*Note the presence rule keys off the **tired** band too* — he does not turn up merely because you
+yawned. The seat filling is itself information: it means you have crossed out of the warning band.
 
 **Why single-run is the stronger rule.** The counter and the death condition are the same
-behavior, which makes the unlock **self-limiting** without any tuning: the only way to reach ten
-hours is to survive several in-game days while repeatedly refusing to sleep, and driving tired is
-the thing most likely to end the run. Most attempts die at hour seven with nothing to show for
-it. That's the achievement — not a number, but a sustained refusal that happened to survive.
+behavior, which makes the unlock **self-limiting** without any tuning: the only way to cover ten
+kilometres tired is to survive several in-game days while repeatedly refusing to sleep, and driving
+tired is the thing most likely to end the run. Most attempts die at the seventh kilometre with
+nothing to show for it. That's the achievement — not a number, but a sustained refusal that happened
+to survive.
 
-Worth checking against real survival rates once the doze is in. Ten is a guess, and it's a guess
-about how much tired-time an in-game day actually affords, which depends on where the sleepiness
-curve starts biting. **⚠ RESOLVED (was CONFLICT 4):** day length is settled at **24 minutes**
-[RATIFIED 2026-07-29], ~10–15 days per run (`run-shape.md`), which pins the arithmetic — ten tired
-hours is **ten real minutes of tired driving**, spread across a 10–15 day run. That is roughly *one
-tired hour per in-game day*: an hour past dark, every night, for the life of the run. Demanding but
-not absurd, and it is the right shape — a sustained habit, not one heroic night.
+Worth checking against real survival rates once the doze is in. Ten is a guess, and it is a guess
+about **how much tired-band driving an in-game day actually affords** — which depends entirely on
+where FEAT-47 puts the sleepy→tired boundary. **⚠ RESOLVED (was CONFLICT 4):** day length is settled
+at **24 minutes** [RATIFIED 2026-07-29], ~10–15 days per run (`run-shape.md`), so across a full run
+10 km is roughly **one kilometre of tired driving per in-game day** — the last stretch after dark,
+most nights, for the life of the run. Demanding but not absurd, and it is the right shape: a
+sustained habit, not one heroic night.
 
-**The real dependency is the sleepiness curve, not the number.** If FEAT-47 makes sleepiness bite
-late and softly, ten hours is trivial; if it bites early and hard, it's unreachable. Set the curve
-first, then re-derive this number from it — do not tune them independently.
+**The real dependency is the band boundary, not the number.** If FEAT-47 puts the tired band late and
+narrow, 10 km is a serious commitment; if the whole evening counts as tired, it's trivial. **Set the
+two bands first, then re-derive this number from them** — do not tune them independently.
 
-**Re-summoning.** ~5 tired hours, still single-run — **and your within-run reading is the one that
-survives** [confirmed 2026-07-29].
+**Re-summoning.** ~5 km tired, still single-run — **and the within-run reading is the one that
+survives** [confirmed 2026-07-29; unit corrected 2026-07-31].
 
 - ❌ **Cross-run halving is DEAD** (resolution #5). The original *"once met he's meta, and the
-  per-run threshold drops to ~5"* would mean run 50 reaches the pact in half the tired-hours run 1
-  needed — a permanent difficulty reduction, which is the power floor SM-INV-9 forbids. **The first
-  threshold is ~10 h in every run, forever.**
+  per-run threshold drops to half"* would mean run 50 reaches the pact in half the tired kilometres
+  run 1 needed — a permanent difficulty reduction, which is the power floor SM-INV-9 forbids. **The
+  first threshold is ~10 km in every run, forever.**
 - ✅ **Within-run re-acquisition is LEGAL and better.** Refuse him, or lose him, and the seat empties
   — the half-threshold is what it costs to have him back *this run*. It resets with the run like
   everything else, so it prices a refusal instead of rewarding a career. Keep this.
@@ -342,7 +372,7 @@ survives** [confirmed 2026-07-29].
 The number ~5 survives; only which axis it sits on changed. Note this makes the pact genuinely
 losable, which the escalation ladder below should account for.
 
-**Should the near-miss leave a mark?** A player who dies at hour nine has done something
+**Should the near-miss leave a mark?** A player who dies at the ninth kilometre has done something
 remarkable and gets nothing. No counter should be shown — but the world might. An empty
 passenger seat that wasn't empty a moment ago, on the run *after* a near miss. **Sharper now that
 the seat is canonically his** (see "Where he sits") — this isn't a random omen, it's *him*, early,
@@ -350,7 +380,7 @@ before you've earned him.
 
 **RESOLVED 2026-07-29: the near-miss is acknowledged on the post-run stats screen, not in the
 world.** [owner] The record is **"longest distance driven tired"** — a career stat, so a player who
-died at hour nine sees their own high-water mark and knows exactly how close they came.
+died at the ninth kilometre sees their own high-water mark and knows exactly how close they came.
 
 This is a better answer than either option that was on the table:
 
@@ -364,12 +394,12 @@ This is a better answer than either option that was on the table:
 - **It gives the stats screen emotional work to do**, rather than leaving it as bookkeeping. The
   place you go to see what you almost did is a different object than a leaderboard.
 
-**Source data:** FEAT-47's tired ledger already integrates **tired hours and tired distance** as
-run-layer counters (they are the Night Owl's summon condition). The career stat is just the max of
-the distance counter across runs — no new instrumentation, and the distance term is the one that
-resists farming, which makes it the honest thing to record.
+**Source data:** FEAT-47's tired ledger integrates **distance driven in the tired band** as a
+run-layer counter (it is the Night Owl's summon condition). The career stat is just the max of that
+counter across runs — no new instrumentation, and distance is the term that resists farming, which is
+what makes it the honest thing to record.
 
-*(The same-run mark — the seat changing at hour nine of the run you're in — remains legal and
+*(The same-run mark — the seat changing at the ninth kilometre of the run you're in — remains legal and
 optional as foreshadowing. It is not required by this resolution.)*
 
 ### How you talk to him [RATIFIED 2026-07-29 (b)]
@@ -671,7 +701,7 @@ Before a new spirit is worth writing down, it should have answers to:
 **Explicit decisions (James):**
 - Spirits are the main story cast, revealed through play.
 - A spirit rewards tired driving; appears at bedtime; offers a risk/reward playstyle modifier.
-- First unlock is achievement-grade (~10 tired hours); subsequent unlocks cheaper (~5).
+- First unlock is achievement-grade (~10 tired **km** — was "hours", corrected 2026-07-31); within-run re-acquisition cheaper (~5 km).
 - An opposing spirit rewards being well-rested, costing daytime hours.
 - A conservationist spirit objects to off-road driving; off-road stays available but angering
   the spirit carries penalties elsewhere.
@@ -679,7 +709,7 @@ Before a new spirit is worth writing down, it should have answers to:
 - **Ratified:** rested spirit pays in reduced wear; ~~tired spirit pays in speed~~ — **the speed half
   was retired 2026-07-29 (b)**, replaced by the nocturnal inversion (see #01 "The bargain"). The
   reduced-wear half stands.
-- **Ratified:** The Night Owl's ~10 tired hours must be reached **within a single run**, not
+- **Ratified:** The Night Owl's ~10 tired **km** (was "hours") must be reached **within a single run**, not
   accumulated across a career. Meeting him requires active irresponsibility, not eventual drift.
 - **Ratified 2026-07-29:** the spirit is named **the Night Owl** (was: *The Passenger*), and he
   **appears in the passenger seat of your car when he speaks to you.** Unifies with the night-owl
@@ -687,7 +717,8 @@ Before a new spirit is worth writing down, it should have answers to:
 - **Ratified 2026-07-29 (b)** — the Night Owl fleshed out (owner):
   - **Appearance:** a man's body and an owl's head. Deliberately simple; no expression system; head
     yaw is the entire motion budget.
-  - **Summon:** ~10 hours **or** ~10 km driven while sleepy, single-run. He then rides in the
+  - **Summon:** ~10 km driven in the **tired** band, single-run — *distance only, and the deep band
+    only* [corrected 2026-07-31]. He then rides in the
     passenger seat **continuously and visibly**, closing the old "visible while driving?" question.
   - **Interaction:** stop and **pull the handbrake** to talk to him; the offer takes the chat pane.
   - **A pact's accept/decline is a licensed exception to the chat pane's no-dialog-options rule** —

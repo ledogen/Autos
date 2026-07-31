@@ -44,7 +44,10 @@ changes. Those are SM-2/SM-3. The exit criterion is a *felt* day.
   player learns "I am N km from anywhere I'd want to wake up" from the yawns, not a number. A debug
   readout behind the lil-gui panel is fine; a HUD gauge is not.
 - **24-minute days [RATIFIED 2026-07-29]** (`run-shape.md`) → ~10–15 days per run. Not 24–48; the
-  range was settled at the short end.
+  range was settled at the short end. **The clock therefore runs 60×** — one real minute is one
+  in-game hour, one real second is one in-game minute. Useful sanity check when tuning the curve:
+  "an hour of tired driving" is *sixty seconds* of play, and a truck holding 60 km/h covers one
+  kilometre per in-game hour.
 - **Coffee is a loan** — alert now, sleepier earlier tomorrow. Cost is in a different currency than
   the payout, and it lands *later*.
 - **SM-INV-12** — the doze is live-reactive, so it is **flag-gated off in headless gates** (FEAT-26
@@ -55,9 +58,32 @@ changes. Those are SM-2/SM-3. The exit criterion is a *felt* day.
 1. **Day clock.** 24 real minutes → one in-game day mapped onto `SKY_CYCLE`. A day counter. Day
    boundary is a real event other systems can subscribe to (`runState` advances at day/sleep/mission
    boundaries per SM-INV-12 — never mid-stream, never per-frame).
-2. **Sleepiness state.** Accrues across the waking day. Curve shape is the tuning question: where it
-   starts biting determines how much tired-driving a day affords, which is what the Night Owl's
-   ~10-tired-hour ledger is calibrated against. Expose it in the debug panel, not the HUD.
+2. **Sleepiness state, in TWO BANDS** [RATIFIED 2026-07-31 — see DESIGN.md "The day and the clock"].
+   Accrues across the waking day, and crosses two thresholds that mean different things:
+   - **Sleepy** — the warning band. Yawns, heavy eyelids, **no doze**. The player reads it as *"I am
+     N km from anywhere I'd want to wake up"* and goes looking for ground. Responsible play enters
+     this band every single day.
+   - **Tired** — the danger band. **The doze only happens here.**
+
+   **Where that boundary sits is this ticket's central tuning decision**, and it is not just a feel
+   question: every threshold in story mode keyed to "driven tired" (the Night Owl's ledger, the career
+   record) is re-derived from it, and a boundary set too early makes a careful player look reckless.
+   Expose both the scalar and the current band in the debug panel, not the HUD.
+   **Build the accrual rate as `base × phaseMultiplier(timeOfDay)`, not a single scalar.** Cost now:
+   one lookup. Cost later: a rewrite. The Night Owl's pact (ratified 2026-07-29 (b),
+   `spirits-and-pacts.md` #01) is *exactly* this multiplier inverted — ~0 between dusk and dawn with a
+   soft margin at the shoulders, and well above baseline in daylight — so if the phase term exists
+   from day one the whole pact is a data change. **It must never touch day length**: the pact is a
+   phase shift, not an extension, so nothing about it may reach `SKY_CYCLE` or the day counter.
+2b. **The tired ledger — ONE counter: distance driven in the tired band.** Integrate ground covered
+   while in the **tired** band only (not sleepy), run-layer, reset on death. No consumer yet. It is
+   the Night Owl's summon condition (**~10 km**, single-run) and the source of the career record
+   *"longest distance driven tired."*
+   **Distance, deliberately, and not hours** [owner, 2026-07-31]: an hours counter fills while parked
+   or crawling a meadow at 5 km/h, so it can be farmed in perfect safety. A distance counter only
+   advances while the player is actually moving in the dark at a speed that can hurt them — the ledger
+   should only tick while the player is exposed to the thing that makes it an achievement.
+   Never rendered (SM-INV-3); debug-panel only. A handful of lines now, annoying to retrofit later.
 3. **Coffee.** The loan: resets/suppresses sleepiness now, raises tomorrow's starting debt. One
    consumable, priced later.
 4. **The doze.** Eyes-close overlay (~400 ms, per DESIGN.md) with **control attenuation** — inputs
@@ -70,13 +96,19 @@ changes. Those are SM-2/SM-3. The exit criterion is a *felt* day.
 ## Explicitly out of scope
 
 Currency · XP · the wear/condition model · mission changes · the chat pane · campsite quality
-scoring · the Night Owl (needs the tired-hours ledger, which needs this first).
+scoring · **the Night Owl himself** — no character, no passenger-seat mesh, no pact, no chat cards.
+Only the three substrate pieces he needs — the **two bands** (§2), the **phase multiplier** (§2), and
+the **tired-distance ledger** (§2b) — are in scope, and all three are useful to the day clock on their
+own terms.
 
 ## Open questions (scope in plan mode)
 
-- **Sleepiness curve shape.** Linear accrual, or flat-then-steep? This is the tuning dial that decides
-  whether a 24-minute day affords 2 tired hours or 8 — and `spirits-and-pacts.md` flags that the Night
-  Owl's threshold is a guess *about this curve*.
+- **Sleepiness curve shape, and where the sleepy→tired boundary sits.** Linear accrual, or
+  flat-then-steep? Together these decide how many kilometres of *tired-band* driving a day affords,
+  which is what the Night Owl's ~10 km is calibrated against — `spirits-and-pacts.md` #01 states
+  outright that its number is a guess about this decision and must be re-derived once the bands exist.
+  Second-order but worth deciding here: is the sleepy→tired crossing **signposted** to the player
+  (a distinct cue, one time), or do they only learn it happened when the first doze arrives?
 - **Does the doze attenuate or fully drop inputs?** "Controls drop" is the bible's phrasing.
   Attenuation is more honest and more frightening than a hard cut; confirm.
 - **What the doze renders.** DESIGN.md wants it to eventually show *something* (the Roamer's channel,
@@ -90,7 +122,10 @@ scoring · the Night Owl (needs the tired-hours ledger, which needs this first).
 ## Acceptance
 
 - A 24-minute in-game day advances the sky through a full cycle and increments a day counter.
-- Sleepiness accrues over the day and produces dozes that lengthen and recur as it climbs.
+- Sleepiness accrues over the day and crosses **sleepy** (warning, no doze) then **tired** (dozes
+  begin, lengthening and recurring as it climbs). The two bands are distinguishable in play, not just
+  in the debug panel.
+- **Tired-band distance accumulates as a run-layer counter** and resets on death. Debug-readable only.
 - **A doze while driving is frightening and survivable** — the truck is handed to the physics for
   ~400 ms and the player recovers or doesn't. No direct kill (SM-INV-1).
 - Coffee suppresses sleepiness now and makes the next day start worse.
