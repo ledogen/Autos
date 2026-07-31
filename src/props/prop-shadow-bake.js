@@ -4,8 +4,16 @@
  * Props are otherwise realtime shadow CASTERS: every scattered tree/rock/log re-renders into the
  * sun's directional shadow map every frame (~1.86 ms/frame on an M4 — test/perf-prop-shadows.mjs),
  * and because RangerSim is always in motion the PERF-16 on-demand skip never fires while driving.
- * The sun is static (no day/night yet), so a prop's shadow is a fixed world-space shape — it only
- * needs baking ONCE, when its terrain chunk streams in.
+ * A prop's shadow is a fixed world-space shape FOR A GIVEN SUN DIRECTION, so it is baked once when
+ * its terrain chunk streams in — and re-baked when the key light has moved far enough to matter.
+ *
+ * DAY/NIGHT: the bake shears each caster along the sun, so every tile belongs to a SUN GENERATION.
+ * setSun() commits a new generation (it writes the shear uniform); the caller then re-queues the
+ * live chunks and the existing MAX_BAKES_PER_CALL slicer rolls them out over several frames rather
+ * than restamping the whole atlas in one. Tiles baked between generations use the committed shear,
+ * so neighbouring tiles always agree — the atlas is never a mix of two sun angles. main.js owns the
+ * trigger policy (drift threshold + minimum interval + nearest-first ordering); see the
+ * sun-generation block in its frame loop.
  *
  * Mechanism — a TOROIDAL SHADOW ATLAS (clipmap):
  *   • One WebGLRenderTarget holds an ATLAS_N × ATLAS_N grid of TILE_PX² tiles, one tile per live
@@ -45,6 +53,11 @@ export const TILE_PX    = 256        // DEFAULT px per chunk tile → 0.25 m/tex
                                      // drive it via FLORA_PARAMS.shadows.tilePx). 0 = baked shadows off.
 const CHUNK             = 64         // world metres per chunk side (matches terrain CHUNK_SIZE)
 const MAX_BAKES_PER_CALL = 8         // tiles baked per update() — sliced to avoid a stream hitch
+
+// Reference caster height for shadowDriftFor(): a mid-size tree. Only sets the units of the
+// re-bake threshold, so it does not need to match any particular prop.
+const SHEAR_REF_HEIGHT = 10
+const _driftShear = new THREE.Vector2()
 
 // Positive modulo (cx can be negative).
 const pmod = (a, n) => ((a % n) + n) % n
@@ -211,9 +224,10 @@ export class ShadowBakeSystem {
   /**
    * Set the sun (key-light) direction — horizontal projection ratio for the shear. `sunDir` points
    * from ground toward the sun (sky.js sunDirection); the shadow falls opposite, offset per metre of
-   * height by -dir.xz / dir.y. The sun is static today; if a day/night cycle ever moves it, the
-   * caller must re-mark live chunks (this system does not track them). Returns true if the shear
-   * changed (so the caller can decide to re-bake).
+   * height by -dir.xz / dir.y. This COMMITS a new sun generation: every tile baked from now on uses
+   * this shear, so the caller must re-mark the live chunks itself (this system does not track them
+   * — see markAll, and shadowDriftFor for deciding when it is worth doing). Returns true if the
+   * shear actually changed.
    * @param {THREE.Vector3} sunDir
    */
   setSun(sunDir) {
@@ -246,6 +260,34 @@ export class ShadowBakeSystem {
   }
 
   hasWork() { return this._dirty.length > 0 }
+
+  /**
+   * How far the shadow TIP of a SHEAR_REF_HEIGHT caster would move if the committed shear were
+   * advanced to `sunDir`, in metres. This is the honest units for a re-bake threshold: the shear
+   * itself is -dir.xz/|dir.y|, which explodes near the horizon, so thresholding it directly would
+   * mean "never re-bake at noon, re-bake constantly at dusk" for no visual reason. Metres of
+   * ground movement is what a player actually sees.
+   */
+  shadowDriftFor(sunDir) {
+    shearFromSun(sunDir, _driftShear)
+    return _driftShear.distanceTo(this._mat.uniforms.uShearXZ.value) * SHEAR_REF_HEIGHT
+  }
+
+  /**
+   * Queue many tiles at once, in the ORDER GIVEN (no neighbour fan-out — a full re-queue already
+   * includes every neighbour). Used for a sun-generation roll, where the caller sorts nearest-first
+   * so the tiles the player is looking at re-project before the ring edge does.
+   * @param {string[]} keys — "cx,cz" chunk keys
+   */
+  markAll(keys) {
+    if (!this._rt) return 0
+    for (const k of keys) {
+      if (this._dirtySet.has(k)) continue
+      this._dirtySet.add(k)
+      this._dirty.push(k)
+    }
+    return this._dirty.length
+  }
 
   /**
    * PERF-21: wire a per-tile caster source — fn(cx, cz) returns a THREE.Scene containing ONLY the

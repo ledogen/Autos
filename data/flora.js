@@ -145,8 +145,9 @@ export const FLORA_PARAMS = {
   // Every scattered prop would otherwise be a realtime shadow CASTER: each tree/rock/log re-renders
   // into the sun's directional shadow map every frame (~1.86 ms/frame on an M4 —
   // test/perf-prop-shadows.mjs), and since the truck is always moving the PERF-16 skip never fires.
-  // The sun is static, so a prop's shadow is a fixed world shape → bake it ONCE per terrain chunk
-  // into a world-space atlas (prop-shadow-bake.js), sampled by the terrain shader. castRealtime=false
+  // A prop's shadow is a fixed world shape for a given sun angle → bake it per terrain chunk into a
+  // world-space atlas (prop-shadow-bake.js), sampled by the terrain shader, and re-bake it as the
+  // day/night key light swings (sunRebake* below). castRealtime=false
   // (default) drops props from the pass and shows the bake; true restores per-frame realtime casting.
   // The GUI checkbox 'Realtime prop shadows' A/Bs the two modes live.
   shadows: {
@@ -163,6 +164,21 @@ export const FLORA_PARAMS = {
     // 160–220 m) so the baked mode never shows LESS shadow than realtime did at the same vantage.
     fadeStart:    240,     // view-distance (m) where the dissolve begins
     fadeEnd:      380,     // fully faded
+
+    // ── Day/night re-baking ──────────────────────────────────────────────────────────────────
+    // The bake projects each caster along the key light, so a moving sun makes every tile stale.
+    // A roll re-queues the live chunks nearest-first and the bake slicer spreads them over the
+    // following frames (MAX_BAKES_PER_CALL), so the atlas is never restamped in a single frame.
+    //
+    // sunRebakeM is measured in METRES the shadow tip of a 10 m tree would move — the shear itself
+    // explodes near the horizon, so thresholding it directly would mean re-baking constantly at
+    // dusk and never at noon, for no visual reason. Lower = shadows track the sun more finely and
+    // roll more often; raise it if rolls ever show up in the frame budget.
+    sunRebakeM:      0.6,
+    // Floor on the interval between rolls. The real limiter is that a roll cannot start while the
+    // previous one is still draining, but a fast debug cycle (dayLengthSec 5) would otherwise keep
+    // the baker saturated back-to-back; this bounds the duty cycle regardless of clock speed.
+    sunRebakeMinSec: 2.0,
   },
 
   // ── PERF-21 billboard impostor LOD ─────────────────────────────────────────────────────────
