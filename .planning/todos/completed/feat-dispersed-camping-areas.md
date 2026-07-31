@@ -82,6 +82,11 @@ questions:**
 Deferred, per the owner: tent model + animated campfire w/ dynamic shadows; the "home-cooked meal"
 wake buff at mom's (→ IDEAS.md); FEAT-38 spur-clearing tie-in when spurs exist.
 
+The deferred campsite visuals were given a design home on 2026-07-30 — `items.md` §2b **Camp gear**
+(bedroll+campfire default → sleeping bag → tent, plus the cooking kit's A-frame Dutch oven). What the
+player carries is what renders at the site, and the gear multiplies the energy a night buys without
+ever touching the vibe score (SM-INV-6). Catalogued as IDEA only; nothing built.
+
 ### Follow-up pass — 2026-07-30, after the owner drove it ("Phase F")
 
 Five ratified refinements, all in this worktree:
