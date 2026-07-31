@@ -2203,11 +2203,21 @@ let _campBusy = false   // a fade is in flight: no second trigger, no double-dug
  * on bad ground does NOT return null — those are the prompt's two failure copies, and telling the
  * player why they cannot camp here is the entire job of a prompt.
  */
+// "Looking for a campsite" — the expand state of the camp prompt (owner, 2026-07-31: the full
+// bar-and-copy prompt was intrusive when just driving through a zone). Collapsed, the prompt is a
+// single chip AND the siting ray never runs AND the brake latch will not open the camp dialogue —
+// expanding is how the player says "I'm shopping for ground now". Session-sticky on purpose: it
+// stays expanded from zone to zone until they collapse it.
+let _campSeek = false
+
 function _campPromptState () {
   if (!storySystem.isActive() || storySystem.isEntering()) return null
   if (missionSystem && missionSystem.state !== 'idle') return null
   if (_campUi || _campBusy) return null
   if (Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) * 3.6 > CAMP_PROMPT_KPH) return null
+  if (!campSystem.zoneAt(vehicleState.position.x, vehicleState.position.z)) return null
+  // Collapsed: the zone test above (a point-in-disc scan) is ALL we pay — no ray, no grading.
+  if (!_campSeek) return { collapsed: true }
   const g = campSystem.evaluate(vehicleState.position.x, vehicleState.position.z)
   return g.inZone ? g : null
 }
@@ -2242,10 +2252,13 @@ function _updateParkTriggers () {
   }
 
   const camp = _campPromptState()
-  const moms = !camp && _atMomsHouse()
+  const seeking = camp && !camp.collapsed
+  // Mom's door outranks the collapsed chip (a doorstep is a specific affordance, like a POI) but
+  // yields to an ACTIVE campsite hunt — mid-seek the bar is what the player is reading.
+  const moms = !seeking && _atMomsHouse()
 
   if (pulled) {
-    if (camp && camp.withinTether && camp.flat && camp.pad) {
+    if (seeking && camp.withinTether && camp.flat && camp.pad) {
       _campUi = { mode: 'confirm', site: camp, moms: false }
       _renderCampUI()
     } else if (moms) {
@@ -2263,22 +2276,34 @@ function _updateParkTriggers () {
   const showCamp = !poi && (camp || moms) && !_campUi
   campEl.style.display = showCamp ? 'block' : 'none'
   // The world-space ring: only while the camp prompt is offering a spot that could actually be
-  // taken. Not at mom's (no pad), not once the dialogue is up (the cube takes over).
-  _updateCampMarker(showCamp && camp && camp.withinTether && camp.flat ? camp : null)
+  // taken. Not while collapsed, not at mom's (no pad), not once the dialogue is up (the cube
+  // takes over).
+  _updateCampMarker(showCamp && seeking && camp.withinTether && camp.flat ? camp : null)
   if (!showCamp) return
   const vibeEl = document.getElementById('camp-vibe')
   const legEl  = document.getElementById('camp-vibe-legend')
   const textEl = document.getElementById('camp-prompt-text')
-  if (moms) {
+  const tglEl  = document.getElementById('camp-seek-toggle')
+  const collapsed = !!camp?.collapsed
+  campEl.classList.toggle('collapsed', collapsed && !moms)
+  if (tglEl) {
+    tglEl.style.display = moms ? 'none' : 'block'
+    tglEl.textContent = collapsed ? 'look for a campsite' : '▾ stop looking'
+  }
+  if (moms || collapsed) {
     if (vibeEl) vibeEl.style.display = 'none'
     if (legEl)  legEl.style.display = 'none'
-    if (textEl) textEl.textContent = "park to sleep at mom's house"
+    if (textEl) {
+      textEl.style.display = moms ? 'block' : 'none'
+      if (moms) textEl.textContent = "park to sleep at mom's house"
+    }
     return
   }
   if (vibeEl) vibeEl.style.display = 'flex'
   if (legEl)  legEl.style.display = 'flex'
   _renderVibeBar(camp)
   if (textEl) {
+    textEl.style.display = 'block'
     // "not flat" now means the WHOLE siting ray failed the flatness gate — every candidate from the
     // road edge out to the tether — not merely that the verge beside the truck did.
     textEl.textContent = !camp.withinTether ? 'too far from the road'
@@ -2459,6 +2484,11 @@ function _renderCampUI () {
   if (isSleep) _syncSleepRow()
 }
 
+document.getElementById('camp-seek-toggle')?.addEventListener('click', (e) => {
+  _campSeek = !_campSeek
+  e.currentTarget.blur()      // Space is the parking brake — a focused button would steal the tap
+  _updateParkTriggers()       // repaint now rather than on the next 10 Hz poll
+})
 document.getElementById('cp-make')?.addEventListener('click', _makeCamp)
 document.getElementById('cp-cancel')?.addEventListener('click', _closeCampUi)
 document.getElementById('cp-break')?.addEventListener('click', _closeCampUi)

@@ -422,6 +422,24 @@
       white-space: pre;
       text-align: center;
     }
+    /* The seek toggle — the only clickable thing in the prompt (the prompt itself stays
+       pointer-events:none so it never eats a drag on the world). Collapsed, it is the whole UI. */
+    #camp-seek-toggle {
+      pointer-events: auto;
+      display: block;
+      margin: 0 auto 6px;
+      background: none;
+      border: none;
+      color: #ffe89a;
+      font-family: monospace;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      opacity: 0.85;
+    }
+    #camp-seek-toggle:hover { opacity: 1; text-decoration: underline; }
+    #camp-prompt.collapsed { border-color: rgba(255, 220, 60, 0.45); background: rgba(0, 0, 0, 0.45); }
+    #camp-prompt.collapsed #camp-seek-toggle { margin-bottom: 0; }
     /* The vibe bar: ONE bar, three stacked segments. Their max widths ARE the score weights
        (50 / 30 / 20 %) — JS only ever writes the three widths. */
     .vibe-bar {
@@ -603,6 +621,11 @@
   <!-- FEAT-45 Phase D: the camping prompt. The vibe bar sits ABOVE the copy — you read the score,
        then what to do about it. Shown only in a camp zone below 20 kph (see _updateParkTriggers). -->
   <div id="camp-prompt">
+    <!-- The seek toggle IS the collapsed state (owner, 2026-07-31): driving through a zone shows
+         only this chip — the bar, legend, copy AND the siting-ray grading all sit behind it, so a
+         drive-through pays nothing and sees almost nothing. Clicking it arms "looking for a
+         campsite" mode, which is also what arms the brake-latch camp trigger. -->
+    <button id="camp-seek-toggle">look for a campsite</button>
     <div class="vibe-bar" id="camp-vibe">
       <div class="vseg vseg-flat"></div>
       <div class="vseg vseg-shade"></div>
