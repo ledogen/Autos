@@ -150,24 +150,46 @@ export class GaugeCluster {
     this._paintSpeedo(ctx)
   }
 
-  // Fill the indent geometry dilated by `pad`: the pod capsule grows to radius POD_R+pad (a
-  // thick round-capped stroke between the two pod centers IS that capsule), the dial discs grow
-  // to well+DIAL_PAD+pad. Where the dilated shapes overlap they merge into one silhouette, so
-  // the union's outline is a true constant-offset frame around all the indents.
+  // Fill the housing silhouette at dilation `pad`: the convex hull of the four outline circles
+  // (temp + fuel pod discs at POD_R+pad, tach/speedo discs at well+DIAL_PAD+pad). The hull's
+  // straight tangent edges BRIDGE the circles across the top and bottom (flush on each circle,
+  // near-horizontal), while the sides stay the same circle arcs as the plain dilated union —
+  // the pod's rounded left end and the speedo's right arc are untouched.
   _fillDilated (ctx, pad, style) {
-    ctx.strokeStyle = style
+    const T = { x: TEMP.cx, y: TEMP.cy, r: POD_R + pad }
+    const F = { x: FUEL.cx, y: FUEL.cy, r: POD_R + pad }
+    const K = { x: TACH.cx, y: TACH.cy, r: TACH.well + DIAL_PAD + pad }
+    const S = { x: SPEEDO.cx, y: SPEEDO.cy, r: SPEEDO.well + DIAL_PAD + pad }
+    // Outward normals of the common external tangents, in clockwise boundary order. The tach
+    // crests above the temp→speedo line, so the top edge is two tangent segments (temp→tach,
+    // tach→speedo); it stays inside the bottom edge, so the bottom is one (speedo→fuel).
+    const nA = this._tangentNormal(T, K, (n) => n.y < 0)   // top, pod → tach
+    const nB = this._tangentNormal(K, S, (n) => n.y < 0)   // top, tach → speedo
+    const nC = this._tangentNormal(S, F, (n) => n.y > 0)   // bottom, speedo → fuel
+    const nD = this._tangentNormal(F, T, (n) => n.x < 0)   // left side, fuel → temp (pod side)
+    const ang = (n) => Math.atan2(n.y, n.x)
     ctx.fillStyle = style
-    ctx.lineCap = 'round'
-    ctx.lineWidth = (POD_R + pad) * 2
     ctx.beginPath()
-    ctx.moveTo(TEMP.cx, TEMP.cy)
-    ctx.lineTo(FUEL.cx, FUEL.cy)
-    ctx.stroke()
-    for (const g of [TACH, SPEEDO]) {
-      ctx.beginPath()
-      ctx.arc(g.cx, g.cy, g.well + DIAL_PAD + pad, 0, Math.PI * 2)
-      ctx.fill()
+    ctx.arc(T.x, T.y, T.r, ang(nD), ang(nA))   // pod top-left shoulder
+    ctx.arc(K.x, K.y, K.r, ang(nA), ang(nB))   // tach crest
+    ctx.arc(S.x, S.y, S.r, ang(nB), ang(nC))   // speedo right end
+    ctx.arc(F.x, F.y, F.r, ang(nC), ang(nD))   // pod bottom-left nose
+    ctx.closePath()
+    ctx.fill()
+  }
+
+  // Unit normal of the common external tangent line of circles a → b, on the side selected by
+  // `pick` (e.g. n.y < 0 for the upper tangent). Tangent touch points are a + r·n and b + r·n.
+  _tangentNormal (a, b, pick) {
+    const dx = b.x - a.x; const dy = b.y - a.y
+    const d = Math.hypot(dx, dy)
+    const al = (a.r - b.r) / d                     // along-axis component keeps both offsets equal
+    const be = Math.sqrt(Math.max(0, 1 - al * al))
+    for (const s of [1, -1]) {
+      const n = { x: (al * dx - s * be * dy) / d, y: (al * dy + s * be * dx) / d }
+      if (pick(n)) return n
     }
+    return { x: 0, y: -1 }                          // degenerate fallback (concentric circles)
   }
 
   // Recessed regions the dial faces sit in (the "indents" on the real cluster): a capsule around
