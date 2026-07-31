@@ -46,9 +46,12 @@ export const CAMP_PARAMS = {
     campGradeAreaM:  6,     // m — the square the site is graded over (flatness)
     campShadeR:      10,    // m — tree-count reach for the shade score (owner, 2026-07-30: shade
                             // reads a wider ring than flatness — a pine 8 m off still shades the pad)
-    campMaxUnevenM:  0.6,   // m — ground spread over that square above which the site is NOT FLAT.
-                            // Best-guess (the plan's number); it is both the prompt's gate and the
-                            // zero point of the flatness score, so one knob moves both together.
+    campMaxUnevenM:  0.6,   // m — spread at/above which the flatness SCORE bottoms out at zero.
+                            // (Was also the campable gate; split 2026-07-31 — see campGateUnevenM.)
+    campGateUnevenM: 1.2,   // m — spread above which a site is NOT campable at all (owner,
+                            // 2026-07-31: the shared 0.6 floor made even a crappy site too hard to
+                            // find on hilly ground). Between the two, a site camps at zero flatness
+                            // credit — extra flatness is still rewarded on the same curve.
     campShadeFullN:  5,     // trees inside the shade ring that earn FULL shade credit (owner: 5
                             // over the 10 m ring — 3 was tuned for the old 6 m reach)
     campWaterR:      30,    // m — how far out water still counts for anything
@@ -409,7 +412,7 @@ export class CampSystem {
         const spread = hi - lo
         return {
             x: cx, z: cz, y: sum / n, spread,
-            flat: spread <= P.campMaxUnevenM,
+            flat: spread <= P.campGateUnevenM,
             flatScore: VIBE_W.flat * clamp01(1 - spread / Math.max(1e-6, P.campMaxUnevenM)),
             trees: 0, shadeScore: 0, waterDist: Infinity, waterFound: false, waterScore: 0,
             vibe: 0,
@@ -562,7 +565,8 @@ export class CampSystem {
         ]
         this._read = read
 
-        f.add(CAMP_PARAMS, 'campMaxUnevenM', 0.1, 3, 0.05).name('max uneven (m)')
+        f.add(CAMP_PARAMS, 'campMaxUnevenM', 0.1, 3, 0.05).name('flat score zero (m)')
+        f.add(CAMP_PARAMS, 'campGateUnevenM', 0.1, 3, 0.05).name('campable floor (m)')
         f.add(CAMP_PARAMS, 'campShadeFullN', 1, 12, 1).name('trees for full shade')
         f.add(CAMP_PARAMS, 'campWaterR', 5, 120, 5).name('water reach (m)')
         f.add(CAMP_PARAMS, 'campWaterBestM', 1, 30, 1).name('water full credit (m)')
