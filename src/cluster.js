@@ -24,12 +24,13 @@
 const DEG = Math.PI / 180
 
 // Layout in CSS pixels (canvas logical size — scaled by devicePixelRatio at construction).
+// Temp and fuel are staggered like the reference — temp high and inboard, fuel low and outboard.
 const W = 400
-const H = 172
-const TEMP  = { cx: 60,  cy: 54,  well: 36, scaleR: 27, start: 215, sweep: 110 }
-const FUEL  = { cx: 60,  cy: 126, well: 36, scaleR: 27, start: 215, sweep: 110 }
-const TACH  = { cx: 166, cy: 86,  well: 62, scaleR: 54, start: 135, sweep: 195, max: 6 }    // ×1000 RPM
-const SPEEDO= { cx: 306, cy: 86,  well: 70, scaleR: 62, start: 135, sweep: 270, max: 120 }  // MPH
+const H = 184
+const TEMP  = { cx: 74,  cy: 48,  well: 34, scaleR: 26, start: 215, sweep: 110 }
+const FUEL  = { cx: 56,  cy: 122, well: 34, scaleR: 26, start: 215, sweep: 110 }
+const TACH  = { cx: 176, cy: 92,  well: 62, scaleR: 54, start: 135, sweep: 195, max: 6 }    // ×1000 RPM
+const SPEEDO= { cx: 314, cy: 92,  well: 70, scaleR: 62, start: 135, sweep: 270, max: 120 }  // MPH
 
 const FACE   = '#171412'   // gauge face / panel
 const WHITE  = '#e8e6e0'
@@ -123,16 +124,21 @@ export class GaugeCluster {
     const ctx = this._bg.getContext('2d')
     ctx.scale(this._dpr, this._dpr)
 
-    // Housing: wide rounded lozenge, dark charcoal with a faint top-edge highlight.
-    ctx.beginPath()
-    ctx.roundRect(1, 1, W - 2, H - 2, 26)
+    // Housing: traced to the cluster's clear-plastic lens outline — arched top over the two big
+    // dials, sloping down over the small-gauge pod on the left, rounded end caps, and a gently
+    // bellied bottom edge. Faint inset stroke fakes the lens-edge highlight.
+    this._lensPath(ctx)
     ctx.fillStyle = '#211d1a'
     ctx.fill()
     ctx.strokeStyle = 'rgba(0,0,0,0.8)'
     ctx.lineWidth = 2
     ctx.stroke()
-    ctx.beginPath()
-    ctx.roundRect(2.5, 2.5, W - 5, H - 5, 24)
+    ctx.save()
+    ctx.translate(W / 2, H / 2)
+    ctx.scale(0.985, 0.98)
+    ctx.translate(-W / 2, -H / 2)
+    this._lensPath(ctx)
+    ctx.restore()
     ctx.strokeStyle = 'rgba(255,255,255,0.07)'
     ctx.lineWidth = 1
     ctx.stroke()
@@ -145,6 +151,22 @@ export class GaugeCluster {
     this._paintFuelIcon(ctx, FUEL.cx, FUEL.cy + 13)
     this._paintTach(ctx)
     this._paintSpeedo(ctx)
+  }
+
+  // The clear-lens outline (clockwise from the left mid-edge). Control points hand-fit to read
+  // as the reference lens: low left shoulder over the temp/fuel pod, high arch spanning the
+  // tach + speedo, rounded caps, bellied bottom.
+  _lensPath (ctx) {
+    ctx.beginPath()
+    ctx.moveTo(10, 96)
+    ctx.bezierCurveTo(10, 52, 26, 34, 52, 26)      // left end cap up to the pod shoulder
+    ctx.bezierCurveTo(110, 10, 150, 6, 220, 6)     // rise onto the main arch
+    ctx.bezierCurveTo(300, 8, 348, 16, 376, 30)    // arch runs over the speedo, eases down
+    ctx.bezierCurveTo(392, 44, 394, 64, 392, 96)   // right end cap
+    ctx.bezierCurveTo(388, 140, 360, 164, 318, 170)
+    ctx.bezierCurveTo(258, 178, 158, 178, 98, 170) // bellied bottom edge
+    ctx.bezierCurveTo(54, 164, 22, 146, 10, 96)    // bottom-left back up to the start
+    ctx.closePath()
   }
 
   // Circular recess each gauge sits in — face disc with a soft inner shadow at the rim.
