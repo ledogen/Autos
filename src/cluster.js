@@ -169,25 +169,31 @@ export class GaugeCluster {
     const nD = this._tangentNormal(F, T, (n) => n.x < 0)   // left side, fuel → temp (pod side)
     const ang = (n) => Math.atan2(n.y, n.x)
     const pt = (c, n) => ({ x: c.x + c.r * n.x, y: c.y + c.r * n.y })
+    // Top edge: ONE continuous convex curve from the pod shoulder to the speedo — a quadratic
+    // whose control point is the intersection of the two top tangent lines (so it leaves the pod
+    // and meets the speedo along their tangents), lifted a touch for the dash-visor bow. It
+    // clears the tach crest, which no longer contributes an arc of its own.
+    const pA = pt(T, nA)
+    const pB = pt(S, nB)
+    const X = this._lineHit(pA, { x: -nA.y, y: nA.x }, pB, { x: -nB.y, y: nB.x })
+    X.y -= 5
     ctx.fillStyle = style
     ctx.beginPath()
     ctx.arc(T.x, T.y, T.r, ang(nD), ang(nA))   // pod top-left shoulder
-    this._bow(ctx, pt(T, nA), pt(K, nA), nA)   // top edge bows up, following the dash visor
-    ctx.arc(K.x, K.y, K.r, ang(nA), ang(nB))   // tach crest
-    this._bow(ctx, pt(K, nB), pt(S, nB), nB)
+    ctx.quadraticCurveTo(X.x, X.y, pB.x, pB.y) // visor curve, left edge to right edge
     ctx.arc(S.x, S.y, S.r, ang(nB), ang(nC))   // speedo right end
     ctx.arc(F.x, F.y, F.r, ang(nC), ang(nD))   // pod bottom-left nose (bottom stays straight)
     ctx.closePath()
     ctx.fill()
   }
 
-  // Replace a straight tangent segment with a slightly convex arc: a quadratic bowed outward
-  // along the tangent's normal, proportional to span (sagitta ≈ 4.5% of length). Endpoints are
-  // the exact circle touch points, so the edge stays coincident with the circles.
-  _bow (ctx, p1, p2, n) {
-    const len = Math.hypot(p2.x - p1.x, p2.y - p1.y)
-    const k = len * 0.09
-    ctx.quadraticCurveTo((p1.x + p2.x) / 2 + n.x * k, (p1.y + p2.y) / 2 + n.y * k, p2.x, p2.y)
+  // Intersection of lines a + t·u and b + s·v (u/v are directions). Falls back to the segment
+  // midpoint if near-parallel (keeps the path sane if layout constants ever degenerate).
+  _lineHit (a, u, b, v) {
+    const den = u.x * v.y - u.y * v.x
+    if (Math.abs(den) < 1e-6) return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+    const t = ((b.x - a.x) * v.y - (b.y - a.y) * v.x) / den
+    return { x: a.x + t * u.x, y: a.y + t * u.y }
   }
 
   // Unit normal of the common external tangent line of circles a → b, on the side selected by
