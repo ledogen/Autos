@@ -76,6 +76,48 @@ plus a slot**, paid on every mile you carry it, against a payoff you only occasi
 > category collapses into "things you buy once." Decide whether stowed mass is legible to the player
 > before authoring more of them.
 
+## 2b. Camp gear
+
+The kit you sleep under. A sub-category of tools, because it inherits the tool cost model exactly —
+**permanent mass plus a slot, paid every mile, collected one night at a time**. It gets its own
+section because it is the only gear with a *shipped* mechanic under it: FEAT-45's camping and
+FEAT-47's energy clock already exist, so these are the first entries whose effect has somewhere to
+land. Nothing here is built (owner, 2026-07-30: *catalog it, don't build it*).
+
+| Item | What it does | Source | Cost | Status |
+|---|---|---|---|---|
+| **Bedroll (+ campfire)** | **The default camp — no modifier.** Everybody has one; you sleep on the ground beside a fire. It is the baseline the rest of this table is measured against, and the thing that renders when you carry nothing else. | Starting kit | Its own trivial mass | **IDEA** — 2026-07-30 |
+| **Sleeping bag** | Multiplies the energy a night buys, by a fixed factor (~1.1×). **Replaces the bedroll** in the rendered camp. | Bought/found | Cash; a slot; small mass | **IDEA** — 2026-07-30 |
+| **Tent** | The same multiplier, larger. **Replaces the sleeping bag** in the rendered camp — the campsite visibly becomes a camp rather than a man on the dirt. | Bought/found | Cash; a slot; real mass | **IDEA** — 2026-07-30 |
+| **Cooking kit** | ~50 lb (≈23 kg) of always-carried mass. Renders as an **A-frame over the campfire with a Dutch oven hanging from it**. Gives a **flat bonus to the effect of food items** — there is deliberately no cooking *system*, no recipes, no ingredients. | Bought/found | ≈23 kg on every mile, for a benefit collected only at camp | **IDEA** — 2026-07-30. ⚠ Depends on food items, which do not exist (§1: fish is PROPOSED, and upstream of a fishing minigame nobody has framed) |
+
+> **The visible-kit rule.** Camp gear is the one category whose ownership is legible *without a UI*:
+> what you carry is what renders at the site, so **the campsite is the inventory screen**. That is
+> the argument for growing this category ahead of the others — every entry pays for itself in
+> readability, and none of it needs the inventory structure `IDEAS.md` has deferred. It also picks up
+> the visuals FEAT-45 deferred on closing (`todos/completed/feat-dispersed-camping-areas.md` —
+> "tent model + animated campfire w/ dynamic shadows"): that render work and this table are the same
+> job seen from two ends.
+
+> **It multiplies the energy, never the vibe.** The site's vibe score decides what a night at that
+> spot is worth (`r(vibe) = lerp(1.5, 3.0, vibe)` in `src/day.js`); gear scales what you take away
+> from it. Keeping them separate is what preserves **SM-INV-6** — *camping is a button, but the place
+> decides the quality*. Folding gear into the vibe term would let a tent substitute for good ground,
+> which is precisely the substitution that invariant exists to forbid. Do not "simplify" it later.
+
+**Two open flags, recorded rather than resolved:**
+
+1. **SM-INV-10 tension.** "1.1×" is a number on an item. The multiplier is legal as *internals* — the
+   game is already full of them — but the figure must never surface in the UI, and no described-not-
+   scored phrasing has been written yet. A sleeping bag is *warmer than the ground*; a tent is *the
+   difference between weather happening to you and weather happening outside*. Settle the language
+   before the mechanic.
+2. **23 kg on a 1360 kg truck is ~1.7%, and will not be felt.** That is §2's own unresolved
+   carry-cost question arriving with a concrete number attached: if the cooking kit's mass is
+   invisible, its cost is invisible, and it is a free upgrade rather than a decision. The kit is
+   therefore the **first real test case** for whether stowed mass is legible at all — decide that
+   question here, or accept that camp gear is priced in cash and slots only.
+
 ## 3. Parts
 
 Architecture choices, not stat sticks (SM-INV-10). Split into the **wear-model parts** (each carries
