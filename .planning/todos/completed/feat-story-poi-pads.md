@@ -1,8 +1,9 @@
 ---
 id: FEAT-46
 type: feature
-status: open
+status: completed
 opened: 2026-07-28
+closed: 2026-08-01
 severity: minor
 source: user-request (scoping session 2026-07-28)
 relates_to: >
