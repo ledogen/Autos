@@ -31,8 +31,9 @@
  *
  * Par integrates CURVATURE and GRADE only, against a fixed reference mu. Adding camber would look
  * like an accuracy win and would quietly break the game, because camber is NOT a static property of
- * the road: the story layer drives `camberStrength` as a run-layer parameter state (the Highway's
- * favour banks your corners harder the longer you stay on the network — see
+ * the road: the story layer drives the superelevation params (`camberKneeRadiusM`) as a run-layer
+ * parameter state — the Highway's favour banks your sweepers harder the longer you stay on the
+ * network, and flattens them when you take a shortcut (see
  * .planning/story-mode/spirits-and-pacts.md #05). A par that read camber would therefore scale with
  * run state, and SM-INV-2 is explicit that par scales with NOTHING — not the car, not run age.
  *

@@ -827,23 +827,58 @@ without ever demanding it, and why the loss is withdrawal rather than punishment
 
 #### The boon: the corners start holding you
 
-**Camber climbs toward the clamp as favour deepens, and relaxes to baseline when the streak breaks.**
-A maintained road is graded, drained, surveyed and **banked** — so the boon is the thing a
-well-engineered road literally does for a driver.
+**Camber deepens as favour accrues, and flattens when the streak breaks.** A maintained road is
+graded, drained, surveyed and **banked** — so the boon is the thing a well-engineered road literally
+does for a driver.
 
-> **Stay on the network and the corners start holding you. Leave it, and they stop.**
+> **Stay on the network and the corners start holding you. Leave it, and they go flat.**
+
+**The mechanism (corrected 2026-08-01 — the model changed under an earlier draft).** Camber is a
+**saturating superelevation** function, not the old `camberStrength·κ` with a hard clamp
+(`camberFromCurvature`, `src/road.js`; params in `data/ranger.js`):
+
+```
+camber(κ) = camberMaxAngleDeg · |κ| / (|κ| + 1/camberKneeRadiusM)
+```
+
+It is self-bounding — hairpins plateau at `camberMaxAngleDeg`, and effective gain *decreases* with
+curvature, so there is **more bank per unit curvature on sweepers than on hairpins**. Shipped defaults
+(`maxAngle 20°`, `knee 60 m`) give ~16° at R=15 m, ~11° at R=50 m, ~5.7° at R=150 m.
+
+**`camberKneeRadiusM` is the favour knob** — *"raise to push strong banking out to gentler curves."*
+That is exactly the boon: an engineered highway superelevates its **sweepers**, and sweepers are where
+a driver actually banks speed. `camberMaxAngleDeg` is the wrong dial to move — tight corners already
+sit near the asymptote, so raising it mostly over-banks hairpins, which is the failure the saturating
+model was introduced to fix.
+
+**The scale [RATIFIED 2026-08-01]:**
+
+| state | camber | how you get there |
+|---|---|---|
+| **punished** | **flat — the floor** | one completed cut |
+| **baseline** | **the shipped defaults** (`maxAngle 20` / `knee 60`) | where every run starts |
+| **full favour** | knee pushed out — strong bank reaching gentler curves | **5 days with no shortcuts** |
+
+**Flat is the floor, deliberately.** Genuinely off-camber was considered and rejected — *"an
+interesting idea to keep in mind, but I don't think it would be fun"* [owner]. Parked, not adopted.
+
+> **⚠ Reading to confirm.** *"Whatever we have right now should be the default starting camber params;
+> it should take 5 days of no shortcuts to build up to this level."* Written above as **current
+> defaults = the day-1 baseline**, with favour climbing *above* them. The alternative parse — current
+> defaults are the 5-day *peak*, and a run starts flatter — is a one-line flip if that was the intent.
+> The reading here is chosen because it preserves the road feel already tuned and liked as the neutral
+> state, and gives both directions somewhere to go.
 
 Five reasons this is the right lever, recorded because three other candidates were rejected first
 (see "What this replaces"):
 
-1. **The mechanism already exists.** `camberStrength · κ`, clamped ±20°, recomputes banking live via
-   `invalidateProfileCaches` / `_networkRev` — no regen needed. `IDEAS.md`'s **road-bender spirit**
-   (2026-07-21) is this idea, and its 2026-07-29 note reads *"spirits deferred, so a road-bender has
-   no carrier."* **The Highway is the carrier.** Two ideas from different months are one thing.
-2. **Double-edged by construction**, so SM-INV-9 needs no bolted-on guardrail. Bank is not free speed:
-   on a high-CoG truck it **invites rollover**, and it bites hardest on tight hairpins where the clamp
-   saturates (`data/ranger.js` warns about exactly this). The boon reads as *the roads now reward
-   commitment and punish sloppiness* — a reshaped run, not a raised floor.
+1. **The mechanism already exists and is already a live dial.** Both params are exposed as debug
+   sliders and recompute banking without a regen. `IDEAS.md`'s **road-bender spirit** (2026-07-21) is
+   this idea, and its 2026-07-29 note reads *"spirits deferred, so a road-bender has no carrier."*
+   **The Highway is the carrier.** Two ideas from different months are one thing.
+2. **Double-edged**, so SM-INV-9 needs no bolted-on guardrail. Bank is not free speed: on a high-CoG
+   truck it **invites rollover**, and pushing strong bank onto sweepers is pushing it onto the corners
+   taken *fastest*. `data/ranger.js` warns about over-banking directly.
 3. **It is the true mirror of the Shortcut**, and neither moves par:
 
    | | how you beat par | what it costs |
@@ -855,16 +890,41 @@ Five reasons this is the right lever, recorded because three other candidates we
    — you take a sweeper you have driven thirty times and the truck doesn't sit down in it the way it
    did last week.
 5. **It rides SM-INV-11's channel for free.** `runState` advances at day/sleep boundaries, never
-   mid-stream, so **the road changes overnight.** You wake and the roads are holding you better; or
-   you took a cut yesterday and this morning they aren't. The parameter-state story mechanism doubles
-   as the favour readout, with no meter anywhere.
+   mid-stream, so **the road changes overnight.** You wake and the roads are holding you better; or you
+   took a cut yesterday and this morning they are flat. The parameter-state story mechanism doubles as
+   the favour readout, with no meter anywhere.
 
 **Tier it, so the relationship progresses instead of flipping a flag:**
 
 | streak depth | what the road does |
 |---|---|
 | early | **it warns you** — corner markers before the hairpin, a grade sign before the descent. Real signage, appearing as favour deepens. *Geometry* information, never mission information, so it does not touch the strategy layer. Same shape as the GPS: convenience for a driver who doesn't know the region, worthless to one who does. |
-| deep | **it banks for you** — camber climbs toward the clamp |
+| deep (5 days) | **it banks its sweepers for you** — `camberKneeRadiusM` pushed out |
+
+#### The arithmetic of five days — and why the boon lands in the mountains
+
+A run is **7–8 days** (`run-shape.md`), so a 5-day climb is not a minor commitment: **full favour
+arrives on day 5–6 and you enjoy it for the last two or three days.** At 6 regions over 7–8 days
+(~1.25 days each), day 5 is **region 4 or 5** — deep country, the hardest roads in the run.
+
+**That is the right place for it, and it is worth noticing that it fell out rather than being
+designed.** The reward for a run of discipline arrives exactly where the driving is most punishing,
+in the mountains, with a truck that is by then worn. A boon that landed on day 2 would be a free
+early-game buff; this one is a late-run payoff you had to protect.
+
+**And favour rebuilds more slowly than it built** [RATIFIED 2026-08-01]. He remembers. The consequence
+is sharp and should be understood before tuning the rate:
+
+> **Past roughly the midpoint of a run, one cut ends the Highway relationship for that run.** If the
+> re-climb is slower than five days and only three remain, there is no recovering it.
+
+So the cost of a shortcut **escalates with run age**, without anything being keyed to run age — it
+comes purely from there being fewer days left than the climb needs. That is the same shape as the rest
+of the economy's escalation, arriving for free. It also means the mid-run cut decision is the heaviest
+one in the domain: early, a cut is cheap and recoverable; late, it is permanent.
+
+*Open: the exact re-climb rate. It must be > 5 days to mean "he remembers", but a rate so slow that
+one cut on day 2 is unrecoverable would collapse the choice rather than sharpen it.*
 
 #### Two hard constraints
 
@@ -929,9 +989,12 @@ alternative — a distance threshold on off-route travel — is truer to "zero o
 written, but needs tuning and could punish one bad corner.)*
 
 **And he does not merely withdraw. He punishes** [owner, 2026-08-01]: a **stark reduction in road
-camber**, dropping *below* baseline. The corners go flat. A mountain road that was holding you last
-week now asks you to hold yourself, and it asks on every sweeper for the rest of the streak's
-absence.
+camber**, dropping *below* baseline to **flat**. A mountain road that was holding you last week now
+asks you to hold yourself, and it asks on every sweeper until favour is rebuilt — which is **slower
+than it was earned.**
+
+**Flat is the floor.** Off-camber was considered and rejected as not fun [owner, 2026-08-01]; it stays
+parked in `IDEAS.md` rather than adopted.
 
 *(This reverses my recommendation of withdrawal-only. The owner is right and the reasoning I used was
 too cautious: the rejected toll was rejected for being **a fine in money**, an ethical objection
@@ -973,12 +1036,11 @@ dialogue tree inside it).
 #### Open
 
 - **Per-mission or continuous across the run?**
-- **Can favour be rebuilt after a break, and does it return at the same rate?** A streak that resets to
-  zero is the simple answer; a slower re-climb would say he remembers. Given he now *punishes*, this
-  matters more than it did — a permanent flattening after one cut would be brutal.
-- **How far below baseline does "stark" go?** Flat is the obvious floor. Genuinely **off-camber**
-  (negative) is available and would be vicious; it is also the `IDEAS.md` road-bender's "adversarial
-  twin" flavour, arriving here as a punishment rather than an opt-in. Owner's call.
+- **The exact re-climb rate.** Ratified that it is **slower than the 5-day first ascent** — he
+  remembers. The number is open and load-bearing (see "The arithmetic of five days"): too slow and a
+  day-2 cut is unrecoverable, which collapses the decision rather than sharpening it.
+- ~~How far below baseline does "stark" go?~~ **RESOLVED 2026-08-01 — flat is the floor.** Off-camber
+  considered and rejected as not fun; parked in `IDEAS.md`.
 - **Fragile and freight cannot use cuts anyway**, so those missions bank Highway favour for free. Is
   "haul the careful cargo, stay legal, get the good corners" a coherent build or a loophole? It reads
   coherent, and it pairs with the durability parts axis.

@@ -178,6 +178,20 @@ flavour — **camber climbs toward the clamp as favour deepens, and relaxes when
 One constraint this entry did not anticipate, now stated inline in `src/par.js`: **par must never read
 camber**, or the boon would move par and violate SM-INV-2. Par sees curvature and grade only.
 
+**⚠ The mechanism described above is stale.** This entry (and the first draft of #05) described
+`camberStrength · κ` hard-clamped at ±20°. That model is **gone** — camber is now a **saturating
+superelevation** function (`camberFromCurvature`, `src/road.js`), self-bounding with no clamp:
+`camber(κ) = camberMaxAngleDeg · |κ| / (|κ| + 1/camberKneeRadiusM)`. Effective gain *decreases* with
+curvature, so there is **more bank per unit curvature on sweepers than hairpins** — which is better for
+the Highway than the old model was, and it changes which knob to turn. **`camberKneeRadiusM` is the
+favour dial** (raise it to push strong banking out to gentler curves); `camberMaxAngleDeg` is the wrong
+one, since hairpins already sit near the asymptote. See #05.
+
+**Two numbers ratified 2026-08-01:** the shipped defaults are the **day-1 baseline**; **5 days with no
+shortcuts** reaches full favour; **flat is the punished floor**, and favour **rebuilds more slowly than
+it built**. The adversarial-twin / off-camber flavour sketched above is **rejected as not fun** —
+retained here as an idea, not a plan.
+
 Related: DESIGN.md "The Roamer", SM-INV-9 (spirits = rules not resources), SM-INV-7/8 (breadth), 
 SM-INV-1 (doze); the night-owl/camper pair above (day-progression ties them together); MILESTONES.md
 SM-5 (spirits land here). Naming (*spirit* vs *sprite*) still unsettled per the pair above.
