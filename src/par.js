@@ -26,6 +26,19 @@
 /**
  * Fixed reference vehicle (SM-INV-2). A competent driver in a competent truck — deliberately
  * NOT the Ranger, and deliberately not tied to it: these are design knobs for the payout curve.
+ *
+ * ⚠ SM-INV-2 — PAR MUST NEVER READ CAMBER. DO NOT "improve" this by folding banking in.
+ *
+ * Par integrates CURVATURE and GRADE only, against a fixed reference mu. Adding camber would look
+ * like an accuracy win and would quietly break the game, because camber is NOT a static property of
+ * the road: the story layer drives `camberStrength` as a run-layer parameter state (the Highway's
+ * favour banks your corners harder the longer you stay on the network — see
+ * .planning/story-mode/spirits-and-pacts.md #05). A par that read camber would therefore scale with
+ * run state, and SM-INV-2 is explicit that par scales with NOTHING — not the car, not run age.
+ *
+ * The whole design depends on this asymmetry: the road can get faster while par stays put. That is
+ * how the Highway's boon is a real reward without ever touching the oracle, exactly as the Shortcut's
+ * cuts are (a shorter route, not a modified par). Keep par blind to anything a run can change.
  */
 export const PAR_REF = {
     // CALIBRATION (FEAT-30, 2026-07-20). Two passes:
@@ -248,15 +261,28 @@ export function formatTime(sec) {
 }
 
 /**
+ * Day-1 rank thresholds (ratio = elapsed/par). FEAT-53: economy.js derives day-tightened
+ * tables from these and passes them back in — the difficulty ramp lives in the LETTERS, never
+ * in par itself (SM-INV-2 as amended 2026-08-01). B must always contain 1.0: the rank that
+ * just meets the cost curve is a B, so par lands inside the B band on every day of a run.
+ */
+export const RANK_THRESHOLDS_DEFAULT = { S: 0.80, A: 0.92, B: 1.05, C: 1.25 }
+
+/**
  * Grade a finished run against par. Margin is par-relative so it reads the same on a 2-minute
  * hop and a 20-minute haul; the letter is a bucketing of that ratio.
+ *
+ * The letter is DISPLAY bucketing of the continuous ratio (SM-INV-3 as amended: rank is
+ * result-card only, display only) — payout is computed from the ratio, never from the letter.
+ * `thresholds` is injected by the caller (economy.js day ramp); nothing here may learn what a
+ * run day is, and `day` must never reach computePar.
  */
-export function gradeRun(elapsed, par) {
+export function gradeRun(elapsed, par, thresholds = RANK_THRESHOLDS_DEFAULT) {
     const ratio = par > 0 ? elapsed / par : Infinity
     let letter = 'D'
-    if (ratio <= 0.80) letter = 'S'
-    else if (ratio <= 0.92) letter = 'A'
-    else if (ratio <= 1.05) letter = 'B'
-    else if (ratio <= 1.25) letter = 'C'
+    if (ratio <= thresholds.S) letter = 'S'
+    else if (ratio <= thresholds.A) letter = 'A'
+    else if (ratio <= thresholds.B) letter = 'B'
+    else if (ratio <= thresholds.C) letter = 'C'
     return { ratio, letter, margin: par - elapsed }
 }

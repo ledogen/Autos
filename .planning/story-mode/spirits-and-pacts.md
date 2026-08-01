@@ -799,7 +799,12 @@ The cuts are **worldgen**, and they do not need the spirit system. Ticket: **FEA
    Cuts are viable on margin-axis errands and nowhere else — and this costs **no new code**, it falls
    out of the existing scoring axes.
 
-### 05 — The Highway *(the default)*
+### 05 — The Highway *(the road that keeps you)* [RATIFIED 2026-08-01]
+
+**Class:** favour track, not a pact · **Domain:** Route · **Disposition:** one-sided positive,
+instantly losable
+**Contact:** the campfire, after a streak of loyal missions · **Ledger:** single-run streak
+**Boon:** **it banks its corners for you**
 
 Vain, bypassed, speaks in the plural. It doesn't watch you from anywhere — **you're standing on it.**
 Motif: culverts, drainage, closure signs on routes that no longer exist.
@@ -808,14 +813,128 @@ Motif: culverts, drainage, closure signs on routes that no longer exist.
 widened, named, and now it can't go anywhere but where it goes. Real grief, adjacent to the Roamer
 without duplicating it: the Roamer lost a range, the Highway lost the ability to wander.
 
-**Terms (the default state):** par as computed on the maintained network; the standard rank
-thresholds; the standard payout. **It never fines you.** Its ledger is a **single-run streak of
-missions with zero off-route travel** — and one cut breaks it, silently, with no explanation.
+**And its boon is gratitude, not generosity.** He resents what was done to him, but a road wants
+traffic. *Look what they did to me — but at least you're still here.* That is why he rewards use
+without ever demanding it, and why the loss is withdrawal rather than punishment.
 
-*If it is ever given an explicit pact* (rather than remaining the default), its boon must be
-**tightened rank thresholds for higher payout** — a trade, legal under SM-INV-9. ⚠ **It must not
-"tighten par"**: par is geometry-only (SM-INV-2 as amended 2026-08-01), and the difficulty ramp lives
-in the thresholds. This is the same correction the run-duration clause needed.
+#### The boon: the corners start holding you
+
+**Camber climbs toward the clamp as favour deepens, and relaxes to baseline when the streak breaks.**
+A maintained road is graded, drained, surveyed and **banked** — so the boon is the thing a
+well-engineered road literally does for a driver.
+
+> **Stay on the network and the corners start holding you. Leave it, and they stop.**
+
+Five reasons this is the right lever, recorded because three other candidates were rejected first
+(see "What this replaces"):
+
+1. **The mechanism already exists.** `camberStrength · κ`, clamped ±20°, recomputes banking live via
+   `invalidateProfileCaches` / `_networkRev` — no regen needed. `IDEAS.md`'s **road-bender spirit**
+   (2026-07-21) is this idea, and its 2026-07-29 note reads *"spirits deferred, so a road-bender has
+   no carrier."* **The Highway is the carrier.** Two ideas from different months are one thing.
+2. **Double-edged by construction**, so SM-INV-9 needs no bolted-on guardrail. Bank is not free speed:
+   on a high-CoG truck it **invites rollover**, and it bites hardest on tight hairpins where the clamp
+   saturates (`data/ranger.js` warns about exactly this). The boon reads as *the roads now reward
+   commitment and punish sloppiness* — a reshaped run, not a raised floor.
+3. **It is the true mirror of the Shortcut**, and neither moves par:
+
+   | | how you beat par | what it costs |
+   |---|---|---|
+   | **Shortcut** | a shorter **route** | he tells the client (par tightens) + wear + risk |
+   | **Highway** | a faster **road** | rollover exposure + you drove the long way |
+
+4. **SM-INV-10-shaped.** No number ever surfaces. *The corners hold you.* The loss needs no UI either
+   — you take a sweeper you have driven thirty times and the truck doesn't sit down in it the way it
+   did last week.
+5. **It rides SM-INV-11's channel for free.** `runState` advances at day/sleep boundaries, never
+   mid-stream, so **the road changes overnight.** You wake and the roads are holding you better; or
+   you took a cut yesterday and this morning they aren't. The parameter-state story mechanism doubles
+   as the favour readout, with no meter anywhere.
+
+**Tier it, so the relationship progresses instead of flipping a flag:**
+
+| streak depth | what the road does |
+|---|---|
+| early | **it warns you** — corner markers before the hairpin, a grade sign before the descent. Real signage, appearing as favour deepens. *Geometry* information, never mission information, so it does not touch the strategy layer. Same shape as the GPS: convenience for a driver who doesn't know the region, worthless to one who does. |
+| deep | **it banks for you** — camber climbs toward the clamp |
+
+#### Two hard constraints
+
+- **⚠ PAR MUST NEVER READ CAMBER.** It does not today — `src/par.js` integrates **curvature and grade
+  only**, against a fixed reference μ, and mentions camber once in a comment about what par cannot
+  see. Under this boon camber becomes **run-state dependent**, so a par that read it would scale with
+  run state, which **SM-INV-2 forbids outright**. This is dangerous precisely because *"make par more
+  accurate by including banking"* is a reasonable-sounding future change that would quietly break the
+  game. The invariant is now stated inline in `par.js`; do not remove it.
+- **Apply at day boundaries only.** Required by SM-INV-12 (`runState` never advances mid-stream), and
+  re-caching profiles mid-drive would hitch anyway.
+
+#### Shape: continuous, not binary — this is what makes the pair work
+
+The two are **deliberately different shapes**, which is what stops the route domain being a reskin of
+the fatigue pair:
+
+| | shape | how you get it | how you lose it |
+|---|---|---|---|
+| **The Shortcut** | **binary** — a door you walk through | opt in, once | you don't |
+| **The Highway** | **continuous** — a relationship you are already in | accumulates silently | one cut, instantly |
+
+**So the exclusivity is enforced by driving, not by a menu.** You can hold the Shortcut's pact *and*
+keep the Highway's favour — as long as you never actually take a cut. Which is absurd and correct: he
+showed you every cut in the region and you are not using any of them, and being the Shortcut, he
+would keep cheerfully telling you about them anyway. There is no accept/decline anywhere in this, which
+matches the chat pane's no-options rule.
+
+#### Summoning
+
+**The terms are the default; the spirit is not.** Par on the road route and standard grading are just
+*the game* — no spirit required, and they apply from minute one. But **the Highway himself is met like
+everyone else** (see "How spirits introduce themselves"): a ledger, then a visit at the fire.
+
+His ledger writes itself: **N missions completed with zero off-route travel.** You meet him by having
+been loyal without knowing he existed, and he turns up to thank you for something you were not doing
+on purpose. *(This resolves a contradiction in the earlier draft, where "the Highway is the default
+state" collided with the convention that no spirit is available at the start of a run.)*
+
+**What breaks the streak** and whether it can be rebuilt: see Open, below.
+
+#### What this replaces (rejected boons, recorded so they aren't re-proposed)
+
+- **Cheap tow / subsidised recovery — REJECTED** [owner, 2026-08-01]. *"A tow is something a great run
+  doesn't even have."* It is insurance you only claim when you are already losing, so discounting it
+  rewards the run that is going badly and is invisible to the run that is going well. Correct call.
+- **Network state as knowledge (which stations are open, which givers remain) — REJECTED** [owner,
+  2026-08-01]. Mission and service availability belongs to the **player's strategy layer**: the owner
+  wants missions visible on the map so the player can do the calculus of *cross the map for the great
+  job, or take the near one that ends somewhere useful.* Withholding or granting that is far too
+  strong a lever to spend on a spirit. **Nothing in this pair may touch what the player can see of the
+  job board.**
+- **Reduced wear — REJECTED** (mine). The Innkeeper already sells wear reduction. Two spirits trading
+  in one currency is exactly the collapse this document warns about in the fatigue domain.
+
+#### Open
+
+- **What breaks the streak?** Reusing FEAT-52's **cut-traversal completion event** (in one road, out a
+  different road) is unambiguous, already being built, and impossible to trip by accident — parking on
+  grass, using a shoulder, or sliding off a corner would never cost you anything. The alternative, a
+  distance threshold of off-route travel, is truer to "zero off-route travel" as written and revives
+  the Verge's terrain-fragility weighting, but needs tuning and can punish one bad corner.
+- **Per-mission or continuous across the run?**
+- **Can favour be rebuilt after a break, and does it return at the same rate?** A streak that resets to
+  zero is the simple answer; a slower re-climb would say he remembers.
+- **Does he have an angry state at all**, or only withdrawal? *Recommendation: withdrawal only* — the
+  owner rejected the toll model outright, and losing the banking is loss enough.
+- **Fragile and freight cannot use cuts anyway**, so those missions bank Highway favour for free. Is
+  "haul the careful cargo, stay legal, get the good corners" a coherent build or a loophole? It reads
+  coherent, and it pairs with the durability parts axis.
+- **What if you hold the chip and never cut?** You own his rival's knowledge and refuse it. Does the
+  Highway care that you *could*? Probably not — he watches what you do, not what you carry.
+
+> **A structural consequence worth confirming in play:** the Highway is strongest exactly where the
+> Shortcut is weakest. Long engineered sweepers are where banking pays, and they are also where cuts
+> are rare, because the network is not detouring around anything. **The two playstyles sort themselves
+> by terrain rather than by player preference** — which is the better outcome, and is the emergent-
+> over-injected principle landing on a story system.
 
 ### 06 — The Shortcut *(the pact)*
 

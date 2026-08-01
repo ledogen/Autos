@@ -161,6 +161,23 @@ Open Q1), and how the adversarial twin's reward is priced.
 the garage now, so a road-bender *spirit* has no carrier. The camber-as-a-live-dial observation
 survives intact regardless of what eventually drives it.
 
+**→ CARRIER FOUND 2026-08-01: this is THE HIGHWAY.** [RATIFIED] The road-bender was an idea in search
+of a character; the Highway is a character who *is* a road. Its boon is exactly this entry's first
+flavour — **camber climbs toward the clamp as favour deepens, and relaxes when you take a cut**
+(`spirits-and-pacts.md` #05). Everything sketched here survived intact and is now spec:
+
+- the **working-with-it raises the bank** reading is the boon;
+- the **double-edged** note is what makes it SM-INV-9-legal without a guardrail (bank invites rollover
+  on a high-CoG truck, worst at saturated hairpins) — this entry called that in July;
+- the **adversarial twin** is not needed: the Shortcut is the opposition, and it opposes by making the
+  *route* shorter rather than the road worse;
+- the **day-progression** flavour is superseded by something better — camber now moves at day
+  boundaries as a function of **favour**, so the road changes overnight for a reason the player
+  caused (SM-INV-11's parameter-state channel doubling as the favour readout, with no meter).
+
+One constraint this entry did not anticipate, now stated inline in `src/par.js`: **par must never read
+camber**, or the boon would move par and violate SM-INV-2. Par sees curvature and grade only.
+
 Related: DESIGN.md "The Roamer", SM-INV-9 (spirits = rules not resources), SM-INV-7/8 (breadth), 
 SM-INV-1 (doze); the night-owl/camper pair above (day-progression ties them together); MILESTONES.md
 SM-5 (spirits land here). Naming (*spirit* vs *sprite*) still unsettled per the pair above.
