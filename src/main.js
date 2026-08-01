@@ -55,7 +55,7 @@ import { LabSystem } from './lab.js'                     // FEAT-31: isolated fl
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { PoiSystem, POI_PARAMS } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { DaySystem } from './day.js'                     // FEAT-47: story-mode day clock (drives the sky)
-import { CampSystem, CAMP_PARAMS } from './camp.js'      // FEAT-45: story-mode dispersed-camping zones
+import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
@@ -2392,11 +2392,12 @@ function _updateParkTriggers () {
   }
 }
 
-/** The stacked vibe bar: three segments whose max widths ARE the 50/30/20 weights. */
+/** The stacked vibe bar: four segments whose max widths ARE the 40/15/20/25 VIBE_W weights. */
 function _renderVibeBar (g, root = document.getElementById('camp-vibe')) {
   if (!root || !g) return
   const seg = (cls, v) => { const e = root.querySelector(cls); if (e) e.style.width = (v * 100).toFixed(1) + '%' }
   seg('.vseg-flat',  g.flatScore)
+  seg('.vseg-view',  g.viewScore)
   seg('.vseg-shade', g.shadeScore)
   seg('.vseg-water', g.waterScore)
 }
@@ -2523,6 +2524,9 @@ function _syncSleepRow () {
 // reads "hilly" the yellow segment is already nearly gone, and the two agree.
 const CAMP_FLAT_M = 0.2   // m of spread at/below which the ground reads as dead flat
 const CAMP_TILT_M = 0.6   // …and at/below which it is merely inclined; above that, hilly
+// The view word, on the RAW view fraction (viewScore / VIBE_W.view — the score before its weight).
+const CAMP_VIEW_BIG = 0.6   // at/above this the outlook is worth mentioning as the reason to stop
+const CAMP_VIEW_OK  = 0.3   // …and at/above this it is at least open; below, you are walled in
 
 /**
  * Render the camp dialogue. day.js/camp.js stay renderer-agnostic (the mission-panel pattern) —
@@ -2571,8 +2575,13 @@ function _renderCampUI () {
     if (isConfirm) {
       const sp = st.site.spread
       const ground = sp <= CAMP_FLAT_M ? 'dead flat' : sp <= CAMP_TILT_M ? 'inclined' : 'hilly'
+      // The view word rides the same rule as "fishable": a poor outlook is simply not mentioned,
+      // because a greyed "no view" would read as a promise the site broke rather than a fact.
+      const vf = (st.site.viewScore ?? 0) / VIBE_W.view
+      const vista = vf >= CAMP_VIEW_BIG ? 'big view' : vf >= CAMP_VIEW_OK ? 'open outlook' : ''
       body.innerHTML = `<span class="cp-stat">vibe ${(vibe * 100) | 0}%</span>`
         + ` &middot; <span class="cp-flat">${ground}</span>`
+        + (vista ? ` &middot; <span class="cp-view">${vista}</span>` : '')
         + ` &middot; <span class="cp-trees">${st.site.trees} trees</span>`
         // No water ⇒ the word is simply absent. A greyed "fishable" would read as a broken promise.
         + (st.site.waterFound ? ' &middot; <span class="cp-water">fishable</span>' : '')

@@ -3,7 +3,7 @@
 // A dispersed-camping ZONE is a permission, not a place: a big soft area of the map (BLM/forest-
 // service style) inside which pulling off the road and sleeping is allowed. It carries no quality
 // judgement at all — how good a given spot is comes from the LIVE grading in Phase D (flatness /
-// shade / water), never from the zone. That split is deliberate and it is what makes SM-INV-12
+// view / shade / water), never from the zone. That split is deliberate and it is what makes SM-INV-12
 // cheap to honour: with no suitability test at zone level, a zone is a pure function of
 // (worldSeed, its macro cell, CAMP_PARAMS) and nothing else.
 //
@@ -59,12 +59,55 @@ export const CAMP_PARAMS = {
     campWaterR:      30,    // m — how far out water still counts for anything
     campWaterBestM:  5,     // m — at or inside this, full water credit (camping ON the bank is best)
     campMomsRadiusM: 25,    // m — park-trigger radius at mom's house
+
+    // ── The view (the field-of-vision scan — see skylineView) ─────────────────────────────────
+    campViewR:        2000, // m — outer reach of the scan. "Extremely far away" has to mean km, not
+                            // hundreds of metres, or a hillside 600 m off reads as a vista.
+    campViewFarM:     1200, // m — distance at which terrain counts as fully far away. Terrain nearer
+                            // than this scores in proportion, so 60 m of hillside is worth ~nothing.
+
+    // THE SCAN SEES FURTHER THAN THE GAME DRAWS, DELIBERATELY AND FOR NOW (owner, 2026-08-01; see
+    // FEAT-52). The scan samples rawHeightWorld, which is analytic and defined everywhere, so it
+    // scores mountains that are never rendered: the terrain mesh ends at the chunk ring (~160 m on
+    // Normal, ~288 m on Ultra), FogExp2 at 0.006 is 96% opaque by 300 m, and the camera far plane
+    // clips at 1000 m. campViewFarM 1200 is therefore PAST the far plane. The far half of this
+    // judgement is real terrain the player cannot yet see, and the score is knowingly ahead of the
+    // renderer — FEAT-52 is what closes the gap. Do not "fix" it by shrinking the scan to the fog:
+    // that reduces an epic view to "you can see 200 m", which is not the thing being scored.
+    campViewNearM:    12,   // m — first sample. Nearer than this is the pad itself, not the view.
+    campViewAz:       12,   // azimuths (every 30°)
+    campViewSteps:    18,   // samples per azimuth, GEOMETRICALLY spaced near→far: occlusion is
+                            // decided by near ground, so that is where the resolution belongs.
+    campViewEyeM:     5,    // m — probe height (owner, 2026-08-01). NOT an eye height: nobody sits
+                            // welded to the pad, and a handful of steps to the edge of the clearing
+                            // is part of camping there. 5 m buys back roughly that much, in the one
+                            // variable a single-point scan has to spend it in.
+    campViewFovDeg:   20,   // ° — the field of vision judged, above and below level. Everything
+                            // steeper than this down is the ground at your feet and everything
+                            // steeper up is the sky or a wall you are not looking at.
+    campViewShapeLo:  0.05, // the response curve on the raw far-fraction: at/below LO the view scores
+    campViewShapeHi:  0.22, // 0, at/above HI it scores 1, smoothstepped between. LO is what makes a
+                            // mediocre outlook worth nothing instead of a third of a segment; HI is
+                            // what keeps a genuinely big view REACHABLE rather than asymptotic.
+                            //
+                            // BOTH ARE MEASURED, NOT CHOSEN, AND THE POPULATION THEY ARE MEASURED
+                            // OVER IS THE WHOLE POINT (2026-08-01, seeds 1/6/42). Calibrated against
+                            // the whole map the window is p50 0.125 / max 0.67 — and camping it is
+                            // then nearly impossible to max, because FLAT GROUND AND BIG VIEWS ARE
+                            // ANTICORRELATED: flat ground is valley floor. Over CAMPABLE ground only
+                            // (spread ≤ campGateUnevenM, ~7% of the map) the same statistic runs
+                            // p50 0.08 · p90 0.165 · best ~0.26–0.41. The score's job is to rank
+                            // campsites against each other, so the campable population is the right
+                            // denominator and these two are set on it. Re-measure over CAMPABLE
+                            // ground before moving either.
 }
 
-// Vibe weights, RATIFIED as the bar's three segments: flatness 50%, shade 30%, water 20%. They are
-// the max widths of the stacked bar as well as the score weights, so the bar IS the score — a full
-// flatness segment is visibly half the bar because flatness is half the judgement.
-export const VIBE_W = { flat: 0.5, shade: 0.3, water: 0.2 }
+// Vibe weights, RE-RATIFIED 2026-08-01 as the bar's FOUR segments: flatness 40%, view 15%, shade
+// 20%, water 25%. (Was flat 50 / shade 30 / water 20 before the view segment landed.) They are the
+// max widths of the stacked bar as well as the score weights, so the bar IS the score — a full
+// flatness segment is visibly two fifths of the bar because flatness is two fifths of the judgement.
+// Keep the four in the bar's left-to-right order; index.html and _renderVibeBar assume it.
+export const VIBE_W = { flat: 0.4, view: 0.15, shade: 0.2, water: 0.25 }
 
 // Grading lattice: 5×5 over the 6 m square (1.5 m spacing). Enough to catch a rock ledge or a ditch
 // lip without turning a 10 Hz poll into a terrain-sampling loop.
@@ -108,6 +151,98 @@ const NEIGHBOR_CELLS = 1
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v)
 
 /**
+ * How epic the outlook from (x,z) is, 0..1 — the raw view score, before VIBE_W.view scales it.
+ *
+ * THE DEFINITION (owner, 2026-08-01): a good view is one where the MAJORITY OF YOUR FIELD OF VISION
+ * is looking at terrain that is extremely far away. Everything below follows from that sentence, and
+ * it is worth being precise about what it replaced, because the two sound alike and are not.
+ *
+ * The first cut scored AZIMUTHAL openness — how many compass directions were unobstructed. That is
+ * the wrong axis, and a flat plain is the proof: every direction is open and sees for kilometres, so
+ * it scored well, while what you would actually be looking at is grass 40 m from your boots with the
+ * whole distance crushed into a hairline at the horizon. Field of vision is ANGULAR, so the scan is
+ * angular: each azimuth is marched outward, and each visible sample is credited with the SLICE OF
+ * VERTICAL ANGLE it fills, weighted by how far away it is. Near ground subtends a great deal of
+ * angle and is worth nothing; a distant range subtends little but is worth full marks. The score is
+ * that angular average — literally "what fraction of what you are looking at is far away".
+ *
+ * Consequences worth knowing before retuning:
+ *   · campViewFovDeg clips the band to ±20° of level. Below that is the ground at your feet, which
+ *     no one counts as their view, and above it is sky or a wall you are not looking at. Without the
+ *     clip a summit scores badly, because the mountainside beneath you fills half the frame.
+ *   · SKY IS NOT PENALISED. The average is taken over the terrain-filled part of the band only.
+ *     What ruins a view is near ground in your face, not the absence of anything — so a cliff edge
+ *     with nothing but air in front reads as a view (and an azimuth with no terrain in band at all
+ *     scores 1). What kills a direction is a hillside, which fills the band at close range.
+ *   · The azimuths are a PLAIN MEAN. "Majority of your field of vision" is a majority claim, so a
+ *     vista in one direction out of twelve should not carry the site. (The first cut weighted the
+ *     best third and that is exactly what made it forgiving of mediocre spots.)
+ *   · Visibility is the standard viewshed test — a sample counts only if nothing closer stands
+ *     higher — so a near lip that hides the valley behind it costs you the valley.
+ *
+ * WHY AN ANALYTIC SCAN AND NOT A REAL RAYCAST. Casting rays at the streamed chunk meshes would
+ * answer a different question every time the window moved — the score would depend on what happened
+ * to be resident — and that is exactly the dependency SM-INV-12 forbids. This walks a HEIGHT
+ * SAMPLER instead, so it is as pure as the sampler is: fed terrain.rawHeightWorld (pure noise, no
+ * carve, no streaming) the answer is a function of (worldSeed, x, z) and nothing else.
+ *
+ * @param {(x:number,z:number)=>number} sampleH  height sampler, metres
+ * @param {number} x
+ * @param {number} z
+ * @param {object} P  merged CAMP_PARAMS
+ * @returns {number} 0..1
+ */
+export function skylineView (sampleH, x, z, P) {
+    const R = Math.max(1, P.campViewR)
+    const near = Math.max(1, Math.min(P.campViewNearM, R))
+    const AZ = Math.max(1, P.campViewAz | 0)
+    const STEPS = Math.max(2, P.campViewSteps | 0)
+    const h0 = sampleH(x, z)
+    if (!isFinite(h0)) return 0
+    const eye = h0 + P.campViewEyeM
+    const fov = P.campViewFovDeg * Math.PI / 180
+    const farM = Math.max(1e-6, P.campViewFarM)
+    const growth = Math.pow(R / near, 1 / (STEPS - 1))
+
+    let sum = 0
+    for (let a = 0; a < AZ; a++) {
+        const ang = (a / AZ) * Math.PI * 2
+        const dx = Math.cos(ang), dz = Math.sin(ang)
+        let horizon = -Infinity   // running max ANGLE — the skyline this direction is stuck behind
+        let prevA = -fov          // top of the band already accounted for; starts at the band floor
+        let wSum = 0, fSum = 0    // angular weight, and that weight times farness
+        let d = near
+        for (let s = 0; s < STEPS; s++, d *= growth) {
+            const hs = sampleH(x + dx * d, z + dz * d)
+            if (!isFinite(hs)) break
+            const aEl = Math.atan2(hs - eye, d)
+            if (aEl <= horizon) continue          // hidden behind something closer
+            horizon = aEl
+            // This sample owns the band from the last skyline up to itself: that slice of the frame
+            // is filled by terrain at distance d. Clipped to the judged band at both ends.
+            const lo = Math.max(prevA, -fov)
+            const hi = Math.min(aEl, fov)
+            if (hi > lo) {
+                const w = hi - lo
+                wSum += w
+                fSum += w * clamp01(d / farM)
+            }
+            if (aEl > prevA) prevA = aEl
+            if (aEl >= fov) break                 // walled in: the rest of the band is behind this
+        }
+        // No terrain in the band at all ⇒ you are above everything in this direction. That is the
+        // top of a cliff, not a bad view.
+        sum += wSum > 1e-9 ? fSum / wSum : 1
+    }
+
+    // The response curve. Raw far-fractions bunch low (near ground is angularly enormous), so a
+    // linear read would make every site a third of a segment and nothing would ever max out.
+    const t = clamp01((sum / AZ - P.campViewShapeLo)
+                      / Math.max(1e-6, P.campViewShapeHi - P.campViewShapeLo))
+    return t * t * (3 - 2 * t)   // smoothstep
+}
+
+/**
  * The dispersed-camping layer: zone generation, the region-scoped zone list the map and the
  * in-world queries read, and the road-adjacency half of the Phase-D eligibility test.
  */
@@ -117,7 +252,8 @@ export class CampSystem {
      *   getRoad()    — the play RoadSystem (a getter: main.js swaps instances on reseed)
      *   getSeed()    — numeric worldSeed
      *   getParams()  — the live params object (road cross-section widths live there)
-     *   getTerrain() — TerrainSystem, for analyticHeight (the flatness grade)   [Phase D]
+     *   getTerrain() — TerrainSystem: analyticHeight (the flatness grade) and rawHeightWorld
+     *                  (the skyline scan behind the view score)                [Phase D]
      *   getWater()   — WaterSystem, for pondsInBBox / streamChannelAt           [Phase D]
      *   treesNear(x,z,r) → count — the deterministic scatter re-roll main.js owns [Phase D]
      */
@@ -288,7 +424,8 @@ export class CampSystem {
      *
      * @returns {{
      *   inZone:boolean, lateral:number, withinTether:boolean, hasRoad:boolean, side:number,
-     *   spread:number, flat:boolean, flatScore:number, shadeScore:number, waterScore:number,
+     *   spread:number, flat:boolean, flatScore:number, viewScore:number, shadeScore:number,
+     *   waterScore:number,
      *   trees:number, waterDist:number, waterFound:boolean, vibe:number, cands:number,
      *   pad:{x,z,y,tx,tz,nx,nz,halfLen,halfWid}|null
      * }}
@@ -320,7 +457,7 @@ export class CampSystem {
             rev: this._rev, qx: x, qz: z, side: nr.side,
             inZone: !!zone, lateral: nr.lateral, withinTether: nr.lateral <= tether,
             hasRoad: isFinite(nr.lateral),
-            spread: Infinity, flat: false, flatScore: 0, shadeScore: 0, waterScore: 0,
+            spread: Infinity, flat: false, flatScore: 0, viewScore: 0, shadeScore: 0, waterScore: 0,
             trees: 0, waterDist: Infinity, waterFound: false, vibe: 0, cands: 0, pad: null,
         }
         this._eval = out
@@ -335,17 +472,18 @@ export class CampSystem {
 
         // TWO PASSES, ON PURPOSE. Flatness is the gate and only flat candidates can win, so the
         // expensive half — shade (a chunked scatter walk) and water (~40 stream probes) — runs on the
-        // survivors only. Then the survivors are taken FLATTEST FIRST and bounded: shade + water can
-        // add at most VIBE_W.shade + VIBE_W.water, so once a candidate's flatness alone cannot reach
-        // the best score already found, neither can any flatter-scoring candidate behind it, and the
-        // pass stops. That is what keeps an 11-rung ladder from costing 11 water searches on the open
-        // flat ground where every rung passes the gate.
-        const AMENITY_MAX = VIBE_W.shade + VIBE_W.water
+        // survivors only. Then the survivors are taken FLATTEST FIRST and bounded: view + shade +
+        // water can add at most VIBE_W.view + VIBE_W.shade + VIBE_W.water, so once a candidate's
+        // flatness alone cannot reach the best score already found, neither can any flatter-scoring
+        // candidate behind it, and the pass stops. That is what keeps an 11-rung ladder from costing
+        // 11 water searches on the open flat ground where every rung passes the gate.
+        const AMENITY_MAX = VIBE_W.view + VIBE_W.shade + VIBE_W.water
         const flats = []
         let flattest = null
         for (let i = 0; i <= steps; i++) {
-            const lat = lat0 + (i / steps) * reach
-            const c = this._gradeFlat(nr.roadX + nr.nx * lat, nr.roadZ + nr.nz * lat, nr, P)
+            const t = i / steps
+            const lat = lat0 + t * reach
+            const c = this._gradeFlat(nr.roadX + nr.nx * lat, nr.roadZ + nr.nz * lat, nr, P, t)
             if (!c) continue                       // off the terrain: not a site
             out.cands++
             if (!flattest || c.spread < flattest.spread) flattest = c
@@ -359,11 +497,33 @@ export class CampSystem {
         const waterPts = []
         this._streamScan(nr.roadX + nr.nx * lat0, nr.roadZ + nr.nz * lat0, P, waterPts)
         this._streamScan(nr.roadX + nr.nx * (lat0 + reach), nr.roadZ + nr.nz * (lat0 + reach), P, waterPts)
+
+        // THE VIEW IS SCANNED PER RAY END, NOT PER CANDIDATE — the _streamScan trick, for the same
+        // reason. A 600 m skyline does not meaningfully change over the 40 m the ladder spans, but it
+        // DOES change enough at a rim edge to be worth more than one reading, so both ends are
+        // scanned and each candidate lerps between them by its position along the ray.
+        //
+        // MEASURED (2026-08-01, seeds 1/6/42): 44–55 µs per scan on real terrain noise, so ~100 µs
+        // for the pair — against a re-grade that already spends ~44 µs in queryNearest alone and
+        // ~275 analyticHeight calls (each strictly dearer than rawHeightWorld: road resolve + water
+        // carve on top of the same noise) in the ladder. Paid only when the truck has left the
+        // CAMP_RESAMPLE_M ball, i.e. ≲1 ms per second of creeping about looking for a site.
+        //
+        // The same sweep says the score SPREADS ACROSS CAMPABLE GROUND, which is the population that
+        // matters: median 0.06–0.13, p90 0.63–0.90, ~20% of flat sites over 0.5 and 4–9% maxing out,
+        // on every seed. Harsh at the bottom and genuinely reachable at the top, which is the
+        // shape asked for — a segment that pinned near one value would be 15% of the bar doing
+        // nothing. See campViewShapeLo/Hi for why the population is flat ground and not the map.
+        const viewEnds = [
+            this._viewAt(nr.roadX + nr.nx * lat0, nr.roadZ + nr.nz * lat0, P),
+            this._viewAt(nr.roadX + nr.nx * (lat0 + reach), nr.roadZ + nr.nz * (lat0 + reach), P),
+        ]
+
         flats.sort((a, b) => b.flatScore - a.flatScore)
         let best = null
         for (const c of flats) {
             if (best && c.flatScore + AMENITY_MAX <= best.vibe) break
-            this._gradeAmenity(c, P, waterPts)
+            this._gradeAmenity(c, P, waterPts, viewEnds)
             if (!best || c.vibe > best.vibe) best = c
         }
 
@@ -371,11 +531,12 @@ export class CampSystem {
         // spot found, so the debug spread read-out still describes real ground rather than Infinity.
         const pick = best || flattest
         if (!pick) return out
-        if (!best) this._gradeAmenity(pick, P, waterPts)
+        if (!best) this._gradeAmenity(pick, P, waterPts, viewEnds)
 
         out.spread = pick.spread
         out.flat = pick.flat
         out.flatScore = pick.flatScore
+        out.viewScore = pick.viewScore
         out.trees = pick.trees
         out.shadeScore = pick.shadeScore
         out.waterDist = pick.waterDist
@@ -401,7 +562,7 @@ export class CampSystem {
      * uses. Raw terrain would bill the site for the road's own cut/fill bench, which is already-spent
      * earthwork and not the campsite's ground.
      */
-    _gradeFlat (cx, cz, nr, P) {
+    _gradeFlat (cx, cz, nr, P, t = 0) {
         const terrain = this._d.getTerrain?.()
         const h = terrain?.analyticHeight ? ((px, pz) => terrain.analyticHeight(px, pz)) : null
         let lo = Infinity, hi = -Infinity, sum = 0, n = 0
@@ -421,27 +582,48 @@ export class CampSystem {
         } else { lo = hi = 0; sum = 0; n = 1 }
         const spread = hi - lo
         return {
-            x: cx, z: cz, y: sum / n, spread,
+            // t = where this rung sits along the siting ray, 0 at the road edge and 1 at the tether
+            // limit. Only the view uses it (the two end scans are lerped by it).
+            x: cx, z: cz, y: sum / n, spread, t,
             flat: spread <= P.campGateUnevenM,
             flatScore: VIBE_W.flat * clamp01(1 - spread / Math.max(1e-6, P.campMaxUnevenM)),
+            viewScore: 0,
             trees: 0, shadeScore: 0, waterDist: Infinity, waterFound: false, waterScore: 0,
             vibe: 0,
         }
     }
 
-    /** Shade + water for a candidate that has already passed _gradeFlat. Mutates `c` in place. */
-    _gradeAmenity (c, P, waterPts) {
-        // ── shade (up to 0.3) — tree quantity inside the grading area ─────────────────────────
+    /**
+     * The raw view score at one point, 0..1 — skylineView driven by the CARVE-FREE terrain sampler.
+     *
+     * rawHeightWorld, not analyticHeight, and for two reasons. It is pure noise, so the score stays a
+     * function of (worldSeed, x, z) and cannot drift with the streaming window (SM-INV-12); and it is
+     * the honest reading anyway — a skyline 600 m out is the shape of the land, not the cut the road
+     * took through it. It is also the cheaper call by some way: no road resolve, no water carve.
+     */
+    _viewAt (x, z, P) {
+        const terrain = this._d.getTerrain?.()
+        if (!terrain?.rawHeightWorld) return 0
+        return skylineView((px, pz) => terrain.rawHeightWorld(px, pz), x, z, P)
+    }
+
+    /** View + shade + water for a candidate that has already passed _gradeFlat. Mutates `c` in place. */
+    _gradeAmenity (c, P, waterPts, viewEnds) {
+        // ── view (up to 0.15) — lerped between the two per-ray-end skyline scans ──────────────
+        const v0 = viewEnds?.[0] ?? 0, v1 = viewEnds?.[1] ?? 0
+        c.viewScore = VIBE_W.view * clamp01(v0 + (v1 - v0) * clamp01(c.t ?? 0))
+
+        // ── shade (up to 0.2) — tree quantity inside the grading area ─────────────────────────
         c.trees = this._d.treesNear?.(c.x, c.z, P.campShadeR) ?? 0
         c.shadeScore = VIBE_W.shade * clamp01(c.trees / Math.max(1, P.campShadeFullN))
 
-        // ── water (up to 0.2) — how close the nearest water is ────────────────────────────────
+        // ── water (up to 0.25) — how close the nearest water is ───────────────────────────────
         c.waterDist = this._waterDistance(c.x, c.z, P, waterPts)
         c.waterFound = c.waterDist <= P.campWaterR
         c.waterScore = VIBE_W.water * clamp01(
             (P.campWaterR - c.waterDist) / Math.max(1e-6, P.campWaterR - P.campWaterBestM))
 
-        c.vibe = c.flatScore + c.shadeScore + c.waterScore
+        c.vibe = c.flatScore + c.viewScore + c.shadeScore + c.waterScore
         return c
     }
 

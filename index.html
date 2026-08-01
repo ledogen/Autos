@@ -469,17 +469,18 @@
       overflow: hidden;
     }
     /* ONE COLOUR CODE across the bar, the legend and the confirm face's stats line (owner,
-       2026-07-31): yellow = flatness, green = shade/trees, blue = water/fishable. The yellow is
-       deliberately duller than the #ffdc3c camping border so the two do not read as the same ink;
-       the green was darkened-green before and is now the readable one, since the stats line has to
-       carry it as text. Change one, change all four places. */
+       2026-07-31): yellow = flatness, violet = view, green = shade/trees, blue = water/fishable.
+       The yellow is deliberately duller than the #ffdc3c camping border so the two do not read as
+       the same ink; the green was darkened-green before and is now the readable one, since the
+       stats line has to carry it as text. Change one, change all four places. */
     .vibe-bar .vseg { height: 100%; width: 0%; transition: width 0.12s linear; }
-    .vibe-bar .vseg-flat  { background: #e8d44a; }   /* flatness — up to 50% of the bar */
-    .vibe-bar .vseg-shade { background: #7fd86a; }   /* shade    — up to 30% */
-    .vibe-bar .vseg-water { background: #4aa8d8; }   /* water    — up to 20% */
+    .vibe-bar .vseg-flat  { background: #e8d44a; }   /* flatness — up to 40% of the bar */
+    .vibe-bar .vseg-view  { background: #b98ae0; }   /* view     — up to 15% */
+    .vibe-bar .vseg-shade { background: #7fd86a; }   /* shade    — up to 20% */
+    .vibe-bar .vseg-water { background: #4aa8d8; }   /* water    — up to 25% */
 
-    /* The legend. The bar read as one anonymous fill without it (owner, 2026-07-30) — three
-       segments in three greens/blues tell you nothing about WHICH judgement is short. Swatch
+    /* The legend. The bar read as one anonymous fill without it (owner, 2026-07-30) — four
+       segments in four colours tell you nothing about WHICH judgement is short. Swatch
        colours are the segment colours; keep them in step or the legend lies. */
     .vibe-legend {
       display: flex;
@@ -493,6 +494,7 @@
     .vibe-legend span { display: flex; align-items: center; gap: 4px; }
     .vibe-legend i { width: 8px; height: 8px; display: inline-block; font-style: normal; }
     .vibe-legend .lg-flat  { background: #e8d44a; }
+    .vibe-legend .lg-view  { background: #b98ae0; }
     .vibe-legend .lg-shade { background: #7fd86a; }
     .vibe-legend .lg-water { background: #4aa8d8; }
 
@@ -532,11 +534,12 @@
     #cp-row { margin-top: 12px; display: flex; gap: 10px; align-items: center; justify-content: center; }
     #cp-hours { width: 160px; }
     .cp-dim { color: #8a939c; }
-    /* The confirm face's stats line. The three judgement words wear the vibe bar's colours (see
-       the colour-code note on .vseg-*) so the reader can tie a word to a segment; the vibe number
-       itself is neutral white because it is the sum of all three. */
+    /* The confirm face's stats line. The judgement words wear the vibe bar's colours (see the
+       colour-code note on .vseg-*) so the reader can tie a word to a segment; the vibe number
+       itself is neutral white because it is the sum of all four. */
     .cp-stat  { color: #ffffff; }
     .cp-flat  { color: #e8d44a; }
+    .cp-view  { color: #b98ae0; }
     .cp-trees { color: #7fd86a; }
     .cp-water { color: #4aa8d8; }
   </style>
@@ -657,11 +660,13 @@
     <button id="camp-seek-toggle">look for a campsite</button>
     <div class="vibe-bar" id="camp-vibe">
       <div class="vseg vseg-flat"></div>
+      <div class="vseg vseg-view"></div>
       <div class="vseg vseg-shade"></div>
       <div class="vseg vseg-water"></div>
     </div>
     <div class="vibe-legend" id="camp-vibe-legend">
       <span><i class="lg-flat"></i>flat</span>
+      <span><i class="lg-view"></i>view</span>
       <span><i class="lg-shade"></i>shade</span>
       <span><i class="lg-water"></i>water</span>
     </div>
@@ -678,11 +683,13 @@
          is untouched. Hidden on every other face. -->
     <div class="vibe-bar" id="cp-vibe" style="display:none;">
       <div class="vseg vseg-flat"></div>
+      <div class="vseg vseg-view"></div>
       <div class="vseg vseg-shade"></div>
       <div class="vseg vseg-water"></div>
     </div>
     <div class="vibe-legend" id="cp-vibe-legend" style="display:none;">
       <span><i class="lg-flat"></i>flat</span>
+      <span><i class="lg-view"></i>view</span>
       <span><i class="lg-shade"></i>shade</span>
       <span><i class="lg-water"></i>water</span>
     </div>
