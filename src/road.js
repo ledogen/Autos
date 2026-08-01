@@ -143,6 +143,13 @@ const PAD_DUCK_CAP_PHYS = 0.55
 // merged carve DIRT to zero at the ring edge makes the field exactly C0 at the exit; interior wheels
 // (f=1) still ride the full asphalt overlay unchanged. Hardcoded: physics-only, no route-cache effect.
 const PAD_EDGE_FEATHER = 1.6
+// QUAL-16 (junction-flow) DEG2_HERMITE_TENSION: cubic-Hermite tangent magnitude, × the mouth-to-mouth
+// gap, for the deg-2 connector's rung-2 fallback (_buildDeg2ArcGeom). 1.0 (tangents as long as the
+// chord) is the standard chord-length parameterisation: it reproduces a gentle arc to within a few cm
+// over the ~20–25 m gaps a connector spans, and degrades gracefully into an S (laterally offset mouths)
+// or a U (near-antiparallel legs) — the two shapes the single tangent circle cannot express at all.
+// Hardcoded, NOT a road* param (carve-time geometry only, no route-cache-signature effect).
+const DEG2_HERMITE_TENSION = 1.0
 // FEAT-46 POI_ROAD_FEATHER: band (m) OUTSIDE the ribbon+shoulder across which a POI lay-by pad's
 // authority ramps 0 → 1 (see _poiPadCarve). This is not a look tunable — it is the mechanism that
 // makes the ratified "POIs never influence routing determinism" rule structural: a pad has exactly
@@ -4435,8 +4442,9 @@ export class RoadSystem {
         // camber flatten): a naked >120° elbow with a multi-metre plaza-rim step and a full camber
         // flip. Cost-pruned topology (QUAL-22) makes such elbows common (valley confluences whose
         // third leg the crossing cull removed — user captures 1784910746309/1784910841316). Admit
-        // every kinked 2-leg cluster; _buildDeg2ArcGeom's own guards (R < halfWidth → null) decide
-        // arc vs pad-ladder fallback, exactly as the deg-3 ladder would.
+        // every kinked 2-leg cluster; _buildDeg2ArcGeom builds a connector for essentially all of them
+        // (tangent circle, else Hermite — see _pushDeg2Core), so the deg-3 pad ladder is now a last
+        // resort for degenerate 2-leg input only.
         const kinkMin = (this._params.roadJunctionKinkDeg ?? 0) * Math.PI / 180
         // QUAL-21 Phase 5b-1 DECISION (2026-07-25): the admission KEEPS the first-chord proxy.
         // A true-analytic-tangent admission was implemented and measured — it fails BOTH ways:
@@ -4482,11 +4490,20 @@ export class RoadSystem {
             // QUAL-16: build the deg-2 connector fillet arc ONCE here (cached per _networkRev). The mesh
             // (_buildDeg2Ribbon) reads node.deg2.points/halfWidth to sweep the strip, and _resolveRoadSurface
             // projects onto it so the terrain earthwork + collision follow the same arc → no scoop on sharp
-            // bends. null (degenerate/pinched fillet) → mesh falls back to the pad ladder, no carve candidate.
+            // bends. null (degenerate 2-leg input only, now that _pushDeg2Core has a Hermite rung) → mesh
+            // falls back to the pad ladder, no carve candidate.
             if (legs.length === 2) {
                 const arc = this._buildDeg2ArcGeom(node)
                 if (arc) {
                     node.deg2 = arc
+                    // junction-flow: the connector's own reach from the node centre, for padReachNodes().
+                    // A connector node has no ring (see below) but still OWNS its ground — src/poi.js must
+                    // not stack a lay-by on a bend fillet, and the terrain skip guard must not cull its rim.
+                    let ar = 0
+                    for (const pt of arc.points) {
+                        const r = Math.hypot(pt.x - c.x, pt.z - c.z); if (r > ar) ar = r
+                    }
+                    node.deg2MaxR = ar
                     const seenTiles = new Set()
                     for (const pt of arc.points) {
                         const key = `${Math.floor(pt.x / CHUNK_SIZE)},${Math.floor(pt.z / CHUNK_SIZE)}`
@@ -4501,7 +4518,17 @@ export class RoadSystem {
             // (_junctionPadCarve) reads it to guarantee the whole pad footprint is a first-class carve
             // region, and the mesh (buildJunctionFootprint) reads the SAME ring so mesh == collision. Cached
             // by _networkRev with the rest of _nodeJunctions. ringMaxR = pad reach for the carve quick-reject.
-            node.ring = this._buildJunctionRing(node)
+            //
+            // QUAL-16 (junction-flow): a deg-2 node that GOT a connector arc has NO pad — the mesh draws the
+            // swept ribbon (_buildDeg2Ribbon) and never reaches the ring branch — so giving it one is pure
+            // harm: _junctionPadCarve would still excavate the full ~14 m welded footprint (incl. the ~268°
+            // back-gap bulb a 2-leg weld produces) at full depth, leaving a bare graded disc with only a
+            // ribbon threaded through it (seed-6 1268.7,2719.4 / 1900.7,831.0 — 11–17 m of cut/fill under
+            // 57–66% un-paved ring interior). The connector owns its own earthwork end to end
+            // (_connectorCarve + collectConnectorSamples, which feeds the terrain skip guard), and the leg
+            // ribbons are cut back only as far as the connector's own mouths — no naked gap. ring = null
+            // makes every consumer (pad carve, padReachNodes, the mesh's ring branch) skip the node.
+            node.ring = node.deg2 ? null : this._buildJunctionRing(node)
             if (node.ring) {
                 let mr = 0
                 for (const rp of node.ring) { const r = Math.hypot(rp.x - c.x, rp.z - c.z); if (r > mr) mr = r }
@@ -5098,6 +5125,10 @@ export class RoadSystem {
      * open-side rim, or a POI lay-by, has no ribbon nearby), so the sample-distance skip must not
      * cull it. Two sources, both listed here so terrain.js has one thing to ask for:
      *   • junction pads (QUAL-10) — reach = ringMaxR + shoulder + maxToe, cached with _nodeJunctions.
+     *   • QUAL-16 deg-2 CONNECTORS (junction-flow) — reach = deg2MaxR + the same apron. These nodes
+     *     have no ring (the connector replaced the pad), but they still own their ground for both
+     *     consumers: src/poi.js must not stack a lay-by on a bend fillet, and the terrain skip guard
+     *     must not cull the connector's outer rim.
      *   • FEAT-46 POI lay-by pads — reach = the stadium's own half-diagonal + the same apron.
      * Also the reject list src/poi.js sites against: a POI never stacks on a junction's ground.
      */
@@ -5107,8 +5138,8 @@ export class RoadSystem {
         const p = this._params
         const extra = PAD_RIM_HOLD + (p.roadShoulderWidth ?? 2.5) + (p.roadMaxEmbankmentToe ?? 10)
         if (this._nodeJunctions) for (const n of this._nodeJunctions.values()) {
-            if (!n.ring) continue
-            out.push({ x: n.pos.x, z: n.pos.z, reach: (n.ringMaxR ?? 0) + extra })
+            if (n.ring) out.push({ x: n.pos.x, z: n.pos.z, reach: (n.ringMaxR ?? 0) + extra })
+            else if (n.deg2) out.push({ x: n.pos.x, z: n.pos.z, reach: (n.deg2MaxR ?? 0) + extra })
         }
         if (this._padsAll) for (const q of this._padsAll) {
             out.push({ x: q.x, z: q.z, reach: Math.hypot(q.halfLen, q.halfWid) + extra })
@@ -5264,16 +5295,17 @@ export class RoadSystem {
 
     // ── QUAL-16: deg-2 kink connector fillet arc geometry ──────────────────────────────────────
     /**
-     * Fit the cheapest circular fillet joining a deg-2 node's two mouth cross-sections and return the
-     * swept connector CENTRELINE (densified ≤ 3 m) plus the data the carve/mesh need. Formerly lived
-     * inside road-mesh.js `_buildDeg2Ribbon`; moved here so it is computed ONCE (cached on the node per
+     * Join a deg-2 node's two mouth cross-sections with a driveable connector and return the swept
+     * CENTRELINE (densified ≤ 3 m) plus the data the carve/mesh need. Formerly lived inside
+     * road-mesh.js `_buildDeg2Ribbon`; moved here so it is computed ONCE (cached on the node per
      * _networkRev) and shared by the mesh (sweep) AND _resolveRoadSurface (earthwork/collision), so
-     * mesh == collision through the bend. gStart/gEnd are the run grades at the two centreline
-     * endpoints (anchor points on the real ribbons) → the connector's flat grade interp is C0 with the
-     * ribbons it welds to. Pure fn of node + params + streamed network (window-invariant, D-16).
+     * mesh == collision through the bend. The centreline rides ON each real ribbon from its anchor
+     * point to its mouth (the lead-ins), so the connector's grade interp is C0 with the ribbons it
+     * welds to. Pure fn of node + params + streamed network (window-invariant, D-16).
      *
-     * Returns { points:[{x,z}], polyCum:Float64Array, halfWidth, gStart, gEnd, totalLen, key } or null
-     * (degenerate/pinched fillet → caller keeps the pad-ladder fallback, no carve candidate).
+     * Returns { points:[{x,z}], polyCum:Float64Array, grades:Float64Array, halfWidth, netKeys,
+     * totalLen, key } or null. Null is now essentially unreachable for a well-formed 2-leg node —
+     * see _pushDeg2Core's rung 2 — and only the caller's pad-ladder fallback consumes it.
      */
     _buildDeg2ArcGeom(node) {
         if (!node.legs || node.legs.length !== 2 || !this._network) return null
@@ -5300,36 +5332,6 @@ export class RoadSystem {
             mouth.push({ runKey: leg.runKey, cx: c.x, cz: c.z, ox: ox / ol, oz: oz / ol, mouthArc, anchorArc })
         }
         const [A, B] = mouth
-        const uAx = -A.ox, uAz = -A.oz
-        const uBx =  B.ox, uBz =  B.oz
-        const qx = B.cx - A.cx, qz = B.cz - A.cz
-        const det = uAx * uBz - uAz * uBx
-        if (Math.abs(det) < 1e-4) return null
-        const t = (qx * uBz - qz * uBx) / det
-        const r = (uAx * qz - uAz * qx) / det
-        if (!(t > 0.5) || !(r > 0.5)) return null
-        const Ix = A.cx + uAx * t, Iz = A.cz + uAz * t
-        const cosD = Math.max(-1, Math.min(1, uAx * uBx + uAz * uBz))
-        const delta = Math.acos(cosD)
-        const tanH = Math.tan(delta / 2)
-        if (tanH < 1e-4) return null
-        const Lt = Math.min(t, r) - halfWidth * 0.5
-        if (Lt < 0.5) return null
-        const R = Lt / tanH
-        if (R < halfWidth) return null   // too tight — inside edge would pinch; let the pad handle it
-        const PAx = Ix - uAx * Lt, PAz = Iz - uAz * Lt
-        const PBx = Ix + uBx * Lt, PBz = Iz + uBz * Lt
-        let bx = -uAx + uBx, bz = -uAz + uBz
-        const bl = Math.hypot(bx, bz)
-        if (bl < 1e-6) return null
-        bx /= bl; bz /= bl
-        const h = R / Math.cos(delta / 2)
-        const Ox = Ix + bx * h, Oz = Iz + bz * h
-        const a0 = Math.atan2(PAx - Ox, PAz - Oz)
-        const a1 = Math.atan2(PBx - Ox, PBz - Oz)
-        let dAng = a1 - a0
-        while (dAng >  Math.PI) dAng -= 2 * Math.PI
-        while (dAng < -Math.PI) dAng += 2 * Math.PI
 
         const SEG = 3
         const center = []
@@ -5350,13 +5352,7 @@ export class RoadSystem {
             }
         }
         pushRun(A.runKey, A.anchorArc, A.mouthArc, true)   // anchorA → cA, on the ribbon
-        pushStraight(A.cx, A.cz, PAx, PAz, false)          // cA → PA (short entry into the fillet)
-        const arcSteps = Math.max(2, Math.ceil(Math.abs(dAng) * R / SEG))
-        for (let k = 1; k <= arcSteps; k++) {
-            const ang = a0 + dAng * (k / arcSteps)
-            center.push({ x: Ox + Math.sin(ang) * R, z: Oz + Math.cos(ang) * R })
-        }
-        pushStraight(PBx, PBz, B.cx, B.cz, false)          // PB → cB
+        if (!this._pushDeg2Core(center, A, B, halfWidth, SEG, pushStraight)) return null
         pushRun(B.runKey, B.mouthArc, B.anchorArc, false)  // cB → anchorB, on the ribbon
         if (center.length < 2) return null
 
@@ -5390,6 +5386,99 @@ export class RoadSystem {
             totalLen: polyCum[center.length - 1],
             key: `@deg2:${node.pos.x.toFixed(1)},${node.pos.z.toFixed(1)}`,
         }
+    }
+
+    /**
+     * QUAL-16: the deg-2 connector CORE — the centreline from mouth A's cross-section point to mouth
+     * B's, appended to `center` (cA is already the last point pushed by the caller's lead-in; cB is
+     * the last point this pushes). Two rungs:
+     *
+     *   1. The cheapest tangent CIRCLE: the largest radius that still fits between the two mouths,
+     *      i.e. the gentlest, most driveable curve. What QUAL-16 originally shipped.
+     *   2. (junction-flow) A cubic HERMITE sweep between the mouths, leg directions as tangents,
+     *      when rung 1 is degenerate. The tangent circle needs the two mouth centrelines to actually
+     *      INTERSECT ahead of both mouths; laterally offset mouths put the intersection BEHIND one of
+     *      them (t ≤ 0.5), which the old code treated as "no connector" — so a gentle 23° kink whose
+     *      mouths are offset near-S (seed-6 -586.7,560.5, t = −2.1) fell through to the pad ladder and
+     *      built a 14.5 m dirt PLAZA on what is visually a straight road. The Hermite has no such
+     *      requirement: it degrades into an S for offset mouths and a U for near-antiparallel legs
+     *      (the >120° cull-created elbows), neither of which a single circle can express.
+     *
+     * So rung 2 is deliberately near-unconditional — it guards only truly degenerate input (coincident
+     * mouths, non-finite output). A slightly tight connector is always better than a bare graded disc.
+     * Both rungs sample at the same SEG spacing and emit into the same array, so every consumer
+     * (_buildDeg2Ribbon, _connectorCarve, _projectOntoDeg2Arc, _deg2ArcTiles, _connectorGradeAt) is
+     * blind to which rung ran. Pure fn of the mouth records (window-invariant, D-16).
+     *
+     * @returns {boolean} true if a core was appended.
+     */
+    _pushDeg2Core(center, A, B, halfWidth, SEG, pushStraight) {
+        const uAx = -A.ox, uAz = -A.oz   // travel direction INTO the node at mouth A
+        const uBx =  B.ox, uBz =  B.oz   // travel direction OUT of the node at mouth B
+        const qx = B.cx - A.cx, qz = B.cz - A.cz
+        const gap = Math.hypot(qx, qz)
+        if (!(gap > 1e-3)) return false
+
+        // ── Rung 1: tangent circle ──────────────────────────────────────────────────────────────
+        const det = uAx * uBz - uAz * uBx
+        if (Math.abs(det) >= 1e-4) {
+            const t = (qx * uBz - qz * uBx) / det
+            const r = (uAx * qz - uAz * qx) / det
+            const cosD = Math.max(-1, Math.min(1, uAx * uBx + uAz * uBz))
+            const delta = Math.acos(cosD)
+            const tanH = Math.tan(delta / 2)
+            const Lt = Math.min(t, r) - halfWidth * 0.5
+            const R = Lt / tanH
+            let bx = -uAx + uBx, bz = -uAz + uBz
+            const bl = Math.hypot(bx, bz)
+            // R < halfWidth = the inside edge would pinch; tanH < 1e-4 = no turn to fillet. Both now
+            // fall THROUGH to the Hermite instead of failing the whole connector.
+            if (t > 0.5 && r > 0.5 && tanH >= 1e-4 && Lt >= 0.5 && R >= halfWidth && bl >= 1e-6) {
+                const Ix = A.cx + uAx * t, Iz = A.cz + uAz * t
+                const PAx = Ix - uAx * Lt, PAz = Iz - uAz * Lt
+                const PBx = Ix + uBx * Lt, PBz = Iz + uBz * Lt
+                bx /= bl; bz /= bl
+                const h = R / Math.cos(delta / 2)
+                const Ox = Ix + bx * h, Oz = Iz + bz * h
+                const a0 = Math.atan2(PAx - Ox, PAz - Oz)
+                const a1 = Math.atan2(PBx - Ox, PBz - Oz)
+                let dAng = a1 - a0
+                while (dAng >  Math.PI) dAng -= 2 * Math.PI
+                while (dAng < -Math.PI) dAng += 2 * Math.PI
+                pushStraight(A.cx, A.cz, PAx, PAz, false)   // cA → PA (short entry into the fillet)
+                const arcSteps = Math.max(2, Math.ceil(Math.abs(dAng) * R / SEG))
+                for (let k = 1; k <= arcSteps; k++) {
+                    const ang = a0 + dAng * (k / arcSteps)
+                    center.push({ x: Ox + Math.sin(ang) * R, z: Oz + Math.cos(ang) * R })
+                }
+                pushStraight(PBx, PBz, B.cx, B.cz, false)   // PB → cB
+                return true
+            }
+        }
+
+        // ── Rung 2: cubic Hermite cA → cB ───────────────────────────────────────────────────────
+        const mag = gap * DEG2_HERMITE_TENSION
+        const m0x = uAx * mag, m0z = uAz * mag
+        const m1x = uBx * mag, m1z = uBz * mag
+        const at = (u) => {
+            const u2 = u * u, u3 = u2 * u
+            const h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u
+            const h01 = -2 * u3 + 3 * u2,    h11 = u3 - u2
+            return { x: h00 * A.cx + h10 * m0x + h01 * B.cx + h11 * m1x,
+                     z: h00 * A.cz + h10 * m0z + h01 * B.cz + h11 * m1z }
+        }
+        // Coarse length pass first, so the emitted spacing matches rung 1's SEG (a Hermite in u is not
+        // arc-length uniform; uniform-in-u sampling at the right COUNT is close enough for a ≤ 3 m rung).
+        let est = 0, prev = { x: A.cx, z: A.cz }
+        for (let k = 1; k <= 16; k++) { const p = at(k / 16); est += Math.hypot(p.x - prev.x, p.z - prev.z); prev = p }
+        if (!isFinite(est) || est < 1e-3) return false
+        const n = Math.max(2, Math.ceil(est / SEG))
+        for (let k = 1; k <= n; k++) {
+            const p = at(k / n)
+            if (!isFinite(p.x) || !isFinite(p.z)) return false
+            center.push(p)
+        }
+        return true
     }
 
     /**

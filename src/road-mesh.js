@@ -1339,16 +1339,16 @@ export class RoadMeshSystem {
      *
      * The two legs are one road bending through the node. Each mouth is the run's own cross-section
      * at cutback + halfWidth/2 (the exact-weld point the pad also uses, overlapping the trimmed
-     * ribbon end). We fit the CHEAPEST circular arc tangent to both centerlines — the largest radius
-     * that still fits between the mouths, i.e. the gentlest, most driveable curve — then sweep a
-     * full-width strip [cA → tangentA → arc → tangentB → cB] along it. Vertex Y rides `sampleY`
-     * (the same asphalt-top field the ribbons + pads use → mesh == collision), so the connector is
-     * continuous with the two ribbons it welds to. Solid asphalt, aMark = 0 (markings feather out at
-     * junctions anyway — matches the pad's stripe contract).
+     * ribbon end). road.js (_pushDeg2Core) fits the connector centreline — the cheapest tangent
+     * circle where one exists, else a cubic Hermite — and we sweep a full-width strip along it.
+     * Vertex Y rides `sampleY` (the same asphalt-top field the ribbons + pads use → mesh ==
+     * collision), so the connector is continuous with the two ribbons it welds to. Solid asphalt,
+     * aMark = 0 (markings feather out at junctions anyway — matches the pad's stripe contract).
      *
-     * Returns a BufferGeometry, or null (degenerate fillet → caller falls back to the pad ladder):
-     * near-collinear legs (det ≈ 0), a mouth on the wrong side (t/r ≤ 0), or a radius so tight the
-     * inside edge would pinch (R < halfWidth). Pure fn of node + params + streamed network (D-16).
+     * Returns a BufferGeometry, or null when road.js built no connector at all (degenerate 2-leg
+     * input — caller falls back to the pad ladder). junction-flow: a node that DOES get a connector
+     * has no node.ring at all, so the pad branch below can never double-draw over this strip and
+     * _junctionPadCarve never excavates a plaza under it. Pure fn of node + params + network (D-16).
      */
     _buildDeg2Ribbon(node, params, sampleY) {
         // QUAL-16: the fillet arc geometry is computed ONCE in road.js (_buildDeg2ArcGeom, cached on the
