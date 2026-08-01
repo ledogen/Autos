@@ -43,8 +43,9 @@ distinct placement stories the user wants:
 
 **Regionality** gates the amount: early story regions are mostly paved; later regions are increasingly
 dirt (both a higher re-surface fraction and more/longer camping spurs). In free roam this is ambient
-variety; under story mode it is a per-region **parameter state** (SM-INV-11), keyed off `metaState`
-(SM-INV-12), exactly like FEAT-32's logged-ness.
+variety; under story mode it is a per-region **parameter state** (SM-INV-11), keyed off **`runState`**
+(SM-INV-12 as rewritten 2026-07-29 — worldgen is meta-free; escalation is run-layer), exactly like
+FEAT-32's logged-ness.
 
 ## Desired behaviour
 
@@ -122,16 +123,19 @@ variety; under story mode it is a per-region **parameter state** (SM-INV-11), ke
 Two clean invariant ties; both are *why* this is worth more than ambient flavour:
 
 - **Regionality = a story parameter state (SM-INV-11).** Dirt prevalence per region is a baked
-  per-region parameter keyed off `metaState` (SM-INV-12) — early regions paved and civilised, deep
+  per-region parameter keyed off **`runState`** (SM-INV-12 as rewritten) — early regions paved and civilised, deep
   regions dirt and wild, delivered with zero authored text. Same delivery surface as FEAT-32
   logged-ness and the sky/prop-palette states DESIGN.md already lists. Under story mode this is
   **baked, not slider-driven** (Game modes: story mode locks debug tooling).
-- **Dispersed-camping spurs feed SM-INV-6 camping-is-a-place.** A spur that peters out at a scored
+- **Dispersed-camping spurs feed SM-INV-6 camping.** *(Phrasing corrected: SM-INV-6 was REVERSED
+  2026-07-19 — camping is a **button gated by campable ground**, not "a place." The argument is
+  unchanged: getting to good ground before you're dangerous is still a navigation problem.)*
+  A spur that peters out at a scored
   clearing **is** a campsite candidate — the worldgen designating campable ground, exactly what SM-1's
   campsite detection and FEAT-21's POI/campsite siting need. Prefer spur-endpoint scoring that overlaps
   the camp-quality dimensions (flat, shade, water proximity) so the two systems share one "is this good
   ground" signal. Flag to FEAT-21 / the camp placer when either is scoped.
-- Progression gating rides FEAT-28's per-region `metaState`, diegetically (SM-INV-13) — the trail into
+- Progression gating rides FEAT-28's per-region **`runState`**, diegetically (SM-INV-13) — the trail into
   the dirt-heavy back-country opens as a region unlocks, not as a menu wall.
 
 ## Open design questions (decide at planning — do NOT resolve unilaterally; some are owner's per DESIGN.md)
@@ -169,7 +173,7 @@ Two clean invariant ties; both are *why* this is worth more than ambient flavour
 - **Per-surface friction** reaches the tire model: a wheel on dirt grips less than on asphalt, via a
   contact-patch surface-class lookup — cheap enough to stay in the physics loop.
 - **Regionality knob** raises dirt prevalence (fraction + spur budget) for later regions; wired as a
-  per-region parameter that story mode can bake off `metaState` (no slider access in story mode).
+  per-region parameter that story mode can bake off **`runState`** (no slider access in story mode).
 - New tunables (dirtness field freq/threshold, dirt router weight set, ribbon noise amp/freq, dirt μ
   scale, spur reach/budget, dust-on-dirt gain) exposed as **USER-OWNED sliders** in the debug panel; HUD/
   log audited for any new state ([[feedback_phase_housekeeping.md]]).
@@ -184,7 +188,7 @@ Two clean invariant ties; both are *why* this is worth more than ambient flavour
   carve `src/road-carve.js`, `_resolveRoadSurface`/`queryNearest` (`src/terrain.js`).
 - Friction: `src/tire.js` (`frictionCoeff`), `data/ranger.js`; dust: `src/dust.js` (`onRoadFactorAt`).
 - Campsites / POI: FEAT-21 scatter, SM-1 campsite detection; FEAT-28 region unlock / per-region
-  `metaState`; FEAT-29 par oracle (should read surface class).
+  **`runState`**; FEAT-29 par oracle (should read surface class).
 - Story mode: [[project_story_mode_framing.md]], `.planning/story-mode/DESIGN.md` (SM-INV-6 camping,
   SM-INV-11 parameter-state story, SM-INV-12 determinism, SM-INV-13 diegetic gating); analogous
   world-content ticket FEAT-32 (logged forest) — same mask/determinism/story-hook pattern.

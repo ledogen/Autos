@@ -351,3 +351,16 @@ wake-up buff — the home-cooked meal. What it does is open (a few bonus energy 
 free breakfast in the run?) but the shape is a small, warm, *scripted-feeling* comfort that makes
 returning to mom's a real alternative to a great campsite, not a fallback. Prices/consumables are
 SM-2's; revisit when food items exist (items.md).
+
+## Camp gear that patches a *deficit* in the vibe score — 2026-08-01
+
+→ **Promoted to `items.md` §2b (Camp gear) on 2026-08-01** — owner ruled the two-axis split (some
+gear scales the **energy**, some scales the **vibe**), which supersedes §2b's original "never the
+vibe" rule. The catalog entries (cot → flatness, canopy → shade, binoculars → view), the
+deficit/`min(itemCap, headroom)` rule that keeps SM-INV-6, the after-the-hunt application note and
+the ghosted-tail bar indicator all live there now.
+
+Still open, left here: a **water-proximity** patcher — a jerry can / water carrier, "I brought my
+own water, the stream doesn't matter" — and the fact that *view* is not a scored factor yet
+(`VIBE_W` in `src/camp.js` is flat/shade/water only; adding it means rebalancing 50/30/20 and
+growing a fourth bar segment). Binoculars are blocked on that.

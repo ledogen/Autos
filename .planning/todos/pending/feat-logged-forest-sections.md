@@ -69,13 +69,18 @@ This is the actual reason to build it, but it must land inside the story invaria
 - **SM-INV-11 — story is delivered through generator parameter states, never cutscenes/exposition.**
   A logged region *is* a parameter state: dial the logged-ness mask per region and the world tells you
   "this place was worked" with zero authored text. This is exactly the intended delivery surface
-  (DESIGN.md lists prop-palette params as the story channel). Logged-ness keys off `metaState`
-  (SM-INV-12) so a region can read pristine, freshly-cut, or long-abandoned as the story moves.
-- **SM-INV-6 — camping is a place the worldgen designates.** An old logging camp / landing is a
-  natural, diegetic campsite candidate — a strong tie-in worth flagging to FEAT-28 / the camp placer.
+  (DESIGN.md lists prop-palette params as the story channel). Logged-ness keys off **`runState`**
+  (SM-INV-12 as rewritten 2026-07-29 — worldgen is meta-free and no meta input reaches it; parameter
+  states are run-layer and reset with the run) so a region can read pristine, freshly-cut, or
+  long-abandoned as the story moves.
+- **SM-INV-6 — camping is a button gated by campable ground** *(phrasing corrected: SM-INV-6 was
+  REVERSED 2026-07-19; it is not "a place")*. An old logging camp / landing is a natural, diegetic
+  **campsite candidate** — it feeds the shared good-ground score, it does not gate camping. Landings
+  are now emitted by the **one off-network generator (FEAT-52)** rather than by this ticket; see
+  DESIGN.md "The off-network layer".
 - **Items / characters that spawn here (the user's "later"):** must be **deterministic** (SM-INV-12,
   window-invariant like everything else) and **diegetic** (SM-INV-13) — a spawn *registry* keyed off
-  the logged mask + region metaState, NOT ad-hoc scripting. This ticket only reserves the hook: a
+  the logged mask + region `runState`, NOT ad-hoc scripting. This ticket only reserves the hook: a
   logged patch exposes a stable, queryable "this is a logging site at (x,z), age = …" so a later story
   ticket can attach spawns to it. Designing the spawns themselves is out of scope until story mode is
   scheduled (see [[project_story_mode_framing.md]]).
@@ -115,6 +120,8 @@ This is the actual reason to build it, but it must land inside the story invaria
 - FEAT-06 prop scatter + palette (`src/props/prop-scatter.js`, `biomeNoise`, cluster passes);
   FEAT-15 fallen logs (`placeLog`) — the reuse surface for slash / left logs.
 - Story mode: [[project_story_mode_framing.md]] and `.planning/story-mode/DESIGN.md` (SM-INV-11 story
-  = parameter states; SM-INV-12 determinism; SM-INV-13 diegetic; SM-INV-6 camping-is-a-place).
-- FEAT-28 region unlock / per-region metaState — the keying surface for story-driven logged-ness.
+  = parameter states; SM-INV-12 determinism; SM-INV-13 diegetic; SM-INV-6 camping).
+- FEAT-28 region unlock / per-region `runState` — the keying surface for story-driven logged-ness.
+- **FEAT-52 off-network generator** — owns logging-site *placement* as of 2026-08-01; this ticket
+  owns what a logged patch looks like, not where the landings go.
 - Emergent-not-injected discipline: [[feedback_emergent_over_injected]].

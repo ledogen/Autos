@@ -4,17 +4,17 @@
 the bible wins. Invariant citations below are `SM-INV-N` per DESIGN.md.
 Companions: `opening.md`, `spirits-and-pacts.md`, `items.md`, `IDEAS.md`.*
 
-**Reconciled against DESIGN.md 2026-07-29**, then updated with the owner decisions of the same date.
-Where DESIGN.md has not yet absorbed those decisions, see `design-amendments-2026-07-29.md` — it is
-newer than the bible.
+**Reconciled against DESIGN.md 2026-08-01.** The performance model below (points, continuous payout,
+rank, day tier) is folded into the bible as its "Ratification pass 2026-08-01" — **DESIGN.md is
+current and wins.** `design-amendments-2026-07-29.md` is a historical provenance record only.
 
 ### Status board
 
 | Decided | Open |
 |---|---|
 | Four scoring axes; three delivery types (§1, §3a, §3b) | Job discovery + expiry model (§"The job board") |
-| XP run-layer, base-from-par × margin bonus | Exact `k` in the XP margin term |
-| Payout on absolute seconds under par | Restraint ceiling: hard-fail vs graded (§3b) |
+| Points not XP; continuous payout; rank as surface | Exact `k` (maintenance cost per par-second) |
+| Payout continuous on par ratio, base × par | Restraint ceiling: hard-fail vs graded (§3b) |
 | Time trials live in-run | Comparability between players — parked |
 | Main mission = log drag; beat/labor split | Whether the final drag must be unsurvivable |
 | Clearance is run-layer | — |
@@ -39,7 +39,7 @@ Mission types are not flavors of the same activity. They differ in **what is bei
 
 | Axis | Measures | Pays in | Fails when |
 |---|---|---|---|
-| **Margin** | Time against par | Currency, scaling with seconds saved | Never hard-fails; bare completion pays ~nothing (SM-INV-4) |
+| **Margin** | Time against par | Currency, continuous in the par ratio, base scaled by par | Never hard-fails; bare completion pays ~nothing (SM-INV-4) |
 | **Coverage** | How much of a fixed inventory you place before the budget runs out | Currency per unit delivered | Budget expires with stock unplaced |
 | **Restraint** | Shock and impulse into the cargo | Flat rate; the cost is time | Cargo is broken |
 | **Clearance** | Objects removed from a blocked trail | Region access | Never — progress is world state |
@@ -53,55 +53,88 @@ Adding a fifth axis is a design act. Adding a fifth *dressing* is a content act.
 
 ---
 
-## Experience and payout
+## Performance, points and payout [RATIFIED 2026-08-01]
 
-Two currencies off two inputs.
+Two currencies off one drive. **Points buy access. Money buys parts.**
 
-**XP is run-layer.** It resets on death with everything else (amendment §3). It is not
-meta-progression — it is a **head start**:
+### Progress is a count, not a quantity
 
-> A strong day one buys region 2 on day two. Because service and parts costs escalate with run age
-> (Q9A), unlocking early means arriving in expensive country **before it gets expensive**. That's a
-> wider margin for something to go wrong later. **XP is not progress. It is position on the cost
-> curve.**
+**XP is retired** (SM-INV-14 as rewritten 2026-08-01). Region access is bought with **mission
+points**:
 
-This is what makes fast driving matter for *survival* and not only for cash — and it does it with no
-rendered clock anywhere (SM-INV-3 intact).
+> **1 point** at rank **B or better** · **½ point** at **C** · **0** at **D**.
 
-**Scoring:**
+Per-region counts are authored and fall with depth — `5 · 4 · 4 · 3 · 3 · 2`, **21 points across six
+regions** in a 7–8 day run (`run-shape.md`). Points are run-layer and reset on death.
+
+*Why the change:* an XP quantity that scales per day only forces the requirement to scale with it —
+a treadmill that nets to nothing while hiding the number that actually matters. A count makes the
+real design question visible: **missions per day per region.** The half-point for a C is the one
+concession to weaker players, and it exists so a run of scrappy drives still advances rather than
+stranding (SM-INV-7).
+
+> **The one hard constraint survives the rename: progress must never increase with time taken.**
+> Any formulation where slow driving earns more reopens gate-farming.
+
+### Payout is continuous
 
 ```
-XP     = parGeometric × (1 + k · marginRatio)
-payout = absoluteSecondsUnderPar
+ratio  = elapsed / par
+payout = parBase × dayTier × clamp((1.2 − ratio) / 0.2, 0, cap)
 ```
 
-**Base from par.** Par is a duration derived from route geometry, so it already contains length *and*
-difficulty — a long mountain route out-pars a short valley one for both reasons. No separate distance
-term is needed, and the number of jobs required per region falls out on its own (see `run-shape.md`).
+- **`parBase = k × par`** — the base scales with the road. This is load-bearing: it is what keeps
+  *same driving quality, more road, more money* true, and it is why payout could not simply be the
+  rank letter. A discrete rank would flatten a twelve-minute haul onto a sixty-second errand and
+  hand the player back the tiny-job farming loop that absolute-seconds payout was chosen to close.
+- **The line:** 0 at ratio 1.2 · **1.0 at par** · 2.0 at ratio 0.8. Peanuts for being 20% over,
+  generous for being 20% under, linear between.
+- **The anchor:** *a day driven entirely at par is break-even.* Below par you profit, above it you
+  bleed. This resolves Q4 as an identity rather than a tuning target, and reduces the economy to one
+  number — `k`, maintenance cost per second of par-driving.
+- **`dayTier`** is a step function of run day, **locked at mission accept**, rising as the run ages so
+  payouts keep pace with escalating maintenance (Q9A). See DESIGN.md "The performance model" for why
+  the rising tier does not double-count with the tightening rank thresholds.
+- **Payout floors at zero.** A bad run earns nothing; it never charges you. The day and the wear are
+  the loss.
 
-**Margin multiplies it**, because driving a fast route should unlock the next region sooner. The
-ratio form (not absolute) keeps long roads worth more than short ones at equal skill.
+### Rank is the surface
 
-> **The one hard constraint: XP must never increase with time taken.** Any formulation where slow
-> driving earns more XP reopens gate-farming, which is the exploit this whole scheme exists to close.
+The player never sees par. They see **a letter and a number.** Ranks are **D · C · B · A · S**
+(already implemented — `gradeRun()` in `src/par.js`), coloured **red · orange · yellow · white ·
+blue**, with **B containing par** so that the grade which merely meets the cost curve is a B and an A
+feels earned.
 
-**Payout is absolute seconds saved, not a ratio.** Ratio payout makes short missions the most
-profitable thing in the game — ten seconds off a sixty-second errand is an enormous ratio; ten
-seconds off a ten-minute haul is noise, and the player optimizes into a loop of tiny jobs. Absolute
-seconds inverts it: **same driving quality, more road, more money.** It also serves the balance
-constraint directly (Q4): lazy day net-negative, brave day net-positive.
+Rank is **display only** — a legible skin over the continuous payout, not a set of bins — and
+**result-card only, never live**, because a live rank is a countdown by proxy (SM-INV-3).
 
-> **XP buys time. Money buys parts.**
+**Rank is computed per axis**, so the letter means something on every mission type: margin grades on
+time vs par, restraint on accumulated shock, coverage on fraction placed, freight on delivery plus
+truck condition, clearance pass/fail. That uniformity is what lets bonus objectives work everywhere.
+
+### Bonus objectives — the one legal pre-drive target
+
+A giver may offer **"a little extra if you finish with an A"**, gating an **item** whose identity is
+not stated up front — a spare tire, a cooking kit. Legal because it names a *standard* without naming
+a *time* (SM-INV-3), and it is the only place a rank boundary carries mechanical weight rather than
+cosmetic. The reward is an item, never cash and never persistent (SM-INV-8).
+
+*Open: does a bonus objective also raise the mission's point value, or only its loot? Loot-only is the
+recommendation — points are a measure of competence, not of the offer you happened to be given.*
 
 **Interaction with the night-owl spirit.** *(Spirits are deferred — see amendment §4. Retained
 because the interaction is instructive.)* A spirit paying more for missions run while sleepy,
-conditioned on the dangerous state (SM-INV-9), compounds against absolute-seconds payout: the largest
-single payday in the game becomes **a long haul driven tired**. The seduction becomes a specific,
+conditioned on the dangerous state (SM-INV-9), compounds against a par-scaled payout base: the largest
+single payday in the game becomes **a long haul driven tired**. *(The 2026-08-01 day tier makes this
+sharper still — accepting at 1 a.m. buys tomorrow's rate, so the economy already seduces the player
+into the Night Owl's territory without him.)* The seduction becomes a specific,
 nameable temptation rather than a percentage.
 
-**Note on SM-INV-2.** Its run-duration par ramp appears redundant now that cost escalation carries
-the difficulty ramp. If it retires (Q9 anticipates this), `parGeometric` and `parEffective` collapse
-into one par. Assume one par until told otherwise.
+**Note on SM-INV-2 — settled.** The run-duration par ramp is **RETIRED**, and `parGeometric` /
+`parEffective` have collapsed into a single **par**. The tightening the clause was reaching for now
+lives in the **rank thresholds** (they move with run day; par does not), and the rising side of the
+economy lives in the **payout day tier**. There is one par, derived from road geometry, scaling with
+nothing.
 
 ---
 
@@ -137,7 +170,7 @@ an inventory and a sunset.
 **Route selection** improves as the player proves themselves, granted by the uncle rather than a
 skill bar. See `opening.md`.
 
-*Open:* this is a **second progression axis** alongside XP → region unlock. Worth deciding
+*Open:* this is a **second progression axis** alongside points → region unlock. Worth deciding
 deliberately rather than inheriting, and probably shouldn't generalize past the uncle.
 
 ### 3. The three delivery types [RATIFIED 2026-07-29]
@@ -147,7 +180,7 @@ truck and what the truck does to the cargo**.
 
 | | mass | scored on | payout shape | the fear |
 |---|---|---|---|---|
-| **3a. Point-to-point** | light | time vs par | absolute seconds under par | crashing; earning nothing |
+| **3a. Point-to-point** | light | time vs par | continuous in the par ratio, base ∝ par | crashing; earning nothing |
 | **3b. Fragile** | light to medium | shock / impulse events | flat rate; slowness is the cost | grandma's vase |
 | **3c. Freight** | **heavy** | delivery, plus what it cost you | flat rate by mass × distance | the truck |
 
@@ -174,7 +207,7 @@ choice becomes real: **the paved detour versus the dirt shortcut** is a decision
 directly.
 
 **Why the slowness needs no penalty attached.** Time is already the scarce resource — the cost curve
-rises with run age and XP velocity is position against it (see Experience and payout). A slow mission
+rises with run age and point velocity is position against it (see Performance, points and payout). A slow mission
 costs you the cost curve. The economy supplies the downside for free.
 
 *Open:* whether breakage is **binary** (broke / didn't, a hard fail like a puncture) or **graded**
@@ -265,10 +298,10 @@ authored main missions that drive the player to a place** (SM-INV-13, ratified 2
 mission below is a candidate main mission — an **authored in-world beat at a threshold moment**,
 which is precisely the case SM-INV-11's relaxation was written for. No new category is needed.
 
-**Gating chain:** XP gates *when the main mission becomes available*; the main mission gates *the
-region*. The bible is explicit that the story should pull the player outward rather than a bare XP
-threshold doing it, so XP is the pacing floor, not the gate itself. Roughly five or six jobs before
-the first one.
+**Gating chain:** **mission points** gate *when the main mission becomes available*; the main mission
+gates *the region*. The bible is explicit that the story should pull the player outward rather than a
+bare threshold doing it, so points are the pacing floor, not the gate itself. Region 1 needs **5
+points** — five well-driven jobs, or more scrappy ones (`run-shape.md`).
 
 ### Shape
 
@@ -482,6 +515,16 @@ signal corrected from lateral g to **vertical shock**. Clearance confirmed run-l
 confirmed in-run; the route+build sharing hash **parked** pending the vehicle-customization question.
 Job board discovery/expiry opened as a live design question.
 
+**2026-08-01 — owner decisions: the performance model.** SM-INV-2's par ramp **retired**;
+`parGeometric`/`parEffective` collapsed into one **par**. Payout became **continuous and linear in
+the par ratio** with the base scaled by par (absolute-seconds-under-par retired, its *intent*
+preserved by the par-scaled base), anchored so **a day at par is break-even** — which resolves Q4.
+A **day tier** locked at mission accept raises payouts as the run ages; the **rank thresholds** tighten
+as the brake. **XP replaced by mission points** (1 / ½ / 0 for B+ / C / D), authored per-region counts
+falling with depth. **Rank (D·C·B·A·S) became par's player-facing surface** — display only,
+result-card only. **Bonus objectives** ("an A gets you a little extra") added as the one legal
+pre-drive target, paying in items.
+
 **Superseded phrasing — do not reuse.** *"Camping is a place, not a button"* (SM-INV-6 was reversed
 2026-07-19; camping is a **button**, gated by campable regions, with a worldgen-scored quality
 preview). *"The careful haul"* (now fragile, §3b). *"Metaprogression is spirits/characters"* (now the
@@ -494,19 +537,20 @@ and its three delivery channels; region unlock as the Roamer's trails gated by m
 chat pane; the mode split; the per-component damage model; breadth-not-floor.
 
 **Superseding DESIGN.md as of 2026-07-29** — see `design-amendments-2026-07-29.md`: worldgen is
-meta-free; XP is run-layer; meta-progression is the garage; no in-run vehicle purchase; run shape
-fixed.
+meta-free; meta-progression is the garage; no in-run vehicle purchase; run shape fixed. **As of
+2026-08-01** DESIGN.md is current again and supersedes that file: par ramp retired, continuous
+payout, mission points, rank as surface, 7–8 day runs.
 
 **Owner-only, untouched:** the Roamer's motives and the final beat (Q1); forced progression (Q9);
 mission bail cost (Q6).
 
 **Ratified by the owner in conversation, not yet in the bible:** the paper route and the uncle as its
 giver and route gate; the three delivery types and their scoring; the log-drag main mission and its
-high-wear premise; XP run-layer with a margin bonus; time trials in-run; the escalation ladder; the
-Roamer as motivator rather than informant.
+high-wear premise; time trials in-run; the escalation ladder; the Roamer as motivator rather than
+informant. **2026-08-01:** the whole performance model above — points not XP, continuous payout,
+break-even-at-par, day tier, tightening thresholds, rank as the surface, bonus objectives.
 
-**Proposed here, not ratified:** the axis taxonomy; `XP = parGeometric × (1 + k·marginRatio)`; payout
-on absolute seconds; binary rather than graded fragile breakage; freight's flat-rate payout (bends
+**Proposed here, not ratified:** the axis taxonomy; binary rather than graded fragile breakage; freight's flat-rate payout (bends
 SM-INV-4 — flagged); logs on graded sections; the beat/labor split and its consequences; POI-type
 partial information on the job board; the uncle/Roamer channel pairing.
 

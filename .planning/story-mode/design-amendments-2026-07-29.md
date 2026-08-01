@@ -9,6 +9,15 @@ came from the project owner on 2026-07-29. Wording is a proposal; the decisions 
 > "The garage" and "Run shape and saving" sections, Open Q3 resolved, Tensions table updated) and
 > into MILESTONES.md SM-4/SM-5. **This file is now the provenance record and the fuller argument
 > for each decision, not a live override.** If it ever disagrees with DESIGN.md, DESIGN.md wins.
+>
+> **Three things below were superseded on 2026-08-01 and must not be built from this file:**
+> (a) `payout = absoluteSecondsUnderPar` and `XP = parGeometric × (1 + k·marginRatio)` — payout is now
+> **continuous in the par ratio** with a par-scaled base, and **XP is retired** in favour of mission
+> points; (b) `parEffective` — the run-duration par clause is **retired**, the ramp moved to the rank
+> thresholds; (c) **~10–15 days per run** — corrected to **7–8** (the old figure divided target hours
+> by the sky cycle); and **~10 regions** — corrected to **6 regions** (20–23 points total; same
+> 2500 m radius, fewer and longer chapters).
+> See DESIGN.md "Ratification pass 2026-08-01".
 
 **Read this first if you're an agent working in the codebase.** Four of these change or revert
 `[RATIFIED]` rules.

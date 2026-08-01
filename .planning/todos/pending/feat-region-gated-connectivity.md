@@ -11,8 +11,10 @@ relates_to: QUAL-19 (deferred corridor tune that surfaced this), QUAL-14 (corrid
 note: "Precursor to STORY MODE region unlocking — the connectivity-validation gate and the progression gate
   are the same mechanism. Design agreed; not yet scheduled. Do NOT pursue the earlier detect-and-bridge or
   cut-edge-protection ideas (see Rejected). Story-mode intent + invariants: .planning/story-mode/DESIGN.md
-  (this ticket is milestone SM-0's keystone; SM-4 wires XP/story beats to the unlock trigger — SM-INV-13:
-  the barrier must stay diegetic)."
+  (this ticket is milestone SM-0's keystone; SM-4 wires MISSION POINTS/story beats to the unlock trigger
+  — SM-INV-13: the barrier must stay diegetic). 2026-08-01: unlocks are RUN-LAYER (Open Q3), so the
+  validation load RECURS every run — hidden by warming the next region on region-unlock-mission ACCEPT,
+  not budgeted. See 'The unlock load is HIDDEN, not budgeted'."
 ---
 
 # FEAT-28: Region-gated connectivity validation (bounded unlock-time component check) — precursor to story-mode region unlocking
@@ -44,8 +46,9 @@ already-validated reachable set," both sides bounded.
 - **Unlock-time validation:** when the play area grows (player levels up / story beat unlocks the next area),
   a **brief load** generates the newly-unlocking region(s) headlessly and runs a union-find component check
   between the new region's boundary nodes and the existing reachable set. Connected → unlock. Not connected →
-  bounded repair (below). Cost is paid ONCE at a level-up boundary during a load you already own — never
-  per-stream.
+  bounded repair (below). ~~Cost is paid ONCE at a level-up boundary during a load you already own~~ —
+  **⚠ superseded 2026-08-01: unlocks are run-layer, so this is paid ~6× per run on EVERY run. See "The
+  unlock load is HIDDEN, not budgeted" below.** Still never per-stream.
 - **Culling stays aggressive at generation time.** The region check validates connectivity at the MACRO level
   only (does region R reach the network at all), never per-edge — dead-ends / thinned junctions / sparse
   branching all survive. If the cull happens to island a region, it's caught here.
@@ -97,6 +100,44 @@ you have the region-unlock primitive; layer narrative triggers on top later.
   bounds the domain outright, so the per-drop rule is likely unnecessary if growth is gated anyway. Kept on the
   shelf as a possible always-on cheap default, not the primary.
 
+## The unlock load is HIDDEN, not budgeted [RATIFIED 2026-08-01]
+
+**The "paid once" justification above expired**, and this section replaces it. That argument —
+*"cost is paid ONCE at a level-up boundary during a load you already own"* — assumed region unlocks
+persist across runs. **Open Q3 (resolved 2026-07-29) made region clearance run-layer**: death puts the
+barriers back, so every run reopens every trail. At the ratified 6-region run shape that is **~6
+validation loads per run, on every run**, in a game most players will replay dozens of times. For
+scale, PERF-27 measured the story region warm at **~5.5 s** live-routed (~1.6 s when the route bundle
+already covers it — and the bundle only covers the dev seed).
+
+**The ruling: warm the next region the moment the player ACCEPTS the region-unlock main mission.**
+
+- **Trigger** — the accept event on the region-unlock main mission (the log drag; `missions.md`
+  "Main missions"). Not chapter start. Accepting the drag is an **unambiguous commitment** to opening
+  that specific trail, so nothing is ever warmed speculatively for a region the player never reaches.
+- **Which region is knowable** — unlock order is deterministic (constraint 3 above), so "the next
+  region" is a pure function of run state. No guessing.
+- **The window is the mission** — travel to the trailhead plus the drag itself, on the order of
+  5–15 minutes against a ~5.5 s warm. Enormous margin.
+- **Off the main thread** — reuse the existing `RoadSystem.warmRoutes()` worker path (PERF-03
+  Workstream A), which exists precisely to pre-warm the per-connection centerline cache without a
+  routing hitch. Do **not** warm on the main thread; the player is driving.
+- **Fallback, never a silent stall** — if the player clears the drag before the warm completes, show
+  the loading screen for the remainder. The warm is an optimisation, not a correctness dependency.
+- **Not a determinism change.** Warming populates a cache. It must not alter what any tile or edge
+  generates (SM-INV-12), and the gates must not care whether it ran.
+
+**A second benefit, and it may matter more than the load time.** Validating early means the
+**connect-check result is known before the player finishes the drag** — so when a region fails to
+connect, the interface-bridge repair (below) happens *invisibly during the mission* rather than at the
+barrier. Without this, a failed check at the moment of unlock is an awkward "you cleared the trail and
+it goes nowhere" beat with a visible pause attached to it.
+
+**Cost to watch:** unlocked regions stay resident, so route-cache memory grows with **regions
+unlocked** across a run — the cumulative-play-space cost noted in `run-shape.md`. PERF-27's REGION
+bundle was 4.67 MB gzipped / ~25 MB parsed for one region. Six resident regions is a real number;
+decide whether distant regions can be evicted and re-warmed on approach.
+
 ## Acceptance (when scheduled)
 
 - [ ] Region tiling defined, aligned to macro-band boundaries; border edges provably identical across
@@ -109,3 +150,15 @@ you have the region-unlock primitive; layer narrative triggers on top later.
 - [ ] Headless test: across seeds, every unlocked region is in one connected component with the spawn region;
       spawn is always on it; no stranded islands reachable.
 - [ ] Overhead: zero added per-stream/per-frame cost; validation confined to unlock events.
+- [ ] **Warm-on-accept**: accepting the region-unlock main mission kicks the next region's warm +
+      connect-check on the **worker** (`warmRoutes()`), with no measurable frame-time cost while
+      driving. Verified by a trace, not by feel.
+- [ ] **The unlock itself is instant in the common case** — by the time the drag is cleared the
+      region is validated and resident, so the barrier lifts with no loading screen. The screen
+      appears only when the player beats the warm, and never as a silent stall.
+- [ ] **A failed connect-check resolves during the mission**, not at the barrier: the
+      interface-bridge repair is chosen and applied before the player arrives.
+- [ ] **Determinism unaffected**: warming is cache-only. Gates pass identically with the warm forced
+      on and forced off, and no tile or edge generates differently because it ran.
+- [ ] Route-cache residency across ~6 unlocked regions measured, with an eviction policy if the
+      footprint warrants one.

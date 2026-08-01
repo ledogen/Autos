@@ -349,10 +349,13 @@ to survive.
 Worth checking against real survival rates once the doze is in. Ten is a guess, and it is a guess
 about **how much tired-band driving an in-game day actually affords** — which depends entirely on
 where FEAT-47 puts the sleepy→tired boundary. **⚠ RESOLVED (was CONFLICT 4):** day length is settled
-at **24 minutes** [RATIFIED 2026-07-29], ~10–15 days per run (`run-shape.md`), so across a full run
-10 km is roughly **one kilometre of tired driving per in-game day** — the last stretch after dark,
-most nights, for the life of the run. Demanding but not absurd, and it is the right shape: a
-sustained habit, not one heroic night.
+at **24 minutes** [RATIFIED 2026-07-29]. **⚠ Arithmetic re-derived 2026-08-01:** a run is **7–8 days**,
+not 10–15 (the old figure divided target hours by the sky cycle — see `run-shape.md`). So 10 km is
+roughly **1.3 km of tired driving per in-game day**, not 1.0 — the last stretch after dark, most
+nights, for the life of a *shorter* run. That makes the ledger **~35% harder than this entry assumed**,
+on top of the tired-band narrowing already noted. Still the right shape — a sustained habit, not one
+heroic night — but the number is now near the top of its plausible range and is the first thing to
+re-check once the doze is playable. Ten may want to become seven or eight.
 
 **The real dependency is the band boundary, not the number.** If FEAT-47 puts the tired band late and
 narrow, 10 km is a serious commitment; if the whole evening counts as tired, it's trivial. **Set the
@@ -451,7 +454,7 @@ sleepiness system, running against a different clock. He still sells *time* — 
 night, not the speedometer.
 
 > **Superseded:** *"Ratified: tired spirit pays in speed"* (Provenance, 2026-07-19). Retired
-> 2026-07-29 (b) in favor of the inversion. The Innkeeper's half of that line — *rested spirit pays
+> 2026-07-29 (b) in favor of the inversion. The Host's half of that line — *rested spirit pays
 > in reduced wear* — **stands unchanged.**
 
 **The price** [owner: dark + a hostile day, and nothing else]:
@@ -511,18 +514,26 @@ The player's own escalation is the story; a purchase ladder would not be.
 
 ---
 
-### 02 — The Innkeeper *(working handle)*
+### 02 — The Host *(renamed 2026-08-01 — was "The Innkeeper")*
 
 **Class:** Pact · **Domain:** Fatigue (safety side) · **Disposition:** Two-sided
-**Contact:** Campfire / discovered camp, at waking
+**Contact:** The campfire, at waking
 **Persistence:** Meta effect, **single-run streak** ledger *(proposed — see below)*
 
 **What it wants.** For you to sleep properly, in a real place, more often than is convenient.
 
-**Unlock.** A streak: N consecutive in-game days in one run ending in a full rest at a discovered
-camp, without ever crossing into tired driving. One bad night resets it to zero. Because camping
-is a location and not a menu option, this is a navigation and planning problem — the unlock cost
-is paid in route planning, not in a stat.
+> **Renamed and re-grounded 2026-08-01** [owner]. *The Innkeeper* implied commerce — a bed you pay
+> for. **The Host** is the forest housing you graciously, which is what the mechanic actually is.
+> And with the rename, a scope ruling: **there is no separate class of "discovered" or "developed"
+> campsites, and none is planned.** The shipped camping system (FEAT-45 dispersed zones + the vibe
+> score) is the only camping there is — a parallel curated-site system would be a second thing to
+> generate and maintain for no mechanical gain. Older "discovered camp" phrasing in this entry
+> predates that ruling; read it as "camp."
+
+**Unlock.** A streak: N consecutive in-game days in one run ending in a full rest at camp — any
+camp, through the one camping system — without ever crossing into tired driving. One bad night
+resets it to zero. Because camping is gated on campable ground, this is a navigation and planning
+problem — the unlock cost is paid in route planning, not in a stat.
 
 > **⚠ RESOLVED (was CONFLICT 3).** *"Camping is a location and not a menu option"* is superseded
 > phrasing —
@@ -537,7 +548,7 @@ for commitment inside one run rather than career credit, or the domain feels lop
 should ask differently, and the shapes fall out naturally:
 
 > **The Night Owl is a total you must reach before you die.
-> The Innkeeper is a streak you must not break.**
+> The Host is a streak you must not break.**
 
 Excess accumulates. Restraint only exists unbroken. A count of rests would be trivially cleared
 by a cautious player; a streak means one late night at hour six of a good run costs the whole
@@ -551,9 +562,9 @@ different *currencies*:
   *(Updated 2026-07-29 (b): was "sells time, priced in safety." The shape of the pair is unchanged
   and the point below stands harder than before — the inversion sells hours-of-the-clock, not speed,
   so there is now no way for the two fatigue spirits to collide on a tempo stat at all.)*
-- The Innkeeper sells **safety and margin**, priced in **time**.
+- The Host sells **safety and margin**, priced in **time**.
 
-So the Innkeeper's boon should be reduced wear accumulation, reduced damage from contact, better
+So the Host's boon should be reduced wear accumulation, reduced damage from contact, better
 low-light visibility, or a payout multiplier — things that make each hour worth more, since the
 player has fewer of them. Wear is the strongest candidate: it directly offsets the sleep cost in
 the economy rather than in the driving.
@@ -563,7 +574,27 @@ per the unifying rule, the spurned one starts behaving like a warden.
 
 ---
 
-### 03 — The Verge *(working handle)*
+### 03 — The Verge *(working handle)* — **RETIRED 2026-08-01, superseded by #05/#06**
+
+> **⚠ DO NOT BUILD. Retired by the owner 2026-08-01**, superseded by **The Highway and The Shortcut**
+> (#05/#06 below). Kept for the reasoning, which was reused rather than discarded.
+>
+> **Why it went.** Two reasons, both owner-stated. First, its premise was rejected outright: *"a
+> conservationist deducting money converts an ethical objection into a toll,"* and a flat fee is
+> brutal at hour one and irrelevant by hour five — backwards. Second, its own open question was
+> *"does it get a trailblazer counterpart?"* — and the answer arrived from a better angle. The
+> Highway/Shortcut pair are **not people with opinions about roads; they are roads**, which gives the
+> domain a voice The Verge never had.
+>
+> **What survived into #05/#06:** the load-bearing observation that off-route travel invalidates
+> rather than beats par; terrain-fragility weighting; the coupling of the terrain domain into fatigue;
+> and the hard jurisdictional split with The Confluence over the streambed (now the Highway's to
+> honour). **What was dropped:** the fine, the ecological framing, and the warden-only posture.
+>
+> **The deeper reversal:** The Verge assumed shortcutting is a problem to price. The owner's ruling is
+> that off-road driving is *already* punishing on this terrain, so on the rare occasion worldgen
+> offers a genuine cut, **taking it should be rewarded** — and the interesting design question is who
+> resents that, not how to tax it.
 
 **Class:** Warden · **Domain:** Terrain · **Disposition:** One-sided negative
 **Contact:** Threshold crossings; ambient world change · **Persistence:** Ledger + Meta
@@ -643,7 +674,7 @@ been decent to the water for a long time.
 Secondary boon: rest taken at a favored water clears sleepiness faster per hour. Note that this
 **stacks with either fatigue pact rather than competing with them** — it makes water a
 cross-domain amplifier, which is exactly what a third domain should be. The Night Owl's player
-uses it to survive; the Innkeeper's player uses it to claw back some of the day they gave up.
+uses it to survive; the Host's player uses it to claw back some of the day they gave up.
 
 **Expression of anger.** Water withdraws, and it withdraws *physically*:
 
@@ -664,9 +695,112 @@ attention, in a framing moment the game fully controls, the way the doze works f
 
 ---
 
+## 05 / 06 — The Highway and The Shortcut [owner, 2026-08-01]
+
+**Domain:** Route · **Class:** the Highway is the **default state**, the Shortcut is a **Pact** ·
+**Mutually exclusive**, like the fatigue pair.
+
+They aren't people with opinions about roads. **They are roads** — same substance, different fate.
+One was surveyed and authorized; the other was just used.
+
+> **The asymmetry is the ruling** [owner, 2026-08-01]. The Highway is **not a pact you take** — it is
+> **the default state of the game**. Driving a routed route, graded against par on the maintained
+> network, *is* being under the Highway's terms; the player never opts in because they start there.
+> What the game offers is **the choice to break it.** That simplifies the pair to one buildable pact
+> and makes the Highway's grief a thing you hear *when you leave*, not a system to opt into.
+
+### Cuts — the world substrate (buildable now, spirit-independent)
+
+The cuts are **worldgen**, and they do not need the spirit system. Ticket: **FEAT-52**
+(off-network generator — *not* FEAT-49, which is the gauge cluster).
+
+- **Generated in a post-pass outside the router graph**, so routing cost stays frozen and cuts never
+  enter pathfinding. **The obfuscation is structural, not cosmetic:** by the router's own cost
+  function a cut *is* bad line — tight radii, no banking, bad surface — so the GPS honestly routes
+  around it. Nobody is hiding anything; the router simply disagrees with you.
+- **Mostly leg-to-leg corner shaves** (adjacent legs, wide interior angle), which is what real social
+  trails are — nobody bushwhacks a novel route, they cut the switchback. Occasional longer ones where
+  the network detours around terrain: the old ford, the drainage crossing. Those read as history and
+  feed the horror layer for free.
+- **Seeded with pre-existing cuts** — logging spurs, mining tracks, stock driveways — so using one is
+  **following, not founding.** The good line was already there.
+- **Not every cut goes through.** Washouts and slides. **Passability is worldgen** [RATIFIED
+  2026-08-01], fixed per seed — so knowing which cuts go is **literacy**, the one thing that survives
+  death (SM-INV-8), and the Shortcut's pact becomes a *knowledge* gift rather than a lottery. You
+  don't know until you're committed, and reversing is expensive: the failure isn't a loss, it's a
+  loss plus the time you spent earning it.
+- **One generator.** Cuts, spurs, camping areas, logging sites and POIs all come from the single
+  off-network generator (DESIGN.md "The off-network layer"). **A track that dead-ends is a spur; a
+  track that rejoins the network is a cut.** Topology decides the purpose.
+
+### Why players don't just take them — four costs, three nearly free
+
+**Not a fine.** The Verge's toll model is retired (#03).
+
+1. **Wear**, already ratified as intensity-scaled (SM-INV-5). **Self-gating with no difficulty knob:**
+   early, damage is existential; late, repairs are affordable. Same mechanic, opposite feel.
+2. **Risk of ruin.** Break down on the road and you get towed. Break down on a cut and the tow costs
+   **extra in proportion to your distance from the maintained network** [owner, 2026-08-01]. *Note
+   this is deliberately a price, not an impossibility* — DESIGN.md is explicit that a survivable
+   breakdown is a **predicament, not a fail state**, and "nobody comes at all" would convert the
+   tow-vs-limp decision into a certainty.
+3. **Fatigue multiplier on rough surface.** Compounds into the Host, camping-as-navigation, and
+   the doze.
+4. **Mission incompatibility.** Fragile scores on vertical shock; freight puts real mass through ruts.
+   Cuts are viable on margin-axis errands and nowhere else — and this costs **no new code**, it falls
+   out of the existing scoring axes.
+
+### 05 — The Highway *(the default)*
+
+Vain, bypassed, speaks in the plural. It doesn't watch you from anywhere — **you're standing on it.**
+Motif: culverts, drainage, closure signs on routes that no longer exist.
+
+**Its argument isn't ecological.** *I was a shortcut once. Look what they did to me* — straightened,
+widened, named, and now it can't go anywhere but where it goes. Real grief, adjacent to the Roamer
+without duplicating it: the Roamer lost a range, the Highway lost the ability to wander.
+
+**Terms (the default state):** par as computed on the maintained network; the standard rank
+thresholds; the standard payout. **It never fines you.** Its ledger is a **single-run streak of
+missions with zero off-route travel** — and one cut breaks it, silently, with no explanation.
+
+*If it is ever given an explicit pact* (rather than remaining the default), its boon must be
+**tightened rank thresholds for higher payout** — a trade, legal under SM-INV-9. ⚠ **It must not
+"tighten par"**: par is geometry-only (SM-INV-2 as amended 2026-08-01), and the difficulty ramp lives
+in the thresholds. This is the same correction the run-duration clause needed.
+
+### 06 — The Shortcut *(the pact)*
+
+Has no memory of being built, so it **doesn't know where it goes** — only that people use it.
+Uncertainty is its actual condition, not a withholding. It speaks with certainty it hasn't earned.
+
+**The pact:** it **reveals which cuts still go** — a render flag, not a system, and valuable precisely
+*because* the washouts were hidden so well. Then it **recomputes par over the cut-inclusive graph.**
+
+> **That doesn't make cuts attractive. It makes them mandatory.** Sight in exchange for refusal.
+
+**This is invariant-legal, and worth noting why**, because it looks like it shouldn't be: recomputing
+par over a different route set is still **pure geometry** — no car, no run age, no build (SM-INV-2).
+The pact doesn't bend par; it changes which roads the route is allowed to use.
+
+**Resolution: none.** The Highway has a position, the truck has wear, the player has a wallet.
+
+### Open
+
+- **Does the Highway's streak have a payoff at all**, or is it purely a thing you can lose? A ledger
+  with no boon is a warden wearing a pact's clothes — which may be right for a default state.
+- **The streambed jurisdiction** (was The Verge's, per Cross-spirit dynamics) now belongs to the
+  Highway. Confirm the hard split with The Confluence still holds under the new framing.
+- **Terrain-fragility weighting** survived #03's retirement in principle but has no consumer now that
+  there is no off-road ledger to weight. Does it come back as cut *wear* scaling?
+
+---
+
 ## Cross-spirit dynamics
 
-- **Jurisdictions must not overlap.** The Verge and The Confluence both have a claim on the
+- **Jurisdictions must not overlap.** *(2026-08-01: The Verge is retired — read "The Verge" below as
+  "The Highway", which inherits the dry-ground claim. The rule is unchanged and is exactly why the
+  Verge could not coexist with the Shortcut: two spirits metering the same behaviour in opposite
+  directions is the worst case of this.)* The Verge and The Confluence both have a claim on the
   streambed. Let them share it and the player can never learn which spirit they offended, which
   kills the legibility the whole system depends on. Recommendation: **hard split** — The Verge
   owns dry ground, The Confluence owns water and the riparian corridor out to some bank width.
@@ -757,7 +891,7 @@ Before a new spirit is worth writing down, it should have answers to:
 - Hard jurisdictional split of the streambed between The Verge and The Confluence.
 - **Ledger shape** as a characterization axis: cross-run accumulation vs. single-run total vs.
   single-run streak.
-- The Innkeeper's ledger becoming a single-run *streak*, for symmetry with The Night Owl's
+- The Host's ledger becoming a single-run *streak*, for symmetry with The Night Owl's
   single-run *total*.
 - The Night Owl's re-summon threshold (~5h) also being single-run.
 - A world-side acknowledgement of near misses, with no counter ever shown.

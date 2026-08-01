@@ -92,8 +92,10 @@ within-run head start against the rising cost curve, not meta-progression (new *
 SM-INV-8 narrowed accordingly). (3) **Meta-progression is unlocked starting vehicles — a garage, not
 a cast**; the roster-of-characters-with-perks model is replaced and the *spirit system is deferred*
 (not deleted). (4) **No in-run vehicle purchase** — parts yes, vehicles no; the game is about
-maintaining one rig (new **SM-INV-15**). (5) **Run shape fixed** — ~10 regions, 4–6 hours to beat,
-24-minute days (~10–15 days per run), and **suspend-and-resume saving** (one slot, written on quit,
+maintaining one rig (new **SM-INV-15**). (5) **Run shape fixed** — ~10 regions (*revised to **6
+large regions** on 2026-08-01*), 4–6 hours to beat,
+24-minute days (~10–15 days per run — *the days figure was corrected to **7–8** on 2026-08-01; see
+that pass*), and **suspend-and-resume saving** (one slot, written on quit,
 *deleted on load*, deleted on death). Downstream: Open Q3 is **resolved** (region unlock is
 run-layer); SM-INV-11 is re-keyed to run progress; SM-INV-2's run-duration par clause is flagged for
 retirement (see the note there — recommended, not yet ratified).
@@ -119,6 +121,24 @@ rewritten from a tempo boon (retired — it was a number on the truck, which SM-
 itself untouched**. Priced in darkness and a hostile morning only; the world does **not** close at
 night.
 
+**Ratification pass 2026-08-01** (project owner): **the mission performance model settled, plus five
+structural rulings.** (1) **SM-INV-2's run-duration par clause is RETIRED** — there is one par and it
+is geometric. The difficulty ramp moves the **rank thresholds**, never par; `parEffective` is deleted
+and `parGeometric` becomes simply *par*. (2) **Payout is a continuous linear function of the par
+ratio** (SM-INV-4 rewritten) — peanuts at +20% over, one day's maintenance at par, generous at −20%
+under. A day driven entirely at par is **break-even**, which turns Open Q4's constraint into a
+formula. (3) **Rank (D/C/B/A/S) is the player-facing surface for par** — display only, result-card
+only, never live (SM-INV-3 amended). (4) **XP is replaced by mission points** (SM-INV-14 rewritten):
+region access is bought with a *count of well-driven missions*, not a scaling quantity — a well-driven
+mission is worth 1, a scraped one 0.5, a bad one 0. (5) **Run shape corrected to 7–8 days and 6 regions** — the old
+10–15-day figure divided target hours by the *sky cycle*, which counts only driving; and ten regions
+was revised to **six** (20–23 mission points total, schedule `5·4·4·3·3·2`) so the player has time to
+actually learn a place rather than tour it — **fewer and longer chapters, not bigger regions**; a
+region is a *progression chapter* and the play space is cumulative, so later missions may span
+several. See "Run shape and saving". Also ratified: **the Highway is the default state of the game, not a pact**; **cuts, spurs,
+camping areas, logging sites and POIs all come from one off-network generator** (see "The off-network
+layer"); and **durability-over-sportiness is a sanctioned parts axis** (`items.md`).
+
 **Companion design notes** (downstream of this bible; where they disagree with it, *it* wins):
 [missions.md](missions.md) (mission taxonomy, XP/payout scoring, the log-drag main mission),
 [run-shape.md](run-shape.md) (run length, day length, saving), [opening.md](opening.md) (the day job,
@@ -133,7 +153,8 @@ asset burn-down surface), [spirits-and-pacts.md](spirits-and-pacts.md) (the spir
 ## The premise [RATIFIED]
 
 RangerSim becomes a **roguelike**. A **run** is as many in-game days as you survive. You die
-by **crashing** or **breaking down** — nothing else. Days are 24–48 real minutes. Every run
+by **crashing** or **breaking down** — nothing else. A day is a **24-minute sky cycle** and costs
+~40–45 real minutes to live through (see "Run shape and saving"); a run is **7–8 days**. Every run
 starts in a jalopy with parts randomized from a pool of crap. Missions are hand-authored
 types with procedural dressing (mom needs milk; someone's chasing you). The roads are fun
 and humans are silly, so everyone drives too fast; the mission system rewards that rather
@@ -285,6 +306,22 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > re-**shaping** the curve is a legal rule-change (steeper early / flatter late — a trade), but
   > **lowering** it is a power floor and SM-INV-9 forbids it. Whatever touches the escalation curve
   > must cost something, because that curve is now the only difficulty ramp in the game.
+  >
+  > **Amendment [RATIFIED 2026-08-01] — the difficulty ramp on the *performance* side lives in the
+  > rank thresholds, never in par.** The owner wanted what the retired clause was reaching for: a
+  > standard that tightens as a run matures, so a maturing run must either drive better or keep a
+  > better-maintained truck. That is now expressed as **the ratio bands moving, not the par moving** —
+  > S needs ratio ≤ 0.80 on day 1 and something tighter by day 7. Identical felt effect; par stays a
+  > pure physical quantity (a duration derived from a road), there is no second par in the code, and
+  > `parGeometric` is simply **par**. This is *not* a reinstatement of the retired clause: the clause
+  > changed the number the economy multiplies against, this changes only where the letters fall.
+
+  > **Why this does not double-count with Q9A.** Cost escalation raises what a day *costs* and the
+  > day tier raises what a mission *pays* (see "The economy"), so the two run in opposite directions
+  > and the threshold ramp is the brake on the rising reward — not a second squeeze. An earlier
+  > analysis in this project argued the par ramp was redundant *with* Q9A; that argument assumed the
+  > ramp reduced income as the run aged. Under the 2026-08-01 model income *rises* with run age, and
+  > the tightening thresholds are what stop that from being free.
 - **SM-INV-3 — Par is never rendered as a countdown; timers are a flavor, not the driver.**
   [RATIFIED as amended 2026-07-16] The par economy is a payout curve, felt as *how hard am I
   willing to push*, never *3:41 remaining* — putting par on the HUD makes the whole game a
@@ -292,7 +329,32 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   visible, diegetic timer (running out reduces or eliminates the reward). The constraint is
   that timers must never become the main driver of all missions — they're one authored
   flavor among the mission types, and the default mission has no clock.
-- **SM-INV-4 — Payout is margin against par; bare completion pays ~nothing.** [DEFAULT]
+
+  > **Amendment [RATIFIED 2026-08-01] — rank is par's player-facing surface.** The player never sees
+  > par and never needs to: they see **a letter and a number** — how they did, and what they earned.
+  > Ranks are **D · C · B · A · S** (`gradeRun()` in `src/par.js` already computes them), coloured
+  > **red · orange · yellow · white · blue**. **B is the band that contains par**, deliberately — the
+  > rank that just meets the cost curve should be a B, because getting an A has to feel like
+  > something. Two hard constraints: the rank is **result-card only, never live** (a live rank is a
+  > countdown by proxy and re-breaks this invariant), and the rank is **display only** — payout is
+  > continuous (SM-INV-4), so the letters are a legible skin over a smooth curve, not bins.
+  >
+  > This *strengthens* the invariant rather than straining it. It also licenses the one legal way to
+  > put a target in front of the player before a drive: a mission-giver offering **"a little extra if
+  > you finish with an A"** states a standard with no clock attached — see "The economy".
+- **SM-INV-4 — Payout is continuous margin against par; bare completion pays ~nothing.**
+  [RATIFIED 2026-08-01 — was DEFAULT] Payout is a **continuous linear function of the par ratio**,
+  not a set of bins. Three anchors fix the line: **+20% over par pays ~nothing · par pays one day's
+  maintenance · −20% under par pays generously (2×)**.
+
+  > **The anchor, stated exactly: a day driven entirely at par is break-even.** Below par you profit,
+  > above it you bleed, and the crossing point is par by construction. That turns Open Q4's constraint
+  > ("negative on a lazy day, positive on a brave one") from a tuning goal into an identity, and it
+  > collapses the whole payout economy to **one tunable number** — maintenance cost per second of
+  > par-driving. Safe driving still isn't punished; it just doesn't pay.
+  >
+  > **Payout floors at zero.** A disastrous run earns nothing; it never charges you. The loss is the
+  > day and the wear, which is a real enough loss that it needs no arithmetic on top.
 - **SM-INV-5 — Wear accrues on time + intensity, never distance.** Hours and engine torque
   are both integrated; wear compounds with how hard you drive, not just how long. This is
   the lever that separates intense mission driving from casual point-to-point freeroam
@@ -391,19 +453,32 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
 - **SM-INV-13 — Progression gates are diegetic.** Region locks are trail-closed barriers a
   ranger reopens (FEAT-28), not menu walls. XP-gating harder country needs an in-world
   frame or it fights the world premise. [DEFAULT]
-- **SM-INV-14 — XP is run-layer; it does not survive death.** [RATIFIED 2026-07-29] XP resets with
-  the run, along with the map, the truck and the money. Persistent XP would let run 50 clear region
-  1's gate instantly — that is a power floor and SM-INV-9's litmus test forbids it. XP is not
-  meta-progression; it is a **within-run pacing resource** whose real function is *positional*:
-  > A strong day one buys region 2 on day two. Because service and parts costs escalate with run
-  > age (Q9A), arriving early means arriving **before the country gets expensive** — a wider margin
-  > for something to go wrong. **XP is not progress. It is a head start against the cost curve.**
+- **SM-INV-14 — Region access is bought with mission *points*, not XP, and they are run-layer.**
+  [RATIFIED 2026-08-01, replacing the XP formulation of 2026-07-29] Progress toward the next region
+  is a **count of well-driven missions**, not an accumulating quantity:
 
-  This is what makes fast driving matter for *survival* rather than only for cash, and it does so
-  with no rendered clock anywhere (SM-INV-3 intact). **The one hard constraint: XP must never
-  increase with time taken** — any formulation where slow driving earns more XP reopens gate-farming.
-  Scoring (`XP = parGeometric × (1 + k·marginRatio)`, `payout = absoluteSecondsUnderPar`) is
-  **PROPOSED, not ratified** — see `missions.md` "Experience and payout".
+  > **1 point** for a mission finished at **rank B or better** · **½ point** at **C** · **0** at D.
+
+  Each region needs N points (see "Run shape and saving" for the schedule). Points reset with the run
+  along with the map, the truck and the money — persistent progress would let run 50 clear region 1's
+  gate instantly, which is a power floor SM-INV-9's litmus test forbids.
+
+  > **Why a count and not XP.** An XP quantity that scales per day only forces the *requirement* to
+  > scale with it; the treadmill nets to nothing and you have traded a legible number for a hidden
+  > one. A count is legible, is impossible to inflate, and makes the real design question the one
+  > that actually matters — **missions per day per region** — instead of curve-fitting.
+  >
+  > **The half-point exists so weak players don't strand.** A run of C-grade drives still advances,
+  > just at half speed. That preserves SM-INV-7's "every run is technically capable of beating the
+  > game" without making a C feel like an A.
+  >
+  > **Quality is the gate, so the count can stay flat.** Bare completion is not progress; a competent
+  > drive is. This is also what stops the count being farmed by crawling — and it means **the one
+  > hard constraint survives the rename: progress must never increase with time taken.**
+
+  A strong early run still buys the next region sooner, and because costs escalate with run age
+  (Q9A), arriving early means arriving **before the country gets expensive**. Points are not progress
+  so much as **a head start against the cost curve** — with no rendered clock anywhere (SM-INV-3).
 - **SM-INV-15 — No in-run vehicle purchase.** [RATIFIED 2026-07-29] **You cannot buy a different car
   during a run.** Parts, yes — deeply. Vehicles, no. Three reasons, all owner-stated, and worth
   keeping in the code comment that will inevitably ask *"why not just add a dealership"*:
@@ -456,16 +531,64 @@ slow motion, legible the whole way down.
 - **Par oracle:** fixed-reference point mass on a friction circle, integrated over the
   route's arc primitives (curvature + grade already there). Physics-honest, free, scales
   with region difficulty. See ticket FEAT-29.
-- **Payout = margin against par** (SM-INV-4). Currency rates must net **negative on a lazy
-  day, positive on a brave one** — that's the whole balance problem in one line.
-- **Two currencies off two inputs (2026-07-29).** **XP buys time; money buys parts.** XP is
-  run-layer (SM-INV-14) and gates *when a region's main mission becomes available*; payout is cash.
-  The scoring shapes — XP based on par and multiplied by margin *ratio*, payout scaled by
-  **absolute seconds under par** — are worked through in `missions.md` and are **PROPOSED, not
-  ratified**. The one settled constraint is that XP must never increase with time taken. Note also
-  that **not every mission type is scored on margin**: coverage (the paper route), restraint
-  (fragile cargo) and clearance (main missions) are separate axes, and freight's flat-rate payout
-  deliberately bends SM-INV-4 — flagged there for explicit ratification.
+- **Payout = continuous margin against par** (SM-INV-4). Currency rates must net **negative on a lazy
+  day, positive on a brave one** — that's the whole balance problem in one line, and the
+  break-even-at-par anchor below makes it true by construction rather than by tuning.
+
+#### The performance model [RATIFIED 2026-08-01]
+
+Three dials, deliberately separated. Each keys off a different thing, so none of them can quietly do
+another's job.
+
+| dial | keyed off | direction | what it decides |
+|---|---|---|---|
+| **par** | route geometry, nothing else | fixed | what a road is *worth* |
+| **rank thresholds** | run day | tighten | how hard the good letters get |
+| **day tier** | run day, **locked at mission start** | rise | how much a mission pays |
+
+```
+ratio  = elapsed / par
+payout = parBase × dayTier × clamp((1.2 − ratio) / 0.2, 0, cap)
+```
+
+- **`parBase = k × par`.** The base scales with the road, so a twelve-minute haul at par pays more
+  than a sixty-second errand at par. **This is load-bearing** — it is what stops the player farming a
+  loop of tiny jobs, and it is the reason payout could not simply be the rank letter. `k` is the one
+  tunable number in the economy: *maintenance cost per second of par-driving.*
+- **`clamp(…)` gives 0 at ratio 1.2, 1.0 at par, 2.0 at ratio 0.8** — the linear payout line. `cap`
+  (~3×) is insurance: a route the oracle mis-prices should not become a payday.
+- **`dayTier` is a step function of the run day**, not a smooth curve, and it is **fixed at the moment
+  the mission is accepted**. Deliberate consequence: **starting a job just before the day rolls over
+  buys tomorrow's rate.** That is a feature — see below.
+- **Rank is display only** (SM-INV-3 as amended): D/C/B/A/S over a continuous payout, B containing par.
+
+**Why the payout tier rises with the run.** Maintenance costs escalate with run age (Q9A). If payout
+did not rise with it, a maturing run would simply starve. Instead both climb: *number go up* feels
+good, and the fact that a repair bill now costs what three missions used to feels bad, at the same
+time. The stakes rise on both sides of the ledger. The **tightening rank thresholds are the brake** —
+you earn more per job, but earning the top of the curve demands either a better-driven line or a
+better-maintained truck. Get neither and the rising payout does not save you.
+
+**The 1 a.m. start is a feature, not an exploit.** Locking the tier at accept time with hard day
+cutoffs means the economy itself makes it rational to take a job late and drive it into the night —
+which is to say **the reward structure seduces the player into driving tired.** That is exactly what
+the fatigue domain was designed to sell, arriving for free from the economy instead of from a spirit.
+Nobody authored it; do not "fix" it.
+
+**Bonus objectives are the one legal pre-drive target.** A mission-giver may offer *"a little extra if
+you finish with an A"*, gating an **item** reward whose identity is not stated up front (a spare tire,
+a cooking kit). This is legal precisely because it names a standard without naming a time (SM-INV-3),
+and it is the only place a rank boundary has mechanical teeth rather than cosmetic meaning. Item
+rewards die with the run like everything else (SM-INV-8).
+
+**Not every mission type is scored on margin.** Coverage (the paper route), restraint (fragile cargo)
+and clearance (main missions) are separate axes; **rank is computed per-axis** so the letter — and
+therefore the bonus objective — works on any job. Freight's flat-rate payout deliberately bends
+SM-INV-4 and is flagged in `missions.md` for explicit ratification.
+
+**Non-timed missions are still governed by the clock, indirectly.** A fragile run has no margin
+scoring, but costs escalate with run age and the day is finite, so dawdling is still expensive. The
+economy supplies the pressure; the mission does not have to.
 - **Wear = f(time, intensity)** (SM-INV-5): hours driven and engine torque are both tracked
   and integrated over the run — rpm-hours, redline time, hard impacts, curb strikes,
   over-temp all feed the condition model. Breakdown is the second death. There is no damage
@@ -596,8 +719,51 @@ tracks obey SM-INV-5 (time + intensity, never distance).
 - **Roadside self-service** for tires (and likely the filter): burn hours, need the part on hand.
 - **Service station in town** for the heavy repairs (engine, suspension, brakes, radiator, gasket) — costs
   money + time; reached by driving or by tow.
+- **Gas stations** — see below.
 - **Diagnostic screen:** a condition panel — the **FEAT-34 instrument cluster is its natural home** —
   surfaces every track, with the **air-filter warning** the critical, can't-miss one.
+
+### Fuel and gas stations [RATIFIED 2026-08-01]
+
+**Fuel exists, and so do gas stations.** This reverses `items.md`'s standing "Fuel? Not in the
+design" line, which is struck. Ticket: **FEAT-50** (tank + burn model), gauge already shipped in the
+FEAT-49 cluster.
+
+**Why it fits rather than bolts on — fuel is the distance term the rest of the economy refuses.**
+SM-INV-5 is emphatic that wear accrues on **time and intensity, never distance**. That is right for
+wear, but it leaves the game with no cost for *going far*, which is strange in a driving game. Fuel is
+exactly that missing axis:
+
+> **Wear prices how hard and how long you drove. Fuel prices how far.** Between them both axes are
+> covered, and neither has to lie about the other.
+
+**Burn is honest, like everything else** — a function of rpm and load off the drivetrain, so a
+par-beating drive costs fuel *and* wear while a gentle freeroam leg is cheap in both. That sharpens
+the two-driving-modes split (see "The organizing problem") rather than complicating it.
+
+**Running dry is not a new fail state.** It is the existing **breakdown predicament** (SM-INV-1) with
+an unusually cheap fix: you are immobilised and must get fuel to the truck — a jerry can if you carry
+one, a tow if you can afford it, and the run ends only under the rule that already exists (*can't
+continue and can't afford recovery*). No invariant moves. **Do not implement running dry as a direct
+kill.**
+
+**Gas stations are a POI type**, and a *service* venue distinct from the town service station: cheap,
+common, and quick, where the service station is expensive, rare, and costs hours. Consequences:
+- Fuel price is a natural carrier for **Q9A cost escalation** — pennies-per-gallon rising with run
+  age is the most legible possible version of "the world is thinning out," and it needs no fiction
+  invented for it.
+- It sharpens **Q9B** (the advancing front consuming POIs): losing the local gas station is worse
+  than losing a job-giver, because it lengthens every route you have left.
+- It gives the **early game a service venue that isn't punishing**, which the repair economy
+  currently lacks.
+
+**It is also the tutorial gauge.** The fuel needle is perfectly legible and always true — the exact
+opposite of the air filter, which does nothing until it does. Fuel teaches the player to read the
+cluster *before* the subtle tracks start mattering. Keep that contrast; it is doing free work.
+
+**Open:** tank capacity as a jalopy/part difference (a bigger tank is described-not-scored territory,
+SM-INV-10); whether a **jerry can** is a stowed tool with real mass (`items.md` §2 rules say it would
+be); and whether fuel price varies by station or only by run age.
 
 ### The car: jalopy + parts [RATIFIED premise, DEFAULT details]
 
@@ -683,10 +849,60 @@ repetition. Full model and the cast: `spirits-and-pacts.md`.
 
 Full working-through in [run-shape.md](run-shape.md); the ratified numbers:
 
-- **~10 regions** at current region size · **4–6 hours** to beat · **24-minute days** (~10–15 days
-  per run). The full trail chain must be completable in **one run** (SM-INV-7), since clearance is
-  run-layer and resets on death — so region count is bounded by what one surviving run can reopen.
-  That is a hard content constraint.
+- **6 regions** at the current 2500 m radius (~12 min to cross) · **4–6 hours** to beat ·
+  **24-minute sky cycle** ·
+  **7–8 days per run** [region count and days-per-run both set 2026-08-01]. The full trail chain must be completable
+  in **one run** (SM-INV-7), since clearance is run-layer and resets on death — so region count is
+  bounded by what one surviving run can reopen. That is a hard content constraint.
+
+  > **The 10–15 day figure was an arithmetic error, and the error is worth naming so nobody re-derives
+  > it.** It came from dividing the target hours by the **sky cycle** (24 min), which assumes a day is
+  > nothing but driving — no camping, no repair trips, no shopping, no dialogue, no travel between
+  > jobs. In practice a day costs roughly **40–45 real minutes**, so 7–8 days is what actually lands
+  > in the 4–6 hour target. **The 24-minute sky cycle is unchanged**; what changed is the recognition
+  > that the sky cycle and the wall-clock cost of a day are different numbers.
+
+- **A region is a progression *chapter*, not a bounded play space** [RATIFIED 2026-08-01]. Regions
+  **unlock, they do not replace** — by chapter 6 the player has six regions of drivable, validated
+  world, and **a chapter's gameplay need not happen inside its own region.** A late mission may start
+  in region 1 and end in region 4; **driving between regions is content, not overhead.**
+
+  > **The region does not need to grow to carry a 40–60 minute chapter.** At the current
+  > `REGION_RADIUS_M = 2500` a crossing already takes ~12 minutes on this terrain, so a chapter is
+  > three to five crossings. The unit that matters is drive time, not map area.
+  >
+  > This is also the better explanation of the falling point schedule: late missions **span regions**,
+  > so their par is large, they pay more (`parBase ∝ par`) and they take longer. Chapter 6 needing
+  > only 2 points is not thinness — it is two multi-region hauls.
+  >
+  > **Two build consequences.** The play space grows monotonically, so streaming and validated-network
+  > coverage scale with **regions unlocked** (FEAT-28's bill, not a region-sizing one) — and because
+  > unlocks are run-layer, that bill is paid **every run**. Ruled 2026-08-01: the next region is
+  > **warmed on the worker the moment the player accepts the region-unlock main mission**, so the
+  > barrier lifts with no loading screen. See FEAT-28. And mission
+  > planning must path over the **union of unlocked regions** — `src/mission.js`'s `_roll()` currently
+  > confines both endpoints to the single active region (FEAT-43), which has to become "inside the
+  > unlocked set" before cross-region missions work at all.
+
+- **Mission points per region: a falling schedule, not a flat count** [RATIFIED 2026-08-01]. At ~2–3
+  missions per day over 7–8 days a run affords roughly **20 missions**, so a flat "5 per region"
+  does not fit at ten regions — it would be a ~10-hour run. At **six** regions the schedule falls
+  with depth and totals 20–23:
+
+  > **5 · 4 · 4 · 3 · 3 · 2** — 21 points, ~2.7 missions/day.
+
+  This is not a compromise; it is the texture `run-shape.md` already predicted — *"region 1 gets
+  cleared in five or six short errands and the last in one or two long hauls."* Early regions are a
+  busy board of short jobs with a healthy truck; deep regions are one or two serious commitments with
+  a wrecked one. Because points come in halves (a C is ½ — SM-INV-14), the real counts are finer than
+  the integers suggest. **Per-region counts are authored numbers, one per region** — a content dial,
+  not a curve to fit.
+
+- **Difficulty is a run-start setting, never a worldgen input** [2026-08-01]. A difficulty selection
+  may scale the point thresholds, the cost-escalation curve, and `k` in the payout formula. It must
+  **not** reach worldgen: SM-INV-12 makes a seed mean the same world for every player, and a
+  difficulty that changed terrain or roads would break seed sharing outright. If difficulty ever must
+  affect generation, it has to become part of the seed's identity rather than a separate dial.
 - **Saving is suspend-and-resume, not checkpointing.** One slot per profile; written on quit;
   **loading a save deletes it**; death deletes it. Resuming is not restoring — it's picking the run
   back up. Standard roguelike practice (Spelunky, FTL, Slay the Spire), and SM-INV-1 is intact:
@@ -717,11 +933,43 @@ Full working-through in [run-shape.md](run-shape.md); the ratified numbers:
   forest), and **road surface class** (FEAT-38 dirt-road prevalence) are the delivery surface —
   a region reading civilised-and-paved vs. wild-and-dirt is a baked per-region parameter, not
   authored text.
-- **Dispersed-camping spurs (FEAT-38)** are a diegetic campsite feeder. Dirt tracks grow off the
-  network into the empty back-country and peter out at scored clearings — the worldgen designating
-  campable ground (SM-INV-6), with the dirt spur *being* the access. Prefer a spur-endpoint score
-  that shares the camp-quality signal (flat, shade, water proximity) so FEAT-38 and the SM-1
-  campsite placer / FEAT-21 siting rules read the same "good ground" field.
+- **The off-network layer — ONE generator [RATIFIED 2026-08-01].** Everything that lives off the
+  routed road network comes from a single generator: **dirt spurs, dispersed-camping areas, logging
+  sites, POIs, and cuts**. Previously these were four tickets (FEAT-38 mode B, FEAT-45, FEAT-32,
+  FEAT-21/46) each growing their own tracks into the same empty back-country, competing for the same
+  space and the same crossing cull. They are one system with several *purposes* tagged onto its
+  output, and the topology decides the purpose:
+
+  > **A track that dead-ends is a spur. A track that rejoins the network is a cut.** Same generator,
+  > same determinism, different fate — which is also exactly the fiction of the Highway/Shortcut pair.
+
+  Hard constraints, inherited from FEAT-46's shipped discipline:
+  - **Strictly downstream of routing.** Nothing in this layer may enter `routeCacheSig`, the abstract
+    graph, the router cost model, or the crossing cull. Road centerlines must be **bit-identical**
+    with and without it — the same parity gate FEAT-46 already ships.
+  - **Pure `(worldSeed, coords)`, window-invariant** (SM-INV-12). This includes **which cuts are
+    washed out** — passability is worldgen, fixed per seed, *not* run-layer. That makes knowing which
+    cuts go through pure **literacy**, the one thing that survives death (SM-INV-8), and it is what
+    lets the Shortcut's pact be a *knowledge* gift rather than a lottery ticket.
+  - **One shared "good ground" score** — flatness, shade (tree density), water proximity, and
+    possibly view (terrain visible from the site). Camp areas, POI pads and logging sites all read
+    it; see the three-layer camping model below.
+
+  **Camping is three layers, not one** [RATIFIED 2026-08-01], which resolves a long-standing muddle
+  about who owns campable ground:
+  1. **Region campable flag** — some regions permit camping and some do not (SM-INV-6's gate).
+  2. **Valid camp locations (FEAT-45)** — areas where the button is legal at all, gated by **hard
+     rejects**: in water, not flat enough.
+  3. **Site quality** — a *score*, not a gate: flatness, shade, water proximity, view. This is what
+     the pre-camp preview shows and what decides the night you get.
+
+  Spurs, logging landings and POI pads **feed candidates** into layer 3; none of them gates. FEAT-45
+  owns the gate.
+
+  **GPS routes the road, not the cut.** Navigation (FEAT-39) prefers the maintained network and will
+  only route over a cut when there is no road way to the destination. The obfuscation is structural
+  rather than cosmetic: by the router's own cost function a cut *is* bad line — tight radii, no
+  banking, bad surface — so honest routing avoids it without anyone hiding anything.
 - **Spirits — DEFERRED 2026-07-29.** *Meta-progression is now the garage (see "The garage"); spirits
   are no longer the roster mechanism. The system is not deleted, but how it relates to the garage
   needs its own pass — don't build spirit-unlock plumbing yet. The description below is retained as
@@ -812,8 +1060,11 @@ escalate rather than assuming the pane is licensed for it.
    and still owner-only: (a) whether the Roamer is a benevolent guide or self-interested/not-fully-noble
    (colors tone, the doze frames, and whether reopening the trails is a gift or a mistake); (b) what
    the concrete *final* beat actually is. Do not invent the ending in a ticket.
-2. XP → region unlock: unit, curve, radius vs discrete regions (FEAT-28 assumes discrete
-   macro-tile regions — the likely answer).
+2. ~~XP → region unlock: unit, curve, radius vs discrete regions.~~ **RESOLVED 2026-08-01.** The
+   unit is **mission points**, not XP (SM-INV-14): 1 for a B or better, ½ for a C, 0 for a D. There
+   is no curve — per-region counts are **authored**, falling with depth (5·4·4·3·3·2 over six regions). Regions
+   are **discrete macro tiles**, as FEAT-28 already assumed. Residual: whether the log drag counts
+   toward its own region's total or sits on top of it.
 3. ~~Whether region unlocks persist across runs.~~ **RESOLVED 2026-07-29 — they do not.** Trail
    clearance and region access are **run-layer**: logs stay cleared for the current run, death puts
    them back. Persistent map access would be *floor* and fails SM-INV-9's litmus test outright —
@@ -822,7 +1073,11 @@ escalate rather than assuming the pane is licensed for it.
    is what bounds region count — see "Run shape and saving"). Consequence for authored content: the
    log-drag main mission splits into **the beat** (staged scene, once per profile, a story key on
    metaState) and **the labor** (chaining and clearing, every run) — see `missions.md`.
-4. Currency rates (lazy-day-negative / brave-day-positive is the constraint, not the tuning).
+4. ~~Currency rates (lazy-day-negative / brave-day-positive is the constraint, not the tuning).~~
+   **RESOLVED 2026-08-01 as a formula** — see "The performance model". The constraint became an
+   identity: *a day driven entirely at par is break-even*, so below par profits and above par bleeds
+   by construction. What remains is **one number to tune** (`k`, maintenance cost per second of
+   par-driving), plus the day-tier steps and the threshold ramp. Tuning, not structure.
 5. Camp quality: dimensions (water, fire, flat, shelter, *weirdness*?) and what they modify.
 6. Mission failure currently costs nothing but opportunity. May be right (the fiction does
    the work) — or means there's no reason not to accept every job and bail. Unresolved.

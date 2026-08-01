@@ -52,7 +52,8 @@ Used up. Per-job or per-day decisions, not permanent upgrades.
 | **Fish (eaten)** | Alertness that **does not have to be repaid** — the only honest restoration in the game. *"Coffee is debt. Fish is income."* | Caught; best at a favored water | A long relationship with the water | **PROPOSED** — `spirits-and-pacts.md` #04. ⚠ Depends on The Confluence, which is deferred |
 | **Spare tire** | Recovers from a puncture without a tow. Puncture is a hard fail state in the wear model. | Bought/found; starts in some jalopies | Real mass, all the time | **IMPLIED** — named in DESIGN.md "The car" as a stowed consumable; behavior unspecified |
 | **Air filter (spare)** | Replacement for the track the player must actively *watch* — it does ~nothing until it does. | Bought/found | Cash; a slot | **IMPLIED** — same |
-| **Fuel?** | Not in the design. Noted only so nobody assumes it exists. | — | — | **NOT DESIGNED** |
+| **Fuel** | The tank. Burn is a function of rpm and load, so a par-beating drive costs fuel as well as wear. **The one cost that scales with distance** — SM-INV-5 keeps wear off the distance axis, and this is what fills it. Bought at gas stations. | Gas stations (a POI type) | Cash — and the detour, if you let it get low | **RATIFIED** — owner, 2026-08-01. Reverses this row's old *NOT DESIGNED*. Ticket FEAT-50; gauge already ships (FEAT-49). See DESIGN.md "Fuel and gas stations" |
+| **Jerry can** | Fuel you carry. The cheap answer to running dry, which is otherwise the breakdown predicament (tow, or don't). | Bought/found | Cash; a slot; **real mass, always** — and it is fuel, so it is not trivial mass | **IMPLIED** — falls out of the fuel ruling; see the tools carry-cost question in §2 |
 
 > **The coffee test.** Coffee works because its cost is in a *different currency* than its payout
 > (hours for alertness) and lands *later*. Any consumable that pays and costs in the same currency is
@@ -110,6 +111,10 @@ land. Nothing here is built (owner, 2026-07-30: *catalog it, don't build it*).
 | **Bedroll (+ campfire)** | **The default camp — no modifier.** Everybody has one; you sleep on the ground beside a fire. It is the baseline the rest of this table is measured against, and the thing that renders when you carry nothing else. | Starting kit | Its own trivial mass | **IDEA** — 2026-07-30 |
 | **Sleeping bag** | Multiplies the energy a night buys, by a fixed factor (~1.1×). **Replaces the bedroll** in the rendered camp. | Bought/found | Cash; a slot; small mass | **IDEA** — 2026-07-30 |
 | **Tent** | The same multiplier, larger. **Replaces the sleeping bag** in the rendered camp — the campsite visibly becomes a camp rather than a man on the dirt. | Bought/found | Cash; a slot; real mass | **IDEA** — 2026-07-30 |
+| **Blanket** | **Energy axis.** The small end of the same multiplier — the cheap first upgrade over the bare bedroll, and the thing you still have when you've sold the tent. | Bought/found | Cash; a slot; trivial mass | **IDEA** — 2026-08-01 |
+| **Cot** | **Vibe axis — flatness.** Makes unflat ground sleepable: fills part of the flatness deficit of the site you chose. Inert on ground that is already flat. | Bought/found | Cash; a slot; real mass (it's a folding frame) | **IDEA** — 2026-08-01 |
+| **Canopy / tarp** | **Vibe axis — shade.** Makes an exposed site bearable: fills part of the shade deficit. Inert under trees. | Bought/found | Cash; a slot; small mass | **IDEA** — 2026-08-01 |
+| **Binoculars** | **Vibe axis — view.** Something to look at from a site with nothing much to look at. Inert on a spot that already has the valley in front of it. ⚠ Depends on a **view** contribution to the site score, which DESIGN.md names as a layer-3 factor but `VIBE_W` (`src/camp.js`) does not yet carry. | Bought/found | Cash; a slot; negligible mass | **IDEA** — 2026-08-01 |
 | **Cooking kit** | ~50 lb (≈23 kg) of always-carried mass. Renders as an **A-frame over the campfire with a Dutch oven hanging from it**. Gives a **flat bonus to the effect of food items** — there is deliberately no cooking *system*, no recipes, no ingredients. | Bought/found | ≈23 kg on every mile, for a benefit collected only at camp | **IDEA** — 2026-07-30. ⚠ Depends on food items, which do not exist (§1: fish is PROPOSED, and upstream of a fishing minigame nobody has framed) |
 
 > **The visible-kit rule.** Camp gear is the one category whose ownership is legible *without a UI*:
@@ -120,11 +125,33 @@ land. Nothing here is built (owner, 2026-07-30: *catalog it, don't build it*).
 > "tent model + animated campfire w/ dynamic shadows"): that render work and this table are the same
 > job seen from two ends.
 
-> **It multiplies the energy, never the vibe.** The site's vibe score decides what a night at that
-> spot is worth (`r(vibe) = lerp(1.5, 3.0, vibe)` in `src/day.js`); gear scales what you take away
-> from it. Keeping them separate is what preserves **SM-INV-6** — *camping is a button, but the place
-> decides the quality*. Folding gear into the vibe term would let a tent substitute for good ground,
-> which is precisely the substitution that invariant exists to forbid. Do not "simplify" it later.
+> **Two axes: some gear scales the energy, some gear scales the vibe.** [RULED 2026-08-01, owner —
+> supersedes this section's original "it multiplies the energy, *never* the vibe."] The site's vibe
+> score decides what a night at that spot is worth (`r(vibe) = lerp(1.5, 3.0, vibe)` in `src/day.js`).
+>
+> - **Energy axis** — bedroll, blanket, sleeping bag, tent, cooking kit. These scale what you *take
+>   away* from the night, whatever the night was. They stack with any site.
+> - **Vibe axis** — cot, canopy, binoculars. Each names **one segment** of the vibe score and fills
+>   part of that segment's **deficit** on the site you already chose.
+>
+> **SM-INV-6 is preserved by the deficit rule, not by keeping gear out of the vibe term.** The assist
+> is `min(itemCap, headroom)` — headroom being what the site left unearned on that factor — so gear
+> is **inert on a site that is already good at that thing**, and the caps are set so flat + shade +
+> view assists together cannot manufacture a top-vibe site out of a bad one. The place still sets the
+> ceiling; gear only reclaims part of what a bad place withheld. Better ground still beats worse
+> ground, so *the last leg of the day is still finding good ground* — which is the clause SM-INV-6
+> actually turns on. What is forbidden is an **uncapped or site-blind** vibe bonus: that is the tent-
+> substitutes-for-ground substitution, and it stays forbidden.
+>
+> **Apply the vibe assist to the CHOSEN site, after the candidate hunt** — never inside
+> `_gradeFlat`/`_gradeAmenity` (`src/camp.js`). The hunt is flattest-first with an early break on
+> `flatScore + AMENITY_MAX`; boosting scores during the search would change *which* spot gets picked,
+> i.e. the cot would start steering the player toward worse ground. Different mechanic, worse one.
+>
+> **Show the assist on the vibe bar, unlabelled** — a lighter ghosted tail on the end of the segment
+> being helped (`_renderVibeBar`, `src/main.js`). No legend, no numbers, no item name: the player
+> sees *the cot is working tonight* vs *the cot is dead weight*, which is the feedback loop that
+> makes carrying it a real decision. SM-INV-3-shaped — a diegetic read, not a meter.
 
 **Two open flags, recorded rather than resolved:**
 
@@ -167,6 +194,37 @@ repair"). These are the items money mostly exists to replace.
 | **Power mods** | On an open-diff RWD truck, a *worse car* for a driver without the literacy — **a cursed item nobody had to author** | **RATIFIED premise** |
 | **Tire compound/type** | Grip character and how it degrades; interacts with surface class (FEAT-38) | **DEFAULT** |
 | **Brake pad grade, per axle** | Bias — a race pad changes what the truck does under braking | **DEFAULT** |
+
+### 3c. The durability axis — sportiness traded for endurance [RATIFIED 2026-08-01]
+
+**A whole class of parts that are worse to drive and harder to kill.** Owner-ratified 2026-08-01 as a
+sanctioned upgrade direction, and it is the cleanest expression of SM-INV-10 in the catalog: nothing
+here is *better*, everything here is a **trade you can feel through the wheel**.
+
+| Part | The trade | Reads (honest signal) |
+|---|---|---|
+| **LT load-rated tires** | Stiffer sidewall, heavier, less peak grip and a duller turn-in — but they take load and abuse a sport tire won't, and they resist puncture far longer on the wear→fragility curve | tire condition track; per-wheel μ |
+| **Heavy-duty off-road suspension** | **No dual-rate damping** — cruder, floatier, less composed on pavement — but it eats bump-stop hits that would degrade a sport damper | suspension condition; bump-stop over-travel |
+| *(space for more)* | Skid plates, a heavier-gauge radiator, steel wheels over alloys — same shape: mass and refinement out, survivability in | |
+
+**Why this axis earns its place.** Three things fall out of it for free:
+
+1. **It is the counter-play to the Shortcut pact.** A player who takes cuts is buying wear with time
+   saved; durability parts change that exchange rate. The two systems synergize without either being
+   authored against the other — the truck build *becomes* the statement of which road you take.
+2. **It is impossible to express as a number**, which makes it self-policing under SM-INV-10. There is
+   no "+15 durability" reading of a tire that grips less and dies slower; you either feel the trade or
+   you don't.
+3. **It is lateral, not upward** — the SM-INV-9 litmus test passes cleanly. Durability doesn't make
+   late runs comfortable; it makes a *different* run, one that is slower against par and cheaper to
+   keep alive. Given payout is continuous in the par ratio, that is a genuine economic fork: you earn
+   less per job and spend less on repairs.
+
+> **Watch the one failure mode:** if durability parts are strictly better in the late game — when
+> repairs are expensive and par matters less — the axis collapses into "the correct build" and stops
+> being a trade. The tightening rank thresholds are what should prevent that, since a slower truck
+> loses ground on the grading curve exactly as the run matures. Verify this when the economy is tuned;
+> it is the interaction most likely to quietly break.
 
 > **Vehicles are not items (SM-INV-15).** You cannot buy a different car during a run. Parts are the
 > entire in-run upgrade path; *starting* vehicles are the meta layer (DESIGN.md "The garage").

@@ -60,7 +60,8 @@ in the cold morning whether it'll start.
   crap truck; a mid-run starter/battery find lands as an event.
 - **SM-INV-10 (parts described, never scored):** "cranks forever when cold" is a described condition,
   no number attached — exactly the cursed-item-nobody-authored texture.
-- **SM-INV-1 / SM-INV-6 (death = crash/breakdown; camping is a place):** turning the key off is the
+- **SM-INV-1 / SM-INV-6 (death = crash/breakdown; camping is a button gated by campable ground —
+  *phrasing corrected, SM-INV-6 was reversed 2026-07-19*):** turning the key off is the
   diegetic end of the day; a truck that won't catch at a bad camp is a breakdown-flavored slow death,
   legible the whole way down — reinforces the "bad night" fiction already in the doc.
 - **SM-INV-12 (determinism):** ignition/crank is a **live run-layer** mechanic; condition comes from

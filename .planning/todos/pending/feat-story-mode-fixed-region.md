@@ -71,10 +71,19 @@ the standing intent; story mode has no do-overs.
       ring. The trail-closed barrier (SM-INV-13) lands with → **FEAT-28**, which also owns the
       macro-tile region model that should eventually decide where a region is *anchored* (today:
       the seed spawn).
+- [ ] **Confinement must become the UNLOCKED SET, not the current region** [2026-08-01]. DESIGN.md
+      "Run shape and saving" ratified that a region is a progression **chapter** and the play space is
+      **cumulative** — later missions may start in region 1 and end in region 4. Two things here are
+      built on the single-region assumption and will need to widen: the `REGION_RADIUS_M` wall
+      (becomes the union of unlocked regions — FEAT-28's macro tiles), and **`_roll()`'s
+      region-confinement guards in `src/mission.js`** (FEAT-43 fix 1), which today pin both mission
+      endpoints inside the one active region. Cross-region missions do not work until both do.
 
 ## Design constraints (unchanged — read before building)
 
-- **SM-INV-12** — worldgen stays a pure fn of `(worldSeed, metaState, coords)`. The region is a
+- **SM-INV-12** — worldgen stays a pure fn of **`(worldSeed, coords)`** *(corrected 2026-08-01: the
+  2026-07-16 `metaState` widening was REVERTED on 2026-07-29 — no meta-progression input reaches
+  worldgen. Run-layer world state is `(worldSeed, runState, coords)`.)* The region is a
   bounded slice of the same deterministic world; freezing the stream must not change what any tile
   generates.
 - **SM-INV-13** — region locks are diegetic, not menu walls. Today's hard boundary is a placeholder.
