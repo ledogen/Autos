@@ -69,7 +69,28 @@ plus a slot**, paid on every mile you carry it, against a payoff you only occasi
 | **Breaker bar** | Roadside wrenching. Paired with the quick-jack in the bible's own list. | Bought/found | Real mass, always | **IMPLIED** — same |
 | **Chain** | Chains onto a downed log for the drag. **A one-sided distance constraint** — zero force slack, hard tension taut — and the snatch impulse *is* the damage signal. | Main-mission equipment | The truck, by design | **RATIFIED premise** — `missions.md` "Main missions". *Open: carried item, or supplied by the mission?* |
 | **Fishing gear** | Required for the fishing minigame. | ? | ? | **IMPLIED / UNSPECIFIED** — see the gap note below |
+| **GPS unit** | Turn-by-turn guidance — FEAT-39's chevrons + junction arrow boards, already shipped in `src/gps.js`. **Until you find one, the paper map (FEAT-16, `M`) is all you get** — navigation is map-reading, landmarks, and memory. | Found or bought within a run | Cash; a slot; trivial mass — the real cost is that you had to *earn* legibility | **RATIFIED premise** — owner, 2026-07-31: "GPS should be an item; until you find it you navigate via the map alone." *Open: strictly per-run (SM-INV-8 says items die with the run — you re-find it every run), or does knowing-where-one-sells count as the literacy that persists?* |
+| **Destination beacon** | Shows a **beam of light rising from the destination**, visible over terrain from far off. Gives *bearing*, not route — the point is that it makes **off-route travel** findable: you can leave the road, crest the ridge, and steer by the light. It answers "where," never "how." | Found or bought within a run | Cash; a slot | **IDEA** — owner, 2026-07-31. *Open: always-on while carried, or aimed/activated? Render: a sky-beam is cheap and reads at range, but must respect fog/night (day/night pass made fogColor a radiance value).* |
+| **Shortcut GPS** | A GPS that routes **the fast way, not the road way** — instead of the strict on-road route, it guides toward genuine shortcuts (dirt legs, cut-the-corner crossings). The item that turns par-beating off-route play from a private discovery into equipment. | Found or bought within a run | Cash; a slot; **the route it shows is riskier by construction** — it spends your truck to save your clock | **IDEA** — owner, 2026-07-31. *Open: tech — the router/par oracle only knows the road graph, so "shortcut" needs a definition: overland legs between road joins? Or is this the beacon + road-GPS combined presentation? Also: must not become the honest-par killer — see note below.* |
 
+> **The GPS is the one tool whose mechanic already ships.** FEAT-39's overlay exists and currently
+> defaults **ON** in missions (it was left on for playtesting + FEAT-30 par calibration). Making it an
+> item means story mode boots with `__setGpsEnabled(false)` until the item is acquired; the sandbox /
+> assists-menu toggle (FEAT-41) stays a plain toggle — the *item* gate is story-mode-only. It is also
+> the cleanest expression of rule 4 in the catalog: the map is the game, the GPS lets you *stop paying
+> attention* — exactly the comfort SM-INV-9 says must be bought, not given.
+>
+> **The navigation ladder.** Map, beacon, GPS, shortcut GPS are one family, and each answers a
+> *different question*: the map answers "what's out there," the beacon "where is it," the GPS "how do
+> I get there," the shortcut GPS "how do I get there *fast*." That's what keeps them from being tiers
+> of the same upgrade — a beacon-carrier still reads the map to pick a line; a GPS-carrier who finds a
+> beacon gains off-route options the GPS would never suggest. Author them so no item obsoletes another.
+> **One economy flag for the shortcut GPS:** par is priced by the oracle on the *road* route
+> (`src/par.js` — endpoints mid-edge, road graph only). An item that systematically reveals off-road
+> lines is an item that systematically beats par — legal under rule 4 only while the shortcut is
+> genuinely harder *driving* (terrain, grade, the truck pays). If off-route legs ever become the
+> comfortable default, this item is the reason why; price it and rarity it accordingly.
+>
 > **The carry-cost question, unresolved and worth deciding early.** Tools are the only category whose
 > cost is paid continuously and whose benefit is occasional. That's a genuinely interesting decision
 > (*do I carry the jack today?*) **only if the mass is felt**. If it isn't, tools are free and the

@@ -70,8 +70,12 @@ only the display.
      vs. both. Binary toggle (likely no gain slider — it's on or off), possibly a display sub-option.
    - **Story-mode fit:** navigation is a real difficulty / QoL axis — no-GPS means *reading the land*
      and remembering the way, which suits the honest-world premise and the SM-INV-6 "last leg of the
-     day is the game" feel. Likely a difficulty toggle: casual players get arrows, purists turn them
-     off. Confirm whether story mode allows it or gates it per difficulty.
+     day is the game" feel.
+     **ANSWERED (owner, 2026-07-31): in story mode the GPS is an *item*, not a toggle** — until you
+     find/buy one within the run, you navigate via the FEAT-16 map alone. Story mode boots with GPS
+     disabled; acquiring the item enables it. The assists-page toggle remains the sandbox/free-roam
+     control. Catalog entry: `.planning/story-mode/items.md` §2 (Tools), with the open per-run vs.
+     persistence question recorded there.
 
 ## The Assists menu page
 
