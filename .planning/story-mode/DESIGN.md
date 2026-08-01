@@ -821,6 +821,26 @@ floor wearing a mystery costume.
 mechanism is vehicles; how spirits and classes relate to it still needs its own pass. **Do not build
 spirit-unlock plumbing yet.**
 
+### How spirits introduce themselves [RATIFIED 2026-08-01]
+
+**A spirit's first appearance must not interrupt driving.** Driving is the game; a beat that arrives
+mid-corner is the one delivery mistake that turns an authored moment into an imposition. So:
+
+> **The ledger completes in motion. The visit lands at rest.** You drive; later you make camp; then
+> it is there — **the night after** the condition is met, not the instant it is met.
+
+The campsite is the default venue for every introduction. It costs nothing to build (FEAT-45 camping
+and FEAT-47's clock already ship, and the player has already committed to the dwell), and a campfire
+is staged world-space, which satisfies SM-INV-11's surviving constraint by construction.
+
+Three properties to keep as the cast grows: **no spirit is available from the start of a run**;
+**the ledger fills while driving but the visit happens at camp**; and **the delay is one night**, so
+it reads as consequence rather than trigger.
+
+*Known exception under discussion:* the **Night Owl** is a passenger, so the seat beside you is his
+natural staging and the doze already frames it. Whether his *first* meeting may break the rule is
+**open** — see `spirits-and-pacts.md` #01.
+
 ### How spirits exist without persisting [RATIFIED 2026-07-29]
 
 Spirits do not need meta-persistence, and do not get it. The model, in four lines:

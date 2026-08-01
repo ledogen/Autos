@@ -14,7 +14,8 @@ relates_to: >
   FEAT-32 (logged forest — logging sites become a purpose tag on this generator's output),
   FEAT-21 (POI scatter — variety pass), FEAT-46 (shipped POI pads — the routing-parity precedent),
   FEAT-45 (shipped camp zones — consumes this generator's good-ground score),
-  FEAT-39/src/gps.js (routing preference), FEAT-29/src/par.js (par over a cut-inclusive graph)
+  FEAT-39/src/gps.js (routing preference + the shortcut-GPS item), FEAT-29/src/par.js (par is
+  ALWAYS the road route — see below)
 blocks: the Shortcut pact (deferred); FEAT-38 mode B; FEAT-32 siting
 note: "ONE generator for everything off the routed network — spurs, cuts, camping areas, logging
 sites, POI candidates. A track that dead-ends is a spur; a track that rejoins is a cut. Strictly
@@ -98,9 +99,33 @@ landings *feed candidates*; they never gate.
   only when there is no road route to the destination. **The obfuscation is structural, not
   cosmetic** — by the router's own cost function a cut *is* bad line (tight radii, no banking, bad
   surface), so honest routing avoids it. Nothing is hidden; the router simply disagrees with you.
-- **Par is computed on the road graph and is not affected by this ticket.** The cut-inclusive par
-  recompute belongs to the Shortcut pact (deferred) and is legal there because it is still pure
-  geometry — a different route set, not a modified par (SM-INV-2 as amended 2026-08-01).
+- **Par is ALWAYS computed on the road route, and nothing here changes that** [clarified
+  2026-08-01]. Geometry-only, item-blind, pact-blind (SM-INV-2). A player who takes a cut beats par
+  by *driving a shorter way* — par did not move, their route did. Two consumers sit downstream and
+  neither belongs to this ticket:
+  - **The shortcut-GPS item** (`items.md` §2) — reveals and routes cuts; par unchanged, so the cut is
+    a genuine advantage. This is the one that can ship without the spirit system.
+  - **The Shortcut's pact** (deferred) — same reveal, but the *client* quotes you against the
+    cut-inclusive route, so the scoring gain is eaten. That is his price, not a change to the oracle.
+
+  **Gating rule this ticket must support:** with neither, the player is **never routed through a
+  cut** — navigation prefers the maintained network, and cuts stay something you find yourself.
+
+### 5. Cut-traversal detection (a small, load-bearing signal)
+
+Emit an event when the player **completes** a cut: entered from one road, exited onto **a different
+road**. A through-passage — reversing back out the way you came is **not** a completion.
+
+Small, but two systems need it and one is already ratified:
+
+- **It is the Shortcut's summoning ledger** (`spirits-and-pacts.md` #06, ratified 2026-08-01). He has
+  no memory of being built and cannot know he goes anywhere until someone proves it by coming out the
+  other side — so the completion event is literally what tells him he connects. He then visits at the
+  **campsite the following night**, never mid-drive.
+- It is the natural hook for anything else that wants to know the player is a cut-taker (the Highway's
+  zero-off-route streak breaks on the same signal, inverted).
+
+Keep it a plain event with the cut's identity and both road endpoints; do not build a ledger here.
 
 ## Explicitly out of scope
 
@@ -134,6 +159,8 @@ ticket only makes the ground exist). FEAT-38 **mode A** edge re-surfacing stays 
       visit, in every run, forever.
 - [ ] Cuts read as *found*, not built: no lane markings, no banking, tight radii, rough surface.
 - [ ] GPS prefers the maintained network and routes over a cut only when no road route exists.
+- [ ] **Cut-traversal completion fires an event** (in one road, out a different road); reversing out
+      does not. This is the Shortcut's summoning ledger — see §5.
 - [ ] The good-ground score is one shared function; FEAT-45's camp scoring consumes it unchanged.
 - [ ] New tunables exposed as **USER-OWNED sliders**; HUD/log audited (`[[feedback_phase_housekeeping]]`).
 - [ ] `npm run test:all` green; route cache re-baked if any `road*` param moved

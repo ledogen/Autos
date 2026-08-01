@@ -75,7 +75,7 @@ plus a slot**, paid on every mile you carry it, against a payoff you only occasi
 | **Fishing gear** | Required for the fishing minigame. | ? | ? | **IMPLIED / UNSPECIFIED** — see the gap note below |
 | **GPS unit** | **Draws the mission route in the 3D world** so you drive it by looking out of the windscreen instead of stopping to read the map — FEAT-39's chevrons + junction arrow boards, already shipped in `src/gps.js`. A **direct convenience upgrade for any player**, and deliberately a common find: it does not make you *faster*, it makes knowing-the-way *free*. A skilled player reads the map and spends the cash elsewhere. **Until you find one, the paper map (FEAT-16, `M`) is all you get** — navigation is map-reading, landmarks, and memory. | Found or bought within a run | Cash; a slot; trivial mass — the real cost is that you had to *earn* legibility | **RATIFIED premise** — owner, 2026-07-31: "GPS should be an item; until you find it you navigate via the map alone." *Open: strictly per-run (SM-INV-8 says items die with the run — you re-find it every run), or does knowing-where-one-sells count as the literacy that persists?* |
 | **Destination beacon** | Shows a **beam of light rising from the destination**, visible over terrain from far off. Gives *bearing*, not route — the point is that it makes **off-route travel** findable: you can leave the road, crest the ridge, and steer by the light. It answers "where," never "how." | Found or bought within a run | Cash; a slot | **IDEA** — owner, 2026-07-31. *Open: always-on while carried, or aimed/activated? Render: a sky-beam is cheap and reads at range, but must respect fog/night (day/night pass made fogColor a radiance value).* |
-| **Shortcut GPS** | **The Shortcut, distilled onto a chip you mount on the dash.** Functionally identical to the pact: it **recomputes par over the cut-inclusive graph and routes you through the cuts** (FEAT-52). Without either this or the pact, **you are never routed through a cut.** The advanced GPS — very rare. | Found or bought within a run; **very rare** | Cash; a slot; **the route it gives you is riskier by construction** — it spends your truck to save your clock | **RATIFIED premise** — owner, 2026-08-01. *The "what is a shortcut" tech question is ANSWERED: cuts are real worldgen objects (FEAT-52), not an overland-routing problem.* |
+| **Shortcut GPS** | **The Shortcut, distilled onto a chip you mount on the dash** — his knowledge with his mouth removed. It **reveals and routes the cuts** (FEAT-52) and **par stays on the road route**, so you genuinely beat par by taking them. Strictly stronger than his pact, deliberately. Without this or the pact, **you are never routed through a cut.** The advanced GPS — very rare. | Found or bought within a run; **very rare** | Cash; a slot; **the route it gives you is riskier by construction** — it spends your truck to save your clock | **RATIFIED premise** — owner, 2026-08-01. *The "what is a shortcut" tech question is ANSWERED: cuts are real worldgen objects (FEAT-52), not an overland-routing problem.* |
 
 > **The GPS is the one tool whose mechanic already ships.** FEAT-39's overlay exists and currently
 > defaults **ON** in missions (it was left on for playtesting + FEAT-30 par calibration). Making it an
@@ -97,11 +97,27 @@ plus a slot**, paid on every mile you carry it, against a payoff you only occasi
 > on a chip you mount on the dash. **A spirit dumb enough to be firmware.** That is the joke, and it
 > is also the lore justification; it needs no further reconciliation.
 >
-> **Two doors, one room.** The chip and the pact grant the same power: par recomputed over the
-> cut-inclusive graph, and routing that uses cuts. They are acquired completely differently — **one by
-> luck, one by relationship** — and that is enough. Redundancy only hurts when the acquisition paths
-> are the same; a rare find that trumps a system is ordinary roguelike practice, and it means a player
-> who never meets the spirit is not locked out of the playstyle.
+> **The chip is stronger than the pact, and that is the point** [corrected 2026-08-01 — an earlier
+> draft gave them the *same* ability, which made the chip pointless]. The difference is **par**:
+>
+> | | reveals + routes cuts | par | acquisition |
+> |---|---|---|---|
+> | **The Shortcut** (pact) | ✅ | **tightens** — he brags about you to the client | early, guaranteed |
+> | **Shortcut GPS** (chip) | ✅ | **unchanged, road route** — he can't talk | very rare, late |
+>
+> Par is never modified by either: it is always computed over the road route, geometry-only and
+> item-blind (SM-INV-2). What the *pact* changes is the route set the client quotes you against —
+> which is his mouth, not the oracle. The chip is that same knowledge with the mouth removed, so the
+> pact buys **tempo** (time and fuel saved) while the chip buys **score**.
+>
+> **Installing the chip ends the pact's par penalty** — you canned him. So taking the pact early is
+> never a trap, and no player has to refuse it defensively to protect a find they may never get.
+>
+> **Once you hold the chip the pact has zero upside** (pact ⊂ chip). Tolerated, not solved: ordering
+> makes pact→chip the common path, and the Shortcut turning up to offer his one trick to a player who
+> has him *installed on the dashboard* is the best beat that character has. The parked fix, if it ever
+> stops being tolerable — **an item can know; only a spirit can act** — is recorded in
+> `spirits-and-pacts.md` #06. Do not build it on speculation.
 >
 > **The gating rule:** with a plain GPS and no pact, **you are never routed through a cut.** The road
 > GPS honestly prefers the maintained network — by the router's own cost function a cut *is* bad line

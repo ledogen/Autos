@@ -57,6 +57,37 @@ mechanical unlock. **The dread persists; the power does not.**
 passenger seat is already the contact moment, so this is satisfied by construction — build it in the
 truck, not in a separate scene graph.
 
+## How spirits introduce themselves [RATIFIED 2026-08-01]
+
+**The convention, and the reason for it:** a spirit's first appearance must not interrupt driving.
+Driving is the game. A beat that seizes the wheel — or demands attention while the player is working a
+mountain road — is the one delivery mistake that makes an authored moment feel like an imposition
+rather than an event.
+
+So the default venue is **the campsite, on the night after the ledger is filled.**
+
+> **You drive. Later, you stop. Then it is there.** The ledger completes in motion; the visit lands
+> at rest. The gap between the two is deliberate — the player has time to notice what they did before
+> anything comes of it.
+
+This costs nothing to build. FEAT-45's camping and FEAT-47's day clock already ship, the make-camp
+flow already has a dwell the player has committed to, and a campfire is a staged in-world space —
+which satisfies SM-INV-11's surviving constraint (**authored beats stay in the world**, never in an
+abstract cutscene layer) by construction.
+
+**Three properties worth keeping as the cast grows:**
+
+1. **No spirit is available from the start of a run.** Every one is earned by a behaviour inside that
+   run (the visibility model, above: present but invisible until its ledger is met).
+2. **The ledger completes while driving; the visit happens at camp.** Never mid-drive by default.
+3. **The delay is one night**, not instant. It reads as consequence rather than trigger.
+
+**The known exception under discussion is the Night Owl** — he is a *passenger*, so a spirit who turns
+up in the seat beside you while you drive is thematically exact. See #01; it is unresolved precisely
+because it trades the strongest staging in the cast against the rule above.
+
+---
+
 ## Career stats [RATIFIED 2026-07-29]
 
 Career totals survive as an **account-level stats screen** — a player-facing journal, explicitly *not*
@@ -273,6 +304,24 @@ the existing prop/character budget, and it rides the FEAT-04a visual-swap seam r
 character pipeline. Nothing about this character requires an animation system to exist.
 
 ### Summoning [RATIFIED 2026-07-29 (b)]
+
+> **⚠ OPEN 2026-08-01 — where the *first* meeting happens.** The 2026-08-01 convention (see "How
+> spirits introduce themselves") makes the **campsite** the default venue for a spirit's introduction,
+> so that no authored beat interrupts driving. **The Night Owl is the deliberate exception under
+> discussion**, and the owner has not ruled:
+>
+> - **In the seat, while driving** — thematically exact. He *is* the passenger; the doze is already a
+>   cab-interior shot with that seat in frame, so it needs no new staging and it is the strongest
+>   image in the cast. Risk: **intrusive.** A character arriving mid-corner on a mountain road, in the
+>   exact state where the player is least able to attend to anything, is the one place the convention
+>   exists to protect.
+> - **At the campsite, like everyone else** — safe, consistent, and it still works: you drove 10 km
+>   with your eyes closing, and that night something is at your fire. Cost: it spends the passenger
+>   seat, which is his whole identity, on a later beat instead of the first one.
+>
+> **A middle reading worth considering:** introduce him at the fire, then let him *take the seat* from
+> the next night onward — the introduction obeys the rule, the recurring presence keeps the image. The
+> beat/labor split already used elsewhere in this document has this shape.
 
 **He appears in the passenger seat once you have driven ~10 km *tired*, within a single run.** One
 number, one unit: **distance**. The counter resets to zero on death. He does not meet people who have
@@ -773,29 +822,88 @@ in the thresholds. This is the same correction the run-duration clause needed.
 Has no memory of being built, so it **doesn't know where it goes** — only that people use it.
 Uncertainty is its actual condition, not a withholding. It speaks with certainty it hasn't earned.
 
-**The pact:** it **reveals which cuts still go** — a render flag, not a system, and valuable precisely
-*because* the washouts were hidden so well. Then it **recomputes par over the cut-inclusive graph.**
+### Summoning [RATIFIED 2026-08-01]
 
-> **The shortcut GPS *is* this pact, on a chip** [RATIFIED 2026-08-01, owner]. `items.md` §2 carries a
-> **shortcut GPS** item granting exactly this power — par recomputed, cuts routed — and that is
-> deliberate, not a collision to resolve. The Shortcut is **so clueless and simplistic in essence**
-> (no memory of being built, no idea whether the trail connects, certainty it has not earned) that its
-> entire being distils onto a tablet you mount on the dash. **A spirit dumb enough to be firmware.**
+**You do not have the Shortcut at the start of a run.** He arrives only once you have **completed a
+cut** — entered from one road and come out on *a different road*. A **through-passage**, not a
+poke down a dirt track that you reversed out of.
+
+> **Then he visits you the following night, when you sleep in the forest.** Not mid-drive — the
+> campsite (see "How spirits introduce themselves"). You took the shortcut; a night later, the thing
+> that *is* the shortcut turns up at your fire.
+
+The ledger is exactly right for this character. He *is* a cut, and he has no memory of being built —
+so he cannot know he goes anywhere until **someone proves it by coming out the other side.** The
+player performing a successful traversal is literally the event that tells him he connects. That is
+why the ledger is completion and not entry, and it is why reversing out earns nothing.
+
+It is also self-selecting in the way the good ledgers are: you cannot fill it without already having
+found a cut, committed to it blind, and been right. He only meets people who have done the thing he
+is about.
+
+### The pact — and what it costs you
+
+**The pact:** he **reveals which cuts still go** and **routes you through them.** The price is that
+**par tightens to assume you took the cut.**
+
+> **The price is not a fine, it is his mouth.** [RATIFIED 2026-08-01] The Shortcut is so clueless and
+> so eager that **he brags about you.** He shows you the fast way and then tells the client how fast
+> you can now get there. He does not understand that announcing your advantage destroys it — a spirit
+> that "speaks with certainty it hasn't earned" would do exactly this, cheerfully, forever.
+
+**So the pact buys tempo, not score.** You cover less ground and less time, which is real — fewer
+minutes and less fuel per job, more jobs per day, points faster, and under SM-INV-14 that means
+reaching the next region **before the country gets expensive**. What you do *not* get is a better
+rank, because par already moved.
+
+**Par itself is never modified — it is always computed over the road route** [clarified 2026-08-01].
+This is the correction that makes the pact and the chip different things at all: an earlier draft had
+both "recomputing par", which made them the same ability. Par is geometry-only and item-blind
+(SM-INV-2); what the pact changes is **the route set the client is quoted against**, which is his
+blabbing, not a change to the oracle.
+
+**A run-shaping consequence, and it may be the best thing here.** Par has tightened to assume a cut
+you *cannot take* on a fragile run (vertical shock) or a freight run (mass through ruts). So the pact
+quietly makes those job types bad for you, and **your run becomes a point-to-point run.** That is
+precisely the objective-reshaper SM-INV-9 asks for — *re-weight what is worth doing, don't staple a
+bonus onto a normal run* — and nobody authored it.
+
+*Tuning question, not structure:* whether par tightens on every mission or only where a cut is
+genuinely usable. All-missions is more characterful (he doesn't know what you're carrying) and
+harsher; usable-only is gentler and less like him.
+
+### Versus the chip — and the redundancy, stated plainly
+
+`items.md` §2 carries the **shortcut GPS**: him, distilled onto a dash-mounted chip. **A spirit dumb
+enough to be firmware.** The split [RATIFIED 2026-08-01]:
+
+| | reveals + routes cuts | par | acquisition |
+|---|---|---|---|
+| **The Shortcut** (pact) | ✅ | **tightens** — he talks | early, guaranteed |
+| **Shortcut GPS** (chip) | ✅ | **unchanged** — road route | very rare, late |
+
+**The chip is his knowledge with his mouth removed**, so it is strictly more powerful — that is the
+owner's intent, not an accident. **Installing the chip ends the pact's par penalty**: you canned him,
+he cannot talk anymore. That matters because it means **taking the pact early is never a trap** — the
+chip redeems it rather than being wasted by it, so no player has to refuse the pact defensively to
+protect a find they might never get.
+
+> **Recorded honestly: once you hold the chip, the pact has zero upside.** Pact ⊂ chip. This is
+> tolerated rather than solved, for two reasons. **Ordering** — the pact is early and guaranteed, the
+> chip rare and late, so the common path is pact→chip where the pact did real work first; the dead
+> case is only the run where you got lucky early. And **the scene** — the Shortcut turning up to offer
+> his one trick to a player who has him *installed on the dashboard* is the best beat this character
+> has. The Highway was bypassed by a road; the Shortcut got bypassed by a product, and he does not
+> know it.
 >
-> **Two doors, one room.** Same power, wildly different acquisition — **one by luck, one by
-> relationship**. A very rare item that makes a pact redundant is fine, and so is the reverse; the
-> owner ruled explicitly on this. It also means a player who never meets the Shortcut is not locked
-> out of the playstyle, which matters more here than protecting the pact's exclusivity.
+> **If it ever stops being tolerable, the principled fix is parked, not built:**
+> > **An item can know. Only a spirit can act.**
 >
-> **What this costs the character, recorded honestly.** The Shortcut is the one spirit whose gift can
-> be bought in a shop, which makes it the least *numinous* of the cast. That is on-theme — it is the
-> dim one — but if the pair ever needs a spirit with mystique, it is the Highway, not this one.
-
-> **That doesn't make cuts attractive. It makes them mandatory.** Sight in exchange for refusal.
-
-**This is invariant-legal, and worth noting why**, because it looks like it shouldn't be: recomputing
-par over a different route set is still **pure geometry** — no car, no run age, no build (SM-INV-2).
-The pact doesn't bend par; it changes which roads the route is allowed to use.
+> The chip is a **snapshot** — a dead copy of what he knew when they canned him. He is alive. So the
+> pact could hold what a static dataset structurally cannot: cuts the chip's data misses, or making a
+> washout passable *this once*. That generalises to the whole cast as the spirit-vs-item rule. **Do
+> not build it on speculation** — spirits are deferred and the bad ordering is uncommon; revisit when
+> the system comes off deferral and play shows whether it is needed.
 
 **Resolution: none.** The Highway has a position, the truck has wear, the player has a wallet.
 
