@@ -134,15 +134,6 @@ const PAD_DIRT_EXTRA = 0.15
 //     (momentary, at pad rims — the same accepted trade as the decal overlay riding above the trough).
 const PAD_DUCK_CAP = 1.2
 const PAD_DUCK_CAP_PHYS = 0.55
-// PAD_EDGE_FEATHER: band (m) inside the ring across which the on-PAD physics overlay feathers the
-// PINNED-resolve excess away (see _sampleCarveWorld). A pinned/hinted resolve extends ONE leg's
-// superelevated cross-section across the plaza; under the saturating-camber model that extension can
-// ride ~1 m above the free pad top near the ring edge, and carrying it to sd=0 before dropping onto
-// the ducked dirt would put a >1 m single step in every pinned cross-section that exits the ring
-// (shoulder-lateral-continuity's plaza tolerance is 0.70 m). Feathering the overlay's lift above the
-// merged carve DIRT to zero at the ring edge makes the field exactly C0 at the exit; interior wheels
-// (f=1) still ride the full asphalt overlay unchanged. Hardcoded: physics-only, no route-cache effect.
-const PAD_EDGE_FEATHER = 1.6
 // QUAL-16 (junction-flow) DEG2_HERMITE_TENSION: cubic-Hermite tangent magnitude, × the mouth-to-mouth
 // gap, for the deg-2 connector's rung-2 fallback (_buildDeg2ArcGeom). 1.0 (tangents as long as the
 // chord) is the standard chord-length parameterisation: it reproduces a gentle arc to within a few cm
@@ -4105,42 +4096,45 @@ export class RoadSystem {
         const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp), PAD_DUCK_CAP_PHYS)
         if (!cs2) return null   // beyond the fill/cut toe of all three — unaffected terrain
 
-        // ── Physics-only on-ribbon overlay (the one intentional mesh↔collision difference) ──
-        // The terrain mesh draws the dirt trough everywhere; ON the ribbon the truck instead rides the
-        // asphalt DECAL on top, which sits clearanceMargin above the dirt (BUG-15 edge dropoff: off the
-        // ribbon the wheel drops onto the lower carved dirt). So on-ribbon we add clearanceMargin back
-        // (ride the decal) + the SURF-06 pothole micro-noise (D-03, physics-only, on-ribbon only). Off
-        // the ribbon the surface == the mesh dirt by construction (QUAL-07 agreement).
+        // ── Physics-only asphalt overlay (the one intentional mesh↔collision difference) ──
+        // The terrain mesh draws the dirt trough everywhere; ON the drawn asphalt (junction pad or
+        // ribbon) the truck instead rides the asphalt on top of it. Both branches below therefore
+        // reproduce the height of the ASPHALT GEOMETRY at this point — that is the whole contract
+        // (QUAL-07 mesh == collision); the merged dirt `cs2.gradeY` is the surface only where no
+        // asphalt is drawn.
         let gradeY = cs2.gradeY
-        if (nr && latDist < halfWidth) {
-            gradeY += clearanceMargin
+        if (cs2.padTopY != null) {
+            // ── On-PAD (inside the junction ring) ── road-mesh.js buildJunctionFootprint puts every
+            // pad vertex at `_nodeSurfaceTop(node,x,z) + apronLift`, which is exactly padTopY. So the
+            // wheel rides padTopY, full stop — the whole ring interior, ribbon or open sector alike
+            // (the pad polygon is what is DRAWN there: the ribbons are trimmed back at the cutback).
+            // One field over the whole interior also means no seam at lat == halfWidth.
+            //
+            // JUNCTION-FLOW: this replaces (a) `cs.gradeY + clearanceMargin` — one LEG's pinned
+            // cross-section extended across the plaza, which under the saturating-camber model rides
+            // up to ~1 m off the drawn pad near the rim — and (b) the PAD_EDGE_FEATHER band that used
+            // to fade that excess out over the last 1.6 m inside the ring (and, in fading, dropped
+            // physics up to 0.44 m BELOW the pad triangles the truck was visibly standing on). With
+            // the overlay pinned to the mesh's own field there is no excess to feather: the only step
+            // left at the ring exit is the drawn asphalt→dirt dropoff (clearance + PAD_DIRT_EXTRA
+            // ≈ 0.30 m), the same intended edge dropoff as a ribbon shoulder (BUG-15), and the MESH
+            // has that identical step there. No potholes either: potholes are an on-ribbon-only
+            // physics-side micro-noise (D-03) and the pad geometry is smooth.
+            gradeY = cs2.padTopY
+        } else if (nr && latDist < halfWidth) {
+            // ── On-RIBBON ── ride the asphalt decal: the LEG cross-section's own design top
+            // (cs.gradeY + clearanceMargin) — the same field the ribbon mesh vertices ride
+            // (sampleRoadTopY) — plus the SURF-06 pothole micro-noise (D-03, physics-only).
+            // JUNCTION-FLOW: this used to add clearanceMargin to the MERGED dirt cs2.gradeY, which
+            // near a pad carries the pad's own duck (PAD_DIRT_EXTRA + crease duck) — so inside the
+            // ring and out through the rim-hold band the wheel rode ~0.15 m BELOW the drawn asphalt.
+            // The duck is a MESH-DIRT armor (keep tan interp slivers under the asphalt); it must not
+            // move the decal. Off pads cs2.gradeY == cs.gradeY, so this is a no-op there.
+            gradeY = (cs ? cs.gradeY : cs2.gradeY) + clearanceMargin
             if (p.potholeEnabled) {
                 const rq = roadQuality(arcSEff, runKey, this._worldSeed)
                 gradeY += potholeNoise(wx, wz, rq, p)
             }
-        } else if (cs2.padTopY != null) {
-            // ── Physics-only on-PAD overlay ── inside the junction pad ring but beyond every ribbon's
-            // halfWidth (the plaza interior / open sector) the truck rides the pad ASPHALT, not the
-            // deepened carve dirt below it — the exact analogue of the on-ribbon decal overlay above,
-            // and continuous with it at lat == halfWidth. Where a leg cross-section resolved, its own
-            // design + clearance IS the asphalt top along THAT run (pin-consistent: a hinted/pinned
-            // resolve stays on its pinned cross-section — no free-resolve leak); only where no run
-            // resolves at all (the far open-side rim) fall back to the pad's free-sampled top. Off the
-            // ring the wheel drops onto the carved dirt, the same intended edge dropoff as a ribbon
-            // shoulder (BUG-15).
-            //
-            // CAMBER-ERA RIM HANDOFF: near the ring edge, feather the overlay's LIFT above the carve
-            // dirt away over the last PAD_EDGE_FEATHER m inside the ring, so the field is exactly C0
-            // at the ring exit (overlay(sd→0⁻) == dirt(sd=0⁺)). Under the saturating-camber model a
-            // pinned resolve's superelevated cross-section can ride ~1 m above the plaza near the rim;
-            // carrying it to sd=0 and dropping onto the dirt put a >1 m single step into every pinned
-            // cross-section exiting the ring (shoulder gate plaza tol 0.70). The feather target is the
-            // merged DIRT (not the free pad top — that field JUMPS multi-metre at the degenerate-node
-            // tear lines and would drag the jump into the overlay). Interior (f=1) is byte-identical
-            // to the pre-feather overlay.
-            const asphalt = cs ? cs.gradeY + clearanceMargin : cs2.padTopY
-            const f = Math.min(1, Math.max(0, -(cs2.padSd ?? -PAD_EDGE_FEATHER) / PAD_EDGE_FEATHER))
-            gradeY = Math.max(gradeY, cs2.gradeY + Math.max(0, asphalt - cs2.gradeY) * f)
         }
 
         return { blendW: cs2.blendW, gradeY }
@@ -5021,7 +5015,11 @@ export class RoadSystem {
         // cell diagonal guarantees every triangle touching the pad interior has ALL its vertices at the
         // deepened design dirt, so the fill/cut feather starts one cell out. padTopY (inside the ring
         // only) is the asphalt surface physics rides — see the pad overlay in _sampleCarveWorld.
-        const padTopY = bestSd <= 0 ? topC : null
+        // padTopY carries the apron lift so it is byte-identical to the pad MESH vertex height
+        // (road-mesh.js samplePadY = _nodeSurfaceTop + roadJunctionApronLift); the design DIRT below
+        // deliberately does not (a lifted apron just gets more clearance under it). Lift is 0 by
+        // default, so this is a no-op unless the user raises the slider.
+        const padTopY = bestSd <= 0 ? topC + (p.roadJunctionApronLift ?? 0) : null
         if (bestSd <= PAD_RIM_HOLD) return { blendW: 1.0, gradeY: topC - clearanceMargin - PAD_DIRT_EXTRA, padTopY, padSd: bestSd }
 
         // Outside the hold band: ramp designY → raw over shoulder + fill/cut toe, mirroring
@@ -5116,7 +5114,7 @@ export class RoadSystem {
         // toe) so there is no step where the full-depth band ends — the duck is C0 everywhere.
         const low = Math.max(Math.min(a.gradeY, b.gradeY), a.gradeY - duckCap)
         const gradeY = a.gradeY + (low - a.gradeY) * b.blendW
-        return { blendW: Math.max(a.blendW, b.blendW), gradeY, padTopY: b.padTopY ?? null, padSd: b.padSd }
+        return { blendW: Math.max(a.blendW, b.blendW), gradeY, padTopY: b.padTopY ?? null }
     }
 
     /**

@@ -1736,7 +1736,15 @@ export class RoadMeshSystem {
         // deduped per-edge → no T-junction cracks); 1/2/3-split triangle patterns keep winding.
         const verts = ring.map(p => ({ x: p.x, z: p.z }))
         const MAX_E2 = PAD_FILL_MAX_EDGE * PAD_FILL_MAX_EDGE
-        for (let pass = 0; pass < 3; pass++) {
+        // PASS CAP 5, not 3 (junction-flow): earClip emits edges as long as the pad ring's diameter
+        // (~30 m on a 4-way weld), and halving 30 m three times still leaves ~3.7 m — the old cap
+        // RETIRED before reaching the 3 m target, and those unsplit triangles chorded up to 0.43 m
+        // across the curved (crowned + banked) pad field. That chord IS the residual "car sinks into
+        // the junction" once physics rides the exact vertex field (road.js on-PAD overlay): the wheel
+        // is on the analytic surface, the eye is on the triangle. 5 passes reach the target for every
+        // ring the ladder can produce; the loop still breaks the moment nothing splits, so a pad that
+        // already converged costs exactly what it did.
+        for (let pass = 0; pass < 5; pass++) {
             const mid = new Map()
             let split = false
             const needs = (i, j) => {
