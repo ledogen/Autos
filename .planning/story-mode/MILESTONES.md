@@ -329,5 +329,7 @@ harness (a test rig for it), FEAT-43 story sandbox, FEAT-46 POI pads.
 - **Cab/vehicle tickets keep arriving ahead of their milestone**, and that is fine — FEAT-49
   (cluster, shipped), FEAT-51 (coolant temp) and FEAT-50 (fuel) are all *instrumentation* the player
   can enjoy in free roam today. The rule that matters: **the gauge is free-lane, the consequence is
-  not.** A needle reading an honest signal is always in order; making that signal end a run is SM-3,
-  and for fuel it is an unanswered design question (see the flag under SM-3).
+  not.** A needle reading an honest signal is always in order; making that signal end a run is SM-3.
+  For fuel that question is now **answered** (ratified 2026-08-01): running dry is the existing
+  breakdown predicament, never a direct kill — see the note under SM-3 and DESIGN.md "Fuel and gas
+  stations".

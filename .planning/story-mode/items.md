@@ -29,14 +29,17 @@ re-read DESIGN.md.
    CoG and handling — *a load, never a stat* (DESIGN.md "The car"). Trivial for a box of straps,
    real for a spare tire, decisive for freight.
 3. **No item may raise the floor (SM-INV-9).** Litmus test: *does it make late runs comfortable?*
-   Items are found or bought **within a run** and die with it (SM-INV-8 as narrowed 2026-07-29 —
-   only literacy and the garage survive). Nothing here persists.
+   Items are found, bought, or **won on a bonus objective** — always **within a run** — and die with
+   it (SM-INV-8 as narrowed 2026-07-29 — only literacy and the garage survive). Nothing here
+   persists.
 4. **An item should enable a harder choice, not make an easy one safe** (`IDEAS.md`, cargo straps).
    The framing to hold everywhere: straps let you *accept freight-grade fragile work you couldn't
    otherwise carry* — they don't turn a normal fragile run into a cruise.
 
-**Columns used below.** `Source` = where the player gets it. `Cost` = what it charges, in a currency
-other than the one it pays out in (rule 4 restated). `Status` = **RATIFIED** / **PROPOSED** /
+**Columns used below.** `Source` = where the player gets it — bought, found, starting kit, or **won
+as a mission bonus objective** (*"a little extra if you finish with an A"* — ratified 2026-08-01,
+`missions.md`; the reward is an item, deliberately unnamed up front). `Cost` = what it charges, in a
+currency other than the one it pays out in (rule 4 restated). `Status` = **RATIFIED** / **PROPOSED** /
 **IDEA** / **IMPLIED** (something a ratified mechanic needs but nobody has specified yet).
 
 ---
@@ -70,9 +73,9 @@ plus a slot**, paid on every mile you carry it, against a payoff you only occasi
 | **Breaker bar** | Roadside wrenching. Paired with the quick-jack in the bible's own list. | Bought/found | Real mass, always | **IMPLIED** — same |
 | **Chain** | Chains onto a downed log for the drag. **A one-sided distance constraint** — zero force slack, hard tension taut — and the snatch impulse *is* the damage signal. | Main-mission equipment | The truck, by design | **RATIFIED premise** — `missions.md` "Main missions". *Open: carried item, or supplied by the mission?* |
 | **Fishing gear** | Required for the fishing minigame. | ? | ? | **IMPLIED / UNSPECIFIED** — see the gap note below |
-| **GPS unit** | Turn-by-turn guidance — FEAT-39's chevrons + junction arrow boards, already shipped in `src/gps.js`. **Until you find one, the paper map (FEAT-16, `M`) is all you get** — navigation is map-reading, landmarks, and memory. | Found or bought within a run | Cash; a slot; trivial mass — the real cost is that you had to *earn* legibility | **RATIFIED premise** — owner, 2026-07-31: "GPS should be an item; until you find it you navigate via the map alone." *Open: strictly per-run (SM-INV-8 says items die with the run — you re-find it every run), or does knowing-where-one-sells count as the literacy that persists?* |
+| **GPS unit** | **Draws the mission route in the 3D world** so you drive it by looking out of the windscreen instead of stopping to read the map — FEAT-39's chevrons + junction arrow boards, already shipped in `src/gps.js`. A **direct convenience upgrade for any player**, and deliberately a common find: it does not make you *faster*, it makes knowing-the-way *free*. A skilled player reads the map and spends the cash elsewhere. **Until you find one, the paper map (FEAT-16, `M`) is all you get** — navigation is map-reading, landmarks, and memory. | Found or bought within a run | Cash; a slot; trivial mass — the real cost is that you had to *earn* legibility | **RATIFIED premise** — owner, 2026-07-31: "GPS should be an item; until you find it you navigate via the map alone." *Open: strictly per-run (SM-INV-8 says items die with the run — you re-find it every run), or does knowing-where-one-sells count as the literacy that persists?* |
 | **Destination beacon** | Shows a **beam of light rising from the destination**, visible over terrain from far off. Gives *bearing*, not route — the point is that it makes **off-route travel** findable: you can leave the road, crest the ridge, and steer by the light. It answers "where," never "how." | Found or bought within a run | Cash; a slot | **IDEA** — owner, 2026-07-31. *Open: always-on while carried, or aimed/activated? Render: a sky-beam is cheap and reads at range, but must respect fog/night (day/night pass made fogColor a radiance value).* |
-| **Shortcut GPS** | A GPS that routes **the fast way, not the road way** — instead of the strict on-road route, it guides toward genuine shortcuts (dirt legs, cut-the-corner crossings). The item that turns par-beating off-route play from a private discovery into equipment. | Found or bought within a run | Cash; a slot; **the route it shows is riskier by construction** — it spends your truck to save your clock | **IDEA** — owner, 2026-07-31. *Open: tech — the router/par oracle only knows the road graph, so "shortcut" needs a definition: overland legs between road joins? Or is this the beacon + road-GPS combined presentation? Also: must not become the honest-par killer — see note below.* |
+| **Shortcut GPS** | **The Shortcut, distilled onto a chip you mount on the dash.** Functionally identical to the pact: it **recomputes par over the cut-inclusive graph and routes you through the cuts** (FEAT-52). Without either this or the pact, **you are never routed through a cut.** The advanced GPS — very rare. | Found or bought within a run; **very rare** | Cash; a slot; **the route it gives you is riskier by construction** — it spends your truck to save your clock | **RATIFIED premise** — owner, 2026-08-01. *The "what is a shortcut" tech question is ANSWERED: cuts are real worldgen objects (FEAT-52), not an overland-routing problem.* |
 
 > **The GPS is the one tool whose mechanic already ships.** FEAT-39's overlay exists and currently
 > defaults **ON** in missions (it was left on for playtesting + FEAT-30 par calibration). Making it an
@@ -85,12 +88,44 @@ plus a slot**, paid on every mile you carry it, against a payoff you only occasi
 > *different question*: the map answers "what's out there," the beacon "where is it," the GPS "how do
 > I get there," the shortcut GPS "how do I get there *fast*." That's what keeps them from being tiers
 > of the same upgrade — a beacon-carrier still reads the map to pick a line; a GPS-carrier who finds a
-> beacon gains off-route options the GPS would never suggest. Author them so no item obsoletes another.
-> **One economy flag for the shortcut GPS:** par is priced by the oracle on the *road* route
-> (`src/par.js` — endpoints mid-edge, road graph only). An item that systematically reveals off-road
-> lines is an item that systematically beats par — legal under rule 4 only while the shortcut is
-> genuinely harder *driving* (terrain, grade, the truck pays). If off-route legs ever become the
-> comfortable default, this item is the reason why; price it and rarity it accordingly.
+> beacon gains off-route options the GPS would never suggest. Author them so no item obsoletes
+> another — with the deliberate exception below, where an item obsoletes a *spirit*.
+>
+> **The shortcut GPS IS the Shortcut** [RATIFIED 2026-08-01, owner]. Not a parallel mechanic — the
+> same one, in a box. The spirit is so **clueless and simplistic in essence** — no memory of being
+> built, no idea whether the trail connects, certainty it has not earned — that the whole of it fits
+> on a chip you mount on the dash. **A spirit dumb enough to be firmware.** That is the joke, and it
+> is also the lore justification; it needs no further reconciliation.
+>
+> **Two doors, one room.** The chip and the pact grant the same power: par recomputed over the
+> cut-inclusive graph, and routing that uses cuts. They are acquired completely differently — **one by
+> luck, one by relationship** — and that is enough. Redundancy only hurts when the acquisition paths
+> are the same; a rare find that trumps a system is ordinary roguelike practice, and it means a player
+> who never meets the spirit is not locked out of the playstyle.
+>
+> **The gating rule:** with a plain GPS and no pact, **you are never routed through a cut.** The road
+> GPS honestly prefers the maintained network — by the router's own cost function a cut *is* bad line
+> — so cuts stay something you find yourself, until the chip or the pact puts them on the route.
+>
+> **⚠ Neither GPS may ever render an ETA or time-remaining.** A real GPS shows arrival time; these must
+> not, ever. Par is never a countdown (SM-INV-3), and an ETA readout is par on the HUD wearing a
+> navigation costume. Route lines, chevrons, distance — fine. Clocks — no. This belongs in FEAT-39
+> before anyone "completes" the GPS feature set.
+>
+> **The chip is honest, not helpful — and that is the interesting part.** It does not know you are
+> carrying eggs. Fragile cargo scores on vertical shock and freight puts real mass through ruts
+> (`missions.md` §3b/§3c), so **a cut-inclusive route is actively wrong for two of the three delivery
+> types** — while par has *already tightened* to assume you took it. Following the chip blindly on a
+> fragile run is how you break the vase and miss par in the same drive. Knowing when to ignore your
+> own navigation is exactly the literacy this game rewards, and it falls out of mechanics that
+> already exist.
+>
+> *(Superseded: an earlier draft split the item from the pact — the item showing a cut **exists**, the
+> pact showing which cuts still **go** — to stop the item devaluing the pact. Owner ruled against it
+> 2026-08-01, and the objection was weaker than it read: items die with the run, so the chip sells a
+> within-run convenience rather than permanent knowledge, and the player's own memory of a seed's cuts
+> was never the item's to sell. The old "an item that reveals off-road lines systematically beats par"
+> flag retires with it — cuts now carry four real costs, so a revealed cut is not a free second.)*
 >
 > **The carry-cost question, unresolved and worth deciding early.** Tools are the only category whose
 > cost is paid continuously and whose benefit is occasional. That's a genuinely interesting decision

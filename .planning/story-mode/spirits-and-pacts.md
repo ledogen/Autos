@@ -776,6 +776,21 @@ Uncertainty is its actual condition, not a withholding. It speaks with certainty
 **The pact:** it **reveals which cuts still go** — a render flag, not a system, and valuable precisely
 *because* the washouts were hidden so well. Then it **recomputes par over the cut-inclusive graph.**
 
+> **The shortcut GPS *is* this pact, on a chip** [RATIFIED 2026-08-01, owner]. `items.md` §2 carries a
+> **shortcut GPS** item granting exactly this power — par recomputed, cuts routed — and that is
+> deliberate, not a collision to resolve. The Shortcut is **so clueless and simplistic in essence**
+> (no memory of being built, no idea whether the trail connects, certainty it has not earned) that its
+> entire being distils onto a tablet you mount on the dash. **A spirit dumb enough to be firmware.**
+>
+> **Two doors, one room.** Same power, wildly different acquisition — **one by luck, one by
+> relationship**. A very rare item that makes a pact redundant is fine, and so is the reverse; the
+> owner ruled explicitly on this. It also means a player who never meets the Shortcut is not locked
+> out of the playstyle, which matters more here than protecting the pact's exclusivity.
+>
+> **What this costs the character, recorded honestly.** The Shortcut is the one spirit whose gift can
+> be bought in a shop, which makes it the least *numinous* of the cast. That is on-theme — it is the
+> dim one — but if the pair ever needs a spirit with mystique, it is the Highway, not this one.
+
 > **That doesn't make cuts attractive. It makes them mandatory.** Sight in exchange for refusal.
 
 **This is invariant-legal, and worth noting why**, because it looks like it shouldn't be: recomputing

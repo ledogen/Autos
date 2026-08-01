@@ -71,6 +71,13 @@ only the display.
    - **Story-mode fit:** navigation is a real difficulty / QoL axis — no-GPS means *reading the land*
      and remembering the way, which suits the honest-world premise and the SM-INV-6 "last leg of the
      day is the game" feel.
+     **⚠ HARD CONSTRAINT (2026-08-01): the GPS must NEVER render an ETA or time-remaining.** Real GPS
+     units show arrival time; this one must not, ever. **Par is never a countdown (SM-INV-3)**, and an
+     ETA readout is par on the HUD wearing a navigation costume — it would break the invariant by
+     accident, while looking like feature completeness. Route lines, chevrons, junction boards,
+     distance-to-turn: all fine. Anything with a clock in it: no. This applies equally to the
+     **shortcut GPS** (`items.md` §2).
+
      **ANSWERED (owner, 2026-07-31): in story mode the GPS is an *item*, not a toggle** — until you
      find/buy one within the run, you navigate via the FEAT-16 map alone. Story mode boots with GPS
      disabled; acquiring the item enables it. The assists-page toggle remains the sandbox/free-roam
