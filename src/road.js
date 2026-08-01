@@ -53,16 +53,28 @@ const _ZERO_JC = { frac: 0, widen: 0 }
 // silently revert cold load ~1.6 s → ~26 s. Carve-time only (zero routing effect), so it must not touch the
 // sig. (Same rationale as KINK_MAX in road-mesh.js.)
 const BLEND_REACH_MULT = 10.0
-// Ruled inter-leg blend (_carveDirtY): BARYCENTRIC weights w_i = taper_i · ∏_{j≠i}(gap_j + RULE_EPS), where
-// gap = distance to the leg's nearest centerline point − halfWidth (clamped ≥0). This is the LINEAR ruled
+// Ruled inter-leg blend (_carveDirtY): BARYCENTRIC weights w_i = taper_i · ∏_{j≠i} soft(gap_j), where
+// gap = distance to the leg's nearest centerline point − halfWidth. This is the LINEAR ruled
 // interpolation between the legs (constant-slope banked gore, no local steepening — an exp/inverse-distance
 // weight concentrates the whole grade change at the Voronoi crossover, a steep lateral step; inverse-distance
-// also spikes at each asphalt edge). RULE_EPS keeps weights finite where two asphalts overlap in the near-node
-// throat (both gaps 0) and sets how sharply a leg dominates on its own ribbon (small ⇒ near-exact ribbons).
+// also spikes at each asphalt edge).
+// RULE_SOFT (junction-flow stage 3) is the SMOOTH-CLAMP radius that replaced the old `max(0,gap) + RULE_EPS`.
+// The hard clamp FROZE a leg's weight the moment the query entered that leg's asphalt, so the whole inter-leg
+// grade handover was squeezed into the thin annulus where BOTH gaps are still positive — at the seed-6 3-way
+// (-341,2430) that was a 1.33 m rise across 1.25 m (>45°) bracketed by two hard C1 knees (one at each leg's
+// asphalt edge). That crease is what read as "tearing" on the pad: vertex normals break across it, and since
+// stage 2 the pad's physics rides the same field. soft(g) = ½(g + √(g² + RULE_SOFT²)) is a smooth positive
+// clamp: ≈ g when g ≫ RULE_SOFT, RULE_SOFT/2 at the asphalt edge, and decaying (not frozen) to ~0 on the
+// centreline — so the weight ratio keeps evolving INSIDE the asphalt and the handover spreads over ~5 m
+// instead of 1.25 m, with no knee anywhere. It is also STRICTLY purer on a clean ribbon than the old floor
+// (a sibling's weight now decays as the query moves onto a leg instead of resting at RULE_EPS), so ribbons
+// sit closer to their own cross-section, not further. Sized ≈ ¼ road width: small enough that a leg still
+// dominates its own asphalt, large enough to span the throat overlap.
 // RULE_LEG_REACH is the in-range cutoff (a leg past it is a separate road); RULE_TAPER eases a leg's weight to
 // 0 over the last metres before that cutoff so it can't POP in (barycentric weight doesn't decay with its own
 // distance, so the cutoff needs an explicit smooth taper).
-const RULE_EPS = 0.2
+const RULE_SOFT = 1.2
+const RULE_SOFT2 = RULE_SOFT * RULE_SOFT
 const RULE_TAPER = 4.0
 const RULE_LEG_REACH = 14.0
 // Arc half-window (m) for the near-node leg projection: confine each leg's nearest-foot search to this much
@@ -141,6 +153,19 @@ const PAD_DUCK_CAP_PHYS = 0.55
 // or a U (near-antiparallel legs) — the two shapes the single tangent circle cannot express at all.
 // Hardcoded, NOT a road* param (carve-time geometry only, no route-cache-signature effect).
 const DEG2_HERMITE_TENSION = 1.0
+// DEG2_SHARP_* (junction-flow stage 3): a SHARP deg-2 kink read as a fat blob, not a bend. The
+// tangent-circle fillet takes the largest radius that fits between the two mouths, and with the
+// mouths pinned at cutback + halfWidth/2 a ~93° kink leaves only R = 7.9 against a 5 m half-width
+// (seed-6 1900.7,831.0) — an inner edge radius of 2.9 m, i.e. a swept lobe rather than a road bend.
+// A real road spreads a sharp bend over MORE length, so pull both mouths further back along their
+// legs as the kink sharpens: t and r (mouth→intersection distances) grow ~1:1 with the pullback, so
+// the tangent length Lt and hence R grow with them. Ramped in over DEG2_SHARP_IN..DEG2_SHARP_FULL so
+// gentle kinks — and every existing seed-6 connector below 60° — are untouched; the existing
+// min(…, len·0.45) mouth cap clamps it on short legs, which degrade gracefully to their old, tighter
+// fillet. Hardcoded, NOT road* params (carve-time geometry only, no route-cache-signature effect).
+const DEG2_SHARP_IN = 60 * Math.PI / 180
+const DEG2_SHARP_FULL = 100 * Math.PI / 180
+const DEG2_SHARP_PULLBACK = 8.0
 // FEAT-46 POI_ROAD_FEATHER: band (m) OUTSIDE the ribbon+shoulder across which a POI lay-by pad's
 // authority ramps 0 → 1 (see _poiPadCarve). This is not a look tunable — it is the mechanism that
 // makes the ratified "POIs never influence routing determinism" rule structural: a pad has exactly
@@ -4239,16 +4264,17 @@ export class RoadSystem {
         // grade = the flat plaza. Shared fn ⇒ mesh (pad + apron via sampleRoadTopY / _carveCrossSection) and
         // physics agree. Window-invariant. Needs (wx,wz).
         if (jc.node && wx !== undefined) {
-            // Collect each in-range leg's clamped gap-to-asphalt, grade, and reach-taper, then blend by
-            // BARYCENTRIC weights w_i = taper_i · ∏_{j≠i}(gap_j + RULE_EPS). This is the LINEAR ruled
+            // Collect each in-range leg's soft-clamped gap-to-asphalt, grade, and reach-taper, then blend by
+            // BARYCENTRIC weights w_i = taper_i · ∏_{j≠i} soft(gap_j). This is the LINEAR ruled
             // interpolation between the legs (for two legs w_A = gap_B, w_B = gap_A ⇒ blend rides the straight
             // line between the two ribbon edges), so the gore is a CONSTANT-slope banked ramp — no local
             // steepening. That is what lets it span the whole plaza out to r≈24: an exp/inverse-distance weight
             // CONCENTRATES the entire grade change at the Voronoi crossover (a steep local lateral step) even
             // when the average ruled slope is gentle; the linear ramp spreads it evenly (≈ Δgrade / gore-width).
-            // It also has NO 1/gap edge spike — as a point reaches a leg's asphalt (gap_i → 0) every OTHER
-            // weight carries that gap_i factor → 0, so w_i alone survives ⇒ that leg's grade exactly, smoothly
-            // (the ribbon never moves). Pure function of position ⇒ continuous across every Voronoi switch.
+            // It also has NO 1/gap edge spike — as a point moves ONTO a leg's asphalt soft(gap_i) decays toward
+            // 0, so every OTHER weight (which carries that factor) decays with it and w_i alone survives ⇒ that
+            // leg's grade, smoothly (the ribbon never moves). Pure function of position, and now C1 as well as
+            // C0 (RULE_SOFT) ⇒ continuous across every Voronoi switch with no crease at the asphalt edges.
             const nodeLegs = jc.node.legs
             const gaps = [], grades = [], tapers = []
             for (const leg of nodeLegs) {
@@ -4283,7 +4309,9 @@ export class RoadSystem {
                     // grade → window-invariant.)
                     const along = Math.abs(pr.arcS - leg.arc)
                     if (Math.abs(legGrade - jc.node.nodeY) > MAX_LEG_SLOPE * along + halfWidth) continue
-                    gaps.push(Math.max(0, gap) + RULE_EPS); grades.push(legGrade)
+                    // RULE_SOFT smooth clamp — see the const's note: a hard max(0,gap) froze the weight at
+                    // the asphalt edge and squeezed the whole inter-leg handover into the throat annulus.
+                    gaps.push(0.5 * (gap + Math.sqrt(gap * gap + RULE_SOFT2))); grades.push(legGrade)
                     // Smooth in-range taper (1 → 0 across the last RULE_TAPER m before the cutoff).
                     // Barycentric weight does NOT decay with a leg's OWN distance, so without this a leg
                     // crossing RULE_LEG_REACH would POP in with a non-trivial weight (a lateral shoulder
@@ -5041,13 +5069,20 @@ export class RoadSystem {
     /**
      * PERF-25: the node's asphalt-top surface at (wx,wz), resolve-free. Projects the query onto the
      * node's OWN legs (cached windows + the per-leg single-slot memo — a _sampleCarveWorld query
-     * shares feet with the leg cross-section's ruled blend), picks the globally nearest branch as
-     * the base cross-section, and evaluates the SAME _carveDirtY ruled blend the ribbons ride —
-     * ONE blend per sample, no _resolveRoadSurface. Where the nearest branch coincides with what a
-     * free resolve would pick (everywhere except the old degenerate-node tear lines) this equals the
-     * old sampleRoadTopY within float noise; at the tear lines it is the CONTINUOUS leg-based value
-     * instead of the jumping free-resolve one. Returns asphalt top (clearance included) or null when
-     * no leg branch is in range (caller falls back to the pad plane).
+     * shares feet with the leg cross-section's ruled blend), picks the nearest branch as the base
+     * cross-section, and evaluates the SAME _carveDirtY ruled blend the ribbons ride — no
+     * _resolveRoadSurface. Where the nearest branch coincides with what a free resolve would pick
+     * (everywhere except the old degenerate-node tear lines) this equals the old sampleRoadTopY within
+     * float noise; at the tear lines it is the CONTINUOUS leg-based value instead of the jumping
+     * free-resolve one. Returns asphalt top (clearance included) or null when no leg branch is in
+     * range (caller falls back to the pad plane).
+     *
+     * The nearest-branch pick only sets the crown/camber fold's frame (signedLat, arcS, runKey); the
+     * GRADE comes from _carveDirtY's ruled blend, which enumerates every leg and is a pure function of
+     * position. So the branch switch is not itself a crease source — the pad's 1.3 m knee was in the
+     * ruled blend's gap clamp (see RULE_SOFT), and with that smoothed the switch measures as no seam
+     * at all (a runner-up cross-section blend on top of it moved the pad field by < 1 mm at every
+     * seed-6 site, so it is deliberately NOT paid for here).
      */
     _nodeSurfaceTop(node, wx, wz) {
         const legs = node.legs
@@ -5311,23 +5346,51 @@ export class RoadSystem {
         const cutback = this.junctionCutbackDist()
         const T = cutback + halfWidth * 0.5
 
-        const mouth = []
-        for (const leg of node.legs) {
+        // One leg's mouth record, `extra` metres further back along the leg than the nominal
+        // cutback + halfWidth/2 (DEG2_SHARP_PULLBACK). Both the mouth and its lead-in anchor move
+        // together so the anchor stays outboard of the mouth; len·0.45 caps both on a short leg.
+        const mouthAt = (leg, extra) => {
             if (leg.arc === undefined || !leg.runKey) return null
             const e = this._network.get(leg.runKey)
             const cum = e?.polyCum
             const len = cum ? cum[cum.length - 1] : 0
             if (!(len > 1e-3)) return null
             const s = leg.arc < 1e-6 ? 1 : -1
-            const mouthArc = leg.arc + s * Math.min(T, len * 0.45)
+            const mouthArc = leg.arc + s * Math.min(T + extra, len * 0.45)
             const c = this.runPointAt(leg.runKey, mouthArc)
             if (!c) return null
             const prof = this.runProfile(mouthArc, leg.runKey)
             let ox = prof.tx * s, oz = prof.tz * s
             const ol = Math.hypot(ox, oz)
             if (ol < 1e-6) return null
-            const anchorArc = leg.arc + s * Math.min(cutback + halfWidth * 2, len * 0.45)
-            mouth.push({ runKey: leg.runKey, cx: c.x, cz: c.z, ox: ox / ol, oz: oz / ol, mouthArc, anchorArc })
+            const anchorArc = leg.arc + s * Math.min(cutback + halfWidth * 2 + extra, len * 0.45)
+            return { runKey: leg.runKey, cx: c.x, cz: c.z, ox: ox / ol, oz: oz / ol, mouthArc, anchorArc, s }
+        }
+
+        let mouth = []
+        for (const leg of node.legs) {
+            const m = mouthAt(leg, 0)
+            if (!m) return null
+            mouth.push(m)
+        }
+        // Sharp-kink pullback: measure the kink from the nominal mouth tangents (the same delta the
+        // fillet fits to), then rebuild both mouths further back so the fillet radius grows and the
+        // bend spreads over more road instead of lobing out sideways. Two passes, once per node per
+        // _networkRev — the result is cached on the node.
+        {
+            const dot = -(mouth[0].ox * mouth[1].ox + mouth[0].oz * mouth[1].oz)
+            const delta = Math.acos(Math.max(-1, Math.min(1, dot)))
+            const u = (delta - DEG2_SHARP_IN) / (DEG2_SHARP_FULL - DEG2_SHARP_IN)
+            if (u > 0) {
+                const k = u >= 1 ? 1 : u * u * (3 - 2 * u)
+                const pulled = []
+                for (const leg of node.legs) {
+                    const m = mouthAt(leg, DEG2_SHARP_PULLBACK * k)
+                    if (!m) return null
+                    pulled.push(m)
+                }
+                mouth = pulled
+            }
         }
         const [A, B] = mouth
 
@@ -5350,7 +5413,9 @@ export class RoadSystem {
             }
         }
         pushRun(A.runKey, A.anchorArc, A.mouthArc, true)   // anchorA → cA, on the ribbon
+        const iMouthA = center.length - 1
         if (!this._pushDeg2Core(center, A, B, halfWidth, SEG, pushStraight)) return null
+        const iMouthB = center.length - 1
         pushRun(B.runKey, B.mouthArc, B.anchorArc, false)  // cB → anchorB, on the ribbon
         if (center.length < 2) return null
 
@@ -5375,11 +5440,26 @@ export class RoadSystem {
                 grades[i] = (gA * wA + gB * wB) / (wA + wB)
             } else grades[i] = gA != null ? gA : (gB != null ? gB : node.nodeY)
         }
+        // junction-flow stage 3 — LANE-MARKING PHASE across the connector. Both lead-ins ride ON their
+        // run's centreline, so the run-global arc there is an exact linear function of the connector's
+        // own chord distance: arcS = mouthArc + σ·(c − cMouth), σ = the sign of the arc as travel
+        // proceeds along the connector. Handing each half of the connector its OWN leg's function makes
+        // the connector's dash phase byte-match the ribbon it overlaps on BOTH lead-ins (coincident,
+        // identical stripes — no ghosting, nothing for the z-fight to reveal). The two functions cannot
+        // be reconciled (unrelated runs, and their σ can even differ in sign), so the unavoidable single
+        // phase jump is parked at the connector's MIDPOINT — the apex of the bend, where no ribbon
+        // draws and it costs one smeared dash instead of a 20 m marking hole.
+        const markPhase = {
+            aArc: A.mouthArc, aSig: Math.sign(A.mouthArc - A.anchorArc) || 1, aCum: polyCum[iMouthA], aKey: A.runKey,
+            bArc: B.mouthArc, bSig: Math.sign(B.anchorArc - B.mouthArc) || 1, bCum: polyCum[iMouthB], bKey: B.runKey,
+            midCum: 0.5 * (polyCum[iMouthA] + polyCum[iMouthB]),
+        }
         return {
             points: center,
             polyCum,
             grades,
             halfWidth,
+            markPhase,
             netKeys: [A.runKey, B.runKey],   // the two legs — _connectorCarve blends their grades in WORLD space
             totalLen: polyCum[center.length - 1],
             key: `@deg2:${node.pos.x.toFixed(1)},${node.pos.z.toFixed(1)}`,
