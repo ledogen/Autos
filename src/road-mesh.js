@@ -1415,18 +1415,35 @@ export class RoadMeshSystem {
         }
         for (let i = 0; i < center.length; i++) {
             const p = center[i]
-            const a = center[Math.max(0, i - 1)], b = center[Math.min(center.length - 1, i + 1)]
-            let tx = b.x - a.x, tz = b.z - a.z
-            const tl = Math.hypot(tx, tz) || 1
-            tx /= tl; tz /= tl
-            const lx = -tz, lz = tx                       // +90° → left side of travel
-            let arcS = 0, q = 0
+            let arcS = 0, q = 0, onA = false
             if (mp) {
-                const onA = cum[i] <= mp.midCum
+                onA = cum[i] <= mp.midCum
                 arcS = onA ? mp.aArc + mp.aSig * (cum[i] - mp.aCum)
                            : mp.bArc + mp.bSig * (cum[i] - mp.bCum)
                 q = roadQuality(arcS, onA ? mp.aKey : mp.bKey, this._worldSeed)
             }
+            // junction-flow stage 4: on the LEAD-INS (the stretches that ride ON their leg's ribbon,
+            // cum ≤ aCum / ≥ bCum) take the lateral frame from the RUN — runProfile's continuous
+            // tangent, the exact frame sweepRibbon offsets the ribbon edge by — instead of the
+            // connector polyline's chord direction. The lead-in POSITIONS already lie on the run
+            // polyline the ribbon sweeps, but a chord lags the analytic tangent by up to half its
+            // turn, and at halfWidth that threw the strip edge up to ~0.3 m off the ribbon edge it is
+            // meant to be coincident with — the little asphalt flap on the outer edge of a bend
+            // (seed 6, 1268.7/2719.4). Matching the frame makes the two edges the same curve. The
+            // switch is C0: the connector CORE leaves each mouth tangent to that same run tangent.
+            let tx, tz
+            const onLead = mp && (cum[i] <= mp.aCum + 1e-6 || cum[i] >= mp.bCum - 1e-6)
+            if (onLead) {
+                const rp = this._road.runProfile(arcS, onA ? mp.aKey : mp.bKey)
+                const sig = onA ? mp.aSig : mp.bSig
+                tx = sig * rp.tx; tz = sig * rp.tz
+            } else {
+                const a = center[Math.max(0, i - 1)], b = center[Math.min(center.length - 1, i + 1)]
+                tx = b.x - a.x; tz = b.z - a.z
+            }
+            const tl = Math.hypot(tx, tz) || 1
+            tx /= tl; tz /= tl
+            const lx = -tz, lz = tx                       // +90° → left side of travel
             for (let c = 0; c < COLS; c++) {
                 const off = halfWidth * (1 - 2 * c / (COLS - 1))   // +halfWidth (left) → −halfWidth (right)
                 const X = p.x + lx * off, Z = p.z + lz * off

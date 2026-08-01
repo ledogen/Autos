@@ -421,6 +421,13 @@ const CROSS_BLEND_BAND = 12   // m — lateral-distance band over which the two 
 // the portal line, and the surface is C0 straight through the portal. The below-crown part of
 // the funnel sits inside the shader discard capsule; the collar hides the fringe.
 const BORE_NOTCH_SLOPE = 1.2  // V:H — mouth-funnel floor rise per metre into the bore
+// QUAL-24 dangling run end: arc-length (m) over which a run's carve footprint EXTRA (the FEAT-40
+// deep-bank toe) feathers away as it approaches a terminus that is a graph LEAF (degree-1 site — a
+// road that genuinely stops, not a junction and not an end whose neighbour merely hasn't streamed).
+// Beyond the terminus the cross-section also folds RADIALLY (see _carveCrossSection), so a dead end
+// reads as a modest gravel turnaround with an ordinary embankment nose instead of the full-width
+// 18 m plateau + vertical stop face the un-folded, lat-only cross-section left there.
+const LEAF_END_TAPER = 30     // m
 const PROTO_SNAP_CAP       = PROTO_ANCHOR_SPACING * 0.45  // m — max anchor gradient-descent displacement (keeps anchors in their lane → fewer parallel/duplicate roads)
 const PROTO_PARAM_DEBOUNCE = 160   // ms — coalesce slider drags before re-routing
 // 8-connectivity direction vectors (index 0..7); used for the turn-penalty A* state.
@@ -4146,7 +4153,7 @@ export class RoadSystem {
             // has that identical step there. No potholes either: potholes are an on-ribbon-only
             // physics-side micro-noise (D-03) and the pad geometry is smooth.
             gradeY = cs2.padTopY
-        } else if (nr && latDist < halfWidth) {
+        } else if (nr && latDist < halfWidth && this._leafEndDist(runKey, arcSEff) >= 0) {
             // ── On-RIBBON ── ride the asphalt decal: the LEG cross-section's own design top
             // (cs.gradeY + clearanceMargin) — the same field the ribbon mesh vertices ride
             // (sampleRoadTopY) — plus the SURF-06 pothole micro-noise (D-03, physics-only).
@@ -4155,6 +4162,10 @@ export class RoadSystem {
             // ring and out through the rim-hold band the wheel rode ~0.15 m BELOW the drawn asphalt.
             // The duck is a MESH-DIRT armor (keep tan interp slivers under the asphalt); it must not
             // move the decal. Off pads cs2.gradeY == cs.gradeY, so this is a no-op there.
+            // QUAL-24: not PAST a graph-leaf terminus (_leafEndDist < 0) — the ribbon mesh stops at
+            // the run's last vertex, so there is no asphalt to ride out on the dangling-end cap.
+            // Without the gate physics floated clearanceMargin above the drawn dirt for the whole
+            // cap (lat ≈ 0 straight off the end), the one place mesh == collision was breaking there.
             gradeY = (cs ? cs.gradeY : cs2.gradeY) + clearanceMargin
             if (p.potholeEnabled) {
                 const rq = roadQuality(arcSEff, runKey, this._worldSeed)
@@ -5729,6 +5740,44 @@ export class RoadSystem {
         return runTop
     }
 
+    // ── QUAL-24: graph-LEAF terminus distance (the dangling-run-end cap) ─────────────────────
+    /**
+     * Signed arc distance from `arcSEff` to the nearer terminus of `runKey` that is a graph LEAF —
+     * POSITIVE inside the run, NEGATIVE beyond the terminus, +Infinity when neither end is a leaf.
+     *
+     * "Leaf" is decided from GRAPH TOPOLOGY (`_graphDegreeOf(cellA/cellB) === 1`), never from the
+     * streamed network or the window: a run is registered as a WHOLE graph edge, so its endpoints
+     * are always graph sites, but at a degree-≥2 site the continuation edge may simply not have
+     * streamed yet. Keying the cap on the streamed leg count would therefore change the surface when
+     * the same area re-streams at a different radius (restream-invariance). The Urquhart band graph
+     * is window-invariant in its interior (roadGraphMargin), and a run end sits at most one edge
+     * length outside the stream band — deep inside that margin. Junction-owned ends (degree ≥ 2) are
+     * cut back and covered by pads/connectors and are deliberately left alone, so the BUG-21
+     * apex-sliver fallback and every pad/connector overlay are untouched by this.
+     *
+     * Memoised on the netEntry, stamped with _networkRev (the same signal every other per-run cache
+     * in this file uses) — the carve path calls this per vertex/probe.
+     */
+    _leafEndDist(runKey, arcSEff) {
+        const e = this._network ? this._network.get(runKey) : null
+        if (!e) return Infinity
+        if (e._leafRev !== this._networkRev) {
+            e._leafRev = this._networkRev
+            e._leafA = !!(e.cellA && this._graphDegreeOf(e.cellA) === 1)
+            e._leafB = !!(e.cellB && this._graphDegreeOf(e.cellB) === 1)
+        }
+        if (!e._leafA && !e._leafB) return Infinity
+        const cum = e.polyCum
+        const o = e.arcOrigin ?? 0
+        let d = Infinity
+        if (e._leafA) d = arcSEff - (-o)                                  // arc at the run's first vertex
+        if (e._leafB) {
+            const d1 = (cum ? cum[cum.length - 1] : 0) - o - arcSEff      // arc at the run's last vertex
+            if (d1 < d) d = d1
+        }
+        return d
+    }
+
     // ── QUAL-07: the ONE road-carve cross-section function ───────────────────────────────────
     /**
      * Resolve the carve DIRT-trough surface + shoulder blend at a point already resolved to a run.
@@ -5768,6 +5817,32 @@ export class RoadSystem {
 
         const latDist = Math.abs(signedLat)
 
+        // QUAL-24 (dangling run end): a run that STOPS — its terminus is a graph leaf, so no
+        // neighbour run, pad or connector owns the ground past it — used to be capped by a lat-ONLY
+        // cross-section. Straight off the end signedLat ≈ 0, so blendW stayed 1 and the full road
+        // grade was held out to the resolver's radial acceptance (endHW ≈ 18 m) and then stopped
+        // dead: an 18 m plateau ringed by a vertical face (6.03 m in ONE 0.25 m sample at the seed-6
+        // dead end (2699.9, 1628.0) — a fortress mound burying the stream below it, shadow and all;
+        // 13.4 m at a deeper one). Fold the section RADIALLY instead:
+        // past the terminus the toe test and the shoulder→toe smoothstep run on hypot(lat, over)
+        // rather than lat, so the surface rolls off in EVERY direction at the ordinary fill/cut
+        // slope. rad is C1 across the terminus plane (∂rad/∂over = over/rad → 0 as over → 0), and
+        // both carve consumers (physics _sampleCarveWorld, terrain _buildCarveTable) share this fn,
+        // so the drawn embankment and the collision surface taper identically (QUAL-07).
+        const dLeaf = this._leafEndDist(runKey, arcSEff)
+        const over  = dLeaf < 0 ? -dLeaf : 0
+        const radDist = over > 0 ? Math.hypot(latDist, over) : latDist
+        // Longitudinal feather of the footprint EXTRA over the final LEAF_END_TAPER metres: the
+        // FEAT-40 deep-bank toe is what lets a toe reach past the resolver's off-end acceptance
+        // radius, which would leave a residual step exactly where the cap ends. Faded to 0 at the
+        // terminus the capped toe becomes carveHalfWidth + maxEmbankmentToe == endHW, so blendW
+        // reaches 0 inside the resolved region and the nose feathers to raw with nothing left over.
+        let leafTaper = 1
+        if (dLeaf < LEAF_END_TAPER) {
+            const u = Math.max(0, dLeaf) / LEAF_END_TAPER
+            leafTaper = u * u * (3.0 - 2.0 * u)
+        }
+
         // Dirt surface (run grade + crown/camber − clearance). D3: a higher overlapping arm raises it.
         let designY = this._carveDirtY(signedLat, arcSEff, runKey, camberSign, wx, wz)
         if (floorY > designY) designY = floorY
@@ -5791,12 +5866,12 @@ export class RoadSystem {
         // instead of compressing into a near-vertical staircased face at the base cap. Shallow
         // banks never reach the base cap, so this only widens genuinely deep walls. Must stay
         // ≤ the _resolveRoadSurface interior footprint (same constant folded there).
-        const toeExt  = Math.min(Math.max(fillToe, cutToe), carveHalfWidth + maxEmbankmentToe + DEEP_BANK_TOE_EXTRA)
-        if (latDist > toeExt) return null   // beyond the fill/cut toe — unaffected terrain
+        const toeExt  = Math.min(Math.max(fillToe, cutToe), carveHalfWidth + maxEmbankmentToe + DEEP_BANK_TOE_EXTRA * leafTaper)
+        if (radDist > toeExt) return null   // beyond the fill/cut toe — unaffected terrain
 
         const ramp = Math.max(shoulderWidth, toeExt - carveHalfWidth)
         let blendW
-        if (latDist < carveHalfWidth) {
+        if (radDist < carveHalfWidth) {
             blendW = 1.0
         } else {
             // QUAL-06/QUAL-07: SMOOTHSTEP shoulder falloff (was linear). u = 0 at the carve-core edge,
@@ -5804,7 +5879,7 @@ export class RoadSystem {
             // the bank has no hard crease at the top-of-bank (core edge) and feathers to terrain at the
             // toe — killing the staircase/crease the linear ramp left on coarse-grid steep banks. The
             // mesh and physics share this fn, so both get the C1 bank identically (agreement preserved).
-            const u = Math.min(1, (latDist - carveHalfWidth) / ramp)
+            const u = Math.min(1, (radDist - carveHalfWidth) / ramp)
             blendW = 1.0 - u * u * (3.0 - 2.0 * u)
         }
 
