@@ -62,14 +62,22 @@ Keep this honest; it is the thing that makes the rule checkable.
   radiator/overheat → power-loss → head-gasket chain DESIGN.md already specifies) and **FEAT-50 fuel**
   (**ratified 2026-08-01** — fuel and gas stations are in; see the note under SM-3).
 
-**Next: SM-2 — and its `Requires:` are now BOTH met** [corrected 2026-08-01]. SM-1 ✓ (shipped
-2026-07-30); POI anchors ✓ via **FEAT-46** (lay-by pads + `enterFromPoi`), which supersedes FEAT-21's
-core. FEAT-21 retains only the *variety* pass (types, names, mission flavour) and is **not** an SM-2
-prerequisite — an earlier version of this section listed it as blocking; that claim is withdrawn.
+**SM-2 IS OPEN — the economy spine is in** [2026-08-01]. **FEAT-53** (ticket in `todos/pending/`,
+phases A–C built the same day the milestone opened) implements the ratified performance model on the
+existing point-to-point missions: `src/economy.js` (payout line, dayTier, day-tightened rank
+thresholds, `runEconomy` wallet + mission points — displayed as **"good deeds"**, owner theming),
+terms frozen at accept (tier AND thresholds — owner ruled lock both), settle-once on arrival, the
+**single-offer rule** (one cached job per POI per day; accept consumes it), the do-over lockout
+(regenerate/retry inert on paid jobs, alive on the unpaid Quick Job rig), result-card rank colours +
+payout, the `#run-hud` wallet, and gates (`economy.mjs`, story-poi §7–8). **Tunables are
+PROVISIONAL** — k 0.35 $/s, cap 3.0, tier ~×1.15/day, S/A −7% by day 8 — the owner's balancing pass
+is FEAT-53 Phase D. Remaining SM-2 scope (paper route, fragile, bonus objectives, consumables) is
+listed as follow-ups on the ticket.
 
-**And SM-2 is now specified, not just scoped.** The 2026-08-01 performance model (DESIGN.md "The
-performance model") settles payout, progression and the rank surface — SM-2 implements it rather than
-designing it. See the milestone below.
+*(Prerequisite audit, retained: SM-1 ✓ shipped 2026-07-30; POI anchors ✓ via FEAT-46, which
+supersedes FEAT-21's core — FEAT-21 retains only the variety pass and never blocked SM-2. The
+2026-08-01 performance model settled payout/progression/rank before implementation began, exactly as
+intended.)*
 
 **Consequence worth stating:** the day now exists for the par economy to press against — the SM-1
 "gap in the build" note from 2026-07-29 is resolved. What money buys and costs is still SM-2's to
@@ -302,8 +310,8 @@ free lane (any time) ── FEAT-28 · FEAT-09 · FEAT-26/27 · FEAT-23 · FEAT-
 
 SM-1 The Day ──▶ SM-2 The Wager ──▶ SM-3 The Machine ──▶ SM-4 The Run ──▶ SM-5 The World Turns
    │                  ▲                    ▲                   ▲
-   └ SHIPPED          └ prereqs MET        └ FEAT-51 coolant   └ needs FEAT-28
-     2026-07-30         ← NEXT               is this, early
+   └ SHIPPED          └ OPEN — spine in    └ FEAT-51 coolant   └ needs FEAT-28
+     2026-07-30         (FEAT-53) ← HERE     is this, early
 ```
 
 **Already banked, out of the critical path:** FEAT-29 par oracle (sanctioned early), the beta mission

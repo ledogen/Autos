@@ -15,7 +15,13 @@
  *     it a vehicle quantity.
  *   - SM-INV-3 — no par countdown on the HUD while driving. The player sees elapsed time and
  *     distance-to-go; par is revealed only in the result card, after arrival.
- *   - REGENERATE is a testing affordance and is labelled as such. Real story mode has no do-overs.
+ *   - REGENERATE/RETRY are testing affordances and are labelled as such. Real story mode has no
+ *     do-overs: FEAT-53 gates both OFF for paid (POI-anchored) jobs — see PAID_JOB_DO_OVERS.
+ *     Quick Job keeps them; it is the calibration rig and pays nothing.
+ *   - SM-INV-4 (FEAT-53) — a POI job settles through the economy on arrival: terms (day tier +
+ *     rank thresholds) are FROZEN at accept, payout/points fold into the result card. The
+ *     economy arrives through the deps adapter (getTerms/onSettle); this module never imports
+ *     economy.js, so headless gates can roll missions with no economy attached.
  *
  * Cost discipline (FEAT-29 acceptance): routing + par run ONCE at generate time, off the frame
  * loop. update() is a couple of distance checks per frame.
@@ -41,6 +47,12 @@ const LEG_MAX = 4000                // m
 const MAX_EDGES = 9                 // routing cap: each edge is tens of ms on a cache miss
 const ARRIVE_RADIUS = 28            // m — you're there
 const COUNTDOWN = 3.0               // s — the start countdown (a START count, not a par clock)
+// FEAT-53: real story mode has no do-overs (DESIGN.md — "a marker you can re-roll is a slot
+// machine", and a retried paid job is a direct payout exploit: drive badly, retry, get paid for
+// the good lap). Held as a const flag in the DEBUG_LOCKOUT house style (story.js): flip to true
+// to re-open regenerate/retry on POI jobs for a calibration session. Quick Job (fromPoi === null)
+// is untouched either way — it pays nothing, so its do-overs are harmless and useful.
+const PAID_JOB_DO_OVERS = false
 const EDGE_T_MARGIN = 0.12          // keep endpoints off the junction pads at both ends
 // FEAT-43: when story mode supplies a region, the whole mission must fit INSIDE its wall.
 // The planner network reaches well past its nominal radius — the streamed band carries a wide
@@ -88,8 +100,14 @@ export class MissionSystem {
      * @param {()=>({x:number,z:number,r:number}|null)} [o.getRegion] — FEAT-43 story region, when
      *        one is active. Missions are confined to it, and the planner ANCHORS on its centre
      *        instead of following the car (see _planner).
+     * @param {()=>{day:number,dayTier:number,thresholds:object}} [o.getTerms] — FEAT-53: the
+     *        economy's terms at this moment (EconomySystem.terms()). Stamped onto the mission at
+     *        ACCEPT and read back at settlement. Optional — without it, jobs grade on the day-1
+     *        default thresholds and nothing pays.
+     * @param {(result:object, mission:object)=>{payout:number,points:number}} [o.onSettle] —
+     *        FEAT-53: settle a finished POI job (EconomySystem.settle). Optional, POI jobs only.
      */
-    constructor({ getRoad, makePlanner, getCar, getSeed, getRegion, teleport, setSpawn, setMapOpen, onChange }) {
+    constructor({ getRoad, makePlanner, getCar, getSeed, getRegion, teleport, setSpawn, setMapOpen, onChange, getTerms, onSettle }) {
         this._getRoad = getRoad
         this._makePlanner = makePlanner || null
         this._plan = null            // { road, seed, center } — the streamed planning network
@@ -100,6 +118,8 @@ export class MissionSystem {
         this._setSpawn = setSpawn || null
         this._setMapOpen = setMapOpen
         this._onChange = onChange || (() => {})
+        this._getTerms = getTerms || null
+        this._onSettle = onSettle || null
 
         this.state = 'idle'      // 'idle' | 'generating' | 'offer' | 'countdown' | 'running' | 'done'
         this.mission = null      // { start, end, par, distance, poly }
@@ -113,6 +133,13 @@ export class MissionSystem {
         // a free Quick Job roll. Held so `regenerate` re-rolls the DESTINATION while keeping the
         // start pinned to the POI you are standing at — see regenerate().
         this._anchor = null
+        // FEAT-53: the single-offer rule (owner, 2026-08-01). One offer per POI per day, cached so
+        // walking away and re-parking presents the SAME job — a giver you can decline-and-re-park
+        // into a fresh roll is the same slot machine as the regenerate button. Keyed
+        // `${poiId}|${day}`, so the offer re-rolls only at a day boundary. Holds live centerline
+        // references (mission.segments) — clearOffers() from invalidatePlan()/region exit is
+        // MANDATORY or a seed regen leaves this pinning a dead RoadSystem.
+        this._offers = new Map()
     }
 
     // ── lifecycle ───────────────────────────────────────────────────────────────────────────
@@ -147,7 +174,10 @@ export class MissionSystem {
     }
 
     /** Drop the planning network (seed change / explicit reset) so the next roll re-streams. */
-    invalidatePlan() { this._plan = null }
+    invalidatePlan() { this._plan = null; this.clearOffers() }
+
+    /** FEAT-53: forget all cached POI offers (region enter/exit, seed change). */
+    clearOffers() { this._offers.clear() }
 
     /** Enter story mode: roll a mission and offer it on the map. */
     enter() {
@@ -164,20 +194,32 @@ export class MissionSystem {
      * the marker's own (edge, arc) point and accepting does NOT teleport — you are already standing
      * there, and the countdown runs out from under you where you sit.
      *
-     * The offer stays ANCHORED for as long as it is on screen: `regenerate` re-rolls the
-     * destination and keeps this start (see regenerate()). Eventually most quest givers lose that
-     * button — DESIGN.md is explicit that real story mode has no do-overs, and a marker you can
-     * re-roll is a slot machine — but while the economy is being calibrated it stays.
+     * FEAT-53: the single-offer rule. The first park of the day rolls the offer; every later park
+     * at the same POI (same day) presents the SAME cached job, instantly — no _generate, no
+     * spinner. The cache entry dies when the job is accepted or the day rolls over.
      *
      * @param {object} poi — a record from PoiSystem.list()
      */
     enterFromPoi (poi) {
         if (!poi) return
+        const day = this._getTerms ? this._getTerms().day : 1
+        const key = `${poi.id}|${day}`
+        const cached = this._offers.get(key)
+        if (cached) {
+            this._anchor = cached.anchor
+            this.mission = cached.mission
+            this.result = null
+            this.error = null
+            this.state = 'offer'
+            this._setMapOpen(true)
+            this._onChange()
+            return
+        }
         this.state = 'generating'
         this.result = null
         this.error = null
         this._onChange()
-        setTimeout(() => this._generate({ aId: poi.aId, bId: poi.bId, s: poi.s, poiId: poi.id }), 0)
+        setTimeout(() => this._generate({ aId: poi.aId, bId: poi.bId, s: poi.s, poiId: poi.id, offerKey: key }), 0)
     }
 
     /**
@@ -190,11 +232,12 @@ export class MissionSystem {
      * parked in a pullout (owner, 2026-07-28). A quest giver offers you a different job, not a
      * different place to be standing.
      *
-     * (Longer term most quest givers lose this button entirely — DESIGN.md is explicit that real
-     * story mode has no do-overs, and a marker you can re-roll is a slot machine.)
+     * FEAT-53: that "longer term" arrived — paid (POI) jobs have NO do-overs unless
+     * PAID_JOB_DO_OVERS is flipped for a calibration session. Quick Job keeps the button.
      */
     regenerate() {
         if (this.state !== 'offer') return
+        if (!PAID_JOB_DO_OVERS && this.mission?.fromPoi) return
         this.state = 'generating'
         this._onChange()
         const anchor = this._anchor
@@ -211,6 +254,14 @@ export class MissionSystem {
      */
     accept() {
         if (this.state !== 'offer' || !this.mission) return
+        // FEAT-53: freeze the TERMS of the contract — day tier AND rank thresholds — at the moment
+        // of commitment (SM-INV-4; owner 2026-08-01: lock both). Settlement reads these, never the
+        // finish-day's values, so a job accepted at 23:58 pays and grades on the day you took it.
+        // The converse — accepting at 1 a.m. to buy tomorrow's HIGHER tier — is a RATIFIED feature
+        // (DESIGN.md: "Nobody authored it; do not 'fix' it").
+        if (this._getTerms) this.mission.terms = this._getTerms()
+        // The job is taken: the giver's offer is spent (single-offer rule).
+        if (this.mission.offerKey) this._offers.delete(this.mission.offerKey)
         this._launch({ seat: !this.mission.fromPoi, setSpawn: true })
     }
 
@@ -221,6 +272,10 @@ export class MissionSystem {
      */
     retry() {
         if (this.state !== 'done' || !this.mission) return
+        // FEAT-53: no retry on a paid job — driving it badly, retrying, and getting paid for the
+        // good lap is a direct payout exploit. (The _settled flag below is the second line of
+        // defence if this gate is ever bypassed.)
+        if (!PAID_JOB_DO_OVERS && this.mission.fromPoi) return
         this.result = null
         // ALWAYS seats, even for a POI job: a retry is a second lap of a known road for calibration,
         // and it is only comparable if it starts at the same start line. Without this you would
@@ -261,7 +316,9 @@ export class MissionSystem {
         this.state = 'idle'
         this.mission = null
         this.result = null
-        this._anchor = null      // the next roll is a fresh one, not a re-roll of a POI you left
+        this._anchor = null
+        // NOTE: _offers is deliberately NOT cleared — declining is exactly what the single-offer
+        // cache exists for. Re-park at the same POI today and you face the same job (FEAT-53).
         this._setMapOpen(false)
         this._onChange()
     }
@@ -433,7 +490,22 @@ export class MissionSystem {
         }
         if (this.distanceToGo() <= ARRIVE_RADIUS) {
             const par = this.mission.par
-            this.result = { elapsed: this.elapsed, par, ...gradeRun(this.elapsed, par) }
+            // FEAT-53: grade on the thresholds FROZEN at accept (missing terms → day-1 default
+            // inside gradeRun — headless gates and free-roam rolls are unchanged).
+            this.result = { elapsed: this.elapsed, par, ...gradeRun(this.elapsed, par, this.mission.terms?.thresholds) }
+            // Settle a paid job exactly once (_settled = the double-pay guard; it lives on the
+            // mission object so ANY future re-entry path inherits it). Quick Job never settles —
+            // it is the calibration rig and pays nothing. The settle callback runs inside the
+            // physics step, so a broken economy must degrade to "no payout", never a dropped loop.
+            if (this.mission.fromPoi && !this.mission._settled && this._onSettle) {
+                this.mission._settled = true
+                try {
+                    const s = this._onSettle(this.result, this.mission)
+                    if (s) { this.result.payout = s.payout; this.result.points = s.points }
+                } catch (e) {
+                    console.warn('[mission] settle failed — run graded but unpaid', e)
+                }
+            }
             this.state = 'done'
             this._onChange()
         }
@@ -456,7 +528,16 @@ export class MissionSystem {
             const tries = this._getRegion() ? REGION_ROLL_TRIES : 1
             this.mission = null
             for (let i = 0; i < tries && !this.mission; i++) this.mission = this._roll(anchor)
-            if (this.mission) this.mission.fromPoi = anchor ? anchor.poiId : null
+            if (this.mission) {
+                this.mission.fromPoi = anchor ? anchor.poiId : null
+                // FEAT-53: a POI roll is cached under its (poi, day) key — the giver's one offer
+                // for today. regenerate() can only reach here for Quick Jobs (or with
+                // PAID_JOB_DO_OVERS flipped, where overwriting the entry is the point).
+                if (anchor?.offerKey) {
+                    this.mission.offerKey = anchor.offerKey
+                    this._offers.set(anchor.offerKey, { mission: this.mission, anchor })
+                }
+            }
             this.state = this.mission ? 'offer' : 'idle'
             if (!this.mission) this.error = 'no route found near here — try again'
             if (this.mission) this._setMapOpen(true)

@@ -269,6 +269,32 @@
       white-space: pre;
     }
 
+    /* FEAT-53: the run wallet — top-right, story mode only. Money and good deeds are RUN state,
+       not mission state: visible whenever the region is live, including mid-drive (owner,
+       2026-08-01). It never references par or the current job, so SM-INV-3 stays whole — the
+       mission-hud running surface is untouched and shows only elapsed + distance. */
+    #run-hud {
+      display: none;
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid #3a4450;
+      padding: 8px 14px;
+      font-family: monospace;
+      font-size: 14px;
+      color: #e6ecf2;
+      z-index: 88;
+      pointer-events: none;
+      text-align: right;
+      line-height: 1.5;
+    }
+    #run-hud .rh-money { font-size: 17px; color: #8ce99a; }
+    #run-hud .rh-deeds { color: #ffcf3c; }
+
+    /* FEAT-53: payout / good-deeds line on the mission result card. */
+    #mission-panel .mp-pay { font-size: 18px; color: #8ce99a; }
+
     /* FEAT-31 testing lab readout — top-right, out of the way of the left-hand debug HUD. */
     #lab-panel {
       display: none;
@@ -642,6 +668,11 @@
     </div>
   </div>
   <div id="mission-hud"></div>
+
+  <!-- FEAT-53: the run wallet (money + good deeds), story mode only. Painted from the ~10 Hz HUD
+       block off economySystem.snapshot(); deliberately its own element so the mission-hud running
+       surface stays byte-identical (SM-INV-3). -->
+  <div id="run-hud"><span class="rh-money">$0</span><br><span class="rh-deeds">0 good deeds</span></div>
 
   <!-- FEAT-46: "park to begin mission" prompt, shown when the truck is stopped beside a POI cube.
        Latching the parking brake (Space) there is what opens the offer — see _updatePoiPrompt. -->

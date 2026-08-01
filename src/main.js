@@ -55,6 +55,7 @@ import { LabSystem } from './lab.js'                     // FEAT-31: isolated fl
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { PoiSystem, POI_PARAMS } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { DaySystem } from './day.js'                     // FEAT-47: story-mode day clock (drives the sky)
+import { EconomySystem, RANK_COLOR, formatDeeds } from './economy.js'  // FEAT-53: payout, wallet, good deeds
 import { CampSystem, CAMP_PARAMS } from './camp.js'      // FEAT-45: story-mode dispersed-camping zones
 import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
@@ -1762,6 +1763,8 @@ if (_PROF) {
   window.__poi = () => poiSystem
   // The live mission/run state, so a harness can reach a result card without driving the route.
   window.__mission = () => missionSystem
+  // FEAT-53: the run wallet, so a harness can assert a payout/points accrual without a screenshot.
+  window.__economy = () => economySystem
   // Route-dispatch probe: wraps _routeDispatch on first call to count per-key dispatches —
   // diagnoses warm-loop re-dispatch churn (a key dispatched >2× means a warm scan is spinning).
   let _rdWrap = null
@@ -2060,6 +2063,16 @@ const daySystem = new DaySystem({
   setTimeOfDay: (h) => skySystem.setTimeOfDay(h),
 })
 
+// ── FEAT-53: the economy spine ─────────────────────────────────────────────────────────────
+// Payout, wallet and mission points ("good deeds" on the HUD — owner theming, 2026-08-01).
+// Story mode only: start() zeroes the run wallet when the region goes live (story deps below);
+// in free roam nothing constructs terms and nothing settles, so it is inert. Run-layer state
+// lives in economy.js's runEconomy — a SIBLING of day.js's runState, because the wallet moves at
+// mission settlement, which is not a day/sleep boundary (SM-INV-12).
+const economySystem = new EconomySystem({
+  getDay: () => daySystem.day(),
+})
+
 // Eyelid overlay drive (FEAT-47). Elements cached once; the frame loop writes nothing but the two
 // transforms. f = 0 → lids fully retracted off-screen, f = 1 → shut. The lids sit off-screen at
 // rest, so the overlay costs a composited layer and nothing else while no blink is running.
@@ -2135,6 +2148,10 @@ missionSystem = new MissionSystem({
       map2d.setRadiusTarget(reach + 300)
     }
   },
+  // FEAT-53: the economy seams. Terms (day tier + rank thresholds) freeze at ACCEPT; a finished
+  // POI job settles into the run wallet. Quick Job never settles — it pays nothing by design.
+  getTerms: () => economySystem.terms(),
+  onSettle: (result, mission) => economySystem.settle(result, mission),
   onChange: () => _renderMissionUI(),
 })
 
@@ -2646,8 +2663,11 @@ function _renderMissionUI () {
           ? `<span class="mp-dim">starts here &mdash; the clock runs from where you're parked</span>`
           : `<span class="mp-dim">green pin is the start &mdash; you'll be moved there</span>`)
       // FEAT-46: the offer is exactly three actions — decline · regenerate · accept.
+      // FEAT-53: on a PAID (POI) job the regenerate button is hidden outright — a dead button is
+      // worse than no button. The mission.js PAID_JOB_DO_OVERS guard stays behind it as defence
+      // against a devtools click; Quick Job (the unpaid calibration rig) keeps the button.
       btn('mp-accept', true); btn('mp-decline', true); btn('mp-retry', false)
-      btn('mp-regen', true); btn('mp-quit', false)
+      btn('mp-regen', !j.fromPoi); btn('mp-quit', false)
       show(document.getElementById('mp-export-row'), false)
       // Clear the per-run note so the previous run's note cannot ride along with the next export.
       // The DRIVER name is deliberately NOT cleared — it is per-session, and re-typing it every run
@@ -2670,14 +2690,25 @@ function _renderMissionUI () {
       const r = m.result
       const sign = r.margin >= 0 ? '+' : '−'
       const col = r.margin >= 0 ? '#8ce99a' : '#ff8f7a'
-      body.innerHTML = `<span class="mp-big" style="color:${col}">${r.letter}</span><br>`
+      // FEAT-53: the letter wears its ratified rank colour (D·C·B·A·S = red·orange·yellow·white·
+      // blue), the one place a rank is ever shown (SM-INV-3: result-card only, never live). A paid
+      // job adds its payout + good deeds; Quick Job says plainly that it pays nothing.
+      const paid = r.payout !== undefined
+      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span><br>`
         + `your time <b>${formatTime(r.elapsed)}</b> &nbsp;<span class="mp-dim">/</span>&nbsp; `
         + `par <b>${formatTime(r.par)}</b><br>`
         + `<span style="color:${col}">${sign}${formatTime(Math.abs(r.margin))} vs par</span>`
+        + (paid
+          ? `<br><span class="mp-pay">$${r.payout.toLocaleString('en-US')}</span>`
+            + (r.points > 0
+              ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points === 0.5 ? '½' : r.points} good deed${r.points > 1 ? 's' : ''}</span>`
+              : '')
+          : (m.mission?.fromPoi ? '' : `<br><span class="mp-dim">test job &mdash; no pay</span>`))
       // The result card is exactly three actions: retry · continue · back to free roam (that is the
       // DOM order too). The calibration form above them stays — the subjective read is the ground
       // truth PAR_REF is fitted to, and it is only reliably captured here, in the same click.
-      btn('mp-accept', true); btn('mp-decline', false); btn('mp-retry', true)
+      // FEAT-53: no retry on a paid job (the payout exploit) — hidden here, gated in mission.js.
+      btn('mp-accept', true); btn('mp-decline', false); btn('mp-retry', !m.mission?.fromPoi)
       btn('mp-regen', false); btn('mp-quit', true)
       show(document.getElementById('mp-export-row'), true)
       // The accept button doubles as CONTINUE here — one obvious forward action, with "retry"
@@ -2696,6 +2727,29 @@ function _renderMissionUI () {
     const nb = document.getElementById('mp-accept')
     if (nb) nb.textContent = 'accept mission'
   }
+}
+
+// ── FEAT-53: the run wallet (top-right) ────────────────────────────────────────────────────
+// Painted on the ~10 Hz HUD cadence; the snapshot key skips the DOM write when nothing changed
+// (the common case — money moves a few times a day, not a few times a second).
+let _runHudKey = ''
+function _setRunHudVisible (on) {
+  const el = document.getElementById('run-hud')
+  if (el) el.style.display = on ? 'block' : 'none'
+  if (!on) _runHudKey = ''
+}
+function _renderRunHud () {
+  if (!storySystem.isActive() || storySystem.isEntering()) return
+  const el = document.getElementById('run-hud')
+  if (!el) return
+  const s = economySystem.snapshot()
+  const key = `${s.money}|${s.halfPoints}`
+  if (key === _runHudKey && el.style.display === 'block') return
+  _runHudKey = key
+  const deeds = formatDeeds(s.halfPoints)
+  el.innerHTML = `<span class="rh-money">$${s.money.toLocaleString('en-US')}</span><br>`
+    + `<span class="rh-deeds">${s.halfPoints === 0 ? 'no' : deeds} good deed${s.halfPoints === 2 ? '' : 's'}</span>`
+  el.style.display = 'block'
 }
 
 // FEAT-46: the mission panel's seed control is GONE. You choose the world when you enter story mode
@@ -2859,6 +2913,8 @@ const _skyFolder = skySystem.addGui(_gui)
 moonSystem.addGui(_skyFolder)   // moon lives under Sky / Lighting — same look, same folder
 // FEAT-47: story day clock folder (self-contained, same pattern). Hidden by the debug lockout.
 daySystem.addGui(_gui)
+// FEAT-53: economy folder — wallet/deeds/tier read-outs + the PROVISIONAL k and cap tunables.
+economySystem.addGui(_gui)
 // FEAT-45: camping folder — the live grade at the truck plus the site tunables. The one action is a
 // shortcut INTO the dialogue (skipping the 30-min chore and the carve), so the sleep flow can be
 // exercised without hunting for a legal site first.
@@ -3206,6 +3262,8 @@ const storySystem = new StorySystem({
     if (!center) return
     daySystem.start()   // FEAT-47: the run's clock opens at dayStartHour and takes over the sky
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
+    economySystem.start()            // FEAT-53: fresh run, empty wallet, zero deeds
+    missionSystem.clearOffers()      // …and no offer cached from a previous run survives into this one
     poiSystem.build(center, radius)
     campSystem.build(center, radius)   // FEAT-45: the region's dispersed-camping zones
     _rebuildPoiMarkers()
@@ -3227,6 +3285,9 @@ const storySystem = new StorySystem({
     daySystem.stop()    // FEAT-47: clock off, sky handed back to free roam's noon look
     daySystem.setBlinksEnabled(false)   // …and the eyelids can never fire in free roam
     setControlAttenuation(1)            // belt-and-braces: leave the driver's inputs whole
+    economySystem.stop()                // FEAT-53: wallet dormant (start() re-zeroes on next run)
+    missionSystem.clearOffers()         // cached offers hold live centerlines — never keep them across a region
+    _setRunHudVisible(false)
     poiSystem.clear()
     campSystem.clear()   // FEAT-45: no camping zones outside a live story region
     roadSystem?.setCampPads(null)   // …and no camp benches: free roam's ground is the seed's ground
@@ -3886,6 +3947,12 @@ function loop () {
     // Story mode (beta): the countdown digit and the elapsed/distance readout are live values,
     // so they repaint on the HUD's ~10 Hz cadence rather than per physics step.
     if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'running')) _renderMissionUI()
+
+    // FEAT-53: the run wallet — money + good deeds, story mode only, always visible while the
+    // region is live (owner, 2026-08-01). Run state, not mission state: it never references par
+    // or the current job, so the SM-INV-3 running surface above stays clean.
+    _renderRunHud()
+    economySystem.syncGui()
 
     // FEAT-46/45: the POI + camping prompts, and the ONE parking-brake trigger behind both.
     // Still the ~10 Hz cadence: the `parked` latch is sticky, so the edge cannot fall between polls.

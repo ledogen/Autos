@@ -286,5 +286,92 @@ const W = makeWorld(C.x, C.z, R)
     check('a free Quick Job roll clears the anchor', ms._anchor === null)
 }
 
+// ── 7. FEAT-53 single-offer rule: one job per (POI, day), re-park = same offer ───────────────────
+// A giver you can decline-and-re-park into a fresh roll is the same slot machine as the regenerate
+// button. The offer is cached per (poi.id, day): identical object on re-entry, re-rolled only at a
+// day boundary, consumed by accept.
+{
+    let day = 1
+    const ms = new MissionSystem({
+        getRoad: () => W.road,
+        makePlanner: () => W.road,
+        getCar: () => ({ x: C.x, z: C.z, speed: 0 }),
+        getSeed: () => SEED,
+        getTerms: () => ({ day, dayTier: 1, thresholds: undefined }),
+        teleport () {}, setMapOpen () {}, onChange () {},
+    })
+    const tick = () => new Promise(r => setTimeout(r, 5))
+    const poi = W.poi.list()[0]
+
+    ms.enterFromPoi(poi); await tick()
+    const m1 = ms.mission
+    check('first park of the day rolls an offer', ms.state === 'offer' && !!m1)
+
+    ms.exit()
+    ms.enterFromPoi(poi)     // cache hit is synchronous — no generate, no spinner
+    check('re-park presents the IDENTICAL mission object (no reroll farming)',
+        ms.state === 'offer' && ms.mission === m1)
+
+    day = 2
+    ms.exit()
+    ms.enterFromPoi(poi)
+    check('a day boundary re-rolls the offer', ms.state === 'generating')
+    await tick()
+    check('the new day\'s offer is a fresh roll', ms.state === 'offer' && ms.mission !== m1)
+
+    ms.accept()
+    check('accept stamps the frozen terms onto the mission (SM-INV-4 lock)',
+        ms.mission.terms && ms.mission.terms.day === 2)
+    const taken = ms.mission
+    ms.exit()
+    ms.enterFromPoi(poi)
+    check('accept CONSUMES the offer — the next park generates, not re-presents',
+        ms.state === 'generating')
+    await tick()
+    check('...and the post-accept roll is not the taken job', ms.mission !== taken)
+
+    ms.invalidatePlan()
+    check('invalidatePlan clears the offer cache (no dead-RoadSystem pinning)', ms._offers.size === 0)
+    ms.exit()
+}
+
+// ── 8. FEAT-53 do-over lockout: paid jobs have no regenerate/retry; Quick Job keeps both ─────────
+{
+    const ms = new MissionSystem({
+        getRoad: () => W.road,
+        makePlanner: () => W.road,
+        getCar: () => ({ x: C.x, z: C.z, speed: 0 }),
+        getSeed: () => SEED,
+        teleport () {}, setMapOpen () {}, onChange () {},
+    })
+    const tick = () => new Promise(r => setTimeout(r, 5))
+    const poi = W.poi.list()[0]
+
+    ms.enterFromPoi(poi); await tick()
+    const offered = ms.mission
+    ms.regenerate()
+    check('regenerate is INERT on a POI job (no do-overs on paid work)',
+        ms.state === 'offer' && ms.mission === offered)
+    ms.state = 'done'; ms.result = { elapsed: 1, par: 1 }
+    ms.retry()
+    check('retry is INERT on a POI job (the payout exploit is closed)',
+        ms.state === 'done' && ms.result !== null)
+    ms.exit()
+
+    ms.enter(); await tick()
+    if (ms.state === 'offer') {
+        ms.regenerate()
+        check('Quick Job keeps regenerate (the calibration rig, pays nothing)', ms.state === 'generating')
+        await tick()
+        ms.state = 'done'; ms.result = { elapsed: 1, par: 1 }
+        ms.retry()
+        check('Quick Job keeps retry', ms.state === 'countdown' && ms.result === null)
+    } else {
+        check('Quick Job keeps regenerate (roll found no route — cannot exercise)', false, `state=${ms.state}`)
+        check('Quick Job keeps retry (roll found no route — cannot exercise)', false, `state=${ms.state}`)
+    }
+    ms.exit()
+}
+
 console.log(fails === 0 ? '\nALL POI CHECKS PASSED' : `\n${fails} CHECK(S) FAILED`)
 process.exit(fails === 0 ? 0 : 1)
