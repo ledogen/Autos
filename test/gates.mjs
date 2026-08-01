@@ -98,6 +98,8 @@ export const GATES = [
     desc: 'FEAT-53 economy spine: SM-INV-4 payout anchors (1.2→0, par→k·par·tier exact, 0.8→2×, cap at ≤0.60) + zero floor over degenerate inputs, parBase ∝ par (no tiny-job farming), SM-INV-14 points 1/½/0 monotone in elapsed, dayTier steps clamped, rank thresholds tighten with day but B always contains par, terms locked at accept (the 1 a.m. feature), runEconomy sibling of runState, economy.js imports nothing' },
   { file: 'camp-zones.mjs', subsystem: 'story', cost: 'fast', extraDeps: [],
     desc: 'FEAT-45 camping zones: pure f(seed, cell, params) — determinism, two-centre window-invariance, region clip is a post-filter (kept == raw grid), GLOBAL density 15–25% on seeds 1/6/7/42 (per-region is high-variance by design), 3×3 raw-scan soundness guard' },
+  { file: 'camp-view.mjs', subsystem: 'story', cost: 'fast', extraDeps: [],
+    desc: 'campsite view score (skylineView): ordering over synthetic landforms (summit > rim > plain, canyon/bowl ≈ nothing), a dead-flat plain is open but NOT epic (the relief term), purity under interleaved calls, translation invariance at 8 km (SM-INV-12), exact 169-sample budget per scan' },
   { file: 'lab-timing.mjs', subsystem: 'story', cost: 'fast', extraDeps: [],
     desc: 'FEAT-31 testing-lab gates: skidpad lap time + derived mu vs closed form, no phantom laps from line jitter, staged drag start (hold-still + count, false start voids, unstaged crossings inert), braking measured 100→0 in the strip corridor and voided by throttle' },
   { file: 'water-invariance.mjs', subsystem: 'water', cost: 'heavy', extraDeps: [],
