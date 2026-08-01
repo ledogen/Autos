@@ -122,8 +122,15 @@ Small, but two systems need it and one is already ratified:
   no memory of being built and cannot know he goes anywhere until someone proves it by coming out the
   other side — so the completion event is literally what tells him he connects. He then visits at the
   **campsite the following night**, never mid-drive.
-- It is the natural hook for anything else that wants to know the player is a cut-taker (the Highway's
-  zero-off-route streak breaks on the same signal, inverted).
+- **It is also what breaks the Highway's streak** (#05, ratified 2026-08-01) — the same event, read
+  with the opposite sign. One completed cut ends the streak and the road **flattens its camber below
+  baseline** until favour is rebuilt. So this single event is the hinge the entire route domain turns
+  on: it summons one spirit and offends the other.
+
+**Precision matters here more than it looks.** A false positive costs the player their Highway favour
+and a visibly worse world, so the event must fire on a genuine through-passage only — **in from one
+road, out onto a different road.** Reversing back out the way you came is not a completion. Parking on
+a spur, using a shoulder, or sliding off a corner must never trip it.
 
 Keep it a plain event with the cut's identity and both road endpoints; do not build a ledger here.
 

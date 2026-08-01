@@ -82,6 +82,13 @@ abstract cutscene layer) by construction.
 2. **The ledger completes while driving; the visit happens at camp.** Never mid-drive by default.
 3. **The delay is one night**, not instant. It reads as consequence rather than trigger.
 
+**Camp is also where you go to *ask*** [added 2026-08-01]. The venue is not only for first meetings:
+once met, a spirit can be **interviewed** at the fire. The Highway is the first to use this — ask him
+and he tells you **the day's road camber**, which is his favour readout delivered in character instead
+of as a meter (#05). Generalise it as the cast grows: **camp is where you meet a spirit, and where you
+go to ask one something.** The interaction is a single commit-action followed by sequential cards —
+never a dialogue tree (the chat-pane rule holds).
+
 **The known exception under discussion is the Night Owl** — he is a *passenger*, so a spirit who turns
 up in the seat beside you while you drive is thematically exact. See #01; it is unresolved precisely
 because it trades the strongest staging in the cast against the rule above.
@@ -801,10 +808,11 @@ The cuts are **worldgen**, and they do not need the spirit system. Ticket: **FEA
 
 ### 05 — The Highway *(the road that keeps you)* [RATIFIED 2026-08-01]
 
-**Class:** favour track, not a pact · **Domain:** Route · **Disposition:** one-sided positive,
-instantly losable
-**Contact:** the campfire, after a streak of loyal missions · **Ledger:** single-run streak
-**Boon:** **it banks its corners for you**
+**Class:** favour track, not a pact · **Domain:** Route · **Disposition:** **two-sided** — favour
+banks the corners above baseline, disfavour flattens them below it
+**Contact:** the campfire — first to introduce himself, thereafter **on request, any night**
+**Ledger:** single-run streak, **broken by completing a cut**
+**Boon:** **it banks its corners for you** · **Anger:** **it takes the banking away, and then some**
 
 Vain, bypassed, speaks in the plural. It doesn't watch you from anywhere — **you're standing on it.**
 Motif: culverts, drainage, closure signs on routes that no longer exist.
@@ -912,18 +920,65 @@ state" collided with the convention that no spirit is available at the start of 
 - **Reduced wear — REJECTED** (mine). The Innkeeper already sells wear reduction. Two spirits trading
   in one currency is exactly the collapse this document warns about in the fatigue domain.
 
+#### The anger: he takes the banking away, and then some [RATIFIED 2026-08-01]
+
+**Completing a cut breaks the streak** — FEAT-52's traversal event, in one road and out a *different*
+road. Unambiguous, already being built, and impossible to trip by accident: parking on grass, using a
+shoulder, or sliding off a corner never costs you anything. *(This settles the open question; the
+alternative — a distance threshold on off-route travel — is truer to "zero off-route travel" as
+written, but needs tuning and could punish one bad corner.)*
+
+**And he does not merely withdraw. He punishes** [owner, 2026-08-01]: a **stark reduction in road
+camber**, dropping *below* baseline. The corners go flat. A mountain road that was holding you last
+week now asks you to hold yourself, and it asks on every sweeper for the rest of the streak's
+absence.
+
+*(This reverses my recommendation of withdrawal-only. The owner is right and the reasoning I used was
+too cautious: the rejected toll was rejected for being **a fine in money**, an ethical objection
+converted into a price tag. Flattening the roads is not a fine — it is the world changing its
+behaviour, which is a rule-change and exactly what SM-INV-9 says a spirit is *for*.)*
+
+**The punishment prices itself, for free, via the same invariant the boon relies on.** Par never reads
+camber — so a punished player faces **the same par on a worse road.** Ratio suffers, rank drops,
+payout falls, points come slower. There is no penalty accounting to write anywhere: the flat corners
+*are* the penalty, and the economy registers it automatically.
+
+**SM-INV-1 is intact, by the doze's own logic.** Flat corners make crashing likelier; they never kill.
+The Highway hands you a harder road and lets the physics decide, which is precisely what the doze is
+already permitted to do. What he must never do is take the wheel or apply a fine.
+
+#### Asking him: the day's camber, from the road's own mouth [RATIFIED 2026-08-01]
+
+**Once met, he can be interviewed at camp on any night, and he will tell you the day's road camber.**
+
+This is the favour readout, and it is delivered **diegetically instead of as a meter** — you do not
+open a screen to check your standing with the Highway, you ask the Highway. He is vain and bypassed
+and starved of traffic; asking a road about its own condition is the one thing guaranteed to get an
+answer, at length.
+
+Three things this earns:
+
+- **It solves legibility without a UI** (SM-INV-3's posture). Camber is otherwise felt but not
+  knowable — the player can tell the corners changed, not by how much or why. He closes that gap in
+  character.
+- **It gives the campsite a *consultation* role, not just an introduction one.** Worth generalising as
+  the cast grows: camp is where you meet a spirit **and** where you go to ask one something.
+- **It is a reason to camp that isn't sleep.** The day's camber is genuinely worth knowing before you
+  plan a run of sweepers.
+
+Interaction shape: a single action at camp, then **sequential cards, no options** — the chat-pane rule
+holds (choosing to ask is a commit, like pulling the handbrake to talk to the Night Owl; there is no
+dialogue tree inside it).
+
 #### Open
 
-- **What breaks the streak?** Reusing FEAT-52's **cut-traversal completion event** (in one road, out a
-  different road) is unambiguous, already being built, and impossible to trip by accident — parking on
-  grass, using a shoulder, or sliding off a corner would never cost you anything. The alternative, a
-  distance threshold of off-route travel, is truer to "zero off-route travel" as written and revives
-  the Verge's terrain-fragility weighting, but needs tuning and can punish one bad corner.
 - **Per-mission or continuous across the run?**
 - **Can favour be rebuilt after a break, and does it return at the same rate?** A streak that resets to
-  zero is the simple answer; a slower re-climb would say he remembers.
-- **Does he have an angry state at all**, or only withdrawal? *Recommendation: withdrawal only* — the
-  owner rejected the toll model outright, and losing the banking is loss enough.
+  zero is the simple answer; a slower re-climb would say he remembers. Given he now *punishes*, this
+  matters more than it did — a permanent flattening after one cut would be brutal.
+- **How far below baseline does "stark" go?** Flat is the obvious floor. Genuinely **off-camber**
+  (negative) is available and would be vicious; it is also the `IDEAS.md` road-bender's "adversarial
+  twin" flavour, arriving here as a punishment rather than an opt-in. Owner's call.
 - **Fragile and freight cannot use cuts anyway**, so those missions bank Highway favour for free. Is
   "haul the careful cargo, stay legal, get the good corners" a coherent build or a loophole? It reads
   coherent, and it pairs with the durability parts axis.

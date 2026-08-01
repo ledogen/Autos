@@ -837,6 +837,11 @@ Three properties to keep as the cast grows: **no spirit is available from the st
 **the ledger fills while driving but the visit happens at camp**; and **the delay is one night**, so
 it reads as consequence rather than trigger.
 
+**Camp is also the consultation venue**, not only the introduction one: once met, a spirit can be
+*asked* something at the fire. The Highway answers with the **day's road camber** — a favour readout
+delivered in character rather than as a meter (SM-INV-3's posture). A single commit-action, then
+sequential cards; never a dialogue tree.
+
 *Known exception under discussion:* the **Night Owl** is a passenger, so the seat beside you is his
 natural staging and the doze already frames it. Whether his *first* meeting may break the rule is
 **open** — see `spirits-and-pacts.md` #01.
