@@ -1,8 +1,9 @@
 ---
 id: FEAT-30
 type: feature
-status: open
+status: completed
 opened: 2026-07-20
+closed: 2026-08-01
 severity: minor
 source: FEAT-29 resolution — par oracle shipped, PAR_REF uncalibrated
 relates_to: FEAT-29 (par oracle, src/par.js), story-mode beta mission harness (src/mission.js),
@@ -53,9 +54,37 @@ Two findings:
 
 ## Acceptance
 
-- [ ] A recorded set of ≥10 human drives with elapsed/par pairs across varied terrain.
-- [ ] `PAR_REF` tuned so a competent, committed drive lands near ratio 1.0 and a casual drive
+- [x] A recorded set of ≥10 human drives with elapsed/par pairs across varied terrain.
+- [x] `PAR_REF` tuned so a competent, committed drive lands near ratio 1.0 and a casual drive
       lands clearly above it — the payout curve has to be able to go negative.
 - [ ] The report-only human-drive bound in `test/par-oracle.mjs` upgraded from "plausible" to an
       actual recorded fixture, if a stable one exists.
-- [ ] Residual bias documented in the ticket resolution (which road character par still misreads).
+- [x] Residual bias documented in the ticket resolution (which road character par still misreads).
+
+## Resolution (2026-08-01)
+
+**PAR_REF recalibrated against 20 unique labelled human drives** (`runs/*.json`, felt labels off
+the result-card calibration form) with the new rainy-day fitter `test/calibrate-par.mjs`
+(rebuilds each run's par input from its exported topology, per-run junction-correction factor,
+sweeps mu × accel × brake against felt-class targets).
+
+**Shipped: mu 0.62 → 0.90 · accel 2.8 → 3.0 (measured) · brake 5.5 → 7.0 (measured).**
+Owner-picked from three candidate bands (balanced-bias point).
+
+Findings, per the acceptance's "document the residual bias":
+- At mu 0.62 par was uniformly generous: felt-SLOW drives graded A at ratio ~0.85. Broken
+  independent of taste — a lazy drive must not beat par (SM-INV-4's arithmetic).
+- The pass-2 ×0.85 "realization fraction" had the sign backwards: the reference is
+  centerline-bound while a human cuts the line with the road width, so effective centerline mu
+  EXCEEDS skidpad grip. The twisty-route bias in the residuals pointed straight at it.
+- Under mu 0.90/3.0/7.0: felt-par → ~0.92 median, felt-slow → ~0.99, felt-very-slow → ~1.2,
+  straighter/twistier residual halves balanced (+0.02/−0.05 log). Felt-par = 1.00 exactly is
+  unreachable under any physically-flavoured knobs — the felt labels carry ±1-class noise
+  ("fast" runs sit above "par" runs) — so par stays ~8% generous to a committed drive.
+- Acceptance item 3 (upgrade the par-oracle report-only human bound to a fixture): NOT done —
+  the felt labels proved too noisy to pin a stable single-run fixture; the 20-run set + fitter
+  in-repo is the reproducible artifact instead. Re-run `node test/calibrate-par.mjs` whenever
+  new labelled runs land.
+
+Knock-on: every par time shrinks ~15-19%, so FEAT-53 payouts (k·par) shrink with them and
+ratios rise — folded into FEAT-53 Phase D (k retune) rather than compensated here.

@@ -41,39 +41,40 @@
  * cuts are (a shorter route, not a modified par). Keep par blind to anything a run can change.
  */
 export const PAR_REF = {
-    // CALIBRATION (FEAT-30, 2026-07-20). Two passes:
+    // CALIBRATION (FEAT-30). Three passes:
     //
-    // (1) The headless constant-steer harness measured steady-state mu 0.577 mean, and I set
-    //     mu = 0.577 × 0.85 = 0.49 on the assumption that a human realizes only a FRACTION of the
-    //     steady-state envelope. That assumption was WRONG IN SIGN. Driving the lab skidpads, the
-    //     owner recorded mu 0.743 at R=25 m and 0.724 at R=60 m — comfortably ABOVE the harness.
-    //     So the harness is a LOWER bound on cornering, not the ceiling: its "settled trim" test
-    //     (radius drift < 12%, speed held < 12%) rejects exactly the ragged, slightly-sliding,
-    //     throttle-steered line a human actually corners on, and its coarse speed sweep only ever
-    //     reports the last speed that passed.
+    // (1) 2026-07-20, headless: the constant-steer harness measured steady-state mu 0.577 mean,
+    //     and mu was set to 0.577 × 0.85 = 0.49 assuming a human realizes only a FRACTION of the
+    //     steady-state envelope. WRONG IN SIGN — the owner's lab skidpad laps recorded mu 0.743
+    //     (R=25 m) and 0.724 (R=60 m), ABOVE the harness: its "settled trim" test rejects exactly
+    //     the ragged, throttle-steered line a human actually corners on. (The R=150 m reading,
+    //     0.647, is POWER limited, not grip limited — never average it in.)
     //
-    // (2) mu = 0.62 ≈ 0.73 (human skidpad) × 0.85, the fraction of a dedicated-skidpad limit that
-    //     survives real corners — transitions, sight lines, unknown camber, road width.
+    // (2) 2026-07-20: mu = 0.62 ≈ 0.73 (human skidpad) × 0.85, guessing 0.85 as the fraction of a
+    //     dedicated-skidpad limit that survives real corners.
     //
-    // NOTE the R=150 m skidpad reading (mu 0.647) is NOT a grip measurement and must not be
-    // averaged in: at that radius the truck is POWER limited (full throttle the whole lap) and
-    // never reaches the friction limit at all. Only the 25 m and 60 m laps bound grip.
+    // (3) 2026-08-01, fitted against 20 recorded human drives with subjective "felt" labels
+    //     (test/calibrate-par.mjs over runs/*.json). That 0.85 discount ALSO had the sign
+    //     backwards, for a different reason: the reference is CENTERLINE-BOUND, but a human cuts
+    //     the corner with the full road width, so the effective centerline mu of a committed drive
+    //     EXCEEDS physical skidpad grip — and the data shows it (at mu 0.62, drives that FELT
+    //     "slow" still graded A at ratio 0.85, and the fit's twisty-route bias pointed straight at
+    //     mu). mu here is a DESIGN knob for the payout curve, not a grip claim: 0.90 is the
+    //     owner-picked balanced-bias point where felt-par lands ~0.92, felt-slow finally stops
+    //     beating par (~0.99), and felt-very-slow prices ~1.2. accel/brake moved to the MEASURED
+    //     truck values (0-100 in ~8.5-9.5 s ⇒ ~3.0 m/s²; braking 7.0 m/s²) — the old brake 5.5
+    //     under-priced every corner entry. Felt-par = 1.00 exactly is unreachable under any
+    //     physically-flavoured setting (the felt labels carry ±1-class noise; "fast" runs sit
+    //     ABOVE "par" runs), so par stays ~8% generous to a committed drive — acceptable, the
+    //     brave day nets positive (SM-INV-4).
     //
-    // test/measure-vehicle-limits.mjs measured the stock truck's steady-state cornering envelope
-    // headlessly (open-loop constant-steer skidpad): mu 0.51–0.66 across radii 8–103 m, mean
-    // **0.577**, notably flat with radius. The shipped 0.75 was therefore ABOVE what the truck can
-    // do at any skill level — par was asking for corner speeds that are not merely hard but
-    // impossible. 0.49 = 0.577 × 0.85, where 0.85 is a PROVISIONAL guess at the fraction of the
-    // steady-state envelope a human realizes through transitions (turn-in, trail-braking, an
-    // open-diff RWD truck back on the power at exit). The testing lab's skidpads measure that
-    // fraction for real — mu_realized / 0.577 — and this number should be re-set from those laps.
-    //
-    // Note from the same work: mu is the DOMINANT dial. vMax is nearly free (these roads are
+    // Note from pass (1): mu is the DOMINANT dial. vMax is nearly free (these roads are
     // curvature-limited essentially everywhere — 42.6 vs 30.0 m/s moved par by under a second),
-    // and accel/brake are secondary. Tune HERE, never by touching the vehicle (SM-INV-2).
-    mu: 0.62,          // reference friction coefficient — see below
-    accel: 2.8,        // powertrain-limited longitudinal accel on the flat (m/s²)
-    brake: 5.5,        // braking decel cap (m/s²) — also friction-circle limited below
+    // and accel/brake are secondary. Tune HERE, never by touching the vehicle (SM-INV-2) — and
+    // re-run test/calibrate-par.mjs when new labelled runs land in runs/.
+    mu: 0.90,          // EFFECTIVE centerline friction — see (3): line-cutting, not tire grip
+    accel: 3.0,        // powertrain-limited longitudinal accel on the flat (m/s²) — measured
+    brake: 7.0,        // braking decel cap (m/s²) — measured; friction-circle limited below
     // vMax is the FLAT terminal speed, and it sets the drag coefficient (k = accel / vMax²)
     // rather than acting as a hard clamp. That matters: with a hard clamp, par hit the cap and
     // cruised regardless of gravity, so a long descent priced the same as flat ground — measured
