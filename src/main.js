@@ -2795,7 +2795,7 @@ function _renderRunHud () {
 // owner; the 2 h sleepy/tired slivers carry no inline label — the title names the current
 // stage in its colour (that's where the text goes when the band is too thin to hold it).
 const EM_PX_PER_H = 25
-const EM_VIEW_W = 200
+const EM_VIEW_W = 100
 let _emEls = null, _emStage = '', _emOn = false
 function _updateEnergyMeter () {
   if (!_emEls) {
