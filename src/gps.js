@@ -34,13 +34,22 @@ const CHEV_SPACING = 15     // m between chevrons — also the world lattice the
 const CHEV_HOVER   = 0.35   // m above the routed road surface
 const CHEV_FADE    = 3      // chevrons over which the far end ramps in
 const CHEV_NEAR    = 20     // m: a chevron fades out over the last stretch as you drive into it
-const ARROW_HOVER  = 1.2    // m: the board's bottom edge clears the road by this much
+const ARROW_HOVER  = 2.0    // m: the board's bottom edge clears the road by this much (owner-set)
 const ARROW_IN     = 140    // m: arrow starts fading in
 const ARROW_FULL   = 110    // m: fully opaque
 const ARROW_PAST   = 12     // m past the node before it is dropped
 const RING_HOVER   = 1.4
 const TAN_SPAN     = 20     // m of route averaged into the exit direction at a junction
 const REACQUIRE_M  = 40     // lateral error that forces a full-route re-scan
+// Progress search window, in baked vertices (× BAKE_DS for metres). The forward reach used to be
+// 40 vertices — 240 m — which is far more than a frame of travel and long enough to see the RETURN
+// leg of a hairpin. On a tight switchback the outbound and inbound legs pass within a few metres,
+// so the far leg wins the nearest test and `s` snaps ~55 m up the route: the chevron lattice
+// teleports past the bend and the driver watches them vanish. 15 vertices (90 m) still swallows any
+// plausible per-frame advance (~4 m at 145 km/h on a 100 ms frame) with 20× margin, while staying
+// well inside the ~50 m at which this network's hairpins fold back on themselves.
+const FWD_V        = 15
+const BACK_V       = 8
 const GPS_COLOR    = 0x66e0ff
 
 // ── pure route math (THREE-free — gated by test/gps-route.mjs) ──────────────────────────────
@@ -48,16 +57,32 @@ const GPS_COLOR    = 0x66e0ff
 /**
  * Flatten a mission route into a world polyline with elevation, plus its junctions.
  *
+ * ELEVATION SOURCE (the bug that made this overlay useless for its whole life): `seg.gradeAt` is
+ * the PAR ORACLE's elevation sampler — the routed design polyline (`_network.get(key).points[].y`,
+ * road.js `_gradeSampler`). That is NOT the surface the world carves. The carve, the ribbon mesh
+ * and the physics all read `RoadSystem.runProfile(s, runKey).gradeY`, a later pipeline stage, and
+ * the two disagree by a per-run offset of up to 27 m. Measured over 12 k baked vertices (seed 6):
+ * gradeAt lands 5.6 % of chevrons BELOW the road (depth-tested away → "they disappear") and 7.2 %
+ * more than a metre ABOVE it ("floating in the sky"), which is exactly the reported symptom set.
+ * runProfile tracks the real surface to 0.09 m at p90 — including at run ends, where the junction
+ * arrow stands. So GPS bakes from runProfile and keeps gradeAt only as the unstreamed fallback.
+ *
  * @param {Array<{centerline: {pointAt(s): {x,z}, length: number}, gradeAt: (s)=>number,
  *                s0: number, s1: number}>} segments  ordered in TRAVEL order; s1 < s0 means the
  *   edge is driven backwards (mission.js:424). Endpoints of the first/last edge are mid-edge.
+ * @param {(seg: object, s: number) => (number|null)} [elevAt]  design elevation at arc `s` on
+ *   `seg`, or null when that run is not streamed yet (then `seg.gradeAt` fills in and `partial` is
+ *   set, so the caller can re-bake once the network grows). Omitted ⇒ gradeAt, which is what the
+ *   headless fixtures in test/gps-route.mjs use.
  * @returns {{px: Float64Array, py: Float64Array, pz: Float64Array, cum: Float64Array,
- *            n: number, length: number, junctions: Array<{i:number,s:number,angle:number,turn:string}>}}
+ *            n: number, length: number, partial: boolean,
+ *            junctions: Array<{i:number,s:number,deg:number,ox:number,oz:number}>}}
  *   `cum` is cumulative 3D arc from the route start. `junctions[].i` indexes the shared vertex.
  */
-export function bakeRoute (segments) {
+export function bakeRoute (segments, elevAt = null) {
   if (!segments || segments.length < 1) return null
   const xs = [], ys = [], zs = [], joinIdx = []
+  let partial = false
 
   for (let si = 0; si < segments.length; si++) {
     const seg = segments[si]
@@ -68,7 +93,9 @@ export function bakeRoute (segments) {
     for (let j = (si === 0 ? 0 : 1); j <= n; j++) {
       const s = seg.s0 + span * (j / n)
       const p = seg.centerline.pointAt(s)
-      xs.push(p.x); ys.push(seg.gradeAt(s)); zs.push(p.z)
+      let y = elevAt ? elevAt(seg, s) : null
+      if (y == null) { y = seg.gradeAt(s); if (elevAt) partial = true }
+      xs.push(p.x); ys.push(y); zs.push(p.z)
     }
     if (si < segments.length - 1) joinIdx.push(xs.length - 1)
   }
@@ -79,7 +106,7 @@ export function bakeRoute (segments) {
   for (let i = 1; i < n; i++) {
     cum[i] = cum[i - 1] + Math.hypot(px[i] - px[i - 1], py[i] - py[i - 1], pz[i] - pz[i - 1])
   }
-  const route = { px, py, pz, cum, n, length: cum[n - 1], junctions: [] }
+  const route = { px, py, pz, cum, n, length: cum[n - 1], partial, junctions: [] }
 
   // Only REAL intersections get an arrow. `endDeg` is the degree of the graph node the edge ends
   // at (tagged in mission.js `_roll()`); degree 2 is the road bending through, and no angle
@@ -106,7 +133,7 @@ export function bakeRoute (segments) {
  * @returns {{idx: number, s: number, lat: number}} s = arc along the route, lat = lateral error.
  */
 export function advanceProgress (route, x, z, lastIdx = 0) {
-  let best = _scanNearest(route, x, z, Math.max(0, lastIdx - 8), Math.min(route.n - 1, lastIdx + 40))
+  let best = _scanNearest(route, x, z, Math.max(0, lastIdx - BACK_V), Math.min(route.n - 1, lastIdx + FWD_V))
   if (best.lat > REACQUIRE_M) {
     const full = _scanNearest(route, x, z, 0, route.n - 1)
     if (full.lat < best.lat) best = full
@@ -151,6 +178,9 @@ function _unit (x, z) {
 /**
  * Interpolated world point + travel direction at arc `s` along the route.
  * `hint` is a starting vertex index (the caller marches forward, so this is O(1) amortised).
+ *
+ * `grade` is the signed rise-over-run of the span (dy / horizontal length) — the road's pitch at
+ * this point, which the chevrons lie back into so they are not met edge-on on a climb.
  */
 export function sampleRoute (route, s, hint = 0) {
   const { px, py, pz, cum, n } = route
@@ -160,12 +190,16 @@ export function sampleRoute (route, s, hint = 0) {
   while (i < n - 2 && cum[i + 1] < sc) i++
   const span = cum[i + 1] - cum[i]
   const t = span > 1e-6 ? (sc - cum[i]) / span : 0
-  const dir = _unit(px[i + 1] - px[i], pz[i + 1] - pz[i]) || { x: 0, z: 1 }
+  const ex = px[i + 1] - px[i], ey = py[i + 1] - py[i], ez = pz[i + 1] - pz[i]
+  const dir = _unit(ex, ez) || { x: 0, z: 1 }
+  const horiz = Math.hypot(ex, ez)
   return {
-    x: px[i] + (px[i + 1] - px[i]) * t,
-    y: py[i] + (py[i + 1] - py[i]) * t,
-    z: pz[i] + (pz[i + 1] - pz[i]) * t,
-    dx: dir.x, dz: dir.z, idx: i,
+    x: px[i] + ex * t,
+    y: py[i] + ey * t,
+    z: pz[i] + ez * t,
+    dx: dir.x, dz: dir.z,
+    grade: horiz > 1e-6 ? ey / horiz : 0,
+    idx: i,
   }
 }
 
@@ -227,16 +261,21 @@ function _arrowGeometry () {
 export class GpsSystem {
   /**
    * @param {THREE.Scene} scene
-   * @param {{ getRoute: () => object|null, getCar: () => {x:number,z:number} }} opts
+   * @param {{ getRoute: () => object|null, getCar: () => {x:number,z:number},
+   *           getRoad?: () => object|null }} opts
    *   getRoute returns the live mission object (with `.segments`) while navigation should be
    *   shown, else null. Identity change ⇒ rebake.
+   *   getRoad returns the RoadSystem, read ONLY at bake time (not per frame) for the design
+   *   profile the carve actually uses — see bakeRoute's ELEVATION SOURCE note.
    */
-  constructor (scene, { getRoute, getCar }) {
+  constructor (scene, { getRoute, getCar, getRoad = null }) {
     this._scene = scene
     this._getRoute = getRoute
     this._getCar = getCar
+    this._getRoad = getRoad
     this._route = null
     this._src = null          // the mission object the current bake came from (identity compare)
+    this._bakeRev = -1        // road._networkRev the current bake was taken at
     this._idx = 0
     this._t = 0
 
@@ -291,7 +330,25 @@ export class GpsSystem {
   }
 
   /** Drop the baked route (seed change / world teardown). Re-bakes on the next update. */
-  clearRoute () { this._route = null; this._src = null; this._hideAll() }
+  clearRoute () { this._route = null; this._src = null; this._bakeRev = -1; this._hideAll() }
+
+  /**
+   * Design elevation on `seg` at arc `s`, from the SAME profile the carve, the ribbon mesh and the
+   * physics read — `RoadSystem.runProfile(...).gradeY`. Returns null when the run is not in the
+   * network (the far end of a long route is often not streamed yet at offer time), so bakeRoute
+   * can fall back and flag the bake `partial`; `update` then re-bakes as the network grows.
+   *
+   * runProfile is keyed on the run's own arc, this passes the centerline arc. They coincide here:
+   * measured over 5 k route samples on seed 6 the resulting elevation matches the carved surface to
+   * 0.09 m at p90 (0.26 m worst within 10 m of a run end, where the junction arrow stands) — pinned
+   * by test/gps-route.mjs so a re-parameterisation of either arc cannot drift this silently.
+   */
+  _profileY (seg, s) {
+    const road = this._getRoad?.()
+    if (!road || !seg.runKey || !road._network?.has(seg.runKey)) return null
+    const p = road.runProfile(s, seg.runKey)
+    return Number.isFinite(p?.gradeY) ? p.gradeY : null
+  }
 
   _hideAll () { this._chev.visible = false; this._arrow.visible = false; this._ring.visible = false }
 
@@ -302,9 +359,15 @@ export class GpsSystem {
       if (this._route) this.clearRoute()
       return
     }
-    if (mission !== this._src) {
+    // Re-bake on a new mission, and also whenever the road network has grown under a PARTIAL bake:
+    // a route baked at offer time reaches past the streamed band, and those far segments fell back
+    // to the (wrong-by-metres) par sampler. One cheap revision compare per frame; the bake itself
+    // only re-runs while something is still missing.
+    const rev = this._getRoad?.()?._networkRev ?? -1
+    if (mission !== this._src || (this._route?.partial && rev !== this._bakeRev)) {
       this._src = mission
-      this._route = bakeRoute(mission.segments)
+      this._route = bakeRoute(mission.segments, (seg, s) => this._profileY(seg, s))
+      this._bakeRev = rev
       this._idx = 0
     }
     const route = this._route
@@ -349,7 +412,13 @@ export class GpsSystem {
       const p = sampleRoute(route, sc, hint)
       hint = p.idx
       d.position.set(p.x, p.y + CHEV_HOVER, p.z)
-      d.rotation.set(0, Math.atan2(p.dx, p.dz), 0)   // rotY maps local +Z onto (sin, cos)
+      // Yaw onto the travel direction (rotY maps local +Z onto (sin, cos)), then PITCH the glyph
+      // back into the road's slope. Flat-in-XZ chevrons are met almost exactly edge-on by the chase
+      // cam on a climb — the one orientation that hides a shape — so on an uphill they thinned to a
+      // line. Lying in the road plane instead, the camera sees the same face it sees of the tarmac.
+      // Rotation order matters: yaw about world Y first, then pitch about the glyph's own X.
+      d.rotation.set(0, Math.atan2(p.dx, p.dz), 0)
+      d.rotateX(-Math.atan(p.grade))
       d.scale.setScalar(1)
       d.updateMatrix()
       this._chev.setMatrixAt(i, d.matrix)
