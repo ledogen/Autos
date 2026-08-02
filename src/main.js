@@ -2794,7 +2794,7 @@ function _renderRunHud () {
 // colours are derived once from DAY_PARAMS/STAGE_COLOR so the palette and thresholds have one
 // owner; the 2 h sleepy/tired slivers carry no inline label — the title names the current
 // stage in its colour (that's where the text goes when the band is too thin to hold it).
-const EM_PX_PER_H = 25
+const EM_PX_PER_H = 25   // also baked into the .em-strip::after hour-tick gradient — keep in step
 const EM_VIEW_W = 100
 let _emEls = null, _emStage = '', _emOn = false
 function _updateEnergyMeter () {

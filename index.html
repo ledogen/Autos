@@ -324,6 +324,14 @@
       display: flex;
       /* no transition: the per-frame transform IS the animation */
     }
+    /* Hour ticks, riding the strip: one dark hairline per in-game hour (25px = EM_PX_PER_H in
+       main.js — keep in step) so the creep reads even inside a long single-colour band. */
+    #energy-meter .em-strip::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: repeating-linear-gradient(90deg,
+        transparent 0, transparent 24px, rgba(0, 0, 0, 0.3) 24px, rgba(0, 0, 0, 0.3) 25px);
+    }
     #energy-meter .em-seg {
       height: 100%;
       flex: none;
