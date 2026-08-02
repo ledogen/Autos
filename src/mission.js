@@ -298,9 +298,13 @@ export class MissionSystem {
     _launch({ seat = true, setSpawn = false } = {}) {
         const s = this.mission.start
         if (seat) this._teleport(s.x, s.z, s.heading)
-        // AFTER the seat, so this reads "where the run begins" in both cases: the POI pad you are
-        // parked on, or the start pin you were just moved to.
-        if (setSpawn) this._setSpawn?.()
+        // Spawn-checkpoint write, ONLY when we did not just teleport. The teleport's own spawn
+        // override already IS the respawn pose (the start pin), and the reseat it queues is
+        // ASYNC — calling setSpawn here on the same tick would overwrite that override with the
+        // PRE-teleport pose, and the queued reseat would then land the truck right back where it
+        // stood (BUG 2026-08-01: "quick job no longer teleports you"). For a POI job (no seat)
+        // this reads the pad you are parked on, which is exactly the checkpoint we want.
+        if (setSpawn && !seat) this._setSpawn?.()
         this._setMapOpen(false)
         this.state = 'countdown'
         this._polyIdx = 0            // route-remaining projection restarts at the start pin
