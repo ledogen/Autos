@@ -292,6 +292,63 @@
     #run-hud .rh-money { font-size: 17px; color: #8ce99a; }
     #run-hud .rh-deeds { color: #ffcf3c; }
 
+    /* FEAT-55: the Energy meter (RoR2 ticker), top-right under the wallet. Story-only; shown and
+       scrolled per frame by _updateEnergyMeter. Segment colours come from day.js STAGE_COLOR via
+       JS so the palette has one owner. */
+    #energy-meter {
+      display: none;
+      position: fixed;
+      top: 82px;
+      right: 14px;
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid #3a4450;
+      padding: 6px 10px 8px;
+      font-family: monospace;
+      font-size: 12px;
+      color: #e6ecf2;
+      z-index: 88;
+      pointer-events: none;
+    }
+    #energy-meter .em-title { margin-bottom: 4px; text-align: left; }
+    #energy-meter .em-view {
+      position: relative;
+      width: 200px;
+      height: 16px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid #55606b;
+    }
+    #energy-meter .em-strip {
+      position: absolute;
+      left: 0; top: 0; height: 100%;
+      display: flex;
+      /* no transition: the per-frame transform IS the animation */
+    }
+    #energy-meter .em-seg {
+      height: 100%;
+      flex: none;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: bold;
+      color: rgba(0, 0, 0, 0.72);   /* dark label on the coloured band, RoR2-style */
+      border-right: 1px solid rgba(0, 0, 0, 0.35);
+    }
+    /* The 2 h slivers can't hold text — the title's stage word covers them. */
+    #em-seg-sleepy span, #em-seg-tired span { display: none; }
+    /* The fixed pointer: a centre caret + hairline the strip scrolls beneath. */
+    #energy-meter .em-pointer {
+      position: absolute;
+      left: 50%; top: 0; height: 100%; width: 0;
+      border-left: 1px solid rgba(255, 255, 255, 0.9);
+    }
+    #energy-meter .em-pointer::before {
+      content: '';
+      position: absolute;
+      left: -5px; top: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-top: 5px solid #ffffff;
+    }
+
     /* FEAT-53: payout / good-deeds line on the mission result card. */
     #mission-panel .mp-pay { font-size: 18px; color: #8ce99a; }
 
@@ -683,6 +740,24 @@
        block off economySystem.snapshot(); deliberately its own element so the mission-hud running
        surface stays byte-identical (SM-INV-3). -->
   <div id="run-hud"><span class="rh-money">$0</span><br><span class="rh-deeds">0 good deeds</span></div>
+
+  <!-- FEAT-55: the Energy meter — a RoR2-style ticker. The stage strip scrolls RIGHT-to-left
+       under a fixed centre pointer as energy drains; segment widths are hours at the meter's
+       px/h scale (rested and exhausted are long, sleepy/tired are 2 h slivers, so only the wide
+       segments carry inline labels — the title names the CURRENT stage in its colour). Widths,
+       colours and the scroll transform are all written by _updateEnergyMeter in main.js. -->
+  <div id="energy-meter">
+    <div class="em-title">Energy&ensp;·&ensp;<span id="em-stage">rested</span></div>
+    <div class="em-view">
+      <div class="em-strip" id="em-strip">
+        <div class="em-seg" id="em-seg-rested"><span>Rested</span></div>
+        <div class="em-seg" id="em-seg-sleepy"><span>Sleepy</span></div>
+        <div class="em-seg" id="em-seg-tired"><span>Tired</span></div>
+        <div class="em-seg" id="em-seg-exhausted"><span>Exhausted</span></div>
+      </div>
+      <div class="em-pointer"></div>
+    </div>
+  </div>
 
   <!-- FEAT-46: "park to begin mission" prompt, shown when the truck is stopped beside a POI cube.
        Latching the parking brake (Space) there is what opens the offer — see _updatePoiPrompt. -->

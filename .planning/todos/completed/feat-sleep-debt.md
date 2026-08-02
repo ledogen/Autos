@@ -42,6 +42,20 @@ colours — sleepy = yellow, tired = orange, exhausted = red.**
   night from −2 wakes at 14 not full, and a 4 h worst-site night from −8 wakes at −8/3 — still
   exhausted. The "empty + 8 h = full" headline now starts from exactly 0.
 
+## Follow-up rulings, same day (built in the follow-up commit)
+
+- **Rested is GREEN** (`#7ed957`), not white — STAGE_COLOR's one-day-old white is gone.
+- **Debug energy jumps**: `Story · Day` GUI gains a nested `set energy` folder — 6 h / 4 h
+  (sleepy) / 2 h (tired) / 0 h (exhausted) buttons over a new clamped `DaySystem.setEnergy(h)`.
+- **The Energy meter** (`#energy-meter`, top-right under the wallet, story-only): a RoR2-style
+  ticker — the stage strip (rested green 12 h · sleepy 2 h · tired 2 h · exhausted red 8 h, at
+  25 px/h) scrolls right-to-left under a fixed centre caret as energy drains, per-frame so the
+  creep is visible at the 24-min day. The 2 h slivers are too thin for labels: wide segments
+  carry inline text, and the title ("Energy · <stage>") names the current stage in its colour.
+  Widths/colours derive from DAY_PARAMS/STAGE_COLOR in `_updateEnergyMeter` (one owner).
+  Owner ruling supersedes the FEAT-47 "the eyelids ARE the readout" stance for energy;
+  SM-INV-3 is untouched (no par, no ETA — energy is body state, not mission state).
+
 ## Acceptance
 
 - [x] Energy drains below 0 to a −8 floor; 0 h and −4 h bedtimes are different nights (gate)

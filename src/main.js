@@ -54,7 +54,7 @@ import { MissionSystem, MISSION_PLAN_RADIUS, PLAN_RESTREAM_MOVE } from './missio
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { PoiSystem, POI_PARAMS } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
-import { DaySystem, STAGE_COLOR } from './day.js'        // FEAT-47: story-mode day clock (drives the sky)
+import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, RANK_COLOR, formatDeeds } from './economy.js'  // FEAT-53: payout, wallet, good deeds
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist (in-world route arrows)
@@ -2786,6 +2786,58 @@ function _renderRunHud () {
   el.style.display = 'block'
 }
 
+// ── FEAT-55: the Energy meter (RoR2 ticker, top-right under the wallet) ────────────────────
+// The stage strip scrolls under a fixed centre pointer as energy drains — the strip is the
+// [fullEnergyH … −sleepDebtMaxH] timeline at EM_PX_PER_H, so one in-game hour of waking is a
+// constant number of pixels of scroll. Per-frame (one transform write) because the scroll is
+// the point: at the 24-min day it creeps visibly, exactly the RoR2 feel. Segment widths and
+// colours are derived once from DAY_PARAMS/STAGE_COLOR so the palette and thresholds have one
+// owner; the 2 h sleepy/tired slivers carry no inline label — the title names the current
+// stage in its colour (that's where the text goes when the band is too thin to hold it).
+const EM_PX_PER_H = 25
+const EM_VIEW_W = 200
+let _emEls = null, _emStage = '', _emOn = false
+function _updateEnergyMeter () {
+  if (!_emEls) {
+    const root = document.getElementById('energy-meter')
+    if (!root) return
+    _emEls = {
+      root,
+      strip: document.getElementById('em-strip'),
+      stage: document.getElementById('em-stage'),
+      segs: {
+        rested:    document.getElementById('em-seg-rested'),
+        sleepy:    document.getElementById('em-seg-sleepy'),
+        tired:     document.getElementById('em-seg-tired'),
+        exhausted: document.getElementById('em-seg-exhausted'),
+      },
+    }
+    const full = daySystem.fullEnergyH()
+    const hours = {
+      rested:    full - DAY_PARAMS.sleepyAtH,
+      sleepy:    DAY_PARAMS.sleepyAtH - DAY_PARAMS.tiredAtH,
+      tired:     DAY_PARAMS.tiredAtH,
+      exhausted: -daySystem.debtFloorH(),
+    }
+    for (const [k, el] of Object.entries(_emEls.segs)) {
+      el.style.width = `${hours[k] * EM_PX_PER_H}px`
+      el.style.background = STAGE_COLOR[k]
+    }
+  }
+  const on = storySystem.isActive() && !storySystem.isEntering()
+  if (on !== _emOn) { _emOn = on; _emEls.root.style.display = on ? 'block' : 'none' }
+  if (!on) return
+  const e = daySystem.energyH()
+  _emEls.strip.style.transform =
+    `translateX(${EM_VIEW_W / 2 - (daySystem.fullEnergyH() - e) * EM_PX_PER_H}px)`
+  const st = daySystem.stage()
+  if (st !== _emStage) {
+    _emStage = st
+    _emEls.stage.textContent = st
+    _emEls.stage.style.color = STAGE_COLOR[st]
+  }
+}
+
 // FEAT-46: the mission panel's seed control is GONE. You choose the world when you enter story mode
 // (#story-seed-modal), and offering it again in the job panel meant a full world rebuild could fire
 // under a live mission planner mid-run. The debug panel's seed field remains the one testing path.
@@ -3650,6 +3702,8 @@ function loop () {
   // the attenuation lag the blink. Two style writes on cached elements — cheap enough to afford.
   setControlAttenuation(daySystem.attenuation())   // identically 1 outside a doze
   _updateDozeOverlay(daySystem.eyelidFactor())
+  // FEAT-55: the Energy meter scrolls on the same per-frame cadence — the creep is the display.
+  _updateEnergyMeter()
 
   // FEAT-22: water submersion flag — CG vs the local water surface (pond plane). Once per render
   // frame (not per physics substep): v1 only SETS the flag; nothing in stepPhysics consumes it yet.

@@ -89,9 +89,10 @@ export const DAY_PARAMS = {
 /**
  * Deprivation-stage colours (owner, 2026-08-02): the sleep slider + energy meter wear the stage.
  * sleepy/tired/exhausted deliberately reuse the ratified rank hexes for B/C/D (economy.js
- * RANK_COLOR — yellow/orange/red mean the same escalation everywhere); rested is neutral white.
+ * RANK_COLOR — yellow/orange/red mean the same escalation everywhere); rested is green
+ * (owner, 2026-08-02 — was white for a day; green reads "healthy" on the energy meter).
  */
-export const STAGE_COLOR = { rested: '#ffffff', sleepy: '#ffdc3c', tired: '#ff9f43', exhausted: '#ff5a4e' }
+export const STAGE_COLOR = { rested: '#7ed957', sleepy: '#ffdc3c', tired: '#ff9f43', exhausted: '#ff5a4e' }
 
 export const runState = {
     day: 1,   // 1-based day index of the current run; increments at each midnight crossed
@@ -217,6 +218,16 @@ export class DaySystem {
     drinkCoffee () {
         this._energyH = Math.min(DAY_PARAMS.fullEnergyH, this._energyH + DAY_PARAMS.coffeeReliefH)
         this._coffeeDebt += DAY_PARAMS.coffeeDebtH
+        this._syncGui()
+    }
+
+    /**
+     * FEAT-55 debug: jump the meter to an exact energy value (clamped to the meter's domain).
+     * Pure state write — the blink scheduler re-reads the stage on the next update() tick, and
+     * the tired signal re-arms through the same crossing logic a coffee uses.
+     */
+    setEnergy (h) {
+        this._energyH = Math.max(-DAY_PARAMS.sleepDebtMaxH, Math.min(DAY_PARAMS.fullEnergyH, h))
         this._syncGui()
     }
 
@@ -473,6 +484,21 @@ export class DaySystem {
         f.add(acts, 'blink').name('force blink')
         f.add(acts, 'blinksEnabled').name('blinks enabled')
             .onChange(v => this.setBlinksEnabled(v))
+
+        // FEAT-55 debug: jump straight to a stage boundary (owner-requested rig — exercising the
+        // doze ladder and the energy meter without driving a day out). Values, not deltas.
+        const fe = f.addFolder('set energy')
+        const jump = {
+            rested:    () => this.setEnergy(6),
+            sleepy:    () => this.setEnergy(DAY_PARAMS.sleepyAtH),
+            tired:     () => this.setEnergy(DAY_PARAMS.tiredAtH),
+            exhausted: () => this.setEnergy(0),
+        }
+        fe.add(jump, 'rested').name('6 h — rested')
+        fe.add(jump, 'sleepy').name('4 h — sleepy')
+        fe.add(jump, 'tired').name('2 h — tired')
+        fe.add(jump, 'exhausted').name('0 h — exhausted')
+        fe.close()
         return f
     }
 
