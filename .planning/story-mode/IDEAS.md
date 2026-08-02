@@ -108,93 +108,52 @@ MILESTONES.md SM-4 (region unlock = Roamer's old trails, main-mission gated) and
 
 ---
 
-## The road-bender spirit: camber as the thing that shifts — 2026-07-21
+## ~~The road-bender spirit~~ → **THE HIGHWAY** — 2026-07-21, promoted 2026-08-01
 
-A **spirit** (rule-change facet of the Roamer, per SM-INV-9) whose whole signature is that it
-**bends the roads themselves**. The world already banks its corners from curvature
-(`camberStrength · κ`, clamped ±20°, live-tunable via the Road Surface slider); this spirit reaches
-into that dial as its way of re-pointing a run.
+**This entry is spec now. It lives in `spirits-and-pacts.md` #05.**
 
-Flavours, weakest → boldest:
-- **Working-with-it raises the bank.** The more you travel with / earn favor from this spirit across
-  a run, the more it tilts the roads into their corners — banking climbs toward the ±20° ceiling.
-  High bank = you can carry more speed through a curve without the tires letting go, so par-beating
-  lines open up. This is the "makes it easier to drive fast" reading.
-- **…but bank is double-edged (the trade that keeps it SM-INV-9-legal).** Camber is not free speed.
-  Past a point the same tilt that saves a grippy corner **invites rollover** on the truck's high CoG
-  (this is exactly the over-bank failure the physics note in `data/ranger.js` warns about), and it
-  bites hardest on tight hairpins where the clamp saturates. So a road-bender run isn't "+grip"; it's
-  "the roads now reward commitment and punish sloppiness" — a reshaped run, not a raised floor.
-- **The adversarial twin — it banks the roads *against* you.** The mirror spirit tilts camber the
-  *wrong* way (off-camber / reverse-banked corners), or randomizes it corner-to-corner so you can't
-  trust the road to hold you. A "harder to drive quickly" run you opt into for a bigger reward.
-- **Camber that progresses over the day (couples to the doze clock).** Rather than a fixed bank, the
-  tilt **drifts as the day wears on** — mellow and forgiving in the morning, steepening toward
-  evening as you get sleepy. Now the sleep/doze axis (SM-INV-1) and the road's drivability move
-  together: the world literally leans harder the longer you push past rest. Ties this spirit to the
-  night-owl/camper pair above (reckless-nights ↔ restful-days).
-- **Randomized per-run camber as a run seed.** A run where the spirit rolls a camber *character*
-  (mild / aggressive / off-camber / progressing) — variety in what the roads feel like, unlocked into
-  the deck like any other spirit facet.
+The road-bender was an idea in search of a character — a spirit whose whole signature was that it
+**bends the roads themselves**, reaching into the camber dial to re-point a run. The Highway is a
+character who *is* a road, and it wanted exactly this boon. Two ideas from different months turned out
+to be one thing, so the sketch has been deleted rather than parked; `spirits-and-pacts.md` #05 carries
+all of it, corrected:
 
-Why it's a natural fit right now: camber just became a **real-time, on-demand dial** (the slider
-recomputes banking live via `invalidateProfileCaches` / `_networkRev`, and the clamp went ±6°→±20°),
-so a story system *can* drive it per-run/over-time without a regen. The mechanism a spirit would need
-already exists.
+- **working-with-it raises the bank** → the boon;
+- **bank is double-edged** (rollover on a high-CoG truck) → what makes it SM-INV-9-legal with no
+  bolted-on guardrail. This entry called that in July and it held up;
+- **the adversarial twin** → not needed. The Shortcut is the opposition, and it opposes by shortening
+  the *route* rather than worsening the road;
+- **camber as a live dial** → still true, and now load-bearing. Two constraints the sketch did not
+  anticipate: the mechanism is a **saturating superelevation** (`camberFromCurvature`, `src/road.js`),
+  not the old `camberStrength · κ` clamped at ±20°, so **`camberKneeRadiusM` is the favour knob** and
+  `camberMaxAngleDeg` is the wrong one; and **par must never read camber** (now stated inline in
+  `src/par.js`) or the boon would move par and violate SM-INV-2.
 
-Guardrails when this gets real:
-- **SM-INV-9 — re-weight, don't hand out.** More bank must stay *bought with risk* (rollover
-  exposure, off-camber elsewhere, or the day-progression tax), never a flat "+cornering" buff. If it
-  reads as free speed, it's the balance-sheet erosion the invariant forbids.
-- **SM-INV-7/8 — breadth, not floor.** The bent roads are a run *shape*; nothing about the tilt
-  persists as power between runs.
-- **SM-INV-1 — dozing stays real.** The day-progression flavour leans on the doze clock; it must
-  couple to it, never soften or cancel the "eyes shut on a mountain road, physics decides" reality.
-- **Honest-emergence (repo feedback `emergent_over_injected`).** Prefer driving the *existing*
-  `camberStrength` / `MAX_CAMBER` / sign so the character *emerges* from the physics the player
-  already trusts, rather than bolting on a bespoke "story camber" layer beside it.
+**What did *not* get promoted, kept here because that is what this file is for:**
 
-Owner-only, don't invent: whether the road-bender is benevolent (guide) or has teeth (Roamer motive,
-Open Q1), and how the adversarial twin's reward is priced.
+- **Off-camber / reverse-banked corners.** Considered and **rejected as not fun** [owner, 2026-08-01].
+  Flat is the punished floor. Parked, not adopted.
+- **Camber that drifts over the day**, steepening toward evening as you tire — superseded by something
+  better (camber moves at *day boundaries* as a function of favour, so the road changes overnight for
+  a reason the player caused), but the doze-coupling instinct is still unspent and could carry a
+  different mechanic.
+- **Randomized per-run camber character** (mild / aggressive / progressing) as a run seed. Never ruled
+  on. Note it would collide with the Highway owning camber — one dial, one owner.
 
-**Update 2026-07-29 — spirits deferred** (`design-amendments-2026-07-29.md` §4): meta-progression is
-the garage now, so a road-bender *spirit* has no carrier. The camber-as-a-live-dial observation
-survives intact regardless of what eventually drives it.
+> **Reopened and re-closed 2026-08-02.** The 20-day run voided the 5-day favour climb, and the owner
+> wanted the pair **co-holdable** rather than a forced lane choice. Both are resolved in
+> `spirits-and-pacts.md` #05/#06, which was rebuilt: **there is no climb to time any more.** Favour is
+> now **loss aversion** — the Highway is *pleased by the status quo*, so camber rises simply as a run
+> matures and is **dented, never reset**, by intentional non-shortcut skips. Cuts don't offend him at
+> all; both spirits are roads, and what he can't forgive is driving as though roads don't matter.
+> His boon also gained a second half — **hazard suppression** (FEAT-26's event rate keyed to favour),
+> making it *maintenance* rather than just banking.
+>
+> **The off-camber idea below stays parked**, and is now doubly so: flat is the floor the punishment
+> *approaches*, graded by how much road distance you skipped.
 
-**→ CARRIER FOUND 2026-08-01: this is THE HIGHWAY.** [RATIFIED] The road-bender was an idea in search
-of a character; the Highway is a character who *is* a road. Its boon is exactly this entry's first
-flavour — **camber climbs toward the clamp as favour deepens, and relaxes when you take a cut**
-(`spirits-and-pacts.md` #05). Everything sketched here survived intact and is now spec:
-
-- the **working-with-it raises the bank** reading is the boon;
-- the **double-edged** note is what makes it SM-INV-9-legal without a guardrail (bank invites rollover
-  on a high-CoG truck, worst at saturated hairpins) — this entry called that in July;
-- the **adversarial twin** is not needed: the Shortcut is the opposition, and it opposes by making the
-  *route* shorter rather than the road worse;
-- the **day-progression** flavour is superseded by something better — camber now moves at day
-  boundaries as a function of **favour**, so the road changes overnight for a reason the player
-  caused (SM-INV-11's parameter-state channel doubling as the favour readout, with no meter).
-
-One constraint this entry did not anticipate, now stated inline in `src/par.js`: **par must never read
-camber**, or the boon would move par and violate SM-INV-2. Par sees curvature and grade only.
-
-**⚠ The mechanism described above is stale.** This entry (and the first draft of #05) described
-`camberStrength · κ` hard-clamped at ±20°. That model is **gone** — camber is now a **saturating
-superelevation** function (`camberFromCurvature`, `src/road.js`), self-bounding with no clamp:
-`camber(κ) = camberMaxAngleDeg · |κ| / (|κ| + 1/camberKneeRadiusM)`. Effective gain *decreases* with
-curvature, so there is **more bank per unit curvature on sweepers than hairpins** — which is better for
-the Highway than the old model was, and it changes which knob to turn. **`camberKneeRadiusM` is the
-favour dial** (raise it to push strong banking out to gentler curves); `camberMaxAngleDeg` is the wrong
-one, since hairpins already sit near the asymptote. See #05.
-
-**Two numbers ratified 2026-08-01:** the shipped defaults are the **day-1 baseline**; **5 days with no
-shortcuts** reaches full favour; **flat is the punished floor**, and favour **rebuilds more slowly than
-it built**. The adversarial-twin / off-camber flavour sketched above is **rejected as not fun** —
-retained here as an idea, not a plan.
-
-Related: DESIGN.md "The Roamer", SM-INV-9 (spirits = rules not resources), SM-INV-7/8 (breadth), 
-SM-INV-1 (doze); the night-owl/camper pair above (day-progression ties them together); MILESTONES.md
-SM-5 (spirits land here). Naming (*spirit* vs *sprite*) still unsettled per the pair above.
+Related: DESIGN.md "The Roamer", SM-INV-9 (spirits = rules not resources), SM-INV-7/8 (breadth),
+SM-INV-1 (doze); MILESTONES.md SM-5 (spirits land here). Naming (*spirit* vs *sprite*) still unsettled.
 
 ---
 

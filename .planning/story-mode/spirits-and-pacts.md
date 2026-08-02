@@ -17,7 +17,7 @@ pass). The document below has been updated; this table records what changed and 
 | 1 | Spirits are the carrier of meta-progression; "Meta" persistence = a spirit "exists in all future worlds" once unlocked | **Spirits are not meta-persistent — and they don't need to be.** Every spirit is present in **every run including the first**. What persists is only whether the player has *met* them (a **story key** — the one thing SM-INV-8 still lets through). See "The visibility model" below. |
 | 2 | Cross-run accumulation ledgers ("a career total that survives death") | **Kept, but moved off the run.** Career totals are an **account-level stats screen**, not the in-run persona's ledger and not a spirit's unlock condition. They may unlock **garage entries** (the garage legally persists), never in-run power. See "Career stats" below. |
 | 3 | "camping is a location and not a menu option" | **Superseded phrasing** — SM-INV-6 reversed 2026-07-19: camping is a **button gated by campable ground**. Argument survives, wording corrected. |
-| 4 | "a 24–48 minute day" | **24-minute days RATIFIED 2026-07-29** (~10–15 days per run). The ledger is *harder* than this doc assumed. **Superseded 2026-07-31:** the ledger is **10 km tired**, not hours — see #01 "Summoning". |
+| 4 | "a 24–48 minute day" | **24-minute days RATIFIED 2026-07-29.** **Superseded 2026-07-31:** the ledger is **10 km tired**, not hours — see #01 "Summoning". **Re-derived 2026-08-02:** the run is **20 days** (16 waking h each), so the ledger is *easier* per day, not harder — ten may want to be fifteen or twenty. |
 | 5 | *(found in this pass)* Re-summon threshold halves, once met | **Dropped — the first threshold is the full one in every run.** A permanently cheaper threshold is meta-progression: run 50 would reach the pact in half the tired-hours run 1 needed, which makes late runs comfortable and fails SM-INV-9's litmus test. *(Unit corrected 2026-07-31: 10 km, not 10 h.)* **This reverts a rule the Provenance section records as owner-ratified**, deliberately. |
 
 **Net effect: the characters survive completely intact.** The taxonomy, domains, ledger *shapes*,
@@ -164,6 +164,11 @@ Five axes. Every entry below fills all five, so the catalog stays comparable as 
 - **Warden spirit** — not opt-in. Once present, it watches whether the player likes it or not.
   It holds a disposition that starts neutral and mostly degrades. It expresses itself through
   world-state changes rather than stat modifiers.
+- **Relationship spirit** — *(added 2026-08-02)* not opt-in and **no bargain at all.** Favour accrues
+  and decays from what you drive; there is no accept/decline moment anywhere. Distinct from a warden
+  in being genuinely **two-sided** — it can reward as readily as it withdraws. **The entire route
+  domain (#05/#06) is this class**, and it is the only class that permits two spirits to be
+  **co-held**: with nothing to opt into, there is nothing to opt out of.
 - **Trader spirit** — *(reserved)* one-shot exchanges at discovered locations. Placeholder for
   the fishing/item economy work.
 
@@ -174,6 +179,12 @@ the bargain isn't neutral — it's a decision the spirit noticed.
 not a fixed type but a **relationship state** — Warden and Pact are two positions on one track,
 and a spirit can move between them in either direction. Most spirits will sit at one end their
 whole lives. The ones that move are the memorable ones.
+
+> **⚠ Watch this axis, 2026-08-02.** The route pair were specced as pact + default-state and, when
+> rebuilt, turned out to be **relationships** — no bargain, no exclusivity. They are the two most
+> developed entries in this file. The fatigue pair are still genuinely pacts, so the class is real and
+> the axis holds; but **if a third domain lands as a relationship, this document is misnamed** and the
+> pact should be demoted from the organising idea to one class among several.
 
 ### Domain
 
@@ -405,13 +416,15 @@ to survive.
 Worth checking against real survival rates once the doze is in. Ten is a guess, and it is a guess
 about **how much tired-band driving an in-game day actually affords** — which depends entirely on
 where FEAT-47 puts the sleepy→tired boundary. **⚠ RESOLVED (was CONFLICT 4):** day length is settled
-at **24 minutes** [RATIFIED 2026-07-29]. **⚠ Arithmetic re-derived 2026-08-01:** a run is **7–8 days**,
-not 10–15 (the old figure divided target hours by the sky cycle — see `run-shape.md`). So 10 km is
-roughly **1.3 km of tired driving per in-game day**, not 1.0 — the last stretch after dark, most
-nights, for the life of a *shorter* run. That makes the ledger **~35% harder than this entry assumed**,
-on top of the tired-band narrowing already noted. Still the right shape — a sustained habit, not one
-heroic night — but the number is now near the top of its plausible range and is the first thing to
-re-check once the doze is playable. Ten may want to become seven or eight.
+at **24 minutes** [RATIFIED 2026-07-29]. **⚠ Arithmetic re-derived twice — current as of 2026-08-02:**
+a run is **20 days** (`run-shape.md`; it was briefly held at 7–8 on 2026-08-01, and that pass made this
+ledger look ~35% *harder* — that conclusion is now void). At 20 days, 10 km is **0.5 km of tired
+driving per in-game day** — the last stretch after dark, most nights, across a long run. That makes the
+ledger **roughly half as demanding per day as this entry assumed**, which pushes the number the other
+way: **ten may want to become fifteen or twenty.**
+
+*(Note the day also got shorter in waking hours — 16, not 18 — so there is slightly less room for a
+tired stretch in each one. The 20-day run dominates: more nights, each with a little less tired time.)*
 
 **The real dependency is the band boundary, not the number.** If FEAT-47 puts the tired band late and
 narrow, 10 km is a serious commitment; if the whole evening counts as tired, it's trivial. **Set the
@@ -651,6 +664,11 @@ per the unifying rule, the spurned one starts behaving like a warden.
 > that off-road driving is *already* punishing on this terrain, so on the rare occasion worldgen
 > offers a genuine cut, **taking it should be rewarded** — and the interesting design question is who
 > resents that, not how to tax it.
+>
+> **Completed 2026-08-02:** the answer turned out to be *nobody resents a cut.* Both spirits are roads
+> and a cut is a road. What the Highway resents is the **intentional non-shortcut skip** — driving
+> across the ground as if the network didn't matter. The Verge's instinct (someone should mind
+> off-road travel) survives; its target moved.
 
 **Class:** Warden · **Domain:** Terrain · **Disposition:** One-sided negative
 **Contact:** Threshold crossings; ambient world change · **Persistence:** Ledger + Meta
@@ -751,19 +769,60 @@ attention, in a framing moment the game fully controls, the way the doze works f
 
 ---
 
-## 05 / 06 — The Highway and The Shortcut [owner, 2026-08-01]
+## 05 / 06 — The Highway and The Shortcut [owner, 2026-08-01; rebuilt 2026-08-02]
 
-**Domain:** Route · **Class:** the Highway is the **default state**, the Shortcut is a **Pact** ·
-**Mutually exclusive**, like the fatigue pair.
+**Domain:** Route · **Class:** **relationships, not pacts** — neither has an accept/decline moment ·
+**Co-holdable.** Serving one does not cost you the other.
 
 They aren't people with opinions about roads. **They are roads** — same substance, different fate.
 One was surveyed and authorized; the other was just used.
 
-> **The asymmetry is the ruling** [owner, 2026-08-01]. The Highway is **not a pact you take** — it is
-> **the default state of the game**. Driving a routed route, graded against par on the maintained
-> network, *is* being under the Highway's terms; the player never opts in because they start there.
-> What the game offers is **the choice to break it.** That simplifies the pair to one buildable pact
-> and makes the Highway's grief a thing you hear *when you leave*, not a system to opt into.
+> ### The 2026-08-02 rebuild, and why the old model is gone
+>
+> The pair was originally **mutually exclusive**: one completed cut broke the Highway's streak
+> instantly and flattened the roads for the rest of the run. That forced a lane choice no matter how
+> it was tuned, and the owner's goal is the opposite —
+>
+> > *"In a great run I want the player to feel like they're on top of the world with great twisties,
+> > but also nasty shortcuts that save a lot of time."*
+>
+> **The fix was already in this document's first sentence: they are both roads.** Of course the
+> Highway respects a cut. What he cannot forgive is someone who denies that roads matter at all — who
+> drives across the ground because the network is an inconvenience. That is a **third** category,
+> belonging to neither spirit, and it is the actual transgression.
+>
+> Five ratified lines changed with it (all owner-approved 2026-08-02):
+>
+> | Was | Now |
+> |---|---|
+> | Completing a cut breaks the streak | **Cuts are fine.** Intentional non-shortcut skips are the offense |
+> | The anger is a stark drop to flat | **Graded and cumulative**; flat is the floor you approach |
+> | Passability is fixed per seed | Fixed per **(seed, favour)** — hazards clear as the Shortcut warms |
+> | The chip is strictly stronger than the pact | The chip is a **display layer** for the relationship |
+> | Binary vs. continuous is what keeps them distinct | **Both continuous**; they differ by *what they know* |
+
+### The father and the son [RATIFIED 2026-08-02]
+
+**The Highway was once a shortcut**, and he remembers being lost and confused. That is why:
+
+- **He approves of shortcuts being reinforced.** One day they'll become highways. He wants that for
+  them.
+- **He hates bypasses** — not because they cost him traffic, but because *a bypass creates a poorly
+  defined shortcut.* You made a child, badly, and left it lost.
+
+So his position is paternal, and the tragedy is that **his advice is "become me," and he is bored and
+stagnant, and he means it kindly.** He'd rather the son be bored than lost. He may even be right.
+
+The Shortcut, for his part, is trying to become the thing that ruined his father, and has no idea.
+Neither of them knows. **That is the tension in this domain — it is dramatic, not mechanical**, which
+is exactly why the mechanics are free to stop fighting each other.
+
+> **Note it stays *voice*, not mechanism** [ruled 2026-08-02]. Cuts do **not** improve with use, and
+> nothing in the world remembers where the player drove — no desire paths, no wear-in, no
+> player-history worldgen. *(Owner: a cut gets driven maybe two or three times in a whole run, so a
+> use-based system would never fire; and world-memory of player movement is out of scope, full stop.)*
+> "One day they'll become highways" is something he *wants*, not something that happens. It is sadder
+> that way, and it is free.
 
 ### Cuts — the world substrate (buildable now, spirit-independent)
 
@@ -780,39 +839,74 @@ The cuts are **worldgen**, and they do not need the spirit system. Ticket: **FEA
   feed the horror layer for free.
 - **Seeded with pre-existing cuts** — logging spurs, mining tracks, stock driveways — so using one is
   **following, not founding.** The good line was already there.
-- **Not every cut goes through.** Washouts and slides. **Passability is worldgen** [RATIFIED
-  2026-08-01], fixed per seed — so knowing which cuts go is **literacy**, the one thing that survives
-  death (SM-INV-8), and the Shortcut's pact becomes a *knowledge* gift rather than a lottery. You
-  don't know until you're committed, and reversing is expensive: the failure isn't a loss, it's a
-  loss plus the time you spent earning it.
 - **One generator.** Cuts, spurs, camping areas, logging sites and POIs all come from the single
   off-network generator (DESIGN.md "The off-network layer"). **A track that dead-ends is a spur; a
   track that rejoins the network is a cut.** Topology decides the purpose.
 
-### Why players don't just take them — four costs, three nearly free
+#### Two passes: inherent difficulty, then discrete hazards [RATIFIED 2026-08-02]
 
-**Not a fine.** The Verge's toll model is retired (#03).
+This is the structural ruling that makes the Shortcut's boon buildable, and it also bounds its cost.
+
+**Pass 1 — inherent difficulty. Free; nothing to author, nothing to clear.** The generator already
+emits tight radii, no banking and bad surface — that is the whole basis of the "the router honestly
+disagrees with you" argument above. **Steep and tight are not hazards; they are what an unengineered
+route *is*.**
+
+**Pass 2 — discrete hazards. Carved, and this is what favour removes.** Rockslide, water crossing,
+rutted-out section, sharp rock. **These have to be generated, not hoped for** [owner, 2026-08-02]:
+
+> *A cut might happen to cross a natural stream, but we get no control over where, how, or whether
+> it's drivable. To guarantee a hazard that is drivable, punishing at the right level and rewarding at
+> the right level, we have to generate it — and generating most of the hazards I want requires carves.*
+
+Three consequences to design in from the start:
+
+- **Keep hazard carves short** — a slide is a ~20 m section, not 200 m. Cheap to invalidate, and
+  better play: a discrete obstacle you commit to, not a slog.
+- **Favour tiers must be coarse** — four or five, advancing only at day boundaries (SM-INV-12). That
+  is ~4–5 re-carve events per run, a region-unlock-shaped cost rather than a per-day one.
+- **Only pass 2 is favour-gated**, so the invalidation surface is small local carves on specific cut
+  segments, never a world regen.
+
+> **⚠ This amends a FEAT-52 hard constraint.** The ticket says *"washout passability is WORLDGEN, not
+> run-layer — a cut that doesn't go through doesn't go through on that seed, forever,"* on the grounds
+> that this makes knowing-which-cuts-go **literacy** (SM-INV-8). Passability is now a function of
+> **(seed, favour)**. *Literacy survives, and improves:* you learn *"that one has a slide two thirds
+> in"* and that is true on that seed every run — what changes is whether you can clear it. The
+> **hazard placement** is the worldgen fact; the **removal** is run-layer. Update the ticket.
+
+### Why players don't just take cuts — three costs, all nearly free
+
+**Not a fine.** The Verge's toll model is retired (#03). And note **the Highway is no longer one of
+these costs** — cuts are fine by him.
 
 1. **Wear**, already ratified as intensity-scaled (SM-INV-5). **Self-gating with no difficulty knob:**
-   early, damage is existential; late, repairs are affordable. Same mechanic, opposite feel.
+   early, damage is existential; late, repairs are affordable. Same mechanic, opposite feel. Under the
+   2026-08-02 repair ruling this bites much harder — a repair costs **money *and* a day**, so a bad
+   cut in region 6 (one mission per day, no service budget) can cost the run.
 2. **Risk of ruin.** Break down on the road and you get towed. Break down on a cut and the tow costs
    **extra in proportion to your distance from the maintained network** [owner, 2026-08-01]. *Note
    this is deliberately a price, not an impossibility* — DESIGN.md is explicit that a survivable
-   breakdown is a **predicament, not a fail state**, and "nobody comes at all" would convert the
-   tow-vs-limp decision into a certainty.
-3. **Fatigue multiplier on rough surface.** Compounds into the Host, camping-as-navigation, and
-   the doze.
-4. **Mission incompatibility.** Fragile scores on vertical shock; freight puts real mass through ruts.
+   breakdown is a **predicament, not a fail state**.
+3. **Mission incompatibility.** Fragile scores on vertical shock; freight puts real mass through ruts.
    Cuts are viable on margin-axis errands and nowhere else — and this costs **no new code**, it falls
    out of the existing scoring axes.
 
-### 05 — The Highway *(the road that keeps you)* [RATIFIED 2026-08-01]
+> **The hazard taxonomy and the parts taxonomy are the same axis.** Rockslide, sharp rock, rut, ford,
+> steep — these map straight onto the per-component damage model, which means the durability parts
+> (`items.md` §3: LT load-rated tires, HD off-road suspension, skid plates) finally have something
+> *specific* to counter instead of "cuts" in the abstract. A truck on load-rated rubber can take the
+> sharp-rock line; one on sport tires cannot. **The build stops being a philosophy and becomes a
+> route-planning tool.**
 
-**Class:** favour track, not a pact · **Domain:** Route · **Disposition:** **two-sided** — favour
-banks the corners above baseline, disfavour flattens them below it
+### 05 — The Highway *(the road that keeps you)*
+
+**Class:** relationship, not a pact · **Domain:** Route · **Disposition:** **two-sided** — favour
+banks the corners above baseline and keeps his ground clear; disfavour flattens the corners and lets
+the hillside come down
 **Contact:** the campfire — first to introduce himself, thereafter **on request, any night**
-**Ledger:** single-run streak, **broken by completing a cut**
-**Boon:** **it banks its corners for you** · **Anger:** **it takes the banking away, and then some**
+**Boon:** **it banks its corners for you, and it keeps itself maintained**
+**Anger:** **it takes the banking away, a bit at a time, and stops clearing the road**
 
 Vain, bypassed, speaks in the plural. It doesn't watch you from anywhere — **you're standing on it.**
 Motif: culverts, drainage, closure signs on routes that no longer exist.
@@ -823,108 +917,178 @@ without duplicating it: the Roamer lost a range, the Highway lost the ability to
 
 **And its boon is gratitude, not generosity.** He resents what was done to him, but a road wants
 traffic. *Look what they did to me — but at least you're still here.* That is why he rewards use
-without ever demanding it, and why the loss is withdrawal rather than punishment.
+without ever demanding it.
 
-#### The boon: the corners start holding you
+#### The boon, part 1: the corners start holding you
 
-**Camber deepens as favour accrues, and flattens when the streak breaks.** A maintained road is
-graded, drained, surveyed and **banked** — so the boon is the thing a well-engineered road literally
-does for a driver.
+**Camber deepens as favour accrues, and flattens as it is dented.** A maintained road is graded,
+drained, surveyed and **banked** — so the boon is the thing a well-engineered road literally does for
+a driver.
 
-> **Stay on the network and the corners start holding you. Leave it, and they go flat.**
-
-**The mechanism (corrected 2026-08-01 — the model changed under an earlier draft).** Camber is a
-**saturating superelevation** function, not the old `camberStrength·κ` with a hard clamp
-(`camberFromCurvature`, `src/road.js`; params in `data/ranger.js`):
+**The mechanism.** Camber is a **saturating superelevation** function (`camberFromCurvature`,
+`src/road.js`; params in `data/ranger.js`) — self-bounding, no clamp:
 
 ```
 camber(κ) = camberMaxAngleDeg · |κ| / (|κ| + 1/camberKneeRadiusM)
 ```
 
-It is self-bounding — hairpins plateau at `camberMaxAngleDeg`, and effective gain *decreases* with
-curvature, so there is **more bank per unit curvature on sweepers than on hairpins**. Shipped defaults
-(`maxAngle 20°`, `knee 60 m`) give ~16° at R=15 m, ~11° at R=50 m, ~5.7° at R=150 m.
+Effective gain *decreases* with curvature, so there is **more bank per unit curvature on sweepers than
+on hairpins**. Shipped defaults (`maxAngle 20°`, `knee 60 m`) give ~16° at R=15 m, ~11° at R=50 m,
+~5.7° at R=150 m.
 
 **`camberKneeRadiusM` is the favour knob** — *"raise to push strong banking out to gentler curves."*
 That is exactly the boon: an engineered highway superelevates its **sweepers**, and sweepers are where
-a driver actually banks speed. `camberMaxAngleDeg` is the wrong dial to move — tight corners already
-sit near the asymptote, so raising it mostly over-banks hairpins, which is the failure the saturating
-model was introduced to fix.
+a driver actually banks speed. `camberMaxAngleDeg` is the wrong dial — tight corners already sit near
+the asymptote, so raising it mostly over-banks hairpins, which is the failure the saturating model was
+introduced to fix.
 
-**The scale [RATIFIED 2026-08-01]:**
+**The scale:**
 
 | state | camber | how you get there |
 |---|---|---|
-| **punished** | **flat — the floor** | one completed cut |
+| **punished** | **flat — the floor** | repeated intentional non-shortcut skips |
 | **baseline** | **the shipped defaults** (`maxAngle 20` / `knee 60`) | where every run starts |
-| **full favour** | knee pushed out — strong bank reaching gentler curves | **5 days with no shortcuts** |
+| **full favour** | knee pushed out — strong bank reaching gentler curves | a run of respecting the network |
 
 **Flat is the floor, deliberately.** Genuinely off-camber was considered and rejected — *"an
-interesting idea to keep in mind, but I don't think it would be fun"* [owner]. Parked, not adopted.
+interesting idea to keep in mind, but I don't think it would be fun"* [owner]. Parked in `IDEAS.md`,
+not adopted.
 
-> **⚠ Reading to confirm.** *"Whatever we have right now should be the default starting camber params;
-> it should take 5 days of no shortcuts to build up to this level."* Written above as **current
-> defaults = the day-1 baseline**, with favour climbing *above* them. The alternative parse — current
-> defaults are the 5-day *peak*, and a run starts flatter — is a one-line flip if that was the intent.
-> The reading here is chosen because it preserves the road feel already tuned and liked as the neutral
-> state, and gives both directions somewhere to go.
+**Current defaults are the day-1 baseline**, with favour climbing *above* them. This preserves the
+road feel already tuned and liked as the neutral state and gives both directions somewhere to go.
 
-Five reasons this is the right lever, recorded because three other candidates were rejected first
+Four reasons this is the right lever, recorded because three other candidates were rejected first
 (see "What this replaces"):
 
 1. **The mechanism already exists and is already a live dial.** Both params are exposed as debug
-   sliders and recompute banking without a regen. `IDEAS.md`'s **road-bender spirit** (2026-07-21) is
-   this idea, and its 2026-07-29 note reads *"spirits deferred, so a road-bender has no carrier."*
-   **The Highway is the carrier.** Two ideas from different months are one thing.
+   sliders and recompute banking without a regen. `IDEAS.md`'s **road-bender spirit** (2026-07-21) was
+   this idea waiting for a character; that entry is now retired into this section.
 2. **Double-edged**, so SM-INV-9 needs no bolted-on guardrail. Bank is not free speed: on a high-CoG
    truck it **invites rollover**, and pushing strong bank onto sweepers is pushing it onto the corners
    taken *fastest*. `data/ranger.js` warns about over-banking directly.
-3. **It is the true mirror of the Shortcut**, and neither moves par:
-
-   | | how you beat par | what it costs |
-   |---|---|---|
-   | **Shortcut** | a shorter **route** | he tells the client (par tightens) + wear + risk |
-   | **Highway** | a faster **road** | rollover exposure + you drove the long way |
-
-4. **SM-INV-10-shaped.** No number ever surfaces. *The corners hold you.* The loss needs no UI either
+3. **SM-INV-10-shaped.** No number ever surfaces. *The corners hold you.* The loss needs no UI either
    — you take a sweeper you have driven thirty times and the truck doesn't sit down in it the way it
    did last week.
-5. **It rides SM-INV-11's channel for free.** `runState` advances at day/sleep boundaries, never
-   mid-stream, so **the road changes overnight.** You wake and the roads are holding you better; or you
-   took a cut yesterday and this morning they are flat. The parameter-state story mechanism doubles as
-   the favour readout, with no meter anywhere.
+4. **It rides SM-INV-11's channel for free.** `runState` advances at day/sleep boundaries, never
+   mid-stream, so **the road changes overnight.** You wake and the roads are holding you better; or
+   you bypassed a section yesterday and this morning they are a little flatter.
 
-**Tier it, so the relationship progresses instead of flipping a flag:**
+#### The boon, part 2: he keeps his own ground clear [RATIFIED 2026-08-02]
 
-| streak depth | what the road does |
+**Favour also suppresses the Highway's dynamic hazards; disfavour raises them.** This makes the boon
+**maintenance** — camber is the engineering, hazard suppression is the upkeep — which is precisely and
+completely what a road authority does for a driver. One idea, two halves, no new vocabulary.
+
+**Mechanism: this is FEAT-26 with its event rate keyed to favour.** No new system is required.
+
+- **FEAT-26 (rockslide ambush)** already specifies *1–3 medium rocks + 5–10 small rocks*, tumbling,
+  timed to intercept — and it is already scoped as a **flag-gated live-reactive system** for exactly
+  the determinism reasons that apply here (same family as doze/ambush timing; gates pin a default
+  `runState`). **Disfavour raises the per-distance event probability. That is the entire change.**
+- **Rocks do not persist** [owner, 2026-08-02]. They are cleared rather than saved, so this is
+  **rigid-body debris (FEAT-09), not carves** — the Highway's hazards cost **nothing** against the cut
+  hazards' carve budget. The two spirits' hazard systems are mechanically unrelated, which is a
+  feature.
+- **FEAT-27 (static rockslide)** is the placed sibling and stays available for authored one-offs, but
+  it is *not* the favour mechanism — a persistent pile would need world state the 2026-08-02 ruling
+  rules out.
+
+> **⚠ He must never block himself, and this is a character argument, not a patch.** *A road wants
+> traffic* is the stated basis of the entire boon. His neglect makes the drive **worse, never
+> impossible** — a couple of medium rocks to pick a line around, not a wall. Same shape as "flat is
+> the floor, not off-camber."
+>
+> **This also kills a death spiral.** If a slide could block the road, the player would be forced
+> around it → that reads as an intentional skip → more disfavour → more slides. It cannot happen if he
+> never blocks. Do not soften this rule for drama.
+>
+> *Spec detail:* an event must not materialise inside the player's view. Spawn it ahead beyond some
+> distance, or on the slope above a segment not yet in frame.
+
+**The asymmetry with the Shortcut's hazards is deliberate and load-bearing:**
+
+| | Highway hazards | Shortcut hazards |
+|---|---|---|
+| Nature | **dynamic**, probabilistic, transient | **authored**, carved, fixed per seed |
+| May block? | **never** | **yes** — you chose to be here, reversing out is the price |
+| Favour effect | suppresses the **rate** | removes **specific** obstacles |
+| What clearing grants | **reliability** on roads you'll drive anyway | **access** to routes that are optional |
+| Build cost | free — FEAT-26 rate multiplier | carves, tiered, budgeted |
+
+#### Tiering
+
+| favour depth | what the road does |
 |---|---|
 | early | **it warns you** — corner markers before the hairpin, a grade sign before the descent. Real signage, appearing as favour deepens. *Geometry* information, never mission information, so it does not touch the strategy layer. Same shape as the GPS: convenience for a driver who doesn't know the region, worthless to one who does. |
-| deep (5 days) | **it banks its sweepers for you** — `camberKneeRadiusM` pushed out |
+| deep | **it banks its sweepers for you** (`camberKneeRadiusM` pushed out) **and its hillsides stay put** |
 
-#### The arithmetic of five days — and why the boon lands in the mountains
+#### What builds favour: the status quo, and what accelerates it
 
-A run is **7–8 days** (`run-shape.md`), so a 5-day climb is not a minor commitment: **full favour
-arrives on day 5–6 and you enjoy it for the last two or three days.** At 6 regions over 7–8 days
-(~1.25 days each), day 5 is **region 4 or 5** — deep country, the hardest roads in the run.
+**Base accrual is simply being on him** [owner, 2026-08-02] — *"it suits his character to be pleased
+by the status quo."* Favour rises as a run matures and is **dented, never reset**. This is a design of
+**loss aversion**: camber is a thing you *have* and can damage, not a thing you earn. That is also
+what finally makes the ratified "the Highway is the default state of the game, not a pact" line mean
+something mechanically.
 
-**That is the right place for it, and it is worth noticing that it fell out rather than being
-designed.** The reward for a run of discipline arrives exactly where the driving is most punishing,
-in the mountains, with a truck that is by then worn. A boon that landed on day 2 would be a free
-early-game buff; this one is a late-run payoff you had to protect.
+**Accelerators — proposed 2026-08-02, owner has not ruled.** Ordered by how much I'd argue for them:
 
-**And favour rebuilds more slowly than it built** [RATIFIED 2026-08-01]. He remembers. The consequence
-is sharp and should be understood before tuning the rate:
+1. **Night driving.** He is bypassed and starved of traffic; headlights at 3 a.m. mean more to a
+   lonely road than headlights at noon. **This is the best one**, because it pays the coffee test:
+   the cost is in a *different currency* (alertness, the doze) and lands *later*, so it is not a price
+   tag. It also couples the route domain to the fatigue domain **through the world rather than through
+   code**, which "Cross-spirit dynamics" names as the most valuable output of the whole system.
+2. **Riding a leg end-to-end**, junction to junction, rather than hopping on and off. He *cannot go
+   anywhere but where he goes* — a driver who rides the whole of him honours the whole of him. Cheap
+   to detect (run identity + `arcS` already exist), and it quietly rewards route planning over
+   POI-hopping.
+3. **Freight.** Doing the thing he was widened for. Weakest of the three: freight can't use cuts
+   anyway, so it already banks favour by default, and making it an accelerator risks the "haul the
+   careful cargo, stay legal, get the good corners" build tipping from *coherent* into *dominant*.
 
-> **Past roughly the midpoint of a run, one cut ends the Highway relationship for that run.** If the
-> re-climb is slower than five days and only three remain, there is no recovering it.
+#### The anger: intentional non-shortcut skips [RATIFIED 2026-08-02]
 
-So the cost of a shortcut **escalates with run age**, without anything being keyed to run age — it
-comes purely from there being fewer days left than the climb needs. That is the same shape as the rest
-of the economy's escalation, arriving for free. It also means the mid-run cut decision is the heaviest
-one in the domain: early, a cut is cheap and recoverable; late, it is permanent.
+**Terminology is deliberate** — this was "willy-nilly skipping" in conversation; use **intentional
+non-shortcut skip** in specs.
 
-*Open: the exact re-climb rate. It must be > 5 days to mean "he remembers", but a rate so slow that
-one cut on day 2 is unrecoverable would collapse the choice rather than sharpen it.*
+> **The definition:** you leave the maintained network and rejoin it having saved **more than ~200 m
+> of road distance**, by a path that **wasn't a cut**.
+
+- **The magnitude scales the penalty.** A 250 m shave costs a little camber; a kilometre of
+  cross-country costs a lot. Graded and cumulative — **repeated offenses approach flat**, one never
+  arrives there. This matters more at 20 days than it did at 7–8: a single mistake must not end the
+  relationship for a run that still has fifteen days in it.
+- **It cannot fire by accident.** Parking on grass, using a shoulder, sliding off a corner and
+  climbing back on — none of these rejoin *downstream*, so none of them skip road distance. This is
+  what the earlier "distance threshold on off-route travel" proposal could not achieve, and it is why
+  that proposal was dropped.
+- **Entering a cut suppresses the check until you rejoin.** Without this flag, the forgiven
+  cross-country escape from a failed cut (below) reads as a bypass. Cheap to implement, easy to forget.
+- **⚠ Verify against junction-pad and lay-by geometry.** Graded pads are wide; a large pad or a
+  lay-by chain might let a player save ~200 m without ever leaving the road surface. *Owner
+  2026-08-02: if it breaks in practice that is a bug to fix, not a reason to redesign.*
+
+**And he does not merely withdraw. He punishes** — camber drops *below* baseline toward flat, and his
+hillsides stop being tidy. A mountain road that was holding you last week now asks you to hold
+yourself, on every sweeper, with loose rock more likely on it.
+
+**The punishment prices itself, for free, via the same invariant the boon relies on.** Par never reads
+camber — so a punished player faces **the same par on a worse road.** Ratio suffers, rank drops,
+payout falls, points come slower. There is no penalty accounting to write anywhere: the flat corners
+*are* the penalty, and the economy registers it automatically.
+
+**SM-INV-1 is intact, by the doze's own logic.** Flat corners and loose rock make crashing likelier;
+they never kill. The Highway hands you a harder road and lets the physics decide, which is precisely
+what the doze is already permitted to do. What he must never do is take the wheel or apply a fine.
+
+#### When a cut fails and you escape cross-country [RATIFIED 2026-08-02]
+
+You entered by a road; the road failed; you got out over the ground. **The Highway forgives it** — he
+knows what it is to be a badly-made trail, and you were not denying that roads matter, you were
+trapped by one. **And the Shortcut rewards it handsomely**: you went in on his word, it went wrong,
+and you did not blame him. Nothing proves commitment like getting out the hard way.
+
+This is the only event in the domain that **pays both spirits at once**, and it is exactly the
+right one to have that property.
 
 #### Two hard constraints
 
@@ -935,23 +1099,9 @@ one cut on day 2 is unrecoverable would collapse the choice rather than sharpen 
   accurate by including banking"* is a reasonable-sounding future change that would quietly break the
   game. The invariant is now stated inline in `par.js`; do not remove it.
 - **Apply at day boundaries only.** Required by SM-INV-12 (`runState` never advances mid-stream), and
-  re-caching profiles mid-drive would hitch anyway.
-
-#### Shape: continuous, not binary — this is what makes the pair work
-
-The two are **deliberately different shapes**, which is what stops the route domain being a reskin of
-the fatigue pair:
-
-| | shape | how you get it | how you lose it |
-|---|---|---|---|
-| **The Shortcut** | **binary** — a door you walk through | opt in, once | you don't |
-| **The Highway** | **continuous** — a relationship you are already in | accumulates silently | one cut, instantly |
-
-**So the exclusivity is enforced by driving, not by a menu.** You can hold the Shortcut's pact *and*
-keep the Highway's favour — as long as you never actually take a cut. Which is absurd and correct: he
-showed you every cut in the region and you are not using any of them, and being the Shortcut, he
-would keep cheerfully telling you about them anyway. There is no accept/decline anywhere in this, which
-matches the chat pane's no-options rule.
+  re-caching profiles mid-drive would hitch anyway. *(The FEAT-26 event **rate** is a live-reactive
+  system and is exempt in the same way ambush timing already is — it reads the day's favour, it does
+  not advance it.)*
 
 #### Summoning
 
@@ -959,56 +1109,9 @@ matches the chat pane's no-options rule.
 *the game* — no spirit required, and they apply from minute one. But **the Highway himself is met like
 everyone else** (see "How spirits introduce themselves"): a ledger, then a visit at the fire.
 
-His ledger writes itself: **N missions completed with zero off-route travel.** You meet him by having
-been loyal without knowing he existed, and he turns up to thank you for something you were not doing
-on purpose. *(This resolves a contradiction in the earlier draft, where "the Highway is the default
-state" collided with the convention that no spirit is available at the start of a run.)*
-
-**What breaks the streak** and whether it can be rebuilt: see Open, below.
-
-#### What this replaces (rejected boons, recorded so they aren't re-proposed)
-
-- **Cheap tow / subsidised recovery — REJECTED** [owner, 2026-08-01]. *"A tow is something a great run
-  doesn't even have."* It is insurance you only claim when you are already losing, so discounting it
-  rewards the run that is going badly and is invisible to the run that is going well. Correct call.
-- **Network state as knowledge (which stations are open, which givers remain) — REJECTED** [owner,
-  2026-08-01]. Mission and service availability belongs to the **player's strategy layer**: the owner
-  wants missions visible on the map so the player can do the calculus of *cross the map for the great
-  job, or take the near one that ends somewhere useful.* Withholding or granting that is far too
-  strong a lever to spend on a spirit. **Nothing in this pair may touch what the player can see of the
-  job board.**
-- **Reduced wear — REJECTED** (mine). The Innkeeper already sells wear reduction. Two spirits trading
-  in one currency is exactly the collapse this document warns about in the fatigue domain.
-
-#### The anger: he takes the banking away, and then some [RATIFIED 2026-08-01]
-
-**Completing a cut breaks the streak** — FEAT-52's traversal event, in one road and out a *different*
-road. Unambiguous, already being built, and impossible to trip by accident: parking on grass, using a
-shoulder, or sliding off a corner never costs you anything. *(This settles the open question; the
-alternative — a distance threshold on off-route travel — is truer to "zero off-route travel" as
-written, but needs tuning and could punish one bad corner.)*
-
-**And he does not merely withdraw. He punishes** [owner, 2026-08-01]: a **stark reduction in road
-camber**, dropping *below* baseline to **flat**. A mountain road that was holding you last week now
-asks you to hold yourself, and it asks on every sweeper until favour is rebuilt — which is **slower
-than it was earned.**
-
-**Flat is the floor.** Off-camber was considered and rejected as not fun [owner, 2026-08-01]; it stays
-parked in `IDEAS.md` rather than adopted.
-
-*(This reverses my recommendation of withdrawal-only. The owner is right and the reasoning I used was
-too cautious: the rejected toll was rejected for being **a fine in money**, an ethical objection
-converted into a price tag. Flattening the roads is not a fine — it is the world changing its
-behaviour, which is a rule-change and exactly what SM-INV-9 says a spirit is *for*.)*
-
-**The punishment prices itself, for free, via the same invariant the boon relies on.** Par never reads
-camber — so a punished player faces **the same par on a worse road.** Ratio suffers, rank drops,
-payout falls, points come slower. There is no penalty accounting to write anywhere: the flat corners
-*are* the penalty, and the economy registers it automatically.
-
-**SM-INV-1 is intact, by the doze's own logic.** Flat corners make crashing likelier; they never kill.
-The Highway hands you a harder road and lets the physics decide, which is precisely what the doze is
-already permitted to do. What he must never do is take the wheel or apply a fine.
+His ledger writes itself: **N missions completed with no intentional non-shortcut skips.** You meet
+him by having been respectful without knowing he existed, and he turns up to thank you for something
+you were not doing on purpose.
 
 #### Asking him: the day's camber, from the road's own mouth [RATIFIED 2026-08-01]
 
@@ -1033,40 +1136,41 @@ Interaction shape: a single action at camp, then **sequential cards, no options*
 holds (choosing to ask is a commit, like pulling the handbrake to talk to the Night Owl; there is no
 dialogue tree inside it).
 
-#### Open
+#### What this replaces (rejected boons, recorded so they aren't re-proposed)
 
-- **Per-mission or continuous across the run?**
-- **The exact re-climb rate.** Ratified that it is **slower than the 5-day first ascent** — he
-  remembers. The number is open and load-bearing (see "The arithmetic of five days"): too slow and a
-  day-2 cut is unrecoverable, which collapses the decision rather than sharpening it.
-- ~~How far below baseline does "stark" go?~~ **RESOLVED 2026-08-01 — flat is the floor.** Off-camber
-  considered and rejected as not fun; parked in `IDEAS.md`.
-- **Fragile and freight cannot use cuts anyway**, so those missions bank Highway favour for free. Is
-  "haul the careful cargo, stay legal, get the good corners" a coherent build or a loophole? It reads
-  coherent, and it pairs with the durability parts axis.
-- **What if you hold the chip and never cut?** You own his rival's knowledge and refuse it. Does the
-  Highway care that you *could*? Probably not — he watches what you do, not what you carry.
+- **Cheap tow / subsidised recovery — REJECTED** [owner, 2026-08-01]. *"A tow is something a great run
+  doesn't even have."* It is insurance you only claim when you are already losing, so discounting it
+  rewards the run that is going badly and is invisible to the run that is going well. Correct call.
+- **Network state as knowledge (which stations are open, which givers remain) — REJECTED** [owner,
+  2026-08-01]. Mission and service availability belongs to the **player's strategy layer**: the owner
+  wants missions visible on the map so the player can do the calculus of *cross the map for the great
+  job, or take the near one that ends somewhere useful.* Withholding or granting that is far too
+  strong a lever to spend on a spirit. **Nothing in this pair may touch what the player can see of the
+  job board.**
+- **Reduced wear — REJECTED** (mine). The Innkeeper already sells wear reduction. Two spirits trading
+  in one currency is exactly the collapse this document warns about in the fatigue domain.
+- **Anger keyed to carrying the shortcut GPS — REJECTED** [owner, 2026-08-02]. Proposed as a way to
+  make chip-vs-pact a real choice. Rejected on the correct grounds: **the spirits are the gameplay
+  tension, and items should build on them, not arbitrate between them.** He watches what you do, not
+  what you carry — and under the rebuilt model he doesn't even mind what you do.
 
-> **A structural consequence worth confirming in play:** the Highway is strongest exactly where the
-> Shortcut is weakest. Long engineered sweepers are where banking pays, and they are also where cuts
-> are rare, because the network is not detouring around anything. **The two playstyles sort themselves
-> by terrain rather than by player preference** — which is the better outcome, and is the emergent-
-> over-injected principle landing on a story system.
-
-### 06 — The Shortcut *(the pact)*
+### 06 — The Shortcut *(the son)*
 
 Has no memory of being built, so it **doesn't know where it goes** — only that people use it.
 Uncertainty is its actual condition, not a withholding. It speaks with certainty it hasn't earned.
 
-### Summoning [RATIFIED 2026-08-01]
+**Class:** relationship, not a pact · **Domain:** Route · **Disposition:** two-sided — esteem reveals
+and clears; neglect takes it all back
+
+#### Summoning
 
 **You do not have the Shortcut at the start of a run.** He arrives only once you have **completed a
-cut** — entered from one road and come out on *a different road*. A **through-passage**, not a
-poke down a dirt track that you reversed out of.
+cut** — entered from one road and come out on *a different road*. A **through-passage**, not a poke
+down a dirt track that you reversed out of.
 
 > **Then he visits you the following night, when you sleep in the forest.** Not mid-drive — the
-> campsite (see "How spirits introduce themselves"). You took the shortcut; a night later, the thing
-> that *is* the shortcut turns up at your fire.
+> campsite. You took the shortcut; a night later, the thing that *is* the shortcut turns up at your
+> fire.
 
 The ledger is exactly right for this character. He *is* a cut, and he has no memory of being built —
 so he cannot know he goes anywhere until **someone proves it by coming out the other side.** The
@@ -1077,80 +1181,103 @@ It is also self-selecting in the way the good ledgers are: you cannot fill it wi
 found a cut, committed to it blind, and been right. He only meets people who have done the thing he
 is about.
 
-### The pact — and what it costs you
+#### The boon: intel, then clearance [RATIFIED 2026-08-02]
 
-**The pact:** he **reveals which cuts still go** and **routes you through them.** The price is that
-**par tightens to assume you took the cut.**
+**Esteem is reciprocal.** He has no memory of being built; every traversal you complete teaches him he
+connects. **You inform him; he informs you.** That is the whole relationship, and it deepens in three
+stages:
 
-> **The price is not a fine, it is his mouth.** [RATIFIED 2026-08-01] The Shortcut is so clueless and
-> so eager that **he brags about you.** He shows you the fast way and then tells the client how fast
-> you can now get there. He does not understand that announcing your advantage destroys it — a spirit
-> that "speaks with certainty it hasn't earned" would do exactly this, cheerfully, forever.
+| esteem | what he gives you |
+|---|---|
+| early | **cuts appear on your map** — you stop guessing where they start |
+| mid | **he floats above a cut that goes through.** A visible in-world marker on the ones that work. No meter, no number, no screen — the thing that *is* the cut, standing over the cut, telling you it's fine. |
+| deep | **hazards start clearing** — pass-2 obstacles are removed a tier at a time. *"It's starting to know more"* — or wants to help turn shortcuts into real roads. |
 
-**So the pact buys tempo, not score.** You cover less ground and less time, which is real — fewer
-minutes and less fuel per job, more jobs per day, points faster, and under SM-INV-14 that means
-reaching the next region **before the country gets expensive**. What you do *not* get is a better
-rank, because par already moved.
+**The floating marker is the best UI idea in the domain.** It is SM-INV-3/SM-INV-10 clean, it gives
+him a presence *on roads* rather than only at the fire, and it is a natural difficulty ramp: early you
+gamble, late you know.
 
-**Par itself is never modified — it is always computed over the road route** [clarified 2026-08-01].
-This is the correction that makes the pact and the chip different things at all: an earlier draft had
-both "recomputing par", which made them the same ability. Par is geometry-only and item-blind
-(SM-INV-2); what the pact changes is **the route set the client is quoted against**, which is his
-blabbing, not a change to the oracle.
+**Hazard clearance is the payoff and the cost centre.** See "Two passes" above for the carve budget
+and the tier discipline.
 
-**A run-shaping consequence, and it may be the best thing here.** Par has tightened to assume a cut
-you *cannot take* on a fragile run (vertical shock) or a freight run (mass through ruts). So the pact
-quietly makes those job types bad for you, and **your run becomes a point-to-point run.** That is
-precisely the objective-reshaper SM-INV-9 asks for — *re-weight what is worth doing, don't staple a
-bonus onto a normal run* — and nobody authored it.
+#### The anger: he cannot stand being ignored [RATIFIED 2026-08-02]
 
-*Tuning question, not structure:* whether par tightens on every mission or only where a cut is
-genuinely usable. All-missions is more characterful (he doesn't know what you're carrying) and
-harsher; usable-only is gentler and less like him.
+**Esteem decays when you stop taking cuts, and it takes the boon back in reverse order:** hazards
+return, he stops floating over the good ones, and finally they **disappear from your map** and you
+stop knowing which ones go.
 
-### Versus the chip — and the redundancy, stated plainly
+**And the moment this bites is the moment it should.** Late in a run, with a worn truck and no repair
+budget, the rational play is to stop gambling and pay for the mission in time instead.
 
-`items.md` §2 carries the **shortcut GPS**: him, distilled onto a dash-mounted chip. **A spirit dumb
-enough to be firmware.** The split [RATIFIED 2026-08-01]:
+> **He finds this boring, and he says it reminds him of his dad.**
 
-| | reveals + routes cuts | par | acquisition |
-|---|---|---|---|
-| **The Shortcut** (pact) | ✅ | **tightens** — he talks | early, guaranteed |
-| **Shortcut GPS** (chip) | ✅ | **unchanged** — road route | very rare, late |
+That single line does an enormous amount of work: it lands the father-son frame in the mechanics, it
+makes the safe late-run play *cost* something, and it is exactly what a character with unearned
+certainty would say about caution.
 
-**The chip is his knowledge with his mouth removed**, so it is strictly more powerful — that is the
-owner's intent, not an accident. **Installing the chip ends the pact's par penalty**: you canned him,
-he cannot talk anymore. That matters because it means **taking the pact early is never a trap** — the
-chip redeems it rather than being wasted by it, so no player has to refuse the pact defensively to
-protect a find they might never get.
+**Implementation: decay on a timer, replenish on traversal.** Do **not** try to detect "there was a
+usable cut on your route and you declined it" — that needs route inference, it is fragile, and it
+would fire on cuts the player never saw. Per-day decay against per-traversal gain produces the same
+felt result (neglect costs you) with none of the machinery, and it makes late-run truck-preservation
+cost esteem without a single special case.
 
-> **Recorded honestly: once you hold the chip, the pact has zero upside.** Pact ⊂ chip. This is
-> tolerated rather than solved, for two reasons. **Ordering** — the pact is early and guaranteed, the
-> chip rare and late, so the common path is pact→chip where the pact did real work first; the dead
-> case is only the run where you got lucky early. And **the scene** — the Shortcut turning up to offer
-> his one trick to a player who has him *installed on the dashboard* is the best beat this character
-> has. The Highway was bypassed by a road; the Shortcut got bypassed by a product, and he does not
-> know it.
->
-> **If it ever stops being tolerable, the principled fix is parked, not built:**
-> > **An item can know. Only a spirit can act.**
->
-> The chip is a **snapshot** — a dead copy of what he knew when they canned him. He is alive. So the
-> pact could hold what a static dataset structurally cannot: cuts the chip's data misses, or making a
-> washout passable *this once*. That generalises to the whole cast as the spirit-vs-item rule. **Do
-> not build it on speculation** — spirits are deferred and the bad ordering is uncommon; revisit when
-> the system comes off deferral and play shows whether it is needed.
+*Open: the decay rate, and whether esteem persists across a full day of legitimate freight work where
+cuts were never viable. The forgiving reading is that decay pauses when nothing you carried could have
+used a cut; the harsh reading is that he doesn't know what you're carrying and doesn't care. **The
+harsh reading is more in character** and should be tried first.*
 
-**Resolution: none.** The Highway has a position, the truck has wear, the player has a wallet.
+#### Where the tension actually lives
+
+**The two spirits pull gently in opposite directions and neither punishes the other's activity:**
+
+| | pleased by | displeased by |
+|---|---|---|
+| **The Highway** | the status quo — being driven | intentional non-shortcut skips |
+| **The Shortcut** | being used and proven | being ignored |
+
+Cuts don't anger the Highway; they simply aren't highway miles. Staying on the road doesn't anger the
+Shortcut *directly*; it just isn't proof. So the equilibrium is **take some cuts, and drive the
+network well** — which is precisely the run the owner asked for. **You can serve both, but not by
+being passive**, and that is the whole design.
+
+### The Shortcut GPS — the same relationship, on the windscreen
+
+`items.md` §2 carries the **shortcut GPS**. Under the rebuild it is **not a parallel power and not a
+stronger version of anything**: it **ties cut generation into the on-screen navigation** [owner,
+2026-08-02]. It renders what the Shortcut has already revealed to you — the FEAT-39 overlay
+(chevrons, junction boards) applied to cuts instead of only roads.
+
+**So it builds on the relationship instead of arbitrating it**, which is the owner's stated rule:
+*the spirits are the gameplay tension; items should build on them, not replace them.*
+
+Three things follow:
+
+- **It is worthless at zero esteem** and gets better as he warms — the item and the relationship
+  multiply rather than compete.
+- **The coercion problem is gone.** The old chip "revealed *and routed*," which meant a
+  Highway-aligned player carrying it was fighting their own nav overlay and risking wrong turns by
+  ignoring it. A display layer over known cuts has no opinion about your route.
+- **`pact ⊂ chip` is gone too**, because there is no pact. The redundancy the document previously
+  *tolerated* — and the parked fix for it (*"an item can know; only a spirit can act"*) — are both
+  moot. **Delete them rather than carrying them forward.**
+
+**⚠ Neither GPS may ever render an ETA or time-remaining.** Par is never a countdown (SM-INV-3), and
+an ETA readout is par on the HUD wearing a navigation costume. Route lines, chevrons, distance — fine.
+Clocks — no.
 
 ### Open
 
-- **Does the Highway's streak have a payoff at all**, or is it purely a thing you can lose? A ledger
-  with no boon is a warden wearing a pact's clothes — which may be right for a default state.
+- **The accelerators for Highway favour** (night driving / full-leg riding / freight) — proposed
+  2026-08-02, not ruled.
+- **The Shortcut's decay rate**, and the freight-forgiveness question above.
 - **The streambed jurisdiction** (was The Verge's, per Cross-spirit dynamics) now belongs to the
   Highway. Confirm the hard split with The Confluence still holds under the new framing.
-- **Terrain-fragility weighting** survived #03's retirement in principle but has no consumer now that
-  there is no off-road ledger to weight. Does it come back as cut *wear* scaling?
+- **Terrain-fragility weighting** survived #03's retirement in principle. Its natural consumer now is
+  **pass-2 hazard siting** — which hazard type a cut gets, given its ground.
+- **Does the pact class survive the cast?** Both spirits in this domain turned out to be
+  **relationships**, and they are the two most-developed entries in the file. The fatigue pair are
+  still pacts, so the class is real — but if another domain lands this way, `spirits-and-pacts.md` is
+  misnamed.
 
 ---
 
@@ -1159,7 +1286,9 @@ protect a find they might never get.
 - **Jurisdictions must not overlap.** *(2026-08-01: The Verge is retired — read "The Verge" below as
   "The Highway", which inherits the dry-ground claim. The rule is unchanged and is exactly why the
   Verge could not coexist with the Shortcut: two spirits metering the same behaviour in opposite
-  directions is the worst case of this.)* The Verge and The Confluence both have a claim on the
+  directions is the worst case of this. **2026-08-02:** the rebuilt pair meters **different**
+  behaviours — the Highway watches off-network skips, the Shortcut watches cut traversals — which is
+  why they can now share a domain without the legibility collapse this rule exists to prevent.)* The Verge and The Confluence both have a claim on the
   streambed. Let them share it and the player can never learn which spirit they offended, which
   kills the legibility the whole system depends on. Recommendation: **hard split** — The Verge
   owns dry ground, The Confluence owns water and the riparian corridor out to some bank width.
@@ -1171,6 +1300,15 @@ protect a find they might never get.
   system and should be found deliberately as spirits are added.
 - **The player can't serve everyone.** With exclusivity inside domains and wardens punishing
   across them, a run develops a shape. That shape is the closest thing this game has to a build.
+
+  > **⚠ Qualified 2026-08-02.** The route domain has **no exclusivity** — both spirits are co-held,
+  > and the run-shape there comes from **how you spend a finite day**, not from a side you picked.
+  > The rule still holds for pact domains (fatigue). But note what the rebuild demonstrated: *"a run
+  > develops a shape"* does **not** require the player to be forced to choose. It only requires that
+  > **passivity satisfies nobody** — the Highway is pleased by the status quo but the Shortcut is
+  > bored by it, so a player who does nothing loses one of them regardless. That is a better generator
+  > of run-shape than exclusivity, and it should be tried in other domains before another
+  > opposed pair is authored.
 - **Spirits are how the horror parameters get motivated.** Leaning trees, an oversized moon, a
   dark afternoon — these read as ambient dread on their own, but attributed to a specific
   offended spirit they become *legible*. The player who knows the world knows whose fault it is.

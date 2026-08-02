@@ -93,9 +93,10 @@ SM-INV-8 narrowed accordingly). (3) **Meta-progression is unlocked starting vehi
 a cast**; the roster-of-characters-with-perks model is replaced and the *spirit system is deferred*
 (not deleted). (4) **No in-run vehicle purchase** — parts yes, vehicles no; the game is about
 maintaining one rig (new **SM-INV-15**). (5) **Run shape fixed** — ~10 regions (*revised to **6
-large regions** on 2026-08-01*), 4–6 hours to beat,
-24-minute days (~10–15 days per run — *the days figure was corrected to **7–8** on 2026-08-01; see
-that pass*), and **suspend-and-resume saving** (one slot, written on quit,
+regions, growing with depth**, 2026-08-01/08-02*), 4–6 hours to beat (*now **6 hours***),
+24-minute days (~10–15 days per run — *corrected to 7–8 on 2026-08-01, then to **20** on 2026-08-02
+once the clock-pause rule fixed what a day actually costs; see "Run shape and saving"*), and
+**suspend-and-resume saving** (one slot, written on quit,
 *deleted on load*, deleted on death). Downstream: Open Q3 is **resolved** (region unlock is
 run-layer); SM-INV-11 is re-keyed to run progress; SM-INV-2's run-duration par clause is flagged for
 retirement (see the note there — recommended, not yet ratified).
@@ -130,14 +131,30 @@ under. A day driven entirely at par is **break-even**, which turns Open Q4's con
 formula. (3) **Rank (D/C/B/A/S) is the player-facing surface for par** — display only, result-card
 only, never live (SM-INV-3 amended). (4) **XP is replaced by mission points** (SM-INV-14 rewritten):
 region access is bought with a *count of well-driven missions*, not a scaling quantity — a well-driven
-mission is worth 1, a scraped one 0.5, a bad one 0. (5) **Run shape corrected to 7–8 days and 6 regions** — the old
-10–15-day figure divided target hours by the *sky cycle*, which counts only driving; and ten regions
-was revised to **six** (20–23 mission points total, schedule `5·4·4·3·3·2`) so the player has time to
-actually learn a place rather than tour it — **fewer and longer chapters, not bigger regions**; a
-region is a *progression chapter* and the play space is cumulative, so later missions may span
-several. See "Run shape and saving". Also ratified: **the Highway is the default state of the game, not a pact**; **cuts, spurs,
+mission is worth 1, a scraped one 0.5, a bad one 0. (5) **Run shape corrected to 6 regions** — ten was
+revised to **six** so the player has time to actually learn a place rather than tour it; a region is a
+*progression chapter* and the play space is cumulative, so later missions may span several.
+*(Days-per-run went 10–15 → 7–8 here, then to **20** on 2026-08-02; the point schedule went
+`5·4·4·3·3·2` = 21 → **`6·6·6·4·3·2` = 27** over a day budget of `4·4·4·3·3·2`, and "fewer and longer
+chapters, **not bigger regions**" was reversed — regions now **grow with depth on a sparser grid**.
+See "Run shape and saving".)* Also ratified: **the Highway is the default state of the game, not a pact**; **cuts, spurs,
 camping areas, logging sites and POIs all come from one off-network generator** (see "The off-network
 layer"); and **durability-over-sportiness is a sanctioned parts axis** (`items.md`).
+
+**Ratification pass 2026-08-02 — the route domain is rebuilt.** The Highway and the Shortcut were
+mutually exclusive (one cut flattened the roads for the run); they are now **co-holdable
+relationships, not pacts** — there is no accept/decline anywhere in the domain. **Cuts no longer
+offend the Highway**; the offense is an **intentional non-shortcut skip** (leaving the network and
+rejoining having saved >~200 m of road distance by a path that wasn't a cut), and the penalty is
+**graded by the distance skipped**, cumulative, with flat as a floor it approaches rather than
+reaches. He is the Shortcut's **father** — once a shortcut himself, he wants cuts reinforced and hates
+bypasses because *a bypass makes a badly-defined shortcut*. His boon gains a second half:
+**maintenance** — favour suppresses his dynamic rockslides (FEAT-26's event rate, keyed to favour; the
+rocks never persist and never block). The Shortcut's boon is **intel then clearance** — cuts on the
+map, then a visible marker floating over the ones that go, then pass-2 hazards clearing — and his
+anger is **being ignored**: esteem decays when you stop taking cuts, and he says it reminds him of his
+dad. The **shortcut GPS is a display layer** over that relationship, not a stronger version of it.
+Full model: `spirits-and-pacts.md` #05/#06.
 
 **Companion design notes** (downstream of this bible; where they disagree with it, *it* wins):
 [missions.md](missions.md) (mission taxonomy, XP/payout scoring, the log-drag main mission),
@@ -153,8 +170,9 @@ asset burn-down surface), [spirits-and-pacts.md](spirits-and-pacts.md) (the spir
 ## The premise [RATIFIED]
 
 RangerSim becomes a **roguelike**. A **run** is as many in-game days as you survive. You die
-by **crashing** or **breaking down** — nothing else. A day is a **24-minute sky cycle** and costs
-~40–45 real minutes to live through (see "Run shape and saving"); a run is **7–8 days**. Every run
+by **crashing** or **breaking down** — nothing else. A day is a **24-minute sky cycle** — **16 waking
+hours plus 8 hours' sleep**, and the clock **pauses in shops, service stations and camp** — so it
+costs **~18 real minutes** to live through (see "Run shape and saving"); a run is **20 days**. Every run
 starts in a jalopy with parts randomized from a pool of crap. Missions are hand-authored
 types with procedural dressing (mom needs milk; someone's chasing you). The roads are fun
 and humans are silly, so everyone drives too fast; the mission system rewards that rather
@@ -311,7 +329,9 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > rank thresholds, never in par.** The owner wanted what the retired clause was reaching for: a
   > standard that tightens as a run matures, so a maturing run must either drive better or keep a
   > better-maintained truck. That is now expressed as **the ratio bands moving, not the par moving** —
-  > S needs ratio ≤ 0.80 on day 1 and something tighter by day 7. Identical felt effect; par stays a
+  > S needs ratio ≤ 0.80 on day 1 and something tighter deep into the run *(the shipped ramp saturates
+  > on day 8 — `economy.js rankTightenDays`; at 20 days that must stretch, see `run-shape.md` "Code
+  > deltas")*. Identical felt effect; par stays a
   > pure physical quantity (a duration derived from a road), there is no second par in the code, and
   > `parGeometric` is simply **par**. This is *not* a reinstatement of the retired clause: the clause
   > changed the number the economy multiplies against, this changes only where the letters fall.
@@ -874,31 +894,47 @@ repetition. Full model and the cast: `spirits-and-pacts.md`.
 
 Full working-through in [run-shape.md](run-shape.md); the ratified numbers:
 
-- **6 regions** at the current 2500 m radius (~12 min to cross) · **4–6 hours** to beat ·
-  **24-minute sky cycle** ·
-  **7–8 days per run** [region count and days-per-run both set 2026-08-01]. The full trail chain must be completable
+- **6 regions**, region 1 at 2500 m (~12 min to cross) and **growing with depth on a sparser grid** ·
+  **6 hours** to beat · **24-minute sky cycle** = **16 waking h + 8 h sleep** ·
+  **~18 real minutes per day** · **20 days per run** [region count 2026-08-01; the clock, the day cost,
+  days-per-run and region growth all 2026-08-02]. The full trail chain must be completable
   in **one run** (SM-INV-7), since clearance is run-layer and resets on death — so region count is
   bounded by what one surviving run can reopen. That is a hard content constraint.
 
-  > **The 10–15 day figure was an arithmetic error, and the error is worth naming so nobody re-derives
-  > it.** It came from dividing the target hours by the **sky cycle** (24 min), which assumes a day is
-  > nothing but driving — no camping, no repair trips, no shopping, no dialogue, no travel between
-  > jobs. In practice a day costs roughly **40–45 real minutes**, so 7–8 days is what actually lands
-  > in the 4–6 hour target. **The 24-minute sky cycle is unchanged**; what changed is the recognition
-  > that the sky cycle and the wall-clock cost of a day are different numbers.
+  > **Days-per-run was wrong twice, and both errors are worth naming.** **10–15** came from dividing
+  > the target hours by the **sky cycle**, which counts only driving. The **7–8** correction then
+  > over-swung, pricing a day at ~40–45 real minutes by charging camping, repairs, shopping *and
+  > travel between jobs* as wall-clock overhead — but **travel between jobs is driving and already runs
+  > at 1:1**, and the rest now **pauses the clock** outright (2026-08-02). Genuine off-clock time is
+  > ~2 real minutes a day. **16 waking hours at 1 real min = 1 in-game hour, +2 min paused, sleep
+  > skipped = ~18 real min a day**, and 360 ÷ 18 = **20**. The 24-minute sky cycle never changed.
+
+- **The clock runs, pauses, or skips** [RATIFIED 2026-08-02]. Driving and travel run at 1:1. **Shops,
+  service stations and camp pause it** — those screens are the planning surface, and **the map must be
+  reachable from each of them.** Sleep, making camp, and an accepted repair **skip** it. Repairs cost
+  **money and hours** — *engine to 50% for $1000 and 10 hours* — charged as an immediate skip, which
+  makes a service stop a real commitment against the day rather than a wallet transaction.
+  **Energy drains across the skip — including when you pay someone else to do the work**; ten hours at
+  a station is ten hours awake, so a big repair accepted in the morning effectively ends the day.
+  **Sleep is the only skip that credits energy** instead of draining it. *(This resolves the standing
+  open question on repair duration and the cost of a day at the shop.)*
 
 - **A region is a progression *chapter*, not a bounded play space** [RATIFIED 2026-08-01]. Regions
   **unlock, they do not replace** — by chapter 6 the player has six regions of drivable, validated
   world, and **a chapter's gameplay need not happen inside its own region.** A late mission may start
   in region 1 and end in region 4; **driving between regions is content, not overhead.**
 
-  > **The region does not need to grow to carry a 40–60 minute chapter.** At the current
-  > `REGION_RADIUS_M = 2500` a crossing already takes ~12 minutes on this terrain, so a chapter is
-  > three to five crossings. The unit that matters is drive time, not map area.
+  > **Regions grow with depth** [REVERSED 2026-08-02 — this bullet previously said they need not].
+  > `REGION_RADIUS_M = 2500` is **region 1**; later regions get physically larger on a **sparser
+  > road/POI grid**, because a 12-hour mission needs somewhere to happen that isn't a lap of the same
+  > network. Cost tracks *density × area*, not area, so a bigger region on a thinner grid is roughly
+  > cost-neutral — and `REGION_RADIUS_M` is a story-layer value **deliberately outside `routeCacheSig`**
+  > (`src/story.js:35`), so growing it does **not** force a route-bundle re-bake.
+  > `test/region-radius-curve.mjs` prices the curve; run it before committing radii. *Open: the ladder
+  > itself, which should be derived from the mission par bands in `run-shape.md`, not picked as a shape.*
   >
-  > This is also the better explanation of the falling point schedule: late missions **span regions**,
-  > so their par is large, they pay more (`parBase ∝ par`) and they take longer. Chapter 6 needing
-  > only 2 points is not thinness — it is two multi-region hauls.
+  > Chapter 6 needing only 2 points is not thinness — those are **two whole-day hauls** (~12 h par
+  > each), and late missions may span regions, so their par is large and they pay more (`parBase ∝ par`).
   >
   > **Two build consequences.** The play space grows monotonically, so streaming and validated-network
   > coverage scale with **regions unlocked** (FEAT-28's bill, not a region-sizing one) — and because
@@ -909,19 +945,37 @@ Full working-through in [run-shape.md](run-shape.md); the ratified numbers:
   > confines both endpoints to the single active region (FEAT-43), which has to become "inside the
   > unlocked set" before cross-region missions work at all.
 
-- **Mission points per region: a falling schedule, not a flat count** [RATIFIED 2026-08-01]. At ~2–3
-  missions per day over 7–8 days a run affords roughly **20 missions**, so a flat "5 per region"
-  does not fit at ten regions — it would be a ~10-hour run. At **six** regions the schedule falls
-  with depth and totals 20–23:
+- **Days and points are authored per region** [RATIFIED 2026-08-02, supersedes the 2026-08-01
+  falling schedule]:
 
-  > **5 · 4 · 4 · 3 · 3 · 2** — 21 points, ~2.7 missions/day.
+  > **days**   4 · 4 · 4 · 3 · 3 · 2 = **20**
+  > **points** 6 · 6 · 6 · 4 · 3 · 2 = **27**
 
-  This is not a compromise; it is the texture `run-shape.md` already predicted — *"region 1 gets
-  cleared in five or six short errands and the last in one or two long hauls."* Early regions are a
-  busy board of short jobs with a healthy truck; deep regions are one or two serious commitments with
-  a wrecked one. Because points come in halves (a C is ½ — SM-INV-14), the real counts are finer than
-  the integers suggest. **Per-region counts are authored numbers, one per region** — a content dial,
-  not a curve to fit.
+  **Days-per-region is a pace, not a gate** — the point count is the gate; falling behind costs days,
+  and the cost curve charges for them.
+
+  **The ramp is mission *length*, not mission count.** Points per day stay nearly flat (1.5 → 1.0);
+  what changes is what a point costs. Region 1's missions are **~5–7 h par**, so two fit in a 16 h day
+  and a good player clears **~8 against a requirement of 6** — deliberate slack, the budget for failing
+  and for building the jalopy up. Region 3's are **7–12 h par**, where two no longer comfortably fit
+  and the day becomes the binding constraint. Region 6's are **~12 h par plus ~2 h to fishable ground
+  and ~2 h to the next job — exactly one day**, with **no room for a service stop or an upgrade.**
+
+  *(An earlier draft authored a falling point schedule on the theory that deep country is emptier.
+  Right instinct, wrong axis: the emptiness should show up as longer missions, not fewer of them.)*
+  Because points come in halves (a C is ½ — SM-INV-14), the real counts are finer than the integers
+  suggest — and that half-point is the only give in region 3's band, which is the tightest number in
+  the run. **Per-region counts are authored numbers, one per region** — a content dial, not a curve to
+  fit. Full derivation and the per-region table: `run-shape.md`.
+
+- **Long missions may need checkpoints.** A 12 h par job across a sparse late region has no vocabulary
+  in `missions.md` today — missions are point-to-point with endpoints mid-edge. **Multi-checkpoint
+  missions are a new structure**, not a tuning value, and they gate regions 3–6. No ticket yet.
+
+- **The cost escalation is a soft asymptote, not a wall** [RATIFIED 2026-08-02]. Day 20 is where a
+  paced run finishes; **a good player who is not motivated to end the run can stretch to 25–30 days.**
+  It must never announce itself — SM-INV-3 forbids a countdown, and a hard cliff at day 20 would be a
+  timer wearing a price tag. You do not run out of days, you run out of money.
 
 - **Difficulty is a run-start setting, never a worldgen input** [2026-08-01]. A difficulty selection
   may scale the point thresholds, the cost-escalation curve, and `k` in the payout formula. It must
@@ -972,10 +1026,19 @@ Full working-through in [run-shape.md](run-shape.md); the ratified numbers:
   - **Strictly downstream of routing.** Nothing in this layer may enter `routeCacheSig`, the abstract
     graph, the router cost model, or the crossing cull. Road centerlines must be **bit-identical**
     with and without it — the same parity gate FEAT-46 already ships.
-  - **Pure `(worldSeed, coords)`, window-invariant** (SM-INV-12). This includes **which cuts are
-    washed out** — passability is worldgen, fixed per seed, *not* run-layer. That makes knowing which
-    cuts go through pure **literacy**, the one thing that survives death (SM-INV-8), and it is what
-    lets the Shortcut's pact be a *knowledge* gift rather than a lottery ticket.
+  - **Pure `(worldSeed, coords)`, window-invariant** (SM-INV-12) — for **placement**. *(Amended
+    2026-08-02: passability is a function of **(seed, favour)**, not seed alone. **Where** a hazard
+    sits is worldgen and fixed forever; **whether it has been cleared** is run-layer, moving only at
+    day boundaries as the Shortcut's esteem deepens. **Literacy survives and improves** — you learn
+    "that one has a slide two thirds in," true on that seed every run; what changes is whether you can
+    get past it.)*
+  - **Two passes** [RATIFIED 2026-08-02]. **Pass 1 is inherent difficulty** — tight radii, no banking,
+    bad surface — which is free, is what an unengineered route *is*, and is why the router honestly
+    costs a cut as bad line. **Pass 2 is discrete hazards** — rockslide, ford, ruts, sharp rock —
+    which must be **carved**, because a hazard that is drivable, punishing at the right level and
+    rewarding at the right level cannot be left to whatever the terrain happened to do. Only pass 2 is
+    favour-gated, which keeps the invalidation surface to short local carves on specific segments.
+    Keep hazard carves ~20 m and favour tiers coarse (4–5, day-boundary only).
   - **One shared "good ground" score** — flatness, shade (tree density), water proximity, and
     possibly view (terrain visible from the site). Camp areas, POI pads and logging sites all read
     it; see the three-layer camping model below.
@@ -1087,7 +1150,8 @@ escalate rather than assuming the pane is licensed for it.
    the concrete *final* beat actually is. Do not invent the ending in a ticket.
 2. ~~XP → region unlock: unit, curve, radius vs discrete regions.~~ **RESOLVED 2026-08-01.** The
    unit is **mission points**, not XP (SM-INV-14): 1 for a B or better, ½ for a C, 0 for a D. There
-   is no curve — per-region counts are **authored**, falling with depth (5·4·4·3·3·2 over six regions). Regions
+   is no curve — per-region counts are **authored** (**6·6·6·4·3·2 = 27** over six regions, against a
+   day budget of 4·4·4·3·3·2; *was 5·4·4·3·3·2 until 2026-08-02*). Regions
    are **discrete macro tiles**, as FEAT-28 already assumed. Residual: whether the log drag counts
    toward its own region's total or sits on top of it.
 3. ~~Whether region unlocks persist across runs.~~ **RESOLVED 2026-07-29 — they do not.** Trail
@@ -1108,12 +1172,16 @@ escalate rather than assuming the pane is licensed for it.
    the work) — or means there's no reason not to accept every job and bail. Unresolved.
    (Timed mission types partially answer this — their reward decays/zeroes — but the
    no-clock default mission still has no bail cost.)
-7. **Maintenance time + the day-cost of waiting** (owner, 2026-07-19). How long does a station
-   repair take — especially a busted engine — in in-game hours, and what does burning a day (or
-   part of one) actually cost the run? The day-cost isn't just the clock: par may tighten with
-   run age (SM-INV-2), sleepiness accrues, and missions expire — so "wait a day at the shop" has
-   to hurt enough to make the tow-vs-limp-vs-repair decision real without being run-ending on its
-   own. Tuning, not structure; log until the economy is being balanced.
+7. ~~**Maintenance time + the day-cost of waiting**~~ **RESOLVED 2026-08-02.** A repair is priced in
+   **money and in-game hours**, and accepting one is an **immediate time skip** — *engine to 50% for
+   $1000 and 10 hours*, which eats most of a 16 h day. The clock is **paused** while you stand in the
+   station deciding, so the cost is purely the daylight you commit, not wall-clock dithering. That
+   makes the tow-vs-limp-vs-repair decision real without being run-ending on its own, and it is what
+   gives "build the jalopy up in region 1, when days are cheap" its teeth. See `run-shape.md` → "The
+   clock". **Energy drains across the skip, and paying someone else to do the work changes nothing** —
+   ten hours at a station is ten hours awake. A morning repair therefore leaves ~6 h of energy and
+   effectively ends the day, which is the point: a big repair *is* a day. **Sleep is the only skip that
+   credits energy** rather than draining it. No residual.
 8. **Two damage-model mechanisms flagged for owner OK** (proposals in "Damage, wear & repair"):
    the **head-gasket metric** (proposed: an overheat integral — time-above-threshold × severity)
    and the **suspension-damage trigger** (bump-stop over-travel distance vs. suspension-velocity
@@ -1171,7 +1239,7 @@ parameter states come from hard tooling, not realtime slider manipulation).
 | Headless gate determinism | Doze, ambush timing, live mission state | Flag-gated live systems (FEAT-26 precedent); gates pin a default **`runState`** (2026-07-29 — was `metaState`) |
 | Meta-progression = breadth, not floor (SM-INV-9) | The roster mechanism was spirits/characters-with-perks | **RATIFIED 2026-07-29**: the roster is a **garage** — unlocked *starting vehicles*, lateral not upward. Easier to keep honest than perks, because a vehicle's differences are physical and visible. Spirits/classes **deferred**, not deleted (see "The garage") |
 | Parts are the upgrade path (SM-INV-10) | An obvious dealership/"buy a better truck" affordance | **RATIFIED 2026-07-29**: no in-run vehicle purchase (SM-INV-15). Aspiration is deep parts customization within one rig, plus unlocked *starting* vehicles chosen before the run |
-| SM-INV-1 death is permanent | A 4–6 hour run needs saving, and a reloadable save destroys the loss economy | **RATIFIED 2026-07-29**: suspend-and-resume — one slot, written on quit, **deleted on load**, deleted on death. A pause button that survives closing the browser, not a checkpoint (see "Run shape and saving") |
+| SM-INV-1 death is permanent | A 6-hour run needs saving, and a reloadable save destroys the loss economy | **RATIFIED 2026-07-29**: suspend-and-resume — one slot, written on quit, **deleted on load**, deleted on death. A pause button that survives closing the browser, not a checkpoint (see "Run shape and saving") |
 | SM-INV-8 "the world persists" | Region/trail clearance persisting is a power *floor* (SM-INV-9) | **RATIFIED 2026-07-29**: clearance and region access are **run-layer**; SM-INV-8 narrowed to literacy + garage. The deck widens, the map doesn't. Resolves Open Q3 |
 | USER-OWNED debug sliders (FEAT-06 etc.) | Story mode drives world params | **RATIFIED 2026-07-16**: story mode locks out debug tooling; sliders fixed; story/difficulty states baked via hard tooling |
 | `feedback_emergent_over_injected` | — | **Alignment, not tension**: par derived from the router, cursed items emerging from honest physics, story as parameter states, damage read from real bump-stop forces — all this tenet applied to game design |

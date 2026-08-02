@@ -21,6 +21,14 @@ clipping the edge of the pile shoves individual rocks rather than hitting an inv
 This is the **static sibling of FEAT-26**: same rock bodies, opposite dynamics — FEAT-26 is a timed
 tumbling ambush, FEAT-27 is a stationary obstacle field.
 
+> **⚠ Story-mode note, 2026-08-02.** The Highway's anger (`spirits-and-pacts.md` #05) is **FEAT-26**,
+> not this ticket — its event *rate* keyed to disfavour, with rocks that do not persist. **FEAT-27 is
+> not the favour mechanism**: a persistent pile is world state, and the 2026-08-02 ruling excludes the
+> world remembering anything about where the player has driven. This ticket stays valuable for
+> authored one-offs and for the FEAT-52 cut hazards (where a *carved* rockslide on a shortcut is
+> exactly right and is fixed per seed). Where it lands there, note the hard asymmetry: **a cut hazard
+> may block; a Highway hazard may never.**
+
 ## Why this links to FEAT-09
 
 Sits mostly on **FEAT-09 Phase 2** (static obstacle contacts): the resting rocks are fixed colliders

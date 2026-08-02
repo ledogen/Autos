@@ -98,7 +98,7 @@ story-mode go-ahead. Listed so that picking one up never feels like a detour.
 | **FEAT-23** drivetrain architecture P2–P5 | Parts-as-cars substrate (SM-INV-10). The parts-selector phase becomes the jalopy generator's roll-space in SM-3. |
 | **FEAT-04a** visual vehicle swap | Jalopy variety reads visually — and, post-2026-07-29, the garage's roster is *starting vehicles*, so this carries more weight than it used to. |
 | **FEAT-21** POI scatter | **Variety pass only** — FEAT-46 shipped the anchors and FEAT-52 owns off-network siting. What is left is POI *types*, names and differing mission flavours. |
-| **FEAT-52** off-network generator | ONE generator for spurs, cuts, camping areas, logging sites and POI candidates (DESIGN.md "The off-network layer"). Absorbs FEAT-38 mode B and FEAT-32's siting. Substrate for the deferred Highway/Shortcut pair. |
+| **FEAT-52** off-network generator | ONE generator for spurs, cuts, camping areas, logging sites and POI candidates (DESIGN.md "The off-network layer"). Absorbs FEAT-38 mode B and FEAT-32's siting. Substrate for the deferred Highway/Shortcut pair. **Two passes as of 2026-08-02** — inherent difficulty (free), then discrete **carved** hazards that the Shortcut's esteem clears; hazard *placement* stays worldgen, *removal* is run-layer. Also owes #05 the **intentional-non-shortcut-skip detector** (>~200 m of road distance saved off-network, penalty scaled by magnitude). |
 | **FEAT-48** physics engine adapter | Backend migration behind a swappable seam. Long lead time, blocks FEAT-36/35 and the log-drag chain. Phase 0 is a go/no-go determinism test — do that early regardless of story progress. |
 | **FEAT-41** game menus + UI | The shell every player-facing feature docks into, including the mode split SM-1 needs. |
 
@@ -123,9 +123,12 @@ economy attached. The last leg of the day is the game (SM-INV-6).
   fixed. Extend the existing `window.__setGameMode` seam — do not invent a second mode mechanism.
   Free Roam remains exactly the game built to date. *(FEAT-41 is the fuller version of this.)*
 - Run clock: **24-minute in-game day** [RATIFIED 2026-07-29] mapped onto sky time-of-day
-  (`SKY_CYCLE` in `src/sky.js` already exists); day counter. **~7–8 days per run** [corrected
-  2026-08-01 — the old 10–15 divided target hours by the *sky cycle*; a day actually costs ~40–45
-  real minutes once camping, repairs and travel are counted. The 24-min cycle itself is unchanged].
+  (`SKY_CYCLE` in `src/sky.js` already exists); day counter. **16 waking hours + 8 hours' sleep**, and
+  the clock **pauses in shops, service stations and camp** → a day costs **~18 real minutes** →
+  **20 days per run** [RATIFIED 2026-08-02; the 24-min cycle itself is unchanged. Successively
+  corrected from 10–15 (divided by the sky cycle) and 7–8 (charged travel as off-clock overhead)].
+  **Shipped `day.js` needs `fullEnergyH` 18 → 16** and its sleep-rate mean 2.25 → 2.0; see
+  `run-shape.md` → "Code deltas".
 - Sleepiness state: accrues over the waking day; coffee = loan (alert now, sleepier tomorrow).
 - **Doze**: eyes-close overlay + control attenuation, periods lengthen with sleepiness. Not a fail
   state (SM-INV-1). Flag-gated for headless gates (SM-INV-12).
@@ -161,9 +164,10 @@ ratio  = elapsed / par            payout = parBase × dayTier × clamp((1.2 − 
 - **Rank thresholds tighten with run day** — the brake on the rising tier. **Par never moves**
   (SM-INV-2 as amended 2026-08-01).
 - **Rank is display only, result-card only, never live** (SM-INV-3 as amended).
-- **Progress = mission points**, not XP: 1 at B+, ½ at C, 0 at D; authored per-region counts falling
-  with depth `5·4·4·3·3·2` over **six regions**, 21 points (SM-INV-14 as rewritten;
-  `run-shape.md`).
+- **Progress = mission points**, not XP: 1 at B+, ½ at C, 0 at D; authored per-region counts
+  `6·6·6·4·3·2` = **27 points** over **six regions**, against a day budget of `4·4·4·3·3·2` = 20 days
+  (SM-INV-14 as rewritten; `run-shape.md`). **The ramp is mission *length*, not count** — ~5–7 h par in
+  region 1, ~12 h (a whole day) in region 6.
 
 - Mission board at POIs: hand-authored types × procedural dressing. **The taxonomy lives in
   [missions.md](missions.md)** — four scoring axes (margin / coverage / restraint / clearance), three
@@ -259,9 +263,10 @@ ratio  = elapsed / par            payout = parBase × dayTier × clamp((1.2 − 
 - **The garage** — meta-progression is unlocked *starting vehicles*, lateral never upward.
 - **Suspend-and-resume saving**: one slot, written on quit, **deleted on load**, deleted on death.
   Cheap precisely because worldgen is meta-free — the world is never serialized. (FEAT-42.)
-- Run shape target: **6 regions** (chapters — the play space is cumulative and later missions may
-  span regions), **7–8 days**, 4–6 h to beat, ~21 missions. The full trail chain must fit in **one run**
-  (SM-INV-7) — that bounds region count. See [run-shape.md](run-shape.md).
+- Run shape target: **6 regions** (chapters — the play space is cumulative, later missions may span
+  regions, and **regions grow with depth on a sparser grid**), **20 days**, **6 h** to beat,
+  **27 points**. The full trail chain must fit in **one run** (SM-INV-7) — that bounds region count.
+  See [run-shape.md](run-shape.md).
 
 ## SM-5 — The World Turns (story delivery, horror)
 

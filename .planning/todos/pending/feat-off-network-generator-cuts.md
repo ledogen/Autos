@@ -16,12 +16,13 @@ relates_to: >
   FEAT-45 (shipped camp zones — consumes this generator's good-ground score),
   FEAT-39/src/gps.js (routing preference + the shortcut-GPS item), FEAT-29/src/par.js (par is
   ALWAYS the road route — see below)
-blocks: the Shortcut pact (deferred); FEAT-38 mode B; FEAT-32 siting
+blocks: the Shortcut relationship (deferred); FEAT-38 mode B; FEAT-32 siting
 note: "ONE generator for everything off the routed network — spurs, cuts, camping areas, logging
 sites, POI candidates. A track that dead-ends is a spur; a track that rejoins is a cut. Strictly
 downstream of routing: road centerlines must be BIT-IDENTICAL with and without it (FEAT-46's shipped
-parity gate is the template). Washout passability is WORLDGEN, not run-layer — that is what makes
-knowing-which-cuts-go literacy rather than a lottery."
+parity gate is the template). Hazard PLACEMENT is worldgen; hazard REMOVAL is run-layer, gated on the
+Shortcut's esteem (amended 2026-08-02 — was 'passability is worldgen, full stop'). Two passes:
+inherent difficulty (free), then discrete CARVED hazards (favour-gated)."
 ---
 
 # FEAT-52: The off-network generator — spurs, cuts, and the shared good-ground field
@@ -52,11 +53,31 @@ That is also, exactly, the fiction of the Highway/Shortcut pair — same substan
    (`cellA`/`cellB`), never the streamed `runKey` — BUG-25 flips whole edges on re-stream, so
    runKey-derived placement is not window-invariant. This is the mistake FEAT-46 already made and
    documented.
-3. **Washout passability is WORLDGEN** [RATIFIED 2026-08-01], not run-layer. A cut that doesn't go
-   through doesn't go through on that seed, forever. This is load-bearing for two reasons: it makes
-   knowing which cuts go **literacy** (SM-INV-8, the one thing that survives death), and it makes the
-   Shortcut's pact a *knowledge* gift rather than a lottery ticket.
-4. **No hand-placement.** The pattern emerges from the mask (`[[feedback_emergent_over_injected]]`).
+3. **Hazard PLACEMENT is worldgen; hazard REMOVAL is run-layer** [amended 2026-08-02 — was
+   "washout passability is WORLDGEN, not run-layer"]. Where a hazard sits is pure `(worldSeed, coords)`
+   and fixed on that seed forever. **Whether it has been cleared is a function of the Shortcut's
+   esteem**, moving only at day boundaries (SM-INV-12). **Literacy survives and improves**: you learn
+   *"that one has a slide two thirds in"* and it is true every run on that seed — what changes is
+   whether you can get past it. See `spirits-and-pacts.md` #05/#06 (rebuilt 2026-08-02).
+
+4. **Two passes** [RATIFIED 2026-08-02]:
+   - **Pass 1 — inherent difficulty.** Tight radii, no banking, bad surface. **Free** — it is what an
+     unengineered route *is*, and it is exactly why the router honestly costs a cut as bad line.
+     Nothing to author, nothing to clear. **Steep and tight are not hazards.**
+   - **Pass 2 — discrete hazards.** Rockslide, water crossing, rutted-out section, sharp rock.
+     **These must be carved.** [owner] *"A cut might happen to cross a natural stream, but we get no
+     control over where, how, or whether it's drivable. To guarantee a hazard that is drivable,
+     punishing at the right level and rewarding at the right level, we have to generate it."*
+
+   Budget discipline, because pass 2 is the only favour-gated part and therefore the only thing that
+   invalidates: **keep hazard carves short (~20 m, not 200)**; **keep favour tiers coarse (4–5,
+   day-boundary only)** — that is ~4–5 re-carve events per run, a region-unlock-shaped cost rather
+   than a per-day one; and **never let a favour change trigger a world regen**, only local segment
+   invalidation.
+
+   *Terrain-fragility weighting (inherited from the retired #03 The Verge) finds its consumer here:
+   which hazard type a cut gets, given its ground.*
+5. **No hand-placement.** The pattern emerges from the mask (`[[feedback_emergent_over_injected]]`).
 
 ## Scope
 
@@ -103,13 +124,16 @@ landings *feed candidates*; they never gate.
   2026-08-01]. Geometry-only, item-blind, pact-blind (SM-INV-2). A player who takes a cut beats par
   by *driving a shorter way* — par did not move, their route did. Two consumers sit downstream and
   neither belongs to this ticket:
-  - **The shortcut-GPS item** (`items.md` §2) — reveals and routes cuts; par unchanged, so the cut is
-    a genuine advantage. This is the one that can ship without the spirit system.
-  - **The Shortcut's pact** (deferred) — same reveal, but the *client* quotes you against the
-    cut-inclusive route, so the scoring gain is eaten. That is his price, not a change to the oracle.
+  - **The Shortcut relationship** (deferred) — *he* is what reveals cuts, in three stages: on the
+    map, then a marker floating over the ones that go, then hazards clearing. **Rebuilt 2026-08-02:
+    there is no pact and no par penalty** — the route domain is relationships, not pacts.
+  - **The shortcut-GPS item** (`items.md` §2) — a **display layer** over what he has already revealed:
+    FEAT-39's chevrons and junction boards applied to cuts. It is worthless at zero esteem, so it
+    cannot ship as a standalone ahead of the spirit layer. *(It previously could — that was the
+    "strictly stronger than the pact" model, retired 2026-08-02.)*
 
-  **Gating rule this ticket must support:** with neither, the player is **never routed through a
-  cut** — navigation prefers the maintained network, and cuts stay something you find yourself.
+  **Gating rule this ticket must support:** with no standing and no chip, the player is **never routed
+  through a cut** and does not know where they are — cuts stay something you find yourself.
 
 ### 5. Cut-traversal detection (a small, load-bearing signal)
 
@@ -122,10 +146,21 @@ Small, but two systems need it and one is already ratified:
   no memory of being built and cannot know he goes anywhere until someone proves it by coming out the
   other side — so the completion event is literally what tells him he connects. He then visits at the
   **campsite the following night**, never mid-drive.
-- **It is also what breaks the Highway's streak** (#05, ratified 2026-08-01) — the same event, read
-  with the opposite sign. One completed cut ends the streak and the road **flattens its camber below
-  baseline** until favour is rebuilt. So this single event is the hinge the entire route domain turns
-  on: it summons one spirit and offends the other.
+- **It gates the Highway's skip detector** (#05, rebuilt 2026-08-02) — but with the **opposite sign
+  to the original spec**. ⚠ **A completed cut no longer offends the Highway; cuts are fine by him.**
+  What this event does for #05 is *suppress* his check: entering a cut must silence the
+  intentional-non-shortcut-skip test until the player rejoins the network, or a forgiven
+  cross-country escape from a **failed** cut reads as a bypass. Cheap, and easy to forget.
+
+**Also needed by #05 — the intentional-non-shortcut-skip detector** [RATIFIED 2026-08-02]. A separate
+signal from the above: the player **left the maintained network and rejoined it having saved more
+than ~200 m of road distance, by a path that was not a cut.** The **magnitude of the distance skipped
+scales the penalty** (a 250 m shave costs a little camber; a kilometre costs a lot), and the effect is
+graded and cumulative — flat is a floor it approaches, never reaches in one event. It must be
+impossible to trip by accident: parking on grass, using a shoulder, or sliding off a corner never
+rejoin *downstream*, so they never skip road distance. ⚠ **Verify against junction-pad and lay-by
+geometry** — graded pads are wide, and a pad chain might let a player save ~200 m without leaving the
+road surface. *(Owner: if it breaks in practice, that is a bug to fix, not a reason to redesign.)*
 
 **Precision matters here more than it looks.** A false positive costs the player their Highway favour
 and a visibly worse world, so the event must fire on a genuine through-passage only — **in from one

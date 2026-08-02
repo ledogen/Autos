@@ -18,6 +18,13 @@ came from the project owner on 2026-07-29. Wording is a proposal; the decisions 
 > by the sky cycle); and **~10 regions** — corrected to **6 regions** (20–23 points total; same
 > 2500 m radius, fewer and longer chapters).
 > See DESIGN.md "Ratification pass 2026-08-01".
+>
+> **⚠ Superseded again on 2026-08-02 — this file is a historical record and is left uncorrected.**
+> Days-per-run is now **20** (a day costs ~18 real min: 16 waking hours at 1:1, the clock **paused**
+> in shops/service/camp, sleep skipped — the 7–8 figure had charged travel-between-jobs as off-clock
+> overhead). Points are **27** on `6·6·6·4·3·2` against a day budget of `4·4·4·3·3·2`, and regions
+> **grow with depth on a sparser grid** rather than staying at 2500 m. Current numbers live in
+> [run-shape.md](run-shape.md); everything below is 2026-07-29/08-01 provenance only.
 
 **Read this first if you're an agent working in the codebase.** Four of these change or revert
 `[RATIFIED]` rules.
@@ -155,6 +162,9 @@ becomes a sweet rig), and unlocked *starting* vehicles at the meta layer (§4) �
 before the run, not bought during it.
 
 ## 6. Run shape *(new mechanics section — see `run-shape.md`)*
+
+*(⚠ Historical. Current numbers: **6 regions growing with depth · 6 h · 20 days · 27 points** — see
+[run-shape.md](run-shape.md). Only the saving model below is still live.)*
 
 **[RATIFIED 2026-07-29]** ~10 regions at current region size · **4–6 hours** to beat · **24-minute
 days** (~10–15 days per run) · full trail chain completable in one run (SM-INV-7) · **saving is

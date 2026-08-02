@@ -22,6 +22,36 @@ intercept** the player's line as they drive by:
 - Spawn/release timing is chosen to try to arrive at the road as the player crosses that stretch —
   a near-miss-or-hit ambush, not a static hazard.
 
+## ⚠ Story-mode consumer added 2026-08-02: this is THE HIGHWAY'S ANGER
+
+`spirits-and-pacts.md` #05 (rebuilt 2026-08-02) ratifies that the Highway's boon has two halves —
+**camber** (the engineering) and **hazard suppression** (the upkeep). Together they make his boon
+*maintenance*, which is exactly and completely what a road authority does for a driver.
+
+**The mechanism is this ticket with its event rate keyed to favour. Nothing else changes.**
+
+- **Disfavour raises the per-distance event probability; favour lowers it.** That is the entire hook.
+  It reads the day's favour; it never advances it.
+- **Rocks do not persist** [owner, 2026-08-02] — *"a couple of medium rocks, not impassable… we could
+  clear them and just have it be that the chance of a rockslide occurring at any random time is higher
+  as disfavour with the highway grows."* So this stays **rigid-body debris (FEAT-09), never carves**,
+  and the Highway's hazards cost **nothing** against FEAT-52's pass-2 carve budget. The two spirits'
+  hazard systems are mechanically unrelated, deliberately.
+- **⚠ HE MUST NEVER BLOCK HIMSELF.** *A road wants traffic* is the stated basis of his entire boon, so
+  neglect makes the drive **worse, never impossible** — a couple of medium rocks to pick a line
+  around, not a wall. Same shape as the ratified "flat is the floor, not off-camber."
+
+  **This also kills a death spiral:** if a slide could block the road, the player would be forced
+  around it → that reads as an intentional non-shortcut skip → more disfavour → more slides. It cannot
+  happen if he never blocks. **Do not soften this rule for drama.**
+- **Never materialise an event inside the player's view.** Spawn ahead beyond some distance, or on a
+  slope above a segment not yet in frame.
+- The **Trigger model** open question below is answered for this consumer: **flag-gated live-reactive**,
+  same precedent as doze/ambush timing, gates pin a default `runState`.
+
+**FEAT-27 (static rockslide)** stays available for authored one-offs but is **not** the favour
+mechanism — a persistent pile needs world state the 2026-08-02 no-world-memory ruling excludes.
+
 ## Why this links to FEAT-09
 
 This is a **gameplay layer on top of FEAT-09 Phase 3** (dynamic debris). The rocks are exactly the

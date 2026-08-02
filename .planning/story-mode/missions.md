@@ -64,8 +64,27 @@ points**:
 
 > **1 point** at rank **B or better** · **½ point** at **C** · **0** at **D**.
 
-Per-region counts are authored and fall with depth — `5 · 4 · 4 · 3 · 3 · 2`, **21 points across six
-regions** in a 7–8 day run (`run-shape.md`). Points are run-layer and reset on death.
+Per-region counts are authored — `6 · 6 · 6 · 4 · 3 · 2`, **27 points across six regions** against a
+day budget of `4 · 4 · 4 · 3 · 3 · 2` in a **20-day** run (`run-shape.md`). Points are run-layer and
+reset on death.
+
+**Difficulty rides mission *length*, not mission count** [RATIFIED 2026-08-02]. Points per day stay
+nearly flat (1.5 → 1.0); what changes is what one point costs of a 16-hour day:
+
+| Region | Mission par | A day holds | Feel |
+|---|---|---|---|
+| 1 | **~5–7 h** | two, comfortably (~8 possible vs 6 required) | chill — room to fail and to wrench |
+| 3 | **7–12 h** | two, barely | the day becomes the binding constraint |
+| 6 | **~12 h** + 2 h to fishable ground + 2 h to the next job | **one, exactly** | no budget for a service stop or an upgrade |
+
+> ⚠ **Region 3 is the tightest number in the run.** At the long end of its par band a cycle is ~14 h
+> and four days buy ~4.6 missions against a requirement of 6 — it only works if the band's short end
+> is typical, and a single C (½ point) costs a whole extra cycle. **Tune the par band before touching
+> the point count.**
+
+> **Long missions may need checkpoints.** A 12 h par job across a sparse late region has no vocabulary
+> here — §3's types are point-to-point with endpoints mid-edge (never node-snapped). **Multi-checkpoint
+> missions are a new structure**, not a tuning value, and they gate regions 3–6. No ticket yet.
 
 *Why the change:* an XP quantity that scales per day only forces the requirement to scale with it —
 a treadmill that nets to nothing while hiding the number that actually matters. A count makes the
@@ -520,8 +539,9 @@ Job board discovery/expiry opened as a live design question.
 the par ratio** with the base scaled by par (absolute-seconds-under-par retired, its *intent*
 preserved by the par-scaled base), anchored so **a day at par is break-even** — which resolves Q4.
 A **day tier** locked at mission accept raises payouts as the run ages; the **rank thresholds** tighten
-as the brake. **XP replaced by mission points** (1 / ½ / 0 for B+ / C / D), authored per-region counts
-falling with depth. **Rank (D·C·B·A·S) became par's player-facing surface** — display only,
+as the brake. *(Both shipped tables saturate on day 8 and must stretch to a 20-day run — see
+`run-shape.md` → "Code deltas".)* **XP replaced by mission points** (1 / ½ / 0 for B+ / C / D),
+authored per-region counts. **Rank (D·C·B·A·S) became par's player-facing surface** — display only,
 result-card only. **Bonus objectives** ("an A gets you a little extra") added as the one legal
 pre-drive target, paying in items.
 
@@ -539,7 +559,8 @@ chat pane; the mode split; the per-component damage model; breadth-not-floor.
 **Superseding DESIGN.md as of 2026-07-29** — see `design-amendments-2026-07-29.md`: worldgen is
 meta-free; meta-progression is the garage; no in-run vehicle purchase; run shape fixed. **As of
 2026-08-01** DESIGN.md is current again and supersedes that file: par ramp retired, continuous
-payout, mission points, rank as surface, 7–8 day runs.
+payout, mission points, rank as surface. **As of 2026-08-02**: **20-day runs**, 27 points, the
+clock-pause rule, and regions that grow with depth (`run-shape.md`).
 
 **Owner-only, untouched:** the Roamer's motives and the final beat (Q1); forced progression (Q9);
 mission bail cost (Q6).
