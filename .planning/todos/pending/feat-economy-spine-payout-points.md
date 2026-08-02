@@ -84,9 +84,42 @@ keep: tier(1)=1, thresholds tighten monotonically, **B > 1.0 on every day**.
 - [x] Rank colours on result card only; `case 'running'` untouched (SM-INV-3)
 - [x] `runState` stays `{ day }` — wallet lives in `runEconomy` (gate-pinned)
 - [x] `npm test` green (economy + story-poi + par-oracle + mission-network + gps-route)
-- [ ] `npm run test:all` green pre-commit
-- [ ] Live drive-through: park → offer → decline → re-park same offer → accept → deliver →
-      coloured letter + $ + deeds on the card, run-hud updates
+- [x] `npm run test:all` green pre-commit (44/44 at e8a7c02; 45/45 at 92da8e4)
+- [x] Live drive-through: owner drove the full flow 2026-08-01/02 — "flow is good,
+      everything feels good"
+
+## HANDOFF — state as of 2026-08-02 (phases A–C DONE and owner-verified; D open)
+
+**On main:** `e8a7c02` (spine) · `212c3a1` (fix: quick-job accept teleports again — _launch's
+setSpawn write clobbered the async teleport's spawn override; setSpawn now fires only on the
+no-seat POI path. Latent since FEAT-46; keep the pattern in mind for any future _launch caller).
+
+**Landed alongside, same day (interacts with Phase D):**
+- **FEAT-30 par recalibration** (`041761b`, ticket CLOSED in `todos/completed/`): PAR_REF mu
+  0.62→0.90, accel→3.0, brake→7.0, fitted to 20 labelled drives via `test/calibrate-par.mjs`
+  (re-runnable when new runs land in `runs/`). Every par shrank ~15-19% ⇒ payouts (k·par) shrank
+  with them and ratios rose. **k = 0.35 was picked against the OLD par scale — Phase D must
+  re-derive it** (target: typical day-1 job at par ≈ $60-70, day of 2.7 par jobs ≈ break-even
+  against whatever SM-3-era costs get authored).
+- camp-view merge (`04c8798`), junction-flow merge (`92da8e4`) — no economy interaction.
+
+**What Phase D still owes (the only open work on this ticket):**
+1. Re-pick `k` against the recalibrated par (see above).
+2. Balance `dayTierTable` + `rankDayLate` against real multi-day runs — run-shape.md: tier, rank
+   ramp and cost escalation are ONE problem; SM-3 costs don't exist yet, so a full balance pass
+   may want to wait for them (owner's call whether to hold D until SM-3 opens).
+3. Gate-pinned constraints any retune must keep: tier(1)=1 · thresholds tighten monotonically ·
+   **B > 1.0 every day** (`test/economy.mjs` fails loudly on all three).
+
+**Where things live:** economy math+state `src/economy.js` (imports nothing; PROVISIONAL block
+at top) · seams in `src/mission.js` (terms at accept, settle-once at arrival, `_offers` cache,
+`PAID_JOB_DO_OVERS`) · surfaces in `src/main.js` (`_renderMissionUI` done-case, `_renderRunHud`)
++ `index.html` (`#run-hud`, `.mp-pay`) · gates `test/economy.mjs` + `test/story-poi.mjs` §7-8 ·
+harness hook `window.__economy` · owner rulings recorded above in this ticket.
+
+**Next SM-2 sittings (separate tickets to mint, not Phase D):** paper route → fragile → bonus
+objectives → consumables (order per MILESTONES SM-2). Open owner questions that gate them:
+job-board discovery/expiry, fragile binary-vs-graded, bonus loot-only-vs-points.
 
 ## Deferred / follow-ups (next SM-2 sitting)
 
