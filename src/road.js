@@ -175,9 +175,20 @@ const DEG2_SHARP_PULLBACK = 8.0
 // welded to one node Y there), but banking must not — averaging it is exactly the flat strip this stage
 // removes — and the weld to each ribbon has to be exact, not approximate.
 const XS_SOFT2 = 0.5 * 0.5
+// XS_OFF_FADE (BUG-40): the distance (m) over which a deg-2 connector leg's weight fades to zero once
+// the query lies PAST that leg's own terminus (_projectOntoRun overDist). Off its end a leg has no
+// grade to report — runProfile CLAMPS to the endpoint sample, i.e. a fictitious horizontal extension of
+// that leg out over its sibling. On an ordinary elbow that fiction is harmless: the sibling is a road-
+// width away so its 1/(gap²+XS_SOFT²) weight is ~1%. On a TIGHT kink the two legs' asphalt overlaps, the
+// sibling's gap-to-edge is 0 on the leg you are actually driving on, and the fiction lands at HALF
+// weight — measured 0.43 m of lift 4.7 m short of the seed-6 41,619 node, a +42% grade spike against a
+// +13% approach that launches the truck (~5.7 g of surface curvature at 20 m/s). Fading on the
+// CONTINUOUS overDist (not the offEnd boolean) keeps the design surface C0/C1: at its own mouth a leg
+// has overDist 0 ⇒ weight 1 ⇒ the weld to that ribbon is exact and unchanged.
+const XS_OFF_FADE = 4.0
 // Reusable sinks for the connector design-surface path (carve hot path — no per-query allocation).
-const _CD_A = { grade: 0, gap: 0, xs: 0 }
-const _CD_B = { grade: 0, gap: 0, xs: 0 }
+const _CD_A = { grade: 0, gap: 0, xs: 0, off: 0 }
+const _CD_B = { grade: 0, gap: 0, xs: 0, off: 0 }
 const _CD_OUT = { grade: 0, lateral: 0 }
 const _CD_RP = { gradeY: 0, camberRad: 0, tx: 1, tz: 0 }
 // FEAT-46 POI_ROAD_FEATHER: band (m) OUTSIDE the ribbon+shoulder across which a POI lay-by pad's
@@ -3506,10 +3517,16 @@ export class RoadSystem {
         // longitudinally BEYOND that end (not beside the ribbon). Such a point is off the end of THIS
         // run — its continuation run (junction neighbour) owns the surface there — so reject it rather
         // than carve a bogus endpoint height (the 40 m "topmost" artifact came from accepting these).
-        const overBefore = bestI === 0 && bestTclamp === 0 &&
-            ((wx - pts[0].x) * bestTx + (wz - pts[0].z) * bestTz) < 0
-        const overAfter  = bestI === N - 2 && bestTclamp === 1 &&
-            ((wx - pts[N - 1].x) * bestTx + (wz - pts[N - 1].z) * bestTz) > 0
+        const beforeD = -((wx - pts[0].x) * bestTx + (wz - pts[0].z) * bestTz)
+        const afterD  =  ((wx - pts[N - 1].x) * bestTx + (wz - pts[N - 1].z) * bestTz)
+        const overBefore = bestI === 0 && bestTclamp === 0 && beforeD > 0
+        const overAfter  = bestI === N - 2 && bestTclamp === 1 && afterD > 0
+        // overDist (BUG-40): the CONTINUOUS twin of offEnd — how far past this run's own terminus the
+        // query lies, longitudinally, in metres (0 when the foot is a genuine in-extent foot). offEnd is
+        // a boolean, and any consumer that has to fade a leg out smoothly (the deg-2 connector blend)
+        // needs the distance, not the flag: switching on the flag injects exactly the C0 crease this
+        // file spends _carveDirtY fighting. Free — both projections are already computed above.
+        const overDist = overBefore ? beforeD : overAfter ? afterD : 0
         // sCL: centerline TRUE-arc at the projected foot — the window center for _resolveRoadSurface's
         // analytic refine. clArc[i] is the exact arc-length at polyline vertex i (see _assembleGraphEdges);
         // interpolate by the winning segment's clamped fraction. Falls back to chord-cum (≈ true-arc on
@@ -3526,6 +3543,7 @@ export class RoadSystem {
             signedLat: (wx - bestFx) * bestTz - (wz - bestFz) * bestTx,
             d2: bestD2,
             offEnd: overBefore || overAfter,
+            overDist,
             sCL
         }
     }
@@ -3569,10 +3587,11 @@ export class RoadSystem {
             }
         }
         if (bestD2 === Infinity || bestD2 > gate2) return null
-        const overBefore = bestI === 0 && bestTclamp === 0 &&
-            ((wx - pts[0].x) * bestTx + (wz - pts[0].z) * bestTz) < 0
-        const overAfter  = bestI === N - 2 && bestTclamp === 1 &&
-            ((wx - pts[N - 1].x) * bestTx + (wz - pts[N - 1].z) * bestTz) > 0
+        const beforeD = -((wx - pts[0].x) * bestTx + (wz - pts[0].z) * bestTz)
+        const afterD  =  ((wx - pts[N - 1].x) * bestTx + (wz - pts[N - 1].z) * bestTz)
+        const overBefore = bestI === 0 && bestTclamp === 0 && beforeD > 0
+        const overAfter  = bestI === N - 2 && bestTclamp === 1 && afterD > 0
+        const overDist = overBefore ? beforeD : overAfter ? afterD : 0   // see _projectOntoRun
         const clArc = netEntry.clArc
         let sCL = bestCum
         if (clArc && bestI + 1 < clArc.length) {
@@ -3584,6 +3603,7 @@ export class RoadSystem {
             signedLat: (wx - bestFx) * bestTz - (wz - bestFz) * bestTx,
             d2: bestD2,
             offEnd: overBefore || overAfter,
+            overDist,
             sCL
         }
     }
@@ -5620,9 +5640,22 @@ export class RoadSystem {
         // uses the run's own direction, so camberSign is +1). pr.signedLat is the perpendicular offset
         // from the foot, i.e. exactly the ribbon's uLat at this point, and it stays signed relative to
         // this run — so a leg the connector traverses backwards still reproduces its tilt correctly.
+        //
+        // BUG-40: the camber lever arm is BOUNDED at the carve footprint edge. Unbounded, this term is a
+        // banked plane extrapolated to infinity, and at a saturated bank (camberMaxAngleDeg 20 on a
+        // sub-knee radius) every extra metre of |signedLat| adds ~0.34 m of height — 0.60 m of phantom
+        // lift measured at 5 m off the sibling leg on the seed-6 41,619 elbow. Beyond XS_LAT_CAP the
+        // fold is held flat: that is past the shoulder AND past carveHalfWidth, so the ribbon, the
+        // shoulder plane and the connector weld are all bit-unchanged (only the far toe, which ramps to
+        // raw terrain anyway, ever sees the cap). Bounding here and not in _carveDirtY is deliberate —
+        // _carveDirtY's fold IS the road's own cross-section (BUG-15 needs it continuous across the whole
+        // footprint); this one is a SIBLING's cross-section imported over a road it does not own.
+        const latCap = halfWidth + (p.roadCarveExtraWidth ?? 3.0)
+        const latB = Math.max(-latCap, Math.min(latCap, pr.signedLat))
         out.xs = crownProfile(pr.signedLat, halfWidth, p.crownHeight ?? 0.05)
-               + pr.signedLat * Math.sin(this.camberProfile(arcS, runKey))
+               + latB * Math.sin(this.camberProfile(arcS, runKey))
         out.gap = Math.max(0, Math.sqrt(pr.d2) - halfWidth)
+        out.off = pr.overDist ?? 0
         return out
     }
 
@@ -5674,7 +5707,15 @@ export class RoadSystem {
             out.grade = o.grade; out.lateral = o.xs
             return out
         }
-        const wA = 1 / (a.gap * a.gap + XS_SOFT2), wB = 1 / (b.gap * b.gap + XS_SOFT2)
+        // BUG-40: fade a leg out over XS_OFF_FADE m past its own terminus — see the const. Smoothstep so
+        // both the weight and its derivative are continuous; if BOTH legs are off-end (the throat of a
+        // sharp fillet, where the corner is cut past both mouths) the tapers collapse together and the
+        // ratio is undefined, so fall back to the untapered weights — there both grades are the same
+        // clamped node height anyway, which is exactly the plaza value that throat should carry.
+        const fade = (d) => { const u = Math.min(1, Math.max(0, d / XS_OFF_FADE)); return 1 - u * u * (3 - 2 * u) }
+        let wA = 1 / (a.gap * a.gap + XS_SOFT2), wB = 1 / (b.gap * b.gap + XS_SOFT2)
+        const tA = wA * fade(a.off), tB = wB * fade(b.off)
+        if (tA + tB > 1e-9) { wA = tA; wB = tB }
         const wS = wA + wB
         out.grade = (a.grade * wA + b.grade * wB) / wS
         out.lateral = (a.xs * wA + b.xs * wB) / wS
