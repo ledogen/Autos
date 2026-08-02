@@ -358,6 +358,11 @@ export class RoadMeshSystem {
             if (!jArcs || jArcs.length === 0) return 1
             let f = 1
             for (const j of jArcs) {
+                // junction-flow stage 3: a deg-2 node that got a CONNECTOR is a road bending through,
+                // not an intersection — the connector strip carries the centreline across the kink with
+                // this ribbon's own dash phase (road.js markPhase), so feathering here would punch a
+                // 20 m marking hole into a continuous road. Real (≥3-leg, padded) junctions still feather.
+                if (j.node && j.node.deg2) continue
                 const d = (Math.abs(aS - j.arc) - jCutback) / MARK_JUNCTION_FEATHER
                 if (d < f) f = d
             }
@@ -1250,6 +1255,13 @@ export class RoadMeshSystem {
             const m = this._material.clone()
             m.polygonOffsetFactor = this._params.roadJunctionPolyOffsetFactor ?? -4
             m.polygonOffsetUnits  = this._params.roadJunctionPolyOffsetUnits  ?? -4
+            // THREE.Material.copy() copies a fixed property list and does NOT carry onBeforeCompile,
+            // so this clone was silently rendering with the STOCK Phong shader — no aMark plumbing at
+            // all. That was invisible while every junction geometry wrote aMark = 0 (pads are
+            // deliberately unmarked); it became visible the moment the deg-2 connector started
+            // carrying the centreline across a kink (junction-flow stage 3) and simply never drew.
+            // Re-attach the parent's hook; pads keep their all-zero aMark and stay unmarked.
+            m.onBeforeCompile = this._material.onBeforeCompile
             this._junctionMaterial = m
         }
         return this._junctionMaterial
@@ -1339,16 +1351,17 @@ export class RoadMeshSystem {
      *
      * The two legs are one road bending through the node. Each mouth is the run's own cross-section
      * at cutback + halfWidth/2 (the exact-weld point the pad also uses, overlapping the trimmed
-     * ribbon end). We fit the CHEAPEST circular arc tangent to both centerlines — the largest radius
-     * that still fits between the mouths, i.e. the gentlest, most driveable curve — then sweep a
-     * full-width strip [cA → tangentA → arc → tangentB → cB] along it. Vertex Y rides `sampleY`
-     * (the same asphalt-top field the ribbons + pads use → mesh == collision), so the connector is
-     * continuous with the two ribbons it welds to. Solid asphalt, aMark = 0 (markings feather out at
-     * junctions anyway — matches the pad's stripe contract).
+     * ribbon end). road.js (_pushDeg2Core) fits the connector centreline — the cheapest tangent
+     * circle where one exists, else a cubic Hermite — and we sweep a full-width strip along it.
+     * Vertex Y rides `sampleY` (the same asphalt-top field the ribbons + pads use → mesh ==
+     * collision), so the connector is continuous with the two ribbons it welds to. Solid asphalt with
+     * the lane markings CARRIED THROUGH (junction-flow stage 3 — a bend is not a plaza; ≥3-leg pads
+     * stay unmarked), phase-locked to each leg's ribbon by road.js's markPhase.
      *
-     * Returns a BufferGeometry, or null (degenerate fillet → caller falls back to the pad ladder):
-     * near-collinear legs (det ≈ 0), a mouth on the wrong side (t/r ≤ 0), or a radius so tight the
-     * inside edge would pinch (R < halfWidth). Pure fn of node + params + streamed network (D-16).
+     * Returns a BufferGeometry, or null when road.js built no connector at all (degenerate 2-leg
+     * input — caller falls back to the pad ladder). junction-flow: a node that DOES get a connector
+     * has no node.ring at all, so the pad branch below can never double-draw over this strip and
+     * _junctionPadCarve never excavates a plaza under it. Pure fn of node + params + network (D-16).
      */
     _buildDeg2Ribbon(node, params, sampleY) {
         // QUAL-16: the fillet arc geometry is computed ONCE in road.js (_buildDeg2ArcGeom, cached on the
@@ -1387,10 +1400,47 @@ export class RoadMeshSystem {
         const V = center.length * COLS
         const positions = new Float32Array(V * 3)
         const colors    = new Float32Array(V * 3)
+        const marks     = new Float32Array(V * 4)
+        // junction-flow stage 3: the connector carries the lane markings across the kink. arcS comes
+        // from road.js's markPhase — each half of the connector uses ITS leg's run-arc as an exact
+        // linear function of the connector chord distance, so on the lead-ins (which ride on the
+        // ribbon) the dash phase and the quality tier byte-match the ribbon underneath, and the one
+        // irreconcilable phase jump sits at the bend apex where no ribbon draws. markEnable is a flat
+        // 1: the ribbons no longer feather their markings at a connector node (see markFeather), so
+        // there is nothing to cross-fade with — the stripe simply runs through.
+        const mp = arc.markPhase
+        const cum = new Float32Array(center.length)
+        for (let i = 1; i < center.length; i++) {
+            cum[i] = cum[i - 1] + Math.hypot(center[i].x - center[i - 1].x, center[i].z - center[i - 1].z)
+        }
         for (let i = 0; i < center.length; i++) {
             const p = center[i]
-            const a = center[Math.max(0, i - 1)], b = center[Math.min(center.length - 1, i + 1)]
-            let tx = b.x - a.x, tz = b.z - a.z
+            let arcS = 0, q = 0, onA = false
+            if (mp) {
+                onA = cum[i] <= mp.midCum
+                arcS = onA ? mp.aArc + mp.aSig * (cum[i] - mp.aCum)
+                           : mp.bArc + mp.bSig * (cum[i] - mp.bCum)
+                q = roadQuality(arcS, onA ? mp.aKey : mp.bKey, this._worldSeed)
+            }
+            // junction-flow stage 4: on the LEAD-INS (the stretches that ride ON their leg's ribbon,
+            // cum ≤ aCum / ≥ bCum) take the lateral frame from the RUN — runProfile's continuous
+            // tangent, the exact frame sweepRibbon offsets the ribbon edge by — instead of the
+            // connector polyline's chord direction. The lead-in POSITIONS already lie on the run
+            // polyline the ribbon sweeps, but a chord lags the analytic tangent by up to half its
+            // turn, and at halfWidth that threw the strip edge up to ~0.3 m off the ribbon edge it is
+            // meant to be coincident with — the little asphalt flap on the outer edge of a bend
+            // (seed 6, 1268.7/2719.4). Matching the frame makes the two edges the same curve. The
+            // switch is C0: the connector CORE leaves each mouth tangent to that same run tangent.
+            let tx, tz
+            const onLead = mp && (cum[i] <= mp.aCum + 1e-6 || cum[i] >= mp.bCum - 1e-6)
+            if (onLead) {
+                const rp = this._road.runProfile(arcS, onA ? mp.aKey : mp.bKey)
+                const sig = onA ? mp.aSig : mp.bSig
+                tx = sig * rp.tx; tz = sig * rp.tz
+            } else {
+                const a = center[Math.max(0, i - 1)], b = center[Math.min(center.length - 1, i + 1)]
+                tx = b.x - a.x; tz = b.z - a.z
+            }
             const tl = Math.hypot(tx, tz) || 1
             tx /= tl; tz /= tl
             const lx = -tz, lz = tx                       // +90° → left side of travel
@@ -1400,6 +1450,10 @@ export class RoadMeshSystem {
                 const vi = i * COLS + c
                 positions[vi * 3] = X; positions[vi * 3 + 1] = sampleY(X, Z); positions[vi * 3 + 2] = Z
                 colors[vi * 3] = 0.15; colors[vi * 3 + 1] = 0.15; colors[vi * 3 + 2] = 0.17
+                // uLat: the sweep's `off` is measured to the LEFT, the ribbon's to the right — the
+                // shader only ever reads |uLat|, so the strip and the ribbon agree either way.
+                marks[vi * 4] = off; marks[vi * 4 + 1] = arcS; marks[vi * 4 + 2] = q
+                marks[vi * 4 + 3] = mp ? 1 : 0
             }
         }
         const tris = []
@@ -1422,7 +1476,7 @@ export class RoadMeshSystem {
         const geo = new THREE.BufferGeometry()
         geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
         geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3))
-        geo.setAttribute('aMark',    new THREE.BufferAttribute(new Float32Array(V * 4), 4))
+        geo.setAttribute('aMark',    new THREE.BufferAttribute(marks,     4))
         geo.setIndex(new THREE.BufferAttribute(new Uint32Array(tris), 1))
         geo.computeVertexNormals()
         return geo
@@ -1736,7 +1790,15 @@ export class RoadMeshSystem {
         // deduped per-edge → no T-junction cracks); 1/2/3-split triangle patterns keep winding.
         const verts = ring.map(p => ({ x: p.x, z: p.z }))
         const MAX_E2 = PAD_FILL_MAX_EDGE * PAD_FILL_MAX_EDGE
-        for (let pass = 0; pass < 3; pass++) {
+        // PASS CAP 5, not 3 (junction-flow): earClip emits edges as long as the pad ring's diameter
+        // (~30 m on a 4-way weld), and halving 30 m three times still leaves ~3.7 m — the old cap
+        // RETIRED before reaching the 3 m target, and those unsplit triangles chorded up to 0.43 m
+        // across the curved (crowned + banked) pad field. That chord IS the residual "car sinks into
+        // the junction" once physics rides the exact vertex field (road.js on-PAD overlay): the wheel
+        // is on the analytic surface, the eye is on the triangle. 5 passes reach the target for every
+        // ring the ladder can produce; the loop still breaks the moment nothing splits, so a pad that
+        // already converged costs exactly what it did.
+        for (let pass = 0; pass < 5; pass++) {
             const mid = new Map()
             let split = false
             const needs = (i, j) => {
