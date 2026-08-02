@@ -145,13 +145,53 @@ const seg = (centerline, s0, s1, gradeAt = level) => ({ centerline, gradeAt, s0,
     Math.abs(held.s - 60) < 10, `s=${held.s.toFixed(1)}`)
 }
 
-// ── 4. elevation comes from gradeAt, and cum is 3-D ─────────────────────────────────────────────
+// ── 4. elevation: the INJECTED profile wins, gradeAt is only the fallback ───────────────────────
+// The defect this pins is the one that made the whole overlay unusable. `seg.gradeAt` is the par
+// oracle's sampler — the routed design polyline — and it is NOT the surface the world builds; the
+// carve, the ribbon and the physics all read RoadSystem.runProfile().gradeY, a later pipeline
+// stage, and on this network the two disagree by a per-run offset of up to 27 m. Baking gradeAt put
+// 5.6% of chevrons UNDER the road (depth-tested away: "they disappear") and 7.2% more than a metre
+// over it ("floating in the sky"), and left the junction arrow a median 7 m off. So: whatever the
+// caller injects is the elevation, gradeAt is used only where the injector declines, and a bake
+// that fell back anywhere must SAY so — GpsSystem re-bakes `partial` routes as the network streams.
 {
   const slope = (k) => (s) => k * s
   const r = bakeRoute([seg(straight(100, 0, 0, 1, 0), 0, 100, slope(0.1))])
-  check('baked Y follows gradeAt', Math.abs(r.py[r.n - 1] - 10) < 1e-6, `end y=${r.py[r.n - 1]}`)
+  check('baked Y follows gradeAt when no profile is injected',
+    Math.abs(r.py[r.n - 1] - 10) < 1e-6, `end y=${r.py[r.n - 1]}`)
   check('cum is 3-D arc (a 10% climb is longer than its XZ run)',
     r.length > 100 && Math.abs(r.length - Math.hypot(100, 10)) < 1e-6, `len=${r.length}`)
+  check('a bake with no injector is not flagged partial', r.partial === false)
+
+  // An injector that answers everywhere must fully override gradeAt — never blend, never average.
+  const inj = bakeRoute([seg(straight(100, 0, 0, 1, 0), 0, 100, slope(0.1))], () => 42)
+  let allInj = true
+  for (let i = 0; i < inj.n; i++) if (inj.py[i] !== 42) allInj = false
+  check('an injected profile overrides gradeAt at every vertex', allInj)
+  check('a fully-answered bake is not partial', inj.partial === false)
+
+  // ...and one that declines (run not streamed yet) falls back AND raises the flag, or the overlay
+  // would silently keep the 27 m-wrong elevation for the far half of every long route.
+  const half = bakeRoute([seg(straight(100, 0, 0, 1, 0), 0, 100, slope(0.1))],
+    (_s, s) => (s < 50 ? 42 : null))
+  check('a declined vertex falls back to gradeAt', Math.abs(half.py[half.n - 1] - 10) < 1e-6,
+    `end y=${half.py[half.n - 1]}`)
+  check('any fallback flags the bake partial (so it re-bakes as roads stream)', half.partial === true)
+}
+
+// ── 4b. chevrons lie in the road plane, not flat in XZ ──────────────────────────────────────────
+// Reported defect 1: on a climb the chase cam meets a horizontal glyph almost exactly edge-on — the
+// one orientation that hides a shape — so the chevrons thinned to a line just when you needed them.
+// sampleRoute carries the span's grade, and _placeChevrons pitches by atan(grade) about local X.
+{
+  const climb = bakeRoute([seg(straight(100, 0, 0, 1, 0), 0, 100, (s) => 0.2 * s)])
+  const p = sampleRoute(climb, 50, 0)
+  check('sampleRoute reports the span grade (rise over horizontal run)',
+    Math.abs(p.grade - 0.2) < 1e-6, `grade=${p.grade}`)
+  const flat = sampleRoute(bakeRoute([seg(straight(100, 0, 0, 1, 0), 0, 100)]), 50, 0)
+  check('a level route reports zero grade', Math.abs(flat.grade) < 1e-9, `grade=${flat.grade}`)
+  const fall = sampleRoute(bakeRoute([seg(straight(100, 0, 0, 1, 0), 0, 100, (s) => -0.2 * s)]), 50, 0)
+  check('grade is signed (a descent is negative)', Math.abs(fall.grade + 0.2) < 1e-6, `grade=${fall.grade}`)
 }
 
 // ── 5. placement: the overlay lands ON the route, pointing the way you travel ───────────────────
@@ -197,6 +237,35 @@ const seg = (centerline, s0, s1, gradeAt = level) => ({ centerline, gradeAt, s0,
   check('chevron local +Z points along travel (rotY convention)',
     Math.abs(fwd.x - 1) < 1e-6 && Math.abs(fwd.z) < 1e-6,
     `local +Z → (${fwd.x.toFixed(3)}, ${fwd.z.toFixed(3)})`)
+  check('on level ground the chevron stays flat (local +Y is world up)',
+    Math.abs(new THREE.Vector3(0, 1, 0).applyQuaternion(lattice0[0].q).y - 1) < 1e-6)
+
+  // Reported defect 1: on a climb the glyph must LIE BACK INTO the road, so the chase cam sees the
+  // same face of it that it sees of the tarmac instead of meeting it edge-on. Its travel axis takes
+  // on the road's slope, and its normal tilts by the same angle out of world-up — no more, or the
+  // chevron is standing up like a sign rather than painted on the deck.
+  {
+    const G = 0.2                                    // a 20% climb, about this network's steepest
+    const hill = { segments: [seg(straight(300, -300, 0, 1, 0), 0, 300, (s) => G * s)] }
+    const hcar = { x: -300, y: 0, z: 0 }
+    const hgps = new GpsSystem(new THREE.Scene(), { getRoute: () => hill, getCar: () => hcar })
+    hgps.update(1 / 60)
+    let got = null
+    for (let i = 0; i < 10 && !got; i++) {
+      hgps._chev.getMatrixAt(i, m)
+      m.decompose(pos, quat, scl)
+      if (pos.y > -1000) got = quat.clone()          // hidden slots are parked at y = -1e4
+    }
+    const axis = new THREE.Vector3(0, 0, 1).applyQuaternion(got)
+    const up   = new THREE.Vector3(0, 1, 0).applyQuaternion(got)
+    check('uphill: the chevron travel axis takes on the road grade',
+      Math.abs(axis.y / Math.hypot(axis.x, axis.z) - G) < 1e-6,
+      `axis rise/run=${(axis.y / Math.hypot(axis.x, axis.z)).toFixed(4)} want ${G}`)
+    check('uphill: the chevron tilts UP the hill, not into it (apex end rises)', axis.y > 0)
+    check('uphill: the glyph stays in the road plane (normal tilts by exactly the grade angle)',
+      Math.abs(Math.acos(Math.min(1, up.y)) - Math.atan(G)) < 1e-6,
+      `normal tilt=${Math.acos(Math.min(1, up.y)).toFixed(4)} want ${Math.atan(G).toFixed(4)}`)
+  }
 
   // THE point of the lattice: drive 7 m (less than one step) and the chevrons must not have
   // budged. If they track the truck they slide 7 m and this fails.
@@ -215,9 +284,12 @@ const seg = (centerline, s0, s1, gradeAt = level) => ({ centerline, gradeAt, s0,
   car.x = -40                                        // 40 m short of the junction at (0,0)
   gps.update(1 / 60)
   check('junction arrow raises inside ARROW_IN', gps._arrow.visible)
+  // y: ARROW_HOVER (2.0, owner-set) + the ±0.12 bob. The window is deliberately tight — the arrow
+  // sitting at the wrong height was one of the three FEAT-39 defects, so a silent drift here is a
+  // regression, not a tuning detail.
   check('junction arrow stands at the junction, not at the car',
     Math.abs(gps._arrow.position.x) < 1e-6 && Math.abs(gps._arrow.position.z) < 1e-6 &&
-    gps._arrow.position.y > 1.0 && gps._arrow.position.y < 1.4,
+    gps._arrow.position.y > 1.85 && gps._arrow.position.y < 2.15,
     `at (${gps._arrow.position.x.toFixed(2)}, ${gps._arrow.position.y.toFixed(2)}, ${gps._arrow.position.z.toFixed(2)})`)
 
   // THE point of the board: its tip aims down the EXIT road (here +Z), and it stands UPRIGHT —

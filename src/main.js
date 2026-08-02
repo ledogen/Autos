@@ -2157,15 +2157,21 @@ missionSystem = new MissionSystem({
 
 // ── FEAT-39: GPS navigation assist ───────────────────────────────────────────
 // A pure guidance overlay: chevrons along the route ahead + a turn arrow over the next junction.
-// It reads the route the mission ALREADY computed (mission.segments) — no routing, no RoadSystem
-// query, and nothing anywhere near the input/physics path. Shown only once the run is live: during
-// 'offer' the truck has not been teleported to the start yet, so arrows would point off elsewhere.
+// It reads the route the mission ALREADY computed (mission.segments) — no routing, no per-frame
+// RoadSystem query, and nothing anywhere near the input/physics path. Shown only once the run is
+// live: during 'offer' the truck has not been teleported to the start yet, so arrows would point
+// off elsewhere.
 gpsSystem = new GpsSystem(scene, {
   getRoute: () => {
     const s = missionSystem?.state
     return (s === 'countdown' || s === 'running') ? missionSystem.mission : null
   },
   getCar: () => vehicleState.position,
+  // Read at BAKE time only (once per mission, plus while the bake is still partial): the design
+  // profile the carve, the ribbon mesh and the physics all read. Without it the overlay bakes the
+  // par oracle's elevation instead, which is a different pipeline stage and disagrees by up to
+  // 27 m — see gps.js bakeRoute's ELEVATION SOURCE note.
+  getRoad: () => roadSystem,
 })
 // FEAT-41 seam: the story-mode assists page will flip this (mirrors window.__setGameMode).
 window.__setGpsEnabled = (v) => gpsSystem?.setEnabled(v)
