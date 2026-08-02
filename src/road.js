@@ -36,7 +36,7 @@ import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
 import { crownProfile, potholeNoise, signedCurvature, arcPrimitiveConnect, smoothGradeInPlace, applyTunnelPassInPlace, dubinsFillet, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
-import { centerlineFromDescriptors, CenterlineCurve, Centerline, makePrimitive, slicePrimitives, reversePrimitives } from './centerline.js'
+import { centerlineFromDescriptors, CenterlineCurve, Centerline, makePrimitive, slicePrimitives, reversePrimitives, primitivePose } from './centerline.js'
 import { delaunay, urquhartEdges } from './road-graph.js'
 
 // FEAT-13 v2: total order on site ids [cmx,cmz,k] — the Poisson-disk priority tie-break.
@@ -3048,20 +3048,73 @@ export class RoadSystem {
         const lenOf = (ps) => ps.reduce((s, p) => s + p.length, 0)
         const lens = legs.map(lenOf)
         const TRIM_FRAC = 0.40   // per JOINT; an interior edge trims at both ends, so ≤ 0.80 of it
-        // Choose each joint's trim from the deflection there, capped by both neighbouring legs.
+        // Pose at arc `s` along a primitive list — the frame a trim would expose.
+        const poseAt = (prims, s) => {
+            let acc = 0
+            for (const p of prims) {
+                if (s <= acc + p.length || p === prims[prims.length - 1]) {
+                    const q = primitivePose(p, Math.max(0, Math.min(p.length, s - acc)))
+                    return { x: q.x, z: q.z, theta: q.theta }
+                }
+                acc += p.length
+            }
+            return null
+        }
+        const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a))
+        // Solve each joint by SEARCH, validating against a real Dubins build — never analytically.
+        //
+        // The obvious closed form (trim R·tan(δ/2) so the two turning circles are tangent) models two
+        // STRAIGHT legs meeting at a point. Real legs curve into the node, so trimming back exposes
+        // frames that are laterally DISPLACED, not merely rotated, and the radius has to satisfy the
+        // lateral offset too: seed-6's second joint sits only 4.4° apart in heading but 11.3° off the
+        // bearing between the frames — an 8.6 m sideways shift over 44 m, where an S-curve at R=75 can
+        // only manage L²/4R ≈ 6.5 m. Infeasible, so Dubins answers with a 360° word and a 75 m circle
+        // gets spliced into the road. Two closed-form attempts missed this; building the path and
+        // measuring how far it actually turns is both simpler and correct by construction.
+        //
+        // More TRIM is the lever that buys feasibility — it lengthens the gap the fillet has to work in —
+        // so each radius is retried with progressively deeper cuts before stepping down. Largest radius
+        // first, per the user's call that a deg-2 kink should read as a sweeping bend, not a corner.
         const head = new Array(legs.length).fill(0), tail = new Array(legs.length).fill(0)
         const rads = new Array(legs.length - 1).fill(gentleR)
+        const fillets = new Array(legs.length - 1).fill(null)
+        const tryJoint = (j, R, t) => {
+            const pP = poseAt(legs[j], lens[j] - t), pQ = poseAt(legs[j + 1], t)
+            if (!pP || !pQ) return null
+            const dub = dubinsFillet(pP.x, pP.z, pP.theta, pQ.x, pQ.z, pQ.theta, R)
+            if (!dub || !dub.length) return null
+            const want = Math.abs(wrap(pQ.theta - pP.theta))
+            const turn = dub.reduce((s, p) => s + Math.abs(p.length * p.kappa0), 0)
+            const L = dub.reduce((s, p) => s + p.length, 0)
+            const gap = Math.hypot(pQ.x - pP.x, pQ.z - pP.z)
+            // A fillet must turn by about the deflection it exists to absorb. Anything past that plus a
+            // quarter turn is a loop, not a bend — the one check that actually catches the circle.
+            if (turn > want + Math.PI / 2) return null
+            if (L > gap + 2.5 * R * (want + 0.2)) return null
+            return { R, t, dub }
+        }
         for (let j = 0; j < legs.length - 1; j++) {
-            const P = legs[j], Q = legs[j + 1]
-            const thP = P[P.length - 1].theta1, thQ = Q[0].theta0
-            let d = Math.abs(Math.atan2(Math.sin(thQ - thP), Math.cos(thQ - thP)))
-            d = Math.min(d, 3.0)                                  // guard tan(δ/2) near π
             const cap = Math.min(TRIM_FRAC * lens[j], TRIM_FRAC * lens[j + 1])
-            let R = gentleR
-            let t = R * Math.tan(d / 2)
-            if (t > cap) { R = Math.max(minR, cap / Math.max(1e-6, Math.tan(d / 2))); t = Math.min(cap, R * Math.tan(d / 2)) }
-            t = Math.max(1.0, Math.min(t, cap))                   // always trim SOMETHING so the weld is G1
-            rads[j] = R; tail[j] = t; head[j + 1] = t
+            let chosen = null
+            for (const R of [gentleR, 0.7 * gentleR, 0.45 * gentleR, Math.max(minR, 0.25 * gentleR), minR]) {
+                // Seed the trim from the tangent length at the CURRENT frames, then deepen. The 1.10 on
+                // the base also keeps the search off the exact-tangent knife edge, where the LSL/RSR
+                // discriminant p² evaluates to 0, rounds a few ulps negative, fails its `p2 >= 0` guard
+                // and drops the correct word — leaving a short straight between the arcs instead.
+                const p0 = poseAt(legs[j], lens[j]), q0 = poseAt(legs[j + 1], 0)
+                const d0 = p0 && q0 ? Math.min(Math.abs(wrap(q0.theta - p0.theta)), 3.0) : 0.5
+                const base = Math.max(2.0, R * Math.tan(d0 / 2) * 1.10)
+                for (const mul of [1.0, 1.5, 2.2, 3.2, 4.5]) {
+                    const t = Math.min(cap, base * mul)
+                    if (t < 1.0) continue
+                    chosen = tryJoint(j, R, t)
+                    if (chosen) break
+                    if (t >= cap) break                       // deeper is not available on these legs
+                }
+                if (chosen) break
+            }
+            if (!chosen) return null
+            rads[j] = chosen.R; tail[j] = chosen.t; head[j + 1] = chosen.t; fillets[j] = chosen.dub
         }
         // Slice once per leg (both joints' trims already known), then interleave the fillets.
         const out = []
@@ -3071,16 +3124,22 @@ export class RoadSystem {
             const sl = slicePrimitives(legs[i], s0, s1)
             if (!sl.length) return null
             if (i > 0) {
+                // The VALIDATED fillet from the joint search — rebuilding it here would risk taking a
+                // different (possibly looping) Dubins word than the one that passed the checks.
+                const dub = fillets[i - 1]
+                if (!dub || !dub.length) return null
+                // Weld check: the fillet was solved against poses taken at these exact trim arcs, so its
+                // ends must coincide with the sliced legs to float precision. A drift here would mean the
+                // slice and the pose sampler disagree — assert rather than ship a discontinuity.
                 const prev = out[out.length - 1]
                 const q = sl[0]
-                const dub = dubinsFillet(prev.x1, prev.z1, prev.theta1, q.x0, q.z0, q.theta0, rads[i - 1])
-                if (!dub || !dub.length) return null
-                const gap = Math.hypot(q.x0 - prev.x1, q.z0 - prev.z1)
-                const dubLen = dub.reduce((s, p) => s + p.length, 0)
-                // A Dubins word that loops (CCC on near-tangent frames) would emit a curl in the road.
-                // Reject rather than build it; the chain then splices without a fillet, which leaves a
-                // heading kink but NOT a launch ramp — the vertical fix is the single profile, not this.
-                if (dubLen > gap + 4 * Math.PI * rads[i - 1]) return null
+                const last = dub[dub.length - 1]
+                const endX = last.x0 + (Math.abs(last.kappa0) < 1e-9 ? last.length * Math.cos(last.theta0)
+                    : (Math.sin(last.theta0 + last.kappa0 * last.length) - Math.sin(last.theta0)) / last.kappa0)
+                const endZ = last.z0 - (Math.abs(last.kappa0) < 1e-9 ? -last.length * Math.sin(last.theta0)
+                    : (Math.cos(last.theta0 + last.kappa0 * last.length) - Math.cos(last.theta0)) / last.kappa0)
+                if (Math.hypot(dub[0].x0 - prev.x1, dub[0].z0 - prev.z1) > 0.05) return null
+                if (Math.hypot(endX - q.x0, endZ - q.z0) > 0.05) return null
                 for (const p of dub) out.push(makePrimitive(p.x0, p.z0, p.theta0, p.length, p.kappa0, p.kappa1 ?? p.kappa0))
             }
             for (const p of sl) out.push(p)
