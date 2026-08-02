@@ -34,14 +34,19 @@
  *     day's maintenance is DEFINED as k × the day's par-seconds, so any k balances). 0.30 $/s
  *     was re-derived 2026-08-02 (Phase D item 1) against the FEAT-30-recalibrated par scale
  *     (PAR_REF mu 0.90, 041761b): 310 anchored POI rolls over three seed-6 region slices gave
- *     median par 210 s ⇒ median job at par $63, mean $68, a 2.7-job day ≈ $170-185 — legible
- *     three-figure numbers for SM-3's repair bills to be authored against.
- *   • dayTierTable steps PER DAY (~×1.15 compounding to 2.66 by day 8) so the ratified
- *     "accept at 1 a.m., buy tomorrow's rate" seduction is live at EVERY midnight.
- *   • rankDayLate tightens S/A ~7% by day 8 — the brake on the rising tier (a day-1 A-drive is
- *     only a day-8 B). B stays ABOVE 1.0 on every day: par must land inside the B band for the
- *     whole run ("the rank that just meets the cost curve should be a B" — DESIGN.md). The
- *     economy gate pins B > 1.0, so a careless tuning edit here fails fast.
+ *     median par 210 s ⇒ median job at par $63, mean $68; a region-1 day of ~2 jobs ≈ $130-190
+ *     (run-shape.md's 20-day allocation) — legible three-figure numbers for SM-3's repair bills
+ *     to be authored against.
+ *   • dayTierTable steps PER DAY so the ratified "accept at 1 a.m., buy tomorrow's rate"
+ *     seduction is live at EVERY midnight. Shipped ~×1.15 compounding through day 8 (2.66),
+ *     then a soft approach to a ~5× asymptote (owner-picked ceiling, 2026-08-02):
+ *     tier(d) = 5 − 2.34·e^((8−d)/7) for d 9..30, ~4.9 by day 30 — escalation stays live for
+ *     the whole ratified 20-day run instead of dying on day 8 (run-shape.md "Code deltas").
+ *   • rankDayLate tightens S/A ~7% by day 20 (rankTightenDays tracks the ratified run length) —
+ *     the brake on the rising tier (a day-1 A-drive is only a day-20 B). B stays ABOVE 1.0 on
+ *     every day: par must land inside the B band for the whole run ("the rank that just meets
+ *     the cost curve should be a B" — DESIGN.md). The economy gate pins B > 1.0, so a careless
+ *     tuning edit here fails fast.
  */
 export const ECONOMY_PARAMS = {
     k:          0.30,   // $ per second of par-driving — THE one economy tunable (SM-INV-4)
@@ -52,11 +57,17 @@ export const ECONOMY_PARAMS = {
     // equality). Linear interpolation day 1 → rankTightenDays, clamped flat on both sides.
     rankDay1:   { S: 0.80, A: 0.92, B: 1.05, C: 1.25 },
     rankDayLate:{ S: 0.74, A: 0.88, B: 1.02, C: 1.15 },
-    rankTightenDays: 8,
+    rankTightenDays: 20,
 
-    // Payout multiplier per run day, 1-based; day 9+ holds the last entry. tier(1) === 1 is the
-    // anchor "a day-1 run at par pays exactly one day's maintenance".
-    dayTierTable: [1.00, 1.15, 1.32, 1.52, 1.75, 2.01, 2.31, 2.66],
+    // Payout multiplier per run day, 1-based; day 31+ holds the last entry. tier(1) === 1 is the
+    // anchor "a day-1 run at par pays exactly one day's maintenance". Days 1-8 are the shipped
+    // ×1.15 compounding; days 9-30 ease toward the ~5× asymptote (derivation in the header note).
+    dayTierTable: [
+        1.00, 1.15, 1.32, 1.52, 1.75, 2.01, 2.31, 2.66,                    // 1-8   shipped curve
+        2.97, 3.24, 3.48, 3.68, 3.85, 4.01, 4.14, 4.25, 4.35, 4.44,        // 9-18
+        4.51, 4.58, 4.63, 4.68, 4.73, 4.76, 4.79, 4.82, 4.84, 4.87,        // 19-28
+        4.88, 4.90,                                                        // 29-30
+    ],
 }
 
 /** Rank colours, ratified: D·C·B·A·S = red·orange·yellow·white·blue (DESIGN.md). */

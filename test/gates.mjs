@@ -93,7 +93,7 @@ export const GATES = [
   { file: 'gps-route.mjs', subsystem: 'story', cost: 'fast', extraDeps: ['src/main.js'],
     desc: 'FEAT-39 GPS assist route bake: travel order (reversed edges + partial first/last ranges), turn sign (+ve = right) + the straight deadband, windowed progress monotonic + full-scan re-acquire, 3-D arc from gradeAt' },
   { file: 'day-clock.mjs', subsystem: 'story', cost: 'fast', extraDeps: [],
-    desc: 'FEAT-47 day clock: SM-INV-12 flag-gate (blinks off ⇒ attenuation ≡ 1, eyelids ≡ 0), pinned runState advances only at midnight/sleep boundaries, sky pushes ride the quant ladder (~11/min not ~3600), energy ladder 14/16/18 h, tired signal once per crossing, coffee +5/−3 settled-then-clamped at wake, r(0.5)=2.25 (avg site = full in 8 h) and r(1)=2·r(0)' },
+    desc: 'FEAT-47 day clock: SM-INV-12 flag-gate (blinks off ⇒ attenuation ≡ 1, eyelids ≡ 0), pinned runState advances only at midnight/sleep boundaries, sky pushes ride the quant ladder (~11/min not ~3600), energy ladder 12/14/16 h, tired signal once per crossing, coffee +5/−3 settled-then-clamped at wake, r(0.5)=2.0 (avg site = full in 8 h) and r(1)=2·r(0)' },
   { file: 'economy.mjs', subsystem: 'story', cost: 'fast', extraDeps: [],
     desc: 'FEAT-53 economy spine: SM-INV-4 payout anchors (1.2→0, par→k·par·tier exact, 0.8→2×, cap at ≤0.60) + zero floor over degenerate inputs, parBase ∝ par (no tiny-job farming), SM-INV-14 points 1/½/0 monotone in elapsed, dayTier steps clamped, rank thresholds tighten with day but B always contains par, terms locked at accept (the 1 a.m. feature), runEconomy sibling of runState, economy.js imports nothing' },
   { file: 'camp-zones.mjs', subsystem: 'story', cost: 'fast', extraDeps: [],

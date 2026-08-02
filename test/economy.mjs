@@ -36,7 +36,7 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps
 // Pin the provisional defaults this gate asserts against (a debug-slider default drifting should
 // fail loudly HERE, not silently re-tune the gate).
 check('pinned: k 0.30, cap 3.0', ECONOMY_PARAMS.k === 0.30 && ECONOMY_PARAMS.payoutCap === 3.0)
-check('pinned: tier table has 8 days, tier(1) === 1', ECONOMY_PARAMS.dayTierTable.length === 8 && dayTier(1) === 1)
+check('pinned: tier table has 30 days, tier(1) === 1', ECONOMY_PARAMS.dayTierTable.length === 30 && dayTier(1) === 1)
 
 // ── 1. SM-INV-4: the payout line's anchors ──────────────────────────────────────────────────────
 {
@@ -98,7 +98,7 @@ check('pinned: tier table has 8 days, tier(1) === 1', ECONOMY_PARAMS.dayTierTabl
   let mono = true
   for (let d = 1; d < 20; d++) if (dayTier(d + 1) < dayTier(d)) mono = false
   check('dayTier non-decreasing in day', mono)
-  check('dayTier clamps flat past the table (day 50 === day 8)', dayTier(50) === dayTier(8))
+  check('dayTier clamps flat past the table (day 50 === day 30)', dayTier(50) === dayTier(30))
   check('dayTier clamps below (day 0/−3 === day 1)', dayTier(0) === dayTier(1) && dayTier(-3) === dayTier(1))
 }
 
@@ -123,7 +123,7 @@ check('pinned: tier table has 8 days, tier(1) === 1', ECONOMY_PARAMS.dayTierTabl
     gradeRun(170, 180).letter === gradeRun(170, 180, rankThresholds(1)).letter)
   check('day ramp changes the letter, never the ratio', (() => {
     const early = gradeRun(0.79 * 180, 180, rankThresholds(1))   // S on day 1
-    const late = gradeRun(0.79 * 180, 180, rankThresholds(8))    // A on day 8
+    const late = gradeRun(0.79 * 180, 180, rankThresholds(20))   // A on day 20 (S has tightened to 0.74)
     return early.letter === 'S' && late.letter === 'A' && near(early.ratio, late.ratio)
   })())
 }

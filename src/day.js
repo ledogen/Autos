@@ -23,24 +23,30 @@ export const DAY_PARAMS = {
     dayLookQuantH: 0.1,    // in-game hours between sky pushes — see THE BAKE COST below
 
     // ── Energy (hours-equivalent; see THE ENERGY LADDER below) ────────────────────────────────
-    fullEnergyH:   18,     // h of waking a full night buys; awake drains 1 h per in-game hour
-    sleepyAtH:     4,      // energy remaining at/below which the driver is SLEEPY  (14 h awake)
-    tiredAtH:      2,      // …TIRED      (16 h awake)
-    // EXHAUSTED is energy <= 0 (18 h awake). Energy floors at 0; exhaustion has no deeper stage.
+    fullEnergyH:   16,     // h of waking a full night buys; awake drains 1 h per in-game hour
+                           //   (18 → 16, run-shape.md 2026-08-02: 16 + 8 h sleep closes the 24 h
+                           //   day; at 18 dawn drifted 2 h per night)
+    sleepyAtH:     4,      // energy remaining at/below which the driver is SLEEPY  (12 h awake)
+    tiredAtH:      2,      // …TIRED      (14 h awake)
+    // EXHAUSTED is energy <= 0 (16 h awake). Energy floors at 0; exhaustion has no deeper stage.
+    // The ladder reads energy REMAINING (4/2/0), so the 2026-08-02 tank shrink moved the stages'
+    // hours-awake onsets from 14/16/18 to 12/14/16 — the "last 4 h risky, last 2 dangerous" shape
+    // is the ratified constant, per the owner's Phase-D ruling.
 
     // Coffee: relief now, debt against the NEXT wake-up. Deliberately net positive (+5 vs −3).
     coffeeReliefH: 5,
     coffeeDebtH:   3,
 
     // ── Sleep recovery (FEAT-45 Phase D) — hours of energy bought per hour slept ───────────────
-    // THE ARITHMETIC (ratified 2026-07-30). r(vibe) = lerp(worst, best, vibe), so:
-    //   • an AVERAGE site (vibe 0.5) gives r = (1.5 + 3.0)/2 = 2.25 h/h ⇒ 8 h × 2.25 = 18 h = FULL
+    // THE ARITHMETIC (ratified 2026-07-30; rescaled 2026-08-02 with the 16 h tank).
+    // r(vibe) = lerp(worst, best, vibe), so:
+    //   • an AVERAGE site (vibe 0.5) gives r = (4/3 + 8/3)/2 = 2.0 h/h ⇒ 8 h × 2.0 = 16 h = FULL
     //     from empty. Eight hours at a decent site is the whole night, exactly as ratified.
-    //   • the BEST site is exactly 2× the worst (3.0 / 1.5), so full-from-empty runs 6 h at best
-    //     and 12 h at worst.
+    //   • the BEST site is exactly 2× the worst (8/3 / 4/3), so full-from-empty runs 6 h at best
+    //     and 12 h at worst — unchanged by the rescale.
     // Change these two together or the "average = full in 8 h" contract quietly breaks.
-    sleepRateWorstH: 1.5,
-    sleepRateBestH:  3.0,
+    sleepRateWorstH: 4 / 3,
+    sleepRateBestH:  8 / 3,
     sleepMinH:       1,    // slider bounds for the sleep timer
     sleepMaxH:       14,
     sleepDefaultH:   8,
@@ -153,13 +159,13 @@ export class DaySystem {
 
     // ── Energy, stages, coffee ────────────────────────────────────────────────────────────────
     //
-    // THE ENERGY LADDER (ratified 2026-07-30). Energy is hours-of-waking remaining, full = 18 h,
-    // draining 1:1 with the in-game clock. The stages read the REMAINDER, not elapsed time, so a
-    // coffee genuinely walks the driver back down the ladder:
+    // THE ENERGY LADDER (ratified 2026-07-30; tank 18 → 16 h 2026-08-02, run-shape.md). Energy is
+    // hours-of-waking remaining, full = 16 h, draining 1:1 with the in-game clock. The stages read
+    // the REMAINDER, not elapsed time, so a coffee genuinely walks the driver back down the ladder:
     //   rested    > 4 h left            — nothing happens
-    //   sleepy   <= 4 h  (14 h awake)   — eyelid animation only, NO control loss. A warning you feel.
-    //   tired    <= 2 h  (16 h awake)   — one long signal blink on entry, then 200–600 ms DOZES
-    //   exhausted <= 0   (18 h awake)   — 400–1000 ms dozes
+    //   sleepy   <= 4 h  (12 h awake)   — eyelid animation only, NO control loss. A warning you feel.
+    //   tired    <= 2 h  (14 h awake)   — one long signal blink on entry, then 200–600 ms DOZES
+    //   exhausted <= 0   (16 h awake)   — 400–1000 ms dozes
     // SM-INV-1: a doze drops the inputs and lets the physics decide. It is never a fail state and
     // never forces a crash — on a straight you coast, on a mountain switchback you had better have
     // stopped for coffee.
@@ -406,7 +412,7 @@ export class DaySystem {
 
         // Read-outs: lil-gui has no live binding, so these are plain controllers refreshed from the
         // frame loop's GUI tick via updateDisplay() (the same trick sky.js uses for its hour slider).
-        const read = { day: runState.day, hour: '07:00', energy: '18.0 h', stage: 'rested', coffeeDebt: '0 h' }
+        const read = { day: runState.day, hour: '07:00', energy: '16.0 h', stage: 'rested', coffeeDebt: '0 h' }
         this._ctrls.push(f.add(read, 'day').name('day').disable())
         this._ctrls.push(f.add(read, 'hour').name('hour').disable())
         this._ctrls.push(f.add(read, 'energy').name('energy').disable())
