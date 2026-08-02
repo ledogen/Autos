@@ -17,7 +17,9 @@
 //   4. The ratified arithmetic (2026-07-30, tank 18 → 16 h 2026-08-02 per run-shape.md): stage
 //      ladder at 12/14/16 h awake (energy 4/2/0), coffee +5 now / −3 at wake (net positive),
 //      r(vibe) with average = full-from-empty in 8 h and best = exactly 2× worst, the tired
-//      signal blink firing exactly once per crossing.
+//      signal blink firing exactly once per crossing, and SLEEP DEBT (owner 2026-08-02): energy
+//      keeps falling past empty to a −8 floor, and the night that repays it must be longer —
+//      0 h and −4 h are different nights. The stage ladder is untouched (negative = exhausted).
 //
 // Pure node: DaySystem's deps adapter is a counting stub — no THREE, no worldgen, no DOM.
 import { DaySystem, DAY_PARAMS, runState } from '../src/day.js'
@@ -31,7 +33,8 @@ const check = (label, ok, detail = '') => {
 // Pin the ratified defaults this gate asserts against (a debug-slider default drifting should fail
 // loudly HERE, not silently re-tune the gate).
 check('pinned: dayLengthSec 1440', DAY_PARAMS.dayLengthSec === 1440)
-check('pinned: energy ladder 16/4/2', DAY_PARAMS.fullEnergyH === 16 && DAY_PARAMS.sleepyAtH === 4 && DAY_PARAMS.tiredAtH === 2)
+check('pinned: energy ladder 16/4/2, debt floor 8', DAY_PARAMS.fullEnergyH === 16 && DAY_PARAMS.sleepyAtH === 4
+  && DAY_PARAMS.tiredAtH === 2 && DAY_PARAMS.sleepDebtMaxH === 8)
 check('pinned: coffee +5/−3', DAY_PARAMS.coffeeReliefH === 5 && DAY_PARAMS.coffeeDebtH === 3)
 check('pinned: sleep rates 4/3 and 8/3 (mean 2.0, best exactly 2× worst)',
   DAY_PARAMS.sleepRateWorstH === 4 / 3 && DAY_PARAMS.sleepRateBestH === 8 / 3)
@@ -64,8 +67,9 @@ const mkDay = () => {
   sys.update(18)                                // 18 in-game hours in one bite
   check('midnight wrap increments runState.day', runState.day === 2 && sys.day() === 2)
   check('hour wraps 07+18 → 01', Math.abs(sys.hour() - 1) < 1e-9, `hour=${sys.hour()}`)
-  check('18 h awake drains the 16 h tank to 0 (floored)', sys.energyH() === 0)
-  check('energy floors at 0 (no deeper stage)', (sys.update(2), sys.energyH() === 0))
+  check('18 h awake on a 16 h tank is 2 h of sleep debt', sys.energyH() === -2)
+  check('energy floors at −8 (debt caps at one night)', (sys.update(10), sys.energyH() === -8))
+  check('negative energy is plain exhausted (no deeper stage)', sys.stage() === 'exhausted')
   DAY_PARAMS.dayLengthSec = 1440
 }
 
@@ -177,20 +181,30 @@ const mkDay = () => {
   check('r(0.5) = 2.0 h/h (average site: 8 h = full from empty)', Math.abs(sys.recoveryRate(0.5) - 2.0) < 1e-9)
   check('r(1) = 2 × r(0) (best site is exactly twice the worst)', sys.recoveryRate(1) === 2 * sys.recoveryRate(0))
 
-  DAY_PARAMS.dayLengthSec = 24
-  sys.update(18)                                 // empty (floored past 16), day 2, hour 01:00
-  const dayBefore = runState.day
-  sys.sleep(8, 0.5)                              // the ratified headline: average site, 8 h
-  check('empty + 8 h at an average site = a full tank', Math.abs(sys.energyH() - DAY_PARAMS.fullEnergyH) < 1e-9,
-    `e=${sys.energyH()}`)
-  check('sleep advances the clock 8 h', Math.abs(sys.hour() - 9) < 1e-9, `hour=${sys.hour()}`)
-  check('no midnight inside 01:00+8 h ⇒ day unchanged', runState.day === dayBefore)
+  const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps
 
-  sys.update(14)                                 // 09:00 + 14 h = 23:00, ~2 h left
-  sys.drinkCoffee()                              // ~7 h left, debt 3
+  DAY_PARAMS.dayLengthSec = 24
+  sys.update(16)                                 // exactly empty, 23:00, still day 1
+  check('16 h awake is exactly empty', sys.energyH() === 0)
+  const d0 = runState.day
+  sys.sleep(8, 0.5)                              // the ratified headline: average site, 8 h
+  check('empty + 8 h at an average site = a full tank', near(sys.energyH(), DAY_PARAMS.fullEnergyH),
+    `e=${sys.energyH()}`)
+  check('sleep advances the clock 8 h (23:00 → 07:00)', near(sys.hour(), 7), `hour=${sys.hour()}`)
+  check('a midnight inside the sleep increments the day', runState.day === d0 + 1)
+
+  // Sleep debt (owner 2026-08-02): the same ratified night from −2 wakes you SHORT — 0 h and −2 h
+  // are different nights now, which is the entire point of the floor moving off zero.
+  sys.update(18)                                 // 07:00 + 18 h = 01:00 next day, energy −2
+  check('staying up past empty accrues debt', near(sys.energyH(), -2), `e=${sys.energyH()}`)
+  sys.sleep(8, 0.5)
+  check('the debt comes off the night: −2 + 16 = 14, not full', near(sys.energyH(), 14), `e=${sys.energyH()}`)
+
+  sys.update(12)                                 // 09:00 + 12 h = 21:00, 2 h left
+  sys.drinkCoffee()                              // 7 h left, debt 3
   const d2 = runState.day
-  sys.sleep(9, 0.5)                              // 23:00 + 9 h crosses midnight; recovery uncapped, THEN −debt
-  check('a midnight inside the sleep increments the day', runState.day === d2 + 1)
+  sys.sleep(9, 0.5)                              // 21:00 + 9 h crosses midnight; recovery uncapped, THEN −debt
+  check('a midnight inside the sleep increments the day (again)', runState.day === d2 + 1)
   // settled = 7 + 2.0·9 − 3 = 22 → clamps to 16: sleeping in DID pay the loan off.
   check('the loan is settled before the clamp (sleep-in offsets it)', sys.energyH() === DAY_PARAMS.fullEnergyH)
   check('the loan is cleared at wake', sys.coffeeDebt() === 0)
@@ -199,8 +213,15 @@ const mkDay = () => {
   sys.update(14)                                 // 2 h left
   sys.drinkCoffee()                              // 7 h left, debt 3
   sys.sleep(2, 0)                                // settled = 7 + (4/3)·2 − 3 = 6⅔
-  check('short sleep charges the debt once, uncapped', Math.abs(sys.energyH() - 20 / 3) < 1e-9, `e=${sys.energyH()}`)
+  check('short sleep charges the debt once, uncapped', near(sys.energyH(), 20 / 3), `e=${sys.energyH()}`)
   check('debt does not survive the wake', sys.coffeeDebt() === 0)
+
+  // Deep debt: a short night can wake you STILL exhausted — the debt is real, not cosmetic.
+  sys.update(30)                                 // way past empty — floors at −8
+  check('sleep-debt floor holds through a long binge', sys.energyH() === -DAY_PARAMS.sleepDebtMaxH)
+  sys.sleep(4, 0)                                // −8 + (4/3)·4 = −8/3
+  check('a short night from deep debt wakes you still exhausted',
+    near(sys.energyH(), -8 / 3) && sys.stage() === 'exhausted', `e=${sys.energyH()}`)
   DAY_PARAMS.dayLengthSec = 1440
 }
 

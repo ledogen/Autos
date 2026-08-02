@@ -539,10 +539,17 @@
     }
     .energy-bar .efill, .energy-bar .epreview {
       position: absolute; left: 0; top: 0; height: 100%; width: 0%;
-      transition: width 0.15s linear;
+      transition: width 0.15s linear, left 0.15s linear;
     }
+    /* Colours are written by _syncSleepRow (STAGE_COLOR — the deprivation-stage overlay); these
+       are just the pre-first-sync fallbacks. */
     .energy-bar .epreview { background: rgba(255, 207, 60, 0.34); }
     .energy-bar .efill    { background: #ffcf3c; }
+    /* The zero tick: left of it is sleep debt (hours owed), right of it is energy in hand. */
+    .energy-bar .ezero {
+      position: absolute; top: -1px; bottom: -1px; width: 1px;
+      background: #aab4be;
+    }
 
     /* Full-screen fade behind the make-camp chore and the night. Plain black, above the panels,
        below the story loading screen. Opacity is the only thing JS writes. */
@@ -731,6 +738,7 @@
       <div class="energy-bar">
         <div class="epreview" id="cp-energy-preview"></div>
         <div class="efill" id="cp-energy-fill"></div>
+        <div class="ezero" id="cp-energy-zero"></div>
       </div>
       <div class="cp-dim" id="cp-energy-text">energy</div>
       <div id="cp-row">

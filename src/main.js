@@ -54,7 +54,7 @@ import { MissionSystem, MISSION_PLAN_RADIUS, PLAN_RESTREAM_MOVE } from './missio
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { PoiSystem, POI_PARAMS } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
-import { DaySystem } from './day.js'                     // FEAT-47: story-mode day clock (drives the sky)
+import { DaySystem, STAGE_COLOR } from './day.js'        // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, RANK_COLOR, formatDeeds } from './economy.js'  // FEAT-53: payout, wallet, good deeds
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist (in-world route arrows)
@@ -2517,26 +2517,45 @@ function _closeCampUi () {
  *
  * The number comes from DaySystem.previewWake, which is literally the arithmetic sleep() applies:
  * one code path, so the preview cannot promise something the night does not deliver.
+ *
+ * SLEEP DEBT ON THE METER (owner, 2026-08-02). The bar's domain is [debtFloorH, fullEnergyH]
+ * (−8..16), with a tick at zero; a segment grows RIGHT from the tick for energy in hand and LEFT
+ * for hours of debt. Fill and preview each wear the STAGE_COLOR of the value they show (sleepy
+ * yellow / tired orange / exhausted red — debt is always left of the tick and always red, since
+ * negative IS exhausted), so the bar and the slider double as the deprivation-stage overlay.
  */
 function _syncSleepRow () {
   const h = parseInt(document.getElementById('cp-hours')?.value ?? '8', 10) || 8
   const vibe = _campUi?.moms ? 0.5 : (_campUi?.site?.vibe ?? 0.5)
-  const full = daySystem.fullEnergyH()
-  const now  = daySystem.energyH()
-  const wake = daySystem.previewWake(h, vibe)
-  const wh   = daySystem.previewWakeHour(h)
+  const full  = daySystem.fullEnergyH()
+  const floor = daySystem.debtFloorH()
+  const now   = daySystem.energyH()
+  const wake  = daySystem.previewWake(h, vibe)
+  const wh    = daySystem.previewWakeHour(h)
 
-  const pct = (v) => `${Math.max(0, Math.min(1, v / full)) * 100}%`
-  const prev = document.getElementById('cp-energy-preview')
-  const fill = document.getElementById('cp-energy-fill')
-  if (prev) prev.style.width = pct(wake)
-  if (fill) fill.style.width = pct(Math.min(now, wake))   // the darker core never overruns the preview
+  // Map an energy value to a bar fraction, and lay a segment between the zero tick and the value.
+  const frac = (v) => Math.max(0, Math.min(1, (v - floor) / (full - floor)))
+  const seg = (el, v, alpha) => {
+    if (!el) return
+    const a = frac(Math.min(0, v)), b = frac(Math.max(0, v))
+    el.style.left = `${a * 100}%`
+    el.style.width = `${(b - a) * 100}%`
+    el.style.background = STAGE_COLOR[daySystem.stageFor(v)] + (alpha ? '57' : '')   // 0x57 ≈ the old 34% preview wash
+  }
+  seg(document.getElementById('cp-energy-preview'), wake, true)
+  seg(document.getElementById('cp-energy-fill'), now, false)
+  const zero = document.getElementById('cp-energy-zero')
+  if (zero) zero.style.left = `${frac(0) * 100}%`
+  const slider = document.getElementById('cp-hours')
+  if (slider) slider.style.accentColor = STAGE_COLOR[daySystem.stageFor(wake)]
 
   const t = document.getElementById('cp-hours-text')
   if (t) t.textContent = `${h} h  ·  wake ${String(Math.floor(wh)).padStart(2, '0')}:${String(Math.floor((wh % 1) * 60)).padStart(2, '0')}`
   const e = document.getElementById('cp-energy-text')
   if (e) {
-    e.textContent = `energy ${now.toFixed(1)} → ${wake.toFixed(1)} / ${full.toFixed(0)} h`
+    // Static strings + toFixed numbers only — nothing player-controlled reaches this innerHTML.
+    e.innerHTML = `energy ${now.toFixed(1)} → ${wake.toFixed(1)} / ${full.toFixed(0)} h`
+      + `  ·  wake <span style="color:${STAGE_COLOR[daySystem.stageFor(wake)]}">${daySystem.stageFor(wake)}</span>`
       + (daySystem.coffeeDebt() > 0 ? `  ·  coffee debt ${daySystem.coffeeDebt().toFixed(0)} h at wake` : '')
   }
 }
