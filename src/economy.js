@@ -31,9 +31,11 @@
  * Tunables. ⚠ PROVISIONAL (FEAT-53, 2026-08-01) — the owner's balancing pass (Phase D) replaces
  * these; the SHAPE is ratified, the numbers are not. Derivation notes:
  *   • k is a pure currency-scale choice (break-even-at-par is an identity under SM-INV-4 — one
- *     day's maintenance is DEFINED as k × the day's par-seconds, so any k balances). 0.35 $/s
- *     ≈ $21/min of par driving ⇒ a typical 3-min job at par ≈ $63, a 2.7-job day ≈ $170 —
- *     legible three-figure numbers for SM-3's repair bills to be authored against.
+ *     day's maintenance is DEFINED as k × the day's par-seconds, so any k balances). 0.30 $/s
+ *     was re-derived 2026-08-02 (Phase D item 1) against the FEAT-30-recalibrated par scale
+ *     (PAR_REF mu 0.90, 041761b): 310 anchored POI rolls over three seed-6 region slices gave
+ *     median par 210 s ⇒ median job at par $63, mean $68, a 2.7-job day ≈ $170-185 — legible
+ *     three-figure numbers for SM-3's repair bills to be authored against.
  *   • dayTierTable steps PER DAY (~×1.15 compounding to 2.66 by day 8) so the ratified
  *     "accept at 1 a.m., buy tomorrow's rate" seduction is live at EVERY midnight.
  *   • rankDayLate tightens S/A ~7% by day 8 — the brake on the rising tier (a day-1 A-drive is
@@ -42,7 +44,7 @@
  *     economy gate pins B > 1.0, so a careless tuning edit here fails fast.
  */
 export const ECONOMY_PARAMS = {
-    k:          0.35,   // $ per second of par-driving — THE one economy tunable (SM-INV-4)
+    k:          0.30,   // $ per second of par-driving — THE one economy tunable (SM-INV-4)
     payoutCap:  3.0,    // clamp ceiling; bites at ratio ≤ 0.60 (mispriced-route insurance)
 
     // Rank thresholds (ratio = elapsed/par). rankDay1 MUST equal par.js RANK_THRESHOLDS_DEFAULT

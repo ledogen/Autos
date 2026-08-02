@@ -64,14 +64,19 @@ payout = parBase × dayTier × clamp((1.2 − ratio)/0.2, 0, cap)      parBase =
 ## ⚠ PROVISIONAL tunables (Phase D — the owner's balancing pass, NOT done)
 
 ```
-k = 0.35 $/s · cap 3.0 · dayTierTable ~×1.15/day → 2.66 @ day 8
+k = 0.30 $/s (re-derived 2026-08-02, see below) · cap 3.0
+dayTierTable ~×1.15/day → 2.66 @ day 8
 rankDayLate { S:0.74, A:0.88, B:1.02, C:1.15 } reached day 8 (linear from day 1)
 ```
-The SHAPE is ratified; these numbers are Claude-picked placeholders (k is a pure currency-scale
-choice until SM-3 gives money something to buy). run-shape.md: the cost-escalation curve, the
-day tier and the threshold ramp are ONE balance problem — tune together, against real drives
-(the feat-par-calibration.md rig is the natural home). Gate-pinned constraints any retune must
-keep: tier(1)=1, thresholds tighten monotonically, **B > 1.0 on every day**.
+The SHAPE is ratified. **k was re-derived 2026-08-02 (Phase D item 1)** against the
+FEAT-30-recalibrated par scale: 310 anchored POI-job rolls over three seed-6 region slices
+(story-poi-style headless worlds, R 1200, forced POI density) gave par p10 129 s / median 210 s /
+p90 352 s (mean 226 s, mean leg 3.9 km) ⇒ k 0.30 lands the target — median day-1 par job $63,
+mean $68, a 2.7-job day ≈ $170-185. The tier/rank tables remain Claude-picked placeholders.
+run-shape.md: the cost-escalation curve, the day tier and the threshold ramp are ONE balance
+problem — tune together, against real drives (the feat-par-calibration.md rig is the natural
+home). Gate-pinned constraints any retune must keep: tier(1)=1, thresholds tighten
+monotonically, **B > 1.0 on every day**.
 
 ## Acceptance (A–C)
 
@@ -104,7 +109,9 @@ no-seat POI path. Latent since FEAT-46; keep the pattern in mind for any future 
 - camp-view merge (`04c8798`), junction-flow merge (`92da8e4`) — no economy interaction.
 
 **What Phase D still owes (the only open work on this ticket):**
-1. Re-pick `k` against the recalibrated par (see above).
+1. ~~Re-pick `k` against the recalibrated par~~ — DONE 2026-08-02: k 0.35 → **0.30**, derived
+   from a 310-roll headless par sample (method + numbers in the PROVISIONAL section above and
+   in the economy.js derivation note; gate pin updated in step).
 2. Balance `dayTierTable` + `rankDayLate` against real multi-day runs — run-shape.md: tier, rank
    ramp and cost escalation are ONE problem; SM-3 costs don't exist yet, so a full balance pass
    may want to wait for them (owner's call whether to hold D until SM-3 opens).
