@@ -902,11 +902,11 @@ these costs** — cuts are fine by him.
 ### 05 — The Highway *(the road that keeps you)*
 
 **Class:** relationship, not a pact · **Domain:** Route · **Disposition:** **two-sided** — favour
-banks the corners above baseline and keeps his ground clear; disfavour flattens the corners and lets
-the hillside come down
+banks the corners above baseline and keeps himself maintained; disfavour flattens the corners and
+lets the surface, the crossings and the hillsides go
 **Contact:** the campfire — first to introduce himself, thereafter **on request, any night**
 **Boon:** **it banks its corners for you, and it keeps itself maintained**
-**Anger:** **it takes the banking away, a bit at a time, and stops clearing the road**
+**Anger:** **it takes the banking away a bit at a time, and stops looking after itself**
 
 Vain, bypassed, speaks in the plural. It doesn't watch you from anywhere — **you're standing on it.**
 Motif: culverts, drainage, closure signs on routes that no longer exist.
@@ -973,54 +973,114 @@ Four reasons this is the right lever, recorded because three other candidates we
    mid-stream, so **the road changes overnight.** You wake and the roads are holding you better; or
    you bypassed a section yesterday and this morning they are a little flatter.
 
-#### The boon, part 2: he keeps his own ground clear [RATIFIED 2026-08-02]
+#### The boon, part 2: he keeps himself maintained [RATIFIED 2026-08-02]
 
-**Favour also suppresses the Highway's dynamic hazards; disfavour raises them.** This makes the boon
-**maintenance** — camber is the engineering, hazard suppression is the upkeep — which is precisely and
-completely what a road authority does for a driver. One idea, two halves, no new vocabulary.
+**Favour suppresses the Highway's hazards; disfavour raises them.** With camber, this makes his boon
+**maintenance** — the engineering *and* the upkeep — which is precisely and completely what a road
+authority does for a driver. One idea, two halves, no new vocabulary.
 
-**Mechanism: this is FEAT-26 with its event rate keyed to favour.** No new system is required.
+**Three hazard classes, and they are not one system** [expanded 2026-08-02 — an earlier draft had only
+rockslides and wrongly claimed the Highway's hazards were carve-free across the board]:
 
-- **FEAT-26 (rockslide ambush)** already specifies *1–3 medium rocks + 5–10 small rocks*, tumbling,
-  timed to intercept — and it is already scoped as a **flag-gated live-reactive system** for exactly
-  the determinism reasons that apply here (same family as doze/ambush timing; gates pin a default
-  `runState`). **Disfavour raises the per-distance event probability. That is the entire change.**
-- **Rocks do not persist** [owner, 2026-08-02]. They are cleared rather than saved, so this is
-  **rigid-body debris (FEAT-09), not carves** — the Highway's hazards cost **nothing** against the cut
-  hazards' carve budget. The two spirits' hazard systems are mechanically unrelated, which is a
-  feature.
-- **FEAT-27 (static rockslide)** is the placed sibling and stays available for authored one-offs, but
-  it is *not* the favour mechanism — a persistent pile would need world state the 2026-08-02 ruling
-  rules out.
+| | what it is | mechanism | build cost |
+|---|---|---|---|
+| **Rockslide** | loose rock on the carriageway | **FEAT-26** event rate keyed to favour; rigid-body debris (FEAT-09) | **none** — no geometry at all |
+| **Pothole** | surface failure — the ride goes to pieces | **already ships.** `potholeNoise` amplitude / `roadQuality` bias, a live dial | **none** — see below |
+| **Washout** | drainage failure — a gully cut across the road | degraded stream crossing; real geometry | **carve.** The only one that invalidates |
 
-> **⚠ He must never block himself, and this is a character argument, not a patch.** *A road wants
-> traffic* is the stated basis of the entire boon. His neglect makes the drive **worse, never
-> impossible** — a couple of medium rocks to pick a line around, not a wall. Same shape as "flat is
-> the floor, not off-camber."
+##### Potholes — the mechanism is already in the build
+
+This needs no new system whatsoever. `src/road-quality.js` ships **`roadQuality(arcS, runKey,
+worldSeed)`** — a pure, window-invariant scalar in [0,1) over 500 m stretches with a 10 m smoothstep
+blend (`roadQualityStretch` / `roadQualityBlend` in `data/ranger.js`) — and `src/road.js:4184` already
+does:
+
+```js
+if (p.potholeEnabled) {
+    const rq = roadQuality(arcSEff, runKey, this._worldSeed)
+    gradeY += potholeNoise(wx, wz, rq, p)      // D-03 / SURF-06
+}
+```
+
+`potholeAmplitude` (0.04 m at quality 0) and `potholeFrequency` (0.3/m ≈ one cell per 3.3 m) are
+tunables in `data/ranger.js`. **So the Highway's pothole lever is a live parameter, exactly like
+`camberKneeRadiusM`** — favour biases quality up, disfavour biases it down or scales the amplitude.
+No carve, no invalidation, no re-bake. Two live dials, one character.
+
+> **⚠ There is a ceiling on this, and it is an honesty ceiling.** Potholes today are **physics-only
+> micro-noise** — `road.js:4167` says so outright, and `terrain.js:30` records that `potholeNoise` was
+> deliberately dropped from the terrain mesh carve path. At 0.04 m that is fine: you feel it, you
+> don't see it, and nobody is being lied to. **Push the amplitude far past that and the mesh has to
+> follow**, or the player is feeling holes that visibly are not there — a MESH == PHYSICS violation
+> and exactly the kind of dishonesty this project's road work has repeatedly refused. Find the
+> amplitude where the divergence starts to read, and treat it as the floor of his neglect. If a
+> deeper punishment is wanted, **it should arrive as washouts, not as bigger invisible potholes.**
+
+##### Washouts — the carved one, and it should ride the crossings
+
+**A washout is a drainage failure, and drainage is already his motif** ("culverts, drainage, closure
+signs on routes that no longer exist"). So put them **where the drainage already is**: at
+**stream crossings**, which the world builds as **filled embankment causeways** with the stream
+culverted underneath (`src/terrain.js:831/1300`). A washout is that causeway **failing** — the fill
+scoured out, a gully where the culvert gave up.
+
+Four things that buys, and it is why this is the right siting rather than scattering washouts anywhere:
+
+- **Placement is free.** The crossing set already exists and is already window-invariant.
+- **The geometry hook exists.** The causeway carve is already MESH == PHYSICS; a washout degrades an
+  existing carve rather than authoring a new feature class.
+- **The count is bounded** by however many crossings a run's network has — so the carve/invalidation
+  budget is knowable in advance instead of being a free parameter.
+- **FEAT-44** (visible culvert pipe) becomes the storytelling for it: the culvert you can see is the
+  culvert that failed.
+
+**This is the only Highway hazard that shares the Shortcut's carve budget**, so it inherits the same
+discipline as FEAT-52 pass 2: short carves, coarse favour tiers (4–5), day-boundary only, local
+segment invalidation and never a world regen. *(⚠ Note it is the more sensitive of the two: cut
+hazards invalidate off-network tracks, washouts invalidate the **maintained network** — the heavily
+cached, constantly resolved path. Budget it first.)*
+
+> **⚠ HE MUST NEVER BLOCK HIMSELF, and this is a character argument, not a patch.** *A road wants
+> traffic* is the stated basis of his entire boon. His neglect makes the drive **worse, never
+> impossible** — a couple of medium rocks to pick a line around, a stretch that shakes the truck to
+> bits, a washout you take at walking pace in first gear. Never a wall. Same shape as the ratified
+> "flat is the floor, not off-camber."
 >
-> **This also kills a death spiral.** If a slide could block the road, the player would be forced
-> around it → that reads as an intentional skip → more disfavour → more slides. It cannot happen if he
-> never blocks. Do not soften this rule for drama.
+> **This also kills a death spiral.** If a hazard could block the road, the player would be forced
+> around it → that reads as an intentional non-shortcut skip → more disfavour → more hazards. It
+> cannot happen if he never blocks. **Do not soften this rule for drama.** It binds washouts hardest,
+> since a scoured gully is the one that could plausibly stop a truck: it must always be *driveable
+> slowly*, never impassable.
 >
-> *Spec detail:* an event must not materialise inside the player's view. Spawn it ahead beyond some
-> distance, or on the slope above a segment not yet in frame.
+> *Spec detail for rockslides only:* an event must not materialise inside the player's view. Spawn it
+> ahead beyond some distance, or on a slope above a segment not yet in frame.
+
+**Determinism.** Pothole and washout placement stay pure `(worldSeed, coords)` and window-invariant
+(SM-INV-12) — `roadQuality` already is. Only the **severity** reads run-layer favour, and only at day
+boundaries. Keep washout placement keyed off crossing identity, never the streamed `runKey`, for the
+BUG-25 reason FEAT-52 constraint 2 already documents. *(Note `roadQuality` itself hashes `runKey` —
+that is safe because it indexes the continuous run profile, but any new favour-gated placement should
+not copy the pattern without checking it.)*
 
 **The asymmetry with the Shortcut's hazards is deliberate and load-bearing:**
 
 | | Highway hazards | Shortcut hazards |
 |---|---|---|
-| Nature | **dynamic**, probabilistic, transient | **authored**, carved, fixed per seed |
+| Nature | mostly **dynamic or parametric**; one carved class | **authored**, carved, fixed per seed |
 | May block? | **never** | **yes** — you chose to be here, reversing out is the price |
-| Favour effect | suppresses the **rate** | removes **specific** obstacles |
+| Favour effect | suppresses **rate** (rockslide) or **severity** (pothole, washout) | removes **specific** obstacles |
 | What clearing grants | **reliability** on roads you'll drive anyway | **access** to routes that are optional |
-| Build cost | free — FEAT-26 rate multiplier | carves, tiered, budgeted |
+| Build cost | two of three are free; washouts share the carve budget | carves throughout |
 
 #### Tiering
 
 | favour depth | what the road does |
 |---|---|
 | early | **it warns you** — corner markers before the hairpin, a grade sign before the descent. Real signage, appearing as favour deepens. *Geometry* information, never mission information, so it does not touch the strategy layer. Same shape as the GPS: convenience for a driver who doesn't know the region, worthless to one who does. |
-| deep | **it banks its sweepers for you** (`camberKneeRadiusM` pushed out) **and its hillsides stay put** |
+| deep | **it banks its sweepers for you** (`camberKneeRadiusM` pushed out), **its surface holds together, its crossings hold, and its hillsides stay put** |
+
+*Read the punished direction as the same list in reverse — flatter corners, a ride that shakes itself
+apart, scoured crossings, loose rock. **Nothing on that list is a wall.***
 
 #### What builds favour: the status quo, and what accelerates it
 
@@ -1067,9 +1127,10 @@ non-shortcut skip** in specs.
   lay-by chain might let a player save ~200 m without ever leaving the road surface. *Owner
   2026-08-02: if it breaks in practice that is a bug to fix, not a reason to redesign.*
 
-**And he does not merely withdraw. He punishes** — camber drops *below* baseline toward flat, and his
-hillsides stop being tidy. A mountain road that was holding you last week now asks you to hold
-yourself, on every sweeper, with loose rock more likely on it.
+**And he does not merely withdraw. He punishes** — camber drops *below* baseline toward flat, the
+surface goes to pieces under you, the crossings scour out, and the hillsides stop being tidy. A
+mountain road that was holding you last week now asks you to hold yourself, on every sweeper, over a
+ride that is coming apart. **None of it ever stops you** — see "he must never block himself."
 
 **The punishment prices itself, for free, via the same invariant the boon relies on.** Par never reads
 camber — so a punished player faces **the same par on a worse road.** Ratio suffers, rank drops,
