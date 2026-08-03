@@ -1134,6 +1134,7 @@ export class RoadSystem {
         }
         this._debugLines = []
         if (this._network) this._network.clear()
+        this._chainEdgeSpans = null; this._chainMembers = null   // QUAL-24: rebuilt by the next merge
         if (this._tiles) this._tiles.clear()
         if (this._tileObjects) this._tileObjects.clear()
         this._slicedFrom = null
@@ -1713,14 +1714,31 @@ export class RoadSystem {
     networkGraph() {
         const key = (id) => `${id[0]},${id[1]},${id[2]}`
         const edges = [], adj = new Map(), idOf = new Map()
-        for (const [runKey, e] of this._network) {
-            if (!e.cellA || !e.cellB) continue
-            const ka = key(e.cellA), kb = key(e.cellB)
-            idOf.set(ka, e.cellA); idOf.set(kb, e.cellB)
+        // QUAL-24: report the ABSTRACT edges, not the runs. A deg-2 chain merge regroups GEOMETRY —
+        // it must not change topology. Collapsing a 3-edge chain to one edge here silently cut the
+        // world's edge count by a third, and everything that decides per-edge went with it: POI siting
+        // rolls once per edge, so POIs visibly vanished. Emit each merged run's MEMBER edges instead,
+        // each still pointing at the merged run that now carries its geometry (edgeParData hands back
+        // the matching arc-span view).
+        const emit = (a, b, runKey) => {
+            const ka = key(a), kb = key(b)
+            idOf.set(ka, a); idOf.set(kb, b)
             if (!adj.has(ka)) adj.set(ka, new Set())
             if (!adj.has(kb)) adj.set(kb, new Set())
             adj.get(ka).add(kb); adj.get(kb).add(ka)
-            edges.push([e.cellA, e.cellB, runKey])
+            edges.push([a, b, runKey])
+        }
+        for (const [runKey, e] of this._network) {
+            const members = this._chainMembers?.get(runKey)
+            if (members?.length) {
+                for (const mk of members) {
+                    const sp = this._chainEdgeSpans.get(mk)
+                    if (sp) emit(sp.a, sp.b, runKey)
+                }
+                continue
+            }
+            if (!e.cellA || !e.cellB) continue
+            emit(e.cellA, e.cellB, runKey)
         }
         return { edges, adj, key, idOf, pos: (id) => this._nodePos(id) }
     }
@@ -1749,6 +1767,19 @@ export class RoadSystem {
         if (this._network.has(alt)) {
             const hit = this._network.get(alt)
             return { key: alt, centerline: hit.centerline, gradeAt: _gradeSampler(hit.points, hit.clArc) }
+        }
+        // QUAL-24: the edge may have been swallowed by a deg-2 chain merge. Hand back a VIEW of its own
+        // stretch within the merged run — the sliced centerline (so the caller's arc domain is still
+        // edge-local and one edge still sites one POI) over the merged run's real graded surface. The
+        // standalone re-route below would answer with geometry the road no longer follows.
+        const span = this._chainEdgeSpans?.get(key) || this._chainEdgeSpans?.get(alt)
+        if (span) {
+            const hit = this._network.get(span.runKey)
+            if (hit) {
+                const sub = centerlineFromDescriptors(slicePrimitives(hit.centerline.primitives, span.s0, span.s1))
+                const full = _gradeSampler(hit.points, hit.clArc)
+                return { key: span.runKey, centerline: sub, gradeAt: (s) => full(s + span.s0), arcOffset: span.s0 }
+            }
         }
 
         const cl = this._edgeCenterline(c1, c2)
@@ -2897,11 +2928,14 @@ export class RoadSystem {
      */
     _mergeDeg2Chains(inBand) {
         const chains = this._deg2Chains(inBand)
+        this._chainEdgeSpans = new Map()
+        this._chainMembers = new Map()
         let merged = 0
         for (const chain of chains) {
             if (chain.runKeys.length < 2) continue
-            const cl = this._mergeChainCenterline(chain)
-            if (!cl || cl.length < 1e-6) continue          // unmergeable: leave the chain as separate runs
+            const res = this._mergeChainCenterline(chain)
+            if (!res || !res.cl || res.cl.length < 1e-6) continue   // unmergeable: leave as separate runs
+            const cl = res.cl
             const first = this._network.get(chain.runKeys[0])
             const last  = this._network.get(chain.runKeys[chain.runKeys.length - 1])
             if (!first || !last) continue
@@ -2913,6 +2947,18 @@ export class RoadSystem {
             if (this._network.has(key) && chain.midKeys.length) key = `${key}:${chain.midKeys.slice().sort()[0]}`
             for (const rk of chain.runKeys) this._network.delete(rk)
             this._registerRun(key, cl, chain.endA, chain.endB)
+            // Record each swallowed edge's window in the merged run. POI siting and mission anchors are
+            // keyed on the abstract GRAPH EDGE, deliberately, so that placement is window-invariant —
+            // but they reach the geometry through edgeParData(a, b), which looks the edge up as a run.
+            // Without this the lookup misses, edgeParData silently re-routes the edge STANDALONE, and
+            // the pad gets evaluated against a centerline that is no longer where the road is: the
+            // cut/fill reject tests then throw the POI away. That is where the POIs went.
+            chain.runKeys.forEach((rk, i) => {
+                const sp = res.spans[i]
+                const o = chain.oriented[i]
+                if (sp) this._chainEdgeSpans.set(rk, { runKey: key, s0: sp[0], s1: sp[1], a: o.from, b: o.to })
+            })
+            this._chainMembers.set(key, chain.runKeys.slice())
             // Re-point incidence: only the chain's ENDS are junctions now; its internal sites are mid-run
             // and must not appear in nodeInc, or _detectNodeJunctions would resurrect them as nodes.
             for (const [sk, list] of this._proto.nodeInc) {
@@ -3044,7 +3090,7 @@ export class RoadSystem {
             const forward = (p0.x - pf.x) ** 2 + (p0.z - pf.z) ** 2 <= (p1.x - pf.x) ** 2 + (p1.z - pf.z) ** 2
             legs.push(forward ? cl.primitives.slice() : reversePrimitives(cl.primitives))
         }
-        if (legs.length === 1) return centerlineFromDescriptors(legs[0])
+        if (legs.length === 1) { const c = centerlineFromDescriptors(legs[0]); return { cl: c, spans: [[0, c.length]] } }
         const lenOf = (ps) => ps.reduce((s, p) => s + p.length, 0)
         const lens = legs.map(lenOf)
         const TRIM_FRAC = 0.40   // per JOINT; an interior edge trims at both ends, so ≤ 0.80 of it
@@ -3117,7 +3163,11 @@ export class RoadSystem {
             rads[j] = chosen.R; tail[j] = chosen.t; head[j + 1] = chosen.t; fillets[j] = chosen.dub
         }
         // Slice once per leg (both joints' trims already known), then interleave the fillets.
-        const out = []
+        // `spans` records where each MEMBER EDGE ended up in the merged arc domain, so consumers that
+        // are keyed on the abstract graph edge (POI siting, mission anchors) can still find their own
+        // stretch of road after the chain swallowed it.
+        const out = [], spans = []
+        let acc = 0
         for (let i = 0; i < legs.length; i++) {
             const s0 = head[i], s1 = lens[i] - tail[i]
             if (s1 - s0 < 1.0) return null                        // leg consumed by its own trims — bail
@@ -3141,11 +3191,16 @@ export class RoadSystem {
                 if (Math.hypot(dub[0].x0 - prev.x1, dub[0].z0 - prev.z1) > 0.05) return null
                 if (Math.hypot(endX - q.x0, endZ - q.z0) > 0.05) return null
                 for (const p of dub) out.push(makePrimitive(p.x0, p.z0, p.theta0, p.length, p.kappa0, p.kappa1 ?? p.kappa0))
+                acc += dub.reduce((s, p) => s + p.length, 0)
             }
+            const segLen = sl.reduce((s, p) => s + p.length, 0)
+            spans.push([acc, acc + segLen])   // this member edge's window in the merged arc domain
+            acc += segLen
             for (const p of sl) out.push(p)
         }
-        return centerlineFromDescriptors(out)
+        return { cl: centerlineFromDescriptors(out), spans }
     }
+
 
     // ── Canonical network builder (D-08) ────────────────────────────────────────
     /**
