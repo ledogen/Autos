@@ -76,7 +76,8 @@ real stores/homes/parking lots are no likelier at an intersection than mid-edge.
 missions and POIs live" records the rule and its three consequences (par integrates over arc-length
 ranges; path search splices endpoints into the graph; arrival is a radius on a point). Also scoped:
 the **beta mission generator** (a testing harness for the par economy, not final gameplay) presents
-a mission on the 2D map with an **accept** button before its start countdown, and later a
+a mission on the 2D map with an **accept** button before its start countdown (*the countdown is now
+Quick Job only — a POI job stages instead; amended 2026-08-02, below*), and later a
 **regenerate** button that re-rolls start/end. Regenerate is explicitly a *testing* affordance —
 **real story mode has no do-overs.**
 
@@ -159,6 +160,35 @@ map, then a visible marker floating over the ones that go, then pass-2 hazards c
 anger is **being ignored**: esteem decays when you stop taking cuts, and he says it reminds him of his
 dad. The **shortcut GPS is a display layer** over that relationship, not a stronger version of it.
 Full model: `spirits-and-pacts.md` #05/#06.
+
+**Ratification pass 2026-08-02 (b) — a POI job stages; it does not count down.** Amends the
+2026-07-20 (b) scoping note above, which gave the beta generator one start ritual for every job.
+There are now **two, and which one you get is decided by whether the job moved you**:
+
+- **Quick Job — teleport, then 3-2-1, handbrake held.** Unchanged. It seats you at a start pin
+  already facing the right way, so a count is exactly the right ritual and the handbrake hold is
+  honest: there is nothing to decide.
+- **A POI job — stage, then cross a threshold.** Accepting does not move you and does not hold you.
+  The truck is **free and untimed** on the pad for as long as you like, and the clock starts the
+  instant you **cross out of a 25 m radius centred on the marker**. The threshold is one-way —
+  driving back inside cannot un-start a run.
+
+The reason is that a POI job starts where *you* parked, which means it can start with the truck
+facing the wrong way — and the counted launch made that a penalty the player could only dodge by
+declining, turning around, and re-opening the same offer (the single-offer cache guarantees it is
+the same job). That is ceremony pretending to be a choice: it costs a menu round-trip and changes
+nothing. Untimed staging deletes the dodge by deleting the thing worth dodging.
+
+**The circle is the interface, and its colour is the state.** A marker wears a translucent
+**orange** ring at its interaction radius (10 m — "park inside this and you'll be offered a job");
+accepting **swaps** that ring for a **green** one at the start threshold ("cross this and you're
+running"), and leaving swaps it back. One circle in front of the player at a time. This is a
+waypoint toward the marker becoming a **highlighted parking spot you pull into** rather than a
+radius you enter — the placeholder cube and the ring both go when that lands.
+
+**This does not touch SM-INV-3.** That invariant forbids rendering *par* as a countdown; the 3-2-1
+was a START count, not a par clock. Removing it moves away from rendered timers, not toward them.
+Implementation: `src/mission.js` (`'staging'`, `START_ZONE_R`), `HANDOFF-poi-mission-start.md`.
 
 **Companion design notes** (downstream of this bible; where they disagree with it, *it* wins):
 [missions.md](missions.md) (mission taxonomy, XP/payout scoring, the log-drag main mission),

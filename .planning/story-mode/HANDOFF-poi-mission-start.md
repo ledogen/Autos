@@ -4,10 +4,10 @@
 Date: 2026-08-02. Rides under **FEAT-46** — no new ticket was cut; this is polish on shipped POI
 behaviour, not new scope.
 
-> **STATUS: IMPLEMENTED, GATED, COMMITTED, NOT MERGED.** One commit (`dd5bcb5`) on `feature/mission-start`, off
-> `origin/main` @ `df1d08c`. Verified headlessly (gates) — **NOT yet verified in the running game**
-> by the owner; the dev server was killed twice by something outside the session, so the ring visuals
-> have not been eyeballed. That is the one open item before merge.
+> **STATUS: MERGED.** `dd5bcb5` + `c5227f1` on `feature/mission-start`, merged to `main` at
+> `e178b13`; the worktree is cleaned up. `npm run test:all` green (45 gates), and **the owner drove
+> it and confirmed it works** (2026-08-03). `DESIGN.md` carries the change as ratification pass
+> **2026-08-02 (b)**; the stale line noted below has been amended.
 
 ---
 
@@ -83,8 +83,8 @@ none after. Nothing in the frame loop, nothing in physics.
   shoulder; inside the zone no clock runs; crossing out starts the run with elapsed from **zero at
   the line**; re-entering cannot stop it; a Quick Job still counts down **and** still holds.
 - `npx vite build` clean.
-- **Not done: in-game visual verification.** Someone should drive it before merge — specifically the
-  ring swap on accept, and whether the two radii read as coherent (see the open question below).
+- **Driven and confirmed by the owner** (2026-08-03) — the ring swap on accept reads correctly in
+  the running game.
 
 ## Design-doc check
 
@@ -93,12 +93,13 @@ the 3-2-1 was a START count, not a par clock (`mission.js` says so at the `COUNT
 removing it for POI jobs moves *away* from rendered timers, not toward them. No other SM-INV is in
 scope.
 
-**One doc line now reads stale, deliberately not edited** (owner's call, per the ask-on-conflicts
-rule): `DESIGN.md` line ~79, in the 2026-07-20 (b) ratification pass, describes the beta mission
+**AMENDED 2026-08-03** (owner's call). `DESIGN.md`'s 2026-07-20 (b) pass described the beta
 generator as presenting "a mission on the 2D map with an **accept** button before its start
-countdown". That is still exactly true of Quick Job and no longer true of a POI job. It is a scoping
-note about a testing harness, not a `[RATIFIED]` invariant, so it did not seem worth an
-amendment — but if you want the record clean, that is the line to touch.
+countdown" — still true of Quick Job, no longer true of a POI job. That line now carries an inline
+pointer, and a new entry **"Ratification pass 2026-08-02 (b) — a POI job stages; it does not count
+down"** records the two start rituals, why the counted launch had to go (it made facing the wrong
+way a penalty dodgeable only by a menu round-trip that changed nothing), the orange↔green ring
+convention, and the note that SM-INV-3 is untouched.
 
 ## Open questions / follow-ups
 
