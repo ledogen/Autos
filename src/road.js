@@ -1776,9 +1776,18 @@ export class RoadSystem {
         if (span) {
             const hit = this._network.get(span.runKey)
             if (hit) {
-                const sub = centerlineFromDescriptors(slicePrimitives(hit.centerline.primitives, span.s0, span.s1))
-                const full = _gradeSampler(hit.points, hit.clArc)
-                return { key: span.runKey, centerline: sub, gradeAt: (s) => full(s + span.s0), arcOffset: span.s0 }
+                // Hand back the REGISTERED centerline object, never a sliced copy. centerline.js's whole
+                // premise is that ONE exact curve travels from the router to every consumer and is
+                // SAMPLED — a re-derived copy is the class of thing BUG-12 came from, and
+                // mission-network asserts object identity so the GPS blue line cannot drift off the
+                // drawn white road. The edge's extent rides alongside as an arc RANGE instead.
+                return {
+                    key: span.runKey,
+                    centerline: hit.centerline,
+                    gradeAt: _gradeSampler(hit.points, hit.clArc),
+                    arcOffset: span.s0,
+                    arcLength: span.s1 - span.s0,
+                }
             }
         }
 

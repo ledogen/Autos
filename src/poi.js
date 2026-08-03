@@ -237,7 +237,12 @@ export class PoiSystem {
     _placeOnEdge (road, e, rnd, P) {
         const ed = road.edgeParData(e.a, e.b)
         if (!ed || !ed.centerline) return null
-        const L = ed.centerline.length
+        // QUAL-24: this edge may be a STRETCH of a longer run — a deg-2 chain merge swallowed it — so
+        // its arc domain is [off, off+L] inside the registered run, not [0, len]. `s` below stays in
+        // that run's GLOBAL arc domain, which is what the pad record, tunnelSpanAt and the mission
+        // anchor all expect. An unmerged edge reports off=0 and L=len, so this is identity there.
+        const off = ed.arcOffset ?? 0
+        const L = ed.arcLength ?? ed.centerline.length
         const clear = P.poiEndClearM
         if (!(L > 2 * clear + 40)) return null      // too short to hold a pad clear of both ends
 
@@ -248,7 +253,7 @@ export class PoiSystem {
         const lat = halfWidth + shoulderWidth + P.poiPadGap + P.poiPadHalfWid
 
         for (let k = 0; k < P.poiCandidates; k++) {
-            const s = clear + rnd() * (L - 2 * clear)
+            const s = off + clear + rnd() * (L - 2 * clear)
             // WHICH SIDE is decided by the ground, not by the hash: try both and take the one that
             // needs less earthwork. On a mountain road the two sides are wildly asymmetric — one is
             // a 1:1 cut bank, the other a 3:1 fill slope — so letting the terrain choose is both the
