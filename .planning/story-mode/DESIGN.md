@@ -149,8 +149,12 @@ rejoining having saved >~200 m of road distance by a path that wasn't a cut), an
 **graded by the distance skipped**, cumulative, with flat as a floor it approaches rather than
 reaches. He is the Shortcut's **father** — once a shortcut himself, he wants cuts reinforced and hates
 bypasses because *a bypass makes a badly-defined shortcut*. His boon gains a second half:
-**maintenance** — favour suppresses his dynamic rockslides (FEAT-26's event rate, keyed to favour; the
-rocks never persist and never block). The Shortcut's boon is **intel then clearance** — cuts on the
+**maintenance**, across three hazard classes — **rockslides** (FEAT-26's event rate keyed to favour;
+rigid-body debris, no geometry), **potholes** (`roadQuality` / `potholeAmplitude`, a live dial that
+**already ships** — `src/road-quality.js`, D-03/SURF-06), and **washouts** (a stream crossing's
+causeway scoured out — the only carved one, and it should ride the existing crossing set because
+drainage is his own motif). **None of them may ever block the road**: a road wants traffic, and a
+blockage would force a detour that reads as a skip, opening a death spiral. The Shortcut's boon is **intel then clearance** — cuts on the
 map, then a visible marker floating over the ones that go, then pass-2 hazards clearing — and his
 anger is **being ignored**: esteem decays when you stop taking cuts, and he says it reminds him of his
 dad. The **shortcut GPS is a display layer** over that relationship, not a stronger version of it.

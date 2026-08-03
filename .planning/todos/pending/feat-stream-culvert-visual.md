@@ -14,6 +14,18 @@ carve change, no bore, no terrain roof — the pipe is decoration on an untouche
 
 # FEAT-44: Visible culvert pipe where a road crosses a stream
 
+> **⚠ Story-mode consumer noted 2026-08-02.** `spirits-and-pacts.md` #05 ratifies **washouts** as one
+> of the Highway's three hazard classes — *a stream crossing's causeway scoured out where the culvert
+> gave up*, severity keyed to his favour. Drainage is his literal motif ("culverts, drainage, closure
+> signs"), and siting washouts on the **existing crossing set** makes placement free, bounds the
+> count, and degrades a carve that is already MESH == PHYSICS instead of authoring a new feature class.
+>
+> **This ticket is the storytelling for that**: the culvert you can see is the culvert that failed. If
+> FEAT-44 ships first, build the pipe so a *damaged* variant is a swap rather than a rework. The hard
+> constraint from #05 carries over — **a washout may never block the road**, only slow it to walking
+> pace; a blockage forces a detour that reads as an intentional non-shortcut skip and opens a death
+> spiral.
+
 ## Context
 
 Road×stream crossings are **causeways**: the road embankment fills the stream channel back to

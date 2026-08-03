@@ -34,9 +34,15 @@ intercept** the player's line as they drive by:
   It reads the day's favour; it never advances it.
 - **Rocks do not persist** [owner, 2026-08-02] — *"a couple of medium rocks, not impassable… we could
   clear them and just have it be that the chance of a rockslide occurring at any random time is higher
-  as disfavour with the highway grows."* So this stays **rigid-body debris (FEAT-09), never carves**,
-  and the Highway's hazards cost **nothing** against FEAT-52's pass-2 carve budget. The two spirits'
-  hazard systems are mechanically unrelated, deliberately.
+  as disfavour with the highway grows."* So **this ticket** stays **rigid-body debris (FEAT-09), never
+  carves**, and costs nothing against FEAT-52's pass-2 carve budget.
+
+  ⚠ **This ticket is one of three Highway hazard classes, not all of them** [corrected 2026-08-02 —
+  an earlier note wrongly implied the Highway's hazards were carve-free across the board]. The other
+  two: **potholes**, which need no new work at all (`roadQuality` × `potholeAmplitude` is a live dial
+  that already ships, `src/road-quality.js` / `src/road.js:4184`, D-03/SURF-06); and **washouts** — a
+  stream crossing's causeway scoured out — which **are** carves and **do** share FEAT-52's budget. See
+  `spirits-and-pacts.md` #05 "The boon, part 2".
 - **⚠ HE MUST NEVER BLOCK HIMSELF.** *A road wants traffic* is the stated basis of his entire boon, so
   neglect makes the drive **worse, never impossible** — a couple of medium rocks to pick a line
   around, not a wall. Same shape as the ratified "flat is the floor, not off-camber."
