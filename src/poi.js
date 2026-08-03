@@ -42,9 +42,14 @@ export const POI_PARAMS = {
     // corners out without rejecting the ordinary crowned straight.
     poiMaxCrossSlope: 0.12,
     poiEndClearM:     55,     // m — keep clear of both edge ends (junction pads live there)
-    poiInteractR:     18,     // m — interaction radius: where the prompt shows AND where latching
+    poiInteractR:     10,     // m — interaction radius: where the prompt shows AND where latching
                               // the parking brake opens the offer. ONE radius on purpose — a prompt
                               // visible further out than the trigger works would be a lie.
+                              // Tightened from 18 (owner, 2026-08-02): 18 m armed the offer from
+                              // the road itself, well short of the pad. 10 m is a little over the
+                              // pad's own half-diagonal (√(7² + 4²) ≈ 8.1), so it means "parked on
+                              // the lay-by" and nothing looser — the step toward the marker being a
+                              // highlighted parking spot you actually pull into.
     poiCubeSize:      1.6,    // m — the placeholder marker cube's edge length
 }
 

@@ -2041,16 +2041,96 @@ scene.add(_poiGroup)
 const _poiCubeGeo = new THREE.BoxGeometry(POI_PARAMS.poiCubeSize, POI_PARAMS.poiCubeSize, POI_PARAMS.poiCubeSize)
 const _poiCubeMat = new THREE.MeshStandardMaterial({ color: 0xff7a18, emissive: 0x3a1a00, roughness: 0.55 })
 
-/** Rebuild the marker cubes from the current POI list (cheap: a handful of boxes per region). */
+// The INTERACTION ring (owner, 2026-08-02): a translucent orange curtain standing at
+// poiInteractR, so the spot where parking actually opens the offer is something you can see and
+// aim at rather than a radius you discover by trial. It is drawn on every marker, always — it is
+// part of what a POI LOOKS like, not a UI state, and it is the first step toward the marker being
+// a highlighted parking spot you pull into.
+//
+// Deliberately dumb geometry: an open-ended unit cylinder, scaled to the radius and sunk into the
+// ground so undulating terrain can never open a gap under it. depthWrite off + DoubleSide so it
+// reads as a light curtain from both approaches instead of a solid bucket, and toneMapped off so
+// the orange stays the same signal orange at every hour of the day clock.
+const _POI_RING_H = 4.0        // m — curtain height
+const _POI_RING_SINK = 1.5     // m — how far the base is buried (terrain slop, not decoration)
+
+/** Vertical alpha ramp: solid at the base, gone by the top. alphaMap reads the GREEN channel. */
+function _ringAlphaTex () {
+  const N = 64
+  const data = new Uint8Array(N * 4)
+  for (let i = 0; i < N; i++) {
+    const v = i / (N - 1)                            // 0 at the base of the cylinder
+    const a = v < 0.45 ? 1 : 1 - (v - 0.45) / 0.55   // hold, then fade out
+    const b = Math.round(255 * Math.max(0, a))
+    data[i * 4] = b; data[i * 4 + 1] = b; data[i * 4 + 2] = b; data[i * 4 + 3] = 255
+  }
+  const tex = new THREE.DataTexture(data, 1, N, THREE.RGBAFormat)
+  tex.needsUpdate = true
+  return tex
+}
+// Unit cylinder + one alpha ramp, shared by BOTH rings — the interaction ring and the start-zone
+// ring are the same object in two colours at two radii, which is what makes the swap below read as
+// one ring changing meaning rather than two unrelated overlays.
+const _ringGeo = new THREE.CylinderGeometry(1, 1, 1, 48, 1, true)
+const _ringAlpha = _ringAlphaTex()
+const _ringMat = (color) => new THREE.MeshBasicMaterial({
+  color, transparent: true, opacity: 0.28, side: THREE.DoubleSide,
+  depthWrite: false, toneMapped: false, alphaMap: _ringAlpha,
+})
+const _poiRingMat = _ringMat(0xff7a18)     // orange — park here to be offered a job
+// The STAGING ring (owner, 2026-08-02): taking the job swaps the marker's orange circle for the
+// green start threshold. One ring at a time, and its colour is the state — orange means "this is
+// where you stop", green means "this is where the clock starts". Same geometry, same style, wider
+// radius (START_ZONE_R vs poiInteractR) and taller in proportion so a 25 m circle still reads as a
+// wall rather than a puddle.
+const _stageRingMat = _ringMat(0x3ddc6b)   // green — cross this and you're running
+const _STAGE_RING_H = 8.0      // m
+const _STAGE_RING_SINK = 3.0   // m
+let _stageRing = null
+// poi.id → its orange ring, so the accepted marker's ring can step aside for the green one while
+// every OTHER marker in the region keeps its own.
+const _poiRings = new Map()
+
+/** Rebuild the marker cubes + interaction rings (cheap: a handful of each per region). */
 function _rebuildPoiMarkers () {
   _poiGroup.clear()   // geometry + material are shared singletons — nothing per-cube to dispose
+  _poiRings.clear()
   const half = POI_PARAMS.poiCubeSize * 0.5
+  const r = POI_PARAMS.poiInteractR
   for (const q of poiSystem.list()) {
     const cube = new THREE.Mesh(_poiCubeGeo, _poiCubeMat)
     cube.position.set(q.x, q.y + half, q.z)
     cube.castShadow = true
     _poiGroup.add(cube)
+
+    const ring = new THREE.Mesh(_ringGeo, _poiRingMat)
+    ring.scale.set(r, _POI_RING_H, r)
+    ring.position.set(q.x, q.y - _POI_RING_SINK + _POI_RING_H * 0.5, q.z)
+    ring.renderOrder = 5
+    _poiGroup.add(ring)
+    _poiRings.set(q.id, ring)
   }
+}
+
+/**
+ * The orange↔green swap, on the ~10 Hz HUD poll: while a POI job is STAGING, the marker you took it
+ * from drops its interaction ring and the start-zone ring stands in its place. Everything here is
+ * visibility + a transform — no allocation after the first staged job.
+ */
+function _updateMissionRings () {
+  const zone = missionSystem?.state === 'staging' ? missionSystem.startZone() : null
+  const activeId = zone ? missionSystem.mission?.fromPoi : null
+  for (const [id, ring] of _poiRings) ring.visible = id !== activeId
+  if (!zone) { if (_stageRing) _stageRing.visible = false; return }
+  if (!_stageRing) {
+    _stageRing = new THREE.Mesh(_ringGeo, _stageRingMat)
+    _stageRing.renderOrder = 5
+    _stageRing.frustumCulled = false
+    scene.add(_stageRing)
+  }
+  _stageRing.scale.set(zone.r, _STAGE_RING_H, zone.r)
+  _stageRing.position.set(zone.x, zone.y - _STAGE_RING_SINK + _STAGE_RING_H * 0.5, zone.z)
+  _stageRing.visible = true
 }
 
 // ── FEAT-47: the story-mode day clock ──────────────────────────────────────────────────────
@@ -2164,7 +2244,9 @@ missionSystem = new MissionSystem({
 gpsSystem = new GpsSystem(scene, {
   getRoute: () => {
     const s = missionSystem?.state
-    return (s === 'countdown' || s === 'running') ? missionSystem.mission : null
+    // 'staging' counts: that is precisely when a POI job wants guidance, because the reason the
+    // start zone exists is that you may be pointing the wrong way and have to decide which.
+    return (s === 'countdown' || s === 'staging' || s === 'running') ? missionSystem.mission : null
   },
   getCar: () => vehicleState.position,
   // Read at BAKE time only (once per mission, plus while the bake is still partial): the design
@@ -2675,7 +2757,7 @@ function _renderMissionUI () {
         // FEAT-46: a POI job does NOT move you — you are already parked at the marker, and claiming
         // otherwise would have the panel lying about the one thing the player is about to feel.
         + (j.fromPoi
-          ? `<span class="mp-dim">starts here &mdash; the clock runs from where you're parked</span>`
+          ? `<span class="mp-dim">starts here &mdash; turn around as you like; the clock starts when you leave the circle</span>`
           : `<span class="mp-dim">green pin is the start &mdash; you'll be moved there</span>`)
       // FEAT-46: the offer is exactly three actions — decline · regenerate · accept.
       // FEAT-53: on a PAID (POI) job the regenerate button is hidden outright — a dead button is
@@ -2693,6 +2775,12 @@ function _renderMissionUI () {
     case 'countdown':
       show(panel, false); show(hud, true)
       hud.innerHTML = `<span class="mh-count">${Math.max(1, Math.ceil(m.countdown))}</span>`
+      break
+    case 'staging':
+      // The POI start. No digits and no hold — the only thing the player needs told is what starts
+      // the clock, and the green ring that just replaced the marker's orange one says where.
+      show(panel, false); show(hud, true)
+      hud.textContent = 'leave the green circle to start'
       break
     case 'running':
       show(panel, false); show(hud, true)
@@ -3960,8 +4048,12 @@ function loop () {
     }
 
     // Story mode (beta): the countdown digit and the elapsed/distance readout are live values,
-    // so they repaint on the HUD's ~10 Hz cadence rather than per physics step.
-    if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'running')) _renderMissionUI()
+    // so they repaint on the HUD's ~10 Hz cadence rather than per physics step. ('staging' is a
+    // static line, but it costs one string write and keeps the state→HUD mapping in one place.)
+    if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'staging'
+                          || missionSystem.state === 'running')) _renderMissionUI()
+    // FEAT-46: the orange interaction ring ↔ green start-zone ring swap rides the same poll.
+    _updateMissionRings()
 
     // FEAT-53: the run wallet — money + good deeds, story mode only, always visible while the
     // region is live (owner, 2026-08-01). Run state, not mission state: it never references par

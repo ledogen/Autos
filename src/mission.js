@@ -47,6 +47,17 @@ const LEG_MAX = 4000                // m
 const MAX_EDGES = 9                 // routing cap: each edge is tens of ms on a cache miss
 const ARRIVE_RADIUS = 28            // m — you're there
 const COUNTDOWN = 3.0               // s — the start countdown (a START count, not a par clock)
+// FEAT-46 start zone (owner, 2026-08-02): a POI job does NOT count down. You are parked on the pad,
+// possibly facing the wrong way, and a 3-2-1 handbrake launch punished you for that — the workaround
+// was to decline, turn around, and re-open the SAME offer, which is ceremony pretending to be a
+// choice. Instead the marker owns a radius: accept, sort yourself out inside it for as long as you
+// like, and the clock starts the instant you cross the threshold. Accepting SWAPS the marker's
+// orange interaction ring for a green one at this radius (main.js's _updateMissionRings), so there
+// is only ever one circle in front of you and its colour is the state: orange means "stop here",
+// green means "cross here and you're running".
+// Quick Job keeps the countdown: it TELEPORTS you to a start pin already facing the right way, so
+// the handbrake launch is exactly right there and nothing about it needs fixing.
+const START_ZONE_R = 25             // m — POI start threshold, measured from the marker
 // FEAT-53: real story mode has no do-overs (DESIGN.md — "a marker you can re-roll is a slot
 // machine", and a retried paid job is a direct payout exploit: drive badly, retry, get paid for
 // the good lap). Held as a const flag in the DEBUG_LOCKOUT house style (story.js): flip to true
@@ -121,7 +132,11 @@ export class MissionSystem {
         this._getTerms = getTerms || null
         this._onSettle = onSettle || null
 
-        this.state = 'idle'      // 'idle' | 'generating' | 'offer' | 'countdown' | 'running' | 'done'
+        // 'idle' | 'generating' | 'offer' | 'countdown' | 'staging' | 'running' | 'done'
+        // 'countdown' and 'staging' are the two mutually exclusive start rituals: a Quick Job counts
+        // down at the pin it teleported you to, a POI job stages inside its start zone (see
+        // START_ZONE_R). Nothing ever passes through both.
+        this.state = 'idle'
         this.mission = null      // { start, end, par, distance, poly }
         this.elapsed = 0
         this.countdown = 0
@@ -192,7 +207,7 @@ export class MissionSystem {
     /**
      * FEAT-46: take a job from the POI you are parked at. Same generator, but the start is PINNED to
      * the marker's own (edge, arc) point and accepting does NOT teleport — you are already standing
-     * there, and the countdown runs out from under you where you sit.
+     * there, and the run begins when you drive out of the marker's start zone (START_ZONE_R).
      *
      * FEAT-53: the single-offer rule. The first park of the day rolls the offer; every later park
      * at the same POI (same day) presents the SAME cached job, instantly — no _generate, no
@@ -219,7 +234,12 @@ export class MissionSystem {
         this.result = null
         this.error = null
         this._onChange()
-        setTimeout(() => this._generate({ aId: poi.aId, bId: poi.bId, s: poi.s, poiId: poi.id, offerKey: key }), 0)
+        // poiX/poiZ ride along for the start zone: the threshold is centred on the MARKER (where you
+        // are parked), not on the mission's road-side start pin ~11 m out across the shoulder.
+        setTimeout(() => this._generate({
+            aId: poi.aId, bId: poi.bId, s: poi.s, poiId: poi.id, offerKey: key,
+            poiX: poi.x, poiZ: poi.z, poiY: poi.y,
+        }), 0)
     }
 
     /**
@@ -246,8 +266,9 @@ export class MissionSystem {
 
     /**
      * Take the job. Two things happen here that do NOT happen on retry:
-     *   • a POI job does not seat you at the start pin — you are already standing on the pad, and
-     *     the countdown runs out from under you where you sit;
+     *   • a POI job does not seat you at the start pin — you are already standing on the pad, and it
+     *     goes straight to 'staging': turn around at your leisure, the clock starts when you leave
+     *     the marker's start zone;
      *   • THE SPAWN POINT MOVES TO WHERE YOU ACCEPTED FROM. Accepting a job is the commitment, so
      *     it is also the checkpoint: reset now and you come back to the job you took, not to
      *     wherever you last happened to stop.
@@ -291,7 +312,8 @@ export class MissionSystem {
      * FEAT-46: a POI job skips the seat on ACCEPT — the player drove to the marker themselves and
      * the job starts from where they are parked. (Owner, 2026-07-28: "no need to teleport the car to
      * the road. the player should know they need to get outta there quick.") The pad sits beside the
-     * centerline, so the first few metres are the driver's own problem, which is the point.
+     * centerline, so the first few metres are the driver's own problem, which is the point — and
+     * since 2026-08-02 those metres are UNTIMED: the start zone is where you sort out the pull-out.
      *
      * @param {{seat:boolean, setSpawn:boolean}} o
      */
@@ -306,9 +328,13 @@ export class MissionSystem {
         // this reads the pad you are parked on, which is exactly the checkpoint we want.
         if (setSpawn && !seat) this._setSpawn?.()
         this._setMapOpen(false)
-        this.state = 'countdown'
+        // A POI job STAGES (free to manoeuvre inside its zone, clock starts on the way out); a Quick
+        // Job counts down where it was just seated. `seat` is not the discriminator — a POI RETRY
+        // seats and must still stage, because its start zone is the thing being retried.
+        const staged = !!this.mission.startZone
+        this.state = staged ? 'staging' : 'countdown'
         this._polyIdx = 0            // route-remaining projection restarts at the start pin
-        this.countdown = COUNTDOWN
+        this.countdown = staged ? 0 : COUNTDOWN
         this.elapsed = 0
         this._trace = []
         this._traceTick = 0
@@ -434,6 +460,25 @@ export class MissionSystem {
         }
     }
 
+    /**
+     * The POI start threshold ({x,y,z,r}) of the job in hand, or null for a Quick Job. Read by
+     * main.js to draw the in-world circle; the zone exists from the moment the offer is rolled, but
+     * only 'staging' has any reason to show it.
+     */
+    startZone() { return this.mission?.startZone || null }
+
+    /**
+     * Metres of slack left inside the start zone: r − (distance from its centre). Zero or below
+     * means the truck has crossed the threshold. Returns 0 when there is no zone, so a job that
+     * somehow reaches 'staging' without one starts immediately rather than hanging there forever.
+     */
+    startZoneExitDist() {
+        const z = this.mission?.startZone
+        if (!z) return 0
+        const c = this._getCar()
+        return z.r - Math.hypot(c.x - z.x, c.z - z.z)
+    }
+
     /** Metres remaining, as the crow flies. Used for the ARRIVAL check (a radius on a point). */
     distanceToGo() {
         if (!this.mission) return 0
@@ -477,6 +522,13 @@ export class MissionSystem {
             if (this.countdown <= 0) { this.state = 'running'; this.elapsed = 0 }
             return
         }
+        // Staging: one distance check. Crossing OUT of the start zone is the start — there is no
+        // countdown, no hold, and no way back in (the zone is a threshold, not a trigger volume, so
+        // re-entering it does not stop the clock you already started).
+        if (this.state === 'staging') {
+            if (this.startZoneExitDist() <= 0) { this.state = 'running'; this.elapsed = 0; this._onChange() }
+            return
+        }
         if (this.state !== 'running') return
         this.elapsed += dt
 
@@ -515,7 +567,12 @@ export class MissionSystem {
         }
     }
 
-    /** True while the player must sit still (the start countdown holds the truck). */
+    /**
+     * True while the player must sit still (the start countdown holds the truck).
+     *
+     * 'staging' is deliberately NOT held: manoeuvring inside the start zone is the whole point of it
+     * — a hold there would be the 3-2-1 launch by another name.
+     */
     isHeld() { return this.state === 'countdown' }
 
     // ── generation ──────────────────────────────────────────────────────────────────────────
@@ -534,6 +591,11 @@ export class MissionSystem {
             for (let i = 0; i < tries && !this.mission; i++) this.mission = this._roll(anchor)
             if (this.mission) {
                 this.mission.fromPoi = anchor ? anchor.poiId : null
+                // The start threshold, for a POI job only. Held on the MISSION (not on the system)
+                // so the cached single-offer entry carries it and a re-park presents the same zone.
+                this.mission.startZone = anchor
+                    ? { x: anchor.poiX, z: anchor.poiZ, y: anchor.poiY ?? 0, r: START_ZONE_R }
+                    : null
                 // FEAT-53: a POI roll is cached under its (poi, day) key — the giver's one offer
                 // for today. regenerate() can only reach here for Quick Jobs (or with
                 // PAID_JOB_DO_OVERS flipped, where overwriting the entry is the point).
