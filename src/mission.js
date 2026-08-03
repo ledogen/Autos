@@ -771,7 +771,12 @@ export class MissionSystem {
             // degree-2 node is just the road bending through (QUAL-16 made those first-class), and
             // the turn angle alone cannot tell the two apart. The GPS assist filters on this.
             const endDeg = (adj.get(nodePath[i + 1]) || []).length
-            segments.push({ centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key, endDeg })
+            // QUAL-24: carry the ABSTRACT EDGE (site pair) alongside the runKey. A runKey names a run
+            // GROUPING, and a deg-2 chain merge groups by the streamed band — so a mission planned at
+            // MISSION_PLAN_RADIUS can name a chain the 320 m play stream never forms, and the drop
+            // point looks like it evaporated. The site pair is stable across windows, so this is what
+            // anything re-resolving the road later should key on.
+            segments.push({ centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key, cellA: a, cellB: b, endDeg })
 
             // Map polyline for this traversed range.
             const n = Math.max(2, Math.ceil(Math.abs(s1 - s0) / 25))
@@ -806,6 +811,7 @@ export class MissionSystem {
             }
             segments.unshift({
                 centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key,
+                cellA: anchor.aId, cellB: anchor.bId,   // QUAL-24: window-stable edge identity
                 endDeg: (adj.get(exitK) || []).length,
             })
             poly.unshift(...head)
