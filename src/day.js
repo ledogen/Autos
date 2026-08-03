@@ -23,24 +23,38 @@ export const DAY_PARAMS = {
     dayLookQuantH: 0.1,    // in-game hours between sky pushes — see THE BAKE COST below
 
     // ── Energy (hours-equivalent; see THE ENERGY LADDER below) ────────────────────────────────
-    fullEnergyH:   18,     // h of waking a full night buys; awake drains 1 h per in-game hour
-    sleepyAtH:     4,      // energy remaining at/below which the driver is SLEEPY  (14 h awake)
-    tiredAtH:      2,      // …TIRED      (16 h awake)
-    // EXHAUSTED is energy <= 0 (18 h awake). Energy floors at 0; exhaustion has no deeper stage.
+    fullEnergyH:   16,     // h of waking a full night buys; awake drains 1 h per in-game hour
+                           //   (18 → 16, run-shape.md 2026-08-02: 16 + 8 h sleep closes the 24 h
+                           //   day; at 18 dawn drifted 2 h per night)
+    sleepyAtH:     4,      // energy remaining at/below which the driver is SLEEPY  (12 h awake)
+    tiredAtH:      2,      // …TIRED      (14 h awake)
+    // EXHAUSTED is energy <= 0 (16 h awake). Exhaustion has no deeper STAGE — but see sleepDebtMaxH:
+    // the number keeps falling below 0, so staying up late is repaid at the next sleep.
+    // The ladder reads energy REMAINING (4/2/0), so the 2026-08-02 tank shrink moved the stages'
+    // hours-awake onsets from 14/16/18 to 12/14/16 — the "last 4 h risky, last 2 dangerous" shape
+    // is the ratified constant, per the owner's Phase-D ruling.
+
+    // SLEEP DEBT (owner, 2026-08-02). Energy floors at −sleepDebtMaxH, not 0: an hour awake past
+    // empty is an hour owed at the next sleep, so 0 h and −4 h are no longer the same night.
+    // Capped at one night's worth (8 h) — the debt can cost you a whole extra average-site night,
+    // never more. The STAGE ladder is untouched: everything below 0 is plain 'exhausted'
+    // (consequence stays SM-INV-1 dozes; the debt deepens the ledger, not the punishment).
+    sleepDebtMaxH: 8,
 
     // Coffee: relief now, debt against the NEXT wake-up. Deliberately net positive (+5 vs −3).
     coffeeReliefH: 5,
     coffeeDebtH:   3,
 
     // ── Sleep recovery (FEAT-45 Phase D) — hours of energy bought per hour slept ───────────────
-    // THE ARITHMETIC (ratified 2026-07-30). r(vibe) = lerp(worst, best, vibe), so:
-    //   • an AVERAGE site (vibe 0.5) gives r = (1.5 + 3.0)/2 = 2.25 h/h ⇒ 8 h × 2.25 = 18 h = FULL
+    // THE ARITHMETIC (ratified 2026-07-30; rescaled 2026-08-02 with the 16 h tank).
+    // r(vibe) = lerp(worst, best, vibe), so:
+    //   • an AVERAGE site (vibe 0.5) gives r = (4/3 + 8/3)/2 = 2.0 h/h ⇒ 8 h × 2.0 = 16 h = FULL
     //     from empty. Eight hours at a decent site is the whole night, exactly as ratified.
-    //   • the BEST site is exactly 2× the worst (3.0 / 1.5), so full-from-empty runs 6 h at best
-    //     and 12 h at worst.
+    //   • the BEST site is exactly 2× the worst (8/3 / 4/3), so full-from-empty runs 6 h at best
+    //     and 12 h at worst — unchanged by the rescale.
     // Change these two together or the "average = full in 8 h" contract quietly breaks.
-    sleepRateWorstH: 1.5,
-    sleepRateBestH:  3.0,
+    sleepRateWorstH: 4 / 3,
+    sleepRateBestH:  8 / 3,
     sleepMinH:       1,    // slider bounds for the sleep timer
     sleepMaxH:       14,
     sleepDefaultH:   8,
@@ -72,6 +86,14 @@ export const DAY_PARAMS = {
  * a test drift the day. Keep it minimal — a field earns its place here only if a run boundary is the
  * only thing that may move it.
  */
+/**
+ * Deprivation-stage colours (owner, 2026-08-02): the sleep slider + energy meter wear the stage.
+ * sleepy/tired/exhausted deliberately reuse the ratified rank hexes for B/C/D (economy.js
+ * RANK_COLOR — yellow/orange/red mean the same escalation everywhere); rested is green
+ * (owner, 2026-08-02 — was white for a day; green reads "healthy" on the energy meter).
+ */
+export const STAGE_COLOR = { rested: '#7ed957', sleepy: '#ffdc3c', tired: '#ff9f43', exhausted: '#ff5a4e' }
+
 export const runState = {
     day: 1,   // 1-based day index of the current run; increments at each midnight crossed
 }
@@ -138,9 +160,9 @@ export class DaySystem {
         this._hour += dHour
         while (this._hour >= 24) { this._hour -= 24; runState.day++ }
         // BEING AWAKE COSTS AN HOUR PER HOUR — energy is denominated in hours of waking left, so the
-        // drain is the hour advance itself. Floors at 0: exhaustion deepens in consequence, not in
-        // number. (Sleep, which is the only thing that puts hours back, arrives in Phase D.)
-        this._energyH = Math.max(0, this._energyH - dHour)
+        // drain is the hour advance itself. Floors at −sleepDebtMaxH: past empty the meter keeps
+        // falling into sleep debt (owner, 2026-08-02), so the night that repays it must be longer.
+        this._energyH = Math.max(-DAY_PARAMS.sleepDebtMaxH, this._energyH - dHour)
         this._updateBlinks(dHour, dtSec)
         this._push(false)
     }
@@ -153,13 +175,13 @@ export class DaySystem {
 
     // ── Energy, stages, coffee ────────────────────────────────────────────────────────────────
     //
-    // THE ENERGY LADDER (ratified 2026-07-30). Energy is hours-of-waking remaining, full = 18 h,
-    // draining 1:1 with the in-game clock. The stages read the REMAINDER, not elapsed time, so a
-    // coffee genuinely walks the driver back down the ladder:
+    // THE ENERGY LADDER (ratified 2026-07-30; tank 18 → 16 h 2026-08-02, run-shape.md). Energy is
+    // hours-of-waking remaining, full = 16 h, draining 1:1 with the in-game clock. The stages read
+    // the REMAINDER, not elapsed time, so a coffee genuinely walks the driver back down the ladder:
     //   rested    > 4 h left            — nothing happens
-    //   sleepy   <= 4 h  (14 h awake)   — eyelid animation only, NO control loss. A warning you feel.
-    //   tired    <= 2 h  (16 h awake)   — one long signal blink on entry, then 200–600 ms DOZES
-    //   exhausted <= 0   (18 h awake)   — 400–1000 ms dozes
+    //   sleepy   <= 4 h  (12 h awake)   — eyelid animation only, NO control loss. A warning you feel.
+    //   tired    <= 2 h  (14 h awake)   — one long signal blink on entry, then 200–600 ms DOZES
+    //   exhausted <= 0   (16 h awake)   — 400–1000 ms dozes
     // SM-INV-1: a doze drops the inputs and lets the physics decide. It is never a fail state and
     // never forces a crash — on a straight you coast, on a mountain switchback you had better have
     // stopped for coffee.
@@ -170,9 +192,14 @@ export class DaySystem {
     /** A full tank, in hours — the denominator of the sleep dialogue's energy meter. */
     fullEnergyH () { return DAY_PARAMS.fullEnergyH }
 
+    /** The meter's floor (negative): the deepest sleep debt, −sleepDebtMaxH. */
+    debtFloorH () { return -DAY_PARAMS.sleepDebtMaxH }
+
     /** @returns {'rested'|'sleepy'|'tired'|'exhausted'} */
-    stage () {
-        const e = this._energyH
+    stage () { return this.stageFor(this._energyH) }
+
+    /** The stage a given energy value reads as — pure; the sleep preview colours ride on it. */
+    stageFor (e) {
         if (e <= 0)                   return 'exhausted'
         if (e <= DAY_PARAMS.tiredAtH) return 'tired'
         if (e <= DAY_PARAMS.sleepyAtH) return 'sleepy'
@@ -194,6 +221,16 @@ export class DaySystem {
         this._syncGui()
     }
 
+    /**
+     * FEAT-55 debug: jump the meter to an exact energy value (clamped to the meter's domain).
+     * Pure state write — the blink scheduler re-reads the stage on the next update() tick, and
+     * the tired signal re-arms through the same crossing logic a coffee uses.
+     */
+    setEnergy (h) {
+        this._energyH = Math.max(-DAY_PARAMS.sleepDebtMaxH, Math.min(DAY_PARAMS.fullEnergyH, h))
+        this._syncGui()
+    }
+
     // ── Time skips: making camp, and sleeping (FEAT-45 Phase D) ───────────────────────────────
     //
     // Both are the same shape — the clock jumps, the screen is black across the jump, and NO BLINK
@@ -209,7 +246,7 @@ export class DaySystem {
     advanceMinutes (m) {
         const dH = Math.max(0, m) / 60
         this._advanceHours(dH)
-        this._energyH = Math.max(0, this._energyH - dH)
+        this._energyH = Math.max(-DAY_PARAMS.sleepDebtMaxH, this._energyH - dH)
         this._endSkip()
     }
 
@@ -221,8 +258,8 @@ export class DaySystem {
      * what makes the owner's rule ("sleeping can offset the loan — sleep in a bit more") true: the
      * night's recovery and the debt are settled UNCAPPED, and only the result is clamped to a full
      * tank. Clamping to full before charging the debt would price every extra hour at zero once the
-     * tank filled, so no amount of sleeping in could ever pay a cup off. Floors at 0 — a debt can
-     * leave you short of a full day, never below empty.
+     * tank filled, so no amount of sleeping in could ever pay a cup off. Floors at −sleepDebtMaxH —
+     * a short night from deep sleep debt can genuinely wake you still exhausted (owner, 2026-08-02).
      *
      * @param {number} hours integer hours from the sleep timer
      * @param {number} vibe  0..1 campsite score (mom's house passes a fixed 0.5)
@@ -248,11 +285,11 @@ export class DaySystem {
      *
      * @param {number} hours
      * @param {number} vibe 0..1
-     * @returns {number} energy in hours at wake, in [0, fullEnergyH]
+     * @returns {number} energy in hours at wake, in [−sleepDebtMaxH, fullEnergyH]
      */
     previewWake (hours, vibe) {
         const settled = this._energyH + this.recoveryRate(vibe) * Math.max(0, hours) - this._coffeeDebt
-        return Math.max(0, Math.min(DAY_PARAMS.fullEnergyH, settled))
+        return Math.max(-DAY_PARAMS.sleepDebtMaxH, Math.min(DAY_PARAMS.fullEnergyH, settled))
     }
 
     /** Hour-of-day (0..24) the clock would read after sleeping `hours`. Pure — the slider's readout. */
@@ -406,7 +443,7 @@ export class DaySystem {
 
         // Read-outs: lil-gui has no live binding, so these are plain controllers refreshed from the
         // frame loop's GUI tick via updateDisplay() (the same trick sky.js uses for its hour slider).
-        const read = { day: runState.day, hour: '07:00', energy: '18.0 h', stage: 'rested', coffeeDebt: '0 h' }
+        const read = { day: runState.day, hour: '07:00', energy: '16.0 h', stage: 'rested', coffeeDebt: '0 h' }
         this._ctrls.push(f.add(read, 'day').name('day').disable())
         this._ctrls.push(f.add(read, 'hour').name('hour').disable())
         this._ctrls.push(f.add(read, 'energy').name('energy').disable())
@@ -447,6 +484,21 @@ export class DaySystem {
         f.add(acts, 'blink').name('force blink')
         f.add(acts, 'blinksEnabled').name('blinks enabled')
             .onChange(v => this.setBlinksEnabled(v))
+
+        // FEAT-55 debug: jump straight to a stage boundary (owner-requested rig — exercising the
+        // doze ladder and the energy meter without driving a day out). Values, not deltas.
+        const fe = f.addFolder('set energy')
+        const jump = {
+            rested:    () => this.setEnergy(6),
+            sleepy:    () => this.setEnergy(DAY_PARAMS.sleepyAtH),
+            tired:     () => this.setEnergy(DAY_PARAMS.tiredAtH),
+            exhausted: () => this.setEnergy(0),
+        }
+        fe.add(jump, 'rested').name('6 h — rested')
+        fe.add(jump, 'sleepy').name('4 h — sleepy')
+        fe.add(jump, 'tired').name('2 h — tired')
+        fe.add(jump, 'exhausted').name('0 h — exhausted')
+        fe.close()
         return f
     }
 
