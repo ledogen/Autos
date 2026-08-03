@@ -136,7 +136,15 @@ const ms = new MissionSystem({
     play.setRadius(320)
     play.update(new THREE.Vector3(m.end.x, 0, m.end.z))
     total++
-    if (!play._network.has(last.runKey)) { missing++; if (bad.length < 3) bad.push(last.runKey) }
+    // QUAL-24: check the ABSTRACT EDGE, not the runKey. The claim is "the road you were sent to is
+    // still there when you drive up" — a cull-agreement claim. A runKey names a run GROUPING, and a
+    // deg-2 chain merge groups by the streamed band, so the plan radius and the 320 m play radius can
+    // spell the same road differently while both genuinely have it. Same assertion, stable unit.
+    const pg = play.networkGraph()
+    const ek = (a, b) => { const ka = pg.key(a), kb = pg.key(b); return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}` }
+    const have = new Set(pg.edges.map(([a, b]) => ek(a, b)))
+    const want = (last.cellA && last.cellB) ? ek(last.cellA, last.cellB) : null
+    if (want === null || !have.has(want)) { missing++; if (bad.length < 3) bad.push(want ?? `no-edge:${last.runKey}`) }
   }
   check('the drop-point road still exists when the PLAY system streams there',
     total > 0 && missing === 0, `${missing}/${total} evaporated: ${bad.join(' ')}`)

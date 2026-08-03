@@ -172,6 +172,56 @@ export class CenterlineCurve {
     getPoints(n = 5) { return this.getSpacedPoints(n) }
 }
 
+// ── QUAL-24: primitive-list surgery for deg-2 chain merging ───────────────────────────────────
+// A deg-2 site is a "continuing path", not a junction (_graphDegreeOf), so its two edges are spliced
+// into ONE run: trim a tail off each and Dubins-connect the exposed frames. Doing that in DESCRIPTOR
+// space rather than on the sampled polyline is what keeps every downstream guarantee intact — the
+// merged run is still a Centerline of typed primitives, so curvature stays bounded BY CONSTRUCTION
+// (BUG-12), the analytic `nearest` refine still works, and nothing is re-interpolated.
+
+/**
+ * Pose (x, z, theta, kappa) at local arc `ls` along one primitive. Exported so road.js can read the
+ * exact frame at a trim point — the same closed form the sampler uses, so the splice is exact.
+ */
+export function primitivePose(p, ls) { return primPose(p, ls) }
+
+/**
+ * The sub-list of `prims` covering global arc [s0, s1], re-based to start exactly at s0. Whole
+ * primitives pass through untouched; the partial one at each end is re-made from its pose at the cut
+ * with the curvature ramp linearly re-sampled — so a cut clothoid is still an exact clothoid.
+ */
+export function slicePrimitives(prims, s0, s1) {
+    const out = []
+    let acc = 0
+    for (const p of prims) {
+        const a = acc, b = acc + p.length
+        acc = b
+        if (b <= s0 + 1e-9 || a >= s1 - 1e-9) continue
+        const la = Math.max(0, s0 - a), lb = Math.min(p.length, s1 - a)
+        const L = lb - la
+        if (L <= 1e-9) continue
+        if (la <= 1e-9 && lb >= p.length - 1e-9) { out.push(p); continue }
+        const dk = p.length > 1e-9 ? (p.kappa1 - p.kappa0) / p.length : 0
+        const q = primPose(p, la)
+        out.push(makePrimitive(q.x, q.z, q.theta, L, p.kappa0 + dk * la, p.kappa0 + dk * lb))
+    }
+    return out
+}
+
+/**
+ * `prims` traversed backwards. Each primitive restarts at its own END pose facing the other way, and
+ * its curvature ramp both REVERSES (κ1→κ0) and NEGATES — going the other way round a bend turns the
+ * opposite hand. Needed because an edge is stored A→B but a chain may traverse it B→A.
+ */
+export function reversePrimitives(prims) {
+    const out = []
+    for (let i = prims.length - 1; i >= 0; i--) {
+        const p = prims[i]
+        out.push(makePrimitive(p.x1, p.z1, p.theta1 + Math.PI, p.length, -p.kappa1, -p.kappa0))
+    }
+    return out
+}
+
 // Wrap plain primitive descriptors {x0,z0,theta0,length,kappa0,kappa1} (as emitted by
 // arcPrimitiveConnect({emitPrimitives:true}) / dubinsPrimitives) into a Centerline. Descriptors are
 // kept dependency-free on the router side; this is the single place they become live primitives.

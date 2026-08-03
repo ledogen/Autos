@@ -62,10 +62,23 @@ const bandOf = (r) => {
     const [mz0, mz1, mx0, mx1] = r._lastBandSig.split(':').map(Number)
     return { wx0: mx0 * ANCHOR, wx1: (mx1 + 1) * ANCHOR, wz0: mz0 * ANCHOR, wz1: (mz1 + 1) * ANCHOR }
 }
+// QUAL-24: compare ABSTRACT EDGES (canonical site pairs), not runKeys. The assertion below is about
+// road EXISTENCE — "a road drawn on the map must be there when you drive up" — and pre-chaining a run
+// WAS an edge, so runKeys expressed that faithfully. Now a deg-2 chain merge can carry several edges
+// in one run, and the run GROUPING legitimately depends on the streamed band while the roads do not:
+// comparing runKeys would fail on grouping alone and say nothing about phantom roads. networkGraph()
+// reports the abstract edges through a merge, so this is the same claim in the unit that survived it.
+// NOT a weakening — an edge culled at play radius but kept at map radius is still caught, which is the
+// whole point. Run identity WITHIN a drive is guarded separately, by restream-invariance.
 const bandSet = (r, band) => {
     const s = new Set()
     const inB = (p) => p.x >= band.wx0 && p.x < band.wx1 && p.z >= band.wz0 && p.z < band.wz1
-    for (const [k, e] of r._network) if (inB(r._nodePos(e.cellA)) || inB(r._nodePos(e.cellB))) s.add(k)
+    const g = r.networkGraph()
+    for (const [a, b] of g.edges) {
+        if (!inB(r._nodePos(a)) && !inB(r._nodePos(b))) continue
+        const ka = g.key(a), kb = g.key(b)
+        s.add(ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`)
+    }
     return s
 }
 

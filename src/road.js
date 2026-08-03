@@ -35,8 +35,8 @@
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
-import { crownProfile, potholeNoise, signedCurvature, arcPrimitiveConnect, smoothGradeInPlace, applyTunnelPassInPlace, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
-import { centerlineFromDescriptors, CenterlineCurve, Centerline } from './centerline.js'
+import { crownProfile, potholeNoise, signedCurvature, arcPrimitiveConnect, smoothGradeInPlace, applyTunnelPassInPlace, dubinsFillet, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
+import { centerlineFromDescriptors, CenterlineCurve, Centerline, makePrimitive, slicePrimitives, reversePrimitives, primitivePose } from './centerline.js'
 import { delaunay, urquhartEdges } from './road-graph.js'
 
 // FEAT-13 v2: total order on site ids [cmx,cmz,k] — the Poisson-disk priority tie-break.
@@ -1134,6 +1134,7 @@ export class RoadSystem {
         }
         this._debugLines = []
         if (this._network) this._network.clear()
+        this._chainEdgeSpans = null; this._chainMembers = null   // QUAL-24: rebuilt by the next merge
         if (this._tiles) this._tiles.clear()
         if (this._tileObjects) this._tileObjects.clear()
         this._slicedFrom = null
@@ -1713,14 +1714,31 @@ export class RoadSystem {
     networkGraph() {
         const key = (id) => `${id[0]},${id[1]},${id[2]}`
         const edges = [], adj = new Map(), idOf = new Map()
-        for (const [runKey, e] of this._network) {
-            if (!e.cellA || !e.cellB) continue
-            const ka = key(e.cellA), kb = key(e.cellB)
-            idOf.set(ka, e.cellA); idOf.set(kb, e.cellB)
+        // QUAL-24: report the ABSTRACT edges, not the runs. A deg-2 chain merge regroups GEOMETRY —
+        // it must not change topology. Collapsing a 3-edge chain to one edge here silently cut the
+        // world's edge count by a third, and everything that decides per-edge went with it: POI siting
+        // rolls once per edge, so POIs visibly vanished. Emit each merged run's MEMBER edges instead,
+        // each still pointing at the merged run that now carries its geometry (edgeParData hands back
+        // the matching arc-span view).
+        const emit = (a, b, runKey) => {
+            const ka = key(a), kb = key(b)
+            idOf.set(ka, a); idOf.set(kb, b)
             if (!adj.has(ka)) adj.set(ka, new Set())
             if (!adj.has(kb)) adj.set(kb, new Set())
             adj.get(ka).add(kb); adj.get(kb).add(ka)
-            edges.push([e.cellA, e.cellB, runKey])
+            edges.push([a, b, runKey])
+        }
+        for (const [runKey, e] of this._network) {
+            const members = this._chainMembers?.get(runKey)
+            if (members?.length) {
+                for (const mk of members) {
+                    const sp = this._chainEdgeSpans.get(mk)
+                    if (sp) emit(sp.a, sp.b, runKey)
+                }
+                continue
+            }
+            if (!e.cellA || !e.cellB) continue
+            emit(e.cellA, e.cellB, runKey)
         }
         return { edges, adj, key, idOf, pos: (id) => this._nodePos(id) }
     }
@@ -1749,6 +1767,28 @@ export class RoadSystem {
         if (this._network.has(alt)) {
             const hit = this._network.get(alt)
             return { key: alt, centerline: hit.centerline, gradeAt: _gradeSampler(hit.points, hit.clArc) }
+        }
+        // QUAL-24: the edge may have been swallowed by a deg-2 chain merge. Hand back a VIEW of its own
+        // stretch within the merged run — the sliced centerline (so the caller's arc domain is still
+        // edge-local and one edge still sites one POI) over the merged run's real graded surface. The
+        // standalone re-route below would answer with geometry the road no longer follows.
+        const span = this._chainEdgeSpans?.get(key) || this._chainEdgeSpans?.get(alt)
+        if (span) {
+            const hit = this._network.get(span.runKey)
+            if (hit) {
+                // Hand back the REGISTERED centerline object, never a sliced copy. centerline.js's whole
+                // premise is that ONE exact curve travels from the router to every consumer and is
+                // SAMPLED — a re-derived copy is the class of thing BUG-12 came from, and
+                // mission-network asserts object identity so the GPS blue line cannot drift off the
+                // drawn white road. The edge's extent rides alongside as an arc RANGE instead.
+                return {
+                    key: span.runKey,
+                    centerline: hit.centerline,
+                    gradeAt: _gradeSampler(hit.points, hit.clArc),
+                    arcOffset: span.s0,
+                    arcLength: span.s1 - span.s0,
+                }
+            }
         }
 
         const cl = this._edgeCenterline(c1, c2)
@@ -2846,27 +2886,330 @@ export class RoadSystem {
             const key = `g:${g.key(c1)}:${g.key(c2)}`
             const cl = this._edgeCenterline(c1, c2)
             if (!cl || cl.length < 1e-6) continue
-            const n = Math.max(1, Math.ceil(cl.length / PROTO_SAMPLE_DS))
-            const pts = new Array(n + 1)
-            const clArc = new Float64Array(n + 1)
-            for (let i = 0; i <= n; i++) {
-                const s = cl.length * i / n
-                clArc[i] = s
-                const p = cl.pointAt(s)
-                pts[i] = new THREE.Vector3(p.x, this._coarseH(p.x, p.z), p.z)
-            }
-            this._gradeEdgeInPlace(pts, this._params?.roadGraphDeviationCap ?? 2)
-            // FEAT-40: taut-string summit cut + crown-cover bore detection. Mutates pts.y only;
-            // spans (bore stretches, cumulative-XZ arc == run-global arcS since arcOrigin=0)
-            // drive carve-skip/physics/tube mesh. _coarseH is the router's own world-fixed
-            // terrain sampler → the pass stays window-invariant.
-            const tunnelSpans = applyTunnelPassInPlace(pts, this._tunnelPassOpts(), (x, z) => this._coarseH(x, z))
-            const polyCum = new Float64Array(n + 1)
-            for (let i = 1; i <= n; i++) polyCum[i] = polyCum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
-            this._network.set(key, { points: pts, arcOrigin: 0, centerline: cl, polyCum, clArc, cellA: c1, cellB: c2, tunnelSpans })
+            this._registerRun(key, cl, c1, c2)
             addInc(g.key(c1), key); addInc(g.key(c2), key)
         }
     }
+
+    /**
+     * Sample a centerline into a network run: polyline at PROTO_SAMPLE_DS, design-graded, tunnel-passed,
+     * with the arc tables the queries read. Factored out of _assembleGraphEdges so the QUAL-24 deg-2
+     * chain merge can register a MERGED centerline through exactly the same path — a merged run must be
+     * built the same way an ordinary one is, or it would not be ordinary road.
+     */
+    _registerRun(key, cl, cellA, cellB) {
+        const n = Math.max(1, Math.ceil(cl.length / PROTO_SAMPLE_DS))
+        const pts = new Array(n + 1)
+        const clArc = new Float64Array(n + 1)
+        for (let i = 0; i <= n; i++) {
+            const s = cl.length * i / n
+            clArc[i] = s
+            const p = cl.pointAt(s)
+            pts[i] = new THREE.Vector3(p.x, this._coarseH(p.x, p.z), p.z)
+        }
+        this._gradeEdgeInPlace(pts, this._params?.roadGraphDeviationCap ?? 2)
+        // FEAT-40: taut-string summit cut + crown-cover bore detection. Mutates pts.y only;
+        // spans (bore stretches, cumulative-XZ arc == run-global arcS since arcOrigin=0)
+        // drive carve-skip/physics/tube mesh. _coarseH is the router's own world-fixed
+        // terrain sampler → the pass stays window-invariant.
+        const tunnelSpans = applyTunnelPassInPlace(pts, this._tunnelPassOpts(), (x, z) => this._coarseH(x, z))
+        const polyCum = new Float64Array(n + 1)
+        for (let i = 1; i <= n; i++) polyCum[i] = polyCum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
+        this._network.set(key, { points: pts, arcOrigin: 0, centerline: cl, polyCum, clArc, cellA, cellB, tunnelSpans })
+        return pts
+    }
+
+    /**
+     * QUAL-24: splice each degree-2 chain of runs into ONE run.
+     *
+     * A degree-2 site is a CONTINUING PATH, not a junction — _graphDegreeOf says so in its own comment —
+     * and a player reads it as plain road, not an intersection. Before this, such a site carried two
+     * independently-graded runs plus a connector overlay that averaged them in world space, and the
+     * joint was where their grade disagreement got dumped: BUG-40's 0.43 m launch ramp, and two more
+     * symptoms of the same shape. Merged, the joint is ordinary road — one polyline, one arcS domain,
+     * one profile with the full earthwork window to spread a grade change over.
+     *
+     * Runs AFTER the crossing cull, deliberately. Deg-2 sites are largely cull-CREATED (a 3-way node
+     * whose third strand was pruned), and more importantly _cullNetwork, _detectJunctions, the map and
+     * POI placement all reason about a run as a graph EDGE. Merging before them changed that unit under
+     * their feet and broke four gates; merging after leaves their world exactly as it was and makes the
+     * chain a late, consumer-facing regrouping.
+     */
+    _mergeDeg2Chains(inBand) {
+        const chains = this._deg2Chains(inBand)
+        this._chainEdgeSpans = new Map()
+        this._chainMembers = new Map()
+        let merged = 0
+        for (const chain of chains) {
+            if (chain.runKeys.length < 2) continue
+            const res = this._mergeChainCenterline(chain)
+            if (!res || !res.cl || res.cl.length < 1e-6) continue   // unmergeable: leave as separate runs
+            const cl = res.cl
+            const first = this._network.get(chain.runKeys[0])
+            const last  = this._network.get(chain.runKeys[chain.runKeys.length - 1])
+            if (!first || !last) continue
+            // Key off the chain's END sites, matching the ordinary `g:<siteA>:<siteB>` shape. Two chains
+            // CAN share both endpoints (rare in a planar graph, not impossible); disambiguate with the
+            // lexicographically-smallest internal site — deterministic and window-invariant, unlike a
+            // discovery-order counter.
+            let key = `g:${this._siteKey(chain.endA)}:${this._siteKey(chain.endB)}`
+            if (this._network.has(key) && chain.midKeys.length) key = `${key}:${chain.midKeys.slice().sort()[0]}`
+            for (const rk of chain.runKeys) this._network.delete(rk)
+            this._registerRun(key, cl, chain.endA, chain.endB)
+            // Record each swallowed edge's window in the merged run. POI siting and mission anchors are
+            // keyed on the abstract GRAPH EDGE, deliberately, so that placement is window-invariant —
+            // but they reach the geometry through edgeParData(a, b), which looks the edge up as a run.
+            // Without this the lookup misses, edgeParData silently re-routes the edge STANDALONE, and
+            // the pad gets evaluated against a centerline that is no longer where the road is: the
+            // cut/fill reject tests then throw the POI away. That is where the POIs went.
+            chain.runKeys.forEach((rk, i) => {
+                const sp = res.spans[i]
+                const o = chain.oriented[i]
+                if (sp) this._chainEdgeSpans.set(rk, { runKey: key, s0: sp[0], s1: sp[1], a: o.from, b: o.to })
+            })
+            this._chainMembers.set(key, chain.runKeys.slice())
+            // Re-point incidence: only the chain's ENDS are junctions now; its internal sites are mid-run
+            // and must not appear in nodeInc, or _detectNodeJunctions would resurrect them as nodes.
+            for (const [sk, list] of this._proto.nodeInc) {
+                const keep = list.filter(rk => !chain.runKeys.includes(rk))
+                if (keep.length !== list.length) {
+                    if (sk === this._siteKey(chain.endA) || sk === this._siteKey(chain.endB)) keep.push(key)
+                    this._proto.nodeInc.set(sk, keep)
+                }
+            }
+            merged++
+        }
+        return merged > 0
+    }
+
+    _siteKey(id) { return `${id[0]},${id[1]},${id[2]}` }
+
+    /**
+     * QUAL-24: group the settled graph's edges into maximal CHAINS through degree-2 sites.
+     *
+     * A chain runs from one non-degree-2 site to the next, passing through any number of degree-2
+     * sites; an ordinary edge between two junctions is a chain of one. Each becomes ONE run.
+     *
+     * Window-invariance (D-16) is the whole risk here, because this decides run IDENTITY, not just a
+     * surface: if a site looked degree-2 from one stream center and degree-3 from another, runKey/arcS/
+     * the entire profile would flip as the player drives. Two guards. (1) Degree is read from the
+     * SETTLED Urquhart adjacency (post degree-cap drops), which is built over band+margin and is
+     * therefore complete for any site inside the band — not from the streamed run set, whose degrees are
+     * incomplete at the frontier. (2) A site is only merged THROUGH when it is inBand, so a site whose
+     * adjacency might still be clipped by the graph's own margin stays a chain end. The band edge sits
+     * at the routing radius (hundreds of metres), far outside anything loaded or drawn, so a decision
+     * that does flip as the band moves has already left the world the player can see — the same
+     * guarantee _degreeDrops and the junction classifier already rely on. Held by restream-invariance.
+     *
+     * Cycles of degree-2 sites (a ring road with no junction on it) have no natural end; they are broken
+     * at their lexicographically-smallest site so the choice is deterministic, not discovery-ordered.
+     *
+     * @returns {Array<{sites: Array<object>, edges: Array<[object, object]>}>} chains, sites in order
+     */
+    _deg2Chains(inBand) {
+        const runs = [...this._network.keys()].sort()      // sorted → discovery order is deterministic
+        const idBy = new Map()                             // siteKey → site id
+        const adj = new Map()                              // siteKey → [runKey]
+        const ends = new Map()                             // runKey → [siteKeyA, siteKeyB]
+        for (const rk of runs) {
+            const e = this._network.get(rk)
+            if (!e || !e.cellA || !e.cellB) continue
+            const ka = this._siteKey(e.cellA), kb = this._siteKey(e.cellB)
+            if (ka === kb) continue                        // self-loop: never a chain member
+            idBy.set(ka, e.cellA); idBy.set(kb, e.cellB)
+            ends.set(rk, [ka, kb])
+            for (const k of [ka, kb]) { let l = adj.get(k); if (!l) adj.set(k, l = []); l.push(rk) }
+        }
+        const through = (k) => {
+            const l = adj.get(k)
+            if (!l || l.length !== 2) return false
+            const id = idBy.get(k)
+            return id !== undefined && inBand(id)
+        }
+        const used = new Set()
+        const chains = []
+        // Walk from `startKey` along `rk0`, absorbing through-sites until a non-through site.
+        const walk = (startKey, rk0) => {
+            const runKeys = [], oriented = [], midKeys = []
+            let curKey = startKey, rk = rk0
+            for (;;) {
+                if (used.has(rk)) break
+                used.add(rk)
+                const [ka, kb] = ends.get(rk)
+                const nextKey = ka === curKey ? kb : ka
+                runKeys.push(rk)
+                oriented.push({ runKey: rk, from: idBy.get(curKey), to: idBy.get(nextKey) })
+                if (!through(nextKey)) { curKey = nextKey; break }
+                midKeys.push(nextKey)
+                const onward = adj.get(nextKey).find(x => x !== rk)
+                if (!onward || used.has(onward)) { curKey = nextKey; break }
+                curKey = nextKey; rk = onward
+            }
+            if (runKeys.length) chains.push({ runKeys, oriented, midKeys, endA: idBy.get(startKey), endB: idBy.get(curKey) })
+        }
+        // Pass 1: every chain with a real end (a non-through site) is discovered from that end.
+        for (const k of [...adj.keys()].sort()) if (!through(k)) for (const rk of adj.get(k)) if (!used.has(rk)) walk(k, rk)
+        // Pass 2: what remains is an all-through CYCLE — break it at its smallest site key so the choice
+        // is deterministic rather than discovery-ordered.
+        for (const seed of runs) {
+            if (used.has(seed)) continue
+            const ring = new Set(), stack = [ends.get(seed)[0]]
+            while (stack.length) {
+                const k = stack.pop()
+                if (ring.has(k)) continue
+                ring.add(k)
+                for (const rk of (adj.get(k) || [])) if (!used.has(rk)) { const [a, b] = ends.get(rk); stack.push(a === k ? b : a) }
+            }
+            const startKey = [...ring].sort()[0]
+            const avail = (adj.get(startKey) || []).filter(rk => !used.has(rk))
+            if (!avail.length) { used.add(seed); continue }
+            walk(startKey, avail[0])
+        }
+        return chains
+    }
+
+    /**
+     * QUAL-24: the merged centerline of a chain — each edge routed as usual, oriented along the walk,
+     * trimmed back at every internal joint, and the exposed frames Dubins-connected.
+     *
+     * Works in PRIMITIVE space, never on the sampled polyline: the result is still a Centerline of typed
+     * primitives, so curvature stays bounded by construction (the guarantee BUG-12's fold fix rests on),
+     * `nearest`'s analytic refine still works, and no geometry is re-interpolated.
+     *
+     * Radius policy (user call, 2026-08-02): take the LARGEST radius that fits, walking down from
+     * roadArcGentleRadius, so a sharp deg-2 kink becomes a sweeping bend a player can carry speed
+     * through rather than a corner that reads as an intersection. The survey across seeds 6/0/3/42 found
+     * every deg-2 node fits the gentle radius inside the 45%-of-leg trim cap, so the ladder is a
+     * safety net, not the normal path. Deriving from existing road* params keeps routeCacheSig — and the
+     * bundled route cache — untouched.
+     *
+     * @returns {Centerline|null}
+     */
+    _mergeChainCenterline(chain) {
+        const pp = this._params || {}
+        const gentleR = pp.roadArcGentleRadius ?? 30
+        const minR    = pp.roadMinTurnRadius   ?? 15
+        // Oriented primitive list per member run (reversed where the walk runs against stored direction).
+        const legs = []
+        for (const { runKey, from } of chain.oriented) {
+            const cl = this._network.get(runKey)?.centerline
+            if (!cl || cl.length < 1e-6 || !cl.primitives?.length) return null
+            const p0 = cl.pointAt(0), pf = this._nodePos(from)
+            const p1 = cl.pointAt(cl.length)
+            const forward = (p0.x - pf.x) ** 2 + (p0.z - pf.z) ** 2 <= (p1.x - pf.x) ** 2 + (p1.z - pf.z) ** 2
+            legs.push(forward ? cl.primitives.slice() : reversePrimitives(cl.primitives))
+        }
+        if (legs.length === 1) { const c = centerlineFromDescriptors(legs[0]); return { cl: c, spans: [[0, c.length]] } }
+        const lenOf = (ps) => ps.reduce((s, p) => s + p.length, 0)
+        const lens = legs.map(lenOf)
+        const TRIM_FRAC = 0.40   // per JOINT; an interior edge trims at both ends, so ≤ 0.80 of it
+        // Pose at arc `s` along a primitive list — the frame a trim would expose.
+        const poseAt = (prims, s) => {
+            let acc = 0
+            for (const p of prims) {
+                if (s <= acc + p.length || p === prims[prims.length - 1]) {
+                    const q = primitivePose(p, Math.max(0, Math.min(p.length, s - acc)))
+                    return { x: q.x, z: q.z, theta: q.theta }
+                }
+                acc += p.length
+            }
+            return null
+        }
+        const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a))
+        // Solve each joint by SEARCH, validating against a real Dubins build — never analytically.
+        //
+        // The obvious closed form (trim R·tan(δ/2) so the two turning circles are tangent) models two
+        // STRAIGHT legs meeting at a point. Real legs curve into the node, so trimming back exposes
+        // frames that are laterally DISPLACED, not merely rotated, and the radius has to satisfy the
+        // lateral offset too: seed-6's second joint sits only 4.4° apart in heading but 11.3° off the
+        // bearing between the frames — an 8.6 m sideways shift over 44 m, where an S-curve at R=75 can
+        // only manage L²/4R ≈ 6.5 m. Infeasible, so Dubins answers with a 360° word and a 75 m circle
+        // gets spliced into the road. Two closed-form attempts missed this; building the path and
+        // measuring how far it actually turns is both simpler and correct by construction.
+        //
+        // More TRIM is the lever that buys feasibility — it lengthens the gap the fillet has to work in —
+        // so each radius is retried with progressively deeper cuts before stepping down. Largest radius
+        // first, per the user's call that a deg-2 kink should read as a sweeping bend, not a corner.
+        const head = new Array(legs.length).fill(0), tail = new Array(legs.length).fill(0)
+        const rads = new Array(legs.length - 1).fill(gentleR)
+        const fillets = new Array(legs.length - 1).fill(null)
+        const tryJoint = (j, R, t) => {
+            const pP = poseAt(legs[j], lens[j] - t), pQ = poseAt(legs[j + 1], t)
+            if (!pP || !pQ) return null
+            const dub = dubinsFillet(pP.x, pP.z, pP.theta, pQ.x, pQ.z, pQ.theta, R)
+            if (!dub || !dub.length) return null
+            const want = Math.abs(wrap(pQ.theta - pP.theta))
+            const turn = dub.reduce((s, p) => s + Math.abs(p.length * p.kappa0), 0)
+            const L = dub.reduce((s, p) => s + p.length, 0)
+            const gap = Math.hypot(pQ.x - pP.x, pQ.z - pP.z)
+            // A fillet must turn by about the deflection it exists to absorb. Anything past that plus a
+            // quarter turn is a loop, not a bend — the one check that actually catches the circle.
+            if (turn > want + Math.PI / 2) return null
+            if (L > gap + 2.5 * R * (want + 0.2)) return null
+            return { R, t, dub }
+        }
+        for (let j = 0; j < legs.length - 1; j++) {
+            const cap = Math.min(TRIM_FRAC * lens[j], TRIM_FRAC * lens[j + 1])
+            let chosen = null
+            for (const R of [gentleR, 0.7 * gentleR, 0.45 * gentleR, Math.max(minR, 0.25 * gentleR), minR]) {
+                // Seed the trim from the tangent length at the CURRENT frames, then deepen. The 1.10 on
+                // the base also keeps the search off the exact-tangent knife edge, where the LSL/RSR
+                // discriminant p² evaluates to 0, rounds a few ulps negative, fails its `p2 >= 0` guard
+                // and drops the correct word — leaving a short straight between the arcs instead.
+                const p0 = poseAt(legs[j], lens[j]), q0 = poseAt(legs[j + 1], 0)
+                const d0 = p0 && q0 ? Math.min(Math.abs(wrap(q0.theta - p0.theta)), 3.0) : 0.5
+                const base = Math.max(2.0, R * Math.tan(d0 / 2) * 1.10)
+                for (const mul of [1.0, 1.5, 2.2, 3.2, 4.5]) {
+                    const t = Math.min(cap, base * mul)
+                    if (t < 1.0) continue
+                    chosen = tryJoint(j, R, t)
+                    if (chosen) break
+                    if (t >= cap) break                       // deeper is not available on these legs
+                }
+                if (chosen) break
+            }
+            if (!chosen) return null
+            rads[j] = chosen.R; tail[j] = chosen.t; head[j + 1] = chosen.t; fillets[j] = chosen.dub
+        }
+        // Slice once per leg (both joints' trims already known), then interleave the fillets.
+        // `spans` records where each MEMBER EDGE ended up in the merged arc domain, so consumers that
+        // are keyed on the abstract graph edge (POI siting, mission anchors) can still find their own
+        // stretch of road after the chain swallowed it.
+        const out = [], spans = []
+        let acc = 0
+        for (let i = 0; i < legs.length; i++) {
+            const s0 = head[i], s1 = lens[i] - tail[i]
+            if (s1 - s0 < 1.0) return null                        // leg consumed by its own trims — bail
+            const sl = slicePrimitives(legs[i], s0, s1)
+            if (!sl.length) return null
+            if (i > 0) {
+                // The VALIDATED fillet from the joint search — rebuilding it here would risk taking a
+                // different (possibly looping) Dubins word than the one that passed the checks.
+                const dub = fillets[i - 1]
+                if (!dub || !dub.length) return null
+                // Weld check: the fillet was solved against poses taken at these exact trim arcs, so its
+                // ends must coincide with the sliced legs to float precision. A drift here would mean the
+                // slice and the pose sampler disagree — assert rather than ship a discontinuity.
+                const prev = out[out.length - 1]
+                const q = sl[0]
+                const last = dub[dub.length - 1]
+                const endX = last.x0 + (Math.abs(last.kappa0) < 1e-9 ? last.length * Math.cos(last.theta0)
+                    : (Math.sin(last.theta0 + last.kappa0 * last.length) - Math.sin(last.theta0)) / last.kappa0)
+                const endZ = last.z0 - (Math.abs(last.kappa0) < 1e-9 ? -last.length * Math.sin(last.theta0)
+                    : (Math.cos(last.theta0 + last.kappa0 * last.length) - Math.cos(last.theta0)) / last.kappa0)
+                if (Math.hypot(dub[0].x0 - prev.x1, dub[0].z0 - prev.z1) > 0.05) return null
+                if (Math.hypot(endX - q.x0, endZ - q.z0) > 0.05) return null
+                for (const p of dub) out.push(makePrimitive(p.x0, p.z0, p.theta0, p.length, p.kappa0, p.kappa1 ?? p.kappa0))
+                acc += dub.reduce((s, p) => s + p.length, 0)
+            }
+            const segLen = sl.reduce((s, p) => s + p.length, 0)
+            spans.push([acc, acc + segLen])   // this member edge's window in the merged arc domain
+            acc += segLen
+            for (const p of sl) out.push(p)
+        }
+        return { cl: centerlineFromDescriptors(out), spans }
+    }
+
 
     // ── Canonical network builder (D-08) ────────────────────────────────────────
     /**
@@ -2994,6 +3337,18 @@ export class RoadSystem {
             // invalidated explicitly here — a pre-cull _detectJunctions() has already cached at
             // this rev, and without this the post-cull call would return the pre-cull crossings.
             if (this._cullNetwork(mx0, mx1, mz0, mz1)) { this._junctionsRev = -1; this._detectJunctions() }
+        }
+
+        // QUAL-24: splice degree-2 chains into single runs. AFTER the cull on purpose — deg-2 sites are
+        // largely cull-CREATED (a 3-way node whose third strand was pruned), and the cull, the crossing
+        // classifier, the map and POI placement all reason about a run as a graph EDGE. Merging earlier
+        // changed that unit under them. Re-detect: the merge deletes and re-registers runs, so any
+        // crossing index cached at this rev now names runKeys that no longer exist.
+        {
+            const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
+            const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
+            const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
+            if (this._mergeDeg2Chains(inBand)) { this._junctionsRev = -1; this._detectJunctions() }
         }
 
         // FEAT-40: crossings are only known now — a bore span may not contain an AT_GRADE crossing

@@ -744,29 +744,39 @@ export class MissionSystem {
             const a = idOf.get(nodePath[i]), b = idOf.get(nodePath[i + 1])
             const ed = road.edgeParData(a, b)
             if (!ed) return null
-            // Which way does this centerline run? Compare its s=0 point to node A's position.
-            const p0 = ed.centerline.pointAt(0)
+            // QUAL-24: an edge may be a STRETCH of a longer run (a deg-2 chain merge swallowed it), so
+            // its arc domain is [off, off+L] inside the registered run, not [0, len]. Unmerged edges
+            // report off=0 and L=len, so this is identity for them.
+            const off = ed.arcOffset ?? 0
+            const L = ed.arcLength ?? ed.centerline.length
+            // Which way does this centerline run? Compare its start point to node A's position.
+            const p0 = ed.centerline.pointAt(off)
             const pa = posOf.get(nodePath[i])
-            const forward = Math.hypot(p0.x - pa.x, p0.z - pa.z) < Math.hypot(p0.x - posOf.get(nodePath[i + 1]).x, p0.z - posOf.get(nodePath[i + 1]).z)
-            const L = ed.centerline.length
-            let s0 = forward ? 0 : L, s1 = forward ? L : 0
+            const pEndE = ed.centerline.pointAt(off + L)
+            const forward = Math.hypot(p0.x - pa.x, p0.z - pa.z) < Math.hypot(pEndE.x - pa.x, pEndE.z - pa.z)
+            let s0 = forward ? off : off + L, s1 = forward ? off + L : off
 
             // Mid-edge endpoints on the first and last edge. An ANCHORED roll has no freedom at the
             // start — the POI's own partial stretch is prepended below and IS the first segment.
             if (i === 0 && !anchor) {
                 const t = EDGE_T_MARGIN + Math.random() * (0.55 - EDGE_T_MARGIN)
-                s0 = forward ? L * t : L * (1 - t)
+                s0 = off + (forward ? L * t : L * (1 - t))
             }
             if (i === nodePath.length - 2) {
                 const t = EDGE_T_MARGIN + Math.random() * (0.55 - EDGE_T_MARGIN)
-                s1 = forward ? L * (1 - t) : L * t
+                s1 = off + (forward ? L * (1 - t) : L * t)
             }
             // FEAT-39: DEGREE of the node this edge ends at. A join is a real intersection — a
             // place the driver has a choice — only when that node carries three or more edges; a
             // degree-2 node is just the road bending through (QUAL-16 made those first-class), and
             // the turn angle alone cannot tell the two apart. The GPS assist filters on this.
             const endDeg = (adj.get(nodePath[i + 1]) || []).length
-            segments.push({ centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key, endDeg })
+            // QUAL-24: carry the ABSTRACT EDGE (site pair) alongside the runKey. A runKey names a run
+            // GROUPING, and a deg-2 chain merge groups by the streamed band — so a mission planned at
+            // MISSION_PLAN_RADIUS can name a chain the 320 m play stream never forms, and the drop
+            // point looks like it evaporated. The site pair is stable across windows, so this is what
+            // anything re-resolving the road later should key on.
+            segments.push({ centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key, cellA: a, cellB: b, endDeg })
 
             // Map polyline for this traversed range.
             const n = Math.max(2, Math.ceil(Math.abs(s1 - s0) / 25))
@@ -783,13 +793,15 @@ export class MissionSystem {
         if (anchor) {
             const ed = road.edgeParData(anchor.aId, anchor.bId)
             if (!ed) return null
-            const L = ed.centerline.length
+            // QUAL-24: arc domain is [off, off+L] within the registered run (identity when unmerged).
+            const off = ed.arcOffset ?? 0
+            const L = ed.arcLength ?? ed.centerline.length
             const ex = posOf.get(exitK)
-            const pEnd = ed.centerline.pointAt(L), pStart = ed.centerline.pointAt(0)
-            const s1 = Math.hypot(pEnd.x - ex.x, pEnd.z - ex.z) < Math.hypot(pStart.x - ex.x, pStart.z - ex.z) ? L : 0
+            const pEnd = ed.centerline.pointAt(off + L), pStart = ed.centerline.pointAt(off)
+            const s1 = Math.hypot(pEnd.x - ex.x, pEnd.z - ex.z) < Math.hypot(pStart.x - ex.x, pStart.z - ex.z) ? off + L : off
             // The POI's arc was measured on the PLAY network's copy of this edge; clamp rather than
             // trust it blind, so a length that differs in the last ulp can't produce an out-of-range s.
-            const s0 = Math.max(0, Math.min(L, anchor.s))
+            const s0 = Math.max(off, Math.min(off + L, anchor.s))
             if (Math.abs(s1 - s0) < 1) return null      // the marker sits on top of the exit node
             const head = []
             const n = Math.max(2, Math.ceil(Math.abs(s1 - s0) / 25))
@@ -799,6 +811,7 @@ export class MissionSystem {
             }
             segments.unshift({
                 centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key,
+                cellA: anchor.aId, cellB: anchor.bId,   // QUAL-24: window-stable edge identity
                 endDeg: (adj.get(exitK) || []).length,
             })
             poly.unshift(...head)

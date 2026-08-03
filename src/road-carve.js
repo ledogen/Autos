@@ -1804,3 +1804,20 @@ export function arcPrimitiveConnect(ax, az, bx, bz, heightFn, opts = {}) {
 }
 // ROUTE SYNC END
 
+/**
+ * QUAL-24: the shortest curvature-bounded connection between two POSES, as primitive descriptors.
+ *
+ * A thin exported wrapper over dubinsPrimitives, which lives INSIDE the ROUTE SYNC region and
+ * therefore may not carry an `export` of its own — the worker mirror is asserted byte-identical and
+ * that gate only strips `export` from arcPrimitiveConnect. Adding the keyword there would break the
+ * mirror; wrapping out here costs one call and keeps the two copies identical.
+ *
+ * Used by the deg-2 chain merge to fill the gap once both legs are trimmed back. Dubins matches both
+ * end HEADINGS exactly, so each weld is G1 (no kink where the fillet meets either leg), and it never
+ * emits a radius below `rho` — which is what lets a merged run keep the router's
+ * min-radius-by-construction guarantee that BUG-12 rests on.
+ */
+export function dubinsFillet(x0, z0, th0, x1, z1, th1, rho) {
+    return dubinsPrimitives(x0, z0, th0, x1, z1, th1, rho)
+}
+
