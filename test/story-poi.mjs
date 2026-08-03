@@ -335,6 +335,64 @@ const W = makeWorld(C.x, C.z, R)
     ms.exit()
 }
 
+// ── 7b. The POI start zone: no countdown, no hold, the clock starts at the threshold ────────────
+// Owner, 2026-08-02: a POI job must not launch on a 3-2-1 handbrake count — you are parked on a pad
+// and may be facing the wrong way, and the old fix for that was declining and re-opening the same
+// offer. Accept puts the job in 'staging' instead: free to manoeuvre, timed from the moment you
+// cross out of the marker's radius. Quick Job is untouched — it teleports you to a pin already
+// pointing the right way, so its countdown is still the right ritual.
+{
+    const car = { x: 0, z: 0, speed: 0 }
+    const ms = new MissionSystem({
+        getRoad: () => W.road,
+        makePlanner: () => W.road,
+        getCar: () => car,
+        getSeed: () => SEED,
+        teleport (x, z) { car.x = x; car.z = z },
+        setMapOpen () {}, onChange () {},
+    })
+    const tick = () => new Promise(r => setTimeout(r, 5))
+    const poi = W.poi.list()[0]
+    car.x = poi.x; car.z = poi.z
+
+    ms.enterFromPoi(poi); await tick()
+    ms.accept()
+    check('a POI job stages instead of counting down', ms.state === 'staging')
+    check('...and does NOT hold the truck (manoeuvring room is the whole point)', ms.isHeld() === false)
+    const z = ms.startZone()
+    check('the start zone is centred on the MARKER, not the road-side start pin',
+        !!z && Math.hypot(z.x - poi.x, z.z - poi.z) < 1e-9,
+        z ? `${Math.hypot(z.x - poi.x, z.z - poi.z).toFixed(2)} m off` : 'no zone')
+
+    // Inside the radius: no clock, whatever the truck does.
+    car.x = poi.x + z.r - 1
+    ms.update(0.5)
+    check('inside the zone the run has not started', ms.state === 'staging' && ms.elapsed === 0)
+
+    // Crossing out: the run starts, and the elapsed clock starts from zero at the threshold.
+    car.x = poi.x + z.r + 1
+    ms.update(0.5)
+    check('crossing the threshold starts the run', ms.state === 'running')
+    check('...with the clock from zero at the line, not from accept', ms.elapsed === 0)
+
+    // The threshold is one-way: driving back in cannot un-start a run.
+    car.x = poi.x; car.z = poi.z
+    ms.update(0.5)
+    check('re-entering the zone does not stop the clock', ms.state === 'running' && ms.elapsed > 0)
+
+    // Quick Job keeps the countdown + the hold.
+    ms.exit()
+    ms._generate(null); await tick()
+    if (ms.state === 'offer') {
+        ms.accept()
+        check('a Quick Job still counts down', ms.state === 'countdown' && ms.startZone() === null)
+        check('...and still holds the truck through the count', ms.isHeld() === true)
+    } else {
+        check('a Quick Job still counts down (roll found no route — cannot exercise)', false, `state=${ms.state}`)
+    }
+    ms.exit()
+}
+
 // ── 8. FEAT-53 do-over lockout: paid jobs have no regenerate/retry; Quick Job keeps both ─────────
 {
     const ms = new MissionSystem({
