@@ -4,7 +4,7 @@
 Date: 2026-08-02. Rides under **FEAT-46** — no new ticket was cut; this is polish on shipped POI
 behaviour, not new scope.
 
-> **STATUS: IMPLEMENTED, GATED, COMMITTED, NOT MERGED.** One commit on `feature/mission-start`, off
+> **STATUS: IMPLEMENTED, GATED, COMMITTED, NOT MERGED.** One commit (`dd5bcb5`) on `feature/mission-start`, off
 > `origin/main` @ `df1d08c`. Verified headlessly (gates) — **NOT yet verified in the running game**
 > by the owner; the dev server was killed twice by something outside the session, so the ring visuals
 > have not been eyeballed. That is the one open item before merge.
@@ -77,7 +77,7 @@ none after. Nothing in the frame loop, nothing in physics.
 ## Verification
 
 - `npm test` — 7 affected gates green (`story-poi`, `mission-network`, `gps-route`, `par-oracle`,
-  `camp-zones`, + 2). `npm run test:all` — see the commit message for the result at commit time.
+  `camp-zones`, + 2). `npm run test:all` — **all 45 gates green** (wall 305 s, pool 8).
 - New checks in `story-poi.mjs` §7b: a POI job stages rather than counts down; it does not hold the
   truck; the zone is centred on the **marker**, not the road-side start pin ~11 m out across the
   shoulder; inside the zone no clock runs; crossing out starts the run with elapsed from **zero at
