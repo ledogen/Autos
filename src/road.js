@@ -6087,6 +6087,16 @@ export class RoadSystem {
      * and with the ribbons (whole cross-section → that leg's near each mouth). Returns { blendW, gradeY }
      * (DIRT, clearance already folded out) or null (no connector near, off its footprint, or beyond the
      * toe). Window-invariant.
+     *
+     * QUAL-24 — THIS IS A FRONTIER FALLBACK, NOT THE PRIMARY PATH. A deg-2 site is a continuing path,
+     * and _mergeDeg2Chains now splices its runs into ONE run so the join is ordinary road with one
+     * profile; connectors are not built there. What remains is the streaming FRONTIER, where a site's
+     * degree is not known-complete (its incident edges are not all registered) so `through()` declines
+     * to merge and a deg-2 node still forms. Those sit at the band edge, hundreds of metres past the
+     * ~160 m draw distance — reachable, never seen. Kept deliberately (owner call 2026-08-03): the
+     * alternative is routing past the band to settle a post-cull degree, which trades cold-load time
+     * (PERF-03/27) and a dependency on BUG-25's open watch for code that costs one Map-size check.
+     * Full reasoning in .planning/todos/completed/qual-24-deg2-chain-merge.md.
      */
     _connectorCarve(wx, wz, rawAmp) {
         if (!this._deg2ArcTiles || !this._deg2ArcTiles.size) return null

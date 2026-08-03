@@ -155,21 +155,41 @@ identical to main's (20/16/20), so the same set of roads is under test, and an e
 radius but kept at map radius is still caught. Run identity *within a drive* stays guarded by
 `restream-invariance`, which passes.
 
-### The connector overlay is NOT deleted — and should not be
+### The connector overlay STAYS — deliberately, as the frontier fallback
 
-The acceptance item above called for deleting it once green. That was wrong: it is not dead code. A
-deg-2 node still forms at the streaming FRONTIER, where a site's adjacency is clipped by the band and
-`through()` therefore declines to merge. Measured at the origin: ≤ 1 such node per seed across
-6/0/3/42/7, and **zero within 400 m of the player** (draw distance ~160 m). The connector is now a
-frontier-only fallback rather than the primary path — reachable, just never seen. It becomes truly
-dead only if chain membership is made fully window-invariant, which is the open thread below.
+The acceptance item above called for deleting it once green. That was wrong, and the decision (owner,
+2026-08-03) is that the overlay is kept as the intended fallback for deg-2 nodes at the edge of the
+streamed window. Not a loose end — the design.
 
-### Open thread (not blocking)
+Chain membership is gated on `inBand`, because a site's degree is only known-complete when all its
+incident edges are registered. So at the streaming FRONTIER `through()` declines to merge and a deg-2
+node still forms there, where the connector serves it. Sampled at the origin: ≤ 1 such node per seed,
+zero within 400 m of the player, against a ~160 m draw distance. Reachable, never seen.
 
-Chain membership is gated on `inBand`, so which runs a chain groups still depends on the streamed
-band. That is invisible in play — flips happen at the band edge, hundreds of metres beyond anything
-drawn, and `restream-invariance` confirms nothing moves during a drive. Making it a pure function of
-the site's own neighbourhood would retire the frontier fallback and let the overlay be deleted.
+**Why chasing the deletion is a bad trade** (measured 2026-08-03):
+
+- **It costs nothing to keep.** `_connectorCarve` and `collectConnectorSamples` both early-return on
+  `!this._deg2ArcTiles.size`, so with no connector nearby the runtime cost is one Map-size check per
+  query. It is not a per-frame tax.
+- **You cannot delete first.** Remove the connector while frontier deg-2 nodes can still form and they
+  fall through to the junction PAD path — the pre-QUAL-16 behaviour junction-flow deliberately removed
+  ("deg-2 pads gone"). The ~370 lines only become free AFTER deg-2 nodes are guaranteed never to form.
+- **That guarantee is the expensive part.** A frontier site's true degree is its POST-CULL degree
+  (deg-2 sites are largely cull-created, `road.js:4881`), and the cull decides on ROUTED geometry
+  (`_edgeXZPolyline`). Deciding past the band means routing past the band — and routing dominates cold
+  load, the exact cost PERF-03/PERF-27 fought.
+- **It would stake correctness on an open watch.** BUG-25 (window-bounded cull decisions flipping
+  whole edges on re-stream) is still a WATCH. Today a cull wobble at the frontier costs an unseen
+  overlay; if run identity depended on it, it would churn runKeys — which is precisely the failure that
+  cost a revert off main this session (missions naming a chain the play radius never forms).
+
+Deleting ~370 lines would therefore add coupling (merge ← cull ← extended routing), take a load-time
+hit, and depend on an invariant with a known open watch — to remove code that costs a Map lookup and
+is provably out of sight.
+
+A gate asserting "no connector within draw distance" was considered and REJECTED: the world is an
+infinite procedural surface, so there is no such thing as a standard seed list to assert over, and a
+gate over a few arbitrary seeds would be asserting nothing.
 
 ## Diagnostics on the branch
 
