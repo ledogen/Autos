@@ -90,6 +90,23 @@ Apply transforms in Blender before exporting.
 
 Full field reference for a spec: the header comment in `data/vehicle-models.js`.
 
+## Untextured assets: flat colours + runtime recolour
+
+Not every asset needs a texture. A low-poly POI can be **flat material colours with no UVs at all**
+— `trailer-home-a` is the reference for this class. It costs no texture memory, needs no bake step,
+and makes recolouring free.
+
+- **One material per colour**, and the material *name is the runtime API* — same substring-match
+  convention the vehicle loader uses for paint. Give recolourable surfaces stable, distinctive names
+  (`TrailerBody`, `TrailerAccent`); renaming on re-export silently drops the hookup.
+- Recolouring is then one `material.color.set()` per material. No texture multiply, no tint shader,
+  no white-albedo trick.
+- **Say in the ticket which materials are recolourable and which are fixed.** A model with seven
+  materials where only two may be driven is not self-documenting.
+- The cost is **draw calls: one per material.** Fine for a POI placed a handful of times; not fine
+  for anything scatter-density, which wants one shared material and the instancing path.
+- Objects with colour-only materials need no UVs — but they will if the project ever atlases.
+
 ## Known limits
 
 - **Props are not wired for GLB *yet*.** The prop system is procedural instanced geometry today,
