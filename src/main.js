@@ -65,6 +65,7 @@ import { scatterTreePositions } from './props/prop-scatter.js'  // FEAT-45: read
 import { ShadowBakeSystem, ATLAS_N, TILE_PX, shearFromSun } from './props/prop-shadow-bake.js'  // PERF-07: baked prop-shadow atlas
 import { installShadowEdgeFade } from './shadow-fade.js'   // QUAL-18: soft realtime shadow-map edge
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
+import { spawnModel } from './model-service.js'            // FEAT-59: hand-modelled asset import service
 import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
 import { loadBundledRouteCache, loadRegionRouteCache } from './route-store.js'  // QUAL-14/PERF-26: bundled route caches (BASE at boot, REGION lazily)
@@ -1889,6 +1890,21 @@ const _gui = initDebug(RANGER_PARAMS, {
 // Body paint color picker (visual-model) — recolors the imported truck's paint coat live.
 const _bodyColor = { color: '#2f6da4' }
 _gui.addColor(_bodyColor, 'color').name('Body color').onChange((v) => setBodyColor(v))
+
+// FEAT-59 acceptance proof: spawn the news-roll 3 m ahead of the vehicle, seated on the ground.
+// The real consumer is the newspaper-delivery mission (throw arc lives there, not here).
+_gui.add({
+  spawnNewsRoll: () => {
+    const p = vehicleState.position
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(vehicleState.quaternion)
+    const x = p.x + fwd.x * 3, z = p.z + fwd.z * 3
+    const y = terrainSystem ? terrainSystem.analyticHeight(x, z) : 0
+    const roll = spawnModel('newsRoll')
+    roll.position.set(x, y, z)
+    roll.quaternion.copy(vehicleState.quaternion)
+    scene.add(roll)
+  },
+}, 'spawnNewsRoll').name('Spawn news-roll (FEAT-59)')
 
 // ── TerrainSystem (Phase 6 / 7) ──────────────────────────────────────────────
 // Instantiated after scene exists. Removes flat ground mesh to prevent Z-fighting.
