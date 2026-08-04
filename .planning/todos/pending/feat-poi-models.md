@@ -34,33 +34,38 @@ newspaper customer's mailbox — with the cube as the fallback for anything unmo
 - **Draw distance reality check:** the game draws ~160 m (FEAT-52 pending); POI models only need
   to read within that.
 
-## POI types (user-identified, 2026-08-03)
+## POI types (ratified 2026-08-03)
 
 - mom's house
 - Larry's house
 - newspaper customers
 - mission providers
 - food vendors
-- service stations
+- **the burger joint** (a specific, named food vendor)
+- **service shop** — this IS the in-run mechanic (ruled 2026-08-03): field repairs cover the
+  simple stuff; complicated work (engine repair) is service-shop-only, and they change a tire
+  faster than you can. Distinct from THE GARAGE, which stays the between-runs meta-roster.
 - gas stations
+- **general store** — the items catalog (`items.md`: consumables, tools, parts) lists most items
+  as "bought/found" with nowhere to buy. Distinct from food vendors.
+- **tackle shop** — the catch category (`items.md` §5). ⚠ Fishing and The Confluence are
+  deferred; the type exists, don't build its systems first.
 
-### Proposed additions (unratified — accept/reject)
+### Still proposed (unratified — accept/reject)
 
-Grounded in the story-mode docs; each names the doc that implies a place with no place yet:
-
-- **Log landing / sawmill drop-off** — the log-drag main mission (`missions.md`) needs a
-  destination the log is dragged TO; today it has no address in the world.
-- **General / parts store** — the items catalog (`items.md`: consumables, tools, parts) lists
-  most items as "bought/found" with nowhere to buy. Distinct from food vendors.
 - **Scrap / junk yard** — the "found" half of "bought/found"; a browsable place for cheap or
   one-off items.
 - **Day-job site** — `opening.md`'s day job is the opening beat and needs a physical place to
   report to.
-- **Bait & tackle / fish buyer** — the catch category (`items.md` §5). ⚠ Fishing and The
-  Confluence are deferred; capture the type, don't build it first.
 - **Community board** — a mission-provider *variant* (paper notices, no NPC) that fits remote
   junctions where a staffed provider wouldn't; cheap way to spread offers spatially.
-- **NOT a campground:** dispersed camping is the ratified model (no developed campsites,
+
+### Rejected
+
+- **Log landing / sawmill drop-off** (2026-08-03): the log-drag is *clear the road*, not a
+  delivery — the log goes nowhere. (And the mission type itself is now uncertain — owner may cut
+  it; `missions.md` still lists it as the main mission.)
+- **Campground:** dispersed camping is the ratified model (no developed campsites,
   Innkeeper → THE HOST). No campsite POI type should exist.
 
 ## Acceptance (sketch — refine when scheduled)
