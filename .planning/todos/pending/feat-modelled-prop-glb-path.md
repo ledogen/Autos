@@ -92,3 +92,4 @@ density scatter):**
   +Y-up export), long axis along Blender +Y → glTF −Z.
 - First real consumer: the newspaper delivery mission type (roll thrown from the moving vehicle on
   a parametric arc; arc lives in mission code).
+- Consumer B (static POI markers) is scoped as its own ticket: FEAT-60 (`feat-poi-models.md`).
