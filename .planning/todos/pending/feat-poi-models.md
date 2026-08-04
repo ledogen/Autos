@@ -51,15 +51,6 @@ newspaper customer's mailbox — with the cube as the fallback for anything unmo
 - **tackle shop** — the catch category (`items.md` §5). ⚠ Fishing and The Confluence are
   deferred; the type exists, don't build its systems first.
 
-### Still proposed (unratified — accept/reject)
-
-- **Scrap / junk yard** — the "found" half of "bought/found"; a browsable place for cheap or
-  one-off items.
-- **Day-job site** — `opening.md`'s day job is the opening beat and needs a physical place to
-  report to.
-- **Community board** — a mission-provider *variant* (paper notices, no NPC) that fits remote
-  junctions where a staffed provider wouldn't; cheap way to spread offers spatially.
-
 ### Rejected
 
 - **Log landing / sawmill drop-off** (2026-08-03): the log-drag is *clear the road*, not a
