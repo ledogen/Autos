@@ -57,6 +57,8 @@ import { PoiSystem, POI_PARAMS } from './poi.js'         // FEAT-46: story-mode 
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, RANK_COLOR, formatDeeds } from './economy.js'  // FEAT-53: payout, wallet, good deeds
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
+import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
+import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
 import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
@@ -1906,6 +1908,13 @@ _gui.add({
   },
 }, 'spawnNewsRoll').name('Spawn news-roll (FEAT-59)')
 
+// FEAT-61 Phase B proof: play Larry's briefing on demand. The real trigger is accepting a paper
+// route (Phase E); this exists so the card can be verified — and re-verified — without one. It
+// passes key `null`, so it always plays and never burns the once-per-run flag the mission uses.
+_gui.add({
+  playBriefing: () => { dialogueSystem.play(null, PAPER_ROUTE_INTRO); _renderDialogue() },
+}, 'playBriefing').name('Play Larry briefing (FEAT-61)')
+
 // ── TerrainSystem (Phase 6 / 7) ──────────────────────────────────────────────
 // Instantiated after scene exists. Removes flat ground mesh to prevent Z-fighting.
 // Phase 7: pass worldSeed so TerrainSystem initializes seeded noise closures and sends
@@ -2197,6 +2206,48 @@ const daySystem = new DaySystem({
 const economySystem = new EconomySystem({
   getDay: () => daySystem.day(),
 })
+
+// FEAT-61: the character channel. No deps — it owns a queue and a once-per-run seen set, and this
+// file owns the DOM (the mission-panel pattern).
+const dialogueSystem = new DialogueSystem()
+
+/**
+ * Paint the dialogue card. Called on every state change rather than per-frame: a card is static
+ * until a key advances it, so there is nothing for the frame loop to do here.
+ *
+ * innerHTML is correct and safe on .dlg-text — cards are authored constants in data/dialogue.js
+ * carrying <span class="dlg-key"> glyphs, never player input. See the note there.
+ */
+function _renderDialogue () {
+  const panel = document.getElementById('dialogue-panel')
+  if (!panel) return
+  const card = dialogueSystem.current()
+  panel.style.display = card ? 'block' : 'none'
+  if (!card) return
+  const sp = document.getElementById('dlg-speaker')
+  const tx = document.getElementById('dlg-text')
+  const mo = document.getElementById('dlg-more')
+  if (sp) sp.textContent = card.speaker
+  if (tx) tx.innerHTML = card.text
+  const p = dialogueSystem.progress()
+  // The affordance is "press anything", so name no key — the brief's press-any-key-to-continue.
+  if (mo) mo.textContent = p ? `${p.n} / ${p.of}  —  press any key` : ''
+}
+
+// Press-any-key advances, and the key goes NOWHERE else. Capture phase on document, which runs
+// before every other keydown listener in the project (camera.js, vehicle.js, debug.js and the
+// handlers further down this file all bind bubble-phase on document) — so a briefing cannot be
+// driven through, paused out of, or logged over. Cards only appear while parked, but "only" is not
+// a guarantee worth relying on.
+document.addEventListener('keydown', e => {
+  if (!dialogueSystem.active) return
+  if (e.repeat) return                                          // held key ≠ several presses
+  if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return  // a modifier alone is not a press
+  e.preventDefault()
+  e.stopPropagation()
+  dialogueSystem.advance()
+  _renderDialogue()
+}, { capture: true })
 
 // Eyelid overlay drive (FEAT-47). Elements cached once; the frame loop writes nothing but the two
 // transforms. f = 0 → lids fully retracted off-screen, f = 1 → shut. The lids sit off-screen at
@@ -3482,6 +3533,8 @@ const storySystem = new StorySystem({
     daySystem.start()   // FEAT-47: the run's clock opens at dayStartHour and takes over the sky
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
     economySystem.start()            // FEAT-53: fresh run, empty wallet, zero deeds
+    dialogueSystem.start()           // FEAT-61: a new run hears every briefing again
+    _renderDialogue()
     missionSystem.clearOffers()      // …and no offer cached from a previous run survives into this one
     poiSystem.build(center, radius)
     campSystem.build(center, radius)   // FEAT-45: the region's dispersed-camping zones
@@ -3507,6 +3560,8 @@ const storySystem = new StorySystem({
     economySystem.stop()                // FEAT-53: wallet dormant (start() re-zeroes on next run)
     missionSystem.clearOffers()         // cached offers hold live centerlines — never keep them across a region
     _setRunHudVisible(false)
+    dialogueSystem.abort()              // FEAT-61: abort, not advance — leaving is not "read it"
+    _renderDialogue()
     poiSystem.clear()
     campSystem.clear()   // FEAT-45: no camping zones outside a live story region
     roadSystem?.setCampPads(null)   // …and no camp benches: free roam's ground is the seed's ground

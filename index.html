@@ -171,9 +171,9 @@
     }
     /* Story-mode beta: mission offer panel. Sits above the 2D map (z 90) so the route and
        start/drop pins are visible behind it; the panel is bottom-anchored, not centered. */
-    /* #camp-panel (FEAT-45) shares the mission panel's chrome by selector rather than by a copied
-       block — one place to restyle a story-mode panel. */
-    #mission-panel, #camp-panel {
+    /* #camp-panel (FEAT-45) and #dialogue-panel (FEAT-61) share the mission panel's chrome by
+       selector rather than by a copied block — one place to restyle a story-mode panel. */
+    #mission-panel, #camp-panel, #dialogue-panel {
       display: none;
       position: fixed;
       left: 50%;
@@ -188,6 +188,47 @@
       z-index: 95;
       min-width: 380px;
       text-align: center;
+    }
+    /* FEAT-61 dialogue card. Takes the shared chrome above, then overrides the three things an RPG
+       card needs and the offer panel doesn't: prose reads left-aligned, the card is wide enough to
+       hold two lines of speech without reflowing between cards, and it sits a little higher so the
+       run HUD stays legible while someone is talking. */
+    #dialogue-panel {
+      text-align: left;
+      width: min(680px, 82vw);
+      bottom: 64px;
+      z-index: 96;              /* over the offer panel: a briefing always has the floor */
+    }
+    .dlg-row { display: flex; gap: 16px; align-items: flex-start; }
+    /* The reserved portrait slot. Empty on purpose — see the note on the markup. Fixed size so
+       dropping an <img> in later cannot change the card's metrics. */
+    .dlg-icon {
+      flex: 0 0 auto;
+      width: 64px; height: 64px;
+      border: 1px solid #3b4753;
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .dlg-col { flex: 1 1 auto; min-width: 0; }
+    .dlg-speaker {
+      color: #7fc2ff;
+      font-size: 12px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .dlg-text { line-height: 1.7; }
+    /* The control-glyph colour. This class IS the markup mechanism (src/dialogue.js) — authored
+       cards wrap a key in it, and nothing parses anything. Yellow because that is already the
+       game's "press this" colour in the controls box. */
+    .dlg-text .dlg-key {
+      color: #ffcf3c;
+      font-weight: bold;
+    }
+    .dlg-more {
+      margin-top: 12px;
+      text-align: right;
+      color: #8a939c;
+      font-size: 12px;
     }
     #mission-panel .mp-title, #camp-panel .mp-title {
       color: #7fc2ff;
@@ -792,6 +833,21 @@
       <span><i class="lg-water"></i>water</span>
     </div>
     <div id="camp-prompt-text">park to make camp</div>
+  </div>
+
+  <!-- FEAT-61: the dialogue card. Sequential, no options (DESIGN.md) — so there are no buttons in
+       here and there is nowhere to put one. The icon slot is deliberately empty: character
+       portraits are a later ticket, and reserving the space now means adding them never reflows the
+       copy. main.js renders it (_renderDialogue); src/dialogue.js stays renderer-agnostic. -->
+  <div id="dialogue-panel">
+    <div class="dlg-row">
+      <div class="dlg-icon"></div>
+      <div class="dlg-col">
+        <div class="dlg-speaker" id="dlg-speaker"></div>
+        <div class="dlg-text" id="dlg-text"></div>
+      </div>
+    </div>
+    <div class="dlg-more" id="dlg-more"></div>
   </div>
 
   <!-- FEAT-45 Phase D: the camp dialogue. One panel, four faces — make-camp confirm, the camp
