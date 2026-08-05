@@ -2116,6 +2116,17 @@ const _poiRingMat = _ringMat(0xff7a18)     // orange — park here to be offered
 const _stageRingMat = _ringMat(0x3ddc6b)   // green — cross this and you're running
 const _STAGE_RING_H = 8.0      // m
 const _STAGE_RING_SINK = 3.0   // m
+// FEAT-61 delivery target: the same ring in the same green at the customer's 3 m radius, plus a 1 m
+// centre ring as an aim point. The centre ring is DECORATION — scoring reads continuous distance
+// from the centre POINT, not which ring the paper is inside (owner, 2026-08-05).
+//
+// Short, not tall: _POI_RING_H's 4 m curtain at a 10 m radius reads as a wall you park inside, but
+// the same proportions at 3 m would be a chimney you cannot see your own throw land in. A target is
+// something you look DOWN into, so it gets a low kerb instead.
+const _targetRingMat = _ringMat(0x3ddc6b)
+const _TARGET_RING_H = 1.2      // m
+const _TARGET_RING_SINK = 0.5   // m
+const _TARGET_PIP_H = 0.5       // m — the centre pip is lower still; it must never mask the landing
 let _stageRing = null
 // poi.id → its orange ring, so the accepted marker's ring can step aside for the green one while
 // every OTHER marker in the region keeps its own.
@@ -2155,6 +2166,24 @@ function _rebuildPoiMarkers () {
     _poiGroup.add(ring)
     _poiRings.set(q.id, ring)
   }
+
+  // FEAT-61 — the customers. No body: a house has no model yet and the orange cube would read as
+  // "park here to be offered a job", which is the one thing a customer is not. Two rings and
+  // nothing else, and NEVER an orange interaction ring — you cannot take a job from a porch.
+  const tr = POI_PARAMS.poiHouseTargetR
+  for (const h of poiSystem.houses()) {
+    const ring = new THREE.Mesh(_ringGeo, _targetRingMat)
+    ring.scale.set(tr, _TARGET_RING_H, tr)
+    ring.position.set(h.x, h.y - _TARGET_RING_SINK + _TARGET_RING_H * 0.5, h.z)
+    ring.renderOrder = 5
+    _poiGroup.add(ring)
+
+    const pip = new THREE.Mesh(_ringGeo, _targetRingMat)
+    pip.scale.set(0.5, _TARGET_PIP_H, 0.5)          // 1 m DIAMETER, so radius 0.5
+    pip.position.set(h.x, h.y - _TARGET_RING_SINK + _TARGET_PIP_H * 0.5, h.z)
+    pip.renderOrder = 5
+    _poiGroup.add(pip)
+  }
 }
 
 /**
@@ -2170,10 +2199,20 @@ function _updateMissionRings () {
   // itself from a long way off, and a field of orange curtains flattens the landscape into a game
   // board. Inside POI_RING_SHOW_R the ring goes back to doing its real job — showing you exactly
   // where to stop. Distance is to the marker, not the camera, so freecam does not light them up.
+  //
+  // FEAT-61 stacks one more condition on top: ONCE A JOB IS TAKEN, NO ORANGE AT ALL (owner,
+  // 2026-08-05). You cannot accept a job while running one, so every orange curtain you drive past
+  // mid-route is an invitation to do something the game will refuse — noise at exactly the moment
+  // you are busy reading the road.
+  //
+  // TAKEN, not merely offered: 'generating' and 'offer' are the states where you are parked at a
+  // marker BEING offered work, and blinking that marker's own ring out from under the panel would
+  // be the opposite of the fix.
+  const onMission = ['staging', 'running', 'done'].includes(missionSystem?.state)
   const vp = vehicleState.position
   for (const [id, ring] of _poiRings) {
     const near = Math.hypot(ring.position.x - vp.x, ring.position.z - vp.z) <= POI_RING_SHOW_R
-    ring.visible = near && id !== activeId
+    ring.visible = near && id !== activeId && !onMission
   }
   if (!zone) { if (_stageRing) _stageRing.visible = false; return }
   if (!_stageRing) {
@@ -3537,6 +3576,10 @@ const storySystem = new StorySystem({
     _renderDialogue()
     missionSystem.clearOffers()      // …and no offer cached from a previous run survives into this one
     poiSystem.build(center, radius)
+    // FEAT-61: AFTER build() — mom is a newspaper customer, and she is a roster POI, so the roster
+    // has to exist before customers() can be asked who receives a paper. Houses carve nothing and
+    // touch no pads, so unlike build() this needs no re-bake behind it.
+    poiSystem.buildHouses(center, radius)
     campSystem.build(center, radius)   // FEAT-45: the region's dispersed-camping zones
     _rebuildPoiMarkers()
     terrainSystem?.rebuildAllChunksFromWorker()

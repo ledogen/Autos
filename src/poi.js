@@ -63,6 +63,35 @@ export const POI_PARAMS = {
                               // the lay-by" and nothing looser — the step toward the marker being a
                               // highlighted parking spot you actually pull into.
     poiCubeSize:      1.6,    // m — the placeholder marker cube's edge length
+
+    // ── FEAT-61: newspaper customers ────────────────────────────────────────────────────────
+    // A CUSTOMER IS NOT A LAY-BY. You never park at one, never open an offer, never interact —
+    // you throw at it from the road. So a house takes none of the pad machinery above: no bench,
+    // no earthwork, no entry in setPoiPads, and therefore ZERO contact with the carve or with
+    // FEAT-46's routing-determinism guarantee. That is the main reason this shape was chosen.
+    //
+    // It is also the only shape that fits. Measured on seed 6: 43 viable PADS region-wide but
+    // only 8 inside 1 km, two of which the roster spends on mom and Larry. Fifteen house pads in
+    // a 1 km ring is geometrically impossible; fifteen roadside targets is easy, because an edge
+    // is ~640 m long and can carry several.
+    poiHouseCount:    15,     // HARD. Count is the contract; the radius below is what relaxes.
+    poiHouseR:        1000,   // m — the ring customers are drawn from (owner, 2026-08-05)
+    poiHouseStep:     250,    // m — how far that ring grows per relax step when a seed is sparse.
+                              // Small on purpose: measured on seed 6, only 10 viable sites lie
+                              // inside 1 km but 19 lie inside 1.25 km, so a coarse step overshoots
+                              // to 1.5 km and scatters the route further than it needs to go. The
+                              // ring is a preference; the COUNT is the contract.
+    poiHouseSpacing:  90,     // m of arc between candidate sites on one edge — a house every ~90 m
+                              // reads as a rural road with neighbours, not a terrace
+    poiHouseMinSep:   80,     // m — min spacing between CHOSEN customers; relaxes (halves) if the
+                              // network cannot supply the count at this spacing
+    poiHouseLat:      12,     // m from centerline to the target centre. Past the shoulder edge
+                              // (7.5) by more than the target radius, so the circle never overlaps
+                              // road surface — a paper that lands on the tarmac must not score.
+    poiHouseTargetR:  3,      // m — the 6 m-diameter delivery circle (owner, 2026-08-05)
+    poiHouseMaxDrop:  1.5,    // m — max height spread across the target circle's rim. A circle
+                              // draped over a cliff edge reads as broken, and you could not land a
+                              // paper in it anyway. The light stand-in for the pad's earthwork cap.
 }
 
 /**
@@ -88,10 +117,19 @@ export const POI_PARAMS = {
  *   'nearSpawn' — inside poiNearSpawnR of the region centre (which IS the spawn).
  *   'coverage'  — the set that minimises the worst drive from any pad to its nearest member.
  *   'any'       — anywhere in the pool.
+ *
+ * TAGS vs TYPE (FEAT-61, owner 2026-08-05). `type` is the roster slot — one identity, the thing
+ * the POI IS. `tags` is everything it also PARTICIPATES IN, and a POI can carry several: mom's
+ * house is a roster landmark AND a newspaper customer AND somewhere you can sleep, and no single
+ * enum can say that. Systems ask by tag ("who receives papers", "where can I sleep") so a new
+ * mechanic adds a tag instead of re-cutting the type list. Larry deliberately carries no
+ * 'newsCustomer' — he is where the route STARTS, and delivering to the man who handed you the
+ * papers is nonsense.
  */
 export const POI_ROSTER = [
     // Exactly one of each per world, and both houses are a short drive from where you wake up.
-    { type: 'momsHouse',    count: 1, model: 'trailerHomeA', siting: 'nearSpawn' },
+    { type: 'momsHouse',    count: 1, model: 'trailerHomeA', siting: 'nearSpawn',
+      tags: ['newsCustomer', 'sleepable'] },
     { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', siting: 'nearSpawn' },
     // "Never too far from a station" — the reason these two slots exist and the reason they are
     // sited by coverage rather than by a spacing rule. Gas and service are solved INDEPENDENTLY:
@@ -170,11 +208,39 @@ export class PoiSystem {
         this._d = deps
         this._list = []
         this._pool = []         // every viable pad the last build saw; see pool()
+        this._houses = []       // FEAT-61 newspaper customers; see houses()
         this._built = null      // {x,z,r,seed} the current list was built for
     }
 
-    /** Every placed POI. Read-only to callers. */
+    /**
+     * Every placed POI. Read-only to callers.
+     *
+     * FEAT-61: newspaper customers are NOT in here — see houses(). That is deliberate and it is the
+     * whole enforcement of the owner's "most missions must not go to houses": there are 15 of them
+     * against a 14-slot roster, so anything picking a destination out of this list would end up
+     * delivering to a stranger's porch most of the time. Keeping them in a separate list means the
+     * mission planner cannot reach them by accident, with no weighting hack to tune or forget.
+     */
     list () { return this._list }
+
+    /**
+     * The FEAT-61 newspaper customers. Read-only. Empty until buildHouses() runs.
+     *
+     * Mom is a customer too but lives in list(), not here — she is a roster POI that also carries
+     * the 'newsCustomer' tag. The paper route's customer pool is therefore
+     * `houses().concat(list().filter(hasTag('newsCustomer')))`, which is what customers() returns.
+     */
+    houses () { return this._houses }
+
+    /** Every POI or house carrying `tag`. The tag-driven query systems ask instead of type-matching. */
+    tagged (tag) {
+        const out = this._list.filter(q => q.tags?.includes(tag))
+        for (const h of this._houses) if (h.tags?.includes(tag)) out.push(h)
+        return out
+    }
+
+    /** Everyone who receives a newspaper: the houses, plus any roster POI tagged as a customer. */
+    customers () { return this.tagged('newsCustomer') }
 
     /**
      * Every VIABLE pad the last build considered, before the roster picked from it. Read-only.
@@ -257,6 +323,182 @@ export class PoiSystem {
         return out
     }
 
+    // ── newspaper customers (FEAT-61) ───────────────────────────────────────────────────────
+    /**
+     * Place the region's newspaper customers: roadside delivery targets in a small ring around
+     * spawn. Call AFTER build() — mom is a customer, and she is a roster POI.
+     *
+     * Deliberately NOT the pad path. A customer is a thing you throw at from the road: no bench is
+     * carved, no earthwork is billed, and nothing here reaches setPoiPads(). The whole FEAT-46
+     * determinism guarantee — that a seed's road surface is identical with and without story mode —
+     * is untouched by this feature because it never writes to the carve at all.
+     *
+     * COUNT IS HARD, THE RADIUS RELAXES (FEAT-60's rule): a region always gets poiHouseCount
+     * customers; the ring grows in poiHouseStep increments until the network can supply them.
+     */
+    buildHouses (center, radius) {
+        const road = this._d.getRoad()
+        if (!road || !center) return this._houses
+        const seed = this._d.getSeed()
+        const P = { ...POI_PARAMS, ...this._d.getParams() }
+
+        // Same canonical edge order as build(), for the same reason: the Map's order is a streaming
+        // artifact, and ids have to be stable across windows.
+        const g = road.networkGraph()
+        const canon = []
+        for (const [a, b] of g.edges) {
+            const ka = idKey(a), kb = idKey(b)
+            canon.push(ka < kb ? { ka, kb, a, b } : { ka: kb, kb: ka, a: b, b: a })
+        }
+        canon.sort((u, v) => (u.ka === v.ka ? (u.kb < v.kb ? -1 : 1) : (u.ka < v.ka ? -1 : 1)))
+
+        // Every viable site on every edge, in canonical order. Window-invariant for the same reason
+        // pads are: a site's position is a pure function of (seed, edge, step index), and the ring
+        // below is a POST-FILTER, never a reject test.
+        const cands = []
+        const seen = new Set()
+        for (const e of canon) {
+            const ek = `${e.ka}|${e.kb}`
+            if (seen.has(ek)) continue
+            this._placeHousesOnEdge(road, e, P, cands)
+            seen.add(ek)
+        }
+
+        const rnd = mulberry32(hash32(`poi-houses:${seed}`))
+        const want = P.poiHouseCount
+        let picked = []
+        for (let r = Math.min(P.poiHouseR, radius); ; r += P.poiHouseStep) {
+            const ring = cands.filter(q => Math.hypot(q.x - center.x, q.z - center.z) <= r)
+            picked = this._pickSpread(ring, want, P.poiHouseMinSep, rnd)
+            if (picked.length >= want) break
+            if (ring.length === cands.length) break     // the ring is the whole network; nothing left to relax into
+        }
+        if (picked.length < want) {
+            console.warn(`[poi] region supplied only ${cands.length} viable house sites — placed ${picked.length}/${want}`)
+        }
+
+        picked.forEach((q, i) => { q.index = i; q.type = 'house'; q.tags = ['newsCustomer'] })
+        this._houses = picked
+        return picked
+    }
+
+    /**
+     * Walk one edge at poiHouseSpacing and push every viable customer site onto `out`.
+     *
+     * Several per edge is the point — an edge is ~640 m, and one target per edge is both too few
+     * (15 customers inside 1 km is unreachable) and wrong-looking (a road where every house is
+     * exactly one house apart). The per-edge PRNG jitters each step so the spacing does not read as
+     * a ruler, and the stream is keyed to the edge alone, so the sites are identical from any window.
+     */
+    _placeHousesOnEdge (road, e, P, out) {
+        const ed = road.edgeParData(e.a, e.b)
+        if (!ed || !ed.centerline) return
+        const off = ed.arcOffset ?? 0
+        const L = ed.arcLength ?? ed.centerline.length
+        const clear = P.poiEndClearM
+        if (!(L > 2 * clear + P.poiHouseSpacing)) return
+
+        const rnd = mulberry32(hash32(`poi-house:${this._d.getSeed()}:${e.ka}|${e.kb}`))
+        const span = L - 2 * clear
+        const steps = Math.floor(span / P.poiHouseSpacing)
+        for (let k = 0; k < steps; k++) {
+            // Jitter inside the step, never across it, so two neighbours can never collapse together.
+            const s = off + clear + (k + 0.15 + rnd() * 0.7) * P.poiHouseSpacing
+            // Side is a coin flip here, not a terrain choice: both sides of the road have houses on
+            // them, and there is no bench to make cheap. Evaluate the chosen side only — if it fails
+            // (water, a junction, a cliff) that is simply a gap in the street, which is honest.
+            const side = rnd() < 0.5 ? 1 : -1
+            const h = this._evaluateHouse(road, ed, s, side, P)
+            if (h) out.push({ id: `house:${e.ka}|${e.kb}:${k}`, index: -1, aId: e.a, bId: e.b, s, runKey: ed.key, ...h })
+        }
+    }
+
+    /**
+     * The customer reject tests. Much lighter than _evaluate's: with no bench to carve there is no
+     * earthwork to cap and no cross-slope to keep water off a pullout. What remains is "is there
+     * real road here, and is the target on believable ground".
+     */
+    _evaluateHouse (road, ed, s, side, P) {
+        const cl = ed.centerline
+        const cp = cl.pointAt(s)
+        const ct = cl.tangentAt(s)
+        const tl = Math.hypot(ct.x, ct.z) || 1
+        const tx = ct.x / tl, tz = ct.z / tl
+        const nx = tz * side, nz = -tx * side
+        const lat = P.poiHouseLat
+        const cx = cp.x + nx * lat, cz = cp.z + nz * lat
+
+        // 1. Tunnels own their ground — and there is no roadside inside a bore to throw at.
+        if (road.tunnelSpanAt?.(ed.key, s)) return null
+
+        // 2. Junction pads: a target in the middle of an intersection apron is not a front yard.
+        for (const nd of road.padReachNodes()) {
+            if (Math.hypot(nd.x - cx, nd.z - cz) <= nd.reach) return null
+        }
+
+        // 3. There must actually be road to throw FROM. Null means the resolver found none here.
+        const edgeLat = P.roadHalfWidth + P.roadShoulderWidth
+        if (road.sampleRoadTopY(cp.x + nx * edgeLat, cp.z + nz * edgeLat) == null) return null
+
+        // 4. Never on water. A paper in a pond is a lost paper, not a delivery.
+        const water = this._d.getWater?.()
+        if (water) {
+            if (water.isRoadNoGo(cx, cz)) return null
+            if (water.streamChannelAt?.(cx, cz)?.inChannel) return null
+        }
+
+        // 5. The circle has to lie on ground you could land a paper on: sample the rim and reject a
+        //    target draped over a cliff edge or a ditch. This is the light stand-in for the pad's
+        //    earthwork cap — it bounds what the ring LOOKS like, which is the thing that reads wrong.
+        const terrain = this._d.getTerrain?.()
+        const groundAt = terrain?.analyticHeight ? ((x, z) => terrain.analyticHeight(x, z))
+            : terrain?.rawHeightWorld ? ((x, z) => terrain.rawHeightWorld(x, z)) : null
+        let y = 0
+        if (groundAt) {
+            y = groundAt(cx, cz)
+            if (!isFinite(y)) return null
+            const R = P.poiHouseTargetR
+            let lo = y, hi = y
+            for (const [ox, oz] of [[R, 0], [-R, 0], [0, R], [0, -R]]) {
+                const gy = groundAt(cx + ox, cz + oz)
+                if (!isFinite(gy)) return null
+                if (gy < lo) lo = gy
+                if (gy > hi) hi = gy
+            }
+            if (hi - lo > P.poiHouseMaxDrop) return null
+        }
+
+        // yaw matches the pad convention (model −Z faces the road) so a modelled house can drop
+        // straight in when FEAT-60 gets around to one.
+        return { x: cx, y, z: cz, tx, tz, nx, nz, side, yaw: Math.atan2(nx, nz) }
+    }
+
+    /**
+     * Take up to `n` sites spread across the network: shuffle deterministically, then accept a site
+     * only if it is at least `minSep` from every site already accepted. If that cannot fill the
+     * count, halve the separation and try again — the count-hard/distance-relaxes rule, in the same
+     * shape _pickCoverage uses for the stations.
+     *
+     * Spread rather than nearest-first on purpose: nearest-first would pack every customer onto the
+     * two streets by the spawn and make the route a lap of the block instead of a round.
+     */
+    _pickSpread (cands, n, minSep, rnd) {
+        if (cands.length <= n) return cands.slice()
+        const order = cands.slice()
+        for (let i = order.length - 1; i > 0; i--) {          // Fisher-Yates off the region PRNG
+            const j = Math.floor(rnd() * (i + 1))
+            ;[order[i], order[j]] = [order[j], order[i]]
+        }
+        for (let sep = minSep; ; sep *= 0.5) {
+            const out = []
+            for (const q of order) {
+                if (out.length >= n) break
+                if (out.every(p => Math.hypot(p.x - q.x, p.z - q.z) >= sep)) out.push(q)
+            }
+            if (out.length >= n || sep < 1) return out
+        }
+    }
+
     // ── the roster (FEAT-60) ────────────────────────────────────────────────────────────────
     /**
      * Fill POI_ROSTER from the candidate pool and return the typed POIs, in roster order.
@@ -280,6 +522,7 @@ export class PoiSystem {
                         :                               this._pickAny(free, slot.count, rnd)
             for (const q of picks) {
                 q.type = slot.type
+                q.tags = slot.tags ? slot.tags.slice() : []   // FEAT-61 — see the TAGS note above
                 q.modelKey = slot.model ?? null
                 // Stamp the authored collision box NOW, off the registry, not when the GLB
                 // resolves: physics must not wait on a fetch, or a marker would be driveable-
@@ -373,6 +616,7 @@ export class PoiSystem {
     clear () {
         this._list = []
         this._pool = []
+        this._houses = []
         this._built = null
         const road = this._d.getRoad()
         if (road) road.setPoiPads(null)
