@@ -174,10 +174,46 @@ opening and the walk-to-Larry tutorial.
   point). `story-poi`, `mission-network`, `economy`, `par-oracle`, `day-clock` stay green;
   `npm run test:all` before merge.
 
-## Phases
+## Phases — state at 2026-08-05
 
-**A — Docs** [DONE] · **B — Dialogue** · **C — Houses** · **D — Throw** · **E — The mission** ·
-**F — Gates + housekeeping**
+**A — Docs** [DONE, `c95a2cc`] · **B — Dialogue** [DONE, `8624861`] · **C — Houses** [DONE,
+`39e433c`] · **D — Throw** [DONE, `07a073d`] · **E — The mission** [PART 1 DONE, `e99fe1e`] ·
+**F — Gates + housekeeping** [PARTIAL]
+
+`feature/poi-models` (FEAT-60) was merged into this branch first, so the roster and the house pass
+were built together rather than reconciled afterwards. `npm run test:all` green, 46 gates.
+
+### What remains — Phase E part 2
+
+The scoring core is built and gated (`test/paper-route.mjs`, 45 checks). What is NOT built is the
+mission around it, because it needs live driving to verify honestly:
+
+1. **`PaperRouteSystem`** — the state machine `idle → offer → briefing → running → done`, a sibling
+   of `MissionSystem` rather than a mode inside it (`src/mission.js` is 871 lines shaped end-to-end
+   around one start and one end, and four gates pin its settle path).
+2. **The tour + par.** Nearest-neighbour tour from Larry over `poiSystem.customers()`, legs built
+   with `mission.js`'s graph adjacency + Dijkstra, concatenated, and **one** `computePar()` over the
+   whole thing (SM-INV-2). Per the ruling: assume it is expensive and **hold the briefing cards
+   until routing completes** — the player reads two cards while it runs, which is free cover.
+   `mission.js`'s `MAX_EDGES = 9` cap does not apply to a 15-stop tour; measure before trusting it.
+3. **Wiring the throw to the route** — today `_throwRoll()` scores against the nearest customer and
+   prints the distance, which proved the rings and the ballistics agree. It needs to instead consume
+   stock, record the delivery against a specific customer (once each), and end the route on the bell
+   or the last paper.
+4. **The result card + tier advance**, settling through `EconomySystem.settleFlat`.
+5. **Housekeeping (F):** a `paper-houses.mjs` heavy gate (count met, window-invariance, off water and
+   junctions, tier-independence, absent from `list()`), a debug folder for `PAPER_PARAMS`/
+   `THROW_PARAMS`/`poiHouse*`, and the MILESTONES SM-2 paragraph.
+
+### Live checks nobody has run yet
+
+Everything below Phase A is gate-verified and **has not been driven**:
+
+- Larry's cards advance on any key and do not replay within a run.
+- Hold F actually rotates the view onto a porch, and the roll leaves on the camera heading with the
+  truck's velocity added.
+- The 6 m rings and 1 m pips sit on believable ground at all 15 houses.
+- Orange rings vanish once a job is taken and come back when it settles.
 
 ## Risks
 
