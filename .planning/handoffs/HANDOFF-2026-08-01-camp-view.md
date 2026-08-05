@@ -75,7 +75,7 @@ precedent — at **44–55 µs each on real terrain noise**. The re-grade alread
 resolve + water carve on the same noise). Paid only when the truck leaves the `CAMP_RESAMPLE_M`
 ball. `AMENITY_MAX` carries `VIBE_W.view`, so the flattest-first early exit stays sound.
 
-## The open gap — FEAT-52
+## The open gap — FEAT-56
 
 **The scan sees 2 km. The game draws ~160 m.** Terrain mesh ends at the chunk ring (`RING_RADIUS` 2
 × 64 m; ~288 m on Ultra), `FogExp2` at 0.006 is 96% opaque by 300 m, and the camera far plane clips
@@ -84,11 +84,11 @@ campsite currently look alike out the windshield; both end in haze at ~200 m.
 
 The owner ruled (2026-08-01) to **keep the 2 km scan and close the gap from the renderer side**,
 rather than shrink the scan to the fog — shrinking reduces "an epic view" to "you can see 200 m",
-which is not the thing worth scoring. `FEAT-52` (`.planning/todos/pending/`) carries the
+which is not the thing worth scoring. `FEAT-56` (`.planning/todos/pending/`) carries the
 measurements and the acceptance criteria, including the constraint that a far shell is scenery only
 and must never become a physics surface.
 
-Until FEAT-52 lands, **the near half of the score is verifiable by eye and the far half is not.**
+Until FEAT-56 lands, **the near half of the score is verifiable by eye and the far half is not.**
 
 ## Files
 
@@ -99,7 +99,7 @@ Until FEAT-52 lands, **the near half of the score is verifiable by eye and the f
 | `index.html` | `.vseg-view` / `.lg-view` / `.cp-view` violet `#b98ae0`, both bar instances + both legends |
 | `test/camp-view.mjs` | new gate |
 | `test/gates.mjs` | registered fast/story |
-| `.planning/todos/pending/feat-distant-terrain-draw-distance.md` | FEAT-52 |
+| `.planning/todos/pending/feat-distant-terrain-draw-distance.md` | FEAT-56 |
 
 ## Picking this up
 

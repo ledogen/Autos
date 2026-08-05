@@ -1,5 +1,5 @@
 ---
-id: FEAT-52
+id: FEAT-56
 type: feature
 status: open
 opened: 2026-08-01
@@ -7,7 +7,7 @@ severity: major
 relates_to: campsite view score (src/camp.js skylineView), PERF-21 (GPU pass), story mode (DESIGN.md — site quality)
 ---
 
-# FEAT-52: Distant terrain — the world ends at 160 m
+# FEAT-56: Distant terrain — the world ends at 160 m
 
 ## The finding
 

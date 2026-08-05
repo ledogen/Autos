@@ -24,7 +24,7 @@ we haven't earned.
 
 ---
 
-## Where we are — build state 2026-08-01
+## Where we are — build state 2026-08-03
 
 Keep this honest; it is the thing that makes the rule checkable.
 
@@ -44,6 +44,11 @@ Keep this honest; it is the thing that makes the rule checkable.
     best 2× worst; mom's house at the spawn (fixed average vibe).
   - Deliberately unbuilt: doze *content* (the Roamer — SM-5, owner-gated), coffee as an item
     (SM-2/3), tent/campfire visuals (deferred), wear coupling (SM-3).
+  - **Re-shaped 2026-08-02** to the ratified 20-day run: **FEAT-54** (`3fadbea`, ticket open for its
+    remainder) applied the mechanical deltas — 16 h tank, ladder onsets at 12/14/16 h awake, sleep
+    rates 4/3 & 8/3, `rankTightenDays` 8 → 20, `dayTierTable` extended to 30 entries on the ~5×
+    asymptote. **FEAT-55** (closed) added **sleep debt** — energy runs to a −8 floor and the night
+    repays it — plus the RoR2-style energy ticker with hour ticks and stage colours.
 - **FEAT-29 par oracle** (`src/par.js`) — built early **by design**: pure math, order-independent,
   and it de-risks the most load-bearing `[DEFAULT]` in the economy (physics-honest par). Its
   `gradeRun()` already computes the **D/C/B/A/S ranks** the 2026-08-01 performance model adopted as
@@ -55,9 +60,11 @@ Keep this honest; it is the thing that makes the rule checkable.
   regenerate is explicitly a testing affordance: **real story mode has no do-overs.**
 - **Story sandbox** (`src/story.js`, FEAT-43) — routing-frozen bounded region, debug lockout seam.
   Ticket still open; the region-confinement half is in.
-- **POI substrate** — `src/poi.js`, FEAT-46 lay-by pads (merged; ⚠ the *ticket* is still sitting in
-  `todos/pending/` with every box checked — close it out).
-- **Cab instrumentation** — `src/cluster.js` (FEAT-49 gauge cluster, merged). Two open tickets hang
+- **POI substrate** — `src/poi.js`, FEAT-46 lay-by pads (merged; **ticket closed 2026-08-02**).
+  Extended the same day (`dd5bcb5`): a POI job **stages** rather than counting down — a 25 m start
+  threshold with orange↔green rings, the ratified *"a job stages; it does not count down"* rule.
+- **Cab instrumentation** — `src/cluster.js` (**FEAT-49 gauge cluster — ticket closed 2026-08-03**;
+  the merge was `54cc10d`, the ticket had simply been left in `pending/`). Two open tickets hang
   off it that are really **SM-3 wear-model work arriving early**: **FEAT-51 coolant temp** (the
   radiator/overheat → power-loss → head-gasket chain DESIGN.md already specifies) and **FEAT-50 fuel**
   (**ratified 2026-08-01** — fuel and gas stations are in; see the note under SM-3).
@@ -69,10 +76,43 @@ thresholds, `runEconomy` wallet + mission points — displayed as **"good deeds"
 terms frozen at accept (tier AND thresholds — owner ruled lock both), settle-once on arrival, the
 **single-offer rule** (one cached job per POI per day; accept consumes it), the do-over lockout
 (regenerate/retry inert on paid jobs, alive on the unpaid Quick Job rig), result-card rank colours +
-payout, the `#run-hud` wallet, and gates (`economy.mjs`, story-poi §7–8). **Tunables are
-PROVISIONAL** — k 0.35 $/s, cap 3.0, tier ~×1.15/day, S/A −7% by day 8 — the owner's balancing pass
-is FEAT-53 Phase D. Remaining SM-2 scope (paper route, fragile, bonus objectives, consumables) is
-listed as follow-ups on the ticket.
+payout, the `#run-hud` wallet, and gates (`economy.mjs`, story-poi §7–8). Phases A–C are **owner-verified**
+by a live drive-through.
+
+**Phase D is half done** [2026-08-03]. Item 1 — re-derive `k` against the recalibrated FEAT-30 par
+scale — landed 2026-08-02 (`30544cb`): **k 0.35 → 0.30**, from a 310-roll headless par sample. Item 2
+(balance `dayTierTable` + `rankDayLate` against real multi-day runs) is the *steepness* half, and it
+is **deliberately held**: tier, rank ramp and cost escalation are one problem, and the costs it must
+balance against are SM-3's, which do not exist yet. The ratified 20-day *length* already went in via
+FEAT-54. So FEAT-53 stays open with one item, blocked on SM-3 by design — not by neglect. Remaining
+SM-2 scope (paper route, fragile, bonus objectives, consumables) is listed as follow-ups on the ticket.
+
+**The paper route is planned and ticketed, not built** [2026-08-04]. **FEAT-61**
+(`todos/pending/feat-paper-route.md`) is SM-2's first real mission type; the approved plan is
+`.planning/handoffs/HANDOFF-2026-08-04-paper-route.md`. It carries **two amendments to ratified
+docs** that land before any code (Phase A): the paper route gets a **par-derived, diegetic deadline**
+(striking §2's "not a timer, it's an inventory and a sunset" in `missions.md`), and **accuracy becomes
+a fifth scoring axis**. Coverage, accuracy and time collapse into one *effective ratio* through the
+unmodified FEAT-53 payout line, so SM-INV-3/4 hold by construction and no economy constant moves.
+Progression is voiced by Uncle Larry (4 → 9 → 12 → 15 houses), on the run layer. Nothing is
+implemented — the worktree `feature/paper-route` is untouched.
+
+**The elevation question under the economy is SETTLED: BUG-41 closed WONTFIX** [owner,
+2026-08-03 — *"par feels good as is"*]. Par prices grade off the *routed* polyline, not the
+`runProfile().gradeY` the world is carved to, and it stays that way. Measured directly, the two
+series agree to **centimetres through every run's interior** and diverge only in the junction end
+bands (median 36 m wide, peak up to 30 m) — where par has already clamped the reference truck to a
+junction speed cap, which is why re-pricing moves par only 0.61% median. Par has no
+vertical-curvature term, so the finer series carries nothing par can express; and FEAT-30 fitted
+`PAR_REF` through this same sampler, so the basis is calibrated, not approximate. A **drift alarm**
+(`test/mission-network.mjs` §7) now pins that shape, so the ruling fails loudly if a future carve
+stage widens those bands into the interior. **Phase D item 2 is therefore unblocked** — it waits
+only on SM-3 costs.
+
+**Road-feel work landed alongside** and is why the drive under all of this is smoother: BUG-40
+(deg-2 connector hump — the hidden launch ramp at tight kinks) and **QUAL-24** (deg-2 chain merge —
+a deg-2 join now *is* one road, one centerline object, rather than two roads plus an overlay; the
+connector overlay survives only as the frontier fallback). Both closed.
 
 *(Prerequisite audit, retained: SM-1 ✓ shipped 2026-07-30; POI anchors ✓ via FEAT-46, which
 supersedes FEAT-21's core — FEAT-21 retains only the variety pass and never blocked SM-2. The

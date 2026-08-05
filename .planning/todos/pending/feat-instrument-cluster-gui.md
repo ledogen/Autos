@@ -5,11 +5,11 @@ status: open
 opened: 2026-07-16
 severity: minor
 source: user-request
-relates_to: FEAT-23 (rpm/speed/gear), FEAT-33 (ignition key), FEAT-31 (radio/music), FEAT-14 (headlights), teleport parking-brake, FEAT-26 + SM milestone 3 (health → warning lights), SM-INV-10
+relates_to: FEAT-23 (rpm/speed/gear), FEAT-33 (ignition key), FEAT-58 (radio/music), FEAT-14 (headlights), teleport parking-brake, FEAT-26 + SM milestone 3 (health → warning lights), SM-INV-10
 note: "A diegetic instrument cluster GUI modeled on the real 2002 Ford Ranger layout — analog tach,
 speedo, temp/fuel/oil/battery gauges, gear indicator, and a bank of warning tell-tale lights that
 respond to vehicle health. Includes the FEAT-33 ignition as a visual key that physically turns
-(OFF→ACC→ON→START), and hosts the FEAT-31 music integration as the in-dash 'radio'. Design north
+(OFF→ACC→ON→START), and hosts the FEAT-58 music integration as the in-dash 'radio'. Design north
 star: Project Zomboid's clean, readable cluster + health-reactive warning lights; explicitly NOT the
 busy overloaded mod look. Aggregates three other tickets — build the shell now, slot them in as they
 land."
@@ -23,7 +23,7 @@ Today the only readout is the green debug text HUD (`src/debug.js` — SPEED / G
 This ticket adds the **real thing**: a diegetic analog instrument cluster, modeled on the **2002 Ford
 Ranger** layout (the sim's own vehicle — reference image provided by owner), that reads the truck's
 actual state and, crucially, shows **health as warning lights**, gives the FEAT-33 ignition a **key
-that turns**, and hosts the FEAT-31 music integration as the **radio**.
+that turns**, and hosts the FEAT-58 music integration as the **radio**.
 
 **Taste, ratified by owner:** the north star is Project Zomboid's cluster — clean, legible gauges with
 a small row of warning tell-tales that light up. The busy overloaded-mod look (many redundant gauges,
@@ -55,10 +55,10 @@ Left → right, matching the real cluster:
    trips the battery light, low oil condition trips oil, over-temp trips overheat. This is the payoff
    the owner called out — condition made legible as idiot lights, not numbers. Depends on that model
    for the *health* lights; the state-backed lights (below) work now.
-3. **Radio = the music app (FEAT-31).** The FEAT-31 player-music / Spotify integration lives in the
+3. **Radio = the music app (FEAT-58).** The FEAT-58 player-music / Spotify integration lives in the
    dash GUI as the "radio" — a small panel showing now-playing / transport. The real radio is in the
    center stack, not the cluster proper, so this is the broader **dashboard GUI** hosting the cluster
-   plus a radio module. Depends on FEAT-31's chosen tier.
+   plus a radio module. Depends on FEAT-58's chosen tier.
 
 ## Signal map — what backs each element (be honest about what exists)
 
@@ -113,7 +113,7 @@ one. Wire what's real; leave clean seams for the rest.
 - **How many warning lights in v1** vs. gated on the wear model — wire the state-backed ones now
   (brake, high-beam, ignition), stub the health ones behind FEAT-26/milestone-3?
 - **Radio placement + scope:** inside the cluster frame or a separate adjacent dash panel? Follows
-  FEAT-31's tier (a Tier-0 focus-mode "radio" is basically just a mute/volume toggle).
+  FEAT-58's tier (a Tier-0 focus-mode "radio" is basically just a mute/volume toggle).
 - **Units + gear indicator:** MPH-primary dual dial (match the real Ranger); PRND auto indicator vs the
   sim's actual gearing (FEAT-23 auto Phase 1 → PRND fits, but confirm reverse/neutral handling).
 - **Night/backlight look:** the cluster should read at night (FEAT-14 lights / sky time-of-day) — green
@@ -129,13 +129,13 @@ one. Wire what's real; leave clean seams for the rest.
 - **Ignition key** element rotates OFF→ACC→ON→START in step with FEAT-33 (held at START while cranking).
 - **Warning lights respond to vehicle health** once the wear/condition model exists; state-backed
   lights work before then. No gauge fakes a live value it has no signal for.
-- **Radio module** present as the FEAT-31 host (scoped to whatever FEAT-31 tier ships).
+- **Radio module** present as the FEAT-58 host (scoped to whatever FEAT-58 tier ships).
 - Pure display: deterministic, `npm test` unaffected, 60fps preserved; styling USER-OWNED.
 
 ## Related
 
 - Ignition/starter this visualizes: `feat-ignition-starter.md` (FEAT-33).
-- Radio/music host: `feat-player-music-streaming.md` (FEAT-31).
+- Radio/music host: `feat-player-music-streaming.md` (FEAT-58).
 - Health-light backing: FEAT-26 + `.planning/story-mode/DESIGN.md` "The economy" (shared wear/condition
   model); SM-INV-10 described-not-scored.
 - State sources: FEAT-23 drivetrain (`src/drivetrain.js`), FEAT-14 cast lights (`src/vehicle-model.js`),

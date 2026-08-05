@@ -209,5 +209,70 @@ const ms = new MissionSystem({
   check('no region ⇒ unchanged free-roam planning', free >= 5, `${free}/6 rolls`)
 }
 
+// ── 7. DRIFT ALARM (BUG-41): par prices a DIFFERENT elevation series than the world carves ───────
+// This does NOT assert the two agree. They deliberately do not, and that was ruled WONTFIX
+// (2026-08-03): `edgeParData().gradeAt` samples the ROUTED design polyline, while the carve, the
+// ribbon, the physics and the GPS overlay all read `runProfile().gradeY`, a later pipeline stage.
+// Par integrates a slope over a 2 m step (par.js DS), so it is insensitive to what that later stage
+// mostly adds, and PAR_REF was calibrated (FEAT-30) against real drives through this same sampler —
+// the basis is a convention, and switching it would invalidate the fit to buy ~0.6% of par time.
+//
+// What makes that ruling SAFE is the measured SHAPE of the disagreement, and that is what this pins:
+//   - in the run INTERIOR the two series are the same road to within centimetres;
+//   - the disagreement is confined to END BANDS, where the later stage reconciles the run onto its
+//     shared junction/pad elevation — and where par has already clamped the truck to a junction
+//     speed cap, so a grade error there buys little time either way.
+// If a future carve stage widens those bands into the interior, par silently starts pricing hills
+// the truck does not climb, at a magnitude nobody measured. That is the regression this catches. It
+// is an alarm, not a correctness check: a FAIL here means "re-open BUG-41", not "revert the carve".
+{
+  const MARGIN = 250     // m from each end — beyond the widest measured band (232 m)
+  const STEP = 4
+  const iAbs = [], bands = [], peaks = []
+  let runs = 0
+  for (const [, e] of road._network) {
+    if (!e.cellA || !e.cellB) continue
+    const ed = road.edgeParData(e.cellA, e.cellB)
+    if (!ed || !ed.centerline) continue
+    const L = ed.centerline.length
+    const dAt = (s) => ed.gradeAt(s) - road.runProfile(s, ed.key).gradeY
+
+    if (L >= 2 * MARGIN + 100) {
+      runs++
+      for (let s = MARGIN; s <= L - MARGIN; s += STEP) iAbs.push(Math.abs(dAt(s)))
+    }
+    // End bands: how far in does the disagreement reach, and how big does it get?
+    for (const fromStart of [true, false]) {
+      let band = 0, peak = 0
+      for (let t = 0; t <= Math.min(400, L / 2); t += STEP) {
+        const v = Math.abs(dAt(fromStart ? t : L - t))
+        if (v > 0.5) { band = t; peak = Math.max(peak, v) }
+      }
+      bands.push(band); peaks.push(peak)
+    }
+    if (runs > 40) break
+  }
+  const pct = (a, p) => { const b = a.slice().sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(p * b.length))] }
+  const iMax = Math.max(...iAbs), iP99 = pct(iAbs, 0.99)
+  const bMax = Math.max(...bands), bP99 = pct(bands, 0.99)
+  const pMax = Math.max(...peaks)
+
+  // The load-bearing property: away from the junctions, par's hills ARE the carved hills.
+  check('BUG-41 alarm: the two elevation series agree in the run INTERIOR',
+    iAbs.length > 500 && iMax < 2.0 && iP99 < 0.5,
+    `${iAbs.length} samples over ${runs} runs: p99 ${iP99.toFixed(3)} m, max ${iMax.toFixed(3)} m`)
+
+  // The disagreement must stay a junction-approach phenomenon, not creep along the run.
+  check('BUG-41 alarm: the disagreement stays confined to the junction END BANDS',
+    bP99 <= 250 && bMax <= 320,
+    `band width over ${bands.length} run ends: p99 ${bP99} m, max ${bMax} m`)
+
+  // ...and stay the size it was when the WONTFIX was measured (peak 30.8 m across seeds 6/1/42).
+  check('BUG-41 alarm: end-band divergence stays within its measured magnitude',
+    pMax <= 45, `peak |Δelevation| ${pMax.toFixed(2)} m`)
+
+  console.log(`       interior p99 ${iP99.toFixed(3)} m / max ${iMax.toFixed(3)} m · band p99 ${bP99} m / max ${bMax} m · peak ${pMax.toFixed(1)} m`)
+}
+
 console.log(fails === 0 ? '\nPASS mission-network' : `\nFAIL mission-network (${fails})`)
 process.exit(fails === 0 ? 0 : 1)

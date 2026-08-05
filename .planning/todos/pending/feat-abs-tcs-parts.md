@@ -1,5 +1,5 @@
 ---
-id: FEAT-40
+id: FEAT-57
 type: feature
 status: open
 opened: 2026-07-20
@@ -15,7 +15,7 @@ a described-not-scored part property (SM-INV-10) that shapes the truck's charact
 matching FEAT-39 assist. Reserve-the-idea capture; design against the parts pool when SM-3 lands."
 ---
 
-# FEAT-40: ABS + traction control as installable parts
+# FEAT-57: ABS + traction control as installable parts
 
 ## Context
 
@@ -23,7 +23,7 @@ Separate from the FEAT-39 **driver-assist software layer**, the owner wants to *
 of ABS and traction control as **actual hardware parts** a vehicle can have. The distinction:
 
 - **FEAT-39** = a difficulty/accessibility layer that modulates *driver input* — freely toggleable.
-- **FEAT-40 (this)** = whether the *truck itself* is equipped with anti-lock brakes / a traction-
+- **FEAT-57 (this)** = whether the *truck itself* is equipped with anti-lock brakes / a traction-
   control system — a **part**, rolled into the jalopy like any other component, that the player can
   find/install/lose.
 

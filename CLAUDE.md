@@ -56,6 +56,18 @@ for physics, OffscreenCanvas, or Euler angles for body rotation. Fixed-timestep 
   they're shipped with `src/` and prevent regressions. Strip the tag only when the code it described
   is gone.
 
+### 3D assets (hand-authored models)
+
+Externally modelled assets (Blender et al.) are saved as **glTF 2.0 Binary** at
+`assets/models/<name>.glb`, textures embedded, **no Draco / no KTX2** — the loader is a bare
+`GLTFLoader` with no decoder attached. That path is load-bearing: `data/vehicle-models.js` fetches
+it as a relative URL and `vite.config.js` copies it to `dist/` at the same path (not an ES import).
+Adding a vehicle is data-only — drop the `.glb`, add a `VEHICLE_MODELS` entry. Model forward = −Z,
+wheels as separate objects (the loader strips them so the procedural wheels show through), material
+names are matched by substring so they must be stable. Third-party models get a line in
+`assets/models/CREDITS.md`. Full convention + Blender export settings:
+`.planning/research/ASSETS.md`.
+
 ### Diagnostic tools (all live in test/, triggered externally)
 
 - **Road resolution / fold debugging:** `node test/replay.mjs <place-capture.json>` — reports
@@ -102,7 +114,7 @@ sleep/economy work — if an implementation satisfies its ticket but violates an
 the invariant wins; stop and flag it. Open design questions listed there are the user's to
 answer, not yours. Companion notes **downstream of DESIGN.md** (where they disagree, DESIGN.md wins):
 `missions.md` (mission taxonomy + XP/payout scoring + the log-drag main mission), `run-shape.md`
-(run/day length, saving), `opening.md` (the day job, the uncle), `items.md` (items catalog —
+(run/day length, saving), `opening.md` (the firing, the uncle), `items.md` (items catalog —
 consumables/tools/parts/cargo/catch, the asset burn-down surface), `spirits-and-pacts.md` (the spirit
 cast — deferred, and carrying flagged conflicts with later rulings), `IDEAS.md` (scratchpad), and
 `design-amendments-2026-07-29.md` (provenance for the 2026-07-29 ratification pass).
@@ -115,6 +127,18 @@ norm.
 - **Capture** bugs/features/ideas as tickets in `.planning/todos/pending/` (frontmatter: `id`, `type`,
   `status`, `severity`, plus a clear acceptance section). This tracker is the live source of truth for
   outstanding work. Close a ticket by moving it to `.planning/todos/completed/` with a resolution note.
+  Classes: `feature` (FEAT-NN) · `bug` (BUG-NN) · `perf` (PERF-NN) · `quality` (QUAL-NN) ·
+  `infra` (INFRA-NN) · **`asset` (ASSET-NN, files `asset-*.md`)** — one hand-modelled `.glb` per
+  ticket, authored per `.planning/research/ASSETS.md`; each carries a tri/texture budget, real-world
+  size, origin + forward convention, and collision metadata, and is loadable only once FEAT-59 lands.
+  Assets come in five roles, stated in the ticket under its title: **POI models** (ASSET-09..21)
+  anchor a zone; **lawn furniture** (ASSET-01..08) is scattered *with* a POI so it inherits that
+  POI's provenance (on bare ground it reads as litter, not habitation); **camp gear** (ASSET-23..26)
+  renders at the player's campsite under items.md's visible-kit rule, sharing one anchor convention
+  and fitting the 6 m camp pad; **cargo** (ASSET-27..30) is visible load, real mass, never a scoring
+  axis; **road furniture** (ASSET-22, ASSET-31) repeats along the network, placed from road geometry.
+  Most of `.planning/story-mode/items.md` is **2D art, not models** — only camp gear, bed/dragged
+  cargo, and the beacon (a shader) have a world presence.
 - **Plan** non-trivial / multi-file changes via plan mode (get sign-off before implementing). Skip the
   ceremony for small fixes.
 - **Implement directly** with focused edits. The headless harness is the real quality gate: `npm test`

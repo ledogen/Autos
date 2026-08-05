@@ -41,7 +41,11 @@ newspaper customer's mailbox — with the cube as the fallback for anything unmo
 - newspaper customers
 - mission providers
 - food vendors
-- **the burger joint** (a specific, named food vendor)
+- **the burger joint** — **the place the player character is fired from in the opening beat**
+  (ruled 2026-08-05). A **story landmark, not a food vendor and not a hub**: no work, no wage, no
+  fallback, and the player can never earn from it again. Sited so they keep driving past what they
+  left. It may source an unrelated mission later, which is the only reason it needs interaction at
+  all — model it as scenery first.
 - **service shop** — this IS the in-run mechanic (ruled 2026-08-03): field repairs cover the
   simple stuff; complicated work (engine repair) is service-shop-only, and they change a tire
   faster than you can. Distinct from THE GARAGE, which stays the between-runs meta-roster.
@@ -58,6 +62,17 @@ newspaper customer's mailbox — with the cube as the fallback for anything unmo
   it; `missions.md` still lists it as the main mission.)
 - **Campground:** dispersed camping is the ratified model (no developed campsites,
   Innkeeper → THE HOST). No campsite POI type should exist.
+
+### Resolved — the firing vs the day-job income floor (raised and ruled 2026-08-05)
+
+The firing initially collided with `opening.md` §"The day job as a hub", which had the day job
+persisting as the income floor and was itself owner-ratified. **Owner ruled: the firing wins.** The
+day job does not persist, there is no income from the burger joint at all, and **the newspaper route
+is the income floor** — that is what it is for. `opening.md` has been rewritten (§"The firing",
+§"There is no day-job income floor") and its provenance now records the withdrawal.
+
+Consequence for this ticket: the burger joint is **scenery with a possible later mission hook**, not
+a service POI. Nothing in FEAT-60 needs an interaction affordance for it on day one.
 
 ## Acceptance (sketch — refine when scheduled)
 

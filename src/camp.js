@@ -67,12 +67,12 @@ export const CAMP_PARAMS = {
                             // than this scores in proportion, so 60 m of hillside is worth ~nothing.
 
     // THE SCAN SEES FURTHER THAN THE GAME DRAWS, DELIBERATELY AND FOR NOW (owner, 2026-08-01; see
-    // FEAT-52). The scan samples rawHeightWorld, which is analytic and defined everywhere, so it
+    // FEAT-56). The scan samples rawHeightWorld, which is analytic and defined everywhere, so it
     // scores mountains that are never rendered: the terrain mesh ends at the chunk ring (~160 m on
     // Normal, ~288 m on Ultra), FogExp2 at 0.006 is 96% opaque by 300 m, and the camera far plane
     // clips at 1000 m. campViewFarM 1200 is therefore PAST the far plane. The far half of this
     // judgement is real terrain the player cannot yet see, and the score is knowingly ahead of the
-    // renderer — FEAT-52 is what closes the gap. Do not "fix" it by shrinking the scan to the fog:
+    // renderer — FEAT-56 is what closes the gap. Do not "fix" it by shrinking the scan to the fog:
     // that reduces an epic view to "you can see 200 m", which is not the thing being scored.
     campViewNearM:    12,   // m — first sample. Nearer than this is the pad itself, not the view.
     campViewAz:       12,   // azimuths (every 30°)

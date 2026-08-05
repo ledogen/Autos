@@ -1,5 +1,5 @@
 ---
-id: FEAT-31
+id: FEAT-58
 type: feature
 status: open
 opened: 2026-07-16
@@ -13,7 +13,7 @@ User flagged it may be too cheesy — this ticket is a THINKING SURFACE, not a c
 the tier + whether to build at all before any implementation."
 ---
 
-# FEAT-31: Player music — bring-your-own soundtrack while driving
+# FEAT-58: Player music — bring-your-own soundtrack while driving
 
 ## Context
 

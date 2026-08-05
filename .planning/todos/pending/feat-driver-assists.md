@@ -9,7 +9,7 @@ relates_to: >
   vehicle input/steer accumulation (src/vehicle.js — steerAngle, smoothThrottle/smoothBrake,
   steerRate/steerDecayRate/throttleRampRate/brakeRampRate), tire slip (src/tire.js slipAngle/
   slipRatio), physics (src/physics.js), debug GUI (src/debug.js lil-gui), FEAT-41 game menus
-  (assists page lives there), FEAT-40 ABS/TCS as hardware parts (reconcile — see below),
+  (assists page lives there), FEAT-57 ABS/TCS as hardware parts (reconcile — see below),
   road graph/router + intersections (src/road-graph.js, ROUTE SYNC in src/road-carve.js) and
   FEAT-16 2D map (src/map2d.js) for the GPS assist, story-mode difficulty (SM-INV-2 honest
   physics / SM-INV-10 described-not-scored / SM-INV-6 mission navigation)
@@ -19,7 +19,7 @@ lost), oversteer reduction (auto countersteer), plus a GPS navigation assist (tu
 intersection). An 'Assists' menu page with per-assist toggles, a gain slider per input-modulation
 assist, plus driving-feel sliders (steering rate, throttle/brake ramping — several already exist as
 params). The four handling aids are INPUT-MODULATION software aids for accessibility/difficulty;
-the *hardware* ABS/TCS parts are the separate FEAT-40 — reconcile the overlap."
+the *hardware* ABS/TCS parts are the separate FEAT-57 — reconcile the overlap."
 ---
 
 # FEAT-39: Driver assists / difficulty modifiers (BeamNG-style)
@@ -113,13 +113,13 @@ Lives as a page in the FEAT-41 game-menu system (and mirrored into the free-roam
   assists OFF (the honest baseline the physics gates already assume) and optionally add an assists-on
   regression later. Default OFF so existing physics gates/behavior are unchanged.
 
-## Reconcile with FEAT-40 (ABS/TCS as hardware parts)
+## Reconcile with FEAT-57 (ABS/TCS as hardware parts)
 
 Overlap to resolve at planning: assist **#1 (TCS)** and **#2 (ABS)** are *software aids* here, but
-FEAT-40 makes ABS and traction control **installable hardware** on the truck. Proposed split:
+FEAT-57 makes ABS and traction control **installable hardware** on the truck. Proposed split:
 - **Free roam / difficulty layer:** the four assists are freely toggleable aids (accessibility +
   difficulty knob), independent of what's bolted to the truck.
-- **Story mode:** whether the jalopy *has* ABS/TCS hardware (FEAT-40) is a part property (SM-INV-10
+- **Story mode:** whether the jalopy *has* ABS/TCS hardware (FEAT-57) is a part property (SM-INV-10
   described-not-scored — the truck either has anti-lock or it doesn't, no number). The ABS/TCS assist
   toggles may then be **gated by hardware presence** — you can't enable ABS the truck doesn't have.
   Understeer/oversteer reduction have no hardware analog, so they stay pure difficulty aids.
@@ -167,11 +167,11 @@ assists are *player* settings, not debug tuning, so they probably survive the lo
   `src/vehicle.js` params).
 - No change to `tire.js`/`physics.js` force math; assists are pure input shaping; `npm test`
   unaffected with assists off.
-- Overlap with FEAT-40 (hardware ABS/TCS) resolved or explicitly deferred with the split above.
+- Overlap with FEAT-57 (hardware ABS/TCS) resolved or explicitly deferred with the split above.
 
 ## Related
 
-- Hardware counterpart: `feat-abs-tcs-parts.md` (FEAT-40).
+- Hardware counterpart: `feat-abs-tcs-parts.md` (FEAT-57).
 - Menu host: `feat-game-menus-ui.md` (FEAT-41).
 - Input seams: `src/vehicle.js` (steerAngle, smoothThrottle/smoothBrake, ramp params); slip signals:
   `src/tire.js`; force solver (untouched): `src/physics.js`.

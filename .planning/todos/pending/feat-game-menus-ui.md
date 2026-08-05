@@ -9,7 +9,7 @@ relates_to: >
   game-mode split (DESIGN.md "Game modes" — Free Roam / Story Mode / One-off scenarios),
   window.__setGameMode seam (teleport feature — [[project_teleport_feature]]), debug GUI
   (src/debug.js lil-gui + stats.js), HUD (src/debug.js green text), FEAT-34 instrument cluster,
-  FEAT-39 assists page, FEAT-33 ignition, FEAT-31 radio, sky/time (src/sky.js), quality presets
+  FEAT-39 assists page, FEAT-33 ignition, FEAT-58 radio, sky/time (src/sky.js), quality presets
   (PERF-08/10), story-mode debug lockout (RATIFIED 2026-07-16)
 note: "MAJOR: build the game's actual menu system + a pass of UI improvements. Main menu (game-mode
 selector: Free Roam / Story Mode / one-off scenarios), settings/options (video/quality, audio,
@@ -45,7 +45,7 @@ Expect to break it into phases at planning.
 ### 2. Settings / options
 - **Video / quality** — surface the existing quality presets (PERF-08/10 draw-distance / resolution
   caps) and toggles as player-facing options, not debug sliders.
-- **Audio** — master / music / SFX (hooks FEAT-31 radio when it lands).
+- **Audio** — master / music / SFX (hooks FEAT-58 radio when it lands).
 - **Controls** — key bindings display (rebinding is a stretch goal); sensitivity where relevant.
 - **Assists page (FEAT-39)** — hosts the driver-assist toggles + gain sliders + steering/throttle/
   brake feel sliders. This ticket provides the page frame; FEAT-39 provides the controls.
@@ -114,6 +114,6 @@ Expect to break it into phases at planning.
 - Mode seam: `window.__setGameMode` (teleport feature — [[project_teleport_feature]]); game-mode
   intent: `.planning/story-mode/DESIGN.md` "Game modes".
 - Docks these in: `feat-driver-assists.md` (FEAT-39 assists page), `feat-instrument-cluster-gui.md`
-  (FEAT-34 player HUD), `feat-player-music-streaming.md` (FEAT-31 audio/radio).
+  (FEAT-34 player HUD), `feat-player-music-streaming.md` (FEAT-58 audio/radio).
 - Current UI surfaces to reconcile: `src/debug.js` (lil-gui + green HUD + spawn toast), quality
   presets (PERF-08/10).

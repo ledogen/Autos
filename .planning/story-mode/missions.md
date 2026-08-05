@@ -179,7 +179,15 @@ many as possible. Payout per paper delivered.
 - **Genre heritage** — the classic driving-game onboarding, descendant of *Paperboy*.
 - **Teaches quietly** — reading the map, planning a route, hitting precise targets, working a budget.
 - **Low stakes** — a missed throw costs a tip, not a mission failure. A tutorial that isn't one.
-- **Freedom contrast** — actual movement, and better money than standing at a register.
+- **Freedom contrast** — actual movement, after a job that was neither.
+
+**It is the income floor** [RATIFIED 2026-08-05]. The day job does not survive the opening beat — the
+player is fired from the burger joint and can never earn there again (`opening.md`), so the route is
+the *only* thing playing this role. It must therefore be reliably available and reliably poor: the
+floor under *bare completion pays nothing*, guaranteeing a run can't dead-end into zero while paying
+badly enough that leaning on it always reads as an admission of a bad day. Tuning consequence: the
+route's payout can never be balanced purely as an onboarding mission — it is also the economy's
+backstop, and FEAT-53's k-curve has to hold both jobs at once.
 
 **The budget is a day-fraction, not a clock.** The route ends when the light goes. Zero per-mission
 tuning. The paper stack supplies a second, harder cap, so the mission self-limits by inventory as
@@ -570,6 +578,8 @@ giver and route gate; the three delivery types and their scoring; the log-drag m
 high-wear premise; time trials in-run; the escalation ladder; the Roamer as motivator rather than
 informant. **2026-08-01:** the whole performance model above — points not XP, continuous payout,
 break-even-at-par, day tier, tightening thresholds, rank as the surface, bonus objectives.
+**2026-08-05:** the paper route is **the income floor** — the burger-joint day job is destroyed in
+the opening beat (fired, never rehireable, no income from it ever) and no longer backstops anything.
 
 **Proposed here, not ratified:** the axis taxonomy; binary rather than graded fragile breakage; freight's flat-rate payout (bends
 SM-INV-4 — flagged); logs on graded sections; the beat/labor split and its consequences; POI-type

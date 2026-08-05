@@ -192,7 +192,7 @@ Implementation: `src/mission.js` (`'staging'`, `START_ZONE_R`), `HANDOFF-poi-mis
 
 **Companion design notes** (downstream of this bible; where they disagree with it, *it* wins):
 [missions.md](missions.md) (mission taxonomy, XP/payout scoring, the log-drag main mission),
-[run-shape.md](run-shape.md) (run length, day length, saving), [opening.md](opening.md) (the day job,
+[run-shape.md](run-shape.md) (run length, day length, saving), [opening.md](opening.md) (the firing,
 the uncle), [items.md](items.md) (the items catalog — consumables, tools, parts, cargo, catch; an
 asset burn-down surface), [spirits-and-pacts.md](spirits-and-pacts.md) (the spirit cast —
 *deferred; carries four flagged conflicts with rules ratified since, see its header*),
