@@ -2059,9 +2059,9 @@ const _poiCubeMat = new THREE.MeshStandardMaterial({ color: 0xff7a18, emissive: 
 
 // The INTERACTION ring (owner, 2026-08-02): a translucent orange curtain standing at
 // poiInteractR, so the spot where parking actually opens the offer is something you can see and
-// aim at rather than a radius you discover by trial. It is drawn on every marker, always — it is
-// part of what a POI LOOKS like, not a UI state, and it is the first step toward the marker being
-// a highlighted parking spot you pull into.
+// aim at rather than a radius you discover by trial — the first step toward the marker being a
+// highlighted parking spot you pull into. Drawn on every marker you are NEAR (FEAT-60 cut it to
+// POI_RING_SHOW_R); it is still part of what a POI looks like up close, not a UI state.
 //
 // Deliberately dumb geometry: an open-ended unit cylinder, scaled to the radius and sunk into the
 // ground so undulating terrain can never open a gap under it. depthWrite off + DoubleSide so it
@@ -2069,6 +2069,11 @@ const _poiCubeMat = new THREE.MeshStandardMaterial({ color: 0xff7a18, emissive: 
 // the orange stays the same signal orange at every hour of the day clock.
 const _POI_RING_H = 4.0        // m — curtain height
 const _POI_RING_SINK = 1.5     // m — how far the base is buried (terrain slop, not decoration)
+// How close you must be for a marker's ring to light up (FEAT-60, owner 2026-08-05). Comfortably
+// past the pad and past braking distance at road speed, but nowhere near the ~160 m the game draws
+// — so you find a POI by seeing the BUILDING, and the ring only tells you where to stop once you
+// have. See the near-field note in _updateMissionRings.
+const POI_RING_SHOW_R = 50     // m
 
 /** Vertical alpha ramp: solid at the base, gone by the top. alphaMap reads the GREEN channel. */
 function _ringAlphaTex () {
@@ -2107,17 +2112,32 @@ let _stageRing = null
 // every OTHER marker in the region keeps its own.
 const _poiRings = new Map()
 
-/** Rebuild the marker cubes + interaction rings (cheap: a handful of each per region). */
+/**
+ * Rebuild the markers + interaction rings (cheap: a handful of each per region).
+ *
+ * FEAT-60: a POI whose roster slot names a model gets the model; everything else keeps the orange
+ * cube. The cube is not an unfinished job — it is the honest placeholder for a type nobody has
+ * modelled yet, and today's roster is deliberately mostly cube.
+ */
 function _rebuildPoiMarkers () {
   _poiGroup.clear()   // geometry + material are shared singletons — nothing per-cube to dispose
   _poiRings.clear()
   const half = POI_PARAMS.poiCubeSize * 0.5
   const r = POI_PARAMS.poiInteractR
   for (const q of poiSystem.list()) {
-    const cube = new THREE.Mesh(_poiCubeGeo, _poiCubeMat)
-    cube.position.set(q.x, q.y + half, q.z)
-    cube.castShadow = true
-    _poiGroup.add(cube)
+    if (q.modelKey) {
+      // receiveShadow too: a building is big enough to catch its neighbours' shadows and its own,
+      // unlike the small thrown mission items FEAT-59's cast-only default was written for.
+      const m = spawnModel(q.modelKey, { castShadow: true, receiveShadow: true })
+      m.position.set(q.x, q.y, q.z)     // pad records are base-seated, and so are the models
+      m.rotation.y = q.yaw              // faces the road — see the yaw note in poi.js
+      _poiGroup.add(m)
+    } else {
+      const cube = new THREE.Mesh(_poiCubeGeo, _poiCubeMat)
+      cube.position.set(q.x, q.y + half, q.z)
+      cube.castShadow = true
+      _poiGroup.add(cube)
+    }
 
     const ring = new THREE.Mesh(_ringGeo, _poiRingMat)
     ring.scale.set(r, _POI_RING_H, r)
@@ -2136,7 +2156,16 @@ function _rebuildPoiMarkers () {
 function _updateMissionRings () {
   const zone = missionSystem?.state === 'staging' ? missionSystem.startZone() : null
   const activeId = zone ? missionSystem.mission?.fromPoi : null
-  for (const [id, ring] of _poiRings) ring.visible = id !== activeId
+  // FEAT-60: rings are a NEAR-FIELD affordance now (owner, 2026-08-05). They used to burn at every
+  // marker across the region because the cube needed the help to be found; a modelled POI reads as
+  // itself from a long way off, and a field of orange curtains flattens the landscape into a game
+  // board. Inside POI_RING_SHOW_R the ring goes back to doing its real job — showing you exactly
+  // where to stop. Distance is to the marker, not the camera, so freecam does not light them up.
+  const vp = vehicleState.position
+  for (const [id, ring] of _poiRings) {
+    const near = Math.hypot(ring.position.x - vp.x, ring.position.z - vp.z) <= POI_RING_SHOW_R
+    ring.visible = near && id !== activeId
+  }
   if (!zone) { if (_stageRing) _stageRing.visible = false; return }
   if (!_stageRing) {
     _stageRing = new THREE.Mesh(_ringGeo, _stageRingMat)

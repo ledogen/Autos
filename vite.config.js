@@ -17,6 +17,7 @@ import { dirname, resolve } from 'node:path'
 //   data/route-cache-region.json.gz   ← src/route-store.js fetch() (story-region delta, lazy)
 //   assets/models/hilux.glb           ← src/vehicle-model.js GLTFLoader().load() (default vehicle)
 //   assets/models/news-roll.glb       ← src/model-service.js GLTFLoader().load() (FEAT-59 registry)
+//   assets/models/trailer-home-a.glb  ← ditto (FEAT-60 POI markers: mom's house, Larry's house)
 //   assets/models/CREDITS.md          ← license attribution shipped beside the model
 // The Vite dev server already serves project-root files, so these 200 in dev with no plugin; this
 // plugin only fixes the BUILD (vite build ships imports + publicDir, and these are neither). We do
@@ -27,6 +28,7 @@ const RUNTIME_ASSETS = [
   'data/route-cache-region.json.gz',
   'assets/models/hilux.glb',
   'assets/models/news-roll.glb',
+  'assets/models/trailer-home-a.glb',
   'assets/models/CREDITS.md',
 ]
 

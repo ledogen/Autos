@@ -30,7 +30,8 @@ import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { WaterSystem } from '../src/water.js'
-import { PoiSystem, POI_PARAMS } from '../src/poi.js'
+import { PoiSystem, POI_PARAMS, POI_ROSTER, POI_COUNT } from '../src/poi.js'
+import { PROP_MODELS } from '../data/prop-models.js'
 import { MissionSystem } from '../src/mission.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
@@ -42,13 +43,15 @@ const check = (label, ok, detail = '') => {
 
 const SEED = 6
 const C = { x: 4500, z: 600 }
-const R = 1200                       // a workable slice of a story region, cheap enough for a gate
+// A workable slice of a story region, cheap enough for a gate. 1600 rather than 1200 (FEAT-60):
+// a 1200 m window yields only 13 viable pads, one short of the 14-slot roster, so the gate could
+// never see a COMPLETE region. The short-pool degradation is still covered — property 6 truncates
+// the pool by hand, which costs nothing.
+const R = 1600
 
-// The gate forces EVERY edge to carry a POI. At the shipped density (poiEdgeChance 0.10) a 1200 m
-// window holds ~40 edge slots and therefore ~1 POI — too few to assert anything about. Forcing the
-// roll exercises the identical placement path on every edge and gives a real sample; the sparsity
-// knob itself is not what needs a gate, the siting and the road-parity guarantee are.
-const PARAMS = { ...RANGER_PARAMS, poiEdgeChance: 1.0 }
+// FEAT-60 retired poiEdgeChance: every viable edge now enters the candidate pool and the roster
+// selects from it, so there is no density roll left to force. The gate runs the shipped params.
+const PARAMS = RANGER_PARAMS
 
 function makeWorld (cx, cz, radius) {
     const road = new RoadSystem(SEED, RANGER_PARAMS)
@@ -75,12 +78,9 @@ const W = makeWorld(C.x, C.z, R)
         `${W.road._network.size} edges`)
     check('placing POIs does not bump _networkRev (route/junction caches survive)',
         W.road._networkRev === beforeRev, `${beforeRev} → ${W.road._networkRev}`)
-    const perEdge = list.length / W.road._network.size
-    check('POIs are actually placed — most edges yield one, the rest are rejected on their ground',
-        list.length >= 5 && perEdge > 0.2 && perEdge <= 1.0, `${list.length} POIs over r=${R}`)
-    console.log(`       ${list.length} POIs from ${W.road._network.size} forced edge slots `
-        + `(${(100 * perEdge).toFixed(0)}% accept ⇒ ~${Math.round(216 * POI_PARAMS.poiEdgeChance * perEdge)} `
-        + `at the shipped density ${POI_PARAMS.poiEdgeChance} over a 216-edge region)`)
+    check('the region fills its whole roster — a selection, not the tail of a coin flip',
+        list.length === POI_COUNT, `${list.length} POIs vs roster ${POI_COUNT}`)
+    console.log(`       ${list.length} POIs selected from ${W.road._network.size} edge slots over r=${R}`)
 }
 
 // ── 2. THE RATIFIED ONE: the road surface is bit-identical with and without pads ─────────────────
@@ -128,13 +128,18 @@ const W = makeWorld(C.x, C.z, R)
     console.log(`       ${probes.length} carve probes across ${lats.length} lateral offsets on every registered run`)
 }
 
-// ── 3. window-invariance: the same POIs from a different stream centre ──────────────────────────
+// ── 3. window-invariance: the same PADS from a different stream centre ──────────────────────────
+// FEAT-60 moved where this guarantee lives. A pad's POSITION is still a pure function of (seed,
+// edge) and must be identical from any stream centre — that is what this asserts, over the
+// candidate POOL. Which pads get promoted to POIs, and what type they become, is now necessarily
+// region-scoped: no edge-local rule can promise a region two gas stations. build() runs once per
+// region on the spawn, so the selection is stable in play; the pool is what has to be invariant.
 {
     const W2 = makeWorld(C.x + 640, C.z - 384, R)
-    const l2 = W2.poi.build({ x: C.x + 640, z: C.z - 384 }, R)
-    const byId = new Map(l2.map(q => [q.id, q]))
+    W2.poi.build({ x: C.x + 640, z: C.z - 384 }, R)
+    const byId = new Map(W2.poi.pool().map(q => [q.id, q]))
     let shared = 0, moved = 0, worst = 0
-    for (const q of W.poi.list()) {
+    for (const q of W.poi.pool()) {
         // Only compare POIs comfortably inside BOTH windows — an edge clipped by one window's
         // region test is legitimately absent there, and that is the region filter, not drift.
         if (Math.hypot(q.x - (C.x + 640), q.z - (C.z - 384)) > R - 400) continue
@@ -144,48 +149,29 @@ const W = makeWorld(C.x, C.z, R)
         const d = Math.hypot(q.x - o.x, q.z - o.z)
         if (d > worst) worst = d
     }
-    check('POIs well inside both windows are present in both (no window-dependent existence)',
+    check('pads well inside both windows are present in both (no window-dependent existence)',
         moved === 0, `${moved} missing of ${moved + shared}`)
-    check('shared POIs sit at exactly the same place (keyed off the graph edge, not the runKey)',
-        worst < 1e-6, `worst drift ${worst.toFixed(6)} m over ${shared} shared POIs`)
-    console.log(`       ${shared} POIs compared across two stream centres 745 m apart`)
+    check('shared pads sit at exactly the same place (keyed off the graph edge, not the runKey)',
+        worst < 1e-6, `worst drift ${worst.toFixed(6)} m over ${shared} shared pads`)
+    console.log(`       ${shared} pads compared across two stream centres 745 m apart`)
 }
 
-// ── 3b. placement has no HISTORY, and density only adds ─────────────────────────────────────────
-// Two properties that a shared reject list quietly breaks. `_evaluate`'s junction reject reads
-// padReachNodes(), which lists POI pads alongside junction pads — so without clearing the previous
-// build's pads first, a REBUILD sites against the region it is replacing. That is history, not
-// determinism, and it showed up as the density sweep below disagreeing with the forced set (1 POI
-// at chance 0.5, 4 at 0.75). It also validates this gate's own forcing trick: because the chance
-// draw is the FIRST call on each edge's PRNG, forcing the roll cannot shift the candidate stream,
-// so the shipped-density layout is exactly a subset of the forced one — the gate tests a superset
-// of what ships, not a different thing.
+// ── 3b. placement has no HISTORY ────────────────────────────────────────────────────────────────
+// `_evaluate`'s junction reject reads padReachNodes(), which lists POI pads alongside junction
+// pads — so without clearing the previous build's pads first, a REBUILD sites against the region it
+// is replacing. That is history, not determinism. Now that the roster selects from the whole pool
+// the stakes are higher, not lower: a drifting pool changes which pads win the constrained slots,
+// so mom's house could move because you visited another region first.
 {
-    const mk = (chance) => {
-        const s = new PoiSystem({
-            getRoad: () => W.road, getWater: () => W.water, getTerrain: () => W.terrain,
-            getSeed: () => SEED, getParams: () => ({ ...RANGER_PARAMS, poiEdgeChance: chance }),
-        })
-        return s.build(C, R).map(q => `${q.id}@${q.x.toFixed(6)},${q.z.toFixed(6)}`)
-    }
-    const forced = new Set(mk(1.0))
-    let strays = 0, tested = 0
-    for (const c of [0.35, 0.5, 0.75, 0.9]) {
-        const l = mk(c)
-        tested += l.length
-        strays += l.filter(k => !forced.has(k)).length
-    }
-    check('a lower density only REMOVES POIs — every one it keeps is identical to the forced set',
-        strays === 0, `${strays} of ${tested} differ`)
-
     const s = new PoiSystem({
         getRoad: () => W.road, getWater: () => W.water, getTerrain: () => W.terrain,
-        getSeed: () => SEED, getParams: () => ({ ...RANGER_PARAMS, poiEdgeChance: 1.0 }),
+        getSeed: () => SEED, getParams: () => PARAMS,
     })
-    const first = s.build(C, R).map(q => `${q.id}@${q.x.toFixed(6)}`).join('|')
+    const sig = (l) => l.map(q => `${q.type}:${q.id}@${q.x.toFixed(6)}`).join('|')
+    const first = sig(s.build(C, R))
     s.build({ x: C.x + 300, z: C.z }, R)          // a different region in between
-    const again = s.build(C, R).map(q => `${q.id}@${q.x.toFixed(6)}`).join('|')
-    check('rebuilding after a DIFFERENT region reproduces the same layout (no history)',
+    const again = sig(s.build(C, R))
+    check('rebuilding after a DIFFERENT region reproduces the same layout AND the same types',
         first === again && first.length > 0)
 
     W.road.setPoiPads(W.poi.list())               // restore the region under test
@@ -429,6 +415,119 @@ const W = makeWorld(C.x, C.z, R)
         check('Quick Job keeps retry (roll found no route — cannot exercise)', false, `state=${ms.state}`)
     }
     ms.exit()
+}
+
+// ── 6. THE ROSTER (FEAT-60): a region is guaranteed its cast, not handed dice ───────────────────
+// The reason placement stopped being a coin flip. "There is a gas station in this region" has to be
+// true on every seed, or story mode is built on sand.
+{
+    const list = W.poi.list()
+    const counts = {}
+    for (const q of list) counts[q.type] = (counts[q.type] || 0) + 1
+    const short = POI_ROSTER.filter(s => (counts[s.type] || 0) !== s.count)
+    check('every roster slot is filled exactly to its count',
+        short.length === 0,
+        short.map(s => `${s.type} ${counts[s.type] || 0}/${s.count}`).join(', '))
+    check('nothing is placed that the roster did not ask for',
+        list.length === POI_COUNT, `${list.length} vs ${POI_COUNT}`)
+    console.log('       ' + POI_ROSTER.map(s => `${s.type} ×${counts[s.type] || 0}`).join('  '))
+
+    // Mom's and Larry's are a short drive from where you wake up. The radius may have relaxed on a
+    // bare seed, so the assertion is against the relaxed ladder, not the nominal 1000 m.
+    const houses = list.filter(q => q.type === 'momsHouse' || q.type === 'larrysHouse')
+    const nearR = POI_PARAMS.poiNearSpawnR
+    const farHouse = houses.map(q => Math.hypot(q.x - C.x, q.z - C.z)).sort((a, b) => b - a)[0] ?? 0
+    check('both houses sit inside the near-spawn ring', farHouse <= nearR,
+        `furthest house ${farHouse.toFixed(0)} m vs ${nearR} m`)
+
+    // COVERAGE IS THE POINT, not spacing. Assert the pair actually chosen is the OPTIMUM of the
+    // objective over every admissible pair — a coverage siting that quietly degraded to "first two
+    // that are far enough apart" would still look plausible in a screenshot.
+    const worstCover = (a, b) => W.poi.pool().reduce((w, q) => Math.max(w,
+        Math.min(Math.hypot(q.x - a.x, q.z - a.z), Math.hypot(q.x - b.x, q.z - b.z))), 0)
+    // Optimality is judged against what the slot could ACTUALLY reach: each slot picks from a pool
+    // its seniors have already drawn from, so the service pair is optimal over the pads gas left
+    // behind, not over the whole region. Walking the roster in order is what makes that concrete.
+    const taken = new Set()
+    for (const slot of POI_ROSTER) {
+        const picks = list.filter(q => q.type === slot.type)
+        if (slot.siting !== 'coverage') { picks.forEach(q => taken.add(q.id)); continue }
+        const type = slot.type
+        const pair = picks
+        const sep = Math.hypot(pair[0].x - pair[1].x, pair[0].z - pair[1].z)
+        const got = worstCover(pair[0], pair[1])
+        // Best achievable over the pads still free at this slot, under the same floor.
+        let best = Infinity
+        const pool = W.poi.pool().filter(q => !taken.has(q.id))
+        for (let i = 0; i < pool.length; i++) for (let j = i + 1; j < pool.length; j++) {
+            if (Math.hypot(pool[i].x - pool[j].x, pool[i].z - pool[j].z) < POI_PARAMS.poiStationMinSep) continue
+            best = Math.min(best, worstCover(pool[i], pool[j]))
+        }
+        picks.forEach(q => taken.add(q.id))
+        check(`${type} pair minimises the worst drive to the nearest one`,
+            got <= best + 1e-6, `got ${got.toFixed(0)} m, best available ${best.toFixed(0)} m`)
+        check(`${type} pair clears the anti-clustering floor`,
+            sep >= POI_PARAMS.poiStationMinSep - 1e-6,
+            `${sep.toFixed(0)} m vs ${POI_PARAMS.poiStationMinSep} m`)
+        console.log(`       ${type}: ${sep.toFixed(0)} m apart, worst drive to one ${got.toFixed(0)} m`)
+    }
+
+    // A modelled POI carries its authored contact box and a yaw, both stamped at build time — the
+    // physics must never wait on a GLB fetch to decide whether a building is solid.
+    const modelled = list.filter(q => q.modelKey)
+    check('modelled POIs exist (the ticket\'s proof: a type that looks like what it is)',
+        modelled.length > 0, `${modelled.length} modelled of ${list.length}`)
+    check('every modelled POI carries its registry collision box and a yaw',
+        modelled.every(q => q.collision?.size?.length === 3 && Number.isFinite(q.yaw)
+            && q.collision === PROP_MODELS[q.modelKey].collision))
+    check('keyless POIs carry no box (they fall back to the cube)',
+        list.filter(q => !q.modelKey).every(q => q.collision === null))
+
+    // The marker is SOLID, and for a modelled one that means solid at its own size. Probe just
+    // outside and just inside the long face of a trailer, in ITS frame — a world-AABB regression
+    // would report contact metres off the wall.
+    const t = modelled[0]
+    const s3 = t.collision.size
+    const cs = Math.cos(t.yaw), sn = Math.sin(t.yaw)
+    const toWorld = (lx, lz) => ({ x: t.x + cs * lx + sn * lz, z: t.z - sn * lx + cs * lz })
+    const inside = toWorld(0, s3[2] * 0.5 - 0.2), outside = toWorld(0, s3[2] * 0.5 + 2.0)
+    check('a modelled marker is solid at its own footprint',
+        W.poi.queryContact(inside.x, t.y + 1.0, inside.z, 0.3) !== null)
+    check('…and is not solid two metres clear of its wall',
+        W.poi.queryContact(outside.x, t.y + 1.0, outside.z, 0.3) === null)
+    // The long axis runs ALONG the road, which is the only way 12 m fits a 14 m pad. Probe the
+    // ends: solid just inside, clear just beyond — and the box is 12 m end-to-end, not 3.5.
+    const endIn = toWorld(s3[0] * 0.5 - 0.2, 0), endOut = toWorld(s3[0] * 0.5 + 2.0, 0)
+    const hit = (p) => W.poi.queryContact(p.x, t.y + 1.0, p.z, 0.3) !== null
+    check('the box extends its full length along the marker\'s own +X', hit(endIn))
+    check('…and stops there', !hit(endOut))
+    // Along the road means the tangent, not the normal: step out along the pad normal and you
+    // leave the trailer within 3.5 m, but along the tangent you do not until 12 m.
+    const alongRoad = Math.abs(Math.cos(t.yaw) * t.tx - Math.sin(t.yaw) * t.tz)
+    check('the marker\'s +X is the road tangent (long side faces the road)', alongRoad > 0.999,
+        `|+X · t| = ${alongRoad.toFixed(4)}`)
+}
+
+// ── 6b. the priority order bites when the pool runs short ───────────────────────────────────────
+// Free: no world build, just the roster against a hand-truncated pool. A region smaller than its
+// roster must still get mom's house and its gas stations; what it loses is mission givers, because
+// they sit at the BOTTOM of POI_ROSTER. This is the whole reason the order is a priority order.
+{
+    const pool = W.poi.pool().slice(0, POI_COUNT - 3)
+    const P = { ...POI_PARAMS, ...PARAMS }
+    const out = W.poi._assignRoster(pool, C, SEED, P)
+    const counts = {}
+    for (const q of out) counts[q.type] = (counts[q.type] || 0) + 1
+    const reserved = POI_ROSTER.filter(s => s.type !== 'missionGiver')
+    check('a short pool still fills every reserved slot',
+        reserved.every(s => counts[s.type] === s.count),
+        reserved.map(s => `${s.type} ${counts[s.type] || 0}/${s.count}`).join(', '))
+    check('…and the shortfall comes out of mission givers alone',
+        counts.missionGiver === POI_ROSTER.find(s => s.type === 'missionGiver').count - 3,
+        `${counts.missionGiver} mission givers`)
+
+    W.poi.build(C, R)                              // restore the region under test
+    W.road.setPoiPads(W.poi.list())
 }
 
 console.log(fails === 0 ? '\nALL POI CHECKS PASSED' : `\n${fails} CHECK(S) FAILED`)

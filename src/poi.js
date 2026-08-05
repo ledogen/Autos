@@ -22,10 +22,22 @@
 // (edge, arcS) point, NEVER snapped to a graph node. Nodes are a routing artifact ~640 m apart and
 // mostly junctions; a place is no likelier at a T than halfway down a road.
 
+import { PROP_MODELS } from '../data/prop-models.js'   // FEAT-59/60: authored collision metadata
+
 /** Tunables. Geometry + siting only — none of this may ever enter routeCacheSig. */
 export const POI_PARAMS = {
-    poiEdgeChance:    0.20,   // probability a qualifying graph edge carries a POI
     poiCandidates:    6,      // arcS candidates tried per carrying edge before giving up
+    // FEAT-60 SITING KNOBS. These bound the roster's *preferences*, never its count — see the
+    // relax-the-distance-not-the-count rule on POI_ROSTER.
+    poiNearSpawnR:    1000,   // m — 'nearSpawn' slots (mom's, Larry's) want to be inside this
+    poiNearSpawnStep: 500,    // m — how far the near-spawn radius grows per relax step
+    poiStationMinSep: 2000,   // m — anti-clustering floor between the two members of a 'coverage'
+                              // pair. NOT the coverage guarantee itself (that is the objective
+                              // below) — just a stop on both stations landing on the same corner.
+                              // Owner asked for 3500 (2026-08-05); measured down to 2000 because a
+                              // 2500 m region only ever offers ~4.7 km of spread and 3500 forced
+                              // both stations onto opposite rims, leaving spawn in a station-free
+                              // band. See the coverage note on _pickCoverage.
     poiPadHalfLen:    7.0,    // m — half length of the lay-by, along the road
     poiPadHalfWid:    4.0,    // m — half width, across the road
     poiPadGap:        0.6,    // m — gap from the shoulder edge to the pad's near side
@@ -52,6 +64,59 @@ export const POI_PARAMS = {
                               // highlighted parking spot you actually pull into.
     poiCubeSize:      1.6,    // m — the placeholder marker cube's edge length
 }
+
+/**
+ * THE REGION-1 POI ROSTER (owner, ratified 2026-08-05).
+ *
+ * FEAT-46 shipped POIs as a per-edge coin flip: every marker was interchangeable and the region's
+ * population was whatever the dice gave (10 on seed 6, unknown elsewhere). Story mode cannot be
+ * built on that — "there is a gas station" has to be true on EVERY seed. So placement is now a
+ * SELECTION, not a roll: gather every viable pad in the region, then fill this roster from the
+ * pool. The pool is deep enough for it — seed 6 offers 46 viable pads over a 2500 m region.
+ *
+ * THE RULE WHEN A SEED CANNOT COMPLY (owner, 2026-08-05): **the count is hard, the distances
+ * relax.** A region always gets its full roster; the siting radii widen in steps until a placement
+ * exists. No seed ever ships without its second gas station. The only thing that can shorten the
+ * roster is a pool with fewer pads than slots, which the region radius makes impossible in play
+ * (it happens in the small-window gates, and they assert the priority order instead).
+ *
+ * ORDER IS PRIORITY. Slots are filled top-down and each takes its pads out of the pool, so the
+ * constrained sitings must come first — an 'any' slot that grabbed the last near-spawn pad would
+ * push mom's house across the region. Do not reorder without re-reading that sentence.
+ *
+ * Sitings:
+ *   'nearSpawn' — inside poiNearSpawnR of the region centre (which IS the spawn).
+ *   'coverage'  — the set that minimises the worst drive from any pad to its nearest member.
+ *   'any'       — anywhere in the pool.
+ */
+export const POI_ROSTER = [
+    // Exactly one of each per world, and both houses are a short drive from where you wake up.
+    { type: 'momsHouse',    count: 1, model: 'trailerHomeA', siting: 'nearSpawn' },
+    { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', siting: 'nearSpawn' },
+    // "Never too far from a station" — the reason these two slots exist and the reason they are
+    // sited by coverage rather than by a spacing rule. Gas and service are solved INDEPENDENTLY:
+    // no constraint was ratified between them, and a service shop sharing a corner with a pump
+    // reads fine.
+    { type: 'gasStation',   count: 2, model: null, siting: 'coverage' },
+    { type: 'serviceShop',  count: 2, model: null, siting: 'coverage' },
+    // The place the player is fired from in the opening (FEAT-60 ruling, 2026-08-05): a story
+    // landmark, NOT a food vendor and not a hub. Sited anywhere — the point is that you keep
+    // driving past it.
+    { type: 'burgerJoint',  count: 1, model: null, siting: 'any' },
+    { type: 'generalStore', count: 1, model: null, siting: 'any' },
+    // The type exists so the roster is whole; fishing and The Confluence stay deferred. Do not
+    // build its systems off the back of this line.
+    { type: 'tackleShop',   count: 1, model: null, siting: 'any' },
+    // Everything left over. Most POIs are mission givers, and a mission giver MAY present as a
+    // food vendor (owner, 2026-08-05) — food vendors get no reservation of their own because a
+    // vendor that also hands out work costs the region nothing.
+    { type: 'missionGiver', count: 5, model: null, siting: 'any' },
+]
+
+/** Region population: 14, derived from the roster so the two can never drift apart. */
+export const POI_COUNT = POI_ROSTER.reduce((n, s) => n + s.count, 0)
+
+/** Newspaper customers are deferred until the paper-route branch merges — no slot yet (FEAT-60). */
 
 // Footprint sampling for the earthwork test: a 3 × 5 lattice over the pad, plus the centre.
 const CUTFILL_NU = 5, CUTFILL_NV = 3
@@ -104,11 +169,23 @@ export class PoiSystem {
     constructor (deps) {
         this._d = deps
         this._list = []
+        this._pool = []         // every viable pad the last build saw; see pool()
         this._built = null      // {x,z,r,seed} the current list was built for
     }
 
     /** Every placed POI. Read-only to callers. */
     list () { return this._list }
+
+    /**
+     * Every VIABLE pad the last build considered, before the roster picked from it. Read-only.
+     *
+     * This is where the window-invariance guarantee now lives (FEAT-60). A pad's position is still
+     * a pure function of (seed, edge), so the pool is identical from any stream centre — but WHICH
+     * pads become POIs, and what type they are, is necessarily region-scoped: you cannot promise a
+     * region two gas stations from decisions each edge makes alone. build() runs once per region on
+     * the spawn, so selection is stable in play; the invariant that survives is this one.
+     */
+    pool () { return this._pool }
 
     /**
      * Place POIs across the routed network inside a circle, and hand the pads to the RoadSystem so
@@ -147,14 +224,18 @@ export class PoiSystem {
         }
         canon.sort((u, v) => (u.ka === v.ka ? (u.kb < v.kb ? -1 : 1) : (u.ka < v.ka ? -1 : 1)))
 
-        const out = []
+        // PASS 1 — THE POOL. Every edge that can hold a pad offers one; nothing is rolled away.
+        // The per-edge PRNG still decides WHERE on its edge the pad sits, so a pad's position is
+        // the same pure function of (seed, edge) it has always been. What changed (FEAT-60) is that
+        // the population is no longer the tail of a coin flip: pass 2 selects from this pool, which
+        // is how a region can be guaranteed a gas station.
+        const pool = []
         const seen = new Set()
         for (const e of canon) {
             const ek = `${e.ka}|${e.kb}`
             if (seen.has(ek)) continue      // networkGraph can list an edge twice (both run keys)
             seen.add(ek)
             const rnd = mulberry32(hash32(`poi:${seed}:${ek}`))
-            if (rnd() >= P.poiEdgeChance) continue
             const poi = this._placeOnEdge(road, e, rnd, P)
             if (!poi) continue
             // THE REGION CLIP IS A POST-FILTER, NEVER A REJECT TEST. Applied inside candidate
@@ -162,19 +243,136 @@ export class PoiSystem {
             // POI 400 m inside the wall then moved when the window moved. Window-invariance means
             // the edge decides where its POI goes; the region only decides whether it is kept.
             if (Math.hypot(poi.x - center.x, poi.z - center.z) > radius - poi.halfLen - 20) continue
-            poi.index = out.length
-            out.push(poi)
+            pool.push(poi)
         }
 
+        // PASS 2 — THE ROSTER. Fill the ratified slots from the pool and discard the rest.
+        const out = this._assignRoster(pool, center, seed, P)
+        out.forEach((q, i) => { q.index = i })
+
         this._list = out
+        this._pool = pool
         this._built = { x: center.x, z: center.z, r: radius, seed }
         road.setPoiPads(out)
         return out
     }
 
+    // ── the roster (FEAT-60) ────────────────────────────────────────────────────────────────
+    /**
+     * Fill POI_ROSTER from the candidate pool and return the typed POIs, in roster order.
+     *
+     * Deterministic in (seed, pool) alone: the pool arrives in canonical edge order and every
+     * arbitrary choice comes off one region PRNG seeded from the world seed. No wall clock, no
+     * insertion order, no dependence on what a previous build did.
+     *
+     * Slots are filled top-down and each removes its pads from `free` — see the ORDER IS PRIORITY
+     * note on POI_ROSTER. A slot that cannot be filled because the pool ran dry is skipped, not
+     * substituted; the roster above it is already placed, which is what makes the order a priority
+     * order and not just a listing.
+     */
+    _assignRoster (pool, center, seed, P) {
+        const rnd = mulberry32(hash32(`poi-roster:${seed}`))
+        const free = pool.slice()
+        const out = []
+        for (const slot of POI_ROSTER) {
+            const picks = slot.siting === 'nearSpawn' ? this._pickNearSpawn(free, center, slot.count, rnd, P)
+                        : slot.siting === 'coverage'  ? this._pickCoverage(free, pool, slot.count, P)
+                        :                               this._pickAny(free, slot.count, rnd)
+            for (const q of picks) {
+                q.type = slot.type
+                q.modelKey = slot.model ?? null
+                // Stamp the authored collision box NOW, off the registry, not when the GLB
+                // resolves: physics must not wait on a fetch, or a marker would be driveable-
+                // through for the first seconds of a region and solid afterwards.
+                q.collision = (slot.model && PROP_MODELS[slot.model]?.collision) || null
+                const i = free.indexOf(q)
+                if (i >= 0) free.splice(i, 1)
+                out.push(q)
+            }
+        }
+        if (out.length < POI_COUNT) {
+            console.warn(`[poi] region supplied only ${pool.length} viable pads — roster filled ${out.length}/${POI_COUNT}`)
+        }
+        return out
+    }
+
+    /** Take `n` pads at random from `free` (uniform, off the region PRNG). */
+    _pickAny (free, n, rnd) {
+        const picks = []
+        const avail = free.slice()
+        for (let k = 0; k < n && avail.length; k++) {
+            picks.push(avail.splice(Math.floor(rnd() * avail.length), 1)[0])
+        }
+        return picks
+    }
+
+    /**
+     * Take `n` pads within poiNearSpawnR of the region centre — which IS the spawn, so this is
+     * "a short drive from where you wake up" (mom's and Larry's).
+     *
+     * THE COUNT IS HARD, THE DISTANCE RELAXES (owner, 2026-08-05): if the ring holds too few pads
+     * it grows by poiNearSpawnStep until it does. On seed 6 it never has to — 11 of the 46 pads
+     * sit inside the first kilometre — but a seed whose spawn is on a bare stretch must still get
+     * both houses, further out rather than not at all.
+     */
+    _pickNearSpawn (free, center, n, rnd, P) {
+        for (let r = P.poiNearSpawnR; ; r += P.poiNearSpawnStep) {
+            const ring = free.filter(q => Math.hypot(q.x - center.x, q.z - center.z) <= r)
+            if (ring.length >= n) return this._pickAny(ring, n, rnd)
+            if (ring.length === free.length) return this._pickAny(free, n, rnd)   // ring is the pool
+        }
+    }
+
+    /**
+     * Take the `n` pads that best COVER the region: the set minimising the worst distance from any
+     * pad in the pool to its nearest member. Subject to a poiStationMinSep floor between members,
+     * relaxed (halved) until a valid set exists.
+     *
+     * WHY COVERAGE AND NOT A SPACING RULE (owner ruling, 2026-08-05). The ask was "you're never too
+     * far from a gas station", first expressed as a 3.5 km minimum separation. Measured, that
+     * backfires: a 2500 m region only offers ~4.7 km of spread between its furthest pads, so a
+     * 3.5 km floor admits almost nothing and drives both stations onto opposite rims — leaving a
+     * 3.5 km band through the middle, spawn included, with no station in it. Min-separation is an
+     * anti-clustering proxy, not a coverage guarantee; at this region size the two pull opposite
+     * ways. So the floor stays only as anti-clustering (poiStationMinSep) and the objective states
+     * the actual requirement. The pool doubles as the sample of "where the player will be" — every
+     * pad is on a road, and they are spread over the region by construction.
+     *
+     * Exhaustive over pairs: n is 2 and the pool is tens, so this is ~10^3 distance evaluations.
+     * Guard rather than generalise — a third station would need a different search and a fresh
+     * ruling about what it is for.
+     */
+    _pickCoverage (free, pool, n, P) {
+        if (n !== 2) throw new Error(`[poi] coverage siting is pair-only (asked for ${n})`)
+        if (free.length < 2) return free.slice(0, n)
+        // Worst-case distance from any pad in the pool to the nearer of (a, b).
+        const worst = (a, b) => {
+            let w = 0
+            for (const q of pool) {
+                const d = Math.min(Math.hypot(q.x - a.x, q.z - a.z), Math.hypot(q.x - b.x, q.z - b.z))
+                if (d > w) w = d
+            }
+            return w
+        }
+        for (let sep = P.poiStationMinSep; ; sep *= 0.5) {
+            let best = null, bestW = Infinity
+            for (let i = 0; i < free.length; i++) {
+                for (let j = i + 1; j < free.length; j++) {
+                    const a = free[i], b = free[j]
+                    if (Math.hypot(a.x - b.x, a.z - b.z) < sep) continue
+                    const w = worst(a, b)
+                    if (w < bestW) { bestW = w; best = [a, b] }   // strict <: first pair wins ties
+                }
+            }
+            if (best) return best
+            if (sep < 1) return free.slice(0, 2)                  // pathological pool — take any two
+        }
+    }
+
     /** Drop every POI and release the pads (leaving story mode). */
     clear () {
         this._list = []
+        this._pool = []
         this._built = null
         const road = this._d.getRoad()
         if (road) road.setPoiPads(null)
@@ -194,36 +392,56 @@ export class PoiSystem {
     }
 
     /**
-     * Hard contact against the marker cubes, for the physics contact pipeline. Sphere vs a
-     * world-axis-aligned box sitting on the pad — the cube is SOLID, because a marker you drive
-     * through reads as scenery and this project's whole premise is that the physics is honest.
-     * Returns the prop-collider convention ({nx,ny,nz,depth}, normal points OUT of the solid) so
-     * main.js's queryContacts splice is identical to the prop one. THREE-free by design.
+     * Hard contact against the markers, for the physics contact pipeline. The marker is SOLID,
+     * because one you drive through reads as scenery and this project's whole premise is that the
+     * physics is honest. Returns the prop-collider convention ({nx,ny,nz,depth}, normal points OUT
+     * of the solid) so main.js's queryContacts splice is identical to the prop one. THREE-free.
+     *
+     * FEAT-60: the box is now per-POI. A modelled marker uses the registry's AUTHORED collision
+     * dims, rotated to the marker's yaw (an ORIENTED box — a 12 m trailer standing at 40° to the
+     * world axes has a world AABB half again its size, and you would bounce off thin air two metres
+     * from the wall). Keyless POIs keep the poiCubeSize cube, which the yaw leaves unchanged
+     * because a cube is rotation-invariant — so their contact is bit-identical to before.
      */
     queryContact (cx, cy, cz, r) {
-        const h = (this._d.getParams?.()?.poiCubeSize ?? POI_PARAMS.poiCubeSize) * 0.5
+        const cube = (this._d.getParams?.()?.poiCubeSize ?? POI_PARAMS.poiCubeSize) * 0.5
         for (const q of this._list) {
-            const dx = cx - q.x, dz = cz - q.z
-            if (dx > h + r || dx < -h - r || dz > h + r || dz < -h - r) continue
-            const bcy = q.y + h                         // box centre: the cube stands ON the pad
+            const s = q.collision?.size
+            const hx = s ? s[0] * 0.5 : cube, hy = s ? s[1] * 0.5 : cube, hz = s ? s[2] * 0.5 : cube
+            // Broad phase in world space against the box's bounding radius — cheap and rotation-
+            // proof, so the oriented test below only runs for a marker actually within reach.
+            const wx = cx - q.x, wz = cz - q.z
+            const reach = Math.hypot(hx, hz) + r
+            if (wx * wx + wz * wz > reach * reach) continue
+            const bcy = q.y + hy                      // box centre: the marker stands ON the pad
             const dy = cy - bcy
-            if (dy > h + r || dy < -h - r) continue
-            // Closest point on the box to the query centre.
-            const qx = dx < -h ? -h : dx > h ? h : dx
-            const qy = dy < -h ? -h : dy > h ? h : dy
-            const qz = dz < -h ? -h : dz > h ? h : dz
-            let ex = dx - qx, ey = dy - qy, ez = dz - qz
-            let d2 = ex * ex + ey * ey + ez * ez
+            if (dy > hy + r || dy < -hy - r) continue
+            // Into the marker's own frame: undo yaw about Y. (cos, −sin; sin, cos) is the inverse
+            // of the rotation applied to the mesh, so dx runs along the model's +X and dz its +Z.
+            const cs = Math.cos(q.yaw ?? 0), sn = Math.sin(q.yaw ?? 0)
+            const dx =  cs * wx - sn * wz
+            const dz =  sn * wx + cs * wz
+            if (dx > hx + r || dx < -hx - r || dz > hz + r || dz < -hz - r) continue
+            // Closest point on the box to the query centre, in box-local axes.
+            const qx = dx < -hx ? -hx : dx > hx ? hx : dx
+            const qy = dy < -hy ? -hy : dy > hy ? hy : dy
+            const qz = dz < -hz ? -hz : dz > hz ? hz : dz
+            const ex = dx - qx, ey = dy - qy, ez = dz - qz
+            const d2 = ex * ex + ey * ey + ez * ez
+            let lx, ly, lz, depth
             if (d2 >= r * r) continue
             if (d2 > 1e-12) {
                 const d = Math.sqrt(d2)
-                return { nx: ex / d, ny: ey / d, nz: ez / d, depth: r - d }
+                lx = ex / d; ly = ey / d; lz = ez / d; depth = r - d
+            } else {
+                // Centre inside the box: push out along the axis with the least penetration.
+                const px = hx - Math.abs(dx), py = hy - Math.abs(dy), pz = hz - Math.abs(dz)
+                if (px <= py && px <= pz)      { lx = Math.sign(dx) || 1; ly = 0; lz = 0; depth = px + r }
+                else if (py <= pz)             { lx = 0; ly = Math.sign(dy) || 1; lz = 0; depth = py + r }
+                else                           { lx = 0; ly = 0; lz = Math.sign(dz) || 1; depth = pz + r }
             }
-            // Centre inside the box: push out along the axis with the least penetration.
-            const px = h - Math.abs(dx), py = h - Math.abs(dy), pz = h - Math.abs(dz)
-            if (px <= py && px <= pz) return { nx: Math.sign(dx) || 1, ny: 0, nz: 0, depth: px + r }
-            if (py <= pz)             return { nx: 0, ny: Math.sign(dy) || 1, nz: 0, depth: py + r }
-            return { nx: 0, ny: 0, nz: Math.sign(dz) || 1, depth: pz + r }
+            // Back to world: re-apply the yaw to the normal (it is a direction, so rotation only).
+            return { nx: cs * lx + sn * lz, ny: ly, nz: -sn * lx + cs * lz, depth }
         }
         return null
     }
@@ -350,6 +568,12 @@ export class PoiSystem {
         return {
             x: cx, z: cz, y: topY, cut,
             tx, tz, nx, nz, side,
+            // FEAT-60: the yaw a marker MODEL stands at. Model forward is −Z (ASSETS.md), and a
+            // building on a lay-by faces the road it was built for — so −Z maps to −n (the pad
+            // normal points away from the centerline). An object at rotation.y = θ aims its −Z at
+            // (−sinθ, −cosθ), hence θ = atan2(nx, nz). Its +X then runs along the road, which is
+            // also the only orientation a 12 m trailer fits a 14 × 8 m pad in.
+            yaw: Math.atan2(nx, nz),
             halfLen: P.poiPadHalfLen, halfWid: P.poiPadHalfWid,
             // The mission start point: ON the road at this arc position, facing along the edge.
             roadX: cp.x, roadZ: cp.z,

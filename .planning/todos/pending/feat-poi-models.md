@@ -74,6 +74,52 @@ is the income floor** — that is what it is for. `opening.md` has been rewritte
 Consequence for this ticket: the burger joint is **scenery with a possible later mission hook**, not
 a service POI. Nothing in FEAT-60 needs an interaction affordance for it on day one.
 
+## The region-1 roster (ratified 2026-08-05)
+
+14 POIs per region, on every seed. Nine reserved, five mission givers. Canonical form lives in
+`POI_ROSTER` (`src/poi.js`) — this table is the provenance, that array is the source of truth.
+
+| Type | Count | Siting |
+|---|---|---|
+| mom's house | 1 | within 1 km of spawn |
+| Larry's house | 1 | within 1 km of spawn |
+| gas station | 2 | coverage (see below) |
+| service shop | 2 | coverage |
+| burger joint | 1 | anywhere |
+| general store | 1 | anywhere |
+| tackle shop | 1 | anywhere |
+| mission giver | 5 | anywhere — **may present as a food vendor**, which is why food vendors get no reservation of their own |
+
+Newspaper customers are deferred until the paper-route branch merges; no slot yet.
+
+### Ratified during implementation
+
+- **Placement became a SELECTION, not a coin flip.** `poiEdgeChance` is gone. Every viable edge
+  enters a candidate pool (46–48 over a real 2500 m region) and the roster is filled from it. This
+  is the only way "there is a gas station in this region" can be true on every seed.
+- **Count is hard, distances relax.** A region always gets its full roster; siting radii widen in
+  steps until a placement exists. `POI_ROSTER` order is a PRIORITY order — a pool too small for 14
+  starves mission givers from the bottom, never the reserved types.
+- **3.5 km station separation was measured and rejected → coverage objective.** The region is 5 km
+  wide and its road network only spans ~4.7 km of that, so a 3.5 km floor drove both stations onto
+  opposite rims and left a station-free band through the middle *including spawn* — the inverse of
+  the intent. Stations are now sited to minimise the worst drive from any pad to the nearest one,
+  with a 2 km anti-clustering floor (`poiStationMinSep`). Measured: worst drive 2.25–2.42 km on
+  seeds 6/1/42/777, rosters complete and both houses inside 1 km on all four.
+- **Rings are near-field** (`POI_RING_SHOW_R` 50 m). A modelled POI reads as itself from far off;
+  a field of orange curtains flattened the landscape into a game board. The ring's job is now
+  "here is where you stop", not "there is something here".
+- **Window-invariance moved, and narrowed.** A pad's POSITION is still a pure function of
+  (seed, edge) and is asserted over the candidate pool. WHICH pads are promoted, and to what type,
+  is necessarily region-scoped — no edge-local rule can promise a region two gas stations.
+  `build()` runs once per region on the spawn, so selection is stable in play.
+- **Solid contact is an ORIENTED box.** `queryContact` rotates into the marker's frame and uses the
+  registry's authored dims. A 12 m trailer at 40° to the world axes has a world AABB half again its
+  size — an AABB would stop the truck two metres shy of the wall. Keyless POIs keep the cube, whose
+  contact is bit-identical to before (a cube is rotation-invariant).
+- Collision metadata is stamped onto the POI record at build time, off the registry — physics never
+  waits on a GLB fetch to decide whether a building is solid.
+
 ## Acceptance (sketch — refine when scheduled)
 
 - POI records (or a type→key lookup) carry an optional `modelKey` into `data/prop-models.js`.

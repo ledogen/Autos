@@ -26,4 +26,15 @@ export const PROP_MODELS = {
     // 'box' here is future-physics metadata, not a driving obstacle.
     collision: { shape: 'box', size: [0.090, 0.074, 0.420] },
   },
+
+  // ASSET-21 — single-wide mobile home, the first modelled POI marker (FEAT-60). Stands on a
+  // lay-by pad as mom's house and Larry's house.
+  trailerHomeA: {
+    url: 'assets/models/trailer-home-a.glb',
+    // BODY ONLY — excludes the stoop, which you should be able to clip a mirror on without the
+    // truck stopping dead. Model-local axes: the 12 m length runs along +X (measured off the GLB:
+    // 12.36 x 3.71 x 4.58 overall), so a marker yawed to face the road lays its length ALONG the
+    // road — the only orientation it fits a 14 x 8 m pad in.
+    collision: { shape: 'box', size: [12.0, 3.15, 3.5] },
+  },
 }
