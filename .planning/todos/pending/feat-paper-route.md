@@ -6,8 +6,9 @@ severity: major
 opened: 2026-08-04
 source: SM-2 milestone — first real mission type (plan-mode session 2026-08-04)
 relates: FEAT-53, FEAT-59, FEAT-60, FEAT-46, FEAT-43, FEAT-29
-invariants: SM-INV-2, SM-INV-3, SM-INV-4, SM-INV-12
+invariants: SM-INV-2, SM-INV-3, SM-INV-4, SM-INV-12, SM-INV-14
 plan: .planning/handoffs/HANDOFF-2026-08-04-paper-route.md
+amended: 2026-08-05 (owner rulings — scoring simplified, houses split from the POI roster)
 ---
 
 # FEAT-61: The paper route — SM-2's first real mission type
@@ -16,105 +17,176 @@ plan: .planning/handoffs/HANDOFF-2026-08-04-paper-route.md
 
 `missions.md` §2 calls the paper route *"the first real mission type"* and the carrier of the
 **coverage** axis; `opening.md` makes **Uncle Larry** the person who hands it over and the gate on
-better routes. SM-2 is open and its spine (FEAT-53: par → ratio → payout → wallet → points) is built
-and owner-verified, so the economy this mission scores into already exists.
+better routes. SM-2's spine (FEAT-53) is built and owner-verified, so the economy this scores into
+already exists.
 
-What is missing is everything that makes the route *a different activity* from the point-to-point
-errand: a way for a character to talk, a way to throw something, houses to throw at, and a score with
-more than one term in it.
+As of the 2026-08-05 ratification it is also **the income floor** — the day job is destroyed in the
+opening, so this is the only reliably-available earner. It must be reliably poor and never dead-end a
+run at zero.
 
-**Outcome:** from Larry's POI near the spawn you take a route, hear him explain it once, drive a loop
-of 4 houses landing rolls on their targets before the morning-coffee deadline, and get paid on how
-fast, how accurate and how complete you were. Run it clean and he gives you a bigger route.
+**Outcome:** from Larry's place you take a route, hear him explain it once, drive a loop landing rolls
+on their targets, and get paid per paper by how well you placed it. Run it clean and fast and he gives
+you a bigger route.
 
-**The full approved plan — scoring algebra, module-by-module design, phases, gates, assumptions and
-risks — lives in the handoff named in the frontmatter. Read it before starting.** This ticket is the
-tracker entry; the handoff is the spec.
+**Base plan:** `.planning/handoffs/HANDOFF-2026-08-04-paper-route.md`. The owner rulings of 2026-08-05
+amend it and are authoritative where they disagree; this ticket carries the amended design.
 
-## Two ratified design amendments (Phase A — do these first, in the docs)
+## Phase A — the two doc amendments [DONE]
 
-Both are owner rulings from the 2026-08-03/04 scoping conversation, and both contradict a doc
-currently on `main`. Recording them as amendments keeps `missions.md` the source of truth instead of
-letting code quietly diverge.
+Both landed in `missions.md`:
 
-1. **The paper route has a deadline.** `missions.md` §2 currently says *"The budget is a day-fraction,
-   not a clock… it isn't a timer, it's an inventory and a sunset."* Ruling: it is a **par-derived
-   timer** — the papers have to land before people have their morning coffee. Legal under SM-INV-3 as
-   amended (*"some mission types carry an explicit, visible, diegetic timer"*), and the diegetic
-   framing is what makes it so. §2's budget paragraph is struck and replaced; the inventory cap
-   survives.
-2. **Accuracy is a fifth scoring axis.** `missions.md` states *"adding a fifth axis is a design act."*
-   Ruling: accuracy is a real axis, not dressing. The scoring-axes table gains a row — **Accuracy ·
-   measures where the thing you threw landed · pays continuous in distance from the target · never
-   hard-fails.**
+1. **The route has a deadline** — §2's *"not a timer, it's an inventory and a sunset"* struck and
+   replaced with a par-derived, diegetic clock under SM-INV-3's timer-flavor allowance.
+2. **Accuracy is the fifth scoring axis** — a row in the scoring-axes table, the status board moved
+   from "Four" to "Five", and the design act stated as such rather than smuggled in.
+
+## Scoring [OWNER-RULED 2026-08-05 — supersedes the handoff's `ratioEff` model]
+
+The handoff folded coverage, accuracy and time into one effective ratio through `payoutFor()`.
+Over-built. **Flat rate per delivery, scaled by accuracy** — the shape `missions.md` §3b/3c already
+use, licensed by DESIGN.md's *"not every mission type is scored on margin… rank is computed
+per-axis."*
+
+### Accuracy — confirmed
+
+    TARGET_R  = 3 m            (6 m diameter)
+    ACC_FLOOR = 0.30
+    q(d)      = 1 − (1 − ACC_FLOOR) × (d / TARGET_R)      d ≤ TARGET_R
+              = 0, not a delivery, paper spent            d >  TARGET_R
+
+Dead centre `q = 1.00`; the worst throw that still counts `q = 0.30`; linear between. **The 1 m ring
+is decoration** — the metric is continuous distance from the centre point.
+
+*Accepted discontinuity:* 2.99 m pays 0.30 of a paper, 3.01 m pays nothing. A delivery is binary; the
+cliff is the property line.
+
+### Payout
+
+    delivered      = papers inside a customer's circle
+    effDeliveries  = Σ q(dᵢ)                              (≤ delivered ≤ customers)
+    payout         = FLAT × effDeliveries × (1 + expedite)
+
+- **Partial routes pay.** No coverage multiplier — deliveries made are money kept, which is what an
+  income floor means.
+- **`FLAT` is par-anchored** [owner-ruled]: `FLAT = k × parRoute × dayTier(day) × PAPER_W /
+  customers`, `PAPER_W = 0.6`. A perfect route at par pays ~60% of a point-to-point at par, and it
+  tracks the day tier instead of decaying to irrelevance by day 15.
+- **Expediency bonus, completed routes only** — you cannot finish early without finishing:
+
+      ratio    = elapsed / parRoute
+      expedite = BONUS_MAX × clamp((EXPEDITE_ON − ratio) / (EXPEDITE_ON − EXPEDITE_FULL), 0, 1)
+                 …and 0 unless every customer was delivered
+
+  `EXPEDITE_ON = 0.90`, `EXPEDITE_FULL = 0.70`, `BONUS_MAX = 0.40`. Tunable.
+
+### Rank (per-axis; SM-INV-4 untouched)
+
+`score = coverage × meanAccuracy`, `coverage = delivered / customers`. One of nine ⇒ `score ≈ 0.11` ⇒
+**D**, *and it still pays for that one*. Thresholds `C ≥ 0.50 · B ≥ 0.75 · A ≥ 0.90 · S ≥ 0.98`.
+`pointsFor(letter)` is called unmodified — a bad route earns money and no good deeds.
+
+**`payoutFor()` and `gradeRun()` are not called by this mission.** Both are par-ratio machinery for
+margin-scored types. `EconomySystem.settle()` remains the single money path.
+
+## Deadline, stock, tiers
+
+- **Deadline** `parRoute × PAPER_TOLERANCE` (1.2). Soft by construction — the bell only stops you
+  earning more.
+- **Tier ladder 4 → 9 → 12 → 15** [owner-ruled: go to 15 houses]. One perfect route advances one
+  tier. `paperRouteTier` lives on the **run layer** — re-earned every run.
+- **Spares interpolate:** +100% at tier 1 (4 customers ⇒ 8 papers) → +30% at tier 4 (15 ⇒ ~20).
+
+## Houses [OWNER-RULED 2026-08-05, plus one implementation finding]
+
+15 newspaper customers in a **1 km radius**, separate from the FEAT-60 roster.
+
+**The finding that shapes this: houses must not be lay-by pads.** Measured on seed 6, the viable pad
+pool holds **43 pads region-wide but only 8 within 1 km** — and FEAT-60's `nearSpawn` slots (mom's,
+Larry's) consume two of those. 15 house *pads* inside 1 km is geometrically impossible, and relaxing
+the radius to reach it would silently defeat the ruling.
+
+It is also the wrong shape. **A customer is a target you throw at from the road** — you never park at
+one, never open an offer, never interact. So a house needs no pad, no earthwork, no `setPoiPads`
+entry:
+
+- **Sited along edges, not one-per-edge.** Reuses `_placeOnEdge`'s shoulder-offset math and the same
+  water / junction reject battery, but walks each edge at a minimum arc spacing, so a ~640 m edge can
+  carry several customers — which is what a residential road looks like anyway.
+- **Count is hard, radius relaxes** — FEAT-60's rule, same shape as `_pickNearSpawn`.
+- **Zero contact with the carve.** No pads means the FEAT-46 determinism guarantee and the
+  `story-poi` gate are untouched by this feature. This is the main reason to prefer it.
+- **Structurally invisible to ordinary missions.** Houses live in their own list, so the mission
+  planner reading `poiSystem.list()` cannot target them. The owner's "most missions must not go to
+  houses" needs no weighting hack — it falls out.
+
+### Versatile tagging [owner-ruled]
+
+FEAT-60 gave each POI a single `type`. Mom must be *a roster POI, a newspaper customer, and somewhere
+you can sleep* at once, so `type` alone can't carry it. POIs gain **`tags`** (a string array) beside
+`type`; `type` stays the roster slot and primary identity.
+
+- **Mom** — `type: 'momsHouse'`, `tags: ['newsCustomer', 'sleepable']`. She is a customer.
+- **Larry** — `type: 'larrysHouse'`, no `newsCustomer` tag. He is the mission *start*; delivering to
+  the man who gave you the papers is nonsense.
+- **Houses** — `tags: ['newsCustomer']`.
+
+Customer pool = the 15 houses + mom.
+
+## Presentation [OWNER-RULED 2026-08-05]
+
+- **Target ring** 6 m diameter reusing the existing ring pool, plus a **1 m centre ring** as an aim
+  point.
+- **The thrown paper freezes where it lands** as visual feedback. Needs a despawn rule (route end)
+  and a live cap.
+- **Achieved accuracy is displayed on landing.**
+- **Orange POI rings are suppressed for the duration of any mission.** FEAT-60 already cut them to a
+  50 m near-field; this adds mission-time suppression on top. Houses never draw one.
 
 ## Scope
 
 - `src/dialogue.js` + `#dialogue-panel` — sequential cards, **no dialogue options**, `.dlg-key`
-  control glyphs, `seen` set on the run layer.
-- `src/throw.js` — hold-**F** aim (camera seam `setAimMode`/`getAimDir`), release to launch;
-  gravity-only projectile inheriting vehicle velocity; visual is `spawnModel('newsRoll')` (FEAT-59).
-- `src/poi.js` — POI records gain `kind: 'job' | 'house' | 'larry'`; `buildPaperRoute(center, radius)`
-  reuses `build()`'s canonical order + `_evaluate()` battery for 15 deterministic houses.
-- `src/main.js` — green target rings (`TARGET_R = 5 m`) on active customers, from the existing ring
-  pool. House *bodies* stay the placeholder cube — **FEAT-60 owns modelled POIs**.
-- `src/paper-route.js` — a **sibling** of `MissionSystem`, not a mode inside it: tour + one
-  `computePar()`, deadline, delivery detection, settlement through the existing
-  `EconomySystem.settle()`, tier advance.
+  glyphs, `seen` on the run layer.
+- `src/throw.js` — hold-**F** aim (camera seam), release to launch, gravity-only projectile
+  inheriting vehicle velocity, `spawnModel('newsRoll')`, freeze on landing.
+- `src/poi.js` — `tags`, and the house pass (`buildHouses`) beside the roster.
+- `src/main.js` — target + centre rings, mission-time ring suppression, accuracy readout.
+- `src/paper-route.js` — sibling of `MissionSystem`: tour + one `computePar()`, deadline, delivery
+  detection, flat-rate settlement, tier advance.
 
-**Out of scope:** modelled houses/mailboxes (FEAT-60), box-physics on the thrown roll, the
-burger-joint opening and the tutorial that walks the player to Larry's house (later ticket).
+**Out of scope:** modelled houses/mailboxes (FEAT-60), box-physics on the roll, the burger-joint
+opening and the walk-to-Larry tutorial.
 
 ## Acceptance
 
-- **The economy anchors hold by construction.** A perfect route driven at par yields `quality = 1`,
-  `ratioEff = 1.0` — payout identical to `payoutFor(par, 1.0, tier)` and letter **B**. No constant in
-  `src/economy.js` or `src/par.js` moves; both are called unmodified.
-- **One par, one oracle** (SM-INV-2): `computePar()` over the planned tour. No second par.
-- **Deadline is exactly `parRoute × PAPER_TOLERANCE`** (recommended **1.2**, where payout already
-  reaches zero). On the bell the route ends; landed papers pay, undelivered stock is forfeit.
-- **Progression is voiced, not a bar:** one perfect route unlocks the next tier from Larry, 4 → 9 → 12
-  → 15 houses (radius 1.0 → 1.5 km). `paperRouteTier` lives on the **run layer** — it re-earns each
-  run.
-- **SM-INV-12 holds:** all 15 houses generate *always*; the tier only chooses customers. Nothing in
-  the run layer changes what worldgen builds.
-- **`ratioEff` cannot produce a garbage grade** — the payout clamp floors at zero; the letter path
-  needs the same guard.
-- **Gates** (`test/gates.mjs`, subsystem `story`): `paper-route.mjs` (scoring algebra, world-free),
-  `paper-poi.mjs` (heavy — 15 houses, window-invariance across two stream centres, never on a pad or
-  in water, tier does not change what exists), `throw.mjs` (pure ballistics). Existing `story-poi`,
-  `mission-network`, `economy`, `par-oracle`, `day-clock` stay green; `npm run test:all` before merge.
-- **Live check** on the worktree's port: take the route, hear the two cards once, throw from a moving
-  truck into a circle, see the result card, take a second route and confirm the briefing does not
-  replay.
+- `q(0) = 1.0`, `q(3) = 0.30`, linear; `d > 3 m` is not a delivery.
+- **Partial routes pay** — 1 of 9 yields a **D** and a non-zero payout.
+- **The expediency bonus is unreachable without full coverage.**
+- **One par, one oracle** (SM-INV-2): `computePar()` once over the tour.
+- **`payoutFor()`/`gradeRun()` are not called**; `settle()` is.
+- **15 houses generate always** inside 1 km (radius relaxing only if the network cannot supply),
+  deterministic and window-invariant; the tier only chooses customers (SM-INV-12).
+- **Houses never appear in `poiSystem.list()`** — the structural form of "most missions don't go to
+  houses".
+- **Mom carries both tags**; Larry carries no `newsCustomer`.
+- **Gates** (subsystem `story`): `paper-route.mjs` (accuracy curve, partial payout, bonus gating,
+  ranks, spares, no NaN at zero deliveries), `paper-houses.mjs` (heavy — count met, window-invariant,
+  off water/junctions, tier-independent, absent from `list()`), `throw.mjs` (ballistics + freeze
+  point). `story-poi`, `mission-network`, `economy`, `par-oracle`, `day-clock` stay green;
+  `npm run test:all` before merge.
 
 ## Phases
 
-- **A — Docs.** The two amendments in `missions.md`. No code.
-- **B — Dialogue.** `src/dialogue.js` + panel + Larry's two cards, fired from a debug hook.
-- **C — Houses.** `poi.js` `kind` + `buildPaperRoute` + green rings.
-- **D — Throw.** `src/throw.js` + camera aim seam + reticle, debug key to throw anywhere.
-- **E — The mission.** `src/paper-route.js` — tour par, deadline, scoring, settle, tier advance.
-- **F — Gates + housekeeping.** New gates, slider/HUD audit, MILESTONES SM-2 paragraph.
-
-## Open assumptions (owner to confirm — full list in the handoff)
-
-- "10 metre circle" = 10 m **diameter**, so `TARGET_R = 5 m`.
-- A thrown paper is **spent** whether or not it lands; stock = customers + 20% spares.
-- Papers are unlimited-range — no minimum standoff.
-- The loop back to Larry is fiction only; arrival at the last customer ends the route.
-- Larry's POI is **placed, not authored** — nearest qualifying pad to spawn, so the mission has a
-  source today.
+**A — Docs** [DONE] · **B — Dialogue** · **C — Houses** · **D — Throw** · **E — The mission** ·
+**F — Gates + housekeeping**
 
 ## Risks
 
-- **Tour routing cost is the one real unknown** — a 15-stop tour is an order of magnitude more edges
-  than a Quick Job's `MAX_EDGES = 9`. Should be cache-warm in a frozen FEAT-43 region; if it blows a
-  frame budget, compute the tour once at accept, behind the briefing cards (free cover).
-- **Three amendments to ratified docs in one feature** (timer, fifth axis, character-voiced
-  progression). Phase A records them so the next session inherits decisions, not drift.
+- **Tour routing cost — resolved by ruling:** assume expensive; **hold the briefing cards until
+  routing completes**. Best case invisible, worst case a short pause after accepting.
+- **FEAT-60 merge — resolved:** `feature/poi-models` was merged into this branch on 2026-08-05
+  before any code was written, so the roster and the house pass were built together rather than
+  reconciled afterwards.
 
 ## Where the work happens
 
-Worktree `/Users/ledogen/CodeShit/CarGame-paper-route`, branch `feature/paper-route`, currently
-fast-forwarded to `b93afbb` and untouched.
+Worktree `/Users/ledogen/CodeShit/CarGame-paper-route`, branch `feature/paper-route`.

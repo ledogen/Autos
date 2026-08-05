@@ -12,7 +12,7 @@ current and wins.** `design-amendments-2026-07-29.md` is a historical provenance
 
 | Decided | Open |
 |---|---|
-| Four scoring axes; three delivery types (§1, §3a, §3b) | Job discovery + expiry model (§"The job board") |
+| Five scoring axes; three delivery types (§1, §3a, §3b) | Job discovery + expiry model (§"The job board") |
 | Points not XP; continuous payout; rank as surface | Exact `k` (maintenance cost per par-second) |
 | Payout continuous on par ratio, base × par | Restraint ceiling: hard-fail vs graded (§3b) |
 | Time trials live in-run | Comparability between players — parked |
@@ -43,6 +43,14 @@ Mission types are not flavors of the same activity. They differ in **what is bei
 | **Coverage** | How much of a fixed inventory you place before the budget runs out | Currency per unit delivered | Budget expires with stock unplaced |
 | **Restraint** | Shock and impulse into the cargo | Flat rate; the cost is time | Cargo is broken |
 | **Clearance** | Objects removed from a blocked trail | Region access | Never — progress is world state |
+| **Accuracy** | Where the thing you threw landed | Continuous in distance from the target, scaling the per-unit rate | Never hard-fails; a miss is one unit unpaid |
+
+**Accuracy is a fifth axis [RATIFIED 2026-08-05].** This table used to say four, and this file says
+plainly that *adding a fifth axis is a design act* — so this is that act, made deliberately rather
+than smuggled in as dressing on coverage. It earns its place by measuring something no other axis can
+see: coverage asks *did you get there*, accuracy asks *how well did you place it*, and the paper route
+needs both or throwing is a formality. It rides **with** another axis, never alone — accuracy scales a
+per-unit rate, so it has no meaning without units to deliver.
 
 DESIGN.md's own failure-mode list names the risk this table exists to manage: *par-scoring eats the
 tone.* If every mission resolves to the same number, this is a time trial with charming skins. The
@@ -189,10 +197,34 @@ badly enough that leaning on it always reads as an admission of a bad day. Tunin
 route's payout can never be balanced purely as an onboarding mission — it is also the economy's
 backstop, and FEAT-53's k-curve has to hold both jobs at once.
 
-**The budget is a day-fraction, not a clock.** The route ends when the light goes. Zero per-mission
-tuning. The paper stack supplies a second, harder cap, so the mission self-limits by inventory as
-well as by daylight. Note this doesn't *need* the SM-INV-3 timer allowance — it isn't a timer, it's
-an inventory and a sunset.
+**The route has a deadline** [RATIFIED 2026-08-05, FEAT-61]. *Struck: "The budget is a day-fraction,
+not a clock. The route ends when the light goes… this doesn't need the SM-INV-3 timer allowance — it
+isn't a timer, it's an inventory and a sunset."* It is a timer, and it should be: papers have to land
+before people have their morning coffee. That is the one deadline in this game the player already
+understands without being taught, and a route with only a sunset behind it has no shape in the hour
+you actually drive it.
+
+- **Derived from par, shown as a clock.** `deadline = par(tour) × PAPER_TOLERANCE`. This is legal
+  under SM-INV-3's timer-flavor allowance, and the *diegetic* framing is what qualifies it — the
+  player reads "before the coffee", not "1.2 × par".
+- **The inventory cap survives.** The paper stack is still the second, harder budget.
+- **The bell is soft, by construction.** Under flat-rate-per-delivery (below) running out of time
+  costs only the papers you hadn't thrown yet. Nothing already earned is clawed back — which is what
+  an income floor requires.
+
+**Scoring: flat rate per delivery, scaled by accuracy** [RATIFIED 2026-08-05, FEAT-61]. Deliberately
+*not* the margin line — this is coverage + accuracy, and DESIGN.md's "not every mission type is
+scored on margin / rank is computed per-axis" is the licence.
+
+    q(d)    = 1 − (1 − ACC_FLOOR) × (d / TARGET_R)   inside the circle, else not a delivery
+    payout  = FLAT × Σ q(dᵢ) × (1 + expedite)
+    rank    = coverage × meanAccuracy                (per-axis, not the par ratio)
+
+A dead-centre throw is worth a whole paper, the worst throw that still counts is worth 0.30 of one,
+and **partial routes pay for what they delivered** — one of nine is a D that still puts money in the
+wallet. The *expediency* bonus is the only place time enters the payout, and it requires a completed
+route: you cannot finish early without finishing. `FLAT` is anchored to par so the floor survives the
+20-day cost ramp rather than decaying into irrelevance.
 
 **Route selection** improves as the player proves themselves, granted by the uncle rather than a
 skill bar. See `opening.md`.
