@@ -189,6 +189,35 @@
       min-width: 380px;
       text-align: center;
     }
+    /* FEAT-61 aim reticle — a 20 px ring at screen centre (the brief). pointer-events none so it
+       can never eat a drag, and no transition: it must appear the instant F goes down or it lies
+       about when aiming started. */
+    #aim-reticle {
+      display: none;
+      position: fixed;
+      left: 50%; top: 50%;
+      width: 20px; height: 20px;
+      margin: -10px 0 0 -10px;
+      border: 2px solid rgba(255, 255, 255, 0.9);
+      border-radius: 50%;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(0, 0, 0, 0.6);
+      pointer-events: none;
+      z-index: 97;
+    }
+    /* The landing readout. Sits just under the reticle rather than in the HUD corner: you are
+       looking at where the paper landed, so the number belongs where your eyes already are. */
+    #throw-readout {
+      display: none;
+      position: fixed;
+      left: 50%; top: 50%;
+      transform: translate(-50%, 28px);
+      font-family: monospace;
+      font-size: 15px;
+      text-shadow: 0 1px 3px #000;
+      pointer-events: none;
+      z-index: 97;
+      white-space: nowrap;
+    }
     /* FEAT-61 dialogue card. Takes the shared chrome above, then overrides the three things an RPG
        card needs and the offer panel doesn't: prose reads left-aligned, the card is wide enough to
        hold two lines of speech without reflowing between cards, and it sits a little higher so the
@@ -834,6 +863,12 @@
     </div>
     <div id="camp-prompt-text">park to make camp</div>
   </div>
+
+  <!-- FEAT-61 aim reticle + landing readout. The reticle is screen-centre because that is exactly
+       where the chase camera looks, so "put the dot on the porch" is a true statement about where
+       the paper will go. -->
+  <div id="aim-reticle"></div>
+  <div id="throw-readout"></div>
 
   <!-- FEAT-61: the dialogue card. Sequential, no options (DESIGN.md) — so there are no buttons in
        here and there is nowhere to put one. The icon slot is deliberately empty: character

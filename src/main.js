@@ -20,7 +20,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics } from './physics.js'
 import { getBodyContactPoints, getWheelPosition } from './suspension.js'
 import { updateVehicle, setLaunchHold, setControlAttenuation, SPAWN_STATE } from './vehicle.js'
-import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus } from './camera.js'
+import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
 // window.__view(x, y, z, yaw, pitch) — used by test/screenshot.mjs (headless CDP) and the browser console.
 window.__view = placeFreecam
@@ -59,6 +59,7 @@ import { EconomySystem, RANK_COLOR, formatDeeds } from './economy.js'  // FEAT-5
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
 import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
+import { simulateThrow, launchVelocity, accuracyScore } from './throw.js'   // FEAT-61: the thrown roll
 import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
@@ -2273,6 +2274,107 @@ function _renderDialogue () {
   if (mo) mo.textContent = p ? `${p.n} / ${p.of}  —  press any key` : ''
 }
 
+// ── FEAT-61: the throw ────────────────────────────────────────────────────────
+// Hold F to aim, release to throw. The mission (Phase E) consumes landing points; this section only
+// produces them, which is why the ballistics live in throw.js and can be gated without a renderer.
+const _thrownRolls = []          // live roll meshes, oldest first — see THROWN_ROLL_CAP
+const THROWN_ROLL_CAP = 40       // papers left lying around before the oldest is reclaimed. A route
+                                 // is at most 15 customers plus spares, so this holds a whole route
+                                 // and then some; the cap exists so a debug session throwing all
+                                 // afternoon cannot leak meshes.
+const _aimDir = new THREE.Vector3()
+let _throwReadoutTimer = 0
+// The cursor's last known position, so entering aim mode can seed the drag origin and the first
+// mousemove is a delta of zero. Without it the view snaps by however far the pointer had drifted
+// since the last real drag.
+let _lastCursorX = 0, _lastCursorY = 0
+document.addEventListener('mousemove', e => { _lastCursorX = e.clientX; _lastCursorY = e.clientY })
+
+/** Surface height for the flight: road where there is road, terrain everywhere else (poi.js's pairing). */
+function _throwGroundY (x, z) {
+  const ry = roadSystem?.sampleRoadTopY(x, z)
+  if (ry != null && isFinite(ry)) return ry
+  return terrainSystem ? terrainSystem.analyticHeight(x, z) : 0
+}
+
+/** Show the landing readout for a moment, then let it fade out of the way. */
+function _showThrowReadout (html) {
+  const el = document.getElementById('throw-readout')
+  if (!el) return
+  el.innerHTML = html
+  el.style.display = 'block'
+  clearTimeout(_throwReadoutTimer)
+  _throwReadoutTimer = setTimeout(() => { el.style.display = 'none' }, 2600)
+}
+
+/**
+ * Throw a roll from the truck along the camera's aim, and freeze it where it lands.
+ *
+ * The paper STAYS on the ground (owner, 2026-08-05). That is the feedback: a route you have driven
+ * reads back as a trail of papers on porches and in ditches, and you can see the one you fluffed.
+ * Nothing here simulates a bounce or a roll — the landing point is the scoring point, so the mesh
+ * must sit exactly where the number came from or the readout would be contradicting the picture.
+ */
+function _throwRoll () {
+  camera.getWorldDirection(_aimDir)
+  // Launch from above the cab rather than the body origin: from the origin a flat throw clips the
+  // truck's own roof on the first step and lands on the bonnet.
+  const p = vehicleState.position
+  const p0 = { x: p.x + _aimDir.x * 1.2, y: p.y + 1.5, z: p.z + _aimDir.z * 1.2 }
+  const v0 = launchVelocity(_aimDir, vehicleState.velocity)
+  const hit = simulateThrow(p0, v0, _throwGroundY)
+  if (!hit) return   // off a cliff or aimed at the sky — no landing, nothing to score
+
+  const roll = spawnModel('newsRoll')
+  roll.position.set(hit.x, hit.y, hit.z)
+  // Lie it down across the flight direction, so a landed roll reads as dropped rather than planted.
+  roll.rotation.set(0, Math.atan2(_aimDir.x, _aimDir.z), Math.PI / 2)
+  scene.add(roll)
+  _thrownRolls.push(roll)
+  while (_thrownRolls.length > THROWN_ROLL_CAP) scene.remove(_thrownRolls.shift())
+
+  // Score it against the nearest customer. Phase E moves this into the mission — here it is the
+  // proof that the target circles and the ballistics agree with each other.
+  const R = POI_PARAMS.poiHouseTargetR
+  let best = null, bestD = Infinity
+  for (const c of poiSystem.customers()) {
+    const d = Math.hypot(c.x - hit.x, c.z - hit.z)
+    if (d < bestD) { bestD = d; best = c }
+  }
+  const q = best ? accuracyScore(bestD, R) : 0
+  if (q > 0) {
+    _showThrowReadout(`<span style="color:#7ed957">${bestD.toFixed(2)} m — ${Math.round(q * 100)}%</span>`)
+  } else if (best && bestD < 25) {
+    _showThrowReadout(`<span style="color:#ff9f43">missed by ${(bestD - R).toFixed(1)} m</span>`)
+  }
+}
+
+/** Drop every landed paper — leaving the region, or finishing a route. */
+function _clearThrownRolls () {
+  for (const r of _thrownRolls) scene.remove(r)
+  _thrownRolls.length = 0
+}
+
+// F is hold-to-aim. keydown repeats while held, and setAimMode is idempotent, so the repeat costs
+// nothing; the reticle appears on the first one. Nothing here fires while a briefing is up — that
+// listener runs in the capture phase and stops propagation before this one is reached.
+document.addEventListener('keydown', e => {
+  if (e.key !== 'f' && e.key !== 'F') return
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+  if (getCameraMode() !== 'chase') return      // hood and freecam own their own look
+  setAimMode(true, _lastCursorX, _lastCursorY)
+  const rt = document.getElementById('aim-reticle')
+  if (rt) rt.style.display = 'block'
+})
+document.addEventListener('keyup', e => {
+  if (e.key !== 'f' && e.key !== 'F') return
+  if (!isAiming()) return                       // never aimed (wrong camera mode) — never throws
+  setAimMode(false)
+  const rt = document.getElementById('aim-reticle')
+  if (rt) rt.style.display = 'none'
+  _throwRoll()
+})
+
 // Press-any-key advances, and the key goes NOWHERE else. Capture phase on document, which runs
 // before every other keydown listener in the project (camera.js, vehicle.js, debug.js and the
 // handlers further down this file all bind bubble-phase on document) — so a briefing cannot be
@@ -3605,6 +3707,8 @@ const storySystem = new StorySystem({
     _setRunHudVisible(false)
     dialogueSystem.abort()              // FEAT-61: abort, not advance — leaving is not "read it"
     _renderDialogue()
+    _clearThrownRolls()                 // …and no papers from a story run lying about in free roam
+    setAimMode(false)
     poiSystem.clear()
     campSystem.clear()   // FEAT-45: no camping zones outside a live story region
     roadSystem?.setCampPads(null)   // …and no camp benches: free roam's ground is the seed's ground

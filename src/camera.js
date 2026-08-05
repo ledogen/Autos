@@ -37,6 +37,11 @@ const ORBIT_RADIUS_DEFAULT = Math.hypot(0, 2.5, 6.0)  // ≈ 6.5 m, matches CHAS
 const DRAG_SENSITIVITY      = 0.005                     // rad/px
 
 let isDragging   = false
+// FEAT-61 aim mode: hold F and the chase orbit goes live with NO mouse button held, so the view can
+// be steered onto a porch. Deliberately the SAME orbit state the drag uses — one set of angles, one
+// clamp, one place the camera can be. A second look system would need its own handoff, and the
+// handoff is the part that goes wrong.
+let aimMode      = false
 let dragLastX    = 0
 let dragLastY    = 0
 let orbitTheta   = Math.PI              // start directly behind car (+Z world = behind -Z-facing car)
@@ -92,8 +97,11 @@ document.addEventListener('mousedown', e => {
 })
 
 document.addEventListener('mousemove', e => {
-  // Chase drag-orbit — only when dragging in chase mode (not freecam).
-  if (isDragging && cameraMode === 'chase') {
+  // Chase drag-orbit — only when dragging in chase mode (not freecam). FEAT-61: aim mode counts as
+  // dragging, which is the whole seam. dragLastX/Y are seeded by setAimMode so the first mousemove
+  // after F goes down cannot fling the view by the distance the cursor happened to sit from its
+  // last drag.
+  if ((isDragging || aimMode) && cameraMode === 'chase') {
     const dx = e.clientX - dragLastX
     const dy = e.clientY - dragLastY
     orbitTheta -= dx * DRAG_SENSITIVITY
@@ -281,7 +289,7 @@ export function updateCamera (camera, vehicleState, dt) {
   }
 
   if (cameraMode === 'chase') {
-    if (isDragging) {
+    if (isDragging || aimMode) {
       // ── Orbit mode: place camera at fixed spherical offset in world space ──────
       // Car continues moving; camera tracks car position but holds the dragged angle
       // AND the actual radius captured at drag-start (see orbitRadius comment above) —
@@ -361,6 +369,23 @@ export function updateCamera (camera, vehicleState, dt) {
  *
  * @param {{x:number,y:number,z:number}|null} p
  */
+/**
+ * FEAT-61 — hold-to-aim. Turns the chase orbit live without a mouse button, and seeds the drag
+ * origin from the cursor's CURRENT position so the first mousemove is a delta of zero rather than
+ * however far the pointer drifted since the last real drag.
+ *
+ * Only meaningful in chase mode; hood and freecam have their own look and are left alone. Idempotent
+ * — main.js calls it on every keydown, and keydown repeats.
+ */
+export function setAimMode (on, cursorX = dragLastX, cursorY = dragLastY) {
+    if (on === aimMode) return
+    aimMode = on
+    if (on) { dragLastX = cursorX; dragLastY = cursorY }
+}
+
+/** True while hold-to-aim is engaged. */
+export function isAiming () { return aimMode }
+
 export function setCameraFocus (p) {
   if (!p) { focusTarget = null; return }
   if (!focusTarget) orbitPhi = FOCUS_PHI   // seat the look-down once, on entry; drag owns it after
