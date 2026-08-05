@@ -182,6 +182,27 @@ export class EconomySystem {
         return { payout, points }
     }
 
+    /**
+     * Settle a mission that PRICED ITSELF (FEAT-61, the paper route).
+     *
+     * Coverage/accuracy types do not run through payoutFor() — that is the SM-INV-4 margin line, and
+     * it answers a question they are not asking (DESIGN.md: "not every mission type is scored on
+     * margin… rank is computed per-axis"). They arrive with a payout and a letter already worked out
+     * on their own axis.
+     *
+     * What they do NOT get to decide is the wallet: money, deeds and the mission count accrue here,
+     * through the same three lines settle() uses, so there is exactly one place run money is made.
+     * pointsFor() is shared deliberately — a letter is worth the same deeds whatever earned it.
+     */
+    settleFlat (payout, letter) {
+        const paid = Math.max(0, Math.round(isFinite(payout) ? payout : 0))
+        const points = pointsFor(letter)
+        runEconomy.money += paid
+        runEconomy.halfPoints += points * 2
+        runEconomy.missions += 1
+        return { payout: paid, points }
+    }
+
     money () { return runEconomy.money }
     points () { return runEconomy.halfPoints / 2 }
     missionCount () { return runEconomy.missions }
