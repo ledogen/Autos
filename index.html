@@ -192,10 +192,12 @@
     /* FEAT-61 aim reticle — a 20 px ring at screen centre (the brief). pointer-events none so it
        can never eat a drag, and no transition: it must appear the instant F goes down or it lies
        about when aiming started. */
+    /* top: 25% matches AIM_RETICLE_Y in main.js — the aim direction is unprojected THROUGH this
+       point, so the two must move together or the reticle starts lying. */
     #aim-reticle {
       display: none;
       position: fixed;
-      left: 50%; top: 50%;
+      left: 50%; top: 25%;
       width: 20px; height: 20px;
       margin: -10px 0 0 -10px;
       border: 2px solid rgba(255, 255, 255, 0.9);
@@ -209,7 +211,7 @@
     #throw-readout {
       display: none;
       position: fixed;
-      left: 50%; top: 50%;
+      left: 50%; top: 25%;
       transform: translate(-50%, 28px);
       font-family: monospace;
       font-size: 15px;

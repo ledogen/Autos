@@ -59,7 +59,7 @@ import { EconomySystem, RANK_COLOR, formatDeeds } from './economy.js'  // FEAT-5
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
 import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
-import { simulateThrow, launchVelocity, accuracyScore } from './throw.js'   // FEAT-61: the thrown roll
+import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
@@ -1246,6 +1246,7 @@ const map2d = new Map2D({
   getRegion: () => storySystem?.region() ?? null,
   // FEAT-46: POI icons — how the player finds one to drive to. Empty outside story mode.
   getPois: () => poiSystem.list(),
+  getCustomers: () => poiSystem.customers(),   // FEAT-61: you cannot drive a round you cannot see
   // FEAT-45: dispersed-camping zones, drawn as a yellow casing on the roads inside them. Empty
   // outside story mode (build() only ever runs from the story deps).
   getCampZones: () => campSystem.zones(),
@@ -2171,8 +2172,12 @@ function _rebuildPoiMarkers () {
   // FEAT-61 — the customers. No body: a house has no model yet and the orange cube would read as
   // "park here to be offered a job", which is the one thing a customer is not. Two rings and
   // nothing else, and NEVER an orange interaction ring — you cannot take a job from a porch.
+  //
+  // customers(), NOT houses(): mom is a roster POI that also carries the 'newsCustomer' tag, so
+  // drawing only the house list left the one customer the player is guaranteed to find with no
+  // target on it (owner-reported). Asking by tag is the whole point of having tags.
   const tr = POI_PARAMS.poiHouseTargetR
-  for (const h of poiSystem.houses()) {
+  for (const h of poiSystem.customers()) {
     const ring = new THREE.Mesh(_ringGeo, _targetRingMat)
     ring.scale.set(tr, _TARGET_RING_H, tr)
     ring.position.set(h.x, h.y - _TARGET_RING_SINK + _TARGET_RING_H * 0.5, h.z)
@@ -2277,13 +2282,22 @@ function _renderDialogue () {
 // ── FEAT-61: the throw ────────────────────────────────────────────────────────
 // Hold F to aim, release to throw. The mission (Phase E) consumes landing points; this section only
 // produces them, which is why the ballistics live in throw.js and can be gated without a renderer.
+// Where the reticle sits, as a fraction of screen height from the top. NOT centred (owner,
+// 2026-08-05): a throw is an arc, so the point you want to hit is above the point the camera looks
+// at, and a centred reticle made you aim at the ground in front of the truck. Everything that
+// consumes the aim direction unprojects THROUGH this point, so the reticle cannot lie about where
+// the paper is going.
+const AIM_RETICLE_Y = 0.25
+const _flying = []               // rolls still in the air — see _updateThrownRolls
 const _thrownRolls = []          // live roll meshes, oldest first — see THROWN_ROLL_CAP
 const THROWN_ROLL_CAP = 40       // papers left lying around before the oldest is reclaimed. A route
                                  // is at most 15 customers plus spares, so this holds a whole route
                                  // and then some; the cap exists so a debug session throwing all
                                  // afternoon cannot leak meshes.
 const _aimDir = new THREE.Vector3()
+const AIM_HOLD_S = 1.0           // s the camera stays on the aimed angle AFTER the paper lands
 let _throwReadoutTimer = 0
+let _aimHoldTimer = 0
 // The cursor's last known position, so entering aim mode can seed the drag origin and the first
 // mousemove is a delta of zero. Without it the view snaps by however far the pointer had drifted
 // since the last real drag.
@@ -2316,25 +2330,78 @@ function _showThrowReadout (html) {
  * must sit exactly where the number came from or the readout would be contradicting the picture.
  */
 function _throwRoll () {
-  camera.getWorldDirection(_aimDir)
+  // Aim THROUGH the reticle, not along the camera's own forward axis. The reticle sits a quarter of
+  // the way down the screen, so those two directions are ~15° apart — using the camera axis is what
+  // made the throw land short of everything you were pointing at.
+  _aimDir.set(0, 1 - 2 * AIM_RETICLE_Y, 0.5).unproject(camera).sub(camera.position).normalize()
+
   // Launch from above the cab rather than the body origin: from the origin a flat throw clips the
   // truck's own roof on the first step and lands on the bonnet.
   const p = vehicleState.position
-  const p0 = { x: p.x + _aimDir.x * 1.2, y: p.y + 1.5, z: p.z + _aimDir.z * 1.2 }
+  const p0 = new THREE.Vector3(p.x + _aimDir.x * 1.2, p.y + 1.5, p.z + _aimDir.z * 1.2)
   const v0 = launchVelocity(_aimDir, vehicleState.velocity)
   const hit = simulateThrow(p0, v0, _throwGroundY)
   if (!hit) return   // off a cliff or aimed at the sky — no landing, nothing to score
 
   const roll = spawnModel('newsRoll')
-  roll.position.set(hit.x, hit.y, hit.z)
-  // Lie it down across the flight direction, so a landed roll reads as dropped rather than planted.
-  roll.rotation.set(0, Math.atan2(_aimDir.x, _aimDir.z), Math.PI / 2)
+  roll.position.copy(p0)
   scene.add(roll)
   _thrownRolls.push(roll)
-  while (_thrownRolls.length > THROWN_ROLL_CAP) scene.remove(_thrownRolls.shift())
+  while (_thrownRolls.length > THROWN_ROLL_CAP) {
+    const old = _thrownRolls.shift()
+    scene.remove(old)
+    const i = _flying.findIndex(f => f.roll === old)
+    if (i >= 0) _flying.splice(i, 1)      // reclaimed mid-flight: stop integrating a removed mesh
+  }
 
-  // Score it against the nearest customer. Phase E moves this into the mission — here it is the
-  // proof that the target circles and the ballistics agree with each other.
+  // The solver already knows where and when this lands, so the flight is played back ANALYTICALLY
+  // rather than re-integrated: p(τ) = p0 + v0·τ − ½g·τ². At τ = hit.t that is exactly the landing
+  // point the score was computed from, so the mesh and the number can never disagree — which they
+  // would if the visual ran its own integrator alongside the scoring one.
+  _flying.push({ roll, p0, v0, tEnd: hit.t, hit, tau: 0 })
+  return hit
+}
+
+/**
+ * Fly the airborne rolls. Called from the frame loop with real seconds.
+ *
+ * This is the bit that was missing: the paper used to appear on the ground the instant F came up,
+ * because the solver returns a landing point and nothing ever drew the arc between here and there.
+ */
+function _updateThrownRolls (dt) {
+  if (!_flying.length) return
+  const g = THROW_PARAMS.gravity
+  for (let i = _flying.length - 1; i >= 0; i--) {
+    const f = _flying[i]
+    f.tau = Math.min(f.tEnd, f.tau + dt)
+    const t = f.tau
+    f.roll.position.set(
+      f.p0.x + f.v0.x * t,
+      f.p0.y + f.v0.y * t - 0.5 * g * t * t,
+      f.p0.z + f.v0.z * t,
+    )
+    // Point the roll along its current velocity so it reads as thrown rather than floating. This is
+    // presentation only — the ruling is that flight carries no rotation, and none is simulated.
+    const vy = f.v0.y - g * t
+    const horiz = Math.hypot(f.v0.x, f.v0.z) || 1e-6
+    f.roll.rotation.set(Math.atan2(vy, horiz), Math.atan2(f.v0.x, f.v0.z), Math.PI / 2, 'ZYX')
+
+    if (f.tau >= f.tEnd) {
+      f.roll.position.set(f.hit.x, f.hit.y, f.hit.z)   // seat it exactly where it scored
+      f.roll.rotation.set(0, Math.atan2(f.v0.x, f.v0.z), Math.PI / 2)
+      _flying.splice(i, 1)
+      _scoreLanding(f.hit)                              // the number arrives WITH the landing
+    }
+  }
+}
+
+/**
+ * Score one landing against the nearest customer and show it.
+ *
+ * Phase E part 2 moves this into the mission (consume stock, credit a specific customer once). Here
+ * it is the proof that the target circles and the ballistics agree with each other.
+ */
+function _scoreLanding (hit) {
   const R = POI_PARAMS.poiHouseTargetR
   let best = null, bestD = Infinity
   for (const c of poiSystem.customers()) {
@@ -2362,6 +2429,7 @@ document.addEventListener('keydown', e => {
   if (e.key !== 'f' && e.key !== 'F') return
   if (e.ctrlKey || e.metaKey || e.altKey) return
   if (getCameraMode() !== 'chase') return      // hood and freecam own their own look
+  clearTimeout(_aimHoldTimer)                  // re-aiming during the post-throw hold keeps the view
   setAimMode(true, _lastCursorX, _lastCursorY)
   const rt = document.getElementById('aim-reticle')
   if (rt) rt.style.display = 'block'
@@ -2369,10 +2437,15 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keyup', e => {
   if (e.key !== 'f' && e.key !== 'F') return
   if (!isAiming()) return                       // never aimed (wrong camera mode) — never throws
-  setAimMode(false)
   const rt = document.getElementById('aim-reticle')
   if (rt) rt.style.display = 'none'
-  _throwRoll()
+  const hit = _throwRoll()
+  // HOLD THE VIEW (owner, 2026-08-05). Snapping back to the follow camera the instant F comes up
+  // yanks the throw out of frame before you can see where it went. Stay on the aimed angle for the
+  // whole flight plus a beat, then hand the camera back. Rearmed on every throw, so a quick second
+  // throw extends the hold rather than cutting the first one short.
+  clearTimeout(_aimHoldTimer)
+  _aimHoldTimer = setTimeout(() => setAimMode(false), ((hit?.t ?? 0) + AIM_HOLD_S) * 1000)
 })
 
 // Press-any-key advances, and the key goes NOWHERE else. Capture phase on document, which runs
@@ -2384,6 +2457,18 @@ document.addEventListener('keydown', e => {
   if (!dialogueSystem.active) return
   if (e.repeat) return                                          // held key ≠ several presses
   if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return  // a modifier alone is not a press
+  e.preventDefault()
+  e.stopPropagation()
+  dialogueSystem.advance()
+  _renderDialogue()
+}, { capture: true })
+
+// …and a click advances too (owner, 2026-08-05). "Press any key" is a keyboard idiom, and a hand
+// already on the mouse should not have to move. Same capture-phase swallow, for the same reason:
+// the click that advances a card must not also start a camera drag underneath it.
+document.addEventListener('mousedown', e => {
+  if (!dialogueSystem.active) return
+  if (e.target.closest?.('.lil-gui')) return    // the debug panel keeps working during a briefing
   e.preventDefault()
   e.stopPropagation()
   dialogueSystem.advance()
@@ -4450,6 +4535,7 @@ function loop () {
   }
 
   updateCamera(camera, vehicleState, frameTime)
+  _updateThrownRolls(frameTime)   // FEAT-61: fly the airborne papers (render-rate, analytic)
 
   // Restore physics position/quaternion — the interpolated copies were render-only.
   vehicleState.position  = _physPos

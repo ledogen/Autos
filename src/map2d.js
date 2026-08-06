@@ -63,7 +63,7 @@ export class Map2D {
      * @param {() => ?{start:{x,z}, end:{x,z}, poly:{x,z}[]}} [o.getMission]
      *        — story-mode mission overlay (route + start/end pins); null when no mission is live
      */
-    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCampZones, getMomsHouse }) {
+    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCustomers, getCampZones, getMomsHouse }) {
         this._canvas    = canvas
         this._ctx       = canvas.getContext('2d')
         this._getSeed   = getSeed
@@ -78,6 +78,7 @@ export class Map2D {
         // FEAT-46: story-mode POIs. This is how the player finds one — see an icon, drive to it,
         // park (latch the handbrake). Empty outside story mode.
         this._getPois     = getPois      || (() => null)
+        this._getCustomers = getCustomers || (() => null)   // FEAT-61 newspaper customers
         // FEAT-45: story-mode dispersed-camping zones — `{x,z,r}[]`, empty outside story mode. NOT
         // drawn as discs: see _drawCampZones.
         this._getCampZones = getCampZones || (() => null)
@@ -503,6 +504,8 @@ export class Map2D {
 
         this._drawRegion(ctx)    // under the mission route — it's world furniture, not the subject
         this._drawCampZones(ctx) // FEAT-45: yellow casing on the road stretches inside a camp zone
+        this._drawCustomers(ctx) // FEAT-61: newspaper customers, UNDER the POIs — there are 15 of
+                                 // them and one of them is mom, so they must never mask a landmark
         this._drawPois(ctx)      // likewise furniture: placed at entry, so not in the cached bg
         this._drawMomsHouse(ctx) // FEAT-45: the always-available bed
         this._drawMission(ctx)   // under the car marker, over the cached bg
@@ -821,6 +824,29 @@ export class Map2D {
         }
     }
 
+    /**
+     * FEAT-61: the newspaper customers. A small green dot each — the shape a POI uses is a diamond
+     * and mom's is a gable, so a customer needs its own silhouette or the map stops being readable
+     * at a glance. Deliberately smaller than a POI: you plan a route AROUND landmarks and THROUGH
+     * these, and there are fifteen of them.
+     *
+     * Owner-reported (2026-08-05): the houses existed in the world as green circles but had no map
+     * presence at all, which made planning a round impossible — you cannot drive a route you cannot
+     * see. Mom appears here too (she is a customer) and then gets her gable drawn over the top.
+     */
+    _drawCustomers(ctx) {
+        const list = this._getCustomers()
+        if (!list || !list.length) return
+        ctx.lineWidth = 1.2
+        ctx.strokeStyle = '#0d1a0d'
+        ctx.fillStyle = '#3ddc6b'
+        for (const c of list) {
+            ctx.beginPath()
+            ctx.arc(this._sx(c.x), this._sy(c.z), 4, 0, Math.PI * 2)
+            ctx.fill(); ctx.stroke()
+        }
+    }
+
     // FEAT-45 Phase D: mom's house — a little gabled square at the region spawn, labelled. Drawn
     // after the POIs so it wins the pixels where the spawn happens to sit under one.
     _drawMomsHouse(ctx) {
@@ -883,6 +909,7 @@ export class Map2D {
             ['#ff5a3c', 'car'],
         ]
         if (this._getPois()?.length) rows.push(['#ff7a18', 'point of interest'])   // FEAT-46
+        if (this._getCustomers()?.length) rows.push(['#3ddc6b', 'paper customer'])   // FEAT-61
         if (this._getCampZones()?.length) rows.push(['#ffdc3c', 'dispersed camping'])   // FEAT-45
         if (this._getMomsHouse()) rows.push(['#ff8fd0', "mom's house"])   // FEAT-45
         const x0 = 16, y0 = 16, lh = 18
