@@ -93,8 +93,31 @@ document.addEventListener('mousedown', e => {
     isDragging = true
     dragLastX  = e.clientX
     dragLastY  = e.clientY
+    _capturePointer()
   }
 })
+
+/**
+ * Take the pointer for a look-drag or an aim (owner, 2026-08-05: running out of trackpad at the edge
+ * of a laptop screen was cutting throws short).
+ *
+ * Locked, the cursor has no position to run out of and we read movementX/Y instead of client deltas,
+ * so a look can rotate forever. Freecam already owns the lock in its own mode and is untouched here.
+ * The request is fired from a real user gesture (mousedown / keydown) as the API demands, and its
+ * rejection is swallowed — the browser refuses during the post-exit cooldown, which is routine when
+ * a player taps F twice quickly and not something to log.
+ */
+function _capturePointer () {
+    if (isPointerLocked) return
+    document.querySelector('canvas')?.requestPointerLock()?.catch(() => {})
+}
+
+/** Give it back — but never steal it from freecam, which holds the lock as its normal state. */
+function _releasePointer () {
+    if (isDragging || aimMode) return          // the other one is still using it
+    if (cameraMode === 'freecam') return
+    if (document.pointerLockElement) document.exitPointerLock()
+}
 
 document.addEventListener('mousemove', e => {
   // Chase drag-orbit — only when dragging in chase mode (not freecam). FEAT-61: aim mode counts as
@@ -102,8 +125,10 @@ document.addEventListener('mousemove', e => {
   // after F goes down cannot fling the view by the distance the cursor happened to sit from its
   // last drag.
   if ((isDragging || aimMode) && cameraMode === 'chase') {
-    const dx = e.clientX - dragLastX
-    const dy = e.clientY - dragLastY
+    // Locked → movementX/Y (no cursor, no screen edge to hit). Unlocked → client deltas, which is
+    // the path that still runs while the lock request is in flight or was refused.
+    const dx = isPointerLocked ? e.movementX : e.clientX - dragLastX
+    const dy = isPointerLocked ? e.movementY : e.clientY - dragLastY
     orbitTheta -= dx * DRAG_SENSITIVITY
     orbitPhi    = Math.max(-1.2, Math.min(1.2, orbitPhi + dy * DRAG_SENSITIVITY))
     dragLastX   = e.clientX
@@ -114,8 +139,8 @@ document.addEventListener('mousemove', e => {
   // right, drag down → look down (signs chosen so the view follows the cursor). Clamped; eased
   // back to forward on release in updateCamera.
   if (isDragging && cameraMode === 'hood') {
-    const dx = e.clientX - dragLastX
-    const dy = e.clientY - dragLastY
+    const dx = isPointerLocked ? e.movementX : e.clientX - dragLastX
+    const dy = isPointerLocked ? e.movementY : e.clientY - dragLastY
     hoodLookYaw   = Math.max(-HOOD_LOOK_YAW_CLAMP,   Math.min(HOOD_LOOK_YAW_CLAMP,   hoodLookYaw   - dx * DRAG_SENSITIVITY))
     hoodLookPitch = Math.max(-HOOD_LOOK_PITCH_CLAMP, Math.min(HOOD_LOOK_PITCH_CLAMP, hoodLookPitch - dy * DRAG_SENSITIVITY))
     dragLastX     = e.clientX
@@ -131,8 +156,8 @@ document.addEventListener('mousemove', e => {
   }
 })
 
-document.addEventListener('mouseup', () => { isDragging = false })
-document.addEventListener('mouseleave', () => { isDragging = false })
+document.addEventListener('mouseup', () => { isDragging = false; _releasePointer() })
+document.addEventListener('mouseleave', () => { isDragging = false; _releasePointer() })
 
 // Pointer lock state — driven by browser event only (T-07-01-PL: never set speculatively).
 document.addEventListener('pointerlockchange', () => {
@@ -380,7 +405,8 @@ export function updateCamera (camera, vehicleState, dt) {
 export function setAimMode (on, cursorX = dragLastX, cursorY = dragLastY) {
     if (on === aimMode) return
     aimMode = on
-    if (on) { dragLastX = cursorX; dragLastY = cursorY }
+    if (on) { dragLastX = cursorX; dragLastY = cursorY; _capturePointer() }
+    else _releasePointer()
 }
 
 /** True while hold-to-aim is engaged. */

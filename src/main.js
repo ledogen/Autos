@@ -2295,7 +2295,14 @@ const THROWN_ROLL_CAP = 40       // papers left lying around before the oldest i
                                  // and then some; the cap exists so a debug session throwing all
                                  // afternoon cannot leak meshes.
 const _aimDir = new THREE.Vector3()
-const AIM_HOLD_S = 1.0           // s the camera stays on the aimed angle AFTER the paper lands
+const AIM_HOLD_S = 0.5           // s the camera stays on the aimed angle AFTER the paper lands
+// The rolled paper is modelled at its real size — 90 × 420 mm (ASSETS.md keeps assets true to
+// life). At that size it is a smudge from the chase camera, so the THROWN one is drawn at 2×
+// (owner, 2026-08-05). A readability decision, deliberately made at the consumer rather than by
+// falsifying the asset: the .glb stays honest for every other use, and scoring never reads the
+// mesh — the landing point comes from the solver, so a bigger roll cannot make a throw score
+// better than it was.
+const THROWN_ROLL_SCALE = 2
 let _throwReadoutTimer = 0
 let _aimHoldTimer = 0
 // The cursor's last known position, so entering aim mode can seed the drag origin and the first
@@ -2344,6 +2351,7 @@ function _throwRoll () {
   if (!hit) return   // off a cliff or aimed at the sky — no landing, nothing to score
 
   const roll = spawnModel('newsRoll')
+  roll.scale.setScalar(THROWN_ROLL_SCALE)
   roll.position.copy(p0)
   scene.add(roll)
   _thrownRolls.push(roll)
