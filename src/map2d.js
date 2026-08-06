@@ -829,8 +829,10 @@ export class Map2D {
                 ctx.fill(p); ctx.stroke(p)
                 ctx.restore()
             } else {
-                // No pictogram authored yet — the plain diamond, in the type's own colour.
-                const r = 6
+                // No pictogram authored yet — the plain diamond, in the type's own colour. Sized
+                // off POI_ICON_PX so it keeps pace with the drawn glyphs instead of shrinking to a
+                // speck beside them whenever the icons are resized.
+                const r = POI_ICON_PX * 0.4
                 ctx.beginPath()
                 ctx.moveTo(sx, sy - r); ctx.lineTo(sx + r, sy); ctx.lineTo(sx, sy + r); ctx.lineTo(sx - r, sy)
                 ctx.closePath()
