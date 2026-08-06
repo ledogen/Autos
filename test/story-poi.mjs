@@ -472,6 +472,15 @@ const W = makeWorld(C.x, C.z, R)
         console.log(`       ${type}: ${sep.toFixed(0)} m apart, worst drive to one ${got.toFixed(0)} m`)
     }
 
+    // Only mission givers answer the park trigger. Everything else is a place that exists before
+    // its mechanic does, and a marker that opens an offer it cannot fill is a lie to the player.
+    check('exactly the mission givers source jobs',
+        list.every(q => q.jobs === (q.type === 'missionGiver')),
+        list.filter(q => q.jobs !== (q.type === 'missionGiver')).map(q => q.type).join(', '))
+    check('mom\'s house does not hand out freight (her doorstep must win the park trigger)',
+        W.poi.nearest(list.find(q => q.type === 'momsHouse').x,
+                      list.find(q => q.type === 'momsHouse').z, POI_PARAMS.poiInteractR, true) === null)
+
     // A modelled POI carries its authored contact box and a yaw, both stamped at build time — the
     // physics must never wait on a GLB fetch to decide whether a building is solid.
     const modelled = list.filter(q => q.modelKey)

@@ -41,7 +41,9 @@ Keep this honest; it is the thing that makes the rule checkable.
     to ≤ 20 m of the road edge; park-to-make-camp on the FEAT-46 brake-latch edge; the **vibe**
     bar (flat 50 / shade 30 / water 20); a 30-min make-camp that digs a 6 m pad through the
     unified pad carve; sleep = energy meter + integer-hour timer, `r(vibe)` avg-full-in-8-h /
-    best 2× worst; mom's house at the spawn (fixed average vibe).
+    best 2× worst; mom's house at the spawn (fixed average vibe). **Superseded 2026-08-05 (FEAT-60):
+    mom's house is a POI on a lay-by pad from the region roster, not a point at the spawn, and it is
+    not a camp — it borrows camp.js's sleep path only.**
   - Deliberately unbuilt: doze *content* (the Roamer — SM-5, owner-gated), coffee as an item
     (SM-2/3), tent/campfire visuals (deferred), wear coupling (SM-3).
   - **Re-shaped 2026-08-02** to the ratified 20-day run: **FEAT-54** (`3fadbea`, ticket open for its
