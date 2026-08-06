@@ -50,6 +50,9 @@ const RESTREAM_MOVE   = 300    // m — re-stream when the pan center has drifte
 const COARSE_DIV      = 250    // m — coarse-height normaliser for terrain shading (≈ full range, see ranger.js)
 const BG_CELL_PX      = 18     // px — terrain shading sample cell (coarser = cheaper)
 const TELEPORT_SNAP_RADIUS = 500  // m — double-click snaps to the nearest road within this range
+// FEAT-40 tunnel arch, outer radius in px. Doubled from 6.5 alongside the POI icons (FEAT-60) so
+// the map's two glyph families stay the same weight as each other.
+const TUNNEL_ICON_R = 13
 
 export class Map2D {
     /**
@@ -615,14 +618,17 @@ export class Map2D {
                 const p = lerpAt(e.points, e.polyCum, (sp.s0 + sp.s1) / 2)
                 const x = this._sx(p.x), y = this._sy(p.z)
                 // Portal-arch glyph: filled amber semicircle on a flat base, dark inner bore.
+                // Proportions are fractions of TUNNEL_ICON_R so the arch resizes as one shape —
+                // scaling the outer radius alone would swallow the bore.
+                const R = TUNNEL_ICON_R, by = y + R * (3 / 6.5)
                 ctx.fillStyle = '#ffb84a'
                 ctx.beginPath()
-                ctx.arc(x, y + 3, 6.5, Math.PI, 0)
+                ctx.arc(x, by, R, Math.PI, 0)
                 ctx.closePath()
                 ctx.fill()
                 ctx.fillStyle = '#1c1c1c'
                 ctx.beginPath()
-                ctx.arc(x, y + 3, 3.5, Math.PI, 0)
+                ctx.arc(x, by, R * (3.5 / 6.5), Math.PI, 0)
                 ctx.closePath()
                 ctx.fill()
             }
