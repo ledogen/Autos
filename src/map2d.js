@@ -20,6 +20,7 @@
 import * as THREE from 'three'
 import { RoadSystem } from './road.js'
 import { MISSION_PLAN_RADIUS } from './mission.js'
+import { POI_ICONS, POI_ICON_PX, TUNNEL_ICON } from '../data/map-icons.js'   // FEAT-60: map glyphs
 
 // Streamed radius of the map's own RoadSystem around the pan cursor. UNIFIED with the story-mode
 // planner's radius: the two are the big read-only networks in the app and they share route caches,
@@ -49,6 +50,9 @@ const RESTREAM_MOVE   = 300    // m — re-stream when the pan center has drifte
 const COARSE_DIV      = 250    // m — coarse-height normaliser for terrain shading (≈ full range, see ranger.js)
 const BG_CELL_PX      = 18     // px — terrain shading sample cell (coarser = cheaper)
 const TELEPORT_SNAP_RADIUS = 500  // m — double-click snaps to the nearest road within this range
+// Car marker, nose-to-tail half-length in px (9 originally, 18 at the 2x pass). The triangle's
+// half-width is derived from it so the arrow keeps its taper instead of going stubby or needly.
+const CAR_ICON_L = 13.5
 
 export class Map2D {
     /**
@@ -63,7 +67,7 @@ export class Map2D {
      * @param {() => ?{start:{x,z}, end:{x,z}, poly:{x,z}[]}} [o.getMission]
      *        — story-mode mission overlay (route + start/end pins); null when no mission is live
      */
-    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCustomers, getCampZones, getMomsHouse }) {
+    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCustomers, getCampZones }) {
         this._canvas    = canvas
         this._ctx       = canvas.getContext('2d')
         this._getSeed   = getSeed
@@ -82,9 +86,8 @@ export class Map2D {
         // FEAT-45: story-mode dispersed-camping zones — `{x,z,r}[]`, empty outside story mode. NOT
         // drawn as discs: see _drawCampZones.
         this._getCampZones = getCampZones || (() => null)
-        // FEAT-45 Phase D: mom's house — {x,z} at the region centre, or null outside story mode.
-        // The one guaranteed bed on the map, so it gets its own glyph rather than a POI diamond.
-        this._getMomsHouse = getMomsHouse || (() => null)
+        // FEAT-60: one Path2D per POI type, built on first draw (see _drawPois).
+        this._iconPaths = new Map()
 
         this._open       = false
         this._road       = null          // the map's own RoadSystem; KEPT ALIVE across opens (route cache)
@@ -504,13 +507,13 @@ export class Map2D {
 
         this._drawRegion(ctx)    // under the mission route — it's world furniture, not the subject
         this._drawCampZones(ctx) // FEAT-45: yellow casing on the road stretches inside a camp zone
+        this._drawTunnels(ctx)   // FEAT-40: over the casing — a bore inside a zone must still read
         this._drawCustomers(ctx) // FEAT-61: newspaper customers, UNDER the POIs — there are 15 of
                                  // them and one of them is mom, so they must never mask a landmark
         this._drawPois(ctx)      // likewise furniture: placed at entry, so not in the cached bg
-        this._drawMomsHouse(ctx) // FEAT-45: the always-available bed
         this._drawMission(ctx)   // under the car marker, over the cached bg
         this._drawCar(ctx)
-        this._drawLegend(ctx)
+        this._drawScaleBar(ctx)
         this._drawCursorCoords(ctx)
         if (this._canTeleport()) this._drawTeleportPrompt(ctx)
         if (this._streaming) this._drawStreamingBadge(ctx)
@@ -599,11 +602,16 @@ export class Map2D {
             for (let i = 1; i < points.length; i++) ctx.lineTo(this._sx(points[i].x), this._sy(points[i].z))
             ctx.stroke()
         }
-        this._drawTunnels(ctx)
     }
 
     // FEAT-40: one arch icon centered on each tunnel bore (span midpoint). Spans live on the net
     // entries (netEntry.tunnelSpans, run-arc metres in the polyCum domain set at assembly).
+    //
+    // Drawn as FURNITURE, not into the cached background (owner, 2026-08-07): a camp zone paints a
+    // yellow casing along every road stretch inside it, and from the background the arches came out
+    // underneath it — a tunnel inside a camping area simply vanished. Moving the pass up also means
+    // the arches ride the LIVE transform instead of the background bitmap's blit delta, so they stay
+    // pinned to their portals mid-pan rather than sliding with the stale bitmap.
     _drawTunnels(ctx) {
         const road = this._road
         const lerpAt = (points, cum, s) => {
@@ -617,18 +625,9 @@ export class Map2D {
             if (!e.tunnelSpans || !e.points || !e.polyCum) continue
             for (const sp of e.tunnelSpans) {
                 const p = lerpAt(e.points, e.polyCum, (sp.s0 + sp.s1) / 2)
-                const x = this._sx(p.x), y = this._sy(p.z)
-                // Portal-arch glyph: filled amber semicircle on a flat base, dark inner bore.
-                ctx.fillStyle = '#ffb84a'
-                ctx.beginPath()
-                ctx.arc(x, y + 3, 6.5, Math.PI, 0)
-                ctx.closePath()
-                ctx.fill()
-                ctx.fillStyle = '#1c1c1c'
-                ctx.beginPath()
-                ctx.arc(x, y + 3, 3.5, Math.PI, 0)
-                ctx.closePath()
-                ctx.fill()
+                ctx.fillStyle = TUNNEL_ICON.color
+                ctx.strokeStyle = '#101010'
+                this._drawGlyph(ctx, '#tunnel', TUNNEL_ICON.path, this._sx(p.x), this._sy(p.z))
             }
         }
     }
@@ -805,34 +804,33 @@ export class Map2D {
         ctx.lineCap = 'butt'
     }
 
-    // FEAT-46: POI markers — the navigate-to-it affordance. See an orange diamond, drive there,
-    // park. Drawn as world FURNITURE (with the region ring, under the mission overlay and the
-    // car) rather than into the cached background: POIs are placed at story-mode entry, by which
-    // time the background may already have been baked. Empty outside story mode.
-    _drawPois(ctx) {
-        const list = this._getPois()
-        if (!list || !list.length) return
-        ctx.lineWidth = 1.5
-        ctx.strokeStyle = '#101010'
-        ctx.fillStyle = '#ff7a18'
-        for (const q of list) {
-            const sx = this._sx(q.x), sy = this._sy(q.z), r = 6
-            ctx.beginPath()
-            ctx.moveTo(sx, sy - r); ctx.lineTo(sx + r, sy); ctx.lineTo(sx, sy + r); ctx.lineTo(sx - r, sy)
-            ctx.closePath()
-            ctx.fill(); ctx.stroke()
-        }
+    // Draw one 24-box glyph from data/map-icons.js centred on (sx, sy), filled in whatever
+    // fillStyle is already set and outlined near-black. The single place any glyph is rendered, so
+    // the POI markers and the tunnel arch cannot drift apart in weight or outline. Caller sets
+    // fillStyle/strokeStyle; `key` is the Path2D cache key (glyphs are static, only positions move,
+    // so this is a handful of objects for the life of the map).
+    _drawGlyph(ctx, key, d, sx, sy) {
+        const S = POI_ICON_PX / 24          // the icon table's viewBox is 24 units
+        let p = this._iconPaths.get(key)
+        if (!p) { p = new Path2D(d); this._iconPaths.set(key, p) }
+        ctx.save()
+        ctx.translate(sx - POI_ICON_PX / 2, sy - POI_ICON_PX / 2)
+        ctx.scale(S, S)
+        ctx.lineWidth = 1.5 / S             // undo the scale so the outline stays hairline
+        ctx.fill(p); ctx.stroke(p)
+        ctx.restore()
     }
 
     /**
-     * FEAT-61: the newspaper customers. A small green dot each — the shape a POI uses is a diamond
-     * and mom's is a gable, so a customer needs its own silhouette or the map stops being readable
-     * at a glance. Deliberately smaller than a POI: you plan a route AROUND landmarks and THROUGH
-     * these, and there are fifteen of them.
+     * FEAT-61: the newspaper customers. A small green dot each — the roster glyphs are pictograms
+     * in their own colours, so a customer needs a distinct silhouette or the map stops being
+     * readable at a glance. Deliberately smaller than a POI: you plan a route AROUND landmarks and
+     * THROUGH these, and there are fifteen of them.
      *
      * Owner-reported (2026-08-05): the houses existed in the world as green circles but had no map
      * presence at all, which made planning a round impossible — you cannot drive a route you cannot
-     * see. Mom appears here too (she is a customer) and then gets her gable drawn over the top.
+     * see. Mom appears here too (she is a customer) and then gets her roster glyph drawn over the
+     * top, which is why this runs before _drawPois.
      */
     _drawCustomers(ctx) {
         const list = this._getCustomers()
@@ -847,30 +845,49 @@ export class Map2D {
         }
     }
 
-    // FEAT-45 Phase D: mom's house — a little gabled square at the region spawn, labelled. Drawn
-    // after the POIs so it wins the pixels where the spawn happens to sit under one.
-    _drawMomsHouse(ctx) {
-        const m = this._getMomsHouse()
-        if (!m) return
-        const sx = this._sx(m.x), sy = this._sy(m.z), r = 6
-        ctx.lineWidth = 1.5
-        ctx.strokeStyle = '#101010'
-        ctx.fillStyle = '#ff8fd0'
-        ctx.beginPath()
-        ctx.moveTo(sx - r, sy)            // gable: walls up to the eaves, then a peak
-        ctx.lineTo(sx - r, sy + r)
-        ctx.lineTo(sx + r, sy + r)
-        ctx.lineTo(sx + r, sy)
-        ctx.lineTo(sx, sy - r)
-        ctx.closePath()
-        ctx.fill(); ctx.stroke()
-        ctx.font = '10px monospace'
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'top'
-        ctx.fillStyle = '#ffb8de'
-        ctx.fillText("MOM'S", sx, sy + r + 3)
-        ctx.textAlign = 'left'
-        ctx.textBaseline = 'alphabetic'
+    // FEAT-46/60: POI markers — the navigate-to-it affordance. Each roster type carries its own
+    // glyph, colour and label (data/map-icons.js), because "drive to the gas station" is only a
+    // plan if the map says which marker that is. Drawn as world FURNITURE (with the region ring,
+    // under the mission overlay and the car) rather than into the cached background: POIs are
+    // placed at story-mode entry, by which time the background may already have been baked. Empty
+    // outside story mode.
+    _drawPois(ctx) {
+        const list = this._getPois()
+        if (!list || !list.length) return
+        for (const q of list) {
+            const ico = POI_ICONS[q.type] ?? POI_ICONS.missionGiver
+            const sx = this._sx(q.x), sy = this._sy(q.z)
+            ctx.lineWidth = 1.5
+            ctx.strokeStyle = '#101010'
+            ctx.fillStyle = ico.color
+            if (ico.path) {
+                this._drawGlyph(ctx, q.type, ico.path, sx, sy)
+            } else {
+                // No pictogram authored yet — the plain diamond, in the type's own colour. Sized
+                // off POI_ICON_PX so it keeps pace with the drawn glyphs instead of shrinking to a
+                // speck beside them whenever the icons are resized.
+                const r = POI_ICON_PX * 0.4
+                ctx.beginPath()
+                ctx.moveTo(sx, sy - r); ctx.lineTo(sx + r, sy); ctx.lineTo(sx, sy + r); ctx.lineTo(sx - r, sy)
+                ctx.closePath()
+                ctx.fill(); ctx.stroke()
+            }
+            // The label is what makes the roster findable; an unlabelled marker is the problem
+            // FEAT-60 set out to fix. Mission givers carry none on purpose (see data/map-icons.js).
+            if (ico.label) {
+                ctx.font = '10px monospace'
+                ctx.textAlign = 'center'
+                ctx.textBaseline = 'top'
+                const ly = sy + POI_ICON_PX / 2 + 3
+                ctx.strokeStyle = '#101010'
+                ctx.lineWidth = 3
+                ctx.strokeText(ico.label, sx, ly)     // halo, so it reads over road and terrain alike
+                ctx.fillStyle = ico.color
+                ctx.fillText(ico.label, sx, ly)
+                ctx.textAlign = 'left'
+                ctx.textBaseline = 'alphabetic'
+            }
+        }
     }
 
     // (5) Car marker — a triangle at the car's world XZ, pointing along its world-forward XZ.
@@ -880,7 +897,7 @@ export class Map2D {
         let fx = car.fx, fz = car.fz
         const m = Math.hypot(fx, fz) || 1; fx /= m; fz /= m   // forward (screen: x→right, z→down)
         const px = -fz, pz = fx                               // perpendicular
-        const L = 9, Wd = 5
+        const L = CAR_ICON_L, Wd = CAR_ICON_L * (5 / 9)       // half-width keeps the original taper
         ctx.fillStyle = '#ff5a3c'
         ctx.strokeStyle = '#1a1a1a'
         ctx.lineWidth = 1
@@ -893,37 +910,15 @@ export class Map2D {
         ctx.stroke()
     }
 
-    // (6) Legend + scale bar (drawn on-canvas — no extra DOM).
-    _drawLegend(ctx) {
+    // (6) Scale bar (drawn on-canvas — no extra DOM). The legend that used to stand above it is
+    // gone (owner, 2026-08-07): once every POI carried its own labelled glyph, the legend was
+    // re-stating what the map already said, in a box covering the top-left corner of the world.
+    // The scale bar stays — nothing else on screen says how far anything is.
+    _drawScaleBar(ctx) {
         const W = this._canvas.clientWidth, H = this._canvas.clientHeight
         ctx.font = '12px monospace'
         ctx.textBaseline = 'middle'
-        const rows = [
-            ['#d8d8d0', 'road'],
-            ['#ffb84a', 'tunnel'],
-            ['#3fd06a', 'AT_GRADE'],
-            ['#e0c83c', 'NEAR_PARALLEL'],
-            ['#46c8ff', 'hub (deg≥3)'],
-            ['#7088a0', 'node (deg 2)'],
-            ['#506070', 'leaf (deg≤1)'],
-            ['#ff5a3c', 'car'],
-        ]
-        if (this._getPois()?.length) rows.push(['#ff7a18', 'point of interest'])   // FEAT-46
-        if (this._getCustomers()?.length) rows.push(['#3ddc6b', 'paper customer'])   // FEAT-61
-        if (this._getCampZones()?.length) rows.push(['#ffdc3c', 'dispersed camping'])   // FEAT-45
-        if (this._getMomsHouse()) rows.push(['#ff8fd0', "mom's house"])   // FEAT-45
-        const x0 = 16, y0 = 16, lh = 18
-        ctx.fillStyle = 'rgba(0,0,0,0.45)'
-        ctx.fillRect(x0 - 8, y0 - 8, 188, rows.length * lh + 16)
-        rows.forEach(([c, label], i) => {
-            const y = y0 + i * lh + lh / 2
-            ctx.fillStyle = c
-            ctx.beginPath(); ctx.arc(x0 + 5, y, 5, 0, Math.PI * 2); ctx.fill()
-            ctx.fillStyle = '#e8e8e8'
-            ctx.fillText(label, x0 + 18, y)
-        })
-
-        // Scale bar: a "nice" world length near 120 px wide.
+        // A "nice" world length near 120 px wide.
         const targetPx = 120
         const rawM = targetPx / this._zoom
         const pow = Math.pow(10, Math.floor(Math.log10(rawM)))

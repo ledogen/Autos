@@ -21,6 +21,15 @@
 // So the disc is a road-corridor selector, not a blob of terrain, and its exact boundary is never
 // drawn or driven into.
 //
+// MOM'S HOUSE IS NOT A CAMP (FEAT-60, owner 2026-08-05). It is a POI — a sited building on a
+// lay-by, one per region, placed by the roster in poi.js and wearing a trailer model. All this
+// module does for it is lend it the sleep path, because a bed is a bed and there was no reason to
+// write sleeping twice. So: `momsHouse()` reports where the roster put her (handed in to build(),
+// never derived here), `atMoms()` gates her doorstep, and nothing about camping's zone permission,
+// road tether, pad digging or vibe grading applies to the place. FEAT-45 originally pinned her to
+// the region centre as a stand-in, which is how the world briefly had two mom's houses several
+// hundred metres apart — one on the map, one with the trailer on it.
+//
 // Isolation discipline (the story.js / poi.js / day.js rule): no THREE, no worldgen imports.
 // Everything arrives through the `deps` adapter main.js hands us.
 
@@ -262,7 +271,7 @@ export class CampSystem {
         this._list = []
         this._built = null      // {x,z,r,seed} the current list was built for
         this._camps = []        // pads dug this run (see makeCampAt) — run state, not worldgen
-        this._moms = null       // {x,z} mom's house, sited at the region centre by build()
+        this._moms = null       // {x,z} mom's house — the POI's position, handed to build()
         this._eval = null       // memoized grade (see evaluate)
         this._rev = 0           // bumped whenever a memoized grade must be thrown away
         this._ctrls = []
@@ -278,8 +287,13 @@ export class CampSystem {
      *
      * Cost: one roll per macro cell overlapping the region (a 2.5 km region is ~7×7 cells). No
      * terrain, no water, no network reads — zones are permission, not placement.
+     *
+     * @param momsAt {x,z} of mom's house, from the POI roster (FEAT-60). MOM'S HOUSE IS NOT A CAMP
+     *   — it is a POI with a building on it, and sleeping there merely reuses this module's sleep
+     *   path because a bed is a bed. Passing it in (rather than assuming the region centre, as
+     *   FEAT-45 did) is what stops the world from having two mom's houses in two places.
      */
-    build (center, radius) {
+    build (center, radius, momsAt = null) {
         if (!center) return this._list
         const seed = this._d.getSeed()
         if (this._built && this._built.seed === seed
@@ -310,9 +324,12 @@ export class CampSystem {
         this._list = out
         this._built = { x: center.x, z: center.z, r: radius, seed }
         // A new region is a new run's ground: last region's camps are gone, and mom's house is
-        // re-sited at this region's centre (the story spawn — DESIGN decision 6).
+        // wherever this region's roster put it. FEAT-45 sited it at the region centre because
+        // nothing yet decided where mom lived; FEAT-60's roster does, guarantees exactly one per
+        // region, and puts a trailer on it. Null only if a pool too small to fill even the first
+        // roster slot left the region without one — better no marker than a phantom bed.
         this._camps = []
-        this._moms = { x: center.x, z: center.z }
+        this._moms = momsAt ? { x: momsAt.x, z: momsAt.z } : null
         this._rev++
         return out
     }

@@ -1250,7 +1250,8 @@ const map2d = new Map2D({
   // FEAT-45: dispersed-camping zones, drawn as a yellow casing on the roads inside them. Empty
   // outside story mode (build() only ever runs from the story deps).
   getCampZones: () => campSystem.zones(),
-  getMomsHouse: () => campSystem.momsHouse(),
+  // (FEAT-60 dropped getMomsHouse: mom's house is a POI now, so it arrives through getPois with
+  // its own glyph — the map no longer needs a second, separate channel for the same place.)
   onTeleport: ({ x, z, heading }) => {
     // Snap to the road orientation, but a road tangent has TWO directions — pick the one closest
     // to the truck's current heading so the teleport doesn't spin it 180°. Off-road: keep heading.
@@ -2161,6 +2162,9 @@ function _rebuildPoiMarkers () {
       _poiGroup.add(cube)
     }
 
+    // The ring means "park here and something happens", so it belongs only to markers where
+    // something does. The services are unbuilt and mom's house has her own doorstep prompt.
+    if (!q.jobs) continue
     const ring = new THREE.Mesh(_ringGeo, _poiRingMat)
     ring.scale.set(r, _POI_RING_H, r)
     ring.position.set(q.x, q.y - _POI_RING_SINK + _POI_RING_H * 0.5, q.z)
@@ -2688,7 +2692,11 @@ labSystem = new LabSystem(scene, () => ({
 function _poiInReach () {
   if (!storySystem.isActive() || storySystem.isEntering()) return null
   if (missionSystem && missionSystem.state !== 'idle') return null
-  return poiSystem.nearest(vehicleState.position.x, vehicleState.position.z)
+  // jobsOnly (FEAT-60): only a mission giver answers the park trigger. Without this the roster's
+  // other six types would each win the trigger and then have nothing to say — and mom's house,
+  // which outranks her own front door in the precedence below, would offer freight instead of bed.
+  return poiSystem.nearest(vehicleState.position.x, vehicleState.position.z,
+                           POI_PARAMS.poiInteractR, true)
 }
 
 // Rising edge of the parking-brake latch (vehicleState.parked), sampled where the prompt is polled.
@@ -2770,7 +2778,8 @@ function _exitCampScene () {
 // The camp dialogue's state, or null when it is closed. One object so every render reads one thing:
 //   mode  'confirm' (make camp?) | 'camp' (break camp · sleep · fish) | 'sleep' (timer) | 'moms'
 //   site  the graded record the camp was made from (vibe + waterFound + pad); null at mom's
-//   moms  true when this is mom's house — fixed average vibe, no pad, no fish
+//   moms  true when this is mom's house — fixed average vibe, no pad, no fish. Mom's is a POI
+//         (poi.js roster), NOT a camp; it borrows this dialogue's sleep path and nothing else.
 let _campUi = null
 let _campBusy = false   // a fade is in flight: no second trigger, no double-dug pad
 
@@ -3845,7 +3854,10 @@ const storySystem = new StorySystem({
     // has to exist before customers() can be asked who receives a paper. Houses carve nothing and
     // touch no pads, so unlike build() this needs no re-bake behind it.
     poiSystem.buildHouses(center, radius)
-    campSystem.build(center, radius)   // FEAT-45: the region's dispersed-camping zones
+    // ORDER MATTERS: the roster decides where mom lives, and camping is handed that answer.
+    // Mom's house is a POI with a building on it, not a camp — you can sleep there, and sleeping
+    // there reuses the camp module's sleep path, which is the whole of the relationship (FEAT-60).
+    campSystem.build(center, radius, poiSystem.list().find(q => q.type === 'momsHouse') ?? null)
     _rebuildPoiMarkers()
     terrainSystem?.rebuildAllChunksFromWorker()
     // Props scattered BEFORE the pads existed are still standing in them (the scatter's road

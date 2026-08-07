@@ -121,6 +121,13 @@ export const POI_PARAMS = {
  *   'coverage'  — the set that minimises the worst drive from any pad to its nearest member.
  *   'any'       — anywhere in the pool.
  *
+ * `jobs` is WHETHER PARKING HERE OPENS AN OFFER, and it is deliberately false for most of the
+ * roster. The services (fuel, repair, shopping, tackle) are in-run mechanics nobody has built yet,
+ * mom's house is a bed, and the burger joint is scenery — so today only mission givers do anything
+ * when you pull the brake. A marker that wears the interaction ring but answers nothing is the
+ * same lie as a prompt drawn wider than its trigger, which this module already refuses to tell.
+ * Turn a row true the day its mechanic lands.
+ *
  * TAGS vs TYPE (FEAT-61, owner 2026-08-05). `type` is the roster slot — one identity, the thing
  * the POI IS. `tags` is everything it also PARTICIPATES IN, and a POI can carry several: mom's
  * house is a roster landmark AND a newspaper customer AND somewhere you can sleep, and no single
@@ -131,27 +138,29 @@ export const POI_PARAMS = {
  */
 export const POI_ROSTER = [
     // Exactly one of each per world, and both houses are a short drive from where you wake up.
-    { type: 'momsHouse',    count: 1, model: 'trailerHomeA', siting: 'nearSpawn',
+    { type: 'momsHouse',    count: 1, model: 'trailerHomeA', jobs: false, siting: 'nearSpawn',
       tags: ['newsCustomer', 'sleepable'] },
-    { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', siting: 'nearSpawn' },
+    // FEAT-61 Phase E2 turns `jobs` true here — Larry hands out the paper route. Until that state
+    // machine lands, the brake at his place answers nothing, so the row stays honest.
+    { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', jobs: false, siting: 'nearSpawn' },
     // "Never too far from a station" — the reason these two slots exist and the reason they are
     // sited by coverage rather than by a spacing rule. Gas and service are solved INDEPENDENTLY:
     // no constraint was ratified between them, and a service shop sharing a corner with a pump
     // reads fine.
-    { type: 'gasStation',   count: 2, model: null, siting: 'coverage' },
-    { type: 'serviceShop',  count: 2, model: null, siting: 'coverage' },
+    { type: 'gasStation',   count: 2, model: null, jobs: false, siting: 'coverage' },
+    { type: 'serviceShop',  count: 2, model: null, jobs: false, siting: 'coverage' },
     // The place the player is fired from in the opening (FEAT-60 ruling, 2026-08-05): a story
     // landmark, NOT a food vendor and not a hub. Sited anywhere — the point is that you keep
     // driving past it.
-    { type: 'burgerJoint',  count: 1, model: null, siting: 'any' },
-    { type: 'generalStore', count: 1, model: null, siting: 'any' },
+    { type: 'burgerJoint',  count: 1, model: null, jobs: false, siting: 'any' },
+    { type: 'generalStore', count: 1, model: null, jobs: false, siting: 'any' },
     // The type exists so the roster is whole; fishing and The Confluence stay deferred. Do not
     // build its systems off the back of this line.
-    { type: 'tackleShop',   count: 1, model: null, siting: 'any' },
+    { type: 'tackleShop',   count: 1, model: null, jobs: false, siting: 'any' },
     // Everything left over. Most POIs are mission givers, and a mission giver MAY present as a
     // food vendor (owner, 2026-08-05) — food vendors get no reservation of their own because a
     // vendor that also hands out work costs the region nothing.
-    { type: 'missionGiver', count: 5, model: null, siting: 'any' },
+    { type: 'missionGiver', count: 5, model: null, jobs: true, siting: 'any' },
 ]
 
 /** Region population: 14, derived from the roster so the two can never drift apart. */
@@ -526,6 +535,7 @@ export class PoiSystem {
             for (const q of picks) {
                 q.type = slot.type
                 q.tags = slot.tags ? slot.tags.slice() : []   // FEAT-61 — see the TAGS note above
+                q.jobs = !!slot.jobs
                 q.modelKey = slot.model ?? null
                 // Stamp the authored collision box NOW, off the registry, not when the GLB
                 // resolves: physics must not wait on a fetch, or a marker would be driveable-
@@ -628,10 +638,15 @@ export class PoiSystem {
     /**
      * The POI the player may interact with from (x,z), or null. Radius test only — the prompt is a
      * proximity affordance, not a trigger volume.
+     *
+     * `jobsOnly` restricts the answer to markers that actually open an offer (see `jobs` on
+     * POI_ROSTER). Without it, parking at mom's house would win the park trigger and answer with
+     * "park to begin mission" — mom does not hand out freight.
      */
-    nearest (x, z, maxR = POI_PARAMS.poiInteractR) {
+    nearest (x, z, maxR = POI_PARAMS.poiInteractR, jobsOnly = false) {
         let best = null, bestD = maxR
         for (const q of this._list) {
+            if (jobsOnly && !q.jobs) continue
             const d = Math.hypot(q.x - x, q.z - z)
             if (d < bestD) { bestD = d; best = q }
         }
