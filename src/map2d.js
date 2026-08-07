@@ -510,7 +510,7 @@ export class Map2D {
         this._drawPois(ctx)      // likewise furniture: placed at entry, so not in the cached bg
         this._drawMission(ctx)   // under the car marker, over the cached bg
         this._drawCar(ctx)
-        this._drawLegend(ctx)
+        this._drawScaleBar(ctx)
         this._drawCursorCoords(ctx)
         if (this._canTeleport()) this._drawTeleportPrompt(ctx)
         if (this._streaming) this._drawStreamingBadge(ctx)
@@ -883,43 +883,15 @@ export class Map2D {
         ctx.stroke()
     }
 
-    // (6) Legend + scale bar (drawn on-canvas — no extra DOM).
-    _drawLegend(ctx) {
+    // (6) Scale bar (drawn on-canvas — no extra DOM). The legend that used to stand above it is
+    // gone (owner, 2026-08-07): once every POI carried its own labelled glyph, the legend was
+    // re-stating what the map already said, in a box covering the top-left corner of the world.
+    // The scale bar stays — nothing else on screen says how far anything is.
+    _drawScaleBar(ctx) {
         const W = this._canvas.clientWidth, H = this._canvas.clientHeight
         ctx.font = '12px monospace'
         ctx.textBaseline = 'middle'
-        const rows = [
-            ['#d8d8d0', 'road'],
-            ['#ffb84a', 'tunnel'],
-            ['#3fd06a', 'AT_GRADE'],
-            ['#e0c83c', 'NEAR_PARALLEL'],
-            ['#46c8ff', 'hub (deg≥3)'],
-            ['#7088a0', 'node (deg 2)'],
-            ['#506070', 'leaf (deg≤1)'],
-            ['#ff5a3c', 'car'],
-        ]
-        // FEAT-60: one legend row per roster type actually present, in the order the roster
-        // placed them, so the legend reads as the region's cast rather than a fixed list.
-        const seenTypes = new Set()
-        for (const q of this._getPois() ?? []) {
-            if (seenTypes.has(q.type)) continue
-            seenTypes.add(q.type)
-            const ico = POI_ICONS[q.type] ?? POI_ICONS.missionGiver
-            rows.push([ico.color, ico.label ? ico.label.toLowerCase() : 'mission giver'])
-        }
-        if (this._getCampZones()?.length) rows.push(['#ffdc3c', 'dispersed camping'])   // FEAT-45
-        const x0 = 16, y0 = 16, lh = 18
-        ctx.fillStyle = 'rgba(0,0,0,0.45)'
-        ctx.fillRect(x0 - 8, y0 - 8, 188, rows.length * lh + 16)
-        rows.forEach(([c, label], i) => {
-            const y = y0 + i * lh + lh / 2
-            ctx.fillStyle = c
-            ctx.beginPath(); ctx.arc(x0 + 5, y, 5, 0, Math.PI * 2); ctx.fill()
-            ctx.fillStyle = '#e8e8e8'
-            ctx.fillText(label, x0 + 18, y)
-        })
-
-        // Scale bar: a "nice" world length near 120 px wide.
+        // A "nice" world length near 120 px wide.
         const targetPx = 120
         const rawM = targetPx / this._zoom
         const pow = Math.pow(10, Math.floor(Math.log10(rawM)))
