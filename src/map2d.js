@@ -53,6 +53,9 @@ const TELEPORT_SNAP_RADIUS = 500  // m — double-click snaps to the nearest roa
 // FEAT-40 tunnel arch, outer radius in px. Doubled from 6.5 alongside the POI icons (FEAT-60) so
 // the map's two glyph families stay the same weight as each other.
 const TUNNEL_ICON_R = 13
+// Car marker, nose-to-tail half-length in px — doubled from 9 with everything else. The triangle's
+// half-width is derived from it so the arrow keeps its taper instead of going stubby or needly.
+const CAR_ICON_L = 18
 
 export class Map2D {
     /**
@@ -869,7 +872,7 @@ export class Map2D {
         let fx = car.fx, fz = car.fz
         const m = Math.hypot(fx, fz) || 1; fx /= m; fz /= m   // forward (screen: x→right, z→down)
         const px = -fz, pz = fx                               // perpendicular
-        const L = 9, Wd = 5
+        const L = CAR_ICON_L, Wd = CAR_ICON_L * (5 / 9)       // half-width keeps the original taper
         ctx.fillStyle = '#ff5a3c'
         ctx.strokeStyle = '#1a1a1a'
         ctx.lineWidth = 1
