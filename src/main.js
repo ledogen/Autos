@@ -60,6 +60,8 @@ import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-m
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
 import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
+// FEAT-61: the paper route — Larry's round, its one par, and the flat-rate settlement.
+import { PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun, stockForTier, deadlineFor } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
@@ -2218,7 +2220,10 @@ function _updateMissionRings () {
   // TAKEN, not merely offered: 'generating' and 'offer' are the states where you are parked at a
   // marker BEING offered work, and blinking that marker's own ring out from under the panel would
   // be the opposite of the fix.
+  // FEAT-61: a paper round counts as being on a job for exactly the same reason — every orange
+  // curtain you pass mid-round is an invitation to do something the game will refuse.
   const onMission = ['staging', 'running', 'done'].includes(missionSystem?.state)
+                    || paperRouteSystem.isActive()
   const vp = vehicleState.position
   for (const [id, ring] of _poiRings) {
     const near = Math.hypot(ring.position.x - vp.x, ring.position.z - vp.z) <= POI_RING_SHOW_R
@@ -2471,13 +2476,29 @@ function _updateThrownRolls (dt) {
 }
 
 /**
- * Score one landing against the nearest customer and show it.
+ * Score one landing and show it.
  *
- * Phase E part 2 moves this into the mission (consume stock, credit a specific customer once). Here
- * it is the proof that the target circles and the ballistics agree with each other.
+ * ON A ROUND, the paper route owns the answer: it credits a specific customer once, spends the
+ * inventory, and decides whether that was the last paper. Off a round this falls back to scoring
+ * against the nearest customer in the region — a practice throw, and the same read-out that proved
+ * the target circles and the ballistics agree with each other.
  */
 function _scoreLanding (hit) {
   const R = POI_PARAMS.poiHouseTargetR
+  const scored = paperRouteSystem.recordLanding(hit.x, hit.z)
+  if (scored) {
+    if (scored.credited) {
+      _showThrowReadout(`<span style="color:#7ed957">${scored.dist.toFixed(2)} m — ${Math.round(scored.q * 100)}%</span>`)
+    } else if (scored.already) {
+      // Not a failure — a paper spent. Saying so is the difference between "that did nothing" and
+      // "you already did this one", and only one of those tells you to drive on.
+      _showThrowReadout('<span style="color:#8a939c">they already have one</span>')
+    } else if (scored.dist < 25) {
+      _showThrowReadout(`<span style="color:#ff9f43">missed by ${(scored.dist - R).toFixed(1)} m</span>`)
+    }
+    return
+  }
+
   let best = null, bestD = Infinity
   for (const c of poiSystem.customers()) {
     const d = Math.hypot(c.x - hit.x, c.z - hit.z)
@@ -2491,10 +2512,13 @@ function _scoreLanding (hit) {
   }
 }
 
-/** Drop every landed paper — leaving the region, or finishing a route. */
+/** Drop every paper — leaving the region, or putting a finished round down. */
 function _clearThrownRolls () {
   for (const r of _thrownRolls) scene.remove(r)
   _thrownRolls.length = 0
+  // …including the ones still in the air. Without this their meshes leave the scene but the
+  // integrator keeps flying them, and each one still calls _scoreLanding when it "lands".
+  _flying.length = 0
 }
 
 // F is hold-to-aim. keydown repeats while held, and setAimMode is idempotent, so the repeat costs
@@ -2514,7 +2538,20 @@ document.addEventListener('keyup', e => {
   if (!isAiming()) return                       // never aimed (wrong camera mode) — never throws
   const rt = document.getElementById('aim-reticle')
   if (rt) rt.style.display = 'none'
+  // On a round, a throw costs a paper — and an empty truck cannot throw. Spent at RELEASE, not at
+  // the landing: a paper in the air is a paper you no longer have. Off a round there is no
+  // inventory and practice throws are free.
+  const onRound = paperRouteSystem.isRunning()
+  if (onRound && !paperRouteSystem.takePaper()) {
+    _showThrowReadout('<span style="color:#ff9f43">out of papers</span>')
+    setAimMode(false)
+    return
+  }
   const hit = _throwRoll()
+  // No landing (off a cliff, or aimed at the sky) means the solver never produced a throw at all —
+  // nothing was drawn and nothing will ever score, so the paper goes back in the truck. Otherwise
+  // an aim at the horizon would silently eat inventory AND leave the round unable to end on it.
+  if (onRound && !hit) paperRouteSystem.refundPaper()
   // HOLD THE VIEW (owner, 2026-08-05). Snapping back to the follow camera the instant F comes up
   // yanks the throw out of frame before you can see where it went. Stay on the aimed angle for the
   // whole flight plus a beat, then hand the camera back. Rearmed on every throw, so a quick second
@@ -2632,6 +2669,33 @@ missionSystem = new MissionSystem({
   onChange: () => _renderMissionUI(),
 })
 
+// ── FEAT-61: the paper route ───────────────────────────────────────────────────────────────
+// Larry's round. A SIBLING of missionSystem — the two can never run at once (each one's park
+// trigger and prompt yields to the other's active state), but neither is a mode inside the other.
+//
+// It plans on missionSystem's planner network: the region is warmed once at story entry and its
+// edges are already routed, so a second 1400 m planner would re-stream roads that exist a metre
+// away in memory.
+const paperRouteSystem = new PaperRouteSystem({
+  getRoad:   () => missionSystem?.planner() ?? roadSystem,
+  getPois:   () => poiSystem,
+  getRegion: () => storySystem?.region() ?? null,
+  getTerms:  () => economySystem.terms(),
+  getTargetR: () => POI_PARAMS.poiHouseTargetR,
+  // The ONE money path (FEAT-53). This mission prices itself on its own axis and hands over a
+  // finished number; the wallet, the deeds and the mission count still accrue in economy.js.
+  onSettle:  (payout, letter) => economySystem.settleFlat(payout, letter),
+  // Larry talks while the tour routes. Once per run (DLG's seen-gate) — the second round must not
+  // re-explain the throw — and `done` fires either way, because a skipped briefing still has to
+  // release the offer.
+  onBriefing: (done) => { dialogueSystem.play(DLG.paperRouteIntro, PAPER_ROUTE_INTRO, done); _renderDialogue() },
+  // A finished round takes its papers off the lawns. Region exit does the same (see onRegionExit);
+  // this is the other half of the rule the handoff flagged as missing.
+  onEnd:     () => _clearThrownRolls(),
+  onChange:  () => _renderPaperUI(),
+})
+window.__paperRoute = () => paperRouteSystem
+
 // ── FEAT-39: GPS navigation assist ───────────────────────────────────────────
 // A pure guidance overlay: chevrons along the route ahead + a turn arrow over the next junction.
 // It reads the route the mission ALREADY computed (mission.segments) — no routing, no per-frame
@@ -2692,6 +2756,9 @@ labSystem = new LabSystem(scene, () => ({
 function _poiInReach () {
   if (!storySystem.isActive() || storySystem.isEntering()) return null
   if (missionSystem && missionSystem.state !== 'idle') return null
+  // FEAT-61: a round is a job in flight, same as any other — you cannot take work while doing work,
+  // and Larry's own marker must not re-offer the route you are three houses into.
+  if (paperRouteSystem.isActive()) return null
   // jobsOnly (FEAT-60): only a mission giver answers the park trigger. Without this the roster's
   // other six types would each win the trigger and then have nothing to say — and mom's house,
   // which outranks her own front door in the precedence below, would offer freight instead of bed.
@@ -2799,6 +2866,7 @@ let _campSeek = false
 function _campPromptState () {
   if (!storySystem.isActive() || storySystem.isEntering()) return null
   if (missionSystem && missionSystem.state !== 'idle') return null
+  if (paperRouteSystem.isActive()) return null       // FEAT-61: not while a round is out
   if (_campUi || _campBusy) return null
   if (Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) * 3.6 > CAMP_PROMPT_KPH) return null
   if (!campSystem.zoneAt(vehicleState.position.x, vehicleState.position.z)) return null
@@ -2812,6 +2880,7 @@ function _campPromptState () {
 function _atMomsHouse () {
   if (!storySystem.isActive() || storySystem.isEntering()) return false
   if (missionSystem && missionSystem.state !== 'idle') return false
+  if (paperRouteSystem.isActive()) return false      // FEAT-61: not while a round is out
   if (_campUi || _campBusy) return false
   return campSystem.atMoms(vehicleState.position.x, vehicleState.position.z)
 }
@@ -2831,7 +2900,11 @@ function _updateParkTriggers () {
   _prevParkedForPoi = parked
 
   if (poi && pulled) {
-    missionSystem.enterFromPoi(poi)      // leaves 'idle' ⇒ _poiInReach() is null from here on
+    // FEAT-61: Larry is the one giver whose offer is a different mission. Branching on the type
+    // here (rather than teaching MissionSystem a second shape) is what keeps the two systems
+    // siblings — each leaves 'idle' and each other's reach test then returns null.
+    if (poi.type === 'larrysHouse') paperRouteSystem.open(poi)
+    else missionSystem.enterFromPoi(poi)
     if (poiEl) poiEl.style.display = 'none'
     if (campEl) campEl.style.display = 'none'
     return
@@ -2856,7 +2929,11 @@ function _updateParkTriggers () {
   // Display. The POI prompt wins outright when both apply — see the precedence above.
   if (poiEl) {
     poiEl.style.display = poi ? 'block' : 'none'
-    if (poi) poiEl.textContent = 'park to begin mission'
+    // Name what the brake will actually do. Larry hands out a round, not an errand, and a prompt
+    // that says "mission" at the one marker that gives you the paper route is the same small lie as
+    // a ring drawn wider than its trigger.
+    if (poi) poiEl.textContent = poi.type === 'larrysHouse' ? 'park to take the paper route'
+                                                           : 'park to begin mission'
   }
   if (!campEl) return
   const showCamp = !poi && (camp || moms) && !_campUi
@@ -3252,6 +3329,93 @@ function _renderMissionUI () {
     if (nb) nb.textContent = 'accept mission'
   }
 }
+
+/**
+ * FEAT-61: the paper route's panel and HUD. Same shape as _renderMissionUI — one switch, one
+ * repaint per state change (plus the 10 Hz poll while running, because the bell and the count are
+ * live values).
+ *
+ * SM-INV-3: the running surface carries the clock, the count and the inventory, and nothing else.
+ * No rank, no par, no payout until the round is over — the deadline is allowed only because the
+ * Phase A amendment ratified it as a diegetic, par-derived one.
+ */
+function _renderPaperUI () {
+  const panel = document.getElementById('paper-panel')
+  const body  = document.getElementById('pp-body')
+  const hud   = document.getElementById('paper-hud')
+  const acts  = document.getElementById('pp-actions')
+  if (!panel || !body || !hud) return
+  const p = paperRouteSystem
+  const show = (el, on, disp = 'block') => { if (el) el.style.display = on ? disp : 'none' }
+  const km = (mm) => (mm / 1000).toFixed(2) + ' km'
+
+  switch (p.state) {
+    case 'planning':
+      // The briefing is the cover for the routing (owner ruling), so this panel is only ever seen
+      // on a SECOND round — the cards are once per run, and without them there would otherwise be
+      // a silent pause with nothing on screen saying why.
+      show(panel, true); show(hud, false); show(acts, false, 'flex')
+      body.innerHTML = 'Larry&rsquo;s sorting the papers&hellip;<br>'
+        + '<span class="mp-dim">working out the round</span>'
+      break
+    case 'offer': {
+      show(panel, true); show(hud, false); show(acts, true, 'flex')
+      const r = p.route
+      const stock = stockForTier()
+      body.innerHTML = `<span class="mp-big">${r.customers.length}</span> `
+        + `<span class="mp-dim">customer${r.customers.length === 1 ? '' : 's'}</span> `
+        + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${km(r.distance)}</span><br>`
+        + `${stock} papers in the truck `
+        + `<span class="mp-dim">(${stock - r.customers.length} spare)</span><br>`
+        + `<span class="mp-dim">back before ${formatTime(deadlineFor(r.par))} &mdash; `
+        + `the papers you place are yours to keep either way</span>`
+      break
+    }
+    case 'running': {
+      show(panel, false); show(hud, true)
+      // Time LEFT, not elapsed: the bell is the thing that ends the round, so it is the thing worth
+      // reading. Delivered/total and the inventory are the other two facts you act on.
+      hud.textContent = `${formatTime(p.timeLeft())} left   `
+        + `${p.delivered()} / ${p.route.customers.length} delivered   `
+        + `${p.stock()} paper${p.stock() === 1 ? '' : 's'}`
+      break
+    }
+    case 'done': {
+      show(panel, true); show(hud, false); show(acts, true, 'flex')
+      const r = p.result
+      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span><br>`
+        + `<b>${r.delivered}</b> of <b>${r.customers}</b> delivered `
+        + `&nbsp;<span class="mp-dim">·</span>&nbsp; `
+        + `${Math.round(r.meanAccuracy * 100)}% <span class="mp-dim">accuracy</span><br>`
+        + `<span class="mp-dim">your time</span> <b>${formatTime(r.elapsed)}</b>`
+        + (r.expedite > 0 ? ` &nbsp;<span style="color:#8ce99a">+${Math.round(r.expedite * 100)}% early</span>` : '')
+        + `<br><span class="mp-pay">$${r.payout.toLocaleString('en-US')}</span>`
+        + (r.points > 0
+          ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points === 0.5 ? '½' : r.points} good deed${r.points > 1 ? 's' : ''}</span>`
+          : '')
+        + (r.advanced
+          ? `<br><span style="color:#ffdc3c">Larry&rsquo;s giving you a bigger round &mdash; ${r.nextTier} houses next time</span>`
+          : '')
+      break
+    }
+    default:
+      show(panel, false); show(hud, false)
+      if (p.error) console.info('[paper]', p.error)
+      break
+  }
+  // Two buttons, two meanings: on the offer they are take/decline, on the result card the left one
+  // is the only forward action and the right one has nothing to say.
+  const acc = document.getElementById('pp-accept')
+  const dec = document.getElementById('pp-decline')
+  if (acc) acc.textContent = p.state === 'done' ? 'continue' : 'take the round'
+  if (dec) dec.style.display = p.state === 'offer' ? '' : 'none'
+}
+
+document.getElementById('pp-accept')?.addEventListener('click', () => {
+  if (paperRouteSystem.state === 'done') paperRouteSystem.dismiss()
+  else paperRouteSystem.accept()
+})
+document.getElementById('pp-decline')?.addEventListener('click', () => paperRouteSystem.decline())
 
 // ── FEAT-53: the run wallet (top-right) ────────────────────────────────────────────────────
 // Painted on the ~10 Hz HUD cadence; the snapshot key skips the DOM write when nothing changed
@@ -3847,7 +4011,10 @@ const storySystem = new StorySystem({
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
     economySystem.start()            // FEAT-53: fresh run, empty wallet, zero deeds
     dialogueSystem.start()           // FEAT-61: a new run hears every briefing again
+    resetPaperRun()                  // …and starts back on Larry's four-house round (SM-INV-12)
+    paperRouteSystem.abort()
     _renderDialogue()
+    _renderPaperUI()
     missionSystem.clearOffers()      // …and no offer cached from a previous run survives into this one
     poiSystem.build(center, radius)
     // FEAT-61: AFTER build() — mom is a newspaper customer, and she is a roster POI, so the roster
@@ -3882,6 +4049,8 @@ const storySystem = new StorySystem({
     _setRunHudVisible(false)
     dialogueSystem.abort()              // FEAT-61: abort, not advance — leaving is not "read it"
     _renderDialogue()
+    paperRouteSystem.abort()            // …and an unfinished round is dropped, never settled
+    _renderPaperUI()
     _clearThrownRolls()                 // …and no papers from a story run lying about in free roam
     setAimMode(false)
     poiSystem.clear()
@@ -4152,6 +4321,9 @@ function loop () {
     if (missionSystem?.isActive()) {
       missionSystem.update(PHYSICS_DT)
     }
+    // FEAT-61: the round's clock against the bell. One add and one comparison — same discipline as
+    // above, and clocked off the fixed step so a frame spike cannot stretch the deadline.
+    if (paperRouteSystem.isRunning()) paperRouteSystem.update(PHYSICS_DT)
 
     _prevRenderPos.copy(vehicleState.position)
     _prevRenderQuat.copy(vehicleState.quaternion)
@@ -4547,6 +4719,9 @@ function loop () {
     // static line, but it costs one string write and keeps the state→HUD mapping in one place.)
     if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'staging'
                           || missionSystem.state === 'running')) _renderMissionUI()
+    // FEAT-61: the round's HUD carries three live values (the bell, the count, the inventory), so
+    // it repaints on the same poll for the same reason.
+    if (paperRouteSystem.isRunning()) _renderPaperUI()
     // FEAT-46: the orange interaction ring ↔ green start-zone ring swap rides the same poll.
     _updateMissionRings()
 

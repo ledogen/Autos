@@ -472,11 +472,17 @@ const W = makeWorld(C.x, C.z, R)
         console.log(`       ${type}: ${sep.toFixed(0)} m apart, worst drive to one ${got.toFixed(0)} m`)
     }
 
-    // Only mission givers answer the park trigger. Everything else is a place that exists before
-    // its mechanic does, and a marker that opens an offer it cannot fill is a lie to the player.
-    check('exactly the mission givers source jobs',
-        list.every(q => q.jobs === (q.type === 'missionGiver')),
-        list.filter(q => q.jobs !== (q.type === 'missionGiver')).map(q => q.type).join(', '))
+    // Only a marker with a mechanic behind it answers the park trigger. Everything else is a place
+    // that exists before its mechanic does, and a marker that opens an offer it cannot fill is a
+    // lie to the player.
+    //
+    // Larry joined the givers when FEAT-61 Phase E2 landed: his brake opens the PAPER ROUTE, not an
+    // errand, so he passes the test this check is actually making. The day fuel or repairs ship,
+    // their types come off the false side of this line the same way — by having something to say.
+    const GIVERS = new Set(['missionGiver', 'larrysHouse'])
+    check('exactly the markers with a mechanic source jobs',
+        list.every(q => q.jobs === GIVERS.has(q.type)),
+        list.filter(q => q.jobs !== GIVERS.has(q.type)).map(q => q.type).join(', '))
     check('mom\'s house does not hand out freight (her doorstep must win the park trigger)',
         W.poi.nearest(list.find(q => q.type === 'momsHouse').x,
                       list.find(q => q.type === 'momsHouse').z, POI_PARAMS.poiInteractR, true) === null)

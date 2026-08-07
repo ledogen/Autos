@@ -23,6 +23,7 @@
 // mostly junctions; a place is no likelier at a T than halfway down a road.
 
 import { PROP_MODELS } from '../data/prop-models.js'   // FEAT-59/60: authored collision metadata
+import { REGION_MARGIN } from './mission.js'          // FEAT-61: the wall a customer must sit inside
 
 /** Tunables. Geometry + siting only — none of this may ever enter routeCacheSig. */
 export const POI_PARAMS = {
@@ -140,9 +141,10 @@ export const POI_ROSTER = [
     // Exactly one of each per world, and both houses are a short drive from where you wake up.
     { type: 'momsHouse',    count: 1, model: 'trailerHomeA', jobs: false, siting: 'nearSpawn',
       tags: ['newsCustomer', 'sleepable'] },
-    // FEAT-61 Phase E2 turns `jobs` true here — Larry hands out the paper route. Until that state
-    // machine lands, the brake at his place answers nothing, so the row stays honest.
-    { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', jobs: false, siting: 'nearSpawn' },
+    // Larry hands out the paper route (FEAT-61 Phase E2). His `jobs` is true like any other giver's,
+    // but the brake at his place opens the PaperRouteSystem rather than a point-to-point errand —
+    // main.js branches on the type, because he is the only POI whose offer is a different mission.
+    { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', jobs: true, siting: 'nearSpawn' },
     // "Never too far from a station" — the reason these two slots exist and the reason they are
     // sited by coverage rather than by a spacing rule. Gas and service are solved INDEPENDENTLY:
     // no constraint was ratified between them, and a service shop sharing a corner with a pump
@@ -364,6 +366,20 @@ export class PoiSystem {
         }
         canon.sort((u, v) => (u.ka === v.ka ? (u.kb < v.kb ? -1 : 1) : (u.ka < v.ka ? -1 : 1)))
 
+        // THE WALL (FEAT-61 Phase E2). A customer's edge must lie WHOLLY inside the region, because
+        // the round is routed on the same region-filtered graph the missions are: an edge with one
+        // node past the wall is dropped from that graph, so a house on it is a person the tour can
+        // never reach — the paper route would simply skip them, silently and forever. Measured on
+        // seed 6, three of the sixteen customers were exactly this.
+        //
+        // This is the one place the ratified "count is hard, distance relaxes" rule has to yield.
+        // The distance cannot relax past the wall, because past the wall there is no route.
+        const wall = radius - REGION_MARGIN
+        const nodeInside = (id) => {
+            const p = g.pos(id)
+            return Math.hypot(p.x - center.x, p.z - center.z) <= wall
+        }
+
         // Every viable site on every edge, in canonical order. Window-invariant for the same reason
         // pads are: a site's position is a pure function of (seed, edge, step index), and the ring
         // below is a POST-FILTER, never a reject test.
@@ -372,18 +388,20 @@ export class PoiSystem {
         for (const e of canon) {
             const ek = `${e.ka}|${e.kb}`
             if (seen.has(ek)) continue
-            this._placeHousesOnEdge(road, e, P, cands)
             seen.add(ek)
+            if (!nodeInside(e.a) || !nodeInside(e.b)) continue
+            this._placeHousesOnEdge(road, e, P, cands)
         }
 
         const rnd = mulberry32(hash32(`poi-houses:${seed}`))
         const want = P.poiHouseCount
         let picked = []
-        for (let r = Math.min(P.poiHouseR, radius); ; r += P.poiHouseStep) {
+        for (let r = Math.min(P.poiHouseR, wall); ; r += P.poiHouseStep) {
             const ring = cands.filter(q => Math.hypot(q.x - center.x, q.z - center.z) <= r)
             picked = this._pickSpread(ring, want, P.poiHouseMinSep, rnd)
             if (picked.length >= want) break
-            if (ring.length === cands.length) break     // the ring is the whole network; nothing left to relax into
+            if (ring.length === cands.length) break     // the ring is the whole region; nothing left to relax into
+            if (r >= wall) break                        // …and it can never grow past the wall
         }
         if (picked.length < want) {
             console.warn(`[poi] region supplied only ${cands.length} viable house sites — placed ${picked.length}/${want}`)

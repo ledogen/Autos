@@ -171,9 +171,9 @@
     }
     /* Story-mode beta: mission offer panel. Sits above the 2D map (z 90) so the route and
        start/drop pins are visible behind it; the panel is bottom-anchored, not centered. */
-    /* #camp-panel (FEAT-45) and #dialogue-panel (FEAT-61) share the mission panel's chrome by
-       selector rather than by a copied block — one place to restyle a story-mode panel. */
-    #mission-panel, #camp-panel, #dialogue-panel {
+    /* #camp-panel (FEAT-45), #dialogue-panel and #paper-panel (FEAT-61) share the mission panel's
+       chrome by selector rather than by a copied block — one place to restyle a story-mode panel. */
+    #mission-panel, #camp-panel, #dialogue-panel, #paper-panel {
       display: none;
       position: fixed;
       left: 50%;
@@ -261,7 +261,7 @@
       color: #8a939c;
       font-size: 12px;
     }
-    #mission-panel .mp-title, #camp-panel .mp-title {
+    #mission-panel .mp-title, #camp-panel .mp-title, #paper-panel .mp-title {
       color: #7fc2ff;
       font-size: 12px;
       letter-spacing: 2px;
@@ -275,11 +275,11 @@
       border-radius: 2px;
       letter-spacing: 1px;
     }
-    #mp-body { line-height: 1.7; }
-    #mp-body .mp-big { font-size: 22px; color: #ffffff; }
-    #mp-body .mp-dim { color: #8a939c; }
-    #mp-actions { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
-    #mission-panel button, #camp-panel button {
+    #mp-body, #pp-body { line-height: 1.7; }
+    #mp-body .mp-big, #pp-body .mp-big { font-size: 22px; color: #ffffff; }
+    #mp-body .mp-dim, #pp-body .mp-dim { color: #8a939c; }
+    #mp-actions, #pp-actions { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
+    #mission-panel button, #camp-panel button, #paper-panel button {
       background: none;
       border: 1px solid #55606b;
       color: #cfd6dd;
@@ -302,8 +302,11 @@
     #mp-note::placeholder, #mp-driver::placeholder { color: #6b747d; }
     .mp-felt-row { display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; }
     #mission-panel button.mp-felt { font-size: 12px; padding: 4px 10px; }
-    /* In-run mission HUD (top-center): elapsed + distance to go. NEVER par — SM-INV-3. */
-    #mission-hud {
+    /* In-run mission HUD (top-center): elapsed + distance to go. NEVER par — SM-INV-3.
+       #paper-hud is the paper route's own surface, deliberately a separate element: the two
+       missions are siblings and can never be running at once, but sharing one div would mean two
+       systems writing the same textContent on the same 10 Hz poll. */
+    #mission-hud, #paper-hud {
       display: none;
       position: fixed;
       top: 14px;
@@ -429,8 +432,9 @@
       border-top: 5px solid #ffffff;
     }
 
-    /* FEAT-53: payout / good-deeds line on the mission result card. */
-    #mission-panel .mp-pay { font-size: 18px; color: #8ce99a; }
+    /* FEAT-53: payout / good-deeds line on the mission result card (and FEAT-61's round card). */
+    #mission-panel .mp-pay, #paper-panel .mp-pay { font-size: 18px; color: #8ce99a; }
+    #pp-accept { border-color: #5ad06a; color: #b6f0be; }
 
     /* FEAT-31 testing lab readout — top-right, out of the way of the left-hand debug HUD. */
     #lab-panel {
@@ -886,6 +890,20 @@
     </div>
     <div class="dlg-more" id="dlg-more"></div>
   </div>
+
+  <!-- FEAT-61: the paper route's offer / result card and its in-run HUD. A sibling of the mission
+       panel, not a face of it — the two missions are different shapes (this one has an inventory
+       and a bell where the other has a destination), and main.js renders each from its own system.
+       src/paper-route.js stays renderer-agnostic. -->
+  <div id="paper-panel">
+    <div class="mp-title" id="pp-title">the paper route</div>
+    <div id="pp-body"></div>
+    <div id="pp-actions">
+      <button id="pp-accept">take the round</button>
+      <button id="pp-decline">not today</button>
+    </div>
+  </div>
+  <div id="paper-hud"></div>
 
   <!-- FEAT-45 Phase D: the camp dialogue. One panel, four faces — make-camp confirm, the camp
        (break camp · sleep · fish), the sleep timer, and mom's house. main.js renders it

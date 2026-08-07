@@ -177,11 +177,48 @@ opening and the walk-to-Larry tutorial.
   point). `story-poi`, `mission-network`, `economy`, `par-oracle`, `day-clock` stay green;
   `npm run test:all` before merge.
 
-## Phases — state at 2026-08-05
+## Phases — state at 2026-08-07
 
 **A — Docs** [DONE, `c95a2cc`] · **B — Dialogue** [DONE, `8624861`] · **C — Houses** [DONE,
-`39e433c`] · **D — Throw** [DONE, `07a073d`] · **E — The mission** [PART 1 DONE, `e99fe1e`] ·
-**F — Gates + housekeeping** [PARTIAL]
+`39e433c`] · **D — Throw** [DONE, `07a073d`] · **E — The mission** [DONE — part 1 `e99fe1e`,
+part 2 this pass] · **F — Gates + housekeeping** [PARTIAL]
+
+### Phase E part 2 — what landed
+
+`PaperRouteSystem` (`src/paper-route.js`), a sibling of `MissionSystem`:
+`idle → planning → offer → running → done`. Larry's roster row is `jobs: true` and the park trigger
+branches on his type; the briefing plays *over* the routing, and the offer is held until both
+finish. Stock is spent at release and refunded when the solver produces no flight; a landing credits
+one customer once; the round ends on the bell, the last porch, or the last paper LANDING. It settles
+through `settleFlat` and moves the ladder. New DOM: `#paper-panel` / `#paper-hud`, sharing the
+mission panel's chrome by selector.
+
+**Two things the ruling assumed that measurement contradicted:**
+
+1. **Tour routing is not expensive — it is 1–4 ms.** Every edge in the region is already routed when
+   the region goes live, so the tour is cache hits. The hold-the-offer-behind-the-briefing design is
+   kept anyway (it costs nothing and it is the right shape), but the risk is closed.
+2. **A stop is a STREET, not a junction.** The first tour visited each customer's nearest edge
+   *node*; the new `test/paper-tour.mjs` gate caught that this left **five of six customers never
+   approached** — a house sits mid-edge, up to most of a 640 m street from either junction. A stop is
+   now the customer's edge, entered at the near junction and left at the far one, so the whole street
+   is driven. Everyone on a street the round drives is on the round.
+
+### The supply problem [OPEN — needs an owner ruling, see BUG-44]
+
+The ratified **15 customers inside 1 km** is not reachable on measured seeds. At the live 2500 m
+region radius, seed 6 offers **7** viable customer sites in the whole region and **1** inside 1 km
+(seed 42: 5 and 1; seed 11: 13 and 3). The cause is `poiHouseMaxDrop`, not the world: the reject
+battery discards **97%** of candidate sites (1787 of 1844 on seed 6) on the "target circle is not
+draped over a cliff" test, which was never retuned when `poiHouseTargetR` went 3 m → 5 m on
+2026-08-07 and started sampling the rim two metres further out.
+
+Fixed this pass, because it is unambiguous: a customer whose edge straddles the region wall can
+never be routed to, so `buildHouses` now sites only inside `radius − REGION_MARGIN` and the ring
+relax stops there. That is the one place "count is hard, distance relaxes" has to yield — past the
+wall there is no route.
+
+The ladder and the ring are what still need a ruling. See BUG-44.
 
 `feature/poi-models` (FEAT-60) was merged into this branch first, so the roster and the house pass
 were built together rather than reconciled afterwards. `npm run test:all` green, 46 gates.

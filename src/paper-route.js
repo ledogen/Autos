@@ -1,8 +1,9 @@
-// FEAT-61 — the paper route's economy.
+// FEAT-61 — the paper route: its economy, and the machine around it.
 //
-// THE SCORING CORE ONLY. The mission state machine (offer → briefing → running → done) and the
-// tour/par construction are the next sitting's work; everything here is pure and headless, which is
-// deliberate — this is the part that has to be RIGHT, and it is the part a gate can actually pin.
+// TWO HALVES, and the split is deliberate. Above `PaperRouteSystem` everything is pure and
+// headless — the accuracy law, the flat rate, the ladder — because that is the part that has to be
+// RIGHT and the part a gate can actually pin (test/paper-route.mjs). Below it is the state machine,
+// which owns the tour, one par, the stock and the settlement, and which needs a live RoadSystem.
 //
 // Why this mission prices itself instead of going through payoutFor():
 //
@@ -18,6 +19,11 @@
 // floor that pays nothing for a half-finished route is not a floor.
 
 import { ECONOMY_PARAMS } from './economy.js'
+import { buildGraphAdj } from './mission.js'
+import { computePar } from './par.js'
+// The accuracy law is throw.js's, not restated here. It is one line of algebra and that is exactly
+// why it must have one home: a second copy is a second thing to keep in step with the gate.
+import { accuracyScore } from './throw.js'
 
 export const PAPER_PARAMS = {
     // The route ends at par × this. Soft by construction: under flat rate the bell only stops you
@@ -150,4 +156,470 @@ export function scoreRoute (accuracies, customers, elapsed, par, dayTier = 1, P 
  */
 export function advancesTier (result, customers) {
     return !!result?.complete && customers > 0 && result.coverage >= 1
+}
+
+// ── the tour ────────────────────────────────────────────────────────────────────────────────────
+//
+// A round is ONE route with many stops, not many routes. SM-INV-2 is the reason the whole tour is
+// concatenated and priced by a single computePar() call: par is the oracle's statement about a
+// stretch of road, and summing fifteen little pars would be summing fifteen standing starts.
+
+const idKey = (id) => `${id[0]},${id[1]},${id[2]}`
+
+/**
+ * Dijkstra from one node over the straight-line graph metric — the same cheap metric the mission
+ * planner uses to choose a path before anything is routed. Returns dist + parent chain to every
+ * reachable node, so one run answers "which customer is nearest" AND "by which roads".
+ */
+function _dijkstraFrom (adj, startK) {
+    const dist = new Map([[startK, 0]]), prev = new Map()
+    const queue = [{ k: startK, d: 0 }]
+    while (queue.length) {
+        queue.sort((a, b) => a.d - b.d)
+        const { k, d } = queue.shift()
+        if (d > (dist.get(k) ?? Infinity)) continue
+        for (const e of adj.get(k) || []) {
+            const nd = d + e.w
+            if (nd < (dist.get(e.to) ?? Infinity)) {
+                dist.set(e.to, nd); prev.set(e.to, k); queue.push({ k: e.to, d: nd })
+            }
+        }
+    }
+    return { dist, prev }
+}
+
+/** Node keys from `startK` to `goalK` inclusive, or null when the chain does not reach back. */
+function _pathBack (prev, startK, goalK) {
+    const out = []
+    for (let k = goalK, n = 0; k != null && n < 512; k = prev.get(k), n++) {
+        out.unshift(k)
+        if (k === startK) return out
+    }
+    return null
+}
+
+/**
+ * Plan one round: pick this tier's customers, order them, route the whole thing, price it ONCE.
+ *
+ * Returns `{ customers, segments, poly, par, distance }` or null when the network cannot supply a
+ * round (no Larry, no reachable customer, an edge the planner does not hold).
+ *
+ * COST: this is the expensive call — every edge the tour traverses is routed, and a fifteen-stop
+ * round crosses many more edges than a point-to-point errand does. It runs once, behind Larry's
+ * briefing cards, and never in the frame loop.
+ *
+ * @param {object} road      the planning RoadSystem (networkGraph + edgeParData)
+ * @param {object} larry     the POI the round starts at — needs {aId, bId, s, x, z}
+ * @param {Array}  allCust   every newspaper customer in the region (poiSystem.customers())
+ * @param {number} want      how many of them this tier visits
+ * @param {{x:number,z:number,r:number}|null} region  the story region wall, or null
+ * @param {number} margin    keep the tour this far inside the wall
+ */
+export function planTour (road, larry, allCust, want, region = null, margin = 100) {
+    if (!road || !larry || !allCust?.length || !(want > 0)) return null
+    const g = road.networkGraph?.()
+    if (!g?.edges?.length) return null
+
+    const rMax = region ? region.r - margin : Infinity
+    const inRegion = (p) => !region || Math.hypot(p.x - region.x, p.z - region.z) <= rMax
+    const { posOf, idOf, adj } = buildGraphAdj(g, inRegion)
+
+    // A CUSTOMER'S STOP IS AN EDGE, NOT A NODE. This is the whole shape of the round and it is easy
+    // to get wrong: a house sits MID-EDGE, so arriving at one of its edge's junctions is not the
+    // same as driving past the porch — the two can be most of a 640 m street apart, and a round
+    // built out of junctions leaves you nowhere near anything to throw at. Measured on the gate's
+    // window, five of six customers were never approached. So the round is a sequence of STREETS
+    // DRIVEN END TO END, which is also what a real paper round is.
+    const edgeKeyOf = (a, b) => {
+        const ka = idKey(a), kb = idKey(b)
+        return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`
+    }
+    const streets = new Map()       // edge key → { ka, kb, aId, bId, cust: [] }
+    for (const c of allCust) {
+        if (!c.aId || !c.bId) continue
+        const ka = g.key(c.aId), kb = g.key(c.bId)
+        if (!adj.has(ka) || !adj.has(kb)) continue       // outside the region wall
+        const ek = edgeKeyOf(c.aId, c.bId)
+        if (!streets.has(ek)) streets.set(ek, { ka, kb, aId: c.aId, bId: c.bId, cust: [] })
+        streets.get(ek).cust.push(c)
+    }
+    if (!streets.size) return null
+
+    const searches = new Map()
+    const searchFrom = (k) => {
+        if (!searches.has(k)) searches.set(k, _dijkstraFrom(adj, k))
+        return searches.get(k)
+    }
+
+    // Which end of Larry's own edge does the round leave through? Whichever reaches a customer's
+    // street sooner. Both are legal roads out of his place; this just avoids opening every round
+    // with a U-turn back past the house.
+    const lka = g.key(larry.aId), lkb = g.key(larry.bId)
+    let larryK = null, bestReach = Infinity
+    for (const k of [lka, lkb]) {
+        if (!adj.has(k)) continue
+        const { dist } = searchFrom(k)
+        let near = Infinity
+        for (const st of streets.values()) {
+            if (st.ka === k || st.kb === k) { near = 0; break }
+            near = Math.min(near, dist.get(st.ka) ?? Infinity, dist.get(st.kb) ?? Infinity)
+        }
+        if (near < bestReach) { bestReach = near; larryK = k }
+    }
+    if (larryK == null || !isFinite(bestReach)) return null
+
+    const order = []
+    const walk = [larryK]
+    const takeCustomers = (list) => {
+        // Passing a house delivers it — so everyone on a street the round drives is ON the round,
+        // up to the tier's count. A tier is a shorter round out of the same door, not a different
+        // set of houses (SM-INV-12: the tier chooses who is on the round, never what exists).
+        for (const c of list) { if (order.length >= want) break; order.push(c) }
+    }
+
+    // Nearest-neighbour over streets. Each stop is entered at the nearer junction and left at the
+    // far one, so the whole street is driven and every porch on it goes past the window. Larry's
+    // own street is in here like any other when someone lives on it — it is simply at distance
+    // zero, so the round opens by driving it.
+    let curK = larryK
+    while (order.length < want && streets.size) {
+        const { dist, prev } = searchFrom(curK)
+        let bestEk = null, bestEntry = null, bestExit = null, bd = Infinity
+        for (const [ek, st] of streets) {
+            for (const [entry, exit] of [[st.ka, st.kb], [st.kb, st.ka]]) {
+                const d = dist.get(entry) ?? Infinity
+                if (d < bd) { bd = d; bestEk = ek; bestEntry = entry; bestExit = exit }
+            }
+        }
+        if (bestEk == null || !isFinite(bd)) break       // the rest of the region is unreachable
+        if (bestEntry !== curK) {
+            const leg = _pathBack(prev, curK, bestEntry)
+            if (!leg) return null
+            for (let i = 1; i < leg.length; i++) walk.push(leg[i])
+        }
+        walk.push(bestExit)                              // …and DOWN the street itself
+        curK = bestExit
+        const st = streets.get(bestEk)
+        streets.delete(bestEk)
+        takeCustomers(st.cust)
+    }
+    if (!order.length) return null
+
+    // Route the walk. Edges repeat when the round doubles back down a dead-end street, so the
+    // routed centerline is memoized — a re-traversal is a second segment over the same road, not a
+    // second routing job.
+    const edCache = new Map()
+    const edgeData = (a, b) => {
+        const ka = idKey(a), kb = idKey(b)
+        const key = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`
+        if (!edCache.has(key)) edCache.set(key, road.edgeParData(a, b) || null)
+        return edCache.get(key)
+    }
+
+    const segments = [], poly = []
+    const pushPoly = (cl, s0, s1) => {
+        const n = Math.max(2, Math.ceil(Math.abs(s1 - s0) / 25))
+        for (let j = 0; j <= n; j++) {
+            const p = cl.pointAt(s0 + (s1 - s0) * (j / n))
+            poly.push({ x: p.x, z: p.z })
+        }
+    }
+
+    // The head: Larry's own partial stretch, from his marker's arc position out to the exit node.
+    // The oracle already integrates partial edges (its arc-RANGE rule), so a mid-edge start needs
+    // no new machinery — just a segment whose s0 is where the truck is standing.
+    {
+        const ed = edgeData(larry.aId, larry.bId)
+        if (!ed) return null
+        const off = ed.arcOffset ?? 0
+        const L = ed.arcLength ?? ed.centerline.length
+        const ex = posOf.get(larryK)
+        const pEnd = ed.centerline.pointAt(off + L), pStart = ed.centerline.pointAt(off)
+        const s1 = Math.hypot(pEnd.x - ex.x, pEnd.z - ex.z) < Math.hypot(pStart.x - ex.x, pStart.z - ex.z)
+            ? off + L : off
+        const s0 = Math.max(off, Math.min(off + L, larry.s))
+        if (Math.abs(s1 - s0) >= 1) {
+            segments.push({ centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key,
+                            cellA: larry.aId, cellB: larry.bId, endDeg: (adj.get(larryK) || []).length })
+            pushPoly(ed.centerline, s0, s1)
+        }
+    }
+
+    for (let i = 0; i < walk.length - 1; i++) {
+        const a = idOf.get(walk[i]), b = idOf.get(walk[i + 1])
+        if (!a || !b) return null
+        const ed = edgeData(a, b)
+        if (!ed) return null
+        const off = ed.arcOffset ?? 0
+        const L = ed.arcLength ?? ed.centerline.length
+        const pa = posOf.get(walk[i])
+        const p0 = ed.centerline.pointAt(off), pE = ed.centerline.pointAt(off + L)
+        const forward = Math.hypot(p0.x - pa.x, p0.z - pa.z) < Math.hypot(pE.x - pa.x, pE.z - pa.z)
+        const s0 = forward ? off : off + L, s1 = forward ? off + L : off
+        segments.push({ centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key,
+                        cellA: a, cellB: b, endDeg: (adj.get(walk[i + 1]) || []).length })
+        pushPoly(ed.centerline, s0, s1)
+    }
+    if (!segments.length) return null
+
+    // ONE par over the whole round (SM-INV-2).
+    const { time, distance } = computePar(segments)
+    if (!(time > 0)) return null
+
+    const polyCum = [0]
+    for (let i = 1; i < poly.length; i++) {
+        polyCum.push(polyCum[i - 1] + Math.hypot(poly[i].x - poly[i - 1].x, poly[i].z - poly[i - 1].z))
+    }
+    return { customers: order, segments, poly, polyCum, par: time, distance, edges: segments.length }
+}
+
+// ── the mission ─────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The paper route, as a mission. A SIBLING of MissionSystem, not a mode inside it: that system is
+ * shaped end-to-end around one start and one end (and four gates pin its settle path), whereas this
+ * one has no destination at all — it has an inventory, a bell, and fifteen porches.
+ *
+ * States:
+ *   idle      nothing doing
+ *   planning  the tour is being routed AND Larry is talking. Both have to finish before the offer
+ *             can be shown, which is the point: the briefing is the cover for the routing.
+ *   offer     the round, priced, with accept/decline
+ *   running   papers in the truck, clock against the bell
+ *   done      the result card, already settled
+ *
+ * Renderer-agnostic (the mission-panel pattern): it owns state, main.js owns the DOM.
+ */
+export class PaperRouteSystem {
+    /**
+     * @param {object} deps
+     *   getRoad()    — the planning RoadSystem (a getter: main.js swaps instances on reseed)
+     *   getPois()    — the PoiSystem (roster + customers)
+     *   getRegion()  — the story region wall, or null
+     *   getTerms()   — economySystem.terms(); frozen at accept, exactly like a paid job
+     *   getTargetR() — the delivery circle radius (POI_PARAMS.poiHouseTargetR)
+     *   onSettle(payout, letter) — EconomySystem.settleFlat; the one money path
+     *   onBriefing(done)  — play Larry's cards and call `done` when they are read
+     *   onChange()   — repaint
+     *   onEnd()      — the round is over: clear the papers off the lawns
+     */
+    constructor ({ getRoad, getPois, getRegion, getTerms, getTargetR,
+                   onSettle, onBriefing, onChange, onEnd }) {
+        this._getRoad = getRoad
+        this._getPois = getPois
+        this._getRegion = getRegion ?? (() => null)
+        this._getTerms = getTerms ?? (() => ({ dayTier: 1 }))
+        this._getTargetR = getTargetR ?? (() => 5)
+        this._onSettle = onSettle ?? (() => null)
+        this._onBriefing = onBriefing ?? ((done) => done())
+        this._onChange = onChange ?? (() => {})
+        this._onEnd = onEnd ?? (() => {})
+
+        this.state = 'idle'
+        this.error = null
+        this.route = null        // the planned tour (see planTour)
+        this.run = null          // the live round — see accept()
+        this.result = null
+        this.giver = null        // the POI the round was taken from
+        this._briefed = false
+        this._planned = false
+    }
+
+    isActive () { return this.state !== 'idle' }
+    /** True while the player is driving the round — the state everything else has to yield to. */
+    isRunning () { return this.state === 'running' }
+
+    /** Papers still in the truck. Zero does not end the round; the last one LANDING does. */
+    stock () { return this.run ? this.run.stock : 0 }
+    hasStock () { return this.stock() > 0 }
+    delivered () { return this.run ? this.run.hits.size : 0 }
+    /** Seconds left before the bell. Negative is impossible — the bell ends the round. */
+    timeLeft () { return this.run ? Math.max(0, this.run.deadline - this.run.elapsed) : 0 }
+
+    /**
+     * Take the round from Larry. Routing starts NOW and the briefing plays over the top of it: the
+     * cards are two screens of reading the player has to do anyway, so the tour gets that long for
+     * free (owner ruling). The offer is held until BOTH are finished, so a slow plan reads as a
+     * long-winded uncle rather than as a hang.
+     */
+    open (giver) {
+        if (this.state !== 'idle' || !giver) return
+        this.giver = giver
+        this.error = null
+        this.result = null
+        this.route = null
+        this.run = null
+        this._briefed = false
+        this._planned = false
+        this.state = 'planning'
+        this._onChange()
+
+        this._onBriefing(() => { this._briefed = true; this._maybeOffer() })
+        // Off this tick so the briefing card is on screen before the routing blocks the thread.
+        setTimeout(() => this._plan(), 0)
+    }
+
+    _plan () {
+        if (this.state !== 'planning') return
+        try {
+            const pois = this._getPois()
+            const larry = this.giver
+            const want = customersForTier()
+            this.route = planTour(this._getRoad(), larry, pois?.customers() ?? [], want,
+                                  this._getRegion())
+            if (!this.route) this.error = 'no round could be routed from here'
+        } catch (e) {
+            console.warn('[paper] tour planning failed', e)
+            this.error = String(e && e.message || e)
+            this.route = null
+        }
+        this._planned = true
+        this._maybeOffer()
+    }
+
+    _maybeOffer () {
+        if (this.state !== 'planning' || !this._planned || !this._briefed) return
+        if (!this.route) { this.state = 'idle'; this._onChange(); return }
+        this.state = 'offer'
+        this._onChange()
+    }
+
+    /** Take the papers. Terms freeze here, exactly like a paid job's do. */
+    accept () {
+        if (this.state !== 'offer' || !this.route) return
+        const terms = this._getTerms() || { dayTier: 1 }
+        this.run = {
+            stock:    stockForTier(),
+            inFlight: 0,
+            elapsed:  0,
+            deadline: deadlineFor(this.route.par),
+            dayTier:  terms.dayTier ?? 1,
+            hits:     new Map(),      // customer id → q, one entry per delivered customer
+        }
+        this.state = 'running'
+        this._onChange()
+    }
+
+    /** Hand the papers back. */
+    decline () {
+        if (this.state !== 'offer') return
+        this._reset()
+    }
+
+    /** Dismiss the result card. */
+    dismiss () {
+        if (this.state !== 'done') return
+        this._reset()
+    }
+
+    /** Leaving the region / the run: drop everything WITHOUT settling. */
+    abort () {
+        if (this.state === 'idle') return
+        this._reset()
+    }
+
+    _reset () {
+        // The papers stay on the lawns until the round is PUT DOWN, not until it ends. Clearing
+        // them at the bell would erase the trail of the round you just drove at the exact moment
+        // the card asks you to look at how it went.
+        const hadPapers = this.state === 'running' || this.state === 'done'
+        this.state = 'idle'
+        this.route = null
+        this.run = null
+        this.giver = null
+        this.error = null
+        this._briefed = this._planned = false
+        if (hadPapers) this._onEnd()
+        this._onChange()
+    }
+
+    /** Clocked off the fixed step. Two comparisons and a counter — nothing else happens per frame. */
+    update (dt) {
+        if (this.state !== 'running') return
+        this.run.elapsed += dt
+        if (this.run.elapsed >= this.run.deadline) this.finish()
+    }
+
+    /**
+     * A paper leaves your hand. Returns false when there are none left — the caller must not throw.
+     * Stock is spent HERE and not at the landing: a paper in the air is a paper you no longer have,
+     * and a round that ended on the throw before the last one landed would be counting wrong.
+     */
+    takePaper () {
+        if (this.state !== 'running' || this.run.stock <= 0) return false
+        this.run.stock--
+        this.run.inFlight++
+        return true
+    }
+
+    /** Put a paper back: the solver produced no flight, so no throw happened. */
+    refundPaper () {
+        if (this.state !== 'running' || this.run.inFlight <= 0) return
+        this.run.stock++
+        this.run.inFlight--
+    }
+
+    /**
+     * Score one landing against the round.
+     *
+     * Returns `{ customer, dist, q, credited, already }` for a paper that reached someone's circle,
+     * `{ dist, q: 0 }` for a miss, or null when no round is running.
+     *
+     * NEAREST CUSTOMER ON THE ROUND, credited ONCE. A second paper onto a porch that already has one
+     * is not a second delivery — it is a paper spent, which is what the spares are for.
+     */
+    recordLanding (x, z) {
+        if (this.state !== 'running') return null
+        this.run.inFlight = Math.max(0, this.run.inFlight - 1)
+        const R = this._getTargetR()
+        let best = null, bd = Infinity
+        for (const c of this.route.customers) {
+            const d = Math.hypot(c.x - x, c.z - z)
+            if (d < bd) { bd = d; best = c }
+        }
+        const q = best ? accuracyScore(bd, R) : 0
+        let credited = false, already = false
+        if (best && q > 0) {
+            if (this.run.hits.has(best.id)) already = true
+            else { this.run.hits.set(best.id, q); credited = true }
+        }
+        // The round ends on the LAST PAPER, not on the last throw: the bell and the inventory are
+        // the only two ways out, and an empty truck with one still in the air is neither yet.
+        if (this.run.hits.size >= this.route.customers.length
+            || (this.run.stock <= 0 && this.run.inFlight <= 0)) {
+            const out = { customer: best, dist: bd, q, credited, already }
+            this.finish()
+            return out
+        }
+        return { customer: best, dist: bd, q, credited, already }
+    }
+
+    /**
+     * The bell, the empty truck, or the last porch. Prices the round, settles it through the one
+     * money path, and moves the ladder.
+     */
+    finish () {
+        if (this.state !== 'running') return
+        const n = this.route.customers.length
+        const accuracies = [...this.run.hits.values()]
+        const r = scoreRoute(accuracies, n, this.run.elapsed, this.route.par, this.run.dayTier)
+        const settled = this._onSettle(Math.round(r.payout), r.letter) || {}
+        const advanced = advancesTier(r, n)
+        if (advanced && runPaper.tier < PAPER_PARAMS.tiers.length - 1) runPaper.tier++
+        runPaper.routesRun++
+        this.result = {
+            ...r,
+            customers: n,
+            delivered: accuracies.length,
+            elapsed:   this.run.elapsed,
+            par:       this.route.par,
+            payout:    settled.payout ?? Math.round(r.payout),
+            points:    settled.points ?? 0,
+            advanced,
+            nextTier:  advanced ? customersForTier() : null,
+        }
+        this.state = 'done'
+        this.run = null
+        this._onChange()
+    }
 }

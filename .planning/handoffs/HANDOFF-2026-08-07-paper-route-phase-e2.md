@@ -1,5 +1,13 @@
 # HANDOFF — FEAT-61 paper route, Phase E part 2 onward — 2026-08-07
 
+> **SUPERSEDED IN PART, later the same day.** Phase E part 2 is built — see the ticket's "Phase E
+> part 2 — what landed". Still live here: the gotchas, the open questions on the tuning constants,
+> and Phase F. Two of this document's assumptions were measured and found wrong: **tour routing is
+> 1–4 ms**, not expensive (the region's edges are already routed), and **a tour stop is a STREET,
+> not a graph node** (a node-based tour left five of six customers never approached). The real
+> problem turned out to be customer SUPPLY — **BUG-44**, which needs an owner ruling before the tier
+> ladder means anything.
+
 **Read `.planning/todos/pending/feat-paper-route.md` first — it is the spec.** This handoff is the
 state of play and the next moves. The original approved plan is
 `.planning/handoffs/HANDOFF-2026-08-04-paper-route.md`, partly superseded (its header says how).

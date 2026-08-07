@@ -72,7 +72,9 @@ const EDGE_T_MARGIN = 0.12          // keep endpoints off the junction pads at b
 // from that set, so ~1 roll in 10 landed outside, and worse once the planner re-centred on a car
 // that had driven away. Two guards: node candidates are filtered to the region, and the finished
 // polyline is re-checked — a centerline between two in-region nodes can still bow past the wall.
-const REGION_MARGIN = 100           // m — keep missions this far clear of the wall itself
+// Exported (FEAT-61): the paper route's customers must be sited inside the SAME wall, or they are
+// people no route can reach. One constant, so the two can never disagree about where the edge is.
+export const REGION_MARGIN = 100    // m — keep missions this far clear of the wall itself
 const REGION_ROLL_TRIES = 8         // re-rolls before admitting the region has no qualifying leg
 const TRACE_HZ = 10                 // driven-trace sample rate
 const TRACE_DIV = Math.round(60 / TRACE_HZ)
@@ -94,6 +96,37 @@ export function headingToFace(tx, tz) { return Math.atan2(-tx, -tz) }
 
 /** Inverse of headingToFace: the unit direction a truck seated at `heading` will point. */
 export function facingFromHeading(h) { return { x: -Math.sin(h), z: -Math.cos(h) } }
+
+/**
+ * The planning graph, keyed by node key: positions, the original ids, and straight-line adjacency.
+ *
+ * EDGES are filtered, not just endpoints (FEAT-43 guard 1): an edge with one node outside the
+ * region wall is a road that LEAVES the region, and admitting it as a hop would route the player
+ * through the boundary even when both pins sit inside.
+ *
+ * Exported because FEAT-61's PaperRouteSystem plans a 15-stop tour over the same graph. It is a
+ * sibling of this system, not a mode inside it, so this is the seam they share — one adjacency
+ * builder rather than two that drift.
+ *
+ * @param {{edges:Array,key:Function,pos:Function}} g — road.networkGraph()
+ * @param {(p:{x:number,z:number})=>boolean} inRegion — the region post-filter (`() => true` if none)
+ */
+export function buildGraphAdj(g, inRegion = () => true) {
+    const posOf = new Map(), idOf = new Map(), adj = new Map()
+    const touch = (id) => {
+        const k = g.key(id)
+        if (!posOf.has(k)) { posOf.set(k, g.pos(id)); idOf.set(k, id); adj.set(k, []) }
+        return k
+    }
+    for (const [a, b] of g.edges) {
+        if (!inRegion(g.pos(a)) || !inRegion(g.pos(b))) continue
+        const ka = touch(a), kb = touch(b)
+        const pa = posOf.get(ka), pb = posOf.get(kb)
+        const w = Math.hypot(pa.x - pb.x, pa.z - pb.z)
+        adj.get(ka).push({ to: kb, w }); adj.get(kb).push({ to: ka, w })
+    }
+    return { posOf, idOf, adj }
+}
 
 export class MissionSystem {
     /**
@@ -187,6 +220,14 @@ export class MissionSystem {
         }
         return this._plan.road
     }
+
+    /**
+     * The planning network, streamed on demand. Public because FEAT-61's paper route plans its tour
+     * on the SAME one — the region is warmed once and its edges are already routed, so a second
+     * planner would re-stream a network that exists a metre away in memory. Shared read-only: the
+     * tour reads networkGraph/edgeParData and writes nothing.
+     */
+    planner() { return this._planner() }
 
     /** Drop the planning network (seed change / explicit reset) so the next roll re-streams. */
     invalidatePlan() { this._plan = null; this.clearOffers() }
@@ -635,27 +676,13 @@ export class MissionSystem {
         if (!g.edges.length) return null
 
         // FEAT-43 guard 1: drop everything outside the story region before any planning happens.
-        // Filtering EDGES (not just endpoints) is what matters — an edge with one node outside the
-        // wall is a road that leaves the region, and admitting it as a path hop would route the
-        // player straight through the boundary even if both mission pins sat inside.
+        // buildGraphAdj applies it per EDGE — see the note there for why that is the part that
+        // matters. Guard 2 (the routed polyline) is further down.
         const region = this._getRegion()
         const rMax = region ? region.r - REGION_MARGIN : Infinity
         const inRegion = (p) => !region || Math.hypot(p.x - region.x, p.z - region.z) <= rMax
 
-        // Adjacency with positions, keyed by node key.
-        const posOf = new Map(), idOf = new Map(), adj = new Map()
-        const touch = (id) => {
-            const k = g.key(id)
-            if (!posOf.has(k)) { posOf.set(k, g.pos(id)); idOf.set(k, id); adj.set(k, []) }
-            return k
-        }
-        for (const [a, b] of g.edges) {
-            if (!inRegion(g.pos(a)) || !inRegion(g.pos(b))) continue
-            const ka = touch(a), kb = touch(b)
-            const pa = posOf.get(ka), pb = posOf.get(kb)
-            const w = Math.hypot(pa.x - pb.x, pa.z - pb.z)
-            adj.get(ka).push({ to: kb, w }); adj.get(kb).push({ to: ka, w })
-        }
+        const { posOf, idOf, adj } = buildGraphAdj(g, inRegion)
 
         // Start node: ANY node in the planned network, not just the one nearest the car. _launch()
         // teleports the player to the start pin regardless (see accept/retry), so pinning the start
