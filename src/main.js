@@ -2303,6 +2303,10 @@ const AIM_HOLD_S = 0.5           // s the camera stays on the aimed angle AFTER 
 // mesh — the landing point comes from the solver, so a bigger roll cannot make a throw score
 // better than it was.
 const THROWN_ROLL_SCALE = 2
+// Peak tumble rate, rad/s per axis, rolled per throw. Fast enough to read as end-over-end at a
+// glance, slow enough not to strobe against the 2× roll's stripe. Cosmetic only — the tumble never
+// feeds back into the path, so two identical throws land identically however differently they spin.
+const TUMBLE_MAX = 7
 let _throwReadoutTimer = 0
 let _aimHoldTimer = 0
 // The cursor's last known position, so entering aim mode can seed the drag origin and the first
@@ -2362,11 +2366,24 @@ function _throwRoll () {
     if (i >= 0) _flying.splice(i, 1)      // reclaimed mid-flight: stop integrating a removed mesh
   }
 
-  // The solver already knows where and when this lands, so the flight is played back ANALYTICALLY
-  // rather than re-integrated: p(τ) = p0 + v0·τ − ½g·τ². At τ = hit.t that is exactly the landing
-  // point the score was computed from, so the mesh and the number can never disagree — which they
-  // would if the visual ran its own integrator alongside the scoring one.
-  _flying.push({ roll, p0, v0, tEnd: hit.t, hit, tau: 0 })
+  // Play back the path the SOLVER flew, sample for sample. Before drag this was a parabola and the
+  // visual could be evaluated in closed form; with drag there is no closed form, and re-integrating
+  // here would put a second, nearly-identical arc on screen next to the one that produced the
+  // score. Replaying the recorded path makes "where it looks like it landed" and "where it scored"
+  // the same statement by construction.
+  //
+  // The tumble is per-throw random and purely cosmetic — it never touches the path, so two
+  // identical throws still land identically however differently they spin (owner: "a little bit of
+  // random rotation for visual flair").
+  _flying.push({
+    roll, path: hit.path, tEnd: hit.t, hit, tau: 0,
+    spin: {
+      x: (Math.random() * 2 - 1) * TUMBLE_MAX,
+      y: (Math.random() * 2 - 1) * TUMBLE_MAX,
+      z: (Math.random() * 2 - 1) * TUMBLE_MAX,
+    },
+    restYaw: Math.random() * Math.PI * 2,
+  })
   return hit
 }
 
@@ -2378,25 +2395,30 @@ function _throwRoll () {
  */
 function _updateThrownRolls (dt) {
   if (!_flying.length) return
-  const g = THROW_PARAMS.gravity
+  const step = THROW_PARAMS.stepS
   for (let i = _flying.length - 1; i >= 0; i--) {
     const f = _flying[i]
     f.tau = Math.min(f.tEnd, f.tau + dt)
-    const t = f.tau
+
+    // Sample the recorded path at the current time, lerping between the two straddling samples so
+    // the flight is smooth at any frame rate rather than stepping at the solver's 120 Hz.
+    const path = f.path
+    const last = path.length / 3 - 1
+    const u = Math.min(last, f.tau / step)
+    const i0 = Math.min(last, Math.floor(u)), i1 = Math.min(last, i0 + 1)
+    const a = u - i0
     f.roll.position.set(
-      f.p0.x + f.v0.x * t,
-      f.p0.y + f.v0.y * t - 0.5 * g * t * t,
-      f.p0.z + f.v0.z * t,
+      path[i0 * 3]     + (path[i1 * 3]     - path[i0 * 3])     * a,
+      path[i0 * 3 + 1] + (path[i1 * 3 + 1] - path[i0 * 3 + 1]) * a,
+      path[i0 * 3 + 2] + (path[i1 * 3 + 2] - path[i0 * 3 + 2]) * a,
     )
-    // Point the roll along its current velocity so it reads as thrown rather than floating. This is
-    // presentation only — the ruling is that flight carries no rotation, and none is simulated.
-    const vy = f.v0.y - g * t
-    const horiz = Math.hypot(f.v0.x, f.v0.z) || 1e-6
-    f.roll.rotation.set(Math.atan2(vy, horiz), Math.atan2(f.v0.x, f.v0.z), Math.PI / 2, 'ZYX')
+    f.roll.rotation.set(f.spin.x * f.tau, f.spin.y * f.tau, f.spin.z * f.tau)
 
     if (f.tau >= f.tEnd) {
       f.roll.position.set(f.hit.x, f.hit.y, f.hit.z)   // seat it exactly where it scored
-      f.roll.rotation.set(0, Math.atan2(f.v0.x, f.v0.z), Math.PI / 2)
+      // Settle flat, at a random yaw: a roll that came to rest should look dropped, and freezing
+      // it mid-tumble reads as a bug rather than as a paper on a lawn.
+      f.roll.rotation.set(0, f.restYaw, Math.PI / 2)
       _flying.splice(i, 1)
       _scoreLanding(f.hit)                              // the number arrives WITH the landing
     }

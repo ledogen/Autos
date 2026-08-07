@@ -163,5 +163,46 @@ check('a perfect route at par pays ~60% of the margin line', (() => {
     return near(r.payout / margin, PAPER_PARAMS.paperW, 1e-9)
 })())
 
+console.log('\n── 8. ballistics: drag, and the path the score came from ──────')
+const { simulateThrow, launchVelocity, THROW_PARAMS } = await import('../src/throw.js')
+const flat = () => 0
+const v0 = launchVelocity({ x: 0.6, y: 0.35, z: -0.72 }, { x: 0, y: 0, z: -12 })
+const shot = simulateThrow({ x: 0, y: 1.5, z: 0 }, v0, flat)
+check('the velocity is ADDED to the truck\'s, not substituted',
+    near(launchVelocity({ x: 0, y: 0, z: -1 }, { x: 0, y: 0, z: -20 }).z, -(THROW_PARAMS.throwSpeed + 20)))
+check('drag shortens the throw', (() => {
+    const noDrag = simulateThrow({ x: 0, y: 1.5, z: 0 }, v0, flat, { ...THROW_PARAMS, dragK: 0 })
+    return Math.hypot(shot.x, shot.z) < Math.hypot(noDrag.x, noDrag.z) * 0.9
+})())
+check('…and with drag OFF the integrator is still exact vs the closed form', (() => {
+    const t = Math.sqrt(2 * 10 / 9.81)
+    const r = simulateThrow({ x: 0, y: 10, z: 0 }, { x: 10, y: 0, z: 0 }, flat, { ...THROW_PARAMS, dragK: 0 })
+    return Math.abs(r.x - 10 * t) < 1e-3      // 1 mm over a 14 m throw
+})())
+check('THE LANDING POINT IS STEP-SIZE INDEPENDENT — the score cannot depend on dt', (() => {
+    const b = simulateThrow({ x: 0, y: 1.5, z: 0 }, v0, flat, { ...THROW_PARAMS, stepS: 1 / 480 })
+    const c = simulateThrow({ x: 0, y: 1.5, z: 0 }, v0, flat, { ...THROW_PARAMS, stepS: 1 / 2000 })
+    return Math.hypot(shot.x - b.x, shot.z - b.z) < 1e-3 && Math.hypot(shot.x - c.x, shot.z - c.z) < 1e-3
+})(), 'RK2 regression — a first-order step moves this ~17 cm')
+check('the recorded path ENDS at the scored landing point', (() => {
+    const p = shot.path, n = p.length / 3 - 1
+    return near(p[n * 3], shot.x, 1e-9) && near(p[n * 3 + 1], shot.y, 1e-9) && near(p[n * 3 + 2], shot.z, 1e-9)
+})(), 'the renderer replays this path; if it ends elsewhere the paper lies about where it scored')
+check('…and STARTS at the launch point', (() => {
+    const p = shot.path
+    return near(p[0], 0) && near(p[1], 1.5) && near(p[2], 0)
+})())
+check('a throw at the sky never lands rather than landing somewhere silly',
+    simulateThrow({ x: 0, y: 1.5, z: 0 }, { x: 0, y: 400, z: 0 }, flat) === null)
+check('a paper launched below ground lands at once', (() => {
+    const r = simulateThrow({ x: 0, y: -1, z: 0 }, { x: 5, y: 5, z: 0 }, flat)
+    return r && r.t === 0 && r.y === 0
+})())
+check('landing is consistent with the ground it landed on (1:5 slope)', (() => {
+    const slope = (x) => x * 0.2
+    const r = simulateThrow({ x: 0, y: 5, z: 0 }, { x: 8, y: 0, z: 0 }, (x) => slope(x))
+    return r && Math.abs(r.y - slope(r.x)) < 1e-9
+})())
+
 console.log(fails === 0 ? '\nALL PAPER-ROUTE CHECKS PASSED' : `\n${fails} CHECK(S) FAILED`)
 process.exit(fails ? 1 : 0)

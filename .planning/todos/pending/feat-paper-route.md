@@ -146,8 +146,10 @@ Customer pool = the 15 houses + mom.
 
 - `src/dialogue.js` + `#dialogue-panel` — sequential cards, **no dialogue options**, `.dlg-key`
   glyphs, `seen` on the run layer.
-- `src/throw.js` — hold-**F** aim (camera seam), release to launch, gravity-only projectile
-  inheriting vehicle velocity, `spawnModel('newsRoll')`, freeze on landing.
+- `src/throw.js` — hold-**F** aim (camera seam), release to launch, projectile with gravity **and
+  quadratic drag** (drag added 2026-08-07, reversing the first ruling) inheriting vehicle velocity,
+  `spawnModel('newsRoll')`, tumbling in flight, frozen where it lands. The solver returns the flown
+  path so the renderer replays the arc that produced the score rather than a second one.
 - `src/poi.js` — `tags`, and the house pass (`buildHouses`) beside the roster.
 - `src/main.js` — target + centre rings, mission-time ring suppression, accuracy readout.
 - `src/paper-route.js` — sibling of `MissionSystem`: tour + one `computePar()`, deadline, delivery
