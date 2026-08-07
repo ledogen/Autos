@@ -88,6 +88,10 @@ const RADIUS_FIXTURES = [
     { seed: 6, label: 'seed6', wideCenter: [4500, 600], narrowCenters: [[4500, 600], [4180, 280]] },
     { seed: 67, label: 'seed67', wideCenter: [-2000, -1000], narrowCenters: [[-2000, -1600], [-2000, -400]] },   // historical residual centers
     { seed: TESTIG, label: 'testig', wideCenter: [1500, 350], narrowCenters: [[1668, 713], [1365, -1]] },        // live flip sites (BUG-25 escalation)
+    // seed 0 @ (-755,-599) — owner-reported live site, 2026-08-07: "the road surface stops
+    // generating at that point even though the map thinks it continues". Node (-2,-1,1) attaches
+    // g:-2,-2,0:-2,-1,1 at the 320 m play radius and g:-1,-3,1:-2,-1,1 at every radius >= 640.
+    { seed: 0, label: 'seed0', wideCenter: [-755, -599], narrowCenters: [[-755, -599], [-600, -500]] },
 ]
 for (const { seed, label, wideCenter, narrowCenters } of RADIUS_FIXTURES) {
     const wide = build(seed, 1500, [wideCenter])
