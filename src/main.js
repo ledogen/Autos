@@ -2315,11 +2315,51 @@ let _aimHoldTimer = 0
 let _lastCursorX = 0, _lastCursorY = 0
 document.addEventListener('mousemove', e => { _lastCursorX = e.clientX; _lastCursorY = e.clientY })
 
-/** Surface height for the flight: road where there is road, terrain everywhere else (poi.js's pairing). */
+/**
+ * Surface height for the flight.
+ *
+ * ANALYTIC HEIGHT, NOT sampleRoadTopY (owner-reported 2026-08-07: papers sank into uphill banks and
+ * floated over downhill slopes). This used to try the road sampler first, copying _groundSampleY —
+ * but that sampler is the graded APRON sampler, and camp.js already documents the trap: it
+ * extrapolates the road-top PLANE laterally well past the asphalt and returns a finite Y for
+ * essentially every point out to ~35 m from the centerline. So a paper thrown at a cut bank stopped
+ * at the road's height (metres below the hillside it visually passed through), and one thrown down
+ * a fill slope stopped at the road's height too (metres above the ground it should have hit). It
+ * looked right on the shoulder and around the pads because there the apron IS the ground.
+ *
+ * analyticHeight is the ROAD-CARVED terrain surface — it already contains the cut and fill
+ * earthwork, which is exactly the ground a paper bounces off — so it is right everywhere off the
+ * asphalt, and the ribbon itself is handled once at the landing point (see _resolveLanding).
+ */
 function _throwGroundY (x, z) {
-  const ry = roadSystem?.sampleRoadTopY(x, z)
-  if (ry != null && isFinite(ry)) return ry
   return terrainSystem ? terrainSystem.analyticHeight(x, z) : 0
+}
+
+/**
+ * If a paper landed on the road, seat it on the ASPHALT rather than on the carved dirt beneath it.
+ *
+ * The terrain is carved to roadClearanceMargin (0.15–0.25 m) BELOW the ribbon so the mesh can armor
+ * under it, so a paper landing on tarmac would otherwise sit a fifth of a metre sunk into it — which
+ * at the roll's drawn size is plainly visible.
+ *
+ * Done once, at the landing point, rather than inside the integrator: the honest "is this asphalt"
+ * test is queryNearest (camp.js's `lateral <= roadHalfWidth`, not the apron sampler), and that is
+ * ~44 µs a call — fine once per throw, a dropped frame if run at all ~150 integration steps. The arc
+ * itself is unaffected because the two surfaces differ by that clearance and nothing else.
+ */
+function _resolveLanding (hit) {
+  const road = roadSystem
+  if (!road || typeof road.queryNearest !== 'function') return hit
+  const half = (RANGER_PARAMS.roadHalfWidth ?? 5) + (RANGER_PARAMS.roadShoulderWidth ?? 2.5)
+  const nr = road.queryNearest(hit.x, hit.z, half + 1)
+  if (!nr?.point) return hit
+  if (Math.hypot(nr.point.x - hit.x, nr.point.z - hit.z) > half) return hit
+  const ry = road.sampleRoadTopY(hit.x, hit.z)
+  if (ry == null || !isFinite(ry)) return hit
+  hit.y = ry
+  const n = hit.path.length
+  if (n >= 3) hit.path[n - 2] = ry     // keep the replayed path ending where the paper rests
+  return hit
 }
 
 /** Show the landing readout for a moment, then let it fade out of the way. */
@@ -2351,8 +2391,9 @@ function _throwRoll () {
   const p = vehicleState.position
   const p0 = new THREE.Vector3(p.x + _aimDir.x * 1.2, p.y + 1.5, p.z + _aimDir.z * 1.2)
   const v0 = launchVelocity(_aimDir, vehicleState.velocity)
-  const hit = simulateThrow(p0, v0, _throwGroundY)
-  if (!hit) return   // off a cliff or aimed at the sky — no landing, nothing to score
+  const hit0 = simulateThrow(p0, v0, _throwGroundY)
+  if (!hit0) return   // off a cliff or aimed at the sky — no landing, nothing to score
+  const hit = _resolveLanding(hit0)
 
   const roll = spawnModel('newsRoll')
   roll.scale.setScalar(THROWN_ROLL_SCALE)

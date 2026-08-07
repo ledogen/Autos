@@ -163,6 +163,16 @@ check('a perfect route at par pays ~60% of the margin line', (() => {
     return near(r.payout / margin, PAPER_PARAMS.paperW, 1e-9)
 })())
 
+console.log('\n── 7b. the target circle never overlaps the road ──────────────')
+// The offset exists FOR this: a paper that lands on the tarmac must not score. Growing the radius
+// (3 → 5 m, owner 2026-08-07) had to move the offset out with it, and nothing else in the codebase
+// couples the two — so it is pinned here.
+const { POI_PARAMS } = await import('../src/poi.js')
+const shoulderEdge = (POI_PARAMS.roadHalfWidth ?? 5) + (POI_PARAMS.roadShoulderWidth ?? 2.5)
+check('the delivery circle clears the shoulder edge entirely',
+    POI_PARAMS.poiHouseLat - POI_PARAMS.poiHouseTargetR > shoulderEdge,
+    `lat ${POI_PARAMS.poiHouseLat} − R ${POI_PARAMS.poiHouseTargetR} = ${POI_PARAMS.poiHouseLat - POI_PARAMS.poiHouseTargetR}, shoulder edge ${shoulderEdge}`)
+
 console.log('\n── 8. ballistics: drag, and the path the score came from ──────')
 const { simulateThrow, launchVelocity, THROW_PARAMS } = await import('../src/throw.js')
 const flat = () => 0

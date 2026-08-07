@@ -85,10 +85,13 @@ export const POI_PARAMS = {
                               // reads as a rural road with neighbours, not a terrace
     poiHouseMinSep:   80,     // m — min spacing between CHOSEN customers; relaxes (halves) if the
                               // network cannot supply the count at this spacing
-    poiHouseLat:      12,     // m from centerline to the target centre. Past the shoulder edge
+    poiHouseLat:      13,     // m from centerline to the target centre. Past the shoulder edge
                               // (7.5) by more than the target radius, so the circle never overlaps
                               // road surface — a paper that lands on the tarmac must not score.
-    poiHouseTargetR:  3,      // m — the 6 m-diameter delivery circle (owner, 2026-08-05)
+                              // Moved out with the radius below (12 → 13): at 12 a 5 m circle would
+                              // have reached lat 7, back onto the shoulder, and that invariant is
+                              // the reason the offset exists at all.
+    poiHouseTargetR:  5,      // m — the delivery circle (owner: 3 → 5 on 2026-08-07)
     poiHouseMaxDrop:  1.5,    // m — max height spread across the target circle's rim. A circle
                               // draped over a cliff edge reads as broken, and you could not land a
                               // paper in it anyway. The light stand-in for the pad's earthwork cap.
