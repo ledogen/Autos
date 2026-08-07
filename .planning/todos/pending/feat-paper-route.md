@@ -204,21 +204,28 @@ mission panel's chrome by selector.
    now the customer's edge, entered at the near junction and left at the far one, so the whole street
    is driven. Everyone on a street the round drives is on the round.
 
-### The supply problem [OPEN — needs an owner ruling, see BUG-44]
+### The supply problem [FIXED — BUG-44]
 
-The ratified **15 customers inside 1 km** is not reachable on measured seeds. At the live 2500 m
-region radius, seed 6 offers **7** viable customer sites in the whole region and **1** inside 1 km
-(seed 42: 5 and 1; seed 11: 13 and 3). The cause is `poiHouseMaxDrop`, not the world: the reject
-battery discards **97%** of candidate sites (1787 of 1844 on seed 6) on the "target circle is not
-draped over a cliff" test, which was never retuned when `poiHouseTargetR` went 3 m → 5 m on
-2026-08-07 and started sampling the rim two metres further out.
+The ratified **15 customers inside 1 km** was not being met: at the live 2500 m region radius the
+placement pass produced 6 / 11 / 4 customers on seeds 6 / 11 / 42. Two causes, both fixed:
 
-Fixed this pass, because it is unambiguous: a customer whose edge straddles the region wall can
-never be routed to, so `buildHouses` now sites only inside `radius − REGION_MARGIN` and the ring
-relax stops there. That is the one place "count is hard, distance relaxes" has to yield — past the
-wall there is no route.
+- **`poiHouseSpacing` 90 m → 30 m.** The parameter was documented as house *spacing* but is really
+  the **candidate step** — how often the walk looks — while `poiHouseMinSep` (80 m) is what actually
+  decides how far apart chosen customers end up. A severe reject battery (97% of sites fail the
+  flat-ground test, because unlike a lay-by pad nothing carves a target circle flat) over a coarse
+  sample yields almost nothing. At 30 m all three seeds place the full 15, with the closest chosen
+  pair still 99–197 m apart. Costs ~110 ms once per region, behind the loading screen.
+- **Customers may not sit on an edge that straddles the region wall.** The tour plans on the same
+  region-filtered graph the missions do, so such a customer is unroutable and the round skips them
+  silently, forever — three of seed 6's sixteen. The ring relax now stops at
+  `radius − REGION_MARGIN`. This is the one place "count is hard, distance relaxes" must yield.
 
-The ladder and the ring are what still need a ruling. See BUG-44.
+The cliff cap, the target radius and the ring geometry were all left untouched.
+
+**Round sizes that fall out** (seed 6, live region radius): tier 1 = 4 customers / 2.61 km /
+par 2:32 · tier 2 = 9 / 15.7 km / 14:44 · tier 3 = 12 / 17.9 km / 17:42 · tier 4 = 15 / 23.0 km /
+23:49. Whether a 24-minute top-tier round is the right size is a play judgement — see the open
+questions.
 
 `feature/poi-models` (FEAT-60) was merged into this branch first, so the roster and the house pass
 were built together rather than reconciled afterwards. `npm run test:all` green, 46 gates.

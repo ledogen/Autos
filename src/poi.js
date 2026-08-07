@@ -82,10 +82,21 @@ export const POI_PARAMS = {
                               // inside 1 km but 19 lie inside 1.25 km, so a coarse step overshoots
                               // to 1.5 km and scatters the route further than it needs to go. The
                               // ring is a preference; the COUNT is the contract.
-    poiHouseSpacing:  90,     // m of arc between candidate sites on one edge — a house every ~90 m
-                              // reads as a rural road with neighbours, not a terrace
-    poiHouseMinSep:   80,     // m — min spacing between CHOSEN customers; relaxes (halves) if the
-                              // network cannot supply the count at this spacing
+    poiHouseSpacing:  30,     // m of arc between CANDIDATE sites on one edge. This is how often the
+                              // walk LOOKS, not how far apart houses end up — poiHouseMinSep below
+                              // owns that, and conflating the two is what starved this pool.
+                              // Measured 2026-08-07 at the live 2500 m region radius: at 90 m the
+                              // region yielded 6 / 11 / 4 viable customers on seeds 6 / 11 / 42 and
+                              // the count could never be met; at 30 m all three place the full 15,
+                              // with the closest chosen pair still 99-197 m apart (the 80 m floor is
+                              // never even reached) and the ring settling at ~1.7 km. The reject
+                              // battery is severe — a target circle needs naturally flat ground,
+                              // because unlike a lay-by pad nothing carves it — so the pool has to
+                              // be sampled finely to find the flat spots that do exist. Costs ~110 ms
+                              // once per region, behind the loading screen, against a ~15 s cold load.
+    poiHouseMinSep:   80,     // m — min spacing between CHOSEN customers, and THE knob that decides
+                              // whether a street reads as rural neighbours or as a terrace. Relaxes
+                              // (halves) only if the network cannot supply the count at this spacing.
     poiHouseLat:      13,     // m from centerline to the target centre. Past the shoulder edge
                               // (7.5) by more than the target radius, so the circle never overlaps
                               // road surface — a paper that lands on the tarmac must not score.
@@ -419,6 +430,12 @@ export class PoiSystem {
      * (15 customers inside 1 km is unreachable) and wrong-looking (a road where every house is
      * exactly one house apart). The per-edge PRNG jitters each step so the spacing does not read as
      * a ruler, and the stream is keyed to the edge alone, so the sites are identical from any window.
+     *
+     * THIS IS THE POOL, NOT THE ROSTER — the same shape build() uses for pads (gather every viable
+     * site, then select). So the walk should be GENEROUS: a rejected step is a step the selection
+     * never gets to consider, and _evaluateHouse rejects most of them (a target circle needs
+     * naturally flat ground, because unlike a pad nothing carves it flat for you). See the
+     * measurement on poiHouseSpacing for what the step size is actually worth.
      */
     _placeHousesOnEdge (road, e, P, out) {
         const ed = road.edgeParData(e.a, e.b)
