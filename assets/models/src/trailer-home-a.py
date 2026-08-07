@@ -1,11 +1,11 @@
 """
 trailer-home-a - parametric generator for the first POI: a single-wide mobile home.
 
-    TrailerHomeA    one mesh, 7 material slots
+    TrailerHomeA    one mesh, 8 material slots
     exterior only - NO interior. Window openings are recessed and backed by a curtain
     plane so the missing interior never reads as a hole.
 
-Built against Blender 5.2 LTS. Ships at 1188 tris (budget 1200), no texture, 7 materials.
+Built against Blender 5.2 LTS. Ships at 1192 tris (budget 1200), no texture, 8 materials.
 
     blender --background --python trailer-home-a.py -- --export
 
@@ -28,7 +28,7 @@ RECOLOUR (the point of the asset)
 
   Both are flat Base Color, so a recolour is one `material.color.set()` per material with
   no texture multiply. Keep these names stable - renaming silently drops the hookup.
-  The other five materials are fixed and must NOT be recoloured.
+  The other six materials are fixed and must NOT be recoloured.
 """
 
 import bpy, bmesh, math, os, sys
@@ -114,7 +114,7 @@ DOOR_WIN_Z0    = 1.05          # above the door bottom, i.e. above SKIRT_H
 DOOR_WIN_DEPTH = 0.03
 KNOB_W, KNOB_H, KNOB_OUT = 0.10, 0.06, 0.05    # latch-side knob, on the door slab
 
-# --- stoop: open tubular-metal stair + handrails, all TrailerTrim ---
+# --- stoop: open tubular-metal stair + handrails, all TrailerMetal ---
 # Not a solid masonry stoop - square-section bar stock, treads spanning between legs, and
 # a rail each side. Everything here is built from tube(), so a fatter or thinner stock is
 # one param, not a remodel.
@@ -138,11 +138,17 @@ CHIM_CAP_T     = 0.055
 # Battened skirting: vertical ribs at a regular pitch, a ground rail at the bottom, and one
 # crawl-space vent. The ribs stand less proud than SKIRT_INSET, so they stay tucked under
 # the body overhang and their top faces are never seen (hence the '+z' skip).
-SKIRT_RIB_PITCH = 2.40         # nominal spacing; the fitted value divides each run evenly
+SKIRT_RIB_PITCH = 2.90         # nominal spacing; the fitted value divides each run evenly
 SKIRT_RIB_W     = 0.10
 SKIRT_RIB_OUT   = 0.045        # < SKIRT_INSET, so ribs stay under the body
 SKIRT_RAIL_H    = 0.10         # ground rail at the bottom of the skirt
 SKIRT_RAIL_OUT  = 0.045
+
+# --- belt trim: the off-white board capping the skirt, between siding and skirting ---
+# Its underside is not built here: the skirt/body ledge ring is simply widened out to
+# BELT_OUT, which caps the ledge and the board's underside in the same 4 quads.
+BELT_H          = 0.11
+BELT_OUT        = 0.030
 VENT_X, VENT_W, VENT_H = -3.20, 0.55, 0.26     # crawl-space vent, on the -Y flank
 VENT_DEPTH      = 0.090        # deep enough that the reveal shades - a shallow one is
                                # invisible, since every skirt colour is within 0.06 of the
@@ -156,15 +162,25 @@ VENT_DEPTH      = 0.090        # deep enough that the reveal shades - a shallow 
 COL_BODY    = (0.28, 0.72, 0.76, 1)
 COL_ACCENT  = (0.10, 0.34, 0.40, 1)
 COL_ROOF    = (0.34, 0.34, 0.35, 1)
-COL_SKIRT   = (0.28, 0.26, 0.24, 1)
-COL_TRIM    = (0.82, 0.82, 0.80, 1)
+COL_SKIRT   = (0.155, 0.148, 0.140, 1)  # darker than the roof, so the trailer sits DOWN
+COL_TRIM    = (0.76, 0.73, 0.63, 1)     # aged off-white, NOT white - warm and pulled down
 COL_DOOR    = (0.45, 0.33, 0.24, 1)
-COL_CURTAIN = (0.82, 0.65, 0.52, 1)    # warm - it is the only colour seen through a window
+COL_CURTAIN = (0.82, 0.65, 0.52, 1)     # warm - the only colour seen through a window
+COL_METAL   = (0.145, 0.150, 0.158, 1)  # dark grey stair / flue metalwork
 
+# These are LINEAR values, which is what glTF baseColorFactor wants - they read roughly one
+# and a half times lighter on screen than the number suggests (0.26 linear is about 0.55
+# sRGB, a mid grey). Pick dark greys far lower than looks right on paper, and judge them
+# rendered rather than from the tuple.
+
+# TrailerMetal is the 8th material, and the ONLY reason the asset costs 8 draw calls rather
+# than 7. It exists so the dark-grey metalwork (stoop, rails, flue) stays tunable apart from
+# the roof, which happens to be a near-identical grey today. Point it at COL_ROOF and delete
+# it if the draw call ever matters more than that independence.
 MATS = [("TrailerBody", COL_BODY, 0.85), ("TrailerAccent", COL_ACCENT, 0.85),
         ("TrailerRoof", COL_ROOF, 0.80), ("TrailerSkirt", COL_SKIRT, 0.90),
         ("TrailerTrim", COL_TRIM, 0.70), ("TrailerDoor", COL_DOOR, 0.60),
-        ("TrailerCurtain", COL_CURTAIN, 0.95)]
+        ("TrailerCurtain", COL_CURTAIN, 0.95), ("TrailerMetal", COL_METAL, 0.45)]
 MI = {n: i for i, (n, _, _) in enumerate(MATS)}
 
 EAVE  = SKIRT_H + BODY_H
@@ -539,7 +555,7 @@ def build_steps(bm):
     RAIL_GAP outboard of the tread width, which is what lets them run ground-to-rail in one
     bar without punching through a tread.
     """
-    m = MI["TrailerTrim"]
+    m = MI["TrailerMetal"]
     y0 = WIDTH / 2
     hw = STEP_W / 2
 
@@ -566,10 +582,32 @@ def build_steps(bm):
         tube(bm, (rx, yb, zb), (rx, yt, zt), RAIL_R, m, cap0=True, cap1=True)
 
 
+def build_belt_trim(bm):
+    """Off-white board where the siding meets the skirting - the horizontal line that stops
+    the two big fields running into each other.
+
+    Four boxes, not a ring: the long ones run the full length INCLUDING the corner returns,
+    the end ones tuck between them, so every butt joint is buried and can be skipped. The
+    undersides are skipped too - the widened ledge ring in build_skirt_detail() caps them.
+    """
+    m = MI["TrailerTrim"]
+    hl, hw = LENGTH / 2, WIDTH / 2
+    z0, z1 = SKIRT_H, snap_course(SKIRT_H + BELT_H)
+
+    for sy in (-1, 1):                                    # long runs, corner to corner
+        y0, y1 = sorted((sy * hw, sy * (hw + BELT_OUT)))
+        box(bm, -hl - BELT_OUT, hl + BELT_OUT, y0, y1, z0, z1, m,
+            skip=('-z', '-y' if sy > 0 else '+y'))
+    for sx in (-1, 1):                                    # end runs, tucked between them
+        x0, x1 = sorted((sx * hl, sx * (hl + BELT_OUT)))
+        box(bm, x0, x1, -hw, hw, z0, z1, m,
+            skip=('-z', '-y', '+y', '-x' if sx > 0 else '+x'))
+
+
 def build_chimney(bm):
     """Woodburner flue: a pipe off the ridge with a rain cap. Deliberately tiny - it is the
     one thing on the model that says somebody heats this place."""
-    m = MI["TrailerTrim"]
+    m = MI["TrailerMetal"]
     z0 = RIDGE + ROOF_THK
     tube(bm, (CHIM_X, 0.0, z0 - 0.06), (CHIM_X, 0.0, z0 + CHIM_H), CHIM_R, m, cap1=True)
     box(bm, CHIM_X - CHIM_CAP_R, CHIM_X + CHIM_CAP_R, -CHIM_CAP_R, CHIM_CAP_R,
@@ -598,9 +636,10 @@ def build_skirt_detail(bm):
     # Close the ledge between the inset skirt and the wider body. This was an OPEN RING -
     # the skirt box has no top face and the wall starts SKIRT_INSET further out, so there
     # was a 0.06 m slot you could see into from below. It also covers the rib tops, which
-    # is what makes their '+z' skip safe.
-    flat_ring_z(bm, (-LENGTH / 2, LENGTH / 2, -WIDTH / 2, WIDTH / 2),
-                (-hx, hx, -hy, hy), SKIRT_H, m, down=True)
+    # is what makes their '+z' skip safe. Widened to BELT_OUT so the same 4 quads double as
+    # the underside of the belt trim board.
+    bx, by = LENGTH / 2 + BELT_OUT, WIDTH / 2 + BELT_OUT
+    flat_ring_z(bm, (-bx, bx, -by, by), (-hx, hx, -hy, hy), SKIRT_H, m, down=True)
 
     for sy in (-1, 1):                                         # ribs, long flanks
         n = max(1, round(LENGTH / SKIRT_RIB_PITCH))
@@ -616,14 +655,16 @@ def build_skirt_detail(bm):
         box(bm, x0, x1, -SKIRT_RIB_W / 2, SKIRT_RIB_W / 2, 0.0, SKIRT_H, m,
             skip=('-z', '+z', '-x' if sx > 0 else '+x'))
 
-    for sy in (-1, 1):                                         # ground rail, long flanks
+    # Ground rail. Long runs go corner to corner and the end runs tuck between them, so
+    # every butt joint is buried and skippable - same trick as build_belt_trim().
+    for sy in (-1, 1):
         y0, y1 = sorted((sy * hy, sy * (hy + SKIRT_RAIL_OUT)))
-        box(bm, -hx, hx, y0, y1, 0.0, SKIRT_RAIL_H, m,
+        box(bm, -hx - SKIRT_RAIL_OUT, hx + SKIRT_RAIL_OUT, y0, y1, 0.0, SKIRT_RAIL_H, m,
             skip=('-z', '-y' if sy > 0 else '+y'))
     for sx in (-1, 1):
         x0, x1 = sorted((sx * hx, sx * (hx + SKIRT_RAIL_OUT)))
         box(bm, x0, x1, -hy, hy, 0.0, SKIRT_RAIL_H, m,
-            skip=('-z', '-x' if sx > 0 else '+x'))
+            skip=('-z', '-y', '+y', '-x' if sx > 0 else '+x'))
 
     # Sink the vent through the hole punched above. start = -SKIRT_INSET because
     # wall_frame() is the BODY plane and the skirt sits inside it - without that the vent
@@ -667,6 +708,7 @@ def build():
     build_roof(bm)
     build_gables(bm)
     build_skirt_detail(bm)
+    build_belt_trim(bm)
     build_steps(bm)
     build_chimney(bm)
 

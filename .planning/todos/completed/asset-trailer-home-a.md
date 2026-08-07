@@ -4,10 +4,10 @@ type: asset
 status: done
 severity: minor
 opened: 2026-08-04
-updated: 2026-08-04
+updated: 2026-08-05
 closed: 2026-08-04
-blocked-by: FEAT-59
-relates: FEAT-46, FEAT-21, ASSET-09, ASSET-10
+blocked-by: FEAT-60
+relates: FEAT-46, FEAT-21, FEAT-59, FEAT-60, BUG-43, ASSET-09, ASSET-10
 ---
 
 # ASSET-21: Trailer home A (single-wide mobile home)
@@ -30,13 +30,13 @@ white so a row of trailers reads as a park rather than a copy-paste.
 
 | Field | Value |
 |---|---|
-| Tri budget | ≤1200 — **shipped at 1188** (was ≤800/624; raised twice by the detail passes below) |
+| Tri budget | ≤1200 — **shipped at 1192** (was ≤800/624; raised twice by the detail passes below) |
 | Texture | **none.** Flat material colours, no UVs — the siding is geometry |
 | Real size | 12.36 m × 4.58 m (incl. stoop) × 3.15 m to roof, **3.71 m to the flue cap**; body 12.0 × 3.5 |
 | Origin | base-seated: skirting bottom at y=0, centred on the body footprint |
 | Forward | −Z (door and stoop face −Z) |
 | Collision | `{ shape: 'box', dims: [3.5, 3.15, 12.0] }` — body only; excludes the stoop **and the flue**, which is why the height stays 3.15 and not 3.71 |
-| Draw calls | 7 (one per material) |
+| Draw calls | **8** (one per material) — the 8th is `TrailerMetal`, see the palette pass below |
 
 ### Runtime recolour — the material names are the API
 
@@ -54,22 +54,32 @@ no texture multiply, no tint shader. Verified across the range:
     yellow  body (0.88, 0.76, 0.28)   accent (0.46, 0.34, 0.12)
     white   body (0.90, 0.90, 0.88)   accent (0.55, 0.56, 0.58)
 
-The other five — `TrailerRoof`, `TrailerSkirt`, `TrailerTrim`, `TrailerDoor`, `TrailerCurtain` —
-are **fixed and must not be recoloured**.
+The other six — `TrailerRoof`, `TrailerSkirt`, `TrailerTrim`, `TrailerDoor`, `TrailerCurtain`,
+`TrailerMetal` — are **fixed and must not be recoloured**.
 
 ## Acceptance
 
-- [x] `assets/models/trailer-home-a.glb` exists, export-clean: 65.3 KB, no `extensionsUsed`, no
+- [x] `assets/models/trailer-home-a.glb` exists, export-clean: 66.2 KB, no `extensionsUsed`, no
       images, no Draco/KTX2.
 - [x] Sources committed: `assets/models/src/trailer-home-a.blend` + `trailer-home-a.py`.
-- [x] Tri count within budget (1188 / 1200). Material names stable.
+- [x] Tri count within budget (1192 / 1200). Material names stable.
 - [x] Base-seated, forward −Z, verified from the exported glTF bounds.
 - [x] No inverted windings — 45 rays cast from 9 m out on all four flanks and from above,
       asserting the first face hit points back at the ray. Zero back-facing hits. (Backface
       culling in the viewport is the eyeball version of the same check, and is what
       `GLTFLoader`'s default `FrontSide` materials will do in-game.)
 - [x] Recolour verified at all three ends of the range.
-- [ ] Loads and places in-world through the FEAT-59 model import service. **Still blocked.**
+- [x] **Loads** through the FEAT-59 model import service — verified headlessly 2026-08-05 by parsing
+      the shipped `.glb` with `GLTFLoader.parse()`: 8 materials, names intact, `TrailerBody` /
+      `TrailerAccent` substring-matchable exactly as `src/vehicle-model.js` matches vehicle paint.
+- [ ] **Places** in-world as a POI. Blocker moved FEAT-59 → **FEAT-60**, which is done on
+      `feature/poi-models` (it already registers `trailerHomeA` in `data/prop-models.js` and sites it
+      as mom's house and Larry's house) but is **not on main**. Nothing further is needed from this
+      asset — do NOT add a registry entry on main, that branch owns the file.
+- [ ] Per-instance recolour actually works — **blocked by [BUG-43](../pending/bug-model-material-sharing.md)**.
+      `spawnModel()` clones the scene graph but shares materials, so recolouring one trailer
+      recolours every trailer. FEAT-60 spawns this model for *both* story houses, so they cannot
+      differ until that is fixed.
 
 ## Notes
 
@@ -158,7 +168,32 @@ Also: a shallow recess with these palette colours is invisible. Every skirt-adja
 within 0.06 of the others and there is no AO, so the vent only reads once it is deep enough for the
 reveal faces to shade differently — `VENT_DEPTH` 0.035 → 0.090.
 
-Budget note: this leaves **12 tris of headroom**.
+### Palette pass (2026-08-05) — 1188 → 1192 tris, budget unchanged at ≤1200
+
+Owner-directed value structure. Only one piece of new geometry — the belt trim — the rest is palette.
+
+| Change | Value |
+|---|---|
+| `TrailerMetal` — **new 8th material**, dark grey stoop + flue | `(0.145, 0.150, 0.158)` |
+| `TrailerTrim` aged white → off-white (windows, corners, belt) | `(0.82, 0.82, 0.80)` → `(0.76, 0.73, 0.63)` |
+| `TrailerSkirt` a shade darker | `(0.28, 0.26, 0.24)` → `(0.155, 0.148, 0.140)` |
+| Belt trim board between siding and skirting, +24 tris | `build_belt_trim()` |
+
+**The 8th material is a real cost: 8 draw calls, not 7.** The stoop and flue used to be `TrailerTrim`,
+which the same pass turned off-white, so they needed their own slot. `TrailerRoof` is a near-identical
+grey and could have absorbed them for free — that was rejected so the metalwork stays tunable apart
+from the roof. Point `COL_METAL` at `COL_ROOF` and drop the slot if that trade ever inverts.
+
+**These are LINEAR values** — what glTF `baseColorFactor` wants, and roughly 1.5× lighter on screen
+than the number reads (0.26 linear ≈ 0.55 sRGB, a mid grey). The first attempt at "dark grey" used
+0.26 and rendered mid-grey. Pick dark values far lower than looks right on paper and judge them
+rendered.
+
+Paid for within the budget by two savings that cost nothing visually: the ground rail's end runs now
+tuck between the long runs so their butt joints are buried and skippable (−8), and the batten pitch
+went 2.40 → 2.90 m, 14 battens to 12 (−12).
+
+Budget note: this leaves **8 tris of headroom**.
 
 ### Siding — how it works, and the two traps
 

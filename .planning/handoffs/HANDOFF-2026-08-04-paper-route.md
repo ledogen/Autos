@@ -15,6 +15,26 @@
 - **Base carries FEAT-59** (`src/model-service.js`, `data/prop-models.js`, `news-roll.glb` + its
   Blender generator) and the FEAT-60 POI-marker ticket — both landed on `main` the same night.
 
+## SUPERSEDED IN PART — owner rulings 2026-08-05
+
+**Read `.planning/todos/pending/feat-paper-route.md` first.** The plan below is preserved as written,
+but four of its sections are overturned. Where they disagree, the ticket wins.
+
+1. **Scoring is simplified.** The `ratioEff = ratio / quality` model is **dropped**. Flat rate per
+   delivery × accuracy; partial routes pay; a completion-only expediency bonus; rank per-axis on
+   `coverage × meanAccuracy`. `payoutFor()`/`gradeRun()` are no longer called at all.
+2. **Accuracy confirmed:** 6 m diameter (`TARGET_R = 3 m`), `q(0) = 1.0` → `q(3 m) = 0.30`, linear;
+   outside is not a delivery. A 1 m centre ring is decoration; distance stays the metric.
+3. **Houses are a separate POI group** — 13 new POIs in a **1.5 km-diameter** ring that exist only to
+   receive papers, not re-tagged general POIs. POI generation gains a **required count** (count hard,
+   distances relax). Houses are mission *receivers* but must not swamp ordinary destinations. Collides
+   with the FEAT-60/POI worktree — read it first.
+4. **Presentation:** thrown papers freeze where they land; accuracy is shown on landing; orange POI
+   rings are suppressed during any mission.
+
+Also ruled: spares interpolate +100% (easiest route) → +30% (hardest); tour routing is *assumed*
+expensive, so the briefing cards hold until routing completes.
+
 ---
 
 # The plan, as approved (verbatim)
