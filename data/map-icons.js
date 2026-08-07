@@ -27,7 +27,7 @@
 
 // Glyphs below are hand-authored to this file's rules (24×24, filled, one `d`, nonzero holes wound
 // against their outer subpath). They are deliberately BLUNT: the outline is a fixed 1.5 SCREEN px,
-// so at POI_ICON_PX 30 it eats ~1.2 viewBox units and any interior feature thinner than that is
+// so at POI_ICON_PX 22.5 it eats ~1.6 viewBox units and any interior feature thinner than that is
 // swallowed whole by its own stroke. Hence one or two chunky cut-outs per glyph and nothing finer
 // — the door of the house, the patty of the burger, the eye of the hook. Anything the drawing can
 // carry as SILHOUETTE it carries as silhouette; interior lines are the last resort, not the first.
@@ -116,5 +116,10 @@ export const POI_ICONS = {
     missionGiver: { label: null,      color: '#ff7a18', path: null },
 }
 
-/** Rendered size of a pictogram on the map, in px (the 24-unit viewBox scales to this). */
-export const POI_ICON_PX = 30
+/**
+ * Rendered size of a pictogram on the map, in px (the 24-unit viewBox scales to this).
+ * 15 as first drawn, 30 at the doubling pass, 22.5 after that read too heavy (owner, 2026-08-07).
+ * The tunnel arch and the car marker in map2d.js are sized to match — move them together or the
+ * map stops looking like one drawing.
+ */
+export const POI_ICON_PX = 22.5

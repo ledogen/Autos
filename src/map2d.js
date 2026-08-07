@@ -50,12 +50,12 @@ const RESTREAM_MOVE   = 300    // m — re-stream when the pan center has drifte
 const COARSE_DIV      = 250    // m — coarse-height normaliser for terrain shading (≈ full range, see ranger.js)
 const BG_CELL_PX      = 18     // px — terrain shading sample cell (coarser = cheaper)
 const TELEPORT_SNAP_RADIUS = 500  // m — double-click snaps to the nearest road within this range
-// FEAT-40 tunnel arch, outer radius in px. Doubled from 6.5 alongside the POI icons (FEAT-60) so
-// the map's two glyph families stay the same weight as each other.
-const TUNNEL_ICON_R = 13
-// Car marker, nose-to-tail half-length in px — doubled from 9 with everything else. The triangle's
+// FEAT-40 tunnel arch, outer radius in px. Sized alongside the POI icons (FEAT-60) so the map's
+// glyph families stay the same weight as each other — 6.5 originally, 13 at the 2x pass, 9.75 now.
+const TUNNEL_ICON_R = 9.75
+// Car marker, nose-to-tail half-length in px (9 originally, 18 at the 2x pass). The triangle's
 // half-width is derived from it so the arrow keeps its taper instead of going stubby or needly.
-const CAR_ICON_L = 18
+const CAR_ICON_L = 13.5
 
 export class Map2D {
     /**
