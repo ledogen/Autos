@@ -1,0 +1,204 @@
+# Art Style: what RangerSim looks like
+
+**Read this before modelling anything.** It is the visual brief. `ASSETS.md` (sibling file) covers
+the mechanical conventions — format, paths, export settings, pivots. This file covers what the thing
+should *look* like, so you don't have to be told.
+
+Verified against the three shipped models and the procedural prop system as of 2026-08-05.
+
+---
+
+## The one-line brief
+
+**Flat-coloured low-poly, faceted, no textures. Detail is geometry, never a map. Desaturated
+natural world; saturated man-made objects. Read at 20 m through fog, not at 2 m in a turntable.**
+
+If you only remember one thing: **anything you would normally paint into a texture, you either
+model or you leave out.**
+
+---
+
+## The reference set
+
+These are the calibration pieces. When unsure, open them and match.
+
+| Asset | Tris | Materials | Textures | What it teaches |
+|---|---|---|---|---|
+| `trailer-home-a.glb` | 1192 | 8 | **0** | The house style. Siding, curtains, battens, trim — all geometry |
+| `hilux.glb` (3rd-party, CC-BY) | 1908 | 10 | **0** | A whole vehicle in flat colour. Roughness 1.0, metalness 0, everywhere |
+| `broken-car.glb` | 1944 | 8 | **0** | A vehicle POI with a *situation*. Carries the only sanctioned alpha + interior — see "Sanctioned exceptions" |
+| `news-roll.glb` | 358 | 2 | **1** | The *only* legitimate texture: printed newsprint. Text is information geometry can't carry |
+| Procedural props (`src/props/`) | — | 1 shared | 0 | Trees/rocks: 6–7-sided tubes, subdiv 0–2 blobs, one flat colour a part |
+
+`trailer-home-a` is the best current example of the style and the one to imitate. Its generator
+(`assets/models/src/trailer-home-a.py`) is heavily commented with the traps.
+
+---
+
+## Rules
+
+### 1. Flat colour per material. No textures.
+
+Every shipped model except `news-roll` has **zero images**. A material is a `baseColorFactor` and
+nothing else — no albedo map, no normal map, no roughness map, no AO map, no emissive map.
+
+Texture only when it carries **information that geometry cannot**: printed text, a label, a logo, a
+photograph. "It would look richer" is not information. If you are reaching for a texture to add wear,
+grain, panel lines or dirt, you are reaching for the wrong tool — model it or drop it.
+
+This is not just taste. It costs no texture memory, needs no bake step, needs no UVs at all, and it
+makes runtime recolour free (see `ASSETS.md`, "Untextured assets").
+
+### 2. Detail is geometry.
+
+The trailer's lap siding is 13 courses of shallow V-grooves. Its curtains are folded zigzags. Its
+skirting has real battens and a real recessed vent. All of it is polygons, and it costs about what a
+texture would have cost in memory while surviving any light direction.
+
+The trick that makes this work: **flat shading turns a fold into a colour change for free.** A groove
+or a pleat reads as light/dark banding purely from facet normals — one material, no texture, 2 tris a
+fold. Use it constantly.
+
+### 3. Faceted. Never smooth-shade.
+
+Everything is flat-shaded. Props are built non-indexed so `computeVertexNormals()` yields per-face
+normals; the trailer sets `f.smooth = False` on every face. Do not add smoothing groups, do not
+average vertex normals, do not raise subdivision to hide faceting. **The facets are the look.**
+
+### 4. Budgets by role
+
+Real budgets from the shipped asset tickets:
+
+| Role | Tris | Examples |
+|---|---|---|
+| Small scatter / repeated dressing | **250–500** | mailbox, crate, pallet, gnome, beach ball |
+| Hand props, camp gear, cargo | **350–700** | newspaper roll (358), cooking kit, propane tank |
+| Mid structures, furniture clusters | **700–1800** | awning, produce stall, fire pit |
+| POI buildings, vehicles | **1200–4000** | trailer home (1192), hilux (1908), sawmill, gas station |
+
+Budget by **how often it repeats**, not by how important it feels. One ticket puts it well: *"it will
+be the most-repeated object in the game; treat the budget as hard."*
+
+Report the **evaluated** count through the depsgraph with modifiers applied, not the base mesh.
+
+### 5. Colour: desaturated world, saturated things people made
+
+The nature palette is grey-green-brown and close to neutral. Man-made objects carry the saturation
+and are what your eye lands on. That contrast is the reason a trailer reads as a destination from
+150 m away.
+
+    NATURAL (from data/flora.js)
+      aspen bark   #eae7df   fleck #242424      pine bark   #5a3d22
+      aspen canopy #86b84a                      pine canopy #3b6840
+      rock/boulder #b7b6b4   variant #8a8782    deadwood    #6f5c46
+      bush         #4f8a3a
+
+    MAN-MADE (from trailer-home-a, linear values)
+      body    0.28 0.72 0.76      accent  0.10 0.34 0.40
+      roof    0.34 0.34 0.35      skirt   0.16 0.15 0.14
+      trim    0.76 0.73 0.63      door    0.45 0.33 0.24
+      curtain 0.82 0.65 0.52      metal   0.14 0.15 0.16
+
+Give an object a **value structure**, not just hues: something dark at the base to sit it down,
+something light to catch the eye, one warm accent. The trailer is dark skirt → off-white belt →
+saturated body → mid-grey roof, bottom to top.
+
+Keep metalness at **0** and vary **roughness** instead (0.45 metalwork → 0.95 fabric). No shipped
+asset uses metalness above 0.2.
+
+> **Trap: these are LINEAR values.** glTF `baseColorFactor` is linear, and it renders roughly 1.5×
+> lighter than the number suggests — 0.26 linear is about 0.55 sRGB, a mid grey. A "dark grey" that
+> looks right as a tuple will render mid-grey. Pick dark values far lower than seems right, and
+> **judge them rendered, never from the number.**
+
+### 6. Draw calls = materials. Count them.
+
+Three.js issues one draw call per material. Fine for a POI placed a handful of times; **not** fine
+for anything scatter-density, which must share one material and go through the instancing path.
+
+Merge materials that are the same colour and same role. Only split when the two surfaces need to be
+tuned or recoloured independently — and when you do split, say so in the ticket and say why.
+
+### 7. No transparency.
+
+No alpha blending, no glass, no cutout foliage. The prop system is explicitly no-alpha-blend for
+iGPU performance, and the trailer deliberately has no glass — pleated curtains behind an opening sell
+a window better than a transparent plane, with no sort order to get wrong.
+
+**One sanctioned exception exists** — see "Sanctioned exceptions" below. It is not a precedent.
+
+### 8. Silhouette first — you are seen through fog
+
+The camera is a car windscreen, not a turntable. Verified viewing conditions:
+
+- Terrain draws to about **160 m** (chunk ring 2 × 64 m tiles).
+- `FogExp2` at density 0.006 (Normal preset): **~60% fogged at 160 m**, ~30% at 100 m, 96% by 300 m.
+- `ACESFilmicToneMapping` applies to the whole scene, so values compress at the top end.
+
+So: **silhouette and value structure survive; surface detail does not.** Spend polys on the outline
+and on big light/dark divisions. A 0.03 m panel line is invisible past ~15 m — which is fine for a
+thing the player walks up to, and waste on a thing they only ever drive past.
+
+One asset ticket says it exactly right: *"silhouette matters more than shading."*
+
+---
+
+## Anti-patterns
+
+Things that look like good modelling elsewhere and are wrong here:
+
+- **Baking an AO or grunge map.** There is no AO in this renderer. Model the shadow or skip it.
+- **Smoothing groups / subdivision to "clean up" faceting.** The faceting is the style.
+- **A texture atlas for a single prop.** Flat colours need no UVs at all.
+- **PBR metal/rough maps.** One roughness scalar per material, metalness 0.
+- **Beveling every edge.** Bevels cost tris and read as nothing at 20 m. The trailer has none.
+- **Modelling an interior.** Exterior only. Cap every opening (the trailer uses recessed curtains).
+  One sanctioned exception — see below.
+- **Matching a photo reference literally.** References set proportion and silhouette. Translate the
+  detail into geometry or drop it — do not chase it into a texture.
+- **Adding a material "just for this one bit."** That is a draw call. Justify it or reuse.
+
+---
+
+## Sanctioned exceptions
+
+Two rules above have been overridden exactly once, by explicit user ruling on **2026-08-05**, for
+**`broken-car.glb` (ASSET-18)** — the broken-down Buick Century wagon. Recorded here so the conflict
+does not have to be re-litigated every session.
+
+| Rule | Override | Why it was allowed |
+|---|---|---|
+| 7, no transparency | `CarGlass` is `alphaMode: BLEND` at 0.72, `doubleSided: true` | The car is a POI placed a handful of times, not scatter density, so one extra sorted draw call is affordable |
+| Anti-pattern, no interiors | Low-detail tub to the beltline, two bench seats, dash, steering wheel | Once the glass is transparent, an empty shell reads worse than no glass at all |
+
+**The scope of this exception is exactly that one file.** It does not extend to props, to scatter
+objects, or to the next vehicle. The prop system remains no-alpha-blend for iGPU reasons and the
+"cap every opening" rule still governs everything else. If a new asset wants either, that is a fresh
+ruling, not a precedent to cite.
+
+Two things worth stealing from it even if you keep the glass opaque:
+
+- **The beltline sightline rule.** Anything meant to be seen through a window must break the
+  beltline. A seat back modelled to a realistic 0.96 m sits entirely below a 1.02 m belt and the
+  cabin reads as empty no matter how good the geometry is.
+- **Interior value.** Read through glass against a bright flank, only the value gap survives. The
+  tub is near-black (0.030 linear), far darker than a real tan interior — the same reasoning as the
+  linear-value trap in rule 5.
+
+---
+
+## Before you export
+
+- [ ] Zero images in the file, unless it is genuinely printed information
+- [ ] Every face flat-shaded
+- [ ] Evaluated tri count inside the ticket budget, reported per object
+- [ ] Metalness 0; roughness carries the surface difference
+- [ ] Materials counted, and any split above ~6 justified in the ticket
+- [ ] Dark values checked **rendered**, not as tuples
+- [ ] No inverted windings — prove it, don't eyeball it. Cast rays from outside and assert the first
+      face hit points back at the ray (the trailer ticket has a worked example). A model viewed from
+      the far side looks mirrored when it is fine, and fine when it is mirrored.
+- [ ] Silhouette still reads with the model shrunk to thumbnail size
+
+Then follow `ASSETS.md` for format, path, pivot, forward axis, and the provenance trio
+(`.glb` + `.blend` + `build.py`).

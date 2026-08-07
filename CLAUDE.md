@@ -68,6 +68,10 @@ names are matched by substring so they must be stable. Third-party models get a 
 `assets/models/CREDITS.md`. Full convention + Blender export settings:
 `.planning/research/ASSETS.md`.
 
+**Art style is `.planning/research/ART-STYLE.md` — read it before modelling anything.** Flat colours,
+**no textures**, faceted (never smooth-shaded), detail carried as geometry rather than maps,
+desaturated nature against saturated man-made objects. `trailer-home-a.glb` is the reference piece.
+
 ### Diagnostic tools (all live in test/, triggered externally)
 
 - **Road resolution / fold debugging:** `node test/replay.mjs <place-capture.json>` — reports

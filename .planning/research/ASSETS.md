@@ -1,5 +1,10 @@
 # 3D Asset Convention: format, location, authoring
 
+> **Modelling something? Read [`ART-STYLE.md`](ART-STYLE.md) first.** This file is the *mechanical*
+> convention — format, paths, export settings, pivots. ART-STYLE.md is what the asset should look
+> like: flat colours, no textures, faceted, detail as geometry. You need both, and the style one
+> answers the questions that otherwise get asked every session.
+
 Where hand-authored 3D models live and what format they must be in. Applies to anything modelled
 externally (Blender et al.) and loaded at runtime: vehicles today, props once they are sideloaded
 as `.glb` (planned).
