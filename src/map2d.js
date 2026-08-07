@@ -20,7 +20,7 @@
 import * as THREE from 'three'
 import { RoadSystem } from './road.js'
 import { MISSION_PLAN_RADIUS } from './mission.js'
-import { POI_ICONS, POI_ICON_PX } from '../data/map-icons.js'   // FEAT-60: per-type POI glyphs
+import { POI_ICONS, POI_ICON_PX, TUNNEL_ICON } from '../data/map-icons.js'   // FEAT-60: map glyphs
 
 // Streamed radius of the map's own RoadSystem around the pan cursor. UNIFIED with the story-mode
 // planner's radius: the two are the big read-only networks in the app and they share route caches,
@@ -50,9 +50,6 @@ const RESTREAM_MOVE   = 300    // m — re-stream when the pan center has drifte
 const COARSE_DIV      = 250    // m — coarse-height normaliser for terrain shading (≈ full range, see ranger.js)
 const BG_CELL_PX      = 18     // px — terrain shading sample cell (coarser = cheaper)
 const TELEPORT_SNAP_RADIUS = 500  // m — double-click snaps to the nearest road within this range
-// FEAT-40 tunnel arch, outer radius in px. Sized alongside the POI icons (FEAT-60) so the map's
-// glyph families stay the same weight as each other — 6.5 originally, 13 at the 2x pass, 9.75 now.
-const TUNNEL_ICON_R = 9.75
 // Car marker, nose-to-tail half-length in px (9 originally, 18 at the 2x pass). The triangle's
 // half-width is derived from it so the arrow keeps its taper instead of going stubby or needly.
 const CAR_ICON_L = 13.5
@@ -509,6 +506,7 @@ export class Map2D {
 
         this._drawRegion(ctx)    // under the mission route — it's world furniture, not the subject
         this._drawCampZones(ctx) // FEAT-45: yellow casing on the road stretches inside a camp zone
+        this._drawTunnels(ctx)   // FEAT-40: over the casing — a bore inside a zone must still read
         this._drawPois(ctx)      // likewise furniture: placed at entry, so not in the cached bg
         this._drawMission(ctx)   // under the car marker, over the cached bg
         this._drawCar(ctx)
@@ -601,11 +599,16 @@ export class Map2D {
             for (let i = 1; i < points.length; i++) ctx.lineTo(this._sx(points[i].x), this._sy(points[i].z))
             ctx.stroke()
         }
-        this._drawTunnels(ctx)
     }
 
     // FEAT-40: one arch icon centered on each tunnel bore (span midpoint). Spans live on the net
     // entries (netEntry.tunnelSpans, run-arc metres in the polyCum domain set at assembly).
+    //
+    // Drawn as FURNITURE, not into the cached background (owner, 2026-08-07): a camp zone paints a
+    // yellow casing along every road stretch inside it, and from the background the arches came out
+    // underneath it — a tunnel inside a camping area simply vanished. Moving the pass up also means
+    // the arches ride the LIVE transform instead of the background bitmap's blit delta, so they stay
+    // pinned to their portals mid-pan rather than sliding with the stale bitmap.
     _drawTunnels(ctx) {
         const road = this._road
         const lerpAt = (points, cum, s) => {
@@ -619,21 +622,9 @@ export class Map2D {
             if (!e.tunnelSpans || !e.points || !e.polyCum) continue
             for (const sp of e.tunnelSpans) {
                 const p = lerpAt(e.points, e.polyCum, (sp.s0 + sp.s1) / 2)
-                const x = this._sx(p.x), y = this._sy(p.z)
-                // Portal-arch glyph: filled amber semicircle on a flat base, dark inner bore.
-                // Proportions are fractions of TUNNEL_ICON_R so the arch resizes as one shape —
-                // scaling the outer radius alone would swallow the bore.
-                const R = TUNNEL_ICON_R, by = y + R * (3 / 6.5)
-                ctx.fillStyle = '#ffb84a'
-                ctx.beginPath()
-                ctx.arc(x, by, R, Math.PI, 0)
-                ctx.closePath()
-                ctx.fill()
-                ctx.fillStyle = '#1c1c1c'
-                ctx.beginPath()
-                ctx.arc(x, by, R * (3.5 / 6.5), Math.PI, 0)
-                ctx.closePath()
-                ctx.fill()
+                ctx.fillStyle = TUNNEL_ICON.color
+                ctx.strokeStyle = '#101010'
+                this._drawGlyph(ctx, '#tunnel', TUNNEL_ICON.path, this._sx(p.x), this._sy(p.z))
             }
         }
     }
@@ -810,6 +801,23 @@ export class Map2D {
         ctx.lineCap = 'butt'
     }
 
+    // Draw one 24-box glyph from data/map-icons.js centred on (sx, sy), filled in whatever
+    // fillStyle is already set and outlined near-black. The single place any glyph is rendered, so
+    // the POI markers and the tunnel arch cannot drift apart in weight or outline. Caller sets
+    // fillStyle/strokeStyle; `key` is the Path2D cache key (glyphs are static, only positions move,
+    // so this is a handful of objects for the life of the map).
+    _drawGlyph(ctx, key, d, sx, sy) {
+        const S = POI_ICON_PX / 24          // the icon table's viewBox is 24 units
+        let p = this._iconPaths.get(key)
+        if (!p) { p = new Path2D(d); this._iconPaths.set(key, p) }
+        ctx.save()
+        ctx.translate(sx - POI_ICON_PX / 2, sy - POI_ICON_PX / 2)
+        ctx.scale(S, S)
+        ctx.lineWidth = 1.5 / S             // undo the scale so the outline stays hairline
+        ctx.fill(p); ctx.stroke(p)
+        ctx.restore()
+    }
+
     // FEAT-46/60: POI markers — the navigate-to-it affordance. Each roster type carries its own
     // glyph, colour and label (data/map-icons.js), because "drive to the gas station" is only a
     // plan if the map says which marker that is. Drawn as world FURNITURE (with the region ring,
@@ -819,7 +827,6 @@ export class Map2D {
     _drawPois(ctx) {
         const list = this._getPois()
         if (!list || !list.length) return
-        const S = POI_ICON_PX / 24          // the icon table's viewBox is 24 units
         for (const q of list) {
             const ico = POI_ICONS[q.type] ?? POI_ICONS.missionGiver
             const sx = this._sx(q.x), sy = this._sy(q.z)
@@ -827,16 +834,7 @@ export class Map2D {
             ctx.strokeStyle = '#101010'
             ctx.fillStyle = ico.color
             if (ico.path) {
-                // One Path2D per type, built on first sight — the glyph is static, only its
-                // position moves, so this is a handful of objects for the life of the map.
-                let p = this._iconPaths.get(q.type)
-                if (!p) { p = new Path2D(ico.path); this._iconPaths.set(q.type, p) }
-                ctx.save()
-                ctx.translate(sx - POI_ICON_PX / 2, sy - POI_ICON_PX / 2)
-                ctx.scale(S, S)
-                ctx.lineWidth = 1.5 / S     // undo the scale so the outline stays hairline
-                ctx.fill(p); ctx.stroke(p)
-                ctx.restore()
+                this._drawGlyph(ctx, q.type, ico.path, sx, sy)
             } else {
                 // No pictogram authored yet — the plain diamond, in the type's own colour. Sized
                 // off POI_ICON_PX so it keeps pace with the drawn glyphs instead of shrinking to a

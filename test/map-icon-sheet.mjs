@@ -9,9 +9,12 @@
 //
 // Reads the icon table live, so a new `path` shows up here the moment it's pasted in.
 
-import { POI_ICONS, POI_ICON_PX as PX } from '../data/map-icons.js'
+import { POI_ICONS, POI_ICON_PX as PX, TUNNEL_ICON } from '../data/map-icons.js'
 
-const rows = Object.entries(POI_ICONS).filter(([, i]) => i.path)
+// The tunnel arch rides along: it is not a POI, but it is drawn from the same table through the
+// same map2d path, and the whole point of judging these is judging them against each other.
+const rows = [...Object.entries(POI_ICONS), ['tunnel', { ...TUNNEL_ICON, label: 'TUNNEL' }]]
+    .filter(([, i]) => i.path)
 const COLW = 150, ROWH = 130
 const W = COLW * rows.length, H = ROWH + 55
 let out = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">

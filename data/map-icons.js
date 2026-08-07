@@ -119,7 +119,37 @@ export const POI_ICONS = {
 /**
  * Rendered size of a pictogram on the map, in px (the 24-unit viewBox scales to this).
  * 15 as first drawn, 30 at the doubling pass, 22.5 after that read too heavy (owner, 2026-08-07).
- * The tunnel arch and the car marker in map2d.js are sized to match — move them together or the
- * map stops looking like one drawing.
+ * The car marker in map2d.js is sized to match — move them together or the map stops looking like
+ * one drawing. (The tunnel arch below no longer needs saying: it IS one of these now.)
  */
 export const POI_ICON_PX = 22.5
+
+// ── TUNNEL (FEAT-40) ────────────────────────────────────────────────────────────────────────
+// Not a POI — one of these marks every tunnel bore, placed from road geometry rather than from the
+// roster — but it lives here, in this format, on purpose. It used to be drawn straight into the
+// canvas in map2d as an amber semicircle with a dark disc punched out of it, which meant it was the
+// one marker on the map with no outline and no shared silhouette language: it read as a blob from a
+// different drawing. Same 24-box rules as everything above, so map2d can stroke it through the same
+// path.
+//
+// Portal seen head-on, after the owner's reference: horseshoe of rock, the road running up into it
+// and flaring toward the viewer, two centreline dashes floating in the opening.
+//
+// The road is a NOTCH cut up from the bottom edge, not a hole punched through — the outline walks
+// up one road edge, over the bore ceiling and down the other, so the bottom of the opening is never
+// a boundary and never gets stroked. Drawn as a hole instead (which is the obvious way), the hole's
+// bottom edge lands flush on the horseshoe's own bottom edge and the two tile into one unbroken
+// line straight across the glyph — the road reads as capped off rather than running out of frame.
+// Same trick as the wrench jaw. The dashes stay separate subpaths, wound with the outer so they
+// fill back in inside the notch.
+//
+// The bore is 7 units wide and the dashes 3×3, against a 1.6-unit outline — both are near the floor
+// of what survives being drawn, so this glyph does not take kindly to being shrunk. If it ever has
+// to be, drop to a single dash before thinning anything.
+export const TUNNEL_ICON = {
+    color: '#ffb84a',
+    path: 'M2 22.25 L2 11.75 A10 10 0 0 1 22 11.75 L22 22.25 L18.4 22.25 L15.5 14.25 L15.5 11.75'
+        + ' A3.5 3.5 0 0 0 8.5 11.75 L8.5 14.25 L5.6 22.25 Z'
+        + 'M10.5 14.85 L13.5 14.85 L13.5 17.85 L10.5 17.85 Z'
+        + 'M10.5 19.25 L13.5 19.25 L13.5 22.25 L10.5 22.25 Z',
+}
