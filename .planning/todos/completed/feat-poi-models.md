@@ -1,14 +1,51 @@
 ---
 id: FEAT-60
 type: feature
-status: open
+status: completed
 severity: minor
 opened: 2026-08-03
+closed: 2026-08-07
 source: feat59-followup
-relates: FEAT-59, FEAT-46, FEAT-43
+relates: FEAT-59, FEAT-46, FEAT-43, FEAT-61
 ---
 
 # FEAT-60: Modelled POI markers (replace the orange placeholder cube)
+
+## Resolution (2026-08-07)
+
+Landed on `main` at `b93643c`, by way of `feature/paper-route` — `feature/poi-models` was merged
+into that branch first (both features reshape `src/poi.js` generation, so the roster and FEAT-61's
+house pass were built together rather than reconciled afterwards) and reached `main` as a
+fast-forward with it. Ten commits, `5285d47`..`cb9e73d`. All 46 gates green.
+
+**Acceptance, line by line:**
+
+- *`modelKey` into `data/prop-models.js`* — carried on the `POI_ROSTER` slot and stamped onto each
+  record at build time.
+- *Model when keyed, cube otherwise* — `_rebuildPoiMarkers()` spawns through FEAT-59's
+  `spawnModel()`; keyless POIs are bit-identical to before.
+- *Registry-driven solid contact* — and it became an **oriented** box rather than the AABB the
+  ticket assumed. A 12 m trailer at 40° to the world axes has a world AABB half again its size,
+  which would have stopped the truck two metres shy of its wall.
+- *Far readability decided explicitly* — **ring-only, and the ring became near-field**
+  (`POI_RING_SHOW_R` 50 m). No beacon assist. A field of orange curtains flattened the landscape
+  into a game board; the ring's job is now "here is where you stop", not "there is something here".
+- *At least one type modelled* — two: mom's and Larry's houses both wear `trailerHomeA`.
+
+**Delivered beyond the sketch**, all owner-ruled during implementation and recorded above:
+the 14-POI ratified roster with count-hard/distance-relaxing siting, the coverage objective for
+stations (3.5 km separation was measured and rejected), `data/map-icons.js` with per-type glyphs and
+labels, the `jobs` flag so no marker wears an interaction ring it cannot answer, and the two-mom's-
+houses fix (`c5e9cab`) — FEAT-45 had pinned her to the region centre as a stand-in while the roster
+sited a real one hundreds of metres away.
+
+**One line above is now stale:** *"Newspaper customers are deferred until the paper-route branch
+merges; no slot yet."* They shipped in the same fast-forward, but deliberately **not** as a roster
+slot — FEAT-61 sites them in their own list so `poiSystem.list()` cannot serve them to ordinary
+missions. See `feat-paper-route.md`.
+
+**Left open, tracked elsewhere:** `bug-42-seed0-junction-legs-missing.md` was filed off this work
+(deg-3 junction on the map, dead end in the world).
 
 ## Request
 
