@@ -41,6 +41,11 @@ dist/
 !assets/**
 !references/**
 
+# …but the negation above is broad enough to re-admit Finder droppings under those paths, which is
+# how assets/.DS_Store came back after the macOS rule at the top of this file already excluded it.
+# Last matching pattern wins, so this has to sit BELOW the negations, not beside its sibling rule.
+**/.DS_Store
+
 # Common scratch / capture dump locations
 screenshots/
 captures/
