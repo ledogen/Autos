@@ -8,6 +8,7 @@ source: SM-2 milestone — first real mission type (plan-mode session 2026-08-04
 relates: FEAT-53, FEAT-59, FEAT-60, FEAT-46, FEAT-43, FEAT-29
 invariants: SM-INV-2, SM-INV-3, SM-INV-4, SM-INV-12, SM-INV-14
 plan: .planning/handoffs/HANDOFF-2026-08-04-paper-route.md
+handoff: .planning/handoffs/HANDOFF-2026-08-07-paper-route-phase-e2.md
 amended: 2026-08-05 (owner rulings — scoring simplified, houses split from the POI roster)
 ---
 
