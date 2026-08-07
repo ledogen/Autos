@@ -3684,6 +3684,13 @@ function _renderLabUI () {
 function _showPauseMenu () {
   const el = document.getElementById('pause-menu')
   if (el) el.style.display = 'flex'
+  // FEAT-61: a menu you cannot point at is not a menu. Drop the aim and hand the pointer back —
+  // pausing mid-throw is exactly when a player is holding F, and the lock would leave them with no
+  // cursor in front of a wall of buttons.
+  setAimMode(false)
+  if (document.pointerLockElement) document.exitPointerLock()
+  const rt = document.getElementById('aim-reticle')
+  if (rt) rt.style.display = 'none'
   // FEAT-43: the pm-story slot is context-aware — it enters story mode from free roam, and offers
   // the way OUT ("free roam") while story mode is active.
   const storyBtn = document.getElementById('pm-story')

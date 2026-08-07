@@ -89,7 +89,16 @@ const FOCUS_PHI    = 0.45              // rad — a gentle look-down set on entr
 
 // ── Input listeners ────────────────────────────────────────────────────────────
 document.addEventListener('mousedown', e => {
-  if (e.button === 0 && (cameraMode === 'chase' || cameraMode === 'hood') && !e.target.closest('.lil-gui')) {
+  // ONLY ON THE RENDER CANVAS. This used to exclude just .lil-gui, which was survivable while a
+  // drag was free: clicking a panel started a look-drag nobody noticed. It stopped being survivable
+  // once the drag took a POINTER LOCK — clicking the pause menu hid the cursor and ate the click, so
+  // the menu could not be used at all (owner, 2026-08-07). An allow-list of the one element a look
+  // may start on covers every overlay in the app and cannot miss the next one somebody adds.
+  //
+  // Identified as the FIRST canvas, which is what requestPointerLock already targets in this file —
+  // #map2d and #cluster are canvases too, and a look-drag must not start on either.
+  if (e.button === 0 && (cameraMode === 'chase' || cameraMode === 'hood')
+      && e.target === document.querySelector('canvas')) {
     isDragging = true
     dragLastX  = e.clientX
     dragLastY  = e.clientY
