@@ -30,7 +30,7 @@ undesirable car, plain beige, no wood panelling. Reference photos supplied; `hil
 
 | Field | Value |
 |---|---|
-| Tri budget | **≤2000** (1500 → 1800 for the jack + tyre iron, → 2000 for the nose rounding + mirror pods) — **shipped at 1944** |
+| Tri budget | **≤2500** (1500 → 1800 for the jack + tyre iron, → 2000 for the nose rounding + mirror pods, → 2500 for the front-end rework) — **shipped at 2086** |
 | Texture | **none.** Flat material colours, no UVs — supersedes the original "one 1024 albedo" line |
 | Real size | car **2.01 m W × 5.01 m L × 1.46 m H** — width is mirror-to-mirror; the bodywork itself is 1.81 m across the flares. Whole asset incl. spare + jack: 2.68 m wide |
 | Origin | base-seated: three tyre contact patches at y=0; asserted in `build.py` (`ground contact z`) |
@@ -40,7 +40,7 @@ undesirable car, plain beige, no wood panelling. Reference photos supplied; `hil
 
 ## Objects and materials
 
-Two objects. `BrokenCar` (1928 tris, opaque, includes all three road wheels, the brake drum, the
+Two objects. `BrokenCar` (2070 tris, opaque, includes all three road wheels, the brake drum, the
 spare, the jack and the tyre iron) and `BrokenCarGlass` (16 tris, alpha-blended, double-sided).
 
 | Material | Role | Recolourable? |
@@ -204,6 +204,37 @@ The wrapped bumper shipped **entirely inside-out** and the 64-ray check reported
 - `check_normals()` default raised 64 → 400. At 64 the inverted bumper scored 0 hits on one run and
   1 on the next: small parts need enough rays to be *struck*, or the check certifies a broken model.
 
+## Revision pass, 2026-08-07e — front end matched to the reference (budget → 2500)
+
+User critique of the previous front: too rectangular, several flat fascia members trying to act as
+a bumper, coarse rectangular grille, oversized rectangular lamps, and no bumper protrusion. Reworked
+against the '93 Century wagon reference photo:
+
+- **The bumper is a CHIN grown out of the body, not a primitive.** The first rework kept the bumper
+  as its own loft — protruding, but with a flat vertical face, a horizontal top shelf and flat end
+  caps, and the user called it correctly: "primitives glued on." Now the whole lower nose is one
+  surface: the fascia plane leans *forward* as it descends to an apex at the rub strip (y 2.558
+  centre), tucks back under into the valance, and its plan (the `CHIN` table in `build.py`) sweeps
+  back around the corners until the ends die into the fenders as narrow near-flush end caps. The
+  apex still leads the lamp/grille plane by 30–65 mm at every x where lamps exist. Overall length
+  5.01 → 5.09 m, accepted — the chin is the feature.
+- **Two black bumper guards**, ±0.29, spanning the bump and topping out over the strip. Each stands
+  proud of the *local* curved apex (`chin_at(x)`); a first pass at 0.360–0.658 read as brush-guard
+  posts.
+- **Framed horizontal-slat grille** ('80 Century reference, second user pass): full chrome frame
+  (rails + vertical end members) with three wide horizontal bars over a dark recess, all layers
+  sharing a 28 mm bottom-to-top rake via `raked()`. Replaced a 5-bar vertical waterfall (itself a
+  replacement for 3 fat bars) — the long horizontals run the same way as the car's own creases,
+  which suits the low-poly look. Same tri cost: 5 slabs either way.
+- **Mirror heads are rounded rectangles** (same pass): still an 8-point section, laid out as a
+  chamfered rect (124 × 86 mm) instead of a circle — the circular pod read as a knob.
+- **Slim lamps** (~96 mm lens, was 146) plus a **corner signal** whose front face angles back twice
+  as hard as the main lens. It cannot physically wrap the corner — the nose cap is ~0.79 half-wide
+  at lamp height, so anything swept behind y 2.440 inboard of that is buried in the body (the first
+  attempt vanished entirely). The angle change carries the read.
+- Fascia overhang guard filter moved z 0.62 → 0.67 (bumper shelf and guard tops are legitimately
+  proud); still asserts ≤0.745 for the lamp/grille stack (now 0.738 at the corner-signal edge).
+
 ## Scope changes from the original ticket
 
 - **Hood closed, not open, and not a separate posable part.** The user's first brief asked for an
@@ -219,7 +250,7 @@ The wrapped bumper shipped **entirely inside-out** and the 64-ray check reported
 - [x] `assets/models/broken-car.glb` exists, export-clean under `ASSETS.md` settings — GLB, no Draco,
       no KTX2, **0 images, 0 textures, no glTF extensions**, 97 KB.
 - [x] Sources committed: `assets/models/src/broken-car.blend` + `broken-car.py`.
-- [x] Tri count within budget (1944 / 2000); material names stable and distinctive.
+- [x] Tri count within budget (2086 / 2500); material names stable and distinctive.
 - [x] Forward −Z and base-seated origin, both asserted numerically rather than eyeballed.
 - [x] No inverted windings — 64 inward rays, 64 hits, 0 facing away (`check_normals()` in `build.py`).
 - [x] The broken-down state reads at a glance **from the right-hand side**. See the open item below.

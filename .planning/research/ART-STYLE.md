@@ -26,7 +26,7 @@ These are the calibration pieces. When unsure, open them and match.
 |---|---|---|---|---|
 | `trailer-home-a.glb` | 1192 | 8 | **0** | The house style. Siding, curtains, battens, trim — all geometry |
 | `hilux.glb` (3rd-party, CC-BY) | 1908 | 10 | **0** | A whole vehicle in flat colour. Roughness 1.0, metalness 0, everywhere |
-| `broken-car.glb` | 1944 | 8 | **0** | A vehicle POI with a *situation*. Carries the only sanctioned alpha + interior — see "Sanctioned exceptions" |
+| `broken-car.glb` | 2086 | 8 | **0** | A vehicle POI with a *situation*. Carries the only sanctioned alpha + interior — see "Sanctioned exceptions" |
 | `news-roll.glb` | 358 | 2 | **1** | The *only* legitimate texture: printed newsprint. Text is information geometry can't carry |
 | Procedural props (`src/props/`) | — | 1 shared | 0 | Trees/rocks: 6–7-sided tubes, subdiv 0–2 blobs, one flat colour a part |
 

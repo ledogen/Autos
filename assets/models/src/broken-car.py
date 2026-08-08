@@ -4,12 +4,18 @@ ASSET-18 — broken-down car (1990s Buick Century Estate wagon), parametric gene
 Built for: Blender 4.x  |  Target: assets/models/broken-car.glb
 Style brief: .planning/research/ART-STYLE.md  ·  Mechanics: .planning/research/ASSETS.md
 
-BUILD REPORT (2026-08-07, Blender 5.2.0 LTS)
-  BrokenCar       1928 tris   (body, greenhouse, interior, trim, 3 road wheels,
+BUILD REPORT (2026-08-07, Blender 5.2.0 LTS — front-end rework pass)
+  BrokenCar       2070 tris   (body, greenhouse, interior, trim, 3 road wheels,
                                brake drum, spare, scissor jack, tyre iron)
   BrokenCarGlass    16 tris   (6 panes, alpha-blended, double-sided)
-  TOTAL           1944 tris   budget 2000
-  materials 8 · images 0 · car 2.01 W (mirror to mirror) x 5.01 L x 1.46 H m · file 97 KB
+  TOTAL           2086 tris   budget 2500
+  materials 8 · images 0 · car 2.03 W (mirror to mirror) x 5.09 L x 1.46 H m
+  Front end matched to the '93 Century reference: an integrated CHIN — the whole
+  lower nose is one surface leaning forward from the fascia to an apex at the rub
+  strip, tucking under, sweeping back around the corners (see CHIN table) — plus
+  two black bumper guards, a framed horizontal-slat grille ('80 Century style),
+  slim lamps + angled corner signals, rounded-rectangular mirror heads.
+  A bumper built as a separate primitive reads glued-on; don't.
   Asserted at every build (see build()/export()): forward -Z, base-seated origin,
   nothing below the ground plane, nothing overhanging the front fascia, the wheel
   pocket clearing the tyre's inner face, the steering wheel clearing the windscreen,
@@ -48,7 +54,8 @@ import math
 # ---------------------------------------------------------------------------
 
 NAME = "broken-car"
-TRI_BUDGET = 2000       # raised from 1800 (2026-08-07) for the nose rounding + mirror pods
+TRI_BUDGET = 2500       # raised from 2000 (2026-08-07) for the front-end rework:
+                        # leading bumper + guards, 5-bar raked grille, corner signals
 OUT_GLB = "/Users/ledogen/CodeShit/CarGame/assets/models/broken-car.glb"
 OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/broken-car.blend"
 
@@ -614,24 +621,59 @@ def build_detail(p):
     # real car the bumper IS the extremity, so letting it run past the nose station
     # inflates the length without adding anything to read.
     #
-    # WRAPPED FRONT LOWER — bumper, rub strip and valance as ONE loft across X.
-    # A straight box across the nose is most of what made the front read as a slab:
-    # real bumpers curve back into the fenders, and that curve is the single strongest
-    # cue that the front of a car is round.  All three parts share the same yf(x) so
-    # they wrap together — as separate boxes the valance immediately poked out through
-    # the bumper at the corners, which looked worse than the slab did.
-    zv0, zv1, zb_, zs0, zs1, zt_ = 0.235, 0.425, 0.442, 0.487, 0.545, 0.655
-    y_back, half = 2.420, 0.812
+    # THE CHIN — the whole front lower is ONE surface growing out of the body, not a
+    # bumper primitive parked in front of it (2026-08-07e, user: "it should be a bump
+    # out of the actual body — the Century has a hell of a chin").  The section is a
+    # side-view PROFILE, top to bottom:
+    #     chin top (z 0.685, tucked in behind the grille's bottom rail)
+    #       -> leans FORWARD as it descends -> apex at the rub strip (z 0.462-0.538)
+    #       -> tucks BACK UNDER -> dark valance -> underside.
+    # No horizontal top shelf, no vertical bumper face, no step: the fascia plane
+    # flows into the chin and the chin peaks at the strip.  What killed the previous
+    # two attempts: a constant-width loft with flat end caps proud of the body sides
+    # reads as a glued-on box no matter how good its front profile is.  So the plan
+    # is table-driven and the last rings SWEEP BACK around the corner (protrusion
+    # collapsing as they go) until the end caps sit against the fender as narrow,
+    # near-flush bumper end caps — the one place a visible seam is honest.
+    #
+    # (x, chin-top y, apex y).  yt tracks what sits ABOVE at that x: the grille's
+    # bottom rail front (~2.494) inboard, the lamp bezels (~2.45) outboard, the bare
+    # nose cap (2.440) past the lamps.  The apex leads the lamp/grille plane by
+    # 30-65 mm everywhere the lamps exist, which is the "bumper first" read.
+    CHIN = [(0.000, 2.490, 2.558),
+            (0.280, 2.486, 2.554),
+            (0.340, 2.470, 2.548),
+            (0.620, 2.452, 2.520),
+            (0.720, 2.442, 2.492),
+            (0.790, 2.415, 2.446),
+            (0.835, 2.330, 2.352)]
+
+    def chin_at(x):
+        ax = abs(x)
+        for (x0, t0, a0), (x1, t1, a1) in zip(CHIN, CHIN[1:]):
+            if x0 <= ax <= x1:
+                t = (ax - x0) / (x1 - x0)
+                return t0 + (t1 - t0) * t, a0 + (a1 - a0) * t
+        return CHIN[-1][1], CHIN[-1][2]
+
+    zb_, zv1_, zs0_, zs1_, zt_ = 0.245, 0.385, 0.462, 0.538, 0.685
     rings = []
-    for i in range(7):
-        x = -half + 2.0 * half * i / 6.0
-        yf = 2.498 - 0.100 * (x / half) ** 2
-        yv = yf - 0.028                       # valance tucked back under the bumper
-        rings.append([(x, y_back, zv0), (x, yv, zv0), (x, yv, zv1), (x, yf, zb_),
-                      (x, yf, zs0), (x, yf, zs1), (x, yf, zt_), (x, y_back, zt_)])
-    # 0-2 valance and its step, 4 the rub strip; 3/5/6 are the painted bumper faces.
-    loft(p, rings, "CarPaint",
-         band_mats={0: "CarTrim", 1: "CarTrim", 2: "CarTrim", 4: "CarTrim"})
+    for x, yt, ya in [(-x, t, a) for x, t, a in reversed(CHIN[1:])] + CHIN:
+        y_back = min(2.420, yt - 0.030)           # stays buried behind the nose cap
+        rings.append([(x, y_back, zb_), (x, ya - 0.058, zb_), (x, ya - 0.040, zv1_),
+                      (x, ya, zs0_), (x, ya, zs1_), (x, yt, zt_), (x, y_back, zt_)])
+    # 0 underside, 1 valance, 3 the rub strip riding the apex; 2 (the tuck-under)
+    # and 4 (the chin slope itself) are painted body surface — that continuity is
+    # what makes it a bump out of the body rather than a fitted part.
+    loft(p, rings, "CarPaint", band_mats={0: "CarTrim", 1: "CarTrim", 3: "CarTrim"})
+
+    # Bumper guards — the two black uprights on the reference.  Each stands proud of
+    # the chin's apex at its own x (the face is curved; a shared y would bury one
+    # corner and float the other), spanning the bump, topping out over the strip.
+    for sx in (1, -1):
+        gx = sx * 0.29
+        box(p, gx - 0.038, gx + 0.038, 2.400, chin_at(gx)[1] + 0.022,
+            0.385, 0.640, "CarTrim")
     # GRILLE TRAP: a filled chrome "surround" box sits in FRONT of the dark recess
     # and the whole nose collapses into one continuous light bar with the headlamps.
     # The chrome must be a frame plus bars only — the dark recess has to stay visible
@@ -646,15 +688,37 @@ def build_detail(p):
     # Nothing on the front face may exceed 0.735, and it is checked at export.
     #
     # Proportion follows the reference: a NARROW centre waterfall grille flanked by
-    # WIDE, SHORT composite lamps that run out towards the fenders.
+    # SLIM composite lamps, with a clear corner signal wrapping each fender.
     # Grille and lamps sit just above the bumper — on the reference the gap is a few
     # centimetres, and opening it up leaves a blank beige shelf across the whole nose.
-    box(p, -0.255, 0.255, 2.400, 2.470, 0.688, 0.902, "CarTrim")       # grille recess
-    box(p, -0.275, 0.275, 2.462, 2.492, 0.878, 0.910, "CarChrome")     # frame, upper
-    box(p, -0.275, 0.275, 2.462, 2.492, 0.680, 0.712, "CarChrome")     # frame, lower
-    for i in range(3):                                                 # waterfall bars
-        cx = -0.14 + i * 0.14
-        box(p, cx - 0.019, cx + 0.019, 2.458, 2.484, 0.706, 0.884, "CarChrome")
+    #
+    # The grille is RAKED: its front plane leans back ~28 mm bottom-to-top, like the
+    # Century's waterfall.  raked() builds a thin slab whose top loop sits behind its
+    # bottom loop; every grille layer shares G_RAKE so bars, recess and rails stay in
+    # one plane.  Front faces stay ahead of the 2.440 nose cap at every height
+    # (DEPTH TRAP above) and behind the bumper face at every x (the bumper leads).
+    G_RAKE = 0.028
+
+    def raked(x0, x1, y_bot, z0, z1, mat, d=0.026):
+        yt = y_bot - G_RAKE * (z1 - z0) / 0.210    # shared slope over grille height
+        hexa(p, [(x0, y_bot - d, z0), (x1, y_bot - d, z0),
+                 (x1, y_bot, z0), (x0, y_bot, z0),
+                 (x0, yt - d, z1), (x1, yt - d, z1),
+                 (x1, yt, z1), (x0, yt, z1)], mat)
+
+    raked(-0.255, 0.255, 2.478, 0.690, 0.900, "CarTrim", d=0.050)      # grille recess
+    # HORIZONTAL SLATS (2026-08-07f, from the '80 Century reference): a full chrome
+    # frame — both rails plus vertical end members — with three wide horizontal bars
+    # inside, dark slots between.  Replaced a 5-bar vertical waterfall; the long
+    # horizontals sit better with the low-poly look (user's call, and they're right:
+    # every edge in this grille now runs the same way the car's own creases do).
+    # Same tri cost: 5 slabs then, 5 slabs now.
+    raked(-0.272, 0.272, 2.494, 0.688, 0.714, "CarChrome")             # rail, lower
+    raked(-0.272, 0.272, 2.469, 0.876, 0.902, "CarChrome")             # rail, upper
+    for sx in (1, -1):                                                 # end members
+        raked(sx * 0.250, sx * 0.272, 2.494, 0.688, 0.902, "CarChrome")
+    for z0, z1 in ((0.736, 0.761), (0.783, 0.807), (0.829, 0.854)):    # the slats
+        raked(-0.255, 0.255, 2.492, z0, z1, "CarChrome")
 
     # Lamps and hood trim are WEDGES, not boxes: the outboard end sits further back in
     # Y so each piece follows the nose radius instead of standing square across a curve.
@@ -665,8 +729,17 @@ def build_detail(p):
             hexa(p, [(a, yi0, z0), (b, yo0, z0), (b, yo1, z0), (a, yi1, z0),
                      (a, yi0, z1), (b, yo0, z1), (b, yo1, z1), (a, yi1, z1)], mat)
 
-    wedge(0.296, 0.716, 2.402, 2.472, 2.376, 2.442, 0.700, 0.890, "CarTrim")   # bezel
-    wedge(0.318, 0.694, 2.458, 2.488, 2.428, 2.456, 0.722, 0.868, "CarLamp")   # lens
+    # Lamps are SLIM now — ~96 mm of lens against the old 146 — and stop at 0.618 so
+    # the corner signal owns the fender edge.  The whole stack sits ~10 mm behind the
+    # old plane (2.482 max, was 2.492) to preserve the bumper's lead.
+    wedge(0.296, 0.748, 2.408, 2.466, 2.402, 2.446, 0.748, 0.878, "CarTrim")   # bezel
+    wedge(0.312, 0.618, 2.452, 2.482, 2.446, 2.474, 0.766, 0.862, "CarLamp")   # lens
+    # Corner signal: a separate short lens whose front face angles back twice as hard
+    # as the main lens.  It CANNOT physically wrap the corner: the nose cap is ~0.79
+    # half-wide at lamp height, so anything swept behind y 2.440 inboard of that is
+    # buried in the body (the first attempt reached x 0.716 / y 2.35 and vanished
+    # entirely).  The angle change against the main lens is what carries the read.
+    wedge(0.634, 0.738, 2.446, 2.472, 2.428, 2.452, 0.766, 0.862, "CarLamp")
     wedge(0.000, 0.700, 2.452, 2.480, 2.424, 2.450, 0.902, 0.926, "CarChrome")  # hood edge
 
     # ---- rear ----------------------------------------------------------------
@@ -710,18 +783,24 @@ def build_detail(p):
     # flank just looks like a badge.  Mounted at the door's front upper corner, and the
     # reflective face looks REARWARD (toward -Y, where the driver is) since the nose
     # is +Y in Blender.
-    # A mirror head is a rounded pod, and a box reads as exactly that — a box bolted to
-    # the door.  It is the one part of the car small enough that its SILHOUETTE is all
-    # you get, so the 32 tris an 8-sided section costs buy more than they would anywhere
-    # else on the model.  Three rings along Y taper it front and back so it is a blob
-    # rather than a prism; the rear cap is the reflective face.
+    # A mirror head is a ROUNDED RECTANGLE in section (2026-08-07f, was circular —
+    # a circular pod read as a knob, and the Century's heads are flat rectangles
+    # with soft corners).  Same cost: still an 8-point section, just laid out as a
+    # chamfered rect, wider than tall.  It is the one part of the car small enough
+    # that its SILHOUETTE is all you get.  Three rings along Y taper it front and
+    # back so it is a slab with shape rather than a prism; the rear cap is the
+    # reflective face.
+    MH_W, MH_H, MH_C = 0.062, 0.043, 0.019    # head half-width / half-height / chamfer
     wb_m, zt_m = _interp_belt(0.73)
     for sx in (1, -1):
         cxh, czh = sx * (wb_m + 0.098), zt_m - 0.048
 
         def pod(yv, s):
-            return [(cxh + sx * 0.052 * s * math.cos(2 * math.pi * i / 8), yv,
-                     czh + 0.048 * s * math.sin(2 * math.pi * i / 8)) for i in range(8)]
+            return [(cxh + sx * ux * s, yv, czh + uz * s)
+                    for ux, uz in ((MH_W - MH_C, MH_H), (MH_W, MH_H - MH_C),
+                                   (MH_W, -(MH_H - MH_C)), (MH_W - MH_C, -MH_H),
+                                   (-(MH_W - MH_C), -MH_H), (-MH_W, -(MH_H - MH_C)),
+                                   (-MH_W, MH_H - MH_C), (-(MH_W - MH_C), MH_H))]
 
         # The reflective face is the pod's own REAR CAP, not a separate n-gon laid over
         # it: a lone n-gon is an open surface, so recalc_face_normals is free to flip it
@@ -1040,10 +1119,11 @@ def build():
     # lenses, hood trim) must stay inside the nose cap or it hangs off the corner
     # into thin air.  The bumper is exempt — on a real car it IS wider than the nose.
     # y >= 2.450 keeps the body's own nose cap (at exactly 2.440, and legitimately
-    # 0.800 half-wide) out of the sample; z > 0.62 drops the bumper and its strip.
+    # 0.800 half-wide) out of the sample; z > 0.67 drops the bumper (top shelf at
+    # 0.625), its guards (tops at 0.658) and the strip — all legitimately proud.
     # Tightened from 0.735 when the nose cap was narrowed to 0.758 for the plan-view
     # rounding: the limit is a property of the cap, so it moves whenever the cap does.
-    face = [c for c in body.v[:car_verts] if c[1] >= 2.450 and c[2] > 0.62]
+    face = [c for c in body.v[:car_verts] if c[1] >= 2.450 and c[2] > 0.67]
     over = max((abs(c[0]) for c in face), default=0.0)
     print(f"  widest front-face part = {over:.3f} (fascia allows 0.745)  "
           f"{'OK' if over <= 0.7451 else 'OVERHANGS'}")
