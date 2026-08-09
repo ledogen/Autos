@@ -404,12 +404,11 @@ export class PoiSystem {
             this._placeHousesOnEdge(road, e, P, cands)
         }
 
-        const rnd = mulberry32(hash32(`poi-houses:${seed}`))
         const want = P.poiHouseCount
         let picked = []
         for (let r = Math.min(P.poiHouseR, wall); ; r += P.poiHouseStep) {
             const ring = cands.filter(q => Math.hypot(q.x - center.x, q.z - center.z) <= r)
-            picked = this._pickSpread(ring, want, P.poiHouseMinSep, rnd)
+            picked = this._pickSpread(ring, want, P.poiHouseMinSep)
             if (picked.length >= want) break
             if (ring.length === cands.length) break     // the ring is the whole region; nothing left to relax into
             if (r >= wall) break                        // …and it can never grow past the wall
@@ -529,13 +528,17 @@ export class PoiSystem {
      * Spread rather than nearest-first on purpose: nearest-first would pack every customer onto the
      * two streets by the spawn and make the route a lap of the block instead of a round.
      */
-    _pickSpread (cands, n, minSep, rnd) {
+    _pickSpread (cands, n, minSep) {
         if (cands.length <= n) return cands.slice()
-        const order = cands.slice()
-        for (let i = order.length - 1; i > 0; i--) {          // Fisher-Yates off the region PRNG
-            const j = Math.floor(rnd() * (i + 1))
-            ;[order[i], order[j]] = [order[j], order[i]]
-        }
+        // Ordered by a STABLE PER-SITE KEY, not shuffled (BUG-45). A Fisher-Yates consumes one
+        // draw per element, so a ring holding one more candidate re-orders the WHOLE list and
+        // picks fifteen different customers — and the ring's contents move whenever the region
+        // centre does. See _pickStable for the mechanism and why the centre is not stable.
+        const seed = this._d.getSeed()
+        const order = cands
+            .map(q => ({ q, k: hash32(`poi-spread:${seed}:${q.id}`) }))
+            .sort((a, b) => (a.k - b.k) || (a.q.id < b.q.id ? -1 : 1))
+            .map(e => e.q)
         for (let sep = minSep; ; sep *= 0.5) {
             const out = []
             for (const q of order) {
@@ -560,13 +563,12 @@ export class PoiSystem {
      * order and not just a listing.
      */
     _assignRoster (pool, center, seed, P) {
-        const rnd = mulberry32(hash32(`poi-roster:${seed}`))
         const free = pool.slice()
         const out = []
         for (const slot of POI_ROSTER) {
-            const picks = slot.siting === 'nearSpawn' ? this._pickNearSpawn(free, center, slot.count, rnd, P)
+            const picks = slot.siting === 'nearSpawn' ? this._pickNearSpawn(free, center, slot.count, slot.type, P)
                         : slot.siting === 'coverage'  ? this._pickCoverage(free, pool, slot.count, P)
-                        :                               this._pickAny(free, slot.count, rnd)
+                        :                               this._pickStable(free, slot.count, slot.type)
             for (const q of picks) {
                 q.type = slot.type
                 q.tags = slot.tags ? slot.tags.slice() : []   // FEAT-61 — see the TAGS note above
@@ -587,14 +589,33 @@ export class PoiSystem {
         return out
     }
 
-    /** Take `n` pads at random from `free` (uniform, off the region PRNG). */
-    _pickAny (free, n, rnd) {
-        const picks = []
-        const avail = free.slice()
-        for (let k = 0; k < n && avail.length; k++) {
-            picks.push(avail.splice(Math.floor(rnd() * avail.length), 1)[0])
-        }
-        return picks
+    /**
+     * Take `n` pads, chosen by a STABLE PER-PAD KEY rather than by drawing indices out of a list.
+     *
+     * BUG-45, and the reason this is not a shuffle. The old version did
+     * `avail.splice(floor(rnd() * avail.length), 1)` — an index into a list whose LENGTH is a
+     * function of the region centre and of whatever happened to be streamed when the pool was
+     * gathered. Both of those move: the spawn probe (`_reseatTruckAtSpawn`) resolves against the
+     * network that is streamed at the time, so re-entering story mode on an already-loaded seed
+     * can land the truck tens of metres from where the cold entry did. One pad entering or leaving
+     * the ring then shifted every index after it, and mom and Larry swapped houses.
+     *
+     * Keying the choice to the pad's own identity makes the selection depend on WHICH pads exist,
+     * not on HOW MANY. A pad that is not near the boundary keeps its slot no matter what churns at
+     * the rim. It is the same discipline the pad's own position already follows — keyed off the
+     * abstract graph edge, never the streamed runKey (see the header).
+     *
+     * `salt` is the roster slot, so two slots drawing from the same pool do not both want the same
+     * pad. Ties break on the id, so equal hashes are still an order and not an accident.
+     */
+    _pickStable (cands, n, salt) {
+        if (!(n > 0) || !cands.length) return []
+        const seed = this._d.getSeed()
+        return cands
+            .map(q => ({ q, k: hash32(`poi-pick:${seed}:${salt}:${q.id}`) }))
+            .sort((a, b) => (a.k - b.k) || (a.q.id < b.q.id ? -1 : 1))
+            .slice(0, n)
+            .map(e => e.q)
     }
 
     /**
@@ -606,11 +627,11 @@ export class PoiSystem {
      * sit inside the first kilometre — but a seed whose spawn is on a bare stretch must still get
      * both houses, further out rather than not at all.
      */
-    _pickNearSpawn (free, center, n, rnd, P) {
+    _pickNearSpawn (free, center, n, salt, P) {
         for (let r = P.poiNearSpawnR; ; r += P.poiNearSpawnStep) {
             const ring = free.filter(q => Math.hypot(q.x - center.x, q.z - center.z) <= r)
-            if (ring.length >= n) return this._pickAny(ring, n, rnd)
-            if (ring.length === free.length) return this._pickAny(free, n, rnd)   // ring is the pool
+            if (ring.length >= n) return this._pickStable(ring, n, salt)
+            if (ring.length === free.length) return this._pickStable(free, n, salt)  // ring is the pool
         }
     }
 

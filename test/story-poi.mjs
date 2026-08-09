@@ -545,5 +545,45 @@ const W = makeWorld(C.x, C.z, R)
     W.road.setPoiPads(W.poi.list())
 }
 
+
+// ── 6c. THE ROSTER SURVIVES A SPAWN THAT MOVED (BUG-45) ─────────────────────────────────────────
+//
+// Owner-reported 2026-08-09: leave story mode and re-enter on the SAME seed, and mom's house and
+// Larry's house have swapped places. The region centre is wherever the truck lands, and the spawn
+// probe (_reseatTruckAtSpawn) resolves against whatever is streamed at the time — so a warm
+// re-entry can seat the truck tens of metres from where the cold entry did.
+//
+// That must not re-cast the roster. It used to: the picks were an INDEX into a filtered list
+// (`floor(rnd() * ring.length)`), so one pad crossing the near-spawn ring shifted every index
+// after it. Selection is now keyed to each pad's own id, so it depends on WHICH pads exist and
+// not on HOW MANY — a pad away from the boundary keeps its slot whatever churns at the rim.
+{
+  const ref = makeWorld(C.x, C.z, R)
+  const refList = ref.poi.build(C, R)
+  const idOf = (list, t) => list.find(q => q.type === t)?.id ?? null
+  const refMom = idOf(refList, 'momsHouse'), refLarry = idOf(refList, 'larrysHouse')
+  check('the reference region has both houses', !!refMom && !!refLarry)
+
+  // A spawn drift well past anything the probe could plausibly produce.
+  for (const d of [5, 20, 50]) {
+    const C2 = { x: C.x + d, z: C.z }
+    const w = makeWorld(C2.x, C2.z, R)
+    const list = w.poi.build(C2, R)
+    const mom = idOf(list, 'momsHouse'), larry = idOf(list, 'larrysHouse')
+    check(`a ${d} m spawn drift does not swap mom and Larry`,
+      mom === refMom && larry === refLarry,
+      `mom ${refMom} → ${mom}, larry ${refLarry} → ${larry}`)
+  }
+
+  // …and the selection is still deterministic: same centre, same answer, twice.
+  const twice = makeWorld(C.x, C.z, R).poi.build(C, R)
+  check('the roster is still a pure function of (seed, pool)',
+    idOf(twice, 'momsHouse') === refMom && idOf(twice, 'larrysHouse') === refLarry)
+
+  // Every slot is distinct — a keyed pick must never hand the same pad to two slots.
+  const ids = refList.map(q => q.id)
+  check('no pad is assigned to two roster slots', new Set(ids).size === ids.length)
+}
+
 console.log(fails === 0 ? '\nALL POI CHECKS PASSED' : `\n${fails} CHECK(S) FAILED`)
 process.exit(fails === 0 ? 0 : 1)

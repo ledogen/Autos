@@ -41,6 +41,13 @@ const ARROW_PAST   = 12     // m past the node before it is dropped
 const RING_HOVER   = 1.4
 const TAN_SPAN     = 20     // m of route averaged into the exit direction at a junction
 const REACQUIRE_M  = 40     // lateral error that forces a full-route re-scan
+// FEAT-61 self-overlap (a paper round drives some streets out and back). A vertex counts as a
+// REVISIT when it is within REVISIT_M of a vertex at least REVISIT_ARC_M earlier along the route.
+// 10 m is a road width — the two passes are the same tarmac, not a parallel road. 150 m is well
+// past the longest legitimate hairpin, so a bend that folds back on itself is not mistaken for a
+// second visit to the same place.
+const REVISIT_M     = 10    // m
+const REVISIT_ARC_M = 150   // m
 // Progress search window, in baked vertices (× BAKE_DS for metres). The forward reach used to be
 // 40 vertices — 240 m — which is far more than a frame of travel and long enough to see the RETURN
 // leg of a hairpin. On a tight switchback the outbound and inbound legs pass within a few metres,
@@ -107,6 +114,7 @@ export function bakeRoute (segments, elevAt = null) {
     cum[i] = cum[i - 1] + Math.hypot(px[i] - px[i - 1], py[i] - py[i - 1], pz[i] - pz[i - 1])
   }
   const route = { px, py, pz, cum, n, length: cum[n - 1], partial, junctions: [] }
+  route.revisit = markRevisits(route)
 
   // Only REAL intersections get an arrow. `endDeg` is the degree of the graph node the edge ends
   // at (tagged in mission.js `_roll()`); degree 2 is the road bending through, and no angle
@@ -124,11 +132,57 @@ export function bakeRoute (segments, elevAt = null) {
 }
 
 /**
+ * Mark every baked vertex that sits on tarmac the route ALREADY covered earlier.
+ *
+ * A point-to-point mission never drives the same road twice, so this used to be a question nobody
+ * had to ask. FEAT-61's paper round does: a round with a dead-end street on it goes down and comes
+ * back, and measured on seeds 6 and 90 a tour re-drives 1-6 of its edges and lies on top of itself
+ * at **0.0 m**. Both passes are then equally "nearest", and the overlay drew chevrons for both —
+ * on the same tarmac, pointing opposite ways (owner-reported 2026-08-09: "shows directions in both
+ * ways and then reroutes me back towards Larry's house").
+ *
+ * `revisit[i]` is true when vertex i is within REVISIT_M of a vertex at least REVISIT_ARC_M EARLIER
+ * along the route. Earlier, not merely different: the first pass down a street is the one worth
+ * drawing, and the return pass is the ghost. A uniform grid keeps this linear — a 23 km round bakes
+ * ~3800 vertices, and the pairwise form would be 14 M tests.
+ *
+ * Exported for test/gps-route.mjs.
+ */
+export function markRevisits (route) {
+  const { px, pz, cum, n } = route
+  const revisit = new Uint8Array(n)
+  const cell = new Map()
+  const key = (cx, cz) => `${cx},${cz}`
+  for (let i = 0; i < n; i++) {
+    const cx = Math.floor(px[i] / REVISIT_M), cz = Math.floor(pz[i] / REVISIT_M)
+    // Look only at what is ALREADY in the grid — i.e. strictly earlier vertices.
+    for (let ox = -1; ox <= 1 && !revisit[i]; ox++) {
+      for (let oz = -1; oz <= 1 && !revisit[i]; oz++) {
+        for (const j of cell.get(key(cx + ox, cz + oz)) || []) {
+          if (cum[i] - cum[j] < REVISIT_ARC_M) continue
+          if ((px[j] - px[i]) ** 2 + (pz[j] - pz[i]) ** 2 <= REVISIT_M * REVISIT_M) { revisit[i] = 1; break }
+        }
+      }
+    }
+    const k = key(cx, cz)
+    if (!cell.has(k)) cell.set(k, [])
+    cell.get(k).push(i)
+  }
+  return revisit
+}
+
+/**
  * Where along the baked route is (x, z)?
  *
  * Windowed around `lastIdx` so it costs ~50 distance tests a frame and stays monotonic through
  * a route that doubles back on itself. Falls back to a full scan when the lateral error blows
  * past REACQUIRE_M, so a wrong turn (or a teleport) re-acquires cleanly.
+ *
+ * SELF-OVERLAP IS ALREADY SAFE HERE, and it is worth writing down because it looks like it should
+ * not be: on a route that drives the same road twice both passes are the same tarmac to the
+ * millimetre, but `_scanNearest` keeps a candidate only on a STRICT improvement, so an exact tie
+ * goes to the earlier index — the outbound pass — and the full-scan fallback cannot throw progress
+ * onto the way back. The FEAT-61 turnaround defect was in the chevron LATTICE, not in here.
  *
  * @returns {{idx: number, s: number, lat: number}} s = arc along the route, lat = lateral error.
  */
@@ -411,6 +465,18 @@ export class GpsSystem {
       }
       const p = sampleRoute(route, sc, hint)
       hint = p.idx
+      // GHOST SUPPRESSION (FEAT-61). On a round that drives a street out and back, the chevron
+      // lattice ahead of you crosses the RETURN pass — which is the same tarmac you are on now,
+      // with the arrows pointing the other way. Drawing both is what read as "directions in both
+      // ways". The first pass down a street is the one that describes what to do now; the second
+      // is a promise about later, and later can speak for itself when you get there.
+      if (route.revisit?.[p.idx]) {
+        d.scale.setScalar(0)
+        d.position.set(0, -1e4, 0)
+        d.updateMatrix()
+        this._chev.setMatrixAt(i, d.matrix)
+        continue
+      }
       d.position.set(p.x, p.y + CHEV_HOVER, p.z)
       // Yaw onto the travel direction (rotY maps local +Z onto (sin, cos)), then PITCH the glyph
       // back into the road's slope. Flat-in-XZ chevrons are met almost exactly edge-on by the chase
