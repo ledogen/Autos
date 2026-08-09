@@ -240,12 +240,13 @@ export class EconomySystem {
 }
 
 /**
- * Display helper: halfPoints → "3½" style copy. The half-point is a designed affordance
- * (SM-INV-14 — a C keeps a weak run moving), so it renders as the ½ glyph, never "3.5".
+ * Display helper: halfPoints → "3.5" style copy.
+ *
+ * DECIMAL, NOT THE ½ GLYPH (owner, 2026-08-09). The vulgar fraction was chosen to say "this is a
+ * designed half, not a rounding artifact" (SM-INV-14 — a C keeps a weak run moving), but at the
+ * HUD's font size it renders as a smudge. A number has to be legible before it can be expressive.
  */
 export function formatDeeds(halfPoints) {
     const whole = Math.floor(halfPoints / 2)
-    const half = halfPoints % 2 === 1
-    if (whole === 0 && half) return '½'
-    return `${whole}${half ? '½' : ''}`
+    return `${whole}${halfPoints % 2 === 1 ? '.5' : ''}`
 }

@@ -3346,7 +3346,7 @@ function _renderMissionUI () {
         + (paid
           ? `<br><span class="mp-pay">$${r.payout.toLocaleString('en-US')}</span>`
             + (r.points > 0
-              ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points === 0.5 ? '½' : r.points} good deed${r.points > 1 ? 's' : ''}</span>`
+              ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points} good deed${r.points > 1 ? 's' : ''}</span>`
               : '')
           : (m.mission?.fromPoi ? '' : `<br><span class="mp-dim">test job &mdash; no pay</span>`))
       // The result card is exactly three actions: retry · continue · back to free roam (that is the
@@ -3441,7 +3441,7 @@ function _renderPaperUI () {
         + (r.expedite > 0 ? ` &nbsp;<span style="color:#8ce99a">+${Math.round(r.expedite * 100)}% early</span>` : '')
         + `<br><span class="mp-pay">$${r.payout.toLocaleString('en-US')}</span>`
         + (r.points > 0
-          ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points === 0.5 ? '½' : r.points} good deed${r.points > 1 ? 's' : ''}</span>`
+          ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points} good deed${r.points > 1 ? 's' : ''}</span>`
           : '')
         + (r.advanced
           ? `<br><span style="color:#ffdc3c">Larry&rsquo;s giving you a bigger round &mdash; ${r.nextTier} houses next time</span>`
@@ -3457,7 +3457,7 @@ function _renderPaperUI () {
   // is the only forward action and the right one has nothing to say.
   const acc = document.getElementById('pp-accept')
   const dec = document.getElementById('pp-decline')
-  if (acc) acc.textContent = p.state === 'done' ? 'continue' : 'take the round'
+  if (acc) acc.textContent = p.state === 'done' ? 'continue' : 'start the route'
   if (dec) dec.style.display = p.state === 'offer' ? '' : 'none'
 }
 
