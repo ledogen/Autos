@@ -19,7 +19,7 @@
 // floor that pays nothing for a half-finished route is not a floor.
 
 import { ECONOMY_PARAMS } from './economy.js'
-import { buildGraphAdj } from './mission.js'
+import { buildGraphAdj, START_ZONE_R } from './mission.js'
 import { computePar } from './par.js'
 // The accuracy law is throw.js's, not restated here. It is one line of algebra and that is exactly
 // why it must have one home: a second copy is a second thing to keep in step with the gate.
@@ -385,6 +385,9 @@ export function planTour (road, larry, allCust, want, region = null, margin = 10
  *   planning  the tour is being routed AND Larry is talking. Both have to finish before the offer
  *             can be shown, which is the point: the briefing is the cover for the routing.
  *   offer     the round, priced, with accept/decline
+ *   staging   papers loaded, parked at Larry's, clock NOT running — same threshold a POI job uses
+ *             (mission.js START_ZONE_R). You are on a pad facing whichever way you arrived, and the
+ *             round should not be timing you while you turn around.
  *   running   papers in the truck, clock against the bell
  *   done      the result card, already settled
  *
@@ -396,6 +399,7 @@ export class PaperRouteSystem {
      *   getRoad()    — the planning RoadSystem (a getter: main.js swaps instances on reseed)
      *   getPois()    — the PoiSystem (roster + customers)
      *   getRegion()  — the story region wall, or null
+     *   getCar()     — the truck's position, for the start-zone threshold
      *   getTerms()   — economySystem.terms(); frozen at accept, exactly like a paid job
      *   getTargetR() — the delivery circle radius (POI_PARAMS.poiHouseTargetR)
      *   onSettle(payout, letter) — EconomySystem.settleFlat; the one money path
@@ -403,11 +407,12 @@ export class PaperRouteSystem {
      *   onChange()   — repaint
      *   onEnd()      — the round is over: clear the papers off the lawns
      */
-    constructor ({ getRoad, getPois, getRegion, getTerms, getTargetR,
+    constructor ({ getRoad, getPois, getRegion, getCar, getTerms, getTargetR,
                    onSettle, onBriefing, onChange, onEnd }) {
         this._getRoad = getRoad
         this._getPois = getPois
         this._getRegion = getRegion ?? (() => null)
+        this._getCar = getCar ?? (() => null)
         this._getTerms = getTerms ?? (() => ({ dayTier: 1 }))
         this._getTargetR = getTargetR ?? (() => 5)
         this._onSettle = onSettle ?? (() => null)
@@ -421,6 +426,7 @@ export class PaperRouteSystem {
         this.run = null          // the live round — see accept()
         this.result = null
         this.giver = null        // the POI the round was taken from
+        this._startZone = null   // the green threshold at Larry's while staging
         this._briefed = false
         this._planned = false
     }
@@ -428,6 +434,23 @@ export class PaperRouteSystem {
     isActive () { return this.state !== 'idle' }
     /** True while the player is driving the round — the state everything else has to yield to. */
     isRunning () { return this.state === 'running' }
+    /** Papers are aboard: staged at Larry's, or out on the round. */
+    isCarrying () { return this.state === 'staging' || this.state === 'running' }
+
+    /** The green threshold at Larry's while staging, or null. main.js draws it. */
+    startZone () { return this.state === 'staging' ? this._startZone : null }
+
+    /** How far past the start threshold the truck is; <= 0 means still inside it. */
+    startZoneExitDist () {
+        const z = this._startZone, car = this._getCar()
+        if (!z || !car) return 0
+        return Math.hypot(car.x - z.x, car.z - z.z) - z.r
+    }
+
+    /** The customers on THIS round — not the region's. Read-only. */
+    routeCustomers () { return this.route?.customers ?? [] }
+    /** Has this customer already had their paper? */
+    isDelivered (id) { return !!this.run?.hits.has(id) }
 
     /** Papers still in the truck. Zero does not end the round; the last one LANDING does. */
     stock () { return this.run ? this.run.stock : 0 }
@@ -484,7 +507,10 @@ export class PaperRouteSystem {
         this._onChange()
     }
 
-    /** Take the papers. Terms freeze here, exactly like a paid job's do. */
+    /**
+     * Take the papers. Terms freeze here, exactly like a paid job's do — but the CLOCK does not
+     * start here: you are parked on Larry's pad. It starts when you drive out of the threshold.
+     */
     accept () {
         if (this.state !== 'offer' || !this.route) return
         const terms = this._getTerms() || { dayTier: 1 }
@@ -496,7 +522,8 @@ export class PaperRouteSystem {
             dayTier:  terms.dayTier ?? 1,
             hits:     new Map(),      // customer id → q, one entry per delivered customer
         }
-        this.state = 'running'
+        this._startZone = { x: this.giver.x, z: this.giver.z, y: this.giver.y ?? 0, r: START_ZONE_R }
+        this.state = 'staging'
         this._onChange()
     }
 
@@ -528,6 +555,7 @@ export class PaperRouteSystem {
         this.run = null
         this.giver = null
         this.error = null
+        this._startZone = null
         this._briefed = this._planned = false
         if (hadPapers) this._onEnd()
         this._onChange()
@@ -535,6 +563,12 @@ export class PaperRouteSystem {
 
     /** Clocked off the fixed step. Two comparisons and a counter — nothing else happens per frame. */
     update (dt) {
+        if (this.state === 'staging') {
+            // One distance check. Crossing the threshold is what starts the round — the same rule,
+            // and the same green ring, a POI job uses.
+            if (this.startZoneExitDist() > 0) { this.state = 'running'; this.run.elapsed = 0; this._onChange() }
+            return
+        }
         if (this.state !== 'running') return
         this.run.elapsed += dt
         if (this.run.elapsed >= this.run.deadline) this.finish()

@@ -57,7 +57,10 @@ const COUNTDOWN = 3.0               // s — the start countdown (a START count,
 // green means "cross here and you're running".
 // Quick Job keeps the countdown: it TELEPORTS you to a start pin already facing the right way, so
 // the handbrake launch is exactly right there and nothing about it needs fixing.
-const START_ZONE_R = 25             // m — POI start threshold, measured from the marker
+// Exported (FEAT-61): the paper route stages out of Larry's place through the same threshold, for
+// the same reason — you are parked on a pad, possibly facing the wrong way, and the round should
+// not be timing you while you sort that out.
+export const START_ZONE_R = 25      // m — POI start threshold, measured from the marker
 // FEAT-53: real story mode has no do-overs (DESIGN.md — "a marker you can re-roll is a slot
 // machine", and a retried paid job is a direct payout exploit: drive badly, retry, get paid for
 // the good lap). Held as a const flag in the DEBUG_LOCKOUT house style (story.js): flip to true

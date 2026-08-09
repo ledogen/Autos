@@ -23,7 +23,8 @@ import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { WaterSystem } from '../src/water.js'
 import { PoiSystem, POI_PARAMS } from '../src/poi.js'
-import { planTour, PAPER_PARAMS, deadlineFor, stockForTier, customersForTier } from '../src/paper-route.js'
+import { planTour, PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun,
+         deadlineFor, stockForTier, customersForTier } from '../src/paper-route.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
 let fails = 0
@@ -169,7 +170,97 @@ for (let i = 0; i < tours.length; i++) {
         `${deadlineFor(tours[i].par).toFixed(0)} s vs par ${tours[i].par.toFixed(0)} s`)
 }
 
-// ── 6. degenerate inputs return null rather than a broken round ─────────────────────────────────
+// ── 6. THE ROUND, END TO END ────────────────────────────────────────────────────────────────────
+//
+// Owner-reported 2026-08-09: "can't deliver the papers — landing a paper inside the green circle
+// shows no accuracy message and does not increase the delivered counter". The cause was on the
+// renderer side (every customer in the region wore a target ring, but only the round's four could
+// score, so most circles were decoys) — but nothing anywhere pinned the delivery path itself, which
+// is why a broken-looking mission could not be told apart from a mission that was working.
+//
+// So: drive a whole round headlessly. Take it from Larry, leave the threshold, land a paper dead
+// centre on every customer, and check the money arrives.
+{
+    const car = { x: larry.x, z: larry.z }
+    const settled = []
+    const paper = new PaperRouteSystem({
+        getRoad: () => W.road,
+        getPois: () => W.poi,
+        getRegion: () => region,
+        getCar: () => car,
+        getTerms: () => ({ dayTier: 1 }),
+        getTargetR: () => POI_PARAMS.poiHouseTargetR,
+        onSettle: (payout, letter) => { settled.push({ payout, letter }); return { payout, points: 0 } },
+        onBriefing: (done) => done(),          // Larry has already said his piece this run
+        onChange: () => {}, onEnd: () => {},
+    })
+
+    resetPaperRun()
+    paper.open(larry)
+    await new Promise(r => setTimeout(r, 0))   // open() routes the tour off the tick
+    check('parking at Larry\'s produces an offer', paper.state === 'offer', `state ${paper.state}`)
+
+    paper.accept()
+    check('accepting STAGES the round — the clock does not start on the pad',
+        paper.state === 'staging', `state ${paper.state}`)
+    const stock0 = paper.stock()
+    check('…with the tier\'s papers aboard', stock0 === stockForTier(0), `${stock0} papers`)
+    paper.update(1 / 60)
+    check('…and sitting in the circle does not start it', paper.state === 'staging')
+
+    car.x = larry.x + 400            // out through the threshold
+    paper.update(1 / 60)
+    check('leaving the circle starts the round', paper.state === 'running', `state ${paper.state}`)
+
+    // THE REPORTED BUG. A paper on the centre point of a customer on the round must credit them,
+    // exactly once, and must return the accuracy the read-out shows.
+    const round = paper.routeCustomers()
+    const first = round[0]
+    paper.takePaper()
+    const hit = paper.recordLanding(first.x, first.z)
+    check('a paper dead centre on a round customer CREDITS them',
+        !!hit?.credited, JSON.stringify(hit && { d: hit.dist, q: hit.q, credited: hit.credited }))
+    check('…scoring 1.00 at the centre point', Math.abs((hit?.q ?? 0) - 1) < 1e-9, `q ${hit?.q}`)
+    check('…and the delivered counter moves', paper.delivered() === 1, `${paper.delivered()}`)
+    check('…and the paper came out of the truck', paper.stock() === stock0 - 1, `${paper.stock()}`)
+
+    paper.takePaper()
+    const again = paper.recordLanding(first.x, first.z)
+    check('a SECOND paper on the same porch is spent, not double-counted',
+        again?.already === true && paper.delivered() === 1,
+        `already ${again?.already}, delivered ${paper.delivered()}`)
+
+    // A paper landing on someone who is NOT on this round scores nothing — the decoy case.
+    const offRound = customers.find(c => !round.some(r => r.id === c.id))
+    if (offRound) {
+        paper.takePaper()
+        const miss = paper.recordLanding(offRound.x, offRound.z)
+        check('a paper on a customer who is not on this round scores nothing',
+            !miss?.credited && paper.delivered() === 1, `delivered ${paper.delivered()}`)
+    }
+
+    // Finish the round on the remaining porches. The LAST one must end it by itself.
+    for (let i = 1; i < round.length; i++) {
+        check(`…still running with ${round.length - i} to go`, paper.state === 'running')
+        paper.takePaper()
+        paper.recordLanding(round[i].x, round[i].z)
+    }
+    check('the last porch ENDS the round', paper.state === 'done', `state ${paper.state}`)
+    const r = paper.result
+    check('a perfect round covers everyone', r?.coverage === 1, `coverage ${r?.coverage}`)
+    check('…letters S', r?.letter === 'S', `letter ${r?.letter}`)
+    check('…pays through the one money path', settled.length === 1 && settled[0].payout > 0,
+        JSON.stringify(settled))
+    check('…and earns the next rung', r?.advanced === true && runPaper.tier === 1,
+        `advanced ${r?.advanced}, tier ${runPaper.tier}`)
+    console.log(`       perfect tier-1 round: $${r?.payout} · ${r?.letter}`
+        + ` · ${r?.delivered}/${r?.customers} · next round ${r?.nextTier} houses`)
+
+    paper.dismiss()
+    check('dismissing the card puts the round down', paper.state === 'idle')
+}
+
+// ── 7. degenerate inputs return null rather than a broken round ─────────────────────────────────
 check('no Larry ⇒ no round', planTour(W.road, null, customers, 4, region) === null)
 check('no customers ⇒ no round', planTour(W.road, larry, [], 4, region) === null)
 check('a zero-customer tier ⇒ no round', planTour(W.road, larry, customers, 0, region) === null)

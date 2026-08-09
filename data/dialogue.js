@@ -10,7 +10,7 @@
 export const PAPER_ROUTE_INTRO = [
     {
         speaker: 'Uncle Larry',
-        text: `So you're finally ready to run the paper route? Here's what you ya gotta do.`,
+        text: `So you're finally ready to run the paper route? Here's what ya gotta do.`,
     },
     {
         speaker: 'Uncle Larry',

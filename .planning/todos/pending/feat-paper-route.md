@@ -252,6 +252,30 @@ mission around it, because it needs live driving to verify honestly:
    junctions, tier-independence, absent from `list()`), a debug folder for `PAPER_PARAMS`/
    `THROW_PARAMS`/`poiHouse*`, and the MILESTONES SM-2 paragraph.
 
+### First drive — four fixes [2026-08-09]
+
+The owner drove it. Four things came back, all fixed:
+
+1. **Typo** in Larry's first card ("Here's what you ya gotta do").
+2. **The round now STAGES.** Accept no longer starts the clock — Larry's marker takes the same green
+   threshold a POI job uses (`START_ZONE_R`, now exported from `mission.js`), and the round begins
+   when you drive out of it. Same ring, same words, same promise.
+3. **GPS follows the round.** `gpsSystem.getRoute` returns the tour while carrying, so the guidance
+   is the route the par was computed over. No re-routing and no fallback was needed — the tour is
+   already baked as segments, which is exactly what the overlay consumes.
+4. **THE DELIVERY BUG — the target rings were lying.** A region holds 16 customers and a tier-1
+   round visits four, but `_rebuildPoiMarkers` lit a green circle on *every* customer. Twelve of the
+   sixteen targets on screen were decoys: a paper landed dead centre in one scored nothing, and
+   because the miss read-out was distance-gated it said nothing either, which reads exactly like a
+   broken mission. Now only the round's **undelivered** customers are lit (a ring going out is the
+   delivery confirmation), and on a round a throw **always** answers.
+
+The scoring path itself was never broken — but nothing pinned it, which is why a lying renderer
+could not be told apart from a broken mission. `test/paper-tour.mjs` now drives a whole round
+headlessly through `PaperRouteSystem`: offer → staging → threshold → a paper dead centre credits at
+q = 1.00 and moves the counter → a second paper on the same porch is spent not double-counted → a
+paper on an off-round customer scores nothing → the last porch ends it → S, settled, next rung.
+
 ### Live checks nobody has run yet
 
 Everything below Phase A is gate-verified and **has not been driven**:

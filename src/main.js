@@ -2136,6 +2136,9 @@ let _stageRing = null
 // poi.id → its orange ring, so the accepted marker's ring can step aside for the green one while
 // every OTHER marker in the region keeps its own.
 const _poiRings = new Map()
+// customer.id → [ring, pip]. FEAT-61: a delivery target is only lit when it is ON your round and
+// still owed a paper — see _updateCustomerRings.
+const _customerRings = new Map()
 
 /**
  * Rebuild the markers + interaction rings (cheap: a handful of each per region).
@@ -2147,6 +2150,7 @@ const _poiRings = new Map()
 function _rebuildPoiMarkers () {
   _poiGroup.clear()   // geometry + material are shared singletons — nothing per-cube to dispose
   _poiRings.clear()
+  _customerRings.clear()
   const half = POI_PARAMS.poiCubeSize * 0.5
   const r = POI_PARAMS.poiInteractR
   for (const q of poiSystem.list()) {
@@ -2195,6 +2199,30 @@ function _rebuildPoiMarkers () {
     pip.position.set(h.x, h.y - _TARGET_RING_SINK + _TARGET_PIP_H * 0.5, h.z)
     pip.renderOrder = 5
     _poiGroup.add(pip)
+    _customerRings.set(h.id, [ring, pip])
+  }
+}
+
+/**
+ * FEAT-61: which delivery targets are lit.
+ *
+ * THIS IS WHY PAPERS "COULDN'T BE DELIVERED" (owner-reported 2026-08-09). A region holds 16
+ * customers and a tier-1 round visits four of them — but every customer wore a green circle, so
+ * twelve of the sixteen targets on screen were decoys. A paper landed dead centre in one of those
+ * scored nothing and, because the miss read-out is distance-gated, said nothing either. The circle
+ * has to mean "this one, now", or it is not a target.
+ *
+ * So: on a round, only the round's UNDELIVERED customers light up — and a ring going out as the
+ * paper lands is the delivery confirmation. Off a round every customer shows again, which is how
+ * you learn the neighbourhood before Larry gives you a bigger piece of it.
+ */
+function _updateCustomerRings () {
+  const onRound = paperRouteSystem.isCarrying()
+  const live = new Set(onRound ? paperRouteSystem.routeCustomers().map(c => c.id) : [])
+  for (const [id, pair] of _customerRings) {
+    const on = onRound ? (live.has(id) && !paperRouteSystem.isDelivered(id)) : true
+    pair[0].visible = on
+    pair[1].visible = on
   }
 }
 
@@ -2204,8 +2232,13 @@ function _rebuildPoiMarkers () {
  * visibility + a transform — no allocation after the first staged job.
  */
 function _updateMissionRings () {
-  const zone = missionSystem?.state === 'staging' ? missionSystem.startZone() : null
-  const activeId = zone ? missionSystem.mission?.fromPoi : null
+  // FEAT-61: the paper round stages out of Larry's place through the same threshold, so it hands
+  // the same ring the same job. Only one of the two can ever be staging — you cannot take a job
+  // while carrying a round — so this is a preference, not a merge.
+  const paperZone = paperRouteSystem.startZone()
+  const zone = paperZone || (missionSystem?.state === 'staging' ? missionSystem.startZone() : null)
+  const activeId = paperZone ? paperRouteSystem.giver?.id
+                 : zone ? missionSystem.mission?.fromPoi : null
   // FEAT-60: rings are a NEAR-FIELD affordance now (owner, 2026-08-05). They used to burn at every
   // marker across the region because the cube needed the help to be found; a modelled POI reads as
   // itself from a long way off, and a field of orange curtains flattens the landscape into a game
@@ -2495,6 +2528,11 @@ function _scoreLanding (hit) {
       _showThrowReadout('<span style="color:#8a939c">they already have one</span>')
     } else if (scored.dist < 25) {
       _showThrowReadout(`<span style="color:#ff9f43">missed by ${(scored.dist - R).toFixed(1)} m</span>`)
+    } else {
+      // ON A ROUND, A THROW ALWAYS ANSWERS. The distance gate above is right for a practice throw
+      // in open country — but during a round, silence is indistinguishable from a broken mission,
+      // which is exactly how this read as one (owner, 2026-08-09).
+      _showThrowReadout('<span style="color:#ff9f43">nobody on your round lives there</span>')
     }
     return
   }
@@ -2680,6 +2718,7 @@ const paperRouteSystem = new PaperRouteSystem({
   getRoad:   () => missionSystem?.planner() ?? roadSystem,
   getPois:   () => poiSystem,
   getRegion: () => storySystem?.region() ?? null,
+  getCar:    () => vehicleState.position,
   getTerms:  () => economySystem.terms(),
   getTargetR: () => POI_PARAMS.poiHouseTargetR,
   // The ONE money path (FEAT-53). This mission prices itself on its own axis and hands over a
@@ -2704,6 +2743,11 @@ window.__paperRoute = () => paperRouteSystem
 // off elsewhere.
 gpsSystem = new GpsSystem(scene, {
   getRoute: () => {
+    // FEAT-61: the paper round gets guidance too, and it gets the SAME route the par came from —
+    // the concatenated tour, in the order it was priced. That is the honest thing to point at: any
+    // other line (nearest undelivered customer, say) would be guiding you along a route the clock
+    // is not measuring. It costs nothing extra because the tour is already baked as segments.
+    if (paperRouteSystem?.isCarrying()) return paperRouteSystem.route
     const s = missionSystem?.state
     // 'staging' counts: that is precisely when a POI job wants guidance, because the reason the
     // start zone exists is that you may be pointing the wrong way and have to decide which.
@@ -3371,6 +3415,12 @@ function _renderPaperUI () {
         + `the papers you place are yours to keep either way</span>`
       break
     }
+    case 'staging':
+      // Same words the POI job uses, because it is the same threshold and the same promise: sort
+      // yourself out on the pad for as long as you like, the clock starts at the green line.
+      show(panel, false); show(hud, true); show(acts, false, 'flex')
+      hud.textContent = 'leave the green circle to start the round'
+      break
     case 'running': {
       show(panel, false); show(hud, true)
       // Time LEFT, not elapsed: the bell is the thing that ends the round, so it is the thing worth
@@ -4321,9 +4371,10 @@ function loop () {
     if (missionSystem?.isActive()) {
       missionSystem.update(PHYSICS_DT)
     }
-    // FEAT-61: the round's clock against the bell. One add and one comparison — same discipline as
-    // above, and clocked off the fixed step so a frame spike cannot stretch the deadline.
-    if (paperRouteSystem.isRunning()) paperRouteSystem.update(PHYSICS_DT)
+    // FEAT-61: the start threshold, then the round's clock against the bell. One distance check or
+    // one add — same discipline as above, and clocked off the fixed step so a frame spike can
+    // neither stretch the deadline nor skip the line that starts it.
+    if (paperRouteSystem.isCarrying()) paperRouteSystem.update(PHYSICS_DT)
 
     _prevRenderPos.copy(vehicleState.position)
     _prevRenderQuat.copy(vehicleState.quaternion)
@@ -4720,8 +4771,11 @@ function loop () {
     if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'staging'
                           || missionSystem.state === 'running')) _renderMissionUI()
     // FEAT-61: the round's HUD carries three live values (the bell, the count, the inventory), so
-    // it repaints on the same poll for the same reason.
-    if (paperRouteSystem.isRunning()) _renderPaperUI()
+    // it repaints on the same poll for the same reason. ('staging' is a static line, but it costs
+    // one string write and keeps the state→HUD mapping in one place.)
+    if (paperRouteSystem.isCarrying()) _renderPaperUI()
+    // …and which delivery targets are lit. Visibility flags only, no allocation.
+    _updateCustomerRings()
     // FEAT-46: the orange interaction ring ↔ green start-zone ring swap rides the same poll.
     _updateMissionRings()
 
