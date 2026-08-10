@@ -5,10 +5,10 @@ Built for: Blender 4.x  |  Target: assets/models/broken-car.glb
 Style brief: .planning/research/ART-STYLE.md  ·  Mechanics: .planning/research/ASSETS.md
 
 BUILD REPORT (2026-08-09, Blender 5.2.0 LTS — mid-90s front-end + wrap bumper pass)
-  BrokenCar       2420 tris   (body, greenhouse, interior, trim, 3 road wheels,
+  BrokenCar       2444 tris   (body, greenhouse, interior, trim, 3 road wheels,
                                brake drum, spare, scissor jack, tyre iron)
   BrokenCarGlass    16 tris   (6 panes, alpha-blended, double-sided)
-  TOTAL           2436 tris   budget 2500
+  TOTAL           2460 tris   budget 2500
   Reference: assets/models/src/ref-century/ — 9-angle board pulled from a 360
   walkaround video (2026-08-10); compare against it before restyling anything.
   materials 9 · images 0 · car 2.03 W (mirror to mirror) x 5.07 L x 1.46 H m
@@ -814,18 +814,19 @@ def build_detail(p):
         layer on the one raked plane no matter where it starts."""
         return 2.494 - G_RAKE * (z0 - 0.700) / 0.210
 
-    # Grille WIDENED to +/-0.292 (2026-08-10, walkaround board: the real aperture
-    # spans nearly half the car's width, and at +/-0.228 the nose read pinched).
-    raked(-0.292, 0.292, gy(0.694) - 0.016, 0.694, 0.884, "CarTrim", d=0.050)  # recess
-    raked(-0.292, 0.292, gy(0.700), 0.700, 0.724, "CarChrome")         # rail, lower
-    raked(-0.292, 0.292, gy(0.856), 0.856, 0.880, "CarChrome")         # rail, upper
+    # Grille WIDENED again to +/-0.342 (2026-08-10b): the lamps moved outboard so
+    # the corner marker actually sits ON the corner, and the grille fills the space
+    # that opened up — its frame runs to 10 mm shy of the lamp bezel.
+    raked(-0.342, 0.342, gy(0.694) - 0.016, 0.694, 0.884, "CarTrim", d=0.050)  # recess
+    raked(-0.342, 0.342, gy(0.700), 0.700, 0.724, "CarChrome")         # rail, lower
+    raked(-0.342, 0.342, gy(0.856), 0.856, 0.880, "CarChrome")         # rail, upper
     for sx in (1, -1):                                                 # end members
-        raked(sx * 0.270, sx * 0.292, gy(0.700), 0.700, 0.880, "CarChrome")
-    # VERTICAL RIBS — nine, evenly pitched across the widened aperture.  Still
-    # chunkier than the real car's fine waterfall (16 mm rib, 38 mm gap): at this
+        raked(sx * 0.320, sx * 0.342, gy(0.700), 0.700, 0.880, "CarChrome")
+    # VERTICAL RIBS — eleven, evenly pitched across the widened aperture.  Still
+    # chunkier than the real car's fine waterfall (16 mm rib, 37 mm gap): at this
     # facet scale that is what reads as "many vertical bars", not jail bars.
-    for i in range(-4, 5):
-        cx = i * 0.054
+    for i in range(-5, 6):
+        cx = i * 0.0533
         raked(cx - 0.008, cx + 0.008, gy(0.724) - 0.002, 0.724, 0.856, "CarChrome")
 
     # Lamps are WEDGES, not boxes: the outboard end sits further back in Y so each
@@ -841,15 +842,20 @@ def build_detail(p):
     # the grille (~135 mm here against the grille's 180), sitting tight beside it,
     # thin dark bezel only — on the reference the lamp sits in body colour with
     # barely any surround, and a fat bezel read as '80s sealed-beams.
-    wedge(0.302, 0.598, 2.412, 2.470, 2.400, 2.448, 0.728, 0.878, "CarTrim")   # bezel
-    wedge(0.312, 0.588, 2.452, 2.482, 2.442, 2.468, 0.740, 0.868, "CarLamp")   # lens
-    # Corner signal — AMBER, the mid-90s tell, matching the lens height.  A separate
-    # short lens whose front face angles back twice as hard as the main lens.  It
-    # CANNOT physically wrap the corner: the nose cap is ~0.79 half-wide at lamp
-    # height, so anything swept behind y 2.440 inboard of that is buried in the body
-    # (an early attempt reached x 0.716 / y 2.35 and vanished entirely).  The angle
-    # change against the main lens is what carries the wrap read.
-    wedge(0.606, 0.716, 2.446, 2.472, 2.408, 2.434, 0.740, 0.868, "CarSignal")
+    # Moved OUTBOARD (2026-08-10b) so the corner marker owns the actual corner.
+    wedge(0.352, 0.648, 2.412, 2.470, 2.400, 2.448, 0.728, 0.878, "CarTrim")   # bezel
+    wedge(0.362, 0.638, 2.452, 2.482, 2.442, 2.468, 0.740, 0.868, "CarLamp")   # lens
+    # Corner marker — AMBER, ON the corner, and it WRAPS it (2026-08-10b, user:
+    # "visible from the side, required by law").  Not a wedge: a four-sided plan
+    # shape whose outer face turns ~33 degrees around the nose corner and stands
+    # ~10 mm PROUD of the skin (the skin at y 2.400 / lamp height is ~0.812 wide, so
+    # an outer edge at 0.822 clears it — anything inboard of the skin is invisible,
+    # which is what killed every earlier wrap attempt).  Plan loop, per side:
+    # inner-front -> corner-front -> wrapped outer-rear (proud) -> buried inner-rear.
+    for sx in (1, -1):
+        plan = [(0.656, 2.472), (0.744, 2.450), (0.822, 2.400), (0.700, 2.404)]
+        pts = [(sx * px, py, z) for z in (0.740, 0.868) for px, py in plan]
+        hexa(p, pts, "CarSignal")
 
     # Stand-up hood ornament — the tri-shield-in-a-ring reduced to a thin chrome
     # blade on the hood crown, base buried in the crown facet (crown at y 2.28 is
