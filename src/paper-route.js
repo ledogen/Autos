@@ -224,26 +224,98 @@ export function planTour (road, larry, allCust, want, region = null, margin = 10
     const inRegion = (p) => !region || Math.hypot(p.x - region.x, p.z - region.z) <= rMax
     const { posOf, idOf, adj } = buildGraphAdj(g, inRegion)
 
-    // A CUSTOMER'S STOP IS AN EDGE, NOT A NODE. This is the whole shape of the round and it is easy
-    // to get wrong: a house sits MID-EDGE, so arriving at one of its edge's junctions is not the
-    // same as driving past the porch — the two can be most of a 640 m street apart, and a round
-    // built out of junctions leaves you nowhere near anything to throw at. Measured on the gate's
-    // window, five of six customers were never approached. So the round is a sequence of STREETS
-    // DRIVEN END TO END, which is also what a real paper round is.
+    // A STOP IS A POINT ON A ROAD — not a junction, and not a whole street either.
+    //
+    // Both of the wrong answers were tried. Snapping each customer to the nearest END of its edge
+    // left five of six customers never approached (a house sits mid-edge and can be most of a 640 m
+    // street from either junction). Making the stop the whole EDGE fixed that and bought a worse
+    // problem: the round then had to drive every customer's street end to end, so it ran past the
+    // porch to finish the tarmac and turned around to come back — the owner drove exactly that.
+    //
+    // The honest model is the one the oracle already speaks: a customer is an (edge, arc) point, so
+    // SPLIT the graph at those points. Each carrying edge becomes a chain a → c₁ → … → cₖ → b with
+    // arc-length weights, Larry included, and then plain shortest paths do the right thing — the
+    // route reaches the porch and carries on in whichever direction is actually shorter. Nothing
+    // downstream needs to know: par already integrates partial edges by arc RANGE.
     const edgeKeyOf = (a, b) => {
         const ka = idKey(a), kb = idKey(b)
         return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`
     }
-    const streets = new Map()       // edge key → { ka, kb, aId, bId, cust: [] }
-    for (const c of allCust) {
-        if (!c.aId || !c.bId) continue
-        const ka = g.key(c.aId), kb = g.key(c.bId)
-        if (!adj.has(ka) || !adj.has(kb)) continue       // outside the region wall
-        const ek = edgeKeyOf(c.aId, c.bId)
-        if (!streets.has(ek)) streets.set(ek, { ka, kb, aId: c.aId, bId: c.bId, cust: [] })
-        streets.get(ek).cust.push(c)
+    const edCache = new Map()
+    const edgeData = (a, b) => {
+        const key = edgeKeyOf(a, b)
+        if (!edCache.has(key)) edCache.set(key, road.edgeParData(a, b) || null)
+        return edCache.get(key)
     }
-    if (!streets.size) return null
+
+    // Gather the points to splice in, grouped by the edge that carries them.
+    const onEdge = new Map()      // edge key → { aId, bId, ka, kb, pts: [{ id, s, cust }] }
+    const addPoint = (q, cust) => {
+        if (!q.aId || !q.bId) return false
+        const ka = g.key(q.aId), kb = g.key(q.bId)
+        if (!adj.has(ka) || !adj.has(kb)) return false       // edge crosses the region wall
+        const ek = edgeKeyOf(q.aId, q.bId)
+        if (!onEdge.has(ek)) onEdge.set(ek, { aId: q.aId, bId: q.bId, ka, kb, pts: [] })
+        onEdge.get(ek).pts.push({ id: q.id, s: q.s, cust })
+        return true
+    }
+    if (!addPoint(larry, null)) return null
+    for (const c of allCust) addPoint(c, c)
+
+    // THE SPLIT. Node degrees are read BEFORE the surgery — a spliced point is not a junction, and
+    // an arrow raised at one would be the overlay inventing an intersection out of a house.
+    const degOf = new Map()
+    for (const [k, list] of adj) degOf.set(k, list.length)
+
+    const ptKeyOf = new Map()     // point id → its node key in the split graph
+    const ptInfo = new Map()      // node key → { ek, s } so segments can be cut at the right arc
+    const edgeArc = new Map()     // edge key → { ed, off, L, kAtOff, kAtEnd }
+    for (const [ek, e] of onEdge) {
+        const ed = edgeData(e.aId, e.bId)
+        if (!ed?.centerline) { onEdge.delete(ek); continue }
+        const off = ed.arcOffset ?? 0
+        const L = ed.arcLength ?? ed.centerline.length
+        // Which node stands at arc `off`? Everything below is expressed in that orientation.
+        const p0 = ed.centerline.pointAt(off)
+        const pa = posOf.get(e.ka)
+        const aAtOff = Math.hypot(p0.x - pa.x, p0.z - pa.z) < Math.hypot(p0.x - posOf.get(e.kb).x, p0.z - posOf.get(e.kb).z)
+        const kAtOff = aAtOff ? e.ka : e.kb, kAtEnd = aAtOff ? e.kb : e.ka
+        edgeArc.set(ek, { ed, off, L, kAtOff, kAtEnd })
+
+        // Chain the points in arc order between the two real endpoints.
+        const pts = e.pts
+            .map(p => ({ ...p, s: Math.max(off, Math.min(off + L, p.s)) }))
+            .sort((u, v) => u.s - v.s)
+        const chain = [{ k: kAtOff, s: off }]
+        pts.forEach((p, i) => {
+            const k = `pt:${ek}:${i}`
+            ptKeyOf.set(p.id, k)
+            ptInfo.set(k, { ek, s: p.s })
+            posOf.set(k, ed.centerline.pointAt(p.s))
+            adj.set(k, [])
+            chain.push({ k, s: p.s })
+        })
+        chain.push({ k: kAtEnd, s: off + L })
+
+        // Unlink the two real endpoints from each other — the road between them now runs THROUGH
+        // the spliced points, and leaving the direct link would offer a shortcut past the porch.
+        for (const [x, y] of [[e.ka, e.kb], [e.kb, e.ka]]) {
+            adj.set(x, (adj.get(x) || []).filter(l => l.to !== y))
+        }
+        // …and relink it as the chain. Weights are TRUE ARC here, where buildGraphAdj used the
+        // straight-line chord: a mixed metric, and deliberately so — arc is the only thing that can
+        // place a point partway along an edge, and routing an edge just to measure it would cost
+        // more than the bias is worth. Arc ≥ chord, so a carrying edge is never under-priced.
+        for (let i = 0; i < chain.length - 1; i++) {
+            const u = chain[i], v = chain[i + 1]
+            const w = Math.abs(v.s - u.s)
+            adj.get(u.k).push({ to: v.k, w })
+            adj.get(v.k).push({ to: u.k, w })
+        }
+    }
+
+    const larryK = ptKeyOf.get(larry.id)
+    if (!larryK) return null
 
     const searches = new Map()
     const searchFrom = (k) => {
@@ -251,69 +323,68 @@ export function planTour (road, larry, allCust, want, region = null, margin = 10
         return searches.get(k)
     }
 
-    // Which end of Larry's own edge does the round leave through? Whichever reaches a customer's
-    // street sooner. Both are legal roads out of his place; this just avoids opening every round
-    // with a U-turn back past the house.
-    const lka = g.key(larry.aId), lkb = g.key(larry.bId)
-    let larryK = null, bestReach = Infinity
-    for (const k of [lka, lkb]) {
-        if (!adj.has(k)) continue
-        const { dist } = searchFrom(k)
-        let near = Infinity
-        for (const st of streets.values()) {
-            if (st.ka === k || st.kb === k) { near = 0; break }
-            near = Math.min(near, dist.get(st.ka) ?? Infinity, dist.get(st.kb) ?? Infinity)
-        }
-        if (near < bestReach) { bestReach = near; larryK = k }
-    }
-    if (larryK == null || !isFinite(bestReach)) return null
-
+    // WHICH customers this tier visits: grow the round outward from Larry by true road distance.
+    // A tier is a shorter round out of the same door, not a different set of houses (SM-INV-12).
+    const stops = allCust.filter(c => ptKeyOf.has(c.id))
+    if (!stops.length) return null
+    const remaining = stops.slice()
     const order = []
-    const walk = [larryK]
-    const takeCustomers = (list) => {
-        // Passing a house delivers it — so everyone on a street the round drives is ON the round,
-        // up to the tier's count. A tier is a shorter round out of the same door, not a different
-        // set of houses (SM-INV-12: the tier chooses who is on the round, never what exists).
-        for (const c of list) { if (order.length >= want) break; order.push(c) }
-    }
-
-    // Nearest-neighbour over streets. Each stop is entered at the nearer junction and left at the
-    // far one, so the whole street is driven and every porch on it goes past the window. Larry's
-    // own street is in here like any other when someone lives on it — it is simply at distance
-    // zero, so the round opens by driving it.
     let curK = larryK
-    while (order.length < want && streets.size) {
-        const { dist, prev } = searchFrom(curK)
-        let bestEk = null, bestEntry = null, bestExit = null, bd = Infinity
-        for (const [ek, st] of streets) {
-            for (const [entry, exit] of [[st.ka, st.kb], [st.kb, st.ka]]) {
-                const d = dist.get(entry) ?? Infinity
-                if (d < bd) { bd = d; bestEk = ek; bestEntry = entry; bestExit = exit }
-            }
+    while (order.length < want && remaining.length) {
+        const { dist } = searchFrom(curK)
+        let bi = -1, bd = Infinity
+        for (let i = 0; i < remaining.length; i++) {
+            const d = dist.get(ptKeyOf.get(remaining[i].id)) ?? Infinity
+            if (d < bd) { bd = d; bi = i }
         }
-        if (bestEk == null || !isFinite(bd)) break       // the rest of the region is unreachable
-        if (bestEntry !== curK) {
-            const leg = _pathBack(prev, curK, bestEntry)
-            if (!leg) return null
-            for (let i = 1; i < leg.length; i++) walk.push(leg[i])
-        }
-        walk.push(bestExit)                              // …and DOWN the street itself
-        curK = bestExit
-        const st = streets.get(bestEk)
-        streets.delete(bestEk)
-        takeCustomers(st.cust)
+        if (bi < 0 || !isFinite(bd)) break               // the rest of the region is unreachable
+        const c = remaining.splice(bi, 1)[0]
+        order.push(c)
+        curK = ptKeyOf.get(c.id)
     }
     if (!order.length) return null
 
-    // Route the walk. Edges repeat when the round doubles back down a dead-end street, so the
-    // routed centerline is memoized — a re-traversal is a second segment over the same road, not a
-    // second routing job.
-    const edCache = new Map()
-    const edgeData = (a, b) => {
-        const ka = idKey(a), kb = idKey(b)
-        const key = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`
-        if (!edCache.has(key)) edCache.set(key, road.edgeParData(a, b) || null)
-        return edCache.get(key)
+    // …and in WHICH ORDER. Nearest-neighbour is a greedy first guess and it is routinely 10-25%
+    // long; 2-opt on the finished order is the cheap classical repair — reverse any sub-run that
+    // shortens the total and repeat until nothing does. The round is open (it does not return to
+    // Larry), so only the interior is reversed and the start stays pinned.
+    {
+        const keys = [larryK, ...order.map(c => ptKeyOf.get(c.id))]
+        const legLen = (a, b) => searchFrom(a).dist.get(b) ?? Infinity
+        const total = (ks) => { let t = 0; for (let i = 0; i < ks.length - 1; i++) t += legLen(ks[i], ks[i + 1]); return t }
+        let best = total(keys)
+        for (let pass = 0; pass < 8; pass++) {
+            let improved = false
+            for (let i = 1; i < keys.length - 1 && !improved; i++) {
+                for (let j = i + 1; j < keys.length && !improved; j++) {
+                    const trial = keys.slice()
+                    const rev = trial.slice(i, j + 1).reverse()
+                    trial.splice(i, rev.length, ...rev)
+                    const t = total(trial)
+                    if (t < best - 1e-6) {
+                        best = t
+                        keys.splice(0, keys.length, ...trial)
+                        improved = true
+                    }
+                }
+            }
+            if (!improved) break
+        }
+        const byKey = new Map(order.map(c => [ptKeyOf.get(c.id), c]))
+        order.splice(0, order.length, ...keys.slice(1).map(k => byKey.get(k)).filter(Boolean))
+    }
+
+    // The node walk: Larry's point, then each stop in turn, along shortest paths through the split
+    // graph. Consecutive duplicates collapse — two customers on one stretch share the road between.
+    const walk = [larryK]
+    let fromK = larryK
+    for (const c of order) {
+        const toK = ptKeyOf.get(c.id)
+        if (toK === fromK) continue
+        const leg = _pathBack(searchFrom(fromK).prev, fromK, toK)
+        if (!leg) return null
+        for (let i = 1; i < leg.length; i++) walk.push(leg[i])
+        fromK = toK
     }
 
     const segments = [], poly = []
@@ -325,39 +396,38 @@ export function planTour (road, larry, allCust, want, region = null, margin = 10
         }
     }
 
-    // The head: Larry's own partial stretch, from his marker's arc position out to the exit node.
-    // The oracle already integrates partial edges (its arc-RANGE rule), so a mid-edge start needs
-    // no new machinery — just a segment whose s0 is where the truck is standing.
-    {
-        const ed = edgeData(larry.aId, larry.bId)
-        if (!ed) return null
-        const off = ed.arcOffset ?? 0
-        const L = ed.arcLength ?? ed.centerline.length
-        const ex = posOf.get(larryK)
-        const pEnd = ed.centerline.pointAt(off + L), pStart = ed.centerline.pointAt(off)
-        const s1 = Math.hypot(pEnd.x - ex.x, pEnd.z - ex.z) < Math.hypot(pStart.x - ex.x, pStart.z - ex.z)
-            ? off + L : off
-        const s0 = Math.max(off, Math.min(off + L, larry.s))
-        if (Math.abs(s1 - s0) >= 1) {
-            segments.push({ centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key,
-                            cellA: larry.aId, cellB: larry.bId, endDeg: (adj.get(larryK) || []).length })
-            pushPoly(ed.centerline, s0, s1)
-        }
-    }
-
+    // Turn each hop into an arc RANGE. A hop is either a whole edge between two real nodes, or a
+    // stretch of a split edge with a spliced point at one or both ends.
     for (let i = 0; i < walk.length - 1; i++) {
-        const a = idOf.get(walk[i]), b = idOf.get(walk[i + 1])
-        if (!a || !b) return null
-        const ed = edgeData(a, b)
-        if (!ed) return null
-        const off = ed.arcOffset ?? 0
-        const L = ed.arcLength ?? ed.centerline.length
-        const pa = posOf.get(walk[i])
-        const p0 = ed.centerline.pointAt(off), pE = ed.centerline.pointAt(off + L)
-        const forward = Math.hypot(p0.x - pa.x, p0.z - pa.z) < Math.hypot(pE.x - pa.x, pE.z - pa.z)
-        const s0 = forward ? off : off + L, s1 = forward ? off + L : off
-        segments.push({ centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key,
-                        cellA: a, cellB: b, endDeg: (adj.get(walk[i + 1]) || []).length })
+        const uk = walk[i], vk = walk[i + 1]
+        const uInfo = ptInfo.get(uk), vInfo = ptInfo.get(vk)
+        let ek = uInfo?.ek ?? vInfo?.ek ?? null
+        if (uInfo && vInfo && uInfo.ek !== vInfo.ek) return null      // not a real hop
+        let ed, off, L, kAtOff
+        if (ek) {
+            ({ ed, off, L, kAtOff } = edgeArc.get(ek))
+        } else {
+            const a = idOf.get(uk), b = idOf.get(vk)
+            if (!a || !b) return null
+            ed = edgeData(a, b)
+            if (!ed?.centerline) return null
+            off = ed.arcOffset ?? 0
+            L = ed.arcLength ?? ed.centerline.length
+            const p0 = ed.centerline.pointAt(off), pu = posOf.get(uk)
+            kAtOff = Math.hypot(p0.x - pu.x, p0.z - pu.z)
+                   < Math.hypot(ed.centerline.pointAt(off + L).x - pu.x, ed.centerline.pointAt(off + L).z - pu.z)
+                ? uk : vk
+        }
+        const arcOf = (k, info) => info ? info.s : (k === kAtOff ? off : off + L)
+        const s0 = arcOf(uk, uInfo), s1 = arcOf(vk, vInfo)
+        if (Math.abs(s1 - s0) < 1e-6) continue
+        segments.push({
+            centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key,
+            cellA: onEdge.get(ek)?.aId ?? idOf.get(uk), cellB: onEdge.get(ek)?.bId ?? idOf.get(vk),
+            // A spliced point is a house, not an intersection — degree 2 keeps the overlay from
+            // raising a turn arrow on somebody's front lawn.
+            endDeg: vInfo ? 2 : (degOf.get(vk) ?? 3),
+        })
         pushPoly(ed.centerline, s0, s1)
     }
     if (!segments.length) return null

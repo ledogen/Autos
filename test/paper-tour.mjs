@@ -130,13 +130,18 @@ for (let tier = 0; tier < PAPER_PARAMS.tiers.length; tier++) {
 }
 
 // ── 3. the round grows, it does not move (SM-INV-12) ────────────────────────────────────────────
+//
+// A SUBSET, not a prefix. Which customers a tier visits is grown outward from Larry, so a lower
+// tier's people are all on a higher tier's round — but the ORDER is then 2-opted for length, and a
+// shorter round is free to visit them in a different sequence. The invariant is about who is on the
+// round, not what order they come in.
 for (let i = 1; i < tours.length; i++) {
     if (!tours[i] || !tours[i - 1]) continue
     const lower = tours[i - 1].customers.map(c => c.id)
-    const higher = tours[i].customers.map(c => c.id)
-    const prefix = lower.every((id, k) => higher[k] === id)
-    check(`tier ${i} is a PREFIX of tier ${i + 1} — the tier picks who, never what exists`, prefix,
-        `${lower.join(',')} vs ${higher.slice(0, lower.length).join(',')}`)
+    const higher = new Set(tours[i].customers.map(c => c.id))
+    const missing = lower.filter(id => !higher.has(id))
+    check(`tier ${i}'s customers are all on tier ${i + 1}'s round — the tier picks who, never what exists`,
+        missing.length === 0, `${missing.length} dropped: ${missing.join(', ')}`)
 }
 
 // ── 4. the roads are real, and inside the wall ──────────────────────────────────────────────────
