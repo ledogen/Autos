@@ -15,7 +15,8 @@ BUILD REPORT (2026-08-09, Blender 5.2.0 LTS — mid-90s front-end + wrap bumper 
   CHIN — the whole lower nose is one surface leaning forward from the fascia to an
   apex at the rub strip, tucking under, then WRAPPING the corner and running back
   along the flank to die into the fender at the wheel arch (CHIN table + WRAP
-  path), rub strip riding the whole way — a DROOPED hood (~20 mm), a narrow raked
+  path), rub strip riding the whole way — a hood falling CONTINUOUSLY from the
+  cowl to the lip (retuned 2026-08-10; it used to plateau then kink), a narrow raked
   vertical-rib waterfall grille, wide slim lamps with AMBER wraparound corner
   signals (CarSignal), two black bumperettes hanging BELOW the bumper line, a
   centre licence plate under the bumper, a stand-up hood ornament, and
@@ -132,17 +133,19 @@ SW_SEG = 10
 # was 0.800) and the body swells back to full width faster than a straight taper would,
 # which is what puts a radius on the corner.  Everything mounted on the fascia has to
 # respect the smaller cap — see the guard in build().
-# HOOD DROOP (2026-08-09).  The mid-90s Century's hood falls away toward the nose —
-# the front belt now sits ~21 mm lower than the slab-nosed first pass and the drop is
-# spread over the front four stations so the hood is a fall, not a kink.  Everything
-# mounted on the fascia lives below z 0.885 now; the grille top rail runs right up
-# under the hood lip because on the reference the two nearly touch.
+# HOOD DROOP (2026-08-09, retuned 2026-08-10).  The mid-90s Century's hood falls
+# CONTINUOUSLY from the windshield base to the nose — the first droop pass kept the
+# hood flat to y 1.95 and then dumped ~60 mm in the last 140 mm, which read as a
+# plateau ending in a kink (user: "slopes not at all and then a lot at the end").
+# The fall now starts at the cowl (~46 mm/m) and accelerates smoothly toward the
+# lip; the nose stays at 0.885 so the grille/lamp stack is untouched, and the
+# grille top rail still runs right up under the hood lip.
 BODY_STATIONS = [
     (2.440, 0.730, 0.788, 0.748, 0.375, 0.885),   # front face — rounded corner
-    (2.410, 0.766, 0.822, 0.782, 0.360, 0.910),
-    (2.365, 0.786, 0.844, 0.804, 0.340, 0.930),
-    (2.300, 0.790, 0.855, 0.820, 0.320, 0.945),
-    (1.950, 0.800, 0.878, 0.855, 0.300, 0.980),   # ahead of the front arch
+    (2.410, 0.766, 0.822, 0.782, 0.360, 0.895),
+    (2.365, 0.786, 0.844, 0.804, 0.340, 0.906),
+    (2.300, 0.790, 0.855, 0.820, 0.320, 0.916),
+    (1.950, 0.800, 0.878, 0.855, 0.300, 0.952),   # ahead of the front arch
     (0.900, 0.800, 0.885, 0.858, 0.295, 1.000),   # cowl / windshield base
     (0.300, 0.805, 0.885, 0.856, 0.295, 1.010),
     (-0.450, 0.805, 0.885, 0.854, 0.295, 1.020),
@@ -811,9 +814,10 @@ def build_detail(p):
     wedge(0.600, 0.718, 2.446, 2.472, 2.408, 2.434, 0.757, 0.860, "CarSignal")
 
     # Stand-up hood ornament — the tri-shield-in-a-ring reduced to a thin chrome
-    # blade on the hood crown, base buried in the crown facet.  Its silhouette
-    # against the sky is the entire read; 12 tris.
-    box(p, -0.008, 0.008, 2.262, 2.296, 0.950, 1.012, "CarChrome")
+    # blade on the hood crown, base buried in the crown facet (crown at y 2.28 is
+    # ~0.936 since the 2026-08-10 hood retune — re-derive if the stations move).
+    # Its silhouette against the sky is the entire read; 12 tris.
+    box(p, -0.008, 0.008, 2.262, 2.296, 0.926, 0.988, "CarChrome")
 
     # ---- rear ----------------------------------------------------------------
     box(p, -0.845, 0.845, -2.500, -2.435, 0.420, 0.640, "CarPaint")
