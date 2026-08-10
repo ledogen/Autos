@@ -378,7 +378,7 @@ export class PoiSystem {
         canon.sort((u, v) => (u.ka === v.ka ? (u.kb < v.kb ? -1 : 1) : (u.ka < v.ka ? -1 : 1)))
 
         // THE WALL (FEAT-61 Phase E2). A customer's edge must lie WHOLLY inside the region, because
-        // the round is routed on the same region-filtered graph the missions are: an edge with one
+        // the route is routed on the same region-filtered graph the missions are: an edge with one
         // node past the wall is dropped from that graph, so a house on it is a person the tour can
         // never reach — the paper route would simply skip them, silently and forever. Measured on
         // seed 6, three of the sixteen customers were exactly this.
@@ -526,7 +526,7 @@ export class PoiSystem {
      * shape _pickCoverage uses for the stations.
      *
      * Spread rather than nearest-first on purpose: nearest-first would pack every customer onto the
-     * two streets by the spawn and make the route a lap of the block instead of a round.
+     * two streets by the spawn and make the route a lap of the block instead of a proper round trip.
      */
     _pickSpread (cands, n, minSep) {
         if (cands.length <= n) return cands.slice()

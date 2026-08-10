@@ -34,8 +34,8 @@ export const PAPER_PARAMS = {
     // it is re-earned every run like everything else.
     tiers:       [4, 9, 12, 15],
     // Spares as a fraction of the customer count, per tier: generous on the first route, thin on the
-    // last (owner). A beginner's four-house round tolerates four fluffed throws; the fifteen-house
-    // round tolerates four and a half, which is the difficulty curve stated as inventory.
+    // last (owner). A beginner's four-house route tolerates four fluffed throws; the fifteen-house
+    // route tolerates four and a half, which is the difficulty curve stated as inventory.
     sparesFrac:  [1.00, 0.75, 0.50, 0.30],
 
     // FLAT is anchored to par so the floor survives the 20-day cost ramp instead of decaying into
@@ -64,7 +64,7 @@ export const PAPER_PARAMS = {
  */
 export const runPaper = {
     tier: 0,
-    routesRun: 0,       // settled routes this run; the result card's "your Nth round"
+    routesRun: 0,       // settled routes this run; the result card's "your Nth route"
 }
 
 export function resetPaperRun () {
@@ -152,7 +152,7 @@ export function scoreRoute (accuracies, customers, elapsed, par, dayTier = 1, P 
 /**
  * Did this route earn the next rung? Only a PERFECT one does: every customer got a paper inside
  * their circle before the bell. Accuracy does not enter it — Larry is judging whether you can
- * finish the round, not how pretty it was.
+ * finish the route, not how pretty it was.
  */
 export function advancesTier (result, customers) {
     return !!result?.complete && customers > 0 && result.coverage >= 1
@@ -160,14 +160,14 @@ export function advancesTier (result, customers) {
 
 // ── the tour ────────────────────────────────────────────────────────────────────────────────────
 //
-// A round is ONE route with many stops, not many routes. SM-INV-2 is the reason the whole tour is
+// A route is ONE route with many stops, not many routes. SM-INV-2 is the reason the whole tour is
 // concatenated and priced by a single computePar() call: par is the oracle's statement about a
 // stretch of road, and summing fifteen little pars would be summing fifteen standing starts.
 
 const idKey = (id) => `${id[0]},${id[1]},${id[2]}`
 
-// Stop count up to which the round's ORDER is solved exactly (Held-Karp, 2^n × n states). The
-// ladder tops out at 15, so in practice every round is exact; the cap exists so a future tier
+// Stop count up to which the route's ORDER is solved exactly (Held-Karp, 2^n × n states). The
+// ladder tops out at 15, so in practice every route is exact; the cap exists so a future tier
 // cannot silently ask for a 2^n table.
 const HELD_KARP_MAX = 15
 
@@ -204,17 +204,17 @@ function _pathBack (prev, startK, goalK) {
 }
 
 /**
- * Plan one round: pick this tier's customers, order them, route the whole thing, price it ONCE.
+ * Plan one route: pick this tier's customers, order them, route the whole thing, price it ONCE.
  *
  * Returns `{ customers, segments, poly, par, distance }` or null when the network cannot supply a
- * round (no Larry, no reachable customer, an edge the planner does not hold).
+ * route (no Larry, no reachable customer, an edge the planner does not hold).
  *
  * COST: this is the expensive call — every edge the tour traverses is routed, and a fifteen-stop
- * round crosses many more edges than a point-to-point errand does. It runs once, behind Larry's
+ * route crosses many more edges than a point-to-point errand does. It runs once, behind Larry's
  * briefing cards, and never in the frame loop.
  *
  * @param {object} road      the planning RoadSystem (networkGraph + edgeParData)
- * @param {object} larry     the POI the round starts at — needs {aId, bId, s, x, z}
+ * @param {object} larry     the POI the route starts at — needs {aId, bId, s, x, z}
  * @param {Array}  allCust   every newspaper customer in the region (poiSystem.customers())
  * @param {number} want      how many of them this tier visits
  * @param {{x:number,z:number,r:number}|null} region  the story region wall, or null
@@ -234,7 +234,7 @@ export function planTour (road, larry, allCust, want, region = null, margin = 10
     // Both of the wrong answers were tried. Snapping each customer to the nearest END of its edge
     // left five of six customers never approached (a house sits mid-edge and can be most of a 640 m
     // street from either junction). Making the stop the whole EDGE fixed that and bought a worse
-    // problem: the round then had to drive every customer's street end to end, so it ran past the
+    // problem: the route then had to drive every customer's street end to end, so it ran past the
     // porch to finish the tarmac and turned around to come back — the owner drove exactly that.
     //
     // The honest model is the one the oracle already speaks: a customer is an (edge, arc) point, so
@@ -328,16 +328,16 @@ export function planTour (road, larry, allCust, want, region = null, margin = 10
         return searches.get(k)
     }
 
-    // WHICH customers this tier visits: grow the round outward from Larry, each next customer the
+    // WHICH customers this tier visits: grow the route outward from Larry, each next customer the
     // nearest by road to the last one taken.
     //
     // CHAINING, not "the k nearest to Larry" — that alternative was measured and is worse on both
     // counts. Nearest-to-Larry picks a STAR: four houses in four directions, which forces a return
     // through the middle between every pair (seed 6 tier 1: 5.94 km against the chain's 3.78 km for
-    // the same four-customer round). Chaining follows the road outward and picks a run of houses,
+    // the same four-customer route). Chaining follows the road outward and picks a run of houses,
     // which is shorter to drive AND is what a paper route actually looks like. The ladder still
     // nests — a tier takes a prefix of the same chain, so its people are all on the next tier's
-    // round (SM-INV-12).
+    // route (SM-INV-12).
     const stops = allCust.filter(c => ptKeyOf.has(c.id))
     if (!stops.length) return null
     const remaining = stops.slice()
@@ -363,7 +363,7 @@ export function planTour (road, larry, allCust, want, region = null, margin = 10
     // reversing a sub-run cannot rotate the sequence — turning A,B,C,D into D,A,B,C is not a
     // reversal of anything — so the very case that hurts most (one stop on the far side that ought
     // to be visited first) is outside the neighbourhood 2-opt can search. Held-Karp is exact and,
-    // at fifteen stops, cheap: 2^15 × 15 states is a few million operations once per round, behind
+    // at fifteen stops, cheap: 2^15 × 15 states is a few million operations once per route, behind
     // the briefing cards. Above the ladder's top rung it falls back to the greedy order rather than
     // trying to allocate a 2^n table.
     {
@@ -468,7 +468,7 @@ export function planTour (road, larry, allCust, want, region = null, margin = 10
     }
     if (!segments.length) return null
 
-    // ONE par over the whole round (SM-INV-2).
+    // ONE par over the whole route (SM-INV-2).
     const { time, distance } = computePar(segments)
     if (!(time > 0)) return null
 
@@ -490,10 +490,10 @@ export function planTour (road, larry, allCust, want, region = null, margin = 10
  *   idle      nothing doing
  *   planning  the tour is being routed AND Larry is talking. Both have to finish before the offer
  *             can be shown, which is the point: the briefing is the cover for the routing.
- *   offer     the round, priced, with accept/decline
+ *   offer     the route, priced, with accept/decline
  *   staging   papers loaded, parked at Larry's, clock NOT running — same threshold a POI job uses
  *             (mission.js START_ZONE_R). You are on a pad facing whichever way you arrived, and the
- *             round should not be timing you while you turn around.
+ *             route should not be timing you while you turn around.
  *   running   papers in the truck, clock against the bell
  *   done      the result card, already settled
  *
@@ -511,7 +511,7 @@ export class PaperRouteSystem {
      *   onSettle(payout, letter) — EconomySystem.settleFlat; the one money path
      *   onBriefing(done)  — play Larry's cards and call `done` when they are read
      *   onChange()   — repaint
-     *   onEnd()      — the round is over: clear the papers off the lawns
+     *   onEnd()      — the route is over: clear the papers off the lawns
      */
     constructor ({ getRoad, getPois, getRegion, getCar, getTerms, getTargetR,
                    onSettle, onBriefing, onChange, onEnd }) {
@@ -529,18 +529,18 @@ export class PaperRouteSystem {
         this.state = 'idle'
         this.error = null
         this.route = null        // the planned tour (see planTour)
-        this.run = null          // the live round — see accept()
+        this.run = null          // the live route — see accept()
         this.result = null
-        this.giver = null        // the POI the round was taken from
+        this.giver = null        // the POI the route was taken from
         this._startZone = null   // the green threshold at Larry's while staging
         this._briefed = false
         this._planned = false
     }
 
     isActive () { return this.state !== 'idle' }
-    /** True while the player is driving the round — the state everything else has to yield to. */
+    /** True while the player is driving the route — the state everything else has to yield to. */
     isRunning () { return this.state === 'running' }
-    /** Papers are aboard: staged at Larry's, or out on the round. */
+    /** Papers are aboard: staged at Larry's, or out on the route. */
     isCarrying () { return this.state === 'staging' || this.state === 'running' }
 
     /** The green threshold at Larry's while staging, or null. main.js draws it. */
@@ -554,33 +554,36 @@ export class PaperRouteSystem {
     }
 
     /**
-     * The round, in the shape the 2D map already draws a mission in ({start, end, poly}).
+     * The route, in the shape the 2D map already draws a mission in ({start, end, poly}).
      *
-     * The map drew every customer in the region but never the ROUND, so there was no way — in game
+     * The map drew every customer in the region but never the ROUTE, so there was no way — in game
      * or in a screenshot — to see which houses were on it or what line it took. That made a routing
      * complaint impossible to answer without rebuilding the region headlessly and guessing the
-     * region centre. A round you cannot see is a round you cannot report a bug about.
+     * region centre. A route you cannot see is a route you cannot report a bug about.
      */
     markers () {
-        if (!this.isCarrying() || !this.route?.poly?.length) return null
+        // Whenever a route EXISTS — the offer included, exactly like MissionSystem.markers(). Seeing
+        // the line before you accept is most of the point of an offer: it is the difference between
+        // "nine customers, 7.9 km" as a number and as a shape you can decide about.
+        if (this.state === 'idle' || !this.route?.poly?.length) return null
         return { start: this.route.poly[0], end: this.route.poly[this.route.poly.length - 1],
                  poly: this.route.poly }
     }
 
-    /** The customers on THIS round — not the region's. Read-only. */
+    /** The customers on THIS route — not the region's. Read-only. */
     routeCustomers () { return this.route?.customers ?? [] }
     /** Has this customer already had their paper? */
     isDelivered (id) { return !!this.run?.hits.has(id) }
 
-    /** Papers still in the truck. Zero does not end the round; the last one LANDING does. */
+    /** Papers still in the truck. Zero does not end the route; the last one LANDING does. */
     stock () { return this.run ? this.run.stock : 0 }
     hasStock () { return this.stock() > 0 }
     delivered () { return this.run ? this.run.hits.size : 0 }
-    /** Seconds left before the bell. Negative is impossible — the bell ends the round. */
+    /** Seconds left before the bell. Negative is impossible — the bell ends the route. */
     timeLeft () { return this.run ? Math.max(0, this.run.deadline - this.run.elapsed) : 0 }
 
     /**
-     * Take the round from Larry. Routing starts NOW and the briefing plays over the top of it: the
+     * Take the route from Larry. Routing starts NOW and the briefing plays over the top of it: the
      * cards are two screens of reading the player has to do anyway, so the tour gets that long for
      * free (owner ruling). The offer is held until BOTH are finished, so a slow plan reads as a
      * long-winded uncle rather than as a hang.
@@ -610,7 +613,7 @@ export class PaperRouteSystem {
             const want = customersForTier()
             this.route = planTour(this._getRoad(), larry, pois?.customers() ?? [], want,
                                   this._getRegion())
-            if (!this.route) this.error = 'no round could be routed from here'
+            if (!this.route) this.error = 'no route could be routed from here'
         } catch (e) {
             console.warn('[paper] tour planning failed', e)
             this.error = String(e && e.message || e)
@@ -666,8 +669,8 @@ export class PaperRouteSystem {
     }
 
     _reset () {
-        // The papers stay on the lawns until the round is PUT DOWN, not until it ends. Clearing
-        // them at the bell would erase the trail of the round you just drove at the exact moment
+        // The papers stay on the lawns until the route is PUT DOWN, not until it ends. Clearing
+        // them at the bell would erase the trail of the route you just drove at the exact moment
         // the card asks you to look at how it went.
         const hadPapers = this.state === 'running' || this.state === 'done'
         this.state = 'idle'
@@ -684,7 +687,7 @@ export class PaperRouteSystem {
     /** Clocked off the fixed step. Two comparisons and a counter — nothing else happens per frame. */
     update (dt) {
         if (this.state === 'staging') {
-            // One distance check. Crossing the threshold is what starts the round — the same rule,
+            // One distance check. Crossing the threshold is what starts the route — the same rule,
             // and the same green ring, a POI job uses.
             if (this.startZoneExitDist() > 0) { this.state = 'running'; this.run.elapsed = 0; this._onChange() }
             return
@@ -697,7 +700,7 @@ export class PaperRouteSystem {
     /**
      * A paper leaves your hand. Returns false when there are none left — the caller must not throw.
      * Stock is spent HERE and not at the landing: a paper in the air is a paper you no longer have,
-     * and a round that ended on the throw before the last one landed would be counting wrong.
+     * and a route that ended on the throw before the last one landed would be counting wrong.
      */
     takePaper () {
         if (this.state !== 'running' || this.run.stock <= 0) return false
@@ -714,12 +717,12 @@ export class PaperRouteSystem {
     }
 
     /**
-     * Score one landing against the round.
+     * Score one landing against the route.
      *
      * Returns `{ customer, dist, q, credited, already }` for a paper that reached someone's circle,
-     * `{ dist, q: 0 }` for a miss, or null when no round is running.
+     * `{ dist, q: 0 }` for a miss, or null when no route is running.
      *
-     * NEAREST CUSTOMER ON THE ROUND, credited ONCE. A second paper onto a porch that already has one
+     * NEAREST CUSTOMER ON THE ROUTE, credited ONCE. A second paper onto a porch that already has one
      * is not a second delivery — it is a paper spent, which is what the spares are for.
      */
     recordLanding (x, z) {
@@ -737,7 +740,7 @@ export class PaperRouteSystem {
             if (this.run.hits.has(best.id)) already = true
             else { this.run.hits.set(best.id, q); credited = true }
         }
-        // The round ends on the LAST PAPER, not on the last throw: the bell and the inventory are
+        // The route ends on the LAST PAPER, not on the last throw: the bell and the inventory are
         // the only two ways out, and an empty truck with one still in the air is neither yet.
         if (this.run.hits.size >= this.route.customers.length
             || (this.run.stock <= 0 && this.run.inFlight <= 0)) {
@@ -749,7 +752,7 @@ export class PaperRouteSystem {
     }
 
     /**
-     * The bell, the empty truck, or the last porch. Prices the round, settles it through the one
+     * The bell, the empty truck, or the last porch. Prices the route, settles it through the one
      * money path, and moves the ladder.
      */
     finish () {

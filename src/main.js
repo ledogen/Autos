@@ -60,7 +60,7 @@ import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-m
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
 import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
-// FEAT-61: the paper route — Larry's round, its one par, and the flat-rate settlement.
+// FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun, stockForTier, deadlineFor } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
@@ -1242,8 +1242,8 @@ const map2d = new Map2D({
   // Double-click teleport (free-roam only). The map snaps to the nearest road and hands us the
   // road-top Y; we drop the truck 0.5 m above it (or on terrain when off-road) and set the spawn.
   canTeleport: isTeleportEnabled,
-  // FEAT-61: the paper round draws as a mission route, because that is what it is — one line, in
-  // the order it will be driven. It wins over the mission's when a round is out; the two can never
+  // FEAT-61: the paper route draws as a mission route, because that is what it is — one line, in
+  // the order it will be driven. It wins over the mission's when a route is out; the two can never
   // both be live.
   getMission: () => paperRouteSystem?.markers() ?? missionSystem?.markers() ?? null,
   // FEAT-43: the story-mode region boundary, so the player can see where the wall is rather than
@@ -1251,7 +1251,7 @@ const map2d = new Map2D({
   getRegion: () => storySystem?.region() ?? null,
   // FEAT-46: POI icons — how the player finds one to drive to. Empty outside story mode.
   getPois: () => poiSystem.list(),
-  getCustomers: () => poiSystem.customers(),   // FEAT-61: you cannot drive a round you cannot see
+  getCustomers: () => poiSystem.customers(),   // FEAT-61: you cannot drive a route you cannot see
   // FEAT-45: dispersed-camping zones, drawn as a yellow casing on the roads inside them. Empty
   // outside story mode (build() only ever runs from the story deps).
   getCampZones: () => campSystem.zones(),
@@ -2139,7 +2139,7 @@ let _stageRing = null
 // poi.id → its orange ring, so the accepted marker's ring can step aside for the green one while
 // every OTHER marker in the region keeps its own.
 const _poiRings = new Map()
-// customer.id → [ring, pip]. FEAT-61: a delivery target is only lit when it is ON your round and
+// customer.id → [ring, pip]. FEAT-61: a delivery target is only lit when it is ON your route and
 // still owed a paper — see _updateCustomerRings.
 const _customerRings = new Map()
 
@@ -2210,13 +2210,13 @@ function _rebuildPoiMarkers () {
  * FEAT-61: which delivery targets are lit.
  *
  * THIS IS WHY PAPERS "COULDN'T BE DELIVERED" (owner-reported 2026-08-09). A region holds 16
- * customers and a tier-1 round visits four of them — but every customer wore a green circle, so
+ * customers and a tier-1 route visits four of them — but every customer wore a green circle, so
  * twelve of the sixteen targets on screen were decoys. A paper landed dead centre in one of those
  * scored nothing and, because the miss read-out is distance-gated, said nothing either. The circle
  * has to mean "this one, now", or it is not a target.
  *
- * So: on a round, only the round's UNDELIVERED customers light up — and a ring going out as the
- * paper lands is the delivery confirmation. Off a round every customer shows again, which is how
+ * So: on a route, only the route's UNDELIVERED customers light up — and a ring going out as the
+ * paper lands is the delivery confirmation. Off a route every customer shows again, which is how
  * you learn the neighbourhood before Larry gives you a bigger piece of it.
  */
 function _updateCustomerRings () {
@@ -2235,9 +2235,9 @@ function _updateCustomerRings () {
  * visibility + a transform — no allocation after the first staged job.
  */
 function _updateMissionRings () {
-  // FEAT-61: the paper round stages out of Larry's place through the same threshold, so it hands
+  // FEAT-61: the paper route stages out of Larry's place through the same threshold, so it hands
   // the same ring the same job. Only one of the two can ever be staging — you cannot take a job
-  // while carrying a round — so this is a preference, not a merge.
+  // while carrying a route — so this is a preference, not a merge.
   const paperZone = paperRouteSystem.startZone()
   const zone = paperZone || (missionSystem?.state === 'staging' ? missionSystem.startZone() : null)
   const activeId = paperZone ? paperRouteSystem.giver?.id
@@ -2256,7 +2256,7 @@ function _updateMissionRings () {
   // TAKEN, not merely offered: 'generating' and 'offer' are the states where you are parked at a
   // marker BEING offered work, and blinking that marker's own ring out from under the panel would
   // be the opposite of the fix.
-  // FEAT-61: a paper round counts as being on a job for exactly the same reason — every orange
+  // FEAT-61: a paper route counts as being on a job for exactly the same reason — every orange
   // curtain you pass mid-round is an invitation to do something the game will refuse.
   const onMission = ['staging', 'running', 'done'].includes(missionSystem?.state)
                     || paperRouteSystem.isActive()
@@ -2514,8 +2514,8 @@ function _updateThrownRolls (dt) {
 /**
  * Score one landing and show it.
  *
- * ON A ROUND, the paper route owns the answer: it credits a specific customer once, spends the
- * inventory, and decides whether that was the last paper. Off a round this falls back to scoring
+ * ON A ROUTE, the paper route owns the answer: it credits a specific customer once, spends the
+ * inventory, and decides whether that was the last paper. Off a route this falls back to scoring
  * against the nearest customer in the region — a practice throw, and the same read-out that proved
  * the target circles and the ballistics agree with each other.
  */
@@ -2532,10 +2532,10 @@ function _scoreLanding (hit) {
     } else if (scored.dist < 25) {
       _showThrowReadout(`<span style="color:#ff9f43">missed by ${(scored.dist - R).toFixed(1)} m</span>`)
     } else {
-      // ON A ROUND, A THROW ALWAYS ANSWERS. The distance gate above is right for a practice throw
-      // in open country — but during a round, silence is indistinguishable from a broken mission,
+      // ON A ROUTE, A THROW ALWAYS ANSWERS. The distance gate above is right for a practice throw
+      // in open country — but during a route, silence is indistinguishable from a broken mission,
       // which is exactly how this read as one (owner, 2026-08-09).
-      _showThrowReadout('<span style="color:#ff9f43">nobody on your round lives there</span>')
+      _showThrowReadout('<span style="color:#ff9f43">nobody on your route lives there</span>')
     }
     return
   }
@@ -2553,7 +2553,7 @@ function _scoreLanding (hit) {
   }
 }
 
-/** Drop every paper — leaving the region, or putting a finished round down. */
+/** Drop every paper — leaving the region, or putting a finished route down. */
 function _clearThrownRolls () {
   for (const r of _thrownRolls) scene.remove(r)
   _thrownRolls.length = 0
@@ -2579,8 +2579,8 @@ document.addEventListener('keyup', e => {
   if (!isAiming()) return                       // never aimed (wrong camera mode) — never throws
   const rt = document.getElementById('aim-reticle')
   if (rt) rt.style.display = 'none'
-  // On a round, a throw costs a paper — and an empty truck cannot throw. Spent at RELEASE, not at
-  // the landing: a paper in the air is a paper you no longer have. Off a round there is no
+  // On a route, a throw costs a paper — and an empty truck cannot throw. Spent at RELEASE, not at
+  // the landing: a paper in the air is a paper you no longer have. Off a route there is no
   // inventory and practice throws are free.
   const onRound = paperRouteSystem.isRunning()
   if (onRound && !paperRouteSystem.takePaper()) {
@@ -2591,7 +2591,7 @@ document.addEventListener('keyup', e => {
   const hit = _throwRoll()
   // No landing (off a cliff, or aimed at the sky) means the solver never produced a throw at all —
   // nothing was drawn and nothing will ever score, so the paper goes back in the truck. Otherwise
-  // an aim at the horizon would silently eat inventory AND leave the round unable to end on it.
+  // an aim at the horizon would silently eat inventory AND leave the route unable to end on it.
   if (onRound && !hit) paperRouteSystem.refundPaper()
   // HOLD THE VIEW (owner, 2026-08-05). Snapping back to the follow camera the instant F comes up
   // yanks the throw out of frame before you can see where it went. Stay on the aimed angle for the
@@ -2711,7 +2711,7 @@ missionSystem = new MissionSystem({
 })
 
 // ── FEAT-61: the paper route ───────────────────────────────────────────────────────────────
-// Larry's round. A SIBLING of missionSystem — the two can never run at once (each one's park
+// Larry's route. A SIBLING of missionSystem — the two can never run at once (each one's park
 // trigger and prompt yields to the other's active state), but neither is a mode inside the other.
 //
 // It plans on missionSystem's planner network: the region is warmed once at story entry and its
@@ -2727,11 +2727,11 @@ const paperRouteSystem = new PaperRouteSystem({
   // The ONE money path (FEAT-53). This mission prices itself on its own axis and hands over a
   // finished number; the wallet, the deeds and the mission count still accrue in economy.js.
   onSettle:  (payout, letter) => economySystem.settleFlat(payout, letter),
-  // Larry talks while the tour routes. Once per run (DLG's seen-gate) — the second round must not
+  // Larry talks while the tour routes. Once per run (DLG's seen-gate) — the second route must not
   // re-explain the throw — and `done` fires either way, because a skipped briefing still has to
   // release the offer.
   onBriefing: (done) => { dialogueSystem.play(DLG.paperRouteIntro, PAPER_ROUTE_INTRO, done); _renderDialogue() },
-  // A finished round takes its papers off the lawns. Region exit does the same (see onRegionExit);
+  // A finished route takes its papers off the lawns. Region exit does the same (see onRegionExit);
   // this is the other half of the rule the handoff flagged as missing.
   onEnd:     () => _clearThrownRolls(),
   onChange:  () => _renderPaperUI(),
@@ -2746,7 +2746,7 @@ window.__paperRoute = () => paperRouteSystem
 // off elsewhere.
 gpsSystem = new GpsSystem(scene, {
   getRoute: () => {
-    // FEAT-61: the paper round gets guidance too, and it gets the SAME route the par came from —
+    // FEAT-61: the paper route gets guidance too, and it gets the SAME route the par came from —
     // the concatenated tour, in the order it was priced. That is the honest thing to point at: any
     // other line (nearest undelivered customer, say) would be guiding you along a route the clock
     // is not measuring. It costs nothing extra because the tour is already baked as segments.
@@ -2803,7 +2803,7 @@ labSystem = new LabSystem(scene, () => ({
 function _poiInReach () {
   if (!storySystem.isActive() || storySystem.isEntering()) return null
   if (missionSystem && missionSystem.state !== 'idle') return null
-  // FEAT-61: a round is a job in flight, same as any other — you cannot take work while doing work,
+  // FEAT-61: a route is a job in flight, same as any other — you cannot take work while doing work,
   // and Larry's own marker must not re-offer the route you are three houses into.
   if (paperRouteSystem.isActive()) return null
   // jobsOnly (FEAT-60): only a mission giver answers the park trigger. Without this the roster's
@@ -2913,7 +2913,7 @@ let _campSeek = false
 function _campPromptState () {
   if (!storySystem.isActive() || storySystem.isEntering()) return null
   if (missionSystem && missionSystem.state !== 'idle') return null
-  if (paperRouteSystem.isActive()) return null       // FEAT-61: not while a round is out
+  if (paperRouteSystem.isActive()) return null       // FEAT-61: not while a route is out
   if (_campUi || _campBusy) return null
   if (Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) * 3.6 > CAMP_PROMPT_KPH) return null
   if (!campSystem.zoneAt(vehicleState.position.x, vehicleState.position.z)) return null
@@ -2927,7 +2927,7 @@ function _campPromptState () {
 function _atMomsHouse () {
   if (!storySystem.isActive() || storySystem.isEntering()) return false
   if (missionSystem && missionSystem.state !== 'idle') return false
-  if (paperRouteSystem.isActive()) return false      // FEAT-61: not while a round is out
+  if (paperRouteSystem.isActive()) return false      // FEAT-61: not while a route is out
   if (_campUi || _campBusy) return false
   return campSystem.atMoms(vehicleState.position.x, vehicleState.position.z)
 }
@@ -2976,7 +2976,7 @@ function _updateParkTriggers () {
   // Display. The POI prompt wins outright when both apply — see the precedence above.
   if (poiEl) {
     poiEl.style.display = poi ? 'block' : 'none'
-    // Name what the brake will actually do. Larry hands out a round, not an errand, and a prompt
+    // Name what the brake will actually do. Larry hands out a route, not an errand, and a prompt
     // that says "mission" at the one marker that gives you the paper route is the same small lie as
     // a ring drawn wider than its trigger.
     if (poi) poiEl.textContent = poi.type === 'larrysHouse' ? 'park to take the paper route'
@@ -3383,7 +3383,7 @@ function _renderMissionUI () {
  * live values).
  *
  * SM-INV-3: the running surface carries the clock, the count and the inventory, and nothing else.
- * No rank, no par, no payout until the round is over — the deadline is allowed only because the
+ * No rank, no par, no payout until the route is over — the deadline is allowed only because the
  * Phase A amendment ratified it as a diegetic, par-derived one.
  */
 function _renderPaperUI () {
@@ -3399,11 +3399,11 @@ function _renderPaperUI () {
   switch (p.state) {
     case 'planning':
       // The briefing is the cover for the routing (owner ruling), so this panel is only ever seen
-      // on a SECOND round — the cards are once per run, and without them there would otherwise be
+      // on a SECOND route — the cards are once per run, and without them there would otherwise be
       // a silent pause with nothing on screen saying why.
       show(panel, true); show(hud, false); show(acts, false, 'flex')
       body.innerHTML = 'Larry&rsquo;s sorting the papers&hellip;<br>'
-        + '<span class="mp-dim">working out the round</span>'
+        + '<span class="mp-dim">working out the route</span>'
       break
     case 'offer': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
@@ -3422,11 +3422,11 @@ function _renderPaperUI () {
       // Same words the POI job uses, because it is the same threshold and the same promise: sort
       // yourself out on the pad for as long as you like, the clock starts at the green line.
       show(panel, false); show(hud, true); show(acts, false, 'flex')
-      hud.textContent = 'leave the green circle to start the round'
+      hud.textContent = 'leave the green circle to start the route'
       break
     case 'running': {
       show(panel, false); show(hud, true)
-      // Time LEFT, not elapsed: the bell is the thing that ends the round, so it is the thing worth
+      // Time LEFT, not elapsed: the bell is the thing that ends the route, so it is the thing worth
       // reading. Delivered/total and the inventory are the other two facts you act on.
       hud.textContent = `${formatTime(p.timeLeft())} left   `
         + `${p.delivered()} / ${p.route.customers.length} delivered   `
@@ -3447,7 +3447,7 @@ function _renderPaperUI () {
           ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points} good deed${r.points > 1 ? 's' : ''}</span>`
           : '')
         + (r.advanced
-          ? `<br><span style="color:#ffdc3c">Larry&rsquo;s giving you a bigger round &mdash; ${r.nextTier} houses next time</span>`
+          ? `<br><span style="color:#ffdc3c">Larry&rsquo;s giving you a bigger route &mdash; ${r.nextTier} houses next time</span>`
           : '')
       break
     }
@@ -4064,7 +4064,7 @@ const storySystem = new StorySystem({
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
     economySystem.start()            // FEAT-53: fresh run, empty wallet, zero deeds
     dialogueSystem.start()           // FEAT-61: a new run hears every briefing again
-    resetPaperRun()                  // …and starts back on Larry's four-house round (SM-INV-12)
+    resetPaperRun()                  // …and starts back on Larry's four-house route (SM-INV-12)
     paperRouteSystem.abort()
     _renderDialogue()
     _renderPaperUI()
@@ -4102,7 +4102,7 @@ const storySystem = new StorySystem({
     _setRunHudVisible(false)
     dialogueSystem.abort()              // FEAT-61: abort, not advance — leaving is not "read it"
     _renderDialogue()
-    paperRouteSystem.abort()            // …and an unfinished round is dropped, never settled
+    paperRouteSystem.abort()            // …and an unfinished route is dropped, never settled
     _renderPaperUI()
     _clearThrownRolls()                 // …and no papers from a story run lying about in free roam
     setAimMode(false)
@@ -4374,7 +4374,7 @@ function loop () {
     if (missionSystem?.isActive()) {
       missionSystem.update(PHYSICS_DT)
     }
-    // FEAT-61: the start threshold, then the round's clock against the bell. One distance check or
+    // FEAT-61: the start threshold, then the route's clock against the bell. One distance check or
     // one add — same discipline as above, and clocked off the fixed step so a frame spike can
     // neither stretch the deadline nor skip the line that starts it.
     if (paperRouteSystem.isCarrying()) paperRouteSystem.update(PHYSICS_DT)
@@ -4773,7 +4773,7 @@ function loop () {
     // static line, but it costs one string write and keeps the state→HUD mapping in one place.)
     if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'staging'
                           || missionSystem.state === 'running')) _renderMissionUI()
-    // FEAT-61: the round's HUD carries three live values (the bell, the count, the inventory), so
+    // FEAT-61: the route's HUD carries three live values (the bell, the count, the inventory), so
     // it repaints on the same poll for the same reason. ('staging' is a static line, but it costs
     // one string write and keeps the state→HUD mapping in one place.)
     if (paperRouteSystem.isCarrying()) _renderPaperUI()

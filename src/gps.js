@@ -41,7 +41,7 @@ const ARROW_PAST   = 12     // m past the node before it is dropped
 const RING_HOVER   = 1.4
 const TAN_SPAN     = 20     // m of route averaged into the exit direction at a junction
 const REACQUIRE_M  = 40     // lateral error that forces a full-route re-scan
-// FEAT-61 self-overlap (a paper round drives some streets out and back). A vertex counts as a
+// FEAT-61 self-overlap (a paper route drives some streets out and back). A vertex counts as a
 // REVISIT when it is within REVISIT_M of a vertex at least REVISIT_ARC_M earlier along the route.
 // 10 m is a road width — the two passes are the same tarmac, not a parallel road. 150 m is well
 // past the longest legitimate hairpin, so a bend that folds back on itself is not mistaken for a
@@ -135,7 +135,7 @@ export function bakeRoute (segments, elevAt = null) {
  * For every baked vertex, the EARLIEST arc at which the route covers that same piece of tarmac.
  *
  * A point-to-point mission never drives the same road twice, so this used to be a question nobody
- * had to ask. FEAT-61's paper round does: a round with a dead-end street on it goes down and comes
+ * had to ask. FEAT-61's paper route does: a route with a dead-end street on it goes down and comes
  * back, and measured on seeds 6 and 90 a tour re-drives 1-6 of its edges and lies on top of itself
  * at **0.0 m**. The chevron lattice ahead of the truck then crosses the return pass and draws
  * arrows on the tarmac under you pointing the other way (owner: "shows directions in both ways").
@@ -148,7 +148,7 @@ export function bakeRoute (segments, elevAt = null) {
  * consumer can ask the only question that matters — is the earlier pass still AHEAD of me? — and
  * suppress just the ghost. See `_placeChevrons`.
  *
- * A uniform grid keeps this linear: a 19 km round bakes ~3200 vertices and the pairwise form would
+ * A uniform grid keeps this linear: a 19 km route bakes ~3200 vertices and the pairwise form would
  * be 10 M tests. Exported for test/gps-route.mjs.
  */
 export function markCoverage (route) {
@@ -470,13 +470,13 @@ export class GpsSystem {
       }
       const p = sampleRoute(route, sc, hint)
       hint = p.idx
-      // GHOST SUPPRESSION (FEAT-61). On a round that drives a street out and back, the chevron
+      // GHOST SUPPRESSION (FEAT-61). On a route that drives a street out and back, the chevron
       // lattice ahead of you crosses the RETURN pass — same tarmac, arrows pointing the other way.
       //
       // THE TEST IS "IS THE EARLIER PASS STILL AHEAD OF ME", not "is this a second pass". Those come
       // apart exactly when it matters: once you HAVE turned around, the leg you are driving is the
       // second pass over that tarmac, and suppressing on second-pass-ness blanked every chevron for
-      // the rest of the round — the guidance stopped dead at the turnaround (owner, 2026-08-09).
+      // the rest of the route — the guidance stopped dead at the turnaround (owner, 2026-08-09).
       // Here a chevron is a ghost only while the pass that covers the same ground sooner is itself
       // still in front of the truck; the moment the truck is past it, this becomes the live pass and
       // draws normally.

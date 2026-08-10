@@ -189,7 +189,7 @@ part 2 this pass] · **F — Gates + housekeeping** [PARTIAL]
 `idle → planning → offer → running → done`. Larry's roster row is `jobs: true` and the park trigger
 branches on his type; the briefing plays *over* the routing, and the offer is held until both
 finish. Stock is spent at release and refunded when the solver produces no flight; a landing credits
-one customer once; the round ends on the bell, the last porch, or the last paper LANDING. It settles
+one customer once; the route ends on the bell, the last porch, or the last paper LANDING. It settles
 through `settleFlat` and moves the ladder. New DOM: `#paper-panel` / `#paper-hud`, sharing the
 mission panel's chrome by selector.
 
@@ -202,7 +202,7 @@ mission panel's chrome by selector.
    *node*; the new `test/paper-tour.mjs` gate caught that this left **five of six customers never
    approached** — a house sits mid-edge, up to most of a 640 m street from either junction. A stop is
    now the customer's edge, entered at the near junction and left at the far one, so the whole street
-   is driven. Everyone on a street the round drives is on the round.
+   is driven. Everyone on a street the route drives is on the route.
 
 ### The supply problem [FIXED — BUG-44]
 
@@ -216,15 +216,15 @@ placement pass produced 6 / 11 / 4 customers on seeds 6 / 11 / 42. Two causes, b
   sample yields almost nothing. At 30 m all three seeds place the full 15, with the closest chosen
   pair still 99–197 m apart. Costs ~110 ms once per region, behind the loading screen.
 - **Customers may not sit on an edge that straddles the region wall.** The tour plans on the same
-  region-filtered graph the missions do, so such a customer is unroutable and the round skips them
+  region-filtered graph the missions do, so such a customer is unroutable and the route skips them
   silently, forever — three of seed 6's sixteen. The ring relax now stops at
   `radius − REGION_MARGIN`. This is the one place "count is hard, distance relaxes" must yield.
 
 The cliff cap, the target radius and the ring geometry were all left untouched.
 
-**Round sizes that fall out** (seed 6, live region radius): tier 1 = 4 customers / 2.61 km /
+**Route sizes that fall out** (seed 6, live region radius): tier 1 = 4 customers / 2.61 km /
 par 2:32 · tier 2 = 9 / 15.7 km / 14:44 · tier 3 = 12 / 17.9 km / 17:42 · tier 4 = 15 / 23.0 km /
-23:49. Whether a 24-minute top-tier round is the right size is a play judgement — see the open
+23:49. Whether a 24-minute top-tier route is the right size is a play judgement — see the open
 questions.
 
 `feature/poi-models` (FEAT-60) was merged into this branch first, so the roster and the house pass
@@ -257,21 +257,21 @@ mission around it, because it needs live driving to verify honestly:
 The owner drove it. Four things came back, all fixed:
 
 1. **Typo** in Larry's first card ("Here's what you ya gotta do").
-2. **The round now STAGES.** Accept no longer starts the clock — Larry's marker takes the same green
-   threshold a POI job uses (`START_ZONE_R`, now exported from `mission.js`), and the round begins
+2. **The route now STAGES.** Accept no longer starts the clock — Larry's marker takes the same green
+   threshold a POI job uses (`START_ZONE_R`, now exported from `mission.js`), and the route begins
    when you drive out of it. Same ring, same words, same promise.
-3. **GPS follows the round.** `gpsSystem.getRoute` returns the tour while carrying, so the guidance
+3. **GPS follows the route.** `gpsSystem.getRoute` returns the tour while carrying, so the guidance
    is the route the par was computed over. No re-routing and no fallback was needed — the tour is
    already baked as segments, which is exactly what the overlay consumes.
 4. **THE DELIVERY BUG — the target rings were lying.** A region holds 16 customers and a tier-1
-   round visits four, but `_rebuildPoiMarkers` lit a green circle on *every* customer. Twelve of the
+   route visits four, but `_rebuildPoiMarkers` lit a green circle on *every* customer. Twelve of the
    sixteen targets on screen were decoys: a paper landed dead centre in one scored nothing, and
    because the miss read-out was distance-gated it said nothing either, which reads exactly like a
-   broken mission. Now only the round's **undelivered** customers are lit (a ring going out is the
-   delivery confirmation), and on a round a throw **always** answers.
+   broken mission. Now only the route's **undelivered** customers are lit (a ring going out is the
+   delivery confirmation), and on a route a throw **always** answers.
 
 The scoring path itself was never broken — but nothing pinned it, which is why a lying renderer
-could not be told apart from a broken mission. `test/paper-tour.mjs` now drives a whole round
+could not be told apart from a broken mission. `test/paper-tour.mjs` now drives a whole route
 headlessly through `PaperRouteSystem`: offer → staging → threshold → a paper dead centre credits at
 q = 1.00 and moves the counter → a second paper on the same porch is spent not double-counted → a
 paper on an off-round customer scores nothing → the last porch ends it → S, settled, next rung.
