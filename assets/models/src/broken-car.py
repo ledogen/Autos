@@ -5,10 +5,10 @@ Built for: Blender 4.x  |  Target: assets/models/broken-car.glb
 Style brief: .planning/research/ART-STYLE.md  ·  Mechanics: .planning/research/ASSETS.md
 
 BUILD REPORT (2026-08-09, Blender 5.2.0 LTS — mid-90s front-end + wrap bumper pass)
-  BrokenCar       2178 tris   (body, greenhouse, interior, trim, 3 road wheels,
+  BrokenCar       2298 tris   (body, greenhouse, interior, trim, 3 road wheels,
                                brake drum, spare, scissor jack, tyre iron)
   BrokenCarGlass    16 tris   (6 panes, alpha-blended, double-sided)
-  TOTAL           2194 tris   budget 2500
+  TOTAL           2314 tris   budget 2500
   materials 9 · images 0 · car 2.03 W (mirror to mirror) x 5.07 L x 1.46 H m
   Front end matched to the MID-90s ('89-96 facelift) Century reference — NOT the
   '80 square nose (2026-08-09, user: "specifically the mid 90s one"): an integrated
@@ -145,6 +145,10 @@ BODY_STATIONS = [
     (2.410, 0.766, 0.822, 0.782, 0.360, 0.895),
     (2.365, 0.786, 0.844, 0.804, 0.340, 0.906),
     (2.300, 0.790, 0.855, 0.820, 0.320, 0.916),
+    (2.120, 0.795, 0.870, 0.840, 0.310, 0.934),   # mid-fender: +3 mm over the straight
+                                                  # taper so the corner->arch span is
+                                                  # two facets with a soft convexity,
+                                                  # not one flat slab (2026-08-10)
     (1.950, 0.800, 0.878, 0.855, 0.300, 0.952),   # ahead of the front arch
     (0.900, 0.800, 0.885, 0.858, 0.295, 1.000),   # cowl / windshield base
     (0.300, 0.805, 0.885, 0.856, 0.295, 1.010),
@@ -355,23 +359,36 @@ def body_ring(y):
     sill_x = ws + (well_x - ws) * t     # the sill tucks in to meet the pocket wall
     lip_x = wm + ARCH_FLARE * t         # the arch lip stands proud: the flare
 
-    # 12 points.  Outside an arch, C and D coincide at the band top and the section is
-    # the original 10-point profile with one degenerate edge (welded by remove_doubles).
+    # 14 points.  Outside an arch, C and D coincide at the band top and the section is
+    # the original profile with one degenerate edge (welded by remove_doubles).
     # G (top centre) carries a 18 mm crown so the hood and boot lid split into two
     # facets instead of reading as one blank slab.  Free: no extra vertices.
+    #
+    # FENDER ROLL (2026-08-10, user: the corner behind the lamps was one flat facet).
+    # H sits on the E->F line — the tall shoulder band — and bows OUTWARD toward the
+    # nose, splitting that band into two facets whose shading break is the catch-light
+    # crease the reference carries from the lamp's top corner back along the fender.
+    # Behind the cowl the bulge is zero and H is exactly collinear, so the doors and
+    # quarters shade as the single flat band they always were.
+    h_frac = 0.058 / 0.16               # H's height on the E->F line
+    h0 = wb + (wm - wb) * h_frac        # collinear baseline — invisible when roll=0
+    roll = 0.015 * min(1.0, max(0.0, (y - 0.90) / 0.60))
+    hx, hz = h0 + roll, zt - 0.058
     return [
         (0.0, y, zb),            # 0  A   underside centre
         (sill_x, y, zb),         # 1  B   sill / pocket floor edge
         (well_x, y, arch_z),     # 2  C   top of the pocket's inner face
         (lip_x, y, arch_z),      # 3  D   arch opening in the skin — flared
         (wm, y, zt - 0.16),      # 4  E   shoulder
-        (wb, y, zt),             # 5  F   belt
-        (0.0, y, zt + 0.018),    # 6  G   crown
-        (-wb, y, zt),            # 7  F'
-        (-wm, y, zt - 0.16),     # 8  E'
-        (-lip_x, y, arch_z),     # 9  D'
-        (-well_x, y, arch_z),    # 10 C'
-        (-sill_x, y, zb),        # 11 B'
+        (hx, y, hz),             # 5  H   fender-roll crease
+        (wb, y, zt),             # 6  F   belt
+        (0.0, y, zt + 0.018),    # 7  G   crown
+        (-wb, y, zt),            # 8  F'
+        (-hx, y, hz),            # 9  H'
+        (-wm, y, zt - 0.16),     # 10 E'
+        (-lip_x, y, arch_z),     # 11 D'
+        (-well_x, y, arch_z),    # 12 C'
+        (-sill_x, y, zb),        # 13 B'
     ]
 
 
@@ -382,17 +399,18 @@ STATION_YS = sorted(
     reverse=True)
 
 
-# Dark section edges.  0/11 underside, 1/10 lower band and the pocket's inner face,
-# 2/9 the pocket ceiling.  That is the value structure ART-STYLE rule 5 asks for —
+# Dark section edges.  0/13 underside, 1/12 lower band and the pocket's inner face,
+# 2/11 the pocket ceiling.  That is the value structure ART-STYLE rule 5 asks for —
 # something dark at the base to sit the car on the ground so it does not read as one
 # beige lozenge in fog — and it makes the wheel opening read as a cavity.
 #
-# Edges 3..8 (flank, shoulder, deck) stay body colour ALWAYS.  A previous pass painted
-# the flank edge dark inside the arches, which is what erased the fender: with no lit
-# body surface reaching the arch lip there was nothing to show where the skin ended and
-# the hole began.  The pocket is its own edges now, so the flank never has to give way.
+# Edges 3..10 (flank, roll, shoulder, deck) stay body colour ALWAYS.  A previous pass
+# painted the flank edge dark inside the arches, which is what erased the fender: with
+# no lit body surface reaching the arch lip there was nothing to show where the skin
+# ended and the hole began.  The pocket is its own edges now, so the flank never has
+# to give way.
 BODY_BANDS = {0: "CarTrim", 1: "CarTrim", 2: "CarTrim",
-              9: "CarTrim", 10: "CarTrim", 11: "CarTrim"}
+              11: "CarTrim", 12: "CarTrim", 13: "CarTrim"}
 
 
 def _interp_belt(y):
@@ -404,7 +422,7 @@ def _interp_belt(y):
 # ---------------------------------------------------------------------------
 # BODY + GREENHOUSE
 # ---------------------------------------------------------------------------
-# CABIN OPENING.  The body is a closed tube, so section edges 4 and 5 — belt-right ->
+# CABIN OPENING.  The body is a closed tube, so section edges 6 and 7 — belt-right ->
 # crown -> belt-left — form a solid deck at BELTLINE height running the whole length.
 # Under the greenhouse that deck is a lid over the interior: the tub, the benches and
 # the steering wheel all sit below it and are completely invisible, with only the top
@@ -416,7 +434,7 @@ CABIN_FROM_Y = 0.900                # the cowl; everything behind it is open cab
 
 
 def _skip_cabin_deck(segment, k):
-    return k in (5, 6) and STATION_YS[segment] <= CABIN_FROM_Y + 1e-6
+    return k in (6, 7) and STATION_YS[segment] <= CABIN_FROM_Y + 1e-6
 
 
 def build_body(p):
