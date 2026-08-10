@@ -4,17 +4,18 @@ ASSET-18 — broken-down car (1990s Buick Century Estate wagon), parametric gene
 Built for: Blender 4.x  |  Target: assets/models/broken-car.glb
 Style brief: .planning/research/ART-STYLE.md  ·  Mechanics: .planning/research/ASSETS.md
 
-BUILD REPORT (2026-08-09, Blender 5.2.0 LTS — mid-90s front-end pass)
-  BrokenCar       2132 tris   (body, greenhouse, interior, trim, 3 road wheels,
+BUILD REPORT (2026-08-09, Blender 5.2.0 LTS — mid-90s front-end + wrap bumper pass)
+  BrokenCar       2208 tris   (body, greenhouse, interior, trim, 3 road wheels,
                                brake drum, spare, scissor jack, tyre iron)
   BrokenCarGlass    16 tris   (6 panes, alpha-blended, double-sided)
-  TOTAL           2148 tris   budget 2500
+  TOTAL           2224 tris   budget 2500
   materials 9 · images 0 · car 2.03 W (mirror to mirror) x 5.07 L x 1.46 H m
   Front end matched to the MID-90s ('89-96 facelift) Century reference — NOT the
   '80 square nose (2026-08-09, user: "specifically the mid 90s one"): an integrated
   CHIN — the whole lower nose is one surface leaning forward from the fascia to an
-  apex at the rub strip, tucking under, sweeping back around the corners (see CHIN
-  table) — a DROOPED hood (front stations lowered ~20 mm), a narrow raked
+  apex at the rub strip, tucking under, then WRAPPING the corner and running back
+  along the flank to die into the fender at the wheel arch (CHIN table + WRAP
+  path), rub strip riding the whole way — a DROOPED hood (~20 mm), a narrow raked
   vertical-rib waterfall grille, wide slim lamps with AMBER wraparound corner
   signals (CarSignal), two black bumperettes hanging BELOW the bumper line, a
   centre licence plate under the bumper, a stand-up hood ornament, and
@@ -642,10 +643,17 @@ def build_detail(p):
     # No horizontal top shelf, no vertical bumper face, no step: the fascia plane
     # flows into the chin and the chin peaks at the strip.  What killed the previous
     # two attempts: a constant-width loft with flat end caps proud of the body sides
-    # reads as a glued-on box no matter how good its front profile is.  So the plan
-    # is table-driven and the last rings SWEEP BACK around the corner (protrusion
-    # collapsing as they go) until the end caps sit against the fender as narrow,
-    # near-flush bumper end caps — the one place a visible seam is honest.
+    # reads as a glued-on box no matter how good its front profile is.
+    #
+    # WRAP-AROUND (2026-08-09, "rework the bumper on the same theme"): the mid-90s
+    # cover does not stop at the corner — it turns it and runs back along the flank
+    # to die into the fender just ahead of the wheel arch, rub strip riding with it
+    # (stopping at the corner is the chrome-blade '80 car).  The sweep is therefore
+    # no longer "rings at constant x, protruding +Y": each ring is the same 7-point
+    # profile stood off a PLAN-VIEW PATH along its own outward normal (bring()
+    # below).  The nose portion still comes from the CHIN table with normal (0,+1);
+    # the corner and flank rings carry rotated normals, and the last ring on each
+    # side is fully flush with the fender so the end cap is a buried, honest seam.
     #
     # (x, chin-top y, apex y).  yt tracks what sits ABOVE at that x: the grille's
     # bottom rail front (~2.494) inboard, the lamp bezels (~2.45) outboard, the bare
@@ -656,8 +664,7 @@ def build_detail(p):
             (0.340, 2.470, 2.548),
             (0.620, 2.452, 2.520),
             (0.720, 2.442, 2.492),
-            (0.790, 2.415, 2.446),
-            (0.835, 2.330, 2.352)]
+            (0.790, 2.415, 2.446)]
 
     def chin_at(x):
         ax = abs(x)
@@ -668,11 +675,37 @@ def build_detail(p):
         return CHIN[-1][1], CHIN[-1][2]
 
     zb_, zv1_, zs0_, zs1_, zt_ = 0.245, 0.385, 0.462, 0.538, 0.685
-    rings = []
+
+    def bring(px, py, nx, ny, d_apex, d_top, zb=zb_, zv=zv1_):
+        """One bumper ring: the 7-point profile stood off plan point (px,py) along
+        unit outward normal (nx,ny).  The back edge sits AT the path point, which
+        every path entry keeps inside the body skin — that is what buries the seam.
+        The strip z band (zs0_/zs1_) is constant so the strip stays dead level all
+        the way around the wrap; zb/zv rise along the flank so the cover's lower
+        edge climbs clear of the rocker instead of hanging at nose depth."""
+        def at(d, z):
+            return (px + nx * d, py + ny * d, z)
+        return [at(0.0, zb), at(d_apex - 0.058, zb), at(d_apex - 0.040, zv),
+                at(d_apex, zs0_), at(d_apex, zs1_), at(d_top, zt_), at(0.0, zt_)]
+
+    # Corner + flank path, one side: (px, py, nx, ny, d_apex, d_top, zb, zv).
+    # Plan points hug the body skin (wm at these stations is 0.876-0.882, and the
+    # skin below the belt never comes inboard of ~0.80), protrusions taper as the
+    # wrap runs rearward, and the last entry is zero-protrusion ON the skin line so
+    # the cover dies flush.  Ends at y 1.79/1.755 — the arch begins at 1.724.
+    WRAP = [(0.780, 2.330, 0.550, 0.835, 0.100, 0.062, 0.250, 0.388),
+            (0.812, 2.208, 0.830, 0.558, 0.075, 0.048, 0.268, 0.392),
+            (0.858, 2.080, 1.000, 0.000, 0.058, 0.038, 0.285, 0.395),
+            (0.858, 1.790, 1.000, 0.000, 0.058, 0.038, 0.300, 0.400),
+            (0.830, 1.755, 1.000, 0.000, 0.000, 0.000, 0.310, 0.402)]
+
+    rings = [bring(sx * px, py, sx * nx, ny, da, dt, zb, zv)
+             for sx, wrap in ((-1, list(reversed(WRAP))),) for px, py, nx, ny, da, dt, zb, zv in wrap]
     for x, yt, ya in [(-x, t, a) for x, t, a in reversed(CHIN[1:])] + CHIN:
         y_back = min(2.420, yt - 0.030)           # stays buried behind the nose cap
-        rings.append([(x, y_back, zb_), (x, ya - 0.058, zb_), (x, ya - 0.040, zv1_),
-                      (x, ya, zs0_), (x, ya, zs1_), (x, yt, zt_), (x, y_back, zt_)])
+        rings.append(bring(x, y_back, 0.0, 1.0, ya - y_back, yt - y_back))
+    rings += [bring(px, py, nx, ny, da, dt, zb, zv)
+              for px, py, nx, ny, da, dt, zb, zv in WRAP]
     # 0 underside, 1 valance, 3 the rub strip riding the apex; 2 (the tuck-under)
     # and 4 (the chin slope itself) are painted body surface — that continuity is
     # what makes it a bump out of the body rather than a fitted part.
@@ -786,8 +819,9 @@ def build_detail(p):
     # z 0.590-0.650 intersects an arch out to |y-axle| = 0.308.  Each run now stops
     # clear of its arch, and takes its X from the local flank width so it stays proud
     # of a body whose width varies.
-    for y0, y1 in ((1.760, 2.240),        # front fender
-                   (-0.950, 0.950),       # both doors
+    # (The front-fender run died 2026-08-09: the bumper wrap now covers that panel
+    # and carries its own strip, and two strip lines on one fender read as clutter.)
+    for y0, y1 in ((-0.950, 0.950),       # both doors
                    (-2.240, -1.760)):     # rear quarter
         wmid = _interp_station(0.5 * (y0 + y1))[1]
         for sx in (1, -1):
