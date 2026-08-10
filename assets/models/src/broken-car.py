@@ -5,10 +5,10 @@ Built for: Blender 4.x  |  Target: assets/models/broken-car.glb
 Style brief: .planning/research/ART-STYLE.md  ·  Mechanics: .planning/research/ASSETS.md
 
 BUILD REPORT (2026-08-09, Blender 5.2.0 LTS — mid-90s front-end + wrap bumper pass)
-  BrokenCar       2208 tris   (body, greenhouse, interior, trim, 3 road wheels,
+  BrokenCar       2178 tris   (body, greenhouse, interior, trim, 3 road wheels,
                                brake drum, spare, scissor jack, tyre iron)
   BrokenCarGlass    16 tris   (6 panes, alpha-blended, double-sided)
-  TOTAL           2224 tris   budget 2500
+  TOTAL           2194 tris   budget 2500
   materials 9 · images 0 · car 2.03 W (mirror to mirror) x 5.07 L x 1.46 H m
   Front end matched to the MID-90s ('89-96 facelift) Century reference — NOT the
   '80 square nose (2026-08-09, user: "specifically the mid 90s one"): an integrated
@@ -663,8 +663,7 @@ def build_detail(p):
             (0.280, 2.486, 2.554),
             (0.340, 2.470, 2.548),
             (0.620, 2.452, 2.520),
-            (0.720, 2.442, 2.492),
-            (0.790, 2.415, 2.446)]
+            (0.720, 2.442, 2.492)]
 
     def chin_at(x):
         ax = abs(x)
@@ -674,38 +673,52 @@ def build_detail(p):
                 return t0 + (t1 - t0) * t, a0 + (a1 - a0) * t
         return CHIN[-1][1], CHIN[-1][2]
 
-    zb_, zv1_, zs0_, zs1_, zt_ = 0.245, 0.385, 0.462, 0.538, 0.685
+    # ROLLED-IN TOP (2026-08-09b, user: "roll the top edge into the body").  The
+    # profile's top point sits AT the path point — i.e. buried inside the skin —
+    # so the chin slope rises from the strip and dies INTO the body, and the
+    # visible top edge is wherever that slope crosses the skin (~z 0.625 at the
+    # nose centre).  No proud top edge, no shelf: the bumper reads as a bulge OF
+    # the body, and its visible height shrank ~60 mm with zt_ 0.685 -> 0.640.
+    zb_, zv1_, zs0_, zs1_, zt_ = 0.245, 0.385, 0.462, 0.538, 0.640
 
-    def bring(px, py, nx, ny, d_apex, d_top, zb=zb_, zv=zv1_):
-        """One bumper ring: the 7-point profile stood off plan point (px,py) along
-        unit outward normal (nx,ny).  The back edge sits AT the path point, which
-        every path entry keeps inside the body skin — that is what buries the seam.
-        The strip z band (zs0_/zs1_) is constant so the strip stays dead level all
-        the way around the wrap; zb/zv rise along the flank so the cover's lower
-        edge climbs clear of the rocker instead of hanging at nose depth."""
+    def bring(px, py, nx, ny, d_apex, zb=zb_, zv=zv1_):
+        """One bumper ring: the profile stood off plan point (px,py) along unit
+        outward normal (nx,ny).  The back edge AND the top edge sit AT the path
+        point, which every path entry keeps inside the body skin — that buries
+        the rear seam and rolls the top into the body.  The strip z band
+        (zs0_/zs1_) is constant so the strip stays dead level all the way around
+        the wrap; zb/zv rise along the flank so the cover's lower edge climbs
+        clear of the rocker instead of hanging at nose depth."""
         def at(d, z):
             return (px + nx * d, py + ny * d, z)
         return [at(0.0, zb), at(d_apex - 0.058, zb), at(d_apex - 0.040, zv),
-                at(d_apex, zs0_), at(d_apex, zs1_), at(d_top, zt_), at(0.0, zt_)]
+                at(d_apex, zs0_), at(d_apex, zs1_), at(0.0, zt_)]
 
-    # Corner + flank path, one side: (px, py, nx, ny, d_apex, d_top, zb, zv).
-    # Plan points hug the body skin (wm at these stations is 0.876-0.882, and the
-    # skin below the belt never comes inboard of ~0.80), protrusions taper as the
-    # wrap runs rearward, and the last entry is zero-protrusion ON the skin line so
-    # the cover dies flush.  Ends at y 1.79/1.755 — the arch begins at 1.724.
-    WRAP = [(0.780, 2.330, 0.550, 0.835, 0.100, 0.062, 0.250, 0.388),
-            (0.812, 2.208, 0.830, 0.558, 0.075, 0.048, 0.268, 0.392),
-            (0.858, 2.080, 1.000, 0.000, 0.058, 0.038, 0.285, 0.395),
-            (0.858, 1.790, 1.000, 0.000, 0.058, 0.038, 0.300, 0.400),
-            (0.830, 1.755, 1.000, 0.000, 0.000, 0.000, 0.310, 0.402)]
+    # Corner + flank path, one side: (px, py, nx, ny, d_apex, zb, zv).
+    # MATCHED TO THE BODY'S PLAN CORNER (2026-08-09b): the first wrap attempt ran
+    # the corner as its own gentle arc while the nose stations turn a much squarer
+    # corner (0.788 half-wide at y 2.440 swelling to 0.855 by 2.300), so the two
+    # disagreed and the seam mitred badly — the path stepped INBOARD (0.79 -> 0.78)
+    # while turning, folding the surface at (0.82, 2.41).  The corner is now a
+    # quarter-ellipse around C=(0.72, 2.300), rx 0.118 / ry 0.120, which tracks the
+    # station swell ~20 mm inside the skin; normals are the ellipse's own, and the
+    # apex taper is monotonic.  Flank wm here is 0.876-0.882; the last entry is
+    # zero-protrusion ON the skin line so the cover dies flush.  Ends at y
+    # 1.79/1.755 — the arch begins at 1.724.
+    WRAP = [(0.779, 2.404, 0.507, 0.862, 0.062, 0.250, 0.388),   # ellipse 30°
+            (0.822, 2.360, 0.870, 0.494, 0.052, 0.262, 0.390),   # ellipse 60°
+            (0.838, 2.300, 1.000, 0.000, 0.045, 0.272, 0.392),   # ellipse 90°
+            (0.858, 2.080, 1.000, 0.000, 0.048, 0.285, 0.395),
+            (0.858, 1.790, 1.000, 0.000, 0.048, 0.300, 0.400),
+            (0.830, 1.755, 1.000, 0.000, 0.000, 0.310, 0.402)]
 
-    rings = [bring(sx * px, py, sx * nx, ny, da, dt, zb, zv)
-             for sx, wrap in ((-1, list(reversed(WRAP))),) for px, py, nx, ny, da, dt, zb, zv in wrap]
+    rings = [bring(-px, py, -nx, ny, da, zb, zv)
+             for px, py, nx, ny, da, zb, zv in reversed(WRAP)]
     for x, yt, ya in [(-x, t, a) for x, t, a in reversed(CHIN[1:])] + CHIN:
         y_back = min(2.420, yt - 0.030)           # stays buried behind the nose cap
-        rings.append(bring(x, y_back, 0.0, 1.0, ya - y_back, yt - y_back))
-    rings += [bring(px, py, nx, ny, da, dt, zb, zv)
-              for px, py, nx, ny, da, dt, zb, zv in WRAP]
+        rings.append(bring(x, y_back, 0.0, 1.0, ya - y_back))
+    rings += [bring(px, py, nx, ny, da, zb, zv)
+              for px, py, nx, ny, da, zb, zv in WRAP]
     # 0 underside, 1 valance, 3 the rub strip riding the apex; 2 (the tuck-under)
     # and 4 (the chin slope itself) are painted body surface — that continuity is
     # what makes it a bump out of the body rather than a fitted part.
