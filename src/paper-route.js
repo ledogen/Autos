@@ -166,6 +166,11 @@ export function advancesTier (result, customers) {
 
 const idKey = (id) => `${id[0]},${id[1]},${id[2]}`
 
+// Stop count up to which the round's ORDER is solved exactly (Held-Karp, 2^n × n states). The
+// ladder tops out at 15, so in practice every round is exact; the cap exists so a future tier
+// cannot silently ask for a 2^n table.
+const HELD_KARP_MAX = 15
+
 /**
  * Dijkstra from one node over the straight-line graph metric — the same cheap metric the mission
  * planner uses to choose a path before anything is routed. Returns dist + parent chain to every
@@ -323,8 +328,16 @@ export function planTour (road, larry, allCust, want, region = null, margin = 10
         return searches.get(k)
     }
 
-    // WHICH customers this tier visits: grow the round outward from Larry by true road distance.
-    // A tier is a shorter round out of the same door, not a different set of houses (SM-INV-12).
+    // WHICH customers this tier visits: grow the round outward from Larry, each next customer the
+    // nearest by road to the last one taken.
+    //
+    // CHAINING, not "the k nearest to Larry" — that alternative was measured and is worse on both
+    // counts. Nearest-to-Larry picks a STAR: four houses in four directions, which forces a return
+    // through the middle between every pair (seed 6 tier 1: 5.94 km against the chain's 3.78 km for
+    // the same four-customer round). Chaining follows the road outward and picks a run of houses,
+    // which is shorter to drive AND is what a paper route actually looks like. The ladder still
+    // nests — a tier takes a prefix of the same chain, so its people are all on the next tier's
+    // round (SM-INV-12).
     const stops = allCust.filter(c => ptKeyOf.has(c.id))
     if (!stops.length) return null
     const remaining = stops.slice()
@@ -344,34 +357,57 @@ export function planTour (road, larry, allCust, want, region = null, margin = 10
     }
     if (!order.length) return null
 
-    // …and in WHICH ORDER. Nearest-neighbour is a greedy first guess and it is routinely 10-25%
-    // long; 2-opt on the finished order is the cheap classical repair — reverse any sub-run that
-    // shortens the total and repeat until nothing does. The round is open (it does not return to
-    // Larry), so only the interior is reversed and the start stays pinned.
+    // …and in WHICH ORDER: the SHORTEST one, exactly.
+    //
+    // 2-opt was not enough, and the reason is worth keeping. On an open path with a pinned start,
+    // reversing a sub-run cannot rotate the sequence — turning A,B,C,D into D,A,B,C is not a
+    // reversal of anything — so the very case that hurts most (one stop on the far side that ought
+    // to be visited first) is outside the neighbourhood 2-opt can search. Held-Karp is exact and,
+    // at fifteen stops, cheap: 2^15 × 15 states is a few million operations once per round, behind
+    // the briefing cards. Above the ladder's top rung it falls back to the greedy order rather than
+    // trying to allocate a 2^n table.
     {
-        const keys = [larryK, ...order.map(c => ptKeyOf.get(c.id))]
+        const keys = order.map(c => ptKeyOf.get(c.id))
+        const n = keys.length
         const legLen = (a, b) => searchFrom(a).dist.get(b) ?? Infinity
-        const total = (ks) => { let t = 0; for (let i = 0; i < ks.length - 1; i++) t += legLen(ks[i], ks[i + 1]); return t }
-        let best = total(keys)
-        for (let pass = 0; pass < 8; pass++) {
-            let improved = false
-            for (let i = 1; i < keys.length - 1 && !improved; i++) {
-                for (let j = i + 1; j < keys.length && !improved; j++) {
-                    const trial = keys.slice()
-                    const rev = trial.slice(i, j + 1).reverse()
-                    trial.splice(i, rev.length, ...rev)
-                    const t = total(trial)
-                    if (t < best - 1e-6) {
-                        best = t
-                        keys.splice(0, keys.length, ...trial)
-                        improved = true
+        if (n > 1 && n <= HELD_KARP_MAX) {
+            const D = []                                   // D[i][j] between stops
+            for (let i = 0; i < n; i++) {
+                D.push([])
+                for (let j = 0; j < n; j++) D[i].push(i === j ? 0 : legLen(keys[i], keys[j]))
+            }
+            const from = order.map(c => legLen(larryK, ptKeyOf.get(c.id)))
+            const SZ = 1 << n
+            const dp = new Float64Array(SZ * n).fill(Infinity)
+            const par = new Int16Array(SZ * n).fill(-1)
+            for (let j = 0; j < n; j++) dp[(1 << j) * n + j] = from[j]
+            for (let mask = 1; mask < SZ; mask++) {
+                for (let j = 0; j < n; j++) {
+                    if (!(mask & (1 << j))) continue
+                    const cur = dp[mask * n + j]
+                    if (!isFinite(cur)) continue
+                    for (let k = 0; k < n; k++) {
+                        if (mask & (1 << k)) continue
+                        const nm = mask | (1 << k)
+                        const cand = cur + D[j][k]
+                        if (cand < dp[nm * n + k]) { dp[nm * n + k] = cand; par[nm * n + k] = j }
                     }
                 }
             }
-            if (!improved) break
+            const full = SZ - 1
+            let endJ = -1, bestT = Infinity
+            for (let j = 0; j < n; j++) if (dp[full * n + j] < bestT) { bestT = dp[full * n + j]; endJ = j }
+            if (endJ >= 0 && isFinite(bestT)) {
+                const seq = []
+                for (let mask = full, j = endJ; j >= 0;) {
+                    seq.unshift(order[j])
+                    const pj = par[mask * n + j]
+                    mask ^= (1 << j)
+                    j = pj
+                }
+                order.splice(0, order.length, ...seq)
+            }
         }
-        const byKey = new Map(order.map(c => [ptKeyOf.get(c.id), c]))
-        order.splice(0, order.length, ...keys.slice(1).map(k => byKey.get(k)).filter(Boolean))
     }
 
     // The node walk: Larry's point, then each stop in turn, along shortest paths through the split
@@ -515,6 +551,20 @@ export class PaperRouteSystem {
         const z = this._startZone, car = this._getCar()
         if (!z || !car) return 0
         return Math.hypot(car.x - z.x, car.z - z.z) - z.r
+    }
+
+    /**
+     * The round, in the shape the 2D map already draws a mission in ({start, end, poly}).
+     *
+     * The map drew every customer in the region but never the ROUND, so there was no way — in game
+     * or in a screenshot — to see which houses were on it or what line it took. That made a routing
+     * complaint impossible to answer without rebuilding the region headlessly and guessing the
+     * region centre. A round you cannot see is a round you cannot report a bug about.
+     */
+    markers () {
+        if (!this.isCarrying() || !this.route?.poly?.length) return null
+        return { start: this.route.poly[0], end: this.route.poly[this.route.poly.length - 1],
+                 poly: this.route.poly }
     }
 
     /** The customers on THIS round — not the region's. Read-only. */

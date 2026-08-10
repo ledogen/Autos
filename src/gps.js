@@ -114,7 +114,7 @@ export function bakeRoute (segments, elevAt = null) {
     cum[i] = cum[i - 1] + Math.hypot(px[i] - px[i - 1], py[i] - py[i - 1], pz[i] - pz[i - 1])
   }
   const route = { px, py, pz, cum, n, length: cum[n - 1], partial, junctions: [] }
-  route.revisit = markRevisits(route)
+  route.firstArc = markCoverage(route)
 
   // Only REAL intersections get an arrow. `endDeg` is the degree of the graph node the edge ends
   // at (tagged in mission.js `_roll()`); degree 2 is the road bending through, and no angle
@@ -132,35 +132,40 @@ export function bakeRoute (segments, elevAt = null) {
 }
 
 /**
- * Mark every baked vertex that sits on tarmac the route ALREADY covered earlier.
+ * For every baked vertex, the EARLIEST arc at which the route covers that same piece of tarmac.
  *
  * A point-to-point mission never drives the same road twice, so this used to be a question nobody
  * had to ask. FEAT-61's paper round does: a round with a dead-end street on it goes down and comes
  * back, and measured on seeds 6 and 90 a tour re-drives 1-6 of its edges and lies on top of itself
- * at **0.0 m**. Both passes are then equally "nearest", and the overlay drew chevrons for both —
- * on the same tarmac, pointing opposite ways (owner-reported 2026-08-09: "shows directions in both
- * ways and then reroutes me back towards Larry's house").
+ * at **0.0 m**. The chevron lattice ahead of the truck then crosses the return pass and draws
+ * arrows on the tarmac under you pointing the other way (owner: "shows directions in both ways").
  *
- * `revisit[i]` is true when vertex i is within REVISIT_M of a vertex at least REVISIT_ARC_M EARLIER
- * along the route. Earlier, not merely different: the first pass down a street is the one worth
- * drawing, and the return pass is the ghost. A uniform grid keeps this linear — a 23 km round bakes
- * ~3800 vertices, and the pairwise form would be 14 M tests.
+ * `firstArc[i]` is the arc of the earliest vertex within REVISIT_M of vertex i — its own `cum[i]`
+ * when nothing earlier covers it. That is strictly more than a "this is a second pass" flag, and
+ * the difference is the whole fix: a flag cannot tell WHICH pass the truck is currently on, so
+ * suppressing on it blanked the entire return leg the moment the player turned around, and the
+ * guidance simply stopped (owner: "turned me around and ended right here"). With the arc, the
+ * consumer can ask the only question that matters — is the earlier pass still AHEAD of me? — and
+ * suppress just the ghost. See `_placeChevrons`.
  *
- * Exported for test/gps-route.mjs.
+ * A uniform grid keeps this linear: a 19 km round bakes ~3200 vertices and the pairwise form would
+ * be 10 M tests. Exported for test/gps-route.mjs.
  */
-export function markRevisits (route) {
+export function markCoverage (route) {
   const { px, pz, cum, n } = route
-  const revisit = new Uint8Array(n)
+  const firstArc = new Float64Array(n)
   const cell = new Map()
   const key = (cx, cz) => `${cx},${cz}`
   for (let i = 0; i < n; i++) {
+    firstArc[i] = cum[i]
     const cx = Math.floor(px[i] / REVISIT_M), cz = Math.floor(pz[i] / REVISIT_M)
     // Look only at what is ALREADY in the grid — i.e. strictly earlier vertices.
-    for (let ox = -1; ox <= 1 && !revisit[i]; ox++) {
-      for (let oz = -1; oz <= 1 && !revisit[i]; oz++) {
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oz = -1; oz <= 1; oz++) {
         for (const j of cell.get(key(cx + ox, cz + oz)) || []) {
           if (cum[i] - cum[j] < REVISIT_ARC_M) continue
-          if ((px[j] - px[i]) ** 2 + (pz[j] - pz[i]) ** 2 <= REVISIT_M * REVISIT_M) { revisit[i] = 1; break }
+          if (cum[j] >= firstArc[i]) continue
+          if ((px[j] - px[i]) ** 2 + (pz[j] - pz[i]) ** 2 <= REVISIT_M * REVISIT_M) firstArc[i] = cum[j]
         }
       }
     }
@@ -168,7 +173,7 @@ export function markRevisits (route) {
     if (!cell.has(k)) cell.set(k, [])
     cell.get(k).push(i)
   }
-  return revisit
+  return firstArc
 }
 
 /**
@@ -466,11 +471,17 @@ export class GpsSystem {
       const p = sampleRoute(route, sc, hint)
       hint = p.idx
       // GHOST SUPPRESSION (FEAT-61). On a round that drives a street out and back, the chevron
-      // lattice ahead of you crosses the RETURN pass — which is the same tarmac you are on now,
-      // with the arrows pointing the other way. Drawing both is what read as "directions in both
-      // ways". The first pass down a street is the one that describes what to do now; the second
-      // is a promise about later, and later can speak for itself when you get there.
-      if (route.revisit?.[p.idx]) {
+      // lattice ahead of you crosses the RETURN pass — same tarmac, arrows pointing the other way.
+      //
+      // THE TEST IS "IS THE EARLIER PASS STILL AHEAD OF ME", not "is this a second pass". Those come
+      // apart exactly when it matters: once you HAVE turned around, the leg you are driving is the
+      // second pass over that tarmac, and suppressing on second-pass-ness blanked every chevron for
+      // the rest of the round — the guidance stopped dead at the turnaround (owner, 2026-08-09).
+      // Here a chevron is a ghost only while the pass that covers the same ground sooner is itself
+      // still in front of the truck; the moment the truck is past it, this becomes the live pass and
+      // draws normally.
+      const firstArc = route.firstArc?.[p.idx]
+      if (firstArc != null && firstArc < sc - REVISIT_ARC_M && firstArc >= s - REVISIT_M) {
         d.scale.setScalar(0)
         d.position.set(0, -1e4, 0)
         d.updateMatrix()

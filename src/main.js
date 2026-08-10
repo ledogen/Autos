@@ -1242,7 +1242,10 @@ const map2d = new Map2D({
   // Double-click teleport (free-roam only). The map snaps to the nearest road and hands us the
   // road-top Y; we drop the truck 0.5 m above it (or on terrain when off-road) and set the spawn.
   canTeleport: isTeleportEnabled,
-  getMission: () => missionSystem?.markers() ?? null,
+  // FEAT-61: the paper round draws as a mission route, because that is what it is — one line, in
+  // the order it will be driven. It wins over the mission's when a round is out; the two can never
+  // both be live.
+  getMission: () => paperRouteSystem?.markers() ?? missionSystem?.markers() ?? null,
   // FEAT-43: the story-mode region boundary, so the player can see where the wall is rather than
   // finding it by driving into it. Null outside story mode (and until the region center is captured).
   getRegion: () => storySystem?.region() ?? null,

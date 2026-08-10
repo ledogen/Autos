@@ -22,7 +22,7 @@
 // THREE is imported only for the placement section — its scene graph is renderer-free, so the
 // real GpsSystem runs headlessly and the arrow/chevron transforms can be asserted, not eyeballed.
 import * as THREE from 'three'
-import { GpsSystem, bakeRoute, advanceProgress, sampleRoute, markRevisits } from '../src/gps.js'
+import { GpsSystem, bakeRoute, advanceProgress, sampleRoute, markCoverage } from '../src/gps.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -338,24 +338,41 @@ const seg = (centerline, s0, s1, gradeAt = level) => ({ centerline, gradeAt, s0,
   check('an out-and-back route bakes to its full DRIVEN length', Math.abs(r.length - 800) < 1e-6,
     `got ${r.length}`)
 
-  // 1. THE RETURN PASS IS MARKED, the way out is not — so the ghost chevrons can be suppressed
-  //    without touching the ones that describe what to do now.
-  const outbound = [], deepBack = []
+  // 1. COVERAGE IS RECORDED AS AN ARC, not a flag. firstArc[i] is where the route FIRST touches
+  //    the ground at vertex i — its own arc on the way out, the outbound arc on the way back.
+  let outClean = true, backPointsBack = true
   for (let i = 0; i < r.n; i++) {
-    if (r.cum[i] < 400) outbound.push(r.revisit[i])
-    else if (r.cum[i] > 550) deepBack.push(r.revisit[i])     // past the hairpin exclusion
+    if (r.cum[i] < 400) { if (r.firstArc[i] !== r.cum[i]) outClean = false }
+    else if (r.cum[i] > 550) { if (!(r.firstArc[i] < r.cum[i] - 150)) backPointsBack = false }
   }
-  check('nothing on the way OUT is flagged as a revisit', outbound.every(v => !v))
-  check('the return pass IS flagged', deepBack.length > 0 && deepBack.every(v => v),
-    `${deepBack.filter(v => v).length}/${deepBack.length} flagged`)
+  check('on the way OUT every vertex is its own first coverage', outClean)
+  check('on the way BACK each vertex points at the outbound arc that covered it first', backPointsBack)
 
-  // …and a route that never revisits must flag NOTHING, or the suppression would eat an ordinary
-  // mission's chevrons.
+  // …and a route that never revisits must record nothing, or the suppression would eat an
+  // ordinary mission's chevrons.
   const ra = straight(200, -200, 0, 1, 0), rb = straight(200, 0, 0, 0, 1)
   const plain = bakeRoute([seg(ra, 0, 200), seg(rb, 0, 200)])
-  check('a route that never doubles back flags no revisits', [...plain.revisit].every(v => !v))
-  check('markRevisits is exported and agrees with the bake',
-    [...markRevisits(r)].join('') === [...r.revisit].join(''))
+  let plainClean = true
+  for (let i = 0; i < plain.n; i++) if (plain.firstArc[i] !== plain.cum[i]) plainClean = false
+  check('a route that never doubles back records no earlier coverage', plainClean)
+  check('markCoverage is exported and agrees with the bake',
+    [...markCoverage(r)].join(',') === [...r.firstArc].join(','))
+
+  // THE REGRESSION THIS SECTION EXISTS FOR (owner, 2026-08-09: "turned me around and ended right
+  // here"). Suppression must depend on WHERE THE TRUCK IS, not on which pass a vertex belongs to.
+  // Driving OUT, the far chevrons that land on the return leg are ghosts and must be hidden.
+  // Driving BACK, that same tarmac is the live pass and must be drawn — the first version keyed on
+  // second-pass-ness alone and blanked every chevron for the rest of the round.
+  const ghost = (sc, carS) => {
+    const p = sampleRoute(r, sc, 0)
+    const fa = r.firstArc[p.idx]
+    return fa < sc - 150 && fa >= carS - 10
+  }
+  check('driving OUT at 100 m, a chevron 700 m along (on the return leg) is a ghost',
+    ghost(700, 100))
+  check('…while a chevron 200 m along (still outbound) is not', !ghost(200, 100))
+  check('driving BACK at 600 m, the chevrons ahead of you are DRAWN, not suppressed',
+    !ghost(650, 600) && !ghost(700, 600) && !ghost(780, 600))
 
   // 2. PROGRESS STAYS ON THE OUTBOUND PASS. Drive out and watch `s`: it must climb monotonically
   //    and never jump onto the return leg, which is 0.0 m away and equally "nearest".
