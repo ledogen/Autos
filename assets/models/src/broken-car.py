@@ -4,17 +4,21 @@ ASSET-18 — broken-down car (1990s Buick Century Estate wagon), parametric gene
 Built for: Blender 4.x  |  Target: assets/models/broken-car.glb
 Style brief: .planning/research/ART-STYLE.md  ·  Mechanics: .planning/research/ASSETS.md
 
-BUILD REPORT (2026-08-07, Blender 5.2.0 LTS — front-end rework pass)
-  BrokenCar       2070 tris   (body, greenhouse, interior, trim, 3 road wheels,
+BUILD REPORT (2026-08-09, Blender 5.2.0 LTS — mid-90s front-end pass)
+  BrokenCar       2132 tris   (body, greenhouse, interior, trim, 3 road wheels,
                                brake drum, spare, scissor jack, tyre iron)
   BrokenCarGlass    16 tris   (6 panes, alpha-blended, double-sided)
-  TOTAL           2086 tris   budget 2500
-  materials 8 · images 0 · car 2.03 W (mirror to mirror) x 5.09 L x 1.46 H m
-  Front end matched to the '93 Century reference: an integrated CHIN — the whole
-  lower nose is one surface leaning forward from the fascia to an apex at the rub
-  strip, tucking under, sweeping back around the corners (see CHIN table) — plus
-  two black bumper guards, a framed horizontal-slat grille ('80 Century style),
-  slim lamps + angled corner signals, rounded-rectangular mirror heads.
+  TOTAL           2148 tris   budget 2500
+  materials 9 · images 0 · car 2.03 W (mirror to mirror) x 5.07 L x 1.46 H m
+  Front end matched to the MID-90s ('89-96 facelift) Century reference — NOT the
+  '80 square nose (2026-08-09, user: "specifically the mid 90s one"): an integrated
+  CHIN — the whole lower nose is one surface leaning forward from the fascia to an
+  apex at the rub strip, tucking under, sweeping back around the corners (see CHIN
+  table) — a DROOPED hood (front stations lowered ~20 mm), a narrow raked
+  vertical-rib waterfall grille, wide slim lamps with AMBER wraparound corner
+  signals (CarSignal), two black bumperettes hanging BELOW the bumper line, a
+  centre licence plate under the bumper, a stand-up hood ornament, and
+  rounded-rectangular mirror heads.
   A bumper built as a separate primitive reads glued-on; don't.
   Asserted at every build (see build()/export()): forward -Z, base-seated origin,
   nothing below the ground plane, nothing overhanging the front fascia, the wheel
@@ -55,7 +59,8 @@ import math
 
 NAME = "broken-car"
 TRI_BUDGET = 2500       # raised from 2000 (2026-08-07) for the front-end rework:
-                        # leading bumper + guards, 5-bar raked grille, corner signals
+                        # leading bumper, raked waterfall grille, corner signals,
+                        # bumperettes + plate + ornament (2026-08-09 mid-90s pass)
 OUT_GLB = "/Users/ledogen/CodeShit/CarGame/assets/models/broken-car.glb"
 OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/broken-car.blend"
 
@@ -126,11 +131,16 @@ SW_SEG = 10
 # was 0.800) and the body swells back to full width faster than a straight taper would,
 # which is what puts a radius on the corner.  Everything mounted on the fascia has to
 # respect the smaller cap — see the guard in build().
+# HOOD DROOP (2026-08-09).  The mid-90s Century's hood falls away toward the nose —
+# the front belt now sits ~21 mm lower than the slab-nosed first pass and the drop is
+# spread over the front four stations so the hood is a fall, not a kink.  Everything
+# mounted on the fascia lives below z 0.885 now; the grille top rail runs right up
+# under the hood lip because on the reference the two nearly touch.
 BODY_STATIONS = [
-    (2.440, 0.730, 0.788, 0.748, 0.375, 0.906),   # front face — rounded corner
-    (2.410, 0.766, 0.822, 0.782, 0.360, 0.930),
-    (2.365, 0.786, 0.844, 0.804, 0.340, 0.946),
-    (2.300, 0.790, 0.855, 0.820, 0.320, 0.955),
+    (2.440, 0.730, 0.788, 0.748, 0.375, 0.885),   # front face — rounded corner
+    (2.410, 0.766, 0.822, 0.782, 0.360, 0.910),
+    (2.365, 0.786, 0.844, 0.804, 0.340, 0.930),
+    (2.300, 0.790, 0.855, 0.820, 0.320, 0.945),
     (1.950, 0.800, 0.878, 0.855, 0.300, 0.980),   # ahead of the front arch
     (0.900, 0.800, 0.885, 0.858, 0.295, 1.000),   # cowl / windshield base
     (0.300, 0.805, 0.885, 0.856, 0.295, 1.010),
@@ -187,6 +197,7 @@ MATS = {
     "CarChrome":    ((0.500, 0.498, 0.480, 1.0), 0.40, 1.0),   # grille, hubcaps, jack, iron
     "CarTire":      ((0.020, 0.020, 0.022, 1.0), 0.95, 1.0),
     "CarLamp":      ((0.670, 0.662, 0.610, 1.0), 0.25, 1.0),   # headlamp lenses
+    "CarSignal":    ((0.560, 0.190, 0.012, 1.0), 0.30, 1.0),   # amber corner signals
     "CarTail":      ((0.520, 0.030, 0.022, 1.0), 0.35, 1.0),
     # Interior is deliberately near-black: it is read THROUGH glass against a beige
     # flank, and at anything but point-blank range only the value gap survives.
@@ -667,13 +678,21 @@ def build_detail(p):
     # what makes it a bump out of the body rather than a fitted part.
     loft(p, rings, "CarPaint", band_mats={0: "CarTrim", 1: "CarTrim", 3: "CarTrim"})
 
-    # Bumper guards — the two black uprights on the reference.  Each stands proud of
-    # the chin's apex at its own x (the face is curved; a shared y would bury one
-    # corner and float the other), spanning the bump, topping out over the strip.
+    # Bumperettes — mid-90s, so they hang BELOW the bumper line (2026-08-09; the
+    # tall uprights that stood over the strip were the '80 car and are gone).  Each
+    # leads the chin's apex at its own x (the face is curved; a shared y would bury
+    # one corner and float the other) and its back is buried in the valance.
     for sx in (1, -1):
-        gx = sx * 0.29
-        box(p, gx - 0.038, gx + 0.038, 2.400, chin_at(gx)[1] + 0.022,
-            0.385, 0.640, "CarTrim")
+        gx = sx * 0.44
+        box(p, gx - 0.036, gx + 0.036, 2.396, chin_at(gx)[1] + 0.016,
+            0.292, 0.452, "CarTrim")
+
+    # Licence plate — centre, hanging under the bumper like the reference, not on it.
+    # Dark backing proud of the valance, pale plate proud of the backing; the plate
+    # face leads the chin apex (2.558 at x=0) by ~4 mm so it reads as hung hardware.
+    box(p, -0.170, 0.170, 2.400, 2.546, 0.286, 0.462, "CarTrim")
+    box(p, -0.150, 0.150, 2.410, 2.562, 0.300, 0.448, "CarLamp")
+
     # GRILLE TRAP: a filled chrome "surround" box sits in FRONT of the dark recess
     # and the whole nose collapses into one continuous light bar with the headlamps.
     # The chrome must be a frame plus bars only — the dark recess has to stay visible
@@ -687,16 +706,16 @@ def build_detail(p):
     # pass ran the lamps out to 0.812 and they hung off the corners into thin air.
     # Nothing on the front face may exceed 0.735, and it is checked at export.
     #
-    # Proportion follows the reference: a NARROW centre waterfall grille flanked by
-    # SLIM composite lamps, with a clear corner signal wrapping each fender.
-    # Grille and lamps sit just above the bumper — on the reference the gap is a few
-    # centimetres, and opening it up leaves a blank beige shelf across the whole nose.
+    # Proportion follows the mid-90s reference: a NARROW centre waterfall grille
+    # (vertical ribs — the horizontal slats were the '80 car) flanked by WIDE slim
+    # lamps, with an AMBER corner signal owning each fender edge.  The grille runs
+    # tall, its top rail tucked right under the drooped hood lip.
     #
     # The grille is RAKED: its front plane leans back ~28 mm bottom-to-top, like the
     # Century's waterfall.  raked() builds a thin slab whose top loop sits behind its
-    # bottom loop; every grille layer shares G_RAKE so bars, recess and rails stay in
-    # one plane.  Front faces stay ahead of the 2.440 nose cap at every height
-    # (DEPTH TRAP above) and behind the bumper face at every x (the bumper leads).
+    # bottom loop; every layer shares the same slope via gy(), so ribs, recess and
+    # rails stay in one plane.  Front faces stay ahead of the 2.440 nose cap at every
+    # height (DEPTH TRAP above) and behind the bumper face at every x (bumper leads).
     G_RAKE = 0.028
 
     def raked(x0, x1, y_bot, z0, z1, mat, d=0.026):
@@ -706,22 +725,25 @@ def build_detail(p):
                  (x0, yt - d, z1), (x1, yt - d, z1),
                  (x1, yt, z1), (x0, yt, z1)], mat)
 
-    raked(-0.255, 0.255, 2.478, 0.690, 0.900, "CarTrim", d=0.050)      # grille recess
-    # HORIZONTAL SLATS (2026-08-07f, from the '80 Century reference): a full chrome
-    # frame — both rails plus vertical end members — with three wide horizontal bars
-    # inside, dark slots between.  Replaced a 5-bar vertical waterfall; the long
-    # horizontals sit better with the low-poly look (user's call, and they're right:
-    # every edge in this grille now runs the same way the car's own creases do).
-    # Same tri cost: 5 slabs then, 5 slabs now.
-    raked(-0.272, 0.272, 2.494, 0.688, 0.714, "CarChrome")             # rail, lower
-    raked(-0.272, 0.272, 2.469, 0.876, 0.902, "CarChrome")             # rail, upper
-    for sx in (1, -1):                                                 # end members
-        raked(sx * 0.250, sx * 0.272, 2.494, 0.688, 0.902, "CarChrome")
-    for z0, z1 in ((0.736, 0.761), (0.783, 0.807), (0.829, 0.854)):    # the slats
-        raked(-0.255, 0.255, 2.492, z0, z1, "CarChrome")
+    def gy(z0):
+        """Front-plane y for a piece whose bottom sits at z0 — keeps every grille
+        layer on the one raked plane no matter where it starts."""
+        return 2.494 - G_RAKE * (z0 - 0.700) / 0.210
 
-    # Lamps and hood trim are WEDGES, not boxes: the outboard end sits further back in
-    # Y so each piece follows the nose radius instead of standing square across a curve.
+    raked(-0.228, 0.228, gy(0.694) - 0.016, 0.694, 0.884, "CarTrim", d=0.050)  # recess
+    raked(-0.228, 0.228, gy(0.700), 0.700, 0.724, "CarChrome")         # rail, lower
+    raked(-0.228, 0.228, gy(0.856), 0.856, 0.880, "CarChrome")         # rail, upper
+    for sx in (1, -1):                                                 # end members
+        raked(sx * 0.206, sx * 0.228, gy(0.700), 0.700, 0.880, "CarChrome")
+    # VERTICAL RIBS — seven, evenly pitched across the aperture.  Still chunkier
+    # than the real car's fine waterfall (16 mm rib, 36 mm gap): at this facet scale
+    # that is what reads as "many vertical bars"; five wider ones read as jail bars.
+    for i in range(-3, 4):
+        cx = i * 0.0515
+        raked(cx - 0.008, cx + 0.008, gy(0.724) - 0.002, 0.724, 0.856, "CarChrome")
+
+    # Lamps are WEDGES, not boxes: the outboard end sits further back in Y so each
+    # piece follows the nose radius instead of standing square across a curve.
     # hexa() takes 8 free points, so the wedge costs exactly what the box did.
     def wedge(xi, xo, yi0, yi1, yo0, yo1, z0, z1, mat):
         for sx in (1, -1):
@@ -729,18 +751,23 @@ def build_detail(p):
             hexa(p, [(a, yi0, z0), (b, yo0, z0), (b, yo1, z0), (a, yi1, z0),
                      (a, yi0, z1), (b, yo0, z1), (b, yo1, z1), (a, yi1, z1)], mat)
 
-    # Lamps are SLIM now — ~96 mm of lens against the old 146 — and stop at 0.618 so
-    # the corner signal owns the fender edge.  The whole stack sits ~10 mm behind the
-    # old plane (2.482 max, was 2.492) to preserve the bumper's lead.
-    wedge(0.296, 0.748, 2.408, 2.466, 2.402, 2.446, 0.748, 0.878, "CarTrim")   # bezel
-    wedge(0.312, 0.618, 2.452, 2.482, 2.446, 2.474, 0.766, 0.862, "CarLamp")   # lens
-    # Corner signal: a separate short lens whose front face angles back twice as hard
-    # as the main lens.  It CANNOT physically wrap the corner: the nose cap is ~0.79
-    # half-wide at lamp height, so anything swept behind y 2.440 inboard of that is
-    # buried in the body (the first attempt reached x 0.716 / y 2.35 and vanished
-    # entirely).  The angle change against the main lens is what carries the read.
-    wedge(0.634, 0.738, 2.446, 2.472, 2.428, 2.452, 0.766, 0.862, "CarLamp")
-    wedge(0.000, 0.700, 2.452, 2.480, 2.424, 2.450, 0.902, 0.926, "CarChrome")  # hood edge
+    # WIDE slim lamps (2026-08-09, mid-90s): ~330 mm of lens, nearly touching the
+    # grille frame, thin dark bezel only — on the reference the lamp sits in body
+    # colour with barely any surround, and a fat bezel read as '80s sealed-beams.
+    wedge(0.240, 0.600, 2.412, 2.470, 2.400, 2.448, 0.745, 0.872, "CarTrim")   # bezel
+    wedge(0.256, 0.582, 2.452, 2.482, 2.442, 2.468, 0.757, 0.860, "CarLamp")   # lens
+    # Corner signal — AMBER, the mid-90s tell.  A separate short lens whose front
+    # face angles back twice as hard as the main lens.  It CANNOT physically wrap
+    # the corner: the nose cap is ~0.79 half-wide at lamp height, so anything swept
+    # behind y 2.440 inboard of that is buried in the body (an early attempt reached
+    # x 0.716 / y 2.35 and vanished entirely).  The angle change against the main
+    # lens is what carries the wrap read.
+    wedge(0.600, 0.718, 2.446, 2.472, 2.408, 2.434, 0.757, 0.860, "CarSignal")
+
+    # Stand-up hood ornament — the tri-shield-in-a-ring reduced to a thin chrome
+    # blade on the hood crown, base buried in the crown facet.  Its silhouette
+    # against the sky is the entire read; 12 tris.
+    box(p, -0.008, 0.008, 2.262, 2.296, 0.950, 1.012, "CarChrome")
 
     # ---- rear ----------------------------------------------------------------
     box(p, -0.845, 0.845, -2.500, -2.435, 0.420, 0.640, "CarPaint")
@@ -1119,8 +1146,8 @@ def build():
     # lenses, hood trim) must stay inside the nose cap or it hangs off the corner
     # into thin air.  The bumper is exempt — on a real car it IS wider than the nose.
     # y >= 2.450 keeps the body's own nose cap (at exactly 2.440, and legitimately
-    # 0.800 half-wide) out of the sample; z > 0.67 drops the bumper (top shelf at
-    # 0.625), its guards (tops at 0.658) and the strip — all legitimately proud.
+    # 0.800 half-wide) out of the sample; z > 0.67 drops the bumper, the bumperettes
+    # and plate hanging under it (tops at 0.462) and the strip — all legitimately proud.
     # Tightened from 0.735 when the nose cap was narrowed to 0.758 for the plan-view
     # rounding: the limit is a property of the cap, so it moves whenever the cap does.
     face = [c for c in body.v[:car_verts] if c[1] >= 2.450 and c[2] > 0.67]
