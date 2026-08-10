@@ -6,6 +6,7 @@ severity: major
 opened: 2026-08-10
 source: owner — "I like it so much I wanna make it a scenario, accessible mission ready to go from the main menu"
 relates: FEAT-41, FEAT-61, FEAT-43, FEAT-42, BUG-45
+simplified: 2026-08-10 — seed-only; worldgen measured seed-pure (test/world-determinism.mjs)
 invariants: SM-INV-3, SM-INV-12
 ---
 
@@ -32,70 +33,41 @@ So this ticket is not inventing a mode; it is building the first one and the fra
 scenario is: **a pinned world, a pinned start, one mission, and a result.** No run, no day ladder to
 manage, no meta progression — you press play and you are driving the thing.
 
-## THE HARD PART: a scenario must pin the WORLD, not the seed
+## The world is pinned by the SEED ALONE [settled 2026-08-10, by measurement]
 
-This is what the owner's note is about, and it is the whole engineering content of the ticket.
+This was drafted as the hard part of the ticket, on the belief that a scenario would have to store a
+region centre because the centre is "wherever the truck is standing" and the spawn probe reads the
+streamed network. **Measured, that belief was wrong, and the ticket gets simpler.**
 
-The road network is a pure function of `(seed, params)`, so the seed alone fixes the roads. **It does
-not fix the mission.** Story mode's region — and therefore the POI roster, the newspaper customers,
-and the route through them — is anchored on the **region centre**, and the region centre is *"wherever
-the truck happens to be standing when the region goes live"* (`story.js._beginWarm`).
+`test/world-determinism.mjs` (added 2026-08-10) pins all three links:
 
-Where the truck is standing is not stable:
+1. **The spawn is a pure function of the seed** — identical across 10 seeds × 4 prior streaming
+   histories (cold boot, idled at spawn, drove 3 km away, a warmed 2500 m story region, a wide
+   off-centre stream), position and heading exact.
+2. **The region centre IS the spawn.** Story entry reseats on *both* branches before capturing it —
+   `applySeed` on a seed change, `reseat` when the seed is already loaded — so where the player was
+   standing when they opened the menu cannot reach world generation.
+3. **What the region contains is a pure function of (seed, centre)** — the registered graph, the POI
+   candidate pool, the roster and the newspaper customers are byte-identical from any history.
 
-- `_reseatTruckAtSpawn` resolves the spawn with a two-tier `queryNearest` probe **against whatever is
-  streamed at that moment**. Its own comment concedes the consequence: *"14 spawn IDENTICAL, the 1
-  that differs lands on a CLOSER on-road point."*
-- Entering story mode on an already-loaded seed takes the `reseat()` branch rather than `applySeed()`,
-  and by then far more network is resident than on a cold load. That is exactly the fresh-load
-  sensitivity the owner is pointing at.
+So a scenario definition needs **the seed and nothing else about the world**. No stored centre, no
+"must be started from a cold load" caveat, no capture step before a scenario can be authored. Pick a
+seed, and the world — the roads, Larry's house, the fifteen customers, the route through them — is
+already the same for everyone, every time.
 
-BUG-45 fixed the *worst* symptom (mom and Larry swapping houses) by keying roster selection to each
-pad's own id instead of to an index into a distance-filtered list. Measured after that fix:
-
-| centre drift | POI roster | newspaper customers | region wall |
-|---|---|---|---|
-| ≤ 20 m | stable | stable | moves with the centre |
-| 50 m | stable | **churns** | moves |
-| 100 m | **mom can change** | churns | moves |
-
-Good enough for story mode, where each run is its own world. **Not good enough for a scenario**,
-whose entire promise is "the same challenge, every time, for everyone".
-
-### The fix this ticket needs
-
-**Pin the region centre in the scenario definition** — capture it once from a real session, store the
-literal coordinates, and have the scenario entry path use them verbatim instead of asking the truck
-where it is. The truck is then seated *from* the centre rather than the centre being derived *from*
-the truck, which inverts the dependency that makes this fragile.
-
-That also means a scenario does **not** depend on a fresh load, which is the more robust answer to
-the owner's constraint: rather than documenting "only start this from a cold boot", make cold and
-warm entry produce the same world by construction. A gate can then assert it — build the scenario's
-world twice from different streaming histories and diff the roster, the customer list and the route.
-
-## Prerequisite: the capture bridge must record the region centre
-
-`src/capture.js` records `place.region`, but that is only the ~200 m probe box around the mark. **The
-story region centre is recorded nowhere**, in any artifact.
-
-The cost of that gap is already measured: three owner bug reports on seed 90 this week
-(BUG-45, BUG-46, the tour-model defect) each had to be chased by rebuilding the region headlessly and
-*guessing* the centre from `streamCenterHistory`, and the guess was never confirmed. Add the live
-region (`storySystem.region()` → `{x, z, r}`) plus the active mission/route to the capture payload.
-
-It is a few lines, it makes every future story-mode bug report reproducible, and **it is how the first
-scenario's centre gets authored** — you drive to a world you like, capture, and paste the numbers into
-the scenario definition.
+The gate is the reason to trust that going forward: it is the thing that fails if a future change to
+the spawn probe, the story entry path or the crossing cull quietly reintroduces a dependency on where
+the player was.
 
 ## Scope
 
 - **`data/scenarios.js`** — authored definitions, data only, the `data/dialogue.js` pattern. Each
-  entry holds: `id`, display `name` + one-line `blurb`, `seed`, **`center: {x, z}`**, `regionRadius`,
-  the start state (where the truck is seated and facing), and the mission to arm.
+  entry holds: `id`, display `name` + one-line `blurb`, **`seed`**, the initial run-layer state, and
+  the mission to arm. **No centre, no radius** — the seed fixes those (see above).
 - **A scenario entry path** — a sibling of `StorySystem.enter()`, or a mode inside it, that takes a
-  definition instead of a seed prompt: apply the seed, seat the truck at the authored start, warm the
-  region on the **authored** centre, go live, arm the mission.
+  definition instead of a seed prompt: apply the seed, let the ordinary reseat put the truck at the
+  seed's spawn, warm the region on it, go live, arm the mission. This is `enter()` with the seed
+  modal replaced by a definition; it should not need a second world-setup path.
 - **Initial run-layer state, authored not inherited.** Day, energy, wallet and the paper-route tier
   are all run-layer (SM-INV-12) and all change the difficulty, so a scenario states them. Tier 1 on
   day 1 with a full tank of energy is the obvious default for the paper route, and it must be a
@@ -109,13 +81,16 @@ the scenario definition.
 
 ## The first scenario: the paper route
 
-Seed **90** is the owner's candidate world (captures 2026-08-09/10). Its centre must be captured once
-the bridge above records it — the value cannot be derived, and the guesses tried during BUG-46 all
-produced different Larrys.
+Seed **90** is the owner's candidate world (captures 2026-08-09/10) — and the seed is the whole
+definition of it.
 
-Start seated at Larry's place with the mission ready to take, so "press play" lands you at the thing
-rather than at a drive to the thing. Tier 1 (four customers) is the right rung: it is the one the
-owner has driven and rated, and it is ~2.8 km / par 2:32.
+Open question worth settling early: **does the scenario start at the spawn or at Larry's?** Starting
+at the spawn is the honest story-mode experience and needs nothing new; starting at Larry's makes
+"press play" land you at the thing rather than at a drive to the thing, and needs a seeded start
+override (the POI's position is derivable from the seed, so this stays seed-only either way).
+
+Tier 1 (four customers) is the right rung: it is the one the owner has driven and rated, and on seed
+90 it is ~2.8 km / par 2:32.
 
 ## Open questions for the owner
 
@@ -132,14 +107,11 @@ owner has driven and rated, and it is ~2.8 km / par 2:32.
 ## Acceptance
 
 - A scenario is playable from the main menu in one click, with no seed prompt.
-- **The world is identical every time.** Entering the same scenario from a cold boot and from a
-  warm session (free roam → scenario, story mode → exit → scenario) produces the same region centre,
-  the same POI roster, the same customer list and the same planned route. This is the ticket's
-  load-bearing acceptance criterion.
-- A gate asserts that: build the scenario's world twice under different streaming histories and diff
-  roster ids, customer ids and the route's segment list.
-- Captures record the story region centre and the active mission, so a scenario can be authored from
-  one and a bug report against one can be reproduced.
+- **The world is identical every time** — entering from a cold boot and from a warm session (free
+  roam → scenario, story mode → exit → scenario) gives the same region, roster, customers and route.
+  `test/world-determinism.mjs` already asserts the worldgen half of this; what this ticket must add
+  is that the scenario's own entry path does not reintroduce a dependency, plus the ROUTE (which that
+  gate does not yet cover).
 - Run-layer state (day, energy, wallet, tier) comes from the definition, not from whatever the last
   session left behind.
 - Debug tooling is locked out inside a scenario, as in story mode.
@@ -152,5 +124,7 @@ owner has driven and rated, and it is ~2.8 km / par 2:32.
 - Persisting scores or unlocks (FEAT-42).
 - Any second scenario. Dodge the Rocks and Escape the Police are named in DESIGN.md and need
   mechanics that do not exist; this ticket builds the frame and one occupant.
-- Fixing the spawn probe's stream sensitivity in general. Scenarios sidestep it by pinning the centre;
-  story mode's own exposure to it is noted in BUG-45 and stays open.
+- Storing a region centre, a radius, or any world state beyond the seed — measured unnecessary.
+- Recording the region centre in captures. Still worth doing for diagnosing story-mode bug reports
+  (three this week were chased by guessing it), but it is no longer a prerequisite for authoring a
+  scenario, so it belongs in its own small infra ticket rather than blocking this one.

@@ -6,6 +6,11 @@
 // flip which run survives → change queryNearest. This harness measures that entanglement directly:
 // for each seed it computes the spawn at the FULL recenter radius (HEAD) vs several REDUCED radii and
 // diffs (x,z,heading) exactly.
+//
+// NOTE (2026-08-10): this only ever varies the RECENTER RADIUS, always from a fresh RoadSystem — it
+// says nothing about whether prior streaming changes the spawn. That question (and the answer: it
+// does not) is test/world-determinism.mjs, which is a registered gate. This stays as the PERF-19.3
+// measurement it was written to be.
 import * as THREE from 'three'
 import { RoadSystem, CHUNK_SIZE } from '../src/road.js'
 import { seedFor } from '../src/seed.js'

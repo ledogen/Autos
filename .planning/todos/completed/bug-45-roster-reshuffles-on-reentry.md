@@ -21,9 +21,24 @@ invariants: SM-INV-12
 
 ## Root cause — a selection that depended on how many, not on which
 
+> **CORRECTION, 2026-08-10.** Link 1 below is WRONG, and it was asserted here without being
+> measured. When the owner asked to make worldgen strictly seed-determined, the claim was finally
+> tested and did not hold up: **the spawn IS a pure function of the seed** — identical across 10
+> seeds × 4 prior streaming histories (cold boot, idled at spawn, drove 3 km away, a warmed 2500 m
+> story region, a wide off-centre stream). So is everything downstream of it: at a fixed centre the
+> registered graph, the POI pool, the roster and the customers are byte-identical from any history.
+> `test/world-determinism.mjs` now pins all of that.
+>
+> Link 2 — the selection being an index into a variable-length list — is real, and the fix stands on
+> its own merits: a choice keyed to each pad's own identity is right whether or not anything
+> upstream ever moves. **What is now unexplained is the owner's observed swap.** It was real (they
+> reproduced it), but neither candidate mechanism reproduces headlessly, so something in the live
+> path is not replicated here — the region freeze, `poiSystem.clear()`/`_built`, or the route
+> Worker. If it ever recurs, that is where to look; do not re-derive link 1.
+
 Two links in a chain, and the second is the defect:
 
-1. **The region centre is not stable across entries.** `story.js` sets `_center` to wherever the
+1. **The region centre is not stable across entries.** *(Measured false — see the correction above.)* `story.js` sets `_center` to wherever the
    truck lands (`_beginWarm`: *"the truck is at the spawn, so that IS the region center"*). On a
    re-entry with the seed already loaded, `enter()` takes the `reseat()` branch rather than
    `applySeed()`, and `_reseatTruckAtSpawn` resolves the spawn with a two-tier probe —
