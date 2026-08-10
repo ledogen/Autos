@@ -5,10 +5,12 @@ Built for: Blender 4.x  |  Target: assets/models/broken-car.glb
 Style brief: .planning/research/ART-STYLE.md  ·  Mechanics: .planning/research/ASSETS.md
 
 BUILD REPORT (2026-08-09, Blender 5.2.0 LTS — mid-90s front-end + wrap bumper pass)
-  BrokenCar       2298 tris   (body, greenhouse, interior, trim, 3 road wheels,
+  BrokenCar       2420 tris   (body, greenhouse, interior, trim, 3 road wheels,
                                brake drum, spare, scissor jack, tyre iron)
   BrokenCarGlass    16 tris   (6 panes, alpha-blended, double-sided)
-  TOTAL           2314 tris   budget 2500
+  TOTAL           2436 tris   budget 2500
+  Reference: assets/models/src/ref-century/ — 9-angle board pulled from a 360
+  walkaround video (2026-08-10); compare against it before restyling anything.
   materials 9 · images 0 · car 2.03 W (mirror to mirror) x 5.07 L x 1.46 H m
   Front end matched to the MID-90s ('89-96 facelift) Century reference — NOT the
   '80 square nose (2026-08-09, user: "specifically the mid 90s one"): an integrated
@@ -374,6 +376,14 @@ def body_ring(y):
     h0 = wb + (wm - wb) * h_frac        # collinear baseline — invisible when roll=0
     roll = 0.015 * min(1.0, max(0.0, (y - 0.90) / 0.60))
     hx, hz = h0 + roll, zt - 0.058
+    # POWER DOME (2026-08-10, from the walkaround board): the Century's hood has a
+    # raised centre section whose creases run back from the grille corners.  J/J'
+    # sit at the grille's outer edge (x 0.30) and stand 12 mm above the F->G line,
+    # G rises to +0.030, so the deck is four facets: outer slope, dome shoulder,
+    # dome shoulder, outer slope.  Costs almost nothing — the cabin skip already
+    # removes the deck behind the cowl, so the extra faces exist only on the hood
+    # (and as creases on the nose/tail caps, where they also belong).
+    jz = zt + 0.024
     return [
         (0.0, y, zb),            # 0  A   underside centre
         (sill_x, y, zb),         # 1  B   sill / pocket floor edge
@@ -382,13 +392,15 @@ def body_ring(y):
         (wm, y, zt - 0.16),      # 4  E   shoulder
         (hx, y, hz),             # 5  H   fender-roll crease
         (wb, y, zt),             # 6  F   belt
-        (0.0, y, zt + 0.018),    # 7  G   crown
-        (-wb, y, zt),            # 8  F'
-        (-hx, y, hz),            # 9  H'
-        (-wm, y, zt - 0.16),     # 10 E'
-        (-lip_x, y, arch_z),     # 11 D'
-        (-well_x, y, arch_z),    # 12 C'
-        (-sill_x, y, zb),        # 13 B'
+        (0.30, y, jz),           # 7  J   dome crease
+        (0.0, y, zt + 0.030),    # 8  G   crown
+        (-0.30, y, jz),          # 9  J'
+        (-wb, y, zt),            # 10 F'
+        (-hx, y, hz),            # 11 H'
+        (-wm, y, zt - 0.16),     # 12 E'
+        (-lip_x, y, arch_z),     # 13 D'
+        (-well_x, y, arch_z),    # 14 C'
+        (-sill_x, y, zb),        # 15 B'
     ]
 
 
@@ -410,7 +422,7 @@ STATION_YS = sorted(
 # ended and the hole began.  The pocket is its own edges now, so the flank never has
 # to give way.
 BODY_BANDS = {0: "CarTrim", 1: "CarTrim", 2: "CarTrim",
-              11: "CarTrim", 12: "CarTrim", 13: "CarTrim"}
+              13: "CarTrim", 14: "CarTrim", 15: "CarTrim"}
 
 
 def _interp_belt(y):
@@ -422,8 +434,9 @@ def _interp_belt(y):
 # ---------------------------------------------------------------------------
 # BODY + GREENHOUSE
 # ---------------------------------------------------------------------------
-# CABIN OPENING.  The body is a closed tube, so section edges 6 and 7 — belt-right ->
-# crown -> belt-left — form a solid deck at BELTLINE height running the whole length.
+# CABIN OPENING.  The body is a closed tube, so section edges 6..9 — belt-right ->
+# dome -> crown -> dome -> belt-left — form a solid deck at BELTLINE height running
+# the whole length.
 # Under the greenhouse that deck is a lid over the interior: the tub, the benches and
 # the steering wheel all sit below it and are completely invisible, with only the top
 # 150 mm of each seat back poking through.  Cut edges 4 and 5 out of every segment
@@ -434,7 +447,7 @@ CABIN_FROM_Y = 0.900                # the cowl; everything behind it is open cab
 
 
 def _skip_cabin_deck(segment, k):
-    return k in (6, 7) and STATION_YS[segment] <= CABIN_FROM_Y + 1e-6
+    return k in (6, 7, 8, 9) and STATION_YS[segment] <= CABIN_FROM_Y + 1e-6
 
 
 def build_body(p):
@@ -700,20 +713,23 @@ def build_detail(p):
     # visible top edge is wherever that slope crosses the skin (~z 0.625 at the
     # nose centre).  No proud top edge, no shelf: the bumper reads as a bulge OF
     # the body, and its visible height shrank ~60 mm with zt_ 0.685 -> 0.640.
-    zb_, zv1_, zs0_, zs1_, zt_ = 0.245, 0.385, 0.462, 0.538, 0.640
+    # zc_ is the CHROME LIP: on the reference a bright line runs directly under the
+    # black rub strip all the way around the cover (2026-08-10, walkaround board).
+    zb_, zv1_, zs0_, zc_, zs1_, zt_ = 0.245, 0.385, 0.455, 0.475, 0.545, 0.640
 
     def bring(px, py, nx, ny, d_apex, zb=zb_, zv=zv1_):
         """One bumper ring: the profile stood off plan point (px,py) along unit
         outward normal (nx,ny).  The back edge AND the top edge sit AT the path
         point, which every path entry keeps inside the body skin — that buries
         the rear seam and rolls the top into the body.  The strip z band
-        (zs0_/zs1_) is constant so the strip stays dead level all the way around
-        the wrap; zb/zv rise along the flank so the cover's lower edge climbs
-        clear of the rocker instead of hanging at nose depth."""
+        (zs0_/zc_/zs1_) is constant so the strip and its chrome lip stay dead
+        level all the way around the wrap; zb/zv rise along the flank so the
+        cover's lower edge climbs clear of the rocker instead of hanging at
+        nose depth."""
         def at(d, z):
             return (px + nx * d, py + ny * d, z)
         return [at(0.0, zb), at(d_apex - 0.058, zb), at(d_apex - 0.040, zv),
-                at(d_apex, zs0_), at(d_apex, zs1_), at(0.0, zt_)]
+                at(d_apex, zs0_), at(d_apex, zc_), at(d_apex, zs1_), at(0.0, zt_)]
 
     # Corner + flank path, one side: (px, py, nx, ny, d_apex, zb, zv).
     # MATCHED TO THE BODY'S PLAN CORNER (2026-08-09b): the first wrap attempt ran
@@ -740,10 +756,11 @@ def build_detail(p):
         rings.append(bring(x, y_back, 0.0, 1.0, ya - y_back))
     rings += [bring(px, py, nx, ny, da, zb, zv)
               for px, py, nx, ny, da, zb, zv in WRAP]
-    # 0 underside, 1 valance, 3 the rub strip riding the apex; 2 (the tuck-under)
-    # and 4 (the chin slope itself) are painted body surface — that continuity is
-    # what makes it a bump out of the body rather than a fitted part.
-    loft(p, rings, "CarPaint", band_mats={0: "CarTrim", 1: "CarTrim", 3: "CarTrim"})
+    # 0 underside, 1 valance, 3 the CHROME LIP, 4 the rub strip riding the apex;
+    # 2 (the tuck-under) and 5 (the chin slope itself) are painted body surface —
+    # that continuity is what makes it a bump out of the body, not a fitted part.
+    loft(p, rings, "CarPaint",
+         band_mats={0: "CarTrim", 1: "CarTrim", 3: "CarChrome", 4: "CarTrim"})
 
     # Bumperettes — mid-90s, so they hang BELOW the bumper line (2026-08-09; the
     # tall uprights that stood over the strip were the '80 car and are gone).  Each
@@ -797,16 +814,18 @@ def build_detail(p):
         layer on the one raked plane no matter where it starts."""
         return 2.494 - G_RAKE * (z0 - 0.700) / 0.210
 
-    raked(-0.228, 0.228, gy(0.694) - 0.016, 0.694, 0.884, "CarTrim", d=0.050)  # recess
-    raked(-0.228, 0.228, gy(0.700), 0.700, 0.724, "CarChrome")         # rail, lower
-    raked(-0.228, 0.228, gy(0.856), 0.856, 0.880, "CarChrome")         # rail, upper
+    # Grille WIDENED to +/-0.292 (2026-08-10, walkaround board: the real aperture
+    # spans nearly half the car's width, and at +/-0.228 the nose read pinched).
+    raked(-0.292, 0.292, gy(0.694) - 0.016, 0.694, 0.884, "CarTrim", d=0.050)  # recess
+    raked(-0.292, 0.292, gy(0.700), 0.700, 0.724, "CarChrome")         # rail, lower
+    raked(-0.292, 0.292, gy(0.856), 0.856, 0.880, "CarChrome")         # rail, upper
     for sx in (1, -1):                                                 # end members
-        raked(sx * 0.206, sx * 0.228, gy(0.700), 0.700, 0.880, "CarChrome")
-    # VERTICAL RIBS — seven, evenly pitched across the aperture.  Still chunkier
-    # than the real car's fine waterfall (16 mm rib, 36 mm gap): at this facet scale
-    # that is what reads as "many vertical bars"; five wider ones read as jail bars.
-    for i in range(-3, 4):
-        cx = i * 0.0515
+        raked(sx * 0.270, sx * 0.292, gy(0.700), 0.700, 0.880, "CarChrome")
+    # VERTICAL RIBS — nine, evenly pitched across the widened aperture.  Still
+    # chunkier than the real car's fine waterfall (16 mm rib, 38 mm gap): at this
+    # facet scale that is what reads as "many vertical bars", not jail bars.
+    for i in range(-4, 5):
+        cx = i * 0.054
         raked(cx - 0.008, cx + 0.008, gy(0.724) - 0.002, 0.724, 0.856, "CarChrome")
 
     # Lamps are WEDGES, not boxes: the outboard end sits further back in Y so each
@@ -818,18 +837,19 @@ def build_detail(p):
             hexa(p, [(a, yi0, z0), (b, yo0, z0), (b, yo1, z0), (a, yi1, z0),
                      (a, yi0, z1), (b, yo0, z1), (b, yo1, z1), (a, yi1, z1)], mat)
 
-    # WIDE slim lamps (2026-08-09, mid-90s): ~330 mm of lens, nearly touching the
-    # grille frame, thin dark bezel only — on the reference the lamp sits in body
-    # colour with barely any surround, and a fat bezel read as '80s sealed-beams.
-    wedge(0.240, 0.600, 2.412, 2.470, 2.400, 2.448, 0.745, 0.872, "CarTrim")   # bezel
-    wedge(0.256, 0.582, 2.452, 2.482, 2.442, 2.468, 0.757, 0.860, "CarLamp")   # lens
-    # Corner signal — AMBER, the mid-90s tell.  A separate short lens whose front
-    # face angles back twice as hard as the main lens.  It CANNOT physically wrap
-    # the corner: the nose cap is ~0.79 half-wide at lamp height, so anything swept
-    # behind y 2.440 inboard of that is buried in the body (an early attempt reached
-    # x 0.716 / y 2.35 and vanished entirely).  The angle change against the main
-    # lens is what carries the wrap read.
-    wedge(0.600, 0.718, 2.446, 2.472, 2.408, 2.434, 0.757, 0.860, "CarSignal")
+    # TALL lamps (2026-08-10, walkaround board): the real lens is nearly as tall as
+    # the grille (~135 mm here against the grille's 180), sitting tight beside it,
+    # thin dark bezel only — on the reference the lamp sits in body colour with
+    # barely any surround, and a fat bezel read as '80s sealed-beams.
+    wedge(0.302, 0.598, 2.412, 2.470, 2.400, 2.448, 0.728, 0.878, "CarTrim")   # bezel
+    wedge(0.312, 0.588, 2.452, 2.482, 2.442, 2.468, 0.740, 0.868, "CarLamp")   # lens
+    # Corner signal — AMBER, the mid-90s tell, matching the lens height.  A separate
+    # short lens whose front face angles back twice as hard as the main lens.  It
+    # CANNOT physically wrap the corner: the nose cap is ~0.79 half-wide at lamp
+    # height, so anything swept behind y 2.440 inboard of that is buried in the body
+    # (an early attempt reached x 0.716 / y 2.35 and vanished entirely).  The angle
+    # change against the main lens is what carries the wrap read.
+    wedge(0.606, 0.716, 2.446, 2.472, 2.408, 2.434, 0.740, 0.868, "CarSignal")
 
     # Stand-up hood ornament — the tri-shield-in-a-ring reduced to a thin chrome
     # blade on the hood crown, base buried in the crown facet (crown at y 2.28 is
