@@ -67,6 +67,8 @@ export class StorySystem {
    *   setGameMode(mode)          — flip window.__setGameMode
    *   getWorldSeed()             — current numeric worldSeed
    *   applySeed(seedStr)         — reseed + regenerate the world; resolves when the rebuild settles
+   *   clearSpawnOverride()       — drop any free-roam teleport spawn point, so the SEED decides
+   *                                where the truck seats and therefore where the region centres
    *   reseat()                   — re-seat the truck at the canonical seed spawn; resolves when seated
    *   setDebugLockout(locked)    — hide + disable the debug GUI while true
    *   ensureRegionRoutes()       — PERF-26: resolve once the story-region route cache is fetched
@@ -151,6 +153,16 @@ export class StorySystem {
     this._pumpAcc = 0
     this._armed = false
     this._phase = 'settling'
+    // THE SEED DECIDES WHERE THE WORLD IS BUILT, AND NOTHING ELSE (owner, 2026-08-11).
+    //
+    // A free-roam teleport leaves a spawn override behind, and main.js's reseat honours it ahead of
+    // the seed's own resolveSpawn. The region centre is then captured from wherever the truck landed
+    // (`_beginWarm` below), so the whole region — every POI, every newspaper customer, the wall —
+    // follows the PLAYER rather than the seed. Reproduced: teleport to Larry's, exit to free roam,
+    // re-enter the same seed, and Larry's house is gone because the region re-centred on the spot he
+    // used to occupy. Dropping the override here is what makes a seed an absolute determinism
+    // machine in the live path, which test/world-determinism.mjs asserts headlessly.
+    this._d.clearSpawnOverride?.()
     this._d.setLoading(true, 'entering the region…')
     // Quick Job stays hidden until the region is live — its planner would fight the region warm
     // for the road Worker, and there is nothing to drive to yet.

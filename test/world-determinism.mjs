@@ -149,5 +149,33 @@ for (const [seed, C] of [[6, { x: 4500, z: 600 }], [90, { x: -72.27, z: 140.48 }
     }
 }
 
+// ── 4. THE LIVE PATH MUST NOT BYPASS resolveSpawn ──────────────────────────────────────────────
+//
+// Everything above measures `resolveSpawn`, which is pure in the seed. The live game can SKIP it:
+// `_reseatTruckAtSpawnInner` checks `_spawnOverride` FIRST, and a free-roam teleport leaves one set.
+// The region centre is then captured from wherever the truck landed, so the world follows the player
+// — teleport to Larry's, exit to free roam, re-enter the same seed, and every POI has moved (owner,
+// 2026-08-11). No headless harness can see that: it is main.js/story.js wiring, not worldgen.
+//
+// So this is a SOURCE-TEXT check, in the same spirit as paper-route.mjs's SM-INV-4 guard. It is
+// crude on purpose — it cannot prove the wiring works, only that the load-bearing line is still
+// there. The measurements above are worthless in practice if it is ever deleted.
+{
+    const { readFileSync } = await import('node:fs')
+    const story = readFileSync(new URL('../src/story.js', import.meta.url), 'utf8')
+    const main  = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+    check('story entry drops the free-roam spawn override (the seed decides where the world is)',
+        /clearSpawnOverride\??\.?\(\)/.test(story),
+        'src/story.js enter() no longer calls clearSpawnOverride')
+    check('…and main.js supplies it', /clearSpawnOverride\s*:/.test(main))
+    check('…and it is dropped BEFORE the world settles, not after',
+        story.indexOf('clearSpawnOverride') < story.indexOf('this._d.applySeed(seed)'),
+        'the override must be gone before applySeed/reseat runs, or the reseat still honours it')
+    // The trap that made this necessary: the override is consulted ahead of resolveSpawn.
+    check('the spawn override is still consulted ahead of resolveSpawn (this check is still needed)',
+        main.indexOf('if (_spawnOverride)') < main.indexOf('resolveSpawn(worldSeed'),
+        'if this flipped, re-read whether the guard above is still the right shape')
+}
+
 console.log(fails ? `\n${fails} CHECK(S) FAILED` : '\nALL WORLD-DETERMINISM CHECKS PASSED')
 process.exit(fails ? 1 : 0)

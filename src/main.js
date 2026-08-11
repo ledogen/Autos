@@ -800,6 +800,14 @@ function _reseatTruckAtSpawn () {
 // the seed-derived resolveSpawn placement: { x, y, z, heading }. Set by the map double-click
 // teleport, the free-cam "teleport here" button, and Shift+R (set spawn to current pose). It is
 // cleared on seed change / world regen (a stale point in a fresh world makes no sense).
+//
+// IT IS A FREE-ROAM CONVENIENCE AND STORY MODE MUST NOT INHERIT IT (owner, 2026-08-11). This
+// override is checked BEFORE resolveSpawn in _reseatTruckAtSpawnInner, so while it is set the truck
+// no longer seats at the seed's spawn — and story.js captures the region centre from wherever the
+// truck ends up (`_beginWarm`). Chained: teleport to Larry's → exit to free roam (you appear where
+// Larry's was) → re-enter the same seed → the region re-centres THERE and every POI moves, which is
+// exactly the bug the owner reproduced. `clearSpawnOverride` is called on story entry so the seed,
+// and nothing else, decides where the world is built. See test/world-determinism.mjs.
 let _spawnOverride = null
 
 // Extract the truck's current heading (Y-yaw, radians) from its quaternion, inverse of
@@ -4007,6 +4015,11 @@ const storySystem = new StorySystem({
   getWorldSeed: () => worldSeed,
   applySeed: (v) => applyWorldSeed(v),     // resolves when the rebuild + reseat have settled
   reseat: () => _reseatTruckAtSpawn(),     // resolves when the truck is seated at the spawn
+  // THE SEED DECIDES WHERE THE WORLD IS, AND NOTHING ELSE (owner, 2026-08-11). A free-roam teleport
+  // leaves a spawn override behind, and _reseatTruckAtSpawnInner honours it ahead of resolveSpawn —
+  // so without this, entering story mode seats the truck wherever you last teleported and the region
+  // centre (and therefore every POI) follows the player instead of the seed. See _spawnOverride.
+  clearSpawnOverride: () => { _spawnOverride = null },
   setDebugLockout: (locked) => {
     setDebugLockout(locked)
     // Collision-sphere debug lives in main.js, not the GUI — force it off entering the lockout so

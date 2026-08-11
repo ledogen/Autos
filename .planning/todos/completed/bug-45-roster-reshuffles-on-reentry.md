@@ -32,9 +32,16 @@ invariants: SM-INV-12
 > Link 2 — the selection being an index into a variable-length list — is real, and the fix stands on
 > its own merits: a choice keyed to each pad's own identity is right whether or not anything
 > upstream ever moves. **What is now unexplained is the owner's observed swap.** It was real (they
-> reproduced it), but neither candidate mechanism reproduces headlessly, so something in the live
-> path is not replicated here — the region freeze, `poiSystem.clear()`/`_built`, or the route
-> Worker. If it ever recurs, that is where to look; do not re-derive link 1.
+> reproduced it), but neither candidate mechanism reproduces headlessly.
+>
+> **RESOLVED, 2026-08-11 — it was the TELEPORT.** `_reseatTruckAtSpawnInner` checks `_spawnOverride`
+> **before** `resolveSpawn`, and a free-roam teleport leaves one set. The owner's repro always began
+> "tp to Larry's": that override then survived the mode switch, so exiting story mode dropped them
+> where Larry's had been, and re-entering seated them there — and `story.js._beginWarm` captures the
+> region centre from wherever the truck landed. The region re-centred on the player, and every POI
+> moved with it. Nothing about the spawn PROBE was ever at fault, which is why measuring it cleared
+> it. Fixed by clearing the override on story entry; `test/world-determinism.mjs` §4 pins the wiring
+> with a source-text check, because no headless harness can see it.
 
 Two links in a chain, and the second is the defect:
 
