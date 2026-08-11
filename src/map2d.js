@@ -61,8 +61,12 @@ const PAPER_GREEN   = '#cfe2bd'   // vegetated ground. ONE colour for now: tree 
 // blends most of the stroke into the paper, so a mid-tone burgundy comes out mauve on screen.
 const CONTOUR_COLOR = '#7e2f3f'   // intermediate contour — dark burgundy
 const INDEX_COLOR   = '#4d1622'   // index contour (every INDEX_EVERY-th), deeper burgundy
-const CONTOUR_W     = 0.65        // px — intermediate contour weight
-const INDEX_W       = 1.15        // px — index contour weight
+// Contour weights, CSS px (the context is pre-scaled by devicePixelRatio, so on a retina panel
+// these are 2x as many device pixels and stay crisp). Fining these down past ~0.4 stops making the
+// line thinner and starts making it fainter — antialiasing has no sub-pixel left to give — which
+// is why the inks below are darker than the weights alone would suggest.
+const CONTOUR_W     = 0.5         // px — intermediate contour weight
+const INDEX_W       = 0.85        // px — index contour weight
 const ROAD_INK      = '#0b0b0b'   // roads — solid black, for maximum contrast against the sheet
 const ROAD_W        = 2.2         // px — road stroke weight
 const MAP_INK       = '#1a1a1a'   // general map ink (neatline, collar lettering, scale bar)
