@@ -70,12 +70,19 @@ exact optimum it tied on seeds 11 and 42 and lost **+15.3 % (2.95 km)** on seed 
 ## The invariant this must not break
 
 **SM-INV-2 — one par, one oracle.** `run.par` is computed once at accept over the tour as planned
-and is **never recomputed**. A re-plan produces guidance only. `gps.js` currently carries a comment
-arguing the opposite (that pointing anywhere other than the priced tour would guide you along a
-route the clock is not measuring) — that comment is superseded by this ticket and must be rewritten,
-not deleted: the resolution is that after you have deviated, the priced tour is no longer a route
-you are driving, and the honest thing is to show the best completion while the clock keeps measuring
-the deal you took. Say that in the code.
+and is **never recomputed**. A re-plan produces guidance only.
+
+**And the guidance is always the SHORTEST completion, precisely because par is frozen** (owner,
+2026-08-11). The two facts are not in tension — the second is the reason for the first. Once you
+have gone off the priced tour, that tour is no longer a route you are driving; it is only a number
+you are being measured against. The shortest way to finish from where you actually are is therefore
+the player's *best remaining chance of coming in under a par that was set on a different line*, and
+pointing at anything else would be withholding help from someone who is already behind.
+
+`gps.js` currently carries a comment arguing the opposite — that pointing anywhere other than the
+priced tour would guide you along a route the clock is not measuring. It is superseded and must be
+**rewritten, not deleted**: the clock measuring a different line is exactly why the guidance must be
+optimal rather than faithful. Say that in the code.
 
 A corollary worth pinning in the gate: a player who follows the GPS exactly from the start never
 triggers a re-plan, so the accept-time optimum and the driven line are the same and par is exact.

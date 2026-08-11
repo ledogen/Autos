@@ -166,8 +166,24 @@ opening and the walk-to-Larry tutorial.
 - **The expediency bonus is unreachable without full coverage.**
 - **One par, one oracle** (SM-INV-2): `computePar()` once over the tour.
 - **`payoutFor()`/`gradeRun()` are not called**; `settle()` is.
-- **15 houses generate always** inside 1 km (radius relaxing only if the network cannot supply),
-  deterministic and window-invariant; the tier only chooses customers (SM-INV-12).
+- **Houses generate always**, deterministic and window-invariant; the tier only chooses customers
+  (SM-INV-12). *Amended 2026-08-11 (owner): the rings are per-rung and HARD — 1.0 / 1.5 / 2.0 /
+  2.0 km — and they no longer relax outward to chase the count. Placement fills them innermost
+  first from `houseRungs()`, which is what makes each rung servable and makes the nesting
+  structural. `poiHouseCount` and `poiHouseR` no longer exist; the ladder is the source of truth.*
+- **OWNER-VERIFIED DIFFICULTY AND PAR — not closeable without this.** The route has been driven
+  once ("very challenging in a good way hard") but nothing about its numbers has been evaluated
+  against real play. The owner must drive it and rule on:
+  - **Is the difficulty right, per rung?** Rung one and rung four are different activities now that
+    the ring widens with the ladder — 2.47 km and four porches against 19.24 km and fifteen.
+  - **Is par honest?** `computePar()` prices the tour with the oracle, but nobody has compared its
+    number to a real drive at a real pace. A par that is generous makes the bell decorative; a par
+    that is tight makes the expediency bonus unreachable and the whole ladder feel punitive. This
+    is the measurement the payout constants below are all waiting on.
+  - The constants still unbalanced against play, listed in Open Questions: `paperW = 0.60`,
+    `expediteOn/Full`, `bonusMax`, the rank thresholds, `throwSpeed = 16`, `dragK = 0.033`, and
+    whether a fifteen-customer route at ~19 km / par ~19 min is the right top rung. A perfect
+    tier-1 route currently pays **$43**.
 - **Houses never appear in `poiSystem.list()`** — the structural form of "most missions don't go to
   houses".
 - **Mom carries both tags**; Larry carries no `newsCustomer`.
