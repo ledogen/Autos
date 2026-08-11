@@ -114,7 +114,23 @@ const CONTOUR_IV = 20
 const TOPO_STEP_PX  = 4           // target screen size of one sample cell
 const TOPO_STEP_MIN = 4           // m — no finer than this (the field has no detail below it)
 const TOPO_STEP_MAX = 24          // m — Nyquist guard against the 250 m octave
-const TOPO_GRID_MAX = 240         // cells per axis — bounds the marching-squares cost per redraw
+// Cells per axis, bounding the marching-squares cost per redraw. Scaled with BG_OVERSCAN below:
+// the cached bitmap now covers OVERSCAN× the screen per axis, and holding the old cap would have
+// silently coarsened the sample step by the same factor — aliasing the contours as a side effect
+// of an unrelated change.
+const TOPO_GRID_MAX = 480
+
+// ── Background overscan ───────────────────────────────────────────────────────────────────────
+// The cached background is rendered OVERSCAN× the screen in each axis, centred on the view, so
+// half a screen of map already exists off every edge. Mid-drag, render() blits that bitmap at an
+// offset (the sharp redraw waits for the gesture to settle — see _deferBgRedraw); at 1× the
+// leading edge had nothing to reveal and scrolled in blank until you let go, which read as the
+// map being generated under you. With the margin the sheet feels pre-printed: you are dragging a
+// window over paper that is already drawn.
+//
+// It is a cheat, not a guarantee — drag further than the margin in one gesture and you outrun it.
+// Costs OVERSCAN² in redraw work and bitmap memory, which is why it is 2 and not 3.
+const BG_OVERSCAN = 2
 
 // ── The collar (border) ───────────────────────────────────────────────────────────────────────
 // The sheet is buried in an off-white margin carrying tick marks and an A–Z / 1–n index, so any
@@ -204,6 +220,8 @@ export class Map2D {
         // triggers one sharp rebuild after the gesture settles. Content changes (stream chunks,
         // params) still set _bgDirty for an immediate rebuild.
         this._bg      = document.createElement('canvas')
+        this._bgOffX  = 0                // overscan margin (px); real values set in _resize
+        this._bgOffY  = 0
         this._bgDirty = true
         this._bgPanX  = 0                // transform the cached bg was rendered at
         this._bgPanZ  = 0
@@ -514,10 +532,13 @@ export class Map2D {
     _resize() {
         const dpr = window.devicePixelRatio || 1
         const w = window.innerWidth, h = window.innerHeight
-        for (const c of [this._canvas, this._bg]) {
-            c.width = Math.round(w * dpr)
-            c.height = Math.round(h * dpr)
-        }
+        this._canvas.width = Math.round(w * dpr)
+        this._canvas.height = Math.round(h * dpr)
+        // The cached background is bigger than the screen on every side — see BG_OVERSCAN.
+        this._bgOffX = Math.round(w * (BG_OVERSCAN - 1) / 2)
+        this._bgOffY = Math.round(h * (BG_OVERSCAN - 1) / 2)
+        this._bg.width  = Math.round(w * BG_OVERSCAN * dpr)
+        this._bg.height = Math.round(h * BG_OVERSCAN * dpr)
         this._canvas.style.width = w + 'px'
         this._canvas.style.height = h + 'px'
         this._dpr = dpr
@@ -640,9 +661,14 @@ export class Map2D {
         // the gesture to settle; see _deferBgRedraw). At rest the delta is identity.
         const k = this._bgZoom ? this._zoom / this._bgZoom : 1
         const s = this._sheet()
+        // (dx, dy) maps a SCREEN coord in the bg's frame to one in the current frame. The bitmap's
+        // pixel (0,0) is screen (-bgOffX, -bgOffY) in that frame — it was drawn through a translate
+        // by the overscan margin — so the destination corner backs off by that margin, scaled.
         const dx = s.cx - k * s.cx + (this._bgPanX - this._panX) * this._zoom
         const dy = s.cy - k * s.cy + (this._bgPanZ - this._panZ) * this._zoom
-        ctx.drawImage(this._bg, dx, dy, W * k, H * k)
+        ctx.drawImage(this._bg,
+                      dx - k * this._bgOffX, dy - k * this._bgOffY,
+                      W * BG_OVERSCAN * k, H * BG_OVERSCAN * k)
 
         this._drawRegion(ctx)    // under the mission route — it's world furniture, not the subject
         this._drawCampZones(ctx) // FEAT-45: yellow casing on the road stretches inside a camp zone
@@ -707,13 +733,18 @@ export class Map2D {
 
     _drawBackground() {
         const ctx = this._bg.getContext('2d')
-        ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0)
         const W = this._canvas.clientWidth, H = this._canvas.clientHeight
-        ctx.clearRect(0, 0, W, H)
+        const ox = this._bgOffX, oy = this._bgOffY
+        // Translate by the overscan margin so every layer below can keep drawing in ordinary
+        // SCREEN coordinates via _sx/_sy — the margin then falls outside [0,W]x[0,H] naturally,
+        // and nothing but this line has to know the bitmap is oversized.
+        ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0)
+        ctx.clearRect(0, 0, W * BG_OVERSCAN, H * BG_OVERSCAN)
+        ctx.translate(ox, oy)
         // Record the transform this bitmap is valid for — render() blits through the delta.
         this._bgPanX = this._panX; this._bgPanZ = this._panZ; this._bgZoom = this._zoom
 
-        this._drawTopo(ctx, W, H)
+        this._drawTopo(ctx, -ox, -oy, W + ox, H + oy)
         this._drawRoads(ctx)
         this._drawCrossings(ctx)
         this._drawNodes(ctx)
@@ -732,27 +763,36 @@ export class Map2D {
     // lineCap the joins are invisible at any zoom this map supports, and it saves carrying the
     // edge-adjacency bookkeeping that tracing needs. Cost lands only in the CACHED background
     // redraw, which is already debounced behind a settled pan/zoom (see _deferBgRedraw).
-    _drawTopo(ctx, W, H) {
+    /**
+     * @param ctx
+     * @param px0,py0,px1,py1 — the SCREEN-space rect to cover. Not necessarily the canvas: the
+     *        cached background is overscanned, so this is normally inset by a negative margin on
+     *        two sides and past the canvas on the other two.
+     */
+    _drawTopo(ctx, px0, py0, px1, py1) {
         const road = this._road
         if (!road) return
         const amp = this._getParams().terrainAmplitude ?? 1
+        const Wpx = px1 - px0, Hpx = py1 - py0
 
         ctx.fillStyle = PAPER_GREEN
-        ctx.fillRect(0, 0, W, H)
+        ctx.fillRect(px0, py0, Wpx, Hpx)
 
-        // ── Sample grid. One cell margin past each edge so contours reach the canvas border
+        // ── Sample grid. One cell margin past each edge so contours reach the rect's border
         //    instead of stopping a cell short of it.
         let step = Math.min(TOPO_STEP_MAX, Math.max(TOPO_STEP_MIN, TOPO_STEP_PX / this._zoom))
-        let nx = Math.ceil(W / (step * this._zoom)) + 3
-        let nz = Math.ceil(H / (step * this._zoom)) + 3
+        let nx = Math.ceil(Wpx / (step * this._zoom)) + 3
+        let nz = Math.ceil(Hpx / (step * this._zoom)) + 3
         if (nx > TOPO_GRID_MAX || nz > TOPO_GRID_MAX) {
             const k = Math.max(nx, nz) / TOPO_GRID_MAX
             step *= k
             nx = Math.ceil(nx / k); nz = Math.ceil(nz / k)
         }
+        // World origin of the grid = the world point under the rect's top-left screen corner,
+        // backed off one cell.
         const s = this._sheet()
-        const x0 = this._panX - s.cx / this._zoom - step
-        const z0 = this._panZ - s.cy / this._zoom - step
+        const x0 = this._panX + (px0 - s.cx) / this._zoom - step
+        const z0 = this._panZ + (py0 - s.cy) / this._zoom - step
 
         const h = new Float32Array(nx * nz)
         for (let j = 0; j < nz; j++) {
