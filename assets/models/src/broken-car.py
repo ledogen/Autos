@@ -937,10 +937,11 @@ def build_detail(p):
     for sx in (1, -1):
         x0, x1 = sorted((sx * 0.615, sx * 0.822))
         box(p, x0, x1, -2.480, -2.425, 0.675, 0.995, "CarTail")
-        # Reverse lamps — the clear segment at the tail lamp's inner bottom
-        # corner on the reference, as its own pale box tight against the cluster.
-        x0, x1 = sorted((sx * 0.505, sx * 0.605))
-        box(p, x0, x1, -2.468, -2.420, 0.680, 0.780, "CarLamp")
+        # Reverse lamps — flanking the licence plate on the tailgate (2026-08-11,
+        # user; was at the tail cluster's inner corner), same proudness as the
+        # plate so the three read as one plate-and-lamps unit.
+        x0, x1 = sorted((sx * 0.195, sx * 0.315))
+        box(p, x0, x1, -2.466, -2.420, 0.715, 0.795, "CarLamp")
     # Licence plate — centred on the tailgate between the lamps (the wagon carries
     # it on the gate, not the bumper), proud of the -2.440 tail face by ~26 mm.
     box(p, -0.155, 0.155, -2.466, -2.420, 0.700, 0.860, "CarLamp")
