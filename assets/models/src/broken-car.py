@@ -5,10 +5,10 @@ Built for: Blender 4.x  |  Target: assets/models/broken-car.glb
 Style brief: .planning/research/ART-STYLE.md  ·  Mechanics: .planning/research/ASSETS.md
 
 BUILD REPORT (2026-08-09, Blender 5.2.0 LTS — mid-90s front-end + wrap bumper pass)
-  BrokenCar       2468 tris   (body, greenhouse, interior, trim, 3 road wheels,
+  BrokenCar       2480 tris   (body, greenhouse, interior, trim, 3 road wheels,
                                brake drum, spare, scissor jack, tyre iron)
   BrokenCarGlass    16 tris   (6 panes, alpha-blended, double-sided)
-  TOTAL           2484 tris   budget 2500
+  TOTAL           2496 tris   budget 2500 — effectively FULL; reclaim before adding
   Reference: assets/models/src/ref-century/ — 9-angle board pulled from a 360
   walkaround video (2026-08-10); compare against it before restyling anything.
   materials 9 · images 0 · car 2.03 W (mirror to mirror) x 5.07 L x 1.46 H m
@@ -781,10 +781,10 @@ def build_detail(p):
         box(p, gx - 0.036, gx + 0.036, 2.396, chin_at(gx)[1] + 0.016,
             0.292, 0.452, "CarTrim")
 
-    # Licence plate — centre, hanging under the bumper like the reference, not on it.
-    # Dark backing proud of the valance, pale plate proud of the backing; the plate
-    # face leads the chin apex (2.558 at x=0) by ~4 mm so it reads as hung hardware.
-    box(p, -0.170, 0.170, 2.400, 2.546, 0.286, 0.462, "CarTrim")
+    # Licence plate — centre, hanging under the bumper like the reference, not on
+    # it; the face leads the chin apex (2.558 at x=0) by ~4 mm so it reads as hung
+    # hardware.  (Its dark backing box was reclaimed 2026-08-11 to pay for the
+    # marker bezel — 12 tris — and the plate reads fine against the valance.)
     box(p, -0.150, 0.150, 2.410, 2.562, 0.300, 0.448, "CarLamp")
 
     # GRILLE TRAP: a filled chrome "surround" box sits in FRONT of the dark recess
@@ -873,6 +873,18 @@ def build_detail(p):
     # rear point ~15 mm proud of the flank, and the whole lens leans with the
     # tumblehome.  The kink sits at y 2.448 — 2 mm inside the y>=2.450 fascia
     # guard, deliberately: it is corner furniture, exempt like the bumper.
+    # The marker's FRAME first (2026-08-11b): the lamp bezel used to stop at the
+    # lamp, leaving the marker frameless.  Same corner-edge-tracking logic as the
+    # lens, one dark hexa per side: ~10 mm behind the lens face, edges extended
+    # past the lens (inner edge meets the lamp bezel at 0.648, rear edge sweeps
+    # 14 mm further around the corner), kink ~6 mm outboard of the E->F corner
+    # edge at its own z (which is 0.7873 at z 0.728, 0.7498 at z 0.878).
+    for sx in (1, -1):
+        pts = []
+        for z, xk, xw in ((0.728, 0.793, 0.836), (0.878, 0.756, 0.802)):
+            plan = [(0.648, 2.460), (xk, 2.440), (xw, 2.386), (0.692, 2.392)]
+            pts += [(sx * px, py, z) for px, py in plan]
+        hexa(p, pts, "CarTrim")
     for sx in (1, -1):
         pts = []
         for z, xk, xw in ((0.740, 0.790, 0.840), (0.868, 0.760, 0.806)):
