@@ -20,7 +20,7 @@
 import * as THREE from 'three'
 import { RoadSystem } from './road.js'
 import { MISSION_PLAN_RADIUS } from './mission.js'
-import { POI_ICONS, POI_ICON_PX, TUNNEL_ICON } from '../data/map-icons.js'   // FEAT-60: map glyphs
+import { POI_ICONS, POI_ICON_PX } from '../data/map-icons.js'   // FEAT-60: map glyphs
 
 // Streamed radius of the map's own RoadSystem around the pan cursor. UNIFIED with the story-mode
 // planner's radius: the two are the big read-only networks in the app and they share route caches,
@@ -69,6 +69,10 @@ const CONTOUR_W     = 0.5         // px — intermediate contour weight
 const INDEX_W       = 0.85        // px — index contour weight
 const ROAD_INK      = '#0b0b0b'   // roads — solid black, for maximum contrast against the sheet
 const ROAD_W        = 2.2         // px — road stroke weight
+const TUNNEL_INK    = 'rgba(11,11,11,0.38)'  // bored stretches — the road, seen through the hill
+const TUNNEL_W      = 1.8         // px — bore stroke weight
+const PORTAL_W      = 2.2         // px — portal bar weight (matches the surface road)
+const PORTAL_LEN    = 8           // px — portal bar length, square across the roadway
 const MAP_INK       = '#1a1a1a'   // rules — neatline, collar ticks, scale bar
 // Lettering is deliberately LIGHTER than the rules it sits between. On a sheet this dense the
 // type is reference, not content: full-strength black pulled the eye to the margin and away from
@@ -793,42 +797,119 @@ export class Map2D {
         ctx.lineCap  = 'round'
         ctx.strokeStyle = ROAD_INK
         ctx.lineWidth = ROAD_W
-        for (const { points } of road._network.values()) {
+        for (const e of road._network.values()) {
+            const { points } = e
             if (!points || points.length < 2) continue
-            ctx.beginPath()
-            ctx.moveTo(this._sx(points[0].x), this._sy(points[0].z))
-            for (let i = 1; i < points.length; i++) ctx.lineTo(this._sx(points[i].x), this._sy(points[i].z))
-            ctx.stroke()
+            // Bored stretches are SKIPPED here and drawn by _drawTunnels in a lighter ink. Cutting
+            // them out at the source is what makes that possible: the alternative — laying the
+            // black road down whole and painting the tunnel over it — would need an opaque erase
+            // stroke, and that would gouge a blank swath through the contours the bore runs under.
+            // On a topo sheet the ground above a tunnel is exactly what must stay drawn.
+            for (const seg of this._surfaceSlices(e)) {
+                ctx.beginPath()
+                ctx.moveTo(this._sx(seg[0].x), this._sy(seg[0].z))
+                for (let i = 1; i < seg.length; i++) ctx.lineTo(this._sx(seg[i].x), this._sy(seg[i].z))
+                ctx.stroke()
+            }
         }
         ctx.lineCap = 'butt'
     }
 
-    // FEAT-40: one arch icon centered on each tunnel bore (span midpoint). Spans live on the net
-    // entries (netEntry.tunnelSpans, run-arc metres in the polyCum domain set at assembly).
+    /**
+     * Sample a run polyline at arc-length `s` (the polyCum domain tunnelSpans are stated in),
+     * returning the point, the unit tangent there, and the index of the segment it landed on.
+     */
+    _atArc(points, cum, s) {
+        let lo = 0, hi = points.length - 1
+        while (lo + 1 < hi) { const m = (lo + hi) >> 1; if (cum[m] <= s) lo = m; else hi = m }
+        const a = points[lo], b = points[lo + 1]
+        const t = (s - cum[lo]) / ((cum[lo + 1] - cum[lo]) || 1)
+        const dx = b.x - a.x, dz = b.z - a.z
+        const m = Math.hypot(dx, dz) || 1
+        return { x: a.x + dx * t, z: a.z + dz * t, tx: dx / m, tz: dz / m, i: lo }
+    }
+
+    // The sub-polyline of a run between arc-lengths a..b, endpoints interpolated exactly onto it.
+    _arcSlice(points, cum, a, b) {
+        const total = cum[cum.length - 1]
+        a = Math.max(0, a); b = Math.min(total, b)
+        if (!(b > a)) return null
+        const A = this._atArc(points, cum, a), B = this._atArc(points, cum, b)
+        const out = [{ x: A.x, z: A.z }]
+        for (let i = A.i + 1; i <= B.i; i++) out.push(points[i])
+        out.push({ x: B.x, z: B.z })
+        return out
+    }
+
+    // A run's polyline minus its bored stretches — i.e. the parts that are actually on the surface.
+    // Returns the whole polyline untouched when the run carries no tunnel.
+    _surfaceSlices(e) {
+        const { points, polyCum: cum, tunnelSpans: spans } = e
+        if (!spans || !spans.length || !cum) return [points]
+        const out = []
+        let s = 0
+        for (const sp of [...spans].sort((p, q) => p.s0 - q.s0)) {
+            const seg = this._arcSlice(points, cum, s, sp.s0)
+            if (seg) out.push(seg)
+            s = Math.max(s, sp.s1)
+        }
+        const tail = this._arcSlice(points, cum, s, cum[cum.length - 1])
+        if (tail) out.push(tail)
+        return out
+    }
+
+    // FEAT-40: bored stretches, drawn the way a quadrangle draws a tunnel (owner, 2026-08-11) —
+    // the road continues through the hill in a LIGHTER ink, and each portal is stamped with a bar
+    // square across the roadway. It replaces the arch pictogram that used to sit at the bore's
+    // midpoint: an icon said "a tunnel is somewhere near here", whereas the portal bars say
+    // exactly where you go underground and where you come out, which is the thing a driver reading
+    // the map actually needs. Spans live on the net entries (netEntry.tunnelSpans, run-arc metres
+    // in the polyCum domain set at assembly).
     //
     // Drawn as FURNITURE, not into the cached background (owner, 2026-08-07): a camp zone paints a
-    // yellow casing along every road stretch inside it, and from the background the arches came out
-    // underneath it — a tunnel inside a camping area simply vanished. Moving the pass up also means
-    // the arches ride the LIVE transform instead of the background bitmap's blit delta, so they stay
-    // pinned to their portals mid-pan rather than sliding with the stale bitmap.
+    // yellow casing along every road stretch inside it, and from the background the tunnels came
+    // out underneath it — a tunnel inside a camping area simply vanished. Running the pass up here
+    // also means it rides the LIVE transform instead of the background bitmap's blit delta, so the
+    // portals stay pinned to their bores mid-pan rather than sliding with the stale bitmap.
     _drawTunnels(ctx) {
         const road = this._road
-        const lerpAt = (points, cum, s) => {
-            let lo = 0, hi = points.length - 1
-            while (lo + 1 < hi) { const m = (lo + hi) >> 1; if (cum[m] <= s) lo = m; else hi = m }
-            const t = (s - cum[lo]) / ((cum[lo + 1] - cum[lo]) || 1)
-            const a = points[lo], b = points[lo + 1]
-            return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t }
-        }
+        if (!road || !road._network) return
+        ctx.lineJoin = 'round'
         for (const e of road._network.values()) {
             if (!e.tunnelSpans || !e.points || !e.polyCum) continue
             for (const sp of e.tunnelSpans) {
-                const p = lerpAt(e.points, e.polyCum, (sp.s0 + sp.s1) / 2)
-                ctx.fillStyle = TUNNEL_ICON.color
-                ctx.strokeStyle = '#101010'
-                this._drawGlyph(ctx, '#tunnel', TUNNEL_ICON.path, this._sx(p.x), this._sy(p.z))
+                // The bore itself: same centreline, lighter ink and a shade thinner, so it reads as
+                // road-under-ground without competing with the surface network.
+                const seg = this._arcSlice(e.points, e.polyCum, sp.s0, sp.s1)
+                if (seg) {
+                    ctx.strokeStyle = TUNNEL_INK
+                    ctx.lineWidth = TUNNEL_W
+                    ctx.lineCap = 'butt'
+                    ctx.beginPath()
+                    ctx.moveTo(this._sx(seg[0].x), this._sy(seg[0].z))
+                    for (let i = 1; i < seg.length; i++) ctx.lineTo(this._sx(seg[i].x), this._sy(seg[i].z))
+                    ctx.stroke()
+                }
+                // The portals. Full-strength black, square across the road — the bar is what marks
+                // the mouth, so it must hold the weight the surface road has, not the bore's.
+                ctx.strokeStyle = ROAD_INK
+                ctx.lineWidth = PORTAL_W
+                ctx.lineCap = 'round'
+                for (const s of [sp.s0, sp.s1]) {
+                    const p = this._atArc(e.points, e.polyCum, s)
+                    // Perpendicular to the roadway, in SCREEN space — the tangent is a world
+                    // direction and the two axes share a scale here, so rotating it 90° is enough.
+                    const px = -p.tz, pz = p.tx
+                    const half = PORTAL_LEN / 2
+                    const sx = this._sx(p.x), sy = this._sy(p.z)
+                    ctx.beginPath()
+                    ctx.moveTo(sx - px * half, sy - pz * half)
+                    ctx.lineTo(sx + px * half, sy + pz * half)
+                    ctx.stroke()
+                }
             }
         }
+        ctx.lineCap = 'butt'
     }
 
     // (3) Classified crossings — colored by kind (at-grade junction vs near-parallel graze).
