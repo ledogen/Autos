@@ -39,7 +39,11 @@ This was drafted as the hard part of the ticket, on the belief that a scenario w
 region centre because the centre is "wherever the truck is standing" and the spawn probe reads the
 streamed network. **Measured, that belief was wrong, and the ticket gets simpler.**
 
-`test/world-determinism.mjs` (added 2026-08-10) pins all three links:
+`test/world-determinism.mjs` (added 2026-08-10) pins all three links — **and finding the one live
+hole in them, 2026-08-11, is what made the claim true rather than merely measured**: a free-roam
+teleport left a spawn override that `_reseatTruckAtSpawnInner` consults ahead of `resolveSpawn`, so
+the region centre followed the player across a mode switch and every POI moved. Story entry now
+clears it, and §4 of the gate is a source-text check on that wiring.
 
 1. **The spawn is a pure function of the seed** — identical across 10 seeds × 4 prior streaming
    histories (cold boot, idled at spawn, drove 3 km away, a warmed 2500 m story region, a wide
@@ -124,7 +128,8 @@ Tier 1 (four customers) is the right rung: it is the one the owner has driven an
 - Persisting scores or unlocks (FEAT-42).
 - Any second scenario. Dodge the Rocks and Escape the Police are named in DESIGN.md and need
   mechanics that do not exist; this ticket builds the frame and one occupant.
-- Storing a region centre, a radius, or any world state beyond the seed — measured unnecessary.
+- Storing a region centre, a radius, or any world state beyond the seed — measured unnecessary, and
+  made true in the live path by `2806718` (story entry drops the free-roam teleport spawn).
 - Recording the region centre in captures. Still worth doing for diagnosing story-mode bug reports
   (three this week were chased by guessing it), but it is no longer a prerequisite for authoring a
   scenario, so it belongs in its own small infra ticket rather than blocking this one.

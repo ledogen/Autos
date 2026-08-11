@@ -8,7 +8,7 @@ source: SM-2 milestone — first real mission type (plan-mode session 2026-08-04
 relates: FEAT-53, FEAT-59, FEAT-60, FEAT-46, FEAT-43, FEAT-29
 invariants: SM-INV-2, SM-INV-3, SM-INV-4, SM-INV-12, SM-INV-14
 plan: .planning/handoffs/HANDOFF-2026-08-04-paper-route.md
-handoff: .planning/handoffs/HANDOFF-2026-08-07-paper-route-phase-e2.md
+handoff: .planning/handoffs/HANDOFF-2026-08-11-paper-route-playable.md
 amended: 2026-08-05 (owner rulings — scoring simplified, houses split from the POI roster)
 ---
 
@@ -181,7 +181,17 @@ opening and the walk-to-Larry tutorial.
 
 **A — Docs** [DONE, `c95a2cc`] · **B — Dialogue** [DONE, `8624861`] · **C — Houses** [DONE,
 `39e433c`] · **D — Throw** [DONE, `07a073d`] · **E — The mission** [DONE — part 1 `e99fe1e`,
-part 2 this pass] · **F — Gates + housekeeping** [PARTIAL]
+part 2 `5400b1a`] · **F — Gates + housekeeping** [PARTIAL — the only thing left before merge]
+
+**THE MISSION IS PLAYABLE AND THE OWNER HAS DRIVEN IT** (2026-08-10/11): *"pretty hard lol — very
+challenging in a good way hard"*, and hard enough that they asked for it as a menu-launchable
+scenario (FEAT-62). Five owner drives found and fixed: the target rings lying (every region customer
+wore one, so 12 of 16 were decoys), the missing staging threshold, GPS not following the route, the
+tour driving whole streets and turning around, the guidance going blank at a turnaround, and the
+free-roam teleport dragging the region centre with it. All closed; see the handoff.
+
+Remaining before merge: `test/paper-houses.mjs`, a debug folder for `PAPER_PARAMS`/`THROW_PARAMS`/
+`poiHouse*`, the MILESTONES SM-2 paragraph, and the merge itself (which brings FEAT-60 with it).
 
 ### Phase E part 2 — what landed
 

@@ -1,5 +1,9 @@
 # HANDOFF — FEAT-61 paper route, Phase E part 2 onward — 2026-08-07
 
+> **SUPERSEDED 2026-08-11** by `HANDOFF-2026-08-11-paper-route-playable.md` — the mission is built
+> and driven. Everything below is history except the **gotchas** section, which is still accurate and
+> still worth reading before touching this code.
+>
 > **SUPERSEDED IN PART, later the same day.** Phase E part 2 is built — see the ticket's "Phase E
 > part 2 — what landed". Still live here: the gotchas, the open questions on the tuning constants,
 > and Phase F. Two of this document's assumptions were measured and found wrong: **tour routing is
