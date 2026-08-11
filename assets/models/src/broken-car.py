@@ -895,10 +895,16 @@ def build_detail(p):
     # rear point ~15 mm proud of the flank, and the whole lens leans with the
     # tumblehome.  The kink sits at y 2.448 — 2 mm inside the y>=2.450 fascia
     # guard, deliberately: it is corner furniture, exempt like the bumper.
+    # LENS-VS-HOUSING (2026-08-11e): the lens is positioned relative to the PLATE,
+    # not the skin — after the housing grew its clip clearances its kink ended up
+    # OUTBOARD of the lens kink at the top loop (0.767 vs 0.760) and the dark
+    # plate sliced diagonally through the amber.  The lens kink now rides ~5 mm
+    # outboard of the plate kink at each loop and the wrap edge ~9 mm proud of the
+    # plate's wrap face, so the lens stands out of its housing everywhere.
     for sx in (1, -1):
         pts = []
-        for z, xk, xw in ((0.740, 0.790, 0.844), (0.868, 0.760, 0.808)):
-            plan = [(0.656, 2.472), (xk, 2.448), (xw, 2.400), (0.700, 2.404)]
+        for z, xk, xw in ((0.740, 0.806, 0.846), (0.868, 0.772, 0.815)):
+            plan = [(0.656, 2.472), (xk, 2.448), (xw, 2.399), (0.700, 2.404)]
             pts += [(sx * px, py, z) for px, py in plan]
         hexa(p, pts, "CarSignal")
 
