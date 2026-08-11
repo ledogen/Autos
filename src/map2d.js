@@ -78,6 +78,11 @@ const TUNNEL_INK    = '#808c75'
 const TUNNEL_W      = 1.8         // px — bore stroke weight
 const PORTAL_W      = 2.2         // px — portal bar weight (matches the surface road)
 const PORTAL_LEN    = 8           // px — portal bar length, square across the roadway
+// FEAT-45 camping casing — a highlighter swipe along the road rather than the dark ochre ink it
+// used to be (owner, 2026-08-11). Kept translucent on purpose: a highlighter marks a sheet
+// without hiding it, so the contours it crosses must still read straight through the stripe.
+const CAMP_CASING   = 'rgba(248,226,54,0.55)'
+const CAMP_CASING_W = 6           // px — ~2.5x the road stroke
 const MAP_INK       = '#1a1a1a'   // rules — neatline, collar ticks, scale bar
 // Lettering is deliberately LIGHTER than the rules it sits between. On a sheet this dense the
 // type is reference, not content: full-strength black pulled the eye to the margin and away from
@@ -1102,7 +1107,7 @@ export class Map2D {
                 ctx.stroke()
             }
         }
-        stroke('rgba(206,142,16,0.75)', 6)   // the casing — ~2.5x the road stroke
+        stroke(CAMP_CASING, CAMP_CASING_W)   // the casing — ~2.5x the road stroke
         stroke(ROAD_INK, ROAD_W)             // the road itself, back on top (matches _drawRoads)
         ctx.lineCap = 'butt'
     }
