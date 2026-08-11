@@ -866,17 +866,25 @@ def build_detail(p):
     # beside and below the lens.  Front chord now lands at y 2.446 at the kink
     # (12 mm proud at the cap corner) and the wrap points sit further outboard;
     # every chord clears its skin by >= 6 mm along the full span.
+    # PARALLEL TO THE FASCIA (2026-08-11f, user's top view): the plate's front
+    # section used to rake back 24 mm inner-to-outer while the grille's mounting
+    # face is flat — in plan the whole assembly read as rotated.  The front edge
+    # now runs at y 2.448 -> 2.446 (2 mm over 0.42 m, parallel to the eye) and
+    # the corner turn begins at the kink, i.e. at the marker.
     for sx in (1, -1):
         pts = []
         for z, xk, xw in ((0.728, 0.804, 0.848), (0.878, 0.764, 0.812)):
-            plan = [(0.352, 2.470), (xk, 2.446), (xw, 2.386), (0.480, 2.398)]
+            plan = [(0.352, 2.448), (xk, 2.446), (xw, 2.386), (0.480, 2.398)]
             pts += [(sx * px, py, z) for px, py in plan]
         hexa(p, pts, "CarTrim")
     # TALL lamps (2026-08-10, walkaround board): the real lens is nearly as tall as
     # the grille (~135 mm here against the grille's 180), sitting tight beside it —
     # on the reference the lamp has barely any surround, and a fat bezel read as
-    # '80s sealed-beams.
-    wedge(0.362, 0.638, 2.452, 2.482, 2.442, 2.468, 0.740, 0.868, "CarLamp")   # lens
+    # '80s sealed-beams.  The lens face is PARALLEL to the fascia (2026-08-11f):
+    # it was a wedge raking back 14 mm inner-to-outer, and the top view read the
+    # lamp as rotated against the flat grille plane.  Flat at 2.462, embedded
+    # 6 mm into the plate (back 2.442 vs plate front 2.448).
+    wedge(0.362, 0.638, 2.442, 2.462, 2.442, 2.462, 0.740, 0.868, "CarLamp")   # lens
     # Corner marker — AMBER, ON the corner, and it WRAPS it (2026-08-10b, user:
     # "visible from the side, required by law").  Not a wedge: a four-sided plan
     # shape whose outer face turns ~33 degrees around the nose corner and stands
@@ -904,7 +912,7 @@ def build_detail(p):
     for sx in (1, -1):
         pts = []
         for z, xk, xw in ((0.740, 0.806, 0.846), (0.868, 0.772, 0.815)):
-            plan = [(0.656, 2.472), (xk, 2.448), (xw, 2.399), (0.700, 2.404)]
+            plan = [(0.656, 2.464), (xk, 2.448), (xw, 2.399), (0.700, 2.404)]
             pts += [(sx * px, py, z) for px, py in plan]
         hexa(p, pts, "CarSignal")
 
