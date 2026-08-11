@@ -69,7 +69,13 @@ const CONTOUR_W     = 0.5         // px — intermediate contour weight
 const INDEX_W       = 0.85        // px — index contour weight
 const ROAD_INK      = '#0b0b0b'   // roads — solid black, for maximum contrast against the sheet
 const ROAD_W        = 2.2         // px — road stroke weight
-const MAP_INK       = '#1a1a1a'   // general map ink (neatline, collar lettering, scale bar)
+const MAP_INK       = '#1a1a1a'   // rules — neatline, collar ticks, scale bar
+// Lettering is deliberately LIGHTER than the rules it sits between. On a sheet this dense the
+// type is reference, not content: full-strength black pulled the eye to the margin and away from
+// the terrain. Two strengths only — marginalia (which you read once) and place labels (which you
+// hunt for), both alpha over the paper so they sit down into it rather than on top.
+const MAP_TEXT      = 'rgba(26,26,26,0.5)'    // collar index, scale/interval notes, coords
+const MAP_TEXT_POI  = 'rgba(16,16,16,0.68)'   // POI + mission-pin labels — still findable
 const INDEX_EVERY   = 5           // every Nth contour is an index contour (so 50 m at CONTOUR_IV)
 // Map lettering. No web font is loaded (browser-only, single origin, no external requests — see
 // CLAUDE.md), so this is a stack that lands on Open Sans where it's installed and on the nearest
@@ -614,7 +620,7 @@ export class Map2D {
         ctx.fillStyle = 'rgba(242,239,228,0.92)'; ctx.fillRect(cx - w / 2, s.y0 + 10, w, 24)
         ctx.strokeStyle = MAP_INK; ctx.lineWidth = 1
         ctx.strokeRect(cx - w / 2 + 0.5, s.y0 + 10.5, w - 1, 23)
-        ctx.fillStyle = MAP_INK; ctx.fillText(txt, cx, s.y0 + 22)
+        ctx.fillStyle = MAP_TEXT; ctx.fillText(txt, cx, s.y0 + 22)
         ctx.textAlign = 'left'
     }
 
@@ -629,7 +635,7 @@ export class Map2D {
         const wz = (this._hoverY - s.cy) / this._zoom + this._panZ
         ctx.font = `11px ${MAP_LABEL_FONT}`
         ctx.textBaseline = 'middle'; ctx.textAlign = 'center'
-        ctx.fillStyle = 'rgba(26,26,26,0.72)'
+        ctx.fillStyle = MAP_TEXT
         ctx.fillText(`seed ${this._getSeed()} · ${wx.toFixed(0)}, ${wz.toFixed(0)}`,
                      (s.x0 + s.x1) / 2, (s.y1 + H) / 2 + 8)
         ctx.textAlign = 'left'
@@ -933,7 +939,7 @@ export class Map2D {
             // Light halo then black text — the paper-sheet lettering treatment (see _drawPois).
             ctx.strokeStyle = 'rgba(242,239,228,0.92)'; ctx.lineWidth = 3.5; ctx.lineJoin = 'round'
             ctx.strokeText(label, sx, sy - 15)
-            ctx.fillStyle = '#101010'
+            ctx.fillStyle = MAP_TEXT_POI
             ctx.fillText(label, sx, sy - 15)
             ctx.textAlign = 'left'
         }
@@ -1089,7 +1095,7 @@ export class Map2D {
                 ctx.lineWidth = 3.5
                 ctx.lineJoin = 'round'
                 ctx.strokeText(ico.label, sx, ly)
-                ctx.fillStyle = '#101010'
+                ctx.fillStyle = MAP_TEXT_POI
                 ctx.fillText(ico.label, sx, ly)
                 ctx.textAlign = 'left'
                 ctx.textBaseline = 'alphabetic'
@@ -1155,9 +1161,9 @@ export class Map2D {
         const colLabel = n => GRID_LETTERS[((n % 26) + 26) % 26]
         const rowLabel = m => String((((m % 26) + 26) % 26) + 1)
 
-        ctx.strokeStyle = MAP_INK
+        ctx.strokeStyle = MAP_INK      // ticks stay full strength; only the lettering is faint
         ctx.lineWidth = 1
-        ctx.fillStyle = MAP_INK
+        ctx.fillStyle = MAP_TEXT
         ctx.font = `600 11px ${MAP_LABEL_FONT}`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
@@ -1230,7 +1236,7 @@ export class Map2D {
         ctx.moveTo(bx, by - 4); ctx.lineTo(bx, by + 4)
         ctx.moveTo(bx + barPx, by - 4); ctx.lineTo(bx + barPx, by + 4)
         ctx.stroke()
-        ctx.fillStyle = MAP_INK
+        ctx.fillStyle = MAP_TEXT
         ctx.font = `11px ${MAP_LABEL_FONT}`
         ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'
         ctx.fillText(niceM >= 1000 ? (niceM / 1000) + ' km' : niceM + ' m', bx - 8, by + 4)
