@@ -722,8 +722,11 @@
 
   <!-- FEAT-16: 2D top-down map overlay (dev/validation tool, toggled with M).
        Fullscreen 2d-context canvas above the WebGL canvas but below the pause menu
-       (z 100). Hidden by default; src/map2d.js owns its draw + pan/zoom handlers. -->
-  <canvas id="map2d" style="position:fixed; inset:0; display:none; z-index:90; background:rgba(10,12,16,0.92); cursor:grab;"></canvas>
+       (z 100). Hidden by default; src/map2d.js owns its draw + pan/zoom handlers.
+       Backdrop is the topo sheet's PAPER_GREEN (map2d.js): mid-drag the cached background is
+       blitted at an offset, and whatever strip that uncovers must read as more sheet rather than
+       as a black gutter opening at the edge of the world. -->
+  <canvas id="map2d" style="position:fixed; inset:0; display:none; z-index:90; background:#cfe2bd; cursor:grab;"></canvas>
 
   <!-- FEAT-47: story-mode eyelids (blink / doze). Inert until main.js writes the transforms. -->
   <div id="doze-overlay">

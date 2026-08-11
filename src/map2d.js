@@ -47,9 +47,41 @@ const MAP_RADIUS_MAX = 2000
 const PROGRESSIVE_GAP  = 16    // ms — yield between stream chunks so the page stays responsive
 const STREAM_DEBOUNCE = 120    // ms — re-stream only after a pan settles (a stream is expensive)
 const RESTREAM_MOVE   = 300    // m — re-stream when the pan center has drifted past this since last stream
-const COARSE_DIV      = 250    // m — coarse-height normaliser for terrain shading (≈ full range, see ranger.js)
-const BG_CELL_PX      = 18     // px — terrain shading sample cell (coarser = cheaper)
 const TELEPORT_SNAP_RADIUS = 500  // m — double-click snaps to the nearest road within this range
+
+// ── Topographic paper (the map's whole visual identity) ───────────────────────────────────────
+// The map is drawn as a USGS/Forest-Service quadrangle: pale green vegetated ground, brown
+// contours off the binned coarse-height field, black-cased roads. Every colour below is picked
+// against the paper green, not against the old dark canvas — anything light-on-dark (the road
+// stroke, the crossing dots, the scale bar) had to be re-inked when the ground went pale.
+const PAPER_GREEN   = '#cfe2bd'   // vegetated ground. ONE colour for now: tree cover is uniform
+                                  // worldwide, so the tan "sparse vegetation" of a real quad has
+                                  // nothing to key off until a biome layer exists (owner, 2026-08-11).
+const CONTOUR_COLOR = '#a1703f'   // intermediate contour — sepia, the quadrangle brown
+const INDEX_COLOR   = '#6b4419'   // index contour (every INDEX_EVERY-th), darker + heavier
+const ROAD_INK      = '#33291c'   // road casing (and the map's general "ink")
+const ROAD_FILL     = '#fbfbf4'   // road fill between the casings
+const INDEX_EVERY   = 5           // every Nth contour is an index contour
+// Map lettering. No web font is loaded (browser-only, single origin, no external requests — see
+// CLAUDE.md), so this is a stack that lands on Open Sans where it's installed and on the nearest
+// humanist grotesque otherwise. Deliberately NOT monospace: the rest of the HUD is a terminal, the
+// map is a printed sheet.
+const MAP_LABEL_FONT = `'Open Sans', 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif`
+
+// Contour interval ladder, metres. The interval is chosen per draw from the terrain's own mean
+// slope (see _pickInterval) so contours keep roughly CONTOUR_MIN_PX apart on screen at any zoom —
+// a fixed interval either crowds into a solid brown wash zoomed out, or vanishes zoomed in.
+const CONTOUR_LADDER = [2, 5, 10, 20, 25, 50, 100, 200, 500]
+const CONTOUR_MIN_PX = 7
+
+// Height-field sampling. The field is `road._coarseH` — the SAME closure the router prices grade
+// off and terrain.js builds the mesh from, so the contours describe the ground the truck drives.
+// Its finest octave is a 250 m wavelength (coarseFreq 0.0005 × 2^3), so the step is capped well
+// under half of that or the contours alias into noise.
+const TOPO_STEP_PX  = 4           // target screen size of one sample cell
+const TOPO_STEP_MIN = 4           // m — no finer than this (the field has no detail below it)
+const TOPO_STEP_MAX = 24          // m — Nyquist guard against the 250 m octave
+const TOPO_GRID_MAX = 240         // cells per axis — bounds the marching-squares cost per redraw
 // Car marker, nose-to-tail half-length in px (9 originally, 18 at the 2x pass). The triangle's
 // half-width is derived from it so the arrow keeps its taper instead of going stubby or needly.
 const CAR_ICON_L = 13.5
@@ -563,45 +595,190 @@ export class Map2D {
         // Record the transform this bitmap is valid for — render() blits through the delta.
         this._bgPanX = this._panX; this._bgPanZ = this._panZ; this._bgZoom = this._zoom
 
-        this._drawTerrain(ctx, W, H)
+        this._drawTopo(ctx, W, H)
         this._drawRoads(ctx)
         this._drawCrossings(ctx)
         this._drawNodes(ctx)
     }
 
-    // (1) Cheap coarse-height grayscale so roads read in context (not a full terrain render).
-    //     Samples the map RoadSystem's own coarse-noise closure (works standalone — the
-    //     constructor builds it; no terrain system / surface sampler needed).
-    _drawTerrain(ctx, W, H) {
+    // (1) The topographic sheet: pale-green vegetated ground + brown contour lines.
+    //
+    // Contours come straight off the height field the rest of the sim already agrees on
+    // (`road._coarseH`, ×terrainAmplitude so the labels are the metres the truck actually climbs).
+    // Sample a regular grid over the view, then MARCHING SQUARES it once per crossed level: each
+    // grid cell knows which levels pass through it from its own min/max, so the whole field is
+    // walked ONE time regardless of how many contours are on screen — the naive "sweep the grid per
+    // level" costs levels× more for an identical picture.
+    //
+    // Segments are emitted disjointly (no contour tracing / polyline stitching). With a round
+    // lineCap the joins are invisible at any zoom this map supports, and it saves carrying the
+    // edge-adjacency bookkeeping that tracing needs. Cost lands only in the CACHED background
+    // redraw, which is already debounced behind a settled pan/zoom (see _deferBgRedraw).
+    _drawTopo(ctx, W, H) {
         const road = this._road
         if (!road) return
-        for (let py = 0; py < H; py += BG_CELL_PX) {
-            for (let px = 0; px < W; px += BG_CELL_PX) {
-                const wx = (px + BG_CELL_PX / 2 - W / 2) / this._zoom + this._panX
-                const wz = (py + BG_CELL_PX / 2 - H / 2) / this._zoom + this._panZ
-                const h = road._coarseH(wx, wz)
-                const t = Math.max(0, Math.min(1, h / COARSE_DIV))
-                const v = Math.round(20 + t * 70)   // dark olive-gray ramp; roads (light) pop over it
-                ctx.fillStyle = `rgb(${v},${v + 6},${v - 2})`
-                ctx.fillRect(px, py, BG_CELL_PX, BG_CELL_PX)
+        const amp = this._getParams().terrainAmplitude ?? 1
+
+        ctx.fillStyle = PAPER_GREEN
+        ctx.fillRect(0, 0, W, H)
+
+        // ── Sample grid. One cell margin past each edge so contours reach the canvas border
+        //    instead of stopping a cell short of it.
+        let step = Math.min(TOPO_STEP_MAX, Math.max(TOPO_STEP_MIN, TOPO_STEP_PX / this._zoom))
+        let nx = Math.ceil(W / (step * this._zoom)) + 3
+        let nz = Math.ceil(H / (step * this._zoom)) + 3
+        if (nx > TOPO_GRID_MAX || nz > TOPO_GRID_MAX) {
+            const k = Math.max(nx, nz) / TOPO_GRID_MAX
+            step *= k
+            nx = Math.ceil(nx / k); nz = Math.ceil(nz / k)
+        }
+        const x0 = this._panX - (W / 2) / this._zoom - step
+        const z0 = this._panZ - (H / 2) / this._zoom - step
+
+        const h = new Float32Array(nx * nz)
+        let hMin = Infinity, hMax = -Infinity
+        for (let j = 0; j < nz; j++) {
+            const wz = z0 + j * step
+            for (let i = 0; i < nx; i++) {
+                const v = road._coarseH(x0 + i * step, wz) * amp
+                h[j * nx + i] = v
+                if (v < hMin) hMin = v
+                if (v > hMax) hMax = v
             }
         }
+
+        // Grid line positions in SCREEN space, precomputed — the marching-squares inner loop then
+        // interpolates in px directly (linear either way) instead of going through _sx/_sy per hit.
+        const gx = new Float64Array(nx), gy = new Float64Array(nz)
+        for (let i = 0; i < nx; i++) gx[i] = this._sx(x0 + i * step)
+        for (let j = 0; j < nz; j++) gy[j] = this._sy(z0 + j * step)
+
+        const iv = this._pickInterval(h, nx, nz, step)
+        if (!iv) return
+
+        // Two batches: intermediate contours and index contours (every Nth, drawn heavier — the
+        // reading aid that lets you count elevation without tracing every line).
+        //
+        // N is NOT the fixed 5 of a printed quad. Zoomed right out the interval goes coarse (100 m)
+        // while this world's total relief is only ~280 m, so every-5th indexes at 500 m and NOT ONE
+        // index contour exists on the sheet — the aid silently disappears exactly where the map is
+        // busiest. Step N down until the index spacing fits inside the relief actually in view.
+        let indexEvery = INDEX_EVERY
+        const relief = hMax - hMin
+        while (indexEvery > 2 && iv * indexEvery > relief) indexEvery--
+        const thin = [], thick = []
+
+        for (let j = 0; j < nz - 1; j++) {
+            const r0 = j * nx, r1 = r0 + nx
+            for (let i = 0; i < nx - 1; i++) {
+                const a = h[r0 + i], b = h[r0 + i + 1], c = h[r1 + i + 1], d = h[r1 + i]
+                let lo = a, hi = a
+                if (b < lo) lo = b; else if (b > hi) hi = b
+                if (c < lo) lo = c; else if (c > hi) hi = c
+                if (d < lo) lo = d; else if (d > hi) hi = d
+                const k0 = Math.ceil(lo / iv), k1 = Math.floor(hi / iv)
+                if (k1 < k0) continue
+                const xl = gx[i], xr = gx[i + 1], yt = gy[j], yb = gy[j + 1]
+                for (let k = k0; k <= k1; k++) {
+                    const v = k * iv
+                    // Corner classification: a=top-left, b=top-right, c=bottom-right, d=bottom-left.
+                    const idx = (a > v ? 8 : 0) | (b > v ? 4 : 0) | (c > v ? 2 : 0) | (d > v ? 1 : 0)
+                    if (idx === 0 || idx === 15) continue
+                    const out = (k % indexEvery === 0) ? thick : thin
+                    // Crossing point on each edge, lerped by value. Only the edges the case needs
+                    // are read (the ternaries below), so no wasted interpolation.
+                    const tx = () => xl + (xr - xl) * ((v - a) / (b - a))     // top edge
+                    const bx = () => xl + (xr - xl) * ((v - d) / (c - d))     // bottom edge
+                    const ly = () => yt + (yb - yt) * ((v - a) / (d - a))     // left edge
+                    const ry = () => yt + (yb - yt) * ((v - b) / (c - b))     // right edge
+                    switch (idx) {
+                        case 1: case 14: out.push(xl, ly(), bx(), yb); break              // left ↔ bottom
+                        case 2: case 13: out.push(bx(), yb, xr, ry()); break              // bottom ↔ right
+                        case 3: case 12: out.push(xl, ly(), xr, ry()); break              // left ↔ right
+                        case 4: case 11: out.push(tx(), yt, xr, ry()); break              // top ↔ right
+                        case 6: case  9: out.push(tx(), yt, bx(), yb); break              // top ↔ bottom
+                        case 7: case  8: out.push(xl, ly(), tx(), yt); break              // top ↔ left
+                        // Saddles: two disjoint arcs through the cell. Resolved the same way every
+                        // time rather than by the corner average — at this cell size the two
+                        // readings differ by a sub-pixel wiggle, and a consistent choice keeps
+                        // neighbouring cells agreeing on which way the pass runs.
+                        case 5:  out.push(xl, ly(), tx(), yt,  bx(), yb, xr, ry()); break
+                        case 10: out.push(tx(), yt, xr, ry(),  xl, ly(), bx(), yb); break
+                    }
+                }
+            }
+        }
+
+        const strokeBatch = (segs, color, width) => {
+            if (!segs.length) return
+            ctx.strokeStyle = color
+            ctx.lineWidth = width
+            ctx.lineCap = 'round'
+            ctx.beginPath()
+            for (let s = 0; s < segs.length; s += 4) {
+                ctx.moveTo(segs[s], segs[s + 1])
+                ctx.lineTo(segs[s + 2], segs[s + 3])
+            }
+            ctx.stroke()
+            ctx.lineCap = 'butt'
+        }
+        // The index contour has to be countable at a glance against a sheet of intermediates —
+        // a 2x width alone did not separate them, so it also carries the darker ink.
+        strokeBatch(thin,  CONTOUR_COLOR, 0.8)
+        strokeBatch(thick, INDEX_COLOR,   2.1)
+
+        this._contourIv = iv   // reported in the scale-bar block, the way a quad states its interval
     }
 
-    // (2) Road centerlines — each streamed network run projected (x,z) → screen.
+    /**
+     * Choose the contour interval from the terrain's own steepness, so lines land ~CONTOUR_MIN_PX
+     * apart on screen: contour spacing = interval / slope, in metres, times zoom for px. Uses the
+     * MEDIAN of the sampled cell slopes rather than the mean — a ridged-noise field has a long
+     * tail of near-cliff cells, and the mean chases that tail into an interval far too coarse for
+     * the valleys where the roads (and the player) actually are.
+     * @returns {number} interval in metres, or 0 if the field is flat enough to have no contours
+     */
+    _pickInterval(h, nx, nz, step) {
+        const slopes = []
+        // Stride the sampling — a few thousand cells fix the median as well as all 57k of them.
+        const sj = Math.max(1, Math.floor(nz / 60)), si = Math.max(1, Math.floor(nx / 60))
+        for (let j = 0; j + 1 < nz; j += sj) {
+            for (let i = 0; i + 1 < nx; i += si) {
+                const a = h[j * nx + i]
+                slopes.push(Math.hypot(h[j * nx + i + 1] - a, h[(j + 1) * nx + i] - a) / step)
+            }
+        }
+        if (!slopes.length) return 0
+        slopes.sort((p, q) => p - q)
+        const med = slopes[slopes.length >> 1]
+        if (!(med > 1e-6)) return 0
+        // px between adjacent contours at interval `iv`
+        const spacing = (ivM) => (ivM / med) * this._zoom
+        for (const ivM of CONTOUR_LADDER) if (spacing(ivM) >= CONTOUR_MIN_PX) return ivM
+        return CONTOUR_LADDER[CONTOUR_LADDER.length - 1]
+    }
+
+    // (2) Road centerlines — each streamed network run projected (x,z) → screen. Drawn the way a
+    //     quadrangle draws a light-duty road: a dark casing with a light fill down the middle, so
+    //     the road reads as a road rather than as one more line on a sheet already full of them
+    //     (the single pale stroke it used to be is invisible against the paper green).
     _drawRoads(ctx) {
         const road = this._road
         if (!road || !road._network) return
-        ctx.strokeStyle = '#d8d8d0'
-        ctx.lineWidth = 2
-        ctx.lineJoin = 'round'
-        for (const { points } of road._network.values()) {
-            if (!points || points.length < 2) continue
-            ctx.beginPath()
-            ctx.moveTo(this._sx(points[0].x), this._sy(points[0].z))
-            for (let i = 1; i < points.length; i++) ctx.lineTo(this._sx(points[i].x), this._sy(points[i].z))
-            ctx.stroke()
+        const trace = () => {
+            for (const { points } of road._network.values()) {
+                if (!points || points.length < 2) continue
+                ctx.beginPath()
+                ctx.moveTo(this._sx(points[0].x), this._sy(points[0].z))
+                for (let i = 1; i < points.length; i++) ctx.lineTo(this._sx(points[i].x), this._sy(points[i].z))
+                ctx.stroke()
+            }
         }
+        ctx.lineJoin = 'round'
+        ctx.lineCap  = 'round'
+        ctx.strokeStyle = ROAD_INK;  ctx.lineWidth = 3.4; trace()
+        ctx.strokeStyle = ROAD_FILL; ctx.lineWidth = 1.4; trace()
+        ctx.lineCap = 'butt'
     }
 
     // FEAT-40: one arch icon centered on each tunnel bore (span midpoint). Spans live on the net
@@ -636,12 +813,15 @@ export class Map2D {
     _drawCrossings(ctx) {
         const road = this._road
         if (!road || typeof road.crossingList !== 'function') return
-        const col = { AT_GRADE: '#3fd06a', NEAR_PARALLEL: '#e0c83c' }
+        // Re-inked for the paper sheet: the old bright green/yellow were picked to glow on a near-
+        // black canvas and wash straight out on pale green. These are the same two categories in
+        // ink that holds against it.
+        const col = { AT_GRADE: '#0e6b33', NEAR_PARALLEL: '#96660a' }
         for (const c of road.crossingList()) {
             const p = c.point; if (!p) continue
-            ctx.fillStyle = col[c.kind] || '#aaaaaa'
+            ctx.fillStyle = col[c.kind] || '#666666'
             ctx.beginPath()
-            ctx.arc(this._sx(p.x), this._sy(p.z), 3.5, 0, Math.PI * 2)
+            ctx.arc(this._sx(p.x), this._sy(p.z), 3, 0, Math.PI * 2)
             ctx.fill()
         }
     }
@@ -661,8 +841,9 @@ export class Map2D {
                 // FEAT-13 v2: node id is a blue-noise site id [cmx,cmz,k].
                 const a = road._nodePos(cell)
                 const deg = typeof road._graphDegreeOf === 'function' && cell.length >= 3 ? road._graphDegreeOf(cell) : 2
-                // leaf (deg≤1) dim, degree-2 pass-through mid, hub (deg≥3) bright cyan.
-                ctx.fillStyle = deg >= 3 ? '#46c8ff' : deg === 2 ? '#7088a0' : '#506070'
+                // leaf (deg≤1) dim, degree-2 pass-through mid, hub (deg≥3) strong — re-inked dark
+                // for the paper sheet (the cyan/slate ramp was tuned against the old dark canvas).
+                ctx.fillStyle = deg >= 3 ? '#15628f' : deg === 2 ? '#5d6f7d' : '#8a9298'
                 ctx.beginPath()
                 ctx.arc(this._sx(a.x), this._sy(a.z), deg >= 3 ? 4 : 2.5, 0, Math.PI * 2)
                 ctx.fill()
@@ -799,8 +980,9 @@ export class Map2D {
                 ctx.stroke()
             }
         }
-        stroke('rgba(255,220,60,0.55)', 5)   // the casing — ~2.5x the road stroke
-        stroke('#d8d8d0', 2)                 // the road itself, back on top (matches _drawRoads)
+        stroke('rgba(206,142,16,0.75)', 7)   // the casing — wider than the road's own casing
+        stroke(ROAD_INK, 3.4)                // the road itself, back on top (matches _drawRoads)
+        stroke(ROAD_FILL, 1.4)
         ctx.lineCap = 'butt'
     }
 
@@ -836,8 +1018,10 @@ export class Map2D {
         const list = this._getCustomers()
         if (!list || !list.length) return
         ctx.lineWidth = 1.2
-        ctx.strokeStyle = '#0d1a0d'
-        ctx.fillStyle = '#3ddc6b'
+        // Darkened for the paper sheet: the old #3ddc6b was a glow colour and sat invisibly on
+        // PAPER_GREEN. Still a green dot, still the distinct small silhouette described above.
+        ctx.strokeStyle = '#0d2a12'
+        ctx.fillStyle = '#159149'
         for (const c of list) {
             ctx.beginPath()
             ctx.arc(this._sx(c.x), this._sy(c.z), 4, 0, Math.PI * 2)
@@ -875,14 +1059,18 @@ export class Map2D {
             // The label is what makes the roster findable; an unlabelled marker is the problem
             // FEAT-60 set out to fix. Mission givers carry none on purpose (see data/map-icons.js).
             if (ico.label) {
-                ctx.font = '10px monospace'
+                // Quadrangle lettering: black humanist sans, haloed in the PAPER colour so it lifts
+                // off the contour hatching without being a black-on-black smudge. (The halo used to
+                // be near-black under the glyph's own colour — that was for the dark canvas.)
+                ctx.font = `600 11px ${MAP_LABEL_FONT}`
                 ctx.textAlign = 'center'
                 ctx.textBaseline = 'top'
                 const ly = sy + POI_ICON_PX / 2 + 3
-                ctx.strokeStyle = '#101010'
-                ctx.lineWidth = 3
-                ctx.strokeText(ico.label, sx, ly)     // halo, so it reads over road and terrain alike
-                ctx.fillStyle = ico.color
+                ctx.strokeStyle = 'rgba(207,226,189,0.9)'
+                ctx.lineWidth = 3.5
+                ctx.lineJoin = 'round'
+                ctx.strokeText(ico.label, sx, ly)
+                ctx.fillStyle = '#101010'
                 ctx.fillText(ico.label, sx, ly)
                 ctx.textAlign = 'left'
                 ctx.textBaseline = 'alphabetic'
@@ -924,14 +1112,27 @@ export class Map2D {
         const pow = Math.pow(10, Math.floor(Math.log10(rawM)))
         const niceM = (rawM / pow >= 5 ? 5 : rawM / pow >= 2 ? 2 : 1) * pow
         const barPx = niceM * this._zoom
-        const bx = W - barPx - 24, by = H - 28
-        ctx.strokeStyle = '#e8e8e8'; ctx.lineWidth = 2
+        // Lifted off the bottom edge to make room for the contour-interval line UNDER the bar —
+        // at the old H-28 the two collided into each other.
+        const bx = W - barPx - 24, by = H - 42
+        ctx.strokeStyle = ROAD_INK; ctx.lineWidth = 2
         ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + barPx, by)
         ctx.moveTo(bx, by - 4); ctx.lineTo(bx, by + 4)
         ctx.moveTo(bx + barPx, by - 4); ctx.lineTo(bx + barPx, by + 4)
         ctx.stroke()
-        ctx.fillStyle = '#e8e8e8'; ctx.textBaseline = 'bottom'
+        ctx.fillStyle = ROAD_INK; ctx.textBaseline = 'bottom'
+        ctx.font = `12px ${MAP_LABEL_FONT}`
         ctx.fillText(niceM >= 1000 ? (niceM / 1000) + ' km' : niceM + ' m', bx, by - 6)
+        // The interval is chosen per redraw from the terrain's slope (_pickInterval), so unlike a
+        // printed quad it is not a constant — which is exactly why it has to be stated on the sheet.
+        if (this._contourIv) {
+            ctx.textAlign = 'right'
+            ctx.textBaseline = 'top'
+            ctx.font = `11px ${MAP_LABEL_FONT}`
+            ctx.fillStyle = ROAD_INK
+            ctx.fillText(`CONTOUR INTERVAL ${this._contourIv} METERS`, bx + barPx, by + 10)
+            ctx.textAlign = 'left'
+        }
         ctx.textBaseline = 'middle'
     }
 }
