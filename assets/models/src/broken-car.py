@@ -5,10 +5,10 @@ Built for: Blender 4.x  |  Target: assets/models/broken-car.glb
 Style brief: .planning/research/ART-STYLE.md  ·  Mechanics: .planning/research/ASSETS.md
 
 BUILD REPORT (2026-08-09, Blender 5.2.0 LTS — mid-90s front-end + wrap bumper pass)
-  BrokenCar       2444 tris   (body, greenhouse, interior, trim, 3 road wheels,
+  BrokenCar       2468 tris   (body, greenhouse, interior, trim, 3 road wheels,
                                brake drum, spare, scissor jack, tyre iron)
   BrokenCarGlass    16 tris   (6 panes, alpha-blended, double-sided)
-  TOTAL           2460 tris   budget 2500
+  TOTAL           2484 tris   budget 2500
   Reference: assets/models/src/ref-century/ — 9-angle board pulled from a 360
   walkaround video (2026-08-10); compare against it before restyling anything.
   materials 9 · images 0 · car 2.03 W (mirror to mirror) x 5.07 L x 1.46 H m
@@ -374,7 +374,12 @@ def body_ring(y):
     # quarters shade as the single flat band they always were.
     h_frac = 0.058 / 0.16               # H's height on the E->F line
     h0 = wb + (wm - wb) * h_frac        # collinear baseline — invisible when roll=0
-    roll = 0.015 * min(1.0, max(0.0, (y - 0.90) / 0.60))
+    # The roll ramps in behind the cowl and FADES BACK OUT ahead of y 2.30: the
+    # crease belongs on the fender behind the lamps, and at the nose its bulge cut
+    # straight through the corner marker's lens (2026-08-11, amber sliver on the
+    # fender crease) — the marker's proud edge is tuned against the un-rolled skin.
+    roll = (0.015 * min(1.0, max(0.0, (y - 0.90) / 0.60))
+                  * min(1.0, max(0.0, (2.38 - y) / 0.08)))
     hx, hz = h0 + roll, zt - 0.058
     # POWER DOME (2026-08-10, from the walkaround board): the Century's hood has a
     # raised centre section whose creases run back from the grille corners.  J/J'
@@ -742,12 +747,17 @@ def build_detail(p):
     # apex taper is monotonic.  Flank wm here is 0.876-0.882; the last entry is
     # zero-protrusion ON the skin line so the cover dies flush.  Ends at y
     # 1.79/1.755 — the arch begins at 1.724.
+    # zb tracks the BODY's own z_bottom at each station (0.272 -> 0.318 along the
+    # flank): the first pass held the cover's lower edge at nose depth, and it hung
+    # 25-50 mm below the rocker as a sagging dark chin (2026-08-11, user's circle).
+    # The end ring sits ON the skin (wm there is ~0.879) — it was at 0.830, 49 mm
+    # INSIDE, and the panel's last segment dove inward as a dent ahead of the arch.
     WRAP = [(0.779, 2.404, 0.507, 0.862, 0.062, 0.250, 0.388),   # ellipse 30°
             (0.822, 2.360, 0.870, 0.494, 0.052, 0.262, 0.390),   # ellipse 60°
-            (0.838, 2.300, 1.000, 0.000, 0.045, 0.272, 0.392),   # ellipse 90°
-            (0.858, 2.080, 1.000, 0.000, 0.048, 0.285, 0.395),
-            (0.858, 1.790, 1.000, 0.000, 0.048, 0.300, 0.400),
-            (0.830, 1.755, 1.000, 0.000, 0.000, 0.310, 0.402)]
+            (0.838, 2.300, 1.000, 0.000, 0.045, 0.300, 0.396),   # ellipse 90°
+            (0.858, 2.080, 1.000, 0.000, 0.048, 0.310, 0.400),
+            (0.858, 1.790, 1.000, 0.000, 0.048, 0.315, 0.402),
+            (0.878, 1.755, 1.000, 0.000, 0.000, 0.318, 0.404)]
 
     rings = [bring(-px, py, -nx, ny, da, zb, zv)
              for px, py, nx, ny, da, zb, zv in reversed(WRAP)]
@@ -814,20 +824,20 @@ def build_detail(p):
         layer on the one raked plane no matter where it starts."""
         return 2.494 - G_RAKE * (z0 - 0.700) / 0.210
 
-    # Grille WIDENED again to +/-0.342 (2026-08-10b): the lamps moved outboard so
-    # the corner marker actually sits ON the corner, and the grille fills the space
-    # that opened up — its frame runs to 10 mm shy of the lamp bezel.
-    raked(-0.342, 0.342, gy(0.694) - 0.016, 0.694, 0.884, "CarTrim", d=0.050)  # recess
-    raked(-0.342, 0.342, gy(0.700), 0.700, 0.724, "CarChrome")         # rail, lower
-    raked(-0.342, 0.342, gy(0.856), 0.856, 0.880, "CarChrome")         # rail, upper
+    # Grille at +/-0.325 (2026-08-11: narrowed 5% from the 0.342 that filled the
+    # lamp move; the lamps stay put so the bezel gap grew to ~27 mm of body colour).
+    raked(-0.325, 0.325, gy(0.694) - 0.016, 0.694, 0.884, "CarTrim", d=0.050)  # recess
+    raked(-0.325, 0.325, gy(0.700), 0.700, 0.724, "CarChrome")         # rail, lower
+    raked(-0.325, 0.325, gy(0.856), 0.856, 0.880, "CarChrome")         # rail, upper
     for sx in (1, -1):                                                 # end members
-        raked(sx * 0.320, sx * 0.342, gy(0.700), 0.700, 0.880, "CarChrome")
-    # VERTICAL RIBS — eleven, evenly pitched across the widened aperture.  Still
-    # chunkier than the real car's fine waterfall (16 mm rib, 37 mm gap): at this
-    # facet scale that is what reads as "many vertical bars", not jail bars.
-    for i in range(-5, 6):
-        cx = i * 0.0533
-        raked(cx - 0.008, cx + 0.008, gy(0.724) - 0.002, 0.724, 0.856, "CarChrome")
+        raked(sx * 0.303, sx * 0.325, gy(0.700), 0.700, 0.880, "CarChrome")
+    # VERTICAL RIBS — thirteen, 11 mm wide on a 44 mm pitch chosen so the end gaps
+    # equal the inter-rib gaps (13 ribs + 14 equal 33 mm slots fill the aperture
+    # exactly).  Finer than the last pass (2026-08-11); still far chunkier than the
+    # real waterfall, which is what this facet scale needs to read as bars at all.
+    for i in range(-6, 7):
+        cx = i * 0.0441
+        raked(cx - 0.0055, cx + 0.0055, gy(0.724) - 0.002, 0.724, 0.856, "CarChrome")
 
     # Lamps are WEDGES, not boxes: the outboard end sits further back in Y so each
     # piece follows the nose radius instead of standing square across a curve.
@@ -848,13 +858,26 @@ def build_detail(p):
     # Corner marker — AMBER, ON the corner, and it WRAPS it (2026-08-10b, user:
     # "visible from the side, required by law").  Not a wedge: a four-sided plan
     # shape whose outer face turns ~33 degrees around the nose corner and stands
-    # ~10 mm PROUD of the skin (the skin at y 2.400 / lamp height is ~0.812 wide, so
-    # an outer edge at 0.822 clears it — anything inboard of the skin is invisible,
-    # which is what killed every earlier wrap attempt).  Plan loop, per side:
+    # ~8 mm PROUD of the skin (anything inboard of the skin is invisible, which is
+    # what killed every earlier wrap attempt).  Plan loop, per side:
     # inner-front -> corner-front -> wrapped outer-rear (proud) -> buried inner-rear.
+    # The wrapped point is PER-LOOP because the flank tumbles inward as it rises —
+    # skin is ~0.821 wide at z 0.740 but only ~0.789 by z 0.868.  The first attempt
+    # used one vertical edge at 0.822: flush at the base, a 33 mm shelf at the top
+    # (2026-08-11, user's circled step behind the lamp).  Track the skin instead.
+    # CLEARANCE IS SET BY THE BODY'S CORNER EDGE, NOT THE FLANK (2026-08-11, two
+    # failed rounds of sliver-chasing prove it): the E->F corner chain at the nose
+    # station runs x 0.784 (z 0.740) -> 0.752 (z 0.868), and any marker surface
+    # inboard of it submarines mid-face.  So BOTH plan points are per-loop: the
+    # kink rides ~6 mm outboard of the corner edge at its own height, the wrapped
+    # rear point ~15 mm proud of the flank, and the whole lens leans with the
+    # tumblehome.  The kink sits at y 2.448 — 2 mm inside the y>=2.450 fascia
+    # guard, deliberately: it is corner furniture, exempt like the bumper.
     for sx in (1, -1):
-        plan = [(0.656, 2.472), (0.744, 2.450), (0.822, 2.400), (0.700, 2.404)]
-        pts = [(sx * px, py, z) for z in (0.740, 0.868) for px, py in plan]
+        pts = []
+        for z, xk, xw in ((0.740, 0.790, 0.840), (0.868, 0.760, 0.806)):
+            plan = [(0.656, 2.472), (xk, 2.448), (xw, 2.400), (0.700, 2.404)]
+            pts += [(sx * px, py, z) for px, py in plan]
         hexa(p, pts, "CarSignal")
 
     # Stand-up hood ornament — the tri-shield-in-a-ring reduced to a thin chrome
