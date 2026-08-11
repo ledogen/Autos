@@ -69,7 +69,12 @@ const CONTOUR_W     = 0.5         // px — intermediate contour weight
 const INDEX_W       = 0.85        // px — index contour weight
 const ROAD_INK      = '#0b0b0b'   // roads — solid black, for maximum contrast against the sheet
 const ROAD_W        = 2.2         // px — road stroke weight
-const TUNNEL_INK    = 'rgba(11,11,11,0.38)'  // bored stretches — the road, seen through the hill
+// Bored stretches — the road, seen through the hill. OPAQUE on purpose: as 38%-black alpha this
+// took its colour from whatever happened to be underneath, so the moment another layer painted
+// road-black under it (the camp-zone casing pass did exactly that) the bore rendered solid black
+// and the bug looked like it lived in the tunnel code. This value is the exact composite of that
+// alpha over PAPER_GREEN, so it is byte-identical on bare paper and immune everywhere else.
+const TUNNEL_INK    = '#808c75'
 const TUNNEL_W      = 1.8         // px — bore stroke weight
 const PORTAL_W      = 2.2         // px — portal bar weight (matches the surface road)
 const PORTAL_LEN    = 8           // px — portal bar length, square across the roadway
@@ -1055,22 +1060,32 @@ export class Map2D {
         }
 
         // Collect the in-zone sub-polylines once, then stroke them twice (casing, then road colour).
+        //
+        // Sourced from _surfaceSlices, NOT the raw run polyline: this pass re-lays the black road
+        // on top of its casing, and over a bored stretch that re-stroke was painting the tunnel
+        // back in as solid road — which then showed through the lighter bore drawn after it and
+        // made a tunnel inside a camping area read as an ordinary road. Skipping the bores is also
+        // the correct claim on its own terms: you cannot camp inside a tunnel, so the casing that
+        // advertises where camping is legal has no business running through one.
         const runs = []
-        for (const { points } of road._network.values()) {
-            if (!points || points.length < 2) continue
-            let cur = null
-            let prevIn = inZone(points[0])
-            for (let i = 1; i < points.length; i++) {
-                const nowIn = inZone(points[i])
-                // A segment belongs to a zone when BOTH endpoints do — the conservative read, so
-                // the casing never claims road that leaves the zone.
-                if (prevIn && nowIn) {
-                    if (!cur) { cur = [points[i - 1]]; runs.push(cur) }
-                    cur.push(points[i])
-                } else {
-                    cur = null
+        for (const e of road._network.values()) {
+            if (!e.points || e.points.length < 2) continue
+            for (const points of this._surfaceSlices(e)) {
+                if (!points || points.length < 2) continue
+                let cur = null
+                let prevIn = inZone(points[0])
+                for (let i = 1; i < points.length; i++) {
+                    const nowIn = inZone(points[i])
+                    // A segment belongs to a zone when BOTH endpoints do — the conservative read,
+                    // so the casing never claims road that leaves the zone.
+                    if (prevIn && nowIn) {
+                        if (!cur) { cur = [points[i - 1]]; runs.push(cur) }
+                        cur.push(points[i])
+                    } else {
+                        cur = null
+                    }
+                    prevIn = nowIn
                 }
-                prevIn = nowIn
             }
         }
         if (!runs.length) return
