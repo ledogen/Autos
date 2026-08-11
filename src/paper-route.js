@@ -197,6 +197,53 @@ const idKey = (id) => `${id[0]},${id[1]},${id[2]}`
 // cannot silently ask for a 2^n table.
 const HELD_KARP_MAX = 15
 
+// FEAT-63: masks between yields in the Held-Karp loop. Measured at fifteen stops the whole loop is
+// ~14 ms over 32768 masks — 0.43 µs each — so 1024 masks is a ~0.45 ms slice. Small enough that the
+// pump's budget is honoured rather than blown by one indivisible chunk, large enough that the yield
+// itself is noise. Must be a power of two: the loop tests it with a bitmask.
+const HK_CHUNK = 1024
+
+/**
+ * The Held-Karp scratch tables, leased rather than allocated (FEAT-63).
+ *
+ * At fifteen stops these are Float64Array(32768 × 15) ≈ 3.9 MB and Int16Array ≈ 1 MB. Allocating
+ * five megabytes in the middle of a drive is a hitch in its own right and hands the collector a
+ * large short-lived object immediately afterwards, which is the second hitch.
+ *
+ * There is normally exactly one lease and every job reuses it. The busy flag exists for the one
+ * case that would otherwise corrupt a route silently: a synchronous `planTour` (a new route being
+ * accepted) running while a sliced re-plan sits suspended mid-DP. That cannot happen today — a
+ * re-plan is cancelled when the route ends — but "cannot happen today" is how this class of bug
+ * ships, so the second caller gets its own tables instead of scribbling on the first one's.
+ */
+// FEAT-63 re-plan tuning. All run-layer, none of it touches worldgen or par.
+const RR_POLL_S     = 0.25   // s between trigger polls — the checks are cheap but not free
+const RR_OFF_M      = 45     // m off the line before it counts as off the line. Comfortably past
+                             // the polyline's own ~25 m vertex spacing (see _latToLine) and past
+                             // any lay-by, so a wide corner cannot trip it.
+const RR_OFF_S      = 2.0    // …and for this long. A wrong turn, not a wobble.
+const RR_MIN_SHOW_S = 0.4    // minimum RECALCULATING time. The job takes ~120 ms, so without this
+                             // the indicator would flash rather than inform.
+const RR_STALE_M    = 50     // m of drift that invalidates a finished job. Should never fire.
+const RR_SNAP_M     = 200    // queryNearest search radius for the truck's own road point
+
+const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
+
+const _hkPool = []
+function _leaseHkTables (SZ, n) {
+    const need = SZ * n
+    let best = null
+    for (const t of _hkPool) {
+        if (!t.busy && t.dp.length >= need) { best = t; break }
+    }
+    if (!best) {
+        best = { dp: new Float64Array(need), par: new Int16Array(need), busy: false }
+        _hkPool.push(best)
+    }
+    best.busy = true
+    return best
+}
+
 /**
  * Dijkstra from one node over the straight-line graph metric — the same cheap metric the mission
  * planner uses to choose a path before anything is routed. Returns dist + parent chain to every
@@ -251,6 +298,30 @@ function _pathBack (prev, startK, goalK) {
  *                           the tour, the gate and any future re-plan all share.
  */
 export function planTour (road, larry, allCust, want, region = null, margin = 100, ringR = Infinity) {
+    const it = planTourJob(road, larry, allCust, want, region, margin, ringR)
+    let r = it.next()
+    while (!r.done) r = it.next()
+    return r.value
+}
+
+/**
+ * The planner itself, as a RESUMABLE job (FEAT-63).
+ *
+ * There is exactly one ordering algorithm in this file and this is it; `planTour` above is a thin
+ * drain over the same generator. That is the whole reason the sliced re-plan is a small feature
+ * rather than a risky one — a second planner would be free to drift from this one, and the gate
+ * that compares them would be pinning two implementations instead of one.
+ *
+ * The yields are placed where the TIME is, and nowhere else. Measured on seed 6 the graph surgery
+ * and the polyline build are sub-millisecond, so slicing them would buy nothing but state to get
+ * wrong; the Dijkstras are ~0.1-0.2 ms each; and the Held-Karp mask loop is the whole 14 ms at
+ * fifteen stops. So: one yield per Dijkstra, and one every HK_CHUNK masks. A single `next()` is
+ * therefore always well under half a millisecond, which is what lets the pump honour a small
+ * budget honestly rather than overshooting it by one enormous chunk.
+ *
+ * Same arguments, same return value as planTour.
+ */
+export function* planTourJob (road, larry, allCust, want, region = null, margin = 100, ringR = Infinity) {
     if (!road || !larry || !allCust?.length || !(want > 0)) return null
     if (region && isFinite(ringR)) {
         allCust = allCust.filter(c => Math.hypot(c.x - region.x, c.z - region.z) <= ringR)
@@ -355,10 +426,15 @@ export function planTour (road, larry, allCust, want, region = null, margin = 10
 
     const larryK = ptKeyOf.get(larry.id)
     if (!larryK) return null
+    yield        // the surgery is done and it was sub-ms; everything expensive is below
 
     const searches = new Map()
+    // `fresh` reports whether this call actually ran a search, so the loops below can yield only
+    // when work happened rather than once per lookup.
+    let fresh = false
     const searchFrom = (k) => {
-        if (!searches.has(k)) searches.set(k, _dijkstraFrom(adj, k))
+        fresh = !searches.has(k)
+        if (fresh) searches.set(k, _dijkstraFrom(adj, k))
         return searches.get(k)
     }
 
@@ -379,6 +455,7 @@ export function planTour (road, larry, allCust, want, region = null, margin = 10
     let curK = larryK
     while (order.length < want && remaining.length) {
         const { dist } = searchFrom(curK)
+        if (fresh) yield
         let bi = -1, bd = Infinity
         for (let i = 0; i < remaining.length; i++) {
             const d = dist.get(ptKeyOf.get(remaining[i].id)) ?? Infinity
@@ -409,37 +486,51 @@ export function planTour (road, larry, allCust, want, region = null, margin = 10
             for (let i = 0; i < n; i++) {
                 D.push([])
                 for (let j = 0; j < n; j++) D[i].push(i === j ? 0 : legLen(keys[i], keys[j]))
+                if (fresh) yield                           // one row = at most one Dijkstra
             }
             const from = order.map(c => legLen(larryK, ptKeyOf.get(c.id)))
             const SZ = 1 << n
-            const dp = new Float64Array(SZ * n).fill(Infinity)
-            const par = new Int16Array(SZ * n).fill(-1)
-            for (let j = 0; j < n; j++) dp[(1 << j) * n + j] = from[j]
-            for (let mask = 1; mask < SZ; mask++) {
-                for (let j = 0; j < n; j++) {
-                    if (!(mask & (1 << j))) continue
-                    const cur = dp[mask * n + j]
-                    if (!isFinite(cur)) continue
-                    for (let k = 0; k < n; k++) {
-                        if (mask & (1 << k)) continue
-                        const nm = mask | (1 << k)
-                        const cand = cur + D[j][k]
-                        if (cand < dp[nm * n + k]) { dp[nm * n + k] = cand; par[nm * n + k] = j }
+            // Borrowed, not allocated (FEAT-63): at fifteen stops these are ~3.9 MB + ~1 MB, and
+            // allocating that mid-drive is its own hitch plus the GC event that follows it.
+            const lease = _leaseHkTables(SZ, n)
+            const { dp, par } = lease
+            dp.fill(Infinity, 0, SZ * n)
+            par.fill(-1, 0, SZ * n)
+            try {
+                for (let j = 0; j < n; j++) dp[(1 << j) * n + j] = from[j]
+                for (let mask = 1; mask < SZ; mask++) {
+                    for (let j = 0; j < n; j++) {
+                        if (!(mask & (1 << j))) continue
+                        const cur = dp[mask * n + j]
+                        if (!isFinite(cur)) continue
+                        for (let k = 0; k < n; k++) {
+                            if (mask & (1 << k)) continue
+                            const nm = mask | (1 << k)
+                            const cand = cur + D[j][k]
+                            if (cand < dp[nm * n + k]) { dp[nm * n + k] = cand; par[nm * n + k] = j }
+                        }
                     }
+                    // THE yield that matters — this loop is the entire 14 ms at fifteen stops.
+                    if ((mask & (HK_CHUNK - 1)) === 0) yield
                 }
-            }
-            const full = SZ - 1
-            let endJ = -1, bestT = Infinity
-            for (let j = 0; j < n; j++) if (dp[full * n + j] < bestT) { bestT = dp[full * n + j]; endJ = j }
-            if (endJ >= 0 && isFinite(bestT)) {
-                const seq = []
-                for (let mask = full, j = endJ; j >= 0;) {
-                    seq.unshift(order[j])
-                    const pj = par[mask * n + j]
-                    mask ^= (1 << j)
-                    j = pj
+                const full = SZ - 1
+                let endJ = -1, bestT = Infinity
+                for (let j = 0; j < n; j++) if (dp[full * n + j] < bestT) { bestT = dp[full * n + j]; endJ = j }
+                if (endJ >= 0 && isFinite(bestT)) {
+                    const seq = []
+                    for (let mask = full, j = endJ; j >= 0;) {
+                        seq.unshift(order[j])
+                        const pj = par[mask * n + j]
+                        mask ^= (1 << j)
+                        j = pj
+                    }
+                    order.splice(0, order.length, ...seq)
                 }
-                order.splice(0, order.length, ...seq)
+            } finally {
+                // finally, not a plain call: a job the pump abandons is closed by the generator
+                // protocol (`.return()`), which runs this and hands the tables back. Without it an
+                // abandoned re-plan would strand the lease and every later job would allocate.
+                lease.busy = false
             }
         }
     }
@@ -451,7 +542,9 @@ export function planTour (road, larry, allCust, want, region = null, margin = 10
     for (const c of order) {
         const toK = ptKeyOf.get(c.id)
         if (toK === fromK) continue
-        const leg = _pathBack(searchFrom(fromK).prev, fromK, toK)
+        const prev = searchFrom(fromK).prev
+        if (fresh) yield
+        const leg = _pathBack(prev, fromK, toK)
         if (!leg) return null
         for (let i = 1; i < leg.length; i++) walk.push(leg[i])
         fromK = toK
@@ -562,13 +655,21 @@ export class PaperRouteSystem {
 
         this.state = 'idle'
         this.error = null
-        this.route = null        // the planned tour (see planTour)
+        this.route = null        // THE CONTRACT: the tour as priced. customers, par, deadline.
+        this.guide = null        // FEAT-63: THE LINE TO DRIVE, re-planned. Never carries par.
         this.run = null          // the live route — see accept()
         this.result = null
         this.giver = null        // the POI the route was taken from
         this._startZone = null   // the green threshold at Larry's while staging
         this._briefed = false
         this._planned = false
+
+        // FEAT-63 re-plan state.
+        this._rr = null          // the live sliced job, or null
+        this._clock = 0          // seconds since the system last reset; drives the indicator only
+        this._rrHideAt = 0       // …and the indicator's minimum display
+        this._offRouteT = 0      // how long we have been off the line, in seconds
+        this._checkT = 0         // trigger-poll accumulator
     }
 
     isActive () { return this.state !== 'idle' }
@@ -599,10 +700,21 @@ export class PaperRouteSystem {
         // Whenever a route EXISTS — the offer included, exactly like MissionSystem.markers(). Seeing
         // the line before you accept is most of the point of an offer: it is the difference between
         // "nine customers, 7.9 km" as a number and as a shape you can decide about.
-        if (this.state === 'idle' || !this.route?.poly?.length) return null
-        return { start: this.route.poly[0], end: this.route.poly[this.route.poly.length - 1],
-                 poly: this.route.poly }
+        const r = this.line()
+        if (this.state === 'idle' || !r?.poly?.length) return null
+        return { start: r.poly[0], end: r.poly[r.poly.length - 1], poly: r.poly }
     }
+
+    /**
+     * THE LINE THE PLAYER SHOULD DRIVE — the re-planned guide if there is one, otherwise the tour
+     * as priced. This is what the GPS points along and what the 2D map draws.
+     *
+     * Deliberately NOT `this.route`, and the split is the whole safety property of FEAT-63:
+     * `route` is the CONTRACT (who is on the round, what par is, when the bell rings) and nothing
+     * in the re-plan path may touch it, while `guide` is only a shape to follow. Scoring, the
+     * deadline and the result card all read `route`; the renderers all read this.
+     */
+    line () { return this.guide ?? this.route }
 
     /** The customers on THIS route — not the region's. Read-only. */
     routeCustomers () { return this.route?.customers ?? [] }
@@ -628,6 +740,7 @@ export class PaperRouteSystem {
         this.error = null
         this.result = null
         this.route = null
+        this.guide = null
         this.run = null
         this._briefed = false
         this._planned = false
@@ -707,8 +820,12 @@ export class PaperRouteSystem {
         // them at the bell would erase the trail of the route you just drove at the exact moment
         // the card asks you to look at how it went.
         const hadPapers = this.state === 'running' || this.state === 'done'
+        this._cancelReplan()
+        this._offRouteT = this._checkT = 0
+        this._rrHideAt = 0
         this.state = 'idle'
         this.route = null
+        this.guide = null
         this.run = null
         this.giver = null
         this.error = null
@@ -720,6 +837,7 @@ export class PaperRouteSystem {
 
     /** Clocked off the fixed step. Two comparisons and a counter — nothing else happens per frame. */
     update (dt) {
+        this._clock += dt
         if (this.state === 'staging') {
             // One distance check. Crossing the threshold is what starts the route — the same rule,
             // and the same green ring, a POI job uses.
@@ -728,7 +846,175 @@ export class PaperRouteSystem {
         }
         if (this.state !== 'running') return
         this.run.elapsed += dt
+        this._replanTick(dt)
         if (this.run.elapsed >= this.run.deadline) this.finish()
+    }
+
+    // ── FEAT-63: the GPS always shows the shortest way to finish ────────────────────────────────
+    /**
+     * WHY THE GUIDE IS ALLOWED TO DISAGREE WITH PAR (owner, 2026-08-11).
+     *
+     * Par is frozen at accept and priced over the tour as planned (SM-INV-2). The moment the player
+     * leaves that tour it stops being a route they are driving and becomes only a number they are
+     * measured against — and the shortest way to finish from where they ACTUALLY are is therefore
+     * their best remaining chance of coming in under it. Guiding them faithfully back along a line
+     * they have already abandoned would be withholding help from someone who is already behind.
+     *
+     * So the guide re-plans and par never does. The two are not in tension; the second is the
+     * reason for the first.
+     */
+    isRerouting () { return !!this._rr || this._clock < this._rrHideAt }
+
+    /**
+     * Spend up to `budgetMs` of this frame's spare time on the live re-plan. Returns true while a
+     * job is still outstanding. main.js calls this with whatever the frame did not use.
+     *
+     * At least one `next()` runs per call even on a zero budget, so a permanently loaded frame
+     * cannot starve the job — it only slows it. And because a single `next()` is bounded (one
+     * Dijkstra, or HK_CHUNK masks — both well under half a millisecond at fifteen stops), honouring
+     * a small budget does not depend on the caller guessing the chunk size right.
+     */
+    pumpReroute (budgetMs = 2) {
+        if (!this._rr) return false
+        const t0 = _now()
+        let r
+        do { r = this._rr.it.next() } while (!r.done && _now() - t0 < budgetMs)
+        if (!r.done) return true
+
+        const job = this._rr
+        this._rr = null
+        const route = r.value
+
+        // THE STALENESS GUARD. The job planned from where the truck WAS. At the measured ~120 ms
+        // and 20 m/s that is under three metres, so this should never fire — it is here for a
+        // frame-rate collapse, and it logs when it fires precisely because it means the budget
+        // model was wrong somewhere.
+        const car = this._getCar()
+        if (car && Math.hypot(car.x - job.ox, car.z - job.oz) > RR_STALE_M) {
+            console.warn('[paper] re-plan went stale in flight — planning again from here')
+            this._startReplan('stale')
+            return !!this._rr
+        }
+        if (route?.segments?.length) {
+            this.guide = route
+            this._onChange()
+        } else {
+            // BUG-47: on a seed where the graph strands part of the region a re-plan can reach
+            // nobody. Keep the previous line — a player mid-route must never be left without one.
+            console.warn('[paper] re-plan produced no route — keeping the previous line')
+        }
+        return false
+    }
+
+    /** Poll the two triggers. O(customers) plus one polyline scan, four times a second. */
+    _replanTick (dt) {
+        if (!this.route || this._rr) return
+        this._checkT += dt
+        if (this._checkT < RR_POLL_S) return
+        this._checkT = 0
+
+        // TRIGGER A — a customer was served out of order, so the rest of the line is a lie.
+        // Delivering IN order does not trigger anything: the remaining suffix is still optimal.
+        if (this._orderIsStale()) { this._startReplan('out of order'); return }
+
+        // TRIGGER B — genuinely off the line, for long enough that it is a wrong turn and not a
+        // wide corner or a lay-by.
+        const lat = this._latToLine()
+        if (lat > RR_OFF_M) {
+            this._offRouteT += RR_POLL_S
+            if (this._offRouteT >= RR_OFF_S) { this._offRouteT = 0; this._startReplan('off route') }
+        } else {
+            this._offRouteT = 0
+        }
+    }
+
+    /** Has anything been delivered out of the guide's order? */
+    _orderIsStale () {
+        const cs = this.line()?.customers
+        if (!cs || !this.run) return false
+        let sawUndelivered = false
+        for (const c of cs) {
+            if (!this.run.hits.has(c.id)) sawUndelivered = true
+            else if (sawUndelivered) return true
+        }
+        return false
+    }
+
+    /**
+     * Distance from the truck to the line, from the baked polyline's vertices. Quantised by the
+     * polyline's own ~25 m spacing, which is why RR_OFF_M is comfortably larger than that — this
+     * decides "wrong turn or not", and it does not need to be exact to do that.
+     */
+    _latToLine () {
+        const poly = this.line()?.poly, car = this._getCar()
+        if (!poly?.length || !car) return 0
+        let best = Infinity
+        for (let i = 0; i < poly.length; i++) {
+            const d = (poly[i].x - car.x) ** 2 + (poly[i].z - car.z) ** 2
+            if (d < best) best = d
+        }
+        return Math.sqrt(best)
+    }
+
+    /**
+     * The truck's own position as a planner stop: the same `{aId, bId, s}` shape Larry has. This is
+     * the one genuinely new piece of machinery the sliced re-plan needs — everything else is the
+     * existing planner, driven differently.
+     *
+     * queryNearest answers in (runKey, arc-along-run) and the planner wants a graph EDGE, so the
+     * edge is the one whose arc span over that run contains the hit. Several edges can share a run
+     * (a merged deg-2 chain reports its members), hence the span test rather than a key match.
+     */
+    _originPoint () {
+        const road = this._getRoad(), car = this._getCar()
+        if (!road?.queryNearest || !car) return null
+        const q = road.queryNearest(car.x, car.z, RR_SNAP_M)
+        if (!q?.runKey) return null
+        const g = road.networkGraph?.()
+        if (!g?.edges) return null
+        for (const [a, b, runKey] of g.edges) {
+            if (runKey !== q.runKey) continue
+            const ed = road.edgeParData(a, b)
+            if (!ed?.centerline) continue
+            const off = ed.arcOffset ?? 0
+            const L = ed.arcLength ?? ed.centerline.length
+            if (q.arcS < off - 1e-6 || q.arcS > off + L + 1e-6) continue
+            return { id: 'origin:truck', aId: a, bId: b, s: q.arcS,
+                     x: q.point.x, y: q.point.y, z: q.point.z }
+        }
+        return null
+    }
+
+    /** Start (or restart) a sliced re-plan of everything still undelivered. */
+    _startReplan (reason) {
+        if (this.state !== 'running' || !this.route || !this.run) return
+        const left = this.route.customers.filter(c => !this.run.hits.has(c.id))
+        if (!left.length) return
+        const origin = this._originPoint()
+        if (!origin) return          // off the network entirely; try again on the next poll
+
+        this._cancelReplan()
+        this._rr = {
+            // want = left.length: the SET is fixed, only the order is in question. No ring filter
+            // either — these customers were already inside the tier's ring when the route was
+            // planned, and re-applying it around the region centre could drop one the player is
+            // standing next to.
+            it: planTourJob(this._getRoad(), origin, left, left.length,
+                            this._getRegion(), 100, Infinity),
+            ox: origin.x, oz: origin.z, reason,
+        }
+        this._rrHideAt = this._clock + RR_MIN_SHOW_S
+        this._onChange()
+    }
+
+    /**
+     * Drop a job. `.return()` rather than dropping the reference: the generator's `finally` hands
+     * the Held-Karp tables back, and an abandoned job that never ran it would strand the lease and
+     * make every later re-plan allocate five megabytes of its own.
+     */
+    _cancelReplan () {
+        this._rr?.it?.return?.()
+        this._rr = null
     }
 
     /**
@@ -791,6 +1077,11 @@ export class PaperRouteSystem {
      */
     finish () {
         if (this.state !== 'running') return
+        // FEAT-63: a re-plan in flight is answering a question the route no longer has. Dropping it
+        // here also stops the indicator sticking: _clock only advances while papers are aboard, so
+        // a job left alive past the bell would hold RECALCULATING on screen over the result card.
+        this._cancelReplan()
+        this._rrHideAt = 0
         const n = this.route.customers.length
         const accuracies = [...this.run.hits.values()]
         const r = scoreRoute(accuracies, n, this.run.elapsed, this.route.par, this.run.dayTier)

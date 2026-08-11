@@ -985,6 +985,14 @@ function setSpawnHere () {
 const PHYSICS_DT = 1 / 60        // physics step: 16.667ms (D-09)
 const MAX_FRAME_TIME = 0.25       // spiral-of-death clamp: 250ms (T-01-04 mitigation)
 
+// FEAT-63: the spare-time pump's budget, at the very bottom of loop(). The margin is what keeps a
+// pumped frame from being the one that misses vsync — the estimate of "time already spent" cannot
+// see the driver's own work after we return. The floor guarantees forward progress on a machine
+// that is permanently over budget: the re-plan gets slower, never stuck.
+const FRAME_BUDGET_MS = 1000 / 60
+const PUMP_MARGIN_MS  = 2
+const PUMP_FLOOR_MS   = 0.5
+
 let simTime = 0  // accumulated simulation time in seconds; incremented by FIXED_DT each physics step
 
 let accumulator = 0
@@ -2756,6 +2764,9 @@ const paperRouteSystem = new PaperRouteSystem({
   onChange:  () => _renderPaperUI(),
 })
 window.__paperRoute = () => paperRouteSystem
+// FEAT-63: cached so the 10 Hz poll is a style write and not a DOM lookup.
+const _recalcEl = document.getElementById('gps-recalc')
+let _recalcOn = false
 
 // ── FEAT-39: GPS navigation assist ───────────────────────────────────────────
 // A pure guidance overlay: chevrons along the route ahead + a turn arrow over the next junction.
@@ -2765,11 +2776,18 @@ window.__paperRoute = () => paperRouteSystem
 // off elsewhere.
 gpsSystem = new GpsSystem(scene, {
   getRoute: () => {
-    // FEAT-61: the paper route gets guidance too, and it gets the SAME route the par came from —
-    // the concatenated tour, in the order it was priced. That is the honest thing to point at: any
-    // other line (nearest undelivered customer, say) would be guiding you along a route the clock
-    // is not measuring. It costs nothing extra because the tour is already baked as segments.
-    if (paperRouteSystem?.isCarrying()) return paperRouteSystem.route
+    // FEAT-61/63: the paper route gets guidance too, and it gets the SHORTEST WAY TO FINISH from
+    // where the truck actually is — `line()`, which is the re-planned guide when there is one and
+    // the priced tour otherwise.
+    //
+    // This used to be `route` (the tour as priced) on the argument that pointing anywhere else
+    // would guide you along a line the clock is not measuring. That is true and it is exactly
+    // backwards: once you have left the priced tour it is no longer a route you are driving, only
+    // a number you are measured against, so the shortest completion is your best remaining chance
+    // of beating it (owner, 2026-08-11). The clock measuring a different line is the REASON the
+    // guidance must be optimal rather than faithful. Par itself never moves — see paper-route.js
+    // line() for why route and guide are two objects.
+    if (paperRouteSystem?.isCarrying()) return paperRouteSystem.line()
     const s = missionSystem?.state
     // 'staging' counts: that is precisely when a POI job wants guidance, because the reason the
     // start zone exists is that you may be pointing the wrong way and have to decide which.
@@ -4801,6 +4819,12 @@ function loop () {
     // it repaints on the same poll for the same reason. ('staging' is a static line, but it costs
     // one string write and keeps the state→HUD mapping in one place.)
     if (paperRouteSystem.isCarrying()) _renderPaperUI()
+    // FEAT-63: RECALCULATING. On the poll, not the frame — one style write at 10 Hz, and the
+    // system's own minimum-display window means a job that finishes in 120 ms is still readable.
+    if (_recalcEl) {
+      const on = paperRouteSystem.isRerouting()
+      if (on !== _recalcOn) { _recalcOn = on; _recalcEl.style.display = on ? 'block' : 'none' }
+    }
     // …and which delivery targets are lit. Visibility flags only, no allocation.
     _updateCustomerRings()
     // FEAT-46: the orange interaction ring ↔ green start-zone ring swap rides the same poll.
@@ -4941,6 +4965,19 @@ function loop () {
   // PERF-26: stamp the frame's CPU span + the program count, so a shader compile shows up as a
   // +N on the hitch record rather than as unexplained time outside every bucket.
   perfFrameEnd(renderer.info.programs?.length ?? -1)
+
+  // FEAT-63: THE SPARE-TIME PUMP. Dead last in the frame, on purpose — by here everything that
+  // owes the player a picture has been done, so what is left before the next vsync is genuinely
+  // spare and spending it cannot push anything else over.
+  //
+  // The re-plan is ~14 ms of work at the top rung and it must never be one frame's worth. Budget
+  // is whatever this frame did not use, so a frame that already overran contributes nothing and a
+  // quiet one contributes several milliseconds. Even at the FLOOR the job lands in about a second,
+  // and the RECALCULATING indicator is what makes that honest to the player.
+  if (paperRouteSystem?.isRerouting()) {
+    const spentMs = performance.now() - newTime * 1000
+    paperRouteSystem.pumpReroute(Math.max(PUMP_FLOOR_MS, FRAME_BUDGET_MS - PUMP_MARGIN_MS - spentMs))
+  }
 }
 
 perfMark('init: synchronous bootstrap done, requesting first frame')  // TEMP (D-arc)

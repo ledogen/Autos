@@ -325,6 +325,26 @@
     }
     #mission-hud .mh-count { font-size: 44px; color: #ffcf3c; }
 
+    /* FEAT-63: the GPS re-plan indicator. Bottom-right and quiet — it reports that help is on the
+       way, it is not an alarm. Its own element rather than a line inside #paper-hud because it
+       comes and goes on a different cadence to the route's three live values, and because it
+       belongs with the navigation furniture rather than with the mission's numbers. */
+    #gps-recalc {
+      display: none;
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      background: rgba(0, 0, 0, 0.55);
+      border: 1px solid #3a4450;
+      padding: 6px 12px;
+      font-family: monospace;
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      color: #7fc3ff;
+      z-index: 88;
+      pointer-events: none;
+    }
+
     /* FEAT-46: POI interaction prompt (bottom-centre) — shown while stopped within range of a
        marker cube. Orange, to match the cubes and their map icons. */
     #poi-prompt {
@@ -904,6 +924,8 @@
     </div>
   </div>
   <div id="paper-hud"></div>
+  <!-- FEAT-63: shown while the GPS is re-planning the shortest way to finish. -->
+  <div id="gps-recalc">RECALCULATING…</div>
 
   <!-- FEAT-45 Phase D: the camp dialogue. One panel, four faces — make-camp confirm, the camp
        (break camp · sleep · fish), the sleep timer, and mom's house. main.js renders it

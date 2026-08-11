@@ -422,6 +422,11 @@ export class GpsSystem {
     // a route baked at offer time reaches past the streamed band, and those far segments fell back
     // to the (wrong-by-metres) par sampler. One cheap revision compare per frame; the bake itself
     // only re-runs while something is still missing.
+    //
+    // FEAT-63 rides this identity check and needs nothing else: a re-planned paper route arrives as
+    // a NEW object, so it re-bakes here and `_idx = 0` re-acquires progress against the new line.
+    // Do not "optimise" the compare into a deep or id-based one — the cheap identity test is the
+    // whole seam a re-plan hangs on.
     const rev = this._getRoad?.()?._networkRev ?? -1
     if (mission !== this._src || (this._route?.partial && rev !== this._bakeRev)) {
       this._src = mission
