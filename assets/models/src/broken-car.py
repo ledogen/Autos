@@ -860,10 +860,16 @@ def build_detail(p):
     # are per-height, the kink ~6 mm outboard of the E->F corner edge at its own z
     # (0.7873 at z 0.728, 0.7498 at 0.878).  Lenses mount proud of the plate.
     # Saves 12 tris over the two-slab version.
+    # Housing clearances (2026-08-11d, user's clipping screenshot): the front chord
+    # ran within ~1 mm of the 2.440 cap plane at its outer end and the wrap chords
+    # dipped ~5 mm under the skin mid-span, so beige wedged through the plate both
+    # beside and below the lens.  Front chord now lands at y 2.446 at the kink
+    # (12 mm proud at the cap corner) and the wrap points sit further outboard;
+    # every chord clears its skin by >= 6 mm along the full span.
     for sx in (1, -1):
         pts = []
-        for z, xk, xw in ((0.728, 0.793, 0.836), (0.878, 0.756, 0.802)):
-            plan = [(0.352, 2.466), (xk, 2.440), (xw, 2.386), (0.480, 2.398)]
+        for z, xk, xw in ((0.728, 0.804, 0.848), (0.878, 0.764, 0.812)):
+            plan = [(0.352, 2.470), (xk, 2.446), (xw, 2.386), (0.480, 2.398)]
             pts += [(sx * px, py, z) for px, py in plan]
         hexa(p, pts, "CarTrim")
     # TALL lamps (2026-08-10, walkaround board): the real lens is nearly as tall as
@@ -891,7 +897,7 @@ def build_detail(p):
     # guard, deliberately: it is corner furniture, exempt like the bumper.
     for sx in (1, -1):
         pts = []
-        for z, xk, xw in ((0.740, 0.790, 0.840), (0.868, 0.760, 0.806)):
+        for z, xk, xw in ((0.740, 0.790, 0.844), (0.868, 0.760, 0.808)):
             plan = [(0.656, 2.472), (xk, 2.448), (xw, 2.400), (0.700, 2.404)]
             pts += [(sx * px, py, z) for px, py in plan]
         hexa(p, pts, "CarSignal")
