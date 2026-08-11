@@ -2226,12 +2226,23 @@ function _rebuildPoiMarkers () {
  * So: on a route, only the route's UNDELIVERED customers light up — and a ring going out as the
  * paper lands is the delivery confirmation. Off a route every customer shows again, which is how
  * you learn the neighbourhood before Larry gives you a bigger piece of it.
+ *
+ * …and only when you are NEAR (owner, 2026-08-11), exactly as the orange interaction rings work.
+ * A rung-four route reaches 2 km, and fifteen green circles burning across the valley flattens the
+ * landscape into a game board — the same reason FEAT-60 pulled the orange ones in. The distance
+ * test comes FIRST and short-circuits everything else, so a customer you are nowhere near costs
+ * one hypot per poll. The radius is generous next to the orange rings' 50 m: a target is something
+ * you have to spot and line a throw up at while moving, not something you park at.
  */
+const TARGET_RING_SHOW_R = 150   // m
 function _updateCustomerRings () {
   const onRound = paperRouteSystem.isCarrying()
   const live = new Set(onRound ? paperRouteSystem.routeCustomers().map(c => c.id) : [])
+  const vp = vehicleState.position
   for (const [id, pair] of _customerRings) {
-    const on = onRound ? (live.has(id) && !paperRouteSystem.isDelivered(id)) : true
+    const p = pair[0].position
+    let on = Math.hypot(p.x - vp.x, p.z - vp.z) <= TARGET_RING_SHOW_R
+    if (on && onRound) on = live.has(id) && !paperRouteSystem.isDelivered(id)
     pair[0].visible = on
     pair[1].visible = on
   }

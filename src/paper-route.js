@@ -33,6 +33,12 @@ export const PAPER_PARAMS = {
     // The ladder Larry walks you up, one rung per PERFECT route (owner, 2026-08-05). Run-layer, so
     // it is re-earned every run like everything else.
     tiers:       [4, 9, 12, 15],
+    // …and how far out each rung reaches, in metres from the region centre (owner, 2026-08-11).
+    // The route grows in BOTH axes: more customers AND a wider neighbourhood, so rung four is a
+    // different shape of drive and not just a longer list. Placement reads this table — poi.js's
+    // buildHouses fills the pool ring by ring so every rung is actually SERVABLE — which is why it
+    // lives here, with the ladder, and not as a second copy in POI_PARAMS.
+    tierR:       [1000, 1500, 2000, 2000],
     // Spares as a fraction of the customer count, per tier: generous on the first route, thin on the
     // last (owner). A beginner's four-house route tolerates four fluffed throws; the fifteen-house
     // route tolerates four and a half, which is the difficulty curve stated as inventory.
@@ -76,6 +82,26 @@ export function resetPaperRun () {
 export function customersForTier (tier = runPaper.tier) {
     const t = PAPER_PARAMS.tiers
     return t[Math.min(Math.max(0, tier | 0), t.length - 1)]
+}
+
+/** How far from the region centre this tier's route reaches. */
+export function radiusForTier (tier = runPaper.tier) {
+    const r = PAPER_PARAMS.tierR
+    return r[Math.min(Math.max(0, tier | 0), r.length - 1)]
+}
+
+/**
+ * The rungs as placement sees them: cumulative (radius, count) quotas, ascending by radius, one
+ * entry per DISTINCT radius carrying that ring's largest count. [4@1km, 9@1.5km, 12@2km, 15@2km]
+ * collapses to [4@1km, 9@1.5km, 15@2km] — the two rungs that share a ring share one quota.
+ */
+export function houseRungs (P = PAPER_PARAMS) {
+    const by = new Map()
+    for (let i = 0; i < P.tiers.length; i++) {
+        const r = P.tierR[Math.min(i, P.tierR.length - 1)]
+        by.set(r, Math.max(by.get(r) ?? 0, P.tiers[i]))
+    }
+    return [...by].sort((a, b) => a[0] - b[0]).map(([r, n]) => ({ r, n }))
 }
 
 /**
@@ -219,9 +245,17 @@ function _pathBack (prev, startK, goalK) {
  * @param {number} want      how many of them this tier visits
  * @param {{x:number,z:number,r:number}|null} region  the story region wall, or null
  * @param {number} margin    keep the tour this far inside the wall
+ * @param {number} ringR     this tier's reach from the region centre (radiusForTier). The rungs
+ *                           widen the neighbourhood as well as lengthening the list, and the ring
+ *                           is applied HERE rather than at the call site so it is one rule that
+ *                           the tour, the gate and any future re-plan all share.
  */
-export function planTour (road, larry, allCust, want, region = null, margin = 100) {
+export function planTour (road, larry, allCust, want, region = null, margin = 100, ringR = Infinity) {
     if (!road || !larry || !allCust?.length || !(want > 0)) return null
+    if (region && isFinite(ringR)) {
+        allCust = allCust.filter(c => Math.hypot(c.x - region.x, c.z - region.z) <= ringR)
+        if (!allCust.length) return null
+    }
     const g = road.networkGraph?.()
     if (!g?.edges?.length) return null
 
@@ -612,7 +646,7 @@ export class PaperRouteSystem {
             const larry = this.giver
             const want = customersForTier()
             this.route = planTour(this._getRoad(), larry, pois?.customers() ?? [], want,
-                                  this._getRegion())
+                                  this._getRegion(), 100, radiusForTier())
             if (!this.route) this.error = 'no route could be routed from here'
         } catch (e) {
             console.warn('[paper] tour planning failed', e)

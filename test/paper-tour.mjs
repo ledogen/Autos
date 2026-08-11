@@ -24,7 +24,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { WaterSystem } from '../src/water.js'
 import { PoiSystem, POI_PARAMS } from '../src/poi.js'
 import { planTour, PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun,
-         deadlineFor, stockForTier, customersForTier } from '../src/paper-route.js'
+         deadlineFor, stockForTier, customersForTier, radiusForTier } from '../src/paper-route.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
 let fails = 0
@@ -79,10 +79,10 @@ const tours = []
 for (let tier = 0; tier < PAPER_PARAMS.tiers.length; tier++) {
     const want = customersForTier(tier)
     const t0 = Date.now()
-    const t = planTour(W.road, larry, customers, want, region)
+    const t = planTour(W.road, larry, customers, want, region, 100, radiusForTier(tier))
     const ms = Date.now() - t0
     tours.push(t)
-    check(`tier ${tier + 1} (${want} customers) plans a route`, !!t)
+    check(`tier ${tier + 1} (${want} customers, ${radiusForTier(tier)} m ring) plans a route`, !!t)
     if (!t) continue
     check(`…priced with a real par`, t.par > 0 && isFinite(t.par), `par ${t.par}`)
     check(`…over a real distance`, t.distance > 0 && isFinite(t.distance), `${t.distance} m`)
