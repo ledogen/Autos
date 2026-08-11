@@ -518,7 +518,9 @@ the argument: it converts deliberation into gameplay rather than into UI.
 
 **Proposed mitigation (unratified): partial information via POI identity.** The POI *type* is visible
 on the map and telegraphs the mission *family*, while the specifics stay hidden until you arrive. A
-sawmill means freight. A house means an errand. A shop means a delivery. So the player is never
+sawmill means freight. A house means an errand. A shop means a delivery. A broken-down car means a
+roadside-assist job (ASSET-18 was marked a **POI mission provider**, owner 2026-08-11 — it offers
+the stranded-motorist / tow / parts family, it is not dressing). So the player is never
 blind — they're choosing which *kind* of uncertainty to drive toward. That keeps informed routing
 without restoring the browsable list.
 

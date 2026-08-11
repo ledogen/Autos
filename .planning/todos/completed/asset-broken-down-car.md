@@ -279,9 +279,12 @@ Flagged for whoever wires FEAT-59/FEAT-46 placement. Cheap either way.
 - `BrokenCarGlass` is a separate object so the renderer can control its draw order independently of
   the opaque body. Three.js draws transparent meshes after opaque ones with depth-write off — worth
   a look when FEAT-59 first renders this against foliage.
-- **Ships as scenery with no interaction.** A stranded-motorist mission, a tow job, or a parts-
-  scavenging hook are all gameplay tickets citing this asset; `.planning/story-mode/DESIGN.md`
-  governs whether any of them exist. This ticket does not assume one does.
+- **POI mission provider** [owner ruling 2026-08-11, supersedes the earlier "ships as scenery with
+  no interaction" note]. When FEAT-59/FEAT-46 place this POI it joins the mission-anchor set — it
+  *offers* jobs (stranded-motorist / tow / parts-scavenging family), it is not dressing. The
+  specific mission design is still a gameplay ticket to cut under `DESIGN.md`'s rules; this ruling
+  only settles that the broken-down car is a provider, not scenery. Under missions.md's
+  POI-identity idea, its silhouette telegraphs the family: a dead car means roadside assistance.
 - Pairs with ASSET-20 (hitchhiker) — a hitchhiker within sight of a dead car is a whole short story
   and costs nothing extra.
 - Distinct from FEAT-36's dynamic props: this is immovable set dressing, not a rock that tumbles.
