@@ -42,10 +42,10 @@ const HOUSE = 'M12 2.5 L22.5 11.5 L19.5 11.5 L19.5 21.5 L4.5 21.5 L4.5 11.5 L1.5
 export const POI_ICONS = {
     // Mom's house — where you can sleep. NOT a camp (see camp.js build()); it is a POI with a
     // building on it that happens to have a bed.
-    momsHouse:    { label: "MOM'S",   color: '#ff8fd0', path: HOUSE },
-    larrysHouse:  { label: "LARRY'S", color: '#8fd0ff', path: HOUSE },
+    momsHouse:    { label: "Mom's",   color: '#ff8fd0', path: HOUSE },
+    larrysHouse:  { label: "Larry's", color: '#8fd0ff', path: HOUSE },
     // Burger: domed top bun, flat-bottomed heel, one slot for the patty.
-    burgerJoint:  { label: 'BURGER',  color: '#ffc84a', path:
+    burgerJoint:  { label: 'Burger',  color: '#ffc84a', path:
         'M2 11.5 A10 7.5 0 0 1 22 11.5 L22 16.5 A10 4.5 0 0 1 2 16.5 Z'
       + 'M3 13 L3 15 L21 15 L21 13 Z' },
     // Open-end wrench laid on the 45° diagonal, head up-left. The head is a full round BOSS — one
@@ -74,7 +74,7 @@ export const POI_ICONS = {
     // this, and the head centre rose from y8 to y7 so the notch crosses the circle nearer its
     // widest point — without both, a r5 head leaves ~2 units of prong, which the outline eats.
     // As drawn the prongs are 3.4 units with ~2.2 of colour surviving.
-    serviceShop:  { label: 'SERVICE', color: '#c8d0d8', path:
+    serviceShop:  { label: 'Service', color: '#c8d0d8', path:
         'M10.73 14.06 A6.54 6.54 0 0 1 2 5.7 L4.39 8.08 A2.61 2.61 0 0 0 8.08 4.39 L5.7 2'
       + ' A6.54 6.54 0 0 1 14.06 10.73 L21.76 18.44 A2.35 2.35 0 0 1 18.44 21.76 Z' },
     // Gas pump: body on a plinth, display window cut out, hose column down the right. The body is
@@ -86,7 +86,7 @@ export const POI_ICONS = {
     // own text. Nudged so the silhouette is symmetric about 12. (Bbox centre is the honest target
     // here because the pump's area centroid lands at 10.24 too — the wide body left of centre and
     // the thin hose column right of it happen to balance.)
-    gasStation:   { label: 'GAS',     color: '#ff7a5a', path:
+    gasStation:   { label: 'Gas',     color: '#ff7a5a', path:
         'M5.75 3 L14.25 3 A1.5 1.5 0 0 1 15.75 4.5 L15.75 7.5 L21.25 7.5 L21.25 23 L18.25 23'
       + ' L18.25 10.5 L15.75 10.5 L15.75 20.5 L17.25 20.5 L17.25 23 L2.75 23 L2.75 20.5'
       + ' L4.25 20.5 L4.25 4.5 A1.5 1.5 0 0 1 5.75 3 Z'
@@ -95,7 +95,7 @@ export const POI_ICONS = {
     // used to be its own polygon crossing the basket, so the stroke drew its edges straight through
     // the basket interior — a seam where the drawing wants clean space. Merged, the post's outer
     // edge simply stops being a boundary below the rim and becomes the basket's left wall.
-    generalStore: { label: 'STORE',   color: '#b48cff', path:
+    generalStore: { label: 'Store',   color: '#b48cff', path:
         'M1.5 2.5 L6.2 2.5 L7.9 7 L22.5 7 L20 17.4 L8.6 17.4 L4.4 5.2 L1.5 5.2 Z'
       + 'M9 19.4 A2 2 0 1 1 13 19.4 A2 2 0 1 1 9 19.4 Z'
       + 'M16.5 19.4 A2 2 0 1 1 20.5 19.4 A2 2 0 1 1 16.5 19.4 Z' },
@@ -106,7 +106,7 @@ export const POI_ICONS = {
     // each side of it barely a tenth of a unit of colour survived, so the eye read as a solid black
     // dot. 2.3 units of wall keeps ~1.1 showing. Eye and wire are one subpath — the shank meets the
     // ring where the circle crosses x = centre ± 1.4, so there is no seam stroked across the join.
-    tackleShop:   { label: 'TACKLE',  color: '#5fd8b8', path:
+    tackleShop:   { label: 'Tackle',  color: '#5fd8b8', path:
         'M12.8 10.16 A4.2 4.2 0 1 1 15.6 10.16 L15.6 17.6 A4.4 4.4 0 0 1 6.8 17.6'
       + ' L6.8 14.1 L5.6 10.9 L9.6 15.1 L9.6 17.6 A1.6 1.6 0 0 0 12.8 17.6 Z'
       + 'M12.3 6.2 A1.9 1.9 0 1 0 16.1 6.2 A1.9 1.9 0 1 0 12.3 6.2 Z' },

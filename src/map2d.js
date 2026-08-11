@@ -50,29 +50,38 @@ const RESTREAM_MOVE   = 300    // m — re-stream when the pan center has drifte
 const TELEPORT_SNAP_RADIUS = 500  // m — double-click snaps to the nearest road within this range
 
 // ── Topographic paper (the map's whole visual identity) ───────────────────────────────────────
-// The map is drawn as a USGS/Forest-Service quadrangle: pale green vegetated ground, brown
+// The map is drawn as a USGS/Forest-Service quadrangle: pale green vegetated ground, burgundy
 // contours off the binned coarse-height field, black-cased roads. Every colour below is picked
 // against the paper green, not against the old dark canvas — anything light-on-dark (the road
 // stroke, the crossing dots, the scale bar) had to be re-inked when the ground went pale.
 const PAPER_GREEN   = '#cfe2bd'   // vegetated ground. ONE colour for now: tree cover is uniform
                                   // worldwide, so the tan "sparse vegetation" of a real quad has
                                   // nothing to key off until a biome layer exists (owner, 2026-08-11).
-const CONTOUR_COLOR = '#a1703f'   // intermediate contour — sepia, the quadrangle brown
-const INDEX_COLOR   = '#6b4419'   // index contour (every INDEX_EVERY-th), darker + heavier
-const ROAD_INK      = '#33291c'   // road casing (and the map's general "ink")
-const ROAD_FILL     = '#fbfbf4'   // road fill between the casings
-const INDEX_EVERY   = 5           // every Nth contour is an index contour
+// Both contour inks run DARKER than they look on a swatch: at sub-pixel widths antialiasing
+// blends most of the stroke into the paper, so a mid-tone burgundy comes out mauve on screen.
+const CONTOUR_COLOR = '#7e2f3f'   // intermediate contour — dark burgundy
+const INDEX_COLOR   = '#4d1622'   // index contour (every INDEX_EVERY-th), deeper burgundy
+const CONTOUR_W     = 0.65        // px — intermediate contour weight
+const INDEX_W       = 1.15        // px — index contour weight
+const ROAD_INK      = '#0b0b0b'   // road casing — black, for maximum contrast against the sheet
+const ROAD_FILL     = '#ffffff'   // road fill between the casings
+const MAP_INK       = '#1a1a1a'   // general map ink (neatline, collar lettering, scale bar)
+const INDEX_EVERY   = 5           // every Nth contour is an index contour (so 50 m at CONTOUR_IV)
 // Map lettering. No web font is loaded (browser-only, single origin, no external requests — see
 // CLAUDE.md), so this is a stack that lands on Open Sans where it's installed and on the nearest
 // humanist grotesque otherwise. Deliberately NOT monospace: the rest of the HUD is a terminal, the
 // map is a printed sheet.
 const MAP_LABEL_FONT = `'Open Sans', 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif`
 
-// Contour interval ladder, metres. The interval is chosen per draw from the terrain's own mean
-// slope (see _pickInterval) so contours keep roughly CONTOUR_MIN_PX apart on screen at any zoom —
-// a fixed interval either crowds into a solid brown wash zoomed out, or vanishes zoomed in.
-const CONTOUR_LADDER = [2, 5, 10, 20, 25, 50, 100, 200, 500]
-const CONTOUR_MIN_PX = 7
+// Contour interval, metres — a CONSTANT, the way a printed quadrangle states one interval for the
+// whole sheet (owner, 2026-08-11). An earlier pass chose it per redraw from the terrain's slope so
+// lines held a fixed screen spacing at any zoom; that read as the ground changing shape when you
+// scrolled the wheel, which is exactly what a map must never do.
+//
+// The cost of the constant is at the extremes of the zoom range, and it is real: zoomed far out the
+// 10 m lines pack tighter than a pixel and collapse into a burgundy wash. That is the honest
+// behaviour of a fixed-interval sheet viewed at the wrong scale — see _drawTopo's density note.
+const CONTOUR_IV = 20
 
 // Height-field sampling. The field is `road._coarseH` — the SAME closure the router prices grade
 // off and terrain.js builds the mesh from, so the contours describe the ground the truck drives.
@@ -82,6 +91,22 @@ const TOPO_STEP_PX  = 4           // target screen size of one sample cell
 const TOPO_STEP_MIN = 4           // m — no finer than this (the field has no detail below it)
 const TOPO_STEP_MAX = 24          // m — Nyquist guard against the 250 m octave
 const TOPO_GRID_MAX = 240         // cells per axis — bounds the marching-squares cost per redraw
+
+// ── The collar (border) ───────────────────────────────────────────────────────────────────────
+// The sheet is buried in an off-white margin carrying tick marks and an A–Z / 1–n index, so any
+// single frame reads as a photograph of a whole printed map rather than as a viewport onto one.
+// The collar is drawn PER FRAME over the top of everything (never into the cached background):
+// it is fixed to the screen while the sheet slides under it, and painting it last also masks
+// whatever the map layer bled into the margin — no clip-region juggling.
+const COLLAR_CREAM  = '#f2efe4'   // the off-white paper of the margin
+const COLLAR        = 30          // px — margin on the top/left/right edges
+const COLLAR_BOTTOM = 56          // px — deeper: it also carries the scale bar + interval note
+const COLLAR_TICK   = 7           // px — length of a grid tick into the margin
+// World size of one index cell, metres. Chosen per frame from this ladder so a cell lands near
+// GRID_CELL_PX on screen — the index has to stay countable across the whole zoom range.
+const GRID_LADDER   = [50, 100, 200, 250, 500, 1000, 2000, 5000, 10000, 20000]
+const GRID_CELL_PX  = 165
+const GRID_LETTERS  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 // Car marker, nose-to-tail half-length in px (9 originally, 18 at the 2x pass). The triangle's
 // half-width is derived from it so the arrow keeps its taper instead of going stubby or needly.
 const CAR_ICON_L = 13.5
@@ -269,7 +294,9 @@ export class Map2D {
      * draw doesn't stomp the fit with the default whole-radius zoom.
      */
     frameBounds(minX, minZ, maxX, maxZ, marginFrac = 0.22) {
-        const w = this._canvas.clientWidth, h = this._canvas.clientHeight
+        // Fit to the SHEET, not the window — the collar is border, not map, and a route framed to
+        // the full canvas would put its endpoints under the border.
+        const { w, h } = this._sheet()
         if (!w || !h) return
         this._panX = (minX + maxX) / 2
         this._panZ = (minZ + maxZ) / 2
@@ -409,8 +436,20 @@ export class Map2D {
     }
 
     // ── Transform helpers ────────────────────────────────────────────────────────────────────
-    _sx(wx) { return (wx - this._panX) * this._zoom + this._canvas.clientWidth  / 2 }
-    _sy(wz) { return (wz - this._panZ) * this._zoom + this._canvas.clientHeight / 2 }
+    // The sheet — the drawable map area inside the collar. The collar is deeper at the bottom
+    // (scale bar + interval note), so this rect is NOT canvas-centred, and the whole view
+    // transform hangs off ITS centre instead. Anything that converts between world and screen
+    // must go through here, or the map slides out from under its own border: _sx/_sy, the
+    // wheel-zoom anchor, the double-click pick, the cached-background blit delta, and the
+    // sample-grid origin in _drawTopo all share this one definition.
+    _sheet() {
+        const W = this._canvas.clientWidth, H = this._canvas.clientHeight
+        const x0 = COLLAR, y0 = COLLAR, x1 = W - COLLAR, y1 = H - COLLAR_BOTTOM
+        return { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }
+    }
+
+    _sx(wx) { return (wx - this._panX) * this._zoom + this._sheet().cx }
+    _sy(wz) { return (wz - this._panZ) * this._zoom + this._sheet().cy }
 
     _resize() {
         const dpr = window.devicePixelRatio || 1
@@ -422,8 +461,14 @@ export class Map2D {
         this._canvas.style.width = w + 'px'
         this._canvas.style.height = h + 'px'
         this._dpr = dpr
-        // Fit MAP_RADIUS*2 to the short screen edge on the very first sizing.
-        if (!this._zoomInit) { this._zoom = Math.min(w, h) / (MAP_RADIUS * 2); this._zoomInit = true }
+        // Fit MAP_RADIUS*2 to the short edge of the SHEET (not the window) on the very first
+        // sizing — the collar is not drawable, so fitting to the window would push the outer ring
+        // of the network under the border.
+        if (!this._zoomInit) {
+            const s = this._sheet()
+            this._zoom = Math.min(s.w, s.h) / (MAP_RADIUS * 2)
+            this._zoomInit = true
+        }
         this._bgDirty = true
     }
 
@@ -478,14 +523,15 @@ export class Map2D {
         // Zoom about the cursor — a PURE canvas transform, no re-stream.
         const rect = this._canvas.getBoundingClientRect()
         const mx = e.clientX - rect.left, my = e.clientY - rect.top
+        const s = this._sheet()
         // World point under the cursor before zoom.
-        const wx = (mx - this._canvas.clientWidth / 2) / this._zoom + this._panX
-        const wz = (my - this._canvas.clientHeight / 2) / this._zoom + this._panZ
+        const wx = (mx - s.cx) / this._zoom + this._panX
+        const wz = (my - s.cy) / this._zoom + this._panZ
         const factor = Math.exp(-e.deltaY * 0.0015)
         this._zoom = Math.max(0.005, Math.min(4, this._zoom * factor))
         // Keep that same world point under the cursor after zoom.
-        this._panX = wx - (mx - this._canvas.clientWidth / 2) / this._zoom
-        this._panZ = wz - (my - this._canvas.clientHeight / 2) / this._zoom
+        this._panX = wx - (mx - s.cx) / this._zoom
+        this._panZ = wz - (my - s.cy) / this._zoom
         this._deferBgRedraw()   // scale-blit until the wheel goes quiet, then one sharp redraw
     }
 
@@ -496,9 +542,9 @@ export class Map2D {
     _onDblClick(e) {
         if (!this._canTeleport() || !this._onTeleport || !this._road) return
         const rect = this._canvas.getBoundingClientRect()
-        const W = this._canvas.clientWidth, H = this._canvas.clientHeight
-        const wx = (e.clientX - rect.left - W / 2) / this._zoom + this._panX
-        const wz = (e.clientY - rect.top  - H / 2) / this._zoom + this._panZ
+        const s = this._sheet()
+        const wx = (e.clientX - rect.left - s.cx) / this._zoom + this._panX
+        const wz = (e.clientY - rect.top  - s.cy) / this._zoom + this._panZ
         const near = typeof this._road.queryNearest === 'function'
             ? this._road.queryNearest(wx, wz, TELEPORT_SNAP_RADIUS) : null
         if (near && near.point) {
@@ -533,8 +579,9 @@ export class Map2D {
         // drag/zoom gesture this is the whole cost of the background (the sharp rebuild waits for
         // the gesture to settle; see _deferBgRedraw). At rest the delta is identity.
         const k = this._bgZoom ? this._zoom / this._bgZoom : 1
-        const dx = W / 2 - k * W / 2 + (this._bgPanX - this._panX) * this._zoom
-        const dy = H / 2 - k * H / 2 + (this._bgPanZ - this._panZ) * this._zoom
+        const s = this._sheet()
+        const dx = s.cx - k * s.cx + (this._bgPanX - this._panX) * this._zoom
+        const dy = s.cy - k * s.cy + (this._bgPanZ - this._panZ) * this._zoom
         ctx.drawImage(this._bg, dx, dy, W * k, H * k)
 
         this._drawRegion(ctx)    // under the mission route — it's world furniture, not the subject
@@ -545,45 +592,56 @@ export class Map2D {
         this._drawPois(ctx)      // likewise furniture: placed at entry, so not in the cached bg
         this._drawMission(ctx)   // under the car marker, over the cached bg
         this._drawCar(ctx)
-        this._drawScaleBar(ctx)
+        this._drawCollar(ctx)    // LAST of the map layers: it masks the margin (see _drawCollar)
         this._drawCursorCoords(ctx)
         if (this._canTeleport()) this._drawTeleportPrompt(ctx)
         if (this._streaming) this._drawStreamingBadge(ctx)
     }
 
     // Top-center hint that double-clicking teleports (free-roam only).
+    // Transient HUD chips (this and the streaming badge) sit just INSIDE the neatline — they are
+    // app chrome rather than map content, so they must not cover the collar's index lettering.
     _drawTeleportPrompt(ctx) {
-        const W = this._canvas.clientWidth
+        const s = this._sheet()
         const txt = 'double click to teleport'
-        ctx.font = '14px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-        const w = ctx.measureText(txt).width + 24
-        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(W / 2 - w / 2, 12, w, 26)
-        ctx.fillStyle = '#d8d8d0'; ctx.fillText(txt, W / 2, 26)
+        ctx.font = `12px ${MAP_LABEL_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+        const w = ctx.measureText(txt).width + 22
+        const cx = (s.x0 + s.x1) / 2
+        ctx.fillStyle = 'rgba(242,239,228,0.92)'; ctx.fillRect(cx - w / 2, s.y0 + 10, w, 24)
+        ctx.strokeStyle = MAP_INK; ctx.lineWidth = 1
+        ctx.strokeRect(cx - w / 2 + 0.5, s.y0 + 10.5, w - 1, 23)
+        ctx.fillStyle = MAP_INK; ctx.fillText(txt, cx, s.y0 + 22)
         ctx.textAlign = 'left'
     }
 
-    // Road-Feel QoL: seed / x / z of the world point under the cursor, bottom-left. Same
-    // screen→world transform as the wheel-zoom anchor.
+    // Road-Feel QoL: seed / x / z of the world point under the cursor. Same screen→world transform
+    // as the wheel-zoom anchor. Set as marginalia in the bottom collar (dev text belongs in the
+    // margin, not over the map) — hence no dark chip behind it any more.
     _drawCursorCoords(ctx) {
         if (this._hoverX === undefined) return
-        const W = this._canvas.clientWidth, H = this._canvas.clientHeight
-        const wx = (this._hoverX - W / 2) / this._zoom + this._panX
-        const wz = (this._hoverY - H / 2) / this._zoom + this._panZ
-        const txt = `seed ${this._getSeed()} / ${wx.toFixed(0)} / ${wz.toFixed(0)}`
-        ctx.font = '13px monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'
-        const w = ctx.measureText(txt).width + 16
-        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(10, H - 36, w, 24)
-        ctx.fillStyle = '#d8d8d0'; ctx.fillText(txt, 18, H - 24)
+        const H = this._canvas.clientHeight
+        const s = this._sheet()
+        const wx = (this._hoverX - s.cx) / this._zoom + this._panX
+        const wz = (this._hoverY - s.cy) / this._zoom + this._panZ
+        ctx.font = `11px ${MAP_LABEL_FONT}`
+        ctx.textBaseline = 'middle'; ctx.textAlign = 'center'
+        ctx.fillStyle = 'rgba(26,26,26,0.72)'
+        ctx.fillText(`seed ${this._getSeed()} · ${wx.toFixed(0)}, ${wz.toFixed(0)}`,
+                     (s.x0 + s.x1) / 2, (s.y1 + H) / 2 + 8)
+        ctx.textAlign = 'left'
     }
 
     // Small bottom-center badge while the network is still filling in (chunked stream in flight).
     _drawStreamingBadge(ctx) {
-        const W = this._canvas.clientWidth, H = this._canvas.clientHeight
+        const s = this._sheet()
         const txt = `streaming network… ${Math.round(100 * this._streamStep / this._radiusSteps().length)}%`
-        ctx.font = '13px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-        const w = ctx.measureText(txt).width + 24
-        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(W / 2 - w / 2, 14, w, 26)
-        ctx.fillStyle = '#ffd24a'; ctx.fillText(txt, W / 2, 28)
+        ctx.font = `12px ${MAP_LABEL_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+        const w = ctx.measureText(txt).width + 22
+        const cx = (s.x0 + s.x1) / 2
+        ctx.fillStyle = 'rgba(242,239,228,0.92)'; ctx.fillRect(cx - w / 2, s.y1 - 36, w, 24)
+        ctx.strokeStyle = MAP_INK; ctx.lineWidth = 1
+        ctx.strokeRect(cx - w / 2 + 0.5, s.y1 - 35.5, w - 1, 23)
+        ctx.fillStyle = '#8a5a00'; ctx.fillText(txt, cx, s.y1 - 24)
         ctx.textAlign = 'left'
     }
 
@@ -632,19 +690,14 @@ export class Map2D {
             step *= k
             nx = Math.ceil(nx / k); nz = Math.ceil(nz / k)
         }
-        const x0 = this._panX - (W / 2) / this._zoom - step
-        const z0 = this._panZ - (H / 2) / this._zoom - step
+        const s = this._sheet()
+        const x0 = this._panX - s.cx / this._zoom - step
+        const z0 = this._panZ - s.cy / this._zoom - step
 
         const h = new Float32Array(nx * nz)
-        let hMin = Infinity, hMax = -Infinity
         for (let j = 0; j < nz; j++) {
             const wz = z0 + j * step
-            for (let i = 0; i < nx; i++) {
-                const v = road._coarseH(x0 + i * step, wz) * amp
-                h[j * nx + i] = v
-                if (v < hMin) hMin = v
-                if (v > hMax) hMax = v
-            }
+            for (let i = 0; i < nx; i++) h[j * nx + i] = road._coarseH(x0 + i * step, wz) * amp
         }
 
         // Grid line positions in SCREEN space, precomputed — the marching-squares inner loop then
@@ -653,19 +706,10 @@ export class Map2D {
         for (let i = 0; i < nx; i++) gx[i] = this._sx(x0 + i * step)
         for (let j = 0; j < nz; j++) gy[j] = this._sy(z0 + j * step)
 
-        const iv = this._pickInterval(h, nx, nz, step)
-        if (!iv) return
+        const iv = CONTOUR_IV
 
-        // Two batches: intermediate contours and index contours (every Nth, drawn heavier — the
-        // reading aid that lets you count elevation without tracing every line).
-        //
-        // N is NOT the fixed 5 of a printed quad. Zoomed right out the interval goes coarse (100 m)
-        // while this world's total relief is only ~280 m, so every-5th indexes at 500 m and NOT ONE
-        // index contour exists on the sheet — the aid silently disappears exactly where the map is
-        // busiest. Step N down until the index spacing fits inside the relief actually in view.
-        let indexEvery = INDEX_EVERY
-        const relief = hMax - hMin
-        while (indexEvery > 2 && iv * indexEvery > relief) indexEvery--
+        // Two batches: intermediate contours and index contours (every INDEX_EVERY-th, drawn
+        // heavier — the reading aid that lets you count elevation without tracing every line).
         const thin = [], thick = []
 
         for (let j = 0; j < nz - 1; j++) {
@@ -684,7 +728,7 @@ export class Map2D {
                     // Corner classification: a=top-left, b=top-right, c=bottom-right, d=bottom-left.
                     const idx = (a > v ? 8 : 0) | (b > v ? 4 : 0) | (c > v ? 2 : 0) | (d > v ? 1 : 0)
                     if (idx === 0 || idx === 15) continue
-                    const out = (k % indexEvery === 0) ? thick : thin
+                    const out = (k % INDEX_EVERY === 0) ? thick : thin
                     // Crossing point on each edge, lerped by value. Only the edges the case needs
                     // are read (the ternaries below), so no wasted interpolation.
                     const tx = () => xl + (xr - xl) * ((v - a) / (b - a))     // top edge
@@ -722,40 +766,10 @@ export class Map2D {
             ctx.stroke()
             ctx.lineCap = 'butt'
         }
-        // The index contour has to be countable at a glance against a sheet of intermediates —
-        // a 2x width alone did not separate them, so it also carries the darker ink.
-        strokeBatch(thin,  CONTOUR_COLOR, 0.8)
-        strokeBatch(thick, INDEX_COLOR,   2.1)
-
-        this._contourIv = iv   // reported in the scale-bar block, the way a quad states its interval
-    }
-
-    /**
-     * Choose the contour interval from the terrain's own steepness, so lines land ~CONTOUR_MIN_PX
-     * apart on screen: contour spacing = interval / slope, in metres, times zoom for px. Uses the
-     * MEDIAN of the sampled cell slopes rather than the mean — a ridged-noise field has a long
-     * tail of near-cliff cells, and the mean chases that tail into an interval far too coarse for
-     * the valleys where the roads (and the player) actually are.
-     * @returns {number} interval in metres, or 0 if the field is flat enough to have no contours
-     */
-    _pickInterval(h, nx, nz, step) {
-        const slopes = []
-        // Stride the sampling — a few thousand cells fix the median as well as all 57k of them.
-        const sj = Math.max(1, Math.floor(nz / 60)), si = Math.max(1, Math.floor(nx / 60))
-        for (let j = 0; j + 1 < nz; j += sj) {
-            for (let i = 0; i + 1 < nx; i += si) {
-                const a = h[j * nx + i]
-                slopes.push(Math.hypot(h[j * nx + i + 1] - a, h[(j + 1) * nx + i] - a) / step)
-            }
-        }
-        if (!slopes.length) return 0
-        slopes.sort((p, q) => p - q)
-        const med = slopes[slopes.length >> 1]
-        if (!(med > 1e-6)) return 0
-        // px between adjacent contours at interval `iv`
-        const spacing = (ivM) => (ivM / med) * this._zoom
-        for (const ivM of CONTOUR_LADDER) if (spacing(ivM) >= CONTOUR_MIN_PX) return ivM
-        return CONTOUR_LADDER[CONTOUR_LADDER.length - 1]
+        // The index contour is separated from the intermediates by INK first and weight second —
+        // both are hairlines now, so a width ratio alone would not have carried the distinction.
+        strokeBatch(thin,  CONTOUR_COLOR, CONTOUR_W)
+        strokeBatch(thick, INDEX_COLOR,   INDEX_W)
     }
 
     // (2) Road centerlines — each streamed network run projected (x,z) → screen. Drawn the way a
@@ -881,9 +895,9 @@ export class Map2D {
         // Label the boundary where it crosses straight up from the center, clamped into view so it
         // stays readable when the player has panned/zoomed away from the region edge.
         const ly = Math.min(H - 10, Math.max(14, cy - r))
-        ctx.font = 'bold 11px monospace'
+        ctx.font = `600 11px ${MAP_LABEL_FONT}`
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-        const txt = `REGION BOUNDARY · ${(reg.r / 1000).toFixed(1)} km`
+        const txt = `Region boundary · ${(reg.r / 1000).toFixed(1)} km`
         const tw = ctx.measureText(txt).width + 14
         ctx.fillStyle = 'rgba(8,10,14,0.75)'; ctx.fillRect(cx - tw / 2, ly - 9, tw, 18)
         ctx.fillStyle = '#ff965a'; ctx.fillText(txt, cx, ly)
@@ -912,13 +926,17 @@ export class Map2D {
             ctx.beginPath(); ctx.arc(sx, sy, 7, 0, Math.PI * 2)
             ctx.fillStyle = fill; ctx.fill()
             ctx.strokeStyle = '#101010'; ctx.lineWidth = 2; ctx.stroke()
-            ctx.fillStyle = '#f0f0e8'; ctx.font = 'bold 11px monospace'
+            ctx.font = `600 11px ${MAP_LABEL_FONT}`
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+            // Light halo then black text — the paper-sheet lettering treatment (see _drawPois).
+            ctx.strokeStyle = 'rgba(242,239,228,0.92)'; ctx.lineWidth = 3.5; ctx.lineJoin = 'round'
+            ctx.strokeText(label, sx, sy - 15)
+            ctx.fillStyle = '#101010'
             ctx.fillText(label, sx, sy - 15)
             ctx.textAlign = 'left'
         }
-        pin(m.start, '#5ad06a', 'START')
-        pin(m.end, '#ffcf3c', 'DROP')
+        pin(m.start, '#5ad06a', 'Start')
+        pin(m.end, '#ffcf3c', 'Drop')
     }
 
     // FEAT-45: dispersed-camping zones, rendered the way a BLM/forest-service map renders them —
@@ -1098,41 +1116,125 @@ export class Map2D {
         ctx.stroke()
     }
 
-    // (6) Scale bar (drawn on-canvas — no extra DOM). The legend that used to stand above it is
-    // gone (owner, 2026-08-07): once every POI carried its own labelled glyph, the legend was
-    // re-stating what the map already said, in a box covering the top-left corner of the world.
-    // The scale bar stays — nothing else on screen says how far anything is.
-    _drawScaleBar(ctx) {
+    /**
+     * The collar: the off-white margin the sheet is buried in, its neatline, the live grid index,
+     * and the marginalia (scale bar + contour interval). Drawn LAST and per frame — see the
+     * COLLAR_* block for why it is neither in the cached background nor a clip region.
+     *
+     * The index marks are the point of the whole thing. Ticks sit at true world-grid boundaries
+     * and the letters/numbers name the cells BETWEEN them, so the collar slides continuously as
+     * you pan — the frame stops reading as a viewport and starts reading as a photograph of a
+     * printed map that happens to be centred where you are.
+     */
+    _drawCollar(ctx) {
         const W = this._canvas.clientWidth, H = this._canvas.clientHeight
-        ctx.font = '12px monospace'
+        const s = this._sheet()
+
+        // (a) Mask the margin. Painting over the map layer is what keeps the sheet inside its
+        //     border without a clip region — anything that bled out is simply covered.
+        ctx.fillStyle = COLLAR_CREAM
+        ctx.fillRect(0, 0, W, s.y0)
+        ctx.fillRect(0, s.y1, W, H - s.y1)
+        ctx.fillRect(0, 0, s.x0, H)
+        ctx.fillRect(s.x1, 0, W - s.x1, H)
+
+        // (b) Grid geometry. One index cell lands near GRID_CELL_PX at any zoom, so the collar
+        //     stays countable from a 60 m view to a 40 km one.
+        let cell = GRID_LADDER[GRID_LADDER.length - 1]
+        for (const c of GRID_LADDER) if (c * this._zoom >= GRID_CELL_PX) { cell = c; break }
+
+        // Cell labels CYCLE. The world is infinite and procedural, so no finite index can be
+        // globally unique — and a view only ever spans a handful of cells, which is the only span
+        // over which an index has to disambiguate anything.
+        //
+        // Both axes cycle on the SAME period of 26. Letters wrapping Z→A reads as an ordinary
+        // atlas grid, but the numbers first ran 1–99 and the 99→1 wrap landed in view as a jump
+        // from two digits to one — which reads as a glitch, not as a repeating index. Matching the
+        // periods makes the vertical wrap look like what it is.
+        const colLabel = n => GRID_LETTERS[((n % 26) + 26) % 26]
+        const rowLabel = m => String((((m % 26) + 26) % 26) + 1)
+
+        ctx.strokeStyle = MAP_INK
+        ctx.lineWidth = 1
+        ctx.fillStyle = MAP_INK
+        ctx.font = `600 11px ${MAP_LABEL_FONT}`
+        ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
+
+        // Columns: ticks on the world-grid lines, letters centred in the cells between them.
+        const nA = Math.floor((this._panX - s.cx / this._zoom) / cell)
+        const nB = Math.floor((this._panX + (W - s.cx) / this._zoom) / cell)
+        for (let n = nA; n <= nB + 1; n++) {
+            const px = this._sx(n * cell)
+            if (px > s.x0 && px < s.x1) {
+                ctx.beginPath()
+                ctx.moveTo(px, s.y0); ctx.lineTo(px, s.y0 - COLLAR_TICK)
+                ctx.moveTo(px, s.y1); ctx.lineTo(px, s.y1 + COLLAR_TICK)
+                ctx.stroke()
+            }
+            // Label the cell [n, n+1), clamped so a cell running off the edge keeps its letter
+            // on screen instead of dropping it the moment the boundary leaves the sheet.
+            const mid = Math.min(s.x1 - 9, Math.max(s.x0 + 9, this._sx((n + 0.5) * cell)))
+            if (this._sx((n + 1) * cell) > s.x0 + 6 && px < s.x1 - 6) {
+                ctx.fillText(colLabel(n), mid, s.y0 - COLLAR_TICK - 8)
+                ctx.fillText(colLabel(n), mid, s.y1 + COLLAR_TICK + 8)
+            }
+        }
+
+        // Rows: same, numbers down the left and right margins.
+        const mA = Math.floor((this._panZ - s.cy / this._zoom) / cell)
+        const mB = Math.floor((this._panZ + (H - s.cy) / this._zoom) / cell)
+        for (let m = mA; m <= mB + 1; m++) {
+            const py = this._sy(m * cell)
+            if (py > s.y0 && py < s.y1) {
+                ctx.beginPath()
+                ctx.moveTo(s.x0, py); ctx.lineTo(s.x0 - COLLAR_TICK, py)
+                ctx.moveTo(s.x1, py); ctx.lineTo(s.x1 + COLLAR_TICK, py)
+                ctx.stroke()
+            }
+            const mid = Math.min(s.y1 - 9, Math.max(s.y0 + 9, this._sy((m + 0.5) * cell)))
+            if (this._sy((m + 1) * cell) > s.y0 + 6 && py < s.y1 - 6) {
+                ctx.fillText(rowLabel(m), s.x0 - COLLAR_TICK - 9, mid)
+                ctx.fillText(rowLabel(m), s.x1 + COLLAR_TICK + 9, mid)
+            }
+        }
+
+        // (c) The neatline (heavy rule bounding the sheet) and an outer hairline, the two rules a
+        //     printed quad carries. Drawn after the ticks so they butt cleanly into it.
+        ctx.strokeStyle = MAP_INK
+        ctx.lineWidth = 1.6
+        ctx.strokeRect(s.x0 + 0.5, s.y0 + 0.5, s.w - 1, s.h - 1)
+        ctx.lineWidth = 1
+        ctx.strokeStyle = 'rgba(26,26,26,0.45)'
+        ctx.strokeRect(6.5, 6.5, W - 13, H - 13)
+
+        this._drawMarginalia(ctx, s, H)
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'alphabetic'
+    }
+
+    // Scale bar + contour interval, set in the deep bottom margin (owner, 2026-08-11) where a
+    // printed sheet puts them — off the map itself, so neither can sit on top of terrain.
+    _drawMarginalia(ctx, s, H) {
+        const by = (s.y1 + H) / 2 + 8      // baseline of the marginalia row, below the index letters
         // A "nice" world length near 120 px wide.
-        const targetPx = 120
-        const rawM = targetPx / this._zoom
+        const rawM = 120 / this._zoom
         const pow = Math.pow(10, Math.floor(Math.log10(rawM)))
         const niceM = (rawM / pow >= 5 ? 5 : rawM / pow >= 2 ? 2 : 1) * pow
         const barPx = niceM * this._zoom
-        // Lifted off the bottom edge to make room for the contour-interval line UNDER the bar —
-        // at the old H-28 the two collided into each other.
-        const bx = W - barPx - 24, by = H - 42
-        ctx.strokeStyle = ROAD_INK; ctx.lineWidth = 2
+
+        const bx = s.x1 - barPx
+        ctx.strokeStyle = MAP_INK; ctx.lineWidth = 1.6
         ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + barPx, by)
         ctx.moveTo(bx, by - 4); ctx.lineTo(bx, by + 4)
         ctx.moveTo(bx + barPx, by - 4); ctx.lineTo(bx + barPx, by + 4)
         ctx.stroke()
-        ctx.fillStyle = ROAD_INK; ctx.textBaseline = 'bottom'
-        ctx.font = `12px ${MAP_LABEL_FONT}`
-        ctx.fillText(niceM >= 1000 ? (niceM / 1000) + ' km' : niceM + ' m', bx, by - 6)
-        // The interval is chosen per redraw from the terrain's slope (_pickInterval), so unlike a
-        // printed quad it is not a constant — which is exactly why it has to be stated on the sheet.
-        if (this._contourIv) {
-            ctx.textAlign = 'right'
-            ctx.textBaseline = 'top'
-            ctx.font = `11px ${MAP_LABEL_FONT}`
-            ctx.fillStyle = ROAD_INK
-            ctx.fillText(`CONTOUR INTERVAL ${this._contourIv} METERS`, bx + barPx, by + 10)
-            ctx.textAlign = 'left'
-        }
-        ctx.textBaseline = 'middle'
+        ctx.fillStyle = MAP_INK
+        ctx.font = `11px ${MAP_LABEL_FONT}`
+        ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'
+        ctx.fillText(niceM >= 1000 ? (niceM / 1000) + ' km' : niceM + ' m', bx - 8, by + 4)
+
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
+        ctx.fillText(`Contour interval ${CONTOUR_IV} m`, s.x0, by)
     }
 }
