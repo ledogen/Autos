@@ -251,6 +251,43 @@ export class Map2D {
         if (this._open) this._startStream()
     }
 
+    /**
+     * FEAT-43: in story mode the network is streamed ONCE, around the region centre, and then left
+     * alone (owner, 2026-08-11).
+     *
+     * Free roam has to chase the pan cursor: the world is unbounded, so the only way to show the
+     * road under your cursor is to re-stream around it. A story-mode region is not unbounded —
+     * main.js already asks for `region.r + 200` on open, so a single stream anchored at the centre
+     * covers everything the player can legally reach, and re-centring it on every pan is pure
+     * churn. Measured on a 2.5 km region: each re-stream update ran ~2.2 s and the map issues one
+     * per radius step, and because the window is a DISC being dragged around a region it already
+     * covered, an 850 m pan dropped 21 edges off the trailing side while gaining 15 on the leading
+     * one — strictly less map, for seconds of main-thread work.
+     *
+     * Returns the region when one stream from its centre covers it, else null (→ cursor-follow).
+     */
+    _regionLock() {
+        const reg = this._getRegion()
+        if (!reg) return null
+        return this._radiusTarget >= reg.r ? reg : null
+    }
+
+    // The world point the network is streamed around: the region centre when locked, else the pan
+    // cursor. Single source of truth for both _startStream and the drift checks that trigger it —
+    // if those two disagreed, a locked map would re-stream forever chasing a centre it never moves to.
+    _streamAnchor() {
+        const lock = this._regionLock()
+        return lock ? { x: lock.x, z: lock.z } : { x: this._panX, z: this._panZ }
+    }
+
+    // Has the anchor moved far enough from what we last streamed around to need another pass?
+    // Always false once a locked region is fully streamed — which is the whole point.
+    _anchorDrifted() {
+        if (!this._streamAt) return true
+        const a = this._streamAnchor()
+        return Math.hypot(a.x - this._streamAt.x, a.z - this._streamAt.z) > RESTREAM_MOVE
+    }
+
     _radiusSteps() {
         const steps = [...MAP_RADIUS_STEPS]
         for (let r = MAP_RADIUS + 500; r <= this._radiusTarget + 1e-6; r += 500) steps.push(r)
@@ -297,11 +334,8 @@ export class Map2D {
             this._panX = car.x; this._panZ = car.z
             this._centeredOnce = true
         }
-        // Resume/begin the chunked stream unless this exact center is already fully streamed.
-        if (!this._streamFull || !this._streamAt ||
-            Math.hypot(this._panX - this._streamAt.x, this._panZ - this._streamAt.z) > RESTREAM_MOVE) {
-            this._startStream()
-        }
+        // Resume/begin the chunked stream unless the anchor is already fully streamed.
+        if (!this._streamFull || this._anchorDrifted()) this._startStream()
 
         this._canvas.addEventListener('mousedown', this._onDown)
         window.addEventListener('mousemove', this._onMove)
@@ -332,7 +366,7 @@ export class Map2D {
         // A programmatic pan has no mouse-up to hang the usual debounced re-stream off, so without
         // this the route would be drawn over blank noise until the user nudged the map by hand
         // (owner-reported after hitting "regenerate" while panned away).
-        if (!this._streamAt || Math.hypot(this._panX - this._streamAt.x, this._panZ - this._streamAt.z) > RESTREAM_MOVE) {
+        if (this._anchorDrifted()) {
             this._streamFull = false
             if (this._open) this._startStream()
         }
@@ -411,16 +445,18 @@ export class Map2D {
         }
     }
 
-    // Begin/restart the chunked stream around the current pan center: grow the radius through
-    // MAP_RADIUS_STEPS one chunk per timer tick, marking the bg dirty after each so the network
-    // visibly fills in. Already-routed edges hit the warm route cache, so re-streaming a center
-    // that's already covered (e.g. a small pan, or resuming after reopen) is fast.
+    // Begin/restart the chunked stream around the anchor (pan cursor in free roam, region centre in
+    // story mode — see _regionLock): grow the radius through MAP_RADIUS_STEPS one chunk per timer
+    // tick, marking the bg dirty after each so the network visibly fills in. Already-routed edges
+    // hit the warm route cache, so re-streaming a centre that's already covered is comparatively
+    // cheap — but not free, which is why a locked region never asks for a second pass.
     _startStream() {
         clearTimeout(this._pumpTimer)
         // Restart the radius growth from the smallest step for the NEW center (first ring paints fast).
         this._streamStep = 0
         this._streamFull = false
-        this._streamCenter = new THREE.Vector3(this._panX, 0, this._panZ)
+        const a = this._streamAnchor()
+        this._streamCenter = new THREE.Vector3(a.x, 0, a.z)
         this._streaming = true
         // Defer the FIRST chunk one tick so the next render paints the terrain layer + "streaming…"
         // badge immediately (the overlay appears instantly; the network then fills in).
@@ -533,10 +569,10 @@ export class Map2D {
         if (!this._dragging) return
         this._dragging = false
         this._canvas.style.cursor = 'grab'
-        // Re-stream (chunked) only if the pan center drifted far from where we last streamed, and
-        // debounced so a flurry of small drags doesn't kick off repeated streams.
-        if (!this._streamAt ||
-            Math.hypot(this._panX - this._streamAt.x, this._panZ - this._streamAt.z) > RESTREAM_MOVE) {
+        // Re-stream (chunked) only if the anchor drifted far from where we last streamed, and
+        // debounced so a flurry of small drags doesn't kick off repeated streams. Inside a locked
+        // story region the anchor never moves, so panning costs nothing at all.
+        if (this._anchorDrifted()) {
             clearTimeout(this._streamTimer)
             this._streamTimer = setTimeout(() => this._startStream(), STREAM_DEBOUNCE)
         }
