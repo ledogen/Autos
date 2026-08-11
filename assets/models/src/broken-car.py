@@ -736,7 +736,13 @@ def build_detail(p):
         nose depth."""
         def at(d, z):
             return (px + nx * d, py + ny * d, z)
-        return [at(0.0, zb), at(d_apex - 0.058, zb), at(d_apex - 0.040, zv),
+        # The valance offsets are CLAMPED positive: on the flank d_apex is only
+        # 0.048 (0 at the end ring), so d_apex-0.058 went negative and the
+        # underside strip folded back over the path point with flipped winding —
+        # invisible while zb sat inside the body, an inverted sliver the moment
+        # the cover's lower edge dropped below the floor line (2026-08-11g).
+        return [at(0.0, zb), at(max(d_apex - 0.058, 0.004), zb),
+                at(max(d_apex - 0.040, 0.010), zv),
                 at(d_apex, zs0_), at(d_apex, zc_), at(d_apex, zs1_),
                 at(d_top, zt_)]
 
@@ -751,17 +757,20 @@ def build_detail(p):
     # apex taper is monotonic.  Flank wm here is 0.876-0.882; the last entry is
     # zero-protrusion ON the skin line so the cover dies flush.  Ends at y
     # 1.79/1.755 — the arch begins at 1.724.
-    # zb tracks the BODY's own z_bottom at each station (0.272 -> 0.318 along the
-    # flank): the first pass held the cover's lower edge at nose depth, and it hung
-    # 25-50 mm below the rocker as a sagging dark chin (2026-08-11, user's circle).
-    # The end ring sits ON the skin (wm there is ~0.879) — it was at 0.830, 49 mm
-    # INSIDE, and the panel's last segment dove inward as a dent ahead of the arch.
+    # zb SHADOWS the body's z_bottom along the flank but stays 8-20 mm BELOW it —
+    # never above, never equal.  The first pass held the cover's lower edge at
+    # nose depth (sagging dark chin, 2026-08-11 circle); the fix then raised zb
+    # to ~the body line and CROSSED it near y 2.15, putting two dark horizontal
+    # planes within 2 mm of each other — the z-fighting where the air dam meets
+    # the bumper (2026-08-11g).  Body z_bottom here: 0.320 @2.300, 0.307 @2.080,
+    # 0.299 @1.790.  The end ring sits ON the skin (wm there is ~0.879) — it was
+    # at 0.830, 49 mm INSIDE, and the panel's last segment dove inward as a dent.
     WRAP = [(0.779, 2.404, 0.507, 0.862, 0.062, 0.250, 0.388, 0.033),  # ellipse 30°
             (0.822, 2.360, 0.870, 0.494, 0.052, 0.262, 0.390, 0.021),  # ellipse 60°
             (0.838, 2.300, 1.000, 0.000, 0.045, 0.300, 0.396, 0.012),  # ellipse 90°
-            (0.858, 2.080, 1.000, 0.000, 0.048, 0.310, 0.400, 0.012),
-            (0.858, 1.790, 1.000, 0.000, 0.048, 0.315, 0.402, 0.012),
-            (0.878, 1.755, 1.000, 0.000, 0.000, 0.318, 0.404, 0.000)]
+            (0.858, 2.080, 1.000, 0.000, 0.048, 0.296, 0.398, 0.012),
+            (0.858, 1.790, 1.000, 0.000, 0.048, 0.290, 0.398, 0.012),
+            (0.878, 1.755, 1.000, 0.000, 0.000, 0.290, 0.400, 0.000)]
 
     rings = [bring(-px, py, -nx, ny, da, zb, zv, dt)
              for px, py, nx, ny, da, zb, zv, dt in reversed(WRAP)]
