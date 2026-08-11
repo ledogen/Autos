@@ -5,10 +5,10 @@ Built for: Blender 4.x  |  Target: assets/models/broken-car.glb
 Style brief: .planning/research/ART-STYLE.md  ·  Mechanics: .planning/research/ASSETS.md
 
 BUILD REPORT (2026-08-09, Blender 5.2.0 LTS — mid-90s front-end + wrap bumper pass)
-  BrokenCar       2480 tris   (body, greenhouse, interior, trim, 3 road wheels,
+  BrokenCar       2400 tris   (body, greenhouse, interior, trim, 3 road wheels,
                                brake drum, spare, scissor jack, tyre iron)
   BrokenCarGlass    16 tris   (6 panes, alpha-blended, double-sided)
-  TOTAL           2496 tris   budget 2500 — effectively FULL; reclaim before adding
+  TOTAL           2416 tris   budget 2500
   Reference: assets/models/src/ref-century/ — 9-angle board pulled from a 360
   walkaround video (2026-08-10); compare against it before restyling anything.
   materials 9 · images 0 · car 2.03 W (mirror to mirror) x 5.07 L x 1.46 H m
@@ -145,12 +145,10 @@ SW_SEG = 10
 BODY_STATIONS = [
     (2.440, 0.730, 0.788, 0.748, 0.375, 0.885),   # front face — rounded corner
     (2.410, 0.766, 0.822, 0.782, 0.360, 0.895),
-    (2.365, 0.786, 0.844, 0.804, 0.340, 0.906),
+    # (2.365 and 2.120 stations removed 2026-08-11: the hood fall is near-linear
+    # through both, and each ring cost ~30 tris of hood facets that carried no
+    # curvature — user: "far denser than it needs to be".)
     (2.300, 0.790, 0.855, 0.820, 0.320, 0.916),
-    (2.120, 0.795, 0.870, 0.840, 0.310, 0.934),   # mid-fender: +3 mm over the straight
-                                                  # taper so the corner->arch span is
-                                                  # two facets with a soft convexity,
-                                                  # not one flat slab (2026-08-10)
     (1.950, 0.800, 0.878, 0.855, 0.300, 0.952),   # ahead of the front arch
     (0.900, 0.800, 0.885, 0.858, 0.295, 1.000),   # cowl / windshield base
     (0.300, 0.805, 0.885, 0.856, 0.295, 1.010),
@@ -722,19 +720,25 @@ def build_detail(p):
     # black rub strip all the way around the cover (2026-08-10, walkaround board).
     zb_, zv1_, zs0_, zc_, zs1_, zt_ = 0.245, 0.385, 0.455, 0.475, 0.545, 0.640
 
-    def bring(px, py, nx, ny, d_apex, zb=zb_, zv=zv1_):
+    def bring(px, py, nx, ny, d_apex, zb=zb_, zv=zv1_, d_top=0.0):
         """One bumper ring: the profile stood off plan point (px,py) along unit
-        outward normal (nx,ny).  The back edge AND the top edge sit AT the path
-        point, which every path entry keeps inside the body skin — that buries
-        the rear seam and rolls the top into the body.  The strip z band
-        (zs0_/zc_/zs1_) is constant so the strip and its chrome lip stay dead
-        level all the way around the wrap; zb/zv rise along the flank so the
-        cover's lower edge climbs clear of the rocker instead of hanging at
+        outward normal (nx,ny).  The back edge sits AT the path point, which
+        every path entry keeps inside the body skin — that buries the rear seam.
+        The top edge sits at d_top: zero on the nose (the cap plane gives a
+        constant 20 mm burial there) but TUNED PER CORNER RING — the path point
+        at strip height is far inside the leaning skin up at zt_, and a top edge
+        buried 40+ mm makes the slope's skin-exit line jog ring to ring, which
+        was the rough miter below the marker (2026-08-11c).  d_top holds the top
+        edge a consistent ~5-25 mm inside the local skin instead.  The strip z
+        band (zs0_/zc_/zs1_) is constant so the strip and its chrome lip stay
+        dead level all the way around the wrap; zb/zv rise along the flank so
+        the cover's lower edge climbs clear of the rocker instead of hanging at
         nose depth."""
         def at(d, z):
             return (px + nx * d, py + ny * d, z)
         return [at(0.0, zb), at(d_apex - 0.058, zb), at(d_apex - 0.040, zv),
-                at(d_apex, zs0_), at(d_apex, zc_), at(d_apex, zs1_), at(0.0, zt_)]
+                at(d_apex, zs0_), at(d_apex, zc_), at(d_apex, zs1_),
+                at(d_top, zt_)]
 
     # Corner + flank path, one side: (px, py, nx, ny, d_apex, zb, zv).
     # MATCHED TO THE BODY'S PLAN CORNER (2026-08-09b): the first wrap attempt ran
@@ -752,20 +756,20 @@ def build_detail(p):
     # 25-50 mm below the rocker as a sagging dark chin (2026-08-11, user's circle).
     # The end ring sits ON the skin (wm there is ~0.879) — it was at 0.830, 49 mm
     # INSIDE, and the panel's last segment dove inward as a dent ahead of the arch.
-    WRAP = [(0.779, 2.404, 0.507, 0.862, 0.062, 0.250, 0.388),   # ellipse 30°
-            (0.822, 2.360, 0.870, 0.494, 0.052, 0.262, 0.390),   # ellipse 60°
-            (0.838, 2.300, 1.000, 0.000, 0.045, 0.300, 0.396),   # ellipse 90°
-            (0.858, 2.080, 1.000, 0.000, 0.048, 0.310, 0.400),
-            (0.858, 1.790, 1.000, 0.000, 0.048, 0.315, 0.402),
-            (0.878, 1.755, 1.000, 0.000, 0.000, 0.318, 0.404)]
+    WRAP = [(0.779, 2.404, 0.507, 0.862, 0.062, 0.250, 0.388, 0.033),  # ellipse 30°
+            (0.822, 2.360, 0.870, 0.494, 0.052, 0.262, 0.390, 0.021),  # ellipse 60°
+            (0.838, 2.300, 1.000, 0.000, 0.045, 0.300, 0.396, 0.012),  # ellipse 90°
+            (0.858, 2.080, 1.000, 0.000, 0.048, 0.310, 0.400, 0.012),
+            (0.858, 1.790, 1.000, 0.000, 0.048, 0.315, 0.402, 0.012),
+            (0.878, 1.755, 1.000, 0.000, 0.000, 0.318, 0.404, 0.000)]
 
-    rings = [bring(-px, py, -nx, ny, da, zb, zv)
-             for px, py, nx, ny, da, zb, zv in reversed(WRAP)]
+    rings = [bring(-px, py, -nx, ny, da, zb, zv, dt)
+             for px, py, nx, ny, da, zb, zv, dt in reversed(WRAP)]
     for x, yt, ya in [(-x, t, a) for x, t, a in reversed(CHIN[1:])] + CHIN:
         y_back = min(2.420, yt - 0.030)           # stays buried behind the nose cap
         rings.append(bring(x, y_back, 0.0, 1.0, ya - y_back))
-    rings += [bring(px, py, nx, ny, da, zb, zv)
-              for px, py, nx, ny, da, zb, zv in WRAP]
+    rings += [bring(px, py, nx, ny, da, zb, zv, dt)
+              for px, py, nx, ny, da, zb, zv, dt in WRAP]
     # 0 underside, 1 valance, 3 the CHROME LIP, 4 the rub strip riding the apex;
     # 2 (the tuck-under) and 5 (the chin slope itself) are painted body surface —
     # that continuity is what makes it a bump out of the body, not a fitted part.
@@ -848,12 +852,24 @@ def build_detail(p):
             hexa(p, [(a, yi0, z0), (b, yo0, z0), (b, yo1, z0), (a, yi1, z0),
                      (a, yi0, z1), (b, yo0, z1), (b, yo1, z1), (a, yi1, z1)], mat)
 
+    # THE HEADLAMP SUBASSEMBLY (2026-08-11c): the lamp bezel and the marker frame
+    # were two separate dark slabs meeting in a seam behind the lenses — merged
+    # into ONE backing plate per side, the removable unit the real car bolts in
+    # with a couple of screws.  Its plan runs from the grille edge straight across
+    # the front, kinks at the corner and wraps to the fender; both outboard points
+    # are per-height, the kink ~6 mm outboard of the E->F corner edge at its own z
+    # (0.7873 at z 0.728, 0.7498 at 0.878).  Lenses mount proud of the plate.
+    # Saves 12 tris over the two-slab version.
+    for sx in (1, -1):
+        pts = []
+        for z, xk, xw in ((0.728, 0.793, 0.836), (0.878, 0.756, 0.802)):
+            plan = [(0.352, 2.466), (xk, 2.440), (xw, 2.386), (0.480, 2.398)]
+            pts += [(sx * px, py, z) for px, py in plan]
+        hexa(p, pts, "CarTrim")
     # TALL lamps (2026-08-10, walkaround board): the real lens is nearly as tall as
-    # the grille (~135 mm here against the grille's 180), sitting tight beside it,
-    # thin dark bezel only — on the reference the lamp sits in body colour with
-    # barely any surround, and a fat bezel read as '80s sealed-beams.
-    # Moved OUTBOARD (2026-08-10b) so the corner marker owns the actual corner.
-    wedge(0.352, 0.648, 2.412, 2.470, 2.400, 2.448, 0.728, 0.878, "CarTrim")   # bezel
+    # the grille (~135 mm here against the grille's 180), sitting tight beside it —
+    # on the reference the lamp has barely any surround, and a fat bezel read as
+    # '80s sealed-beams.
     wedge(0.362, 0.638, 2.452, 2.482, 2.442, 2.468, 0.740, 0.868, "CarLamp")   # lens
     # Corner marker — AMBER, ON the corner, and it WRAPS it (2026-08-10b, user:
     # "visible from the side, required by law").  Not a wedge: a four-sided plan
@@ -873,18 +889,6 @@ def build_detail(p):
     # rear point ~15 mm proud of the flank, and the whole lens leans with the
     # tumblehome.  The kink sits at y 2.448 — 2 mm inside the y>=2.450 fascia
     # guard, deliberately: it is corner furniture, exempt like the bumper.
-    # The marker's FRAME first (2026-08-11b): the lamp bezel used to stop at the
-    # lamp, leaving the marker frameless.  Same corner-edge-tracking logic as the
-    # lens, one dark hexa per side: ~10 mm behind the lens face, edges extended
-    # past the lens (inner edge meets the lamp bezel at 0.648, rear edge sweeps
-    # 14 mm further around the corner), kink ~6 mm outboard of the E->F corner
-    # edge at its own z (which is 0.7873 at z 0.728, 0.7498 at z 0.878).
-    for sx in (1, -1):
-        pts = []
-        for z, xk, xw in ((0.728, 0.793, 0.836), (0.878, 0.756, 0.802)):
-            plan = [(0.648, 2.460), (xk, 2.440), (xw, 2.386), (0.692, 2.392)]
-            pts += [(sx * px, py, z) for px, py in plan]
-        hexa(p, pts, "CarTrim")
     for sx in (1, -1):
         pts = []
         for z, xk, xw in ((0.740, 0.790, 0.840), (0.868, 0.760, 0.806)):
