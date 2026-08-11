@@ -63,8 +63,8 @@ const CONTOUR_COLOR = '#7e2f3f'   // intermediate contour — dark burgundy
 const INDEX_COLOR   = '#4d1622'   // index contour (every INDEX_EVERY-th), deeper burgundy
 const CONTOUR_W     = 0.65        // px — intermediate contour weight
 const INDEX_W       = 1.15        // px — index contour weight
-const ROAD_INK      = '#0b0b0b'   // road casing — black, for maximum contrast against the sheet
-const ROAD_FILL     = '#ffffff'   // road fill between the casings
+const ROAD_INK      = '#0b0b0b'   // roads — solid black, for maximum contrast against the sheet
+const ROAD_W        = 2.2         // px — road stroke weight
 const MAP_INK       = '#1a1a1a'   // general map ink (neatline, collar lettering, scale bar)
 const INDEX_EVERY   = 5           // every Nth contour is an index contour (so 50 m at CONTOUR_IV)
 // Map lettering. No web font is loaded (browser-only, single origin, no external requests — see
@@ -772,26 +772,24 @@ export class Map2D {
         strokeBatch(thick, INDEX_COLOR,   INDEX_W)
     }
 
-    // (2) Road centerlines — each streamed network run projected (x,z) → screen. Drawn the way a
-    //     quadrangle draws a light-duty road: a dark casing with a light fill down the middle, so
-    //     the road reads as a road rather than as one more line on a sheet already full of them
-    //     (the single pale stroke it used to be is invisible against the paper green).
+    // (2) Road centerlines — each streamed network run projected (x,z) → screen. A single solid
+    //     black stroke (owner, 2026-08-11): the cased double line a quadrangle uses for a
+    //     light-duty road needs ~4 px of width to show its fill, and below that it degrades into a
+    //     grey smudge. One black line holds its weight at every zoom this map supports.
     _drawRoads(ctx) {
         const road = this._road
         if (!road || !road._network) return
-        const trace = () => {
-            for (const { points } of road._network.values()) {
-                if (!points || points.length < 2) continue
-                ctx.beginPath()
-                ctx.moveTo(this._sx(points[0].x), this._sy(points[0].z))
-                for (let i = 1; i < points.length; i++) ctx.lineTo(this._sx(points[i].x), this._sy(points[i].z))
-                ctx.stroke()
-            }
-        }
         ctx.lineJoin = 'round'
         ctx.lineCap  = 'round'
-        ctx.strokeStyle = ROAD_INK;  ctx.lineWidth = 3.4; trace()
-        ctx.strokeStyle = ROAD_FILL; ctx.lineWidth = 1.4; trace()
+        ctx.strokeStyle = ROAD_INK
+        ctx.lineWidth = ROAD_W
+        for (const { points } of road._network.values()) {
+            if (!points || points.length < 2) continue
+            ctx.beginPath()
+            ctx.moveTo(this._sx(points[0].x), this._sy(points[0].z))
+            for (let i = 1; i < points.length; i++) ctx.lineTo(this._sx(points[i].x), this._sy(points[i].z))
+            ctx.stroke()
+        }
         ctx.lineCap = 'butt'
     }
 
@@ -998,9 +996,8 @@ export class Map2D {
                 ctx.stroke()
             }
         }
-        stroke('rgba(206,142,16,0.75)', 7)   // the casing — wider than the road's own casing
-        stroke(ROAD_INK, 3.4)                // the road itself, back on top (matches _drawRoads)
-        stroke(ROAD_FILL, 1.4)
+        stroke('rgba(206,142,16,0.75)', 6)   // the casing — ~2.5x the road stroke
+        stroke(ROAD_INK, ROAD_W)             // the road itself, back on top (matches _drawRoads)
         ctx.lineCap = 'butt'
     }
 
