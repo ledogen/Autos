@@ -11,22 +11,32 @@ A browser-based 6DOF rigid body car physics simulation built in JavaScript with 
 - **Tech stack**: Three.js + vanilla JS, Vite build (PERF-04/PERF-20.5) — `npm run dev` locally, `npm run build` → `dist/` deployed to GitHub Pages via GitHub Actions. (Was a no-bundler CDN importmap; bundling was adopted to kill the ~0.9 s per-load import waterfall. three/simplex resolve from npm, byte-identical to the retired pins; the `test/*.mjs` gates stay pure-node and never touch Vite.)
 - **Runtime**: Browser only, single origin — no server, no WebSocket, no backend
 - **File structure**: ES6 modules in a `src/` directory, single `index.html` entry point
-- **Physics**: Hand-rolled, no physics library — required for learning, tuning transparency, and terrain control
+- **Physics**: The rigid-body core is **Box3D** (Erin Catto's 3D engine, WASM via the vendored
+  `vendor/box3d/` bindings) behind the **thin adapter seam `src/physics-engine.js`** — the ONE module
+  allowed to touch engine types; everything else consumes opaque handles (FEAT-48, owner decision
+  2026-07-29, REVERSING the original hand-rolled-only rule). **The vehicle model stays ours**: Pacejka
+  tires (`tire.js`), spring-damper struts vs the analytic terrain (`suspension.js`), drivetrain — never
+  adopt an engine wheel joint / vehicle controller. Swapping backends (fallback: Rapier) must touch
+  only the adapter.
 - **Performance**: Target 60fps on a mid-range laptop with terrain active — physics must be lightweight
 - **LLM maintainability**: Code is primarily maintained by LLM sessions (Claude Sonnet 4.6, `claude-sonnet-4-6`). Conventions must be explicit, self-documenting, and resistant to drift across sessions.
 
 ## Technology Stack
 
 Three.js r184 (ESM from npm, bundled by Vite) · vanilla JS · lil-gui + stats.js (from `three/addons`,
-aliased to `three/examples/jsm/` in vite.config.js). Hand-rolled 6DOF physics (Pacejka tires,
-spring-damper suspension) using Three.js math primitives. Local dev: `npm run dev` (Vite on :8000).
+aliased to `three/examples/jsm/` in vite.config.js). Physics: Box3D WASM rigid-body core behind the
+`src/physics-engine.js` adapter (FEAT-48) + our own Pacejka tires and spring-damper suspension
+(Three.js math primitives). Local dev: `npm run dev` (Vite on :8000).
 Deploy: `npm run build` → `dist/` shipped to GitHub Pages by `.github/workflows/deploy.yml` (Pages
 Source must be set to "GitHub Actions"). Runtime assets fetched by URL — `data/route-cache-default
 .json.gz` and `assets/models/*.glb` — are copied into `dist/` by an inline plugin at their existing
 paths (NOT ES imports; do not convert to `?url`, that breaks the pure-node gates that read them).
 
-**Do NOT use:** physics libs (Cannon/Rapier/Ammo), dat.GUI, global `<script>` Three.js, Web Workers
-for physics, OffscreenCanvas, or Euler angles for body rotation. Fixed-timestep accumulator loop.
+**Do NOT use:** any physics engine OUTSIDE the `physics-engine.js` adapter seam (no direct `b3*`/
+engine imports elsewhere — grep-enforceable; FEAT-48 reversed the old blanket physics-lib ban but the
+seam is the new hard rule), engine vehicle/wheel-joint abstractions (our Pacejka + struts ARE the
+project), dat.GUI, global `<script>` Three.js, Web Workers for physics, OffscreenCanvas, or Euler
+angles for body rotation. Fixed-timestep accumulator loop.
 (Full rationale + version-verification + sources: `.planning/research/STACK.md`.)
 
 ### Module Structure
@@ -34,7 +44,9 @@ for physics, OffscreenCanvas, or Euler angles for body rotation. Fixed-timestep 
 |--------|---------------|--------------|
 | `src/tire.js` | Pacejka Magic Formula, slip angle → lateral force | Nothing (pure math) |
 | `src/suspension.js` | Spring-damper per corner, contact patch position, normal force | `tire.js` (for normal force input) |
-| `src/physics.js` | 6DOF integrator, force accumulation, quaternion rotation | `tire.js`, `suspension.js` |
+| `src/physics-engine.js` | THE adapter seam — the only module importing the Box3D engine (`vendor/box3d/`) | Nothing (engine only) |
+| `src/physics.js` | Vehicle step: suspension/tire force accumulation → engine body; chassis factory; debris translation layer | `tire.js`, `suspension.js`, `physics-engine.js` |
+| `src/terrain-physics.js` | Streamed chunk heightfield colliders (MESH == PHYSICS mirror) | `physics-engine.js` |
 | `src/vehicle.js` | Vehicle state, drivetrain, Ackermann, input accumulation | `physics.js` |
 | `src/camera.js` | Chase camera, spring follow | Three.js only |
 | `src/debug.js` | lil-gui panel, scenario logger, HUD | `vehicle.js` (reads state) |

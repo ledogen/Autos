@@ -22,8 +22,10 @@
 import * as THREE from 'three'
 import { RANGER_PARAMS as P } from '../data/ranger.js'
 import { stepPhysics } from '../src/physics.js'
+import { makeEngineCtx } from './lib/engine-ctx.mjs'
 
 const DT = 1 / 60
+const ctx = await makeEngineCtx({ position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } }, P)  // FEAT-48: collider-free world — wheels ride the analytic mock; the engine supplies gravity + integration
 
 // Per-step suspension scratch (main.js pre-allocates these on params).
 P._tireFz = [0, 0, 0, 0]
@@ -92,7 +94,7 @@ const ok = (cond, msg) => { console.log(`  ${cond ? '✓' : '✗'} ${msg}`); if 
 // ── Settle a 4-wheel rest state on flat ground (no wall) ─────────────────────────────────────────
 wallMode = false
 const settled = mkState(0.60, 0)
-for (let i = 0; i < 800; i++) stepPhysics(settled, P, DT, queryContacts, queryVertexContacts)
+for (let i = 0; i < 800; i++) stepPhysics(settled, P, DT, queryContacts, queryVertexContacts, ctx)
 console.log(`settled: y=${settled.position.y.toFixed(4)} m  |v|=${settled.velocity.length().toFixed(4)} m/s  ` +
   `strutComp=[${settled.strutComp.map(c => c.toFixed(3)).join(', ')}]`)
 
@@ -105,9 +107,9 @@ const vsB = cloneState(settled); vsB.velocity.set(V_LAT, 0, 0)
 const vLat0 = V_LAT
 
 wallMode = false
-for (let i = 0; i < N_STEP; i++) stepPhysics(vsA, P, DT, queryContacts, queryVertexContacts)
+for (let i = 0; i < N_STEP; i++) stepPhysics(vsA, P, DT, queryContacts, queryVertexContacts, ctx)
 wallMode = true
-for (let i = 0; i < N_STEP; i++) stepPhysics(vsB, P, DT, queryContacts, queryVertexContacts)
+for (let i = 0; i < N_STEP; i++) stepPhysics(vsB, P, DT, queryContacts, queryVertexContacts, ctx)
 wallMode = false
 
 const vxA = vsA.velocity.x, vxB = vsB.velocity.x

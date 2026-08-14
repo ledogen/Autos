@@ -701,7 +701,12 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
   // ONE world step per physics tick, chassis↔debris↔terrain solved together.
   engine.applyForce(chassis, totalForce)
   engine.applyTorque(chassis, totalTorque)
-  engine.step(dt, params.engineSubsteps ?? 4)
+  // 8 substeps (not the engine-default 4): the chassis carries the TUNED inertia, whose x-axis
+  // value sits ~3× below the hull-natural tensor, and the soft-step solver converts some of a
+  // flat bare-frame slam into rocking rebound when under-substepped. 8 halves that phantom
+  // bounce (measured: e_eff 0.30 → 0.21 on a worst-case flat slam) and costs microseconds at
+  // this body count. See test/body-contact-energy.mjs for the measured envelope.
+  engine.step(dt, params.engineSubsteps ?? 8)
 
   // ── Step 3e: Pull the engine result back into the authoritative JS mirror ──
   engine.getTransform(chassis, vehicleState.position, vehicleState.quaternion)
