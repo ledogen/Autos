@@ -77,8 +77,9 @@ ARCH_R = (-1.55, -0.60)
 TRACK = 1.02
 WHEEL_R, HUB_R, WHEEL_W, WHEEL_SEG = 0.40, 0.16, 0.26, 10
 
-# Cab glazing
-CAB_WIN = (2.70, 3.50)                  # real opening, both sides, Z_SILL..Z_SHOULDER
+# Cab glazing (photo-measured 2026-08-14: the slider sits further back and
+# larger than first guessed — glass from y 2.40 nearly to the A-pillar)
+CAB_WIN = (2.40, 3.45)                  # real opening, both sides, Z_SILL..Z_SHOULDER
 
 # --- Shaped nose (2026-08-14: "still just a rectangle — add a shaped cab") ---
 # The Chieftain front cap is not a slab: the body tapers in plan toward the
@@ -105,30 +106,34 @@ TAIL_ST = [(-3.94, 1.00, 0.960),        # cap rim (built first — loft runs tai
 TAIL_N = len(TAIL_ST)                   # rings prepended before the straight hull
 
 # Camper windows (y0, y1, z0, z1) per side.  Curtained + proud, no hull holes.
-WINDOWS_R = [(-3.55, -2.45, 1.62, 2.35),   # bedroom
-             (-1.55, -0.85, 1.80, 2.35),   # kitchen (high sill)
-             (0.05, 0.65, 1.62, 2.35),     # dinette
-             (1.85, 2.55, 1.62, 2.35)]     # lounge
-WINDOWS_L = [(-3.50, -2.60, 1.62, 2.35),
-             (-1.80, -1.00, 1.62, 2.35),
-             (0.10, 0.80, 1.62, 2.35),
-             (1.60, 2.40, 1.62, 2.35)]
+# Positions MEASURED off the profile photo (220 px/m): bedroom window at the
+# tail, then a LONG blank panel (bathroom + fridge), a window over the rear
+# wheel, a tall lower-silled window hard against the door, and a small one
+# between door and cab.
+WINDOWS_R = [(-3.60, -2.55, 1.62, 2.35),   # bedroom
+             (-0.78, -0.12, 1.62, 2.35),   # over the rear wheel
+             (0.42, 0.82, 1.35, 2.35),     # tall, drops below the others
+             (1.70, 2.16, 1.62, 2.35)]     # small, door-to-cab
+WINDOWS_L = [(-3.60, -2.55, 1.62, 2.35),
+             (-0.78, -0.12, 1.62, 2.35),
+             (0.42, 0.82, 1.35, 2.35),
+             (1.20, 2.16, 1.62, 2.35)]     # wider — no door on this side
 WIN_FRAME = 0.045                       # frame border around the opening
 WIN_DEPTH = 0.036                       # how proud the frame face sits
 CURT_LO, CURT_HI = 0.008, 0.022         # pleat zigzag depths (outboard of wall)
 GLASS_OFF = 0.030                       # pane depth (recessed behind the frame face)
 PLEAT_W = 0.14                          # a fold roughly every 14 cm
 
-# Entry door (curbside, +X), with its own curtained window
-DOOR_Y0, DOOR_Y1 = 0.95, 1.65
+# Entry door (curbside, +X), with its own curtained window (photo: y 0.93-1.54)
+DOOR_Y0, DOOR_Y1 = 0.93, 1.55
 DOOR_Z0, DOOR_Z1 = 0.46, 2.42
 DOOR_PROUD = 0.012
-DOOR_WIN = (1.08, 1.52, 1.62, 2.20)
+DOOR_WIN = (1.05, 1.45, 1.62, 2.20)
 
 # Rolled awning, door side
-AWN_Y0, AWN_Y1 = -2.35, 1.80
+AWN_Y0, AWN_Y1 = -2.45, 2.32
 AWN_Z, AWN_R = 2.51, 0.065
-AWN_ARM_Y = (-2.30, 1.72)               # in the gaps between window frames
+AWN_ARM_Y = (-2.30, 2.24)               # on blank wall between window frames
 AWN_ARM_Z0 = 1.40
 
 # Luggage bays (proud body-colour panels, curbside, below the stripes) —
@@ -281,6 +286,7 @@ N_RING = len(RING)
 # rings appended around these.
 STATIONS = [-3.55, ARCH_R[0], ARCH_R[1], ARCH_F[0], CAB_WIN[0],
             ARCH_F[1], CAB_WIN[1]]
+assert all(a < b for a, b in zip(STATIONS, STATIONS[1:])), STATIONS
 
 
 def _piecewise(pts, z):
@@ -348,8 +354,10 @@ def hull_band(s, k):
     s2 = s - TAIL_N                           # ring index -> straight-segment index
     if z < Z_THICK0 and 0 <= s2 < len(STATIONS) - 1:   # skirt: arch spans go dark
         y0, y1 = _seg_span(s2)
+        # Within-span, not exact-span: the front arch is split across two
+        # segments now that the cab window edge (2.40) lands inside it.
         for a0, a1 in (ARCH_F, ARCH_R):
-            if abs(y0 - a0) < 0.01 and abs(y1 - a1) < 0.01:
+            if y0 >= a0 - 0.01 and y1 <= a1 + 0.01:
                 return "RVWellDark"           # alias, resolved to RVDark below
     return None
 
