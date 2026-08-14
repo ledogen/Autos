@@ -162,19 +162,26 @@ Things that look like good modelling elsewhere and are wrong here:
 
 ## Sanctioned exceptions
 
-Two rules above have been overridden exactly once, by explicit user ruling on **2026-08-05**, for
-**`broken-car.glb` (ASSET-18)** — the broken-down Buick Century wagon. Recorded here so the conflict
-does not have to be re-litigated every session.
+Two rules above have been overridden for exactly two assets, each by explicit user ruling —
+**2026-08-05** for **`broken-car.glb` (ASSET-18)** and **2026-08-13** for **`winnebago.glb`
+(ASSET-09)**. Recorded here so the conflict does not have to be re-litigated every session.
 
 | Rule | Override | Why it was allowed |
 |---|---|---|
 | 7, no transparency | `CarGlass` is `alphaMode: BLEND` at 0.72, `doubleSided: true` | The car is a POI placed a handful of times, not scatter density, so one extra sorted draw call is affordable |
 | Anti-pattern, no interiors | Low-detail tub to the beltline, two bench seats, dash, steering wheel | Once the glass is transparent, an empty shell reads worse than no glass at all |
 
-**The scope of this exception is exactly that one file.** It does not extend to props, to scatter
-objects, or to the next vehicle. The prop system remains no-alpha-blend for iGPU reasons and the
-"cap every opening" rule still governs everything else. If a new asset wants either, that is a fresh
-ruling, not a precedent to cite.
+**`winnebago.glb` (2026-08-13)** received the same pair by fresh ruling: `RVGlass` is
+`alphaMode: BLEND` at **0.45** (lighter than the car's 0.72 — these panes sit over closed pleated
+curtains and a modelled cab, and at 0.72 the curtains black out), and the cab carries a minimal
+interior (dash, wheel, two chairs breaking the beltline). Its camper windows are NOT openings —
+curtain + glass sit proud of a sealed hull, so only the cab needed the interior. One extra wrinkle:
+`RVCurtain` exports doubleSided because open zigzag pleat sheets have no reliable winding.
+
+**The scope of these exceptions is exactly those two files.** They do not extend to props, to
+scatter objects, or to the next vehicle. The prop system remains no-alpha-blend for iGPU reasons and
+the "cap every opening" rule still governs everything else. If a new asset wants either, that is a
+fresh ruling, not a precedent to cite.
 
 Two things worth stealing from it even if you keep the glass opaque:
 
