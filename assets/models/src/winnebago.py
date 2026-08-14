@@ -76,10 +76,20 @@ WHEEL_R, HUB_R, WHEEL_W, WHEEL_SEG = 0.40, 0.16, 0.26, 10
 
 # Cab glazing
 CAB_WIN = (2.70, 3.50)                  # real opening, both sides, Z_SILL..Z_SHOULDER
-WS_X = 1.02                             # windshield opening half width
-WS_Z0, WS_Z1 = 1.72, 2.66
-WS_GLASS_Y = 3.878                      # panes inset behind the y=3.92 nose cap
-BELT0, BELT1 = 1.62, 1.72               # sill strip on the nose face
+
+# --- Shaped nose (2026-08-14: "still just a rectangle — add a shaped cab") ---
+# The Chieftain front cap is not a slab: the body tapers in plan toward the
+# nose, the BELTLINE is the proudest line (the brow), the windshield rakes BACK
+# above it and the lower fascia tucks back below it, and the header rakes hard
+# into the roof.  Implemented as two extra loft stations (keeping the stripe
+# band materials and welding for free) + a contoured cap built strip-by-strip.
+NOSE_BROW = [(0.42, -0.14), (1.62, 0.04), (1.72, 0.03),
+             (2.60, -0.20), (2.92, -0.36)]   # (z, y offset from the cap base)
+NOSE_ST = [(3.72, 0.50, 0.975),              # (y base, brow fraction, plan scale)
+           (3.94, 1.00, 0.885)]              # cap rim: brow peaks at y 3.98
+WS_X = 0.92                             # windshield opening half width (on the cap)
+WS_Z0, WS_Z1 = 1.72, 2.60               # sill..shoulder, glazed in the raked plane
+WS_INSET = 0.035                        # glass sits this far behind the cap plane
 
 # Camper windows (y0, y1, z0, z1) per side.  Curtained + proud, no hull holes.
 WINDOWS_R = [(-3.55, -2.45, 1.62, 2.35),   # bedroom
@@ -129,9 +139,11 @@ SW_RO, SW_RI, SW_TH = 0.19, 0.14, 0.03
 # Front fascia (ref-01: headlights LOW beside a low grille, stripes wrapping the
 # nose, the flying-W flash above them)
 GRILLE = (0.55, 0.70, 0.90)             # half w, z0, z1
-HEADLIGHT_X = (0.78, 1.10)
+# Kept inside the tapered cap rim (|x| = 1.062) — wider boxes float clear of
+# the corner transition surface and read as detached slabs from the side.
+HEADLIGHT_X = (0.66, 0.98)
 HEADLIGHT_Z = (0.72, 0.94)
-MARKER_X, MARKER_Z = (1.00, 1.12), (1.44, 1.52)
+MARKER_X, MARKER_Z = (0.88, 1.00), (1.44, 1.52)
 WFLASH_HW, WFLASH_Z0, WFLASH_Z1, WFLASH_TH = 0.70, 1.30, 1.55, 0.10
 BUMPER_Z0, BUMPER_Z1 = 0.44, 0.66
 TAILLIGHT_X, TAILLIGHT_Z = (0.93, 1.08), (0.72, 1.10)
@@ -250,8 +262,30 @@ RING = ([(-HALF_W, Z_SKIRT)] + _SIDE_R
 # RING[0] = bottom-left; faces k span RING[k] -> RING[k+1].
 N_RING = len(RING)
 
+# Straight-hull stations only; the two shaped nose rings are appended after.
 STATIONS = [BODY_TAIL, ARCH_R[0], ARCH_R[1], ARCH_F[0], CAB_WIN[0],
-            ARCH_F[1], CAB_WIN[1], BODY_NOSE]
+            ARCH_F[1], CAB_WIN[1]]
+
+
+def brow(z):
+    """Nose profile: y offset of the cap at height z (piecewise linear)."""
+    pts = NOSE_BROW
+    if z <= pts[0][0]:
+        return pts[0][1]
+    for (z0, d0), (z1, d1) in zip(pts, pts[1:]):
+        if z <= z1:
+            return d0 + (d1 - d0) * (z - z0) / (z1 - z0)
+    return pts[-1][1]
+
+
+def nose_ring(y_base, frac, scale):
+    """A hull ring squeezed in plan and pushed along +Y by the brow profile."""
+    return [(x * scale, y_base + frac * brow(z), z) for (x, z) in RING]
+
+
+def cap_y(z):
+    """Y of the finished cap surface at height z."""
+    return NOSE_ST[-1][0] + brow(z)
 
 
 def _face_zx(k):
@@ -278,7 +312,7 @@ def hull_band(s, k):
         return "RVStripe"
     if Z_THIN0 - 0.01 < z < Z_THIN1 + 0.01:
         return "RVStripe"
-    if z < Z_THICK0:                          # skirt: dark in the arch spans
+    if z < Z_THICK0 and s + 1 < len(STATIONS):   # skirt: dark in the arch spans
         y0, y1 = _seg_span(s)
         for a0, a1 in (ARCH_F, ARCH_R):
             if abs(y0 - a0) < 0.01 and abs(y1 - a1) < 0.01:
@@ -288,6 +322,8 @@ def hull_band(s, k):
 
 def hull_skip(s, k):
     """Cut the two cab slider openings (both sides, CAB_WIN span, sill..shoulder)."""
+    if s + 1 >= len(STATIONS):                # nose segments never carry openings
+        return False
     if not _is_side(k):
         return False
     z, _ = _face_zx(k)
@@ -299,6 +335,7 @@ def hull_skip(s, k):
 
 def build_hull(p):
     rings = [[(x, y, z) for (x, z) in RING] for y in STATIONS]
+    rings += [nose_ring(*st) for st in NOSE_ST]
 
     def band(s, k):
         m = hull_band(s, k)
@@ -320,71 +357,85 @@ def build_hull(p):
 
 
 # ---------------------------------------------------------------------------
-# Nose cap: flat Class-A face with a real windshield opening
+# Nose cap: contoured Class-A face closing the shaped rim
 # ---------------------------------------------------------------------------
-def _chamfer_x_at(z):
-    """x of the roof chamfer line at height z (between shoulder and roof)."""
-    t = (z - Z_SHOULDER) / (Z_ROOF - Z_SHOULDER)
-    return HALF_W + (ROOF_HALF_W - HALF_W) * t
+def build_nose(p, g):
+    """Cap the last nose ring with horizontal strips following the brow profile.
 
+    The rim ring already carries the shaping (taper + brow), so each strip is a
+    single quad between consecutive rim z-levels; the stripe bands land on the
+    cap as MATERIALS on those strips, exactly like the hull loft does it.  The
+    windshield strip is replaced by jambs + an inset raked glass plane.
+    """
+    _, _, scale = NOSE_ST[-1]
+    n_side = len(_SIDE_R)                          # rim indices 1..n_side (right)
+    rim = [(x * scale, cap_y(z), z) for (x, z) in _SIDE_R]
 
-def build_nose(p):
-    y = BODY_NOSE
-    # Fascia below the belt, then the sill strip.
-    quad(p, (-HALF_W, y, Z_SKIRT), (HALF_W, y, Z_SKIRT),
-         (HALF_W, y, BELT0), (-HALF_W, y, BELT0), "RVBody")
-    quad(p, (-HALF_W, y, BELT0), (HALF_W, y, BELT0),
-         (HALF_W, y, BELT1), (-HALF_W, y, BELT1), "RVBody")
-    # A-pillar panels beside the windshield, up to the chamfer.
-    xc = _chamfer_x_at(WS_Z1)
+    strip_mat = {(Z_THICK0, Z_THICK1): "RVStripe", (Z_THIN0, Z_THIN1): "RVStripe"}
+    for i in range(n_side - 1):
+        (x0, y0, z0), (x1, y1, z1) = rim[i], rim[i + 1]
+        if abs(z0 - WS_Z0) < 0.01 and abs(z1 - WS_Z1) < 0.01:
+            continue                               # glazed separately below
+        quad(p, (-x0, y0, z0), (x0, y0, z0), (x1, y1, z1), (-x1, y1, z1),
+             strip_mat.get((z0, z1), "RVBody"))
+
+    # Windshield: jamb panels out to the rim, returns into the raked glass.
+    xw = HALF_W * scale
+    yb, yt = cap_y(WS_Z0), cap_y(WS_Z1)
     for sgn in (1, -1):
-        p0, p1 = sgn * WS_X, sgn * HALF_W
-        quad(p, (p0, y, BELT1), (p1, y, BELT1),
-             (p1, y, Z_SHOULDER), (p0, y, Z_SHOULDER), "RVBody")
-        quad(p, (p0, y, Z_SHOULDER), (p1, y, Z_SHOULDER),
-             (sgn * xc, y, WS_Z1), (p0, y, WS_Z1), "RVBody")
-    # Header: from the opening top to the roof edge (follows the chamfer).
-    quad(p, (-xc, y, WS_Z1), (xc, y, WS_Z1),
-         (ROOF_HALF_W, y, Z_ROOF), (-ROOF_HALF_W, y, Z_ROOF), "RVBody")
-    # Windshield returns: rim (y=3.92) back to the glass plane, plus the mullion.
-    g = WS_GLASS_Y
-    quad(p, (-WS_X, y, WS_Z0), (WS_X, y, WS_Z0),
-         (WS_X, g, WS_Z0), (-WS_X, g, WS_Z0), "RVBody")
-    quad(p, (-WS_X, y, WS_Z1), (WS_X, y, WS_Z1),
-         (WS_X, g, WS_Z1), (-WS_X, g, WS_Z1), "RVBody")
+        quad(p, (sgn * WS_X, yb, WS_Z0), (sgn * xw, yb, WS_Z0),
+             (sgn * xw, yt, WS_Z1), (sgn * WS_X, yt, WS_Z1), "RVBody")
+    # Outward normal of the raked plane (in the YZ plane).
+    import mathutils
+    t = mathutils.Vector((0.0, yt - yb, WS_Z1 - WS_Z0)).normalized()
+    nrm = mathutils.Vector((0.0, t.z, -t.y))       # rotated -90°: points +Y/out
+    gb = (yb + nrm.y * -WS_INSET, WS_Z0 + nrm.z * -WS_INSET)
+    gt = (yt + nrm.y * -WS_INSET, WS_Z1 + nrm.z * -WS_INSET)
+    quad(p, (-WS_X, yb, WS_Z0), (WS_X, yb, WS_Z0),
+         (WS_X, gb[0], gb[1]), (-WS_X, gb[0], gb[1]), "RVBody")   # sill return
+    quad(p, (-WS_X, yt, WS_Z1), (WS_X, yt, WS_Z1),
+         (WS_X, gt[0], gt[1]), (-WS_X, gt[0], gt[1]), "RVBody")   # header return
     for sgn in (1, -1):
         x = sgn * WS_X
-        quad(p, (x, y, WS_Z0), (x, y, WS_Z1), (x, g, WS_Z1), (x, g, WS_Z0), "RVBody")
-    quad(p, (-0.025, g + 0.004, WS_Z0), (0.025, g + 0.004, WS_Z0),
-         (0.025, g + 0.004, WS_Z1), (-0.025, g + 0.004, WS_Z1), "RVBody")
+        quad(p, (x, yb, WS_Z0), (x, yt, WS_Z1),
+             (x, gt[0], gt[1]), (x, gb[0], gb[1]), "RVBody")      # jamb returns
+    quad(p, (-0.025, gb[0] + 0.004, gb[1]), (0.025, gb[0] + 0.004, gb[1]),
+         (0.025, gt[0] + 0.004, gt[1]), (-0.025, gt[0] + 0.004, gt[1]), "RVBody")
+    for x0, x1 in ((-WS_X, -0.025), (0.025, WS_X)):
+        quad(g, (x0, gb[0], gb[1]), (x1, gb[0], gb[1]),
+             (x1, gt[0], gt[1]), (x0, gt[0], gt[1]), "RVGlass")
 
-    # Wipers parked on the sill strip, both leaning right (GM style).
-    for x0 in (-0.90, 0.10):
-        quad(p, (x0, y + 0.006, 1.630), (x0 + 0.60, y + 0.006, 1.685),
-             (x0 + 0.60, y + 0.006, 1.713), (x0, y + 0.006, 1.658), "RVDark")
+    # Wipers parked on the sill area, both leaning right (GM style),
+    # following the cap surface.
+    for x0 in (-0.86, 0.10):
+        quad(p, (x0, cap_y(1.630) + 0.008, 1.630),
+             (x0 + 0.58, cap_y(1.685) + 0.008, 1.685),
+             (x0 + 0.58, cap_y(1.713) + 0.008, 1.713),
+             (x0, cap_y(1.658) + 0.008, 1.658), "RVDark")
 
-    # Fascia furniture, all proud of the y=3.92 plane.
-    quad(p, (-GRILLE[0], y + 0.006, GRILLE[1]), (GRILLE[0], y + 0.006, GRILLE[1]),
-         (GRILLE[0], y + 0.006, GRILLE[2]), (-GRILLE[0], y + 0.006, GRILLE[2]),
-         "RVDark")
+    # Fascia furniture, proud of the contoured cap.
+    quad(p, (-GRILLE[0], cap_y(GRILLE[1]) + 0.006, GRILLE[1]),
+         (GRILLE[0], cap_y(GRILLE[1]) + 0.006, GRILLE[1]),
+         (GRILLE[0], cap_y(GRILLE[2]) + 0.006, GRILLE[2]),
+         (-GRILLE[0], cap_y(GRILLE[2]) + 0.006, GRILLE[2]), "RVDark")
+    hz0, hz1 = HEADLIGHT_Z
     for sgn in (1, -1):
         x0, x1 = sorted((sgn * HEADLIGHT_X[0], sgn * HEADLIGHT_X[1]))
-        box(p, x0, x1, y + 0.001, y + 0.028,
-            HEADLIGHT_Z[0], HEADLIGHT_Z[1], "RVTrim")
+        box(p, x0, x1, cap_y(hz0) - 0.01, cap_y(hz1) + 0.02, hz0, hz1, "RVTrim")
         m0, m1 = sorted((sgn * MARKER_X[0], sgn * MARKER_X[1]))
-        box(p, m0, m1, y + 0.001, y + 0.020, MARKER_Z[0], MARKER_Z[1], "RVSignal")
-    box(p, -1.23, 1.23, y - 0.02, 4.00, BUMPER_Z0, BUMPER_Z1, "RVTrim")
+        box(p, m0, m1, cap_y(MARKER_Z[0]) + 0.001, cap_y(MARKER_Z[1]) + 0.020,
+            MARKER_Z[0], MARKER_Z[1], "RVSignal")
+    # Narrower than the tail bumper: the nose rim tapers to |x|=1.062, and a
+    # full-width blade left 17 cm of bumper hanging past the shaped corner.
+    box(p, -1.14, 1.14, 3.78, 4.00, BUMPER_Z0, BUMPER_Z1, "RVTrim")
 
-    # Stripe bands wrap the nose (proud strips, aligned with the hull bands).
-    for z0, z1 in ((Z_THICK0, Z_THICK1), (Z_THIN0, Z_THIN1)):
-        quad(p, (-HALF_W, y + 0.004, z0), (HALF_W, y + 0.004, z0),
-             (HALF_W, y + 0.004, z1), (-HALF_W, y + 0.004, z1), "RVStripe")
-    # Flying-W flash: two angled strips meeting in a point at bottom centre.
+    # Flying-W flash on the belt panel, hugging the surface.
+    z0, z1, th = WFLASH_Z0, WFLASH_Z1, WFLASH_TH
     for sgn in (1, -1):
-        quad(p, (0.0, y + 0.005, WFLASH_Z0),
-             (sgn * WFLASH_HW, y + 0.005, WFLASH_Z1),
-             (sgn * WFLASH_HW, y + 0.005, WFLASH_Z1 + WFLASH_TH),
-             (0.0, y + 0.005, WFLASH_Z0 + WFLASH_TH), "RVStripe")
+        quad(p, (0.0, cap_y(z0) + 0.006, z0),
+             (sgn * WFLASH_HW, cap_y(z1) + 0.006, z1),
+             (sgn * WFLASH_HW, cap_y(z1 + th) + 0.006, z1 + th),
+             (0.0, cap_y(z0 + th) + 0.006, z0 + th), "RVStripe")
 
 
 def build_tail(p):
@@ -500,10 +551,8 @@ def build_bays(p):
 # Cab glass + interior
 # ---------------------------------------------------------------------------
 def build_glass(g):
-    """Windshield panes + cab sliders.  Camper panes are added by the windows."""
-    for x0, x1 in ((-WS_X, -0.025), (0.025, WS_X)):
-        quad(g, (x0, WS_GLASS_Y, WS_Z0), (x1, WS_GLASS_Y, WS_Z0),
-             (x1, WS_GLASS_Y, WS_Z1), (x0, WS_GLASS_Y, WS_Z1), "RVGlass")
+    """Cab sliders.  The windshield lives in build_nose, camper panes in the
+    window builders."""
     gx = HALF_W - 0.043
     y0, y1 = CAB_WIN
     for sgn in (1, -1):
@@ -555,9 +604,9 @@ def build_interior(p):
         p.f.append([a, a + 2, a + 3, a + 1])
         p.m.append("RVCurtain")
 
-    # Sun visors: dark slabs tucked behind the windshield header.
-    for x0, x1 in ((-0.95, -0.35), (0.35, 0.95)):
-        box(p, x0, x1, 3.76, 3.80, 2.42, 2.60, "RVDark")
+    # Sun visors: dark slabs tucked behind the (now raked) windshield.
+    for x0, x1 in ((-0.90, -0.34), (0.34, 0.90)):
+        box(p, x0, x1, 3.60, 3.64, 2.26, 2.46, "RVDark")
 
     # Steering wheel: thin octagonal annulus slab, tilted back, plus a column.
     cx, cy, cz = SW_C
@@ -667,7 +716,8 @@ def build_awning(p):
 
 def build_mirrors(p):
     for sgn in (1, -1):
-        a0, a1 = sorted((sgn * HALF_W, sgn * 1.44))
+        # Arm buried to x=1.16: past y=3.50 the wall tapers inboard.
+        a0, a1 = sorted((sgn * 1.16, sgn * 1.44))
         box(p, a0, a1, 3.54, 3.58, 2.06, 2.10, "RVTrim")
         h0, h1 = sorted((sgn * 1.34, sgn * 1.46))
         box(p, h0, h1, 3.52, 3.56, 1.90, 2.24, "RVTrim")
@@ -797,7 +847,7 @@ def build():
     glass = Part("WinnebagoGlass")
 
     build_hull(body)
-    build_nose(body)
+    build_nose(body, glass)
     build_tail(body)
     for w in WINDOWS_R:
         curtain_window(body, glass, 1, *w)
@@ -835,10 +885,16 @@ def build():
     ok_len = abs((ext[1][1] - ext[1][0]) - 8.0) < 0.005
     print(f"  length vs ticket 8.0 m: {'OK' if ok_len else 'MISMATCH'}")
 
-    # Steering wheel vs windshield glass plane (y = WS_GLASS_Y).
+    # Steering wheel vs the raked windshield: compare against the glass plane's
+    # y at the wheel's topmost z (the plane leans back, so clearance shrinks
+    # with height — a fixed-y check would pass a poking wheel).
     sw_max_y = SW_C[1] + SW_RO * math.sin(WHEEL_TILT) + SW_TH
-    print(f"  steering wheel max y = {sw_max_y:.3f} vs glass {WS_GLASS_Y:.3f}  "
-          f"{'OK' if sw_max_y < WS_GLASS_Y else 'POKES THROUGH'}")
+    sw_top_z = SW_C[2] + SW_RO * math.cos(WHEEL_TILT) + SW_TH
+    t = (sw_top_z - WS_Z0) / (WS_Z1 - WS_Z0)
+    glass_y = cap_y(WS_Z0) + (cap_y(WS_Z1) - cap_y(WS_Z0)) * t - WS_INSET
+    print(f"  steering wheel max y = {sw_max_y:.3f} vs glass {glass_y:.3f} "
+          f"(at z {sw_top_z:.2f})  "
+          f"{'OK' if sw_max_y < glass_y else 'POKES THROUGH'}")
     # Seat back + headrest must break the cab beltline or the cabin reads empty.
     print(f"  headrest top 2.140 vs beltline {Z_SILL:.3f}  "
           f"{'OK' if 2.14 > Z_SILL else 'BELOW BELT'}")
