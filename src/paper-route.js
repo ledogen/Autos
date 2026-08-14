@@ -637,11 +637,13 @@ export class PaperRouteSystem {
      *   getTargetR() — the delivery circle radius (POI_PARAMS.poiHouseTargetR)
      *   onSettle(payout, letter) — EconomySystem.settleFlat; the one money path
      *   onBriefing(done)  — play Larry's cards and call `done` when they are read
+     *   setMapOpen(open)  — show/hide the 2D map, framed on the route (the offer's preview)
      *   onChange()   — repaint
      *   onEnd()      — the route is over: clear the papers off the lawns
      */
     constructor ({ getRoad, getPois, getRegion, getCar, getTerms, getTargetR,
-                   onSettle, onBriefing, onChange, onEnd }) {
+                   onSettle, onBriefing, setMapOpen, onChange, onEnd }) {
+        this._setMapOpen = setMapOpen ?? (() => {})
         this._getRoad = getRoad
         this._getPois = getPois
         this._getRegion = getRegion ?? (() => null)
@@ -774,6 +776,9 @@ export class PaperRouteSystem {
         if (this.state !== 'planning' || !this._planned || !this._briefed) return
         if (!this.route) { this.state = 'idle'; this._onChange(); return }
         this.state = 'offer'
+        // The preview. Fires here, not on arrival at the pad: before this moment there is nothing
+        // to look at, because the tour is still routing behind Larry's briefing cards.
+        this._setMapOpen(true)
         this._onChange()
     }
 
@@ -794,6 +799,7 @@ export class PaperRouteSystem {
         }
         this._startZone = { x: this.giver.x, z: this.giver.z, y: this.giver.y ?? 0, r: START_ZONE_R }
         this.state = 'staging'
+        this._setMapOpen(false)     // you have seen it; now drive
         this._onChange()
     }
 
@@ -820,6 +826,8 @@ export class PaperRouteSystem {
         // them at the bell would erase the trail of the route you just drove at the exact moment
         // the card asks you to look at how it went.
         const hadPapers = this.state === 'running' || this.state === 'done'
+        // Declining or dismissing takes the preview down with the offer that raised it.
+        if (this.state === 'offer') this._setMapOpen(false)
         this._cancelReplan()
         this._offRouteT = this._checkT = 0
         this._rrHideAt = 0
@@ -863,7 +871,14 @@ export class PaperRouteSystem {
      * So the guide re-plans and par never does. The two are not in tension; the second is the
      * reason for the first.
      */
-    isRerouting () { return !!this._rr || this._clock < this._rrHideAt }
+    isRerouting () { return (!!this._rr && !this._rr.quiet) || this._clock < this._rrHideAt }
+
+    /**
+     * Is there a job to pump? Distinct from isRerouting() on purpose: a delivery's re-plan is
+     * QUIET — it still has to be computed, but it is bookkeeping rather than news, and flashing
+     * RECALCULATING after every paper would train the player to ignore the one time it matters.
+     */
+    hasReplan () { return !!this._rr }
 
     /**
      * Spend up to `budgetMs` of this frame's spare time on the live re-plan. Returns true while a
@@ -889,10 +904,20 @@ export class PaperRouteSystem {
         // and 20 m/s that is under three metres, so this should never fire — it is here for a
         // frame-rate collapse, and it logs when it fires precisely because it means the budget
         // model was wrong somewhere.
+        //
+        // Measured against the CAR's own start position, not the origin the planner used. Those are
+        // different points — the origin is snapped to the road — so comparing the two would call a
+        // truck parked 60 m off the tarmac permanently stale and re-plan it forever, burning the
+        // frame budget for as long as it sat there. The gate caught exactly that.
+        //
+        // One retry, then take what we have. A route planned from a hundred metres back is a little
+        // stale at its first turn and completely fine after that; a re-plan that will not converge
+        // is worse than either.
         const car = this._getCar()
-        if (car && Math.hypot(car.x - job.ox, car.z - job.oz) > RR_STALE_M) {
+        const drifted = car && Math.hypot(car.x - job.cx, car.z - job.cz) > RR_STALE_M
+        if (drifted && !job.retry) {
             console.warn('[paper] re-plan went stale in flight — planning again from here')
-            this._startReplan('stale')
+            this._startReplan(job.reason, job.quiet, true)
             return !!this._rr
         }
         if (route?.segments?.length) {
@@ -985,11 +1010,15 @@ export class PaperRouteSystem {
         return null
     }
 
-    /** Start (or restart) a sliced re-plan of everything still undelivered. */
-    _startReplan (reason) {
+    /**
+     * Start (or restart) a sliced re-plan of everything still undelivered.
+     * `quiet` suppresses the indicator — see hasReplan().
+     */
+    _startReplan (reason, quiet = false, retry = false) {
         if (this.state !== 'running' || !this.route || !this.run) return
         const left = this.route.customers.filter(c => !this.run.hits.has(c.id))
         if (!left.length) return
+        const car = this._getCar()
         const origin = this._originPoint()
         if (!origin) return          // off the network entirely; try again on the next poll
 
@@ -1001,9 +1030,11 @@ export class PaperRouteSystem {
             // standing next to.
             it: planTourJob(this._getRoad(), origin, left, left.length,
                             this._getRegion(), 100, Infinity),
-            ox: origin.x, oz: origin.z, reason,
+            // cx/cz is where the TRUCK was, which is what the staleness guard measures against;
+            // origin is the road point it planned from, and the two are not the same place.
+            cx: car?.x ?? origin.x, cz: car?.z ?? origin.z, reason, quiet, retry,
         }
-        this._rrHideAt = this._clock + RR_MIN_SHOW_S
+        if (!quiet) this._rrHideAt = this._clock + RR_MIN_SHOW_S
         this._onChange()
     }
 
@@ -1068,6 +1099,19 @@ export class PaperRouteSystem {
             this.finish()
             return out
         }
+        // FEAT-63 / BUG-48: RE-PLAN ON EVERY DELIVERY, not only on an out-of-order one.
+        //
+        // The old rule — "delivering in order leaves the remaining suffix optimal, so don't bother"
+        // — was true about OPTIMALITY and wrong about the line. A served customer stayed on the
+        // guide, and `advanceProgress` is a nearest-point projection rather than a ratchet, so
+        // turning round and driving back the way you came walked `s` backwards and re-lit the
+        // chevron lattice pointing at a porch that already had its paper (owner-reported, seed 90).
+        //
+        // The invariant that fixes it is not "re-plan when the order is wrong", it is THE LINE ONLY
+        // EVER CONTAINS PEOPLE WHO ARE STILL OWED A PAPER. Re-planning here is how that is kept,
+        // and it costs nothing the player can see: quiet, so no RECALCULATING flashes for something
+        // that is not a wrong turn, and the previous line stays up for the ~120 ms it takes.
+        if (credited) this._startReplan('delivered', true)
         return { customer: best, dist: bd, q, credited, already }
     }
 

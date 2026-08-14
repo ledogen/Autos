@@ -2669,6 +2669,35 @@ function _updateDozeOverlay (f) {
   _dozeBotLid.style.transform = `translateY(${pct}%)`
 }
 
+/**
+ * Open (or close) the map framed on a route.
+ *
+ * Shared by the POI job and the paper route (FEAT-61): both want the same thing at the same
+ * moment — "here is the work, look at it before you commit". Taking `markers` as an argument
+ * rather than reading one system means the second caller was a parameter, not a copy.
+ *
+ * The offer panel is z 95 and the map canvas z 90, so accept/decline stay on top and clickable —
+ * the map is a backdrop to the offer, not a modal over it.
+ */
+function _setMapOpen (open, mk) {
+  if (!open) { map2d.hide(); return }
+  map2d.show()
+  // Frame the whole job so the route reads at a glance instead of running off the edge.
+  if (mk?.poly?.length) {
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity
+    for (const p of mk.poly) { if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x; if (p.z < z0) z0 = p.z; if (p.z > z1) z1 = p.z }
+    map2d.frameBounds(x0, z0, x1, z1)
+    // The mission plans over a wider network than the map streams by default, so tell the map how
+    // far it has to build. Otherwise the route runs past the edge of the drawn network and looks
+    // like an invented road.
+    const car = vehicleState.position
+    const reach = Math.max(
+      Math.hypot(x0 - car.x, z0 - car.z), Math.hypot(x1 - car.x, z1 - car.z),
+      Math.hypot(x0 - car.x, z1 - car.z), Math.hypot(x1 - car.x, z0 - car.z))
+    map2d.setRadiusTarget(reach + 300)
+  }
+}
+
 const _misFwd = new THREE.Vector3()
 missionSystem = new MissionSystem({
   getRoad:  () => roadSystem,
@@ -2711,25 +2740,7 @@ missionSystem = new MissionSystem({
   // checkpoint: reset (R) puts you back on the job you took, not wherever you last happened to stop.
   // Reuses setSpawnHere() so there is ONE spawn-override write path, not a second that could drift.
   setSpawn: () => setSpawnHere(),
-  setMapOpen: (open) => {
-    if (!open) { map2d.hide(); return }
-    map2d.show()
-    // Frame the whole job so the route reads at a glance instead of running off the edge.
-    const mk = missionSystem?.markers()
-    if (mk?.poly?.length) {
-      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity
-      for (const p of mk.poly) { if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x; if (p.z < z0) z0 = p.z; if (p.z > z1) z1 = p.z }
-      map2d.frameBounds(x0, z0, x1, z1)
-      // The mission plans over a wider network than the map streams by default, so tell the map how
-      // far it has to build. Otherwise the route runs past the edge of the drawn network and looks
-      // like an invented road.
-      const car = vehicleState.position
-      const reach = Math.max(
-        Math.hypot(x0 - car.x, z0 - car.z), Math.hypot(x1 - car.x, z1 - car.z),
-        Math.hypot(x0 - car.x, z1 - car.z), Math.hypot(x1 - car.x, z0 - car.z))
-      map2d.setRadiusTarget(reach + 300)
-    }
-  },
+  setMapOpen: (open) => _setMapOpen(open, missionSystem?.markers()),
   // FEAT-53: the economy seams. Terms (day tier + rank thresholds) freeze at ACCEPT; a finished
   // POI job settles into the run wallet. Quick Job never settles — it pays nothing by design.
   getTerms: () => economySystem.terms(),
@@ -2761,6 +2772,11 @@ const paperRouteSystem = new PaperRouteSystem({
   // A finished route takes its papers off the lawns. Region exit does the same (see onRegionExit);
   // this is the other half of the rule the handoff flagged as missing.
   onEnd:     () => _clearThrownRolls(),
+  // Parking at Larry's opens the map on the offer (owner, 2026-08-13). A paper route is fifteen
+  // porches over as much as 2 km and the panel can only say so as a number — you cannot decide
+  // whether to take it without seeing the SHAPE. Same seam a POI job already uses, and it fires at
+  // 'offer' rather than on arrival because that is the first moment there is a route to preview.
+  setMapOpen: (open) => _setMapOpen(open, paperRouteSystem?.markers()),
   onChange:  () => _renderPaperUI(),
 })
 window.__paperRoute = () => paperRouteSystem
@@ -4974,7 +4990,10 @@ function loop () {
   // is whatever this frame did not use, so a frame that already overran contributes nothing and a
   // quiet one contributes several milliseconds. Even at the FLOOR the job lands in about a second,
   // and the RECALCULATING indicator is what makes that honest to the player.
-  if (paperRouteSystem?.isRerouting()) {
+  // hasReplan(), not isRerouting(): a delivery's re-plan is quiet and shows no indicator, but it
+  // still has to be computed — gating the pump on the indicator would leave those jobs suspended
+  // forever, which is the bug the indicator was never meant to be able to cause.
+  if (paperRouteSystem?.hasReplan()) {
     const spentMs = performance.now() - newTime * 1000
     paperRouteSystem.pumpReroute(Math.max(PUMP_FLOOR_MS, FRAME_BUDGET_MS - PUMP_MARGIN_MS - spentMs))
   }

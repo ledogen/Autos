@@ -22,8 +22,10 @@ import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { WaterSystem } from '../src/water.js'
-import { PoiSystem } from '../src/poi.js'
-import { planTour, planTourJob, radiusForTier, customersForTier } from '../src/paper-route.js'
+import { PoiSystem, POI_PARAMS } from '../src/poi.js'
+import { planTour, planTourJob, radiusForTier, customersForTier,
+         PaperRouteSystem, resetPaperRun } from '../src/paper-route.js'
+import { START_ZONE_R } from '../src/mission.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
 let fails = 0
@@ -190,6 +192,64 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
             `re-plan ${(re.distance / 1000).toFixed(2)} km vs stale ${(naive / 1000).toFixed(2)} km`)
         console.log(`       jumped to the far end: re-plan ${(re.distance / 1000).toFixed(2)} km`
             + ` vs ${(naive / 1000).toFixed(2)} km on the stale line`)
+    }
+}
+
+// ── BUG-48: the line never contains someone who already has their paper ─────────────────────────
+//
+// The owner-reported defect (seed 90): deliver two papers in order, turn round, drive back the way
+// you came, and the chevrons pointing at customer two light up again. The cause was not the chevron
+// code — `advanceProgress` is a nearest-point projection, not a ratchet, so driving back walks `s`
+// backwards quite correctly. The cause was that the LINE still had the served porches on it,
+// because an in-order delivery deliberately skipped the re-plan as an optimisation.
+//
+// So the property to hold is not "re-plan when the order is wrong". It is this one, and it is
+// checked here through the live system rather than the planner, because the trigger is what broke.
+{
+    let mapOpen = null
+    const sys = new PaperRouteSystem({
+        getRoad: () => road, getPois: () => poi, getRegion: () => region,
+        getCar: () => car, getTerms: () => ({ dayTier: 1 }),
+        getTargetR: () => POI_PARAMS.poiHouseTargetR,
+        onSettle: () => ({ payout: 0, points: 0 }),
+        onBriefing: (done) => done(),
+        setMapOpen: (o) => { mapOpen = o },
+    })
+    const car = { x: larry.x, y: larry.y ?? 0, z: larry.z }
+    resetPaperRun()
+    sys.open(larry)
+    // open() defers the plan a tick; drain it synchronously the way the gate for the tour does.
+    await new Promise(r => setTimeout(r, 0))
+
+    check('parking at Larry\'s opens the map on the offer', sys.state === 'offer' && mapOpen === true,
+        `state ${sys.state}, map ${mapOpen}`)
+    if (sys.state === 'offer') {
+        sys.accept()
+        check('…and accepting puts it away again', mapOpen === false)
+        car.x += START_ZONE_R + 5
+        sys.update(0.1)                                  // leave the threshold: the route is running
+
+        const first = sys.route.customers[0]
+        car.x = first.x; car.z = first.z
+        sys.takePaper()
+        const hit = sys.recordLanding(first.x, first.z)
+        check('a delivery credits the customer', !!hit?.credited)
+        check('…and immediately starts a re-plan', sys.hasReplan(),
+            'without this the served porch stays on the line and the chevrons re-light behind you')
+        check('…quietly — an ordinary delivery is not a wrong turn', !sys.isRerouting())
+
+        let guard = 0
+        while (sys.pumpReroute(50) && guard++ < 500) { /* drain it the way the frame pump would */ }
+        const onLine = new Set(sys.line().customers.map(c => c.id))
+        check('…and the new line does NOT contain the porch that was just served',
+            !onLine.has(first.id),
+            `${first.id} is still on the guide — this is the seed-90 defect`)
+        check('…while everyone still owed a paper is on it',
+            sys.route.customers.filter(c => c.id !== first.id).every(c => onLine.has(c.id)))
+        // The contract keeps everybody, because the contract is who you owe, not where you are.
+        check('…and the CONTRACT still lists every customer, delivered or not',
+            sys.route.customers.length === base.customers.length
+            || sys.route.customers.some(c => c.id === first.id))
     }
 }
 
