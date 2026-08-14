@@ -121,7 +121,9 @@ VENT = (-0.16, 0.16, 0.72, 1.04, 2.92, 3.02)   # x0,x1,y0,y1,z0,z1
 FLOOR_Z0, FLOOR_Z1 = 0.82, 0.88
 SEAT_X = 0.60                           # chair centreline |x|
 WHEEL_TILT = math.radians(35.0)
-SW_C = (-SEAT_X, 3.50, 1.50)            # steering wheel hub
+# Hub raised so the rim breaks the 1.72 sill: a bus wheel is VISIBLE through the
+# windshield (ref-04), and below the sill the whole cab reads unoccupied.
+SW_C = (-SEAT_X, 3.50, 1.60)            # steering wheel hub
 SW_RO, SW_RI, SW_TH = 0.19, 0.14, 0.03
 
 # Front fascia (ref-01: headlights LOW beside a low grille, stripes wrapping the
@@ -141,7 +143,9 @@ MATS = {
     "RVTrim":     ((0.360, 0.365, 0.375, 1.0), 0.45, 1.0),
     "RVDark":     ((0.030, 0.030, 0.032, 1.0), 0.90, 1.0),  # wells, tyres, interior
     "RVCurtain":  ((0.430, 0.260, 0.215, 1.0), 0.95, 1.0),  # pleats + rolled awning
-    "RVSeat":     ((0.130, 0.040, 0.058, 1.0), 0.95, 1.0),  # maroon velour
+    "RVSeat":     ((0.165, 0.050, 0.068, 1.0), 0.95, 1.0),  # maroon velour —
+    # brighter than broken-car's tub logic suggests: these chairs sit behind
+    # 0.45 glass, not 0.72, and at 0.13 they vanished into the void.
     "RVSignal":   ((0.750, 0.280, 0.030, 1.0), 0.40, 1.0),
     # Lighter than broken-car's 0.72: these panes sit OVER the curtains and the
     # cab interior, and at 0.72 the pleats black out entirely.  0.45 keeps a
@@ -354,6 +358,11 @@ def build_nose(p):
     quad(p, (-0.025, g + 0.004, WS_Z0), (0.025, g + 0.004, WS_Z0),
          (0.025, g + 0.004, WS_Z1), (-0.025, g + 0.004, WS_Z1), "RVBody")
 
+    # Wipers parked on the sill strip, both leaning right (GM style).
+    for x0 in (-0.90, 0.10):
+        quad(p, (x0, y + 0.006, 1.630), (x0 + 0.60, y + 0.006, 1.685),
+             (x0 + 0.60, y + 0.006, 1.713), (x0, y + 0.006, 1.658), "RVDark")
+
     # Fascia furniture, all proud of the y=3.92 plane.
     quad(p, (-GRILLE[0], y + 0.006, GRILLE[1]), (GRILLE[0], y + 0.006, GRILLE[1]),
          (GRILLE[0], y + 0.006, GRILLE[2]), (-GRILLE[0], y + 0.006, GRILLE[2]),
@@ -503,19 +512,52 @@ def build_glass(g):
              (x, y1, Z_SHOULDER), (x, y0, Z_SHOULDER), "RVGlass")
 
 
+def build_slider_trim(p):
+    """Vertical divider mid-slider so the cab windows read as sliders."""
+    ym = (CAB_WIN[0] + CAB_WIN[1]) * 0.5
+    for sgn in (1, -1):
+        x0, x1 = sorted((sgn * (HALF_W - 0.055), sgn * (HALF_W - 0.035)))
+        box(p, x0, x1, ym - 0.02, ym + 0.02, Z_SILL, Z_SHOULDER, "RVTrim")
+
+
 def build_interior(p):
     x = HALF_W - 0.04
     box(p, -x, x, 2.36, 3.88, FLOOR_Z0, FLOOR_Z1, "RVDark")          # cab floor
     box(p, -0.26, 0.26, 2.75, 3.62, FLOOR_Z1, 1.26, "RVDark")        # doghouse
     box(p, -x + 0.02, x - 0.02, 3.62, 3.86, 1.28, 1.58, "RVDark")    # dash
-    box(p, -x, x, 2.30, 2.36, 0.86, 2.68, "RVDark")                  # partition
+    # Partition narrower than the floor: at its 2.68 top the roof chamfer is
+    # already in to x=1.15, and a ±1.16 slab poked a dark corner through it.
+    box(p, -1.13, 1.13, 2.30, 2.36, 0.86, 2.68, "RVDark")            # partition
 
     # Captain chairs, maroon velour.  Backs deliberately break the 1.72 beltline
     # (the broken-car sightline rule: below the belt, a cabin reads as empty).
     for sgn in (1, -1):
         cx = sgn * SEAT_X
+        box(p, cx - 0.20, cx + 0.20, 3.10, 3.28, FLOOR_Z1, 1.08, "RVDark")   # pedestal
         box(p, cx - 0.24, cx + 0.24, 2.98, 3.44, 1.06, 1.26, "RVSeat")
-        box(p, cx - 0.24, cx + 0.24, 2.92, 3.02, 1.26, 2.06, "RVSeat")
+        box(p, cx - 0.24, cx + 0.24, 2.92, 3.02, 1.26, 1.96, "RVSeat")
+        box(p, cx - 0.15, cx + 0.15, 2.90, 3.00, 1.96, 2.14, "RVSeat")       # headrest
+
+    # Closed curtain across the cab-to-camper opening: the warm tan panel the
+    # windshield looks INTO.  Without it the cab backs onto a black void and the
+    # "curtains drawn everywhere" story stops at the partition.
+    cy0, cy1 = -1.08, 1.08
+    n = max(4, int(round((cy1 - cy0) / PLEAT_W)))
+    base = len(p.v)
+    for i in range(n + 1):
+        t = i / n
+        xx = cy0 + (cy1 - cy0) * t
+        yy = 2.40 + (0.0 if i % 2 == 0 else 0.020)
+        p.v.append((xx, yy, 1.35))
+        p.v.append((xx, yy, 2.62))
+    for i in range(n):
+        a = base + 2 * i
+        p.f.append([a, a + 2, a + 3, a + 1])
+        p.m.append("RVCurtain")
+
+    # Sun visors: dark slabs tucked behind the windshield header.
+    for x0, x1 in ((-0.95, -0.35), (0.35, 0.95)):
+        box(p, x0, x1, 3.76, 3.80, 2.42, 2.60, "RVDark")
 
     # Steering wheel: thin octagonal annulus slab, tilted back, plus a column.
     cx, cy, cz = SW_C
@@ -765,6 +807,7 @@ def build():
     build_door(body, glass)
     build_bays(body)
     build_interior(body)
+    build_slider_trim(body)
     build_glass(glass)
     build_wheels(body)
     build_roof_kit(body)
@@ -796,9 +839,13 @@ def build():
     sw_max_y = SW_C[1] + SW_RO * math.sin(WHEEL_TILT) + SW_TH
     print(f"  steering wheel max y = {sw_max_y:.3f} vs glass {WS_GLASS_Y:.3f}  "
           f"{'OK' if sw_max_y < WS_GLASS_Y else 'POKES THROUGH'}")
-    # Seat backs must break the cab beltline or the cabin reads empty.
-    print(f"  seat back top 2.060 vs beltline {Z_SILL:.3f}  "
-          f"{'OK' if 2.06 > Z_SILL else 'BELOW BELT'}")
+    # Seat back + headrest must break the cab beltline or the cabin reads empty.
+    print(f"  headrest top 2.140 vs beltline {Z_SILL:.3f}  "
+          f"{'OK' if 2.14 > Z_SILL else 'BELOW BELT'}")
+    # Raised steering wheel must break the sill too — that is why it was raised.
+    sw_top = SW_C[2] + SW_RO * math.cos(WHEEL_TILT) + SW_TH
+    print(f"  wheel rim top = {sw_top:.3f} vs sill {Z_SILL:.3f}  "
+          f"{'OK' if sw_top > Z_SILL else 'HIDDEN'}")
     print("=" * 60)
     return ob_body, ob_glass
 
