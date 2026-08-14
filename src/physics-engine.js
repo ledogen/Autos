@@ -58,6 +58,7 @@ export class PhysicsEngine {
     this._shapeToHandle = new Map()        // shapeId.index1<<21|generation-ish key → body handle
     this._nextHandle = 1
     this._heightfields = new Map()         // handle → b3HeightFieldData (owned, freed on destroy)
+    this._meshDatas = new Map()            // handle → b3MeshData[] (owned, freed on destroy)
     this._hulls = []                       // shared hull data to free on dispose
 
     // Scratch out-params — the bindings write into caller-provided arrays; reuse
@@ -107,6 +108,8 @@ export class PhysicsEngine {
     _b3.b3DestroyBody(rec.id)              // destroys attached shapes with it
     const hf = this._heightfields.get(handle)
     if (hf) { _b3.b3DestroyHeightField(hf); this._heightfields.delete(handle) }
+    const mds = this._meshDatas.get(handle)
+    if (mds) { for (const m of mds) _b3.b3DestroyMesh(m); this._meshDatas.delete(handle) }
     this._bodies.delete(handle)
   }
 
@@ -179,6 +182,24 @@ export class PhysicsEngine {
     const hull = _b3.b3CreateHull(positions)
     this._hulls.push(hull)
     this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull))
+  }
+
+  /**
+   * Static triangle-mesh collider from world/local-space geometry (positions
+   * Float32Array [x,y,z,…], indices Uint32Array). For streamed static surfaces
+   * whose exact shape matters — the road ribbon, tunnel bores, junction pads.
+   * Mesh data is owned by the body and freed with it. Best kept on STATIC
+   * bodies (trimesh-vs-trimesh dynamics is not a thing engines do well).
+   */
+  addMesh (handle, positions, indices, material = {}) {
+    const rec = this._bodies.get(handle)
+    const mesh = _b3.b3CreateMesh(positions, indices)
+    if (!mesh) return false
+    let list = this._meshDatas.get(handle)
+    if (!list) this._meshDatas.set(handle, list = [])
+    list.push(mesh)
+    this._register(handle, _b3.b3CreateMeshShape(rec.id, this._shapeDef(material), mesh, [1, 1, 1]))
+    return true
   }
 
   /**
@@ -409,6 +430,8 @@ export class PhysicsEngine {
     _b3.b3DestroyWorld(this._world)
     for (const hf of this._heightfields.values()) _b3.b3DestroyHeightField(hf)
     this._heightfields.clear()
+    for (const list of this._meshDatas.values()) for (const m of list) _b3.b3DestroyMesh(m)
+    this._meshDatas.clear()
     for (const h of this._hulls) _b3.b3DestroyHull(h)
     this._hulls.length = 0
     this._bodies.clear()

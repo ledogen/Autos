@@ -19,7 +19,7 @@ import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics, createVehicleChassis } from './physics.js'
 import { createPhysicsEngine } from './physics-engine.js'
-import { TerrainPhysics } from './terrain-physics.js'
+import { TerrainPhysics, RoadPhysics } from './terrain-physics.js'
 import { DebrisSystem } from './debris.js'
 import { getBodyContactPoints, getWheelPosition } from './suspension.js'
 import { updateVehicle, setLaunchHold, setControlAttenuation, SPAWN_STATE } from './vehicle.js'
@@ -658,6 +658,7 @@ async function _rebuildFullNow () {
         RANGER_PARAMS,
         worldSeed  // D-03: roadQuality determinism
       )
+      roadMeshSystem.setPhysicsHook(roadPhysics)   // FEAT-48: re-attach after the seed-rebuild swap
       terrainSystem.setRoadSystem(roadSystem)
     }
     _step('roadInit')
@@ -1962,6 +1963,10 @@ terrainSystem.setPhysicsHook(terrainPhysics)   // mirrors every chunk build/reca
 const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_PARAMS)
 const engineCtx = { engine: physicsEngine, chassis: vehicleChassis }
 const debrisSystem = new DebrisSystem(physicsEngine, scene)   // FEAT-36: thrown barrels/rocks
+// Road ribbon/pad/bore trimesh colliders — attached to roadMeshSystem at its creation sites
+// below (boot + seed rebuild). The terrain heightfields mirror the CARVED mesh, which sits
+// roadClearanceMargin BELOW the asphalt; without this mirror debris fell through the road.
+const roadPhysics = new RoadPhysics(physicsEngine)
 window.__physicsEngine = physicsEngine         // dev handle (counters in the HUD / console)
 window.__vehicleChassis = vehicleChassis       // dev handle — debug.js restitution slider targets it
 window.__debris = debrisSystem                 // dev handle — debug.js projectile selector + clear button
@@ -3698,6 +3703,7 @@ roadMeshSystem = new RoadMeshSystem(
   RANGER_PARAMS,
   worldSeed  // D-03: roadQuality determinism requires the world seed
 )
+roadMeshSystem.setPhysicsHook(roadPhysics)   // FEAT-48: asphalt is a collider, not just a decal
 
 // FEAT-22/17/18: water — needs terrainSystem.rawHeightWorld, alive now. Seed-deterministic like
 // props. BEFORE PropSystem: the scatter's waterAt sampler must see the current water from the very
@@ -3976,6 +3982,8 @@ function enterLab () {
 
   terrainSystem.setPhysicsHook(null)   // FEAT-48: stop mirroring world chunks…
   terrainPhysics.clear()               // …drop their colliders (lab is a clean room)
+  roadMeshSystem?.setPhysicsHook(null)
+  roadPhysics.clear()
   _buildLabColliders()
 
   // Fog is tuned for worldgen draw distances (FogExp2 ~0.006), which swallows the far end of a
@@ -4009,6 +4017,7 @@ function exitLab () {
 
   _destroyLabColliders()                          // FEAT-48: lab slab + ramp out…
   terrainSystem.setPhysicsHook(terrainPhysics)    // …world chunk colliders back (re-syncs kept chunks)
+  roadMeshSystem?.setPhysicsHook(roadPhysics)     // …and the standing road tiles
 
   if (scene.fog && _labFogDensity != null) { scene.fog.density = _labFogDensity; _labFogDensity = null }
 

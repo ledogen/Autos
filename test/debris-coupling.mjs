@@ -112,6 +112,54 @@ ok(up.y > 0.9, `truck still upright after the hit (up·Y ${up.y.toFixed(3)} > 0.
 ok(barrelRestSpeed < 0.8, `barrel settles instead of jittering (final |v| ${barrelRestSpeed.toFixed(3)} < 0.8 m/s)`)
 
 ctx.dispose()
+
+// ── Fling regression (owner capture 1786690032648, 2026-08-14) ───────────────────────────────
+// Coasting slowly over a SMALL rock used to feed a loop: the overlap depth spiked to ~0.15 m in
+// one frame → ~10 kN tire Fz → the summed-Fz reaction flung the rock → the fleeing rock's
+// velocity drove the relative-slip ω integrator to 60+ rad/s with ZERO throttle. Fixed by the
+// DYN_CONTACT_DEPTH_CAP + contact-local reaction Fn (physics.js). This scenario locks it in:
+// rolling over a rock at ~3 m/s coast must leave the rock nearby and slow, the wheels near
+// rolling speed, and the tire loads bounded.
+console.log('\nfling regression — coast over a small rock, no throttle:')
+{
+  const P2 = freshParams()
+  const eq2 = eqOf(P2)
+  const v0 = 3
+  const vs2 = {
+    position: new THREE.Vector3(0, eq2.bodyY, 0), velocity: new THREE.Vector3(0, 0, -v0),
+    quaternion: new THREE.Quaternion(), angularVelocity: new THREE.Vector3(),
+    steerAngle: 0, throttle: 0, brake: 0, smoothThrottle: 0, smoothBrake: 0,
+    wheelAngles: [0, 0, 0, 0], wheelSteerAngles: [0, 0, 0, 0],
+    wheelDebug: [0, 1, 2, 3].map(() => ({ fn: 0, fy: 0, sa: 0, c: 0, omega: 0, fz: 0 })),
+    wheelOmega: [0, 0, 0, 0].map(() => v0 / P2.wheelRadius), slipLong: [0, 0, 0, 0], slipLat: [0, 0, 0, 0],
+    strutComp: [...eq2.strutComp], strutCompVel: [0, 0, 0, 0], handbrake: false,
+    drivetrain: { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },
+  }
+  const ctx2 = await makeEngineCtx(vs2, P2, { groundFn: () => 0, extent: 128, cell: 4 })
+  // A ~50 kg cobble dead in the LEFT front wheel's track (x ≈ −0.72), 6 m ahead.
+  const rock = ctx2.engine.createBody({ type: 'dynamic', position: { x: -0.72, y: 0.16, z: -6 }, userData: { kind: 'debris' } })
+  ctx2.engine.addCylinder(rock, 0.24, 0.17, { density: 2500, friction: 0.7, restitution: 0.15, group: GROUP_DEBRIS }, 0, 8)
+
+  const rv = { x: 0, y: 0, z: 0 }, rw = { x: 0, y: 0, z: 0 }
+  let rockPeak = 0, omegaPeak = 0, fzPeak = 0
+  for (let s = 1; s <= 480; s++) {
+    vs2.throttle = 0
+    stepPhysics(vs2, P2, DT, queryContacts, queryVertexContacts, ctx2)
+    ctx2.engine.getVelocity(rock, rv, rw)
+    rockPeak = Math.max(rockPeak, Math.hypot(rv.x, rv.y, rv.z))
+    for (let i = 0; i < 4; i++) {
+      omegaPeak = Math.max(omegaPeak, Math.abs(vs2.wheelOmega[i]))
+      fzPeak = Math.max(fzPeak, P2._tireFz[i])
+    }
+  }
+  const omega0 = v0 / P2.wheelRadius
+  console.log(`  rock peak |v| ${rockPeak.toFixed(2)} m/s; wheel |ω| peak ${omegaPeak.toFixed(1)} rad/s (rolling ${omega0.toFixed(1)}); tire Fz peak ${fzPeak.toFixed(0)} N`)
+  ok(rockPeak < 3.0, `rock is rolled over, not flung (peak ${rockPeak.toFixed(2)} m/s < 3.0 at a ${v0} m/s coast)`)
+  ok(omegaPeak < 2.5 * omega0, `no phantom wheel spin-up (peak |ω| ${omegaPeak.toFixed(1)} < ${(2.5 * omega0).toFixed(1)} rad/s — was 60+ pre-fix)`)
+  ok(fzPeak < 12000, `tire load bounded over the rock (peak Fz ${fzPeak.toFixed(0)} N < 12 kN — was spiking on full-radius depth)`)
+  ctx2.dispose()
+}
+
 console.log('\n' + '═'.repeat(56))
 if (fail) { console.log('DEBRIS-COUPLING: FAIL'); process.exit(1) }
 console.log('DEBRIS-COUPLING: PASS — wheel↔debris coupling is two-way, stable, and honest ✓')

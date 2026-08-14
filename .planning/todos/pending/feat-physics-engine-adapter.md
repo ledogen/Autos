@@ -46,8 +46,9 @@ body with tuned mass/inertia via SetMassData, our suspension/Pacejka feeding for
   would swap them — a feel change that is the owner's call.
 - **Single-precision** — the engine build is float32; ~1 mm position granularity at 10 km from
   origin. Fine at story-region scale; far teleports would want the double build or origin rebasing.
-- **Known gap**: chassis-vs-tunnel-bore-wall contact (wheels still get bore walls analytically;
-  the chassis hull has no bore collider — rare roof-scrape case, ticket if it ever shows).
+- ~~Known gap: chassis-vs-tunnel-bore-wall contact~~ **CLOSED 2026-08-14** — RoadPhysics mirrors
+  road tiles (ribbon + pads + tunnel bores) as engine trimeshes, so the chassis collides with
+  bore linings now. See also QUAL-25 (chassis collider fidelity, owner watch item).
 
 ## The decision [OWNER, 2026-07-29]
 

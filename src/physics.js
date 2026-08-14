@@ -192,7 +192,16 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
   const qcPlus = (cx, cy, cz, r, footprint) => {
     const list = queryContacts(cx, cy, cz, r, footprint)
     const dyn = engine.overlapSphere({ x: cx, y: cy, z: cz }, r, { collidesWith: GROUP_DEBRIS, dynamicOnly: true })
-    for (let i = 0; i < dyn.length; i++) list.push(dyn[i])
+    for (let i = 0; i < dyn.length; i++) {
+      // CAP THE DEPTH of dynamic-body contacts. The overlap query can report a near-full-radius
+      // depth in a single frame (hub center dips inside a small rock's hull), and the tire spring
+      // turned that into a ~10 kN Fz spike (capture 1786690032648: fl_c 0.004 → 0.148 in one
+      // frame, coasting). That spike flung the rock, the fleeing rock's velocity then drove the
+      // relative-slip ω integrator to 60+ rad/s, and the loop fed itself. A tire can only deflect
+      // so far — bound debris contacts to a deep-but-sane squish and the whole loop dies.
+      if (dyn[i].depth > DYN_CONTACT_DEPTH_CAP) dyn[i].depth = DYN_CONTACT_DEPTH_CAP
+      list.push(dyn[i])
+    }
     return list
   }
 
@@ -493,9 +502,13 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
         params._longitudinalVelocity = (hubVel.x - groundVel.x) * wheelFwd.x +
                                        (hubVel.y - groundVel.y) * wheelFwd.y +
                                        (hubVel.z - groundVel.z) * wheelFwd.z
-        params._compressionVelocity  = -((contactVel.x - groundVel.x) * ground.normal.x +
-                                         (contactVel.y - groundVel.y) * ground.normal.y +
-                                         (contactVel.z - groundVel.z) * ground.normal.z)
+        // Clamped: a debris body ricocheting off the rim can report a huge closing speed for a
+        // frame; the tire damper term must not turn that into another force spike (same failure
+        // family as the depth cap in qcPlus).
+        const cvRel = -((contactVel.x - groundVel.x) * ground.normal.x +
+                        (contactVel.y - groundVel.y) * ground.normal.y +
+                        (contactVel.z - groundVel.z) * ground.normal.z)
+        params._compressionVelocity = Math.max(-3, Math.min(3, cvRel))
       } else {
         params._compressionVelocity = -contactVel.dot(ground.normal)
       }
@@ -564,11 +577,18 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
       // FEAT-48: equal-and-opposite onto the dynamic support — the tire's friction force
       // AND its normal load press on the body under the wheel at the contact point.
       // (Static supports have no .body; the terrain doesn't need its reaction.)
+      //
+      // The normal reaction is the CONTACT-LOCAL tire-spring force (stiffness × this contact's
+      // capped depth), NOT the wheel's summed Fz: _tireFz[i] sums every contact the strut sees
+      // (road + rock when straddling), and pushing the whole summed load into the rock alone
+      // over-flung it. Bounded above by Fn — the rock can never receive more normal force than
+      // the wheel is actually carrying.
       if (ground.body != null) {
+        const FnContact = Math.min(Fn, params.tireStiffness * ground.depth)
         engine.applyForce(ground.body, {
-          x: -wheelForce.x - Fn * ground.normal.x,
-          y: -wheelForce.y - Fn * ground.normal.y,
-          z: -wheelForce.z - Fn * ground.normal.z,
+          x: -wheelForce.x - FnContact * ground.normal.x,
+          y: -wheelForce.y - FnContact * ground.normal.y,
+          z: -wheelForce.z - FnContact * ground.normal.z,
         }, ground.contactPoint)
       }
 
@@ -716,3 +736,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
 
 // Scratch for the dynamic-support ground velocity (avoids a per-contact alloc).
 const _groundVelScratch = { x: 0, y: 0, z: 0 }
+
+// Max contact depth a DYNAMIC body (debris under the wheel) may report into the tire spring.
+// A loaded tire's real deflection is ~0.05 m; 0.09 allows a hard bump (~2× static corner load
+// at current tireStiffness) while making the one-frame full-radius spike impossible. Static
+// terrain contacts are untouched — their depth is already continuous.
+const DYN_CONTACT_DEPTH_CAP = 0.09

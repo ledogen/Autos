@@ -61,3 +61,61 @@ export class TerrainPhysics {
 
   get chunkCount () { return this._chunks.size }
 }
+
+// Asphalt grips better than the carved dirt shoulder (terrain μ 0.8) — debris resting on the
+// road should stay put; the chassis pair-μ barely moves (geometric mean vs its 0.0125).
+const ROAD_FRICTION = 0.9
+
+/**
+ * RoadPhysics — mirrors RoadMeshSystem's streamed ribbon tiles as static TRIMESH colliders.
+ *
+ * Why this exists (owner-reported, 2026-08-14): the terrain-mesh carve deliberately sits
+ * roadClearanceMargin (0.15 m) BELOW the ribbon so terrain can never poke through the asphalt.
+ * The heightfield colliders above mirror that carved mesh — so debris (and the chassis) fell
+ * through the visual road surface onto the dirt beneath it and read as "clipping through the
+ * road". The wheels never did: their analytic surface resolves the ribbon top on-road. This
+ * class gives the engine the SAME asphalt: every geometry the road tile committed (ribbon
+ * slices, junction pads, tunnel bores + portals — all world-space vertices) becomes a mesh
+ * shape on one static body per tile. Bonus: the chassis now collides with tunnel bore linings,
+ * which closed a known FEAT-48 gap.
+ *
+ * Driven by RoadMeshSystem.setPhysicsHook(): syncTile on commit, disposeTile on evict/stale,
+ * clear on full rebuild. Adapter-only — no engine types.
+ */
+export class RoadPhysics {
+  constructor (engine) {
+    this._eng = engine
+    this._tiles = new Map()    // road tile key → engine body handle
+  }
+
+  /** RoadMeshSystem hook: a tile committed — (re)build its collider from its geometries. */
+  syncTile (key, geometries) {
+    this.disposeTile(key)
+    const body = this._eng.createBody({ type: 'static', userData: { kind: 'road', key } })
+    let shapes = 0
+    for (const geo of geometries) {
+      const pos = geo.attributes?.position
+      const idx = geo.index
+      if (!pos || !idx || pos.isInterleavedBufferAttribute) continue
+      const positions = pos.array instanceof Float32Array ? pos.array : new Float32Array(pos.array)
+      const indices = idx.array instanceof Uint32Array ? idx.array : new Uint32Array(idx.array)
+      if (this._eng.addMesh(body, positions, indices, { friction: ROAD_FRICTION })) shapes++
+    }
+    if (shapes > 0) this._tiles.set(key, body)
+    else this._eng.destroyBody(body)
+  }
+
+  /** RoadMeshSystem hook: tile evicted or stale. */
+  disposeTile (key) {
+    const body = this._tiles.get(key)
+    if (body !== undefined) { this._eng.destroyBody(body); this._tiles.delete(key) }
+  }
+
+  /** RoadMeshSystem hook: full rebuild / re-route — drop everything. */
+  clear () {
+    for (const body of this._tiles.values()) this._eng.destroyBody(body)
+    this._tiles.clear()
+  }
+
+  get tileCount () { return this._tiles.size }
+}
