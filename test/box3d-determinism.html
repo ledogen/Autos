@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- FEAT-48 Phase 0 — browser side of the node-vs-browser determinism axis.
+     Served from the repo root; driven by test/box3d-determinism-browser.mjs.
+     Runs the SAME harness module as node and exposes the hash on window.__box3dHash. -->
+<html>
+<body>
+<pre id="out">running…</pre>
+<script type="module">
+  import { run } from './box3d-determinism.mjs';
+  try {
+    const { hash, samePass } = await run();
+    window.__box3dHash = hash;
+    window.__box3dSamePass = samePass;
+    document.getElementById('out').textContent = `hash: ${hash}\nsame-process: ${samePass}`;
+  } catch (e) {
+    window.__box3dHash = 'ERROR: ' + e.message;
+    document.getElementById('out').textContent = window.__box3dHash;
+  }
+</script>
+</body>
+</html>
