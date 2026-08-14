@@ -72,8 +72,13 @@ Z_SILL = 1.72                           # cab window sill; camper sills sit abov
 # chassis clusters both axles forward (~3.7 m wheelbase) and drags a ~2.9 m
 # rear overhang — the wheels sit under the MIDDLE of the coach, not the tail.
 AX_F, AX_R = 2.68, -1.075
-ARCH_F = (2.30, 3.05)                   # dark skirt band spans (loft stations)
+# REAL wheel-well openings (2026-08-14): the skirt band (0.42..0.92) is cut out
+# over these spans and lined with a dark pocket.  Each span must clear the
+# 0.80 m tyre diameter or the tyre pokes through the well end walls.
+ARCH_F = (2.24, 3.12)
 ARCH_R = (-1.55, -0.60)
+WELL_X = 0.80                           # pocket inner wall |x|
+WELL_TOP = 0.92                         # pocket ceiling = skirt band top
 TRACK = 1.02
 WHEEL_R, HUB_R, WHEEL_W, WHEEL_SEG = 0.40, 0.16, 0.26, 10
 
@@ -351,29 +356,31 @@ def hull_band(s, k):
         return "RVStripe"
     if Z_THIN0 - 0.01 < z < Z_THIN1 + 0.01:
         return "RVStripe"
-    s2 = s - TAIL_N                           # ring index -> straight-segment index
-    if z < Z_THICK0 and 0 <= s2 < len(STATIONS) - 1:   # skirt: arch spans go dark
-        y0, y1 = _seg_span(s2)
-        # Within-span, not exact-span: the front arch is split across two
-        # segments now that the cab window edge (2.40) lands inside it.
-        for a0, a1 in (ARCH_F, ARCH_R):
-            if y0 >= a0 - 0.01 and y1 <= a1 + 0.01:
-                return "RVWellDark"           # alias, resolved to RVDark below
     return None
 
 
 def hull_skip(s, k):
-    """Cut the two cab slider openings (both sides, CAB_WIN span, sill..shoulder)."""
+    """Cut the real openings out of the hull walls: the two cab sliders
+    (CAB_WIN span, sill..shoulder) and the four wheel-arch mouths (arch spans,
+    skirt band).  Within-span, not exact-span: the cab-window and arch edges
+    interleave, so an arch can straddle two segments."""
     s2 = s - TAIL_N                           # tail/nose segments carry no openings
     if not (0 <= s2 < len(STATIONS) - 1):
         return False
-    if not _is_side(k):
+    # k=0 is the underbody: both its endpoints sit at |x|=HALF_W so it PASSES
+    # the _is_side test, and the arch cut silently deleted the floor across
+    # both arch spans (rays then entered from below and lit up the roof
+    # backside in the winding check).  The bottom face is never an opening.
+    if k == 0 or not _is_side(k):
         return False
     z, _ = _face_zx(k)
-    if not (Z_SILL - 0.01 < z < Z_SHOULDER + 0.01):
-        return False
     y0, y1 = _seg_span(s2)
-    return y0 >= CAB_WIN[0] - 0.01 and y1 <= CAB_WIN[1] + 0.01
+    if Z_SILL - 0.01 < z < Z_SHOULDER + 0.01:
+        return y0 >= CAB_WIN[0] - 0.01 and y1 <= CAB_WIN[1] + 0.01
+    if Z_SKIRT - 0.01 < z < WELL_TOP + 0.01:
+        return any(y0 >= a0 - 0.01 and y1 <= a1 + 0.01
+                   for a0, a1 in (ARCH_F, ARCH_R))
+    return False
 
 
 def build_hull(p):
@@ -732,6 +739,34 @@ def add_wheel(p, cx, cy, cz, outer_sign):
     p.m.append("RVDark")
 
 
+def build_wells(p):
+    """Dark pockets lining the arch mouths.  Every quad's rim edge lands on
+    hull vertices (arch edges are loft stations, skirt band edges are ring
+    levels), so remove_doubles welds the pockets in and the hull stays a
+    closed solid — signed-volume orientation keeps working.  The pocket floor
+    is the dark underbody face itself; the tyre pokes through it invisibly,
+    dark on dark."""
+    for a0, a1 in (ARCH_F, ARCH_R):
+        # Ceiling and inner wall are split at every loft station inside the
+        # span so their edges COINCIDE with hull edges.  Vertex-only contact
+        # (a T-junction at a mid-arch station) leaves the pocket an isolated
+        # zero-volume island — recalc then orients it by heuristic, and 15
+        # faces shipped inverted exactly that way.  Edge-welded, the pocket
+        # joins the hull island and orientation propagates.
+        spans = [a0] + [st for st in STATIONS if a0 < st < a1] + [a1]
+        for sgn in (1, -1):
+            w, i = sgn * HALF_W, sgn * WELL_X
+            for b0, b1 in zip(spans, spans[1:]):
+                quad(p, (w, b0, WELL_TOP), (w, b1, WELL_TOP),
+                     (i, b1, WELL_TOP), (i, b0, WELL_TOP), "RVDark")  # ceiling
+                quad(p, (i, b0, Z_SKIRT), (i, b1, Z_SKIRT),
+                     (i, b1, WELL_TOP), (i, b0, WELL_TOP), "RVDark")  # inner wall
+            quad(p, (w, a0, Z_SKIRT), (i, a0, Z_SKIRT),
+                 (i, a0, WELL_TOP), (w, a0, WELL_TOP), "RVDark")      # aft wall
+            quad(p, (w, a1, Z_SKIRT), (i, a1, Z_SKIRT),
+                 (i, a1, WELL_TOP), (w, a1, WELL_TOP), "RVDark")      # fwd wall
+
+
 def build_wheels(p):
     for ay in (AX_F, AX_R):
         for sgn in (1, -1):
@@ -904,6 +939,7 @@ def build():
     glass = Part("WinnebagoGlass")
 
     build_hull(body)
+    build_wells(body)
     build_nose(body, glass)
     build_tail(body)
     for w in WINDOWS_R:
@@ -955,6 +991,17 @@ def build():
     # Seat back + headrest must break the cab beltline or the cabin reads empty.
     print(f"  headrest top 2.140 vs beltline {Z_SILL:.3f}  "
           f"{'OK' if 2.14 > Z_SILL else 'BELOW BELT'}")
+    # The whole point of the wells: the pocket's inner wall has to clear the
+    # tyre's inner face, or the wheel could not rise into it (broken-car rule).
+    tyre_in = TRACK - WHEEL_W * 0.5
+    print(f"  well pocket wall = {WELL_X:.3f} vs tyre inner face {tyre_in:.3f}  "
+          f"{'OK' if WELL_X < tyre_in else 'TOO SHALLOW'}")
+    # And the tyre must fit INSIDE each arch mouth lengthwise.
+    for name, (a0, a1), ax in (("front", ARCH_F, AX_F), ("rear", ARCH_R, AX_R)):
+        fits = a0 < ax - WHEEL_R and ax + WHEEL_R < a1
+        print(f"  {name} arch {a0:.2f}..{a1:.2f} vs tyre "
+              f"{ax - WHEEL_R:.2f}..{ax + WHEEL_R:.2f}  "
+              f"{'OK' if fits else 'TYRE HITS WALL'}")
     # Raised steering wheel must break the sill too — that is why it was raised.
     sw_top = SW_C[2] + SW_RO * math.cos(WHEEL_TILT) + SW_TH
     print(f"  wheel rim top = {sw_top:.3f} vs sill {Z_SILL:.3f}  "
