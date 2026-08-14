@@ -1,21 +1,37 @@
 /**
- * src/physics.js — Physics integrator for RangerSim.
+ * src/physics.js — Vehicle physics step for RangerSim (FEAT-48: engine-backed).
  *
- * 6DOF rigid body step using quaternion orientation (see GLOSSARY.md §Quaternion Integration Convention).
- * Imports computeTireForces (combined-slip Pacejka) from tire.js and
- * computeNormalForce/getWheelPosition/getBodyContactPoints from suspension.js.
+ * The rigid-body core is the physics ENGINE behind the adapter seam
+ * (physics-engine.js): the chassis is an engine dynamic body; integration
+ * (position, quaternion, full-tensor inertia with gyroscopic terms) and every
+ * body↔terrain / body↔prop / body↔debris contact are solved by the engine.
+ * The hand-rolled 6DOF integrator and the BUG-27 sequential-impulse body solver
+ * were removed in the cutover — their failure-mode lore lives in the FEAT-48
+ * landing commit message and the constants below.
  *
- * Contact model: each wheel is a sphere (hub center + wheelRadius). The caller supplies
- * queryContacts(cx, cy, cz, r) → Array<{normal, depth, contactPoint}> which returns every
- * surface the sphere overlaps. Forces are applied independently per contact, enabling
- * slopes, walls, and multiple simultaneous contacts.
+ * What stays OURS — the entire point of the project (see the FEAT-48 warning:
+ * never adopt an engine vehicle/wheel abstraction):
+ *   - suspension.js spring/damper struts, stepped against the ANALYTIC terrain
+ *     surface via queryContacts (higher fidelity than any baked collider);
+ *   - tire.js combined-slip Pacejka, fed per-wheel slip velocities;
+ *   - the drivetrain chain and the ω Newton integrator.
+ * Their net force+torque is applied to the engine body each step; the engine
+ * integrates and hands the transform back into vehicleState (the authoritative
+ * JS mirror every other system reads).
  *
- * Body contact points (bumper corners) use the same queryContacts path but generate
- * normal-only force — no tire lateral/longitudinal forces.
+ * Translation layer (FEAT-48 "the one substantive change"): wheel contact
+ * queries are the analytic queryContacts PLUS an engine sphere-overlap for
+ * DYNAMIC bodies (debris under the wheel). When the wheel's support surface is
+ * a dynamic body, slip and compression velocities are computed RELATIVE to that
+ * body's contact-point velocity, and the tire's normal+friction force is
+ * applied back to it equal-and-opposite — drive onto a rock and the suspension
+ * compresses, the truck lifts, the rock squirts out.
  *
  * Exports:
- *   stepPhysics(vehicleState, params, dt, queryContacts) — mutates vehicleState in-place
- *   getDriveTorque(wheelIndex, vehicleState, params) — Phase 1 RWD flat torque stub (M1-14)
+ *   stepPhysics(vehicleState, params, dt, queryContacts, queryVertexContacts, engineCtx)
+ *     — engineCtx = { engine: PhysicsEngine, chassis: bodyHandle } (required)
+ *   createVehicleChassis(engine, vehicleState, params) — build the chassis body
+ *   getDriveTorque(wheelIndex, vehicleState, params)
  *
  * Conventions: see docs/GLOSSARY.md
  * Forbidden: body rotation must always use THREE.Quaternion, never bodyMesh.rotation
@@ -23,8 +39,9 @@
 
 import * as THREE from 'three'
 import { computeTireForces } from './tire.js'
-import { computeNormalForce, getWheelPosition, getBodyContactPoints, stepSuspensionSubsteps } from './suspension.js'
+import { computeNormalForce, getWheelPosition, stepSuspensionSubsteps } from './suspension.js'
 import { stepDrivetrain } from './drivetrain.js'
+import { GROUP_CHASSIS, GROUP_DEBRIS } from './physics-engine.js'
 
 // Speed threshold for input routing (rule-based, no dead-zone oscillation).
 // FEAT-23 removed FWD_THRESHOLD (the W-brake / drive-cut deadband); the drivetrain now supplies
@@ -98,34 +115,86 @@ function getBrakeTorque (wheelIndex, vehicleState, params) {
  * @returns {void}
  */
 // Body (frame/bumper/undercarriage) contact restitution — DEFAULT for params.bodyRestitution.
-//
-// BUG-27 history: this was pinned to 0 because the solver AMPLIFIED any e > 0. The old sweep did
-// `dN = -(1+e)·vn` off the CURRENT vn every pass, so restitution was re-applied 8 passes × 6
-// coincident undercarriage probes — a nominal 0.05 landed at ~0.15 effective and launched the car.
-// The conclusion drawn then ("a steel frame does not rebound") was really a workaround for that
-// amplification: e=0 is the one value the buggy formulation happens to handle correctly, because
-// driving vn → 0 is idempotent no matter how many times you re-apply it.
-//
-// Fixed properly (2026-07-16) with the standard restitution BIAS: each contact's approach velocity
-// is sampled ONCE before the solver and the passes drive vn toward a FIXED target (−e·vnApproach)
-// instead of recomputing the target from the velocity the previous pass just changed. Convergence
-// is now to that target, so e means what it says and does not compound with probe count or pass
-// count. That makes restitution a real, tunable parameter — hence the slider.
-const BODY_RESTITUTION_DEFAULT = 0.21   // slight rebound on hard slams; 0 = the old fully-plastic thud
-// Restitution applies only to genuine IMPACTS. Below this approach speed the bias is 0, so resting /
-// settling contact stays dead-stopped and cannot jitter or creep (the job the removed BUG-27-era
-// REST_VEL_THRESHOLD used to do, reinstated now that e > 0 is back on the table).
-const REST_VEL_THRESHOLD = 1.0   // m/s — |vn| below this → no bounce, pure plastic stop
-// BUG-27b: body contact is SLIPPERY — damp the NORMAL (arrest sink-in, no launch) but do NOT
-// arrest tangential/forward slide. At mu=0.6 a bumper grazing the road while crossing the shoulder
-// saturated friction (jf = vt/invEffMassT ≤ 0.6·accumN) and stopped the truck DEAD. A low mu caps
-// the tangential impulse well below full arrest, so the frame slides along the surface (steel-on-
-// dirt is slippery) while the plastic normal still kills the springy bounce. Only the normal is damped.
-const BODY_FRICTION_MU  = 0.1   // slippery body contact — normal-damped, tangential slides (BUG-27b)
+// BUG-27 lore (kept because the failure mode recurs as an engine-tuning question): restitution
+// must be a bias off the PRE-solve approach velocity, never re-derived per solver pass, or it
+// compounds. The engine's solver does this correctly; e is applied as the chassis shape's
+// restitution material (terrain restitution is 0 and engines combine by max, so the pair
+// restitution IS this value).
+const BODY_RESTITUTION_DEFAULT = 0.21   // slight rebound on hard slams; 0 = fully-plastic thud
+// Restitution applies only to genuine IMPACTS. Below this approach speed there is no bounce, so
+// resting/settling contact stays dead-stopped (BUG-27-era REST_VEL_THRESHOLD, now enforced by the
+// engine's world-level restitution threshold — wired in physics-engine.js's world defaults).
+export const REST_VEL_THRESHOLD = 1.0   // m/s — |vn| below this → no bounce, pure plastic stop
+// BUG-27b: body contact is SLIPPERY — a bumper grazing the shoulder must SLIDE, not catch and stop
+// the truck dead. Under the engine this is a friction MATERIAL on the chassis shape. Engines
+// combine pair friction by geometric mean (√(μa·μb)), and terrain colliders carry μ=0.8
+// (terrain-physics.js), so the shape value is chosen to land the PAIR at the tuned BUG-27b 0.1:
+// √(0.0125 · 0.8) = 0.1.
+const BODY_FRICTION_MU  = 0.1            // the tuned pair friction (BUG-27b)
+const TERRAIN_FRICTION_REF = 0.8         // must match terrain-physics.js TERRAIN_FRICTION
+const CHASSIS_SHAPE_MU  = BODY_FRICTION_MU * BODY_FRICTION_MU / TERRAIN_FRICTION_REF   // ≈ 0.0125
 
-export function stepPhysics (vehicleState, params, dt, queryContacts, queryVertexContacts) {
+/**
+ * Create the vehicle chassis body in the engine world (FEAT-48 Phase 2).
+ *
+ * One convex hull spanning the exact extents the old body-contact probes covered
+ * (bumpers, undercarriage, roof corners — see suspension.js getBodyContactPoints
+ * geometry): x ±(trackFront/2 + 0.1), y from undercarriage to roof, z from front
+ * bumper to rear bumper. Body origin = CG (vehicleState.position), so mass data
+ * centers at the local origin.
+ *
+ * Mass + rotational inertia are OVERRIDDEN with the tuned params values — the
+ * driving feel is calibration, not collider geometry. The engine still rotates
+ * the tensor into world frame every step (I_world = R·I_body·Rᵀ + gyroscopic
+ * terms), which the old world-frame-diagonal integrator could not.
+ */
+export function createVehicleChassis (engine, vehicleState, params) {
+  const fz    = -(params.wheelbase * params.weightRear)    // front axle Z (body space)
+  const rz    =  (params.wheelbase * params.weightFront)   // rear axle Z
+  const undY  = params.wheelRadius - params.cgHeight       // undercarriage bottom
+  const topY  = 0.4                                        // roof (matches old roof probes)
+  const halfW = params.trackFront / 2 + 0.1
+  const zF = fz - 0.85, zR = rz + 0.65                     // bumper extents
+  const corners = []
+  for (const x of [-halfW, halfW]) for (const y of [undY, topY]) for (const z of [zF, zR]) corners.push(x, y, z)
+
+  const chassis = engine.createBody({
+    type: 'dynamic',
+    position: vehicleState.position,
+    quaternion: vehicleState.quaternion,
+    canSleep: false,               // the player's body — never let the engine idle it out
+    bullet: true,                  // continuous collision: no tunnelling through thin debris at speed
+    userData: { kind: 'vehicle' },
+  })
+  engine.addHull(chassis, corners, {
+    friction: CHASSIS_SHAPE_MU,
+    restitution: params.bodyRestitution ?? BODY_RESTITUTION_DEFAULT,
+    density: 1,                    // placeholder — overridden by setMassData below
+    group: GROUP_CHASSIS,
+  })
+  engine.setMassData(chassis, params.mass,
+    { x: params.inertiaRoll, y: params.inertiaYaw, z: params.inertiaPitch })
+  return chassis
+}
+
+export function stepPhysics (vehicleState, params, dt, queryContacts, queryVertexContacts, engineCtx) {
+  if (!engineCtx) throw new Error('stepPhysics: engineCtx {engine, chassis} is required (FEAT-48)')
+  const { engine, chassis } = engineCtx
   // ── Step 0: Rotation helper ────────────────────────────────────────────────
   params._rotateVector = (v) => new THREE.Vector3(v.x, v.y, v.z).applyQuaternion(vehicleState.quaternion)
+
+  // ── Step 0.5: Wheel contact source = analytic terrain ∪ engine DYNAMIC bodies ──
+  // The analytic queryContacts stays the terrain/prop/wall source for wheels (it is
+  // continuous-resolution — better than any baked collider). The engine overlap adds
+  // debris under the wheel, filtered to GROUP_DEBRIS so engine terrain/props can never
+  // double-count a surface the analytic query already reports. Engine hits carry .body,
+  // which is what triggers the relative-velocity path in Step 3.
+  const qcPlus = (cx, cy, cz, r, footprint) => {
+    const list = queryContacts(cx, cy, cz, r, footprint)
+    const dyn = engine.overlapSphere({ x: cx, y: cy, z: cz }, r, { collidesWith: GROUP_DEBRIS, dynamicOnly: true })
+    for (let i = 0; i < dyn.length; i++) list.push(dyn[i])
+    return list
+  }
 
   // ── Step 1: Catastrophic penetration failsafe ──────────────────────────────
   // Fires ONLY for genuine tunnelling. Uses queryContacts to detect terrain-aware severe penetration
@@ -165,6 +234,15 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
     }
   }
 
+  // ── Step 1.5: Push authoritative state into the engine body ────────────────
+  // vehicleState is the single source of truth every other system (and every
+  // external mutation — teleport, spawn reseat, lab staging, the Step 1 failsafe
+  // above) writes to. Pushing it into the engine at the top of every step makes
+  // those hard-sets Just Work with no dirty-flag plumbing; the engine step below
+  // then advances from exactly this state and Step 3e pulls the result back.
+  engine.setTransform(chassis, vehicleState.position, vehicleState.quaternion)
+  engine.setVelocity(chassis, vehicleState.velocity, vehicleState.angularVelocity)
+
   // ── Step 2: Body-space axes ────────────────────────────────────────────────
   const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(vehicleState.quaternion)
   const right   = new THREE.Vector3(1, 0, 0).applyQuaternion(vehicleState.quaternion)
@@ -186,7 +264,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
   //   params._suspForceAccum[i] — averaged suspension force on body per corner (applied along body_up below)
   //   params._hubNormalXZ[i]    — X/Z residual contact normal force per corner (applied in Step 2.6 below)
   // Must run BEFORE Step 3 so Pacejka reads the post-substep tire Fz (D-08).
-  stepSuspensionSubsteps(vehicleState, params, dt, queryContacts)
+  stepSuspensionSubsteps(vehicleState, params, dt, qcPlus)
 
   // ── Step 2.6: Apply XZ contact normal forces to body (Phase 4.1 D-06a) ─────────────────────
   // _hubNormalXZ[i] is the X/Z residual of tire contact normal force — the component of contact
@@ -236,7 +314,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
   }
 
   // ── Step 3: Per-wheel force accumulation ──────────────────────────────────
-  const totalForce  = new THREE.Vector3(0, -params.mass * 9.81, 0)
+  // Gravity is the ENGINE's (world gravity acts on the chassis body) — starting
+  // this accumulator at zero instead of −mg is the cutover's one-source rule.
+  const totalForce  = new THREE.Vector3()
   const totalTorque = new THREE.Vector3()
   let totalGroundFn = 0  // accumulated normal force across all wheel contacts; gates rolling resistance
 
@@ -363,8 +443,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
     let lastLongVelCur  = 0
     let lastRelaxDen    = 1
 
-    // Query every surface this wheel sphere overlaps (footprint=true: tire-envelope ground sampling)
-    const contacts = queryContacts(hub.x, hub.y, hub.z, params.wheelRadius, true)
+    // Query every surface this wheel sphere overlaps (footprint=true: tire-envelope ground sampling).
+    // qcPlus = analytic terrain/props/walls ∪ engine dynamic debris (FEAT-48 translation layer).
+    const contacts = qcPlus(hub.x, hub.y, hub.z, params.wheelRadius, true)
 
     // BUG-38: the Pacejka tire is a per-WHEEL model with ONE slip state, so its friction must be
     // evaluated ONCE per wheel — NOT once per contact. Pick the support surface (normal most aligned
@@ -395,8 +476,29 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
         new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rContact)
       )
 
-      params._compression         = ground.depth
-      params._compressionVelocity = -contactVel.dot(ground.normal)
+      params._compression = ground.depth
+
+      // FEAT-48: RELATIVE contact velocity. Against static ground (analytic terrain,
+      // props — no .body) the support is at rest and this reduces exactly to the old
+      // absolute-velocity formulation. Against a dynamic body (a rock rolling under
+      // the wheel) slip and compression velocity are measured relative to the body's
+      // own contact-point velocity — this one mechanism is what makes driving onto a
+      // moving rock launch the car and kick the rock out, with no special cases.
+      let groundVel = null
+      if (ground.body != null) {
+        groundVel = engine.getPointVelocity(ground.body, ground.contactPoint, _groundVelScratch)
+        params._lateralVelocity      = (hubVel.x - groundVel.x) * wheelRight.x +
+                                       (hubVel.y - groundVel.y) * wheelRight.y +
+                                       (hubVel.z - groundVel.z) * wheelRight.z
+        params._longitudinalVelocity = (hubVel.x - groundVel.x) * wheelFwd.x +
+                                       (hubVel.y - groundVel.y) * wheelFwd.y +
+                                       (hubVel.z - groundVel.z) * wheelFwd.z
+        params._compressionVelocity  = -((contactVel.x - groundVel.x) * ground.normal.x +
+                                         (contactVel.y - groundVel.y) * ground.normal.y +
+                                         (contactVel.z - groundVel.z) * ground.normal.z)
+      } else {
+        params._compressionVelocity = -contactVel.dot(ground.normal)
+      }
 
       // Phase 4.1 NOTE (D-06): do NOT add Fn*normal to totalForce here.
       // The strut-axis component of the contact normal flows through _suspForceAccum (spring pathway),
@@ -458,6 +560,17 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
       wheelForce.addScaledVector(wheelRight, -Flat)
       totalForce.add(wheelForce)
       totalTorque.add(new THREE.Vector3().crossVectors(rContact, wheelForce))
+
+      // FEAT-48: equal-and-opposite onto the dynamic support — the tire's friction force
+      // AND its normal load press on the body under the wheel at the contact point.
+      // (Static supports have no .body; the terrain doesn't need its reaction.)
+      if (ground.body != null) {
+        engine.applyForce(ground.body, {
+          x: -wheelForce.x - Fn * ground.normal.x,
+          y: -wheelForce.y - Fn * ground.normal.y,
+          z: -wheelForce.z - Fn * ground.normal.z,
+        }, ground.contactPoint)
+      }
 
       // Write debug data for logger — evaluated once per wheel against the chosen support surface (BUG-38).
       // NOTE: `sa` field now stores SLIP VELOCITY magnitude (m/s) instead of slip angle (rad).
@@ -578,157 +691,23 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, queryVerte
     }
   }
 
-  // ── Step 3b-pre: Integrate force → velocity BEFORE body contact (semi-implicit Euler) ──
-  // Gravity and accumulated forces must hit the velocity BEFORE the body-contact impulse
-  // solver runs. Previously velocity was integrated in Step 4 (after the solver), so each
-  // frame the solver nulled the contact velocity and gravity was re-added immediately after —
-  // leaving a body-at-rest in a perpetual sink-and-correct micro-jitter (observed as vy pinned
-  // at ~-0.8 m/s and roll rate flipping sign every frame when resting upside-down). Integrating
-  // first lets the solver see the gravity-loaded velocity and cancel it to a true rest.
-  vehicleState.velocity.addScaledVector(totalForce, dt / params.mass)
-  vehicleState.angularVelocity.x += totalTorque.x / params.inertiaRoll  * dt
-  vehicleState.angularVelocity.y += totalTorque.y / params.inertiaYaw   * dt
-  vehicleState.angularVelocity.z += totalTorque.z / params.inertiaPitch * dt
+  // ── Step 3b: Hand the accumulated forces to the engine and step the world ──
+  // FEAT-48 cutover: the semi-implicit Euler velocity integration, the BUG-27
+  // accumulated-impulse body-contact solver, and the Step 4/5 position+quaternion
+  // integration are all the ENGINE's job now (with full-tensor world-frame
+  // inertia and gyroscopic terms the old world-diagonal integrator lacked).
+  // totalForce/totalTorque are about the CG — the body origin — so center
+  // application is exact. The engine also advances every debris body here:
+  // ONE world step per physics tick, chassis↔debris↔terrain solved together.
+  engine.applyForce(chassis, totalForce)
+  engine.applyTorque(chassis, totalTorque)
+  engine.step(dt, params.engineSubsteps ?? 4)
 
-  // ── Step 3b: Body contact — sphere probes + sequential-impulse solver ───────────────
-  // Sphere probes at body contact points. Contact normal comes from
-  // sphere-center-to-closest-triangle-point (queryContacts). Impulse: instantaneous velocity
-  // change sized to resolve the contact this step. Baumgarte correction bleeds out residual
-  // penetration. Contacts are gathered once, then solved over several Gauss-Seidel passes so
-  // coincident points (e.g. four roof corners when upside-down) settle to a consistent rest
-  // instead of fighting in a single pass.
-  {
-    // BUG-27: Baumgarte tamed. The position correction below pushes the body OUT of penetration
-    // but injects gravitational PE with no matching velocity sink — on a deep slam (depth up to
-    // ~0.16 m across the coincident undercarriage probes) the old beta=0.25 lifted the body ~4 cm
-    // per step every step, compounding into the upward "launch/creep" after the bounce. Lower beta
-    // + a hard per-step clamp let deep penetration bleed out over a few frames instead of catapulting
-    // (true tunnels are still caught by the Step 1 failsafe). The velocity solver already dead-stops
-    // the contact (restitution 0), so the residual depth is small and a gentle correction suffices.
-    const BAUMGARTE_BETA = 0.1     // was 0.25 — softer positional push, less PE injected per step
-    const MAX_CORRECTION = 0.02    // m — cap the per-step de-penetration so a deep hit can't launch
-    const SLOP = 0.005
-    const SOLVER_ITERATIONS = 8     // sequential-impulse passes for coincident-contact convergence
-
-    // Gather all body contacts once — queryContacts is expensive, so don't re-run it per pass.
-    const bodyPts = getBodyContactPoints(vehicleState, params)
-    const bodyContacts = []
-    for (const bp of bodyPts) {
-      const contacts = queryContacts(bp.x, bp.y, bp.z, params.bodyContactRadius)
-      for (const { normal, depth, contactPoint } of contacts) {
-        const rContact = new THREE.Vector3(
-          contactPoint.x - vehicleState.position.x,
-          contactPoint.y - vehicleState.position.y,
-          contactPoint.z - vehicleState.position.z
-        )
-        const rCrossN = new THREE.Vector3().crossVectors(rContact, normal)
-        const iInvRCrossN = new THREE.Vector3(
-          rCrossN.x / params.inertiaRoll,
-          rCrossN.y / params.inertiaYaw,
-          rCrossN.z / params.inertiaPitch
-        )
-        const invEffMass = 1 / params.mass + rCrossN.dot(iInvRCrossN)
-        // Restitution bias, sampled ONCE here from the pre-solve approach velocity (see
-        // BODY_RESTITUTION_DEFAULT). vnApproach < 0 = closing on the surface; the solver then drives
-        // vn up to +bias instead of merely to 0. Computing it here — not inside the pass loop — is
-        // what stops e from compounding across passes/probes (the BUG-27 launch).
-        const vApproach = vehicleState.velocity.clone().add(
-          new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rContact)
-        )
-        const vnApproach = vApproach.dot(normal)
-        const e = params.bodyRestitution ?? BODY_RESTITUTION_DEFAULT
-        const bias = vnApproach < -REST_VEL_THRESHOLD ? -e * vnApproach : 0
-        bodyContacts.push({ normal, depth, rContact, iInvRCrossN, invEffMass, bias })
-      }
-    }
-
-    // Velocity solver — accumulated-impulse projected Gauss-Seidel (BUG-27).
-    // The previous solver applied a FRESH full normal impulse (−vn/invEffMass) every pass without
-    // tracking the accumulated impulse. On a hard slam the body probes are coincident but at very
-    // different lever arms (front/rear undercarriage + bumpers span ~4 m in z), and that
-    // non-accumulated sweep did NOT converge to the inelastic resting solution in 8 passes — it
-    // pumped a large phantom PITCH rotation (ω_z ≈ −2 rad/s from a pure vertical drop) plus net
-    // UPWARD velocity, i.e. it CREATED energy and launched the car. Accumulating each contact's
-    // impulse and clamping the TOTAL to be non-negative (the standard sequential-impulse / Box2D
-    // formulation) converges to the true LCP solution: the body stops dead, no phantom spin,
-    // mechanical energy strictly removed. Resting contact is unchanged (it already sat at vn ≈ 0).
-    for (const c of bodyContacts) { c.accumN = 0 }
-
-    for (let iter = 0; iter < SOLVER_ITERATIONS; iter++) {
-      for (const c of bodyContacts) {
-        const { normal, rContact, iInvRCrossN, invEffMass, bias } = c
-
-        // ── Normal impulse: drive vn → the fixed bias target, accumulate & clamp ≥ 0 ──
-        // bias = 0 (resting / slow contact) → vn → 0, the old fully-plastic behaviour, unchanged.
-        // bias > 0 (impact)                → vn → +bias, i.e. it leaves with e × its approach speed.
-        // The target is a CONSTANT for the whole solve, so re-running this pass is idempotent once
-        // converged — that's why restitution no longer amplifies with pass/probe count (BUG-27).
-        let vertVel = vehicleState.velocity.clone().add(
-          new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rContact)
-        )
-        const vn = vertVel.dot(normal)
-        let dN = -(vn - bias) / invEffMass
-        const newN = Math.max(0, c.accumN + dN)   // total normal impulse can never pull the body down
-        dN = newN - c.accumN
-        c.accumN = newN
-        if (dN !== 0) {
-          vehicleState.velocity.addScaledVector(normal, dN / params.mass)
-          vehicleState.angularVelocity.x += iInvRCrossN.x * dN
-          vehicleState.angularVelocity.y += iInvRCrossN.y * dN
-          vehicleState.angularVelocity.z += iInvRCrossN.z * dN
-        }
-
-        // ── Coulomb friction: tangential impulse opposing slide, capped at μ · accumulated normal ──
-        if (c.accumN > 0) {
-          vertVel = vehicleState.velocity.clone().add(
-            new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rContact)
-          )
-          const vnNow = vertVel.dot(normal)
-          const vt    = vertVel.clone().addScaledVector(normal, -vnNow)  // tangential velocity
-          const vtMag = vt.length()
-          if (vtMag > 1e-6) {
-            const tDir      = vt.clone().multiplyScalar(-1 / vtMag)   // oppose sliding
-            const rCrossT   = new THREE.Vector3().crossVectors(rContact, tDir)
-            const iInvRCrossT = new THREE.Vector3(
-              rCrossT.x / params.inertiaRoll,
-              rCrossT.y / params.inertiaYaw,
-              rCrossT.z / params.inertiaPitch
-            )
-            const invEffMassT = 1 / params.mass + rCrossT.dot(iInvRCrossT)
-            const jf = Math.min(vtMag / invEffMassT, BODY_FRICTION_MU * c.accumN)
-            if (jf > 0) {
-              vehicleState.velocity.addScaledVector(tDir, jf / params.mass)
-              vehicleState.angularVelocity.x += iInvRCrossT.x * jf
-              vehicleState.angularVelocity.y += iInvRCrossT.y * jf
-              vehicleState.angularVelocity.z += iInvRCrossT.z * jf
-            }
-          }
-        }
-      }
-    }
-
-    // Baumgarte position correction — applied once after the velocity solver converges.
-    // BUG-27: clamped to MAX_CORRECTION so a deep slam de-penetrates over several frames rather
-    // than teleporting up in one (which injected unbounded PE → the launch).
-    for (const { normal, depth } of bodyContacts) {
-      const correction = Math.min(Math.max(0, depth - SLOP) * BAUMGARTE_BETA, MAX_CORRECTION)
-      if (correction > 0) {
-        vehicleState.position.x += normal.x * correction
-        vehicleState.position.y += normal.y * correction
-        vehicleState.position.z += normal.z * correction
-      }
-    }
-  }
-
-  // ── Step 4: Integrate position (velocity already integrated in Step 3b-pre + contacts) ──
-  vehicleState.position.addScaledVector(vehicleState.velocity, dt)
-
-  // ── Step 5: Integrate quaternion orientation (angular velocity already integrated above) ──
-  const omega    = vehicleState.angularVelocity
-  const angSpeed = omega.length()
-  if (angSpeed > 1e-10) {
-    const axis = omega.clone().normalize()
-    const dq   = new THREE.Quaternion().setFromAxisAngle(axis, angSpeed * dt)
-    vehicleState.quaternion.premultiply(dq).normalize()
-  }
+  // ── Step 3e: Pull the engine result back into the authoritative JS mirror ──
+  engine.getTransform(chassis, vehicleState.position, vehicleState.quaternion)
+  engine.getVelocity(chassis, vehicleState.velocity, vehicleState.angularVelocity)
+  vehicleState.quaternion.normalize()
 }
+
+// Scratch for the dynamic-support ground velocity (avoids a per-contact alloc).
+const _groundVelScratch = { x: 0, y: 0, z: 0 }

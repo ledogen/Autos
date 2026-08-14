@@ -17,7 +17,9 @@
 
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { stepPhysics } from './physics.js'
+import { stepPhysics, createVehicleChassis } from './physics.js'
+import { createPhysicsEngine } from './physics-engine.js'
+import { TerrainPhysics } from './terrain-physics.js'
 import { getBodyContactPoints, getWheelPosition } from './suspension.js'
 import { updateVehicle, setLaunchHold, setControlAttenuation, SPAWN_STATE } from './vehicle.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming } from './camera.js'
@@ -1947,6 +1949,20 @@ _gui.add({
 perfMark('init: before TerrainSystem')  // TEMP (D-arc) — the ~8s load is one-time init, not the frame loop
 terrainSystem = new TerrainSystem(scene, RANGER_PARAMS, worldSeed)
 scene.remove(ground)   // Remove flat 200×200 ground mesh — terrain chunks replace it (T-06-06)
+
+// ── FEAT-48: the physics engine world ────────────────────────────────────────
+// One engine world for everything — chassis, streamed terrain colliders, debris.
+// WASM init is ~15 ms (measured, Phase 0); top-level await here matches the
+// existing boot style (route-cache import below also top-level awaits).
+perfMark('init: before physics engine')
+const physicsEngine = await createPhysicsEngine()
+const terrainPhysics = new TerrainPhysics(physicsEngine)
+terrainSystem.setPhysicsHook(terrainPhysics)   // mirrors every chunk build/recarve/dispose
+const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_PARAMS)
+const engineCtx = { engine: physicsEngine, chassis: vehicleChassis }
+window.__physicsEngine = physicsEngine         // dev handle (counters in the HUD / console)
+window.__vehicleChassis = vehicleChassis       // dev handle — debug.js restitution slider targets it
+perfMark('init: physics engine ready')
 
 // Phase 8 (D-05 / D-07): RoadSystem — instantiated after scene exists.
 // init(scene) attaches the scene reference so buildDebugLines() can add debug lines.
@@ -3906,10 +3922,42 @@ function _setWorldgenVisible (visible) {
   if (dirtSpraySystem) dirtSpraySystem.setVisible(visible)
 }
 
+// FEAT-48: engine colliders for the lab clean-room. The world's streamed terrain colliders
+// must NOT exist while the lab is active — the lab sits near the world origin where real
+// terrain is ~150 m high, and the chassis would spawn deep inside those heightfields (the
+// engine would eject it violently). Swap: detach the terrain hook + clear its bodies on
+// enter; rebuild lab ground (flat slab; the cm-scale rumble crests only matter to wheels,
+// which sample labSystem.groundHeight analytically) + the ramp prism. Reverse on exit —
+// re-attaching the hook re-syncs every chunk still in the map.
+let _labEngineBodies = []
+function _buildLabColliders () {
+  const slab = physicsEngine.createBody({ type: 'static', position: { x: 0, y: -5, z: 0 }, userData: { kind: 'lab-ground' } })
+  physicsEngine.addBox(slab, { x: 2000, y: 5, z: 2000 }, { friction: 0.8 })   // top face at y = 0
+  _labEngineBodies.push(slab)
+  // Ramp prism — same solid queryVertexContacts describes (incline face, back wall, sides).
+  const ramp = physicsEngine.createBody({ type: 'static', position: { x: 0, y: 0, z: 0 }, userData: { kind: 'lab-ramp' } })
+  const tanA = Math.tan(RAMP_ANGLE)
+  const yToe = RAMP_MAX_H + (RAMP_END_Z - RAMP_TOE_Z) * tanA   // toe surface Y (buried below 0)
+  const corners = []
+  for (const x of [-_hw, _hw]) {
+    corners.push(x, yToe, RAMP_TOE_Z, x, RAMP_MAX_H, RAMP_END_Z, x, -RAMP_DEPTH, RAMP_END_Z, x, -RAMP_DEPTH, RAMP_TOE_Z)
+  }
+  physicsEngine.addHull(ramp, corners, { friction: 0.8 })
+  _labEngineBodies.push(ramp)
+}
+function _destroyLabColliders () {
+  for (const b of _labEngineBodies) physicsEngine.destroyBody(b)
+  _labEngineBodies = []
+}
+
 function enterLab () {
   _labActive = true
   _labActive = true            // reuse every flat-world physics gate
   window.__setGameMode('lab')
+
+  terrainSystem.setPhysicsHook(null)   // FEAT-48: stop mirroring world chunks…
+  terrainPhysics.clear()               // …drop their colliders (lab is a clean room)
+  _buildLabColliders()
 
   // Fog is tuned for worldgen draw distances (FogExp2 ~0.006), which swallows the far end of a
   // 400 m strip and hides the 150 m skidpad entirely from any useful vantage. The lab is a clean
@@ -3939,6 +3987,9 @@ function exitLab () {
   _labActive = false
   _labActive = false
   window.__setGameMode('freeroam')
+
+  _destroyLabColliders()                          // FEAT-48: lab slab + ramp out…
+  terrainSystem.setPhysicsHook(terrainPhysics)    // …world chunk colliders back (re-syncs kept chunks)
 
   if (scene.fog && _labFogDensity != null) { scene.fog.density = _labFogDensity; _labFogDensity = null }
 
@@ -4437,7 +4488,7 @@ function loop () {
       }
     }
 
-    stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, queryVertexContacts)
+    stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, queryVertexContacts, engineCtx)
     simTime += PHYSICS_DT
     // BUG-12 diagnostic (open): while recording, log the truck run's local centerline turn radius
     // to localize ribbon folds. Gated on isRecording() so normal play pays nothing (queryNearest

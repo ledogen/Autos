@@ -149,8 +149,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   driveFolder.add(params, 'maxBrakeTorqueFront', 200, 4000, 50).name('Brake Torque Front (N·m)')
   driveFolder.add(params, 'maxBrakeTorqueRear', 200, 4000, 50).name('Brake Torque Rear (N·m)')
   driveFolder.add(params, 'maxHandbrakeTorque', 500, 5000, 100).name('Handbrake Torque (Nm)')
-  // Body-slam rebound (0 = the old fully-plastic thud). Read live per contact — no rebuild needed.
+  // Body-slam rebound (0 = fully-plastic thud). FEAT-48: lives on the chassis shape's engine
+  // material now, so the slider pushes the new value into the engine on change.
   driveFolder.add(params, 'bodyRestitution', 0, 0.6, 0.01).name('Body Bounce (restitution)')
+    .onChange(v => { window.__physicsEngine?.setMaterial(window.__vehicleChassis, { restitution: v }) })
   // Rolling resistance + aero drag — coast/top-speed feel
   driveFolder.add(params, 'rollingResistanceCoeff', 0, 0.05, 0.001).name('Rolling Resistance Cr')
   driveFolder.add(params, 'aeroDragArea', 0, 3.0, 0.05).name('Aero Drag Cd·A (m²)')

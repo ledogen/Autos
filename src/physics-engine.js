@@ -49,6 +49,9 @@ export class PhysicsEngine {
     const wd = _b3.b3DefaultWorldDef()
     wd.gravity = [gravity.x, gravity.y, gravity.z]
     wd.workerCount = 0                     // determinism: single-threaded solver
+    // Below this approach speed contacts are fully plastic (no bounce) — carries the tuned
+    // BUG-27-era REST_VEL_THRESHOLD (physics.js) into the engine so resting contact can't jitter.
+    wd.restitutionThreshold = 1.0
     this._world = _b3.b3CreateWorld(wd)
 
     this._bodies = new Map()               // handle → { id (b3BodyId), shapes: b3ShapeId[], userData }
@@ -265,6 +268,14 @@ export class PhysicsEngine {
   }
 
   getMass (handle) { return _b3.b3Body_GetMass(this._bodies.get(handle).id) }
+
+  /** Live-update friction/restitution on every shape of a body (debug sliders). */
+  setMaterial (handle, { friction = null, restitution = null } = {}) {
+    for (const s of this._bodies.get(handle).shapes) {
+      if (friction != null) _b3.b3Shape_SetFriction(s, friction)
+      if (restitution != null) _b3.b3Shape_SetRestitution(s, restitution)
+    }
+  }
 
   isAwake (handle) { return _b3.b3Body_IsAwake(this._bodies.get(handle).id) }
   wake (handle) { _b3.b3Body_SetAwake(this._bodies.get(handle).id, true) }
