@@ -54,6 +54,20 @@ when written; the conclusion was superseded.
 
 # FEAT-36: Dynamic physics objects (debris rigid bodies)
 
+## ⚑ STATUS 2026-08-14 — first slice LANDED on `feature/box3d` (with FEAT-48)
+
+`src/debris.js`: throwable dynamic props via the paper-throw mechanic — debug panel selector
+(Vehicle → Physics Props → "Throw Projectile (F)": paper / barrel / rock), hard cap 12 with
+oldest-reclaim, clear button, collider = convex hull of the GLB's own vertices, density-derived
+mass/inertia. Two-way coupling with the truck verified by gate `test/debris-coupling.mjs` and
+in-browser. Placeholder assets `test-barrel.glb` (44 tris) / `test-rock.glb` (20 tris) built
+parametrically (assets/models/src/test-*.py, Blender 5.2 headless) — deliberately NOT the
+ASSET-25/26 barrels, which stay open. Debris throws never touch paper-route scoring/inventory.
+
+**Still open here:** the `causesDamage` flag (impulse-report seam exists —
+`PhysicsEngine.maxContactImpulse`), deterministic world-fixture spawn/despawn against streaming
+(rockpiles), object↔object beyond incidental, real art.
+
 ## Context
 
 The world is static except the truck. This adds **a couple of loose rigid bodies at a time** — rocks,

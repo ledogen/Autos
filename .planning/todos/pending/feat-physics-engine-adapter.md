@@ -22,6 +22,33 @@ rule — deliberate and owner-made, not drift. Keep tire.js (Pacejka) and the su
 
 # FEAT-48: Physics engine adapter seam (backend: Box3D)
 
+## ⚑ STATUS 2026-08-14 — Phases 0–3 LANDED on `feature/box3d` (fable overnight job)
+
+Box3D **passed Phase 0** (box3d.js 0.1.1, newer than this ticket's 0.0.2): determinism holds
+run-to-run / cross-process / node-vs-browser (hash `ba6be98f42bc3b83`, now a standing gate —
+`test/box3d-determinism-gate.mjs`); plain-node WASM load works; the full needed API surface exists;
+cold load is 319 kB gz + 14 ms init. Bindings VENDORED at `vendor/box3d/`. Adapter is
+`src/physics-engine.js` (seam grep-clean); terrain chunks mirror as heightfield colliders
+(`src/terrain-physics.js`, exact composed mesh Y — MESH == PHYSICS); the vehicle rides an engine
+body with tuned mass/inertia via SetMassData, our suspension/Pacejka feeding forces, CLEAN CUTOVER
+(owner chose no A/B flag). Gates 51/51 green; before/after feel traces in `test/baselines/`
+(driving scenarios match legacy to sub-cm; slam is the reviewed divergence). CLAUDE.md amended.
+
+**Still open (owner):**
+- **Cross-machine determinism** — run `node test/box3d-determinism.mjs --hash-only` on the Windows
+  thin client and diff `test/box3d-determinism.expected` (the deferred Phase 0 axis).
+- **Drive-time feel sign-off** — record fresh `assert-m4-*` scenarios in-game and compare; the
+  owner's eyes are the arbiter.
+- **FINDING — inertia axes**: the legacy integrator applied `inertiaRoll` to world **x** and
+  `inertiaPitch` to world **z**; with forward = −Z, physical roll is about z — the tuned roll/pitch
+  inertias have been swapped (and heading-dependent) all along. The cutover keeps the spawn-heading
+  mapping in body frame (drives the same, now heading-consistent). Physically-correct assignment
+  would swap them — a feel change that is the owner's call.
+- **Single-precision** — the engine build is float32; ~1 mm position granularity at 10 km from
+  origin. Fine at story-region scale; far teleports would want the double build or origin rebasing.
+- **Known gap**: chassis-vs-tunnel-bore-wall contact (wheels still get bore walls analytically;
+  the chassis hull has no bore collider — rare roof-scrape case, ticket if it ever shows).
+
 ## The decision [OWNER, 2026-07-29]
 
 **Adopt a third-party physics engine as the core for everything — vehicle included — behind a thin

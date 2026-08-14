@@ -20,6 +20,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics, createVehicleChassis } from './physics.js'
 import { createPhysicsEngine } from './physics-engine.js'
 import { TerrainPhysics } from './terrain-physics.js'
+import { DebrisSystem } from './debris.js'
 import { getBodyContactPoints, getWheelPosition } from './suspension.js'
 import { updateVehicle, setLaunchHold, setControlAttenuation, SPAWN_STATE } from './vehicle.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming } from './camera.js'
@@ -1960,8 +1961,10 @@ const terrainPhysics = new TerrainPhysics(physicsEngine)
 terrainSystem.setPhysicsHook(terrainPhysics)   // mirrors every chunk build/recarve/dispose
 const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_PARAMS)
 const engineCtx = { engine: physicsEngine, chassis: vehicleChassis }
+const debrisSystem = new DebrisSystem(physicsEngine, scene)   // FEAT-36: thrown barrels/rocks
 window.__physicsEngine = physicsEngine         // dev handle (counters in the HUD / console)
 window.__vehicleChassis = vehicleChassis       // dev handle — debug.js restitution slider targets it
+window.__debris = debrisSystem                 // dev handle — debug.js projectile selector + clear button
 perfMark('init: physics engine ready')
 
 // Phase 8 (D-05 / D-07): RoadSystem — instantiated after scene exists.
@@ -2474,6 +2477,17 @@ function _throwRoll () {
   // made the throw land short of everything you were pointing at.
   _aimDir.set(0, 1 - 2 * AIM_RETICLE_Y, 0.5).unproject(camera).sub(camera.position).normalize()
 
+  // FEAT-36/FEAT-48: debug projectile selector. Barrels and rocks are DYNAMIC ENGINE BODIES —
+  // no ballistic solver, no landing point, no scoring: the engine flies them, bounces them and
+  // lets you drive over them (the whole point). Same aim, same launch pose as the paper.
+  if ((RANGER_PARAMS.throwProjectile ?? 'paper') !== 'paper') {
+    const pd = vehicleState.position
+    const pd0 = { x: pd.x + _aimDir.x * 1.6, y: pd.y + 1.6, z: pd.z + _aimDir.z * 1.6 }
+    const vd0 = launchVelocity(_aimDir, vehicleState.velocity)
+    debrisSystem.spawn(RANGER_PARAMS.throwProjectile, pd0, vd0)
+    return
+  }
+
   // Launch from above the cab rather than the body origin: from the origin a flat throw clips the
   // truck's own roof on the first step and lands on the bonnet.
   const p = vehicleState.position
@@ -2625,7 +2639,10 @@ document.addEventListener('keyup', e => {
   // On a route, a throw costs a paper — and an empty truck cannot throw. Spent at RELEASE, not at
   // the landing: a paper in the air is a paper you no longer have. Off a route there is no
   // inventory and practice throws are free.
-  const onRound = paperRouteSystem.isRunning()
+  // FEAT-36: debris throws (barrel/rock via the debug selector) are physics tests — they never
+  // spend, refund, or score papers, even mid-route.
+  const throwingPaper = (RANGER_PARAMS.throwProjectile ?? 'paper') === 'paper'
+  const onRound = throwingPaper && paperRouteSystem.isRunning()
   if (onRound && !paperRouteSystem.takePaper()) {
     _showThrowReadout('<span style="color:#ff9f43">out of papers</span>')
     setAimMode(false)
@@ -2641,7 +2658,9 @@ document.addEventListener('keyup', e => {
   // whole flight plus a beat, then hand the camera back. Rearmed on every throw, so a quick second
   // throw extends the hold rather than cutting the first one short.
   clearTimeout(_aimHoldTimer)
-  _aimHoldTimer = setTimeout(() => setAimMode(false), ((hit?.t ?? 0) + AIM_HOLD_S) * 1000)
+  // Debris has no solver flight time (the engine flies it live) — hold ~1.5 s so the launch stays
+  // in frame, same reasoning as the paper's flight-long hold.
+  _aimHoldTimer = setTimeout(() => setAimMode(false), ((hit?.t ?? (throwingPaper ? 0 : 1.5)) + AIM_HOLD_S) * 1000)
 })
 
 // Press-any-key advances, and the key goes NOWHERE else. Capture phase on document, which runs
@@ -4957,6 +4976,7 @@ function loop () {
 
   updateCamera(camera, vehicleState, frameTime)
   _updateThrownRolls(frameTime)   // FEAT-61: fly the airborne papers (render-rate, analytic)
+  debrisSystem.update()           // FEAT-36: engine transform → debris meshes (physics steps them)
 
   // Restore physics position/quaternion — the interpolated copies were render-only.
   vehicleState.position  = _physPos

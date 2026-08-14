@@ -79,6 +79,8 @@ export const GATES = [
   { file: 'box3d-determinism-gate.mjs', subsystem: 'physics', cost: 'fast',
     extraDeps: ['vendor/box3d/dist/box3d.mjs', 'test/box3d-determinism.expected'],
     desc: 'FEAT-48: the physics engine is bit-deterministic — 10k-step state hash reproduces in-process and matches the recorded Phase 0 expectation (engine/bindings drift alarm)' },
+  { file: 'debris-coupling.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
+    desc: 'FEAT-48/FEAT-36: wheel-vs-debris coupling is two-way through the translation layer — the truck shoves the barrel, the chassis feels the hit, both settle, no NaN' },
   { file: 'penetration-failsafe.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'BUG-24: catastrophic-penetration failsafe fires only on true tunnels (depth>2·wheelRadius = wheel fully swallowed), not resolvable deep contact — no teleport on the shoulder step or in the sub-2R band' },
   { file: 'body-contact-energy.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],

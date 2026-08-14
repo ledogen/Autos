@@ -333,6 +333,11 @@ export const RANGER_PARAMS = {
   // and rampMesh.visible is set false via the setRampVisible callback in debug.js.
   rampEnabled: true,       // ramp collision + visibility toggle (FEAT-31 testing lab only)
 
+  // FEAT-36/FEAT-48: what the throw key launches. 'paper' = the scoring newspaper (FEAT-61);
+  // 'barrel' / 'rock' spawn dynamic engine debris (src/debris.js) — physics test projectiles,
+  // selected from the debug panel. Debris throws never touch paper-route scoring or inventory.
+  throwProjectile: 'paper',
+
   // ── Input Ramp Rates (FEAT-01) ───────────────────────────────────────────
   // Smoothed throttle/brake accumulators in vehicle.js ramp at these rates (1/s).
   // throttleRampRate: 4/s → full range in 250 ms

@@ -153,6 +153,12 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // material now, so the slider pushes the new value into the engine on change.
   driveFolder.add(params, 'bodyRestitution', 0, 0.6, 0.01).name('Body Bounce (restitution)')
     .onChange(v => { window.__physicsEngine?.setMaterial(window.__vehicleChassis, { restitution: v }) })
+
+  // FEAT-36/FEAT-48: what the throw key (F) launches. 'paper' is the scoring newspaper; 'barrel'
+  // and 'rock' spawn dynamic engine debris to drive over (src/debris.js) — the physics test rig.
+  const debrisFolder = vehicleFolder.addFolder('Physics Props (FEAT-36)')
+  debrisFolder.add(params, 'throwProjectile', ['paper', 'barrel', 'rock']).name('Throw Projectile (F)')
+  debrisFolder.add({ clear: () => window.__debris?.clear() }, 'clear').name('Clear Debris')
   // Rolling resistance + aero drag — coast/top-speed feel
   driveFolder.add(params, 'rollingResistanceCoeff', 0, 0.05, 0.001).name('Rolling Resistance Cr')
   driveFolder.add(params, 'aeroDragArea', 0, 3.0, 0.05).name('Aero Drag Cd·A (m²)')
