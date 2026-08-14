@@ -53,7 +53,7 @@ OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/winnebago.blend"
 
 # Real Chieftain 27DB is 27 ft; ticket says 8.0 x 2.4 x 3.2 m.  Bumper faces land
 # exactly on +/-4.0 so the collision box in the ticket stays honest.
-BODY_NOSE, BODY_TAIL = 3.92, -3.92     # hull end planes (bumpers add the last 8 cm)
+BODY_NOSE, BODY_TAIL = 3.92, -3.94     # cap base planes (bumpers add the last 6-8 cm)
 HALF_W = 1.20
 Z_SKIRT = 0.42                          # hull bottom
 Z_SHOULDER = 2.60                       # where the roof chamfer starts
@@ -67,10 +67,13 @@ Z_RIB = 1.42                            # corrugation hint: one jogged loop betw
 RIB_INSET = 0.007                       # the stripes and the sills, x pulled in a hair
 Z_SILL = 1.72                           # cab window sill; camper sills sit above this
 
-# Axles / wheels.  Front axle well back from the nose — that is the Class-A look.
-AX_F, AX_R = 2.68, -2.48
+# Axles / wheels.  Front axle well back from the nose — that is the Class-A
+# look.  Rear axle corrected 2026-08-14 against the profile photo: the P30
+# chassis clusters both axles forward (~3.7 m wheelbase) and drags a ~2.9 m
+# rear overhang — the wheels sit under the MIDDLE of the coach, not the tail.
+AX_F, AX_R = 2.68, -1.075
 ARCH_F = (2.30, 3.05)                   # dark skirt band spans (loft stations)
-ARCH_R = (-2.95, -2.00)
+ARCH_R = (-1.55, -0.60)
 TRACK = 1.02
 WHEEL_R, HUB_R, WHEEL_W, WHEEL_SEG = 0.40, 0.16, 0.26, 10
 
@@ -90,6 +93,16 @@ NOSE_ST = [(3.72, 0.50, 0.975),              # (y base, brow fraction, plan scal
 WS_X = 0.92                             # windshield opening half width (on the cap)
 WS_Z0, WS_Z1 = 1.72, 2.60               # sill..shoulder, glazed in the raked plane
 WS_INSET = 0.035                        # glass sits this far behind the cap plane
+
+# --- Shaped tail (2026-08-14, from the profile photo): the roof curls FORWARD
+# into the rear face and the skirt tucks under at a departure chamfer; only the
+# mid band (bumper top to window head) is truly vertical.  Positive offsets pull
+# the cap forward, so the tail never crosses y = BODY_TAIL.
+TAIL_BROW = [(0.42, 0.14), (0.66, 0.06), (0.92, 0.01),
+             (2.35, 0.00), (2.60, 0.03), (2.92, 0.16)]
+TAIL_ST = [(-3.94, 1.00, 0.960),        # cap rim (built first — loft runs tail->nose)
+           (-3.76, 0.50, 0.990)]
+TAIL_N = len(TAIL_ST)                   # rings prepended before the straight hull
 
 # Camper windows (y0, y1, z0, z1) per side.  Curtained + proud, no hull holes.
 WINDOWS_R = [(-3.55, -2.45, 1.62, 2.35),   # bedroom
@@ -118,8 +131,9 @@ AWN_Z, AWN_R = 2.51, 0.065
 AWN_ARM_Y = (-2.30, 1.72)               # in the gaps between window frames
 AWN_ARM_Z0 = 1.40
 
-# Luggage bays (proud body-colour panels, curbside, below the stripes)
-BAYS_R = [(-1.75, -0.75), (-0.35, 0.45)]
+# Luggage bays (proud body-colour panels, curbside, below the stripes) —
+# one in the long rear overhang, one between the axles.
+BAYS_R = [(-3.35, -2.35), (-0.30, 0.50)]
 BAY_Z0, BAY_Z1 = 0.50, 0.86
 
 # Roof kit
@@ -146,7 +160,8 @@ HEADLIGHT_Z = (0.72, 0.94)
 MARKER_X, MARKER_Z = (0.88, 1.00), (1.44, 1.52)
 WFLASH_HW, WFLASH_Z0, WFLASH_Z1, WFLASH_TH = 0.70, 1.30, 1.55, 0.10
 BUMPER_Z0, BUMPER_Z1 = 0.44, 0.66
-TAILLIGHT_X, TAILLIGHT_Z = (0.93, 1.08), (0.72, 1.10)
+TAILLIGHT_X, TAILLIGHT_Z = (0.93, 1.08), (0.70, 0.88)   # cream gap between
+                                                        # bumper top and stripes
 
 MATS = {
     #  name          base colour (linear)           rough  alpha
@@ -262,14 +277,13 @@ RING = ([(-HALF_W, Z_SKIRT)] + _SIDE_R
 # RING[0] = bottom-left; faces k span RING[k] -> RING[k+1].
 N_RING = len(RING)
 
-# Straight-hull stations only; the two shaped nose rings are appended after.
-STATIONS = [BODY_TAIL, ARCH_R[0], ARCH_R[1], ARCH_F[0], CAB_WIN[0],
+# Straight-hull stations only; shaped tail rings are prepended and shaped nose
+# rings appended around these.
+STATIONS = [-3.55, ARCH_R[0], ARCH_R[1], ARCH_F[0], CAB_WIN[0],
             ARCH_F[1], CAB_WIN[1]]
 
 
-def brow(z):
-    """Nose profile: y offset of the cap at height z (piecewise linear)."""
-    pts = NOSE_BROW
+def _piecewise(pts, z):
     if z <= pts[0][0]:
         return pts[0][1]
     for (z0, d0), (z1, d1) in zip(pts, pts[1:]):
@@ -278,14 +292,33 @@ def brow(z):
     return pts[-1][1]
 
 
+def brow(z):
+    """Nose profile: y offset of the cap at height z (piecewise linear)."""
+    return _piecewise(NOSE_BROW, z)
+
+
+def tbrow(z):
+    """Tail profile: forward pull of the rear cap at height z."""
+    return _piecewise(TAIL_BROW, z)
+
+
 def nose_ring(y_base, frac, scale):
     """A hull ring squeezed in plan and pushed along +Y by the brow profile."""
     return [(x * scale, y_base + frac * brow(z), z) for (x, z) in RING]
 
 
+def tail_ring(y_base, frac, scale):
+    return [(x * scale, y_base + frac * tbrow(z), z) for (x, z) in RING]
+
+
 def cap_y(z):
-    """Y of the finished cap surface at height z."""
+    """Y of the finished nose cap surface at height z."""
     return NOSE_ST[-1][0] + brow(z)
+
+
+def tail_y(z):
+    """Y of the finished tail cap surface at height z."""
+    return TAIL_ST[0][0] + tbrow(z)
 
 
 def _face_zx(k):
@@ -312,8 +345,9 @@ def hull_band(s, k):
         return "RVStripe"
     if Z_THIN0 - 0.01 < z < Z_THIN1 + 0.01:
         return "RVStripe"
-    if z < Z_THICK0 and s + 1 < len(STATIONS):   # skirt: dark in the arch spans
-        y0, y1 = _seg_span(s)
+    s2 = s - TAIL_N                           # ring index -> straight-segment index
+    if z < Z_THICK0 and 0 <= s2 < len(STATIONS) - 1:   # skirt: arch spans go dark
+        y0, y1 = _seg_span(s2)
         for a0, a1 in (ARCH_F, ARCH_R):
             if abs(y0 - a0) < 0.01 and abs(y1 - a1) < 0.01:
                 return "RVWellDark"           # alias, resolved to RVDark below
@@ -322,26 +356,28 @@ def hull_band(s, k):
 
 def hull_skip(s, k):
     """Cut the two cab slider openings (both sides, CAB_WIN span, sill..shoulder)."""
-    if s + 1 >= len(STATIONS):                # nose segments never carry openings
+    s2 = s - TAIL_N                           # tail/nose segments carry no openings
+    if not (0 <= s2 < len(STATIONS) - 1):
         return False
     if not _is_side(k):
         return False
     z, _ = _face_zx(k)
     if not (Z_SILL - 0.01 < z < Z_SHOULDER + 0.01):
         return False
-    y0, y1 = _seg_span(s)
+    y0, y1 = _seg_span(s2)
     return y0 >= CAB_WIN[0] - 0.01 and y1 <= CAB_WIN[1] + 0.01
 
 
 def build_hull(p):
-    rings = [[(x, y, z) for (x, z) in RING] for y in STATIONS]
+    rings = [tail_ring(*st) for st in TAIL_ST]
+    rings += [[(x, y, z) for (x, z) in RING] for y in STATIONS]
     rings += [nose_ring(*st) for st in NOSE_ST]
 
     def band(s, k):
         m = hull_band(s, k)
         return "RVDark" if m == "RVWellDark" else m
 
-    loft(p, rings, "RVBody", cap_first=True, cap_last=False,
+    loft(p, rings, "RVBody", cap_first=False, cap_last=False,
          band_mats=band, skip=hull_skip)
 
     # Seal the cab sliders: jamb returns from the wall in to the glass plane.
@@ -439,15 +475,25 @@ def build_nose(p, g):
 
 
 def build_tail(p):
-    y = BODY_TAIL
-    box(p, -1.23, 1.23, -4.00, y + 0.02, BUMPER_Z0, BUMPER_Z1, "RVTrim")
-    for z0, z1 in ((Z_THICK0, Z_THICK1), (Z_THIN0, Z_THIN1)):
-        quad(p, (-HALF_W, y - 0.004, z0), (-HALF_W, y - 0.004, z1),
-             (HALF_W, y - 0.004, z1), (HALF_W, y - 0.004, z0), "RVStripe")
+    """Contoured rear cap: same strip technique as the nose, mirrored."""
+    _, _, scale = TAIL_ST[0]
+    rim = [(x * scale, tail_y(z), z) for (x, z) in _SIDE_R]
+
+    strip_mat = {(Z_THICK0, Z_THICK1): "RVStripe", (Z_THIN0, Z_THIN1): "RVStripe"}
+    for i in range(len(rim) - 1):
+        (x0, y0, z0), (x1, y1, z1) = rim[i], rim[i + 1]
+        quad(p, (x0, y0, z0), (-x0, y0, z0), (-x1, y1, z1), (x1, y1, z1),
+             strip_mat.get((z0, z1), "RVBody"))
+
+    # Rear bumper, buried into the departure tuck.
+    box(p, -1.19, 1.19, -4.00, -3.80, BUMPER_Z0, BUMPER_Z1, "RVTrim")
+    # Taillights: surface-hugging proud quads below the stripe cluster.
     for sgn in (1, -1):
         x0, x1 = sorted((sgn * TAILLIGHT_X[0], sgn * TAILLIGHT_X[1]))
-        box(p, x0, x1, y - 0.025, y - 0.001,
-            TAILLIGHT_Z[0], TAILLIGHT_Z[1], "RVStripe")
+        quad(p, (x0, tail_y(TAILLIGHT_Z[0]) - 0.008, TAILLIGHT_Z[0]),
+             (x1, tail_y(TAILLIGHT_Z[0]) - 0.008, TAILLIGHT_Z[0]),
+             (x1, tail_y(TAILLIGHT_Z[1]) - 0.008, TAILLIGHT_Z[1]),
+             (x0, tail_y(TAILLIGHT_Z[1]) - 0.008, TAILLIGHT_Z[1]), "RVStripe")
 
 
 # ---------------------------------------------------------------------------
@@ -682,6 +728,9 @@ def build_wheels(p):
     for ay in (AX_F, AX_R):
         for sgn in (1, -1):
             add_wheel(p, sgn * TRACK, ay, WHEEL_R, sgn)
+            # Mud flap hanging off the skirt behind the tyre (profile photo).
+            box(p, sgn * (TRACK - 0.14), sgn * (TRACK + 0.14),
+                ay - 0.60, ay - 0.57, 0.16, Z_SKIRT + 0.01, "RVDark")
 
 
 def build_roof_kit(p):
