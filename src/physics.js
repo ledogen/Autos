@@ -260,7 +260,9 @@ export function createVehicleChassis (engine, vehicleState, params) {
 // Soft band between the wheel hard core and the visual tire radius — the depth range the
 // analytic tire spring owns. Matches DYN_CONTACT_DEPTH deep-squish territory, so the core
 // engages only when the soft path has already been overwhelmed (a pinched rock).
-const WHEEL_SOFT_BAND = 0.07
+const WHEEL_SOFT_BAND = 0.15   // was 0.07 — thicker band gives the suspension more travel-time
+                               // to absorb fast hits before the rigid core engages (owner,
+                               // 2026-08-15: high-speed rock hits felt chassis-hard)
 
 export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx) {
   if (!engineCtx) throw new Error('stepPhysics: engineCtx {engine, chassis} is required (FEAT-48)')
@@ -288,6 +290,13 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   const prevDepth = engineCtx._dynContactDepth ?? EMPTY_DEPTH_MAP
   const stepDepth = new Map()
   engineCtx._dynContactDepth = stepDepth
+  // SPEED-SCALED allowance (owner capture 1786778753602): at 24 m/s a rock hit lost 1.4 m/s in
+  // ONE frame with tire compression still ~0.02 — the flat 2.5 m/s growth starved the soft tire
+  // at speed, so the rigid wheel core took the hit straight into the chassis (harsh). Depth may
+  // now grow as fast as the truck is actually closing: the crawl keeps the gentle base rate (the
+  // fling/spike guard lives at low speed), a fast hit builds honest tire force in the very first
+  // frames — the suspension gets to absorb it before the core ever engages.
+  const dynDepthAllow = (DYN_CONTACT_DEPTH_RATE + 1.5 * vehicleState.velocity.length()) * dt
   const qcPlus = (cx, cy, cz, r, footprint) => {
     const list = queryContacts(cx, cy, cz, r, footprint)
     const dyn = engine.overlapSphere({ x: cx, y: cy, z: cz }, r, { collidesWith: GROUP_DEBRIS, dynamicOnly: true })
@@ -300,7 +309,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // chassis' engine contact, not a wheel contact. Skip inverted hits — the wheel then rides
       // the terrain until the honest upward contact re-acquires.
       if (h.normal.y < -0.1) continue
-      const cap = Math.min(DYN_CONTACT_DEPTH_HARD, (prevDepth.get(h.body) ?? 0) + DYN_CONTACT_DEPTH_RATE * dt)
+      const cap = Math.min(DYN_CONTACT_DEPTH_HARD, (prevDepth.get(h.body) ?? 0) + dynDepthAllow)
       if (h.depth > cap) h.depth = cap
       const seen = stepDepth.get(h.body)
       if (seen === undefined || h.depth > seen) stepDepth.set(h.body, h.depth)
@@ -764,20 +773,21 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
         lastDelta = delta
         if (Math.abs(delta) < 1e-4) break
       }
-      // CONVERGENCE SAFEGUARD (2026-08-15, capture 1786777538787): under a heavily overloaded
-      // near-stationary wheel (a rock crossing tipping ~9 kN onto one corner) the 4-iteration
-      // Newton can leave a LARGE unconverged residual — the committed ω then swings −20…−60 rad/s
-      // frame to frame, pure integrator artifact ("low-speed tire slosh" family, now excited by
-      // debris). If the last step was still moving ω by more than NEWTON_TOL, reject the diverged
-      // value and take one damped explicit step from ω₀ instead: bounded, sign-sane, and the next
-      // frame retries Newton from a consistent state. Converged solves (normal driving, 1–3
-      // iterations) are untouched.
+      // CONVERGENCE SAFEGUARD (2026-08-15, capture 1786777538787): under a heavily loaded
+      // near-stationary wheel the 4-iteration Newton can leave a LARGE residual (post-peak
+      // Pacejka slope flips g′ and the iteration overshoots) — the committed ω then swung
+      // −20…−60 rad/s frame to frame ("low-speed tire slosh" family, newly excited by debris).
+      // A first attempt at an explicit-Euler fallback formed its own two-frame limit cycle
+      // (±10 → ±25, growing) — explicit stepping is UNSTABLE at this contact stiffness by
+      // construction. When Newton fails, commit the PHYSICAL fixed point instead: a gripping,
+      // heavily loaded wheel rolls — ω anchors to the contact's longitudinal velocity plus the
+      // one-step torque nudge. Bounded, cycle-free, and the next frame retries Newton from a
+      // consistent state. Converged solves (normal driving, 1–3 iterations) are untouched.
       if (Math.abs(lastDelta) > NEWTON_TOL && lastFn > 0) {
-        const s0 = Math.max(-sLongMax, Math.min(sLongMax,
-          (lastSLongPrev + dt * (omega0 * params.wheelRadius - lastLongVelCur)) / lastRelaxDen))
-        const { Flong } = computeTireForces(s0, lastSLatNew, lastFn, params)
-        omegaNew = omega0 + dt / wheelInertia * (driveTorque - Flong * params.wheelRadius - brakeSigned)
-        sLongFinal = s0
+        omegaNew = lastLongVelCur / params.wheelRadius +
+          dt / wheelInertia * (driveTorque - brakeSigned)
+        sLongFinal = Math.max(-sLongMax, Math.min(sLongMax,
+          (lastSLongPrev + dt * (omegaNew * params.wheelRadius - lastLongVelCur)) / lastRelaxDen))
       }
       // Clamp: braking cannot reverse spin direction (brake stops the wheel, doesn't push through zero).
       // Must happen BEFORE committing sLong — if omega is clamped to 0 the Newton loop may have
