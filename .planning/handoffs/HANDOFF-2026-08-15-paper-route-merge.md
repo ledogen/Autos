@@ -1,10 +1,14 @@
 # HANDOFF — merging `feature/paper-route` into main — 2026-08-15
 
-**You are merging 28 commits that deliver FEAT-61 (the paper route), FEAT-60 (modelled POI markers)
+**You are merging 29 commits that deliver FEAT-61 (the paper route), FEAT-60 (modelled POI markers)
 and FEAT-63 (the GPS re-plan). Read the whole of §1 before you type `git merge`.**
 
-Branch: `feature/paper-route` @ `de5559a`, worktree `/Users/ledogen/CodeShit/CarGame-paper-route`.
+Branch: `feature/paper-route` @ `4e2c52a`, worktree `/Users/ledogen/CodeShit/CarGame-paper-route`.
 Merge base: `37489ef`. Tree is clean; every commit is gated.
+
+**Two owner rulings shape this merge, both 2026-08-15:** the topo map stays and only its customer
+dot changes colour (§1), and Phase F is deferred for you to scope after the merge rather than done
+before it (§4).
 
 ---
 
@@ -22,7 +26,7 @@ map rewrite. Take **main's file as the base** and re-apply this branch's three a
 | file | main | this branch | how to resolve |
 |---|---|---|---|
 | `src/map2d.js` | +632 / −145 (topo rewrite) | +65 / −8 | **main's base**, re-apply 3 additions below |
-| `data/map-icons.js` | +7 / −7 (palette darkened) | +20 (new `NEWSPAPER` glyph) | both — additive, but see palette note |
+| `data/map-icons.js` | +7 / −7 (palette darkened) | +20 (new `NEWSPAPER` glyph) | **both** — this branch only ADDS a const, main only retunes existing rows |
 | `index.html` | +5 / −2 | +53 / −13 | both — should be textually disjoint, verify |
 | `.planning/story-mode/missions.md` | small | §2 rewritten | **take this branch's** — it carries four ratified amendments |
 
@@ -37,27 +41,26 @@ map rewrite. Take **main's file as the base** and re-apply this branch's three a
 3. **The `getRouteState` constructor dep**, and one call to `_drawStartArrow(ctx)` after
    `_drawMission(ctx)` in the draw order.
 
-### ⚠ THE COLOURS ARE WRONG FOR MAIN'S MAP, AND YOU MUST RE-PICK THEM
+### The colours — OWNER-RULED 2026-08-15, no judgement needed
 
-This branch chose its map colours against the **old dark map**. Main's map is now a **printed paper
-sheet**, and main already had to fix exactly this class of problem — see its own comment on
-`_drawCustomers`:
+The owner's ruling, verbatim in effect: **keep the topo map, change its green customer dots to
+white, and turn those white dots into newspapers once Larry's mission starts.**
 
-> *"Darkened for the paper sheet: the old `#3ddc6b` was a glow colour and sat invisibly on
-> PAPER_GREEN."*
+So this branch's colours stand, and main's customer dot is the one thing that changes:
 
-So, on main's palette:
+- **Customer dot: main's `#159149` / `#0d2a12` → `#ffffff` fill, `#101010` stroke.** This was
+  checked rather than assumed: main's paper is `PAPER_GREEN = #cfe2bd`, and the near-black stroke is
+  what carries the contrast, so a white dot reads cleanly on it. Main's own comment warns that
+  `#3ddc6b` "sat invisibly on PAPER_GREEN" — that was an unstroked GLOW colour, which is a different
+  problem from a stroked white.
+- **The `NEWSPAPER` glyph keeps its white fill + `#101010` stroke**, for the same reason. It was
+  rendered and inspected at 22.5 px during authoring.
+- **The start chevron keeps `#5ab4ff`.** Verified: main's `_drawMission` still strokes the route in
+  `rgba(90,180,255,0.85)`, unchanged by the topo rewrite, so the chevron still matches the line it
+  is describing.
 
-- **White customer dots (`#ffffff`) will be near-invisible on paper.** Main darkened its customer
-  dot to fill `#159149` / stroke `#0d2a12` for this reason. The *intent* to preserve is "quiet,
-  anonymous, not competing with the POI glyphs" — not the literal white.
-- **The `NEWSPAPER` glyph is filled white** in `_drawCustomers`. On paper it needs a dark fill.
-- **The start chevron `#5ab4ff`** was matched to the route line's `rgba(90,180,255,0.85)`. Check
-  what main's topo map draws the route in now and match *that*, whatever it is.
-
-**Re-pick all three against main's palette and flag them for the owner** — this is a visual call,
-no gate covers `map2d.js` or `map-icons.js` (the runner says so explicitly rather than reporting a
-hollow pass), and the owner has not seen these on the new map.
+No gate covers `map2d.js` or `map-icons.js` — the runner says so outright rather than reporting a
+hollow pass — so the smoke test in §3 is the only verification these get.
 
 ---
 
@@ -118,10 +121,15 @@ guidance re-plans to the shortest way to finish, computed across frames in spare
 - **BUG-47** — seed 11 strands Larry on a small graph component; 12 of 16 customers unroutable, so
   the ladder saturates at 4. Pre-existing, FEAT-28's problem, parked by the owner.
 - **FEAT-62** — the paper route as a menu-launchable scenario. Filed, untouched.
-- **FEAT-61 Phase F** — the only thing left on the ticket: `test/paper-houses.mjs`, a debug folder
-  for `PAPER_PARAMS` / `THROW_PARAMS` / `poiHouse*` / FEAT-63's `RR_*`, and the MILESTONES SM-2
-  paragraph. **Owner approved doing this; it is not a merge blocker.** Several of those constants
-  are feel-tuned by one drive and two (`RR_OFF_M`, `RR_STALE_M`) were reasoned about and never felt.
+- **FEAT-61 Phase F** — `test/paper-houses.mjs`, a debug folder for `PAPER_PARAMS` / `THROW_PARAMS`
+  / `poiHouse*` / FEAT-63's `RR_*`, and the MILESTONES SM-2 paragraph.
+  **DEFERRED TO AFTER THE MERGE, AND IT IS YOURS TO SCOPE (owner, 2026-08-15):** decide whether any
+  of it is actually needed once the merge is done, rather than doing it because a ticket says so.
+  The strongest case is the debug folder — several of those constants are feel-tuned by a single
+  drive, and two (`RR_OFF_M`, `RR_STALE_M`) were reasoned about and never felt at all, so they are
+  guesses with no dial on them. The weakest is `paper-houses.mjs`: `story-poi` and
+  `world-determinism` already cover house determinism and window-invariance from two stream centres,
+  so check what it would actually add before writing it.
 
 ## 5. Housekeeping the merge should not be surprised by
 

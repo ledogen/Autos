@@ -306,7 +306,15 @@ the route, the result card and the tier advance. Everything below is the houseke
    knobs, and FEAT-63's `RR_*` re-plan knobs. None are on sliders and the phase-housekeeping rule
    says they should be — several are feel-tuned by one drive, and two were never felt at all.
 3. **The MILESTONES SM-2 paragraph.**
-4. **Merge** (brings FEAT-60 with it) — see `.planning/handoffs/HANDOFF-2026-08-15-paper-route-merge.md`.
+**DEFERRED PAST THE MERGE (owner, 2026-08-15)** — the merge agent scopes whether any of it is
+needed, rather than it being done because this ticket says so. Items 1-3 above are candidates, not
+obligations; the debug folder has the strongest case (two of FEAT-63's knobs were never felt at
+all), `paper-houses.mjs` the weakest (`story-poi` and `world-determinism` already cover house
+determinism and two-centre window-invariance — check what it would add before writing it).
+
+4. **Merge** (brings FEAT-60 with it) — see
+   `.planning/handoffs/HANDOFF-2026-08-15-paper-route-merge.md`, which leads with the fact that main
+   redrew the 2D map underneath this branch.
 
 ### First drive — four fixes [2026-08-09]
 
