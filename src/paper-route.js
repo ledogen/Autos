@@ -176,12 +176,18 @@ export function scoreRoute (accuracies, customers, elapsed, par, dayTier = 1, P 
     // which made "how well did you throw" and "how well did you do" the same question and left
     // nothing for the clock to say.
     //
-    // GATED ON FULL COVERAGE: an unfinished round has no time worth grading, because you can always
-    // be quick by skipping people. Undelivered ⇒ D, however fast you were. The money is untouched
-    // by this — partial routes still pay for what they placed, which is what an income floor means.
-    const letter = complete
-        ? gradeRun(elapsed, par, thresholds).letter
-        : 'D'
+    // PAR SCALES WITH THE JOB YOU ACTUALLY DID (owner, 2026-08-15): deliver half the papers and you
+    // are measured against half the par — "closer to half of par" — instead of being handed a flat D.
+    //
+    // The flat D it replaces was too blunt. It graded a round that dropped one paper of fifteen the
+    // same as one that dropped fourteen, and it made the letter stop being about driving the moment
+    // anything went wrong. Scaling keeps the clock honest instead: skipping people no longer buys
+    // time, because it shrinks the clock you are held to by exactly as much. Nine of nine at par and
+    // three of nine in a third of par both come out at ratio 1.0.
+    //
+    // Complete routes are untouched (coverage 1 ⇒ parEff = par), so B still contains par.
+    const parEff = par * coverage
+    const letter = gradeRun(elapsed, parEff, thresholds).letter
 
     // FLAT is per delivery, and it is derived rather than authored so the route tracks the same
     // economy everything else does. Degenerate par (a broken tour) pays zero rather than NaN-ing

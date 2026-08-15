@@ -97,9 +97,24 @@ check('accuracy does NOT move the letter — only the money', (() => {
     const rough = scoreRoute(Array(9).fill(0.3), 9, PAR, PAR, TIER)
     return sharp.letter === rough.letter && rough.payout < sharp.payout
 })())
-// AN UNFINISHED ROUND HAS NO TIME WORTH GRADING: you can always be quick by skipping people.
-check('an incomplete route letters D however fast it was',
-    scoreRoute(Array(8).fill(1), 9, PAR * 0.5, PAR, TIER).letter === 'D')
+// PAR SCALES WITH COVERAGE [owner, 2026-08-15] — skipping people cannot buy time, because it
+// shrinks the clock you are held to by exactly as much. This replaced a flat D for any incomplete
+// route, which graded 8-of-9 the same as 1-of-9.
+check('an incomplete route is measured against a SHORTER par, not handed a flat D', (() => {
+    const third = scoreRoute(Array(3).fill(1), 9, PAR / 3, PAR, TIER)   // a third of the job, a third of the time
+    const full  = scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER)
+    return third.letter === full.letter
+})())
+check('…so dropping papers and taking the full time is punished', (() => {
+    const lazy = scoreRoute(Array(3).fill(1), 9, PAR, PAR, TIER)        // a third of the job, all of the time
+    return lazy.letter === 'D'
+})())
+check('…and one paper short of a full round still beats half a round', (() => {
+    const nearly = scoreRoute(Array(8).fill(1), 9, PAR * 0.88, PAR, TIER)
+    const half   = scoreRoute(Array(4).fill(1), 9, PAR * 0.88, PAR, TIER)
+    const order  = ['D', 'C', 'B', 'A', 'S']
+    return order.indexOf(nearly.letter) > order.indexOf(half.letter)
+})())
 check('…and still PAYS for what it placed (the income floor)',
     scoreRoute(Array(8).fill(1), 9, PAR * 0.5, PAR, TIER).payout > 0)
 // THE OWNER'S EQUIVALENCE, as an assertion. This is the number bonusMax exists to satisfy: a

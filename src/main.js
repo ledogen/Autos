@@ -62,7 +62,7 @@ import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun, stockForTier, deadlineFor } from './paper-route.js'
-import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist (in-world route arrows)
+import { GpsSystem, addGpsGui, GPS_COLOR } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
@@ -2127,8 +2127,8 @@ function _ringAlphaTex () {
 // one ring changing meaning rather than two unrelated overlays.
 const _ringGeo = new THREE.CylinderGeometry(1, 1, 1, 48, 1, true)
 const _ringAlpha = _ringAlphaTex()
-const _ringMat = (color) => new THREE.MeshBasicMaterial({
-  color, transparent: true, opacity: 0.28, side: THREE.DoubleSide,
+const _ringMat = (color, opacity = 0.28) => new THREE.MeshBasicMaterial({
+  color, transparent: true, opacity, side: THREE.DoubleSide,
   depthWrite: false, toneMapped: false, alphaMap: _ringAlpha,
 })
 const _poiRingMat = _ringMat(0xff7a18)     // orange — park here to be offered a job
@@ -2147,7 +2147,12 @@ const _STAGE_RING_SINK = 3.0   // m
 // Short, not tall: _POI_RING_H's 4 m curtain at a 10 m radius reads as a wall you park inside, but
 // the same proportions at 3 m would be a chimney you cannot see your own throw land in. A target is
 // something you look DOWN into, so it gets a low kerb instead.
-const _targetRingMat = _ringMat(0x3ddc6b)
+// GPS CYAN, NOT THE STAGING GREEN, and at nearly double the opacity (owner, 2026-08-15). It is
+// easy to blow straight past a porch at speed, and the muted green sat too close to the grass it
+// stands on to catch the eye at 60 km/h. Cyan is the one colour nothing in this landscape wears —
+// and it is GPS_COLOR itself, imported rather than copied, so "navigation is telling you about
+// this" reads as one idea across the chevrons, the destination ring and the target.
+const _targetRingMat = _ringMat(GPS_COLOR, 0.52)
 const _TARGET_RING_H = 1.2      // m
 const _TARGET_RING_SINK = 0.5   // m
 const _TARGET_PIP_H = 0.5       // m — the centre pip is lower still; it must never mask the landing
@@ -3458,12 +3463,11 @@ function _renderPaperUI () {
 
   switch (p.state) {
     case 'planning':
-      // The briefing is the cover for the routing (owner ruling), so this panel is only ever seen
-      // on a SECOND route — the cards are once per run, and without them there would otherwise be
-      // a silent pause with nothing on screen saying why.
-      show(panel, true); show(hud, false); show(acts, false, 'flex')
-      body.innerHTML = 'Larry&rsquo;s sorting the papers&hellip;<br>'
-        + '<span class="mp-dim">working out the route</span>'
+      // NOTHING (owner, 2026-08-15). This card was cover for a pause the player never experiences:
+      // on the first route Larry's dialogue sits on top of it, and on every route after that the
+      // map opens straight onto the offer. It was written against an ASSUMED routing cost, and the
+      // measurement came back at a few milliseconds — so all it could ever do was flash.
+      show(panel, false); show(hud, false); show(acts, false, 'flex')
       break
     case 'offer': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
