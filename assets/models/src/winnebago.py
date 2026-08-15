@@ -139,13 +139,14 @@ WINDOWS_L = [(-3.60, -2.55, 1.62, 2.35),
              (0.42, 0.82, 1.35, 2.35),
              (1.20, 2.16, 1.62, 2.35)]     # wider — no door on this side
 WIN_FRAME = 0.045                       # frame border around the opening
-WIN_DEPTH = 0.036                       # how proud the frame face sits
-CURT_LO, CURT_HI = 0.002, 0.012         # pleat zigzag depths (outboard of wall)
-                                        # — hugging the wall so the pleats sit
-                                        # visibly BEHIND the glass, not flush
-                                        # with the frame face
-GLASS_OFF = 0.030                       # pane depth (recessed behind the frame face)
-PLEAT_W = 0.14                          # a fold roughly every 14 cm
+# Curtain depth ruling (2026-08-15): the pleats were pressed against the glass
+# with a 10 mm swing and read as wallpaper.  Deepening must move them AWAY
+# from the glass only — the deep creases drop to the wall surface and the
+# GLASS moved outboard to open the gap; the crests never chased it.
+WIN_DEPTH = 0.050                       # how proud the frame face sits
+CURT_LO, CURT_HI = 0.002, 0.024         # pleat zigzag depths (outboard of wall)
+GLASS_OFF = 0.044                       # pane depth (recessed behind the frame face)
+PLEAT_W = 0.11                          # a fold roughly every 11 cm
 
 # Entry door (curbside, +X), with its own curtained window (photo: y 0.93-1.54)
 DOOR_Y0, DOOR_Y1 = 0.93, 1.55
@@ -698,7 +699,9 @@ def build_interior(p):
     for i in range(n + 1):
         t = i / n
         xx = cy0 + (cy1 - cy0) * t
-        yy = 2.40 + (0.0 if i % 2 == 0 else 0.020)
+        # Creases recede TOWARD the partition (0.01 clear of it) — the crest
+        # line at 2.40 never moves toward the windshield.
+        yy = 2.40 - (0.0 if i % 2 == 0 else 0.030)
         p.v.append((xx, yy, 1.35))
         p.v.append((xx, yy, 2.62))
     for i in range(n):
