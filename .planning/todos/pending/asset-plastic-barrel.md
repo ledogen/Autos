@@ -4,7 +4,7 @@ type: asset
 status: open
 severity: minor
 opened: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-15
 blocked-by: FEAT-59
 relates: FEAT-46, FEAT-36, ASSET-30
 ---
@@ -27,8 +27,8 @@ a truck bed.
 
 | Field | Value |
 |---|---|
-| Tri budget | **≤350** |
-| Texture | one albedo, **512×512** — moulded seams, bung caps, chalky UV fade, algae at the base |
+| Tri budget | **≤350** — built at **336** |
+| Texture | **none** — flat colours per ART-STYLE (supersedes the 512² spec, same ruling as ASSET-23/09); seams/hoops are geometry, fade and algae dropped |
 | Real size | 0.58 m diameter × 0.89 m tall (a real 208 L drum) |
 | Origin | base-seated: base at y=0, centred |
 | Forward | −Z (bungs face −Z) |
@@ -38,9 +38,9 @@ Rolling hoops are geometry — they are the silhouette. Do not smooth the barrel
 
 ## Acceptance
 
-- `assets/models/barrel-plastic.glb` exists, export-clean under `.planning/research/ASSETS.md`
-  settings.
-- Sources committed: `assets/models/src/barrel-plastic.blend` + `barrel-plastic.py`.
+- [x] `assets/models/barrel-plastic.glb` exists, export-clean (336 tris, 2 materials —
+  `BarrelBlue` recolour hook + `BarrelBung` — 0 images, base z=0, 0.585×0.892 m, 2026-08-15).
+- [x] Sources committed: `assets/models/src/barrel-plastic.blend` + `barrel-plastic.py`.
 - Reads correctly **upright and on its side** — it will be placed both ways, and a barrel on its side
   is the cheapest bit of disorder in the class.
 - Tri count within budget; material names stable and distinctive (the blue is the identity; keep it
