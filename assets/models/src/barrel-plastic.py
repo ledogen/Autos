@@ -39,18 +39,21 @@ SEG = 10                                 # lathe segments — faceted on purpose
 
 # Lathe profile bottom->top (z, r).  Real 208 L drum: 0.58 dia x 0.89 tall.
 # Chimes at both ends, two rolling hoops just above and below the waist.
+# The body BELLIES: 0.276 at the chime necks swelling to 0.2866 between the
+# hoops (no extra ring — the swell rides the existing levels).  Hoops stand
+# only ~4 mm proud of the local body (they were 12 and read as armour ribs).
 PROFILE = [
     (0.000, 0.268),                      # base edge (cap closes it)
     (0.025, 0.290),                      # bottom chime
     (0.075, 0.290),
-    (0.115, 0.280),                      # body
-    (0.330, 0.280),
-    (0.365, 0.2925),                     # rolling hoop 1
-    (0.400, 0.280),
-    (0.480, 0.280),
-    (0.515, 0.2925),                     # rolling hoop 2
-    (0.550, 0.280),
-    (0.780, 0.280),
+    (0.115, 0.2760),                     # neck below the belly
+    (0.330, 0.2850),
+    (0.365, 0.2895),                     # rolling hoop 1
+    (0.400, 0.2866),                     # belly, at its fullest between hoops
+    (0.480, 0.2866),
+    (0.515, 0.2895),                     # rolling hoop 2
+    (0.550, 0.2850),
+    (0.780, 0.2760),                     # neck above the belly
     (0.820, 0.290),                      # top chime
     (0.868, 0.290),
     (0.890, 0.262),                      # rim rolls in
