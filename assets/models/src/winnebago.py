@@ -137,7 +137,9 @@ TAIL_N = len(TAIL_ST)                   # rings prepended before the straight hu
 WINDOWS_R = [(-3.60, -2.55, 1.62, 2.35),   # bedroom
              (-0.78, -0.12, 1.62, 2.35),   # over the rear wheel
              (0.42, 0.82, 1.35, 2.35),     # tall, drops below the others
-             (1.70, 2.16, 1.62, 2.35)]     # small, door-to-cab
+             (1.72, 2.12, 1.35, 2.35)]     # door-to-cab: TWIN of the tall one
+                                           # (user 2026-08-15: matched pair
+                                           # flanking the door, tall shape)
 WINDOWS_L = [(-3.60, -2.55, 1.62, 2.35),
              (-0.78, -0.12, 1.62, 2.35),
              (0.42, 0.82, 1.35, 2.35),
