@@ -17,22 +17,22 @@
 // you delivered are money you keep. There is no completion multiplier anywhere in here, because a
 // floor that pays nothing for a half-finished route is not a floor.
 //
-// ── ACCURACY PAYS, THE CLOCK GRADES [ratified 2026-08-14 — NOT YET IMPLEMENTED HERE] ────────────
+// ── ACCURACY PAYS, THE CLOCK GRADES [ratified + implemented 2026-08-14] ─────────────────────────
 //
-// missions.md §2 now says: accuracy scales the per-delivery rate ONLY, and the rank is the par
-// ratio (gradeRun, B contains par) gated on full coverage, with the expediency bonus worth 0.70 of
-// a perfect route's paper money and applied to the FULL flat rather than the accuracy-scaled sum.
-// The point is that "slow and careful" and "fast and ragged" should pay about the same, so both are
-// real ways to drive a round.
+// Accuracy scales the per-delivery rate and NOTHING else. The rank is the par ratio through the
+// same gradeRun() every other mission type uses — B contains par (SM-INV-3), the day ramp tightens
+// it — gated on full coverage, because you can always be quick by skipping people.
 //
-// THE CODE BELOW STILL DOES THE OLD THING: scoreRoute ranks on coverage × meanAccuracy via
-// letterFor/PAPER_PARAMS.rank, and bonusMax is 0.40 on the scaled sum. This comment is here so the
-// divergence is impossible to miss — the doc is the ruling, this file is the lag. Landing it means
-// deleting letterFor + the rank table, calling gradeRun(), and moving the bonus onto n × flat.
+// The shape this buys: "slow and careful" and "fast and ragged" pay about the same, so both are
+// real ways to drive a round rather than one dominating. That equivalence is what fixes bonusMax at
+// 0.70 and forces the bonus to be ADDITIVE on the full flat — see scoreRoute.
+//
+// It replaced coverage × meanAccuracy, which made "how well did you throw" and "how well did you
+// do" the same question and left the clock nothing to say.
 
 import { ECONOMY_PARAMS } from './economy.js'
 import { buildGraphAdj, START_ZONE_R } from './mission.js'
-import { computePar } from './par.js'
+import { computePar, gradeRun, RANK_THRESHOLDS_DEFAULT } from './par.js'
 // The accuracy law is throw.js's, not restated here. It is one line of algebra and that is exactly
 // why it must have one home: a second copy is a second thing to keep in step with the gate.
 import { accuracyScore } from './throw.js'
@@ -65,11 +65,11 @@ export const PAPER_PARAMS = {
     // you cannot finish early without finishing.
     expediteOn:  0.90,   // ratio at which the bonus starts paying (10% inside par)
     expediteFull:0.70,   // …and where it maxes out
-    bonusMax:    0.40,
-
-    // Per-axis rank thresholds on coverage × accuracy — NOT the par ratio. One delivery out of nine
-    // scores 0.11 and letters D, which is the owner's stated case, and it still pays for that one.
-    rank:        { C: 0.50, B: 0.75, A: 0.90, S: 0.98 },
+    // 0.70, and it is not a free knob: the owner's equivalence fixes it. A rim-scraper (mean
+    // q = 0.30) who blasts the round must earn about what a methodical driver (mean q = 1.0) earns
+    // at par, and 0.30 + 0.70 = 1.00 is that statement. Applied to the FULL flat (n x FLAT), never
+    // to the accuracy-scaled sum — see scoreRoute.
+    bonusMax:    0.70,
 }
 
 /**
@@ -144,17 +144,6 @@ export function flatPerPaper (par, customers, dayTier = 1, P = PAPER_PARAMS) {
         : 0
 }
 
-/** Per-axis rank. Scores the ROUTE (coverage × accuracy), never the clock. */
-export function letterFor (score, P = PAPER_PARAMS) {
-    const r = P.rank
-    if (!(score > 0)) return 'D'
-    if (score >= r.S) return 'S'
-    if (score >= r.A) return 'A'
-    if (score >= r.B) return 'B'
-    if (score >= r.C) return 'C'
-    return 'D'
-}
-
 /**
  * Price a finished route.
  *
@@ -167,7 +156,8 @@ export function letterFor (score, P = PAPER_PARAMS) {
  * @param {number}   dayTier     economy.js dayTier(day), frozen at accept with the rest of the terms
  * @returns {{coverage,meanAccuracy,effDeliveries,score,letter,flat,expedite,payout,complete}}
  */
-export function scoreRoute (accuracies, customers, elapsed, par, dayTier = 1, P = PAPER_PARAMS) {
+export function scoreRoute (accuracies, customers, elapsed, par, dayTier = 1, P = PAPER_PARAMS,
+                            thresholds = RANK_THRESHOLDS_DEFAULT) {
     const n = Math.max(0, customers | 0)
     const delivered = accuracies?.length ?? 0
     // effDeliveries is the payout's unit: "how many papers' worth did you actually place". A
@@ -178,8 +168,20 @@ export function scoreRoute (accuracies, customers, elapsed, par, dayTier = 1, P 
     const coverage     = n > 0 ? Math.min(1, delivered / n) : 0
     const meanAccuracy = delivered > 0 ? eff / delivered : 0
     const score        = coverage * meanAccuracy
-    const letter       = letterFor(score, P)
     const complete     = n > 0 && delivered >= n
+
+    // THE CLOCK GRADES [ratified 2026-08-14]. The letter is the par ratio through the SAME
+    // gradeRun() every other mission type uses — B contains par, and the day ramp tightens it — so
+    // a paper route's B means what a POI job's B means. It used to be coverage × meanAccuracy,
+    // which made "how well did you throw" and "how well did you do" the same question and left
+    // nothing for the clock to say.
+    //
+    // GATED ON FULL COVERAGE: an unfinished round has no time worth grading, because you can always
+    // be quick by skipping people. Undelivered ⇒ D, however fast you were. The money is untouched
+    // by this — partial routes still pay for what they placed, which is what an income floor means.
+    const letter = complete
+        ? gradeRun(elapsed, par, thresholds).letter
+        : 'D'
 
     // FLAT is per delivery, and it is derived rather than authored so the route tracks the same
     // economy everything else does. Degenerate par (a broken tour) pays zero rather than NaN-ing
@@ -196,7 +198,14 @@ export function scoreRoute (accuracies, customers, elapsed, par, dayTier = 1, P 
         expedite    = P.bonusMax * Math.min(1, Math.max(0, f))
     }
 
-    const payout = Math.max(0, flat * eff * (1 + expedite))
+    // ACCURACY PAYS, AND THE BONUS IS ADDITIVE ON THE FULL FLAT — not a multiplier on the
+    // accuracy-scaled sum. That is the one structural decision in the amendment, and it is forced
+    // by the owner's own equivalence: a rim-scraper (mean q = 0.30) who blasts the round should
+    // earn about what a methodical driver (mean q = 1.0) earns at par. Additively that needs a
+    // bonus worth 0.70 of a perfect route's paper money; multiplicatively the same equivalence
+    // needs 233%, which is not a number anyone can tune. So the two ways to drive a round are a
+    // real choice: place them well, or place them fast, and either pays.
+    const payout = Math.max(0, flat * eff + flat * n * expedite)
     return { coverage, meanAccuracy, effDeliveries: eff, score, letter, flat, expedite, payout, complete }
 }
 
@@ -849,6 +858,10 @@ export class PaperRouteSystem {
             elapsed:  0,
             deadline: deadlineFor(this.route.par),
             dayTier:  terms.dayTier ?? 1,
+            // Frozen WITH the day tier, for the same reason (FEAT-53): the rank ramp is part of the
+            // deal you accepted. Now that the letter IS the par ratio, a route straddling midnight
+            // would otherwise be graded on tomorrow's tighter thresholds.
+            thresholds: terms.thresholds ?? RANK_THRESHOLDS_DEFAULT,
             hits:     new Map(),      // customer id → q, one entry per delivered customer
         }
         this._startZone = { x: this.giver.x, z: this.giver.z, y: this.giver.y ?? 0, r: START_ZONE_R }
@@ -1186,7 +1199,8 @@ export class PaperRouteSystem {
         this._rrHideAt = 0
         const n = this.route.customers.length
         const accuracies = [...this.run.hits.values()]
-        const r = scoreRoute(accuracies, n, this.run.elapsed, this.route.par, this.run.dayTier)
+        const r = scoreRoute(accuracies, n, this.run.elapsed, this.route.par, this.run.dayTier,
+                             PAPER_PARAMS, this.run.thresholds)
         const settled = this._onSettle(Math.round(r.payout), r.letter) || {}
         const advanced = advancesTier(r, n)
         if (advanced && runPaper.tier < PAPER_PARAMS.tiers.length - 1) runPaper.tier++

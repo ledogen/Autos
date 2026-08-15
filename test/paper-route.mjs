@@ -18,7 +18,7 @@
 import { accuracyScore, ACC_FLOOR } from '../src/throw.js'
 import {
     PAPER_PARAMS, runPaper, resetPaperRun, customersForTier, stockForTier,
-    deadlineFor, letterFor, scoreRoute, advancesTier,
+    deadlineFor, scoreRoute, advancesTier,
 } from '../src/paper-route.js'
 import { EconomySystem, runEconomy, ECONOMY_PARAMS, pointsFor } from '../src/economy.js'
 
@@ -58,8 +58,12 @@ const sloppy = scoreRoute(Array(9).fill(accuracyScore(R, R)), 9, PAR, PAR, TIER)
 const clean  = scoreRoute(Array(9).fill(accuracyScore(0, R)), 9, PAR, PAR, TIER)
 check('a full sloppy route pays less than a full clean one', sloppy.payout < clean.payout)
 check(`…by exactly the accuracy floor (${ACC_FLOOR}×)`, near(sloppy.payout, clean.payout * ACC_FLOOR, 1e-9))
-check('a full clean route letters S', clean.letter === 'S', `got ${clean.letter}`)
-check('a full sloppy route still letters D', sloppy.letter === 'D', `got ${sloppy.letter}`)
+// Both routes were driven at par, and under the amended model the letter is the CLOCK — so they
+// letter the same and differ only in money. That is the point of the change: accuracy is paid for,
+// not graded. (These two checks previously asserted S and D respectively, off coverage x accuracy.)
+check('a clean and a sloppy route driven at par letter the SAME',
+    clean.letter === sloppy.letter, `clean ${clean.letter}, sloppy ${sloppy.letter}`)
+check('…and that letter is B, because B contains par', clean.letter === 'B', `got ${clean.letter}`)
 
 console.log('\n── 3. the expediency bonus ────────────────────────────────────')
 const fastPartial = scoreRoute(Array(8).fill(1), 9, PAR * 0.5, PAR, TIER)
@@ -70,24 +74,45 @@ const fast = scoreRoute(Array(9).fill(1), 9, PAR * 0.8, PAR, TIER)
 check('…10% inside par starts paying', fast.expedite > 0, `expedite ${fast.expedite}`)
 const veryFast = scoreRoute(Array(9).fill(1), 9, PAR * 0.6, PAR, TIER)
 check('…and it caps at bonusMax', near(veryFast.expedite, PAPER_PARAMS.bonusMax))
-check('the bonus multiplies the payout', near(veryFast.payout, atPar.payout * (1 + PAPER_PARAMS.bonusMax)))
+// ADDITIVE ON THE FULL FLAT, not a multiplier on the accuracy-scaled sum [ratified 2026-08-14].
+// The distinction is the whole reason the equivalence below is reachable with a tunable number.
+check('the bonus is additive on the FULL flat, not a multiplier on the scaled sum',
+    near(veryFast.payout, atPar.payout + veryFast.flat * 9 * PAPER_PARAMS.bonusMax))
 check('bonus is monotone in speed', fast.expedite < veryFast.expedite)
 
 console.log('\n── 4. rank is per-axis, and the ladder ────────────────────────')
-check('letterFor is monotone across the thresholds', (() => {
-    const order = ['D', 'C', 'B', 'A', 'S']
-    let last = -1
-    for (let s = 0; s <= 1.0001; s += 0.01) {
-        const i = order.indexOf(letterFor(Math.min(s, 1)))
-        if (i < last) return false
-        last = Math.max(last, i)
-    }
-    return true
-})())
-check('rank ignores the clock entirely', (() => {
-    const slow = scoreRoute(Array(9).fill(1), 9, PAR * 5, PAR, TIER)
+// THE CLOCK GRADES [ratified 2026-08-14] — the exact reversal of what this gate used to assert,
+// which said the rank ignored the clock entirely. Kept as an explicit inversion so a reader of the
+// history can see the model changed rather than the test rotting.
+check('the rank is the CLOCK now, not the throwing', (() => {
+    const slow  = scoreRoute(Array(9).fill(1), 9, PAR * 1.4, PAR, TIER)   // perfect throws, dawdled
     const quick = scoreRoute(Array(9).fill(1), 9, PAR * 0.5, PAR, TIER)
-    return slow.letter === quick.letter
+    return slow.letter !== quick.letter && quick.letter === 'S' && slow.letter === 'D'
+})())
+check('…and B contains par (SM-INV-3, owner-confirmed 2026-08-14)',
+    scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER).letter === 'B')
+check('…dawdling past par drops to C', scoreRoute(Array(9).fill(1), 9, PAR * 1.1, PAR, TIER).letter === 'C')
+check('accuracy does NOT move the letter — only the money', (() => {
+    const sharp = scoreRoute(Array(9).fill(1.0), 9, PAR, PAR, TIER)
+    const rough = scoreRoute(Array(9).fill(0.3), 9, PAR, PAR, TIER)
+    return sharp.letter === rough.letter && rough.payout < sharp.payout
+})())
+// AN UNFINISHED ROUND HAS NO TIME WORTH GRADING: you can always be quick by skipping people.
+check('an incomplete route letters D however fast it was',
+    scoreRoute(Array(8).fill(1), 9, PAR * 0.5, PAR, TIER).letter === 'D')
+check('…and still PAYS for what it placed (the income floor)',
+    scoreRoute(Array(8).fill(1), 9, PAR * 0.5, PAR, TIER).payout > 0)
+// THE OWNER'S EQUIVALENCE, as an assertion. This is the number bonusMax exists to satisfy: a
+// rim-scraper who blasts the round earns what a methodical driver earns at par, so "place them
+// well" and "place them fast" are both real ways to drive it.
+check('a rim-scraping blast pays about what a methodical drive at par pays', (() => {
+    const methodical = scoreRoute(Array(9).fill(1.0), 9, PAR, PAR, TIER)
+    const blaster    = scoreRoute(Array(9).fill(0.3), 9, PAR * PAPER_PARAMS.expediteFull, PAR, TIER)
+    return Math.abs(blaster.payout - methodical.payout) / methodical.payout < 0.02
+})(), (() => {
+    const m = scoreRoute(Array(9).fill(1.0), 9, PAR, PAR, TIER)
+    const b = scoreRoute(Array(9).fill(0.3), 9, PAR * PAPER_PARAMS.expediteFull, PAR, TIER)
+    return `methodical $${m.payout.toFixed(2)} vs blaster $${b.payout.toFixed(2)}`
 })())
 resetPaperRun()
 check('a run starts on the first rung', runPaper.tier === 0 && customersForTier() === 4)
@@ -127,9 +152,14 @@ console.log('\n── 6. SM-INV-4 is untouched; the wallet is shared ───�
 const src = (await import('node:fs')).readFileSync(new URL('../src/paper-route.js', import.meta.url), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 check('paper-route.js never calls payoutFor', !/\bpayoutFor\s*\(/.test(src))
-check('paper-route.js never calls gradeRun', !/\bgradeRun\s*\(/.test(src))
-check('…and never imports them either (the structural version)',
-    !/import[\s\S]*?\b(payoutFor|gradeRun)\b[\s\S]*?from/.test(src))
+// gradeRun IS called now [ratified 2026-08-14] — the rank is the par ratio, through the same
+// function every other mission type grades with, so a paper route's B means what a POI job's B
+// means. payoutFor is still never called: the MONEY is a flat rate, not the margin line, and
+// SM-INV-4 stays untouched. That asymmetry is the thing worth pinning.
+check('paper-route.js DOES grade through the shared gradeRun', /\bgradeRun\s*\(/.test(src))
+check('…but still never calls payoutFor (SM-INV-4 untouched)', !/\bpayoutFor\s*\(/.test(src))
+check('…and never imports payoutFor either (the structural version)',
+    !/import[\s\S]*?\bpayoutFor\b[\s\S]*?from/.test(src))
 const econ = new EconomySystem({ getDay: () => 1 })
 econ.start()
 const before = { ...runEconomy }
