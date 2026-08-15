@@ -95,23 +95,27 @@ CAB_WIN = (2.40, 3.45)                  # real opening, both sides, Z_SILL..Z_SH
 # above it and the lower fascia tucks back below it, and the header rakes hard
 # into the roof.  Implemented as two extra loft stations (keeping the stripe
 # band materials and welding for free) + a contoured cap built strip-by-strip.
-# Steepened 2026-08-15 against the profile photo: windshield rake ~0.35 over
-# the glass height (~21 deg), lower fascia raked ~13 deg from the brow down to
-# the bumper.  The first pass was visibly too upright.
-NOSE_BROW = [(0.42, -0.22), (1.62, 0.06), (1.72, 0.05),
-             (2.60, -0.30), (2.92, -0.48)]   # (z, y offset from the cap base)
-NOSE_ST = [(3.70, 0.50, 0.975),              # (y base, brow fraction, plan scale)
-           (3.92, 1.00, 0.885)]              # cap rim: brow peaks at y 3.98
+# TRACED from the front-corner photo (2026-08-15, second pass): the peak of the
+# profile is LOW — just above the bumper at z~0.70 — and the whole face leans
+# FORWARD down to it (~12 deg).  Above the sill the windshield rakes back ~24
+# deg, and the roof edge OVERHANGS the glass (the visor): the rim sits behind
+# station A up top, a deliberate fold in the loft.  First attempts pivoted at
+# the beltline; that read as a slab with a bent top.
+NOSE_BROW = [(0.42, 0.00), (0.70, 0.08), (1.62, -0.12), (1.72, -0.15),
+             (2.60, -0.55), (2.92, -0.72)]   # (z, y offset from the cap base)
+NOSE_ST = [(3.72, 0.35, 0.975),              # (y base, brow fraction, plan scale)
+           (3.90, 1.00, 0.885)]              # cap rim: peak lands on y 3.98
 WS_X = 0.92                             # windshield opening half width (on the cap)
 WS_Z0, WS_Z1 = 1.72, 2.60               # sill..shoulder, glazed in the raked plane
 WS_INSET = 0.035                        # glass sits this far behind the cap plane
 
-# --- Shaped tail (2026-08-14, from the profile photo): the roof curls FORWARD
-# into the rear face and the skirt tucks under at a departure chamfer; only the
-# mid band (bumper top to window head) is truly vertical.  Positive offsets pull
-# the cap forward, so the tail never crosses y = BODY_TAIL.
-TAIL_BROW = [(0.42, 0.14), (0.66, 0.06), (0.92, 0.01),
-             (2.35, 0.00), (2.60, 0.03), (2.92, 0.16)]
+# --- Shaped tail: same lean as the nose but gentler (user 2026-08-15) — the
+# rearmost point sits low at bumper height and the face leans forward going up,
+# ending in the roof curl.  Positive offsets pull the cap forward, so the tail
+# never crosses y = BODY_TAIL.  The rear window zone (1.62..2.35) leans only
+# ~3 deg; curtain_window_tail plants itself on the AVERAGE surface there.
+TAIL_BROW = [(0.42, 0.10), (0.70, 0.00), (1.55, 0.02),
+             (2.40, 0.06), (2.60, 0.14), (2.92, 0.30)]
 TAIL_ST = [(-3.94, 1.00, 0.960),        # cap rim (built first — loft runs tail->nose)
            (-3.76, 0.50, 0.990)]
 TAIL_N = len(TAIL_ST)                   # rings prepended before the straight hull
@@ -287,9 +291,13 @@ def loft(part, rings, mat, cap_first=True, cap_last=True, band_mats=None, skip=N
 # ---------------------------------------------------------------------------
 # Right side bottom->top, then mirrored.  The RIB point jogs inboard so flat
 # shading draws one horizontal siding line between the stripes and the sills.
-_SIDE_R = [(HALF_W, Z_SKIRT), (HALF_W, Z_THICK0), (HALF_W, Z_THICK1),
-           (HALF_W, Z_THIN0), (HALF_W, Z_THIN1), (HALF_W - RIB_INSET, Z_RIB),
-           (HALF_W, Z_SILL), (HALF_W, Z_SHOULDER), (ROOF_HALF_W, Z_ROOF)]
+_SIDE_R = [(HALF_W, Z_SKIRT), (HALF_W, 0.70), (HALF_W, Z_THICK0),
+           (HALF_W, Z_THICK1), (HALF_W, Z_THIN0), (HALF_W, Z_THIN1),
+           (HALF_W - RIB_INSET, Z_RIB), (HALF_W, Z_SILL),
+           (HALF_W, Z_SHOULDER), (ROOF_HALF_W, Z_ROOF)]
+# The z=0.70 level exists ONLY so the end caps can sample the profile PEAK —
+# both brow tables put their forwardmost point there; without a ring level the
+# loft would chord straight across it and the traced angles would vanish.
 
 RING = ([(-HALF_W, Z_SKIRT)] + _SIDE_R
         + [(-x, z) for (x, z) in reversed(_SIDE_R)][:-1])
@@ -482,12 +490,14 @@ def build_nose(p, g):
          (GRILLE[0], cap_y(GRILLE[2]) + 0.006, GRILLE[2]),
          (-GRILLE[0], cap_y(GRILLE[2]) + 0.006, GRILLE[2]), "RVDark")
     hz0, hz1 = HEADLIGHT_Z
+    hc0, hc1 = sorted((cap_y(hz0), cap_y(hz1)))   # fascia slope flips sign
+    mc0, mc1 = sorted((cap_y(MARKER_Z[0]), cap_y(MARKER_Z[1])))
     for sgn in (1, -1):
         x0, x1 = sorted((sgn * HEADLIGHT_X[0], sgn * HEADLIGHT_X[1]))
-        box(p, x0, x1, cap_y(hz0) - 0.01, cap_y(hz1) + 0.02, hz0, hz1, "RVTrim")
+        box(p, x0, x1, hc0 - 0.01, hc1 + 0.02, hz0, hz1, "RVTrim")
         m0, m1 = sorted((sgn * MARKER_X[0], sgn * MARKER_X[1]))
-        box(p, m0, m1, cap_y(MARKER_Z[0]) + 0.001, cap_y(MARKER_Z[1]) + 0.020,
-            MARKER_Z[0], MARKER_Z[1], "RVSignal")
+        box(p, m0, m1, mc0 - 0.005, mc1 + 0.020, MARKER_Z[0], MARKER_Z[1],
+            "RVSignal")
     # Narrower than the tail bumper: the nose rim tapers to |x|=1.062, and a
     # full-width blade left 17 cm of bumper hanging past the shaped corner.
     # Back edge buried deep: the fascia now rakes to y~3.70 at bumper height.
@@ -568,7 +578,8 @@ def curtain_window(p, g, sgn, y0, y1, z0, z1, wall=HALF_W):
 
 def curtain_window_tail(p, g, x0, x1, z0, z1):
     """Same proud frame + pleats + glass, on the tail face (normal -Y)."""
-    wall = -BODY_TAIL          # distance of the wall plane from origin
+    wall = -BODY_TAIL - 0.04   # the AVERAGE tail surface across the window
+                               # zone, which now leans ~3 deg (see TAIL_BROW)
     fx0, fx1 = x0 - WIN_FRAME, x1 + WIN_FRAME
     fz0, fz1 = z0 - WIN_FRAME, z1 + WIN_FRAME
     w0, wf = -wall, -(wall + WIN_DEPTH)
@@ -658,7 +669,8 @@ def build_interior(p):
     # height, and a 3.88 slab poked straight through the nose.
     box(p, -x, x, 2.36, 3.72, FLOOR_Z0, FLOOR_Z1, "RVDark")          # cab floor
     box(p, -0.26, 0.26, 2.75, 3.62, FLOOR_Z1, 1.26, "RVDark")        # doghouse
-    box(p, -x + 0.02, x - 0.02, 3.62, 3.86, 1.28, 1.58, "RVDark")    # dash
+    box(p, -x + 0.02, x - 0.02, 3.62, 3.74, 1.28, 1.58, "RVDark")    # dash —
+    # front at 3.74: the fascia now leans back over it (cap ~3.79 at dash top)
     # Partition narrower than the floor: at its 2.68 top the roof chamfer is
     # already in to x=1.15, and a ±1.16 slab poked a dark corner through it.
     box(p, -1.13, 1.13, 2.30, 2.36, 0.86, 2.68, "RVDark")            # partition
@@ -689,9 +701,10 @@ def build_interior(p):
         p.f.append([a, a + 2, a + 3, a + 1])
         p.m.append("RVCurtain")
 
-    # Sun visors: dark slabs tucked behind the (now raked) windshield.
+    # Sun visors: dark slabs tucked behind the (now steeply raked) windshield —
+    # the 24-deg glass sweeps to y~3.39 by z 2.44, so they sit well back.
     for x0, x1 in ((-0.90, -0.34), (0.34, 0.90)):
-        box(p, x0, x1, 3.60, 3.64, 2.26, 2.46, "RVDark")
+        box(p, x0, x1, 3.28, 3.32, 2.24, 2.44, "RVDark")
 
     # Steering wheel: thin octagonal annulus slab, tilted back, plus a column.
     cx, cy, cz = SW_C
@@ -813,10 +826,16 @@ def build_arches(p):
             for (y0, z0), (y1, z1) in zip(pts, pts[1:]):     # above the arch
                 quad(p, (w, y0, z0), (w, y1, z1),
                      (w, y1, WELL_TOP), (w, y0, WELL_TOP), "RVBody")
-            quad(p, (w, a0, Z_SKIRT), (w, ax - ARCH_RAD, Z_SKIRT),   # slivers
-                 (w, ax - ARCH_RAD, WELL_TOP), (w, a0, WELL_TOP), "RVBody")
-            quad(p, (w, ax + ARCH_RAD, Z_SKIRT), (w, a1, Z_SKIRT),
-                 (w, a1, WELL_TOP), (w, ax + ARCH_RAD, WELL_TOP), "RVBody")
+            # Slivers, split at the z=0.70 ring level: the hull's skirt border
+            # is two edges since that level exists, and a full-height sliver
+            # edge only touches them at vertices — a T-junction that isolates
+            # the panel island and hands its winding to the recalc heuristic
+            # (two panels shipped inverted exactly that way).
+            for zz0, zz1 in ((Z_SKIRT, 0.70), (0.70, WELL_TOP)):
+                quad(p, (w, a0, zz0), (w, ax - ARCH_RAD, zz0),
+                     (w, ax - ARCH_RAD, zz1), (w, a0, zz1), "RVBody")
+                quad(p, (w, ax + ARCH_RAD, zz0), (w, a1, zz0),
+                     (w, a1, zz1), (w, ax + ARCH_RAD, zz1), "RVBody")
 
             def lip(y, z):
                 dy, dz = y - ax, z - Z_SKIRT
