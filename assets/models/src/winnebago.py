@@ -105,7 +105,11 @@ CAB_WIN = (2.40, 3.45)                  # real opening, both sides, Z_SILL..Z_SH
 # Brow at +0.07 (y 3.99), a hair behind the bumper face: the wipers and W
 # flash ride the cap surface proud, and at +0.08 they poked past y 4.0 and
 # broke the 8.0 m length assert.
-NOSE_BROW = [(0.42, -0.26), (1.62, 0.07), (1.72, 0.055),
+# EVERY kink z in this table MUST be a _SIDE_R ring level: the cap is built
+# from ring samples, so an off-level kink gets chorded across and the built
+# surface diverges from cap_y()/tail_y() — surface-riding details then float
+# or clip (the rear curtain grew cream spikes exactly that way).
+NOSE_BROW = [(0.42, -0.26), (1.72, 0.07),
              (2.60, -0.36), (2.92, -0.42)]   # (z, y offset from the cap base)
 NOSE_ST = [(3.72, 0.50, 0.975),              # (y base, brow fraction, plan scale)
            (3.92, 1.00, 0.885)]              # cap rim: brow lands on y 4.00
@@ -119,8 +123,8 @@ WS_INSET = 0.035                        # glass sits this far behind the cap pla
 # offsets pull the cap forward, so the tail never crosses y = BODY_TAIL.  The
 # rear window zone (1.62..2.35) leans ~5 deg; curtain_window_tail plants
 # itself on the AVERAGE surface there.
-TAIL_BROW = [(0.42, 0.16), (0.70, 0.12), (1.62, 0.00),
-             (2.35, 0.06), (2.60, 0.10), (2.92, 0.24)]
+TAIL_BROW = [(0.42, 0.16), (0.70, 0.12), (1.72, 0.00),
+             (2.60, 0.10), (2.92, 0.24)]    # kinks on ring levels only
 TAIL_ST = [(-3.94, 1.00, 0.960),        # cap rim (built first — loft runs tail->nose)
            (-3.76, 0.50, 0.990)]
 TAIL_N = len(TAIL_ST)                   # rings prepended before the straight hull
@@ -583,21 +587,34 @@ def curtain_window(p, g, sgn, y0, y1, z0, z1, wall=HALF_W):
 
 
 def curtain_window_tail(p, g, x0, x1, z0, z1):
-    """Same proud frame + pleats + glass, on the tail face (normal -Y)."""
-    wall = -BODY_TAIL - 0.03   # the AVERAGE tail surface across the window
-                               # zone, which leans ~5 deg (see TAIL_BROW)
+    """Same proud frame + pleats + glass, on the tail face (normal -Y).
+
+    The tail cap LEANS (see TAIL_BROW), so every element is offset from the
+    local surface tail_y(z) rather than from one flat plane — a flat-plane
+    build had the leaning wall crossing the curtain (pleats clipped through
+    the cream cap at the window's bottom) and the crests breaking the glass
+    where the gap narrowed."""
+    def sy(z, d):
+        return tail_y(z) - d           # d outboard of the local surface
+
     fx0, fx1 = x0 - WIN_FRAME, x1 + WIN_FRAME
     fz0, fz1 = z0 - WIN_FRAME, z1 + WIN_FRAME
-    w0, wf = -wall, -(wall + WIN_DEPTH)
 
-    quad(p, (fx0, w0, fz0), (fx1, w0, fz0), (fx1, wf, fz0), (fx0, wf, fz0), "RVTrim")
-    quad(p, (fx0, w0, fz1), (fx1, w0, fz1), (fx1, wf, fz1), (fx0, wf, fz1), "RVTrim")
-    quad(p, (fx0, w0, fz0), (fx0, w0, fz1), (fx0, wf, fz1), (fx0, wf, fz0), "RVTrim")
-    quad(p, (fx1, w0, fz0), (fx1, w0, fz1), (fx1, wf, fz1), (fx1, wf, fz0), "RVTrim")
-    quad(p, (fx0, wf, fz0), (fx1, wf, fz0), (fx1, wf, z0), (fx0, wf, z0), "RVTrim")
-    quad(p, (fx0, wf, z1), (fx1, wf, z1), (fx1, wf, fz1), (fx0, wf, fz1), "RVTrim")
-    quad(p, (fx0, wf, z0), (x0, wf, z0), (x0, wf, z1), (fx0, wf, z1), "RVTrim")
-    quad(p, (x1, wf, z0), (fx1, wf, z0), (fx1, wf, z1), (x1, wf, z1), "RVTrim")
+    # Perimeter return band, then frame face strips — all tilted with the cap.
+    quad(p, (fx0, sy(fz0, 0), fz0), (fx1, sy(fz0, 0), fz0),
+         (fx1, sy(fz0, WIN_DEPTH), fz0), (fx0, sy(fz0, WIN_DEPTH), fz0), "RVTrim")
+    quad(p, (fx0, sy(fz1, 0), fz1), (fx1, sy(fz1, 0), fz1),
+         (fx1, sy(fz1, WIN_DEPTH), fz1), (fx0, sy(fz1, WIN_DEPTH), fz1), "RVTrim")
+    for fx in (fx0, fx1):
+        quad(p, (fx, sy(fz0, 0), fz0), (fx, sy(fz1, 0), fz1),
+             (fx, sy(fz1, WIN_DEPTH), fz1), (fx, sy(fz0, WIN_DEPTH), fz0), "RVTrim")
+    quad(p, (fx0, sy(fz0, WIN_DEPTH), fz0), (fx1, sy(fz0, WIN_DEPTH), fz0),
+         (fx1, sy(z0, WIN_DEPTH), z0), (fx0, sy(z0, WIN_DEPTH), z0), "RVTrim")
+    quad(p, (fx0, sy(z1, WIN_DEPTH), z1), (fx1, sy(z1, WIN_DEPTH), z1),
+         (fx1, sy(fz1, WIN_DEPTH), fz1), (fx0, sy(fz1, WIN_DEPTH), fz1), "RVTrim")
+    for fa, fb in ((fx0, x0), (x1, fx1)):
+        quad(p, (fa, sy(z0, WIN_DEPTH), z0), (fb, sy(z0, WIN_DEPTH), z0),
+             (fb, sy(z1, WIN_DEPTH), z1), (fa, sy(z1, WIN_DEPTH), z1), "RVTrim")
 
     cx0, cx1, cz0, cz1 = x0 - 0.02, x1 + 0.02, z0 - 0.02, z1 + 0.02
     n = max(4, int(round((cx1 - cx0) / PLEAT_W)))
@@ -606,16 +623,15 @@ def curtain_window_tail(p, g, x0, x1, z0, z1):
         t = i / n
         xx = cx0 + (cx1 - cx0) * t
         d = CURT_LO if (i % 2 == 0) else CURT_HI
-        yy = -(wall + d)
-        p.v.append((xx, yy, cz0))
-        p.v.append((xx, yy, cz1))
+        p.v.append((xx, sy(cz0, d), cz0))
+        p.v.append((xx, sy(cz1, d), cz1))
     for i in range(n):
         a = base + 2 * i
         p.f.append([a, a + 2, a + 3, a + 1])
         p.m.append("RVCurtain")
 
-    gy = -(wall + GLASS_OFF)
-    quad(g, (x0, gy, z0), (x1, gy, z0), (x1, gy, z1), (x0, gy, z1), "RVGlass")
+    quad(g, (x0, sy(z0, GLASS_OFF), z0), (x1, sy(z0, GLASS_OFF), z0),
+         (x1, sy(z1, GLASS_OFF), z1), (x0, sy(z1, GLASS_OFF), z1), "RVGlass")
 
 
 def build_door(p, g):
@@ -1054,7 +1070,9 @@ def build():
         curtain_window(body, glass, 1, *w)
     for w in WINDOWS_L:
         curtain_window(body, glass, -1, *w)
-    curtain_window_tail(body, glass, -0.75, 0.75, 1.62, 2.35)
+    # Fully ABOVE the tail brow kink at z 1.72: a flat pane straddling the
+    # apex has the cap bulging through the curtain chord in cream wedges.
+    curtain_window_tail(body, glass, -0.75, 0.75, 1.78, 2.42)
     build_door(body, glass)
     build_bays(body)
     build_interior(body)
