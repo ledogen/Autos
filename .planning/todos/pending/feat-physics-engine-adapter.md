@@ -34,16 +34,16 @@ body with tuned mass/inertia via SetMassData, our suspension/Pacejka feeding for
 (owner chose no A/B flag). Gates 51/51 green; before/after feel traces in `test/baselines/`
 (driving scenarios match legacy to sub-cm; slam is the reviewed divergence). CLAUDE.md amended.
 
-**Still open (owner):**
-- **Cross-machine determinism** — run `node test/box3d-determinism.mjs --hash-only` on the Windows
-  thin client and diff `test/box3d-determinism.expected` (the deferred Phase 0 axis).
-- **Drive-time feel sign-off** — record fresh `assert-m4-*` scenarios in-game and compare; the
-  owner's eyes are the arbiter.
-- **FINDING — inertia axes**: the legacy integrator applied `inertiaRoll` to world **x** and
-  `inertiaPitch` to world **z**; with forward = −Z, physical roll is about z — the tuned roll/pitch
-  inertias have been swapped (and heading-dependent) all along. The cutover keeps the spawn-heading
-  mapping in body frame (drives the same, now heading-consistent). Physically-correct assignment
-  would swap them — a feel change that is the owner's call.
+**Status updates 2026-08-15 (post-shakedown):**
+- ✅ **Feel SIGNED OFF by the owner** after the full debris-contact shakedown (exact manifolds,
+  enveloping, rim tracking; the within-step proxy experiment was reverted on feel — see commits).
+  The formal `assert-m4-*` recordings are OPTIONAL RIGOR now — the owner's extended drive covered
+  more ground than the canned maneuvers.
+- ✅ **Inertia axes FIXED** (owner-approved): body-frame x now carries inertiaPitch, z carries
+  inertiaRoll — the physically correct assignment (roll is about the longitudinal axis). The
+  legacy world-frame swap is retired; feel baseline re-recorded. Pending one owner drive.
+- ⏰ **Cross-machine determinism DEFERRED → INFRA-03** (owner ships before touching the Windows
+  machine; the ticket is the reminder).
 - **Single-precision** — the engine build is float32; ~1 mm position granularity at 10 km from
   origin. Fine at story-region scale; far teleports would want the double build or origin rebasing.
 - ~~Known gap: chassis-vs-tunnel-bore-wall contact~~ **CLOSED 2026-08-14** — RoadPhysics mirrors

@@ -78,7 +78,8 @@ function mkState (py, vy) {
 function energy (vs) {
   const v = vs.velocity, w = vs.angularVelocity
   const keT = 0.5 * P.mass * (v.x * v.x + v.y * v.y + v.z * v.z)
-  const keR = 0.5 * (P.inertiaRoll * w.x * w.x + P.inertiaYaw * w.y * w.y + P.inertiaPitch * w.z * w.z)
+  // Matches the engine's body-frame assignment (physics.js): x = PITCH inertia, z = ROLL.
+  const keR = 0.5 * (P.inertiaPitch * w.x * w.x + P.inertiaYaw * w.y * w.y + P.inertiaRoll * w.z * w.z)
   const pe  = P.mass * G * vs.position.y
   return keT + keR + pe
 }
@@ -126,7 +127,10 @@ let driftRel = 0
 // 0.03 bound encoded the hand-rolled solver's exact plasticity; that solver is gone (BUG-27 lore
 // lives in the FEAT-48 landing commits).
 const E_FLOOR   = 0.20                             // engine floor-bounce envelope at e=0 (measured ≤ 0.15 + margin)
-const E_TOL_REL = Math.max(driftRel * 1.5, 0.04)   // relative energy tolerance (soft-constraint bias work ≤ ~3.2% measured)
+const E_TOL_REL = Math.max(driftRel * 1.5, 0.055)  // relative energy tolerance — soft-constraint bias work; re-measured
+                                                   // 5.0% worst-case after the 2026-08-15 inertia-axis correction (the
+                                                   // roll axis is honestly LIGHT now, so the same solver bias velocity
+                                                   // reads as more rotational energy). Bounded, not compounding.
 
 // Reference rest height from a gentle settle (used as the launch baseline below).
 groundY = 0

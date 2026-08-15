@@ -259,8 +259,15 @@ export function createVehicleChassis (engine, vehicleState, params) {
     rims.push({ shapeIndex, x, z, mountY, front })
   }
 
+  // INERTIA AXES — PHYSICALLY CORRECT MAPPING (owner-approved fix, 2026-08-15). Body frame,
+  // forward = −Z: ROLL is rotation about the LONGITUDINAL (z) axis, PITCH about the LATERAL (x)
+  // axis. The legacy world-frame integrator applied inertiaRoll to world-x and inertiaPitch to
+  // world-z — i.e. the tuned values (which carry correct real-Ranger magnitudes: roll ~678,
+  // pitch ~2699) landed on swapped axes, and traded places with heading. The cutover first
+  // replicated that swap for drives-the-same fidelity; this assigns them to the axes the
+  // real truck owns: quick honest roll (rollovers!), stately dive/squat.
   engine.setMassData(chassis, params.mass,
-    { x: params.inertiaRoll, y: params.inertiaYaw, z: params.inertiaPitch })
+    { x: params.inertiaPitch, y: params.inertiaYaw, z: params.inertiaRoll })
   _chassisRims.set(chassis, rims)
   return chassis
 }
