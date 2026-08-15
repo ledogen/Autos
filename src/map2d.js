@@ -895,7 +895,9 @@ export class Map2D {
         ctx.lineJoin = 'round'; ctx.lineCap = 'round'
         ctx.strokeStyle = '#101010'; ctx.lineWidth = 7      // halo, so it reads over the blue line
         ctx.stroke()
-        ctx.strokeStyle = '#ffdc3c'; ctx.lineWidth = 3.5
+        // The ROUTE's blue, not a warning yellow (owner, 2026-08-15): this marker is a statement
+        // about the blue line it sits on, so it belongs to that line rather than competing with it.
+        ctx.strokeStyle = '#5ab4ff'; ctx.lineWidth = 3.5
         ctx.stroke()
         ctx.lineJoin = 'miter'; ctx.lineCap = 'butt'
     }

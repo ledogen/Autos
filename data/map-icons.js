@@ -44,16 +44,20 @@ const HOUSE = 'M12 2.5 L22.5 11.5 L19.5 11.5 L19.5 21.5 L4.5 21.5 L4.5 11.5 L1.5
 // paper on the diagonal, matching the object the player throws; it read as a stick, because a roll
 // seen end-on is a bar and one small hole cannot rescue a bar.
 //
-// Six subpaths in one `d`, which the header's rules allow: page and spine are wound the SAME way so
-// nonzero unions them into one silhouette (they overlap by half a unit on purpose — a gap would
-// show as a seam), and the four type blocks are wound AGAINST them so they punch through. Every
-// block is >= 2.5 units tall, comfortably clear of the ~1.5 units that the 1.5 px outline swallows.
+// Five subpaths in one `d`, which the header's rules allow: page and spine are wound the SAME way
+// so nonzero unions them into one silhouette (they overlap by half a unit on purpose — a gap would
+// show as a seam), and the three type blocks are wound AGAINST them so they punch through.
+//
+// THE GRID IS EXACT, because at 22.5 px an uneven margin reads as a mistake rather than as texture.
+// The page is 7..21.5 x 5..21.5; every block sits inside a 2.0-unit margin on all four sides, and
+// the gaps between blocks are 2.0 as well — so margin and gutter are one number and the whitespace
+// is even wherever you measure it. Headline across the top, then two columns. A fourth block was
+// tried and dropped: it packed the lower half tight enough that the gutters closed up at size.
 export const NEWSPAPER = 'M7 5 L21.5 5 L21.5 21.5 L7 21.5 Z'
                        + 'M2.5 8 L7.5 8 L7.5 21.5 L2.5 21.5 Z'
-                       + 'M19.5 7 L9.5 7 L9.5 10 L19.5 10 Z'
-                       + 'M14 11.5 L9.5 11.5 L9.5 14 L14 14 Z'
-                       + 'M14 15.5 L9.5 15.5 L9.5 18 L14 18 Z'
-                       + 'M19.5 11.5 L15.5 11.5 L15.5 18 L19.5 18 Z'
+                       + 'M19.5 7 L9 7 L9 10 L19.5 10 Z'
+                       + 'M13.25 12 L9 12 L9 19.5 L13.25 19.5 Z'
+                       + 'M19.5 12 L15.25 12 L15.25 19.5 L19.5 19.5 Z'
 
 export const POI_ICONS = {
     // Mom's house — where you can sleep. NOT a camp (see camp.js build()); it is a POI with a
