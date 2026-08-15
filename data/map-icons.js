@@ -39,16 +39,21 @@
 const HOUSE = 'M12 2.5 L22.5 11.5 L19.5 11.5 L19.5 21.5 L4.5 21.5 L4.5 11.5 L1.5 11.5 Z'
             + 'M10 14 L10 21.5 L14 21.5 L14 14 Z'
 
-// FEAT-61: a ROLLED newspaper on the 45° diagonal, with the open end of the roll cut out of it.
-// The roll rather than a folded broadsheet because the roll is the thing the player actually holds
-// and throws (assets/models/news-roll.glb) — a map glyph that matches the object in your hand needs
-// no learning. Diagonal for the same reason the wrench is: it squares up the bounding box, so the
-// bar can be scaled fatter and still fit the 24-box.
+// FEAT-61: a FOLDED newspaper — the page, the rolled spine down its left edge, and four blocks of
+// type punched out of it (owner-supplied reference, 2026-08-15). The first attempt was a rolled
+// paper on the diagonal, matching the object the player throws; it read as a stick, because a roll
+// seen end-on is a bar and one small hole cannot rescue a bar.
 //
-// One cut-out, a diamond at the near end, wound against the bar so nonzero fill punches it through.
-// That single hole is the whole reading — without it the silhouette is a stick.
-export const NEWS_ROLL = 'M3.7 15.7 L15.7 3.7 L20.3 8.3 L8.3 20.3 Z'
-                       + 'M17.4 5.4 L16.2 6.6 L17.4 7.8 L18.6 6.6 Z'
+// Six subpaths in one `d`, which the header's rules allow: page and spine are wound the SAME way so
+// nonzero unions them into one silhouette (they overlap by half a unit on purpose — a gap would
+// show as a seam), and the four type blocks are wound AGAINST them so they punch through. Every
+// block is >= 2.5 units tall, comfortably clear of the ~1.5 units that the 1.5 px outline swallows.
+export const NEWSPAPER = 'M7 5 L21.5 5 L21.5 21.5 L7 21.5 Z'
+                       + 'M2.5 8 L7.5 8 L7.5 21.5 L2.5 21.5 Z'
+                       + 'M19.5 7 L9.5 7 L9.5 10 L19.5 10 Z'
+                       + 'M14 11.5 L9.5 11.5 L9.5 14 L14 14 Z'
+                       + 'M14 15.5 L9.5 15.5 L9.5 18 L14 18 Z'
+                       + 'M19.5 11.5 L15.5 11.5 L15.5 18 L19.5 18 Z'
 
 export const POI_ICONS = {
     // Mom's house — where you can sleep. NOT a camp (see camp.js build()); it is a POI with a

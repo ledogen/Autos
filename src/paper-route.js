@@ -63,13 +63,23 @@ export const PAPER_PARAMS = {
 
     // The expediency bonus — the ONLY place time enters the payout. Gated on a completed route:
     // you cannot finish early without finishing.
-    expediteOn:  0.90,   // ratio at which the bonus starts paying (10% inside par)
+    //
+    // IT STARTS AT THE BELL, not at par (owner, 2026-08-15). There is no `expediteOn` any more,
+    // because the ratio it would hold is `tolerance` and two numbers that must be equal are one
+    // number waiting to drift: the payout reaching zero exactly where the route ends is now
+    // structural rather than a coincidence. Beating the bell by a second pays a cent; par pays
+    // properly; the floor is the bell itself, which is the only place $0 makes sense.
     expediteFull:0.70,   // …and where it maxes out
-    // 0.70, and it is not a free knob: the owner's equivalence fixes it. A rim-scraper (mean
-    // q = 0.30) who blasts the round must earn about what a methodical driver (mean q = 1.0) earns
-    // at par, and 0.30 + 0.70 = 1.00 is that statement. Applied to the FULL flat (n x FLAT), never
-    // to the accuracy-scaled sum — see scoreRoute.
-    bonusMax:    0.70,
+    // NOT A FREE KNOB — the owner's equivalence fixes it, and moving the bonus's start to the bell
+    // moved this with it. A rim-scraper (mean q 0.30) blasting the round must earn about what a
+    // methodical driver (mean q 1.0) earns at par. At par the bonus is now only PARTLY paid —
+    // f(1.0) = (1.20 − 1.00) / (1.20 − 0.70) = 0.4 — so the two sides read
+    //     1.0 + 0.4·B  =  0.3 + 1.0·B     ⇒     B = 7/6
+    // rather than the 0.70 that held when the bonus started at par. A bonus worth more than the
+    // paper money looks odd until you notice what it is buying: at rim accuracy the papers are only
+    // worth 0.3 of a round, so speed has to carry the rest or "fast and ragged" cannot pay.
+    // Applied to the FULL flat (n × FLAT), never to the accuracy-scaled sum — see scoreRoute.
+    bonusMax:    7 / 6,
 }
 
 /**
@@ -199,8 +209,8 @@ export function scoreRoute (accuracies, customers, elapsed, par, dayTier = 1, P 
     let expedite = 0
     if (complete && isFinite(elapsed) && elapsed >= 0 && isFinite(par) && par > 0) {
         const ratio = elapsed / par
-        const span  = P.expediteOn - P.expediteFull
-        const f     = span > 0 ? (P.expediteOn - ratio) / span : 0
+        const span  = P.tolerance - P.expediteFull
+        const f     = span > 0 ? (P.tolerance - ratio) / span : 0
         expedite    = P.bonusMax * Math.min(1, Math.max(0, f))
     }
 

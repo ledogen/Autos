@@ -20,7 +20,7 @@
 import * as THREE from 'three'
 import { RoadSystem } from './road.js'
 import { MISSION_PLAN_RADIUS } from './mission.js'
-import { POI_ICONS, POI_ICON_PX, TUNNEL_ICON, NEWS_ROLL } from '../data/map-icons.js'   // FEAT-60: map glyphs
+import { POI_ICONS, POI_ICON_PX, TUNNEL_ICON, NEWSPAPER } from '../data/map-icons.js'   // FEAT-60: map glyphs
 
 // Streamed radius of the map's own RoadSystem around the pan cursor. UNIFIED with the story-mode
 // planner's radius: the two are the big read-only networks in the app and they share route caches,
@@ -862,7 +862,7 @@ export class Map2D {
         ctx.strokeStyle = '#101010'
         ctx.fillStyle = '#ffffff'
         for (const c of list) {
-            this._drawGlyph(ctx, '#news', NEWS_ROLL, this._sx(c.x), this._sy(c.z))
+            this._drawGlyph(ctx, '#news', NEWSPAPER, this._sx(c.x), this._sy(c.z))
         }
     }
 
@@ -873,26 +873,31 @@ export class Map2D {
      * the line alone cannot say which end to start from, and the player is left guessing at exactly
      * the moment they are deciding whether to take the job (owner-reported on seed 90).
      *
-     * A single arrow at the route HEAD, aimed the way the first chevrons will point. Only at the
-     * offer: once you are driving, the chevrons themselves are the answer and a second, static
-     * arrow on the map would be one more thing to keep in step with them.
+     * A CHEVRON, 50 m down the route, aimed the way the first GPS chevrons will point — the same
+     * glyph in the same role, so the map and the windscreen agree. A solid arrow at the route HEAD
+     * was the first attempt and it fought the car marker for the same pixels, since the route starts
+     * where the car is parked.
+     *
+     * Only at the offer: once you are driving, the chevrons themselves are the answer, and a second
+     * static marker on the map would be one more thing to keep in step with them.
      */
     _drawStartArrow(ctx) {
         const a = this._getRouteState()?.arrow
         if (!a) return
         const sx = this._sx(a.x), sy = this._sy(a.z)
-        // Screen-space angle: +x is +x, but map +z runs DOWN the canvas, so the world heading is
-        // used as-is against _sx/_sy rather than negated.
-        const L = 17, W = 9
         const c = Math.cos(a.ang), s2 = Math.sin(a.ang)
+        // Local frame: +fwd is down-route, +lat is to its right on screen.
         const pt = (fwd, lat) => [sx + c * fwd - s2 * lat, sy + s2 * fwd + c * lat]
-        const [tx, ty] = pt(L, 0), [lx, ly] = pt(-L * 0.45, -W), [rx, ry] = pt(-L * 0.45, W)
+        const L = 9, W = 9
+        const [tx, ty] = pt(L, 0), [lx, ly] = pt(-L, -W), [rx, ry] = pt(-L, W)
         ctx.beginPath()
-        ctx.moveTo(tx, ty); ctx.lineTo(lx, ly); ctx.lineTo(rx, ry); ctx.closePath()
-        ctx.fillStyle = '#ffdc3c'
-        ctx.strokeStyle = '#101010'
-        ctx.lineWidth = 2
-        ctx.fill(); ctx.stroke()
+        ctx.moveTo(lx, ly); ctx.lineTo(tx, ty); ctx.lineTo(rx, ry)
+        ctx.lineJoin = 'round'; ctx.lineCap = 'round'
+        ctx.strokeStyle = '#101010'; ctx.lineWidth = 7      // halo, so it reads over the blue line
+        ctx.stroke()
+        ctx.strokeStyle = '#ffdc3c'; ctx.lineWidth = 3.5
+        ctx.stroke()
+        ctx.lineJoin = 'miter'; ctx.lineCap = 'butt'
     }
 
     // FEAT-46/60: POI markers — the navigate-to-it affordance. Each roster type carries its own

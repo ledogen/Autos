@@ -1279,12 +1279,19 @@ const map2d = new Map2D({
     const line = p.line()
     let arrow = null
     if (p.state === 'offer' && line?.poly?.length > 1) {
-      // Aim it along the first real bit of route, not the first vertex pair: the polyline samples
-      // at 25 m and the opening step can be a metre of junction geometry pointing anywhere.
-      const a = line.poly[0]
-      let b = line.poly[1]
-      for (const q of line.poly) { if (Math.hypot(q.x - a.x, q.z - a.z) > 30) { b = q; break } }
-      arrow = { x: a.x, z: a.z, ang: Math.atan2(b.z - a.z, b.x - a.x) }
+      // NOT AT THE HEAD: the route starts at Larry's, where the car marker already is, and the two
+      // fought for the same pixels (owner, 2026-08-15). Set it 50 m down the route instead — far
+      // enough to be its own mark, near enough to still read as "this way from here".
+      const cum = line.polyCum, poly = line.poly
+      const AT = 50
+      let i = 0
+      while (i < poly.length - 2 && cum[i] < AT) i++
+      // Heading from a span, not from the neighbouring vertex: at 25 m sampling one step is noisy
+      // on a bend, and a start marker that points into the ditch is worse than none.
+      let j = i
+      while (j < poly.length - 1 && cum[j] - cum[i] < 30) j++
+      arrow = { x: poly[i].x, z: poly[i].z,
+                ang: Math.atan2(poly[j].z - poly[i].z, poly[j].x - poly[i].x) }
     }
     return { onRoute: true, arrow }
   },

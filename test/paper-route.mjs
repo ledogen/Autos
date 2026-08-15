@@ -72,16 +72,27 @@ check('…and that letter is B, because B contains par', clean.letter === 'B', `
 console.log('\n── 3. the expediency bonus ────────────────────────────────────')
 const fastPartial = scoreRoute(Array(8).fill(1), 9, PAR * 0.5, PAR, TIER)
 check('an UNFINISHED route earns no bonus however fast', fastPartial.expedite === 0)
+// THE BONUS STARTS AT THE BELL, not at par [owner, 2026-08-15] — so the end-of-route payout hits
+// zero exactly where the route ends, which is the only place $0 makes sense. It used to start at
+// 0.90 par, which made par itself settle nothing and read as a pay cut for a clean round.
+const atBell = scoreRoute(Array(9).fill(1), 9, PAR * PAPER_PARAMS.tolerance, PAR, TIER)
+check('a route that finishes ON the bell earns no bonus — $0 sits at the deadline',
+    atBell.expedite === 0 && atBell.payout === 0)
 const atPar = scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER)
-check('a completed route AT par earns no bonus', atPar.expedite === 0)
+check('…but par itself pays, because par is inside the bell', atPar.expedite > 0 && atPar.payout > 0,
+    `expedite ${atPar.expedite.toFixed(3)}, payout ${atPar.payout.toFixed(2)}`)
+// There is no `expediteOn`: the bonus's start IS the tolerance, structurally, so the payout floor
+// and the route's end cannot drift apart into two numbers that were meant to be one.
+check('…and the zero is the tolerance itself, not a second constant that could drift',
+    PAPER_PARAMS.expediteOn === undefined)
 const fast = scoreRoute(Array(9).fill(1), 9, PAR * 0.8, PAR, TIER)
-check('…10% inside par starts paying', fast.expedite > 0, `expedite ${fast.expedite}`)
+check('…and faster pays more still', fast.expedite > atPar.expedite)
 const veryFast = scoreRoute(Array(9).fill(1), 9, PAR * 0.6, PAR, TIER)
 check('…and it caps at bonusMax', near(veryFast.expedite, PAPER_PARAMS.bonusMax))
 // ADDITIVE ON THE FULL FLAT, not a multiplier on the accuracy-scaled sum [ratified 2026-08-14].
 // The distinction is the whole reason the equivalence below is reachable with a tunable number.
 check('the bonus is additive on the FULL flat, not a multiplier on the scaled sum',
-    near(veryFast.payout, atPar.payout + veryFast.flat * 9 * PAPER_PARAMS.bonusMax))
+    near(veryFast.payout, veryFast.flat * 9 * PAPER_PARAMS.bonusMax))
 check('bonus is monotone in speed', fast.expedite < veryFast.expedite)
 
 console.log('\n── 4. rank is per-axis, and the ladder ────────────────────────')
@@ -129,8 +140,8 @@ check('the end-of-route payout is decoupled from accuracy entirely', (() => {
     const rough = scoreRoute(Array(9).fill(0.3), 9, PAR * 0.8, PAR, TIER)
     return near(sharp.payout, rough.payout) && rough.spot < sharp.spot
 })())
-check('…and a route driven exactly at par settles nothing — it was all paid on the spot', (() => {
-    const r = scoreRoute(Array(9).fill(1.0), 9, PAR, PAR, TIER)
+check('…and a route that runs to the BELL settles nothing — it was all paid on the spot', (() => {
+    const r = scoreRoute(Array(9).fill(1.0), 9, PAR * PAPER_PARAMS.tolerance, PAR, TIER)
     return r.payout === 0 && r.spot > 0 && near(r.total, r.spot)
 })())
 // THE OWNER'S EQUIVALENCE, as an assertion. This is the number bonusMax exists to satisfy: a
@@ -218,10 +229,13 @@ check('the day tier lifts the floor with the cost curve', (() => {
     const d20 = scoreRoute(Array(9).fill(1), 9, PAR, PAR, 4.58)
     return d20.total > d1.total * 4
 })())
-check('a perfect route at par pays ~60% of the margin line', (() => {
+// The FLOOR anchor: what the papers alone are worth on a perfect round at par. Reads `spot`, not
+// `total`, since the bonus now pays at par too — paperW describes the paper money, which is the
+// part that has to survive the 20-day cost ramp.
+check('a perfect route\'s papers are worth ~60% of the margin line', (() => {
     const r = scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER)
     const margin = ECONOMY_PARAMS.k * PAR * TIER * 1.0   // payoutFor at ratio 1.0 → m = 1
-    return near(r.total / margin, PAPER_PARAMS.paperW, 1e-9)
+    return near(r.spot / margin, PAPER_PARAMS.paperW, 1e-9)
 })())
 
 console.log('\n── 7b. the target circle never overlaps the road ──────────────')

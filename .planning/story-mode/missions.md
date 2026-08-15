@@ -220,8 +220,9 @@ you actually drive it.
 rank moved onto the clock [AMENDED 2026-08-14, owner].
 
     q(d)    = 1 − (1 − ACC_FLOOR) × (d / TARGET_R)   inside the circle, else not a delivery
-    payout  = FLAT × Σ q(dᵢ)  +  FLAT × n × expedite(ratio)
-    rank    = gradeRun(ratio)                        (the par ratio, gated on full coverage)
+    spot    = FLAT × q(dᵢ)                           banked AS EACH PAPER LANDS
+    payout  = FLAT × n × expedite(ratio)             settled at the bell, PURE FUNCTION OF TIME
+    rank    = gradeRun(ratio ÷ coverage)             the par ratio, par scaled by the job you did
 
 **ACCURACY PAYS, THE CLOCK GRADES [AMENDED 2026-08-14, owner].** The rank used to be
 `coverage × meanAccuracy`. It is now the par ratio, and accuracy is confined to what it is actually
@@ -231,10 +232,21 @@ route become a real choice instead of one dominating. Accuracy is still the fift
 above; what changed is that it scales the per-unit rate **only**, which is what that table already
 said it did.
 
-The arithmetic that pins it: a rim-scraper (mean q = 0.30) who blasts the round must earn what a
-methodical driver (mean q = 1.0) earns at par. So the bonus is worth **0.70 of a perfect route's
-paper money**, and it applies to the FULL flat (`n × FLAT`) rather than to the accuracy-scaled sum —
-on the scaled sum the same equivalence needs a 233% bonus, which is not a tunable number.
+**PAID ON THE SPOT [AMENDED 2026-08-15, owner].** Accuracy money is banked the instant each paper
+lands, not at the bell, so the end-of-route payout is a *pure function of time* and accuracy is
+decoupled from it completely — not because it stopped paying, but because it was already paid. The
+totals do not move; what moved is when. It is also what lets the throw read-out quote real money.
+
+**$0 SITS AT THE BELL, not at par [AMENDED 2026-08-15, owner].** The bonus ramps from the deadline
+down to `expediteFull`, so the settlement reaches zero exactly where the route ends. There is no
+`expediteOn` constant: the start *is* `tolerance`, structurally, because two numbers that must be
+equal are one number waiting to drift.
+
+The arithmetic that pins the bonus: a rim-scraper (mean q = 0.30) who blasts the round must earn what
+a methodical driver (mean q = 1.0) earns at par. At par the bonus is only partly paid —
+f(1.0) = (1.20 − 1.00) / (1.20 − 0.70) = 0.4 — so `1.0 + 0.4·B = 0.3 + B`, giving **B = 7/6**. It
+applies to the FULL flat (`n × FLAT`) rather than to the accuracy-scaled sum; on the scaled sum the
+same equivalence needs a 233% bonus, which is not a tunable number.
 
 **Par is a B, and B contains par** [CONFIRMED 2026-08-14, owner]. SM-INV-3's amendment holds for
 this mission type too: driving the route the way par assumes is a B, and dawdling is a C. An earlier
