@@ -192,6 +192,10 @@ const WATER_INK     = '#4da2e8'   // stream centreline + pond outline — the re
 const WATER_FILL    = '#bcdcf5'   // pond body
 const WATER_W       = 1.6         // px — stream stroke weight
 const WATER_MARGIN  = 200         // m — bbox slop so a stream entering from off-sheet is drawn
+// Max texels per side of a pond's shoreline raster — see _drawPond. Bounds the cost of a large
+// pond at high zoom; past this the shore is resolved coarser than one screen pixel, which no
+// reader can tell from the exact one.
+const POND_TEXELS_MAX = 192
 
 // ── Vegetation + wet-ground glyphs ────────────────────────────────────────────────────────────
 // Both are stamped on a JITTERED WORLD LATTICE, for the same reason the cover raster is
@@ -344,6 +348,7 @@ export class Map2D {
         // affordable. Cleared on a seed change (see _ensureRoad), never on a view change.
         this._coverMemo   = new Map()
         this._coverCanvas = null   // offscreen the ground bitmap is scaled from; reused across redraws
+        this._pondCanvas  = null   // offscreen one pond's shoreline raster is built in (see _drawPond)
         this._coverGrid   = null   // last resolved lattice — handed from _paintGround to _drawGlyphs
 
         this._open       = false
@@ -1191,7 +1196,19 @@ export class Map2D {
 
         const cx0 = Math.floor(wx0 / CH), cz0 = Math.floor(wz0 / CH)
         const cx1 = Math.floor((wx0 + gw * COVER_CELL) / CH), cz1 = Math.floor((wz0 + gh * COVER_CELL) / CH)
-        if ((cx1 - cx0 + 1) * (cz1 - cz0 + 1) > COVER_CHUNK_BUDGET) return null
+        // The budget gates the TREE REPLAY only — never the green/white fill, which is drawn at
+        // every zoom (owner, 2026-08-15). The two layers have very different costs and answer very
+        // different questions:
+        //
+        //   biome per cell   — cheap, and it alone decides green vs white. Always resolved.
+        //   scatter replay   — ~44 candidates a chunk, and only distinguishes MED from HIGH, i.e.
+        //                      whether foliage glyphs are stamped. Those glyphs are already hidden
+        //                      below GLYPH_MIN_PX, so at the zooms this budget bites there is
+        //                      nothing it could have contributed to the picture.
+        //
+        // Skipping the replay therefore costs a zoomed-out sheet its glyphs and nothing else. It
+        // used to skip the fill too, which is why the map went flat green when you zoomed out.
+        const replay = (cx1 - cx0 + 1) * (cz1 - cz0 + 1) <= COVER_CHUNK_BUDGET
 
         // Water rejects, fetched ONCE for the whole rect rather than queried per candidate. The
         // scatter asks `is this point in a pond / in a stream channel` per tree; asking the
@@ -1232,17 +1249,12 @@ export class Map2D {
                 const key = cx + ',' + cz
                 let cc = this._coverMemo.get(key)
                 if (!cc) {
-                    // Two reads per chunk, memoized together because they are invalidated together.
-                    //
-                    // The COUNTS come from the scatter replay, which evaluates biome once per
-                    // cluster — correct for deciding whether a tree stands, but far too coarse to
-                    // draw a meadow's EDGE with: a chunk whose four clusters all landed in a meadow
-                    // zeroes as one 64 m square, and the sheet grows visible blocks.
-                    //
-                    // So the boundary is drawn from a per-CELL biome read instead. 16 evaluations
-                    // per chunk against the replay's ~44 candidates, and the edge then follows the
-                    // terrain that defines it rather than the chunk grid.
-                    const counts = chunkCover(cx, cz, seed, samplers)
+                    // The per-CELL biome read — always resolved, and the thing that draws the
+                    // meadow's EDGE. The replay below evaluates biome once per CLUSTER, which is
+                    // correct for deciding whether a tree stands but far too coarse to draw a
+                    // boundary with: a chunk whose four clusters all landed in a meadow zeroes as
+                    // one 64 m square, and the sheet grows visible blocks. 16 evaluations a chunk,
+                    // and the edge then follows the terrain that defines it.
                     const bio = new Uint8Array(CELLS_PER_CHUNK * CELLS_PER_CHUNK)
                     for (let lj = 0; lj < CELLS_PER_CHUNK; lj++) {
                         for (let li = 0; li < CELLS_PER_CHUNK; li++) {
@@ -1252,16 +1264,22 @@ export class Map2D {
                                 biomeAt(wx, wz, seed, samplers) === BIOME.FOREST ? 0 : 1
                         }
                     }
-                    cc = { counts, bio }
+                    cc = { counts: null, bio }
                     this._coverMemo.set(key, cc)
                 }
+                // Counts fill in lazily. A chunk first resolved while zoomed out holds biome only;
+                // zooming in upgrades it in place rather than discarding the biome read.
+                if (replay && !cc.counts) cc.counts = chunkCover(cx, cz, seed, samplers)
                 for (let lj = 0; lj < CELLS_PER_CHUNK; lj++) {
                     const gj = Math.round((cz * CH + lj * COVER_CELL - wz0) / COVER_CELL)
                     if (gj < 0 || gj >= gh) continue
                     for (let li = 0; li < CELLS_PER_CHUNK; li++) {
                         const gi = Math.round((cx * CH + li * COVER_CELL - wx0) / COVER_CELL)
                         if (gi < 0 || gi >= gw) continue
-                        out[gj * gw + gi]  = cc.counts[lj * CELLS_PER_CHUNK + li]
+                        // No counts (replay skipped) → leave the count at 0 and mark the cell
+                        // DENSITY-UNKNOWN via `known`, so the binning below cannot mistake a
+                        // missing read for genuinely open ground.
+                        if (cc.counts) out[gj * gw + gi] = cc.counts[lj * CELLS_PER_CHUNK + li]
                         open[gj * gw + gi] = cc.bio[lj * CELLS_PER_CHUNK + li]
                     }
                 }
@@ -1290,6 +1308,9 @@ export class Map2D {
             // this is also what keeps the map's white agreeing with the world, since the scatter
             // clears exactly these cells.
             if (open[k]) { bin[k] = COVER_LOW; continue }
+            // Forest, but the replay was skipped: green with no glyphs. Falling through to the
+            // count test would read 0 trees and print the whole zoomed-out sheet white.
+            if (!replay) { bin[k] = COVER_MED; continue }
             const n = area[k]
             bin[k] = n >= DENSE_MIN ? COVER_HIGH : n >= SCATTERED_MIN ? COVER_MED : COVER_LOW
         }
@@ -1312,15 +1333,8 @@ export class Map2D {
 
         // Ponds first: a stream draining into one should read as running INTO the water body, so
         // its centreline is drawn over the pond fill rather than under it.
-        ctx.fillStyle = WATER_FILL
-        ctx.strokeStyle = WATER_INK
-        ctx.lineWidth = 1
         for (const p of water.pondsInBBox(x0, z0, x1, z1)) {
-            const r = p.radius * this._zoom
-            if (r < 1.2) continue          // below a pixel and a half it is a blue speck, not a pond
-            ctx.beginPath()
-            ctx.arc(this._sx(p.floorX), this._sy(p.floorZ), r, 0, Math.PI * 2)
-            ctx.fill(); ctx.stroke()
+            this._drawPond(ctx, water, p)
         }
 
         ctx.strokeStyle = WATER_INK
@@ -1336,6 +1350,90 @@ export class Map2D {
         }
         ctx.stroke()
         ctx.lineCap = 'butt'; ctx.lineJoin = 'miter'
+    }
+
+    /**
+     * One pond, clipped to its real shoreline.
+     *
+     * A pond record is a disc (floorX/floorZ/radius), but a pond is NOT disc-shaped. The water is a
+     * flat plane at `waterLevel` and the land rises into it, so the shore is wherever the terrain
+     * crosses that plane — which is what you see from above in-game, and why the map's perfect
+     * circles disagreed with the world (owner, 2026-08-15).
+     *
+     * The test is WaterSystem.waterSurfaceY's own, not an approximation of it: inside the disc AND
+     * ground below waterLevel. Same rule, so the printed shore is the shore the truck drives to.
+     *
+     * Rasterised rather than traced. Marching squares would give a path, but filling one needs the
+     * segments stitched into closed rings — bookkeeping this map has deliberately avoided
+     * everywhere else (see _drawTopo's note on disjoint segments) — and a pond's outline can be
+     * several disjoint rings anyway, once islands and inlets are in play. A small bitmap gets the
+     * exact shape for none of that machinery, and the shoreline INK falls out of the same pass: a
+     * water texel with a dry 4-neighbour is an edge texel.
+     */
+    _drawPond(ctx, water, p) {
+        const zoom = this._zoom
+        const rpx = p.radius * zoom
+        if (rpx < 1.5) return          // below a pixel and a half it is a blue speck, not a pond
+
+        // Ground height. Prefer the WaterSystem's OWN height closure — it is the function that
+        // decided waterLevel in the first place (full raw terrain), so shoreline and water level
+        // come from one field and cannot disagree. The coarse fallback keeps this drawable if the
+        // system is ever handed a different shape.
+        const hAt = water._height ? (x, z) => water._height(x, z)
+                                  : (x, z) => this._road._coarseH(x, z) * (this._getParams().terrainAmplitude ?? 1)
+
+        // Texel grid over the pond's bounding square, ~1 screen px per texel (the square spans the
+        // DIAMETER, 2·rpx px), so the shore resolves at the limit of what can be seen. Capped so a
+        // large pond at high zoom cannot turn into an unbounded raster.
+        const n = Math.max(8, Math.min(POND_TEXELS_MAX, Math.ceil(rpx * 2)))
+        const d = (p.radius * 2) / n
+        const img = ctx.createImageData(n, n)
+        const px = img.data
+        const wet = new Uint8Array(n * n)
+
+        for (let j = 0; j < n; j++) {
+            const wz = p.floorZ - p.radius + (j + 0.5) * d
+            for (let i = 0; i < n; i++) {
+                const wx = p.floorX - p.radius + (i + 0.5) * d
+                const dx = wx - p.floorX, dz = wz - p.floorZ
+                if (dx * dx + dz * dz > p.radius * p.radius) continue
+                if (hAt(wx, wz) >= p.waterLevel) continue
+                wet[j * n + i] = 1
+            }
+        }
+
+        const fR = parseInt(WATER_FILL.slice(1, 3), 16), fG = parseInt(WATER_FILL.slice(3, 5), 16),
+              fB = parseInt(WATER_FILL.slice(5, 7), 16)
+        const iR = parseInt(WATER_INK.slice(1, 3), 16), iG = parseInt(WATER_INK.slice(3, 5), 16),
+              iB = parseInt(WATER_INK.slice(5, 7), 16)
+        for (let j = 0; j < n; j++) {
+            for (let i = 0; i < n; i++) {
+                const k = j * n + i
+                if (!wet[k]) continue
+                // Edge texel = wet with a dry (or off-grid) 4-neighbour. Off-grid counts as dry,
+                // which is correct: the grid spans the whole disc, so there is no water past it.
+                const edge = (i === 0     || !wet[k - 1]) || (i === n - 1 || !wet[k + 1]) ||
+                             (j === 0     || !wet[k - n]) || (j === n - 1 || !wet[k + n])
+                const o = k * 4
+                px[o]     = edge ? iR : fR
+                px[o + 1] = edge ? iG : fG
+                px[o + 2] = edge ? iB : fB
+                px[o + 3] = 255
+            }
+        }
+
+        if (!this._pondCanvas) this._pondCanvas = document.createElement('canvas')
+        const pc = this._pondCanvas
+        if (pc.width !== n || pc.height !== n) { pc.width = n; pc.height = n }
+        const pctx = pc.getContext('2d')
+        pctx.clearRect(0, 0, n, n)      // texels outside the shore stay transparent, not black
+        pctx.putImageData(img, 0, 0)
+
+        const sx = this._sx(p.floorX - p.radius), sy = this._sy(p.floorZ - p.radius)
+        const prev = ctx.imageSmoothingEnabled
+        ctx.imageSmoothingEnabled = true
+        ctx.drawImage(pc, sx, sy, p.radius * 2 * zoom, p.radius * 2 * zoom)
+        ctx.imageSmoothingEnabled = prev
     }
 
     // (1c) Vegetation and wet-ground glyphs — the texture that tells you what the tint MEANS.
