@@ -212,8 +212,10 @@ export const RANGER_PARAMS = {
   // restLength: allowance for suspension travel (room for bump + droop from static equilibrium)
   // Owner retune 2026-08-15: matched to the CORRECTED inertia axes (x=pitch, z=roll — FEAT-48
   // final fix). Stiffer/more-damped rear + softer front ARB + shorter carcass + μ 0.8 rebalance
-  // roll/pitch response around the honest tensor. frictionCoeff 0.9→0.8 also shifts grip —
-  // par calibration (FEAT-31 calibrate-par) should be re-run before par fairness matters.
+  // roll/pitch response around the honest tensor. frictionCoeff 0.9→0.8 is deliberate
+  // COMPENSATION, not a grip nerf: the old swapped-high roll inertia lifted inside wheels and
+  // peeled drive torque away through the open diff; planted wheels at μ 0.8 pace the same —
+  // owner verified par calibration stays close (no re-cal needed).
   suspensionStiffnessFront:  33000,   // N/m — 1.5 Hz body bounce at front sprung corner mass
   suspensionStiffnessRear:   33000,   // N/m — 1.5 Hz body bounce at rear sprung corner mass
   suspensionDampingFront:     3500,   // N·s/m

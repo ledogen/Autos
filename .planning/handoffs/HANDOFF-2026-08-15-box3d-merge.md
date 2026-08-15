@@ -61,10 +61,15 @@ The corrected inertia axes (x=pitch, z=roll) come with an owner-tuned chassis se
 `data/ranger.js`: carcass/relaxation length 0.135, frictionCoeff 0.8 (was 0.9), suspension
 stiffness 33000/33000 (rear was 27000), damping 3500/4000 (was 3000/3000), front ARB 4500
 (was 5000). The committed feel baseline (`vehicle-feel-box3d.json`, tag `owner-retune-2026-08-15`)
-reflects this state. **Post-merge flag:** frictionCoeff 0.9→0.8 shifts overall grip — the FEAT-31
-par calibration (`test/calibrate-par.mjs`, PAR_REF.mu lineage) should be RE-RUN before par
-fairness matters in story mode; mission gates use frozen PAR_REF constants so nothing fails
-loudly, it just drifts (the BUG-41 drift-alarm family).
+reflects this state.
+
+**Par calibration — owner-verified CLOSE, no action needed (2026-08-15):** the frictionCoeff
+drop 0.9→0.8 is NOT a net grip loss. The old (swapped, too-high) roll inertia caused constant
+one-wheel-peel through the open diff — inside wheels lifting and spinning away drive torque —
+which slowed real runs below what μ 0.9 suggests. With the corrected (light) roll inertia the
+wheels stay planted, so μ 0.8 with full traction delivers ≈ the same effective pace; the owner
+measured par as "not off by much". Re-running `test/calibrate-par.mjs` remains available if par
+fairness ever needs tightening, but it is NOT a merge follow-up.
 
 ## Open work that survives the merge (tracked)
 
