@@ -95,10 +95,13 @@ CAB_WIN = (2.40, 3.45)                  # real opening, both sides, Z_SILL..Z_SH
 # above it and the lower fascia tucks back below it, and the header rakes hard
 # into the roof.  Implemented as two extra loft stations (keeping the stripe
 # band materials and welding for free) + a contoured cap built strip-by-strip.
-NOSE_BROW = [(0.42, -0.14), (1.62, 0.04), (1.72, 0.03),
-             (2.60, -0.20), (2.92, -0.36)]   # (z, y offset from the cap base)
-NOSE_ST = [(3.72, 0.50, 0.975),              # (y base, brow fraction, plan scale)
-           (3.94, 1.00, 0.885)]              # cap rim: brow peaks at y 3.98
+# Steepened 2026-08-15 against the profile photo: windshield rake ~0.35 over
+# the glass height (~21 deg), lower fascia raked ~13 deg from the brow down to
+# the bumper.  The first pass was visibly too upright.
+NOSE_BROW = [(0.42, -0.22), (1.62, 0.06), (1.72, 0.05),
+             (2.60, -0.30), (2.92, -0.48)]   # (z, y offset from the cap base)
+NOSE_ST = [(3.70, 0.50, 0.975),              # (y base, brow fraction, plan scale)
+           (3.92, 1.00, 0.885)]              # cap rim: brow peaks at y 3.98
 WS_X = 0.92                             # windshield opening half width (on the cap)
 WS_Z0, WS_Z1 = 1.72, 2.60               # sill..shoulder, glazed in the raked plane
 WS_INSET = 0.035                        # glass sits this far behind the cap plane
@@ -128,7 +131,10 @@ WINDOWS_L = [(-3.60, -2.55, 1.62, 2.35),
              (1.20, 2.16, 1.62, 2.35)]     # wider — no door on this side
 WIN_FRAME = 0.045                       # frame border around the opening
 WIN_DEPTH = 0.036                       # how proud the frame face sits
-CURT_LO, CURT_HI = 0.008, 0.022         # pleat zigzag depths (outboard of wall)
+CURT_LO, CURT_HI = 0.002, 0.012         # pleat zigzag depths (outboard of wall)
+                                        # — hugging the wall so the pleats sit
+                                        # visibly BEHIND the glass, not flush
+                                        # with the frame face
 GLASS_OFF = 0.030                       # pane depth (recessed behind the frame face)
 PLEAT_W = 0.14                          # a fold roughly every 14 cm
 
@@ -370,19 +376,22 @@ def hull_skip(s, k):
     s2 = s - TAIL_N                           # tail/nose segments carry no openings
     if not (0 <= s2 < len(STATIONS) - 1):
         return False
-    # k=0 is the underbody: both its endpoints sit at |x|=HALF_W so it PASSES
-    # the _is_side test, and the arch cut silently deleted the floor across
-    # both arch spans (rays then entered from below and lit up the roof
-    # backside in the winding check).  The bottom face is never an opening.
-    if k == 0 or not _is_side(k):
+    y0, y1 = _seg_span(s2)
+    in_arch = any(y0 >= a0 - 0.01 and y1 <= a1 + 0.01
+                  for a0, a1 in (ARCH_F, ARCH_R))
+    # k=0 is the underbody (it PASSES the _is_side test — both endpoints at
+    # |x|=HALF_W — so it needs its own branch).  Across the arch spans the
+    # full-width floor is dropped DELIBERATELY: it used to slice through the
+    # wheel centres.  build_wells puts back a centre strip between the pockets.
+    if k == 0:
+        return in_arch
+    if not _is_side(k):
         return False
     z, _ = _face_zx(k)
-    y0, y1 = _seg_span(s2)
     if Z_SILL - 0.01 < z < Z_SHOULDER + 0.01:
         return y0 >= CAB_WIN[0] - 0.01 and y1 <= CAB_WIN[1] + 0.01
     if Z_SKIRT - 0.01 < z < WELL_TOP + 0.01:
-        return any(y0 >= a0 - 0.01 and y1 <= a1 + 0.01
-                   for a0, a1 in (ARCH_F, ARCH_R))
+        return in_arch
     return False
 
 
@@ -481,7 +490,8 @@ def build_nose(p, g):
             MARKER_Z[0], MARKER_Z[1], "RVSignal")
     # Narrower than the tail bumper: the nose rim tapers to |x|=1.062, and a
     # full-width blade left 17 cm of bumper hanging past the shaped corner.
-    box(p, -1.14, 1.14, 3.78, 4.00, BUMPER_Z0, BUMPER_Z1, "RVTrim")
+    # Back edge buried deep: the fascia now rakes to y~3.70 at bumper height.
+    box(p, -1.14, 1.14, 3.66, 4.00, BUMPER_Z0, BUMPER_Z1, "RVTrim")
 
     # Flying-W flash on the belt panel, hugging the surface.
     z0, z1, th = WFLASH_Z0, WFLASH_Z1, WFLASH_TH
@@ -602,6 +612,15 @@ def build_door(p, g):
     for b0, b1 in ((Z_THICK0, Z_THICK1), (Z_THIN0, Z_THIN1)):
         quad(p, (xd, DOOR_Y0, b0), (xd, DOOR_Y1, b0),
              (xd, DOOR_Y1, b1), (xd, DOOR_Y0, b1), "RVStripe")
+    # Aluminium door frame riding OVER the vinyl: the surround seam is what
+    # makes the door read as a door and not a decal panel.
+    xf = xd + 0.001
+    fw = 0.03
+    for (y0, y1, z0, z1) in ((DOOR_Y0, DOOR_Y0 + fw, DOOR_Z0, DOOR_Z1),
+                             (DOOR_Y1 - fw, DOOR_Y1, DOOR_Z0, DOOR_Z1),
+                             (DOOR_Y0, DOOR_Y1, DOOR_Z1 - fw, DOOR_Z1),
+                             (DOOR_Y0, DOOR_Y1, DOOR_Z0, DOOR_Z0 + fw)):
+        quad(p, (xf, y0, z0), (xf, y1, z0), (xf, y1, z1), (xf, y0, z1), "RVTrim")
     box(p, HALF_W + DOOR_PROUD, HALF_W + DOOR_PROUD + 0.020,
         DOOR_Y0 + 0.05, DOOR_Y0 + 0.11, 1.28, 1.42, "RVTrim")
 
@@ -635,7 +654,9 @@ def build_slider_trim(p):
 
 def build_interior(p):
     x = HALF_W - 0.04
-    box(p, -x, x, 2.36, 3.88, FLOOR_Z0, FLOOR_Z1, "RVDark")          # cab floor
+    # Floor stops at 3.72: the raked fascia surface is at y~3.80 down at floor
+    # height, and a 3.88 slab poked straight through the nose.
+    box(p, -x, x, 2.36, 3.72, FLOOR_Z0, FLOOR_Z1, "RVDark")          # cab floor
     box(p, -0.26, 0.26, 2.75, 3.62, FLOOR_Z1, 1.26, "RVDark")        # doghouse
     box(p, -x + 0.02, x - 0.02, 3.62, 3.86, 1.28, 1.58, "RVDark")    # dash
     # Partition narrower than the floor: at its 2.68 top the roof chamfer is
@@ -768,6 +789,12 @@ def build_wells(p):
                  (i, a0, WELL_TOP), (w, a0, WELL_TOP), "RVDark")      # aft wall
             quad(p, (w, a1, Z_SKIRT), (i, a1, Z_SKIRT),
                  (i, a1, WELL_TOP), (w, a1, WELL_TOP), "RVDark")      # fwd wall
+        # Centre underbody strip between the two pockets: the full-width floor
+        # is skipped across the arch span (it clipped through the wheel
+        # centres), so only the between-pockets part is rebuilt.
+        for b0, b1 in zip(spans, spans[1:]):
+            quad(p, (-WELL_X, b0, Z_SKIRT), (WELL_X, b0, Z_SKIRT),
+                 (WELL_X, b1, Z_SKIRT), (-WELL_X, b1, Z_SKIRT), "RVDark")
 
 
 def build_arches(p):
