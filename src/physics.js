@@ -231,10 +231,36 @@ export function createVehicleChassis (engine, vehicleState, params) {
     [P.cabRearZ, 0.14], [P.cabRearZ, P.railY], [P.tailZ, P.railY], [P.tailZ, 0.14],
   ], P.deckHalfW), mat)
 
+  // 5. Wheel HARD CORES — spheres at the nominal hub positions that collide with DEBRIS ONLY
+  // (never terrain/road — driving feel is untouched by construction). The tire itself stays the
+  // analytic soft contact (suspension + Pacejka + reaction through qcPlus); these cores exist
+  // because the wheel is otherwise not solid to the engine, so a rock bulldozed backward by the
+  // slab chamfer could be shoved INTO the wheel arch and sit inside the tire (owner capture
+  // 1786777538787: wheel visually through rock; measured −0.43 m interpenetration in the crawl
+  // gate). Core radius = wheelRadius − WHEEL_SOFT_BAND: the outer band is honest tire squish
+  // handled by the soft path; the core makes deeper overlap geometrically impossible and hands
+  // the pinch impulse to the chassis like a real wheel would.
+  const axleF = -(params.wheelbase * params.weightRear)
+  const axleR = params.wheelbase * params.weightFront
+  for (const [x, z, front] of [
+    [-params.trackFront / 2, axleF, true], [params.trackFront / 2, axleF, true],
+    [-params.trackRear / 2, axleR, false], [params.trackRear / 2, axleR, false],
+  ]) {
+    const hubY = -(params.cgHeight - params.wheelRadius) +
+      (front ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0))
+    engine.addSphere(chassis, params.wheelRadius - WHEEL_SOFT_BAND, {
+      friction: 0.5, restitution: 0, group: GROUP_CHASSIS, collidesWith: GROUP_DEBRIS,
+    }, { x, y: hubY, z })
+  }
+
   engine.setMassData(chassis, params.mass,
     { x: params.inertiaRoll, y: params.inertiaYaw, z: params.inertiaPitch })
   return chassis
 }
+// Soft band between the wheel hard core and the visual tire radius — the depth range the
+// analytic tire spring owns. Matches DYN_CONTACT_DEPTH deep-squish territory, so the core
+// engages only when the soft path has already been overwhelmed (a pinched rock).
+const WHEEL_SOFT_BAND = 0.07
 
 export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx) {
   if (!engineCtx) throw new Error('stepPhysics: engineCtx {engine, chassis} is required (FEAT-48)')
@@ -267,6 +293,13 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     const dyn = engine.overlapSphere({ x: cx, y: cy, z: cz }, r, { collidesWith: GROUP_DEBRIS, dynamicOnly: true })
     for (let i = 0; i < dyn.length; i++) {
       const h = dyn[i]
+      // A debris body can NEVER push a wheel DOWN. When the hub center sinks past a small
+      // rock's center, the deep-overlap fallback normal flips to point downward (measured:
+      // (0,−1,0) exactly at the crossover — capture 1786777538787's flickering contacts and
+      // wheel-through-rock). A support surface acts upward or sideways; a rock OVERHEAD is the
+      // chassis' engine contact, not a wheel contact. Skip inverted hits — the wheel then rides
+      // the terrain until the honest upward contact re-acquires.
+      if (h.normal.y < -0.1) continue
       const cap = Math.min(DYN_CONTACT_DEPTH_HARD, (prevDepth.get(h.body) ?? 0) + DYN_CONTACT_DEPTH_RATE * dt)
       if (h.depth > cap) h.depth = cap
       const seen = stepDepth.get(h.body)
@@ -714,6 +747,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       const sLongMax  = Math.sqrt(Math.max(0, sBreak * sBreak - lastSLatNew * lastSLatNew))
       let omegaNew = omega0
       let sLongFinal = lastSLongPrev
+      let lastDelta = 0
       for (let iter = 0; iter < 4; iter++) {
         const omegaR    = omegaNew * params.wheelRadius
         let   sLongIter = (lastSLongPrev + dt * (omegaR - lastLongVelCur)) / lastRelaxDen
@@ -727,7 +761,23 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
         const gp = 1 + dt * params.wheelRadius * dFmagDs * dsdo / wheelInertia
         const delta = g / gp
         omegaNew -= delta
+        lastDelta = delta
         if (Math.abs(delta) < 1e-4) break
+      }
+      // CONVERGENCE SAFEGUARD (2026-08-15, capture 1786777538787): under a heavily overloaded
+      // near-stationary wheel (a rock crossing tipping ~9 kN onto one corner) the 4-iteration
+      // Newton can leave a LARGE unconverged residual — the committed ω then swings −20…−60 rad/s
+      // frame to frame, pure integrator artifact ("low-speed tire slosh" family, now excited by
+      // debris). If the last step was still moving ω by more than NEWTON_TOL, reject the diverged
+      // value and take one damped explicit step from ω₀ instead: bounded, sign-sane, and the next
+      // frame retries Newton from a consistent state. Converged solves (normal driving, 1–3
+      // iterations) are untouched.
+      if (Math.abs(lastDelta) > NEWTON_TOL && lastFn > 0) {
+        const s0 = Math.max(-sLongMax, Math.min(sLongMax,
+          (lastSLongPrev + dt * (omega0 * params.wheelRadius - lastLongVelCur)) / lastRelaxDen))
+        const { Flong } = computeTireForces(s0, lastSLatNew, lastFn, params)
+        omegaNew = omega0 + dt / wheelInertia * (driveTorque - Flong * params.wheelRadius - brakeSigned)
+        sLongFinal = s0
       }
       // Clamp: braking cannot reverse spin direction (brake stops the wheel, doesn't push through zero).
       // Must happen BEFORE committing sLong — if omega is clamped to 0 the Newton loop may have
@@ -829,5 +879,6 @@ const _groundVelScratch = { x: 0, y: 0, z: 0 }
 // ~4 frames (firm — ground-equivalent ~18 kN available). See the qcPlus comment.
 const DYN_CONTACT_DEPTH_HARD = 0.18
 const DEBRIS_SLIP_CLAMP = 3.0               // m/s — max support-velocity contribution to tire slip
+const NEWTON_TOL = 0.5                      // rad/s — ω-solve residual above this = diverged, take the explicit fallback
 const DYN_CONTACT_DEPTH_RATE = 2.5          // m/s of allowed depth growth
 const EMPTY_DEPTH_MAP = new Map()           // shared immutable-by-convention first-step default

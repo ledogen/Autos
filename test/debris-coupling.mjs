@@ -153,7 +153,10 @@ console.log('\nfling regression — coast over a small rock, no throttle:')
     ctx2.engine.getVelocity(rock, rv, rw)
     rockPeak = Math.max(rockPeak, Math.hypot(rv.x, rv.y, rv.z))
     for (let i = 0; i < 4; i++) {
-      omegaPeak = Math.max(omegaPeak, Math.abs(vs2.wheelOmega[i]))
+      // ω bound applies to GROUNDED wheels only: the debris hard core gives brief airborne
+      // moments, and idle converter creep legitimately spins an unloaded driven wheel (that's
+      // the drivetrain, not the debris chase this scenario guards against).
+      if (P2._tireFz[i] > 500) omegaPeak = Math.max(omegaPeak, Math.abs(vs2.wheelOmega[i]))
       fzPeak = Math.max(fzPeak, P2._tireFz[i])
     }
     // Firmness (owner: "squishy on rocks", 2026-08-15): while the FL wheel is horizontally atop
@@ -173,6 +176,57 @@ console.log('\nfling regression — coast over a small rock, no throttle:')
   ok(fzPeak < 20000, `tire load bounded over the rock (peak Fz ${fzPeak.toFixed(0)} N < 20 kN — honest depth now allowed, spikes still clamped)`)
   ok(maxSink < 0.14, `tire rides the rock FIRMLY, not through it (max sink ${maxSink.toFixed(3)} m < 0.14 — the hard-cap squish regression)`)
   ctx2.dispose()
+}
+
+// ── Crawl-over-rock consistency (owner capture 1786777538787, 2026-08-15) ────────────────────
+// Dead-slow crawl straight over the rounded rock. The deep-overlap fallback used to flip its
+// normal downward once the hub sank past the rock's centre — the contact then pushed the wheel
+// THROUGH the rock (flickering Fz, no climb). The honest signature of riding OVER: the body
+// visibly rises, contact stays finite, nothing launches.
+console.log('\ncrawl-over-rock — the wheel climbs it, never passes through:')
+{
+  const P4 = freshParams()
+  const eq4 = eqOf(P4)
+  const v0 = 1.2
+  const vs4 = {
+    position: new THREE.Vector3(0, eq4.bodyY, 0), velocity: new THREE.Vector3(0, 0, -v0),
+    quaternion: new THREE.Quaternion(), angularVelocity: new THREE.Vector3(),
+    steerAngle: 0, throttle: 0.25, brake: 0, smoothThrottle: 0.25, smoothBrake: 0,
+    wheelAngles: [0, 0, 0, 0], wheelSteerAngles: [0, 0, 0, 0],
+    wheelDebug: [0, 1, 2, 3].map(() => ({ fn: 0, fy: 0, sa: 0, c: 0, omega: 0, fz: 0 })),
+    wheelOmega: [0, 0, 0, 0].map(() => v0 / P4.wheelRadius), slipLong: [0, 0, 0, 0], slipLat: [0, 0, 0, 0],
+    strutComp: [...eq4.strutComp], strutCompVel: [0, 0, 0, 0], handbrake: false,
+    drivetrain: { engineRPM: 900, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },
+  }
+  const ctx4 = await makeEngineCtx(vs4, P4, { groundFn: () => 0, extent: 128, cell: 4 })
+  const R4 = 0.2
+  const rock4 = ctx4.engine.createBody({ type: 'dynamic', position: { x: -0.72, y: R4, z: -4 }, userData: { kind: 'debris' } })
+  ctx4.engine.addSphere(rock4, R4, { density: 2500, friction: 0.7, restitution: 0.15, group: GROUP_DEBRIS })
+
+  const rp4 = { x: 0, y: 0, z: 0 }, rq4 = { x: 0, y: 0, z: 0, w: 1 }
+  let maxRise = 0, minVy = 0, maxAbsWy = 0, minSep = Infinity
+  for (let s = 1; s <= 600; s++) {
+    vs4.throttle = 0.25
+    stepPhysics(vs4, P4, DT, queryContacts, ctx4)
+    maxRise = Math.max(maxRise, vs4.position.y - eq4.bodyY)
+    minVy = Math.min(minVy, vs4.velocity.y)
+    maxAbsWy = Math.max(maxAbsWy, Math.abs(vs4.angularVelocity.y))
+    ctx4.engine.getTransform(rock4, rp4, rq4)
+    const hub = getWheelPosition(0, vs4, P4)
+    const sep = Math.hypot(hub.x - rp4.x, hub.y - rp4.y, hub.z - rp4.z) - (P4.wheelRadius + R4)
+    if (sep < minSep) minSep = sep
+  }
+  const rockPushed = Math.hypot(rp4.x - -0.72, rp4.z - -4)
+  console.log(`  body rise ${maxRise.toFixed(3)} m; rock pushed ${rockPushed.toFixed(2)} m; min wheel–rock separation ${minSep.toFixed(3)} m; min vy ${minVy.toFixed(2)}; peak |yawRate| ${maxAbsWy.toFixed(2)}`)
+  // A slow crawl legitimately BULLDOZES a loose round cobble instead of mounting it — either
+  // outcome is honest. Occupying the same space is not: interpenetration stays within tire
+  // squish, and the rock is never silently ghosted.
+  ok(maxRise > 0.05 || rockPushed > 0.5,
+    `the wheel CLIMBS or BULLDOZES — never ghosts (rise ${maxRise.toFixed(3)} m, pushed ${rockPushed.toFixed(2)} m)`)
+  ok(minSep > -0.15, `interpenetration bounded by tire squish (min separation ${minSep.toFixed(3)} m > −0.15 — pass-through was ≈ −0.4)`)
+  ok(minVy > -1.5, `never driven downward through the rock (min vy ${minVy.toFixed(2)} > −1.5)`)
+  ok(maxAbsWy < 1.0, `no yaw kick from a flickering contact (peak |yawRate| ${maxAbsWy.toFixed(2)} < 1.0)`)
+  ctx4.dispose()
 }
 
 // ── Chassis-vs-tree rigid stop (owner-reported "squishy trees", 2026-08-15) ──────────────────
