@@ -56,6 +56,22 @@ export const BIOME_PARAMS = {
   // mechanically applied to every basin in the world.
   meadowNoiseFreq:  0.0022, // 1/m — ~450 m wavelength; the scale of a meadow, not of a clearing
   meadowNoiseMin:   0.42,   // qualifying ground becomes meadow only where the mask clears this
+
+  // ── WET GROUND: where the map stamps marsh symbols ─────────────────────────────────────────
+  // Same shape of question as MEADOW — flat ground sitting below what surrounds it — asked at a
+  // much SMALLER radius, and that difference is the point. A meadow is a landform, so it is read
+  // across 320 m; boggy ground is a hollow you could walk across, so it is read across 48 m. Wet
+  // and open are independent: a spring seep under closed canopy is wet and not a meadow, and a
+  // well-drained meadow on a bench is open and not wet.
+  //
+  // These thresholds live here, next to the meadow ones, because the two ARE the same drainage
+  // idea and drift apart the moment they are kept in different files. An earlier pass had the wet
+  // test inlined in map2d.js on its own lattice with its own constants; it covered 0.47% of ground
+  // (measured, seed 6), so marsh symbols were effectively invisible, and nothing about the file it
+  // lived in made that comparable to the meadow test it duplicated.
+  wetRingR:         48,     // m
+  wetSlopeMax:      0.035,  // gradient across the ring
+  wetReliefMin:     1.0,    // m below the ring mean — together ≈16% of ground (was 0.47%)
 }
 
 export const BIOME = { FOREST: 0, MEADOW: 1, ROCK: 2 }

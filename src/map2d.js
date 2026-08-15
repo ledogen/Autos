@@ -23,7 +23,7 @@ import { MISSION_PLAN_RADIUS } from './mission.js'
 import { POI_ICONS, POI_ICON_PX } from '../data/map-icons.js'   // FEAT-60: map glyphs
 import { chunkCover, slopeFromGradient, COVER_CELL, CELLS_PER_CHUNK, DENSE_MIN }
     from './map-cover.js'
-import { biomeAt, BIOME } from './biome.js'
+import { biomeAt, isWetGround, BIOME } from './biome.js'
 import { FLORA_PARAMS } from '../data/flora.js'
 
 // Streamed radius of the map's own RoadSystem around the pan cursor. UNIFIED with the story-mode
@@ -218,14 +218,10 @@ const GLYPH_PX       = 7           // px — drawn size of one glyph
 // simply not drawn. This is also the cost bound — it caps how many can ever land on one sheet.
 const GLYPH_MIN_PX   = 9
 
-// ── Drainage (what makes ground read as WET) ──────────────────────────────────────────────────
-// Independent of cover, and layered over it — on the reference the marsh tufts sit INSIDE the white
-// of Osa Meadows, because flat wet valley floors are both open and boggy. Two tests, both off the
-// height grid already in hand: the ground must be near-flat, and it must sit low relative to the
-// terrain around it (a local sink collects water; a flat shelf on a ridge does not).
-const WET_SLOPE_MAX  = 0.05   // gradient magnitude — above this it drains rather than collects
-const WET_RELIEF_M   = 2.5    // m — must sit at least this far below the neighbourhood mean
-const WET_RELIEF_R   = 4      // grid cells — radius the neighbourhood mean is taken over
+// Drainage — what makes ground read as WET — lives in src/biome.js (isWetGround) with its
+// thresholds in data/biomes.js, alongside the meadow test it is the small-radius sibling of. It was
+// once inlined here on its own lattice with its own constants, which made it impossible to see that
+// the two were the same idea, and left it covering 0.47% of ground.
 
 // ── Background overscan ───────────────────────────────────────────────────────────────────────
 // The cached background is rendered OVERSCAN× the screen in each axis, centred on the view, so
@@ -1069,9 +1065,9 @@ export class Map2D {
     // finest octave is a 250 m wavelength, so a 16 m lattice is four times finer than Nyquist and
     // the hillshade is fully resolved, not approximated.
     //
-    // Leaves `this._coverGrid` behind for _drawGlyphs, which stamps into the same lattice it just
-    // resolved rather than paying for it twice. Redraw-local: written and consumed inside one
-    // cached-background rebuild.
+    // Leaves `this._coverGrid` behind for _drawWater (its bbox) and _drawGlyphs (the cover bins it
+    // just resolved, rather than resolving them twice). Redraw-local: written and consumed inside
+    // one cached-background rebuild.
     _paintGround(ctx, px0, py0, Wpx, Hpx, amp) {
         const road = this._road
         const zoom = this._zoom
@@ -1097,7 +1093,10 @@ export class Map2D {
 
         // Cover, if the sheet is close enough in for it to mean anything — see COVER_CHUNK_BUDGET.
         const cover = this._coverRaster(wx0, wz0, gw, gh)
-        this._coverGrid = { wx0, wz0, gw, gh, cover, hg }
+        // Handed to _drawWater (for its bbox) and _drawGlyphs (for the cover bins). NOT the height
+        // lattice: the only thing that read it was the old inlined wet test, and drainage now
+        // samples the field directly at each glyph — see isWetGround.
+        this._coverGrid = { wx0, wz0, gw, gh, cover }
 
         // ── Compose, at COVER_SS texels per lattice cell.
         //
@@ -1471,15 +1470,17 @@ export class Map2D {
         const zoom = this._zoom
         if (!this._glyphsVisible()) return
 
-        const { wx0, wz0, gw, gh, cover, hg } = g
+        const { wx0, wz0, gw, gh, cover } = g
         const x1 = wx0 + gw * COVER_CELL, z1 = wz0 + gh * COVER_CELL
         const i0 = Math.floor(wx0 / GLYPH_CELL), i1 = Math.ceil(x1 / GLYPH_CELL)
         const j0 = Math.floor(wz0 / GLYPH_CELL), j1 = Math.ceil(z1 / GLYPH_CELL)
         const s = GLYPH_PX
 
-        // Neighbourhood-mean relief, for the wet test. Reuses the lattice heights _paintGround
-        // already sampled — the drainage read costs no new touch of the height field.
-        const relief = boxBlur(hg, gw, gh, WET_RELIEF_R)
+        // Height sampler for the drainage read. Sampled at the glyph's own world position rather
+        // than off the cover lattice: isWetGround's ring is 48 m, finer than that lattice would
+        // resolve, and a marsh symbol has to sit on the hollow it marks.
+        const amp = this._getParams().terrainAmplitude ?? 1
+        const wetSamplers = { heightAt: (x, z) => this._road._coarseH(x, z) * amp }
 
         ctx.lineWidth = 1
         for (let j = j0; j <= j1; j++) {
@@ -1499,15 +1500,9 @@ export class Map2D {
 
                 const px = this._sx(wx), py = this._sy(wz)
 
-                // ── Wet ground: near-flat AND sitting below its surroundings. Both tests are
-                //    needed — a flat shelf high on a ridge sheds water, and a steep gully bottom
-                //    carries it away rather than holding it.
-                const iL = gi > 0 ? gi - 1 : gi, iR = gi < gw - 1 ? gi + 1 : gi
-                const jU = gj > 0 ? gj - 1 : gj, jD = gj < gh - 1 ? gj + 1 : gj
-                const dx = (hg[gj * gw + iR] - hg[gj * gw + iL]) / ((iR - iL) * COVER_CELL || 1)
-                const dz = (hg[jD * gw + gi] - hg[jU * gw + gi]) / ((jD - jU) * COVER_CELL || 1)
-                const flat = Math.hypot(dx, dz) < WET_SLOPE_MAX
-                if (flat && relief[k] - hg[k] > WET_RELIEF_M) {
+                // ── Wet ground. Independent of cover and layered over it, so a hollow under closed
+                //    canopy gets a marsh mark and a well-drained meadow does not.
+                if (isWetGround(wx, wz, wetSamplers)) {
                     // Marsh tuft: three short uprights off a baseline, the USGS wetland mark.
                     ctx.strokeStyle = GLYPH_WET_INK
                     ctx.beginPath()

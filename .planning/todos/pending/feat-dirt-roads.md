@@ -22,6 +22,21 @@ the story coupling is designed against DESIGN.md when story mode is scheduled, n
 
 # FEAT-38: Dirt roads — a second surface class (re-surfaced edges + dispersed camping spurs)
 
+> **⚠ Added 2026-08-15 — the 2D map needs a second road ink.** The map is now a topographic
+> quadrangle (`src/map2d.js`, branch `feature/topo-cover`) and `_drawRoads` renders **every** edge
+> as one solid black stroke at `ROAD_INK` / `ROAD_W`. The moment a surface class exists, that is a
+> map bug: a quadrangle's whole road vocabulary is surface — solid casing for paved, dashed or
+> lighter brown for unimproved — and the owner's USGS reference (2026-08-15) shows exactly that
+> distinction.
+>
+> Scope this into FEAT-38 rather than leaving it to be noticed later: whatever marks an edge as
+> dirt must be readable from the map's own `RoadSystem` (it streams a separate read-only instance),
+> so put the surface class on the **graph edge / run record**, not somewhere only the ribbon mesh
+> can see. If it is only known at mesh-build time the map cannot draw it at all.
+>
+> Also note the map already has a precedent for a second road treatment — the FEAT-40 tunnel bore
+> (`TUNNEL_INK`) — so the pattern to copy is there.
+
 ## Context
 
 Today every road is one surface: a crowned, cambered asphalt ribbon (`src/road-mesh.js`, SURF-01/02),

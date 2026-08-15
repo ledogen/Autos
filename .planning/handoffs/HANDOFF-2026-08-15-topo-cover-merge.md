@@ -5,6 +5,10 @@
 **Base:** branched from `main` at `f5bb365`
 **Tag used in commits:** `feat(16)` — extends FEAT-16 (2D map). No ticket file exists for this work.
 
+**Also amends three pending tickets** — FEAT-32 (logged forest), FEAT-38 (dirt roads), FEAT-44
+(culvert). Each gained a dated block at the top explaining what the biome layer / map changed for
+it. Those edits ship on this branch, so they arrive with the code they describe.
+
 ---
 
 ## TL;DR for the merger
@@ -35,6 +39,8 @@ Four commits, each self-contained:
 | `bcee5f7` | Biomes: `src/biome.js` + `data/biomes.js`. Meadows and bare rock become real in the world. |
 | `9d153b9` | Cover renders at every zoom; pond shorelines follow terrain instead of being circles. |
 | `5571764` | Solid green/white regions; hillshade azimuth corrected. |
+| `e3b8c6a` | This handoff. |
+| *(final)* | One drainage definition; marsh symbols 0.47% → ~16%; FEAT-32/38/44 amended. |
 
 ```
  data/biomes.js            |  61 ++++      (new)
@@ -112,6 +118,13 @@ These are load-bearing. Each has a comment in-source saying so; this is the inde
 3. **`flora.slopeRejectMax` == `BIOME_PARAMS.rockSlopeMin`** (both 0.38). Same rule at two
    granularities — per tree vs per cluster. Change one, change the other.
 
+3b. **One drainage definition.** `src/biome.js` holds both readings of "flat ground sitting below
+   what surrounds it": `biomeAt`'s MEADOW branch at a 320 m ring (a landform) and `isWetGround` at a
+   48 m ring (a hollow you could walk across). Thresholds for both live in `data/biomes.js`. Do not
+   re-inline a drainage test in `map2d.js` — one used to live there on its own lattice with its own
+   constants, and being in a different file is exactly what hid the fact that it covered 0.47% of
+   ground while claiming to mark marshland.
+
 4. **World-keyed rasters.** The cover lattice and the glyph lattice are anchored to fixed world
    coordinates, never to the view (same D-16 window-invariance discipline as terrain and scatter). A
    clearing must have the same shape and edge at every zoom, and glyphs must not crawl when you pan.
@@ -164,6 +177,7 @@ Ratified by the owner on 2026-08-15:
 | More/less solid regions | `meadowRingR` (320 m) — the dominant lever |
 | More/less bare rock | `rockSlopeMin` (0.38) — **and `flora.slopeRejectMax` with it** |
 | More/fewer foliage glyphs | `DENSE_MIN` (1.0 ⇒ ~72% of forest glyphed; 1.6 ⇒ 34%) |
+| More/fewer marsh symbols | `wetSlopeMax` (0.035) / `wetReliefMin` (1.0) ⇒ ~16% of ground |
 | Heavier/lighter relief | `HILLSHADE_MIN` (0.88) |
 
 ---
@@ -182,7 +196,8 @@ resolution:
 2. **Zoom out fully** — it stays two-tone. (If it goes flat green, `_coverRaster`'s biome path got
    gated behind the budget again.)
 3. **Foliage glyphs appear** at reading zoom. (If not: `COVER_CHUNK_BUDGET` / `_glyphsVisible`.)
-4. Ponds are **irregular**, not circles; ridges read as standing **up** with light from the top-left.
+4. **Marsh symbols are plentiful** and sit in the low open basins, not sprinkled over ridges.
+5. Ponds are **irregular**, not circles; ridges read as standing **up** with light from the top-left.
 
 ---
 
@@ -194,6 +209,13 @@ resolution:
   not feel. Worth a lap — there is meaningfully more treeless ground than before.
 - **No ticket file.** This work was directed conversationally. If it needs tracking, it extends
   FEAT-16; the biome layer arguably deserves its own FEAT ticket since it is now worldgen.
+- **ROCK is invisible on the map** — `BIOME.ROCK` and `BIOME.MEADOW` both collapse to white (the map
+  read is literally `=== BIOME.FOREST ? 0 : 1`), so the ~1.2% of ground that is bare rock is
+  indistinguishable from meadow. Raised with the owner 2026-08-15 and **explicitly accepted as-is**;
+  do not "fix" it unprompted.
+- **Contour elevation labels** (the inline `8800` numbers on index contours) were offered and
+  deliberately deferred by the owner. Probably the cheapest remaining visible win, and independent
+  of everything else here.
 - **The worktree has an untracked `node_modules` symlink** I created to run the dev server
   (`.gitignore`'s `node_modules/` pattern does not match a symlink). Don't `git add -A` in that
   worktree. Safe to delete once the worktree is retired.

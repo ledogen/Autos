@@ -15,6 +15,29 @@ when story mode is scheduled, not now."
 
 # FEAT-32: Logged / clearcut forest sections
 
+> **⚠ Amended 2026-08-15 — a real biome layer now exists; build on it.** `src/biome.js` +
+> `data/biomes.js` (branch `feature/topo-cover`) define **FOREST / MEADOW / ROCK** as one pure
+> `biomeAt(x, z, seed, samplers)`. `prop-scatter.js` clears tree clusters wherever that does not
+> return FOREST, and the 2D map reads the *same function* to decide where it prints green.
+>
+> **LOGGED should be a fourth biome, not a parallel mechanism.** That gets three things for free:
+> the scatter already has the hook that suppresses standing trees, the map gains a logged region
+> without a second code path, and it stays inside the invariant that there is exactly one definition
+> of what grows where. A separate mask bolted onto `prop-scatter` would silently make the map lie
+> about the forest — precisely what the biome layer exists to prevent.
+>
+> The Context paragraph below is **stale in two ways**: `biomeNoise` only ever biased the aspen/pine
+> *species mix*, never cluster density (`clustersPerChunk` is flat); and the forest is no longer
+> uniformly standing, since meadows and rock now clear it. Read it as history.
+>
+> Two hooks worth using:
+> - Biome clearing is evaluated **per cluster**, not per tree (the ring sample is too dear per tree,
+>   and a half-cleared cluster reads as thinning rather than as a cut). A clearcut wants the same
+>   granularity; selective/regrowth wants a per-tree survival roll *inside* a LOGGED cluster.
+> - If LOGGED lands, the map needs a ruling: does logged ground print as open (white), as forest
+>   (green), or as its own treatment? A real quadrangle shows it cleared. Cheap either way — the map
+>   already bins per cell off `biomeAt`.
+
 ## Context
 
 Right now forest density varies by a smooth biome mask (`biomeNoise` in `src/props/prop-scatter.js`,

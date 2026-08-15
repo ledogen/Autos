@@ -42,6 +42,31 @@ export function meadowMask (x, z, freq, seed) {
 }
 
 /**
+ * Ground that collects water, for the map's marsh symbols.
+ *
+ * THE drainage test — there is deliberately only one. It asks exactly what the MEADOW branch of
+ * biomeAt asks (is this flat, and does it sit below what surrounds it) at a much smaller radius,
+ * because a meadow is a landform and a bog is a hollow. Keeping both readings in this file, off one
+ * parameter block, is what stops them drifting into two different ideas of drainage.
+ *
+ * Independent of biome, and layered over it: a seep under closed canopy is wet without being open,
+ * and a meadow on a well-drained bench is open without being wet.
+ *
+ * @param {{heightAt:(x,z)=>number}} s   heightAt only — wetness needs no slope sampler, since the
+ *                                       gradient comes off the same ring as the relief.
+ */
+export function isWetGround (x, z, s, P = BIOME_PARAMS) {
+  const r = P.wetRingR
+  const h  = s.heightAt(x, z)
+  const hE = s.heightAt(x + r, z), hW = s.heightAt(x - r, z)
+  const hS = s.heightAt(x, z + r), hN = s.heightAt(x, z - r)
+
+  const gx = (hE - hW) / (2 * r), gz = (hS - hN) / (2 * r)
+  if (1 - 1 / Math.sqrt(1 + gx * gx + gz * gz) > P.wetSlopeMax) return false
+  return (hE + hW + hS + hN) * 0.25 - h >= P.wetReliefMin
+}
+
+/**
  * The biome at a world point.
  *
  * @param {number} x,z
