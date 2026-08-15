@@ -95,27 +95,32 @@ CAB_WIN = (2.40, 3.45)                  # real opening, both sides, Z_SILL..Z_SH
 # above it and the lower fascia tucks back below it, and the header rakes hard
 # into the roof.  Implemented as two extra loft stations (keeping the stripe
 # band materials and welding for free) + a contoured cap built strip-by-strip.
-# TRACED from the front-corner photo (2026-08-15, second pass): the peak of the
-# profile is LOW — just above the bumper at z~0.70 — and the whole face leans
-# FORWARD down to it (~12 deg).  Above the sill the windshield rakes back ~24
-# deg, and the roof edge OVERHANGS the glass (the visor): the rim sits behind
-# station A up top, a deliberate fold in the loft.  First attempts pivoted at
-# the beltline; that read as a slab with a bent top.
-NOSE_BROW = [(0.42, 0.00), (0.70, 0.08), (1.62, -0.12), (1.72, -0.15),
-             (2.60, -0.55), (2.92, -0.72)]   # (z, y offset from the cap base)
-NOSE_ST = [(3.72, 0.35, 0.975),              # (y base, brow fraction, plan scale)
-           (3.90, 1.00, 0.885)]              # cap rim: peak lands on y 3.98
+# PROFILE RULING (2026-08-15, after one rejected attempt): the brow stays AT
+# THE BELTLINE (z 1.62) and the face is CONVEX around it — a "low peak above
+# the bumper" variant caved the whole face in and was thrown out on sight.
+# To steepen, drag the BROW VERTEX forward (it sits at y 4.00, flush with the
+# bumper face, so overall length holds 8.0) — never pull the peak downward.
+# Windshield ~26 deg, fascia lean ~16 deg, and NO loft folds: every rim point
+# stays ahead of station A, which stays ahead of the straight hull at 3.45.
+# Brow at +0.07 (y 3.99), a hair behind the bumper face: the wipers and W
+# flash ride the cap surface proud, and at +0.08 they poked past y 4.0 and
+# broke the 8.0 m length assert.
+NOSE_BROW = [(0.42, -0.26), (1.62, 0.07), (1.72, 0.055),
+             (2.60, -0.36), (2.92, -0.42)]   # (z, y offset from the cap base)
+NOSE_ST = [(3.72, 0.50, 0.975),              # (y base, brow fraction, plan scale)
+           (3.92, 1.00, 0.885)]              # cap rim: brow lands on y 4.00
 WS_X = 0.92                             # windshield opening half width (on the cap)
 WS_Z0, WS_Z1 = 1.72, 2.60               # sill..shoulder, glazed in the raked plane
 WS_INSET = 0.035                        # glass sits this far behind the cap plane
 
-# --- Shaped tail: same lean as the nose but gentler (user 2026-08-15) — the
-# rearmost point sits low at bumper height and the face leans forward going up,
-# ending in the roof curl.  Positive offsets pull the cap forward, so the tail
-# never crosses y = BODY_TAIL.  The rear window zone (1.62..2.35) leans only
-# ~3 deg; curtain_window_tail plants itself on the AVERAGE surface there.
-TAIL_BROW = [(0.42, 0.10), (0.70, 0.00), (1.55, 0.02),
-             (2.40, 0.06), (2.60, 0.14), (2.92, 0.30)]
+# --- Shaped tail: the SAME brow-at-beltline shape as the nose, gentler (user
+# 2026-08-15, per ref-02): rearmost line at z 1.62, skirt tucking under below
+# it, upper face leaning forward above it into the roof curl.  Positive
+# offsets pull the cap forward, so the tail never crosses y = BODY_TAIL.  The
+# rear window zone (1.62..2.35) leans ~5 deg; curtain_window_tail plants
+# itself on the AVERAGE surface there.
+TAIL_BROW = [(0.42, 0.16), (0.70, 0.12), (1.62, 0.00),
+             (2.35, 0.06), (2.60, 0.10), (2.92, 0.24)]
 TAIL_ST = [(-3.94, 1.00, 0.960),        # cap rim (built first — loft runs tail->nose)
            (-3.76, 0.50, 0.990)]
 TAIL_N = len(TAIL_ST)                   # rings prepended before the straight hull
@@ -500,8 +505,8 @@ def build_nose(p, g):
             "RVSignal")
     # Narrower than the tail bumper: the nose rim tapers to |x|=1.062, and a
     # full-width blade left 17 cm of bumper hanging past the shaped corner.
-    # Back edge buried deep: the fascia now rakes to y~3.70 at bumper height.
-    box(p, -1.14, 1.14, 3.66, 4.00, BUMPER_Z0, BUMPER_Z1, "RVTrim")
+    # Back edge buried deep: the fascia rakes to y~3.67 at bumper height.
+    box(p, -1.14, 1.14, 3.60, 4.00, BUMPER_Z0, BUMPER_Z1, "RVTrim")
 
     # Flying-W flash on the belt panel, hugging the surface.
     z0, z1, th = WFLASH_Z0, WFLASH_Z1, WFLASH_TH
@@ -578,8 +583,8 @@ def curtain_window(p, g, sgn, y0, y1, z0, z1, wall=HALF_W):
 
 def curtain_window_tail(p, g, x0, x1, z0, z1):
     """Same proud frame + pleats + glass, on the tail face (normal -Y)."""
-    wall = -BODY_TAIL - 0.04   # the AVERAGE tail surface across the window
-                               # zone, which now leans ~3 deg (see TAIL_BROW)
+    wall = -BODY_TAIL - 0.03   # the AVERAGE tail surface across the window
+                               # zone, which leans ~5 deg (see TAIL_BROW)
     fx0, fx1 = x0 - WIN_FRAME, x1 + WIN_FRAME
     fz0, fz1 = z0 - WIN_FRAME, z1 + WIN_FRAME
     w0, wf = -wall, -(wall + WIN_DEPTH)
@@ -669,8 +674,8 @@ def build_interior(p):
     # height, and a 3.88 slab poked straight through the nose.
     box(p, -x, x, 2.36, 3.72, FLOOR_Z0, FLOOR_Z1, "RVDark")          # cab floor
     box(p, -0.26, 0.26, 2.75, 3.62, FLOOR_Z1, 1.26, "RVDark")        # doghouse
-    box(p, -x + 0.02, x - 0.02, 3.62, 3.74, 1.28, 1.58, "RVDark")    # dash —
-    # front at 3.74: the fascia now leans back over it (cap ~3.79 at dash top)
+    box(p, -x + 0.02, x - 0.02, 3.62, 3.86, 1.28, 1.58, "RVDark")    # dash
+    # (cap surface is ~3.99 at dash height with the brow at the beltline)
     # Partition narrower than the floor: at its 2.68 top the roof chamfer is
     # already in to x=1.15, and a ±1.16 slab poked a dark corner through it.
     box(p, -1.13, 1.13, 2.30, 2.36, 0.86, 2.68, "RVDark")            # partition
@@ -701,10 +706,10 @@ def build_interior(p):
         p.f.append([a, a + 2, a + 3, a + 1])
         p.m.append("RVCurtain")
 
-    # Sun visors: dark slabs tucked behind the (now steeply raked) windshield —
-    # the 24-deg glass sweeps to y~3.39 by z 2.44, so they sit well back.
+    # Sun visors: dark slabs tucked behind the ~26-deg windshield (glass plane
+    # is at y~3.60 by z 2.44 — keep 5+ cm of clearance).
     for x0, x1 in ((-0.90, -0.34), (0.34, 0.90)):
-        box(p, x0, x1, 3.28, 3.32, 2.24, 2.44, "RVDark")
+        box(p, x0, x1, 3.50, 3.54, 2.24, 2.44, "RVDark")
 
     # Steering wheel: thin octagonal annulus slab, tilted back, plus a column.
     cx, cy, cz = SW_C
