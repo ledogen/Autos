@@ -11,12 +11,24 @@
 // ~nothing. That is the correct shape for a point-to-point errand and the wrong shape for this.
 // DESIGN.md already blesses the divergence ("not every mission type is scored on margin… rank is
 // computed per-axis") and missions.md §3b/3c already price fragile and freight at a flat rate. So
-// the paper route is scored on COVERAGE × ACCURACY, with time entering only as a bonus, and
-// SM-INV-4 is left untouched rather than bent.
+// this route prices itself, and SM-INV-4 is left untouched rather than bent.
 //
 // The consequence that matters: this is the income floor (missions.md, ratified 2026-08-05). Papers
 // you delivered are money you keep. There is no completion multiplier anywhere in here, because a
 // floor that pays nothing for a half-finished route is not a floor.
+//
+// ── ACCURACY PAYS, THE CLOCK GRADES [ratified 2026-08-14 — NOT YET IMPLEMENTED HERE] ────────────
+//
+// missions.md §2 now says: accuracy scales the per-delivery rate ONLY, and the rank is the par
+// ratio (gradeRun, B contains par) gated on full coverage, with the expediency bonus worth 0.70 of
+// a perfect route's paper money and applied to the FULL flat rather than the accuracy-scaled sum.
+// The point is that "slow and careful" and "fast and ragged" should pay about the same, so both are
+// real ways to drive a round.
+//
+// THE CODE BELOW STILL DOES THE OLD THING: scoreRoute ranks on coverage × meanAccuracy via
+// letterFor/PAPER_PARAMS.rank, and bonusMax is 0.40 on the scaled sum. This comment is here so the
+// divergence is impossible to miss — the doc is the ruling, this file is the lag. Landing it means
+// deleting letterFor + the rank table, calling gradeRun(), and moving the bonus onto n × flat.
 
 import { ECONOMY_PARAMS } from './economy.js'
 import { buildGraphAdj, START_ZONE_R } from './mission.js'
@@ -117,6 +129,21 @@ export function stockForTier (tier = runPaper.tier) {
 /** The deadline for a route, in the same units as par. */
 export function deadlineFor (par, P = PAPER_PARAMS) { return par * P.tolerance }
 
+/**
+ * What ONE paper is worth at full accuracy — the per-delivery flat rate.
+ *
+ * Extracted from scoreRoute rather than duplicated, because the HUD now quotes it to the player the
+ * instant a paper lands (owner, 2026-08-14) and a second copy of this expression is a second thing
+ * to keep in step with the settlement. Derived, never authored, so the route tracks the same
+ * economy as everything else; degenerate par pays zero rather than NaN-ing the wallet.
+ */
+export function flatPerPaper (par, customers, dayTier = 1, P = PAPER_PARAMS) {
+    const n = Math.max(0, customers | 0)
+    return (isFinite(par) && par > 0 && n > 0)
+        ? ECONOMY_PARAMS.k * par * dayTier * P.paperW / n
+        : 0
+}
+
 /** Per-axis rank. Scores the ROUTE (coverage × accuracy), never the clock. */
 export function letterFor (score, P = PAPER_PARAMS) {
     const r = P.rank
@@ -157,9 +184,7 @@ export function scoreRoute (accuracies, customers, elapsed, par, dayTier = 1, P 
     // FLAT is per delivery, and it is derived rather than authored so the route tracks the same
     // economy everything else does. Degenerate par (a broken tour) pays zero rather than NaN-ing
     // the wallet — the same guard payoutFor() carries.
-    const flat = (isFinite(par) && par > 0 && n > 0)
-        ? ECONOMY_PARAMS.k * par * dayTier * P.paperW / n
-        : 0
+    const flat = flatPerPaper(par, n, dayTier, P)
 
     // The bonus needs a real elapsed time AND a completed route. An unfinished route has no ratio
     // worth reading: you did not finish, so you cannot have finished early.
@@ -739,6 +764,19 @@ export class PaperRouteSystem {
     /** Has this customer already had their paper? */
     isDelivered (id) { return !!this.run?.hits.has(id) }
 
+    /**
+     * What a paper landed at accuracy `q` just earned, in dollars (FEAT-61, owner 2026-08-14).
+     *
+     * The EXPEDIENCY BONUS IS NOT IN HERE, and that is the honest choice rather than an omission:
+     * the bonus depends on when you finish, so quoting a share of it mid-route would be a promise
+     * the route can still take back. This is the money already banked for that throw — which is
+     * exactly the thing accuracy buys, and the reason it is worth showing the instant it lands.
+     */
+    paperValue (q) {
+        if (!this.run || !this.route) return 0
+        return flatPerPaper(this.route.par, this.route.customers.length, this.run.dayTier) * q
+    }
+
     /** Papers still in the truck. Zero does not end the route; the last one LANDING does. */
     stock () { return this.run ? this.run.stock : 0 }
     hasStock () { return this.stock() > 0 }
@@ -1109,9 +1147,13 @@ export class PaperRouteSystem {
         }
         // The route ends on the LAST PAPER, not on the last throw: the bell and the inventory are
         // the only two ways out, and an empty truck with one still in the air is neither yet.
+        // What that throw just banked, quoted to the player on landing. Zero unless it credited —
+        // a paper onto a porch that already has one is spent, and saying it earned something would
+        // be the read-out lying about the one number it exists to show.
+        const pay = credited ? this.paperValue(q) : 0
         if (this.run.hits.size >= this.route.customers.length
             || (this.run.stock <= 0 && this.run.inFlight <= 0)) {
-            const out = { customer: best, dist: bd, q, credited, already }
+            const out = { customer: best, dist: bd, q, credited, already, pay }
             this.finish()
             return out
         }
@@ -1128,7 +1170,7 @@ export class PaperRouteSystem {
         // and it costs nothing the player can see: quiet, so no RECALCULATING flashes for something
         // that is not a wrong turn, and the previous line stays up for the ~120 ms it takes.
         if (credited) this._startReplan('delivered', true)
-        return { customer: best, dist: bd, q, credited, already }
+        return { customer: best, dist: bd, q, credited, already, pay }
     }
 
     /**

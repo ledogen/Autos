@@ -2551,7 +2551,12 @@ function _scoreLanding (hit) {
   const scored = paperRouteSystem.recordLanding(hit.x, hit.z)
   if (scored) {
     if (scored.credited) {
-      _showThrowReadout(`<span style="color:#7ed957">${scored.dist.toFixed(2)} m — ${Math.round(scored.q * 100)}%</span>`)
+      // DISTANCE THEN DOLLARS (owner, 2026-08-14). Accuracy is what the throw pays for now, so the
+      // read-out quotes the money it just earned rather than a percentage the player has to convert
+      // in their head. `scored.pay` is banked money — the expediency bonus is not in it, because
+      // that depends on when you finish and the route can still take it back.
+      _showThrowReadout(`<span style="color:#7ed957">${scored.dist.toFixed(2)} m`
+        + ` &nbsp;·&nbsp; $${scored.pay.toFixed(2)}</span>`)
     } else if (scored.already) {
       // Not a failure — a paper spent. Saying so is the difference between "that did nothing" and
       // "you already did this one", and only one of those tells you to drive on.
@@ -3395,9 +3400,11 @@ function _renderMissionUI () {
       // blue), the one place a rank is ever shown (SM-INV-3: result-card only, never live). A paid
       // job adds its payout + good deeds; Quick Job says plainly that it pays nothing.
       const paid = r.payout !== undefined
-      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span><br>`
-        + `your time <b>${formatTime(r.elapsed)}</b> &nbsp;<span class="mp-dim">/</span>&nbsp; `
-        + `par <b>${formatTime(r.par)}</b><br>`
+      // Letter and time share the headline, at one size (owner, 2026-08-14 — the same rule the
+      // paper route's cards follow). Par stays underneath: it is the reference, not the result.
+      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
+        + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span><br>`
+        + `<span class="mp-dim">par</span> <b>${formatTime(r.par)}</b><br>`
         + `<span style="color:${col}">${sign}${formatTime(Math.abs(r.margin))} vs par</span>`
         + (paid
           ? `<br><span class="mp-pay">$${r.payout.toLocaleString('en-US')}</span>`
@@ -3462,13 +3469,17 @@ function _renderPaperUI () {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       const r = p.route
       const stock = stockForTier()
+      // THE THREE HEADLINE NUMBERS, one line, one size (owner, 2026-08-14): who, how far, how long.
+      // The deadline used to be dim text on the last line, which made the one number with a bell
+      // attached to it the least legible thing on the card.
       body.innerHTML = `<span class="mp-big">${r.customers.length}</span> `
         + `<span class="mp-dim">customer${r.customers.length === 1 ? '' : 's'}</span> `
-        + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${km(r.distance)}</span><br>`
+        + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${km(r.distance)}</span> `
+        + `&nbsp;<span class="mp-dim">·</span>&nbsp; `
+        + `<span class="mp-big">${formatTime(deadlineFor(r.par))}</span><br>`
         + `${stock} papers in the truck `
         + `<span class="mp-dim">(${stock - r.customers.length} spare)</span><br>`
-        + `<span class="mp-dim">back before ${formatTime(deadlineFor(r.par))} &mdash; `
-        + `the papers you place are yours to keep either way</span>`
+        + `<span class="mp-dim">i gave you a couple extra, feel free to keep what you don&rsquo;t deliver</span>`
       break
     }
     case 'staging':
@@ -3489,12 +3500,12 @@ function _renderPaperUI () {
     case 'done': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       const r = p.result
-      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span><br>`
-        + `<b>${r.delivered}</b> of <b>${r.customers}</b> delivered `
-        + `&nbsp;<span class="mp-dim">·</span>&nbsp; `
-        + `${Math.round(r.meanAccuracy * 100)}% <span class="mp-dim">accuracy</span><br>`
-        + `<span class="mp-dim">your time</span> <b>${formatTime(r.elapsed)}</b>`
+      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
+        + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
         + (r.expedite > 0 ? ` &nbsp;<span style="color:#8ce99a">+${Math.round(r.expedite * 100)}% early</span>` : '')
+        + `<br><b>${r.delivered}</b> of <b>${r.customers}</b> delivered `
+        + `&nbsp;<span class="mp-dim">·</span>&nbsp; `
+        + `${Math.round(r.meanAccuracy * 100)}% <span class="mp-dim">accuracy</span>`
         + `<br><span class="mp-pay">$${r.payout.toLocaleString('en-US')}</span>`
         + (r.points > 0
           ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points} good deed${r.points > 1 ? 's' : ''}</span>`

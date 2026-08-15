@@ -80,14 +80,35 @@ cliff is the property line.
 
   `EXPEDITE_ON = 0.90`, `EXPEDITE_FULL = 0.70`, `BONUS_MAX = 0.40`. Tunable.
 
-### Rank (per-axis; SM-INV-4 untouched)
+### Rank — SUPERSEDED [AMENDED 2026-08-14, owner]
 
-`score = coverage × meanAccuracy`, `coverage = delivered / customers`. One of nine ⇒ `score ≈ 0.11` ⇒
-**D**, *and it still pays for that one*. Thresholds `C ≥ 0.50 · B ≥ 0.75 · A ≥ 0.90 · S ≥ 0.98`.
-`pointsFor(letter)` is called unmodified — a bad route earns money and no good deeds.
+> **ACCURACY PAYS, THE CLOCK GRADES.** The rank is now **`gradeRun(elapsed / par)`** — the par
+> ratio, gated on full coverage — and accuracy is confined to scaling the per-delivery rate. Par is
+> a **B** and B contains par (SM-INV-3's amendment holds here too); dawdling is a C. The expediency
+> bonus grows to **0.70** and applies to the **full** flat (`n × FLAT`) rather than the
+> accuracy-scaled sum, which is what makes a rim-scraping blast pay about what a methodical drive at
+> par pays. On the scaled sum the same equivalence needs 233%, which is not a tunable number.
+>
+> `gradeRun()` IS now called by this mission; `payoutFor()` still is not. See `missions.md` §2 for
+> the full amendment and its arithmetic.
+>
+> **STATUS: ratified, not yet implemented.** `scoreRoute` still ranks on `coverage × meanAccuracy`
+> via `letterFor`/`PAPER_PARAMS.rank`, and `bonusMax` is still 0.40. `src/paper-route.js`'s header
+> carries the same warning. Landing it = delete `letterFor` + the rank table, call `gradeRun()`,
+> move the bonus onto `n × flat`, and retune `bonusMax` to 0.70.
 
-**`payoutFor()` and `gradeRun()` are not called by this mission.** Both are par-ratio machinery for
-margin-scored types. `EconomySystem.settle()` remains the single money path.
+The superseded model, for provenance: `score = coverage × meanAccuracy`, thresholds
+`C ≥ 0.50 · B ≥ 0.75 · A ≥ 0.90 · S ≥ 0.98`; one of nine ⇒ `score ≈ 0.11` ⇒ **D**, and it still paid
+for that one. `pointsFor(letter)` is called unmodified either way — a bad route earns money and no
+good deeds — and `EconomySystem.settle()` remains the single money path.
+
+### Par prices the stops [FIXED 2026-08-14]
+
+A delivery pins the reference driver to **zero** at the porch (`stop` on the segment; the one place
+`par.js`'s `vMin` floor does not apply) and charges **no dwell** — the cost is the braking and the
+re-acceleration, derived from the truck's own figures, measured at 3.0–6.0 s per stop and varying
+with the road either side of the house. Before this, par drove straight past every porch at 73 km/h
+and the expediency bonus was unreachable by construction.
 
 ## Deadline, stock, tiers
 
