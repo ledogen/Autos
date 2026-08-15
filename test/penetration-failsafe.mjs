@@ -42,7 +42,6 @@ const queryContacts = (cx, cy, cz, r) => {
   if (depth <= 0) return []
   return [{ normal: new THREE.Vector3(0, 1, 0), depth, contactPoint: new THREE.Vector3(cx, groundY, cz) }]
 }
-const queryVertexContacts = () => []
 
 function mkState (py) {
   return {
@@ -62,7 +61,7 @@ function mkState (py) {
 
 // Start slightly above contact so settling never starts with a large embed.
 const vs = mkState(0.70)
-for (let i = 0; i < 300; i++) stepPhysics(vs, P, DT, queryContacts, queryVertexContacts, ctx)
+for (let i = 0; i < 300; i++) stepPhysics(vs, P, DT, queryContacts, ctx)
 
 const pySettle = vs.position.y
 const vySettle = vs.velocity.y
@@ -90,7 +89,7 @@ let pyBefore = vs.position.y
 for (let i = 0; i < 40; i++) {
   const vyPrev = vs.velocity.y
   const pyPrev = vs.position.y
-  stepPhysics(vs, P, DT, queryContacts, queryVertexContacts, ctx)
+  stepPhysics(vs, P, DT, queryContacts, ctx)
   // Force-only integration moves position by ≈ vy·dt + a·dt² (a·dt² ≤ ~0.01 m even at huge tire force).
   // A failsafe teleport adds maxEmbed (≫ 0.05 m) on top. So any per-frame |Δpy − vyPrev·dt| > 0.05 m
   // is a position write, i.e. the failsafe fired.
@@ -105,14 +104,14 @@ ok(climbed > 0.10, `body climbed toward the new surface via suspension force (Δ
 function settledHub () {
   const s = mkState(pySettle)
   groundY = 0
-  for (let i = 0; i < 60; i++) stepPhysics(s, P, DT, queryContacts, queryVertexContacts, ctx)
+  for (let i = 0; i < 60; i++) stepPhysics(s, P, DT, queryContacts, ctx)
   return { s, hub: getWheelPosition(0, s, P) }   // _rotateVector was set by the last stepPhysics call
 }
 
 // One step against a raised surface → the position change NOT explained by integration (= a teleport).
 function stepJump (s) {
   const pyPrev = s.position.y, vyPrev = s.velocity.y
-  stepPhysics(s, P, DT, queryContacts, queryVertexContacts, ctx)
+  stepPhysics(s, P, DT, queryContacts, ctx)
   return (s.position.y - pyPrev) - vyPrev * DT
 }
 

@@ -35,11 +35,6 @@ const queryContacts = (cx, cy, cz, r) => {
   if (gd > 0) return [{ normal: N.clone(), depth: gd, contactPoint: new THREE.Vector3(cx, h, cz) }]
   return []
 }
-const queryVertexContacts = (px, py, pz) => {
-  const h = surfaceY(px, pz)
-  if (py < h) return [{ normal: N.clone(), depth: h - py }]
-  return []
-}
 
 // Static equilibrium (verbatim from main.js computeStaticEquilibrium).
 function eqOf (p) {
@@ -75,7 +70,7 @@ console.log(`slope ${slopeDeg}°  heading ${headingDeg}°  ${park?'HANDBRAKE(par
 console.log(`  t    speed   downhillV |  FL_fn  FR_fn  RL_fn  RR_fn  | airborne-wheels | maxDepth`)
 let chatterSteps = 0
 for (let s=1; s<=STEPS; s++){
-  stepPhysics(vs, P, DT, queryContacts, queryVertexContacts)
+  stepPhysics(vs, P, DT, queryContacts)
   // downhill direction on the plane = projection of -gravity-tangent = (0,0,1) flattened; use +z comp.
   const speed = vs.velocity.length()
   const downhillV = vs.velocity.z

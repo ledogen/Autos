@@ -113,7 +113,7 @@ function _trackStreamCenter (t, x, z) {
   if (_streamCenterRing.length > _STREAM_RING_MAX) _streamCenterRing.shift()
 }
 
-// TerrainSystem instance — declared at module scope so queryContacts / queryVertexContacts
+// TerrainSystem instance — declared at module scope so queryContacts
 // can access it by reference. Initialized after scene exists (below initDebug).
 let terrainSystem = null
 
@@ -1405,78 +1405,9 @@ function closestPointOnTriangle (px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz)
   return new THREE.Vector3(ax + v * abx + w * acx, ay + v * aby + w * acy, az + v * abz + w * acz)
 }
 
-/**
- * Point (vertex) collision query against all solid geometry using face normals.
- * Unlike queryContacts, this takes a bare point (no radius) and tests it against
- * surface planes directly — returning the face normal, not a sphere-derived normal.
- * Used for body box vertex contacts to eliminate edge/corner normal artifacts.
- * Each contact: normal points away from solid; depth is penetration depth.
- */
-function queryVertexContacts (px, py, pz) {
-  const hits = []
-
-  // Ground surface — the lab's own surface (flat, except its rumble lanes) in the testing lab;
-  // analytic terrain height in the generated world.
-  // FEAT-40: pass the vertex's own Y so a body inside a bore span rides the bore floor instead of
-  // seeing the raw hill overhead as a 30 m phantom penetration.
-  const terrainH = _labActive ? labSystem.groundHeight(px, pz)
-                              : (terrainSystem ? terrainSystem.analyticHeight(px, pz, undefined, py) : 0)
-  if (py < terrainH) {
-    const terrainN = _labActive ? labSystem.groundNormal(px, pz)
-                                : (terrainSystem ? terrainSystem.analyticNormal(px, pz, undefined, py) : { x: 0, y: 1, z: 0 })
-    hits.push({ normal: new THREE.Vector3(terrainN.x, terrainN.y, terrainN.z), depth: terrainH - py })
-  }
-
-  // BUG-37: bore WALL contact — terrainSystem only resolves the bore floor (bore-ownership rule);
-  // the curved half-tube sides have no matching collision without this. No hint passed (matches this
-  // function's terrain block above, which is also unhinted — vertex contacts fire far less often than
-  // per-wheel sphere contacts, so the memo optimization isn't needed here).
-  if (!_labActive && roadSystem) {
-    const wallHit = roadSystem.queryTunnelWallContact(px, py, pz, 0)
-    if (wallHit) hits.push({ normal: wallHit.normal, depth: wallHit.depth })
-  }
-
-  // Ramp face contacts — lab only (D-19: the ramp was never part of the generated world). Kept
-  // when grid world was retired: a jump is a legitimate suspension/damage input, which is exactly
-  // what the lab's rumble lanes are also for.
-  // _labActive is the authoritative gate; RANGER_PARAMS.rampEnabled is a secondary debug toggle.
-  if (_labActive && RANGER_PARAMS.rampEnabled !== false) {
-    // Ramp top incline face — half-space below the inclined plane, within ramp footprint
-    if (px >= -_hw && px <= _hw && pz <= RAMP_TOE_Z && pz >= RAMP_END_Z) {
-      const rampSurfaceY = RAMP_MAX_H + (RAMP_END_Z - pz) * Math.tan(RAMP_ANGLE)
-      const depth = rampSurfaceY - py
-      if (depth > 0) {
-        hits.push({ normal: _rampNormal.clone(), depth })
-      }
-    }
-
-    // Ramp back wall — vertical face at RAMP_END_Z, within ramp width and height
-    if (px >= -_hw && px <= _hw && pz < RAMP_END_Z && py >= -RAMP_DEPTH && py <= RAMP_MAX_H) {
-      const depth = RAMP_END_Z - pz
-      if (depth > 0) {
-        hits.push({ normal: new THREE.Vector3(0, 0, 1), depth })
-      }
-    }
-
-    // Ramp left side wall — at x = -_hw, within ramp Z and height
-    if (pz <= RAMP_TOE_Z && pz >= RAMP_END_Z && py >= -RAMP_DEPTH && py <= RAMP_MAX_H) {
-      const depth = px - (-_hw)
-      if (depth < 0) {
-        hits.push({ normal: new THREE.Vector3(1, 0, 0), depth: -depth })
-      }
-    }
-
-    // Ramp right side wall — at x = +_hw
-    if (pz <= RAMP_TOE_Z && pz >= RAMP_END_Z && py >= -RAMP_DEPTH && py <= RAMP_MAX_H) {
-      const depth = _hw - px
-      if (depth < 0) {
-        hits.push({ normal: new THREE.Vector3(-1, 0, 0), depth: -depth })
-      }
-    }
-  }
-
-  return hits
-}
+// (queryVertexContacts deleted 2026-08-15 — it fed the retired hand-rolled body-contact
+// solver; the engine chassis collides via its own hull compound now. The lab ramp solid it
+// described lives on as the engine ramp prism built in _buildLabColliders.)
 
 /**
  * Sphere collision query against all solid geometry.
@@ -1542,7 +1473,7 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
     })
   }
 
-  // Ramp triangle contacts — lab only (see queryVertexContacts above).
+  // Ramp triangle contacts — lab only (wheel path; the chassis gets the engine ramp prism).
   // _labActive is the authoritative gate; RANGER_PARAMS.rampEnabled is a secondary debug toggle.
   if (_labActive && RANGER_PARAMS.rampEnabled !== false) {
     for (const [[ax, ay, az], [bx, by, bz], [ex, ey, ez]] of RAMP_TRIS) {
@@ -3960,7 +3891,7 @@ function _buildLabColliders () {
   const slab = physicsEngine.createBody({ type: 'static', position: { x: 0, y: -5, z: 0 }, userData: { kind: 'lab-ground' } })
   physicsEngine.addBox(slab, { x: 2000, y: 5, z: 2000 }, { friction: 0.8 })   // top face at y = 0
   _labEngineBodies.push(slab)
-  // Ramp prism — same solid queryVertexContacts describes (incline face, back wall, sides).
+  // Ramp prism — incline face, back wall, sides (matches the analytic RAMP_TRIS the wheels use).
   const ramp = physicsEngine.createBody({ type: 'static', position: { x: 0, y: 0, z: 0 }, userData: { kind: 'lab-ramp' } })
   const tanA = Math.tan(RAMP_ANGLE)
   const yToe = RAMP_MAX_H + (RAMP_END_Z - RAMP_TOE_Z) * tanA   // toe surface Y (buried below 0)
@@ -4520,7 +4451,7 @@ function loop () {
       }
     }
 
-    stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, queryVertexContacts, engineCtx)
+    stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
     simTime += PHYSICS_DT
     // BUG-12 diagnostic (open): while recording, log the truck run's local centerline turn radius
     // to localize ribbon folds. Gated on isRecording() so normal play pays nothing (queryNearest

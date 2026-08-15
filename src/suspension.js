@@ -391,53 +391,7 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
   }
 }
 
-export function getBodyContactPoints (vehicleState, params) {
-  const fz     = -(params.wheelbase * params.weightRear)   // front axle Z in body space
-  const rz     =  (params.wheelbase * params.weightFront)  // rear axle Z in body space
-  const bumY   = 0.45 - params.cgHeight                   // bumper height (low side of body)
-  const undY   = params.wheelRadius - params.cgHeight      // undercarriage bottom
-  const topY   = 0.4                                       // top of visual body box (0.8m box / 2, centered at CG)
-  const halfW  = params.trackFront / 2 + 0.1              // lateral extent (slightly past track)
+// (getBodyContactPoints deleted 2026-08-15 — the bumper/undercarriage/roof probe points fed
+// the retired hand-rolled body solver and its debug spheres; the chassis is an engine hull
+// compound now, measured off the vehicle model in physics.js createVehicleChassis.)
 
-  // BUG-05: the four near-wheel undercarriage probes used to sit at ±track/2 — exactly on the
-  // wheel centerline — so their spheres straddled the wheel and stole its ground contact when
-  // the car was lowered (false wheel lift-off + jitter). Pull them inboard so the probe's outer
-  // edge stays inside the wheel's inner sidewall (track/2 − wheelHalfWidth) with a small margin.
-  // Derived from geometry so it holds at any track width, wheel size, or bodyContactRadius.
-  const WHEEL_HALF_WIDTH = 0.125
-  const UND_MARGIN       = 0.05
-  const undWFront = params.trackFront / 2 - WHEEL_HALF_WIDTH - params.bodyContactRadius - UND_MARGIN
-  const undWRear  = params.trackRear  / 2 - WHEEL_HALF_WIDTH - params.bodyContactRadius - UND_MARGIN
-
-  const locals = [
-    // Front bumper — left and right
-    { x: -halfW, y: bumY, z: fz - 0.85 },
-    { x:  halfW, y: bumY, z: fz - 0.85 },
-    // Rear bumper — left and right
-    { x: -halfW, y: bumY, z: rz + 0.65 },
-    { x:  halfW, y: bumY, z: rz + 0.65 },
-    // Undercarriage — just in front of rear wheels (inboard of the wheel footprint)
-    { x: -undWRear, y: undY, z: rz - 0.35 },
-    { x:  undWRear, y: undY, z: rz - 0.35 },
-    // Undercarriage — just behind front wheels (inboard of the wheel footprint)
-    { x: -undWFront, y: undY, z: fz + 0.35 },
-    { x:  undWFront, y: undY, z: fz + 0.35 },
-    // Undercarriage — center (two points straddling CG)
-    { x: 0, y: undY, z: -0.3 },
-    { x: 0, y: undY, z:  0.3 },
-    // Roof — four corners
-    { x: -halfW, y: topY, z: fz - 0.85 },
-    { x:  halfW, y: topY, z: fz - 0.85 },
-    { x: -halfW, y: topY, z: rz + 0.65 },
-    { x:  halfW, y: topY, z: rz + 0.65 },
-  ]
-
-  return locals.map(p => {
-    const rotated = typeof params._rotateVector === 'function' ? params._rotateVector(p) : p
-    return {
-      x: vehicleState.position.x + rotated.x,
-      y: vehicleState.position.y + rotated.y,
-      z: vehicleState.position.z + rotated.z,
-    }
-  })
-}

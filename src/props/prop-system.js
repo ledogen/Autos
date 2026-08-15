@@ -29,7 +29,7 @@
 import * as THREE from 'three'
 import { buildPalette } from './prop-palette.js'
 import { scatterChunk, scatterChunkGen } from './prop-scatter.js'
-import { sphereVsSphere, sphereVsCapsuleY, sphereVsCapsule, sphereVsMeshInstance, bushDrag } from './prop-collider.js'
+import { sphereVsSphere, sphereVsCapsule, sphereVsMeshInstance, bushDrag } from './prop-collider.js'
 import { BAKE_LAYER, shadowShearScale } from './prop-shadow-bake.js'   // PERF-07: baked prop-shadow atlas (main.js owns the system)
 import { PropImpostors } from './prop-impostor.js'                     // PERF-21: distant-prop billboards
 import { FLORA_PARAMS } from '../../data/flora.js'
@@ -458,6 +458,24 @@ export class PropSystem {
           ax: A.x, ay: A.y, az: A.z, bx: B.x, by: B.y, bz: B.z,
           radius: col.radius, boundR: col.boundR, scale: pl.scale,
         })
+      } else if (col && col.kind === 'capsule') {
+        // Standing trunk — bake WORLD endpoints so the capsule INHERITS THE TREE'S TILT
+        // (owner-spotted via the collider wireframes, 2026-08-15: colliders stood vertical
+        // under leaning trees). Local axis (0,1,0) through the same rotation the instance
+        // matrix applies: tilt about (cos tiltAz, 0, sin tiltAz), then yaw about Y.
+        const h = (col.height || 0) * pl.scale
+        const st = Math.sin(pl.tilt || 0), ct = Math.cos(pl.tilt || 0)
+        const vx = -Math.sin(pl.tiltAz || 0) * st, vy = ct, vz = Math.cos(pl.tiltAz || 0) * st
+        const cyw = Math.cos(pl.rotY), syw = Math.sin(pl.rotY)
+        const dx = vx * cyw + vz * syw, dz = -vx * syw + vz * cyw
+        collidables.push({
+          kind: 'capsule', x: pl.x, y: pl.y, z: pl.z,
+          ax: pl.x, ay: pl.y, az: pl.z,
+          bx: pl.x + dx * h, by: pl.y + vy * h, bz: pl.z + dz * h,
+          radius: col.radius, height: col.height || 0, scale: pl.scale,
+          // grid footprint must cover the LEAN (top can reach h·sin(tilt) from the base)
+          boundR: Math.max(col.radius, (col.height || 0) * st / 2 + col.radius),
+        })
       } else if (col) collidables.push({
         kind: col.kind, x: pl.x, y: pl.y, z: pl.z,
         radius: col.radius, height: col.height || 0, scale: pl.scale,
@@ -816,8 +834,10 @@ export class PropSystem {
     this._cellsAround(cx, cz, r, (c) => {
       let hit = null
       if (c.kind === 'capsule') {
+        // General capsule between the baked (tilt-inclusive) world endpoints — the vertical
+        // fast path missed leaning trunks (endpoints baked in _commitChunk).
         const capR = c.radius * c.scale * C.trunkRadiusScale
-        hit = sphereVsCapsuleY(cx, cy, cz, r, c.x, c.z, c.y, c.y + c.height * c.scale, capR)
+        hit = sphereVsCapsule(cx, cy, cz, r, c.ax, c.ay, c.az, c.bx, c.by, c.bz, capR)
       } else if (c.kind === 'logCapsule') {
         // FEAT-15: fallen log — general capsule between the baked world endpoints. Same live
         // trunkRadiusScale as standing trunks (bark + slop), so one slider tunes both.

@@ -50,7 +50,6 @@ const queryContacts = (cx, cy, cz, r) => {
     ? [{ normal: new THREE.Vector3(0, 1, 0), depth: gd, contactPoint: new THREE.Vector3(cx, 0, cz) }]
     : []
 }
-const queryVertexContacts = () => []
 
 const vs = {
   position: new THREE.Vector3(0, eq.bodyY, 0), velocity: new THREE.Vector3(0, 0, -8),
@@ -84,7 +83,7 @@ let anyNaN = false
 let contactStep = -1
 for (let s = 1; s <= 600; s++) {
   vs.throttle = 0.5
-  stepPhysics(vs, P, DT, queryContacts, queryVertexContacts, ctx)
+  stepPhysics(vs, P, DT, queryContacts, ctx)
   ctx.engine.getVelocity(barrel, bv, bw)
   const bSpeed = Math.hypot(bv.x, bv.y, bv.z)
   if (bSpeed > barrelPeakSpeed) barrelPeakSpeed = bSpeed
@@ -144,7 +143,7 @@ console.log('\nfling regression — coast over a small rock, no throttle:')
   let rockPeak = 0, omegaPeak = 0, fzPeak = 0
   for (let s = 1; s <= 480; s++) {
     vs2.throttle = 0
-    stepPhysics(vs2, P2, DT, queryContacts, queryVertexContacts, ctx2)
+    stepPhysics(vs2, P2, DT, queryContacts, ctx2)
     ctx2.engine.getVelocity(rock, rv, rw)
     rockPeak = Math.max(rockPeak, Math.hypot(rv.x, rv.y, rv.z))
     for (let i = 0; i < 4; i++) {
@@ -188,7 +187,7 @@ console.log('\nchassis vs tree trunk — rigid stop, not a squish:')
   let minZ = 0
   for (let s = 1; s <= 300; s++) {
     vs3.throttle = 0
-    stepPhysics(vs3, P3, DT, queryContacts, queryVertexContacts, ctx3)
+    stepPhysics(vs3, P3, DT, queryContacts, ctx3)
     minZ = Math.min(minZ, vs3.position.z)
   }
   const up3 = new THREE.Vector3(0, 1, 0).applyQuaternion(vs3.quaternion)

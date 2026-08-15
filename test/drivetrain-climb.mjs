@@ -55,10 +55,6 @@ function runScenario (gradePct, steps, label, opts = {}) {
     const h = surfaceY(cx, cz); const gd = h + r - cy
     return gd > 0 ? [{ normal: N.clone(), depth: gd, contactPoint: new THREE.Vector3(cx, h, cz) }] : []
   }
-  const queryVertexContacts = (px, py, pz) => {
-    const h = surfaceY(px, pz)
-    return py < h ? [{ normal: N.clone(), depth: h - py }] : []
-  }
 
   const eq = eqOf(P)
   const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), N)
@@ -90,7 +86,7 @@ function runScenario (gradePct, steps, label, opts = {}) {
   let prevGear = 1
   for (let s = 1; s <= steps; s++) {
     vs.throttle = 1; vs.brake = 0        // hold full throttle every step (no input ramp in harness)
-    stepPhysics(vs, P, DT, queryContacts, queryVertexContacts, ctx)
+    stepPhysics(vs, P, DT, queryContacts, ctx)
     const vfwd = vs.velocity.dot(fwd)
     const accel = (vfwd - prevV) / DT; prevV = vfwd
     const driveT = P._driveTorque ? P._driveTorque[2] : 0

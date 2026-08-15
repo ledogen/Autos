@@ -50,7 +50,6 @@ const queryContacts = (cx, cy, cz, r) => {
     ? [{ normal: new THREE.Vector3(0, 1, 0), depth: gd, contactPoint: new THREE.Vector3(cx, 0, cz) }]
     : []
 }
-const queryVertexContacts = (px, py, pz) => py < 0 ? [{ normal: new THREE.Vector3(0, 1, 0), depth: -py }] : []
 
 function freshState (P, { y = null, vfwd = 0 } = {}) {
   const eq = eqOf(P)
@@ -87,7 +86,7 @@ async function runScenario (name, steps, drive, opts = {}) {
   const trace = []
   for (let s = 1; s <= steps; s++) {
     drive(vs, s * DT, s)
-    stepPhysics(vs, P, DT, queryContacts, queryVertexContacts, ctx)
+    stepPhysics(vs, P, DT, queryContacts, ctx)
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(vs.quaternion)
     const e = new THREE.Euler().setFromQuaternion(vs.quaternion, 'YXZ')
     trace.push([

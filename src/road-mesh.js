@@ -931,6 +931,11 @@ export class RoadMeshSystem {
 
             const _ptS = performance.now()
             const geo  = this.sweepRibbon(spline, useGrade, usePoints, this._params, runKey, useArcS0, useArcS1)
+            // FEAT-48: the ribbon's edge SKIRTS are near-vertical wall strips — colliding with
+            // them let the chassis slab catch a 0.4 m wall at speed (the hairpin launch+yaw kick,
+            // capture 1786773473453). Physics keeps the DRIVING SURFACE only; RoadPhysics strips
+            // steep triangles from surface-tagged geometries. Tunnels/portals stay fully solid.
+            geo.userData.colliderSurfaceOnly = true
             perfAdd('ribbon.sweepRibbon', performance.now() - _ptS)
             const _ptM = performance.now()   // PERF-26 INSTRUMENT: Mesh ctor + scene.add (parent/matrix
             // bookkeeping, and the first place a fresh BufferGeometry is seen by the renderer graph)
@@ -1006,6 +1011,7 @@ export class RoadMeshSystem {
                     nz >= tileWorldZ && nz < tileWorldZ + CHUNK_SIZE) {
                     const geo = this.buildJunctionFootprint(node, this._params)
                     if (geo) {
+                        geo.userData.colliderSurfaceOnly = true   // FEAT-48: pads too — aprons can have steep rims
                         const mesh = new THREE.Mesh(geo, this._getJunctionMaterial())
                         mesh.renderOrder = 1  // Plan 09-10: ribbon draws after terrain
                         mesh.receiveShadow = true

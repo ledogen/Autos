@@ -67,7 +67,6 @@ const queryContacts = (cx, cy, cz, r) => {
   const gd = r - cy
   return gd > 0 ? [{ normal: UP.clone(), depth: gd, contactPoint: new THREE.Vector3(cx, 0, cz) }] : []
 }
-const queryVertexContacts = (px, py) => (py < 0 ? [{ normal: UP.clone(), depth: -py }] : [])
 
 // A vehicle state on the flat plane, optionally already rolling at v0 (body -Z is forward).
 function makeVehicle (P, v0 = 0) {
@@ -117,7 +116,7 @@ function measureAccel () {
   for (let s = 0; s < steps; s++) {
     vs.throttle = 1; vs.brake = 0
     applySteer(vs, P, 0)
-    stepPhysics(vs, P, DT, queryContacts, queryVertexContacts)
+    stepPhysics(vs, P, DT, queryContacts)
     t += DT
     const v = vs.velocity.dot(fwdOf(vs))
     dist += v * DT
@@ -139,7 +138,7 @@ function measureBraking (fromKph = 100) {
   for (let s = 0; s < 60 * 60; s++) {
     vs.throttle = 0; vs.brake = 1
     applySteer(vs, P, 0)
-    stepPhysics(vs, P, DT, queryContacts, queryVertexContacts)
+    stepPhysics(vs, P, DT, queryContacts)
     const v = vs.velocity.dot(fwdOf(vs))
     if (v <= 0.2) break
     dist += v * DT; t += DT
@@ -168,7 +167,7 @@ function skidpad (phiCmd, targetV, { hold = 14, settle = 6 } = {}) {
     const u = Math.max(-1, Math.min(1, err * 0.35 + integ))
     vs.throttle = Math.max(0, u); vs.brake = Math.max(0, -u) * 0.5
 
-    stepPhysics(vs, P, DT, queryContacts, queryVertexContacts)
+    stepPhysics(vs, P, DT, queryContacts)
 
     // Departure guards: rolled over, or launched.
     if (upOf(vs).y < 0.6) return { departed: 'rollover' }

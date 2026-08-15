@@ -98,11 +98,31 @@ export class RoadPhysics {
       const idx = geo.index
       if (!pos || !idx || pos.isInterleavedBufferAttribute) continue
       const positions = pos.array instanceof Float32Array ? pos.array : new Float32Array(pos.array)
-      const indices = idx.array instanceof Uint32Array ? idx.array : new Uint32Array(idx.array)
-      if (this._eng.addMesh(body, positions, indices, { friction: ROAD_FRICTION })) shapes++
+      let indices = idx.array instanceof Uint32Array ? idx.array : new Uint32Array(idx.array)
+      // Surface-tagged geometries (ribbon slices, pads) contribute their DRIVING SURFACE only:
+      // triangles steeper than ~70° (|ny| < 0.35 of the normal) are dropped — those are the edge
+      // skirts, 0.4 m wall strips along the asphalt that the chassis slab could catch at speed
+      // (one-frame Δv 7 m/s + 8.6 rad/s yaw kick, capture 1786773473453). Debris can't tell:
+      // anything rolling off the edge lands on the carved-dirt heightfield centimetres below.
+      if (geo.userData?.colliderSurfaceOnly) indices = this._surfaceTris(positions, indices)
+      if (indices.length >= 3 && this._eng.addMesh(body, positions, indices, { friction: ROAD_FRICTION })) shapes++
     }
     if (shapes > 0) this._tiles.set(key, body)
     else this._eng.destroyBody(body)
+  }
+
+  /** Keep triangles whose face normal is within ~70° of vertical (the drivable surface). */
+  _surfaceTris (pos, idx) {
+    const keep = []
+    for (let i = 0; i + 2 < idx.length; i += 3) {
+      const a = idx[i] * 3, b = idx[i + 1] * 3, c = idx[i + 2] * 3
+      const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2]
+      const vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2]
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx
+      const len = Math.sqrt(nx * nx + ny * ny + nz * nz)
+      if (len > 1e-12 && Math.abs(ny) / len >= 0.35) keep.push(idx[i], idx[i + 1], idx[i + 2])
+    }
+    return Uint32Array.from(keep)
   }
 
   /** RoadMeshSystem hook: tile evicted or stale. */
@@ -151,9 +171,9 @@ export class PropPhysics {
     let shapes = 0
     for (const c of collidables) {
       if (c.kind === 'capsule') {
+        // Baked world endpoints — inherits the tree's tilt (same data the analytic query uses).
         const r = c.radius * c.scale * C.trunkRadiusScale
-        this._eng.addCapsule(body, { x: c.x, y: c.y, z: c.z },
-          { x: c.x, y: c.y + c.height * c.scale, z: c.z }, r, mat)
+        this._eng.addCapsule(body, { x: c.ax, y: c.ay, z: c.az }, { x: c.bx, y: c.by, z: c.bz }, r, mat)
         shapes++
       } else if (c.kind === 'logCapsule') {
         const r = c.radius * c.scale * C.trunkRadiusScale

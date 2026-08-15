@@ -7,7 +7,7 @@
 //
 // Usage per scenario:
 //   const ctx = await makeEngineCtx(vs, P, { groundFn: (x, z) => -tanT * z, extent: 1024, cell: 8 })
-//   ... stepPhysics(vs, P, DT, queryContacts, queryVertexContacts, ctx) ...
+//   ... stepPhysics(vs, P, DT, queryContacts, ctx) ...
 //   ctx.dispose()
 //
 // One engine WORLD per scenario (WASM module is shared/idempotent); dispose when done.

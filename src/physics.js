@@ -28,7 +28,7 @@
  * compresses, the truck lifts, the rock squirts out.
  *
  * Exports:
- *   stepPhysics(vehicleState, params, dt, queryContacts, queryVertexContacts, engineCtx)
+ *   stepPhysics(vehicleState, params, dt, queryContacts, engineCtx)
  *     — engineCtx = { engine: PhysicsEngine, chassis: bodyHandle } (required)
  *   createVehicleChassis(engine, vehicleState, params) — build the chassis body
  *   getDriveTorque(wheelIndex, vehicleState, params)
@@ -124,7 +124,7 @@ const BODY_RESTITUTION_DEFAULT = 0.21   // slight rebound on hard slams; 0 = ful
 // Restitution applies only to genuine IMPACTS. Below this approach speed there is no bounce, so
 // resting/settling contact stays dead-stopped (BUG-27-era REST_VEL_THRESHOLD, now enforced by the
 // engine's world-level restitution threshold — wired in physics-engine.js's world defaults).
-export const REST_VEL_THRESHOLD = 1.0   // m/s — |vn| below this → no bounce, pure plastic stop
+const REST_VEL_THRESHOLD = 1.0   // m/s — |vn| below this → no bounce, pure plastic stop
 // BUG-27b: body contact is SLIPPERY — a bumper grazing the shoulder must SLIDE, not catch and stop
 // the truck dead. Under the engine this is a friction MATERIAL on the chassis shape. Engines
 // combine pair friction by geometric mean (√(μa·μb)), and terrain colliders carry μ=0.8
@@ -199,10 +199,24 @@ export function createVehicleChassis (engine, vehicleState, params) {
     for (const x of [-halfW, halfW]) for (const [z, y] of profile) pts.push(x, y, z)
     return pts
   }
-  // 1. Lower slab: nose to tail, undercarriage to beltline.
-  engine.addHull(chassis, extrude([
-    [P.noseZ, undY], [P.noseZ, P.beltY], [P.tailZ, P.beltY], [P.tailZ, undY],
-  ], P.slabHalfW), mat)
+  // 1. Lower slab: nose to tail, undercarriage to beltline — CHAMFERED (capture 1786773473453).
+  // A sharp box corner at undercarriage depth dug into rising ground/road at full suspension
+  // compression and turned a graze into a one-frame wall strike (launch + yaw kick). The bottom
+  // face is pulled in like a real truck's approach/departure angles (~40°) and side sills, so a
+  // bottoming-out contact is always a glancing plane, never a corner catch. The bottom PLANE
+  // stays at the honest undercarriage height — flat scrapes are unchanged.
+  // Slab restitution is pinned to 0 regardless of params.bodyRestitution: an undercarriage
+  // scrape must be fully plastic (real frames yield, they don't bounce); the cab/roof/deck
+  // below keep the tunable rebound for genuine body slams and rollovers.
+  const slabBottomHalfW = 0.80
+  const slabBottomNoseZ = P.noseZ + 0.43   // approach chamfer
+  const slabBottomTailZ = P.tailZ - 0.37   // departure chamfer
+  engine.addHull(chassis, [
+    -P.slabHalfW, P.beltY, P.noseZ, P.slabHalfW, P.beltY, P.noseZ,
+    -P.slabHalfW, P.beltY, P.tailZ, P.slabHalfW, P.beltY, P.tailZ,
+    -slabBottomHalfW, undY, slabBottomNoseZ, slabBottomHalfW, undY, slabBottomNoseZ,
+    -slabBottomHalfW, undY, slabBottomTailZ, slabBottomHalfW, undY, slabBottomTailZ,
+  ], { ...mat, restitution: 0 })
   // 2. Hood wedge: grille up to the cowl.
   engine.addHull(chassis, extrude([
     [P.noseZ, 0.02], [P.noseZ, P.hoodNoseY], [P.cowlZ, P.hoodCowlY], [P.cowlZ, 0.02],
@@ -222,7 +236,7 @@ export function createVehicleChassis (engine, vehicleState, params) {
   return chassis
 }
 
-export function stepPhysics (vehicleState, params, dt, queryContacts, queryVertexContacts, engineCtx) {
+export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx) {
   if (!engineCtx) throw new Error('stepPhysics: engineCtx {engine, chassis} is required (FEAT-48)')
   const { engine, chassis } = engineCtx
   // ── Step 0: Rotation helper ────────────────────────────────────────────────
