@@ -21,7 +21,7 @@ import * as THREE from 'three'
 import { RoadSystem } from './road.js'
 import { MISSION_PLAN_RADIUS } from './mission.js'
 import { POI_ICONS, POI_ICON_PX } from '../data/map-icons.js'   // FEAT-60: map glyphs
-import { chunkCover, slopeFromGradient, COVER_CELL, CELLS_PER_CHUNK, DENSE_MIN, SCATTERED_MIN }
+import { chunkCover, slopeFromGradient, COVER_CELL, CELLS_PER_CHUNK, DENSE_MIN }
     from './map-cover.js'
 import { biomeAt, BIOME } from './biome.js'
 import { FLORA_PARAMS } from '../data/flora.js'
@@ -142,14 +142,18 @@ const TOPO_GRID_MAX = 480
 // hand and not one new sample of the field. Landing it in the cached background means it is paid
 // once per settled pan/zoom, never per frame.
 //
-// Lit from the NORTH-WEST. That is the cartographic convention, not a physical sun: lighting relief
-// from the upper left is what makes a reader see ridges standing up instead of valleys — flip it
-// and the terrain inverts perceptually.
+// Lit from the upper-LEFT of the screen. That is the cartographic convention, not a physical sun:
+// lighting relief from the upper left is what makes a reader see ridges standing up instead of
+// valleys — get it wrong and the terrain inverts perceptually.
+//
+// The angle is in WORLD xz, and the map draws +z DOWN the screen (see _sy), so "upper-left" means
+// the light lies toward (−x, −z): azimuth 5π/4, not the 3π/4 this shipped with. 3π/4 puts it at
+// (−x, +z) — lower-left — which is why the sheet read as lit from the bottom edge.
 //
 // The band is deliberately shallow. On the owner's reference the shading only takes the green from
 // #e9f1db to about #d2d9c2, ~12%, and a heavier hand turns a printed sheet into a render — the
 // contours are what carry the relief, the shade only tells you which way it faces.
-const HILLSHADE_AZ  = Math.PI * 0.75   // rad — light from the NW (screen upper-left)
+const HILLSHADE_AZ  = Math.PI * 1.25   // rad — light from the screen's upper-left
 const HILLSHADE_MIN = 0.88             // darkest multiplier on a fully-shaded slope
 const HILLSHADE_K   = 2.2              // gradient → shade gain; ~1.0 saturates on a mild grade
 
@@ -178,12 +182,17 @@ const COVER_SS   = 4
 // about ground rather than about an individual gap between trunks. Raising it flattens the sheet
 // toward uniform green: at r=3 the measured p10..p90 spread collapses to 1.14..1.76.
 const COVER_COUNT_BLUR = 1
-// Cover chunks resolved per background redraw. A 4 km sheet is ~3,900 chunks and each replays its
-// scatter, so at full zoom-out the cap bites and the rest of the sheet prints as plain green.
-// Deliberate: at that zoom a 64 m chunk is well under a pixel, so there is no cover pattern left to
-// see, and the alternative is a multi-second stall for a texture nobody can resolve. The memo is
-// permanent, so panning back in fills what the cap skipped.
-const COVER_CHUNK_BUDGET = 1400
+// Safety cap on chunks whose SCATTER REPLAY is resolved in one background redraw. The real gate is
+// glyph visibility (see _glyphsVisible) — the replay's only product is the MED/HIGH split, and that
+// only shows as foliage glyphs — so this exists purely to bound the pathological case where glyphs
+// are just barely visible across an enormous sheet.
+//
+// Sized against measurement: the replay costs ~31 us a chunk, so 6000 is ~190 ms, paid once per
+// chunk for the life of the seed and inside an already-debounced redraw. It was 1400, which sounds
+// generous but is not: the cached background is OVERSCANNED 2x per axis, so it covers 4x the chunks
+// on screen, and the cap was silently cutting in at ordinary reading zooms and taking every foliage
+// glyph with it.
+const COVER_CHUNK_BUDGET = 6000
 
 // ── Water ─────────────────────────────────────────────────────────────────────────────────────
 // Rivers and ponds, straight off the play WaterSystem (injected — see the getWater ctor option).
@@ -1196,19 +1205,18 @@ export class Map2D {
 
         const cx0 = Math.floor(wx0 / CH), cz0 = Math.floor(wz0 / CH)
         const cx1 = Math.floor((wx0 + gw * COVER_CELL) / CH), cz1 = Math.floor((wz0 + gh * COVER_CELL) / CH)
-        // The budget gates the TREE REPLAY only — never the green/white fill, which is drawn at
-        // every zoom (owner, 2026-08-15). The two layers have very different costs and answer very
-        // different questions:
+        // What is gated, and what never is (owner, 2026-08-15 — the fill is drawn at every zoom):
         //
-        //   biome per cell   — cheap, and it alone decides green vs white. Always resolved.
-        //   scatter replay   — ~44 candidates a chunk, and only distinguishes MED from HIGH, i.e.
-        //                      whether foliage glyphs are stamped. Those glyphs are already hidden
-        //                      below GLYPH_MIN_PX, so at the zooms this budget bites there is
-        //                      nothing it could have contributed to the picture.
+        //   biome per cell   — cheap, and it ALONE decides green vs white. Always resolved.
+        //   scatter replay   — ~44 candidates a chunk, and its only product is the MED/HIGH split,
+        //                      which shows up solely as foliage glyphs.
         //
-        // Skipping the replay therefore costs a zoomed-out sheet its glyphs and nothing else. It
-        // used to skip the fill too, which is why the map went flat green when you zoomed out.
-        const replay = (cx1 - cx0 + 1) * (cz1 - cz0 + 1) <= COVER_CHUNK_BUDGET
+        // So the replay is gated on whether those glyphs can be seen at all, not on area. Tying it
+        // to area instead is what made the glyphs vanish at ordinary reading zooms: the background
+        // is overscanned 2x per axis, so the chunk count is 4x what is on screen and blew a cap
+        // that looked roomy. The count check survives only as a bound on the pathological case.
+        const replay = this._glyphsVisible() &&
+                       (cx1 - cx0 + 1) * (cz1 - cz0 + 1) <= COVER_CHUNK_BUDGET
 
         // Water rejects, fetched ONCE for the whole rect rather than queried per candidate. The
         // scatter asks `is this point in a pond / in a stream channel` per tree; asking the
@@ -1307,15 +1315,26 @@ export class Map2D {
             // count of trees that happened to be replayed nearby may argue them back to green —
             // this is also what keeps the map's white agreeing with the world, since the scatter
             // clears exactly these cells.
+            // White means "not the forest biome" and nothing else, so the biome alone decides the
+            // fill and the counts only choose whether glyphs are stamped on top of the green.
+            // That is what keeps both region types solid: the count can no longer punch white
+            // holes into forest, and it never could paint green into a meadow.
             if (open[k]) { bin[k] = COVER_LOW; continue }
-            // Forest, but the replay was skipped: green with no glyphs. Falling through to the
-            // count test would read 0 trees and print the whole zoomed-out sheet white.
-            if (!replay) { bin[k] = COVER_MED; continue }
-            const n = area[k]
-            bin[k] = n >= DENSE_MIN ? COVER_HIGH : n >= SCATTERED_MIN ? COVER_MED : COVER_LOW
+            bin[k] = (replay && area[k] >= DENSE_MIN) ? COVER_HIGH : COVER_MED
         }
         return bin
     }
+
+    /**
+     * Is the glyph lattice far enough apart on screen to be read as separate marks?
+     *
+     * ONE definition with two callers, and they must agree: _drawGlyphs uses it to decide whether
+     * to stamp, and _coverRaster uses it to decide whether the scatter replay is worth running at
+     * all — the replay's only product is the MED/HIGH split, which nothing but those glyphs
+     * expresses. If the two ever disagreed, the map would either pay for a replay it cannot show or
+     * try to stamp glyphs from densities it never resolved.
+     */
+    _glyphsVisible() { return GLYPH_CELL * this._zoom >= GLYPH_MIN_PX }
 
     // (1b) Rivers and ponds — the blue plate.
     //
@@ -1450,7 +1469,7 @@ export class Map2D {
         const g = this._coverGrid
         if (!g || !g.cover) return
         const zoom = this._zoom
-        if (GLYPH_CELL * zoom < GLYPH_MIN_PX) return   // would merge into a smear — see GLYPH_MIN_PX
+        if (!this._glyphsVisible()) return
 
         const { wx0, wz0, gw, gh, cover, hg } = g
         const x1 = wx0 + gw * COVER_CELL, z1 = wz0 + gh * COVER_CELL

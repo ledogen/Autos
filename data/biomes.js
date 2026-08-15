@@ -31,9 +31,25 @@ export const BIOME_PARAMS = {
   // Montane meadows form where a valley floor is flat enough to hold water and low enough to
   // receive it. Both tests are needed: a flat shelf part-way up a ridge sheds water and grows
   // trees, and a steep gully bottom carries water away rather than holding it.
-  meadowSlopeMax:   0.075,  // above this the ground drains and stays forest
-  meadowReliefMin:  3.0,    // m — must sit at least this far below the surrounding ground
-  meadowReliefR:    70,     // m — radius the surrounding ground is averaged over (4-point ring)
+  // Both meadow tests read ONE 4-point ring at this radius — the landform's gradient across it,
+  // and its height against the ring's mean. Deliberately wide: read at a short baseline, flatness
+  // spikes over every metre-scale wrinkle on a basin floor and the meadow comes out shot through
+  // with green ribbons that no one standing in the field would call a treeline.
+  // Wide on purpose, and this radius is the single biggest lever on whether meadows read as solid
+  // regions or as ribbons. Measured over seed 6, holding the other two fixed (open% / boundary
+  // neighbours per open cell — lower is more solid):
+  //
+  //     r=55  →  7.5% / 1.277      r=180 → 16.3% / 0.557
+  //     r=90  → 10.1% / 0.907      r=250 → 21.1% / 0.398
+  //     r=130 → 12.5% / 0.715      r=320 → 25.2% / 0.306
+  //
+  // A short ring asks "is the ground under my feet flat", which every wrinkle on a basin floor
+  // answers differently, so the meadow shatters. A wide one asks "is this a broad flat basin",
+  // which is what a meadow actually is — and it is the same five samples either way.
+  meadowRingR:      320,    // m
+  meadowSlopeMax:   0.020,  // above this the landform drains and stays forest. Small-looking
+                            // because a gradient across 640 m is far gentler than a local one.
+  meadowReliefMin:  2.0,    // m — must sit at least this far below the surrounding ground
 
   // Not every flat hollow is a meadow. This is a low-frequency world-space gate that lets some
   // qualifying ground stay wooded, so meadows read as particular places rather than as a rule

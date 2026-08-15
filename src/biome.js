@@ -54,18 +54,31 @@ export function meadowMask (x, z, freq, seed) {
  * expected to evaluate this per CLUSTER, not per tree — see prop-scatter's tree pass.
  */
 export function biomeAt (x, z, seed, s, P = BIOME_PARAMS) {
-  const slope = s.slopeAt(x, z)
-  if (slope >= P.rockSlopeMin) return BIOME.ROCK
-  if (slope > P.meadowSlopeMax) return BIOME.FOREST
+  // ROCK is a LOCAL question — a face is steep where you stand on it — so it reads the caller's
+  // own slope sampler at whatever baseline that caller uses.
+  if (s.slopeAt(x, z) >= P.rockSlopeMin) return BIOME.ROCK
 
-  // Relief against the surrounding ground, as a 4-point ring rather than a full neighbourhood
-  // average. The ring is what makes this cheap enough to sit in the scatter's hot path, and at this
-  // radius the two readings differ by less than the threshold's own slack.
-  const r = P.meadowReliefR
-  const h = s.heightAt(x, z)
-  const around = (s.heightAt(x + r, z) + s.heightAt(x - r, z) +
-                  s.heightAt(x, z + r) + s.heightAt(x, z - r)) * 0.25
-  if (around - h < P.meadowReliefMin) return BIOME.FOREST
+  // MEADOW is a question about a LANDFORM, and both of its tests are answered from one 4-point
+  // ring at meadowRingR. That shared ring is not just a saving — it is the fix for meadows that
+  // came out shot through with green strips.
+  //
+  // Flatness used to read the caller's slope sampler too, at whatever short baseline it had (±0.5 m
+  // through analyticNormal in the world, ±8 m on the map — which also meant the two consumers were
+  // not answering quite the same question). At that scale every ridgelet crossing a basin floor
+  // spikes the slope over the threshold, so the meadow broke into ribbons of forest following
+  // metre-scale wrinkles that nobody standing in the field would call a treeline. Reading the
+  // gradient across the ring instead asks whether the LANDFORM is flat, which is what a meadow is,
+  // and it makes both consumers read identically.
+  const r = P.meadowRingR
+  const h  = s.heightAt(x, z)
+  const hE = s.heightAt(x + r, z), hW = s.heightAt(x - r, z)
+  const hS = s.heightAt(x, z + r), hN = s.heightAt(x, z - r)
+
+  const gx = (hE - hW) / (2 * r), gz = (hS - hN) / (2 * r)
+  if (1 - 1 / Math.sqrt(1 + gx * gx + gz * gz) > P.meadowSlopeMax) return BIOME.FOREST
+
+  // Sitting low relative to what surrounds it — the same four samples.
+  if ((hE + hW + hS + hN) * 0.25 - h < P.meadowReliefMin) return BIOME.FOREST
 
   return meadowMask(x, z, P.meadowNoiseFreq, seed) >= P.meadowNoiseMin ? BIOME.MEADOW : BIOME.FOREST
 }

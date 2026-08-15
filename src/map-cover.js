@@ -60,12 +60,16 @@ const CELLS_PER_CHUNK = FLORA_PARAMS.chunkSize / COVER_CELL   // 4
 // These cuts are therefore ~p8 and ~p65 of that distribution, which is what makes the sheet read
 // predominantly green with open ground as the exception — the proportion a forest quadrangle has.
 // Banding the BARE counts instead put 41% of the map under white, which is not a map of this world.
-export const DENSE_MIN     = 1.6   // ≥ this → green WITH tree glyphs (closed canopy)
-// Below this → white. Deliberately LOW, and lowered once biomes landed: a meadow or a rock face
-// reports a flat zero here, so the biome layer trips this cut on its own. Anything above zero is a
-// thin patch of real forest, and pushing the cut up into the count distribution only prints the
-// Poisson noise in cluster placement as a rash of white specks that mean nothing on the ground.
-export const SCATTERED_MIN = 0.25
+// The ONE count threshold left: at or above it a forest cell prints tree glyphs, below it the same
+// green without them. There is deliberately no second cut turning low counts back to white — white
+// means "not the forest biome", full stop (owner, 2026-08-15: green regions solid, white regions
+// solid). A cut here instead sprayed white specks through the forest wherever cluster placement
+// happened to leave a Poisson gap, which is a fact about a random number generator and not about
+// any ground the player can walk on.
+// 1.0 glyphs ~72% of forest (measured, seed 6; 1.2→59%, 1.6→34%). Set high, the forest printed as
+// bare green over most of its area and the sheet read as mostly empty — which matters more now
+// that this is the ONLY thing distinguishing forest from open ground besides the tint.
+export const DENSE_MIN = 1.0
 
 /**
  * Slope in prop-scatter's units, from a height field's gradient.
