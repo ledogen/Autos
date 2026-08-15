@@ -240,22 +240,44 @@ export function createVehicleChassis (engine, vehicleState, params) {
   // gate). Core radius = wheelRadius − WHEEL_SOFT_BAND: the outer band is honest tire squish
   // handled by the soft path; the core makes deeper overlap geometrically impossible and hands
   // the pinch impulse to the chassis like a real wheel would.
+  // Rim placement TRACKS THE STRUT (owner, 2026-08-15 — they originally rode fixed on the
+  // body at the MOUNT height, ~a strut-length above the real hub): created here at the mount,
+  // re-seated every step by updateWheelRims() below to the strut-derived hub position, wheel
+  // order FL/FR/RL/RR to match strutComp indexing.
   const axleF = -(params.wheelbase * params.weightRear)
   const axleR = params.wheelbase * params.weightFront
-  for (const [x, z, front] of [
+  const rims = []
+  for (const [i, [x, z, front]] of [
     [-params.trackFront / 2, axleF, true], [params.trackFront / 2, axleF, true],
     [-params.trackRear / 2, axleR, false], [params.trackRear / 2, axleR, false],
-  ]) {
-    const hubY = -(params.cgHeight - params.wheelRadius) +
+  ].entries()) {
+    const mountY = -(params.cgHeight - params.wheelRadius) +
       (front ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0))
-    engine.addSphere(chassis, params.wheelRadius - WHEEL_SOFT_BAND, {
+    const shapeIndex = engine.addSphere(chassis, params.wheelRadius - WHEEL_SOFT_BAND, {
       friction: 0.5, restitution: 0, group: GROUP_CHASSIS, collidesWith: GROUP_DEBRIS,
-    }, { x, y: hubY, z })
+    }, { x, y: mountY, z })
+    rims.push({ shapeIndex, x, z, mountY, front })
   }
 
   engine.setMassData(chassis, params.mass,
     { x: params.inertiaRoll, y: params.inertiaYaw, z: params.inertiaPitch })
+  _chassisRims.set(chassis, rims)
   return chassis
+}
+
+// chassis handle → rim tracking metadata (module-scoped: gates create their own chassis).
+const _chassisRims = new Map()
+
+/** Re-seat the rim cores at the strut-derived hub positions (hubLocal = mount − strutLen·ŷ). */
+function updateWheelRims (engine, chassis, vehicleState, params) {
+  const rims = _chassisRims.get(chassis)
+  if (!rims || !vehicleState.strutComp) return
+  for (let i = 0; i < 4; i++) {
+    const r = rims[i]
+    const L_S = r.front ? params.suspensionRestLengthFront : params.suspensionRestLengthRear
+    const strutLen = L_S - (vehicleState.strutComp[i] ?? 0)
+    engine.setSphereLocal(chassis, r.shapeIndex, { x: r.x, y: r.mountY - strutLen, z: r.z })
+  }
 }
 // Soft band between the wheel hard core and the visual tire radius — the depth range the
 // analytic tire spring owns. Matches DYN_CONTACT_DEPTH deep-squish territory, so the core
@@ -674,13 +696,11 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       lastSLatNew    = sLatNew
       lastLongVelCur = longVelCur
       lastRelaxDen   = relaxDen
-      // ω NEVER CHASES A DEBRIS SUPPORT (owner rulings, captures 1786690032648 + round-rock
-      // regression): the implicit ω solve converges toward the support's frame in one step, so a
-      // rock squirting out from under the wheel revved it to 60–80 rad/s at zero throttle — and
-      // the spun-up wheel then flung the next thing it touched. For dynamic supports the wheel's
-      // spin integrator tracks the ROAD frame (absolute hub velocity): the momentary transient
-      // still shoves the body and the rock through the force path above, but the wheel rolls on.
-      if (ground.body != null) lastLongVelCur = hubVel.dot(wheelFwd)
+      // REVERTED 2026-08-15 (owner): ω responds to RELATIVE slip on debris again — the
+      // road-frame anchor was a containment measure from the discontinuous-depth era, when
+      // force spikes launched rocks and the implicit solve chased them to 60–80 rad/s. With
+      // exact manifolds the spikes are gone, and DEBRIS_SLIP_CLAMP (±3 m/s) already bounds the
+      // chase to ~±8 rad/s around rolling — honest wheel response, no runaway possible.
 
       const wheelForce = wheelFwd.clone().multiplyScalar(Flong)
       // WR-02: lateral grip opposes lateral hub velocity (resists the slide), so positive Flat
@@ -697,9 +717,10 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // suspension applied for this contact (Newton's third law, symmetric), never the wheel's
       // SUMMED Fz (road + rock when straddling once over-flung the rock).
       if (ground.body != null) {
+        const env = ground.sizeR !== undefined ? ground.sizeR / (ground.sizeR + TIRE_ENVELOPE_LEN) : 1
         const FnContact = Math.max(0,
           params.tireStiffness * ground.depth +
-          params.tireDamping * (ground.depthRate ?? 0) * Math.min(1, ground.depth / 0.04))
+          params.tireDamping * (ground.depthRate ?? 0) * Math.min(1, ground.depth / 0.04)) * env
         engine.applyForce(ground.body, {
           x: -wheelForce.x - FnContact * ground.normal.x,
           y: -wheelForce.y - FnContact * ground.normal.y,
@@ -852,6 +873,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // totalForce/totalTorque are about the CG — the body origin — so center
   // application is exact. The engine also advances every debris body here:
   // ONE world step per physics tick, chassis↔debris↔terrain solved together.
+  updateWheelRims(engine, chassis, vehicleState, params)   // rims follow strut travel
   engine.applyForce(chassis, totalForce)
   engine.applyTorque(chassis, totalTorque)
   // 8 substeps (not the engine-default 4): the chassis carries the TUNED inertia, whose x-axis
@@ -875,5 +897,11 @@ const _groundVelScratch = { x: 0, y: 0, z: 0 }
 // at current tireStiffness) while making the one-frame full-radius spike impossible. Static
 // terrain contacts are untouched — their depth is already continuous.
 const DEBRIS_SLIP_CLAMP = 3.0               // m/s — max support-velocity contribution to tire slip
+// Tire OBSTACLE ENVELOPING (standard tire mechanics; owner captures 178678330/78/28/69 —
+// 20 kN single-frame nose kicks at 20 m/s): a carcass wraps around objects smaller than its
+// own scale, so effective stiffness against a small rock is a fraction of the flat-ground
+// value — env = sizeR/(sizeR + L). A 0.2 m rock transmits ~60%, a barrel ~80%, and the
+// factor →1 as obstacles approach ground-scale. Size comes from the engine shape itself.
+const TIRE_ENVELOPE_LEN = 0.12              // m — the carcass wrap length-scale
 const NEWTON_TOL = 0.5                      // rad/s — ω-solve residual above this = diverged, take the explicit fallback
 const EMPTY_DEPTH_MAP = new Map()           // shared immutable-by-convention first-step default

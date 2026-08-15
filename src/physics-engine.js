@@ -61,6 +61,7 @@ export class PhysicsEngine {
     this._meshDatas = new Map()            // handle → b3MeshData[] (owned, freed on destroy)
     this._hulls = []                       // shared hull data to free on dispose
     this._shapeHulls = new Map()           // shapeKey → b3HullData (for exact pair-test contacts)
+    this._shapeSizeR = new Map()           // shapeKey → bounding radius (tire obstacle-enveloping)
 
     // Scratch out-params — the bindings write into caller-provided arrays; reuse
     // to keep the per-frame allocation at zero on the hot read paths.
@@ -159,11 +160,24 @@ export class PhysicsEngine {
       halfExtents.x, halfExtents.y, halfExtents.z), { shape: 'box', halfExtents: { ...halfExtents } })
   }
 
-  /** Sphere collider at local offset (default body origin). */
+  /** Sphere collider at local offset (default body origin). Returns the shape INDEX on the
+   *  body (stable — shapes are only ever appended), usable with setSphereLocal below. */
   addSphere (handle, radius, material = {}, offset = { x: 0, y: 0, z: 0 }) {
     const rec = this._bodies.get(handle)
-    this._register(handle, _b3.b3CreateSphereShape(rec.id, this._shapeDef(material),
+    const shapeId = this._register(handle, _b3.b3CreateSphereShape(rec.id, this._shapeDef(material),
       { center: [offset.x, offset.y, offset.z], radius }), { shape: 'sphere', radius, offset: { ...offset } })
+    this._shapeSizeR.set(this._shapeKey(shapeId), radius)
+    return rec.shapes.length - 1
+  }
+
+  /** Re-seat a sphere shape's LOCAL center (e.g. the wheel rim cores tracking strut travel).
+   *  Cheap (one engine call); also updates the debug-viz spec in place. */
+  setSphereLocal (handle, shapeIndex, offset) {
+    const rec = this._bodies.get(handle)
+    const shapeId = rec.shapes[shapeIndex]
+    const spec = rec.specs[shapeIndex]
+    _b3.b3Shape_SetSphere(shapeId, { center: [offset.x, offset.y, offset.z], radius: spec.radius })
+    spec.offset.x = offset.x; spec.offset.y = offset.y; spec.offset.z = offset.z
   }
 
   /** Capsule collider between two local points. */
@@ -185,6 +199,7 @@ export class PhysicsEngine {
     const shapeId = this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull),
       { shape: 'cylinder', height, radius, yOffset, sides })
       this._shapeHulls.set(this._shapeKey(shapeId), hull)   // narrow-phase pair tests need the data
+      this._shapeSizeR.set(this._shapeKey(shapeId), Math.hypot(radius, height / 2 + Math.abs(yOffset)))
   }
 
   /** Convex hull collider from a flat [x0,y0,z0, x1,…] position array. */
@@ -195,6 +210,7 @@ export class PhysicsEngine {
     const shapeId = this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull),
       { shape: 'hull', positions: Array.from(positions) })
       this._shapeHulls.set(this._shapeKey(shapeId), hull)   // narrow-phase pair tests need the data
+      { let m = 0; for (let i = 0; i < positions.length; i += 3) m = Math.max(m, Math.hypot(positions[i], positions[i + 1], positions[i + 2])); this._shapeSizeR.set(this._shapeKey(shapeId), m) }
   }
 
   /**
@@ -419,6 +435,7 @@ export class PhysicsEngine {
         normal: { x: n[0], y: n[1], z: n[2] },
         depth: -deep.separation,
         contactPoint: { x: cp[0], y: cp[1], z: cp[2] },
+        sizeR: this._shapeSizeR.get(this._shapeKey(shapeId)) ?? 0.3,   // obstacle size for tire enveloping
       })
       return true
     })

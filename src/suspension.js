@@ -345,9 +345,15 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         const compressionVel = (c.depthRate !== undefined)
           ? c.depthRate * Math.min(1, c.depth / TIRE_DAMP_ENGAGE)
           : -strutCompVelI
+        // Obstacle ENVELOPING for debris (c.sizeR set): the carcass wraps objects smaller than
+        // its own scale, so effective stiffness against a small rock is a fraction of the
+        // flat-ground value — this is why real tires cross rock gardens at speed without
+        // launching the body (owner captures: 20 kN single-frame nose kicks). Mirrors the
+        // reaction-side factor in physics.js exactly (Newton's third law).
+        const env = (c.sizeR !== undefined) ? c.sizeR / (c.sizeR + 0.12) : 1
         const tireFnAtContact = Math.max(0,
           params.tireStiffness * c.depth + params.tireDamping * compressionVel
-        )
+        ) * env
         // D-06: split contact normal force into strut-axis and X/Z residual components
         // bodyUpDot = dot(c.normal, body_up): the fraction of contact normal force along the strut axis
         const bodyUpDot = c.normal.x * body_up.x + c.normal.y * body_up.y + c.normal.z * body_up.z

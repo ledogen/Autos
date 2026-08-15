@@ -63,6 +63,10 @@ export class PhysicsWireframes {
     for (const rec of this._built.values()) {
       if (rec.dynamic) {
         this._eng.getTransform(rec.handle, rec.group.position, rec.group.quaternion)
+        for (const t of rec.tracked) {   // live-seated spheres (rim cores) follow their spec
+          t.faint.position.set(t.spec.offset.x, t.spec.offset.y, t.spec.offset.z)
+          t.bright.position.copy(t.faint.position)
+        }
       } else if (cameraPos) {
         rec.group.visible = rec.refPos.distanceToSquared(cameraPos) < STATIC_DRAW_R * STATIC_DRAW_R
       }
@@ -92,6 +96,7 @@ export class PhysicsWireframes {
     const group = new THREE.Group()
     const mats = this._mats.get(b.userData.kind)
     const bounds = new THREE.Box3()
+    const tracked = []   // sphere-spec line pairs that follow spec.offset live
     for (const spec of b.specs) {
       const edges = this._edgesFor(spec)
       if (!edges) continue
@@ -100,13 +105,18 @@ export class PhysicsWireframes {
       // Two-tone: faint X-ray first (renderOrder below the bright pass), bright depth-tested on top.
       const faint = new THREE.LineSegments(edges, mats[1]); faint.renderOrder = 10
       const bright = new THREE.LineSegments(edges, mats[0]); bright.renderOrder = 11
+      if (spec.shape === 'sphere') {
+        faint.position.set(spec.offset.x, spec.offset.y, spec.offset.z)
+        bright.position.copy(faint.position)
+        tracked.push({ spec, faint, bright })
+      }
       group.add(faint, bright)
     }
     if (group.children.length === 0) return
     if (b.dynamic) this._eng.getTransform(b.handle, group.position, group.quaternion)
     this._root.add(group)
     this._built.set(b.handle, {
-      handle: b.handle, group, dynamic: b.dynamic,
+      handle: b.handle, group, dynamic: b.dynamic, tracked,
       refPos: bounds.getCenter(new THREE.Vector3()),   // statics bake world coords — bbox centre is the cull point
     })
   }
@@ -119,9 +129,10 @@ export class PhysicsWireframes {
         return this._edges(g)
       }
       case 'sphere': {
-        const g = new THREE.SphereGeometry(spec.radius, 10, 6)
-        g.translate(spec.offset.x, spec.offset.y, spec.offset.z)
-        return this._edges(g, 25)
+        // Built at the ORIGIN; the caller positions the line objects from spec.offset and
+        // update() refreshes them each frame — sphere shapes can be re-seated live (the wheel
+        // rim cores track strut travel via setSphereLocal, which mutates spec.offset).
+        return this._edges(new THREE.SphereGeometry(spec.radius, 10, 6), 25)
       }
       case 'capsule': {
         const a = new THREE.Vector3(spec.p1.x, spec.p1.y, spec.p1.z)
