@@ -173,7 +173,11 @@ console.log('\nfling regression — coast over a small rock, no throttle:')
   }
   const omega0 = v0 / P2.wheelRadius
   console.log(`  rock peak |v| ${rockPeak.toFixed(2)} m/s; wheel |ω| peak ${omegaPeak.toFixed(1)} rad/s (rolling ${omega0.toFixed(1)}); tire Fz peak ${fzPeak.toFixed(0)} N; max sink atop rock ${maxSink.toFixed(3)} m`)
-  ok(rockPeak < 3.0, `rock is rolled over, not flung (peak ${rockPeak.toFixed(2)} m/s < 3.0 at a ${v0} m/s coast)`)
+  // Bound = the two-body ELASTIC ceiling (2·m_truck/(m_truck+m_rock) ≈ 1.9× closing speed):
+  // with exact manifolds + the rim core, a round rock takes an honest momentum kick; anything
+  // past the elastic ceiling would be energy from nowhere. (The old 3.0 encoded the rate-clamp
+  // era's artificially damped kick.)
+  ok(rockPeak < 2.0 * v0, `rock kick within the elastic ceiling (peak ${rockPeak.toFixed(2)} m/s < ${(2 * v0).toFixed(1)} at a ${v0} m/s coast)`)
   ok(omegaPeak < 2.5 * omega0, `no phantom wheel spin-up (peak |ω| ${omegaPeak.toFixed(1)} < ${(2.5 * omega0).toFixed(1)} rad/s — was 60+ pre-fix)`)
   ok(fzPeak < 20000, `tire load bounded over the rock (peak Fz ${fzPeak.toFixed(0)} N < 20 kN — honest depth now allowed, spikes still clamped)`)
   ok(maxSink < 0.14, `tire rides the rock FIRMLY, not through it (max sink ${maxSink.toFixed(3)} m < 0.14 — the hard-cap squish regression)`)
@@ -201,9 +205,13 @@ console.log('\ncrawl-over-rock — the wheel climbs it, never passes through:')
     drivetrain: { engineRPM: 900, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },
   }
   const ctx4 = await makeEngineCtx(vs4, P4, { groundFn: () => 0, extent: 128, cell: 4 })
-  const R4 = 0.2
-  const rock4 = ctx4.engine.createBody({ type: 'dynamic', position: { x: -0.72, y: R4, z: -4 }, userData: { kind: 'debris' } })
-  ctx4.engine.addSphere(rock4, R4, { density: 2500, friction: 0.7, restitution: 0.15, group: GROUP_DEBRIS })
+  // A SQUAT FLAT rock (cylinder hull, flat side down): a perfect sphere on flat ground is a
+  // ball — it rolls away from any push and honestly cannot be climbed (the pre-manifold "climb"
+  // was a weak-force artifact). Real rocks are lumpy and wedge; the flat shape represents that
+  // and keeps the CLIMB path tested. It also exercises the hull pair-test branch.
+  const R4 = 0.22
+  const rock4 = ctx4.engine.createBody({ type: 'dynamic', position: { x: -0.72, y: 0.12, z: -4 }, userData: { kind: 'debris' } })
+  ctx4.engine.addCylinder(rock4, 0.24, R4, { density: 2500, friction: 0.8, restitution: 0, group: GROUP_DEBRIS }, 0, 10)
 
   const rp4 = { x: 0, y: 0, z: 0 }, rq4 = { x: 0, y: 0, z: 0, w: 1 }
   let maxRise = 0, minVy = 0, maxAbsWy = 0, minSep = Infinity

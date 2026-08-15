@@ -331,15 +331,22 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       for (const c of hubContacts) {
         // compressionVel sign convention: positive = hub approaching ground = tire compressing.
         // strutCompVelI > 0 means strut shortening = hub moving UP = tire decompressing, so negate.
-        const compressionVel = -strutCompVelI
-        // FEAT-48 debris contacts (c.body set): the damper term may ADD but never RELIEVE.
-        // While the strut compresses fast (climbing onto a rock), tireDamping × negative
-        // compressionVel subtracted several kN exactly when the rock needed pushing against —
-        // rocks read visibly softer than ground (owner, 2026-08-15). Ground keeps the full
-        // signed damper (its transients are pre-spread by the footprint envelope).
-        const dampTerm = params.tireDamping * compressionVel
+        // Damper: for DEBRIS contacts (c.depthRate set by physics.js) use the contact's TRUE
+        // closing rate — hit hard → high force, roll on slow → low force, straight from the
+        // spring–damper law. HUNT–CROSSLEY engagement scaling (min(1, depth/ENGAGE)): a
+        // constant damper is DISCONTINUOUS at first touch (force jumps from 0 to c·v the
+        // instant contact begins), which punted crawled-into rocks like a kicked ball; scaling
+        // the damper with penetration makes contact force continuous from zero — the standard
+        // contact-mechanics form. A fast hit reaches full engagement within its first frame
+        // (depth ≈ v·dt ≥ ENGAGE), so high-speed response is undiminished, with no speed terms.
+        // Terrain contacts keep the strut-velocity approximation (their transients are
+        // pre-spread by the footprint envelope, and the m4 calibration history rests on it).
+        const TIRE_DAMP_ENGAGE = 0.04   // m — full damper by one static deflection of depth
+        const compressionVel = (c.depthRate !== undefined)
+          ? c.depthRate * Math.min(1, c.depth / TIRE_DAMP_ENGAGE)
+          : -strutCompVelI
         const tireFnAtContact = Math.max(0,
-          params.tireStiffness * c.depth + (c.body != null ? Math.max(0, dampTerm) : dampTerm)
+          params.tireStiffness * c.depth + params.tireDamping * compressionVel
         )
         // D-06: split contact normal force into strut-axis and X/Z residual components
         // bodyUpDot = dot(c.normal, body_up): the fraction of contact normal force along the strut axis

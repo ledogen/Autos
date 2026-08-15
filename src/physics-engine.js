@@ -60,6 +60,7 @@ export class PhysicsEngine {
     this._heightfields = new Map()         // handle → b3HeightFieldData (owned, freed on destroy)
     this._meshDatas = new Map()            // handle → b3MeshData[] (owned, freed on destroy)
     this._hulls = []                       // shared hull data to free on dispose
+    this._shapeHulls = new Map()           // shapeKey → b3HullData (for exact pair-test contacts)
 
     // Scratch out-params — the bindings write into caller-provided arrays; reuse
     // to keep the per-frame allocation at zero on the hot read paths.
@@ -181,8 +182,9 @@ export class PhysicsEngine {
     const rec = this._bodies.get(handle)
     const hull = _b3.b3CreateCylinder(height, radius, yOffset, sides)
     this._hulls.push(hull)                // hull data is shared/copied by the shape; free on dispose
-    this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull),
+    const shapeId = this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull),
       { shape: 'cylinder', height, radius, yOffset, sides })
+      this._shapeHulls.set(this._shapeKey(shapeId), hull)   // narrow-phase pair tests need the data
   }
 
   /** Convex hull collider from a flat [x0,y0,z0, x1,…] position array. */
@@ -190,8 +192,9 @@ export class PhysicsEngine {
     const rec = this._bodies.get(handle)
     const hull = _b3.b3CreateHull(positions)
     this._hulls.push(hull)
-    this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull),
+    const shapeId = this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull),
       { shape: 'hull', positions: Array.from(positions) })
+      this._shapeHulls.set(this._shapeKey(shapeId), hull)   // narrow-phase pair tests need the data
   }
 
   /**
@@ -338,47 +341,86 @@ export class PhysicsEngine {
   }
 
   /**
-   * Sphere overlap → contact list in the game's {normal, depth, contactPoint}
-   * convention (normal away from the solid, toward the sphere center), plus the
-   * body handle so the caller can do relative-velocity / reaction-impulse work.
-   * `dynamicOnly` filters to dynamic bodies (the wheel-vs-debris path).
+   * EXACT sphere-vs-debris contact query using the engine's own narrow-phase pair tests
+   * (b3CollideSpheres / b3CollideHullAndSphere) — penetration depth is CONTINUOUS through
+   * full containment and the normal never degenerates, unlike a closest-point probe (which
+   * jumps to full radius and inverts once the query center enters a hull — the source of the
+   * 2026-08-15 rock-contact defect family). Convention out: normal points OUT of the solid
+   * toward the sphere center; depth > 0 is penetration.
+   *
+   * Manifold conventions (probed empirically 2026-08-15):
+   *   b3CollideSpheres(A, B, xfB)        → normal A→B, separation = −penetration
+   *   b3CollideHullAndSphere(hull, s, xf) → hull is at IDENTITY (its own frame); normal
+   *                                         hull→sphere; results in hull-local coordinates.
    */
-  overlapSphere (center, radius, { collidesWith = GROUP_ALL, dynamicOnly = false } = {}) {
+  contactSphere (center, radius, { collidesWith = GROUP_ALL, dynamicOnly = false } = {}) {
     const f = _b3.b3DefaultQueryFilter()
     f.maskBits = collidesWith
     const hits = []
-    const cp = this._p
     _b3.b3World_OverlapShape(this._world, [center.x, center.y, center.z], [[0, 0, 0]], radius, f, (shapeId) => {
       const handle = this._shapeToHandle.get(this._shapeKey(shapeId))
       if (handle == null) return true
       if (dynamicOnly && !this.isDynamic(handle)) return true
-      _b3.b3Shape_GetClosestPoint(cp, shapeId, [center.x, center.y, center.z])
-      let dx = center.x - cp[0], dy = center.y - cp[1], dz = center.z - cp[2]
-      let dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
-      let depth
-      if (dist < 1e-4) {
-        // Query center is INSIDE the shape — closest surface point degenerates to
-        // the center itself. Fall back to pushing out along body-center → query
-        // direction at full-radius depth (deep contact; exact depth unknowable
-        // from a closest-point query, and the resolver only needs "very deep").
-        const rec = this._bodies.get(handle)
-        _b3.b3Body_GetWorldCenterOfMass(cp, rec.id)
-        dx = center.x - cp[0]; dy = center.y - cp[1]; dz = center.z - cp[2]
-        dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
-        if (dist < 1e-8) return true                   // dead-centered: give up
-        depth = radius
+      const rec = this._bodies.get(handle)
+      _b3.b3Body_GetTransform(this._p, this._q, rec.id)
+      const bp = this._p, bq = this._q
+      const type = _b3.b3Shape_GetType(shapeId).value
+      let manifold = null
+      let toWorld = null   // hull results come back hull-local — rotate/translate out
+      if (type === _b3.b3ShapeType.b3_sphereShape.value) {
+        const sph = _b3.b3Shape_GetSphere(shapeId)
+        manifold = _b3.b3CollideSpheres({ center: [center.x, center.y, center.z], radius }, sph,
+          { position: [bp[0], bp[1], bp[2]], quaternion: [bq[0], bq[1], bq[2], bq[3]] })
+        // normal is A→B = wheel→solid; our convention wants solid→wheel
+        if (manifold && manifold.points.length) {
+          manifold = { normal: [-manifold.normal[0], -manifold.normal[1], -manifold.normal[2]], points: manifold.points }
+        }
+      } else if (type === _b3.b3ShapeType.b3_hullShape.value) {
+        const hull = this._shapeHulls.get(this._shapeKey(shapeId))
+        if (!hull) return true
+        // Express the sphere in the hull's (= body's) local frame: l = q⁻¹·(c − p)
+        const qx = -bq[0], qy = -bq[1], qz = -bq[2], qw = bq[3]
+        const dx = center.x - bp[0], dy = center.y - bp[1], dz = center.z - bp[2]
+        const ix = qw * dx + qy * dz - qz * dy, iy = qw * dy + qz * dx - qx * dz
+        const iz = qw * dz + qx * dy - qy * dx, iw = -qx * dx - qy * dy - qz * dz
+        const lx = ix * qw + iw * -qx + iy * -qz - iz * -qy
+        const ly = iy * qw + iw * -qy + iz * -qx - ix * -qz
+        const lz = iz * qw + iw * -qz + ix * -qy - iy * -qx
+        manifold = _b3.b3CollideHullAndSphere(hull, { center: [0, 0, 0], radius },
+          { position: [lx, ly, lz], quaternion: [0, 0, 0, 1] })
+        toWorld = (v) => {   // rotate a hull-local vector into world with bq
+          const jx = bq[3] * v[0] + bq[1] * v[2] - bq[2] * v[1]
+          const jy = bq[3] * v[1] + bq[2] * v[0] - bq[0] * v[2]
+          const jz = bq[3] * v[2] + bq[0] * v[1] - bq[1] * v[0]
+          const jw = -bq[0] * v[0] - bq[1] * v[1] - bq[2] * v[2]
+          return [
+            jx * bq[3] + jw * -bq[0] + jy * -bq[2] - jz * -bq[1],
+            jy * bq[3] + jw * -bq[1] + jz * -bq[0] - jx * -bq[2],
+            jz * bq[3] + jw * -bq[2] + jx * -bq[1] - jy * -bq[0],
+          ]
+        }
       } else {
-        if (dist >= radius) return true                // grazing — no overlap
-        depth = radius - dist
+        return true   // debris is spheres and hulls today; other types have no pair test wired
       }
-      const inv = 1 / dist
+      if (!manifold || !manifold.points.length) return true
+      // Deepest manifold point carries the contact
+      let deep = manifold.points[0]
+      for (const pt of manifold.points) if (pt.separation < deep.separation) deep = pt
+      if (deep.separation >= 0) return true
+      let n = manifold.normal
+      let cp = deep.point
+      if (toWorld) {
+        n = toWorld(n)
+        cp = toWorld(cp)
+        cp = [cp[0] + bp[0], cp[1] + bp[1], cp[2] + bp[2]]
+      }
       hits.push({
         body: handle,
-        normal: { x: dx * inv, y: dy * inv, z: dz * inv },
-        depth,
+        normal: { x: n[0], y: n[1], z: n[2] },
+        depth: -deep.separation,
         contactPoint: { x: cp[0], y: cp[1], z: cp[2] },
       })
-      return true   // keep enumerating
+      return true
     })
     return hits
   }
