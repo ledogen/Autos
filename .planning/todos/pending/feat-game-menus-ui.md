@@ -3,6 +3,7 @@ id: FEAT-41
 type: feature
 status: open
 opened: 2026-07-20
+updated: 2026-08-15
 severity: major
 source: user-request
 relates_to: >
@@ -35,12 +36,34 @@ Expect to break it into phases at planning.
 ## Scope
 
 ### 1. Main menu (entry point)
+
+**Two elements, layered** [owner-specified 2026-08-15]:
+
+**1a. The UI element** — buttons, interactables, the actual menu stuff (DOM overlay, per the
+technical approach below).
 - Boots here instead of straight into the sim. Selects the game mode via the existing
   `window.__setGameMode` seam (extend it — do **not** invent a second mode system):
   - **Free Roam** — infinite world, full debug tooling (the game as built to date).
   - **Story Mode** — the region-bounded roguelike fork (debug locked out — RATIFIED 2026-07-16).
   - **One-off scenarios** — self-contained set pieces (Dodge the Rocks, Escape the Police, …).
 - Clean, on-brand; sets the tone. Should not fight the sim's look.
+
+**1b. The live 3D scene element** — rendered live BEHIND the menu UI, pure eye candy to integrate
+the menu with the sim's look. Owner-specified beat sheet:
+
+- **Stage**: an empty void. A ground plane, and on it a **small dirt mound** — nothing else.
+- **The drop**: the hero truck is dropped from **~18 in (0.46 m)** positioned so its **front-left
+  wheel lands on the mound**. The real physics does the rest — impact, rebound, settle.
+- **Camera**: in front of the truck, looking back at that **front-left corner** (the wheel on the
+  mound is the star). **Mouse position drives a small ±5° camera orbit in both pitch and yaw** —
+  a parallax-style effect, cursor-follow only, no free orbit.
+- **The second beat**: once the suspension settles (**~2 s** after the drop), a bunch of **physics
+  rocks fall from high up and land in the bed**, compressing the rear suspension and restarting the
+  truck's dynamic wobble. The scene therefore never goes fully static.
+- Build notes: this is the sim in a bottle — the flat-void staging is the FEAT-31 testing-lab
+  pattern (`src/lab.js`), and the bed-landing rocks are FEAT-36 throwable-debris physics (on
+  `feature/box3d`, unmerged — this scene is a natural consumer once it lands). Loop policy (does
+  the drop replay? do rocks keep trickling?) is a planning-time call.
 
 ### 2. Settings / options
 - **Video / quality** — surface the existing quality presets (PERF-08/10 draw-distance / resolution
@@ -66,17 +89,20 @@ Expect to break it into phases at planning.
 
 ## Technical approach (proposal)
 
-- **DOM overlay (HTML/CSS)**, same lane as lil-gui / stats / the FEAT-34 cluster — no WebGL menu
-  geometry, no new deps beyond what's bundled. Most LLM-maintainable, and menus don't need the 3D
-  layer. Keep it framework-free (vanilla JS + CSS) to match the stack constraint.
+- **DOM overlay (HTML/CSS)** for the UI element (1a), same lane as lil-gui / stats / the FEAT-34
+  cluster — no WebGL menu geometry, no new deps beyond what's bundled. Keep it framework-free
+  (vanilla JS + CSS) to match the stack constraint. The **3D layer behind it is the live scene
+  (1b)** — the existing renderer pointed at a staged sandbox, not menu geometry: buttons never live
+  in WebGL, the truck never lives in DOM.
 - **Menu state machine** — a small explicit state (`main → mode → in-run ⇄ pause → settings`), driving
   which DOM layer is visible and whether the sim loop runs. Extend `window.__setGameMode` for the
   mode axis; the menu owns the screen-state axis.
 - **Pause discipline** — gate the fixed-timestep accumulator (`src/main.js` loop): stop stepping
   physics while paused, keep rendering, resume without a dt spike. Don't let pause become a hidden
   slow-mo or a dt bomb.
-- **Zero physics/gameplay effect** → deterministic; headless gates (no DOM, no menu) unaffected. Menu
-  styling is USER-OWNED.
+- **Zero gameplay effect** → deterministic; headless gates (no DOM, no menu) unaffected. The 1b
+  scene DOES run real physics, but sandboxed: its world/state must be torn down completely on mode
+  entry and can never leak into a run. Menu styling is USER-OWNED.
 
 ## Story-mode fit
 
