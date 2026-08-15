@@ -1233,6 +1233,11 @@ const map2d = new Map2D({
   canvas:    document.getElementById('map2d'),
   getSeed:   () => worldSeed,
   getParams: () => RANGER_PARAMS,
+  // The play WaterSystem, read-only: the sheet prints the rivers and ponds the truck actually
+  // fords, and the tree-cover raster needs the same water rejects the scatter applies. Reads the
+  // module-scope binding at CALL time so it survives rebuildWaterSystem without re-injection —
+  // the same convention makePropSamplers uses.
+  getWater:  () => waterSystem,
   getCar:    () => {
     _mapFwd.set(0, 0, -1).applyQuaternion(vehicleState.quaternion)
     return { x: vehicleState.position.x, z: vehicleState.position.z, fx: _mapFwd.x, fz: _mapFwd.z }

@@ -53,6 +53,8 @@ export const GATES = [
     desc: 'capture↔replay round-trip (Phase 4 place path) — guards src/capture.js + replay.mjs tooling' },
   { file: 'prop-shadow-alignment.mjs', subsystem: 'props', cost: 'fast', extraDeps: ['src/main.js', 'src/terrain.js'],
     desc: 'PERF-07: bake-camera UV == terrain-sampler UV per axis (the twice-shipped mirror bug), shear == sun-ray ground hit, prop ring ⊂ atlas' },
+  { file: 'map-cover.mjs', subsystem: 'props', cost: 'fast', extraDeps: ['src/props/prop-scatter.js', 'src/map-cover.js'],
+    desc: "SCATTER SYNC: the map's tree-cover replay (map-cover.js) bins cell-for-cell identical to prop-scatter under the same samplers" },
   { file: 'route-worker-sync.mjs', subsystem: 'road', cost: 'fast', extraDeps: ['src/road-carve.js', 'src/road-worker.js'],
     desc: 'PERF-03 WS-A: worker routing copy (road-worker.js ROAD_WORKER_SOURCE) byte-identical to road-carve.js canonical' },
   { file: 'route-bundle-parity.mjs', subsystem: 'road', cost: 'heavy',
