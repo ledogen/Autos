@@ -20,7 +20,7 @@
 
 import { ECONOMY_PARAMS } from './economy.js'
 import { buildGraphAdj, START_ZONE_R } from './mission.js'
-import { computePar } from './par.js'
+import { computePar, PAR_REF } from './par.js'
 // The accuracy law is throw.js's, not restated here. It is one line of algebra and that is exactly
 // why it must have one home: a second copy is a second thing to keep in step with the gate.
 import { accuracyScore } from './throw.js'
@@ -54,6 +54,16 @@ export const PAPER_PARAMS = {
     expediteOn:  0.90,   // ratio at which the bonus starts paying (10% inside par)
     expediteFull:0.70,   // …and where it maxes out
     bonusMax:    0.40,
+
+    // Seconds the reference driver spends AT each porch — pull up, aim, throw, set off (owner,
+    // 2026-08-14). par.js caps the speed envelope at every customer, which buys the braking and the
+    // re-acceleration; this buys the last crawl to rest and the time standing there.
+    //
+    // It exists because par was measured pricing a fifteen-stop round as an uninterrupted blast:
+    // 73 km/h average, and 2 of ~1150 profile samples below 3 m/s — the first and the last. The
+    // oracle was right about the ROAD and wrong about the JOB, which is why point-to-point missions
+    // felt correct while this one was unbeatable.
+    stopDwell:   4.0,
 
     // Per-axis rank thresholds on coverage × accuracy — NOT the par ratio. One delivery out of nine
     // scores 0.11 and letters D, which is the owner's stated case, and it still pays for that one.
@@ -550,6 +560,14 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
         fromK = toK
     }
 
+    // Which split-graph nodes are CUSTOMERS — so the segment that arrives at one can be marked as a
+    // place the reference driver pulls up (par.js `stop`). Larry and the truck's own origin are
+    // spliced points too and are deliberately NOT in here: you do not throw a paper at either.
+    // A porch the route passes TWICE is one stop, not two: you throw on the first pass and drive
+    // through on the way back. Consumed as the segments are built, so only the first arrival is
+    // charged — without this a route that doubles back priced 13 stops for 12 customers.
+    const custKeys = new Set(order.map(c => ptKeyOf.get(c.id)))
+
     const segments = [], poly = []
     const pushPoly = (cl, s0, s1) => {
         const n = Math.max(2, Math.ceil(Math.abs(s1 - s0) / 25))
@@ -590,13 +608,19 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
             // A spliced point is a house, not an intersection — degree 2 keeps the overlay from
             // raising a turn arrow on somebody's front lawn.
             endDeg: vInfo ? 2 : (degOf.get(vk) ?? 3),
+            // …but it IS a place you stop, and par has to know that even though the overlay must
+            // not. The two flags say different things about the same point on purpose.
+            stop: custKeys.delete(vk),
         })
         pushPoly(ed.centerline, s0, s1)
     }
     if (!segments.length) return null
 
     // ONE par over the whole route (SM-INV-2).
-    const { time, distance } = computePar(segments)
+    // ONE par over the whole route (SM-INV-2) — and the reference driver PULLS UP at every porch.
+    // Without the dwell the oracle priced a fifteen-stop round as an uninterrupted 73 km/h blast
+    // and the expediency bonus was unreachable by construction (owner-reported 2026-08-14).
+    const { time, distance } = computePar(segments, { ...PAR_REF, stopDwell: PAPER_PARAMS.stopDwell })
     if (!(time > 0)) return null
 
     const polyCum = [0]

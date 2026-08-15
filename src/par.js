@@ -87,6 +87,11 @@ export const PAR_REF = {
     junctionRadius: 18, // effective corner radius when turning through a node (m)
     junctionDeadband: 0.14, // heading change below this (rad, ~8°) is not a corner at all
     g: 9.81,
+    // FEAT-61: seconds spent at a segment end marked `stop: true` — a WAYPOINT the driver has to
+    // pull up at and do something at, rather than a corner they carry speed through. Zero by
+    // default, so a point-to-point job (which has no such waypoints) prices exactly as before; the
+    // paper route overrides it. See computePar's STOPS note for what the number has to cover.
+    stopDwell: 0,
 }
 
 const DS = 2.0        // profile sample spacing along the route (m) — 2 m is well below the
@@ -112,6 +117,7 @@ const EPS = 1e-9
 export function sampleRoute(segments) {
     const d = [], kappa = [], sinT = [], cosT = []
     const caps = []            // { i, v } hard speed caps injected at segment joins
+    let stops = 0              // segment ends the driver must pull up at (FEAT-61)
     let dist = 0
     let prevTangent = null
 
@@ -152,9 +158,20 @@ export function sampleRoute(segments) {
             if (i === 0 && d.length > 0) continue
             d.push(dist); kappa.push(k); sinT.push(Math.sin(theta)); cosT.push(Math.cos(theta))
         }
+        // FEAT-61: a WAYPOINT, not a corner. The paper route's stops are places the driver pulls up
+        // at, throws, and sets off again — so the envelope has to be pinned to the floor here or the
+        // oracle prices a fifteen-stop round as an uninterrupted blast (measured: 73 km/h average,
+        // and 2 of ~1150 samples below 3 m/s, which were the first and the last).
+        //
+        // v: 0 lands on vMin (2.5 m/s) because the cap is floored — the integrator divides by speed
+        // and a true zero is not representable here. That is deliberate and it is why stopDwell
+        // exists: the CAP buys the braking and the re-acceleration, which scale with the road, and
+        // the DWELL buys the last crawl to rest plus the time standing there doing the thing.
+        if (segments[seg].stop) { caps.push({ i: d.length - 1, v: 0 }); stops++ }
+
         prevTangent = (() => { const t = centerline.tangentAt(s1); return { x: t.x * dir, z: t.z * dir } })()
     }
-    return { d, kappa, sinT, cosT, caps }
+    return { d, kappa, sinT, cosT, caps, stops }
 }
 
 function clamp(s, len) { return s < 0 ? 0 : (s > len ? len : s) }
@@ -174,7 +191,7 @@ function clamp(s, len) { return s < 0 ? 0 : (s > len ? len : s) }
  * @returns {{ time:number, distance:number, speeds:Float64Array, dist:Float64Array }}
  */
 export function computePar(segments, ref = PAR_REF) {
-    const { d, kappa, sinT, cosT, caps } = sampleRoute(segments || [])
+    const { d, kappa, sinT, cosT, caps, stops } = sampleRoute(segments || [])
     const n = d.length
     if (n < 2) return { time: 0, distance: 0, speeds: new Float64Array(0), dist: new Float64Array(0) }
 
@@ -233,7 +250,12 @@ export function computePar(segments, ref = PAR_REF) {
         const vbar = Math.max(ref.vMin * 0.5, 0.5 * (v[i] + v[i - 1]))
         time += ds / vbar
     }
-    return { time, distance: d[n - 1], speeds: v, dist: Float64Array.from(d) }
+    // STOPS (FEAT-61). Still ONE par and one oracle (SM-INV-2) — a route with waypoints in it is
+    // priced by the same call, in one pass, and the dwell is a property of the reference driver
+    // rather than a second opinion about the route. Zero for every mission type that has no
+    // waypoints, which is all of them but the paper round.
+    time += (stops || 0) * (ref.stopDwell ?? 0)
+    return { time, distance: d[n - 1], speeds: v, dist: Float64Array.from(d), stops: stops || 0 }
 }
 
 /**
