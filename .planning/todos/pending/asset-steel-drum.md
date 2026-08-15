@@ -4,7 +4,7 @@ type: asset
 status: open
 severity: minor
 opened: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-15
 blocked-by: FEAT-59
 relates: FEAT-46, FEAT-36, ASSET-29
 ---
@@ -31,13 +31,13 @@ costs a material lookup, not a texture:
 
 | Variant | Tris | Notes |
 |---|---|---|
-| `drum-closed` | ≤350 | closed head, two bungs — the default |
+| `drum-closed` | ≤350 — **built at 328 (2026-08-15)** | closed head, 2"+3/4" bungs — the default |
 | `drum-open` | ≤450 | lid removed, rolled rim, visible interior wall (**do not** model contents) |
 | `drum-crushed` | ≤400 | dented, staved-in top, canted; a distinct mesh, not a squashed transform |
 
 | Field | Value |
 |---|---|
-| Texture | **one shared 1024×1024 atlas** across all three — bare steel, rust bloom, faded paint, stencils |
+| Texture | **none** — flat colours per ART-STYLE (supersedes the atlas spec; ASSET-23/09/29 precedent). Variety = RUNTIME RECOLOUR of `DrumPaint` (red-oxide default), not UV offsets; `DrumSteel` (bungs) fixed |
 | Real size | 0.58 m diameter × 0.85 m tall |
 | Origin | base-seated: base at y=0, centred (crushed variant sits on its actual contact points) |
 | Forward | −Z (bungs / stencil face −Z) |
@@ -47,11 +47,10 @@ Chimes and rolling hoops are geometry on all three — they are the silhouette.
 
 ## Acceptance
 
-- `assets/models/drum-closed.glb`, `drum-open.glb`, `drum-crushed.glb` exist, all export-clean under
-  `.planning/research/ASSETS.md` settings.
-- Sources committed: one `assets/models/src/steel-drum.blend` + `steel-drum.py` generating all three.
-- All three reference the **same** atlas — confirm it is not embedded three times at full size, or
-  accept and record that cost.
+- [x] `assets/models/drum-closed.glb` exists, export-clean (328 tris, 2 materials, 0 images,
+  0.580×0.850 m, base z=0, 2026-08-15). `drum-open.glb` / `drum-crushed.glb` **not built yet**.
+- [x] Sources committed: `assets/models/src/steel-drum.blend` + `steel-drum.py` (closed only so far).
+- ~~Shared atlas check~~ — moot, no textures.
 - The closed variant reads correctly upright **and** on its side.
 - Tri counts within budget; material names stable.
 - All three load and place in-world through the FEAT-59 model import service.
