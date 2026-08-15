@@ -20,7 +20,7 @@
 import * as THREE from 'three'
 import { RoadSystem } from './road.js'
 import { MISSION_PLAN_RADIUS } from './mission.js'
-import { POI_ICONS, POI_ICON_PX, TUNNEL_ICON } from '../data/map-icons.js'   // FEAT-60: map glyphs
+import { POI_ICONS, POI_ICON_PX, TUNNEL_ICON, NEWS_ROLL } from '../data/map-icons.js'   // FEAT-60: map glyphs
 
 // Streamed radius of the map's own RoadSystem around the pan cursor. UNIFIED with the story-mode
 // planner's radius: the two are the big read-only networks in the app and they share route caches,
@@ -67,7 +67,7 @@ export class Map2D {
      * @param {() => ?{start:{x,z}, end:{x,z}, poly:{x,z}[]}} [o.getMission]
      *        — story-mode mission overlay (route + start/end pins); null when no mission is live
      */
-    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCustomers, getCampZones }) {
+    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCustomers, getCampZones, getRouteState }) {
         this._canvas    = canvas
         this._ctx       = canvas.getContext('2d')
         this._getSeed   = getSeed
@@ -83,6 +83,10 @@ export class Map2D {
         // park (latch the handbrake). Empty outside story mode.
         this._getPois     = getPois      || (() => null)
         this._getCustomers = getCustomers || (() => null)   // FEAT-61 newspaper customers
+        // FEAT-61: `{ onRoute: boolean, arrow: {x,z,ang}|null }`, or null outside story mode.
+        // onRoute drives the customer glyph (see _drawCustomers); arrow is the offer's start
+        // direction (see _drawStartArrow).
+        this._getRouteState = getRouteState || (() => null)
         // FEAT-45: story-mode dispersed-camping zones — `{x,z,r}[]`, empty outside story mode. NOT
         // drawn as discs: see _drawCampZones.
         this._getCampZones = getCampZones || (() => null)
@@ -512,6 +516,7 @@ export class Map2D {
                                  // them and one of them is mom, so they must never mask a landmark
         this._drawPois(ctx)      // likewise furniture: placed at entry, so not in the cached bg
         this._drawMission(ctx)   // under the car marker, over the cached bg
+        this._drawStartArrow(ctx)   // FEAT-61: which way to set off, on the offer only
         this._drawCar(ctx)
         this._drawScaleBar(ctx)
         this._drawCursorCoords(ctx)
@@ -835,14 +840,59 @@ export class Map2D {
     _drawCustomers(ctx) {
         const list = this._getCustomers()
         if (!list || !list.length) return
-        ctx.lineWidth = 1.2
-        ctx.strokeStyle = '#0d1a0d'
-        ctx.fillStyle = '#3ddc6b'
-        for (const c of list) {
-            ctx.beginPath()
-            ctx.arc(this._sx(c.x), this._sy(c.z), 4, 0, Math.PI * 2)
-            ctx.fill(); ctx.stroke()
+        // TWO STATES, because the marker means two different things (owner, 2026-08-15).
+        //
+        // OFF a route these are scenery you are learning: fifteen anonymous white dots, deliberately
+        // quiet, saying only "papers get delivered around here". ON a route (the offer included, so
+        // the briefing map reads the same as the drive) every one of them is a job, and each gets
+        // the newspaper roll — the same object the player is about to throw.
+        const onRoute = !!this._getRouteState()?.onRoute
+        if (!onRoute) {
+            ctx.lineWidth = 1.2
+            ctx.strokeStyle = '#101010'
+            ctx.fillStyle = '#ffffff'
+            for (const c of list) {
+                ctx.beginPath()
+                ctx.arc(this._sx(c.x), this._sy(c.z), 3.5, 0, Math.PI * 2)
+                ctx.fill(); ctx.stroke()
+            }
+            return
         }
+        ctx.lineWidth = 1.5
+        ctx.strokeStyle = '#101010'
+        ctx.fillStyle = '#ffffff'
+        for (const c of list) {
+            this._drawGlyph(ctx, '#news', NEWS_ROLL, this._sx(c.x), this._sy(c.z))
+        }
+    }
+
+    /**
+     * FEAT-61: WHICH WAY TO SET OFF, drawn once on the offer's map.
+     *
+     * A paper round routinely passes back through Larry's — customers lie on both sides of him — so
+     * the line alone cannot say which end to start from, and the player is left guessing at exactly
+     * the moment they are deciding whether to take the job (owner-reported on seed 90).
+     *
+     * A single arrow at the route HEAD, aimed the way the first chevrons will point. Only at the
+     * offer: once you are driving, the chevrons themselves are the answer and a second, static
+     * arrow on the map would be one more thing to keep in step with them.
+     */
+    _drawStartArrow(ctx) {
+        const a = this._getRouteState()?.arrow
+        if (!a) return
+        const sx = this._sx(a.x), sy = this._sy(a.z)
+        // Screen-space angle: +x is +x, but map +z runs DOWN the canvas, so the world heading is
+        // used as-is against _sx/_sy rather than negated.
+        const L = 17, W = 9
+        const c = Math.cos(a.ang), s2 = Math.sin(a.ang)
+        const pt = (fwd, lat) => [sx + c * fwd - s2 * lat, sy + s2 * fwd + c * lat]
+        const [tx, ty] = pt(L, 0), [lx, ly] = pt(-L * 0.45, -W), [rx, ry] = pt(-L * 0.45, W)
+        ctx.beginPath()
+        ctx.moveTo(tx, ty); ctx.lineTo(lx, ly); ctx.lineTo(rx, ry); ctx.closePath()
+        ctx.fillStyle = '#ffdc3c'
+        ctx.strokeStyle = '#101010'
+        ctx.lineWidth = 2
+        ctx.fill(); ctx.stroke()
     }
 
     // FEAT-46/60: POI markers — the navigate-to-it affordance. Each roster type carries its own

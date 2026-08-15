@@ -39,6 +39,17 @@
 const HOUSE = 'M12 2.5 L22.5 11.5 L19.5 11.5 L19.5 21.5 L4.5 21.5 L4.5 11.5 L1.5 11.5 Z'
             + 'M10 14 L10 21.5 L14 21.5 L14 14 Z'
 
+// FEAT-61: a ROLLED newspaper on the 45° diagonal, with the open end of the roll cut out of it.
+// The roll rather than a folded broadsheet because the roll is the thing the player actually holds
+// and throws (assets/models/news-roll.glb) — a map glyph that matches the object in your hand needs
+// no learning. Diagonal for the same reason the wrench is: it squares up the bounding box, so the
+// bar can be scaled fatter and still fit the 24-box.
+//
+// One cut-out, a diamond at the near end, wound against the bar so nonzero fill punches it through.
+// That single hole is the whole reading — without it the silhouette is a stick.
+export const NEWS_ROLL = 'M3.7 15.7 L15.7 3.7 L20.3 8.3 L8.3 20.3 Z'
+                       + 'M17.4 5.4 L16.2 6.6 L17.4 7.8 L18.6 6.6 Z'
+
 export const POI_ICONS = {
     // Mom's house — where you can sleep. NOT a camp (see camp.js build()); it is a POI with a
     // building on it that happens to have a bed.

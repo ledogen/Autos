@@ -49,15 +49,19 @@ check('nonsense distances score zero, not NaN', accuracyScore(-1, R) === 0 && ac
 console.log('\n── 2. partial routes pay (the income floor) ────────────────────')
 const one = scoreRoute([accuracyScore(0, R)], 9, PAR * 1.1, PAR, TIER)
 check('1 of 9 delivered letters D', one.letter === 'D', `got ${one.letter} (score ${one.score.toFixed(3)})`)
-check('…and still pays for the one', one.payout > 0, `payout ${one.payout}`)
-check('…which is exactly one paper at the flat rate', near(one.payout, one.flat))
+// `.total` from here on where the check means MONEY EARNED. Since 2026-08-15 accuracy money is
+// banked ON THE SPOT as each paper lands (`spot`) and only the clock settles at the bell
+// (`payout`), so a route driven exactly at par settles ZERO — every dollar was already paid. The
+// old assertions read `.payout` and were really asking about the total.
+check('…and still pays for the one', one.total > 0, `total ${one.total}`)
+check('…which is exactly one paper at the flat rate', near(one.spot, one.flat))
 const half = scoreRoute(Array(5).fill(accuracyScore(0, R)), 9, PAR, PAR, TIER)
-check('more deliveries pay strictly more', half.payout > one.payout)
+check('more deliveries pay strictly more', half.total > one.total)
 check('coverage is delivered/customers', near(half.coverage, 5 / 9))
 const sloppy = scoreRoute(Array(9).fill(accuracyScore(R, R)), 9, PAR, PAR, TIER)
 const clean  = scoreRoute(Array(9).fill(accuracyScore(0, R)), 9, PAR, PAR, TIER)
-check('a full sloppy route pays less than a full clean one', sloppy.payout < clean.payout)
-check(`…by exactly the accuracy floor (${ACC_FLOOR}×)`, near(sloppy.payout, clean.payout * ACC_FLOOR, 1e-9))
+check('a full sloppy route pays less than a full clean one', sloppy.total < clean.total)
+check(`…by exactly the accuracy floor (${ACC_FLOOR}×)`, near(sloppy.spot, clean.spot * ACC_FLOOR, 1e-9))
 // Both routes were driven at par, and under the amended model the letter is the CLOCK — so they
 // letter the same and differ only in money. That is the point of the change: accuracy is paid for,
 // not graded. (These two checks previously asserted S and D respectively, off coverage x accuracy.)
@@ -95,7 +99,7 @@ check('…dawdling past par drops to C', scoreRoute(Array(9).fill(1), 9, PAR * 1
 check('accuracy does NOT move the letter — only the money', (() => {
     const sharp = scoreRoute(Array(9).fill(1.0), 9, PAR, PAR, TIER)
     const rough = scoreRoute(Array(9).fill(0.3), 9, PAR, PAR, TIER)
-    return sharp.letter === rough.letter && rough.payout < sharp.payout
+    return sharp.letter === rough.letter && rough.total < sharp.total
 })())
 // PAR SCALES WITH COVERAGE [owner, 2026-08-15] — skipping people cannot buy time, because it
 // shrinks the clock you are held to by exactly as much. This replaced a flat D for any incomplete
@@ -116,18 +120,30 @@ check('…and one paper short of a full round still beats half a round', (() => 
     return order.indexOf(nearly.letter) > order.indexOf(half.letter)
 })())
 check('…and still PAYS for what it placed (the income floor)',
-    scoreRoute(Array(8).fill(1), 9, PAR * 0.5, PAR, TIER).payout > 0)
+    scoreRoute(Array(8).fill(1), 9, PAR * 0.5, PAR, TIER).total > 0)
+// THE SPLIT ITSELF [owner, 2026-08-15]: accuracy is banked live, the clock settles at the bell, and
+// the end-of-route payout is a PURE FUNCTION OF TIME. Two routes with the same time and wildly
+// different accuracy must settle the same amount and differ only in what was already paid.
+check('the end-of-route payout is decoupled from accuracy entirely', (() => {
+    const sharp = scoreRoute(Array(9).fill(1.0), 9, PAR * 0.8, PAR, TIER)
+    const rough = scoreRoute(Array(9).fill(0.3), 9, PAR * 0.8, PAR, TIER)
+    return near(sharp.payout, rough.payout) && rough.spot < sharp.spot
+})())
+check('…and a route driven exactly at par settles nothing — it was all paid on the spot', (() => {
+    const r = scoreRoute(Array(9).fill(1.0), 9, PAR, PAR, TIER)
+    return r.payout === 0 && r.spot > 0 && near(r.total, r.spot)
+})())
 // THE OWNER'S EQUIVALENCE, as an assertion. This is the number bonusMax exists to satisfy: a
 // rim-scraper who blasts the round earns what a methodical driver earns at par, so "place them
 // well" and "place them fast" are both real ways to drive it.
 check('a rim-scraping blast pays about what a methodical drive at par pays', (() => {
     const methodical = scoreRoute(Array(9).fill(1.0), 9, PAR, PAR, TIER)
     const blaster    = scoreRoute(Array(9).fill(0.3), 9, PAR * PAPER_PARAMS.expediteFull, PAR, TIER)
-    return Math.abs(blaster.payout - methodical.payout) / methodical.payout < 0.02
+    return Math.abs(blaster.total - methodical.total) / methodical.total < 0.02
 })(), (() => {
     const m = scoreRoute(Array(9).fill(1.0), 9, PAR, PAR, TIER)
     const b = scoreRoute(Array(9).fill(0.3), 9, PAR * PAPER_PARAMS.expediteFull, PAR, TIER)
-    return `methodical $${m.payout.toFixed(2)} vs blaster $${b.payout.toFixed(2)}`
+    return `methodical $${m.total.toFixed(2)} vs blaster $${b.total.toFixed(2)}`
 })())
 resetPaperRun()
 check('a run starts on the first rung', runPaper.tier === 0 && customersForTier() === 4)
@@ -200,12 +216,12 @@ check('a longer route pays proportionally more per paper', (() => {
 check('the day tier lifts the floor with the cost curve', (() => {
     const d1 = scoreRoute(Array(9).fill(1), 9, PAR, PAR, 1.0)
     const d20 = scoreRoute(Array(9).fill(1), 9, PAR, PAR, 4.58)
-    return d20.payout > d1.payout * 4
+    return d20.total > d1.total * 4
 })())
 check('a perfect route at par pays ~60% of the margin line', (() => {
     const r = scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER)
     const margin = ECONOMY_PARAMS.k * PAR * TIER * 1.0   // payoutFor at ratio 1.0 → m = 1
-    return near(r.payout / margin, PAPER_PARAMS.paperW, 1e-9)
+    return near(r.total / margin, PAPER_PARAMS.paperW, 1e-9)
 })())
 
 console.log('\n── 7b. the target circle never overlaps the road ──────────────')

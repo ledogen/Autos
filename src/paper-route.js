@@ -204,15 +204,24 @@ export function scoreRoute (accuracies, customers, elapsed, par, dayTier = 1, P 
         expedite    = P.bonusMax * Math.min(1, Math.max(0, f))
     }
 
-    // ACCURACY PAYS, AND THE BONUS IS ADDITIVE ON THE FULL FLAT — not a multiplier on the
-    // accuracy-scaled sum. That is the one structural decision in the amendment, and it is forced
-    // by the owner's own equivalence: a rim-scraper (mean q = 0.30) who blasts the round should
-    // earn about what a methodical driver (mean q = 1.0) earns at par. Additively that needs a
-    // bonus worth 0.70 of a perfect route's paper money; multiplicatively the same equivalence
-    // needs 233%, which is not a number anyone can tune. So the two ways to drive a round are a
-    // real choice: place them well, or place them fast, and either pays.
-    const payout = Math.max(0, flat * eff + flat * n * expedite)
-    return { coverage, meanAccuracy, effDeliveries: eff, score, letter, flat, expedite, payout, complete }
+    // TWO INCOME STREAMS, PAID AT DIFFERENT TIMES [owner, 2026-08-15].
+    //
+    //   accuracy -> `spot`, banked THE MOMENT each paper lands (EconomySystem.addSpot)
+    //   time     -> `payout`, settled at the bell
+    //
+    // So the end-of-mission payout is a pure function of the clock, and accuracy is fully decoupled
+    // from it — not because accuracy stopped paying, but because it was already paid. The totals
+    // are unchanged; what moved is WHEN. That is what makes the throw read-out honest: the dollars
+    // it quotes are in the wallet before the paper stops rolling.
+    //
+    // The split also keeps the owner's equivalence intact, since it is a statement about the total:
+    // a rim-scraper (mean q 0.30) blasting the round and a methodical driver (mean q 1.0) at par
+    // both come out at flat x n. The bonus is ADDITIVE on the full flat for that reason — the same
+    // equivalence expressed multiplicatively needs 233%, which is not a tunable number.
+    const spot   = Math.max(0, flat * eff)
+    const payout = Math.max(0, flat * n * expedite)
+    return { coverage, meanAccuracy, effDeliveries: eff, score, letter, flat, expedite,
+             spot, payout, total: spot + payout, complete }
 }
 
 /**
@@ -691,14 +700,16 @@ export class PaperRouteSystem {
      *   getCar()     — the truck's position, for the start-zone threshold
      *   getTerms()   — economySystem.terms(); frozen at accept, exactly like a paid job
      *   getTargetR() — the delivery circle radius (POI_PARAMS.poiHouseTargetR)
-     *   onSettle(payout, letter) — EconomySystem.settleFlat; the one money path
+     *   onSettle(payout, letter) — EconomySystem.settleFlat; the end-of-route money path
+     *   onSpot(amount)  — EconomySystem.addSpot; accuracy money, banked as each paper lands
      *   onBriefing(done)  — play Larry's cards and call `done` when they are read
      *   setMapOpen(open)  — show/hide the 2D map, framed on the route (the offer's preview)
      *   onChange()   — repaint
      *   onEnd()      — the route is over: clear the papers off the lawns
      */
     constructor ({ getRoad, getPois, getRegion, getCar, getTerms, getTargetR,
-                   onSettle, onBriefing, setMapOpen, onChange, onEnd }) {
+                   onSettle, onSpot, onBriefing, setMapOpen, onChange, onEnd }) {
+        this._onSpot = onSpot ?? (() => 0)
         this._setMapOpen = setMapOpen ?? (() => {})
         this._getRoad = getRoad
         this._getPois = getPois
@@ -1169,7 +1180,10 @@ export class PaperRouteSystem {
         // What that throw just banked, quoted to the player on landing. Zero unless it credited —
         // a paper onto a porch that already has one is spent, and saying it earned something would
         // be the read-out lying about the one number it exists to show.
-        const pay = credited ? this.paperValue(q) : 0
+        // BANKED ON THE SPOT (owner, 2026-08-15). Accuracy money is paid the instant the paper
+        // lands, not at the bell, so the figure the read-out quotes is already in the wallet —
+        // and the end-of-route payout is left a pure function of the clock.
+        const pay = credited ? this._onSpot(this.paperValue(q)) : 0
         if (this.run.hits.size >= this.route.customers.length
             || (this.run.stock <= 0 && this.run.inFlight <= 0)) {
             const out = { customer: best, dist: bd, q, credited, already, pay }
@@ -1213,6 +1227,7 @@ export class PaperRouteSystem {
         runPaper.routesRun++
         this.result = {
             ...r,
+            spot:      Math.round(r.spot * 100) / 100,
             customers: n,
             delivered: accuracies.length,
             elapsed:   this.run.elapsed,

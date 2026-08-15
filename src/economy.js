@@ -126,9 +126,25 @@ export function pointsFor(letter) {
  * floats across a 20-mission run invites 4.999999 at a region gate that asks for 5.
  */
 export const runEconomy = {
-    money: 0,        // whole dollars; settle() rounds — display never shows cents
+    money: 0,        // dollars, to the CENT. Every mutation rounds to 2 dp so a run's worth of
+                     // additions cannot drift into 20.700000000000003 — see addSpot()
     halfPoints: 0,   // mission points × 2
     missions: 0,     // settled (paid) missions this run
+}
+
+/** Round to whole cents. Money is added a paper at a time now, so drift is a real hazard. */
+const _cents = (v) => Math.round(v * 100) / 100
+
+/**
+ * Money as the player reads it (owner, 2026-08-15): cents below $100, whole dollars at or above.
+ * Small change matters when a single paper is worth $5.17 and the wallet is the score; by three
+ * figures the cents are noise on a number you are reading at a glance.
+ */
+export function formatMoney (v) {
+    const n = isFinite(v) ? v : 0
+    return n < 100
+        ? n.toFixed(2)
+        : Math.round(n).toLocaleString('en-US')
 }
 
 export class EconomySystem {
@@ -176,7 +192,7 @@ export class EconomySystem {
         const t = mission?.terms ?? { dayTier: dayTier(1) }
         const payout = Math.round(payoutFor(result.par, result.ratio, t.dayTier))
         const points = pointsFor(result.letter)
-        runEconomy.money += payout
+        runEconomy.money = _cents(runEconomy.money + payout)
         runEconomy.halfPoints += points * 2
         runEconomy.missions += 1
         return { payout, points }
@@ -195,12 +211,26 @@ export class EconomySystem {
      * pointsFor() is shared deliberately — a letter is worth the same deeds whatever earned it.
      */
     settleFlat (payout, letter) {
-        const paid = Math.max(0, Math.round(isFinite(payout) ? payout : 0))
+        const paid = _cents(Math.max(0, isFinite(payout) ? payout : 0))
         const points = pointsFor(letter)
-        runEconomy.money += paid
+        runEconomy.money = _cents(runEconomy.money + paid)
         runEconomy.halfPoints += points * 2
         runEconomy.missions += 1
         return { payout: paid, points }
+    }
+
+    /**
+     * Money earned MID-MISSION and banked on the spot (FEAT-61, owner 2026-08-15) — the paper
+     * route's accuracy bonus, paid as each paper lands rather than at the bell.
+     *
+     * Deliberately NOT settleFlat: this accrues no points and does not count a mission, because it
+     * is not a settlement. It is the same wallet through the same module, which is the part that
+     * matters — there is still exactly one place run money is made.
+     */
+    addSpot (amount) {
+        const paid = _cents(Math.max(0, isFinite(amount) ? amount : 0))
+        runEconomy.money = _cents(runEconomy.money + paid)
+        return paid
     }
 
     money () { return runEconomy.money }
@@ -231,7 +261,7 @@ export class EconomySystem {
     /** Refresh the GUI readouts (called from the frame loop's GUI tick, day.js pattern). */
     syncGui () {
         if (!this._read) return
-        this._read.money = '$' + runEconomy.money.toLocaleString('en-US')
+        this._read.money = '$' + formatMoney(runEconomy.money)
         this._read.deeds = formatDeeds(runEconomy.halfPoints)
         this._read.missions = runEconomy.missions
         this._read.tier = dayTier(this._getDay()).toFixed(2)

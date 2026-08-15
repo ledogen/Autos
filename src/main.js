@@ -55,7 +55,7 @@ import { LabSystem } from './lab.js'                     // FEAT-31: isolated fl
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { PoiSystem, POI_PARAMS } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
-import { EconomySystem, RANK_COLOR, formatDeeds } from './economy.js'  // FEAT-53: payout, wallet, good deeds
+import { EconomySystem, RANK_COLOR, formatDeeds, formatMoney } from './economy.js'  // FEAT-53: payout, wallet, good deeds
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
 import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
@@ -1268,6 +1268,26 @@ const map2d = new Map2D({
   // FEAT-46: POI icons — how the player finds one to drive to. Empty outside story mode.
   getPois: () => poiSystem.list(),
   getCustomers: () => poiSystem.customers(),   // FEAT-61: you cannot drive a route you cannot see
+  // FEAT-61: what the customers MEAN right now, and which way to set off.
+  //
+  // `onRoute` covers the offer as well as the drive, so the briefing map and the in-mission map say
+  // the same thing about the same dots. `arrow` is the offer ONLY — once you are driving, the
+  // chevrons are the answer, and a second static arrow would be one more thing to keep in step.
+  getRouteState: () => {
+    const p = paperRouteSystem
+    if (!p?.isActive()) return null
+    const line = p.line()
+    let arrow = null
+    if (p.state === 'offer' && line?.poly?.length > 1) {
+      // Aim it along the first real bit of route, not the first vertex pair: the polyline samples
+      // at 25 m and the opening step can be a metre of junction geometry pointing anywhere.
+      const a = line.poly[0]
+      let b = line.poly[1]
+      for (const q of line.poly) { if (Math.hypot(q.x - a.x, q.z - a.z) > 30) { b = q; break } }
+      arrow = { x: a.x, z: a.z, ang: Math.atan2(b.z - a.z, b.x - a.x) }
+    }
+    return { onRoute: true, arrow }
+  },
   // FEAT-45: dispersed-camping zones, drawn as a yellow casing on the roads inside them. Empty
   // outside story mode (build() only ever runs from the story deps).
   getCampZones: () => campSystem.zones(),
@@ -2561,7 +2581,7 @@ function _scoreLanding (hit) {
       // in their head. `scored.pay` is banked money — the expediency bonus is not in it, because
       // that depends on when you finish and the route can still take it back.
       _showThrowReadout(`<span style="color:#7ed957">${scored.dist.toFixed(2)} m`
-        + ` &nbsp;·&nbsp; $${scored.pay.toFixed(2)}</span>`)
+        + ` &nbsp;·&nbsp; +$${scored.pay.toFixed(2)}</span>`)
     } else if (scored.already) {
       // Not a failure — a paper spent. Saying so is the difference between "that did nothing" and
       // "you already did this one", and only one of those tells you to drive on.
@@ -2775,6 +2795,9 @@ const paperRouteSystem = new PaperRouteSystem({
   // The ONE money path (FEAT-53). This mission prices itself on its own axis and hands over a
   // finished number; the wallet, the deeds and the mission count still accrue in economy.js.
   onSettle:  (payout, letter) => economySystem.settleFlat(payout, letter),
+  // FEAT-61: accuracy money, banked as each paper lands. Same wallet, same module — but no points
+  // and no mission count, because a delivery is not a settlement.
+  onSpot:    (amount) => economySystem.addSpot(amount),
   // Larry talks while the tour routes. Once per run (DLG's seen-gate) — the second route must not
   // re-explain the throw — and `done` fires either way, because a skipped briefing still has to
   // release the offer.
@@ -3510,7 +3533,10 @@ function _renderPaperUI () {
         + `<br><b>${r.delivered}</b> of <b>${r.customers}</b> delivered `
         + `&nbsp;<span class="mp-dim">·</span>&nbsp; `
         + `${Math.round(r.meanAccuracy * 100)}% <span class="mp-dim">accuracy</span>`
-        + `<br><span class="mp-pay">$${r.payout.toLocaleString('en-US')}</span>`
+        // TWO LINES, because it is two payments: the papers were banked as they landed, and the
+        // clock is what settles now. Showing only the settlement would look like a pay cut.
+        + `<br><span class="mp-dim">papers (already paid)</span> <span class="mp-pay">$${formatMoney(r.spot)}</span>`
+        + `<br><span class="mp-dim">time</span> <span class="mp-pay">$${formatMoney(r.payout)}</span>`
         + (r.points > 0
           ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points} good deed${r.points > 1 ? 's' : ''}</span>`
           : '')
@@ -3556,7 +3582,7 @@ function _renderRunHud () {
   if (key === _runHudKey && el.style.display === 'block') return
   _runHudKey = key
   const deeds = formatDeeds(s.halfPoints)
-  el.innerHTML = `<span class="rh-money">$${s.money.toLocaleString('en-US')}</span><br>`
+  el.innerHTML = `<span class="rh-money">$${formatMoney(s.money)}</span><br>`
     + `<span class="rh-deeds">${s.halfPoints === 0 ? 'no' : deeds} good deed${s.halfPoints === 2 ? '' : 's'}</span>`
   el.style.display = 'block'
 }
