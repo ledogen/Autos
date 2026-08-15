@@ -315,6 +315,29 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   const prevDepth = engineCtx._dynContactDepth ?? EMPTY_DEPTH_MAP
   const stepDepth = new Map()
   engineCtx._dynContactDepth = stepDepth
+  // WITHIN-STEP ROCK PROXIES (owner, 2026-08-15 — "a heavy rock would give velocity to the
+  // tire; are we calculating force on rock before force on tire?"): the engine only integrates
+  // debris at the END of our step, so tire forces used to push against a FROZEN rock all frame
+  // — force-on-tire and force-on-rock each lagged the other by a step, overestimating exactly
+  // the first frame of a fast hit. Each contacted body now gets a linear proxy (mass +
+  // start-of-step velocity); the suspension substeps push on it through the onForce callback,
+  // every subsequent query sees its accumulated yield (depth and closing rate corrected), and
+  // the net impulse is committed to the engine once, before the world steps. Both sides of the
+  // contact now evolve simultaneously at substep cadence. (Momentum itself is still conserved —
+  // shoving an 85 kg rock out of a 20 m/s path costs the truck ~1.2 m/s whatever the softness;
+  // this removes the coupling LAG, not the physics.)
+  const rockProxies = new Map()   // body → { m, v0:{...}, v:{...}, disp:{...}, point }
+  const _proxyFor = (h) => {
+    let p = rockProxies.get(h.body)
+    if (!p) {
+      const v = { x: 0, y: 0, z: 0 }, w = { x: 0, y: 0, z: 0 }
+      engine.getVelocity(h.body, v, w)
+      p = { m: Math.max(1, engine.getMass(h.body)), v0: { ...v }, v: { ...v }, disp: { x: 0, y: 0, z: 0 }, point: h.contactPoint,
+            resting: Math.hypot(v.x, v.y, v.z) < 0.5 }
+      rockProxies.set(h.body, p)
+    }
+    return p
+  }
   const qcPlus = (cx, cy, cz, r, footprint) => {
     const list = queryContacts(cx, cy, cz, r, footprint)
     const dyn = engine.contactSphere({ x: cx, y: cy, z: cz }, r, { collidesWith: GROUP_DEBRIS, dynamicOnly: true })
@@ -323,7 +346,32 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // Safety invariant, not a filter that should ever fire with exact manifolds: a body under
       // the wheel cannot push it DOWN (a rock overhead is the chassis' engine contact).
       if (h.normal.y < -0.1) continue
-      h.depthRate = (h.depth - (prevDepth.get(h.body) ?? 0)) / dt
+      const p = _proxyFor(h)
+      // The proxy's yield since step start, projected on this contact's normal: the rock has
+      // already moved away by disp·n and is separating at (v − v0)·n faster than the engine
+      // snapshot knows.
+      const yieldDepth = p.disp.x * h.normal.x + p.disp.y * h.normal.y + p.disp.z * h.normal.z
+      h.depth = Math.max(0, h.depth - yieldDepth)
+      if (h.depth <= 0) continue
+      const sepRate = (p.v.x - p.v0.x) * h.normal.x + (p.v.y - p.v0.y) * h.normal.y + (p.v.z - p.v0.z) * h.normal.z
+      h.depthRate = (h.depth - (prevDepth.get(h.body) ?? 0)) / dt - sepRate
+      h.onForce = (Fn, sdt) => {   // suspension substep pushes the proxy along −normal
+        // Force on the rock = −n·Fn. The proxy is otherwise FREE, which over-yields a rock that
+        // is actually wedged: for bodies that began the step at rest, hold back the horizontal
+        // response by the ground-friction capacity μ·(m·g + press-down) — this is what lets a
+        // crawled-onto flat rock stay put and be CLIMBED instead of skating away frictionlessly
+        // within the step. Moving bodies (thrown, already kicked) stay free.
+        let Fx = -h.normal.x * Fn, Fy = -h.normal.y * Fn, Fz = -h.normal.z * Fn
+        if (p.resting) {
+          const cap = 0.7 * (p.m * 9.81 + Math.max(0, -Fy))
+          const Fh = Math.hypot(Fx, Fz)
+          const k = Fh > cap ? (Fh - cap) / Fh : 0
+          Fx *= k; Fz *= k
+        }
+        p.v.x += Fx / p.m * sdt; p.v.y += Fy / p.m * sdt; p.v.z += Fz / p.m * sdt
+        p.disp.x += (p.v.x - p.v0.x) * sdt; p.disp.y += (p.v.y - p.v0.y) * sdt; p.disp.z += (p.v.z - p.v0.z) * sdt
+        p.point = h.contactPoint
+      }
       const seen = stepDepth.get(h.body)
       if (seen === undefined || h.depth > seen) stepDepth.set(h.body, h.depth)
       list.push(h)
@@ -622,16 +670,15 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       let groundVel = null
       if (ground.body != null) {
         groundVel = engine.getPointVelocity(ground.body, ground.contactPoint, _groundVelScratch)
-        // The support's own velocity enters the slip BOUNDED (±DEBRIS_SLIP_CLAMP m/s per axis):
-        // an escaping rock at 6+ m/s would otherwise saturate Pacejka into a violent transient.
-        // Past a few m/s of relative motion the contact is momentary — the tire never re-grips
-        // a fleeing surface, so the honest force is the bounded one.
-        const gvLat = Math.max(-DEBRIS_SLIP_CLAMP, Math.min(DEBRIS_SLIP_CLAMP,
-          groundVel.x * wheelRight.x + groundVel.y * wheelRight.y + groundVel.z * wheelRight.z))
-        const gvLong = Math.max(-DEBRIS_SLIP_CLAMP, Math.min(DEBRIS_SLIP_CLAMP,
-          groundVel.x * wheelFwd.x + groundVel.y * wheelFwd.y + groundVel.z * wheelFwd.z))
-        params._lateralVelocity      = hubVel.dot(wheelRight) - gvLat
-        params._longitudinalVelocity = hubVel.dot(wheelFwd) - gvLong
+        // Fully relative — the support's own velocity enters the slip UNCLAMPED (owner,
+        // 2026-08-15: the last containment-era limiter deleted). Honest forces from honest
+        // kinematics; the enveloping factor and exact manifolds bound the magnitudes.
+        params._lateralVelocity      = (hubVel.x - groundVel.x) * wheelRight.x +
+                                       (hubVel.y - groundVel.y) * wheelRight.y +
+                                       (hubVel.z - groundVel.z) * wheelRight.z
+        params._longitudinalVelocity = (hubVel.x - groundVel.x) * wheelFwd.x +
+                                       (hubVel.y - groundVel.y) * wheelFwd.y +
+                                       (hubVel.z - groundVel.z) * wheelFwd.z
         // Clamped: a debris body ricocheting off the rim can report a huge closing speed for a
         // frame; the tire damper term must not turn that into another force spike (same failure
         // family as the depth cap in qcPlus).
@@ -713,19 +760,12 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // AND its normal load press on the body under the wheel at the contact point.
       // (Static supports have no .body; the terrain doesn't need its reaction.)
       //
-      // The normal reaction is the CONTACT-LOCAL spring–damper force — exactly the law the
-      // suspension applied for this contact (Newton's third law, symmetric), never the wheel's
-      // SUMMED Fz (road + rock when straddling once over-flung the rock).
+      // Reaction: the NORMAL share is delivered through the within-step rock proxy (the
+      // suspension substeps pushed it via onForce; committed as one impulse below). Only the
+      // tire FRICTION force is applied here — it comes from the Pacejka pass, which runs once
+      // per step, not per substep.
       if (ground.body != null) {
-        const env = ground.sizeR !== undefined ? ground.sizeR / (ground.sizeR + TIRE_ENVELOPE_LEN) : 1
-        const FnContact = Math.max(0,
-          params.tireStiffness * ground.depth +
-          params.tireDamping * (ground.depthRate ?? 0) * Math.min(1, ground.depth / 0.04)) * env
-        engine.applyForce(ground.body, {
-          x: -wheelForce.x - FnContact * ground.normal.x,
-          y: -wheelForce.y - FnContact * ground.normal.y,
-          z: -wheelForce.z - FnContact * ground.normal.z,
-        }, ground.contactPoint)
+        engine.applyForce(ground.body, { x: -wheelForce.x, y: -wheelForce.y, z: -wheelForce.z }, ground.contactPoint)
       }
 
       // Write debug data for logger — evaluated once per wheel against the chosen support surface (BUG-38).
@@ -874,6 +914,12 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // application is exact. The engine also advances every debris body here:
   // ONE world step per physics tick, chassis↔debris↔terrain solved together.
   updateWheelRims(engine, chassis, vehicleState, params)   // rims follow strut travel
+  // Commit the within-step rock-proxy impulses: everything the suspension substeps pushed into
+  // each contacted body this step, as one engine impulse at its (last) contact point.
+  for (const [body, p] of rockProxies) {
+    const jx = p.m * (p.v.x - p.v0.x), jy = p.m * (p.v.y - p.v0.y), jz = p.m * (p.v.z - p.v0.z)
+    if (jx * jx + jy * jy + jz * jz > 1e-8) engine.applyImpulse(body, { x: jx, y: jy, z: jz }, p.point)
+  }
   engine.applyForce(chassis, totalForce)
   engine.applyTorque(chassis, totalTorque)
   // 8 substeps (not the engine-default 4): the chassis carries the TUNED inertia, whose x-axis
@@ -896,7 +942,6 @@ const _groundVelScratch = { x: 0, y: 0, z: 0 }
 // A loaded tire's real deflection is ~0.05 m; 0.09 allows a hard bump (~2× static corner load
 // at current tireStiffness) while making the one-frame full-radius spike impossible. Static
 // terrain contacts are untouched — their depth is already continuous.
-const DEBRIS_SLIP_CLAMP = 3.0               // m/s — max support-velocity contribution to tire slip
 // Tire OBSTACLE ENVELOPING (standard tire mechanics; owner captures 178678330/78/28/69 —
 // 20 kN single-frame nose kicks at 20 m/s): a carcass wraps around objects smaller than its
 // own scale, so effective stiffness against a small rock is a fraction of the flat-ground
