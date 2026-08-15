@@ -19,9 +19,10 @@ import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics, createVehicleChassis } from './physics.js'
 import { createPhysicsEngine } from './physics-engine.js'
-import { TerrainPhysics, RoadPhysics } from './terrain-physics.js'
+import { TerrainPhysics, RoadPhysics, PropPhysics } from './terrain-physics.js'
 import { DebrisSystem } from './debris.js'
-import { getBodyContactPoints, getWheelPosition } from './suspension.js'
+import { PhysicsWireframes } from './physics-debug.js'
+import { getWheelPosition } from './suspension.js'
 import { updateVehicle, setLaunchHold, setControlAttenuation, SPAWN_STATE } from './vehicle.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
@@ -676,6 +677,7 @@ async function _rebuildFullNow () {
     if (propSystem) {
       propSystem.dispose()
       propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
+      propSystem.setPhysicsHook(propPhysics)   // FEAT-48: re-attach after the seed-rebuild swap
       // PERF-07: wipe the old seed's baked shadow tiles and re-arm baking for the fresh props.
       if (shadowBake) { shadowBake.clear(); propSystem.setShadowBake(shadowBake) }
       if (_syncImpostors) _syncImpostors()   // PERF-21: re-activate billboards on the fresh instance
@@ -1967,6 +1969,14 @@ const debrisSystem = new DebrisSystem(physicsEngine, scene)   // FEAT-36: thrown
 // below (boot + seed rebuild). The terrain heightfields mirror the CARVED mesh, which sits
 // roadClearanceMargin BELOW the asphalt; without this mirror debris fell through the road.
 const roadPhysics = new RoadPhysics(physicsEngine)
+// Prop hard colliders (tree trunks, logs, rocks, boulders) as engine statics — the chassis'
+// rigid tree contact ("squishy trees" fix, 2026-08-15). Attached at every PropSystem creation.
+const propPhysics = new PropPhysics(physicsEngine, FLORA_PARAMS)
+window.__propPhysics = propPhysics             // dev handle — prop-debug radius sliders resyncAll()
+// Collider wireframes (debug overlay) — replaces the retired orange probe spheres. Backtick
+// toggles it; the debug panel mirrors it. Two-tone X-ray over the models, never hiding them.
+const physicsWireframes = new PhysicsWireframes(physicsEngine, scene)
+window.__physWireframes = physicsWireframes    // dev handle — debug.js checkbox targets it
 window.__physicsEngine = physicsEngine         // dev handle (counters in the HUD / console)
 window.__vehicleChassis = vehicleChassis       // dev handle — debug.js restitution slider targets it
 window.__debris = debrisSystem                 // dev handle — debug.js projectile selector + clear button
@@ -3711,6 +3721,7 @@ roadMeshSystem.setPhysicsHook(roadPhysics)   // FEAT-48: asphalt is a collider, 
 rebuildWaterSystem()
 // FEAT-06: prop system — needs terrain (height/normal) + road (exclusion) + water samplers, all alive now.
 propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
+propSystem.setPhysicsHook(propPhysics)   // FEAT-48: trees/rocks/boulders are rigid for the chassis
 
 // PERF-07: baked prop-shadow atlas. Needs the WebGL renderer (absent headless — this whole block is
 // browser-only). Wires the atlas texture into the terrain sampler, the bake triggers into the prop
@@ -3769,6 +3780,7 @@ addPropGui(_gui, {
   rebuild: () => {
     propSystem.dispose()
     propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
+    propSystem.setPhysicsHook(propPhysics)   // FEAT-48: re-attach after the GUI full rebuild
     shadowBake.clear()
     propSystem.setShadowBake(shadowBake)
     applyPropShadowMode()
@@ -3821,24 +3833,13 @@ await _importSessionOrBundledRoutes()
 await _reseatTruckAtSpawn()
 perfMark('init: spawn reseated')  // TEMP (D-arc)
 
-// ── Body contact point debug spheres ──────────────────────────────────────────
-// 14 translucent orange spheres — one per probe in getBodyContactPoints.
-// Toggled with backtick alongside the rest of the debug overlay.
-const _dbgSphereMat = new THREE.MeshBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.45, depthWrite: false })
-const _dbgSphereGeo = new THREE.SphereGeometry(RANGER_PARAMS.bodyContactRadius, 8, 6)
-const BODY_CONTACT_COUNT = 14
-const _dbgSpheres = Array.from({ length: BODY_CONTACT_COUNT }, () => {
-  const m = new THREE.Mesh(_dbgSphereGeo, _dbgSphereMat)
-  m.visible = false
-  scene.add(m)
-  return m
-})
-let _dbgSpheresOn = false
+// ── Collider wireframe overlay (physics-debug.js) ─────────────────────────────
+// Replaced the 14 orange probe spheres (2026-08-15): those visualised the retired
+// getBodyContactPoints probes; the wireframes draw the ACTUAL engine colliders.
 document.addEventListener('keydown', e => {
-  // FEAT-43: collision-sphere debug is part of the debug tooling locked out in story mode.
+  // FEAT-43: collider debug is part of the debug tooling locked out in story mode.
   if (e.key === '`' && !storySystem.isActive()) {
-    _dbgSpheresOn = !_dbgSpheresOn
-    _dbgSpheres.forEach(m => { m.visible = _dbgSpheresOn })
+    physicsWireframes.setEnabled(!physicsWireframes.enabled)
   }
   // FEAT-16: M toggles the 2D top-down map overlay (sim keeps running underneath).
   if (e.key === 'm' || e.key === 'M') {
@@ -3984,6 +3985,8 @@ function enterLab () {
   terrainPhysics.clear()               // …drop their colliders (lab is a clean room)
   roadMeshSystem?.setPhysicsHook(null)
   roadPhysics.clear()
+  propSystem?.setPhysicsHook(null)
+  propPhysics.clear()
   _buildLabColliders()
 
   // Fog is tuned for worldgen draw distances (FogExp2 ~0.006), which swallows the far end of a
@@ -4018,6 +4021,7 @@ function exitLab () {
   _destroyLabColliders()                          // FEAT-48: lab slab + ramp out…
   terrainSystem.setPhysicsHook(terrainPhysics)    // …world chunk colliders back (re-syncs kept chunks)
   roadMeshSystem?.setPhysicsHook(roadPhysics)     // …and the standing road tiles
+  propSystem?.setPhysicsHook(propPhysics)         // …and the prop colliders
 
   if (scene.fog && _labFogDensity != null) { scene.fog.density = _labFogDensity; _labFogDensity = null }
 
@@ -4991,12 +4995,8 @@ function loop () {
   vehicleState.position  = _physPos
   vehicleState.quaternion = _physQuat
 
-  // Update body contact debug spheres (only when visible — cheap early-out)
-  if (_dbgSpheresOn) {
-    RANGER_PARAMS._rotateVector = (v) => new THREE.Vector3(v.x, v.y, v.z).applyQuaternion(vehicleState.quaternion)
-    const pts = getBodyContactPoints(vehicleState, RANGER_PARAMS)
-    pts.forEach((pt, i) => { if (_dbgSpheres[i]) _dbgSpheres[i].position.set(pt.x, pt.y, pt.z) })
-  }
+  // Collider wireframes: follow dynamic bodies, cull far statics (no-op while disabled).
+  physicsWireframes.update(camera.position)
 
   // QUAL-02: keep the (finite) sky box centred on the camera so it always surrounds the view.
   skySystem.update(camera.position)

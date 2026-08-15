@@ -65,6 +65,7 @@ export class PhysicsEngine {
     // to keep the per-frame allocation at zero on the hot read paths.
     this._p = [0, 0, 0]; this._q = [0, 0, 0, 0]
     this._v = [0, 0, 0]; this._w = [0, 0, 0]
+    this._rev = 0                          // bumped on body create/destroy — debug viz change detection
   }
 
   /** Advance the world by dt with the given solver substep count. Synchronous. */
@@ -96,7 +97,8 @@ export class PhysicsEngine {
     bd.isBullet = bullet
     const id = _b3.b3CreateBody(this._world, bd)
     const handle = this._nextHandle++
-    this._bodies.set(handle, { id, shapes: [], userData })
+    this._bodies.set(handle, { id, shapes: [], specs: [], userData })
+    this._rev++
     return handle
   }
 
@@ -104,6 +106,7 @@ export class PhysicsEngine {
   destroyBody (handle) {
     const rec = this._bodies.get(handle)
     if (!rec) return
+    this._rev++
     for (const s of rec.shapes) this._shapeToHandle.delete(this._shapeKey(s))
     _b3.b3DestroyBody(rec.id)              // destroys attached shapes with it
     const hf = this._heightfields.get(handle)
@@ -138,8 +141,12 @@ export class PhysicsEngine {
 
   _shapeKey (shapeId) { return shapeId.index1 * 0x10000 + shapeId.generation }
 
-  _register (handle, shapeId) {
-    this._bodies.get(handle).shapes.push(shapeId)
+  /** spec: a plain descriptor of the shape as CREATED (body-local geometry) — the debug
+   *  wireframe source of truth (physics-debug.js). Never read by the engine. */
+  _register (handle, shapeId, spec = null) {
+    const rec = this._bodies.get(handle)
+    rec.shapes.push(shapeId)
+    if (spec) rec.specs.push(spec)
     this._shapeToHandle.set(this._shapeKey(shapeId), handle)
     return shapeId
   }
@@ -148,21 +155,22 @@ export class PhysicsEngine {
   addBox (handle, halfExtents, material = {}) {
     const rec = this._bodies.get(handle)
     this._register(handle, _b3.b3CreateBoxShape(rec.id, this._shapeDef(material),
-      halfExtents.x, halfExtents.y, halfExtents.z))
+      halfExtents.x, halfExtents.y, halfExtents.z), { shape: 'box', halfExtents: { ...halfExtents } })
   }
 
   /** Sphere collider at local offset (default body origin). */
   addSphere (handle, radius, material = {}, offset = { x: 0, y: 0, z: 0 }) {
     const rec = this._bodies.get(handle)
     this._register(handle, _b3.b3CreateSphereShape(rec.id, this._shapeDef(material),
-      { center: [offset.x, offset.y, offset.z], radius }))
+      { center: [offset.x, offset.y, offset.z], radius }), { shape: 'sphere', radius, offset: { ...offset } })
   }
 
   /** Capsule collider between two local points. */
   addCapsule (handle, p1, p2, radius, material = {}) {
     const rec = this._bodies.get(handle)
     this._register(handle, _b3.b3CreateCapsuleShape(rec.id, this._shapeDef(material),
-      { center1: [p1.x, p1.y, p1.z], center2: [p2.x, p2.y, p2.z], radius }))
+      { center1: [p1.x, p1.y, p1.z], center2: [p2.x, p2.y, p2.z], radius }),
+    { shape: 'capsule', p1: { ...p1 }, p2: { ...p2 }, radius })
   }
 
   /**
@@ -173,7 +181,8 @@ export class PhysicsEngine {
     const rec = this._bodies.get(handle)
     const hull = _b3.b3CreateCylinder(height, radius, yOffset, sides)
     this._hulls.push(hull)                // hull data is shared/copied by the shape; free on dispose
-    this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull))
+    this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull),
+      { shape: 'cylinder', height, radius, yOffset, sides })
   }
 
   /** Convex hull collider from a flat [x0,y0,z0, x1,…] position array. */
@@ -181,7 +190,8 @@ export class PhysicsEngine {
     const rec = this._bodies.get(handle)
     const hull = _b3.b3CreateHull(positions)
     this._hulls.push(hull)
-    this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull))
+    this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull),
+      { shape: 'hull', positions: Array.from(positions) })
   }
 
   /**
@@ -198,7 +208,8 @@ export class PhysicsEngine {
     let list = this._meshDatas.get(handle)
     if (!list) this._meshDatas.set(handle, list = [])
     list.push(mesh)
-    this._register(handle, _b3.b3CreateMeshShape(rec.id, this._shapeDef(material), mesh, [1, 1, 1]))
+    this._register(handle, _b3.b3CreateMeshShape(rec.id, this._shapeDef(material), mesh, [1, 1, 1]),
+      { shape: 'mesh', positions, indices })   // references, not copies — same arrays the caller owns
     return true
   }
 
@@ -212,7 +223,8 @@ export class PhysicsEngine {
     const rec = this._bodies.get(handle)
     const hf = _b3.b3CreateHeightField(heights, countX, countZ, [cellSize, 1, cellSize])
     this._heightfields.set(handle, hf)
-    this._register(handle, _b3.b3CreateHeightFieldShape(rec.id, this._shapeDef({ group: GROUP_TERRAIN, ...material }), hf))
+    this._register(handle, _b3.b3CreateHeightFieldShape(rec.id, this._shapeDef({ group: GROUP_TERRAIN, ...material }), hf),
+      { shape: 'heightfield' })   // viz skips these — the terrain mesh IS the collider
   }
 
   // ── State access ──────────────────────────────────────────────────────────
@@ -418,6 +430,18 @@ export class PhysicsEngine {
   }
 
   destroyJoint (joint) { _b3.b3DestroyJoint(joint, true) }
+
+  /** Monotonic revision — bumps on body create/destroy (debug-viz change detection). */
+  get revision () { return this._rev }
+
+  /** Snapshot of every body for the debug wireframes: opaque handle + what was created. */
+  debugBodies () {
+    const out = []
+    for (const [handle, rec] of this._bodies) {
+      out.push({ handle, userData: rec.userData, dynamic: this.isDynamic(handle), specs: rec.specs })
+    }
+    return out
+  }
 
   /** Counters for the debug HUD / perf harness. */
   counters () {

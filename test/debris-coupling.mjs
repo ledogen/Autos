@@ -160,6 +160,46 @@ console.log('\nfling regression — coast over a small rock, no throttle:')
   ctx2.dispose()
 }
 
+// ── Chassis-vs-tree rigid stop (owner-reported "squishy trees", 2026-08-15) ──────────────────
+// Prop colliders used to be analytic-only (wheel path) — the engine chassis sailed through a
+// trunk with nothing but suspension spring residue pushing back. With PropPhysics mirroring
+// trunks as engine capsules, driving square into a tree is a HARD stop: big speed loss on
+// impact, no pass-through, truck still upright.
+console.log('\nchassis vs tree trunk — rigid stop, not a squish:')
+{
+  const P3 = freshParams()
+  const eq3 = eqOf(P3)
+  const v0 = 10
+  const vs3 = {
+    position: new THREE.Vector3(0, eq3.bodyY, 0), velocity: new THREE.Vector3(0, 0, -v0),
+    quaternion: new THREE.Quaternion(), angularVelocity: new THREE.Vector3(),
+    steerAngle: 0, throttle: 0, brake: 0, smoothThrottle: 0, smoothBrake: 0,
+    wheelAngles: [0, 0, 0, 0], wheelSteerAngles: [0, 0, 0, 0],
+    wheelDebug: [0, 1, 2, 3].map(() => ({ fn: 0, fy: 0, sa: 0, c: 0, omega: 0, fz: 0 })),
+    wheelOmega: [0, 0, 0, 0].map(() => v0 / P3.wheelRadius), slipLong: [0, 0, 0, 0], slipLat: [0, 0, 0, 0],
+    strutComp: [...eq3.strutComp], strutCompVel: [0, 0, 0, 0], handbrake: false,
+    drivetrain: { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },
+  }
+  const ctx3 = await makeEngineCtx(vs3, P3, { groundFn: () => 0, extent: 128, cell: 4 })
+  // A stout trunk dead ahead on the centerline — exactly what PropPhysics builds for a tree.
+  const tree = ctx3.engine.createBody({ type: 'static', userData: { kind: 'prop' } })
+  ctx3.engine.addCapsule(tree, { x: 0, y: 0, z: -15 }, { x: 0, y: 6, z: -15 }, 0.28, { friction: 0.8 })
+
+  let minZ = 0
+  for (let s = 1; s <= 300; s++) {
+    vs3.throttle = 0
+    stepPhysics(vs3, P3, DT, queryContacts, queryVertexContacts, ctx3)
+    minZ = Math.min(minZ, vs3.position.z)
+  }
+  const up3 = new THREE.Vector3(0, 1, 0).applyQuaternion(vs3.quaternion)
+  const vEnd = vs3.velocity.length()
+  console.log(`  deepest CG z ${minZ.toFixed(2)} (trunk at −15, nose reaches z ≈ CG − 2.13); final |v| ${vEnd.toFixed(2)}, up·Y ${up3.y.toFixed(3)}`)
+  ok(minZ > -13.4, `truck STOPPED at the trunk, no pass-through (CG z ${minZ.toFixed(2)} > −13.4)`)
+  ok(vEnd < 2.5, `impact killed the speed rigidly (final |v| ${vEnd.toFixed(2)} < 2.5 m/s from ${v0})`)
+  ok(up3.y > 0.85, `truck still upright after the tree hit (up·Y ${up3.y.toFixed(3)})`)
+  ctx3.dispose()
+}
+
 console.log('\n' + '═'.repeat(56))
 if (fail) { console.log('DEBRIS-COUPLING: FAIL'); process.exit(1) }
 console.log('DEBRIS-COUPLING: PASS — wheel↔debris coupling is two-way, stable, and honest ✓')

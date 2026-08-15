@@ -159,6 +159,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   const debrisFolder = vehicleFolder.addFolder('Physics Props (FEAT-36)')
   debrisFolder.add(params, 'throwProjectile', ['paper', 'barrel', 'rock']).name('Throw Projectile (F)')
   debrisFolder.add({ clear: () => window.__debris?.clear() }, 'clear').name('Clear Debris')
+  // Collider wireframes (physics-debug.js) — same toggle the backtick key drives. The checkbox
+  // won't visually follow a key toggle (one-way onChange), which is fine for a debug control.
+  debrisFolder.add({ wireframes: false }, 'wireframes').name('Collider Wireframes (`)')
+    .onChange(v => window.__physWireframes?.setEnabled(v))
   // Rolling resistance + aero drag — coast/top-speed feel
   driveFolder.add(params, 'rollingResistanceCoeff', 0, 0.05, 0.001).name('Rolling Resistance Cr')
   driveFolder.add(params, 'aeroDragArea', 0, 3.0, 0.05).name('Aero Drag Cd·A (m²)')

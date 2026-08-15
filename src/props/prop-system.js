@@ -170,6 +170,7 @@ export class PropSystem {
     this._collidables = new Map()  // "cx,cz" -> [{ kind, x, y, z, radius, height, scale }]
     this._grid = new Map()         // "gx,gz" -> [collidable, ...]
     this._gridCell = 8             // m
+    this._physicsHook = null       // FEAT-48: PropPhysics (engine static colliders) — syncChunk/disposeChunk/clear
     this._gridDirty = true
   }
 
@@ -468,7 +469,10 @@ export class PropSystem {
     const chunk = { places, owned: [], mode: this._chunkMode(cx, cz) }
     this._chunks.set(ck, chunk)
     this._placeChunk(chunk, chunk.mode)
-    if (collidables.length) { this._collidables.set(ck, collidables); this._gridDirty = true }
+    if (collidables.length) {
+      this._collidables.set(ck, collidables); this._gridDirty = true
+      this._physicsHook?.syncChunk(ck, collidables)   // FEAT-48: rigid engine colliders for the chassis/debris
+    }
 
     // PERF-07: this chunk's props changed → (re)bake its shadow tile and its neighbours' (silhouettes
     // cross chunk seams). The bake system slices the work; a no-op when realtime casting / headless.
@@ -610,7 +614,7 @@ export class PropSystem {
     this._unplaceChunk(chunk)
     const wasBBOnly = chunk.mode === 'bbonly'
     this._chunks.delete(ck)
-    if (this._collidables.delete(ck)) this._gridDirty = true
+    if (this._collidables.delete(ck)) { this._gridDirty = true; this._physicsHook?.disposeChunk(ck) }
     // PERF-07: this chunk's props are gone → re-bake still-live neighbours so their tiles drop the
     // departed silhouettes (a neighbour still in-ring re-bakes without them; its own tile is reused
     // by whichever chunk lands on the toroidal slot next). Billboard-only chunks never baked.
@@ -892,6 +896,17 @@ export class PropSystem {
     this._meshes.clear()
     this._chunks.clear()
     this._collidables.clear()
+    this._physicsHook?.clear()   // FEAT-48: drop the engine prop colliders with the system
     this._grid.clear()
+  }
+
+  /**
+   * FEAT-48: attach the engine prop-collider mirror (PropPhysics). Chunk commit/evict/dispose
+   * keep it in sync; late registration re-syncs standing chunks. resyncAll() on the mirror is
+   * the hook for the live collision-scale sliders (radii bake at sync time).
+   */
+  setPhysicsHook(hook) {
+    this._physicsHook = hook ?? null
+    if (hook) for (const [ck, list] of this._collidables) hook.syncChunk(ck, list)
   }
 }
