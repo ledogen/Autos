@@ -45,6 +45,10 @@ Mission types are not flavors of the same activity. They differ in **what is bei
 | **Clearance** | Objects removed from a blocked trail | Region access | Never — progress is world state |
 | **Accuracy** | Where the thing you threw landed | Continuous in distance from the target, scaling the per-unit rate | Never hard-fails; a miss is one unit unpaid |
 
+> **[AMENDED 2026-08-14, owner] Accuracy scales the RATE and no longer sets the rank.** It stays a
+> fifth axis and stays in this table; what it lost is the letter. The paper route's rank is the par
+> ratio now — see §2's scoring block for the amendment and the arithmetic behind it.
+
 **Accuracy is a fifth axis [RATIFIED 2026-08-05].** This table used to say four, and this file says
 plainly that *adding a fifth axis is a design act* — so this is that act, made deliberately rather
 than smuggled in as dressing on coverage. It earns its place by measuring something no other axis can
@@ -212,13 +216,56 @@ you actually drive it.
   costs only the papers you hadn't thrown yet. Nothing already earned is clawed back — which is what
   an income floor requires.
 
-**Scoring: flat rate per delivery, scaled by accuracy** [RATIFIED 2026-08-05, FEAT-61]. Deliberately
-*not* the margin line — this is coverage + accuracy, and DESIGN.md's "not every mission type is
-scored on margin / rank is computed per-axis" is the licence.
+**Scoring: flat rate per delivery, scaled by accuracy** [RATIFIED 2026-08-05, FEAT-61] — with the
+rank moved onto the clock [AMENDED 2026-08-14, owner].
 
     q(d)    = 1 − (1 − ACC_FLOOR) × (d / TARGET_R)   inside the circle, else not a delivery
-    payout  = FLAT × Σ q(dᵢ) × (1 + expedite)
-    rank    = coverage × meanAccuracy                (per-axis, not the par ratio)
+    spot    = FLAT × q(dᵢ)                           banked AS EACH PAPER LANDS
+    payout  = FLAT × n × expedite(ratio)             settled at the bell, PURE FUNCTION OF TIME
+    rank    = gradeRun(ratio ÷ coverage)             the par ratio, par scaled by the job you did
+
+**ACCURACY PAYS, THE CLOCK GRADES [AMENDED 2026-08-14, owner].** The rank used to be
+`coverage × meanAccuracy`. It is now the par ratio, and accuracy is confined to what it is actually
+good at — the money for the paper in front of you. This is a simplification with a shape behind it:
+*slow and careful* and *fast and ragged* should pay about the same, so the two ways to drive the
+route become a real choice instead of one dominating. Accuracy is still the fifth axis in the table
+above; what changed is that it scales the per-unit rate **only**, which is what that table already
+said it did.
+
+**PAID ON THE SPOT [AMENDED 2026-08-15, owner].** Accuracy money is banked the instant each paper
+lands, not at the bell, so the end-of-route payout is a *pure function of time* and accuracy is
+decoupled from it completely — not because it stopped paying, but because it was already paid. The
+totals do not move; what moved is when. It is also what lets the throw read-out quote real money.
+
+**$0 SITS AT THE BELL, not at par [AMENDED 2026-08-15, owner].** The bonus ramps from the deadline
+down to `expediteFull`, so the settlement reaches zero exactly where the route ends. There is no
+`expediteOn` constant: the start *is* `tolerance`, structurally, because two numbers that must be
+equal are one number waiting to drift.
+
+The arithmetic that pins the bonus: a rim-scraper (mean q = 0.30) who blasts the round must earn what
+a methodical driver (mean q = 1.0) earns at par. At par the bonus is only partly paid —
+f(1.0) = (1.20 − 1.00) / (1.20 − 0.70) = 0.4 — so `1.0 + 0.4·B = 0.3 + B`, giving **B = 7/6**. It
+applies to the FULL flat (`n × FLAT`) rather than to the accuracy-scaled sum; on the scaled sum the
+same equivalence needs a 233% bonus, which is not a tunable number.
+
+**Par is a B, and B contains par** [CONFIRMED 2026-08-14, owner]. SM-INV-3's amendment holds for
+this mission type too: driving the route the way par assumes is a B, and dawdling is a C. An earlier
+reading — that par should be a C here — was withdrawn.
+
+**Par prices the STOPS, and nothing else** [FIXED 2026-08-14, FEAT-61]. `par.js` pins the reference
+driver's speed to **zero** at every customer — a true halt, the one place the `vMin` floor does not
+apply — and **charges no dwell**. Owner ruling: a paper goes out of the window on the move, and no
+player is going to sit at a porch for four seconds, so what a delivery actually costs is coming to
+rest and pulling away again. That cost is then derived from the truck's own brake and accel figures
+by the same forward/backward passes that price every corner, rather than from a constant somebody
+picked. Measured: **~3.0–4.6 s per stop**, rising with how fast the road either side of the porch
+would otherwise have been, which is the right shape — a delivery on a fast straight costs more than
+one in a hairpin.
+
+Before this the oracle priced a fifteen-porch round as one uninterrupted blast — 73 km/h average,
+with 2 of ~1150 profile samples below 3 m/s, and those two were the first and the last — which is
+why point-to-point missions felt right while this one was unbeatable and the expediency bonus was
+unreachable by construction. A porch the route passes twice is charged once.
 
 A dead-centre throw is worth a whole paper, the worst throw that still counts is worth 0.30 of one,
 and **partial routes pay for what they delivered** — one of nine is a D that still puts money in the

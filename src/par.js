@@ -112,6 +112,7 @@ const EPS = 1e-9
 export function sampleRoute(segments) {
     const d = [], kappa = [], sinT = [], cosT = []
     const caps = []            // { i, v } hard speed caps injected at segment joins
+    let stops = 0              // segment ends the driver must pull up at (FEAT-61)
     let dist = 0
     let prevTangent = null
 
@@ -152,9 +153,21 @@ export function sampleRoute(segments) {
             if (i === 0 && d.length > 0) continue
             d.push(dist); kappa.push(k); sinT.push(Math.sin(theta)); cosT.push(Math.cos(theta))
         }
+        // FEAT-61: a WAYPOINT, not a corner. The paper route's stops are places the driver comes to
+        // rest and sets off again — so the envelope is pinned to ZERO here (see the cap loop in
+        // computePar for why this one ignores vMin) or the oracle prices a fifteen-stop round as an
+        // uninterrupted blast: measured at 73 km/h average, with 2 of ~1150 samples below 3 m/s,
+        // and those two were the first and the last.
+        //
+        // No dwell rides along with it. The whole cost is the braking and the re-acceleration,
+        // which the forward/backward passes derive from the truck's own accel and brake figures —
+        // owner, 2026-08-14: a paper goes out of the window on the move, so what a delivery really
+        // costs is the stop itself, not time spent parked.
+        if (segments[seg].stop) { caps.push({ i: d.length - 1, v: 0, stop: true }); stops++ }
+
         prevTangent = (() => { const t = centerline.tangentAt(s1); return { x: t.x * dir, z: t.z * dir } })()
     }
-    return { d, kappa, sinT, cosT, caps }
+    return { d, kappa, sinT, cosT, caps, stops }
 }
 
 function clamp(s, len) { return s < 0 ? 0 : (s > len ? len : s) }
@@ -174,7 +187,7 @@ function clamp(s, len) { return s < 0 ? 0 : (s > len ? len : s) }
  * @returns {{ time:number, distance:number, speeds:Float64Array, dist:Float64Array }}
  */
 export function computePar(segments, ref = PAR_REF) {
-    const { d, kappa, sinT, cosT, caps } = sampleRoute(segments || [])
+    const { d, kappa, sinT, cosT, caps, stops } = sampleRoute(segments || [])
     const n = d.length
     if (n < 2) return { time: 0, distance: 0, speeds: new Float64Array(0), dist: new Float64Array(0) }
 
@@ -194,9 +207,25 @@ export function computePar(segments, ref = PAR_REF) {
         v[i] = Math.max(ref.vMin, Math.min(vCeil, vCorner))
     }
     // Junction caps sit on top of the envelope.
+    //
+    // A STOP is not a cap, it is a zero, and it is the one place the vMin floor must not apply
+    // (FEAT-61). vMin exists so a hairpin cannot price as infinite time; a delivery is a genuine
+    // halt, and floored at 2.5 m/s it would price as a slow roll past the porch. Pinned to zero,
+    // the forward and backward passes below do the rest on their own — the reference brakes to
+    // rest at the porch and pulls away from rest afterwards, so the cost is whatever the road and
+    // the truck's real accel/brake say it is rather than a number somebody picked.
+    // ORDER MATTERS, and it is not obvious: a porch sits at a segment JOIN, so the junction cap for
+    // the next segment lands on the same sample index as the stop. Applied in array order the
+    // junction cap comes second and floors the zero back up to vMin — a delivery at a bend priced
+    // as a slow roll past the house, silently, on some stops and not others. So junctions first,
+    // then stops, and a stop always wins the index it shares.
     for (const c of caps) {
+        if (c.stop) continue
         const i = Math.min(n - 1, c.i)
         v[i] = Math.max(ref.vMin, Math.min(v[i], c.v))
+    }
+    for (const c of caps) {
+        if (c.stop) v[Math.min(n - 1, c.i)] = 0
     }
 
     // 2. Forward (accel-limited), from rest. `a` may be NEGATIVE — above terminal speed, or on a
@@ -233,7 +262,7 @@ export function computePar(segments, ref = PAR_REF) {
         const vbar = Math.max(ref.vMin * 0.5, 0.5 * (v[i] + v[i - 1]))
         time += ds / vbar
     }
-    return { time, distance: d[n - 1], speeds: v, dist: Float64Array.from(d) }
+    return { time, distance: d[n - 1], speeds: v, dist: Float64Array.from(d), stops: stops || 0 }
 }
 
 /**

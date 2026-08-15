@@ -11,16 +11,28 @@
 // ~nothing. That is the correct shape for a point-to-point errand and the wrong shape for this.
 // DESIGN.md already blesses the divergence ("not every mission type is scored on margin… rank is
 // computed per-axis") and missions.md §3b/3c already price fragile and freight at a flat rate. So
-// the paper route is scored on COVERAGE × ACCURACY, with time entering only as a bonus, and
-// SM-INV-4 is left untouched rather than bent.
+// this route prices itself, and SM-INV-4 is left untouched rather than bent.
 //
 // The consequence that matters: this is the income floor (missions.md, ratified 2026-08-05). Papers
 // you delivered are money you keep. There is no completion multiplier anywhere in here, because a
 // floor that pays nothing for a half-finished route is not a floor.
+//
+// ── ACCURACY PAYS, THE CLOCK GRADES [ratified + implemented 2026-08-14] ─────────────────────────
+//
+// Accuracy scales the per-delivery rate and NOTHING else. The rank is the par ratio through the
+// same gradeRun() every other mission type uses — B contains par (SM-INV-3), the day ramp tightens
+// it — gated on full coverage, because you can always be quick by skipping people.
+//
+// The shape this buys: "slow and careful" and "fast and ragged" pay about the same, so both are
+// real ways to drive a round rather than one dominating. That equivalence is what fixes bonusMax at
+// 0.70 and forces the bonus to be ADDITIVE on the full flat — see scoreRoute.
+//
+// It replaced coverage × meanAccuracy, which made "how well did you throw" and "how well did you
+// do" the same question and left the clock nothing to say.
 
 import { ECONOMY_PARAMS } from './economy.js'
 import { buildGraphAdj, START_ZONE_R } from './mission.js'
-import { computePar } from './par.js'
+import { computePar, gradeRun, RANK_THRESHOLDS_DEFAULT } from './par.js'
 // The accuracy law is throw.js's, not restated here. It is one line of algebra and that is exactly
 // why it must have one home: a second copy is a second thing to keep in step with the gate.
 import { accuracyScore } from './throw.js'
@@ -51,13 +63,23 @@ export const PAPER_PARAMS = {
 
     // The expediency bonus — the ONLY place time enters the payout. Gated on a completed route:
     // you cannot finish early without finishing.
-    expediteOn:  0.90,   // ratio at which the bonus starts paying (10% inside par)
+    //
+    // IT STARTS AT THE BELL, not at par (owner, 2026-08-15). There is no `expediteOn` any more,
+    // because the ratio it would hold is `tolerance` and two numbers that must be equal are one
+    // number waiting to drift: the payout reaching zero exactly where the route ends is now
+    // structural rather than a coincidence. Beating the bell by a second pays a cent; par pays
+    // properly; the floor is the bell itself, which is the only place $0 makes sense.
     expediteFull:0.70,   // …and where it maxes out
-    bonusMax:    0.40,
-
-    // Per-axis rank thresholds on coverage × accuracy — NOT the par ratio. One delivery out of nine
-    // scores 0.11 and letters D, which is the owner's stated case, and it still pays for that one.
-    rank:        { C: 0.50, B: 0.75, A: 0.90, S: 0.98 },
+    // NOT A FREE KNOB — the owner's equivalence fixes it, and moving the bonus's start to the bell
+    // moved this with it. A rim-scraper (mean q 0.30) blasting the round must earn about what a
+    // methodical driver (mean q 1.0) earns at par. At par the bonus is now only PARTLY paid —
+    // f(1.0) = (1.20 − 1.00) / (1.20 − 0.70) = 0.4 — so the two sides read
+    //     1.0 + 0.4·B  =  0.3 + 1.0·B     ⇒     B = 7/6
+    // rather than the 0.70 that held when the bonus started at par. A bonus worth more than the
+    // paper money looks odd until you notice what it is buying: at rim accuracy the papers are only
+    // worth 0.3 of a round, so speed has to carry the rest or "fast and ragged" cannot pay.
+    // Applied to the FULL flat (n × FLAT), never to the accuracy-scaled sum — see scoreRoute.
+    bonusMax:    7 / 6,
 }
 
 /**
@@ -117,15 +139,19 @@ export function stockForTier (tier = runPaper.tier) {
 /** The deadline for a route, in the same units as par. */
 export function deadlineFor (par, P = PAPER_PARAMS) { return par * P.tolerance }
 
-/** Per-axis rank. Scores the ROUTE (coverage × accuracy), never the clock. */
-export function letterFor (score, P = PAPER_PARAMS) {
-    const r = P.rank
-    if (!(score > 0)) return 'D'
-    if (score >= r.S) return 'S'
-    if (score >= r.A) return 'A'
-    if (score >= r.B) return 'B'
-    if (score >= r.C) return 'C'
-    return 'D'
+/**
+ * What ONE paper is worth at full accuracy — the per-delivery flat rate.
+ *
+ * Extracted from scoreRoute rather than duplicated, because the HUD now quotes it to the player the
+ * instant a paper lands (owner, 2026-08-14) and a second copy of this expression is a second thing
+ * to keep in step with the settlement. Derived, never authored, so the route tracks the same
+ * economy as everything else; degenerate par pays zero rather than NaN-ing the wallet.
+ */
+export function flatPerPaper (par, customers, dayTier = 1, P = PAPER_PARAMS) {
+    const n = Math.max(0, customers | 0)
+    return (isFinite(par) && par > 0 && n > 0)
+        ? ECONOMY_PARAMS.k * par * dayTier * P.paperW / n
+        : 0
 }
 
 /**
@@ -140,7 +166,8 @@ export function letterFor (score, P = PAPER_PARAMS) {
  * @param {number}   dayTier     economy.js dayTier(day), frozen at accept with the rest of the terms
  * @returns {{coverage,meanAccuracy,effDeliveries,score,letter,flat,expedite,payout,complete}}
  */
-export function scoreRoute (accuracies, customers, elapsed, par, dayTier = 1, P = PAPER_PARAMS) {
+export function scoreRoute (accuracies, customers, elapsed, par, dayTier = 1, P = PAPER_PARAMS,
+                            thresholds = RANK_THRESHOLDS_DEFAULT) {
     const n = Math.max(0, customers | 0)
     const delivered = accuracies?.length ?? 0
     // effDeliveries is the payout's unit: "how many papers' worth did you actually place". A
@@ -151,28 +178,60 @@ export function scoreRoute (accuracies, customers, elapsed, par, dayTier = 1, P 
     const coverage     = n > 0 ? Math.min(1, delivered / n) : 0
     const meanAccuracy = delivered > 0 ? eff / delivered : 0
     const score        = coverage * meanAccuracy
-    const letter       = letterFor(score, P)
     const complete     = n > 0 && delivered >= n
+
+    // THE CLOCK GRADES [ratified 2026-08-14]. The letter is the par ratio through the SAME
+    // gradeRun() every other mission type uses — B contains par, and the day ramp tightens it — so
+    // a paper route's B means what a POI job's B means. It used to be coverage × meanAccuracy,
+    // which made "how well did you throw" and "how well did you do" the same question and left
+    // nothing for the clock to say.
+    //
+    // PAR SCALES WITH THE JOB YOU ACTUALLY DID (owner, 2026-08-15): deliver half the papers and you
+    // are measured against half the par — "closer to half of par" — instead of being handed a flat D.
+    //
+    // The flat D it replaces was too blunt. It graded a round that dropped one paper of fifteen the
+    // same as one that dropped fourteen, and it made the letter stop being about driving the moment
+    // anything went wrong. Scaling keeps the clock honest instead: skipping people no longer buys
+    // time, because it shrinks the clock you are held to by exactly as much. Nine of nine at par and
+    // three of nine in a third of par both come out at ratio 1.0.
+    //
+    // Complete routes are untouched (coverage 1 ⇒ parEff = par), so B still contains par.
+    const parEff = par * coverage
+    const letter = gradeRun(elapsed, parEff, thresholds).letter
 
     // FLAT is per delivery, and it is derived rather than authored so the route tracks the same
     // economy everything else does. Degenerate par (a broken tour) pays zero rather than NaN-ing
     // the wallet — the same guard payoutFor() carries.
-    const flat = (isFinite(par) && par > 0 && n > 0)
-        ? ECONOMY_PARAMS.k * par * dayTier * P.paperW / n
-        : 0
+    const flat = flatPerPaper(par, n, dayTier, P)
 
     // The bonus needs a real elapsed time AND a completed route. An unfinished route has no ratio
     // worth reading: you did not finish, so you cannot have finished early.
     let expedite = 0
     if (complete && isFinite(elapsed) && elapsed >= 0 && isFinite(par) && par > 0) {
         const ratio = elapsed / par
-        const span  = P.expediteOn - P.expediteFull
-        const f     = span > 0 ? (P.expediteOn - ratio) / span : 0
+        const span  = P.tolerance - P.expediteFull
+        const f     = span > 0 ? (P.tolerance - ratio) / span : 0
         expedite    = P.bonusMax * Math.min(1, Math.max(0, f))
     }
 
-    const payout = Math.max(0, flat * eff * (1 + expedite))
-    return { coverage, meanAccuracy, effDeliveries: eff, score, letter, flat, expedite, payout, complete }
+    // TWO INCOME STREAMS, PAID AT DIFFERENT TIMES [owner, 2026-08-15].
+    //
+    //   accuracy -> `spot`, banked THE MOMENT each paper lands (EconomySystem.addSpot)
+    //   time     -> `payout`, settled at the bell
+    //
+    // So the end-of-mission payout is a pure function of the clock, and accuracy is fully decoupled
+    // from it — not because accuracy stopped paying, but because it was already paid. The totals
+    // are unchanged; what moved is WHEN. That is what makes the throw read-out honest: the dollars
+    // it quotes are in the wallet before the paper stops rolling.
+    //
+    // The split also keeps the owner's equivalence intact, since it is a statement about the total:
+    // a rim-scraper (mean q 0.30) blasting the round and a methodical driver (mean q 1.0) at par
+    // both come out at flat x n. The bonus is ADDITIVE on the full flat for that reason — the same
+    // equivalence expressed multiplicatively needs 233%, which is not a tunable number.
+    const spot   = Math.max(0, flat * eff)
+    const payout = Math.max(0, flat * n * expedite)
+    return { coverage, meanAccuracy, effDeliveries: eff, score, letter, flat, expedite,
+             spot, payout, total: spot + payout, complete }
 }
 
 /**
@@ -550,6 +609,14 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
         fromK = toK
     }
 
+    // Which split-graph nodes are CUSTOMERS — so the segment that arrives at one can be marked as a
+    // place the reference driver pulls up (par.js `stop`). Larry and the truck's own origin are
+    // spliced points too and are deliberately NOT in here: you do not throw a paper at either.
+    // A porch the route passes TWICE is one stop, not two: you throw on the first pass and drive
+    // through on the way back. Consumed as the segments are built, so only the first arrival is
+    // charged — without this a route that doubles back priced 13 stops for 12 customers.
+    const custKeys = new Set(order.map(c => ptKeyOf.get(c.id)))
+
     const segments = [], poly = []
     const pushPoly = (cl, s0, s1) => {
         const n = Math.max(2, Math.ceil(Math.abs(s1 - s0) / 25))
@@ -590,12 +657,20 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
             // A spliced point is a house, not an intersection — degree 2 keeps the overlay from
             // raising a turn arrow on somebody's front lawn.
             endDeg: vInfo ? 2 : (degOf.get(vk) ?? 3),
+            // …but it IS a place you stop, and par has to know that even though the overlay must
+            // not. The two flags say different things about the same point on purpose.
+            stop: custKeys.delete(vk),
         })
         pushPoly(ed.centerline, s0, s1)
     }
     if (!segments.length) return null
 
     // ONE par over the whole route (SM-INV-2).
+    // ONE par over the whole route (SM-INV-2) — and the reference driver COMES TO REST at every
+    // porch, because the segments carry `stop`. Without that the oracle priced a fifteen-stop round
+    // as an uninterrupted 73 km/h blast and the expediency bonus was unreachable by construction
+    // (owner-reported 2026-08-14). No extra reference is needed: the stop is a property of the
+    // route, so PAR_REF stays the one shared reference driver.
     const { time, distance } = computePar(segments)
     if (!(time > 0)) return null
 
@@ -635,13 +710,17 @@ export class PaperRouteSystem {
      *   getCar()     — the truck's position, for the start-zone threshold
      *   getTerms()   — economySystem.terms(); frozen at accept, exactly like a paid job
      *   getTargetR() — the delivery circle radius (POI_PARAMS.poiHouseTargetR)
-     *   onSettle(payout, letter) — EconomySystem.settleFlat; the one money path
+     *   onSettle(payout, letter) — EconomySystem.settleFlat; the end-of-route money path
+     *   onSpot(amount)  — EconomySystem.addSpot; accuracy money, banked as each paper lands
      *   onBriefing(done)  — play Larry's cards and call `done` when they are read
+     *   setMapOpen(open)  — show/hide the 2D map, framed on the route (the offer's preview)
      *   onChange()   — repaint
      *   onEnd()      — the route is over: clear the papers off the lawns
      */
     constructor ({ getRoad, getPois, getRegion, getCar, getTerms, getTargetR,
-                   onSettle, onBriefing, onChange, onEnd }) {
+                   onSettle, onSpot, onBriefing, setMapOpen, onChange, onEnd }) {
+        this._onSpot = onSpot ?? (() => 0)
+        this._setMapOpen = setMapOpen ?? (() => {})
         this._getRoad = getRoad
         this._getPois = getPois
         this._getRegion = getRegion ?? (() => null)
@@ -721,6 +800,19 @@ export class PaperRouteSystem {
     /** Has this customer already had their paper? */
     isDelivered (id) { return !!this.run?.hits.has(id) }
 
+    /**
+     * What a paper landed at accuracy `q` just earned, in dollars (FEAT-61, owner 2026-08-14).
+     *
+     * The EXPEDIENCY BONUS IS NOT IN HERE, and that is the honest choice rather than an omission:
+     * the bonus depends on when you finish, so quoting a share of it mid-route would be a promise
+     * the route can still take back. This is the money already banked for that throw — which is
+     * exactly the thing accuracy buys, and the reason it is worth showing the instant it lands.
+     */
+    paperValue (q) {
+        if (!this.run || !this.route) return 0
+        return flatPerPaper(this.route.par, this.route.customers.length, this.run.dayTier) * q
+    }
+
     /** Papers still in the truck. Zero does not end the route; the last one LANDING does. */
     stock () { return this.run ? this.run.stock : 0 }
     hasStock () { return this.stock() > 0 }
@@ -774,6 +866,9 @@ export class PaperRouteSystem {
         if (this.state !== 'planning' || !this._planned || !this._briefed) return
         if (!this.route) { this.state = 'idle'; this._onChange(); return }
         this.state = 'offer'
+        // The preview. Fires here, not on arrival at the pad: before this moment there is nothing
+        // to look at, because the tour is still routing behind Larry's briefing cards.
+        this._setMapOpen(true)
         this._onChange()
     }
 
@@ -790,10 +885,15 @@ export class PaperRouteSystem {
             elapsed:  0,
             deadline: deadlineFor(this.route.par),
             dayTier:  terms.dayTier ?? 1,
+            // Frozen WITH the day tier, for the same reason (FEAT-53): the rank ramp is part of the
+            // deal you accepted. Now that the letter IS the par ratio, a route straddling midnight
+            // would otherwise be graded on tomorrow's tighter thresholds.
+            thresholds: terms.thresholds ?? RANK_THRESHOLDS_DEFAULT,
             hits:     new Map(),      // customer id → q, one entry per delivered customer
         }
         this._startZone = { x: this.giver.x, z: this.giver.z, y: this.giver.y ?? 0, r: START_ZONE_R }
         this.state = 'staging'
+        this._setMapOpen(false)     // you have seen it; now drive
         this._onChange()
     }
 
@@ -820,6 +920,8 @@ export class PaperRouteSystem {
         // them at the bell would erase the trail of the route you just drove at the exact moment
         // the card asks you to look at how it went.
         const hadPapers = this.state === 'running' || this.state === 'done'
+        // Declining or dismissing takes the preview down with the offer that raised it.
+        if (this.state === 'offer') this._setMapOpen(false)
         this._cancelReplan()
         this._offRouteT = this._checkT = 0
         this._rrHideAt = 0
@@ -863,7 +965,14 @@ export class PaperRouteSystem {
      * So the guide re-plans and par never does. The two are not in tension; the second is the
      * reason for the first.
      */
-    isRerouting () { return !!this._rr || this._clock < this._rrHideAt }
+    isRerouting () { return (!!this._rr && !this._rr.quiet) || this._clock < this._rrHideAt }
+
+    /**
+     * Is there a job to pump? Distinct from isRerouting() on purpose: a delivery's re-plan is
+     * QUIET — it still has to be computed, but it is bookkeeping rather than news, and flashing
+     * RECALCULATING after every paper would train the player to ignore the one time it matters.
+     */
+    hasReplan () { return !!this._rr }
 
     /**
      * Spend up to `budgetMs` of this frame's spare time on the live re-plan. Returns true while a
@@ -889,10 +998,20 @@ export class PaperRouteSystem {
         // and 20 m/s that is under three metres, so this should never fire — it is here for a
         // frame-rate collapse, and it logs when it fires precisely because it means the budget
         // model was wrong somewhere.
+        //
+        // Measured against the CAR's own start position, not the origin the planner used. Those are
+        // different points — the origin is snapped to the road — so comparing the two would call a
+        // truck parked 60 m off the tarmac permanently stale and re-plan it forever, burning the
+        // frame budget for as long as it sat there. The gate caught exactly that.
+        //
+        // One retry, then take what we have. A route planned from a hundred metres back is a little
+        // stale at its first turn and completely fine after that; a re-plan that will not converge
+        // is worse than either.
         const car = this._getCar()
-        if (car && Math.hypot(car.x - job.ox, car.z - job.oz) > RR_STALE_M) {
+        const drifted = car && Math.hypot(car.x - job.cx, car.z - job.cz) > RR_STALE_M
+        if (drifted && !job.retry) {
             console.warn('[paper] re-plan went stale in flight — planning again from here')
-            this._startReplan('stale')
+            this._startReplan(job.reason, job.quiet, true)
             return !!this._rr
         }
         if (route?.segments?.length) {
@@ -985,11 +1104,15 @@ export class PaperRouteSystem {
         return null
     }
 
-    /** Start (or restart) a sliced re-plan of everything still undelivered. */
-    _startReplan (reason) {
+    /**
+     * Start (or restart) a sliced re-plan of everything still undelivered.
+     * `quiet` suppresses the indicator — see hasReplan().
+     */
+    _startReplan (reason, quiet = false, retry = false) {
         if (this.state !== 'running' || !this.route || !this.run) return
         const left = this.route.customers.filter(c => !this.run.hits.has(c.id))
         if (!left.length) return
+        const car = this._getCar()
         const origin = this._originPoint()
         if (!origin) return          // off the network entirely; try again on the next poll
 
@@ -1001,9 +1124,11 @@ export class PaperRouteSystem {
             // standing next to.
             it: planTourJob(this._getRoad(), origin, left, left.length,
                             this._getRegion(), 100, Infinity),
-            ox: origin.x, oz: origin.z, reason,
+            // cx/cz is where the TRUCK was, which is what the staleness guard measures against;
+            // origin is the road point it planned from, and the two are not the same place.
+            cx: car?.x ?? origin.x, cz: car?.z ?? origin.z, reason, quiet, retry,
         }
-        this._rrHideAt = this._clock + RR_MIN_SHOW_S
+        if (!quiet) this._rrHideAt = this._clock + RR_MIN_SHOW_S
         this._onChange()
     }
 
@@ -1062,13 +1187,33 @@ export class PaperRouteSystem {
         }
         // The route ends on the LAST PAPER, not on the last throw: the bell and the inventory are
         // the only two ways out, and an empty truck with one still in the air is neither yet.
+        // What that throw just banked, quoted to the player on landing. Zero unless it credited —
+        // a paper onto a porch that already has one is spent, and saying it earned something would
+        // be the read-out lying about the one number it exists to show.
+        // BANKED ON THE SPOT (owner, 2026-08-15). Accuracy money is paid the instant the paper
+        // lands, not at the bell, so the figure the read-out quotes is already in the wallet —
+        // and the end-of-route payout is left a pure function of the clock.
+        const pay = credited ? this._onSpot(this.paperValue(q)) : 0
         if (this.run.hits.size >= this.route.customers.length
             || (this.run.stock <= 0 && this.run.inFlight <= 0)) {
-            const out = { customer: best, dist: bd, q, credited, already }
+            const out = { customer: best, dist: bd, q, credited, already, pay }
             this.finish()
             return out
         }
-        return { customer: best, dist: bd, q, credited, already }
+        // FEAT-63 / BUG-48: RE-PLAN ON EVERY DELIVERY, not only on an out-of-order one.
+        //
+        // The old rule — "delivering in order leaves the remaining suffix optimal, so don't bother"
+        // — was true about OPTIMALITY and wrong about the line. A served customer stayed on the
+        // guide, and `advanceProgress` is a nearest-point projection rather than a ratchet, so
+        // turning round and driving back the way you came walked `s` backwards and re-lit the
+        // chevron lattice pointing at a porch that already had its paper (owner-reported, seed 90).
+        //
+        // The invariant that fixes it is not "re-plan when the order is wrong", it is THE LINE ONLY
+        // EVER CONTAINS PEOPLE WHO ARE STILL OWED A PAPER. Re-planning here is how that is kept,
+        // and it costs nothing the player can see: quiet, so no RECALCULATING flashes for something
+        // that is not a wrong turn, and the previous line stays up for the ~120 ms it takes.
+        if (credited) this._startReplan('delivered', true)
+        return { customer: best, dist: bd, q, credited, already, pay }
     }
 
     /**
@@ -1084,13 +1229,15 @@ export class PaperRouteSystem {
         this._rrHideAt = 0
         const n = this.route.customers.length
         const accuracies = [...this.run.hits.values()]
-        const r = scoreRoute(accuracies, n, this.run.elapsed, this.route.par, this.run.dayTier)
+        const r = scoreRoute(accuracies, n, this.run.elapsed, this.route.par, this.run.dayTier,
+                             PAPER_PARAMS, this.run.thresholds)
         const settled = this._onSettle(Math.round(r.payout), r.letter) || {}
         const advanced = advancesTier(r, n)
         if (advanced && runPaper.tier < PAPER_PARAMS.tiers.length - 1) runPaper.tier++
         runPaper.routesRun++
         this.result = {
             ...r,
+            spot:      Math.round(r.spot * 100) / 100,
             customers: n,
             delivered: accuracies.length,
             elapsed:   this.run.elapsed,

@@ -1,7 +1,14 @@
 ---
 id: FEAT-63
 type: feature
-status: open
+status: done
+closed: 2026-08-15
+resolution: >
+  Built and gated. planTour became a generator (planTourJob) with planTour a thin drain over it, so
+  there is ONE ordering algorithm driven two ways; the frame pump spends only the time a frame did
+  not use, with a floor so a loaded machine makes the re-plan slower rather than stuck. Par is never
+  recomputed — `route` is the contract, `guide` is the line, and the split is what makes that
+  structural instead of careful. Gate: test/paper-reroute.mjs (13 checks).
 severity: major
 opened: 2026-08-11
 source: owner ruling 2026-08-11, during the FEAT-61 rung-radius pass
@@ -10,7 +17,7 @@ note: "SM-INV-2 (one par, one oracle) is the constraint that shapes this ticket:
   re-plans, the PAR never does. Read the Invariant section before touching src/par.js."
 ---
 
-# FEAT-63: the GPS always gives you the best remaining route — computed across frames, never a stutter
+# FEAT-63 [DONE 2026-08-15]: the GPS always gives you the best remaining route — computed across frames, never a stutter
 
 ## The ruling (owner, 2026-08-11)
 
@@ -166,6 +173,28 @@ On a seed where Larry is on a stranded component, a re-plan can legitimately rea
 than remain undelivered. Do not treat that as a failure: route what is reachable, keep the rest
 undelivered, and let BUG-47 own the topology. A re-plan must **never** return null and leave the
 player with no line — on a failed job, keep the previous route and drop the indicator.
+
+## What actually landed, and what the plan got wrong
+
+Built across `808f420` (the feature) and `d0478f9` (two fixes found by its own gate). Three things
+diverged from the plan above and are worth carrying forward:
+
+1. **THE TRIGGER WAS THE BUG, NOT THE PLANNER.** The plan said re-plan on a wrong turn or an
+   out-of-order delivery, and deliberately skipped the re-plan when a delivery was IN order because
+   "the remaining suffix is still optimal". True about optimality, false about the line: the served
+   porch stayed on the guide, `advanceProgress` is a nearest-point projection rather than a ratchet,
+   and driving back the way you came re-lit chevrons pointing at a house that already had its paper
+   (owner-reported, seed 90). The invariant is not "re-plan when the order is wrong" — it is **the
+   line only ever contains people still owed a paper**, so EVERY credited delivery re-plans. Those
+   are quiet (no indicator), and the pump gates on `hasReplan()` rather than `isRerouting()` or the
+   quiet ones would sit suspended forever.
+2. **The staleness guard compared the wrong two points** — the truck against the job's ORIGIN, which
+   is snapped to the road. A truck parked more than 50 m off the tarmac was therefore permanently
+   stale and re-planned forever, burning frame budget for as long as it sat there. It measures car
+   against car now, and retries once before accepting what it has.
+3. **The budget was far kinder than the ruling assumed.** The whole job is ~14 ms at fifteen stops
+   (48 slices), so it lands in ~120 ms — an eighth of the delay allowed. The indicator needed a
+   MINIMUM display time, not a patience budget.
 
 ## Acceptance
 

@@ -57,7 +57,9 @@ const REVISIT_ARC_M = 150   // m
 // well inside the ~50 m at which this network's hairpins fold back on themselves.
 const FWD_V        = 15
 const BACK_V       = 8
-const GPS_COLOR    = 0x66e0ff
+// Exported (FEAT-61): the delivery target rings wear this too, so "navigation is telling you about
+// this" is one colour across the overlay and the world rather than two that drift apart.
+export const GPS_COLOR = 0x66e0ff
 
 // ── pure route math (THREE-free — gated by test/gps-route.mjs) ──────────────────────────────
 

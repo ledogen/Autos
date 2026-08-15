@@ -59,14 +59,14 @@ import { LabSystem } from './lab.js'                     // FEAT-31: isolated fl
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { PoiSystem, POI_PARAMS } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
-import { EconomySystem, RANK_COLOR, formatDeeds } from './economy.js'  // FEAT-53: payout, wallet, good deeds
+import { EconomySystem, RANK_COLOR, formatDeeds, formatMoney } from './economy.js'  // FEAT-53: payout, wallet, good deeds
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
 import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun, stockForTier, deadlineFor } from './paper-route.js'
-import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist (in-world route arrows)
+import { GpsSystem, addGpsGui, GPS_COLOR } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
@@ -1279,6 +1279,33 @@ const map2d = new Map2D({
   // FEAT-46: POI icons — how the player finds one to drive to. Empty outside story mode.
   getPois: () => poiSystem.list(),
   getCustomers: () => poiSystem.customers(),   // FEAT-61: you cannot drive a route you cannot see
+  // FEAT-61: what the customers MEAN right now, and which way to set off.
+  //
+  // `onRoute` covers the offer as well as the drive, so the briefing map and the in-mission map say
+  // the same thing about the same dots. `arrow` is the offer ONLY — once you are driving, the
+  // chevrons are the answer, and a second static arrow would be one more thing to keep in step.
+  getRouteState: () => {
+    const p = paperRouteSystem
+    if (!p?.isActive()) return null
+    const line = p.line()
+    let arrow = null
+    if (p.state === 'offer' && line?.poly?.length > 1) {
+      // NOT AT THE HEAD: the route starts at Larry's, where the car marker already is, and the two
+      // fought for the same pixels (owner, 2026-08-15). Set it 50 m down the route instead — far
+      // enough to be its own mark, near enough to still read as "this way from here".
+      const cum = line.polyCum, poly = line.poly
+      const AT = 50
+      let i = 0
+      while (i < poly.length - 2 && cum[i] < AT) i++
+      // Heading from a span, not from the neighbouring vertex: at 25 m sampling one step is noisy
+      // on a bend, and a start marker that points into the ditch is worse than none.
+      let j = i
+      while (j < poly.length - 1 && cum[j] - cum[i] < 30) j++
+      arrow = { x: poly[i].x, z: poly[i].z,
+                ang: Math.atan2(poly[j].z - poly[i].z, poly[j].x - poly[i].x) }
+    }
+    return { onRoute: true, arrow }
+  },
   // FEAT-45: dispersed-camping zones, drawn as a yellow casing on the roads inside them. Empty
   // outside story mode (build() only ever runs from the story deps).
   getCampZones: () => campSystem.zones(),
@@ -2097,8 +2124,8 @@ function _ringAlphaTex () {
 // one ring changing meaning rather than two unrelated overlays.
 const _ringGeo = new THREE.CylinderGeometry(1, 1, 1, 48, 1, true)
 const _ringAlpha = _ringAlphaTex()
-const _ringMat = (color) => new THREE.MeshBasicMaterial({
-  color, transparent: true, opacity: 0.28, side: THREE.DoubleSide,
+const _ringMat = (color, opacity = 0.28) => new THREE.MeshBasicMaterial({
+  color, transparent: true, opacity, side: THREE.DoubleSide,
   depthWrite: false, toneMapped: false, alphaMap: _ringAlpha,
 })
 const _poiRingMat = _ringMat(0xff7a18)     // orange — park here to be offered a job
@@ -2117,7 +2144,12 @@ const _STAGE_RING_SINK = 3.0   // m
 // Short, not tall: _POI_RING_H's 4 m curtain at a 10 m radius reads as a wall you park inside, but
 // the same proportions at 3 m would be a chimney you cannot see your own throw land in. A target is
 // something you look DOWN into, so it gets a low kerb instead.
-const _targetRingMat = _ringMat(0x3ddc6b)
+// GPS CYAN, NOT THE STAGING GREEN, and at nearly double the opacity (owner, 2026-08-15). It is
+// easy to blow straight past a porch at speed, and the muted green sat too close to the grass it
+// stands on to catch the eye at 60 km/h. Cyan is the one colour nothing in this landscape wears —
+// and it is GPS_COLOR itself, imported rather than copied, so "navigation is telling you about
+// this" reads as one idea across the chevrons, the destination ring and the target.
+const _targetRingMat = _ringMat(GPS_COLOR, 0.52)
 const _TARGET_RING_H = 1.2      // m
 const _TARGET_RING_SINK = 0.5   // m
 const _TARGET_PIP_H = 0.5       // m — the centre pip is lower still; it must never mask the landing
@@ -2532,7 +2564,12 @@ function _scoreLanding (hit) {
   const scored = paperRouteSystem.recordLanding(hit.x, hit.z)
   if (scored) {
     if (scored.credited) {
-      _showThrowReadout(`<span style="color:#7ed957">${scored.dist.toFixed(2)} m — ${Math.round(scored.q * 100)}%</span>`)
+      // DISTANCE THEN DOLLARS (owner, 2026-08-14). Accuracy is what the throw pays for now, so the
+      // read-out quotes the money it just earned rather than a percentage the player has to convert
+      // in their head. `scored.pay` is banked money — the expediency bonus is not in it, because
+      // that depends on when you finish and the route can still take it back.
+      _showThrowReadout(`<span style="color:#7ed957">${scored.dist.toFixed(2)} m`
+        + ` &nbsp;·&nbsp; +$${scored.pay.toFixed(2)}</span>`)
     } else if (scored.already) {
       // Not a failure — a paper spent. Saying so is the difference between "that did nothing" and
       // "you already did this one", and only one of those tells you to drive on.
@@ -2655,6 +2692,35 @@ function _updateDozeOverlay (f) {
   _dozeBotLid.style.transform = `translateY(${pct}%)`
 }
 
+/**
+ * Open (or close) the map framed on a route.
+ *
+ * Shared by the POI job and the paper route (FEAT-61): both want the same thing at the same
+ * moment — "here is the work, look at it before you commit". Taking `markers` as an argument
+ * rather than reading one system means the second caller was a parameter, not a copy.
+ *
+ * The offer panel is z 95 and the map canvas z 90, so accept/decline stay on top and clickable —
+ * the map is a backdrop to the offer, not a modal over it.
+ */
+function _setMapOpen (open, mk) {
+  if (!open) { map2d.hide(); return }
+  map2d.show()
+  // Frame the whole job so the route reads at a glance instead of running off the edge.
+  if (mk?.poly?.length) {
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity
+    for (const p of mk.poly) { if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x; if (p.z < z0) z0 = p.z; if (p.z > z1) z1 = p.z }
+    map2d.frameBounds(x0, z0, x1, z1)
+    // The mission plans over a wider network than the map streams by default, so tell the map how
+    // far it has to build. Otherwise the route runs past the edge of the drawn network and looks
+    // like an invented road.
+    const car = vehicleState.position
+    const reach = Math.max(
+      Math.hypot(x0 - car.x, z0 - car.z), Math.hypot(x1 - car.x, z1 - car.z),
+      Math.hypot(x0 - car.x, z1 - car.z), Math.hypot(x1 - car.x, z0 - car.z))
+    map2d.setRadiusTarget(reach + 300)
+  }
+}
+
 const _misFwd = new THREE.Vector3()
 missionSystem = new MissionSystem({
   getRoad:  () => roadSystem,
@@ -2697,25 +2763,7 @@ missionSystem = new MissionSystem({
   // checkpoint: reset (R) puts you back on the job you took, not wherever you last happened to stop.
   // Reuses setSpawnHere() so there is ONE spawn-override write path, not a second that could drift.
   setSpawn: () => setSpawnHere(),
-  setMapOpen: (open) => {
-    if (!open) { map2d.hide(); return }
-    map2d.show()
-    // Frame the whole job so the route reads at a glance instead of running off the edge.
-    const mk = missionSystem?.markers()
-    if (mk?.poly?.length) {
-      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity
-      for (const p of mk.poly) { if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x; if (p.z < z0) z0 = p.z; if (p.z > z1) z1 = p.z }
-      map2d.frameBounds(x0, z0, x1, z1)
-      // The mission plans over a wider network than the map streams by default, so tell the map how
-      // far it has to build. Otherwise the route runs past the edge of the drawn network and looks
-      // like an invented road.
-      const car = vehicleState.position
-      const reach = Math.max(
-        Math.hypot(x0 - car.x, z0 - car.z), Math.hypot(x1 - car.x, z1 - car.z),
-        Math.hypot(x0 - car.x, z1 - car.z), Math.hypot(x1 - car.x, z0 - car.z))
-      map2d.setRadiusTarget(reach + 300)
-    }
-  },
+  setMapOpen: (open) => _setMapOpen(open, missionSystem?.markers()),
   // FEAT-53: the economy seams. Terms (day tier + rank thresholds) freeze at ACCEPT; a finished
   // POI job settles into the run wallet. Quick Job never settles — it pays nothing by design.
   getTerms: () => economySystem.terms(),
@@ -2740,6 +2788,9 @@ const paperRouteSystem = new PaperRouteSystem({
   // The ONE money path (FEAT-53). This mission prices itself on its own axis and hands over a
   // finished number; the wallet, the deeds and the mission count still accrue in economy.js.
   onSettle:  (payout, letter) => economySystem.settleFlat(payout, letter),
+  // FEAT-61: accuracy money, banked as each paper lands. Same wallet, same module — but no points
+  // and no mission count, because a delivery is not a settlement.
+  onSpot:    (amount) => economySystem.addSpot(amount),
   // Larry talks while the tour routes. Once per run (DLG's seen-gate) — the second route must not
   // re-explain the throw — and `done` fires either way, because a skipped briefing still has to
   // release the offer.
@@ -2747,6 +2798,11 @@ const paperRouteSystem = new PaperRouteSystem({
   // A finished route takes its papers off the lawns. Region exit does the same (see onRegionExit);
   // this is the other half of the rule the handoff flagged as missing.
   onEnd:     () => _clearThrownRolls(),
+  // Parking at Larry's opens the map on the offer (owner, 2026-08-13). A paper route is fifteen
+  // porches over as much as 2 km and the panel can only say so as a number — you cannot decide
+  // whether to take it without seeing the SHAPE. Same seam a POI job already uses, and it fires at
+  // 'offer' rather than on arrival because that is the first moment there is a route to preview.
+  setMapOpen: (open) => _setMapOpen(open, paperRouteSystem?.markers()),
   onChange:  () => _renderPaperUI(),
 })
 window.__paperRoute = () => paperRouteSystem
@@ -3365,9 +3421,11 @@ function _renderMissionUI () {
       // blue), the one place a rank is ever shown (SM-INV-3: result-card only, never live). A paid
       // job adds its payout + good deeds; Quick Job says plainly that it pays nothing.
       const paid = r.payout !== undefined
-      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span><br>`
-        + `your time <b>${formatTime(r.elapsed)}</b> &nbsp;<span class="mp-dim">/</span>&nbsp; `
-        + `par <b>${formatTime(r.par)}</b><br>`
+      // Letter and time share the headline, at one size (owner, 2026-08-14 — the same rule the
+      // paper route's cards follow). Par stays underneath: it is the reference, not the result.
+      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
+        + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span><br>`
+        + `<span class="mp-dim">par</span> <b>${formatTime(r.par)}</b><br>`
         + `<span style="color:${col}">${sign}${formatTime(Math.abs(r.margin))} vs par</span>`
         + (paid
           ? `<br><span class="mp-pay">$${r.payout.toLocaleString('en-US')}</span>`
@@ -3421,24 +3479,27 @@ function _renderPaperUI () {
 
   switch (p.state) {
     case 'planning':
-      // The briefing is the cover for the routing (owner ruling), so this panel is only ever seen
-      // on a SECOND route — the cards are once per run, and without them there would otherwise be
-      // a silent pause with nothing on screen saying why.
-      show(panel, true); show(hud, false); show(acts, false, 'flex')
-      body.innerHTML = 'Larry&rsquo;s sorting the papers&hellip;<br>'
-        + '<span class="mp-dim">working out the route</span>'
+      // NOTHING (owner, 2026-08-15). This card was cover for a pause the player never experiences:
+      // on the first route Larry's dialogue sits on top of it, and on every route after that the
+      // map opens straight onto the offer. It was written against an ASSUMED routing cost, and the
+      // measurement came back at a few milliseconds — so all it could ever do was flash.
+      show(panel, false); show(hud, false); show(acts, false, 'flex')
       break
     case 'offer': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       const r = p.route
       const stock = stockForTier()
+      // THE THREE HEADLINE NUMBERS, one line, one size (owner, 2026-08-14): who, how far, how long.
+      // The deadline used to be dim text on the last line, which made the one number with a bell
+      // attached to it the least legible thing on the card.
       body.innerHTML = `<span class="mp-big">${r.customers.length}</span> `
         + `<span class="mp-dim">customer${r.customers.length === 1 ? '' : 's'}</span> `
-        + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${km(r.distance)}</span><br>`
+        + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${km(r.distance)}</span> `
+        + `&nbsp;<span class="mp-dim">·</span>&nbsp; `
+        + `<span class="mp-big">${formatTime(deadlineFor(r.par))}</span><br>`
         + `${stock} papers in the truck `
         + `<span class="mp-dim">(${stock - r.customers.length} spare)</span><br>`
-        + `<span class="mp-dim">back before ${formatTime(deadlineFor(r.par))} &mdash; `
-        + `the papers you place are yours to keep either way</span>`
+        + `<span class="mp-dim">i gave you a couple extra, feel free to keep what you don&rsquo;t deliver</span>`
       break
     }
     case 'staging':
@@ -3459,13 +3520,16 @@ function _renderPaperUI () {
     case 'done': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       const r = p.result
-      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span><br>`
-        + `<b>${r.delivered}</b> of <b>${r.customers}</b> delivered `
-        + `&nbsp;<span class="mp-dim">·</span>&nbsp; `
-        + `${Math.round(r.meanAccuracy * 100)}% <span class="mp-dim">accuracy</span><br>`
-        + `<span class="mp-dim">your time</span> <b>${formatTime(r.elapsed)}</b>`
+      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
+        + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
         + (r.expedite > 0 ? ` &nbsp;<span style="color:#8ce99a">+${Math.round(r.expedite * 100)}% early</span>` : '')
-        + `<br><span class="mp-pay">$${r.payout.toLocaleString('en-US')}</span>`
+        + `<br><b>${r.delivered}</b> of <b>${r.customers}</b> delivered `
+        + `&nbsp;<span class="mp-dim">·</span>&nbsp; `
+        + `${Math.round(r.meanAccuracy * 100)}% <span class="mp-dim">accuracy</span>`
+        // TWO LINES, because it is two payments: the papers were banked as they landed, and the
+        // clock is what settles now. Showing only the settlement would look like a pay cut.
+        + `<br><span class="mp-dim">papers (already paid)</span> <span class="mp-pay">$${formatMoney(r.spot)}</span>`
+        + `<br><span class="mp-dim">time</span> <span class="mp-pay">$${formatMoney(r.payout)}</span>`
         + (r.points > 0
           ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points} good deed${r.points > 1 ? 's' : ''}</span>`
           : '')
@@ -3511,7 +3575,7 @@ function _renderRunHud () {
   if (key === _runHudKey && el.style.display === 'block') return
   _runHudKey = key
   const deeds = formatDeeds(s.halfPoints)
-  el.innerHTML = `<span class="rh-money">$${s.money.toLocaleString('en-US')}</span><br>`
+  el.innerHTML = `<span class="rh-money">$${formatMoney(s.money)}</span><br>`
     + `<span class="rh-deeds">${s.halfPoints === 0 ? 'no' : deeds} good deed${s.halfPoints === 2 ? '' : 's'}</span>`
   el.style.display = 'block'
 }
@@ -4990,7 +5054,10 @@ function loop () {
   // is whatever this frame did not use, so a frame that already overran contributes nothing and a
   // quiet one contributes several milliseconds. Even at the FLOOR the job lands in about a second,
   // and the RECALCULATING indicator is what makes that honest to the player.
-  if (paperRouteSystem?.isRerouting()) {
+  // hasReplan(), not isRerouting(): a delivery's re-plan is quiet and shows no indicator, but it
+  // still has to be computed — gating the pump on the indicator would leave those jobs suspended
+  // forever, which is the bug the indicator was never meant to be able to cause.
+  if (paperRouteSystem?.hasReplan()) {
     const spentMs = performance.now() - newTime * 1000
     paperRouteSystem.pumpReroute(Math.max(PUMP_FLOOR_MS, FRAME_BUDGET_MS - PUMP_MARGIN_MS - spentMs))
   }

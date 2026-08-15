@@ -8,7 +8,8 @@ source: SM-2 milestone — first real mission type (plan-mode session 2026-08-04
 relates: FEAT-53, FEAT-59, FEAT-60, FEAT-46, FEAT-43, FEAT-29
 invariants: SM-INV-2, SM-INV-3, SM-INV-4, SM-INV-12, SM-INV-14
 plan: .planning/handoffs/HANDOFF-2026-08-04-paper-route.md
-handoff: .planning/handoffs/HANDOFF-2026-08-11-paper-route-playable.md
+handoff: .planning/handoffs/HANDOFF-2026-08-15-paper-route-merge.md
+prev_handoff: .planning/handoffs/HANDOFF-2026-08-11-paper-route-playable.md
 amended: 2026-08-05 (owner rulings — scoring simplified, houses split from the POI roster)
 ---
 
@@ -65,7 +66,8 @@ cliff is the property line.
 
     delivered      = papers inside a customer's circle
     effDeliveries  = Σ q(dᵢ)                              (≤ delivered ≤ customers)
-    payout         = FLAT × effDeliveries × (1 + expedite)
+    spot           = FLAT × q(dᵢ)                         banked AS EACH PAPER LANDS
+    payout         = FLAT × customers × expedite(ratio)   settled at the bell — TIME ONLY
 
 - **Partial routes pay.** No coverage multiplier — deliveries made are money kept, which is what an
   income floor means.
@@ -75,19 +77,51 @@ cliff is the property line.
 - **Expediency bonus, completed routes only** — you cannot finish early without finishing:
 
       ratio    = elapsed / parRoute
-      expedite = BONUS_MAX × clamp((EXPEDITE_ON − ratio) / (EXPEDITE_ON − EXPEDITE_FULL), 0, 1)
+      expedite = BONUS_MAX × clamp((TOLERANCE − ratio) / (TOLERANCE − EXPEDITE_FULL), 0, 1)
                  …and 0 unless every customer was delivered
 
-  `EXPEDITE_ON = 0.90`, `EXPEDITE_FULL = 0.70`, `BONUS_MAX = 0.40`. Tunable.
+  `EXPEDITE_FULL = 0.70`, `BONUS_MAX = 7/6`. **Superseded numbers** (`EXPEDITE_ON = 0.90`,
+  `BONUS_MAX = 0.40`) kept here only as provenance — see the Rank section for what replaced them
+  and why the two are locked together.
 
-### Rank (per-axis; SM-INV-4 untouched)
+### Rank — SUPERSEDED [AMENDED 2026-08-14, owner]
 
-`score = coverage × meanAccuracy`, `coverage = delivered / customers`. One of nine ⇒ `score ≈ 0.11` ⇒
-**D**, *and it still pays for that one*. Thresholds `C ≥ 0.50 · B ≥ 0.75 · A ≥ 0.90 · S ≥ 0.98`.
-`pointsFor(letter)` is called unmodified — a bad route earns money and no good deeds.
+> **ACCURACY PAYS, THE CLOCK GRADES.** The rank is now **`gradeRun(elapsed / par)`** — the par
+> ratio, gated on full coverage — and accuracy is confined to scaling the per-delivery rate. Par is
+> a **B** and B contains par (SM-INV-3's amendment holds here too); dawdling is a C. The expediency
+> bonus grows to **0.70** and applies to the **full** flat (`n × FLAT`) rather than the
+> accuracy-scaled sum, which is what makes a rim-scraping blast pay about what a methodical drive at
+> par pays. On the scaled sum the same equivalence needs 233%, which is not a tunable number.
+>
+> `gradeRun()` IS now called by this mission; `payoutFor()` still is not. See `missions.md` §2 for
+> the full amendment and its arithmetic.
+>
+> **STATUS: IMPLEMENTED 2026-08-14** (`daaa665`). `letterFor` and `PAPER_PARAMS.rank` are deleted;
+> `scoreRoute` grades through `gradeRun()`. Two further owner amendments landed on top of it:
+>
+> - **Par scales with coverage** [2026-08-15, `d2f773f`]. An incomplete round is graded against
+>   `par × coverage` rather than handed a flat D — skipping people cannot buy time, because it
+>   shrinks the clock you are held to by exactly as much.
+> - **Accuracy is paid ON THE SPOT and $0 sits at the BELL** [2026-08-15, `2cc0926` / `588d786`].
+>   Accuracy money is banked as each paper lands (`EconomySystem.addSpot`), so the end-of-route
+>   settlement is a pure function of time. The bonus ramps from `tolerance` down to `expediteFull` —
+>   there is no `expediteOn` constant, so the payout floor and the deadline cannot drift apart — and
+>   `bonusMax` is **7/6**, forced by the equivalence now that par is only partly into the ramp.
+>
+> **Owner-confirmed 2026-08-15: "payout curve is good".**
 
-**`payoutFor()` and `gradeRun()` are not called by this mission.** Both are par-ratio machinery for
-margin-scored types. `EconomySystem.settle()` remains the single money path.
+The superseded model, for provenance: `score = coverage × meanAccuracy`, thresholds
+`C ≥ 0.50 · B ≥ 0.75 · A ≥ 0.90 · S ≥ 0.98`; one of nine ⇒ `score ≈ 0.11` ⇒ **D**, and it still paid
+for that one. `pointsFor(letter)` is called unmodified either way — a bad route earns money and no
+good deeds — and `EconomySystem.settle()` remains the single money path.
+
+### Par prices the stops [FIXED 2026-08-14]
+
+A delivery pins the reference driver to **zero** at the porch (`stop` on the segment; the one place
+`par.js`'s `vMin` floor does not apply) and charges **no dwell** — the cost is the braking and the
+re-acceleration, derived from the truck's own figures, measured at 3.0–6.0 s per stop and varying
+with the road either side of the house. Before this, par drove straight past every porch at 73 km/h
+and the expediency bonus was unreachable by construction.
 
 ## Deadline, stock, tiers
 
@@ -162,28 +196,27 @@ opening and the walk-to-Larry tutorial.
 ## Acceptance
 
 - `q(0) = 1.0`, `q(3) = 0.30`, linear; `d > 3 m` is not a delivery.
-- **Partial routes pay** — 1 of 9 yields a **D** and a non-zero payout.
+- **Partial routes pay** — 1 of 9 pays for the one. *(Amended 2026-08-15: the LETTER is now the par
+  ratio against a par scaled by coverage, so 1-of-9 taking full time is a D but 1-of-9 in a ninth of
+  the time is not — skipping people cannot buy time.)*
 - **The expediency bonus is unreachable without full coverage.**
 - **One par, one oracle** (SM-INV-2): `computePar()` once over the tour.
-- **`payoutFor()`/`gradeRun()` are not called**; `settle()` is.
+- **`payoutFor()` is not called**; `settleFlat()` + `addSpot()` are. *(Amended 2026-08-14:
+  `gradeRun()` IS now called — the rank is the par ratio, through the same function every other
+  mission type grades with.)*
 - **Houses generate always**, deterministic and window-invariant; the tier only chooses customers
   (SM-INV-12). *Amended 2026-08-11 (owner): the rings are per-rung and HARD — 1.0 / 1.5 / 2.0 /
   2.0 km — and they no longer relax outward to chase the count. Placement fills them innermost
   first from `houseRungs()`, which is what makes each rung servable and makes the nesting
   structural. `poiHouseCount` and `poiHouseR` no longer exist; the ladder is the source of truth.*
-- **OWNER-VERIFIED DIFFICULTY AND PAR — not closeable without this.** The route has been driven
-  once ("very challenging in a good way hard") but nothing about its numbers has been evaluated
-  against real play. The owner must drive it and rule on:
-  - **Is the difficulty right, per rung?** Rung one and rung four are different activities now that
-    the ring widens with the ladder — 2.47 km and four porches against 19.24 km and fifteen.
-  - **Is par honest?** `computePar()` prices the tour with the oracle, but nobody has compared its
-    number to a real drive at a real pace. A par that is generous makes the bell decorative; a par
-    that is tight makes the expediency bonus unreachable and the whole ladder feel punitive. This
-    is the measurement the payout constants below are all waiting on.
-  - The constants still unbalanced against play, listed in Open Questions: `paperW = 0.60`,
-    `expediteOn/Full`, `bonusMax`, the rank thresholds, `throwSpeed = 16`, `dragK = 0.033`, and
-    whether a fifteen-customer route at ~19 km / par ~19 min is the right top rung. A perfect
-    tier-1 route currently pays **$43**.
+- **OWNER-VERIFIED DIFFICULTY, PAR AND PAYOUT — [MET 2026-08-15].** The owner drove the route
+  across four sessions and ruled: *"par on paper route feels good"* and *"payout curve is good"*.
+  Both were wrong when first driven and both were fixed against measurement rather than taste —
+  see "Par prices the stops" and the scoring amendments above.
+  - Still feel-tuned rather than calibrated, and NOT blocking: `throwSpeed = 16`, `dragK = 0.033`
+    (one drive, 2026-08-07), and FEAT-63's re-plan knobs (`RR_OFF_M` 45 m, `RR_OFF_S` 2 s,
+    `RR_MIN_SHOW_S` 0.4, `RR_STALE_M` 50) which were reasoned about and never felt. The debug
+    folder in Phase F is what turns these from guesses into dials.
 - **Houses never appear in `poiSystem.list()`** — the structural form of "most missions don't go to
   houses".
 - **Mom carries both tags**; Larry carries no `newsCustomer`.
@@ -193,11 +226,15 @@ opening and the walk-to-Larry tutorial.
   point). `story-poi`, `mission-network`, `economy`, `par-oracle`, `day-clock` stay green;
   `npm run test:all` before merge.
 
-## Phases — state at 2026-08-07
+## Phases — state at 2026-08-15
 
 **A — Docs** [DONE, `c95a2cc`] · **B — Dialogue** [DONE, `8624861`] · **C — Houses** [DONE,
 `39e433c`] · **D — Throw** [DONE, `07a073d`] · **E — The mission** [DONE — part 1 `e99fe1e`,
 part 2 `5400b1a`] · **F — Gates + housekeeping** [PARTIAL — the only thing left before merge]
+
+> **THE MISSION IS FINISHED AND OWNER-APPROVED** as of 2026-08-15, bar Phase F. Par, the payout
+> curve and the scoring model are all owner-ruled and implemented. What follows in this section is
+> the historical record of how it got there; **`### What remains` below is the only live list.**
 
 **THE MISSION IS PLAYABLE AND THE OWNER HAS DRIVEN IT** (2026-08-10/11): *"pretty hard lol — very
 challenging in a good way hard"*, and hard enough that they asked for it as a menu-launchable
@@ -256,27 +293,28 @@ questions.
 `feature/poi-models` (FEAT-60) was merged into this branch first, so the roster and the house pass
 were built together rather than reconciled afterwards. `npm run test:all` green, 46 gates.
 
-### What remains — Phase E part 2
+### What remains — PHASE F ONLY [live list, 2026-08-15]
 
-The scoring core is built and gated (`test/paper-route.mjs`, 45 checks). What is NOT built is the
-mission around it, because it needs live driving to verify honestly:
+Phase E part 2 is built in full — the state machine, the tour and its one par, the throw wired to
+the route, the result card and the tier advance. Everything below is the housekeeping.
 
-1. **`PaperRouteSystem`** — the state machine `idle → offer → briefing → running → done`, a sibling
-   of `MissionSystem` rather than a mode inside it (`src/mission.js` is 871 lines shaped end-to-end
-   around one start and one end, and four gates pin its settle path).
-2. **The tour + par.** Nearest-neighbour tour from Larry over `poiSystem.customers()`, legs built
-   with `mission.js`'s graph adjacency + Dijkstra, concatenated, and **one** `computePar()` over the
-   whole thing (SM-INV-2). Per the ruling: assume it is expensive and **hold the briefing cards
-   until routing completes** — the player reads two cards while it runs, which is free cover.
-   `mission.js`'s `MAX_EDGES = 9` cap does not apply to a 15-stop tour; measure before trusting it.
-3. **Wiring the throw to the route** — today `_throwRoll()` scores against the nearest customer and
-   prints the distance, which proved the rings and the ballistics agree. It needs to instead consume
-   stock, record the delivery against a specific customer (once each), and end the route on the bell
-   or the last paper.
-4. **The result card + tier advance**, settling through `EconomySystem.settleFlat`.
-5. **Housekeeping (F):** a `paper-houses.mjs` heavy gate (count met, window-invariance, off water and
-   junctions, tier-independence, absent from `list()`), a debug folder for `PAPER_PARAMS`/
-   `THROW_PARAMS`/`poiHouse*`, and the MILESTONES SM-2 paragraph.
+1. **`test/paper-houses.mjs`** — the heavy house gate: count met per rung, window-invariance from
+   two stream centres, never on water or a junction pad, tier-independence (SM-INV-12), and houses
+   absent from `poiSystem.list()`. Verified by hand in Phase C and never gated. Register it in
+   `test/gates.mjs` beside `paper-tour.mjs` (subsystem `story`, cost `heavy`).
+2. **A debug folder** for `PAPER_PARAMS`, `THROW_PARAMS` (`throwSpeed`, `dragK`), the `poiHouse*`
+   knobs, and FEAT-63's `RR_*` re-plan knobs. None are on sliders and the phase-housekeeping rule
+   says they should be — several are feel-tuned by one drive, and two were never felt at all.
+3. **The MILESTONES SM-2 paragraph.**
+**DEFERRED PAST THE MERGE (owner, 2026-08-15)** — the merge agent scopes whether any of it is
+needed, rather than it being done because this ticket says so. Items 1-3 above are candidates, not
+obligations; the debug folder has the strongest case (two of FEAT-63's knobs were never felt at
+all), `paper-houses.mjs` the weakest (`story-poi` and `world-determinism` already cover house
+determinism and two-centre window-invariance — check what it would add before writing it).
+
+4. **Merge** (brings FEAT-60 with it) — see
+   `.planning/handoffs/HANDOFF-2026-08-15-paper-route-merge.md`, which leads with the fact that main
+   redrew the 2D map underneath this branch.
 
 ### First drive — four fixes [2026-08-09]
 
@@ -302,9 +340,10 @@ headlessly through `PaperRouteSystem`: offer → staging → threshold → a pap
 q = 1.00 and moves the counter → a second paper on the same porch is spent not double-counted → a
 paper on an off-round customer scores nothing → the last porch ends it → S, settled, next rung.
 
-### Live checks nobody has run yet
+### Live checks — mostly RUN as of 2026-08-15
 
-Everything below Phase A is gate-verified and **has not been driven**:
+The owner has driven the route across four sessions. What remains unverified by eye, and is worth a
+look during the merge smoke test rather than being treated as a blocker:
 
 - Larry's cards advance on any key and do not replay within a run.
 - Hold F actually rotates the view onto a porch, and the roll leaves on the camera heading with the

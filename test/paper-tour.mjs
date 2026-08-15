@@ -25,6 +25,7 @@ import { WaterSystem } from '../src/water.js'
 import { PoiSystem, POI_PARAMS } from '../src/poi.js'
 import { planTour, PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun,
          deadlineFor, stockForTier, customersForTier, radiusForTier } from '../src/paper-route.js'
+import { computePar } from '../src/par.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
 let fails = 0
@@ -142,6 +143,41 @@ for (let i = 1; i < tours.length; i++) {
     const missing = lower.filter(id => !higher.has(id))
     check(`tier ${i}'s customers are all on tier ${i + 1}'s route — the tier picks who, never what exists`,
         missing.length === 0, `${missing.length} dropped: ${missing.join(', ')}`)
+}
+
+// ── 3b. PAR PRICES THE STOPS (FEAT-61, owner-reported 2026-08-14) ───────────────────────────────
+//
+// The oracle used to price a fifteen-porch round as one uninterrupted blast: 73 km/h average, and 2
+// of ~1150 profile samples below 3 m/s — the first and the last. Point-to-point missions felt right
+// while this one was unbeatable, because par was correct about the ROAD and wrong about the JOB.
+//
+// There is NO DWELL — the whole cost is the stop itself (owner, 2026-08-14: a paper goes out of the
+// window on the move, so what a delivery really costs is coming to rest and pulling away again, not
+// time spent parked). So the properties to pin are that the reference actually reaches ZERO at each
+// porch, and that the time this buys is derived from the truck's own brake and accel.
+for (const t of tours.filter(Boolean)) {
+    const n = t.customers.length
+    const pr = computePar(t.segments)
+    check('tier: par charges exactly one stop per customer, never two for a porch passed twice',
+        pr.stops === n, `${pr.stops} stops priced for ${n} customers`)
+    // A TRUE zero, not vMin. The stop cap is the one place the vMin floor must not apply — floored
+    // at 2.5 m/s a delivery prices as a slow roll past the porch, which is most of the bug.
+    const zeros = [...pr.speeds].filter(v => v === 0).length
+    check('…and the reference comes to REST there, not to a 2.5 m/s crawl',
+        zeros >= n, `${zeros} samples at a standstill for ${n} stops + the route end`)
+    // …and stopping has to COST. Same route with the flags off: if `stop` stopped being set, or the
+    // cap stopped biting, par would collapse back to the drive-past-everyone number.
+    const dry = computePar(t.segments.map(s => ({ ...s, stop: false })))
+    check('…and stopping costs real time, derived from brake and accel',
+        t.par > dry.time * 1.03,
+        `${t.par.toFixed(0)} s with stops vs ${dry.time.toFixed(0)} s without`)
+    console.log(`       tier: ${n} stops cost ${(t.par - dry.time).toFixed(0)} s`
+        + ` (+${((t.par / dry.time - 1) * 100).toFixed(0)}%), ${((t.par - dry.time) / n).toFixed(1)} s each`)
+}
+{
+    const t = tours.at(-1)
+    if (t) console.log(`       top rung with stops priced: par ${t.par.toFixed(0)} s`
+        + ` · ${(t.distance / t.par * 3.6).toFixed(1)} km/h average`)
 }
 
 // ── 4. the roads are real, and inside the wall ──────────────────────────────────────────────────
