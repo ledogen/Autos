@@ -8,6 +8,7 @@
     "dev": "vite --port 8000",
     "build": "vite build",
     "preview": "vite preview",
+    "dash": "node tools/dashboard/index.mjs",
     "test": "node test/run-all.mjs",
     "test:all": "node test/run-all.mjs --all",
     "test:affected": "node test/run-all.mjs --affected",

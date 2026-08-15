@@ -131,6 +131,10 @@ norm.
 - **Capture** bugs/features/ideas as tickets in `.planning/todos/pending/` (frontmatter: `id`, `type`,
   `status`, `severity`, plus a clear acceptance section). This tracker is the live source of truth for
   outstanding work. Close a ticket by moving it to `.planning/todos/completed/` with a resolution note.
+  **Browse it with `npm run dash`** (`tools/dashboard/`, serves :8010) — filterable list, rendered
+  ticket bodies with cross-refs auto-linked, an "open in editor" jump, and a repo-stats page. It is a
+  read-only viewer: it normalises the tracker's drifted `type`/`status` vocabulary for filtering and
+  reports the offenders, but never edits a ticket. The frontmatter files stay the source of truth.
   Classes: `feature` (FEAT-NN) · `bug` (BUG-NN) · `perf` (PERF-NN) · `quality` (QUAL-NN) ·
   `infra` (INFRA-NN) · **`asset` (ASSET-NN, files `asset-*.md`)** — one hand-modelled `.glb` per
   ticket, authored per `.planning/research/ASSETS.md`; each carries a tri/texture budget, real-world

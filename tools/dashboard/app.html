@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RangerSim — planning dashboard</title>
+<style>
+  :root {
+    --bg:#14161a; --panel:#1b1e24; --panel2:#22262e; --line:#2c313b;
+    --fg:#dfe3ea; --dim:#8b94a3; --dimmer:#646c7a;
+    --accent:#6fb3ff;
+    --feature:#6fb3ff; --bug:#ff7a7a; --perf:#ffc25c; --quality:#b78bff;
+    --infra:#5fd0c0; --asset:#7fd97f; --unknown:#8b94a3;
+    --critical:#ff5c5c; --high:#ff8a5c; --major:#ffc25c;
+    --medium:#9fd06f; --minor:#6a7382; --trivial:#4d545f;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--fg);
+    font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+
+  header {
+    position:sticky; top:0; z-index:10; background:var(--panel);
+    border-bottom:1px solid var(--line); padding:10px 18px;
+    display:flex; gap:14px; align-items:center; flex-wrap:wrap;
+  }
+  .brand { font-weight:600; letter-spacing:.3px; margin-right:4px; }
+  .brand span { color:var(--dimmer); font-weight:400; }
+  nav a {
+    padding:4px 10px; border-radius:6px; color:var(--dim);
+  }
+  nav a.on { background:var(--panel2); color:var(--fg); }
+  nav a:hover { text-decoration:none; color:var(--fg); }
+  #search {
+    margin-left:auto; background:var(--bg); border:1px solid var(--line);
+    color:var(--fg); border-radius:6px; padding:5px 10px; width:260px; font:inherit;
+  }
+  #search:focus { outline:none; border-color:var(--accent); }
+  button.act {
+    background:var(--panel2); border:1px solid var(--line); color:var(--dim);
+    border-radius:6px; padding:5px 10px; font:inherit; cursor:pointer;
+  }
+  button.act:hover { color:var(--fg); border-color:var(--dimmer); }
+
+  main { max-width:1080px; margin:0 auto; padding:18px; }
+
+  /* filters */
+  .filters { display:flex; flex-direction:column; gap:8px; margin-bottom:14px; }
+  .frow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .flabel { color:var(--dimmer); font-size:11px; text-transform:uppercase;
+            letter-spacing:.8px; width:62px; flex:none; }
+  .chip {
+    border:1px solid var(--line); background:transparent; color:var(--dim);
+    border-radius:999px; padding:3px 11px; font:inherit; font-size:12.5px;
+    cursor:pointer; display:flex; gap:6px; align-items:center;
+  }
+  .chip .n { color:var(--dimmer); font-size:11px; font-variant-numeric:tabular-nums; }
+  .chip:hover { border-color:var(--dimmer); color:var(--fg); }
+  .chip.on { color:#12151a; font-weight:600; border-color:transparent; }
+  .chip.on .n { color:rgba(0,0,0,.5); }
+  .chip .dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
+
+  /* list */
+  .count { color:var(--dimmer); font-size:12px; margin:2px 0 8px; }
+  ul.list { list-style:none; margin:0; padding:0;
+            border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  ul.list li {
+    display:flex; gap:12px; align-items:baseline; padding:7px 12px;
+    border-bottom:1px solid var(--line);
+  }
+  ul.list li:last-child { border-bottom:0; }
+  ul.list li:nth-child(even) { background:rgba(255,255,255,.015); }
+  ul.list li:hover { background:var(--panel2); }
+  .tid { font-family:var(--mono); font-size:12.5px; width:92px; flex:none; }
+  .ttitle { flex:none; max-width:44%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tblurb { color:var(--dimmer); font-size:12.5px; overflow:hidden;
+            text-overflow:ellipsis; white-space:nowrap; flex:1; }
+  .tmeta { margin-left:auto; flex:none; display:flex; gap:8px; align-items:center;
+           font-size:11px; color:var(--dimmer); }
+  .sev { font-family:var(--mono); font-size:10.5px; text-transform:uppercase;
+         letter-spacing:.5px; }
+  .st { font-size:10.5px; border:1px solid var(--line); border-radius:4px; padding:0 5px; }
+  .st.closed, .st.cancelled { opacity:.6; }
+
+  /* detail */
+  .crumb { color:var(--dimmer); font-size:12px; margin-bottom:10px; }
+  .dhead { display:flex; gap:12px; align-items:flex-start; margin-bottom:6px; }
+  .dhead h1 { font-size:21px; margin:0 0 2px; line-height:1.3; }
+  .dhead .id { font-family:var(--mono); color:var(--dimmer); font-size:13px; }
+  .dhead .spacer { margin-left:auto; display:flex; gap:8px; flex:none; }
+  .fm { display:flex; gap:6px 16px; flex-wrap:wrap; color:var(--dim);
+        font-size:12px; padding:8px 0 14px; border-bottom:1px solid var(--line);
+        margin-bottom:16px; }
+  .fm b { color:var(--dimmer); font-weight:400; }
+  .body { font-size:14.5px; }
+  .body h1 { font-size:20px; margin:26px 0 8px; }
+  .body h2 { font-size:17px; margin:26px 0 8px; padding-bottom:5px;
+             border-bottom:1px solid var(--line); }
+  .body h3 { font-size:15px; margin:20px 0 6px; color:var(--dim); }
+  .body p, .body li { line-height:1.65; }
+  .body code { font-family:var(--mono); font-size:12.5px; background:var(--panel2);
+               padding:1px 5px; border-radius:4px; }
+  .body pre { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+              padding:11px 13px; overflow-x:auto; }
+  .body pre code { background:none; padding:0; font-size:12.5px; line-height:1.5; }
+  .body blockquote { margin:12px 0; padding:2px 14px; border-left:3px solid var(--line);
+                     color:var(--dim); }
+  .body hr { border:0; border-top:1px solid var(--line); margin:22px 0; }
+  .body table { border-collapse:collapse; width:100%; margin:12px 0; font-size:13px;
+                display:block; overflow-x:auto; }
+  .body th, .body td { border:1px solid var(--line); padding:5px 9px; text-align:left;
+                       vertical-align:top; }
+  .body th { background:var(--panel2); color:var(--dim); font-weight:600; }
+  .tref { font-family:var(--mono); font-size:.92em; border-bottom:1px dotted currentColor; }
+  .tref.gone { color:var(--dimmer); border:0; cursor:default; }
+  .pathref { font-family:var(--mono); font-size:.92em; color:var(--dim); }
+  .pathref:hover { color:var(--accent); }
+  .refs { margin-top:28px; padding-top:14px; border-top:1px solid var(--line); }
+  .refs h3 { color:var(--dimmer); font-size:11px; text-transform:uppercase;
+             letter-spacing:.8px; margin:0 0 8px; }
+  .refs .row { margin-bottom:6px; font-size:13px; }
+
+  /* stats */
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(168px,1fr));
+           gap:10px; margin-bottom:22px; }
+  .tile { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+          padding:12px 14px; }
+  .tile .k { color:var(--dimmer); font-size:11px; text-transform:uppercase;
+             letter-spacing:.8px; }
+  .tile .v { font-size:24px; font-variant-numeric:tabular-nums; margin:4px 0 1px;
+             font-family:var(--mono); }
+  .tile .s { color:var(--dimmer); font-size:11.5px; }
+  h2.sec { font-size:13px; text-transform:uppercase; letter-spacing:.9px;
+           color:var(--dim); margin:26px 0 10px; }
+  table.data { border-collapse:collapse; width:100%; font-size:13px; }
+  table.data th { text-align:left; color:var(--dimmer); font-weight:400; font-size:11px;
+                  text-transform:uppercase; letter-spacing:.6px;
+                  border-bottom:1px solid var(--line); padding:4px 8px; }
+  table.data td { padding:4px 8px; border-bottom:1px solid var(--line);
+                  font-variant-numeric:tabular-nums; }
+  table.data td.num { text-align:right; font-family:var(--mono); font-size:12.5px; }
+  table.data td.name { font-family:var(--mono); font-size:12.5px; }
+  .stale { color:var(--perf); }
+  .note { color:var(--dimmer); font-size:12px; margin:6px 0 0; }
+  .bar { height:4px; background:var(--panel2); border-radius:2px; overflow:hidden;
+         margin-top:6px; }
+  .bar i { display:block; height:100%; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">RangerSim <span>· planning</span></div>
+  <nav>
+    <a href="#/tickets" data-nav="tickets">Tickets</a>
+    <a href="#/stats" data-nav="stats">Overview</a>
+  </nav>
+  <input id="search" type="search" placeholder="filter by id, title, text…" autocomplete="off">
+  <button class="act" id="reindex" title="Rescan .planning and re-measure the repo">Reindex</button>
+</header>
+<main id="app">loading…</main>
+
+<script type="module">
+/* ─────────────────────────── data ─────────────────────────── */
+let TICKETS = [], BY_ID = new Map(), BACKLINKS = new Map(), STATS = null;
+
+async function load() {
+  const [t, s] = await Promise.all([
+    fetch('tickets.json?' + Date.now()).then(r => r.json()),
+    fetch('stats.json?' + Date.now()).then(r => r.json()),
+  ]);
+  TICKETS = t.tickets; STATS = s;
+  BY_ID = new Map(TICKETS.map(x => [x.id, x]));
+  BACKLINKS = new Map();
+  for (const tk of TICKETS) {
+    for (const r of tk.refs) {
+      if (!BACKLINKS.has(r)) BACKLINKS.set(r, []);
+      BACKLINKS.get(r).push(tk.id);
+    }
+  }
+}
+
+/* ───────────────────────── markdown ────────────────────────
+ * Small block/inline renderer — enough for the ticket corpus (headings, lists,
+ * fenced code, tables, blockquotes, rules) and nothing more. Inline runs in two
+ * passes: code spans / links / ticket refs / file paths are pulled out into
+ * placeholder tokens first, so emphasis can never chew through generated HTML. */
+const esc = s => s.replace(/[&<>]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[c]));
+
+const TICKET_RE = /\b(?:FEAT|BUG|PERF|QUAL|INFRA|ASSET)-\d+\b/;
+const PATH_RE = /(?:\.planning|src|test|data|assets|tools|scenarios|docs)\/[\w./@-]*[\w]\.\w{1,5}/;
+// Emphasis and links must survive a line break: the tickets are hard-wrapped at
+// ~100 columns, so most bold runs of any length straddle a newline.
+const LINK_RE = /\[([^\]]+)\]\(([^)\s]+)\)/;
+const CODE_RE = /`[^`\n]+`/;
+
+function ticketLink(id) {
+  const t = BY_ID.get(id);
+  if (!t) return `<span class="tref gone">${id}</span>`;
+  const title = esc(`${t.title} — ${t.status}`);
+  return `<a class="tref" href="#/t/${id}" title="${title}">${id}</a>`;
+}
+const pathLink = p =>
+  `<a class="pathref" href="vscode://file${STATS.root}/${p}" title="open ${p} in VS Code">${p}</a>`;
+
+function inline(text) {
+  const tokens = [];
+  const keep = html => { tokens.push(html); return `\u0000${tokens.length - 1}\u0000`; };
+
+  const combined = new RegExp(
+    [CODE_RE.source, LINK_RE.source, TICKET_RE.source, PATH_RE.source].join('|'), 'g',
+  );
+  let out = text.replace(combined, (m) => {
+    if (m.startsWith('`')) {
+      // Tickets write paths and ids inside backticks far more often than bare,
+      // so a code span that IS one stays a code span but becomes clickable.
+      const inner = m.slice(1, -1);
+      const code = `<code>${inner}</code>`;
+      if (new RegExp(`^${TICKET_RE.source}$`).test(inner)) {
+        return keep(BY_ID.has(inner)
+          ? `<a class="tref" href="#/t/${inner}">${code}</a>` : code);
+      }
+      if (new RegExp(`^${PATH_RE.source}$`).test(inner)) {
+        return keep(`<a class="pathref" href="vscode://file${STATS.root}/${inner}"`
+          + ` title="open ${inner} in VS Code">${code}</a>`);
+      }
+      return keep(code);
+    }
+    const link = LINK_RE.exec(m);
+    if (link && link[0] === m) {
+      const [, label, href] = link;
+      const local = !/^[a-z]+:/i.test(href) && !href.startsWith('#');
+      const url = local ? `vscode://file${STATS.root}/${href.replace(/^\.\//, '')}` : href;
+      const ext = /^https?:/i.test(url) ? ' target="_blank" rel="noopener"' : '';
+      return keep(`<a href="${url}"${ext}>${label}</a>`);
+    }
+    if (new RegExp(`^${TICKET_RE.source}$`).test(m)) return keep(ticketLink(m));
+    return keep(pathLink(m));
+  });
+
+  out = out
+    // Italic BEFORE bold, so `**bold with *italic* inside**` still closes: the
+    // italic pass can't start on a `**` (a lone `*` must be followed by a
+    // non-`*`), so it only ever consumes the inner pair.
+    .replace(/(^|[\s(])\*([^*]+?)\*(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>')
+    .replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[\s(])_([^_]+?)_(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>');
+
+  return out.replace(/\u0000(\d+)\u0000/g, (_, i) => tokens[+i]);
+}
+
+function md(src) {
+  const lines = esc(src).split('\n');
+  const out = [];
+  let i = 0;
+  const isTableSep = s => /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(s) && s.includes('-');
+  const cells = s => s.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map(c => c.trim());
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (/^```/.test(line)) {
+      const buf = [];
+      i++;
+      while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]);
+      i++;
+      out.push(`<pre><code>${buf.join('\n')}</code></pre>`);
+      continue;
+    }
+    if (!line.trim()) { i++; continue; }
+    if (/^(---+|\*\*\*+)\s*$/.test(line)) { out.push('<hr>'); i++; continue; }
+
+    const h = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (h) { out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); i++; continue; }
+
+    if (line.includes('|') && isTableSep(lines[i + 1] || '')) {
+      const head = cells(line);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].includes('|') && lines[i].trim()) rows.push(cells(lines[i++]));
+      out.push(
+        `<table><thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join('')}</tr></thead>`
+        + `<tbody>${rows.map(r => `<tr>${r.map(c => `<td>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`,
+      );
+      continue;
+    }
+
+    if (/^\s*>/.test(line)) {
+      const buf = [];
+      while (i < lines.length && /^\s*>/.test(lines[i])) buf.push(lines[i++].replace(/^\s*>\s?/, ''));
+      out.push(`<blockquote>${md(buf.join('\n'))}</blockquote>`);
+      continue;
+    }
+
+    const li = /^\s*([-*+]|\d+\.)\s+/.exec(line);
+    if (li) {
+      const ordered = /\d/.test(li[1]);
+      const items = [];
+      while (i < lines.length) {
+        const m = /^\s*(?:[-*+]|\d+\.)\s+(.*)$/.exec(lines[i]);
+        if (m) { items.push(m[1]); i++; }
+        else if (/^\s+\S/.test(lines[i]) && items.length) { items[items.length - 1] += ` ${lines[i].trim()}`; i++; }
+        else break;
+      }
+      const tag = ordered ? 'ol' : 'ul';
+      out.push(`<${tag}>${items.map(x => `<li>${inline(x)}</li>`).join('')}</${tag}>`);
+      continue;
+    }
+
+    const para = [];
+    while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|```|\s*>|\s*([-*+]|\d+\.)\s|---+\s*$)/.test(lines[i])) {
+      if (lines[i].includes('|') && isTableSep(lines[i + 1] || '')) break;
+      para.push(lines[i++]);
+    }
+    if (para.length) out.push(`<p>${inline(para.join('\n'))}</p>`);
+    else i++;
+  }
+  return out.join('\n');
+}
+
+/* ───────────────────────── filters ─────────────────────────
+ * Filter state lives in the hash so a filtered list is a shareable/bookmarkable
+ * URL and Back works between list and detail. */
+const TYPES = ['feature', 'bug', 'perf', 'quality', 'infra', 'asset'];
+const STATUSES = ['open', 'closed', 'cancelled'];
+const STATUS_COLOR = { open: '#6fb3ff', closed: '#7fd97f', cancelled: '#8b94a3' };
+const DEFAULTS = { type: [], status: ['open'], sev: [] };
+
+function readFilters() {
+  const q = new URLSearchParams((location.hash.split('?')[1] || ''));
+  const get = (k) => (q.has(k) ? q.get(k).split(',').filter(Boolean) : DEFAULTS[k]);
+  return { type: get('type'), status: get('status'), sev: get('sev') };
+}
+function writeFilters(f) {
+  const q = new URLSearchParams();
+  for (const k of ['type', 'status', 'sev']) {
+    if (String(f[k]) !== String(DEFAULTS[k])) q.set(k, f[k].join(','));
+  }
+  const s = q.toString();
+  location.hash = '#/tickets' + (s ? `?${s}` : '');
+}
+function toggle(kind, value) {
+  const f = readFilters();
+  f[kind] = f[kind].includes(value) ? f[kind].filter(v => v !== value) : [...f[kind], value];
+  writeFilters(f);
+}
+
+function matches(t, f, q) {
+  if (f.type.length && !f.type.includes(t.type)) return false;
+  if (f.status.length && !f.status.includes(t.status)) return false;
+  if (f.sev.length && !f.sev.includes(t.severity)) return false;
+  if (q) {
+    const hay = `${t.id} ${t.title} ${t.blurb} ${t.body}`.toLowerCase();
+    if (!q.split(/\s+/).every(w => hay.includes(w))) return false;
+  }
+  return true;
+}
+
+/* ─────────────────────────── views ─────────────────────────── */
+const fmtBytes = (b) => (b >= 1e6 ? `${(b / 1048576).toFixed(1)} MB`
+  : b >= 1e3 ? `${(b / 1024).toFixed(0)} KB` : `${b} B`);
+const fmtNum = (n) => n.toLocaleString();
+const daysAgo = (iso) => Math.round((Date.now() - new Date(iso)) / 86400000);
+
+function chip(kind, value, on, count, color) {
+  const style = on && color ? ` style="background:${color}"` : color ? ` style="color:${color}"` : '';
+  return `<button class="chip${on ? ' on' : ''}" data-kind="${kind}" data-val="${value}"${style}>`
+    + `<i class="dot"></i>${value}<span class="n">${count}</span></button>`;
+}
+
+function viewTickets() {
+  const f = readFilters();
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const shown = TICKETS.filter(t => matches(t, f, q));
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(`--${n}`).trim();
+
+  // Each axis counts against the *other* axes only, so a chip's number is what
+  // you'd get by turning it on — not what's on screen right now.
+  const nType = (v) => TICKETS.filter(t => t.type === v && matches(t, { ...f, type: [] }, q)).length;
+  const nStat = (v) => TICKETS.filter(t => t.status === v && matches(t, { ...f, status: [] }, q)).length;
+  const nSev = (v) => TICKETS.filter(t => t.severity === v && matches(t, { ...f, sev: [] }, q)).length;
+
+  const rows = shown.map(t => `
+    <li>
+      <a class="tid" href="#/t/${t.id}" style="color:${css(t.type)}">${t.id}</a>
+      <span class="ttitle">${esc(t.title)}</span>
+      <span class="tblurb">${esc(t.blurb)}</span>
+      <span class="tmeta">
+        <span class="sev" style="color:${css(t.severity)}">${t.severity}</span>
+        <span class="st ${t.status}">${t.status}</span>
+      </span>
+    </li>`).join('');
+
+  return `
+    <div class="filters">
+      <div class="frow"><span class="flabel">Type</span>
+        ${TYPES.map(v => chip('type', v, f.type.includes(v), nType(v), css(v))).join('')}</div>
+      <div class="frow"><span class="flabel">Status</span>
+        ${STATUSES.map(v => chip('status', v, f.status.includes(v), nStat(v), STATUS_COLOR[v])).join('')}</div>
+      <div class="frow"><span class="flabel">Severity</span>
+        ${STATS.severityOrder.map(v => chip('sev', v, f.sev.includes(v), nSev(v), css(v))).join('')}</div>
+    </div>
+    <div class="count">${shown.length} of ${TICKETS.length} tickets${q ? ` matching “${esc(q)}”` : ''}</div>
+    <ul class="list">${rows || '<li><span class="tblurb">nothing matches</span></li>'}</ul>`;
+}
+
+function viewTicket(id) {
+  const t = BY_ID.get(id);
+  if (!t) return `<p>No ticket <code>${esc(id)}</code>. <a href="#/tickets">Back to the list</a></p>`;
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(`--${n}`).trim();
+  const back = (BACKLINKS.get(id) || []).sort();
+  const fmRow = (k, v) => (v ? `<span><b>${k}</b> ${v}</span>` : '');
+
+  return `
+    <div class="crumb"><a href="#/tickets">← tickets</a> · ${t.file}</div>
+    <div class="dhead">
+      <div>
+        <div class="id" style="color:${css(t.type)}">${t.id}</div>
+        <h1>${esc(t.title)}</h1>
+      </div>
+      <div class="spacer">
+        <a class="act" style="display:inline-block"
+           href="vscode://file${STATS.root}/${t.file}:1">Open in editor</a>
+      </div>
+    </div>
+    <div class="fm">
+      ${fmRow('type', t.type + (t.typeRaw !== t.type ? ` <i style="color:var(--perf)">(${t.typeRaw})</i>` : ''))}
+      ${fmRow('status', t.status + (t.statusRaw !== t.status ? ` <i style="color:var(--perf)">(${t.statusRaw})</i>` : ''))}
+      ${fmRow('severity', `<span style="color:${css(t.severity)}">${t.severity}</span>`)}
+      ${fmRow('opened', t.opened)} ${fmRow('updated', t.updated)} ${fmRow('closed', t.closed)}
+    </div>
+    <div class="body">${md(t.body.replace(/^#\s+.*(\n|$)/m, ''))}</div>
+    <div class="refs">
+      <h3>Links</h3>
+      <div class="row"><b style="color:var(--dimmer)">references</b>
+        ${t.refs.length ? t.refs.map(ticketLink).join(' ') : '<span style="color:var(--dimmer)">none</span>'}</div>
+      <div class="row"><b style="color:var(--dimmer)">referenced by</b>
+        ${back.length ? back.map(ticketLink).join(' ') : '<span style="color:var(--dimmer)">none</span>'}</div>
+      ${t.plan ? `<div class="row"><b style="color:var(--dimmer)">plan</b> ${inline(esc(t.plan))}</div>` : ''}
+      ${t.handoff ? `<div class="row"><b style="color:var(--dimmer)">handoff</b> ${inline(esc(t.handoff))}</div>` : ''}
+    </div>`;
+}
+
+function viewStats() {
+  const s = STATS;
+  const tile = (k, v, sub) => `<div class="tile"><div class="k">${k}</div>
+    <div class="v">${v}</div><div class="s">${sub || ''}</div></div>`;
+  const age = (iso) => {
+    const d = daysAgo(iso);
+    if (d >= 7) return `<span class="stale">${d} days old</span>`;
+    return d <= 0 ? 'today' : `${d} day${d === 1 ? '' : 's'} old`;
+  };
+
+  const cold = s.perf?.cold;
+  const fr = s.perf?.frames;
+  const distPct = s.dist ? (100 * s.dist.gz / s.dist.raw).toFixed(0) : 0;
+
+  const codeRows = s.code.map(r => `<tr>
+      <td class="name">${r.name}/</td><td class="num">${r.files}</td>
+      <td class="num">${fmtNum(r.lines)}</td><td class="num">${fmtBytes(r.bytes)}</td>
+      <td><div class="bar"><i style="width:${(100 * r.lines / s.codeTotal.lines).toFixed(1)}%;
+        background:var(--accent)"></i></div></td></tr>`).join('');
+
+  const distRows = (s.dist?.byExt || []).map(e => `<tr>
+      <td class="name">${e.ext}</td><td class="num">${e.files}</td>
+      <td class="num">${fmtBytes(e.raw)}</td><td class="num">${fmtBytes(e.gz)}</td></tr>`).join('');
+
+  const typeRows = Object.entries(s.tickets.byType)
+    .sort((a, b) => b[1].total - a[1].total)
+    .map(([k, v]) => `<tr><td class="name" style="color:var(--${k})">${k}</td>
+      <td class="num">${v.open}</td><td class="num">${v.total}</td></tr>`).join('');
+
+  const driftRows = s.drift.map(d => `<tr>
+      <td class="name">${d.file.replace('.planning/todos/', '')}</td>
+      <td class="name">${d.field}</td>
+      <td class="name" style="color:var(--perf)">${esc(String(d.value))}</td>
+      <td class="name" style="color:var(--dimmer)">${d.canon || d.note || '—'}</td></tr>`).join('');
+
+  return `
+    <div class="tiles">
+      ${tile('Source', fmtNum(s.codeTotal.lines), `lines · ${s.codeTotal.files} files · ${fmtBytes(s.codeTotal.bytes)}`)}
+      ${tile('Planning', fmtNum(s.planning.lines), `lines of markdown · ${s.planning.files} files`)}
+      ${tile('Tickets', `${s.tickets.open}/${s.tickets.total}`, `open · ${s.tickets.closed} closed · ${s.tickets.cancelled} cancelled`)}
+      ${s.dist ? tile('Build', fmtBytes(s.dist.raw), `dist/ raw · built ${age(s.dist.built)}`) : ''}
+      ${s.dist ? tile('On the wire', fmtBytes(s.dist.gz), `gzipped · ${distPct}% of raw`) : ''}
+      ${s.routeCache ? tile('Route cache', fmtBytes(s.routeCache.bytes), 'data/route-cache-default.json.gz') : ''}
+      ${cold ? tile('Cold → ready', `${cold.msToReady} ms`, `${cold.msToRingComplete} ms to full chunk ring · ${age(cold.date)}`) : ''}
+      ${fr ? tile('Frame time', `${fr.p50} ms`, `p50 · p95 ${fr.p95} · ${fr.fpsMean} fps mean · ${age(fr.date)}`) : ''}
+    </div>
+
+    ${cold ? `<p class="note">Load and frame numbers are read from the newest
+      <code>perf-runs/</code> artifact (${cold.run}, preset ${cold.preset}, seed ${cold.seed}) —
+      they are <b>not</b> measured live, since that means booting headless Chrome. Re-run the
+      PERF-08 harness to refresh them.</p>` : ''}
+
+    <h2 class="sec">Code by area</h2>
+    <table class="data">
+      <thead><tr><th>area</th><th style="text-align:right">files</th>
+        <th style="text-align:right">lines</th><th style="text-align:right">bytes</th><th></th></tr></thead>
+      <tbody>${codeRows}
+        <tr><td class="name"><b>total</b></td><td class="num">${s.codeTotal.files}</td>
+        <td class="num">${fmtNum(s.codeTotal.lines)}</td>
+        <td class="num">${fmtBytes(s.codeTotal.bytes)}</td><td></td></tr></tbody>
+    </table>
+
+    ${s.dist ? `<h2 class="sec">Shipped weight — dist/ by file type</h2>
+    <table class="data">
+      <thead><tr><th>ext</th><th style="text-align:right">files</th>
+        <th style="text-align:right">raw</th><th style="text-align:right">gzip</th></tr></thead>
+      <tbody>${distRows}
+        <tr><td class="name"><b>total</b></td><td class="num">${s.dist.files}</td>
+        <td class="num">${fmtBytes(s.dist.raw)}</td><td class="num">${fmtBytes(s.dist.gz)}</td></tr></tbody>
+    </table>
+    <p class="note"><code>.gz</code> files are counted as-is rather than double-compressed.</p>` : ''}
+
+    <h2 class="sec">Tickets by type</h2>
+    <table class="data">
+      <thead><tr><th>type</th><th style="text-align:right">open</th>
+        <th style="text-align:right">total</th></tr></thead>
+      <tbody>${typeRows}</tbody>
+    </table>
+
+    <h2 class="sec">Frontmatter drift — ${s.drift.length} non-canonical values</h2>
+    ${s.drift.length ? `<table class="data">
+      <thead><tr><th>ticket</th><th>field</th><th>written</th><th>read as</th></tr></thead>
+      <tbody>${driftRows}</tbody></table>
+      <p class="note">The dashboard normalises these for filtering; the files are untouched.</p>`
+    : '<p class="note">None — the tracker vocabulary is clean.</p>'}
+
+    <p class="note" style="margin-top:24px">Indexed ${new Date(s.generated).toLocaleString()}.</p>`;
+}
+
+/* ─────────────────────────── router ─────────────────────────── */
+function render() {
+  const path = location.hash.split('?')[0] || '#/tickets';
+  const app = document.getElementById('app');
+  const search = document.getElementById('search');
+
+  let page = 'tickets';
+  if (path.startsWith('#/t/')) { app.innerHTML = viewTicket(decodeURIComponent(path.slice(4))); page = 'tickets'; }
+  else if (path === '#/stats') { app.innerHTML = viewStats(); page = 'stats'; }
+  else app.innerHTML = viewTickets();
+
+  search.style.visibility = page === 'stats' ? 'hidden' : 'visible';
+  for (const a of document.querySelectorAll('nav a')) a.classList.toggle('on', a.dataset.nav === page);
+  if (!path.startsWith('#/t/')) window.scrollTo(0, 0);
+}
+
+document.getElementById('app').addEventListener('click', (e) => {
+  const c = e.target.closest('.chip');
+  if (c) toggle(c.dataset.kind, c.dataset.val);
+});
+document.getElementById('search').addEventListener('input', () => {
+  if (location.hash.startsWith('#/t/')) location.hash = '#/tickets';
+  else render();
+});
+document.getElementById('reindex').addEventListener('click', async (e) => {
+  e.target.textContent = 'Reindexing…';
+  try { await fetch('/reindex'); await load(); render(); } finally { e.target.textContent = 'Reindex'; }
+});
+addEventListener('hashchange', render);
+addEventListener('keydown', (e) => {
+  if (e.key === '/' && e.target.tagName !== 'INPUT') { e.preventDefault(); document.getElementById('search').focus(); }
+  if (e.key === 'Escape') { document.getElementById('search').value = ''; render(); }
+});
+
+await load();
+if (!location.hash) location.hash = '#/tickets';
+render();
+</script>
+</body>
+</html>
