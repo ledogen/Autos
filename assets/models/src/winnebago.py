@@ -683,12 +683,23 @@ def build_interior(p):
 
     # Captain chairs, maroon velour.  Backs deliberately break the 1.72 beltline
     # (the broken-car sightline rule: below the belt, a cabin reads as empty).
+    recl = math.tan(math.radians(10.0))          # backs recline 10 deg
     for sgn in (1, -1):
         cx = sgn * SEAT_X
         box(p, cx - 0.20, cx + 0.20, 3.10, 3.28, FLOOR_Z1, 1.08, "RVDark")   # pedestal
         box(p, cx - 0.24, cx + 0.24, 2.98, 3.44, 1.06, 1.26, "RVSeat")
-        box(p, cx - 0.24, cx + 0.24, 2.92, 3.02, 1.26, 1.96, "RVSeat")
-        box(p, cx - 0.15, cx + 0.15, 2.90, 3.00, 1.96, 2.14, "RVSeat")       # headrest
+        sh = 0.70 * recl                          # shear at the back's top
+        hexa(p, [(cx - 0.24, 2.92, 1.26), (cx + 0.24, 2.92, 1.26),
+                 (cx + 0.24, 3.02, 1.26), (cx - 0.24, 3.02, 1.26),
+                 (cx - 0.24, 2.92 - sh, 1.96), (cx + 0.24, 2.92 - sh, 1.96),
+                 (cx + 0.24, 3.02 - sh, 1.96), (cx - 0.24, 3.02 - sh, 1.96)],
+             "RVSeat")
+        hh = sh + 0.18 * recl                     # headrest continues the lean
+        hexa(p, [(cx - 0.15, 2.90 - sh, 1.96), (cx + 0.15, 2.90 - sh, 1.96),
+                 (cx + 0.15, 3.00 - sh, 1.96), (cx - 0.15, 3.00 - sh, 1.96),
+                 (cx - 0.15, 2.90 - hh, 2.14), (cx + 0.15, 2.90 - hh, 2.14),
+                 (cx + 0.15, 3.00 - hh, 2.14), (cx - 0.15, 3.00 - hh, 2.14)],
+             "RVSeat")
 
     # Closed curtain across the cab-to-camper opening: the warm tan panel the
     # windshield looks INTO.  Without it the cab backs onto a black void and the
@@ -895,10 +906,18 @@ def build_awning(p):
 
 
 def build_mirrors(p):
+    # The mount wall is a TWISTED quad (straight hull tapering into nose
+    # station A) and its triangulation lands on opposite diagonals per side,
+    # so its true surface can't be predicted to better than ~4 mm — chasing
+    # it left the arm either poking into the cab or floating.  Instead the
+    # arm anchors deep THROUGH the zero-thickness wall, and a near-black
+    # cover plate on the interior side masks the butt: dark-on-dark inside
+    # the near-black cab, and fully inboard of the wall so never seen outside.
     for sgn in (1, -1):
-        # Arm buried to x=1.16: past y=3.50 the wall tapers inboard.
         a0, a1 = sorted((sgn * 1.16, sgn * 1.44))
         box(p, a0, a1, 3.54, 3.58, 2.06, 2.10, "RVTrim")
+        c0, c1 = sorted((sgn * 1.155, sgn * 1.176))
+        box(p, c0, c1, 3.51, 3.61, 2.03, 2.13, "RVDark")
         h0, h1 = sorted((sgn * 1.34, sgn * 1.46))
         box(p, h0, h1, 3.52, 3.56, 1.90, 2.24, "RVTrim")
         quad(p, (h0 + 0.01, 3.5195, 1.91), (h1 - 0.01, 3.5195, 1.91),

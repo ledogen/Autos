@@ -27,7 +27,7 @@ A/C shroud + vent on the roof. The most legible "someone is camped here" object 
 
 | Field | Value |
 |---|---|
-| Tri budget | **≤2000** — built at **1786** (Winnebago 1758 + WinnebagoGlass 28) |
+| Tri budget | **≤2000** — built at **1810** (Winnebago 1782 + WinnebagoGlass 28) |
 | Texture | **none** — flat colours per ART-STYLE (supersedes the original 1024² albedo spec, same ruling as ASSET-23) |
 | Real size | 8.0 m long × 2.4 m body width × 3.14 m tall (window frames/awning/mirrors run the visual width to 2.56/2.92) |
 | Origin | base-seated: tyre contact at y=0, centred on the footprint |
