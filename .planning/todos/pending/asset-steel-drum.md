@@ -32,8 +32,8 @@ costs a material lookup, not a texture:
 | Variant | Tris | Notes |
 |---|---|---|
 | `drum-closed` | ≤350 — **built at 328 (2026-08-15)** | closed head, 2"+3/4" bungs — the default |
-| `drum-open` | ≤450 | lid removed, rolled rim, visible interior wall (**do not** model contents) |
-| `drum-crushed` | ≤400 | dented, staved-in top, canted; a distinct mesh, not a squashed transform |
+| `drum-open` | ≤450 — **built at 316** | lid removed, rolled rim, bare-steel interior wall + floor, no contents |
+| `drum-crushed` | ≤400 — **built at 348** | deterministic sin-crumple: 0.62×0.62×0.61 m, staved head, 7° cant reseated on contact points |
 
 | Field | Value |
 |---|---|
@@ -47,9 +47,9 @@ Chimes and rolling hoops are geometry on all three — they are the silhouette.
 
 ## Acceptance
 
-- [x] `assets/models/drum-closed.glb` exists, export-clean (328 tris, 2 materials, 0 images,
-  0.580×0.850 m, base z=0, 2026-08-15). `drum-open.glb` / `drum-crushed.glb` **not built yet**.
-- [x] Sources committed: `assets/models/src/steel-drum.blend` + `steel-drum.py` (closed only so far).
+- [x] All three exist and are export-clean (closed 328 / open 316 / crushed 348 tris; 2 shared
+  materials, 0 images, base z=0, ray-verified 2026-08-15).
+- [x] Sources committed: one `assets/models/src/steel-drum.blend` + `steel-drum.py` generating all three.
 - ~~Shared atlas check~~ — moot, no textures.
 - The closed variant reads correctly upright **and** on its side.
 - Tri counts within budget; material names stable.

@@ -1,22 +1,24 @@
 """
-ASSET-30 — 55-gallon steel drum, closed-head variant, parametric generator.
+ASSET-30 — 55-gallon steel drum, all three variants, parametric generator.
 
-Built for: Blender 5.x  |  Target: assets/models/drum-closed.glb
+Built for: Blender 5.x  |  Targets: assets/models/drum-closed.glb,
+drum-open.glb, drum-crushed.glb (three .glb, one ticket — the sanctioned
+lumber-yard-style kit exception).
 Style brief: .planning/research/ART-STYLE.md  ·  Mechanics: .planning/research/ASSETS.md
 
 NO TEXTURE (ART-STYLE supersedes the ticket's 1024 atlas — ASSET-23/09/29
-precedent).  The ticket's "rust in the atlas" variety plan becomes RUNTIME
-RECOLOUR instead, which is what was asked for: `DrumPaint` is the hook — one
-`material.color.set()` per placement (red-oxide default, olive, black, faded
-blue...).  `DrumSteel` (bungs) stays fixed.
+precedent).  Variety is RUNTIME RECOLOUR of `DrumPaint` (red-oxide default);
+`DrumSteel` (bungs, open interior) stays fixed.
 
-DELIBERATELY NOT the plastic barrel (ASSET-29, see its ticket note): straight
-walls with NO belly, thin rolled chimes instead of tall moulded ones, sharp
-pressed hoops at the third-lines, and a 2-inch + 3/4-inch bung pair instead of
-twin caps.  Siblings, not variants.
-
-Open and crushed variants (same ticket) are NOT built yet — this is the
-closed default only.
+Variants:
+  closed  — the default: recessed head, 2" + 3/4" bung pair.
+  open    — lid gone: rim rolls inward to a full interior wall and floor
+            (bare DrumSteel).  No contents, per the ticket.
+  crushed — the same lathe run through a DETERMINISTIC crumple (sin-based,
+            no randomness — Date/random are banned in this pipeline anyway):
+            axial crush to ~0.60 m, radial buckling that grows with height,
+            a staved-in head, and a 7-degree cant reseated onto its actual
+            contact points.  A distinct mesh, not a squashed transform.
 
 AXIS.  Lathe about +Z, base-seated at z=0.  Bung pair on the Blender X axis
 (reads from the glTF -Z front).
@@ -30,9 +32,8 @@ import math
 # PARAMETERS
 # ---------------------------------------------------------------------------
 
-NAME = "drum-closed"
-TRI_BUDGET = 350
-OUT_GLB = "/Users/ledogen/CodeShit/CarGame/assets/models/drum-closed.glb"
+TRI_BUDGETS = {"drum-closed": 350, "drum-open": 450, "drum-crushed": 400}
+OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
 OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/steel-drum.blend"
 
 SEG = 10
@@ -57,6 +58,24 @@ PROFILE = [
     (0.836, 0.258),                      # recessed head (bungs sit below rim)
 ]
 DECK_Z = 0.836
+
+# Open variant: exterior up to the rolled rim, then straight down inside.
+PROFILE_OPEN = PROFILE[:13] + [
+    (0.850, 0.270),                      # rim rolls over
+    (0.846, 0.254),                      # inner lip
+    (0.070, 0.254),                      # interior wall, floor caps it
+]
+OPEN_STEEL_FROM = 14                     # spans from here down are bare steel
+
+# Crushed variant: an extra mid-body ring so the crumple has geometry to
+# bend.  Spliced BETWEEN the hoops (index 7) — an earlier [:5] splice put
+# 0.430 before 0.283 and the folded-back band shipped as a ring of inverted
+# faces.  z must stay monotonic through the body.
+PROFILE_CRUSH = (PROFILE[:7] + [(0.430, 0.282)] + PROFILE[7:])
+assert all(a[0] < b[0] for a, b in zip(PROFILE_CRUSH[:-2], PROFILE_CRUSH[1:-1])), \
+    "PROFILE_CRUSH z not monotonic (rim tail excepted)"
+CRUSH_H = 0.64                           # axial squash factor (0.85 -> ~0.58)
+CRUSH_CANT = math.radians(7.0)
 
 # Real closure: one 2-inch bung + one 3/4-inch vent, both low steel pucks.
 BUNGS = [(0.160, 0.050), (-0.160, 0.030)]   # (x, radius)
@@ -87,28 +106,31 @@ class Part:
             self.m.append(mat)
 
 
-def lathe(p, profile, mat, seg, cap_first=True, cap_last=True):
+def lathe(p, profile, mat, seg, cap_first=True, cap_last=True,
+          span_mat=None, cap_last_mat=None):
+    """Surface of revolution about +Z.  span_mat(s) -> material overrides the
+    default for span s (the open drum's interior goes bare steel)."""
     ang = [2 * math.pi * i / seg for i in range(seg)]
     base = len(p.v)
     for (z, r) in profile:
         p.v.extend((math.cos(a) * r, math.sin(a) * r, z) for a in ang)
     for s in range(len(profile) - 1):
         a0, a1 = base + s * seg, base + (s + 1) * seg
+        m = (span_mat(s) if span_mat else None) or mat
         for k in range(seg):
             k2 = (k + 1) % seg
             p.f.append([a0 + k, a0 + k2, a1 + k2, a1 + k])
-            p.m.append(mat)
+            p.m.append(m)
     if cap_first:
         p.f.append([base + k for k in range(seg - 1, -1, -1)])
         p.m.append(mat)
     if cap_last:
         o = base + (len(profile) - 1) * seg
         p.f.append([o + k for k in range(seg)])
-        p.m.append(mat)
+        p.m.append(cap_last_mat or mat)
 
 
-def build_drum(p):
-    lathe(p, PROFILE, "DrumPaint", SEG)
+def add_bungs(p):
     for bx, br in BUNGS:
         ang = [2 * math.pi * i / BUNG_SEG for i in range(BUNG_SEG)]
         base = len(p.v)
@@ -124,6 +146,66 @@ def build_drum(p):
         p.f.append([base + k for k in range(BUNG_SEG - 1, -1, -1)])  # blind cap:
         p.m.append("DrumSteel")           # closed shell for signed-volume orient
 
+
+def build_closed():
+    p = Part("DrumClosed")
+    lathe(p, PROFILE, "DrumPaint", SEG)
+    add_bungs(p)
+    return p
+
+
+def build_open():
+    p = Part("DrumOpen")
+    lathe(p, PROFILE_OPEN, "DrumPaint", SEG,
+          span_mat=lambda s: "DrumSteel" if s >= OPEN_STEEL_FROM else None,
+          cap_last_mat="DrumSteel")
+    return p
+
+
+def build_crushed():
+    p = Part("DrumCrushed")
+    lathe(p, PROFILE_CRUSH, "DrumPaint", SEG)
+    add_bungs(p)
+
+    # Deterministic crumple.  Envelope keeps the base round enough to read as
+    # a drum; buckling grows with height; the head staves in toward centre.
+    zmax = 0.850
+    out = []
+    for (x, y, z) in p.v:
+        a = math.atan2(y, x)
+        t = min(z / zmax, 1.0)
+        env = 0.15 + 0.85 * t
+        if z > 0.80:
+            env *= 0.3       # the rim-roll rings sit 4 mm apart up here —
+                             # full-strength dents fold them through each other
+        # Low-frequency buckle only: a 7a term at SEG=10 swung adjacent ring
+        # verts far enough to fold quads through themselves (21 back-facing
+        # ray hits on the isolated mesh).
+        dr = env * (0.032 * math.sin(3.0 * a + 9.0 * t + 1.7)
+                    + 0.010 * math.sin(5.0 * a - 4.0 * t))
+        rr = math.hypot(x, y)
+        s = (rr + dr) / rr if rr > 1e-6 else 1.0
+        zc = z * (CRUSH_H + 0.03 * math.sin(2.0 * a + 1.0) * t)
+        # Head + rim tail + bungs stave in toward centre.  Selected by RADIUS
+        # (< 0.275), not by z alone: a plain z >= DECK_Z cut sank the chime's
+        # 0.842 ring but not its 0.828 ring, folding the chime flat upside
+        # down — a full band of inverted faces.
+        if z > 0.80 and rr < 0.275:
+            zc -= 0.085 * (1.0 - min(rr / 0.258, 1.0) * 0.55)
+        out.append((x * s, y * s, zc))
+    # Cant, then reseat onto the actual contact points, centred.
+    ca, sa = math.cos(CRUSH_CANT), math.sin(CRUSH_CANT)
+    out = [(x, y * ca - z * sa, y * sa + z * ca) for (x, y, z) in out]
+    zmin = min(v[2] for v in out)
+    xs = [v[0] for v in out]
+    ys = [v[1] for v in out]
+    cx, cy = (min(xs) + max(xs)) * 0.5, (min(ys) + max(ys)) * 0.5
+    p.v = [(x - cx, y - cy, z - zmin) for (x, y, z) in out]
+    return p
+
+
+VARIANTS = [("drum-closed", build_closed), ("drum-open", build_open),
+            ("drum-crushed", build_crushed)]
 
 # ---------------------------------------------------------------------------
 # Bake / verify / export
@@ -215,35 +297,42 @@ def evaluated_tris(ob):
     return n
 
 
-def build():
+def _fresh_scene():
     bpy.ops.wm.read_homefile(use_empty=True)
     for d in (bpy.data.objects, bpy.data.meshes, bpy.data.materials):
         for x in list(d):
             d.remove(x)
 
-    drum = Part("DrumClosed")
-    build_drum(drum)
-    ob = bake(drum)
 
+def _report(name, part, ob):
     t = evaluated_tris(ob)
-    ext = [(min(c[i] for c in drum.v), max(c[i] for c in drum.v)) for i in range(3)]
+    ext = [(min(c[i] for c in part.v), max(c[i] for c in part.v))
+           for i in range(3)]
+    print(f"  {name:14s} {t:4d} tris (budget {TRI_BUDGETS[name]}) "
+          f"W {ext[0][1]-ext[0][0]:.3f} x D {ext[1][1]-ext[1][0]:.3f} "
+          f"x H {ext[2][1]:.3f} m, base z {ext[2][0]:.3f}")
+    return t
+
+
+def build(offset=True):
+    """All three side by side (the .blend source view)."""
+    _fresh_scene()
     print("=" * 60)
-    print(f"  DrumClosed      {t:5d} tris   (budget {TRI_BUDGET})")
-    print(f"  materials       {len(bpy.data.materials)}   images {len(bpy.data.images)}")
-    print(f"  D x H = {ext[0][1]-ext[0][0]:.3f} x {ext[2][1]:.3f} m "
-          f"(ticket 0.58 x 0.85)")
-    print(f"  base z = {ext[2][0]:.3f} (must be 0.000)")
-    rmax = max(r for _, r in PROFILE)
-    print(f"  max r = {rmax:.3f} vs collision 0.29  "
-          f"{'OK' if rmax <= 0.2901 else 'OVER'}")
+    for i, (name, builder) in enumerate(VARIANTS):
+        part = builder()
+        if offset:
+            part.v = [(x + i * 0.8, y, z) for (x, y, z) in part.v]
+        ob = bake(part)
+        _report(name, part, ob)
+    print(f"  materials       {len(bpy.data.materials)}   "
+          f"images {len(bpy.data.images)}")
     print("=" * 60)
-    return ob
 
 
 def check_normals(ob, samples=200):
     import mathutils
     bad = tested = 0
-    c = mathutils.Vector((0.0, 0.0, 0.42))
+    c = mathutils.Vector((0.0, 0.0, 0.4))
     for i in range(samples):
         t = (i + 0.5) / samples
         phi = math.acos(1 - 2 * t)
@@ -272,33 +361,41 @@ def _ui_override():
 
 
 def export():
-    ob = build()
-    ov = _ui_override()
-    with bpy.context.temp_override(**ov):
-        ob.select_set(True)
-        bpy.context.view_layer.objects.active = ob
-        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-
-    bad = check_normals(ob)
-
-    with bpy.context.temp_override(**ov):
-        bpy.ops.export_scene.gltf(
-            filepath=OUT_GLB,
-            export_format="GLB",
-            export_draco_mesh_compression_enable=False,
-            export_yup=True,
-            export_apply=True,
-            export_materials="EXPORT",
-            export_texcoords=False,
-            export_normals=True,
-            export_cameras=False,
-            export_lights=False,
-            use_selection=False,
-        )
-    print(f"  wrote {OUT_GLB}")
+    """One .glb per variant (each built alone in a fresh scene), then the
+    combined side-by-side scene saved as the .blend source."""
+    total_bad = 0
+    for name, builder in VARIANTS:
+        _fresh_scene()
+        part = builder()
+        ob = bake(part)
+        ov = _ui_override()
+        with bpy.context.temp_override(**ov):
+            ob.select_set(True)
+            bpy.context.view_layer.objects.active = ob
+            bpy.ops.object.transform_apply(location=True, rotation=True,
+                                           scale=True)
+        print("=" * 60)
+        _report(name, part, ob)
+        total_bad += check_normals(ob)
+        with bpy.context.temp_override(**ov):
+            bpy.ops.export_scene.gltf(
+                filepath=f"{OUT_DIR}/{name}.glb",
+                export_format="GLB",
+                export_draco_mesh_compression_enable=False,
+                export_yup=True,
+                export_apply=True,
+                export_materials="EXPORT",
+                export_texcoords=False,
+                export_normals=True,
+                export_cameras=False,
+                export_lights=False,
+                use_selection=False,
+            )
+        print(f"  wrote {OUT_DIR}/{name}.glb")
+    build(offset=True)
     bpy.ops.wm.save_as_mainfile(filepath=OUT_BLEND)
     print(f"  wrote {OUT_BLEND}")
-    return bad
+    return total_bad
 
 
 if __name__ == "__main__":
