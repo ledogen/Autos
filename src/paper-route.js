@@ -20,7 +20,7 @@
 
 import { ECONOMY_PARAMS } from './economy.js'
 import { buildGraphAdj, START_ZONE_R } from './mission.js'
-import { computePar, PAR_REF } from './par.js'
+import { computePar } from './par.js'
 // The accuracy law is throw.js's, not restated here. It is one line of algebra and that is exactly
 // why it must have one home: a second copy is a second thing to keep in step with the gate.
 import { accuracyScore } from './throw.js'
@@ -54,16 +54,6 @@ export const PAPER_PARAMS = {
     expediteOn:  0.90,   // ratio at which the bonus starts paying (10% inside par)
     expediteFull:0.70,   // …and where it maxes out
     bonusMax:    0.40,
-
-    // Seconds the reference driver spends AT each porch — pull up, aim, throw, set off (owner,
-    // 2026-08-14). par.js caps the speed envelope at every customer, which buys the braking and the
-    // re-acceleration; this buys the last crawl to rest and the time standing there.
-    //
-    // It exists because par was measured pricing a fifteen-stop round as an uninterrupted blast:
-    // 73 km/h average, and 2 of ~1150 profile samples below 3 m/s — the first and the last. The
-    // oracle was right about the ROAD and wrong about the JOB, which is why point-to-point missions
-    // felt correct while this one was unbeatable.
-    stopDwell:   4.0,
 
     // Per-axis rank thresholds on coverage × accuracy — NOT the par ratio. One delivery out of nine
     // scores 0.11 and letters D, which is the owner's stated case, and it still pays for that one.
@@ -617,10 +607,12 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
     if (!segments.length) return null
 
     // ONE par over the whole route (SM-INV-2).
-    // ONE par over the whole route (SM-INV-2) — and the reference driver PULLS UP at every porch.
-    // Without the dwell the oracle priced a fifteen-stop round as an uninterrupted 73 km/h blast
-    // and the expediency bonus was unreachable by construction (owner-reported 2026-08-14).
-    const { time, distance } = computePar(segments, { ...PAR_REF, stopDwell: PAPER_PARAMS.stopDwell })
+    // ONE par over the whole route (SM-INV-2) — and the reference driver COMES TO REST at every
+    // porch, because the segments carry `stop`. Without that the oracle priced a fifteen-stop round
+    // as an uninterrupted 73 km/h blast and the expediency bonus was unreachable by construction
+    // (owner-reported 2026-08-14). No extra reference is needed: the stop is a property of the
+    // route, so PAR_REF stays the one shared reference driver.
+    const { time, distance } = computePar(segments)
     if (!(time > 0)) return null
 
     const polyCum = [0]

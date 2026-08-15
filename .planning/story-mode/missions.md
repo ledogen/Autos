@@ -240,12 +240,20 @@ on the scaled sum the same equivalence needs a 233% bonus, which is not a tunabl
 this mission type too: driving the route the way par assumes is a B, and dawdling is a C. An earlier
 reading — that par should be a C here — was withdrawn.
 
-**Par prices the STOPS** [FIXED 2026-08-14, FEAT-61]. `par.js` caps the speed envelope at every
-customer and adds `stopDwell` seconds there, because the reference driver pulls up, throws and sets
-off again. Before this it priced a fifteen-porch round as one uninterrupted blast — measured at 73
-km/h average with 2 of ~1150 profile samples below 3 m/s, and those two were the first and the last
-— which is why point-to-point missions felt right while this one was unbeatable and the expediency
-bonus was unreachable by construction. A porch the route passes twice is charged once.
+**Par prices the STOPS, and nothing else** [FIXED 2026-08-14, FEAT-61]. `par.js` pins the reference
+driver's speed to **zero** at every customer — a true halt, the one place the `vMin` floor does not
+apply — and **charges no dwell**. Owner ruling: a paper goes out of the window on the move, and no
+player is going to sit at a porch for four seconds, so what a delivery actually costs is coming to
+rest and pulling away again. That cost is then derived from the truck's own brake and accel figures
+by the same forward/backward passes that price every corner, rather than from a constant somebody
+picked. Measured: **~3.0–4.6 s per stop**, rising with how fast the road either side of the porch
+would otherwise have been, which is the right shape — a delivery on a fast straight costs more than
+one in a hairpin.
+
+Before this the oracle priced a fifteen-porch round as one uninterrupted blast — 73 km/h average,
+with 2 of ~1150 profile samples below 3 m/s, and those two were the first and the last — which is
+why point-to-point missions felt right while this one was unbeatable and the expediency bonus was
+unreachable by construction. A porch the route passes twice is charged once.
 
 A dead-centre throw is worth a whole paper, the worst throw that still counts is worth 0.30 of one,
 and **partial routes pay for what they delivered** — one of nine is a D that still puts money in the

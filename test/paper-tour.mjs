@@ -25,7 +25,7 @@ import { WaterSystem } from '../src/water.js'
 import { PoiSystem, POI_PARAMS } from '../src/poi.js'
 import { planTour, PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun,
          deadlineFor, stockForTier, customersForTier, radiusForTier } from '../src/paper-route.js'
-import { computePar, PAR_REF } from '../src/par.js'
+import { computePar } from '../src/par.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
 let fails = 0
@@ -151,24 +151,28 @@ for (let i = 1; i < tours.length; i++) {
 // of ~1150 profile samples below 3 m/s — the first and the last. Point-to-point missions felt right
 // while this one was unbeatable, because par was correct about the ROAD and wrong about the JOB.
 //
-// Two independent things are pinned, because they fail differently: the CAPS (the envelope is
-// pinned to the floor at every porch, which buys the braking and the re-acceleration and scales
-// with the road) and the DWELL (a flat charge for standing there). A regression that dropped the
-// `stop` flag would kill both; one that dropped only stopDwell would leave the caps looking fine.
+// There is NO DWELL — the whole cost is the stop itself (owner, 2026-08-14: a paper goes out of the
+// window on the move, so what a delivery really costs is coming to rest and pulling away again, not
+// time spent parked). So the properties to pin are that the reference actually reaches ZERO at each
+// porch, and that the time this buys is derived from the truck's own brake and accel.
 for (const t of tours.filter(Boolean)) {
     const n = t.customers.length
-    const dry = computePar(t.segments, { ...PAR_REF, stopDwell: 0 })
-    check(`tier: par charges exactly one stop per customer, never two for a porch passed twice`,
-        dry.stops === n, `${dry.stops} stops priced for ${n} customers`)
-    check('…and the dwell is on top of the caps, not instead of them',
-        Math.abs((t.par - dry.time) - n * PAPER_PARAMS.stopDwell) < 0.01,
-        `par ${t.par.toFixed(1)} − capped ${dry.time.toFixed(1)} = ${(t.par - dry.time).toFixed(1)},`
-        + ` expected ${(n * PAPER_PARAMS.stopDwell).toFixed(1)}`)
-    // The caps have to BITE. Without them the dwell alone would still lift par, so an equality on
-    // the dwell above can pass while the envelope sails through every porch at speed.
-    const slow = [...dry.speeds].filter(v => v < 3).length
-    check('…and the speed envelope actually drops at the porches',
-        slow >= n, `${slow} samples below 3 m/s for ${n} stops + the two route ends`)
+    const pr = computePar(t.segments)
+    check('tier: par charges exactly one stop per customer, never two for a porch passed twice',
+        pr.stops === n, `${pr.stops} stops priced for ${n} customers`)
+    // A TRUE zero, not vMin. The stop cap is the one place the vMin floor must not apply — floored
+    // at 2.5 m/s a delivery prices as a slow roll past the porch, which is most of the bug.
+    const zeros = [...pr.speeds].filter(v => v === 0).length
+    check('…and the reference comes to REST there, not to a 2.5 m/s crawl',
+        zeros >= n, `${zeros} samples at a standstill for ${n} stops + the route end`)
+    // …and stopping has to COST. Same route with the flags off: if `stop` stopped being set, or the
+    // cap stopped biting, par would collapse back to the drive-past-everyone number.
+    const dry = computePar(t.segments.map(s => ({ ...s, stop: false })))
+    check('…and stopping costs real time, derived from brake and accel',
+        t.par > dry.time * 1.03,
+        `${t.par.toFixed(0)} s with stops vs ${dry.time.toFixed(0)} s without`)
+    console.log(`       tier: ${n} stops cost ${(t.par - dry.time).toFixed(0)} s`
+        + ` (+${((t.par / dry.time - 1) * 100).toFixed(0)}%), ${((t.par - dry.time) / n).toFixed(1)} s each`)
 }
 {
     const t = tours.at(-1)

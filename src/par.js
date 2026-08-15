@@ -87,11 +87,6 @@ export const PAR_REF = {
     junctionRadius: 18, // effective corner radius when turning through a node (m)
     junctionDeadband: 0.14, // heading change below this (rad, ~8°) is not a corner at all
     g: 9.81,
-    // FEAT-61: seconds spent at a segment end marked `stop: true` — a WAYPOINT the driver has to
-    // pull up at and do something at, rather than a corner they carry speed through. Zero by
-    // default, so a point-to-point job (which has no such waypoints) prices exactly as before; the
-    // paper route overrides it. See computePar's STOPS note for what the number has to cover.
-    stopDwell: 0,
 }
 
 const DS = 2.0        // profile sample spacing along the route (m) — 2 m is well below the
@@ -158,16 +153,17 @@ export function sampleRoute(segments) {
             if (i === 0 && d.length > 0) continue
             d.push(dist); kappa.push(k); sinT.push(Math.sin(theta)); cosT.push(Math.cos(theta))
         }
-        // FEAT-61: a WAYPOINT, not a corner. The paper route's stops are places the driver pulls up
-        // at, throws, and sets off again — so the envelope has to be pinned to the floor here or the
-        // oracle prices a fifteen-stop round as an uninterrupted blast (measured: 73 km/h average,
-        // and 2 of ~1150 samples below 3 m/s, which were the first and the last).
+        // FEAT-61: a WAYPOINT, not a corner. The paper route's stops are places the driver comes to
+        // rest and sets off again — so the envelope is pinned to ZERO here (see the cap loop in
+        // computePar for why this one ignores vMin) or the oracle prices a fifteen-stop round as an
+        // uninterrupted blast: measured at 73 km/h average, with 2 of ~1150 samples below 3 m/s,
+        // and those two were the first and the last.
         //
-        // v: 0 lands on vMin (2.5 m/s) because the cap is floored — the integrator divides by speed
-        // and a true zero is not representable here. That is deliberate and it is why stopDwell
-        // exists: the CAP buys the braking and the re-acceleration, which scale with the road, and
-        // the DWELL buys the last crawl to rest plus the time standing there doing the thing.
-        if (segments[seg].stop) { caps.push({ i: d.length - 1, v: 0 }); stops++ }
+        // No dwell rides along with it. The whole cost is the braking and the re-acceleration,
+        // which the forward/backward passes derive from the truck's own accel and brake figures —
+        // owner, 2026-08-14: a paper goes out of the window on the move, so what a delivery really
+        // costs is the stop itself, not time spent parked.
+        if (segments[seg].stop) { caps.push({ i: d.length - 1, v: 0, stop: true }); stops++ }
 
         prevTangent = (() => { const t = centerline.tangentAt(s1); return { x: t.x * dir, z: t.z * dir } })()
     }
@@ -211,9 +207,25 @@ export function computePar(segments, ref = PAR_REF) {
         v[i] = Math.max(ref.vMin, Math.min(vCeil, vCorner))
     }
     // Junction caps sit on top of the envelope.
+    //
+    // A STOP is not a cap, it is a zero, and it is the one place the vMin floor must not apply
+    // (FEAT-61). vMin exists so a hairpin cannot price as infinite time; a delivery is a genuine
+    // halt, and floored at 2.5 m/s it would price as a slow roll past the porch. Pinned to zero,
+    // the forward and backward passes below do the rest on their own — the reference brakes to
+    // rest at the porch and pulls away from rest afterwards, so the cost is whatever the road and
+    // the truck's real accel/brake say it is rather than a number somebody picked.
+    // ORDER MATTERS, and it is not obvious: a porch sits at a segment JOIN, so the junction cap for
+    // the next segment lands on the same sample index as the stop. Applied in array order the
+    // junction cap comes second and floors the zero back up to vMin — a delivery at a bend priced
+    // as a slow roll past the house, silently, on some stops and not others. So junctions first,
+    // then stops, and a stop always wins the index it shares.
     for (const c of caps) {
+        if (c.stop) continue
         const i = Math.min(n - 1, c.i)
         v[i] = Math.max(ref.vMin, Math.min(v[i], c.v))
+    }
+    for (const c of caps) {
+        if (c.stop) v[Math.min(n - 1, c.i)] = 0
     }
 
     // 2. Forward (accel-limited), from rest. `a` may be NEGATIVE — above terminal speed, or on a
@@ -250,11 +262,6 @@ export function computePar(segments, ref = PAR_REF) {
         const vbar = Math.max(ref.vMin * 0.5, 0.5 * (v[i] + v[i - 1]))
         time += ds / vbar
     }
-    // STOPS (FEAT-61). Still ONE par and one oracle (SM-INV-2) — a route with waypoints in it is
-    // priced by the same call, in one pass, and the dwell is a property of the reference driver
-    // rather than a second opinion about the route. Zero for every mission type that has no
-    // waypoints, which is all of them but the paper round.
-    time += (stops || 0) * (ref.stopDwell ?? 0)
     return { time, distance: d[n - 1], speeds: v, dist: Float64Array.from(d), stops: stops || 0 }
 }
 
