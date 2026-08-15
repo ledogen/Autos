@@ -134,29 +134,50 @@ const BODY_FRICTION_MU  = 0.1            // the tuned pair friction (BUG-27b)
 const TERRAIN_FRICTION_REF = 0.8         // must match terrain-physics.js TERRAIN_FRICTION
 const CHASSIS_SHAPE_MU  = BODY_FRICTION_MU * BODY_FRICTION_MU / TERRAIN_FRICTION_REF   // ≈ 0.0125
 
+// ── QUAL-25: chassis collider profile — measured off the ACTUAL vehicle model ──────────────
+// Body-frame breakpoints (origin = CG, forward = −Z) of hilux.glb pushed through the exact
+// seating transform vehicle-model.js applies (targetLength 4.6 × bodyScale 1.065, shiftRear
+// 0.318, shiftDown 0.21, planted at cgHeight; mirrors excluded from widths). Re-measure via
+// Blender if the model or its VEHICLE_MODELS spec changes — and when a SECOND vehicle model
+// lands, this profile should move into data/vehicle-models.js as per-model hull data (the
+// QUAL-25 option-2 path) instead of growing switches here.
+//
+// This vehicle has NO OPEN BED — the model's bed top is closed (reads as a tonneau cover), so
+// the deck hull is a SOLID at rail height by owner ruling (2026-08-15). A future model with a
+// real open bed gets a hollow bin (three wall hulls + floor) so cargo can ride in it.
+const CHASSIS_PROFILE = {
+  noseZ: -2.13,        // front bumper face
+  tailZ: 2.77,         // rear bumper face
+  cowlZ: -0.72,        // windshield base
+  roofFrontZ: -0.30,   // windshield top / roof leading edge
+  roofRearZ: 0.60,     // roof trailing edge (rear window top)
+  cabRearZ: 0.73,      // cab back panel → bed rail
+  hoodNoseY: 0.30,     // hood height at the grille
+  hoodCowlY: 0.54,     // hood height at the cowl
+  roofY: 1.04,         // roof plane (the old single hull had 0.40 — rollovers rested on air)
+  railY: 0.29,         // bed rail / tonneau deck top
+  beltY: 0.18,         // beltline — top of the full-length lower slab (fenders/doors/bumpers)
+  slabHalfW: 0.95,     // fenders/bumpers
+  cabHalfW: 0.78,      // cab + roof (mirrors excluded)
+  deckHalfW: 0.93,     // bed sides
+}
+
 /**
- * Create the vehicle chassis body in the engine world (FEAT-48 Phase 2).
+ * Create the vehicle chassis body in the engine world (FEAT-48 Phase 2, QUAL-25 compound).
  *
- * One convex hull spanning the exact extents the old body-contact probes covered
- * (bumpers, undercarriage, roof corners — see suspension.js getBodyContactPoints
- * geometry): x ±(trackFront/2 + 0.1), y from undercarriage to roof, z from front
- * bumper to rear bumper. Body origin = CG (vehicleState.position), so mass data
- * centers at the local origin.
+ * Four convex hulls tracing the visible body volume (engine hulls are convex-only, so the
+ * silhouette is decomposed): full-length lower SLAB (frame, bumpers, fenders — undercarriage
+ * plane unchanged from the probe era), HOOD wedge rising to the cowl, CAB with the raked
+ * windshield up to the real roof, and the tonneau-height bed DECK. Body origin = CG
+ * (vehicleState.position), so mass data centers at the local origin. Overlapping hulls are
+ * fine — they are one rigid body; overlap just guarantees no seam gaps.
  *
- * Mass + rotational inertia are OVERRIDDEN with the tuned params values — the
- * driving feel is calibration, not collider geometry. The engine still rotates
- * the tensor into world frame every step (I_world = R·I_body·Rᵀ + gyroscopic
- * terms), which the old world-frame-diagonal integrator could not.
+ * Mass + rotational inertia are OVERRIDDEN with the tuned params values — the driving feel is
+ * calibration, not collider geometry (a compound's shape-derived tensor never applies).
  */
 export function createVehicleChassis (engine, vehicleState, params) {
-  const fz    = -(params.wheelbase * params.weightRear)    // front axle Z (body space)
-  const rz    =  (params.wheelbase * params.weightFront)   // rear axle Z
-  const undY  = params.wheelRadius - params.cgHeight       // undercarriage bottom
-  const topY  = 0.4                                        // roof (matches old roof probes)
-  const halfW = params.trackFront / 2 + 0.1
-  const zF = fz - 0.85, zR = rz + 0.65                     // bumper extents
-  const corners = []
-  for (const x of [-halfW, halfW]) for (const y of [undY, topY]) for (const z of [zF, zR]) corners.push(x, y, z)
+  const P = CHASSIS_PROFILE
+  const undY = params.wheelRadius - params.cgHeight        // undercarriage bottom (unchanged)
 
   const chassis = engine.createBody({
     type: 'dynamic',
@@ -166,12 +187,36 @@ export function createVehicleChassis (engine, vehicleState, params) {
     bullet: true,                  // continuous collision: no tunnelling through thin debris at speed
     userData: { kind: 'vehicle' },
   })
-  engine.addHull(chassis, corners, {
+  const mat = {
     friction: CHASSIS_SHAPE_MU,
     restitution: params.bodyRestitution ?? BODY_RESTITUTION_DEFAULT,
     density: 1,                    // placeholder — overridden by setMassData below
     group: GROUP_CHASSIS,
-  })
+  }
+  // A z–y profile polygon extruded to ±halfW → flat hull point list.
+  const extrude = (profile, halfW) => {
+    const pts = []
+    for (const x of [-halfW, halfW]) for (const [z, y] of profile) pts.push(x, y, z)
+    return pts
+  }
+  // 1. Lower slab: nose to tail, undercarriage to beltline.
+  engine.addHull(chassis, extrude([
+    [P.noseZ, undY], [P.noseZ, P.beltY], [P.tailZ, P.beltY], [P.tailZ, undY],
+  ], P.slabHalfW), mat)
+  // 2. Hood wedge: grille up to the cowl.
+  engine.addHull(chassis, extrude([
+    [P.noseZ, 0.02], [P.noseZ, P.hoodNoseY], [P.cowlZ, P.hoodCowlY], [P.cowlZ, 0.02],
+  ], P.slabHalfW * 0.95), mat)
+  // 3. Cab: cowl → raked windshield → roof → back panel down to the rail.
+  engine.addHull(chassis, extrude([
+    [P.cowlZ, 0.14], [P.cowlZ, P.hoodCowlY], [P.roofFrontZ, P.roofY],
+    [P.roofRearZ, P.roofY], [P.cabRearZ, P.railY], [P.cabRearZ, 0.14],
+  ], P.cabHalfW), mat)
+  // 4. Bed deck: cab back to the tail at rail height — SOLID (tonneau, see header note).
+  engine.addHull(chassis, extrude([
+    [P.cabRearZ, 0.14], [P.cabRearZ, P.railY], [P.tailZ, P.railY], [P.tailZ, 0.14],
+  ], P.deckHalfW), mat)
+
   engine.setMassData(chassis, params.mass,
     { x: params.inertiaRoll, y: params.inertiaYaw, z: params.inertiaPitch })
   return chassis

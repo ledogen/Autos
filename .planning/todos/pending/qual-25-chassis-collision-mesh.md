@@ -11,6 +11,26 @@ relates_to: FEAT-48 (engine adapter — chassis hull lives in physics.js createV
 
 # QUAL-25: Chassis collider — replace the coarse hull with a mesh that approximates the body
 
+## ⚑ STATUS 2026-08-15 — compound LANDED for the hilux model; ticket stays open for the open bed
+
+`createVehicleChassis` (physics.js) is now a 4-hull compound measured off hilux.glb through its
+exact VEHICLE_MODELS seating transform (CHASSIS_PROFILE constants, provenance in the comment):
+lower slab (bumpers/fenders, undercarriage plane unchanged) + hood wedge + cab with raked
+windshield to the REAL roof (y +1.04 — the old plane was 0.40) + bed deck at rail height. Probe-
+verified in-game via body-frame raycasts: bed 0.29, roof 1.04, windshield 0.80, hood 0.42, nose
+0.32, beltline outside cab width. A barrel dropped on the cab slides off the windshield.
+
+**OWNER RULING (2026-08-15): THIS model has no open bed** — the bed top is closed geometry (reads
+as a tonneau cover), so the deck is a SOLID at rail height. The eventual open-bed wish stands:
+
+## Remaining (why this stays open)
+
+- **Open bed as a hollow bin** (floor + three wall hulls + tailgate) so cargo can ride in the bed
+  — blocked on a vehicle model that actually models an open bed; also what ASSET-27..30 visible
+  cargo wants.
+- **Per-model hull data** in data/vehicle-models.js once a second vehicle model exists
+  (CHASSIS_PROFILE is single-model by construction).
+
 ## Watch item (owner)
 
 The FEAT-48 chassis collider is ONE convex hull spanning the old body-probe extents — a box, in
