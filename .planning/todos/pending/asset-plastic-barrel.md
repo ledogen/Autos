@@ -27,7 +27,7 @@ a truck bed.
 
 | Field | Value |
 |---|---|
-| Tri budget | **≤350** — built at **336** |
+| Tri budget | **≤350** — built at **348** |
 | Texture | **none** — flat colours per ART-STYLE (supersedes the 512² spec, same ruling as ASSET-23/09); seams/hoops are geometry, fade and algae dropped |
 | Real size | 0.58 m diameter × 0.89 m tall (a real 208 L drum) |
 | Origin | base-seated: base at y=0, centred |
@@ -38,7 +38,7 @@ Rolling hoops are geometry — they are the silhouette. Do not smooth the barrel
 
 ## Acceptance
 
-- [x] `assets/models/barrel-plastic.glb` exists, export-clean (336 tris, 2 materials —
+- [x] `assets/models/barrel-plastic.glb` exists, export-clean (348 tris, 2 materials —
   `BarrelBlue` recolour hook + `BarrelBung` — 0 images, base z=0, 0.585×0.892 m, 2026-08-15).
 - [x] Sources committed: `assets/models/src/barrel-plastic.blend` + `barrel-plastic.py`.
 - Reads correctly **upright and on its side** — it will be placed both ways, and a barrel on its side

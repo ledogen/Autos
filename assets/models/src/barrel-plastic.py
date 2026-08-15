@@ -42,26 +42,31 @@ SEG = 10                                 # lathe segments — faceted on purpose
 # The body BELLIES: 0.276 at the chime necks swelling to 0.2866 between the
 # hoops (no extra ring — the swell rides the existing levels).  Hoops stand
 # only ~4 mm proud of the local body (they were 12 and read as armour ribs).
+# Hoops are TIGHT ridges (11 mm ramp each side of the peak, ~2 cm total) and
+# the chime flanges are 30 mm tall — the first pass had 70 mm hoop ramps and
+# 50 mm chimes and the whole drum read bubbly.
 PROFILE = [
     (0.000, 0.268),                      # base edge (cap closes it)
-    (0.025, 0.290),                      # bottom chime
-    (0.075, 0.290),
-    (0.115, 0.2760),                     # neck below the belly
-    (0.330, 0.2850),
-    (0.365, 0.2895),                     # rolling hoop 1
-    (0.400, 0.2866),                     # belly, at its fullest between hoops
-    (0.480, 0.2866),
-    (0.515, 0.2895),                     # rolling hoop 2
-    (0.550, 0.2850),
-    (0.780, 0.2760),                     # neck above the belly
-    (0.820, 0.290),                      # top chime
+    (0.018, 0.290),                      # bottom chime
+    (0.048, 0.290),
+    (0.085, 0.2760),                     # neck below the belly
+    (0.354, 0.2848),
+    (0.365, 0.2895),                     # rolling hoop 1 — sharp
+    (0.376, 0.2852),
+    (0.480, 0.2866),                     # belly, fullest between the hoops
+    (0.504, 0.2862),
+    (0.515, 0.2895),                     # rolling hoop 2 — sharp
+    (0.526, 0.2848),
+    (0.795, 0.2760),                     # neck above the belly
+    (0.838, 0.290),                      # top chime
     (0.868, 0.290),
     (0.890, 0.262),                      # rim rolls in
     (0.872, 0.250),                      # recessed deck edge (bungs sit low,
 ]                                        # like the photo — not proud of the rim)
 DECK_Z = 0.872
 
-BUNG_R, BUNG_H, BUNG_SEG = 0.055, 0.020, 6
+BUNG_R, BUNG_H, BUNG_SEG = 0.055, 0.020, 5   # pentagon: the sharp hoops cost
+                                             # a ring, this pays for it
 BUNG_X = 0.165                           # pair on the X axis (glTF -Z front)
 
 MATS = {
