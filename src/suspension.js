@@ -354,12 +354,6 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         const tireFnAtContact = Math.max(0,
           params.tireStiffness * c.depth + params.tireDamping * compressionVel
         ) * env
-        // FEAT-48 within-step two-way coupling: report this substep's contact force back to the
-        // provider (physics.js attaches onForce to debris hits). The rock's proxy accelerates
-        // NOW, subsequent substep queries see it yielding, and force-on-tire / force-on-rock
-        // become simultaneous at substep cadence instead of lagging a frame. Injected callback —
-        // the pure-math contract of this module is preserved.
-        if (c.onForce) c.onForce(tireFnAtContact, sdt)
         // D-06: split contact normal force into strut-axis and X/Z residual components
         // bodyUpDot = dot(c.normal, body_up): the fraction of contact normal force along the strut axis
         const bodyUpDot = c.normal.x * body_up.x + c.normal.y * body_up.y + c.normal.z * body_up.z
