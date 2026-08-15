@@ -275,16 +275,20 @@ const HK_CHUNK = 1024
  * re-plan is cancelled when the route ends — but "cannot happen today" is how this class of bug
  * ships, so the second caller gets its own tables instead of scribbling on the first one's.
  */
-// FEAT-63 re-plan tuning. All run-layer, none of it touches worldgen or par.
-const RR_POLL_S     = 0.25   // s between trigger polls — the checks are cheap but not free
-const RR_OFF_M      = 45     // m off the line before it counts as off the line. Comfortably past
-                             // the polyline's own ~25 m vertex spacing (see _latToLine) and past
-                             // any lay-by, so a wide corner cannot trip it.
-const RR_OFF_S      = 2.0    // …and for this long. A wrong turn, not a wobble.
-const RR_MIN_SHOW_S = 0.4    // minimum RECALCULATING time. The job takes ~120 ms, so without this
-                             // the indicator would flash rather than inform.
-const RR_STALE_M    = 50     // m of drift that invalidates a finished job. Should never fire.
-const RR_SNAP_M     = 200    // queryNearest search radius for the truck's own road point
+// FEAT-63 re-plan tuning. All run-layer, none of it touches worldgen or par. An object rather
+// than consts so the debug panel can put a dial on them (FEAT-61 Phase F) — offM and staleM in
+// particular were reasoned about, never felt.
+export const RR_PARAMS = {
+    pollS:    0.25,   // s between trigger polls — the checks are cheap but not free
+    offM:     45,     // m off the line before it counts as off the line. Comfortably past
+                      // the polyline's own ~25 m vertex spacing (see _latToLine) and past
+                      // any lay-by, so a wide corner cannot trip it.
+    offS:     2.0,    // …and for this long. A wrong turn, not a wobble.
+    minShowS: 0.4,    // minimum RECALCULATING time. The job takes ~120 ms, so without this
+                      // the indicator would flash rather than inform.
+    staleM:   50,     // m of drift that invalidates a finished job. Should never fire.
+    snapM:    200,    // queryNearest search radius for the truck's own road point
+}
 
 const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
 
@@ -1008,7 +1012,7 @@ export class PaperRouteSystem {
         // stale at its first turn and completely fine after that; a re-plan that will not converge
         // is worse than either.
         const car = this._getCar()
-        const drifted = car && Math.hypot(car.x - job.cx, car.z - job.cz) > RR_STALE_M
+        const drifted = car && Math.hypot(car.x - job.cx, car.z - job.cz) > RR_PARAMS.staleM
         if (drifted && !job.retry) {
             console.warn('[paper] re-plan went stale in flight — planning again from here')
             this._startReplan(job.reason, job.quiet, true)
@@ -1029,7 +1033,7 @@ export class PaperRouteSystem {
     _replanTick (dt) {
         if (!this.route || this._rr) return
         this._checkT += dt
-        if (this._checkT < RR_POLL_S) return
+        if (this._checkT < RR_PARAMS.pollS) return
         this._checkT = 0
 
         // TRIGGER A — a customer was served out of order, so the rest of the line is a lie.
@@ -1039,9 +1043,9 @@ export class PaperRouteSystem {
         // TRIGGER B — genuinely off the line, for long enough that it is a wrong turn and not a
         // wide corner or a lay-by.
         const lat = this._latToLine()
-        if (lat > RR_OFF_M) {
-            this._offRouteT += RR_POLL_S
-            if (this._offRouteT >= RR_OFF_S) { this._offRouteT = 0; this._startReplan('off route') }
+        if (lat > RR_PARAMS.offM) {
+            this._offRouteT += RR_PARAMS.pollS
+            if (this._offRouteT >= RR_PARAMS.offS) { this._offRouteT = 0; this._startReplan('off route') }
         } else {
             this._offRouteT = 0
         }
@@ -1087,7 +1091,7 @@ export class PaperRouteSystem {
     _originPoint () {
         const road = this._getRoad(), car = this._getCar()
         if (!road?.queryNearest || !car) return null
-        const q = road.queryNearest(car.x, car.z, RR_SNAP_M)
+        const q = road.queryNearest(car.x, car.z, RR_PARAMS.snapM)
         if (!q?.runKey) return null
         const g = road.networkGraph?.()
         if (!g?.edges) return null
@@ -1128,7 +1132,7 @@ export class PaperRouteSystem {
             // origin is the road point it planned from, and the two are not the same place.
             cx: car?.x ?? origin.x, cz: car?.z ?? origin.z, reason, quiet, retry,
         }
-        if (!quiet) this._rrHideAt = this._clock + RR_MIN_SHOW_S
+        if (!quiet) this._rrHideAt = this._clock + RR_PARAMS.minShowS
         this._onChange()
     }
 

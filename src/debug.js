@@ -28,6 +28,8 @@
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
 import { VEHICLES } from '../data/vehicles.js'
 import { resolveBuild } from './version.js'
+import { THROW_PARAMS } from './throw.js'                      // FEAT-61 Phase F: throw feel
+import { PAPER_PARAMS, RR_PARAMS } from './paper-route.js'     // FEAT-61 Phase F: payout + re-plan
 
 // Module-level bindings so updatePacejkaCurve and updateTravelBars (defined at module scope)
 // can read them. Assigned inside initDebug(); null until then.
@@ -731,6 +733,36 @@ export function initDebug (params, callbacks = {}, options = {}) {
     dustAmount:       'Density multiplier for wheel dust. 0 = off, 1 = default.',
   }
   for (const ctrl of fxFolder.controllers) addInfo(ctrl, FX_INFO[ctrl.property])
+
+  // ── Paper Route (FEAT-61 Phase F) ─────────────────────────────────────────────────
+  // The feel-tuned constants of the round, dialled. All live-read at their use sites — a throw
+  // integrates THROW_PARAMS when F lands, scoreRoute reads PAPER_PARAMS at settlement, the
+  // re-plan poll reads RR_PARAMS four times a second — so no onChange plumbing. Deliberately
+  // absent: bonusMax (derived from the owner's rim-scraper/methodical equivalence — see
+  // paper-route.js; a slider on it would be a slider on a theorem), the tier tables (arrays, and
+  // owner-ratified ladder shape), and poiHouse* (placement is baked at story-mode entry, so a
+  // live dial would silently do nothing until the next run).
+  const paperFolder = gui.addFolder('Paper Route (FEAT-61)')
+  paperFolder.add(THROW_PARAMS, 'throwSpeed', 8, 30, 0.5).name('Throw Speed (m/s)')
+  paperFolder.add(THROW_PARAMS, 'dragK', 0, 0.1, 0.001).name('Throw Drag K (1/m)')
+  paperFolder.add(PAPER_PARAMS, 'tolerance', 1.0, 1.5, 0.01).name('Bell (× par)')
+  paperFolder.add(PAPER_PARAMS, 'paperW', 0.2, 1.0, 0.05).name('Flat Rate Weight')
+  paperFolder.add(PAPER_PARAMS, 'expediteFull', 0.5, 1.0, 0.01).name('Expedite Full (× par)')
+  paperFolder.add(RR_PARAMS, 'offM', 20, 120, 1).name('Re-plan Off-line (m)')
+  paperFolder.add(RR_PARAMS, 'offS', 0.5, 5, 0.1).name('Re-plan Off-line (s)')
+  paperFolder.add(RR_PARAMS, 'staleM', 20, 150, 5).name('Re-plan Stale (m)')
+  paperFolder.close()
+  const PAPER_INFO = {
+    throwSpeed:   'Launch speed of the rolled paper along the aim, before the truck\'s own velocity is added.',
+    dragK:        'Lumped quadratic air-drag coefficient on the flying roll. 0.033 ≈ terminal 17 m/s; 0 = gravity-only sail.',
+    tolerance:    'The route ends (the bell) at par × this. Soft: it only stops further earning, nothing banked is lost.',
+    paperW:       'How much poorer than the margin line a perfect route at par pays. 0.6 = "reliably poor" income floor.',
+    expediteFull: 'Where the expediency bonus maxes out, as a fraction of par. It starts at the bell and grows as you beat it.',
+    offM:         'Lateral distance off the guide line before the off-route re-plan trigger starts counting. Never felt in anger — tune on a drive.',
+    offS:         'How long you must stay off the line before a re-plan fires. A wrong turn, not a wobble.',
+    staleM:       'Drift from the re-plan\'s origin that invalidates a finished re-plan job. Should essentially never fire.',
+  }
+  for (const ctrl of paperFolder.controllers) addInfo(ctrl, PAPER_INFO[ctrl.property])
 
   // D-04: Read-only Logger hint — shows the \ key without being interactive
   const _loggerHint = { hint: '\\ to record' }

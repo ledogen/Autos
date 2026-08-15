@@ -1,7 +1,8 @@
 ---
 id: FEAT-48
 type: feature
-status: open
+status: closed
+closed: 2026-08-15
 opened: 2026-07-29
 severity: major
 source: owner decision 2026-07-29 (FEAT-36 blocking-out session)
@@ -279,3 +280,11 @@ belong in the migration.
   `MESH == PHYSICS` holds through carve updates.
 - `npm run test:all` green with physics gates re-baselined **and the re-baselining reviewed**.
 - CLAUDE.md's physics-lib rule amended **in the landing commit**, with the rationale recorded.
+
+## Resolution (2026-08-15)
+
+Merged to main (merge of `feature/box3d`) with the owner's feel sign-off on the final
+inertia-axis fix (x=pitch, z=roll) and the 2026-08-15 chassis retune. 52/52 gates + clean
+build post-merge. Remaining threads live in their own tickets: INFRA-03 (Windows determinism
+hash), QUAL-25 (open-bed hollow bin), FEAT-36 remainder (causesDamage, world-fixture debris,
+ASSET-25/26 art).

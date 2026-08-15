@@ -1,7 +1,8 @@
 ---
 id: FEAT-61
 type: feature
-status: open
+status: closed
+closed: 2026-08-15
 severity: major
 opened: 2026-08-04
 source: SM-2 milestone — first real mission type (plan-mode session 2026-08-04)
@@ -362,3 +363,15 @@ look during the merge smoke test rather than being treated as a blocker:
 ## Where the work happens
 
 Worktree `/Users/ledogen/CodeShit/CarGame-paper-route`, branch `feature/paper-route`.
+
+## Resolution (2026-08-15)
+
+Merged to main in the three-branch pass (box3d → topo-cover → paper-route). map2d resolved per
+the owner rulings: topo map stays, customer dots white (#ffffff/#101010), NEWSPAPER glyph on
+Larry's route, blue start chevron. Phase F scoped post-merge per the owner's instruction:
+SHIPPED a Paper Route debug-panel folder (THROW_PARAMS throwSpeed/dragK, PAPER_PARAMS
+tolerance/paperW/expediteFull, RR_PARAMS offM/offS/staleM — RR_* consts objectified for the
+dials; bonusMax deliberately has no slider, it is derived). SKIPPED test/paper-houses.mjs
+(story-poi + world-determinism already pin house determinism and window-invariance) and the
+poiHouse* sliders (placement bakes at story entry; a live dial would do nothing). Open
+follow-ons: BUG-47, BUG-48, FEAT-62.
