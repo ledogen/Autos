@@ -145,7 +145,7 @@ export const RANGER_PARAMS = {
   // but kept so existing debug sliders do not break.
   lateralDampingCoeff:    4000,  // N/(m/s) — damps lateral contact-patch velocity (unused, kept for slider compat)
   corneringStiffness: 50000,     // N/rad — linear tire lateral stiffness; used by computeLateralForce (Bug 6 fix)
-  frictionCoeff:      0.9,       // peak tire-road friction coefficient; caps Flat and Flong at μ*Fn
+  frictionCoeff:      0.8,       // peak tire-road friction coefficient; caps Flat and Flong at μ*Fn
 
   // ── Body Contact (collision against walls/ramp faces) ────────────────────
   bodyContactStiffness: 200000,  // N/m — stiffer than tire; metal-on-terrain response
@@ -173,7 +173,7 @@ export const RANGER_PARAMS = {
   // holding the ratio at 0.3: identical grip, ~1/3 the carcass displacement → the slosh is gone and
   // force builds snappier. Tune these via the coupled "Carcass Length / Slosh" + "Relax:VRef Ratio"
   // sliders (debug.js), NOT independently — moving one alone silently rescales grip.
-  tireRelaxationLength: 0.1,     // m — carcass length / "sloshiness" (× vRef sets grip via the ratio)
+  tireRelaxationLength: 0.135,     // m — carcass length / "sloshiness" (× vRef sets grip via the ratio)
   tireSlipVelRef:       0.3333,  // m/s — slip velocity ref; L/vRef = 0.3 reproduces the original grip curve
   tireStiffnessLong:    1.0,   // anisotropy hook — scale longitudinal slip component (default 1.0 isotropic)
   tireStiffnessLat:     1.0,   // anisotropy hook — scale lateral slip component (real tires ≈ 0.7×Long)
@@ -210,10 +210,14 @@ export const RANGER_PARAMS = {
   //   Raised from ζ=0.40 (2800/2300) — at ζ=0.40 the pitch mode amplitude was large enough
   //   to lift front wheels off ground on every upswing (half-wave oscillation at 3 Hz).
   // restLength: allowance for suspension travel (room for bump + droop from static equilibrium)
+  // Owner retune 2026-08-15: matched to the CORRECTED inertia axes (x=pitch, z=roll — FEAT-48
+  // final fix). Stiffer/more-damped rear + softer front ARB + shorter carcass + μ 0.8 rebalance
+  // roll/pitch response around the honest tensor. frictionCoeff 0.9→0.8 also shifts grip —
+  // par calibration (FEAT-31 calibrate-par) should be re-run before par fairness matters.
   suspensionStiffnessFront:  33000,   // N/m — 1.5 Hz body bounce at front sprung corner mass
-  suspensionStiffnessRear:   27000,   // N/m — 1.5 Hz body bounce at rear sprung corner mass
-  suspensionDampingFront:     3000,   // N·s/m
-  suspensionDampingRear:      3000,   // N·s/m
+  suspensionStiffnessRear:   33000,   // N/m — 1.5 Hz body bounce at rear sprung corner mass
+  suspensionDampingFront:     3500,   // N·s/m
+  suspensionDampingRear:      4000,   // N·s/m
   suspensionRestLengthFront:  0.20,   // m — travel allowance front axle (typical road truck)
   suspensionRestLengthRear:   0.22,   // m — slightly more rear travel (lighter unloaded rear)
   // wheelMass: unsprung mass per corner (tire + wheel + stub axle).
@@ -232,7 +236,7 @@ export const RANGER_PARAMS = {
   // F_arb = arbStiffness · (suspComp[left] − suspComp[right]) per axle.
   // Front ARB stiffer than rear → promotes understeer balance for a Ranger.
   // At 0.5g lateral: target ≈5° body roll total; front+rear ARBs together provide this.
-  arbStiffnessFront:   5000,   // N/m — front anti-roll bar stiffness (D-06)
+  arbStiffnessFront:   4500,   // N/m — front anti-roll bar stiffness (D-06)
   arbStiffnessRear:       0,   // N/m — rear ARB (D-06)
 
   // ── Suspension Travel + Stops (Phase 4.1 — D-08) ──────────────────────────────────────────

@@ -55,6 +55,17 @@ owner's; ask if not already settled.
   mass/inertia via SetMassData with the CORRECTED axis mapping (x=pitch, z=roll — final commit).
   Slab restitution pinned 0; cab/deck carry params.bodyRestitution.
 
+## Owner retune shipped with the inertia fix (2026-08-15, final commits)
+
+The corrected inertia axes (x=pitch, z=roll) come with an owner-tuned chassis setup in
+`data/ranger.js`: carcass/relaxation length 0.135, frictionCoeff 0.8 (was 0.9), suspension
+stiffness 33000/33000 (rear was 27000), damping 3500/4000 (was 3000/3000), front ARB 4500
+(was 5000). The committed feel baseline (`vehicle-feel-box3d.json`, tag `owner-retune-2026-08-15`)
+reflects this state. **Post-merge flag:** frictionCoeff 0.9→0.8 shifts overall grip — the FEAT-31
+par calibration (`test/calibrate-par.mjs`, PAR_REF.mu lineage) should be RE-RUN before par
+fairness matters in story mode; mission gates use frozen PAR_REF constants so nothing fails
+loudly, it just drifts (the BUG-41 drift-alarm family).
+
 ## Open work that survives the merge (tracked)
 
 - **INFRA-03** — ⏰ owner reminder: run the Box3D determinism hash on the Windows machine
@@ -73,8 +84,8 @@ owner's; ask if not already settled.
 - `npm run test:all` — 51 gates incl. `box3d-determinism-gate` (engine drift alarm) and
   `debris-coupling` (the whole contact-feel contract: fling, firmness, crawl, tree stop).
 - `test/vehicle-feel-trace.mjs` — canned maneuvers; committed baseline
-  `test/baselines/vehicle-feel-box3d.json` is the CURRENT signed-off state (tag
-  `inertia-axes-corrected`); `vehicle-feel-legacy.json` is the pre-migration reference.
+  `test/baselines/vehicle-feel-box3d.json` is the CURRENT state (tag
+  `owner-retune-2026-08-15`); `vehicle-feel-legacy.json` is the pre-migration reference.
 - In-browser: backtick = collider wireframes; debug panel → Vehicle → Physics Props →
   throw barrels/rocks with F.
 - Memory file `project_feat48_box3d_landed.md` mirrors all of this for future sessions — update
