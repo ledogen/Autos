@@ -689,12 +689,20 @@ def build_slider_trim(p):
 
 def build_interior(p):
     x = HALF_W - 0.04
-    # Floor stops at 3.72: the raked fascia surface is at y~3.80 down at floor
-    # height, and a 3.88 slab poked straight through the nose.
-    box(p, -x, x, 2.36, 3.72, FLOOR_Z0, FLOOR_Z1, "RVDark")          # cab floor
+    # The nose TAPERS in plan past y~3.5 (station A then the cap rim), so the
+    # forward ends of the floor and dash are TRAPEZOIDS — full-width slabs
+    # poked out of the front corners.  Wall is at x~1.10 by the floor's front
+    # edge and ~1.09 at the dash face.
+    box(p, -x, x, 2.36, 3.55, FLOOR_Z0, FLOOR_Z1, "RVDark")          # cab floor
+    hexa(p, [(-x, 3.55, FLOOR_Z0), (x, 3.55, FLOOR_Z0),
+             (1.03, 3.72, FLOOR_Z0), (-1.03, 3.72, FLOOR_Z0),
+             (-x, 3.55, FLOOR_Z1), (x, 3.55, FLOOR_Z1),
+             (1.03, 3.72, FLOOR_Z1), (-1.03, 3.72, FLOOR_Z1)], "RVDark")
     box(p, -0.26, 0.26, 2.75, 3.62, FLOOR_Z1, 1.26, "RVDark")        # doghouse
-    box(p, -x + 0.02, x - 0.02, 3.62, 3.86, 1.28, 1.58, "RVDark")    # dash
-    # (cap surface is ~3.99 at dash height with the brow at the beltline)
+    hexa(p, [(-1.13, 3.62, 1.28), (1.13, 3.62, 1.28),                # dash
+             (1.04, 3.86, 1.28), (-1.04, 3.86, 1.28),
+             (-1.13, 3.62, 1.58), (1.13, 3.62, 1.58),
+             (1.04, 3.86, 1.58), (-1.04, 3.86, 1.58)], "RVDark")
     # Partition narrower than the floor: at its 2.68 top the roof chamfer is
     # already in to x=1.15, and a ±1.16 slab poked a dark corner through it.
     box(p, -1.13, 1.13, 2.30, 2.36, 0.86, 2.68, "RVDark")            # partition
