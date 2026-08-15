@@ -75,10 +75,13 @@ AX_F, AX_R = 2.68, -1.075
 # REAL wheel-well openings (2026-08-14): the skirt band (0.42..0.92) is cut out
 # over these spans and lined with a dark pocket.  Each span must clear the
 # 0.80 m tyre diameter or the tyre pokes through the well end walls.
-ARCH_F = (2.24, 3.12)
+ARCH_F = (2.20, 3.16)
 ARCH_R = (-1.55, -0.60)
 WELL_X = 0.80                           # pocket inner wall |x|
 WELL_TOP = 0.92                         # pocket ceiling = skirt band top
+ARCH_RAD = 0.44                         # radiused arch opening (tyre 0.40 + gap)
+ARCH_SEG = 6                            # semicircle facets — the faceting is the look
+LIP_W, LIP_PROUD = 0.05, 0.012          # fender molding around the arch edge
 TRACK = 1.02
 WHEEL_R, HUB_R, WHEEL_W, WHEEL_SEG = 0.40, 0.16, 0.26, 10
 
@@ -767,6 +770,37 @@ def build_wells(p):
                  (i, a1, WELL_TOP), (w, a1, WELL_TOP), "RVDark")      # fwd wall
 
 
+def build_arches(p):
+    """Radiused arch panels closing the rectangular well mouths, plus a proud
+    fender-lip molding.  The panel lives IN the wall plane (the hull faces
+    there are skipped, so nothing fights it) and its outer edges land on hull
+    vertices, welding it into the hull island for orientation."""
+    for (a0, a1), ax in ((ARCH_F, AX_F), (ARCH_R, AX_R)):
+        pts = []
+        for i in range(ARCH_SEG + 1):
+            th = math.pi * (1 - i / ARCH_SEG)          # 180deg -> 0deg
+            pts.append((ax + ARCH_RAD * math.cos(th),
+                        Z_SKIRT + ARCH_RAD * math.sin(th)))
+        for sgn in (1, -1):
+            w, wl = sgn * HALF_W, sgn * (HALF_W + LIP_PROUD)
+            for (y0, z0), (y1, z1) in zip(pts, pts[1:]):     # above the arch
+                quad(p, (w, y0, z0), (w, y1, z1),
+                     (w, y1, WELL_TOP), (w, y0, WELL_TOP), "RVBody")
+            quad(p, (w, a0, Z_SKIRT), (w, ax - ARCH_RAD, Z_SKIRT),   # slivers
+                 (w, ax - ARCH_RAD, WELL_TOP), (w, a0, WELL_TOP), "RVBody")
+            quad(p, (w, ax + ARCH_RAD, Z_SKIRT), (w, a1, Z_SKIRT),
+                 (w, a1, WELL_TOP), (w, ax + ARCH_RAD, WELL_TOP), "RVBody")
+
+            def lip(y, z):
+                dy, dz = y - ax, z - Z_SKIRT
+                f = (ARCH_RAD + LIP_W) / (math.hypot(dy, dz) or 1.0)
+                return ax + dy * f, Z_SKIRT + dz * f
+            for (y0, z0), (y1, z1) in zip(pts, pts[1:]):
+                (ly0, lz0), (ly1, lz1) = lip(y0, z0), lip(y1, z1)
+                quad(p, (wl, y0, z0), (wl, y1, z1),
+                     (wl, ly1, lz1), (wl, ly0, lz0), "RVBody")
+
+
 def build_wheels(p):
     for ay in (AX_F, AX_R):
         for sgn in (1, -1):
@@ -940,6 +974,7 @@ def build():
 
     build_hull(body)
     build_wells(body)
+    build_arches(body)
     build_nose(body, glass)
     build_tail(body)
     for w in WINDOWS_R:
@@ -996,12 +1031,12 @@ def build():
     tyre_in = TRACK - WHEEL_W * 0.5
     print(f"  well pocket wall = {WELL_X:.3f} vs tyre inner face {tyre_in:.3f}  "
           f"{'OK' if WELL_X < tyre_in else 'TOO SHALLOW'}")
-    # And the tyre must fit INSIDE each arch mouth lengthwise.
+    # And the radiused arch must fit inside its span, around the tyre.
     for name, (a0, a1), ax in (("front", ARCH_F, AX_F), ("rear", ARCH_R, AX_R)):
-        fits = a0 < ax - WHEEL_R and ax + WHEEL_R < a1
-        print(f"  {name} arch {a0:.2f}..{a1:.2f} vs tyre "
-              f"{ax - WHEEL_R:.2f}..{ax + WHEEL_R:.2f}  "
-              f"{'OK' if fits else 'TYRE HITS WALL'}")
+        fits = (a0 <= ax - ARCH_RAD and ax + ARCH_RAD <= a1
+                and ARCH_RAD > WHEEL_R)
+        print(f"  {name} arch r{ARCH_RAD:.2f} in {a0:.2f}..{a1:.2f}, tyre "
+              f"r{WHEEL_R:.2f}  {'OK' if fits else 'ARCH DOES NOT FIT'}")
     # Raised steering wheel must break the sill too — that is why it was raised.
     sw_top = SW_C[2] + SW_RO * math.cos(WHEEL_TILT) + SW_TH
     print(f"  wheel rim top = {sw_top:.3f} vs sill {Z_SILL:.3f}  "
