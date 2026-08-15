@@ -26,6 +26,18 @@ carve change, no bore, no terrain roof — the pipe is decoration on an untouche
 > pace; a blockage forces a detour that reads as an intentional non-shortcut skip and opens a death
 > spiral.
 
+> **⚠ Added 2026-08-15 — the 2D map now draws streams, so the crossing is visible on it.**
+> `src/map2d.js` `_drawWater` (branch `feature/topo-cover`) strokes stream centrelines straight from
+> `WaterSystem.streamsInBBox()`, beneath the black road plate. A causeway therefore already reads on
+> the map as a blue line passing under a road line — which is, as it happens, the cartographic
+> convention for a culverted crossing, and needs no map work to be correct.
+>
+> Two things follow. **A washout deserves a map symbol** when the #05 hazard class lands: a crossing
+> the player cannot see coming is a nasty surprise, and the crossing set is already resolved
+> (`RoadSystem.streamRoadCrossings`, which the map calls for `_drawCrossings`). **And do not give
+> the map a bridge symbol here** — the causeway ruling in [[project_stream_crossing_causeway]]
+> governs the sheet as much as the mesh.
+
 ## Context
 
 Road×stream crossings are **causeways**: the road embankment fills the stream channel back to

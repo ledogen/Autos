@@ -21,6 +21,10 @@ import * as THREE from 'three'
 import { RoadSystem } from './road.js'
 import { MISSION_PLAN_RADIUS } from './mission.js'
 import { POI_ICONS, POI_ICON_PX } from '../data/map-icons.js'   // FEAT-60: map glyphs
+import { chunkCover, slopeFromGradient, COVER_CELL, CELLS_PER_CHUNK, DENSE_MIN }
+    from './map-cover.js'
+import { biomeAt, isWetGround, BIOME } from './biome.js'
+import { FLORA_PARAMS } from '../data/flora.js'
 
 // Streamed radius of the map's own RoadSystem around the pan cursor. UNIFIED with the story-mode
 // planner's radius: the two are the big read-only networks in the app and they share route caches,
@@ -54,9 +58,21 @@ const TELEPORT_SNAP_RADIUS = 500  // m — double-click snaps to the nearest roa
 // contours off the binned coarse-height field, black-cased roads. Every colour below is picked
 // against the paper green, not against the old dark canvas — anything light-on-dark (the road
 // stroke, the crossing dots, the scale bar) had to be re-inked when the ground went pale.
-const PAPER_GREEN   = '#cfe2bd'   // vegetated ground. ONE colour for now: tree cover is uniform
-                                  // worldwide, so the tan "sparse vegetation" of a real quad has
-                                  // nothing to key off until a biome layer exists (owner, 2026-08-11).
+// Vegetated ground. Sampled off the owner's USGS reference sheet (2026-08-15): the brightest,
+// UNSHADED cluster of its green family. That distinction matters — on the reference the green runs
+// #eaf2dd down to #d2d9c2, and that spread is hillshade already multiplied in, not four tints. So
+// this is the LIT end of the ramp and _paintGround darkens from it (see HILLSHADE_MIN).
+//
+// One green tint only: the dense-vs-scattered distinction is carried by tree GLYPHS, not by a
+// darker fill (owner, 2026-08-15), which is what the reference does — a single pale wash with
+// conifer marks stamped through the parts that are genuinely forested.
+//
+// (Supersedes the note that stood here on 2026-08-11, that tree cover was uniform worldwide and had
+// nothing to key off. It has something to key off now: the scatter itself, read via map-cover.js.)
+const PAPER_GREEN   = '#e9f1db'
+// Open ground — meadow, grassland, bare rock. Not pure white: the reference's cleared ground sits a
+// hair under the collar cream, and #ffffff against COLLAR_CREAM reads as a hole punched in the sheet.
+const PAPER_OPEN    = '#fbfbfa'
 // Both contour inks run DARKER than they look on a swatch: at sub-pixel widths antialiasing
 // blends most of the stroke into the paper, so a mid-tone burgundy comes out mauve on screen.
 const CONTOUR_COLOR = '#7e2f3f'   // intermediate contour — dark burgundy
@@ -120,6 +136,106 @@ const TOPO_STEP_MAX = 24          // m — Nyquist guard against the 250 m octav
 // of an unrelated change.
 const TOPO_GRID_MAX = 480
 
+// ── Hillshade ─────────────────────────────────────────────────────────────────────────────────
+// Relief shading, multiplied into the ground fill. It is free in the sense that matters: it reads
+// the SAME height grid _drawTopo already built for the contours, so it adds a pass over an array in
+// hand and not one new sample of the field. Landing it in the cached background means it is paid
+// once per settled pan/zoom, never per frame.
+//
+// Lit from the upper-LEFT of the screen. That is the cartographic convention, not a physical sun:
+// lighting relief from the upper left is what makes a reader see ridges standing up instead of
+// valleys — get it wrong and the terrain inverts perceptually.
+//
+// The angle is in WORLD xz, and the map draws +z DOWN the screen (see _sy), so "upper-left" means
+// the light lies toward (−x, −z): azimuth 5π/4, not the 3π/4 this shipped with. 3π/4 puts it at
+// (−x, +z) — lower-left — which is why the sheet read as lit from the bottom edge.
+//
+// The band is deliberately shallow. On the owner's reference the shading only takes the green from
+// #e9f1db to about #d2d9c2, ~12%, and a heavier hand turns a printed sheet into a render — the
+// contours are what carry the relief, the shade only tells you which way it faces.
+const HILLSHADE_AZ  = Math.PI * 1.25   // rad — light from the screen's upper-left
+const HILLSHADE_MIN = 0.88             // darkest multiplier on a fully-shaded slope
+const HILLSHADE_K   = 2.2              // gradient → shade gain; ~1.0 saturates on a mild grade
+
+// ── Ground cover raster ───────────────────────────────────────────────────────────────────────
+// The green/white sheet is a small bitmap — one texel per COVER_CELL of world — scaled up under
+// the contours with smoothing ON. That upscale is the whole trick: it costs one drawImage, and the
+// bilinear filter is what gives clearings the soft organic edge of the reference instead of the
+// stair-stepped 16 m blocks a per-cell fillRect would print.
+//
+// The raster is keyed to a FIXED WORLD LATTICE, never to the view. Same discipline as the terrain
+// and scatter (D-16 window-invariance): a clearing has to have the same shape and the same edge
+// whatever zoom you found it at, and a view-aligned raster would reshape it under the cursor.
+// The three cover bins. Two fill colours only — COVER_HIGH prints the same green as COVER_MED and
+// is told apart by carrying foliage glyphs, which is the reference's own vocabulary (owner,
+// 2026-08-15: "low cover is white, med cover is green and high cover is foliage icon").
+const COVER_LOW  = 0
+const COVER_MED  = 1
+const COVER_HIGH = 2
+// Texels per lattice cell in the composed ground bitmap. 4 puts a texel every 4 m, which is what
+// buys a hard cover boundary that still curves — the bins are interpolated and re-thresholded at
+// this resolution rather than being blended by the upscale. Costs COVER_SS² array writes, all of
+// them trivial, inside a redraw that is already debounced.
+const COVER_SS   = 4
+// Radius, in cells, the tree COUNTS are area-averaged over before they are binned. Since white
+// became biome-only, this has exactly ONE remaining consumer: the MED/HIGH split, i.e. where
+// foliage glyphs are stamped. Widened to 4 (a 144 m window) purely to make that region hold
+// together — at r=1 a 42%-coverage cut has an edginess of ~1.07, which is visually indistinguishable
+// from static; at r=4 the same coverage reads 0.69.
+//
+// ⚠ HONESTY NOTE — the med/high distinction is not describing anything real, and no tuning here can
+// make it so. `clustersPerChunk` is a flat 4 and `treesPerCluster` a uniform [4,11], so per-cell
+// tree count is Poisson sampling noise with NO low-frequency field behind it: this world has no
+// dense stands and no thin stands, only uniform forest sampled unevenly. Every threshold on it
+// therefore prints smoothed noise, and pushing for a smaller, "denser-looking" subset makes it
+// worse, not better (blur r=4: 42% → edginess 0.69, but 2% → 1.86).
+//
+// This is the same shape of problem as white ground before biomes existed, and it has the same two
+// honest fixes: collapse to two bins (open / forest), or give the scatter a real low-frequency
+// density field that BOTH the world and the map read. Flagged to the owner 2026-08-15; the current
+// values are the best available compromise pending that ruling, not a solution.
+const COVER_COUNT_BLUR = 4
+// Safety cap on chunks whose SCATTER REPLAY is resolved in one background redraw. The real gate is
+// glyph visibility (see _glyphsVisible) — the replay's only product is the MED/HIGH split, and that
+// only shows as foliage glyphs — so this exists purely to bound the pathological case where glyphs
+// are just barely visible across an enormous sheet.
+//
+// Sized against measurement: the replay costs ~31 us a chunk, so 6000 is ~190 ms, paid once per
+// chunk for the life of the seed and inside an already-debounced redraw. It was 1400, which sounds
+// generous but is not: the cached background is OVERSCANNED 2x per axis, so it covers 4x the chunks
+// on screen, and the cap was silently cutting in at ordinary reading zooms and taking every foliage
+// glyph with it.
+const COVER_CHUNK_BUDGET = 6000
+
+// ── Water ─────────────────────────────────────────────────────────────────────────────────────
+// Rivers and ponds, straight off the play WaterSystem (injected — see the getWater ctor option).
+// Both queries are cell-cached inside that system, so this is a fetch and not a generation pass.
+const WATER_INK     = '#4da2e8'   // stream centreline + pond outline — the reference's blue
+const WATER_FILL    = '#bcdcf5'   // pond body
+const WATER_W       = 1.6         // px — stream stroke weight
+const WATER_MARGIN  = 200         // m — bbox slop so a stream entering from off-sheet is drawn
+// Max texels per side of a pond's shoreline raster — see _drawPond. Bounds the cost of a large
+// pond at high zoom; past this the shore is resolved coarser than one screen pixel, which no
+// reader can tell from the exact one.
+const POND_TEXELS_MAX = 192
+
+// ── Vegetation + wet-ground glyphs ────────────────────────────────────────────────────────────
+// Both are stamped on a JITTERED WORLD LATTICE, for the same reason the cover raster is
+// world-keyed: a glyph has to stay on the tuft of marsh it marks when you zoom, and a
+// screen-space scatter would make the whole sheet crawl.
+const GLYPH_TREE_INK = '#4a7f3c'   // conifer marks in forested cells
+const GLYPH_WET_INK  = '#7db6de'   // marsh tick-tufts on wet ground
+const GLYPH_CELL     = 26          // m — nominal lattice spacing between glyph slots
+const GLYPH_PX       = 7           // px — drawn size of one glyph
+// Glyphs are a texture, not data: below this on-screen spacing they merge into a smear and are
+// simply not drawn. This is also the cost bound — it caps how many can ever land on one sheet.
+const GLYPH_MIN_PX   = 9
+
+// Drainage — what makes ground read as WET — lives in src/biome.js (isWetGround) with its
+// thresholds in data/biomes.js, alongside the meadow test it is the small-radius sibling of. It was
+// once inlined here on its own lattice with its own constants, which made it impossible to see that
+// the two were the same idea, and left it covering 0.47% of ground.
+
 // ── Background overscan ───────────────────────────────────────────────────────────────────────
 // The cached background is rendered OVERSCAN× the screen in each axis, centred on the view, so
 // half a screen of map already exists off every edge. Mid-drag, render() blits that bitmap at an
@@ -151,6 +267,61 @@ const GRID_LETTERS  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 // half-width is derived from it so the arrow keeps its taper instead of going stubby or needly.
 const CAR_ICON_L = 13.5
 
+// ── Ground-wash helpers (module scope: pure, no instance state) ────────────────────────────────
+
+/**
+ * Separable box blur over a scalar field. Softens the printed edge of a clearing so the cover
+ * raster's 16 m lattice does not read as squares once it is scaled up.
+ */
+function boxBlur(src, w, h, r) {
+    if (r < 1) return src
+    const tmp = new Float32Array(w * h), out = new Float32Array(w * h)
+    for (let j = 0; j < h; j++) {
+        for (let i = 0; i < w; i++) {
+            let sum = 0, n = 0
+            for (let k = -r; k <= r; k++) {
+                const ii = i + k
+                if (ii < 0 || ii >= w) continue
+                sum += src[j * w + ii]; n++
+            }
+            tmp[j * w + i] = sum / n
+        }
+    }
+    for (let j = 0; j < h; j++) {
+        for (let i = 0; i < w; i++) {
+            let sum = 0, n = 0
+            for (let k = -r; k <= r; k++) {
+                const jj = j + k
+                if (jj < 0 || jj >= h) continue
+                sum += tmp[jj * w + i]; n++
+            }
+            out[j * w + i] = sum / n
+        }
+    }
+    return out
+}
+
+/**
+ * Is (x,z) inside a stream's channel? The same test WaterSystem.streamChannelAt runs, against a
+ * stream record the caller has ALREADY fetched — the map tests hundreds of points against the same
+ * handful of streams, and going through streamChannelAt would re-run a bbox stream query per point.
+ */
+function inStreamChannel(st, x, z) {
+    const pad = (st.maxWidth ?? st.width) + st.bankWidth
+    const pts = st.points
+    for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i]
+        const abx = b.x - a.x, abz = b.z - a.z
+        const len2 = abx * abx + abz * abz
+        if (len2 < 1e-9) continue
+        let t = ((x - a.x) * abx + (z - a.z) * abz) / len2
+        t = t < 0 ? 0 : t > 1 ? 1 : t
+        const px = a.x + abx * t - x, pz = a.z + abz * t - z
+        if (px * px + pz * pz < pad * pad) return true
+    }
+    return false
+}
+
 export class Map2D {
     /**
      * @param {object}   o
@@ -164,7 +335,7 @@ export class Map2D {
      * @param {() => ?{start:{x,z}, end:{x,z}, poly:{x,z}[]}} [o.getMission]
      *        — story-mode mission overlay (route + start/end pins); null when no mission is live
      */
-    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCustomers, getCampZones }) {
+    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCustomers, getCampZones, getWater }) {
         this._canvas    = canvas
         this._ctx       = canvas.getContext('2d')
         this._getSeed   = getSeed
@@ -183,8 +354,20 @@ export class Map2D {
         // FEAT-45: story-mode dispersed-camping zones — `{x,z,r}[]`, empty outside story mode. NOT
         // drawn as discs: see _drawCampZones.
         this._getCampZones = getCampZones || (() => null)
+        // The play WaterSystem. Read-only, and OPTIONAL — without it the sheet simply prints no
+        // rivers and the cover raster stops rejecting trees for standing in water, which is a
+        // degradation and not a crash (the headless gates construct the map this way).
+        this._getWater    = getWater     || null
         // FEAT-60: one Path2D per POI type, built on first draw (see _drawPois).
         this._iconPaths = new Map()
+
+        // Tree-cover memo, keyed 'cx,cz'. Cover is a property of the WORLD, so an entry stays valid
+        // across every pan and zoom for the life of the seed — this is what makes _coverRaster
+        // affordable. Cleared on a seed change (see _ensureRoad), never on a view change.
+        this._coverMemo   = new Map()
+        this._coverCanvas = null   // offscreen the ground bitmap is scaled from; reused across redraws
+        this._pondCanvas  = null   // offscreen one pond's shoreline raster is built in (see _drawPond)
+        this._coverGrid   = null   // last resolved lattice — handed from _paintGround to _drawGlyphs
 
         this._open       = false
         this._road       = null          // the map's own RoadSystem; KEPT ALIVE across opens (route cache)
@@ -345,7 +528,13 @@ export class Map2D {
         // the kept instance, whose warm route cache makes a reopen instant. The terrain layer paints
         // immediately; the network then streams in progressively (see _startStream).
         const sig = this._paramSig()
-        if (!this._road || sig !== this._sig) { this._buildRoad(); this._sig = sig }
+        if (!this._road || sig !== this._sig) {
+            this._buildRoad(); this._sig = sig
+            // The memo is keyed by chunk only, so it MUST be dropped with the signature it was
+            // resolved under — a new seed puts a different forest in the same chunk coordinates,
+            // and a stale entry would print the old world's clearings on the new one.
+            this._coverMemo.clear()
+        }
 
         if (!this._centeredOnce) {
             const car = this._getCar()
@@ -745,6 +934,11 @@ export class Map2D {
         this._bgPanX = this._panX; this._bgPanZ = this._panZ; this._bgZoom = this._zoom
 
         this._drawTopo(ctx, -ox, -oy, W + ox, H + oy)
+        // Water and the vegetation/marsh glyphs go OVER the contours and UNDER the roads, which is
+        // the order a quadrangle is printed in: the blue plate reads through the brown, and the
+        // black road plate covers both.
+        this._drawWater(ctx)
+        this._drawGlyphs(ctx)
         this._drawRoads(ctx)
         this._drawCrossings(ctx)
         this._drawNodes(ctx)
@@ -775,8 +969,10 @@ export class Map2D {
         const amp = this._getParams().terrainAmplitude ?? 1
         const Wpx = px1 - px0, Hpx = py1 - py0
 
-        ctx.fillStyle = PAPER_GREEN
-        ctx.fillRect(px0, py0, Wpx, Hpx)
+        // Ground first — the green/white cover wash with hillshade multiplied through it. Painted
+        // as one scaled bitmap, so everything below (water, glyphs, contours, roads) draws over a
+        // finished sheet in the order a printer would lay them down.
+        this._paintGround(ctx, px0, py0, Wpx, Hpx, amp)
 
         // ── Sample grid. One cell margin past each edge so contours reach the rect's border
         //    instead of stopping a cell short of it.
@@ -870,6 +1066,479 @@ export class Map2D {
         // both are hairlines now, so a width ratio alone would not have carried the distinction.
         strokeBatch(thin,  CONTOUR_COLOR, CONTOUR_W)
         strokeBatch(thick, INDEX_COLOR,   INDEX_W)
+    }
+
+    // (1a) The ground wash: green where the forest stands, white where it does not, hillshaded.
+    //
+    // Both layers resolve onto ONE world-aligned lattice and leave as a single ImageData, scaled up
+    // under the contours with smoothing on. That is what buys the soft clearing edges — a per-cell
+    // fillRect would print 16 m stair-steps no matter how the thresholds were tuned.
+    //
+    // The lattice can be sampled this coarsely because of what the height field is: `_coarseH`'s
+    // finest octave is a 250 m wavelength, so a 16 m lattice is four times finer than Nyquist and
+    // the hillshade is fully resolved, not approximated.
+    //
+    // Leaves `this._coverGrid` behind for _drawWater (its bbox) and _drawGlyphs (the cover bins it
+    // just resolved, rather than resolving them twice). Redraw-local: written and consumed inside
+    // one cached-background rebuild.
+    _paintGround(ctx, px0, py0, Wpx, Hpx, amp) {
+        const road = this._road
+        const zoom = this._zoom
+        const s = this._sheet()
+
+        // World rect under the screen rect, snapped OUT to the cover lattice. Snapping is what
+        // makes the raster window-invariant: the texel covering a given patch of world is the same
+        // texel at every pan and zoom, so a clearing keeps its shape instead of shimmering.
+        const wx0 = Math.floor((this._panX + (px0 - s.cx) / zoom) / COVER_CELL) * COVER_CELL
+        const wz0 = Math.floor((this._panZ + (py0 - s.cy) / zoom) / COVER_CELL) * COVER_CELL
+        const wx1 = Math.ceil((this._panX + (px0 + Wpx - s.cx) / zoom) / COVER_CELL) * COVER_CELL
+        const wz1 = Math.ceil((this._panZ + (py0 + Hpx - s.cy) / zoom) / COVER_CELL) * COVER_CELL
+
+        const gw = Math.max(2, Math.round((wx1 - wx0) / COVER_CELL))
+        const gh = Math.max(2, Math.round((wz1 - wz0) / COVER_CELL))
+
+        // Heights on the lattice, for the hillshade gradient.
+        const hg = new Float32Array(gw * gh)
+        for (let j = 0; j < gh; j++) {
+            const wz = wz0 + j * COVER_CELL
+            for (let i = 0; i < gw; i++) hg[j * gw + i] = road._coarseH(wx0 + i * COVER_CELL, wz) * amp
+        }
+
+        // Cover, if the sheet is close enough in for it to mean anything — see COVER_CHUNK_BUDGET.
+        const cover = this._coverRaster(wx0, wz0, gw, gh)
+        // Handed to _drawWater (for its bbox) and _drawGlyphs (for the cover bins). NOT the height
+        // lattice: the only thing that read it was the old inlined wet test, and drainage now
+        // samples the field directly at each glyph — see isWetGround.
+        this._coverGrid = { wx0, wz0, gw, gh, cover }
+
+        // ── Compose, at COVER_SS texels per lattice cell.
+        //
+        // The supersample is what lets the cover stay HARD-EDGED without printing 16 m squares. The
+        // bins are interpolated as a continuous field and then re-thresholded per texel, so a
+        // boundary follows a smooth curve through the lattice while every texel on either side of
+        // it is exactly white or exactly green — never a blend of the two. Letting the upscale
+        // filter do it instead would fade green into white across the seam, which is the one thing
+        // a binned sheet must not do.
+        //
+        // Hillshade is interpolated normally: it IS a continuous quantity, and it is the one soft
+        // thing the owner asked for.
+        const iw = gw * COVER_SS, ih = gh * COVER_SS
+        const img = ctx.createImageData(iw, ih)
+        const px = img.data
+        const gR = parseInt(PAPER_GREEN.slice(1, 3), 16), gG = parseInt(PAPER_GREEN.slice(3, 5), 16),
+              gB = parseInt(PAPER_GREEN.slice(5, 7), 16)
+        const oR = parseInt(PAPER_OPEN.slice(1, 3), 16), oG = parseInt(PAPER_OPEN.slice(3, 5), 16),
+              oB = parseInt(PAPER_OPEN.slice(5, 7), 16)
+        const lx = Math.cos(HILLSHADE_AZ), lz = Math.sin(HILLSHADE_AZ)
+
+        // Per-cell shade, computed once on the lattice and interpolated per texel below.
+        const shadeG = new Float32Array(gw * gh)
+        for (let j = 0; j < gh; j++) {
+            for (let i = 0; i < gw; i++) {
+                // Central differences, clamped at the border (a one-sided difference there would
+                // draw a bright or dark rule down the edge of every cached bitmap — and with a 2x
+                // overscan those seams land mid-sheet, not off it).
+                const iL = i > 0 ? i - 1 : i, iR = i < gw - 1 ? i + 1 : i
+                const jU = j > 0 ? j - 1 : j, jD = j < gh - 1 ? j + 1 : j
+                const dx = (hg[j * gw + iR] - hg[j * gw + iL]) / ((iR - iL) * COVER_CELL || 1)
+                const dz = (hg[jD * gw + i] - hg[jU * gw + i]) / ((jD - jU) * COVER_CELL || 1)
+                // Slope-aspect dot with the light. Not a physical lambert — a shallow, clamped
+                // ramp, because the job is to say which way a face turns, not to render it.
+                const lit = Math.max(-1, Math.min(1, -(dx * lx + dz * lz) * HILLSHADE_K))
+                shadeG[j * gw + i] = 1 + (lit < 0 ? lit : lit * 0.35) * (1 - HILLSHADE_MIN)
+            }
+        }
+
+        // Bilinear read of a lattice field at texel (u,v), in lattice units.
+        const lerpG = (fld, u, v) => {
+            const i0 = Math.min(gw - 1, Math.max(0, Math.floor(u))), i1 = Math.min(gw - 1, i0 + 1)
+            const j0 = Math.min(gh - 1, Math.max(0, Math.floor(v))), j1 = Math.min(gh - 1, j0 + 1)
+            const fu = u - i0, fv = v - j0
+            const a = fld[j0 * gw + i0], b = fld[j0 * gw + i1]
+            const c = fld[j1 * gw + i0], d = fld[j1 * gw + i1]
+            return (a + (b - a) * fu) + ((c + (d - c) * fu) - (a + (b - a) * fu)) * fv
+        }
+
+        for (let jj = 0; jj < ih; jj++) {
+            const v = (jj + 0.5) / COVER_SS - 0.5
+            for (let ii = 0; ii < iw; ii++) {
+                const u = (ii + 0.5) / COVER_SS - 0.5
+                const shade = lerpG(shadeG, u, v)
+
+                // Cover → one of two fills, thresholded, never blended. `cover` is null past the
+                // budget, which prints plain green: at that zoom the pattern is sub-pixel anyway.
+                // The cut sits at COVER_LOW..COVER_MED's midpoint, so it is the LOW/MED boundary
+                // that gets drawn — HIGH and MED share a fill and are told apart by glyphs.
+                const open = cover ? lerpG(cover, u, v) < (COVER_LOW + COVER_MED) / 2 : false
+                const r = open ? oR : gR, g = open ? oG : gG, b = open ? oB : gB
+
+                const o = (jj * iw + ii) * 4
+                px[o]     = Math.max(0, Math.min(255, r * shade))
+                px[o + 1] = Math.max(0, Math.min(255, g * shade))
+                px[o + 2] = Math.max(0, Math.min(255, b * shade))
+                px[o + 3] = 255
+            }
+        }
+
+        // putImageData ignores the transform and cannot scale, so the bitmap goes through an
+        // offscreen canvas to be drawn scaled + smoothed. Reused across redraws — reallocating a
+        // canvas per rebuild is what makes this kind of pass show up in a profile.
+        if (!this._coverCanvas) this._coverCanvas = document.createElement('canvas')
+        const cc = this._coverCanvas
+        if (cc.width !== iw || cc.height !== ih) { cc.width = iw; cc.height = ih }
+        cc.getContext('2d').putImageData(img, 0, 0)
+
+        const sx0 = this._sx(wx0), sy0 = this._sy(wz0)
+        const sw = (wx1 - wx0) * zoom, sh = (wz1 - wz0) * zoom
+        // Smoothing ON only to take the stair-steps off the supersampled texels (4 m each, so this
+        // is antialiasing a hard edge, NOT fading one bin into the next — the threshold above has
+        // already decided which side of the boundary every texel is on).
+        const prev = ctx.imageSmoothingEnabled
+        ctx.imageSmoothingEnabled = true
+        ctx.imageSmoothingQuality = 'high'
+        ctx.drawImage(cc, sx0, sy0, sw, sh)
+        ctx.imageSmoothingEnabled = prev
+    }
+
+    /**
+     * Resolve the tree-cover raster over a lattice rect, as a 0..1 vegetation weight per cell.
+     *
+     * Per-chunk results are memoized FOREVER (keyed by chunk, cleared only when the seed changes),
+     * which is the whole reason this is affordable: cover is a property of the world, not of the
+     * view, so a chunk resolved once at one zoom is still valid at every other zoom and after any
+     * pan. Only newly-revealed chunks ever cost anything.
+     *
+     * Returns null when the visible chunk count blows the budget — see COVER_CHUNK_BUDGET.
+     */
+    _coverRaster(wx0, wz0, gw, gh) {
+        const road = this._road
+        const CH = FLORA_PARAMS.chunkSize
+        const amp = this._getParams().terrainAmplitude ?? 1
+
+        const cx0 = Math.floor(wx0 / CH), cz0 = Math.floor(wz0 / CH)
+        const cx1 = Math.floor((wx0 + gw * COVER_CELL) / CH), cz1 = Math.floor((wz0 + gh * COVER_CELL) / CH)
+        // What is gated, and what never is (owner, 2026-08-15 — the fill is drawn at every zoom):
+        //
+        //   biome per cell   — cheap, and it ALONE decides green vs white. Always resolved.
+        //   scatter replay   — ~44 candidates a chunk, and its only product is the MED/HIGH split,
+        //                      which shows up solely as foliage glyphs.
+        //
+        // So the replay is gated on whether those glyphs can be seen at all, not on area. Tying it
+        // to area instead is what made the glyphs vanish at ordinary reading zooms: the background
+        // is overscanned 2x per axis, so the chunk count is 4x what is on screen and blew a cap
+        // that looked roomy. The count check survives only as a bound on the pathological case.
+        const replay = this._glyphsVisible() &&
+                       (cx1 - cx0 + 1) * (cz1 - cz0 + 1) <= COVER_CHUNK_BUDGET
+
+        // Water rejects, fetched ONCE for the whole rect rather than queried per candidate. The
+        // scatter asks `is this point in a pond / in a stream channel` per tree; asking the
+        // WaterSystem that directly, ~44 times per chunk over hundreds of chunks, is the one way
+        // this pass could have become expensive.
+        const water = this._getWater ? this._getWater() : null
+        const m = 64
+        const ponds = water ? water.pondsInBBox(wx0 - m, wz0 - m, wx0 + gw * COVER_CELL + m, wz0 + gh * COVER_CELL + m) : []
+        const streams = water ? water.streamsInBBox(wx0 - m, wz0 - m, wx0 + gw * COVER_CELL + m, wz0 + gh * COVER_CELL + m) : []
+
+        const samplers = {
+            // Slope in the scatter's own units — see slopeFromGradient. The ±8 m offsets are half a
+            // cover cell, matching the lattice the answer is binned into.
+            slopeAt: (x, z) => {
+                const e = 8
+                const dx = (road._coarseH(x + e, z) - road._coarseH(x - e, z)) * amp / (2 * e)
+                const dz = (road._coarseH(x, z + e) - road._coarseH(x, z - e)) * amp / (2 * e)
+                return slopeFromGradient(dx, dz)
+            },
+            // Feeds the biome relief ring. Coarse field, matching slopeAt — the ring spans 70 m, so
+            // the detail octave the map cannot see contributes nothing at that scale anyway.
+            heightAt: (x, z) => road._coarseH(x, z) * amp,
+            rejectAt: (x, z) => {
+                for (const p of ponds) {
+                    const dx = x - p.floorX, dz = z - p.floorZ
+                    if (dx * dx + dz * dz < p.radius * p.radius) return true
+                }
+                for (const st of streams) if (inStreamChannel(st, x, z)) return true
+                return false
+            },
+        }
+
+        const out = new Float32Array(gw * gh)
+        const open = new Uint8Array(gw * gh)   // 1 = biome says this cell is not forest at all
+        const seed = this._getSeed()
+        for (let cz = cz0; cz <= cz1; cz++) {
+            for (let cx = cx0; cx <= cx1; cx++) {
+                const key = cx + ',' + cz
+                let cc = this._coverMemo.get(key)
+                if (!cc) {
+                    // The per-CELL biome read — always resolved, and the thing that draws the
+                    // meadow's EDGE. The replay below evaluates biome once per CLUSTER, which is
+                    // correct for deciding whether a tree stands but far too coarse to draw a
+                    // boundary with: a chunk whose four clusters all landed in a meadow zeroes as
+                    // one 64 m square, and the sheet grows visible blocks. 16 evaluations a chunk,
+                    // and the edge then follows the terrain that defines it.
+                    const bio = new Uint8Array(CELLS_PER_CHUNK * CELLS_PER_CHUNK)
+                    for (let lj = 0; lj < CELLS_PER_CHUNK; lj++) {
+                        for (let li = 0; li < CELLS_PER_CHUNK; li++) {
+                            const wx = cx * CH + (li + 0.5) * COVER_CELL
+                            const wz = cz * CH + (lj + 0.5) * COVER_CELL
+                            bio[lj * CELLS_PER_CHUNK + li] =
+                                biomeAt(wx, wz, seed, samplers) === BIOME.FOREST ? 0 : 1
+                        }
+                    }
+                    cc = { counts: null, bio }
+                    this._coverMemo.set(key, cc)
+                }
+                // Counts fill in lazily. A chunk first resolved while zoomed out holds biome only;
+                // zooming in upgrades it in place rather than discarding the biome read.
+                if (replay && !cc.counts) cc.counts = chunkCover(cx, cz, seed, samplers)
+                for (let lj = 0; lj < CELLS_PER_CHUNK; lj++) {
+                    const gj = Math.round((cz * CH + lj * COVER_CELL - wz0) / COVER_CELL)
+                    if (gj < 0 || gj >= gh) continue
+                    for (let li = 0; li < CELLS_PER_CHUNK; li++) {
+                        const gi = Math.round((cx * CH + li * COVER_CELL - wx0) / COVER_CELL)
+                        if (gi < 0 || gi >= gw) continue
+                        // No counts (replay skipped) → leave the count at 0 and mark the cell
+                        // DENSITY-UNKNOWN via `known`, so the binning below cannot mistake a
+                        // missing read for genuinely open ground.
+                        if (cc.counts) out[gj * gw + gi] = cc.counts[lj * CELLS_PER_CHUNK + li]
+                        open[gj * gw + gi] = cc.bio[lj * CELLS_PER_CHUNK + li]
+                    }
+                }
+            }
+        }
+
+        // ── Counts → one of THREE bins. No ramp between them (owner, 2026-08-15): a printed sheet
+        //    states a category, it does not fade between two. So the sheet only ever carries two
+        //    fill colours, and the third bin is distinguished by carrying foliage glyphs on the
+        //    same green as the second:
+        //
+        //      COVER_LOW   → white   (meadow, bare rock, water margin — open ground)
+        //      COVER_MED   → green
+        //      COVER_HIGH  → green + foliage glyphs (see _drawGlyphs)
+        //
+        // The counts are AREA-AVERAGED before binning, and that order is the correctness of this
+        // layer. "Is this ground forested" is a property of a neighbourhood, not of a 16 m cell: a
+        // cell with no trunk in it, ringed by cells full of trees, is the gap between two trunks,
+        // not a meadow. Binning the bare counts put 41% of the world under white (measured, seed 6)
+        // purely because the scatter drops trees in clusters.
+        const area = boxBlur(out, gw, gh, COVER_COUNT_BLUR)
+        const bin = new Float32Array(area.length)
+        for (let k = 0; k < area.length; k++) {
+            // The biome is decisive. Meadow and bare rock are open ground by definition, and no
+            // count of trees that happened to be replayed nearby may argue them back to green —
+            // this is also what keeps the map's white agreeing with the world, since the scatter
+            // clears exactly these cells.
+            // White means "not the forest biome" and nothing else, so the biome alone decides the
+            // fill and the counts only choose whether glyphs are stamped on top of the green.
+            // That is what keeps both region types solid: the count can no longer punch white
+            // holes into forest, and it never could paint green into a meadow.
+            if (open[k]) { bin[k] = COVER_LOW; continue }
+            bin[k] = (replay && area[k] >= DENSE_MIN) ? COVER_HIGH : COVER_MED
+        }
+        return bin
+    }
+
+    /**
+     * Is the glyph lattice far enough apart on screen to be read as separate marks?
+     *
+     * ONE definition with two callers, and they must agree: _drawGlyphs uses it to decide whether
+     * to stamp, and _coverRaster uses it to decide whether the scatter replay is worth running at
+     * all — the replay's only product is the MED/HIGH split, which nothing but those glyphs
+     * expresses. If the two ever disagreed, the map would either pay for a replay it cannot show or
+     * try to stamp glyphs from densities it never resolved.
+     */
+    _glyphsVisible() { return GLYPH_CELL * this._zoom >= GLYPH_MIN_PX }
+
+    // (1b) Rivers and ponds — the blue plate.
+    //
+    // Straight off the play WaterSystem, which is the same water the truck fords and the router
+    // avoids, so the sheet cannot disagree with the world about where a creek runs. Both queries
+    // are cell-cached inside that system, making this a fetch rather than a generation pass — the
+    // reason water could be added to a per-redraw layer at all.
+    _drawWater(ctx) {
+        const water = this._getWater && this._getWater()
+        if (!water) return
+        const g = this._coverGrid
+        if (!g) return
+        const x0 = g.wx0 - WATER_MARGIN, z0 = g.wz0 - WATER_MARGIN
+        const x1 = g.wx0 + g.gw * COVER_CELL + WATER_MARGIN, z1 = g.wz0 + g.gh * COVER_CELL + WATER_MARGIN
+
+        // Ponds first: a stream draining into one should read as running INTO the water body, so
+        // its centreline is drawn over the pond fill rather than under it.
+        for (const p of water.pondsInBBox(x0, z0, x1, z1)) {
+            this._drawPond(ctx, water, p)
+        }
+
+        ctx.strokeStyle = WATER_INK
+        ctx.lineWidth = WATER_W
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        ctx.beginPath()
+        for (const st of water.streamsInBBox(x0, z0, x1, z1)) {
+            const pts = st.points
+            if (!pts || pts.length < 2) continue
+            ctx.moveTo(this._sx(pts[0].x), this._sy(pts[0].z))
+            for (let i = 1; i < pts.length; i++) ctx.lineTo(this._sx(pts[i].x), this._sy(pts[i].z))
+        }
+        ctx.stroke()
+        ctx.lineCap = 'butt'; ctx.lineJoin = 'miter'
+    }
+
+    /**
+     * One pond, clipped to its real shoreline.
+     *
+     * A pond record is a disc (floorX/floorZ/radius), but a pond is NOT disc-shaped. The water is a
+     * flat plane at `waterLevel` and the land rises into it, so the shore is wherever the terrain
+     * crosses that plane — which is what you see from above in-game, and why the map's perfect
+     * circles disagreed with the world (owner, 2026-08-15).
+     *
+     * The test is WaterSystem.waterSurfaceY's own, not an approximation of it: inside the disc AND
+     * ground below waterLevel. Same rule, so the printed shore is the shore the truck drives to.
+     *
+     * Rasterised rather than traced. Marching squares would give a path, but filling one needs the
+     * segments stitched into closed rings — bookkeeping this map has deliberately avoided
+     * everywhere else (see _drawTopo's note on disjoint segments) — and a pond's outline can be
+     * several disjoint rings anyway, once islands and inlets are in play. A small bitmap gets the
+     * exact shape for none of that machinery, and the shoreline INK falls out of the same pass: a
+     * water texel with a dry 4-neighbour is an edge texel.
+     */
+    _drawPond(ctx, water, p) {
+        const zoom = this._zoom
+        const rpx = p.radius * zoom
+        if (rpx < 1.5) return          // below a pixel and a half it is a blue speck, not a pond
+
+        // Ground height. Prefer the WaterSystem's OWN height closure — it is the function that
+        // decided waterLevel in the first place (full raw terrain), so shoreline and water level
+        // come from one field and cannot disagree. The coarse fallback keeps this drawable if the
+        // system is ever handed a different shape.
+        const hAt = water._height ? (x, z) => water._height(x, z)
+                                  : (x, z) => this._road._coarseH(x, z) * (this._getParams().terrainAmplitude ?? 1)
+
+        // Texel grid over the pond's bounding square, ~1 screen px per texel (the square spans the
+        // DIAMETER, 2·rpx px), so the shore resolves at the limit of what can be seen. Capped so a
+        // large pond at high zoom cannot turn into an unbounded raster.
+        const n = Math.max(8, Math.min(POND_TEXELS_MAX, Math.ceil(rpx * 2)))
+        const d = (p.radius * 2) / n
+        const img = ctx.createImageData(n, n)
+        const px = img.data
+        const wet = new Uint8Array(n * n)
+
+        for (let j = 0; j < n; j++) {
+            const wz = p.floorZ - p.radius + (j + 0.5) * d
+            for (let i = 0; i < n; i++) {
+                const wx = p.floorX - p.radius + (i + 0.5) * d
+                const dx = wx - p.floorX, dz = wz - p.floorZ
+                if (dx * dx + dz * dz > p.radius * p.radius) continue
+                if (hAt(wx, wz) >= p.waterLevel) continue
+                wet[j * n + i] = 1
+            }
+        }
+
+        const fR = parseInt(WATER_FILL.slice(1, 3), 16), fG = parseInt(WATER_FILL.slice(3, 5), 16),
+              fB = parseInt(WATER_FILL.slice(5, 7), 16)
+        const iR = parseInt(WATER_INK.slice(1, 3), 16), iG = parseInt(WATER_INK.slice(3, 5), 16),
+              iB = parseInt(WATER_INK.slice(5, 7), 16)
+        for (let j = 0; j < n; j++) {
+            for (let i = 0; i < n; i++) {
+                const k = j * n + i
+                if (!wet[k]) continue
+                // Edge texel = wet with a dry (or off-grid) 4-neighbour. Off-grid counts as dry,
+                // which is correct: the grid spans the whole disc, so there is no water past it.
+                const edge = (i === 0     || !wet[k - 1]) || (i === n - 1 || !wet[k + 1]) ||
+                             (j === 0     || !wet[k - n]) || (j === n - 1 || !wet[k + n])
+                const o = k * 4
+                px[o]     = edge ? iR : fR
+                px[o + 1] = edge ? iG : fG
+                px[o + 2] = edge ? iB : fB
+                px[o + 3] = 255
+            }
+        }
+
+        if (!this._pondCanvas) this._pondCanvas = document.createElement('canvas')
+        const pc = this._pondCanvas
+        if (pc.width !== n || pc.height !== n) { pc.width = n; pc.height = n }
+        const pctx = pc.getContext('2d')
+        pctx.clearRect(0, 0, n, n)      // texels outside the shore stay transparent, not black
+        pctx.putImageData(img, 0, 0)
+
+        const sx = this._sx(p.floorX - p.radius), sy = this._sy(p.floorZ - p.radius)
+        const prev = ctx.imageSmoothingEnabled
+        ctx.imageSmoothingEnabled = true
+        ctx.drawImage(pc, sx, sy, p.radius * 2 * zoom, p.radius * 2 * zoom)
+        ctx.imageSmoothingEnabled = prev
+    }
+
+    // (1c) Vegetation and wet-ground glyphs — the texture that tells you what the tint MEANS.
+    //
+    // Two marks on one shared lattice: a conifer where the cover raster says trees actually stand
+    // thickly, and a marsh tick-tuft where the drainage test says the ground collects water. They
+    // can and do coexist — a wet cell under forest gets both, exactly as on the reference, where
+    // the tufts run under the tree marks along a creek.
+    //
+    // The lattice is WORLD-anchored and jittered by world position, not by index, so a glyph stays
+    // on the patch it marks through every pan and zoom. A screen-space scatter would make the whole
+    // sheet crawl under the cursor, which is the single fastest way to destroy the illusion of paper.
+    _drawGlyphs(ctx) {
+        const g = this._coverGrid
+        if (!g || !g.cover) return
+        const zoom = this._zoom
+        if (!this._glyphsVisible()) return
+
+        const { wx0, wz0, gw, gh, cover } = g
+        const x1 = wx0 + gw * COVER_CELL, z1 = wz0 + gh * COVER_CELL
+        const i0 = Math.floor(wx0 / GLYPH_CELL), i1 = Math.ceil(x1 / GLYPH_CELL)
+        const j0 = Math.floor(wz0 / GLYPH_CELL), j1 = Math.ceil(z1 / GLYPH_CELL)
+        const s = GLYPH_PX
+
+        // Height sampler for the drainage read. Sampled at the glyph's own world position rather
+        // than off the cover lattice: isWetGround's ring is 48 m, finer than that lattice would
+        // resolve, and a marsh symbol has to sit on the hollow it marks.
+        const amp = this._getParams().terrainAmplitude ?? 1
+        const wetSamplers = { heightAt: (x, z) => this._road._coarseH(x, z) * amp }
+
+        ctx.lineWidth = 1
+        for (let j = j0; j <= j1; j++) {
+            for (let i = i0; i <= i1; i++) {
+                // Deterministic per-slot jitter from world lattice indices. Same hash discipline as
+                // the rest of the sim: the mark does not move because the view did.
+                const hsh = Math.sin(i * 127.1 + j * 311.7) * 43758.5453
+                const hx = hsh - Math.floor(hsh)
+                const hs2 = Math.sin(i * 269.5 + j * 183.3) * 43758.5453
+                const hz = hs2 - Math.floor(hs2)
+                const wx = (i + 0.15 + hx * 0.7) * GLYPH_CELL
+                const wz = (j + 0.15 + hz * 0.7) * GLYPH_CELL
+
+                const gi = Math.floor((wx - wx0) / COVER_CELL), gj = Math.floor((wz - wz0) / COVER_CELL)
+                if (gi < 0 || gj < 0 || gi >= gw || gj >= gh) continue
+                const k = gj * gw + gi
+
+                const px = this._sx(wx), py = this._sy(wz)
+
+                // ── Wet ground. Independent of cover and layered over it, so a hollow under closed
+                //    canopy gets a marsh mark and a well-drained meadow does not.
+                if (isWetGround(wx, wz, wetSamplers)) {
+                    // Marsh tuft: three short uprights off a baseline, the USGS wetland mark.
+                    ctx.strokeStyle = GLYPH_WET_INK
+                    ctx.beginPath()
+                    ctx.moveTo(px - s * 0.5, py); ctx.lineTo(px + s * 0.5, py)
+                    ctx.moveTo(px - s * 0.3, py); ctx.lineTo(px - s * 0.3, py - s * 0.45)
+                    ctx.moveTo(px,           py); ctx.lineTo(px,           py - s * 0.62)
+                    ctx.moveTo(px + s * 0.3, py); ctx.lineTo(px + s * 0.3, py - s * 0.45)
+                    ctx.stroke()
+                }
+
+                // ── Foliage: the HIGH bin only. MED gets the same green and no mark — the whole
+                //    med-vs-high distinction is carried by this glyph, which is what the owner
+                //    asked for and what the reference sheet does.
+                if (cover[k] === COVER_HIGH) {
+                    ctx.strokeStyle = GLYPH_TREE_INK
+                    ctx.beginPath()
+                    ctx.moveTo(px, py - s * 0.55); ctx.lineTo(px, py + s * 0.35)   // trunk
+                    ctx.moveTo(px, py - s * 0.55); ctx.lineTo(px - s * 0.35, py + s * 0.1)
+                    ctx.moveTo(px, py - s * 0.55); ctx.lineTo(px + s * 0.35, py + s * 0.1)
+                    ctx.stroke()
+                }
+            }
+        }
     }
 
     // (2) Road centerlines — each streamed network run projected (x,z) → screen. A single solid
