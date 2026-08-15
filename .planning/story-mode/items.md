@@ -237,8 +237,37 @@ repair"). These are the items money mostly exists to replace.
 | **Power mods** | On an open-diff RWD truck, a *worse car* for a driver without the literacy — **a cursed item nobody had to author** | **RATIFIED premise** |
 | **Tire compound/type** | Grip character and how it degrades; interacts with surface class (FEAT-38) | **DEFAULT** |
 | **Brake pad grade, per axle** | Bias — a race pad changes what the truck does under braking | **DEFAULT** |
+| **Sport anti-roll bars** | Flattens roll and sharpens turn-in, but couples each axle side-to-side — one wheel's bump is now the other's problem, and a lifted inside wheel comes sooner | **DEFAULT** |
 
-### 3c. The durability axis — sportiness traded for endurance [RATIFIED 2026-08-01]
+**ARB values [owner-specified 2026-08-09].** Stock is the asymmetric factory setup; sport is a matched
+pair. Both axles are `arbStiffness{Front,Rear}` in `data/ranger.js`, N/m along the strut axis.
+
+| Set | Front | Rear |
+|---|---|---|
+| **Stock** | 5000 | **none — the pickup ships without a rear bar** |
+| **Sport** | 9500 | 6500 |
+
+The stock pair is already the shipped default. Fitting a rear bar where the factory fitted none is a
+change in *kind*, not degree: the stock rear axle is fully independent side-to-side, and the sport
+bar couples it.
+
+**Delivery: a shop part, never a slider [owner-specified 2026-08-09].** The `arbStiffness*` sliders
+in the debug menu are a **tuning surface for development only**. The player never drags them. Roll
+bars are **purchased as parts from the service shop** and swapped onto the truck — so the numbers
+above are two purchasable states, not a continuous range. Swappable bars are not implemented yet;
+this is the specified final state. The same applies to every part in §3 that currently exists only as
+a param: the shop is the interface, the slider is the dev tool.
+
+The 9500/6500 pair above is the **Sport** bar in §3d's taxonomy — so it also carries Sport's *lower*
+durability than the OEM bar. Off-road and heavy-duty bars are unspecified; when they're set, they
+belong in this same table.
+
+### 3c. The durability axis — sportiness traded for endurance [RATIFIED 2026-08-01; refined by §3d 2026-08-09]
+
+> **Read §3d first.** This section framed durability as a single lateral axis (sporty ⟷ durable). The
+> 2026-08-09 ruling splits it into two independent axes — *character* (sport/off-road/heavy-duty) and
+> *durability* (brand tier, paid for). The reasoning below still holds; the taxonomy is §3d's.
+
 
 **A whole class of parts that are worse to drive and harder to kill.** Owner-ratified 2026-08-01 as a
 sanctioned upgrade direction, and it is the cleanest expression of SM-INV-10 in the catalog: nothing
@@ -274,6 +303,40 @@ here is *better*, everything here is a **trade you can feel through the wheel**.
 
 > **Vehicles are not items (SM-INV-15).** You cannot buy a different car during a run. Parts are the
 > entire in-run upgrade path; *starting* vehicles are the meta layer (DESIGN.md "The garage").
+
+### 3d. Component families & brands — the build matrix [RATIFIED 2026-08-09]
+
+**Most component families ship in three characters, priced against an OEM baseline.** This is the
+owner-specified shape of the shop, and it supersedes the single-axis reading in §3c (which treated
+"durability" as one lateral trade; it is actually two independent axes).
+
+| Family | Focused on | Durability vs. OEM |
+|---|---|---|
+| **OEM** | The baseline the truck was built around — the reference point, not a tier | — |
+| **Sport** | On-road performance | **Lower than OEM** |
+| **Off-road** | Off-road performance | Slightly better than OEM |
+| **Heavy-duty** | Heavy-load performance — but higher spring rates mean it **does not drive well on road** | Very high |
+
+**Two axes, priced separately.** *Character* (sport ↔ heavy-duty) is what the part does. *Durability*
+is what it survives. The player **pays a premium for durability**, and pays a smaller marginal cost to
+get the truck driving the way they want. So there is no single "upgrade" direction: a heavy-duty part
+is not a better sport part, it is a different truck that happens to also last longer.
+
+**Brands carry durability.** Fake in-game brands are the durability signal — a part's survivability is
+mostly a function of *which brand made it*, with only subtle tweaks to the actual spring rates and
+stiffnesses between them. This keeps the physics honest (rates stay in a believable band) while giving
+the shop a legible quality ladder that isn't a stat line on the part.
+
+> **The design goal — synergy, not ranking.** The truth about building a vehicle is that no one spring
+> rate is better than another; what's effective is a **package of components set up to work together**.
+> The catalog exists so the player can arrive at *"I really like the brand A coilovers with the brand B
+> roll bar with the brand C tire"* — a build they chose and can defend, not a row they climbed to.
+> Any part that reads as strictly-better in isolation has failed this section.
+
+**SM-INV-10 reconciliation.** Owner-ruled 2026-08-09: durability and brand tier *are* genuinely
+rankable, so the invariant's "no number on a part, ever" now governs **presentation and character** —
+the shop may express price and a brand's reputation, but a part still never prints a handling stat, and
+the character families stay lateral to each other. Flagged for a matching edit in DESIGN.md.
 
 ## 4. Cargo
 
