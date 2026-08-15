@@ -23,6 +23,7 @@ import { MISSION_PLAN_RADIUS } from './mission.js'
 import { POI_ICONS, POI_ICON_PX } from '../data/map-icons.js'   // FEAT-60: map glyphs
 import { chunkCover, slopeFromGradient, COVER_CELL, CELLS_PER_CHUNK, DENSE_MIN, SCATTERED_MIN }
     from './map-cover.js'
+import { biomeAt, BIOME } from './biome.js'
 import { FLORA_PARAMS } from '../data/flora.js'
 
 // Streamed radius of the map's own RoadSystem around the pan cursor. UNIFIED with the story-mode
@@ -161,10 +162,18 @@ const HILLSHADE_K   = 2.2              // gradient → shade gain; ~1.0 saturate
 // The raster is keyed to a FIXED WORLD LATTICE, never to the view. Same discipline as the terrain
 // and scatter (D-16 window-invariance): a clearing has to have the same shape and the same edge
 // whatever zoom you found it at, and a view-aligned raster would reshape it under the cursor.
-const COVER_BLUR    = 1     // box-blur radius in cells, applied to the banded WEIGHT before the
-                            // upscale. One pass is enough — the bilinear upscale does most of the
-                            // softening.
-// Radius, in cells, the tree COUNTS are area-averaged over before they are banded — i.e. the scale
+// The three cover bins. Two fill colours only — COVER_HIGH prints the same green as COVER_MED and
+// is told apart by carrying foliage glyphs, which is the reference's own vocabulary (owner,
+// 2026-08-15: "low cover is white, med cover is green and high cover is foliage icon").
+const COVER_LOW  = 0
+const COVER_MED  = 1
+const COVER_HIGH = 2
+// Texels per lattice cell in the composed ground bitmap. 4 puts a texel every 4 m, which is what
+// buys a hard cover boundary that still curves — the bins are interpolated and re-thresholded at
+// this resolution rather than being blended by the upscale. Costs COVER_SS² array writes, all of
+// them trivial, inside a redraw that is already debounced.
+const COVER_SS   = 4
+// Radius, in cells, the tree COUNTS are area-averaged over before they are binned — i.e. the scale
 // at which "forested" is asked. One cell (a 48 m window) is the smallest that answers the question
 // about ground rather than about an individual gap between trunks. Raising it flattens the sheet
 // toward uniform green: at r=3 the measured p10..p90 spread collapses to 1.14..1.76.
@@ -1076,8 +1085,19 @@ export class Map2D {
         const cover = this._coverRaster(wx0, wz0, gw, gh)
         this._coverGrid = { wx0, wz0, gw, gh, cover, hg }
 
-        // ── Compose. One texel = one lattice cell.
-        const img = ctx.createImageData(gw, gh)
+        // ── Compose, at COVER_SS texels per lattice cell.
+        //
+        // The supersample is what lets the cover stay HARD-EDGED without printing 16 m squares. The
+        // bins are interpolated as a continuous field and then re-thresholded per texel, so a
+        // boundary follows a smooth curve through the lattice while every texel on either side of
+        // it is exactly white or exactly green — never a blend of the two. Letting the upscale
+        // filter do it instead would fade green into white across the seam, which is the one thing
+        // a binned sheet must not do.
+        //
+        // Hillshade is interpolated normally: it IS a continuous quantity, and it is the one soft
+        // thing the owner asked for.
+        const iw = gw * COVER_SS, ih = gh * COVER_SS
+        const img = ctx.createImageData(iw, ih)
         const px = img.data
         const gR = parseInt(PAPER_GREEN.slice(1, 3), 16), gG = parseInt(PAPER_GREEN.slice(3, 5), 16),
               gB = parseInt(PAPER_GREEN.slice(5, 7), 16)
@@ -1085,9 +1105,10 @@ export class Map2D {
               oB = parseInt(PAPER_OPEN.slice(5, 7), 16)
         const lx = Math.cos(HILLSHADE_AZ), lz = Math.sin(HILLSHADE_AZ)
 
+        // Per-cell shade, computed once on the lattice and interpolated per texel below.
+        const shadeG = new Float32Array(gw * gh)
         for (let j = 0; j < gh; j++) {
             for (let i = 0; i < gw; i++) {
-                const k = j * gw + i
                 // Central differences, clamped at the border (a one-sided difference there would
                 // draw a bright or dark rule down the edge of every cached bitmap — and with a 2x
                 // overscan those seams land mid-sheet, not off it).
@@ -1098,14 +1119,34 @@ export class Map2D {
                 // Slope-aspect dot with the light. Not a physical lambert — a shallow, clamped
                 // ramp, because the job is to say which way a face turns, not to render it.
                 const lit = Math.max(-1, Math.min(1, -(dx * lx + dz * lz) * HILLSHADE_K))
-                const shade = 1 + (lit < 0 ? lit : lit * 0.35) * (1 - HILLSHADE_MIN)
+                shadeG[j * gw + i] = 1 + (lit < 0 ? lit : lit * 0.35) * (1 - HILLSHADE_MIN)
+            }
+        }
 
-                // Cover → green/white mix. `cover` is null past the budget, which prints plain
-                // green: at that zoom the pattern is sub-pixel anyway.
-                const veg = cover ? cover[k] : 1
-                const r = oR + (gR - oR) * veg, g = oG + (gG - oG) * veg, b = oB + (gB - oB) * veg
+        // Bilinear read of a lattice field at texel (u,v), in lattice units.
+        const lerpG = (fld, u, v) => {
+            const i0 = Math.min(gw - 1, Math.max(0, Math.floor(u))), i1 = Math.min(gw - 1, i0 + 1)
+            const j0 = Math.min(gh - 1, Math.max(0, Math.floor(v))), j1 = Math.min(gh - 1, j0 + 1)
+            const fu = u - i0, fv = v - j0
+            const a = fld[j0 * gw + i0], b = fld[j0 * gw + i1]
+            const c = fld[j1 * gw + i0], d = fld[j1 * gw + i1]
+            return (a + (b - a) * fu) + ((c + (d - c) * fu) - (a + (b - a) * fu)) * fv
+        }
 
-                const o = k * 4
+        for (let jj = 0; jj < ih; jj++) {
+            const v = (jj + 0.5) / COVER_SS - 0.5
+            for (let ii = 0; ii < iw; ii++) {
+                const u = (ii + 0.5) / COVER_SS - 0.5
+                const shade = lerpG(shadeG, u, v)
+
+                // Cover → one of two fills, thresholded, never blended. `cover` is null past the
+                // budget, which prints plain green: at that zoom the pattern is sub-pixel anyway.
+                // The cut sits at COVER_LOW..COVER_MED's midpoint, so it is the LOW/MED boundary
+                // that gets drawn — HIGH and MED share a fill and are told apart by glyphs.
+                const open = cover ? lerpG(cover, u, v) < (COVER_LOW + COVER_MED) / 2 : false
+                const r = open ? oR : gR, g = open ? oG : gG, b = open ? oB : gB
+
+                const o = (jj * iw + ii) * 4
                 px[o]     = Math.max(0, Math.min(255, r * shade))
                 px[o + 1] = Math.max(0, Math.min(255, g * shade))
                 px[o + 2] = Math.max(0, Math.min(255, b * shade))
@@ -1118,18 +1159,18 @@ export class Map2D {
         // canvas per rebuild is what makes this kind of pass show up in a profile.
         if (!this._coverCanvas) this._coverCanvas = document.createElement('canvas')
         const cc = this._coverCanvas
-        if (cc.width !== gw || cc.height !== gh) { cc.width = gw; cc.height = gh }
+        if (cc.width !== iw || cc.height !== ih) { cc.width = iw; cc.height = ih }
         cc.getContext('2d').putImageData(img, 0, 0)
 
         const sx0 = this._sx(wx0), sy0 = this._sy(wz0)
         const sw = (wx1 - wx0) * zoom, sh = (wz1 - wz0) * zoom
+        // Smoothing ON only to take the stair-steps off the supersampled texels (4 m each, so this
+        // is antialiasing a hard edge, NOT fading one bin into the next — the threshold above has
+        // already decided which side of the boundary every texel is on).
         const prev = ctx.imageSmoothingEnabled
-        ctx.imageSmoothingEnabled = true          // the bilinear upscale IS the soft clearing edge
+        ctx.imageSmoothingEnabled = true
         ctx.imageSmoothingQuality = 'high'
-        // Half-texel inset: drawImage maps texel CENTRES to the rect's corners, so without it the
-        // outer half-texel is stretched and the sheet gets a smeared border.
-        const half = COVER_CELL * zoom * 0.5
-        ctx.drawImage(cc, sx0 - half, sy0 - half, sw + COVER_CELL * zoom, sh + COVER_CELL * zoom)
+        ctx.drawImage(cc, sx0, sy0, sw, sh)
         ctx.imageSmoothingEnabled = prev
     }
 
@@ -1170,6 +1211,9 @@ export class Map2D {
                 const dz = (road._coarseH(x, z + e) - road._coarseH(x, z - e)) * amp / (2 * e)
                 return slopeFromGradient(dx, dz)
             },
+            // Feeds the biome relief ring. Coarse field, matching slopeAt — the ring spans 70 m, so
+            // the detail octave the map cannot see contributes nothing at that scale anyway.
+            heightAt: (x, z) => road._coarseH(x, z) * amp,
             rejectAt: (x, z) => {
                 for (const p of ponds) {
                     const dx = x - p.floorX, dz = z - p.floorZ
@@ -1181,44 +1225,75 @@ export class Map2D {
         }
 
         const out = new Float32Array(gw * gh)
+        const open = new Uint8Array(gw * gh)   // 1 = biome says this cell is not forest at all
         const seed = this._getSeed()
         for (let cz = cz0; cz <= cz1; cz++) {
             for (let cx = cx0; cx <= cx1; cx++) {
                 const key = cx + ',' + cz
                 let cc = this._coverMemo.get(key)
-                if (!cc) { cc = chunkCover(cx, cz, seed, samplers); this._coverMemo.set(key, cc) }
-                // Blit the chunk's cell counts into the lattice.
+                if (!cc) {
+                    // Two reads per chunk, memoized together because they are invalidated together.
+                    //
+                    // The COUNTS come from the scatter replay, which evaluates biome once per
+                    // cluster — correct for deciding whether a tree stands, but far too coarse to
+                    // draw a meadow's EDGE with: a chunk whose four clusters all landed in a meadow
+                    // zeroes as one 64 m square, and the sheet grows visible blocks.
+                    //
+                    // So the boundary is drawn from a per-CELL biome read instead. 16 evaluations
+                    // per chunk against the replay's ~44 candidates, and the edge then follows the
+                    // terrain that defines it rather than the chunk grid.
+                    const counts = chunkCover(cx, cz, seed, samplers)
+                    const bio = new Uint8Array(CELLS_PER_CHUNK * CELLS_PER_CHUNK)
+                    for (let lj = 0; lj < CELLS_PER_CHUNK; lj++) {
+                        for (let li = 0; li < CELLS_PER_CHUNK; li++) {
+                            const wx = cx * CH + (li + 0.5) * COVER_CELL
+                            const wz = cz * CH + (lj + 0.5) * COVER_CELL
+                            bio[lj * CELLS_PER_CHUNK + li] =
+                                biomeAt(wx, wz, seed, samplers) === BIOME.FOREST ? 0 : 1
+                        }
+                    }
+                    cc = { counts, bio }
+                    this._coverMemo.set(key, cc)
+                }
                 for (let lj = 0; lj < CELLS_PER_CHUNK; lj++) {
                     const gj = Math.round((cz * CH + lj * COVER_CELL - wz0) / COVER_CELL)
                     if (gj < 0 || gj >= gh) continue
                     for (let li = 0; li < CELLS_PER_CHUNK; li++) {
                         const gi = Math.round((cx * CH + li * COVER_CELL - wx0) / COVER_CELL)
                         if (gi < 0 || gi >= gw) continue
-                        out[gj * gw + gi] = cc[lj * CELLS_PER_CHUNK + li]
+                        out[gj * gw + gi]  = cc.counts[lj * CELLS_PER_CHUNK + li]
+                        open[gj * gw + gi] = cc.bio[lj * CELLS_PER_CHUNK + li]
                     }
                 }
             }
         }
 
-        // ── Counts → a 0..1 vegetation weight.
+        // ── Counts → one of THREE bins. No ramp between them (owner, 2026-08-15): a printed sheet
+        //    states a category, it does not fade between two. So the sheet only ever carries two
+        //    fill colours, and the third bin is distinguished by carrying foliage glyphs on the
+        //    same green as the second:
         //
-        // The counts are AREA-AVERAGED first, and that order is the whole correctness of this
+        //      COVER_LOW   → white   (meadow, bare rock, water margin — open ground)
+        //      COVER_MED   → green
+        //      COVER_HIGH  → green + foliage glyphs (see _drawGlyphs)
+        //
+        // The counts are AREA-AVERAGED before binning, and that order is the correctness of this
         // layer. "Is this ground forested" is a property of a neighbourhood, not of a 16 m cell: a
-        // cell with no trunk standing in it, ringed by cells that are full of trees, is the gap
-        // between two trunks — not a meadow. Banding the bare counts printed 41% of the world
-        // white (measured, seed 6) purely because the scatter drops trees in clusters.
-        //
-        // So: average over COVER_COUNT_BLUR to ask the neighbourhood question, band that, and only
-        // then blur the WEIGHT for the printed edge.
+        // cell with no trunk in it, ringed by cells full of trees, is the gap between two trunks,
+        // not a meadow. Binning the bare counts put 41% of the world under white (measured, seed 6)
+        // purely because the scatter drops trees in clusters.
         const area = boxBlur(out, gw, gh, COVER_COUNT_BLUR)
-        const veg = new Float32Array(area.length)
+        const bin = new Float32Array(area.length)
         for (let k = 0; k < area.length; k++) {
+            // The biome is decisive. Meadow and bare rock are open ground by definition, and no
+            // count of trees that happened to be replayed nearby may argue them back to green —
+            // this is also what keeps the map's white agreeing with the world, since the scatter
+            // clears exactly these cells.
+            if (open[k]) { bin[k] = COVER_LOW; continue }
             const n = area[k]
-            veg[k] = n >= DENSE_MIN ? 1
-                   : n >= SCATTERED_MIN ? (n - SCATTERED_MIN) / (DENSE_MIN - SCATTERED_MIN) * 0.75 + 0.25
-                   : 0
+            bin[k] = n >= DENSE_MIN ? COVER_HIGH : n >= SCATTERED_MIN ? COVER_MED : COVER_LOW
         }
-        return boxBlur(veg, gw, gh, COVER_BLUR)
+        return bin
     }
 
     // (1b) Rivers and ponds — the blue plate.
@@ -1326,10 +1401,10 @@ export class Map2D {
                     ctx.stroke()
                 }
 
-                // ── Trees: only where the raster is at full vegetation weight, i.e. the DENSE band.
-                //    Bare green (the scattered band) gets the tint and no mark, which is the
-                //    dense/scattered distinction the owner asked for carried by glyphs alone.
-                if (cover[k] > 0.92) {
+                // ── Foliage: the HIGH bin only. MED gets the same green and no mark — the whole
+                //    med-vs-high distinction is carried by this glyph, which is what the owner
+                //    asked for and what the reference sheet does.
+                if (cover[k] === COVER_HIGH) {
                     ctx.strokeStyle = GLYPH_TREE_INK
                     ctx.beginPath()
                     ctx.moveTo(px, py - s * 0.55); ctx.lineTo(px, py + s * 0.35)   // trunk

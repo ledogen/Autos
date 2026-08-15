@@ -44,6 +44,7 @@
 
 import { mulberry32, seedFor } from './seed.js'
 import { FLORA_PARAMS } from '../data/flora.js'
+import { biomeAt, BIOME } from './biome.js'
 
 // Cover raster cell, metres. Sub-chunk (64 / 16 = 4×4 cells per chunk) so a cluster's 18 m disc
 // spans a couple of cells and its edge can land somewhere other than a chunk boundary — at full
@@ -60,7 +61,11 @@ const CELLS_PER_CHUNK = FLORA_PARAMS.chunkSize / COVER_CELL   // 4
 // predominantly green with open ground as the exception — the proportion a forest quadrangle has.
 // Banding the BARE counts instead put 41% of the map under white, which is not a map of this world.
 export const DENSE_MIN     = 1.6   // ≥ this → green WITH tree glyphs (closed canopy)
-export const SCATTERED_MIN = 0.55  // ≥ this → bare green; below → white open ground
+// Below this → white. Deliberately LOW, and lowered once biomes landed: a meadow or a rock face
+// reports a flat zero here, so the biome layer trips this cut on its own. Anything above zero is a
+// thin patch of real forest, and pushing the cut up into the count distribution only prints the
+// Poisson noise in cluster placement as a rash of white specks that mean nothing on the ground.
+export const SCATTERED_MIN = 0.25
 
 /**
  * Slope in prop-scatter's units, from a height field's gradient.
@@ -83,10 +88,10 @@ export function slopeFromGradient (dx, dz) {
  *
  * @param {number} cx,cz        chunk coords (world = cx * chunkSize)
  * @param {number} worldSeed
- * @param {{slopeAt:(x,z)=>number, rejectAt:(x,z)=>boolean}} s
+ * @param {{slopeAt:(x,z)=>number, heightAt:(x,z)=>number, rejectAt:(x,z)=>boolean}} s
  *        rejectAt covers the water tests (pond + stream channel) as one call, since the map
- *        resolves both from the same bbox-fetched lists. No heightAt: the scatter samples it only
- *        to seat a placed tree's y, and the map has no use for a tree's elevation.
+ *        resolves both from the same bbox-fetched lists. heightAt feeds the biome relief ring only
+ *        — a placed tree's own y is of no interest to a map.
  * @returns {Float32Array} tree counts, row-major, CELLS_PER_CHUNK per side
  */
 export function chunkCover (cx, cz, worldSeed, s, P = FLORA_PARAMS) {
@@ -104,6 +109,10 @@ export function chunkCover (cx, cz, worldSeed, s, P = FLORA_PARAMS) {
     // is not; skipping the draw would desynchronise every cluster after this one.
     rng()
 
+    // The ground this cluster stands on. MEADOW and ROCK clear it entirely — this is where the
+    // map's white comes from, and it is the SAME call the scatter makes, not a parallel rule.
+    const ground = biomeAt(ccx, ccz, worldSeed, s)
+
     const n = Math.round(S.treesPerCluster[0] +
                         (S.treesPerCluster[1] - S.treesPerCluster[0]) * rng())
     for (let k = 0; k < n; k++) {
@@ -113,6 +122,7 @@ export function chunkCover (cx, cz, worldSeed, s, P = FLORA_PARAMS) {
 
       // ── placeTree's reject chain, in order. Each `continue` leaves the stream untouched,
       //    exactly as the early `return`s in prop-scatter do.
+      if (ground !== BIOME.FOREST) continue              // meadow / bare rock
       if (s.rejectAt(tx, tz)) continue                  // pond water + stream channel
       if (s.slopeAt(tx, tz) > S.slopeRejectMax) continue // cliff
       // Placed: consume the five per-tree draws (brightness, variant, scale, rotY, tilt, tiltAz).

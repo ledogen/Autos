@@ -44,7 +44,12 @@ export const FLORA_PARAMS = {
     // Species selection by terrain (slope = 1 - normal.y; 0 flat, →1 vertical):
     slopeMeadowMax:   0.16,     // below → meadow (aspen favoured)
     slopeSteepMin:    0.34,     // above → steep/exposed (pine favoured); between → biome-noise mix
-    slopeRejectMax:   0.75,     // above this, no trees at all (cliff)
+    // Above this, no trees at all. Was 0.75, which NEVER FIRED: this terrain tops out at slope
+    // 0.593 (measured, 160k samples on seed 6 — p50 0.094, p90 0.248, max 0.593), so the world had
+    // no bare ground anywhere and the 2D map had nothing honest to print white. Mirrors
+    // BIOME_PARAMS.rockSlopeMin — the same rule per TREE that the ROCK biome applies per CLUSTER.
+    // Keep the two equal.
+    slopeRejectMax:   0.38,
     biomeNoiseFreq:   0.012,    // low-freq world-space mask for meadow/exposed blending
     // Aspen gets MORE common with elevation; pine ~uniform. Weight = 1 + k*(elev/elevRef).
     aspenElevBias:    0.6,

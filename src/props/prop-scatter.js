@@ -21,6 +21,7 @@
 
 import { mulberry32, seedFor } from '../seed.js'
 import { FLORA_PARAMS } from '../../data/flora.js'
+import { biomeAt, BIOME } from '../biome.js'
 
 const lerp = (a, b, t) => a + (b - a) * t
 const irange = (rng, [lo, hi]) => Math.round(lo + (hi - lo) * rng())
@@ -62,7 +63,12 @@ export function* treeClusterPass (rng, ox, oz, worldSeed, samplers, P = FLORA_PA
   const out = []
   const slopeAt = (x, z) => slopeFrom(samplers, x, z)
 
-  const placeTree = (cat, x, z) => {
+  const placeTree = (cat, x, z, ground) => {
+    // Biome gate. Evaluated once per CLUSTER and passed down (see the cluster loop) rather than
+    // per tree: it costs a slope sample plus a five-point relief ring, which is far too much to pay
+    // 44 times a chunk, and a meadow that only half-cleared its own cluster would read as a thinned
+    // patch rather than as open ground. Rejects BEFORE any rng draw, like roadBlocked.
+    if (ground !== BIOME.FOREST) return
     if (roadBlocked(x, z)) return
     if (inPondWaterAt(samplers, x, z)) return       // FEAT-17: no trees standing in the pond
     if (inStreamChannelAt(samplers, x, z)) return   // FEAT-25: no trees standing in the stream channel
@@ -88,6 +94,10 @@ export function* treeClusterPass (rng, ox, oz, worldSeed, samplers, P = FLORA_PA
     const slope = slopeAt(ccx, ccz)
     const elev = heightAt(ccx, ccz)
     const biome = biomeNoise(ccx, ccz, S.biomeNoiseFreq, worldSeed)
+    // Which ground this cluster is standing on. FOREST places, MEADOW and ROCK clear it entirely —
+    // this is where the world's openings come from. Note this is a different thing from `biome`
+    // above, which is only the species mask (aspen vs pine) and has always been named that.
+    const ground = biomeAt(ccx, ccz, worldSeed, { heightAt, slopeAt })
 
     // species probability: aspen favoured in meadows (low slope) + at elevation; pine on steeps.
     let pAspen
@@ -103,7 +113,7 @@ export function* treeClusterPass (rng, ox, oz, worldSeed, samplers, P = FLORA_PA
     for (let k = 0; k < n; k++) {
       // jittered offset within cluster radius (sqrt for area-uniform)
       const ang = rng() * Math.PI * 2, rad = Math.sqrt(rng()) * S.clusterRadius
-      placeTree(cat, ccx + Math.cos(ang) * rad, ccz + Math.sin(ang) * rad)
+      placeTree(cat, ccx + Math.cos(ang) * rad, ccz + Math.sin(ang) * rad, ground)
       yield   // PERF-14: slice point — EVERY candidate (a single sampler chain can run ms-scale)
     }
   }
