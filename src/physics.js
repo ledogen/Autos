@@ -248,18 +248,30 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // debris under the wheel, filtered to GROUP_DEBRIS so engine terrain/props can never
   // double-count a surface the analytic query already reports. Engine hits carry .body,
   // which is what triggers the relative-velocity path in Step 3.
+  // Depth CONTINUITY clamp for dynamic-body contacts (owner: "squishy on rocks", 2026-08-15 —
+  // supersedes the flat 0.09 hard cap). The overlap query can report a near-full-radius depth in
+  // a single frame (hub center dips inside a small rock's hull; capture 1786690032648: fl_c
+  // 0.004 → 0.148 in one frame while coasting — the fling loop's trigger). But a HARD cap made
+  // sustained contact mushy: the tire could never push harder than cap × tireStiffness, so the
+  // wheel sank into rocks visibly softer than it sits on the ground. Rate-limiting depth GROWTH
+  // keeps both properties: a fresh contact ramps in over a few frames (no one-frame force spike,
+  // the fling stays dead), while rolling onto and staying on a rock reaches full honest depth
+  // (ground-equivalent firmness). Per-body last-step depths live on engineCtx; every query
+  // inside one step shares the same previous-step bound, so multiple suspension substep queries
+  // cannot compound the allowance.
+  const prevDepth = engineCtx._dynContactDepth ?? EMPTY_DEPTH_MAP
+  const stepDepth = new Map()
+  engineCtx._dynContactDepth = stepDepth
   const qcPlus = (cx, cy, cz, r, footprint) => {
     const list = queryContacts(cx, cy, cz, r, footprint)
     const dyn = engine.overlapSphere({ x: cx, y: cy, z: cz }, r, { collidesWith: GROUP_DEBRIS, dynamicOnly: true })
     for (let i = 0; i < dyn.length; i++) {
-      // CAP THE DEPTH of dynamic-body contacts. The overlap query can report a near-full-radius
-      // depth in a single frame (hub center dips inside a small rock's hull), and the tire spring
-      // turned that into a ~10 kN Fz spike (capture 1786690032648: fl_c 0.004 → 0.148 in one
-      // frame, coasting). That spike flung the rock, the fleeing rock's velocity then drove the
-      // relative-slip ω integrator to 60+ rad/s, and the loop fed itself. A tire can only deflect
-      // so far — bound debris contacts to a deep-but-sane squish and the whole loop dies.
-      if (dyn[i].depth > DYN_CONTACT_DEPTH_CAP) dyn[i].depth = DYN_CONTACT_DEPTH_CAP
-      list.push(dyn[i])
+      const h = dyn[i]
+      const cap = Math.min(DYN_CONTACT_DEPTH_HARD, (prevDepth.get(h.body) ?? 0) + DYN_CONTACT_DEPTH_RATE * dt)
+      if (h.depth > cap) h.depth = cap
+      const seen = stepDepth.get(h.body)
+      if (seen === undefined || h.depth > seen) stepDepth.set(h.body, h.depth)
+      list.push(h)
     }
     return list
   }
@@ -555,12 +567,16 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       let groundVel = null
       if (ground.body != null) {
         groundVel = engine.getPointVelocity(ground.body, ground.contactPoint, _groundVelScratch)
-        params._lateralVelocity      = (hubVel.x - groundVel.x) * wheelRight.x +
-                                       (hubVel.y - groundVel.y) * wheelRight.y +
-                                       (hubVel.z - groundVel.z) * wheelRight.z
-        params._longitudinalVelocity = (hubVel.x - groundVel.x) * wheelFwd.x +
-                                       (hubVel.y - groundVel.y) * wheelFwd.y +
-                                       (hubVel.z - groundVel.z) * wheelFwd.z
+        // The support's own velocity enters the slip BOUNDED (±DEBRIS_SLIP_CLAMP m/s per axis):
+        // an escaping rock at 6+ m/s would otherwise saturate Pacejka into a violent transient.
+        // Past a few m/s of relative motion the contact is momentary — the tire never re-grips
+        // a fleeing surface, so the honest force is the bounded one.
+        const gvLat = Math.max(-DEBRIS_SLIP_CLAMP, Math.min(DEBRIS_SLIP_CLAMP,
+          groundVel.x * wheelRight.x + groundVel.y * wheelRight.y + groundVel.z * wheelRight.z))
+        const gvLong = Math.max(-DEBRIS_SLIP_CLAMP, Math.min(DEBRIS_SLIP_CLAMP,
+          groundVel.x * wheelFwd.x + groundVel.y * wheelFwd.y + groundVel.z * wheelFwd.z))
+        params._lateralVelocity      = hubVel.dot(wheelRight) - gvLat
+        params._longitudinalVelocity = hubVel.dot(wheelFwd) - gvLong
         // Clamped: a debris body ricocheting off the rim can report a huge closing speed for a
         // frame; the tire damper term must not turn that into another force spike (same failure
         // family as the depth cap in qcPlus).
@@ -625,6 +641,13 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       lastSLatNew    = sLatNew
       lastLongVelCur = longVelCur
       lastRelaxDen   = relaxDen
+      // ω NEVER CHASES A DEBRIS SUPPORT (owner rulings, captures 1786690032648 + round-rock
+      // regression): the implicit ω solve converges toward the support's frame in one step, so a
+      // rock squirting out from under the wheel revved it to 60–80 rad/s at zero throttle — and
+      // the spun-up wheel then flung the next thing it touched. For dynamic supports the wheel's
+      // spin integrator tracks the ROAD frame (absolute hub velocity): the momentary transient
+      // still shoves the body and the rock through the force path above, but the wheel rolls on.
+      if (ground.body != null) lastLongVelCur = hubVel.dot(wheelFwd)
 
       const wheelForce = wheelFwd.clone().multiplyScalar(Flong)
       // WR-02: lateral grip opposes lateral hub velocity (resists the slide), so positive Flat
@@ -800,4 +823,11 @@ const _groundVelScratch = { x: 0, y: 0, z: 0 }
 // A loaded tire's real deflection is ~0.05 m; 0.09 allows a hard bump (~2× static corner load
 // at current tireStiffness) while making the one-frame full-radius spike impossible. Static
 // terrain contacts are untouched — their depth is already continuous.
-const DYN_CONTACT_DEPTH_CAP = 0.09
+// Absolute ceiling (a wheel can never meaningfully deflect past half its radius) and the
+// per-second depth GROWTH allowance. At 60 Hz the rate admits ~4 cm of new depth per step:
+// first touch of a fresh rock is ≤ ~4 kN (gentle), sustained contact reaches the ceiling in
+// ~4 frames (firm — ground-equivalent ~18 kN available). See the qcPlus comment.
+const DYN_CONTACT_DEPTH_HARD = 0.18
+const DEBRIS_SLIP_CLAMP = 3.0               // m/s — max support-velocity contribution to tire slip
+const DYN_CONTACT_DEPTH_RATE = 2.5          // m/s of allowed depth growth
+const EMPTY_DEPTH_MAP = new Map()           // shared immutable-by-convention first-step default

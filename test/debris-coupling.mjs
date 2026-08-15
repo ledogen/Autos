@@ -13,6 +13,7 @@
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics } from '../src/physics.js'
+import { getWheelPosition } from '../src/suspension.js'
 import { makeEngineCtx } from './lib/engine-ctx.mjs'
 import { GROUP_DEBRIS } from '../src/physics-engine.js'
 
@@ -135,12 +136,17 @@ console.log('\nfling regression — coast over a small rock, no throttle:')
     drivetrain: { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },
   }
   const ctx2 = await makeEngineCtx(vs2, P2, { groundFn: () => 0, extent: 128, cell: 4 })
-  // A ~50 kg cobble dead in the LEFT front wheel's track (x ≈ −0.72), 6 m ahead.
-  const rock = ctx2.engine.createBody({ type: 'dynamic', position: { x: -0.72, y: 0.16, z: -6 }, userData: { kind: 'debris' } })
-  ctx2.engine.addCylinder(rock, 0.24, 0.17, { density: 2500, friction: 0.7, restitution: 0.15, group: GROUP_DEBRIS }, 0, 8)
+  // A ~85 kg ROUNDED cobble dead in the LEFT front wheel's track (x ≈ −0.72), 6 m ahead.
+  // Round like the real test-rock hull — the wheel RAMPS up it; a sharp-rimmed shape would
+  // demand an instant hub step no finite force can deliver and the sink metric would measure
+  // geometry, not firmness.
+  const ROCK_R = 0.2
+  const rock = ctx2.engine.createBody({ type: 'dynamic', position: { x: -0.72, y: ROCK_R, z: -6 }, userData: { kind: 'debris' } })
+  ctx2.engine.addSphere(rock, ROCK_R, { density: 2500, friction: 0.7, restitution: 0.15, group: GROUP_DEBRIS })
 
   const rv = { x: 0, y: 0, z: 0 }, rw = { x: 0, y: 0, z: 0 }
-  let rockPeak = 0, omegaPeak = 0, fzPeak = 0
+  const rp = { x: 0, y: 0, z: 0 }, rq = { x: 0, y: 0, z: 0, w: 1 }
+  let rockPeak = 0, omegaPeak = 0, fzPeak = 0, maxSink = 0
   for (let s = 1; s <= 480; s++) {
     vs2.throttle = 0
     stepPhysics(vs2, P2, DT, queryContacts, ctx2)
@@ -150,12 +156,22 @@ console.log('\nfling regression — coast over a small rock, no throttle:')
       omegaPeak = Math.max(omegaPeak, Math.abs(vs2.wheelOmega[i]))
       fzPeak = Math.max(fzPeak, P2._tireFz[i])
     }
+    // Firmness (owner: "squishy on rocks", 2026-08-15): while the FL wheel is horizontally atop
+    // the rock, its hub must ride ~rockTop + wheelRadius — sinking deep INTO the rock is the
+    // hard-cap mushiness this scenario now forbids (depth continuity clamp, physics.js).
+    ctx2.engine.getTransform(rock, rp, rq)
+    const hub = getWheelPosition(0, vs2, P2)
+    if (Math.hypot(hub.x - rp.x, hub.z - rp.z) < 0.12) {
+      const rockTop = rp.y + ROCK_R
+      maxSink = Math.max(maxSink, (rockTop + P2.wheelRadius) - hub.y)
+    }
   }
   const omega0 = v0 / P2.wheelRadius
-  console.log(`  rock peak |v| ${rockPeak.toFixed(2)} m/s; wheel |ω| peak ${omegaPeak.toFixed(1)} rad/s (rolling ${omega0.toFixed(1)}); tire Fz peak ${fzPeak.toFixed(0)} N`)
+  console.log(`  rock peak |v| ${rockPeak.toFixed(2)} m/s; wheel |ω| peak ${omegaPeak.toFixed(1)} rad/s (rolling ${omega0.toFixed(1)}); tire Fz peak ${fzPeak.toFixed(0)} N; max sink atop rock ${maxSink.toFixed(3)} m`)
   ok(rockPeak < 3.0, `rock is rolled over, not flung (peak ${rockPeak.toFixed(2)} m/s < 3.0 at a ${v0} m/s coast)`)
   ok(omegaPeak < 2.5 * omega0, `no phantom wheel spin-up (peak |ω| ${omegaPeak.toFixed(1)} < ${(2.5 * omega0).toFixed(1)} rad/s — was 60+ pre-fix)`)
-  ok(fzPeak < 12000, `tire load bounded over the rock (peak Fz ${fzPeak.toFixed(0)} N < 12 kN — was spiking on full-radius depth)`)
+  ok(fzPeak < 20000, `tire load bounded over the rock (peak Fz ${fzPeak.toFixed(0)} N < 20 kN — honest depth now allowed, spikes still clamped)`)
+  ok(maxSink < 0.14, `tire rides the rock FIRMLY, not through it (max sink ${maxSink.toFixed(3)} m < 0.14 — the hard-cap squish regression)`)
   ctx2.dispose()
 }
 

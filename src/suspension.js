@@ -332,8 +332,14 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         // compressionVel sign convention: positive = hub approaching ground = tire compressing.
         // strutCompVelI > 0 means strut shortening = hub moving UP = tire decompressing, so negate.
         const compressionVel = -strutCompVelI
+        // FEAT-48 debris contacts (c.body set): the damper term may ADD but never RELIEVE.
+        // While the strut compresses fast (climbing onto a rock), tireDamping × negative
+        // compressionVel subtracted several kN exactly when the rock needed pushing against —
+        // rocks read visibly softer than ground (owner, 2026-08-15). Ground keeps the full
+        // signed damper (its transients are pre-spread by the footprint envelope).
+        const dampTerm = params.tireDamping * compressionVel
         const tireFnAtContact = Math.max(0,
-          params.tireStiffness * c.depth + params.tireDamping * compressionVel
+          params.tireStiffness * c.depth + (c.body != null ? Math.max(0, dampTerm) : dampTerm)
         )
         // D-06: split contact normal force into strut-axis and X/Z residual components
         // bodyUpDot = dot(c.normal, body_up): the fraction of contact normal force along the strut axis
