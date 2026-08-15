@@ -134,7 +134,8 @@ check('pinned: tier table has 30 days, tier(1) === 1', ECONOMY_PARAMS.dayTierTab
   eco.start()
   for (let i = 0; i < 20; i++) eco.settle({ par: 180, ratio: 1.1, letter: 'C' }, { terms: eco.terms() })
   check('20 C-grades === exactly 10.0 points (integer halves, no float drift)', eco.points() === 10.0)
-  check('formatDeeds renders the ½ glyph', formatDeeds(7) === '3½' && formatDeeds(1) === '½' && formatDeeds(4) === '2')
+  check('formatDeeds renders halves as a decimal, not the ½ glyph (owner, 2026-08-09 — the fraction was a smudge at HUD size)',
+    formatDeeds(7) === '3.5' && formatDeeds(1) === '0.5' && formatDeeds(4) === '2')
 }
 
 // ── 8. Run-layer boundary (SM-INV-12) ───────────────────────────────────────────────────────────

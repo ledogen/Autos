@@ -86,15 +86,6 @@ export async function replayEvent(capture, { THREE }) {
         }
         return hits
     }
-    const queryVertexContacts = (px, py, pz) => {
-        const hits = []
-        const terrainH = terrain.analyticHeight(px, pz)
-        if (py < terrainH) {
-            const n = terrain.analyticNormal(px, pz)
-            hits.push({ normal: new THREE.Vector3(n.x, n.y, n.z), depth: terrainH - py })
-        }
-        return hits
-    }
 
     // ── (A) Terrain self-check: does headless analyticHeight match the recorded rd_gh column? ──────
     // This is the live drift detector for terrain-headless.mjs. Sample at every recorded CG position.
@@ -157,7 +148,7 @@ export async function replayEvent(capture, { THREE }) {
         vs.brake = inp.brk;    vs.smoothBrake = inp.brk
         vs.wheelSteerAngles = ackermann(inp.steer, params)
 
-        stepPhysics(vs, params, 1 / 60, queryContacts, queryVertexContacts)
+        stepPhysics(vs, params, 1 / 60, queryContacts)
 
         replayFz.push([0, 1, 2, 3].map(w => vs.wheelDebug[w]?.fz ?? 0))
 

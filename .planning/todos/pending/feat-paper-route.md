@@ -8,7 +8,7 @@ source: SM-2 milestone — first real mission type (plan-mode session 2026-08-04
 relates: FEAT-53, FEAT-59, FEAT-60, FEAT-46, FEAT-43, FEAT-29
 invariants: SM-INV-2, SM-INV-3, SM-INV-4, SM-INV-12, SM-INV-14
 plan: .planning/handoffs/HANDOFF-2026-08-04-paper-route.md
-handoff: .planning/handoffs/HANDOFF-2026-08-07-paper-route-phase-e2.md
+handoff: .planning/handoffs/HANDOFF-2026-08-11-paper-route-playable.md
 amended: 2026-08-05 (owner rulings — scoring simplified, houses split from the POI roster)
 ---
 
@@ -166,8 +166,24 @@ opening and the walk-to-Larry tutorial.
 - **The expediency bonus is unreachable without full coverage.**
 - **One par, one oracle** (SM-INV-2): `computePar()` once over the tour.
 - **`payoutFor()`/`gradeRun()` are not called**; `settle()` is.
-- **15 houses generate always** inside 1 km (radius relaxing only if the network cannot supply),
-  deterministic and window-invariant; the tier only chooses customers (SM-INV-12).
+- **Houses generate always**, deterministic and window-invariant; the tier only chooses customers
+  (SM-INV-12). *Amended 2026-08-11 (owner): the rings are per-rung and HARD — 1.0 / 1.5 / 2.0 /
+  2.0 km — and they no longer relax outward to chase the count. Placement fills them innermost
+  first from `houseRungs()`, which is what makes each rung servable and makes the nesting
+  structural. `poiHouseCount` and `poiHouseR` no longer exist; the ladder is the source of truth.*
+- **OWNER-VERIFIED DIFFICULTY AND PAR — not closeable without this.** The route has been driven
+  once ("very challenging in a good way hard") but nothing about its numbers has been evaluated
+  against real play. The owner must drive it and rule on:
+  - **Is the difficulty right, per rung?** Rung one and rung four are different activities now that
+    the ring widens with the ladder — 2.47 km and four porches against 19.24 km and fifteen.
+  - **Is par honest?** `computePar()` prices the tour with the oracle, but nobody has compared its
+    number to a real drive at a real pace. A par that is generous makes the bell decorative; a par
+    that is tight makes the expediency bonus unreachable and the whole ladder feel punitive. This
+    is the measurement the payout constants below are all waiting on.
+  - The constants still unbalanced against play, listed in Open Questions: `paperW = 0.60`,
+    `expediteOn/Full`, `bonusMax`, the rank thresholds, `throwSpeed = 16`, `dragK = 0.033`, and
+    whether a fifteen-customer route at ~19 km / par ~19 min is the right top rung. A perfect
+    tier-1 route currently pays **$43**.
 - **Houses never appear in `poiSystem.list()`** — the structural form of "most missions don't go to
   houses".
 - **Mom carries both tags**; Larry carries no `newsCustomer`.
@@ -177,11 +193,65 @@ opening and the walk-to-Larry tutorial.
   point). `story-poi`, `mission-network`, `economy`, `par-oracle`, `day-clock` stay green;
   `npm run test:all` before merge.
 
-## Phases — state at 2026-08-05
+## Phases — state at 2026-08-07
 
 **A — Docs** [DONE, `c95a2cc`] · **B — Dialogue** [DONE, `8624861`] · **C — Houses** [DONE,
-`39e433c`] · **D — Throw** [DONE, `07a073d`] · **E — The mission** [PART 1 DONE, `e99fe1e`] ·
-**F — Gates + housekeeping** [PARTIAL]
+`39e433c`] · **D — Throw** [DONE, `07a073d`] · **E — The mission** [DONE — part 1 `e99fe1e`,
+part 2 `5400b1a`] · **F — Gates + housekeeping** [PARTIAL — the only thing left before merge]
+
+**THE MISSION IS PLAYABLE AND THE OWNER HAS DRIVEN IT** (2026-08-10/11): *"pretty hard lol — very
+challenging in a good way hard"*, and hard enough that they asked for it as a menu-launchable
+scenario (FEAT-62). Five owner drives found and fixed: the target rings lying (every region customer
+wore one, so 12 of 16 were decoys), the missing staging threshold, GPS not following the route, the
+tour driving whole streets and turning around, the guidance going blank at a turnaround, and the
+free-roam teleport dragging the region centre with it. All closed; see the handoff.
+
+Remaining before merge: `test/paper-houses.mjs`, a debug folder for `PAPER_PARAMS`/`THROW_PARAMS`/
+`poiHouse*`, the MILESTONES SM-2 paragraph, and the merge itself (which brings FEAT-60 with it).
+
+### Phase E part 2 — what landed
+
+`PaperRouteSystem` (`src/paper-route.js`), a sibling of `MissionSystem`:
+`idle → planning → offer → running → done`. Larry's roster row is `jobs: true` and the park trigger
+branches on his type; the briefing plays *over* the routing, and the offer is held until both
+finish. Stock is spent at release and refunded when the solver produces no flight; a landing credits
+one customer once; the route ends on the bell, the last porch, or the last paper LANDING. It settles
+through `settleFlat` and moves the ladder. New DOM: `#paper-panel` / `#paper-hud`, sharing the
+mission panel's chrome by selector.
+
+**Two things the ruling assumed that measurement contradicted:**
+
+1. **Tour routing is not expensive — it is 1–4 ms.** Every edge in the region is already routed when
+   the region goes live, so the tour is cache hits. The hold-the-offer-behind-the-briefing design is
+   kept anyway (it costs nothing and it is the right shape), but the risk is closed.
+2. **A stop is a STREET, not a junction.** The first tour visited each customer's nearest edge
+   *node*; the new `test/paper-tour.mjs` gate caught that this left **five of six customers never
+   approached** — a house sits mid-edge, up to most of a 640 m street from either junction. A stop is
+   now the customer's edge, entered at the near junction and left at the far one, so the whole street
+   is driven. Everyone on a street the route drives is on the route.
+
+### The supply problem [FIXED — BUG-44]
+
+The ratified **15 customers inside 1 km** was not being met: at the live 2500 m region radius the
+placement pass produced 6 / 11 / 4 customers on seeds 6 / 11 / 42. Two causes, both fixed:
+
+- **`poiHouseSpacing` 90 m → 30 m.** The parameter was documented as house *spacing* but is really
+  the **candidate step** — how often the walk looks — while `poiHouseMinSep` (80 m) is what actually
+  decides how far apart chosen customers end up. A severe reject battery (97% of sites fail the
+  flat-ground test, because unlike a lay-by pad nothing carves a target circle flat) over a coarse
+  sample yields almost nothing. At 30 m all three seeds place the full 15, with the closest chosen
+  pair still 99–197 m apart. Costs ~110 ms once per region, behind the loading screen.
+- **Customers may not sit on an edge that straddles the region wall.** The tour plans on the same
+  region-filtered graph the missions do, so such a customer is unroutable and the route skips them
+  silently, forever — three of seed 6's sixteen. The ring relax now stops at
+  `radius − REGION_MARGIN`. This is the one place "count is hard, distance relaxes" must yield.
+
+The cliff cap, the target radius and the ring geometry were all left untouched.
+
+**Route sizes that fall out** (seed 6, live region radius): tier 1 = 4 customers / 2.61 km /
+par 2:32 · tier 2 = 9 / 15.7 km / 14:44 · tier 3 = 12 / 17.9 km / 17:42 · tier 4 = 15 / 23.0 km /
+23:49. Whether a 24-minute top-tier route is the right size is a play judgement — see the open
+questions.
 
 `feature/poi-models` (FEAT-60) was merged into this branch first, so the roster and the house pass
 were built together rather than reconciled afterwards. `npm run test:all` green, 46 gates.
@@ -207,6 +277,30 @@ mission around it, because it needs live driving to verify honestly:
 5. **Housekeeping (F):** a `paper-houses.mjs` heavy gate (count met, window-invariance, off water and
    junctions, tier-independence, absent from `list()`), a debug folder for `PAPER_PARAMS`/
    `THROW_PARAMS`/`poiHouse*`, and the MILESTONES SM-2 paragraph.
+
+### First drive — four fixes [2026-08-09]
+
+The owner drove it. Four things came back, all fixed:
+
+1. **Typo** in Larry's first card ("Here's what you ya gotta do").
+2. **The route now STAGES.** Accept no longer starts the clock — Larry's marker takes the same green
+   threshold a POI job uses (`START_ZONE_R`, now exported from `mission.js`), and the route begins
+   when you drive out of it. Same ring, same words, same promise.
+3. **GPS follows the route.** `gpsSystem.getRoute` returns the tour while carrying, so the guidance
+   is the route the par was computed over. No re-routing and no fallback was needed — the tour is
+   already baked as segments, which is exactly what the overlay consumes.
+4. **THE DELIVERY BUG — the target rings were lying.** A region holds 16 customers and a tier-1
+   route visits four, but `_rebuildPoiMarkers` lit a green circle on *every* customer. Twelve of the
+   sixteen targets on screen were decoys: a paper landed dead centre in one scored nothing, and
+   because the miss read-out was distance-gated it said nothing either, which reads exactly like a
+   broken mission. Now only the route's **undelivered** customers are lit (a ring going out is the
+   delivery confirmation), and on a route a throw **always** answers.
+
+The scoring path itself was never broken — but nothing pinned it, which is why a lying renderer
+could not be told apart from a broken mission. `test/paper-tour.mjs` now drives a whole route
+headlessly through `PaperRouteSystem`: offer → staging → threshold → a paper dead centre credits at
+q = 1.00 and moves the counter → a second paper on the same porch is spent not double-counted → a
+paper on an off-round customer scores nothing → the last porch ends it → S, settled, next rung.
 
 ### Live checks nobody has run yet
 

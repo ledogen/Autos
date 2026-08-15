@@ -1,20 +1,38 @@
 # HANDOFF — FEAT-61 paper route, Phase E part 2 onward — 2026-08-07
 
+> **SUPERSEDED 2026-08-11** by `HANDOFF-2026-08-11-paper-route-playable.md` — the mission is built
+> and driven. Everything below is history except the **gotchas** section, which is still accurate and
+> still worth reading before touching this code.
+>
+> **SUPERSEDED IN PART, later the same day.** Phase E part 2 is built — see the ticket's "Phase E
+> part 2 — what landed". Still live here: the gotchas, the open questions on the tuning constants,
+> and Phase F. Two of this document's assumptions were measured and found wrong: **tour routing is
+> 1–4 ms**, not expensive (the region's edges are already routed), and **a tour stop is a STREET,
+> not a graph node** (a node-based tour left five of six customers never approached). The real
+> problem turned out to be customer SUPPLY — **BUG-44**, which needs an owner ruling before the tier
+> ladder means anything.
+
 **Read `.planning/todos/pending/feat-paper-route.md` first — it is the spec.** This handoff is the
 state of play and the next moves. The original approved plan is
 `.planning/handoffs/HANDOFF-2026-08-04-paper-route.md`, partly superseded (its header says how).
+
+> **Revised 2026-08-07, later the same day.** Everything through Phase E part 1 is now **merged to
+> `main` and pushed** — the section below has changed the most, so re-read it even if you saw the
+> morning version.
 
 ## Where the work lives
 
 - **Worktree** `/Users/ledogen/CodeShit/CarGame-paper-route`, branch **`feature/paper-route`**.
   `node_modules` installed. Dev server: `npm run dev -- --port 3661 --strictPort`.
-- **`feature/poi-models` (FEAT-60) is merged into this branch** and is NOT on main. Merging this
-  branch back therefore delivers both. That was deliberate — both features touch `src/poi.js`
-  generation, and doing it first meant building the roster and the house pass together instead of
-  reconciling them afterwards.
-- Gates: `npm test` (affected) / `npm run test:all` (46, last full run green).
+- **`feature/paper-route` and `main` are identical** at `37489ef`. The branch was merged to main as
+  a fast-forward and then fast-forwarded back, so there is no divergence to reconcile and no merge
+  commit between them.
+- **Keep Phase E2 on the branch.** `main` auto-deploys to GitHub Pages on every push
+  (`.github/workflows/deploy.yml`, `on: push: branches: [main]`), so work-in-progress on main goes
+  live. The branch costs nothing now that it tracks main exactly.
+- Gates: `npm test` (affected) / `npm run test:all` (46, green at `37489ef`).
 
-## What is built
+## What is built — all of it now on main
 
 | Phase | Commit | |
 |---|---|---|
@@ -23,11 +41,52 @@ state of play and the next moves. The original approved plan is
 | C — houses | `39e433c` | 15 customers, POI `tags`, target rings |
 | D — throw | `07a073d` | `src/throw.js`, aim seam in `camera.js` |
 | E part 1 | `e99fe1e` | `src/paper-route.js` scoring + `test/paper-route.mjs` |
-| fixes | `5140ef3` `2a60806` `2806ea5` `7a5bab0` `fa43509` | see below |
+| fixes | `5140ef3` `2a60806` `2806ea5` `7a5bab0` `fa43509` | see the gotchas below |
+| FEAT-60 merge | `b93643c` | poi-models folded in — three conflicts, resolved as recorded below |
 
 **Owner-verified live:** the dialogue card, the throw, the rings, ring suppression, map markers.
 
 **Gate-verified only (55 checks in `test/paper-route.mjs`):** all scoring algebra and ballistics.
+
+**Deployed:** the live Pages build now contains the houses, rings, dialogue and throw with **no
+mission to start them** — a player can throw a paper at a house and nothing happens. That is Phase
+E2's absence, not a bug.
+
+## What changed around the feature on 2026-08-07
+
+None of this is FEAT-61 code, but all of it changes assumptions the morning's handoff made:
+
+- **FEAT-60 is closed** (`.planning/todos/completed/feat-poi-models.md`, with a resolution note).
+  The `feature/poi-models` branch and its worktree are **deleted** — fully merged, nothing unique.
+  Its old dev server on `:3914` is gone with it.
+- **BUG-42 was minted twice**, in worktrees that could not see each other. Owner ruled:
+  **BUG-42 = the junction-legs bug** (deg-3 junction on the map, dead end in the world);
+  **BUG-43 = the material-sharing bug**, renumbered. Do not re-file either under the other number.
+- **BUG-43 blocks the recolour convention** and touches this feature directly: `spawnModel()`
+  returns `template.clone(true)`, and `Object3D.clone()` shares **materials by reference**, so every
+  instance of a registry key points at one `THREE.Material` set. FEAT-60 spawns `trailerHomeA` for
+  both mom's and Larry's houses — recolouring one recolours both. ASSET-21's recolour acceptance box
+  is unticked and blocked on it.
+- **`ART-STYLE.md` exists** (`.planning/research/`) and CLAUDE.md points at it — read before
+  modelling anything.
+- **The FEAT-61 ticket loose end is resolved.** Main's uncommitted older copy was confirmed
+  superseded (diffed line by line — same rulings, looser wording) and discarded; the branch's copy
+  is the one on main. There is nothing left to reconcile.
+
+### Merge decisions a future session must not casually undo
+
+The FEAT-60 merge had three conflicts. Two of the resolutions look like deletions and are not:
+
+- **`getMomsHouse` stays deleted.** FEAT-60 removed that channel deliberately — mom arrives through
+  `getPois()` now. Resurrecting it re-creates the two-mom's-houses bug (`c5e9cab`): FEAT-45 pinned
+  her to the region centre while the roster sited a real one hundreds of metres away, so the pink
+  pin and the building were different places.
+- **The map legend stays gone** (`84ef695` — dropped in favour of the scale bar). FEAT-61's "paper
+  customer" legend row went with it. The green customer dots still draw, *under* the roster glyphs,
+  which is what lets mom read as a landmark and a customer at once. Re-adding a legend is a new
+  decision, not a merge repair.
+- **`poi.js` carries both `jobs` and `tags`** — orthogonal. `jobs` = does parking here open an
+  offer; `tags` = what this POI participates in.
 
 ## Phase E part 2 — the mission itself
 
@@ -49,6 +108,9 @@ Everything below is unbuilt. The scoring core is done and pinned; this is the ma
    last paper. `stockForTier()` and `deadlineFor()` are ready.
 4. **Result card + tier advance**, settling through `EconomySystem.settleFlat(payout, letter)` and
    `advancesTier(result, customers)`.
+5. **Flip Larry's `jobs` to true.** `POI_ROSTER` marks him `jobs: false` today with a comment naming
+   this phase as the one that earns the change — FEAT-60's rule is that a marker must not wear the
+   "park here for a job" ring until its mechanic can answer. E2 is that mechanic.
 
 ## Phase F — housekeeping
 
@@ -90,10 +152,5 @@ Everything below is unbuilt. The scoring core is done and pinned; this is the ma
   thresholds) are all proposals, unbalanced against real play.
 - **`throwSpeed = 16` m/s and `dragK = 0.033`** give ~22 m of range at 12 m/s driving. Feel-tuned by
   one drive, not calibrated.
-- Whether the ring should hard-stop at 1 km (see above).
-
-## Loose end outside this worktree
-
-The FEAT-61 ticket amendments written in **main's checkout** on 2026-08-05 are still uncommitted
-there and are superseded by this branch's copy. Merging back will conflict on that one planning file;
-take this branch's version. Nothing else diverges.
+- Whether the house ring should hard-stop at 1 km (see above).
+- Whether the customers want a map label now that the legend is gone.

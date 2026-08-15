@@ -17,8 +17,12 @@
 
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { stepPhysics } from './physics.js'
-import { getBodyContactPoints, getWheelPosition } from './suspension.js'
+import { stepPhysics, createVehicleChassis } from './physics.js'
+import { createPhysicsEngine } from './physics-engine.js'
+import { TerrainPhysics, RoadPhysics, PropPhysics } from './terrain-physics.js'
+import { DebrisSystem } from './debris.js'
+import { PhysicsWireframes } from './physics-debug.js'
+import { getWheelPosition } from './suspension.js'
 import { updateVehicle, setLaunchHold, setControlAttenuation, SPAWN_STATE } from './vehicle.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
@@ -60,6 +64,8 @@ import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-m
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
 import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
+// FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
+import { PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun, stockForTier, deadlineFor } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js'          // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
@@ -107,7 +113,7 @@ function _trackStreamCenter (t, x, z) {
   if (_streamCenterRing.length > _STREAM_RING_MAX) _streamCenterRing.shift()
 }
 
-// TerrainSystem instance — declared at module scope so queryContacts / queryVertexContacts
+// TerrainSystem instance — declared at module scope so queryContacts
 // can access it by reference. Initialized after scene exists (below initDebug).
 let terrainSystem = null
 
@@ -653,6 +659,7 @@ async function _rebuildFullNow () {
         RANGER_PARAMS,
         worldSeed  // D-03: roadQuality determinism
       )
+      roadMeshSystem.setPhysicsHook(roadPhysics)   // FEAT-48: re-attach after the seed-rebuild swap
       terrainSystem.setRoadSystem(roadSystem)
     }
     _step('roadInit')
@@ -670,6 +677,7 @@ async function _rebuildFullNow () {
     if (propSystem) {
       propSystem.dispose()
       propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
+      propSystem.setPhysicsHook(propPhysics)   // FEAT-48: re-attach after the seed-rebuild swap
       // PERF-07: wipe the old seed's baked shadow tiles and re-arm baking for the fresh props.
       if (shadowBake) { shadowBake.clear(); propSystem.setShadowBake(shadowBake) }
       if (_syncImpostors) _syncImpostors()   // PERF-21: re-activate billboards on the fresh instance
@@ -798,6 +806,14 @@ function _reseatTruckAtSpawn () {
 // the seed-derived resolveSpawn placement: { x, y, z, heading }. Set by the map double-click
 // teleport, the free-cam "teleport here" button, and Shift+R (set spawn to current pose). It is
 // cleared on seed change / world regen (a stale point in a fresh world makes no sense).
+//
+// IT IS A FREE-ROAM CONVENIENCE AND STORY MODE MUST NOT INHERIT IT (owner, 2026-08-11). This
+// override is checked BEFORE resolveSpawn in _reseatTruckAtSpawnInner, so while it is set the truck
+// no longer seats at the seed's spawn — and story.js captures the region centre from wherever the
+// truck ends up (`_beginWarm`). Chained: teleport to Larry's → exit to free roam (you appear where
+// Larry's was) → re-enter the same seed → the region re-centres THERE and every POI moves, which is
+// exactly the bug the owner reproduced. `clearSpawnOverride` is called on story entry so the seed,
+// and nothing else, decides where the world is built. See test/world-determinism.mjs.
 let _spawnOverride = null
 
 // Extract the truck's current heading (Y-yaw, radians) from its quaternion, inverse of
@@ -974,6 +990,14 @@ function setSpawnHere () {
 // suspension.js which cannot import main.js). NEVER use 1/60 or 0.0167 literals below.
 const PHYSICS_DT = 1 / 60        // physics step: 16.667ms (D-09)
 const MAX_FRAME_TIME = 0.25       // spiral-of-death clamp: 250ms (T-01-04 mitigation)
+
+// FEAT-63: the spare-time pump's budget, at the very bottom of loop(). The margin is what keeps a
+// pumped frame from being the one that misses vsync — the estimate of "time already spent" cannot
+// see the driver's own work after we return. The floor guarantees forward progress on a machine
+// that is permanently over budget: the re-plan gets slower, never stuck.
+const FRAME_BUDGET_MS = 1000 / 60
+const PUMP_MARGIN_MS  = 2
+const PUMP_FLOOR_MS   = 0.5
 
 let simTime = 0  // accumulated simulation time in seconds; incremented by FIXED_DT each physics step
 
@@ -1240,13 +1264,16 @@ const map2d = new Map2D({
   // Double-click teleport (free-roam only). The map snaps to the nearest road and hands us the
   // road-top Y; we drop the truck 0.5 m above it (or on terrain when off-road) and set the spawn.
   canTeleport: isTeleportEnabled,
-  getMission: () => missionSystem?.markers() ?? null,
+  // FEAT-61: the paper route draws as a mission route, because that is what it is — one line, in
+  // the order it will be driven. It wins over the mission's when a route is out; the two can never
+  // both be live.
+  getMission: () => paperRouteSystem?.markers() ?? missionSystem?.markers() ?? null,
   // FEAT-43: the story-mode region boundary, so the player can see where the wall is rather than
   // finding it by driving into it. Null outside story mode (and until the region center is captured).
   getRegion: () => storySystem?.region() ?? null,
   // FEAT-46: POI icons — how the player finds one to drive to. Empty outside story mode.
   getPois: () => poiSystem.list(),
-  getCustomers: () => poiSystem.customers(),   // FEAT-61: you cannot drive a round you cannot see
+  getCustomers: () => poiSystem.customers(),   // FEAT-61: you cannot drive a route you cannot see
   // FEAT-45: dispersed-camping zones, drawn as a yellow casing on the roads inside them. Empty
   // outside story mode (build() only ever runs from the story deps).
   getCampZones: () => campSystem.zones(),
@@ -1378,78 +1405,9 @@ function closestPointOnTriangle (px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz)
   return new THREE.Vector3(ax + v * abx + w * acx, ay + v * aby + w * acy, az + v * abz + w * acz)
 }
 
-/**
- * Point (vertex) collision query against all solid geometry using face normals.
- * Unlike queryContacts, this takes a bare point (no radius) and tests it against
- * surface planes directly — returning the face normal, not a sphere-derived normal.
- * Used for body box vertex contacts to eliminate edge/corner normal artifacts.
- * Each contact: normal points away from solid; depth is penetration depth.
- */
-function queryVertexContacts (px, py, pz) {
-  const hits = []
-
-  // Ground surface — the lab's own surface (flat, except its rumble lanes) in the testing lab;
-  // analytic terrain height in the generated world.
-  // FEAT-40: pass the vertex's own Y so a body inside a bore span rides the bore floor instead of
-  // seeing the raw hill overhead as a 30 m phantom penetration.
-  const terrainH = _labActive ? labSystem.groundHeight(px, pz)
-                              : (terrainSystem ? terrainSystem.analyticHeight(px, pz, undefined, py) : 0)
-  if (py < terrainH) {
-    const terrainN = _labActive ? labSystem.groundNormal(px, pz)
-                                : (terrainSystem ? terrainSystem.analyticNormal(px, pz, undefined, py) : { x: 0, y: 1, z: 0 })
-    hits.push({ normal: new THREE.Vector3(terrainN.x, terrainN.y, terrainN.z), depth: terrainH - py })
-  }
-
-  // BUG-37: bore WALL contact — terrainSystem only resolves the bore floor (bore-ownership rule);
-  // the curved half-tube sides have no matching collision without this. No hint passed (matches this
-  // function's terrain block above, which is also unhinted — vertex contacts fire far less often than
-  // per-wheel sphere contacts, so the memo optimization isn't needed here).
-  if (!_labActive && roadSystem) {
-    const wallHit = roadSystem.queryTunnelWallContact(px, py, pz, 0)
-    if (wallHit) hits.push({ normal: wallHit.normal, depth: wallHit.depth })
-  }
-
-  // Ramp face contacts — lab only (D-19: the ramp was never part of the generated world). Kept
-  // when grid world was retired: a jump is a legitimate suspension/damage input, which is exactly
-  // what the lab's rumble lanes are also for.
-  // _labActive is the authoritative gate; RANGER_PARAMS.rampEnabled is a secondary debug toggle.
-  if (_labActive && RANGER_PARAMS.rampEnabled !== false) {
-    // Ramp top incline face — half-space below the inclined plane, within ramp footprint
-    if (px >= -_hw && px <= _hw && pz <= RAMP_TOE_Z && pz >= RAMP_END_Z) {
-      const rampSurfaceY = RAMP_MAX_H + (RAMP_END_Z - pz) * Math.tan(RAMP_ANGLE)
-      const depth = rampSurfaceY - py
-      if (depth > 0) {
-        hits.push({ normal: _rampNormal.clone(), depth })
-      }
-    }
-
-    // Ramp back wall — vertical face at RAMP_END_Z, within ramp width and height
-    if (px >= -_hw && px <= _hw && pz < RAMP_END_Z && py >= -RAMP_DEPTH && py <= RAMP_MAX_H) {
-      const depth = RAMP_END_Z - pz
-      if (depth > 0) {
-        hits.push({ normal: new THREE.Vector3(0, 0, 1), depth })
-      }
-    }
-
-    // Ramp left side wall — at x = -_hw, within ramp Z and height
-    if (pz <= RAMP_TOE_Z && pz >= RAMP_END_Z && py >= -RAMP_DEPTH && py <= RAMP_MAX_H) {
-      const depth = px - (-_hw)
-      if (depth < 0) {
-        hits.push({ normal: new THREE.Vector3(1, 0, 0), depth: -depth })
-      }
-    }
-
-    // Ramp right side wall — at x = +_hw
-    if (pz <= RAMP_TOE_Z && pz >= RAMP_END_Z && py >= -RAMP_DEPTH && py <= RAMP_MAX_H) {
-      const depth = _hw - px
-      if (depth < 0) {
-        hits.push({ normal: new THREE.Vector3(-1, 0, 0), depth: -depth })
-      }
-    }
-  }
-
-  return hits
-}
+// (queryVertexContacts deleted 2026-08-15 — it fed the retired hand-rolled body-contact
+// solver; the engine chassis collides via its own hull compound now. The lab ramp solid it
+// described lives on as the engine ramp prism built in _buildLabColliders.)
 
 /**
  * Sphere collision query against all solid geometry.
@@ -1515,7 +1473,7 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
     })
   }
 
-  // Ramp triangle contacts — lab only (see queryVertexContacts above).
+  // Ramp triangle contacts — lab only (wheel path; the chassis gets the engine ramp prism).
   // _labActive is the authoritative gate; RANGER_PARAMS.rampEnabled is a secondary debug toggle.
   if (_labActive && RANGER_PARAMS.rampEnabled !== false) {
     for (const [[ax, ay, az], [bx, by, bz], [ex, ey, ez]] of RAMP_TRIS) {
@@ -1927,6 +1885,34 @@ perfMark('init: before TerrainSystem')  // TEMP (D-arc) — the ~8s load is one-
 terrainSystem = new TerrainSystem(scene, RANGER_PARAMS, worldSeed)
 scene.remove(ground)   // Remove flat 200×200 ground mesh — terrain chunks replace it (T-06-06)
 
+// ── FEAT-48: the physics engine world ────────────────────────────────────────
+// One engine world for everything — chassis, streamed terrain colliders, debris.
+// WASM init is ~15 ms (measured, Phase 0); top-level await here matches the
+// existing boot style (route-cache import below also top-level awaits).
+perfMark('init: before physics engine')
+const physicsEngine = await createPhysicsEngine()
+const terrainPhysics = new TerrainPhysics(physicsEngine)
+terrainSystem.setPhysicsHook(terrainPhysics)   // mirrors every chunk build/recarve/dispose
+const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_PARAMS)
+const engineCtx = { engine: physicsEngine, chassis: vehicleChassis }
+const debrisSystem = new DebrisSystem(physicsEngine, scene)   // FEAT-36: thrown barrels/rocks
+// Road ribbon/pad/bore trimesh colliders — attached to roadMeshSystem at its creation sites
+// below (boot + seed rebuild). The terrain heightfields mirror the CARVED mesh, which sits
+// roadClearanceMargin BELOW the asphalt; without this mirror debris fell through the road.
+const roadPhysics = new RoadPhysics(physicsEngine)
+// Prop hard colliders (tree trunks, logs, rocks, boulders) as engine statics — the chassis'
+// rigid tree contact ("squishy trees" fix, 2026-08-15). Attached at every PropSystem creation.
+const propPhysics = new PropPhysics(physicsEngine, FLORA_PARAMS)
+window.__propPhysics = propPhysics             // dev handle — prop-debug radius sliders resyncAll()
+// Collider wireframes (debug overlay) — replaces the retired orange probe spheres. Backtick
+// toggles it; the debug panel mirrors it. Two-tone X-ray over the models, never hiding them.
+const physicsWireframes = new PhysicsWireframes(physicsEngine, scene)
+window.__physWireframes = physicsWireframes    // dev handle — debug.js checkbox targets it
+window.__physicsEngine = physicsEngine         // dev handle (counters in the HUD / console)
+window.__vehicleChassis = vehicleChassis       // dev handle — debug.js restitution slider targets it
+window.__debris = debrisSystem                 // dev handle — debug.js projectile selector + clear button
+perfMark('init: physics engine ready')
+
 // Phase 8 (D-05 / D-07): RoadSystem — instantiated after scene exists.
 // init(scene) attaches the scene reference so buildDebugLines() can add debug lines.
 // RoadSystem is pure-function-of-(worldSeed, coords, params) — the tile cache is memoization
@@ -2134,6 +2120,9 @@ let _stageRing = null
 // poi.id → its orange ring, so the accepted marker's ring can step aside for the green one while
 // every OTHER marker in the region keeps its own.
 const _poiRings = new Map()
+// customer.id → [ring, pip]. FEAT-61: a delivery target is only lit when it is ON your route and
+// still owed a paper — see _updateCustomerRings.
+const _customerRings = new Map()
 
 /**
  * Rebuild the markers + interaction rings (cheap: a handful of each per region).
@@ -2145,6 +2134,7 @@ const _poiRings = new Map()
 function _rebuildPoiMarkers () {
   _poiGroup.clear()   // geometry + material are shared singletons — nothing per-cube to dispose
   _poiRings.clear()
+  _customerRings.clear()
   const half = POI_PARAMS.poiCubeSize * 0.5
   const r = POI_PARAMS.poiInteractR
   for (const q of poiSystem.list()) {
@@ -2193,6 +2183,41 @@ function _rebuildPoiMarkers () {
     pip.position.set(h.x, h.y - _TARGET_RING_SINK + _TARGET_PIP_H * 0.5, h.z)
     pip.renderOrder = 5
     _poiGroup.add(pip)
+    _customerRings.set(h.id, [ring, pip])
+  }
+}
+
+/**
+ * FEAT-61: which delivery targets are lit.
+ *
+ * THIS IS WHY PAPERS "COULDN'T BE DELIVERED" (owner-reported 2026-08-09). A region holds 16
+ * customers and a tier-1 route visits four of them — but every customer wore a green circle, so
+ * twelve of the sixteen targets on screen were decoys. A paper landed dead centre in one of those
+ * scored nothing and, because the miss read-out is distance-gated, said nothing either. The circle
+ * has to mean "this one, now", or it is not a target.
+ *
+ * So: on a route, only the route's UNDELIVERED customers light up — and a ring going out as the
+ * paper lands is the delivery confirmation. Off a route every customer shows again, which is how
+ * you learn the neighbourhood before Larry gives you a bigger piece of it.
+ *
+ * …and only when you are NEAR (owner, 2026-08-11), exactly as the orange interaction rings work.
+ * A rung-four route reaches 2 km, and fifteen green circles burning across the valley flattens the
+ * landscape into a game board — the same reason FEAT-60 pulled the orange ones in. The distance
+ * test comes FIRST and short-circuits everything else, so a customer you are nowhere near costs
+ * one hypot per poll. The radius is generous next to the orange rings' 50 m: a target is something
+ * you have to spot and line a throw up at while moving, not something you park at.
+ */
+const TARGET_RING_SHOW_R = 150   // m
+function _updateCustomerRings () {
+  const onRound = paperRouteSystem.isCarrying()
+  const live = new Set(onRound ? paperRouteSystem.routeCustomers().map(c => c.id) : [])
+  const vp = vehicleState.position
+  for (const [id, pair] of _customerRings) {
+    const p = pair[0].position
+    let on = Math.hypot(p.x - vp.x, p.z - vp.z) <= TARGET_RING_SHOW_R
+    if (on && onRound) on = live.has(id) && !paperRouteSystem.isDelivered(id)
+    pair[0].visible = on
+    pair[1].visible = on
   }
 }
 
@@ -2202,8 +2227,13 @@ function _rebuildPoiMarkers () {
  * visibility + a transform — no allocation after the first staged job.
  */
 function _updateMissionRings () {
-  const zone = missionSystem?.state === 'staging' ? missionSystem.startZone() : null
-  const activeId = zone ? missionSystem.mission?.fromPoi : null
+  // FEAT-61: the paper route stages out of Larry's place through the same threshold, so it hands
+  // the same ring the same job. Only one of the two can ever be staging — you cannot take a job
+  // while carrying a route — so this is a preference, not a merge.
+  const paperZone = paperRouteSystem.startZone()
+  const zone = paperZone || (missionSystem?.state === 'staging' ? missionSystem.startZone() : null)
+  const activeId = paperZone ? paperRouteSystem.giver?.id
+                 : zone ? missionSystem.mission?.fromPoi : null
   // FEAT-60: rings are a NEAR-FIELD affordance now (owner, 2026-08-05). They used to burn at every
   // marker across the region because the cube needed the help to be found; a modelled POI reads as
   // itself from a long way off, and a field of orange curtains flattens the landscape into a game
@@ -2218,7 +2248,10 @@ function _updateMissionRings () {
   // TAKEN, not merely offered: 'generating' and 'offer' are the states where you are parked at a
   // marker BEING offered work, and blinking that marker's own ring out from under the panel would
   // be the opposite of the fix.
+  // FEAT-61: a paper route counts as being on a job for exactly the same reason — every orange
+  // curtain you pass mid-round is an invitation to do something the game will refuse.
   const onMission = ['staging', 'running', 'done'].includes(missionSystem?.state)
+                    || paperRouteSystem.isActive()
   const vp = vehicleState.position
   for (const [id, ring] of _poiRings) {
     const near = Math.hypot(ring.position.x - vp.x, ring.position.z - vp.z) <= POI_RING_SHOW_R
@@ -2390,6 +2423,17 @@ function _throwRoll () {
   // made the throw land short of everything you were pointing at.
   _aimDir.set(0, 1 - 2 * AIM_RETICLE_Y, 0.5).unproject(camera).sub(camera.position).normalize()
 
+  // FEAT-36/FEAT-48: debug projectile selector. Barrels and rocks are DYNAMIC ENGINE BODIES —
+  // no ballistic solver, no landing point, no scoring: the engine flies them, bounces them and
+  // lets you drive over them (the whole point). Same aim, same launch pose as the paper.
+  if ((RANGER_PARAMS.throwProjectile ?? 'paper') !== 'paper') {
+    const pd = vehicleState.position
+    const pd0 = { x: pd.x + _aimDir.x * 1.6, y: pd.y + 1.6, z: pd.z + _aimDir.z * 1.6 }
+    const vd0 = launchVelocity(_aimDir, vehicleState.velocity)
+    debrisSystem.spawn(RANGER_PARAMS.throwProjectile, pd0, vd0)
+    return
+  }
+
   // Launch from above the cab rather than the body origin: from the origin a flat throw clips the
   // truck's own roof on the first step and lands on the bonnet.
   const p = vehicleState.position
@@ -2471,13 +2515,34 @@ function _updateThrownRolls (dt) {
 }
 
 /**
- * Score one landing against the nearest customer and show it.
+ * Score one landing and show it.
  *
- * Phase E part 2 moves this into the mission (consume stock, credit a specific customer once). Here
- * it is the proof that the target circles and the ballistics agree with each other.
+ * ON A ROUTE, the paper route owns the answer: it credits a specific customer once, spends the
+ * inventory, and decides whether that was the last paper. Off a route this falls back to scoring
+ * against the nearest customer in the region — a practice throw, and the same read-out that proved
+ * the target circles and the ballistics agree with each other.
  */
 function _scoreLanding (hit) {
   const R = POI_PARAMS.poiHouseTargetR
+  const scored = paperRouteSystem.recordLanding(hit.x, hit.z)
+  if (scored) {
+    if (scored.credited) {
+      _showThrowReadout(`<span style="color:#7ed957">${scored.dist.toFixed(2)} m — ${Math.round(scored.q * 100)}%</span>`)
+    } else if (scored.already) {
+      // Not a failure — a paper spent. Saying so is the difference between "that did nothing" and
+      // "you already did this one", and only one of those tells you to drive on.
+      _showThrowReadout('<span style="color:#8a939c">they already have one</span>')
+    } else if (scored.dist < 25) {
+      _showThrowReadout(`<span style="color:#ff9f43">missed by ${(scored.dist - R).toFixed(1)} m</span>`)
+    } else {
+      // ON A ROUTE, A THROW ALWAYS ANSWERS. The distance gate above is right for a practice throw
+      // in open country — but during a route, silence is indistinguishable from a broken mission,
+      // which is exactly how this read as one (owner, 2026-08-09).
+      _showThrowReadout('<span style="color:#ff9f43">nobody on your route lives there</span>')
+    }
+    return
+  }
+
   let best = null, bestD = Infinity
   for (const c of poiSystem.customers()) {
     const d = Math.hypot(c.x - hit.x, c.z - hit.z)
@@ -2491,10 +2556,13 @@ function _scoreLanding (hit) {
   }
 }
 
-/** Drop every landed paper — leaving the region, or finishing a route. */
+/** Drop every paper — leaving the region, or putting a finished route down. */
 function _clearThrownRolls () {
   for (const r of _thrownRolls) scene.remove(r)
   _thrownRolls.length = 0
+  // …including the ones still in the air. Without this their meshes leave the scene but the
+  // integrator keeps flying them, and each one still calls _scoreLanding when it "lands".
+  _flying.length = 0
 }
 
 // F is hold-to-aim. keydown repeats while held, and setAimMode is idempotent, so the repeat costs
@@ -2514,13 +2582,31 @@ document.addEventListener('keyup', e => {
   if (!isAiming()) return                       // never aimed (wrong camera mode) — never throws
   const rt = document.getElementById('aim-reticle')
   if (rt) rt.style.display = 'none'
+  // On a route, a throw costs a paper — and an empty truck cannot throw. Spent at RELEASE, not at
+  // the landing: a paper in the air is a paper you no longer have. Off a route there is no
+  // inventory and practice throws are free.
+  // FEAT-36: debris throws (barrel/rock via the debug selector) are physics tests — they never
+  // spend, refund, or score papers, even mid-route.
+  const throwingPaper = (RANGER_PARAMS.throwProjectile ?? 'paper') === 'paper'
+  const onRound = throwingPaper && paperRouteSystem.isRunning()
+  if (onRound && !paperRouteSystem.takePaper()) {
+    _showThrowReadout('<span style="color:#ff9f43">out of papers</span>')
+    setAimMode(false)
+    return
+  }
   const hit = _throwRoll()
+  // No landing (off a cliff, or aimed at the sky) means the solver never produced a throw at all —
+  // nothing was drawn and nothing will ever score, so the paper goes back in the truck. Otherwise
+  // an aim at the horizon would silently eat inventory AND leave the route unable to end on it.
+  if (onRound && !hit) paperRouteSystem.refundPaper()
   // HOLD THE VIEW (owner, 2026-08-05). Snapping back to the follow camera the instant F comes up
   // yanks the throw out of frame before you can see where it went. Stay on the aimed angle for the
   // whole flight plus a beat, then hand the camera back. Rearmed on every throw, so a quick second
   // throw extends the hold rather than cutting the first one short.
   clearTimeout(_aimHoldTimer)
-  _aimHoldTimer = setTimeout(() => setAimMode(false), ((hit?.t ?? 0) + AIM_HOLD_S) * 1000)
+  // Debris has no solver flight time (the engine flies it live) — hold ~1.5 s so the launch stays
+  // in frame, same reasoning as the paper's flight-long hold.
+  _aimHoldTimer = setTimeout(() => setAimMode(false), ((hit?.t ?? (throwingPaper ? 0 : 1.5)) + AIM_HOLD_S) * 1000)
 })
 
 // Press-any-key advances, and the key goes NOWHERE else. Capture phase on document, which runs
@@ -2632,6 +2718,37 @@ missionSystem = new MissionSystem({
   onChange: () => _renderMissionUI(),
 })
 
+// ── FEAT-61: the paper route ───────────────────────────────────────────────────────────────
+// Larry's route. A SIBLING of missionSystem — the two can never run at once (each one's park
+// trigger and prompt yields to the other's active state), but neither is a mode inside the other.
+//
+// It plans on missionSystem's planner network: the region is warmed once at story entry and its
+// edges are already routed, so a second 1400 m planner would re-stream roads that exist a metre
+// away in memory.
+const paperRouteSystem = new PaperRouteSystem({
+  getRoad:   () => missionSystem?.planner() ?? roadSystem,
+  getPois:   () => poiSystem,
+  getRegion: () => storySystem?.region() ?? null,
+  getCar:    () => vehicleState.position,
+  getTerms:  () => economySystem.terms(),
+  getTargetR: () => POI_PARAMS.poiHouseTargetR,
+  // The ONE money path (FEAT-53). This mission prices itself on its own axis and hands over a
+  // finished number; the wallet, the deeds and the mission count still accrue in economy.js.
+  onSettle:  (payout, letter) => economySystem.settleFlat(payout, letter),
+  // Larry talks while the tour routes. Once per run (DLG's seen-gate) — the second route must not
+  // re-explain the throw — and `done` fires either way, because a skipped briefing still has to
+  // release the offer.
+  onBriefing: (done) => { dialogueSystem.play(DLG.paperRouteIntro, PAPER_ROUTE_INTRO, done); _renderDialogue() },
+  // A finished route takes its papers off the lawns. Region exit does the same (see onRegionExit);
+  // this is the other half of the rule the handoff flagged as missing.
+  onEnd:     () => _clearThrownRolls(),
+  onChange:  () => _renderPaperUI(),
+})
+window.__paperRoute = () => paperRouteSystem
+// FEAT-63: cached so the 10 Hz poll is a style write and not a DOM lookup.
+const _recalcEl = document.getElementById('gps-recalc')
+let _recalcOn = false
+
 // ── FEAT-39: GPS navigation assist ───────────────────────────────────────────
 // A pure guidance overlay: chevrons along the route ahead + a turn arrow over the next junction.
 // It reads the route the mission ALREADY computed (mission.segments) — no routing, no per-frame
@@ -2640,6 +2757,18 @@ missionSystem = new MissionSystem({
 // off elsewhere.
 gpsSystem = new GpsSystem(scene, {
   getRoute: () => {
+    // FEAT-61/63: the paper route gets guidance too, and it gets the SHORTEST WAY TO FINISH from
+    // where the truck actually is — `line()`, which is the re-planned guide when there is one and
+    // the priced tour otherwise.
+    //
+    // This used to be `route` (the tour as priced) on the argument that pointing anywhere else
+    // would guide you along a line the clock is not measuring. That is true and it is exactly
+    // backwards: once you have left the priced tour it is no longer a route you are driving, only
+    // a number you are measured against, so the shortest completion is your best remaining chance
+    // of beating it (owner, 2026-08-11). The clock measuring a different line is the REASON the
+    // guidance must be optimal rather than faithful. Par itself never moves — see paper-route.js
+    // line() for why route and guide are two objects.
+    if (paperRouteSystem?.isCarrying()) return paperRouteSystem.line()
     const s = missionSystem?.state
     // 'staging' counts: that is precisely when a POI job wants guidance, because the reason the
     // start zone exists is that you may be pointing the wrong way and have to decide which.
@@ -2692,6 +2821,9 @@ labSystem = new LabSystem(scene, () => ({
 function _poiInReach () {
   if (!storySystem.isActive() || storySystem.isEntering()) return null
   if (missionSystem && missionSystem.state !== 'idle') return null
+  // FEAT-61: a route is a job in flight, same as any other — you cannot take work while doing work,
+  // and Larry's own marker must not re-offer the route you are three houses into.
+  if (paperRouteSystem.isActive()) return null
   // jobsOnly (FEAT-60): only a mission giver answers the park trigger. Without this the roster's
   // other six types would each win the trigger and then have nothing to say — and mom's house,
   // which outranks her own front door in the precedence below, would offer freight instead of bed.
@@ -2799,6 +2931,7 @@ let _campSeek = false
 function _campPromptState () {
   if (!storySystem.isActive() || storySystem.isEntering()) return null
   if (missionSystem && missionSystem.state !== 'idle') return null
+  if (paperRouteSystem.isActive()) return null       // FEAT-61: not while a route is out
   if (_campUi || _campBusy) return null
   if (Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) * 3.6 > CAMP_PROMPT_KPH) return null
   if (!campSystem.zoneAt(vehicleState.position.x, vehicleState.position.z)) return null
@@ -2812,6 +2945,7 @@ function _campPromptState () {
 function _atMomsHouse () {
   if (!storySystem.isActive() || storySystem.isEntering()) return false
   if (missionSystem && missionSystem.state !== 'idle') return false
+  if (paperRouteSystem.isActive()) return false      // FEAT-61: not while a route is out
   if (_campUi || _campBusy) return false
   return campSystem.atMoms(vehicleState.position.x, vehicleState.position.z)
 }
@@ -2831,7 +2965,11 @@ function _updateParkTriggers () {
   _prevParkedForPoi = parked
 
   if (poi && pulled) {
-    missionSystem.enterFromPoi(poi)      // leaves 'idle' ⇒ _poiInReach() is null from here on
+    // FEAT-61: Larry is the one giver whose offer is a different mission. Branching on the type
+    // here (rather than teaching MissionSystem a second shape) is what keeps the two systems
+    // siblings — each leaves 'idle' and each other's reach test then returns null.
+    if (poi.type === 'larrysHouse') paperRouteSystem.open(poi)
+    else missionSystem.enterFromPoi(poi)
     if (poiEl) poiEl.style.display = 'none'
     if (campEl) campEl.style.display = 'none'
     return
@@ -2856,7 +2994,11 @@ function _updateParkTriggers () {
   // Display. The POI prompt wins outright when both apply — see the precedence above.
   if (poiEl) {
     poiEl.style.display = poi ? 'block' : 'none'
-    if (poi) poiEl.textContent = 'park to begin mission'
+    // Name what the brake will actually do. Larry hands out a route, not an errand, and a prompt
+    // that says "mission" at the one marker that gives you the paper route is the same small lie as
+    // a ring drawn wider than its trigger.
+    if (poi) poiEl.textContent = poi.type === 'larrysHouse' ? 'park to take the paper route'
+                                                           : 'park to begin mission'
   }
   if (!campEl) return
   const showCamp = !poi && (camp || moms) && !_campUi
@@ -3225,7 +3367,7 @@ function _renderMissionUI () {
         + (paid
           ? `<br><span class="mp-pay">$${r.payout.toLocaleString('en-US')}</span>`
             + (r.points > 0
-              ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points === 0.5 ? '½' : r.points} good deed${r.points > 1 ? 's' : ''}</span>`
+              ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points} good deed${r.points > 1 ? 's' : ''}</span>`
               : '')
           : (m.mission?.fromPoi ? '' : `<br><span class="mp-dim">test job &mdash; no pay</span>`))
       // The result card is exactly three actions: retry · continue · back to free roam (that is the
@@ -3252,6 +3394,99 @@ function _renderMissionUI () {
     if (nb) nb.textContent = 'accept mission'
   }
 }
+
+/**
+ * FEAT-61: the paper route's panel and HUD. Same shape as _renderMissionUI — one switch, one
+ * repaint per state change (plus the 10 Hz poll while running, because the bell and the count are
+ * live values).
+ *
+ * SM-INV-3: the running surface carries the clock, the count and the inventory, and nothing else.
+ * No rank, no par, no payout until the route is over — the deadline is allowed only because the
+ * Phase A amendment ratified it as a diegetic, par-derived one.
+ */
+function _renderPaperUI () {
+  const panel = document.getElementById('paper-panel')
+  const body  = document.getElementById('pp-body')
+  const hud   = document.getElementById('paper-hud')
+  const acts  = document.getElementById('pp-actions')
+  if (!panel || !body || !hud) return
+  const p = paperRouteSystem
+  const show = (el, on, disp = 'block') => { if (el) el.style.display = on ? disp : 'none' }
+  const km = (mm) => (mm / 1000).toFixed(2) + ' km'
+
+  switch (p.state) {
+    case 'planning':
+      // The briefing is the cover for the routing (owner ruling), so this panel is only ever seen
+      // on a SECOND route — the cards are once per run, and without them there would otherwise be
+      // a silent pause with nothing on screen saying why.
+      show(panel, true); show(hud, false); show(acts, false, 'flex')
+      body.innerHTML = 'Larry&rsquo;s sorting the papers&hellip;<br>'
+        + '<span class="mp-dim">working out the route</span>'
+      break
+    case 'offer': {
+      show(panel, true); show(hud, false); show(acts, true, 'flex')
+      const r = p.route
+      const stock = stockForTier()
+      body.innerHTML = `<span class="mp-big">${r.customers.length}</span> `
+        + `<span class="mp-dim">customer${r.customers.length === 1 ? '' : 's'}</span> `
+        + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${km(r.distance)}</span><br>`
+        + `${stock} papers in the truck `
+        + `<span class="mp-dim">(${stock - r.customers.length} spare)</span><br>`
+        + `<span class="mp-dim">back before ${formatTime(deadlineFor(r.par))} &mdash; `
+        + `the papers you place are yours to keep either way</span>`
+      break
+    }
+    case 'staging':
+      // Same words the POI job uses, because it is the same threshold and the same promise: sort
+      // yourself out on the pad for as long as you like, the clock starts at the green line.
+      show(panel, false); show(hud, true); show(acts, false, 'flex')
+      hud.textContent = 'leave the green circle to start the route'
+      break
+    case 'running': {
+      show(panel, false); show(hud, true)
+      // Time LEFT, not elapsed: the bell is the thing that ends the route, so it is the thing worth
+      // reading. Delivered/total and the inventory are the other two facts you act on.
+      hud.textContent = `${formatTime(p.timeLeft())} left   `
+        + `${p.delivered()} / ${p.route.customers.length} delivered   `
+        + `${p.stock()} paper${p.stock() === 1 ? '' : 's'}`
+      break
+    }
+    case 'done': {
+      show(panel, true); show(hud, false); show(acts, true, 'flex')
+      const r = p.result
+      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span><br>`
+        + `<b>${r.delivered}</b> of <b>${r.customers}</b> delivered `
+        + `&nbsp;<span class="mp-dim">·</span>&nbsp; `
+        + `${Math.round(r.meanAccuracy * 100)}% <span class="mp-dim">accuracy</span><br>`
+        + `<span class="mp-dim">your time</span> <b>${formatTime(r.elapsed)}</b>`
+        + (r.expedite > 0 ? ` &nbsp;<span style="color:#8ce99a">+${Math.round(r.expedite * 100)}% early</span>` : '')
+        + `<br><span class="mp-pay">$${r.payout.toLocaleString('en-US')}</span>`
+        + (r.points > 0
+          ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points} good deed${r.points > 1 ? 's' : ''}</span>`
+          : '')
+        + (r.advanced
+          ? `<br><span style="color:#ffdc3c">Larry&rsquo;s giving you a bigger route &mdash; ${r.nextTier} houses next time</span>`
+          : '')
+      break
+    }
+    default:
+      show(panel, false); show(hud, false)
+      if (p.error) console.info('[paper]', p.error)
+      break
+  }
+  // Two buttons, two meanings: on the offer they are take/decline, on the result card the left one
+  // is the only forward action and the right one has nothing to say.
+  const acc = document.getElementById('pp-accept')
+  const dec = document.getElementById('pp-decline')
+  if (acc) acc.textContent = p.state === 'done' ? 'continue' : 'start the route'
+  if (dec) dec.style.display = p.state === 'offer' ? '' : 'none'
+}
+
+document.getElementById('pp-accept')?.addEventListener('click', () => {
+  if (paperRouteSystem.state === 'done') paperRouteSystem.dismiss()
+  else paperRouteSystem.accept()
+})
+document.getElementById('pp-decline')?.addEventListener('click', () => paperRouteSystem.decline())
 
 // ── FEAT-53: the run wallet (top-right) ────────────────────────────────────────────────────
 // Painted on the ~10 Hz HUD cadence; the snapshot key skips the DOM write when nothing changed
@@ -3409,6 +3644,7 @@ roadMeshSystem = new RoadMeshSystem(
   RANGER_PARAMS,
   worldSeed  // D-03: roadQuality determinism requires the world seed
 )
+roadMeshSystem.setPhysicsHook(roadPhysics)   // FEAT-48: asphalt is a collider, not just a decal
 
 // FEAT-22/17/18: water — needs terrainSystem.rawHeightWorld, alive now. Seed-deterministic like
 // props. BEFORE PropSystem: the scatter's waterAt sampler must see the current water from the very
@@ -3416,6 +3652,7 @@ roadMeshSystem = new RoadMeshSystem(
 rebuildWaterSystem()
 // FEAT-06: prop system — needs terrain (height/normal) + road (exclusion) + water samplers, all alive now.
 propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
+propSystem.setPhysicsHook(propPhysics)   // FEAT-48: trees/rocks/boulders are rigid for the chassis
 
 // PERF-07: baked prop-shadow atlas. Needs the WebGL renderer (absent headless — this whole block is
 // browser-only). Wires the atlas texture into the terrain sampler, the bake triggers into the prop
@@ -3474,6 +3711,7 @@ addPropGui(_gui, {
   rebuild: () => {
     propSystem.dispose()
     propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
+    propSystem.setPhysicsHook(propPhysics)   // FEAT-48: re-attach after the GUI full rebuild
     shadowBake.clear()
     propSystem.setShadowBake(shadowBake)
     applyPropShadowMode()
@@ -3526,24 +3764,13 @@ await _importSessionOrBundledRoutes()
 await _reseatTruckAtSpawn()
 perfMark('init: spawn reseated')  // TEMP (D-arc)
 
-// ── Body contact point debug spheres ──────────────────────────────────────────
-// 14 translucent orange spheres — one per probe in getBodyContactPoints.
-// Toggled with backtick alongside the rest of the debug overlay.
-const _dbgSphereMat = new THREE.MeshBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.45, depthWrite: false })
-const _dbgSphereGeo = new THREE.SphereGeometry(RANGER_PARAMS.bodyContactRadius, 8, 6)
-const BODY_CONTACT_COUNT = 14
-const _dbgSpheres = Array.from({ length: BODY_CONTACT_COUNT }, () => {
-  const m = new THREE.Mesh(_dbgSphereGeo, _dbgSphereMat)
-  m.visible = false
-  scene.add(m)
-  return m
-})
-let _dbgSpheresOn = false
+// ── Collider wireframe overlay (physics-debug.js) ─────────────────────────────
+// Replaced the 14 orange probe spheres (2026-08-15): those visualised the retired
+// getBodyContactPoints probes; the wireframes draw the ACTUAL engine colliders.
 document.addEventListener('keydown', e => {
-  // FEAT-43: collision-sphere debug is part of the debug tooling locked out in story mode.
+  // FEAT-43: collider debug is part of the debug tooling locked out in story mode.
   if (e.key === '`' && !storySystem.isActive()) {
-    _dbgSpheresOn = !_dbgSpheresOn
-    _dbgSpheres.forEach(m => { m.visible = _dbgSpheresOn })
+    physicsWireframes.setEnabled(!physicsWireframes.enabled)
   }
   // FEAT-16: M toggles the 2D top-down map overlay (sim keeps running underneath).
   if (e.key === 'm' || e.key === 'M') {
@@ -3652,10 +3879,46 @@ function _setWorldgenVisible (visible) {
   if (dirtSpraySystem) dirtSpraySystem.setVisible(visible)
 }
 
+// FEAT-48: engine colliders for the lab clean-room. The world's streamed terrain colliders
+// must NOT exist while the lab is active — the lab sits near the world origin where real
+// terrain is ~150 m high, and the chassis would spawn deep inside those heightfields (the
+// engine would eject it violently). Swap: detach the terrain hook + clear its bodies on
+// enter; rebuild lab ground (flat slab; the cm-scale rumble crests only matter to wheels,
+// which sample labSystem.groundHeight analytically) + the ramp prism. Reverse on exit —
+// re-attaching the hook re-syncs every chunk still in the map.
+let _labEngineBodies = []
+function _buildLabColliders () {
+  const slab = physicsEngine.createBody({ type: 'static', position: { x: 0, y: -5, z: 0 }, userData: { kind: 'lab-ground' } })
+  physicsEngine.addBox(slab, { x: 2000, y: 5, z: 2000 }, { friction: 0.8 })   // top face at y = 0
+  _labEngineBodies.push(slab)
+  // Ramp prism — incline face, back wall, sides (matches the analytic RAMP_TRIS the wheels use).
+  const ramp = physicsEngine.createBody({ type: 'static', position: { x: 0, y: 0, z: 0 }, userData: { kind: 'lab-ramp' } })
+  const tanA = Math.tan(RAMP_ANGLE)
+  const yToe = RAMP_MAX_H + (RAMP_END_Z - RAMP_TOE_Z) * tanA   // toe surface Y (buried below 0)
+  const corners = []
+  for (const x of [-_hw, _hw]) {
+    corners.push(x, yToe, RAMP_TOE_Z, x, RAMP_MAX_H, RAMP_END_Z, x, -RAMP_DEPTH, RAMP_END_Z, x, -RAMP_DEPTH, RAMP_TOE_Z)
+  }
+  physicsEngine.addHull(ramp, corners, { friction: 0.8 })
+  _labEngineBodies.push(ramp)
+}
+function _destroyLabColliders () {
+  for (const b of _labEngineBodies) physicsEngine.destroyBody(b)
+  _labEngineBodies = []
+}
+
 function enterLab () {
   _labActive = true
   _labActive = true            // reuse every flat-world physics gate
   window.__setGameMode('lab')
+
+  terrainSystem.setPhysicsHook(null)   // FEAT-48: stop mirroring world chunks…
+  terrainPhysics.clear()               // …drop their colliders (lab is a clean room)
+  roadMeshSystem?.setPhysicsHook(null)
+  roadPhysics.clear()
+  propSystem?.setPhysicsHook(null)
+  propPhysics.clear()
+  _buildLabColliders()
 
   // Fog is tuned for worldgen draw distances (FogExp2 ~0.006), which swallows the far end of a
   // 400 m strip and hides the 150 m skidpad entirely from any useful vantage. The lab is a clean
@@ -3685,6 +3948,11 @@ function exitLab () {
   _labActive = false
   _labActive = false
   window.__setGameMode('freeroam')
+
+  _destroyLabColliders()                          // FEAT-48: lab slab + ramp out…
+  terrainSystem.setPhysicsHook(terrainPhysics)    // …world chunk colliders back (re-syncs kept chunks)
+  roadMeshSystem?.setPhysicsHook(roadPhysics)     // …and the standing road tiles
+  propSystem?.setPhysicsHook(propPhysics)         // …and the prop colliders
 
   if (scene.fog && _labFogDensity != null) { scene.fog.density = _labFogDensity; _labFogDensity = null }
 
@@ -3790,6 +4058,11 @@ const storySystem = new StorySystem({
   getWorldSeed: () => worldSeed,
   applySeed: (v) => applyWorldSeed(v),     // resolves when the rebuild + reseat have settled
   reseat: () => _reseatTruckAtSpawn(),     // resolves when the truck is seated at the spawn
+  // THE SEED DECIDES WHERE THE WORLD IS, AND NOTHING ELSE (owner, 2026-08-11). A free-roam teleport
+  // leaves a spawn override behind, and _reseatTruckAtSpawnInner honours it ahead of resolveSpawn —
+  // so without this, entering story mode seats the truck wherever you last teleported and the region
+  // centre (and therefore every POI) follows the player instead of the seed. See _spawnOverride.
+  clearSpawnOverride: () => { _spawnOverride = null },
   setDebugLockout: (locked) => {
     setDebugLockout(locked)
     // Collision-sphere debug lives in main.js, not the GUI — force it off entering the lockout so
@@ -3847,7 +4120,10 @@ const storySystem = new StorySystem({
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
     economySystem.start()            // FEAT-53: fresh run, empty wallet, zero deeds
     dialogueSystem.start()           // FEAT-61: a new run hears every briefing again
+    resetPaperRun()                  // …and starts back on Larry's four-house route (SM-INV-12)
+    paperRouteSystem.abort()
     _renderDialogue()
+    _renderPaperUI()
     missionSystem.clearOffers()      // …and no offer cached from a previous run survives into this one
     poiSystem.build(center, radius)
     // FEAT-61: AFTER build() — mom is a newspaper customer, and she is a roster POI, so the roster
@@ -3882,6 +4158,8 @@ const storySystem = new StorySystem({
     _setRunHudVisible(false)
     dialogueSystem.abort()              // FEAT-61: abort, not advance — leaving is not "read it"
     _renderDialogue()
+    paperRouteSystem.abort()            // …and an unfinished route is dropped, never settled
+    _renderPaperUI()
     _clearThrownRolls()                 // …and no papers from a story run lying about in free roam
     setAimMode(false)
     poiSystem.clear()
@@ -4152,6 +4430,10 @@ function loop () {
     if (missionSystem?.isActive()) {
       missionSystem.update(PHYSICS_DT)
     }
+    // FEAT-61: the start threshold, then the route's clock against the bell. One distance check or
+    // one add — same discipline as above, and clocked off the fixed step so a frame spike can
+    // neither stretch the deadline nor skip the line that starts it.
+    if (paperRouteSystem.isCarrying()) paperRouteSystem.update(PHYSICS_DT)
 
     _prevRenderPos.copy(vehicleState.position)
     _prevRenderQuat.copy(vehicleState.quaternion)
@@ -4169,7 +4451,7 @@ function loop () {
       }
     }
 
-    stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, queryVertexContacts)
+    stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
     simTime += PHYSICS_DT
     // BUG-12 diagnostic (open): while recording, log the truck run's local centerline turn radius
     // to localize ribbon folds. Gated on isRecording() so normal play pays nothing (queryNearest
@@ -4547,6 +4829,18 @@ function loop () {
     // static line, but it costs one string write and keeps the state→HUD mapping in one place.)
     if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'staging'
                           || missionSystem.state === 'running')) _renderMissionUI()
+    // FEAT-61: the route's HUD carries three live values (the bell, the count, the inventory), so
+    // it repaints on the same poll for the same reason. ('staging' is a static line, but it costs
+    // one string write and keeps the state→HUD mapping in one place.)
+    if (paperRouteSystem.isCarrying()) _renderPaperUI()
+    // FEAT-63: RECALCULATING. On the poll, not the frame — one style write at 10 Hz, and the
+    // system's own minimum-display window means a job that finishes in 120 ms is still readable.
+    if (_recalcEl) {
+      const on = paperRouteSystem.isRerouting()
+      if (on !== _recalcOn) { _recalcOn = on; _recalcEl.style.display = on ? 'block' : 'none' }
+    }
+    // …and which delivery targets are lit. Visibility flags only, no allocation.
+    _updateCustomerRings()
     // FEAT-46: the orange interaction ring ↔ green start-zone ring swap rides the same poll.
     _updateMissionRings()
 
@@ -4626,17 +4920,14 @@ function loop () {
 
   updateCamera(camera, vehicleState, frameTime)
   _updateThrownRolls(frameTime)   // FEAT-61: fly the airborne papers (render-rate, analytic)
+  debrisSystem.update()           // FEAT-36: engine transform → debris meshes (physics steps them)
 
   // Restore physics position/quaternion — the interpolated copies were render-only.
   vehicleState.position  = _physPos
   vehicleState.quaternion = _physQuat
 
-  // Update body contact debug spheres (only when visible — cheap early-out)
-  if (_dbgSpheresOn) {
-    RANGER_PARAMS._rotateVector = (v) => new THREE.Vector3(v.x, v.y, v.z).applyQuaternion(vehicleState.quaternion)
-    const pts = getBodyContactPoints(vehicleState, RANGER_PARAMS)
-    pts.forEach((pt, i) => { if (_dbgSpheres[i]) _dbgSpheres[i].position.set(pt.x, pt.y, pt.z) })
-  }
+  // Collider wireframes: follow dynamic bodies, cull far statics (no-op while disabled).
+  physicsWireframes.update(camera.position)
 
   // QUAL-02: keep the (finite) sky box centred on the camera so it always surrounds the view.
   skySystem.update(camera.position)
@@ -4685,6 +4976,19 @@ function loop () {
   // PERF-26: stamp the frame's CPU span + the program count, so a shader compile shows up as a
   // +N on the hitch record rather than as unexplained time outside every bucket.
   perfFrameEnd(renderer.info.programs?.length ?? -1)
+
+  // FEAT-63: THE SPARE-TIME PUMP. Dead last in the frame, on purpose — by here everything that
+  // owes the player a picture has been done, so what is left before the next vsync is genuinely
+  // spare and spending it cannot push anything else over.
+  //
+  // The re-plan is ~14 ms of work at the top rung and it must never be one frame's worth. Budget
+  // is whatever this frame did not use, so a frame that already overran contributes nothing and a
+  // quiet one contributes several milliseconds. Even at the FLOOR the job lands in about a second,
+  // and the RECALCULATING indicator is what makes that honest to the player.
+  if (paperRouteSystem?.isRerouting()) {
+    const spentMs = performance.now() - newTime * 1000
+    paperRouteSystem.pumpReroute(Math.max(PUMP_FLOOR_MS, FRAME_BUDGET_MS - PUMP_MARGIN_MS - spentMs))
+  }
 }
 
 perfMark('init: synchronous bootstrap done, requesting first frame')  // TEMP (D-arc)

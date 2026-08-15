@@ -402,6 +402,7 @@ export class TerrainSystem {
         this._pendingQueue  = []          // FIFO of received {key,cx,cz,heights} awaiting geometry build
         this._activeBuild   = null        // PERF-26: the chunk whose carve table is mid-build, carried across frames
         this._geomPool      = []          // PERF-05: recycled chunk BufferGeometry (65×65 XZ plane; only Y/normal/color change per chunk) — avoids per-chunk PlaneGeometry alloc + GC
+        this._physicsHook   = null        // FEAT-48: TerrainPhysics (engine heightfield colliders) — syncChunk/disposeChunk/clear
 
         // Main-thread analytic noise closures (seeded same way as Worker — deterministic agreement)
         this._noiseCoarse   = null
@@ -843,6 +844,23 @@ export class TerrainSystem {
     }
 
     /**
+     * FEAT-48: attach the engine terrain-collider mirror (TerrainPhysics). Every chunk Y write
+     * (build / recarve / amplitude rebuild) re-syncs its collider; dispose paths drop it —
+     * MESH == PHYSICS holds through carve updates by construction. Late registration is fine:
+     * chunks already built are synced immediately here.
+     */
+    setPhysicsHook(hook) {
+        this._physicsHook = hook ?? null
+        if (hook) {
+            const N = GRID_SAMPLES, S = CHUNK_SIZE
+            for (const [key, chunk] of this._chunkMap) {
+                const ci = key.indexOf(',')
+                hook.syncChunk(key, +key.slice(0, ci), +key.slice(ci + 1), chunk.mesh.geometry.attributes.position, N, S)
+            }
+        }
+    }
+
+    /**
      * Path B rebuild: dispose ALL built chunk meshes, clear all state, re-request ring
      * on the next update() call. Use after seed/coarse-param changes.
      * The _pendingWorker race-fix ordering is preserved: _pendingWorker is cleared here
@@ -856,6 +874,7 @@ export class TerrainSystem {
             this._releaseChunkGeometry(chunk.mesh.geometry)  // PERF-05: recycle for the imminent re-stream
         }
         this._chunkMap.clear()
+        this._physicsHook?.clear()      // FEAT-48: full regen drops every engine terrain collider
         this._initialFillDone = false   // PERF-13: a full regen is a load — burst the refill too
 
         // Clear pending state — Worker will process new generate requests after reinit
@@ -1145,6 +1164,7 @@ export class TerrainSystem {
                 this._scene.remove(chunk.mesh)
                 this._releaseChunkGeometry(chunk.mesh.geometry)  // PERF-05: recycle (was T-06-03 dispose)
                 this._chunkMap.delete(key)
+                this._physicsHook?.disposeChunk(key)             // FEAT-48: drop the engine collider with the mesh
             }
         }
 
@@ -1183,6 +1203,7 @@ export class TerrainSystem {
                 // Stamp the new generation so we don't re-carve this chunk again until the next re-route.
                 chunk.carveData = newCarveData ?? null
                 chunk.builtRoadGeneration = currentRoadGen
+                this._physicsHook?.syncChunk(key, cx, cz, pos, N, CHUNK_SIZE)  // FEAT-48: recarved Y ⇒ rebuild collider
                 recarved++
             }
         }
@@ -1252,6 +1273,7 @@ export class TerrainSystem {
             this._computeGridNormals(chunk.mesh.geometry)  // PERF-03: grid-FD normals
             // Re-write vertex colors after Y + normals are updated (D-09/D-10/D-11).
             this._writeChunkVertexColors(chunk.mesh.geometry, carveData, chunk.heights, amp, cx, cz)
+            this._physicsHook?.syncChunk(key, cx, cz, pos, N, CHUNK_SIZE)  // FEAT-48: amp-rescaled Y ⇒ rebuild collider
         }
     }
 
@@ -1964,6 +1986,7 @@ export class TerrainSystem {
 
             this._scene.add(mesh)
             perfEvent('terrain.chunk')   // PERF-26: commit point — the frame this geometry first draws
+            this._physicsHook?.syncChunk(key, cx, cz, pos, N, S)  // FEAT-48: engine heightfield from the same Y writes
 
             // Store mesh, raw heights (heights used by sampleHeight for P7-2 test),
             // carveData (used by sampleHeight carve blend path), and builtRoadGeneration

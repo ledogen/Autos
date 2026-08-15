@@ -331,10 +331,29 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       for (const c of hubContacts) {
         // compressionVel sign convention: positive = hub approaching ground = tire compressing.
         // strutCompVelI > 0 means strut shortening = hub moving UP = tire decompressing, so negate.
-        const compressionVel = -strutCompVelI
+        // Damper: for DEBRIS contacts (c.depthRate set by physics.js) use the contact's TRUE
+        // closing rate — hit hard → high force, roll on slow → low force, straight from the
+        // spring–damper law. HUNT–CROSSLEY engagement scaling (min(1, depth/ENGAGE)): a
+        // constant damper is DISCONTINUOUS at first touch (force jumps from 0 to c·v the
+        // instant contact begins), which punted crawled-into rocks like a kicked ball; scaling
+        // the damper with penetration makes contact force continuous from zero — the standard
+        // contact-mechanics form. A fast hit reaches full engagement within its first frame
+        // (depth ≈ v·dt ≥ ENGAGE), so high-speed response is undiminished, with no speed terms.
+        // Terrain contacts keep the strut-velocity approximation (their transients are
+        // pre-spread by the footprint envelope, and the m4 calibration history rests on it).
+        const TIRE_DAMP_ENGAGE = 0.04   // m — full damper by one static deflection of depth
+        const compressionVel = (c.depthRate !== undefined)
+          ? c.depthRate * Math.min(1, c.depth / TIRE_DAMP_ENGAGE)
+          : -strutCompVelI
+        // Obstacle ENVELOPING for debris (c.sizeR set): the carcass wraps objects smaller than
+        // its own scale, so effective stiffness against a small rock is a fraction of the
+        // flat-ground value — this is why real tires cross rock gardens at speed without
+        // launching the body (owner captures: 20 kN single-frame nose kicks). Mirrors the
+        // reaction-side factor in physics.js exactly (Newton's third law).
+        const env = (c.sizeR !== undefined) ? c.sizeR / (c.sizeR + 0.12) : 1
         const tireFnAtContact = Math.max(0,
           params.tireStiffness * c.depth + params.tireDamping * compressionVel
-        )
+        ) * env
         // D-06: split contact normal force into strut-axis and X/Z residual components
         // bodyUpDot = dot(c.normal, body_up): the fraction of contact normal force along the strut axis
         const bodyUpDot = c.normal.x * body_up.x + c.normal.y * body_up.y + c.normal.z * body_up.z
@@ -391,53 +410,7 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
   }
 }
 
-export function getBodyContactPoints (vehicleState, params) {
-  const fz     = -(params.wheelbase * params.weightRear)   // front axle Z in body space
-  const rz     =  (params.wheelbase * params.weightFront)  // rear axle Z in body space
-  const bumY   = 0.45 - params.cgHeight                   // bumper height (low side of body)
-  const undY   = params.wheelRadius - params.cgHeight      // undercarriage bottom
-  const topY   = 0.4                                       // top of visual body box (0.8m box / 2, centered at CG)
-  const halfW  = params.trackFront / 2 + 0.1              // lateral extent (slightly past track)
+// (getBodyContactPoints deleted 2026-08-15 — the bumper/undercarriage/roof probe points fed
+// the retired hand-rolled body solver and its debug spheres; the chassis is an engine hull
+// compound now, measured off the vehicle model in physics.js createVehicleChassis.)
 
-  // BUG-05: the four near-wheel undercarriage probes used to sit at ±track/2 — exactly on the
-  // wheel centerline — so their spheres straddled the wheel and stole its ground contact when
-  // the car was lowered (false wheel lift-off + jitter). Pull them inboard so the probe's outer
-  // edge stays inside the wheel's inner sidewall (track/2 − wheelHalfWidth) with a small margin.
-  // Derived from geometry so it holds at any track width, wheel size, or bodyContactRadius.
-  const WHEEL_HALF_WIDTH = 0.125
-  const UND_MARGIN       = 0.05
-  const undWFront = params.trackFront / 2 - WHEEL_HALF_WIDTH - params.bodyContactRadius - UND_MARGIN
-  const undWRear  = params.trackRear  / 2 - WHEEL_HALF_WIDTH - params.bodyContactRadius - UND_MARGIN
-
-  const locals = [
-    // Front bumper — left and right
-    { x: -halfW, y: bumY, z: fz - 0.85 },
-    { x:  halfW, y: bumY, z: fz - 0.85 },
-    // Rear bumper — left and right
-    { x: -halfW, y: bumY, z: rz + 0.65 },
-    { x:  halfW, y: bumY, z: rz + 0.65 },
-    // Undercarriage — just in front of rear wheels (inboard of the wheel footprint)
-    { x: -undWRear, y: undY, z: rz - 0.35 },
-    { x:  undWRear, y: undY, z: rz - 0.35 },
-    // Undercarriage — just behind front wheels (inboard of the wheel footprint)
-    { x: -undWFront, y: undY, z: fz + 0.35 },
-    { x:  undWFront, y: undY, z: fz + 0.35 },
-    // Undercarriage — center (two points straddling CG)
-    { x: 0, y: undY, z: -0.3 },
-    { x: 0, y: undY, z:  0.3 },
-    // Roof — four corners
-    { x: -halfW, y: topY, z: fz - 0.85 },
-    { x:  halfW, y: topY, z: fz - 0.85 },
-    { x: -halfW, y: topY, z: rz + 0.65 },
-    { x:  halfW, y: topY, z: rz + 0.65 },
-  ]
-
-  return locals.map(p => {
-    const rotated = typeof params._rotateVector === 'function' ? params._rotateVector(p) : p
-    return {
-      x: vehicleState.position.x + rotated.x,
-      y: vehicleState.position.y + rotated.y,
-      z: vehicleState.position.z + rotated.z,
-    }
-  })
-}

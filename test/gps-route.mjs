@@ -13,12 +13,16 @@
 //   3. PROGRESS RE-ACQUISITION. The windowed nearest search must stay monotonic while you drive
 //      the route, and must recover the right place after a wrong turn — otherwise a tester who
 //      strays once gets chevrons for the rest of the run pointing at a stale index.
+//   4. ROUTES THAT DRIVE THE SAME ROAD TWICE (FEAT-61). A point-to-point mission never revisits a
+//      road; a paper round does, and lies on top of itself at 0.0 m. Both passes are then equally
+//      "nearest", so progress could flip onto the return leg and the chevron lattice ahead drew
+//      arrows on the tarmac under the truck pointing the other way.
 //
 // Pure node: the centerlines here are duck-typed analytic curves, same trick as par-oracle.mjs.
 // THREE is imported only for the placement section — its scene graph is renderer-free, so the
 // real GpsSystem runs headlessly and the arrow/chevron transforms can be asserted, not eyeballed.
 import * as THREE from 'three'
-import { GpsSystem, bakeRoute, advanceProgress, sampleRoute } from '../src/gps.js'
+import { GpsSystem, bakeRoute, advanceProgress, sampleRoute, markCoverage } from '../src/gps.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -319,6 +323,75 @@ const seg = (centerline, s0, s1, gradeAt = level) => ({ centerline, gradeAt, s0,
   check('setEnabled(false) hides everything and stops updating',
     !gps._chev.visible && !gps._arrow.visible && !gps._ring.visible)
   gps.dispose()
+}
+
+
+// ── OUT AND BACK: a route that drives the same road twice (FEAT-61) ─────────────────────────────
+//
+// Owner-reported 2026-08-09: approaching the turnaround on a paper round the guidance "shows
+// directions in both ways and then reroutes me back towards Larry's house". Measured on seeds 6
+// and 90, a tour re-drives 1-6 of its edges and overlaps itself at 0.0 m.
+{
+  // Out 400 m along +Z, then straight back down the same road. The two passes are the SAME tarmac.
+  const road = straight(400, 0, 0, 0, 1)
+  const r = bakeRoute([seg(road, 0, 400), seg(road, 400, 0)])
+  check('an out-and-back route bakes to its full DRIVEN length', Math.abs(r.length - 800) < 1e-6,
+    `got ${r.length}`)
+
+  // 1. COVERAGE IS RECORDED AS AN ARC, not a flag. firstArc[i] is where the route FIRST touches
+  //    the ground at vertex i — its own arc on the way out, the outbound arc on the way back.
+  let outClean = true, backPointsBack = true
+  for (let i = 0; i < r.n; i++) {
+    if (r.cum[i] < 400) { if (r.firstArc[i] !== r.cum[i]) outClean = false }
+    else if (r.cum[i] > 550) { if (!(r.firstArc[i] < r.cum[i] - 150)) backPointsBack = false }
+  }
+  check('on the way OUT every vertex is its own first coverage', outClean)
+  check('on the way BACK each vertex points at the outbound arc that covered it first', backPointsBack)
+
+  // …and a route that never revisits must record nothing, or the suppression would eat an
+  // ordinary mission's chevrons.
+  const ra = straight(200, -200, 0, 1, 0), rb = straight(200, 0, 0, 0, 1)
+  const plain = bakeRoute([seg(ra, 0, 200), seg(rb, 0, 200)])
+  let plainClean = true
+  for (let i = 0; i < plain.n; i++) if (plain.firstArc[i] !== plain.cum[i]) plainClean = false
+  check('a route that never doubles back records no earlier coverage', plainClean)
+  check('markCoverage is exported and agrees with the bake',
+    [...markCoverage(r)].join(',') === [...r.firstArc].join(','))
+
+  // THE REGRESSION THIS SECTION EXISTS FOR (owner, 2026-08-09: "turned me around and ended right
+  // here"). Suppression must depend on WHERE THE TRUCK IS, not on which pass a vertex belongs to.
+  // Driving OUT, the far chevrons that land on the return leg are ghosts and must be hidden.
+  // Driving BACK, that same tarmac is the live pass and must be drawn — the first version keyed on
+  // second-pass-ness alone and blanked every chevron for the rest of the round.
+  const ghost = (sc, carS) => {
+    const p = sampleRoute(r, sc, 0)
+    const fa = r.firstArc[p.idx]
+    return fa < sc - 150 && fa >= carS - 10
+  }
+  check('driving OUT at 100 m, a chevron 700 m along (on the return leg) is a ghost',
+    ghost(700, 100))
+  check('…while a chevron 200 m along (still outbound) is not', !ghost(200, 100))
+  check('driving BACK at 600 m, the chevrons ahead of you are DRAWN, not suppressed',
+    !ghost(650, 600) && !ghost(700, 600) && !ghost(780, 600))
+
+  // 2. PROGRESS STAYS ON THE OUTBOUND PASS. Drive out and watch `s`: it must climb monotonically
+  //    and never jump onto the return leg, which is 0.0 m away and equally "nearest".
+  let idx = 0, prev = -1, monotone = true, jumped = false
+  for (let z = 0; z <= 380; z += 4) {
+    const p = advanceProgress(r, 0, z, idx)
+    idx = p.idx
+    if (p.s < prev - 1e-6) monotone = false
+    if (p.s > 400) jumped = true            // snapped onto the way back while still driving out
+    prev = p.s
+  }
+  check('driving OUT, progress never snaps onto the return pass', !jumped, `s reached ${prev}`)
+  check('…and arc progress is monotonic the whole way', monotone)
+
+  // 3. …AND A GENUINE RE-ACQUISITION STILL WORKS: the margin on the full-scan fallback must not
+  //    cost a truck that is picked up somewhere unexpected its route.
+  const far = advanceProgress(r, 0, 390, 0)
+  check('a truck picked up far along the route still re-acquires', far.lat < 5,
+    `lat ${far.lat.toFixed(1)} m`)
 }
 
 console.log(fails === 0 ? '\nPASS gps-route' : `\nFAIL gps-route (${fails})`)

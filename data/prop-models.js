@@ -27,6 +27,18 @@ export const PROP_MODELS = {
     collision: { shape: 'box', size: [0.090, 0.074, 0.420] },
   },
 
+  // FEAT-36/FEAT-48 physics-test props — deliberately dead simple (44 / 20 tris), NOT the real
+  // ASSET-25/26 barrels. Thrown via the debug projectile selector; src/debris.js builds each
+  // collider as the convex hull of the GLB's own vertices, so `collision` metadata is moot here.
+  testBarrel: {
+    url: 'assets/models/test-barrel.glb',
+    collision: { shape: 'hull-from-mesh', size: [0.6, 0.9, 0.6] },
+  },
+  testRock: {
+    url: 'assets/models/test-rock.glb',
+    collision: { shape: 'hull-from-mesh', size: [0.44, 0.4, 0.36] },
+  },
+
   // ASSET-21 — single-wide mobile home, the first modelled POI marker (FEAT-60). Stands on a
   // lay-by pad as mom's house and Larry's house.
   trailerHomeA: {

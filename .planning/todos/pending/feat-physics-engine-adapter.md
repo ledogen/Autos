@@ -22,6 +22,34 @@ rule — deliberate and owner-made, not drift. Keep tire.js (Pacejka) and the su
 
 # FEAT-48: Physics engine adapter seam (backend: Box3D)
 
+## ⚑ STATUS 2026-08-14 — Phases 0–3 LANDED on `feature/box3d` (fable overnight job)
+
+Box3D **passed Phase 0** (box3d.js 0.1.1, newer than this ticket's 0.0.2): determinism holds
+run-to-run / cross-process / node-vs-browser (hash `ba6be98f42bc3b83`, now a standing gate —
+`test/box3d-determinism-gate.mjs`); plain-node WASM load works; the full needed API surface exists;
+cold load is 319 kB gz + 14 ms init. Bindings VENDORED at `vendor/box3d/`. Adapter is
+`src/physics-engine.js` (seam grep-clean); terrain chunks mirror as heightfield colliders
+(`src/terrain-physics.js`, exact composed mesh Y — MESH == PHYSICS); the vehicle rides an engine
+body with tuned mass/inertia via SetMassData, our suspension/Pacejka feeding forces, CLEAN CUTOVER
+(owner chose no A/B flag). Gates 51/51 green; before/after feel traces in `test/baselines/`
+(driving scenarios match legacy to sub-cm; slam is the reviewed divergence). CLAUDE.md amended.
+
+**Status updates 2026-08-15 (post-shakedown):**
+- ✅ **Feel SIGNED OFF by the owner** after the full debris-contact shakedown (exact manifolds,
+  enveloping, rim tracking; the within-step proxy experiment was reverted on feel — see commits).
+  The formal `assert-m4-*` recordings are OPTIONAL RIGOR now — the owner's extended drive covered
+  more ground than the canned maneuvers.
+- ✅ **Inertia axes FIXED** (owner-approved): body-frame x now carries inertiaPitch, z carries
+  inertiaRoll — the physically correct assignment (roll is about the longitudinal axis). The
+  legacy world-frame swap is retired; feel baseline re-recorded. Pending one owner drive.
+- ⏰ **Cross-machine determinism DEFERRED → INFRA-03** (owner ships before touching the Windows
+  machine; the ticket is the reminder).
+- **Single-precision** — the engine build is float32; ~1 mm position granularity at 10 km from
+  origin. Fine at story-region scale; far teleports would want the double build or origin rebasing.
+- ~~Known gap: chassis-vs-tunnel-bore-wall contact~~ **CLOSED 2026-08-14** — RoadPhysics mirrors
+  road tiles (ribbon + pads + tunnel bores) as engine trimeshes, so the chassis collides with
+  bore linings now. See also QUAL-25 (chassis collider fidelity, owner watch item).
+
 ## The decision [OWNER, 2026-07-29]
 
 **Adopt a third-party physics engine as the core for everything — vehicle included — behind a thin

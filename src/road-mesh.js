@@ -112,6 +112,7 @@ export class RoadMeshSystem {
         // Tile map: "X,Z" → { meshes: THREE.Mesh[], geometries: THREE.BufferGeometry[] }
         // One tile may have multiple ribbon meshes (one per slice in road._tiles).
         this._tileMeshMap = new Map()
+        this._physicsHook = null   // FEAT-48: RoadPhysics (engine trimesh colliders) — syncTile/disposeTile/clear
 
         // Pending queue: tile keys waiting to be built.
         this._pendingQueue = []
@@ -682,6 +683,20 @@ export class RoadMeshSystem {
         }
         this._tileMeshMap.delete(key)
         this._pendingSet.delete(key)
+        this._physicsHook?.disposeTile(key)   // FEAT-48: drop the engine trimesh with the visuals
+    }
+
+    /**
+     * FEAT-48: attach the engine road-collider mirror (RoadPhysics). Every committed tile's
+     * geometries (ribbon slices, junction pads, tunnel bores — world-space vertices) become
+     * static trimesh shapes; every dispose path funnels through disposeRoadTile above. Late
+     * registration re-syncs tiles already standing.
+     */
+    setPhysicsHook(hook) {
+        this._physicsHook = hook ?? null
+        if (hook) {
+            for (const [key, entry] of this._tileMeshMap) hook.syncTile(key, entry.geometries)
+        }
     }
 
     /**
@@ -916,6 +931,11 @@ export class RoadMeshSystem {
 
             const _ptS = performance.now()
             const geo  = this.sweepRibbon(spline, useGrade, usePoints, this._params, runKey, useArcS0, useArcS1)
+            // FEAT-48: the ribbon's edge SKIRTS are near-vertical wall strips — colliding with
+            // them let the chassis slab catch a 0.4 m wall at speed (the hairpin launch+yaw kick,
+            // capture 1786773473453). Physics keeps the DRIVING SURFACE only; RoadPhysics strips
+            // steep triangles from surface-tagged geometries. Tunnels/portals stay fully solid.
+            geo.userData.colliderSurfaceOnly = true
             perfAdd('ribbon.sweepRibbon', performance.now() - _ptS)
             const _ptM = performance.now()   // PERF-26 INSTRUMENT: Mesh ctor + scene.add (parent/matrix
             // bookkeeping, and the first place a fresh BufferGeometry is seen by the renderer graph)
@@ -991,6 +1011,7 @@ export class RoadMeshSystem {
                     nz >= tileWorldZ && nz < tileWorldZ + CHUNK_SIZE) {
                     const geo = this.buildJunctionFootprint(node, this._params)
                     if (geo) {
+                        geo.userData.colliderSurfaceOnly = true   // FEAT-48: pads too — aprons can have steep rims
                         const mesh = new THREE.Mesh(geo, this._getJunctionMaterial())
                         mesh.renderOrder = 1  // Plan 09-10: ribbon draws after terrain
                         mesh.receiveShadow = true
@@ -1023,6 +1044,7 @@ export class RoadMeshSystem {
         // D1 (plan 09-19): stamp the road generation this tile was built against so
         // syncToChunkRing can detect stale tiles and re-enqueue them on mismatch.
         this._tileMeshMap.set(key, { meshes, geometries, builtGeneration: this._road.roadGeneration() })
+        this._physicsHook?.syncTile(key, geometries)   // FEAT-48: asphalt/pads/bores → engine trimeshes
     }
 
     // ── FEAT-40: tunnel bore lining + portal headwalls ────────────────────────

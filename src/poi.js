@@ -23,6 +23,8 @@
 // mostly junctions; a place is no likelier at a T than halfway down a road.
 
 import { PROP_MODELS } from '../data/prop-models.js'   // FEAT-59/60: authored collision metadata
+import { REGION_MARGIN } from './mission.js'          // FEAT-61: the wall a customer must sit inside
+import { houseRungs } from './paper-route.js'         // FEAT-61: the ladder placement has to serve
 
 /** Tunables. Geometry + siting only — none of this may ever enter routeCacheSig. */
 export const POI_PARAMS = {
@@ -74,17 +76,40 @@ export const POI_PARAMS = {
     // only 8 inside 1 km, two of which the roster spends on mom and Larry. Fifteen house pads in
     // a 1 km ring is geometrically impossible; fifteen roadside targets is easy, because an edge
     // is ~640 m long and can carry several.
-    poiHouseCount:    15,     // HARD. Count is the contract; the radius below is what relaxes.
-    poiHouseR:        1000,   // m — the ring customers are drawn from (owner, 2026-08-05)
-    poiHouseStep:     250,    // m — how far that ring grows per relax step when a seed is sparse.
-                              // Small on purpose: measured on seed 6, only 10 viable sites lie
-                              // inside 1 km but 19 lie inside 1.25 km, so a coarse step overshoots
-                              // to 1.5 km and scatters the route further than it needs to go. The
-                              // ring is a preference; the COUNT is the contract.
-    poiHouseSpacing:  90,     // m of arc between candidate sites on one edge — a house every ~90 m
-                              // reads as a rural road with neighbours, not a terrace
-    poiHouseMinSep:   80,     // m — min spacing between CHOSEN customers; relaxes (halves) if the
-                              // network cannot supply the count at this spacing
+    // THE COUNT AND THE RADIUS BOTH COME FROM THE LADDER (owner, 2026-08-11) — PAPER_PARAMS.tiers
+    // and .tierR, read through houseRungs(). There is no poiHouseCount and no poiHouseR any more,
+    // because a single count in a single ring cannot serve a ladder whose rungs reach 1.0 / 1.5 /
+    // 2.0 km: measured, one flat 15-house pick spread over 2 km leaves only 3-5 of them inside the
+    // first rung's kilometre, so rung one has nobody to deliver to. buildHouses() fills the pool
+    // ring by ring instead, innermost first.
+    //
+    // The rings are HARD — they do not grow to chase a count. FEAT-60's "count is hard, distance
+    // relaxes" rule is inverted here on purpose: a paper round is the streets around your mother's
+    // house, and a sparse seed gets a shorter roster rather than a longer drive. The region wall
+    // still clamps everything, because past it there is no route.
+    poiHouseSpacing:  15,     // m of arc between CANDIDATE sites on one edge. This is how often the
+                              // walk LOOKS, not how far apart houses end up — poiHouseMinSep below
+                              // owns that, and conflating the two is what starved this pool.
+                              // Measured 2026-08-07 at the live 2500 m region radius: at 90 m the
+                              // region yielded 6 / 11 / 4 viable customers on seeds 6 / 11 / 42 and
+                              // the count could never be met; at 30 m all three place 15 — but only
+                              // by letting the ring grow to ~1.7 km. Re-measured 2026-08-11 against
+                              // the HARD rings: the FIRST rung's kilometre holds only 5 / 7 / 9 at
+                              // 30 m and 9-15 at 15 m, and the first rung is the one that starves.
+                              // The step halved because the rings stopped relaxing — the same
+                              // supply now has to come out of a third the area. ~230 ms per region,
+                              // up from ~110. The reject battery is severe — a target circle needs
+                              // naturally flat ground, because unlike a lay-by pad nothing carves it
+                              // — so the pool has to be sampled finely to find the flat spots that
+                              // do exist. Paid once per region, behind the loading screen, against
+                              // a ~15 s cold load.
+    poiHouseMinSep:   10,     // m — min spacing between CHOSEN customers, and THE knob that decides
+                              // whether a street reads as rural neighbours or as a terrace. Relaxes
+                              // (halves) only if the network cannot supply the count at this spacing.
+                              // 80 → 10 (owner, 2026-08-11): with hard rings the separation is what
+                              // has to give, and 10 m is the owner's floor. In practice it is rarely
+                              // reached — the reject battery scatters the viable sites far more
+                              // widely than this — so it reads as a backstop, not as a terrace.
     poiHouseLat:      13,     // m from centerline to the target centre. Past the shoulder edge
                               // (7.5) by more than the target radius, so the circle never overlaps
                               // road surface — a paper that lands on the tarmac must not score.
@@ -140,9 +165,10 @@ export const POI_ROSTER = [
     // Exactly one of each per world, and both houses are a short drive from where you wake up.
     { type: 'momsHouse',    count: 1, model: 'trailerHomeA', jobs: false, siting: 'nearSpawn',
       tags: ['newsCustomer', 'sleepable'] },
-    // FEAT-61 Phase E2 turns `jobs` true here — Larry hands out the paper route. Until that state
-    // machine lands, the brake at his place answers nothing, so the row stays honest.
-    { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', jobs: false, siting: 'nearSpawn' },
+    // Larry hands out the paper route (FEAT-61 Phase E2). His `jobs` is true like any other giver's,
+    // but the brake at his place opens the PaperRouteSystem rather than a point-to-point errand —
+    // main.js branches on the type, because he is the only POI whose offer is a different mission.
+    { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', jobs: true, siting: 'nearSpawn' },
     // "Never too far from a station" — the reason these two slots exist and the reason they are
     // sited by coverage rather than by a spacing rule. Gas and service are solved INDEPENDENTLY:
     // no constraint was ratified between them, and a service shop sharing a corner with a pump
@@ -364,6 +390,20 @@ export class PoiSystem {
         }
         canon.sort((u, v) => (u.ka === v.ka ? (u.kb < v.kb ? -1 : 1) : (u.ka < v.ka ? -1 : 1)))
 
+        // THE WALL (FEAT-61 Phase E2). A customer's edge must lie WHOLLY inside the region, because
+        // the route is routed on the same region-filtered graph the missions are: an edge with one
+        // node past the wall is dropped from that graph, so a house on it is a person the tour can
+        // never reach — the paper route would simply skip them, silently and forever. Measured on
+        // seed 6, three of the sixteen customers were exactly this.
+        //
+        // This is the one place the ratified "count is hard, distance relaxes" rule has to yield.
+        // The distance cannot relax past the wall, because past the wall there is no route.
+        const wall = radius - REGION_MARGIN
+        const nodeInside = (id) => {
+            const p = g.pos(id)
+            return Math.hypot(p.x - center.x, p.z - center.z) <= wall
+        }
+
         // Every viable site on every edge, in canonical order. Window-invariant for the same reason
         // pads are: a site's position is a pure function of (seed, edge, step index), and the ring
         // below is a POST-FILTER, never a reject test.
@@ -372,21 +412,32 @@ export class PoiSystem {
         for (const e of canon) {
             const ek = `${e.ka}|${e.kb}`
             if (seen.has(ek)) continue
-            this._placeHousesOnEdge(road, e, P, cands)
             seen.add(ek)
+            if (!nodeInside(e.a) || !nodeInside(e.b)) continue
+            this._placeHousesOnEdge(road, e, P, cands)
         }
 
-        const rnd = mulberry32(hash32(`poi-houses:${seed}`))
-        const want = P.poiHouseCount
+        // FILL THE LADDER, INNERMOST RING FIRST (owner, 2026-08-11).
+        //
+        // The rungs are cumulative (radius, count) quotas — 4 inside 1 km, 9 inside 1.5 km, 15
+        // inside 2 km — and each pass TOPS UP the previous one rather than re-picking. That order
+        // is what makes the ladder servable: a single flat pick of 15 spread over 2 km leaves only
+        // 3-5 of them inside the first rung's kilometre (measured, seeds 6/11/42/7), so rung one
+        // would have too few people to deliver to on most seeds.
+        //
+        // It also buys SM-INV-12's nesting for free. Because each pass keeps everything the last
+        // one chose, a lower rung's customers are a subset of a higher rung's by construction —
+        // the route grows, it never moves. Nothing about this depends on the player's tier: every
+        // house is placed, always, and the tier only decides who is on today's route.
         let picked = []
-        for (let r = Math.min(P.poiHouseR, radius); ; r += P.poiHouseStep) {
+        for (const rung of houseRungs()) {
+            const r = Math.min(rung.r, wall)
             const ring = cands.filter(q => Math.hypot(q.x - center.x, q.z - center.z) <= r)
-            picked = this._pickSpread(ring, want, P.poiHouseMinSep, rnd)
-            if (picked.length >= want) break
-            if (ring.length === cands.length) break     // the ring is the whole network; nothing left to relax into
-        }
-        if (picked.length < want) {
-            console.warn(`[poi] region supplied only ${cands.length} viable house sites — placed ${picked.length}/${want}`)
+            picked = this._pickSpread(ring, rung.n, P.poiHouseMinSep, picked)
+            if (picked.length < rung.n) {
+                console.warn(`[poi] the ${r | 0} m rung holds only ${ring.length} viable house sites`
+                    + ` (${cands.length} region-wide) — placed ${picked.length}/${rung.n} customers`)
+            }
         }
 
         picked.forEach((q, i) => { q.index = i; q.type = 'house'; q.tags = ['newsCustomer'] })
@@ -401,6 +452,12 @@ export class PoiSystem {
      * (15 customers inside 1 km is unreachable) and wrong-looking (a road where every house is
      * exactly one house apart). The per-edge PRNG jitters each step so the spacing does not read as
      * a ruler, and the stream is keyed to the edge alone, so the sites are identical from any window.
+     *
+     * THIS IS THE POOL, NOT THE ROSTER — the same shape build() uses for pads (gather every viable
+     * site, then select). So the walk should be GENEROUS: a rejected step is a step the selection
+     * never gets to consider, and _evaluateHouse rejects most of them (a target circle needs
+     * naturally flat ground, because unlike a pad nothing carves it flat for you). See the
+     * measurement on poiHouseSpacing for what the step size is actually worth.
      */
     _placeHousesOnEdge (road, e, P, out) {
         const ed = road.edgeParData(e.a, e.b)
@@ -492,17 +549,27 @@ export class PoiSystem {
      * shape _pickCoverage uses for the stations.
      *
      * Spread rather than nearest-first on purpose: nearest-first would pack every customer onto the
-     * two streets by the spawn and make the route a lap of the block instead of a round.
+     * two streets by the spawn and make the route a lap of the block instead of a proper round trip.
+     *
+     * `pre` is a set already chosen by an inner rung: it is kept whole, counts toward `n`, and is
+     * what every candidate must clear `minSep` against. Keeping it whole even as the separation
+     * relaxes is what makes the rungs nest — see buildHouses().
      */
-    _pickSpread (cands, n, minSep, rnd) {
-        if (cands.length <= n) return cands.slice()
-        const order = cands.slice()
-        for (let i = order.length - 1; i > 0; i--) {          // Fisher-Yates off the region PRNG
-            const j = Math.floor(rnd() * (i + 1))
-            ;[order[i], order[j]] = [order[j], order[i]]
-        }
+    _pickSpread (cands, n, minSep, pre = []) {
+        const have = new Set(pre.map(q => q.id))
+        cands = cands.filter(q => !have.has(q.id))
+        if (pre.length + cands.length <= n) return [...pre, ...cands]
+        // Ordered by a STABLE PER-SITE KEY, not shuffled (BUG-45). A Fisher-Yates consumes one
+        // draw per element, so a ring holding one more candidate re-orders the WHOLE list and
+        // picks fifteen different customers — and the ring's contents move whenever the region
+        // centre does. See _pickStable for the mechanism and why the centre is not stable.
+        const seed = this._d.getSeed()
+        const order = cands
+            .map(q => ({ q, k: hash32(`poi-spread:${seed}:${q.id}`) }))
+            .sort((a, b) => (a.k - b.k) || (a.q.id < b.q.id ? -1 : 1))
+            .map(e => e.q)
         for (let sep = minSep; ; sep *= 0.5) {
-            const out = []
+            const out = pre.slice()
             for (const q of order) {
                 if (out.length >= n) break
                 if (out.every(p => Math.hypot(p.x - q.x, p.z - q.z) >= sep)) out.push(q)
@@ -525,13 +592,12 @@ export class PoiSystem {
      * order and not just a listing.
      */
     _assignRoster (pool, center, seed, P) {
-        const rnd = mulberry32(hash32(`poi-roster:${seed}`))
         const free = pool.slice()
         const out = []
         for (const slot of POI_ROSTER) {
-            const picks = slot.siting === 'nearSpawn' ? this._pickNearSpawn(free, center, slot.count, rnd, P)
+            const picks = slot.siting === 'nearSpawn' ? this._pickNearSpawn(free, center, slot.count, slot.type, P)
                         : slot.siting === 'coverage'  ? this._pickCoverage(free, pool, slot.count, P)
-                        :                               this._pickAny(free, slot.count, rnd)
+                        :                               this._pickStable(free, slot.count, slot.type)
             for (const q of picks) {
                 q.type = slot.type
                 q.tags = slot.tags ? slot.tags.slice() : []   // FEAT-61 — see the TAGS note above
@@ -552,14 +618,33 @@ export class PoiSystem {
         return out
     }
 
-    /** Take `n` pads at random from `free` (uniform, off the region PRNG). */
-    _pickAny (free, n, rnd) {
-        const picks = []
-        const avail = free.slice()
-        for (let k = 0; k < n && avail.length; k++) {
-            picks.push(avail.splice(Math.floor(rnd() * avail.length), 1)[0])
-        }
-        return picks
+    /**
+     * Take `n` pads, chosen by a STABLE PER-PAD KEY rather than by drawing indices out of a list.
+     *
+     * BUG-45, and the reason this is not a shuffle. The old version did
+     * `avail.splice(floor(rnd() * avail.length), 1)` — an index into a list whose LENGTH is a
+     * function of the region centre and of whatever happened to be streamed when the pool was
+     * gathered. Both of those move: the spawn probe (`_reseatTruckAtSpawn`) resolves against the
+     * network that is streamed at the time, so re-entering story mode on an already-loaded seed
+     * can land the truck tens of metres from where the cold entry did. One pad entering or leaving
+     * the ring then shifted every index after it, and mom and Larry swapped houses.
+     *
+     * Keying the choice to the pad's own identity makes the selection depend on WHICH pads exist,
+     * not on HOW MANY. A pad that is not near the boundary keeps its slot no matter what churns at
+     * the rim. It is the same discipline the pad's own position already follows — keyed off the
+     * abstract graph edge, never the streamed runKey (see the header).
+     *
+     * `salt` is the roster slot, so two slots drawing from the same pool do not both want the same
+     * pad. Ties break on the id, so equal hashes are still an order and not an accident.
+     */
+    _pickStable (cands, n, salt) {
+        if (!(n > 0) || !cands.length) return []
+        const seed = this._d.getSeed()
+        return cands
+            .map(q => ({ q, k: hash32(`poi-pick:${seed}:${salt}:${q.id}`) }))
+            .sort((a, b) => (a.k - b.k) || (a.q.id < b.q.id ? -1 : 1))
+            .slice(0, n)
+            .map(e => e.q)
     }
 
     /**
@@ -571,11 +656,11 @@ export class PoiSystem {
      * sit inside the first kilometre — but a seed whose spawn is on a bare stretch must still get
      * both houses, further out rather than not at all.
      */
-    _pickNearSpawn (free, center, n, rnd, P) {
+    _pickNearSpawn (free, center, n, salt, P) {
         for (let r = P.poiNearSpawnR; ; r += P.poiNearSpawnStep) {
             const ring = free.filter(q => Math.hypot(q.x - center.x, q.z - center.z) <= r)
-            if (ring.length >= n) return this._pickAny(ring, n, rnd)
-            if (ring.length === free.length) return this._pickAny(free, n, rnd)   // ring is the pool
+            if (ring.length >= n) return this._pickStable(ring, n, salt)
+            if (ring.length === free.length) return this._pickStable(free, n, salt)  // ring is the pool
         }
     }
 

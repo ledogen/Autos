@@ -24,6 +24,7 @@ import * as THREE from 'three'
 import { RANGER_PARAMS as P } from '../data/ranger.js'
 import { stepPhysics } from '../src/physics.js'
 import { getWheelPosition } from '../src/suspension.js'
+import { makeEngineCtx } from './lib/engine-ctx.mjs'
 
 const DT = 1 / 60
 
@@ -33,6 +34,7 @@ P._suspForceAccum = [0, 0, 0, 0]
 P._hubNormalXZ = [0, 1, 2, 3].map(() => ({ x: 0, y: 0, z: 0 }))
 
 let groundY = 0
+const ctx = await makeEngineCtx({ position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } }, P)  // FEAT-48: collider-free world — wheels ride the analytic mock; the engine supplies gravity + integration
 // Wheel-radius contacts only → isolates the failsafe/suspension wheel path from body-sphere contacts.
 const queryContacts = (cx, cy, cz, r) => {
   if (Math.abs(r - P.wheelRadius) > 1e-9) return []
@@ -40,7 +42,6 @@ const queryContacts = (cx, cy, cz, r) => {
   if (depth <= 0) return []
   return [{ normal: new THREE.Vector3(0, 1, 0), depth, contactPoint: new THREE.Vector3(cx, groundY, cz) }]
 }
-const queryVertexContacts = () => []
 
 function mkState (py) {
   return {
@@ -60,7 +61,7 @@ function mkState (py) {
 
 // Start slightly above contact so settling never starts with a large embed.
 const vs = mkState(0.70)
-for (let i = 0; i < 300; i++) stepPhysics(vs, P, DT, queryContacts, queryVertexContacts)
+for (let i = 0; i < 300; i++) stepPhysics(vs, P, DT, queryContacts, ctx)
 
 const pySettle = vs.position.y
 const vySettle = vs.velocity.y
@@ -88,7 +89,7 @@ let pyBefore = vs.position.y
 for (let i = 0; i < 40; i++) {
   const vyPrev = vs.velocity.y
   const pyPrev = vs.position.y
-  stepPhysics(vs, P, DT, queryContacts, queryVertexContacts)
+  stepPhysics(vs, P, DT, queryContacts, ctx)
   // Force-only integration moves position by ≈ vy·dt + a·dt² (a·dt² ≤ ~0.01 m even at huge tire force).
   // A failsafe teleport adds maxEmbed (≫ 0.05 m) on top. So any per-frame |Δpy − vyPrev·dt| > 0.05 m
   // is a position write, i.e. the failsafe fired.
@@ -103,14 +104,14 @@ ok(climbed > 0.10, `body climbed toward the new surface via suspension force (Δ
 function settledHub () {
   const s = mkState(pySettle)
   groundY = 0
-  for (let i = 0; i < 60; i++) stepPhysics(s, P, DT, queryContacts, queryVertexContacts)
+  for (let i = 0; i < 60; i++) stepPhysics(s, P, DT, queryContacts, ctx)
   return { s, hub: getWheelPosition(0, s, P) }   // _rotateVector was set by the last stepPhysics call
 }
 
 // One step against a raised surface → the position change NOT explained by integration (= a teleport).
 function stepJump (s) {
   const pyPrev = s.position.y, vyPrev = s.velocity.y
-  stepPhysics(s, P, DT, queryContacts, queryVertexContacts)
+  stepPhysics(s, P, DT, queryContacts, ctx)
   return (s.position.y - pyPrev) - vyPrev * DT
 }
 

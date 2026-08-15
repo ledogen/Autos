@@ -29,7 +29,7 @@
 import * as THREE from 'three'
 import { buildPalette } from './prop-palette.js'
 import { scatterChunk, scatterChunkGen } from './prop-scatter.js'
-import { sphereVsSphere, sphereVsCapsuleY, sphereVsCapsule, sphereVsMeshInstance, bushDrag } from './prop-collider.js'
+import { sphereVsSphere, sphereVsCapsule, sphereVsMeshInstance, bushDrag } from './prop-collider.js'
 import { BAKE_LAYER, shadowShearScale } from './prop-shadow-bake.js'   // PERF-07: baked prop-shadow atlas (main.js owns the system)
 import { PropImpostors } from './prop-impostor.js'                     // PERF-21: distant-prop billboards
 import { FLORA_PARAMS } from '../../data/flora.js'
@@ -170,6 +170,7 @@ export class PropSystem {
     this._collidables = new Map()  // "cx,cz" -> [{ kind, x, y, z, radius, height, scale }]
     this._grid = new Map()         // "gx,gz" -> [collidable, ...]
     this._gridCell = 8             // m
+    this._physicsHook = null       // FEAT-48: PropPhysics (engine static colliders) — syncChunk/disposeChunk/clear
     this._gridDirty = true
   }
 
@@ -457,6 +458,24 @@ export class PropSystem {
           ax: A.x, ay: A.y, az: A.z, bx: B.x, by: B.y, bz: B.z,
           radius: col.radius, boundR: col.boundR, scale: pl.scale,
         })
+      } else if (col && col.kind === 'capsule') {
+        // Standing trunk — bake WORLD endpoints so the capsule INHERITS THE TREE'S TILT
+        // (owner-spotted via the collider wireframes, 2026-08-15: colliders stood vertical
+        // under leaning trees). Local axis (0,1,0) through the same rotation the instance
+        // matrix applies: tilt about (cos tiltAz, 0, sin tiltAz), then yaw about Y.
+        const h = (col.height || 0) * pl.scale
+        const st = Math.sin(pl.tilt || 0), ct = Math.cos(pl.tilt || 0)
+        const vx = -Math.sin(pl.tiltAz || 0) * st, vy = ct, vz = Math.cos(pl.tiltAz || 0) * st
+        const cyw = Math.cos(pl.rotY), syw = Math.sin(pl.rotY)
+        const dx = vx * cyw + vz * syw, dz = -vx * syw + vz * cyw
+        collidables.push({
+          kind: 'capsule', x: pl.x, y: pl.y, z: pl.z,
+          ax: pl.x, ay: pl.y, az: pl.z,
+          bx: pl.x + dx * h, by: pl.y + vy * h, bz: pl.z + dz * h,
+          radius: col.radius, height: col.height || 0, scale: pl.scale,
+          // grid footprint must cover the LEAN (top can reach h·sin(tilt) from the base)
+          boundR: Math.max(col.radius, (col.height || 0) * st / 2 + col.radius),
+        })
       } else if (col) collidables.push({
         kind: col.kind, x: pl.x, y: pl.y, z: pl.z,
         radius: col.radius, height: col.height || 0, scale: pl.scale,
@@ -468,7 +487,10 @@ export class PropSystem {
     const chunk = { places, owned: [], mode: this._chunkMode(cx, cz) }
     this._chunks.set(ck, chunk)
     this._placeChunk(chunk, chunk.mode)
-    if (collidables.length) { this._collidables.set(ck, collidables); this._gridDirty = true }
+    if (collidables.length) {
+      this._collidables.set(ck, collidables); this._gridDirty = true
+      this._physicsHook?.syncChunk(ck, collidables)   // FEAT-48: rigid engine colliders for the chassis/debris
+    }
 
     // PERF-07: this chunk's props changed → (re)bake its shadow tile and its neighbours' (silhouettes
     // cross chunk seams). The bake system slices the work; a no-op when realtime casting / headless.
@@ -610,7 +632,7 @@ export class PropSystem {
     this._unplaceChunk(chunk)
     const wasBBOnly = chunk.mode === 'bbonly'
     this._chunks.delete(ck)
-    if (this._collidables.delete(ck)) this._gridDirty = true
+    if (this._collidables.delete(ck)) { this._gridDirty = true; this._physicsHook?.disposeChunk(ck) }
     // PERF-07: this chunk's props are gone → re-bake still-live neighbours so their tiles drop the
     // departed silhouettes (a neighbour still in-ring re-bakes without them; its own tile is reused
     // by whichever chunk lands on the toroidal slot next). Billboard-only chunks never baked.
@@ -812,8 +834,10 @@ export class PropSystem {
     this._cellsAround(cx, cz, r, (c) => {
       let hit = null
       if (c.kind === 'capsule') {
+        // General capsule between the baked (tilt-inclusive) world endpoints — the vertical
+        // fast path missed leaning trunks (endpoints baked in _commitChunk).
         const capR = c.radius * c.scale * C.trunkRadiusScale
-        hit = sphereVsCapsuleY(cx, cy, cz, r, c.x, c.z, c.y, c.y + c.height * c.scale, capR)
+        hit = sphereVsCapsule(cx, cy, cz, r, c.ax, c.ay, c.az, c.bx, c.by, c.bz, capR)
       } else if (c.kind === 'logCapsule') {
         // FEAT-15: fallen log — general capsule between the baked world endpoints. Same live
         // trunkRadiusScale as standing trunks (bark + slop), so one slider tunes both.
@@ -892,6 +916,17 @@ export class PropSystem {
     this._meshes.clear()
     this._chunks.clear()
     this._collidables.clear()
+    this._physicsHook?.clear()   // FEAT-48: drop the engine prop colliders with the system
     this._grid.clear()
+  }
+
+  /**
+   * FEAT-48: attach the engine prop-collider mirror (PropPhysics). Chunk commit/evict/dispose
+   * keep it in sync; late registration re-syncs standing chunks. resyncAll() on the mirror is
+   * the hook for the live collision-scale sliders (radii bake at sync time).
+   */
+  setPhysicsHook(hook) {
+    this._physicsHook = hook ?? null
+    if (hook) for (const [ck, list] of this._collidables) hook.syncChunk(ck, list)
   }
 }

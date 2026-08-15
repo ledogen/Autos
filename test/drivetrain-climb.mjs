@@ -12,8 +12,10 @@ import * as THREE from 'three'
 import { stepPhysics } from '../src/physics.js'
 import { stepDrivetrain } from '../src/drivetrain.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
+import { makeEngineCtx } from './lib/engine-ctx.mjs'
 
 const DT = 1 / 60
+const ctx = await makeEngineCtx({ position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } }, RANGER_PARAMS)  // FEAT-48: collider-free world — wheels ride the analytic mock; the engine supplies gravity + integration
 let failures = 0
 const fail = (msg) => { console.log(`  ✗ ${msg}`); failures++ }
 const pass = (msg) => { console.log(`  ✓ ${msg}`) }
@@ -53,10 +55,6 @@ function runScenario (gradePct, steps, label, opts = {}) {
     const h = surfaceY(cx, cz); const gd = h + r - cy
     return gd > 0 ? [{ normal: N.clone(), depth: gd, contactPoint: new THREE.Vector3(cx, h, cz) }] : []
   }
-  const queryVertexContacts = (px, py, pz) => {
-    const h = surfaceY(px, pz)
-    return py < h ? [{ normal: N.clone(), depth: h - py }] : []
-  }
 
   const eq = eqOf(P)
   const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), N)
@@ -88,7 +86,7 @@ function runScenario (gradePct, steps, label, opts = {}) {
   let prevGear = 1
   for (let s = 1; s <= steps; s++) {
     vs.throttle = 1; vs.brake = 0        // hold full throttle every step (no input ramp in harness)
-    stepPhysics(vs, P, DT, queryContacts, queryVertexContacts)
+    stepPhysics(vs, P, DT, queryContacts, ctx)
     const vfwd = vs.velocity.dot(fwd)
     const accel = (vfwd - prevV) / DT; prevV = vfwd
     const driveT = P._driveTorque ? P._driveTorque[2] : 0
