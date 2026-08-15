@@ -177,11 +177,24 @@ const COVER_HIGH = 2
 // this resolution rather than being blended by the upscale. Costs COVER_SS² array writes, all of
 // them trivial, inside a redraw that is already debounced.
 const COVER_SS   = 4
-// Radius, in cells, the tree COUNTS are area-averaged over before they are binned — i.e. the scale
-// at which "forested" is asked. One cell (a 48 m window) is the smallest that answers the question
-// about ground rather than about an individual gap between trunks. Raising it flattens the sheet
-// toward uniform green: at r=3 the measured p10..p90 spread collapses to 1.14..1.76.
-const COVER_COUNT_BLUR = 1
+// Radius, in cells, the tree COUNTS are area-averaged over before they are binned. Since white
+// became biome-only, this has exactly ONE remaining consumer: the MED/HIGH split, i.e. where
+// foliage glyphs are stamped. Widened to 4 (a 144 m window) purely to make that region hold
+// together — at r=1 a 42%-coverage cut has an edginess of ~1.07, which is visually indistinguishable
+// from static; at r=4 the same coverage reads 0.69.
+//
+// ⚠ HONESTY NOTE — the med/high distinction is not describing anything real, and no tuning here can
+// make it so. `clustersPerChunk` is a flat 4 and `treesPerCluster` a uniform [4,11], so per-cell
+// tree count is Poisson sampling noise with NO low-frequency field behind it: this world has no
+// dense stands and no thin stands, only uniform forest sampled unevenly. Every threshold on it
+// therefore prints smoothed noise, and pushing for a smaller, "denser-looking" subset makes it
+// worse, not better (blur r=4: 42% → edginess 0.69, but 2% → 1.86).
+//
+// This is the same shape of problem as white ground before biomes existed, and it has the same two
+// honest fixes: collapse to two bins (open / forest), or give the scatter a real low-frequency
+// density field that BOTH the world and the map read. Flagged to the owner 2026-08-15; the current
+// values are the best available compromise pending that ruling, not a solution.
+const COVER_COUNT_BLUR = 4
 // Safety cap on chunks whose SCATTER REPLAY is resolved in one background redraw. The real gate is
 // glyph visibility (see _glyphsVisible) — the replay's only product is the MED/HIGH split, and that
 // only shows as foliage glyphs — so this exists purely to bound the pathological case where glyphs

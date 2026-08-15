@@ -11,6 +11,21 @@ it. Those edits ship on this branch, so they arrive with the code they describe.
 
 ---
 
+## ⚠ Re-run the tests yourself. Do not trust the numbers in this document.
+
+Every "47/47 green" in this handoff and in the commit messages was observed by the authoring agent,
+but at least one such claim was reported **prematurely** during the session: a wait-loop polling the
+log for `FAIL` matched the literal string `0 FAIL` inside a *passing* gate's summary line
+(`... 3 pass, 0 FAIL (3 total) — exit 0`) and returned before the suite had finished. The claim was
+retracted and the real result was green, but the failure mode is silent and easy to repeat.
+
+**So: run `npm run test:all` yourself after merging and believe only your own output.** If you script
+the wait, poll for the `^RUN-ALL:` line anchored at start-of-line — not for `FAIL`, which appears in
+passing output.
+
+The final pre-merge run on this branch was green at `4018296` (47/47, wall 327s) and again after the
+glyph retune. Treat both as claims to verify, not as evidence.
+
 ## TL;DR for the merger
 
 **It merges clean into `main` as of today — verified, not assumed.** `git merge-tree --write-tree main
@@ -40,7 +55,8 @@ Four commits, each self-contained:
 | `9d153b9` | Cover renders at every zoom; pond shorelines follow terrain instead of being circles. |
 | `5571764` | Solid green/white regions; hillshade azimuth corrected. |
 | `e3b8c6a` | This handoff. |
-| *(final)* | One drainage definition; marsh symbols 0.47% → ~16%; FEAT-32/38/44 amended. |
+| `4018296` | One drainage definition; marsh symbols 0.47% → ~16%; FEAT-32/38/44 amended. |
+| *(final)* | Foliage glyphs cut back from 55% of the sheet to a real subset. |
 
 ```
  data/biomes.js            |  61 ++++      (new)
@@ -176,7 +192,7 @@ Ratified by the owner on 2026-08-15:
 | Less white overall | `meadowSlopeMax` (0.020) down |
 | More/less solid regions | `meadowRingR` (320 m) — the dominant lever |
 | More/less bare rock | `rockSlopeMin` (0.38) — **and `flora.slopeRejectMax` with it** |
-| More/fewer foliage glyphs | `DENSE_MIN` (1.0 ⇒ ~72% of forest glyphed; 1.6 ⇒ 34%) |
+| More/fewer foliage glyphs | `DENSE_MIN` (1.4) — **read with `COVER_COUNT_BLUR` (4)**; at that blur 1.0 ⇒ 87% of forest, 1.4 ⇒ 42%, 1.8 ⇒ 2% |
 | More/fewer marsh symbols | `wetSlopeMax` (0.035) / `wetReliefMin` (1.0) ⇒ ~16% of ground |
 | Heavier/lighter relief | `HILLSHADE_MIN` (0.88) |
 
@@ -216,6 +232,35 @@ resolution:
 - **Contour elevation labels** (the inline `8800` numbers on index contours) were offered and
   deliberately deferred by the owner. Probably the cheapest remaining visible win, and independent
   of everything else here.
+
+- **🔴 OPEN QUESTION — the MED/HIGH bin does not describe anything real.** This is the one piece of
+  unfinished design on the branch, and it needs an owner ruling rather than more tuning.
+
+  The owner ratified three bins: low=white, med=green, high=green+foliage glyphs. Low vs the rest is
+  solid — it is the biome layer. But **med vs high is smoothed noise.** `clustersPerChunk` is a flat
+  4 and `treesPerCluster` a uniform `[4,11]`, so per-cell tree count is Poisson sampling variance
+  with no low-frequency field behind it: this world has no dense stands and no thin stands, only
+  uniform forest sampled unevenly. Measured coherence of the HIGH region (boundary neighbours per
+  cell; ~1.3 is indistinguishable from static) shows no tuning escapes it — the region only looks
+  solid when it covers nearly everything:
+
+  | blur \ `DENSE_MIN` | 1.0 | 1.4 | 1.8 |
+  |---|---|---|---|
+  | r=1 | 73% / 0.618 | 47% / 1.069 | 25% / 1.533 |
+  | r=4 | 87% / 0.143 | 42% / 0.689 | 2% / 1.859 |
+
+  This is the same shape of problem as white ground was before biomes existed, and it has the same
+  two honest fixes:
+  1. **Collapse to two bins** — open (white) and forest (green + glyphs). Truthful, and cheap; but
+     it reverses a ratified decision, so it is the owner's call, not the merger's.
+  2. **Give the scatter a real low-frequency density field** that BOTH the world and the map read —
+     the same move biomes made for white. Then dense and thin stands genuinely exist and the third
+     bin means something. Worldgen change.
+
+  Current values (`DENSE_MIN` 1.4, `COVER_COUNT_BLUR` 4) are the **best available compromise pending
+  that ruling**, chosen so the glyphs read as a subset rather than as "every green cell has a tree
+  on it" (they covered 55% of the entire sheet before). Do not treat them as a solution, and do not
+  spend time re-tuning them — the ceiling is set by the world, not by the thresholds.
 - **The worktree has an untracked `node_modules` symlink** I created to run the dev server
   (`.gitignore`'s `node_modules/` pattern does not match a symlink). Don't `git add -A` in that
   worktree. Safe to delete once the worktree is retired.

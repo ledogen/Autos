@@ -66,10 +66,15 @@ const CELLS_PER_CHUNK = FLORA_PARAMS.chunkSize / COVER_CELL   // 4
 // solid). A cut here instead sprayed white specks through the forest wherever cluster placement
 // happened to leave a Poisson gap, which is a fact about a random number generator and not about
 // any ground the player can walk on.
-// 1.0 glyphs ~72% of forest (measured, seed 6; 1.2→59%, 1.6→34%). Set high, the forest printed as
-// bare green over most of its area and the sheet read as mostly empty — which matters more now
-// that this is the ONLY thing distinguishing forest from open ground besides the tint.
-export const DENSE_MIN = 1.0
+// Paired with COVER_COUNT_BLUR — read them together, since coverage depends on both. At blur r=4:
+// 1.0 → 87% of forest, 1.4 → 42%, 1.8 → 2%. At 1.0 the glyphs covered 55% of the entire sheet and
+// read as "every green cell has a tree on it", which erases the med/high distinction they exist to
+// carry. 1.4 makes HIGH a genuine subset.
+//
+// ⚠ Be aware of what this threshold is cutting: see the honesty note on COVER_COUNT_BLUR in
+// map2d.js. Tree density in this world has no spatial structure, so no value here produces truly
+// coherent stands — only more or less of a smoothed random field.
+export const DENSE_MIN = 1.4
 
 /**
  * Slope in prop-scatter's units, from a height field's gradient.
