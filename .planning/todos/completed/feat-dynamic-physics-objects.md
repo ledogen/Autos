@@ -1,8 +1,9 @@
 ---
 id: FEAT-36
 type: feature
-status: open
+status: completed
 opened: 2026-07-17
+closed: 2026-08-15
 severity: minor
 source: user-request
 relates_to: FEAT-06 (props), FEAT-35 (multi-vehicle), FEAT-26/27 (rockslides), story mode (the log
@@ -16,6 +17,32 @@ sits on top of it, which removes most of what was hard here: solver generalizati
 colliders, object↔object narrow phase, sleeping and two-way coupling all come from the engine. What
 remains is authoring: shapes, masses, spawn/despawn, a causesDamage flag."
 ---
+
+## Resolution (2026-08-15) — closed on the landed slice
+
+Merged to main with FEAT-48 (`7bc9fb3`, branch `feature/box3d`). `src/debris.js` gives dynamic
+rigid-body props built **entirely against the `physics-engine.js` adapter** — no engine type leaks
+into debris code. Collider = convex hull of the GLB's own vertices; mass/inertia derived from
+density. Spawned through the paper-throw mechanic (debug panel → Vehicle → Physics Props → "Throw
+Projectile (F)": paper / barrel / rock), hard cap 12 with oldest-reclaim plus a clear button.
+Two-way truck↔debris coupling is the engine's, verified by the `test/debris-coupling.mjs` gate and
+in-browser. Placeholder art `test-barrel.glb` (44 tris) / `test-rock.glb` (20 tris) is built
+parametrically (`assets/models/src/test-*.py`) and is deliberately **not** ASSET-25/26, which stay
+open. Debris throws never touch paper-route scoring or inventory.
+
+Acceptance met: bodies rest, tumble, settle and sleep; two-way contact via the engine's shared
+impulse pass; adapter-only; hard cap; off in headless; tunables in the debug panel; `npm test` green.
+
+**Deliberately not built, and not blocking the close** — each is cheap to reopen as its own ticket
+when its consumer exists:
+
+- `causesDamage` per prop type. The seam is in place and unused: `PhysicsEngine.maxContactImpulse`
+  reports impulse magnitude; the flag would gate whether that report reaches the wear model. Waiting
+  on SM-3, which owns the wear model — building the flag before its subscriber would be guesswork.
+- Deterministic world-fixture spawn/despawn against streaming (rockpiles from `(seed, coords)`,
+  SM-INV-12). Debris today is run-layer and player-thrown only.
+- Object↔object beyond incidental (no stacks; sequential-impulse jitter was never exercised).
+- Real art — the two test props are placeholders.
 
 ## ⚠ Rescoped 2026-07-29 — the escalated decision is resolved
 

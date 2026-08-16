@@ -3,9 +3,10 @@ id: FEAT-34
 type: feature
 status: open
 opened: 2026-07-16
+updated: 2026-08-15
 severity: minor
 source: user-request
-relates_to: FEAT-23 (rpm/speed/gear), FEAT-33 (ignition key), FEAT-58 (radio/music), FEAT-14 (headlights), teleport parking-brake, FEAT-26 + SM milestone 3 (health → warning lights), SM-INV-10
+relates_to: FEAT-49 (gauge cluster — SHIPPED, this ticket's shell), FEAT-50 (fuel model), FEAT-51 (coolant temp), FEAT-23 (rpm/speed/gear), FEAT-33 (ignition key), FEAT-58 (radio/music), FEAT-14 (headlights), teleport parking-brake, FEAT-26 + SM milestone 3 (health → warning lights), SM-INV-10
 note: "A diegetic instrument cluster GUI modeled on the real 2002 Ford Ranger layout — analog tach,
 speedo, temp/fuel/oil/battery gauges, gear indicator, and a bank of warning tell-tale lights that
 respond to vehicle health. Includes the FEAT-33 ignition as a visual key that physically turns
@@ -16,6 +17,40 @@ land."
 ---
 
 # FEAT-34: Instrument cluster GUI (with ignition key + warning lights + radio)
+
+## ⚑ STATUS 2026-08-15 — the shell SHIPPED as FEAT-49; what's left is the three consumers
+
+**The cluster itself exists on main.** FEAT-49 (`src/cluster.js`, `GaugeCluster`, merged `54cc10d`,
+closed 2026-08-03) built and shipped the readout this ticket asked for. Do **not** re-plan the shell;
+read `src/cluster.js` first and plan only the deltas below.
+
+**Rulings the shipped cluster settled — these override the proposals further down this file:**
+
+| This ticket proposed | What actually shipped (FEAT-49) |
+|---|---|
+| DOM overlay, SVG + CSS transforms | **Canvas 2D**, procedurally drawn, no image assets, no new deps |
+| 2002 Ranger layout | **Early-90s Ranger** reference (matches the jalopy), right-hand oil/battery pod **trimmed off** |
+| Placement TBD (bottom-center strip vs corner) | **Bottom-right**, hidden while the 2D map (`M`) is open, visible in chase/hood/freecam |
+| Replace or complement the text HUD? | **Replaces** it for speed/gear/rpm — those lines are deleted; the wheelspin diagnostic stays on the text HUD as a dev readout |
+| "Does the game get fuel?" — the big fork | **Yes** — ratified 2026-08-01, *"there should 100% be fuel in the game and gas stations"*; the model is FEAT-50, tank rescaled to a 16 h day by FEAT-54 |
+
+Also landed since: an **odometer** (seeds 80k–160k mi, accumulates real miles, re-seeds per run until
+the run/save layer gives the jalopy a persistent identity — SM-4/FEAT-42) and a **24 h run clock** on
+the story HUD (`14fbb66`).
+
+**What remains in FEAT-34 — all three are blocked on their own subsystem, none on the cluster:**
+
+1. **Warning tell-tale bank** — the ticket's actual payoff, and nothing of it shipped. Still gated on
+   the wear/condition model (FEAT-26 / SM-3). The state-backed lights are buildable *now* against live
+   signals: brake (parking-brake latch), high-beam / headlights (FEAT-14). SM-INV-10 guardrail stands
+   — idiot lights, never "oil: 43%".
+2. **Ignition key that turns** (OFF→ACC→ON→START) — blocked on FEAT-33's state machine, still open.
+3. **Radio module** hosting FEAT-58 — FEAT-58 is still a thinking surface, not a committed build, and
+   the owner flagged it as possibly too cheesy. Scope follows whatever tier it lands at, if any.
+
+The two placeholder needles are **not** this ticket's debt: `setFuelLevel` / `setCoolantTemp` sit at
+static targets by design until **FEAT-50** and **FEAT-51** drive them. Honest-signal rule held — no
+gauge fakes a live value.
 
 ## Context
 

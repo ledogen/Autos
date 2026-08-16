@@ -3,13 +3,48 @@ id: FEAT-26
 type: feature
 status: open
 opened: 2026-07-15
+updated: 2026-08-15
 severity: minor
 source: user-idea
-relates_to: FEAT-09 (generic contact pipeline → dynamic debris — the physics substrate this needs), FEAT-06 (prop palette — boulder/med-stone meshes to reuse)
-depends_on: FEAT-09 Phase 3 (dynamic rigid-body debris + two-way coupling)
+relates_to: FEAT-36 (dynamic debris — the physics substrate, LANDED) + FEAT-48 (Box3D adapter seam), FEAT-06 (prop palette — boulder/med-stone meshes to reuse), spirits-and-pacts.md #05 (the Highway's anger)
+depends_on: none — substrate landed 2026-08-15 (was "FEAT-09 Phase 3")
 ---
 
 # FEAT-26: Random rockslide ambushes — timed tumbling rocks that try to nail the player
+
+## ⚑ STATUS 2026-08-15 — UNBLOCKED; the substrate is on main
+
+The dependency this ticket carried is **discharged**. FEAT-09 no longer exists as the plan: the
+rigid-body core is **Box3D behind the `src/physics-engine.js` adapter seam** (FEAT-48), and dynamic
+debris shipped as **FEAT-36** (`src/debris.js`, merged with FEAT-48, both closed). Read every
+"FEAT-09 Phase 3" reference below as **FEAT-36 on the FEAT-48 adapter**.
+
+**Build against the adapter, never against the engine** — no `b3*` import outside
+`physics-engine.js`. That is a hard project rule, not a preference.
+
+**What `src/debris.js` already hands this ticket for free** (do not rebuild any of it):
+
+- Dynamic bodies with convex-hull colliders from a GLB's own vertices, density-derived mass/inertia.
+- **Tumbling** — real inertia tensors; the hand-rolled solver could not do this, the engine does.
+- **Rock↔terrain contact during the descent**, so rocks bounce down the slope rather than free-fall.
+  The "cheaper scripted-fall then hand off to dynamic" open question below is **moot** — take the
+  honest tumble.
+- **Rock↔vehicle two-way coupling** carrying real momentum into the truck, gated by
+  `test/debris-coupling.mjs`. Rock↔rock comes with the engine too.
+- Sleeping/settling, plus a **hard count cap with oldest-reclaim** (currently 12) — the concurrent-cap
+  acceptance line has a working precedent, though an event of 6–13 bodies will want its own budget
+  rather than sharing the throw cap.
+- Placeholder `test-rock.glb` (20 tris) to prototype against; real boulder/med-stone art is
+  FEAT-06 palette work or its own ASSET ticket.
+
+**What is genuinely left, and it is all director logic, not physics:** slope selection, release
+timing / lead / intentional inaccuracy, telegraphing, event rate keyed to Highway favour, spawn-out-
+of-view, and cleanup against streaming.
+
+**Still blocked, but only in part:** "what can a hit actually do" — there is still **no wear/damage
+model** (SM-3). The impulse-report seam exists (`PhysicsEngine.maxContactImpulse`, and FEAT-36's
+deferred `causesDamage` flag is exactly this consumer). Build the hazard so it *shoves* now and let
+damage subscribe later; do not block the ticket on SM-3.
 
 ## Request (user)
 
