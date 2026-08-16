@@ -22,7 +22,7 @@
 // (edge, arcS) point, NEVER snapped to a graph node. Nodes are a routing artifact ~640 m apart and
 // mostly junctions; a place is no likelier at a T than halfway down a road.
 
-import { PROP_MODELS } from '../data/prop-models.js'   // FEAT-59/60: authored collision metadata
+import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'   // FEAT-59/60: authored collision metadata
 import { REGION_MARGIN } from './mission.js'          // FEAT-61: the wall a customer must sit inside
 import { houseRungs } from './paper-route.js'         // FEAT-61: the ladder placement has to serve
 
@@ -186,7 +186,14 @@ export const POI_ROSTER = [
     // Everything left over. Most POIs are mission givers, and a mission giver MAY present as a
     // food vendor (owner, 2026-08-05) — food vendors get no reservation of their own because a
     // vendor that also hands out work costs the region nothing.
-    { type: 'missionGiver', count: 5, model: null, jobs: true, siting: 'any' },
+    //
+    // MODEL POOL, not one model (owner, 2026-08-15). `modelPool` names a data/prop-models.js TAG
+    // and each of the five givers draws from every asset carrying it, keyed to the pad's own
+    // identity so the choice is a pure function of the seed. Widening the pool is therefore a
+    // one-line edit to the registry — and the owner has ruled that widening it MAY reshuffle which
+    // marker wears what on an existing seed. That is the licence this design is built on; do not
+    // add a stability guarantee here without re-reading that sentence.
+    { type: 'missionGiver', count: 5, modelPool: 'missionGiver', jobs: true, siting: 'any' },
 ]
 
 /** Region population: 14, derived from the roster so the two can never drift apart. */
@@ -598,15 +605,28 @@ export class PoiSystem {
             const picks = slot.siting === 'nearSpawn' ? this._pickNearSpawn(free, center, slot.count, slot.type, P)
                         : slot.siting === 'coverage'  ? this._pickCoverage(free, pool, slot.count, P)
                         :                               this._pickStable(free, slot.count, slot.type)
+            // NOTE `pool` is already this method's pad pool — the model pool needs its own name.
+            const models = slot.modelPool ? modelsTagged(slot.modelPool) : null
             for (const q of picks) {
                 q.type = slot.type
                 q.tags = slot.tags ? slot.tags.slice() : []   // FEAT-61 — see the TAGS note above
                 q.jobs = !!slot.jobs
-                q.modelKey = slot.model ?? null
+                q.modelKey = models?.length
+                    // Keyed to the pad's own id, the same discipline as _pickStable and for the
+                    // same reason: the choice must depend on WHICH pad this is, never on how many
+                    // pads happened to be streamed when the pool was gathered.
+                    ? models[hash32(`poi-model:${seed}:${q.id}`) % models.length]
+                    : (slot.model ?? null)
                 // Stamp the authored collision box NOW, off the registry, not when the GLB
                 // resolves: physics must not wait on a fetch, or a marker would be driveable-
                 // through for the first seconds of a region and solid afterwards.
-                q.collision = (slot.model && PROP_MODELS[slot.model]?.collision) || null
+                const spec = q.modelKey ? PROP_MODELS[q.modelKey] : null
+                q.collision = spec?.collision || null
+                // The yaw the MODEL stands at, as opposed to q.yaw's "this pad faces the road".
+                // Assets whose length runs down their own -Z (vehicles) are quarter-turned so the
+                // long axis lies along the pad's 14 m rather than across its 8 m — see yawOffset
+                // in data/prop-models.js. Both the mesh and the oriented contact box read THIS.
+                q.modelYaw = q.yaw + (spec?.yawOffset ?? 0)
                 const i = free.indexOf(q)
                 if (i >= 0) free.splice(i, 1)
                 out.push(q)
@@ -745,7 +765,7 @@ export class PoiSystem {
      * of the solid) so main.js's queryContacts splice is identical to the prop one. THREE-free.
      *
      * FEAT-60: the box is now per-POI. A modelled marker uses the registry's AUTHORED collision
-     * dims, rotated to the marker's yaw (an ORIENTED box — a 12 m trailer standing at 40° to the
+     * dims, rotated to the marker's modelYaw (an ORIENTED box — a 12 m trailer standing at 40° to the
      * world axes has a world AABB half again its size, and you would bounce off thin air two metres
      * from the wall). Keyless POIs keep the poiCubeSize cube, which the yaw leaves unchanged
      * because a cube is rotation-invariant — so their contact is bit-identical to before.
@@ -765,7 +785,8 @@ export class PoiSystem {
             if (dy > hy + r || dy < -hy - r) continue
             // Into the marker's own frame: undo yaw about Y. (cos, −sin; sin, cos) is the inverse
             // of the rotation applied to the mesh, so dx runs along the model's +X and dz its +Z.
-            const cs = Math.cos(q.yaw ?? 0), sn = Math.sin(q.yaw ?? 0)
+            // modelYaw, NOT the pad yaw — a quarter-turned Winnebago's box must turn with it.
+            const cs = Math.cos(q.modelYaw ?? q.yaw ?? 0), sn = Math.sin(q.modelYaw ?? q.yaw ?? 0)
             const dx =  cs * wx - sn * wz
             const dz =  sn * wx + cs * wz
             if (dx > hx + r || dx < -hx - r || dz > hz + r || dz < -hz - r) continue

@@ -2185,9 +2185,10 @@ const _customerRings = new Map()
 /**
  * Rebuild the markers + interaction rings (cheap: a handful of each per region).
  *
- * FEAT-60: a POI whose roster slot names a model gets the model; everything else keeps the orange
- * cube. The cube is not an unfinished job — it is the honest placeholder for a type nobody has
- * modelled yet, and today's roster is deliberately mostly cube.
+ * FEAT-60: a POI whose roster slot names a model (or a model POOL — the five mission givers draw
+ * from every 'missionGiver'-tagged asset) gets the model; everything else keeps the orange cube.
+ * The cube is not an unfinished job — it is the honest placeholder for a type nobody has modelled
+ * yet, and the services, the burger joint and the stores are all still cube.
  */
 function _rebuildPoiMarkers () {
   _poiGroup.clear()   // geometry + material are shared singletons — nothing per-cube to dispose
@@ -2201,7 +2202,9 @@ function _rebuildPoiMarkers () {
       // unlike the small thrown mission items FEAT-59's cast-only default was written for.
       const m = spawnModel(q.modelKey, { castShadow: true, receiveShadow: true })
       m.position.set(q.x, q.y, q.z)     // pad records are base-seated, and so are the models
-      m.rotation.y = q.yaw              // faces the road — see the yaw note in poi.js
+      // modelYaw = the pad's road-facing yaw plus the asset's own yawOffset (a Winnebago parks
+      // broadside, a trailer stands square) — see the yawOffset note in data/prop-models.js.
+      m.rotation.y = q.modelYaw ?? q.yaw
       _poiGroup.add(m)
     } else {
       const cube = new THREE.Mesh(_poiCubeGeo, _poiCubeMat)

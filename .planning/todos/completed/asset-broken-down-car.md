@@ -254,8 +254,13 @@ against the '93 Century wagon reference photo:
 - [x] Forward −Z and base-seated origin, both asserted numerically rather than eyeballed.
 - [x] No inverted windings — 64 inward rays, 64 hits, 0 facing away (`check_normals()` in `build.py`).
 - [x] The broken-down state reads at a glance **from the right-hand side**. See the open item below.
-- [ ] Loads and places in-world through the FEAT-59 model import service. **Still blocked** — same
-      state `trailer-home-a` (ASSET-21) shipped in; the file is correct, nothing loads it yet.
+- [x] Loads and places in-world through the FEAT-59 model import service. **Met 2026-08-15** —
+      registered as `brokenCar` in `data/prop-models.js`, tagged `missionGiver`, so the roster's
+      five giver slots draw it from that pool. The stranded-motorist giver: the model states the job.
+      Sited parallel to the road (`yawOffset: π/2`) — a car that died on a lay-by was pulled off, not
+      parked nose-on to greet you. **That also settles the open item below**: +π/2 turns the model's
+      +X toward the road on every pad orientation, so the wreck's one storytelling flank faces the
+      driver. The sign is therefore load-bearing — −π/2 would park the good side out.
 
 ## Open item — the story is one-sided
 

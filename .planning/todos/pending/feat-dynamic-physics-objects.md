@@ -37,10 +37,19 @@ quietly becomes a non-requirement.
    world places a body. This is the item most likely to surface a leak or a streaming hitch, and it
    was called out as "still real work" in the 2026-07-29 rescope.
 3. **Object↔object beyond incidental.** No stacks exist, so pile behaviour is untested.
-4. **Real art.** `test-barrel.glb` (44 tris) / `test-rock.glb` (20) are deliberate placeholders and
-   are **not** ASSET-25/26, which stay open. ASSET-29 (plastic barrel, 348 tris) and ASSET-30 (three
-   steel-drum variants) are now **built and export-clean** — they need a `PROP_MODELS` entry and a
-   placement consumer, which is item 2's work.
+4. **Real art — HALF CLOSED 2026-08-15.** The thrown barrel is now ASSET-30's `drum-closed.glb`
+   (328 tris, ρ 86 → the ticket's 18 kg empty); `test-barrel.glb` is retired and its registry entry
+   deleted, leaving the `.glb`/`.blend`/`.py` orphaned on disk. `test-rock.glb` (20 tris) is still a
+   placeholder. ASSET-29 (plastic barrel) and ASSET-30's open/crushed variants remain unregistered —
+   they want the SCATTER consumer, which is item 2's work, not a throw target.
+   (The earlier note here said these were "not ASSET-25/26": that was a misnumbering — ASSET-25 is
+   the cooking kit and ASSET-26 the shade tarp. The barrels are ASSET-29/30.)
+
+   Swapping the model surfaced a latent bug worth keeping in mind for item 2: `_extractHull` took
+   only the GLB's FIRST mesh, and GLTFLoader splits a multi-material mesh into one child per
+   primitive. `drum-closed` is DrumPaint + DrumSteel, so the collider was a coin flip on exporter
+   ordering between the whole drum and its two 5 cm bungs — silent, no error either way. It now
+   unions every mesh, in template space. Any two-material prop added later would have hit this.
 
 ### What HAS landed (keep, do not rebuild)
 
