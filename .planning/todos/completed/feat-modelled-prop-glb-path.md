@@ -1,15 +1,56 @@
 ---
 id: FEAT-59
 type: feature
-status: open
+status: completed
 severity: minor
 opened: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-15
+closed: 2026-08-15
 source: news-roll-asset
-relates: FEAT-06
+relates: FEAT-06, FEAT-61 (news roll — the proof consumer), FEAT-60/46 (POI markers), FEAT-36 (debris), BUG-49 (deploy gate)
 ---
 
 # FEAT-59: A model import service for hand-modelled (`.glb`) assets
+
+## Resolution (2026-08-15) — SHIPPED; closed on a code check, not on age
+
+`src/model-service.js` (92 lines) + `data/prop-models.js`. Every core acceptance line is met:
+
+| Acceptance | Where |
+|---|---|
+| Data-only registry; adding an asset is a `.glb` drop + one entry | `data/prop-models.js` (`PROP_MODELS`), documented at the top of the file |
+| `getModel(key)` async, cached, concurrent callers share one fetch | `_records` Map holds the **promise**, so the promise *is* the dedup and the cache |
+| Spawn a `THREE.Mesh`/`Group`, shadow-casting toggleable per spawn | `spawnModel(key, { castShadow, receiveShadow })` |
+| Async, never stalls worldgen or the frame loop | Returns a group immediately and populates it when the load resolves |
+| Failure → 0.5 m pink cube, never null, never a silent no-op | `_fallbackTemplate()` (`0xff00ff`); **`getModel` never rejects** — unknown key *and* failed fetch both log and resolve to the fallback |
+| Collision metadata carried verbatim | `rec.collision` → `root.userData.collision` |
+| **Proof: `news-roll` spawns in-world via the service** | `main.js:1918` and `main.js:2515` — and it did not stay a stub, it carries the FEAT-61 paper route |
+
+**It outgrew its own proof, which is the real reason to close it.** The ticket asked for consumer A
+(mission items) and pencilled consumer B (static POI dressing) as "later, may split". Both shipped,
+plus a third the ticket filed under *"Future (not this ticket): physics"*:
+
+- **Mission items** — the thrown newspaper roll (FEAT-61).
+- **Static POI markers** — `main.js:2202` spawns `trailerHomeA` with shadows on, as mom's and
+  Larry's houses.
+- **Physics props** — `src/debris.js` calls `getModel` directly and builds colliders from the loaded
+  mesh (FEAT-36/FEAT-48). The authored `collision` metadata the service was told to carry "unused
+  today" now has a live consumer.
+
+The path is also **gated**: `test/dist-assets.mjs` (added by BUG-49, registered in `test/gates.mjs`
+under `infra`) asserts every registry model URL exists and is copied into `dist/` by
+`vite.config.js` — the allowlist drift that shipped pink cubes to Pages. The fallback proved itself
+in production before it was fenced.
+
+**Deferred criteria stay deferred, exactly as written:** palette/scatter integration
+(`InstancedMesh`, one draw call per variant) was conditional — *"only if/when a modelled asset needs
+density scatter"* — and nothing does yet. Placed POI props are small counts on the per-mesh path,
+which is what the ticket specified. If a modelled asset ever needs scatter density, that is a new
+ticket against FEAT-06's palette, not a reopen of this one.
+
+**Not closed by this:** several built assets are still unregistered — ASSET-09 (winnebago),
+ASSET-29 (barrel-plastic), ASSET-30 (three drum variants). That is one `PROP_MODELS` entry each plus
+somewhere to place them; the service they were "blocked by" has not blocked them for some time.
 
 ## Request
 
