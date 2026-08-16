@@ -8,27 +8,29 @@
 // Blob-classic terrain + road workers are built from template STRINGS inside src/*.js and are
 // bundler-invisible — the string constants survive bundling untouched.
 import { defineConfig } from 'vite'
-import { copyFileSync, mkdirSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
 // Runtime assets fetched by URL (NOT ES imports), so the bundler never sees them — they must be
 // copied into dist verbatim at their existing paths so the runtime fetch/loader URLs keep resolving:
 //   data/route-cache-default.json.gz  ← src/route-store.js fetch() (BASE route bundle, boot)
 //   data/route-cache-region.json.gz   ← src/route-store.js fetch() (story-region delta, lazy)
-//   assets/models/hilux.glb           ← src/vehicle-model.js GLTFLoader().load() (default vehicle)
-//   assets/models/news-roll.glb       ← src/model-service.js GLTFLoader().load() (FEAT-59 registry)
-//   assets/models/trailer-home-a.glb  ← ditto (FEAT-60 POI markers: mom's house, Larry's house)
-//   assets/models/CREDITS.md          ← license attribution shipped beside the model
+//   assets/models/CREDITS.md          ← license attribution shipped beside the models
+//   assets/models/*.glb               ← ENUMERATED, not listed (see below)
 // The Vite dev server already serves project-root files, so these 200 in dev with no plugin; this
 // plugin only fixes the BUILD (vite build ships imports + publicDir, and these are neither). We do
 // NOT move them under public/ — that would change the fetch URLs and break the pure-node gates that
 // read data/*.js directly. (route-store.js keeps its fetch URL; do NOT convert it to a ?url import.)
+//
+// BUG: the .glb list used to be hand-maintained here and silently drifted — every model added after
+// FEAT-60 (test-rock, test-barrel, the drums, winnebago, tent, broken-car, barrel-plastic) was
+// missing from it, so those loads 404'd in the DEPLOYED build only and rendered as model-service.js's
+// pink-cube fallback. Dev never caught it (the dev server serves the whole project root). The
+// directory is now the manifest: dropping a .glb in assets/models/ is all "adding a vehicle is
+// data-only" (CLAUDE.md) ever claimed it should take. test/dist-assets.mjs gates it.
 const RUNTIME_ASSETS = [
   'data/route-cache-default.json.gz',
   'data/route-cache-region.json.gz',
-  'assets/models/hilux.glb',
-  'assets/models/news-roll.glb',
-  'assets/models/trailer-home-a.glb',
   'assets/models/CREDITS.md',
 ]
 
@@ -39,7 +41,10 @@ function copyRuntimeAssets () {
     configResolved (cfg) { root = cfg.root },
     closeBundle () {
       const outDir = resolve(root, 'dist')
-      for (const rel of RUNTIME_ASSETS) {
+      const glbs = readdirSync(resolve(root, 'assets/models'))
+        .filter((f) => f.endsWith('.glb'))
+        .map((f) => `assets/models/${f}`)
+      for (const rel of [...RUNTIME_ASSETS, ...glbs]) {
         const dest = resolve(outDir, rel)
         mkdirSync(dirname(dest), { recursive: true })
         copyFileSync(resolve(root, rel), dest)

@@ -5033,8 +5033,11 @@ function loop () {
   vehicleState.position  = _physPos
   vehicleState.quaternion = _physQuat
 
-  // Collider wireframes: follow dynamic bodies, cull far statics (no-op while disabled).
-  physicsWireframes.update(camera.position)
+  // Collider wireframes: follow dynamic bodies, cull far statics (no-op while disabled). The
+  // chassis wireframe takes the INTERPOLATED render pose, not the engine transform — the meshes
+  // were drawn at subframe time above, and reading the raw body here would sit the box up to one
+  // physics step (~0.5 m at 30 m/s) off the truck it is measuring.
+  physicsWireframes.update(camera.position, { position: _renderPos, quaternion: _renderQuat })
 
   // QUAL-02: keep the (finite) sky box centred on the camera so it always surrounds the view.
   skySystem.update(camera.position)
