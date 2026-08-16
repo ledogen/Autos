@@ -386,6 +386,7 @@
     }
     #run-hud .rh-money { font-size: 17px; color: #8ce99a; }
     #run-hud .rh-deeds { color: #ffcf3c; }
+    #run-hud .rh-clock { color: #9fb3c8; letter-spacing: 1px; }
 
     /* FEAT-55: the Energy meter (RoR2 ticker), top-right under the wallet. Story-only; shown and
        scrolled per frame by _updateEnergyMeter. Segment colours come from day.js STAGE_COLOR via
@@ -393,7 +394,7 @@
     #energy-meter {
       display: none;
       position: fixed;
-      top: 82px;
+      top: 104px;   /* clears the 3-line wallet (money / deeds / clock) */
       right: 14px;
       background: rgba(0, 0, 0, 0.6);
       border: 1px solid #3a4450;
@@ -846,7 +847,7 @@
   <!-- FEAT-53: the run wallet (money + good deeds), story mode only. Painted from the ~10 Hz HUD
        block off economySystem.snapshot(); deliberately its own element so the mission-hud running
        surface stays byte-identical (SM-INV-3). -->
-  <div id="run-hud"><span class="rh-money">$0</span><br><span class="rh-deeds">0 good deeds</span></div>
+  <div id="run-hud"><span class="rh-money">$0</span><br><span class="rh-deeds">0 good deeds</span><br><span class="rh-clock">07:00</span></div>
 
   <!-- FEAT-55: the Energy meter — a RoR2-style ticker. The stage strip scrolls RIGHT-to-left
        under a fixed centre pointer as energy drains; segment widths are hours at the meter's

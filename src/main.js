@@ -3571,12 +3571,18 @@ function _renderRunHud () {
   const el = document.getElementById('run-hud')
   if (!el) return
   const s = economySystem.snapshot()
-  const key = `${s.money}|${s.halfPoints}`
+  // The 24 h clock reads the one authoritative hour-of-day (day.js). Truncated to whole minutes,
+  // which is also what keeps the snapshot key from re-writing the DOM on every 10 Hz poll.
+  const h = daySystem.hour()
+  const mins = Math.min(1439, Math.floor(h * 60))
+  const clock = `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`
+  const key = `${s.money}|${s.halfPoints}|${clock}`
   if (key === _runHudKey && el.style.display === 'block') return
   _runHudKey = key
   const deeds = formatDeeds(s.halfPoints)
   el.innerHTML = `<span class="rh-money">$${formatMoney(s.money)}</span><br>`
-    + `<span class="rh-deeds">${s.halfPoints === 0 ? 'no' : deeds} good deed${s.halfPoints === 2 ? '' : 's'}</span>`
+    + `<span class="rh-deeds">${s.halfPoints === 0 ? 'no' : deeds} good deed${s.halfPoints === 2 ? '' : 's'}</span><br>`
+    + `<span class="rh-clock">${clock}</span>`
   el.style.display = 'block'
 }
 
