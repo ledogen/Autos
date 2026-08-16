@@ -15,18 +15,27 @@
 //      candidate pars are c × recomputed(candidate). c is ~mu-invariant (caps scale with √mu like
 //      every other corner) and folds in any other reconstruction residual too.
 //   2. Sweep PAR_REF candidates (mu × accel × brake; vMax/vCeil/junction* held), score each by
-//      weighted log-error of per-run ratios against felt-class targets:
-//        very_fast ≤ 0.82 (one-sided) · fast 0.90 · par 1.00 (double weight) · slow 1.10 ·
-//        very_slow ≥ 1.25 (one-sided, half weight — "very slow" is unbounded above by nature).
-//   3. Constrain mu ≤ 0.72: the lab skidpads (runs/lab-baselines.json) put the REALIZED human
-//      ceiling at 0.708–0.743 on the grip-limited pads, and par must stay reachable (SM-INV-4:
-//      the payout curve has to be able to go negative — but ratio 1.0 must be attainable).
+//      weighted log-error of per-run ratios against felt-class targets.
+//   3. mu is OWNER-SET (0.80) as of the 2026-08-16 re-anchor, not fitted. The old `mu ≤ 0.72`
+//      constraint existed because ratio 1.0 had to stay attainable while par WAS the standard;
+//      PAR_SLACK now guarantees that by construction, so the constraint is retired and this
+//      script's recommendation is advisory only.
+//
+// RE-ANCHORED 2026-08-16. The felt-class targets below were written when par sat mid-B and a
+// felt-par drive was supposed to land at ratio ~1.00. Par is now the C/D boundary — the slowest
+// PASS — so the whole target table shifted down: a felt-par drive is a comfortable pass (~0.85,
+// mid-C), and only a genuinely bad drive should reach 1.0. Leaving the old targets in place would
+// have kept this script recommending mu ~0.90 forever.
+//
+// Health warning that has not changed: the felt labels carry ±1 class of noise and are partly
+// INVERTED against the clock in the current corpus — median "fast" 0.926 vs median "par" 0.909
+// under the pre-re-anchor scale. Treat any recommendation from 20 runs as a hint, not a fit.
 //
 // The sweep MUTATES PAR_REF in place (sampleRoute's junction caps read the module constant, not
 // the ref argument) and restores it after. Pure node, no worldgen.
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { computePar, PAR_REF } from '../src/par.js'
+import { computePar, PAR_REF, PAR_SLACK } from '../src/par.js'
 
 const DIR = process.argv[2] || 'runs'
 
@@ -82,7 +91,12 @@ function parWith(segments, r) { setRef(r); const p = computePar(segments); setRe
 console.log('── reconstruction (recomputed par under the exported ref vs recorded) ──')
 for (const r of runs) {
     r.segments = toSegments(r)
-    r.parRecon = parWith(r.segments, r.par_ref)
+    // parWith returns par = referenceTime × PAR_SLACK, but `par_s` in the corpus was recorded
+    // BEFORE the 2026-08-16 re-anchor, i.e. slack-free. Divide it back out so `corr` stays what it
+    // claims to be — a pure reconstruction residual. Skipping this is silent and total: corr would
+    // absorb 1/PAR_SLACK, the slack would cancel again at line ~110, and every ratio printed below
+    // would be the OLD anchoring wearing new labels.
+    r.parRecon = parWith(r.segments, r.par_ref) / PAR_SLACK
     r.corr = r.result.par_s / r.parRecon        // junction caps + residuals, assumed ref-invariant
 }
 const corrs = runs.map(r => r.corr).sort((a, b) => a - b)
@@ -91,15 +105,17 @@ const suspect = runs.filter(r => r.corr < 0.9 || r.corr > 1.15)
 for (const r of suspect) console.log(`  ⚠ ${r.file}: corr ${r.corr.toFixed(3)} — reconstruction poor, run downweighted`)
 
 // ── 2. the sweep ────────────────────────────────────────────────────────────────────────────
-// Felt targets. par is the anchor (w 2). The tails are one-sided: a "very slow" drive can be
-// arbitrarily far over par and a "very fast" one arbitrarily under — only the wrong SIDE is an
-// error there.
+// Felt targets, RE-ANCHORED 2026-08-16 (see header). par-felt is still the anchor (w 2), but it
+// now targets mid-C rather than ratio 1.0, because ratio 1.0 is the C/D boundary — a bare pass —
+// and "I drove at a normal pace" should clear it comfortably. The tails stay one-sided: a "very
+// slow" drive can be arbitrarily far over and a "very fast" one arbitrarily under; only the wrong
+// SIDE is an error. Targets are the MIDDLE of each intended band, not the boundary.
 const TARGET = {
-    very_fast: { t: 0.82, w: 0.5, side: 'below' },
-    fast:      { t: 0.90, w: 1.0 },
-    par:       { t: 1.00, w: 2.0 },
-    slow:      { t: 1.10, w: 1.0 },
-    very_slow: { t: 1.25, w: 0.5, side: 'above' },
+    very_fast: { t: 0.62, w: 0.5, side: 'below' },   // S band
+    fast:      { t: 0.72, w: 1.0 },                  // A band
+    par:       { t: 0.88, w: 2.0 },                  // B/C — a normal pace passes with room
+    slow:      { t: 0.97, w: 1.0 },                  // deep C, still a pass
+    very_slow: { t: 1.10, w: 0.5, side: 'above' },   // D — failed the standard
 }
 function score(mu, accel, brake) {
     const ref = { ...BASE, mu, accel, brake }

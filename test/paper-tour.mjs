@@ -203,11 +203,16 @@ for (const t of tours.filter(Boolean)) {
     }
 }
 
-// ── 5. the deadline is reachable at the oracle's own pace ───────────────────────────────────────
+// ── 5. the deadline IS par [RE-ANCHORED 2026-08-16] ─────────────────────────────────────────────
+// This used to assert `deadlineFor(par) > par`: the bell had to ring strictly AFTER par, because
+// par was the expected drive and the bell was a failure line somewhere beyond it. They are the
+// same instant now — par IS the failure line, so the bell sits exactly on it (tolerance 1.0).
+// The reachability this check was really protecting hasn't gone away; it moved into par itself,
+// where PAR_SLACK is what makes par a pace a human can actually hold (see src/par.js).
 for (let i = 0; i < tours.length; i++) {
     if (!tours[i]) continue
-    check(`tier ${i + 1}'s bell rings after its par, not before`,
-        deadlineFor(tours[i].par) > tours[i].par,
+    check(`tier ${i + 1}'s bell rings exactly ON its par`,
+        Math.abs(deadlineFor(tours[i].par) - tours[i].par) < 1e-9,
         `${deadlineFor(tours[i].par).toFixed(0)} s vs par ${tours[i].par.toFixed(0)} s`)
 }
 

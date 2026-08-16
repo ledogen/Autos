@@ -3450,18 +3450,24 @@ function _renderMissionUI () {
     case 'done': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       const r = m.result
-      const sign = r.margin >= 0 ? '+' : '−'
-      const col = r.margin >= 0 ? '#8ce99a' : '#ff8f7a'
       // FEAT-53: the letter wears its ratified rank colour (D·C·B·A·S = red·orange·yellow·white·
       // blue), the one place a rank is ever shown (SM-INV-3: result-card only, never live). A paid
       // job adds its payout + good deeds; Quick Job says plainly that it pays nothing.
       const paid = r.payout !== undefined
       // Letter and time share the headline, at one size (owner, 2026-08-14 — the same rule the
-      // paper route's cards follow). Par stays underneath: it is the reference, not the result.
+      // paper route's cards follow).
+      //
+      // PAR IS NOT SHOWN [owner, 2026-08-16 — the par re-anchor]. The two lines that used to sit
+      // here ("par 2:14.3" and "+0:12.4 vs par") are gone: the player sees a letter and a number,
+      // how they did and what they earned, and never the reference the letter was cut from. Par is
+      // now the failing line rather than a target to aim at, so showing it invites exactly the
+      // stopwatch relationship SM-INV-3 exists to prevent — and it was the last place par leaked
+      // onto the screen outside the paper route's authored timer.
+      // `r.par` and `r.margin` are still CARRIED on the result object — the run-export
+      // (mission.js, `rangersim-run-export/2`) writes them as par_s/margin_s and the whole runs/
+      // calibration corpus is keyed on that. Display change only; do not prune the fields.
       body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
-        + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span><br>`
-        + `<span class="mp-dim">par</span> <b>${formatTime(r.par)}</b><br>`
-        + `<span style="color:${col}">${sign}${formatTime(Math.abs(r.margin))} vs par</span>`
+        + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
         + (paid
           ? `<br><span class="mp-pay">$${r.payout.toLocaleString('en-US')}</span>`
             + (r.points > 0

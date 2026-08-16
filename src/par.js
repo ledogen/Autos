@@ -60,20 +60,32 @@ export const PAR_REF = {
     //     the corner with the full road width, so the effective centerline mu of a committed drive
     //     EXCEEDS physical skidpad grip — and the data shows it (at mu 0.62, drives that FELT
     //     "slow" still graded A at ratio 0.85, and the fit's twisty-route bias pointed straight at
-    //     mu). mu here is a DESIGN knob for the payout curve, not a grip claim: 0.90 is the
-    //     owner-picked balanced-bias point where felt-par lands ~0.92, felt-slow finally stops
-    //     beating par (~0.99), and felt-very-slow prices ~1.2. accel/brake moved to the MEASURED
-    //     truck values (0-100 in ~8.5-9.5 s ⇒ ~3.0 m/s²; braking 7.0 m/s²) — the old brake 5.5
-    //     under-priced every corner entry. Felt-par = 1.00 exactly is unreachable under any
-    //     physically-flavoured setting (the felt labels carry ±1-class noise; "fast" runs sit
-    //     ABOVE "par" runs), so par stays ~8% generous to a committed drive — acceptable, the
-    //     brave day nets positive (SM-INV-4).
+    //     mu). mu is a DESIGN knob for the payout curve, not a grip claim. accel/brake moved to
+    //     the MEASURED truck values (0-100 in ~8.5-9.5 s ⇒ ~3.0 m/s²; braking 7.0 m/s²) — the old
+    //     brake 5.5 under-priced every corner entry.
+    //
+    // (4) 2026-08-16, THE RE-ANCHOR (owner). Pass (3) tuned mu so a felt-par drive landed ~0.92,
+    //     because par was then the middle of the B band. Par no longer means that: par is now the
+    //     C/D boundary — *the slowest you can drive without failing* — so a felt-par drive SHOULD
+    //     price near 1.0, and the whole "felt-par ≈ 0.92, par stays ~8% generous" target of pass
+    //     (3) is retired. Two consequences, and they are deliberately kept apart:
+    //       • mu 0.90 → 0.80. A small, honest step back toward measured grip (skidpad 0.72-0.74)
+    //         now that mu no longer has to carry the anchoring. Worth only ~2.5% of ratio.
+    //       • the ~25% that actually moves par to the failing line is PAR_SLACK below, NOT mu.
+    //         Reaching it through mu would require an implausible reference driver and would
+    //         quietly turn a physical constant into a fudge factor.
+    //
+    // Measured 2026-08-16 while re-anchoring (test/, analytic drivetrain envelope): this reference
+    // is PESSIMISTIC on acceleration at every speed and grade — the real truck delivers roughly
+    // 2-3× PAR_REF.accel below 20 m/s. Par's difficulty lives almost entirely in mu (corner speed),
+    // exactly as pass (1) said. Do not "fix" accel to match the truck without re-cutting the rank
+    // thresholds in the same pass: it would slash par and inflate every letter.
     //
     // Note from pass (1): mu is the DOMINANT dial. vMax is nearly free (these roads are
     // curvature-limited essentially everywhere — 42.6 vs 30.0 m/s moved par by under a second),
     // and accel/brake are secondary. Tune HERE, never by touching the vehicle (SM-INV-2) — and
     // re-run test/calibrate-par.mjs when new labelled runs land in runs/.
-    mu: 0.90,          // EFFECTIVE centerline friction — see (3): line-cutting, not tire grip
+    mu: 0.80,          // EFFECTIVE centerline friction — see (3)/(4): line-cutting, not tire grip
     accel: 3.0,        // powertrain-limited longitudinal accel on the flat (m/s²) — measured
     brake: 7.0,        // braking decel cap (m/s²) — measured; friction-circle limited below
     // vMax is the FLAT terminal speed, and it sets the drag coefficient (k = accel / vMax²)
@@ -88,6 +100,35 @@ export const PAR_REF = {
     junctionDeadband: 0.14, // heading change below this (rad, ~8°) is not a corner at all
     g: 9.81,
 }
+
+/**
+ * PAR_SLACK — how much slower than the committed reference drive is still a PASS.
+ * [RATIFIED 2026-08-16, owner — the par re-anchor]
+ *
+ * Par used to be one number doing two jobs: a physical duration AND the standard the player is
+ * measured against. Those pulled in opposite directions the moment par stopped meaning "the
+ * expected drive" and started meaning "the slowest drive that isn't a failure", so they are now
+ * separate:
+ *
+ *     referenceTime = computePar's physics      — road geometry × PAR_REF. Scales with nothing else.
+ *     par           = referenceTime × PAR_SLACK — the standard. THE design knob.
+ *     ratio         = elapsed / par             — 1.0 IS the C/D boundary, by construction.
+ *
+ * Why not fold this into PAR_REF: reaching a ~25% slower standard through mu/accel alone would
+ * need a reference driver nobody believes in, and would turn a physical constant into a fudge
+ * factor. SM-INV-2 is satisfied either way — par still scales with route geometry and nothing a
+ * run can change — but this way the physics stays honest and the judgment stays legible and in
+ * ONE place. Move the standard here; move the physics in PAR_REF.
+ *
+ * Changing this rescales every ratio in the game, so the rank thresholds and the payout line move
+ * with it — see economy.js (they are derived as fractions of a PASS, not of the reference drive).
+ *
+ * Value fitted 2026-08-16 against the 20-run corpus (test/calibrate-par.mjs): 1.15 is the point
+ * where every felt-"very slow" drive lands at or above ratio 1.0 (1.017 / 1.018 / 1.457) and every
+ * committed or normal drive lands below it. That is the definition made measurable — the standard
+ * is exactly where careless driving starts to fail.
+ */
+export const PAR_SLACK = 1.15
 
 const DS = 2.0        // profile sample spacing along the route (m) — 2 m is well below the
                       // shortest primitive the router emits, so κ is never aliased.
@@ -262,7 +303,12 @@ export function computePar(segments, ref = PAR_REF) {
         const vbar = Math.max(ref.vMin * 0.5, 0.5 * (v[i] + v[i - 1]))
         time += ds / vbar
     }
-    return { time, distance: d[n - 1], speeds: v, dist: Float64Array.from(d), stops: stops || 0 }
+    // PAR_SLACK turns the reference DURATION into the PASS STANDARD (see the constant). Applied
+    // once, here, so every consumer — parForEdge, the paper route's whole-tour par, the mission
+    // oracle — inherits it and there is no second definition of par anywhere in the codebase.
+    // `speeds` is deliberately NOT scaled: it is the reference speed profile (a physical quantity
+    // the GPS/par debug views read), not the standard.
+    return { time: time * PAR_SLACK, distance: d[n - 1], speeds: v, dist: Float64Array.from(d), stops: stops || 0 }
 }
 
 /**
@@ -294,10 +340,25 @@ export function formatTime(sec) {
 /**
  * Day-1 rank thresholds (ratio = elapsed/par). FEAT-53: economy.js derives day-tightened
  * tables from these and passes them back in — the difficulty ramp lives in the LETTERS, never
- * in par itself (SM-INV-2 as amended 2026-08-01). B must always contain 1.0: the rank that
- * just meets the cost curve is a B, so par lands inside the B band on every day of a run.
+ * in par itself (SM-INV-2 as amended 2026-08-01).
+ *
+ * [RE-ANCHORED 2026-08-16, owner] **C is pinned at exactly 1.0, on every day of the run.** Par is
+ * the C/D boundary — the slowest drive that is still a pass — so the letter that contains par is
+ * the LAST passing letter, not the middle one. This reverses the 2026-08-01 ruling that "B is the
+ * band that contains par" (and, for the paper route specifically, the 2026-08-14 confirmation of
+ * it); see DESIGN.md SM-INV-3 and missions.md for the amendment.
+ *
+ * Why C never tightens while S/A/B do: par IS the pass line by definition. If C drifted below 1.0
+ * on later days, a drive exactly at par would start failing, and par would stop meaning the one
+ * thing this whole re-anchor exists to make it mean. The ramp squeezes the GOOD letters instead.
+ * (Gated: test/economy.mjs pins C === 1.0 on every day — the replacement for the old B > 1.0 pin.)
+ *
+ * Fitted 2026-08-16 against the 20-run corpus at PAR_SLACK 1.15, cutting on the CLOCK rather than
+ * the felt labels — the labels are demonstrably inverted here (median felt-"fast" is slower than
+ * median felt-"par"), so they cannot separate the top bands. Resulting spread: S 2 · A 8 · B 7 ·
+ * C 0 · D 3. The empty C band is the "scraped past" gap the corpus happens not to contain.
  */
-export const RANK_THRESHOLDS_DEFAULT = { S: 0.80, A: 0.92, B: 1.05, C: 1.25 }
+export const RANK_THRESHOLDS_DEFAULT = { S: 0.69, A: 0.80, B: 0.90, C: 1.00 }
 
 /**
  * Grade a finished run against par. Margin is par-relative so it reads the same on a 2-minute

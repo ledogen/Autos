@@ -20,8 +20,10 @@
 // ── ACCURACY PAYS, THE CLOCK GRADES [ratified + implemented 2026-08-14] ─────────────────────────
 //
 // Accuracy scales the per-delivery rate and NOTHING else. The rank is the par ratio through the
-// same gradeRun() every other mission type uses — B contains par (SM-INV-3), the day ramp tightens
-// it — gated on full coverage, because you can always be quick by skipping people.
+// same gradeRun() every other mission type uses — par is the C/D boundary (SM-INV-3 as re-anchored
+// 2026-08-16; this REVERSES the 2026-08-14 "par is a B, and B contains par" confirmation, owner's
+// call, applied game-wide), the day ramp tightens the good letters — gated on full coverage,
+// because you can always be quick by skipping people.
 //
 // The shape this buys: "slow and careful" and "fast and ragged" pay about the same, so both are
 // real ways to drive a round rather than one dominating. That equivalence is what fixes bonusMax at
@@ -40,7 +42,13 @@ import { accuracyScore } from './throw.js'
 export const PAPER_PARAMS = {
     // The route ends at par × this. Soft by construction: under flat rate the bell only stops you
     // earning more, so it costs the papers still in the truck and nothing already banked.
-    tolerance:   1.2,
+    //
+    // [1.2 → 1.0, owner 2026-08-16 — the par re-anchor.] THE BELL IS PAR. Par now means "the
+    // slowest you can drive without failing", so the one honest place for a hard timer is exactly
+    // there: run the clock out and you have, by definition, failed the standard. This is also what
+    // licenses the countdown on screen — SM-INV-3 forbids par-as-countdown on the DEFAULT mission
+    // but explicitly permits an authored, diegetic timer on a mission type that carries one.
+    tolerance:   1.0,
 
     // The ladder Larry walks you up, one rung per PERFECT route (owner, 2026-08-05). Run-layer, so
     // it is re-earned every run like everything else.
@@ -57,8 +65,17 @@ export const PAPER_PARAMS = {
     sparesFrac:  [1.00, 0.75, 0.50, 0.30],
 
     // FLAT is anchored to par so the floor survives the 20-day cost ramp instead of decaying into
-    // irrelevance by day 15. paperW is how much poorer than the margin line a perfect route at par
-    // is: 0.6 = "reliably poor", which is what an income floor is supposed to feel like.
+    // irrelevance by day 15. paperW is how poor a perfect route at par is: 0.6 = "reliably poor",
+    // which is what an income floor is supposed to feel like.
+    //
+    // [RE-ANCHORED 2026-08-16.] It used to mean "0.6 × the margin line AT PAR", and the margin line
+    // at par used to be one full day-tier unit — so the two readings were the same number. They are
+    // not any more: par now pays m = 0.5. Kept at 0.6 of a **day-tier unit** (the break-even
+    // payment) rather than 0.6 of the margin line at par, which would have silently HALVED the
+    // income floor at the exact moment the rest of the economy got harder. Consequence, stated so
+    // nobody trips over it later: a *perfect* paper round at par (0.60) now out-earns a POI mission
+    // scraping past at par (0.50). That is intended — perfect accuracy should beat a bare pass —
+    // but it does mean the floor is no longer strictly below every other way to earn.
     paperW:      0.60,
 
     // The expediency bonus — the ONLY place time enters the payout. Gated on a completed route:
@@ -67,19 +84,24 @@ export const PAPER_PARAMS = {
     // IT STARTS AT THE BELL, not at par (owner, 2026-08-15). There is no `expediteOn` any more,
     // because the ratio it would hold is `tolerance` and two numbers that must be equal are one
     // number waiting to drift: the payout reaching zero exactly where the route ends is now
-    // structural rather than a coincidence. Beating the bell by a second pays a cent; par pays
-    // properly; the floor is the bell itself, which is the only place $0 makes sense.
+    // structural rather than a coincidence.
+    //
+    // [2026-08-16] The bell IS par now, so "starts at the bell" and "starts at par" have become the
+    // same sentence, and the drift risk the paragraph above worries about is gone by construction —
+    // there is only one number left. The owner accepted the consequence explicitly: **a route
+    // driven exactly at par settles $0 of time money** and keeps only its per-throw spot earnings.
+    // A bare pass is a bare pass.
     expediteFull:0.70,   // …and where it maxes out
-    // NOT A FREE KNOB — the owner's equivalence fixes it, and moving the bonus's start to the bell
-    // moved this with it. A rim-scraper (mean q 0.30) blasting the round must earn about what a
-    // methodical driver (mean q 1.0) earns at par. At par the bonus is now only PARTLY paid —
-    // f(1.0) = (1.20 − 1.00) / (1.20 − 0.70) = 0.4 — so the two sides read
-    //     1.0 + 0.4·B  =  0.3 + 1.0·B     ⇒     B = 7/6
-    // rather than the 0.70 that held when the bonus started at par. A bonus worth more than the
-    // paper money looks odd until you notice what it is buying: at rim accuracy the papers are only
-    // worth 0.3 of a round, so speed has to carry the rest or "fast and ragged" cannot pay.
+    // NOT A FREE KNOB — the owner's equivalence fixes it. A rim-scraper (mean q 0.30) blasting the
+    // round must earn about what a methodical driver (mean q 1.0) earns at par. With the bell at
+    // par the bonus is fully unpaid there — f(1.0) = (1.00 − 1.00) / (1.00 − 0.70) = 0 — so:
+    //     1.0 + 0·B  =  0.3 + 1.0·B     ⇒     B = 0.70
+    // which is exactly the value that held before the bonus was moved to the bell in the first
+    // place. The 7/6 of 2026-08-15 was an artefact of the bell sitting at 1.2·par; putting the bell
+    // back on par returns the equivalence to its original solution. (The module header up top never
+    // stopped saying 0.70 — it was stale for a day and is now correct again.)
     // Applied to the FULL flat (n × FLAT), never to the accuracy-scaled sum — see scoreRoute.
-    bonusMax:    7 / 6,
+    bonusMax:    0.70,
 }
 
 /**
@@ -181,8 +203,11 @@ export function scoreRoute (accuracies, customers, elapsed, par, dayTier = 1, P 
     const complete     = n > 0 && delivered >= n
 
     // THE CLOCK GRADES [ratified 2026-08-14]. The letter is the par ratio through the SAME
-    // gradeRun() every other mission type uses — B contains par, and the day ramp tightens it — so
-    // a paper route's B means what a POI job's B means. It used to be coverage × meanAccuracy,
+    // gradeRun() every other mission type uses — par is the C/D boundary (re-anchored 2026-08-16),
+    // and the day ramp tightens the good letters — so a paper route's B means what a POI job's B
+    // means. That shared meaning is the point, and it is why the re-anchor had to reverse the
+    // 2026-08-14 "par is a B" ruling HERE too rather than leaving this mission type behind on the
+    // old convention. It used to be coverage × meanAccuracy,
     // which made "how well did you throw" and "how well did you do" the same question and left
     // nothing for the clock to say.
     //

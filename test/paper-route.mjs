@@ -20,7 +20,7 @@ import {
     PAPER_PARAMS, runPaper, resetPaperRun, customersForTier, stockForTier,
     deadlineFor, scoreRoute, advancesTier,
 } from '../src/paper-route.js'
-import { EconomySystem, runEconomy, ECONOMY_PARAMS, pointsFor } from '../src/economy.js'
+import { EconomySystem, runEconomy, ECONOMY_PARAMS, pointsFor, payoutFor } from '../src/economy.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -67,20 +67,30 @@ check(`…by exactly the accuracy floor (${ACC_FLOOR}×)`, near(sloppy.spot, cle
 // not graded. (These two checks previously asserted S and D respectively, off coverage x accuracy.)
 check('a clean and a sloppy route driven at par letter the SAME',
     clean.letter === sloppy.letter, `clean ${clean.letter}, sloppy ${sloppy.letter}`)
-check('…and that letter is B, because B contains par', clean.letter === 'B', `got ${clean.letter}`)
+// [RE-ANCHORED 2026-08-16] This asserted B "because B contains par" — the THIRD copy of that rule
+// in the suite, after economy.mjs and par-oracle.mjs. Par is the C/D boundary now, game-wide: the
+// owner's 2026-08-14 ruling that the paper route keeps par-in-B was explicitly REVERSED rather
+// than left standing as a second convention for one mission type.
+check('…and that letter is C, because par is the slowest PASSING drive',
+    clean.letter === 'C', `got ${clean.letter}`)
 
 console.log('\n── 3. the expediency bonus ────────────────────────────────────')
 const fastPartial = scoreRoute(Array(8).fill(1), 9, PAR * 0.5, PAR, TIER)
 check('an UNFINISHED route earns no bonus however fast', fastPartial.expedite === 0)
-// THE BONUS STARTS AT THE BELL, not at par [owner, 2026-08-15] — so the end-of-route payout hits
-// zero exactly where the route ends, which is the only place $0 makes sense. It used to start at
-// 0.90 par, which made par itself settle nothing and read as a pay cut for a clean round.
+// THE BONUS STARTS AT THE BELL [owner, 2026-08-15] — so the end-of-route payout hits zero exactly
+// where the route ends, which is the only place $0 makes sense.
+// [RE-ANCHORED 2026-08-16] The bell IS par now (tolerance 1.2 → 1.0), so "the bell" and "par" are
+// the same instant and the two checks below have collapsed into one. The owner accepted the
+// consequence explicitly: a route driven exactly at par settles NO time money and keeps only its
+// per-throw spot earnings. A bare pass is a bare pass.
 const atBell = scoreRoute(Array(9).fill(1), 9, PAR * PAPER_PARAMS.tolerance, PAR, TIER)
 check('a route that finishes ON the bell earns no bonus — $0 sits at the deadline',
     atBell.expedite === 0 && atBell.payout === 0)
 const atPar = scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER)
-check('…but par itself pays, because par is inside the bell', atPar.expedite > 0 && atPar.payout > 0,
-    `expedite ${atPar.expedite.toFixed(3)}, payout ${atPar.payout.toFixed(2)}`)
+check('the bell IS par: finishing exactly at par settles no time money',
+    PAPER_PARAMS.tolerance === 1.0 && atPar.expedite === 0 && atPar.payout === 0,
+    `tolerance ${PAPER_PARAMS.tolerance}, expedite ${atPar.expedite.toFixed(3)}`)
+check('…but the spot money already banked per throw survives it', atPar.spot > 0)
 // There is no `expediteOn`: the bonus's start IS the tolerance, structurally, so the payout floor
 // and the route's end cannot drift apart into two numbers that were meant to be one.
 check('…and the zero is the tolerance itself, not a second constant that could drift',
@@ -104,9 +114,14 @@ check('the rank is the CLOCK now, not the throwing', (() => {
     const quick = scoreRoute(Array(9).fill(1), 9, PAR * 0.5, PAR, TIER)
     return slow.letter !== quick.letter && quick.letter === 'S' && slow.letter === 'D'
 })())
-check('…and B contains par (SM-INV-3, owner-confirmed 2026-08-14)',
-    scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER).letter === 'B')
-check('…dawdling past par drops to C', scoreRoute(Array(9).fill(1), 9, PAR * 1.1, PAR, TIER).letter === 'C')
+// [RE-ANCHORED 2026-08-16] Was "B contains par (SM-INV-3, owner-confirmed 2026-08-14)". That
+// confirmation is REVERSED, by the owner, game-wide — par is the last passing letter, not the
+// middle one. A perfect round driven at par is a C: you passed, you earned your throw money, and
+// you earned nothing for the clock.
+check('…and par itself is a C (SM-INV-3 as re-anchored 2026-08-16, reversing 2026-08-14)',
+    scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER).letter === 'C')
+check('…dawdling past par is a D, not a C — past par you have failed the standard',
+    scoreRoute(Array(9).fill(1), 9, PAR * 1.1, PAR, TIER).letter === 'D')
 check('accuracy does NOT move the letter — only the money', (() => {
     const sharp = scoreRoute(Array(9).fill(1.0), 9, PAR, PAR, TIER)
     const rough = scoreRoute(Array(9).fill(0.3), 9, PAR, PAR, TIER)
@@ -230,13 +245,24 @@ check('the day tier lifts the floor with the cost curve', (() => {
     return d20.total > d1.total * 4
 })())
 // The FLOOR anchor: what the papers alone are worth on a perfect round at par. Reads `spot`, not
-// `total`, since the bonus now pays at par too — paperW describes the paper money, which is the
-// part that has to survive the 20-day cost ramp.
-check('a perfect route\'s papers are worth ~60% of the margin line', (() => {
+// `total`, since paperW describes the paper money — the part that has to survive the 20-day ramp.
+//
+// [RE-ANCHORED 2026-08-16] This used to divide by a LOCAL constant `k·PAR·TIER·1.0`, commented
+// "payoutFor at ratio 1.0 → m = 1". That identity died with the re-anchor (ratio 1.0 now pays
+// m = 0.5), and because the constant was hand-inlined rather than read from payoutFor, the check
+// would have gone on passing while silently measuring paperW against the wrong yardstick. It now
+// names its yardstick explicitly: ONE DAY-TIER UNIT, which is what paperW is defined against
+// (see PAPER_PARAMS.paperW) — and asserts the identity that used to be assumed, so the next
+// re-anchor breaks this loudly instead of quietly.
+check('a perfect route\'s papers are worth ~60% of ONE DAY-TIER UNIT', (() => {
     const r = scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER)
-    const margin = ECONOMY_PARAMS.k * PAR * TIER * 1.0   // payoutFor at ratio 1.0 → m = 1
-    return near(r.spot / margin, PAPER_PARAMS.paperW, 1e-9)
+    const unit = ECONOMY_PARAMS.k * PAR * TIER           // == payoutFor at the break-even ratio
+    return near(r.spot / unit, PAPER_PARAMS.paperW, 1e-9)
 })())
+check('…and that unit really is payoutFor at break-even (not an inlined guess)',
+    near(payoutFor(PAR, ECONOMY_PARAMS.breakEven, TIER), ECONOMY_PARAMS.k * PAR * TIER, 1e-9))
+check('…while par itself pays only half of it — the floor now beats a bare pass, deliberately',
+    near(payoutFor(PAR, 1.0, TIER), 0.5 * ECONOMY_PARAMS.k * PAR * TIER, 1e-9))
 
 console.log('\n── 7b. the target circle never overlaps the road ──────────────')
 // The offset exists FOR this: a paper that lands on the tarmac must not score. Growing the radius

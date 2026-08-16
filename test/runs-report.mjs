@@ -106,11 +106,18 @@ if (unlabelled.length) console.log(`  (${unlabelled.length} run(s) with no felt 
 // ── verdict + which knob ─────────────────────────────────────────────────────────────────────────
 const onPar = runs.filter(r => r.felt === 'par').map(r => r.result.ratio)
 console.log('')
+// [RE-CENTRED 2026-08-16] The band used to sit on 1.0, because par was the drive a felt-par run
+// was meant to match. Par is the C/D boundary now — the slowest PASS — so a felt-par drive should
+// clear it with room and land mid-C, ~0.88 (the same target calibrate-par.mjs fits against). A
+// felt-par drive arriving AT 1.0 no longer reads as "well calibrated"; it means the player is
+// scraping the failure line while feeling unhurried, i.e. the standard is too tight. Tune
+// PAR_SLACK for this, NOT PAR_REF: the slack is the standard, PAR_REF is the physics.
+const PAR_FELT_TARGET = 0.88
 if (onPar.length >= 3) {
   const m = mean(onPar)
-  if (m < 0.95)      console.log(`VERDICT: par is TOO SLOW — an on-par drive beats it by ${((1 - m) * 100).toFixed(0)}%. Tighten PAR_REF.`)
-  else if (m > 1.05) console.log(`VERDICT: par is TOO FAST — an on-par drive misses it by ${((m - 1) * 100).toFixed(0)}%. Loosen PAR_REF.`)
-  else               console.log(`VERDICT: par is well calibrated on "felt on par" runs (mean ${m.toFixed(3)}).`)
+  if (m < PAR_FELT_TARGET - 0.07)      console.log(`VERDICT: the standard is TOO LOOSE — an on-par drive sits at ${m.toFixed(3)}, comfortably inside the pass. Lower PAR_SLACK.`)
+  else if (m > PAR_FELT_TARGET + 0.07) console.log(`VERDICT: the standard is TOO TIGHT — an on-par drive sits at ${m.toFixed(3)}, near the 1.0 failure line. Raise PAR_SLACK.`)
+  else                                 console.log(`VERDICT: the standard is well calibrated on "felt on par" runs (mean ${m.toFixed(3)}, target ~${PAR_FELT_TARGET}).`)
 } else {
   console.log(`VERDICT: need ≥3 runs labelled "on par" to call it (have ${onPar.length}).`)
 }

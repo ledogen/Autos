@@ -211,6 +211,14 @@ budget like any other job.
 20 days at 1.0–1.5 points/day ≈ **27 points per run** — the ratified total, authored per region
 against the day budget:
 
+> ⚠ **NEEDS A RECOUNT [2026-08-16].** This total was counted when a drive at par was a **B** worth a
+> full point. After the par re-anchor (DESIGN.md, "Ratification pass 2026-08-16") par is a **C**,
+> worth **half** — SM-INV-14's 1/½/0 wording is unchanged but its economics are not. First-order
+> estimate against the 20-run corpus under the re-cut letters: 17 of 20 drives still earn a full
+> point on day 1 (S 2 · A 9 · B 6 · C 0 · D 3), so 27 is probably close to right for a competent
+> player and harsher for a weak one. **That is a model from 20 drives, not a recount — treat the 27
+> as provisional until it has been re-derived.**
+
 > **days**  4 · 4 · 4 · 3 · 3 · 2 = **20**
 > **points** 6 · 6 · 6 · 4 · 3 · 2 = **27**
 

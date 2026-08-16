@@ -35,19 +35,32 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps
 
 // Pin the provisional defaults this gate asserts against (a debug-slider default drifting should
 // fail loudly HERE, not silently re-tune the gate).
-check('pinned: k 0.30, cap 3.0', ECONOMY_PARAMS.k === 0.30 && ECONOMY_PARAMS.payoutCap === 3.0)
+check('pinned: k 0.27, cap 3.0', ECONOMY_PARAMS.k === 0.27 && ECONOMY_PARAMS.payoutCap === 3.0)
 check('pinned: tier table has 30 days, tier(1) === 1', ECONOMY_PARAMS.dayTierTable.length === 30 && dayTier(1) === 1)
+check('pinned: break-even 0.90 (the day-1 B/C boundary), zero 1.10',
+  ECONOMY_PARAMS.breakEven === 0.90 && ECONOMY_PARAMS.payoutZero === 1.10)
 
-// ── 1. SM-INV-4: the payout line's anchors ──────────────────────────────────────────────────────
+// ── 1. SM-INV-4: the payout line's anchors [RE-ANCHORED 2026-08-16] ─────────────────────────────
+// The anchors moved with the meaning of par. They used to read "0 at 1.2 · one unit AT PAR · 2× at
+// 0.8", which encoded par-as-the-expected-drive. Par is now the C/D boundary — the slowest PASS —
+// so the unit anchor moved down to the B/C boundary and par itself pays a fraction of a day.
 {
   const par = 180, tier = 1.0
-  const atPar = payoutFor(par, 1.0, tier)
-  check('ratio 1.2 → 0 (bare completion pays ~nothing)', payoutFor(par, 1.2, tier) === 0)
-  check('ratio 1.0 → k·par·tier exactly', near(atPar, ECONOMY_PARAMS.k * par * tier), `got ${atPar}`)
-  check('ratio 0.8 → exactly 2× par pay', near(payoutFor(par, 0.8, tier), 2 * atPar))
-  check('cap bites at ratio 0.60 and below', near(payoutFor(par, 0.6, tier), ECONOMY_PARAMS.payoutCap * atPar)
-    && near(payoutFor(par, 0.1, tier), ECONOMY_PARAMS.payoutCap * atPar))
-  check('tier multiplies linearly', near(payoutFor(par, 1.0, 2.66), 2.66 * atPar))
+  const unit = ECONOMY_PARAMS.k * par * tier          // one day-tier unit of maintenance
+  const atBreakEven = payoutFor(par, ECONOMY_PARAMS.breakEven, tier)
+  check('break-even ratio 0.90 → exactly one day-tier unit (k·par·tier)',
+    near(atBreakEven, unit), `got ${atBreakEven}`)
+  check('ratio 1.10 → 0 (past par, margin money is gone)', payoutFor(par, 1.10, tier) === 0)
+  check('ratio 1.20 → still 0 (floored, never negative)', payoutFor(par, 1.20, tier) === 0)
+  // The headline consequence of the re-anchor, pinned so it cannot quietly drift back: PAR LOSES
+  // MONEY. If this ever reads 1.0 units again, the re-anchor has been undone somewhere upstream.
+  check('par (ratio 1.0) pays HALF a unit — a bare pass does not cover the day',
+    near(payoutFor(par, 1.0, tier), 0.5 * unit), `got ${(payoutFor(par, 1.0, tier) / unit).toFixed(3)} units`)
+  check('par pays strictly less than break-even', payoutFor(par, 1.0, tier) < atBreakEven)
+  check('ratio 0.80 (the A/B boundary) → 1.5 units', near(payoutFor(par, 0.8, tier), 1.5 * unit))
+  check('cap bites at ratio 0.50 and below', near(payoutFor(par, 0.5, tier), ECONOMY_PARAMS.payoutCap * unit)
+    && near(payoutFor(par, 0.1, tier), ECONOMY_PARAMS.payoutCap * unit))
+  check('tier multiplies linearly', near(payoutFor(par, 1.0, 2.66), 2.66 * payoutFor(par, 1.0, 1.0)))
 }
 
 // ── 2. Floors at zero, finite, never NaN ────────────────────────────────────────────────────────
@@ -102,19 +115,26 @@ check('pinned: tier table has 30 days, tier(1) === 1', ECONOMY_PARAMS.dayTierTab
   check('dayTier clamps below (day 0/−3 === day 1)', dayTier(0) === dayTier(1) && dayTier(-3) === dayTier(1))
 }
 
-// ── 6. rankThresholds: ordered, tightening, B always contains par, day 1 === par.js default ─────
+// ── 6. rankThresholds: ordered, tightening, C IS par on every day, day 1 === par.js default ─────
+// [RE-ANCHORED 2026-08-16] The old pin here was `A < 1.0 < B` — "B is the band containing par".
+// Par is now the C/D boundary, so the pin inverts: C sits exactly ON 1.0, and it must NOT tighten
+// with the day. If C ever drifted below 1.0, a drive exactly at par would start failing on later
+// days and par would stop meaning "the slowest passing drive" — which is the entire point of the
+// re-anchor. The ramp is allowed to squeeze S/A/B and nothing else.
 {
-  let ordered = true, contains = true, tightening = true
+  let ordered = true, cIsPar = true, tightening = true, sTightens = false
   let prev = null
-  for (let d = 1; d <= 20; d++) {
+  for (let d = 1; d <= 30; d++) {
     const t = rankThresholds(d)
     if (!(t.S < t.A && t.A < t.B && t.B < t.C)) ordered = false
-    if (!(t.A < 1.0 && 1.0 < t.B)) contains = false        // B is the band containing par
+    if (Math.abs(t.C - 1.0) > 1e-12) cIsPar = false        // par IS the C/D boundary, every day
     if (prev) for (const k of ['S', 'A', 'B', 'C']) if (t[k] > prev[k] + 1e-12) tightening = false
+    if (prev && t.S < prev.S - 1e-12) sTightens = true
     prev = t
   }
-  check('thresholds ordered S<A<B<C, days 1..20', ordered)
-  check('B contains par (A < 1.0 < B) on EVERY day', contains)
+  check('thresholds ordered S<A<B<C, days 1..30', ordered)
+  check('C IS par (=== 1.0) on EVERY day — the ramp never moves the pass line', cIsPar)
+  check('the ramp still bites: S tightens across the run', sTightens)
   check('thresholds non-increasing in day (tighten, never loosen)', tightening)
   const d1 = rankThresholds(1)
   check('day 1 deep-equals par.js RANK_THRESHOLDS_DEFAULT',
@@ -122,17 +142,26 @@ check('pinned: tier table has 30 days, tier(1) === 1', ECONOMY_PARAMS.dayTierTab
   check('gradeRun default arg IS day 1 (3-arg === 2-arg at day 1)',
     gradeRun(170, 180).letter === gradeRun(170, 180, rankThresholds(1)).letter)
   check('day ramp changes the letter, never the ratio', (() => {
-    const early = gradeRun(0.79 * 180, 180, rankThresholds(1))   // S on day 1
-    const late = gradeRun(0.79 * 180, 180, rankThresholds(20))   // A on day 20 (S has tightened to 0.74)
+    const early = gradeRun(0.68 * 180, 180, rankThresholds(1))   // S on day 1 (S ≤ 0.69)
+    const late = gradeRun(0.68 * 180, 180, rankThresholds(20))   // A on day 20 (S has tightened to 0.67)
     return early.letter === 'S' && late.letter === 'A' && near(early.ratio, late.ratio)
   })())
+  // S MUST STILL BE REACHABLE ON THE LAST DAY. This is the regression that prompted the whole
+  // 2026-08-16 re-anchor: the previous ramp tightened S to 0.74 by day 20, which was faster than
+  // ANY of the 20 recorded drives in runs/, so S was mathematically dead for the back half of
+  // every run and nobody had decided that. The best drive in the corpus sits at ratio 0.654; keep
+  // day-20 S at or above it or the letter goes extinct again, silently.
+  check('S survives day 20 (threshold ≥ the best recorded human drive, 0.654)',
+    rankThresholds(20).S >= 0.654, `day-20 S = ${rankThresholds(20).S.toFixed(3)}`)
 }
 
 // ── 7. Points accrue as exact integer halves ────────────────────────────────────────────────────
 {
   const eco = new EconomySystem({ getDay: () => 1 })
   eco.start()
-  for (let i = 0; i < 20; i++) eco.settle({ par: 180, ratio: 1.1, letter: 'C' }, { terms: eco.terms() })
+  // ratio 0.95 IS a C under the re-anchored bands (B 0.90 < 0.95 ≤ C 1.00). It used to read 1.1,
+  // which is now a D — the fixture would have been quietly self-contradictory.
+  for (let i = 0; i < 20; i++) eco.settle({ par: 180, ratio: 0.95, letter: 'C' }, { terms: eco.terms() })
   check('20 C-grades === exactly 10.0 points (integer halves, no float drift)', eco.points() === 10.0)
   check('formatDeeds renders halves as a decimal, not the ½ glyph (owner, 2026-08-09 — the fraction was a smudge at HUD size)',
     formatDeeds(7) === '3.5' && formatDeeds(1) === '0.5' && formatDeeds(4) === '2')
@@ -145,7 +174,9 @@ check('pinned: tier table has 30 days, tier(1) === 1', ECONOMY_PARAMS.dayTierTab
   eco.start()
   check('start() zeroes the run wallet/points/missions',
     runEconomy.money === 0 && runEconomy.halfPoints === 0 && runEconomy.missions === 0)
-  const r = eco.settle({ par: 180, ratio: 1.0, letter: 'B' }, { terms: eco.terms() })
+  // ratio 0.85 IS a B under the re-anchored bands (A 0.80 < 0.85 ≤ B 0.90). It used to read 1.0,
+  // which is now the C/D boundary — the fixture claimed a letter the ratio no longer earns.
+  const r = eco.settle({ par: 180, ratio: 0.85, letter: 'B' }, { terms: eco.terms() })
   check('settle accrues money + points + mission count',
     runEconomy.money === r.payout && eco.points() === 1 && eco.missionCount() === 1)
   check('payout is whole dollars', Number.isInteger(r.payout))
@@ -160,7 +191,9 @@ check('pinned: tier table has 30 days, tier(1) === 1', ECONOMY_PARAMS.dayTierTab
   eco.start()
   const terms = eco.terms()          // accepted on day 3
   day = 4                            // midnight passes mid-drive
-  const settled = eco.settle({ par: 180, ratio: 1.0, letter: 'B' }, { terms })
+  // Settle AT break-even so the expected payout is exactly one day-tier unit and the arithmetic
+  // below stays readable. (At ratio 1.0 it would be half a unit — see the re-anchored payout line.)
+  const settled = eco.settle({ par: 180, ratio: ECONOMY_PARAMS.breakEven, letter: 'B' }, { terms })
   check('terms lock: day-3 tier paid despite finishing on day 4',
     settled.payout === Math.round(ECONOMY_PARAMS.k * 180 * dayTier(3)) && dayTier(3) !== dayTier(4))
   check('terms carry day-3 thresholds (frozen)',
