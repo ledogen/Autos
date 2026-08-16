@@ -200,12 +200,14 @@ const COVER_COUNT_BLUR = 4
 // only shows as foliage glyphs — so this exists purely to bound the pathological case where glyphs
 // are just barely visible across an enormous sheet.
 //
-// Sized against measurement: the replay costs ~31 us a chunk, so 6000 is ~190 ms, paid once per
-// chunk for the life of the seed and inside an already-debounced redraw. It was 1400, which sounds
-// generous but is not: the cached background is OVERSCANNED 2x per axis, so it covers 4x the chunks
-// on screen, and the cap was silently cutting in at ordinary reading zooms and taking every foliage
-// glyph with it.
-const COVER_CHUNK_BUDGET = 6000
+// Sized against measurement: the replay costs ~31 us a chunk, so 16000 is ~0.5 s, paid once per
+// chunk for the life of the seed and inside an already-debounced redraw. It was 1400, then 6000,
+// and both were still cutting in at ordinary reading zooms — the cached background is OVERSCANNED
+// 2x per axis, so it covers 4x the chunks on screen. At GLYPH_MIN_PX the sheet spans ~4.4k chunks
+// on a 1200x800 canvas and ~9.5k on a 1920x1080 one, so anything under ~10000 makes the foliage
+// pop-in depend on the WINDOW SIZE rather than on the zoom. This must stay comfortably above that
+// or the two glyph plates drift apart again.
+const COVER_CHUNK_BUDGET = 16000
 
 // ── Water ─────────────────────────────────────────────────────────────────────────────────────
 // Rivers and ponds, straight off the play WaterSystem (injected — see the getWater ctor option).
@@ -229,7 +231,15 @@ const GLYPH_CELL     = 26          // m — nominal lattice spacing between glyp
 const GLYPH_PX       = 7           // px — drawn size of one glyph
 // Glyphs are a texture, not data: below this on-screen spacing they merge into a smear and are
 // simply not drawn. This is also the cost bound — it caps how many can ever land on one sheet.
-const GLYPH_MIN_PX   = 9
+//
+// 9 → 12 → 16 (owner, 2026-08-15: "a little more zoomed in", then "even more"). ONE number now
+// governs BOTH marks, which
+// it did not in practice before: the marsh tufts appeared here while the conifers waited for the
+// scatter replay, and the replay was being held off by COVER_CHUNK_BUDGET until a noticeably closer
+// zoom, so the two plates popped in at different heights. That is fixed at both ends — the budget
+// below no longer binds at this threshold, and the glyph pass now refuses to stamp EITHER mark
+// unless the replay ran (see _drawGlyphs).
+const GLYPH_MIN_PX   = 16
 
 // Drainage — what makes ground read as WET — lives in src/biome.js (isWetGround) with its
 // thresholds in data/biomes.js, alongside the meadow test it is the small-radius sibling of. It was
@@ -351,9 +361,10 @@ export class Map2D {
         // park (latch the handbrake). Empty outside story mode.
         this._getPois     = getPois      || (() => null)
         this._getCustomers = getCustomers || (() => null)   // FEAT-61 newspaper customers
-        // FEAT-61: `{ onRoute: boolean, arrow: {x,z,ang}|null }`, or null outside story mode.
-        // onRoute drives the customer glyph (see _drawCustomers); arrow is the offer's start
-        // direction (see _drawStartArrow).
+        // FEAT-61: `{ onRoute: boolean, arrow: {x,z,ang}|null }`, or null when nothing is driving it.
+        // onRoute is TRUE ONLY ON A PAPER ROUTE and drives the customer glyph (see _drawCustomers);
+        // arrow is the start direction of whatever mission line is drawn (see _drawStartArrow), and
+        // the two are independent — a POI mission has an arrow and onRoute false.
         this._getRouteState = getRouteState || (() => null)
         // FEAT-45: story-mode dispersed-camping zones — `{x,z,r}[]`, empty outside story mode. NOT
         // drawn as discs: see _drawCampZones.
@@ -870,7 +881,7 @@ export class Map2D {
                                  // them and one of them is mom, so they must never mask a landmark
         this._drawPois(ctx)      // likewise furniture: placed at entry, so not in the cached bg
         this._drawMission(ctx)   // under the car marker, over the cached bg
-        this._drawStartArrow(ctx)   // FEAT-61: which way to set off, on the offer only
+        this._drawStartArrow(ctx)   // FEAT-61: which way to set off, on any drawn mission line
         this._drawCar(ctx)
         this._drawCollar(ctx)    // LAST of the map layers: it masks the margin (see _drawCollar)
         this._drawCursorCoords(ctx)
@@ -1110,11 +1121,14 @@ export class Map2D {
         }
 
         // Cover, if the sheet is close enough in for it to mean anything — see COVER_CHUNK_BUDGET.
-        const cover = this._coverRaster(wx0, wz0, gw, gh)
+        const { bin: cover, replayed } = this._coverRaster(wx0, wz0, gw, gh)
         // Handed to _drawWater (for its bbox) and _drawGlyphs (for the cover bins). NOT the height
         // lattice: the only thing that read it was the old inlined wet test, and drainage now
         // samples the field directly at each glyph — see isWetGround.
-        this._coverGrid = { wx0, wz0, gw, gh, cover }
+        //
+        // `replayed` travels with the bins because the glyph pass has to know whether the MED/HIGH
+        // split in them is real; see _drawGlyphs.
+        this._coverGrid = { wx0, wz0, gw, gh, cover, replayed }
 
         // ── Compose, at COVER_SS texels per lattice cell.
         //
@@ -1339,7 +1353,7 @@ export class Map2D {
             if (open[k]) { bin[k] = COVER_LOW; continue }
             bin[k] = (replay && area[k] >= DENSE_MIN) ? COVER_HIGH : COVER_MED
         }
-        return bin
+        return { bin, replayed: replay }
     }
 
     /**
@@ -1487,6 +1501,11 @@ export class Map2D {
         if (!g || !g.cover) return
         const zoom = this._zoom
         if (!this._glyphsVisible()) return
+        // ONE POP-IN FOR BOTH PLATES (owner, 2026-08-15). The marsh tufts need no cover data and the
+        // conifers need the scatter replay, so on any sheet where the replay was skipped the tufts
+        // used to appear alone and the trees followed at a closer zoom. Neither is drawn unless the
+        // bins under them are real — the glyph layer arrives whole or not at all.
+        if (!g.replayed) return
 
         const { wx0, wz0, gw, gh, cover } = g
         const x1 = wx0 + gw * COVER_CELL, z1 = wz0 + gh * COVER_CELL
@@ -1922,7 +1941,7 @@ export class Map2D {
     }
 
     /**
-     * FEAT-61: WHICH WAY TO SET OFF, drawn once on the offer's map.
+     * FEAT-61: WHICH WAY TO SET OFF, drawn on every mission line the map shows.
      *
      * A paper round routinely passes back through Larry's — customers lie on both sides of him — so
      * the line alone cannot say which end to start from, and the player is left guessing at exactly
@@ -1933,8 +1952,10 @@ export class Map2D {
      * was the first attempt and it fought the car marker for the same pixels, since the route starts
      * where the car is parked.
      *
-     * Only at the offer: once you are driving, the chevrons themselves are the answer, and a second
-     * static marker on the map would be one more thing to keep in step with them.
+     * ALWAYS, not just on a self-crossing paper offer (owner, 2026-08-15). A drawn line has two ends
+     * whatever drew it, so a POI mission earns the same mark, and it stays up while you drive — the
+     * in-world chevrons answer the question only once you are already on the road pointing at them.
+     * Placement is main.js's `_startArrow`; this method only draws what it is handed.
      */
     _drawStartArrow(ctx) {
         const a = this._getRouteState()?.arrow

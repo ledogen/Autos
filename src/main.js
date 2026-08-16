@@ -66,7 +66,7 @@ import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun, stockForTier, deadlineFor } from './paper-route.js'
-import { GpsSystem, addGpsGui, GPS_COLOR } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
+import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
@@ -1253,6 +1253,38 @@ let missionSystem = null
 let labSystem = null
 // FEAT-39 GPS assist — constructed with missionSystem below (it reads the mission's route).
 let gpsSystem = null
+
+/**
+ * FEAT-61: the map's "set off THIS way" chevron — where it sits on a mission line, and which way it
+ * points. Returns `{x, z, ang}` or null; map2d draws it (see _drawStartArrow).
+ *
+ * NOT AT THE HEAD: a route normally starts where the car is parked, and the two marks fought for
+ * the same pixels (owner, 2026-08-15). It goes 50 m down the line instead — far enough to be its own
+ * mark, near enough to still read as "this way from here".
+ *
+ * Takes anything carrying a map polyline (`{poly:[{x,z}…]}`) so the paper route and a POI mission
+ * can share one definition; arc length is walked here rather than read off `polyCum`, since only one
+ * of the two callers has that array and the walk is a few dozen hypots on a click.
+ */
+function _startArrow (line) {
+  const poly = line?.poly
+  if (!poly || poly.length < 2) return null
+  const AT = 50, SPAN = 30      // m: anchor distance down the line, and the span the heading is read over
+  let i = 0, s = 0
+  while (i < poly.length - 2 && s < AT) {
+    s += Math.hypot(poly[i + 1].x - poly[i].x, poly[i + 1].z - poly[i].z); i++
+  }
+  // Heading from a span, not from the neighbouring vertex: at 25 m sampling one step is noisy on a
+  // bend, and a start marker that points into the ditch is worse than none.
+  let j = i, t = 0
+  while (j < poly.length - 1 && t < SPAN) {
+    t += Math.hypot(poly[j + 1].x - poly[j].x, poly[j + 1].z - poly[j].z); j++
+  }
+  if (j === i) return null
+  return { x: poly[i].x, z: poly[i].z,
+           ang: Math.atan2(poly[j].z - poly[i].z, poly[j].x - poly[i].x) }
+}
+
 const map2d = new Map2D({
   canvas:    document.getElementById('map2d'),
   getSeed:   () => worldSeed,
@@ -1281,30 +1313,19 @@ const map2d = new Map2D({
   getCustomers: () => poiSystem.customers(),   // FEAT-61: you cannot drive a route you cannot see
   // FEAT-61: what the customers MEAN right now, and which way to set off.
   //
-  // `onRoute` covers the offer as well as the drive, so the briefing map and the in-mission map say
-  // the same thing about the same dots. `arrow` is the offer ONLY — once you are driving, the
-  // chevrons are the answer, and a second static arrow would be one more thing to keep in step.
+  // `onRoute` is the PAPER ROUTE only — it decides whether the customer dots are jobs or scenery, and
+  // a POI mission says nothing about newspapers. `arrow` is for EVERY drawn mission line (owner,
+  // 2026-08-15): it was gated to the paper offer on the theory that only a self-crossing round is
+  // ambiguous about which end to start from, but a line on a sheet has two ends whatever drew it,
+  // and "which way" is a question the player asks of a POI job too. So it now follows the line the
+  // map is actually drawing, whichever system owns it and whatever state that system is in.
   getRouteState: () => {
     const p = paperRouteSystem
-    if (!p?.isActive()) return null
-    const line = p.line()
-    let arrow = null
-    if (p.state === 'offer' && line?.poly?.length > 1) {
-      // NOT AT THE HEAD: the route starts at Larry's, where the car marker already is, and the two
-      // fought for the same pixels (owner, 2026-08-15). Set it 50 m down the route instead — far
-      // enough to be its own mark, near enough to still read as "this way from here".
-      const cum = line.polyCum, poly = line.poly
-      const AT = 50
-      let i = 0
-      while (i < poly.length - 2 && cum[i] < AT) i++
-      // Heading from a span, not from the neighbouring vertex: at 25 m sampling one step is noisy
-      // on a bend, and a start marker that points into the ditch is worse than none.
-      let j = i
-      while (j < poly.length - 1 && cum[j] - cum[i] < 30) j++
-      arrow = { x: poly[i].x, z: poly[i].z,
-                ang: Math.atan2(poly[j].z - poly[i].z, poly[j].x - poly[i].x) }
-    }
-    return { onRoute: true, arrow }
+    const paperOn = !!p?.isActive()
+    // The same precedence _drawMission's source (`getMission`) uses, so the arrow can never end up
+    // describing a different polyline from the one under it.
+    const line = paperOn ? p.line() : missionSystem?.markers()
+    return { onRoute: paperOn, arrow: _startArrow(line) }
   },
   // FEAT-45: dispersed-camping zones, drawn as a yellow casing on the roads inside them. Empty
   // outside story mode (build() only ever runs from the story deps).
@@ -2141,16 +2162,16 @@ const _STAGE_RING_SINK = 3.0   // m
 // centre ring as an aim point. The centre ring is DECORATION — scoring reads continuous distance
 // from the centre POINT, not which ring the paper is inside (owner, 2026-08-05).
 //
-// Short, not tall: _POI_RING_H's 4 m curtain at a 10 m radius reads as a wall you park inside, but
-// the same proportions at 3 m would be a chimney you cannot see your own throw land in. A target is
-// something you look DOWN into, so it gets a low kerb instead.
-// GPS CYAN, NOT THE STAGING GREEN, and at nearly double the opacity (owner, 2026-08-15). It is
-// easy to blow straight past a porch at speed, and the muted green sat too close to the grass it
-// stands on to catch the eye at 60 km/h. Cyan is the one colour nothing in this landscape wears —
-// and it is GPS_COLOR itself, imported rather than copied, so "navigation is telling you about
-// this" reads as one idea across the chevrons, the destination ring and the target.
-const _targetRingMat = _ringMat(GPS_COLOR, 0.52)
-const _TARGET_RING_H = 1.2      // m
+// Low, but not a kerb: _POI_RING_H's 4 m curtain at a 10 m radius reads as a wall you park inside,
+// and the same proportions at 3 m would be a chimney you cannot see your own throw land in. The
+// first pass went the other way and made it a 1.2 m kerb, which was too easy to blow straight past
+// at speed — DOUBLED to 2.4 m (owner, 2026-08-15). At 3 m radius that is still something you look
+// down into, just tall enough to break the horizon line from a moving truck.
+// WHITE, not the GPS cyan it wore before (owner, same pass): every ground colour out here is a
+// muted natural, so the one ink that never occurs in the landscape is paper white — it separates
+// from grass, gravel, wet ground and shadow alike without picking up a meaning from another system.
+const _targetRingMat = _ringMat(0xffffff, 0.52)
+const _TARGET_RING_H = 2.4      // m
 const _TARGET_RING_SINK = 0.5   // m
 const _TARGET_PIP_H = 0.5       // m — the centre pip is lower still; it must never mask the landing
 let _stageRing = null
@@ -2213,12 +2234,14 @@ function _rebuildPoiMarkers () {
     ring.scale.set(tr, _TARGET_RING_H, tr)
     ring.position.set(h.x, h.y - _TARGET_RING_SINK + _TARGET_RING_H * 0.5, h.z)
     ring.renderOrder = 5
+    ring.visible = false      // lit only by _updateCustomerRings, and only on a live round
     _poiGroup.add(ring)
 
     const pip = new THREE.Mesh(_ringGeo, _targetRingMat)
     pip.scale.set(0.5, _TARGET_PIP_H, 0.5)          // 1 m DIAMETER, so radius 0.5
     pip.position.set(h.x, h.y - _TARGET_RING_SINK + _TARGET_PIP_H * 0.5, h.z)
     pip.renderOrder = 5
+    pip.visible = false
     _poiGroup.add(pip)
     _customerRings.set(h.id, [ring, pip])
   }
@@ -2234,8 +2257,13 @@ function _rebuildPoiMarkers () {
  * has to mean "this one, now", or it is not a target.
  *
  * So: on a route, only the route's UNDELIVERED customers light up — and a ring going out as the
- * paper lands is the delivery confirmation. Off a route every customer shows again, which is how
- * you learn the neighbourhood before Larry gives you a bigger piece of it.
+ * paper lands is the delivery confirmation.
+ *
+ * OFF A ROUTE, NOTHING LIGHTS UP AT ALL (owner, 2026-08-15). The rings used to stay on as a
+ * learn-the-neighbourhood affordance, but a target you cannot score is a target that teaches you to
+ * ignore targets — and it put white circles on the landscape at every moment of the game, including
+ * ones that have nothing to do with papers. The ring now means exactly one thing: a paper is owed
+ * here, right now.
  *
  * …and only when you are NEAR (owner, 2026-08-11), exactly as the orange interaction rings work.
  * A rung-four route reaches 2 km, and fifteen green circles burning across the valley flattens the
@@ -2247,12 +2275,16 @@ function _rebuildPoiMarkers () {
 const TARGET_RING_SHOW_R = 150   // m
 function _updateCustomerRings () {
   const onRound = paperRouteSystem.isCarrying()
-  const live = new Set(onRound ? paperRouteSystem.routeCustomers().map(c => c.id) : [])
+  if (!onRound) {
+    for (const pair of _customerRings.values()) { pair[0].visible = false; pair[1].visible = false }
+    return
+  }
+  const live = new Set(paperRouteSystem.routeCustomers().map(c => c.id))
   const vp = vehicleState.position
   for (const [id, pair] of _customerRings) {
     const p = pair[0].position
     let on = Math.hypot(p.x - vp.x, p.z - vp.z) <= TARGET_RING_SHOW_R
-    if (on && onRound) on = live.has(id) && !paperRouteSystem.isDelivered(id)
+    if (on) on = live.has(id) && !paperRouteSystem.isDelivered(id)
     pair[0].visible = on
     pair[1].visible = on
   }
