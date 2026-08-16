@@ -56,13 +56,31 @@ export class PhysicsWireframes {
     this._sync(true)
   }
 
-  /** Frame-loop tick (only called while enabled): follow dynamics, cull statics, track churn. */
-  update (cameraPos) {
+  /**
+   * Frame-loop tick (only called while enabled): follow dynamics, cull statics, track churn.
+   * @param {THREE.Vector3} [cameraPos] — static cull origin.
+   * @param {{position: THREE.Vector3, quaternion: THREE.Quaternion}} [vehiclePose] — the SUBFRAME
+   *   render pose of the chassis. Load-bearing for alignment, not decoration: the truck's meshes are
+   *   drawn at lerp(prev step, this step, accumulator/dt) while the engine body sits at THIS step, so
+   *   a wireframe read straight from getTransform() lands up to a full physics step (1/60 s) away
+   *   from the model it exists to measure — invisible parked, ~0.5 m of offset at 30 m/s. main.js
+   *   hands us the same interpolated pose syncMeshesToState() used. Substituting it is exact, not an
+   *   approximation: vehicleState.position/quaternion IS the chassis body transform verbatim
+   *   (physics.js's end-of-step getTransform).
+   *   Debris deliberately does NOT get this — debris meshes are posed from the raw engine transform
+   *   too (debris.js update()), so raw-vs-raw already agrees.
+   */
+  update (cameraPos, vehiclePose) {
     if (!this.enabled) return
     this._sync(false)
     for (const rec of this._built.values()) {
       if (rec.dynamic) {
-        this._eng.getTransform(rec.handle, rec.group.position, rec.group.quaternion)
+        if (vehiclePose && rec.kind === 'vehicle') {
+          rec.group.position.copy(vehiclePose.position)
+          rec.group.quaternion.copy(vehiclePose.quaternion)
+        } else {
+          this._eng.getTransform(rec.handle, rec.group.position, rec.group.quaternion)
+        }
         for (const t of rec.tracked) {   // live-seated spheres (rim cores) follow their spec
           t.faint.position.set(t.spec.offset.x, t.spec.offset.y, t.spec.offset.z)
           t.bright.position.copy(t.faint.position)
@@ -116,7 +134,7 @@ export class PhysicsWireframes {
     if (b.dynamic) this._eng.getTransform(b.handle, group.position, group.quaternion)
     this._root.add(group)
     this._built.set(b.handle, {
-      handle: b.handle, group, dynamic: b.dynamic, tracked,
+      handle: b.handle, group, dynamic: b.dynamic, tracked, kind: b.userData.kind,
       refPos: bounds.getCenter(new THREE.Vector3()),   // statics bake world coords — bbox centre is the cull point
     })
   }
