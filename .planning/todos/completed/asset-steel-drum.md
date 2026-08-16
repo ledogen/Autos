@@ -73,7 +73,12 @@ Chimes and rolling hoops are geometry on all three — they are the silhouette.
 - ~~Shared atlas check~~ — moot, no textures.
 - The closed variant reads correctly upright **and** on its side.
 - Tri counts within budget; material names stable.
-- All three load and place in-world through the FEAT-59 model import service.
+- **One of three** loads and places in-world (2026-08-15). `drum-closed` is registered as
+  `drumClosed` in `data/prop-models.js` and is now THE thrown physics prop, replacing the retired
+  `test-barrel` placeholder: `src/debris.js` hulls its mesh, and ρ 86 over the ≈0.209 m³ hull lands
+  this ticket's 18 kg empty mass (the placeholder's ρ 70 was tuned to a bigger 0.254 m³ hull, so the
+  number had to move to keep the mass honest). `drum-open` and `drum-crushed` remain unregistered
+  and unplaced — they want a scatter-dressing consumer, which is FEAT-36 item 2's work, not this one's.
 
 ## Notes
 

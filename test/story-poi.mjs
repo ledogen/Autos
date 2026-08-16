@@ -31,7 +31,7 @@ import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { WaterSystem } from '../src/water.js'
 import { PoiSystem, POI_PARAMS, POI_ROSTER, POI_COUNT } from '../src/poi.js'
-import { PROP_MODELS } from '../data/prop-models.js'
+import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'
 import { MissionSystem } from '../src/mission.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
@@ -492,18 +492,52 @@ const W = makeWorld(C.x, C.z, R)
     const modelled = list.filter(q => q.modelKey)
     check('modelled POIs exist (the ticket\'s proof: a type that looks like what it is)',
         modelled.length > 0, `${modelled.length} modelled of ${list.length}`)
-    check('every modelled POI carries its registry collision box and a yaw',
-        modelled.every(q => q.collision?.size?.length === 3 && Number.isFinite(q.yaw)
+    check('every modelled POI carries its registry collision box and a model yaw',
+        modelled.every(q => q.collision?.size?.length === 3 && Number.isFinite(q.modelYaw)
             && q.collision === PROP_MODELS[q.modelKey].collision))
     check('keyless POIs carry no box (they fall back to the cube)',
         list.filter(q => !q.modelKey).every(q => q.collision === null))
 
+    // THE MODEL POOL (owner, 2026-08-15). The five mission givers draw from every asset tagged
+    // 'missionGiver' rather than all wearing one model. What is gated is membership, not the
+    // distribution: which giver draws what is allowed to move when the pool is widened, so an
+    // "at least two distinct models appear" check would be a tripwire on a sanctioned change.
+    const pool = modelsTagged('missionGiver')
+    check('the missionGiver pool has more than one asset in it (else it is not a pool)',
+        pool.length > 1, pool.join(', '))
+    const givers = list.filter(q => q.type === 'missionGiver')
+    check('every mission giver draws its model from that pool',
+        givers.length > 0 && givers.every(q => pool.includes(q.modelKey)),
+        givers.map(q => q.modelKey).join(', '))
+
+    // EVERY modelled marker must FIT ITS PAD, which is what yawOffset exists to buy. The pad is
+    // 2·poiPadHalfLen along the road by 2·poiPadHalfWid across it, and the model's own box is
+    // turned into that frame by its offset alone (the pad yaw cancels — it IS the frame). An
+    // unturned 8 m Winnebago spans the full 8 m width with its nose on the shoulder edge; this is
+    // the check that catches the next asset someone registers without thinking about which way
+    // its length runs.
+    const seenKeys = new Set()
+    for (const q of modelled) {
+        if (seenKeys.has(q.modelKey)) continue   // the box is per-ASSET; one probe per key is the test
+        seenKeys.add(q.modelKey)
+        const [sx, , sz] = q.collision.size
+        const d = q.modelYaw - q.yaw
+        const along = Math.abs(Math.cos(d)) * sx + Math.abs(Math.sin(d)) * sz
+        const across = Math.abs(Math.sin(d)) * sx + Math.abs(Math.cos(d)) * sz
+        check(`${q.modelKey} fits its pad (${along.toFixed(1)} x ${across.toFixed(1)} m in a ` +
+              `${2 * POI_PARAMS.poiPadHalfLen} x ${2 * POI_PARAMS.poiPadHalfWid} m bay)`,
+            along <= 2 * POI_PARAMS.poiPadHalfLen && across <= 2 * POI_PARAMS.poiPadHalfWid)
+    }
+
     // The marker is SOLID, and for a modelled one that means solid at its own size. Probe just
     // outside and just inside the long face of a trailer, in ITS frame — a world-AABB regression
-    // would report contact metres off the wall.
-    const t = modelled[0]
+    // would report contact metres off the wall. Pinned to a trailerHomeA: the assertions below are
+    // written about a 12 m box whose length runs down its own +X, which is that asset's geometry
+    // and not a property of "whatever is modelled first".
+    const t = modelled.find(q => q.modelKey === 'trailerHomeA')
+    check('a trailerHomeA marker exists to probe', !!t)
     const s3 = t.collision.size
-    const cs = Math.cos(t.yaw), sn = Math.sin(t.yaw)
+    const cs = Math.cos(t.modelYaw), sn = Math.sin(t.modelYaw)
     const toWorld = (lx, lz) => ({ x: t.x + cs * lx + sn * lz, z: t.z - sn * lx + cs * lz })
     const inside = toWorld(0, s3[2] * 0.5 - 0.2), outside = toWorld(0, s3[2] * 0.5 + 2.0)
     check('a modelled marker is solid at its own footprint',
@@ -518,7 +552,7 @@ const W = makeWorld(C.x, C.z, R)
     check('…and stops there', !hit(endOut))
     // Along the road means the tangent, not the normal: step out along the pad normal and you
     // leave the trailer within 3.5 m, but along the tangent you do not until 12 m.
-    const alongRoad = Math.abs(Math.cos(t.yaw) * t.tx - Math.sin(t.yaw) * t.tz)
+    const alongRoad = Math.abs(Math.cos(t.modelYaw) * t.tx - Math.sin(t.modelYaw) * t.tz)
     check('the marker\'s +X is the road tangent (long side faces the road)', alongRoad > 0.999,
         `|+X · t| = ${alongRoad.toFixed(4)}`)
 }

@@ -74,7 +74,11 @@ Recolour targets are `RVBody`/`RVStripe`; the rest are fixed.
       self-asserting: length, ground contact, wheel-vs-windshield, seat-vs-beltline, 400-ray
       winding proof — 0 inverted).
 - [x] Tri count within budget; material names stable and distinctive.
-- [ ] Loads and places in-world through the FEAT-59 model import service. **Still blocked.**
+- [x] Loads and places in-world through the FEAT-59 model import service. **Met 2026-08-15** —
+      registered as `winnebago` in `data/prop-models.js`, tagged `missionGiver`, so the roster's
+      five giver slots draw it from that pool. Sited BROADSIDE (`yawOffset: π/2`): its 8 m length
+      runs down its own −Z and the pad is only 8 m across, so the default road-facing yaw put the
+      nose exactly on the shoulder edge with zero margin. Turned, the 8 m lies along the pad's 14 m.
 
 ## Notes
 

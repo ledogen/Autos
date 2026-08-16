@@ -6,7 +6,7 @@
  * settle. Built ENTIRELY against the adapter seam (physics-engine.js): no engine types here.
  *
  * Collider = convex hull of the visual GLB's own vertices, re-centred on the mesh bbox centre
- * (MESH == PHYSICS for props, by construction — the test props are 44 and 20 tris, well inside
+ * (MESH == PHYSICS for props, by construction — the props are 328 and 20 tris, well inside
  * hull-building comfort). Mass/inertia are density-derived from that hull, so a rock tumbles
  * with the inertia of its actual shape; densities are picked per type to land honest masses.
  *
@@ -22,10 +22,15 @@ import { GROUP_DEBRIS } from './physics-engine.js'
 import { getModel } from './model-service.js'
 
 export const DEBRIS_TYPES = {
-  // density kg/m³ of the SOLID hull (the engine integrates ρ over the hull volume):
-  // barrel ≈ 0.25 m³ solid → ~70 ρ lands the ~18 kg of an empty plastic drum;
-  // rock hull ≈ 0.02 m³ → 2500 ρ lands ~50 kg of granite cobble.
-  barrel: { model: 'testBarrel', density: 70, friction: 0.5, restitution: 0.3 },
+  // density kg/m³ of the SOLID hull (the engine integrates ρ over the hull volume) — these are
+  // NOT material densities, they are whatever lands the real mass of a HOLLOW object on its solid
+  // hull volume:
+  //   barrel — ASSET-30's drum-closed. The hull is the 10-gon lathe at its 0.290 m chime radius
+  //     over 0.85 m: area ½·10·0.290²·sin36° = 0.247 m² → ≈ 0.209 m³. 18 kg (the ticket's empty
+  //     mass) / 0.209 = ρ 86. The retired test cylinder was ρ 70 on a 0.254 m³ hull, same 18 kg —
+  //     the drum is a smaller barrel, so the number had to move to keep the mass honest.
+  //   rock — hull ≈ 0.02 m³ → 2500 ρ lands ~50 kg of granite cobble.
+  barrel: { model: 'drumClosed', density: 86, friction: 0.5, restitution: 0.3 },
   rock: { model: 'testRock', density: 2500, friction: 0.7, restitution: 0.15 },
 }
 
@@ -46,21 +51,47 @@ export class DebrisSystem {
     }
   }
 
-  /** Hull positions (bbox-centred, model-local) + the centre used, from the GLB's first mesh. */
+  /**
+   * Hull positions (bbox-centred, model-local) + the centre used, from EVERY mesh in the GLB.
+   *
+   * All of them, not the first. GLTFLoader splits a multi-material mesh into one Mesh child per
+   * primitive, so `drum-closed.glb` (DrumPaint + DrumSteel) arrives as two — and the first-mesh
+   * version of this silently hulled whichever primitive the exporter happened to write first.
+   * That is a coin flip between "the drum" and "its two bungs", and the bung case would have
+   * spawned a 5 cm collider inside a 0.85 m visual with no error anywhere. Vertices are taken in
+   * TEMPLATE space (applyMatrix4 on each mesh's world matrix relative to the template root), so a
+   * GLB with transformed child nodes hulls correctly too.
+   */
   _extractHull (template) {
-    let mesh = null
-    template.traverse(o => { if (!mesh && o.isMesh) mesh = o })
-    if (!mesh) return null
-    const pos = mesh.geometry.attributes.position
-    mesh.geometry.computeBoundingBox()
-    const center = mesh.geometry.boundingBox.getCenter(new THREE.Vector3())
-    const hull = new Float32Array(pos.count * 3)
-    for (let i = 0; i < pos.count; i++) {
-      hull[i * 3] = pos.getX(i) - center.x
-      hull[i * 3 + 1] = pos.getY(i) - center.y
-      hull[i * 3 + 2] = pos.getZ(i) - center.z
+    const meshes = []
+    template.updateMatrixWorld(true)
+    template.traverse(o => { if (o.isMesh && o.geometry?.attributes?.position) meshes.push(o) })
+    if (!meshes.length) return null
+
+    const _inv = new THREE.Matrix4().copy(template.matrixWorld).invert()
+    const _m = new THREE.Matrix4()
+    const _v = new THREE.Vector3()
+    let n = 0
+    for (const mesh of meshes) n += mesh.geometry.attributes.position.count
+    const pts = new Float32Array(n * 3)
+    const box = new THREE.Box3()
+    let w = 0
+    for (const mesh of meshes) {
+      _m.multiplyMatrices(_inv, mesh.matrixWorld)
+      const pos = mesh.geometry.attributes.position
+      for (let i = 0; i < pos.count; i++) {
+        _v.fromBufferAttribute(pos, i).applyMatrix4(_m)
+        pts[w++] = _v.x; pts[w++] = _v.y; pts[w++] = _v.z
+        box.expandByPoint(_v)
+      }
     }
-    return { hull, center }
+    const center = box.getCenter(new THREE.Vector3())
+    for (let i = 0; i < n; i++) {
+      pts[i * 3] -= center.x
+      pts[i * 3 + 1] -= center.y
+      pts[i * 3 + 2] -= center.z
+    }
+    return { hull: pts, center }
   }
 
   /**
