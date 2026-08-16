@@ -1,8 +1,9 @@
 ---
 id: INFRA-03
 type: infra
-status: open
+status: closed
 opened: 2026-08-15
+closed: 2026-08-15
 severity: minor
 source: FEAT-48 Phase 0 deferred axis (owner decision — ship first, test on Windows after)
 relates_to: FEAT-48 (the Box3D adoption's determinism contract), INFRA-01 (the Windows thin client),
@@ -11,7 +12,26 @@ relates_to: FEAT-48 (the Box3D adoption's determinism contract), INFRA-01 (the W
 
 # INFRA-03: Run the Box3D determinism hash on the Windows machine
 
-## ⏰ REMINDER (owner asked to be reminded — surface this when the Windows machine is next used)
+## ✅ RESOLVED 2026-08-15 — the hash matches; all four axes hold
+
+The Windows machine returned `ba6be98f42bc3b83`, `same-process: true`, from the Pages build's
+browser harness — **identical to the Mac**. The machine-vs-machine axis passes.
+
+Consequences:
+
+- **The SIMD divergence risk did not materialise.** SSE2-vs-Neon was the expected failure mode and
+  it didn't happen; `BOX3D_DISABLE_SIMD` stays unnecessary, so there is no perf cost to pay.
+- **Cross-machine replay is on the table.** The missions.md anti-cheat re-simulation idea no longer
+  has to be pinned to same-machine. Treat this as evidence, not a guarantee — it is one CPU pair on
+  one engine build (box3d.js 0.1.1). Re-run the page on any new machine before relying on it.
+- `test/box3d-determinism.expected` records the result; a future hash change there is now a real
+  engine/behaviour change rather than platform noise.
+
+The browser harness stays shipped with the build (`vite.config.js` → `DIAGNOSTIC_ASSETS`, four
+lines, unlinked from the game) — it is the cheapest possible way to re-check this on any future
+machine. Delete those four lines to unship it.
+
+## Original reminder (kept for provenance)
 
 The FEAT-48 physics engine's determinism was verified on THREE of four axes (run-to-run,
 cross-process, node-vs-browser — all hash `ba6be98f42bc3b83`, now a standing gate). The

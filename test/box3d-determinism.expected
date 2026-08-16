@@ -2,5 +2,9 @@ ba6be98f42bc3b83
 # box3d.js 0.1.1 (engine 0.1.0, single-precision), harness test/box3d-determinism.mjs
 # Recorded 2026-08-13 on macOS arm64 (Darwin 24.6.0), node v25.8.2.
 # Verified identical: run-to-run in-process, 3× fresh node processes, Chrome browser.
-# DEFERRED (FEAT-48 Phase 0): run `node test/box3d-determinism.mjs --hash-only`
-# on the Windows thin client (INFRA-01) and diff against line 1 of this file.
+# CROSS-MACHINE CONFIRMED 2026-08-15 (INFRA-03, closed): the Windows machine's browser
+# returned this same hash from the Pages build (<pages-url>/test/box3d-determinism.html),
+# same-process true. All four FEAT-48 Phase 0 axes now hold — run-to-run, cross-process,
+# node-vs-browser, machine-vs-machine — so the SIMD divergence risk (SSE2 vs Neon) did NOT
+# materialise and BOX3D_DISABLE_SIMD stays unnecessary. A future hash change here is a real
+# engine/behaviour change, not platform noise.
