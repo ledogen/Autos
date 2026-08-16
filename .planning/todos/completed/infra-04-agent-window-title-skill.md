@@ -1,12 +1,39 @@
 ---
 id: INFRA-04
 type: infra
-status: open
+status: completed
 severity: minor
 opened: 2026-08-15
+closed: 2026-08-15
 source: user-request
 relates: worktree skill (~/.claude/skills/worktree), tools/dashboard (INFRA dev tooling lane)
 ---
+
+## Resolution (2026-08-15)
+
+Built at `~/.claude/skills/window-title/` (SKILL.md + `scripts/title.sh`). Title format
+`<worktree>  :<port> :<port>`, e.g. `CarGame  :8000 :8010`. Three parts of the ticket's plan
+did not survive contact with the environment:
+
+1. **`printf '\033]0;…'` on stdout cannot work from a tool call or hook** — that shell has no
+   controlling terminal, so the escape lands in captured output. The script instead resolves the
+   tty of the nearest ancestor process that has one, and sets Terminal.app's tab custom title by
+   tty over AppleScript, with an OSC-to-`/dev/ttysNNN` fallback for other emulators.
+2. **Port attribution by "this session's shells" finds nothing** — dev servers are reparented to
+   launchd (PPID 1) the moment their launching shell exits. Attribution is by the listening
+   process's **cwd**, with the longest matching worktree path winning so a nested worktree's
+   server is never credited to main.
+3. **Claude Code writes its own OSC title every turn** and would overwrite ours, so
+   `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE: "1"` is now set in `~/.claude/settings.json`.
+
+The stretch goal was taken, not deferred: `SessionStart` + `Stop` hooks in
+`~/.claude/settings.json` run the script automatically, so the title tracks reality with no
+manual invocation. The `worktree` skill now re-runs it after `serve`/`new`/`clean`.
+
+Verified: main checkout → `CarGame  :8000 :8010`; a throwaway worktree serving :8077 →
+`CarGame-titletest  :8077` with main correctly *not* showing :8077; non-repo dir → basename.
+Known cosmetic issue documented in SKILL.md: Terminal.app's stock profile wraps the custom title
+with working directory, active process, and dimensions.
 
 # INFRA-04: `window-title` skill — label the agent's terminal at a glance
 
