@@ -1,15 +1,30 @@
 ---
 id: ASSET-29
 type: asset
-status: open
+status: completed
 severity: minor
 opened: 2026-08-03
 updated: 2026-08-15
-blocked-by: FEAT-59
-relates: FEAT-46, FEAT-36, ASSET-30
+closed: 2026-08-15
+relates: FEAT-59 (model service — registry entry still owed), FEAT-46, FEAT-36, ASSET-30
 ---
 
 # ASSET-29: Blue 55-gallon plastic barrel
+
+## Resolution (2026-08-15) — the model is built and export-clean
+
+`assets/models/barrel-plastic.glb` at **348 / 350 tris**, 2 materials (`BarrelBlue` recolour hook +
+`BarrelBung`), **0 images**, base-seated at z=0, 0.585 × 0.892 m. Sources committed:
+`assets/models/src/barrel-plastic.blend` + `barrel-plastic.py`. Textureless per ART-STYLE, hoops
+carried as geometry, symmetric and yaw-randomisable so it reads upright or on its side.
+
+**One acceptance line is not met and is deliberately left to the placement layer:** *"loads and
+places in-world."* The FEAT-59 **import service does exist** (`src/model-service.js` +
+`data/prop-models.js` — `trailerHomeA` loads through it today), so the `blocked-by: FEAT-59` label
+this ticket carried is stale. What is genuinely missing is one `PROP_MODELS` entry plus a consumer
+that decides *where* barrels go — cargo in the bed (real mass, `items.md` rule 2) and lawn-furniture
+scatter around a POI. Neither is authoring work, and neither belongs to this asset. `mass_kg: 9`
+(empty) stays inert until a physics consumer claims it.
 
 **Cargo** — visible load, not scenery. It rides in the bed as **real mass that shifts CoG and
 handling** (`items.md` rule 2: *a load, never a stat*), and doubles as set dressing around working

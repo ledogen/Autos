@@ -4,11 +4,78 @@ type: bug
 status: open
 severity: major
 opened: 2026-08-07
+updated: 2026-08-15
 source: owner-report
-relates: BUG-25, QUAL-24, FEAT-40
+relates: BUG-48 (three RoadSystem instances — likely the same root), QUAL-24, BUG-47, BUG-25, FEAT-40
 ---
 
 # BUG-42: a deg-3 junction on the map is a dead end in the world (seed 0, story mode)
+
+## ⚑ UPDATE 2026-08-15 — a candidate root arrived: BUG-48
+
+**Still open, still not reproduced. But this ticket's dead end — "no headless build reproduces it,
+so it must be live session state" — now has a named mechanism, and it is not the one hypothesised
+below.**
+
+BUG-48 (filed 2026-08-15) establishes that **three separate `RoadSystem` instances are streamed over
+different windows**: `play` (~320 m band — physics, carve, the ribbon mesh, *the road you drive*),
+`planner` (`MISSION_PLAN_RADIUS` 1400 m), and `map` (`map2d._road`, its own `setRadius`, ***the white
+road you see on the map***). QUAL-24's note at `src/mission.js:806` is the load-bearing part:
+
+> *"A runKey names a run GROUPING, and a deg-2 chain merge groups by the streamed band — so a mission
+> planned at MISSION_PLAN_RADIUS can name a chain the 320 m play stream never forms."*
+
+**That is this ticket's symptom stated in the abstract.** "The map draws a deg-3 junction, the world
+has one leg" is a map-instance-vs-play-instance disagreement by construction — the two artefacts the
+owner compared are drawn from different `RoadSystem` objects streamed at different radii, and nothing
+guarantees they group runs the same way.
+
+It also explains the one anomaly this ticket could never place. The session resolved the dead-end
+point to run `g:-2,-1,1:-1,-1,2` at a clamped `arcS 0.000000`; a fresh build attributes the *same
+point* to a **different run**, `g:-1,-3,1:-2,-1,1`, 2159 m along. That is not a resolver clamp bug —
+that is **the same place carrying two different run groupings in two different windows**, which is
+precisely the defect BUG-48 measured directly at seed 90 (same seed, same run, same arc, local radius
+**79.6 m in the game vs 195.5 m in a replay**). The clamp to `arcS 0` is then a *downstream symptom*:
+project a point onto a run whose arc domain it does not belong to, and it pins to the origin — at the
+wrong height, which is the 5.3 m surface discrepancy recorded below.
+
+**Revised working hypothesis, superseding "the resolver clamps beyond the arc domain":** the
+`_projectOntoRun` / `_resolveRoadSurface` family is where the symptom *surfaces*, not where it
+*originates*. The origin is `edgeParData` presenting an arc-span view `(centerline, s0, s1)` of a
+**merged** run, where the merge groups differently per window. Fix the presentation, not the
+projection — and per BUG-48's "Do not", **do not key anything new on `runKey`**; the abstract edge
+(site pair) is the window-stable identity.
+
+**Investigate these two together.** BUG-48 has a live capture that reproduces *its* half on demand
+(`bug-48-seed90-route-shortcut.json`) — which is exactly what this ticket lacks. Its "next
+measurement" (build all three instances headlessly, resolve one abstract edge in each, compare
+`arcOffset`/`arcLength`, sampled centerline, and `curvatureAt`) would, if it lands, either explain
+this ticket or rule the family out. **Do not spend more effort reproducing BUG-42 first.**
+
+### What this update does NOT claim
+
+- **Not proven.** Nobody has compared the three instances at *this* site, and the seed-0 captures
+  cannot be re-run against a hypothesis about an instance the capture never recorded.
+- **The leg counts still do not line up.** Both windows carry three legs at this node (see the table
+  below), so this is not a naive "the map sees an edge the play band never streams". And the leg the
+  owner found missing, `g:-2,-1,1:-2,0,1`, is present at **every** radius 320…2000 with a 1701 m
+  centerline. A grouping difference has to explain a *ribbon that was not assembled*, not just an
+  edge that was absent — that step is still missing.
+- **The eliminations below all stand.** They were measured, and BUG-48 does not touch any of them.
+
+### One note discharged, one still open
+
+The Notes' teleport suspicion has been **half answered**. The cross-mode leak it guessed at was real
+and is **fixed**: a free-roam teleport set `_spawnOverride`, which outlived the mode switch, so story
+entry seated the truck at the teleport point and `story.js._beginWarm` captured the region centre
+**from the player instead of the seed** — the whole region, POIs included, moved. That was BUG-45's
+mechanism, fixed in `2806718` and pinned by `test/world-determinism.mjs` §4.
+
+Whether *this* capture's session was subject to it is **unknowable from the capture** — the region
+centre is not recorded, only `streamCenterHistory` (which does show a ~1200 m jump at t≈66 s). Worth
+knowing: the jump is well inside `REGION_RADIUS_M` (2500 m), so "the player teleported outside the
+frozen region" is **ruled out** as an explanation. Teleporting *within* a frozen region remains
+reachable in normal play — story mode's teleport lockout is still deliberately OFF.
 
 ## Report (owner, 2026-08-07)
 

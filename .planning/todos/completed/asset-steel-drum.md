@@ -1,15 +1,35 @@
 ---
 id: ASSET-30
 type: asset
-status: open
+status: completed
 severity: minor
 opened: 2026-08-03
 updated: 2026-08-15
-blocked-by: FEAT-59
-relates: FEAT-46, FEAT-36, ASSET-29
+closed: 2026-08-15
+relates: FEAT-59 (model service — registry entries still owed), FEAT-46, FEAT-36, ASSET-29
 ---
 
 # ASSET-30: 55-gallon steel drum (variants)
+
+## Resolution (2026-08-15) — all three variants built and export-clean
+
+`drum-closed.glb` **328**, `drum-open.glb` **316**, `drum-crushed.glb` **348** tris — each inside its
+budget. Two shared materials (`DrumPaint` recolour hook, red-oxide default; `DrumSteel` fixed),
+**0 images**, base-seated at z=0, ray-verified. One source generates all three:
+`assets/models/src/steel-drum.blend` + `steel-drum.py`. Chimes and rolling hoops are geometry on all
+three variants.
+
+**One spec decision changed during the build and the ticket body below is stale on it:** the
+1024² shared atlas is **gone**. ART-STYLE's no-texture rule won (same ruling as ASSET-23/09/29), so
+variety comes from **runtime recolour of `DrumPaint`**, not UV offsets. That means this ticket's
+closing note — *"a rustier drum is a UV offset, not a fourth mesh… spend variety in texture space"* —
+no longer describes the asset. Variety is a material tint; if rust ever needs to read as *geometry*,
+that is a new ticket, not a UV edit.
+
+**Not met, and left to the placement layer:** *"all three load and place in-world."* Same position as
+ASSET-29 — the FEAT-59 import service exists (`src/model-service.js` + `data/prop-models.js`), so the
+`blocked-by: FEAT-59` label was stale; what is owed is three `PROP_MODELS` entries plus a consumer
+that places them. `mass_kg: 18` (empty) stays inert.
 
 **Cargo** — visible load, not scenery. It rides in the bed as **real mass that shifts CoG and
 handling** (`items.md` rule 2: *a load, never a stat*), and doubles as set dressing around working

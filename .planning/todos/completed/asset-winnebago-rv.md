@@ -1,15 +1,37 @@
 ---
 id: ASSET-09
 type: asset
-status: open
+status: completed
 severity: minor
 opened: 2026-08-03
-updated: 2026-08-13
-blocked-by: FEAT-59
-relates: FEAT-46, FEAT-21, ASSET-06
+updated: 2026-08-15
+closed: 2026-08-15
+relates: FEAT-59 (model service — registry entry still owed), FEAT-46, FEAT-21, ASSET-06
 ---
 
 # ASSET-09: Winnebago RV
+
+## Resolution (2026-08-15) — built as amended, export-clean
+
+`assets/models/winnebago.glb` at **1818 / 2000 tris** (Winnebago 1790 + WinnebagoGlass 28), 8
+materials, 0 images, +Y up, nose −Z, ground contact 0.000. Sources committed and parametric,
+`assets/models/src/winnebago.blend` + `winnebago.py`, self-asserting on length, ground contact,
+wheel-vs-windshield, seat-vs-beltline and a 400-ray winding proof (0 inverted).
+
+Built to the **2026-08-13 amendment** — a flat-front Class-A 1985 Chieftain 27DB, not the originally
+specced Class-C cab-over — and it carries the second-ever transparency exception: all windows are
+alpha-blended `RVGlass` at **0.45**, doubleSided, recorded in ART-STYLE.md. Camper windows get closed
+pleated curtains as proud assemblies; the cab has real openings with a minimal interior behind them.
+
+Two loose ends, neither blocking:
+
+- **Not met — *"loads and places in-world."*** Same position as ASSET-29/30: the FEAT-59 import
+  service exists (`src/model-service.js` + `data/prop-models.js`), so the `blocked-by: FEAT-59` label
+  was stale. What is owed is a `PROP_MODELS` entry and a POI siting decision — and for this asset the
+  siting is a **real constraint, not a formality**: 8 m of RV must fit a lay-by pad without intruding
+  on drivable ground. Confirm that when it is placed.
+- The reference board `assets/models/src/ref-chieftain/` was never committed and is **deleted
+  locally**; regenerate it from the BaT listing if the model is ever revised.
 
 **POI model** — a destination, not dressing. It anchors a zone (FEAT-46 lay-by pads / FEAT-21 POI
 scatter) and gives lawn furniture (ASSET-01..08) something to belong to. A POI carries provenance:
