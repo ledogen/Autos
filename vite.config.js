@@ -34,6 +34,21 @@ const RUNTIME_ASSETS = [
   'assets/models/CREDITS.md',
 ]
 
+// INFRA-03: the Box3D determinism harness, shipped so it can be run on a machine that has no repo
+// and no node — open <pages-url>/test/box3d-determinism.html and read the hash off the page. The
+// machine-vs-machine axis is the one FEAT-48 Phase 0 left untested, and the BROWSER hash is the
+// one that matters: the game runs Box3D in a browser, and node-vs-browser is already proven
+// identical (test/box3d-determinism.expected). Paths are repo-relative on purpose — the page
+// imports './box3d-determinism.mjs', which imports '../vendor/box3d/dist/box3d.mjs', which fetches
+// box3d.wasm from its own directory. Mirroring the tree keeps all three resolving with no edits.
+// A standalone page, unlinked from the game: delete these four lines to unship it.
+const DIAGNOSTIC_ASSETS = [
+  'test/box3d-determinism.html',
+  'test/box3d-determinism.mjs',
+  'vendor/box3d/dist/box3d.mjs',
+  'vendor/box3d/dist/box3d.wasm',
+]
+
 function copyRuntimeAssets () {
   let root = process.cwd()
   return {
@@ -44,7 +59,7 @@ function copyRuntimeAssets () {
       const glbs = readdirSync(resolve(root, 'assets/models'))
         .filter((f) => f.endsWith('.glb'))
         .map((f) => `assets/models/${f}`)
-      for (const rel of [...RUNTIME_ASSETS, ...glbs]) {
+      for (const rel of [...RUNTIME_ASSETS, ...DIAGNOSTIC_ASSETS, ...glbs]) {
         const dest = resolve(outDir, rel)
         mkdirSync(dirname(dest), { recursive: true })
         copyFileSync(resolve(root, rel), dest)

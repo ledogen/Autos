@@ -19,15 +19,29 @@ cross-process, node-vs-browser — all hash `ba6be98f42bc3b83`, now a standing g
 `BOX3D_DISABLE_SIMD` exists in the engine) and cross-platform determinism usually breaks
 exactly there. The owner ships first; this is the follow-up.
 
-## What to run (5 minutes)
+## What to run (1 minute, no repo and no node needed)
 
-On the Windows thin client, in the repo:
+The harness now ships with the Pages build (`vite.config.js` → `DIAGNOSTIC_ASSETS`). On the Windows
+machine, open:
+
+```
+https://<pages-url>/test/box3d-determinism.html
+```
+
+It prints `hash: <16 hex chars>` and `same-process: true` after a few seconds of compute. Compare
+the hash against line 1 of `test/box3d-determinism.expected` (`ba6be98f42bc3b83`).
+
+**The browser hash is the one that matters** — the game runs Box3D in a browser, and the
+node-vs-browser axis is already proven identical on the Mac, so a browser match closes the
+machine-vs-machine axis for what actually ships. (Verified 2026-08-15: the shipped page, served
+over HTTP from a real `dist/`, reproduces `ba6be98f42bc3b83` in headless Chrome on the Mac — so a
+mismatch on Windows is a genuine cross-machine signal, not a packaging artifact.)
+
+Equivalent if the machine ever does get a repo + node (INFRA-01):
 
 ```
 node test/box3d-determinism.mjs --hash-only
 ```
-
-Compare against line 1 of `test/box3d-determinism.expected` (`ba6be98f42bc3b83`).
 
 - **Match** → close this ticket; the determinism contract holds on all four axes.
 - **Mismatch** → cross-machine physics divergence is REAL. Consequences to weigh before any
