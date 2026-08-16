@@ -16,7 +16,9 @@ depends_on: none — substrate landed 2026-08-15 (was "FEAT-09 Phase 3")
 
 The dependency this ticket carried is **discharged**. FEAT-09 no longer exists as the plan: the
 rigid-body core is **Box3D behind the `src/physics-engine.js` adapter seam** (FEAT-48), and dynamic
-debris shipped as **FEAT-36** (`src/debris.js`, merged with FEAT-48, both closed). Read every
+debris shipped as **FEAT-36** (`src/debris.js`, merged to main with FEAT-48). FEAT-48 is closed;
+**FEAT-36 stays open** on scope this ticket does not need — `causesDamage`, world-fixture spawn,
+stacking, real art — so treat its substrate as available, not its ticket as done. Read every
 "FEAT-09 Phase 3" reference below as **FEAT-36 on the FEAT-48 adapter**.
 
 **Build against the adapter, never against the engine** — no `b3*` import outside

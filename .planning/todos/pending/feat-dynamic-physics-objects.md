@@ -1,9 +1,9 @@
 ---
 id: FEAT-36
 type: feature
-status: completed
+status: open
 opened: 2026-07-17
-closed: 2026-08-15
+updated: 2026-08-15
 severity: minor
 source: user-request
 relates_to: FEAT-06 (props), FEAT-35 (multi-vehicle), FEAT-26/27 (rockslides), story mode (the log
@@ -18,7 +18,31 @@ colliders, object↔object narrow phase, sleeping and two-way coupling all come 
 remains is authoring: shapes, masses, spawn/despawn, a causesDamage flag."
 ---
 
-## Resolution (2026-08-15) — closed on the landed slice
+## ⚑ STATUS 2026-08-15 — first slice LANDED, ticket STAYS OPEN
+
+**Owner ruling, 2026-08-15: this does not close until the requirements below are met.** An earlier
+close on the landed slice was reverted the same day — the throwable-debris slice is real work that
+shipped, but it is not this ticket's acceptance, and closing on a partial is how a requirement
+quietly becomes a non-requirement.
+
+**What is left — the four gaps are the remaining scope, not footnotes:**
+
+1. **`causesDamage` per prop type.** The seam exists and is unused:
+   `PhysicsEngine.maxContactImpulse` reports impulse magnitude, and the flag gates whether that
+   report reaches the wear model — *not* whether the contact happens, so the physics is identical
+   either way. SM-3 owns the subscriber and does not exist yet; emit at the seam and let the wear
+   model subscribe when it lands, rather than blocking on it.
+2. **Deterministic world-fixture spawn/despawn against streaming.** Rockpiles keyed from
+   `(seed, coords)` per SM-INV-12. Debris today is run-layer and player-thrown only — nothing in the
+   world places a body. This is the item most likely to surface a leak or a streaming hitch, and it
+   was called out as "still real work" in the 2026-07-29 rescope.
+3. **Object↔object beyond incidental.** No stacks exist, so pile behaviour is untested.
+4. **Real art.** `test-barrel.glb` (44 tris) / `test-rock.glb` (20) are deliberate placeholders and
+   are **not** ASSET-25/26, which stay open. ASSET-29 (plastic barrel, 348 tris) and ASSET-30 (three
+   steel-drum variants) are now **built and export-clean** — they need a `PROP_MODELS` entry and a
+   placement consumer, which is item 2's work.
+
+### What HAS landed (keep, do not rebuild)
 
 Merged to main with FEAT-48 (`7bc9fb3`, branch `feature/box3d`). `src/debris.js` gives dynamic
 rigid-body props built **entirely against the `physics-engine.js` adapter** — no engine type leaks
@@ -30,19 +54,12 @@ in-browser. Placeholder art `test-barrel.glb` (44 tris) / `test-rock.glb` (20 tr
 parametrically (`assets/models/src/test-*.py`) and is deliberately **not** ASSET-25/26, which stay
 open. Debris throws never touch paper-route scoring or inventory.
 
-Acceptance met: bodies rest, tumble, settle and sleep; two-way contact via the engine's shared
-impulse pass; adapter-only; hard cap; off in headless; tunables in the debug panel; `npm test` green.
+Acceptance lines already satisfied by this slice: bodies rest, tumble, settle and sleep; two-way
+contact via the engine's shared impulse pass; adapter-only, no engine type leaks; hard count cap;
+flag-gated off in headless; tunables in the debug panel; `npm test` green.
 
-**Deliberately not built, and not blocking the close** — each is cheap to reopen as its own ticket
-when its consumer exists:
-
-- `causesDamage` per prop type. The seam is in place and unused: `PhysicsEngine.maxContactImpulse`
-  reports impulse magnitude; the flag would gate whether that report reaches the wear model. Waiting
-  on SM-3, which owns the wear model — building the flag before its subscriber would be guesswork.
-- Deterministic world-fixture spawn/despawn against streaming (rockpiles from `(seed, coords)`,
-  SM-INV-12). Debris today is run-layer and player-thrown only.
-- Object↔object beyond incidental (no stacks; sequential-impulse jitter was never exercised).
-- Real art — the two test props are placeholders.
+Untouched by the `feature/box3d-fixes` merge (2026-08-15) — that work was BUG-49/50, deployed-GLB
+404s and the collider-wireframe offset; it does not go near `src/debris.js` or the four gaps above.
 
 ## ⚠ Rescoped 2026-07-29 — the escalated decision is resolved
 
