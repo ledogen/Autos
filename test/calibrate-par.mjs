@@ -91,12 +91,19 @@ function parWith(segments, r) { setRef(r); const p = computePar(segments); setRe
 console.log('── reconstruction (recomputed par under the exported ref vs recorded) ──')
 for (const r of runs) {
     r.segments = toSegments(r)
-    // parWith returns par = referenceTime × PAR_SLACK, but `par_s` in the corpus was recorded
-    // BEFORE the 2026-08-16 re-anchor, i.e. slack-free. Divide it back out so `corr` stays what it
-    // claims to be — a pure reconstruction residual. Skipping this is silent and total: corr would
-    // absorb 1/PAR_SLACK, the slack would cancel again at line ~110, and every ratio printed below
-    // would be the OLD anchoring wearing new labels.
-    r.parRecon = parWith(r.segments, r.par_ref) / PAR_SLACK
+    // `corr` must be a PURE reconstruction residual (junction caps the export cannot carry), so
+    // both sides of the ratio have to be expressed against the SAME standard. They are not by
+    // default: parWith() returns referenceTime × the CURRENT PAR_SLACK, while `par_s` carries
+    // whatever slack was live when the run was recorded — 1.0 for everything predating the
+    // 2026-08-16 re-anchor, 1.15 after it. Rescale the reconstruction to the run's own slack.
+    //
+    // Getting this wrong is silent and total, in both directions. Dividing by nothing lets corr
+    // absorb 1/PAR_SLACK and the slack cancels again downstream, so every ratio is the OLD
+    // anchoring wearing new labels. Dividing unconditionally (the first cut of this fix) inflates
+    // corr by exactly 1.15 on post-re-anchor runs — visible as correction factors drifting to 1.13
+    // when they had never exceeded 1.02.
+    const slackUsed = r.par_ref?.slack ?? 1.0     // exports record it since 2026-08-16
+    r.parRecon = parWith(r.segments, r.par_ref) / PAR_SLACK * slackUsed
     r.corr = r.result.par_s / r.parRecon        // junction caps + residuals, assumed ref-invariant
 }
 const corrs = runs.map(r => r.corr).sort((a, b) => a - b)
