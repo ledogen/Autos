@@ -10,7 +10,9 @@ A browser-based 6DOF rigid body car physics simulation built in JavaScript with 
 
 - **Tech stack**: Three.js + vanilla JS, Vite build (PERF-04/PERF-20.5) — `npm run dev` locally, `npm run build` → `dist/` deployed to GitHub Pages via GitHub Actions. (Was a no-bundler CDN importmap; bundling was adopted to kill the ~0.9 s per-load import waterfall. three/simplex resolve from npm, byte-identical to the retired pins; the `test/*.mjs` gates stay pure-node and never touch Vite.)
 - **Runtime**: Browser only, single origin — no server, no WebSocket, no backend
-- **File structure**: ES6 modules in a `src/` directory, single `index.html` entry point
+- **File structure**: ES6 modules in a `src/` directory, single `index.html` entry point. The full
+  repo/file map + naming conventions live in `.planning/research/LAYOUT.md` — update it when adding
+  or moving files.
 - **Physics**: The rigid-body core is **Box3D** (Erin Catto's 3D engine, WASM via the vendored
   `vendor/box3d/` bindings) behind the **thin adapter seam `src/physics-engine.js`** — the ONE module
   allowed to touch engine types; everything else consumes opaque handles (FEAT-48, owner decision
@@ -19,7 +21,7 @@ A browser-based 6DOF rigid body car physics simulation built in JavaScript with 
   adopt an engine wheel joint / vehicle controller. Swapping backends (fallback: Rapier) must touch
   only the adapter.
 - **Performance**: Target 60fps on a mid-range laptop with terrain active — physics must be lightweight
-- **LLM maintainability**: Code is primarily maintained by LLM sessions (Claude Sonnet 4.6, `claude-sonnet-4-6`). Conventions must be explicit, self-documenting, and resistant to drift across sessions.
+- **LLM maintainability**: Code is primarily maintained by LLM sessions. Conventions must be explicit, self-documenting, and resistant to drift across sessions.
 
 ## Technology Stack
 
@@ -39,19 +41,18 @@ project), dat.GUI, global `<script>` Three.js, Web Workers for physics, Offscree
 angles for body rotation. Fixed-timestep accumulator loop.
 (Full rationale + version-verification + sources: `.planning/research/STACK.md`.)
 
-### Module Structure
-| Module | Responsibility | Imports from |
-|--------|---------------|--------------|
-| `src/tire.js` | Pacejka Magic Formula, slip angle → lateral force | Nothing (pure math) |
-| `src/suspension.js` | Spring-damper per corner, contact patch position, normal force | `tire.js` (for normal force input) |
-| `src/physics-engine.js` | THE adapter seam — the only module importing the Box3D engine (`vendor/box3d/`) | Nothing (engine only) |
-| `src/physics.js` | Vehicle step: suspension/tire force accumulation → engine body; chassis factory; debris translation layer | `tire.js`, `suspension.js`, `physics-engine.js` |
-| `src/terrain-physics.js` | Streamed chunk heightfield colliders (MESH == PHYSICS mirror) | `physics-engine.js` |
-| `src/vehicle.js` | Vehicle state, drivetrain, Ackermann, input accumulation | `physics.js` |
-| `src/camera.js` | Chase camera, spring follow | Three.js only |
-| `src/debug.js` | lil-gui panel, scenario logger, HUD | `vehicle.js` (reads state) |
-| `src/main.js` | Entry point, scene setup, game loop | All of the above |
-| `data/ranger.js` | Ford Ranger specs as exported const object | Nothing |
+### Import seams (the load-bearing contract)
+
+This is an import-direction contract for the physics stack, not a file inventory — the full map of
+all `src/` modules is `.planning/research/LAYOUT.md`.
+
+| Seam | Rule |
+|------|------|
+| `src/physics-engine.js` | THE adapter — the ONLY module importing the Box3D engine (`vendor/box3d/`). Imports nothing else. |
+| `src/tire.js`, `src/suspension.js` | Pure math, no engine types. `suspension.js` may import `tire.js`; neither touches `physics-engine.js`. |
+| `src/physics.js` | The only consumer that combines tire/suspension forces with engine bodies (`tire.js` + `suspension.js` + `physics-engine.js`). |
+| `src/terrain-physics.js` | Heightfield colliders via `physics-engine.js` only (MESH == PHYSICS mirror). |
+| Everything else | Consumes opaque handles / vehicle state; never imports engine types or reaches around `physics.js` into the stack. |
 
 ## Conventions
 
@@ -93,7 +94,7 @@ desaturated nature against saturated man-made objects. `trailer-home-a.glb` is t
 - **Physics behaviors** (load transfer, wheel independence, wheel lift, damping, ramp slide):
   `test/assert-m4-*.mjs` — rainy-day manual scripts; each needs a recorded scenario log. Not in
   `npm test`.
-- **Regression gates (33, in `test/gates.mjs`):** `npm test` runs **only the AFFECTED gates** — those
+- **Regression gates (registered in `test/gates.mjs`):** `npm test` runs **only the AFFECTED gates** — those
   whose transitive import closure (computed live by `run-all.mjs`, + each gate's `extraDeps`) intersects
   your `git diff`. So a physics edit runs the physics gates, a prop-slider tweak the prop gates, a
   skybox edit nothing. Keeps the nominal loop fast; heavy road/terrain/water gates run only when you
@@ -120,13 +121,16 @@ the canonical (modulo `export` + template escaping). Edit the `ROUTE SYNC` regio
 the same commit. The main thread keeps the synchronous router as the cold-load/teleport fallback, so
 headless gates (no Worker, no dispatcher) are unaffected.
 
-## Story Mode (design intent)
+## Story Mode
 
-Story mode (roguelike runs, sleep/doze clock, par-based mission economy, region unlocking via
-FEAT-28) is framed but not yet scheduled. **Intent and invariants live in
-`.planning/story-mode/DESIGN.md`** (cite invariants as `SM-INV-N`); milestones + ticket map in
-`.planning/story-mode/MILESTONES.md`. Read DESIGN.md before any gameplay/mission/progression/
-sleep/economy work — if an implementation satisfies its ticket but violates an invariant there,
+Story mode (roguelike runs, day/sleep clock, par-based mission economy, region unlocking) is **in
+active implementation** — the day clock, camping, economy spine (payout/wallet/points), POIs,
+dialogue, and the first missions are on main. **Intent and invariants live in
+`.planning/story-mode/DESIGN.md`** (cite invariants as `SM-INV-N`). **The roadmap is
+`.planning/story-mode/MILESTONES.md`** — prerequisite-ordered milestones with a "Where we are"
+build-state section; its rule: don't open a milestone whose `Requires:` aren't met, free-lane work
+is always fair game, and tickets are minted into the tracker at milestone entry, not up front.
+Read DESIGN.md before any gameplay/mission/progression/sleep/economy work — if an implementation satisfies its ticket but violates an invariant there,
 the invariant wins; stop and flag it. Open design questions listed there are the user's to
 answer, not yours. Companion notes **downstream of DESIGN.md** (where they disagree, DESIGN.md wins):
 `missions.md` (mission taxonomy + XP/payout scoring + the log-drag main mission), `run-shape.md`
@@ -137,8 +141,9 @@ cast — deferred, and carrying flagged conflicts with later rulings), `IDEAS.md
 
 ## Workflow
 
-This project is in **maintenance / polish stage**. Work the lightweight loop — direct edits are the
-norm.
+The engine is in **maintenance / polish**; new gameplay lands via the **story-mode roadmap**
+(`.planning/story-mode/MILESTONES.md`). Either way, work the lightweight loop — direct edits are
+the norm.
 
 - **Capture** bugs/features/ideas as tickets in `.planning/todos/pending/` (frontmatter: `id`, `type`,
   `status`, `severity`, plus a clear acceptance section). This tracker is the live source of truth for
@@ -150,7 +155,7 @@ norm.
   Classes: `feature` (FEAT-NN) · `bug` (BUG-NN) · `perf` (PERF-NN) · `quality` (QUAL-NN) ·
   `infra` (INFRA-NN) · **`asset` (ASSET-NN, files `asset-*.md`)** — one hand-modelled `.glb` per
   ticket, authored per `.planning/research/ASSETS.md`; each carries a tri/texture budget, real-world
-  size, origin + forward convention, and collision metadata, and is loadable only once FEAT-59 lands.
+  size, origin + forward convention, and collision metadata, loaded via `src/model-service.js` (FEAT-59).
   Assets come in five roles, stated in the ticket under its title: **POI models** (ASSET-09..21)
   anchor a zone; **lawn furniture** (ASSET-01..08) is scattered *with* a POI so it inherits that
   POI's provenance (on bare ground it reads as litter, not habitation); **camp gear** (ASSET-23..26)
