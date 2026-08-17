@@ -1,8 +1,9 @@
 ---
 id: INFRA-05
 type: infra
-status: open
+status: completed
 opened: 2026-08-16
+closed: 2026-08-16
 severity: minor
 source: user-observation 2026-08-16 — "this window should be using my rename skill but the title still
   shows :8000 :8010? why don't we have a worktree name and port?"
@@ -115,3 +116,41 @@ stamp, or the next task in that window inherits a title for a worktree that no l
 - The `worktree` skill already tells agents to run `title.sh <worktree-path>` after `new`/`clean`.
   That instruction is currently ineffective for anything but the remainder of the current turn —
   worth correcting in the skill whichever option is chosen.
+
+---
+
+## Resolution (2026-08-16)
+
+**Option 2 chosen by the owner**, with the port field narrowed at the same time. Both changes live
+entirely in `~/.claude/skills/window-title/scripts/title.sh`; `wt.sh` and the hooks are untouched.
+
+**The pin.** `title.sh <dir>` now stamps that path into `~/.claude/run/window-title/<tty>`, and a
+bare call (i.e. the `Stop` hook) reads it back instead of recomputing from `CLAUDE_PROJECT_DIR`. The
+tty was already resolved for the write — it is the natural key and it *is* the window — so it was
+moved to the top of the script and now serves both jobs. `--clear` unpins.
+
+Staleness rule, as required: a stamp naming a path that no longer exists is deleted on the next call
+and the window falls back to its own checkout. This is why `wt.sh clean` needed **no** change — the
+worktree's disappearance *is* the expiry signal. The ticket's warning about `clean` clearing the
+stamp is satisfied structurally rather than by a cleanup call that could be forgotten.
+
+**One port, not all.** The title now shows only the dev server — the listening pid's command line
+must look like one (`vite` / `npm run dev` / `next dev` / webpack / react-scripts). `npm run dash`
+on :8010 is dropped. This directly kills the hazard this ticket called out: main used to advertise
+`:8000 :8010` and point at the wrong server. Lowest port wins if a tree somehow has two.
+
+Verified live against the real process table on 2026-08-16:
+
+| call | result |
+|---|---|
+| `--print` (main) | `CarGame  :8000` (was `CarGame  :8000 :8010`) |
+| `--print <par-reanchor>` | `CarGame-par-reanchor  :3872` |
+| `--print <seed20-road>` | `CarGame-seed20-road  :3304` |
+| pin par-reanchor, then bare call | `CarGame-par-reanchor  :3872` — **the acceptance case** |
+| bare call w/ stamp → deleted tree | `CarGame  :8000`, stamp removed |
+| `--clear` while pinned | `CarGame  :8000` |
+| `--print` | writes no stamp |
+
+Docs updated: `window-title/SKILL.md` (new "The pin" section, single-port semantics) and
+`worktree/SKILL.md` (the `title.sh <path>` instruction is now effective and sticky; `clean` should
+`--clear`).
