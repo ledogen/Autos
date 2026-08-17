@@ -33,7 +33,7 @@
 // do" the same question and left the clock nothing to say.
 
 import { ECONOMY_PARAMS } from './economy.js'
-import { buildGraphAdj, START_ZONE_R } from './mission.js'
+import { buildGraphAdj, START_ZONE_R, buildRunExport, TRACE_DIV } from './mission.js'
 import { computePar, gradeRun, RANK_THRESHOLDS_DEFAULT } from './par.js'
 // The accuracy law is throw.js's, not restated here. It is one line of algebra and that is exactly
 // why it must have one home: a second copy is a second thing to keep in step with the gate.
@@ -181,10 +181,10 @@ export function deadlineFor (par, P = PAPER_PARAMS) { return par * P.tolerance }
  * to keep in step with the settlement. Derived, never authored, so the route tracks the same
  * economy as everything else; degenerate par pays zero rather than NaN-ing the wallet.
  */
-export function flatPerPaper (par, customers, dayTier = 1, P = PAPER_PARAMS) {
+export function flatPerPaper (par, customers, payTier = 1, P = PAPER_PARAMS) {
     const n = Math.max(0, customers | 0)
     return (isFinite(par) && par > 0 && n > 0)
-        ? ECONOMY_PARAMS.k * par * dayTier * P.paperW / n
+        ? ECONOMY_PARAMS.k * par * payTier * P.paperW / n
         : 0
 }
 
@@ -197,10 +197,12 @@ export function flatPerPaper (par, customers, dayTier = 1, P = PAPER_PARAMS) {
  * @param {number}   customers   how many people were on the route
  * @param {number}   elapsed     seconds taken
  * @param {number}   par         seconds the tour is worth (computePar over the whole tour — ONE par)
- * @param {number}   dayTier     economy.js dayTier(day), frozen at accept with the rest of the terms
+ * @param {number}   payTier     economy.js terms().payTier — dayTier × regionTier, frozen at accept
+ *                               with the rest of the terms (renamed from `dayTier` 2026-08-17 when
+ *                               the region multiplier landed; it is no longer the day alone)
  * @returns {{coverage,meanAccuracy,effDeliveries,score,letter,flat,expedite,payout,complete}}
  */
-export function scoreRoute (accuracies, customers, elapsed, par, dayTier = 1, P = PAPER_PARAMS,
+export function scoreRoute (accuracies, customers, elapsed, par, payTier = 1, P = PAPER_PARAMS,
                             thresholds = RANK_THRESHOLDS_DEFAULT) {
     const n = Math.max(0, customers | 0)
     const delivered = accuracies?.length ?? 0
@@ -239,7 +241,7 @@ export function scoreRoute (accuracies, customers, elapsed, par, dayTier = 1, P 
     // FLAT is per delivery, and it is derived rather than authored so the route tracks the same
     // economy everything else does. Degenerate par (a broken tour) pays zero rather than NaN-ing
     // the wallet — the same guard payoutFor() carries.
-    const flat = flatPerPaper(par, n, dayTier, P)
+    const flat = flatPerPaper(par, n, payTier, P)
 
     // The bonus needs a real elapsed time AND a completed route. An unfinished route has no ratio
     // worth reading: you did not finish, so you cannot have finished early.
@@ -758,7 +760,7 @@ export class PaperRouteSystem {
      *   onChange()   — repaint
      *   onEnd()      — the route is over: clear the papers off the lawns
      */
-    constructor ({ getRoad, getPois, getRegion, getCar, getTerms, getTargetR,
+    constructor ({ getRoad, getPois, getRegion, getCar, getSeed, getTerms, getTargetR,
                    onSettle, onSpot, onBriefing, setMapOpen, onChange, onEnd }) {
         this._onSpot = onSpot ?? (() => 0)
         this._setMapOpen = setMapOpen ?? (() => {})
@@ -766,7 +768,9 @@ export class PaperRouteSystem {
         this._getPois = getPois
         this._getRegion = getRegion ?? (() => null)
         this._getCar = getCar ?? (() => null)
-        this._getTerms = getTerms ?? (() => ({ dayTier: 1 }))
+        // getSeed() — world seed, for the export's per-500 m road-quality column (2026-08-17).
+        this._getSeed = getSeed ?? (() => 0)
+        this._getTerms = getTerms ?? (() => ({ payTier: 1 }))
         this._getTargetR = getTargetR ?? (() => 5)
         this._onSettle = onSettle ?? (() => null)
         this._onBriefing = onBriefing ?? ((done) => done())
@@ -834,6 +838,57 @@ export class PaperRouteSystem {
      * in the re-plan path may touch it, while `guide` is only a shape to follow. Scoring, the
      * deadline and the result card all read `route`; the renderers all read this.
      */
+    /**
+     * FEAT-30 calibration export for a finished paper round — the same `rangersim-run-export/2`
+     * shape a point-to-point job produces, through the same shared builder (`buildRunExport`), so
+     * both mission types land in one corpus and `test/calibrate-par.mjs` needs no special case.
+     *
+     * Why this exists [owner, 2026-08-17]: there was no way to save a paper round at all, so the
+     * report that the route "seems too easy time-wise" could not be checked against data — par
+     * cannot be fitted to a mission type that leaves no record.
+     *
+     * `extra.paper` carries what only this mission type knows and what a par fit actually needs.
+     * The round is priced with a full STOP at every porch (planTour sets `stop`), so customer count
+     * is a first-class term in its par rather than dressing.
+     */
+    exportRun (note = '') {
+        const e = this._lastExport, r = this.result
+        if (!e || !r) return null
+        const ratio = r.par > 0 ? r.elapsed / r.par : 0
+        return buildRunExport({
+            note,
+            segs:  e.segments,
+            result: {
+                elapsed_s: +r.elapsed.toFixed(2), par_s: +r.par.toFixed(2),
+                ratio: +ratio.toFixed(3), letter: r.letter,
+                margin_s: +(r.par - r.elapsed).toFixed(2),
+            },
+            edges: e.edges,
+            start: { x: +e.start.x.toFixed(1), z: +e.start.z.toFixed(1), heading_rad: 0 },
+            end:   e.customers[e.customers.length - 1] ?? { x: 0, z: 0 },
+            trace: e.trace,
+            seed:  this._getSeed(),
+            extra: {
+                mission_type: 'paper_route',
+                paper: {
+                    tier:          runPaper.tier + 1,
+                    customers:     r.customers,
+                    delivered:     r.delivered,
+                    coverage:      +r.coverage.toFixed(3),
+                    mean_accuracy: +r.meanAccuracy.toFixed(3),
+                    expedite:      +r.expedite.toFixed(3),
+                    complete:      !!r.complete,
+                    // The letter is graded against par × coverage (owner, 2026-08-15), so record the
+                    // EFFECTIVE par it actually came from — otherwise a refit grades a half-finished
+                    // round against the whole round's clock and concludes par is far too generous.
+                    par_effective_s: +(r.par * r.coverage).toFixed(2),
+                    payout:        r.payout,
+                    spot:          r.spot,
+                },
+            },
+        })
+    }
+
     line () { return this.guide ?? this.route }
 
     /** The customers on THIS route — not the region's. Read-only. */
@@ -851,7 +906,7 @@ export class PaperRouteSystem {
      */
     paperValue (q) {
         if (!this.run || !this.route) return 0
-        return flatPerPaper(this.route.par, this.route.customers.length, this.run.dayTier) * q
+        return flatPerPaper(this.route.par, this.route.customers.length, this.run.payTier) * q
     }
 
     /** Papers still in the truck. Zero does not end the route; the last one LANDING does. */
@@ -919,18 +974,20 @@ export class PaperRouteSystem {
      */
     accept () {
         if (this.state !== 'offer' || !this.route) return
-        const terms = this._getTerms() || { dayTier: 1 }
+        const terms = this._getTerms() || { payTier: 1 }
         this.run = {
             stock:    stockForTier(),
             inFlight: 0,
             elapsed:  0,
             deadline: deadlineFor(this.route.par),
-            dayTier:  terms.dayTier ?? 1,
+            payTier:  terms.payTier ?? terms.dayTier ?? 1,   // dayTier fallback: pre-region callers
             // Frozen WITH the day tier, for the same reason (FEAT-53): the rank ramp is part of the
             // deal you accepted. Now that the letter IS the par ratio, a route straddling midnight
             // would otherwise be graded on tomorrow's tighter thresholds.
             thresholds: terms.thresholds ?? RANK_THRESHOLDS_DEFAULT,
             hits:     new Map(),      // customer id → q, one entry per delivered customer
+            trace:    [],             // driven-trace rows at TRACE_HZ (FEAT-30 calibration export)
+            traceTick: 0,
         }
         this._startZone = { x: this.giver.x, z: this.giver.z, y: this.giver.y ?? 0, r: START_ZONE_R }
         this.state = 'staging'
@@ -989,6 +1046,17 @@ export class PaperRouteSystem {
         }
         if (this.state !== 'running') return
         this.run.elapsed += dt
+        // Driven trace at TRACE_HZ, downsampled off the 60 Hz step — the same sampler a POI job
+        // runs, so the two mission types produce directly comparable calibration exports. Cheap:
+        // a 4-minute round is ~2400 rows, small next to the topology array.
+        if ((this.run.traceTick++ % TRACE_DIV) === 0) {
+            const c = this._getCar()
+            if (c) this.run.trace.push([
+                +this.run.elapsed.toFixed(2), +c.x.toFixed(2), +(c.y ?? 0).toFixed(2), +c.z.toFixed(2),
+                +(c.speed ?? 0).toFixed(2), +(c.heading ?? 0).toFixed(3),
+                +(c.throttle ?? 0).toFixed(2), +(c.brake ?? 0).toFixed(2), +(c.steer ?? 0).toFixed(3),
+            ])
+        }
         this._replanTick(dt)
         if (this.run.elapsed >= this.run.deadline) this.finish()
     }
@@ -1270,7 +1338,7 @@ export class PaperRouteSystem {
         this._rrHideAt = 0
         const n = this.route.customers.length
         const accuracies = [...this.run.hits.values()]
-        const r = scoreRoute(accuracies, n, this.run.elapsed, this.route.par, this.run.dayTier,
+        const r = scoreRoute(accuracies, n, this.run.elapsed, this.route.par, this.run.payTier,
                              PAPER_PARAMS, this.run.thresholds)
         const settled = this._onSettle(Math.round(r.payout), r.letter) || {}
         const advanced = advancesTier(r, n)
@@ -1287,6 +1355,18 @@ export class PaperRouteSystem {
             points:    settled.points ?? 0,
             advanced,
             nextTier:  advanced ? customersForTier() : null,
+        }
+        // Stash what the calibration export needs BEFORE the run object goes: the trace lives on
+        // `run`, and `run` is about to be nulled. (FEAT-30, extended to the paper route 2026-08-17 —
+        // there was previously no way to record a paper round at all, so par could not be fitted
+        // against one.)
+        this._lastExport = {
+            segments: this.route.segments,
+            edges:    this.route.edges,
+            distance: this.route.distance,
+            trace:    this.run.trace,
+            start:    { x: this.giver?.x ?? 0, z: this.giver?.z ?? 0 },
+            customers: this.route.customers.map(c => ({ x: +(c.x ?? 0).toFixed(1), z: +(c.z ?? 0).toFixed(1) })),
         }
         this.state = 'done'
         this.run = null

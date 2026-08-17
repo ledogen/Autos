@@ -99,6 +99,28 @@ export const ECONOMY_PARAMS = {
     // its ratified ~5× ceiling, make late missions far longer, or add a per-region multiplier
     // (a new dial). All three are owner decisions — do not pick one here.
     //
+    // ── PER-REGION PAYOUT MULTIPLIER [owner, 2026-08-17] ──────────────────────────────────────
+    // 1-based by region index; region 7+ holds the last entry. THE reason to push into new country.
+    //
+    // Why this exists and dayTier does not cover it (owner's reasoning, recorded because it is the
+    // whole point): dayTier rises to keep pace with escalating maintenance, so reward and cost climb
+    // together and a run that merely survives longer nets nothing. Progression has to come from
+    // somewhere the treadmill cannot follow — and that is the region. Moving to harder country is a
+    // CHOICE the player earns with mission points, and the payout step is what makes it worth
+    // making. (Region and day do correlate through the run schedule, but the step is earned, not
+    // accrued.)
+    //
+    // Geometric, ×~1.64 per region, 1 → 12 across the ratified six. Solved from the owner's stated
+    // end targets: a day-20 region-6 mission (par ~720 s, tier 4.58, a B drive) pays ~$1000 at
+    // regionMult 12, against ~$9 for a day-1 region-1 job — the ~100× spread k alone could not
+    // reach (see the ceiling note below, now resolved by this dial).
+    //
+    // ⚠ NOT YET FED A REAL INDEX. Multi-region progression is FEAT-28 / milestone SM-4 and does not
+    // exist — story.js builds exactly ONE bounded region. `EconomySystem` takes the index through
+    // its deps adapter (`getRegion`), which currently returns 1 everywhere, so this table is inert
+    // until SM-4 lands. It is built now so the economy is not the thing blocking that milestone.
+    regionMult: [1.0, 1.6, 2.7, 4.4, 7.3, 12.0],
+
     // Payout multiplier per run day, 1-based; day 31+ holds the last entry. tier(1) === 1 is the
     // anchor "a day-1 run at par pays exactly one day's maintenance". Days 1-8 are the shipped
     // ×1.15 compounding; days 9-30 ease toward the ~5× asymptote (derivation in the header note).
@@ -114,6 +136,16 @@ export const ECONOMY_PARAMS = {
 export const RANK_COLOR = { D: '#ff5a4e', C: '#ff9f43', B: '#ffdc3c', A: '#ffffff', S: '#5ab6ff' }
 
 // ── Pure functions ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Payout multiplier for a REGION (1-based). Clamps both ends: region <1 reads as 1, past the table
+ * holds the last entry. Pure step function, exactly like dayTier — the two multiply.
+ */
+export function regionTier (region) {
+    const t = ECONOMY_PARAMS.regionMult
+    const i = Math.min(Math.max(1, Math.floor(region || 1)), t.length) - 1
+    return t[i]
+}
 
 /** Payout multiplier for a run day. Step function of the table; day 9+ holds; day <1 clamps. */
 export function dayTier(day) {
@@ -200,6 +232,9 @@ export class EconomySystem {
      */
     constructor (deps = {}) {
         this._getDay = deps.getDay ?? (() => 1)
+        // getRegion() — 1-based region index. Defaults to 1: multi-region progression is FEAT-28 /
+        // SM-4 and unbuilt, so nothing supplies a real index yet. Wired now so the economy is ready.
+        this._getRegion = deps.getRegion ?? (() => 1)
         this._read = null
         this._ctrls = []
     }
@@ -224,7 +259,16 @@ export class EconomySystem {
      */
     terms () {
         const day = this._getDay()
-        return Object.freeze({ day, dayTier: dayTier(day), thresholds: Object.freeze(rankThresholds(day)) })
+        const region = this._getRegion()
+        const dt = dayTier(day), rt = regionTier(region)
+        // payTier is the ONE number consumers should multiply by: the day treadmill and the earned
+        // region step composed. Both components ride along for the result card and for debugging.
+        // Frozen at accept with everything else — a job accepted in region 2 pays region 2's rate
+        // even if it is settled after moving on, exactly as the day tier already worked.
+        return Object.freeze({
+            day, region, dayTier: dt, regionTier: rt, payTier: dt * rt,
+            thresholds: Object.freeze(rankThresholds(day)),
+        })
     }
 
     /**
@@ -234,8 +278,8 @@ export class EconomySystem {
      * gradeRun used to letter it).
      */
     settle (result, mission) {
-        const t = mission?.terms ?? { dayTier: dayTier(1) }
-        const payout = Math.round(payoutFor(result.par, result.ratio, t.dayTier))
+        const t = mission?.terms ?? { payTier: dayTier(1) * regionTier(1) }
+        const payout = Math.round(payoutFor(result.par, result.ratio, t.payTier ?? t.dayTier ?? 1))
         const points = pointsFor(result.letter)
         runEconomy.money = _cents(runEconomy.money + payout)
         runEconomy.halfPoints += points * 2

@@ -679,13 +679,14 @@ another's job.
 | **par** | route geometry, nothing else | fixed | what a road is *worth* |
 | **rank thresholds** | run day | tighten | how hard the good letters get |
 | **day tier** | run day, **locked at mission start** | rise | how much a mission pays |
+| **region tier** | region index, **locked at mission start** | rise | the reward for pushing into harder country |
 
 *(Re-anchored 2026-08-16 — SM-INV-3 and SM-INV-4 amendments.)*
 
 ```
 par    = referenceTime × PAR_SLACK          PAR_SLACK 1.15 — the standard; referenceTime is physics
 ratio  = elapsed / par                      ratio 1.0 IS the C/D boundary, by construction
-payout = parBase × dayTier × clamp((payoutZero − ratio) / (payoutZero − breakEven), 0, cap)
+payout = parBase × dayTier × regionTier × clamp((payoutZero − ratio) / (payoutZero − breakEven), 0, cap)
                                             breakEven 0.80 · payoutZero 1.20 · k 0.024 · cap 3.0
 ```
 
@@ -699,6 +700,14 @@ payout = parBase × dayTier × clamp((payoutZero − ratio) / (payoutZero − br
 - **`PAR_SLACK` is the design knob; `PAR_REF` is the physics.** Par used to be one number doing both
   jobs, which is why the word drifted away from its meaning. Move the *standard* with `PAR_SLACK`;
   move the *reference drive* with `PAR_REF`. Never fake one with the other.
+- **`regionTier` is the progression dial** [RATIFIED 2026-08-17, owner]. `dayTier` rises to track
+  escalating maintenance, so reward and cost climb together and simply surviving longer nets the
+  player nothing — progression has to come from somewhere the treadmill cannot follow. That is the
+  **region**: harder country is a choice bought with mission points, and the payout step is what
+  makes buying it worth doing. Geometric, ×~1.64 a region, **1 → 12 across the ratified six**, which
+  is what carries a mission from ~$9 on day 1 in region 1 to ~$1000 on day 20 in region 6. Locked at
+  accept exactly like the day tier. *(Inert until FEAT-28/SM-4 supplies a real region index — the
+  economy takes it through `EconomySystem`'s deps adapter, which returns 1 today.)*
 - **`dayTier` is a step function of the run day**, not a smooth curve, and it is **fixed at the moment
   the mission is accepted**. Deliberate consequence: **starting a job just before the day rolls over
   buys tomorrow's rate.** That is a feature — see below.

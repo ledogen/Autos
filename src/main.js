@@ -2359,6 +2359,10 @@ const daySystem = new DaySystem({
 // mission settlement, which is not a day/sleep boundary (SM-INV-12).
 const economySystem = new EconomySystem({
   getDay: () => daySystem.day(),
+  // getRegion: the per-region payout multiplier's index (FEAT-53, owner 2026-08-17). Pinned to 1
+  // because multi-region progression is FEAT-28 / SM-4 and does not exist yet — story.js builds
+  // exactly ONE bounded region. When SM-4 lands, this is the single line that has to change.
+  getRegion: () => 1,
 })
 
 // FEAT-61: the character channel. No deps — it owns a queue and a once-per-run seen set, and this
@@ -2756,6 +2760,12 @@ function _setMapOpen (open, mk) {
   }
 }
 
+// Which system owns the result card currently on screen — set by whichever card last rendered in
+// its 'done' state. The felt/export buttons are shared DOM, so without this they would always ask
+// the POI mission system and a finished paper round would silently export the previous job.
+// Declared up here because BOTH card renderers assign it, and they live above the handler.
+let _exportSource = null
+
 const _misFwd = new THREE.Vector3()
 missionSystem = new MissionSystem({
   getRoad:  () => roadSystem,
@@ -2817,7 +2827,19 @@ const paperRouteSystem = new PaperRouteSystem({
   getRoad:   () => missionSystem?.planner() ?? roadSystem,
   getPois:   () => poiSystem,
   getRegion: () => storySystem?.region() ?? null,
-  getCar:    () => vehicleState.position,
+  // Full telemetry, not just position: the start-zone check only needs x/z, but the FEAT-30
+  // calibration trace (2026-08-17) records speed and controls too, and it must match the shape the
+  // POI job records or the two mission types cannot share one corpus.
+  getCar:    () => {
+    _misFwd.set(0, 0, -1).applyQuaternion(vehicleState.quaternion)
+    return {
+      x: vehicleState.position.x, y: vehicleState.position.y, z: vehicleState.position.z,
+      speed: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z),
+      heading: Math.atan2(_misFwd.x, _misFwd.z),
+      throttle: vehicleState.throttle, brake: vehicleState.brake, steer: vehicleState.steerAngle,
+    }
+  },
+  getSeed:   () => worldSeed,
   getTerms:  () => economySystem.terms(),
   getTargetR: () => POI_PARAMS.poiHouseTargetR,
   // The ONE money path (FEAT-53). This mission prices itself on its own axis and hands over a
@@ -3480,6 +3502,9 @@ function _renderMissionUI () {
       // FEAT-53: no retry on a paid job (the payout exploit) — hidden here, gated in mission.js.
       btn('mp-accept', true); btn('mp-decline', false); btn('mp-retry', !m.mission?.fromPoi)
       btn('mp-regen', false); btn('mp-quit', true)
+      // Reclaim the shared felt buttons for the POI job — a paper round finishing first
+      // would otherwise leave them pointed at paperRouteSystem (see _exportSource).
+      _exportSource = missionSystem
       show(document.getElementById('mp-export-row'), true)
       // The accept button doubles as CONTINUE here — one obvious forward action, with "retry"
       // beside it to re-run the same route (testing/calibration: a known-road second lap).
@@ -3577,6 +3602,12 @@ function _renderPaperUI () {
         + (r.advanced
           ? `<br><span style="color:#ffdc3c">Larry&rsquo;s giving you a bigger route &mdash; ${r.nextTier} houses next time</span>`
           : '')
+      // FEAT-30 calibration form, same one the POI result card shows (owner, 2026-08-17): a paper
+      // round could not be recorded at all before this, so par had nothing to be fitted against for
+      // the one mission type whose par is dominated by STOPS. `_exportSource` tells the shared felt
+      // handler which system to ask for the blob.
+      _exportSource = paperRouteSystem
+      show(document.getElementById('mp-export-row'), true)
       break
     }
     default:
@@ -3584,6 +3615,7 @@ function _renderPaperUI () {
       if (p.error) console.info('[paper]', p.error)
       break
   }
+  if (p.state !== 'done') show(document.getElementById('mp-export-row'), false)
   // Two buttons, two meanings: on the offer they are take/decline, on the result card the left one
   // is the only forward action and the right one has nothing to say.
   const acc = document.getElementById('pp-accept')
@@ -3709,7 +3741,7 @@ document.getElementById('mp-retry')?.addEventListener('click', () => missionSyst
 for (const b of document.querySelectorAll('.mp-felt')) {
   b.addEventListener('click', () => {
     const note = document.getElementById('mp-note')?.value?.trim() ?? ''
-    const data = missionSystem.exportRun(note)
+    const data = (_exportSource ?? missionSystem).exportRun(note)
     if (!data) return
     data.felt = b.dataset.felt
     data.driver = document.getElementById('mp-driver')?.value?.trim() || null
@@ -3717,7 +3749,10 @@ for (const b of document.querySelectorAll('.mp-felt')) {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `rangersim-run-${data.driver ? data.driver.replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-' : ''}`
+    // `paper` in the name so the two mission types are tellable apart in runs/ at a glance — their
+    // pars are not comparable (a paper round's is dominated by per-porch stops).
+    const kind = data.mission_type === 'paper_route' ? 'paper-' : ''
+    a.download = `rangersim-run-${kind}${data.driver ? data.driver.replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-' : ''}`
       + `${data.felt}-${data.result.letter ?? 'x'}-${Math.round(data.result.elapsed_s)}s.json`
     a.click()
     URL.revokeObjectURL(a.href)

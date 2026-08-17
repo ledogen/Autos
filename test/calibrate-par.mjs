@@ -42,18 +42,40 @@ const DIR = process.argv[2] || 'runs'
 // ── load + dedup ────────────────────────────────────────────────────────────────────────────
 const seen = new Set()
 const runs = []
+const paper = []      // paper rounds: reported, never fitted — see the skip below
 for (const f of readdirSync(DIR).sort()) {
     if (!f.endsWith('.json')) continue
     let d
     try { d = JSON.parse(readFileSync(join(DIR, f), 'utf8')) } catch { continue }
     if (d.format !== 'rangersim-run-export/2') continue
     if (!d.felt || !d.result || !d.topology?.rows?.length) { console.log(`  (skip ${f} — no felt/result/topology)`); continue }
+    // PAPER ROUTES ARE A DIFFERENT PAR SCALE and must not be fitted together with point-to-point
+    // jobs [2026-08-17]. A round's par is dominated by a full STOP at every porch (planTour sets
+    // `stop`, par.js pins the reference to v=0 there), and mu — the dial this script fits — does
+    // not price stops at all. Blending them would drag mu to compensate for stop cost and quietly
+    // mis-price every ordinary mission. They are collected and reported separately below.
+    if (d.mission_type === 'paper_route') { paper.push({ file: f, ...d }); continue }
     const key = `${d.result.elapsed_s}|${d.result.par_s}|${d.route?.distance_m}`
     if (seen.has(key)) continue      // the 000N-*.json files duplicate their rangersim-run-* originals
     seen.add(key)
     runs.push({ file: f, ...d })
 }
 console.log(`${runs.length} unique runs from ${DIR}/\n`)
+if (paper.length) {
+    // Reported, not fitted. These are the calibration data for the PAPER standard, which is a
+    // separate question from PAR_REF's physics: a round's par is par.js's reference driver plus a
+    // dead stop per porch, so what a fit would tune here is PAR_SLACK and the stop cost, not mu.
+    console.log(`── ${paper.length} paper round(s) — reported, NOT fitted (separate par scale) ──`)
+    console.log('   ratio  stops  cov   acc   felt        file')
+    for (const r of paper.sort((a, b) => a.result.ratio - b.result.ratio)) {
+        const q = r.paper ?? {}
+        console.log(`  ${r.result.ratio.toFixed(3)} ${String(q.customers ?? '?').padStart(6)}`
+            + ` ${(q.coverage ?? 0).toFixed(2)}  ${(q.mean_accuracy ?? 0).toFixed(2)}`
+            + `  ${(r.felt ?? '?').padEnd(10)} ${r.file}`)
+    }
+    const med = paper.map(r => r.result.ratio).sort((a, b) => a - b)[Math.floor(paper.length / 2)]
+    console.log(`   median ratio ${med.toFixed(3)} — the paper standard's own calibration target\n`)
+}
 
 // ── rebuild a par input from the flat topology ──────────────────────────────────────────────
 // columns: s_m x z elev_m heading_rad curv_1pm grade quality par_ms

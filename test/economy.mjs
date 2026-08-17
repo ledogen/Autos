@@ -21,7 +21,7 @@
 //
 // Pure node: no THREE, no worldgen, no DOM.
 import {
-  ECONOMY_PARAMS, RANK_COLOR, dayTier, rankThresholds, payoutFor, pointsFor,
+  ECONOMY_PARAMS, RANK_COLOR, dayTier, regionTier, rankThresholds, payoutFor, pointsFor,
   runEconomy, EconomySystem, formatDeeds,
 } from '../src/economy.js'
 import { gradeRun, RANK_THRESHOLDS_DEFAULT } from '../src/par.js'
@@ -122,6 +122,31 @@ check('break-even IS the day-1 B/C threshold, not an independent constant',
   check('dayTier clamps below (day 0/−3 === day 1)', dayTier(0) === dayTier(1) && dayTier(-3) === dayTier(1))
 }
 
+// ── 5b. regionTier: the per-region payout multiplier [owner, 2026-08-17] ───────────────────────
+// This is the progression dial. dayTier rises to track escalating maintenance, so reward and cost
+// move together and surviving longer nets nothing on its own; the region step is the part the
+// treadmill cannot follow, and it is what makes pushing into harder country worth doing.
+{
+  let mono = true
+  for (let r = 1; r < ECONOMY_PARAMS.regionMult.length; r++) {
+    if (regionTier(r + 1) <= regionTier(r)) mono = false
+  }
+  check('regionTier strictly increasing across the six regions', mono)
+  check('regionTier(1) === 1 — region 1 is the anchor, like day 1', regionTier(1) === 1)
+  check('regionTier clamps both ends (0/−2 → region 1; past the table holds)',
+    regionTier(0) === 1 && regionTier(-2) === 1 &&
+    regionTier(99) === ECONOMY_PARAMS.regionMult[ECONOMY_PARAMS.regionMult.length - 1])
+  check('six regions, matching the ratified run shape', ECONOMY_PARAMS.regionMult.length === 6)
+  // The end-of-run pay target this dial exists to reach: a day-20 region-6 mission should land in
+  // the owner's $500-1500 band while a day-1 region-1 job stays in $5-15. Both ends pinned, because
+  // a well-meaning tweak to either table silently breaks the progression curve.
+  const m = (r) => Math.max(0, (ECONOMY_PARAMS.payoutZero - r) / (ECONOMY_PARAMS.payoutZero - ECONOMY_PARAMS.breakEven))
+  const pay = (par, day, region) => ECONOMY_PARAMS.k * par * dayTier(day) * regionTier(region) * m(0.78)
+  const start = pay(360, 1, 1), end = pay(720, 20, 6)
+  check('a day-1 region-1 job pays $5-15', start >= 5 && start <= 15, `got $${start.toFixed(2)}`)
+  check('a day-20 region-6 job pays $500-1500', end >= 500 && end <= 1500, `got $${end.toFixed(0)}`)
+}
+
 // ── 6. rankThresholds: ordered, tightening, C IS par on every day, day 1 === par.js default ─────
 // [RE-ANCHORED 2026-08-16] The old pin here was `A < 1.0 < B` — "B is the band containing par".
 // Par is now the C/D boundary, so the pin inverts: C sits exactly ON 1.0, and it must NOT tighten
@@ -205,6 +230,24 @@ check('break-even IS the day-1 B/C threshold, not an independent constant',
     settled.payout === Math.round(ECONOMY_PARAMS.k * 180 * dayTier(3)) && dayTier(3) !== dayTier(4))
   check('terms carry day-3 thresholds (frozen)',
     terms.day === 3 && terms.thresholds.S === rankThresholds(3).S && Object.isFrozen(terms.thresholds))
+  check('terms compose payTier = dayTier × regionTier',
+    near(terms.payTier, terms.dayTier * terms.regionTier))
+}
+
+// ── 9b. The region multiplier reaches the payout, and locks at accept like the day tier ─────────
+{
+  let region = 2
+  const eco = new EconomySystem({ getDay: () => 1, getRegion: () => region })
+  eco.start()
+  const terms = eco.terms()                 // accepted in region 2
+  check('terms carry the region and its tier', terms.region === 2 && terms.regionTier === regionTier(2))
+  region = 5                                // player drives on into region 5 before settling
+  const settled = eco.settle({ par: 180, ratio: ECONOMY_PARAMS.breakEven, letter: 'B' }, { terms })
+  check('region tier reaches the payout (region 2 pays 1.6× region 1)',
+    settled.payout === Math.round(ECONOMY_PARAMS.k * 180 * dayTier(1) * regionTier(2)),
+    `got ${settled.payout}`)
+  check('region locks at ACCEPT, not at settle — same rule as the day tier',
+    settled.payout !== Math.round(ECONOMY_PARAMS.k * 180 * dayTier(1) * regionTier(5)))
 }
 
 // ── 10. Purity ──────────────────────────────────────────────────────────────────────────────────
