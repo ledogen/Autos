@@ -2779,12 +2779,19 @@ let _exportSource = null
  * survive appendChild), which is what stops the two mission types drifting into two calibration
  * forms that ask subtly different questions.
  */
+// NOTE, because it cost a shipped bug: these two are MODULE-scope helpers and the card renderers'
+// `show()` is NOT — every `show` in this file is a `const` local to one render function. An earlier
+// cut of these called `show(row, …)` and threw a ReferenceError the instant a round finished, which
+// aborted _renderPaperUI midway: the body had already been written, so the card LOOKED fine while
+// the form never mounted and the buttons kept the previous render's labels. The display write is
+// therefore inline here, with no dependency on anything a renderer happens to have in scope.
+// (test/paper-route.mjs pins that these helpers never call `show(`.)
 function unmountExportRow (panelId) {
   const row = document.getElementById('mp-export-row')
   // Ownership-guarded on purpose. Both card renderers run on their own schedules, so an
   // unconditional hide here lets the IDLE paper renderer tear the form off a live POI result card
   // (and vice versa). Only the panel currently holding the node may hide it.
-  if (row && row.parentElement?.id === panelId) show(row, false)
+  if (row && row.parentElement?.id === panelId) row.style.display = 'none'
 }
 
 function mountExportRow (panelId, beforeId) {
@@ -2795,7 +2802,7 @@ function mountExportRow (panelId, beforeId) {
   if (row.parentElement !== panel || (before && row.nextElementSibling !== before)) {
     panel.insertBefore(row, before)
   }
-  show(row, true)
+  row.style.display = 'block'
 }
 
 const _misFwd = new THREE.Vector3()

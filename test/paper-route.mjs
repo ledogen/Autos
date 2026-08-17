@@ -243,6 +243,22 @@ check('…and never imports payoutFor either (the structural version)',
         !/show\(document\.getElementById\('mp-export-row'\),\s*false\)/.test(main))
     check('the felt buttons ask whichever system owns the card (not always the POI one)',
         /_exportSource\s*\?\?\s*missionSystem/.test(main))
+    // THE SECOND bug in the same feature, pinned because a build will never catch it: every
+    // `show()` in main.js is a const LOCAL to one render function, so a module-scope helper calling
+    // it throws a ReferenceError the instant it runs. That aborted _renderPaperUI midway — the body
+    // was already written, so the card looked fine while the form never mounted and the buttons kept
+    // the previous render's labels. These helpers must stay self-contained.
+    const helper = (name) => {
+        const i = main.indexOf(`function ${name} `)
+        if (i < 0) return ''
+        let d = 0, k = main.indexOf('{', i), start = k
+        for (;; k++) { if (main[k] === '{') d++; else if (main[k] === '}' && --d === 0) break }
+        return main.slice(start, k)
+    }
+    const bodies = helper('mountExportRow') + helper('unmountExportRow')
+    check('the export-row helpers are self-contained (they run at module scope)',
+        bodies.length > 0 && !/(?<![.\w])show\s*\(/.test(bodies),
+        'a renderer-local show() here is a ReferenceError at runtime')
 }
 const econ = new EconomySystem({ getDay: () => 1 })
 econ.start()
