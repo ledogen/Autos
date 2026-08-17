@@ -469,7 +469,7 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > So the ladder is: below par you are losing ground, at par you are surviving badly, at B/C you
   > are level, and at B and better you are actually building something.
   >
-  > *`k` re-derived, value preserved.* `k_new = k_old × breakEven = 0.30 × 0.80 = 0.24`. This holds
+  > *`k` re-derived, value preserved.* `k_new = k_old × breakEven = 0.30 × 0.80 = 0.24`, then a flat ×0.1 currency rescale on 2026-08-17 → **k = 0.024** (scale only; every ratio, letter and relative price is unchanged). This holds
   > the dollar value of a break-even day fixed across the re-anchor, so the ~$130-190 region-1 day
   > and the repair bills authored against it stay valid even though par grew and mu dropped.
   >
@@ -686,7 +686,7 @@ another's job.
 par    = referenceTime × PAR_SLACK          PAR_SLACK 1.15 — the standard; referenceTime is physics
 ratio  = elapsed / par                      ratio 1.0 IS the C/D boundary, by construction
 payout = parBase × dayTier × clamp((payoutZero − ratio) / (payoutZero − breakEven), 0, cap)
-                                            breakEven 0.80 · payoutZero 1.20 · k 0.24 · cap 3.0
+                                            breakEven 0.80 · payoutZero 1.20 · k 0.024 · cap 3.0
 ```
 
 - **`parBase = k × par`.** The base scales with the road, so a twelve-minute haul at par pays more

@@ -68,15 +68,27 @@ export const PAPER_PARAMS = {
     // irrelevance by day 15. paperW is how poor a perfect route at par is: 0.6 = "reliably poor",
     // which is what an income floor is supposed to feel like.
     //
-    // [RE-ANCHORED 2026-08-16.] It used to mean "0.6 × the margin line AT PAR", and the margin line
-    // at par used to be one full day-tier unit — so the two readings were the same number. They are
-    // not any more: par now pays m = 0.5. Kept at 0.6 of a **day-tier unit** (the break-even
-    // payment) rather than 0.6 of the margin line at par, which would have silently HALVED the
-    // income floor at the exact moment the rest of the economy got harder. Consequence, stated so
-    // nobody trips over it later: a *perfect* paper round at par (0.60) now out-earns a POI mission
-    // scraping past at par (0.50). That is intended — perfect accuracy should beat a bare pass —
-    // but it does mean the floor is no longer strictly below every other way to earn.
-    paperW:      0.60,
+    // [RE-ANCHORED 2026-08-16, then RAISED 2026-08-17.] It used to mean "0.6 × the margin line AT
+    // PAR", and the margin line at par used to be one full day-tier unit — so the two readings were
+    // the same number. They are not any more: par pays m = 0.5. It is now a fraction of a
+    // **day-tier unit** (the break-even payment).
+    //
+    // 0.60 → 0.82 [owner, 2026-08-17]: **the paper route is no longer meant to be poor.** The owner
+    // reframed it as *distance + tip* — it should out-earn a point-to-point job over the same road
+    // by ~20%, with accuracy as the tip. Measured before the change, the card the owner sent (4/4,
+    // 69% accuracy, ratio 0.653) paid **0.61× what a POI job over the same par would have**. The
+    // new value is solved from a stated anchor: a PERFECT round driven at the break-even pace
+    // (ratio 0.80) pays 1.20 × the margin line at that same pace —
+    //     paperW × (1 + bonusMax·f(0.80)) = 1.20 × m(0.80)
+    //     paperW × (1 + 0.70 × 0.667)     = 1.20 × 1.00     ⇒ paperW = 0.818
+    //
+    // ⚠ THE PREMIUM IS NOT FLAT ACROSS THE RANGE, and cannot be made flat by this number alone.
+    // The margin line keeps climbing as the driver gets faster, while the paper route's time bonus
+    // SATURATES at `expediteFull` (ratio 0.70) — so the premium is ~1.2× around break-even and
+    // decays for a quick driver, reaching roughly parity by ratio 0.65. Making it a true flat +20%
+    // everywhere means having the expediency bonus track the margin line instead of capping, which
+    // is a redesign of the paper payout curve and an owner decision, not a tuning tweak.
+    paperW:      0.82,
 
     // The expediency bonus — the ONLY place time enters the payout. Gated on a completed route:
     // you cannot finish early without finishing.

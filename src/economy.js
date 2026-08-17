@@ -69,7 +69,13 @@
  *     "B > 1.0" pin, which encoded the reversed arrangement.
  */
 export const ECONOMY_PARAMS = {
-    k:          0.24,   // $ per second of par-driving — THE one economy tunable (SM-INV-4)
+    // 0.24 → 0.024 [owner, 2026-08-17]: a flat ×0.1 currency rescale. The SHAPE of the economy is
+    // untouched — k is a pure scale factor, so every ratio, letter and relative price is identical;
+    // only the denomination changes. Target was "~$5-15 a mission at the start". Measured after the
+    // cut: a day-1 region-1 job (par ~360 s, tier 1, a B-grade drive) pays ~$9. ✓
+    // ⚠ The matching end-of-run target ("~$500-1500") is NOT reached by this cut and cannot be
+    //   reached by k at all — see the note under dayTierTable.
+    k:          0.024,  // $ per second of par-driving — THE one economy tunable (SM-INV-4)
     payoutCap:  3.0,    // clamp ceiling; unreachable in practice now (mispriced-route insurance)
 
     // The payout line, as two named anchors rather than magic numbers in the formula.
@@ -83,6 +89,16 @@ export const ECONOMY_PARAMS = {
     rankDayLate:{ S: 0.70, A: 0.74, B: 0.78, C: 1.00 },   // C pinned — see the note above
     rankTightenDays: 20,
 
+    // ⚠ THE END-OF-RUN PAYOUT CEILING [measured 2026-08-17]. The owner's stated targets are ~$5-15
+    // per mission at the start and ~$500-1500 at the end — a ~100× spread. The economy cannot
+    // deliver that, and k cannot fix it, because k scales BOTH ends equally. The whole spread comes
+    // from two multipliers: the day tier (1.00 → 4.58 by day 20) and mission length (region 1 par
+    // ~5-7 in-game h → region 6 ~12 h, and 1 in-game hour is 60 s real at dayLengthSec 1440). That
+    // is 4.58 × 2 ≈ 9× total. Measured end-of-run mission at k 0.024: ~$85, not $500-1500.
+    // Closing it needs a structural change, not a tuning one: raise the tier asymptote well past
+    // its ratified ~5× ceiling, make late missions far longer, or add a per-region multiplier
+    // (a new dial). All three are owner decisions — do not pick one here.
+    //
     // Payout multiplier per run day, 1-based; day 31+ holds the last entry. tier(1) === 1 is the
     // anchor "a day-1 run at par pays exactly one day's maintenance". Days 1-8 are the shipped
     // ×1.15 compounding; days 9-30 ease toward the ~5× asymptote (derivation in the header note).

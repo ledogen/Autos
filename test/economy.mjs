@@ -37,7 +37,7 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps
 
 // Pin the provisional defaults this gate asserts against (a debug-slider default drifting should
 // fail loudly HERE, not silently re-tune the gate).
-check('pinned: k 0.24, cap 3.0', ECONOMY_PARAMS.k === 0.24 && ECONOMY_PARAMS.payoutCap === 3.0)
+check('pinned: k 0.024, cap 3.0', ECONOMY_PARAMS.k === 0.024 && ECONOMY_PARAMS.payoutCap === 3.0)
 check('pinned: tier table has 30 days, tier(1) === 1', ECONOMY_PARAMS.dayTierTable.length === 30 && dayTier(1) === 1)
 check('pinned: break-even 0.80 (the day-1 B/C boundary), zero 1.20',
   ECONOMY_PARAMS.breakEven === 0.80 && ECONOMY_PARAMS.payoutZero === 1.20)

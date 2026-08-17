@@ -112,7 +112,7 @@ stranding (SM-INV-7).
 ```
 par    = referenceTime × PAR_SLACK        PAR_SLACK 1.15 — the standard; PAR_REF is the physics
 ratio  = elapsed / par                    ratio 1.0 IS the C/D boundary
-payout = parBase × dayTier × clamp((1.20 − ratio) / 0.40, 0, cap)     break-even 0.80 · k 0.24
+payout = parBase × dayTier × clamp((1.20 − ratio) / 0.40, 0, cap)     break-even 0.80 · k 0.024
 ```
 
 - **`parBase = k × par`** — the base scales with the road. This is load-bearing: it is what keeps
@@ -126,7 +126,7 @@ payout = parBase × dayTier × clamp((1.20 − ratio) / 0.40, 0, cap)     break-
   break-even.* **Par itself loses money** — a bare pass pays half a day's maintenance. The owner's
   framing: B/C meets the growing cost of maintenance so you can keep going, but it does not pay for
   upgrades; you need to be hitting B's for that. This still resolves Q4 as an identity rather than a
-  tuning target, and still reduces the economy to one number — `k` (0.30 → **0.24**, re-derived as
+  tuning target, and still reduces the economy to one number — `k` (0.30 → 0.24 → **0.024** after the 2026-08-17 ×0.1 currency rescale, re-derived as
   `k × breakEven` so a break-even day is worth the same dollars as before).
 - **`dayTier`** is a step function of run day, **locked at mission accept**, rising as the run ages so
   payouts keep pace with escalating maintenance (Q9A). See DESIGN.md "The performance model" for why

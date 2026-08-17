@@ -197,12 +197,12 @@ break-even — re-anchored 2026-08-16, was "a day at par").
 **The performance model is RATIFIED and specified** (DESIGN.md "The performance model",
 `missions.md` "Performance, points and payout") — this milestone implements it, it does not design it.
 **Re-anchored 2026-08-16** (DESIGN.md "Ratification pass 2026-08-16"): par became the C/D boundary.
-This rebalance IS Phase D item 2, plus a re-do of item 1 (`k` 0.30 → 0.24):
+This rebalance IS Phase D item 2, plus a re-do of item 1 (`k` 0.30 → 0.24, then ×0.1 → 0.024):
 
 ```
 par    = referenceTime × PAR_SLACK   PAR_SLACK 1.15 — the standard; PAR_REF stays the physics
 ratio  = elapsed / par               payout = parBase × dayTier × clamp((1.20 − ratio)/0.40, 0, cap)
-                                     break-even 0.80 · par 1.0 pays half · zero at 1.20 · k 0.24
+                                     break-even 0.80 · par 1.0 pays half · zero at 1.20 · k 0.024
 ```
 - **`parBase = k × par`** — base scales with the road (stops tiny-job farming). `k` is the one
   economy tunable: maintenance cost per second of par-driving.
