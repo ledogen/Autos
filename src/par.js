@@ -353,12 +353,25 @@ export function formatTime(sec) {
  * thing this whole re-anchor exists to make it mean. The ramp squeezes the GOOD letters instead.
  * (Gated: test/economy.mjs pins C === 1.0 on every day — the replacement for the old B > 1.0 pin.)
  *
- * Fitted 2026-08-16 against the 20-run corpus at PAR_SLACK 1.15, cutting on the CLOCK rather than
- * the felt labels — the labels are demonstrably inverted here (median felt-"fast" is slower than
- * median felt-"par"), so they cannot separate the top bands. Resulting spread: S 2 · A 8 · B 7 ·
- * C 0 · D 3. The empty C band is the "scraped past" gap the corpus happens not to contain.
+ * Fitted 2026-08-16, then REFITTED the same day against four drives the owner recorded on the
+ * re-anchored build and labelled with the letter each SHOULD have earned (a far better signal than
+ * the felt-pace labels, which are demonstrably inverted in the older corpus). Those four targets —
+ * ratio 0.687 "solid S" · 0.712 "barely S" · 0.809 "mid C" · 0.910 "middle C" — are all hit.
+ * Spread over the combined 24 runs: S 5 · A 2 · B 6 · C 8 · D 3.
+ *
+ * ⚠ KNOWN AND DELIBERATE: **A and B are narrow** (0.04 of ratio each) and C is very wide. That is
+ * forced by the owner's own targets — 0.712 must be S and 0.809 must be C, which leaves only
+ * 0.72–0.80 for both middle letters. It is arguably right for the design (par is the failing line,
+ * so most of the passing range IS "just passing", and A has to feel earned), but it does mean small
+ * differences in driving flip A/B. If A/B start feeling like coin-flips, the fix is to relax one of
+ * those two anchors — not to widen the bands and silently break the targets.
+ *
+ * ⚠ UNRESOLVED, recorded so it is not rediscovered: the owner's two "slow" drives sit at ratio
+ * 0.809 and 0.910 — 0.10 apart — and were BOTH labelled "middle C". No threshold set can satisfy
+ * that; it is par pricing two routes ~10% differently for the same felt pace. A threshold refit
+ * cannot fix a spread, only par can. Needs more labelled runs before chasing.
  */
-export const RANK_THRESHOLDS_DEFAULT = { S: 0.69, A: 0.80, B: 0.90, C: 1.00 }
+export const RANK_THRESHOLDS_DEFAULT = { S: 0.72, A: 0.76, B: 0.80, C: 1.00 }
 
 /**
  * Grade a finished run against par. Margin is par-relative so it reads the same on a 2-minute

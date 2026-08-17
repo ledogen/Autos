@@ -27,7 +27,7 @@
  * loop. update() is a couple of distance checks per frame.
  */
 
-import { computePar, sampleRoute, gradeRun, formatTime, PAR_REF } from './par.js'
+import { computePar, sampleRoute, gradeRun, formatTime, PAR_REF, PAR_SLACK } from './par.js'
 import { roadQuality } from './road-quality.js'
 
 // Planning radius for the dedicated planner RoadSystem. The planner must stream the network for
@@ -485,7 +485,12 @@ export class MissionSystem {
                     ratio: +this.result.ratio.toFixed(3), letter: this.result.letter,
                     margin_s: +this.result.margin.toFixed(2) }
                 : { elapsed_s: +this.elapsed.toFixed(2), par_s: +this.mission.par.toFixed(2), incomplete: true },
-            par_ref: { ...PAR_REF },
+            // PAR_SLACK rides along with PAR_REF [2026-08-16]: `par_s` is referenceTime × PAR_SLACK,
+            // so a run recorded under a different slack is measured against a different STANDARD
+            // even at identical PAR_REF. Without this the corpus cannot tell the two apart and any
+            // future refit silently mixes scales — which is exactly the trap the runs recorded
+            // before the re-anchor fell into.
+            par_ref: { ...PAR_REF, slack: PAR_SLACK },
             route: {
                 distance_m: +total.toFixed(1),
                 edges: this.mission.edges,

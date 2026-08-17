@@ -7,13 +7,16 @@
 //     parBase = k × par
 //
 // SM-INV-4 anchors [RE-ANCHORED 2026-08-16, owner], by construction:
-//   • BREAK-EVEN IS THE B/C BOUNDARY (ratio 0.90), not par. A B/C drive covers the day's rising
+//   • BREAK-EVEN IS THE B/C BOUNDARY (ratio 0.80), not par. A B/C drive covers the day's rising
 //     maintenance and keeps the player going; it does NOT fund upgrades. Upgrades need real B's.
+//     It tracks the B/C threshold, so refitting the rank bands moves this and `k` with them.
 //   • PAR NOW LOSES MONEY. Ratio 1.0 is the C/D boundary — the slowest passing drive — and pays
 //     half a day's maintenance (m = 0.5). Scraping past the standard is survival, not a living.
-//   • Zero at ratio 1.10, just past par: a drive that fails the standard earns nothing from margin.
-//   • The cap (~3×) is unchanged insurance against an oracle-mispriced route; it now bites at
-//     ratio 0.50, which is unreachable in practice (best corpus drive 0.654) — insurance, not a dial.
+//     `payoutZero` is chosen to hold that half-a-unit property: z = 2·breakEven − ... in practice,
+//     pick z so (z−1)/(z−breakEven) == 0.5, which for breakEven 0.80 gives z = 1.20.
+//   • Zero at ratio 1.20: a drive well past par earns nothing from margin.
+//   • The cap (~3×) is unchanged insurance against an oracle-mispriced route. With this line it is
+//     unreachable in practice (it would need ratio 0.0) — insurance, not a dial.
 // Payout floors at zero — a mission never charges the player; the loss is the day and the wear.
 //
 // The payout line does NOT move with the day, even though the rank thresholds do. That is
@@ -44,7 +47,7 @@
  *   • k is a pure currency-scale choice (break-even is an identity under SM-INV-4 — one day's
  *     maintenance is DEFINED as k × the day's par-seconds at the break-even ratio, so any k
  *     balances). 0.30 $/s was derived 2026-08-02 against the mu-0.90 par scale.
- *     RE-DERIVED 2026-08-16 for the re-anchor: k_new = k_old × breakEven = 0.30 × 0.90 = 0.27.
+ *     RE-DERIVED 2026-08-16 for the re-anchor: k_new = k_old × breakEven = 0.30 × 0.80 = 0.24.
  *     The derivation: a day spent driving at the break-even ratio b covers real time T, so its
  *     par-time is T/b; requiring k_new × (T/b) × m(b) = k_old × T with m(b) = 1 gives k_new =
  *     k_old × b. This holds the dollar VALUE of a break-even day fixed across the re-anchor, so
@@ -66,18 +69,18 @@
  *     "B > 1.0" pin, which encoded the reversed arrangement.
  */
 export const ECONOMY_PARAMS = {
-    k:          0.27,   // $ per second of par-driving — THE one economy tunable (SM-INV-4)
-    payoutCap:  3.0,    // clamp ceiling; bites at ratio ≤ 0.50 (mispriced-route insurance)
+    k:          0.24,   // $ per second of par-driving — THE one economy tunable (SM-INV-4)
+    payoutCap:  3.0,    // clamp ceiling; unreachable in practice now (mispriced-route insurance)
 
     // The payout line, as two named anchors rather than magic numbers in the formula.
-    breakEven:  0.90,   // ratio paying exactly one day-tier unit — the day-1 B/C boundary
-    payoutZero: 1.10,   // ratio where margin money runs out, just past par (1.0 pays m = 0.5)
+    breakEven:  0.80,   // ratio paying exactly one day-tier unit — the day-1 B/C boundary
+    payoutZero: 1.20,   // ratio where margin money runs out (keeps par at exactly m = 0.5)
 
     // Rank thresholds (ratio = elapsed/par). rankDay1 MUST equal par.js RANK_THRESHOLDS_DEFAULT
     // (this module imports nothing, so it's a mirrored constant — the economy gate asserts the
     // equality). Linear interpolation day 1 → rankTightenDays, clamped flat on both sides.
-    rankDay1:   { S: 0.69, A: 0.80, B: 0.90, C: 1.00 },
-    rankDayLate:{ S: 0.67, A: 0.78, B: 0.87, C: 1.00 },   // C pinned — see the note above
+    rankDay1:   { S: 0.72, A: 0.76, B: 0.80, C: 1.00 },
+    rankDayLate:{ S: 0.70, A: 0.74, B: 0.78, C: 1.00 },   // C pinned — see the note above
     rankTightenDays: 20,
 
     // Payout multiplier per run day, 1-based; day 31+ holds the last entry. tier(1) === 1 is the

@@ -129,9 +129,9 @@ reversing the "B contains par" ruling of 2026-08-01 (item 3 below) and the 2026-
 of it for the paper route; the reversal is game-wide. Six parts: (1) **par the NUMBER grows** —
 `par = referenceTime × PAR_SLACK` (1.15), splitting the physics from the judgment so SM-INV-2's
 "par is geometric" survives intact; `PAR_REF.mu` 0.90 → 0.80 alongside it. (2) **Thresholds re-cut**
-to S 0.69 · A 0.80 · B 0.90 · **C 1.00 pinned on every day** — the ramp squeezes the good letters and
+to S 0.72 · A 0.76 · B 0.80 · **C 1.00 pinned on every day** — the ramp squeezes the good letters and
 never the pass line. (3) **Break-even moves to the B/C boundary**; par pays half a day's maintenance,
-so a bare pass loses money and only B and better funds upgrades (`k` 0.30 → 0.27, re-derived to hold
+so a bare pass loses money and only B and better funds upgrades (`k` 0.30 → 0.24, re-derived to hold
 a break-even day's dollar value fixed). (4) **Par is deleted from the player-facing UI** — a letter
 and a number, nothing else. (5) **The paper route's timer becomes par exactly**, so finishing at par
 settles no time money. (6) **SM-INV-14's 1/½/0 rule is unchanged in wording but harder in effect** —
@@ -427,7 +427,7 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > `par = referenceTime × PAR_SLACK` (1.15), a split of the physics from the judgment. `par.js`
   > holds the reference physics; `PAR_SLACK` holds "how much slower than a committed drive is still
   > a pass". SM-INV-2 is untouched: par still scales with route geometry and nothing a run can
-  > change. Thresholds became **S 0.69 · A 0.80 · B 0.90 · C 1.00**, and **C is pinned at 1.0 on
+  > change. Thresholds became **S 0.72 · A 0.76 · B 0.80 · C 1.00**, and **C is pinned at 1.0 on
   > every day of the run** — the day ramp squeezes S/A/B only, because a C that drifted below 1.0
   > would make a drive exactly at par start failing and un-say the whole amendment.
   >
@@ -460,16 +460,16 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   >
   > | ratio | pays | meaning |
   > |---|---|---|
-  > | **0.90** (B/C boundary) | **one day's maintenance** | break-even — you keep going |
+  > | **0.80** (B/C boundary) | **one day's maintenance** | break-even — you keep going |
   > | **1.00** (par, C/D) | **half a day's maintenance** | a bare pass does not cover the day |
-  > | **1.10** | nothing | past par, margin money is gone |
+  > | **1.20** | nothing | well past par, margin money is gone |
   >
   > *The owner's framing, verbatim in intent:* B/C **meets the growing cost of maintenance so the
   > player can keep going. It does not pay for upgrades. You need to be hitting B's for that.**
   > So the ladder is: below par you are losing ground, at par you are surviving badly, at B/C you
   > are level, and at B and better you are actually building something.
   >
-  > *`k` re-derived, value preserved.* `k_new = k_old × breakEven = 0.30 × 0.90 = 0.27`. This holds
+  > *`k` re-derived, value preserved.* `k_new = k_old × breakEven = 0.30 × 0.80 = 0.24`. This holds
   > the dollar value of a break-even day fixed across the re-anchor, so the ~$130-190 region-1 day
   > and the repair bills authored against it stay valid even though par grew and mu dropped.
   >
@@ -686,16 +686,16 @@ another's job.
 par    = referenceTime × PAR_SLACK          PAR_SLACK 1.15 — the standard; referenceTime is physics
 ratio  = elapsed / par                      ratio 1.0 IS the C/D boundary, by construction
 payout = parBase × dayTier × clamp((payoutZero − ratio) / (payoutZero − breakEven), 0, cap)
-                                            breakEven 0.90 · payoutZero 1.10 · k 0.27 · cap 3.0
+                                            breakEven 0.80 · payoutZero 1.20 · k 0.24 · cap 3.0
 ```
 
 - **`parBase = k × par`.** The base scales with the road, so a twelve-minute haul at par pays more
   than a sixty-second errand at par. **This is load-bearing** — it is what stops the player farming a
   loop of tiny jobs, and it is the reason payout could not simply be the rank letter. `k` is the one
   tunable number in the economy: *maintenance cost per second of par-driving.*
-- **`clamp(…)` gives 1.0 at ratio 0.90 (break-even), 0.5 at par, 0 at 1.10, 1.5 at 0.80** — the
-  linear payout line. `cap` (~3×) is insurance: a route the oracle mis-prices should not become a
-  payday. It now bites at ratio 0.50, which is unreachable in practice — insurance, not a dial.
+- **`clamp(…)` gives 1.0 at ratio 0.80 (break-even), 0.5 at par, 0 at 1.20** — the linear payout
+  line. `cap` (~3×) is insurance: a route the oracle mis-prices should not become a payday. Under
+  this line it is unreachable in practice — insurance, not a dial.
 - **`PAR_SLACK` is the design knob; `PAR_REF` is the physics.** Par used to be one number doing both
   jobs, which is why the word drifted away from its meaning. Move the *standard* with `PAR_SLACK`;
   move the *reference drive* with `PAR_REF`. Never fake one with the other.
