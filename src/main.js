@@ -2766,6 +2766,38 @@ function _setMapOpen (open, mk) {
 // Declared up here because BOTH card renderers assign it, and they live above the handler.
 let _exportSource = null
 
+/**
+ * Show the ONE calibration form on whichever result card is up, MOVING the node rather than
+ * duplicating it (FEAT-30; paper route added 2026-08-17).
+ *
+ * The bug this fixes, because it is invisible from the code that had it: `#mp-export-row` is a
+ * child of `#mission-panel`, and `#paper-panel` is a SIBLING of that, not a face of it. So setting
+ * the row's own `display` while the paper card is up did exactly nothing — its parent was hidden.
+ * A finished round showed earnings and a continue button and no form at all.
+ *
+ * Moving the node keeps one form, one set of inputs and one set of click listeners (listeners
+ * survive appendChild), which is what stops the two mission types drifting into two calibration
+ * forms that ask subtly different questions.
+ */
+function unmountExportRow (panelId) {
+  const row = document.getElementById('mp-export-row')
+  // Ownership-guarded on purpose. Both card renderers run on their own schedules, so an
+  // unconditional hide here lets the IDLE paper renderer tear the form off a live POI result card
+  // (and vice versa). Only the panel currently holding the node may hide it.
+  if (row && row.parentElement?.id === panelId) show(row, false)
+}
+
+function mountExportRow (panelId, beforeId) {
+  const row = document.getElementById('mp-export-row')
+  const panel = document.getElementById(panelId)
+  if (!row || !panel) return
+  const before = beforeId ? document.getElementById(beforeId) : null
+  if (row.parentElement !== panel || (before && row.nextElementSibling !== before)) {
+    panel.insertBefore(row, before)
+  }
+  show(row, true)
+}
+
 const _misFwd = new THREE.Vector3()
 missionSystem = new MissionSystem({
   getRoad:  () => roadSystem,
@@ -3428,7 +3460,7 @@ function _renderMissionUI () {
       // long walk), which takes a few seconds — say so rather than looking hung.
       body.innerHTML = 'planning a job&hellip;<br><span class="mp-dim">building the road network for this area</span>'
       show(acts, false, 'flex')
-      show(document.getElementById('mp-export-row'), false)
+      unmountExportRow('mission-panel')
       break
     case 'offer': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
@@ -3446,7 +3478,7 @@ function _renderMissionUI () {
       // against a devtools click; Quick Job (the unpaid calibration rig) keeps the button.
       btn('mp-accept', true); btn('mp-decline', true); btn('mp-retry', false)
       btn('mp-regen', !j.fromPoi); btn('mp-quit', false)
-      show(document.getElementById('mp-export-row'), false)
+      unmountExportRow('mission-panel')
       // Clear the per-run note so the previous run's note cannot ride along with the next export.
       // The DRIVER name is deliberately NOT cleared — it is per-session, and re-typing it every run
       // is exactly how you end up with three spellings of one person in the dataset.
@@ -3503,9 +3535,10 @@ function _renderMissionUI () {
       btn('mp-accept', true); btn('mp-decline', false); btn('mp-retry', !m.mission?.fromPoi)
       btn('mp-regen', false); btn('mp-quit', true)
       // Reclaim the shared felt buttons for the POI job — a paper round finishing first
-      // would otherwise leave them pointed at paperRouteSystem (see _exportSource).
+      // would otherwise leave them pointed at paperRouteSystem (see _exportSource), and would
+      // also have left the form parented to the paper panel.
       _exportSource = missionSystem
-      show(document.getElementById('mp-export-row'), true)
+      mountExportRow('mission-panel', 'mp-actions')
       // The accept button doubles as CONTINUE here — one obvious forward action, with "retry"
       // beside it to re-run the same route (testing/calibration: a known-road second lap).
       const nb = document.getElementById('mp-accept')
@@ -3514,7 +3547,7 @@ function _renderMissionUI () {
     }
     default:
       show(panel, false); show(hud, false)
-      show(document.getElementById('mp-export-row'), false)
+      unmountExportRow('mission-panel')
       if (m.error) console.info('[mission]', m.error)
       break
   }
@@ -3607,7 +3640,7 @@ function _renderPaperUI () {
       // the one mission type whose par is dominated by STOPS. `_exportSource` tells the shared felt
       // handler which system to ask for the blob.
       _exportSource = paperRouteSystem
-      show(document.getElementById('mp-export-row'), true)
+      mountExportRow('paper-panel', 'pp-actions')
       break
     }
     default:
@@ -3615,7 +3648,7 @@ function _renderPaperUI () {
       if (p.error) console.info('[paper]', p.error)
       break
   }
-  if (p.state !== 'done') show(document.getElementById('mp-export-row'), false)
+  if (p.state !== 'done') unmountExportRow('paper-panel')
   // Two buttons, two meanings: on the offer they are take/decline, on the result card the left one
   // is the only forward action and the right one has nothing to say.
   const acc = document.getElementById('pp-accept')

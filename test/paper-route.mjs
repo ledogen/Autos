@@ -217,6 +217,33 @@ check('paper-route.js DOES grade through the shared gradeRun', /\bgradeRun\s*\(/
 check('…but still never calls payoutFor (SM-INV-4 untouched)', !/\bpayoutFor\s*\(/.test(src))
 check('…and never imports payoutFor either (the structural version)',
     !/import[\s\S]*?\bpayoutFor\b[\s\S]*?from/.test(src))
+
+// ── the calibration form has to be REACHABLE from the paper card [2026-08-17] ───────────────────
+// This shipped broken once and no gate could see it: `#mp-export-row` is a child of
+// `#mission-panel`, and `#paper-panel` is a SIBLING of that — so toggling the row's own `display`
+// while the paper card was up did nothing at all, and a finished round showed earnings, a continue
+// button, and no form. main.js therefore MOVES the single form node into whichever panel is up.
+// Text assertions, because the failure is DOM parenting and lives outside any headless harness —
+// they encode the two facts that made it break rather than re-testing the browser.
+{
+    const { readFileSync } = await import('node:fs')
+    const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+    const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
+    const mpPanel = html.slice(html.indexOf('id="mission-panel"'), html.indexOf('id="paper-panel"'))
+    check('the export row still lives in the MISSION panel (so moving it is required)',
+        mpPanel.includes('id="mp-export-row"'))
+    check('…and there is exactly ONE of it — never a second copy for the paper card',
+        (html.match(/id="mp-export-row"/g) || []).length === 1)
+    check('main.js mounts the form into the paper panel on a finished round',
+        /mountExportRow\(\s*'paper-panel'/.test(main))
+    check('…and back into the mission panel for a POI job',
+        /mountExportRow\(\s*'mission-panel'/.test(main))
+    check('…and hides it ownership-guarded, so one card cannot strip the other\'s form',
+        /function unmountExportRow/.test(main) &&
+        !/show\(document\.getElementById\('mp-export-row'\),\s*false\)/.test(main))
+    check('the felt buttons ask whichever system owns the card (not always the POI one)',
+        /_exportSource\s*\?\?\s*missionSystem/.test(main))
+}
 const econ = new EconomySystem({ getDay: () => 1 })
 econ.start()
 const before = { ...runEconomy }
