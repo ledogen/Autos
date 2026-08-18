@@ -1,3 +1,33 @@
+# ✅ DONE 2026-08-18 — HANDOFF: merge `feature/par-reanchor`, then `feature/seed20-road`
+
+> **CLOSED. Historical record — do not work from this.**
+>
+> **`feature/par-reanchor`: MERGED AND PUSHED.** Merge commit `5c7d648`, on `origin/main` in
+> `78b76d1..9bdffe5`. 54/54 gates green on the merged tree plus a clean build; the owner had already
+> driven a paper round, a POI job and a Quick Job on the branch. Worktree removed, branch deleted.
+>
+> **`feature/seed20-road`: NOT merged, and not by oversight — the owner called it a flop.** Its
+> worktree still holds uncommitted work (including the `road-carve.js` / `road-worker.js` CARVE SYNC
+> pair). Left entirely alone. If it is ever revived, §1's warning still applies.
+>
+> **What actually happened that this document did not predict**, kept because it is the useful part:
+> - Main's own worktree was dirty with a stale 2026-08-17 design pass. Committed verbatim as
+>   `733bbea`, attributed to its author, rather than stashed — a stash is a thing to forget.
+> - **Two conflicts, both design rulings, both resolved by preserving BOTH intents:** `DESIGN.md`
+>   (SM-INV-3 amended twice a day apart — par's *meaning* vs live rank *display*; kept
+>   chronologically with a reconciliation note) and FEAT-53's ticket (their "CURRENT STATE" section
+>   kept verbatim under a SUPERSEDED header pointing at the closure).
+> - **The FEAT id space moved twice under the branch.** 64 was taken by an uncommitted ticket, then
+>   68 was taken after I renumbered into it. Mine ended up **FEAT-69**. Lesson for the next agent:
+>   pick an id by scanning committed tickets *and* every worktree's `git status`, not just the
+>   tracker.
+> - A `git commit -- <paths>` with only the *new* filename after a `git mv` left the delete half
+>   staged and uncommitted, which then blocked a merge probe. Rename ⇒ list both paths.
+
+---
+
+## (original handoff below, as written before the merge)
+
 # HANDOFF 2026-08-18 — merge `feature/par-reanchor`, then `feature/seed20-road`
 
 **For:** an agent doing the merges. **Owner has approved both.**
