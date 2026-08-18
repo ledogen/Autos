@@ -69,11 +69,52 @@ Its four new `test/*.mjs` files are **rainy-day scripts, not gates** (nothing ad
 
 ---
 
+## 3b. ⚠⚠ THE MAIN WORKTREE IS ALSO DIRTY — read this before §4
+
+Discovered while committing this handoff, and it changes the picture. `CarGame/` (main) has
+substantial **uncommitted** work from another agent:
+
+```
+ M .planning/story-mode/DESIGN.md            (+48)
+ M .planning/story-mode/missions.md          (+35)
+ M .planning/todos/pending/feat-economy-spine-payout-points.md   (+48)   ← FEAT-53
+ M CLAUDE.md
+ M tools/dashboard/app.html · tools/dashboard/index.mjs
+RM .planning/todos/pending/asset-tent.md -> completed/
+?? .planning/story-mode/design-amendments-2026-08-17.md
+?? feat-64-paper-throw-audio · feat-65-demolition-missions
+?? feat-66-camp-gear-slots · feat-67-visible-offer-board
+```
+
+**§4's "no conflicts" was measured against main's COMMITTED state (`bf65a57`) and is still true for
+it. It does not cover the working tree above.** Three overlaps are real:
+
+1. **FEAT-53's ticket is modified in main (+48) while `feature/par-reanchor` CLOSES and MOVES it** to
+   `completed/`. That is a modify/rename collision. Git will likely ask; the answer is almost
+   certainly *keep the closure and fold their edits into it*, but **read their 48 lines first** —
+   they may be recording a decision the closure should carry.
+2. **`DESIGN.md` (+48) and `missions.md` (+35) are edited in main**, and par-reanchor amends both
+   heavily (the par re-anchor, SM-INV-3/4, the paper payout reshape). Textual conflict is likely.
+   Both sides are *design rulings*, so resolve by **preserving both intents** — do not take a side.
+   There is also an untracked `design-amendments-2026-08-17.md` that probably explains their edits;
+   read it before resolving.
+3. **FEAT-64 was an ID collision, already fixed on my side.** Their `feat-64-paper-throw-audio` is
+   uncommitted, so it was invisible to me when I minted mine. Mine is now **FEAT-68**
+   (`3a940a0`), with FEAT-53's closure note and `MILESTONES.md` updated to match. Nothing to do —
+   recorded so nobody "fixes" it back.
+
+**What to do:** get that work committed (or ask its owner to) BEFORE merging either feature branch.
+Merging into a dirty tree with overlapping design docs is how a ruling gets silently reverted. If
+they cannot be reached, `git stash` in the main worktree is NOT sufficient — the FEAT-53
+modify/rename still needs a human decision.
+
+---
+
 ## 4. Conflict analysis — measured, not assumed
 
 Probed with `git merge --no-commit --no-ff` in a scratch tree, both directions:
 
-- **par-reanchor ↔ main: no conflicts.**
+- **par-reanchor ↔ main's COMMITTED state (`bf65a57`): no conflicts.** ⚠ Not its working tree — see §3b.
 - **par-reanchor ↔ seed20-road: no conflicts.** The only file both touch is `src/debug.js` — theirs
   at lines ~413 and ~609, mine at ~740 (the Paper Route folder). Auto-merges.
 - Nothing else overlaps. par-reanchor does not touch routing, `road.js`, `ranger.js` or the route
@@ -145,7 +186,7 @@ bash ~/.claude/skills/worktree/scripts/wt.sh clean par-reanchor
 
 ## 8. Known-open, deliberately not fixed — do not "fix" these in passing
 
-- **FEAT-64** carries what FEAT-53 could not close: `dayTierTable` is unbalanced against SM-3's
+- **FEAT-68** (renumbered from 64 — see §3b.3) carries what FEAT-53 could not close: `dayTierTable` is unbalanced against SM-3's
   repair costs (they do not exist yet), no multi-day run has been recorded, and the **27-point run
   budget needs a recount** — SM-INV-14's wording is unchanged but its economics moved when par
   became a C. `run-shape.md` flags it provisional in place.
