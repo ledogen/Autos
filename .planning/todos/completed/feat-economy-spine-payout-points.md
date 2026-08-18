@@ -177,9 +177,9 @@ and the balance fell out of it. Landed on `feature/par-reanchor` (14 commits, `c
 **C === 1.0 on every day** instead, plus day-20 S staying reachable. `tier(1) = 1` and monotone
 tightening still hold.
 
-### What this ticket does NOT close — carried to FEAT-64
+### What this ticket does NOT close — carried to FEAT-68
 
 Phase D item 2's *original* condition was never met and could not be: a balance pass against SM-3's
 repair costs, which do not exist yet, using multi-day run data nobody has recorded. `dayTierTable`
 was **not** touched. That work, plus the 27-point recount SM-INV-14's shifted economics forces, is
-minted as **FEAT-64** rather than left buried in a closed ticket.
+minted as **FEAT-68** rather than left buried in a closed ticket.
