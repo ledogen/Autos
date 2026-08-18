@@ -160,6 +160,44 @@ variable) > performance**.
   **matching today's speed is acceptable if the 10-second version isn't fun** — that relief valve
   is why the old router survives on main until sign-off.
 
+### Baseline measured 2026-08-18 (session zero — 4× proxy, dev machine)
+
+**Headless (node, single-thread, 1×, this machine).** Cold road-network build (`test/bench-worldgen.mjs`
+part A — real routing, no cache, no worker): seed 20 = **5.6 s**, seed 11 = **7.5 s**, seed 67 =
+**6.9 s**. An instrumented split (depth-guarded timers wrapped around `_edgeCenterline` /
+`_soloCenterline` / `_gradeEdgeInPlace`, script in gitignored `perf-runs/router-baseline.mjs` on the
+worktree) attributes **98–99% of that to the route-search subtree** (arc search + corridor discs +
+refit); grading is ~1 ms and graph assembly + geometry ~0.1 s per seed. The cold road build IS the
+router, headlessly.
+
+**Browser (built app, CDP `--cpu=4` old-hardware proxy, `test/story-coldload.mjs`, same sitting).**
+Cold boot → driving in story mode:
+
+| story seed | boot | entry | **total** |
+|---|---|---|---|
+| 20 | 4.65 s | 48.04 s | **62.57 s** |
+| 11 | 4.38 s | 54.08 s | **68.29 s** |
+| 67 | 4.41 s | 42.11 s | **56.78 s** |
+| 6 (baked control) | 6.45 s | 12.17 s | **29.86 s** |
+
+**Box caveat (same one PERF-27 hit):** `mediaanalysisd` + `mds_stores` were reindexing throughout
+(load ~5), and the baked control came in at 29.9 s vs PERF-27's quiet-box 14.7 s — tonight's
+absolutes are ~2× inflated. The deltas and shares are the assertion. **Checkpoint bench discipline:
+every 4× bench re-runs the seed-6 baked control in the same sitting and compares against it, never
+against a past absolute.**
+
+**The right number.** Router-attributable cost = the unbaked−baked gap: **27–38 s at 4×** on the
+eval seeds (tonight's box; ~13–19 s scaled to a quiet box). Composition checks out against PERF-27:
+the reseed rebuild is 65% synchronous road streaming, and headlessly the road build is 98–99% route
+search. What is NOT router-attributable is the baked-seed envelope itself (boot + ring + terrain +
+props + story fixed costs) — ~15 s at 4× on a quiet box. Consequences:
+
+- **v2 victory = closing the unbaked−baked gap** (eval-seed cold→driving ≈ the baked envelope,
+  with no bundled route cache needed).
+- The **< 10 s cold-to-driving target cannot be reached by the router alone** — the baked envelope
+  already exceeds it at 4×. Hitting it also needs the double-world-build removal (PERF-27's lever,
+  FEAT-41 boot-to-menu), which stays out of FEAT-68 scope. Judge v2 against the gap, not the total.
+
 ## Process: branch-parallel, checkpoint loop
 
 - **Main keeps the old router untouched and shippable.** Router v2 lives on its own long-lived
@@ -226,7 +264,7 @@ The branch is the **reference implementation** for these; its numbers are ground
 
 ## Acceptance
 
-- [ ] Router-attributable cold-load baseline measured on the old hardware, published in-ticket.
+- [x] Router-attributable cold-load baseline measured (4× proxy, 2026-08-18 — see "Baseline measured" above); owner real-hardware spot-check still keeps the proxy honest.
 - [ ] Two-stage router on its own branch: corridor + full-vocabulary profile (cut/fill/bore/bridge),
       priced == built (a gate asserts the registered profile equals the solver's output).
 - [ ] Seed 20's marks: the A→B ridge (the 202 m / 13% / 157 m-cover chord) resolves as a bore or
