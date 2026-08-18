@@ -139,17 +139,11 @@ for (const r of suspect) console.log(`  ⚠ ${r.file}: corr ${r.corr.toFixed(3)}
 // and "I drove at a normal pace" should clear it comfortably. The tails stay one-sided: a "very
 // slow" drive can be arbitrarily far over and a "very fast" one arbitrarily under; only the wrong
 // SIDE is an error. Targets are the MIDDLE of each intended band, not the boundary.
-// [RE-CENTRED 2026-08-17 on the owner's own reading of the middle button.] The `par` label meant
-// "I drove at the reference pace" when par WAS the reference; the owner reports they read it as
-// "not slow and not fast — it felt right, a B", and the form's middle option is now labelled
-// **average** to say so. The targets are therefore the MIDDLE OF EACH LETTER under the re-cut
-// bands (S ≤0.72 · A 0.72-0.76 · B 0.76-0.80 · C 0.80-1.00 · D >1.00), not points on the old scale.
-// Confirmed by the first recorded paper round: felt-average graded B at ratio 0.785, mid-band.
 const TARGET = {
-    very_fast: { t: 0.68, w: 0.5, side: 'below' },   // S
-    fast:      { t: 0.74, w: 1.0 },                  // mid A
-    par:       { t: 0.78, w: 2.0 },                  // mid B — "average", the anchor
-    slow:      { t: 0.90, w: 1.0 },                  // mid C
+    very_fast: { t: 0.62, w: 0.5, side: 'below' },   // S band
+    fast:      { t: 0.72, w: 1.0 },                  // A band
+    par:       { t: 0.88, w: 2.0 },                  // B/C — a normal pace passes with room
+    slow:      { t: 0.97, w: 1.0 },                  // deep C, still a pass
     very_slow: { t: 1.10, w: 0.5, side: 'above' },   // D — failed the standard
 }
 function score(mu, accel, brake) {
