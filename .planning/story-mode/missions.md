@@ -316,10 +316,14 @@ directly.
 rises with run age and point velocity is position against it (see Performance, points and payout). A slow mission
 costs you the cost curve. The economy supplies the downside for free.
 
-*Open:* whether breakage is **binary** (broke / didn't, a hard fail like a puncture) or **graded**
-(condition on arrival scales payout). Binary keeps restraint a real constraint; graded lets a bad
-pothole cost rather than end. Binary is the recommendation — a graded ceiling collapses the axis back
-onto margin, since the player pushes hard and eats the penalty.
+*~~Open~~ **RESOLVED 2026-08-17 — GRADED**, over this file's standing recommendation of binary.*
+Condition on arrival scales the payout; a bad pothole costs money rather than ending the job. The
+recommendation's own objection stands and is accepted knowingly — *a graded ceiling risks collapsing
+the axis back onto margin, since the player pushes hard and eats the penalty*. **Two levers keep it
+honest, and implementation must reach for them before reaching back for binary:** make the gradient
+**steep and superlinear in shock**, so pushing hard loses most of the fee rather than paying a small
+tax; and keep a **floor at zero**, letting a single catastrophic impact bottom it out — graded does
+not have to mean gentle. Provenance: `design-amendments-2026-08-17.md` §4.
 
 #### 3c. Freight — **heavy, and mass does the work**
 
@@ -347,6 +351,12 @@ margin, so SM-INV-4's "bare completion pays ~nothing" cannot govern it. *This is
 mission types bend a stated invariant* — flagged deliberately rather than slipped in. The bible's own
 failure-mode list asks for types where par isn't the axis, so the bend is licensed in spirit; it
 should still be ratified explicitly.
+
+**A load you pick, not a load you're given [owner, 2026-08-18 — needs ratifying].** The freight giver
+shows **a menu of objects with different masses**, some of them outside what your truck can carry;
+suspension and tire upgrades raise that budget, which unlocks the heavier, better-paying items. Full
+capture, with the open questions, in `items.md` §1a. It gives freight a decision at the giver and
+gives the suspension/tire parts a purpose beyond replacing what wore out.
 
 **Freight is training for the boss.** It teaches what the truck does under load — heat, brakes,
 weight transfer — before the Roamer asks the player to destroy it doing exactly that. And a pallet in
@@ -547,10 +557,22 @@ was sketched and **set aside** as premature. Don't rebuild it until the customiz
 
 Not settled. Recorded because the shape of the question matters more than any answer proposed so far.
 
+> **⚠ SUPERSEDED 2026-08-17 — read this box before the section below.** The owner reversed leaning 2
+> outright: **the board is visible, and optimizing against it is now a design goal.** Before
+> accepting, an offer states its **pay range `$MIN–$MAX`**, its **named bonus item** and the **rank
+> that earns it** (B/A/S, variable), and **when it re-rolls**. Leaning 1 survives and is
+> *strengthened* — re-roll is now visible precisely so it can be planned against, letting the player
+> plot an optimal chain a mission or two ahead and then have to make the time. The "partial
+> information via POI identity" mitigation below is **superseded**: it solved a problem that no
+> longer exists (POI type still telegraphs family, but as flavour on top of stated terms, not as a
+> substitute for them). The argument in this section is kept as the provenance for what was traded
+> away. Full record: `design-amendments-2026-08-17.md` §1.
+
 **Two owner leanings, 2026-07-29:**
 
-1. **Missions expire and re-roll.** You can't hoard a good board.
+1. **Missions expire and re-roll.** You can't hoard a good board. *(Survives — and is now visible.)*
 2. **Missions are not visible from the map.** You learn what a POI is offering by **driving there**.
+   *(**REVERSED 2026-08-17.**)*
 
 **Why (2) is the strong idea.** It converts the choice from *optimization* to *exploration under
 uncertainty*. A browsable board with visible timers makes the player compare rows in a list — that's
@@ -649,7 +671,10 @@ chat pane; the mode split; the per-component damage model; breadth-not-floor.
 meta-free; meta-progression is the garage; no in-run vehicle purchase; run shape fixed. **As of
 2026-08-01** DESIGN.md is current again and supersedes that file: par ramp retired, continuous
 payout, mission points, rank as surface. **As of 2026-08-02**: **20-day runs**, 27 points, the
-clock-pause rule, and regions that grow with depth (`run-shape.md`).
+clock-pause rule, and regions that grow with depth (`run-shape.md`). **As of 2026-08-17**
+(`design-amendments-2026-08-17.md`): the **board is visible** (pay range + named bonus + rank gate +
+re-roll timer), **rank boundaries are shown live** (SM-INV-3's never-live clause retired), **fragile
+is graded**, and **non-margin mission types price themselves**.
 
 **Owner-only, untouched:** the Roamer's motives and the final beat (Q1); forced progression (Q9);
 mission bail cost (Q6).
@@ -662,7 +687,9 @@ break-even-at-par, day tier, tightening thresholds, rank as the surface, bonus o
 **2026-08-05:** the paper route is **the income floor** — the burger-joint day job is destroyed in
 the opening beat (fired, never rehireable, no income from it ever) and no longer backstops anything.
 
-**Proposed here, not ratified:** the axis taxonomy; binary rather than graded fragile breakage; freight's flat-rate payout (bends
+**Proposed here, not ratified:** the axis taxonomy; ~~binary rather than graded fragile breakage~~
+(**resolved 2026-08-17: graded**); ~~freight's flat-rate payout~~ (**ratified 2026-08-17** as part of
+a general "non-margin types price themselves" exception) (bends
 SM-INV-4 — flagged); logs on graded sections; the beat/labor split and its consequences; POI-type
 partial information on the job board; the uncle/Roamer channel pairing.
 

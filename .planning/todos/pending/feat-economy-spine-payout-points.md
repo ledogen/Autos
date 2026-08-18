@@ -3,6 +3,7 @@ id: FEAT-53
 type: feature
 status: open
 opened: 2026-08-01
+updated: 2026-08-17
 severity: major
 source: SM-2 milestone entry (planning session 2026-08-01)
 relates_to: >
@@ -93,7 +94,48 @@ monotonically, **B > 1.0 on every day**.
 - [x] Live drive-through: owner drove the full flow 2026-08-01/02 — "flow is good,
       everything feels good"
 
-## HANDOFF — state as of 2026-08-02 (phases A–C DONE and owner-verified; D open)
+## CURRENT STATE — 2026-08-17
+
+**Phases A–C: done, owner-verified, unchanged since 2026-08-02.** The spine has been carrying live
+missions for two weeks and has not needed a fix. `runEconomy` is still the wallet, `runState` is
+still `{ day }`, the gates still pin `tier(1)=1` / monotone thresholds / **B > 1.0 every day**.
+
+**Phase D item 1 (re-pick `k`): DONE** 2026-08-02 — k 0.35 → **0.30** off a 310-roll headless par
+sample. **Phase D item 2 (balance `dayTierTable` + `rankDayLate`): the ONLY open work on this
+ticket**, and blocked *by design* on SM-3: run-shape.md treats day tier, threshold ramp and cost
+escalation as ONE balance problem, and the costs to balance against are SM-3's wear/repair economy,
+which does not exist yet. Holding D until SM-3 opens is the owner's call, recorded as such.
+
+**What has landed against the spine since the handoff was written:**
+
+- **FEAT-61 paper route — MERGED to main 2026-08-15** (`todos/completed/feat-paper-route.md`).
+  SM-2's first real non-p2p mission type and the first consumer of the coverage axis. It **prices
+  itself** (flat × accuracy) rather than going through `payoutFor`, which is the precedent every
+  later non-margin type now inherits — see the open question on freight below.
+- **FEAT-54** extended `dayTierTable` to 30 entries and moved `rankTightenDays` 8 → 20 for the
+  ratified 20-day run. The run *length* half of the balance problem is therefore already settled;
+  Phase D only owes the *rates*.
+- **FEAT-59** (model service) + **FEAT-36/48** (debris physics) shipped, so item rewards and
+  destructible props now have a delivery path — the "needs items to exist" blocker on bonus
+  objectives is partly lifted (world-side, not inventory-side).
+
+**⚠ Four gating owner questions ANSWERED 2026-08-17** (`design-amendments-2026-08-17.md`, folded
+into DESIGN.md + missions.md). Three reverse ratified rules, one reverses code shipped by THIS
+ticket: the **board is now visible** (pay range + named bonus + rank gate + re-roll timer), so
+FEAT-53's single-hidden-offer-per-POI — scoped explicitly to *dodge* that question — is superseded by
+**FEAT-67**. Also: **rank boundaries show live** (SM-INV-3's never-live clause retired), **fragile is
+graded**, and **non-margin types price themselves** (ratifying freight's flat rate and formalising
+FEAT-61's existing self-pricing). The fragile / bonus / freight follow-ups below are **no longer
+gated on design** — only on build order.
+
+**Newly minted, downstream of this ticket, not part of it:** **FEAT-65** (demolition missions — a
+fourth axis, itself blocked on two owner rulings), **FEAT-64** (paper-throw audio), and **FEAT-67**
+(the visible offer board — carries the 2026-08-17 rulings).
+
+**Stale elsewhere:** MILESTONES.md "Where we are" is dated 2026-08-03 and predates the paper-route
+merge; refresh it at the next SM-2 sitting.
+
+## HANDOFF — state as of 2026-08-02 (superseded by CURRENT STATE above) (phases A–C DONE and owner-verified; D open)
 
 **On main:** `e8a7c02` (spine) · `212c3a1` (fix: quick-job accept teleports again — _launch's
 setSpawn write clobbered the async teleport's spawn override; setSpawn now fires only on the
@@ -124,13 +166,13 @@ at top) · seams in `src/mission.js` (terms at accept, settle-once at arrival, `
 + `index.html` (`#run-hud`, `.mp-pay`) · gates `test/economy.mjs` + `test/story-poi.mjs` §7-8 ·
 harness hook `window.__economy` · owner rulings recorded above in this ticket.
 
-**Next SM-2 sittings (separate tickets to mint, not Phase D):** paper route → fragile → bonus
-objectives → consumables (order per MILESTONES SM-2). Open owner questions that gate them:
-job-board discovery/expiry, fragile binary-vs-graded, bonus loot-only-vs-points.
+**Next SM-2 sittings (separate tickets to mint, not Phase D):** ~~paper route~~ (SHIPPED, see
+below) → fragile → bonus objectives → consumables (order per MILESTONES SM-2). Open owner questions
+that gate them: job-board discovery/expiry, fragile binary-vs-graded, bonus loot-only-vs-points.
 
-## Deferred / follow-ups (next SM-2 sitting)
+## Deferred / follow-ups
 
-- Paper route (coverage axis, the uncle, day-fraction budget) — needs a delivery-fan generator.
+- ~~Paper route (coverage axis, the uncle, day-fraction budget)~~ — **SHIPPED**, see current state.
 - Fragile (restraint axis) — vertical-shock plumbing shared with SM-3 suspension wear.
 - Bonus objectives ("a little extra for an A", item reward) — needs items to exist.
 - Consumables (coffee as an item) so lazy-day-negative holds against real running costs.

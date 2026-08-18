@@ -396,6 +396,24 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > This *strengthens* the invariant rather than straining it. It also licenses the one legal way to
   > put a target in front of the player before a drive: a mission-giver offering **"a little extra if
   > you finish with an A"** states a standard with no clock attached — see "The economy".
+
+  > **⚠ Amendment [RATIFIED 2026-08-17] — the never-live clause is RETIRED; rank boundaries are shown
+  > live.** The player now sees, during the drive, **where the rank boundaries fall in time** — when S
+  > lapses to A, when A lapses to B. This directly reverses the 2026-08-01 clause above ("result-card
+  > only, never live"), including its stated reason. The premise changed: under the same pass, mission
+  > terms — pay range, named bonus item, and the rank that earns it — are **stated before the drive**
+  > (see "The economy"), so a player is now banking on a specific rank. A target you can plan toward
+  > but cannot track is a guess, not tension.
+  >
+  > **The original fear is traded against legibility, not refuted** — par on the HUD does pull the
+  > eyes in, and the fatigue design wants them out. So the reinstatement carries presentation
+  > constraints, which are binding: show **boundary proximity, not a running countdown** (never
+  > `3:41 remaining`, the exact string this invariant names); keep it **glanceable and peripheral**;
+  > site it on the run HUD as a mission-terms surface, not layered over the road.
+  >
+  > **What survives:** timers must still never become the driver of *all* missions, and payout stays
+  > continuous underneath (SM-INV-4) — crossing a boundary costs a little, never a cliff.
+  > Provenance: `design-amendments-2026-08-17.md` §3.
 - **SM-INV-4 — Payout is continuous margin against par; bare completion pays ~nothing.**
   [RATIFIED 2026-08-01 — was DEFAULT] Payout is a **continuous linear function of the par ratio**,
   not a set of bins. Three anchors fix the line: **+20% over par pays ~nothing · par pays one day's
@@ -630,15 +648,33 @@ the fatigue domain was designed to sell, arriving for free from the economy inst
 Nobody authored it; do not "fix" it.
 
 **Bonus objectives are the one legal pre-drive target.** A mission-giver may offer *"a little extra if
-you finish with an A"*, gating an **item** reward whose identity is not stated up front (a spare tire,
-a cooking kit). This is legal precisely because it names a standard without naming a time (SM-INV-3),
-and it is the only place a rank boundary has mechanical teeth rather than cosmetic meaning. Item
-rewards die with the run like everything else (SM-INV-8).
+you finish with an A"*, gating an **item** reward. This is legal precisely because it names a standard
+without naming a time (SM-INV-3), and it is the only place a rank boundary has mechanical teeth rather
+than cosmetic meaning. Item rewards die with the run like everything else (SM-INV-8).
+
+> **Amendment [RATIFIED 2026-08-17] — the reward is NAMED, and it may tier by rank.** The earlier
+> wording hid the reward's identity until it was earned; that is reversed, because an unnamed reward
+> cannot be planned toward and planning is now the point. The offer states **the item by name, and the
+> rank that earns it — B, A or S, variable per mission**. A single mission may **tier** its reward
+> across ranks (a spare tire at B; tire + rear suspension at A; both + front suspension at S) rather
+> than carrying one flag. Provenance: `design-amendments-2026-08-17.md` §2.
 
 **Not every mission type is scored on margin.** Coverage (the paper route), restraint (fragile cargo)
 and clearance (main missions) are separate axes; **rank is computed per-axis** so the letter — and
-therefore the bonus objective — works on any job. Freight's flat-rate payout deliberately bends
-SM-INV-4 and is flagged in `missions.md` for explicit ratification.
+therefore the bonus objective — works on any job.
+
+> **Amendment [RATIFIED 2026-08-17] — non-margin mission types price themselves.** Freight's
+> flat-rate payout was flagged here as an unratified bend of SM-INV-4; it is now ratified, as a
+> **bounded exception rather than a one-off**. SM-INV-4 continues to govern **margin** missions
+> (point-to-point). A mission scored on a different axis carries **its own payout shape**, stated by
+> its type: freight **flat by mass × distance**; coverage **flat × accuracy** (already shipped —
+> FEAT-61's paper route does not call `payoutFor`, so this formalises existing code); restraint
+> **flat, scaled by cargo condition on arrival**. A mission may even pay **$0 cash and settle entirely
+> in rank-gated items** — SM-INV-4's "bare completion pays ~nothing" floor was written about poor
+> *performance*, not about a mission designed to pay no cash. **What does not bend:** rank is still
+> per-axis, the day tier still multiplies, and mission points still ride on rank rather than payout —
+> which is what keeps a $0 mission a real choice instead of a trap. Provenance:
+> `design-amendments-2026-08-17.md` §5.
 
 **Non-timed missions are still governed by the clock, indirectly.** A fragile run has no margin
 scoring, but costs escalate with run age and the day is finite, so dawdling is still expensive. The

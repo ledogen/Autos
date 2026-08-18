@@ -10,7 +10,7 @@
     --fg:#dfe3ea; --dim:#8b94a3; --dimmer:#646c7a;
     --accent:#6fb3ff;
     --feature:#6fb3ff; --bug:#ff7a7a; --perf:#ffc25c; --quality:#b78bff;
-    --infra:#5fd0c0; --asset:#7fd97f; --unknown:#8b94a3;
+    --infra:#5fd0c0; --asset:#7fd97f; --unknown:#8b94a3; --milestone:#ff9ad5;
     --critical:#ff5c5c; --high:#ff8a5c; --major:#ffc25c;
     --medium:#9fd06f; --minor:#6a7382; --trivial:#4d545f;
     --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
@@ -96,6 +96,10 @@
         font-size:12px; padding:8px 0 14px; border-bottom:1px solid var(--line);
         margin-bottom:16px; }
   .fm b { color:var(--dimmer); font-weight:400; }
+  /* Milestone gate line — SM-N's `Requires:`, the rule that says whether it may open. */
+  .gate { margin:10px 0 2px; padding:8px 11px; border-left:2px solid var(--milestone);
+          background:var(--panel); border-radius:0 5px 5px 0; font-size:13px; color:var(--dim); }
+  .gate b { color:var(--milestone); font-weight:400; margin-right:7px; }
   .body { font-size:14.5px; }
   .body h1 { font-size:20px; margin:26px 0 8px; }
   .body h2 { font-size:17px; margin:26px 0 8px; padding-bottom:5px;
@@ -190,7 +194,7 @@ async function load() {
  * placeholder tokens first, so emphasis can never chew through generated HTML. */
 const esc = s => s.replace(/[&<>]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[c]));
 
-const TICKET_RE = /\b(?:FEAT|BUG|PERF|QUAL|INFRA|ASSET)-\d+\b/;
+const TICKET_RE = /\b(?:FEAT|BUG|PERF|QUAL|INFRA|ASSET|SM)-\d+\b/;
 const PATH_RE = /(?:\.planning|src|test|data|assets|tools|scenarios|docs)\/[\w./@-]*[\w]\.\w{1,5}/;
 // Emphasis and links must survive a line break: the tickets are hard-wrapped at
 // ~100 columns, so most bold runs of any length straddle a newline.
@@ -252,8 +256,11 @@ function inline(text) {
   return out.replace(/\u0000(\d+)\u0000/g, (_, i) => tokens[+i]);
 }
 
-function md(src) {
-  const lines = esc(src).split('\n');
+function md(src, escaped = false) {
+  // `esc` runs once, at the top: every block test below therefore matches on the
+  // ESCAPED text (`&gt;`, not `>`). The recursive blockquote call passes
+  // escaped=true so its already-escaped buffer is not escaped a second time.
+  const lines = (escaped ? src : esc(src)).split('\n');
   const out = [];
   let i = 0;
   const isTableSep = s => /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(s) && s.includes('-');
@@ -288,10 +295,12 @@ function md(src) {
       continue;
     }
 
-    if (/^\s*>/.test(line)) {
+    if (/^\s*&gt;/.test(line)) {
       const buf = [];
-      while (i < lines.length && /^\s*>/.test(lines[i])) buf.push(lines[i++].replace(/^\s*>\s?/, ''));
-      out.push(`<blockquote>${md(buf.join('\n'))}</blockquote>`);
+      while (i < lines.length && /^\s*&gt;/.test(lines[i])) {
+        buf.push(lines[i++].replace(/^\s*&gt;\s?/, ''));
+      }
+      out.push(`<blockquote>${md(buf.join('\n'), true)}</blockquote>`);
       continue;
     }
 
@@ -311,7 +320,7 @@ function md(src) {
     }
 
     const para = [];
-    while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|```|\s*>|\s*([-*+]|\d+\.)\s|---+\s*$)/.test(lines[i])) {
+    while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|```|\s*&gt;|\s*([-*+]|\d+\.)\s|---+\s*$)/.test(lines[i])) {
       if (lines[i].includes('|') && isTableSep(lines[i + 1] || '')) break;
       para.push(lines[i++]);
     }
@@ -324,7 +333,7 @@ function md(src) {
 /* ───────────────────────── filters ─────────────────────────
  * Filter state lives in the hash so a filtered list is a shareable/bookmarkable
  * URL and Back works between list and detail. */
-const TYPES = ['feature', 'bug', 'perf', 'quality', 'infra', 'asset'];
+const TYPES = ['milestone', 'feature', 'bug', 'perf', 'quality', 'infra', 'asset'];
 const STATUSES = ['open', 'closed', 'cancelled'];
 const STATUS_COLOR = { open: '#6fb3ff', closed: '#7fd97f', cancelled: '#8b94a3' };
 const DEFAULTS = { type: [], status: ['open'], sev: [] };
@@ -351,7 +360,7 @@ function toggle(kind, value) {
 function matches(t, f, q) {
   if (f.type.length && !f.type.includes(t.type)) return false;
   if (f.status.length && !f.status.includes(t.status)) return false;
-  if (f.sev.length && !f.sev.includes(t.severity)) return false;
+  if (f.sev.length && !f.sev.includes(t.severity)) return false;   // t.severity null ⇒ excluded
   if (q) {
     const hay = `${t.id} ${t.title} ${t.blurb} ${t.body}`.toLowerCase();
     if (!q.split(/\s+/).every(w => hay.includes(w))) return false;
@@ -389,7 +398,9 @@ function viewTickets() {
       <span class="ttitle">${esc(t.title)}</span>
       <span class="tblurb">${esc(t.blurb)}</span>
       <span class="tmeta">
-        <span class="sev" style="color:${css(t.severity)}">${t.severity}</span>
+        ${t.phase
+          ? `<span class="sev" style="color:${css('milestone')}">${t.phase}</span>`
+          : `<span class="sev" style="color:${css(t.severity)}">${t.severity}</span>`}
         <span class="st ${t.status}">${t.status}</span>
       </span>
     </li>`).join('');
@@ -423,16 +434,24 @@ function viewTicket(id) {
       </div>
       <div class="spacer">
         <a class="act" style="display:inline-block"
-           href="vscode://file${STATS.root}/${t.file}:1">Open in editor</a>
+           href="vscode://file${STATS.root}/${t.file}:${t.line || 1}">Open in editor</a>
       </div>
     </div>
     <div class="fm">
       ${fmRow('type', t.type + (t.typeRaw !== t.type ? ` <i style="color:var(--perf)">(${t.typeRaw})</i>` : ''))}
       ${fmRow('status', t.status + (t.statusRaw !== t.status ? ` <i style="color:var(--perf)">(${t.statusRaw})</i>` : ''))}
-      ${fmRow('severity', `<span style="color:${css(t.severity)}">${t.severity}</span>`)}
-      ${fmRow('opened', t.opened)} ${fmRow('updated', t.updated)} ${fmRow('closed', t.closed)}
+      ${t.severity ? fmRow('severity', `<span style="color:${css(t.severity)}">${t.severity}</span>`) : ''}
+      ${fmRow('opened', t.opened)} ${fmRow('updated', t.updated)}
+      ${fmRow(t.phase === 'shipped' ? 'shipped' : 'closed', t.closed)}
     </div>
-    <div class="body">${md(t.body.replace(/^#\s+.*(\n|$)/m, ''))}</div>
+    ${t.requires ? `<div class="gate"><b>Requires</b> ${inline(esc(t.requires))}</div>` : ''}
+    <div class="body">${md(
+      t.body
+        .replace(/^#\s+.*(\n|$)/m, '')
+        // Milestones hoist `**Requires:** …` into the gate box above; drop the
+        // original so the detail page doesn't state the same gate twice.
+        .replace(t.requires ? /^\*\*Requires:?\*\*[\s\S]*?(?=\n\s*\n)/m : /(?!)/, ''),
+    )}</div>
     <div class="refs">
       <h3>Links</h3>
       <div class="row"><b style="color:var(--dimmer)">references</b>

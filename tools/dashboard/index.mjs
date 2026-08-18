@@ -36,6 +36,7 @@ const CANON_TYPE = {
   quality: 'quality', qual: 'quality', refactor: 'quality',
   infra: 'infra',
   asset: 'asset',
+  milestone: 'milestone',
 };
 const CANON_STATUS = {
   open: 'open', pending: 'open',
@@ -54,7 +55,9 @@ const CANON_SEVERITY = {
 };
 const SEVERITY_ORDER = ['critical', 'high', 'major', 'medium', 'minor', 'trivial'];
 
-const TICKET_RE = /\b(FEAT|BUG|PERF|QUAL|INFRA|ASSET)-(\d+)\b/g;
+/* `SM` is last and requires digits immediately after the dash, so the design
+ * docs' `SM-INV-14` invariant tags can never be read as milestone refs. */
+const TICKET_RE = /\b(FEAT|BUG|PERF|QUAL|INFRA|ASSET|SM)-(\d+)\b/g;
 
 /* ── frontmatter ──────────────────────────────────────────────────────────
  * Deliberately lenient, not a YAML parser. Values wrap across lines
@@ -124,6 +127,7 @@ function blurbOf(body) {
 /** Older tickets predate the `type:` field; the id prefix is authoritative anyway. */
 const TYPE_FROM_PREFIX = {
   FEAT: 'feature', BUG: 'bug', PERF: 'perf', QUAL: 'quality', INFRA: 'infra', ASSET: 'asset',
+  SM: 'milestone',
 };
 
 function walk(dir, out = []) {
@@ -136,6 +140,96 @@ function walk(dir, out = []) {
     else out.push({ path: p, size: st.size });
   }
   return out;
+}
+
+/* ── milestones ───────────────────────────────────────────────────────────
+ * The SM-N story milestones live as `## SM-N — Title` sections of one prose
+ * file, not as ticket files, so they were invisible here. The owner reads them
+ * as tickets ("in my head theyre basically tickets"), so they are indexed into
+ * the same list — synthesised, never written back. MILESTONES.md stays the
+ * source of truth and the only place they are edited.
+ *
+ * They carry no `severity` (null, so the severity chips ignore them) and their
+ * status is derived, not declared: shipped from the heading's ✅, active from
+ * the "Where we are" section saying so, planned otherwise. */
+function indexMilestones() {
+  const rel = join('.planning', 'story-mode', 'MILESTONES.md');
+  const abs = join(ROOT, rel);
+  if (!existsSync(abs)) return [];
+  const text = readFileSync(abs, 'utf8');
+  const lines = text.split('\n');
+
+  // Heading line numbers first, so each section can carry a deep editor link.
+  const heads = [];
+  lines.forEach((l, i) => {
+    const m = /^##\s+SM-(\d+)\s*[—-]\s*(.+?)\s*$/.exec(l);
+    if (m) heads.push({ num: Number(m[1]), rawTitle: m[2], line: i + 1 });
+  });
+
+  return heads.map((h, k) => {
+    const from = h.line;                                    // line after the heading
+    const to = k + 1 < heads.length ? heads[k + 1].line - 1 : lines.length;
+    const body = lines.slice(from, to).join('\n').trim();
+    const id = `SM-${h.num}`;
+
+    // "The Day (sleep is the clock) ✅ **SHIPPED 2026-07-30**" → title + date.
+    const shipped = /✅|\bSHIPPED\b/.test(h.rawTitle);
+    const shipDate = (/SHIPPED\s+(\d{4}-\d{2}-\d{2})/.exec(h.rawTitle) || [])[1] || null;
+    const title = h.rawTitle.replace(/\s*✅.*$/, '').replace(/\s*\*\*SHIPPED[^*]*\*\*/, '').trim();
+
+    // Declared in the doc's own words; `Requires:` and `Goal:` wrap over lines.
+    const grab = (label) => {
+      // `$(?![\s\S])` is end-of-STRING: plain `$` under /m stops at the first
+      // line break and would clip SM-2's two-line Requires.
+      const m = new RegExp(
+        `^\\*\\*${label}:?\\*\\*:?\\s*([\\s\\S]*?)(?=\\n\\s*\\n|\\n[-*>#]|$(?![\\s\\S]))`, 'm',
+      ).exec(body);
+      return m ? m[1].replace(/\s+/g, ' ').trim() : null;
+    };
+    // Same de-markdowning blurbOf applies — the list renders blurbs as plain text.
+    const plain = (v) => (v || '')
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+      .replace(/[*_`]/g, '')
+      .trim() || null;
+    const goal = plain(grab('Goal'));
+    const requires = grab('Requires');
+
+    // "SM-2 IS OPEN" is stated in the file's "Where we are" build-state section,
+    // which sits above every milestone section — so search the whole document.
+    const active = new RegExp(`\\*\\*${id} IS OPEN`).test(text)
+      || new RegExp(`${id} IS OPEN`).test(text);
+    const phase = shipped ? 'shipped' : active ? 'active' : 'planned';
+
+    const refs = [...new Set(body.match(TICKET_RE) || [])].filter((r) => r !== id);
+
+    return {
+      id,
+      prefix: 'SM',
+      num: h.num,
+      title,
+      blurb: goal ? (goal.length > 220 ? `${goal.slice(0, 217)}…` : goal) : blurbOf(body),
+      type: 'milestone',
+      typeRaw: 'milestone',
+      status: shipped ? 'closed' : 'open',
+      statusRaw: phase,
+      severity: null,
+      severityRaw: null,
+      bucket: 'milestone',
+      phase,
+      goal,
+      requires,
+      opened: null,
+      updated: null,
+      closed: shipDate,
+      plan: null,
+      handoff: null,
+      refs,
+      file: rel,
+      line: h.line,
+      abs,
+      body,
+    };
+  });
 }
 
 /* ── tickets ──────────────────────────────────────────────────────────── */
@@ -204,7 +298,13 @@ function indexTickets() {
     }
   }
 
-  tickets.sort((a, b) => (a.prefix === b.prefix ? b.num - a.num : a.prefix.localeCompare(b.prefix)));
+  tickets.push(...indexMilestones());
+
+  // Newest-first within a class, except milestones: SM-1..SM-5 is a build order,
+  // so reading it backwards is nonsense.
+  tickets.sort((a, b) => (a.prefix === b.prefix
+    ? (a.prefix === 'SM' ? a.num - b.num : b.num - a.num)
+    : a.prefix.localeCompare(b.prefix)));
   return { tickets, drift };
 }
 

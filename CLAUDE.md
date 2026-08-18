@@ -23,6 +23,82 @@ A browser-based 6DOF rigid body car physics simulation built in JavaScript with 
 - **Performance**: Target 60fps on a mid-range laptop with terrain active — physics must be lightweight
 - **LLM maintainability**: Code is primarily maintained by LLM sessions. Conventions must be explicit, self-documenting, and resistant to drift across sessions.
 
+## Communicating with the owner
+
+The owner is **an engineer by trade, not a professional programmer**. Abstract and complex ideas
+land fine; it is the base-level programming vocabulary that is missing. Calibrate to that — do not
+calibrate to "beginner", which is wrong in the other direction and patronising.
+
+**Fluent — never gloss, never simplify, never explain unless asked:**
+
+- Vehicle dynamics and physical intuition (weight transfer, slip, camber, grade, damping). Often
+  arrives at the right root cause before the code does — "I think it has to do with there only being
+  a single probe for ground contact" was correct.
+- Geometry, curves, tolerances, and **maths up to roughly differential equations**. Exponents,
+  ratios, and unit reasoning are not the obstacle. Give real numbers, not analogies.
+- The operational layer: git, worktrees, branches, merges, builds, gates, profiling, benchmarks.
+- Game design, economy, pacing, progression — the owner is the authority here, not the model.
+- Graph vocabulary (node, edge, degree-2, junction, shortest path) — learned on this project and
+  now fluent. Say them plainly.
+- Perf reasoning as *budgets and levers*: LOD, frustum culling, draw calls, cost splits between
+  subsystems. Fluent at "what does this cost and what knob moves it".
+
+**Thin — name the real term, then gloss it inline in the same sentence:**
+
+- **JavaScript language semantics** — closures, promises, `this`, prototypes, the event loop, and
+  reference vs value (objects and arrays are shared, numbers and strings are copied, and `const`
+  does not prevent mutation).
+- **Browser platform primitives** — worker realms and structured cloning, storage
+  (localStorage / IndexedDB / cookies), fetch and CORS, module resolution, bundler mechanics.
+- **CS notation and naming.** The *maths* is never the problem, the *notation* is: `O(n²)` needed
+  only "O means order of, constants dropped, keep the fastest-growing term" and was then immediately
+  clear. Always pair a complexity claim with measured milliseconds — the notation compares how two
+  approaches scale, never how fast either one is.
+- **GPU internals** — shaders, instancing, impostors and the rest are known as effects, not
+  mechanisms.
+
+These four are **calibration samples, not a ledger.** Do not maintain them, do not tick items off as
+they are learned, and never write a "concepts covered" note anywhere. They exist to convey the
+*shape* of the gap so the next rule can be applied by guessing.
+
+**The rule for guessing — this is the load-bearing part.** Sort the thing you are about to say by
+layer, not by difficulty:
+
+| Layer | Assume |
+|---|---|
+| What the system *does* — physics, geometry, cost, tradeoffs, design, git, maths | **Fluent.** Say it straight. |
+| What the *code or platform* is — language semantics, browser APIs, CS notation, GPU internals, tooling internals | **Needs one line.** Gloss on sight. |
+
+Difficulty is the wrong axis. A hard idea in the top row lands fine; a trivial one in the bottom row
+does not. When a term sits on the boundary, gloss it — a gloss that names the correct term costs a
+clause and never reads as condescension, while a missing one costs a round trip.
+
+**The owner wants to learn, and does not want that to slow the work down.** Both halves are
+binding. So: introduce the lingo in passing, then carry on using it properly — that is the whole
+mechanism, and it is enough. Do not quiz, do not check comprehension, do not ask whether a term is
+familiar before using it, do not offer to explain further, and never expand a gloss into a lesson.
+If something genuinely warrants more than a line, say so in one sentence and offer it *after* the
+work is delivered, never in the middle of it.
+
+**How to gloss — the owner's stated preference:**
+
+> Inline one-line gloss, keep going.
+
+Name the correct term, define it in a clause right there, continue at full speed. Do not stop the
+flow, do not add a teaching section, do not footnote it to the bottom, and do not ask permission
+first. One line is genuinely enough — "after reading the answers it makes perfect sense" is the
+normal outcome.
+
+**The real failure mode is density, not difficulty.** Every recorded "I don't understand" was
+triggered by compressed, jargon-stacked prose, never by a hard idea:
+
+> "reiterate in simpler terms i dont understand"
+> "i dont understand this spell it out for me"
+
+Both followed paragraphs that chained several unglossed nouns into one sentence. So: one idea per
+sentence, expand the acronym the first time, and prefer a plain sentence over a dense one. Length is
+not the enemy — unexplained compression is. If a summary has to choose, choose clear over terse.
+
 ## Technology Stack
 
 Three.js r184 (ESM from npm, bundled by Vite) · vanilla JS · lil-gui + stats.js (from `three/addons`,
@@ -152,6 +228,11 @@ the norm.
   ticket bodies with cross-refs auto-linked, an "open in editor" jump, and a repo-stats page. It is a
   read-only viewer: it normalises the tracker's drifted `type`/`status` vocabulary for filtering and
   reports the offenders, but never edits a ticket. The frontmatter files stay the source of truth.
+  It also **synthesises the story milestones as pseudo-tickets** (`SM-1`…`SM-5`, type `milestone`)
+  by parsing the `## SM-N — …` sections of `.planning/story-mode/MILESTONES.md`, so a milestone
+  cross-links with the tickets that cite it and its `Requires:` gate is shown up front. They have no
+  severity, and their status is derived (shipped / active / planned), not declared. **MILESTONES.md
+  stays the only place they are edited** — nothing is ever written back.
   Classes: `feature` (FEAT-NN) · `bug` (BUG-NN) · `perf` (PERF-NN) · `quality` (QUAL-NN) ·
   `infra` (INFRA-NN) · **`asset` (ASSET-NN, files `asset-*.md`)** — one hand-modelled `.glb` per
   ticket, authored per `.planning/research/ASSETS.md`; each carries a tri/texture budget, real-world

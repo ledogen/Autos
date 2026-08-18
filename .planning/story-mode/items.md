@@ -62,6 +62,70 @@ Used up. Per-job or per-day decisions, not permanent upgrades.
 > (hours for alertness) and lands *later*. Any consumable that pays and costs in the same currency is
 > just a price tag. Check new entries against it.
 
+### 1a. Food & temporary effects — the idea pool [owner brain-dump 2026-08-18]
+
+Owner, unprompted, working the question *"what can food and items actually do to power up the
+player?"* — **captured as stated, none of it ratified.** The value of the dump is that it shows the
+whole shape of a **timed-effect layer** at once, which is the thing the catalog has been missing.
+Sorted below by how close each one is to legal, not by the order they were said.
+
+| # | The idea, as stated | Read |
+|---|---|---|
+| **A** | **Increases carry capacity** — temporarily, "maybe eight hours or a day" | **The strongest, and it drags a real mechanic in with it — see the load-budget ruling below.** As an item it needs a reframe: eating does not stiffen springs. The version that survives is *willingness*, not capacity — it lets you **accept an over-budget load**, and the truck then genuinely handles like it (rule 4 exactly: a harder choice, not a safe one) |
+| **B** | **Overheat less** — "though I don't know how useful that would be" | **More pointed than the owner thought.** Early cooling is *designed* marginal, and freight on a long grade is the specified trigger for the overheat → power loss → engine wear → head gasket chain (`missions.md` §3c). An item that buys headroom on exactly that chain is aimed at the one wear track the catalog already knows is load-bearing. Pairs naturally with A — take the heavy load *and* survive the climb |
+| **C** | **Day-only / night-only effects** | **Not an item — a modifier shape**, and a free one: the day clock already exists (SM-1). Anything below can be given a time-of-day window instead of a duration. A night-only effect is also the only clean way to make coffee's debt interesting a second time |
+| **D** | **Burn less gas** | Legal in principle — fuel is the ratified distance cost — but this reads like a **part**, not a meal. Fuel burn is a function of rpm and load; a *driver* doesn't change it, a component does. Park it in §3b unless a fiction appears |
+| **E** | **Damage resistance for the truck** | **The category error to watch.** Food acts on the driver; this acts on the chassis. Either it becomes a driver effect (steadier hands, so less shock reaches the truck — but then it is a number on the player) or it moves to §2 as strapping/padding, where cargo straps already live. As written it is a stat with no fiction under it |
+| **F** | **Higher mission payout while the effect is active** | **Fails the coffee test as written** — bought with cash, pays out in cash, so it is a price tag with a timer. Salvageable only if the cost is in a different currency: hours, a detour, a worse load, an obligation |
+| **G** | **Traction in the rain** | **Blocked — there is no weather.** Worth keeping on the list precisely because it names a whole missing system; do not author it as an item first |
+| **H** | **Changes something about the world — "increases road camber temporarily"** | **The weakest, and the one to reject loudest.** The world is the one thing that must stay honest — MESH == PHYSICS, and *emergent over injected* is the standing worldgen rule. An item that edits terrain to be nicer is a power floor wearing a physics costume (SM-INV-9) |
+| **—** | **Something that makes you faster** | **Rejected by the owner in the same breath** — "a little on-the-nose." Recorded so nobody re-proposes it |
+
+**"Some of them can be fish too."** This is the first proposed *use* for the catch category beyond
+alertness, and it would give the distinct-waters ledger (§5) somewhere to land. ⚠ **It also collides
+with the one thing fish are currently committed to:** *coffee is debt, fish is income* — fish as
+unrepaid alertness (`spirits-and-pacts.md` #04). If fish become the carriers of timed effects, they
+stop being the honest-restoration counterweight and become a buff table with scales on. **Owner's
+call, flagged not resolved.** The cheap compromise, if wanted: fish restore, *cooked* fish at camp
+carry the effect — which prices the effect in camp time and firewood rather than in nothing.
+
+**The structural question under all of it.** A timed-effect layer is a stat framework, and SM-INV-10
+says described, never scored. Two things have to be answered before any of these becomes a row above:
+
+1. **How does the player know an effect is running, without a meter?** This is less hostile than it
+   was — the 2026-08-17 amendment reversed SM-INV-3's "never live" clause for the rank indicator, so
+   a live diegetic indicator is no longer forbidden on principle. It still has to read as *the world
+   telling you*, not a buff bar.
+2. **What is the duration in?** "Eight hours or a day" is the right instinct — the game's clock is the
+   day, so effects should expire on **sleep or hours**, never on a job count. That also makes every
+   effect cost the same scarce thing the day already costs.
+
+#### The load-budget ruling this dropped out of [owner-specified 2026-08-18, needs ratifying]
+
+Idea **A** carried a freight mechanic with it, and the mechanic is the more valuable half:
+
+> At a freight giver, you're shown **a variety of objects to pick from**. Each has a mass. Some are
+> **too heavy for your vehicle to carry** — outside its budget. You raise the budget by **upgrading
+> suspension and tires**, which lets you take the heavier items: harder to deliver, worth more money.
+
+Why this is good: it makes freight a **choice at the giver** rather than a load handed to you, it
+gives §3a's suspension and tire parts a *reason to be bought* that isn't "wear ran out", and the
+difficulty scales through mass — which is already real load that shifts CoG, so nothing new has to be
+plumbed (`missions.md` §3c: *"no new wear plumbing"*). It also gives the visible-offer-board work
+(FEAT-67) a second thing to show.
+
+Open, and the owner's to settle:
+
+- **Is the budget a hard refusal or a soft one?** Refusing to load is clean; letting you load it and
+  watching the truck squat onto the bump stops is more honest and more RangerSim. The middle option —
+  it loads, but the giver tells you it's a bad idea — is probably the answer.
+- **Does this survive the run?** Suspension and tires are run-layer purchases, so the *budget* dies
+  with the run (SM-INV-8/9). Fine — but say so, because "upgrade to carry more" is the exact sentence
+  shape a power floor usually arrives in.
+- **Where does the mass menu come from?** §4's cargo table is currently one row for freight
+  ("pallets"). A pick-list needs three or four masses with different shapes — and shape matters as
+  much as mass once it's in the bed.
+
 ## 2. Tools
 
 Kept, re-used, and heavy. The distinction from consumables is that a tool's cost is **permanent mass
@@ -157,7 +221,8 @@ land. Nothing here is built (owner, 2026-07-30: *catalog it, don't build it*).
 | **Blanket** | **Energy axis.** The small end of the same multiplier — the cheap first upgrade over the bare bedroll, and the thing you still have when you've sold the tent. | Bought/found | Cash; a slot; trivial mass | **IDEA** — 2026-08-01 |
 | **Cot** | **Vibe axis — flatness.** Makes unflat ground sleepable: fills part of the flatness deficit of the site you chose. Inert on ground that is already flat. | Bought/found | Cash; a slot; real mass (it's a folding frame) | **IDEA** — 2026-08-01 |
 | **Canopy / tarp** | **Vibe axis — shade.** Makes an exposed site bearable: fills part of the shade deficit. Inert under trees. | Bought/found | Cash; a slot; small mass | **IDEA** — 2026-08-01 |
-| **Binoculars** | **Vibe axis — view.** Something to look at from a site with nothing much to look at. Inert on a spot that already has the valley in front of it. ⚠ Depends on a **view** contribution to the site score, which DESIGN.md names as a layer-3 factor but `VIBE_W` (`src/camp.js`) does not yet carry. | Bought/found | Cash; a slot; negligible mass | **IDEA** — 2026-08-01 |
+| **Binoculars** | **Vibe axis — view.** Something to look at from a site with nothing much to look at. Inert on a spot that already has the valley in front of it. **Unblocked:** view is now a real segment — `VIBE_W = { flat .40, view .15, shade .20, water .25 }` in `src/camp.js`, re-ratified 2026-08-01, and the raw score is `skylineView()`'s angular field-of-vision scan. So the deficit this fills is `1 − viewScore`, and it is **the cheapest entry in this table to build** — the only camp-gear row whose whole dependency chain already ships. | Bought/found | Cash; a slot; negligible mass | **IDEA** — 2026-08-01; **owner re-affirmed 2026-08-18** |
+| **Backpack** | **Reach — a third axis, not a deficit patch.** Lets you make camp **further from the road**: it raises the tether (`campRoadEdgeM`, 40 m past the shoulder in `src/camp.js`) that currently pins camping to the road corridor. It fills no segment of the vibe score — it **lengthens the candidate ladder the site hunt walks**, so better ground comes into reach. | Bought/found | Cash; a slot; mass — and **the day clock at both ends**: getting out there and getting back | **IDEA** — owner, 2026-08-18 |
 | **Cooking kit** | ~50 lb (≈23 kg) of always-carried mass. Renders as an **A-frame over the campfire with a Dutch oven hanging from it**. Gives a **flat bonus to the effect of food items** — there is deliberately no cooking *system*, no recipes, no ingredients. | Bought/found | ≈23 kg on every mile, for a benefit collected only at camp | **IDEA** — 2026-07-30. ⚠ Depends on food items, which do not exist (§1: fish is PROPOSED, and upstream of a fishing minigame nobody has framed) |
 
 > **The visible-kit rule.** Camp gear is the one category whose ownership is legible *without a UI*:
@@ -195,6 +260,37 @@ land. Nothing here is built (owner, 2026-07-30: *catalog it, don't build it*).
 > being helped (`_renderVibeBar`, `src/main.js`). No legend, no numbers, no item name: the player
 > sees *the cot is working tonight* vs *the cot is dead weight*, which is the feedback loop that
 > makes carrying it a real decision. SM-INV-3-shaped — a diegetic read, not a meter.
+
+> **The backpack is a THIRD axis — reach — and it is the only camp item that raises the ceiling**
+> [owner, 2026-08-18; needs ratifying against SM-INV-6]. Cot, canopy and binoculars are all
+> *deficit patchers*: `min(itemCap, headroom)` on a site you already chose, deliberately inert on a
+> good site, so the place still sets the ceiling. The backpack does something categorically
+> different — it changes **which sites are eligible at all** by extending the road tether, so the
+> hunt itself gets a longer ladder and genuinely better ground becomes reachable.
+>
+> That is not automatically illegal. SM-INV-6's clause is *the last leg of the day is still finding
+> good ground* — and this item makes that hunt **bigger**, not shorter. It's the opposite failure
+> mode from the tent-substitutes-for-ground substitution. But it is a ceiling raise, so it needs a
+> real cost and a cap, and both are open:
+>
+> - **What does it cost?** The honest one is **the day clock at both ends** — you spend daylight
+>   getting out there and you spend it again getting back to the road in the morning, before the
+>   first job. That's a cost in hours against a payout in vibe: different currencies, so it passes
+>   the coffee test. Mass and a slot are the small half of the price.
+> - **How far, and is it capped?** 40 m is the shipped tether. Doubling it is a different game from
+>   ten-xing it: the tether is what makes the camp zone *a road-corridor selector rather than a blob
+>   of terrain* (`src/camp.js` header). Past some radius the yellow casing on the 2D map stops
+>   describing where you can sleep, and the zone disc — which is deliberately never drawn — starts
+>   to matter. Pick a number that keeps the corridor reading true.
+> - **⚠ The fiction assumes on-foot movement, which the game does not have.** A backpack means you
+>   carry your kit in from the parked truck. There is no walking in RangerSim. So either the item is
+>   really a *driving* permission ("you can hump the gear in from wherever you got the truck to") and
+>   the name is doing fictional work the mechanic doesn't, or it wants an out-of-truck mode, which is
+>   a much larger ask. **Owner's call** — the mechanic is clean either way, only the name is at risk.
+> - **Cheap to build, and it does not touch determinism.** `campRoadEdgeM` is a `CAMP_PARAMS` key
+>   and is explicitly kept out of `routeCacheSig`, so a per-run modifier on the tether re-bakes
+>   nothing and cannot move a zone (SM-INV-12 holds for free). It already has a debug slider
+>   (5–80 m).
 
 **Two open flags, recorded rather than resolved:**
 
@@ -370,6 +466,10 @@ What the docs currently commit to:
 - The **fishing perk tree, if any, *is* The Confluence's disposition track** — one system, not two,
   so every perk held is evidence of a relationship rather than a purchase.
 
+**Fish may also carry timed effects** — owner, 2026-08-18 (§1a). That would give this ledger a
+second use, and it **conflicts with *coffee is debt, fish is income***; see §1a for the conflict and
+the cooked-at-camp compromise.
+
 **Species: unspecified, and that's the burn-down question.** Nothing in the docs names a single fish.
 Before authoring a species list, the axis it varies along has to exist. Candidates, cheapest first:
 
@@ -392,18 +492,21 @@ Before authoring a species list, the axis it varies along has to exist. Candidat
 
 ## Gaps worth knowing before burning down assets
 
-1. **There is no fishing system.** DESIGN.md mentions fish exactly once, in passing ("no fire, no
+1. **There is no timed-effect layer.** §1a is a nine-idea dump, not a system: no duration model, no
+   way to show an effect is running without a meter (SM-INV-10), no ruling on whether food acts on the
+   driver or the truck. Upstream of every food asset.
+2. **There is no fishing system.** DESIGN.md mentions fish exactly once, in passing ("no fire, no
    fish, wake half-tired"). The whole catch category, The Confluence, and *coffee-is-debt-fish-is-
    income* rest on a minigame nobody has framed. **This is the single biggest gap in the catalog** —
    and it's upstream of any fish asset work.
-2. **The item *structure* is deferred** (`IDEAS.md`). No slot model, no weight budget, no
+3. **The item *structure* is deferred** (`IDEAS.md`). No slot model, no weight budget, no
    inventory UI is specified. Every "a slot" cost above is an assumption, not a rule.
-3. **Consumables-as-real-mass is stated but never quantified.** It's the rule that makes tools
+4. **Consumables-as-real-mass is stated but never quantified.** It's the rule that makes tools
    interesting (§2) and it currently has no numbers behind it.
-4. **Spare tire, air filter, quick-jack, breaker bar are named but undesigned.** They appear in one
+5. **Spare tire, air filter, quick-jack, breaker bar are named but undesigned.** They appear in one
    sentence of DESIGN.md as examples of stowed consumables. Whether roadside repair is even a
    player action is unspecified — which is a *mechanic* question, not an asset one.
-5. **The chain may not be an item at all.** If the log drag supplies it, it belongs to the mission,
+6. **The chain may not be an item at all.** If the log drag supplies it, it belongs to the mission,
    not the inventory. Cheap to decide, and it changes whether it needs an asset.
 
 ## Adding to this catalog

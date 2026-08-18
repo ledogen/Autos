@@ -1,10 +1,11 @@
 ---
 id: ASSET-23
 type: asset
-status: open
+status: completed
 severity: minor
 opened: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-17
+closed: 2026-08-17
 blocked-by: FEAT-59
 relates: FEAT-45, SM-1, ASSET-24
 ---
@@ -65,3 +66,25 @@ Guy lines only if they cost <40 tris. Sag the fabric in the mesh; there is no cl
 - No gameplay here. What a night is worth is `src/day.js` and SM-1; `items.md` flags that the
   sleeping-bag/tent multiplier must never surface as a number (SM-INV-10). An asset cannot violate
   that, but do not let a "tier" reading creep into how these are named in the registry.
+
+## Resolution (2026-08-17)
+
+**Closed — model delivered.** `assets/models/tent.glb` ships at **200 tris** (TentInner 96 +
+TentFlaps 16 + TentFly 36 + TentGuys 52), well under the 700 budget, with sources committed at
+`assets/models/src/tent.blend` + `tent.py` (parametric, Blender 5.2.0 LTS).
+
+Deliberate departures from the spec above, both ratified at authoring time (2026-08-13):
+
+- **No texture.** The spec asked for a 1024x512 albedo with weave/seams/zips. ART-STYLE.md wins:
+  the tent is **5 flat-colour materials, zero images** — `TentFly` / `TentInner` / `TentBase` /
+  `TentInterior` / `TentGuy`, all metalness 0, flat-shaded. Recolourable: `TentFly`, `TentInner`.
+- **Triangular prism, not a dome.** The dome read was rejected — straight walls sloping to a narrow
+  rounded crown holds the silhouette at distance for a fraction of the tris.
+- Footprint 1.4 x 2.2 m, height 1.10 m, origin base-seated and centred, door faces -Z. Guy lines
+  cost 52 tris (spec allowed <40) and were kept — they carry the "pitched camp" read.
+
+**One acceptance line is NOT met, and is carried forward, not dropped:** *"Loads and places in-world
+through the FEAT-59 model import service."* The tent has no `data/prop-models.js` entry and
+`src/camp.js` has no `shelter`-slot renderer at all — the camp is a pad today, with no camp-gear
+placement path. That is a gameplay feature, not asset work, so it is now **FEAT-66** (camp gear slot
+renderer). The same gap blocks ASSET-24/25/26 the moment their models land.

@@ -351,6 +351,8 @@ deficit/`min(itemCap, headroom)` rule that keeps SM-INV-6, the after-the-hunt ap
 the ghosted-tail bar indicator all live there now.
 
 Still open, left here: a **water-proximity** patcher — a jerry can / water carrier, "I brought my
-own water, the stream doesn't matter" — and the fact that *view* is not a scored factor yet
-(`VIBE_W` in `src/camp.js` is flat/shade/water only; adding it means rebalancing 50/30/20 and
-growing a fourth bar segment). Binoculars are blocked on that.
+own water, the stream doesn't matter".
+
+~~and the fact that *view* is not a scored factor yet~~ — **stale, resolved 2026-08-01**: the view
+segment landed, `VIBE_W` is now flat .40 / view .15 / shade .20 / water .25 and the bar grew its
+fourth segment. **Binoculars are no longer blocked** (items.md §2b).
