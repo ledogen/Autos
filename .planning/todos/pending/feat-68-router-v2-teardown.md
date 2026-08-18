@@ -434,3 +434,62 @@ of a whole region lands in low single-digit seconds.
 heights pinned; junction-to-junction corridors THROUGH deg-2 sites, killing the chain merge; bore
 segments mapped onto FEAT-40 span machinery; bridges may ship crude), stage-3 curve smoothing,
 seeds 20/11/67 served with the 2D map.
+
+## Checkpoint 1 record (2026-08-18, session zero (d) — v2 drives the full network)
+
+On `feature/corridor-router` (commit 7cff01d), **served for judging: `http://localhost:3343`**
+(worktree dev server; 2D map on M; seed via `?seed=20` / `?seed=11` / `?seed=67`). Seed 20's
+canonical bore is AT SPAWN — the spawn road enters it within ~100 m. Screenshots from the
+headless pass: a real portal + hillside road (the emergent bore, rendered by the FEAT-40
+machinery), and a bridge as the agreed-crude floating tube at (419, 1480).
+
+**Integration shape (the run contract held):** four narrow swaps in road.js — `_edgeCenterline`
+(corridor + stage-3 curve), `_registerRun` (exact profile DP replaces design-grade + tunnel pass;
+bore/bridge segs ship as FEAT-40 spans), the warm scan (neutered — the v1 Worker must not fill the
+v2 cache; synchronous routing is ~3 ms/edge), and `routeCacheSig` v1→v2. Everything downstream
+(carve, ribbon, physics colliders, map, spawn, missions) consumed v2 runs unmodified. The deg-2
+chain merge re-registers through `_registerRun` and thereby BECAME the junction-to-junction
+re-solve — deg-2 pins lift automatically on merged chains.
+
+**Numbers (eval seeds 20/11/67, headless):** full network 240–550 ms (v1: 5.6–7.5 s); node
+y-spread at shared nodes **0.000 m** (the junction blend disease is dead by construction); max
+sustained-24 m grade **35% = the vocabulary cap**, zero runs over the 40% ceiling (v1 shipped
+118% here); zero infeasible profiles; in-browser 60 fps on this machine.
+
+**Stage 3 (new, in corridor-router.js):** dehairpin (one-cell A* stairs are noise, not
+switchbacks) → Douglas-Peucker at ~1 cell (the swath owns that freedom) → Chaikin with
+escalating passes → line-arc fillets into the repo's own `Centerline` primitives (real curvature
+for camber; clothoid upgrade path open). Min fillet radius ≥ 8 network-wide (mostly ≥ 12).
+
+**Two purity findings fixed en route (both measured):**
+- **Routes are now direction-canonical.** The search is not direction-symmetric and windows ask in
+  either order (v1's "routing is directional" gotcha): 36 m AB-vs-BA drift, killed by routing the
+  id-ordered direction and returning its exact reverse for the other spelling. 0.00 m after.
+- **cutMax 12 → 20 m.** A 12–20 m trench is an open rock cutting at road grade cap, not a tunnel;
+  at 12 the bore's 18% cap rate-limited legitimate cliff descents (the one false "infeasible").
+
+**Gate triage (25/30 green on the affected set):**
+- *Die with v1 (retire in the teardown commits):* `road-tunnel.mjs` (tests the FEAT-40 tunnel
+  PASS, which no longer runs — spans now come from the solver), `route-bundle-parity.mjs` (cache
+  subsystem; sig-bumped off by design — inventory item 4 says delete the whole bake).
+- *Re-baseline:* `graph-topology.mjs` — its window-invariance sub-check PASSED on substance
+  (0 only-in-one-window edges, 0 grade mismatches) but its ≥4-interior-edges precondition fails
+  because v2's non-crossing corridors leave fewer, longer merged runs; and its node-departure rule
+  encodes v1's "node Y rides road grade, not terrain", which the ratified day-one node-height rule
+  deliberately replaces.
+- *Loop items (real, diagnosed, not blocking a character judgment):* `story-poi.mjs` — shared pads
+  drift 20 m between stream windows because v2's naive deg-2 joints carry kinks, so the QUAL-16
+  merge fillets now do real geometric work and merge extent is window-bounded; the by-construction
+  fix is routing junction-to-junction THROUGH deg-2 nodes (junction plan bonus deletion, next).
+  `paper-tour.mjs` — tier-2 dropped 4 customers that are on tier-3's route; mission-layer
+  edge→merged-run arc mapping over the longer v2 chains, investigate in the loop.
+- *Green and load-bearing:* world-determinism (byte-identical rebuilds), restream-invariance,
+  carve-mesh-smoothness, centerline-curvature, pond-route-around (discs now block corridor cells),
+  road-fill-support (taught that spans are structure — and a real 9.5 m v2 embankment measured
+  fully supported, so the carve takes v2's deeper earthworks fine).
+
+**What to judge while driving (calibration knobs are `V2_COSTS` in src/corridor-router.js):**
+structures are still too COMMON (bores/bridges must read as earned); grade character (does 35%-max
+hugging feel honest or harsh); crest airtime; whether corridors pick believable lines. Bridges
+render as tubes and junctions are naive meets — both knowingly deferred, judge alignment not
+dressing.
