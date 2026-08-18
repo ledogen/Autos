@@ -5,17 +5,30 @@
 // RIGHT and the part a gate can actually pin (test/paper-route.mjs). Below it is the state machine,
 // which owns the tour, one par, the stock and the settlement, and which needs a live RoadSystem.
 //
-// Why this mission prices itself instead of going through payoutFor():
+// THE FARE IS THE MARGIN LINE; THE TIPS ARE THE DIFFERENCE [owner, 2026-08-17].
 //
-// payoutFor() is the SM-INV-4 margin line — continuous in the par ratio, bare completion pays
-// ~nothing. That is the correct shape for a point-to-point errand and the wrong shape for this.
-// DESIGN.md already blesses the divergence ("not every mission type is scored on margin… rank is
-// computed per-axis") and missions.md §3b/3c already price fragile and freight at a flat rate. So
-// this route prices itself, and SM-INV-4 is left untouched rather than bent.
+//     time  =  payoutFor(parEff, elapsed/parEff, payTier)   — the SAME function a POI job uses
+//     tips  =  paperTip x k x par x payTier, per customer, scaled by throw accuracy
+//
+// This REVERSES the original ruling, which was that the route must price its own time money and
+// never call payoutFor(). The reasoning then was that the margin line is the wrong shape for this
+// mission; what that produced in practice was two time-payout curves with different ceilings. The
+// route's own bonus SATURATED at expediteFull while the margin line kept climbing, so a paper round
+// paid best relative to a POI job when you drove SLOWLY and inverted below ratio ~0.66 — the exact
+// opposite of a reward. Sharing the function removes the possibility by construction.
+//
+// The owner's framing: you are paid for the drive like any other job, and every customer tips you
+// on top for making the delivery and for how well you placed it. Not realistic; it does not need to
+// be. The premium over a POI job is therefore largest at par (where the fare is smallest) and
+// tapers as you drive faster — a fixed gratuity on a growing fare — and never inverts.
+//
+// SM-INV-4 is not bent by this: the margin line IS the invariant, and this mission now uses it
+// verbatim instead of running a parallel curve beside it.
 //
 // The consequence that matters: this is the income floor (missions.md, ratified 2026-08-05). Papers
-// you delivered are money you keep. There is no completion multiplier anywhere in here, because a
-// floor that pays nothing for a half-finished route is not a floor.
+// you delivered are money you keep — the TIPS are the floor, banked per throw, and they survive a
+// half-finished route. The fare is priced against parEff (par x coverage), so serving half the
+// round pays for half the road rather than cliff-edging to nothing.
 //
 // ── ACCURACY PAYS, THE CLOCK GRADES [ratified + implemented 2026-08-14] ─────────────────────────
 //
@@ -25,14 +38,16 @@
 // call, applied game-wide), the day ramp tightens the good letters — gated on full coverage,
 // because you can always be quick by skipping people.
 //
-// The shape this buys: "slow and careful" and "fast and ragged" pay about the same, so both are
-// real ways to drive a round rather than one dominating. That equivalence is what fixes bonusMax at
-// 0.70 and forces the bonus to be ADDITIVE on the full flat — see scoreRoute.
+// The shape this used to buy: "slow and careful" and "fast and ragged" paid about the same, which
+// is what fixed bonusMax at 0.70. That equivalence RETIRED with the 2026-08-17 reshape — the fare
+// is now the margin line, which rewards pace without limit, so speed carries more of the total than
+// accuracy does. Accuracy is a tip, deliberately: `paperTip` is the one dial for how much it is
+// worth, and raising it is how you give throwing more weight again.
 //
 // It replaced coverage × meanAccuracy, which made "how well did you throw" and "how well did you
 // do" the same question and left the clock nothing to say.
 
-import { ECONOMY_PARAMS } from './economy.js'
+import { ECONOMY_PARAMS, payoutFor } from './economy.js'
 import { buildGraphAdj, START_ZONE_R, buildRunExport, TRACE_DIV } from './mission.js'
 import { computePar, gradeRun, RANK_THRESHOLDS_DEFAULT } from './par.js'
 // The accuracy law is throw.js's, not restated here. It is one line of algebra and that is exactly
@@ -64,56 +79,29 @@ export const PAPER_PARAMS = {
     // route tolerates four and a half, which is the difficulty curve stated as inventory.
     sparesFrac:  [1.00, 0.75, 0.50, 0.30],
 
-    // FLAT is anchored to par so the floor survives the 20-day cost ramp instead of decaying into
-    // irrelevance by day 15. paperW is how poor a perfect route at par is: 0.6 = "reliably poor",
-    // which is what an income floor is supposed to feel like.
+    // THE TIP POOL [owner, 2026-08-17 — replaces paperW / bonusMax / expediteFull].
     //
-    // [RE-ANCHORED 2026-08-16, then RAISED 2026-08-17.] It used to mean "0.6 × the margin line AT
-    // PAR", and the margin line at par used to be one full day-tier unit — so the two readings were
-    // the same number. They are not any more: par pays m = 0.5. It is now a fraction of a
-    // **day-tier unit** (the break-even payment).
+    // The model changed shape, not just value. A paper round now pays:
     //
-    // 0.60 → 0.82 [owner, 2026-08-17]: **the paper route is no longer meant to be poor.** The owner
-    // reframed it as *distance + tip* — it should out-earn a point-to-point job over the same road
-    // by ~20%, with accuracy as the tip. Measured before the change, the card the owner sent (4/4,
-    // 69% accuracy, ratio 0.653) paid **0.61× what a POI job over the same par would have**. The
-    // new value is solved from a stated anchor: a PERFECT round driven at the break-even pace
-    // (ratio 0.80) pays 1.20 × the margin line at that same pace —
-    //     paperW × (1 + bonusMax·f(0.80)) = 1.20 × m(0.80)
-    //     paperW × (1 + 0.70 × 0.667)     = 1.20 × 1.00     ⇒ paperW = 0.818
+    //     time  =  EXACTLY the point-to-point margin line (economy.js payoutFor)
+    //     tips  =  paperTip x k x par x payTier, split per customer and scaled by accuracy
     //
-    // ⚠ THE PREMIUM IS NOT FLAT ACROSS THE RANGE, and cannot be made flat by this number alone.
-    // The margin line keeps climbing as the driver gets faster, while the paper route's time bonus
-    // SATURATES at `expediteFull` (ratio 0.70) — so the premium is ~1.2× around break-even and
-    // decays for a quick driver, reaching roughly parity by ratio 0.65. Making it a true flat +20%
-    // everywhere means having the expediency bonus track the margin line instead of capping, which
-    // is a redesign of the paper payout curve and an owner decision, not a tuning tweak.
-    paperW:      0.82,
-
-    // The expediency bonus — the ONLY place time enters the payout. Gated on a completed route:
-    // you cannot finish early without finishing.
+    // The owner's framing: every customer tips you for making the delivery and for how well you
+    // placed it, on top of being paid for the drive like any other job. Not realistic; it does not
+    // need to be. What it buys is that the CLOCK is priced identically to every other mission —
+    // same function, same curve, no second time-payout with its own ceiling to drift out of step.
     //
-    // IT STARTS AT THE BELL, not at par (owner, 2026-08-15). There is no `expediteOn` any more,
-    // because the ratio it would hold is `tolerance` and two numbers that must be equal are one
-    // number waiting to drift: the payout reaching zero exactly where the route ends is now
-    // structural rather than a coincidence.
+    // Why the old shape had to go: the round's whole payout was a flat rate plus an expediency
+    // bonus that SATURATED at expediteFull, while the margin line it was meant to beat keeps
+    // climbing. So the paper route paid best relative to a POI job when you drove slowly and
+    // INVERTED below ratio ~0.66. Worse, `bonusMax` was carrying two incompatible jobs at once:
+    // 0.70 to hold the accuracy/speed equivalence, 1.50 to hold a flat premium. One constant,
+    // two equations. Reusing the margin line deletes the conflict rather than trading it off.
     //
-    // [2026-08-16] The bell IS par now, so "starts at the bell" and "starts at par" have become the
-    // same sentence, and the drift risk the paragraph above worries about is gone by construction —
-    // there is only one number left. The owner accepted the consequence explicitly: **a route
-    // driven exactly at par settles $0 of time money** and keeps only its per-throw spot earnings.
-    // A bare pass is a bare pass.
-    expediteFull:0.70,   // …and where it maxes out
-    // NOT A FREE KNOB — the owner's equivalence fixes it. A rim-scraper (mean q 0.30) blasting the
-    // round must earn about what a methodical driver (mean q 1.0) earns at par. With the bell at
-    // par the bonus is fully unpaid there — f(1.0) = (1.00 − 1.00) / (1.00 − 0.70) = 0 — so:
-    //     1.0 + 0·B  =  0.3 + 1.0·B     ⇒     B = 0.70
-    // which is exactly the value that held before the bonus was moved to the bell in the first
-    // place. The 7/6 of 2026-08-15 was an artefact of the bell sitting at 1.2·par; putting the bell
-    // back on par returns the equivalence to its original solution. (The module header up top never
-    // stopped saying 0.70 — it was stale for a day and is now correct again.)
-    // Applied to the FULL flat (n × FLAT), never to the accuracy-scaled sum — see scoreRoute.
-    bonusMax:    0.70,
+    // 0.20 = a perfect round tips ~20% of the margin line on top of it. The premium is therefore
+    // largest at par (where clock money is smallest) and tapers as you drive faster — which is how
+    // a tip behaves: a fixed gratuity on a growing fare.
+    paperTip:    0.20,
 }
 
 /**
@@ -181,10 +169,10 @@ export function deadlineFor (par, P = PAPER_PARAMS) { return par * P.tolerance }
  * to keep in step with the settlement. Derived, never authored, so the route tracks the same
  * economy as everything else; degenerate par pays zero rather than NaN-ing the wallet.
  */
-export function flatPerPaper (par, customers, payTier = 1, P = PAPER_PARAMS) {
+export function tipPerPaper (par, customers, payTier = 1, P = PAPER_PARAMS) {
     const n = Math.max(0, customers | 0)
     return (isFinite(par) && par > 0 && n > 0)
-        ? ECONOMY_PARAMS.k * par * payTier * P.paperW / n
+        ? ECONOMY_PARAMS.k * par * payTier * P.paperTip / n
         : 0
 }
 
@@ -200,7 +188,7 @@ export function flatPerPaper (par, customers, payTier = 1, P = PAPER_PARAMS) {
  * @param {number}   payTier     economy.js terms().payTier — dayTier × regionTier, frozen at accept
  *                               with the rest of the terms (renamed from `dayTier` 2026-08-17 when
  *                               the region multiplier landed; it is no longer the day alone)
- * @returns {{coverage,meanAccuracy,effDeliveries,score,letter,flat,expedite,payout,complete}}
+ * @returns {{coverage,meanAccuracy,effDeliveries,score,letter,tip,timeMoney,spot,payout,total,complete}}
  */
 export function scoreRoute (accuracies, customers, elapsed, par, payTier = 1, P = PAPER_PARAMS,
                             thresholds = RANK_THRESHOLDS_DEFAULT) {
@@ -238,38 +226,34 @@ export function scoreRoute (accuracies, customers, elapsed, par, payTier = 1, P 
     const parEff = par * coverage
     const letter = gradeRun(elapsed, parEff, thresholds).letter
 
-    // FLAT is per delivery, and it is derived rather than authored so the route tracks the same
-    // economy everything else does. Degenerate par (a broken tour) pays zero rather than NaN-ing
-    // the wallet — the same guard payoutFor() carries.
-    const flat = flatPerPaper(par, n, payTier, P)
+    // TIPS are per delivery, derived rather than authored so the round tracks the same economy
+    // everything else does. Degenerate par (a broken tour) pays zero rather than NaN-ing the
+    // wallet — the same guard payoutFor() carries.
+    const tip = tipPerPaper(par, n, payTier, P)
 
-    // The bonus needs a real elapsed time AND a completed route. An unfinished route has no ratio
-    // worth reading: you did not finish, so you cannot have finished early.
-    let expedite = 0
-    if (complete && isFinite(elapsed) && elapsed >= 0 && isFinite(par) && par > 0) {
-        const ratio = elapsed / par
-        const span  = P.tolerance - P.expediteFull
-        const f     = span > 0 ? (P.tolerance - ratio) / span : 0
-        expedite    = P.bonusMax * Math.min(1, Math.max(0, f))
-    }
+    // THE CLOCK IS THE MARGIN LINE, NOT A SECOND CURVE [owner, 2026-08-17]. This mission used to
+    // price its own time money and the module header used to boast that it never called
+    // payoutFor(). That asymmetry is exactly what went wrong: two time-payout curves with
+    // different ceilings cannot be kept in step, and the paper route ended up paying best for
+    // driving SLOWLY. It now calls the shared function, so a paper round and a POI job are paid
+    // identically for the same drive over the same road, and the tips are the difference.
+    //
+    // Priced against parEff (par × coverage), the same effective par the LETTER is graded on:
+    // serve half the round and you are paid for half the road, on the clock you actually kept.
+    // Nothing needs to be gated on `complete` — an unfinished round is priced, not cliff-edged,
+    // and the tips it did earn are already banked. The income floor survives in the tips.
+    const timeMoney = parEff > 0 ? payoutFor(parEff, elapsed / parEff, payTier) : 0
 
     // TWO INCOME STREAMS, PAID AT DIFFERENT TIMES [owner, 2026-08-15].
     //
     //   accuracy -> `spot`, banked THE MOMENT each paper lands (EconomySystem.addSpot)
     //   time     -> `payout`, settled at the bell
     //
-    // So the end-of-mission payout is a pure function of the clock, and accuracy is fully decoupled
-    // from it — not because accuracy stopped paying, but because it was already paid. The totals
-    // are unchanged; what moved is WHEN. That is what makes the throw read-out honest: the dollars
-    // it quotes are in the wallet before the paper stops rolling.
-    //
-    // The split also keeps the owner's equivalence intact, since it is a statement about the total:
-    // a rim-scraper (mean q 0.30) blasting the round and a methodical driver (mean q 1.0) at par
-    // both come out at flat x n. The bonus is ADDITIVE on the full flat for that reason — the same
-    // equivalence expressed multiplicatively needs 233%, which is not a tunable number.
-    const spot   = Math.max(0, flat * eff)
-    const payout = Math.max(0, flat * n * expedite)
-    return { coverage, meanAccuracy, effDeliveries: eff, score, letter, flat, expedite,
+    // The split is unchanged and the mapping got cleaner: `spot` IS the customers' tips, `payout`
+    // IS the fare. What the player is told matches what the money is.
+    const spot   = Math.max(0, tip * eff)
+    const payout = Math.max(0, timeMoney)
+    return { coverage, meanAccuracy, effDeliveries: eff, score, letter, tip, timeMoney,
              spot, payout, total: spot + payout, complete }
 }
 
@@ -876,7 +860,6 @@ export class PaperRouteSystem {
                     delivered:     r.delivered,
                     coverage:      +r.coverage.toFixed(3),
                     mean_accuracy: +r.meanAccuracy.toFixed(3),
-                    expedite:      +r.expedite.toFixed(3),
                     complete:      !!r.complete,
                     // The letter is graded against par × coverage (owner, 2026-08-15), so record the
                     // EFFECTIVE par it actually came from — otherwise a refit grades a half-finished
@@ -906,7 +889,7 @@ export class PaperRouteSystem {
      */
     paperValue (q) {
         if (!this.run || !this.route) return 0
-        return flatPerPaper(this.route.par, this.route.customers.length, this.run.payTier) * q
+        return tipPerPaper(this.route.par, this.route.customers.length, this.run.payTier) * q
     }
 
     /** Papers still in the truck. Zero does not end the route; the last one LANDING does. */

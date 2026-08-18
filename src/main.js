@@ -3628,14 +3628,17 @@ function _renderPaperUI () {
       const r = p.result
       body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
         + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
-        + (r.expedite > 0 ? ` &nbsp;<span style="color:#8ce99a">+${Math.round(r.expedite * 100)}% early</span>` : '')
+        // The "+N% early" badge went with the expediency bonus it reported [2026-08-17]. Pace is
+        // now paid through the shared margin line, so the letter and the time money already say it
+        // and a third restatement was just the old bonus wearing a percentage.
+        + ''
         + `<br><b>${r.delivered}</b> of <b>${r.customers}</b> delivered `
         + `&nbsp;<span class="mp-dim">·</span>&nbsp; `
         + `${Math.round(r.meanAccuracy * 100)}% <span class="mp-dim">accuracy</span>`
         // TWO LINES, because it is two payments: the papers were banked as they landed, and the
         // clock is what settles now. Showing only the settlement would look like a pay cut.
-        + `<br><span class="mp-dim">papers (already paid)</span> <span class="mp-pay">$${formatMoney(r.spot)}</span>`
-        + `<br><span class="mp-dim">time</span> <span class="mp-pay">$${formatMoney(r.payout)}</span>`
+        + `<br><span class="mp-dim">tips (already paid)</span> <span class="mp-pay">$${formatMoney(r.spot)}</span>`
+        + `<br><span class="mp-dim">the drive</span> <span class="mp-pay">$${formatMoney(r.payout)}</span>`
         + (r.points > 0
           ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points} good deed${r.points > 1 ? 's' : ''}</span>`
           : '')

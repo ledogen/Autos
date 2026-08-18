@@ -244,25 +244,47 @@ lands, not at the bell, so the end-of-route payout is a *pure function of time* 
 decoupled from it completely — not because it stopped paying, but because it was already paid. The
 totals do not move; what moved is when. It is also what lets the throw read-out quote real money.
 
-**$0 SITS AT THE BELL, not at par [AMENDED 2026-08-15, owner].** The bonus ramps from the deadline
-down to `expediteFull`, so the settlement reaches zero exactly where the route ends. There is no
-`expediteOn` constant: the start *is* `tolerance`, structurally, because two numbers that must be
-equal are one number waiting to drift.
+~~**$0 SITS AT THE BELL, not at par [AMENDED 2026-08-15, owner].** The bonus ramps from the deadline
+down to `expediteFull`, so the settlement reaches zero exactly where the route ends.~~
+**[RETIRED 2026-08-17.]** Nothing settles at zero any more: the bell IS par, par is the slowest
+PASSING drive, and a pass pays. This was the owner-reported flaw that prompted the reshape below —
+"where I went wrong was making the time payout a road to zero at par".
 
-The arithmetic that pins the bonus: a rim-scraper (mean q = 0.30) who blasts the round must earn what
-a methodical driver (mean q = 1.0) earns at par. ~~At par the bonus is only partly paid —
-f(1.0) = (1.20 − 1.00) / (1.20 − 0.70) = 0.4 — so `1.0 + 0.4·B = 0.3 + B`, giving **B = 7/6**.~~
-**[RE-DERIVED 2026-08-16]** The bell is par now (`tolerance` 1.2 → 1.0), so at par the bonus is
-*fully unpaid* — f(1.0) = (1.00 − 1.00) / (1.00 − 0.70) = 0 — and the equivalence reads
-`1.0 + 0·B = 0.3 + B`, giving **B = 0.70**. That is exactly the value that held before the bonus was
-moved to the bell on 2026-08-15: the 7/6 was an artefact of the bell sitting at 1.2·par, and putting
-the bell back on par returns the equivalence to its original solution. It still
-applies to the FULL flat (`n × FLAT`) rather than to the accuracy-scaled sum; on the scaled sum the
-same equivalence needs a 233% bonus, which is not a tunable number.
+~~The arithmetic that pins the bonus~~ **[RETIRED 2026-08-17 — the expediency bonus is gone.]**
+The round used to price its own time money as a flat rate plus a bonus that saturated at
+`expediteFull`, and `bonusMax` was solved from the equivalence "a rim-scraper blasting the round
+earns what a methodical driver earns at par".
 
-~~**Par is a B, and B contains par** [CONFIRMED 2026-08-14, owner]. SM-INV-3's amendment holds for
-this mission type too: driving the route the way par assumes is a B, and dawdling is a C. An earlier
-reading — that par should be a C here — was withdrawn.~~
+**THE RESHAPE [RATIFIED 2026-08-17, owner]: the fare is the margin line; the tips are the
+difference.**
+
+```
+time  =  payoutFor(parEff, elapsed/parEff, payTier)   — the SAME function a POI job uses
+tips  =  paperTip (0.20) × k × par × payTier, per customer, scaled by throw accuracy
+```
+
+*Why.* The old model had **two time-payout curves with different ceilings**. The route's bonus
+saturated at ratio 0.70 while the margin line keeps climbing, so a paper round paid best relative to
+a POI job when you drove **slowly**, and inverted below ratio ~0.66 — the opposite of a reward.
+Worse, `bonusMax` was being asked to satisfy two incompatible equations at once: **0.70** to hold the
+accuracy/speed equivalence, **1.50** to hold a flat premium over the margin line. One constant, two
+requirements. Sharing the margin line deletes the conflict instead of trading it off.
+
+*The framing.* You are paid for the drive like any other job, and every customer tips you on top for
+making the delivery and for how well you placed it. Not realistic; it does not need to be. The
+premium is therefore biggest at par (where the fare is smallest) and tapers as you drive faster — a
+fixed gratuity on a growing fare — measured **1.40× at par · 1.20× at break-even · 1.13× at 0.60**,
+and it never inverts.
+
+*What it costs.* **The 2026-08-14 accuracy/speed equivalence is retired.** The fare rewards pace
+without a ceiling, so speed now out-earns accuracy. Accuracy is a tip, deliberately; `paperTip` is
+the single dial for how much it is worth, and raising it is how throwing gets more weight back.
+
+*And SM-INV-4 is no longer bent.* The original ruling was that this mission must price itself and
+never call `payoutFor` — that is **reversed**. The margin line IS the invariant, and the route now
+uses it verbatim instead of running a parallel curve beside it. The income floor moved to the tips,
+which are banked per throw and survive a half-finished round; the fare is priced against
+`parEff = par × coverage`, so serving half the round pays for half the road rather than nothing.
 
 **Par is a C** [REVERSED 2026-08-16, owner — this reverses the 2026-08-14 confirmation struck through
 above]. The reading withdrawn on 2026-08-14 is, in effect, reinstated — not because that call was
