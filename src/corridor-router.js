@@ -1,0 +1,388 @@
+// src/corridor-router.js — FEAT-68 corridor router (v2), M0.
+//
+// Two-stage replacement for the arc-lattice router (v1):
+//   Stage 1  corridorSearch()  — coarse, heading-free A* over the OCTAVE-TRUNCATED coarse field.
+//                                Picks the lateral corridor (which valley / which side / which
+//                                saddle). No radii, no geometry — a swath, not a road.
+//   Stage 2  profileSolve()    — exact 1-D dynamic programming over the vertical alignment along
+//                                the corridor. Full vocabulary as priced states: on-grade, cut,
+//                                fill, bore, bridge. The profile this solver outputs IS the
+//                                profile that ships — priced == built by construction.
+//
+// Purity contract (FEAT-68 item 7, measured to hold): everything here is a pure function of
+// (terrain closures, anchor pair, endpoint heights, knobs). No sibling coupling, no window state,
+// no module-scope mutable caches. Window invariance is structural, not defended.
+//
+// Seam: pure math. No engine types, no THREE — points are plain {x,y,z} / arrays, height fields
+// arrive as closures. Importable by a Worker as a real module (no verbatim mirror — FEAT-68 fence).
+
+// ── Physical knobs (FEAT-68 item 8 — engineer-priced, money units per metre of plain road) ──────
+// cRoadM is the numéraire: 1.0 = one metre of flat on-grade road. Everything else is priced
+// relative to it, so the knobs read as "a metre of bore costs the same as N metres of road".
+export const V2_COSTS = {
+    cRoadM: 1.0,      // on-grade road, per m
+    wGrade: 40,       // quadratic grade discomfort: cost/m factor = 1 + wGrade·g² (15% → ×1.9)
+    cCutM: 0.15,      // cut, per m of length PER m of depth (10 m trench ≈ ×2.5 road)
+    cFillM: 0.12,     // fill, per m of length per m of height
+    cBoreM: 8.0,      // bore, per m (flat — underground ignores the surface)
+    cBridgeM: 20.0,   // bridge deck, per m (expensive: structures must be EARNED — character spec)
+    cPortal: 150,     // fixed, per bore portal
+    cAbutment: 100,   // fixed, per bridge end
+    cutMax: 12,       // m below ground where a cut becomes a bore
+    fillMax: 8,       // m above ground where a fill becomes a bridge
+    onTol: 0.75,      // m — |deck − ground| within this counts as on-grade
+    gMaxRoad: 0.35,   // hard vocabulary cap for surface states (sustained ceiling is 0.40)
+    gMaxBore: 0.18,   // bores are gentler by construction (FEAT-40 lineage)
+}
+
+// ── Octave-truncated coarse field (scope-fenced ADDITIVE read API — world byte-identical) ──────
+/**
+ * Same ridged-fBm loop as _coarseHeight()/coarseHeight() but stopped after K octaves.
+ * K=2 keeps the 2000 m / 1000 m skeleton (225 of ~281 m total amplitude) — the scale where the
+ * real passes and valleys live. NOT a new field: octave 0..K-1 of the shipping one, low-passed.
+ * @param {Function} noiseCoarse createNoise2D closure (the road/terrain one)
+ * @param {object} params RANGER_PARAMS (coarseAmplitude/coarseFreq/ridgeSharpness/coarseOctaves)
+ * @param {number} K octaves to keep (1..coarseOctaves)
+ * @returns {(x:number,z:number)=>number} height closure, raw metres (pre-amplitude)
+ */
+export function truncatedHeightField(noiseCoarse, params, K) {
+    const { coarseAmplitude, coarseFreq, ridgeSharpness, coarseOctaves } = params
+    const n = Math.max(1, Math.min(K, coarseOctaves))
+    return (wx, wz) => {
+        let h = 0, freq = coarseFreq, amp = coarseAmplitude
+        for (let o = 0; o < n; o++) {
+            const v = noiseCoarse(wx * freq, wz * freq)
+            h += Math.pow(1.0 - Math.abs(v), ridgeSharpness) * amp
+            freq *= 2.0
+            amp *= 0.5
+        }
+        return h
+    }
+}
+
+// ── Minimal binary min-heap (local to the corridor search) ─────────────────────────────────────
+class Heap {
+    constructor() { this.d = [] }
+    push(item, pri) {
+        const d = this.d
+        d.push({ item, pri })
+        let i = d.length - 1
+        while (i > 0) { const p = (i - 1) >> 1; if (d[p].pri <= d[i].pri) break; [d[p], d[i]] = [d[i], d[p]]; i = p }
+    }
+    pop() {
+        const d = this.d
+        const top = d[0], last = d.pop()
+        if (d.length) {
+            d[0] = last
+            let i = 0
+            for (;;) {
+                const l = 2 * i + 1, r = l + 1
+                let m = i
+                if (l < d.length && d[l].pri < d[m].pri) m = l
+                if (r < d.length && d[r].pri < d[m].pri) m = r
+                if (m === i) break
+                ;[d[m], d[i]] = [d[i], d[m]]; i = m
+            }
+        }
+        return top?.item
+    }
+    get size() { return this.d.length }
+}
+
+// ── Stage 1: corridor search ───────────────────────────────────────────────────────────────────
+/**
+ * Coarse 8-connected A* from (ax,az) to (bx,bz) on the truncated field. The per-step cost is a
+ * LOWER BOUND of what the profile stage can pay along that step (the admissibility contract):
+ * per metre, the profile pays at most
+ *     min( on-grade at the local slope,  bore rate,  bridge rate )
+ * — a bore ignores how high the surface is, a bridge ignores how low, so either caps the rate no
+ * matter how hostile the ground. The bound is local, so the search stays a plain lattice A*.
+ *
+ * No heading in the state ⇒ no wander: any zigzag in the result is the grade term buying slope
+ * with length on the SMOOTHED field — a deliberate switchback, not quantization greed.
+ *
+ * @param {number} ax,az,bx,bz anchor XZ (world m)
+ * @param {(x:number,z:number)=>number} hTrunc octave-truncated field
+ * @param {object} [opts] { cell=32, margin=max(800,chord), costs=V2_COSTS }
+ * @returns {{path:{x:number,z:number}[], cost:number, expanded:number}|null} lattice polyline A→B
+ */
+export function corridorSearch(ax, az, bx, bz, hTrunc, opts = {}) {
+    const C = opts.costs ?? V2_COSTS
+    const cell = opts.cell ?? 32
+    const chord = Math.hypot(bx - ax, bz - az)
+    const margin = opts.margin ?? Math.max(800, chord)
+    const x0 = Math.min(ax, bx) - margin, x1 = Math.max(ax, bx) + margin
+    const z0 = Math.min(az, bz) - margin, z1 = Math.max(az, bz) + margin
+    const W = Math.ceil((x1 - x0) / cell) + 1, Hn = Math.ceil((z1 - z0) / cell) + 1
+    const idx = (cx, cz) => cz * W + cx
+    const wx = cx => x0 + cx * cell, wz = cz => z0 + cz * cell
+
+    // Terrain memo for this search only (pure per call — no cross-edge state).
+    const hMemo = new Float64Array(W * Hn).fill(NaN)
+    const hAt = (cx, cz) => {
+        const i = idx(cx, cz)
+        let v = hMemo[i]
+        if (Number.isNaN(v)) { v = hTrunc(wx(cx), wz(cz)); hMemo[i] = v }
+        return v
+    }
+
+    // Cheapest possible per-metre rate — the heuristic's slope (bore/bridge can't beat flat road).
+    const minRate = C.cRoadM
+    const capRate = Math.min(C.cBoreM, C.cBridgeM)   // hostile ground can never cost more than this
+
+    const sx = Math.round((ax - x0) / cell), sz = Math.round((az - z0) / cell)
+    const gx = Math.round((bx - x0) / cell), gz = Math.round((bz - z0) / cell)
+    const goalI = idx(gx, gz)
+
+    const gCost = new Float64Array(W * Hn).fill(Infinity)
+    const from = new Int32Array(W * Hn).fill(-1)
+    const open = new Heap()
+    gCost[idx(sx, sz)] = 0
+    open.push(idx(sx, sz), 0)
+    const NB = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]
+    let expanded = 0
+
+    while (open.size) {
+        const cur = open.pop()
+        if (cur === goalI) break
+        const cz = Math.floor(cur / W), cx = cur - cz * W
+        const gc = gCost[cur]
+        expanded++
+        const h0 = hAt(cx, cz)
+        for (const [dx, dz] of NB) {
+            const nx = cx + dx, nz = cz + dz
+            if (nx < 0 || nz < 0 || nx >= W || nz >= Hn) continue
+            const ni = idx(nx, nz)
+            const ds = cell * Math.hypot(dx, dz)
+            const g = Math.abs(hAt(nx, nz) - h0) / ds
+            const onGrade = C.cRoadM * (1 + C.wGrade * g * g)
+            const rate = Math.min(onGrade, capRate)
+            const cand = gc + ds * rate
+            if (cand < gCost[ni]) {
+                gCost[ni] = cand
+                from[ni] = cur
+                const hEu = Math.hypot(wx(nx) - bx, wz(nz) - bz) * minRate
+                open.push(ni, cand + hEu)
+            }
+        }
+    }
+    if (!Number.isFinite(gCost[goalI])) return null
+
+    const path = []
+    for (let i = goalI; i !== -1; i = from[i]) {
+        const cz = Math.floor(i / W), cx = i - cz * W
+        path.push({ x: wx(cx), z: wz(cz) })
+    }
+    path.reverse()
+    // Exact endpoints (the lattice snapped them): pin A and B.
+    path[0] = { x: ax, z: az }
+    path[path.length - 1] = { x: bx, z: bz }
+    return { path, cost: gCost[goalI], expanded }
+}
+
+// ── Station resampling ─────────────────────────────────────────────────────────────────────────
+/**
+ * Resample a corridor polyline at ~ds intervals and read the FULL-resolution ground under each
+ * station. Ground here is the real field the carve will use — the profile prices real dirt.
+ * @returns {{s:number[], x:number[], z:number[], ground:number[]}}
+ */
+export function resampleStations(path, hFull, ds = 10) {
+    const s = [0]
+    for (let i = 1; i < path.length; i++)
+        s.push(s[i - 1] + Math.hypot(path[i].x - path[i - 1].x, path[i].z - path[i - 1].z))
+    const L = s[path.length - 1]
+    const n = Math.max(2, Math.round(L / ds))
+    const out = { s: [], x: [], z: [], ground: [] }
+    let seg = 1
+    for (let i = 0; i <= n; i++) {
+        const t = L * i / n
+        while (seg < path.length - 1 && s[seg] < t) seg++
+        const a = path[seg - 1], b = path[seg]
+        const u = (t - s[seg - 1]) / Math.max(1e-9, s[seg] - s[seg - 1])
+        const x = a.x + (b.x - a.x) * u, z = a.z + (b.z - a.z) * u
+        out.s.push(t); out.x.push(x); out.z.push(z); out.ground.push(hFull(x, z))
+    }
+    return out
+}
+
+// Profile state classes (derived from deck − ground, never stored independently).
+export const CLS = { ON: 0, CUT: 1, FILL: 2, BORE: 3, BRIDGE: 4 }
+export const CLS_NAME = ['on', 'cut', 'fill', 'bore', 'bridge']
+
+function classOf(d, C) {
+    if (Math.abs(d) <= C.onTol) return CLS.ON
+    if (d < 0) return d < -C.cutMax ? CLS.BORE : CLS.CUT
+    return d > C.fillMax ? CLS.BRIDGE : CLS.FILL
+}
+
+/** Per-metre station cost for a deck at offset d from ground (no grade/fixed terms). */
+function stationRate(d, C) {
+    switch (classOf(d, C)) {
+        case CLS.ON: return C.cRoadM
+        case CLS.CUT: return C.cRoadM + C.cCutM * (-d)
+        case CLS.FILL: return C.cRoadM + C.cFillM * d
+        case CLS.BORE: return C.cBoreM
+        case CLS.BRIDGE: return C.cBridgeM
+    }
+}
+
+// ── Stage 2: exact profile solve ───────────────────────────────────────────────────────────────
+/**
+ * 1-D dynamic programming over deck elevation along the stations. State = (station, quantized y).
+ * Transition = one station step at grade g = Δy/Δs, allowed while g respects the class caps
+ * (surface 35%, bore 18%). Costs: station rate (above) × ds + on-grade quadratic discomfort
+ * + fixed portal/abutment charges when the derived class crosses into/out of bore/bridge.
+ * Endpoints are PINNED to (yA, yB) — junction node heights as boundary conditions (FEAT-68
+ * junction plan item 2: edges may never disagree at shared nodes).
+ *
+ * No vertical-curvature smoothing term: crest airtime is a FEATURE (character spec). If lattice
+ * sawtooth shows up it gets handled in stage 3 (curve generation), never priced away here.
+ *
+ * @param {{s:number[],ground:number[]}} st stations from resampleStations
+ * @param {number} yA deck height pinned at station 0
+ * @param {number} yB deck height pinned at the last station
+ * @param {object} [opts] { yStep=0.5, costs=V2_COSTS }
+ * @returns {{y:number[], cls:number[], cost:number, segs:{cls:number,s0:number,s1:number,len:number}[]}|null}
+ *          null = infeasible under the caps (mark-and-ship is the CALLER's job)
+ */
+export function profileSolve(st, yA, yB, opts = {}) {
+    const C = opts.costs ?? V2_COSTS
+    const yStep = opts.yStep ?? 0.5
+    const n = st.s.length
+    if (n < 2) return null
+
+    let lo = Math.min(yA, yB), hi = Math.max(yA, yB)
+    for (const g of st.ground) { if (g < lo) lo = g; if (g > hi) hi = g }
+    lo -= C.cutMax + 8
+    hi += C.fillMax + 8
+    const ny = Math.max(2, Math.round((hi - lo) / yStep) + 1)
+    const yOf = j => lo + j * yStep
+
+    // One transition step: cost of arriving at (ground g1, deck y1) from (g0, y0) over ds.
+    // Infinity when the grade cap of the classes involved is exceeded.
+    // Cap check carries a HALF-QUANTUM tolerance (yStep/2 of Δy): on a y-grid the legal grades
+    // come in yStep/ds increments, so a hard cap silently truncates to the next lower increment —
+    // measured on seed 20 edge -5,-1,0:-5,0,1, floor(0.35·9.993/0.5)=6 made the effective cap 30%
+    // and a feasible 28.5%-mean descent "infeasible". Tolerating cap + yStep/(2·ds) (≤2.5% grade
+    // at defaults) biases the error to a bounded overshoot instead of an unbounded undershoot.
+    const stepCost = (y0, g0, y1, g1, ds) => {
+        const g = (y1 - y0) / ds
+        const cls0 = classOf(y0 - g0, C), cls1 = classOf(y1 - g1, C)
+        // class-aware grade cap: any bore endpoint tightens the cap
+        const cap = (cls0 === CLS.BORE || cls1 === CLS.BORE) ? C.gMaxBore : C.gMaxRoad
+        if (Math.abs(g) > cap + yStep / (2 * ds) + 1e-9) return Infinity
+        let c = ds * stationRate(y1 - g1, C) + ds * C.cRoadM * C.wGrade * g * g
+        if ((cls0 === CLS.BORE) !== (cls1 === CLS.BORE)) c += C.cPortal
+        if ((cls0 === CLS.BRIDGE) !== (cls1 === CLS.BRIDGE)) c += C.cAbutment
+        return c
+    }
+
+    // ENDPOINTS ARE EXACT, not grid states: station 0 sits at yA and station n-1 at yB precisely
+    // (junction node heights are a boundary CONDITION — a grid snap there would let two edges
+    // disagree at a shared node by up to yStep/2, re-importing v1's node disease in miniature).
+    // Interior stations 1..n-2 live on the y grid; the first and last transitions are computed
+    // against the continuous endpoint values, so the DP's accumulated cost is the exact price of
+    // the exact profile that ships. priced == built with no epsilon.
+    if (n === 2) {
+        const ds = st.s[1] - st.s[0]
+        const c = stepCost(yA, st.ground[0], yB, st.ground[1], ds)
+        if (c === Infinity) return null
+        const y = [yA, yB]
+        const cls = [classOf(yA - st.ground[0], C), classOf(yB - st.ground[1], C)]
+        const segs = [{ cls: cls[0], s0: st.s[0], s1: st.s[0] }]
+        if (cls[1] === cls[0]) segs[0].s1 = st.s[1]
+        else segs.push({ cls: cls[1], s0: st.s[1], s1: st.s[1] })
+        for (const sg of segs) sg.len = sg.s1 - sg.s0
+        return { y, cls, cost: c, segs }
+    }
+
+    // cost[i][j] = cheapest cost to reach interior station i (1-based here) at elevation index j
+    const cost = []
+    const from = []
+    {   // first step: exact yA → grid states of station 1
+        const ds = st.s[1] - st.s[0]
+        const kMax = Math.ceil(C.gMaxRoad * ds / yStep) + 1
+        const c1 = new Float64Array(ny).fill(Infinity)
+        const jNear = Math.round((yA - lo) / yStep)
+        for (let j = Math.max(0, jNear - kMax); j <= Math.min(ny - 1, jNear + kMax); j++) {
+            c1[j] = stepCost(yA, st.ground[0], yOf(j), st.ground[1], ds)
+        }
+        cost[1] = c1
+        from[1] = null
+    }
+    for (let i = 2; i <= n - 2; i++) {
+        const ds = st.s[i] - st.s[i - 1]
+        const kMax = Math.ceil(C.gMaxRoad * ds / yStep)
+        const ci = new Float64Array(ny).fill(Infinity)
+        const fi = new Int32Array(ny).fill(-1)
+        const prev = cost[i - 1]
+        const g0 = st.ground[i - 1], g1 = st.ground[i]
+        for (let j = 0; j < ny; j++) {
+            const y1 = yOf(j)
+            let best = Infinity, bestK = -1
+            for (let k = Math.max(0, j - kMax); k <= Math.min(ny - 1, j + kMax); k++) {
+                const p = prev[k]
+                if (p === Infinity) continue
+                const c = p + stepCost(yOf(k), g0, y1, g1, ds)
+                if (c < best) { best = c; bestK = k }
+            }
+            ci[j] = best
+            fi[j] = bestK
+        }
+        cost[i] = ci
+        from[i] = fi
+    }
+    // last step: grid states of station n-2 → exact yB
+    let total = Infinity, jEnd = -1
+    {
+        const ds = st.s[n - 1] - st.s[n - 2]
+        const prev = cost[n - 2]
+        const g0 = st.ground[n - 2], g1 = st.ground[n - 1]
+        for (let k = 0; k < ny; k++) {
+            const p = prev[k]
+            if (p === Infinity) continue
+            const c = p + stepCost(yOf(k), g0, yB, g1, ds)
+            if (c < total) { total = c; jEnd = k }
+        }
+    }
+    if (!Number.isFinite(total)) return null
+
+    const y = new Array(n), cls = new Array(n)
+    y[0] = yA; y[n - 1] = yB
+    let j = jEnd
+    for (let i = n - 2; i >= 1; i--) {
+        y[i] = yOf(j)
+        j = from[i] ? from[i][j] : j
+    }
+    for (let i = 0; i < n; i++) cls[i] = classOf(y[i] - st.ground[i], C)
+
+    const segs = []
+    for (let i = 0; i < n; i++) {
+        const last = segs[segs.length - 1]
+        if (last && last.cls === cls[i]) { last.s1 = st.s[i] }
+        else segs.push({ cls: cls[i], s0: st.s[i], s1: st.s[i] })
+    }
+    for (const sg of segs) sg.len = sg.s1 - sg.s0
+    return { y, cls, cost: total, segs }
+}
+
+// ── Orchestration: one anchor pair, corridor → profile ─────────────────────────────────────────
+/**
+ * Route one anchor pair end to end. M0 shape: stage-3 curve generation is still the raw corridor
+ * polyline — geometry smoothing lands with the first drivable checkpoint.
+ * @param {object} a {x,z,y} anchor A (y = pinned node height)
+ * @param {object} b {x,z,y} anchor B
+ * @param {(x,z)=>number} hTrunc octave-truncated field (stage 1)
+ * @param {(x,z)=>number} hFull full-resolution field (stage 2 prices real dirt)
+ * @param {object} [opts] forwarded to both stages
+ * @returns {{pts:{x,y,z}[], stations:object, profile:object, corridor:object}|null}
+ */
+export function corridorConnect(a, b, hTrunc, hFull, opts = {}) {
+    const cor = corridorSearch(a.x, a.z, b.x, b.z, hTrunc, opts)
+    if (!cor) return null
+    const st = resampleStations(cor.path, hFull, opts.ds ?? 10)
+    const prof = profileSolve(st, a.y, b.y, opts)
+    if (!prof) return null
+    const pts = st.s.map((_, i) => ({ x: st.x[i], y: prof.y[i], z: st.z[i] }))
+    return { pts, stations: st, profile: prof, corridor: cor }
+}
