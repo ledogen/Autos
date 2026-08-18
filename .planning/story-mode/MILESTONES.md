@@ -81,13 +81,16 @@ terms frozen at accept (tier AND thresholds — owner ruled lock both), settle-o
 payout, the `#run-hud` wallet, and gates (`economy.mjs`, story-poi §7–8). Phases A–C are **owner-verified**
 by a live drive-through.
 
-**Phase D is half done** [2026-08-03]. Item 1 — re-derive `k` against the recalibrated FEAT-30 par
-scale — landed 2026-08-02 (`30544cb`): **k 0.35 → 0.30**, from a 310-roll headless par sample. Item 2
-(balance `dayTierTable` + `rankDayLate` against real multi-day runs) is the *steepness* half, and it
-is **deliberately held**: tier, rank ramp and cost escalation are one problem, and the costs it must
-balance against are SM-3's, which do not exist yet. The ratified 20-day *length* already went in via
-FEAT-54. So FEAT-53 stays open with one item, blocked on SM-3 by design — not by neglect. Remaining
-SM-2 scope (paper route, fragile, bonus objectives, consumables) is listed as follow-ups on the ticket.
+**Phase D landed as the par re-anchor; FEAT-53 CLOSED 2026-08-18.** Item 1 (`k`) was re-derived
+twice — 0.35 → 0.30 against the recalibrated par scale, then 0.30 → 0.24 when break-even moved to
+the B/C boundary, then ×0.1 → **0.024** on the owner's currency rescale. Item 2 arrived as a change
+of *meaning* rather than a tuning pass: par became the C/D boundary (the slowest passing drive),
+thresholds were re-cut and fitted to owner-labelled drives, `rankDayLate` softened 7% → 3% to stop
+rank S going mathematically extinct mid-run, and a **per-region payout multiplier** was added as the
+progression dial — because `dayTier` rises with maintenance and so nets to nothing on its own.
+`dayTierTable` itself was deliberately NOT touched: it has to balance against SM-3's repair costs,
+which still do not exist. That, plus the 27-point recount SM-INV-14's shifted economics forces, is
+**FEAT-64**.
 
 **The paper route is planned and ticketed, not built** [2026-08-04]. **FEAT-61**
 (`todos/pending/feat-paper-route.md`) is SM-2's first real mission type; the approved plan is
