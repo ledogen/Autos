@@ -90,13 +90,13 @@ if (refs.length > 1 || refs[0] !== current) {
 
 // ── the headline: does par agree with how it felt? ───────────────────────────────────────────────
 const GROUPS = [
-  ['very_fast', 'felt VERY FAST — well below 1.00'],
-  ['fast',      'felt FAST      — below 1.00'],
-  ['par',       'felt ON PAR    — near  1.00'],
-  ['slow',      'felt SLOW      — above 1.00'],
-  ['very_slow', 'felt VERY SLOW — well above 1.00'],
+  ['very_fast', 'felt VERY FAST — an S drive'],
+  ['fast',      'felt FAST      — an A drive'],
+  ['par',       'felt AVERAGE   — a B drive'],
+  ['slow',      'felt SLOW      — a C drive'],
+  ['very_slow', 'felt VERY SLOW — a D drive'],
 ]
-console.log('ratio = your time / par     (lower = you beat par)\n')
+console.log('ratio = your time / par     (1.00 IS the pass line — lower is better)\n')
 for (const [key, label] of GROUPS) {
   const g = runs.filter(r => r.felt === key)
   if (!g.length) { console.log(`  ${label.padEnd(32)}  no runs yet`); continue }
@@ -112,20 +112,21 @@ if (unlabelled.length) console.log(`  (${unlabelled.length} run(s) with no felt 
 // mixed mean read 0.805 ("too loose") purely because most of the corpus predates the re-anchor.
 const onPar = runs.filter(r => r.felt === 'par' && refKey(r) === current).map(r => r.result.ratio)
 console.log('')
-// [RE-CENTRED 2026-08-16] The band used to sit on 1.0, because par was the drive a felt-par run
-// was meant to match. Par is the C/D boundary now — the slowest PASS — so a felt-par drive should
-// clear it with room and land mid-C, ~0.88 (the same target calibrate-par.mjs fits against). A
-// felt-par drive arriving AT 1.0 no longer reads as "well calibrated"; it means the player is
-// scraping the failure line while feeling unhurried, i.e. the standard is too tight. Tune
-// PAR_SLACK for this, NOT PAR_REF: the slack is the standard, PAR_REF is the physics.
-const PAR_FELT_TARGET = 0.88
+// [RE-CENTRED 2026-08-16, again 2026-08-17.] The band used to sit on 1.0, because par was the drive
+// a felt-par run was meant to match. Par is the C/D boundary now — the slowest PASS — so an average
+// drive should clear it with room. The middle button is labelled **average** and the owner reads it
+// as "not slow, not fast, felt right, a B", so the target is MID-B (0.78), not mid-C. An average
+// drive arriving at 1.0 means the player is scraping the failure line while feeling unhurried, i.e.
+// the standard is too tight. Tune PAR_SLACK for this, NOT PAR_REF: slack is the standard, PAR_REF
+// is the physics.
+const PAR_FELT_TARGET = 0.78
 if (onPar.length >= 3) {
   const m = mean(onPar)
   if (m < PAR_FELT_TARGET - 0.07)      console.log(`VERDICT: the standard is TOO LOOSE — an on-par drive sits at ${m.toFixed(3)}, comfortably inside the pass. Lower PAR_SLACK.`)
   else if (m > PAR_FELT_TARGET + 0.07) console.log(`VERDICT: the standard is TOO TIGHT — an on-par drive sits at ${m.toFixed(3)}, near the 1.0 failure line. Raise PAR_SLACK.`)
   else                                 console.log(`VERDICT: the standard is well calibrated on "felt on par" runs (mean ${m.toFixed(3)}, target ~${PAR_FELT_TARGET}).`)
 } else {
-  console.log(`VERDICT: need ≥3 runs labelled "on par" to call it (have ${onPar.length}).`)
+  console.log(`VERDICT: need ≥3 runs labelled "average" on the CURRENT calibration to call it (have ${onPar.length}).`)
 }
 
 // ── which knob: correlate the residual against route features ────────────────────────────────────
