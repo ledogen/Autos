@@ -90,7 +90,7 @@ rank S going mathematically extinct mid-run, and a **per-region payout multiplie
 progression dial — because `dayTier` rises with maintenance and so nets to nothing on its own.
 `dayTierTable` itself was deliberately NOT touched: it has to balance against SM-3's repair costs,
 which still do not exist. That, plus the 27-point recount SM-INV-14's shifted economics forces, is
-**FEAT-68**.
+**FEAT-69**.
 
 **The paper route is planned and ticketed, not built** [2026-08-04]. **FEAT-61**
 (`todos/pending/feat-paper-route.md`) is SM-2's first real mission type; the approved plan is
