@@ -202,6 +202,28 @@ The branch is the **reference implementation** for these; its numbers are ground
 - **Escape-score site ranking** (topology layer, shipped on the branch): connectivity 5/10 → 8/10
   fully-connected at unchanged sparsity. Cherry-pick or re-land — it is independent of the router.
 
+## Session zero — for the agent taking this over cold
+
+1. **Read first:** this ticket top to bottom, then memory `project_feat68_router_v2` and
+   `project_bug51_grade_ladder`. The reference implementation and all ground-truth measurements
+   live on the UNMERGED branch `feature/seed20-road`.
+2. **Worktree:** create a fresh long-lived worktree/branch (suggest `feature/corridor-router`) off
+   main. Main stays untouched except planning docs. **⚠ Never `wt.sh clean seed20-road`** — that
+   helper DELETES the branch, which is the reference implementation and the owner's relief valve.
+   (Its worktree folder may still exist with a dev server on :3304 serving the v1-ladder world for
+   comparison; leave or remove the FOLDER only, keep the branch.)
+3. **Perf measurement (owner decision 2026-08-18): 4× CPU throttle is the old-hardware proxy** —
+   already calibrated (PERF-27's 42.8 s unbaked at 4× ≈ the owner's 45 s experience). The agent
+   benches at 4× every checkpoint; the owner occasionally runs `node test/bench-worldgen.mjs` on
+   the real old machine to keep the proxy honest. Absolute sign-off numbers are real-hardware.
+4. **Order of work:** (a) router-attributable baseline at 4× (v1, this machine, published
+   in-ticket); (b) the purity probe — inventory item 7 — because items 2 and 9 hinge on it;
+   (c) M0: corridor + profile on single anchor pairs (seed 20's A→B ridge chord is the canonical
+   test case: 202 m, 13% end-to-end, 157 m cover — a bore must EMERGE); (d) first checkpoint:
+   crude drivable network on seeds 20/11/67, own port, 2D map, gallery entry. Then loop.
+5. **Decisions during the loop are amended INTO THIS TICKET** (dated, like the sections above) —
+   it is the single handoff document across sessions.
+
 ## Acceptance
 
 - [ ] Router-attributable cold-load baseline measured on the old hardware, published in-ticket.
