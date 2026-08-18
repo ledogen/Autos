@@ -361,6 +361,35 @@ defenses, and those exist only because v1's routes wander:
    may reduce to a trivial post-filter. On record: QUAL-22 changed character (seed-6 switchbacks
    61→27) — loop-evaluated, never silent.
 
+### Purity probe result (2026-08-18, session zero — item 7 TESTED, it holds)
+
+Method (`perf-runs/purity-probe.mjs`, gitignored — numbers here are the record): on 6 seeds
+(eval 20/11/67 + fresh 3/42/99), route EVERY pre-cull Urquhart edge in a r=1400 origin window as
+v1's SOLO (pure fn of terrain + anchor pair, no sibling avoidance), then measure conflicts among
+the pure routes. v1 solos wander MORE than v2 corridors will, so these are upper bounds.
+
+| seed | edges | final≠solo (coupling bit) | crossings, node-sharing | crossings, disjoint | disjoint pairs < 30 m |
+|---|---|---|---|---|---|
+| 20 | 222 | 28% | 80 | 0 | 0 |
+| 11 | 228 | 31% | 82 | 0 | 0 |
+| 67 | 215 | 24% | 67 | 0 | 0 |
+| 3 | 218 | 25% | 65 | 1 | 1 |
+| 42 | 229 | 23% | 62 | 0 | 0 |
+| 99 | 207 | 20% | 59 | 1 | 1 |
+
+**Reading:** inter-edge conflict is ENTIRELY a shared-node phenomenon. Among the ~24k disjoint
+pairs (no shared node) across 6 windows there are 2 crossings and ~0 sub-30 m near-parallels —
+the "real overlap" class is empty-to-rare (and the 2 look like the legitimate geography-funnel
+events the vocabulary section predicted). Every other crossing (59–82/seed) is two edges of the
+SAME junction excursing near their shared node — v1's wander class, which the corridor-disc
+machinery (biting on ~a quarter of edges) exists to manage.
+
+**Consequences:** purity is viable — a v2 edge as a pure fn of (terrain, anchor pair, node
+heights) needs NO sibling coupling; window invariance becomes structural (nothing an edge reads
+depends on the stream window). Items 2 (overlap-prevention deletion) and 9 (cull deletion) are
+upgraded from "strong bet" to "expected — verify by measurement in the loop" (loop questions in
+item 9 unchanged: corridors crossing, stranding with culls off, escape-rank's residual value).
+
 **Not simplified, ever:** the carve (MESH==PHYSICS), the determinism promise itself — only the
 cost of keeping it. (The topology layer is no longer on this list: it isn't redesigned during the
 build, but it is expected to shed its cull apparatus once v2's corridors land — see 9–10.)
