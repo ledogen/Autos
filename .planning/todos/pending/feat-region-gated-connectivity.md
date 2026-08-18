@@ -55,7 +55,8 @@ already-validated reachable set," both sides bounded.
 - **Failure handling is bounded & local:** either defer the unlock (pick an adjacent region that DOES connect)
   or restore the single cheapest DROPPED interface edge (Kruskal-of-one over the discard pile at the region
   interface — tractable because both regions are loaded & finite). This is the "rather add a bridge than
-  prevent a cull" instinct, made cheap.
+  prevent a cull" instinct, made cheap. **⚠ See "The unsatisfiable region" below — the discard pile can be
+  empty of viable edges, and this ticket must own that case too.**
 - **Diegetic boundary:** a "Trail Closed / Area Beyond This Point Restricted" barrier at region edges so the
   player physically can't enter an unvalidated region. On-theme for the forest-ranger world — the connectivity
   mechanism and the progression gate become the SAME in-world object (level up → ranger reopens the next trail
@@ -99,6 +100,47 @@ you have the region-unlock primitive; layer narrative triggers on top later.
   by the fixed margin. The region-gate carries the guarantee more cheaply (amortized to level-up loads) and
   bounds the domain outright, so the per-drop rule is likely unnecessary if growth is gated anyway. Kept on the
   shelf as a possible always-on cheap default, not the primary.
+
+## The unsatisfiable region [ADDED 2026-08-18 — from the BUG-51 grade-ceiling work]
+
+The failure handling above assumes a viable dropped interface edge exists to restore. **Some terrain
+admits none.** The BUG-51 work is adding a hard ceiling on built road grade (~40% sustained,
+`roadMaxBuiltGrade`) with a connectivity-guarded drop ladder — so an edge can now be *topologically
+necessary but geometrically unbuildable*: every candidate crossing between two regions is a cliff,
+the discard pile holds only over-cap edges, and "restore the cheapest dropped edge" restores a road
+that violates the grade ceiling. A valley ringed by cliffs has no compliant road in or out, and no
+topology cleverness changes that.
+
+Within a region the router work degrades gracefully (the worst edge survives steep, marked
+`e.gradeExceeded` — connectivity outranks the cap, per the 2026-08-18 priority ruling). At a REGION
+INTERFACE the same concession may not be acceptable: an unlock whose only link is a marked 60% wall
+is a progression gate behind an undrivable road.
+
+**Candidate remedies (owner-listed 2026-08-18 — recorded as OPTIONS, not decisions):**
+
+1. **Increase the region radius** for the failing unlock until a compliant interface exists — more
+   candidate crossings, bounded re-validation.
+2. **Refuse the seed** at world creation: run the region-graph validation for the run's region set
+   up front and reject seeds that cannot satisfy connectivity + grade ceiling.
+3. **Silently substitute another seed** on validation failure (derive seed′ = f(seed) and retry) so
+   the player never sees a refusal.
+4. (Implicit in the existing design) **restore the least-bad dropped edge and mark it** — accept one
+   `gradeExceeded` interface road, diegetically framed ("washed-out pass"), when remedies 1–3 are
+   judged worse.
+
+**Two constraints bind any remedy chosen:**
+
+- **SM-INV-12** (worldgen is meta-free) plus this ticket's own "determinism unaffected" acceptance
+  box: radius growth or seed substitution must be a **pure function of (seed, region set)** —
+  deterministic, path-independent, identical for every player — or `world-determinism` /
+  `spawn-identity` break. A substitution scheme is fine (seed′ is derivable); a "try until it works
+  against wall-clock/attempt state" scheme is not, unless the attempt count itself is derivable.
+- **SM-INV-1** ("Death is crash or breakdown only. No other fail states."): a run walled off by
+  impassable terrain is a fail state SM-INV-1 does not admit. This is the design-level argument that
+  the unsatisfiable case MUST resolve to something — deferring the unlock forever is not an option
+  if the deferred region is on the story's critical path.
+
+Decision on which remedy (and where the acceptance bar sits) is the owner's, at scheduling time.
 
 ## The unlock load is HIDDEN, not budgeted [RATIFIED 2026-08-01]
 
@@ -146,6 +188,10 @@ decide whether distant regions can be evicted and re-warmed on approach.
       deterministic pass/fail.
 - [ ] Interface-bridge repair: restore cheapest dropped interface edge when a region fails to connect; bounded,
       no new routing.
+- [ ] **Unsatisfiable-region remedy chosen and implemented** (see "The unsatisfiable region"): when the
+      discard pile holds no grade-compliant interface edge, the chosen remedy (radius growth / seed
+      refusal / seed substitution / marked exception road) resolves it deterministically — a pure fn of
+      (seed, region set), SM-INV-1 and SM-INV-12 both upheld.
 - [ ] Trail-closed diegetic barriers at locked region edges; player cannot enter an unvalidated region.
 - [ ] Headless test: across seeds, every unlocked region is in one connected component with the spawn region;
       spawn is always on it; no stranded islands reachable.
