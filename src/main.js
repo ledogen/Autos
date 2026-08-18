@@ -1076,6 +1076,15 @@ const scene = new THREE.Scene()
 // the FEAT-05 "no hard band at the horizon" invariant is preserved. Initial colour is a placeholder
 // overwritten by SkySystem.apply() on construction (it applies the active look's fog colour).
 scene.fog = new THREE.FogExp2(0x9bb8d4, 0.006)
+// Fog kill-switch (owner request, 2026-08-18 — FEAT-68 checkpoint screenshots): `?nofog=1` boots
+// with fog off, and the debug-panel checkbox flips it live. Quality presets write density THROUGH
+// this state (applyQuality), so a preset change can never silently re-enable fog. FogExp2 with
+// density 0 is a no-op, so toggling needs no scene surgery. Sky looks only recolour fog — unaffected.
+const _fogState = {
+  disabled: _urlParams.has('nofog'),
+  presetDensity: 0.006,   // last preset-owned density; restored when the toggle re-enables fog
+}
+if (_fogState.disabled) scene.fog.density = 0
 
 // HemisphereLight (cool alpine sky above, warm granite-ground bounce below) reads far more alpine
 // than a flat white ambient for almost no cost (FEAT-05).
@@ -1712,7 +1721,8 @@ function applyQuality (name) {
   // Normal land exactly on today's 192/320; High/Ultra trim 512→448 / 640→576 (the old constants were
   // routed past anything renderable). Tied to ring so it can never drift out of sync with the terrain.
   if (roadSystem) roadSystem.setRadius((p.ring + 0.5) * 2 * CHUNK_SIZE)   // dirty → next update() re-streams
-  if (scene.fog) scene.fog.density = p.fogDensity
+  _fogState.presetDensity = p.fogDensity
+  if (scene.fog && !_fogState.disabled) scene.fog.density = p.fogDensity
   // Drive the FEAT-05 detail master from the tier. Mirrors setTerrainUniform: write the param (source
   // of truth + what the debug slider binds to) and push the live uniform to both the terrain and the
   // road-shoulder materials. The debug onChange refreshes the slider display to match.
@@ -1902,6 +1912,11 @@ const _gui = initDebug(RANGER_PARAMS, {
     if (roadMeshSystem?._roadUniforms?.[name])   roadMeshSystem._roadUniforms[name].value = value
   },
 }, { initialSeed: _urlSeed ?? '6' })
+
+// Fog kill-switch checkbox (see _fogState at the fog construction for the boot-param half).
+_gui.add(_fogState, 'disabled').name('Disable fog').onChange((v) => {
+  if (scene.fog) scene.fog.density = v ? 0 : _fogState.presetDensity
+})
 
 // Body paint color picker (visual-model) — recolors the imported truck's paint coat live.
 const _bodyColor = { color: '#2f6da4' }

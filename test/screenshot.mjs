@@ -54,7 +54,12 @@ const OUT = flag('out', join(process.cwd(), `screenshot_${X}_${Z}.png`))
 const PORT = Number(flag('port', 8000)), CDP = 9222
 // default seed is 6 (main.js `_urlSeed ?? '6'`) — only add the query when overriding, so the common case
 // loads the bare URL (a ?seed= query has proven flaky to load headlessly).
-const APP = (SEED && SEED !== '6') ? `http://localhost:${PORT}/index.html?seed=${SEED}` : `http://localhost:${PORT}/index.html`
+// Fog is DISABLED by default (?nofog=1 — the main.js fog kill-switch): distance shots exist to show
+// geometry, and FogExp2 whites out anything past ~300 m. Pass --fog to keep the shipped look.
+const QS = []
+if (SEED && SEED !== '6') QS.push(`seed=${SEED}`)
+if (!process.argv.includes('--fog')) QS.push('nofog=1')
+const APP = `http://localhost:${PORT}/index.html${QS.length ? '?' + QS.join('&') : ''}`
 
 // Server up?
 try { const r = await fetch(APP); if (!r.ok) throw 0 } catch { console.error(`No server on :${PORT}. Run \`npx serve .\` first.`); process.exit(1) }
