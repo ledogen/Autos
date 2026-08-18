@@ -12,7 +12,7 @@
 // Not a gate.
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { PAR_REF } from '../src/par.js'
+import { PAR_REF, PAR_SLACK } from '../src/par.js'
 
 const RUNS = resolve(new URL('..', import.meta.url).pathname, 'runs')
 const VERBOSE = process.argv.includes('--verbose')
@@ -76,9 +76,12 @@ console.log(`RUN LIBRARY — ${runs.length} run${runs.length === 1 ? '' : 's'}\n
 
 // Ratios are recomputed nowhere: each run's stored ratio is against the PAR_REF in force AT THE
 // TIME. Flag runs taken under different constants rather than silently mixing them.
-const refKey = (r) => `mu ${r.par_ref?.mu} a ${r.par_ref?.accel} b ${r.par_ref?.brake} v ${r.par_ref?.vMax}`
+// `slack` joins the key: par_s is referenceTime × PAR_SLACK, so two runs at identical PAR_REF but
+// different slack were measured against different STANDARDS and their ratios are not comparable.
+// (Runs predating the 2026-08-16 re-anchor carry no slack field; they were recorded at 1.0.)
+const refKey = (r) => `mu ${r.par_ref?.mu} a ${r.par_ref?.accel} b ${r.par_ref?.brake} v ${r.par_ref?.vMax} slack ${r.par_ref?.slack ?? 1.0}`
 const refs = [...new Set(runs.map(refKey))]
-const current = refKey({ par_ref: PAR_REF })
+const current = refKey({ par_ref: { ...PAR_REF, slack: PAR_SLACK } })
 if (refs.length > 1 || refs[0] !== current) {
   console.log('⚠ runs span more than one PAR_REF — group means below MIX calibrations:')
   for (const k of refs) console.log(`    ${k}   (${runs.filter(r => refKey(r) === k).length} runs)${k === current ? '  ← current' : ''}`)
@@ -104,13 +107,23 @@ const unlabelled = runs.filter(r => !GROUPS.some(([k]) => r.felt === k))
 if (unlabelled.length) console.log(`  (${unlabelled.length} run(s) with no felt label — not usable for calibration)`)
 
 // ── verdict + which knob ─────────────────────────────────────────────────────────────────────────
-const onPar = runs.filter(r => r.felt === 'par').map(r => r.result.ratio)
+// VERDICT ON THE CURRENT CALIBRATION ONLY. Averaging a felt-par mean across calibrations compares
+// ratios measured against different standards and produces a confident, wrong recommendation — the
+// mixed mean read 0.805 ("too loose") purely because most of the corpus predates the re-anchor.
+const onPar = runs.filter(r => r.felt === 'par' && refKey(r) === current).map(r => r.result.ratio)
 console.log('')
+// [RE-CENTRED 2026-08-16] The band used to sit on 1.0, because par was the drive a felt-par run
+// was meant to match. Par is the C/D boundary now — the slowest PASS — so a felt-par drive should
+// clear it with room and land mid-C, ~0.88 (the same target calibrate-par.mjs fits against). A
+// felt-par drive arriving AT 1.0 no longer reads as "well calibrated"; it means the player is
+// scraping the failure line while feeling unhurried, i.e. the standard is too tight. Tune
+// PAR_SLACK for this, NOT PAR_REF: the slack is the standard, PAR_REF is the physics.
+const PAR_FELT_TARGET = 0.88
 if (onPar.length >= 3) {
   const m = mean(onPar)
-  if (m < 0.95)      console.log(`VERDICT: par is TOO SLOW — an on-par drive beats it by ${((1 - m) * 100).toFixed(0)}%. Tighten PAR_REF.`)
-  else if (m > 1.05) console.log(`VERDICT: par is TOO FAST — an on-par drive misses it by ${((m - 1) * 100).toFixed(0)}%. Loosen PAR_REF.`)
-  else               console.log(`VERDICT: par is well calibrated on "felt on par" runs (mean ${m.toFixed(3)}).`)
+  if (m < PAR_FELT_TARGET - 0.07)      console.log(`VERDICT: the standard is TOO LOOSE — an on-par drive sits at ${m.toFixed(3)}, comfortably inside the pass. Lower PAR_SLACK.`)
+  else if (m > PAR_FELT_TARGET + 0.07) console.log(`VERDICT: the standard is TOO TIGHT — an on-par drive sits at ${m.toFixed(3)}, near the 1.0 failure line. Raise PAR_SLACK.`)
+  else                                 console.log(`VERDICT: the standard is well calibrated on "felt on par" runs (mean ${m.toFixed(3)}, target ~${PAR_FELT_TARGET}).`)
 } else {
   console.log(`VERDICT: need ≥3 runs labelled "on par" to call it (have ${onPar.length}).`)
 }

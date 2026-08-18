@@ -15,36 +15,67 @@
 //      candidate pars are c × recomputed(candidate). c is ~mu-invariant (caps scale with √mu like
 //      every other corner) and folds in any other reconstruction residual too.
 //   2. Sweep PAR_REF candidates (mu × accel × brake; vMax/vCeil/junction* held), score each by
-//      weighted log-error of per-run ratios against felt-class targets:
-//        very_fast ≤ 0.82 (one-sided) · fast 0.90 · par 1.00 (double weight) · slow 1.10 ·
-//        very_slow ≥ 1.25 (one-sided, half weight — "very slow" is unbounded above by nature).
-//   3. Constrain mu ≤ 0.72: the lab skidpads (runs/lab-baselines.json) put the REALIZED human
-//      ceiling at 0.708–0.743 on the grip-limited pads, and par must stay reachable (SM-INV-4:
-//      the payout curve has to be able to go negative — but ratio 1.0 must be attainable).
+//      weighted log-error of per-run ratios against felt-class targets.
+//   3. mu is OWNER-SET (0.80) as of the 2026-08-16 re-anchor, not fitted. The old `mu ≤ 0.72`
+//      constraint existed because ratio 1.0 had to stay attainable while par WAS the standard;
+//      PAR_SLACK now guarantees that by construction, so the constraint is retired and this
+//      script's recommendation is advisory only.
+//
+// RE-ANCHORED 2026-08-16. The felt-class targets below were written when par sat mid-B and a
+// felt-par drive was supposed to land at ratio ~1.00. Par is now the C/D boundary — the slowest
+// PASS — so the whole target table shifted down: a felt-par drive is a comfortable pass (~0.85,
+// mid-C), and only a genuinely bad drive should reach 1.0. Leaving the old targets in place would
+// have kept this script recommending mu ~0.90 forever.
+//
+// Health warning that has not changed: the felt labels carry ±1 class of noise and are partly
+// INVERTED against the clock in the current corpus — median "fast" 0.926 vs median "par" 0.909
+// under the pre-re-anchor scale. Treat any recommendation from 20 runs as a hint, not a fit.
 //
 // The sweep MUTATES PAR_REF in place (sampleRoute's junction caps read the module constant, not
 // the ref argument) and restores it after. Pure node, no worldgen.
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { computePar, PAR_REF } from '../src/par.js'
+import { computePar, PAR_REF, PAR_SLACK } from '../src/par.js'
 
 const DIR = process.argv[2] || 'runs'
 
 // ── load + dedup ────────────────────────────────────────────────────────────────────────────
 const seen = new Set()
 const runs = []
+const paper = []      // paper rounds: reported, never fitted — see the skip below
 for (const f of readdirSync(DIR).sort()) {
     if (!f.endsWith('.json')) continue
     let d
     try { d = JSON.parse(readFileSync(join(DIR, f), 'utf8')) } catch { continue }
     if (d.format !== 'rangersim-run-export/2') continue
     if (!d.felt || !d.result || !d.topology?.rows?.length) { console.log(`  (skip ${f} — no felt/result/topology)`); continue }
+    // PAPER ROUTES ARE A DIFFERENT PAR SCALE and must not be fitted together with point-to-point
+    // jobs [2026-08-17]. A round's par is dominated by a full STOP at every porch (planTour sets
+    // `stop`, par.js pins the reference to v=0 there), and mu — the dial this script fits — does
+    // not price stops at all. Blending them would drag mu to compensate for stop cost and quietly
+    // mis-price every ordinary mission. They are collected and reported separately below.
+    if (d.mission_type === 'paper_route') { paper.push({ file: f, ...d }); continue }
     const key = `${d.result.elapsed_s}|${d.result.par_s}|${d.route?.distance_m}`
     if (seen.has(key)) continue      // the 000N-*.json files duplicate their rangersim-run-* originals
     seen.add(key)
     runs.push({ file: f, ...d })
 }
 console.log(`${runs.length} unique runs from ${DIR}/\n`)
+if (paper.length) {
+    // Reported, not fitted. These are the calibration data for the PAPER standard, which is a
+    // separate question from PAR_REF's physics: a round's par is par.js's reference driver plus a
+    // dead stop per porch, so what a fit would tune here is PAR_SLACK and the stop cost, not mu.
+    console.log(`── ${paper.length} paper round(s) — reported, NOT fitted (separate par scale) ──`)
+    console.log('   ratio  stops  cov   acc   felt        file')
+    for (const r of paper.sort((a, b) => a.result.ratio - b.result.ratio)) {
+        const q = r.paper ?? {}
+        console.log(`  ${r.result.ratio.toFixed(3)} ${String(q.customers ?? '?').padStart(6)}`
+            + ` ${(q.coverage ?? 0).toFixed(2)}  ${(q.mean_accuracy ?? 0).toFixed(2)}`
+            + `  ${(r.felt ?? '?').padEnd(10)} ${r.file}`)
+    }
+    const med = paper.map(r => r.result.ratio).sort((a, b) => a - b)[Math.floor(paper.length / 2)]
+    console.log(`   median ratio ${med.toFixed(3)} — the paper standard's own calibration target\n`)
+}
 
 // ── rebuild a par input from the flat topology ──────────────────────────────────────────────
 // columns: s_m x z elev_m heading_rad curv_1pm grade quality par_ms
@@ -82,7 +113,19 @@ function parWith(segments, r) { setRef(r); const p = computePar(segments); setRe
 console.log('── reconstruction (recomputed par under the exported ref vs recorded) ──')
 for (const r of runs) {
     r.segments = toSegments(r)
-    r.parRecon = parWith(r.segments, r.par_ref)
+    // `corr` must be a PURE reconstruction residual (junction caps the export cannot carry), so
+    // both sides of the ratio have to be expressed against the SAME standard. They are not by
+    // default: parWith() returns referenceTime × the CURRENT PAR_SLACK, while `par_s` carries
+    // whatever slack was live when the run was recorded — 1.0 for everything predating the
+    // 2026-08-16 re-anchor, 1.15 after it. Rescale the reconstruction to the run's own slack.
+    //
+    // Getting this wrong is silent and total, in both directions. Dividing by nothing lets corr
+    // absorb 1/PAR_SLACK and the slack cancels again downstream, so every ratio is the OLD
+    // anchoring wearing new labels. Dividing unconditionally (the first cut of this fix) inflates
+    // corr by exactly 1.15 on post-re-anchor runs — visible as correction factors drifting to 1.13
+    // when they had never exceeded 1.02.
+    const slackUsed = r.par_ref?.slack ?? 1.0     // exports record it since 2026-08-16
+    r.parRecon = parWith(r.segments, r.par_ref) / PAR_SLACK * slackUsed
     r.corr = r.result.par_s / r.parRecon        // junction caps + residuals, assumed ref-invariant
 }
 const corrs = runs.map(r => r.corr).sort((a, b) => a - b)
@@ -91,15 +134,17 @@ const suspect = runs.filter(r => r.corr < 0.9 || r.corr > 1.15)
 for (const r of suspect) console.log(`  ⚠ ${r.file}: corr ${r.corr.toFixed(3)} — reconstruction poor, run downweighted`)
 
 // ── 2. the sweep ────────────────────────────────────────────────────────────────────────────
-// Felt targets. par is the anchor (w 2). The tails are one-sided: a "very slow" drive can be
-// arbitrarily far over par and a "very fast" one arbitrarily under — only the wrong SIDE is an
-// error there.
+// Felt targets, RE-ANCHORED 2026-08-16 (see header). par-felt is still the anchor (w 2), but it
+// now targets mid-C rather than ratio 1.0, because ratio 1.0 is the C/D boundary — a bare pass —
+// and "I drove at a normal pace" should clear it comfortably. The tails stay one-sided: a "very
+// slow" drive can be arbitrarily far over and a "very fast" one arbitrarily under; only the wrong
+// SIDE is an error. Targets are the MIDDLE of each intended band, not the boundary.
 const TARGET = {
-    very_fast: { t: 0.82, w: 0.5, side: 'below' },
-    fast:      { t: 0.90, w: 1.0 },
-    par:       { t: 1.00, w: 2.0 },
-    slow:      { t: 1.10, w: 1.0 },
-    very_slow: { t: 1.25, w: 0.5, side: 'above' },
+    very_fast: { t: 0.62, w: 0.5, side: 'below' },   // S band
+    fast:      { t: 0.72, w: 1.0 },                  // A band
+    par:       { t: 0.88, w: 2.0 },                  // B/C — a normal pace passes with room
+    slow:      { t: 0.97, w: 1.0 },                  // deep C, still a pass
+    very_slow: { t: 1.10, w: 0.5, side: 'above' },   // D — failed the standard
 }
 function score(mu, accel, brake) {
     const ref = { ...BASE, mu, accel, brake }

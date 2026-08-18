@@ -20,7 +20,7 @@ import {
     PAPER_PARAMS, runPaper, resetPaperRun, customersForTier, stockForTier,
     deadlineFor, scoreRoute, advancesTier,
 } from '../src/paper-route.js'
-import { EconomySystem, runEconomy, ECONOMY_PARAMS, pointsFor } from '../src/economy.js'
+import { EconomySystem, runEconomy, ECONOMY_PARAMS, pointsFor, payoutFor } from '../src/economy.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -54,7 +54,7 @@ check('1 of 9 delivered letters D', one.letter === 'D', `got ${one.letter} (scor
 // (`payout`), so a route driven exactly at par settles ZERO — every dollar was already paid. The
 // old assertions read `.payout` and were really asking about the total.
 check('…and still pays for the one', one.total > 0, `total ${one.total}`)
-check('…which is exactly one paper at the flat rate', near(one.spot, one.flat))
+check('…which is exactly one paper at the tip rate', near(one.spot, one.tip))
 const half = scoreRoute(Array(5).fill(accuracyScore(0, R)), 9, PAR, PAR, TIER)
 check('more deliveries pay strictly more', half.total > one.total)
 check('coverage is delivered/customers', near(half.coverage, 5 / 9))
@@ -67,33 +67,61 @@ check(`…by exactly the accuracy floor (${ACC_FLOOR}×)`, near(sloppy.spot, cle
 // not graded. (These two checks previously asserted S and D respectively, off coverage x accuracy.)
 check('a clean and a sloppy route driven at par letter the SAME',
     clean.letter === sloppy.letter, `clean ${clean.letter}, sloppy ${sloppy.letter}`)
-check('…and that letter is B, because B contains par', clean.letter === 'B', `got ${clean.letter}`)
+// [RE-ANCHORED 2026-08-16] This asserted B "because B contains par" — the THIRD copy of that rule
+// in the suite, after economy.mjs and par-oracle.mjs. Par is the C/D boundary now, game-wide: the
+// owner's 2026-08-14 ruling that the paper route keeps par-in-B was explicitly REVERSED rather
+// than left standing as a second convention for one mission type.
+check('…and that letter is C, because par is the slowest PASSING drive',
+    clean.letter === 'C', `got ${clean.letter}`)
 
-console.log('\n── 3. the expediency bonus ────────────────────────────────────')
-const fastPartial = scoreRoute(Array(8).fill(1), 9, PAR * 0.5, PAR, TIER)
-check('an UNFINISHED route earns no bonus however fast', fastPartial.expedite === 0)
-// THE BONUS STARTS AT THE BELL, not at par [owner, 2026-08-15] — so the end-of-route payout hits
-// zero exactly where the route ends, which is the only place $0 makes sense. It used to start at
-// 0.90 par, which made par itself settle nothing and read as a pay cut for a clean round.
-const atBell = scoreRoute(Array(9).fill(1), 9, PAR * PAPER_PARAMS.tolerance, PAR, TIER)
-check('a route that finishes ON the bell earns no bonus — $0 sits at the deadline',
-    atBell.expedite === 0 && atBell.payout === 0)
-const atPar = scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER)
-check('…but par itself pays, because par is inside the bell', atPar.expedite > 0 && atPar.payout > 0,
-    `expedite ${atPar.expedite.toFixed(3)}, payout ${atPar.payout.toFixed(2)}`)
-// There is no `expediteOn`: the bonus's start IS the tolerance, structurally, so the payout floor
-// and the route's end cannot drift apart into two numbers that were meant to be one.
-check('…and the zero is the tolerance itself, not a second constant that could drift',
-    PAPER_PARAMS.expediteOn === undefined)
-const fast = scoreRoute(Array(9).fill(1), 9, PAR * 0.8, PAR, TIER)
-check('…and faster pays more still', fast.expedite > atPar.expedite)
-const veryFast = scoreRoute(Array(9).fill(1), 9, PAR * 0.6, PAR, TIER)
-check('…and it caps at bonusMax', near(veryFast.expedite, PAPER_PARAMS.bonusMax))
-// ADDITIVE ON THE FULL FLAT, not a multiplier on the accuracy-scaled sum [ratified 2026-08-14].
-// The distinction is the whole reason the equivalence below is reachable with a tunable number.
-check('the bonus is additive on the FULL flat, not a multiplier on the scaled sum',
-    near(veryFast.payout, veryFast.flat * 9 * PAPER_PARAMS.bonusMax))
-check('bonus is monotone in speed', fast.expedite < veryFast.expedite)
+console.log('\n── 3. the fare IS the margin line, the tips ride on top ────────')
+// [RESHAPED 2026-08-17, owner] The expediency bonus is GONE. It was a second time-payout curve
+// beside the margin line, and because it saturated at expediteFull while the margin line keeps
+// climbing, a paper round paid best relative to a POI job when you drove SLOWLY — inverting below
+// ratio ~0.66. The clock is now priced by the SAME function every other mission uses, and the
+// customers' tips are the difference. These checks pin that identity, because the moment the two
+// drift apart the old bug is back.
+const PT = 1.0
+for (const r of [1.00, 0.90, 0.80, 0.72, 0.65]) {
+    const round = scoreRoute(Array(9).fill(1), 9, PAR * r, PAR, PT)
+    check(`the fare at ratio ${r.toFixed(2)} IS payoutFor — same function, same number`,
+        near(round.payout, payoutFor(PAR, r, PT), 1e-9),
+        `${round.payout} vs ${payoutFor(PAR, r, PT)}`)
+}
+// The thing the owner said went wrong with the old model, pinned so it cannot come back:
+// time money used to fall to exactly zero at par. Par is the slowest PASSING drive; it pays.
+const atPar = scoreRoute(Array(9).fill(1), 9, PAR, PAR, PT)
+check('PAR STILL PAYS — the fare does not road-to-zero at the bell', atPar.payout > 0,
+    `fare at par ${atPar.payout}`)
+check('…and the tips at par are already banked on top', atPar.spot > 0)
+// A tip is a fixed gratuity on a growing fare: the premium is biggest where the fare is smallest
+// and tapers as you drive faster. What it must never do is invert — that was the old bug.
+let prem = [], monotone = true, prev = Infinity
+for (const r of [1.00, 0.90, 0.80, 0.72, 0.65, 0.60]) {
+    const round = scoreRoute(Array(9).fill(1), 9, PAR * r, PAR, PT)
+    const x = round.total / payoutFor(PAR, r, PT)
+    prem.push(x)
+    if (x > prev + 1e-9) monotone = false
+    prev = x
+}
+check('a perfect round ALWAYS out-earns the equivalent POI job (never inverts)',
+    prem.every(x => x > 1.0), prem.map(x => x.toFixed(2) + 'x').join(' '))
+check('…and the premium tapers as the fare grows, like a tip', monotone,
+    prem.map(x => x.toFixed(2)).join(' → '))
+check(`…worth ~${Math.round(PAPER_PARAMS.paperTip * 100)}% at the break-even pace, which is what paperTip means`,
+    Math.abs(prem[2] - (1 + PAPER_PARAMS.paperTip)) < 0.005, `${prem[2].toFixed(3)}x`)
+// The income floor is now the TIPS, not the fare: an unfinished round still banks what it placed.
+const partial = scoreRoute(Array(3).fill(1), 9, PAR * 0.9, PAR, PT)
+check('an unfinished round still banks its tips (the floor)', partial.spot > 0)
+check('…and is paid for the road it actually served, not cliff-edged', partial.payout >= 0)
+check('accuracy scales the tips and nothing else', (() => {
+    const sharp = scoreRoute(Array(9).fill(1.0), 9, PAR * 0.8, PAR, PT)
+    const rough = scoreRoute(Array(9).fill(0.3), 9, PAR * 0.8, PAR, PT)
+    return near(sharp.payout, rough.payout) && rough.spot < sharp.spot
+})())
+check('the retired bonus is really gone (no expediteFull / bonusMax left to drift)',
+    PAPER_PARAMS.bonusMax === undefined && PAPER_PARAMS.expediteFull === undefined &&
+    PAPER_PARAMS.expediteOn === undefined && PAPER_PARAMS.paperW === undefined)
 
 console.log('\n── 4. rank is per-axis, and the ladder ────────────────────────')
 // THE CLOCK GRADES [ratified 2026-08-14] — the exact reversal of what this gate used to assert,
@@ -104,9 +132,14 @@ check('the rank is the CLOCK now, not the throwing', (() => {
     const quick = scoreRoute(Array(9).fill(1), 9, PAR * 0.5, PAR, TIER)
     return slow.letter !== quick.letter && quick.letter === 'S' && slow.letter === 'D'
 })())
-check('…and B contains par (SM-INV-3, owner-confirmed 2026-08-14)',
-    scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER).letter === 'B')
-check('…dawdling past par drops to C', scoreRoute(Array(9).fill(1), 9, PAR * 1.1, PAR, TIER).letter === 'C')
+// [RE-ANCHORED 2026-08-16] Was "B contains par (SM-INV-3, owner-confirmed 2026-08-14)". That
+// confirmation is REVERSED, by the owner, game-wide — par is the last passing letter, not the
+// middle one. A perfect round driven at par is a C: you passed, you earned your throw money, and
+// you earned nothing for the clock.
+check('…and par itself is a C (SM-INV-3 as re-anchored 2026-08-16, reversing 2026-08-14)',
+    scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER).letter === 'C')
+check('…dawdling past par is a D, not a C — past par you have failed the standard',
+    scoreRoute(Array(9).fill(1), 9, PAR * 1.1, PAR, TIER).letter === 'D')
 check('accuracy does NOT move the letter — only the money', (() => {
     const sharp = scoreRoute(Array(9).fill(1.0), 9, PAR, PAR, TIER)
     const rough = scoreRoute(Array(9).fill(0.3), 9, PAR, PAR, TIER)
@@ -140,21 +173,28 @@ check('the end-of-route payout is decoupled from accuracy entirely', (() => {
     const rough = scoreRoute(Array(9).fill(0.3), 9, PAR * 0.8, PAR, TIER)
     return near(sharp.payout, rough.payout) && rough.spot < sharp.spot
 })())
-check('…and a route that runs to the BELL settles nothing — it was all paid on the spot', (() => {
+// [RESHAPED 2026-08-17] The inverse of what this used to assert. Running to the bell settling
+// NOTHING was the owner-reported flaw: the bell is par, par is the slowest passing drive, and a
+// pass should pay. It now settles the margin line's value at ratio 1.0 — half a day-tier unit.
+check('a route that runs to the BELL still settles a fare — par pays', (() => {
     const r = scoreRoute(Array(9).fill(1.0), 9, PAR * PAPER_PARAMS.tolerance, PAR, TIER)
-    return r.payout === 0 && r.spot > 0 && near(r.total, r.spot)
+    return r.payout > 0 && r.spot > 0 && near(r.payout, payoutFor(PAR, 1.0, TIER))
 })())
-// THE OWNER'S EQUIVALENCE, as an assertion. This is the number bonusMax exists to satisfy: a
-// rim-scraper who blasts the round earns what a methodical driver earns at par, so "place them
-// well" and "place them fast" are both real ways to drive it.
-check('a rim-scraping blast pays about what a methodical drive at par pays', (() => {
-    const methodical = scoreRoute(Array(9).fill(1.0), 9, PAR, PAR, TIER)
-    const blaster    = scoreRoute(Array(9).fill(0.3), 9, PAR * PAPER_PARAMS.expediteFull, PAR, TIER)
-    return Math.abs(blaster.total - methodical.total) / methodical.total < 0.02
-})(), (() => {
-    const m = scoreRoute(Array(9).fill(1.0), 9, PAR, PAR, TIER)
-    const b = scoreRoute(Array(9).fill(0.3), 9, PAR * PAPER_PARAMS.expediteFull, PAR, TIER)
-    return `methodical $${m.total.toFixed(2)} vs blaster $${b.total.toFixed(2)}`
+// THE OWNER'S EQUIVALENCE IS RETIRED [2026-08-17], and its replacement is pinned instead so the
+// change is visible rather than merely absent. It used to say a rim-scraper blasting the round
+// earned what a methodical driver earned at par — the equation that fixed bonusMax at 0.70. The
+// fare is the margin line now, which rewards pace without a ceiling, so SPEED OUT-EARNS ACCURACY
+// and that is the accepted consequence of "pay the clock like any other job, tip on top".
+// `paperTip` is the single dial for how much accuracy is worth; raise it to weight throwing more.
+check('speed now out-earns accuracy (the 2026-08-14 equivalence is retired, deliberately)', (() => {
+    const methodical = scoreRoute(Array(9).fill(1.0), 9, PAR, PAR, TIER)          // perfect, at par
+    const blaster    = scoreRoute(Array(9).fill(0.3), 9, PAR * 0.70, PAR, TIER)   // ragged, quick
+    return blaster.total > methodical.total
+})())
+check('…but accuracy is still worth real money, not a rounding error', (() => {
+    const sharp = scoreRoute(Array(9).fill(1.0), 9, PAR * 0.8, PAR, TIER)
+    const rough = scoreRoute(Array(9).fill(0.3), 9, PAR * 0.8, PAR, TIER)
+    return (sharp.total - rough.total) / rough.total > 0.10
 })())
 resetPaperRun()
 check('a run starts on the first rung', runPaper.tier === 0 && customersForTier() === 4)
@@ -193,15 +233,63 @@ console.log('\n── 6. SM-INV-4 is untouched; the wallet is shared ───�
 // naming a function in prose is not calling it. What we are pinning is the code.
 const src = (await import('node:fs')).readFileSync(new URL('../src/paper-route.js', import.meta.url), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
-check('paper-route.js never calls payoutFor', !/\bpayoutFor\s*\(/.test(src))
+// [REVERSED 2026-08-17] This gate used to pin that the paper route NEVER calls payoutFor, on the
+// reasoning that the margin line was the wrong shape for it. That produced two time-payout curves
+// with different ceilings, and the route ended up paying best for driving slowly. It now calls the
+// shared function on purpose — the whole point is that one drive over one road is priced once.
+check('paper-route.js DOES price the clock through the shared margin line', /\bpayoutFor\s*\(/.test(src))
 // gradeRun IS called now [ratified 2026-08-14] — the rank is the par ratio, through the same
 // function every other mission type grades with, so a paper route's B means what a POI job's B
 // means. payoutFor is still never called: the MONEY is a flat rate, not the margin line, and
 // SM-INV-4 stays untouched. That asymmetry is the thing worth pinning.
 check('paper-route.js DOES grade through the shared gradeRun', /\bgradeRun\s*\(/.test(src))
-check('…but still never calls payoutFor (SM-INV-4 untouched)', !/\bpayoutFor\s*\(/.test(src))
-check('…and never imports payoutFor either (the structural version)',
-    !/import[\s\S]*?\bpayoutFor\b[\s\S]*?from/.test(src))
+check('…and imports it from economy.js rather than re-deriving the curve',
+    /import\s*\{[^}]*payoutFor[^}]*\}\s*from\s*'\.\/economy\.js'/.test(src))
+check('…and does NOT reimplement the payout line locally (no second copy to drift)',
+    !/1\.20\s*-\s*ratio|payoutZero/.test(src))
+
+// ── the calibration form has to be REACHABLE from the paper card [2026-08-17] ───────────────────
+// This shipped broken once and no gate could see it: `#mp-export-row` is a child of
+// `#mission-panel`, and `#paper-panel` is a SIBLING of that — so toggling the row's own `display`
+// while the paper card was up did nothing at all, and a finished round showed earnings, a continue
+// button, and no form. main.js therefore MOVES the single form node into whichever panel is up.
+// Text assertions, because the failure is DOM parenting and lives outside any headless harness —
+// they encode the two facts that made it break rather than re-testing the browser.
+{
+    const { readFileSync } = await import('node:fs')
+    const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+    const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
+    const mpPanel = html.slice(html.indexOf('id="mission-panel"'), html.indexOf('id="paper-panel"'))
+    check('the export row still lives in the MISSION panel (so moving it is required)',
+        mpPanel.includes('id="mp-export-row"'))
+    check('…and there is exactly ONE of it — never a second copy for the paper card',
+        (html.match(/id="mp-export-row"/g) || []).length === 1)
+    check('main.js mounts the form into the paper panel on a finished round',
+        /mountExportRow\(\s*'paper-panel'/.test(main))
+    check('…and back into the mission panel for a POI job',
+        /mountExportRow\(\s*'mission-panel'/.test(main))
+    check('…and hides it ownership-guarded, so one card cannot strip the other\'s form',
+        /function unmountExportRow/.test(main) &&
+        !/show\(document\.getElementById\('mp-export-row'\),\s*false\)/.test(main))
+    check('the felt buttons ask whichever system owns the card (not always the POI one)',
+        /_exportSource\s*\?\?\s*missionSystem/.test(main))
+    // THE SECOND bug in the same feature, pinned because a build will never catch it: every
+    // `show()` in main.js is a const LOCAL to one render function, so a module-scope helper calling
+    // it throws a ReferenceError the instant it runs. That aborted _renderPaperUI midway — the body
+    // was already written, so the card looked fine while the form never mounted and the buttons kept
+    // the previous render's labels. These helpers must stay self-contained.
+    const helper = (name) => {
+        const i = main.indexOf(`function ${name} `)
+        if (i < 0) return ''
+        let d = 0, k = main.indexOf('{', i), start = k
+        for (;; k++) { if (main[k] === '{') d++; else if (main[k] === '}' && --d === 0) break }
+        return main.slice(start, k)
+    }
+    const bodies = helper('mountExportRow') + helper('unmountExportRow')
+    check('the export-row helpers are self-contained (they run at module scope)',
+        bodies.length > 0 && !/(?<![.\w])show\s*\(/.test(bodies),
+        'a renderer-local show() here is a ReferenceError at runtime')
+}
 const econ = new EconomySystem({ getDay: () => 1 })
 econ.start()
 const before = { ...runEconomy }
@@ -215,14 +303,14 @@ econ.settleFlat(-500, 'D')
 check('a negative payout cannot drain the wallet', runEconomy.money >= 0)
 
 console.log('\n── 7. the flat rate is anchored to par ────────────────────────')
-check('FLAT is k × par × tier × paperW / customers', (() => {
+check('the TIP is k × par × tier × paperTip / customers', (() => {
     const r = scoreRoute([1], 9, PAR, PAR, 2.0)
-    return near(r.flat, ECONOMY_PARAMS.k * PAR * 2.0 * PAPER_PARAMS.paperW / 9)
+    return near(r.tip, ECONOMY_PARAMS.k * PAR * 2.0 * PAPER_PARAMS.paperTip / 9)
 })())
-check('a longer route pays proportionally more per paper', (() => {
+check('a longer route tips proportionally more per paper', (() => {
     const a = scoreRoute([1], 9, PAR, PAR, TIER)
     const b = scoreRoute([1], 9, PAR, PAR * 2, TIER)
-    return near(b.flat, a.flat * 2)
+    return near(b.tip, a.tip * 2)
 })())
 check('the day tier lifts the floor with the cost curve', (() => {
     const d1 = scoreRoute(Array(9).fill(1), 9, PAR, PAR, 1.0)
@@ -230,13 +318,24 @@ check('the day tier lifts the floor with the cost curve', (() => {
     return d20.total > d1.total * 4
 })())
 // The FLOOR anchor: what the papers alone are worth on a perfect round at par. Reads `spot`, not
-// `total`, since the bonus now pays at par too — paperW describes the paper money, which is the
-// part that has to survive the 20-day cost ramp.
-check('a perfect route\'s papers are worth ~60% of the margin line', (() => {
+// `total`, since paperW describes the paper money — the part that has to survive the 20-day ramp.
+//
+// [RE-ANCHORED 2026-08-16] This used to divide by a LOCAL constant `k·PAR·TIER·1.0`, commented
+// "payoutFor at ratio 1.0 → m = 1". That identity died with the re-anchor (ratio 1.0 now pays
+// m = 0.5), and because the constant was hand-inlined rather than read from payoutFor, the check
+// would have gone on passing while silently measuring paperW against the wrong yardstick. It now
+// names its yardstick explicitly: ONE DAY-TIER UNIT, which is what paperW is defined against
+// (see PAPER_PARAMS.paperW) — and asserts the identity that used to be assumed, so the next
+// re-anchor breaks this loudly instead of quietly.
+check(`a perfect route's TIPS are worth ~${Math.round(PAPER_PARAMS.paperTip * 100)}% of ONE DAY-TIER UNIT`, (() => {
     const r = scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER)
-    const margin = ECONOMY_PARAMS.k * PAR * TIER * 1.0   // payoutFor at ratio 1.0 → m = 1
-    return near(r.spot / margin, PAPER_PARAMS.paperW, 1e-9)
+    const unit = ECONOMY_PARAMS.k * PAR * TIER           // == payoutFor at the break-even ratio
+    return near(r.spot / unit, PAPER_PARAMS.paperTip, 1e-9)
 })())
+check('…and that unit really is payoutFor at break-even (not an inlined guess)',
+    near(payoutFor(PAR, ECONOMY_PARAMS.breakEven, TIER), ECONOMY_PARAMS.k * PAR * TIER, 1e-9))
+check('…while par itself pays only half of it — the floor now beats a bare pass, deliberately',
+    near(payoutFor(PAR, 1.0, TIER), 0.5 * ECONOMY_PARAMS.k * PAR * TIER, 1e-9))
 
 console.log('\n── 7b. the target circle never overlaps the road ──────────────')
 // The offset exists FOR this: a paper that lands on the tarmac must not score. Growing the radius

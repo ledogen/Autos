@@ -2359,6 +2359,10 @@ const daySystem = new DaySystem({
 // mission settlement, which is not a day/sleep boundary (SM-INV-12).
 const economySystem = new EconomySystem({
   getDay: () => daySystem.day(),
+  // getRegion: the per-region payout multiplier's index (FEAT-53, owner 2026-08-17). Pinned to 1
+  // because multi-region progression is FEAT-28 / SM-4 and does not exist yet — story.js builds
+  // exactly ONE bounded region. When SM-4 lands, this is the single line that has to change.
+  getRegion: () => 1,
 })
 
 // FEAT-61: the character channel. No deps — it owns a queue and a once-per-run seen set, and this
@@ -2756,6 +2760,51 @@ function _setMapOpen (open, mk) {
   }
 }
 
+// Which system owns the result card currently on screen — set by whichever card last rendered in
+// its 'done' state. The felt/export buttons are shared DOM, so without this they would always ask
+// the POI mission system and a finished paper round would silently export the previous job.
+// Declared up here because BOTH card renderers assign it, and they live above the handler.
+let _exportSource = null
+
+/**
+ * Show the ONE calibration form on whichever result card is up, MOVING the node rather than
+ * duplicating it (FEAT-30; paper route added 2026-08-17).
+ *
+ * The bug this fixes, because it is invisible from the code that had it: `#mp-export-row` is a
+ * child of `#mission-panel`, and `#paper-panel` is a SIBLING of that, not a face of it. So setting
+ * the row's own `display` while the paper card is up did exactly nothing — its parent was hidden.
+ * A finished round showed earnings and a continue button and no form at all.
+ *
+ * Moving the node keeps one form, one set of inputs and one set of click listeners (listeners
+ * survive appendChild), which is what stops the two mission types drifting into two calibration
+ * forms that ask subtly different questions.
+ */
+// NOTE, because it cost a shipped bug: these two are MODULE-scope helpers and the card renderers'
+// `show()` is NOT — every `show` in this file is a `const` local to one render function. An earlier
+// cut of these called `show(row, …)` and threw a ReferenceError the instant a round finished, which
+// aborted _renderPaperUI midway: the body had already been written, so the card LOOKED fine while
+// the form never mounted and the buttons kept the previous render's labels. The display write is
+// therefore inline here, with no dependency on anything a renderer happens to have in scope.
+// (test/paper-route.mjs pins that these helpers never call `show(`.)
+function unmountExportRow (panelId) {
+  const row = document.getElementById('mp-export-row')
+  // Ownership-guarded on purpose. Both card renderers run on their own schedules, so an
+  // unconditional hide here lets the IDLE paper renderer tear the form off a live POI result card
+  // (and vice versa). Only the panel currently holding the node may hide it.
+  if (row && row.parentElement?.id === panelId) row.style.display = 'none'
+}
+
+function mountExportRow (panelId, beforeId) {
+  const row = document.getElementById('mp-export-row')
+  const panel = document.getElementById(panelId)
+  if (!row || !panel) return
+  const before = beforeId ? document.getElementById(beforeId) : null
+  if (row.parentElement !== panel || (before && row.nextElementSibling !== before)) {
+    panel.insertBefore(row, before)
+  }
+  row.style.display = 'block'
+}
+
 const _misFwd = new THREE.Vector3()
 missionSystem = new MissionSystem({
   getRoad:  () => roadSystem,
@@ -2817,7 +2866,19 @@ const paperRouteSystem = new PaperRouteSystem({
   getRoad:   () => missionSystem?.planner() ?? roadSystem,
   getPois:   () => poiSystem,
   getRegion: () => storySystem?.region() ?? null,
-  getCar:    () => vehicleState.position,
+  // Full telemetry, not just position: the start-zone check only needs x/z, but the FEAT-30
+  // calibration trace (2026-08-17) records speed and controls too, and it must match the shape the
+  // POI job records or the two mission types cannot share one corpus.
+  getCar:    () => {
+    _misFwd.set(0, 0, -1).applyQuaternion(vehicleState.quaternion)
+    return {
+      x: vehicleState.position.x, y: vehicleState.position.y, z: vehicleState.position.z,
+      speed: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z),
+      heading: Math.atan2(_misFwd.x, _misFwd.z),
+      throttle: vehicleState.throttle, brake: vehicleState.brake, steer: vehicleState.steerAngle,
+    }
+  },
+  getSeed:   () => worldSeed,
   getTerms:  () => economySystem.terms(),
   getTargetR: () => POI_PARAMS.poiHouseTargetR,
   // The ONE money path (FEAT-53). This mission prices itself on its own axis and hands over a
@@ -3406,7 +3467,7 @@ function _renderMissionUI () {
       // long walk), which takes a few seconds — say so rather than looking hung.
       body.innerHTML = 'planning a job&hellip;<br><span class="mp-dim">building the road network for this area</span>'
       show(acts, false, 'flex')
-      show(document.getElementById('mp-export-row'), false)
+      unmountExportRow('mission-panel')
       break
     case 'offer': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
@@ -3424,7 +3485,7 @@ function _renderMissionUI () {
       // against a devtools click; Quick Job (the unpaid calibration rig) keeps the button.
       btn('mp-accept', true); btn('mp-decline', true); btn('mp-retry', false)
       btn('mp-regen', !j.fromPoi); btn('mp-quit', false)
-      show(document.getElementById('mp-export-row'), false)
+      unmountExportRow('mission-panel')
       // Clear the per-run note so the previous run's note cannot ride along with the next export.
       // The DRIVER name is deliberately NOT cleared — it is per-session, and re-typing it every run
       // is exactly how you end up with three spellings of one person in the dataset.
@@ -3450,18 +3511,24 @@ function _renderMissionUI () {
     case 'done': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       const r = m.result
-      const sign = r.margin >= 0 ? '+' : '−'
-      const col = r.margin >= 0 ? '#8ce99a' : '#ff8f7a'
       // FEAT-53: the letter wears its ratified rank colour (D·C·B·A·S = red·orange·yellow·white·
       // blue), the one place a rank is ever shown (SM-INV-3: result-card only, never live). A paid
       // job adds its payout + good deeds; Quick Job says plainly that it pays nothing.
       const paid = r.payout !== undefined
       // Letter and time share the headline, at one size (owner, 2026-08-14 — the same rule the
-      // paper route's cards follow). Par stays underneath: it is the reference, not the result.
+      // paper route's cards follow).
+      //
+      // PAR IS NOT SHOWN [owner, 2026-08-16 — the par re-anchor]. The two lines that used to sit
+      // here ("par 2:14.3" and "+0:12.4 vs par") are gone: the player sees a letter and a number,
+      // how they did and what they earned, and never the reference the letter was cut from. Par is
+      // now the failing line rather than a target to aim at, so showing it invites exactly the
+      // stopwatch relationship SM-INV-3 exists to prevent — and it was the last place par leaked
+      // onto the screen outside the paper route's authored timer.
+      // `r.par` and `r.margin` are still CARRIED on the result object — the run-export
+      // (mission.js, `rangersim-run-export/2`) writes them as par_s/margin_s and the whole runs/
+      // calibration corpus is keyed on that. Display change only; do not prune the fields.
       body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
-        + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span><br>`
-        + `<span class="mp-dim">par</span> <b>${formatTime(r.par)}</b><br>`
-        + `<span style="color:${col}">${sign}${formatTime(Math.abs(r.margin))} vs par</span>`
+        + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
         + (paid
           ? `<br><span class="mp-pay">$${r.payout.toLocaleString('en-US')}</span>`
             + (r.points > 0
@@ -3474,7 +3541,11 @@ function _renderMissionUI () {
       // FEAT-53: no retry on a paid job (the payout exploit) — hidden here, gated in mission.js.
       btn('mp-accept', true); btn('mp-decline', false); btn('mp-retry', !m.mission?.fromPoi)
       btn('mp-regen', false); btn('mp-quit', true)
-      show(document.getElementById('mp-export-row'), true)
+      // Reclaim the shared felt buttons for the POI job — a paper round finishing first
+      // would otherwise leave them pointed at paperRouteSystem (see _exportSource), and would
+      // also have left the form parented to the paper panel.
+      _exportSource = missionSystem
+      mountExportRow('mission-panel', 'mp-actions')
       // The accept button doubles as CONTINUE here — one obvious forward action, with "retry"
       // beside it to re-run the same route (testing/calibration: a known-road second lap).
       const nb = document.getElementById('mp-accept')
@@ -3483,7 +3554,7 @@ function _renderMissionUI () {
     }
     default:
       show(panel, false); show(hud, false)
-      show(document.getElementById('mp-export-row'), false)
+      unmountExportRow('mission-panel')
       if (m.error) console.info('[mission]', m.error)
       break
   }
@@ -3557,20 +3628,29 @@ function _renderPaperUI () {
       const r = p.result
       body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
         + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
-        + (r.expedite > 0 ? ` &nbsp;<span style="color:#8ce99a">+${Math.round(r.expedite * 100)}% early</span>` : '')
+        // The "+N% early" badge went with the expediency bonus it reported [2026-08-17]. Pace is
+        // now paid through the shared margin line, so the letter and the time money already say it
+        // and a third restatement was just the old bonus wearing a percentage.
+        + ''
         + `<br><b>${r.delivered}</b> of <b>${r.customers}</b> delivered `
         + `&nbsp;<span class="mp-dim">·</span>&nbsp; `
         + `${Math.round(r.meanAccuracy * 100)}% <span class="mp-dim">accuracy</span>`
         // TWO LINES, because it is two payments: the papers were banked as they landed, and the
         // clock is what settles now. Showing only the settlement would look like a pay cut.
-        + `<br><span class="mp-dim">papers (already paid)</span> <span class="mp-pay">$${formatMoney(r.spot)}</span>`
-        + `<br><span class="mp-dim">time</span> <span class="mp-pay">$${formatMoney(r.payout)}</span>`
+        + `<br><span class="mp-dim">accuracy bonus</span> <span class="mp-pay">$${formatMoney(r.spot)}</span>`
+        + `<br><span class="mp-dim">the drive</span> <span class="mp-pay">$${formatMoney(r.payout)}</span>`
         + (r.points > 0
           ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points} good deed${r.points > 1 ? 's' : ''}</span>`
           : '')
         + (r.advanced
           ? `<br><span style="color:#ffdc3c">Larry&rsquo;s giving you a bigger route &mdash; ${r.nextTier} houses next time</span>`
           : '')
+      // FEAT-30 calibration form, same one the POI result card shows (owner, 2026-08-17): a paper
+      // round could not be recorded at all before this, so par had nothing to be fitted against for
+      // the one mission type whose par is dominated by STOPS. `_exportSource` tells the shared felt
+      // handler which system to ask for the blob.
+      _exportSource = paperRouteSystem
+      mountExportRow('paper-panel', 'pp-actions')
       break
     }
     default:
@@ -3578,6 +3658,7 @@ function _renderPaperUI () {
       if (p.error) console.info('[paper]', p.error)
       break
   }
+  if (p.state !== 'done') unmountExportRow('paper-panel')
   // Two buttons, two meanings: on the offer they are take/decline, on the result card the left one
   // is the only forward action and the right one has nothing to say.
   const acc = document.getElementById('pp-accept')
@@ -3703,7 +3784,7 @@ document.getElementById('mp-retry')?.addEventListener('click', () => missionSyst
 for (const b of document.querySelectorAll('.mp-felt')) {
   b.addEventListener('click', () => {
     const note = document.getElementById('mp-note')?.value?.trim() ?? ''
-    const data = missionSystem.exportRun(note)
+    const data = (_exportSource ?? missionSystem).exportRun(note)
     if (!data) return
     data.felt = b.dataset.felt
     data.driver = document.getElementById('mp-driver')?.value?.trim() || null
@@ -3711,7 +3792,10 @@ for (const b of document.querySelectorAll('.mp-felt')) {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `rangersim-run-${data.driver ? data.driver.replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-' : ''}`
+    // `paper` in the name so the two mission types are tellable apart in runs/ at a glance — their
+    // pars are not comparable (a paper round's is dominated by per-porch stops).
+    const kind = data.mission_type === 'paper_route' ? 'paper-' : ''
+    a.download = `rangersim-run-${kind}${data.driver ? data.driver.replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-' : ''}`
       + `${data.felt}-${data.result.letter ?? 'x'}-${Math.round(data.result.elapsed_s)}s.json`
     a.click()
     URL.revokeObjectURL(a.href)

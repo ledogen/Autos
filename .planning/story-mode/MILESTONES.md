@@ -81,13 +81,16 @@ terms frozen at accept (tier AND thresholds — owner ruled lock both), settle-o
 payout, the `#run-hud` wallet, and gates (`economy.mjs`, story-poi §7–8). Phases A–C are **owner-verified**
 by a live drive-through.
 
-**Phase D is half done** [2026-08-03]. Item 1 — re-derive `k` against the recalibrated FEAT-30 par
-scale — landed 2026-08-02 (`30544cb`): **k 0.35 → 0.30**, from a 310-roll headless par sample. Item 2
-(balance `dayTierTable` + `rankDayLate` against real multi-day runs) is the *steepness* half, and it
-is **deliberately held**: tier, rank ramp and cost escalation are one problem, and the costs it must
-balance against are SM-3's, which do not exist yet. The ratified 20-day *length* already went in via
-FEAT-54. So FEAT-53 stays open with one item, blocked on SM-3 by design — not by neglect. Remaining
-SM-2 scope (paper route, fragile, bonus objectives, consumables) is listed as follow-ups on the ticket.
+**Phase D landed as the par re-anchor; FEAT-53 CLOSED 2026-08-18.** Item 1 (`k`) was re-derived
+twice — 0.35 → 0.30 against the recalibrated par scale, then 0.30 → 0.24 when break-even moved to
+the B/C boundary, then ×0.1 → **0.024** on the owner's currency rescale. Item 2 arrived as a change
+of *meaning* rather than a tuning pass: par became the C/D boundary (the slowest passing drive),
+thresholds were re-cut and fitted to owner-labelled drives, `rankDayLate` softened 7% → 3% to stop
+rank S going mathematically extinct mid-run, and a **per-region payout multiplier** was added as the
+progression dial — because `dayTier` rises with maintenance and so nets to nothing on its own.
+`dayTierTable` itself was deliberately NOT touched: it has to balance against SM-3's repair costs,
+which still do not exist. That, plus the 27-point recount SM-INV-14's shifted economics forces, is
+**FEAT-69**.
 
 **The paper route is planned and ticketed, not built** [2026-08-04]. **FEAT-61**
 (`todos/pending/feat-paper-route.md`) is SM-2's first real mission type; the approved plan is
@@ -191,20 +194,27 @@ POI anchors — **MET** by FEAT-46 (shipped), which superseded FEAT-21's core.
 mission harness to test against.
 
 **Goal:** money exists and the arithmetic says: lazy day nets negative, brave day nets positive —
-which the 2026-08-01 performance model makes true **by construction** (a day at par is break-even).
+which the performance model makes true **by construction** (a day at the **B/C boundary** is
+break-even — re-anchored 2026-08-16, was "a day at par").
 
 **The performance model is RATIFIED and specified** (DESIGN.md "The performance model",
-`missions.md` "Performance, points and payout") — this milestone implements it, it does not design it:
+`missions.md` "Performance, points and payout") — this milestone implements it, it does not design it.
+**Re-anchored 2026-08-16** (DESIGN.md "Ratification pass 2026-08-16"): par became the C/D boundary.
+This rebalance IS Phase D item 2, plus a re-do of item 1 (`k` 0.30 → 0.24, then ×0.1 → 0.024):
 
 ```
-ratio  = elapsed / par            payout = parBase × dayTier × clamp((1.2 − ratio)/0.2, 0, cap)
+par    = referenceTime × PAR_SLACK   PAR_SLACK 1.15 — the standard; PAR_REF stays the physics
+ratio  = elapsed / par               payout = parBase × dayTier × clamp((1.20 − ratio)/0.40, 0, cap)
+                                     break-even 0.80 · par 1.0 pays half · zero at 1.20 · k 0.024
 ```
 - **`parBase = k × par`** — base scales with the road (stops tiny-job farming). `k` is the one
   economy tunable: maintenance cost per second of par-driving.
 - **`dayTier`** — step function of run day, **locked at mission accept**; rising payouts track
   escalating maintenance. The 1 a.m. accept buying tomorrow's rate is a **feature**.
 - **Rank thresholds tighten with run day** — the brake on the rising tier. **Par never moves**
-  (SM-INV-2 as amended 2026-08-01).
+  (SM-INV-2 as amended 2026-08-01). Since 2026-08-16 only **S/A/B** tighten: **C is pinned at 1.0**
+  on every day, because par IS the pass line and a drifting C would make a drive at par start failing.
+  Thresholds **S 0.72 · A 0.76 · B 0.80 · C 1.00**; day-20 S must stay reachable (gated).
 - **Rank is display only, result-card only, never live** (SM-INV-3 as amended).
 - **Progress = mission points**, not XP: 1 at B+, ½ at C, 0 at D; authored per-region counts
   `6·6·6·4·3·2` = **27 points** over **six regions**, against a day budget of `4·4·4·3·3·2` = 20 days

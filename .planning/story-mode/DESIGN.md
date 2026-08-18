@@ -123,6 +123,21 @@ rewritten from a tempo boon (retired — it was a number on the truck, which SM-
 itself untouched**. Priced in darkness and a hostile morning only; the world does **not** close at
 night.
 
+**Ratification pass 2026-08-16** (project owner): **THE PAR RE-ANCHOR — par means "the slowest you
+can drive without failing".** Par moves from the middle of the B band to the **C/D boundary**,
+reversing the "B contains par" ruling of 2026-08-01 (item 3 below) and the 2026-08-14 confirmation
+of it for the paper route; the reversal is game-wide. Six parts: (1) **par the NUMBER grows** —
+`par = referenceTime × PAR_SLACK` (1.15), splitting the physics from the judgment so SM-INV-2's
+"par is geometric" survives intact; `PAR_REF.mu` 0.90 → 0.80 alongside it. (2) **Thresholds re-cut**
+to S 0.72 · A 0.76 · B 0.80 · **C 1.00 pinned on every day** — the ramp squeezes the good letters and
+never the pass line. (3) **Break-even moves to the B/C boundary**; par pays half a day's maintenance,
+so a bare pass loses money and only B and better funds upgrades (`k` 0.30 → 0.24, re-derived to hold
+a break-even day's dollar value fixed). (4) **Par is deleted from the player-facing UI** — a letter
+and a number, nothing else. (5) **The paper route's timer becomes par exactly**, so finishing at par
+settles no time money. (6) **SM-INV-14's 1/½/0 rule is unchanged in wording but harder in effect** —
+flagged at the invariant. *Prompted by a measured bug: the 2026-08-01 mu recalibration had silently
+made rank S unreachable — 1 of 20 recorded drives on day 1, 0 of 20 by day 20 — which nobody decided.*
+
 **Ratification pass 2026-08-01** (project owner): **the mission performance model settled, plus five
 structural rulings.** (1) **SM-INV-2's run-duration par clause is RETIRED** — there is one par and it
 is geometric. The difficulty ramp moves the **rank thresholds**, never par; `parEffective` is deleted
@@ -387,8 +402,9 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > **Amendment [RATIFIED 2026-08-01] — rank is par's player-facing surface.** The player never sees
   > par and never needs to: they see **a letter and a number** — how they did, and what they earned.
   > Ranks are **D · C · B · A · S** (`gradeRun()` in `src/par.js` already computes them), coloured
-  > **red · orange · yellow · white · blue**. **B is the band that contains par**, deliberately — the
-  > rank that just meets the cost curve should be a B, because getting an A has to feel like
+  > **red · orange · yellow · white · blue**. ~~**B is the band that contains par**, deliberately — the
+  > rank that just meets the cost curve should be a B~~ *(superseded 2026-08-16 — see below)*, because
+  > getting an A has to feel like
   > something. Two hard constraints: the rank is **result-card only, never live** (a live rank is a
   > countdown by proxy and re-breaks this invariant), and the rank is **display only** — payout is
   > continuous (SM-INV-4), so the letters are a legible skin over a smooth curve, not bins.
@@ -396,6 +412,34 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > This *strengthens* the invariant rather than straining it. It also licenses the one legal way to
   > put a target in front of the player before a drive: a mission-giver offering **"a little extra if
   > you finish with an A"** states a standard with no clock attached — see "The economy".
+
+  > **Amendment [RATIFIED 2026-08-16] — PAR IS THE C/D BOUNDARY. It is the slowest drive that is
+  > still a pass, not the middle of the scale.** This **reverses** the 2026-08-01 "B contains par"
+  > ruling above, and with it the 2026-08-14 owner confirmation that the paper route keeps par-in-B
+  > (`missions.md`). The reversal is **game-wide** — one par convention, every mission type.
+  >
+  > *Why.* "Par" on a scorecard means the standard you must meet, and the owner wanted the word to
+  > mean that: **the slowest you can drive without failing.** Under the old arrangement par was the
+  > *expected* drive, which made the bottom half of the scale unreachable-by-construction and left
+  > the word doing something no player would guess.
+  >
+  > *What actually moved.* Par the NUMBER grew, rather than the letters merely being relabelled —
+  > `par = referenceTime × PAR_SLACK` (1.15), a split of the physics from the judgment. `par.js`
+  > holds the reference physics; `PAR_SLACK` holds "how much slower than a committed drive is still
+  > a pass". SM-INV-2 is untouched: par still scales with route geometry and nothing a run can
+  > change. Thresholds became **S 0.72 · A 0.76 · B 0.80 · C 1.00**, and **C is pinned at 1.0 on
+  > every day of the run** — the day ramp squeezes S/A/B only, because a C that drifted below 1.0
+  > would make a drive exactly at par start failing and un-say the whole amendment.
+  >
+  > *The bug that forced it.* The 2026-08-01 recalibration to mu 0.90 quietly killed S: of the 20
+  > recorded drives in `runs/`, **one** made S on day 1 and **none** could on day 20 (the ramp
+  > tightened S to 0.74; the best drive ever recorded is 0.778). Nobody decided that — it was
+  > collateral from a mu change. Gated now: `test/economy.mjs` pins day-20 S at or above the best
+  > recorded human drive, so the letter cannot go extinct silently a second time.
+  >
+  > *And par is now invisible.* The result card shows a letter and a number — how you did and what
+  > you earned. It no longer prints par or "±0:12 vs par". Par-as-the-failing-line is exactly the
+  > thing that would invite a stopwatch relationship with the road if you could see it.
 
   > **⚠ Amendment [RATIFIED 2026-08-17] — the never-live clause is RETIRED; rank boundaries are shown
   > live.** The player now sees, during the drive, **where the rank boundaries fall in time** — when S
@@ -414,19 +458,55 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > **What survives:** timers must still never become the driver of *all* missions, and payout stays
   > continuous underneath (SM-INV-4) — crossing a boundary costs a little, never a cliff.
   > Provenance: `design-amendments-2026-08-17.md` §3.
+
+  > **Reconciling the two amendments above [2026-08-18].** They landed a day apart on separate
+  > branches and both amend SM-INV-3, so read them together: the 08-16 pass changed what **par
+  > means** (the failing line, and the number stays off the result card); the 08-17 pass changed what
+  > the player may **see while driving** (rank boundary proximity, live). They are compatible, and
+  > the seam between them is worth stating because it looks like a contradiction and is not: what
+  > 08-16 keeps hidden is *par itself* — a duration, the thing that invites a stopwatch — while what
+  > 08-17 shows is *where the letters fall*, which is the player-facing surface par was given in the
+  > first place. The live display reads the re-anchored constants automatically (thresholds
+  > S 0.72 · A 0.76 · B 0.80 · C 1.00, C pinned), so it needs no separate tuning; but it now sits on
+  > a scale where **C contains par**, which is the band a live readout will spend most of its time
+  > in. Whoever implements the live surface should check it reads sensibly there rather than
+  > assuming the old B-centred spacing.
 - **SM-INV-4 — Payout is continuous margin against par; bare completion pays ~nothing.**
   [RATIFIED 2026-08-01 — was DEFAULT] Payout is a **continuous linear function of the par ratio**,
-  not a set of bins. Three anchors fix the line: **+20% over par pays ~nothing · par pays one day's
-  maintenance · −20% under par pays generously (2×)**.
+  not a set of bins. ~~Three anchors fix the line: **+20% over par pays ~nothing · par pays one day's
+  maintenance · −20% under par pays generously (2×)**.~~ *(anchors re-set 2026-08-16 — see below)*
 
-  > **The anchor, stated exactly: a day driven entirely at par is break-even.** Below par you profit,
-  > above it you bleed, and the crossing point is par by construction. That turns Open Q4's constraint
+  > ~~**The anchor, stated exactly: a day driven entirely at par is break-even.**~~ Below par you profit,
+  > above it you bleed. That turns Open Q4's constraint
   > ("negative on a lazy day, positive on a brave one") from a tuning goal into an identity, and it
   > collapses the whole payout economy to **one tunable number** — maintenance cost per second of
   > par-driving. Safe driving still isn't punished; it just doesn't pay.
   >
   > **Payout floors at zero.** A disastrous run earns nothing; it never charges you. The loss is the
   > day and the wear, which is a real enough loss that it needs no arithmetic on top.
+
+  > **Amendment [RATIFIED 2026-08-16] — break-even moves to the B/C boundary; PAR LOSES MONEY.**
+  > The shape is unchanged (continuous, linear in the ratio, floored at zero); the three anchors
+  > moved with par's new meaning:
+  >
+  > | ratio | pays | meaning |
+  > |---|---|---|
+  > | **0.80** (B/C boundary) | **one day's maintenance** | break-even — you keep going |
+  > | **1.00** (par, C/D) | **half a day's maintenance** | a bare pass does not cover the day |
+  > | **1.20** | nothing | well past par, margin money is gone |
+  >
+  > *The owner's framing, verbatim in intent:* B/C **meets the growing cost of maintenance so the
+  > player can keep going. It does not pay for upgrades. You need to be hitting B's for that.**
+  > So the ladder is: below par you are losing ground, at par you are surviving badly, at B/C you
+  > are level, and at B and better you are actually building something.
+  >
+  > *`k` re-derived, value preserved.* `k_new = k_old × breakEven = 0.30 × 0.80 = 0.24`, then a flat ×0.1 currency rescale on 2026-08-17 → **k = 0.024** (scale only; every ratio, letter and relative price is unchanged). This holds
+  > the dollar value of a break-even day fixed across the re-anchor, so the ~$130-190 region-1 day
+  > and the repair bills authored against it stay valid even though par grew and mu dropped.
+  >
+  > *The payout line does NOT follow the day ramp*, even though the rank thresholds do — money must
+  > never be a function of the letter (rank is display only). Past day 1 the tightening B/C boundary
+  > drifts slightly off the fixed break-even point, and the rising `dayTier` is what compensates.
 - **SM-INV-5 — Wear accrues on time + intensity, never distance.** Hours and engine torque
   are both integrated; wear compounds with how hard you drive, not just how long. This is
   the lever that separates intense mission driving from casual point-to-point freeroam
@@ -535,6 +615,19 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   along with the map, the truck and the money — persistent progress would let run 50 clear region 1's
   gate instantly, which is a power floor SM-INV-9's litmus test forbids.
 
+  > ⚠ **Unchanged in wording, CHANGED in economics [2026-08-16].** The 1/½/0 rule survives the par
+  > re-anchor untouched — but what it costs the player did not. Under the old anchoring a drive at
+  > par was a **B**, worth a **full point**. Par is now the C/D boundary, so the same drive is a
+  > **C**, worth **half**. Progress toward the next region got materially harder, and *nothing in
+  > this invariant's text says so* — which is exactly why it is flagged here.
+  >
+  > The concrete casualty is the **27-point / 20-day budget** in `run-shape.md`, which was counted
+  > against the old mapping. Against the re-cut letters the recorded corpus grades S 2 · A 9 · B 6 ·
+  > C 0 · D 3 on day 1 — i.e. **17 of 20 drives still earn a full point**, so the budget is probably
+  > close to intact for a competent player and materially harsher for a weak one. That is a
+  > modelling estimate from 20 drives, not a verified recount: **re-count the schedule before
+  > treating the 27 as ratified.** [owner decision: keep 1/½/0 as-is]
+
   > **Why a count and not XP.** An XP quantity that scales per day only forces the *requirement* to
   > scale with it; the treadmill nets to nothing and you have traded a legible number for a hidden
   > one. A count is legible, is impossible to inflate, and makes the real design question the one
@@ -617,22 +710,40 @@ another's job.
 | **par** | route geometry, nothing else | fixed | what a road is *worth* |
 | **rank thresholds** | run day | tighten | how hard the good letters get |
 | **day tier** | run day, **locked at mission start** | rise | how much a mission pays |
+| **region tier** | region index, **locked at mission start** | rise | the reward for pushing into harder country |
+
+*(Re-anchored 2026-08-16 — SM-INV-3 and SM-INV-4 amendments.)*
 
 ```
-ratio  = elapsed / par
-payout = parBase × dayTier × clamp((1.2 − ratio) / 0.2, 0, cap)
+par    = referenceTime × PAR_SLACK          PAR_SLACK 1.15 — the standard; referenceTime is physics
+ratio  = elapsed / par                      ratio 1.0 IS the C/D boundary, by construction
+payout = parBase × dayTier × regionTier × clamp((payoutZero − ratio) / (payoutZero − breakEven), 0, cap)
+                                            breakEven 0.80 · payoutZero 1.20 · k 0.024 · cap 3.0
 ```
 
 - **`parBase = k × par`.** The base scales with the road, so a twelve-minute haul at par pays more
   than a sixty-second errand at par. **This is load-bearing** — it is what stops the player farming a
   loop of tiny jobs, and it is the reason payout could not simply be the rank letter. `k` is the one
   tunable number in the economy: *maintenance cost per second of par-driving.*
-- **`clamp(…)` gives 0 at ratio 1.2, 1.0 at par, 2.0 at ratio 0.8** — the linear payout line. `cap`
-  (~3×) is insurance: a route the oracle mis-prices should not become a payday.
+- **`clamp(…)` gives 1.0 at ratio 0.80 (break-even), 0.5 at par, 0 at 1.20** — the linear payout
+  line. `cap` (~3×) is insurance: a route the oracle mis-prices should not become a payday. Under
+  this line it is unreachable in practice — insurance, not a dial.
+- **`PAR_SLACK` is the design knob; `PAR_REF` is the physics.** Par used to be one number doing both
+  jobs, which is why the word drifted away from its meaning. Move the *standard* with `PAR_SLACK`;
+  move the *reference drive* with `PAR_REF`. Never fake one with the other.
+- **`regionTier` is the progression dial** [RATIFIED 2026-08-17, owner]. `dayTier` rises to track
+  escalating maintenance, so reward and cost climb together and simply surviving longer nets the
+  player nothing — progression has to come from somewhere the treadmill cannot follow. That is the
+  **region**: harder country is a choice bought with mission points, and the payout step is what
+  makes buying it worth doing. Geometric, ×~1.64 a region, **1 → 12 across the ratified six**, which
+  is what carries a mission from ~$9 on day 1 in region 1 to ~$1000 on day 20 in region 6. Locked at
+  accept exactly like the day tier. *(Inert until FEAT-28/SM-4 supplies a real region index — the
+  economy takes it through `EconomySystem`'s deps adapter, which returns 1 today.)*
 - **`dayTier` is a step function of the run day**, not a smooth curve, and it is **fixed at the moment
   the mission is accepted**. Deliberate consequence: **starting a job just before the day rolls over
   buys tomorrow's rate.** That is a feature — see below.
-- **Rank is display only** (SM-INV-3 as amended): D/C/B/A/S over a continuous payout, B containing par.
+- **Rank is display only** (SM-INV-3 as amended): D/C/B/A/S over a continuous payout, **C containing
+  par** — and C is pinned at 1.0 on every day, so the ramp never moves the pass line itself.
 
 **Why the payout tier rises with the run.** Maintenance costs escalate with run age (Q9A). If payout
 did not rise with it, a maturing run would simply starve. Instead both climb: *number go up* feels

@@ -13,7 +13,7 @@
 //
 // Pure node, no THREE, no worldgen: the centerlines here are duck-typed analytic curves, which is
 // the whole point of par.js taking geometry by interface.
-import { computePar, PAR_REF, gradeRun, formatTime } from '../src/par.js'
+import { computePar, PAR_REF, PAR_SLACK, gradeRun, formatTime } from '../src/par.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { headingToFace, facingFromHeading } from '../src/mission.js'
 
@@ -70,8 +70,15 @@ const seg = (centerline, gradeAt = flat, s0 = 0, s1 = centerline.length) => ({ c
     t += dt
     if (v <= 0 && L - x > 1) break              // shouldn't happen; guard against a stall
   }
-  check('flat straight par matches an independent time-marched integration',
-    Math.abs(time - t) / t < 0.03, `par ${time.toFixed(2)}s vs march ${t.toFixed(2)}s`)
+  // Compare the REFERENCE duration, not the pass standard: this check validates par.js's
+  // space-marching integrator against a time-marching one, and PAR_SLACK is a design constant
+  // applied afterwards (par = referenceTime × PAR_SLACK), not part of the physics. Divide it back
+  // out so the check keeps measuring the integrator; the slack itself is pinned on the next line.
+  const refTime = time / PAR_SLACK
+  check('flat straight reference time matches an independent time-marched integration',
+    Math.abs(refTime - t) / t < 0.03, `ref ${refTime.toFixed(2)}s vs march ${t.toFixed(2)}s`)
+  check('par == reference time × PAR_SLACK (the standard is a multiple of the physics)',
+    Math.abs(time - refTime * PAR_SLACK) < 1e-9)
   check('flat straight distance == centerline length',
     Math.abs(distance - L) < 1e-6, `got ${distance}`)
 }
@@ -172,8 +179,14 @@ const seg = (centerline, gradeAt = flat, s0 = 0, s1 = centerline.length) => ({ c
 // ── 7. Grading + formatting helpers ─────────────────────────────────────────────────────────────
 {
   const par = 300
-  check('grade S is faster than par', gradeRun(230, par).letter === 'S')
-  check('grade B brackets par', gradeRun(300, par).letter === 'B')
+  // [RE-ANCHORED 2026-08-16] "grade B brackets par" lived here — a second copy of the old
+  // "B contains par" rule, hiding in the par gate rather than the economy gate where you would
+  // look for it. Par is now the C/D boundary: driving exactly par is the slowest PASS, a C.
+  check('grade S needs a genuinely quick drive', gradeRun(0.65 * par, par).letter === 'S')
+  check('grade A is the committed-drive band', gradeRun(0.75 * par, par).letter === 'A')
+  check('par itself is a C — the slowest passing drive, NOT the middle band',
+    gradeRun(300, par).letter === 'C')
+  check('a hair over par is already a D', gradeRun(300.01, par).letter === 'D')
   check('grade D is well over par', gradeRun(500, par).letter === 'D')
   check('margin is par − elapsed', Math.abs(gradeRun(280, par).margin - 20) < 1e-9)
   check('formatTime pads seconds', formatTime(65.4) === '1:05.4', formatTime(65.4))

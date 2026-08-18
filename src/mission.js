@@ -27,7 +27,7 @@
  * loop. update() is a couple of distance checks per frame.
  */
 
-import { computePar, sampleRoute, gradeRun, formatTime, PAR_REF } from './par.js'
+import { computePar, sampleRoute, gradeRun, formatTime, PAR_REF, PAR_SLACK } from './par.js'
 import { roadQuality } from './road-quality.js'
 
 // Planning radius for the dedicated planner RoadSystem. The planner must stream the network for
@@ -79,8 +79,11 @@ const EDGE_T_MARGIN = 0.12          // keep endpoints off the junction pads at b
 // people no route can reach. One constant, so the two can never disagree about where the edge is.
 export const REGION_MARGIN = 100    // m — keep missions this far clear of the wall itself
 const REGION_ROLL_TRIES = 8         // re-rolls before admitting the region has no qualifying leg
-const TRACE_HZ = 10                 // driven-trace sample rate
-const TRACE_DIV = Math.round(60 / TRACE_HZ)
+// Exported (2026-08-17): the paper route samples its own drive trace, and buildRunExport() stamps
+// `hz: TRACE_HZ` into every export — so a second sampler at a different rate would make the file
+// lie about itself. One rate, one constant, both callers.
+export const TRACE_HZ = 10          // driven-trace sample rate
+export const TRACE_DIV = Math.round(60 / TRACE_HZ)
 const TOPO_DS = 2.0                 // m — topology export spacing (matches par's own sampling)
 
 /**
@@ -415,93 +418,21 @@ export class MissionSystem {
      */
     exportRun(note = '') {
         if (!this.mission) return null
-        const segs = this.mission.segments
-        const par = computePar(segs)
-        const seed = this._getSeed()
-
-        // ── TOPOLOGY: the road itself, sampled along the driven route ──────────────────────
-        // Columnar (a `columns` header + numeric rows) rather than an array of objects: same
-        // information, a fraction of the bytes, and it drops straight into a dataframe.
-        //
-        // Sampled at TOPO_DS along each segment's traversed arc range, in TRAVEL order, so index
-        // order is the order you drove it. Everything here is the ROAD, not the drive:
-        //   s_m          cumulative 3D distance along the route
-        //   x, z, elev_m world position and routed design elevation
-        //   heading_rad  atan2 of the travel-direction tangent
-        //   curv_1pm     SIGNED curvature (left/right matters; +ve = left, router convention)
-        //   grade        dElev/ds, signed (+ve = climbing)
-        //   quality      0..1 per-500 m road-surface tier; drives pothole severity (road-quality.js)
-        //   par_ms       what par thinks you should be doing here
-        // Camber is deliberately NOT a column: it is a deterministic slew-limited function of
-        // curv_1pm (road.js camberFromCurvature — saturating superelevation), so storing it would
-        // just be a second copy of the curvature column.
-        const cols = ['s_m', 'x', 'z', 'elev_m', 'heading_rad', 'curv_1pm', 'grade', 'quality', 'par_ms']
-        const rows = []
-        let sAcc = 0, prevX = null, prevZ = null, prevY = null
-        for (const sg of segs) {
-            const dir = sg.s1 >= sg.s0 ? 1 : -1
-            const span = Math.abs(sg.s1 - sg.s0)
-            const nS = Math.max(1, Math.ceil(span / TOPO_DS))
-            for (let i = 0; i <= nS; i++) {
-                if (i === 0 && rows.length) continue          // shared join sample
-                const sc = sg.s0 + dir * span * (i / nS)      // arc position on THIS centerline
-                const p = sg.centerline.pointAt(sc)
-                const t = sg.centerline.tangentAt(sc)
-                const y = sg.gradeAt(sc)
-                if (prevX !== null) sAcc += Math.hypot(p.x - prevX, p.z - prevZ, y - prevY)
-                prevX = p.x; prevZ = p.z; prevY = y
-                // Local grade from a centred difference on the design elevation.
-                const ds = span / nS
-                const yF = sg.gradeAt(Math.max(0, Math.min(sg.centerline.length, sc + dir * ds * 0.5)))
-                const yB = sg.gradeAt(Math.max(0, Math.min(sg.centerline.length, sc - dir * ds * 0.5)))
-                rows.push([
-                    +sAcc.toFixed(2), +p.x.toFixed(2), +p.z.toFixed(2), +y.toFixed(2),
-                    +Math.atan2(t.x * dir, t.z * dir).toFixed(4),
-                    +(sg.centerline.curvatureAt(sc) * dir).toFixed(6),
-                    +((yF - yB) / ds).toFixed(4),
-                    +roadQuality(sc, sg.runKey ?? '', seed).toFixed(3),
-                    0,   // par_ms filled below
-                ])
-            }
-        }
-        // Par's speed target, resampled onto the topology rows by arc position.
-        for (let i = 0, j = 0; i < rows.length; i++) {
-            while (j < par.dist.length - 1 && par.dist[j] < rows[i][0]) j++
-            rows[i][8] = +par.speeds[j].toFixed(2)
-        }
-
-        const total = sAcc || 1
-        let climb = 0, descent = 0
-        for (let i = 1; i < rows.length; i++) {
-            const dy = rows[i][3] - rows[i - 1][3]
-            if (dy > 0) climb += dy; else descent += -dy
-        }
-
-        return {
-            format: 'rangersim-run-export/2',
+        return buildRunExport({
             note,
+            segs: this.mission.segments,
             result: this.result
                 ? { elapsed_s: +this.result.elapsed.toFixed(2), par_s: +this.result.par.toFixed(2),
                     ratio: +this.result.ratio.toFixed(3), letter: this.result.letter,
                     margin_s: +this.result.margin.toFixed(2) }
                 : { elapsed_s: +this.elapsed.toFixed(2), par_s: +this.mission.par.toFixed(2), incomplete: true },
-            par_ref: { ...PAR_REF },
-            route: {
-                distance_m: +total.toFixed(1),
-                edges: this.mission.edges,
-                start: { x: +this.mission.start.x.toFixed(1), z: +this.mission.start.z.toFixed(1),
-                         heading_rad: +this.mission.start.heading.toFixed(4) },
-                end: { x: +this.mission.end.x.toFixed(1), z: +this.mission.end.z.toFixed(1) },
-                climb_m: +climb.toFixed(1), descent_m: +descent.toFixed(1),
-                par_avg_kmh: +(total / par.time * 3.6).toFixed(1),
-            },
-            topology: { spacing_m: TOPO_DS, columns: cols, rows },
-            trace: {
-                hz: TRACE_HZ,
-                columns: ['t_s', 'x', 'y', 'z', 'speed_ms', 'heading_rad', 'throttle', 'brake', 'steer_rad'],
-                rows: this._trace,
-            },
-        }
+            edges: this.mission.edges,
+            start: { x: +this.mission.start.x.toFixed(1), z: +this.mission.start.z.toFixed(1),
+                     heading_rad: +this.mission.start.heading.toFixed(4) },
+            end: { x: +this.mission.end.x.toFixed(1), z: +this.mission.end.z.toFixed(1) },
+            trace: this._trace,
+            seed: this._getSeed(),
+        })
     }
 
     /**
@@ -899,3 +830,116 @@ function _pathLength(prev, k, root) {
 }
 
 export { formatTime }
+
+
+/**
+ * Build a `rangersim-run-export/2` blob from a priced route plus the drive made on it.
+ *
+ * SHARED, NOT DUPLICATED [2026-08-17]. This was the body of `MissionSystem.exportRun` until the
+ * paper route needed the same export. A second copy of the topology sampler would have been a
+ * second thing to keep in step with par.js's own sampling — precisely the drift the project's SYNC
+ * rules exist to prevent — so the mission types now differ only in what they can SAY about a route
+ * (a point-to-point job has a start and an end; a paper round has customers). Anything a caller
+ * wants to record beyond the shared shape rides in `extra`.
+ *
+ * Par is recomputed here from `segs` rather than passed in, deliberately: the export can then never
+ * describe a different route than the one it reports par for.
+ *
+ * @param {object} o
+ * @param {ParSegment[]} o.segs    the route AS PRICED, in travel order
+ * @param {object} o.result        the `result` block verbatim (elapsed_s / par_s / ratio / letter / …)
+ * @param {number} o.edges         edge count of the route
+ * @param {object} o.start         { x, z, heading_rad }
+ * @param {object} o.end           { x, z }
+ * @param {number[][]} [o.trace]   driven-trace rows at TRACE_HZ
+ * @param {number} [o.seed]        world seed (feeds the per-500 m road-quality column)
+ * @param {object} [o.extra]       merged into the top level — mission-type-specific calibration data
+ */
+export function buildRunExport ({ note = '', segs, result, edges = 0, start = null, end = null,
+                                  trace = [], seed = 0, extra = null }) {
+    const par = computePar(segs)
+
+        // ── TOPOLOGY: the road itself, sampled along the driven route ──────────────────────
+        // Columnar (a `columns` header + numeric rows) rather than an array of objects: same
+        // information, a fraction of the bytes, and it drops straight into a dataframe.
+        //
+        // Sampled at TOPO_DS along each segment's traversed arc range, in TRAVEL order, so index
+        // order is the order you drove it. Everything here is the ROAD, not the drive:
+        //   s_m          cumulative 3D distance along the route
+        //   x, z, elev_m world position and routed design elevation
+        //   heading_rad  atan2 of the travel-direction tangent
+        //   curv_1pm     SIGNED curvature (left/right matters; +ve = left, router convention)
+        //   grade        dElev/ds, signed (+ve = climbing)
+        //   quality      0..1 per-500 m road-surface tier; drives pothole severity (road-quality.js)
+        //   par_ms       what par thinks you should be doing here
+        // Camber is deliberately NOT a column: it is a deterministic slew-limited function of
+        // curv_1pm (road.js camberFromCurvature — saturating superelevation), so storing it would
+        // just be a second copy of the curvature column.
+        const cols = ['s_m', 'x', 'z', 'elev_m', 'heading_rad', 'curv_1pm', 'grade', 'quality', 'par_ms']
+        const rows = []
+        let sAcc = 0, prevX = null, prevZ = null, prevY = null
+        for (const sg of segs) {
+            const dir = sg.s1 >= sg.s0 ? 1 : -1
+            const span = Math.abs(sg.s1 - sg.s0)
+            const nS = Math.max(1, Math.ceil(span / TOPO_DS))
+            for (let i = 0; i <= nS; i++) {
+                if (i === 0 && rows.length) continue          // shared join sample
+                const sc = sg.s0 + dir * span * (i / nS)      // arc position on THIS centerline
+                const p = sg.centerline.pointAt(sc)
+                const t = sg.centerline.tangentAt(sc)
+                const y = sg.gradeAt(sc)
+                if (prevX !== null) sAcc += Math.hypot(p.x - prevX, p.z - prevZ, y - prevY)
+                prevX = p.x; prevZ = p.z; prevY = y
+                // Local grade from a centred difference on the design elevation.
+                const ds = span / nS
+                const yF = sg.gradeAt(Math.max(0, Math.min(sg.centerline.length, sc + dir * ds * 0.5)))
+                const yB = sg.gradeAt(Math.max(0, Math.min(sg.centerline.length, sc - dir * ds * 0.5)))
+                rows.push([
+                    +sAcc.toFixed(2), +p.x.toFixed(2), +p.z.toFixed(2), +y.toFixed(2),
+                    +Math.atan2(t.x * dir, t.z * dir).toFixed(4),
+                    +(sg.centerline.curvatureAt(sc) * dir).toFixed(6),
+                    +((yF - yB) / ds).toFixed(4),
+                    +roadQuality(sc, sg.runKey ?? '', seed).toFixed(3),
+                    0,   // par_ms filled below
+                ])
+            }
+        }
+        // Par's speed target, resampled onto the topology rows by arc position.
+        for (let i = 0, j = 0; i < rows.length; i++) {
+            while (j < par.dist.length - 1 && par.dist[j] < rows[i][0]) j++
+            rows[i][8] = +par.speeds[j].toFixed(2)
+        }
+
+        const total = sAcc || 1
+        let climb = 0, descent = 0
+        for (let i = 1; i < rows.length; i++) {
+            const dy = rows[i][3] - rows[i - 1][3]
+            if (dy > 0) climb += dy; else descent += -dy
+        }
+
+    return {
+        format: 'rangersim-run-export/2',
+        note,
+        result,
+            // PAR_SLACK rides along with PAR_REF [2026-08-16]: `par_s` is referenceTime × PAR_SLACK,
+            // so a run recorded under a different slack is measured against a different STANDARD
+            // even at identical PAR_REF. Without this the corpus cannot tell the two apart and any
+            // future refit silently mixes scales — which is exactly the trap the runs recorded
+            // before the re-anchor fell into.
+            par_ref: { ...PAR_REF, slack: PAR_SLACK },
+            route: {
+                distance_m: +total.toFixed(1),
+                edges,
+                start, end,
+                climb_m: +climb.toFixed(1), descent_m: +descent.toFixed(1),
+                par_avg_kmh: +(total / par.time * 3.6).toFixed(1),
+            },
+            topology: { spacing_m: TOPO_DS, columns: cols, rows },
+            trace: {
+                hz: TRACE_HZ,
+                columns: ['t_s', 'x', 'y', 'z', 'speed_ms', 'heading_rad', 'throttle', 'brake', 'steer_rad'],
+                rows: trace,
+            },
+            ...(extra || {}),
+        }
+}

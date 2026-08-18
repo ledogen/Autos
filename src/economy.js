@@ -2,14 +2,28 @@
 //
 // Implements the RATIFIED performance model (DESIGN.md "The performance model", 2026-08-01):
 //
-//     ratio  = elapsed / par
-//     payout = parBase × dayTier × clamp((1.2 − ratio) / 0.2, 0, payoutCap)
+//     ratio  = elapsed / par                    (par = referenceTime × PAR_SLACK — see par.js)
+//     payout = parBase × dayTier × clamp((PAYOUT_ZERO − ratio) / (PAYOUT_ZERO − BREAK_EVEN), 0, cap)
 //     parBase = k × par
 //
-// SM-INV-4 anchors, by construction: +20% over par pays ~nothing · a run AT par pays exactly one
-// day-tier unit of maintenance (k·par·tier) · 20% under pays 2× · the cap (~3×) is insurance
-// against an oracle-mispriced route. Payout floors at zero — a mission never charges the player;
-// the loss is the day and the wear.
+// SM-INV-4 anchors [RE-ANCHORED 2026-08-16, owner], by construction:
+//   • BREAK-EVEN IS THE B/C BOUNDARY (ratio 0.80), not par. A B/C drive covers the day's rising
+//     maintenance and keeps the player going; it does NOT fund upgrades. Upgrades need real B's.
+//     It tracks the B/C threshold, so refitting the rank bands moves this and `k` with them.
+//   • PAR NOW LOSES MONEY. Ratio 1.0 is the C/D boundary — the slowest passing drive — and pays
+//     half a day's maintenance (m = 0.5). Scraping past the standard is survival, not a living.
+//     `payoutZero` is chosen to hold that half-a-unit property: z = 2·breakEven − ... in practice,
+//     pick z so (z−1)/(z−breakEven) == 0.5, which for breakEven 0.80 gives z = 1.20.
+//   • Zero at ratio 1.20: a drive well past par earns nothing from margin.
+//   • The cap (~3×) is unchanged insurance against an oracle-mispriced route. With this line it is
+//     unreachable in practice (it would need ratio 0.0) — insurance, not a dial.
+// Payout floors at zero — a mission never charges the player; the loss is the day and the wear.
+//
+// The payout line does NOT move with the day, even though the rank thresholds do. That is
+// deliberate and required by SM-INV-4: payout is continuous in the ratio and rank is display only,
+// so money must never be a function of the letter. Consequence to know: past day 1 the tightening
+// B/C boundary drifts slightly off the fixed break-even point, and the rising dayTier is what
+// compensates. Letters get harder; the money line stays put.
 //
 // SM-INV-2 — the difficulty ramp lives HERE (dayTier + rank thresholds), never in par. `day`
 //   flows into dayTier() and rankThresholds() and NOTHING in this module can reach computePar.
@@ -30,34 +44,82 @@
 /**
  * Tunables. ⚠ PROVISIONAL (FEAT-53, 2026-08-01) — the owner's balancing pass (Phase D) replaces
  * these; the SHAPE is ratified, the numbers are not. Derivation notes:
- *   • k is a pure currency-scale choice (break-even-at-par is an identity under SM-INV-4 — one
- *     day's maintenance is DEFINED as k × the day's par-seconds, so any k balances). 0.30 $/s
- *     was re-derived 2026-08-02 (Phase D item 1) against the FEAT-30-recalibrated par scale
- *     (PAR_REF mu 0.90, 041761b): 310 anchored POI rolls over three seed-6 region slices gave
- *     median par 210 s ⇒ median job at par $63, mean $68; a region-1 day of ~2 jobs ≈ $130-190
- *     (run-shape.md's 20-day allocation) — legible three-figure numbers for SM-3's repair bills
- *     to be authored against.
+ *   • k is a pure currency-scale choice (break-even is an identity under SM-INV-4 — one day's
+ *     maintenance is DEFINED as k × the day's par-seconds at the break-even ratio, so any k
+ *     balances). 0.30 $/s was derived 2026-08-02 against the mu-0.90 par scale.
+ *     RE-DERIVED 2026-08-16 for the re-anchor: k_new = k_old × breakEven = 0.30 × 0.80 = 0.24.
+ *     The derivation: a day spent driving at the break-even ratio b covers real time T, so its
+ *     par-time is T/b; requiring k_new × (T/b) × m(b) = k_old × T with m(b) = 1 gives k_new =
+ *     k_old × b. This holds the dollar VALUE of a break-even day fixed across the re-anchor, so
+ *     the $130-190 region-1 day and SM-3's repair bills authored against it stay valid — even
+ *     though par itself grew by PAR_SLACK and mu dropped 0.90 → 0.80.
  *   • dayTierTable steps PER DAY so the ratified "accept at 1 a.m., buy tomorrow's rate"
  *     seduction is live at EVERY midnight. Shipped ~×1.15 compounding through day 8 (2.66),
  *     then a soft approach to a ~5× asymptote (owner-picked ceiling, 2026-08-02):
  *     tier(d) = 5 − 2.34·e^((8−d)/7) for d 9..30, ~4.9 by day 30 — escalation stays live for
  *     the whole ratified 20-day run instead of dying on day 8 (run-shape.md "Code deltas").
- *   • rankDayLate tightens S/A ~7% by day 20 (rankTightenDays tracks the ratified run length) —
- *     the brake on the rising tier (a day-1 A-drive is only a day-20 B). B stays ABOVE 1.0 on
- *     every day: par must land inside the B band for the whole run ("the rank that just meets
- *     the cost curve should be a B" — DESIGN.md). The economy gate pins B > 1.0, so a careless
- *     tuning edit here fails fast.
+ *   • rankDayLate tightens S/A/B ~3% by day 20 — the brake on the rising tier. SOFTENED from the
+ *     old ~7% [owner, 2026-08-16]: at 7% the S threshold outran the best drive anyone had ever
+ *     recorded, so S was mathematically dead from roughly mid-run (0 of 20 corpus drives could
+ *     reach day-20 S). At 3% the best drive still clears it and S stays a live goal to day 20.
+ *   • **C DOES NOT TIGHTEN. It is pinned at exactly 1.0 on every day.** Par is the pass line by
+ *     definition; if C drifted below 1.0 a drive exactly at par would start failing and par would
+ *     stop meaning the one thing the 2026-08-16 re-anchor exists to make it mean. The ramp
+ *     squeezes S/A/B only. The economy gate pins C === 1.0 on every day — this REPLACES the old
+ *     "B > 1.0" pin, which encoded the reversed arrangement.
  */
 export const ECONOMY_PARAMS = {
-    k:          0.30,   // $ per second of par-driving — THE one economy tunable (SM-INV-4)
-    payoutCap:  3.0,    // clamp ceiling; bites at ratio ≤ 0.60 (mispriced-route insurance)
+    // 0.24 → 0.024 [owner, 2026-08-17]: a flat ×0.1 currency rescale. The SHAPE of the economy is
+    // untouched — k is a pure scale factor, so every ratio, letter and relative price is identical;
+    // only the denomination changes. Target was "~$5-15 a mission at the start". Measured after the
+    // cut: a day-1 region-1 job (par ~360 s, tier 1, a B-grade drive) pays ~$9. ✓
+    // ⚠ The matching end-of-run target ("~$500-1500") is NOT reached by this cut and cannot be
+    //   reached by k at all — see the note under dayTierTable.
+    k:          0.024,  // $ per second of par-driving — THE one economy tunable (SM-INV-4)
+    payoutCap:  3.0,    // clamp ceiling; unreachable in practice now (mispriced-route insurance)
+
+    // The payout line, as two named anchors rather than magic numbers in the formula.
+    breakEven:  0.80,   // ratio paying exactly one day-tier unit — the day-1 B/C boundary
+    payoutZero: 1.20,   // ratio where margin money runs out (keeps par at exactly m = 0.5)
 
     // Rank thresholds (ratio = elapsed/par). rankDay1 MUST equal par.js RANK_THRESHOLDS_DEFAULT
     // (this module imports nothing, so it's a mirrored constant — the economy gate asserts the
     // equality). Linear interpolation day 1 → rankTightenDays, clamped flat on both sides.
-    rankDay1:   { S: 0.80, A: 0.92, B: 1.05, C: 1.25 },
-    rankDayLate:{ S: 0.74, A: 0.88, B: 1.02, C: 1.15 },
+    rankDay1:   { S: 0.72, A: 0.76, B: 0.80, C: 1.00 },
+    rankDayLate:{ S: 0.70, A: 0.74, B: 0.78, C: 1.00 },   // C pinned — see the note above
     rankTightenDays: 20,
+
+    // ⚠ THE END-OF-RUN PAYOUT CEILING [measured 2026-08-17]. The owner's stated targets are ~$5-15
+    // per mission at the start and ~$500-1500 at the end — a ~100× spread. The economy cannot
+    // deliver that, and k cannot fix it, because k scales BOTH ends equally. The whole spread comes
+    // from two multipliers: the day tier (1.00 → 4.58 by day 20) and mission length (region 1 par
+    // ~5-7 in-game h → region 6 ~12 h, and 1 in-game hour is 60 s real at dayLengthSec 1440). That
+    // is 4.58 × 2 ≈ 9× total. Measured end-of-run mission at k 0.024: ~$85, not $500-1500.
+    // Closing it needs a structural change, not a tuning one: raise the tier asymptote well past
+    // its ratified ~5× ceiling, make late missions far longer, or add a per-region multiplier
+    // (a new dial). All three are owner decisions — do not pick one here.
+    //
+    // ── PER-REGION PAYOUT MULTIPLIER [owner, 2026-08-17] ──────────────────────────────────────
+    // 1-based by region index; region 7+ holds the last entry. THE reason to push into new country.
+    //
+    // Why this exists and dayTier does not cover it (owner's reasoning, recorded because it is the
+    // whole point): dayTier rises to keep pace with escalating maintenance, so reward and cost climb
+    // together and a run that merely survives longer nets nothing. Progression has to come from
+    // somewhere the treadmill cannot follow — and that is the region. Moving to harder country is a
+    // CHOICE the player earns with mission points, and the payout step is what makes it worth
+    // making. (Region and day do correlate through the run schedule, but the step is earned, not
+    // accrued.)
+    //
+    // Geometric, ×~1.64 per region, 1 → 12 across the ratified six. Solved from the owner's stated
+    // end targets: a day-20 region-6 mission (par ~720 s, tier 4.58, a B drive) pays ~$1000 at
+    // regionMult 12, against ~$9 for a day-1 region-1 job — the ~100× spread k alone could not
+    // reach (see the ceiling note below, now resolved by this dial).
+    //
+    // ⚠ NOT YET FED A REAL INDEX. Multi-region progression is FEAT-28 / milestone SM-4 and does not
+    // exist — story.js builds exactly ONE bounded region. `EconomySystem` takes the index through
+    // its deps adapter (`getRegion`), which currently returns 1 everywhere, so this table is inert
+    // until SM-4 lands. It is built now so the economy is not the thing blocking that milestone.
+    regionMult: [1.0, 1.6, 2.7, 4.4, 7.3, 12.0],
 
     // Payout multiplier per run day, 1-based; day 31+ holds the last entry. tier(1) === 1 is the
     // anchor "a day-1 run at par pays exactly one day's maintenance". Days 1-8 are the shipped
@@ -74,6 +136,16 @@ export const ECONOMY_PARAMS = {
 export const RANK_COLOR = { D: '#ff5a4e', C: '#ff9f43', B: '#ffdc3c', A: '#ffffff', S: '#5ab6ff' }
 
 // ── Pure functions ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Payout multiplier for a REGION (1-based). Clamps both ends: region <1 reads as 1, past the table
+ * holds the last entry. Pure step function, exactly like dayTier — the two multiply.
+ */
+export function regionTier (region) {
+    const t = ECONOMY_PARAMS.regionMult
+    const i = Math.min(Math.max(1, Math.floor(region || 1)), t.length) - 1
+    return t[i]
+}
 
 /** Payout multiplier for a run day. Step function of the table; day 9+ holds; day <1 clamps. */
 export function dayTier(day) {
@@ -100,11 +172,16 @@ export function rankThresholds(day) {
  * The SM-INV-4 payout line. Continuous in ratio — the rank letter is a display skin over this
  * curve, never an input to it. Floors at 0 and returns 0 for any degenerate input (par ≤ 0,
  * non-finite ratio): a mispriced or broken route pays nothing rather than NaN-ing the wallet.
+ *
+ * The line is fixed by two anchors: m = 1 at `breakEven` (one day-tier unit of maintenance) and
+ * m = 0 at `payoutZero`. Both are day-INDEPENDENT — see the module header on why money must not
+ * follow the tightening letters.
  */
 export function payoutFor(par, ratio, tier) {
     if (!isFinite(par) || par <= 0 || !isFinite(ratio) || !isFinite(tier)) return 0
-    const m = Math.min(Math.max((1.2 - ratio) / 0.2, 0), ECONOMY_PARAMS.payoutCap)
-    return ECONOMY_PARAMS.k * par * tier * m
+    const P = ECONOMY_PARAMS
+    const m = Math.min(Math.max((P.payoutZero - ratio) / (P.payoutZero - P.breakEven), 0), P.payoutCap)
+    return P.k * par * tier * m
 }
 
 /** SM-INV-14: 1 point at B or better, ½ at C, 0 at D. Never a function of time taken. */
@@ -155,6 +232,9 @@ export class EconomySystem {
      */
     constructor (deps = {}) {
         this._getDay = deps.getDay ?? (() => 1)
+        // getRegion() — 1-based region index. Defaults to 1: multi-region progression is FEAT-28 /
+        // SM-4 and unbuilt, so nothing supplies a real index yet. Wired now so the economy is ready.
+        this._getRegion = deps.getRegion ?? (() => 1)
         this._read = null
         this._ctrls = []
     }
@@ -179,7 +259,16 @@ export class EconomySystem {
      */
     terms () {
         const day = this._getDay()
-        return Object.freeze({ day, dayTier: dayTier(day), thresholds: Object.freeze(rankThresholds(day)) })
+        const region = this._getRegion()
+        const dt = dayTier(day), rt = regionTier(region)
+        // payTier is the ONE number consumers should multiply by: the day treadmill and the earned
+        // region step composed. Both components ride along for the result card and for debugging.
+        // Frozen at accept with everything else — a job accepted in region 2 pays region 2's rate
+        // even if it is settled after moving on, exactly as the day tier already worked.
+        return Object.freeze({
+            day, region, dayTier: dt, regionTier: rt, payTier: dt * rt,
+            thresholds: Object.freeze(rankThresholds(day)),
+        })
     }
 
     /**
@@ -189,8 +278,8 @@ export class EconomySystem {
      * gradeRun used to letter it).
      */
     settle (result, mission) {
-        const t = mission?.terms ?? { dayTier: dayTier(1) }
-        const payout = Math.round(payoutFor(result.par, result.ratio, t.dayTier))
+        const t = mission?.terms ?? { payTier: dayTier(1) * regionTier(1) }
+        const payout = Math.round(payoutFor(result.par, result.ratio, t.payTier ?? t.dayTier ?? 1))
         const points = pointsFor(result.letter)
         runEconomy.money = _cents(runEconomy.money + payout)
         runEconomy.halfPoints += points * 2

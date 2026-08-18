@@ -1,9 +1,10 @@
 ---
 id: FEAT-53
 type: feature
-status: open
+status: closed
 opened: 2026-08-01
 updated: 2026-08-17
+closed: 2026-08-18
 severity: major
 source: SM-2 milestone entry (planning session 2026-08-01)
 relates_to: >
@@ -94,7 +95,14 @@ monotonically, **B > 1.0 on every day**.
 - [x] Live drive-through: owner drove the full flow 2026-08-01/02 — "flow is good,
       everything feels good"
 
-## CURRENT STATE — 2026-08-17
+## CURRENT STATE — 2026-08-17  ⚠ SUPERSEDED, see the closure at the bottom of this file
+
+> **This section was written on 2026-08-17 and was accurate then. It is kept for provenance and is
+> now wrong in two specifics, both settled by the par re-anchor that merged 2026-08-18:**
+> its "Phase D item 2 is the ONLY open work" — the ticket is **closed**, and the SM-3-blocked
+> remainder went to **FEAT-69** — and its restatement of the gate pin **"B > 1.0 every day"**, which
+> is inverted to **"C === 1.0 every day"** now that par is the C/D boundary rather than the middle
+> of the B band. Read the closure section before acting on anything below.
 
 **Phases A–C: done, owner-verified, unchanged since 2026-08-02.** The spine has been carrying live
 missions for two weeks and has not needed a fix. `runEconomy` is still the wallet, `runState` is
@@ -180,3 +188,47 @@ that gate them: job-board discovery/expiry, fragile binary-vs-graded, bonus loot
   payout math punishes an overnight on any job via elapsed, which is a fine interim).
 - Phase D tuning (above). Open owner questions that gate later passes: board discovery/expiry,
   fragile binary-vs-graded, bonus loot-only-vs-points, freight flat-rate vs SM-INV-4.
+
+
+---
+
+## ✅ CLOSED 2026-08-18 — Phase D landed as the par re-anchor
+
+Owner drove a paper round, a POI job and a Quick Job on the branch; all three settled correctly.
+Closed on that verification plus 54/54 gates.
+
+### What Phase D actually turned into
+
+Item 2 was written as "balance `dayTierTable` + `rankDayLate` against real multi-day runs". What the
+owner asked for instead, once they played it, was a change of **meaning** rather than a tuning pass —
+and the balance fell out of it. Landed on `feature/par-reanchor` (14 commits, `c6dcc4d..ba388d6`):
+
+- **Par re-anchored to the C/D boundary** — the slowest drive that is still a pass, reversing
+  "B contains par" (2026-08-01) and its paper-route confirmation (2026-08-14). `par = referenceTime
+  × PAR_SLACK`, splitting the physics from the standard so SM-INV-2 survives intact.
+- **Thresholds re-cut** to S 0.72 · A 0.76 · B 0.80 · **C 1.00 pinned on every day**, fitted against
+  four owner-labelled drives. `rankDayLate` softened 7% → 3%: at 7% rank S was mathematically
+  unreachable from mid-run, which nobody had decided — that bug is what prompted the whole pass.
+- **Break-even moved to the B/C boundary**; par now pays half a day's maintenance. `k` re-derived
+  0.30 → 0.24, then ×0.1 → **0.024** on the owner's currency rescale.
+- **Per-region payout multiplier** (1 → 12 across six regions) — the progression dial, because
+  `dayTier` rises with maintenance and so nets to nothing on its own. $9 day-1/region-1 → $997
+  day-20/region-6, both ends gated.
+- **Paper route reshaped**: the fare IS the margin line (`payoutFor`), tips ride on top. This
+  reverses the original rule that the route must never call `payoutFor` — that rule is what produced
+  two time-payout curves with different ceilings, and made the round pay best for driving *slowly*.
+- **Paper rounds can be recorded at all** (FEAT-30 export + report card), which they could not
+  before; first round is in `runs/`.
+
+### Item 3's constraint list is superseded
+
+"**B > 1.0 every day**" was correct for the old anchoring and is now inverted: the gate pins
+**C === 1.0 on every day** instead, plus day-20 S staying reachable. `tier(1) = 1` and monotone
+tightening still hold.
+
+### What this ticket does NOT close — carried to FEAT-69
+
+Phase D item 2's *original* condition was never met and could not be: a balance pass against SM-3's
+repair costs, which do not exist yet, using multi-day run data nobody has recorded. `dayTierTable`
+was **not** touched. That work, plus the 27-point recount SM-INV-14's shifted economics forces, is
+minted as **FEAT-69** rather than left buried in a closed ticket.

@@ -110,19 +110,24 @@ stranding (SM-INV-7).
 ### Payout is continuous
 
 ```
-ratio  = elapsed / par
-payout = parBase × dayTier × clamp((1.2 − ratio) / 0.2, 0, cap)
+par    = referenceTime × PAR_SLACK        PAR_SLACK 1.15 — the standard; PAR_REF is the physics
+ratio  = elapsed / par                    ratio 1.0 IS the C/D boundary
+payout = parBase × dayTier × clamp((1.20 − ratio) / 0.40, 0, cap)     break-even 0.80 · k 0.024
 ```
 
 - **`parBase = k × par`** — the base scales with the road. This is load-bearing: it is what keeps
   *same driving quality, more road, more money* true, and it is why payout could not simply be the
   rank letter. A discrete rank would flatten a twelve-minute haul onto a sixty-second errand and
   hand the player back the tiny-job farming loop that absolute-seconds payout was chosen to close.
-- **The line:** 0 at ratio 1.2 · **1.0 at par** · 2.0 at ratio 0.8. Peanuts for being 20% over,
-  generous for being 20% under, linear between.
-- **The anchor:** *a day driven entirely at par is break-even.* Below par you profit, above it you
-  bleed. This resolves Q4 as an identity rather than a tuning target, and reduces the economy to one
-  number — `k`, maintenance cost per second of par-driving.
+- **The line** *(re-anchored 2026-08-16)*: **1.0 at ratio 0.80** (the B/C boundary) · **0.5 at par**
+  · **0 at 1.20**. Linear between, floored at zero.
+  *(Was: 0 at 1.2 · 1.0 at par · 2.0 at 0.8 — which encoded par-as-the-expected-drive.)*
+- **The anchor** *(re-anchored 2026-08-16)*: *a day driven entirely at the **B/C boundary** is
+  break-even.* **Par itself loses money** — a bare pass pays half a day's maintenance. The owner's
+  framing: B/C meets the growing cost of maintenance so you can keep going, but it does not pay for
+  upgrades; you need to be hitting B's for that. This still resolves Q4 as an identity rather than a
+  tuning target, and still reduces the economy to one number — `k` (0.30 → 0.24 → **0.024** after the 2026-08-17 ×0.1 currency rescale, re-derived as
+  `k × breakEven` so a break-even day is worth the same dollars as before).
 - **`dayTier`** is a step function of run day, **locked at mission accept**, rising as the run ages so
   payouts keep pace with escalating maintenance (Q9A). See DESIGN.md "The performance model" for why
   the rising tier does not double-count with the tightening rank thresholds.
@@ -133,8 +138,10 @@ payout = parBase × dayTier × clamp((1.2 − ratio) / 0.2, 0, cap)
 
 The player never sees par. They see **a letter and a number.** Ranks are **D · C · B · A · S**
 (already implemented — `gradeRun()` in `src/par.js`), coloured **red · orange · yellow · white ·
-blue**, with **B containing par** so that the grade which merely meets the cost curve is a B and an A
-feels earned.
+blue**, with **C containing par** *(re-anchored 2026-08-16 — was B)* so that par means the slowest
+drive that is still a pass, and every letter above it is something you actually earned. Thresholds
+**S 0.72 · A 0.76 · B 0.80 · C 1.00**, with C pinned at 1.0 on every day of the run — the difficulty
+ramp squeezes S/A/B and never the pass line itself.
 
 Rank is **display only** — a legible skin over the continuous payout, not a set of bins — and
 **result-card only, never live**, because a live rank is a countdown by proxy (SM-INV-3).
@@ -237,20 +244,65 @@ lands, not at the bell, so the end-of-route payout is a *pure function of time* 
 decoupled from it completely — not because it stopped paying, but because it was already paid. The
 totals do not move; what moved is when. It is also what lets the throw read-out quote real money.
 
-**$0 SITS AT THE BELL, not at par [AMENDED 2026-08-15, owner].** The bonus ramps from the deadline
-down to `expediteFull`, so the settlement reaches zero exactly where the route ends. There is no
-`expediteOn` constant: the start *is* `tolerance`, structurally, because two numbers that must be
-equal are one number waiting to drift.
+~~**$0 SITS AT THE BELL, not at par [AMENDED 2026-08-15, owner].** The bonus ramps from the deadline
+down to `expediteFull`, so the settlement reaches zero exactly where the route ends.~~
+**[RETIRED 2026-08-17.]** Nothing settles at zero any more: the bell IS par, par is the slowest
+PASSING drive, and a pass pays. This was the owner-reported flaw that prompted the reshape below —
+"where I went wrong was making the time payout a road to zero at par".
 
-The arithmetic that pins the bonus: a rim-scraper (mean q = 0.30) who blasts the round must earn what
-a methodical driver (mean q = 1.0) earns at par. At par the bonus is only partly paid —
-f(1.0) = (1.20 − 1.00) / (1.20 − 0.70) = 0.4 — so `1.0 + 0.4·B = 0.3 + B`, giving **B = 7/6**. It
-applies to the FULL flat (`n × FLAT`) rather than to the accuracy-scaled sum; on the scaled sum the
-same equivalence needs a 233% bonus, which is not a tunable number.
+~~The arithmetic that pins the bonus~~ **[RETIRED 2026-08-17 — the expediency bonus is gone.]**
+The round used to price its own time money as a flat rate plus a bonus that saturated at
+`expediteFull`, and `bonusMax` was solved from the equivalence "a rim-scraper blasting the round
+earns what a methodical driver earns at par".
 
-**Par is a B, and B contains par** [CONFIRMED 2026-08-14, owner]. SM-INV-3's amendment holds for
-this mission type too: driving the route the way par assumes is a B, and dawdling is a C. An earlier
-reading — that par should be a C here — was withdrawn.
+**THE RESHAPE [RATIFIED 2026-08-17, owner]: the fare is the margin line; the tips are the
+difference.**
+
+```
+time  =  payoutFor(parEff, elapsed/parEff, payTier)   — the SAME function a POI job uses
+tips  =  paperTip (0.30) × k × par × payTier, per customer, scaled by throw accuracy
+```
+
+*Why.* The old model had **two time-payout curves with different ceilings**. The route's bonus
+saturated at ratio 0.70 while the margin line keeps climbing, so a paper round paid best relative to
+a POI job when you drove **slowly**, and inverted below ratio ~0.66 — the opposite of a reward.
+Worse, `bonusMax` was being asked to satisfy two incompatible equations at once: **0.70** to hold the
+accuracy/speed equivalence, **1.50** to hold a flat premium over the margin line. One constant, two
+requirements. Sharing the margin line deletes the conflict instead of trading it off.
+
+*The framing.* You are paid for the drive like any other job, and every customer tips you on top for
+making the delivery and for how well you placed it. Not realistic; it does not need to be. The
+premium is therefore biggest at par (where the fare is smallest) and tapers as you drive faster — a
+fixed gratuity on a growing fare — measured **1.60× at par · 1.30× at break-even · 1.20× at 0.60**,
+and it never inverts.
+
+*What it costs.* **The 2026-08-14 accuracy/speed equivalence is retired.** The fare rewards pace
+without a ceiling, so speed still out-earns accuracy — a ragged blast at ratio 0.70 pays ~1.7× a
+perfect round at par. Accuracy is a tip, deliberately; `paperTip` is the single dial for how much it
+is worth. Raised **0.20 → 0.30 [owner, 2026-08-17]**, which moves the accuracy swing on a
+break-even round from ~13% to ~19% of the total.
+
+*And SM-INV-4 is no longer bent.* The original ruling was that this mission must price itself and
+never call `payoutFor` — that is **reversed**. The margin line IS the invariant, and the route now
+uses it verbatim instead of running a parallel curve beside it. The income floor moved to the tips,
+which are banked per throw and survive a half-finished round; the fare is priced against
+`parEff = par × coverage`, so serving half the round pays for half the road rather than nothing.
+
+**Par is a C** [REVERSED 2026-08-16, owner — this reverses the 2026-08-14 confirmation struck through
+above]. The reading withdrawn on 2026-08-14 is, in effect, reinstated — not because that call was
+wrong for its time, but because par itself changed meaning game-wide (DESIGN.md SM-INV-3,
+"Ratification pass 2026-08-16"). Par is the **C/D boundary** everywhere: driving the route the way
+par assumes is a **C** — you passed, you keep your throw money, you earned nothing for the clock —
+and dawdling past it is a **D**. The owner's instruction was explicitly that this apply game-wide
+rather than leave the paper route on a second convention, since a paper route's B has to mean what a
+POI job's B means for the letter to be worth anything at all.
+
+**The bell IS par** [2026-08-16]. `tolerance` 1.0, so the visible countdown is par exactly: run it
+out and you have, by definition, failed the standard. Consequence the owner accepted explicitly: a
+route finished exactly at par settles **no time money**, keeping only the per-throw spot earnings.
+This is the one mission type allowed a visible clock — SM-INV-3 permits an authored, diegetic timer
+and forbids only par-as-countdown on the default mission — and hanging it on par is what makes the
+number honest rather than arbitrary.
 
 **Par prices the STOPS, and nothing else** [FIXED 2026-08-14, FEAT-61]. `par.js` pins the reference
 driver's speed to **zero** at every customer — a true halt, the one place the `vMin` floor does not

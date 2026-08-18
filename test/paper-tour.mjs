@@ -23,6 +23,8 @@ import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { WaterSystem } from '../src/water.js'
 import { PoiSystem, POI_PARAMS } from '../src/poi.js'
+import { PAR_SLACK } from '../src/par.js'
+import { TRACE_HZ } from '../src/mission.js'
 import { planTour, PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun,
          deadlineFor, stockForTier, customersForTier, radiusForTier } from '../src/paper-route.js'
 import { computePar } from '../src/par.js'
@@ -203,11 +205,16 @@ for (const t of tours.filter(Boolean)) {
     }
 }
 
-// ── 5. the deadline is reachable at the oracle's own pace ───────────────────────────────────────
+// ── 5. the deadline IS par [RE-ANCHORED 2026-08-16] ─────────────────────────────────────────────
+// This used to assert `deadlineFor(par) > par`: the bell had to ring strictly AFTER par, because
+// par was the expected drive and the bell was a failure line somewhere beyond it. They are the
+// same instant now — par IS the failure line, so the bell sits exactly on it (tolerance 1.0).
+// The reachability this check was really protecting hasn't gone away; it moved into par itself,
+// where PAR_SLACK is what makes par a pace a human can actually hold (see src/par.js).
 for (let i = 0; i < tours.length; i++) {
     if (!tours[i]) continue
-    check(`tier ${i + 1}'s bell rings after its par, not before`,
-        deadlineFor(tours[i].par) > tours[i].par,
+    check(`tier ${i + 1}'s bell rings exactly ON its par`,
+        Math.abs(deadlineFor(tours[i].par) - tours[i].par) < 1e-9,
         `${deadlineFor(tours[i].par).toFixed(0)} s vs par ${tours[i].par.toFixed(0)} s`)
 }
 
@@ -229,7 +236,8 @@ for (let i = 0; i < tours.length; i++) {
         getPois: () => W.poi,
         getRegion: () => region,
         getCar: () => car,
-        getTerms: () => ({ dayTier: 1 }),
+        getSeed: () => 20,
+        getTerms: () => ({ payTier: 1 }),
         getTargetR: () => POI_PARAMS.poiHouseTargetR,
         onSettle: (payout, letter) => { settled.push({ payout, letter }); return { payout, points: 0 } },
         onBriefing: (done) => done(),          // Larry has already said his piece this run
@@ -252,6 +260,14 @@ for (let i = 0; i < tours.length; i++) {
     car.x = larry.x + 400            // out through the threshold
     paper.update(1 / 60)
     check('leaving the circle starts the route', paper.state === 'running', `state ${paper.state}`)
+
+    // Actually DRIVE for a bit rather than teleporting between porches with a frozen clock. This
+    // gate used to tick update() exactly twice, which left run.elapsed at 0 — harmless for the
+    // routing assertions it was written for, but it means the calibration export at the bottom
+    // would record a zero-length drive and an empty trace. `drive()` also exercises the TRACE_HZ
+    // sampler, which nothing else covers.
+    const drive = (seconds) => { for (let i = 0; i < Math.round(seconds * 60); i++) paper.update(1 / 60) }
+    drive(3)
 
     // THE REPORTED BUG. A paper on the centre point of a customer on the route must credit them,
     // exactly once, and must return the accuracy the read-out shows.
@@ -283,6 +299,7 @@ for (let i = 0; i < tours.length; i++) {
     // Finish the route on the remaining porches. The LAST one must end it by itself.
     for (let i = 1; i < route.length; i++) {
         check(`…still running with ${route.length - i} to go`, paper.state === 'running')
+        drive(4)                      // road between porches, so elapsed and the trace are real
         paper.takePaper()
         paper.recordLanding(route[i].x, route[i].z)
     }
@@ -296,6 +313,37 @@ for (let i = 0; i < tours.length; i++) {
         `advanced ${r?.advanced}, tier ${runPaper.tier}`)
     console.log(`       perfect tier-1 route: $${r?.payout} · ${r?.letter}`
         + ` · ${r?.delivered}/${r?.customers} · next route ${r?.nextTier} houses`)
+
+    // ── the calibration export [2026-08-17] ─────────────────────────────────────────────────
+    // The paper route had no way to record itself, so par could not be fitted to the one mission
+    // type whose par is dominated by per-porch STOPS. This asserts the blob is actually usable by
+    // the corpus tools rather than merely non-null — a broken export would otherwise only surface
+    // as a confusing refit weeks later.
+    {
+        const x = paper.exportRun('gate')
+        check('a finished round exports a run blob', !!x)
+        check('…in the shared corpus format', x?.format === 'rangersim-run-export/2', x?.format)
+        check('…tagged as a paper route so the two par scales stay separable',
+            x?.mission_type === 'paper_route')
+        // Everything test/calibrate-par.mjs reads. It rebuilds par from `topology.rows`, corrects it
+        // with result.par_s, and needs par_ref.slack to know WHICH standard the run was graded on.
+        check('…carries the fields calibrate-par consumes',
+            x?.result?.par_s > 0 && x?.result?.elapsed_s > 0 && x?.result?.letter &&
+            x?.topology?.rows?.length > 1 && x.topology.columns?.length === 9 &&
+            x?.par_ref?.slack === PAR_SLACK,
+            JSON.stringify({ par: x?.result?.par_s, elapsed: x?.result?.elapsed_s, letter: x?.result?.letter,
+                             cols: x?.topology?.columns?.length, rows: x?.topology?.rows?.length, slack: x?.par_ref?.slack }))
+        check('…records the EFFECTIVE par the letter came from (par × coverage)',
+            Math.abs(x.paper.par_effective_s - x.result.par_s * x.paper.coverage) < 0.02,
+            `${x?.paper?.par_effective_s} vs ${x?.result?.par_s} × ${x?.paper?.coverage}`)
+        check('…and the paper-specific terms a refit needs',
+            x.paper.customers > 0 && x.paper.delivered === x.paper.customers && x.paper.complete === true)
+        // The trace is the richest calibration signal: it says WHERE the time went, not just how
+        // much. A silently-empty trace would make the export look fine and be half useless.
+        check('…with a non-empty driven trace at the shared TRACE_HZ',
+            x.trace?.rows?.length > 0 && x.trace.hz === TRACE_HZ,
+            `rows ${x?.trace?.rows?.length}, hz ${x?.trace?.hz}`)
+    }
 
     paper.dismiss()
     check('dismissing the card puts the route down', paper.state === 'idle')
