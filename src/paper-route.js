@@ -98,10 +98,15 @@ export const PAPER_PARAMS = {
     // 0.70 to hold the accuracy/speed equivalence, 1.50 to hold a flat premium. One constant,
     // two equations. Reusing the margin line deletes the conflict rather than trading it off.
     //
-    // 0.20 = a perfect round tips ~20% of the margin line on top of it. The premium is therefore
-    // largest at par (where clock money is smallest) and tapers as you drive faster — which is how
-    // a tip behaves: a fixed gratuity on a growing fare.
-    paperTip:    0.20,
+    // 0.30 = a perfect round tips ~30% of a day-tier unit on top of the fare [owner, 2026-08-17,
+    // raised from the 0.20 that matched the original "about 20% more" ask]. The premium is largest
+    // at par (where the fare is smallest) and tapers as you drive faster — how a tip behaves: a
+    // fixed gratuity on a growing fare.
+    //
+    // This is ALSO the accuracy dial, and the only one. The fare rewards pace without a ceiling, so
+    // raising paperTip is the single way to buy throwing more weight back against speed; the
+    // accuracy swing on the total scales directly with it.
+    paperTip:    0.30,
 }
 
 /**

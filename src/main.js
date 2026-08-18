@@ -3637,7 +3637,7 @@ function _renderPaperUI () {
         + `${Math.round(r.meanAccuracy * 100)}% <span class="mp-dim">accuracy</span>`
         // TWO LINES, because it is two payments: the papers were banked as they landed, and the
         // clock is what settles now. Showing only the settlement would look like a pay cut.
-        + `<br><span class="mp-dim">tips (already paid)</span> <span class="mp-pay">$${formatMoney(r.spot)}</span>`
+        + `<br><span class="mp-dim">accuracy bonus</span> <span class="mp-pay">$${formatMoney(r.spot)}</span>`
         + `<br><span class="mp-dim">the drive</span> <span class="mp-pay">$${formatMoney(r.payout)}</span>`
         + (r.points > 0
           ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points} good deed${r.points > 1 ? 's' : ''}</span>`

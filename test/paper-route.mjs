@@ -108,7 +108,7 @@ check('a perfect round ALWAYS out-earns the equivalent POI job (never inverts)',
     prem.every(x => x > 1.0), prem.map(x => x.toFixed(2) + 'x').join(' '))
 check('…and the premium tapers as the fare grows, like a tip', monotone,
     prem.map(x => x.toFixed(2)).join(' → '))
-check('…worth ~20% at the break-even pace, which is what paperTip means',
+check(`…worth ~${Math.round(PAPER_PARAMS.paperTip * 100)}% at the break-even pace, which is what paperTip means`,
     Math.abs(prem[2] - (1 + PAPER_PARAMS.paperTip)) < 0.005, `${prem[2].toFixed(3)}x`)
 // The income floor is now the TIPS, not the fare: an unfinished round still banks what it placed.
 const partial = scoreRoute(Array(3).fill(1), 9, PAR * 0.9, PAR, PT)
@@ -327,7 +327,7 @@ check('the day tier lifts the floor with the cost curve', (() => {
 // names its yardstick explicitly: ONE DAY-TIER UNIT, which is what paperW is defined against
 // (see PAPER_PARAMS.paperW) — and asserts the identity that used to be assumed, so the next
 // re-anchor breaks this loudly instead of quietly.
-check('a perfect route\'s TIPS are worth ~20% of ONE DAY-TIER UNIT', (() => {
+check(`a perfect route's TIPS are worth ~${Math.round(PAPER_PARAMS.paperTip * 100)}% of ONE DAY-TIER UNIT`, (() => {
     const r = scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER)
     const unit = ECONOMY_PARAMS.k * PAR * TIER           // == payoutFor at the break-even ratio
     return near(r.spot / unit, PAPER_PARAMS.paperTip, 1e-9)

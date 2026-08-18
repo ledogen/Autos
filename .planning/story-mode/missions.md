@@ -260,7 +260,7 @@ difference.**
 
 ```
 time  =  payoutFor(parEff, elapsed/parEff, payTier)   — the SAME function a POI job uses
-tips  =  paperTip (0.20) × k × par × payTier, per customer, scaled by throw accuracy
+tips  =  paperTip (0.30) × k × par × payTier, per customer, scaled by throw accuracy
 ```
 
 *Why.* The old model had **two time-payout curves with different ceilings**. The route's bonus
@@ -273,12 +273,14 @@ requirements. Sharing the margin line deletes the conflict instead of trading it
 *The framing.* You are paid for the drive like any other job, and every customer tips you on top for
 making the delivery and for how well you placed it. Not realistic; it does not need to be. The
 premium is therefore biggest at par (where the fare is smallest) and tapers as you drive faster — a
-fixed gratuity on a growing fare — measured **1.40× at par · 1.20× at break-even · 1.13× at 0.60**,
+fixed gratuity on a growing fare — measured **1.60× at par · 1.30× at break-even · 1.20× at 0.60**,
 and it never inverts.
 
 *What it costs.* **The 2026-08-14 accuracy/speed equivalence is retired.** The fare rewards pace
-without a ceiling, so speed now out-earns accuracy. Accuracy is a tip, deliberately; `paperTip` is
-the single dial for how much it is worth, and raising it is how throwing gets more weight back.
+without a ceiling, so speed still out-earns accuracy — a ragged blast at ratio 0.70 pays ~1.7× a
+perfect round at par. Accuracy is a tip, deliberately; `paperTip` is the single dial for how much it
+is worth. Raised **0.20 → 0.30 [owner, 2026-08-17]**, which moves the accuracy swing on a
+break-even round from ~13% to ~19% of the total.
 
 *And SM-INV-4 is no longer bent.* The original ruling was that this mission must price itself and
 never call `payoutFor` — that is **reversed**. The margin line IS the invariant, and the route now
