@@ -36,6 +36,7 @@ import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
 import { crownProfile, potholeNoise, signedCurvature, arcPrimitiveConnect, smoothGradeInPlace, applyTunnelPassInPlace, dubinsFillet, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
+import { truncatedHeightField, corridorSearch, corridorCenterline, profileSolve, CLS } from './corridor-router.js'   // FEAT-68: router v2
 import { centerlineFromDescriptors, CenterlineCurve, Centerline, makePrimitive, slicePrimitives, reversePrimitives, primitivePose } from './centerline.js'
 import { delaunay, urquhartEdges } from './road-graph.js'
 
@@ -680,6 +681,13 @@ export class RoadSystem {
         this._worldSeed  = worldSeed
         this._params     = params
         this._noiseCoarse = createNoise2D(mulberry32(seedFor(worldSeed, 'coarse')))
+        this._v2TruncF   = null   // FEAT-68: octave-truncated corridor field re-derives from the new noise
+    }
+
+    /** FEAT-68: memoized octave-truncated coarse field (K=3) — the corridor stage's terrain. */
+    _v2Trunc() {
+        if (!this._v2TruncF) this._v2TruncF = truncatedHeightField(this._noiseCoarse, this._params, 3)
+        return this._v2TruncF
     }
 
     // ── Height accessor ────────────────────────────────────────────────────────
@@ -1580,6 +1588,12 @@ export class RoadSystem {
      * WHEN a job ships, never WHAT it computes.
      */
     _warmScan(edges, cap, evalCap = Infinity) {
+        // FEAT-68 (v2): the v1 route Worker speaks arc-primitive descriptors and must never fill
+        // the v2 cache. At ~3 ms/edge synchronous routing, pre-warm dispatch is not worth a
+        // protocol port yet — if streaming hitches say otherwise, the fix is a real module import
+        // on the Worker (no verbatim mirror), not this scan.
+        return { jobs: [], deferred: false }
+
         const jobs = []
         let deferred = false
         const seen = new Set()
@@ -1802,7 +1816,7 @@ export class RoadSystem {
             const p = cl.pointAt(s)
             pts[i] = new THREE.Vector3(p.x, this._coarseH(p.x, p.z), p.z)
         }
-        this._gradeEdgeInPlace(pts, this._params?.roadGraphDeviationCap ?? 2)
+        this._v2GradePts(pts, clArc)   // FEAT-68: par prices the same profile the carve builds
         return { key, centerline: cl, gradeAt: _gradeSampler(pts, clArc) }
     }
 
@@ -2701,20 +2715,13 @@ export class RoadSystem {
         return discs.length ? discs : undefined
     }
 
-    // SOLO centerline for an edge: routed with NO corridor avoidance (ponds + self-clearance and
-    // the foreign-node discs still apply) — the dep-free pure per-edge route that lower-priority
-    // siblings avoid. Cached in clsSolo; the Worker pre-warm fills the same cache via
-    // 'S|'-prefixed jobs.
+    // FEAT-68 (v2): the solo/final split is GONE — a route is a pure fn of (terrain, anchor pair),
+    // so "solo" and "final" are the same object (the purity probe measured sibling coupling to be
+    // entirely a shared-node phenomenon; corridors don't wander, so nothing needs avoiding).
+    // Kept as a delegate because warm bookkeeping and older callers still name it.
     _soloCenterline(c1, c2) {
-        if (!this._proto.clsSolo) this._proto.clsSolo = new Map()
-        const key = this._edgeClsKey(c1, c2)
-        const cached = this._proto.clsSolo.get(key)
-        if (cached) return cached
-        const spec = this._edgeRouteSpec(c1, c2)
-        const descs = arcPrimitiveConnect(spec.ax, spec.az, spec.bx, spec.bz, (x, z) => this._coarseH(x, z), spec.opts)
-        const cl = centerlineFromDescriptors(descs)
-        this._proto.clsSolo.set(key, cl)
-        this._pendingRoutes.delete('S|' + key)
+        const cl = this._edgeCenterline(c1, c2)
+        this._pendingRoutes.delete('S|' + this._edgeClsKey(c1, c2))
         return cl
     }
 
@@ -2738,39 +2745,37 @@ export class RoadSystem {
         return true
     }
 
+    // FEAT-68 (v2): route an edge — corridor search on the octave-truncated field, then stage-3
+    // curve generation (dehairpin → RDP → Chaikin → line-arc fillets). Pure fn of (terrain,
+    // anchor pair); the cache is memoization only, never coupling. Terminal headings, corridor
+    // discs, solo-reuse and the self-clearance wrapper are all gone with the wander.
     _edgeCenterline(c1, c2) {
         if (!this._proto.cls) this._proto.cls = new Map()
         const key = this._edgeClsKey(c1, c2)
         const cached = this._proto.cls.get(key)
         if (cached) return cached
-        // QUAL-14 Part B: avoid the corridors of higher-priority siblings (their SOLO routes —
-        // dep-free, so no recursion past depth 2).
-        const avoid = this._corridorDiscsFor(c1, c2, true)
-        if (avoid === undefined) {
-            // Nothing to avoid → final ≡ solo (identical opts). Share the solo cache entry
-            // instead of paying the search twice.
-            const cl = this._soloCenterline(c1, c2)
+        // FEAT-68: routes are direction-CANONICAL. The search (A*, RDP, Chaikin) is not
+        // direction-symmetric, and which spelling a window asks for depends on local site order —
+        // v1's "routing is directional" gotcha, measured again here as 36 m of AB-vs-BA drift
+        // (story-poi pad positions). Route the id-ordered direction once; the other spelling is
+        // its EXACT reverse (reversePrimitives), so both are one pure geometry.
+        const canon = (c1[0] - c2[0] || c1[1] - c2[1] || c1[2] - c2[2]) <= 0
+        if (!canon) {
+            const fwd = this._edgeCenterline(c2, c1)
+            const cl = new Centerline(reversePrimitives(fwd.primitives))
             this._proto.cls.set(key, cl)
             this._pendingRoutes.delete(key)
             return cl
         }
-        if (this._params?.roadSoloReuse) {
-            // ALWAYS resolve the solo (computing it if missing): adoption must be a pure fn of
-            // the edge, or it becomes WINDOW-DEPENDENT — a wide stream caches solos a narrow one
-            // doesn't, and the same edge routes differently per window (caught by BUNDLE-PARITY:
-            // bake radius 1160 vs gate radius 480 disagreed on one edge). When the discs then
-            // bite we pay solo + final, but most edges' solos are sibling-dep inputs anyway.
-            const solo = this._soloCenterline(c1, c2)
-            if (solo && solo.length > 1e-6 && this._soloClearOf(solo, avoid)) {
-                this._proto.cls.set(key, solo)
-                this._pendingRoutes.delete(key)
-                return solo
-            }
-        }
-        const spec = this._edgeRouteSpec(c1, c2)
-        if (avoid) spec.opts.avoidDiscs = spec.opts.avoidDiscs ? spec.opts.avoidDiscs.concat(avoid) : avoid
-        const descs = arcPrimitiveConnect(spec.ax, spec.az, spec.bx, spec.bz, (x, z) => this._coarseH(x, z), spec.opts)
-        const cl = centerlineFromDescriptors(descs)
+        const A = this._nodePos(c1), B = this._nodePos(c2)
+        // pond+skirt no-go discs (FEAT-17) over the corridor's OWN search box — the corridor
+        // margin is far wider than v1's PROTO_MARGIN, so fetch discs for what it can reach
+        const margin = Math.max(800, Math.hypot(B.x - A.x, B.z - A.z))
+        const blockedDiscs = this._pondDiscsInBBox ? this._pondDiscsInBBox(
+            Math.min(A.x, B.x) - margin, Math.min(A.z, B.z) - margin,
+            Math.max(A.x, B.x) + margin, Math.max(A.z, B.z) + margin) : undefined
+        const cor = corridorSearch(A.x, A.z, B.x, B.z, this._v2Trunc(), { margin, blockedDiscs })
+        const cl = cor ? corridorCenterline(cor.path) : centerlineFromDescriptors([])
         this._proto.cls.set(key, cl)
         this._pendingRoutes.delete(key)
         return cl
@@ -2789,6 +2794,53 @@ export class RoadSystem {
     // design; the cap yanks it back). tanh approaches ±cap asymptotically instead, so the profile bends into
     // the terrain-following region smoothly. Bounded by ±cap (never floats past it), near-identity for
     // |dev|≪cap so unclamped roads are unchanged, and window-invariant (pointwise fn of two box means). D-16.
+    /**
+     * FEAT-68 (v2): solve the vertical profile for a sampled run IN PLACE — priced == built.
+     * Stations every ~10 m over the run's arc (profile detail below that is noise), ground from
+     * the world-fixed coarse sampler, ENDPOINTS PINNED to terrain height at the run's ends (the
+     * day-one junction node height rule — two runs sharing a node agree by construction). The
+     * solved y lerps onto the 4 m samples. Returns FEAT-40-shaped spans [{s0,s1}] covering bore
+     * and (crude for now) bridge stretches, or null. On an infeasible solve (a cost-model bug by
+     * definition — the vocabulary can always buy its way through) the run keeps terrain-following
+     * y as the mark-and-ship fallback and _v2Infeasible counts it.
+     */
+    _v2GradePts(pts, clArc) {
+        const n = pts.length
+        const L = clArc[n - 1]
+        if (!(L > 1e-6) || n < 2) return null
+        const nSt = Math.max(2, Math.round(L / 10))
+        const st = { s: new Array(nSt + 1), ground: new Array(nSt + 1) }
+        let j = 1
+        for (let i = 0; i <= nSt; i++) {
+            const t = L * i / nSt
+            while (j < n - 1 && clArc[j] < t) j++
+            const u = (t - clArc[j - 1]) / Math.max(1e-9, clArc[j] - clArc[j - 1])
+            const x = pts[j - 1].x + (pts[j].x - pts[j - 1].x) * u
+            const z = pts[j - 1].z + (pts[j].z - pts[j - 1].z) * u
+            st.s[i] = t
+            st.ground[i] = this._coarseH(x, z)
+        }
+        const yA = this._coarseH(pts[0].x, pts[0].z)
+        const yB = this._coarseH(pts[n - 1].x, pts[n - 1].z)
+        const prof = profileSolve(st, yA, yB)
+        if (!prof) {
+            this._v2Infeasible = (this._v2Infeasible || 0) + 1
+            return null
+        }
+        let k = 1
+        for (let i = 0; i < n; i++) {
+            const t = clArc[i]
+            while (k < nSt && st.s[k] < t) k++
+            const u = (t - st.s[k - 1]) / Math.max(1e-9, st.s[k] - st.s[k - 1])
+            pts[i].y = prof.y[k - 1] + (prof.y[k] - prof.y[k - 1]) * u
+        }
+        const spans = []
+        for (const sg of prof.segs) {
+            if ((sg.cls === CLS.BORE || sg.cls === CLS.BRIDGE) && sg.len >= 12) spans.push({ s0: sg.s0, s1: sg.s1 })
+        }
+        return spans.length ? spans : null
+    }
+
     _gradeEdgeInPlace(pts, capOverride = null) {
         const ewWindow = this._params?.roadEarthworkWindow ?? 0
         const ewActive = ewWindow > 0 && (this._params?.roadWDeviation ?? 0) > 0
@@ -2907,12 +2959,10 @@ export class RoadSystem {
             const p = cl.pointAt(s)
             pts[i] = new THREE.Vector3(p.x, this._coarseH(p.x, p.z), p.z)
         }
-        this._gradeEdgeInPlace(pts, this._params?.roadGraphDeviationCap ?? 2)
-        // FEAT-40: taut-string summit cut + crown-cover bore detection. Mutates pts.y only;
-        // spans (bore stretches, cumulative-XZ arc == run-global arcS since arcOrigin=0)
-        // drive carve-skip/physics/tube mesh. _coarseH is the router's own world-fixed
-        // terrain sampler → the pass stays window-invariant.
-        const tunnelSpans = applyTunnelPassInPlace(pts, this._tunnelPassOpts(), (x, z) => this._coarseH(x, z))
+        // FEAT-68 (v2): exact profile solve replaces design-grading + the FEAT-40 tunnel pass.
+        // Bore AND bridge stretches come back as FEAT-40-shaped spans (carve-skip + lining +
+        // collider through the existing machinery; bridge rendering is knowingly crude for now).
+        const tunnelSpans = this._v2GradePts(pts, clArc)
         const polyCum = new Float64Array(n + 1)
         for (let i = 1; i <= n; i++) polyCum[i] = polyCum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
         this._network.set(key, { points: pts, arcOrigin: 0, centerline: cl, polyCum, clArc, cellA, cellB, tunnelSpans })

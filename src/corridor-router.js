@@ -16,6 +16,8 @@
 // Seam: pure math. No engine types, no THREE — points are plain {x,y,z} / arrays, height fields
 // arrive as closures. Importable by a Worker as a real module (no verbatim mirror — FEAT-68 fence).
 
+import { Centerline, makePrimitive, primitivePose } from './centerline.js'
+
 // ── Physical knobs (FEAT-68 item 8 — engineer-priced, money units per metre of plain road) ──────
 // cRoadM is the numéraire: 1.0 = one metre of flat on-grade road. Everything else is priced
 // relative to it, so the knobs read as "a metre of bore costs the same as N metres of road".
@@ -28,7 +30,10 @@ export const V2_COSTS = {
     cBridgeM: 20.0,   // bridge deck, per m (expensive: structures must be EARNED — character spec)
     cPortal: 150,     // fixed, per bore portal
     cAbutment: 100,   // fixed, per bridge end
-    cutMax: 12,       // m below ground where a cut becomes a bore
+    cutMax: 20,       // m below ground where a cut becomes a bore — a 12–20 m trench is an open
+                      // rock CUTTING (road grade cap, priced linearly per m of depth), not a
+                      // tunnel; at 12 the bore's 18% grade cap rate-limited legitimate cliff
+                      // descents through incidental deep-cut pockets (seed 67, 31.7%-mean drop)
     fillMax: 8,       // m above ground where a fill becomes a bridge
     onTol: 0.75,      // m — |deck − ground| within this counts as on-grade
     gMaxRoad: 0.35,   // hard vocabulary cap for surface states (sustained ceiling is 0.40)
@@ -103,7 +108,10 @@ class Heap {
  *
  * @param {number} ax,az,bx,bz anchor XZ (world m)
  * @param {(x:number,z:number)=>number} hTrunc octave-truncated field
- * @param {object} [opts] { cell=32, margin=max(800,chord), costs=V2_COSTS }
+ * @param {object} [opts] { cell=32, margin=max(800,chord), costs=V2_COSTS,
+ *                           blockedDiscs: flat [x,z,r,...] hard no-go discs (ponds — FEAT-17;
+ *                           water is not crossable, matching v1; cells within 2 cells of either
+ *                           anchor are exempt so an endpoint can never be walled) }
  * @returns {{path:{x:number,z:number}[], cost:number, expanded:number}|null} lattice polyline A→B
  */
 export function corridorSearch(ax, az, bx, bz, hTrunc, opts = {}) {
@@ -134,6 +142,27 @@ export function corridorSearch(ax, az, bx, bz, hTrunc, opts = {}) {
     const gx = Math.round((bx - x0) / cell), gz = Math.round((bz - z0) / cell)
     const goalI = idx(gx, gz)
 
+    // Hard no-go cells (pond+skirt discs): 0 unknown, 1 open, 2 blocked — resolved lazily.
+    const discs = opts.blockedDiscs
+    const blocked = discs && discs.length ? new Uint8Array(W * Hn) : null
+    const exempt2 = (2 * cell) * (2 * cell)
+    const isBlocked = (cx2, cz2) => {
+        if (!blocked) return false
+        const i = idx(cx2, cz2)
+        if (blocked[i]) return blocked[i] === 2
+        const x = wx(cx2), z = wz(cz2)
+        let b = 1
+        const dax = x - ax, daz = z - az, dbx = x - bx, dbz = z - bz
+        if (dax * dax + daz * daz > exempt2 && dbx * dbx + dbz * dbz > exempt2) {
+            for (let d = 0; d < discs.length; d += 3) {
+                const dx = x - discs[d], dz = z - discs[d + 1]
+                if (dx * dx + dz * dz <= discs[d + 2] * discs[d + 2]) { b = 2; break }
+            }
+        }
+        blocked[i] = b
+        return b === 2
+    }
+
     const gCost = new Float64Array(W * Hn).fill(Infinity)
     const from = new Int32Array(W * Hn).fill(-1)
     const open = new Heap()
@@ -152,6 +181,7 @@ export function corridorSearch(ax, az, bx, bz, hTrunc, opts = {}) {
         for (const [dx, dz] of NB) {
             const nx = cx + dx, nz = cz + dz
             if (nx < 0 || nz < 0 || nx >= W || nz >= Hn) continue
+            if (isBlocked(nx, nz)) continue
             const ni = idx(nx, nz)
             const ds = cell * Math.hypot(dx, dz)
             const g = Math.abs(hAt(nx, nz) - h0) / ds
@@ -174,9 +204,14 @@ export function corridorSearch(ax, az, bx, bz, hTrunc, opts = {}) {
         path.push({ x: wx(cx), z: wz(cz) })
     }
     path.reverse()
-    // Exact endpoints (the lattice snapped them): pin A and B.
+    // Exact endpoints (the lattice snapped them): pin A and B, and ABSORB lattice vertices closer
+    // than ~a cell to each anchor — the pin can land up to half a cell diagonal away from its
+    // snapped cell, and a leftover vertex that close makes a short-leg kink no smoothing pass can
+    // buy a real radius for (measured: the sub-8 m fillets all sat at run STARTs).
     path[0] = { x: ax, z: az }
     path[path.length - 1] = { x: bx, z: bz }
+    while (path.length > 2 && Math.hypot(path[1].x - ax, path[1].z - az) < cell * 1.6) path.splice(1, 1)
+    while (path.length > 2 && Math.hypot(path[path.length - 2].x - bx, path[path.length - 2].z - bz) < cell * 1.6) path.splice(path.length - 2, 1)
     return { path, cost: gCost[goalI], expanded }
 }
 
@@ -385,4 +420,162 @@ export function corridorConnect(a, b, hTrunc, hFull, opts = {}) {
     if (!prof) return null
     const pts = st.s.map((_, i) => ({ x: st.x[i], y: prof.y[i], z: st.z[i] }))
     return { pts, stations: st, profile: prof, corridor: cor }
+}
+// ── Stage 3: curve generation ──────────────────────────────────────────────────────────────────
+/**
+ * Douglas–Peucker polyline simplification (iterative). The lattice A* buys slope with length at
+ * ONE-CELL amplitude (stairstep zigzags — noise, not switchbacks); collapsing every deviation
+ * under ~0.6 cells leaves genuine multi-cell switchbacks intact while giving Chaikin a clean
+ * control polygon to smooth. Endpoints always survive.
+ */
+export function simplifyRDP(path, tol) {
+    if (path.length < 3) return path
+    const keep = new Uint8Array(path.length)
+    keep[0] = keep[path.length - 1] = 1
+    const stack = [[0, path.length - 1]]
+    const t2 = tol * tol
+    while (stack.length) {
+        const [a, b] = stack.pop()
+        if (b - a < 2) continue
+        const ax = path[a].x, az = path[a].z
+        const vx = path[b].x - ax, vz = path[b].z - az
+        const vv = vx * vx + vz * vz || 1
+        let worst = -1, wd = t2
+        for (let i = a + 1; i < b; i++) {
+            const wx = path[i].x - ax, wz = path[i].z - az
+            const t = Math.max(0, Math.min(1, (wx * vx + wz * vz) / vv))
+            const dx = wx - t * vx, dz = wz - t * vz
+            const d = dx * dx + dz * dz
+            if (d > wd) { wd = d; worst = i }
+        }
+        if (worst >= 0) { keep[worst] = 1; stack.push([a, worst], [worst, b]) }
+    }
+    const out = []
+    for (let i = 0; i < path.length; i++) if (keep[i]) out.push(path[i])
+    return out
+}
+
+/**
+ * Open-curve Chaikin corner cutting (endpoints preserved). Two passes turn the 32 m lattice
+ * polyline into ~8–16 m segments with per-vertex turns small enough for generous fillets.
+ */
+export function chaikin(path, iterations = 2) {
+    let p = path
+    for (let it = 0; it < iterations; it++) {
+        if (p.length < 3) return p
+        const out = [p[0]]
+        for (let i = 0; i < p.length - 1; i++) {
+            const a = p[i], b = p[i + 1]
+            out.push({ x: 0.75 * a.x + 0.25 * b.x, z: 0.75 * a.z + 0.25 * b.z })
+            out.push({ x: 0.25 * a.x + 0.75 * b.x, z: 0.25 * a.z + 0.75 * b.z })
+        }
+        out.push(p[p.length - 1])
+        p = out
+    }
+    return p
+}
+
+/**
+ * Fit a polyline with LINE + ARC primitives (corner fillets): every interior corner is replaced
+ * by a tangent circular arc anchored ON the incoming/outgoing segments, lines join the tangent
+ * points. G1 by construction, real curvature for camber/min-radius consumers. Each primitive is
+ * anchored analytically to the polyline (no chained pose drift). The v1 refit's κ box-filter can
+ * upgrade this to clothoid (G2) later without changing the representation — same primitive type.
+ * @param {{x,z}[]} path smoothed polyline
+ * @param {number} rMin fillet radii clamp low end (kink guard, m)
+ * @param {number} rMax fillet radii clamp high end (m)
+ * @returns {Centerline}
+ */
+export function lineArcFit(path, rMin = 10, rMax = 400) {
+    // dedupe near-coincident vertices first (exact-anchor pinning can create them)
+    const P = []
+    for (const q of path) {
+        const last = P[P.length - 1]
+        if (!last || Math.hypot(q.x - last.x, q.z - last.z) > 0.05) P.push(q)
+    }
+    if (P.length < 2) return new Centerline([])
+    const prims = []
+    // cursor: how far along the polyline the fitted chain has consumed, expressed as a point
+    let cur = P[0]
+    for (let i = 1; i < P.length - 1; i++) {
+        const a = P[i - 1], b = P[i], c = P[i + 1]
+        const inX = b.x - a.x, inZ = b.z - a.z, outX = c.x - b.x, outZ = c.z - b.z
+        const inL = Math.hypot(inX, inZ), outL = Math.hypot(outX, outZ)
+        const dInX = inX / inL, dInZ = inZ / inL, dOutX = outX / outL, dOutZ = outZ / outL
+        const cross = dInX * dOutZ - dInZ * dOutX
+        const dot = dInX * dOutX + dInZ * dOutZ
+        const turn = Math.atan2(cross, dot)                    // signed corner angle
+        if (Math.abs(turn) < 1e-4) continue                    // collinear: swallow into the line
+        // tangent offset t = R·tan(|turn|/2); available leg = half of each adjacent segment
+        const tanHalf = Math.tan(Math.abs(turn) / 2)
+        const tAvail = 0.5 * Math.min(inL, outL)
+        const R = Math.min(rMax, tAvail / tanHalf)             // caller escalates smoothing if R < rMin
+        const t = R * tanHalf
+        const t1x = b.x - dInX * t, t1z = b.z - dInZ * t       // arc entry (on incoming segment)
+        const thetaIn = Math.atan2(dInZ, dInX)
+        // line from cursor to arc entry
+        const lineLen = Math.hypot(t1x - cur.x, t1z - cur.z)
+        if (lineLen > 0.05) prims.push(makePrimitive(cur.x, cur.z, Math.atan2(t1z - cur.z, t1x - cur.x), lineLen, 0))
+        // the fillet arc
+        const kappa = turn > 0 ? 1 / R : -1 / R
+        const arcLen = R * Math.abs(turn)
+        const arc = makePrimitive(t1x, t1z, thetaIn, arcLen, kappa)
+        prims.push(arc)
+        const end = primitivePose(arc, arcLen)
+        cur = { x: end.x, z: end.z }
+    }
+    const last = P[P.length - 1]
+    const lineLen = Math.hypot(last.x - cur.x, last.z - cur.z)
+    if (lineLen > 0.05) prims.push(makePrimitive(cur.x, cur.z, Math.atan2(last.z - cur.z, last.x - cur.x), lineLen, 0))
+    return new Centerline(prims)
+}
+
+/**
+ * Remove one-cell hairpin apexes: an interior vertex turning more than maxTurn with BOTH legs
+ * shorter than legMax is lattice noise (the A* dodging one expensive cell), not a switchback —
+ * real switchback apexes carry legs many cells long and are left alone. Iterates to a fixed point.
+ */
+export function dehairpin(path, maxTurn = 100 * Math.PI / 180, legMax = 85) {
+    let p = path, changed = true
+    while (changed && p.length > 2) {
+        changed = false
+        const out = [p[0]]
+        for (let i = 1; i < p.length - 1; i++) {
+            const a = out[out.length - 1], b = p[i], c = p[i + 1]
+            const inX = b.x - a.x, inZ = b.z - a.z, outX = c.x - b.x, outZ = c.z - b.z
+            const inL = Math.hypot(inX, inZ), outL = Math.hypot(outX, outZ)
+            if (inL > 1e-9 && outL > 1e-9 && inL < legMax && outL < legMax) {
+                const dot = (inX * outX + inZ * outZ) / (inL * outL)
+                if (Math.acos(Math.max(-1, Math.min(1, dot))) > maxTurn) { changed = true; continue }
+            }
+            out.push(b)
+        }
+        out.push(p[p.length - 1])
+        p = out
+    }
+    return p
+}
+
+/**
+ * Corridor lattice path → drivable centerline: Chaikin, then line-arc fillets. Chaikin passes
+ * ESCALATE (2 → 5) until every fillet clears rMin — each pass halves corner angles, roughly
+ * doubling the achievable radius, so sharp lattice turns (up to 135°) converge in a pass or two.
+ */
+export function corridorCenterline(path, opts = {}) {
+    const rMin = opts.rMin ?? 12, rMax = opts.rMax ?? 400
+    const clean = dehairpin(path)
+    // Escalate smoothing freedom until the fit clears rMin: more Chaikin passes first, then a
+    // wider RDP tolerance (the corridor is a ~100 m swath — the centerline owns that freedom).
+    // Keep the best fit seen so the escalation can never make things worse.
+    let best = null, bestR = -Infinity
+    for (const tol of [opts.rdpTol ?? 32, 44]) {
+        const base = simplifyRDP(clean, tol)
+        for (let passes = opts.chaikin ?? 2; passes <= 5; passes++) {
+            const cl = lineArcFit(chaikin(base, passes), rMin, rMax)
+            const r = cl.minRadius()
+            if (r > bestR) { best = cl; bestR = r }
+            if (r >= rMin) return cl
+        }
+    }
+    return best
 }

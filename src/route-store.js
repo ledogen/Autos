@@ -36,7 +36,7 @@ export const REGION_ROUTE_CACHE_URL = 'data/route-cache-region.json.gz'
  * (roadArcRadii) are JSON-encoded. Pure — shared by the browser loader and the node bake script.
  */
 export function routeCacheSig(worldSeed, params) {
-    let s = 'v1|seed=' + worldSeed
+    let s = 'v2|seed=' + worldSeed   // FEAT-68: corridor router — every v1 bundle/IDB record must mismatch
     for (const k of Object.keys(params).sort()) {
         const v = params[k]
         if (typeof v === 'function') continue
