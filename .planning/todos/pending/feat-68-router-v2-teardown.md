@@ -14,6 +14,12 @@ relates: BUG-51 (absorbed — grade ceiling becomes core spec), BUG-52 (planner 
 
 # FEAT-68: Router v2 — tear down, rebuild two-stage, iterate against driven character
 
+**Naming (2026-08-18):** the outgoing router is the **arc-lattice router (v1)** — fixed-angle arc
+primitives searched over a heading-binned lattice, de-quantized post-hoc. The replacement is the
+**corridor router (v2)**. Named by mechanism, not just version, because the lattice IS one of the
+named motivations for its death. NOT part of either name: the blue-noise/Urquhart/cull topology
+layer — that is a separate layer and it survives.
+
 ## Why a teardown and not another patch
 
 The current router is an accretion: hybrid A* over quantized heading bins + a fixed radius palette
@@ -71,6 +77,16 @@ priced≠built gap that caused everything above).
   separable — the router's job is "connect this anchor pair", not "choose the pairs".
 - **Streams keep causeways** (`project_stream_crossing_causeway`). Valley-spanning bridges do not
   reverse that ruling.
+- **Terrain interface (read-side only — generation is untouchable).** Terrain co-design was
+  considered and rejected on principle: terrain bending to meet roads inverts
+  `feedback_emergent_over_injected` — the land must not negotiate back, or mountains stop being
+  real. The carve (and now bores/bridges) is the only sanctioned "terrain adapts to road"
+  mechanism: local, bounded, downstream. Two cheap ADDITIVE read APIs are in scope though, world
+  byte-identical: (a) **octave-truncated sampling** — the corridor stage searches the coarse noise
+  evaluated at its first K octaves: same world low-passed, faster per sample, and the low-octave
+  skeleton of ridged noise is where the real passes/valleys live; (b) **analytic gradients** —
+  simplex noise has closed-form derivatives, letting the profile stage price slope without the
+  finite-difference sample burn v1 pays.
 - **No verbatim worker mirror.** The ROUTE SYNC copied-string arrangement is a standing tax
   (byte-identical template-literal mirror + escaping + a gate). Router v2 must be architected so
   the worker and main thread share ONE canonical source (build-time splice or shared module), with
@@ -182,3 +198,44 @@ The branch is the **reference implementation** for these; its numbers are ground
 - [ ] Cold-to-driving on old hardware: < 10 s, or owner explicitly accepts the relief valve.
 - [ ] Contract gates re-baselined green; implementation gates retired in the same commit that
       retires the code they tested; bundles rebaked; old router deleted from main in the swap merge.
+
+## Simplification inventory ("simplify, add lightness" — owner request 2026-08-18)
+
+The pattern: find machinery that exists to fight a consequence of v1's design; check whether v2
+removes the cause. Grouped by confidence.
+
+**Dies by construction (certain if the architecture holds):**
+1. **The fine search itself** — v1 expands up to 300k states/edge with a coarse pass bolted on as
+   an accelerator; v2 searches ONLY coarse (octave-truncated terrain) and solves profile as 1-D
+   dynamic programming along the corridor: exact global optimum, no heuristic, no inflation.
+2. **The overlap-prevention subsystem** — solo+final double routing, `_edgeDeps` (per-edge Delaunay
+   builds), corridor discs, priority ordering, the escape hatch, and the ≤16-iteration
+   self-clearance repair loop all exist because the greedy quantized search WANDERS (bows past
+   goals, pigtails to gain elevation). Coarse corridors don't wander; a profile stage with bores
+   never spirals for height. Largest single deletion candidate.
+3. **Quantize-then-repair geometry** — heading bins, radius palette, Dubins terminals, de-quantize
+   refit. v2 fits continuous curvature once, as the primary representation.
+4. **Worker mirror** (already fenced above) and — if the perf target is hit — the ENTIRE
+   route-cache bake subsystem (bundles, bake script, parity gates, sig discipline): a cache for a
+   problem that no longer exists. Delete, don't optimize.
+
+**Strong bets (design for, verify early in the loop):**
+5. **Junction heights as boundary conditions** — assign node heights first, solve each profile with
+   pinned endpoints. Edges then cannot disagree at joints: the junction blend shrinks to cosmetics
+   and the deg-2 merge loses its grade-repair job (which measurably amplified 44%→58% on the
+   reference branch). Same by-construction move as priced==built, applied at nodes.
+6. **One shared terrain pyramid** — ≥4 subsystems currently sample the same field with 4 separate
+   caches. One octave-banded lattice-snapped pyramid serves corridor, profile, escape-score, and
+   bore-cover probes. (Proven trick: the `_reliefH` memo, 265 ms → negligible.)
+7. **Window invariance by purity** — the margin/ring/invariance-gate burden defends against
+   inter-edge coupling. If v2 edges are pure fns of (terrain, anchor pair, node heights) with NO
+   sibling coupling, invariance becomes a one-line argument. TEST THIS FIRST — if it holds, items
+   2 and 7 compound.
+
+**The tuning dividend:**
+8. **Physical knobs** — replace ~15 interacting abstract weights with ~5 engineer-priced ones
+   (cost/m³ cut, cost/m³ fill, cost/m bore, cost/m span, grade comfort). Directly serves the
+   evaluation loop: the owner turns knobs with physical meaning between checkpoints.
+
+**Not simplified, ever:** the carve (MESH==PHYSICS), the topology layer, the determinism promise
+itself — only the cost of keeping it.
