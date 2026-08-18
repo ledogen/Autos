@@ -1350,6 +1350,9 @@ const map2d = new Map2D({
     map2d.hide()   // close the map so the teleport is immediately visible
   }
 })
+// Dev handle for the FEAT-68 checkpoint tooling (test/map-shot.mjs drives the map over CDP —
+// frameBounds + setRadiusTarget + poll _streamFull). Same always-on precedent as window.__view.
+window.__map2d = () => map2d
 
 // FEAT-49: gauge cluster (bottom-right canvas overlay). The odometer seeds to a random jalopy
 // mileage at boot and RE-seeds on every story-mode entry — "the next run's jalopy". Fuel/temp
