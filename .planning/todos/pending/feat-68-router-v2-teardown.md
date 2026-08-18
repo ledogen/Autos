@@ -261,5 +261,27 @@ removes the cause. Grouped by confidence.
    (cost/m³ cut, cost/m³ fill, cost/m bore, cost/m span, grade comfort). Directly serves the
    evaluation loop: the owner turns knobs with physical meaning between checkpoints.
 
-**Not simplified, ever:** the carve (MESH==PHYSICS), the topology layer, the determinism promise
-itself — only the cost of keeping it.
+**Layer 1 (topology) sheds weight PASSIVELY — expect it, verify it, don't pre-build it
+(owner follow-up 2026-08-18):** sites + Urquhart are genuinely simple (the graph is planar by
+construction: chords cannot cross — "every real crossing is a routing excursion", per the code's
+own comment). Nearly all of Layer 1's complexity is the CULLS and their window-invariance
+defenses, and those exist only because v1's routes wander:
+9. **Crossing + clearance culls die with the wander.** Non-wandering corridors don't cross and
+   don't run parallel-too-close → both culls, the one-ring universe, the wide shadow graphs, the
+   drop memos, and the cull-radius-invariance gate go with them. Dominoes: the culls are the
+   island generator (BUG-47, recorded) → no stranded components → FEAT-28's repair burden shrinks
+   → the escape-score ranking's measured value (5/10→8/10 fully-connected) was compensation for
+   cull damage, so its ~500 ms may become optional. Loop questions, in order: (a) do v2 corridors
+   ever cross? (b) with culls off, do components ever strand? (c) does escape-rank still earn its
+   cost? Kill in that order, by measurement.
+10. **Resurrect QUAL-22 on honest costs** — cost-weighted Urquhart pruning (implemented, measured,
+   deleted UN-SHIPPED for process reasons, reopen checklist in its completed ticket). Urquhart ⊇
+   MST holds PER WEIGHT FUNCTION, so weight-pruning is connected BY CONSTRUCTION — no detour BFS,
+   no guard. v1 had no honest weight to feed it; v2's corridor lower-bound (octave-truncated
+   terrain) is exactly one. Expensive edges are then never PROPOSED, and the degree-cap machinery
+   may reduce to a trivial post-filter. On record: QUAL-22 changed character (seed-6 switchbacks
+   61→27) — loop-evaluated, never silent.
+
+**Not simplified, ever:** the carve (MESH==PHYSICS), the determinism promise itself — only the
+cost of keeping it. (The topology layer is no longer on this list: it isn't redesigned during the
+build, but it is expected to shed its cull apparatus once v2's corridors land — see 9–10.)
