@@ -199,6 +199,30 @@ The branch is the **reference implementation** for these; its numbers are ground
 - [ ] Contract gates re-baselined green; implementation gates retired in the same commit that
       retires the code they tested; bundles rebaked; old router deleted from main in the swap merge.
 
+## Junction plan (owner-confirmed 2026-08-18: geometry deferred, heights are not)
+
+"Junctions" is three problems with three different fates — do not conflate them:
+
+1. **WHERE junctions are — solved, out of scope.** The topology layer decides it. Untouched.
+2. **Vertical agreement at nodes — IN from the FIRST checkpoint, non-negotiable.** Assign every
+   junction node a height first (day one: terrain height at the site is fine); every profile
+   solves with endpoints PINNED to those heights. This is a boundary condition on the solver, not
+   "doing junctions" — and it is the by-construction fix for v1's node disease (the 30 m junction
+   blend, the deg-2 chain merge, and the measured 44%→58% merge amplification all exist because
+   independently-graded edges disagree at shared nodes). Deferring THIS re-imports all of it.
+3. **Junction geometry (pads, fillets, aprons, approach headings) — DEFERRED, owner's call.**
+   Early checkpoints ship naive meets: roads terminate at the shared point, drivable but ugly.
+   Character judgment doesn't need pretty junctions. The later "band-aid" is mostly REATTACHMENT,
+   not rewrite: the shipped pad/fillet/carve machinery (junction-flow pass, sloped pads,
+   triple-overlay carve composition) consumes the run contract + node incidence, both of which
+   survive. One genuinely new deferred item: v1's canonical approach headings make edges meet a
+   node tangentially (G1); v2 corridors need an equivalent before sign-off or junctions read as
+   spokes at raw angles. Cosmetic until then.
+
+Bonus deletion: route **junction-to-junction THROUGH deg-2 nodes** (a pass-through node is just a
+point on the corridor, not a route boundary). The deg-2 chain-merge machinery then dies entirely
+instead of being guarded — no merge, no re-grade, no amplification class.
+
 ## Simplification inventory ("simplify, add lightness" — owner request 2026-08-18)
 
 The pattern: find machinery that exists to fight a consequence of v1's design; check whether v2
