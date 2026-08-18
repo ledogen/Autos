@@ -4,7 +4,7 @@ type: asset
 status: open
 severity: minor
 opened: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-18
 blocked-by: FEAT-59
 relates: FEAT-46, FEAT-21, ASSET-06
 ---
@@ -35,15 +35,48 @@ costing almost nothing to place.
 
 Produce as alpha-tested cards in the crates, not modelled fruit. Crates themselves are geometry.
 
+## Spec amendments (2026-08-17 / 2026-08-18)
+
+The model is built and exported; the spec table above is the ORIGINAL and is superseded on
+five rows by owner rulings taken during authoring. Recorded here rather than edited in place
+so the original intent stays readable.
+
+| Field | Ticket said | Shipped | Why |
+|---|---|---|---|
+| Form | trestle table under a canopy | **stall on a single-axle trailer** | owner direction 2026-08-17 |
+| Real size | 3.0 x 2.0 x 2.4 m | **4.347 x 2.250 x 2.400 m** | the drawbar adds 1.2 m ahead of the deck; height is unchanged |
+| Tri budget | <= 1200 | **1752** | see below |
+| Texture | 1024x1024 albedo **with alpha** for produce | **512x384, no alpha**, sign artwork only | ART-STYLE rule 7 bans transparency; produce is modelled instead |
+| Collision | `[3.0, 1.0, 2.0]` | **needs restating** — deck mass only, excluding drawbar and sign | not yet written into `data/prop-models.js` |
+
+**On the budget.** 1752 sits inside ART-STYLE.md's 700-1800 "mid structures" band, which names
+the produce stall explicitly; the ticket's 1200 predates that table (ticket 2026-08-03,
+ART-STYLE verified 2026-08-05). Treat 1800 as the budget. It got there the cheap way: the
+sign's lettering was 784 tris as geometry and is now one baked texture, which took the model
+from 2692 down to 1752 in a single change.
+
+**On materials.** 12, against ART-STYLE rule 6's "justify anything above ~6". Five of those are
+produce colours and are not mergeable - red tomatoes and orange carrots cannot share a draw
+call. The remaining seven are frame / deck / tyre / post / roof / crate / sign. This is a POI
+placed a handful of times, not scatter density, so 12 draw calls is affordable; it must not be
+taken as licence for anything repeated.
+
+**Recolourable materials:** `StallRoof`, `StallSign` (swap its image for region-varied
+lettering). All others are fixed.
+
 ## Acceptance
 
-- `assets/models/produce-stall.glb` exists, export-clean under `ASSETS.md` settings.
-- Sources committed: `assets/models/src/produce-stall.blend` + `produce-stall.py`.
-- Produce renders as **alpha-test** (`alphaTest`, `transparent: false`), not alpha-blend — same rule
-  and the same reason as ASSET-07.
-- Canopy renders correctly from below.
-- Tri count within budget; material names stable.
-- Loads and places in-world through the FEAT-59 model import service.
+- [x] `assets/models/produce-stall.glb` exists, export-clean under `ASSETS.md` settings.
+      Verified off the exported file: glTF 2.0, 1752 tris, 12 primitives, one embedded PNG,
+      no extensions (no Draco), +Y up, base-seated at Y=0, serving face on -Z.
+- [x] Sources committed: `assets/models/src/produce-stall.blend` + `produce-stall.py`.
+- [x] ~~Produce renders as alpha-test~~ — **superseded**: produce is modelled geometry, no alpha
+      anywhere in the asset. See the amendment table.
+- [x] Canopy renders correctly from below (gable underside is a V ceiling, not a flat slab).
+- [x] Tri count within the amended budget; material names stable.
+- [ ] **Loads and places in-world through the FEAT-59 model import service.** NOT DONE - there is
+      no `data/prop-models.js` entry yet, and the collision box needs restating for the trailer
+      form. This is the only outstanding item.
 
 ## Notes
 
