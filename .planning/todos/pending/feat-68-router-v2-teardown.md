@@ -20,6 +20,25 @@ primitives searched over a heading-binned lattice, de-quantized post-hoc. The re
 named motivations for its death. NOT part of either name: the blue-noise/Urquhart/cull topology
 layer — that is a separate layer and it survives.
 
+## Vocabulary (so checkpoint reports and owner share a language)
+
+- **Routed edge (v1):** the final road geometry, produced by a sequential (position, heading)
+  search that crawls A→B in fixed-radius arc steps. It answers "which way / what height / what
+  curve" with one vocabulary that can only express curves — so it fakes height with LENGTH
+  (wander, pigtails) and commits locally then compensates (bowing, crossings). The wander is not
+  a bug; it is v1's only vertical vocabulary.
+- **Corridor (v2 stage 1):** a SWATH, not a road — a ~100 m-wide highlighter stroke on the
+  smoothed (octave-truncated) terrain answering only "which valley / which side / which saddle."
+  No heading, no radii, no geometry. Small enough to search exhaustively → no greediness → no
+  dive-and-recover.
+- **Profile (v2 stage 2):** the 1-D exact solve along the corridor — per station: on-grade, cut,
+  fill, bore, or bridge, each priced. Elevation is bought with money, never faked with length.
+- **Curve (v2 stage 3):** the smooth centerline generated INSIDE the swath from corridor +
+  profile, continuous-curvature by construction. Generated, not searched.
+- Corridors can still legitimately overlap where geography funnels them (one good pass, two
+  connections) — a real, rare event for the crossing classifier, not a search artifact. That
+  distinction is what inventory item 9 verifies.
+
 ## Why a teardown and not another patch
 
 The current router is an accretion: hybrid A* over quantized heading bins + a fixed radius palette
