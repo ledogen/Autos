@@ -393,3 +393,44 @@ item 9 unchanged: corridors crossing, stranding with culls off, escape-rank's re
 **Not simplified, ever:** the carve (MESH==PHYSICS), the determinism promise itself — only the
 cost of keeping it. (The topology layer is no longer on this list: it isn't redesigned during the
 build, but it is expected to shed its cull apparatus once v2's corridors land — see 9–10.)
+
+## M0 record (2026-08-18, session zero (c) — mechanism proven on single pairs)
+
+Built on `feature/corridor-router` (commit 926e993): `src/corridor-router.js` (pure module — no
+engine types, no THREE, no module-scope caches; height fields arrive as closures) + workbench
+tools `test/corridor-m0.mjs` (canonical + benign edge, priced==built check) and
+`test/corridor-sweep.mjs` (full-network census). Not gates yet.
+
+**Canonical case (acceptance item 3, proven in isolation):** on seed 20's BUG-51 cliff edge
+`0,-1,2 : -1,0,2` (452 m chord, 177 m chord-line cover — my derivation of "the A→B ridge chord";
+the ticket's 202 m / 13% / 157 m are the reference branch's portal-to-portal figures for the same
+crossing), the profile stage EMERGES a **171 m bore under 170 m of cover at ≤15% bore grade**,
+corridor detour ×1.12 where v1 ships ×2.51. Chosen by cost, nothing injected.
+
+**priced == built is EXACT** — endpoint pins are solved as continuous values inside the DP (not
+grid states), so the solver's reported cost equals an independent re-price of the shipped arrays
+to the last digit. This is the future gate's assertion, already holding at M0.
+
+**Speed:** all 222 seed-20 graph edges corridor+profile in ~0.8 s single-threaded ≈ **3–4 ms/edge,
+~50× v1's ~160 ms/edge** — before any optimization. At this rate the route Worker and the entire
+route-cache bake subsystem look deletable (inventory item 4), and even 4×-throttled cold routing
+of a whole region lands in low single-digit seconds.
+
+**Findings:**
+- **kMax quantization bug (fixed):** flooring the DP transition window made the effective grade
+  cap yStep-granular (30% instead of 35% at ds=9.993) and produced one false "infeasible" edge.
+  Cap checks now carry a half-quantum tolerance (bounded ≤2.5%-grade overshoot instead of an
+  unbounded undershoot). Post-fix: **0 infeasible on all 222 edges at K=2 AND K=3.**
+- **Corridor K-blindness:** at K=2 the corridor cannot see octave-3/4 wrinkles (500/250 m
+  wavelengths, ~56 m combined amplitude), so gullies become profile emergencies (a 140 m bridge
+  climbing at ~30% appeared on a "benign" edge where the corridor drove into a wall only the
+  profile could see). K=3 halves the >20%-grade mileage (28.6 km vs 39.2 km of ~180 km) at the
+  same speed. **Working default for the first checkpoint: K=3.**
+- **Structures are far too common at the initial prices** (62–77 bores, 22–27 bridges across 222
+  edges — they must be EARNED). This is exactly the calibration the checkpoint loop + the owner's
+  physical knobs (`V2_COSTS`) exist for; not tuned blind.
+
+**Next:** session zero (d) — first checkpoint: integrate behind the run contract (junction node
+heights pinned; junction-to-junction corridors THROUGH deg-2 sites, killing the chain merge; bore
+segments mapped onto FEAT-40 span machinery; bridges may ship crude), stage-3 curve smoothing,
+seeds 20/11/67 served with the 2D map.
