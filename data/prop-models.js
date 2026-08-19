@@ -78,6 +78,26 @@ export const PROP_MODELS = {
     collision: { shape: 'box', size: [0.16, 0.59, 0.73] },
   },
 
+  // ASSET-03 — segmented beach ball, 268 tris, 0.40 m across.  Six vertical
+  // gores as five flat material slots, no texture (the ticket offers per-panel
+  // slots as its own alternative and ART-STYLE rule 1 prefers it).
+  //
+  // *** ORIGIN IS THE SPHERE CENTRE, NOT BASE-SEATED. ***  Every other model in
+  // this registry sits on y = 0; this one straddles it, because it is meant to
+  // be simulated (FEAT-36) and a rigid body spins about its origin.  Anything
+  // placing it statically MUST lift it by 0.20 or it sinks to its equator.
+  //
+  // mass_kg / restitution are inert until dynamic prop physics exists — carried
+  // now so nothing is re-plumbed later, per FEAT-59's rule.  The mesh is fully
+  // inside the r=0.20 collider except the valve nub, which stands 2.4 mm proud.
+  beachBall: {
+    url: 'assets/models/beach-ball.glb',
+    collision: {
+      shape: 'sphere', radius: 0.20, size: [0.40, 0.40, 0.40],
+      mass_kg: 0.15, restitution: 0.75,
+    },
+  },
+
   // ── POI markers ───────────────────────────────────────────────────────────────────────────
   // Each carries the 'missionGiver' tag, so the roster's five giver slots draw from all three.
 
