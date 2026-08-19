@@ -1815,7 +1815,7 @@ if (_PROF) {
     }
     return {
       pending: rs._pendingRoutes.size,
-      cls: rs._proto.cls?.size ?? 0, clsSolo: rs._proto.clsSolo?.size ?? 0,
+      cls: rs._proto.cls?.size ?? 0,
       lastWarm: !!rs._lastWarmCenter, epoch: rs._routeEpoch,
       dispatched: _rdWrap?.count ?? 0,
       hot: _rdWrap ? [..._rdWrap.keys.entries()].filter(([, n]) => n > 2).sort((a, b) => b[1] - a[1]).slice(0, 8) : [],
@@ -2032,7 +2032,6 @@ function _buildPlannerRoad (seed) {
   if (roadSystem && roadSystem._worldSeed === seed) {
     const p = roadSystem._proto, q = r._proto
     q.cls = (p.cls ??= new Map())
-    q.clsSolo = (p.clsSolo ??= new Map())
   }
   return r
 }

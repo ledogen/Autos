@@ -61,6 +61,12 @@ export const V2_COSTS = {
     gMaxBore: 0.18,   // bores are gentler by construction (FEAT-40 lineage)
 }
 
+// The corridor stage's octave depth. 4 == the full coarse field at default params: the 2.5D plan
+// must see the wrinkles the profile will pay for. ONE constant shared by RoadSystem._v2Trunc and
+// the route Worker's field rebuild — a literal in two places is exactly the drift the FEAT-68
+// no-mirror fence exists to prevent.
+export const V2_TRUNC_K = 4
+
 // ── Octave-truncated coarse field (scope-fenced ADDITIVE read API — world byte-identical) ──────
 /**
  * Same ridged-fBm loop as _coarseHeight()/coarseHeight() but stopped after K octaves.
@@ -535,6 +541,72 @@ export function profileSolve(st, yA, yB, opts = {}) {
     }
     for (const sg of segs) sg.len = sg.s1 - sg.s0
     return { y, cls, cost: total, segs }
+}
+
+// ── Orchestration: routeEdgeV2 — the ONE route function (sync path AND Worker import it) ───────
+/**
+ * Feasibility pre-check: does a legal profile exist along this centerline? (~1–2 ms.)
+ * Stations every ~10 m on the coarse field, endpoints pinned to the node heights.
+ */
+export function profileFeasible(cl, yA, yB, hCoarse, opts = {}) {
+    const n = Math.max(2, Math.round(cl.length / 10))
+    const st = { s: new Array(n + 1), ground: new Array(n + 1) }
+    for (let i = 0; i <= n; i++) {
+        const t = cl.length * i / n
+        const p = cl.pointAt(t)
+        st.s[i] = t
+        st.ground[i] = hCoarse(p.x, p.z)
+    }
+    return profileSolve(st, yA, yB, opts) !== null
+}
+
+/**
+ * Route one edge end to end: 2.5D corridor search → stage-3 curve → feasibility ladder. This is
+ * THE route function — RoadSystem's synchronous path and the route Worker both import it, so
+ * worker/sync parity is by construction (the FEAT-68 no-mirror fence).
+ *
+ * The fail-safe ladder (deterministic per spec — purity/window-invariance hold). Rung order
+ * encodes the priorities: heading pins are the FIRST thing sacrificed (joint tangency is
+ * cosmetic), the structure vocabulary the second (a conservative re-route prices hostile ground
+ * at full quadratic cost so the corridor goes AROUND — for gullies/convex drops where no bore can
+ * substitute and the default plan's profile is infeasible). First rung whose profile is feasible
+ * ships; if none is, the rung-1 curve ships and the caller's registration marks it
+ * (mark-and-ship — the network never disconnects).
+ *
+ * @param {object} spec { ax, az, yA, bx, bz, yB, margin, blockedDiscs, dirs } — dirs =
+ *   {startDir?, goalDir?} unit {x,z}, the deg-2 canonical approach headings (or undefined)
+ * @param {(x,z)=>number} hTrunc corridor field (truncatedHeightField at V2_TRUNC_K)
+ * @param {(x,z)=>number} hCoarse full coarse field (feasibility prices the profile's ground)
+ * @returns {{cl:Centerline, feasible:boolean, usedPin:boolean, pinRequested:boolean}}
+ */
+export function routeEdgeV2(spec, hTrunc, hCoarse) {
+    const { ax, az, yA, bx, bz, yB, margin, blockedDiscs, dirs } = spec
+    const attempt = (pin, extra) => {
+        const c = corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, {
+            margin, blockedDiscs,
+            ...(pin ? { startDir: pin.startDir, goalDir: pin.goalDir } : {}),
+            ...extra,
+        })
+        return c ? corridorCenterline(c.path,
+            pin ? { keepStart: !!pin.startDir, keepEnd: !!pin.goalDir } : {}) : null
+    }
+    const pin = dirs && (dirs.startDir || dirs.goalDir) ? dirs : null
+    const rungs = pin
+        ? [[pin, {}], [null, {}], [pin, { structureCap: false }], [null, { structureCap: false }]]
+        : [[null, {}], [null, { structureCap: false }]]
+    let cl = null, first = null, usedPin = false
+    for (const [p, extra] of rungs) {
+        const c = attempt(p, extra)
+        if (!c || !(c.length > 1e-6)) continue
+        if (!first) first = c
+        if (profileFeasible(c, yA, yB, hCoarse)) { cl = c; usedPin = !!p; break }
+    }
+    return {
+        cl: cl ?? first ?? new Centerline([]),
+        feasible: !!cl,
+        usedPin: !!(cl && usedPin),
+        pinRequested: !!pin,
+    }
 }
 
 // ── Orchestration: one anchor pair, corridor → profile ─────────────────────────────────────────

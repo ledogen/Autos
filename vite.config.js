@@ -5,8 +5,10 @@
 // working); `npm run build` bundles to dist/ for the GitHub Actions Pages deploy.
 //
 // three + simplex-noise resolve from node_modules (byte-identical to the old importmap pin). The
-// Blob-classic terrain + road workers are built from template STRINGS inside src/*.js and are
-// bundler-invisible — the string constants survive bundling untouched.
+// Blob-classic TERRAIN worker is built from a template STRING inside src/terrain.js and is
+// bundler-invisible; the ROUTE worker (FEAT-68) is a real module worker — src/road-worker.js does
+// `new Worker(new URL('./road-route-worker.js', import.meta.url), {type:'module'})`, which Vite
+// detects and bundles as its own chunk in dev and build.
 import { defineConfig } from 'vite'
 import { copyFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'

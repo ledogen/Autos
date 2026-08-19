@@ -35,8 +35,8 @@
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
-import { crownProfile, potholeNoise, signedCurvature, arcPrimitiveConnect, smoothGradeInPlace, applyTunnelPassInPlace, dubinsFillet, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
-import { truncatedHeightField, corridorSearch, corridorCenterline, profileSolve, CLS, V2_COSTS } from './corridor-router.js'   // FEAT-68: router v2
+import { crownProfile, potholeNoise, signedCurvature, smoothGradeInPlace, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
+import { truncatedHeightField, routeEdgeV2, profileSolve, CLS, V2_COSTS, V2_TRUNC_K } from './corridor-router.js'   // FEAT-68: router v2
 import { centerlineFromDescriptors, CenterlineCurve, Centerline, makePrimitive, slicePrimitives, reversePrimitives, primitivePose } from './centerline.js'
 import { delaunay, urquhartEdges } from './road-graph.js'
 
@@ -402,10 +402,6 @@ export const CHUNK_SIZE = 64
 // deterministic chain of valley-anchor connections, streamed around the view like terrain.
 const PROTO_ANCHOR_SPACING = 256   // m between macro-grid anchors
 const PROTO_CELL           = 10    // m — A* grid resolution for an anchor→anchor connection
-const PROTO_MARGIN         = 120   // m — N/S detour room so a connection can wrap around a peak. PERF
-                                   // (Tier 1): the arc-search lattice area is (256+2·margin)² so this
-                                   // is the dominant per-connection cost knob (200→120 ≈ 1.8× faster);
-                                   // 120 m still clears the DETOURS-AROUND-PEAK gate (119 m detour).
 const PROTO_REGEN_MOVE     = 96    // m — re-stream the trunk once the view center moves this far
 const PROTO_SAMPLE_DS      = 4     // m — centerline → polyline sampling spacing (profile/slice/query density)
 // Corner-facet fix: _resolveRoadSurface refines the WINNING run's frame onto its exact primitive
@@ -489,29 +485,15 @@ const ROAD_BAND_MARGIN = 1  // extra macro-cols beyond ceil(R/spacing) each side
 // ── Off-thread route pre-warm tuning (PERF-03 Workstream A) ───────────────────
 const PREWARM_MARGIN    = 2   // extra macro-cols/rows beyond the streamer band to route AHEAD of need
 const PREWARM_MAX_JOBS  = 16  // route jobs dispatched per warmRoutes() call. Routing has its OWN worker
-// PERF-26: WORK budget for _warmScan, distinct from the JOB budget above. An edge that takes a
-// `deferred` branch pays full _edgeDeps (a per-edge Urquhart build on a cold edge, ~0.33 ms) and
-// _corridorDiscsFor yet produces NO job, so PREWARM_MAX_JOBS never bound it: a cold macro-column
-// crossing evaluated ~115 edges in ONE frame (~38 ms, the whole warm.scan hitch). Capping expensive
-// evaluations spreads that over ~15 frames. Legitimate because warmRoutes is pre-warm with
-// PREWARM_MARGIN of slack by design — it is allowed to lag a few frames behind the streamer.
-                              // pool since QUAL-08/QUAL-14 (terrain generation can't be starved), so the
-                              // cap is only back-pressure: enough in flight to keep 2–4 workers busy
-                              // through the two-phase (solo→final) warm without flooding a stale epoch.
+                              // pool since QUAL-08 (terrain generation can't be starved), so the cap
+                              // is only back-pressure: enough in flight to keep 2–4 workers busy
+                              // without flooding a stale epoch.
+// PERF-26: WORK budget for _warmScan, distinct from the JOB budget above — bounds per-call spec
+// builds (pin + disc + node-height derivation on cold edges) so a cold macro-column crossing
+// spreads over frames instead of landing as one warm.scan hitch. Legitimate because warmRoutes is
+// pre-warm with PREWARM_MARGIN of slack by design — it may lag a few frames behind the streamer.
 const PREWARM_MAX_EVALS = 4   // expensive (uncached) edge evaluations per _warmScan call
 const PREWARM_WARM_MOVE = 32  // m — only rescan/redispatch the pre-warm band after the center moves this far
-
-// QUAL-14 Part B: spacing of corridor-avoidance no-go discs sampled along a higher-priority
-// sibling's centerline. Discs of radius roadCorridorClearance (20 m) at 12 m spacing overlap
-// heavily → the corridor is a solid capsule, no gap a primitive can thread.
-const CORRIDOR_DISC_DS = 12  // m
-// QUAL-14 Part B: radius of the no-go disc every route keeps around FOREIGN graph nodes (all
-// alive sites except the edge's own two endpoints). Kills shallow near-node crossings at the
-// source (a road no longer cuts through someone else's junction neighborhood) and keeps sibling
-// corridors out of the anchor-exemption zone (60 + the 26 m disc reach < the 80 m exemption), so
-// an edge's own start/goal can never be walled by a corridor. < roadSiteMinDist (90), so a node
-// disc can never cover an adjacent node.
-const NODE_CLEAR_R = 60  // m
 
 // ── Module-scope pure height function ─────────────────────────────────────────
 /**
@@ -686,7 +668,7 @@ export class RoadSystem {
 
     /** FEAT-68: memoized octave-truncated coarse field (K=3) — the corridor stage's terrain. */
     _v2Trunc() {
-        if (!this._v2TruncF) this._v2TruncF = truncatedHeightField(this._noiseCoarse, this._params, 4)   // K=4 == the full coarse field: the 2.5D plan must see the wrinkles the profile will pay for
+        if (!this._v2TruncF) this._v2TruncF = truncatedHeightField(this._noiseCoarse, this._params, V2_TRUNC_K)   // shared with the route Worker's rebuild — see corridor-router.js
         return this._v2TruncF
     }
 
@@ -1307,8 +1289,6 @@ export class RoadSystem {
             graph:    null,                                  // FEAT-13 v2: current band Urquhart {sig, edges, adj, key}
             nodeInc:  new Map(),                             // FEAT-13 v2: site-key → [runKey,…] incident registered edges
             cls:      new Map(),                             // "mx,mz:…" → Centerline (per-connection primitive curve)
-            clsSolo:  new Map(),                             // QUAL-14: edge key → SOLO centerline (routed with no corridor avoidance; what siblings avoid)
-            edgeDeps: new Map(),                             // QUAL-14: edge key → higher-priority node-sharing edges (corridor deps)
             lastCenter: null,
             dirty:    true,
             surfaceY: null,                                  // optional (x,z)=>renderedHeight for visual line placement
@@ -1442,8 +1422,6 @@ export class RoadSystem {
         // Param changes affect routing results → drop the per-connection centerline cache
         // (a pure fn of params, so the next miss recomputes the new value).
         if (this._proto.cls) this._proto.cls.clear()
-        if (this._proto.clsSolo) this._proto.clsSolo.clear()     // QUAL-14: solo routes derive from params too
-        if (this._proto.edgeDeps) this._proto.edgeDeps.clear()   // QUAL-14: deps derive from sites+params
         // Off-thread routing (PERF-03 WS-A): the cleared cache must be re-warmable, and any Worker
         // reply still in flight was routed against the OLD params → bump the epoch so it's discarded
         // as stale, and clear pending so the new params' connections get re-dispatched.
@@ -1455,9 +1433,9 @@ export class RoadSystem {
 
     // ── Off-thread route pre-warming API (PERF-03 Workstream A) ──────────────────
     /**
-     * Wire the Worker route dispatcher. `fn(jobs, epoch)` posts the jobs to a Worker that runs
-     * arcPrimitiveConnect and replies via ingestRoutedConnections(). main.js routes this through the
-     * terrain Worker (which already has the seeded coarse-noise the routes are computed against).
+     * Wire the Worker route dispatcher. `fn(jobs, epoch)` posts _v2EdgeSpec jobs to the route
+     * Worker pool (src/road-worker.js), which runs the SAME routeEdgeV2 the synchronous path
+     * calls and replies via ingestRoutedConnections().
      * Until set, routing is fully synchronous (headless gates never set it → unchanged behaviour).
      */
     setRouteDispatcher(fn) { this._routeDispatch = fn }
@@ -1474,7 +1452,7 @@ export class RoadSystem {
      *   Part A (arc exclusion, the actual guarantee): discsFn(minX,minZ,maxX,maxZ)→flat [cx,cz,r,...]
      *     — pond+skirt discs attached to every route SPEC as pure DATA (opts.pondDiscs), so the
      *     Worker pre-warm and the synchronous fallback route with the SAME exclusion and the cache
-     *     stays byte-identical. arcPrimitiveConnect hard-rejects primitives entering a disc.
+     *     stays byte-identical. The corridor search hard-blocks lattice cells inside a disc.
      * Both fns must be pure fns of (seed, coords, params) — window-invariance rides on it (the
      * WaterSystem is; see test/water-invariance.mjs). Invalidates the proto caches: the network
      * derives from the anchor set + route specs, so changing the filter changes the network.
@@ -1484,21 +1462,6 @@ export class RoadSystem {
         this._waterNoGo = noGoFn
         this._pondDiscsInBBox = discsFn
         this._invalidateProto()
-    }
-
-    // FEAT-17 Part A data: pond+skirt discs overlapping edge c1→c2's routing search area (edge bbox
-    // + the router's detour margin — any primitive the search can reach lies inside it). Flat
-    // [cx,cz,r,...] world-XZ array: structured-clone-cheap for the Worker route job. undefined when
-    // no water is injected, so route specs (and their cache keys' meaning) stay identical for gates.
-    _pondDiscsForEdge(c1, c2) {
-        if (!this._pondDiscsInBBox) return undefined
-        const a = this._nodePos(c1), b = this._nodePos(c2)
-        const m = PROTO_MARGIN
-        const discs = this._pondDiscsInBBox(
-            Math.min(a.x, b.x) - m, Math.min(a.z, b.z) - m,
-            Math.max(a.x, b.x) + m, Math.max(a.z, b.z) + m
-        )
-        return (discs && discs.length) ? discs : undefined
     }
 
     /**
@@ -1538,7 +1501,7 @@ export class RoadSystem {
 
         // FEAT-13 v2: warm every Urquhart edge in the band (same edge set _assembleGraphEdges will
         // register → the pre-warmed routes are exact cache hits). Edge SELECTION stays main-thread;
-        // only arcPrimitiveConnect runs on the Worker (no WORKER_SOURCE / ROUTE SYNC change).
+        // only routeEdgeV2 runs on the Worker (a real module import — no mirror, FEAT-68).
         // PERF-26: warmRoutes decomposes into three costs with different fixes — keep them named.
         // Measured at 4x CPU: urquhart ~1.4 ms (memoised below), degreeDrops 35-42 ms, scan 32-36 ms.
         const _wU = performance.now()
@@ -1554,7 +1517,7 @@ export class RoadSystem {
         perfAdd('warm.degreeDrops', performance.now() - _wD)
         const wEdges = g.edges.filter(([c1, c2]) => !drop.has(g.key(c1) + '|' + g.key(c2)))
         const _wS = performance.now()
-        const { jobs, deferred } = this._warmScan(wEdges, PREWARM_MAX_JOBS, PREWARM_MAX_EVALS)
+        const { jobs, deferred } = this._warmScan(g, drop, wEdges, PREWARM_MAX_JOBS, PREWARM_MAX_EVALS)
         perfAdd('warm.scan', performance.now() - _wS)
         // Only advance the throttle anchor once the visible band is fully warmed/pending — otherwise a
         // single move could leave fringe connections un-dispatched until the NEXT PREWARM_WARM_MOVE.
@@ -1563,95 +1526,44 @@ export class RoadSystem {
     }
 
     /**
-     * Shared warm-scan core (QUAL-14 perf refactor — extracted verbatim from warmRoutes). Walks
-     * `edges` trying to make each cache-complete, collecting ≤ `cap` dispatchable route jobs.
-     * QUAL-14 Part B: dispatch is DEPENDENCY-AWARE — an edge's FINAL job ships only when every
-     * higher-priority overlapping sibling's SOLO route is already cached (its corridor discs are
-     * then pure data, identical to what the sync fallback would compute); unready deps get SOLO
-     * jobs first (they may lie outside the band) and the dependent edge retries on a later scan
-     * once the replies land. Returns { jobs, deferred } — deferred means the set is not yet
-     * cache-complete (replies in flight, deps pending, or the cap bit): callers must rescan.
+     * Warm-scan core (FEAT-68 v2 rewrite): collect ≤ `cap` dispatchable route jobs for `edges`.
+     * A v2 route is a PURE fn of (terrain, anchor pair, node heights, deg-2 pins) — no sibling
+     * deps, no solo routes, no corridor discs — so a job is just the edge's _v2EdgeSpec and the
+     * scan is a cache walk. The QUAL-14 dependency machinery (solo pre-warms, disc readiness,
+     * solo-reuse adoption) died with it. Jobs are CANONICAL spellings only (id-ordered, the same
+     * rule as _edgeCenterline); the reverse spelling derives from the cached forward on demand.
      *
-     * PERF-26: `evalCap` bounds EXPENSIVE evaluations (edges not already in _proto.cls, which pay
-     * _edgeDeps + _corridorDiscsFor), as opposed to `cap` which bounds dispatched jobs. The two
-     * diverge badly: a deferring edge costs full price and yields no job, so `cap` alone let a cold
-     * macro-column crossing evaluate ~115 edges in one frame. Callers wanting the whole set at once
-     * (cold spawn, region warm) pass Infinity and behave exactly as before.
+     * `g`/`drop` are the caller's window graph + degree-drop set — needed to derive each edge's
+     * deg-2 heading pins exactly as registration will (_v2EdgeDirs is window-invariant, so warm
+     * windows and the streaming band agree). A cached DIRLESS entry for an edge that carries pins
+     * is NOT cache-complete (the _edgeCenterline guard would re-route it synchronously) — the
+     * scan re-dispatches it and the reply overwrites.
      *
-     * The cursor is why this is safe: a fixed-start eval cap would re-evaluate the same first N
-     * edges every frame and the tail would starve forever, since warmRoutes rescans from scratch
-     * while `deferred`. Starting each budgeted scan where the last one stopped (and wrapping) makes
-     * successive frames sweep the whole list. Rotating the start order is behaviour-neutral: a
-     * route is a pure function of its edge, and dep SOLO adoption is documented as a pure function
-     * of the edge too — never of what some wider stream happened to cache — so order changes only
-     * WHEN a job ships, never WHAT it computes.
+     * Returns { jobs, deferred } — deferred means not yet cache-complete (replies in flight or a
+     * cap bit): callers rescan until false. `evalCap` bounds per-call spec builds (PERF-26: pin +
+     * disc derivation on a cold edge is the priced part); the rotating cursor keeps budgeted
+     * scans sweeping the whole list instead of starving the tail.
      */
-    _warmScan(edges, cap, evalCap = Infinity) {
-        // FEAT-68 (v2): the v1 route Worker speaks arc-primitive descriptors and must never fill
-        // the v2 cache. At ~3 ms/edge synchronous routing, pre-warm dispatch is not worth a
-        // protocol port yet — if streaming hitches say otherwise, the fix is a real module import
-        // on the Worker (no verbatim mirror), not this scan.
-        return { jobs: [], deferred: false }
-
+    _warmScan(g, drop, edges, cap, evalCap = Infinity) {
         const jobs = []
         let deferred = false
-        const seen = new Set()
         let evals = 0
-        // Dispatch a SOLO route job (no corridor discs) for a dep edge — fills clsSolo on reply.
-        const warmSolo = (c1, c2) => {
-            if (jobs.length >= cap) { deferred = true; return }
-            const skey = 'S|' + this._edgeClsKey(c1, c2)
-            if (seen.has(skey) || this._pendingRoutes.has(skey)) { deferred = true; return }
-            seen.add(skey)
-            const spec = this._edgeRouteSpec(c1, c2)
-            this._pendingRoutes.add(skey)
-            jobs.push({ key: skey, ax: spec.ax, az: spec.az, bx: spec.bx, bz: spec.bz, opts: spec.opts })
-        }
-        const tryWarm = (c1, c2) => {
-            if (jobs.length >= cap) { deferred = true; return }
-            const key = this._edgeClsKey(c1, c2)
-            if (this._proto.cls?.has(key)) return
-            evals++   // past the cache check ⇒ this edge pays _edgeDeps/_corridorDiscsFor below
-            if (seen.has(key)) { deferred = true; return }   // dispatched/deferred earlier this pass
-            seen.add(key)
-            if (this._pendingRoutes.has(key)) { deferred = true; return }
-            // Phase 1: every dep's SOLO route must be cached before this edge's discs are data.
-            let ready = true
-            for (const [d1, d2] of this._edgeDeps(c1, c2)) {
-                if (!this._proto.clsSolo?.has(this._edgeClsKey(d1, d2))) { ready = false; warmSolo(d1, d2) }
-            }
-            if (!ready) { deferred = true; return }
-            // Phase 2: deps solo-cached → discs are pure data; ship the final job.
-            const avoid = this._corridorDiscsFor(c1, c2, false)
-            if (avoid === null) { deferred = true; return }   // raced: dep evicted since the check
-            // Solo-reuse precheck (see _edgeCenterline): discs never touch the solo → adopt it
-            // as the final right here — no worker job at all. The edge's OWN solo is a dispatch
-            // dependency exactly like the sibling solos above (window-invariance: adoption must
-            // be a pure fn of the edge, never of what some wider stream happened to cache).
-            if (avoid && this._params?.roadSoloReuse) {
-                const solo = this._proto.clsSolo?.get(key)
-                if (!solo) { warmSolo(c1, c2); deferred = true; return }
-                if (solo.length > 1e-6 && this._soloClearOf(solo, avoid)) {
-                    this._proto.cls.set(key, solo)
-                    this._pendingRoutes.delete(key)
-                    return
-                }
-            }
-            const spec = this._edgeRouteSpec(c1, c2)
-            if (avoid) spec.opts.avoidDiscs = spec.opts.avoidDiscs ? spec.opts.avoidDiscs.concat(avoid) : avoid
-            this._pendingRoutes.add(spec.key)
-            jobs.push({ key: spec.key, ax: spec.ax, az: spec.az, bx: spec.bx, bz: spec.bz, opts: spec.opts })
-        }
         const n = edges.length
-        // Budgeted scans resume where the last one stopped; unbudgeted ones always start at 0 so
-        // their edge order (and dispatch order) is exactly what it has always been.
         const start = (evalCap === Infinity || n === 0) ? 0 : this._warmCursor % n
         let i = 0
         for (; i < n; i++) {
-            if (jobs.length >= cap) { deferred = true; break }
-            if (evals >= evalCap) { deferred = true; break }
-            const [c1, c2] = edges[(start + i) % n]
-            tryWarm(c1, c2)
+            if (jobs.length >= cap || evals >= evalCap) { deferred = true; break }
+            let [c1, c2] = edges[(start + i) % n]
+            if ((c1[0] - c2[0] || c1[1] - c2[1] || c1[2] - c2[2]) > 0) [c1, c2] = [c2, c1]   // canonical spelling
+            const key = this._edgeClsKey(c1, c2)
+            if (this._pendingRoutes.has(key)) { deferred = true; continue }
+            evals++   // past here this edge pays pin + disc + node-height derivation
+            const dirs = this._v2EdgeDirs(g, drop, g.key(c1), g.key(c2))
+            const cached = this._proto.cls?.get(key)
+            if (cached && (!dirs || cached._v2Dirs)) continue   // cache-complete (mirrors the _edgeCenterline guard)
+            const spec = this._v2EdgeSpec(c1, c2, dirs)
+            this._pendingRoutes.add(key)
+            jobs.push(spec)
         }
         if (evalCap !== Infinity && n > 0) this._warmCursor = (start + i) % n
         return { jobs, deferred }
@@ -1687,7 +1599,7 @@ export class RoadSystem {
         const dropped = ([c1, c2]) => dd.drop.has(g.key(c1) + '|' + g.key(c2))
         const edges = g.edges.filter((e) => !dropped(e) && (inBand(e[0]) || inBand(e[1])))
         // (FEAT-68: the cull one-ring warm is gone with the culls — only registered edges warm.)
-        const { jobs, deferred } = this._warmScan(edges, Infinity)
+        const { jobs, deferred } = this._warmScan(g, dd.drop, edges, Infinity)
         if (jobs.length > 0) this._routeDispatch(jobs, this._routeEpoch)
         return jobs.length === 0 && !deferred
     }
@@ -1741,7 +1653,7 @@ export class RoadSystem {
      * streamed; otherwise routes it (cached in _proto.cls) and grades a fresh sample — the same
      * five lines _assembleGraphEdges uses, so par is computed on the SAME curve the carve builds.
      *
-     * EXPENSIVE on a cache miss (arcPrimitiveConnect, tens of ms). Mission-offer time only —
+     * A cache miss routes synchronously (routeEdgeV2, tens of ms). Mission-offer time only —
      * never the frame loop (FEAT-29 acceptance).
      */
     edgeParData(c1, c2) {
@@ -1811,7 +1723,7 @@ export class RoadSystem {
         // QUAL-21 Stage 2: skip degree-capped edges (settled spec-time — never registered/routed).
         const { drop } = this._degreeDrops(mx0, mx1, mz0, mz1)
         const edges = g.edges.filter(([c1, c2]) => !drop.has(g.key(c1) + '|' + g.key(c2)) && (inBand(c1) || inBand(c2)))
-        const { jobs, deferred } = this._warmScan(edges, Infinity)
+        const { jobs, deferred } = this._warmScan(g, drop, edges, Infinity)
         if (jobs.length > 0) this._routeDispatch(jobs, this._routeEpoch)
         return jobs.length === 0 && !deferred
     }
@@ -1824,48 +1736,48 @@ export class RoadSystem {
     exportRouteCache() {
         // Third tuple element = the FEAT-68 _v2Dirs tag (dirs-aware routing) — without it every
         // imported entry would read as dirless and registration would re-route the whole cache.
+        // (clsSolo died with the QUAL-14 dependency machinery — v2 has no solo routes.)
         const dump = (m) => m ? [...m.entries()].map(([k, cl]) => [k, cl.primitives, cl._v2Dirs ? 1 : 0]) : []
-        return { cls: dump(this._proto.cls), clsSolo: dump(this._proto.clsSolo) }
+        return { cls: dump(this._proto.cls) }
     }
 
     /** QUAL-14 perf: import a persisted route cache (fills only missing keys — live entries win). */
     importRouteCache(data) {
         if (!data) return
         if (!this._proto.cls) this._proto.cls = new Map()
-        if (!this._proto.clsSolo) this._proto.clsSolo = new Map()
-        const load = (m, entries) => {
-            for (const [k, prims, v2dirs] of entries || []) {
-                if (!m.has(k) && prims && prims.length) {
-                    const cl = centerlineFromDescriptors(prims)
-                    if (v2dirs) cl._v2Dirs = true
-                    m.set(k, cl)
-                }
+        for (const [k, prims, v2dirs] of data.cls || []) {
+            if (!this._proto.cls.has(k) && prims && prims.length) {
+                const cl = centerlineFromDescriptors(prims)
+                if (v2dirs) cl._v2Dirs = true
+                this._proto.cls.set(k, cl)
             }
         }
-        load(this._proto.cls, data.cls)
-        load(this._proto.clsSolo, data.clsSolo)
     }
 
     /**
-     * Consume Worker-routed connections: drop each {key, prims} into _proto.cls (the memoization the
-     * synchronous router would otherwise fill). Stale replies (epoch != current — a re-route happened
-     * since dispatch) are discarded wholesale. Pure cache population: the network/slices/queries are
-     * untouched until the next natural _streamNetwork, which then finds these as cache hits.
-     * @param {Array<{key:string, prims:object[]}>} results
-     * @param {number} epoch — the route epoch the dispatch carried
+     * Consume Worker-routed connections: drop each {key, prims, v2Dirs, pinFallback} into
+     * _proto.cls (the memoization the synchronous router would otherwise fill). Stale replies
+     * (epoch != current — a re-route happened since dispatch) are discarded wholesale. Pure cache
+     * population: the network/slices/queries are untouched until the next natural _streamNetwork,
+     * which then finds these as cache hits. A live entry wins over a reply UNLESS the reply
+     * upgrades a dirless entry to heading-ful (the _edgeCenterline cache-poisoning guard's rule).
+     * prims:null = the worker raced ahead of 'init' — the key re-warms on a later scan.
      */
     ingestRoutedConnections(results, epoch) {
         if (epoch !== this._routeEpoch) return   // routed against stale params — discard
         if (!this._proto.cls) this._proto.cls = new Map()
-        if (!this._proto.clsSolo) this._proto.clsSolo = new Map()
-        for (const { key, prims } of results) {
-            this._pendingRoutes.delete(key)
-            if (!prims) continue
-            // QUAL-14: 'S|'-prefixed keys are SOLO route pre-warms (corridor-dep inputs) → clsSolo.
-            const solo = key.startsWith('S|')
-            const map = solo ? this._proto.clsSolo : this._proto.cls
-            const k = solo ? key.slice(2) : key
-            if (!map.has(k)) map.set(k, centerlineFromDescriptors(prims))
+        for (const r of results) {
+            this._pendingRoutes.delete(r.key)
+            if (!r.prims) continue
+            const have = this._proto.cls.get(r.key)
+            if (have && (have._v2Dirs || !r.v2Dirs)) continue
+            const cl = centerlineFromDescriptors(r.prims)
+            if (r.v2Dirs) cl._v2Dirs = true
+            if (r.pinFallback) {
+                this._v2DirFallbacks = (this._v2DirFallbacks || 0) + 1
+                ;(this._v2DirFallbackKeys ||= []).push(r.key)
+            }
+            this._proto.cls.set(r.key, cl)
         }
     }
 
@@ -1889,7 +1801,7 @@ export class RoadSystem {
     //       and window-invariant (the Delaunay of a fixed point set is unique; the margin makes interior
     //       edges independent of the stream center — verified by test/graph-topology.mjs).
     // A node id is a SITE id `[cmx, cmz, k]` (macro-cell + candidate index). _nodePos resolves it to a
-    // world position; everything downstream (_edgeRouteSpec, headings, junction blend) reads through it.
+    // world position; everything downstream (_v2EdgeSpec, headings, junction blend) reads through it.
 
     // The seeded candidate sites for macro-cell (cmx,cmz): roadSiteCandidates points jittered across the
     // whole cell, each optionally valley-snapped (a bounded gradient-descent so sites still favour valley
@@ -1993,12 +1905,10 @@ export class RoadSystem {
     // assemble path). warmRoutes passes persist=false: it only needs the edge LIST for route jobs and
     // runs on its own prewarm band, so it must NOT clobber the streaming graph (degree would go stale on
     // a rebuild-skip). Window-invariance makes both bands agree on shared interior edges either way.
-    // `cacheable=false` (only _edgeDeps) still READS the memo but never WRITES it. PERF-26: the
-    // per-edge dep windows are single-use — a cold macro-column scan issues ~115 of them and they
-    // produced 113 DISTINCT sigs with 0 memo hits, so caching them buys nothing and costs everything:
-    // at 115 inserts against a 6-entry clear-all memo they wiped it 16 times per scan, evicting the
-    // big warm-band and cull graphs that _degreeDrops depends on. _edgeDeps has its own persistent
-    // per-edge memo (_proto.edgeDeps), so its graph is built once per edge ever regardless.
+    // `cacheable=false` lets a single-use window READ the memo without WRITING it (PERF-26: the
+    // QUAL-14 per-edge dep windows produced ~113 distinct sigs per scan and wiped the 6-entry memo
+    // 16 times over, evicting the warm-band and cull graphs _degreeDrops depends on; that caller
+    // is gone with the dependency machinery, but the knob is harmless and the lesson stands).
     _buildUrquhart(mx0, mx1, mz0, mz1, persist = true, marginOverride = null, cacheable = true) {
         const M = marginOverride != null ? Math.max(1, Math.round(marginOverride)) : Math.max(1, Math.round(this._params?.roadGraphMargin ?? 3))
         // FEAT-13: the SITE grid is decoupled from the 256 m macro-grid. The band [mx0,mx1] is in
@@ -2210,271 +2120,11 @@ export class RoadSystem {
     // into the run polyline (Y = coarse height), so the separate point-mode search + collinear-simplify +
     // loop/self-crossing cleanup are all gone. _segCrossParam stays (module scope, _detectJunctions).)
 
-    // arcPrimitiveConnect opts for an edge between two graph node ids c1,c2 (terminal headings from
-    // _edgeTerminalHeading — the edge's own direction toward its neighbour). emitPrimitives:true so the
-    // result is the EXACT curvature-bounded curve (line/arc/Dubins-terminal, radius ≥ hardR by
-    // construction), carried end-to-end with no Catmull-Rom re-fit. Shared by _edgeCenterline (synchronous
-    // compute) and warmRoutes (the off-thread Worker job) so the pre-warmed route is byte-identical to the
-    // synchronous fallback — same nodes, same headings, same cost weights. Window-invariant (pure fn).
-    _routeOptsBetween(c1, c2) {
-        const P = this._proto.params
-        const pp = this._params || {}
-        const halfW = pp.roadHalfWidth ?? 5, clearance = pp.roadClearanceMargin ?? 0.5
-        const hardR = Math.max(pp.roadArcHardRadius ?? 8, halfW + clearance + 0.1)
-        return {
-            hardR, gentleR: pp.roadArcGentleRadius ?? 30, margin: PROTO_MARGIN,
-            // WINDINESS stage (FEAT-13): the graph router's valley-seeking + curvature weights. Lower wCurv
-            // = cheaper bends; higher wAlt = harder valley-diving (windier, more terrain-following roads).
-            wDist: P.wDist, wAlt: pp.roadGraphWAlt ?? P.wAlt, wGrade: P.wGrade, wOver: P.wOver,
-            // The SOFT grade target is the dominant windiness lever: a lower target makes more chords exceed
-            // it, so the over-cap penalty forces terrain-following detours/switchbacks (windier roads).
-            maxGrade: pp.roadGraphMaxGrade ?? 0.20,
-            wCurv: pp.roadGraphWTurn ?? P.wTurn, wHeur: pp.roadArcHeurWeight ?? 1.5,
-            valleyDepthCap: pp.roadValleyDepthCap ?? 40,
-            // QUAL-05 follow-up: fixed-angle palette → large sweeping radii (see ranger.js roadArc*).
-            radii: pp.roadArcRadii, hbins: pp.roadArcHeadingBins, gradeSamples: pp.roadArcGradeSamples,
-            maxNodes: pp.roadArcMaxNodes ?? 300000,
-            // FEAT-10 earthwork routing: when earthworkWindow>0 the router costs grade against a
-            // spatially LOW-PASSED terrain (the design grade the carve will build) instead of raw
-            // terrain — so it stops spiralling to follow every bump — and pays wDev per metre of
-            // |lowpass − raw| (the fill/cut earthwork). Default 0 = off (terrain-following, unchanged).
-            earthworkWindow: pp.roadEarthworkWindow ?? 0, wDev: pp.roadWDeviation ?? 0,
-            deviationCap: pp.roadDeviationCap ?? Infinity,
-            // The router's design line must clamp against the SAME narrow smooth reference the builder
-            // (_gradeEdgeInPlace) clamps against, or the search prices a different road than gets built.
-            gradeWindow: pp.designGradeWindow ?? 50,
-            // The router's goalHeading is the TRAVEL direction ARRIVING at c2 (= bearing c1→c2).
-            // _edgeTerminalHeading(c2,c1) is the LEAVE direction at c2 (bearing c2→c1) = the reverse of
-            // arrival, so a directed router would loop around to approach c2 from the wrong side (the "enter
-            // from the wrong side" / shallow near-node crossing). +π flips it to the arrival direction.
-            // (startHeading is already the leave-at-c1 = forward direction.) The heading rides
-            // this spec, and _edgeRouteSpec feeds both the Worker prewarm and the sync fallback
-            // → worker/sync parity is free.
-            startHeading: this._edgeTerminalHeading(c1, c2),
-            goalHeading:  this._edgeTerminalHeading(c2, c1) + Math.PI,
-            // FEAT-13: a WIDE goal blend. The hybrid-A* search overshoots short edges' goal node (wanders
-            // past it, then the terminal reels back) → the edge bows past the node and crosses a sibling
-            // TWICE (the "happens twice" double-cross the user flagged). Cutting back a wide tail (~140 m)
-            // and replacing it with the clean Dubins terminal-into-node erases that overshoot: the edge runs
-            // straight in. Robust across seeds (seed 6 crossings 6→2, overshoot 5→0; seed 3 →0), no loops.
-            goalBlend: pp.roadGraphGoalBlend ?? 60,
-            emitPrimitives: true,
-            // BUG-16/FEAT-20 de-quantize refit (road-carve.js refit block): corridor Dubins
-            // shortcut (straightens the greedy quantized-heading bow, continuous radii) + κ
-            // box-filter clothoid re-emit (smooth curvature transitions). Read straight off the
-            // live params like the other roadArc* knobs so the debug sliders re-route through
-            // the normal onRoadParamChange → _invalidateProto path.
-            refitShortcut: pp.roadRefitShortcut ?? false, refitWindow: pp.roadRefitWindow ?? 0,
-            // QUAL-14 self-clearance: the emitted chain may not approach ITSELF closer than the
-            // full carve footprint (road width + both shoulders + margin) outside a selfClearGap
-            // arc window — kills lollipop self-intersections and hairpin legs sharing a carve wall.
-            // Violations re-route with no-go discs on the violation sites (deterministic iterative
-            // repair — see SELF_CLEAR_MAX_REPAIR in road-carve.js).
-            selfClearDist: 2 * halfW + 2 * (pp.roadShoulderWidth ?? 2.5) + (pp.roadSelfClearMargin ?? 3),
-            selfClearGap: pp.roadSelfClearGap ?? 80,
-            // PERF corridor two-pass (EXPERIMENTAL — see the block header in road-carve.js):
-            // coarse-lattice pass guiding the fine search ('heuristic' = cost-to-go field,
-            // 'tube' = hard lattice restriction). Off unless the preset opts in.
-            corridorCoarse: pp.roadCorridorTwoPass ? {
-                mode: pp.roadCorridorMode ?? 'heuristic',
-                tubeR: pp.roadCorridorTubeR ?? 100,
-                hScale: pp.roadCorridorHScale ?? 1.0,
-            } : undefined,
-            // FEAT-17: pond+skirt no-go discs for this edge's search area as pure DATA (see
-            // setWaterNoGo). Baked into the shared spec so the Worker pre-warm job and the
-            // synchronous fallback route with the identical exclusion. undefined when unwired.
-            pondDiscs: this._pondDiscsForEdge(c1, c2),
-            // QUAL-14 Part B: foreign-node no-go discs (see _nodeAvoidDiscs) — every route (solo
-            // AND final) stays out of other junctions' neighborhoods. _edgeCenterline/warmRoutes
-            // CONCATENATE the per-edge corridor discs onto this base.
-            avoidDiscs: this._nodeAvoidDiscs(c1, c2),
-        }
-    }
-
     // FEAT-13: route SPEC for a node-id edge c1→c2 (canonical 'g' cache key). Node ids are blue-noise
     // site ids [cmx,cmz,k]; the key joins their components so it is unique.
     _edgeClsKey(c1, c2) {
         const a = this._nodePos(c1), b = this._nodePos(c2)
         return `g${c1.join('_')}>${c2.join('_')}:${a.x.toFixed(0)},${a.z.toFixed(0)}>${b.x.toFixed(0)},${b.z.toFixed(0)}`
-    }
-
-    _edgeRouteSpec(c1, c2) {
-        const a = this._nodePos(c1), b = this._nodePos(c2)
-        return { key: this._edgeClsKey(c1, c2), ax: a.x, az: a.z, bx: b.x, bz: b.z, opts: this._routeOptsBetween(c1, c2) }
-    }
-
-    // ── QUAL-14 Part B: cross-edge corridor avoidance ─────────────────────────────────────────────
-    // Edges route INDEPENDENTLY (per-edge purity — cache/worker/window-invariance), so no edge knows
-    // its siblings exist and two edges can carve parallel corridors sharing a cut wall. The Urquhart
-    // graph is a Delaunay subgraph ⇒ PLANAR ⇒ edge CHORDS never cross — any routed edge-edge
-    // crossing/hug is route-wander artifact, so hard-forbidding proximity is topologically sound.
-    // Scheme: a CANONICAL PRIORITY orders all edges (pure fn of the world-stable site ids); an edge
-    // routes with no-go discs sampled from the SOLO centerlines (routed with no avoidance — a pure
-    // per-edge fn) of every higher-priority edge SHARING A NODE with it (see _edgeDeps for why
-    // adjacency is the dep set), except near the shared node itself (merge exemption: approaches
-    // into a common junction may converge; everywhere else they may not). Discs come from SOLO
-    // routes, not final ones, deliberately: dep-of-dep resolution makes an edge's result depend on
-    // a TRANSITIVE closure of monotone-decreasing-priority paths, and that closure percolates
-    // (measured: >3000 edges — unbounded on an endless map). Solo routes cut the chain at depth 1:
-    // every edge's discs derive only from its immediate siblings' dep-free routes. The final
-    // network can still deviate from a solo corridor second-order (a sibling itself displaced),
-    // which the clearance gate watches; connectivity is guarded by the router's escape hatch.
-
-    // Canonical priority: numeric-lexicographic on the edge's two site ids, pair canonicalized so
-    // the comparison is orientation-independent. Returns <0 if edge A outranks (routes before) B.
-    static _sitePairCmp(a1, a2, b1, b2) {
-        const idCmp = (p, q) => (p[0] - q[0]) || (p[1] - q[1]) || (p[2] - q[2])
-        let aLo = a1, aHi = a2; if (idCmp(a2, a1) < 0) { aLo = a2; aHi = a1 }
-        let bLo = b1, bHi = b2; if (idCmp(b2, b1) < 0) { bLo = b2; bHi = b1 }
-        return idCmp(aLo, bLo) || idCmp(aHi, bHi)
-    }
-
-    // Higher-priority edges whose SEARCH AREA (endpoint bbox + PROTO_MARGIN) overlaps this edge's —
-    // the siblings whose corridors it must avoid. The wide bbox relation is affordable because deps
-    // are ONE LEVEL deep (an edge avoids dep SOLO routes, never dep finals — see the scheme header;
-    // a transitive dep-of-dep design percolated across the unbounded map and OOMed). Enumerated
-    // over an EDGE-CENTRED Urquhart build (pure fn of the edge + params → window-invariant, unlike
-    // the streaming band graph). Memoized per edge key.
-    _edgeDeps(c1, c2) {
-        const memoKey = this._edgeClsKey(c1, c2)
-        const memo = this._proto.edgeDeps.get(memoKey)
-        if (memo) return memo
-        const S = this._params?.roadSiteSpacing ?? PROTO_ANCHOR_SPACING
-        const a = this._nodePos(c1), b = this._nodePos(c2)
-        // Candidate range: this edge's search bbox + its margin + a sibling's margin + max edge reach.
-        const pad = 2 * PROTO_MARGIN + 2 * S
-        const mx0 = Math.floor((Math.min(a.x, b.x) - pad) / PROTO_ANCHOR_SPACING)
-        const mx1 = Math.floor((Math.max(a.x, b.x) + pad) / PROTO_ANCHOR_SPACING)
-        const mz0 = Math.floor((Math.min(a.z, b.z) - pad) / PROTO_ANCHOR_SPACING)
-        const mz1 = Math.floor((Math.max(a.z, b.z) + pad) / PROTO_ANCHOR_SPACING)
-        const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false, null, false)   // single-use window — read the memo, never pollute it
-        const ex0 = Math.min(a.x, b.x) - PROTO_MARGIN, ex1 = Math.max(a.x, b.x) + PROTO_MARGIN
-        const ez0 = Math.min(a.z, b.z) - PROTO_MARGIN, ez1 = Math.max(a.z, b.z) + PROTO_MARGIN
-        const deps = []
-        for (const [d1, d2] of g.edges) {
-            if (RoadSystem._sitePairCmp(d1, d2, c1, c2) >= 0) continue   // only strictly higher priority
-            const p = this._nodePos(d1), q = this._nodePos(d2)
-            if (Math.min(p.x, q.x) - PROTO_MARGIN > ex1 || Math.max(p.x, q.x) + PROTO_MARGIN < ex0) continue
-            if (Math.min(p.z, q.z) - PROTO_MARGIN > ez1 || Math.max(p.z, q.z) + PROTO_MARGIN < ez0) continue
-            deps.push([d1, d2])
-        }
-        // Deterministic dep order (g.edges order varies with the build window; disc order must not).
-        deps.sort((e, f) => RoadSystem._sitePairCmp(e[0], e[1], f[0], f[1]))
-        this._proto.edgeDeps.set(memoKey, deps)
-        return deps
-    }
-
-    /**
-     * Corridor no-go discs for edge (c1,c2): every dep's SOLO centerline sampled at
-     * CORRIDOR_DISC_DS, radius roadCorridorClearance, pruned to this edge's search bbox, minus the
-     * MERGE EXEMPTION (samples within EXEMPT_R of a node both edges share — approaches into a
-     * common junction may converge). syncResolve=true computes unready solo routes on the spot
-     * (a solo route is dep-free, so depth is bounded); syncResolve=false (Worker pre-warm)
-     * returns null when a dep's solo route is not yet cached, so the caller dispatches the solo
-     * job and defers this edge instead of blocking the frame. Pure data from window-invariant
-     * solo centerlines → the pre-warm job and the sync fallback carry identical discs.
-     * undefined = no deps/no discs (spec shape unchanged for gates).
-     */
-    _corridorDiscsFor(c1, c2, syncResolve) {
-        const deps = this._edgeDeps(c1, c2)
-        if (!deps.length) return undefined
-        const pp = this._params || {}
-        // Disc radius = clearance + half the disc spacing (SAG COMPENSATION): rejection guarantees
-        // ≥ r to the disc CENTERS (the solo curve's samples); a point can sit half a spacing along
-        // the curve from the nearest sample, so guaranteeing ≥ clearance to the CURVE needs the
-        // half-spacing added (measured residuals sat exactly in the 20−6 … 20 m sag band).
-        const R = (pp.roadCorridorClearance ?? 20) + CORRIDOR_DISC_DS * 0.5
-        const EXEMPT = pp.roadCorridorExempt ?? (Math.max(pp.roadGraphGoalBlend ?? 60, pp.roadJunctionBlendLength ?? 30, 60) + 20)
-        const a = this._nodePos(c1), b = this._nodePos(c2)
-        const ex0 = Math.min(a.x, b.x) - PROTO_MARGIN, ex1 = Math.max(a.x, b.x) + PROTO_MARGIN
-        const ez0 = Math.min(a.z, b.z) - PROTO_MARGIN, ez1 = Math.max(a.z, b.z) + PROTO_MARGIN
-        const k1 = `${c1[0]},${c1[1]},${c1[2]}`, k2 = `${c2[0]},${c2[1]},${c2[2]}`
-        const discs = []
-        for (const [d1, d2] of deps) {
-            let cl
-            if (syncResolve) cl = this._soloCenterline(d1, d2)
-            else {
-                cl = this._proto.clsSolo?.get(this._edgeClsKey(d1, d2))
-                if (!cl) return null   // dep solo not warmed yet — defer this edge's job
-            }
-            if (!cl || !(cl.length > 1e-6)) continue
-            // Exemption zones: nodes the two edges SHARE (merge exemption) AND this edge's OWN two
-            // anchors regardless of sharing — the edge MUST reach its anchors, and a non-shared
-            // sibling's corridor passing near them would otherwise wall the start/goal outright
-            // (measured: mass escape-hatch fallbacks → hugs → culls in dense junction areas).
-            // Near-junction convergence is expected geometry (QUAL-13's business, not stacking).
-            const exemptPts = [a, b]
-            const kd1 = `${d1[0]},${d1[1]},${d1[2]}`, kd2 = `${d2[0]},${d2[1]},${d2[2]}`
-            if (kd1 === k1 || kd1 === k2) exemptPts.push(this._nodePos(d1))
-            if (kd2 === k1 || kd2 === k2) exemptPts.push(this._nodePos(d2))
-            const n = Math.max(1, Math.ceil(cl.length / CORRIDOR_DISC_DS))
-            for (let i = 0; i <= n; i++) {
-                const p = cl.pointAt(cl.length * i / n)
-                if (p.x < ex0 || p.x > ex1 || p.z < ez0 || p.z > ez1) continue
-                let exempt = false
-                for (const sp of exemptPts) {
-                    if ((p.x - sp.x) * (p.x - sp.x) + (p.z - sp.z) * (p.z - sp.z) < EXEMPT * EXEMPT) { exempt = true; break }
-                }
-                if (!exempt) discs.push(p.x, p.z, R)
-            }
-        }
-        return discs.length ? discs : undefined
-    }
-
-    // No-go discs around every FOREIGN graph node in the edge's search area (all alive sites
-    // except the edge's own endpoints). Applies to EVERY route (solo and final — baked into the
-    // route spec): roads don't cut through someone else's junction neighborhood, so shallow
-    // near-node crossings stop forming, and sibling corridors (derived from these routes) can
-    // never reach into an edge's own anchor-exemption zone. Pure fn of the alive-site field →
-    // window-invariant; escapable (rides opts.avoidDiscs) — connectivity still wins.
-    _nodeAvoidDiscs(c1, c2) {
-        const S = this._params?.roadSiteSpacing ?? PROTO_ANCHOR_SPACING
-        const a = this._nodePos(c1), b = this._nodePos(c2)
-        const ex0 = Math.min(a.x, b.x) - PROTO_MARGIN - NODE_CLEAR_R, ex1 = Math.max(a.x, b.x) + PROTO_MARGIN + NODE_CLEAR_R
-        const ez0 = Math.min(a.z, b.z) - PROTO_MARGIN - NODE_CLEAR_R, ez1 = Math.max(a.z, b.z) + PROTO_MARGIN + NODE_CLEAR_R
-        const k1 = `${c1[0]},${c1[1]},${c1[2]}`, k2 = `${c2[0]},${c2[1]},${c2[2]}`
-        const discs = []
-        const cx0 = Math.floor(ex0 / S), cx1 = Math.floor(ex1 / S)
-        const cz0 = Math.floor(ez0 / S), cz1 = Math.floor(ez1 / S)
-        for (let cz = cz0; cz <= cz1; cz++) for (let cx = cx0; cx <= cx1; cx++) {
-            for (const s of this._aliveSitesIn(cx, cz)) {
-                if (s.pos.x < ex0 || s.pos.x > ex1 || s.pos.z < ez0 || s.pos.z > ez1) continue
-                const sk = `${s.id[0]},${s.id[1]},${s.id[2]}`
-                if (sk === k1 || sk === k2) continue   // own endpoints stay reachable
-                discs.push(s.pos.x, s.pos.z, NODE_CLEAR_R)
-            }
-        }
-        return discs.length ? discs : undefined
-    }
-
-    // FEAT-68 (v2): the solo/final split is GONE — a route is a pure fn of (terrain, anchor pair),
-    // so "solo" and "final" are the same object (the purity probe measured sibling coupling to be
-    // entirely a shared-node phenomenon; corridors don't wander, so nothing needs avoiding).
-    // Kept as a delegate because warm bookkeeping and older callers still name it.
-    _soloCenterline(c1, c2) {
-        const cl = this._edgeCenterline(c1, c2)
-        this._pendingRoutes.delete('S|' + this._edgeClsKey(c1, c2))
-        return cl
-    }
-
-    // PERF (cold-load) solo-reuse precheck: adopt an edge's cached SOLO route as its FINAL when the
-    // corridor discs never come near it — the constrained search would be solving a problem whose
-    // constraints don't bind (measured: half of all final searches returned a byte-identical copy
-    // of the solo). Sampling at 2 m matches the refit validator's resolution, strictly finer than
-    // the search's endpoint/midpoint rejection sampling, so adoption is CONSERVATIVE: any disc the
-    // search could have seen forces the full search. Not byte-guaranteed vs. searching (a disc can
-    // reshape the flood without touching the winning path); gated by roadSoloReuse until the feel
-    // delta is user-approved. Pure fn of (solo route, discs) → window/worker/cache-invariant.
-    _soloClearOf(cl, discs) {
-        const n = Math.max(1, Math.ceil(cl.length / 2))
-        for (let i = 0; i <= n; i++) {
-            const p = cl.pointAt(cl.length * i / n)
-            for (let d = 0; d < discs.length; d += 3) {
-                const dx = p.x - discs[d], dz = p.z - discs[d + 1]
-                if (dx * dx + dz * dz <= discs[d + 2] * discs[d + 2]) return false
-            }
-        }
-        return true
     }
 
     // FEAT-68 (v2): route an edge — corridor search on the octave-truncated field, then stage-3
@@ -2515,72 +2165,78 @@ export class RoadSystem {
             this._pendingRoutes.delete(key)
             return cl
         }
-        const A = this._nodePos(c1), B = this._nodePos(c2)
-        // pond+skirt no-go discs (FEAT-17) over the corridor's OWN search box — the corridor
-        // margin is far wider than v1's PROTO_MARGIN, so fetch discs for what it can reach
-        const margin = Math.max(800, Math.hypot(B.x - A.x, B.z - A.z))
-        const blockedDiscs = this._pondDiscsInBBox ? this._pondDiscsInBBox(
-            Math.min(A.x, B.x) - margin, Math.min(A.z, B.z) - margin,
-            Math.max(A.x, B.x) + margin, Math.max(A.z, B.z) + margin) : undefined
-        // 2.5D corridor (owner green-light 2026-08-19): the search plans the DECK, pinned at the
-        // same node heights the profile pins to — switchbacks emerge where a face out-steepens
-        // the deck's grade budget.
-        const yA = this._v2NodeHeight(A.x, A.z), yB = this._v2NodeHeight(B.x, B.z)
-        const trunc = this._v2Trunc()
-        const attempt = (pin, extra) => {
-            const c = corridorSearch(A.x, A.z, yA, B.x, B.z, yB, trunc, {
-                margin, blockedDiscs,
-                ...(pin ? { startDir: pin.startDir, goalDir: pin.goalDir } : {}),
-                ...extra,
-            })
-            return c ? corridorCenterline(c.path,
-                pin ? { keepStart: !!pin.startDir, keepEnd: !!pin.goalDir } : {}) : null
+        // routeEdgeV2 is THE route function — the route Worker imports the same one, so the
+        // pre-warmed cache entry and this synchronous fallback are byte-identical by construction
+        // (the FEAT-68 no-mirror fence; test/road-worker-parity.mjs pins the field derivation).
+        const spec = this._v2EdgeSpec(c1, c2, dirs)
+        const res = routeEdgeV2(spec, this._v2Trunc(), (x, z) => this._coarseH(x, z))
+        const cl = res.cl
+        if (res.pinRequested && res.feasible && !res.usedPin) {
+            this._v2DirFallbacks = (this._v2DirFallbacks || 0) + 1
+            ;(this._v2DirFallbackKeys ||= []).push(key)
         }
-        // Fail-safe ladder (deterministic per edge — purity/window-invariance hold). Rung order
-        // encodes the priorities: heading pins are the FIRST thing sacrificed (joint tangency is
-        // cosmetic), the structure vocabulary the second (a conservative re-route prices hostile
-        // ground at full quadratic cost so the corridor goes AROUND — for gullies/convex drops
-        // where no bore can substitute and the default plan's profile is infeasible). First rung
-        // whose profile is feasible ships; if none is, the rung-1 curve ships and registration
-        // marks it (mark-and-ship — the network never disconnects).
-        const pin = dirs && (dirs.startDir || dirs.goalDir) ? dirs : null
-        const rungs = pin
-            ? [[pin, {}], [null, {}], [pin, { structureCap: false }], [null, { structureCap: false }]]
-            : [[null, {}], [null, { structureCap: false }]]
-        let cl = null, first = null
-        for (const [p, extra] of rungs) {
-            const c = attempt(p, extra)
-            if (!c || !(c.length > 1e-6)) continue
-            if (!first) first = c
-            if (this._v2Feasible(c)) {
-                cl = c
-                if (pin && !p) {
-                    this._v2DirFallbacks = (this._v2DirFallbacks || 0) + 1
-                    ;(this._v2DirFallbackKeys ||= []).push(key)
-                }
-                break
-            }
-        }
-        cl = cl ?? first ?? centerlineFromDescriptors([])
         if (dirs) cl._v2Dirs = true   // tag = "a dirs-aware caller routed this" (even if pins fell back)
         this._proto.cls.set(key, cl)
         this._pendingRoutes.delete(key)
         return cl
     }
 
-    /** FEAT-68 rung-2 precheck: does a legal profile exist along this centerline? (~1–2 ms) */
-    _v2Feasible(cl) {
-        const n = Math.max(2, Math.round(cl.length / 10))
-        const st = { s: new Array(n + 1), ground: new Array(n + 1) }
-        for (let i = 0; i <= n; i++) {
-            const t = cl.length * i / n
-            const p = cl.pointAt(t)
-            st.s[i] = t
-            st.ground[i] = this._coarseH(p.x, p.z)
+    /**
+     * FEAT-68: the v2 route-job spec for an edge — the ONE place it is built, shared by the
+     * synchronous path (_edgeCenterline) and the Worker pre-warm (_warmScan), so both routes are
+     * computed from identical inputs. Structured-clonable throughout (plain numbers/arrays).
+     * The 2.5D corridor plans the DECK pinned at the same node heights the profile pins to;
+     * pond+skirt no-go discs (FEAT-17) are fetched over the corridor's own (wide) search box.
+     */
+    _v2EdgeSpec(c1, c2, dirs) {
+        const A = this._nodePos(c1), B = this._nodePos(c2)
+        const margin = Math.max(800, Math.hypot(B.x - A.x, B.z - A.z))
+        const blockedDiscs = this._pondDiscsInBBox ? this._pondDiscsInBBox(
+            Math.min(A.x, B.x) - margin, Math.min(A.z, B.z) - margin,
+            Math.max(A.x, B.x) + margin, Math.max(A.z, B.z) + margin) : undefined
+        return {
+            key: this._edgeClsKey(c1, c2),
+            ax: A.x, az: A.z, yA: this._v2NodeHeight(A.x, A.z),
+            bx: B.x, bz: B.z, yB: this._v2NodeHeight(B.x, B.z),
+            margin, blockedDiscs, dirs,
         }
-        const p0 = cl.pointAt(0), p1 = cl.pointAt(cl.length)
-        const prof = profileSolve(st, this._v2NodeHeight(p0.x, p0.z), this._v2NodeHeight(p1.x, p1.z))
-        return prof !== null
+    }
+
+    // FEAT-68 deg-2 canonical approach headings: a pass-through node is a POINT ON a longer
+    // corridor, not a route boundary — its two incident edges should meet tangentially. The
+    // through-direction at a deg-2 node of the SETTLED post-drop adjacency is the
+    // neighbor-to-neighbor chord (neighbors sorted lexicographically for determinism). Pure fn of
+    // the settled adjacency — every window derives identical pins, so the route cache stays
+    // window-invariant. Junctions (deg ≠ 2) get no pin: naive meets are checkpoint-sanctioned,
+    // junction geometry is its own deferred pass. `drop` filters degree-capped pairs when the
+    // caller's graph has not had them deleted from adj (warm windows); on the streaming graph the
+    // deletions are already applied and the filter is a no-op — same result either way.
+    _v2NodeThrough(g, drop, nk) {
+        const nbrs = g.adj.get(nk)
+        if (!nbrs) return null
+        let ks = [...nbrs]
+        if (drop) ks = ks.filter((o) => !drop.has(nk + '|' + o))
+        if (ks.length !== 2) return null
+        ks.sort()
+        const p1 = this._nodePos(ks[0].split(',').map(Number))
+        const p2 = this._nodePos(ks[1].split(',').map(Number))
+        const dx = p2.x - p1.x, dz = p2.z - p1.z, l = Math.hypot(dx, dz)
+        return l > 1e-9 ? { x: dx / l, z: dz / l, toward: ks[1] } : null
+    }
+
+    // Signing is by NEIGHBOR IDENTITY, not by the edge's own chord: through runs k1→k2, so an
+    // edge leaving toward k2 pins +through, toward k1 pins −through; an arrival continues toward
+    // the OTHER neighbor. (Chord-dot signing was measured wrong at acute elbows — a node sitting
+    // behind one neighbor along the chord got pins that REVERSE travel through the node, a
+    // sanctioned cusp. Identity signing keeps travel consistent through every joint.)
+    _v2EdgeDirs(g, drop, kA, kB) {
+        const s = this._v2NodeThrough(g, drop, kA), t = this._v2NodeThrough(g, drop, kB)
+        if (!s && !t) return undefined
+        const neg = (d) => ({ x: -d.x, z: -d.z })
+        return {
+            startDir: s ? (s.toward === kB ? { x: s.x, z: s.z } : neg(s)) : undefined,
+            goalDir: t ? (t.toward === kA ? neg(t) : { x: t.x, z: t.z }) : undefined,
+        }
     }
 
 
@@ -2769,38 +2425,6 @@ export class RoadSystem {
                 g.adj.get(g.key(c1))?.delete(g.key(c2)); g.adj.get(g.key(c2))?.delete(g.key(c1))
             }
         }
-        // FEAT-68 deg-2 canonical approach headings: a pass-through node is a POINT ON a longer
-        // corridor, not a route boundary — its two incident edges should meet tangentially. The
-        // through-direction at every deg-2 node of the SETTLED post-drop adjacency is the
-        // neighbor-to-neighbor chord (neighbors sorted lexicographically for determinism); each
-        // incident edge routes with its end pinned to that direction (signed along its own
-        // travel). Pure fn of the settled adjacency — every window derives identical pins, so the
-        // route cache stays window-invariant. Junctions (deg ≠ 2) get no pin: naive meets are
-        // checkpoint-sanctioned, junction geometry is its own deferred pass.
-        const thru = new Map()
-        for (const [nk, nbrs] of g.adj) {
-            if (nbrs.size !== 2) continue
-            const [k1, k2] = [...nbrs].sort()
-            const p1 = this._nodePos(k1.split(',').map(Number))
-            const p2 = this._nodePos(k2.split(',').map(Number))
-            const dx = p2.x - p1.x, dz = p2.z - p1.z, l = Math.hypot(dx, dz)
-            if (l > 1e-9) thru.set(nk, { x: dx / l, z: dz / l, toward: k2 })
-        }
-        // Signing is by NEIGHBOR IDENTITY, not by the edge's own chord: through runs k1→k2, so an
-        // edge leaving toward k2 pins +through, toward k1 pins −through; an arrival continues
-        // toward the OTHER neighbor. (Chord-dot signing was measured wrong at acute elbows — a
-        // node sitting behind one neighbor along the chord got pins that REVERSE travel through
-        // the node, a sanctioned 166° spike on seed 20. Identity signing keeps travel consistent
-        // through every joint, elbows included.)
-        const edgeDirs = (kA, kB) => {
-            const s = thru.get(kA), t = thru.get(kB)
-            if (!s && !t) return undefined
-            const neg = (d) => ({ x: -d.x, z: -d.z })
-            return {
-                startDir: s ? (s.toward === kB ? { x: s.x, z: s.z } : neg(s)) : undefined,
-                goalDir: t ? (t.toward === kA ? neg(t) : { x: t.x, z: t.z }) : undefined,
-            }
-        }
         this._proto.nodeInc.clear()
         const addInc = (idKey, runKey) => { const a = this._proto.nodeInc.get(idKey) || this._proto.nodeInc.set(idKey, []).get(idKey); a.push(runKey) }
         for (const [c1, c2] of g.edges) {
@@ -2809,7 +2433,7 @@ export class RoadSystem {
             const A = this._nodePos(c1), B = this._nodePos(c2)
             { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }   // degenerate (coincident) edge
             const key = `g:${g.key(c1)}:${g.key(c2)}`
-            const cl = this._edgeCenterline(c1, c2, edgeDirs(g.key(c1), g.key(c2)))
+            const cl = this._edgeCenterline(c1, c2, this._v2EdgeDirs(g, drop, g.key(c1), g.key(c2)))
             if (!cl || cl.length < 1e-6) continue
             this._registerRun(key, cl, c1, c2)
             addInc(g.key(c1), key); addInc(g.key(c2), key)
@@ -2918,8 +2542,6 @@ export class RoadSystem {
         // function of seed+center+params, caches are memoization only).
         if (this._proto.anchors.size > 4000) { this._proto.anchors.clear(); this._proto.mergedAnchors.clear() }
         if (this._proto.cls && this._proto.cls.size > 1500) this._proto.cls.clear()
-        if (this._proto.clsSolo && this._proto.clsSolo.size > 1500) this._proto.clsSolo.clear()
-        if (this._proto.edgeDeps && this._proto.edgeDeps.size > 3000) this._proto.edgeDeps.clear()
         this._network.clear()
         // D1: do NOT bump _generation here. A positional re-stream produces window-INVARIANT
         // geometry (D-16: the network is a pure function of seed+world-coords+params), so an

@@ -663,7 +663,6 @@ export class Map2D {
         if (src && src._worldSeed === this._getSeed()) {
             const p = src._proto, q = this._road._proto
             q.cls = (p.cls ??= new Map())
-            q.clsSolo = (p.clsSolo ??= new Map())
         }
     }
 
