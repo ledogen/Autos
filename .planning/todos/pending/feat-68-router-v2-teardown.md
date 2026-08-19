@@ -808,3 +808,72 @@ to pre-port; npm test = the same 7 standing reds, nothing new.
 **Note for the record:** the handoff hoped the worker port would clear `paper-reroute`; its red is
 a mission-layer re-plan-length margin (12.25 vs 11.28 km), identical before and after the port —
 still a standing loop item, not slicing.
+
+## Step 4 record (2026-08-19, autonomous — feel-session prep, and the perf verdict)
+
+Gallery for the visit: **`perf-runs/gallery.html`** on the worktree (open it directly; images sit
+beside it). Drive from **`http://localhost:3343/?seed=20|11|67|6`**, map on **M**.
+
+### The victory number — router-attributable cost is 27–38 s → 8.4–9.4 s
+
+4× CPU throttle, built app, ALL runs in one sitting with a paired control (checkpoint discipline):
+
+| run | boot | entry | total | gap vs baked control |
+|---|---|---|---|---|
+| seed 6 — **baked control** (v2 bundle) | 3.2 s | 8.9 s | **18.25 s** | — |
+| seed 6 — same seed, routing live | 4.0 s | 10.3 s | 21.04 s | +2.8 s |
+| seed 20 | 3.2 s | 16.9 s | 26.64 s | **+8.4 s** |
+| seed 11 | 3.4 s | 17.8 s | 27.66 s | **+9.4 s** |
+| seed 67 | 3.4 s | 16.9 s | 27.15 s | **+8.9 s** |
+
+Baseline (v1, 2026-08-18) was a 27–38 s gap; totals 56.8–68.3 s. **Gap cut 3–4×.** Totals roughly
+halved, but tonight's box was quieter than the baseline sitting — the gap is the honest half.
+Routing a whole 2800 m region live now costs **~2.8 s at 4×** (the seed-6 pair, same seed both
+ways). Still above the <10 s total target exactly as the ticket predicted: the residual ~18 s IS
+the baked envelope, and that needs PERF-27's double-world-build removal (out of scope here).
+
+**⚠ Bench trap discovered:** `routeCacheSig` is now `v2|…`, so the committed v1 bundles missed for
+EVERY seed — the first bench run tonight had no baked control at all (its "seed 6" was routing
+live). A paired control now requires re-baking. Any future 4× bench must confirm the control
+actually loaded its bundle before quoting a gap.
+
+### Route-cache bundles: 7.9 MB → 0.13 MB (60×), and `route-bundle-parity` is GREEN
+
+Re-baked under v2 (`test/bake-route-bundle.mjs` fixed: clsSolo references removed, and the warm
+pass now routes WITH deg-2 pins — a dirless bake entry is re-routed at load by the cache guard, so
+a pin-less bake buys nothing). A v2 centerline is a handful of line/arc primitives where v1 stored
+hundreds of quantized arc steps, and solo routes are gone. **The PERF-26 concern that motivated the
+BASE/REGION split — 8.31 MB of asset, 24.85 MB of JSON parsed on the main thread — no longer
+exists.** Gate green: 0 descriptor mismatches, 0 of 216 in-band edges uncached. Inventory item 4
+("delete the whole bake subsystem") is now an owner call on a subsystem that costs ~130 KB and an
+8 s bake, not the multi-megabyte tax it was.
+
+Bake nit fixed en route: skipping degree-capped edges in the bake is WRONG — the bake centres on
+the spawn BASE point and over-covers by BAKE_MARGIN, so its window is not the runtime's, and three
+edges it called capped are live at runtime (measured). The bake routes the superset.
+
+### NEGATIVE RESULT — do not re-attempt: strict pin-signature cache matching
+
+Tried, measured, REVERTED. The cache-poisoning guard tags entries with whether they were routed
+heading-ful (`_v2Dirs`, a boolean). The "obvious" hardening is to tag the pin SIGNATURE and reuse
+an entry only on exact match, so no producer can hand back geometry routed under different pins.
+**Measured cost: seed-6 baked cold load 18.25 s → 195 s (10×).** Mechanism: deg-2 pins are
+window-invariant for INTERIOR edges (verified: 27 interior edges × 5 window sizes, 0
+disagreements) but NOT at window frontiers, where membership itself differs — so two windows
+alternate, each overwriting the other's entry, and those edges re-route on every stream. The
+boolean's apparent sloppiness IS the stability that prevents the thrash: once an entry is pinned,
+every pinned request accepts it. Any future attempt at strict matching must first solve frontier
+pin agreement (junction-to-junction through-routing would, since deg-2 nodes stop being route
+boundaries at all).
+
+### cTurn A/B ready for the owner to dial on arrival
+
+`V2_COSTS.cTurn` in `src/corridor-router.js` (money per radian) is the hairpin dial. Grade
+compliance is IDENTICAL at all three values (35% max sustained, same marks) — it only trades
+hairpin density against sweep. Map renders for all three are in the gallery.
+
+| cTurn | hairpins 20/11/67 | spans 20/11/67 | km 20/11/67 |
+|---|---|---|---|
+| 15 | 20 / 38 / 32 | 10 / 6 / 7 | 45.8 / 39.7 / 41.8 |
+| **30 (current)** | 17 / 21 / 24 | 9 / 7 / 8 | 45.1 / 39.3 / 41.2 |
+| 60 | 17 / 15 / 11 | 11 / 7 / 9 | 44.6 / 38.4 / 40.2 |
