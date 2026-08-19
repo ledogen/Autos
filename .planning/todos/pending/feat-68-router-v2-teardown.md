@@ -493,3 +493,64 @@ structures are still too COMMON (bores/bridges must read as earned); grade chara
 hugging feel honest or harsh); crest airtime; whether corridors pick believable lines. Bridges
 render as tubes and junctions are naive meets — both knowingly deferred, judge alignment not
 dressing.
+
+## Calibration pass 1 (2026-08-18, owner's first drive — rulings + fixes)
+
+**Owner rulings (binding):**
+- **Bridges are DE-SCOPED from the router vocabulary.** Real forest bridges are short (~30 m),
+  same-elevation, and sit at water crossings; valley-spanning decks raise "why is there no road
+  down there" (crossings at different heights). Machinery stays re-enableable
+  (`V2_COSTS.bridgesOn`); the planned road back is a POST-ROUTER conversion of water crossings
+  only (today's stream causeways are candidates). The occasional long suspension bridge is a
+  someday-maybe, not vocabulary.
+- **Tunnels: no visual difference in the mountaintop above a bore — carve a clean hole.** Cut
+  pricing is the lever, not the carve.
+- **Switchbacks must emerge; the solver was "too happy to tunnel, not happy to make tight turns."**
+
+**Shipped on the branch (commits 1d063b2, e16ad9d):**
+- **Tunnels were NEVER chassis-passable — fixed** (pre-dates v2, exists on main: owner-reported).
+  The engine heightfield mirrors mesh Y, and the mesh keeps the mountain over a span, so the
+  chassis hit an invisible wall at every portal (wheels would have passed — the analytic surface
+  already resolves the bore floor). `TerrainPhysics.syncChunk` now cuts the bore slot (heights →
+  deck−0.5 within tube radius inside spans): the engine collider aligns with the wheel surface, a
+  deliberate span-bounded MESH≠PHYSICS exception. Verified by CDP drive-through of the canonical
+  bore at 18–24 m/s. If v1 tunnels matter before the swap, this cherry-picks to main cleanly.
+- **"No switchbacks" root cause: stage-3 smoothing, not the search.** The corridor A* was already
+  building them — measured 949 m of deliberate descent zigzag collapsed by RDP/Chaikin into an
+  infeasible 488 m plunge. Smoothing is now GRADE-GUARDED (a shortcut may not steepen the raw legs
+  it replaces, on the truncated field). Hairpin census on eval seeds: 0 → 7/8/4.
+- **Prices:** wGrade 40→120 (optimal climb grade g*=1/√wGrade: 16%→9% — length now beats sustained
+  steepness, which is where switchbacks come from); cBoreM 8→12, cPortal 150→250 (tunnels earned);
+  cCut2 = 0.12 quadratic cut depth (cut ≈ bore at ~9 m: portals emerge at bench depth — canonical
+  approach cut 19.6 m → 10.9 m, mountaintop untouched).
+- **Day-two node heights:** pin = terrain NEIGHBORHOOD (min over a 22 m ring + 35% climb-back),
+  pure per node. Kills the convex-edge class where ground fell 24 m in 30 m off a pinned node and
+  no bridge-less profile could follow.
+- **Fail-safe ladder (per edge, deterministic, pure):** rung 1 fine yStep 0.25 → rung 2
+  conservative corridor re-route (structureCap off: profile-infeasible corridors route AROUND
+  hostile ground) → rung 3 solve at 38% (under the 40% ceiling) → mark-and-ship with run ends
+  BLENDED onto node heights (marks can never re-open the node disease).
+- **QUAL-24 deg-2 merge OFF under v2.** Its load-bearing half (joint grade continuity) is
+  delivered by pinned node heights; its re-solve of window-clipped chains broke GRADEY-INVARIANT
+  (road-band-coverage gate). Naive meets are checkpoint-sanctioned; the junction-to-junction
+  pass-through design replaces it properly later. Turning it off ALSO fixed the story-poi pad
+  drift and mission-network reds from checkpoint 1.
+- **Fold floor by construction:** control-polygon radius repair (drop vertices that cannot admit
+  an 8 m fillet) before the line-arc fit + shared tangent budgets. Worst exact radius 1.29 m →
+  9.09 m over 1235 edges; centerline-curvature and road-minradius gates green.
+
+**State after the pass (eval seeds 20/11/67):** 0/1/3 marked edges (seed 20 and effectively seed
+11 clean); max sustained 35/40/76% — the 76% is a marked run; node y-spread 0.000 m everywhere;
+hairpins 7/8/4; spans 15/10/16 (bores only). Gates 26/30 — remaining reds triaged: road-tunnel +
+route-bundle-parity die with v1; graph-topology GRAPH-NODE-DEPARTURE encodes v1's "node Y rides
+road grade" rule, replaced by the ratified day-two rule (re-baseline); paper-reroute is a
+mission-layer margin threshold (re-plan DID beat stale, 15.12 vs 15.82 km).
+
+**Loop items minted by this pass:**
+- **Summit-knob nodes:** all 3 seed-67 marks share node `1,-2,1` (a 255 m peak with 60–120%
+  faces — unbuildable without bridges from any direction). This is SITE PLACEMENT (topology
+  layer): the escape-score ranking should never anchor a junction on a peak. Evidence for the
+  item-9/10 topology work; not a router bug.
+- **Post-router bridge conversion at water crossings** (owner's design): causeway → short deck
+  where a stream crosses, same elevation both ends.
+- The in-game marked-seed disclaimer (acceptance item) is still to wire.
