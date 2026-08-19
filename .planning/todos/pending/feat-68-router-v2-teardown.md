@@ -620,3 +620,40 @@ stacks — reasons 1 and 2 stand); heading in the state (v1's lattice disease, b
 ticket); detect-steep-and-inject-zigzags (violates `feedback_emergent_over_injected`).
 
 **Status: awaiting owner's pick before implementation.**
+
+## The 2.5D corridor SHIPPED (2026-08-19, commit 8981406 — deck height in the search state)
+
+Built as green-lit, and it delivered on the first network build. State = (32 m cell, 3 m deck
+bin); grade is a hard per-step deck budget; terrain prices as deck-vs-ground offset through the
+profile's own classOf/stationRate vocabulary; the same cell at two heights is two states, so
+stacks are expressible. Full detail in the commit message; the measured story:
+
+- **Switchbacks are REAL and visible** — hairpins 6/13/13 on the eval seeds (the deck PLANS them:
+  e.g. the owner's captured descent plans 1424 m at ≤20% for a 719 m chord). The two spots the
+  owner flagged (seed 6 screenshot + capture) both carry genuine hairpin stacks now.
+- **Marks 4 → 1** — the 2.5D search solves two of the three summit-knob edges by spiraling.
+- **Canonical bore: 150 m DEAD LEVEL under 164 m cover** — chosen by the search, and tunnels
+  network-wide went 15 → 4 spans on seed 20: earned, not default.
+- **Deletions, not additions:** dehairpin deleted (existed for the old search's dither, which the
+  2.5D search cannot produce), structure-cap flattening + cover proxy gone. Two ADDED first-class
+  costs, both physical knobs: `cTurn` (money per radian — a heading-free search otherwise prices
+  twenty micro-zigzags the same as two traverses; v1's roadWTurn lesson) and the fillet
+  length-loss budget (a corner may shortcut ≤18 m of the plan — sharp apexes get real hairpin
+  radii, sweepers stay sweeping; max-radius fitting was eating 275 m of a switchback descent).
+- Corridor field is now K=4 (full coarse — the plan must see what the profile pays), priced ==
+  built exact, node y-spread 0.000.
+
+**Open items from this pass:**
+- **Perf: ~60 ms/edge search** (was 3–4), network 1.5–2.1 s at 1× headless. Cold-load acceptable;
+  the real issue is per-edge synchronous routing now exceeds a frame → in-game streaming hitches
+  (`paper-reroute`'s slicing gate is red on exactly this). Fix = the route Worker port, which the
+  clean-module architecture was designed for (no verbatim mirror). Weighted A* (ε=1.15) + the
+  relaxation heuristic + bore-band clamp are already in; further profiling belongs with the
+  worker item.
+- `story-poi` red = roster supply threshold on the changed network (13 viable sites vs roster 14)
+  — re-baseline class. `road-fill-support` seed 7 = 1.0 m support shortfall on a fillMax-boundary
+  fill measured against fine-noise raw while the profile grades against coarse — small real gap,
+  loop item. `route-bundle-parity` + `graph-topology` node-departure unchanged (die-with-v1 /
+  re-baseline).
+- Residual ~30–35% pitches can appear near hairpin apexes where the fillet displaces the line off
+  the planned bench (≤ ~19 m at a 135° apex) — second-order; judge in the drive.
