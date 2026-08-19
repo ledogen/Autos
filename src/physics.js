@@ -167,6 +167,42 @@ const CHASSIS_PROFILE = {
 }
 
 /**
+ * Which armor region a contact landed on: 'front' | 'left' | 'right' | 'rear', or null for a hit
+ * that no armor covers.
+ *
+ * Takes the body-local point AND body-local normal from `engine.maxContactImpulse()`, and uses each
+ * for what it is actually good at:
+ *
+ *   · The NORMAL says which FACE was struck. Nosing into a rock pushes back along the body's z
+ *     axis; scraping a wall pushes along x; landing from a jump pushes along y. That last one is
+ *     the reason the normal is consulted at all — a vertical push is the ground, and the truck has
+ *     no floor or roof armor, so it is not an impact this model prices. It is suspension work.
+ *   · The POINT says which END or SIDE of that face. The normal's SIGN is unusable — it flips with
+ *     whichever shape the engine happened to label A — so only its magnitudes pick the axis, and
+ *     the position supplies the direction.
+ *
+ * The z test is taken about the mid-point between the bumpers rather than the CG, because the CG
+ * sits well forward of body center on a pickup and would push the front/rear split into the cab.
+ * Both axes are normalised by their own half-extent so "closest face" is measured in body
+ * proportions, not metres — otherwise the long axis would win almost every time.
+ *
+ * @param {{x,y,z}} localPoint - contact point in body frame.
+ * @param {{x,y,z}} localNormal - contact normal in body frame (sign-agnostic).
+ * @returns {'front'|'left'|'right'|'rear'|null}
+ */
+export function classifyImpactRegion (localPoint, localNormal) {
+  if (!localPoint || !localNormal) return null
+  const ax = Math.abs(localNormal.x), ay = Math.abs(localNormal.y), az = Math.abs(localNormal.z)
+  if (ay >= ax && ay >= az) return null            // ground beneath / roof above — not armor
+  const P = CHASSIS_PROFILE
+  if (az >= ax) {
+    const midZ = 0.5 * (P.noseZ + P.tailZ)
+    return localPoint.z < midZ ? 'front' : 'rear'  // forward = −z
+  }
+  return localPoint.x < 0 ? 'left' : 'right'       // right = +x
+}
+
+/**
  * Create the vehicle chassis body in the engine world (FEAT-48 Phase 2, QUAL-25 compound).
  *
  * Four convex hulls tracing the visible body volume (engine hulls are convex-only, so the

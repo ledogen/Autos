@@ -17,13 +17,13 @@
 
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { stepPhysics, createVehicleChassis } from './physics.js'
+import { stepPhysics, createVehicleChassis, classifyImpactRegion } from './physics.js'
 import { createPhysicsEngine } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics } from './terrain-physics.js'
 import { DebrisSystem } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
 import { getWheelPosition } from './suspension.js'
-import { DamageModel } from './damage.js'                   // SM-3: component condition model
+import { DamageModel, MPH } from './damage.js'              // SM-3: component condition model
 import { updateVehicle, setLaunchHold, setControlAttenuation, SPAWN_STATE } from './vehicle.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
@@ -4672,6 +4672,19 @@ function loop () {
     // framerate-independent like everything else (INFRA-03 determinism). Reads the honest signals
     // stepPhysics just published; writes the effect multipliers the NEXT step will read.
     damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
+    // SM-3 collision damage: read the hardest contact on the chassis this step and hand it to the
+    // damage model, which decides whether that is an impact (see feedContact — a contact is not).
+    // classifyImpactRegion turns the body-local point/normal into an armor region and returns null
+    // for ground contacts, so driving over terrain never registers as a crash.
+    if (!_labActive) {
+      const hit = physicsEngine.maxContactImpulse(vehicleChassis)
+      const landed = damageModel.feedContact(
+        classifyImpactRegion(hit.point, hit.normal), hit.impulse, RANGER_PARAMS.mass, PHYSICS_DT)
+      // One line per LANDED impact — a discrete crash event, not per-frame instrumentation. It is
+      // the only way to tell from the driver's seat that a hit registered, until the slice-3 GUI.
+      if (landed) console.log(`[damage] ${landed.region} impact — ${(landed.v / MPH).toFixed(1)} mph`
+        + ` equivalent, ${Math.round(landed.passed * 100)}% through armor${landed.fatal ? ' — FATAL' : ''}`)
+    }
     simTime += PHYSICS_DT
     // BUG-12 diagnostic (open): while recording, log the truck run's local centerline turn radius
     // to localize ribbon folds. Gated on isRecording() so normal play pays nothing (queryNearest

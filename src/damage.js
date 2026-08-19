@@ -186,6 +186,19 @@ export const DAMAGE_PARAMS = {
   // 60 mph the armor curve tops out at — total armor loss and death are the same impact.
   fatalMph:        60,
   fatalEnabled:    true,
+
+  // ── Contact → impact gating (feedContact) ──────────────────────────────────────────────────
+  // A contact is not an impact. The engine reports a manifold every step a body is touching
+  // anything, so a truck parked against a fence would be "hit" 250 times a second. Two guards:
+  //
+  // impactMinMph — the floor a contact must clear to be an impact at all. Resting on the ground is
+  //   worth about 0.09 mph equivalent (one step of the truck's own weight), so 2 mph clears the
+  //   noise by more than an order of magnitude while still catching a gentle nudge into a post.
+  // impactHoldMax — how long one collision is allowed to keep building before it is banked and a
+  //   fresh one is armed. A real crash peaks in tens of milliseconds; this only matters for a
+  //   sustained scrape along a wall, which becomes a series of hits rather than one endless one.
+  impactMinMph:    2,
+  impactHoldMax:   0.25,
 }
 
 // ── Curves ────────────────────────────────────────────────────────────────────────────────────────
@@ -318,6 +331,9 @@ export class DamageModel {
 
     // Set by applyImpact when a hit exceeds the fatal threshold; the run layer reads and clears it.
     this.fatalImpact = null
+
+    // In-flight collision burst tracked by feedContact: { region, impulse, t }, or null.
+    this._burst = null
   }
 
   /** Condition of one track, [0, 1]. */
@@ -379,6 +395,50 @@ export class DamageModel {
   engineScale () {
     const P = DAMAGE_PARAMS
     return kneeResponse(this.get('engine'), P.engineKnee, P.engineAtKnee, P.engineAtZero)
+  }
+
+  /**
+   * Feed one step's worth of raw contact readout and let the model decide whether that is an
+   * impact worth landing. This is the entry point the game loop calls; `applyImpact` below is the
+   * entry point an impact goes through once one has been recognised.
+   *
+   * A collision is a BURST, not an instant. The engine reports a manifold on every step the bodies
+   * are touching, so the same crash arrives as a few dozen consecutive readings that rise to a peak
+   * and fall away. Landing each of them separately would price one crash as dozens, and — worse —
+   * would let a truck resting against a wall grind itself to scrap while parked. So this holds the
+   * PEAK of the burst and banks it once, when contact drops back below the floor (or when the
+   * burst has run longer than `impactHoldMax`, which turns a sustained scrape into repeated hits
+   * rather than one that never ends).
+   *
+   * Peak, not sum: the ratified model prices a hit on how hard the contact was, and adding up the
+   * impulses of one collision would price it on how long the truck stayed leaning on the thing it
+   * had already hit.
+   *
+   * @param {'front'|'left'|'right'|'rear'|null} region - from classifyImpactRegion; null (a ground
+   *   or roof contact, which no armor covers) closes any burst in progress and starts nothing.
+   * @param {number} impulseNs - max contact normal impulse this step [N·s].
+   * @param {number} mass - vehicle mass [kg].
+   * @param {number} dt - physics step [s].
+   * @returns {{region, v, passed, fatal}|null} the landed impact, or null on a step that banked none.
+   */
+  feedContact (region, impulseNs, mass, dt) {
+    const P = DAMAGE_PARAMS
+    const live = region != null && impactSpeed(impulseNs, mass) >= P.impactMinMph * MPH
+
+    if (live) {
+      if (!this._burst) this._burst = { region, impulse: impulseNs, t: 0 }
+      else {
+        this._burst.t += dt
+        // The region travels with the peak: a truck that clips a post front-first and slews into it
+        // sideways took its worst hit on whichever face was loaded hardest.
+        if (impulseNs > this._burst.impulse) { this._burst.impulse = impulseNs; this._burst.region = region }
+      }
+      if (this._burst.t < P.impactHoldMax) return null
+    }
+    const b = this._burst
+    if (!b) return null
+    this._burst = null
+    return { region: b.region, ...this.applyImpact(b.region, b.impulse, mass) }
   }
 
   /**

@@ -33,6 +33,23 @@ export const GROUP_ALL     = 0xffffffffffffffffn
 
 let _b3 = null            // the loaded engine module — module-private, never exported
 
+/**
+ * Rotate a plain {x,y,z} by a quaternion given as [x,y,z,w]. Local to this module so the adapter
+ * stays dependency-free (it imports nothing but the engine); the standard v' = q·v·q* expanded.
+ */
+function _rotateByQuat (v, q) {
+  const [qx, qy, qz, qw] = q
+  const ix =  qw * v.x + qy * v.z - qz * v.y
+  const iy =  qw * v.y + qz * v.x - qx * v.z
+  const iz =  qw * v.z + qx * v.y - qy * v.x
+  const iw = -qx * v.x - qy * v.y - qz * v.z
+  return {
+    x: ix * qw + iw * -qx + iy * -qz - iz * -qy,
+    y: iy * qw + iw * -qy + iz * -qx - ix * -qz,
+    z: iz * qw + iw * -qz + ix * -qy - iy * -qx,
+  }
+}
+
 /** Load the engine WASM once. Idempotent. Call at boot (and at gate setup). */
 export async function initPhysicsEngine () {
   if (!_b3) _b3 = await Box3DFactory()
@@ -443,30 +460,61 @@ export class PhysicsEngine {
   }
 
   /**
-   * Per-body contact readout: max normal-impulse magnitude currently on the
-   * body's manifolds. The SM-3 wear model subscribes here later (FEAT-36's
-   * causesDamage flag gates the REPORT, not the contact).
+   * Per-body contact readout: the hardest normal impulse currently on the body's manifolds,
+   * WITH where it landed — in the body's own frame, so callers never touch engine types.
+   *
+   * The SM-3 wear model subscribes here (FEAT-36's causesDamage flag gates the REPORT, not the
+   * contact). It needs the location as well as the magnitude: front/left/right/rear armor can only
+   * be told apart by where the hit is, and a ground contact under the truck is not an armor hit
+   * at all. Both are returned for the SAME manifold point — the hardest one — so magnitude and
+   * position always describe one event.
+   *
+   * Frame notes: `anchorA`/`anchorB` are world-space OFFSETS from their body's center of mass, and
+   * this project seats the chassis body origin AT the CG, so rotating the anchor by the body's
+   * inverse rotation lands directly in body-local coordinates. The manifold normal is world-space
+   * and its SIGN depends on which shape the engine picked as A, so callers must use magnitudes
+   * only — see classifyImpactRegion in physics.js.
+   *
+   * @param {*} handle - body handle.
+   * @returns {{impulse: number, point: {x,y,z}|null, normal: {x,y,z}|null}} body-local point/normal.
    */
   maxContactImpulse (handle) {
     const rec = this._bodies.get(handle)
     if (!this._contactsBuf) this._contactsBuf = _b3.createContactsBuffer()
     const buf = _b3.getBodyContactData(this._contactsBuf, rec.id)
-    let max = 0
+    const none = { impulse: 0, point: null, normal: null }
     const n = _b3.getNumContacts(buf)
-    if (n === 0) return 0
-    const contact = _b3.createContact()
-    const manifold = _b3.createManifold()
+    if (n === 0) return none
+    // Reused across steps: this runs every physics step, and createContact/createManifold each
+    // allocate a wasm-backed struct.
+    const contact  = this._contactScratch  || (this._contactScratch  = _b3.createContact())
+    const manifold = this._manifoldScratch || (this._manifoldScratch = _b3.createManifold())
+    let max = 0, anchor = null, worldN = null
     for (let i = 0; i < n; i++) {
       _b3.getContactAt(contact, buf, i)
+      // Which side of the pair is US: the anchor is measured from that body, so picking the wrong
+      // one would offset every impact by the gap between the two bodies' centers.
+      const aIsSelf = this._shapeToHandle.get(this._shapeKey(contact.shapeIdA)) === handle
       for (let m = 0; m < contact.manifoldCount; m++) {
         _b3.getManifoldAt(manifold, contact, m)
         for (let k = 0; k < manifold.pointCount; k++) {
-          const imp = manifold.points[k].totalNormalImpulse
-          if (imp > max) max = imp
+          const pt = manifold.points[k]
+          if (pt.totalNormalImpulse <= max) continue
+          max = pt.totalNormalImpulse
+          const a = aIsSelf ? pt.anchorA : pt.anchorB
+          anchor = { x: a[0] ?? a.x, y: a[1] ?? a.y, z: a[2] ?? a.z }
+          const nv = manifold.normal
+          worldN = { x: nv[0] ?? nv.x, y: nv[1] ?? nv.y, z: nv[2] ?? nv.z }
         }
       }
     }
-    return max
+    if (max === 0 || !anchor) return none
+    // World → body frame. b3Body_GetLocalPoint would add the body TRANSLATION, which the anchor
+    // does not carry (it is already an offset), so rotate by the inverse rotation instead.
+    const q = [0, 0, 0, 1]
+    _b3.b3Body_GetRotation(q, rec.id)
+    const inv = [-(q[0] ?? q.x), -(q[1] ?? q.y), -(q[2] ?? q.z), (q[3] ?? q.w)]
+    return { impulse: max, point: _rotateByQuat(anchor, inv), normal: _rotateByQuat(worldN, inv) }
   }
 
   // ── Joints (log-drag etc.) ────────────────────────────────────────────────
