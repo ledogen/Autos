@@ -23,13 +23,28 @@ import { Centerline, makePrimitive, primitivePose } from './centerline.js'
 // relative to it, so the knobs read as "a metre of bore costs the same as N metres of road".
 export const V2_COSTS = {
     cRoadM: 1.0,      // on-grade road, per m
-    wGrade: 40,       // quadratic grade discomfort: cost/m factor = 1 + wGrade·g² (15% → ×1.9)
-    cCutM: 0.15,      // cut, per m of length PER m of depth (10 m trench ≈ ×2.5 road)
+    // Grade discomfort is the switchback dial: climbing H metres at grade g costs ≈ H·(1/g + wGrade·g)
+    // per the length-vs-grade trade, minimized at g* = 1/√wGrade. 40 put g* at 16% — the solver just
+    // took steep straights (owner 2026-08-18: "no switchbacks"). 120 puts g* ≈ 9%, forest-road grade,
+    // so length (and the corridor's zigzags) win against sustained steepness.
+    wGrade: 120,      // quadratic grade discomfort: cost/m factor = 1 + wGrade·g²
+    cCutM: 0.15,      // cut, per m of length PER m of depth (linear haul term)
+    // Quadratic cut term (owner 2026-08-18: "no visual difference in the mountaintop above a tunnel —
+    // just carve a clean hole"): real cuttings go superlinear past ~8 m (rock walls, stabilization),
+    // and without this the solver trenched to the 20 m class boundary before conceding a portal
+    // (measured: ~60 m × 19 m exit trench on the canonical bore). Cut ≈ bore at ~9 m now, so portals
+    // emerge at portal-bench depth and approach notches stay small.
+    cCut2: 0.12,      // cut, per m of length per m² of depth
     cFillM: 0.12,     // fill, per m of length per m of height
-    cBoreM: 8.0,      // bore, per m (flat — underground ignores the surface)
-    cBridgeM: 20.0,   // bridge deck, per m (expensive: structures must be EARNED — character spec)
-    cPortal: 150,     // fixed, per bore portal
-    cAbutment: 100,   // fixed, per bridge end
+    cBoreM: 12.0,     // bore, per m (owner 2026-08-18: "too happy to tunnel" — raised 8 → 12)
+    cPortal: 250,     // fixed, per bore portal (also raised — kills pop-through mini-bores)
+    // Bridges are DE-SCOPED from the vocabulary (owner 2026-08-18): real forest bridges are short,
+    // same-elevation water crossings, not grade machines — and valley-spanning decks raise "why is
+    // there no road down there". Machinery stays; flip bridgesOn to re-enable. The planned way back
+    // is a post-router conversion of stream/water crossings only.
+    bridgesOn: false,
+    cBridgeM: 20.0,   // bridge deck, per m (only read when bridgesOn)
+    cAbutment: 100,   // fixed, per bridge end (only read when bridgesOn)
     cutMax: 20,       // m below ground where a cut becomes a bore — a 12–20 m trench is an open
                       // rock CUTTING (road grade cap, priced linearly per m of depth), not a
                       // tunnel; at 12 the bore's 18% grade cap rate-limited legitimate cliff
@@ -136,7 +151,14 @@ export function corridorSearch(ax, az, bx, bz, hTrunc, opts = {}) {
 
     // Cheapest possible per-metre rate — the heuristic's slope (bore/bridge can't beat flat road).
     const minRate = C.cRoadM
-    const capRate = Math.min(C.cBoreM, C.cBridgeM)   // hostile ground can never cost more than this
+    // Hostile ground can never cost more than the cheapest structure that ignores it. With bridges
+    // de-scoped only the bore caps — and a bore needs ground ABOVE the deck, so this under-estimates
+    // at gullies (admissible for the bound; the profile prices the dip honestly).
+    // opts.structureCap=false is the fail-safe ladder's CONSERVATIVE mode (road.js rung 2): no
+    // structure discount at all, steep ground priced at its full quadratic — the corridor then
+    // routes around anything the bridge-less profile could not buy through.
+    const capRate = opts.structureCap === false ? Infinity
+        : C.bridgesOn ? Math.min(C.cBoreM, C.cBridgeM) : C.cBoreM
 
     const sx = Math.round((ax - x0) / cell), sz = Math.round((az - z0) / cell)
     const gx = Math.round((bx - x0) / cell), gz = Math.round((bz - z0) / cell)
@@ -254,10 +276,10 @@ function classOf(d, C) {
 function stationRate(d, C) {
     switch (classOf(d, C)) {
         case CLS.ON: return C.cRoadM
-        case CLS.CUT: return C.cRoadM + C.cCutM * (-d)
+        case CLS.CUT: return C.cRoadM + C.cCutM * (-d) + (C.cCut2 ?? 0) * d * d
         case CLS.FILL: return C.cRoadM + C.cFillM * d
         case CLS.BORE: return C.cBoreM
-        case CLS.BRIDGE: return C.cBridgeM
+        case CLS.BRIDGE: return C.bridgesOn ? C.cBridgeM : Infinity
     }
 }
 
@@ -428,7 +450,30 @@ export function corridorConnect(a, b, hTrunc, hFull, opts = {}) {
  * under ~0.6 cells leaves genuine multi-cell switchbacks intact while giving Chaikin a clean
  * control polygon to smooth. Endpoints always survive.
  */
-export function simplifyRDP(path, tol) {
+// Grade guard shared by the smoothing passes: a shortcut may replace a raw sub-path only if it
+// does not STEEPEN it (on the truncated field). Switchbacks exist to buy grade with length — the
+// search paid full price for that length (measured: a 949 m switchback descent smoothed into an
+// infeasible 488 m plunge on seed 67), so any smoothing move that trades length back for grade is
+// undoing the router's decision, not cleaning noise.
+const GUARD_G = 0.18   // shortcuts at or under bore-grade never need guarding
+function _maxLegGrade(path, a, b, hT) {
+    let m = 0
+    for (let i = a + 1; i <= b; i++) {
+        const len = Math.hypot(path[i].x - path[i - 1].x, path[i].z - path[i - 1].z)
+        if (len < 1e-6) continue
+        const g = Math.abs(hT(path[i].x, path[i].z) - hT(path[i - 1].x, path[i - 1].z)) / len
+        if (g > m) m = g
+    }
+    return m
+}
+function _shortcutSteepens(path, a, b, hT) {
+    const len = Math.hypot(path[b].x - path[a].x, path[b].z - path[a].z)
+    if (len < 1e-6) return false
+    const g = Math.abs(hT(path[b].x, path[b].z) - hT(path[a].x, path[a].z)) / len
+    return g > Math.max(GUARD_G, _maxLegGrade(path, a, b, hT) + 0.03)
+}
+
+export function simplifyRDP(path, tol, hT = null) {
     if (path.length < 3) return path
     const keep = new Uint8Array(path.length)
     keep[0] = keep[path.length - 1] = 1
@@ -440,14 +485,18 @@ export function simplifyRDP(path, tol) {
         const ax = path[a].x, az = path[a].z
         const vx = path[b].x - ax, vz = path[b].z - az
         const vv = vx * vx + vz * vz || 1
-        let worst = -1, wd = t2
+        let worst = -1, wd = t2, deepest = -1, dd = -1
         for (let i = a + 1; i < b; i++) {
             const wx = path[i].x - ax, wz = path[i].z - az
             const t = Math.max(0, Math.min(1, (wx * vx + wz * vz) / vv))
             const dx = wx - t * vx, dz = wz - t * vz
             const d = dx * dx + dz * dz
             if (d > wd) { wd = d; worst = i }
+            if (d > dd) { dd = d; deepest = i }
         }
+        // Grade guard: even a within-tolerance collapse is refused when the chord is steeper than
+        // the raw legs it replaces — keep the deepest point and re-examine the halves.
+        if (worst < 0 && hT && _shortcutSteepens(path, a, b, hT)) worst = deepest
         if (worst >= 0) { keep[worst] = 1; stack.push([a, worst], [worst, b]) }
     }
     const out = []
@@ -476,6 +525,33 @@ export function chaikin(path, iterations = 2) {
 }
 
 /**
+ * Control-polygon radius repair: iteratively remove any interior vertex whose corner cannot admit
+ * a fillet of rFloor with CONSERVATIVE tangent budget (half of each adjacent leg — the fitter's
+ * shared budget only ever grants more, so passing this check guarantees the fitted radius).
+ * Removing a vertex hands its turn to the neighbors; the loop converges because every iteration
+ * deletes a vertex. This is the hard geometric floor (BUG-12 fold class) enforced BEFORE fitting —
+ * fillet clamps after the fact would break G1 or overrun legs.
+ */
+export function enforceMinRadius(path, rFloor = 8.5, rMax = 400) {
+    const P = path.slice()
+    for (;;) {
+        let worst = -1, worstR = Infinity
+        for (let i = 1; i < P.length - 1; i++) {
+            const a = P[i - 1], b = P[i], c = P[i + 1]
+            const inL = Math.hypot(b.x - a.x, b.z - a.z), outL = Math.hypot(c.x - b.x, c.z - b.z)
+            if (inL < 1e-9 || outL < 1e-9) { worst = i; worstR = 0; break }
+            const dot = ((b.x - a.x) * (c.x - b.x) + (b.z - a.z) * (c.z - b.z)) / (inL * outL)
+            const turn = Math.acos(Math.max(-1, Math.min(1, dot)))
+            if (turn < 1e-4) continue
+            const R = Math.min(rMax, 0.5 * Math.min(inL, outL) / Math.tan(turn / 2))
+            if (R < worstR) { worstR = R; worst = i }
+        }
+        if (worst < 0 || worstR >= rFloor || P.length <= 2) return P
+        P.splice(worst, 1)
+    }
+}
+
+/**
  * Fit a polyline with LINE + ARC primitives (corner fillets): every interior corner is replaced
  * by a tangent circular arc anchored ON the incoming/outgoing segments, lines join the tangent
  * points. G1 by construction, real curvature for camber/min-radius consumers. Each primitive is
@@ -497,6 +573,7 @@ export function lineArcFit(path, rMin = 10, rMax = 400) {
     const prims = []
     // cursor: how far along the polyline the fitted chain has consumed, expressed as a point
     let cur = P[0]
+    let usedT = 0   // tangent length the PREVIOUS corner consumed on the shared segment
     for (let i = 1; i < P.length - 1; i++) {
         const a = P[i - 1], b = P[i], c = P[i + 1]
         const inX = b.x - a.x, inZ = b.z - a.z, outX = c.x - b.x, outZ = c.z - b.z
@@ -505,12 +582,17 @@ export function lineArcFit(path, rMin = 10, rMax = 400) {
         const cross = dInX * dOutZ - dInZ * dOutX
         const dot = dInX * dOutX + dInZ * dOutZ
         const turn = Math.atan2(cross, dot)                    // signed corner angle
-        if (Math.abs(turn) < 1e-4) continue                    // collinear: swallow into the line
-        // tangent offset t = R·tan(|turn|/2); available leg = half of each adjacent segment
+        if (Math.abs(turn) < 1e-4) { usedT = 0; continue }     // collinear: swallow into the line
+        // Tangent offset t = R·tan(|turn|/2). Budget: the incoming segment minus what the previous
+        // corner already consumed, and half the outgoing segment (reserved for the next corner).
+        // Sharing the real remainder instead of a flat half doubles the radius a HAIRPIN can buy
+        // when its neighbors are gentle — switchback apexes are exactly that shape.
         const tanHalf = Math.tan(Math.abs(turn) / 2)
-        const tAvail = 0.5 * Math.min(inL, outL)
-        const R = Math.min(rMax, tAvail / tanHalf)             // caller escalates smoothing if R < rMin
+        const tAvail = Math.min(inL - usedT - 0.05, 0.5 * outL)
+        if (tAvail < 0.05) { usedT = 0; continue }   // no room left: straight through (repair pass prevents sharp cases)
+        const R = Math.min(rMax, tAvail / tanHalf)   // caller escalates if R < rMin
         const t = R * tanHalf
+        usedT = t
         const t1x = b.x - dInX * t, t1z = b.z - dInZ * t       // arc entry (on incoming segment)
         const thetaIn = Math.atan2(dInZ, dInX)
         // line from cursor to arc entry
@@ -535,7 +617,9 @@ export function lineArcFit(path, rMin = 10, rMax = 400) {
  * shorter than legMax is lattice noise (the A* dodging one expensive cell), not a switchback —
  * real switchback apexes carry legs many cells long and are left alone. Iterates to a fixed point.
  */
-export function dehairpin(path, maxTurn = 100 * Math.PI / 180, legMax = 85) {
+// legMax 50: one-cell lattice-noise legs are 32/45 m; a REAL switchback apex carries ≥2-cell legs
+// (64 m+) and must survive (85 was eating them — owner: "no switchbacks", 2026-08-18).
+export function dehairpin(path, maxTurn = 100 * Math.PI / 180, legMax = 50, hT = null) {
     let p = path, changed = true
     while (changed && p.length > 2) {
         changed = false
@@ -546,7 +630,11 @@ export function dehairpin(path, maxTurn = 100 * Math.PI / 180, legMax = 85) {
             const inL = Math.hypot(inX, inZ), outL = Math.hypot(outX, outZ)
             if (inL > 1e-9 && outL > 1e-9 && inL < legMax && outL < legMax) {
                 const dot = (inX * outX + inZ * outZ) / (inL * outL)
-                if (Math.acos(Math.max(-1, Math.min(1, dot))) > maxTurn) { changed = true; continue }
+                if (Math.acos(Math.max(-1, Math.min(1, dot))) > maxTurn) {
+                    // Grade guard: a switchback apex is indistinguishable from lattice noise by
+                    // leg length alone — the tell is that CUTTING it steepens the line.
+                    if (!hT || !_shortcutSteepens([a, b, c], 0, 2, hT)) { changed = true; continue }
+                }
             }
             out.push(b)
         }
@@ -563,19 +651,28 @@ export function dehairpin(path, maxTurn = 100 * Math.PI / 180, legMax = 85) {
  */
 export function corridorCenterline(path, opts = {}) {
     const rMin = opts.rMin ?? 12, rMax = opts.rMax ?? 400
-    const clean = dehairpin(path)
+    const R_FOLD = 8   // hard geometric floor (BUG-12 fold class) — outranks the grade guard
     // Escalate smoothing freedom until the fit clears rMin: more Chaikin passes first, then a
     // wider RDP tolerance (the corridor is a ~100 m swath — the centerline owns that freedom).
-    // Keep the best fit seen so the escalation can never make things worse.
+    // Keep the best fit seen so the escalation can never make things worse. The grade guard (hT)
+    // preserves switchbacks; if even the escalation ladder cannot buy the FOLD floor with the
+    // guard on, the final rung re-smooths unguarded — a folded centerline corrupts carve/physics
+    // everywhere it exists, while a steepened line is priced honestly by the profile (and the
+    // road.js feasibility ladder or the mark fail-safe absorbs the consequence).
     let best = null, bestR = -Infinity
-    for (const tol of [opts.rdpTol ?? 32, 44]) {
-        const base = simplifyRDP(clean, tol)
-        for (let passes = opts.chaikin ?? 2; passes <= 5; passes++) {
-            const cl = lineArcFit(chaikin(base, passes), rMin, rMax)
-            const r = cl.minRadius()
-            if (r > bestR) { best = cl; bestR = r }
-            if (r >= rMin) return cl
+    for (const hTry of [opts.hT ?? null, null]) {
+        const clean = dehairpin(path, undefined, undefined, hTry)
+        for (const tol of [opts.rdpTol ?? 32, 44]) {
+            const base = simplifyRDP(clean, tol, hTry)
+            for (let passes = opts.chaikin ?? 2; passes <= 5; passes++) {
+                const cl = lineArcFit(enforceMinRadius(chaikin(base, passes)), rMin, rMax)
+                const r = cl.minRadius()
+                if (r > bestR) { best = cl; bestR = r }
+                if (r >= rMin) return cl
+            }
         }
+        if (bestR >= R_FOLD) break   // guard kept AND geometrically valid — good enough
+        if (!(opts.hT ?? null)) break
     }
     return best
 }

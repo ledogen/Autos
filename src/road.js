@@ -36,7 +36,7 @@ import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
 import { crownProfile, potholeNoise, signedCurvature, arcPrimitiveConnect, smoothGradeInPlace, applyTunnelPassInPlace, dubinsFillet, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
-import { truncatedHeightField, corridorSearch, corridorCenterline, profileSolve, CLS } from './corridor-router.js'   // FEAT-68: router v2
+import { truncatedHeightField, corridorSearch, corridorCenterline, profileSolve, CLS, V2_COSTS } from './corridor-router.js'   // FEAT-68: router v2
 import { centerlineFromDescriptors, CenterlineCurve, Centerline, makePrimitive, slicePrimitives, reversePrimitives, primitivePose } from './centerline.js'
 import { delaunay, urquhartEdges } from './road-graph.js'
 
@@ -2775,10 +2775,39 @@ export class RoadSystem {
             Math.min(A.x, B.x) - margin, Math.min(A.z, B.z) - margin,
             Math.max(A.x, B.x) + margin, Math.max(A.z, B.z) + margin) : undefined
         const cor = corridorSearch(A.x, A.z, B.x, B.z, this._v2Trunc(), { margin, blockedDiscs })
-        const cl = cor ? corridorCenterline(cor.path) : centerlineFromDescriptors([])
+        let cl = cor ? corridorCenterline(cor.path, { hT: this._v2Trunc() }) : centerlineFromDescriptors([])
+        // Fail-safe ladder rung 2 (bridges de-scoped, 2026-08-18): the default corridor prices
+        // hostile ground at the bore cap, which lies at gullies/convex drops where no structure
+        // can substitute — so its profile can be infeasible. Pre-check feasibility HERE (the
+        // routing decision is the router's), and on failure re-route with the structure discount
+        // off: steep ground at full quadratic price → the corridor goes around. Deterministic per
+        // edge (pure ladder), so purity/window-invariance hold.
+        if (cl.length > 1e-6 && !this._v2Feasible(cl)) {
+            const cor2 = corridorSearch(A.x, A.z, B.x, B.z, this._v2Trunc(),
+                { margin, blockedDiscs, structureCap: false })
+            if (cor2) {
+                const cl2 = corridorCenterline(cor2.path, { hT: this._v2Trunc() })
+                if (cl2.length > 1e-6 && this._v2Feasible(cl2)) cl = cl2
+            }
+        }
         this._proto.cls.set(key, cl)
         this._pendingRoutes.delete(key)
         return cl
+    }
+
+    /** FEAT-68 rung-2 precheck: does a legal profile exist along this centerline? (~1–2 ms) */
+    _v2Feasible(cl) {
+        const n = Math.max(2, Math.round(cl.length / 10))
+        const st = { s: new Array(n + 1), ground: new Array(n + 1) }
+        for (let i = 0; i <= n; i++) {
+            const t = cl.length * i / n
+            const p = cl.pointAt(t)
+            st.s[i] = t
+            st.ground[i] = this._coarseH(p.x, p.z)
+        }
+        const p0 = cl.pointAt(0), p1 = cl.pointAt(cl.length)
+        const prof = profileSolve(st, this._v2NodeHeight(p0.x, p0.z), this._v2NodeHeight(p1.x, p1.z))
+        return prof !== null
     }
 
 
@@ -2794,6 +2823,28 @@ export class RoadSystem {
     // design; the cap yanks it back). tanh approaches ±cap asymptotically instead, so the profile bends into
     // the terrain-following region smoothly. Bounded by ±cap (never floats past it), near-identity for
     // |dev|≪cap so unclamped roads are unchanged, and window-invariant (pointwise fn of two box means). D-16.
+    /**
+     * FEAT-68 (v2) day-two node-height rule: a node pinned to terrain ON A CONVEX EDGE is
+     * unreachable with bridges de-scoped — measured on seed 11: ground fell 24 m in the first
+     * 30 m while the deck, pinned high and limited to 35% with an 8 m fill window, could not
+     * follow (v1 encoded the same lesson as "node Y rides road grade, not the valley floor").
+     * The pin is now the terrain NEIGHBORHOOD: the node may sit up to gMaxRoad·R below its own
+     * spot height when a ring sample says the ground falls away — a small cut bench at the
+     * junction (pads land there later anyway). Pure fn of (terrain, x, z) → every incident edge
+     * computes the identical height from any window; node agreement and invariance survive.
+     */
+    _v2NodeHeight(x, z) {
+        const R = 22, N = 12
+        let h = this._coarseH(x, z)
+        const allow = 0.35 * R
+        for (let i = 0; i < N; i++) {
+            const a = 2 * Math.PI * i / N
+            const hr = this._coarseH(x + R * Math.cos(a), z + R * Math.sin(a)) + allow
+            if (hr < h) h = hr
+        }
+        return h
+    }
+
     /**
      * FEAT-68 (v2): solve the vertical profile for a sampled run IN PLACE — priced == built.
      * Stations every ~10 m over the run's arc (profile detail below that is noise), ground from
@@ -2820,11 +2871,28 @@ export class RoadSystem {
             st.s[i] = t
             st.ground[i] = this._coarseH(x, z)
         }
-        const yA = this._coarseH(pts[0].x, pts[0].z)
-        const yB = this._coarseH(pts[n - 1].x, pts[n - 1].z)
-        const prof = profileSolve(st, yA, yB)
+        const yA = this._v2NodeHeight(pts[0].x, pts[0].z)
+        const yB = this._v2NodeHeight(pts[n - 1].x, pts[n - 1].z)
+        let prof = profileSolve(st, yA, yB)
+        // Rung 1 (quantization pinch): thin-margin descents die at yStep 0.5 (grade quanta 5%) but
+        // solve at 0.25 — the measured M0 failure class. Only failures pay the finer, slower solve.
+        if (!prof) prof = profileSolve(st, yA, yB, { yStep: 0.25 })
+        // Rung 3 (last before the mark): raise the surface cap to 38% — under the 40% sustained
+        // CEILING (the vocabulary cap is a design comfort, the ceiling is the contract). A road
+        // shipped by this rung is steep but legal and unmarked.
+        if (!prof) prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: { ...V2_COSTS, gMaxRoad: 0.38 } })
         if (!prof) {
+            // Mark-and-ship fallback: terrain-follow y, but BLEND the ends onto the shared node
+            // heights over 60 m so a marked run still meets its solved neighbors (node agreement
+            // is by construction everywhere else; a mark must not re-open v1's node disease).
             this._v2Infeasible = (this._v2Infeasible || 0) + 1
+            const W = Math.min(60, L / 3)
+            for (let i = 0; i < n; i++) {
+                const dA = Math.max(0, 1 - clArc[i] / W)
+                const dB = Math.max(0, 1 - (L - clArc[i]) / W)
+                pts[i].y += dA * (yA - this._coarseH(pts[0].x, pts[0].z))
+                          + dB * (yB - this._coarseH(pts[n - 1].x, pts[n - 1].z))
+            }
             return null
         }
         let k = 1
@@ -3398,7 +3466,16 @@ export class RoadSystem {
             const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
             const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
             const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
-            if (this._mergeDeg2Chains(inBand)) { this._junctionsRev = -1; this._detectJunctions() }
+            // FEAT-68 (v2): the QUAL-24 deg-2 chain merge is OFF. Its load-bearing half — grade
+            // continuity at deg-2 joints (BUG-40 launch ramps) — is delivered by construction now
+            // (every edge pins its ends to _v2NodeHeight, so joints agree exactly). Its other half,
+            // Dubins fillets at joint kinks, is junction GEOMETRY — explicitly deferred to the
+            // junction pass ("naive meets" are checkpoint-sanctioned). What the merge COSTS under
+            // v2 is window invariance: chains clip at band edges, and a re-solved (or re-filleted)
+            // chain profile differs per window (road-band-coverage GRADEY-INVARIANT caught it).
+            // Per-edge registration is pure per (terrain, edge) from any window. The machinery
+            // stays for the junction-to-junction pass-through design to replace properly.
+            // if (this._mergeDeg2Chains(inBand)) { this._junctionsRev = -1; this._detectJunctions() }
         }
 
         // FEAT-40: crossings are only known now — a bore span may not contain an AT_GRADE crossing

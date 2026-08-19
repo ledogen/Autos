@@ -50,10 +50,10 @@ function repriceIndependent(res, C) {
     const d = p.y[i] - st.ground[i]
     let rate
     if (Math.abs(d) <= C.onTol) rate = C.cRoadM
-    else if (d < 0 && d >= -C.cutMax) rate = C.cRoadM + C.cCutM * (-d)
+    else if (d < 0 && d >= -C.cutMax) rate = C.cRoadM + C.cCutM * (-d) + (C.cCut2 ?? 0) * d * d
     else if (d < 0) rate = C.cBoreM
     else if (d <= C.fillMax) rate = C.cRoadM + C.cFillM * d
-    else rate = C.cBridgeM
+    else rate = C.bridgesOn ? C.cBridgeM : Infinity
     const grade = (p.y[i] - p.y[i - 1]) / ds
     tot += ds * rate + ds * C.cRoadM * C.wGrade * grade * grade
     if ((clsAt(i - 1) === CLS.BORE) !== (clsAt(i) === CLS.BORE)) tot += C.cPortal
