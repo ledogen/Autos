@@ -92,7 +92,7 @@ const RINGS = [480, 900, 1200, 1700, 2200, 2700].filter(r => r < TARGET).concat(
 // own key, and "which radius first needed this edge" is not recoverable from the key.
 let baseKeys = null
 const snapshotBase = () => {
-    baseKeys = { cls: new Set(road._proto.cls.keys()), clsSolo: new Set(road._proto.clsSolo.keys()) }
+    baseKeys = { cls: new Set(road._proto.cls.keys()) }
 }
 for (const R of RINGS) {
     const t = Date.now()
@@ -123,9 +123,18 @@ function warmBand (radius, label) {
     const wz1 = (Math.ceil((baseZ + radius) / 256) + PM + 1) * 256
     const inBand = (c) => { const p = road._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
     let n = 0
+    // FEAT-68: route WITH the deg-2 heading pins registration will use — a dirless cache entry is
+    // re-routed at load by the _edgeCenterline cache guard, so a pin-less bake buys nothing.
+    const { drop } = road._degreeDrops(cmx - HW - PM, cmx + HW + PM,
+        Math.floor((baseZ - radius) / 256) - PM, Math.ceil((baseZ + radius) / 256) + PM)
     for (const [c1, c2] of g.edges) {
         if (!inBand(c1) && !inBand(c2)) continue
-        road._edgeCenterline(c1, c2)   // synchronous route → fills the cache we are about to export
+        // Route the SUPERSET — do NOT skip degree-capped edges. The bake centres on the spawn BASE
+        // point and over-covers by BAKE_MARGIN, so its window is not the runtime's: measured, three
+        // edges this window called degree-capped are LIVE in the narrower runtime window, and
+        // skipping them left them routing behind the loading screen. Caching a handful of edges the
+        // runtime never registers is harmless (they are a few KB); missing one is not.
+        road._edgeCenterline(c1, c2, road._v2EdgeDirs(g, drop, g.key(c1), g.key(c2)))
         n++
     }
     console.log(`  ${label.padEnd(9)} … ${((Date.now() - t) / 1000).toFixed(1)} s  (${n} in-band edges, cls ${road._proto.cls.size})`)
@@ -140,17 +149,16 @@ const full = road.exportRouteCache()
 if (!baseKeys) throw new Error('base snapshot never taken — is BASE_TARGET above every ring?')
 const split = (rows, keys) => ({ mine: rows.filter(r => keys.has(r[0])), rest: rows.filter(r => !keys.has(r[0])) })
 const cls = split(full.cls, baseKeys.cls)
-const solo = split(full.clsSolo, baseKeys.clsSolo)
 
 const write = (path, data, label, covers) => {
     const gz = gzipSync(Buffer.from(JSON.stringify({ sig: routeCacheSig(SEED, RANGER_PARAMS), data }), 'utf8'), { level: 9 })
     writeFileSync(path, gz)
     console.log(`\nwrote ${path}  [${label}]`)
-    console.log(`  ${data.cls.length} routed + ${data.clsSolo.length} solo · ${(gz.length / 1048576).toFixed(2)} MB gzipped`)
+    console.log(`  ${data.cls.length} routed · ${(gz.length / 1048576).toFixed(2)} MB gzipped`)
     console.log(`  ${covers}`)
 }
-write(OUT_BASE, { cls: cls.mine, clsSolo: solo.mine }, 'BASE — awaited at boot',
+write(OUT_BASE, { cls: cls.mine }, 'BASE — awaited at boot',
     `spawn (${baseX.toFixed(0)}, ${baseZ.toFixed(0)}) out to ${BASE_TARGET} m = plan ${MISSION_PLAN_RADIUS} + ${BAKE_MARGIN} margin`)
-write(OUT_REGION, { cls: cls.rest, clsSolo: solo.rest }, 'REGION delta — background, story only',
+write(OUT_REGION, { cls: cls.rest }, 'REGION delta — background, story only',
     `+ out to ${TARGET} m = story warm ${REGION_WARM_RADIUS_M} + ${BAKE_MARGIN} margin`)
 console.log('\nnow run: node test/route-bundle-parity.mjs')
