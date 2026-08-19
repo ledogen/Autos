@@ -43,6 +43,12 @@ export const V2_COSTS = {
     // there no road down there". Machinery stays; flip bridgesOn to re-enable. The planned way back
     // is a post-router conversion of stream/water crossings only.
     bridgesOn: false,
+    // Direction-change cost, per radian (the corridor is heading-free, so without this a ladder
+    // of twenty micro-zigzags prices identically to two long traverses — the search has no reason
+    // to prefer the buildable shape). This is v1's roadWTurn lesson as a PHYSICAL knob: curvature
+    // costs money. Evaluated greedily against the parent step's direction (not part of the state
+    // — exact turn accounting would 8× the state space for a tie-shaping term).
+    cTurn: 30,
     cBridgeM: 20.0,   // bridge deck, per m (only read when bridgesOn)
     cAbutment: 100,   // fixed, per bridge end (only read when bridgesOn)
     cutMax: 20,       // m below ground where a cut becomes a bore — a 12–20 m trench is an open
@@ -109,29 +115,42 @@ class Heap {
     get size() { return this.d.length }
 }
 
-// ── Stage 1: corridor search ───────────────────────────────────────────────────────────────────
+// ── Stage 1: the 2.5D corridor search ─────────────────────────────────────────────────────────
 /**
- * Coarse 8-connected A* from (ax,az) to (bx,bz) on the truncated field. The per-step cost is a
- * LOWER BOUND of what the profile stage can pay along that step (the admissibility contract):
- * per metre, the profile pays at most
- *     min( on-grade at the local slope,  bore rate,  bridge rate )
- * — a bore ignores how high the surface is, a bridge ignores how low, so either caps the rate no
- * matter how hostile the ground. The bound is local, so the search stays a plain lattice A*.
+ * Coarse A* whose state is (cell, DECK ELEVATION BIN) — the deck's height is part of the plan,
+ * not a consequence of it (owner green-light 2026-08-19). This is the structural fix for the
+ * no-switchbacks class, and it replaces three dead patches at once:
  *
- * No heading in the state ⇒ no wander: any zigzag in the result is the grade term buying slope
- * with length on the SMOOTHED field — a deliberate switchback, not quantization greed.
+ *  - Grade is a HARD per-step budget on the deck (|Δdeck| ≤ cap·ds), priced on the grade you
+ *    CHOOSE — one-cell dithering to dodge steep ground samples gains nothing, so the old
+ *    "zigzag noise vs switchback" ambiguity never forms.
+ *  - The same cell at two heights is two different states, so switchback STACKS (the road
+ *    crossing the same hillside repeatedly at different benches) are expressible — the plain XZ
+ *    lattice forbade them outright (each cell visitable once).
+ *  - Terrain enters as deck-vs-ground offset priced through the SAME classOf/stationRate
+ *    vocabulary the profile uses (on-grade/cut/bore… per metre, portal charges on class change).
+ *    The old structure-cap ("everything steeper than 30% costs the bore rate") and its
+ *    cover-proxy patch both dissolve: the state knows whether the deck is under or over ground.
  *
- * @param {number} ax,az,bx,bz anchor XZ (world m)
+ * Still heading-free — no v1 lattice disease. The exact 1-D profile DP downstream re-solves the
+ * vertical on the final stations, so priced == built is untouched; the deck plan here is the
+ * corridor's own honest cost model, not the shipped profile.
+ *
+ * opts.structureCap === false is the fail-safe ladder's conservative mode: BORE states are
+ * illegal, so the plan must stay within cut/fill of the surface — the corridor then routes
+ * around anything the structure vocabulary cannot buy through.
+ *
+ * @param {number} ax,az anchor A world XZ · @param {number} yA deck height pinned at A
+ * @param {number} bx,bz anchor B world XZ · @param {number} yB deck height pinned at B
  * @param {(x:number,z:number)=>number} hTrunc octave-truncated field
- * @param {object} [opts] { cell=32, margin=max(800,chord), costs=V2_COSTS,
- *                           blockedDiscs: flat [x,z,r,...] hard no-go discs (ponds — FEAT-17;
- *                           water is not crossable, matching v1; cells within 2 cells of either
- *                           anchor are exempt so an endpoint can never be walled) }
- * @returns {{path:{x:number,z:number}[], cost:number, expanded:number}|null} lattice polyline A→B
+ * @param {object} [opts] { cell=32, yBin=3, margin=max(800,chord), costs=V2_COSTS,
+ *                          blockedDiscs (ponds, flat [x,z,r,...]), structureCap }
+ * @returns {{path:{x:number,z:number,y:number}[], cost:number, expanded:number}|null}
  */
-export function corridorSearch(ax, az, bx, bz, hTrunc, opts = {}) {
+export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
     const C = opts.costs ?? V2_COSTS
     const cell = opts.cell ?? 32
+    const yBin = opts.yBin ?? 3
     const chord = Math.hypot(bx - ax, bz - az)
     const margin = opts.margin ?? Math.max(800, chord)
     const x0 = Math.min(ax, bx) - margin, x1 = Math.max(ax, bx) + margin
@@ -149,29 +168,28 @@ export function corridorSearch(ax, az, bx, bz, hTrunc, opts = {}) {
         return v
     }
 
-    // Cheapest possible per-metre rate — the heuristic's slope (bore/bridge can't beat flat road).
-    const minRate = C.cRoadM
-    // Hostile ground can never cost more than the cheapest structure that ignores it. With bridges
-    // de-scoped only the bore caps — and a bore needs ground ABOVE the deck, so this under-estimates
-    // at gullies (admissible for the bound; the profile prices the dip honestly).
-    // opts.structureCap=false is the fail-safe ladder's CONSERVATIVE mode (road.js rung 2): no
-    // structure discount at all, steep ground priced at its full quadratic — the corridor then
-    // routes around anything the bridge-less profile could not buy through.
-    const capRate = opts.structureCap === false ? Infinity
-        : C.bridgesOn ? Math.min(C.cBoreM, C.cBridgeM) : C.cBoreM
-
-    const sx = Math.round((ax - x0) / cell), sz = Math.round((az - z0) / cell)
-    const gx = Math.round((bx - x0) / cell), gz = Math.round((bz - z0) / cell)
-    const goalI = idx(gx, gz)
+    // Elevation range: a stride-2 terrain pre-scan bounds the deck lattice. The deck can never sit
+    // above ground+fillMax (bridges de-scoped) and never usefully below the box floor minus the
+    // cut band. The pre-scan fills the memo the search reuses.
+    let tMin = Math.min(yA, yB), tMax = Math.max(yA, yB)
+    for (let cz2 = 0; cz2 < Hn; cz2 += 2) for (let cx2 = 0; cx2 < W; cx2 += 2) {
+        const h = hAt(cx2, cz2)
+        if (h < tMin) tMin = h
+        if (h > tMax) tMax = h
+    }
+    const yLo = tMin - C.cutMax - 3 * yBin
+    const NY = Math.max(2, Math.min(220, Math.round((tMax + C.fillMax + yBin - yLo) / yBin) + 1))
+    const yOf = b => yLo + b * yBin
+    const bOf = y => Math.max(0, Math.min(NY - 1, Math.round((y - yLo) / yBin)))
 
     // Hard no-go cells (pond+skirt discs): 0 unknown, 1 open, 2 blocked — resolved lazily.
     const discs = opts.blockedDiscs
-    const blocked = discs && discs.length ? new Uint8Array(W * Hn) : null
+    const blockedArr = discs && discs.length ? new Uint8Array(W * Hn) : null
     const exempt2 = (2 * cell) * (2 * cell)
     const isBlocked = (cx2, cz2) => {
-        if (!blocked) return false
+        if (!blockedArr) return false
         const i = idx(cx2, cz2)
-        if (blocked[i]) return blocked[i] === 2
+        if (blockedArr[i]) return blockedArr[i] === 2
         const x = wx(cx2), z = wz(cz2)
         let b = 1
         const dax = x - ax, daz = z - az, dbx = x - bx, dbz = z - bz
@@ -181,60 +199,125 @@ export function corridorSearch(ax, az, bx, bz, hTrunc, opts = {}) {
                 if (dx * dx + dz * dz <= discs[d + 2] * discs[d + 2]) { b = 2; break }
             }
         }
-        blocked[i] = b
+        blockedArr[i] = b
         return b === 2
     }
 
-    const gCost = new Float64Array(W * Hn).fill(Infinity)
-    const from = new Int32Array(W * Hn).fill(-1)
+    const noBore = opts.structureCap === false
+    // Bore states live in the anchor elevation BAND: a bore must surface at portal height at both
+    // ends, so decks far above/below the anchors are never usefully underground — without this
+    // clamp every cell under a crest carries 50+ deep-bore bins the search dutifully explores.
+    const boreLoB = Math.floor((Math.min(yA, yB) - 20 - yLo) / yBin)
+    const boreHiB = Math.ceil((Math.max(yA, yB) + 40 - yLo) / yBin)
+    const sx = Math.round((ax - x0) / cell), sz = Math.round((az - z0) / cell)
+    const gx = Math.round((bx - x0) / cell), gz = Math.round((bz - z0) / cell)
+    const goalCell = idx(gx, gz), goalB = bOf(yB)
+
+    const SN = W * Hn * NY
+    const gCost = new Float64Array(SN).fill(Infinity)
+    const from = new Int32Array(SN).fill(-1)
     const open = new Heap()
-    gCost[idx(sx, sz)] = 0
-    open.push(idx(sx, sz), 0)
+    // Admissible heuristic: the continuous relaxation of "cover horizontal distance D while
+    // buying |ΔY| = V of elevation" over the cost 1 + wGrade·g² per metre (every station rate is
+    // ≥ cRoadM and turn/portal charges are ≥ 0, so this lower-bounds the true remainder).
+    // Minimizing ∫(1+wG·g²)ds with path length L ≥ D and ∫|g|ds ≥ V gives
+    //   L = D:        D + wG·V²/D      (gentle case — the climb fits in the crow-flight run)
+    //   L = V·√wG:    2·V·√wG          (steep case — extra length must be bought)
+    // Far tighter than max(D, V·2√wG) on climbing remainders — measured 72k → far fewer expansions.
+    const RTWG = Math.sqrt(Math.max(1e-6, C.wGrade))
+    const hEu = (cx, cz, yb) => {
+        const D = Math.hypot(wx(cx) - bx, wz(cz) - bz)
+        const V = Math.abs(yOf(yb) - yB)
+        return (D >= V * RTWG ? D + C.wGrade * V * V / Math.max(1e-9, D) : 2 * V * RTWG) * C.cRoadM
+    }
+
+    // Weighted A* (ε = 1.15): the corridor is the COARSE stage — a bounded 15% cost inflation on
+    // its plan buys a several-fold expansion cut, and the exact profile DP re-prices the final
+    // line regardless (priced == built is downstream of this choice).
+    const EPS_W = 1.15
+    const startS = idx(sx, sz) * NY + bOf(yA)
+    gCost[startS] = 0
+    open.push(startS, EPS_W * hEu(sx, sz, bOf(yA)))
     const NB = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]
     let expanded = 0
+    let found = -1
 
     while (open.size) {
         const cur = open.pop()
-        if (cur === goalI) break
-        const cz = Math.floor(cur / W), cx = cur - cz * W
+        const curCell = (cur / NY) | 0
+        const curB = cur - curCell * NY
+        if (curCell === goalCell && Math.abs(curB - goalB) <= 1) { found = cur; break }
+        const cz2 = (curCell / W) | 0, cx2 = curCell - cz2 * W
         const gc = gCost[cur]
+        const parentCell = from[cur] >= 0 ? (from[cur] / NY) | 0 : -1
+        let pdx = 0, pdz = 0
+        if (parentCell >= 0) {
+            const pz = (parentCell / W) | 0, px = parentCell - pz * W
+            pdx = cx2 - px; pdz = cz2 - pz
+            const pl = Math.hypot(pdx, pdz) || 1
+            pdx /= pl; pdz /= pl
+        }
         expanded++
-        const h0 = hAt(cx, cz)
+        const y0 = yOf(curB)
+        const cls0 = classOf(y0 - hAt(cx2, cz2), C)
+        const bore0 = cls0 === CLS.BORE
         for (const [dx, dz] of NB) {
-            const nx = cx + dx, nz = cz + dz
+            const nx = cx2 + dx, nz = cz2 + dz
             if (nx < 0 || nz < 0 || nx >= W || nz >= Hn) continue
+            if (idx(nx, nz) === parentCell) continue   // no A→B→A retrace: an "elevator" stack has
+                                                       // zero lateral advance — unbuildable, and XZ
+                                                       // simplification would annihilate its length
             if (isBlocked(nx, nz)) continue
-            const ni = idx(nx, nz)
             const ds = cell * Math.hypot(dx, dz)
-            const g = Math.abs(hAt(nx, nz) - h0) / ds
-            const onGrade = C.cRoadM * (1 + C.wGrade * g * g)
-            const rate = Math.min(onGrade, capRate)
-            const cand = gc + ds * rate
-            if (cand < gCost[ni]) {
-                gCost[ni] = cand
-                from[ni] = cur
-                const hEu = Math.hypot(wx(nx) - bx, wz(nz) - bz) * minRate
-                open.push(ni, cand + hEu)
+            const g1 = hAt(nx, nz)
+            // deck may not rise above ground+fillMax (no bridges); no useful floor below the band
+            const bTop = Math.min(NY - 1, Math.floor((g1 + C.fillMax - yLo) / yBin))
+            const kMax = Math.round(C.gMaxRoad * ds / yBin)
+            const ni0 = idx(nx, nz) * NY
+            for (let nb = Math.max(0, curB - kMax); nb <= Math.min(bTop, curB + kMax); nb++) {
+                const y1 = yOf(nb)
+                const d1 = y1 - g1
+                const cls1 = classOf(d1, C)
+                const bore1 = cls1 === CLS.BORE
+                if (bore1 && (noBore || nb < boreLoB || nb > boreHiB)) continue
+                const g = (y1 - y0) / ds
+                const cap = (bore0 || bore1) ? C.gMaxBore : C.gMaxRoad
+                if (Math.abs(g) > cap + yBin / (2 * ds) + 1e-9) continue
+                let c = gc + ds * stationRate(d1, C) + ds * C.cRoadM * C.wGrade * g * g
+                if (pdx !== 0 || pdz !== 0) {
+                    const dl = Math.hypot(dx, dz)
+                    const dot = (dx * pdx + dz * pdz) / dl
+                    const crs = Math.abs(dx * pdz - dz * pdx) / dl
+                    c += (C.cTurn ?? 0) * Math.atan2(crs, dot)
+                }
+                if (bore0 !== bore1) c += C.cPortal
+                const ni = ni0 + nb
+                if (c < gCost[ni]) {
+                    gCost[ni] = c
+                    from[ni] = cur
+                    open.push(ni, c + EPS_W * hEu(nx, nz, nb))
+                }
             }
         }
     }
-    if (!Number.isFinite(gCost[goalI])) return null
+    if (found < 0) return null
 
     const path = []
-    for (let i = goalI; i !== -1; i = from[i]) {
-        const cz = Math.floor(i / W), cx = i - cz * W
-        path.push({ x: wx(cx), z: wz(cz) })
+    for (let i = found; i !== -1; i = from[i]) {
+        const ci = (i / NY) | 0
+        const cz2 = (ci / W) | 0, cx2 = ci - cz2 * W
+        path.push({ x: wx(cx2), z: wz(cz2), y: yOf(i - ci * NY) })
     }
     path.reverse()
     // Exact endpoints (the lattice snapped them): pin A and B, and ABSORB lattice vertices closer
     // than ~a cell to each anchor — the pin can land up to half a cell diagonal away from its
     // snapped cell, and a leftover vertex that close makes a short-leg kink no smoothing pass can
     // buy a real radius for (measured: the sub-8 m fillets all sat at run STARTs).
-    path[0] = { x: ax, z: az }
-    path[path.length - 1] = { x: bx, z: bz }
+    path[0] = { x: ax, z: az, y: yA }
+    path[path.length - 1] = { x: bx, z: bz, y: yB }
     while (path.length > 2 && Math.hypot(path[1].x - ax, path[1].z - az) < cell * 1.6) path.splice(1, 1)
     while (path.length > 2 && Math.hypot(path[path.length - 2].x - bx, path[path.length - 2].z - bz) < cell * 1.6) path.splice(path.length - 2, 1)
-    return { path, cost: gCost[goalI], expanded }
+    return { path, cost: gCost[found], expanded }
 }
 
 // ── Station resampling ─────────────────────────────────────────────────────────────────────────
@@ -435,7 +518,7 @@ export function profileSolve(st, yA, yB, opts = {}) {
  * @returns {{pts:{x,y,z}[], stations:object, profile:object, corridor:object}|null}
  */
 export function corridorConnect(a, b, hTrunc, hFull, opts = {}) {
-    const cor = corridorSearch(a.x, a.z, b.x, b.z, hTrunc, opts)
+    const cor = corridorSearch(a.x, a.z, a.y, b.x, b.z, b.y, hTrunc, opts)
     if (!cor) return null
     const st = resampleStations(cor.path, hFull, opts.ds ?? 10)
     const prof = profileSolve(st, a.y, b.y, opts)
@@ -535,6 +618,7 @@ export function enforceMinRadius(path, rFloor = 8.5, rMax = 400) {
  * @param {number} rMax fillet radii clamp high end (m)
  * @returns {Centerline}
  */
+const LOSS_MAX = 18   // m — max planned length a single fillet may shortcut (see radius choice)
 export function lineArcFit(path, rMin = 10, rMax = 400) {
     // dedupe near-coincident vertices first (exact-anchor pinning can create them)
     const P = []
@@ -563,14 +647,22 @@ export function lineArcFit(path, rMin = 10, rMax = 400) {
         const tanHalf = Math.tan(Math.abs(turn) / 2)
         const tAvail = Math.min(inL - usedT - 0.05, 0.5 * outL)
         if (tAvail < 0.05) { usedT = 0; continue }   // no room left: straight through (repair pass prevents sharp cases)
-        const R = Math.min(rMax, tAvail / tanHalf)   // caller escalates if R < rMin
+        // Radius by LENGTH-LOSS BUDGET: a fillet shortcuts 2t − arc = R·(2·tan(φ/2) − φ) metres of
+        // the polygon. The 2.5D plan PAID for that length (its grade budget lives on it), so a
+        // corner may cut at most LOSS_MAX of it: sharp apexes get tight hairpin radii (R→rMin,
+        // like a real switchback turn), gentle corners still sweep wide (their loss rate is ~0 —
+        // measured: max-radius fitting ate 275 m of a 1287 m switchback descent and the profile
+        // shipped 35% on the shortfall).
+        const shortRate = 2 * tanHalf - Math.abs(turn)
+        const lossR = shortRate > 1e-6 ? LOSS_MAX / shortRate : Infinity
+        const R = Math.min(tAvail / tanHalf, rMax, Math.max(rMin, lossR))
         const t = R * tanHalf
         usedT = t
         const t1x = b.x - dInX * t, t1z = b.z - dInZ * t       // arc entry (on incoming segment)
         const thetaIn = Math.atan2(dInZ, dInX)
         // line from cursor to arc entry
         const lineLen = Math.hypot(t1x - cur.x, t1z - cur.z)
-        if (lineLen > 0.05) prims.push(makePrimitive(cur.x, cur.z, Math.atan2(t1z - cur.z, t1x - cur.x), lineLen, 0))
+        if (lineLen > 0.005) prims.push(makePrimitive(cur.x, cur.z, Math.atan2(t1z - cur.z, t1x - cur.x), lineLen, 0))
         // the fillet arc
         const kappa = turn > 0 ? 1 / R : -1 / R
         const arcLen = R * Math.abs(turn)
@@ -581,36 +673,8 @@ export function lineArcFit(path, rMin = 10, rMax = 400) {
     }
     const last = P[P.length - 1]
     const lineLen = Math.hypot(last.x - cur.x, last.z - cur.z)
-    if (lineLen > 0.05) prims.push(makePrimitive(cur.x, cur.z, Math.atan2(last.z - cur.z, last.x - cur.x), lineLen, 0))
+    if (lineLen > 0.005) prims.push(makePrimitive(cur.x, cur.z, Math.atan2(last.z - cur.z, last.x - cur.x), lineLen, 0))
     return new Centerline(prims)
-}
-
-/**
- * Remove one-cell hairpin apexes: an interior vertex turning more than maxTurn with BOTH legs
- * shorter than legMax is lattice noise (the A* dodging one expensive cell), not a switchback —
- * real switchback apexes carry legs many cells long and are left alone. Iterates to a fixed point.
- */
-// legMax 50: one-cell lattice-noise legs are 32/45 m; a REAL switchback apex carries ≥2-cell legs
-// (64 m+) and must survive (85 was eating them — owner: "no switchbacks", 2026-08-18).
-export function dehairpin(path, maxTurn = 100 * Math.PI / 180, legMax = 50) {
-    let p = path, changed = true
-    while (changed && p.length > 2) {
-        changed = false
-        const out = [p[0]]
-        for (let i = 1; i < p.length - 1; i++) {
-            const a = out[out.length - 1], b = p[i], c = p[i + 1]
-            const inX = b.x - a.x, inZ = b.z - a.z, outX = c.x - b.x, outZ = c.z - b.z
-            const inL = Math.hypot(inX, inZ), outL = Math.hypot(outX, outZ)
-            if (inL > 1e-9 && outL > 1e-9 && inL < legMax && outL < legMax) {
-                const dot = (inX * outX + inZ * outZ) / (inL * outL)
-                if (Math.acos(Math.max(-1, Math.min(1, dot))) > maxTurn) { changed = true; continue }
-            }
-            out.push(b)
-        }
-        out.push(p[p.length - 1])
-        p = out
-    }
-    return p
 }
 
 /**
@@ -628,10 +692,13 @@ export function corridorCenterline(path, opts = {}) {
     // wider RDP tolerance (the corridor is a ~100 m swath — the centerline owns that freedom).
     // Keep the best fit seen so the escalation can never make things worse.
     let best = null, bestR = -Infinity
-    const clean = dehairpin(path)
     for (const tol of [opts.rdpTol ?? 32, 44]) {
-        const base = simplifyRDP(clean, tol)
-        for (let passes = opts.chaikin ?? 2; passes <= 5; passes++) {
+        const base = simplifyRDP(path, tol)
+        // Start at ZERO Chaikin passes: the 2.5D plan's polygon is already the road's shape
+        // (traverses + reversals), and corner-cutting near-180° apexes destroys the length the
+        // deck's grade budget paid for (measured 1563 → 1051 m). The fillet fitter rounds sparse
+        // corners fine on its own; Chaikin remains as the radius-rescue escalation only.
+        for (let passes = opts.chaikin ?? 0; passes <= 5; passes++) {
             const cl = lineArcFit(enforceMinRadius(chaikin(base, passes)), rMin, rMax)
             const r = cl.minRadius()
             if (r > bestR) { best = cl; bestR = r }

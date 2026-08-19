@@ -11,7 +11,7 @@ const road = new RoadSystem(20, RANGER_PARAMS)
 road.setRadius(1400)
 road.update(new THREE.Vector3(0, 0, 0))
 const hFull = (x, z) => road._coarseH(x, z)
-const hTrunc = truncatedHeightField(road._noiseCoarse, RANGER_PARAMS, 2)
+const hTrunc = truncatedHeightField(road._noiseCoarse, RANGER_PARAMS, 4)   // mirror road.js: the 2.5D plan must see what the profile pays
 
 const posOf = new Map()
 for (let cz = -8; cz <= 8; cz++) for (let cx = -8; cx <= 8; cx++)

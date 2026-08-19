@@ -686,7 +686,7 @@ export class RoadSystem {
 
     /** FEAT-68: memoized octave-truncated coarse field (K=3) — the corridor stage's terrain. */
     _v2Trunc() {
-        if (!this._v2TruncF) this._v2TruncF = truncatedHeightField(this._noiseCoarse, this._params, 3)
+        if (!this._v2TruncF) this._v2TruncF = truncatedHeightField(this._noiseCoarse, this._params, 4)   // K=4 == the full coarse field: the 2.5D plan must see the wrinkles the profile will pay for
         return this._v2TruncF
     }
 
@@ -2774,7 +2774,11 @@ export class RoadSystem {
         const blockedDiscs = this._pondDiscsInBBox ? this._pondDiscsInBBox(
             Math.min(A.x, B.x) - margin, Math.min(A.z, B.z) - margin,
             Math.max(A.x, B.x) + margin, Math.max(A.z, B.z) + margin) : undefined
-        const cor = corridorSearch(A.x, A.z, B.x, B.z, this._v2Trunc(), { margin, blockedDiscs })
+        // 2.5D corridor (owner green-light 2026-08-19): the search plans the DECK, pinned at the
+        // same node heights the profile pins to — switchbacks emerge where a face out-steepens
+        // the deck's grade budget.
+        const yA = this._v2NodeHeight(A.x, A.z), yB = this._v2NodeHeight(B.x, B.z)
+        const cor = corridorSearch(A.x, A.z, yA, B.x, B.z, yB, this._v2Trunc(), { margin, blockedDiscs })
         let cl = cor ? corridorCenterline(cor.path) : centerlineFromDescriptors([])
         // Fail-safe ladder rung 2 (bridges de-scoped, 2026-08-18): the default corridor prices
         // hostile ground at the bore cap, which lies at gullies/convex drops where no structure
@@ -2783,7 +2787,7 @@ export class RoadSystem {
         // off: steep ground at full quadratic price → the corridor goes around. Deterministic per
         // edge (pure ladder), so purity/window-invariance hold.
         if (cl.length > 1e-6 && !this._v2Feasible(cl)) {
-            const cor2 = corridorSearch(A.x, A.z, B.x, B.z, this._v2Trunc(),
+            const cor2 = corridorSearch(A.x, A.z, yA, B.x, B.z, yB, this._v2Trunc(),
                 { margin, blockedDiscs, structureCap: false })
             if (cor2) {
                 const cl2 = corridorCenterline(cor2.path)
