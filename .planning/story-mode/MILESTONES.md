@@ -254,6 +254,26 @@ ratio  = elapsed / par               payout = parBase × dayTier × clamp((1.20 
 > signals only, out of the hot loop, per-run state (SM-INV-8), time+intensity never distance
 > (SM-INV-5).
 
+### Build decisions [owner, 2026-08-19]
+
+- **Alignment gets REAL static geometry**, not damage-only offsets. Toe and camber become genuine
+  vehicle parameters with stock 2002 Ranger values, and damage perturbs them from there. This
+  **shifts the handling baseline of every vehicle and rebaselines every physics gate** — accepted
+  knowingly, because a truck that has never had alignment is a truck that cannot lose it.
+  Implementation reference: the `feature/out-of-round` worktree, where the owner is building the
+  toe/camber geometry alongside the runout work. **Port that, do not invent a second one.**
+- **FEAT-51 (coolant temp) is folded into this milestone.** The radiator's only damage source is
+  impact and its only effect is temperature, so the thermal model is not a dependency to wait on —
+  it is part of the radiator track.
+- **Death is in scope.** Both SM-INV-1 fail states land here: the fatal-crash impact threshold and
+  the unrecoverable-breakdown run-end. This pulls SM-4 run-lifecycle work forward far enough that
+  a dead run needs somewhere to go.
+- **Ships in three slices**, each merged and driven before the next starts:
+  1. the condition spine + debug tooling + per-tire μ + its wiring gate + every wear track that
+     needs no new physics (brakes, tires, engine, springs, dampers);
+  2. impacts + armor + wheels (out-of-round);
+  3. thermal + headlights + alignment + the damage GUI + the death conditions.
+
 ### The component tracks
 
 **Sixteen tracks in eight classes.** Left/right is deliberately NOT separable on suspension or
