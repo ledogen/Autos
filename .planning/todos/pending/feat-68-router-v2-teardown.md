@@ -582,3 +582,41 @@ instruction; drive-through re-verified green (31–36 m/s end to end).
 in the measurement loop from the first edit, (b) the portal-mouth blockage diagnosed first, and
 (c) possibly a gentler gate (cover proxy relative to the local deck estimate, not the chord line)
 so portal APPROACH flanks keep their discount and only true descent faces lose it.
+
+## The switchback question (2026-08-19, owner ruling + structural diagnosis — DISCUSSION OPEN)
+
+**Ruling:** grade-guarded smoothing REVERTED (commit c255fb3). It produced "at best a little
+wiggle, hardly the cut across the mountain face" (owner, with capture 1787124538285), and it was
+a rule defending a symptom — the accretion class this worktree exists to kill. Decisive number:
+hairpin census 7/8/4 guarded vs 1/2/1 unguarded — the guard was preserving DITHER, not
+switchbacks.
+
+**Why the XZ corridor cannot produce switchbacks (three stacked structural reasons):**
+1. **The state can't hold a grade budget.** Position-only state means grade is a per-step
+   INCENTIVE on sampled ground Δh, so "buy grade with length" degenerates into one-cell
+   side-dodging (lowering the sampled slope) — dither at the wrong wavelength, never traverses.
+2. **The lattice can't stack traverses.** The search visits each cell once; a switchback stack
+   needs the path to cross the same hillside repeatedly 20–40 m apart — inside one 32 m cell.
+   Tight stacks are literally inexpressible, whatever the prices say.
+3. **The structure cap flattens steep prices** (capture 1787117526907): past ~30% every slope
+   costs the flat bore rate, deleting the incentive exactly where switchbacks should pay.
+
+**Proposed no-compromise fix — the 2.5D corridor (one mechanism, several deletions):** add the
+deck's height to the corridor state: (cell ~32 m, deck elevation ~3 m bins). Then: grade is a
+HARD per-step budget on the deck (dither gains nothing — cost follows the grade you choose, not
+the ground you sample); the same cell at two heights is two states (stacks become expressible and
+emerge only where a face out-steepens the cap); terrain is priced per state as |deck − ground|
+through the SAME cut/fill/bore vocabulary (the bore-cap flattening and the parked cover-proxy
+dilemma both vanish — the state knows whether the deck is under or over ground). The exact 1-D
+profile DP still refines on the final stations: priced == built untouched. Expected deletions:
+the grade guard (done), the cover proxy, most of dehairpin's job, likely ladder rung 2.
+**Cost:** state space ~4k → ~100–200k; estimate 10–40 ms/edge (vs 3–4), ~1–3 s per network at
+1× — still 2–5× faster than v1. Fallback if too slow: TIER it (keep the cheap XZ route when its
+profile is gentle; 2.5D only where the XZ route violates the character bound) — same mechanism,
+applied where it matters.
+
+**Rejected alternatives:** finer cells + honest pricing alone (measured: yields dither, not
+stacks — reasons 1 and 2 stand); heading in the state (v1's lattice disease, banned by this
+ticket); detect-steep-and-inject-zigzags (violates `feedback_emergent_over_injected`).
+
+**Status: awaiting owner's pick before implementation.**
