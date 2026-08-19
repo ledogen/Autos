@@ -1761,6 +1761,9 @@ export class RoadSystem {
             return { key: alt, centerline: hit.centerline, gradeAt: _gradeSampler(hit.points, hit.clArc) }
         }
         // (QUAL-24 chain-span view removed with the merge — runs are 1:1 with edges.)
+        // Dirless on purpose: this fallback only touches never-registered edges (no settled
+        // adjacency to derive deg-2 heading pins from). If the edge later registers, the
+        // _edgeCenterline cache guard re-routes it heading-ful and overwrites.
         const cl = this._edgeCenterline(c1, c2)
         if (!cl || cl.length < 1e-6) return null
         const n = Math.max(1, Math.ceil(cl.length / PROTO_SAMPLE_DS))
@@ -1819,7 +1822,9 @@ export class RoadSystem {
      * from their descriptors, so this is the whole cache state.
      */
     exportRouteCache() {
-        const dump = (m) => m ? [...m.entries()].map(([k, cl]) => [k, cl.primitives]) : []
+        // Third tuple element = the FEAT-68 _v2Dirs tag (dirs-aware routing) — without it every
+        // imported entry would read as dirless and registration would re-route the whole cache.
+        const dump = (m) => m ? [...m.entries()].map(([k, cl]) => [k, cl.primitives, cl._v2Dirs ? 1 : 0]) : []
         return { cls: dump(this._proto.cls), clsSolo: dump(this._proto.clsSolo) }
     }
 
@@ -1829,8 +1834,12 @@ export class RoadSystem {
         if (!this._proto.cls) this._proto.cls = new Map()
         if (!this._proto.clsSolo) this._proto.clsSolo = new Map()
         const load = (m, entries) => {
-            for (const [k, prims] of entries || []) {
-                if (!m.has(k) && prims && prims.length) m.set(k, centerlineFromDescriptors(prims))
+            for (const [k, prims, v2dirs] of entries || []) {
+                if (!m.has(k) && prims && prims.length) {
+                    const cl = centerlineFromDescriptors(prims)
+                    if (v2dirs) cl._v2Dirs = true
+                    m.set(k, cl)
+                }
             }
         }
         load(this._proto.cls, data.cls)
@@ -2469,14 +2478,26 @@ export class RoadSystem {
     }
 
     // FEAT-68 (v2): route an edge — corridor search on the octave-truncated field, then stage-3
-    // curve generation (dehairpin → RDP → Chaikin → line-arc fillets). Pure fn of (terrain,
-    // anchor pair); the cache is memoization only, never coupling. Terminal headings, corridor
-    // discs, solo-reuse and the self-clearance wrapper are all gone with the wander.
-    _edgeCenterline(c1, c2) {
+    // curve generation (RDP → Chaikin → line-arc fillets). Pure fn of (terrain, anchor pair,
+    // deg-2 approach headings); the cache is memoization only, never coupling. Terminal headings
+    // at JUNCTIONS, corridor discs, solo-reuse and the self-clearance wrapper are all gone with
+    // the wander.
+    //
+    // `dirs` = {startDir?, goalDir?} unit {x,z} — deg-2 canonical approach headings (registration
+    // passes them; they are a pure fn of the settled post-drop adjacency, so every window derives
+    // the identical pins and cache entries stay window-invariant).
+    _edgeCenterline(c1, c2, dirs) {
         if (!this._proto.cls) this._proto.cls = new Map()
         const key = this._edgeClsKey(c1, c2)
         const cached = this._proto.cls.get(key)
-        if (cached) return cached
+        // CACHE-POISONING GUARD: entries are tagged `_v2Dirs` when routed by a dirs-aware caller.
+        // A dirless caller (edgeParData's standalone fallback — it only touches never-registered
+        // edges, where no settled adjacency exists to derive pins from) can route an edge FIRST;
+        // if registration later requests the same edge WITH dirs it must re-route and overwrite —
+        // registered geometry always ships heading-ful, or window invariance breaks (which curve
+        // an edge got would depend on who asked first). Dirless requests accept any cached entry:
+        // the dirs are deterministic per edge, so a dirful entry IS that edge's one true geometry.
+        if (cached && (!dirs || cached._v2Dirs)) return cached
         // FEAT-68: routes are direction-CANONICAL. The search (A*, RDP, Chaikin) is not
         // direction-symmetric, and which spelling a window asks for depends on local site order —
         // v1's "routing is directional" gotcha, measured again here as 36 m of AB-vs-BA drift
@@ -2484,8 +2505,12 @@ export class RoadSystem {
         // its EXACT reverse (reversePrimitives), so both are one pure geometry.
         const canon = (c1[0] - c2[0] || c1[1] - c2[1] || c1[2] - c2[2]) <= 0
         if (!canon) {
-            const fwd = this._edgeCenterline(c2, c1)
+            // reversed traversal: leave B along −goalDir, arrive at A along −startDir
+            const neg = (d) => d ? { x: -d.x, z: -d.z } : undefined
+            const flip = dirs ? { startDir: neg(dirs.goalDir), goalDir: neg(dirs.startDir) } : undefined
+            const fwd = this._edgeCenterline(c2, c1, flip)
             const cl = new Centerline(reversePrimitives(fwd.primitives))
+            if (fwd._v2Dirs) cl._v2Dirs = true
             this._proto.cls.set(key, cl)
             this._pendingRoutes.delete(key)
             return cl
@@ -2501,22 +2526,43 @@ export class RoadSystem {
         // same node heights the profile pins to — switchbacks emerge where a face out-steepens
         // the deck's grade budget.
         const yA = this._v2NodeHeight(A.x, A.z), yB = this._v2NodeHeight(B.x, B.z)
-        const cor = corridorSearch(A.x, A.z, yA, B.x, B.z, yB, this._v2Trunc(), { margin, blockedDiscs })
-        let cl = cor ? corridorCenterline(cor.path) : centerlineFromDescriptors([])
-        // Fail-safe ladder rung 2 (bridges de-scoped, 2026-08-18): the default corridor prices
-        // hostile ground at the bore cap, which lies at gullies/convex drops where no structure
-        // can substitute — so its profile can be infeasible. Pre-check feasibility HERE (the
-        // routing decision is the router's), and on failure re-route with the structure discount
-        // off: steep ground at full quadratic price → the corridor goes around. Deterministic per
-        // edge (pure ladder), so purity/window-invariance hold.
-        if (cl.length > 1e-6 && !this._v2Feasible(cl)) {
-            const cor2 = corridorSearch(A.x, A.z, yA, B.x, B.z, yB, this._v2Trunc(),
-                { margin, blockedDiscs, structureCap: false })
-            if (cor2) {
-                const cl2 = corridorCenterline(cor2.path)
-                if (cl2.length > 1e-6 && this._v2Feasible(cl2)) cl = cl2
+        const trunc = this._v2Trunc()
+        const attempt = (pin, extra) => {
+            const c = corridorSearch(A.x, A.z, yA, B.x, B.z, yB, trunc, {
+                margin, blockedDiscs,
+                ...(pin ? { startDir: pin.startDir, goalDir: pin.goalDir } : {}),
+                ...extra,
+            })
+            return c ? corridorCenterline(c.path,
+                pin ? { keepStart: !!pin.startDir, keepEnd: !!pin.goalDir } : {}) : null
+        }
+        // Fail-safe ladder (deterministic per edge — purity/window-invariance hold). Rung order
+        // encodes the priorities: heading pins are the FIRST thing sacrificed (joint tangency is
+        // cosmetic), the structure vocabulary the second (a conservative re-route prices hostile
+        // ground at full quadratic cost so the corridor goes AROUND — for gullies/convex drops
+        // where no bore can substitute and the default plan's profile is infeasible). First rung
+        // whose profile is feasible ships; if none is, the rung-1 curve ships and registration
+        // marks it (mark-and-ship — the network never disconnects).
+        const pin = dirs && (dirs.startDir || dirs.goalDir) ? dirs : null
+        const rungs = pin
+            ? [[pin, {}], [null, {}], [pin, { structureCap: false }], [null, { structureCap: false }]]
+            : [[null, {}], [null, { structureCap: false }]]
+        let cl = null, first = null
+        for (const [p, extra] of rungs) {
+            const c = attempt(p, extra)
+            if (!c || !(c.length > 1e-6)) continue
+            if (!first) first = c
+            if (this._v2Feasible(c)) {
+                cl = c
+                if (pin && !p) {
+                    this._v2DirFallbacks = (this._v2DirFallbacks || 0) + 1
+                    ;(this._v2DirFallbackKeys ||= []).push(key)
+                }
+                break
             }
         }
+        cl = cl ?? first ?? centerlineFromDescriptors([])
+        if (dirs) cl._v2Dirs = true   // tag = "a dirs-aware caller routed this" (even if pins fell back)
         this._proto.cls.set(key, cl)
         this._pendingRoutes.delete(key)
         return cl
@@ -2723,6 +2769,38 @@ export class RoadSystem {
                 g.adj.get(g.key(c1))?.delete(g.key(c2)); g.adj.get(g.key(c2))?.delete(g.key(c1))
             }
         }
+        // FEAT-68 deg-2 canonical approach headings: a pass-through node is a POINT ON a longer
+        // corridor, not a route boundary — its two incident edges should meet tangentially. The
+        // through-direction at every deg-2 node of the SETTLED post-drop adjacency is the
+        // neighbor-to-neighbor chord (neighbors sorted lexicographically for determinism); each
+        // incident edge routes with its end pinned to that direction (signed along its own
+        // travel). Pure fn of the settled adjacency — every window derives identical pins, so the
+        // route cache stays window-invariant. Junctions (deg ≠ 2) get no pin: naive meets are
+        // checkpoint-sanctioned, junction geometry is its own deferred pass.
+        const thru = new Map()
+        for (const [nk, nbrs] of g.adj) {
+            if (nbrs.size !== 2) continue
+            const [k1, k2] = [...nbrs].sort()
+            const p1 = this._nodePos(k1.split(',').map(Number))
+            const p2 = this._nodePos(k2.split(',').map(Number))
+            const dx = p2.x - p1.x, dz = p2.z - p1.z, l = Math.hypot(dx, dz)
+            if (l > 1e-9) thru.set(nk, { x: dx / l, z: dz / l, toward: k2 })
+        }
+        // Signing is by NEIGHBOR IDENTITY, not by the edge's own chord: through runs k1→k2, so an
+        // edge leaving toward k2 pins +through, toward k1 pins −through; an arrival continues
+        // toward the OTHER neighbor. (Chord-dot signing was measured wrong at acute elbows — a
+        // node sitting behind one neighbor along the chord got pins that REVERSE travel through
+        // the node, a sanctioned 166° spike on seed 20. Identity signing keeps travel consistent
+        // through every joint, elbows included.)
+        const edgeDirs = (kA, kB) => {
+            const s = thru.get(kA), t = thru.get(kB)
+            if (!s && !t) return undefined
+            const neg = (d) => ({ x: -d.x, z: -d.z })
+            return {
+                startDir: s ? (s.toward === kB ? { x: s.x, z: s.z } : neg(s)) : undefined,
+                goalDir: t ? (t.toward === kA ? neg(t) : { x: t.x, z: t.z }) : undefined,
+            }
+        }
         this._proto.nodeInc.clear()
         const addInc = (idKey, runKey) => { const a = this._proto.nodeInc.get(idKey) || this._proto.nodeInc.set(idKey, []).get(idKey); a.push(runKey) }
         for (const [c1, c2] of g.edges) {
@@ -2731,7 +2809,7 @@ export class RoadSystem {
             const A = this._nodePos(c1), B = this._nodePos(c2)
             { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }   // degenerate (coincident) edge
             const key = `g:${g.key(c1)}:${g.key(c2)}`
-            const cl = this._edgeCenterline(c1, c2)
+            const cl = this._edgeCenterline(c1, c2, edgeDirs(g.key(c1), g.key(c2)))
             if (!cl || cl.length < 1e-6) continue
             this._registerRun(key, cl, c1, c2)
             addInc(g.key(c1), key); addInc(g.key(c2), key)

@@ -140,14 +140,27 @@ class Heap {
  * illegal, so the plan must stay within cut/fill of the surface — the corridor then routes
  * around anything the structure vocabulary cannot buy through.
  *
+ * opts.startDir / opts.goalDir (unit {x,z}) are FEAT-68 deg-2 approach-heading pins: the first
+ * step out of the start state and the arriving step into a goal state must lie within a 60° cone
+ * (dot ≥ 0.5 — admits exactly the two nearest lattice directions) of the pinned heading. The
+ * cone additionally BINDS OVER A TERMINAL REGION (~2.5 cells): near a pinned end no step may
+ * move against the pin (dot < 0) — a literal-last-step cone was measured satisfiable by
+ * overshooting the goal and hooking back with a 150° jink on the final step (letter, not
+ * spirit). A constrained search can return null; the CALLER retries without pins (connectivity
+ * outranks joint tangency — a cheap extra ladder rung, road.js's job).
+ *
  * @param {number} ax,az anchor A world XZ · @param {number} yA deck height pinned at A
  * @param {number} bx,bz anchor B world XZ · @param {number} yB deck height pinned at B
  * @param {(x:number,z:number)=>number} hTrunc octave-truncated field
  * @param {object} [opts] { cell=32, yBin=3, margin=max(800,chord), costs=V2_COSTS,
- *                          blockedDiscs (ponds, flat [x,z,r,...]), structureCap }
+ *                          blockedDiscs (ponds, flat [x,z,r,...]), structureCap,
+ *                          startDir, goalDir }
  * @returns {{path:{x:number,z:number,y:number}[], cost:number, expanded:number}|null}
  */
+const TERM_R = 2.5   // cells — reach of a heading pin's no-backtracking terminal region
 export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
+    const _unit = (d) => { if (!d) return null; const l = Math.hypot(d.x, d.z); return l > 1e-9 ? { x: d.x / l, z: d.z / l } : null }
+    const sDir = _unit(opts.startDir), gDir = _unit(opts.goalDir)
     const C = opts.costs ?? V2_COSTS
     const cell = opts.cell ?? 32
     const yBin = opts.yBin ?? 3
@@ -268,13 +281,29 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
                                                        // zero lateral advance — unbuildable, and XZ
                                                        // simplification would annihilate its length
             if (isBlocked(nx, nz)) continue
-            const ds = cell * Math.hypot(dx, dz)
+            const dl = Math.hypot(dx, dz)
+            // heading pins: first step out of the start state must lie in the strict cone, and
+            // any step SOURCED within the start's terminal region may not move against the pin …
+            if (sDir) {
+                if (parentCell < 0 && dx * sDir.x + dz * sDir.z < (0.5 - 1e-9) * dl) continue
+                if (dx * sDir.x + dz * sDir.z < -1e-9 &&
+                    Math.hypot(wx(cx2) - ax, wz(cz2) - az) < TERM_R * cell) continue
+            }
+            // … mirrored at the goal: no step LANDING in the goal's terminal region may move
+            // against the pin, and the arriving step must lie in the strict cone (checked per-bin
+            // below — only arrivals within the goal's accept window |nb−goalB| ≤ 1 are "arrivals")
+            if (gDir && dx * gDir.x + dz * gDir.z < -1e-9 &&
+                Math.hypot(wx(nx) - bx, wz(nz) - bz) < TERM_R * cell) continue
+            const gConeFail = gDir && idx(nx, nz) === goalCell &&
+                dx * gDir.x + dz * gDir.z < (0.5 - 1e-9) * dl
+            const ds = cell * dl
             const g1 = hAt(nx, nz)
             // deck may not rise above ground+fillMax (no bridges); no useful floor below the band
             const bTop = Math.min(NY - 1, Math.floor((g1 + C.fillMax - yLo) / yBin))
             const kMax = Math.round(C.gMaxRoad * ds / yBin)
             const ni0 = idx(nx, nz) * NY
             for (let nb = Math.max(0, curB - kMax); nb <= Math.min(bTop, curB + kMax); nb++) {
+                if (gConeFail && Math.abs(nb - goalB) <= 1) continue   // off-cone goal arrival
                 const y1 = yOf(nb)
                 const d1 = y1 - g1
                 const cls1 = classOf(d1, C)
@@ -313,10 +342,12 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
     // than ~a cell to each anchor — the pin can land up to half a cell diagonal away from its
     // snapped cell, and a leftover vertex that close makes a short-leg kink no smoothing pass can
     // buy a real radius for (measured: the sub-8 m fillets all sat at run STARTs).
+    // A heading-pinned end SKIPS its absorb: the constrained first/last step IS the joint tangent,
+    // and absorbing it would eat exactly the geometry the cone paid for.
     path[0] = { x: ax, z: az, y: yA }
     path[path.length - 1] = { x: bx, z: bz, y: yB }
-    while (path.length > 2 && Math.hypot(path[1].x - ax, path[1].z - az) < cell * 1.6) path.splice(1, 1)
-    while (path.length > 2 && Math.hypot(path[path.length - 2].x - bx, path[path.length - 2].z - bz) < cell * 1.6) path.splice(path.length - 2, 1)
+    if (!sDir) while (path.length > 2 && Math.hypot(path[1].x - ax, path[1].z - az) < cell * 1.6) path.splice(1, 1)
+    if (!gDir) while (path.length > 2 && Math.hypot(path[path.length - 2].x - bx, path[path.length - 2].z - bz) < cell * 1.6) path.splice(path.length - 2, 1)
     return { path, cost: gCost[found], expanded }
 }
 
@@ -533,11 +564,18 @@ export function corridorConnect(a, b, hTrunc, hFull, opts = {}) {
  * under ~0.6 cells leaves genuine multi-cell switchbacks intact while giving Chaikin a clean
  * control polygon to smooth. Endpoints always survive.
  */
-export function simplifyRDP(path, tol) {
+export function simplifyRDP(path, tol, opts = null) {
     if (path.length < 3) return path
     const keep = new Uint8Array(path.length)
     keep[0] = keep[path.length - 1] = 1
-    const stack = [[0, path.length - 1]]
+    // FEAT-68 heading pins: the first/last LEG is the joint tangent the corridor search was
+    // constrained to. Force-keep the pinned vertex AND seed the recursion at it (a pre-marked
+    // vertex that isn't also a recursion boundary would survive in the output but not constrain
+    // the simplification around it).
+    let a0 = 0, b0 = path.length - 1
+    if (opts?.keepStart) { keep[1] = 1; a0 = 1 }
+    if (opts?.keepEnd) { keep[path.length - 2] = 1; b0 = path.length - 2 }
+    const stack = [[a0, b0]]
     const t2 = tol * tol
     while (stack.length) {
         const [a, b] = stack.pop()
@@ -588,22 +626,39 @@ export function chaikin(path, iterations = 2) {
  * deletes a vertex. This is the hard geometric floor (BUG-12 fold class) enforced BEFORE fitting —
  * fillet clamps after the fact would break G1 or overrun legs.
  */
-export function enforceMinRadius(path, rFloor = 8.5, rMax = 400) {
+export function enforceMinRadius(path, rFloor = 8.5, rMax = 400, keep = null) {
     const P = path.slice()
     for (;;) {
-        let worst = -1, worstR = Infinity
+        // FEAT-68 heading pins: vertex 1 / n−2 anchor the joint tangent, so they are EXEMPT from
+        // repair — unless the fold floor itself demands action (a sub-floor kink is a fold, and
+        // the fold floor outranks joint tangency). Two-tier scan: remove the worst unprotected
+        // vertex first; when only a PROTECTED corner is below the floor, soften it by removing
+        // its interior NEIGHBOR (merging the approach chord into the pinned vertex — measured:
+        // removing the pinned vertex itself re-aimed a kept 23 m end leg into a 166° joint
+        // spike). The pinned vertex goes only when no unprotected neighbor is left to give.
+        let worst = -1, worstR = Infinity          // worst removable (unprotected)
+        let worstP = -1, worstPR = Infinity        // worst protected (fold-floor override only)
+        const isProt = (i) => keep && ((keep.keepStart && i === 1) || (keep.keepEnd && i === P.length - 2))
         for (let i = 1; i < P.length - 1; i++) {
             const a = P[i - 1], b = P[i], c = P[i + 1]
             const inL = Math.hypot(b.x - a.x, b.z - a.z), outL = Math.hypot(c.x - b.x, c.z - b.z)
-            if (inL < 1e-9 || outL < 1e-9) { worst = i; worstR = 0; break }
+            if (inL < 1e-9 || outL < 1e-9) { worst = i; worstR = 0; break }   // coincident: no direction to protect
             const dot = ((b.x - a.x) * (c.x - b.x) + (b.z - a.z) * (c.z - b.z)) / (inL * outL)
             const turn = Math.acos(Math.max(-1, Math.min(1, dot)))
             if (turn < 1e-4) continue
             const R = Math.min(rMax, 0.5 * Math.min(inL, outL) / Math.tan(turn / 2))
-            if (R < worstR) { worstR = R; worst = i }
+            if (isProt(i)) { if (R < worstPR) { worstPR = R; worstP = i } }
+            else if (R < worstR) { worstR = R; worst = i }
         }
-        if (worst < 0 || worstR >= rFloor || P.length <= 2) return P
-        P.splice(worst, 1)
+        if (P.length <= 2) return P
+        if (worst >= 0 && worstR < rFloor) { P.splice(worst, 1); continue }
+        if (worstP >= 0 && worstPR < rFloor) {
+            const nb = worstP === 1 ? worstP + 1 : worstP - 1   // interior-side neighbor
+            if (nb >= 1 && nb <= P.length - 2 && !isProt(nb)) P.splice(nb, 1)
+            else P.splice(worstP, 1)
+            continue
+        }
+        return P
     }
 }
 
@@ -688,18 +743,24 @@ export function corridorCenterline(path, opts = {}) {
     // a cut across the face — a rule protecting a symptom. Real switchbacks come from the search
     // itself (see the ticket's 2.5D corridor discussion); smoothing goes back to being plain.
     const rMin = opts.rMin ?? 12, rMax = opts.rMax ?? 400
+    // FEAT-68 heading pins: when the corridor search ran with a start/goal direction cone, stage 3
+    // must not re-aim the constrained first/last step — RDP force-keeps it and the radius repair
+    // exempts it (fold floor still wins). Chaikin and the fillet fitter preserve end tangents by
+    // construction (their new points lie ON the end legs), so no guard is needed there.
+    const keep = (opts.keepStart || opts.keepEnd)
+        ? { keepStart: !!opts.keepStart, keepEnd: !!opts.keepEnd } : null
     // Escalate smoothing freedom until the fit clears rMin: more Chaikin passes first, then a
     // wider RDP tolerance (the corridor is a ~100 m swath — the centerline owns that freedom).
     // Keep the best fit seen so the escalation can never make things worse.
     let best = null, bestR = -Infinity
     for (const tol of [opts.rdpTol ?? 32, 44]) {
-        const base = simplifyRDP(path, tol)
+        const base = simplifyRDP(path, tol, keep)
         // Start at ZERO Chaikin passes: the 2.5D plan's polygon is already the road's shape
         // (traverses + reversals), and corner-cutting near-180° apexes destroys the length the
         // deck's grade budget paid for (measured 1563 → 1051 m). The fillet fitter rounds sparse
         // corners fine on its own; Chaikin remains as the radius-rescue escalation only.
         for (let passes = opts.chaikin ?? 0; passes <= 5; passes++) {
-            const cl = lineArcFit(enforceMinRadius(chaikin(base, passes)), rMin, rMax)
+            const cl = lineArcFit(enforceMinRadius(chaikin(base, passes), 8.5, 400, keep), rMin, rMax)
             const r = cl.minRadius()
             if (r > bestR) { best = cl; bestR = r }
             if (r >= rMin) return cl
