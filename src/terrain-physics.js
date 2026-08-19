@@ -27,15 +27,78 @@
 const TERRAIN_FRICTION = 0.8
 
 export class TerrainPhysics {
-  constructor (engine) {
+  constructor (engine, getRoad = null) {
     this._eng = engine
     this._chunks = new Map()   // chunk key → engine body handle
+    this._getRoad = getRoad    // () => RoadSystem | null — bore-slot cut below needs the spans
+  }
+
+  /**
+   * Bore-span centerline segments overlapping a world-XZ box: flat [ax,ay,az,bx,by,bz,...] from
+   * the registered runs' 4 m samples inside each tunnel span, or null when none. The y values ARE
+   * the deck (the run profile inside a span is the bore floor).
+   */
+  _boreSegsIn (x0, z0, x1, z1) {
+    const rs = this._getRoad?.()
+    if (!rs?._network) return null
+    let segs = null
+    for (const [, e] of rs._network) {
+      if (!e.tunnelSpans) continue
+      const pts = e.points, cum = e.polyCum
+      for (const sp of e.tunnelSpans) {
+        for (let i = 1; i < pts.length; i++) {
+          if (cum[i] < sp.s0 - 2) continue
+          if (cum[i - 1] > sp.s1 + 2) break
+          const a = pts[i - 1], b = pts[i]
+          if (Math.max(a.x, b.x) < x0 || Math.min(a.x, b.x) > x1 ||
+              Math.max(a.z, b.z) < z0 || Math.min(a.z, b.z) > z1) continue
+          ;(segs ??= []).push(a.x, a.y, a.z, b.x, b.y, b.z)
+        }
+      }
+    }
+    return segs
   }
 
   /** TerrainSystem hook: (re)build the collider for a chunk from its mesh Y values. */
   syncChunk (key, cx, cz, posAttr, N, S) {
     const heights = new Float32Array(N * N)          // engine copies into WASM; this is transient
     for (let i = 0; i < N * N; i++) heights[i] = posAttr.getY(i)
+    // ── FEAT-40 gap (owner-reported 2026-08-18, pre-dates router v2): cut the bore SLOT. ────────
+    // The mesh keeps the mountain above a tunnel span, so mirroring mesh Y verbatim walls the
+    // portal — tunnels were never chassis-passable. The WHEELS already pass: _sampleCarveWorld's
+    // bore-ownership rule resolves the bore FLOOR inside spans, and queryTunnelWallContact gives
+    // the tube walls. This depresses heightfield vertices inside each bore tube (lateral distance
+    // ≤ tunnelBoreRadius from the span centerline) to just under the deck, aligning the engine
+    // collider with the analytic surface the wheels drive — the deliberate, span-bounded exception
+    // to "heights == mesh Y" (the mountain above is scenery there, not a driving surface).
+    const rs = this._getRoad?.()
+    if (rs?._network) {
+      const R = rs._params?.tunnelBoreRadius ?? 8
+      const wx0 = cx * S, wz0 = cz * S
+      const segs = this._boreSegsIn(wx0 - R, wz0 - R, wx0 + S + R, wz0 + S + R)
+      if (segs) {
+        const half = S / 2
+        const R2 = R * R
+        for (let i = 0; i < N * N; i++) {
+          // PlaneGeometry local XZ ∈ [−S/2, S/2]; mesh sits at the chunk CENTER (terrain.js)
+          const x = posAttr.getX(i) + wx0 + half
+          const z = posAttr.getZ(i) + wz0 + half
+          let cut = Infinity
+          for (let sgi = 0; sgi < segs.length; sgi += 6) {
+            const ax = segs[sgi], az = segs[sgi + 2]
+            const vx = segs[sgi + 3] - ax, vz = segs[sgi + 5] - az
+            const vv = vx * vx + vz * vz || 1
+            let t = ((x - ax) * vx + (z - az) * vz) / vv
+            t = t < 0 ? 0 : t > 1 ? 1 : t
+            const dx = x - (ax + t * vx), dz = z - (az + t * vz)
+            if (dx * dx + dz * dz > R2) continue
+            const deck = segs[sgi + 1] + t * (segs[sgi + 4] - segs[sgi + 1])
+            if (deck < cut) cut = deck
+          }
+          if (cut !== Infinity && heights[i] > cut - 0.5) heights[i] = cut - 0.5
+        }
+      }
+    }
     const old = this._chunks.get(key)
     if (old !== undefined) this._eng.destroyBody(old)
     const body = this._eng.createBody({

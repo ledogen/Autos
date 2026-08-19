@@ -1350,9 +1350,12 @@ const map2d = new Map2D({
     map2d.hide()   // close the map so the teleport is immediately visible
   }
 })
-// Dev handle for the FEAT-68 checkpoint tooling (test/map-shot.mjs drives the map over CDP —
-// frameBounds + setRadiusTarget + poll _streamFull). Same always-on precedent as window.__view.
+// Dev handles for the FEAT-68 checkpoint tooling (CDP probes: map renders, drive-through tests).
+// Same always-on precedent as window.__view.
 window.__map2d = () => map2d
+window.__teleport = (x, z, heading, drop = 0.5) => teleportToGround(x, z, heading, drop)
+window.__car = () => ({ x: vehicleState.position.x, y: vehicleState.position.y, z: vehicleState.position.z,
+                        v: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) })
 
 // FEAT-49: gauge cluster (bottom-right canvas overlay). The odometer seeds to a random jalopy
 // mileage at boot and RE-seeds on every story-mode entry — "the next run's jalopy". Fuel/temp
@@ -1962,7 +1965,7 @@ scene.remove(ground)   // Remove flat 200×200 ground mesh — terrain chunks re
 // existing boot style (route-cache import below also top-level awaits).
 perfMark('init: before physics engine')
 const physicsEngine = await createPhysicsEngine()
-const terrainPhysics = new TerrainPhysics(physicsEngine)
+const terrainPhysics = new TerrainPhysics(physicsEngine, () => roadSystem)   // road spans → bore slots in the collider
 terrainSystem.setPhysicsHook(terrainPhysics)   // mirrors every chunk build/recarve/dispose
 const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_PARAMS)
 const engineCtx = { engine: physicsEngine, chassis: vehicleChassis }
