@@ -681,3 +681,59 @@ Owner-approved order: culls → deg-2 joints → worker port → feel-session pr
   descriptor protocol; (3) feel-session prep — cTurn {15,30,60} A/B map renders + fresh gallery
   shots so the owner can dial hairpin density on arrival. Also open: story-poi pad-flatness
   (1/14 pads, 1.27 m), paper-tour 1 dropped customer, fill-support seed-7 (1 m), perf ~30-60 ms/edge.
+
+## HANDOFF (2026-08-19, context-full — resume here)
+
+**State:** branch `feature/corridor-router` at `30be9f9`, working tree CLEAN, dev server :3343.
+Battery: seeds 20/11/67 → 56/50/55 runs, 1 component each, y-spread 0.000, hairpins 15/21/20,
+marks 0/0/1 (the seed-67 summit knob), max sustained 35/35/63 (63 = the marked run). Gates: the
+new `road-connectivity` green 6/6; standing reds = route-bundle-parity (dies with v1),
+graph-topology node-departure (re-baseline), paper-reroute (slicing — worker port fixes),
+mission-network BUG-41 interior-drift pair (booked, arc-domain hypothesis DISPROVEN),
+road-fill-support seed-7 (1 m), story-poi pad-flatness (1/14, 1.27 m), paper-tour (1 dropped
+customer). Battery tool: `node perf-runs/v2-integration-check.mjs` (gitignored, on the worktree).
+
+**Next task (step 2b, design ready — was mid-implementation when context ran out):
+deg-2 canonical approach headings.** The full design, worked out and ready to type:
+
+1. `corridorSearch` gains `opts.startDir {x,z}` / `opts.goalDir {x,z}` (unit vectors). Enforce as
+   DIRECTION CONES: for expansions FROM the start state (parent < 0), require
+   dot(stepDir, startDir) ≥ 0.5 (60° cone — admits exactly the two nearest lattice dirs); for
+   relaxations INTO the goal cell, same test against goalDir. If a constrained search returns
+   null, road.js retries WITHOUT dirs (connectivity outranks joint tangency — a new cheap rung).
+   Skip the near-anchor absorb loops at any end whose heading pin is active (they'd eat the
+   constrained first step).
+2. `_assembleGraphEdges` computes per-node THROUGH-directions from the settled post-drop
+   adjacency it already holds (g.adj after the degree-drop deletions): for nodeKey with adjacency
+   size == 2, neighbors sorted lexicographically (determinism), through = normalize(pos(n2) −
+   pos(n1)). Per edge (c1,c2): startDir = through(c1) signed so dot(startDir, pos(c2)−pos(c1)) ≥ 0;
+   goalDir = through(c2) signed the same way. Junctions (deg ≠ 2) get no pin (naive meets stay —
+   junction geometry is its own deferred pass).
+3. `_edgeCenterline(c1, c2, dirs)` plumb: canonical-direction recursion flips dirs
+   (startDir' = −goalDir, goalDir' = −startDir) before reversePrimitives. CACHE-POISONING GUARD:
+   tag cached centerlines with whether dirs were applied (e.g. `cl._v2Dirs = true`); on a cache
+   hit where dirs are requested but the entry is dirless (edgeParData's standalone fallback can
+   route first), re-route with dirs and overwrite — registration must always ship heading-ful
+   geometry or window invariance breaks (fallback callers stay dirless: they only touch
+   never-registered edges; comment this).
+4. Stage 3 must not bend the pinned ends: `corridorCenterline` gains opts.keepEnds → simplifyRDP
+   force-keeps path indices 1 and n−2, and enforceMinRadius exempts them unless the fold floor
+   demands removal (fold floor > joint tangency).
+5. Measure: per deg-2 node, angle between the two incident runs' meeting-end tangents
+   (`centerline.tangentAt` at 0/length), report deviation from 180° — add worst-case to the
+   battery print, screenshot one joint before/after (a known one: node `1,-1,1` on seed 6/7 had
+   the convergent approaches). Then npm test + commit.
+
+**Then (step 3): worker port** — extract `routeEdgeV2()` (corridor → centerline → feasibility
+ladder, incl. dirs) into corridor-router.js; road.js sync path calls it; rewrite
+`src/road-worker.js` as a MODULE worker (`new Worker(new URL(...), {type:'module'})`, Vite
+bundles it) importing the same function — worker needs only {seed, the 4 coarse-noise params} at
+init (NEVER whole RANGER_PARAMS) to rebuild noiseCoarse + hTrunc(K=4); jobs carry
+{key, ax, az, yA, bx, bz, yB, margin, blockedDiscs, dirs}; replies stay primitive-descriptor
+lists (ingestRoutedConnections already rebuilds via centerlineFromDescriptors). Re-enable
+`_warmScan` to emit those specs. DELETE the ROUTE SYNC mirror + `route-worker-sync` gate in the
+same commit. Verify sync-vs-worker descriptor parity on a few edges (determinism).
+
+**Then (step 4): feel-session prep** — cTurn {15, 30, 60} A/B map renders (map-shot.mjs) + fresh
+gallery shots + 4× bench with paired seed-6 control, so the owner dials hairpin density in one
+visit. Owner is away ~20 h from 2026-08-19 early morning.
