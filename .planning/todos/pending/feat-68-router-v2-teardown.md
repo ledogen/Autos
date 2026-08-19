@@ -877,3 +877,35 @@ hairpin density against sweep. Map renders for all three are in the gallery.
 | 15 | 20 / 38 / 32 | 10 / 6 / 7 | 45.8 / 39.7 / 41.8 |
 | **30 (current)** | 17 / 21 / 24 | 9 / 7 / 8 | 45.1 / 39.3 / 41.2 |
 | 60 | 17 / 15 / 11 | 11 / 7 / 9 | 44.6 / 38.4 / 40.2 |
+
+## HANDOFF (2026-08-19 evening — steps 2b/3/4 done; next = owner feel session)
+
+**State:** branch `feature/corridor-router` at `103203e`, working tree CLEAN, dev server :3343.
+Battery (`node perf-runs/v2-integration-check.mjs`, gitignored): seeds 20/11/67 → 56/50/55 runs,
+1 component each, y-spread 0.000, marks 0/0/1 (the seed-67 summit knob), max sustained 35/35/63,
+hairpins 17/21/24, deg-2 joint kink mean 35/45/54°.
+
+**Gates: full suite 48/54.** `route-bundle-parity` and the new `road-worker-parity` are GREEN;
+`route-worker-sync` is deleted with the mirror. The six standing reds are unchanged and all
+pre-date this session: `mission-network` (BUG-41 interior drift, arc-domain hypothesis DISPROVEN —
+needs its own session), `graph-topology` (node-departure encodes v1's "node Y rides road grade" —
+re-baseline), `story-poi` (pad flatness 1/14, 1.27 m), `road-fill-support` (seed 7, 1.0 m),
+`paper-tour` (1 dropped customer), `paper-reroute` (mission-layer re-plan margin — NOT slicing;
+verified identical before and after the worker port).
+
+**What the owner should do on arrival:** open `perf-runs/gallery.html`, then drive
+`http://localhost:3343/?seed=20` (and 11 / 67 / 6). The one decision waiting is **cTurn** — the
+hairpin dial, A/B'd at 15 / 30 / 60 in the gallery with map renders. Everything else is a judgment
+call on character: are bores earned now (7–9 per seed), does 35%-max hugging feel honest, is crest
+airtime there, do deg-2 bends read as one road.
+
+**Next work, in order (nothing is blocked):**
+1. **Owner's cTurn ruling** → set it, re-bake, re-shoot the gallery.
+2. **Junction geometry** — the deferred pass. Naive meets are still naive; deg-2 joints are now
+   tangent, so what remains is genuine junction geometry (pads/fillets/aprons at deg ≥ 3) plus
+   the junction-to-junction through-routing that would make deg-2 nodes stop being route
+   boundaries entirely (and would also unlock strict pin matching — see the negative result).
+3. **BUG-41 interior drift** (mission-network) — the one real unexplained defect on the branch.
+4. **Inventory item 4 close-out** — with bundles at 130 KB the "delete the bake subsystem"
+   question is now cheap either way; owner's call.
+5. Loop leftovers: story-poi pad flatness, road-fill-support seed 7, paper-tour's dropped customer.
