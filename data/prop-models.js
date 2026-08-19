@@ -53,6 +53,31 @@ export const PROP_MODELS = {
     collision: { shape: 'hull-from-mesh', size: [0.44, 0.4, 0.36] },
   },
 
+  // ASSET-01 — pink lawn flamingo, two poses, 358 / 344 tris.  Lawn furniture:
+  // scatter these WITH a POI, never on bare ground (ticket rule — without an
+  // anchor a flamingo reads as litter, not habitation).
+  //
+  // NO POOL TAG YET.  The only pool in this file is 'missionGiver', and a
+  // flamingo is not a place that hands out work.  The POI-satellite scatter that
+  // would consume a 'lawnFurniture' tag does not exist; until it does these are
+  // spawnModel()-only.  Do NOT tag them missionGiver to make them show up.
+  flamingoUp: {
+    url: 'assets/models/flamingo-a.glb',
+    // Head up, the tall alert pose.  0.16 wide x 0.87 tall x 0.49 long, the
+    // length running down -Z (beak at z -0.278, tail at +0.216).  Knockable set
+    // dressing, not a wall.
+    collision: { shape: 'box', size: [0.16, 0.87, 0.50] },
+  },
+
+  // ASSET-01 — the grazing pose.  SHORTER but LONGER: the neck swings forward
+  // and down, so it is only 0.59 tall but reaches 0.73 along -Z — the longest
+  // thing in this registry relative to its height.  Sized from the GLB, not
+  // copied from its sibling.
+  flamingoDown: {
+    url: 'assets/models/flamingo-b.glb',
+    collision: { shape: 'box', size: [0.16, 0.59, 0.73] },
+  },
+
   // ── POI markers ───────────────────────────────────────────────────────────────────────────
   // Each carries the 'missionGiver' tag, so the roster's five giver slots draw from all three.
 
