@@ -2775,7 +2775,7 @@ export class RoadSystem {
             Math.min(A.x, B.x) - margin, Math.min(A.z, B.z) - margin,
             Math.max(A.x, B.x) + margin, Math.max(A.z, B.z) + margin) : undefined
         const cor = corridorSearch(A.x, A.z, B.x, B.z, this._v2Trunc(), { margin, blockedDiscs })
-        let cl = cor ? corridorCenterline(cor.path, { hT: this._v2Trunc() }) : centerlineFromDescriptors([])
+        let cl = cor ? corridorCenterline(cor.path) : centerlineFromDescriptors([])
         // Fail-safe ladder rung 2 (bridges de-scoped, 2026-08-18): the default corridor prices
         // hostile ground at the bore cap, which lies at gullies/convex drops where no structure
         // can substitute — so its profile can be infeasible. Pre-check feasibility HERE (the
@@ -2786,7 +2786,7 @@ export class RoadSystem {
             const cor2 = corridorSearch(A.x, A.z, B.x, B.z, this._v2Trunc(),
                 { margin, blockedDiscs, structureCap: false })
             if (cor2) {
-                const cl2 = corridorCenterline(cor2.path, { hT: this._v2Trunc() })
+                const cl2 = corridorCenterline(cor2.path)
                 if (cl2.length > 1e-6 && this._v2Feasible(cl2)) cl = cl2
             }
         }

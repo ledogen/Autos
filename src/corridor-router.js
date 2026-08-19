@@ -450,30 +450,7 @@ export function corridorConnect(a, b, hTrunc, hFull, opts = {}) {
  * under ~0.6 cells leaves genuine multi-cell switchbacks intact while giving Chaikin a clean
  * control polygon to smooth. Endpoints always survive.
  */
-// Grade guard shared by the smoothing passes: a shortcut may replace a raw sub-path only if it
-// does not STEEPEN it (on the truncated field). Switchbacks exist to buy grade with length — the
-// search paid full price for that length (measured: a 949 m switchback descent smoothed into an
-// infeasible 488 m plunge on seed 67), so any smoothing move that trades length back for grade is
-// undoing the router's decision, not cleaning noise.
-const GUARD_G = 0.18   // shortcuts at or under bore-grade never need guarding
-function _maxLegGrade(path, a, b, hT) {
-    let m = 0
-    for (let i = a + 1; i <= b; i++) {
-        const len = Math.hypot(path[i].x - path[i - 1].x, path[i].z - path[i - 1].z)
-        if (len < 1e-6) continue
-        const g = Math.abs(hT(path[i].x, path[i].z) - hT(path[i - 1].x, path[i - 1].z)) / len
-        if (g > m) m = g
-    }
-    return m
-}
-function _shortcutSteepens(path, a, b, hT) {
-    const len = Math.hypot(path[b].x - path[a].x, path[b].z - path[a].z)
-    if (len < 1e-6) return false
-    const g = Math.abs(hT(path[b].x, path[b].z) - hT(path[a].x, path[a].z)) / len
-    return g > Math.max(GUARD_G, _maxLegGrade(path, a, b, hT) + 0.03)
-}
-
-export function simplifyRDP(path, tol, hT = null) {
+export function simplifyRDP(path, tol) {
     if (path.length < 3) return path
     const keep = new Uint8Array(path.length)
     keep[0] = keep[path.length - 1] = 1
@@ -485,18 +462,14 @@ export function simplifyRDP(path, tol, hT = null) {
         const ax = path[a].x, az = path[a].z
         const vx = path[b].x - ax, vz = path[b].z - az
         const vv = vx * vx + vz * vz || 1
-        let worst = -1, wd = t2, deepest = -1, dd = -1
+        let worst = -1, wd = t2
         for (let i = a + 1; i < b; i++) {
             const wx = path[i].x - ax, wz = path[i].z - az
             const t = Math.max(0, Math.min(1, (wx * vx + wz * vz) / vv))
             const dx = wx - t * vx, dz = wz - t * vz
             const d = dx * dx + dz * dz
             if (d > wd) { wd = d; worst = i }
-            if (d > dd) { dd = d; deepest = i }
         }
-        // Grade guard: even a within-tolerance collapse is refused when the chord is steeper than
-        // the raw legs it replaces — keep the deepest point and re-examine the halves.
-        if (worst < 0 && hT && _shortcutSteepens(path, a, b, hT)) worst = deepest
         if (worst >= 0) { keep[worst] = 1; stack.push([a, worst], [worst, b]) }
     }
     const out = []
@@ -619,7 +592,7 @@ export function lineArcFit(path, rMin = 10, rMax = 400) {
  */
 // legMax 50: one-cell lattice-noise legs are 32/45 m; a REAL switchback apex carries ≥2-cell legs
 // (64 m+) and must survive (85 was eating them — owner: "no switchbacks", 2026-08-18).
-export function dehairpin(path, maxTurn = 100 * Math.PI / 180, legMax = 50, hT = null) {
+export function dehairpin(path, maxTurn = 100 * Math.PI / 180, legMax = 50) {
     let p = path, changed = true
     while (changed && p.length > 2) {
         changed = false
@@ -630,11 +603,7 @@ export function dehairpin(path, maxTurn = 100 * Math.PI / 180, legMax = 50, hT =
             const inL = Math.hypot(inX, inZ), outL = Math.hypot(outX, outZ)
             if (inL > 1e-9 && outL > 1e-9 && inL < legMax && outL < legMax) {
                 const dot = (inX * outX + inZ * outZ) / (inL * outL)
-                if (Math.acos(Math.max(-1, Math.min(1, dot))) > maxTurn) {
-                    // Grade guard: a switchback apex is indistinguishable from lattice noise by
-                    // leg length alone — the tell is that CUTTING it steepens the line.
-                    if (!hT || !_shortcutSteepens([a, b, c], 0, 2, hT)) { changed = true; continue }
-                }
+                if (Math.acos(Math.max(-1, Math.min(1, dot))) > maxTurn) { changed = true; continue }
             }
             out.push(b)
         }
@@ -650,29 +619,24 @@ export function dehairpin(path, maxTurn = 100 * Math.PI / 180, legMax = 50, hT =
  * doubling the achievable radius, so sharp lattice turns (up to 135°) converge in a pass or two.
  */
 export function corridorCenterline(path, opts = {}) {
+    // 2026-08-19 owner ruling: the grade-guarded smoothing is GONE. It defended the XZ search's
+    // one-cell dither as if it were switchbacks, and dither smoothed into "a little wiggle", never
+    // a cut across the face — a rule protecting a symptom. Real switchbacks come from the search
+    // itself (see the ticket's 2.5D corridor discussion); smoothing goes back to being plain.
     const rMin = opts.rMin ?? 12, rMax = opts.rMax ?? 400
-    const R_FOLD = 8   // hard geometric floor (BUG-12 fold class) — outranks the grade guard
     // Escalate smoothing freedom until the fit clears rMin: more Chaikin passes first, then a
     // wider RDP tolerance (the corridor is a ~100 m swath — the centerline owns that freedom).
-    // Keep the best fit seen so the escalation can never make things worse. The grade guard (hT)
-    // preserves switchbacks; if even the escalation ladder cannot buy the FOLD floor with the
-    // guard on, the final rung re-smooths unguarded — a folded centerline corrupts carve/physics
-    // everywhere it exists, while a steepened line is priced honestly by the profile (and the
-    // road.js feasibility ladder or the mark fail-safe absorbs the consequence).
+    // Keep the best fit seen so the escalation can never make things worse.
     let best = null, bestR = -Infinity
-    for (const hTry of [opts.hT ?? null, null]) {
-        const clean = dehairpin(path, undefined, undefined, hTry)
-        for (const tol of [opts.rdpTol ?? 32, 44]) {
-            const base = simplifyRDP(clean, tol, hTry)
-            for (let passes = opts.chaikin ?? 2; passes <= 5; passes++) {
-                const cl = lineArcFit(enforceMinRadius(chaikin(base, passes)), rMin, rMax)
-                const r = cl.minRadius()
-                if (r > bestR) { best = cl; bestR = r }
-                if (r >= rMin) return cl
-            }
+    const clean = dehairpin(path)
+    for (const tol of [opts.rdpTol ?? 32, 44]) {
+        const base = simplifyRDP(clean, tol)
+        for (let passes = opts.chaikin ?? 2; passes <= 5; passes++) {
+            const cl = lineArcFit(enforceMinRadius(chaikin(base, passes)), rMin, rMax)
+            const r = cl.minRadius()
+            if (r > bestR) { best = cl; bestR = r }
+            if (r >= rMin) return cl
         }
-        if (bestR >= R_FOLD) break   // guard kept AND geometrically valid — good enough
-        if (!(opts.hT ?? null)) break
     }
     return best
 }
