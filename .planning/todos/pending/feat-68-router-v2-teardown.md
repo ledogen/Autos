@@ -682,7 +682,7 @@ Owner-approved order: culls → deg-2 joints → worker port → feel-session pr
   shots so the owner can dial hairpin density on arrival. Also open: story-poi pad-flatness
   (1/14 pads, 1.27 m), paper-tour 1 dropped customer, fill-support seed-7 (1 m), perf ~30-60 ms/edge.
 
-## HANDOFF (2026-08-19, context-full — resume here)
+## HANDOFF (2026-08-19, context-full — step 2b SHIPPED since, see the step-2b record below; resume at step 3, the worker port)
 
 **State:** branch `feature/corridor-router` at `30be9f9`, working tree CLEAN, dev server :3343.
 Battery: seeds 20/11/67 → 56/50/55 runs, 1 component each, y-spread 0.000, hairpins 15/21/20,
@@ -737,3 +737,48 @@ same commit. Verify sync-vs-worker descriptor parity on a few edges (determinism
 **Then (step 4): feel-session prep** — cTurn {15, 30, 60} A/B map renders (map-shot.mjs) + fresh
 gallery shots + 4× bench with paired seed-6 control, so the owner dials hairpin density in one
 visit. Owner is away ~20 h from 2026-08-19 early morning.
+
+## Step 2b record (2026-08-19, autonomous — deg-2 canonical approach headings SHIPPED)
+
+On `feature/corridor-router`: heading pins at deg-2 nodes, as designed in the handoff plus three
+measurement-forced amendments. New battery metric: per deg-2 node (settled adjacency), deviation
+of the two runs' meeting-end away-tangents from 180°.
+
+**Measured (eval trio, before → after):** kink mean 107°/91°/61° → **35°/45°/54°**, worst
+180°/164°/167° → **79°/82°/153°**. Everything else at handoff state: marks 0/0/1, comps 1/1/1,
+y-spread 0.000, max sustained 35/35/63 (63 = the marked run), hairpins 17/21/24. Gate reds
+unchanged — all 7 standing reds re-verified IDENTICAL on pre-change src (stash A/B), nothing new.
+Before/after map shots of the killed seed-20 spike (node 1,2,0, 166° → <45°):
+`perf-runs/shot-joint-120-{before,after}.png`.
+
+**Amendments to the handoff design (all measured, in commit order of discovery):**
+1. **Pin signing is by NEIGHBOR IDENTITY, not the edge's own chord.** `dot(dir, B−A) ≥ 0` signing
+   reverses travel through a node that sits behind one neighbor along the through-chord (acute
+   elbow) — a sanctioned cusp. through runs k1→k2 (sorted); leaving toward k2 pins +through,
+   toward k1 −through; arrivals continue toward the OTHER neighbor.
+2. **The cone binds over a TERMINAL REGION (2.5 cells), not one step.** A literal last-step cone
+   was measured satisfiable by overshooting the goal and hooking back with a 150° jink on the
+   final 23 m (seed 20's 166° spike — NOT an elbow; probe showed the raw path ran dot −0.7…−1.0
+   against the pin until the last step). Near a pinned end no step may move against the pin
+   (dot < 0); the strict 60° cone stays on the literal first/arrival step.
+3. **The fold-floor override removes the pinned vertex's interior NEIGHBOR, not the vertex.**
+   RDP collapses the wandering approach into a long chord; the corner AT the protected vertex
+   then breaks the 8.5 m floor and removing IT re-aimed a kept 23 m end leg into the spike.
+   Softening the approach (neighbor removal) keeps tangency; the pinned vertex goes only when
+   nothing unprotected is left (fold floor > joint tangency, still).
+4. **The ladder demotes pins on INFEASIBILITY too, not just on search-null:** pinned → unpinned →
+   pinned-conservative → unpinned-conservative, first feasible profile ships. Without this, pins
+   forced two new marked edges (seed 11 49%, seed 67 +1); with it both ship clean unpinned.
+   Fallbacks are counted (`_v2DirFallbacks`/`_v2DirFallbackKeys`): exactly 1/seed on 11 and 67.
+
+**Residual, understood:** worst kinks decompose into (a) the two fallback edges — the recorded
+priority trade (seed 67's 153° node has fallback edge g:1,1,1:1,2,2 on the summit-knob flank);
+(b) cone slack, up to 60°/side plus ≤~35°/side of anchor-snap swing (the exact anchor sits up to
+half a cell diagonal off its lattice cell). Getting joints to true G1 needs either exact
+end-tangent constraints in stage 3 or the junction-to-junction through-routing (the pass-through
+deletion) — pins are the sanctioned cheap approximation until then. Also: the cache tag
+`_v2Dirs` + poisoning guard keeps dirless fallback routing (edgeParData) from ever shipping into
+registration; export/import carries the tag.
+
+Known-joint note: the design's showcase node 1,-1,1 (seed 6/7) is no longer deg-2 — the cull
+deletion changed the settled adjacency. Showcase moved to seed 20 node 1,2,0.
