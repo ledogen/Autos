@@ -657,3 +657,27 @@ stacks are expressible. Full detail in the commit message; the measured story:
   re-baseline).
 - Residual ~30–35% pitches can appear near hairpin apexes where the fillet displaces the line off
   the planned bench (≤ ~19 m at a 135° apex) — second-order; judge in the drive.
+
+## Big-bite session checkpoint (2026-08-19, autonomous — steps 1-2a of the agreed order done)
+
+Owner-approved order: culls → deg-2 joints → worker port → feel-session prep.
+- **DONE (acb42f3): culls DELETED.** Measured first: v1 95.7%/7-of-10 fully connected vs
+  v2-with-culls 54.1%/0-of-10 — the culls deleted 11-21 good edges/seed while preventing ZERO real
+  crossings. Culls off: **100%/10-of-10, zero crossings**, runs +50%, km at v1 coverage, hairpins
+  15/21/20, seed-11 mark cleared. New gate `road-connectivity.mjs` (eval trio = one component +
+  no real crossings). Re-baselined: shoulder-lateral-continuity (cross-run seams at naive meets
+  are the junction pass's item), mission-network cull-share precondition inverted.
+- **DONE (this commit): chain-merge machinery deleted** (was already off). Runs are 1:1 with edges.
+- **OPEN — BUG-41 interior drift** (mission-network red): par-vs-carve elevation series diverge
+  p99 2.8 m in run interiors on the bigger network; the clArc-vs-polyCum hypothesis was tested and
+  DISPROVEN (sampler-domain swap moved nothing). Needs its own session.
+- **NEXT, in order:** (1) deg-2 canonical approach headings (compute per node from settled
+  degree-capped adjacency inside _assembleGraphEdges; enforce as first/last-step direction
+  constraints in corridorSearch — ±~50° cone; skip the near-anchor absorb when a heading pin is
+  active or it eats the constrained step); (2) worker port — extract a routeEdgeV2() orchestration
+  (corridor→centerline→feasibility ladder) into corridor-router.js, rewrite src/road-worker.js as
+  a MODULE worker importing it (kills the ROUTE SYNC mirror + its gate), re-enable _warmScan with
+  v2 job specs {key, ax, az, yA, bx, bz, yB, margin, discs}, keep ingestRoutedConnections'
+  descriptor protocol; (3) feel-session prep — cTurn {15,30,60} A/B map renders + fresh gallery
+  shots so the owner can dial hairpin density on arrival. Also open: story-poi pad-flatness
+  (1/14 pads, 1.27 m), paper-tour 1 dropped customer, fill-support seed-7 (1 m), perf ~30-60 ms/edge.
