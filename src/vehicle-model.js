@@ -37,6 +37,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
+import { camberLean, toeOffset } from './alignment.js'
 
 // The imported GLB (described by a spec from data/vehicle-models.js) replaces the primitive truck.
 // The primitives stay as an automatic fallback if the load fails (offline, 404, parse error).
@@ -480,15 +481,21 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
       // which is rearward (forward = −Z). Negate here — visual only, physics owns the sign upstream.
       const spinQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -state.wheelAngles[i])
 
-      if (i < 2) {
-        // Front wheels: combine steer (Y) then spin (X). steerQ.multiply(spinQ) = steerQ * spinQ
-        // meaning spinQ is applied first, then steerQ — spin around axle, then yaw the whole assembly.
-        const steer  = state.wheelSteerAngles ? state.wheelSteerAngles[i] : state.steerAngle
-        const steerQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), steer)
-        wheelMeshes[i].quaternion.copy(steerQ).multiply(spinQ)
-      } else {
-        wheelMeshes[i].quaternion.copy(spinQ)
-      }
+      // Steer (Y) carries static toe on every corner — rear wheels are only ever toed, never steered.
+      const steerInput = i < 2
+        ? (state.wheelSteerAngles ? state.wheelSteerAngles[i] : state.steerAngle)
+        : 0
+      const steer  = steerInput + toeOffset(i, params)
+      const steerQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), steer)
+      // Camber leans the whole assembly about its forward axis (−Z), applied OUTSIDE steer+spin so
+      // it reads as suspension geometry rather than something the wheel does as it turns. Same
+      // signed lean physics.js uses, so what you see is what the tire model is actually doing.
+      const lean = camberLean(i, params)
+      const camberQ = lean !== 0
+        ? new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, -1), lean)
+        : null
+      wheelMeshes[i].quaternion.copy(steerQ).multiply(spinQ)
+      if (camberQ) wheelMeshes[i].quaternion.premultiply(camberQ)
 
       // D-07 (Phase 4.1): Derive full hub world position from strutComp, inverse-transform to body-local.
       // Replaces the broken world-ΔY approximation with exact body-space hub position for any orientation.

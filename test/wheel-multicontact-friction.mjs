@@ -42,7 +42,9 @@ const groundY = 0
 const WALL_DEPTH = 1e-5   // ~0 → negligible push-out, but still a second contact the loop must handle
 let wallMode = false
 const mkQuery = () => (cx, cy, cz, r) => {
-  if (Math.abs(r - P.wheelRadius) > 1e-9) return []   // ignore body-sphere queries
+  // Accept the whole out-of-round radius band (params.wheelRunout modulates the wheel query
+  // radius by ±runout/2 per spin phase); anything outside it is a body-sphere query.
+  if (Math.abs(r - P.wheelRadius) > 0.5 * (P.wheelRunout || 0) + 1e-9) return []
   const depth = groundY + r - cy
   const hits = []
   if (depth > 0) hits.push({ normal: new THREE.Vector3(0, 1, 0), depth, contactPoint: new THREE.Vector3(cx, groundY, cz) })
@@ -82,6 +84,7 @@ function cloneState (s) {
     strutComp: [...s.strutComp], strutCompVel: [...s.strutCompVel],
     slipLong: [...s.slipLong], slipLat: [...s.slipLat],
     wheelOmega: [...s.wheelOmega],
+    wheelPhase: s.wheelPhase ? [...s.wheelPhase] : [0, 0, 0, 0],
     wheelDebug: s.wheelDebug.map(d => ({ ...d })),
     handbrake: s.handbrake,
   }

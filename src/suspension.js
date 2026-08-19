@@ -129,6 +129,38 @@ export function getWheelPosition (corner, vehicleState, params) {
  * @returns {Array<{x,y,z}>} Four world-space points: FL/FR front bumper, RL/RR rear bumper.
  */
 /**
+ * Effective (rolling-surface) tire radius for one corner at its current spin angle.
+ *
+ * Radial runout — an out-of-round tire. `params.wheelRunout` is the PEAK-TO-PEAK radius
+ * variation in metres (0 = perfectly round), so the amplitude about the nominal radius is
+ * half of it: a 0.02 m runout means +/-0.01 m. The high spot passes the contact patch once
+ * per revolution, so the vertical force gets a first-order sinusoid at wheel frequency
+ * (omega / 2*pi Hz) — the classic wheel hop / steering-wheel shimmy that grows with speed.
+ *
+ * Each corner carries a fixed phase offset so the four wheels do not hop in lockstep
+ * (a real set of tires is never phase-matched, and in-phase hop would read as pure heave).
+ *
+ * The hub CENTER is unaffected — runout is tire-carcass geometry, not axle position — so only
+ * the contact-query radius uses this, never getWheelPosition().
+ *
+ * Phase comes from vehicleState.wheelPhase — integrated by physics.js at the FIXED physics step,
+ * NOT from vehicleState.wheelAngles (which vehicle.js integrates per rendered frame). Physics must
+ * not read a render-rate value or the ride becomes framerate-dependent (INFRA-03 determinism).
+ *
+ * @param {number} corner - 0-3 (FL, FR, RL, RR).
+ * @param {object} vehicleState - uses .wheelPhase[corner] (rad, integrated in physics.js).
+ * @param {object} params - uses wheelRadius, wheelRunout.
+ * @returns {number} radius in metres.
+ */
+const RUNOUT_PHASE = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5]
+export function effectiveWheelRadius (corner, vehicleState, params) {
+  const runout = params.wheelRunout || 0
+  if (runout === 0) return params.wheelRadius
+  const theta = (vehicleState.wheelPhase && vehicleState.wheelPhase[corner]) || 0
+  return params.wheelRadius + 0.5 * runout * Math.sin(theta + RUNOUT_PHASE[corner])
+}
+
+/**
  * Quarter-car suspension sub-step loop. Integrates strut compression state (strutComp, strutCompVel)
  * at dt/N for stability, computes tire-spring and suspension-spring forces, applies ARB coupling.
  *
@@ -333,7 +365,10 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       const springTerm = strutCompI > 0 ? k_S * strutCompI : 0
 
       // Phase 4.1 D-06: Contact normal split into strut-axis component (tireFz) and X/Z residual (_hubNormalXZ).
-      const hubContacts = queryContacts(hubWorldX, hubWorldY, hubWorldZ, params.wheelRadius, true)
+      // Out-of-round tires: the contact query uses the radius AT THIS SPIN ANGLE, so the high
+      // spot digs deeper into the surface (bigger depth -> bigger tire force) once per revolution.
+      const hubContacts = queryContacts(hubWorldX, hubWorldY, hubWorldZ,
+        effectiveWheelRadius(i, vehicleState, params), true)
       let tireFz = 0
       for (const c of hubContacts) {
         // compressionVel sign convention: positive = hub approaching ground = tire compressing.

@@ -37,7 +37,9 @@ let groundY = 0
 const ctx = await makeEngineCtx({ position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } }, P)  // FEAT-48: collider-free world — wheels ride the analytic mock; the engine supplies gravity + integration
 // Wheel-radius contacts only → isolates the failsafe/suspension wheel path from body-sphere contacts.
 const queryContacts = (cx, cy, cz, r) => {
-  if (Math.abs(r - P.wheelRadius) > 1e-9) return []
+  // Accept the whole out-of-round radius band (params.wheelRunout modulates the wheel query
+  // radius by ±runout/2 per spin phase); anything outside it is a body-sphere query.
+  if (Math.abs(r - P.wheelRadius) > 0.5 * (P.wheelRunout || 0) + 1e-9) return []
   const depth = groundY + r - cy
   if (depth <= 0) return []
   return [{ normal: new THREE.Vector3(0, 1, 0), depth, contactPoint: new THREE.Vector3(cx, groundY, cz) }]

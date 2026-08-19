@@ -922,6 +922,7 @@ async function _reseatTruckAtSpawnInner () {
   vehicleState.tireFlat       = [0, 0, 0, 0]
   vehicleState.bumpForce      = [0, 0, 0, 0]
   vehicleState.brakeTorque    = [0, 0, 0, 0]
+  vehicleState.wheelPhase     = [0, 0, 0, 0]
   vehicleState.drivetrain     = { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 }
   vehicleState.slipLong       = [0, 0, 0, 0]
   vehicleState.slipLat        = [0, 0, 0, 0]
@@ -1047,6 +1048,7 @@ const vehicleState = {
   tireFlat:        [0, 0, 0, 0],                   // N   — cornering force magnitude (tire wear, minor term)
   bumpForce:       [0, 0, 0, 0],                   // N   — peak bump-stop force this step (spring wear)
   brakeTorque:     [0, 0, 0, 0],                   // N·m — applied brake torque (brake wear)
+  wheelPhase:      [0, 0, 0, 0],                   // per-wheel spin phase [rad], fixed-step; feeds the out-of-round radius (params.wheelRunout)
   drivetrain:      { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },  // FEAT-23 engine/converter/gearbox state; stepped by stepDrivetrain, read by HUD/logger
   handbrake:       false,                            // Space key handbrake state; written by updateVehicle, read by getBrakeTorque
   parked:          true,                              // spawn/teleport hold (feature/teleport): handbrake held until first driver input

@@ -195,6 +195,18 @@ export function initDebug (params, callbacks = {}, options = {}) {
   const tiresFolder = vehicleFolder.addFolder('Tires')
   tiresFolder.add(params, 'tireStiffness', 100000, 300000, 5000).name('Tire Stiffness (N/m)')
   tiresFolder.add(params, 'tireDamping', 200, 4000, 100).name('Tire Damping (N·s/m)')
+  tiresFolder.add(params, 'wheelRunout', 0, 0.05, 0.001).name('Runout p-p (m)')   // out-of-round tire; 0 = perfectly round
+
+  // ── Alignment ───────────────────────────────────────────────────────────────────
+  // Static toe and camber, in DEGREES, mirrored per side by src/alignment.js.
+  // toe > 0 = toe-in (leading edges converge); camber < 0 = tops leaning inboard.
+  // Live-editable: physics reads params every step and the wheel meshes tilt with them.
+  const alignFolder = vehicleFolder.addFolder('Alignment')
+  alignFolder.add(params, 'toeFront', -1.0, 1.0, 0.01).name('Toe Front (deg, + = in)')
+  alignFolder.add(params, 'toeRear', -1.0, 1.0, 0.01).name('Toe Rear (deg, + = in)')
+  alignFolder.add(params, 'camberFront', -5.0, 2.0, 0.05).name('Camber Front (deg, − = neg)')
+  alignFolder.add(params, 'camberRear', -5.0, 2.0, 0.05).name('Camber Rear (deg, − = neg)')
+  alignFolder.add(params, 'camberThrustCoeff', 0, 2.0, 0.05).name('Camber Thrust (×Fn/rad)')
   tiresFolder.add(params, 'frictionCoeff', 0.1, 1.5, 0.05).name('Friction Coeff')
   tiresFolder.add(params, 'pacejkaB', 5, 20, 0.5).name('B - Stiffness')
   tiresFolder.add(params, 'pacejkaC', 1.0, 1.99, 0.01).name('C - Shape [1.0-1.99]')

@@ -14,6 +14,23 @@ export const RANGER_PARAMS = {
   trackRear:    1.46,   // m — center-to-center wheel spacing at rear axle
   cgHeight:     0.55,   // m — center of gravity above ground (estimate, laden)
   wheelRadius:  0.368,  // m — 245/75R16 tire radius
+  wheelRunout:  0.000,  // m — PEAK-TO-PEAK radial runout (out-of-round tire). 0 = perfectly round
+                        // and the whole path short-circuits; the Tires debug slider dials it in.
+                        // Modulates the contact radius once per wheel revolution
+                        // (src/suspension.js effectiveWheelRadius), so it hops at wheel frequency.
+
+  // ── Wheel alignment (degrees — an alignment sheet reads in degrees, so the params do too) ──
+  // Sign conventions and the per-side mirroring live in src/alignment.js:
+  //   toe    > 0 = TOE-IN      (leading edges converge ahead of the axle)
+  //   camber < 0 = NEGATIVE    (tops lean toward the centerline, patches splay out)
+  toeFront:     +0.10,  // deg — mild toe-in for straight-line stability
+  toeRear:       0.00,  // deg — solid rear axle, no toe adjustment
+  camberFront:  -0.50,  // deg
+  camberRear:   -0.30,  // deg
+  // Camber stiffness as a multiple of Fn per radian of lean (camber thrust = coeff·Fn·lean).
+  // Radial tires run ≈0.5-1.5, roughly a tenth of cornering stiffness. 0 disables camber thrust
+  // (the geometric lean of the lateral axis stays).
+  camberThrustCoeff: 0.9,
   bodyLength:   4.61,   // m — approximate exterior length (2002 Ford Ranger)
   bodyWidth:    1.66,   // m — track(1.46) + wheel width(0.25) - 0.05 margin so wheels visible from side
   bodyHeight:   1.60,   // m — approximate exterior height (2002 Ford Ranger)

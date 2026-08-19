@@ -39,8 +39,9 @@
 
 import * as THREE from 'three'
 import { computeTireForces } from './tire.js'
-import { computeNormalForce, getWheelPosition, stepSuspensionSubsteps } from './suspension.js'
+import { computeNormalForce, effectiveWheelRadius, getWheelPosition, stepSuspensionSubsteps } from './suspension.js'
 import { stepDrivetrain } from './drivetrain.js'
+import { camberLean, toeOffset } from './alignment.js'
 import { GROUP_CHASSIS, GROUP_DEBRIS } from './physics-engine.js'
 
 // Speed threshold for input routing (rule-based, no dead-zone oscillation).
@@ -562,12 +563,20 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     )
 
     // Wheel-frame axes (steered for front wheels)
-    const steer = (i < 2 && vehicleState.wheelSteerAngles)
+    const steerInput = (i < 2 && vehicleState.wheelSteerAngles)
       ? vehicleState.wheelSteerAngles[i]
       : (i < 2 ? vehicleState.steerAngle : 0)
+    // Static toe rides on top of the steer angle (rear wheels get it too, from toeRear).
+    const steer = steerInput + toeOffset(i, params)
     const steerQ     = new THREE.Quaternion().setFromAxisAngle(up, steer)
     const wheelFwd   = forward.clone().applyQuaternion(steerQ)
     const wheelRight = right.clone().applyQuaternion(steerQ)
+    // Static camber tilts the whole wheel about its own forward axis, so the lateral (axle)
+    // axis tilts with it. Grip then has a small vertical component — the jacking force real
+    // cambered wheels generate. Body roll is already in `right`/`up` (body axes), so the lean
+    // this builds is the wheel's attitude relative to the WORLD, not just to the chassis.
+    const lean = camberLean(i, params)
+    if (lean !== 0) wheelRight.applyAxisAngle(wheelFwd, lean)
 
     params._lateralVelocity      = hubVel.dot(wheelRight)
     params._longitudinalVelocity = hubVel.dot(wheelFwd)
@@ -597,7 +606,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
 
     // Query every surface this wheel sphere overlaps (footprint=true: tire-envelope ground sampling).
     // qcPlus = analytic terrain/props/walls ∪ engine dynamic debris (FEAT-48 translation layer).
-    const contacts = qcPlus(hub.x, hub.y, hub.z, params.wheelRadius, true)
+    // Same out-of-round radius the suspension contact query uses (params.wheelRunout) — the
+    // Pacejka patch has to sit on the same tire surface the vertical spring is loading.
+    const contacts = qcPlus(hub.x, hub.y, hub.z, effectiveWheelRadius(i, vehicleState, params), true)
 
     // BUG-38: the Pacejka tire is a per-WHEEL model with ONE slip state, so its friction must be
     // evaluated ONCE per wheel — NOT once per contact. Pick the support surface (normal most aligned
@@ -731,6 +742,13 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // WR-02: lateral grip opposes lateral hub velocity (resists the slide), so positive Flat
       // from computeTireForces(positive slipVy) must be applied along -wheelRight.
       wheelForce.addScaledVector(wheelRight, -Flat)
+      // Camber thrust: a leaning tire steers itself toward the lean, at roughly a tenth of its
+      // cornering stiffness (camberThrustCoeff is that stiffness as a multiple of Fn per radian).
+      // Straight-line it cancels left against right; in a corner the loaded outside wheel wins,
+      // which is why negative camber pays off only once weight has transferred.
+      if (lean !== 0) {
+        wheelForce.addScaledVector(wheelRight, (params.camberThrustCoeff || 0) * Fn * lean)
+      }
       totalForce.add(wheelForce)
       totalTorque.add(new THREE.Vector3().crossVectors(rContact, wheelForce))
 
@@ -850,6 +868,19 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     // Update omega debug field — airborne wheels still log their evolving omega (CR-03)
     if (vehicleState.wheelDebug) {
       vehicleState.wheelDebug[i].omega = vehicleState.wheelOmega[i]
+    }
+  }
+
+  // ── Step 3-runout: integrate the tire spin phase used by the out-of-round radius ──
+  // Fixed-step integration of wheelOmega, kept separate from vehicleState.wheelAngles (which
+  // vehicle.js integrates per rendered frame for the wheel MESH). Wrapped to [0, 2π) so it
+  // stays exact after long drives. No-op cost when wheelRunout is 0.
+  if (params.wheelRunout) {
+    if (!vehicleState.wheelPhase) vehicleState.wheelPhase = [0, 0, 0, 0]
+    const TWO_PI = Math.PI * 2
+    for (let i = 0; i < 4; i++) {
+      const ph = vehicleState.wheelPhase[i] + (vehicleState.wheelOmega?.[i] ?? 0) * dt
+      vehicleState.wheelPhase[i] = ph - TWO_PI * Math.floor(ph / TWO_PI)
     }
   }
 
