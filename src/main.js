@@ -23,6 +23,7 @@ import { TerrainPhysics, RoadPhysics, PropPhysics } from './terrain-physics.js'
 import { DebrisSystem } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
 import { getWheelPosition } from './suspension.js'
+import { DamageModel } from './damage.js'                   // SM-3: component condition model
 import { updateVehicle, setLaunchHold, setControlAttenuation, SPAWN_STATE } from './vehicle.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
@@ -917,6 +918,10 @@ async function _reseatTruckAtSpawnInner () {
   vehicleState.wheelSteerAngles = [0, 0, 0, 0]
   vehicleState.wheelDebug     = [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ]
   vehicleState.wheelOmega     = [0, 0, 0, 0]
+  vehicleState.slipVel        = [0, 0, 0, 0]     // SM-3 damage signals
+  vehicleState.tireFlat       = [0, 0, 0, 0]
+  vehicleState.bumpForce      = [0, 0, 0, 0]
+  vehicleState.brakeTorque    = [0, 0, 0, 0]
   vehicleState.drivetrain     = { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 }
   vehicleState.slipLong       = [0, 0, 0, 0]
   vehicleState.slipLat        = [0, 0, 0, 0]
@@ -1036,12 +1041,27 @@ const vehicleState = {
   strutCompVel: [0, 0, 0, 0],            // m/s — strut compression velocity per corner (D-01)
   wheelDebug:      [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ],  // per-wheel debug data written by stepPhysics; read by logger; fz=tire spring force (D-12)
   wheelOmega:      [0, 0, 0, 0],                   // per-wheel angular velocity [rad/s]; integrated by physics.js omega integrator
+  // ── SM-3 damage signals: honest per-corner quantities the physics already computes, published
+  // here so src/damage.js can integrate wear without importing anything from the physics stack.
+  slipVel:         [0, 0, 0, 0],                   // m/s — raw contact-patch sliding speed (tire wear, dominant term)
+  tireFlat:        [0, 0, 0, 0],                   // N   — cornering force magnitude (tire wear, minor term)
+  bumpForce:       [0, 0, 0, 0],                   // N   — peak bump-stop force this step (spring wear)
+  brakeTorque:     [0, 0, 0, 0],                   // N·m — applied brake torque (brake wear)
   drivetrain:      { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },  // FEAT-23 engine/converter/gearbox state; stepped by stepDrivetrain, read by HUD/logger
   handbrake:       false,                            // Space key handbrake state; written by updateVehicle, read by getBrakeTorque
   parked:          true,                              // spawn/teleport hold (feature/teleport): handbrake held until first driver input
   submerged:       false,                            // FEAT-22: CG below a water surface (set per-frame from WaterSystem.submergedAt)
   submergedDepth:  0,                                // FEAT-22: m below the water surface (0 when dry)
 }
+
+// ── SM-3 damage model ────────────────────────────────────────────────────────────────────────────
+// One instance per run. Starts at 100% (a new truck); the jalopy generator will replace this with a
+// seeded roll over starting wear later in SM-3. publish() runs immediately so the physics stack sees
+// defined multipliers on the very first step rather than falling back to its `?? 1` defaults.
+const damageModel = new DamageModel({ params: RANGER_PARAMS })
+damageModel.publish(RANGER_PARAMS)
+window.__damage = damageModel   // debug panel + the damage GUI read this
+
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
 const canvas = document.querySelector('canvas')
@@ -4646,6 +4666,10 @@ function loop () {
     }
 
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
+    // SM-3: integrate component wear on the SAME fixed step the physics ran, so condition is
+    // framerate-independent like everything else (INFRA-03 determinism). Reads the honest signals
+    // stepPhysics just published; writes the effect multipliers the NEXT step will read.
+    damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     simTime += PHYSICS_DT
     // BUG-12 diagnostic (open): while recording, log the truck run's local centerline turn radius
     // to localize ribbon folds. Gated on isRecording() so normal play pays nothing (queryNearest

@@ -84,9 +84,12 @@ function getBrakeTorque (wheelIndex, vehicleState, params) {
   // re-create the drive/brake oscillation this feature fixes.
 
   // S above REV_THRESHOLD: brake all wheels to slow forward motion (front/rear-split service brake).
+  // SM-3: worn pads deliver less torque. params._brakeScale{Front,Rear} is published by
+  // src/damage.js; absent (headless gates, damage off) it reads as 1 and nothing changes.
+  const brakeDmg = isRear ? (params._brakeScaleRear ?? 1) : (params._brakeScaleFront ?? 1)
   if (vehicleState.brake > 0 && longVel > REV_THRESHOLD) {
     const maxBt = isRear ? (params.maxBrakeTorqueRear ?? 800) : (params.maxBrakeTorqueFront ?? 1200)
-    return vehicleState.brake * maxBt
+    return vehicleState.brake * maxBt * brakeDmg
   }
 
   // Handbrake: rear wheels only, FULL clamping torque at all speeds. A handbrake is a fixed brake, so
@@ -97,7 +100,7 @@ function getBrakeTorque (wheelIndex, vehicleState, params) {
   // grades far below the friction angle. Full torque locks the rears; the tire then holds (static) or
   // skids (kinetic) per the slope vs friction angle, which is the correct behaviour.
   if (vehicleState.handbrake && isRear) {
-    return params.maxHandbrakeTorque
+    return params.maxHandbrakeTorque * brakeDmg
   }
 
   return 0
@@ -528,6 +531,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       const wheelInertia_a = params.wheelInertia || 1.22
       const driveTorque_a  = getDriveTorque(i, vehicleState, params)
       const brakeTorque_a  = getBrakeTorque(i, vehicleState, params)
+      if (vehicleState.brakeTorque) vehicleState.brakeTorque[i] = brakeTorque_a
+      if (vehicleState.slipVel)  vehicleState.slipVel[i]  = 0   // airborne: no contact, no abrasion
+      if (vehicleState.tireFlat) vehicleState.tireFlat[i] = 0
       const omega0_a       = vehicleState.wheelOmega?.[i] ?? 0
       const spinSign_a     = omega0_a >= 0 ? 1 : -1
       const brakeSigned_a  = brakeTorque_a * spinSign_a
@@ -698,7 +704,16 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       if (sMag > sBreak) { const k = sBreak / sMag; sLongCur *= k; sLatNew *= k }
       vehicleState.slipLat[i] = sLatNew
 
-      const { Flong, Flat } = computeTireForces(sLongCur, sLatNew, Fn, params)
+      // SM-3 per-tire friction: params._tireMuScale[i] is published by src/damage.js (tire wear),
+      // and is the same hook FEAT-38's per-surface μ will multiply into. Absent → 1, no change.
+      const muScale = params._tireMuScale?.[i] ?? 1
+      const { Flong, Flat } = computeTireForces(sLongCur, sLatNew, Fn, params, muScale)
+
+      // SM-3 honest wear signals for this wheel, published for src/damage.js to integrate.
+      // slipVel is the RAW contact-patch sliding speed (not the relaxation-filtered displacement) —
+      // abrasion is driven by how fast the rubber is actually sliding over the ground.
+      if (vehicleState.slipVel)  vehicleState.slipVel[i]  = Math.hypot(omegaCur - longVelCur, latVelCur)
+      if (vehicleState.tireFlat) vehicleState.tireFlat[i] = Math.abs(Flat)
 
       // Save state for Newton iteration in ω integrator (re-evaluates sLong and F at ω_new).
       lastFn         = Fn
@@ -766,6 +781,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       const wheelInertia = params.wheelInertia || 1.22
       const driveTorque  = getDriveTorque(i, vehicleState, params)
       const brakeTorque  = getBrakeTorque(i, vehicleState, params)
+      if (vehicleState.brakeTorque) vehicleState.brakeTorque[i] = brakeTorque
       const dsdo         = dt * params.wheelRadius / lastRelaxDen  // ∂sLong_new/∂ω_new
       const omega0       = vehicleState.wheelOmega?.[i] ?? 0
       const spinSign     = omega0 >= 0 ? 1 : -1
@@ -786,7 +802,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
         if (sLongIter < -sLongMax) sLongIter = -sLongMax
         sLongFinal = sLongIter
         if (lastFn <= 0) break  // airborne: no road reaction; Newton trivially converged
-        const { Flong, dFmagDs } = computeTireForces(sLongIter, lastSLatNew, lastFn, params)
+        const { Flong, dFmagDs } = computeTireForces(sLongIter, lastSLatNew, lastFn, params, params._tireMuScale?.[i] ?? 1)
         const g  = omegaNew - omega0 - dt / wheelInertia * (driveTorque - Flong * params.wheelRadius - brakeSigned)
         // g'(ω) = 1 + dt·r/I · dF/dω,  with dF/dω = dFmagDs · dsdo
         const gp = 1 + dt * params.wheelRadius * dFmagDs * dsdo / wheelInertia

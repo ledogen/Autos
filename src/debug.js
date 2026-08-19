@@ -30,6 +30,7 @@ import { VEHICLES } from '../data/vehicles.js'
 import { resolveBuild } from './version.js'
 import { THROW_PARAMS } from './throw.js'                      // FEAT-61 Phase F: throw feel
 import { PAPER_PARAMS, RR_PARAMS } from './paper-route.js'     // FEAT-61 Phase F: payout + re-plan
+import { DAMAGE_PARAMS, TRACKS, TRACK_IDS } from './damage.js' // SM-3: component condition model
 
 // Module-level bindings so updatePacejkaCurve and updateTravelBars (defined at module scope)
 // can read them. Assigned inside initDebug(); null until then.
@@ -242,6 +243,41 @@ export function initDebug (params, callbacks = {}, options = {}) {
   suspFolder.add(params, 'suspensionBodyOffsetRear',  -0.10, 0.10,   0.005).name('Rear Body Offset (m)')
   suspFolder.add(params, 'bumpStopStiffness',         10000, 500000, 5000).name('Bump Stop Stiffness (N/m)')
   suspFolder.add(params, 'wheelFootprint').name('Tire Footprint (envelope)')
+
+  // ── SM-3 damage panel ──────────────────────────────────────────────────────────────────────────
+  // Two jobs, both authoring conveniences, neither shipped to the player (the player-facing surface
+  // is the diagnostic screen, FEAT-34):
+  //   1. Disable damage — does NOT freeze components where they are. It restores/degrades every
+  //      track to the nominal used-vehicle condition and locks it there (owner, 2026-08-19), so a
+  //      debug session always starts from the same known truck.
+  //   2. Poke one component by ±5 / ±25 percentage points, so any condition is reachable in seconds
+  //      instead of having to drive to it.
+  const dmgFolder = vehicleFolder.addFolder('Damage (SM-3)')
+  const _damage = () => (typeof window !== 'undefined' ? window.__damage : null)
+
+  dmgFolder.add(DAMAGE_PARAMS, 'enabled').name('Damage Enabled')
+  dmgFolder.add(DAMAGE_PARAMS, 'nominalCondition', 0, 1, 0.05).name('Nominal (disabled) %')
+
+  const _pick = { track: TRACK_IDS[0], condition: 1 }
+  const _trackOptions = {}
+  for (const id of TRACK_IDS) _trackOptions[TRACKS[id].label] = id
+
+  const _readout = dmgFolder.add(_pick, 'condition', 0, 1).name('Condition').listen().disable()
+  const _sync = () => { const d = _damage(); if (d) _pick.condition = d.get(_pick.track) }
+  dmgFolder.add(_pick, 'track', _trackOptions).name('Component').onChange(_sync)
+
+  const _poke = (delta) => () => {
+    const d = _damage(); if (!d) return
+    d.adjust(_pick.track, delta)
+    d.publish(params)     // effects apply immediately — no need to wait for the next wear step
+    _sync()
+  }
+  dmgFolder.add({ f: _poke(-0.25) }, 'f').name('−25%')
+  dmgFolder.add({ f: _poke(-0.05) }, 'f').name('−5%')
+  dmgFolder.add({ f: _poke(+0.05) }, 'f').name('+5%')
+  dmgFolder.add({ f: _poke(+0.25) }, 'f').name('+25%')
+  dmgFolder.add({ f: () => { const d = _damage(); if (d) { d.setAll(1); d.publish(params); _sync() } } }, 'f').name('Restore All')
+  void _readout
 
   // Phase 6 (TERR-06): Terrain folder — amplitude tuning + ramp visibility toggle.
   // terrainAmplitude is read by TerrainSystem._flushPendingQueue during geometry build;

@@ -40,12 +40,15 @@
  * @param {number} Fn - [N] normal force on this wheel.
  * @param {object} params - RANGER_PARAMS. Reads pacejkaB/C/D/E, frictionCoeff,
  *   tireStiffnessLong, tireStiffnessLat, tireSlipVelRef.
+ * @param {number} [muScale=1] - PER-WHEEL friction multiplier (SM-3 tire wear + FEAT-38 surface μ).
+ *   The caller owns which wheel this is; this module stays a pure single-tire function. Multiplies
+ *   params.frictionCoeff, so 1.0 is exactly the old behaviour.
  * @returns {{Flong: number, Flat: number, dFmagDs: number}}
  *   Flong: positive = wheel-forward (drive direction).
  *   Flat:  positive = wheel-right.
  *   dFmagDs: d|F|/d|s_scaled| in N/(m/s), well-defined at slip = 0.
  */
-export function computeTireForces (slipVx, slipVy, Fn, params) {
+export function computeTireForces (slipVx, slipVy, Fn, params, muScale = 1) {
   const kL   = params.tireStiffnessLong ?? 1.0
   const kT   = params.tireStiffnessLat  ?? 1.0
   const vRef = params.tireSlipVelRef    ?? 1.0
@@ -53,7 +56,7 @@ export function computeTireForces (slipVx, slipVy, Fn, params) {
   const C    = Math.max(1.0, Math.min(1.99, params.pacejkaC))  // C=2 collapses formula
   const D    = params.pacejkaD
   const E    = params.pacejkaE
-  const mu   = params.frictionCoeff ?? 1.0
+  const mu   = (params.frictionCoeff ?? 1.0) * muScale
 
   const sx   = slipVx * kL
   const sy   = slipVy * kT

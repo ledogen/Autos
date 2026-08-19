@@ -169,6 +169,8 @@ export function getWheelPosition (corner, vehicleState, params) {
  * @returns {void}
  */
 export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts) {
+  // SM-3: reset the per-step peak bump-stop force before the substep loop accumulates this step's.
+  if (vehicleState.bumpForce) { vehicleState.bumpForce[0] = 0; vehicleState.bumpForce[1] = 0; vehicleState.bumpForce[2] = 0; vehicleState.bumpForce[3] = 0 }
   // Paranoid guard (Phase 4.1 D-01): if strutComp/strutCompVel not initialized, skip.
   if (!vehicleState.strutComp || vehicleState.strutComp.length !== 4) return
   if (!vehicleState.strutCompVel || vehicleState.strutCompVel.length !== 4) return
@@ -319,8 +321,13 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
     // ── 3. Force + strut integration pass ────────────────────────────────────────
     for (let i = 0; i < 4; i++) {
       const { strutCompI, strutCompVelI, hubWorldX, hubWorldY, hubWorldZ, isFront } = cornerData[i]
-      const k_S = isFront ? params.suspensionStiffnessFront : params.suspensionStiffnessRear
-      const c_S = isFront ? params.suspensionDampingFront   : params.suspensionDampingRear
+      // SM-3: sagged springs and dead dampers. params._springScale{Front,Rear} and
+      // params._damperScale{Front,Rear} are published by src/damage.js; absent (headless gates,
+      // damage off) they read as 1 and the suspension is exactly the stock one.
+      const k_S = (isFront ? params.suspensionStiffnessFront : params.suspensionStiffnessRear)
+                * (isFront ? (params._springScaleFront ?? 1) : (params._springScaleRear ?? 1))
+      const c_S = (isFront ? params.suspensionDampingFront   : params.suspensionDampingRear)
+                * (isFront ? (params._damperScaleFront ?? 1) : (params._damperScaleRear ?? 1))
 
       // Suspension spring: D-15 no-tension clamp on spring term (no tension when strut extended).
       const springTerm = strutCompI > 0 ? k_S * strutCompI : 0
@@ -374,6 +381,13 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       // Bump stop: engages when strut is compressed past travel limit; pushes hub away from body (negative)
       const bumpOvershoot  = strutCompI - travel
       const bumpForce      = bumpOvershoot > 0 ? -params.bumpStopStiffness * bumpOvershoot : 0
+      // SM-3 honest wear signal: peak bump-stop force this step, per corner. src/damage.js reads it
+      // for the spring track. Peak (not mean) across substeps — a hard hit inside one substep is
+      // exactly the severity this track is supposed to notice.
+      if (vehicleState.bumpForce) {
+        const bfMag = Math.abs(bumpForce)
+        if (bfMag > vehicleState.bumpForce[i]) vehicleState.bumpForce[i] = bfMag
+      }
       // Droop stop: engages when strut extends past rest (strutComp < 0); pulls hub back toward body (positive)
       const droopOvershoot = -strutCompI  // positive when strutComp < 0
       const droopForce     = droopOvershoot > 0 ? DROOP_K * droopOvershoot : 0

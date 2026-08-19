@@ -62,6 +62,11 @@ export const SPAWN_STATE = {
   smoothThrottle: 0, smoothBrake: 0,
   wheelAngles: [0, 0, 0, 0],
   wheelSteerAngles: [0, 0, 0, 0],
+  // ── SM-3 damage signals (written by physics.js / suspension.js, read by src/damage.js) ──────
+  slipVel:     [0, 0, 0, 0],   // m/s — raw contact-patch sliding speed per wheel (tire abrasion)
+  tireFlat:    [0, 0, 0, 0],   // N   — cornering force magnitude per wheel (tire, minor term)
+  bumpForce:   [0, 0, 0, 0],   // N   — peak bump-stop force this step per corner (springs)
+  brakeTorque: [0, 0, 0, 0],   // N·m — applied brake torque per wheel (brake pads)
   // ── Phase 4.1 strut state (D-01) ────────────────────────────────────────────
   // strutComp[i]:    strut compression from rest length [m]; positive = compressed.
   // strutCompVel[i]: compression velocity [m/s]; positive = compressing.
