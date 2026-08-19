@@ -554,3 +554,31 @@ mission-layer margin threshold (re-plan DID beat stale, 15.12 vs 15.82 km).
 - **Post-router bridge conversion at water crossings** (owner's design): causeway → short deck
   where a stream crosses, same elevation both ends.
 - The in-game marked-seed disclaimer (acceptance item) is still to wire.
+
+### Owner capture 1787117526907 (2026-08-18): the steep-straight-shot mechanism — diagnosed, fix parked
+
+Capture: seed 6, mark (1272, −467) — "should be switchbacks, not a steep straight shot." Taken on
+the pre-pass-1 build (its runKey is a merged-chain key); on today's build the road there is edge
+`g:2,-2,0:1,-1,1`: 888 m for a 719 m chord, descending 124 m (mean 13.9% — a 9% road exists at
+~1.5×), shipping **35.1% sustained-24 m exactly at the marked station** with 108 m over 30%.
+Legal (≤ the vocabulary cap), unmarked — and wrong per the character spec.
+
+**Mechanism (valid, measured):** the corridor's structure cap prices every step at
+min(onGrade, cBoreM) — beyond ~30% slope, onGrade exceeds 12 so ALL steeper ground costs the same
+12/m. On a descent to a LOWER node no bore can substitute (nothing to pass under), yet the cap
+still flattens the price — the corridor has no reason to trade length for grade on exactly the
+faces that need switchbacks. Compounding: the smoothing grade-guard (GUARD_G 0.18) lets a 9%
+zigzag be traded for a 17%-truncated chord unconditionally (25–30% on the full field).
+
+**Tried and PARKED (reverted, uncommitted):** cover-gating the cap (structure discount only where
+truncated terrain rises 10 m above the anchor-to-anchor chord line) + GUARD_G 0.12. At the
+captured spot: worst 35.1% → 29.8%, over-30% mileage 108 m → 0, detour ×1.24 → ×1.18 — the
+targeted cure works. But the canonical seed-20 crossing drifted ×1.25 → ×2.20 (bore 211 → 331 m,
+portal moved s=20 → s=70) and the tunnel drive-through then BLOCKED at the new portal mouth
+(cause not yet run down — portal-face collider vs the moved span). Reverted to e16ad9d per owner
+instruction; drive-through re-verified green (31–36 m/s end to end).
+
+**Next-pass shape:** re-land the cover-gated cap with (a) the canonical acceptance + drive-through
+in the measurement loop from the first edit, (b) the portal-mouth blockage diagnosed first, and
+(c) possibly a gentler gate (cover proxy relative to the local deck estimate, not the chord line)
+so portal APPROACH flanks keep their discount and only true descent faces lose it.
