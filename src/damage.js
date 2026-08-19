@@ -1,7 +1,7 @@
 /**
  * src/damage.js — SM-3 component condition model.
  *
- * ONE framework, 25 per-component condition tracks in eight classes. Every track carries a
+ * ONE framework, 26 per-component condition tracks in eight classes. Every track carries a
  * condition in [0, 1] (1 = new, 0 = destroyed), integrates an HONEST physics signal the sim already
  * produces, and expresses its effect as a multiplier the physics stack reads. Per-run state only
  * (SM-INV-8) — nothing here persists across runs. Time + intensity, never distance (SM-INV-5).
@@ -71,7 +71,8 @@ export const TRACKS = {
   // Powertrain + front-end. All three sit behind the front bumper and nothing else.
   engine:     { label: 'Engine',     cls: 'engine',     regions: ['front'] },
   radiator:   { label: 'Radiator',   cls: 'radiator',   regions: ['front'] },
-  headlights: { label: 'Headlights', cls: 'headlights', regions: ['front'] },
+  headlightL: { label: 'Headlight L', cls: 'headlights', regions: ['front'], side: 'left'  },
+  headlightR: { label: 'Headlight R', cls: 'headlights', regions: ['front'], side: 'right' },
 
   // Alignment — PER WHEEL, because toe and camber are per-wheel geometry and the ratified effect is
   // "random toe and camber applied to the affected wheels". Front bumper covers the front pair, rear
@@ -120,12 +121,20 @@ export const DAMAGE_PARAMS = {
 
   // Tires: slip velocity × time DOMINATES; cornering force × time is a minor contribution.
   //   insult = slipVel[m/s]·dt  +  wCorner · |Flat|[N]·dt
-  durTire:        4000,      // m of accumulated sliding to destroy a tire
+  // FITTED by test/calibrate-wear.mjs against the owner's rate (2026-08-19): 70 h of hard driving
+  // costs 20% of a tire. "Hard driving" is the duty cycle stated in that script — 25% of the hour at
+  // the grip limit, measured at 2.62 insult/s from the real stepPhysics. Re-run it if the tire model
+  // or the duty cycle changes; do not hand-edit this number.
+  durTire:        826000,    // m of accumulated sliding to destroy a tire
   tireWCorner:    2.0e-4,    // N·s → m-equivalent. At 5 kN cornering that is 1 m/s of "slip".
   tireSlipFloor:  0.15,      // m/s — no-harm floor. Rolling slip is not abrasion.
 
   // Brakes: ∫(brake torque × time), summed over the axle pair.
-  durBrake:       3.0e6,     // N·m·s per axle to destroy the pads
+  // FITTED likewise: 120 h of hard driving costs 20% of the FRONT pads (15% of the hour on the brakes
+  // at 60% pedal → 234 N·m mean on the front axle). The rear axle shares this constant and therefore
+  // reaches the same wear at ~347 h — fronts wearing roughly twice as fast is how brakes really
+  // behave, so this is the model being honest rather than a calibration miss.
+  durBrake:       5.05e8,    // N·m·s per axle to destroy the pads
 
   // Engine: f(rpm, torque, load) — deliberately VERY slow. Normalised so 1.0 = redline at full load.
   durEngine:      2.0e5,     // normalised load-seconds
@@ -138,6 +147,45 @@ export const DAMAGE_PARAMS = {
   // Dampers: high suspension displacement RATE above a no-harm floor.
   durDamper:      1.2e4,     // (m/s)·s per axle
   damperVelFloor: 0.35,      // m/s — normal ride motion is free
+
+  // ── Impacts ─────────────────────────────────────────────────────────────────────────────────────
+  // Calibrated by the owner in mph (2026-08-19), but the MEASURED quantity is the contact manifold's
+  // normal impulse in N·s — see impactSpeed() for why that distinction is the whole point.
+  //
+  // Each entry is (damage at 10 mph, damage at 60 mph) with NO armor in the way. Two points define a
+  // power law, damage = d10·(v/10mph)^n with n = ln(d60/d10)/ln 6:
+  //
+  //     armor / headlight   0.10 → 1.00   n = 1.285
+  //     radiator            0.05 → 0.50   n = 1.285
+  //     engine              0.01 → 0.20   n = 1.672
+  //
+  // Worth knowing: n = 1 would be damage proportional to IMPULSE, n = 2 proportional to KINETIC
+  // ENERGY. The ratified curve sits between them, so this is a fitted law, not either textbook one.
+  impactArmor:     { d10: 0.10, d60: 1.00 },
+  impactHeadlight: { d10: 0.10, d60: 1.00 },
+  impactRadiator:  { d10: 0.05, d60: 0.50 },
+  impactEngine:    { d10: 0.01, d60: 0.20 },
+  // Not owner-specified — starting values, to be tuned by feel like the springs and dampers.
+  impactWheel:     { d10: 0.05, d60: 0.50 },
+  impactSpring:    { d10: 0.03, d60: 0.30 },
+  impactDamper:    { d10: 0.03, d60: 0.30 },
+
+  // Armor absorbs a fraction of what it stands in front of, proportional to its own condition.
+  // Owner anchors: 90% absorbed at full health, 10% absorbed at 10% health. Straight proportionality
+  // hits both (it gives 9% at 10% health), so the simple form IS the ratified curve.
+  armorAbsorbAtFull: 0.90,
+
+  // Alignment: nothing below 30 mph, full displacement at 80 mph. At full displacement a wheel picks
+  // up ~2° of camber and ~0.5° of toe, randomly signed and randomly split between the two.
+  alignMinMph:     30,
+  alignMaxMph:     80,
+  alignMaxCamberDeg: 2.0,
+  alignMaxToeDeg:    0.5,
+
+  // Death: a hit at or above this equivalent speed is the fatal-crash fail state (SM-INV-1). Same
+  // 60 mph the armor curve tops out at — total armor loss and death are the same impact.
+  fatalMph:        60,
+  fatalEnabled:    true,
 }
 
 // ── Curves ────────────────────────────────────────────────────────────────────────────────────────
@@ -167,6 +215,80 @@ export function kneeResponse (c, knee, atKnee, atZero) {
   return atKnee + (atZero - atKnee) * t
 }
 
+// ── Impacts ───────────────────────────────────────────────────────────────────────────────────────
+
+export const MPH = 0.44704            // m/s per mph
+
+/**
+ * Equivalent impact speed, in m/s, for a measured contact impulse.
+ *
+ * The engine reports `totalNormalImpulse` off the contact manifold — N·s, the time integral of the
+ * contact force. That is deliberately NOT the vehicle's Δv:
+ *
+ *   · a glancing clip off a mailbox at 60 mph transfers almost no impulse → almost no damage
+ *   · a square hit into rock transfers the full m·v → full damage
+ *
+ * Pricing damage on impulse means the SEVERITY OF THE CONTACT drives it, which is the ratified
+ * intent (owner, 2026-08-19). Δv enters only as the unit conversion below: for the reference square,
+ * dead-stop collision, impulse = m·v, so `v_eq = J/m` reads as "the speed this hit would have shed
+ * had it stopped the truck dead". That is what the mph calibration numbers are quoted against.
+ *
+ * @param {number} impulseNs - contact normal impulse [N·s].
+ * @param {number} mass - vehicle mass [kg].
+ * @returns {number} equivalent impact speed [m/s].
+ */
+export function impactSpeed (impulseNs, mass) {
+  return mass > 0 ? Math.abs(impulseNs) / mass : 0
+}
+
+/**
+ * Damage fraction from a two-point mph calibration.
+ *
+ * `curve` is {d10, d60} — the damage an UNPROTECTED component takes at 10 and 60 mph. Two points fix
+ * a power law damage = d10·(v/10mph)^n with n = ln(d60/d10)/ln 6. Returns 0..1 (uncapped above 1 so
+ * the fatal check can see how far over it went; callers clamp when applying).
+ *
+ * @param {number} v - equivalent impact speed [m/s], from impactSpeed().
+ * @param {{d10: number, d60: number}} curve
+ */
+export function impactDamage (v, curve) {
+  const v10 = 10 * MPH
+  if (v <= 0) return 0
+  const n = Math.log(curve.d60 / curve.d10) / Math.log(6)
+  return curve.d10 * Math.pow(v / v10, n)
+}
+
+/**
+ * Fraction of an impact that armor at condition `c` lets THROUGH to what it protects.
+ *
+ * Ratified: 90% absorbed at full health, 10% absorbed at 10% health. Proportional absorption hits
+ * both anchors, so absorbed = 0.9·c and passed = 1 − 0.9·c. Destroyed armor passes everything.
+ */
+export function armorPassThrough (c) {
+  const p = 1 - DAMAGE_PARAMS.armorAbsorbAtFull * (c < 0 ? 0 : c > 1 ? 1 : c)
+  return p < 0 ? 0 : p
+}
+
+/**
+ * Deterministic PRNG (mulberry32) for the alignment scatter.
+ *
+ * Alignment damage is random by design, but the world is a determinism machine (INFRA-03) and gates
+ * pin exact states. So the randomness is SEEDED and advances only when an impact actually lands —
+ * same run, same drive, same crashes, same bent axle. This is FEAT-26's flag-gated-nondeterminism
+ * pattern applied to damage.
+ */
+const clampAbs = (x, m) => (x >  m ? m : x < -m ? -m : x)
+
+function mulberry32 (seed) {
+  let a = seed >>> 0
+  return function () {
+    a = (a + 0x6D2B79F5) >>> 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
 // ── The model ─────────────────────────────────────────────────────────────────────────────────────
 
 export class DamageModel {
@@ -184,8 +306,18 @@ export class DamageModel {
     const c0 = opts.initial ?? 1
     for (const id of TRACK_IDS) this.condition[id] = c0
 
-    // Per-axle wear accumulators, so a partially-integrated insult is never lost between steps.
     this._durabilityScale = {}     // track id → multiplier from fitted parts (1 = stock)
+
+    // Alignment is not a multiplier like the other tracks — it is bent GEOMETRY. Per-wheel toe and
+    // camber offsets in degrees, accumulated by impacts, consumed by the suspension geometry.
+    this.toeOffsetDeg    = [0, 0, 0, 0]
+    this.camberOffsetDeg = [0, 0, 0, 0]
+
+    // Seeded so a run replays identically (INFRA-03). Advances only when an impact lands.
+    this._rand = mulberry32(opts.seed ?? 0x5A17)
+
+    // Set by applyImpact when a hit exceeds the fatal threshold; the run layer reads and clears it.
+    this.fatalImpact = null
   }
 
   /** Condition of one track, [0, 1]. */
@@ -250,6 +382,86 @@ export class DamageModel {
   }
 
   /**
+   * Land one impact on one armor region.
+   *
+   * The ONLY entry point for collision damage. Armor takes its own damage on the same curve, and
+   * what reaches the components behind it is scaled by how intact that armor was BEFORE the hit —
+   * so the bumper you already crushed is the reason the next tap kills the radiator.
+   *
+   * @param {'front'|'left'|'right'|'rear'} region - which armor piece took it.
+   * @param {number} impulseNs - contact normal impulse [N·s], straight from the engine manifold.
+   * @param {number} mass - vehicle mass [kg], for the impulse → equivalent-speed conversion.
+   * @returns {{v: number, passed: number, fatal: boolean}} what the hit was worth, for logging.
+   */
+  applyImpact (region, impulseNs, mass) {
+    const P = DAMAGE_PARAMS
+    const v = impactSpeed(impulseNs, mass)
+    if (v <= 0) return { v: 0, passed: 1, fatal: false }
+
+    // Armor condition BEFORE this hit decides what gets through — a hit cannot protect itself.
+    const armorId = ARMOR_REGIONS[region]
+    const passed  = armorId ? armorPassThrough(this.get(armorId)) : 1
+
+    if (armorId) this.wear(armorId, impactDamage(v, P.impactArmor), 1)
+
+    const curveFor = {
+      wheel: P.impactWheel, spring: P.impactSpring, damper: P.impactDamper,
+      engine: P.impactEngine, radiator: P.impactRadiator, headlights: P.impactHeadlight,
+    }
+    for (const id of TRACK_IDS) {
+      const t = TRACKS[id]
+      if (t.cls === 'armor' || t.cls === 'alignment') continue
+      if (!t.regions.includes(region)) continue
+      const curve = curveFor[t.cls]
+      if (!curve) continue
+      // Headlights are per-side and a side impact only reaches its own: a left-side hit does not
+      // break the right headlight. A FRONT hit reaches both.
+      if (t.cls === 'headlights' && (region === 'left' || region === 'right') && t.side !== region) continue
+      this.wear(id, impactDamage(v, curve) * passed, 1)
+    }
+
+    this._bendAlignment(region, v, passed)
+
+    // Fatal-crash fail state (SM-INV-1). Armor does NOT save you from this — the deceleration is
+    // what kills, and a bumper only decides what breaks on the truck.
+    const fatal = P.fatalEnabled && v >= P.fatalMph * MPH
+    if (fatal && !this.fatalImpact) this.fatalImpact = { region, v, mph: v / MPH }
+
+    return { v, passed, fatal }
+  }
+
+  /**
+   * Bend the alignment of the wheels in an impact region.
+   *
+   * Ratified shape: nothing at all below 30 mph, ramping to a full displacement at 80 mph of about
+   * 2° camber and 0.5° toe. Signs and the split between the two are random, because a bent knuckle
+   * is not a tidy quantity — but the RNG is seeded, so a given run bends the same way every replay.
+   */
+  _bendAlignment (region, v, passed) {
+    const P = DAMAGE_PARAMS
+    const vMin = P.alignMinMph * MPH, vMax = P.alignMaxMph * MPH
+    if (v <= vMin) return
+    const sev = Math.min(1, (v - vMin) / (vMax - vMin)) * passed
+    if (sev <= 0) return
+
+    for (const id of TRACK_IDS) {
+      const t = TRACKS[id]
+      if (t.cls !== 'alignment' || !t.regions.includes(region)) continue
+      const w = t.wheel
+      // Two independent draws in [-1, 1] — a hit can bend camber hard and toe barely, or both.
+      const dCam = (this._rand() * 2 - 1) * sev * P.alignMaxCamberDeg
+      const dToe = (this._rand() * 2 - 1) * sev * P.alignMaxToeDeg
+      this.camberOffsetDeg[w] = clampAbs(this.camberOffsetDeg[w] + dCam, P.alignMaxCamberDeg)
+      this.toeOffsetDeg[w]    = clampAbs(this.toeOffsetDeg[w]    + dToe, P.alignMaxToeDeg)
+      // The condition track is a READOUT of how bent it is, so the damage GUI and the diagnostic
+      // screen have one number per wheel like every other component.
+      const bent = 0.5 * (Math.abs(this.camberOffsetDeg[w]) / P.alignMaxCamberDeg
+                        + Math.abs(this.toeOffsetDeg[w])    / P.alignMaxToeDeg)
+      this.set(id, 1 - bent)
+    }
+  }
+
+  /**
    * Publish every effect multiplier onto `params._*`. Called at the end of step(), and once at
    * construction time, so the physics stack always sees a defined value.
    */
@@ -264,6 +476,10 @@ export class DamageModel {
     params._damperScaleFront = this.damperScale(false)
     params._damperScaleRear  = this.damperScale(true)
     params._engineDamageScale = this.engineScale()
+    // Alignment is geometry, not a multiplier — published as the raw per-wheel offsets the
+    // suspension applies on top of the static toe/camber. Slice 3 consumes these.
+    params._toeOffsetDeg    = this.toeOffsetDeg
+    params._camberOffsetDeg = this.camberOffsetDeg
   }
 
   /**

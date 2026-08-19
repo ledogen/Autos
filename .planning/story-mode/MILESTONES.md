@@ -276,7 +276,7 @@ ratio  = elapsed / par               payout = parBase × dayTier × clamp((1.20 
 
 ### The component tracks
 
-**Sixteen tracks in eight classes.** Left/right is deliberately NOT separable on suspension or
+**Twenty-six tracks in eight classes.** Left/right is deliberately NOT separable on suspension or
 brakes — the player should not be asked to manage eight independent corners.
 
 | Class | Tracks | Damaged by | Effect when worn |
@@ -289,8 +289,8 @@ brakes — the player should not be asked to manage eight independent corners.
 | **Brakes** | front pair · rear pair | ∫(brake torque × time) — **never** impact | max brake torque falls, non-linearly (most of it in the last 30%) |
 | **Engine** | one | front impact + coolant above 105 °C + slow f(rpm, torque, load) | available torque falls at all rpm (curve below) |
 | **Radiator** | one | **impact only** | available cooling rate falls → coolant temperature climbs |
-| **Headlights** | one | front impact, much worse when the front bumper is compromised | flicker below 50%, permanently dark at 0% |
-| **Alignment** | front · rear | impact (front bumper protects front, rear bumper rear, each side protects its own) | random toe + camber offsets applied to the affected wheels, bounded |
+| **Headlights** | left · right | front impact, much worse when the front bumper is compromised | flicker below 50%, permanently dark at 0% |
+| **Alignment** | ×4 per wheel | impact (front bumper protects front, rear bumper rear, each side protects its own) | random toe + camber offsets applied to the affected wheels, bounded |
 
 ### Armor — the mechanism that ties impacts together
 
@@ -312,6 +312,55 @@ almost everything.
 The consequence the design wants: a truck with a mangled front end is not merely ugly, it is one
 more front-end tap away from a punctured radiator and a dead engine. Armor is the thing that makes
 the *order* of your crashes matter.
+
+### The impact calibration [owner, 2026-08-19]
+
+**Impacts are priced on contact IMPULSE, not on Δv.** The engine reports the manifold's normal
+impulse in N·s; a glancing clip transfers almost none of it while a square hit transfers the lot, so
+the severity of the *contact* drives the damage rather than the speed you happened to be doing. The
+mph figures below are the calibration language, converted through the reference square, dead-stop
+collision: **`v_eq = J / mass`** — the speed a hit would have shed had it stopped the truck dead.
+
+Two points per component define a power law, `damage = d10·(v/10mph)^n` with `n = ln(d60/d10)/ln 6`:
+
+| Component (UNPROTECTED) | 10 mph | 60 mph | n |
+|---|---|---|---|
+| Armor itself | 10% | 100% | 1.285 |
+| Headlight | 10% | 100% | 1.285 |
+| Radiator | 5% | 50% | 1.285 |
+| Engine | 1% | 20% | 1.672 |
+
+**Worth stating plainly:** `n = 1` would mean damage proportional to *impulse*, `n = 2` proportional
+to *kinetic energy*. The ratified anchors sit between the two, so this is a fitted curve rather than
+either textbook law — it is what the owner's two points say, not an appeal to physics.
+
+**Armor absorption**: 90% absorbed at full health, 10% absorbed at 10% health. Straight
+proportionality (`absorbed = 0.9 × condition`) reproduces both anchors, so the simple form *is* the
+ratified curve. Consequence, and the point of the whole mechanism: the same 30 mph tap costs the
+radiator 2% behind a fresh bumper and **20% behind a crushed one** — ten times worse.
+
+**Alignment** does nothing below **30 mph** and saturates at **80 mph** at roughly **±2° camber** and
+**±0.5° toe**, randomly signed and randomly split. The randomness is real but **seeded**, so a run
+replays identically (INFRA-03, FEAT-26's flag-gated-nondeterminism pattern).
+
+**60 mph is the fatal-crash threshold** — the same impact that writes off the armor. Armor does not
+save you from it: the deceleration is what kills, and the bumper only decides what breaks on the truck.
+
+### The wear calibration [owner, 2026-08-19]
+
+- **Tires: 70 h of hard driving costs 20%.**
+- **Brakes: 120 h of hard driving costs 20%** (front axle — the rears share the constant and get
+  there at ~347 h, because fronts really do wear about twice as fast).
+
+Neither can be turned into a constant without saying what *hard driving* is, because the model
+integrates slip velocity and brake torque rather than hours. The duty cycle is therefore stated out
+loud and lives in `test/calibrate-wear.mjs`: **25% of the hour at the grip limit, 15% on the brakes
+at 60% pedal**. That script measures what the honest signals actually read under real `stepPhysics`,
+mixes them by that duty cycle, and solves the durability constants. **Argue with the duty cycle, not
+with the constants** — and re-run the script rather than hand-editing them.
+
+Springs, dampers and wheels have **no owner-set rate**: there is no conversion from game feel to
+bump-stop force or wheel rate, so they start at chosen values and get tuned by driving.
 
 ### Durability — per-component, and a parts lever
 
