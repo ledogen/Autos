@@ -187,6 +187,17 @@ export const DAMAGE_PARAMS = {
   fatalMph:        60,
   fatalEnabled:    true,
 
+  // ── Wheels ─────────────────────────────────────────────────────────────────────────────────
+  // A bent wheel is out-of-round, and out-of-round is a REAL thing in the sim (params.wheelRunout,
+  // src/suspension.js) rather than a handling penalty invented for damage. Ratified: 0.04 m
+  // peak-to-peak at zero condition — a wheel so far gone the truck shakes itself apart at speed.
+  wheelRunoutAtZero: 0.04,
+  // Wheel damage from suspension ACCELERATION, not velocity: a damper is worn by how fast the
+  // strut moves, a wheel is bent by how hard it is stopped. The floor is the no-harm level —
+  // normal road undulation must cost nothing, or the wheels would wear out on a smooth highway.
+  wheelAccelFloor: 60,     // m/s^2 of strut acceleration below which nothing happens
+  durWheel:        4.0e5,  // insult units for a full wheel; chosen, not fitted — needs a drive
+
   // ── Contact → impact gating (feedContact) ──────────────────────────────────────────────────
   // A contact is not an impact. The engine reports a manifold every step a body is touching
   // anything, so a truck parked against a fence would be "hit" 250 times a second. Two guards:
@@ -540,6 +551,22 @@ export class DamageModel {
     // suspension applies on top of the static toe/camber. Slice 3 consumes these.
     params._toeOffsetDeg    = this.toeOffsetDeg
     params._camberOffsetDeg = this.camberOffsetDeg
+    // Per-wheel out-of-round, in metres peak-to-peak. Added to the params.wheelRunout slider so
+    // that slider stays usable on its own as a test tool with damage off.
+    const ro = params._wheelRunout || (params._wheelRunout = [0, 0, 0, 0])
+    for (let i = 0; i < 4; i++) ro[i] = this.wheelRunout(i, params)
+  }
+
+  /**
+   * Out-of-round for one wheel, in metres peak-to-peak — the effective value physics should use.
+   *
+   * Linear in condition: a wheel at full health is perfectly round, one at zero carries the full
+   * ratified 0.04 m. The manual `params.wheelRunout` slider adds on top so it keeps working as a
+   * standalone test tool when damage is off.
+   */
+  wheelRunout (wheelIndex, params = this.params) {
+    const c = this.get(['wheelFL', 'wheelFR', 'wheelRL', 'wheelRR'][wheelIndex])
+    return ((params && params.wheelRunout) || 0) + (1 - c) * DAMAGE_PARAMS.wheelRunoutAtZero
   }
 
   /**
@@ -613,6 +640,27 @@ export class DamageModel {
                 + Math.max(0, Math.abs(strutVel[3] || 0) - P.damperVelFloor)
       this.wear('damperFront', vF * dt, P.durDamper)
       this.wear('damperRear',  vR * dt, P.durDamper)
+    }
+
+    // ── Wheels: strut ACCELERATION above the no-harm floor, per corner ─────────────────────────
+    // Same family of signal as the damper track, one derivative up: the damper is worn by how fast
+    // the strut moves, the wheel is bent by how hard that motion is arrested. Differenced here
+    // rather than published from physics.js, because it is derived from a signal already on
+    // vehicleState — the seam stays as thin as it was.
+    //
+    // This inherits the damper track's OPEN RISK and doubles it: strutCompVel is a 4-substep
+    // explicit-Euler quantity, and differencing a noisy signal amplifies the noise. If the
+    // washboard drive says this is not honest, say so — do not substitute a proxy.
+    if (strutVel) {
+      if (!this._prevStrutVel) this._prevStrutVel = [0, 0, 0, 0]
+      const ids = ['wheelFL', 'wheelFR', 'wheelRL', 'wheelRR']
+      for (let i = 0; i < 4; i++) {
+        const v = strutVel[i] || 0
+        const a = Math.abs(v - this._prevStrutVel[i]) / dt
+        this._prevStrutVel[i] = v
+        const insult = Math.max(0, a - P.wheelAccelFloor)
+        if (insult > 0) this.wear(ids[i], insult * dt, P.durWheel)
+      }
     }
 
     // ── Engine: f(rpm, torque, load), very slow ────────────────────────────────────────────────

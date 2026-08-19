@@ -129,6 +129,19 @@ export function getWheelPosition (corner, vehicleState, params) {
  * @returns {Array<{x,y,z}>} Four world-space points: FL/FR front bumper, RL/RR rear bumper.
  */
 /**
+ * Peak-to-peak radial runout in effect on one corner, in metres.
+ *
+ * `params.wheelRunout` is the manual slider (a whole-vehicle test value); `params._wheelRunout[i]`
+ * is the per-wheel value the SM-3 damage model publishes from that wheel's condition, in the same
+ * `params._` scratch convention as every other damage effect. Undefined means no damage model is
+ * running — headless gates, damage off — and the slider alone applies. Defaults to 0 both ways, so
+ * a stock truck rolls on perfectly round wheels and the whole path short-circuits.
+ */
+export function wheelRunoutOf (corner, params) {
+  return params._wheelRunout ? params._wheelRunout[corner] : (params.wheelRunout || 0)
+}
+
+/**
  * Effective (rolling-surface) tire radius for one corner at its current spin angle.
  *
  * Radial runout — an out-of-round tire. `params.wheelRunout` is the PEAK-TO-PEAK radius
@@ -154,7 +167,7 @@ export function getWheelPosition (corner, vehicleState, params) {
  */
 const RUNOUT_PHASE = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5]
 export function effectiveWheelRadius (corner, vehicleState, params) {
-  const runout = params.wheelRunout || 0
+  const runout = wheelRunoutOf(corner, params)
   if (runout === 0) return params.wheelRadius
   const theta = (vehicleState.wheelPhase && vehicleState.wheelPhase[corner]) || 0
   return params.wheelRadius + 0.5 * runout * Math.sin(theta + RUNOUT_PHASE[corner])

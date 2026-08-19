@@ -39,7 +39,7 @@
 
 import * as THREE from 'three'
 import { computeTireForces } from './tire.js'
-import { computeNormalForce, effectiveWheelRadius, getWheelPosition, stepSuspensionSubsteps } from './suspension.js'
+import { computeNormalForce, effectiveWheelRadius, getWheelPosition, stepSuspensionSubsteps, wheelRunoutOf } from './suspension.js'
 import { stepDrivetrain } from './drivetrain.js'
 import { camberLean, toeOffset } from './alignment.js'
 import { GROUP_CHASSIS, GROUP_DEBRIS } from './physics-engine.js'
@@ -910,8 +910,11 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // ── Step 3-runout: integrate the tire spin phase used by the out-of-round radius ──
   // Fixed-step integration of wheelOmega, kept separate from vehicleState.wheelAngles (which
   // vehicle.js integrates per rendered frame for the wheel MESH). Wrapped to [0, 2π) so it
-  // stays exact after long drives. No-op cost when wheelRunout is 0.
-  if (params.wheelRunout) {
+  // stays exact after long drives. No-op cost when every wheel is round.
+  // Any ONE wheel out of round is enough — runout is per-wheel now (SM-3 wheel condition), so a
+  // single bent rim still has to spin its phase.
+  if (wheelRunoutOf(0, params) || wheelRunoutOf(1, params)
+   || wheelRunoutOf(2, params) || wheelRunoutOf(3, params)) {
     if (!vehicleState.wheelPhase) vehicleState.wheelPhase = [0, 0, 0, 0]
     const TWO_PI = Math.PI * 2
     for (let i = 0; i < 4; i++) {
