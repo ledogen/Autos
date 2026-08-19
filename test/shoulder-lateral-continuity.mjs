@@ -115,6 +115,23 @@ for (const seed of SEEDS) {
             // wheel on THIS arm feels). The pinned hint isolates the single cross-section under test.
             const nr0 = road._resolveRoadSurface(fx, fz)
             if (!nr0 || (nr0.runKey ?? '') !== runKey) continue
+            // FEAT-68 (2026-08-19): skip stations where a DIFFERENT run passes inside the sweep's
+            // reach. This gate's invariant is that a run's OWN shoulder is laterally continuous;
+            // where two approaches converge near a shared junction node (naive meets — junction
+            // geometry is deferred by the ticket) the sweep crosses onto the neighbour's apron and
+            // the seam between two carve heights reads as a step. That seam is the junction pass's
+            // work item, not a shoulder tear (measured: both historical failures sat 4-8 m from a
+            // second run at node 1,-1,1's approaches).
+            let foreignNear = false
+            for (const [ok2, oe] of road._network) {
+                if (ok2 === runKey || foreignNear) continue
+                const op = oe.points
+                for (let q = 0; q < op.length; q += 4) {
+                    const dxq = op[q].x - fx, dzq = op[q].z - fz
+                    if (dxq * dxq + dzq * dzq < (LAT_MAX + 12) * (LAT_MAX + 12)) { foreignNear = true; break }
+                }
+            }
+            if (foreignNear) continue
             // FEAT-40 bore notch: near/over a bore the skin is the mouth-funnel cutting
             // (road.js _boreNotchCS) — steep by design, C0, collar-fringed. Bank tier for the sweep.
             let neckNear = false

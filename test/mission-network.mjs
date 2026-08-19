@@ -48,8 +48,12 @@ road.update(new THREE.Vector3(C.x, 0, C.z))
     near++
     if (!registered.has(`${kf(a)}|${kf(b)}`)) culled++
   }
-  check('the cull removes a non-trivial share of raw Urquhart edges (the bug surface is real)',
-    near > 10 && culled > 0, `${culled}/${near} culled near centre`)
+  // FEAT-68 (2026-08-19): the routed-geometry culls are DELETED (measured: they shredded v2
+  // connectivity while preventing zero real crossings), so the registered network ≡ the
+  // degree-capped graph. The check inverts: a NONZERO cull share now means phantom edge-dropping
+  // machinery came back.
+  check('no routed-geometry cull exists — registered network ≡ degree-capped graph near centre',
+    near > 10 && culled === 0, `${culled}/${near} culled near centre`)
   console.log(`       ${culled}/${near} raw edges near centre do NOT exist in the world (${(100 * culled / near).toFixed(0)}%)`)
 }
 

@@ -579,11 +579,7 @@ export const RANGER_PARAMS = {
   roadCorridorMode: 'heuristic',
   roadCorridorHScale: 1.0,
   roadCorridorTubeR: 100,
-  // roadGraphCullCrossings: SAFE-PRUNE the redundant edge of every routed at-grade crossing
-  // (they read as ugly mid-span intersections; the graph is planar-abstract so a routed cross means one
-  // edge took a redundant excursion). Only dropped if the far endpoint keeps a detour (≤ cull max hops),
-  // so dead ends + bridges are never cut. seed-set: routed crossings 7→1 (the 1 is a true bridge, kept).
-  roadGraphCullCrossings: true,
+  // (roadGraphCullCrossings retired with the FEAT-68 cull deletion — see road.js tombstone.)
   // roadGraphCullMaxHops: how far the connectivity-safe detour search looks before deeming a crossing
   // edge a bridge (un-cullable). Higher = culls crossings with longer alternate routes (more aggressive,
   // accepts bigger detours); lower = keeps more crossings but never risks a long way round. 8 clears all

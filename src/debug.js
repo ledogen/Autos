@@ -423,7 +423,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(params, 'roadGraphGoalBlend', 20, 200, 10).name('Goal Blend').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphWTurn', 0, 12000, 250).name('Curve Penalty').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphWAlt', 0, 6, 0.1).name('wAlt').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadGraphCullCrossings').name('Cull Crossings').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphMaxDegree', 0, 6, 1).name('Max Junction Degree').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphDegreeDetourHops', 2, 8, 1).name('Degree Cull Strictness').onChange(fireRoadParam)
   // QUAL-14 route clearance: self-clearance contract (D_self = roadWidth + 2·shoulder + margin over
