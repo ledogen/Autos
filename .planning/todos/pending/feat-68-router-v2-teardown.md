@@ -782,3 +782,29 @@ registration; export/import carries the tag.
 
 Known-joint note: the design's showcase node 1,-1,1 (seed 6/7) is no longer deg-2 — the cull
 deletion changed the settled adjacency. Showcase moved to seed 20 node 1,2,0.
+
+## Step 3 record (2026-08-19, autonomous — route Worker ported to a module import, mirror DELETED)
+
+On `feature/corridor-router` (4620e78): `routeEdgeV2()` (corridor → stage-3 curve → feasibility
+ladder, pins included) extracted into corridor-router.js as THE route function; sync path and
+Worker import the same one. `src/road-route-worker.js` is a real ES module worker (Vite bundles
+it, dev and build verified — dist ships it as its own 16 kB chunk); the QUAL-08 pool/pull-pump
+survives on top. `_warmScan` re-enabled with v2 specs {key, ax, az, yA, bx, bz, yB, margin,
+blockedDiscs, dirs}; a cached dirless entry for a pinned edge re-dispatches and the reply
+upgrades it (window invariance holds through the worker path).
+
+**Deleted (374 insertions vs 1979 deletions):** the ROAD_WORKER_SOURCE verbatim mirror
+(~1300 lines) + `route-worker-sync` gate; the whole QUAL-14 dependency apparatus — _edgeDeps,
+_corridorDiscsFor, _nodeAvoidDiscs, solo routes (clsSolo everywhere incl. map2d/main sharing),
+solo-reuse adoption, _sitePairCmp priority, _routeOptsBetween/_edgeRouteSpec, PROTO_MARGIN.
+Inventory items 2 and 4 (worker half) are now DONE, measured, not just predicted.
+
+**New gate `road-worker-parity.mjs`:** pins the worker's height-field rebuild ({seed, 4 coarse
+params} → bit-exact vs RoadSystem's closures) and asserts byte-identical descriptors on real
+pinned edges. Green 0-mismatch. Verified live over CDP: forced re-route dispatched 147 jobs to
+the module worker, pending drained to 0, cache refilled, no console errors. Battery byte-identical
+to pre-port; npm test = the same 7 standing reds, nothing new.
+
+**Note for the record:** the handoff hoped the worker port would clear `paper-reroute`; its red is
+a mission-layer re-plan-length margin (12.25 vs 11.28 km), identical before and after the port —
+still a standing loop item, not slicing.
