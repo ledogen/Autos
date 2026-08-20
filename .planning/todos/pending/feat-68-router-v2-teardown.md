@@ -991,3 +991,32 @@ debounced 150 ms and then re-streams + re-carves; there is no separate invalidat
 only from the dead `sampleDesignGradeAt` test hook) and `graph-topology.mjs`'s v1 sub-checks
 (GRAPH-CORRIDOR-CLEARANCE / GRAPH-CROSSINGS-CULLED test machinery that no longer exists — part of
 that gate's booked re-baseline).
+
+## Price-slider feedback loop fixed (2026-08-20) — the map is the A/B surface
+
+Two owner reports, one real bug and one visibility limit.
+
+**BUG — the map ignored every router-price change (`b7dd8a3`).** `map2d._paramSig()` built its
+rebuild signature with `s += '|' + k + '=' + p[k]`; for the nested `params.roadV2` that renders as
+the constant `"[object Object]"`, so the signature never moved, `_checkParamChange` never fired,
+and the map held a stale network while the real road re-routed underneath it. Object values are
+JSON.stringify'd now. Verified with the map open: cTurn 30 → 120 rebuilds it (83 runs, fingerprint
+moves, 15891 → 15023 sampled points).
+
+**NOT a bug — "changing turn cost does nothing to the road."** It does; you cannot see it. Measured
+in the browser, cTurn 30 → 120 moves the geometry fingerprint and takes the free-roam window from
+7.86 → 7.60 km. But free roam streams only ~640 m of road and DRAWS ~160 m
+(`project_draw_distance_160m`), so near a gentle spawn there are one or two segments in view and
+cTurn's effect — hairpin density on STEEP faces — has almost nothing to act on there. The map was
+the right instrument and it was the broken one.
+
+**The loop the owner asked for, now measured:** with the map open, a price edit shows a first
+visible change in **~2.5 s** and fully settles in **~9 s** at a 2000 m map radius (debounce 150 ms
+→ fresh RoadSystem → progressive chunked re-stream on the worker pool). Flip values on the map,
+then drop into freecam on the winner.
+
+**New tool:** `window.__road()` now returns a geometry **fingerprint** (order-independent hash over
+every registered run's points) plus `runs`/`pts`/`km`. Two builds with the same fingerprint are the
+same roads — this is what makes a price A/B measurable instead of eyeballed, and it is how both
+reports above were settled. Harness: `perf-runs/knob-ab.mjs`, `perf-runs/map-ab.mjs`,
+`perf-runs/map-settle.mjs` (gitignored).
