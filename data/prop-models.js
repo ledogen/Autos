@@ -78,22 +78,26 @@ export const PROP_MODELS = {
     collision: { shape: 'box', size: [0.16, 0.59, 0.73] },
   },
 
-  // ASSET-02 — ceramic garden gnome, 478 tris, the classic STANDING lawn
-  // ornament: boots, tunic, beard over the belly, tall floppy hat.  Lawn
+  // ASSET-02 — ceramic garden gnome, 492 tris, the classic STANDING lawn
+  // ornament: boots, belted coat, beard over the chest, tall red hat.  Lawn
   // furniture, same rule as the flamingos: scatter WITH a POI, never on bare
   // ground.  NO POOL TAG for the same reason — a gnome is not a place that
   // hands out work, and 'lawnFurniture' has no consumer yet.
   //
   // NO TEXTURE.  The ticket budgeted a 256x256 baked face; the owner's 2026-08-19
   // reference call is the low-poly read — brim, beard, and a nose between them,
-  // no eyes — so there is nothing left for a texture to carry.  5 flat materials.
+  // no eyes — so there is nothing left for a texture to carry.
+  //
+  // SIX MATERIALS, one over the ART-STYLE soft limit.  GnomeLeather carries the
+  // belt, trousers and boots as one dark-leather role; GnomeBuckle is the brass
+  // buckle and is the only thing that could not be merged into it.
   gnome: {
     url: 'assets/models/gnome.glb',
-    // 0.209 wide x 0.400 tall x 0.206 deep, measured off the GLB — the ticket's
-    // 0.22 envelope.  Nose and boot toes reach -Z (forward), so the box is not
-    // centred on the origin in Z: it runs -0.114 .. +0.092.  Knockable set
-    // dressing, not a wall.
-    collision: { shape: 'box', size: [0.209, 0.400, 0.206] },
+    // 0.196 wide x 0.400 tall x 0.170 deep, measured off the GLB — inside the
+    // ticket's 0.22 envelope.  Nose and boot toes reach -Z (forward), so the box
+    // is not centred on the origin in Z: it runs -0.100 .. +0.070.  Knockable
+    // set dressing, not a wall.
+    collision: { shape: 'box', size: [0.196, 0.400, 0.170] },
   },
 
   // ASSET-03 — segmented beach ball, 252 tris, 0.40 m across.  Six vertical

@@ -51,43 +51,63 @@ survive glTF export; bake to an image texture first (ASSETS.md).
 
 ## Resolution — 2026-08-20
 
-`assets/models/gnome.glb` shipped. **478 tris** (budget 500), 255 verts, one mesh object,
-5 flat materials, **0 images**, 29.3 kB, single-sided, no Draco. Sources:
+`assets/models/gnome.glb` shipped. **492 tris** (budget 500), 264 verts, one mesh object,
+6 flat materials, **0 images**, 31.0 kB, single-sided, no Draco. Sources:
 `assets/models/src/gnome.blend` + `gnome.py` (parametric, `build(); export()`).
 Registered as `gnome` in `data/prop-models.js` (FEAT-59), **no pool tag** — same rule as the
 flamingos: a gnome is not a mission giver, and `lawnFurniture` has no consumer yet.
 `node test/dist-assets.mjs` green.
 
-**0.2088 W × 0.400 H × 0.2056 D m** — inside the spec's 0.22 × 0.40 × 0.22. Origin and forward
-as specified: base-seated at exactly y = 0 (both boot soles flat on it), forward = −Z. Note the
-Z extent is **−0.114 … +0.092**, not centred on the origin: the nose and boot toes reach forward.
+**0.196 W × 0.400 H × 0.170 D m** — inside the spec's 0.22 × 0.40 × 0.22. Origin and forward as
+specified: base-seated at exactly y = 0 (both boot soles flat on it), forward = −Z. The Z extent
+is **−0.100 … +0.070**, not centred on the origin: the nose and boot toes reach forward.
 
-The classic upright ornament — boots, tunic to the boot tops, arms down the sides with bare hands
-showing, beard draped over the belly, tall floppy hat. A first pass built the *seated* pose of the
-colour reference; the owner's call 2026-08-20 is standing, which is also what this envelope
-assumes. There is no base disc: two boots stand on the ground the way the flamingos' legs do,
-which freed the fifth material for the boots.
+The classic upright ornament: boots, belted coat, beard over the chest, tall red hat, arms bent
+with the hands resting either side of the buckle. Three passes got here — seated (the colour
+reference read too literally), standing but portly, then this.
 
-**One spec deviation: no texture.** The spec budgeted one 256×256 baked albedo for the face and
-called this "the only asset in this set that earns a texture." The owner's reference call was the
-classic colours and pose plus a *low-poly* face — brim, beard, and a nose between them, **no eyes,
-no mouth**. With no face to paint there is nothing left for a texture to carry, so this reverts to
-ART-STYLE's flat-colour default. `news-roll` and `produce-stall` remain the only textured models.
+**The humanoid fix was the vertical layout, not the waistline.** Proportions are taken off the
+owner's third reference as fractions of total height, from the ground: boot top 0.11, coat hem
+0.17, belt 0.31, **shoulder line 0.50**, beard bottom 0.39, hat brim 0.70, tip 1.00 — head plus
+hat is exactly the top half. The torso is then a narrow tube (rx 0.056…0.081 against the old
+0.100 belly) **widest at the shoulders**, nipped at the belt, flaring slightly to the hem.
+The beard is deliberately narrower than the shoulders so blue shows at either side of it; at equal
+width it ate them and the torso lost its slope.
 
-Materials (5, all metalness 0): `GnomeHat` red · `GnomeCoat` blue tunic · `GnomeBeard` off-white ·
-`GnomeSkin` nose + hands · `GnomeBoot` dark brown. All recolourable by name.
+**Two spec deviations.**
+
+1. **No texture.** The spec budgeted one 256×256 baked albedo for the face and called this "the
+   only asset in this set that earns a texture." The owner's reference call was the classic colours
+   and pose plus a *low-poly* face — brim, beard, and a nose between them, **no eyes, no mouth**.
+   With no face to paint there is nothing left for a texture to carry, so this reverts to
+   ART-STYLE's flat-colour default. `news-roll` and `produce-stall` remain the only textured models.
+2. **Six materials**, one over ART-STYLE's soft limit of ~6, spent on the buckle. `GnomeLeather`
+   merges the reference's mid-brown trousers with its near-black boots and the belt into one
+   dark-leather role — at the 20 m viewing distance that value split is invisible while the boot
+   silhouette carries the read. `GnomeBuckle` is the only warm metal on the model and is the detail
+   the owner asked for by name, so it could not be merged. Metalness stays 0; roughness 0.35 does
+   the brass.
+
+Materials (6, all metalness 0): `GnomeHat` red · `GnomeCoat` blue · `GnomeBeard` off-white ·
+`GnomeSkin` nose, face band and hands · `GnomeLeather` belt + trousers + boots · `GnomeBuckle`
+brass. All recolourable by name.
 
 Audit clean: 0 object-vs-object clips, 0 coplanar pairs, 0 non-manifold edges, 0 loose verts,
-0/3000 inverted first-hit rays.
+0/4000 inverted first-hit rays.
 
-Three things the generator records so they are not re-discovered:
+Five things the generator records so they are not re-discovered:
 
+- **The belt is a BAND OF THE BODY SWEEP, not a ring around it.** As its own cylinder it cost 32
+  tris and needed two caps buried inside the coat; as two extra stations it costs 16 and cannot
+  z-fight.
 - **The beard's forward offset is solved from the body profile**, stated as `(z, rx, ry, PROUD)`.
   Stated as an absolute offset, widening the body silently swallows the lower beard and cuts the
-  white silhouette off with a horizontal edge halfway down. It also makes the beard *drape* over
-  the belly, which is what a real one does.
-- **The arm's shoulder station sits low**, at z 0.228 where the tunic is still 75 mm wide, so the
-  arm emerges from inside the flank. Hung off the 0.248 shoulder it perched on the outside and
-  read as a bolted-on slab with a visible flat cap.
-- **Boots are a 3-station sweep, not scaled icospheres.** Same tri cost, but an ellipsoid's sole is
-  a point — the gnome balances on two dots and only two vertices touch y = 0.
+  white silhouette off with a horizontal edge halfway down.
+- **Leg and boot are one 4-station limb**, not two parts: 88 tris against 104, and the
+  trouser-to-boot flare comes free. A scaled icosphere boot has a *point* for a sole — the gnome
+  would balance on two dots with only two vertices touching y = 0.
+- **The hand is 9 mm proud of the belly, no more.** At 23 mm the forward sweep from the cuff became
+  a pale spike in profile.
+- **Winding is only ever proven by ray-cast.** The viewport draws backfaces, so an inverted part is
+  invisible there. Three separate causes hit this build: a top-down station table, `mirror = -1` on
+  the left limb, and all six faces of the buckle box.
