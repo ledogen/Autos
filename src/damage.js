@@ -345,6 +345,10 @@ export class DamageModel {
 
     // In-flight collision burst tracked by feedContact: { region, impulse, t }, or null.
     this._burst = null
+
+    // Last strut acceleration per corner [m/s^2] — the raw wheel-wear signal, exposed so the
+    // readout can show the SAME number the model wore on, not a recomputed lookalike.
+    this.strutAccel = [0, 0, 0, 0]
   }
 
   /** Condition of one track, [0, 1]. */
@@ -658,6 +662,9 @@ export class DamageModel {
         const v = strutVel[i] || 0
         const a = Math.abs(v - this._prevStrutVel[i]) / dt
         this._prevStrutVel[i] = v
+        // Kept for the readout: judging whether this signal is honest enough to damage a wheel
+        // means SEEING it, and a readout that recomputed it could differ from what actually wore.
+        this.strutAccel[i] = a
         const insult = Math.max(0, a - P.wheelAccelFloor)
         if (insult > 0) this.wear(ids[i], insult * dt, P.durWheel)
       }

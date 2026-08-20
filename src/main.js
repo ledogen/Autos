@@ -23,7 +23,8 @@ import { TerrainPhysics, RoadPhysics, PropPhysics } from './terrain-physics.js'
 import { DebrisSystem } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
 import { getWheelPosition } from './suspension.js'
-import { DamageModel, MPH } from './damage.js'              // SM-3: component condition model
+import { DamageModel } from './damage.js'                   // SM-3: component condition model
+import { DamageHUD } from './damage-hud.js'                 // SM-3: the V-key condition readout
 import { updateVehicle, setLaunchHold, setControlAttenuation, SPAWN_STATE } from './vehicle.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
@@ -1063,6 +1064,10 @@ const vehicleState = {
 const damageModel = new DamageModel({ params: RANGER_PARAMS })
 damageModel.publish(RANGER_PARAMS)
 window.__damage = damageModel   // debug panel + the damage GUI read this
+// The driver's-seat readout (V). Hidden by default and free while hidden; it is how a drive is
+// evaluated at all, since condition, wear rates and a tenth-of-a-second impact are otherwise
+// invisible from behind the wheel. The ratified top-down schematic replaces its condition pane.
+const damageHUD = new DamageHUD(damageModel, vehicleState)
 
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
@@ -4602,6 +4607,7 @@ function loop () {
   _fpsLastTime = newTime
 
   accumulator += frameTime
+  damageHUD.update(frameTime)   // SM-3 readout (V) — returns on the first line while hidden
 
   // PERF-26: bucket the whole fixed-step block. Without it the catch-up substeps a hitch frame owes
   // (a 150 ms frame is followed by one paying ~9 physics steps) land in no bucket at all, and the
@@ -4680,10 +4686,7 @@ function loop () {
       const hit = physicsEngine.maxContactImpulse(vehicleChassis)
       const landed = damageModel.feedContact(
         classifyImpactRegion(hit.point, hit.normal), hit.impulse, RANGER_PARAMS.mass, PHYSICS_DT)
-      // One line per LANDED impact — a discrete crash event, not per-frame instrumentation. It is
-      // the only way to tell from the driver's seat that a hit registered, until the slice-3 GUI.
-      if (landed) console.log(`[damage] ${landed.region} impact — ${(landed.v / MPH).toFixed(1)} mph`
-        + ` equivalent, ${Math.round(landed.passed * 100)}% through armor${landed.fatal ? ' — FATAL' : ''}`)
+      if (landed) damageHUD.noteImpact(landed)
     }
     simTime += PHYSICS_DT
     // BUG-12 diagnostic (open): while recording, log the truck run's local centerline turn radius
