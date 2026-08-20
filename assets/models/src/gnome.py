@@ -10,24 +10,29 @@ and a single faceted nose between them, no eyes, no mouth.  With no face to
 paint there is nothing a texture would carry that geometry does not, so this
 lands back on the ART-STYLE default: 5 flat Principled materials, 0 images.
 
-POSE: seated, cross-legged, on a dark plinth (reference 1).  Bare feet peek
-from the hem and the knees are a free ring bulge.  NO HANDS -- see the note on
-HANDS below.  The solar orbs of the reference are NOT modelled: they are a
-garden-lighting gimmick, they would need emissive + alpha (ART-STYLE rule 7),
-and the ticket asks for a plain ceramic gnome.
+POSE: STANDING.  The classic upright lawn ornament -- boots on the ground,
+tunic to the boot tops, arms down the sides with bare hands showing, beard
+draped over the belly, tall floppy hat.  (A first pass built the seated,
+cross-legged pose of the colour reference; the owner's call 2026-08-20 is
+standing, which is also what the ticket's 0.22 x 0.40 x 0.22 envelope assumes.)
 
-BUILT 2026-08-19 against Blender 5.2.0 LTS.  Final: 426 tris (budget 500),
-225 verts, 5 materials, 0 images, 0 UV layers, one mesh object, 27.9 kB .glb.
-0.2915 W x 0.400 H x 0.3142 D m, base-seated at exactly y = 0 in the GLB,
-forward = -Z, single-sided, no Draco.  Audit clean: 0 object-vs-object clips,
-0 coplanar pairs, 0 non-manifold edges, 0/2000 inverted first-hit rays.
+NO BASE DISC.  The seated version needed a plinth; standing on two boots does
+not, and the flamingos (ASSET-01) already ship two thin legs with no base.
+That also frees the fifth material for the boots instead of a plinth.
+
+BUILT 2026-08-20 against Blender 5.2.0 LTS.  FINAL: 478 tris (budget 500),
+255 verts, 5 materials, 0 images, 0 UV layers, one mesh object, 29.3 kB .glb.
+0.2088 W x 0.400 H x 0.2056 D m -- inside the ticket's 0.22 x 0.40 x 0.22 --
+base-seated at exactly y = 0 in the GLB (both soles flat on it), forward = -Z,
+single-sided, no Draco.  Audit clean: 0 object-vs-object clips, 0 coplanar
+pairs, 0 non-manifold edges, 0/3000 inverted first-hit rays.
 Rebuild:  exec(open(__file__).read()); build(); export()
 
 AXIS TRAP.  The glTF exporter's "+Y up" maps blender (x,y,z) -> gltf (x, z, -y),
 so blender +Y becomes gltf -Z.  ASSETS.md wants forward = -Z, therefore
-*** the gnome faces +Y in Blender. ***  Base-seated: plinth underside at z = 0.
+*** the gnome faces +Y in Blender. ***  Base-seated: boot soles at z = 0.
 
-ONE OBJECT, FIVE MATERIAL SLOTS.  Beard, nose and feet deliberately
+ONE OBJECT, FIVE MATERIAL SLOTS.  Beard, nose, arms and boots deliberately
 interpenetrate the body -- that is how the parts blend without a seam.  Keeping
 them in ONE mesh means the audit's object-vs-object clipping check stays a
 meaningful signal instead of reporting the assembly back at us every run.
@@ -37,10 +42,12 @@ set is closed under reflection about the forward axis, so the gnome is exactly
 left-right symmetric, with a vertex on the nose line and a flat facet at the
 spine.  (Same reasoning as flamingo.py.)
 
-THE BEARD MUST OUT-REACH THE COAT.  A gnome read from the front is beard --
-the coat is a rim of colour at the sides and below.  Beard front reach is
-~0.128 m against the coat's ~0.118 m at the same height; drop below that and
-the beard sinks into the chest and the silhouette goes to a blue egg.
+THE BEARD DRAPES, IT DOES NOT HANG FLAT.  Its forward offset is SOLVED from the
+body profile (see BEARD_SHAPE) so its front face always clears the coat by a
+stated margin.  That makes the beard follow the belly outward as it descends,
+which is what a real one does -- and it is why the offset must never be stated
+as an absolute: two earlier passes did, and widening the body silently swallowed
+the lower beard, cutting the white silhouette off with a horizontal edge.
 """
 
 import bpy
@@ -57,90 +64,91 @@ OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/gnome.blend"
 OBJ_NAME = "Gnome"
 
 SEG = 9                    # rings on body / hat / beard
+SEG_LIMB = 6               # rings on arms / boots - they are 40 mm across
 PHASE = math.pi / 2        # first ring vertex on +Y (the nose line)
 
 # Materials: (name, linear base colour, roughness).  LINEAR -- renders ~1.5x
 # lighter than the tuple reads (ART-STYLE rule 5).
 MATERIALS = {
     "GnomeHat":   ((0.450, 0.022, 0.026, 1.0), 0.55),   # classic pillar-box red
-    "GnomeCoat":  ((0.030, 0.085, 0.340, 1.0), 0.55),   # cobalt blue
+    "GnomeCoat":  ((0.030, 0.085, 0.340, 1.0), 0.55),   # cobalt blue tunic
     "GnomeBeard": ((0.780, 0.780, 0.755, 1.0), 0.72),   # warm off-white
-    "GnomeSkin":  ((0.800, 0.520, 0.420, 1.0), 0.60),   # nose, hands, feet
-    "GnomeBase":  ((0.030, 0.032, 0.028, 1.0), 0.60),   # dark plinth
+    "GnomeSkin":  ((0.800, 0.520, 0.420, 1.0), 0.60),   # nose and hands
+    "GnomeBoot":  ((0.045, 0.026, 0.016, 1.0), 0.60),   # dark brown boots
 }
-MAT_ORDER = ["GnomeHat", "GnomeCoat", "GnomeBeard", "GnomeSkin", "GnomeBase"]
+MAT_ORDER = ["GnomeHat", "GnomeCoat", "GnomeBeard", "GnomeSkin", "GnomeBoot"]
 
-# --- body: one sweep from the plinth underside up to the neck.  (z, cy, rx, ry)
-# Bands 0..1 are the plinth, 2.. are the robe.  Widest at the lap (z 0.090):
-# a seated gnome spreads, and that spread is most of the silhouette.
+# Stations are (z, cy, rx, ry) or (z, cx, cy, rx, ry) -- the 5-tuple form is for
+# the limbs, which sit off the centreline.  All rings are horizontal.
+
+# --- body: tunic hem up to the neck.  Widest at the belly, because a gnome is
+# a pear: narrow the belly and the whole thing reads as a traffic cone.
 BODY = [
-    (0.000, 0.020, 0.130, 0.160),  # plinth: an OVAL pushed forward, so the feet
-    (0.022, 0.020, 0.132, 0.162),  #   land on it instead of overhanging it.
-                                   # top lip a hair proud -> a dark shadow
-    (0.030, 0.008, 0.140, 0.126),  #  band under the hem for free (flat shading)
-    (0.090, 0.010, 0.148, 0.132),  # lap - widest, and pushed FORWARD: a seated
-                                   #   figure has a lap, a cone does not
-    (0.160, 0.0, 0.126, 0.112),
-    (0.215, 0.0, 0.100, 0.090),   # shoulders
-    (0.248, 0.0, 0.074, 0.068),   # neck, swallowed by the hat brim
+    (0.045, 0.0, 0.068, 0.064),   # hem - the boot tops come up through this
+    (0.085, 0.0, 0.094, 0.088),
+    (0.120, 0.0, 0.100, 0.094),   # belly - widest point on the figure
+    (0.165, 0.0, 0.096, 0.090),
+    (0.212, 0.0, 0.082, 0.076),   # chest
+    (0.248, 0.0, 0.058, 0.054),   # shoulders
+    (0.270, 0.0, 0.042, 0.040),   # neck, swallowed by the hat brim
 ]
-BODY_BANDS = ["GnomeBase", "GnomeBase", "GnomeCoat",
-              "GnomeCoat", "GnomeCoat", "GnomeCoat"]
 
-# The crossed knees, for FREE.  At SEG 9 / PHASE pi/2 the ring angles are
-# 90 + 40k degrees, so k = 1 and 8 sit at 130/50 deg -- the front quarters,
-# exactly where a cross-legged figure's knees push the robe out.  Displacing
-# those two vertices on the two lap stations costs no tris and flat shading
-# turns each bulge into its own light/dark facet pair (ART-STYLE rule 2).
-# Modelling the knees as separate blobs instead cost 40 tris and read as
-# pebbles stuck to the flanks.
-KNEE_STATIONS = (2, 3)
-KNEE_VERTS = (1, 8)
-KNEE_BULGE = 0.20            # fraction of the local radius, pushed out and forward
-
-# --- hat: brim, then a cone leaning forward into a blunt curled tip.
-# The tip is a small RING, not a point: a degenerate ring welds into a fan and
-# loses the moulded-ceramic blunt end (flamingo.py learned this the hard way).
+# --- hat: brim, then a cone leaning forward into a blunt tip.  The tip is a
+# small RING, not a point: a degenerate ring welds into a fan and loses the
+# moulded-ceramic blunt end (flamingo.py learned this the hard way).
 HAT = [
-    (0.200, 0.000, 0.132, 0.120),   # brim edge - MUST out-reach the shoulders,
-    (0.222, 0.002, 0.126, 0.115),   #   the overhang is what puts the face in
-    (0.238, 0.004, 0.104, 0.096),   #   shadow.  The step here reads as a band.
-    (0.282, 0.010, 0.086, 0.079),
-    (0.326, 0.020, 0.060, 0.056),
-    (0.364, 0.036, 0.034, 0.032),
-    (0.391, 0.056, 0.015, 0.014),
-    (0.400, 0.072, 0.005, 0.005),   # tip -> total height 0.400 m
+    (0.250, 0.000, 0.106, 0.098),   # brim edge - MUST out-reach the BEARD, not
+    (0.268, 0.002, 0.100, 0.092),   #   just the shoulders; a brim narrower than
+    (0.282, 0.004, 0.076, 0.070),   #   shadow.  The step here reads as a band.
+    (0.316, 0.010, 0.058, 0.054),
+    (0.352, 0.022, 0.038, 0.036),
+    (0.382, 0.040, 0.018, 0.017),
+    (0.400, 0.058, 0.005, 0.005),   # tip -> total height 0.400 m
 ]
 
-# --- beard: a broad shield hung off the brim, tapering to a blunt point above
-# the lap.  Stated as (z, rx, ry, PROUD): `proud` is how far the beard's front
-# face clears the coat's front face at that height, and the cy offset is solved
-# from the body profile below.  Stating it as an absolute cy is how the first
-# two passes went wrong -- widening the lap silently ate the clearance and the
-# lower beard sank inside the coat, cutting the white silhouette off with a
-# horizontal edge halfway down.
+# --- beard: (z, rx, ry, PROUD).  `proud` is how far the beard's front face
+# clears the coat's front face at that height; the cy offset is solved from the
+# body profile.  See the header note on why this is not an absolute offset.
 BEARD_SHAPE = [
-    (0.204, 0.092, 0.070, 0.022),   # tucked under the brim
-    (0.180, 0.122, 0.088, 0.028),
-    (0.150, 0.132, 0.096, 0.030),   # widest - WIDER than the coat here.
-    (0.120, 0.118, 0.092, 0.030),   #   The beard IS the front of the figure.
-    (0.098, 0.082, 0.074, 0.026),
-    (0.082, 0.026, 0.034, 0.018),   # blunt tip, above the lap
+    (0.252, 0.060, 0.046, 0.016),   # tucked under the brim
+    (0.222, 0.080, 0.058, 0.020),
+    (0.190, 0.086, 0.064, 0.022),   # widest
+    (0.150, 0.062, 0.052, 0.018),   # TAPER HARD from here - a beard that stays
+    (0.115, 0.016, 0.026, 0.010),   #   fat to the hem reads as a snowman
 ]
 
-# --- blobs: (material, centre, radii).  Icosahedra (20 tris each) scaled --
-# at 0.4 m tall a nose is a facet cluster, not a modelled feature.
-NOSE = ("GnomeSkin", (0.000, 0.130, 0.188), (0.034, 0.038, 0.034))
-# NO HANDS.  Reference 1's hands exist to cup its two solar orbs; with the orbs
-# gone they were tried three ways -- on the flanks, on the knee crests, and
-# outboard of the beard -- and every one read as a pebble stuck to the model.
-# A hand needs an arm to explain it, and an arm is 60 tris to be hidden behind
-# the beard from every angle that matters.  Cut, and the 40 tris stayed unspent.
-#
-# Feet toe OUT (yaw), which is what sells "cross-legged" -- two axis-aligned
-# ellipsoids side by side read as a pair of pebbles at the hem.
-FEET = [("GnomeSkin", (sx * 0.060, 0.132, 0.034), (0.038, 0.056, 0.022),
-         sx * -0.42) for sx in (-1, 1)]
+# --- arms: shoulder -> hand, two bands, the second one bare skin.  This is the
+# whole reason the standing pose can have hands and the seated one could not:
+# an arm explains a hand.  THE SHOULDER STATION SITS LOW, at z 0.228 where the
+# tunic is still 75 mm wide, so the arm emerges from inside the flank; hung off
+# the 0.248 shoulder instead it perched on the outside and read as a bolted-on
+# slab with a visible flat cap.  The beard
+# (which sits ~35 mm further forward) hides their inner edge from the front.
+ARM = [
+    (0.228, 0.070, 0.004, 0.026, 0.026),   # shoulder     [sleeve]
+    (0.155, 0.082, 0.010, 0.022, 0.022),   # cuff         [hand starts]
+    (0.120, 0.086, 0.018, 0.021, 0.021),   # knuckles
+]
+ARM_BANDS = ["GnomeCoat", "GnomeSkin"]
+
+# --- boots: flat-soled, toes forward and splayed.  A scaled icosphere was the
+# obvious cheap boot and is wrong: its sole is a point, so the gnome balances on
+# two dots and z_min is only touched at two vertices.  A 3-station sweep is the
+# same tri cost and lands the whole sole on z = 0.
+BOOT = [
+    (0.000, 0.050, 0.030, 0.030, 0.056),   # sole - THE TOE MUST CLEAR THE HEM.
+    (0.028, 0.050, 0.016, 0.028, 0.044),   #   The tunic reaches y 0.064 and a
+    (0.056, 0.048, 0.004, 0.026, 0.034),   #   boot tucked under it has no toe.
+                                           # cx 0.050, NOT 0.042: at 0.042 the
+                                           # two boots very nearly touch and
+                                           # read as one stumpy pedestal.
+]
+
+# --- nose: an icosahedron (20 tris), the ONLY face feature.  Sits at the brim
+# line so it emerges from under the overhang -- that gap IS the face.  It has
+# to clear THE BRIM (y 0.098), not just the beard: 13 mm past the brim read as
+# a sliver in profile, 21 mm reads as a nose.
+NOSE = ("GnomeSkin", (0.000, 0.082, 0.232), (0.033, 0.037, 0.033))
 
 
 def _body_front(z):
@@ -163,78 +171,68 @@ BEARD = [(z, _body_front(z) + proud - ry, rx, ry)
 # GEOMETRY HELPERS
 # ---------------------------------------------------------------------------
 
-def ring(bm, station, seg=SEG, phase=PHASE):
+def _unpack(station):
+    """(z, cy, rx, ry) or (z, cx, cy, rx, ry) -> (z, cx, cy, rx, ry)."""
+    if len(station) == 4:
+        z, cy, rx, ry = station
+        return z, 0.0, cy, rx, ry
+    return station
+
+
+def ring(bm, station, seg, phase=PHASE, mirror=1.0):
     """One horizontal cross-section, CCW seen from +Z."""
-    z, cy, rx, ry = station
+    z, cx, cy, rx, ry = _unpack(station)
+    cx *= mirror
     out = []
     for k in range(seg):
         a = phase + 2.0 * math.pi * k / seg
-        out.append(bm.verts.new((rx * math.cos(a), cy + ry * math.sin(a), z)))
+        out.append(bm.verts.new((cx + mirror * rx * math.cos(a),
+                                 cy + ry * math.sin(a), z)))
     return out
 
 
-def sweep(bm, stations, bands, cap_bottom=True, cap_top=True, seg=SEG,
-          bulge=None):
+def sweep(bm, stations, bands, seg=SEG, mirror=1.0,
+          cap_bottom=True, cap_top=True):
     """Vertical swept tube.  `bands[i]` names the material of the band between
-    station i and i+1.  Caps inherit the adjacent band's material.
-    `bulge` = (station_indices, vert_indices, amount) displaces those ring
-    vertices outward and forward -- free geometric detail, no extra tris."""
-    # WINDING TRAP.  The face winding below assumes ring i sits BELOW ring i+1.
-    # BEARD_SHAPE is written top-down because that is how a beard is described,
-    # and building it as given inverted every one of its faces -- invisible in
-    # the viewport (Blender draws backfaces), caught only by the ray-cast test.
+    station i and i+1; caps inherit the adjacent band's material.
+
+    WINDING TRAP.  The face winding below assumes ring i sits BELOW ring i+1,
+    and `mirror = -1` (the left limb) reverses handedness.  A beard table
+    written top-down, or a mirrored arm, inverts every one of its faces --
+    invisible in the viewport, which draws backfaces, and caught only by the
+    ray-cast test in the audit."""
     if stations[0][0] > stations[-1][0]:
         stations = list(reversed(stations))
         bands = list(reversed(bands))
-        if bulge:
-            n = len(stations) - 1
-            bulge = ([len(stations) - 1 - i for i in bulge[0]], bulge[1], bulge[2])
-    rings = [ring(bm, s, seg) for s in stations]
-    if bulge:
-        st_idx, v_idx, amt = bulge
-        for i in st_idx:
-            for k in v_idx:
-                v = rings[i][k]
-                v.co.x *= (1.0 + amt)
-                v.co.y += amt * abs(v.co.y - stations[i][1]) + 0.006
-    faces = []
+    rings = [ring(bm, s, seg, mirror=mirror) for s in stations]
+    flip = mirror < 0
     for i in range(len(rings) - 1):
         lo, hi = rings[i], rings[i + 1]
         mi = MAT_ORDER.index(bands[i])
         for k in range(seg):
             k2 = (k + 1) % seg
-            f = bm.faces.new((lo[k], lo[k2], hi[k2], hi[k]))   # outward normal
+            quad = (lo[k], lo[k2], hi[k2], hi[k])
+            f = bm.faces.new(tuple(reversed(quad)) if flip else quad)
             f.material_index = mi
-            faces.append(f)
     if cap_bottom:
-        f = bm.faces.new(tuple(reversed(rings[0])))            # -Z
-        f.material_index = MAT_ORDER.index(bands[0])
-        faces.append(f)
+        r = rings[0] if flip else tuple(reversed(rings[0]))
+        bm.faces.new(r).material_index = MAT_ORDER.index(bands[0])
     if cap_top:
-        f = bm.faces.new(tuple(rings[-1]))                     # +Z
-        f.material_index = MAT_ORDER.index(bands[-1])
-        faces.append(f)
-    return faces
+        r = tuple(reversed(rings[-1])) if flip else rings[-1]
+        bm.faces.new(r).material_index = MAT_ORDER.index(bands[-1])
 
 
-def blob(bm, mat, centre, radii, yaw=0.0):
+def blob(bm, mat, centre, radii):
     """A scaled icosahedron - 20 flat facets, no smoothing, no subdivision."""
     res = bmesh.ops.create_icosphere(bm, subdivisions=1, radius=1.0)
     mi = MAT_ORDER.index(mat)
-    verts = res["verts"]
-    ca, sa = math.cos(yaw), math.sin(yaw)
-    for v in verts:
-        x, y, z = v.co.x * radii[0], v.co.y * radii[1], v.co.z * radii[2]
-        v.co.x = centre[0] + x * ca - y * sa
-        v.co.y = centre[1] + x * sa + y * ca
-        v.co.z = centre[2] + z
-    seen = set()
-    for v in verts:
+    for v in res["verts"]:
+        v.co.x = centre[0] + v.co.x * radii[0]
+        v.co.y = centre[1] + v.co.y * radii[1]
+        v.co.z = centre[2] + v.co.z * radii[2]
+    for v in res["verts"]:
         for f in v.link_faces:
-            if f.index not in seen or f.index < 0:
-                f.material_index = mi
-                seen.add(f.index)
-    return verts
+            f.material_index = mi
 
 
 # ---------------------------------------------------------------------------
@@ -266,12 +264,13 @@ def build():
             bpy.data.meshes.remove(me)
 
     bm = bmesh.new()
-    sweep(bm, BODY, BODY_BANDS,
-          bulge=(KNEE_STATIONS, KNEE_VERTS, KNEE_BULGE))
+    sweep(bm, BODY, ["GnomeCoat"] * (len(BODY) - 1))
     sweep(bm, HAT, ["GnomeHat"] * (len(HAT) - 1))
     sweep(bm, BEARD, ["GnomeBeard"] * (len(BEARD) - 1))
-    for spec in [NOSE] + FEET:
-        blob(bm, *spec)
+    for m in (1.0, -1.0):
+        sweep(bm, ARM, ARM_BANDS, seg=SEG_LIMB, mirror=m)
+        sweep(bm, BOOT, ["GnomeBoot"] * (len(BOOT) - 1), seg=SEG_LIMB, mirror=m)
+    blob(bm, *NOSE)
 
     bm.normal_update()
     for f in bm.faces:

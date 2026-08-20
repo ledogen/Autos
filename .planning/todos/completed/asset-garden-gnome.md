@@ -49,37 +49,45 @@ survive glTF export; bake to an image texture first (ASSETS.md).
 - 256×256 is sized to the ~0.4 m on-screen footprint; resist raising it.
 - If a second variant is ever wanted, prefer a **texture** variant over a mesh variant.
 
-## Resolution — 2026-08-19
+## Resolution — 2026-08-20
 
-`assets/models/gnome.glb` shipped. **426 tris** (budget 500), 225 verts, one mesh object,
-5 flat materials, **0 images**, 27.9 kB, single-sided, no Draco. Sources:
+`assets/models/gnome.glb` shipped. **478 tris** (budget 500), 255 verts, one mesh object,
+5 flat materials, **0 images**, 29.3 kB, single-sided, no Draco. Sources:
 `assets/models/src/gnome.blend` + `gnome.py` (parametric, `build(); export()`).
 Registered as `gnome` in `data/prop-models.js` (FEAT-59), **no pool tag** — same rule as the
 flamingos: a gnome is not a mission giver, and `lawnFurniture` has no consumer yet.
-`node test/dist-assets.mjs` green; the 8 affected gates green.
+`node test/dist-assets.mjs` green.
 
-Three spec deviations, all owner-directed or measured:
+**0.2088 W × 0.400 H × 0.2056 D m** — inside the spec's 0.22 × 0.40 × 0.22. Origin and forward
+as specified: base-seated at exactly y = 0 (both boot soles flat on it), forward = −Z. Note the
+Z extent is **−0.114 … +0.092**, not centred on the origin: the nose and boot toes reach forward.
 
-1. **No texture.** The spec budgeted one 256×256 baked albedo for the face. The owner's reference
-   call was reference 1's colours and pose with reference 2's *low-poly* face — brim, beard, and a
-   nose between them, **no eyes, no mouth**. With no face to paint there is nothing left for a
-   texture to carry, so this reverts to the ART-STYLE default: flat colour per material, 0 images.
-   That also drops the only reason this asset was called "the one that earns a texture".
-2. **Seated, not standing.** Owner asked for reference 1's pose: cross-legged on a dark plinth,
-   bare feet at the hem, knees as a free ring-vertex bulge. The reference's two solar orbs are NOT
-   modelled — emissive + alpha, ART-STYLE rule 7.
-3. **Footprint 0.292 × 0.400 × 0.314 m**, not the spec's 0.22 square. 0.22 describes a *standing*
-   gnome; a seated one spreads. Collision box updated to match in `prop-models.js`. Origin and
-   forward are unchanged: base-seated at exactly y = 0, forward = −Z (nose and feet reach −Z, so
-   the box runs −0.182 … +0.132 in Z and is not centred on the origin).
+The classic upright ornament — boots, tunic to the boot tops, arms down the sides with bare hands
+showing, beard draped over the belly, tall floppy hat. A first pass built the *seated* pose of the
+colour reference; the owner's call 2026-08-20 is standing, which is also what this envelope
+assumes. There is no base disc: two boots stand on the ground the way the flamingos' legs do,
+which freed the fifth material for the boots.
 
-Materials (5, all metalness 0): `GnomeHat` red · `GnomeCoat` blue · `GnomeBeard` off-white ·
-`GnomeSkin` nose + feet · `GnomeBase` dark plinth. All recolourable by name.
+**One spec deviation: no texture.** The spec budgeted one 256×256 baked albedo for the face and
+called this "the only asset in this set that earns a texture." The owner's reference call was the
+classic colours and pose plus a *low-poly* face — brim, beard, and a nose between them, **no eyes,
+no mouth**. With no face to paint there is nothing left for a texture to carry, so this reverts to
+ART-STYLE's flat-colour default. `news-roll` and `produce-stall` remain the only textured models.
+
+Materials (5, all metalness 0): `GnomeHat` red · `GnomeCoat` blue tunic · `GnomeBeard` off-white ·
+`GnomeSkin` nose + hands · `GnomeBoot` dark brown. All recolourable by name.
 
 Audit clean: 0 object-vs-object clips, 0 coplanar pairs, 0 non-manifold edges, 0 loose verts,
-0/2000 inverted first-hit rays.
+0/3000 inverted first-hit rays.
 
-**No hands.** Tried three placements (flanks, knee crests, outboard of the beard); every one read
-as a pebble stuck to the model, because a hand needs an arm to explain it and an arm is ~60 tris
-hidden behind the beard from every angle that matters. Reference 1's hands exist to cup its orbs.
-The 40 tris stayed unspent.
+Three things the generator records so they are not re-discovered:
+
+- **The beard's forward offset is solved from the body profile**, stated as `(z, rx, ry, PROUD)`.
+  Stated as an absolute offset, widening the body silently swallows the lower beard and cuts the
+  white silhouette off with a horizontal edge halfway down. It also makes the beard *drape* over
+  the belly, which is what a real one does.
+- **The arm's shoulder station sits low**, at z 0.228 where the tunic is still 75 mm wide, so the
+  arm emerges from inside the flank. Hung off the 0.248 shoulder it perched on the outside and
+  read as a bolted-on slab with a visible flat cap.
+- **Boots are a 3-station sweep, not scaled icospheres.** Same tri cost, but an ellipsoid's sole is
+  a point — the gnome balances on two dots and only two vertices touch y = 0.
