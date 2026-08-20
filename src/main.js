@@ -77,7 +77,6 @@ import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuni
 import { spawnModel } from './model-service.js'            // FEAT-59: hand-modelled asset import service
 import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
-import { loadBundledRouteCache, loadRegionRouteCache } from './route-store.js'  // QUAL-14/PERF-26: bundled route caches (BASE at boot, REGION lazily)
 import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond discs + stream ribbons
 
 // World seed — parsed from URL ?seed= parameter, defaulting to '6'.
@@ -381,47 +380,20 @@ function _spawnProbeBase (wseed, params) {
 // stays alive. resolveSpawn's stream then finds every connection in _proto.cls (pure cache hits).
 // Warms the TIGHT tier only — the wide tier fires for rare sparse-gap seeds and falls back to the
 // synchronous router exactly as before. Bounded wait: correctness NEVER depends on the warm.
-// ── QUAL-14 perf: route-cache import (bundled default world + in-session seeds) ─────────
-// Nothing persists on the player's machine (user decision 2026-07-06). The shipped default
-// world's routes come from the bundled static asset (route-store.js — sig-guarded, baked at
-// commit time); every other seed caches in this in-session Map: a regen stashes the outgoing
-// RoadSystem's routes here, so toggling back to a seed already visited this session is instant.
+// ── QUAL-14 perf: in-session route cache ─────────────────────────────────────────────────
+// Nothing persists on the player's machine (user decision 2026-07-06). A regen stashes the
+// outgoing RoadSystem's routes in this Map, so toggling back to a seed already visited this
+// session is instant. (FEAT-68 deleted the BUNDLED half — the baked static assets, their bake
+// script, sig discipline and parity gate. v2 routes a whole region in ~2.8 s at 4x throttle and
+// the bundle had shrunk to 130 KB, so it was buying a second on the one seed it covered while
+// costing a subsystem; owner call 2026-08-19.)
 const _sessionRouteCache = new Map()   // String(seed) → exportRouteCache() payload
-async function _importSessionOrBundledRoutes () {
+function _importSessionRoutes () {
   if (!roadSystem) return
   const mem = _sessionRouteCache.get(String(worldSeed))
-  if (mem) { roadSystem.importRouteCache(mem); return }
-  const bundled = await loadBundledRouteCache(worldSeed, RANGER_PARAMS)
-  if (bundled && roadSystem) roadSystem.importRouteCache(bundled)
+  if (mem) roadSystem.importRouteCache(mem)
 }
 
-// ── PERF-26: the STORY-REGION route cache, off the boot critical path ────────────────────
-// The bundle is split in two (route-store.js): BASE, awaited above, and this REGION delta, which
-// only story mode's 2800 m entry warm needs. Boot must not wait on it — it is the larger half, and
-// the cost is not just the download: inflate + JSON.parse run on the main thread.
-//
-// So: kick the fetch off once the world is up and idle, and let story entry AWAIT it. By the time
-// the owner clicks into story mode it is already parsed and waiting (the point of doing it at all);
-// if they click sooner, entry blocks on the tail of a download that is already in flight, behind
-// the loading screen it already shows.
-//
-// Fetch and IMPORT are deliberately separate. The download is memoized per seed — the sig check
-// inside is seed-dependent, so a non-default seed resolves null and is never retried — while the
-// import happens only when story mode actually asks, so free roam never merges 4.7 MB of routes it
-// will not use. Correctness never depends on any of this: a miss just routes, like any other seed.
-const _regionRouteFetch = new Map()   // String(seed) → Promise<data|null>
-function _fetchRegionRoutes (seed) {
-  const k = String(seed)
-  if (!_regionRouteFetch.has(k)) _regionRouteFetch.set(k, loadRegionRouteCache(seed, RANGER_PARAMS))
-  return _regionRouteFetch.get(k)
-}
-async function _ensureRegionRoutes () {
-  const seed = worldSeed
-  const data = await _fetchRegionRoutes(seed)
-  // Re-check the seed: the player can reseed while this is in flight, and roadSystem is a DIFFERENT
-  // instance after a reseed — importing seed 6's routes into seed 99's network would be poison.
-  if (data && roadSystem && worldSeed === seed) roadSystem.importRouteCache(data)
-}
 // One-time cleanup of the short-lived IndexedDB persistence experiment (32cde75, reverted same day).
 try { indexedDB.deleteDatabase('rangersim-routes') } catch { /* private mode etc. */ }
 
@@ -629,7 +601,7 @@ async function _rebuildFullNow () {
     if (roadSystem && scene) {
       const wasVisible = roadSystem._debugVisible
       // QUAL-14 perf: stash the outgoing instance's routes so toggling back to this seed later
-      // in the session is instant (in-session cache only — nothing persists to disk).
+      // in the session is instant (in-session only — nothing persists to disk).
       if (roadSystem._proto?.cls?.size) {
         _sessionRouteCache.set(String(roadSystem._worldSeed), roadSystem.exportRouteCache())
       }
@@ -683,11 +655,11 @@ async function _rebuildFullNow () {
       if (_syncImpostors) _syncImpostors()   // PERF-21: re-activate billboards on the fresh instance
     }
     _step('props')
-    // QUAL-14 perf: same cache import + async reseat as the initial load — the new seed's spawn
+    // QUAL-14 perf: same session-cache import + async reseat as the initial load — the new seed's spawn
     // bands route on the worker pool inside resolveSpawn (frames keep rendering) before each
     // synchronous stream. AFTER rebuildWaterSystem above: the warm must carry the new seed's
     // pond no-go discs.
-    await _importSessionOrBundledRoutes()
+    _importSessionRoutes()
     _step('routeImport')
     await _reseatTruckAtSpawn()
     _step('reseat')
@@ -2062,8 +2034,8 @@ function _startPlannerWarm (seed, cx, cz) {
 // routing determinism — structural: free roam never calls build(), so it never sets a pad, and the
 // same seed produces the same roads, the same surface and the same par in both modes.
 //
-// POI knobs live in POI_PARAMS, deliberately NOT in RANGER_PARAMS: that object feeds routeCacheSig,
-// and a poi* key landing in it would re-key every baked route bundle for a marker's size.
+// POI knobs live in POI_PARAMS, deliberately NOT in RANGER_PARAMS: a poi* key landing in that
+// object would re-route the whole world every time a marker's size changed.
 const poiSystem = new PoiSystem({
   getRoad:    () => roadSystem,
   getWater:   () => waterSystem,
@@ -2073,7 +2045,7 @@ const poiSystem = new PoiSystem({
 })
 
 // FEAT-45: dispersed-camping zones. Same isolation + same params discipline as the POI layer above
-// (CAMP_PARAMS is outside RANGER_PARAMS for the routeCacheSig reason), and the same story-only
+// (CAMP_PARAMS is outside RANGER_PARAMS for the same re-route reason), and the same story-only
 // lifecycle: built from the story deps when the region goes live, cleared on exit, so free roam
 // never has a zone and pays nothing. Zones are pure f(seed, macro cell) — they read nothing from
 // the world, so unlike POIs there is no carve or re-bake to trigger here.
@@ -2365,8 +2337,8 @@ function _updateMissionRings () {
 // Story mode only: started when the region goes live, stopped on exit (see the story deps below),
 // and a no-op every frame in between in free roam. Its one output today is the sky hour — pushed on
 // a quantized ladder because each push re-bakes the sky cubemap and the prop impostor atlas
-// (skySystem.onLookApplied, below). DAY_PARAMS lives in day.js, out of RANGER_PARAMS/routeCacheSig,
-// for the same reason POI_PARAMS does.
+// (skySystem.onLookApplied, below). DAY_PARAMS lives in day.js, out of RANGER_PARAMS, for the
+// same reason POI_PARAMS does.
 const daySystem = new DaySystem({
   setTimeOfDay: (h) => skySystem.setTimeOfDay(h),
 })
@@ -3974,7 +3946,7 @@ applyQuality('Normal')
 // main.js is a module, so everything below, including the render loop start, waits).
 // resolveSpawn warms each band it streams on the worker POOL before touching it, so the old
 // 20 s+ synchronous cold-load block becomes a parallel, event-loop-friendly wait.
-await _importSessionOrBundledRoutes()
+_importSessionRoutes()
 await _reseatTruckAtSpawn()
 perfMark('init: spawn reseated')  // TEMP (D-arc)
 
@@ -4283,7 +4255,6 @@ const storySystem = new StorySystem({
     // spheres left on in free roam don't linger into story mode.
     if (locked && _dbgSpheresOn) { _dbgSpheresOn = false; _dbgSpheres.forEach(m => { m.visible = false }) }
   },
-  ensureRegionRoutes: () => _ensureRegionRoutes(),   // PERF-26: lazy story-region route cache
   hidePauseMenu: () => _hidePauseMenu(),
   setQuickJobVisible: (visible) => { const el = document.getElementById('quickjob-btn'); if (el) el.style.display = visible ? 'block' : 'none' },
   setLoading: (visible, text) => {
@@ -5216,16 +5187,6 @@ perfMark('init: synchronous bootstrap done, requesting first frame')  // TEMP (D
 // the render loop is starting. Read by the headless boot-timing probes.
 window.__rsReady = true
 requestAnimationFrame(loop)
-// PERF-26: start pulling the story-region route cache now that boot is done — download + parse
-// only, no import (see _fetchRegionRoutes). Deferred to idle so it never competes with the initial
-// terrain/prop fill, with a timeout so a permanently-busy machine still gets it. Story entry awaits
-// whatever this leaves in flight, so clicking in early costs the tail of the download, not the whole
-// thing. Fire-and-forget by design: a failure here just means story mode routes as any seed does.
-{
-  const kick = () => { void _fetchRegionRoutes(worldSeed) }
-  if (typeof requestIdleCallback === 'function') requestIdleCallback(kick, { timeout: 4000 })
-  else setTimeout(kick, 2000)
-}
 // PERF-21: precompile the light-count shader variants (lamps off/brake/night/reverse) off the
 // critical path so the first brake or headlight toggle doesn't compile shaders mid-drive.
 prewarmLightPrograms(renderer, scene, camera)

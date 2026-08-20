@@ -7,8 +7,8 @@
 // routing. The same seed opened in free roam and in story mode must produce identical centerlines,
 // identical road surface and identical par — you just don't see the pads in free roam. So:
 //   • Placement runs strictly DOWNSTREAM of routing. It reads the already-routed network
-//     (networkGraph + edgeParData) and writes nothing back. Nothing here reaches routeCacheSig,
-//     the abstract graph, the router cost model or the crossing cull.
+//     (networkGraph + edgeParData) and writes nothing back. Nothing here reaches RANGER_PARAMS,
+//     the abstract graph or the router cost model.
 //   • The pad carve (RoadSystem._poiPadCarve) is gated to zero authority inside the road's own
 //     cross-section, so the ribbon the truck drives is bit-identical with or without a pad beside it.
 //   • Free roam never calls build(), so it never sets a pad and pays nothing.
@@ -26,7 +26,7 @@ import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'   // FEAT-59/
 import { REGION_MARGIN } from './mission.js'          // FEAT-61: the wall a customer must sit inside
 import { houseRungs } from './paper-route.js'         // FEAT-61: the ladder placement has to serve
 
-/** Tunables. Geometry + siting only — none of this may ever enter routeCacheSig. */
+/** Tunables. Geometry + siting only — none of this may ever enter RANGER_PARAMS. */
 export const POI_PARAMS = {
     poiCandidates:    6,      // arcS candidates tried per carrying edge before giving up
     // FEAT-60 SITING KNOBS. These bound the roster's *preferences*, never its count — see the

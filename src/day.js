@@ -12,11 +12,11 @@
 // reaches the sky exclusively through the `deps` adapter main.js hands it, which keeps the clock
 // headless-testable and keeps sky internals out of story-layer code.
 //
-// DAY_PARAMS lives here, deliberately NOT in RANGER_PARAMS: that object feeds routeCacheSig, and a
-// day* key landing in it would re-key every baked route bundle for a clock tunable (the same reason
-// POI_PARAMS stands apart — see the comment above the PoiSystem construction in main.js).
+// DAY_PARAMS lives here, deliberately NOT in RANGER_PARAMS: a day* key landing in that object
+// would re-route the whole world for a clock tunable (the same reason POI_PARAMS stands apart —
+// see the comment above the PoiSystem construction in main.js).
 
-/** Tunables. Clock only — none of this may ever enter routeCacheSig. */
+/** Tunables. Clock only — none of this may ever enter RANGER_PARAMS. */
 export const DAY_PARAMS = {
     dayLengthSec:  1440,   // s of real time per in-game day (RATIFIED: 24 minutes)
     dayStartHour:  7,      // hour a run's first day opens at

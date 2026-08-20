@@ -36,9 +36,9 @@
 import { hash32, mulberry32 } from './poi.js'
 
 /**
- * Tunables. Zone siting + the road tether only — none of this may ever enter routeCacheSig
- * (that object re-keys every baked route bundle; a camp* key landing in it would re-bake the world
- * for a camping knob). Same reason POI_PARAMS and DAY_PARAMS stand apart.
+ * Tunables. Zone siting + the road tether only — none of this may ever enter RANGER_PARAMS
+ * (a camp* key landing in it would re-route the whole world for a camping knob). Same reason
+ * POI_PARAMS and DAY_PARAMS stand apart.
  */
 export const CAMP_PARAMS = {
     campCellM:      1024,   // m — macro cell; one zone roll per cell

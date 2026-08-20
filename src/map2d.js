@@ -614,8 +614,8 @@ export class Map2D {
     // ── RoadSystem (the map's own read-only instance) ────────────────────────────────────────
     // A signature over the seed + every road*/tunnel* param, so the kept instance is rebuilt iff
     // the network it represents could have changed (mode/graph-knob/tunnel tuning) — and reused
-    // (instant) otherwise. tunnel* is separate from road* on purpose (routeCacheSig must not see
-    // it — FEAT-40), but the tunnel pass DOES change spans/profiles, so the map must re-stream.
+    // (instant) otherwise. tunnel* is separate from road* on purpose (it must not force a
+    // re-route — FEAT-40), but it DOES change spans/profiles, so the map must re-stream.
     _paramSig() {
         const p = this._getParams()
         let s = 'seed=' + this._getSeed()

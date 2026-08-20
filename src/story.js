@@ -33,7 +33,7 @@
 // Isolation discipline: this module holds NO worldgen and imports nothing. It coordinates the
 // existing systems through the `deps` adapter main.js passes in, and carries only story-layer state
 // (region geometry + boundary + freeze flag). REGION_RADIUS_M is a story-layer value and is NOT
-// part of routeCacheSig — changing it does not invalidate any baked route cache.
+// a road* param — changing it never re-routes the world.
 
 // The play area. Single tunable: the hard wall sits here, and the router is warmed to
 // REGION_RADIUS_M + WARM_MARGIN_M so the network is complete right up to (and just past) the wall.
@@ -71,9 +71,6 @@ export class StorySystem {
    *                                where the truck seats and therefore where the region centres
    *   reseat()                   — re-seat the truck at the canonical seed spawn; resolves when seated
    *   setDebugLockout(locked)    — hide + disable the debug GUI while true
-   *   ensureRegionRoutes()       — PERF-26: resolve once the story-region route cache is fetched
-   *                                (background since boot) and imported. Optional; a miss just means
-   *                                the region warm routes for real.
    *   hidePauseMenu()            — close the pause menu
    *   setQuickJobVisible(v)      — show/hide the in-mode Quick Job button
    *   setLoading(visible, text)  — the mode-entry loading overlay
@@ -172,14 +169,8 @@ export class StorySystem {
     const settled = reseed ? this._d.applySeed(seed) : this._d.reseat()
     Promise.resolve(settled)
       .catch(e => { console.warn('[story] world settle failed', e) })
-      // PERF-26: the story-region route cache is fetched lazily in the background after boot — it is
-      // not on the boot critical path. Import it HERE, after the settle, for two reasons: the reseed
-      // branch above builds a NEW RoadSystem (importing before it would load into the doomed one),
-      // and this is the last moment before the warm, which is exactly who needs those routes. If the
-      // background fetch is still in flight we wait out its tail behind the loading screen. Never
-      // fatal: without it the warm just routes for real, like any non-default seed.
-      .then(() => this._d.ensureRegionRoutes?.())
-      .catch(e => { console.warn('[story] region route cache unavailable — warming from scratch', e) })
+      // (FEAT-68 removed the baked story-region route cache that used to be imported here — the
+      // region warm now routes for real on the worker pool, ~2.8 s at 4x throttle.)
       .then(() => {
         if (this._token !== token || this._phase !== 'settling') return   // superseded
         this._beginWarm()

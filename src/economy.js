@@ -37,9 +37,9 @@
 // Isolation discipline (the story.js / day.js rule): imports NOTHING. Day arrives through the
 // deps adapter; thresholds flow OUT to par.js's gradeRun as an argument. Headless by nature.
 //
-// ECONOMY_PARAMS lives here, deliberately NOT in RANGER_PARAMS: that object feeds routeCacheSig,
-// and an economy key landing in it would re-key every baked route bundle for a payout tunable
-// (the same reason DAY_PARAMS and POI_PARAMS stand apart).
+// ECONOMY_PARAMS lives here, deliberately NOT in RANGER_PARAMS: an economy key landing in that
+// object would re-route the whole world every time a payout tunable moved (the same reason
+// DAY_PARAMS and POI_PARAMS stand apart).
 
 /**
  * Tunables. ⚠ PROVISIONAL (FEAT-53, 2026-08-01) — the owner's balancing pass (Phase D) replaces
