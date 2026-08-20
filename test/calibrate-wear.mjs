@@ -126,6 +126,20 @@ const cruise = measure('cruising', (vs) => {
   for (let k = 0; k < 4; k++) vs.wheelOmega[k] = LIMIT_FWD / P.wheelRadius
 }, 240)
 
+// One-wheel peel — the owner's re-anchor (2026-08-20). The truck barely moves while one rear wheel
+// spins at speed, so the whole contact-patch surface speed IS slip. It is the harshest sustained
+// abrasion the sim can produce, which makes it a far better anchor than a duty-cycle assumption:
+// there is nothing to argue about in "hold it flat and the tire is gone in five minutes".
+// Open diff, so ONE rear wheel takes it all — that is what a peel is.
+const BURNOUT_SURFACE = 28   // m/s of tread speed at the patch (redline in a low gear)
+const burnout = measure('one-wheel peel', (vs) => {
+  vs.velocity.set(0, vs.velocity.y, FWD_Z * 1.0)          // creeping forward, as a real peel does
+  vs.wheelOmega[0] = vs.wheelOmega[1] = 1.0 / P.wheelRadius
+  vs.wheelOmega[2] = BURNOUT_SURFACE / P.wheelRadius      // RL lit up
+  vs.wheelOmega[3] = 1.0 / P.wheelRadius
+  vs.throttle = 1; vs.smoothThrottle = 1
+}, 240)
+
 // Braking at the representative pedal fraction.
 const braking = measure('braking @ 60% pedal', (vs) => {
   vs.velocity.set(0, vs.velocity.y, FWD_Z * LIMIT_FWD)
@@ -137,8 +151,14 @@ const braking = measure('braking @ 60% pedal', (vs) => {
 // condition falls by insult/durability, so:  durability = meanRate · seconds / conditionLost
 const solve = (rate, hours, lost) => rate * hours * H / lost
 
+// Tires are anchored on the PEEL now (owner, 2026-08-20), not on the duty cycle. The old anchor —
+// 70 h of hard driving costs 20% — put a tire set at 400 minutes of continuous burnout, which the
+// owner rejected as absurd: it should be about five. The duty-cycle mix is still computed below,
+// but only to REPORT what the peel anchor implies for ordinary driving, which is the number with
+// the economy consequences.
+const PEEL_MINUTES = 5
+const durTire  = burnout.tire * PEEL_MINUTES * 60 / 1.0     // full tire, from new to gone
 const tireRate = DUTY.tireLimit * limit.tire + DUTY.tireCruise * cruise.tire
-const durTire  = solve(tireRate, 70, 0.20)
 
 const brkRateF = DUTY.brakeTime * braking.brkF
 const brkRateR = DUTY.brakeTime * braking.brkR
@@ -147,7 +167,8 @@ const durBrake = solve(brkRateF, 120, 0.20)     // fit to the FRONT axle: it wor
 
 console.log(`\nduty cycle (the assumption): ${DUTY.tireLimit * 100}% at the limit, ` +
             `${DUTY.brakeTime * 100}% on the brakes at ${DUTY.brakePedal * 100}% pedal`)
-console.log(`\n  mean tire insult   ${tireRate.toFixed(4)} /s   → 70 h costs 20%  ⇒  durTire  = ${durTire.toPrecision(3)}`)
+console.log(`\n  peel insult        ${burnout.tire.toFixed(3)} /s   → ${PEEL_MINUTES} min kills a tire  ⇒  durTire  = ${durTire.toPrecision(3)}`)
+console.log(`  mean tire insult   ${tireRate.toFixed(4)} /s   (hard-driving duty cycle, for the readout below)`)
 console.log(`  mean brake front   ${brkRateF.toFixed(1)} N·m   → 120 h costs 20%  ⇒  durBrake = ${durBrake.toPrecision(3)}`)
 console.log(`  mean brake rear    ${brkRateR.toFixed(1)} N·m   (rear axle reaches 20% at ` +
             `${(solve(brkRateR, 120, 0.20) === 0 ? Infinity : durBrake * 0.20 / brkRateR / H).toFixed(0)} h — ` +
@@ -158,5 +179,9 @@ console.log(`paste:                  durTire: ${Number(durTire.toPrecision(3))},
 
 // Sanity: what the fitted constants imply for a 20-day run (SM-INV-14: 16 waking hours a day).
 const runH = 20 * 16
+const tireHardH = durTire / tireRate / H            // hours of "hard driving" to destroy a tire
+console.log(`\nwhat the peel anchor implies for ORDINARY driving — the number with economy consequences:`)
+console.log(`  ${tireHardH.toFixed(1)} h of hard driving destroys a tire (${(tireHardH * 60).toFixed(0)} min)`)
+console.log(`  a 20-day run is ${runH} waking hours, so that is ~${(runH / tireHardH).toFixed(0)} tire sets if every hour were hard`)
 console.log(`\nimplied over a full 20-day run (${runH} h) if EVERY hour were "hard":`)
-console.log(`  tires  ${(100 - runH / 70 * 20).toFixed(0)}% condition · brakes ${(100 - runH / 120 * 20).toFixed(0)}%`)
+console.log(`  tires  ${Math.max(0, 100 - runH / tireHardH * 100).toFixed(0)}% condition · brakes ${(100 - runH / 120 * 20).toFixed(0)}%`)

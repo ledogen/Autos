@@ -43,10 +43,25 @@ for (const [mph, eng, rad, hl] of [[10, 0.01, 0.05, 0.10], [60, 0.20, 0.50, 1.00
   ok(near(1 - d.get('headlightL'), hl),   `${mph} mph: headlight takes ${((1 - d.get('headlightL')) * 100).toFixed(1)}% (want ${(hl * 100).toFixed(0)}%)`)
 }
 
-console.log('\n§2 armor takes its own curve, and it is the same 10/100 shape')
-for (const [mph, want] of [[10, 0.10], [60, 1.00]]) {
-  const { d } = hit('front', mph, 1)
-  ok(near(1 - d.get('armorFront'), want), `${mph} mph: front bumper takes ${((1 - d.get('armorFront')) * 100).toFixed(1)}% (want ${(want * 100).toFixed(0)}%)`)
+console.log('\n§2 armor takes its own curve — floored, saturating at 80 mph, square-law (owner 2026-08-20)')
+{
+  // Body panels were ~4x too sensitive at low speed. Three requirements at once: NOTHING below a
+  // floor, a defined write-off speed, and a square-law rise. The components deliberately keep the
+  // old two-point law — the owner judged those about right.
+  for (const [mph, want] of [[10, 0.00], [20, 0.020], [45, 0.250], [80, 1.00]]) {
+    const { d } = hit('front', mph, 1)
+    ok(near(1 - d.get('armorFront'), want, 0.005),
+      `${mph} mph: front bumper takes ${((1 - d.get('armorFront')) * 100).toFixed(1)}% (want ${(want * 100).toFixed(1)}%)`)
+  }
+  ok(hit('front', 9, 1).d.get('armorFront') === 1, 'below the 10 mph floor a body panel takes NOTHING — a parking-lot tap is free')
+  // Square-law is the whole point: doubling the speed over the floor must quadruple the damage.
+  const a = 1 - hit('front', 10 + 17.5, 1).d.get('armorFront')
+  const b = 1 - hit('front', 10 + 35.0, 1).d.get('armorFront')
+  ok(near(b / a, 4, 0.05), `doubling speed-over-floor quadruples the damage (x${(b / a).toFixed(2)}) — energy, not impulse`)
+  // The fatal threshold is 60 mph and armor now saturates at 80, so the two no longer coincide.
+  // That is a deliberate consequence of the owner's re-anchor, pinned so it cannot drift silently.
+  ok(D.fatalMph === 60 && D.impactArmor.fullMph === 80,
+    'death (60 mph) and total armor loss (80 mph) are now DIFFERENT speeds — they used to be the same hit')
 }
 
 console.log('\n§3 armor absorption follows the ratified two anchors')

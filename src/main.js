@@ -1064,6 +1064,10 @@ const vehicleState = {
 const damageModel = new DamageModel({ params: RANGER_PARAMS })
 damageModel.publish(RANGER_PARAMS)
 window.__damage = damageModel   // debug panel + the damage GUI read this
+// Read-only console/harness handle on the live vehicle state. The damage rates are calibrated by
+// driving the FEAT-31 lab rig and watching the per-corner signals, and a harness cannot hold a
+// target speed on the rumble lane without being able to read the speed back.
+window.__vehicleState = () => vehicleState
 // The driver's-seat readout (V). Hidden by default and free while hidden; it is how a drive is
 // evaluated at all, since condition, wear rates and a tenth-of-a-second impact are otherwise
 // invisible from behind the wheel. The ratified top-down schematic replaces its condition pane.
@@ -1847,7 +1851,10 @@ if (_PROF) {
   window.__gps = () => gpsSystem
   // FEAT-39 harness: drop the CAR at a spot (unlike __view, which only moves the freecam). Lets the
   // CDP probe frame the real chase-cam approach to a junction without hand-driving there.
-  window.__tp = (x, z, heading = 0) => teleportToGround(x, z, heading, 0.5)
+  // `drop` is exposed because the SM-3 spring track is calibrated by DROPPING the truck onto its
+  // bump stops from a known height, which is the only clean way to produce a repeatable bump-stop
+  // force (owner, 2026-08-20). 0.5 m stays the default so existing harness calls are unchanged.
+  window.__tp = (x, z, heading = 0, drop = 0.5) => teleportToGround(x, z, heading, drop)
   // Single-lever A/B toggles: isolate one cost axis at a time at a fixed preset. Each returns true
   // if applied. NOT persisted anywhere — page reload restores the preset's values.
   const _eachPropMesh = (fn) => { if (propSystem) for (const rec of propSystem._meshes.values()) fn(rec) }
@@ -4682,7 +4689,7 @@ function loop () {
     // damage model, which decides whether that is an impact (see feedContact — a contact is not).
     // classifyImpactRegion turns the body-local point/normal into an armor region and returns null
     // for ground contacts, so driving over terrain never registers as a crash.
-    if (!_labActive) {
+    {
       const hit = physicsEngine.maxContactImpulse(vehicleChassis)
       const landed = damageModel.feedContact(
         classifyImpactRegion(hit.point, hit.normal), hit.impulse, RANGER_PARAMS.mass, PHYSICS_DT)

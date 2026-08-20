@@ -291,6 +291,17 @@ export function initDebug (params, callbacks = {}, options = {}) {
   dmgFolder.add({ f: () => { const d = _damage(); if (d) { d.setAll(1); d.publish(params); _sync() } } }, 'f').name('Restore All')
   void _readout
 
+  // ── Wear speed, per class ────────────────────────────────────────────────────────────────────
+  // 1 = the calibrated rate in DAMAGE_PARAMS. Live, because every one of these rates has in
+  // practice been set by driving and judging, and a code edit + reload per guess is the slow way
+  // to do that. Watch the %/min column in the V readout while dialling. Anything that settles
+  // should be folded back into the dur* constant it scales (see the note in damage.js).
+  const wearFolder = dmgFolder.addFolder('Wear Speed (x calibrated)')
+  for (const k of ['tire', 'brake', 'spring', 'damper', 'wheel', 'engine']) {
+    wearFolder.add(DAMAGE_PARAMS.wearScale, k, 0, 10, 0.1).name(k)
+  }
+  wearFolder.close()
+
   // Phase 6 (TERR-06): Terrain folder — amplitude tuning + ramp visibility toggle.
   // terrainAmplitude is read by TerrainSystem._flushPendingQueue during geometry build;
   // live mutation of params.terrainAmplitude takes effect on the next chunk built.

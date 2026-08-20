@@ -104,7 +104,10 @@ export const DAMAGE_PARAMS = {
   // ── Effect curves ───────────────────────────────────────────────────────────────────────────────
   // "Most of the reduction in the last 30% of health" — a two-segment line with a knee. Above the
   // knee the component is nearly as good as new; below it, it falls off a cliff. `kneeResponse()`.
-  springKnee: 0.30, springAtKnee: 0.90, springAtZero: 0.25,
+  // springAtZero RAISED to 0.50 on 2026-08-20 (owner). At 0.25 the truck sat down on its bump stops
+  // and stopped being drivable. A real spring never yields flat — it always keeps some elastic — so
+  // half rate is both the playable floor and the honest one.
+  springKnee: 0.30, springAtKnee: 0.90, springAtZero: 0.50,
   damperKnee: 0.30, damperAtKnee: 0.90, damperAtZero: 0.25,
   brakeKnee:  0.30, brakeAtKnee:  0.90, brakeAtZero:  0.25,
   // Engine is the one curve the owner specified exactly: 100→20% costs 10% of torque, 20→0% costs
@@ -121,11 +124,16 @@ export const DAMAGE_PARAMS = {
 
   // Tires: slip velocity × time DOMINATES; cornering force × time is a minor contribution.
   //   insult = slipVel[m/s]·dt  +  wCorner · |Flat|[N]·dt
-  // FITTED by test/calibrate-wear.mjs against the owner's rate (2026-08-19): 70 h of hard driving
-  // costs 20% of a tire. "Hard driving" is the duty cycle stated in that script — 25% of the hour at
-  // the grip limit, measured at 2.62 insult/s from the real stepPhysics. Re-run it if the tire model
-  // or the duty cycle changes; do not hand-edit this number.
-  durTire:        826000,    // m of accumulated sliding to destroy a tire
+  // FITTED by test/calibrate-wear.mjs. RE-ANCHORED 2026-08-20: the owner rejected the old rate as
+  // roughly 100x too slow — a continuous one-wheel peel took 400 minutes to destroy a tire, and it
+  // should take about five. Five minutes of peel IS the anchor now, and it is a much better one than
+  // the old duty-cycle assumption because there is nothing in it to argue about. The peel measures
+  // 26.8 insult/s against the real stepPhysics.
+  //
+  // What it implies, which is the part with economy consequences: ~3 h of HARD driving (25% of the
+  // hour at the grip limit) destroys a tire, against ~266 h of gentle cruising. That spread is the
+  // point — driving badly is what costs rubber.
+  durTire:        8050,      // m of accumulated sliding to destroy a tire
   tireWCorner:    2.0e-4,    // N·s → m-equivalent. At 5 kN cornering that is 1 m/s of "slip".
   tireSlipFloor:  0.15,      // m/s — no-harm floor. Rolling slip is not abrasion.
 
@@ -141,12 +149,18 @@ export const DAMAGE_PARAMS = {
   engineRPMExp:   2.0,       // rpm term exponent — revving hurts superlinearly
 
   // Springs: bump-stop force above a no-harm floor (ratified: light contact is harmless).
-  durSpring:      3.0e6,     // N·s per axle
+  // 4x more sensitive as of 2026-08-20 (owner): the wear was real but too minor to feel — dropping
+  // the truck repeatedly registered, and barely moved the needle.
+  durSpring:      7.5e5,     // N·s per axle
   springForceFloor: 3000,    // N — below this, bump-stop contact costs nothing
 
-  // Dampers: high suspension displacement RATE above a no-harm floor.
-  durDamper:      1.2e4,     // (m/s)·s per axle
-  damperVelFloor: 0.35,      // m/s — normal ride motion is free
+  // Dampers: suspension displacement RATE above a no-harm floor.
+  // Two changes on 2026-08-20 (owner: "basically no damper wear, make it more sensitive to wheel
+  // velocity"). The FLOOR was the real culprit — at 0.35 m/s almost all ordinary ride motion was
+  // free, so only crashes wore a damper at all, which is backwards: a damper's whole life is
+  // ordinary ride motion. Lowered to 0.10 so normal travel counts, and the rate raised 10x on top.
+  durDamper:      1.2e3,     // (m/s)·s per axle
+  damperVelFloor: 0.10,      // m/s — only near-static motion is free now
 
   // ── Impacts ─────────────────────────────────────────────────────────────────────────────────────
   // Calibrated by the owner in mph (2026-08-19), but the MEASURED quantity is the contact manifold's
@@ -161,7 +175,17 @@ export const DAMAGE_PARAMS = {
   //
   // Worth knowing: n = 1 would be damage proportional to IMPULSE, n = 2 proportional to KINETIC
   // ENERGY. The ratified curve sits between them, so this is a fitted law, not either textbook one.
-  impactArmor:     { d10: 0.10, d60: 1.00 },
+  //
+  // ARMOR IS THE EXCEPTION and uses the other shape below (owner, 2026-08-20): the body panels were
+  // about 4x too sensitive at low speed, so they get a FLOOR they must clear, saturate at 80 mph
+  // rather than 60, and rise as the SQUARE of speed. Square-law is the honest choice for sheet metal
+  // — a panel deforms by absorbing energy, and energy goes as v². It is why a parking-lot tap now
+  // costs almost nothing while a real crash still writes the truck off.
+  //
+  //     20 mph  24% → 2%     30 mph  42% → 8%     45 mph  73% → 25%     60 mph  100% → 51%
+  //
+  // The components keep the two-point law: the owner judged them about right as they are.
+  impactArmor:     { floorMph: 10, fullMph: 80, n: 2 },
   impactHeadlight: { d10: 0.10, d60: 1.00 },
   impactRadiator:  { d10: 0.05, d60: 0.50 },
   impactEngine:    { d10: 0.01, d60: 0.20 },
@@ -182,8 +206,13 @@ export const DAMAGE_PARAMS = {
   alignMaxCamberDeg: 2.0,
   alignMaxToeDeg:    0.5,
 
-  // Death: a hit at or above this equivalent speed is the fatal-crash fail state (SM-INV-1). Same
-  // 60 mph the armor curve tops out at — total armor loss and death are the same impact.
+  // Death: a hit at or above this equivalent speed is the fatal-crash fail state (SM-INV-1).
+  //
+  // NOTE (2026-08-20): this used to coincide with the armor curve topping out, so total armor loss
+  // and death were the same impact. The re-anchor moved armor's write-off speed to 80 mph and left
+  // death at 60, because the owner's tuning pass was about panel sensitivity and said nothing about
+  // the fail state. They are now DIFFERENT speeds and that is UNRESOLVED, not settled — a single
+  // survivable hit can no longer destroy a bumper outright; it takes an accumulation. Raise it.
   fatalMph:        60,
   fatalEnabled:    true,
 
@@ -197,6 +226,17 @@ export const DAMAGE_PARAMS = {
   // normal road undulation must cost nothing, or the wheels would wear out on a smooth highway.
   wheelAccelFloor: 60,     // m/s^2 of strut acceleration below which nothing happens
   durWheel:        4.0e5,  // insult units for a full wheel; chosen, not fitted — needs a drive
+
+  // ── Live tuning multipliers ────────────────────────────────────────────────────────────────
+  // Per-class wear SPEED, 1 = the calibrated rate above. These exist so wear can be tuned by feel
+  // from the debug panel during a drive — which is how every one of these rates has actually been
+  // set — instead of through a code edit and a reload each time. They multiply the insult, so 2
+  // means "wears twice as fast".
+  //
+  // They are a TUNING surface, not part of the model: anything that settles here should be folded
+  // back into the dur* constant it scales and the multiplier returned to 1, so there is one number
+  // per rate rather than two that have to be read together.
+  wearScale: { tire: 1, brake: 1, spring: 1, damper: 1, wheel: 1, engine: 1 },
 
   // ── Contact → impact gating (feedContact) ──────────────────────────────────────────────────
   // A contact is not an impact. The engine reports a manifold every step a body is touching
@@ -266,18 +306,34 @@ export function impactSpeed (impulseNs, mass) {
 }
 
 /**
- * Damage fraction from a two-point mph calibration.
+ * Damage fraction for one impact. Two curve shapes, because the owner calibrated the two kinds of
+ * part differently, and forcing them into one form would misrepresent one of them.
  *
- * `curve` is {d10, d60} — the damage an UNPROTECTED component takes at 10 and 60 mph. Two points fix
- * a power law damage = d10·(v/10mph)^n with n = ln(d60/d10)/ln 6. Returns 0..1 (uncapped above 1 so
- * the fatal check can see how far over it went; callers clamp when applying).
+ * **Two-point power law** — `{d10, d60}`, the damage an UNPROTECTED component takes at 10 and 60
+ * mph. Those fix damage = d10·(v/10mph)^n with n = ln(d60/d10)/ln 6. This is the components: engine,
+ * radiator, headlights, wheels, springs, dampers. There is no floor, because a small knock really
+ * does cost a headlight a little.
+ *
+ * **Floored saturating law** — `{floorMph, fullMph, n}`, giving
+ * ((v − floor)/(full − floor))^n, zero below the floor. This is the ARMOR (owner, 2026-08-20). Body
+ * panels needed three things the power law could not give at once: nothing at all below a threshold,
+ * a defined write-off speed, and a square-law rise so low-speed taps stay cheap while real crashes
+ * stay expensive. A parking-lot nudge should cost a bumper nothing, and no two-point power law
+ * anchored above zero can express "nothing".
+ *
+ * Returns 0..1, uncapped above 1 so the fatal check can see how far over it went; callers clamp.
  *
  * @param {number} v - equivalent impact speed [m/s], from impactSpeed().
- * @param {{d10: number, d60: number}} curve
+ * @param {{d10:number,d60:number}|{floorMph:number,fullMph:number,n:number}} curve
  */
 export function impactDamage (v, curve) {
-  const v10 = 10 * MPH
   if (v <= 0) return 0
+  if (curve.floorMph !== undefined) {
+    const floor = curve.floorMph * MPH, full = curve.fullMph * MPH
+    if (v <= floor) return 0
+    return Math.pow((v - floor) / (full - floor), curve.n)
+  }
+  const v10 = 10 * MPH
   const n = Math.log(curve.d60 / curve.d10) / Math.log(6)
   return curve.d10 * Math.pow(v / v10, n)
 }
@@ -379,7 +435,9 @@ export class DamageModel {
    */
   wear (id, insult, durability) {
     if (insult <= 0) return
-    this.condition[id] = Math.max(0, this.get(id) - insult / this._dur(id, durability))
+    const scale = DAMAGE_PARAMS.wearScale[TRACKS[id].cls] ?? 1
+    if (scale <= 0) return
+    this.condition[id] = Math.max(0, this.get(id) - insult * scale / this._dur(id, durability))
   }
 
   // ── Effect multipliers (what the physics stack reads) ───────────────────────────────────────────

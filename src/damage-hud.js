@@ -66,7 +66,7 @@ const CSS = `
 /* Two columns: the condition pane is 26 tracks and would otherwise push the panes that matter
    (signals, impacts) off the bottom of the screen. */
 #dmg-hud .dh-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; align-items: start; }
-#dmg-hud .dh-row { display: grid; grid-template-columns: 76px 1fr 28px 46px; gap: 4px; align-items: center;
+#dmg-hud .dh-row { display: grid; grid-template-columns: 72px 1fr 28px 62px; gap: 4px; align-items: center;
   height: 12px; }
 #dmg-hud .dh-lbl { color: #a8b2a4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* display:block matters — an inline span ignores height, which renders every bar as flat background. */
@@ -168,9 +168,16 @@ export class DamageHUD {
         const r = rate(id)
         // Alignment's condition is a READOUT of how bent it is, so show the bend itself too —
         // that is the quantity that actually reaches the physics.
-        const extra = TRACKS[id].cls === 'alignment'
+        // Alignment and wheels show their SYMPTOM rather than a wear rate: for those two the
+        // condition number is a summary, and the bend in degrees / the runout in mm is the quantity
+        // that actually reaches the physics. Runout in particular is an OUTPUT of wheel condition —
+        // nothing derives wear from it — so it belongs here beside the wheel, never in SIGNALS.
+        const cls = TRACKS[id].cls
+        const extra = cls === 'alignment'
           ? `${d.camberOffsetDeg[TRACKS[id].wheel] >= 0 ? '+' : ''}${d.camberOffsetDeg[TRACKS[id].wheel].toFixed(2)}°cam`
-          : (r > 0.005 ? `${r.toFixed(2)}%/min` : '')
+          : cls === 'wheel'
+            ? `${(d.wheelRunout(TRACKS[id].wheel) * 1000).toFixed(1)}mm o-o-r`
+            : (r > 0.005 ? `${r.toFixed(2)}%/min` : '')
         col.push(
           `<div class="dh-row"><span class="dh-lbl">${TRACKS[id].label}</span>` +
           `<span class="dh-bar"><span class="dh-fill" style="width:${(c * 100).toFixed(1)}%;background:${conditionColor(c)}"></span></span>` +
@@ -184,15 +191,13 @@ export class DamageHUD {
     const vs = this.vehicleState
     const fmt = (v, floor, dp = 1) => `<span class="${v > floor ? 'over' : ''}">${v.toFixed(dp)}</span>`
     const corner = (arr, floor, dp = 1) => [0, 1, 2, 3].map(i => fmt(Math.abs(arr?.[i] || 0), floor, dp)).join('')
-    out.push('<h4>Signals — per corner, red is above the floor</h4>')
+    out.push('<h4>Signals — wear INPUTS, per corner, red is above the floor</h4>')
     out.push('<div class="dh-sig"><span>&nbsp;</span><span>FL</span><span>FR</span><span>RL</span><span>RR</span></div>')
     out.push(`<div class="dh-sig"><span>slip m/s</span>${corner(vs.slipVel, P.tireSlipFloor, 2)}</div>`)
     out.push(`<div class="dh-sig"><span>bump kN</span>${[0, 1, 2, 3].map(i =>
       fmt(Math.abs(vs.bumpForce?.[i] || 0) / 1000, P.springForceFloor / 1000, 1)).join('')}</div>`)
     out.push(`<div class="dh-sig"><span>strut m/s</span>${corner(vs.strutCompVel, P.damperVelFloor, 2)}</div>`)
     out.push(`<div class="dh-sig"><span>accel m/s²</span>${corner(d.strutAccel, P.wheelAccelFloor, 0)}</div>`)
-    out.push(`<div class="dh-sig"><span>runout mm</span>${[0, 1, 2, 3].map(i =>
-      `<span>${(d.wheelRunout(i) * 1000).toFixed(1)}</span>`).join('')}</div>`)
     out.push(`<div class="dh-note">floors — slip ${P.tireSlipFloor} m/s · bump ${(P.springForceFloor / 1000).toFixed(0)} kN`
       + ` · strut ${P.damperVelFloor} m/s · accel ${P.wheelAccelFloor} m/s²</div>`)
     out.push('<div class="dh-note">a floor that is red on ordinary road is wrong, or the signal under it is noise.</div>')
