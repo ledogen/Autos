@@ -953,3 +953,41 @@ contains the entire v1 arc router (`arcPrimitiveConnect` + dubins + refit + self
 no callers, and ~25 now-inert `road*`/`tunnel*` keys remain in `data/ranger.js`. Both are clean
 follow-up deletions; neither affects behaviour. `_smoothDesignGrade` is a third (legacy per-tile
 path, reachable only from a dead test hook).
+
+## v1 router deleted + the slider-aliasing bug (2026-08-20, owner instructions)
+
+**Owner: "I guess we can take out roadcarve.js and all the road tunnel keys."** Done (`2149dec`).
+
+- **`src/road-carve.js` 1823 → 430 lines, carve-only again.** The entire ROUTE SYNC region
+  (`arcPrimitiveConnect` + search scratch + the QUAL-14 self-clearance repair loop + Dubins
+  terminal/fillet + the de-quantize refit), `smoothGradeInPlace` and `applyTunnelPassInPlace` are
+  gone. Every carve function stays — terrain.js WORKER_SOURCE still mirrors those (CARVE SYNC).
+- **Also dead, also gone:** `_proto.params` (the D-09 weight block) and `_refreshParams()` that
+  copied it every re-stream — nothing read either; the lazy `dg` wide-graph getter in
+  `_degreeDrops` (its only consumer was the deleted cull); 23 orphaned debug tooltips.
+- **Gates retired with their code:** `arc-router`, `road-dequantize` (v1 internals),
+  `defect-b-grade` (smoothGradeInPlace). Registry 53 → 50.
+- **`data/ranger.js` 218 → 177 keys** — 41 dead road*/tunnel* params removed with their comment
+  blocks. `tunnelBoreRadius` stays: bore GEOMETRY (mesh, collider, containment) is real.
+
+### The "v2 sliders don't update anything" bug — diagnosed, and the class removed
+
+**It was module aliasing under hot-module reload, not a wiring fault.** On a *fresh* page load the
+sliders always worked (measured over CDP: cTurn 30 → 90, route cache re-routes 154 → 149 entries).
+But `V2_COSTS` was a module constant in `corridor-router.js` — a file being edited continuously
+during the session — and a Vite HMR update can swap in a fresh module instance. The panel then
+mutates the NEW copy while RoadSystem still holds the OLD one, so the knob moves nothing.
+
+**Fix: the price list moved to `RANGER_PARAMS.roadV2`** — the same object every other road slider
+binds, in a data module nobody edits mid-session, which removes the aliasing class rather than
+patching this instance of it. `RoadSystem._v2Costs()` reads it fresh per route and hands it to each
+job spec, so the Worker (a separate module instance with its own defaults) keeps pricing
+identically. `V2_COSTS` survives in corridor-router.js as the headless default only.
+
+**Worth remembering for the feel session:** a knob edit takes effect on the next re-route, which is
+debounced 150 ms and then re-streams + re-carves; there is no separate invalidation to trigger.
+
+**Remaining known-dead, not yet removed:** `_smoothDesignGrade` (legacy per-tile path, reachable
+only from the dead `sampleDesignGradeAt` test hook) and `graph-topology.mjs`'s v1 sub-checks
+(GRAPH-CORRIDOR-CLEARANCE / GRAPH-CROSSINGS-CULLED test machinery that no longer exists — part of
+that gate's booked re-baseline).
