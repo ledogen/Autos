@@ -1020,3 +1020,70 @@ every registered run's points) plus `runs`/`pts`/`km`. Two builds with the same 
 same roads — this is what makes a price A/B measurable instead of eyeballed, and it is how both
 reports above were settled. Harness: `perf-runs/knob-ab.mjs`, `perf-runs/map-ab.mjs`,
 `perf-runs/map-settle.mjs` (gitignored).
+
+## Micro-crest fix + owner's weight review (2026-08-20, `6bea353`)
+
+**Owner:** *"the road changes slope rather abruptly and I would like to add a smoother to the rate
+of change of the slope. Basically there's lots of tiny microcrests and troughs that upset the
+suspension a lot more than progressive steady curves would."* Plus a weights ruling: **grade
+discomfort 120 → 180, turn cost 30 → 55** — *"this forces a little more turing without it being free
+and everywhere."* Both applied.
+
+**Diagnosed before building.** TWO stacked causes, both artifacts of how the profile is solved and
+shipped — neither is anything the router meant:
+
+1. **Grade quantisation.** The DP solves on a 0.5 m elevation grid at 10 m stations, so its smallest
+   expressible grade is **5%**. A road wanting a steady −2.5% ships as a staircase alternating 0%
+   and −5%. Measured on seed 20: every station grade a multiple of 5%, 219 sample steps jumping a
+   full 5 pp.
+2. **Station corners** — and this one dominates what the suspension feels. The solved profile is
+   lerped onto the 4 m polyline, so grade is constant *within* a station and changes
+   INSTANTANEOUSLY at each one: a corner every 10 m, unbounded vertical curvature, however small
+   the step.
+
+**Both fixed where the ticket already said to fix them** ("if lattice sawtooth shows up it gets
+handled in stage 3, never priced away" — crest airtime is a FEATURE, so nothing was added to the
+DP's cost model):
+- `dequantizeProfile()` — fixed 3-pass binomial low-pass on interior stations. Deliberately NOT the
+  user knob: it removes a solver artifact, so the GRID sets its size, not taste. (Driving it from
+  the user knob was measured WORSE at large settings — heavy station smoothing fights the class
+  clamps and the polyline rounding downstream.) Endpoints never move, no station may change
+  bore/bridge status, and it is RE-PRICED through the new `priceProfile()`; if smoothing would break
+  a grade cap the blend bisects back toward the solved profile, which is always feasible.
+- Corner rounding on the shipped polyline, window `roadV2.vSmoothM`, displacement bounded to
+  ±0.25 m = **half the solver's own elevation quantum**, so the shipped road never departs from the
+  priced one by more than the solver could resolve.
+
+**Measured** — vertical jolt (v²·dg/ds at 20 m/s, p99 over seeds 20/11):
+
+| vSmoothM | jolt p99 | strongest crest | note |
+|---|---|---|---|
+| 0 m | 0.51 / 0.46 g | 0.31 g | the reported problem |
+| **15 m (default)** | **0.24 / 0.24 g** | 0.25 g | halved; crest intact |
+| 30 m | 0.48 / 0.45 g | 0.26 g | worse again |
+
+**NOT monotone — more is not smoother.** Past ~2 stations the ±0.25 m bound clips and clipping puts
+corners back, so the slider caps at 25 rather than offering a knob that degrades when turned up.
+Station grades now read `-3.6 -3.2 -2.5 -1.5 -0.8 -0.7 -1.2 -2.3` where they read
+`-3.0 -5.0 -3.8 0.0 0.0 0.0 0.0 -1.7`.
+
+**Contract intact** on all three eval seeds: node y-spread 0.000, marks 0/0/1, sustained ceiling
+respected, spans stable, one component each.
+
+**Gate movement:** `road-fill-support`, `paper-tour` and `paper-reroute` went **GREEN** (a smoother
+profile sits better on its embankments). `pond-route-around` has a NEW red — but only its
+NON-VACUOUS precondition: the guarantee passes (0 of 13468 centerline points in water), while the
+check that the router would *want* the water without the no-go discs no longer holds at the new
+weights. Routing is untouched by the smoother (it runs after route selection), so that is the
+weights, and it is benign. Standing reds now: `mission-network` (BUG-41), `graph-topology`
+(re-baseline), `story-poi` (pad flatness), `pond-route-around` (this precondition).
+
+**Owner has NOT yet reviewed:** cut, cut², fill, bore, portal, max road grade, max bore grade,
+cut→bore depth, max fill. All in the same folder, all re-route live.
+
+**Filed, not fixed (owner: "we don't have to fix this now"):** `BUG-53` — road edges cross away from
+nodes. Records their ranked preference (delete a leg > trim to the crossing > legitimise it, with
+their own "causes lots of chaos" doubt), why there are more now (the cull deletion was right on its
+evidence, but that evidence predates the 2.5D corridor whose switchback stacks can excurse into a
+neighbour), and the census that should decide the design — including the VERTICAL GAP at each
+crossing, since with bores in the vocabulary some already pass under and are not defects.
