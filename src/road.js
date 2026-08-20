@@ -35,7 +35,7 @@
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
-import { crownProfile, potholeNoise, signedCurvature, smoothGradeInPlace, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
+import { crownProfile, potholeNoise, signedCurvature, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
 import { truncatedHeightField, routeEdgeV2, profileSolve, CLS, V2_COSTS, V2_TRUNC_K } from './corridor-router.js'   // FEAT-68: router v2
 import { centerlineFromDescriptors, CenterlineCurve, Centerline, makePrimitive, slicePrimitives, reversePrimitives, primitivePose } from './centerline.js'
 import { delaunay, urquhartEdges } from './road-graph.js'
@@ -49,10 +49,9 @@ const _ZERO_JC = { frac: 0, widen: 0 }
 // (_carveDirtY) reaches (roadJunctionCarveRadius × this) as an ARC distance along the winning leg. The
 // Voronoi step between two legs GROWS with radius, so the blend must reach well past the crown/camber-ease
 // + widen core (R) — set to fully cover the observed crease (≥ r≈28 on the seed-6 trident). Deliberately a
-// hardcoded const, NOT a road* param — route-store.js routeCacheSig() bakes every ^road key into the
-// bundled route-cache signature, so a new road* param would invalidate data/route-cache-default.json.gz and
-// silently revert cold load ~1.6 s → ~26 s. Carve-time only (zero routing effect), so it must not touch the
-// sig. (Same rationale as KINK_MAX in road-mesh.js.)
+// hardcoded const, NOT a road* param — every ^road key re-routes the whole world when it changes,
+// and this is carve-time only (zero routing effect), so it has no business forcing that.
+// (Same rationale as KINK_MAX in road-mesh.js.)
 const BLEND_REACH_MULT = 10.0
 // Ruled inter-leg blend (_carveDirtY): BARYCENTRIC weights w_i = taper_i · ∏_{j≠i} soft(gap_j), where
 // gap = distance to the leg's nearest centerline point − halfWidth. This is the LINEAR ruled
@@ -1729,9 +1728,10 @@ export class RoadSystem {
     }
 
     /**
-     * QUAL-14 perf: export the route caches as plain primitive-descriptor entries (structured-
-     * clonable) for IndexedDB persistence (src/route-store.js). Centerlines rebuild losslessly
-     * from their descriptors, so this is the whole cache state.
+     * QUAL-14 perf: export the route cache as plain primitive-descriptor entries (structured-
+     * clonable) for main.js's in-session cache, so returning to a seed visited earlier this
+     * session is instant. Centerlines rebuild losslessly from their descriptors, so this is the
+     * whole cache state.
      */
     exportRouteCache() {
         // Third tuple element = the FEAT-68 _v2Dirs tag (dirs-aware routing) — without it every
@@ -2199,6 +2199,7 @@ export class RoadSystem {
             ax: A.x, az: A.z, yA: this._v2NodeHeight(A.x, A.z),
             bx: B.x, bz: B.z, yB: this._v2NodeHeight(B.x, B.z),
             margin, blockedDiscs, dirs,
+            costs: V2_COSTS,   // ride the spec so Worker-routed edges price identically (own module instance)
         }
     }
 
@@ -2252,6 +2253,14 @@ export class RoadSystem {
     // design; the cap yanks it back). tanh approaches ±cap asymptotically instead, so the profile bends into
     // the terrain-following region smoothly. Bounded by ±cap (never floats past it), near-identity for
     // |dev|≪cap so unclamped roads are unchanged, and window-invariant (pointwise fn of two box means). D-16.
+    // FEAT-68: _gradeEdgeInPlace (v1 design-grade smoothing: wide-smooth + tanh deviation clamp)
+    // and _tunnelPassOpts (FEAT-40's taut-string tunnel DETECTION pass) are DELETED. Both were
+    // already unreachable: _v2GradePts solves the exact profile instead, and a bore is no longer
+    // something found after the fact — it is a priced state the router chose. Their knobs
+    // (roadEarthworkWindow / roadWDeviation / roadDeviationCap / tunnelMinDepth / MinLen / MaxLen /
+    // PortalDepth / MaxGrade / tunnelsEnabled) went with them; tunnelBoreRadius survives because
+    // bore GEOMETRY — mesh, collider, containment test — is still real.
+
     /**
      * FEAT-68 (v2) day-two node-height rule: a node pinned to terrain ON A CONVEX EDGE is
      * unreachable with bridges de-scoped — measured on seed 11: ground fell 24 m in the first
@@ -2338,42 +2347,6 @@ export class RoadSystem {
         return spans.length ? spans : null
     }
 
-    _gradeEdgeInPlace(pts, capOverride = null) {
-        const ewWindow = this._params?.roadEarthworkWindow ?? 0
-        const ewActive = ewWindow > 0 && (this._params?.roadWDeviation ?? 0) > 0
-        const legacyWin = this._params?.designGradeWindow ?? 50
-        if (!ewActive) { smoothGradeInPlace(pts, legacyWin); return }
-        const raw = pts.map(pt => pt.y)
-        smoothGradeInPlace(pts, ewWindow)            // pts.y = wide design line
-        const design = pts.map(pt => pt.y)
-        for (let i = 0; i < pts.length; i++) pts[i].y = raw[i]
-        smoothGradeInPlace(pts, legacyWin)           // pts.y = smooth terrain reference
-        const cap = capOverride ?? this._params?.roadDeviationCap ?? Infinity
-        if (!(cap < Infinity)) { for (let i = 0; i < pts.length; i++) pts[i].y = design[i]; return }
-        for (let i = 0; i < pts.length; i++) {
-            const ref = pts[i].y
-            pts[i].y = ref + cap * Math.tanh((design[i] - ref) / cap)
-        }
-    }
-
-    // FEAT-40: knobs for the taut-string tunnel pass (applyTunnelPassInPlace). minDepth 0
-    // (or tunnelsEnabled=false) disables the pass entirely. endMargin keeps bores clear of the
-    // junction grade blend (_applyJunctionBlend) so node reconciliation never reaches a bore.
-    // NOTE: deliberately `tunnel*`-prefixed, NOT `road*` — the pass never touches routed XZ
-    // centerlines, so these params must stay OUT of routeCacheSig (a road* key would spuriously
-    // invalidate the bundled default-world route cache).
-    _tunnelPassOpts() {
-        const p = this._params || {}
-        return {
-            minDepth:    (p.tunnelsEnabled ?? true) ? (p.tunnelMinDepth ?? 8) : 0,
-            minLen:      p.tunnelMinLen ?? 26,
-            portalDepth: p.tunnelPortalDepth ?? 1.5,
-            maxGrade:    p.tunnelMaxGrade ?? 0.12,
-            maxLen:      p.tunnelMaxLen ?? 200,
-            boreRadius:  p.tunnelBoreRadius ?? 8,
-            endMargin:   (p.roadJunctionBlendLength ?? 30) + 6,
-        }
-    }
 
     // FEAT-40: remove bore coverage around AT_GRADE crossings (see call site in _streamNetwork).
     // Window-invariant: pure function of _network tunnelSpans (per-edge) + _crossingsByRun (RUNKEY-
@@ -5691,12 +5664,12 @@ export class RoadSystem {
     }
 
     // ── Phase 9: Design grade smoothing (D-06) ────────────────────────────────────
-    // NOTE (09-31, defect B): the LIVE longitudinal grade smoother is smoothGradeInPlace()
-    // in road-carve.js, applied to the canonical run polyline in _streamNetwork BEFORE the
-    // COVER split — it grades the single `this._network` polyline that BOTH consumers read
-    // (physics via _buildRunProfile.gradeY, ribbon via _buildRoadTile slicing). The
-    // per-spline _smoothDesignGrade below is the BYPASSED legacy path (reachable only via the
-    // dead sampleDesignGradeAt → test harness); kept until the cleanup step.
+    // NOTE: since FEAT-68 there is NO longitudinal grade SMOOTHER at all — _v2GradePts solves the
+    // exact profile (priced == built) onto the canonical run polyline that BOTH consumers read
+    // (physics via _buildRunProfile.gradeY, ribbon via _buildRoadTile slicing). Smoothing a solved
+    // profile would break priced == built, and crest airtime is a FEATURE (character spec).
+    // The per-spline _smoothDesignGrade below is a BYPASSED legacy path (reachable only via the
+    // dead sampleDesignGradeAt → test harness) — a deletion candidate, not a live smoother.
     /**
      * Compute a smoothed "design grade" Y array for a per-tile spline.
      * Purpose: suppress fine-noise terrain texture (±0.5 m) from the road vertical profile

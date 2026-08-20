@@ -580,10 +580,13 @@ export function profileFeasible(cl, yA, yB, hCoarse, opts = {}) {
  * @returns {{cl:Centerline, feasible:boolean, usedPin:boolean, pinRequested:boolean}}
  */
 export function routeEdgeV2(spec, hTrunc, hCoarse) {
-    const { ax, az, yA, bx, bz, yB, margin, blockedDiscs, dirs } = spec
+    // `costs` rides the spec so a Worker (a SEPARATE module instance with its own V2_COSTS) prices
+    // exactly what the main thread does — without it, live knob edits would apply only to
+    // synchronously-routed edges and the network would be priced two different ways.
+    const { ax, az, yA, bx, bz, yB, margin, blockedDiscs, dirs, costs } = spec
     const attempt = (pin, extra) => {
         const c = corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, {
-            margin, blockedDiscs,
+            margin, blockedDiscs, costs,
             ...(pin ? { startDir: pin.startDir, goalDir: pin.goalDir } : {}),
             ...extra,
         })
@@ -599,7 +602,7 @@ export function routeEdgeV2(spec, hTrunc, hCoarse) {
         const c = attempt(p, extra)
         if (!c || !(c.length > 1e-6)) continue
         if (!first) first = c
-        if (profileFeasible(c, yA, yB, hCoarse)) { cl = c; usedPin = !!p; break }
+        if (profileFeasible(c, yA, yB, hCoarse, { costs })) { cl = c; usedPin = !!p; break }
     }
     return {
         cl: cl ?? first ?? new Centerline([]),
