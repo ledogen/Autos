@@ -54,7 +54,7 @@ demonstration that props are no longer scenery.
 
 ## Resolution (2026-08-19)
 
-`assets/models/beach-ball.glb` — **268 tris** (budget 320), 0.400 x 0.400 x 0.394 m,
+`assets/models/beach-ball.glb` — **252 tris** (budget 320), 0.400 x 0.400 x 0.394 m,
 origin at the sphere centre. Sources: `assets/models/src/beach-ball.blend` + `beach-ball.py`.
 Registered as `beachBall` in `data/prop-models.js`.
 
@@ -104,3 +104,18 @@ cross-section stays a true 0.400 m. Adding a dedicated cap ring instead would ha
 2*SEG per pole (+72 tris) and blown the 320 budget.
 
 `CAP_LAT` is a hoisted parameter — a different disc size is one number and a re-run.
+
+### Tweak, 2026-08-19 — air valve removed (owner)
+
+Cut on the owner's call, not flag-disabled: the parameters, `add_valve()` and its call site
+are deleted. **268 -> 252 tris.**
+
+Worth the note — with the valve gone, **every vertex now sits exactly on the r=0.20 sphere**
+(radial max == min == 0.2000). The visual is perfectly inscribed in its collider and cannot
+interpenetrate whatever it rests on. The valve was the only thing that had ever broken that,
+and the only thing breaking the model's rotational symmetry.
+
+The clearance lesson is kept as a comment in the generator header rather than as code: if
+anything proud is ever added back, check it with `hypot(offset, radius)` against `RADIUS`,
+NOT with the axis-aligned bounding box — the bbox cannot see an off-axis bump and reported
+the 12.3 mm overshoot as clean.

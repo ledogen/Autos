@@ -78,7 +78,7 @@ export const PROP_MODELS = {
     collision: { shape: 'box', size: [0.16, 0.59, 0.73] },
   },
 
-  // ASSET-03 — segmented beach ball, 268 tris, 0.40 m across.  Six vertical
+  // ASSET-03 — segmented beach ball, 252 tris, 0.40 m across.  Six vertical
   // gores as five flat material slots, no texture (the ticket offers per-panel
   // slots as its own alternative and ART-STYLE rule 1 prefers it).
   //
@@ -88,8 +88,9 @@ export const PROP_MODELS = {
   // placing it statically MUST lift it by 0.20 or it sinks to its equator.
   //
   // mass_kg / restitution are inert until dynamic prop physics exists — carried
-  // now so nothing is re-plumbed later, per FEAT-59's rule.  The mesh is fully
-  // inside the r=0.20 collider except the valve nub, which stands 2.4 mm proud.
+  // now so nothing is re-plumbed later, per FEAT-59's rule.  EVERY vertex sits
+  // exactly on the r=0.20 sphere, so the visual is perfectly inscribed in its
+  // collider and can never interpenetrate whatever it rests on.
   beachBall: {
     url: 'assets/models/beach-ball.glb',
     collision: {

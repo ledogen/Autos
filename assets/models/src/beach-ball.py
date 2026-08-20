@@ -21,8 +21,12 @@ ASSETS.md default because the ball is meant to be simulated (FEAT-36) and a
 rigid body spins about its origin.  Anything placing it must offset by RADIUS
 or it will sink half-way into the ground — flagged in the registry entry.
 
-AXIS.  Rotationally symmetric, so there is no forward convention.  The valve is
-the only feature that breaks symmetry and it is deliberately off-axis.
+AXIS.  Rotationally symmetric in every sense — no forward convention, and no
+feature anywhere that breaks the symmetry.  An earlier cut carried a moulded
+air valve; it was cut on the owner's call.  If anything proud is ever added
+back, check its clearance with hypot(offset, radius) against RADIUS and NOT
+with the axis-aligned bounding box, which cannot see an off-axis bump: the
+valve overshot the r=0.20 collider by 12.3 mm and the bbox reported it clean.
 """
 
 import bpy
@@ -64,8 +68,6 @@ GORES = 6
 GORE_MATS = ["BallWhite", "BallRed", "BallGreen", "BallWhite", "BallBlue", "BallYellow"]
 POLE_CAPS = True
 
-# The air valve — the detail that says "inflatable" rather than "sphere".
-# Sits mid-latitude on the centre of a white gore, where a real one is moulded.
 CAP_LAT = math.radians(14.0)  # angular radius of the white polar patch.  The
                               # cap IS the polar triangle fan, so its size is
                               # set by where ring 1 sits — and the rings do NOT
@@ -77,25 +79,6 @@ CAP_LAT = math.radians(14.0)  # angular radius of the white polar patch.  The
                               # The remaining rings still spread evenly from
                               # CAP_LAT to the equator, and one still lands
                               # EXACTLY on 90 deg — see latitudes().
-
-VALVE = True
-VALVE_LAT = math.radians(50.0)      # from the north pole
-VALVE_GORE = 0                      # white
-VALVE_R = 0.013
-VALVE_SEG = 5
-VALVE_IN = 0.180                    # inner end, buried in the shell
-VALVE_OUT = 0.202                   # outer end.  MUST stay near RADIUS: the
-                                    # collider is a r=0.20 SPHERE, so anything
-                                    # sticking out further clips the ground at
-                                    # the rest orientation that puts the valve
-                                    # underneath.  The first cut used 0.212 and
-                                    # overshot by 12.3 mm; 0.202 with R 0.013
-                                    # overshoots by 2.4 mm and still stands ~5 mm
-                                    # proud of the neighbouring facet centres
-                                    # (which sit at RADIUS*cos(10 deg) = 0.197).
-                                    # Check with hypot(VALVE_OUT, VALVE_R), NOT
-                                    # with the axis-aligned bounding box — the
-                                    # valve is off-axis and the bbox hides it.
 
 MATS = {
     #  name          base colour (linear)              rough
@@ -171,38 +154,7 @@ def build_ball():
             k2 = (k + 1) % SEG
             p.add_face([a0 + k, a0 + k2, a1 + k2, a1 + k], gore_mat(k))
 
-    if VALVE:
-        add_valve(p)
     return p
-
-
-def add_valve(p):
-    """A short stem on the surface normal.  Closed at BOTH ends: the buried cap
-    costs 3 tris and keeps the island a closed shell, which is what the
-    signed-volume orientation pass needs to tell inside from outside."""
-    theta = 2 * math.pi * ((VALVE_GORE + 0.5) / GORES)   # centre of that gore
-    d = (math.sin(VALVE_LAT) * math.cos(theta),
-         math.sin(VALVE_LAT) * math.sin(theta),
-         math.cos(VALVE_LAT))
-    # Any two vectors perpendicular to d.
-    up = (0.0, 0.0, 1.0) if abs(d[2]) < 0.9 else (1.0, 0.0, 0.0)
-    e1 = (d[1] * up[2] - d[2] * up[1], d[2] * up[0] - d[0] * up[2],
-          d[0] * up[1] - d[1] * up[0])
-    n = math.sqrt(sum(c * c for c in e1)); e1 = tuple(c / n for c in e1)
-    e2 = (d[1] * e1[2] - d[2] * e1[1], d[2] * e1[0] - d[0] * e1[2],
-          d[0] * e1[1] - d[1] * e1[0])
-    base = len(p.v)
-    for rad in (VALVE_IN, VALVE_OUT):
-        for k in range(VALVE_SEG):
-            a = 2 * math.pi * k / VALVE_SEG
-            c, s = math.cos(a) * VALVE_R, math.sin(a) * VALVE_R
-            p.v.append(tuple(d[i] * rad + e1[i] * c + e2[i] * s for i in range(3)))
-    for k in range(VALVE_SEG):
-        k2 = (k + 1) % VALVE_SEG
-        p.add_face([base + k, base + k2, base + VALVE_SEG + k2,
-                    base + VALVE_SEG + k], "BallWhite")
-    p.add_face([base + VALVE_SEG + k for k in range(VALVE_SEG)], "BallWhite")
-    p.add_face([base + k for k in range(VALVE_SEG - 1, -1, -1)], "BallWhite")
 
 
 # ---------------------------------------------------------------------------
