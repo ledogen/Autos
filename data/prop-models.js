@@ -78,6 +78,24 @@ export const PROP_MODELS = {
     collision: { shape: 'box', size: [0.16, 0.59, 0.73] },
   },
 
+  // ASSET-02 — ceramic garden gnome, 426 tris, seated cross-legged on a dark
+  // plinth.  Lawn furniture, same rule as the flamingos: scatter WITH a POI,
+  // never on bare ground.  NO POOL TAG for the same reason — a gnome is not a
+  // place that hands out work, and 'lawnFurniture' has no consumer yet.
+  //
+  // NO TEXTURE.  The ticket budgeted a 256x256 baked face; the owner's 2026-08-19
+  // reference call is the low-poly read — brim, beard, and a nose between them,
+  // no eyes — so there is nothing left for a texture to carry.  5 flat materials.
+  gnome: {
+    url: 'assets/models/gnome.glb',
+    // 0.292 wide x 0.400 tall x 0.314 deep, measured off the GLB.  WIDER AND
+    // DEEPER than the ticket's 0.22 square: that figure describes a STANDING
+    // gnome, and the owner asked for the seated pose, which spreads.  Feet and
+    // nose reach -Z (forward), so the box is not centred on the origin in Z —
+    // it runs -0.182 .. +0.132.  Knockable set dressing, not a wall.
+    collision: { shape: 'box', size: [0.292, 0.400, 0.314] },
+  },
+
   // ASSET-03 — segmented beach ball, 252 tris, 0.40 m across.  Six vertical
   // gores as five flat material slots, no texture (the ticket offers per-panel
   // slots as its own alternative and ART-STYLE rule 1 prefers it).
