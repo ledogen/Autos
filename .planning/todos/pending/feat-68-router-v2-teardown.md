@@ -909,3 +909,47 @@ airtime there, do deg-2 bends read as one road.
 4. **Inventory item 4 close-out** — with bundles at 130 KB the "delete the bake subsystem"
    question is now cheap either way; owner's call.
 5. Loop leftovers: story-poi pad flatness, road-fill-support seed 7, paper-tour's dropped customer.
+
+## Route cache DELETED + debug panel rebuilt (2026-08-19 evening, owner instructions)
+
+**Owner: "i think we can get rid of it for now."** Inventory item 4 is CLOSED by deletion
+(`584674f`). Gone: both `data/route-cache-*.json.gz`, `src/route-store.js` (routeCacheSig + the
+loaders), the bake script, `route-bundle-parity` (+ gate entry), `route-cache-miss-cost`, main.js's
+boot await + lazy story-region fetch/import/idle-kick, story.js's `ensureRegionRoutes` dep, and the
+vite copy entries. **Kept:** `_sessionRouteCache` — returning to a seed visited earlier in the
+session is still instant, with no asset, signature or bake behind it.
+
+Knock-on: `routeCacheSig` was the STATED reason POI_PARAMS / CAMP_PARAMS / DAY_PARAMS /
+ECONOMY_PARAMS live outside RANGER_PARAMS. Those comments now cite the reason that survives — a
+`road*` key re-routes the whole world.
+
+**Cold load, this machine, no cache of any kind:** boot **1.4 s**; cold → driving in story mode
+**6.8 s** (seed 6) / **8.5 s** (seed 20). At the 4× proxy: seed 6 18.25 → **21.94 s** (it was the
+only seed the bundle ever helped), eval seeds unchanged at **27.2–28.4 s**. Every seed is now an
+equal citizen — there is no "default world" fast path to mistake for the real cost.
+
+### Debug panel rebuilt for v2 (`bb96f73`)
+
+The Roads folder was still driving the arc-lattice router: **25 sliders bound params the v2 path
+never reads** (wAlt/wGrade/wOver, Curve Penalty, Max Grade, Goal Blend, Earthwork Cap/Window, wDev,
+Deviation Cap, both Self-Clear knobs, both Corridor Clearance knobs, Valley Depth Cap, the four Arc
+radii, Heading Bins, Grade Samples, Heur Weight, Corridor 2-Pass/HScale, Solo Reuse, both Refit
+knobs, and the five tunnel-PASS knobs). All removed.
+
+New **`Router v2 (prices)`** sub-folder — the tuning dividend, everything in metres-of-flat-road:
+`cTurn` (the hairpin dial, per radian), `wGrade` (router climbs at g* = 1/√wGrade), `cCutM`/`cCut2`/
+`cFillM`, `cBoreM`/`cPortal`, `gMaxRoad`/`gMaxBore`, `cutMax`/`fillMax`. **`V2_COSTS` now rides each
+route job** — a Worker is a separate module instance with its own copy, so without that a live knob
+edit would price sync-routed and Worker-routed edges differently.
+
+Deleted with the sliders (both already unreachable): `_gradeEdgeInPlace` (v1 design-grade
+smoothing) and `_tunnelPassOpts` (FEAT-40's tunnel DETECTION pass). `tunnelBoreRadius` survives —
+bore GEOMETRY is still real. `Min Turn Radius` renamed **Carve Footprint Cap**, which is all it has
+clamped since v2 (the fold floor is the fillet rMin inside `corridorCenterline`). Junction sliders
+are all still live and unchanged — junction geometry is deferred, not dead.
+
+**Known remaining stale mass (NOT done, deliberately scoped out):** `src/road-carve.js` still
+contains the entire v1 arc router (`arcPrimitiveConnect` + dubins + refit + self-clear repair) with
+no callers, and ~25 now-inert `road*`/`tunnel*` keys remain in `data/ranger.js`. Both are clean
+follow-up deletions; neither affects behaviour. `_smoothDesignGrade` is a third (legacy per-tile
+path, reachable only from a dead test hook).
