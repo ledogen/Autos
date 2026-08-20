@@ -78,6 +78,40 @@ hit registered — but it is a `console.log` in `src/`, so it is the owner's cal
 **Gates:** `test/damage-contact-wiring.mjs` and `test/damage-wheel-runout.mjs`, both registered in
 `test/gates.mjs`, both green, both fast and pure-node.
 
+### `46a6cc6` — the V-key damage readout
+
+Slice 2 was not evaluable: condition, wear rates and a tenth-of-a-second impact are all invisible
+from the driver's seat, and the debug panel showed one component at a time through a dropdown.
+`src/damage-hud.js`, toggled with **V**, hidden by default, free while hidden, 10 Hz when visible.
+Three panes — CONDITION (all 26 tracks, green→red, two columns, with wear rate in %/min beside
+each), SIGNALS (the raw per-corner inputs against the floors they must clear, red when over), and
+IMPACTS (the last six landed hits, replacing the console.log).
+
+The wear RATE is the load-bearing half: condition says where you are, the rate says what the drive
+you are doing right now is costing. It is measured by differencing conditions over a moving window
+rather than asking the model, so it always describes what actually happened.
+
+**This is the diagnostic readout, not the ratified GUI.** The top-down schematic replaces the
+CONDITION pane in slice 3; SIGNALS and IMPACTS are development instruments and go with it.
+
+---
+
+## What the first drive already showed
+
+Verified in-browser by driving off the road. **The wiring is real**: the truck took a 13.8 mph LEFT
+impact then a scrape series, with armor pass-through climbing 10% → 39% as that side crushed. That
+is the ratified armor rule visible in live play, which is what slice 2 existed to deliver.
+
+Two things came out of it that are the owner's to judge:
+
+- **A scrape banks a lot of small hits.** Five seconds against the roadside cost the left armor
+  ~35%, as ten separate 2-3.5 mph impacts at the `impactHoldMax` cadence. Each one is individually
+  correct; the question is whether the cadence makes scraping too expensive.
+- **A rollover pushes the wheel and damper signals hard over their floors** — strut acceleration hit
+  101 m/s² against a floor of 60, with wheel wear reading 40%/min and damper 24%/min. That is the
+  open fidelity question showing up on the very first crash, and the SIGNALS pane is there to judge
+  it. Whether those floors are right is exactly what the washboard drive has to settle.
+
 ---
 
 ## What is NOT done, and what to raise
