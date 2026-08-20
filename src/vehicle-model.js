@@ -38,7 +38,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
 import { camberLean, toeOffset } from './alignment.js'
-import { carcassRadialOffset } from './suspension.js'
+import { carcassRadialOffset, wheelRunoutOf } from './suspension.js'
 
 // The imported GLB (described by a spec from data/vehicle-models.js) replaces the primitive truck.
 // The primitives stay as an automatic fallback if the load fails (offline, 404, parse error).
@@ -461,9 +461,27 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
   }
 
   function applyWheelRunout (runout) {
+    for (let c = 0; c < 4; c++) applyWheelRunoutAt(c, runout)
+  }
+
+  function applyWheelRunoutAt (corner, runout) {
+    deformWheelPart(tireGeoms[corner], tireBase, corner, runout)
+    deformWheelPart(rimGeoms[corner],  rimBase,  corner, runout)
+    _bakedRunout[corner] = runout
+  }
+
+  // Last runout actually baked into each corner's geometry. Re-deforming rewrites every tread and
+  // rim vertex, so it must not happen per frame — but SM-3 makes runout a function of WHEEL
+  // CONDITION, which creeps as the truck is driven and cannot be baked once at build time either.
+  // Re-bake only when a corner has actually moved, by enough to see.
+  const _bakedRunout = [0, 0, 0, 0]
+  const RUNOUT_REBAKE_M = 5e-4   // 0.5 mm — below this the change is invisible at any camera distance
+
+  /** Re-bake any corner whose effective runout has drifted from what its mesh is currently showing. */
+  function refreshWheelRunout (params) {
     for (let c = 0; c < 4; c++) {
-      deformWheelPart(tireGeoms[c], tireBase, c, runout)
-      deformWheelPart(rimGeoms[c],  rimBase,  c, runout)
+      const want = wheelRunoutOf(c, params)
+      if (Math.abs(want - _bakedRunout[c]) >= RUNOUT_REBAKE_M) applyWheelRunoutAt(c, want)
     }
   }
 
@@ -537,6 +555,11 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
   // carGroup carries world position and quaternion — body and wheels inherit it (Bug 5 fix).
   // Do NOT use Euler rotation for body orientation (Pitfall 3 / CLAUDE.md).
   function syncMeshesToState (state) {
+    // SM-3: a wheel bent by damage is visibly out of round, and its condition creeps while driving.
+    // This is a no-op on all but the rare frame where a corner has actually changed (see the
+    // 0.5 mm threshold), so the per-frame cost is four subtractions.
+    refreshWheelRunout(params)
+
     // Sync carGroup transform — body and wheels inherit this automatically (Bug 5 fix).
     carGroup.position.copy(state.position)
     carGroup.quaternion.copy(state.quaternion)  // quaternion-only rotation, never Euler (GLOSSARY.md)

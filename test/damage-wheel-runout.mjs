@@ -14,7 +14,7 @@
 //   · that a stock truck short-circuits the whole path (this runs 4× per substep, 250 Hz)
 
 import { DamageModel, DAMAGE_PARAMS as D } from '../src/damage.js'
-import { effectiveWheelRadius, wheelRunoutOf } from '../src/suspension.js'
+import { effectiveWheelRadius, wheelRunoutOf, RUNOUT_HARMONIC } from '../src/suspension.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 
 let fail = 0
@@ -71,7 +71,10 @@ console.log('\n§4 it reaches the radius, at the right amplitude, once per revol
   ok(near(hi - lo, D.wheelRunoutAtZero, 1e-4), `one revolution sweeps the full ${D.wheelRunoutAtZero} m peak-to-peak`)
   ok(near(0.5 * (hi + lo), p.wheelRadius, 1e-4), '...centred on the nominal radius — runout is not a size change')
 
-  // Once per revolution, not twice: the radius must cross its mean exactly twice over a full turn.
+  // How many high spots go round the carcass IS the character of the defect, so it is pinned —
+  // but pinned against RUNOUT_HARMONIC, not a hardcoded number, because that constant is the one
+  // knob that switches the model (1 = eccentric/bent rim, 2 = OVAL, which is what ships).
+  // n high spots ⇒ 2n crossings of the mean over a full revolution.
   let crossings = 0, prev = effectiveWheelRadius(0, { wheelPhase: [0, 0, 0, 0] }, p) - p.wheelRadius
   for (let k = 1; k <= N; k++) {
     state.wheelPhase[0] = 2 * Math.PI * k / N
@@ -79,7 +82,9 @@ console.log('\n§4 it reaches the radius, at the right amplitude, once per revol
     if ((prev < 0) !== (cur < 0)) crossings++
     prev = cur
   }
-  ok(crossings === 2, 'and it is ONE high spot per revolution (2 mean crossings), which is what wheel-frequency hop means')
+  ok(crossings === 2 * RUNOUT_HARMONIC,
+    `and it carries ${RUNOUT_HARMONIC} high spot(s) per revolution (${crossings} mean crossings) — `
+    + `${RUNOUT_HARMONIC === 2 ? 'OVAL, so it shakes at twice wheel frequency' : 'eccentric, at wheel frequency'}`)
 }
 
 console.log('\n§5 a stock truck pays nothing')

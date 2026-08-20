@@ -156,13 +156,13 @@ const solve = (rate, hours, lost) => rate * hours * H / lost
 // owner rejected as absurd: it should be about five. The duty-cycle mix is still computed below,
 // but only to REPORT what the peel anchor implies for ordinary driving, which is the number with
 // the economy consequences.
-const PEEL_MINUTES = 5
+const PEEL_MINUTES = 10   // owner doubled it 2026-08-20: five was a touch quick in play
 const durTire  = burnout.tire * PEEL_MINUTES * 60 / 1.0     // full tire, from new to gone
 const tireRate = DUTY.tireLimit * limit.tire + DUTY.tireCruise * cruise.tire
 
 const brkRateF = DUTY.brakeTime * braking.brkF
 const brkRateR = DUTY.brakeTime * braking.brkR
-const durBrake = solve(brkRateF, 120, 0.20)     // fit to the FRONT axle: it works hardest, so it is
+const durBrake = solve(brkRateF, 120, 0.20) / 10   // owner 2026-08-20: 10x faster, or pads never wear out in a run     // fit to the FRONT axle: it works hardest, so it is
                                                 // the axle the owner's number is really about
 
 console.log(`\nduty cycle (the assumption): ${DUTY.tireLimit * 100}% at the limit, ` +

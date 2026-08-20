@@ -133,7 +133,8 @@ export const DAMAGE_PARAMS = {
   // What it implies, which is the part with economy consequences: ~3 h of HARD driving (25% of the
   // hour at the grip limit) destroys a tire, against ~266 h of gentle cruising. That spread is the
   // point — driving badly is what costs rubber.
-  durTire:        8050,      // m of accumulated sliding to destroy a tire
+  // DOUBLED again on 2026-08-20: five minutes of peel was a touch too quick in play, so ten.
+  durTire:        16100,     // m of accumulated sliding to destroy a tire
   tireWCorner:    2.0e-4,    // N·s → m-equivalent. At 5 kN cornering that is 1 m/s of "slip".
   tireSlipFloor:  0.15,      // m/s — no-harm floor. Rolling slip is not abrasion.
 
@@ -142,17 +143,33 @@ export const DAMAGE_PARAMS = {
   // at 60% pedal → 234 N·m mean on the front axle). The rear axle shares this constant and therefore
   // reaches the same wear at ~347 h — fronts wearing roughly twice as fast is how brakes really
   // behave, so this is the model being honest rather than a calibration miss.
-  durBrake:       5.05e8,    // N·m·s per axle to destroy the pads
+  //
+  // 10x FASTER as of 2026-08-20 (owner): at the fitted rate pads would never wear out inside a run,
+  // which makes them a component the player never thinks about. The fitted number stays the
+  // provenance — this is that number, deliberately overridden by a factor of ten.
+  durBrake:       5.05e7,    // N·m·s per axle to destroy the pads
 
   // Engine: f(rpm, torque, load) — deliberately VERY slow. Normalised so 1.0 = redline at full load.
   durEngine:      2.0e5,     // normalised load-seconds
   engineRPMExp:   2.0,       // rpm term exponent — revving hurts superlinearly
 
-  // Springs: bump-stop force above a no-harm floor (ratified: light contact is harmless).
-  // 4x more sensitive as of 2026-08-20 (owner): the wear was real but too minor to feel — dropping
-  // the truck repeatedly registered, and barely moved the needle.
-  durSpring:      7.5e5,     // N·s per axle
-  springForceFloor: 3000,    // N — below this, bump-stop contact costs nothing
+  // Springs: bump-stop EVENTS, priced on the PEAK force of each one.
+  //
+  // This used to integrate force x time above the floor, and that was the wrong SHAPE, not a wrong
+  // coefficient (owner diagnosed it, 2026-08-20). A 40 mph ramp landing peaks at 21 kN — seven
+  // times the floor — but the spike lasts about 15 ms, so a time integral barely saw it, and
+  // hammering the stops was nearly free. What actually takes the set out of a spring is peak
+  // STRESS, once: a spring that sees 20 kN for an instant is damaged, one that sees 4 kN all day
+  // is not. So each bump-stop contact is now one event, priced on its peak, square-law.
+  //
+  //   damage = ((F_peak − floor) / (springBumpFullN − floor))^2, per corner, onto that axle's track
+  //
+  // Measured on the lab ramp: a 30 mph landing costs the front axle ~3% (about 32 landings), a
+  // 40 mph landing ~6% (about 16). durSpring no longer applies to this track — the curve IS the
+  // calibration — but the parts durability multiplier and the wear-speed slider still do.
+  springForceFloor: 3000,    // N — below this, bump-stop contact costs nothing at all
+  springBumpFullN:  85000,   // N — a single bump-stop hit this hard destroys the spring outright
+  springBumpExp:    2,       // square law: peak stress, the same reason armor is square-law
 
   // Dampers: suspension displacement RATE above a no-harm floor.
   // Two changes on 2026-08-20 (owner: "basically no damper wear, make it more sensitive to wheel
@@ -205,6 +222,15 @@ export const DAMAGE_PARAMS = {
   alignMaxMph:     80,
   alignMaxCamberDeg: 2.0,
   alignMaxToeDeg:    0.5,
+  // Bump-stop CROSSTALK (owner, 2026-08-20): hitting a bump really hard is what throws a real
+  // truck's alignment out, so a hard enough bump-stop event bends the geometry of the corner that
+  // took it — not just its spring. The floor is deliberately HIGH and well clear of the spring
+  // track's: ordinary bottoming-out must never touch alignment, or every rough road would knock
+  // the truck out of line. For scale, a 30 mph ramp landing peaks around 16 kN and does nothing
+  // here; 40 mph peaks around 21 kN and bends it slightly.
+  alignBumpFloorN: 18000,    // N — below this a bump-stop hit costs alignment nothing
+  alignBumpFullN:  60000,    // N — a hit this hard is a full-severity bend
+  alignBumpScale:  0.5,      // a bump bends less than a crash of the same severity does
 
   // Death: a hit at or above this equivalent speed is the fatal-crash fail state (SM-INV-1).
   //
@@ -402,6 +428,9 @@ export class DamageModel {
     // In-flight collision burst tracked by feedContact: { region, impulse, t }, or null.
     this._burst = null
 
+    // Peak bump-stop force per corner while a stop is currently loaded; 0 when it is not.
+    this._bumpPeak = [0, 0, 0, 0]
+
     // Last strut acceleration per corner [m/s^2] — the raw wheel-wear signal, exposed so the
     // readout can show the SAME number the model wore on, not a recomputed lookalike.
     this.strutAccel = [0, 0, 0, 0]
@@ -580,17 +609,55 @@ export class DamageModel {
     for (const id of TRACK_IDS) {
       const t = TRACKS[id]
       if (t.cls !== 'alignment' || !t.regions.includes(region)) continue
-      const w = t.wheel
-      // Two independent draws in [-1, 1] — a hit can bend camber hard and toe barely, or both.
-      const dCam = (this._rand() * 2 - 1) * sev * P.alignMaxCamberDeg
-      const dToe = (this._rand() * 2 - 1) * sev * P.alignMaxToeDeg
-      this.camberOffsetDeg[w] = clampAbs(this.camberOffsetDeg[w] + dCam, P.alignMaxCamberDeg)
-      this.toeOffsetDeg[w]    = clampAbs(this.toeOffsetDeg[w]    + dToe, P.alignMaxToeDeg)
-      // The condition track is a READOUT of how bent it is, so the damage GUI and the diagnostic
-      // screen have one number per wheel like every other component.
-      const bent = 0.5 * (Math.abs(this.camberOffsetDeg[w]) / P.alignMaxCamberDeg
-                        + Math.abs(this.toeOffsetDeg[w])    / P.alignMaxToeDeg)
-      this.set(id, 1 - bent)
+      this._bendWheel(t.wheel, sev)
+    }
+  }
+
+  /**
+   * Bend ONE wheel's alignment by `sev` (0..1 of a full displacement). The single write path for
+   * alignment geometry — impacts and bump-stop hits both come through here, so the randomness, the
+   * clamping and the condition readout cannot drift apart between the two.
+   */
+  _bendWheel (wheel, sev) {
+    const P = DAMAGE_PARAMS
+    if (sev <= 0) return
+    // Two independent draws in [-1, 1] — a hit can bend camber hard and toe barely, or both.
+    const dCam = (this._rand() * 2 - 1) * sev * P.alignMaxCamberDeg
+    const dToe = (this._rand() * 2 - 1) * sev * P.alignMaxToeDeg
+    this.camberOffsetDeg[wheel] = clampAbs(this.camberOffsetDeg[wheel] + dCam, P.alignMaxCamberDeg)
+    this.toeOffsetDeg[wheel]    = clampAbs(this.toeOffsetDeg[wheel]    + dToe, P.alignMaxToeDeg)
+    // The condition track is a READOUT of how bent it is, so the damage GUI and the diagnostic
+    // screen have one number per wheel like every other component.
+    const bent = 0.5 * (Math.abs(this.camberOffsetDeg[wheel]) / P.alignMaxCamberDeg
+                      + Math.abs(this.toeOffsetDeg[wheel])    / P.alignMaxToeDeg)
+    this.set(['alignFL', 'alignFR', 'alignRL', 'alignRR'][wheel], 1 - bent)
+  }
+
+  /**
+   * Land one completed bump-stop event on one corner: the suspension bottomed out, and this is how
+   * hard it hit. Wears that axle's spring on the peak-force curve, and — only if the hit was hard
+   * enough to clear the much higher alignment floor — bends that corner's geometry too.
+   *
+   * @param {number} corner - 0-3 (FL, FR, RL, RR).
+   * @param {number} peakN - peak bump-stop force during the event [N].
+   */
+  _landBumpStop (corner, peakN) {
+    const P = DAMAGE_PARAMS
+    if (peakN <= P.springForceFloor) return
+
+    // Spring: square law between the no-harm floor and the one-hit-kills force.
+    const t = (peakN - P.springForceFloor) / (P.springBumpFullN - P.springForceFloor)
+    const dmg = Math.pow(Math.max(0, t), P.springBumpExp)
+    const id = corner < 2 ? 'springFront' : 'springRear'
+    // durability 1 = the insult IS the damage fraction, the same idiom applyImpact uses. There is
+    // no durSpring any more: for an event-priced track the CURVE is the calibration. The parts
+    // durability multiplier (SM-INV-10) and the wear-speed slider still apply inside wear().
+    this.wear(id, dmg, 1)
+
+    // Alignment crosstalk: only really hard bumps, per the owner's floor.
+    if (peakN > P.alignBumpFloorN) {
+      const sev = Math.min(1, (peakN - P.alignBumpFloorN) / (P.alignBumpFullN - P.alignBumpFloorN))
+      this._bendWheel(corner, sev * P.alignBumpScale)
     }
   }
 
@@ -677,16 +744,25 @@ export class DamageModel {
       this.wear('brakeRear',  rear  * dt, P.durBrake)
     }
 
-    // ── Springs: bump-stop force above the no-harm floor, per axle pair ────────────────────────
-    // Ratified anchor: light bump-stop contact is harmless, hard contact is not. The floor IS that
-    // rule — it is not a tuning fudge.
+    // ── Springs: bump-stop EVENTS, per corner, priced on the PEAK of each ─────────────────────
+    // Hold the peak while the stop is loaded and bank it once the corner comes off it. Same shape
+    // as feedContact for collisions, for the same reason: what matters is how hard the single
+    // event was, not how long the truck stayed leaning on it. Ratified anchor unchanged — light
+    // bump-stop contact is harmless, hard contact is not — but the floor is now the entry
+    // condition for an event rather than a subtraction inside an integral.
     if (bumpF) {
-      const fF = Math.max(0, Math.abs(bumpF[0] || 0) - P.springForceFloor)
-                + Math.max(0, Math.abs(bumpF[1] || 0) - P.springForceFloor)
-      const fR = Math.max(0, Math.abs(bumpF[2] || 0) - P.springForceFloor)
-                + Math.max(0, Math.abs(bumpF[3] || 0) - P.springForceFloor)
-      this.wear('springFront', fF * dt, P.durSpring)
-      this.wear('springRear',  fR * dt, P.durSpring)
+      if (!this._bumpPeak) this._bumpPeak = [0, 0, 0, 0]
+      for (let i = 0; i < 4; i++) {
+        const f = Math.abs(bumpF[i] || 0)
+        if (f > P.springForceFloor) {
+          if (f > this._bumpPeak[i]) this._bumpPeak[i] = f
+          continue                                  // still on the stop — keep watching
+        }
+        if (this._bumpPeak[i] > 0) {                // just came off it: bank the event
+          this._landBumpStop(i, this._bumpPeak[i])
+          this._bumpPeak[i] = 0
+        }
+      }
     }
 
     // ── Dampers: suspension displacement rate above the no-harm floor, per axle pair ───────────

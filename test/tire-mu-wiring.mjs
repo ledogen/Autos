@@ -41,7 +41,10 @@ P._tireMuScale = [1, 1, 1, 1]
 
 const groundY = 0
 const queryContacts = (cx, cy, cz, r) => {
-  if (Math.abs(r - P.wheelRadius) > 1e-9) return []
+  // Accept the whole out-of-round radius band — the wheel query radius is modulated by
+  // ±runout/2 per spin phase, and an exact-match mock silently returns NO CONTACTS for an
+  // out-of-round tire, which reads as every corner making zero grip.
+  if (Math.abs(r - P.wheelRadius) > 0.5 * (P.wheelRunout || 0) + 1e-9) return []
   const depth = groundY + r - cy
   return depth > 0
     ? [{ normal: new THREE.Vector3(0, 1, 0), depth, contactPoint: new THREE.Vector3(cx, groundY, cz) }]
