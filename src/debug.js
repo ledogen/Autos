@@ -457,6 +457,12 @@ export function initDebug (params, callbacks = {}, options = {}) {
   v2Folder.add(params.roadV2, 'cPortal', 0, 800, 25).name('Portal (each)').onChange(fireRoadParam)
   //   Vocabulary caps — HARD limits the search may not exceed (the sustained-24 m ceiling is 40%).
   //   Bores are gentler by construction (FEAT-40 lineage).
+  //   Corner Rounding: the solved profile is defined at ~10 m stations, so grade changes
+  //   instantaneously at each one — a corner every 10 m that reads as a periodic tick through the
+  //   suspension. This rounds them into short vertical curves. NOT monotone: measured jolt p99 at
+  //   20 m/s runs 0 m → 0.51 g, 15 m → 0.24 g, 30 m → 0.48 g, because past ~2 stations the
+  //   displacement bound clips and clipping puts corners back. 15 is the floor; 25 is the cap.
+  v2Folder.add(params.roadV2, 'vSmoothM', 0, 25, 2.5).name('Corner Rounding (m)').onChange(fireRoadParam)
   v2Folder.add(params.roadV2, 'gMaxRoad', 0.15, 0.40, 0.01).name('Max Road Grade').onChange(fireRoadParam)
   v2Folder.add(params.roadV2, 'gMaxBore', 0.05, 0.30, 0.01).name('Max Bore Grade').onChange(fireRoadParam)
   //   Class boundaries: deeper than cutMax below ground becomes a BORE; higher than fillMax above

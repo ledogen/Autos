@@ -436,7 +436,9 @@ export const RANGER_PARAMS = {
     // H·(1/g + wGrade·g), minimised at g* = 1/√wGrade — so this sets the grade the router WANTS to
     // climb at. 40 put g* at 16% and the solver just took steep straights (owner: "no switchbacks");
     // 120 puts g* near 9%, forest-road grade, so length wins against sustained steepness.
-    wGrade: 120,
+    // Owner review 2026-08-20: 120 → 180 alongside cTurn 30 → 55 — "this forces a little more
+    // turning without it being free and everywhere". g* = 1/√180 ≈ 7.5%.
+    wGrade: 180,
     cCutM: 0.15,      // cut, per m of length per m of depth (linear haul term)
     // Quadratic cut term (owner 2026-08-18: "no visual difference in the mountaintop above a tunnel —
     // just carve a clean hole"): real cuttings go superlinear past ~8 m (rock walls, stabilisation),
@@ -451,7 +453,7 @@ export const RANGER_PARAMS = {
     // search has no reason to prefer the buildable shape (v1's roadWTurn lesson as a physical knob).
     // Measured on the eval trio: 15 → 20/38/32 hairpins, 30 → 17/21/24, 60 → 17/15/11, with grade
     // compliance identical at all three — it trades hairpin density against sweep, nothing else.
-    cTurn: 30,
+    cTurn: 55,
     // Bridges are DE-SCOPED from the vocabulary (owner 2026-08-18): real forest bridges are short,
     // same-elevation water crossings, not grade machines — and valley-spanning decks raise "why is
     // there no road down there". Machinery stays; flip bridgesOn to re-enable. The planned way back
@@ -463,6 +465,20 @@ export const RANGER_PARAMS = {
                       // cutting at road grade cap, not a tunnel; at 12 the bore's 18% cap
                       // rate-limited legitimate cliff descents through deep-cut pockets
     fillMax: 8,       // m above ground where a fill would become a bridge (so: the fill ceiling)
+    // Vertical corner-rounding window in METRES (0 = off). The solved profile is defined at ~10 m
+    // stations and lerped onto the 4 m polyline, so grade is constant within a station and changes
+    // INSTANTANEOUSLY at each one — a corner every 10 m, which reads as a periodic tick through the
+    // suspension however small the grade step (owner 2026-08-20: "lots of tiny microcrests and
+    // troughs"). This low-passes the shipped samples so each corner becomes a short vertical curve.
+    //
+    // MEASURED, and the curve is not monotone — more is NOT smoother. Vertical jolt (v²·dg/ds at
+    // 20 m/s, p99 over seeds 20/11): 0 m → 0.51/0.46 g · 15 m → 0.24/0.24 g · 30 m → 0.48/0.45 g.
+    // Past ~2 stations the ±0.25 m displacement bound starts clipping, and clipping puts corners
+    // back. 15 m ≈ 1.5 stations is the floor of that curve, which is why the slider stops at 25.
+    // Crest airtime survives (strongest crest 0.31 → 0.25 g) because a real crest spans many
+    // stations; the bound is half the solver's own elevation quantum, so the shipped road never
+    // departs from the priced one by more than the solver could resolve in the first place.
+    vSmoothM: 15,
     onTol: 0.75,      // m — |deck − ground| within this counts as on-grade
     gMaxRoad: 0.35,   // hard vocabulary cap for surface states (the sustained ceiling is 0.40)
     gMaxBore: 0.18,   // bores are gentler by construction (FEAT-40 lineage)

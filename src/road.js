@@ -36,7 +36,7 @@ import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
 import { crownProfile, potholeNoise, signedCurvature, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
-import { truncatedHeightField, routeEdgeV2, profileSolve, CLS, V2_COSTS, V2_TRUNC_K } from './corridor-router.js'   // FEAT-68: router v2
+import { truncatedHeightField, routeEdgeV2, profileSolve, dequantizeProfile, CLS, V2_COSTS, V2_TRUNC_K } from './corridor-router.js'   // FEAT-68: router v2
 import { centerlineFromDescriptors, CenterlineCurve, Centerline, makePrimitive, slicePrimitives, reversePrimitives, primitivePose } from './centerline.js'
 import { delaunay, urquhartEdges } from './road-graph.js'
 
@@ -2295,12 +2295,42 @@ export class RoadSystem {
             }
             return null
         }
+        // Vertical dequantise: the DP's elevation grid makes grade come in 5% quanta, so a gentle
+        // steady grade would ship as a 0%/±5% staircase — micro-crests the suspension feels. This
+        // low-passes them out, pins the endpoints, preserves every span, and re-prices.
+        prof = dequantizeProfile(st, prof, C)
         let k = 1
         for (let i = 0; i < n; i++) {
             const t = clArc[i]
             while (k < nSt && st.s[k] < t) k++
             const u = (t - st.s[k - 1]) / Math.max(1e-9, st.s[k] - st.s[k - 1])
             pts[i].y = prof.y[k - 1] + (prof.y[k] - prof.y[k - 1]) * u
+        }
+        // ROUND THE STATION CORNERS. The solved profile is defined at ~10 m stations and lerped onto
+        // the 4 m polyline, so grade is CONSTANT within a station and changes instantaneously at each
+        // one — a corner every 10 m. Even with a perfectly smooth station-grade series that reads as
+        // a periodic tick through the suspension (infinite vertical curvature at each corner, however
+        // small the grade step). A short low-pass over the shipped samples turns each corner into a
+        // vertical curve. Endpoints stay pinned (node heights are a boundary condition) and the
+        // window is deliberately ~2 stations: long enough to round a corner, far too short to touch
+        // a real crest, which spans many stations. Bounded ±0.5·yStep, so it can never move the deck
+        // across a class boundary and invent or destroy a span.
+        const wSm = this._params?.roadV2?.vSmoothM ?? 0
+        if (wSm > 0 && n > 4) {
+            const last = n - 1
+            const dsPoly = L / last
+            const passes = Math.max(1, Math.min(24, Math.round(2 * Math.pow(Math.min(wSm, 2.5 * (L / nSt)) / (2 * dsPoly), 2))))
+            const y0 = new Float64Array(n)
+            for (let i = 0; i < n; i++) y0[i] = pts[i].y
+            const cur = Float64Array.from(y0), nxt = Float64Array.from(y0)
+            for (let p2 = 0; p2 < passes; p2++) {
+                for (let i = 1; i < last; i++) nxt[i] = 0.25 * cur[i - 1] + 0.5 * cur[i] + 0.25 * cur[i + 1]
+                for (let i = 1; i < last; i++) cur[i] = nxt[i]
+            }
+            const BOUND = 0.25   // m — half the DP's coarse y quantum
+            for (let i = 1; i < last; i++) {
+                pts[i].y = y0[i] + Math.max(-BOUND, Math.min(BOUND, cur[i] - y0[i]))
+            }
         }
         const spans = []
         for (const sg of prof.segs) {

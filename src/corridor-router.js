@@ -543,6 +543,117 @@ export function profileSolve(st, yA, yB, opts = {}) {
     return { y, cls, cost: total, segs }
 }
 
+/**
+ * Price a FINISHED profile — the independent re-price that makes "priced == built" checkable, and
+ * the shared cost model the dequantiser below re-prices with. Returns the same shape profileSolve
+ * does, so a smoothed profile is indistinguishable from a solved one downstream.
+ * @returns {{y:number[], cls:number[], cost:number, segs:object[]}|null} null = the array violates
+ *          a grade cap (i.e. it is not a legal profile at all)
+ */
+export function priceProfile(st, y, C) {
+    const n = st.s.length
+    const cls = new Array(n)
+    for (let i = 0; i < n; i++) cls[i] = classOf(y[i] - st.ground[i], C)
+    let cost = 0
+    for (let i = 1; i < n; i++) {
+        const ds = st.s[i] - st.s[i - 1]
+        if (!(ds > 1e-9)) continue
+        const g = (y[i] - y[i - 1]) / ds
+        const cap = (cls[i - 1] === CLS.BORE || cls[i] === CLS.BORE) ? C.gMaxBore : C.gMaxRoad
+        if (Math.abs(g) > cap + 1e-9) return null
+        const rate = stationRate(y[i] - st.ground[i], C)
+        if (!Number.isFinite(rate)) return null
+        cost += ds * rate + ds * C.cRoadM * C.wGrade * g * g
+        if ((cls[i - 1] === CLS.BORE) !== (cls[i] === CLS.BORE)) cost += C.cPortal
+        if ((cls[i - 1] === CLS.BRIDGE) !== (cls[i] === CLS.BRIDGE)) cost += C.cAbutment
+    }
+    const segs = []
+    for (let i = 0; i < n; i++) {
+        const last = segs[segs.length - 1]
+        if (last && last.cls === cls[i]) last.s1 = st.s[i]
+        else segs.push({ cls: cls[i], s0: st.s[i], s1: st.s[i] })
+    }
+    for (const sg of segs) sg.len = sg.s1 - sg.s0
+    return { y, cls, cost, segs }
+}
+
+/**
+ * VERTICAL DEQUANTISE (owner 2026-08-20: "the road changes slope rather abruptly… lots of tiny
+ * microcrests and troughs that upset the suspension").
+ *
+ * The profile DP solves on an ELEVATION GRID, so the grades it can express come in quanta of
+ * yStep/ds — 5% at the defaults (0.5 m over 10 m). A road that wants a steady −2.5% therefore ships
+ * as a staircase alternating 0% and −5%, which is a train of micro-crests no real road has and the
+ * suspension feels sharply. (Measured on seed 20: every station grade a multiple of 5%, 219 sample
+ * steps jumping a full 5 percentage points.)
+ *
+ * The cure is a LOW-PASS on the interior stations, not a curvature term inside the DP. That is the
+ * ticket's own instruction — crest airtime is a FEATURE, so vertical curvature is never priced away
+ * — and it is why this is a window in METRES: a real crest spans many stations and a ~30 m window
+ * leaves it untouched, while the quantisation ripple lives at exactly one station and dies.
+ *
+ * Three guarantees the callers depend on, in order of who would notice:
+ *   1. ENDPOINTS NEVER MOVE. Junction node heights are a boundary condition, not a preference —
+ *      moving one re-opens v1's node disease (y-spread at shared nodes).
+ *   2. NO STATION CHANGES BORE/BRIDGE STATUS. on/cut/fill may interchange freely (they are one
+ *      continuum and the re-price handles them), but a station may not sink into a bore or rise
+ *      into a bridge — that would invent or destroy a span, portal charges and all.
+ *   3. THE RESULT IS RE-PRICED, so priced == built still holds. It is a property of the SHIPPED
+ *      array, and the shipped array is this one. If smoothing would break a grade cap the blend is
+ *      bisected back toward the solved profile, which is always feasible — so this can soften the
+ *      ripple or do nothing, but it can never ship an illegal road.
+ *
+ * @param {{s:number[],ground:number[]}} st stations
+ * @param {object} prof the solved profile (from profileSolve)
+ * @param {object} C the price list (reads vSmoothM, the window in metres; 0 = off)
+ * @returns {object} a profile of the same shape — the input untouched when smoothing is off/unusable
+ */
+export function dequantizeProfile(st, prof, C) {
+    const n = st.s.length
+    if (n < 5) return prof
+    // FIXED, and deliberately NOT the user's smoothing knob. This pass removes a SOLVER ARTIFACT —
+    // the grade quantum of the elevation grid — so its size is set by the grid, not by taste. Three
+    // binomial passes reach ≈1.2 stations of spread: enough to dissolve a one-station staircase
+    // tread, far too little to touch anything the solver actually meant. (Measured: driving this
+    // from the user knob made large settings WORSE, because heavy station smoothing then fought the
+    // class clamps and the shipped-polyline rounding downstream.)
+    const passes = 3
+    const y0 = prof.y
+    let y = y0.slice()
+    const next = y0.slice()
+    for (let p = 0; p < passes; p++) {
+        for (let i = 1; i < n - 1; i++) next[i] = 0.25 * y[i - 1] + 0.5 * y[i] + 0.25 * y[i + 1]
+        for (let i = 1; i < n - 1; i++) y[i] = next[i]
+    }
+    // Guarantee 2: clamp each interior station back inside its own bore/bridge status.
+    const EPS = 1e-3
+    for (let i = 1; i < n - 1; i++) {
+        const g = st.ground[i]
+        const wasBore = prof.cls[i] === CLS.BORE
+        const wasBridge = prof.cls[i] === CLS.BRIDGE
+        if (wasBore) y[i] = Math.min(y[i], g - C.cutMax - EPS)
+        else y[i] = Math.max(y[i], g - C.cutMax + EPS)
+        if (wasBridge) y[i] = Math.max(y[i], g + C.fillMax + EPS)
+        else y[i] = Math.min(y[i], g + C.fillMax - EPS)
+    }
+    // Guarantee 3: keep the largest feasible blend toward the smoothed line. t = 0 (the solved
+    // profile) is feasible by construction, so this always terminates with something legal.
+    const blend = (t) => {
+        const out = new Array(n)
+        for (let i = 0; i < n; i++) out[i] = y0[i] + t * (y[i] - y0[i])
+        return out
+    }
+    let best = priceProfile(st, blend(1), C)
+    if (best) return best
+    let lo = 0, hi = 1
+    for (let it = 0; it < 12; it++) {
+        const mid = (lo + hi) / 2
+        const p = priceProfile(st, blend(mid), C)
+        if (p) { best = p; lo = mid } else hi = mid
+    }
+    return best || prof
+}
+
 // ── Orchestration: routeEdgeV2 — the ONE route function (sync path AND Worker import it) ───────
 /**
  * Feasibility pre-check: does a legal profile exist along this centerline? (~1–2 ms.)
