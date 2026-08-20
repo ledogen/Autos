@@ -1789,7 +1789,19 @@ if (_PROF) {
         return orig(jobs, epoch)
       }
     }
+    // Geometry fingerprint: cheap, order-independent hash of every registered run's sampled
+    // points. Two builds with the same fingerprint ARE the same roads — this is what makes a
+    // router-price A/B measurable instead of eyeballed.
+    let fp = 0, pts = 0, km = 0
+    for (const [key, e] of rs._network) {
+      km += (e.polyCum?.[e.polyCum.length - 1] ?? 0) / 1000
+      for (const q of e.points) {
+        fp = (fp + Math.round(q.x * 8) * 73856093 + Math.round(q.y * 8) * 19349663 + Math.round(q.z * 8) * 83492791) >>> 0
+        pts++
+      }
+    }
     return {
+      runs: rs._network.size, fp, pts, km: +km.toFixed(2),
       pending: rs._pendingRoutes.size,
       cls: rs._proto.cls?.size ?? 0,
       lastWarm: !!rs._lastWarmCenter, epoch: rs._routeEpoch,

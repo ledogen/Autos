@@ -619,7 +619,14 @@ export class Map2D {
     _paramSig() {
         const p = this._getParams()
         let s = 'seed=' + this._getSeed()
-        for (const k of Object.keys(p)) if (/^road|^tunnel/i.test(k) && typeof p[k] !== 'function') s += '|' + k + '=' + p[k]
+        // JSON.stringify OBJECT values: `'' + p[k]` renders any object as the constant
+        // "[object Object]", so the nested v2 price list (params.roadV2) was invisible here and the
+        // map kept a stale network through every router-price edit while the real road re-routed.
+        for (const k of Object.keys(p)) {
+            const v = p[k]
+            if (!/^road|^tunnel/i.test(k) || typeof v === 'function') continue
+            s += '|' + k + '=' + (v && typeof v === 'object' ? JSON.stringify(v) : v)
+        }
         return s
     }
 
