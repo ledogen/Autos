@@ -90,3 +90,17 @@ centres.
 **Still needed before it appears in-world:** same as ASSET-01 — there is no lawn-furniture
 scatter pool, so this is `spawnModel('beachBall')`-only. Making it the first punt-able
 dynamic prop is FEAT-36, not this ticket.
+
+### Tweak, 2026-08-19 — smaller polar disc (owner)
+
+The white pole patch was 153 mm on a 400 mm ball (38% of the diameter) and read heavy.
+Now **96.8 mm / 24.2%**, measured off the exported GLB.
+
+Done for **zero extra tris** by making the ring latitudes UNEVEN rather than adding
+geometry: the cap *is* the polar triangle fan, so its angular radius is just wherever ring
+1 sits. `CAP_LAT` pulls that ring in to 14 deg; the remaining rings still spread evenly
+from there to the equator, and one still lands exactly on 90 deg so the widest
+cross-section stays a true 0.400 m. Adding a dedicated cap ring instead would have cost
+2*SEG per pole (+72 tris) and blown the 320 budget.
+
+`CAP_LAT` is a hoisted parameter — a different disc size is one number and a re-run.

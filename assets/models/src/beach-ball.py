@@ -66,6 +66,18 @@ POLE_CAPS = True
 
 # The air valve — the detail that says "inflatable" rather than "sphere".
 # Sits mid-latitude on the centre of a white gore, where a real one is moulded.
+CAP_LAT = math.radians(14.0)  # angular radius of the white polar patch.  The
+                              # cap IS the polar triangle fan, so its size is
+                              # set by where ring 1 sits — and the rings do NOT
+                              # have to be evenly spaced.  Pulling ring 1 in to
+                              # 14 deg shrinks the disc from 153 mm to 97 mm on
+                              # a 400 mm ball for ZERO extra tris; adding a
+                              # dedicated cap ring instead would cost 2*SEG per
+                              # pole (+72) and blow the budget.
+                              # The remaining rings still spread evenly from
+                              # CAP_LAT to the equator, and one still lands
+                              # EXACTLY on 90 deg — see latitudes().
+
 VALVE = True
 VALVE_LAT = math.radians(50.0)      # from the north pole
 VALVE_GORE = 0                      # white
@@ -115,6 +127,19 @@ class Part:
         self.m.append(mat)
 
 
+def latitudes():
+    """Ring latitudes, north to south, excluding the two pole verts.
+
+    STACKS is even, so there are STACKS-1 rings and the middle one is the
+    equator.  Rings 1..mid spread evenly from CAP_LAT to exactly pi/2; the rest
+    mirror.  Keeping the equator exact is what holds the widest cross-section at
+    a true 2*RADIUS (see the STACKS note above)."""
+    mid = STACKS // 2                       # index of the equator ring (1-based)
+    north = [CAP_LAT + (math.pi / 2 - CAP_LAT) * i / (mid - 1) for i in range(mid)]
+    assert abs(north[-1] - math.pi / 2) < 1e-12, "equator ring drifted off 90 deg"
+    return north + [math.pi - a for a in reversed(north[:-1])]
+
+
 def gore_mat(k):
     """Material for the strip between meridian k and k+1."""
     return GORE_MATS[(k * GORES // SEG) % GORES]
@@ -124,8 +149,7 @@ def build_ball():
     p = Part("BeachBall")
     # rings j = 1 .. STACKS-1 (the poles are single verts)
     ring0 = len(p.v)
-    for j in range(1, STACKS):
-        phi = math.pi * j / STACKS
+    for phi in latitudes():
         z, rr = math.cos(phi) * RADIUS, math.sin(phi) * RADIUS
         for k in range(SEG):
             a = 2 * math.pi * k / SEG
