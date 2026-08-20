@@ -374,54 +374,6 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
   const tireGeom = mergeGeometries(tireParts.map((g) => (g.index ? g.toNonIndexed() : g)))
   tireGeom.rotateZ(-Math.PI / 2)
 
-  // ── Out-of-round carcass (SM-3) ─────────────────────────────────────────────
-  // params.wheelRunout is PEAK-TO-PEAK radial runout, so the amplitude about the nominal radius is
-  // A = runout/2, and suspension.js's RUNOUT_HARMONIC sets how many high spots carry it (2 = OVAL,
-  // the shipped model). effectiveWheelRadius() makes the CONTACT radius follow that shape; this
-  // bakes the SAME shape into the tire mesh, so the bulge you can see is the bulge being rolled on.
-  //
-  // Four geometries, not one shared: each corner carries its own RUNOUT_PHASE so the wheels do not
-  // hop in lockstep, and that offset is a fixed rotation of the carcass, i.e. geometry.
-  //
-  // Displacement is weighted (r − RIM_R)/(wRad − RIM_R), clamped to [0,1]: zero at the bead, full
-  // at the tread. The bead stays welded to the perfectly round steel rim (runout is carcass
-  // geometry, never axle position), so the sidewall visibly stretches on the long axis of the oval
-  // and squats on the short one — a round steel wheel inside a tire that is not round.
-  //
-  // Vertex normals are deliberately NOT recomputed. At the 50 mm slider maximum the radial
-  // displacement is 6.7% of the radius, tilting the true surface normal by a couple of degrees at
-  // worst; recomputing on this non-indexed merged geometry would flat-shade the tread band and pop
-  // the tire's shading the instant the slider left zero.
-  //
-  // The signed offset itself is carcassRadialOffset() in suspension.js — it lives next to
-  // effectiveWheelRadius() because the two ARE one model, and its docblock carries the phase
-  // derivation for the build frame / mirror / spin chain below.
-  const tireBase  = Float32Array.from(tireGeom.attributes.position.array)
-  const tireGeoms = [0, 1, 2, 3].map(() => tireGeom.clone())
-
-  function applyWheelRunout (runout) {
-    const span = wRad - RIM_R
-    for (let c = 0; c < 4; c++) {
-      const attr = tireGeoms[c].attributes.position
-      const out  = attr.array
-      for (let v = 0; v < out.length; v += 3) {
-        const y = tireBase[v + 1]
-        const z = tireBase[v + 2]
-        const r = Math.hypot(y, z)
-        let s = 1
-        if (runout && r > 1e-6) {
-          const d = carcassRadialOffset(c, Math.atan2(z, y), runout)
-          const w = Math.min(1, Math.max(0, (r - RIM_R) / span))
-          s = (r + w * d) / r
-        }
-        out[v + 1] = y * s
-        out[v + 2] = z * s
-      }
-      attr.needsUpdate = true
-      tireGeoms[c].computeBoundingSphere()
-    }
-  }
-
   // Disc face: one ExtrudeGeometry from a circular Shape with 5 circular holes punched in it, so
   // the perforation is real geometry (you see into the dark wheel well — no decal, no alpha).
   const discShape = new THREE.Shape().absarc(0, 0, RIM_R - 0.006, 0, Math.PI * 2)
@@ -448,6 +400,72 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
   // mergeGeometries needs a uniform index state; ExtrudeGeometry is non-indexed, cylinders are not.
   const rimGeom = mergeGeometries(rimParts.map((g) => (g.index ? g.toNonIndexed() : g)))
   rimGeom.rotateZ(-Math.PI / 2)
+
+  // ── Out-of-round wheel (SM-3) ───────────────────────────────────────────────
+  // params.wheelRunout is PEAK-TO-PEAK radial runout, so the amplitude about the nominal radius is
+  // A = runout/2, and suspension.js's RUNOUT_HARMONIC sets how many high spots carry it (2 = OVAL,
+  // the shipped model). effectiveWheelRadius() makes the CONTACT radius follow that shape; this
+  // bakes the SAME shape into the mesh, so the bulge you can see is the bulge being rolled on.
+  //
+  // BOTH the tire and the steel rim are deformed — a bent wheel, not just a bad tire. The rim is
+  // what makes it legible: rubber has no hard edges, but an oval steel barrel and a swinging ring
+  // of lightening holes are unmistakable, and they stay lit and visible where a black sidewall does
+  // not. The tire is stretched over that rim and follows it, so the bead stays seated.
+  //
+  // ONE weight ramp, shared by both geometries, so they cannot tear apart at the bead:
+  //
+  //   w(r) = clamp((r − HUB_R) / (RIM_R − HUB_R), 0, 1)
+  //
+  // Zero out to HUB_R, which covers the hub boss and the whole lug circle: those bolt to the axle
+  // flange and CANNOT be out of round — the axle still runs true, which is what keeps the physics
+  // model honest (the hub CENTER never moves; only the metal and rubber around it). Full by RIM_R,
+  // so the barrel, the bead and everything outboard of it — the entire tire carcass, tread included
+  // — carry the whole amplitude rigidly. The disc face is caught mid-ramp, so the lightening holes
+  // visibly orbit off-centre while the lug nuts sit dead still. That contrast IS the read.
+  //
+  // Four geometries each, not one shared: every corner carries its own RUNOUT_PHASE so the wheels
+  // do not hop in lockstep, and that offset is a fixed rotation of the wheel, i.e. geometry.
+  //
+  // Vertex normals are deliberately NOT recomputed. At the 50 mm slider maximum the radial
+  // displacement is 6.7% of the radius, tilting the true surface normal by a couple of degrees at
+  // worst; recomputing on these non-indexed merged geometries would flat-shade the tread band and
+  // pop the tire's shading the instant the slider left zero.
+  //
+  // The signed offset itself is carcassRadialOffset() in suspension.js — it lives next to
+  // effectiveWheelRadius() because the two ARE one model, and its docblock carries the phase
+  // derivation for the build frame / mirror / spin chain used here.
+  const HUB_R = 0.085                  // axle-flange radius: clears the hub boss and the lug nuts
+
+  const tireBase  = Float32Array.from(tireGeom.attributes.position.array)
+  const rimBase   = Float32Array.from(rimGeom.attributes.position.array)
+  const tireGeoms = [0, 1, 2, 3].map(() => tireGeom.clone())
+  const rimGeoms  = [0, 1, 2, 3].map(() => rimGeom.clone())
+
+  function deformWheelPart (geom, base, corner, runout) {
+    const out = geom.attributes.position.array
+    for (let v = 0; v < out.length; v += 3) {
+      const y = base[v + 1]
+      const z = base[v + 2]
+      const r = Math.hypot(y, z)
+      let s = 1
+      if (runout && r > 1e-6) {
+        const d = carcassRadialOffset(corner, Math.atan2(z, y), runout)
+        const w = Math.min(1, Math.max(0, (r - HUB_R) / (RIM_R - HUB_R)))
+        s = (r + w * d) / r
+      }
+      out[v + 1] = y * s
+      out[v + 2] = z * s
+    }
+    geom.attributes.position.needsUpdate = true
+    geom.computeBoundingSphere()
+  }
+
+  function applyWheelRunout (runout) {
+    for (let c = 0; c < 4; c++) {
+      deformWheelPart(tireGeoms[c], tireBase, c, runout)
+      deformWheelPart(rimGeoms[c],  rimBase,  c, runout)
+    }
+  }
 
   const tireMat = new THREE.MeshStandardMaterial({ color: COLOR_TIRE, roughness: 0.95, metalness: 0 })
   // DoubleSide on the rim only: the dish recess shows the INSIDE of the barrel, which would
@@ -487,7 +505,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
     // carGroup carries world position and orientation; wheels follow automatically (Bug 5 fix).
     wheel.position.set(offset.x, offset.y, offset.z)
     const tire = new THREE.Mesh(tireGeoms[corner], tireMat)
-    const rim  = new THREE.Mesh(rimGeom, rimMat)
+    const rim  = new THREE.Mesh(rimGeoms[corner], rimMat)
     // Both geometries face outboard = +X, correct for the right-hand wheels. Mirror the WHOLE
     // assembly (tire is asymmetric too: open outboard annulus vs closed inboard caps) for the left
     // (negative X) side via an inner group, keeping the outer group's quaternion free for steer∘spin.
