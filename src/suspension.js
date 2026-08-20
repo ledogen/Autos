@@ -25,7 +25,7 @@
  *
  * @param {number} corner - Wheel index 0-3 (0=FL, 1=FR, 2=RL, 3=RR per GLOSSARY.md §Wheel Index).
  * @param {object} vehicleState - Full vehicleState object (position, velocity, quaternion,
- *   angularVelocity, steerAngle, throttle, brake, wheelAngles). Unused in Phase 1 static bodies.
+ *   angularVelocity, steerAngle, throttle, brake, wheelPhase). Unused in Phase 1 static bodies.
  * @param {object} params - RANGER_PARAMS; uses params.mass [kg], params.weightFront [-],
  *   params.weightRear [-]. Phase 4 will also use spring stiffness and compression state.
  * @returns {number} Fn [N] normal force on this wheel. Positive = pushing up against wheel.
@@ -157,8 +157,9 @@ export function wheelRunoutOf (corner, params) {
  * the contact-query radius uses this, never getWheelPosition().
  *
  * Phase comes from vehicleState.wheelPhase — integrated by physics.js at the FIXED physics step,
- * NOT from vehicleState.wheelAngles (which vehicle.js integrates per rendered frame). Physics must
- * not read a render-rate value or the ride becomes framerate-dependent (INFRA-03 determinism).
+ * never at the render rate, or the ride becomes framerate-dependent (INFRA-03 determinism). It is
+ * also the angle vehicle-model.js spins the wheel MESH by, whose tire has the same runout baked
+ * into its geometry, so the visible high spot is the one being contacted here.
  *
  * @param {number} corner - 0-3 (FL, FR, RL, RR).
  * @param {object} vehicleState - uses .wheelPhase[corner] (rad, integrated in physics.js).
@@ -166,6 +167,34 @@ export function wheelRunoutOf (corner, params) {
  * @returns {number} radius in metres.
  */
 const RUNOUT_PHASE = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5]
+
+/**
+ * Radial offset of the out-of-round tire CARCASS at build-frame carcass angle `psi`, for one corner.
+ *
+ * The mesh half of effectiveWheelRadius(): vehicle-model.js displaces its tread vertices by this
+ * so the tire you can SEE is the tire the contact query is rolling on. Split out here, next to the
+ * radius it must agree with, because the two are one model — edit one, edit both.
+ *
+ * Frame: the wheel geometry is built with its spin axis along +X, so a vertex sits at carcass angle
+ * psi = atan2(z, y). The mesh spins about +X by −phase and the LEFT-side assembly is pre-flipped by
+ * rotation.y = PI, which puts psi = PI + phase (right) / PI − phase (left) at the contact patch.
+ * Substituting those into A·sin(phase + RUNOUT_PHASE[corner]) gives the two branches below.
+ * (test/wheel-runout-mesh.mjs walks that transform chain numerically and checks the agreement.)
+ *
+ * @param {number} corner - 0-3 (FL, FR, RL, RR). 0 and 2 are the left, mirrored side.
+ * @param {number} psi - carcass angle in the build frame [rad].
+ * @param {number} runout - params.wheelRunout, PEAK-TO-PEAK [m].
+ * @returns {number} signed radial offset [m], amplitude runout/2.
+ */
+export function carcassRadialOffset (corner, psi, runout) {
+  const A = 0.5 * (runout || 0)
+  if (A === 0) return 0
+  const phi = RUNOUT_PHASE[corner]
+  return (corner === 0 || corner === 2)
+    ? A * Math.sin(psi - phi)
+    : -A * Math.sin(psi + phi)
+}
+
 export function effectiveWheelRadius (corner, vehicleState, params) {
   const runout = wheelRunoutOf(corner, params)
   if (runout === 0) return params.wheelRadius

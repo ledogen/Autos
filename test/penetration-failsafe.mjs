@@ -52,7 +52,7 @@ function mkState (py) {
     quaternion: new THREE.Quaternion(0, 0, 0, 1),
     angularVelocity: new THREE.Vector3(0, 0, 0),
     steerAngle: 0, throttle: 0, brake: 0, smoothThrottle: 0, smoothBrake: 0,
-    wheelAngles: [0, 0, 0, 0], wheelSteerAngles: [0, 0, 0, 0],
+    wheelSteerAngles: [0, 0, 0, 0],
     strutComp: [0.05, 0.05, 0.05, 0.05], strutCompVel: [0, 0, 0, 0],
     slipLong: [0, 0, 0, 0], slipLat: [0, 0, 0, 0],
     wheelOmega: [0, 0, 0, 0],

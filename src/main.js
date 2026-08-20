@@ -915,7 +915,6 @@ async function _reseatTruckAtSpawnInner () {
   vehicleState.brake         = 0
   vehicleState.smoothThrottle = 0
   vehicleState.smoothBrake    = 0
-  vehicleState.wheelAngles    = [0, 0, 0, 0]
   vehicleState.wheelSteerAngles = [0, 0, 0, 0]
   vehicleState.wheelDebug     = [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ]
   vehicleState.wheelOmega     = [0, 0, 0, 0]
@@ -1035,7 +1034,6 @@ const vehicleState = {
   brake:           0,
   smoothThrottle:  0,                             // FEAT-01: ramped throttle accumulator; read+written by updateVehicle
   smoothBrake:     0,                             // FEAT-01: ramped brake accumulator; read+written by updateVehicle
-  wheelAngles:     [0, 0, 0, 0],                 // per-wheel spin angle [rad], Plan 03 drives
   wheelSteerAngles: [0, 0, 0, 0],               // Per-wheel Ackermann steer angles [rad]; set by updateVehicle each step; read by stepPhysics for lateral force decomposition.
   // Phase 4.1 strut state (D-01): strut compression and velocity per corner.
   // Initialized to static equilibrium — strutComp ≈ 0.111 m at current params.
@@ -1266,7 +1264,7 @@ const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
 // src/vehicle-model.js. carGroup/bodyMesh/wheelMeshes are returned for back-compat;
 // syncMeshesToState(state) is called once per render frame below.
-const { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, prewarmLightPrograms } = createVehicleModel(scene, RANGER_PARAMS)
+const { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, applyWheelRunout, addLightGui, setNightFactor, prewarmLightPrograms } = createVehicleModel(scene, RANGER_PARAMS)
 
 // ── FEAT-16: 2D top-down map (dev/validation overlay, toggle M) ──────────────────
 // Owns a SEPARATE read-only RoadSystem instance streamed around its own pan cursor — it never
@@ -1908,6 +1906,8 @@ if (_PROF) {
 //   changeSeed = update worldSeed then fire Path B.
 const _gui = initDebug(RANGER_PARAMS, {
   setRampVisible:      (v) => { rampMesh.visible = v },
+  // SM-3: re-bake the out-of-round tire carcass so the mesh matches the new contact radius.
+  onWheelRunoutChange: (v) => applyWheelRunout(v),
   applyQuality:        (name) => applyQuality(name),   // PERF-06: master Quality tier (draw distance + shadows + props + res)
   rebuildTerrain:      ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() },
   rebuildTerrainFull:  ()  => debouncedRebuildFull(),

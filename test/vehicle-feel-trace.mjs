@@ -57,7 +57,7 @@ function freshState (P, { y = null, vfwd = 0 } = {}) {
     position: new THREE.Vector3(0, y ?? eq.bodyY, 0), velocity: new THREE.Vector3(0, 0, -vfwd),
     quaternion: new THREE.Quaternion(), angularVelocity: new THREE.Vector3(),
     steerAngle: 0, throttle: 0, brake: 0, smoothThrottle: 0, smoothBrake: 0,
-    wheelAngles: [0, 0, 0, 0], wheelSteerAngles: [0, 0, 0, 0],
+    wheelSteerAngles: [0, 0, 0, 0],
     wheelDebug: [0, 1, 2, 3].map(() => ({ fn: 0, fy: 0, sa: 0, c: 0, omega: 0, fz: 0 })),
     wheelOmega: [0, 0, 0, 0].map(() => vfwd / P.wheelRadius), slipLong: [0, 0, 0, 0], slipLat: [0, 0, 0, 0],
     strutComp: [...eq.strutComp], strutCompVel: [0, 0, 0, 0], handbrake: false,

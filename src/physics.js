@@ -907,14 +907,13 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     }
   }
 
-  // ── Step 3-runout: integrate the tire spin phase used by the out-of-round radius ──
-  // Fixed-step integration of wheelOmega, kept separate from vehicleState.wheelAngles (which
-  // vehicle.js integrates per rendered frame for the wheel MESH). Wrapped to [0, 2π) so it
-  // stays exact after long drives. No-op cost when every wheel is round.
-  // Any ONE wheel out of round is enough — runout is per-wheel now (SM-3 wheel condition), so a
-  // single bent rim still has to spin its phase.
-  if (wheelRunoutOf(0, params) || wheelRunoutOf(1, params)
-   || wheelRunoutOf(2, params) || wheelRunoutOf(3, params)) {
+  // ── Step 3-runout: integrate the tire spin phase ──
+  // wheelPhase is THE wheel spin angle: it sets the out-of-round contact radius here AND rotates
+  // the wheel MESH in vehicle-model.js, whose tire carcass has the same runout baked in. Those two
+  // must share ONE integrator or the visible high spot drifts out of phase with the hop you feel.
+  // Integrated at the FIXED physics step and wrapped to [0, 2π) so it stays exact after long
+  // drives; the mesh rotation is 2π-periodic, so the wrap is invisible.
+  {
     if (!vehicleState.wheelPhase) vehicleState.wheelPhase = [0, 0, 0, 0]
     const TWO_PI = Math.PI * 2
     for (let i = 0; i < 4; i++) {

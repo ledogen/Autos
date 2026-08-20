@@ -60,7 +60,6 @@ export const SPAWN_STATE = {
   angVelX: 0, angVelY: 0, angVelZ: 0,
   steerAngle: 0, throttle: 0, brake: 0,
   smoothThrottle: 0, smoothBrake: 0,
-  wheelAngles: [0, 0, 0, 0],
   wheelPhase: [0, 0, 0, 0],
   wheelSteerAngles: [0, 0, 0, 0],
   // ── SM-3 damage signals (written by physics.js / suspension.js, read by src/damage.js) ──────
@@ -88,7 +87,7 @@ export const SPAWN_STATE = {
  *
  * @param {object} vehicleState - Mutable vehicleState shape from main.js; mutated in-place.
  *   Must have: velocity ({x,y,z}), quaternion ({x,y,z,w}), steerAngle (number),
- *              throttle (number), brake (number), wheelAngles (number[4]),
+ *              throttle (number), brake (number),
  *              wheelSteerAngles (number[4]).
  * @param {object} params - RANGER_PARAMS (may have debug-slider overrides).
  *   Uses: maxSteerAngle, steerRate, steerDecayRate, speedSteerRef, wheelbase,
@@ -195,43 +194,6 @@ export function updateVehicle (vehicleState, params, dt) {
 
   // Store on vehicleState: read by physics.js stepPhysics for lateral force decomposition.
   vehicleState.wheelSteerAngles = wheelSteerAngles
-
-  // ── 5. Wheel visual spin accumulation (M1-09) ──────────────────────────────
-  // vehicle.js has no Three.js — compute forward direction from quaternion components directly.
-  // Forward vector = (0,0,-1) rotated by quaternion (world-space -Z body axis).
-  // Using standard quaternion rotation formula for a unit basis vector:
-  //   fwd = q * (0,0,-1) * q^-1
-  // Expanded form (from quaternion product derivation):
-  const qx = vehicleState.quaternion.x
-  const qy = vehicleState.quaternion.y
-  const qz = vehicleState.quaternion.z
-  const qw = vehicleState.quaternion.w
-
-  // Rotating (0,0,-1) by q: standard formula for q * v * q^-1 with v = (0,0,-1)
-  const fwdX = 2 * (qx * qz + qy * qw)
-  const fwdY = 2 * (qy * qz - qx * qw)
-  const fwdZ = 1 - 2 * (qx * qx + qy * qy)
-  // Result is already the world-space forward direction (-Z body axis).
-  // No sign negation needed: q*(0,0,-1)*q^-1 directly gives the forward vector.
-
-  // Project velocity onto forward direction to get longitudinal speed.
-  const longSpeed = vehicleState.velocity.x * fwdX +
-                    vehicleState.velocity.y * fwdY +
-                    vehicleState.velocity.z * fwdZ
-
-  // Spin delta: per-wheel angular velocity from the physics omega integrator (wheelOmega,
-  // stepPhysics's Newton-solved slip omega), NOT the shared ground-speed estimate — that
-  // uniform fallback made a spinning/slipping wheel visually roll at the same rate as the
-  // ground track, hiding wheelspin the driver could see in the slip-velocity debug readout.
-  // wheelOmega lags one frame behind (stepPhysics runs after updateVehicle each frame), same
-  // as longSpeed already did, so no new staleness. Ground-speed fallback covers cold frames
-  // before wheelOmega is seeded (or airborne wheels with no omega yet).
-  const fallbackDelta = (longSpeed / params.wheelRadius) * dt
-
-  for (let i = 0; i < 4; i++) {
-    const omega = vehicleState.wheelOmega ? vehicleState.wheelOmega[i] : undefined
-    vehicleState.wheelAngles[i] += (omega !== undefined ? omega * dt : fallbackDelta)
-  }
 
   // ── 6. Reset check (M1-12) ─────────────────────────────────────────────────
   if (keys.r) {

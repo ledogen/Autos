@@ -14,7 +14,7 @@ export const RANGER_PARAMS = {
   trackRear:    1.46,   // m — center-to-center wheel spacing at rear axle
   cgHeight:     0.55,   // m — center of gravity above ground (estimate, laden)
   wheelRadius:  0.368,  // m — 245/75R16 tire radius
-  wheelRunout:  0.000,  // m — PEAK-TO-PEAK radial runout (out-of-round tire). 0 = perfectly round
+  wheelRunout:  0.020,  // m — PEAK-TO-PEAK radial runout (out-of-round tire). 0 = perfectly round
                         // and the whole path short-circuits; the Tires debug slider dials it in.
                         // Modulates the contact radius once per wheel revolution
                         // (src/suspension.js effectiveWheelRadius), so it hops at wheel frequency.
