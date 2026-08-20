@@ -375,23 +375,23 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
   tireGeom.rotateZ(-Math.PI / 2)
 
   // ── Out-of-round carcass (SM-3) ─────────────────────────────────────────────
-  // params.wheelRunout is PEAK-TO-PEAK radial runout, so the amplitude about the nominal radius
-  // is A = runout/2. suspension.js's effectiveWheelRadius() already makes the CONTACT radius
-  // R + A·sin(phase + RUNOUT_PHASE[corner]); this bakes the SAME first-order eccentricity into the
-  // tire mesh, so the bulge you can see is the bulge the tire is rolling on. (First-order = ONE
-  // high spot per revolution — an egg, not an ellipse; an ellipse would be a 2·phase term.)
+  // params.wheelRunout is PEAK-TO-PEAK radial runout, so the amplitude about the nominal radius is
+  // A = runout/2, and suspension.js's RUNOUT_HARMONIC sets how many high spots carry it (2 = OVAL,
+  // the shipped model). effectiveWheelRadius() makes the CONTACT radius follow that shape; this
+  // bakes the SAME shape into the tire mesh, so the bulge you can see is the bulge being rolled on.
   //
   // Four geometries, not one shared: each corner carries its own RUNOUT_PHASE so the wheels do not
   // hop in lockstep, and that offset is a fixed rotation of the carcass, i.e. geometry.
   //
   // Displacement is weighted (r − RIM_R)/(wRad − RIM_R), clamped to [0,1]: zero at the bead, full
   // at the tread. The bead stays welded to the perfectly round steel rim (runout is carcass
-  // geometry, never axle position), so the sidewall visibly stretches and squats once per turn.
+  // geometry, never axle position), so the sidewall visibly stretches on the long axis of the oval
+  // and squats on the short one — a round steel wheel inside a tire that is not round.
   //
   // Vertex normals are deliberately NOT recomputed. At the 50 mm slider maximum the radial
-  // displacement is 6.7% of the radius, which tilts the true surface normal by well under a
-  // degree; recomputing on this non-indexed merged geometry would flat-shade the tread band and
-  // pop the tire's shading the instant the slider left zero.
+  // displacement is 6.7% of the radius, tilting the true surface normal by a couple of degrees at
+  // worst; recomputing on this non-indexed merged geometry would flat-shade the tread band and pop
+  // the tire's shading the instant the slider left zero.
   //
   // The signed offset itself is carcassRadialOffset() in suspension.js — it lives next to
   // effectiveWheelRadius() because the two ARE one model, and its docblock carries the phase

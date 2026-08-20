@@ -129,6 +129,40 @@ export function getWheelPosition (corner, vehicleState, params) {
  * @returns {Array<{x,y,z}>} Four world-space points: FL/FR front bumper, RL/RR rear bumper.
  */
 /**
+ * ── Out-of-round tires (SM-3) ───────────────────────────────────────────────────────────────────
+ *
+ * `params.wheelRunout` is the PEAK-TO-PEAK radius variation in metres (0 = perfectly round), so the
+ * amplitude about the nominal radius is half of it: a 0.02 m runout means +/-0.01 m.
+ *
+ * The SHAPE is set by RUNOUT_HARMONIC — how many high spots there are around the carcass, which is
+ * the whole character of the defect:
+ *
+ *   n = 1  ECCENTRIC. One high spot. r(theta) = R + A*sin(theta + phi), which to first order is a
+ *          round tire whose centre is offset from the axle — a bent rim, a flat spot, a tire mounted
+ *          with its high point off the valve. ONE hop per revolution, at wheel frequency.
+ *   n = 2  OVAL. Two high spots, 180 deg apart, so the carcass is squashed across one diameter and
+ *          stretched across the other. Uneven wear, a pinched rim, a heat-set carcass. TWO hops per
+ *          revolution, at twice wheel frequency — the same runout therefore shakes at half the road
+ *          speed an eccentric tire would, and reads unmistakably as a wheel that is not round.
+ *
+ * n = 2 is the shipped model: "out of round" means OVAL here (owner, 2026-08-20). Changing this one
+ * number changes both the physics and the mesh together — carcassRadialOffset() below is derived
+ * for general n, and test/wheel-runout-mesh.mjs re-checks the agreement at whatever n is set.
+ *
+ * Either way the vertical force gets a sinusoid at n * (omega / 2*pi) Hz — the classic wheel hop /
+ * steering-wheel shimmy that grows with speed.
+ *
+ * Each corner carries a fixed phase offset so the four wheels do not hop in lockstep (a real set of
+ * tires is never phase-matched, and in-phase hop would read as pure heave).
+ *
+ * The hub CENTER is unaffected — runout is tire-carcass geometry, not axle position — so only the
+ * contact-query radius uses this, never getWheelPosition(). An oval tire on a straight axle is
+ * exactly that: the axle runs true, the rubber around it does not.
+ */
+const RUNOUT_PHASE = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5]
+export const RUNOUT_HARMONIC = 2   // 1 = eccentric (one high spot), 2 = oval (two)
+
+/**
  * Peak-to-peak radial runout in effect on one corner, in metres.
  *
  * `params.wheelRunout` is the manual slider (a whole-vehicle test value); `params._wheelRunout[i]`
@@ -136,6 +170,8 @@ export function getWheelPosition (corner, vehicleState, params) {
  * `params._` scratch convention as every other damage effect. Undefined means no damage model is
  * running — headless gates, damage off — and the slider alone applies. Defaults to 0 both ways, so
  * a stock truck rolls on perfectly round wheels and the whole path short-circuits.
+ *
+ * This is the ONE place slider and damage are resolved; everything else asks here.
  */
 export function wheelRunoutOf (corner, params) {
   return params._wheelRunout ? params._wheelRunout[corner] : (params.wheelRunout || 0)
@@ -144,18 +180,6 @@ export function wheelRunoutOf (corner, params) {
 /**
  * Effective (rolling-surface) tire radius for one corner at its current spin angle.
  *
- * Radial runout — an out-of-round tire. `params.wheelRunout` is the PEAK-TO-PEAK radius
- * variation in metres (0 = perfectly round), so the amplitude about the nominal radius is
- * half of it: a 0.02 m runout means +/-0.01 m. The high spot passes the contact patch once
- * per revolution, so the vertical force gets a first-order sinusoid at wheel frequency
- * (omega / 2*pi Hz) — the classic wheel hop / steering-wheel shimmy that grows with speed.
- *
- * Each corner carries a fixed phase offset so the four wheels do not hop in lockstep
- * (a real set of tires is never phase-matched, and in-phase hop would read as pure heave).
- *
- * The hub CENTER is unaffected — runout is tire-carcass geometry, not axle position — so only
- * the contact-query radius uses this, never getWheelPosition().
- *
  * Phase comes from vehicleState.wheelPhase — integrated by physics.js at the FIXED physics step,
  * never at the render rate, or the ride becomes framerate-dependent (INFRA-03 determinism). It is
  * also the angle vehicle-model.js spins the wheel MESH by, whose tire has the same runout baked
@@ -163,23 +187,33 @@ export function wheelRunoutOf (corner, params) {
  *
  * @param {number} corner - 0-3 (FL, FR, RL, RR).
  * @param {object} vehicleState - uses .wheelPhase[corner] (rad, integrated in physics.js).
- * @param {object} params - uses wheelRadius, wheelRunout.
+ * @param {object} params - uses wheelRadius, plus wheelRunout / _wheelRunout via wheelRunoutOf().
  * @returns {number} radius in metres.
  */
-const RUNOUT_PHASE = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5]
+export function effectiveWheelRadius (corner, vehicleState, params) {
+  const runout = wheelRunoutOf(corner, params)   // slider + this wheel's damage-driven runout
+  if (runout === 0) return params.wheelRadius
+  const theta = (vehicleState.wheelPhase && vehicleState.wheelPhase[corner]) || 0
+  return params.wheelRadius + 0.5 * runout * Math.sin(RUNOUT_HARMONIC * theta + RUNOUT_PHASE[corner])
+}
 
 /**
  * Radial offset of the out-of-round tire CARCASS at build-frame carcass angle `psi`, for one corner.
  *
- * The mesh half of effectiveWheelRadius(): vehicle-model.js displaces its tread vertices by this
- * so the tire you can SEE is the tire the contact query is rolling on. Split out here, next to the
+ * The mesh half of effectiveWheelRadius(): vehicle-model.js displaces its tread vertices by this so
+ * the tire you can SEE is the tire the contact query is rolling on. It lives here, next to the
  * radius it must agree with, because the two are one model — edit one, edit both.
  *
- * Frame: the wheel geometry is built with its spin axis along +X, so a vertex sits at carcass angle
- * psi = atan2(z, y). The mesh spins about +X by −phase and the LEFT-side assembly is pre-flipped by
- * rotation.y = PI, which puts psi = PI + phase (right) / PI − phase (left) at the contact patch.
- * Substituting those into A·sin(phase + RUNOUT_PHASE[corner]) gives the two branches below.
- * (test/wheel-runout-mesh.mjs walks that transform chain numerically and checks the agreement.)
+ * Derivation. The wheel geometry is built with its spin axis along +X, so a vertex sits at carcass
+ * angle psi = atan2(z, y). syncMeshesToState spins the wheel group about +X by −phase, and the
+ * LEFT-side assembly is pre-flipped by rotation.y = PI. Pushing a vertex through that chain and
+ * asking which one lands at the contact patch (angle PI) at spin phase `a` gives
+ *
+ *     psi = PI + a   (right side)        psi = PI − a   (left side)
+ *
+ * so requiring the offset there to equal effectiveWheelRadius's A*sin(n*a + phi) — substitute
+ * a = psi − PI on the right, a = PI − psi on the left — gives the two branches below directly, for
+ * any harmonic n. (test/wheel-runout-mesh.mjs walks that chain numerically and checks it holds.)
  *
  * @param {number} corner - 0-3 (FL, FR, RL, RR). 0 and 2 are the left, mirrored side.
  * @param {number} psi - carcass angle in the build frame [rad].
@@ -190,16 +224,10 @@ export function carcassRadialOffset (corner, psi, runout) {
   const A = 0.5 * (runout || 0)
   if (A === 0) return 0
   const phi = RUNOUT_PHASE[corner]
+  const n   = RUNOUT_HARMONIC
   return (corner === 0 || corner === 2)
-    ? A * Math.sin(psi - phi)
-    : -A * Math.sin(psi + phi)
-}
-
-export function effectiveWheelRadius (corner, vehicleState, params) {
-  const runout = wheelRunoutOf(corner, params)
-  if (runout === 0) return params.wheelRadius
-  const theta = (vehicleState.wheelPhase && vehicleState.wheelPhase[corner]) || 0
-  return params.wheelRadius + 0.5 * runout * Math.sin(theta + RUNOUT_PHASE[corner])
+    ? A * Math.sin(n * (Math.PI - psi) + phi)
+    : A * Math.sin(n * (psi - Math.PI) + phi)
 }
 
 /**
