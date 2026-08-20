@@ -1325,6 +1325,10 @@ const map2d = new Map2D({
 // Dev handles for the FEAT-68 checkpoint tooling (CDP probes: map renders, drive-through tests).
 // Same always-on precedent as window.__view.
 window.__map2d = () => map2d
+// FEAT-68: the live v2 price list, so a harness (or the console) can read/poke a router price
+// and see the world re-route. This is the SAME object the router prices with — if a slider ever
+// stops taking effect, compare what the panel mutated against what this returns.
+window.__v2costs = () => RANGER_PARAMS.roadV2
 window.__teleport = (x, z, heading, drop = 0.5) => teleportToGround(x, z, heading, drop)
 window.__car = () => ({ x: vehicleState.position.x, y: vehicleState.position.y, z: vehicleState.position.z,
                         v: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) })

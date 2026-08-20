@@ -1265,20 +1265,11 @@ export class RoadSystem {
     // ═══════════════════════════════════════════════════════════════════════════
 
     _protoInit() {
-        // Seed the cost weights from this._params (D-09 locked defaults in data/ranger.js)
-        // — NO hardcoded weight literals. Live slider edits flow through via _refreshParams()
-        // on each re-stream (debug sliders mutate this._params in place).
-        const p = this._params || {}
+        // FEAT-68: the D-09 cost-weight block (_proto.params: wDist/wAlt/wGrade/wOver/wTurn/
+        // maxGrade/minTurnRadius) and its per-re-stream _refreshParams() copy are GONE with the
+        // arc-lattice router that priced with them. v2's prices live in RANGER_PARAMS.roadV2 and
+        // reach the router (main thread AND Worker) through the route spec — nothing to refresh.
         this._proto = {
-            params: {
-                wDist:      p.roadWDist      ?? 1,    // directness
-                wAlt:       p.roadWAlt       ?? 0.85, // stay low (valley-seeking) — DOMINANT term (D-04)
-                wGrade:     p.roadWGrade     ?? 400,  // gentle (quadratic grade²)
-                wOver:      p.roadWOver      ?? 8000, // SOFT over-cap penalty — never Infinity (D-02 REVISED)
-                maxGrade:   p.maxRoadGrade   ?? 0.15, // SOFT target the over-cap penalty measures against
-                wTurn:      p.roadWTurn      ?? 120,  // per-45° turn penalty — long straights / true switchbacks
-                minTurnRadius: p.roadMinTurnRadius ?? 45,  // QUAL-01 — m; coils tighter than this are excised
-            },
             paramDirtyAt: 0,
             radius:   640,                                   // m — streamed road radius (set from terrain stream radius)
             anchors:  new Map(),                             // "mx,mz" → THREE.Vector3 (raw valley-snapped, pre-merge)
@@ -1368,8 +1359,8 @@ export class RoadSystem {
 
     // (08-07) The proto-only viz API (setProtoEnabled / setProtoParam / setProtoRadius / updateProto)
     // is retired — there is ONE viz now, toggled by setDebugVisible + driven by update()/buildDebugLines.
-    // Live D-09 weight edits arrive by debug sliders mutating this._params; each re-stream refreshes
-    // this._proto.params from this._params (see _refreshParams) so slider changes take effect.
+    // Live edits arrive by debug sliders mutating this._params in place; the next re-stream reads
+    // them straight off it (v2 keeps no derived copy of the weights).
     setSurfaceSampler(fn) { this._proto.surfaceY = fn }       // main.js passes terrainSystem.analyticHeight
 
     /**
@@ -1389,26 +1380,6 @@ export class RoadSystem {
      * @param {Function} fn — (wx, wz) => number  carve-free raw terrain height (metres)
      */
     setRawHeightSampler(fn) { this._rawHeightSampler = fn }
-
-    // Refresh the live cost weights from this._params (debug sliders mutate this._params in place).
-    // Called on every re-stream so D-09 slider edits flow through deterministically (D-03).
-    _refreshParams() {
-        const p = this._params || {}
-        const P = this._proto.params
-        P.wDist      = p.roadWDist      ?? P.wDist
-        P.wAlt       = p.roadWAlt       ?? P.wAlt
-        P.wGrade     = p.roadWGrade     ?? P.wGrade
-        P.wOver      = p.roadWOver      ?? P.wOver
-        P.maxGrade   = p.maxRoadGrade   ?? P.maxGrade
-        P.wTurn      = p.roadWTurn      ?? P.wTurn
-        // D0: floor minTurnRadius ≥ roadHalfWidth + clearanceMargin + ε so the ribbon inner edge
-        // cannot fold by construction. This clamp applies even when the slider is dragged below
-        // the floor — the arc-fillet always receives a geometrically safe radius.
-        const halfW     = p.roadHalfWidth       ?? 5
-        const clearance = p.roadClearanceMargin ?? 0.5
-        const floorR    = halfW + clearance + 0.1  // +0.1 m epsilon
-        P.minTurnRadius = Math.max(p.roadMinTurnRadius ?? P.minTurnRadius, floorR)  // D0 floor
-    }
 
     _invalidateProto() {
         this._proto.anchors.clear()
@@ -1486,7 +1457,6 @@ export class RoadSystem {
     warmRoutes(center) {
         if (!this._routeDispatch) return
         if (this._lastWarmCenter && center.distanceTo(this._lastWarmCenter) < PREWARM_WARM_MOVE) return
-        this._refreshParams()   // route against the CURRENT slider values (same as the next _streamNetwork)
 
         const R = this._proto.radius
         const center_mx = Math.floor(center.x / PROTO_ANCHOR_SPACING)
@@ -1581,7 +1551,6 @@ export class RoadSystem {
      */
     warmSpawnBand(center) {
         if (!this._routeDispatch) return true
-        this._refreshParams()
         const R = this._proto.radius
         const center_mx = Math.floor(center.x / PROTO_ANCHOR_SPACING)
         const HW = this._bandHalfWidth()
@@ -1704,7 +1673,6 @@ export class RoadSystem {
      */
     warmBandComplete(center) {
         if (!this._routeDispatch) return true        // no worker (headless/tests): nothing to warm
-        this._refreshParams()
         const R = this._proto.radius
         const cmx = Math.floor(center.x / PROTO_ANCHOR_SPACING)
         const HW = this._bandHalfWidth()
@@ -2016,8 +1984,8 @@ export class RoadSystem {
         if (!maxDeg) return drops
         // Tight detour cap: only an edge whose endpoints reconnect within THIS many hops is
         // "redundant enough" to lose to the degree cap. Low = only near-triangle diagonals (some
-        // 4-ways survive — the user wants fewer, not none); toward roadGraphCullMaxHops =
-        // progressively more aggressive thinning.
+        // 4-ways survive — the user wants fewer, not none); higher = progressively more
+        // aggressive thinning.
         const hopCap = this._params?.roadGraphDegreeDetourHops ?? 4
         const pairK = (a, b) => a + '|' + b
         const dgAdj = new Map()
@@ -2070,23 +2038,15 @@ export class RoadSystem {
         return drops
     }
 
-    // Memoized degree decisions for a stream/warm window, as { drop, dg }. Keyed by (window,
+    // Memoized degree decisions for a stream/warm window, as { drop }. Keyed by (window,
     // _networkRev) — warm scans repeat the same window between move thresholds.
     //
-    // The two fields want DIFFERENT margins, and conflating them was the streaming hitch:
-    //   drop — _degreeDropSet's Phase-2 BFS reaches at most roadGraphDegreeDetourHops (4), so a
-    //          margin of roadGraphMargin + degreeDetourHops + 1 already contains the detour
-    //          neighbourhood of every in-window candidate. That is the whole window-invariance
-    //          argument; a wider box cannot change an in-window decision, only cost more.
-    //   dg   — _cullNetwork's detour() runs to roadGraphCullMaxHops (8) over this same graph, so
-    //          IT genuinely needs roadGraphMargin + cullMaxHops + 1.
-    //
-    // PERF-26: both used to come from the cullMaxHops-sized build, so warmRoutes — which reads only
-    // `drop` — paid a margin-12 delaunay (1261 edges) every 256 m macro-column crossing when a
-    // margin-8 one (645 edges) decides the identical set. Measured over 6 cold column crossings,
-    // seed 6: 60.1 ms → 16.9 ms (72% cheaper) with ZERO in-window decision mismatches across 107
-    // compared edges. `dg` is now a lazy getter so only the cull/one-ring callers build the wide
-    // graph; when the two margins coincide, _urqMemo returns the same object and nothing is doubled.
+    // PERF-26: the margin is roadGraphMargin + degreeDetourHops + 1, because _degreeDropSet's
+    // Phase-2 BFS reaches at most roadGraphDegreeDetourHops (4) — that box already contains the
+    // detour neighbourhood of every in-window candidate, which is the whole window-invariance
+    // argument; a wider box cannot change an in-window decision, only cost more. (The wider `dg`
+    // graph this used to also carry — margin roadGraphCullMaxHops — died with the crossing and
+    // clearance culls in FEAT-68; it was the only consumer.)
     _degreeDrops(mx0, mx1, mz0, mz1) {
         const sig = `${mx0}:${mx1}:${mz0}:${mz1}`
         if (!this._degreeDropsMemo || this._degreeDropsMemo.rev !== this._networkRev)
@@ -2096,15 +2056,8 @@ export class RoadSystem {
         if (hit) return hit
         const gMargin = this._params?.roadGraphMargin ?? 3
         const dropMargin = gMargin + (this._params?.roadGraphDegreeDetourHops ?? 4) + 1
-        const cullMargin = gMargin + (this._params?.roadGraphCullMaxHops ?? 4) + 1
-        const self = this
         const entry = {
             drop: this._degreeDropSet(this._buildUrquhart(mx0, mx1, mz0, mz1, false, dropMargin)),
-            _dg: null,
-            get dg() {
-                if (!this._dg) this._dg = self._buildUrquhart(mx0, mx1, mz0, mz1, false, cullMargin)
-                return this._dg
-            },
         }
         if (memo.size > 6) memo.clear()   // warm/stream/spawn windows alternate — keep a handful
         memo.set(sig, entry)
@@ -2199,9 +2152,17 @@ export class RoadSystem {
             ax: A.x, az: A.z, yA: this._v2NodeHeight(A.x, A.z),
             bx: B.x, bz: B.z, yB: this._v2NodeHeight(B.x, B.z),
             margin, blockedDiscs, dirs,
-            costs: V2_COSTS,   // ride the spec so Worker-routed edges price identically (own module instance)
+            costs: this._v2Costs(),   // ride the spec so Worker-routed edges price identically (own module instance)
         }
     }
+
+    /**
+     * FEAT-68: the live v2 price list. RANGER_PARAMS.roadV2 is the real one (debug sliders mutate
+     * it in place, exactly like every other road knob); V2_COSTS is the module default, used only
+     * by headless callers that construct a RoadSystem without it. Read fresh each time — never
+     * cached — so a slider edit takes effect on the next route with no invalidation of its own.
+     */
+    _v2Costs() { return this._params?.roadV2 ?? V2_COSTS }
 
     // FEAT-68 deg-2 canonical approach headings: a pass-through node is a POINT ON a longer
     // corridor, not a route boundary — its two incident edges should meet tangentially. The
@@ -2311,14 +2272,15 @@ export class RoadSystem {
         }
         const yA = this._v2NodeHeight(pts[0].x, pts[0].z)
         const yB = this._v2NodeHeight(pts[n - 1].x, pts[n - 1].z)
-        let prof = profileSolve(st, yA, yB)
+        const C = this._v2Costs()
+        let prof = profileSolve(st, yA, yB, { costs: C })
         // Rung 1 (quantization pinch): thin-margin descents die at yStep 0.5 (grade quanta 5%) but
         // solve at 0.25 — the measured M0 failure class. Only failures pay the finer, slower solve.
-        if (!prof) prof = profileSolve(st, yA, yB, { yStep: 0.25 })
+        if (!prof) prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: C })
         // Rung 3 (last before the mark): raise the surface cap to 38% — under the 40% sustained
         // CEILING (the vocabulary cap is a design comfort, the ceiling is the contract). A road
         // shipped by this rung is steep but legal and unmarked.
-        if (!prof) prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: { ...V2_COSTS, gMaxRoad: 0.38 } })
+        if (!prof) prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: { ...C, gMaxRoad: 0.38 } })
         if (!prof) {
             // Mark-and-ship fallback: terrain-follow y, but BLEND the ends onto the shared node
             // heights over 60 m so a marked run still meets its solved neighbors (node agreement
@@ -2507,7 +2469,6 @@ export class RoadSystem {
         this._networkRev++   // real rebuild → invalidate per-run profile/adjacency caches (lazy)
         // Refresh live D-09 weights from this._params (debug sliders mutate it in place) so this
         // re-stream uses the current slider values — deterministic re-route (D-03).
-        this._refreshParams()
         // Bound the proto caches BEFORE building (CR-02). anchors/cls are pure functions of
         // coords, so a cache miss recomputes the identical value — evicting them is always benign.
         // Doing it pre-build (rather than post-build) makes the result independent of WHEN the

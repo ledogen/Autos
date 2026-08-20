@@ -19,16 +19,10 @@
 // Adding a gate: add an entry here AND write test/<file>. Keep this list in run order.
 
 export const GATES = [
-  { file: 'arc-router.mjs', subsystem: 'road', cost: 'fast', extraDeps: [],
-    desc: 'arc-primitive router valid-by-construction: reaches goal, detours peaks, min-radius, determinism (search-time now report-only)' },
-  { file: 'road-dequantize.mjs', subsystem: 'road', cost: 'fast', extraDeps: [],
-    desc: 'BUG-16+FEAT-20 de-quantize refit: shortcut straightens the bow, κ-filter clothoids, switchbacks preserved, endpoint-exact (timing report-only)' },
   { file: 'road-minradius.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-12: DENSE realized centerline min-radius the ribbon sweeps (incl. capture fixtures) — the fold metric' },
   { file: 'centerline-curvature.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'EXACT per-primitive min-radius + two-center invariance (construction-level, complements road-minradius realized geometry)' },
-  { file: 'defect-b-grade.mjs', subsystem: 'road', cost: 'fast', extraDeps: [],
-    desc: 'smoothGradeInPlace window-invariance + grade-flip collapse + ramp-preserved (defect B)' },
   { file: 'invariance.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'two-center network invariance: arcS + gradeY stable across streaming windows' },
   { file: 'road-band-coverage.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
