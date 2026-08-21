@@ -35,13 +35,15 @@ silhouette carries the read.  GnomeBuckle is the one thing that could not be
 merged -- it is the only warm metal on the model and it is the detail the owner
 asked for by name.
 
-BUILT 2026-08-20 against Blender 5.2.0 LTS.  FINAL: 488 tris (budget 500),
-262 verts, 6 materials, 0 images, 0 UV layers, one mesh object, 30.7 kB .glb.
-0.2069 W x 0.400 H x 0.1652 D m -- inside the ticket's 0.22 x 0.40 x 0.22 --
+BUILT 2026-08-20 against Blender 5.2.0 LTS.  FINAL: 500 tris (budget 500 --
+EXACTLY at the cap, so anything added here has to be paid for), 268 verts,
+6 materials, 0 images, 0 UV layers, one mesh object, 31.4 kB .glb.
+0.2070 W x 0.400 H x 0.1652 D m -- inside the ticket's 0.22 x 0.40 x 0.22 --
 base-seated at exactly y = 0 in the GLB (both soles flat on it), forward = -Z,
-single-sided, no Draco.  THE BOUNDS ARE NOT SYMMETRIC IN X (-0.1045 .. +0.1025)
+single-sided, no Draco.  THE BOUNDS ARE NOT SYMMETRIC IN X (-0.1035 .. +0.1035 by
+coincidence; Z is where the pose shows, -0.0952 .. +0.0700)
 and that is the pose, not an error.  Audit clean: 0 object-vs-object clips,
-0 coplanar pairs, 0 non-manifold edges, 0/5000 inverted first-hit rays.
+0 coplanar pairs, 0 non-manifold edges, 0/6000 inverted first-hit rays.
 Rebuild:  exec(open(__file__).read()); build(); export()
 
 AXIS TRAP.  The glTF exporter's "+Y up" maps blender (x,y,z) -> gltf (x, z, -y),
@@ -156,14 +158,14 @@ BODY_BANDS = ["GnomeCoat", "GnomeLeather", "GnomeCoat", "GnomeCoat",
 HAT = [
     (0.240,  0.003, 0.000, 0.070, 0.062),  # band, hugging the head
     (0.272,  0.003, 0.000, 0.079, 0.070),  # brim flare - widest, shades the face
-    (0.316,  0.001, 0.005, 0.048, 0.043),  # (a station at 0.284 sharpened the
-                                           #  taper off the brim; it was worth
-                                           #  16 tris and the arms wanted them
-                                           #  more.  The flare peak at 0.272 is
-                                           #  what reads as a brim, not the
-                                           #  sharpness above it.)
-    (0.350, -0.003, 0.012, 0.031, 0.028),  # the cone leaves the head's axis and
-    (0.380, -0.009, 0.022, 0.015, 0.014),  #   leans forward AND to his left
+    (0.316,  0.001, 0.005, 0.048, 0.043),  # (stations at 0.284 and 0.350 have
+                                           #  both been spent on the arms, 16
+                                           #  tris each.  What reads as a hat is
+                                           #  the flare PEAK at 0.272 and the
+                                           #  tip curl above 0.380; the cone
+                                           #  between them is a straight taper
+                                           #  and does not need describing.)
+    (0.380, -0.009, 0.022, 0.015, 0.014),  # the cone leans forward AND left
     (0.400, -0.016, 0.032, 0.005, 0.005),  # tip -> total height 0.400 m
 ]
 
@@ -193,31 +195,43 @@ BEARD_SHAPE = [
 # cut ran the right hand's skin band over 20 mm and the left's over 30, and one
 # hand was half again the size of the other.
 #
-# Two lengths are held equal on purpose, both measured as 3-D path length along
-# the station centres:
-#   * the SKIN band -- 27.8 mm right, 25.1 mm left.  This is the visible hand.
-#   * the WHOLE arm -- 80.1 mm right, 80.6 mm left, 0.6% apart.
-# The right arm reaches the belt by carrying its forward swing in the CUFF, not
-# in the hand; spend it in the hand instead and that band lengthens to 40 mm and
-# the hand fattens again.
+# FOUR STATIONS: shoulder, ELBOW, cuff, hand.  Three stations put the elbow and
+# the wrist at the same point, so the "hand" was really a forearm and the arm
+# could only bend by lengthening that band -- which is exactly how the two hands
+# ended up different sizes.  With a real elbow the bend lives in the upper-arm /
+# forearm angle and every band length can stay fixed.
+#
+# THE THREE SEGMENT LENGTHS ARE HELD EQUAL PER SIDE, measured as 3-D path along
+# the station centres.  Check them after ANY edit here -- eyeballing a table of
+# offsets will not catch a 20% limb-length error, and the owner's eye will:
+#     upper arm   45.9 mm  |  45.9 mm
+#     forearm     25.6 mm  |  25.7 mm
+#     hand        21.4 mm  |  21.5 mm     <- the SKIN band, the visible hand
+#     whole arm   92.8 mm  |  93.1 mm     <- 0.3% apart
+# Radii are identical station-for-station too (0.023 / 0.020 / 0.0185 / 0.022).
+# The fist is deliberately FATTER than the wrist it grows from; that step is
+# most of what reads as a hand at 0.4 m.
 ARM_R = [
-    (0.192, 0.078, 0.006, 0.023, 0.023),   # shoulder     [sleeve]
-    (0.148, 0.082, 0.034, 0.021, 0.021),   # cuff, ALREADY forward - carrying
-                                           #   the swing on the last 20 mm
-                                           #   aimed the hand like a dart
-    (0.126, 0.070, 0.046, 0.022, 0.022),   # hand, ON the belly by the buckle -
+    (0.196, 0.076, 0.004, 0.023, 0.0230),  # shoulder            [sleeve]
+    (0.151, 0.084, 0.008, 0.020, 0.0200),  # elbow, hanging down and slightly
+                                           #   out - the upper arm is near
+                                           #   vertical on BOTH sides
+    (0.139, 0.079, 0.030, 0.0185, 0.0185), # cuff - the forearm swings FORWARD
+                                           #   and in.  THIS is the bend.
+    (0.128, 0.070, 0.046, 0.022, 0.0220),  # hand, ON the belly by the buckle -
                                            #   9 mm proud, no more.  At 23 mm
                                            #   the sweep read as a pale spike.
 ]
-# The idle arm.  Lower, further out, and barely forward -- it hangs at the hip
-# instead of matching its partner at the belt.  This one deviation does more for
-# the pose than the contrapposto does.
+# The idle arm.  Same bones, less bend: the forearm drops almost straight so the
+# hand hangs at the hip instead of matching its partner at the belt.  This one
+# deviation does more for the pose than the contrapposto does.
 ARM_L = [
-    (0.194, 0.076, 0.004, 0.023, 0.023),   # shoulder, a touch higher and back
-    (0.140, 0.084, 0.014, 0.021, 0.021),   # cuff, swung out
-    (0.118, 0.082, 0.026, 0.022, 0.022),   # hand, hanging at the hip
+    (0.198, 0.074, 0.002, 0.023, 0.0230),  # shoulder, a touch higher and back
+    (0.1535, 0.084, 0.007, 0.020, 0.0200), # elbow
+    (0.1295, 0.082, 0.016, 0.0185, 0.0185),# cuff, barely bent
+    (0.1100, 0.082, 0.025, 0.022, 0.0220), # hand, hanging at the hip
 ]
-ARM_BANDS = ["GnomeCoat", "GnomeSkin"]
+ARM_BANDS = ["GnomeCoat", "GnomeCoat", "GnomeSkin"]
 
 # --- leg + boot as ONE limb: trouser at the top, widening down into the boot.
 # Two separate parts cost 104 tris and a buried seam; one 4-station sweep costs
