@@ -49,7 +49,12 @@ check(tunneled.length >= 1, `seed ${SEED} region has tunneled edges: ${tunneled.
 // Stage-1 chords are capped at tunnelMaxGrade; stage-2 bores follow the road's own profile
 // (grade-smoothed, but a bored stretch can legally carry the network max grade) — so the bound
 // here is a driveability sanity ceiling, not the chord cap.
-const maxGrade = 0.20
+// FEAT-68: the ceiling is the SOLVER's contract, not a round number — gMaxBore (0.18) plus its
+// documented cap tolerance: the DP allows a half-quantum overshoot (yStep 0.5 over a station of
+// L/round(L/10) ≈ 9.5-10.5 m → up to ~2.6 pp; see the M0 record), and the vSmooth corner
+// rounding may add a hair within its ±0.25 m bound. +0.03 covers both (measured worst 20.53%);
+// anything above it is a real solver violation, not quantisation.
+const maxGrade = 0.18 + 0.03
 let worstG = 0, worstStep = 0
 for (const [, e] of tunneled) {
   const pts = e.points, cum = e.polyCum

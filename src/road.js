@@ -2191,14 +2191,42 @@ export class RoadSystem {
     // the OTHER neighbor. (Chord-dot signing was measured wrong at acute elbows — a node sitting
     // behind one neighbor along the chord got pins that REVERSE travel through the node, a
     // sanctioned cusp. Identity signing keeps travel consistent through every joint.)
+    //
+    // BUG-53: JUNCTION ends (settled degree >= 3) get a CHORD pin — each leg must depart its node
+    // toward its own far node (60° cone + the terminal-region rule, same machinery as deg-2).
+    // Unpinned junction legs all pick the same best exit out of the node, which is the measured
+    // generator of the node-sharing overlap/crossing class: two runs collinear out of one node,
+    // sharing earthworks for 100-500 m (the owner's "huge tear", seed 6 node -7,2,0: 244 m at
+    // 0.1 m separation). The chord is a pure fn of the two endpoint positions, so the pin is
+    // window-invariant wherever the degree class is (same settled-adjacency argument as the deg-2
+    // through pins), and the feasibility ladder still demotes any pin the terrain refuses.
+    // Leaf ends (degree 1) stay unpinned — there is nothing to separate.
     _v2EdgeDirs(g, drop, kA, kB) {
         const s = this._v2NodeThrough(g, drop, kA), t = this._v2NodeThrough(g, drop, kB)
-        if (!s && !t) return undefined
-        const neg = (d) => ({ x: -d.x, z: -d.z })
-        return {
-            startDir: s ? (s.toward === kB ? { x: s.x, z: s.z } : neg(s)) : undefined,
-            goalDir: t ? (t.toward === kA ? neg(t) : { x: t.x, z: t.z }) : undefined,
+        const degOf = (nk) => {
+            const nbrs = g.adj.get(nk)
+            if (!nbrs) return 0
+            let n = 0
+            for (const o of nbrs) if (!drop || !drop.has(nk + '|' + o)) n++
+            return n
         }
+        let chord
+        const chordDir = () => {
+            if (chord === undefined) {
+                const pa = this._nodePos(kA.split(',').map(Number))
+                const pb = this._nodePos(kB.split(',').map(Number))
+                const dx = pb.x - pa.x, dz = pb.z - pa.z, l = Math.hypot(dx, dz)
+                chord = l > 1e-9 ? { x: dx / l, z: dz / l } : null
+            }
+            return chord ?? undefined
+        }
+        const neg = (d) => ({ x: -d.x, z: -d.z })
+        const startDir = s ? (s.toward === kB ? { x: s.x, z: s.z } : neg(s))
+            : (degOf(kA) >= 3 ? chordDir() : undefined)
+        const goalDir = t ? (t.toward === kA ? neg(t) : { x: t.x, z: t.z })
+            : (degOf(kB) >= 3 ? chordDir() : undefined)
+        if (!startDir && !goalDir) return undefined
+        return { startDir, goalDir }
     }
 
 

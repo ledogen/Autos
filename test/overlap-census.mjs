@@ -29,10 +29,16 @@ const d2seg = (px, pz, ax, az, bx, bz) => {
   return Math.hypot(px - (ax + t * dx), pz - (az + t * dz))
 }
 const minDistTo = (px, pz, pts) => {
-  let d = Infinity
-  for (let i = 1; i < pts.length; i++)
-    d = Math.min(d, d2seg(px, pz, pts[i - 1].x, pts[i - 1].z, pts[i].x, pts[i].z))
-  return d
+  let d = Infinity, y = 0
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i]
+    const dx = b.x - a.x, dz = b.z - a.z
+    const l2 = dx * dx + dz * dz
+    const t = l2 > 1e-12 ? Math.max(0, Math.min(1, ((px - a.x) * dx + (pz - a.z) * dz) / l2)) : 0
+    const dd = Math.hypot(px - (a.x + t * dx), pz - (a.z + t * dz))
+    if (dd < d) { d = dd; y = a.y + t * (b.y - a.y) }
+  }
+  return { d, y }
 }
 const seg = (ax, az, bx, bz, cx, cz, dx, dz) => {
   const r1 = bx - ax, r2 = bz - az, s1 = dx - cx, s2 = dz - cz
@@ -78,15 +84,34 @@ for (const seed of [6, 20, 11, 67]) {
   for (let i = 0; i < runs.length; i++) for (let j = i + 1; j < runs.length; j++) {
     const A = runs[i], B = runs[j]
     const sharedNodes = [A.a, A.b].filter(n => n === B.a || n === B.b)
-    if (!sharedNodes.length) continue
+    if (!sharedNodes.length) {
+      // DISJOINT pairs cannot legitimately come near each other at all (nodes are blue-noise
+      // spaced), so any shared-earthworks proximity is a tear candidate — the graph-topology
+      // SURFACE-SMOOTH step at seed 6 (3328,-27) is two NO-shared-node runs 11 m apart with a
+      // 31 m deck mismatch. Crossings between disjoint runs stay censused by crossing-census.
+      const pA0 = A.e.points, cA0 = A.e.polyCum
+      let nearLen = 0, minSep = Infinity, maxDy = 0
+      for (let m = 0; m < pA0.length; m++) {
+        const r = minDistTo(pA0[m].x, pA0[m].z, B.e.points)
+        if (r.d < NEAR) {
+          minSep = Math.min(minSep, r.d)
+          maxDy = Math.max(maxDy, Math.abs(pA0[m].y - r.y))
+          if (m > 0) nearLen += cA0[m] - cA0[m - 1]
+        }
+      }
+      if (nearLen >= 20 && (minSep < 9 || maxDy > 3))
+        conflicts.push({ type: 'overlap', A, B, tear: true, disjoint: true,
+          detail: `DISJOINT · near ${nearLen.toFixed(0)} m, minSep ${minSep.toFixed(1)}, deck mismatch ${maxDy.toFixed(1)} m` })
+      continue
+    }
     const pk = A.k + '|' + B.k
     if (pairsSeen.has(pk)) continue
     pairsSeen.add(pk)
     pairsTotal++
     // walk A's samples: distance to B, arc position, bore state
     const pA = A.e.points, cA = A.e.polyCum
-    const near = new Array(pA.length)
-    for (let m = 0; m < pA.length; m++) near[m] = minDistTo(pA[m].x, pA[m].z, B.e.points)
+    const near = new Array(pA.length), nearY = new Array(pA.length)
+    for (let m = 0; m < pA.length; m++) { const r = minDistTo(pA[m].x, pA[m].z, B.e.points); near[m] = r.d; nearY[m] = r.y }
     // (a) from-node contiguous overlap, per shared node
     let fromNodeOverlap = 0, minSepMid = Infinity
     for (const sn of sharedNodes) {
@@ -101,15 +126,26 @@ for (const seed of [6, 20, 11, 67]) {
       fromNodeOverlap = Math.max(fromNodeOverlap, s)
     }
     overlapLens.push(fromNodeOverlap)
-    // (b) min separation mid-span (beyond PAD from every shared node end of A)
+    // (b) mid-span proximity (beyond PAD from every shared node end of A): min separation, the
+    //     DECK MISMATCH where the two stencils meet (|yA - yB| while within NEAR — two benches at
+    //     different heights tear the carve even at 15 m lateral: the lone-pine 28 m case), and the
+    //     total near-length.
+    let maxDyMid = 0, midNearLen = 0
     for (let m = 0; m < pA.length; m++) {
       const dEnd = Math.min(
         sharedNodes.includes(A.a) ? cA[m] : Infinity,
         sharedNodes.includes(A.b) ? cA[cA.length - 1] - cA[m] : Infinity)
-      if (dEnd > PAD) minSepMid = Math.min(minSepMid, near[m])
+      if (dEnd <= PAD) continue
+      minSepMid = Math.min(minSepMid, near[m])
+      if (near[m] < NEAR) {
+        maxDyMid = Math.max(maxDyMid, Math.abs(pA[m].y - nearY[m]))
+        if (m > 0) midNearLen += cA[m] - cA[m - 1]
+      }
     }
-    if (fromNodeOverlap > PAD)
-      conflicts.push({ type: 'overlap', A, B, detail: `${fromNodeOverlap.toFixed(0)} m from node, minSep mid ${minSepMid === Infinity ? '—' : minSepMid.toFixed(1)}` })
+    const isTear = (minSepMid < 9 && midNearLen >= 20) || (maxDyMid > 3 && midNearLen >= 20)
+    if (fromNodeOverlap > PAD || isTear)
+      conflicts.push({ type: 'overlap', A, B, tear: isTear,
+        detail: `${fromNodeOverlap.toFixed(0)} m from node, mid-span near ${midNearLen.toFixed(0)} m, minSep ${minSepMid === Infinity ? '—' : minSepMid.toFixed(1)}, deck mismatch ${maxDyMid.toFixed(1)} m` })
     // (c) crossings (REAL class, same rules as crossing-census)
     const pB = B.e.points, cB = B.e.polyCum
     let crossed = false
@@ -151,8 +187,10 @@ for (const seed of [6, 20, 11, 67]) {
   const defects = new Map()   // pairKey → {A, B, why}
   for (const c of conflicts) {
     const pk = c.A.k + '|' + c.B.k
-    const sepM = c.type === 'overlap' ? parseFloat(c.detail.split('minSep mid ')[1]) : 0
-    const isDefect = c.type === 'cross' || (Number.isFinite(sepM) && sepM < 9)
+    // Defect = a REAL crossing, or a mid-span tear (stencils overlap outright, or two benches at
+    // mismatched heights while within shared-earthworks distance). A shallow-angle departure that
+    // stays laterally clear and height-agreeing is junction geometry, not a defect.
+    const isDefect = c.type === 'cross' || c.tear
     if (!isDefect) continue
     if (!defects.has(pk)) defects.set(pk, { A: c.A, B: c.B, why: c.type })
     else defects.get(pk).why += '+' + c.type
