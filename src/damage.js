@@ -147,7 +147,11 @@ export const DAMAGE_PARAMS = {
   // 10x FASTER as of 2026-08-20 (owner): at the fitted rate pads would never wear out inside a run,
   // which makes them a component the player never thinks about. The fitted number stays the
   // provenance — this is that number, deliberately overridden by a factor of ten.
-  durBrake:       5.05e7,    // N·m·s per axle to destroy the pads
+  // Units are now WATT-SECONDS (joules) per axle, not N·m·s: the track integrates friction POWER
+  // since 2026-08-21, so the constant was re-fitted by calibrate-wear.mjs against the same duty
+  // cycle and the same owner rate (120 h of hard driving costs 20% of the FRONT pads, 10x faster
+  // than the original fit so pads actually wear out inside a run).
+  durBrake:       2.31e9,    // J per axle to destroy the pads
 
   // Engine: f(rpm, torque, load) — deliberately VERY slow. Normalised so 1.0 = redline at full load.
   durEngine:      2.0e5,     // normalised load-seconds
@@ -784,12 +788,18 @@ export class DamageModel {
       }
     }
 
-    // ── Brakes: ∫(brake torque × time), per axle pair ──────────────────────────────────────────
+    // ── Brakes: ∫(friction POWER × time) = the energy the pads actually dissipate ─────────────
+    // Torque x time was wrong and the owner caught it: it wore the rear pads while the truck just
+    // sat on a hill with the brakes holding it. A stationary pad dissipates nothing — no sliding,
+    // no heat, no material removed — so the honest quantity is torque x SLIDING SPEED, i.e. the
+    // power going into the disc. That is zero at a standstill by construction, which is a better
+    // answer than a speed floor: it needs no threshold and it also gets the middle right, where a
+    // gentle crawl-speed drag costs far less than the same torque at 60 mph.
     if (brakeT) {
-      const front = Math.abs(brakeT[0] || 0) + Math.abs(brakeT[1] || 0)
-      const rear  = Math.abs(brakeT[2] || 0) + Math.abs(brakeT[3] || 0)
-      this.wear('brakeFront', front * dt, P.durBrake)
-      this.wear('brakeRear',  rear  * dt, P.durBrake)
+      const omega = vehicleState.wheelOmega
+      const p = (i) => Math.abs(brakeT[i] || 0) * Math.abs(omega?.[i] || 0)   // N·m/s = W
+      this.wear('brakeFront', (p(0) + p(1)) * dt, P.durBrake)
+      this.wear('brakeRear',  (p(2) + p(3)) * dt, P.durBrake)
     }
 
     // ── Wheels: RIM STRIKE events, per corner, on peak tire deflection ────────────────────────

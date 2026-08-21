@@ -4686,15 +4686,15 @@ function loop () {
     // SM-3: integrate component wear on the SAME fixed step the physics ran, so condition is
     // framerate-independent like everything else (INFRA-03 determinism). Reads the honest signals
     // stepPhysics just published; writes the effect multipliers the NEXT step will read.
+    // Fold the engine's wheel-core contacts into rimForce BEFORE the damage step reads it — the
+    // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
+    readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT)
     damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     // SM-3 collision damage: read the hardest contact on the chassis this step and hand it to the
     // damage model, which decides whether that is an impact (see feedContact — a contact is not).
     // classifyImpactRegion turns the body-local point/normal into an armor region and returns null
     // for ground contacts, so driving over terrain never registers as a crash.
     {
-      // The rim cores are part of the same compound body, so this is one engine read: the hardest
-      // contact overall (for armor) and the per-core impulses (for rim strikes) come out together.
-      readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT)
       const hit = physicsEngine.maxContactImpulse(vehicleChassis)
       const landed = damageModel.feedContact(
         classifyImpactRegion(hit.point, hit.normal), hit.impulse, RANGER_PARAMS.mass, PHYSICS_DT)

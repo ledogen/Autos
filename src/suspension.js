@@ -159,6 +159,14 @@ export function getWheelPosition (corner, vehicleState, params) {
  * contact-query radius uses this, never getWheelPosition(). An oval tire on a straight axle is
  * exactly that: the axle runs true, the rubber around it does not.
  */
+/**
+ * Soft band between the wheel's rigid core and the visual tire radius — the depth range the
+ * analytic tire spring owns. Past it there is no rubber left and the rim is bearing directly.
+ * (0.15 m, raised from 0.07 on 2026-08-15: a thicker band gives the suspension more travel-time to
+ * absorb fast hits before the rigid core engages — high-speed rock hits felt chassis-hard.)
+ */
+export const WHEEL_SOFT_BAND = 0.15
+
 const RUNOUT_PHASE = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5]
 export const RUNOUT_HARMONIC = 2   // 1 = eccentric (one high spot), 2 = oval (two)
 
@@ -273,6 +281,11 @@ export function carcassRadialOffset (corner, psi, runout) {
 export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts) {
   // SM-3: reset the per-step peak bump-stop force before the substep loop accumulates this step's.
   if (vehicleState.bumpForce) { vehicleState.bumpForce[0] = 0; vehicleState.bumpForce[1] = 0; vehicleState.bumpForce[2] = 0; vehicleState.bumpForce[3] = 0 }
+  // SM-3: peak RIM contact force per corner this step [N]. Reset here and written below whenever
+  // the tire is squashed clean through its soft band; physics.js then folds the engine's own
+  // hard-core contacts (debris) in on top with a max. Two paths, ONE signal — a rim does not care
+  // whether it was the road or a rock that reached it, and the cores collide with debris only.
+  if (vehicleState.rimForce) { vehicleState.rimForce[0] = 0; vehicleState.rimForce[1] = 0; vehicleState.rimForce[2] = 0; vehicleState.rimForce[3] = 0 }
   // Paranoid guard (Phase 4.1 D-01): if strutComp/strutCompVel not initialized, skip.
   if (!vehicleState.strutComp || vehicleState.strutComp.length !== 4) return
   if (!vehicleState.strutCompVel || vehicleState.strutCompVel.length !== 4) return
@@ -493,6 +506,14 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         const tireFnAtContact = Math.max(0,
           params.tireStiffness * c.depth + params.tireDamping * compressionVel
         ) * env
+
+        // RIM CONTACT from the analytic path. Depth is measured from the tire's OUTER radius, so
+        // once it exceeds the soft band the contact has reached the rim and the wheel is bearing
+        // on it directly. A hard enough landing over a shoulder step really does kiss the rim, and
+        // the engine's hard cores can never report it because they collide with debris only.
+        if (vehicleState.rimForce && c.depth > WHEEL_SOFT_BAND && tireFnAtContact > vehicleState.rimForce[i]) {
+          vehicleState.rimForce[i] = tireFnAtContact
+        }
         // D-06: split contact normal force into strut-axis and X/Z residual components
         // bodyUpDot = dot(c.normal, body_up): the fraction of contact normal force along the strut axis
         const bodyUpDot = c.normal.x * body_up.x + c.normal.y * body_up.y + c.normal.z * body_up.z

@@ -97,8 +97,10 @@ function measure (label, hold, steps) {
       slip += vs.slipVel[k] / 4
       flat += Math.abs(vs.tireFlat[k]) / 4
     }
-    brkF += Math.abs(vs.brakeTorque[0]) + Math.abs(vs.brakeTorque[1])
-    brkR += Math.abs(vs.brakeTorque[2]) + Math.abs(vs.brakeTorque[3])
+    // Brake insult is POWER (torque x wheel speed), not torque: a pad standing still wears
+    // nothing. See the note in damage.js.
+    brkF += Math.abs(vs.brakeTorque[0] * vs.wheelOmega[0]) + Math.abs(vs.brakeTorque[1] * vs.wheelOmega[1])
+    brkR += Math.abs(vs.brakeTorque[2] * vs.wheelOmega[2]) + Math.abs(vs.brakeTorque[3] * vs.wheelOmega[3])
   }
   const r = {
     tire: Math.max(...tire) / steps,          // worst corner — the one that decides the set
@@ -169,8 +171,8 @@ console.log(`\nduty cycle (the assumption): ${DUTY.tireLimit * 100}% at the limi
             `${DUTY.brakeTime * 100}% on the brakes at ${DUTY.brakePedal * 100}% pedal`)
 console.log(`\n  peel insult        ${burnout.tire.toFixed(3)} /s   → ${PEEL_MINUTES} min kills a tire  ⇒  durTire  = ${durTire.toPrecision(3)}`)
 console.log(`  mean tire insult   ${tireRate.toFixed(4)} /s   (hard-driving duty cycle, for the readout below)`)
-console.log(`  mean brake front   ${brkRateF.toFixed(1)} N·m   → 120 h costs 20%  ⇒  durBrake = ${durBrake.toPrecision(3)}`)
-console.log(`  mean brake rear    ${brkRateR.toFixed(1)} N·m   (rear axle reaches 20% at ` +
+console.log(`  mean brake front   ${(brkRateF/1000).toFixed(2)} kW    → 120 h costs 20%  ⇒  durBrake = ${durBrake.toPrecision(3)}`)
+console.log(`  mean brake rear    ${(brkRateR/1000).toFixed(2)} kW    (rear axle reaches 20% at ` +
             `${(solve(brkRateR, 120, 0.20) === 0 ? Infinity : durBrake * 0.20 / brkRateR / H).toFixed(0)} h — ` +
             `fronts wear faster, which is how brakes actually behave)`)
 

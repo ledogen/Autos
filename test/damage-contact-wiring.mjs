@@ -104,5 +104,23 @@ console.log('\n§4 the region travels with the peak, and a long scrape does not 
   ok(hits <= Math.ceil(1 / D.impactHoldMax) + 1, `...at the ${D.impactHoldMax}s hold cadence, not per step`)
 }
 
+console.log('\n§5 brakes wear on ENERGY, so holding a hill costs nothing')
+{
+  // The owner caught this: torque x time wore the rear pads while the truck simply sat on a slope
+  // with the brakes holding it. A stationary pad slides nothing, dissipates nothing, loses nothing.
+  const held = new DamageModel({ params: {} })
+  const stopped = { brakeTorque: [1300, 1300, 450, 450], wheelOmega: [0, 0, 0, 0] }
+  for (let i = 0; i < 300 / DT; i++) held.step(stopped, {}, DT)   // five minutes parked on the brakes
+  ok(held.get('brakeRear') === 1 && held.get('brakeFront') === 1,
+    'five minutes holding a hill on full brake torque costs the pads NOTHING')
+
+  const rolling = new DamageModel({ params: {} })
+  const moving = { brakeTorque: [1300, 1300, 450, 450], wheelOmega: [49, 49, 49, 49] }  // ~18 m/s
+  for (let i = 0; i < 300 / DT; i++) rolling.step(moving, {}, DT)
+  ok(rolling.get('brakeFront') < 1, '...while the same torque at speed does wear them')
+  ok(rolling.get('brakeFront') < rolling.get('brakeRear'),
+    'and the fronts wear faster than the rears, which is how brakes actually behave')
+}
+
 console.log(fail ? '\nFAIL — the contact→impact wiring has drifted' : '\nPASS — engine contacts reach the right armor regions, and only when they are impacts')
 process.exit(fail)

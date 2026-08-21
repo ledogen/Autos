@@ -39,7 +39,7 @@
 
 import * as THREE from 'three'
 import { computeTireForces } from './tire.js'
-import { computeNormalForce, effectiveWheelRadius, getWheelPosition, stepSuspensionSubsteps, wheelRunoutOf } from './suspension.js'
+import { computeNormalForce, effectiveWheelRadius, getWheelPosition, stepSuspensionSubsteps, wheelRunoutOf, WHEEL_SOFT_BAND } from './suspension.js'
 import { stepDrivetrain } from './drivetrain.js'
 import { camberLean, toeOffset } from './alignment.js'
 import { GROUP_CHASSIS, GROUP_DEBRIS } from './physics-engine.js'
@@ -167,7 +167,8 @@ const CHASSIS_PROFILE = {
 }
 
 /**
- * Peak contact FORCE on each WHEEL HARD CORE this step, per corner [N].
+ * Fold the engine's WHEEL HARD CORE contact forces into `out`, per corner [N], taking the max
+ * against whatever the soft path already put there.
  *
  * This is the rim-strike signal, and it is the engine's own answer rather than anything derived.
  * The QUAL-25 chassis carries a rigid sphere per wheel at `wheelRadius − WHEEL_SOFT_BAND`, riding
@@ -190,13 +191,17 @@ const CHASSIS_PROFILE = {
  * @returns {Array<number>} `out`.
  */
 export function readRimStrikes (engine, chassis, out, dt) {
-  out[0] = out[1] = out[2] = out[3] = 0
   const rims = _chassisRims.get(chassis)
   if (!rims) return out
   if (!_shapeImpulseScratch || _shapeImpulseScratch.length < 64) _shapeImpulseScratch = new Float64Array(64)
   engine.maxContactImpulse(chassis, _shapeImpulseScratch)
   const inv = dt > 0 ? 1 / dt : 0
-  for (let i = 0; i < 4; i++) out[i] = (_shapeImpulseScratch[rims[i].shapeIndex] || 0) * inv
+  // MAX, not assign: the soft path has already written any rim contact it detected against
+  // terrain this step (suspension.js), and a wheel can be taking both at once.
+  for (let i = 0; i < 4; i++) {
+    const f = (_shapeImpulseScratch[rims[i].shapeIndex] || 0) * inv
+    if (f > out[i]) out[i] = f
+  }
   return out
 }
 let _shapeImpulseScratch = null
@@ -395,12 +400,6 @@ function wheelCorePoints (cx, cy, cz, params) {
   }
   return pts
 }
-// Soft band between the wheel hard core and the visual tire radius — the depth range the
-// analytic tire spring owns. Matches DYN_CONTACT_DEPTH deep-squish territory, so the core
-// engages only when the soft path has already been overwhelmed (a pinched rock).
-const WHEEL_SOFT_BAND = 0.15   // was 0.07 — thicker band gives the suspension more travel-time
-                               // to absorb fast hits before the rigid core engages (owner,
-                               // 2026-08-15: high-speed rock hits felt chassis-hard)
 
 export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx) {
   if (!engineCtx) throw new Error('stepPhysics: engineCtx {engine, chassis} is required (FEAT-48)')
