@@ -247,11 +247,8 @@ export const DAMAGE_PARAMS = {
   // src/suspension.js) rather than a handling penalty invented for damage. Ratified: 0.04 m
   // peak-to-peak at zero condition — a wheel so far gone the truck shakes itself apart at speed.
   wheelRunoutAtZero: 0.04,
-  // Wheel damage from suspension ACCELERATION, not velocity: a damper is worn by how fast the
-  // strut moves, a wheel is bent by how hard it is stopped. The floor is the no-harm level —
-  // normal road undulation must cost nothing, or the wheels would wear out on a smooth highway.
-  wheelAccelFloor: 60,     // m/s^2 of strut acceleration below which nothing happens
-  durWheel:        4.0e5,  // insult units for a full wheel; chosen, not fitted — needs a drive
+  // There is no durWheel: wheels take damage from IMPACTS only (impactWheel above), so the impact
+  // curve is the whole calibration for this track.
 
   // ── Live tuning multipliers ────────────────────────────────────────────────────────────────
   // Per-class wear SPEED, 1 = the calibrated rate above. These exist so wear can be tuned by feel
@@ -431,9 +428,6 @@ export class DamageModel {
     // Peak bump-stop force per corner while a stop is currently loaded; 0 when it is not.
     this._bumpPeak = [0, 0, 0, 0]
 
-    // Last strut acceleration per corner [m/s^2] — the raw wheel-wear signal, exposed so the
-    // readout can show the SAME number the model wore on, not a recomputed lookalike.
-    this.strutAccel = [0, 0, 0, 0]
   }
 
   /** Condition of one track, [0, 1]. */
@@ -780,29 +774,12 @@ export class DamageModel {
       this.wear('damperRear',  vR * dt, P.durDamper)
     }
 
-    // ── Wheels: strut ACCELERATION above the no-harm floor, per corner ─────────────────────────
-    // Same family of signal as the damper track, one derivative up: the damper is worn by how fast
-    // the strut moves, the wheel is bent by how hard that motion is arrested. Differenced here
-    // rather than published from physics.js, because it is derived from a signal already on
-    // vehicleState — the seam stays as thin as it was.
-    //
-    // This inherits the damper track's OPEN RISK and doubles it: strutCompVel is a 4-substep
-    // explicit-Euler quantity, and differencing a noisy signal amplifies the noise. If the
-    // washboard drive says this is not honest, say so — do not substitute a proxy.
-    if (strutVel) {
-      if (!this._prevStrutVel) this._prevStrutVel = [0, 0, 0, 0]
-      const ids = ['wheelFL', 'wheelFR', 'wheelRL', 'wheelRR']
-      for (let i = 0; i < 4; i++) {
-        const v = strutVel[i] || 0
-        const a = Math.abs(v - this._prevStrutVel[i]) / dt
-        this._prevStrutVel[i] = v
-        // Kept for the readout: judging whether this signal is honest enough to damage a wheel
-        // means SEEING it, and a readout that recomputed it could differ from what actually wore.
-        this.strutAccel[i] = a
-        const insult = Math.max(0, a - P.wheelAccelFloor)
-        if (insult > 0) this.wear(ids[i], insult * dt, P.durWheel)
-      }
-    }
+    // WHEELS have no continuous wear source, by design (owner, 2026-08-20): a wheel is bent by
+    // being HIT, not worn out by driving. A strut-acceleration source was tried and deleted — it
+    // measured 95,000 minutes to destroy a wheel, so it was not a mechanism, and strut acceleration
+    // is a poor proxy for the one real non-collision case (a pothole or kerb strike) anyway. If
+    // that case is ever wanted, the hook is _landBumpStop below, which is already peak-priced and
+    // already bends alignment for exactly this reason — not a differenced velocity signal.
 
     // ── Engine: f(rpm, torque, load), very slow ────────────────────────────────────────────────
     const dtr = vehicleState.drivetrain

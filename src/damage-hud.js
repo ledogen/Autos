@@ -197,9 +197,9 @@ export class DamageHUD {
     out.push(`<div class="dh-sig"><span>bump kN</span>${[0, 1, 2, 3].map(i =>
       fmt(Math.abs(vs.bumpForce?.[i] || 0) / 1000, P.springForceFloor / 1000, 1)).join('')}</div>`)
     out.push(`<div class="dh-sig"><span>strut m/s</span>${corner(vs.strutCompVel, P.damperVelFloor, 2)}</div>`)
-    out.push(`<div class="dh-sig"><span>accel m/s²</span>${corner(d.strutAccel, P.wheelAccelFloor, 0)}</div>`)
     out.push(`<div class="dh-note">floors — slip ${P.tireSlipFloor} m/s · bump ${(P.springForceFloor / 1000).toFixed(0)} kN`
-      + ` · strut ${P.damperVelFloor} m/s · accel ${P.wheelAccelFloor} m/s²</div>`)
+      + ` (align ${(P.alignBumpFloorN / 1000).toFixed(0)} kN) · strut ${P.damperVelFloor} m/s.`
+      + ` Wheels have no continuous wear source — they are damaged by impacts only.</div>`)
     out.push('<div class="dh-note">a floor that is red on ordinary road is wrong, or the signal under it is noise.</div>')
 
     // ── IMPACTS ───────────────────────────────────────────────────────────────────────────────

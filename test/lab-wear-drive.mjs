@@ -56,13 +56,12 @@ if (await ev('typeof window.__tp') !== 'function') throw new Error('window.__tp 
 // aliases it into noise (measured strut peaks came out 10x low). damageModel.step runs once per
 // fixed step, so wrapping it sees every one.
 await ev(`(() => { const d = window.__damage, orig = d.step.bind(d)
-  window.__pk = { strut: 0, bump: 0, accel: 0, comp: 0, n: 0, sum: 0 }
+  window.__pk = { strut: 0, bump: 0, comp: 0, n: 0, sum: 0 }
   d.step = (vs, p, dt) => { const P = window.__pk
     for (let i = 0; i < 4; i++) {
       const s = Math.abs(vs.strutCompVel?.[i] || 0); P.n++; P.sum += s; if (s > P.strut) P.strut = s
       const c = Math.abs(vs.strutComp?.[i] || 0);    if (c > P.comp)  P.comp  = c
       const b = Math.abs(vs.bumpForce?.[i] || 0);    if (b > P.bump)  P.bump  = b
-      const a = Math.abs(d.strutAccel?.[i] || 0);    if (a > P.accel) P.accel = a
     }
     return orig(vs, p, dt) }
   return true })()`)
@@ -70,7 +69,7 @@ await ev(`(() => { const d = window.__damage, orig = d.step.bind(d)
 const cond  = async () => JSON.parse(await ev('JSON.stringify(window.__damage.condition)'))
 const peaks = async () => JSON.parse(await ev('JSON.stringify(window.__pk)'))
 const reset = () => ev(`window.__damage.setAll(1); window.__damage.publish(window.__damage.params)
-  window.__pk = { strut: 0, bump: 0, accel: 0, comp: 0, n: 0, sum: 0 }; true`)
+  window.__pk = { strut: 0, bump: 0, comp: 0, n: 0, sum: 0 }; true`)
 const speedMph = () => ev(`(() => { const v = window.__vehicleState().velocity
   return Math.hypot(v.x, v.z) / 0.44704 })()`)
 
@@ -96,7 +95,7 @@ async function hold (label, targetMph, secs) {
     console.log(`  ${k.padEnd(12)} ${r.toFixed(3)} %/min` + (r > 1e-5 ? ` → dead in ${(100 / r).toFixed(0)} min` : ''))
   }
   console.log(`  strut |v| mean ${(pk.sum / pk.n).toFixed(3)} peak ${pk.strut.toFixed(2)} m/s`)
-  console.log(`  strutComp peak ${(pk.comp * 1000).toFixed(0)} mm · bump peak ${(pk.bump / 1000).toFixed(1)} kN · strut accel peak ${pk.accel.toFixed(0)} m/s²`)
+  console.log(`  strutComp peak ${(pk.comp * 1000).toFixed(0)} mm · bump peak ${(pk.bump / 1000).toFixed(1)} kN`)
 }
 
 /** Teleport onto a lane and refuse to measure if it did not land — see the ?prof=1 note above. */

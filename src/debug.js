@@ -299,6 +299,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // practice been set by driving and judging, and a code edit + reload per guess is the slow way
   // to do that. Watch the %/min column in the V readout while dialling. Anything that settles
   // should be folded back into the dur* constant it scales (see the note in damage.js).
+  // `wheel` has no continuous wear source — wheels are damaged by impacts only — so that one
+  // scales how hard impacts hit the wheels rather than a rate.
   const wearFolder = dmgFolder.addFolder('Wear Speed (x calibrated)')
   for (const k of ['tire', 'brake', 'spring', 'damper', 'wheel', 'engine']) {
     wearFolder.add(DAMAGE_PARAMS.wearScale, k, 0, 10, 0.1).name(k)
