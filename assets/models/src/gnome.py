@@ -37,9 +37,9 @@ asked for by name.
 
 BUILT 2026-08-20 against Blender 5.2.0 LTS.  FINAL: 488 tris (budget 500),
 262 verts, 6 materials, 0 images, 0 UV layers, one mesh object, 30.7 kB .glb.
-0.2060 W x 0.400 H x 0.1652 D m -- inside the ticket's 0.22 x 0.40 x 0.22 --
+0.2069 W x 0.400 H x 0.1652 D m -- inside the ticket's 0.22 x 0.40 x 0.22 --
 base-seated at exactly y = 0 in the GLB (both soles flat on it), forward = -Z,
-single-sided, no Draco.  THE BOUNDS ARE NOT SYMMETRIC IN X (-0.1055 .. +0.1005)
+single-sided, no Draco.  THE BOUNDS ARE NOT SYMMETRIC IN X (-0.1045 .. +0.1025)
 and that is the pose, not an error.  Audit clean: 0 object-vs-object clips,
 0 coplanar pairs, 0 non-manifold edges, 0/5000 inverted first-hit rays.
 Rebuild:  exec(open(__file__).read()); build(); export()
@@ -186,22 +186,36 @@ BEARD_SHAPE = [
 # come FORWARD onto the belly at the belt line (cy 0.040), the way the reference
 # rests them either side of the buckle -- hung straight down they read as two
 # pink dots on the flanks.
+# --- arms.  ASYMMETRY IS POSE, NOT ANATOMY.  The two tables differ only in
+# DIRECTION; the radii are identical station-for-station (0.023 / 0.021 / 0.022)
+# and both bands span the same lengths, so the gnome has two arms of one size
+# doing two different things.  Get that wrong and it reads instantly: the first
+# cut ran the right hand's skin band over 20 mm and the left's over 30, and one
+# hand was half again the size of the other.
+#
+# Two lengths are held equal on purpose, both measured as 3-D path length along
+# the station centres:
+#   * the SKIN band -- 27.8 mm right, 25.1 mm left.  This is the visible hand.
+#   * the WHOLE arm -- 80.1 mm right, 80.6 mm left, 0.6% apart.
+# The right arm reaches the belt by carrying its forward swing in the CUFF, not
+# in the hand; spend it in the hand instead and that band lengthens to 40 mm and
+# the hand fattens again.
 ARM_R = [
     (0.192, 0.078, 0.006, 0.023, 0.023),   # shoulder     [sleeve]
-    (0.150, 0.080, 0.034, 0.021, 0.021),   # cuff, ALREADY forward - carrying
-                                           #   the whole swing on the last
-                                           #   20 mm aimed the hand like a dart
-    (0.130, 0.068, 0.044, 0.022, 0.022),   # hand, ON the belly by the buckle -
-                                           #   7 mm proud, no more.  At 23 mm
+    (0.148, 0.082, 0.034, 0.021, 0.021),   # cuff, ALREADY forward - carrying
+                                           #   the swing on the last 20 mm
+                                           #   aimed the hand like a dart
+    (0.126, 0.070, 0.046, 0.022, 0.022),   # hand, ON the belly by the buckle -
+                                           #   9 mm proud, no more.  At 23 mm
                                            #   the sweep read as a pale spike.
 ]
 # The idle arm.  Lower, further out, and barely forward -- it hangs at the hip
 # instead of matching its partner at the belt.  This one deviation does more for
 # the pose than the contrapposto does.
 ARM_L = [
-    (0.194, 0.076, 0.002, 0.023, 0.023),   # shoulder, a touch higher and back
-    (0.142, 0.086, 0.020, 0.020, 0.020),   # elbow, swung out
-    (0.112, 0.082, 0.030, 0.022, 0.022),   # hand, hanging at the hip
+    (0.194, 0.076, 0.004, 0.023, 0.023),   # shoulder, a touch higher and back
+    (0.140, 0.084, 0.014, 0.021, 0.021),   # cuff, swung out
+    (0.118, 0.082, 0.026, 0.022, 0.022),   # hand, hanging at the hip
 ]
 ARM_BANDS = ["GnomeCoat", "GnomeSkin"]
 

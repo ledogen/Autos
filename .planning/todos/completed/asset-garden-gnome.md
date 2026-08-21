@@ -58,9 +58,9 @@ Registered as `gnome` in `data/prop-models.js` (FEAT-59), **no pool tag** — sa
 flamingos: a gnome is not a mission giver, and `lawnFurniture` has no consumer yet.
 `node test/dist-assets.mjs` green.
 
-**0.206 W × 0.400 H × 0.165 D m** — inside the spec's 0.22 × 0.40 × 0.22. Origin and forward as
+**0.207 W × 0.400 H × 0.165 D m** — inside the spec's 0.22 × 0.40 × 0.22. Origin and forward as
 specified: base-seated at exactly y = 0 (both boot soles flat on it), forward = −Z. **The bounds
-are not symmetric** — X runs −0.106 … +0.101 and Z runs −0.095 … +0.070 — because the pose puts
+are not symmetric** — X runs −0.105 … +0.103 and Z runs −0.095 … +0.070 — because the pose puts
 weight on one leg, hangs the other arm, and pushes the nose and boot toes forward. The registry
 box is a size rather than a centred extent, so it over-covers by ~3 mm on one side.
 
@@ -118,6 +118,12 @@ Seven things the generator records so they are not re-discovered:
 - **The toe box must be a SLAB.** Stations 0 and 1 are the same size 20 mm apart, so the foot is
   flat-topped and the step up to the ankle is a hard crease that flat shading turns into the top of
   the shoe. A single smooth taper from sole to cuff over 48 mm reads as a traffic cone.
+- **Asymmetry is pose, not anatomy.** The two arm tables differ only in *direction*: radii are
+  identical station-for-station, the skin band is 27.8 mm against 25.1 mm, and total arm path
+  length is 80.1 mm against 80.6 mm — 0.6% apart. The first asymmetric cut ran one hand's skin
+  band over 20 mm and the other's over 30, and one hand was visibly half again the size of the
+  other. The right arm reaches the belt by carrying its forward swing in the **cuff**; spend it in
+  the hand instead and that band stretches to 40 mm and the hand fattens again.
 - **The hands must not have a vertex on +Y.** The arms run at 7 segments with the ring phase
   offset by half a segment, so a *facet* faces forward instead of a vertex — at 6 segments on the
   common phase each hand ended in a knife edge aimed at the camera and read as a beak. The extra
