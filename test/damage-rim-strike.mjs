@@ -39,19 +39,25 @@ function strike (d, ns, corner = 0, steps = 3) {
   d.step(vs, P, DT)
 }
 
-console.log('§1 the lab anchors — a thrown rock, run over at a range of speeds')
+console.log('§1 the lab anchors — a thrown rock, run over with the DISK core')
 {
-  // Measured in-game (lab strip, 50 kg debris rock, window.__debris.spawn).
-  for (const [mph, ns, lo, hi] of [[22, 3076, 0.05, 1], [60, 5495, 3, 12]]) {
+  // Measured in-game (lab strip, 50 kg debris rock settled on the wheel line, speed swept 1-92 mph).
+  //
+  // OPEN, and deliberately not papered over: the impulse on the core is PINCH-dominated, not
+  // speed-ranked. 1 mph read 3246 N·s and 92 mph read 2951; 38 mph read 1626 on one run and 3772 on
+  // another. Impulse is ∫F·dt, and a slow climb onto a rock presses the full wheel load through it
+  // for many steps while a fast strike can glance off in two — so the two ends come out similar.
+  // The model therefore currently prices "how thoroughly the rock got trapped", not "how hard it
+  // was hit". Box3D's contact HIT events carry approachSpeed, which is the missing discriminator.
+  // Until that lands, treat the numbers below as the observed range and not as a calibration.
+  for (const [ns, lo, hi] of [[2092, 0, 0.2], [3772, 0.5, 3]]) {
     const d = fresh(); strike(d, ns)
     const lost = (1 - d.get('wheelFL')) * 100
-    console.log(`  ${mph} mph over a rock (${ns} N·s on the core) costs the wheel ${lost.toFixed(2)}%`)
-    ok(lost >= lo && lost <= hi, `...within the intended ${lo}-${hi}% band`)
+    console.log(`  a ${ns} N·s core hit costs the wheel ${lost.toFixed(2)}%`)
+    ok(lost >= lo && lost <= hi, `...within the observed ${lo}-${hi}% band`)
   }
-  // The PINCH floor: a rock trapped between core and ground registers a big impulse even at
-  // walking pace, so easing over one must be free and only speed may cost you.
   const crawl = fresh(); strike(crawl, D.rimStrikeFloorNs - 1)
-  ok(crawl.get('wheelFL') === 1, `a pinch below ${D.rimStrikeFloorNs} N·s costs nothing — easing over a rock is free`)
+  ok(crawl.get('wheelFL') === 1, `a pinch below ${D.rimStrikeFloorNs} N·s costs nothing`)
 }
 
 console.log('\n§2 nothing but a core contact can bend a rim')
@@ -93,8 +99,8 @@ console.log('\n§3 priced square-law past the floor, banked as one event, on the
   ok(d.get('wheelRL') < 1 && d.get('wheelFL') === 1 && d.get('wheelRR') === 1, 'only the corner that struck is bent')
 
   // The headroom the owner asked for: one bad strike must not be a write-off.
-  const one = fresh(); strike(one, 5495)
-  ok(one.get('wheelFL') > 0.85, 'one 60 mph rock strike leaves the wheel above 85%')
+  const one = fresh(); strike(one, 3772)
+  ok(one.get('wheelFL') > 0.9, 'the hardest rock hit measured leaves the wheel above 90%')
 }
 
 console.log('\n§4 a crash bends the rim, but only past a threshold')

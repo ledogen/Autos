@@ -14,6 +14,8 @@ export const RANGER_PARAMS = {
   trackRear:    1.46,   // m — center-to-center wheel spacing at rear axle
   cgHeight:     0.55,   // m — center of gravity above ground (estimate, laden)
   wheelRadius:  0.368,  // m — 245/75R16 tire radius
+  wheelWidth:   0.25,   // m — 245-section tire tread width. Sets the WIDTH of the wheel hard core
+                        // (src/physics.js wheelCorePoints), which is a disk, not a sphere.
   rimRadius:    0.203,  // m — 16 in steel rim (0.406 m diameter). wheelRadius − rimRadius is the
                         // SIDEWALL height, 165 mm, and that is a real dimension off the tire rather
                         // than a tuning constant: it is how far the carcass can deflect before the

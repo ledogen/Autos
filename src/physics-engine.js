@@ -146,7 +146,7 @@ export class PhysicsEngine {
   // ── Colliders ─────────────────────────────────────────────────────────────
 
   _shapeDef ({ friction = 0.6, restitution = 0, density = 1000, group = GROUP_STATIC, collidesWith = GROUP_ALL,
-               rollingResistance = 0, hitEvents = false } = {}) {
+               rollingResistance = 0, hitEvents = false, updateBodyMass = true } = {}) {
     const sd = _b3.b3DefaultShapeDef()
     sd.baseMaterial.friction = friction
     sd.baseMaterial.restitution = restitution
@@ -155,6 +155,10 @@ export class PhysicsEngine {
     sd.filter.categoryBits = group
     sd.filter.maskBits = collidesWith
     sd.enableHitEvents = hitEvents        // per-contact impact events (wear-model seam)
+    // Adding a shape RE-DERIVES the body's mass from its shapes' densities by default. Bodies whose
+    // mass was pinned with setMassData (the chassis) must opt out, or a shape swap silently throws
+    // the pinned mass and inertia away — which reads as the truck no longer settling on flat ground.
+    sd.updateBodyMass = updateBodyMass
     return sd
   }
 
@@ -178,7 +182,7 @@ export class PhysicsEngine {
   }
 
   /** Sphere collider at local offset (default body origin). Returns the shape INDEX on the
-   *  body (stable — shapes are only ever appended), usable with setSphereLocal below. */
+   *  body (stable — shapes are only ever appended), and stays valid across replaceHullLocal. */
   addSphere (handle, radius, material = {}, offset = { x: 0, y: 0, z: 0 }) {
     const rec = this._bodies.get(handle)
     const shapeId = this._register(handle, _b3.b3CreateSphereShape(rec.id, this._shapeDef(material),
@@ -189,12 +193,40 @@ export class PhysicsEngine {
 
   /** Re-seat a sphere shape's LOCAL center (e.g. the wheel rim cores tracking strut travel).
    *  Cheap (one engine call); also updates the debug-viz spec in place. */
-  setSphereLocal (handle, shapeIndex, offset) {
+  /** How many collider shapes a body currently has — callers hold indices into this. */
+  shapeCount (handle) { return this._bodies.get(handle).shapes.length }
+
+  /**
+   * Replace an existing hull shape in place, keeping its shape INDEX stable.
+   *
+   * Box3D can mutate a sphere (b3Shape_SetSphere) and a capsule, but a hull has no setter — its
+   * points are baked at creation. A hull that has to MOVE within its body therefore has to be
+   * rebuilt, and a destroy+add would append the replacement at the end. Callers hold shape indices
+   * (the wheel cores do), so the new shape takes the old one's slot instead.
+   *
+   * Body mass is NOT recomputed on either half: this project sets chassis mass explicitly with
+   * setMassData after construction, and letting a shape swap re-derive it from densities would
+   * silently overwrite that.
+   */
+  replaceHullLocal (handle, shapeIndex, positions, material = {}) {
     const rec = this._bodies.get(handle)
-    const shapeId = rec.shapes[shapeIndex]
-    const spec = rec.specs[shapeIndex]
-    _b3.b3Shape_SetSphere(shapeId, { center: [offset.x, offset.y, offset.z], radius: spec.radius })
-    spec.offset.x = offset.x; spec.offset.y = offset.y; spec.offset.z = offset.z
+    const oldId = rec.shapes[shapeIndex]
+    this._shapeToHandle.delete(this._shapeKey(oldId))
+    this._shapeHulls.delete(this._shapeKey(oldId))
+    this._shapeSizeR.delete(this._shapeKey(oldId))
+    _b3.b3DestroyShape(oldId, false)
+    const hull = _b3.b3CreateHull(positions)
+    this._hulls.push(hull)
+    const shapeId = _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull)
+    rec.shapes[shapeIndex] = shapeId
+    rec.specs[shapeIndex] = { shape: 'hull', positions: Array.from(positions) }
+    this._shapeToHandle.set(this._shapeKey(shapeId), handle)
+    this._shapeHulls.set(this._shapeKey(shapeId), hull)
+    let m = 0
+    for (let i = 0; i < positions.length; i += 3) m = Math.max(m, Math.hypot(positions[i], positions[i + 1], positions[i + 2]))
+    this._shapeSizeR.set(this._shapeKey(shapeId), m)
+    this._rev++
+    return shapeId
   }
 
   /** Capsule collider between two local points. */

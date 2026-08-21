@@ -326,10 +326,8 @@ export function createVehicleChassis (engine, vehicleState, params) {
   ].entries()) {
     const mountY = -(params.cgHeight - params.wheelRadius) +
       (front ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0))
-    const shapeIndex = engine.addSphere(chassis, params.wheelRadius - WHEEL_SOFT_BAND, {
-      friction: 0.5, restitution: 0, group: GROUP_CHASSIS, collidesWith: GROUP_DEBRIS,
-    }, { x, y: mountY, z })
-    rims.push({ shapeIndex, x, z, mountY, front })
+    engine.addHull(chassis, wheelCorePoints(x, mountY, z, params), RIM_MATERIAL)
+    rims.push({ shapeIndex: engine.shapeCount(chassis) - 1, x, z, mountY, front, lastY: mountY })
   }
 
   // INERTIA AXES — PHYSICALLY CORRECT MAPPING (owner-approved fix, 2026-08-15). Body frame,
@@ -355,9 +353,45 @@ function updateWheelRims (engine, chassis, vehicleState, params) {
   for (let i = 0; i < 4; i++) {
     const r = rims[i]
     const L_S = r.front ? params.suspensionRestLengthFront : params.suspensionRestLengthRear
-    const strutLen = L_S - (vehicleState.strutComp[i] ?? 0)
-    engine.setSphereLocal(chassis, r.shapeIndex, { x: r.x, y: r.mountY - strutLen, z: r.z })
+    const y = r.mountY - (L_S - (vehicleState.strutComp[i] ?? 0))
+    // A hull cannot be mutated in place, so moving the core means rebuilding it — cheap, but not
+    // free, and the strut moves by microns most steps. Rebuild only once the core has drifted far
+    // enough for the difference to matter to a contact, which on a smooth road is almost never.
+    if (Math.abs(y - r.lastY) < RIM_REBUILD_M) continue
+    engine.replaceHullLocal(chassis, r.shapeIndex, wheelCorePoints(r.x, y, r.z, params), RIM_MATERIAL)
+    r.lastY = y
   }
+}
+
+const RIM_REBUILD_M = 0.004   // m — below this the core has not moved enough to change a contact
+const RIM_SIDES = 12          // dodecagon: within 3.5% of a true circle, 24 hull points
+// updateBodyMass FALSE: the chassis mass is pinned by setMassData after construction, and these
+// cores are rebuilt live as the strut moves — letting each rebuild re-derive mass from shape
+// densities throws that pinned mass away (the truck stops settling on flat ground).
+const RIM_MATERIAL = { friction: 0.5, restitution: 0, group: GROUP_CHASSIS, collidesWith: GROUP_DEBRIS, updateBodyMass: false }
+
+/**
+ * Hull points for one wheel HARD CORE — a DISK, not a sphere.
+ *
+ * The core is the rim, so it should be shaped like one: a regular prism about the spin axis (body
+ * X), radius `wheelRadius − WHEEL_SOFT_BAND`, as wide as the tire. A sphere of the same radius was
+ * wrong in both directions at once — 0.44 m across where the tire is 0.25 m, so it pinched rocks
+ * well outboard and inboard of the tread, and it met the ground at a POINT where a wheel meets it
+ * along a line. Neither error is small at rock scale.
+ *
+ * @param {number} cx,cy,cz - core centre in body-local space (the hub).
+ * @returns {Array<number>} flat [x,y,z,…] hull points.
+ */
+function wheelCorePoints (cx, cy, cz, params) {
+  const R = params.wheelRadius - WHEEL_SOFT_BAND
+  const halfW = (params.wheelWidth || 0.25) / 2
+  const pts = []
+  for (let k = 0; k < RIM_SIDES; k++) {
+    const a = (k + 0.5) * 2 * Math.PI / RIM_SIDES   // +0.5 so a FLAT faces down, not a vertex
+    const y = cy + R * Math.cos(a), z = cz + R * Math.sin(a)
+    pts.push(cx - halfW, y, z, cx + halfW, y, z)
+  }
+  return pts
 }
 // Soft band between the wheel hard core and the visual tire radius — the depth range the
 // analytic tire spring owns. Matches DYN_CONTACT_DEPTH deep-squish territory, so the core
