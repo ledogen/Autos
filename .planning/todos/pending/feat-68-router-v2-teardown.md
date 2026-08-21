@@ -682,7 +682,7 @@ Owner-approved order: culls → deg-2 joints → worker port → feel-session pr
   shots so the owner can dial hairpin density on arrival. Also open: story-poi pad-flatness
   (1/14 pads, 1.27 m), paper-tour 1 dropped customer, fill-support seed-7 (1 m), perf ~30-60 ms/edge.
 
-## HANDOFF (2026-08-19, context-full — step 2b SHIPPED since, see the step-2b record below; resume at step 3, the worker port)
+## HANDOFF — SUPERSEDED (2026-08-19 midday; kept for the step-2b design notes below)
 
 **State:** branch `feature/corridor-router` at `30be9f9`, working tree CLEAN, dev server :3343.
 Battery: seeds 20/11/67 → 56/50/55 runs, 1 component each, y-spread 0.000, hairpins 15/21/20,
@@ -878,7 +878,7 @@ hairpin density against sweep. Map renders for all three are in the gallery.
 | **30 (current)** | 17 / 21 / 24 | 9 / 7 / 8 | 45.1 / 39.3 / 41.2 |
 | 60 | 17 / 15 / 11 | 11 / 7 / 9 | 44.6 / 38.4 / 40.2 |
 
-## HANDOFF (2026-08-19 evening — steps 2b/3/4 done; next = owner feel session)
+## HANDOFF — SUPERSEDED (2026-08-19 evening; see the CURRENT HANDOFF at the end of this file)
 
 **State:** branch `feature/corridor-router` at `103203e`, working tree CLEAN, dev server :3343.
 Battery (`node perf-runs/v2-integration-check.mjs`, gitignored): seeds 20/11/67 → 56/50/55 runs,
@@ -1126,3 +1126,57 @@ probe recorded **59–82 node-sharing crossings per seed** and dismissed them as
 the corridor discs — machinery v2 deleted with nothing in its place. **Node-sharing overlap is the
 class that reaches the player.** And it is not the deferred junction pass in disguise: a pad dresses
 a few metres, not a 244 m shared corridor. Full detail + the census to run: BUG-53.
+
+---
+
+# CURRENT HANDOFF (2026-08-20) — read this one
+
+**Where the work lives.** Two tickets track it, both in `.planning/todos/pending/`:
+- **`feat-68-router-v2-teardown.md`** (this file) — the corridor router itself. Everything above is a
+  dated record, appended in order; this section is the only live "what now".
+- **`bug-53-offnode-edge-crossings.md`** — road-overlap defects, filed 2026-08-20 from the owner's
+  capture. Not started.
+
+**Branch:** `feature/corridor-router` at `563c757`, worktree `/Users/ledogen/CodeShit/CarGame-corridor-router`,
+dev server **:3343**. Main is untouched and still ships v1 — the swap is one merge at sign-off.
+Battery: `node perf-runs/v2-integration-check.mjs`. Gallery: `perf-runs/gallery.html`.
+
+**State (eval seeds 20/11/67):** 56/50/55 runs, 45.0/41.1/41.8 km, one component each, node y-spread
+0.000 m, marks 0/0/1, sustained 35/33/63% (the 63 is that one marked run), hairpins 17/21/25.
+Cold→driving, no route cache at all: **6.8–8.5 s on this machine**, 22–28 s at the 4× proxy.
+
+**Gates: 4 standing reds**, all diagnosed, none blocking a character judgment:
+| gate | what it is |
+|---|---|
+| `mission-network` | BUG-41 interior drift, p99 2.4 m. The one real unexplained defect. Arc-domain hypothesis DISPROVEN. Needs its own session. |
+| `graph-topology` | Re-baseline: its node-departure rule encodes v1's "node Y rides road grade", and two sub-checks test culls that no longer exist. |
+| `story-poi` | Pad flatness, 1 of 14 pads varies 1.27 m. |
+| `pond-route-around` | Its GUARANTEE passes (0 of 13468 points in water); only the non-vacuity precondition fails at the new weights. |
+
+## Next, in the order I'd take them
+
+1. **Finish the price review (owner).** Reviewed: `cTurn 55`, `wGrade 180`. **Not yet reviewed:** cut,
+   cut², fill, bore, portal, max bore grade, cut→bore depth, max fill — and **re-review Max Road
+   Grade**, which only started behaving correctly today (it was being overridden by the ladder). All
+   live in the `Router v2 (prices)` folder; the map A/B loop is ~2.5 s to first change, ~9 s settled.
+2. **BUG-53 — node-sharing overlap.** The measured case is two runs sharing a node and sharing
+   earthworks for 244 m at 0.1 m separation. Start with the census in that ticket; the owner's
+   preference is to delete a leg (with the degree-cap's bounded-hop detour guarantee) over trimming
+   to the crossing. NOT solved by the junction pass — a pad dresses metres, not 244 m.
+3. **Junction geometry (deferred pass).** Naive meets at degree ≥ 3. Mostly REATTACHMENT of shipped
+   machinery (pads/fillets/aprons consume the run contract + node incidence, both of which survive).
+   The one genuinely new piece: canonical approach headings at junctions — deg-2 already has them.
+4. **BUG-41 interior drift** — own session, own head.
+5. **Gate re-baselines** (graph-topology, story-poi, pond-route-around's precondition).
+6. **Acceptance leftovers before the swap merge:** wire the in-game marked-seed disclaimer; character
+   sign-off from driven checkpoints; retire the remaining v1 gates' dead sub-checks; delete the old
+   router from main in the swap commit. Also still known-dead: `_smoothDesignGrade` (legacy per-tile
+   path, reachable only from a dead test hook).
+
+## Two things a future session must NOT re-attempt
+
+- **Strict pin-signature cache matching** — measured 18 s → 195 s cold load. Deg-2 pins are
+  window-invariant for interior edges but NOT at window frontiers, so strict matching thrashes.
+  Full write-up in the negative-result section above.
+- **Restoring the crossing/clearance culls** to fix BUG-53 — they cost 11–21 good edges per seed and
+  took connectivity to 54%. Connectivity outranks tidiness; fix the overlap directly.
