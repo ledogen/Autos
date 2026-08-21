@@ -1384,9 +1384,9 @@ remaining decision is next-step 2 below, and its old file is a closed-merged stu
 **Branch:** `feature/corridor-router` at `5a5be89`, worktree `/Users/ledogen/CodeShit/CarGame-corridor-router`,
 dev server **:3343**, tree CLEAN. Main is untouched and still ships v1 — the swap is one merge at
 sign-off. (Planning docs commit to main; code to the branch. Both trees clean as of this handoff.)
-Battery: `node perf-runs/v2-integration-check.mjs`. Gallery: `perf-runs/gallery.html` (predates the
-pins — refresh before the next feel visit). Censuses: `node test/crossing-census.mjs` +
-`node test/overlap-census.mjs` (the BUG-53 instruments).
+Battery: `node perf-runs/v2-integration-check.mjs`. Gallery: `perf-runs/gallery.html` (§8 = the
+chord-pin checkpoint, fresh map renders of all four seeds). Censuses:
+`node test/crossing-census.mjs` + `node test/overlap-census.mjs` (the BUG-53 instruments).
 
 **State (eval seeds 20/11/67):** 56/50/55 runs, 42.2/39.2/40.0 km, one component each, node y-spread
 0.000 m, **marks 0/0/0** (seed 67's summit-knob mark solves under its chord pin), sustained
@@ -1470,8 +1470,8 @@ things not to re-attempt. (BUG-53 is absorbed into this file — there is no sec
    `?seed=20|11|67|6`, map on **M**, price sliders under `Roads → Router v2 (prices)`.
 2. `node perf-runs/v2-integration-check.mjs` — one line per eval seed, the contract at a glance.
 3. `node test/overlap-census.mjs` — the BUG-53 defect state + drop simulation per seed.
-4. `open perf-runs/gallery.html` — the checkpoint gallery. ⚠ Its renders predate the chord pins;
-   re-shoot before using it to judge.
+4. `open perf-runs/gallery.html` — the checkpoint gallery; §8 is the chord-pin checkpoint with
+   fresh map renders of all four seeds and the waiting decision spelled out.
 
 **The one thing most likely to confuse a fresh session:** planning docs live on **main**, code lives
 on **feature/corridor-router**. They are different worktrees. Main also carries unrelated asset work
