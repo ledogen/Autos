@@ -2273,14 +2273,31 @@ export class RoadSystem {
         const yA = this._v2NodeHeight(pts[0].x, pts[0].z)
         const yB = this._v2NodeHeight(pts[n - 1].x, pts[n - 1].z)
         const C = this._v2Costs()
+        this._v2Rung = this._v2Rung || [0, 0, 0, 0]
         let prof = profileSolve(st, yA, yB, { costs: C })
+        if (prof) this._v2Rung[0]++
         // Rung 1 (quantization pinch): thin-margin descents die at yStep 0.5 (grade quanta 5%) but
         // solve at 0.25 — the measured M0 failure class. Only failures pay the finer, slower solve.
-        if (!prof) prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: C })
-        // Rung 3 (last before the mark): raise the surface cap to 38% — under the 40% sustained
-        // CEILING (the vocabulary cap is a design comfort, the ceiling is the contract). A road
-        // shipped by this rung is steep but legal and unmarked.
-        if (!prof) prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: { ...C, gMaxRoad: 0.38 } })
+        if (!prof) { prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: C }); if (prof) this._v2Rung[1]++ }
+        // Rung 3 (last before the mark): grant a SMALL relief above the vocabulary cap — the cap is a
+        // design comfort, the 40% sustained ceiling is the contract, and a road shipped here is steep
+        // but legal and unmarked.
+        //
+        // The relief is RELATIVE to the live cap and never exceeds the ceiling. It used to be the
+        // literal 0.38, which silently overrode the setting: with Max Road Grade dialled to 20%, the
+        // handful of edges that could not solve at 20% shipped at 38% — nearly double the request —
+        // which is exactly why the knob "seemed to have very little influence" (owner 2026-08-20).
+        // Measured at cap 0.20 on seed 20: 54 edges solved at the cap, 2 fell here and produced the
+        // 38% maximum. Honouring the cap instead means those 2 edges may MARK, which is the designed
+        // answer — a mark says the terrain cannot meet the request, which is true information.
+        const reliefCap = Math.min(0.38, C.gMaxRoad + 0.03)
+        if (!prof) { prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: { ...C, gMaxRoad: reliefCap } }); if (prof) this._v2Rung[2]++ }
+        // Rung 4 (the CEILING rung, last before the mark): if even the relieved cap fails, ship the
+        // steepest road the CONTRACT allows rather than fall through to the terrain-follow. Marking
+        // is for "no legal road exists here", not for "your design cap was ambitious" — and the
+        // fallback below is a genuinely bad road (measured: a marked run at a 20% cap terrain-
+        // follows to 106%, where a solved 38% road existed the whole time).
+        if (!prof && reliefCap < 0.38) { prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: { ...C, gMaxRoad: 0.38 } }); if (prof) this._v2Rung[3]++ }
         if (!prof) {
             // Mark-and-ship fallback: terrain-follow y, but BLEND the ends onto the shared node
             // heights over 60 m so a marked run still meets its solved neighbors (node agreement
