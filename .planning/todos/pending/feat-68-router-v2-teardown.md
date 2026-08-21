@@ -1452,6 +1452,81 @@ its own session and plan-mode sign-off (it touches the run contract), which is w
 measured and designed it rather than half-landing it. The 2 non-redundant weaves get nothing and
 should be judged on the map: at 29–52 m apart they may simply read as two roads crossing.
 
+## The trim, re-ruled and designed at the POLYLINE level (2026-08-21 — owner reconsideration; SUPERSEDES the span-ownership recommendation above)
+
+**Owner's revision:** crossings are cheap-route artifacts, not a catastrophe — just ugly. Promoting
+them to junctions is OUT (a mid-span junction would not be grade-aware the way endpoint junctions
+are, and in braid spots it would legitimise a high density of roads). Preferred fix: **trim one of
+the intersecting legs**; where the legs genuinely go different directions and both are needed for
+connectivity, **trim the midspan sections so there is just one path to the next crossing**. And
+the direct question: *can we do this at the polyline level?*
+
+### Answer: YES — verified, the polyline is the load-bearing representation
+
+The consumer map, checked in code (line refs at branch `37391b4`):
+
+| consumer | reads | consequence for a polyline trim |
+|---|---|---|
+| physics/carve resolve | `netEntry.points` via `_projectOntoRun` (road.js:3106); the carve is a **main-thread blend** — it never enters the terrain Worker (terrain.js:1179) | edited points move mesh AND physics together; no worker change |
+| ribbon | slices are cut from the run **polyline**; `CenterlineCurve(entry.centerline, s0, s1, clean)` shapes XZ *within* a slice via the polyCum→clArc table, **Y always rides the points** (road.js:6850) | suppress ceded intervals in the SLICER and road-mesh needs no change at all |
+| `runPointAt` / `gradeAt` / par / missions / map | points + polyCum / clArc (road.js:5433, 610) | correct automatically once points are edited |
+| analytic refine | `ce.centerline.nearest(...)` (road.js:3585, 5245) | gate the refine off inside a ceded span (fall back to the polyline projection) |
+| GPS chevrons | `seg.centerline.pointAt(s)` (gps.js:104) | redirect to a points-backed sampler — one small change |
+| junction blend | mutates derived profile TABLES, not entry points (road.js:6280) | no aliasing hazard for a pure-sample memo |
+
+### The design: fork-at-last-crossing
+
+For a node-sharing pair (A,B) at node N with ≥1 real crossing (≥40 m from N, outside both runs'
+bores): order the crossings by arc from N; let **Xk = the farthest crossing**. The merge region is
+**[N .. Xk] on each run**. The **winner W = the run with the shorter arc N→Xk** (tie: lexicographic
+runKey) and it registers completely untouched. The **loser L adopts W's polyline vertices
+verbatim** over the region (plus the exact crossing point as the boundary vertex, W's segment
+reversed as needed), so the two runs **coincide exactly** — identical vertices, identical solved
+heights → the carve is idempotent and no tear can exist. Physically: ONE pavement from N out to Xk,
+a Y-fork at Xk, then L's own road continues to its far node. Every inner crossing vanishes because
+L follows W through them — the owner's "one path to the next crossing", and both terminal strands
+(the legs that genuinely serve different directions) survive untouched. Connectivity, the graph,
+and site ids are all unchanged.
+
+- **Profile:** L's outer segment [Xk .. L's far node] re-solves through the existing ladder with
+  its inner end PINNED to W's solved height at Xk (refactor `_v2GradePts` to accept end-height
+  overrides); inside the region L carries W's y verbatim. At N both runs already agree (node
+  height, y-spread 0.000 by construction) — continuous everywhere, ≤ cap everywhere, and the fork
+  is grade-safe because both branches leave from W's real solved height. Bores: from the outer
+  solve only; a guard skips any trim whose region overlaps either run's tunnelSpans.
+- **`cededSpans: [{s0, s1, owner}]`** on L's entry (polyCum domain): the SLICER skips ceded
+  intervals (splitting slices at the boundary) so L's ribbon there is never built — W draws the
+  pavement; `_resolveRoadSurface`/queryNearest skip L inside its ceded span (W owns the surface,
+  and the stale-centerline refine is thereby never consulted there); the crossing classifier needs
+  no change (exactly-copied vertices produce no proper crossings — the X junction evaporates).
+- **clArc:** outer samples keep their original centerline arcs (the ribbon's slice mapping stays
+  exact); ceded samples get a monotone linear fill that no centerline consumer ever observes
+  (ribbon suppressed, refine gated).
+
+### Window invariance (the BUG-25 trap, closed by construction)
+
+The trim plan is computed **per NODE** from that node's post-degree-drop incident edges and their
+PURE routes — the identical 1-ring information the deg-2/junction heading pins already derive in
+every window. Per-node resolution is deterministic (pairs sorted, first-come role sets: a run that
+loses at N is never a winner at N; one trim per run per node); a **region ≤ 0.5 × run length**
+guard makes the two ends' regions disjoint so cross-node interactions cannot chain (no 2-ring
+lookups, no influence chains). Every window that registers an edge at N derives the same incident
+set, the same routes, the same plans.
+
+### Guards (all skip + report, never force)
+
+Region ≥ 30 m on both runs · region ≤ 0.5 × each run's length · no bore overlap on either region ·
+crossings within 40 m of N excluded (pad territory) · one trim per (run, node) · a loser at N is
+never a winner at N.
+
+### Phasing
+
+- **Phase 1 (this build): crossing-anchored trims** — all 19 crossing pairs (7 weave + 12
+  single-cross) have exact-intersection boundaries; crossings → ~0 by construction.
+- **Phase 2: pure-overlap pairs** (0 crossings, shared earthworks; incl. the lone-pine 28 m
+  stacked-deck tear) — same machinery but the joins need a taper (the strands never touch), and the
+  rare disjoint-pair proximity class rides along. Design after Phase 1 is judged on the map.
+
 ---
 
 # CURRENT HANDOFF (2026-08-21) — read this one
@@ -1508,16 +1583,15 @@ judgment (stash-A/B'd against pre-pin src):
    Grade**, which only started behaving correctly 2026-08-20 (it was being overridden by the ladder).
    All live in the `Router v2 (prices)` folder; the map A/B loop is ~2.5 s to first change, ~9 s
    settled. The pins changed every network — drive/map-judge them in the same visit.
-2. **BUG-53 remainder — the WEAVE trim is designed and waiting on a plan-mode session.**
-   Chord pins cut the defect class 58% (shipped, `5a5be89`). The owner's own mechanism — trim the
-   centre span between two crossings — is measured SOUND for 5 of 7 weave braids (the two roads
-   stay within 0.3–9 m the whole way; ~1.0 km of 163 km) and WRONG for the other 2 (legs genuinely
-   29–52 m apart). Recommended implementation is **span ownership** (a `tunnelSpans`-shaped skip
-   list, no manufactured nodes, no centerline surgery), decided from the graph for window
-   invariance. It touches the run contract → plan-mode sign-off first. Full design + the three
-   blockers: the "Owner prices ratified + the WEAVE class measured" section above. The non-weave
-   residue (single-crossings + overlap pairs) still has the earlier priced menu at the end of the
-   "BUG-53 worked" section.
+2. **BUG-53 remainder — the polyline-level TRIM (owner-ruled 2026-08-21, design final, in
+   build).** Junction-promotion is OUT (not grade-aware, density). The fix: fork-at-last-crossing —
+   the loser leg adopts the winner's polyline verbatim from the shared node out to the farthest
+   crossing, outer profile re-solved with a pinned boundary height, `cededSpans` suppress the
+   duplicate ribbon/surface. One pavement out of the node, a Y-fork at the last crossing, both
+   terminal strands kept, crossings evaporate, graph untouched. Full verified design (consumer
+   map with line refs, invariance argument, guards, phasing): "The trim, re-ruled and designed at
+   the POLYLINE level" section above. Phase 2 (pure-overlap tears, taper joins) follows once
+   Phase 1 is judged on the map.
 3. **Junction geometry (deferred pass).** Naive meets at degree ≥ 3. Mostly REATTACHMENT of shipped
    machinery (pads/fillets/aprons consume the run contract + node incidence, both of which survive).
    Canonical approach headings now exist at BOTH deg-2 and junctions (the chord pins) — what
