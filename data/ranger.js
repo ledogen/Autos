@@ -14,6 +14,10 @@ export const RANGER_PARAMS = {
   trackRear:    1.46,   // m — center-to-center wheel spacing at rear axle
   cgHeight:     0.55,   // m — center of gravity above ground (estimate, laden)
   wheelRadius:  0.368,  // m — 245/75R16 tire radius
+  rimRadius:    0.203,  // m — 16 in steel rim (0.406 m diameter). wheelRadius − rimRadius is the
+                        // SIDEWALL height, 165 mm, and that is a real dimension off the tire rather
+                        // than a tuning constant: it is how far the carcass can deflect before the
+                        // rim flange is taking the load. src/damage.js thresholds rim damage on it.
   wheelRunout:  0.000,  // m — PEAK-TO-PEAK radial runout (out-of-round tire). 0 = perfectly round
                         // and the whole path short-circuits; the Tires debug slider dials it in.
                         // RESET to 0 on the damage branch (was 0.020 while the visual was being

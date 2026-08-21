@@ -27,7 +27,7 @@
  * two panes are development instruments and go away with them.
  */
 
-import { TRACKS, TRACK_IDS, DAMAGE_PARAMS, MPH } from './damage.js'
+import { TRACKS, TRACK_IDS, DAMAGE_PARAMS, MPH, DamageModel } from './damage.js'
 
 const REFRESH_S = 0.1     // 10 Hz — condition moves on the scale of minutes
 const RATE_WINDOW_S = 3   // moving window the wear rate is measured over
@@ -197,9 +197,15 @@ export class DamageHUD {
     out.push(`<div class="dh-sig"><span>bump kN</span>${[0, 1, 2, 3].map(i =>
       fmt(Math.abs(vs.bumpForce?.[i] || 0) / 1000, P.springForceFloor / 1000, 1)).join('')}</div>`)
     out.push(`<div class="dh-sig"><span>strut m/s</span>${corner(vs.strutCompVel, P.damperVelFloor, 2)}</div>`)
+    // Tire deflection against the rim-strike point: past this the carcass has run out and the rim
+    // flange is taking load. Shown in mm of the sidewall it has used up.
+    const rp = this.model.params || {}
+    const trip = P.wheelStrikeStaticMult * DamageModel.staticTireDeflection(rp)
+    out.push(`<div class="dh-sig"><span>tire mm</span>${[0, 1, 2, 3].map(i =>
+      fmt((vs.tireDeflect?.[i] || 0) * 1000, trip * 1000, 0)).join('')}</div>`)
     out.push(`<div class="dh-note">floors — slip ${P.tireSlipFloor} m/s · bump ${(P.springForceFloor / 1000).toFixed(0)} kN`
-      + ` (align ${(P.alignBumpFloorN / 1000).toFixed(0)} kN) · strut ${P.damperVelFloor} m/s.`
-      + ` Wheels have no continuous wear source — they are damaged by impacts only.</div>`)
+      + ` (align ${(P.alignBumpFloorN / 1000).toFixed(0)} kN) · strut ${P.damperVelFloor} m/s`
+      + ` · tire ${(trip * 1000).toFixed(0)} mm (rim strike, ${P.wheelStrikeStaticMult}x static)</div>`)
     out.push('<div class="dh-note">a floor that is red on ordinary road is wrong, or the signal under it is noise.</div>')
 
     // ── IMPACTS ───────────────────────────────────────────────────────────────────────────────

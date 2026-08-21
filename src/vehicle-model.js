@@ -358,7 +358,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
   // an inner group (see below) — never on the wheel group itself, whose quaternion syncMeshesToState owns.
   const TIRE_W  = 0.25                 // tire section width
   const HALF_W  = TIRE_W / 2
-  const RIM_R   = 0.203                // 16 in rim ≈ 0.406 m diameter
+  const RIM_R   = params.rimRadius      // 16 in rim ≈ 0.406 m diameter — one source, shared with damage.js
   const DISC_T  = 0.012                // disc face thickness
   const DISC_Y  = HALF_W - 0.042       // inboard side of the disc — the dish: face sits ~30 mm in
   const wRad    = params.wheelRadius

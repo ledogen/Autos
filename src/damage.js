@@ -207,7 +207,9 @@ export const DAMAGE_PARAMS = {
   impactRadiator:  { d10: 0.05, d60: 0.50 },
   impactEngine:    { d10: 0.01, d60: 0.20 },
   // Not owner-specified — starting values, to be tuned by feel like the springs and dampers.
-  impactWheel:     { d10: 0.05, d60: 0.50 },
+  // Wheels sit behind the armor and want a THRESHOLD (owner, 2026-08-20): a light knock should not
+  // bend a rim at all, a real collision should. Floored square law, same shape as the armor curve.
+  impactWheel:     { floorMph: 15, fullMph: 80, n: 2 },
   impactSpring:    { d10: 0.03, d60: 0.30 },
   impactDamper:    { d10: 0.03, d60: 0.30 },
 
@@ -247,8 +249,36 @@ export const DAMAGE_PARAMS = {
   // src/suspension.js) rather than a handling penalty invented for damage. Ratified: 0.04 m
   // peak-to-peak at zero condition — a wheel so far gone the truck shakes itself apart at speed.
   wheelRunoutAtZero: 0.04,
-  // There is no durWheel: wheels take damage from IMPACTS only (impactWheel above), so the impact
-  // curve is the whole calibration for this track.
+
+  // ── What bends a rim ───────────────────────────────────────────────────────────────────────
+  // Two events, no continuous wear: a crash hard enough to reach the wheel through the armor
+  // (impactWheel above), and a RIM STRIKE — the tire bottoming out against a pothole edge or a
+  // kerb until there is no rubber left between the road and the rim flange.
+  //
+  // The rim strike is thresholded on TIRE DEFLECTION, because that is the quantity physically
+  // between the road and the wheel: the load path is road → carcass → RIM → strut, so the carcass
+  // is what decides whether the flange ever touches down. Strut travel is DOWNSTREAM of the rim
+  // (you can bottom the suspension smoothly on a long landing without a strike, and strike a rim on
+  // a sharp edge without the strut running out of travel); strut acceleration is downstream again.
+  //
+  // WHY THE THRESHOLD IS A MULTIPLE OF STATIC DEFLECTION, and not the sidewall height.
+  // The physically right anchor is the sidewall (wheelRadius − rimRadius = 165 mm): past that there
+  // is no rubber left. But this sim's tire is a LINEAR spring with no bottoming — tireStiffness ×
+  // depth, unbounded — so `depth` is an honest carcass deflection near static load and pure fiction
+  // past it. Measured: a 4 m drop reports 361 mm of "deflection", more than twice the sidewall, with
+  // the rim 200 mm underground. Thresholding on the real dimension therefore fires on drops that
+  // should not scratch a wheel.
+  //
+  // A multiple of STATIC deflection (mass·g / 4 / tireStiffness ≈ 33 mm) is the ratio a linear
+  // spring does represent honestly, and it tracks the tire spring and the vehicle mass if either is
+  // retuned — which a fixed 165 mm would not. Calibrated against measured drops: 0.5 m does nothing,
+  // 0.9 m costs about 1%, 1.5 m about 11%, 4 m writes the wheel off.
+  //
+  // If the tire model ever gets a progressive / bottoming rate, move this back to the sidewall —
+  // that anchor is the better one the moment `depth` means what it says.
+  wheelStrikeStaticMult:     6.6,   // x static deflection (≈220 mm): where the rim starts taking load
+  wheelStrikeFullStaticMult: 4.2,   // x static deflection BEYOND that (≈140 mm): writes the wheel off
+  wheelStrikeExp:            2,
 
   // ── Live tuning multipliers ────────────────────────────────────────────────────────────────
   // Per-class wear SPEED, 1 = the calibrated rate above. These exist so wear can be tuned by feel
@@ -427,6 +457,9 @@ export class DamageModel {
 
     // Peak bump-stop force per corner while a stop is currently loaded; 0 when it is not.
     this._bumpPeak = [0, 0, 0, 0]
+
+    // Peak tire deflection per corner while that tire is past the rim-strike point; 0 when it is not.
+    this._strikePeak = [0, 0, 0, 0]
 
   }
 
@@ -628,6 +661,29 @@ export class DamageModel {
   }
 
   /**
+   * Land one completed RIM STRIKE on one corner: the tire bottomed out hard enough that the rim
+   * flange took load. `excessM` is how far the deflection went past the sidewall fraction where
+   * the rubber runs out — the only thing that decides how bad it was.
+   */
+  _landRimStrike (corner, excessM, staticDefl) {
+    const P = DAMAGE_PARAMS
+    if (excessM <= 0) return
+    const full = P.wheelStrikeFullStaticMult * staticDefl
+    const dmg = Math.pow(Math.min(1, excessM / full), P.wheelStrikeExp)
+    this.wear(['wheelFL', 'wheelFR', 'wheelRL', 'wheelRR'][corner], dmg, 1)
+  }
+
+  /**
+   * Static tire deflection [m] — one corner's share of the vehicle's weight on the tire spring.
+   * The scale the rim-strike thresholds are expressed in; see the note in DAMAGE_PARAMS for why
+   * this, and not the sidewall height, is the honest ruler for a linear tire spring.
+   */
+  static staticTireDeflection (params) {
+    const k = params.tireStiffness || 0
+    return k > 0 ? (params.mass || 0) * 9.81 / 4 / k : 0
+  }
+
+  /**
    * Land one completed bump-stop event on one corner: the suspension bottomed out, and this is how
    * hard it hit. Wears that axle's spring on the peak-force curve, and — only if the hit was hard
    * enough to clear the much higher alignment floor — bends that corner's geometry too.
@@ -736,6 +792,31 @@ export class DamageModel {
       const rear  = Math.abs(brakeT[2] || 0) + Math.abs(brakeT[3] || 0)
       this.wear('brakeFront', front * dt, P.durBrake)
       this.wear('brakeRear',  rear  * dt, P.durBrake)
+    }
+
+    // ── Wheels: RIM STRIKE events, per corner, on peak tire deflection ────────────────────────
+    // The tire carcass is the only thing between the road and the rim, so its deflection is what
+    // decides whether the flange ever touches down — not strut travel, which is downstream of the
+    // wheel, and not strut acceleration, which is downstream of that. Peak-held and banked on
+    // release, like every other event in this model.
+    const deflect = vehicleState.tireDeflect
+    if (deflect && params) {
+      const staticDefl = DamageModel.staticTireDeflection(params)
+      const trip = P.wheelStrikeStaticMult * staticDefl
+      if (trip > 0) {
+        if (!this._strikePeak) this._strikePeak = [0, 0, 0, 0]
+        for (let i = 0; i < 4; i++) {
+          const d = deflect[i] || 0
+          if (d > trip) {
+            if (d > this._strikePeak[i]) this._strikePeak[i] = d
+            continue
+          }
+          if (this._strikePeak[i] > 0) {
+            this._landRimStrike(i, this._strikePeak[i] - trip, staticDefl)
+            this._strikePeak[i] = 0
+          }
+        }
+      }
     }
 
     // ── Springs: bump-stop EVENTS, per corner, priced on the PEAK of each ─────────────────────

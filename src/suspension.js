@@ -273,6 +273,11 @@ export function carcassRadialOffset (corner, psi, runout) {
 export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts) {
   // SM-3: reset the per-step peak bump-stop force before the substep loop accumulates this step's.
   if (vehicleState.bumpForce) { vehicleState.bumpForce[0] = 0; vehicleState.bumpForce[1] = 0; vehicleState.bumpForce[2] = 0; vehicleState.bumpForce[3] = 0 }
+  // SM-3: peak TIRE DEFLECTION per corner this step [m]. Same peak-across-substeps convention as
+  // bumpForce. This is the honest measure of what the RIM is seeing: the tire carcass is the only
+  // thing between the road and the wheel, so when its deflection uses up the sidewall the rim
+  // flange is taking the load directly. Reset here, maxed below.
+  if (vehicleState.tireDeflect) { vehicleState.tireDeflect[0] = 0; vehicleState.tireDeflect[1] = 0; vehicleState.tireDeflect[2] = 0; vehicleState.tireDeflect[3] = 0 }
   // Paranoid guard (Phase 4.1 D-01): if strutComp/strutCompVel not initialized, skip.
   if (!vehicleState.strutComp || vehicleState.strutComp.length !== 4) return
   if (!vehicleState.strutCompVel || vehicleState.strutCompVel.length !== 4) return
@@ -453,6 +458,7 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         // (depth ≈ v·dt ≥ ENGAGE), so high-speed response is undiminished, with no speed terms.
         // Terrain contacts keep the strut-velocity approximation (their transients are
         // pre-spread by the footprint envelope, and the m4 calibration history rests on it).
+        if (vehicleState.tireDeflect && c.depth > vehicleState.tireDeflect[i]) vehicleState.tireDeflect[i] = c.depth
         const TIRE_DAMP_ENGAGE = 0.04   // m — full damper by one static deflection of depth
         const compressionVel = (c.depthRate !== undefined)
           ? c.depthRate * Math.min(1, c.depth / TIRE_DAMP_ENGAGE)

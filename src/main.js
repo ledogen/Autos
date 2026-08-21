@@ -921,6 +921,7 @@ async function _reseatTruckAtSpawnInner () {
   vehicleState.slipVel        = [0, 0, 0, 0]     // SM-3 damage signals
   vehicleState.tireFlat       = [0, 0, 0, 0]
   vehicleState.bumpForce      = [0, 0, 0, 0]
+  vehicleState.tireDeflect    = [0, 0, 0, 0]
   vehicleState.brakeTorque    = [0, 0, 0, 0]
   vehicleState.wheelPhase     = [0, 0, 0, 0]
   vehicleState.drivetrain     = { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 }
@@ -1046,6 +1047,7 @@ const vehicleState = {
   slipVel:         [0, 0, 0, 0],                   // m/s — raw contact-patch sliding speed (tire wear, dominant term)
   tireFlat:        [0, 0, 0, 0],                   // N   — cornering force magnitude (tire wear, minor term)
   bumpForce:       [0, 0, 0, 0],                   // N   — peak bump-stop force this step (spring wear)
+  tireDeflect:     [0, 0, 0, 0],                   // m   — peak tire carcass deflection this step (wheel/rim damage)
   brakeTorque:     [0, 0, 0, 0],                   // N·m — applied brake torque (brake wear)
   wheelPhase:      [0, 0, 0, 0],                   // per-wheel spin phase [rad], fixed-step; feeds the out-of-round radius (params.wheelRunout)
   drivetrain:      { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },  // FEAT-23 engine/converter/gearbox state; stepped by stepDrivetrain, read by HUD/logger
