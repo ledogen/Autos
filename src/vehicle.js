@@ -61,7 +61,7 @@ export const SPAWN_STATE = {
   steerAngle: 0, throttle: 0, brake: 0,
   smoothThrottle: 0, smoothBrake: 0,
   wheelPhase: [0, 0, 0, 0],
-  rimImpulse: [0, 0, 0, 0],
+  rimForce: [0, 0, 0, 0],
   wheelSteerAngles: [0, 0, 0, 0],
   // ── SM-3 damage signals (written by physics.js / suspension.js, read by src/damage.js) ──────
   slipVel:     [0, 0, 0, 0],   // m/s — raw contact-patch sliding speed per wheel (tire abrasion)

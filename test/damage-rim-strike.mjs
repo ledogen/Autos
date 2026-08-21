@@ -29,44 +29,54 @@ import { RANGER_PARAMS as P } from '../data/ranger.js'
 let fail = 0
 const ok = (c, m) => { console.log(`  ${c ? '✓' : '✗'} ${m}`); if (!c) fail = 1 }
 const DT = 0.004
+const STATIC = DamageModel.staticWheelLoad(P)
+const YIELD = D.rimYieldMult * STATIC
 const fresh = () => new DamageModel({ params: P })
 
-/** Drive one strike event: `ns` newton-seconds on a corner's core for a few steps, then clear. */
-function strike (d, ns, corner = 0, steps = 3) {
-  const vs = { rimImpulse: [0, 0, 0, 0] }
-  for (let i = 0; i < steps; i++) { vs.rimImpulse[corner] = ns; d.step(vs, P, DT) }
-  vs.rimImpulse[corner] = 0
+/** Drive one strike event: `n` newtons of core contact force for a few steps, then clear. */
+function strike (d, n, corner = 0, steps = 3) {
+  const vs = { rimForce: [0, 0, 0, 0] }
+  for (let i = 0; i < steps; i++) { vs.rimForce[corner] = n; d.step(vs, P, DT) }
+  vs.rimForce[corner] = 0
   d.step(vs, P, DT)
 }
 
-console.log('§1 the lab anchors — a thrown rock, run over with the DISK core')
+console.log(`§1 yield — below it the rim springs back (static ${(STATIC / 1000).toFixed(1)} kN, yield ${(YIELD / 1000).toFixed(1)} kN)`)
 {
-  // Measured in-game (lab strip, 50 kg debris rock settled on the wheel line, speed swept 1-92 mph).
-  //
-  // OPEN, and deliberately not papered over: the impulse on the core is PINCH-dominated, not
-  // speed-ranked. 1 mph read 3246 N·s and 92 mph read 2951; 38 mph read 1626 on one run and 3772 on
-  // another. Impulse is ∫F·dt, and a slow climb onto a rock presses the full wheel load through it
-  // for many steps while a fast strike can glance off in two — so the two ends come out similar.
-  // The model therefore currently prices "how thoroughly the rock got trapped", not "how hard it
-  // was hit". Box3D's contact HIT events carry approachSpeed, which is the missing discriminator.
-  // Until that lands, treat the numbers below as the observed range and not as a calibration.
-  for (const [ns, lo, hi] of [[2092, 0, 0.2], [3772, 0.5, 3]]) {
-    const d = fresh(); strike(d, ns)
-    const lost = (1 - d.get('wheelFL')) * 100
-    console.log(`  a ${ns} N·s core hit costs the wheel ${lost.toFixed(2)}%`)
-    ok(lost >= lo && lost <= hi, `...within the observed ${lo}-${hi}% band`)
-  }
-  const crawl = fresh(); strike(crawl, D.rimStrikeFloorNs - 1)
-  ok(crawl.get('wheelFL') === 1, `a pinch below ${D.rimStrikeFloorNs} N·s costs nothing`)
+  const under = fresh(); strike(under, YIELD * 0.99, 0, 400)
+  ok(under.get('wheelFL') === 1,
+    'a load just under yield, held for 400 steps, bends nothing — elastic is elastic however long you hold it')
+  const over = fresh(); strike(over, YIELD * 3)
+  ok(over.get('wheelFL') < 1, '...and a load past yield does take a permanent set')
+
+  // Damage is the OVERLOAD, not the total load: only the excess goes into plastic work.
+  const a = fresh(); strike(a, YIELD + 10000)
+  const b = fresh(); strike(b, YIELD + 20000)
+  const ratio = (1 - b.get('wheelFL')) / (1 - a.get('wheelFL'))
+  ok(Math.abs(ratio - Math.pow(2, D.rimStrikeExp)) < 0.05,
+    `doubling the OVERLOAD raises the damage by 2^${D.rimStrikeExp} (x${ratio.toFixed(2)}) — plastic work, not total load`)
 }
 
-console.log('\n§2 nothing but a core contact can bend a rim')
+console.log('\n§2 measured: running over a rock does not reach the rim')
+{
+  // Peak core force measured in-game over a settled 34 cm debris rock, 11-61 mph, AFTER the
+  // contact model was fixed to engage progressively (it read tens of kN before, with the rock
+  // sinking to the rim at walking pace).
+  for (const [mph, kN] of [[11, 3.2], [34, 3.9], [55, 5.1]]) {
+    const d = fresh(); strike(d, kN * 1000)
+    const lost = (1 - d.get('wheelFL')) * 100
+    console.log(`  ${mph} mph over a rock peaks the core at ${kN} kN → ${lost.toFixed(2)}% of the wheel`)
+    ok(lost < 1, `...which leaves the rim essentially intact, as a real tire would`)
+  }
+}
+
+console.log('\n§3 nothing but a core contact can bend a rim')
 {
   // The cores collide with DEBRIS ONLY (see createVehicleChassis), so terrain, roads and static
   // props can never produce this signal at all. Everything else the model integrates is hammered
   // here for a simulated minute with the cores untouched.
   const d = fresh()
-  const vs = { rimImpulse: [0, 0, 0, 0], tireFlat: [8000, 8000, 8000, 8000], bumpForce: [0, 0, 0, 0],
+  const vs = { rimForce: [0, 0, 0, 0], tireFlat: [8000, 8000, 8000, 8000], bumpForce: [0, 0, 0, 0],
                strutCompVel: [3, 3, 3, 3], slipVel: [10, 10, 10, 10] }
   for (let i = 0; i < 60 / DT; i++) {
     // Cycle the bump stops so they bank real landings rather than resting on them (a steady load
@@ -81,29 +91,24 @@ console.log('\n§2 nothing but a core contact can bend a rim')
   ok(d.get('alignFL') < 1, '...including the alignment those hard bumps threw out — the crosstalk still fires')
 }
 
-console.log('\n§3 priced square-law past the floor, banked as one event, on the corner that struck')
+console.log('\n§4 priced past yield, banked as one event, on the corner that struck')
 {
-  const f = D.rimStrikeFloorNs
-  const a = fresh(); strike(a, f + 2000)
-  const b = fresh(); strike(b, f + 4000)
-  const ratio = (1 - b.get('wheelFL')) / (1 - a.get('wheelFL'))
-  ok(Math.abs(ratio - 4) < 0.05, `doubling impulse-over-floor quadruples the damage (x${ratio.toFixed(2)})`)
-  const kill = fresh(); strike(kill, D.rimStrikeFullNs)
-  ok(kill.get('wheelFL') <= 0.001, `${D.rimStrikeFullNs} N·s writes the wheel off in one strike`)
+  const kill = fresh(); strike(kill, YIELD + D.rimFullMult * STATIC)
+  ok(kill.get('wheelFL') <= 0.001, `${((YIELD + D.rimFullMult * STATIC) / 1000).toFixed(0)} kN writes the wheel off in one strike`)
 
-  const brief = fresh(); strike(brief, 6000, 0, 2)
-  const long  = fresh(); strike(long,  6000, 0, 400)
+  const brief = fresh(); strike(brief, YIELD * 4, 0, 2)
+  const long  = fresh(); strike(long,  YIELD * 4, 0, 400)
   ok(Math.abs(brief.get('wheelFL') - long.get('wheelFL')) < 1e-12,
     'a core resting against what it hit costs the same as striking it — an event, not a dwell')
-  const d = fresh(); strike(d, 6000, 2)
+  const d = fresh(); strike(d, YIELD * 4, 2)
   ok(d.get('wheelRL') < 1 && d.get('wheelFL') === 1 && d.get('wheelRR') === 1, 'only the corner that struck is bent')
 
   // The headroom the owner asked for: one bad strike must not be a write-off.
-  const one = fresh(); strike(one, 3772)
-  ok(one.get('wheelFL') > 0.9, 'the hardest rock hit measured leaves the wheel above 90%')
+  const one = fresh(); strike(one, YIELD * 4)
+  ok(one.get('wheelFL') > 0.7, 'a load four times yield still leaves most of the wheel — headroom, as asked')
 }
 
-console.log('\n§4 a crash bends the rim, but only past a threshold')
+console.log('\n§5 a crash bends the rim, but only past a threshold')
 {
   const impulseAt = (mph) => P.mass * mph * MPH
   const tap = new DamageModel({ params: P }); tap.set('armorFront', 0)   // armor gone: worst case

@@ -462,7 +462,34 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         // flat-ground value — this is why real tires cross rock gardens at speed without
         // launching the body (owner captures: 20 kN single-frame nose kicks). Mirrors the
         // reaction-side factor in physics.js exactly (Newton's third law).
-        const env = (c.sizeR !== undefined) ? c.sizeR / (c.sizeR + 0.12) : 1
+        // ── OBSTACLE ENGAGEMENT (was a constant "enveloping" scale) ───────────────────────────
+        // A tire pressed onto a rigid object does not carry it at a fixed fraction of flat-ground
+        // stiffness. The contact AREA grows as it sinks in, and the carcass carries load in
+        // proportion to that area, so the resistance is PROGRESSIVE: nearly nothing on first touch,
+        // stiffening fast, full flat-ground stiffness once the patch is as big as the one the tire
+        // makes on the road.
+        //
+        // For a round indenter of radius a pressed a depth d into a surface, the contact radius is
+        // sqrt(2ad) to first order, so the area is 2*pi*a*d. Divide by the tire's own nominal
+        // contact-patch area and that ratio IS the engaged fraction:
+        //
+        //     engaged(d) = min(1, 2*pi*sizeR*d / tireContactAreaM2)
+        //
+        // which makes force go as d^2 until the patch saturates and linear after — the "point force
+        // on first contact, more of the profile as it penetrates" shape (owner, 2026-08-21).
+        //
+        // The constant it replaced (sizeR/(sizeR+0.12)) softened the tire UNIFORMLY against every
+        // obstacle, which is why rocks sank so far: a 0.34 m boulder was carried at 59% stiffness at
+        // every depth, so it kept sinking instead of the wheel climbing it. Under the area law that
+        // same boulder saturates to FULL stiffness within ~20 mm, and the wheel rides over it.
+        //
+        // Terrain and static props do not come through here at all — the analytic query already
+        // envelopes them GEOMETRICALLY (main.js queryContacts, the sqrt(r^2 - d^2) footprint
+        // stencil), which is the stronger treatment. Same principle, applied where each fits: how
+        // much of the tire is really touching.
+        const env = (c.sizeR !== undefined)
+          ? Math.min(1, 2 * Math.PI * c.sizeR * Math.max(0, c.depth) / (params.tireContactAreaM2 || 0.0166))
+          : 1
         const tireFnAtContact = Math.max(0,
           params.tireStiffness * c.depth + params.tireDamping * compressionVel
         ) * env

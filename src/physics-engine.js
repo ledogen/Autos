@@ -508,9 +508,10 @@ export class PhysicsEngine {
    * only — see classifyImpactRegion in physics.js.
    *
    * @param {*} handle - body handle.
-   * @param {Float64Array|Array} [outByShape] - if given, filled with the peak impulse on EACH of the
-   *   body's shapes (indexed as they were added). Lets a caller tell a wheel-core hit from a body
-   *   hull hit without the engine knowing what either means. Allocation-free: reused by the caller.
+   * @param {Float64Array|Array} [outByShape] - if given, filled with THIS STEP's peak normal impulse
+   *   on EACH of the body's shapes (indexed as they were added); divide by dt for contact force.
+   *   Lets a caller tell a wheel-core hit from a body hull hit without the engine knowing what
+   *   either means. Allocation-free: reused by the caller.
    * @returns {{impulse: number, point: {x,y,z}|null, normal: {x,y,z}|null}} body-local point/normal.
    */
   maxContactImpulse (handle, outByShape = null) {
@@ -518,14 +519,14 @@ export class PhysicsEngine {
     if (outByShape) outByShape.fill(0)
     if (!this._contactsBuf) this._contactsBuf = _b3.createContactsBuffer()
     const buf = _b3.getBodyContactData(this._contactsBuf, rec.id)
-    const none = { impulse: 0, point: null, normal: null }
+    const none = { impulse: 0, stepImpulse: 0, point: null, normal: null }
     const n = _b3.getNumContacts(buf)
     if (n === 0) return none
     // Reused across steps: this runs every physics step, and createContact/createManifold each
     // allocate a wasm-backed struct.
     const contact  = this._contactScratch  || (this._contactScratch  = _b3.createContact())
     const manifold = this._manifoldScratch || (this._manifoldScratch = _b3.createManifold())
-    let max = 0, anchor = null, worldN = null
+    let max = 0, anchor = null, worldN = null, maxStep = 0
     for (let i = 0; i < n; i++) {
       _b3.getContactAt(contact, buf, i)
       // Which side of the pair is US: the anchor is measured from that body, so picking the wrong
@@ -538,10 +539,15 @@ export class PhysicsEngine {
           // Per-SHAPE peak, when the caller wants attribution. The chassis is a QUAL-25 compound —
           // four body hulls plus four wheel hard cores — and which shape took a hit is the whole
           // difference between "the bumper hit a tree" and "the rim hit a rock".
+          if (pt.normalImpulse > maxStep) maxStep = pt.normalImpulse
           if (outByShape) {
+            // THIS STEP's impulse, not the lifetime total: divided by dt it is the contact FORCE,
+            // which is what a yield criterion needs. totalNormalImpulse keeps accumulating while a
+            // contact persists, so it measures how long something was leaned on, not how hard it
+            // was hit — a slow crawl onto a rock out-reads a fast strike.
             const selfShape = aIsSelf ? contact.shapeIdA : contact.shapeIdB
             const si = rec.shapes.findIndex(sh => this._shapeKey(sh) === this._shapeKey(selfShape))
-            if (si >= 0 && pt.totalNormalImpulse > outByShape[si]) outByShape[si] = pt.totalNormalImpulse
+            if (si >= 0 && pt.normalImpulse > outByShape[si]) outByShape[si] = pt.normalImpulse
           }
           if (pt.totalNormalImpulse <= max) continue
           max = pt.totalNormalImpulse
@@ -558,7 +564,7 @@ export class PhysicsEngine {
     const q = [0, 0, 0, 1]
     _b3.b3Body_GetRotation(q, rec.id)
     const inv = [-(q[0] ?? q.x), -(q[1] ?? q.y), -(q[2] ?? q.z), (q[3] ?? q.w)]
-    return { impulse: max, point: _rotateByQuat(anchor, inv), normal: _rotateByQuat(worldN, inv) }
+    return { impulse: max, stepImpulse: maxStep, point: _rotateByQuat(anchor, inv), normal: _rotateByQuat(worldN, inv) }
   }
 
   // ── Joints (log-drag etc.) ────────────────────────────────────────────────

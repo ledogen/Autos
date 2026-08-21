@@ -251,40 +251,32 @@ export const DAMAGE_PARAMS = {
   wheelRunoutAtZero: 0.04,
 
   // ── What bends a rim ───────────────────────────────────────────────────────────────────────
-  // Two events, no continuous wear: a crash that reaches the wheel through the armor
-  // (impactWheel above), and a RIM STRIKE — the wheel's rigid core meeting something.
+  // Two events, no continuous wear: a crash reaching the wheel through the armor (impactWheel
+  // above), and a RIM STRIKE — the wheel's rigid core taking a load hard enough to bend it.
   //
-  // The signal is THE ENGINE'S OWN contact impulse on the wheel hard core (QUAL-25), not a proxy.
-  // The chassis carries a rigid sphere per wheel at wheelRadius − 0.15 m: the outer band is rubber,
-  // handled by our analytic soft path, and the core is the rim. So "the rubber ran out" needs no
-  // threshold — it IS the condition that a core reports a contact at all, and Box3D solves that
-  // contact properly, with the rock leaving carrying the momentum it took out of the wheel.
+  // The model is PLASTIC DEFORMATION PAST YIELD, which is what actually bends a steel wheel
+  // (owner, 2026-08-21). Three consequences, all of them the point:
+  //   · the quantity is FORCE through the contact, read from the engine's per-step normal impulse
+  //     over dt — not an impulse total, which measures how long something was leaned on rather
+  //     than how hard it was hit, and let a 1 mph crawl out-read a 92 mph strike;
+  //   · below yield NOTHING happens, however long the load is held. A wheel parked against a kerb
+  //     is not slowly bending;
+  //   · above yield the damage is the overload, not the total load, because only the excess goes
+  //     into permanent set.
   //
-  // Everything derived from the SOFT path was tried first and all of it failed, which is worth
-  // recording. Vertical load ranks the owner's two captures backwards (hard cornering peaked a tire
-  // at 34.5 kN, a 50 mph rock strike at 15.5 kN), and that rules out tire deflection, bump-stop
-  // force and strut acceleration together — they are all vertical load through one filter or
-  // another. Off-axis force ranks those two right, but goes QUIET on the case that matters most,
-  // because the tire ENVELOPING factor deliberately attenuates small hard objects: the more
-  // rim-threatening the rock, the less force the soft path reports.
+  // Yield is quoted as a multiple of STATIC WHEEL LOAD, so it reads as "this wheel took N times what
+  // it normally carries" and tracks vehicle mass.
   //
-  // Reading the rigid core sidesteps that entirely — and the enveloping factor turns out to point
-  // the right way round for it. A boulder envelops little, so the tire resists and rides over it
-  // with the core untouched; a small hard rock envelops a lot, so the carcass wraps it and the hub
-  // sinks until the core meets it. Which is the ranking a rim wants, for free.
-  //
-  // Priced on impulse in N·s directly. No mph conversion: J/mass against the whole truck makes a
-  // rock strike read as a fraction of a mile an hour — true, and useless.
-  // Calibrated by running over a thrown 50 kg rock in the lab at a range of speeds. Two things
-  // that measurement showed, which the numbers encode:
-  //   · a big part of the impulse is the PINCH — the rock trapped between core and ground — and it
-  //     is there even at walking pace (≈3000 N·s at 8 mph). The floor sits above that, so easing
-  //     over a rock is free and only speed costs you.
-  //   · speed then adds on top: ≈7900 N·s at 41 mph.
-  // ⇒ a crawl over a rock ≈ 0.3%, a 40 mph strike ≈ 19%, so about five bad hits per wheel.
-  rimStrikeFloorNs: 2500,   // N·s — below this the core has merely pinched something
-  rimStrikeFullNs:  15000,  // N·s — a strike this hard writes the wheel off outright
-  rimStrikeExp:     2,
+  // PROVISIONAL, and the multiplier CANNOT be derived from steel properties — that would be a
+  // category error. The force here is a RESIDUAL: what got past the tire once the carcass had taken
+  // its share. Its absolute scale is set by how much the soft path absorbed, not by the stress in
+  // the rim. So the number has to come from driving. Measured after the contact-model fix, running
+  // over a 34 cm rock reads 0.3-5.1 kN across 11-61 mph, so this sits just under the worst of those:
+  // nothing at ordinary speeds, and only the hardest hits mark a wheel. That matches the owner's
+  // read that a straight-on rock or kerb at 20 mph should leave the rim fine.
+  rimYieldMult:   1.5,    // x static wheel load (≈5 kN): below this the rim springs back
+  rimFullMult:    30,     // x static wheel load (≈100 kN) of OVERLOAD writes the wheel off
+  rimStrikeExp:   1.5,    // between linear and square — plastic work rises faster than the overload
 
   // Fraction of its own peak a loaded event must FALL TO before it is banked. Waiting for the load
   // to release outright loses the event whenever the truck ends up resting on whatever it hit —
@@ -471,7 +463,7 @@ export class DamageModel {
     // Peak bump-stop force per corner while a stop is currently loaded; 0 when it is not.
     this._bumpPeak = [0, 0, 0, 0]
 
-    // Peak rim-core contact impulse per corner while a strike is in progress; 0 otherwise.
+    // Peak rim-core contact FORCE per corner while a strike is in progress; 0 otherwise.
     this._strikePeak = [0, 0, 0, 0]
 
   }
@@ -678,13 +670,16 @@ export class DamageModel {
    * flange took load. `excessM` is how far the deflection went past the sidewall fraction where
    * the rubber runs out — the only thing that decides how bad it was.
    */
-  _landRimStrike (corner, impulseNs) {
+  _landRimStrike (corner, forceN, staticLoad) {
     const P = DAMAGE_PARAMS
-    const excess = impulseNs - P.rimStrikeFloorNs
-    if (excess <= 0) return
-    const dmg = Math.pow(Math.min(1, excess / (P.rimStrikeFullNs - P.rimStrikeFloorNs)), P.rimStrikeExp)
+    const overload = forceN - P.rimYieldMult * staticLoad
+    if (overload <= 0) return                       // elastic: the rim springs back, nothing kept
+    const dmg = Math.pow(Math.min(1, overload / (P.rimFullMult * staticLoad)), P.rimStrikeExp)
     this.wear(['wheelFL', 'wheelFR', 'wheelRL', 'wheelRR'][corner], dmg, 1)
   }
+
+  /** Static wheel load [N] — one corner's share of the vehicle's weight. The yield scale. */
+  static staticWheelLoad (params) { return (params.mass || 0) * 9.81 / 4 }
 
   /**
    * Land one completed bump-stop event on one corner: the suspension bottomed out, and this is how
@@ -798,20 +793,20 @@ export class DamageModel {
     }
 
     // ── Wheels: RIM STRIKE events, per corner, on peak tire deflection ────────────────────────
-    // Engine contact impulse on the wheel's rigid core — the rim itself taking a hit. Peak-held
-    // and banked on decay, like every other event in this model.
-    const rim = vehicleState.rimImpulse
-    if (rim) {
-      const trip = P.rimStrikeFloorNs
+    // Engine contact FORCE on the wheel's rigid core. Peak-held and banked on decay like every
+    // other event, but the criterion is yield: only the peak matters, and only if it exceeded it.
+    const rimF = vehicleState.rimForce
+    if (rimF && params) {
+      const yieldN = P.rimYieldMult * DamageModel.staticWheelLoad(params)
       if (!this._strikePeak) this._strikePeak = [0, 0, 0, 0]
       for (let i = 0; i < 4; i++) {
-        const f = rim[i] || 0
+        const f = rimF[i] || 0
         const peak = this._strikePeak[i]
-        if (f > peak) { this._strikePeak[i] = f; continue }          // still building
-        if (peak > trip && (f <= trip || f < peak * P.eventDecayFrac)) {
-          this._landRimStrike(i, peak)
+        if (f > peak) { this._strikePeak[i] = f; continue }
+        if (peak > yieldN && (f <= yieldN || f < peak * P.eventDecayFrac)) {
+          this._landRimStrike(i, peak, DamageModel.staticWheelLoad(params))
           this._strikePeak[i] = 0
-        } else if (f <= trip) {
+        } else if (f <= yieldN) {
           this._strikePeak[i] = 0
         }
       }

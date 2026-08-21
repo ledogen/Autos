@@ -167,7 +167,7 @@ const CHASSIS_PROFILE = {
 }
 
 /**
- * Peak contact impulse on each WHEEL HARD CORE this step, per corner [N·s].
+ * Peak contact FORCE on each WHEEL HARD CORE this step, per corner [N].
  *
  * This is the rim-strike signal, and it is the engine's own answer rather than anything derived.
  * The QUAL-25 chassis carries a rigid sphere per wheel at `wheelRadius − WHEEL_SOFT_BAND`, riding
@@ -186,15 +186,17 @@ const CHASSIS_PROFILE = {
  * @param {object} engine - physics engine (adapter).
  * @param {*} chassis - chassis body handle.
  * @param {Array<number>} out - length-4 scratch, written FL/FR/RL/RR.
+ * @param {number} dt - physics step [s]; the engine reports an impulse, a yield criterion wants force.
  * @returns {Array<number>} `out`.
  */
-export function readRimStrikes (engine, chassis, out) {
+export function readRimStrikes (engine, chassis, out, dt) {
   out[0] = out[1] = out[2] = out[3] = 0
   const rims = _chassisRims.get(chassis)
   if (!rims) return out
   if (!_shapeImpulseScratch || _shapeImpulseScratch.length < 64) _shapeImpulseScratch = new Float64Array(64)
   engine.maxContactImpulse(chassis, _shapeImpulseScratch)
-  for (let i = 0; i < 4; i++) out[i] = _shapeImpulseScratch[rims[i].shapeIndex] || 0
+  const inv = dt > 0 ? 1 / dt : 0
+  for (let i = 0; i < 4; i++) out[i] = (_shapeImpulseScratch[rims[i].shapeIndex] || 0) * inv
   return out
 }
 let _shapeImpulseScratch = null
@@ -863,7 +865,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // suspension applied for this contact (Newton's third law, symmetric), never the wheel's
       // SUMMED Fz (road + rock when straddling once over-flung the rock).
       if (ground.body != null) {
-        const env = ground.sizeR !== undefined ? ground.sizeR / (ground.sizeR + TIRE_ENVELOPE_LEN) : 1
+        const env = ground.sizeR !== undefined
+          ? Math.min(1, 2 * Math.PI * ground.sizeR * Math.max(0, ground.depth) / (params.tireContactAreaM2 || 0.0166))
+          : 1   // MIRRORS suspension.js obstacle engagement EXACTLY (Newton's third law)
         const FnContact = Math.max(0,
           params.tireStiffness * ground.depth +
           params.tireDamping * (ground.depthRate ?? 0) * Math.min(1, ground.depth / 0.04)) * env
@@ -1058,11 +1062,11 @@ const _groundVelScratch = { x: 0, y: 0, z: 0 }
 // A loaded tire's real deflection is ~0.05 m; 0.09 allows a hard bump (~2× static corner load
 // at current tireStiffness) while making the one-frame full-radius spike impossible. Static
 // terrain contacts are untouched — their depth is already continuous.
-// Tire OBSTACLE ENVELOPING (standard tire mechanics; owner captures 178678330/78/28/69 —
-// 20 kN single-frame nose kicks at 20 m/s): a carcass wraps around objects smaller than its
-// own scale, so effective stiffness against a small rock is a fraction of the flat-ground
-// value — env = sizeR/(sizeR + L). A 0.2 m rock transmits ~60%, a barrel ~80%, and the
-// factor →1 as obstacles approach ground-scale. Size comes from the engine shape itself.
-const TIRE_ENVELOPE_LEN = 0.12              // m — the carcass wrap length-scale
+// Tire OBSTACLE ENGAGEMENT — the canonical explanation lives in src/suspension.js beside the
+// force it scales; this file only mirrors it on the reaction side (Newton's third law), so the
+// two must be edited together. Superseded the constant env = sizeR/(sizeR + 0.12) on 2026-08-21:
+// a fixed fraction softened the tire against every obstacle at every depth, which is what let
+// rocks sink to the rim. The area law is progressive instead — near-zero on first touch, full
+// flat-ground stiffness once the contact patch matches the tire's own.
 const NEWTON_TOL = 0.5                      // rad/s — ω-solve residual above this = diverged, take the explicit fallback
 const EMPTY_DEPTH_MAP = new Map()           // shared immutable-by-convention first-step default

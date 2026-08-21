@@ -162,6 +162,11 @@ export const RANGER_PARAMS = {
   // the wheel returns to ground quickly but doesn't prematurely unload — overdamped tire
   // damping causes tireFz to hit zero while hub is still 2 cm in ground (hubVy drives damping
   // term negative, triggering spurious airborne flag at high hub velocities).
+  // Nominal flat-ground contact patch AREA. Sets how fast the tire stiffens against a rigid
+  // obstacle: the engaged fraction is the obstacle's growing contact area over this (see
+  // src/suspension.js). 245-section tire at ~35 psi carrying a quarter of the truck:
+  // 3.3 kN / 241 kPa = 0.0139 m2; 0.0166 leaves a little margin for a laden corner.
+  tireContactAreaM2: 0.0166,  // m^2
   tireStiffness: 100000,  // N/m
   tireDamping:     1500,  // N·s/m — ζ≈0.56; reduced from 4000 to prevent premature wheel lift-off
 

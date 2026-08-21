@@ -134,7 +134,7 @@ export class DamageHUD {
   update (dt) {
     // The peak hold runs even while hidden — otherwise opening the panel after a strike shows
     // nothing, which is exactly when you want to look.
-    const rim = this.vehicleState.rimImpulse
+    const rim = this.vehicleState.rimForce
     if (rim) {
       this._t += dt
       for (let i = 0; i < 4; i++) {
@@ -212,12 +212,12 @@ export class DamageHUD {
     // Rim-core contact impulse, PEAK-HELD. A strike lasts a couple of physics steps and this pane
     // redraws at 10 Hz, so the instantaneous value is almost never the one you want to read — the
     // hold keeps each corner's worst for a few seconds so a spike can actually be caught.
-    const trip = P.rimStrikeFloorNs
-    out.push(`<div class="dh-sig"><span>rim N·s</span>${[0, 1, 2, 3].map(i =>
-      fmt(this._rimHold[i], trip, 0)).join('')}</div>`)
+    const trip = P.rimYieldMult * DamageModel.staticWheelLoad(this.model.params || {})
+    out.push(`<div class="dh-sig"><span>rim kN</span>${[0, 1, 2, 3].map(i =>
+      fmt(this._rimHold[i] / 1000, trip / 1000, 1)).join('')}</div>`)
     out.push(`<div class="dh-note">floors — slip ${P.tireSlipFloor} m/s · bump ${(P.springForceFloor / 1000).toFixed(0)} kN`
       + ` (align ${(P.alignBumpFloorN / 1000).toFixed(0)} kN) · strut ${P.damperVelFloor} m/s`
-      + ` · rim ${trip} N·s on the wheel core (held ${HOLD_S}s). Wheels: no continuous wear — strikes and crashes only.</div>`)
+      + ` · rim yield ${(trip / 1000).toFixed(0)} kN on the wheel core (peak held ${HOLD_S}s). Below yield the rim springs back.</div>`)
     out.push('<div class="dh-note">a floor that is red on ordinary road is wrong, or the signal under it is noise.</div>')
 
     // ── IMPACTS ───────────────────────────────────────────────────────────────────────────────
