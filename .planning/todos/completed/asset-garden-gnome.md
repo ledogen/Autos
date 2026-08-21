@@ -51,16 +51,16 @@ survive glTF export; bake to an image texture first (ASSETS.md).
 
 ## Resolution — 2026-08-20
 
-`assets/models/gnome.glb` shipped. **492 tris** (budget 500), 264 verts, one mesh object,
-6 flat materials, **0 images**, 31.0 kB, single-sided, no Draco. Sources:
+`assets/models/gnome.glb` shipped. **488 tris** (budget 500), 262 verts, one mesh object,
+6 flat materials, **0 images**, 30.7 kB, single-sided, no Draco. Sources:
 `assets/models/src/gnome.blend` + `gnome.py` (parametric, `build(); export()`).
 Registered as `gnome` in `data/prop-models.js` (FEAT-59), **no pool tag** — same rule as the
 flamingos: a gnome is not a mission giver, and `lawnFurniture` has no consumer yet.
 `node test/dist-assets.mjs` green.
 
-**0.202 W × 0.400 H × 0.165 D m** — inside the spec's 0.22 × 0.40 × 0.22. Origin and forward as
+**0.206 W × 0.400 H × 0.165 D m** — inside the spec's 0.22 × 0.40 × 0.22. Origin and forward as
 specified: base-seated at exactly y = 0 (both boot soles flat on it), forward = −Z. **The bounds
-are not symmetric** — X runs −0.103 … +0.098 and Z runs −0.095 … +0.070 — because the pose puts
+are not symmetric** — X runs −0.106 … +0.101 and Z runs −0.095 … +0.070 — because the pose puts
 weight on one leg, hangs the other arm, and pushes the nose and boot toes forward. The registry
 box is a size rather than a centred extent, so it over-covers by ~3 mm on one side.
 
@@ -118,6 +118,11 @@ Seven things the generator records so they are not re-discovered:
 - **The toe box must be a SLAB.** Stations 0 and 1 are the same size 20 mm apart, so the foot is
   flat-topped and the step up to the ankle is a hard crease that flat shading turns into the top of
   the shoe. A single smooth taper from sole to cuff over 48 mm reads as a traffic cone.
+- **The hands must not have a vertex on +Y.** The arms run at 7 segments with the ring phase
+  offset by half a segment, so a *facet* faces forward instead of a vertex — at 6 segments on the
+  common phase each hand ended in a knife edge aimed at the camera and read as a beak. The extra
+  segment was paid for by deleting the hat station just above the brim flare: the flare peak is
+  what reads as a brim, not the sharpness of the taper above it.
 - **`ring()` takes a plan yaw**, rotating each ring about its own centre. Real foot splay is most of
   what stops two feet reading as a pair of parked objects, and it is free.
 - **The hand is 9 mm proud of the belly, no more.** At 23 mm the forward sweep from the cuff became

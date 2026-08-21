@@ -78,7 +78,7 @@ export const PROP_MODELS = {
     collision: { shape: 'box', size: [0.16, 0.59, 0.73] },
   },
 
-  // ASSET-02 — ceramic garden gnome, 492 tris, the classic STANDING lawn
+  // ASSET-02 — ceramic garden gnome, 488 tris, the classic STANDING lawn
   // ornament: boots, belted coat, beard over the chest, tall red hat.  Lawn
   // furniture, same rule as the flamingos: scatter WITH a POI, never on bare
   // ground.  NO POOL TAG for the same reason — a gnome is not a place that
@@ -93,13 +93,13 @@ export const PROP_MODELS = {
   // buckle and is the only thing that could not be merged into it.
   gnome: {
     url: 'assets/models/gnome.glb',
-    // 0.202 wide x 0.400 tall x 0.165 deep, measured off the GLB — inside the
+    // 0.206 wide x 0.400 tall x 0.165 deep, measured off the GLB — inside the
     // ticket's 0.22 envelope.  THE MODEL IS NOT SYMMETRIC: the pose puts weight
-    // on one leg and hangs the other arm, so X runs -0.103 .. +0.098 and Z (the
+    // on one leg and hangs the other arm, so X runs -0.106 .. +0.101 and Z (the
     // nose and boot toes reach forward, i.e. -Z) runs -0.095 .. +0.070.  This
     // box is a size, not a centred extent — it over-covers by ~3 mm on one side,
     // which is the right way round for knockable set dressing.
-    collision: { shape: 'box', size: [0.202, 0.400, 0.165] },
+    collision: { shape: 'box', size: [0.206, 0.400, 0.165] },
   },
 
   // ASSET-03 — segmented beach ball, 252 tris, 0.40 m across.  Six vertical

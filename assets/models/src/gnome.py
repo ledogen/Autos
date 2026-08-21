@@ -35,11 +35,11 @@ silhouette carries the read.  GnomeBuckle is the one thing that could not be
 merged -- it is the only warm metal on the model and it is the detail the owner
 asked for by name.
 
-BUILT 2026-08-20 against Blender 5.2.0 LTS.  FINAL: 492 tris (budget 500),
-264 verts, 6 materials, 0 images, 0 UV layers, one mesh object, 31.0 kB .glb.
-0.2015 W x 0.400 H x 0.1652 D m -- inside the ticket's 0.22 x 0.40 x 0.22 --
+BUILT 2026-08-20 against Blender 5.2.0 LTS.  FINAL: 488 tris (budget 500),
+262 verts, 6 materials, 0 images, 0 UV layers, one mesh object, 30.7 kB .glb.
+0.2060 W x 0.400 H x 0.1652 D m -- inside the ticket's 0.22 x 0.40 x 0.22 --
 base-seated at exactly y = 0 in the GLB (both soles flat on it), forward = -Z,
-single-sided, no Draco.  THE BOUNDS ARE NOT SYMMETRIC IN X (-0.1033 .. +0.0982)
+single-sided, no Draco.  THE BOUNDS ARE NOT SYMMETRIC IN X (-0.1055 .. +0.1005)
 and that is the pose, not an error.  Audit clean: 0 object-vs-object clips,
 0 coplanar pairs, 0 non-manifold edges, 0/5000 inverted first-hit rays.
 Rebuild:  exec(open(__file__).read()); build(); export()
@@ -101,7 +101,14 @@ OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/gnome.blend"
 OBJ_NAME = "Gnome"
 
 SEG = 8                    # rings on body / hat / beard
-SEG_LIMB = 6               # rings on arms / legs - they are ~35 mm across
+SEG_LIMB = 6               # rings on legs / boots - they are ~35 mm across
+SEG_ARM = 7                # ...and one more on the arms, for the hands
+# THE HANDS MUST NOT HAVE A VERTEX ON +Y.  At SEG 6 / PHASE pi/2 the ring puts a
+# vertex dead ahead, so each hand ends in a knife edge aimed at the camera and
+# reads as a beak.  Half a segment of phase drops a FACET across the front
+# instead, which is what makes a fist blunt.  The offset set is still closed
+# under reflection about +Y, so the hand stays left-right symmetric.
+PHASE_ARM = math.pi / 2 + math.pi / SEG_ARM
 PHASE = math.pi / 2        # first ring vertex on +Y (the nose line)
 
 # Materials: (name, linear base colour, roughness).  LINEAR -- renders ~1.5x
@@ -149,8 +156,12 @@ BODY_BANDS = ["GnomeCoat", "GnomeLeather", "GnomeCoat", "GnomeCoat",
 HAT = [
     (0.240,  0.003, 0.000, 0.070, 0.062),  # band, hugging the head
     (0.272,  0.003, 0.000, 0.079, 0.070),  # brim flare - widest, shades the face
-    (0.284,  0.003, 0.001, 0.065, 0.058),
-    (0.316,  0.001, 0.005, 0.048, 0.043),
+    (0.316,  0.001, 0.005, 0.048, 0.043),  # (a station at 0.284 sharpened the
+                                           #  taper off the brim; it was worth
+                                           #  16 tris and the arms wanted them
+                                           #  more.  The flare peak at 0.272 is
+                                           #  what reads as a brim, not the
+                                           #  sharpness above it.)
     (0.350, -0.003, 0.012, 0.031, 0.028),  # the cone leaves the head's axis and
     (0.380, -0.009, 0.022, 0.015, 0.014),  #   leans forward AND to his left
     (0.400, -0.016, 0.032, 0.005, 0.005),  # tip -> total height 0.400 m
@@ -176,19 +187,20 @@ BEARD_SHAPE = [
 # rests them either side of the buckle -- hung straight down they read as two
 # pink dots on the flanks.
 ARM_R = [
-    (0.192, 0.078, 0.004, 0.023, 0.023),   # shoulder     [sleeve]
-    (0.150, 0.080, 0.026, 0.021, 0.021),   # cuff         [hand starts]
-    (0.130, 0.066, 0.046, 0.022, 0.022),   # hand, ON the belly by the buckle -
-                                           #   9 mm proud, no more.  At 23 mm
-                                           #   the forward sweep from the cuff
-                                           #   became a pale spike in profile.
+    (0.192, 0.078, 0.006, 0.023, 0.023),   # shoulder     [sleeve]
+    (0.150, 0.080, 0.034, 0.021, 0.021),   # cuff, ALREADY forward - carrying
+                                           #   the whole swing on the last
+                                           #   20 mm aimed the hand like a dart
+    (0.130, 0.068, 0.044, 0.022, 0.022),   # hand, ON the belly by the buckle -
+                                           #   7 mm proud, no more.  At 23 mm
+                                           #   the sweep read as a pale spike.
 ]
 # The idle arm.  Lower, further out, and barely forward -- it hangs at the hip
 # instead of matching its partner at the belt.  This one deviation does more for
 # the pose than the contrapposto does.
 ARM_L = [
     (0.194, 0.076, 0.002, 0.023, 0.023),   # shoulder, a touch higher and back
-    (0.142, 0.086, 0.014, 0.020, 0.020),   # elbow, swung out
+    (0.142, 0.086, 0.020, 0.020, 0.020),   # elbow, swung out
     (0.112, 0.082, 0.030, 0.022, 0.022),   # hand, hanging at the hip
 ]
 ARM_BANDS = ["GnomeCoat", "GnomeSkin"]
@@ -276,7 +288,7 @@ def ring(bm, station, seg, phase=PHASE, mirror=1.0, yaw=0.0):
     return out
 
 
-def sweep(bm, stations, bands, seg=SEG, mirror=1.0, yaw=0.0,
+def sweep(bm, stations, bands, seg=SEG, mirror=1.0, yaw=0.0, phase=PHASE,
           cap_bottom=True, cap_top=True):
     """Vertical swept tube.  `bands[i]` names the material of the band between
     station i and i+1; caps inherit the adjacent band's material.
@@ -289,7 +301,7 @@ def sweep(bm, stations, bands, seg=SEG, mirror=1.0, yaw=0.0,
     if stations[0][0] > stations[-1][0]:
         stations = list(reversed(stations))
         bands = list(reversed(bands))
-    rings = [ring(bm, s, seg, mirror=mirror, yaw=yaw) for s in stations]
+    rings = [ring(bm, s, seg, phase, mirror=mirror, yaw=yaw) for s in stations]
     flip = mirror < 0
     for i in range(len(rings) - 1):
         lo, hi = rings[i], rings[i + 1]
@@ -379,7 +391,7 @@ def build():
     sweep(bm, BEARD, ["GnomeBeard"] * (len(BEARD) - 1))
     for arm, limb, lyaw, m in ((ARM_R, LIMB_R, LIMB_YAW_R, 1.0),
                                (ARM_L, LIMB_L, LIMB_YAW_L, -1.0)):
-        sweep(bm, arm, ARM_BANDS, seg=SEG_LIMB, mirror=m)
+        sweep(bm, arm, ARM_BANDS, seg=SEG_ARM, mirror=m, phase=PHASE_ARM)
         sweep(bm, limb, ["GnomeLeather"] * (len(limb) - 1),
               seg=SEG_LIMB, mirror=m, yaw=lyaw)
     blob(bm, *NOSE)
