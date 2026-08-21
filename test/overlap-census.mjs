@@ -45,7 +45,9 @@ const seg = (ax, az, bx, bz, cx, cz, dx, dz) => {
   const den = r1 * s2 - r2 * s1
   if (Math.abs(den) < 1e-12) return null
   const t = ((cx - ax) * s2 - (cz - az) * s1) / den, u = ((cx - ax) * r2 - (cz - az) * r1) / den
-  return (t >= 0 && t <= 1 && u >= 0 && u <= 1) ? { t, u } : null
+  // STRICT proper crossing (open interval, matches _segCrossParam) — coincident trim chains
+  // touch at every shared vertex; inclusive bounds count each touch.
+  return (t > 1e-6 && t < 1 - 1e-6 && u > 1e-6 && u < 1 - 1e-6) ? { t, u } : null
 }
 
 for (const seed of [6, 20, 11, 67]) {
@@ -108,10 +110,23 @@ for (const seed of [6, 20, 11, 67]) {
     if (pairsSeen.has(pk)) continue
     pairsSeen.add(pk)
     pairsTotal++
+    // BUG-53 trims: a loser's ceded interval COINCIDES with its winner by design — that proximity
+    // is the fix working, not a defect. Skip the sanctioned interval on whichever side of the pair
+    // carries it (near = Infinity there ⇒ no overlap, no crossing can fire on identical vertices).
+    const sanction = (run, partner) => {
+      const spans = []
+      for (const sp of run.e.cededSpans || []) if (run.e.cededOwner === partner.k) spans.push([sp.s0, sp.s1])
+      for (const sp of partner.e.cededSpans || []) if (partner.e.cededOwner === run.k) spans.push([sp.ownerS0 ?? -1, sp.ownerS1 ?? -1])
+      return spans
+    }
+    const sancA = sanction(A, B)
     // walk A's samples: distance to B, arc position, bore state
     const pA = A.e.points, cA = A.e.polyCum
     const near = new Array(pA.length), nearY = new Array(pA.length)
-    for (let m = 0; m < pA.length; m++) { const r = minDistTo(pA[m].x, pA[m].z, B.e.points); near[m] = r.d; nearY[m] = r.y }
+    for (let m = 0; m < pA.length; m++) {
+      if (sancA.some(([s0, s1]) => cA[m] >= s0 - 1 && cA[m] <= s1 + 1)) { near[m] = Infinity; nearY[m] = 0; continue }
+      const r = minDistTo(pA[m].x, pA[m].z, B.e.points); near[m] = r.d; nearY[m] = r.y
+    }
     // (a) from-node contiguous overlap, per shared node
     let fromNodeOverlap = 0, minSepMid = Infinity
     for (const sn of sharedNodes) {
@@ -158,6 +173,7 @@ for (const seed of [6, 20, 11, 67]) {
       const dA = Math.min(sA, cA[cA.length - 1] - sA), dB = Math.min(sB, cB[cB.length - 1] - sB)
       if (Math.min(dA, dB) < PAD) continue
       if (A.inBore(sA) || B.inBore(sB)) continue
+      if (sancA.some(([s0, s1]) => sA >= s0 - 1 && sA <= s1 + 1)) continue
       const yA = pA[m - 1].y + X.t * (pA[m].y - pA[m - 1].y), yB2 = pB[n - 1].y + X.u * (pB[n].y - pB[n - 1].y)
       xsAll.push({ sA, sB, gap: Math.abs(yA - yB2), fromEnd: Math.min(dA, dB) })
     }

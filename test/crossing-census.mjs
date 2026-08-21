@@ -22,7 +22,10 @@ const seg = (ax,az,bx,bz,cx,cz,dx,dz) => {
   const den = r1*s2 - r2*s1
   if (Math.abs(den) < 1e-12) return null
   const t = ((cx-ax)*s2 - (cz-az)*s1)/den, u = ((cx-ax)*r2 - (cz-az)*r1)/den
-  return (t>=0&&t<=1&&u>=0&&u<=1) ? {t,u,x:ax+t*r1,z:az+t*r2} : null
+  // STRICT proper crossing (open interval, matches _segCrossParam): coincident chains touch at
+  // every shared vertex and an inclusive test counts each touch as a crossing (BUG-53 trims
+  // make loser/winner chains exactly coincident by design).
+  return (t>1e-6&&t<1-1e-6&&u>1e-6&&u<1-1e-6) ? {t,u,x:ax+t*r1,z:az+t*r2} : null
 }
 for (const seed of [6, 20, 11]) {
   const road = new RoadSystem(seed, RANGER_PARAMS)
