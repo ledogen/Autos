@@ -251,37 +251,38 @@ export const DAMAGE_PARAMS = {
   wheelRunoutAtZero: 0.04,
 
   // ── What bends a rim ───────────────────────────────────────────────────────────────────────
-  // Two events, no continuous wear: a crash hard enough to reach the wheel through the armor
-  // (impactWheel above), and a RIM STRIKE — the tire bottoming out against a pothole edge or a
-  // kerb until there is no rubber left between the road and the rim flange.
+  // Two events, no continuous wear: a crash that reaches the wheel through the armor
+  // (impactWheel above), and a RIM STRIKE — hitting something with the wheel. A rock, a kerb, a
+  // pothole edge.
   //
-  // The rim strike is thresholded on TIRE DEFLECTION, because that is the quantity physically
-  // between the road and the wheel: the load path is road → carcass → RIM → strut, so the carcass
-  // is what decides whether the flange ever touches down. Strut travel is DOWNSTREAM of the rim
-  // (you can bottom the suspension smoothly on a long landing without a strike, and strike a rim on
-  // a sharp edge without the strut running out of travel); strut acceleration is downstream again.
+  // The signal is the OFF-AXIS contact force: the part of the tire contact force that is not along
+  // the strut axis. On flat ground it is EXACTLY zero however hard the tire is loaded, and it goes
+  // non-zero only when a wheel meets something that is not the road surface. That is the whole
+  // reason it is the right signal, and it was chosen from two owner captures (2026-08-20) that
+  // between them ruled out the alternatives:
   //
-  // WHY THE THRESHOLD IS A MULTIPLE OF STATIC DEFLECTION, and not the sidewall height.
-  // The physically right anchor is the sidewall (wheelRadius − rimRadius = 165 mm): past that there
-  // is no rubber left. But this sim's tire is a LINEAR spring with no bottoming — tireStiffness ×
-  // depth, unbounded — so `depth` is an honest carcass deflection near static load and pure fiction
-  // past it. Measured: a 4 m drop reports 361 mm of "deflection", more than twice the sidewall, with
-  // the rim 200 mm underground. Thresholding on the real dimension therefore fires on drops that
-  // should not scratch a wheel.
+  //   · hard cornering on rough ground peaked the tire at 34.5 kN VERTICAL — 2.6x the truck's
+  //     whole weight on one corner — and should not mark a rim. The tire's job is to carry load.
+  //   · hitting a pile of rocks at 50 mph peaked at only 15.5 kN vertical, and must mark it.
   //
-  // A multiple of STATIC deflection (mass·g / 4 / tireStiffness ≈ 33 mm) is the ratio a linear
-  // spring does represent honestly, and it tracks the tire spring and the vehicle mass if either is
-  // retuned — which a fixed 165 mm would not. Calibrated against measured drops: 0.5 m does nothing,
-  // 0.9 m costs a fifth of a percent, 1.5 m about 3%, 2.5 m about 12%, 4 m about 25%.
+  // So vertical load ranks those two BACKWARDS, and every vertical proxy inherits that: tire
+  // deflection is vertical load over a spring rate, bump-stop force is what is left after the tire
+  // passes it on, strut acceleration is a derivative of the same thing. Off-axis force ranks them
+  // 8.7 kN for the corner against 42 kN for a rock strike — a 5x separation in the right order.
   //
-  // If the tire model ever gets a progressive / bottoming rate, move this back to the sidewall —
-  // that anchor is the better one the moment `depth` means what it says.
-  wheelStrikeStaticMult:     6.6,   // x static deflection (≈220 mm): where the rim starts taking load
-  // DOUBLED 2026-08-20 (owner: "wheels are too delicate, I need like 4x the headroom"). Square law,
-  // so doubling the scale quarters the damage per strike — a wheel now survives four times as much
-  // of everything. One 4 m drop wrote a wheel off before; now it takes four.
-  wheelStrikeFullStaticMult: 8.4,   // x static deflection BEYOND that (≈280 mm): writes the wheel off
-  wheelStrikeExp:            2,
+  // Thresholds are multiples of STATIC WHEEL LOAD (mass·g/4 ≈ 3.3 kN), so they mean "an off-axis
+  // force N times what this wheel normally carries" and track vehicle mass. Square-law past the
+  // floor, banked as one event, like every other event in this model.
+  wheelStrikeFloorMult: 4.5,   // x static wheel load (≈15 kN): below this the tire absorbs it
+  wheelStrikeFullMult:  27,    // x static wheel load (≈90 kN): writes the wheel off in one strike
+  wheelStrikeExp:       2,
+
+  // Fraction of its own peak a loaded event must FALL TO before it is banked. Waiting for the load
+  // to release outright loses the event whenever the truck ends up resting on whatever it hit —
+  // measured in-game, a 37 kN rock strike banked as 0.29% because the truck stopped against the
+  // rock and the contact never let go. Banking on decay instead catches the spike as soon as it has
+  // passed, while a steady resting load never decays and so is never banked twice.
+  eventDecayFrac:   0.5,
 
   // ── Live tuning multipliers ────────────────────────────────────────────────────────────────
   // Per-class wear SPEED, 1 = the calibrated rate above. These exist so wear can be tuned by feel
@@ -461,7 +462,7 @@ export class DamageModel {
     // Peak bump-stop force per corner while a stop is currently loaded; 0 when it is not.
     this._bumpPeak = [0, 0, 0, 0]
 
-    // Peak tire deflection per corner while that tire is past the rim-strike point; 0 when it is not.
+    // Peak off-axis contact force per corner while that wheel is past the strike point; 0 otherwise.
     this._strikePeak = [0, 0, 0, 0]
 
   }
@@ -668,23 +669,19 @@ export class DamageModel {
    * flange took load. `excessM` is how far the deflection went past the sidewall fraction where
    * the rubber runs out — the only thing that decides how bad it was.
    */
-  _landRimStrike (corner, excessM, staticDefl) {
+  _landRimStrike (corner, excessN, staticLoad) {
     const P = DAMAGE_PARAMS
-    if (excessM <= 0) return
-    const full = P.wheelStrikeFullStaticMult * staticDefl
-    const dmg = Math.pow(Math.min(1, excessM / full), P.wheelStrikeExp)
+    if (excessN <= 0) return
+    const full = P.wheelStrikeFullMult * staticLoad
+    const dmg = Math.pow(Math.min(1, excessN / full), P.wheelStrikeExp)
     this.wear(['wheelFL', 'wheelFR', 'wheelRL', 'wheelRR'][corner], dmg, 1)
   }
 
   /**
-   * Static tire deflection [m] — one corner's share of the vehicle's weight on the tire spring.
-   * The scale the rim-strike thresholds are expressed in; see the note in DAMAGE_PARAMS for why
-   * this, and not the sidewall height, is the honest ruler for a linear tire spring.
+   * Static wheel load [N] — one corner's share of the vehicle's weight. The scale the rim-strike
+   * thresholds are expressed in, so they read as "N times what this wheel normally carries".
    */
-  static staticTireDeflection (params) {
-    const k = params.tireStiffness || 0
-    return k > 0 ? (params.mass || 0) * 9.81 / 4 / k : 0
-  }
+  static staticWheelLoad (params) { return (params.mass || 0) * 9.81 / 4 }
 
   /**
    * Land one completed bump-stop event on one corner: the suspension bottomed out, and this is how
@@ -798,24 +795,24 @@ export class DamageModel {
     }
 
     // ── Wheels: RIM STRIKE events, per corner, on peak tire deflection ────────────────────────
-    // The tire carcass is the only thing between the road and the rim, so its deflection is what
-    // decides whether the flange ever touches down — not strut travel, which is downstream of the
-    // wheel, and not strut acceleration, which is downstream of that. Peak-held and banked on
-    // release, like every other event in this model.
-    const deflect = vehicleState.tireDeflect
-    if (deflect && params) {
-      const staticDefl = DamageModel.staticTireDeflection(params)
-      const trip = P.wheelStrikeStaticMult * staticDefl
+    // Off-axis contact force: zero on flat ground however hard the tire is loaded, non-zero only
+    // when a wheel strikes something. Peak-held and banked on release, like every other event.
+    const obst = vehicleState.obstacleForce
+    if (obst && params) {
+      const staticLoad = DamageModel.staticWheelLoad(params)
+      const trip = P.wheelStrikeFloorMult * staticLoad
       if (trip > 0) {
         if (!this._strikePeak) this._strikePeak = [0, 0, 0, 0]
         for (let i = 0; i < 4; i++) {
-          const d = deflect[i] || 0
-          if (d > trip) {
-            if (d > this._strikePeak[i]) this._strikePeak[i] = d
-            continue
-          }
-          if (this._strikePeak[i] > 0) {
-            this._landRimStrike(i, this._strikePeak[i] - trip, staticDefl)
+          const f = obst[i] || 0
+          const peak = this._strikePeak[i]
+          if (f > peak) { this._strikePeak[i] = f; continue }        // still building
+          // Bank once the spike has passed — dropped below the floor, or fallen to a fraction of
+          // its own peak (which a truck resting against what it hit never does).
+          if (peak > trip && (f <= trip || f < peak * P.eventDecayFrac)) {
+            this._landRimStrike(i, peak - trip, staticLoad)
+            this._strikePeak[i] = 0
+          } else if (f <= trip) {
             this._strikePeak[i] = 0
           }
         }
@@ -832,12 +829,15 @@ export class DamageModel {
       if (!this._bumpPeak) this._bumpPeak = [0, 0, 0, 0]
       for (let i = 0; i < 4; i++) {
         const f = Math.abs(bumpF[i] || 0)
-        if (f > P.springForceFloor) {
-          if (f > this._bumpPeak[i]) this._bumpPeak[i] = f
-          continue                                  // still on the stop — keep watching
-        }
-        if (this._bumpPeak[i] > 0) {                // just came off it: bank the event
-          this._landBumpStop(i, this._bumpPeak[i])
+        const peak = this._bumpPeak[i]
+        if (f > peak) { this._bumpPeak[i] = f; continue }            // still building
+        // Banked on decay as well as release, for the same reason as the rim strike: a truck that
+        // settles onto its stops and stays there would otherwise never bank the landing that put
+        // it there. A steady resting load does not decay, so it is never banked twice.
+        if (peak > P.springForceFloor && (f <= P.springForceFloor || f < peak * P.eventDecayFrac)) {
+          this._landBumpStop(i, peak)
+          this._bumpPeak[i] = 0
+        } else if (f <= P.springForceFloor) {
           this._bumpPeak[i] = 0
         }
       }

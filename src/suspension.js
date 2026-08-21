@@ -273,11 +273,9 @@ export function carcassRadialOffset (corner, psi, runout) {
 export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts) {
   // SM-3: reset the per-step peak bump-stop force before the substep loop accumulates this step's.
   if (vehicleState.bumpForce) { vehicleState.bumpForce[0] = 0; vehicleState.bumpForce[1] = 0; vehicleState.bumpForce[2] = 0; vehicleState.bumpForce[3] = 0 }
-  // SM-3: peak TIRE DEFLECTION per corner this step [m]. Same peak-across-substeps convention as
-  // bumpForce. This is the honest measure of what the RIM is seeing: the tire carcass is the only
-  // thing between the road and the wheel, so when its deflection uses up the sidewall the rim
-  // flange is taking the load directly. Reset here, maxed below.
-  if (vehicleState.tireDeflect) { vehicleState.tireDeflect[0] = 0; vehicleState.tireDeflect[1] = 0; vehicleState.tireDeflect[2] = 0; vehicleState.tireDeflect[3] = 0 }
+  // SM-3: peak OFF-AXIS contact force per corner this step [N] — the rim-strike signal. Same
+  // peak-across-substeps convention as bumpForce. Reset here, maxed in the contacts loop.
+  if (vehicleState.obstacleForce) { vehicleState.obstacleForce[0] = 0; vehicleState.obstacleForce[1] = 0; vehicleState.obstacleForce[2] = 0; vehicleState.obstacleForce[3] = 0 }
   // Paranoid guard (Phase 4.1 D-01): if strutComp/strutCompVel not initialized, skip.
   if (!vehicleState.strutComp || vehicleState.strutComp.length !== 4) return
   if (!vehicleState.strutCompVel || vehicleState.strutCompVel.length !== 4) return
@@ -458,7 +456,6 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         // (depth ≈ v·dt ≥ ENGAGE), so high-speed response is undiminished, with no speed terms.
         // Terrain contacts keep the strut-velocity approximation (their transients are
         // pre-spread by the footprint envelope, and the m4 calibration history rests on it).
-        if (vehicleState.tireDeflect && c.depth > vehicleState.tireDeflect[i]) vehicleState.tireDeflect[i] = c.depth
         const TIRE_DAMP_ENGAGE = 0.04   // m — full damper by one static deflection of depth
         const compressionVel = (c.depthRate !== undefined)
           ? c.depthRate * Math.min(1, c.depth / TIRE_DAMP_ENGAGE)
@@ -483,6 +480,19 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
           params._hubNormalXZ[i].x += tireFnAtContact * (c.normal.x - bodyUpDot * body_up.x) / N
           params._hubNormalXZ[i].y += tireFnAtContact * (c.normal.y - bodyUpDot * body_up.y) / N
           params._hubNormalXZ[i].z += tireFnAtContact * (c.normal.z - bodyUpDot * body_up.z) / N
+          // SM-3 rim strike: the OFF-AXIS part of this contact, peak-held per corner across the
+          // whole step rather than averaged. On flat ground the residual is exactly zero, so this
+          // is a clean "this wheel hit something that is not the road surface" signal — a rock, a
+          // kerb, a pothole edge — which is what actually bends a rim. Vertical load does not:
+          // that is the tire's job to carry, and the owner's captures show hard cornering loading
+          // a tire twice as hard as a 50 mph rock strike does.
+          if (vehicleState.obstacleForce) {
+            const ox = tireFnAtContact * (c.normal.x - bodyUpDot * body_up.x)
+            const oy = tireFnAtContact * (c.normal.y - bodyUpDot * body_up.y)
+            const oz = tireFnAtContact * (c.normal.z - bodyUpDot * body_up.z)
+            const mag = Math.sqrt(ox * ox + oy * oy + oz * oz)
+            if (mag > vehicleState.obstacleForce[i]) vehicleState.obstacleForce[i] = mag
+          }
         }
       }
 
