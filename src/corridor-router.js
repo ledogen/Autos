@@ -27,7 +27,7 @@ export const V2_COSTS = {
     // per the length-vs-grade trade, minimized at g* = 1/√wGrade. 40 put g* at 16% — the solver just
     // took steep straights (owner 2026-08-18: "no switchbacks"). 120 puts g* ≈ 9%, forest-road grade,
     // so length (and the corridor's zigzags) win against sustained steepness.
-    wGrade: 120,      // quadratic grade discomfort: cost/m factor = 1 + wGrade·g²
+    wGrade: 180,      // quadratic grade discomfort: cost/m factor = 1 + wGrade·g²
     cCutM: 0.15,      // cut, per m of length PER m of depth (linear haul term)
     // Quadratic cut term (owner 2026-08-18: "no visual difference in the mountaintop above a tunnel —
     // just carve a clean hole"): real cuttings go superlinear past ~8 m (rock walls, stabilization),
@@ -48,7 +48,7 @@ export const V2_COSTS = {
     // to prefer the buildable shape). This is v1's roadWTurn lesson as a PHYSICAL knob: curvature
     // costs money. Evaluated greedily against the parent step's direction (not part of the state
     // — exact turn accounting would 8× the state space for a tie-shaping term).
-    cTurn: 30,
+    cTurn: 45,
     cBridgeM: 20.0,   // bridge deck, per m (only read when bridgesOn)
     cAbutment: 100,   // fixed, per bridge end (only read when bridgesOn)
     cutMax: 20,       // m below ground where a cut becomes a bore — a 12–20 m trench is an open
@@ -57,7 +57,7 @@ export const V2_COSTS = {
                       // descents through incidental deep-cut pockets (seed 67, 31.7%-mean drop)
     fillMax: 8,       // m above ground where a fill becomes a bridge
     onTol: 0.75,      // m — |deck − ground| within this counts as on-grade
-    gMaxRoad: 0.35,   // hard vocabulary cap for surface states (sustained ceiling is 0.40)
+    gMaxRoad: 0.24,   // hard vocabulary cap for surface states (sustained ceiling is 0.40)
     gMaxBore: 0.18,   // bores are gentler by construction (FEAT-40 lineage)
 }
 

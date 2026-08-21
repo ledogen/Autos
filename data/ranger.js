@@ -453,7 +453,8 @@ export const RANGER_PARAMS = {
     // search has no reason to prefer the buildable shape (v1's roadWTurn lesson as a physical knob).
     // Measured on the eval trio: 15 → 20/38/32 hairpins, 30 → 17/21/24, 60 → 17/15/11, with grade
     // compliance identical at all three — it trades hairpin density against sweep, nothing else.
-    cTurn: 55,
+    // Owner review 2026-08-21 (set from the live sliders): 55 -> 45.
+    cTurn: 45,
     // Bridges are DE-SCOPED from the vocabulary (owner 2026-08-18): real forest bridges are short,
     // same-elevation water crossings, not grade machines — and valley-spanning decks raise "why is
     // there no road down there". Machinery stays; flip bridgesOn to re-enable. The planned way back
@@ -480,7 +481,9 @@ export const RANGER_PARAMS = {
     // departs from the priced one by more than the solver could resolve in the first place.
     vSmoothM: 15,
     onTol: 0.75,      // m — |deck − ground| within this counts as on-grade
-    gMaxRoad: 0.35,   // hard vocabulary cap for surface states (the sustained ceiling is 0.40)
+    // Owner review 2026-08-21 (set from the live sliders): 0.35 -> 0.24. The ladder's relief rung
+    // then solves refusals at min(0.38, 0.27), and the ceiling rung still guards the 0.38 contract.
+    gMaxRoad: 0.24,   // hard vocabulary cap for surface states (the sustained ceiling is 0.40)
     gMaxBore: 0.18,   // bores are gentler by construction (FEAT-40 lineage)
   },
 
