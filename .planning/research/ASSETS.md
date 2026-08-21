@@ -110,6 +110,41 @@ and makes recolouring free.
   materials where only two may be driven is not self-documenting.
 - The cost is **draw calls: one per material.** Fine for a POI placed a handful of times; not fine
   for anything scatter-density, which wants one shared material and the instancing path.
+### Curated recolour pools (owner ruling 2026-08-21)
+
+Recolouring is **not** a free-for-all tint. A model that wants variety declares a short,
+hand-picked list of colours it is *allowed* to be, in a `palette` field on its
+`data/prop-models.js` entry, and spawners choose an index. The look stays art-directed while the
+world stops looking cloned. `gnome.glb` is the reference: `GnomeCoat` may be cobalt, bottle green
+or burgundy; hat, beard, skin, leather and buckle are fixed.
+
+```js
+palette: { GnomeCoat: [[0.030, 0.085, 0.340], [0.022, 0.147, 0.040], [0.163, 0.009, 0.013]] }
+```
+
+The rules, all enforced by `test/model-palette.mjs`:
+
+- **Linear RGB**, the same numbers as the `.glb`'s `baseColorFactor` — not sRGB (ART-STYLE rule 5).
+- **Index 0 must equal the authored colour.** Variant 0 reuses the `.glb`'s own material rather
+  than a clone, so if the two drift the default depends on whether a spawner passed `0` or passed
+  nothing.
+- **Every array the same length.** The variant index is *one number for the whole model*, so two
+  materials listed together recolour in lockstep — that is the feature, it lets you define a
+  coordinated outfit instead of rolling independent dice per material.
+- **Keys match by substring** on material name, the same convention as the vehicle loader's
+  `spec.paint`. Renaming a material on re-export silently drops the hookup.
+
+Spawn with `spawnModel(key, { variant: n })`. `n` is any integer, taken modulo the palette length,
+so callers pass a raw hash and never track the count. **The caller owns determinism** — derive it
+from the seed the way `src/poi.js` derives `modelKey`, never `Math.random()`.
+
+> **The trap this is built around.** `Object3D.clone()` copies the scene graph but *shares
+> geometry and materials by reference* — which is exactly why spawning is cheap. Calling
+> `.color.set()` on a spawned model's material therefore recolours **every** instance in the world,
+> including ones already placed. Per-spawn recolour must swap the material *object*, never mutate
+> the shared one. `src/model-service.js` builds each pool colour once at load, so a hundred gnomes
+> cost three coat materials rather than a hundred.
+
 - Objects with colour-only materials need no UVs — but they will if the project ever atlases.
 
 ## Known limits

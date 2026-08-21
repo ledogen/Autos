@@ -29,6 +29,25 @@
 //                       -Z at the road). The pad is 14 m along the road x 8 m across, so an asset
 //                       whose length runs down its own -Z has only 8 m to live in unless it is
 //                       turned. Default 0.
+//   palette    object — CURATED RECOLOUR POOL, { <material name substring>: [[r,g,b], ...] }.
+//                       Owner ruling 2026-08-21: recolouring is not a free-for-all tint. Each
+//                       model that wants variety declares a short, hand-picked list of colours it
+//                       is ALLOWED to be, and spawners pick an index. The look stays art-directed;
+//                       the world stops looking cloned.
+//                         * Colours are LINEAR RGB — the same numbers as the .glb's
+//                           baseColorFactor, NOT sRGB. See ART-STYLE.md rule 5.
+//                         * Index 0 MUST equal the colour authored in the .glb. It is the default,
+//                           and test/model-palette.mjs asserts the two have not drifted.
+//                         * Every array must be the SAME LENGTH — the index is one variant number
+//                           for the whole model, so two materials listed here recolour in lockstep
+//                           and you can define a coordinated outfit rather than independent dice.
+//                         * The key is matched by SUBSTRING against material names, the same
+//                           convention the vehicle loader's spec.paint uses. Renaming a material on
+//                           re-export silently drops the hookup, which is what the gate is for.
+//                       spawnModel(key, { variant: n }) selects one; n is taken modulo the palette
+//                       length, so callers pass a raw hash and never think about the count.
+//                       DETERMINISM: the caller owns it. Derive n from the seed the way poi.js
+//                       does for modelKey (hash32(`...:${seed}:${id}`)), never Math.random().
 //   credit     string — attribution if third-party; also recorded in assets/models/CREDITS.md
 
 export const PROP_MODELS = {
@@ -101,6 +120,21 @@ export const PROP_MODELS = {
     // i.e. -Z).  This box is a size, not a centred extent, so it over-covers on
     // one side — the right way round for knockable set dressing.
     collision: { shape: 'box', size: [0.206, 0.400, 0.165] },
+    // Blue / green / burgundy. The hat, beard, skin, leather and buckle are FIXED — a gnome is a
+    // red hat and a white beard, and recolouring those stops it being a gnome.
+    //
+    // The burgundy is deliberately much darker than the hat it sits under (luminance 0.042 against
+    // the hat's 0.113, a 2.7x ratio). A coat matched to the hat's pillar-box red would collapse the
+    // figure into one red mass at distance, which is the whole value structure gone — ART-STYLE
+    // rule 5 wants something dark low and something bright to catch the eye, and here the hat is
+    // the bright thing.
+    palette: {
+      GnomeCoat: [
+        [0.030, 0.085, 0.340],   // 0 — cobalt, the authored colour (must match the .glb)
+        [0.022, 0.147, 0.040],   // 1 — bottle green
+        [0.163, 0.009, 0.013],   // 2 — burgundy
+      ],
+    },
   },
 
   // ASSET-03 — segmented beach ball, 252 tris, 0.40 m across.  Six vertical

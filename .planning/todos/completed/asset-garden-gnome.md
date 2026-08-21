@@ -150,3 +150,42 @@ Seven things the generator records so they are not re-discovered:
 - **Winding is only ever proven by ray-cast.** The viewport draws backfaces, so an inverted part is
   invisible there. Four separate causes hit this build: a top-down station table, `mirror = -1` on
   the left limb, all six faces of the buckle box, and (checked, clean) the plan yaw.
+
+## Follow-up — 2026-08-21: curated recolour pool
+
+Owner ruling: recolouring should draw from a **pool of colours saved ahead of time** per model, so
+the look stays curated while spawns can be randomised. Checked against `ASSETS.md` — it already
+ratified half of this ("one material per colour, the material *name* is the runtime API",
+`material.color.set()`, "say in the ticket which materials are recolourable"). The curated-pool
+layer on top is new, so it is now written into `ASSETS.md` as its own section.
+
+`GnomeCoat` may be **cobalt / bottle green / burgundy**; hat, beard, skin, leather and buckle are
+**fixed** — a gnome is a red hat and a white beard, and recolouring those stops it being a gnome.
+The burgundy is deliberately much darker than the hat above it (luminance 0.042 vs 0.113, a 2.7×
+ratio): a coat matched to the hat's pillar-box red collapses the figure into one red mass at
+distance, losing the value structure ART-STYLE rule 5 asks for.
+
+Shipped in three pieces:
+
+- `data/prop-models.js` — a `palette` field, `{ <material name substring>: [[r,g,b], …] }`, linear
+  RGB, index 0 equal to the authored colour, all arrays the same length (the variant index is one
+  number for the whole model, so listed materials recolour in lockstep — that is how a coordinated
+  outfit gets defined rather than independent dice per material).
+- `src/model-service.js` — `spawnModel(key, { variant: n })`. `n` is any integer, taken modulo the
+  palette length, so callers pass a raw hash. **The caller owns determinism**: derive it from the
+  seed the way `poi.js` derives `modelKey`, never `Math.random()`.
+- `test/model-palette.mjs` — new `npm test` gate (subsystem `infra`, fast).
+
+**The trap this is built around.** `Object3D.clone()` shares geometry *and materials* by reference —
+which is exactly why `spawnModel` is cheap. So `.color.set()` on a spawned model's material
+recolours **every** instance in the world, including ones already placed. Per-spawn recolour must
+swap the material *object*, never mutate the shared one. Each pool colour is therefore built once
+at load: a hundred gnomes cost three coat materials, not a hundred, and draw calls are unchanged.
+
+Verified end-to-end against the real `.glb` through the real `GLTFLoader`: the palette binds to
+`GnomeCoat`, variants 0/1/2 yield the three colours, and 5 and −1 fold correctly to 2. The gate was
+proved by breaking it three ways — drifted index 0, a renamed material, and an over-broad key that
+matches six materials — each caught with a specific message.
+
+**Nothing spawns gnomes yet** (no pool tag; see the resolution above), so the randomisation goes
+live with the lawn-furniture scatter, not now.
