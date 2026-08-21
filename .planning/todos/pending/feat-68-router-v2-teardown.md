@@ -1159,10 +1159,15 @@ Cold→driving, no route cache at all: **6.8–8.5 s on this machine**, 22–28 
    cut², fill, bore, portal, max bore grade, cut→bore depth, max fill — and **re-review Max Road
    Grade**, which only started behaving correctly today (it was being overridden by the ladder). All
    live in the `Router v2 (prices)` folder; the map A/B loop is ~2.5 s to first change, ~9 s settled.
-2. **BUG-53 — node-sharing overlap.** The measured case is two runs sharing a node and sharing
-   earthworks for 244 m at 0.1 m separation. Start with the census in that ticket; the owner's
-   preference is to delete a leg (with the degree-cap's bounded-hop detour guarantee) over trimming
-   to the crossing. NOT solved by the junction pass — a pad dresses metres, not 244 m.
+2. **BUG-53 — roads crossing and overlapping mid-span. CENSUSED, ready to implement.**
+   `node test/crossing-census.mjs`: eval seeds carry **11 / 13 / 4 real mid-span crossings** (seeds
+   6/20/11), 58–473 m from any run end, and 11/10/3 of them have **under 6 m of vertical
+   separation** — two roads at the same height with nothing between them. Plus the separate overlap
+   case (two runs sharing earthworks for 244 m at 0.1 m).
+   **Every single crossing is between runs that share a node elsewhere; disjoint crossings are ZERO
+   across all three seeds** — so the fix is local to each node's incident edges, not an all-pairs
+   problem. Owner's preference: delete a leg (with the degree-cap's bounded-hop detour guarantee)
+   over trimming to the crossing. NOT solved by the junction pass — a pad dresses metres.
 3. **Junction geometry (deferred pass).** Naive meets at degree ≥ 3. Mostly REATTACHMENT of shipped
    machinery (pads/fillets/aprons consume the run contract + node incidence, both of which survive).
    The one genuinely new piece: canonical approach headings at junctions — deg-2 already has them.
@@ -1178,5 +1183,11 @@ Cold→driving, no route cache at all: **6.8–8.5 s on this machine**, 22–28 
 - **Strict pin-signature cache matching** — measured 18 s → 195 s cold load. Deg-2 pins are
   window-invariant for interior edges but NOT at window frontiers, so strict matching thrashes.
   Full write-up in the negative-result section above.
-- **Restoring the crossing/clearance culls** to fix BUG-53 — they cost 11–21 good edges per seed and
-  took connectivity to 54%. Connectivity outranks tidiness; fix the overlap directly.
+- **Restoring the crossing/clearance culls WHOLESALE** to fix BUG-53 — they were blunt, dropping
+  edges for mere proximity, and took connectivity from 95.7% to 54.1% at a cost of 11–21 good edges
+  per seed. Connectivity outranks tidiness.
+  **But note the correction (2026-08-20):** the finding that retired them — "they prevented ZERO
+  crossings" — was measured on the pre-2.5D corridor and is now FALSE; the 2.5D search produces
+  4–13 real crossings per seed. So this is "don't bring back the blunt instrument", NOT "crossings
+  are fine". A targeted resolver (only actual crossings, only a node's own incident edges, with the
+  detour guarantee) is exactly what BUG-53 is for.
