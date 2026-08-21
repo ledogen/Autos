@@ -1087,3 +1087,42 @@ their own "causes lots of chaos" doubt), why there are more now (the cull deleti
 evidence, but that evidence predates the 2.5D corridor whose switchback stacks can excurse into a
 neighbour), and the census that should decide the design — including the VERTICAL GAP at each
 crossing, since with bores in the vocabulary some already pass under and are not defects.
+
+## Grade cap honoured + the captured "terrain tear" diagnosed (2026-08-20)
+
+### Max Road Grade was real, but the ladder overrode it (`0f4ac6e`)
+
+**Owner:** *"does max road grade actually limit the grade? it seems like its not a hard cap, rather
+it actually has very little influence."* Half right, and the half that was wrong mattered.
+
+It IS a hard cap in the solver — sustained-24 m grade tracks it exactly (cap 20/25/30/35% →
+shipped 22/27/30/35%). What ignored it was the **fail-safe ladder**: rung 3 re-solved with a LITERAL
+`gMaxRoad: 0.38` whatever the setting. At a 20% cap, the few edges that could not solve at 20%
+shipped at **38%** — and those are exactly the steep bits a driver notices, which is why the knob
+felt inert. Measured on seed 20 at cap 0.20: 54 edges at the cap, **2 on rung 3**, and those 2 owned
+the 38% maximum.
+
+Relief is now **relative**: `min(0.38, gMaxRoad + 0.03)`. At the 0.35 default that is 0.38 —
+byte-identical, verified against the battery. Honouring the cap alone made one thing WORSE (the
+sweep caught it): a seed-11 edge fell all the way to mark-and-ship, and a marked run terrain-follows,
+so it shipped at **106%** where a legal 38% road existed. So a **CEILING rung** now sits before the
+mark — if even the relieved cap fails, solve at the 0.38 contract ceiling. Marking is for "no legal
+road exists", not "your design cap was ambitious".
+
+Net at cap 0.20: instantaneous max **38% → 23%** (seed 20), **106% → 31%** (seed 11), zero marks on
+both. Ladder use is instrumented (`_v2Rung`), so "which rung did this edge land on" is answerable.
+
+### The captured tear is NODE-SHARING OVERLAP — see BUG-53
+
+`rangersim-capture-1787289162055.json` (seed 6, mark −4420, 1535, *"4 roads converging mostly to one
+spot, huge tear in terrain"*). Replay says the world is **fine by every contract**: window-invariance
+gradeΔ 0.000 m over 88 on-road points, fold radius 938 m against a 15 m design minimum. It is a
+**degree-3** node (not four roads) whose three run ends agree to **0.000 m**.
+
+The defect is lateral: two of the three runs leave the node nearly collinear and share earthworks
+**out to 244 m at a 0.1 m minimum separation** — two roads carving the same dirt. This reframes
+BUG-53: the disjoint-crossing class really is empty-to-rare as the purity probe found, but that same
+probe recorded **59–82 node-sharing crossings per seed** and dismissed them as v1 wander managed by
+the corridor discs — machinery v2 deleted with nothing in its place. **Node-sharing overlap is the
+class that reaches the player.** And it is not the deferred junction pass in disguise: a pad dresses
+a few metres, not a 244 m shared corridor. Full detail + the census to run: BUG-53.
