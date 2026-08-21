@@ -1369,6 +1369,89 @@ forever (both legs bridges). Options, rankable only by the owner:
 Recommendation on the record: 1 + judge the rest driven (3 as follow-up if tears still read);
 avoid 2 until nothing else serves.
 
+## Owner prices ratified + the WEAVE class measured (2026-08-21, `3a0240e`)
+
+**Prices are defaults now** (set from the owner's live sliders): **`cTurn 55 → 45`**,
+**`gMaxRoad 0.35 → 0.24`**; everything else in the panel already matched. The headless `V2_COSTS`
+fallback in `corridor-router.js` was synced to the same ruling (it had drifted: cTurn 30,
+wGrade 120) so headless callers price like the game. Battery at the new prices: sustained max
+**25/38/25%** (the 38 is one seed-11 edge riding the ladder's ceiling rung — legal, unmarked),
+infeasible 0/0/0, one component each, y-spread 0.000, spans 19/13/19, hairpins 19/20/23.
+`road-smoothness` and `paper-tour` went GREEN on the re-route; `paper-reroute` went red (the same
+network-shape-sensitive mission-margin class — 12.69 vs 11.96 km).
+
+### The owner's observation, measured: legs cross and cross BACK
+
+> *"there are lots of locations where legs cross and then they cross back … a potential solution
+> might be … trim the center span of the two intersections."*
+
+Their captured spot (seed 6, map −1746/1768; the screenshot's car sits at −1732/1796) is exactly
+this: `g:-4,3,2:-3,3,2` × `g:-3,1,1:-3,3,2` — two legs off the SHARED node `-3,3,2` that cross
+**three times**, at Y gaps 1.64 / 0.64 / 0.00 m. The census now classifies every crossing pair as
+**WEAVE (≥2 crossings)** vs single-cross, and measures each braid interval (`test/overlap-census.mjs`
++ `perf-runs/braid-probe.mjs`).
+
+**Weave census (seeds 6/20/11/67):** 7 weave pairs, 12 single-cross pairs. So weaves are a
+substantial minority, not the majority — the owner's hunch that this explains "most of the ones we
+culled" is half right: it explains the worst of them, not all of them.
+
+**And the braid geometry splits the class cleanly in two** — this is the finding that matters:
+
+| pair | braid | mean sep | max sep | braid beyond 18 m apart |
+|---|---|---|---|---|
+| s6 `1,0,0:1,1,2` × `1,1,2:2,1,0` | 250 m | **2.1 m** | 5.9 m | 0% |
+| s6 `2,-2,0:3,-2,1` × `3,-2,1:3,-1,0` | 98 m | **3.6 m** | 5.5 m | 0% |
+| s6 `-1,2,0:0,2,1` × `0,2,1:0,3,2` | 113 m | **6.9 m** | 11.9 m | 0% |
+| s67 `2,-1,1:3,0,2` × `3,-2,1:2,-1,1` | 11 m | **0.3 m** | 0.8 m | 0% |
+| s11 `0,-1,1:0,0,0` × `0,-2,0:0,-1,1` | 216 m | 9.2 m | 20.1 m | 9% |
+| s20 `1,-1,0:2,0,0` × `1,0,2:2,0,0` | 181 m | **18.0 m** | 28.9 m | **58%** |
+| s11 `-3,-3,1:-2,-2,0` × `-1,-3,1:-2,-2,0` | 121 m | **27.0 m** | 51.5 m | **70%** |
+
+**Five of seven braids are REDUNDANT** — the two roads stay within 0.3–9 m of each other for the
+entire braid, i.e. inside one road's own half-width + shoulder (7.5 m). Two roads within two metres
+for 250 metres is not an intersection; it is the same road drawn twice, weaving. **Two of seven are
+NOT** — the legs genuinely swing 29–52 m apart between crossings, so both halves are real road and
+trimming either would delete useful network. Any trim must be GATED on the braid being redundant;
+the census's own shared-earthworks threshold is the natural gate.
+
+**Total trim if we take the shorter braid of each redundant pair: ~1.0 km of a 163 km network
+(0.6%).** Cheap.
+
+### Why the trim is not a small change — the two blockers, both real
+
+The owner's mechanism is right; it lands on two load-bearing contracts:
+
+1. **A trimmed run is a broken run.** Deleting A's middle leaves A in two pieces that connect to
+   nothing at the cut ends. Connectivity only survives if either (a) the crossing points become
+   REAL NODES (the owner's option 2 — manufactured nodes the site layer never placed, which every
+   consumer keyed on site ids must accept), or (b) A keeps its full geometry but a **span
+   ownership** list tells the ribbon and carve to skip A over the braid because B owns that
+   pavement — the same shape as the existing `tunnelSpans` mechanism, and the option that leaves
+   the run contract, missions, par and GPS untouched. (b) is the better bet.
+   Note the project already has a named deferred design for (a): the **T/X secondary-node
+   promotion** referenced in `graph-topology.mjs`'s SURFACE-SMOOTH exclusion.
+2. **MESH == PHYSICS forbids a half-measure.** The carve/physics resolver projects onto the run
+   **polyline** (`_projectOntoRun` reads `netEntry.points`) while the ribbon sweeps the
+   **centerline primitives**. Snapping one without the other splits mesh from physics — the
+   cardinal sin. Splicing the centerline (`slicePrimitives` already exists) introduces heading
+   kinks at the splice, which is infinite curvature and would take the fold-floor/curvature gates
+   red unless the joins are filleted.
+3. **Window invariance is the trap that killed v1's culls (BUG-25).** The trim decision must be a
+   pure function of the GRAPH, not of which runs happen to be registered in the current window —
+   otherwise a pair split across a stream boundary is trimmed in one window and not the other, and
+   the surface flips. The argument that works: every crossing is node-sharing (measured, three
+   censuses now), so a run's braid partners are exactly the edges incident to its two nodes —
+   always inside the graph margin, always derivable, exactly the same purity argument the deg-2
+   and junction heading pins already rely on.
+
+**Recommendation:** build (b) — span ownership, gated on braid redundancy (max separation across
+the braid ≤ ~8 m, keeping the hidden centerline under the winner's pavement), decided from the
+graph. That is a run-contract addition plus a ribbon skip, no manufactured nodes, no centerline
+surgery, no curvature risk — and it removes the artifact the owner is actually looking at. It wants
+its own session and plan-mode sign-off (it touches the run contract), which is why this pass
+measured and designed it rather than half-landing it. The 2 non-redundant weaves get nothing and
+should be judged on the map: at 29–52 m apart they may simply read as two roads crossing.
+
 ---
 
 # CURRENT HANDOFF (2026-08-21) — read this one
@@ -1388,17 +1471,23 @@ Battery: `node perf-runs/v2-integration-check.mjs`. Gallery: `perf-runs/gallery.
 chord-pin checkpoint, fresh map renders of all four seeds). Censuses:
 `node test/crossing-census.mjs` + `node test/overlap-census.mjs` (the BUG-53 instruments).
 
-**State (eval seeds 20/11/67):** 56/50/55 runs, 42.2/39.2/40.0 km, one component each, node y-spread
-0.000 m, **marks 0/0/0** (seed 67's summit-knob mark solves under its chord pin), sustained
-**35/35/35%**, zero runs over the 40% ceiling, hairpins 13/17/24, deg-2 joint kink mean 30/39/49°,
-BUG-53 defect pairs 5/6/6 (seed 6: 7). Cold→driving with NO route cache: **6.8–8.5 s on this
-machine**, 22–28 s at the 4× old-hardware proxy (pre-pin numbers; re-bench at the next checkpoint).
+**Prices (owner-ratified 2026-08-21, now the defaults):** `cTurn 45`, `wGrade 180`,
+`gMaxRoad 0.24`, corner rounding 15 m; cut/cut²/fill/bore/portal unchanged from the panel.
+
+**State (eval seeds 20/11/67, at those prices):** 56/50/55 runs, 43.3/39.6/41.5 km, one component
+each, node y-spread 0.000 m, **marks 0/0/0**, sustained **25/38/25%** (the 38 is one seed-11 edge on
+the ladder's ceiling rung — legal, unmarked), zero runs over the 40% ceiling, hairpins 19/20/23,
+spans 19/13/19, deg-2 joint kink mean 30/39/44°. BUG-53 defect pairs 5/6/12 (seed 6: 8) — the seed-67
+rise is overlap-class, not crossings (its crossings are 4). Cold→driving with NO route cache:
+**6.8–8.5 s on this machine**, 22–28 s at the 4× proxy (pre-pin numbers; re-bench next checkpoint).
 
 **Landed since the last handoff (all measured, all recorded above):** BUG-53 Phase A censuses
 (overlap instrument + drop simulation) · verdict: drop-a-leg alone insufficient · negative result:
 QUAL-22 cost-weighted vote makes BUG-53 WORSE (reverted) · **junction chord pins** (defect pairs
-−58%, crossings 11/13/4 → 10/3/3, marks 0/0/0, sustained ceiling 35% network-wide) · road-tunnel
-bore ceiling aligned to the solver's documented cap tolerance.
+−58%, crossings 11/13/4 → 10/3/3, marks 0/0/0) · road-tunnel bore ceiling aligned to the solver's
+documented cap tolerance · **owner's prices ratified as defaults** (cTurn 45, gMaxRoad 0.24) ·
+**the WEAVE class measured and the trim design worked out** (5 of 7 braids redundant, 2 not; the
+recommended mechanism is span ownership, not manufactured nodes — full design above).
 
 **Gates: `npm run test:all` = 45/50, five reds**, all diagnosed, none blocking a character
 judgment (stash-A/B'd against pre-pin src):
@@ -1419,12 +1508,16 @@ judgment (stash-A/B'd against pre-pin src):
    Grade**, which only started behaving correctly 2026-08-20 (it was being overridden by the ladder).
    All live in the `Router v2 (prices)` folder; the map A/B loop is ~2.5 s to first change, ~9 s
    settled. The pins changed every network — drive/map-judge them in the same visit.
-2. **BUG-53 remainder — owner ruling needed.** Chord pins cut the defect class 58% (shipped,
-   `5a5be89`); 24 pairs remain across seeds 6/20/11/67, and every further move is a priced
-   tradeoff the owner must rank — the full menu with measured costs is the end of the "BUG-53
-   worked" section above: drop-a-leg at hop ≤ 4 (clears 6 of 24, ~5.7 km) · trim/fork
-   (manufactured nodes) · carve-side blend (kills tears, not crossings) · accept-and-judge-driven.
-   Recorded recommendation: drop-a-leg at hop ≤ 4 + judge the rest on the map/drive.
+2. **BUG-53 remainder — the WEAVE trim is designed and waiting on a plan-mode session.**
+   Chord pins cut the defect class 58% (shipped, `5a5be89`). The owner's own mechanism — trim the
+   centre span between two crossings — is measured SOUND for 5 of 7 weave braids (the two roads
+   stay within 0.3–9 m the whole way; ~1.0 km of 163 km) and WRONG for the other 2 (legs genuinely
+   29–52 m apart). Recommended implementation is **span ownership** (a `tunnelSpans`-shaped skip
+   list, no manufactured nodes, no centerline surgery), decided from the graph for window
+   invariance. It touches the run contract → plan-mode sign-off first. Full design + the three
+   blockers: the "Owner prices ratified + the WEAVE class measured" section above. The non-weave
+   residue (single-crossings + overlap pairs) still has the earlier priced menu at the end of the
+   "BUG-53 worked" section.
 3. **Junction geometry (deferred pass).** Naive meets at degree ≥ 3. Mostly REATTACHMENT of shipped
    machinery (pads/fillets/aprons consume the run contract + node incidence, both of which survive).
    Canonical approach headings now exist at BOTH deg-2 and junctions (the chord pins) — what
