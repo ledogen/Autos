@@ -62,12 +62,39 @@ The owner captured a spot on seed 6 (`rangersim-capture-1787289162055.json`, mar
   (Two roads need ≈18 m of centre separation not to share earthworks: 2 × (halfWidth 5 + shoulder
   2.5) + carve extra 3.)
 
-**This reframes the ticket.** The FEAT-68 purity probe measured the DISJOINT-pair crossing class as
-empty-to-rare (2 crossings in ~24k pairs across 6 seeds) — and that still holds. But the same probe
-recorded **59–82 node-sharing crossings per seed** and dismissed them as "v1's wander class, which
-the corridor-disc machinery exists to manage". Under v2 that machinery is deleted and nothing
-replaced it, so node-sharing overlap is the class that actually reaches the player. Fix that first;
-disjoint crossings may need nothing at all.
+### Second and third captures (2026-08-20, same day) — MID-SPAN crossings, and the census
+
+The owner then captured two more spots (`…3171385`, `…3164102`, seed 6) — *"points where I just
+cross mid-span"* — and asked where this sits in the plan. Both are **two runs that share a node
+somewhere, crossing each other far from it**: at 72%/53% and 72%/18% along their respective lengths,
+with vertical gaps of 31 m and **7.95 m**. That is a THIRD geometry, distinct from the near-parallel
+departure above, and the first framing of this ticket did not cover it.
+
+**Census over the eval seeds** (`node test/crossing-census.mjs`), excluding crossings within 40 m of
+a shared node (expected junction geometry) and crossings where one run is inside a bore (the
+vocabulary working):
+
+| seed | runs | REAL crossings | node-sharing | disjoint | under 6 m vertical gap |
+|---|---|---|---|---|---|
+| 6 | 52 | **11** | 11 | 0 | 11 of 11 |
+| 20 | 56 | **13** | 13 | 0 | 10 of 13 |
+| 11 | 50 | **4** | 4 | 0 | 3 of 4 |
+
+Distance from the nearest run end: **58–473 m** — genuinely mid-span, not junction spill. Vertical
+gaps run 0.1–4.9 m on the bad ones: two roads at the same height crossing with nothing to separate
+them.
+
+**What this settles.** The DISJOINT class really is empty — 0 across three seeds, consistent with the
+purity probe. Every real crossing is between runs that share a node elsewhere. So the fix does not
+need a global all-pairs search: for each node, only its own incident edges can collide, which makes
+this a bounded, local problem.
+
+**And it falsifies the claim that retired the culls.** FEAT-68 deleted the crossing/clearance culls
+on the finding that they prevented ZERO crossings while costing 11–21 good edges per seed. That
+measurement was taken on the pre-2.5D corridor and is now STALE: the 2.5D search produces 4–13 real
+crossings per seed. The conclusion to draw is NOT "restore the culls" — they were blunt (they
+dropped edges for mere proximity and took connectivity from 95.7% to 54.1%) — but "the targeted
+replacement they were standing in for is now genuinely needed".
 
 Note this is NOT the deferred junction-geometry pass in disguise. A pad or fillet dresses the first
 few metres; it does nothing about two roads sharing a corridor for 244 m. The owner's own instinct
@@ -75,11 +102,13 @@ few metres; it does nothing about two roads sharing a corridor for 244 m. The ow
 
 ## Before building anything — measure (the Q1/Q2 discipline this ticket family runs on)
 
-- **How many, of the node-sharing kind?** Per eval seed, for every pair of runs meeting at a node,
-  the arc length over which their centres stay within ~18 m (the shared-earthworks threshold), and
-  the minimum separation. The seed-6 case above (244 m at 0.1 m) is the shape to hunt.
-- **How many disjoint crossings?** Same census for runs that share NO node, with world positions
-  and the two runKeys. (The FEAT-68 purity probe already has the geometry for this: it
+- **DONE — the crossing census** (`test/crossing-census.mjs`, table above). Re-run it after any
+  routing change; it is the measurement this ticket is judged on.
+- **Still to measure — the OVERLAP kind** (distinct from crossing): per eval seed, for every pair of
+  runs meeting at a node, the arc length over which their centres stay within ~18 m (the
+  shared-earthworks threshold) and the minimum separation. The seed-6 `-7,2,0` case (244 m at 0.1 m)
+  is the shape to hunt. A pair can overlap without ever crossing, so the census above does not see
+  it. (The FEAT-68 purity probe already has the geometry for this: it
   counted crossings among pure routes and found the disjoint-pair class empty-to-rare on the OLD
   search — that number needs re-taking on the 2.5D corridor.)
 - **What kind?** Split them: (a) a genuine geography funnel — one good pass, two connections, the
