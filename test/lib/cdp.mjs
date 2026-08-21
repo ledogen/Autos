@@ -17,17 +17,19 @@ const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 export const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 // Launch Chrome at `url` with a throwaway profile dir. `headed: true` opens a real window —
-// headless compositing differs from real compositing, so perf runs may want both.
+// headless compositing differs from real compositing, so perf runs may want both. Audio is muted
+// unless `audio: true`.
 // Returns { chrome, cleanup }; cleanup kills the process and removes the profile dir
 // (also wired to process exit/SIGINT so orphans don't accumulate).
-export function launchChrome (url, { port = 9222, headed = false, windowSize = '1400,900', extraArgs = [] } = {}) {
+export function launchChrome (url, { port = 9222, headed = false, audio = false, windowSize = '1400,900', extraArgs = [] } = {}) {
   const userDir = mkdtempSync(join(tmpdir(), 'rangersim-cdp-'))
   const args = [
-    // --mute-audio rides with --headless: CDP-synthesized keydowns count as a user gesture, so the
-    // harness DOES unlock WebAudio and a headless run would otherwise play the engine drone out of
-    // the host's speakers. Deliberately not applied to `headed` runs — that's the in-browser verify
-    // path (see reference: CDP verify), where hearing the audio is the point.
-    ...(headed ? [] : ['--headless=new', '--mute-audio']),
+    // --mute-audio is the DEFAULT on every harness launch, headed or not: CDP-synthesized keydowns
+    // count as a user gesture, so the harness DOES unlock WebAudio and a run would otherwise play
+    // the engine drone out of the host's speakers mid-session. Opt back in with `audio: true` when
+    // the point of the run is to hear it.
+    ...(audio ? [] : ['--mute-audio']),
+    ...(headed ? [] : ['--headless=new']),
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${userDir}`,
     '--use-angle=metal',

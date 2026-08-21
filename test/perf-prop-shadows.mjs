@@ -31,6 +31,9 @@ const server = spawn('npx', ['serve', ROOT, '-l', String(PORT)], { stdio: 'ignor
 const userDir = mkdtempSync(join(tmpdir(), 'rangersim-perf-'))
 const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${CDP}`, `--user-data-dir=${userDir}`,
     '--use-angle=metal', '--window-size=1400,900',
+    // Muted like every other harness launch — CDP input unlocks WebAudio, so an unmuted run drones
+    // out of the host's speakers.
+    '--mute-audio',
     // Unlock the frame rate: vsync clamps every phase to 16.67 ms and hides any cost that fits
     // in the frame budget — unlocked, the mean frame time IS the true render cost.
     '--disable-frame-rate-limit', '--disable-gpu-vsync',
