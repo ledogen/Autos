@@ -476,10 +476,14 @@ export class PhysicsEngine {
    * only — see classifyImpactRegion in physics.js.
    *
    * @param {*} handle - body handle.
+   * @param {Float64Array|Array} [outByShape] - if given, filled with the peak impulse on EACH of the
+   *   body's shapes (indexed as they were added). Lets a caller tell a wheel-core hit from a body
+   *   hull hit without the engine knowing what either means. Allocation-free: reused by the caller.
    * @returns {{impulse: number, point: {x,y,z}|null, normal: {x,y,z}|null}} body-local point/normal.
    */
-  maxContactImpulse (handle) {
+  maxContactImpulse (handle, outByShape = null) {
     const rec = this._bodies.get(handle)
+    if (outByShape) outByShape.fill(0)
     if (!this._contactsBuf) this._contactsBuf = _b3.createContactsBuffer()
     const buf = _b3.getBodyContactData(this._contactsBuf, rec.id)
     const none = { impulse: 0, point: null, normal: null }
@@ -499,6 +503,14 @@ export class PhysicsEngine {
         _b3.getManifoldAt(manifold, contact, m)
         for (let k = 0; k < manifold.pointCount; k++) {
           const pt = manifold.points[k]
+          // Per-SHAPE peak, when the caller wants attribution. The chassis is a QUAL-25 compound —
+          // four body hulls plus four wheel hard cores — and which shape took a hit is the whole
+          // difference between "the bumper hit a tree" and "the rim hit a rock".
+          if (outByShape) {
+            const selfShape = aIsSelf ? contact.shapeIdA : contact.shapeIdB
+            const si = rec.shapes.findIndex(sh => this._shapeKey(sh) === this._shapeKey(selfShape))
+            if (si >= 0 && pt.totalNormalImpulse > outByShape[si]) outByShape[si] = pt.totalNormalImpulse
+          }
           if (pt.totalNormalImpulse <= max) continue
           max = pt.totalNormalImpulse
           const a = aIsSelf ? pt.anchorA : pt.anchorB

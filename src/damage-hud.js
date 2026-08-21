@@ -31,6 +31,7 @@ import { TRACKS, TRACK_IDS, DAMAGE_PARAMS, MPH, DamageModel } from './damage.js'
 
 const REFRESH_S = 0.1     // 10 Hz — condition moves on the scale of minutes
 const RATE_WINDOW_S = 3   // moving window the wear rate is measured over
+const HOLD_S = 4          // how long the peak-held signal rows keep a spike, so it can be read
 
 // Track classes in display order, with the heading each group sits under.
 const GROUPS = [
@@ -98,6 +99,8 @@ export class DamageHUD {
     this.impacts = []          // most recent first, capped
     this._acc = 0
     this._history = []         // [{t, condition:{...}}] for the wear-rate window
+    this._rimHold = [0, 0, 0, 0]   // peak-held rim impulse per corner (see HOLD_S)
+    this._rimHoldT = [0, 0, 0, 0]
     this._t = 0
 
     const style = document.createElement('style')
@@ -129,8 +132,17 @@ export class DamageHUD {
 
   /** @param {number} dt - real seconds since the last frame. */
   update (dt) {
+    // The peak hold runs even while hidden — otherwise opening the panel after a strike shows
+    // nothing, which is exactly when you want to look.
+    const rim = this.vehicleState.rimImpulse
+    if (rim) {
+      this._t += dt
+      for (let i = 0; i < 4; i++) {
+        if (rim[i] > this._rimHold[i]) { this._rimHold[i] = rim[i]; this._rimHoldT[i] = this._t }
+        else if (this._t - this._rimHoldT[i] > HOLD_S) this._rimHold[i] = 0
+      }
+    }
     if (!this.visible) return
-    this._t += dt
     this._acc += dt
     if (this._acc < REFRESH_S) return
     this._acc = 0
@@ -197,15 +209,15 @@ export class DamageHUD {
     out.push(`<div class="dh-sig"><span>bump kN</span>${[0, 1, 2, 3].map(i =>
       fmt(Math.abs(vs.bumpForce?.[i] || 0) / 1000, P.springForceFloor / 1000, 1)).join('')}</div>`)
     out.push(`<div class="dh-sig"><span>strut m/s</span>${corner(vs.strutCompVel, P.damperVelFloor, 2)}</div>`)
-    // Off-axis contact force against the rim-strike point. Exactly zero on flat ground however
-    // hard the tire is loaded — a reading here means that wheel is hitting something.
-    const rp = this.model.params || {}
-    const trip = P.wheelStrikeFloorMult * DamageModel.staticWheelLoad(rp)
-    out.push(`<div class="dh-sig"><span>strike kN</span>${[0, 1, 2, 3].map(i =>
-      fmt((vs.obstacleForce?.[i] || 0) / 1000, trip / 1000, 1)).join('')}</div>`)
+    // Rim-core contact impulse, PEAK-HELD. A strike lasts a couple of physics steps and this pane
+    // redraws at 10 Hz, so the instantaneous value is almost never the one you want to read — the
+    // hold keeps each corner's worst for a few seconds so a spike can actually be caught.
+    const trip = P.rimStrikeFloorNs
+    out.push(`<div class="dh-sig"><span>rim N·s</span>${[0, 1, 2, 3].map(i =>
+      fmt(this._rimHold[i], trip, 0)).join('')}</div>`)
     out.push(`<div class="dh-note">floors — slip ${P.tireSlipFloor} m/s · bump ${(P.springForceFloor / 1000).toFixed(0)} kN`
       + ` (align ${(P.alignBumpFloorN / 1000).toFixed(0)} kN) · strut ${P.damperVelFloor} m/s`
-      + ` · strike ${(trip / 1000).toFixed(0)} kN off-axis (${P.wheelStrikeFloorMult}x static wheel load)</div>`)
+      + ` · rim ${trip} N·s on the wheel core (held ${HOLD_S}s). Wheels: no continuous wear — strikes and crashes only.</div>`)
     out.push('<div class="dh-note">a floor that is red on ordinary road is wrong, or the signal under it is noise.</div>')
 
     // ── IMPACTS ───────────────────────────────────────────────────────────────────────────────

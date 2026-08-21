@@ -17,7 +17,7 @@
 
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { stepPhysics, createVehicleChassis, classifyImpactRegion } from './physics.js'
+import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes } from './physics.js'
 import { createPhysicsEngine } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics } from './terrain-physics.js'
 import { DebrisSystem } from './debris.js'
@@ -921,7 +921,7 @@ async function _reseatTruckAtSpawnInner () {
   vehicleState.slipVel        = [0, 0, 0, 0]     // SM-3 damage signals
   vehicleState.tireFlat       = [0, 0, 0, 0]
   vehicleState.bumpForce      = [0, 0, 0, 0]
-  vehicleState.obstacleForce  = [0, 0, 0, 0]
+  vehicleState.rimImpulse     = [0, 0, 0, 0]
   vehicleState.brakeTorque    = [0, 0, 0, 0]
   vehicleState.wheelPhase     = [0, 0, 0, 0]
   vehicleState.drivetrain     = { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 }
@@ -1047,7 +1047,7 @@ const vehicleState = {
   slipVel:         [0, 0, 0, 0],                   // m/s — raw contact-patch sliding speed (tire wear, dominant term)
   tireFlat:        [0, 0, 0, 0],                   // N   — cornering force magnitude (tire wear, minor term)
   bumpForce:       [0, 0, 0, 0],                   // N   — peak bump-stop force this step (spring wear)
-  obstacleForce:   [0, 0, 0, 0],                   // N   — peak OFF-AXIS contact force this step: zero on flat ground, non-zero only when a wheel strikes something (rim damage)
+  rimImpulse:      [0, 0, 0, 0],                   // N·s — engine contact impulse on each WHEEL HARD CORE this step (QUAL-25). Non-zero only when the rim itself is hit — rim damage
   brakeTorque:     [0, 0, 0, 0],                   // N·m — applied brake torque (brake wear)
   wheelPhase:      [0, 0, 0, 0],                   // per-wheel spin phase [rad], fixed-step; feeds the out-of-round radius (params.wheelRunout)
   drivetrain:      { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },  // FEAT-23 engine/converter/gearbox state; stepped by stepDrivetrain, read by HUD/logger
@@ -4692,6 +4692,9 @@ function loop () {
     // classifyImpactRegion turns the body-local point/normal into an armor region and returns null
     // for ground contacts, so driving over terrain never registers as a crash.
     {
+      // The rim cores are part of the same compound body, so this is one engine read: the hardest
+      // contact overall (for armor) and the per-core impulses (for rim strikes) come out together.
+      readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimImpulse)
       const hit = physicsEngine.maxContactImpulse(vehicleChassis)
       const landed = damageModel.feedContact(
         classifyImpactRegion(hit.point, hit.normal), hit.impulse, RANGER_PARAMS.mass, PHYSICS_DT)

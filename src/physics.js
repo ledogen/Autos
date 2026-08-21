@@ -167,6 +167,39 @@ const CHASSIS_PROFILE = {
 }
 
 /**
+ * Peak contact impulse on each WHEEL HARD CORE this step, per corner [N·s].
+ *
+ * This is the rim-strike signal, and it is the engine's own answer rather than anything derived.
+ * The QUAL-25 chassis carries a rigid sphere per wheel at `wheelRadius − WHEEL_SOFT_BAND`, riding
+ * the strut-derived hub position and colliding with debris only. That geometry IS the model of a
+ * tire: the outer 0.15 m band is rubber, handled by our analytic soft path, and the core is the
+ * rim. So "the rubber ran out and the rim is taking the load" needs no threshold and no proxy —
+ * it is exactly the condition that the engine reports a contact on a core, and Box3D solves that
+ * contact properly: real impulse exchange, the rock kicked away with the momentum it took out of
+ * the wheel, no penalty spring of ours in the loop.
+ *
+ * Note the enveloping factor is what decides whether a core is ever reached, and it points the
+ * right way round: a big boulder envelops little, so the tire resists it and rides over with the
+ * core untouched; a small hard rock envelops a lot, so the carcass wraps it and the hub sinks
+ * until the core meets it. Which is the ranking a rim wants.
+ *
+ * @param {object} engine - physics engine (adapter).
+ * @param {*} chassis - chassis body handle.
+ * @param {Array<number>} out - length-4 scratch, written FL/FR/RL/RR.
+ * @returns {Array<number>} `out`.
+ */
+export function readRimStrikes (engine, chassis, out) {
+  out[0] = out[1] = out[2] = out[3] = 0
+  const rims = _chassisRims.get(chassis)
+  if (!rims) return out
+  if (!_shapeImpulseScratch || _shapeImpulseScratch.length < 64) _shapeImpulseScratch = new Float64Array(64)
+  engine.maxContactImpulse(chassis, _shapeImpulseScratch)
+  for (let i = 0; i < 4; i++) out[i] = _shapeImpulseScratch[rims[i].shapeIndex] || 0
+  return out
+}
+let _shapeImpulseScratch = null
+
+/**
  * Which armor region a contact landed on: 'front' | 'left' | 'right' | 'rear', or null for a hit
  * that no armor covers.
  *
