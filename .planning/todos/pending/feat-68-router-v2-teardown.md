@@ -1137,15 +1137,26 @@ a few metres, not a 244 m shared corridor. Full detail + the census to run: BUG-
 - **`bug-53-offnode-edge-crossings.md`** — road-overlap defects, filed 2026-08-20 from the owner's
   capture. Not started.
 
-**Branch:** `feature/corridor-router` at `563c757`, worktree `/Users/ledogen/CodeShit/CarGame-corridor-router`,
-dev server **:3343**. Main is untouched and still ships v1 — the swap is one merge at sign-off.
+**Branch:** `feature/corridor-router` at `e1aa55b`, worktree `/Users/ledogen/CodeShit/CarGame-corridor-router`,
+dev server **:3343**, tree CLEAN. Main is untouched and still ships v1 — the swap is one merge at
+sign-off. (Planning docs commit to main; code to the branch. Both trees clean as of this handoff.)
 Battery: `node perf-runs/v2-integration-check.mjs`. Gallery: `perf-runs/gallery.html`.
+Crossing census: `node test/crossing-census.mjs`.
 
 **State (eval seeds 20/11/67):** 56/50/55 runs, 45.0/41.1/41.8 km, one component each, node y-spread
-0.000 m, marks 0/0/1, sustained 35/33/63% (the 63 is that one marked run), hairpins 17/21/25.
-Cold→driving, no route cache at all: **6.8–8.5 s on this machine**, 22–28 s at the 4× proxy.
+0.000 m, marks 0/0/1, sustained 35/33/63% (the 63 is that one marked run), hairpins 17/21/25, deg-2
+joint kink mean 30/41/50°. Cold→driving with NO route cache of any kind: **6.8–8.5 s on this
+machine**, 22–28 s at the 4× old-hardware proxy.
 
-**Gates: 4 standing reds**, all diagnosed, none blocking a character judgment:
+**Landed since the last handoff (all measured, all recorded above):** deg-2 approach headings ·
+route Worker ported to a module import (mirror + 1,979 lines deleted) · route-cache bake subsystem
+deleted outright · v1 arc router deleted from road-carve.js (1823→430 lines) + 41 dead params ·
+debug panel rebuilt for v2 (25 dead sliders out, the price list in) · map paramSig fix (the map now
+follows price edits) · profile dequantise + station-corner rounding (jolt p99 halved) · owner's
+weights (wGrade 180, cTurn 55) · Max Road Grade actually honoured.
+
+**Gates: `npm run test:all` = 46/50, four standing reds**, all diagnosed, none blocking a character
+judgment:
 | gate | what it is |
 |---|---|
 | `mission-network` | BUG-41 interior drift, p99 2.4 m. The one real unexplained defect. Arc-domain hypothesis DISPROVEN. Needs its own session. |
@@ -1191,3 +1202,24 @@ Cold→driving, no route cache at all: **6.8–8.5 s on this machine**, 22–28 
   4–13 real crossings per seed. So this is "don't bring back the blunt instrument", NOT "crossings
   are fine". A targeted resolver (only actual crossings, only a node's own incident edges, with the
   detour guarantee) is exactly what BUG-53 is for.
+
+## Session close (2026-08-20)
+
+**Where to pick up:** the CURRENT HANDOFF above is the whole orientation — it lists both tickets,
+the branch/worktree/port, the verified state, the four standing gate reds and what each one is, the
+ranked next steps, and the two things not to re-attempt.
+
+**Fastest way back in:**
+1. `cd /Users/ledogen/CodeShit/CarGame-corridor-router && npm run dev` (port 3343) — drive
+   `?seed=20|11|67|6`, map on **M**, price sliders under `Roads → Router v2 (prices)`.
+2. `node perf-runs/v2-integration-check.mjs` — one line per eval seed, the contract at a glance.
+3. `open perf-runs/gallery.html` — the checkpoint gallery, including the cTurn A/B and the
+   micro-crest before/after.
+
+**The one thing most likely to confuse a fresh session:** planning docs live on **main**, code lives
+on **feature/corridor-router**. They are different worktrees. Main also carries unrelated asset work
+committed in parallel, so main's HEAD will not be a FEAT-68 commit.
+
+**Loose end, not mine:** `.planning/todos/pending/bug-54-buried-rock-invisible-collider.md` is
+UNTRACKED on main — it predates this session and was never committed. Someone should `git add` it or
+delete it deliberately; leaving it untracked risks losing it.
