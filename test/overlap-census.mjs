@@ -146,10 +146,12 @@ for (const seed of [6, 20, 11, 67]) {
     if (fromNodeOverlap > PAD || isTear)
       conflicts.push({ type: 'overlap', A, B, tear: isTear,
         detail: `${fromNodeOverlap.toFixed(0)} m from node, mid-span near ${midNearLen.toFixed(0)} m, minSep ${minSepMid === Infinity ? '—' : minSepMid.toFixed(1)}, deck mismatch ${maxDyMid.toFixed(1)} m` })
-    // (c) crossings (REAL class, same rules as crossing-census)
+    // (c) crossings (REAL class, same rules as crossing-census) — ALL of them, because the SHAPE
+    //     matters: ≥2 crossings = a WEAVE (the owner's cross-and-cross-back observation), where the
+    //     braid interval [first crossing .. last crossing] is the trim/merge candidate.
     const pB = B.e.points, cB = B.e.polyCum
-    let crossed = false
-    for (let m = 1; m < pA.length && !crossed; m++) for (let n = 1; n < pB.length; n++) {
+    const xsAll = []
+    for (let m = 1; m < pA.length; m++) for (let n = 1; n < pB.length; n++) {
       const X = seg(pA[m - 1].x, pA[m - 1].z, pA[m].x, pA[m].z, pB[n - 1].x, pB[n - 1].z, pB[n].x, pB[n].z)
       if (!X) continue
       const sA = cA[m - 1] + X.t * (cA[m] - cA[m - 1]), sB = cB[n - 1] + X.u * (cB[n] - cB[n - 1])
@@ -157,9 +159,14 @@ for (const seed of [6, 20, 11, 67]) {
       if (Math.min(dA, dB) < PAD) continue
       if (A.inBore(sA) || B.inBore(sB)) continue
       const yA = pA[m - 1].y + X.t * (pA[m].y - pA[m - 1].y), yB2 = pB[n - 1].y + X.u * (pB[n].y - pB[n - 1].y)
-      conflicts.push({ type: 'cross', A, B, detail: `gap ${Math.abs(yA - yB2).toFixed(1)} m, ${Math.min(dA, dB).toFixed(0)} m from run end` })
-      crossed = true
-      break
+      xsAll.push({ sA, sB, gap: Math.abs(yA - yB2), fromEnd: Math.min(dA, dB) })
+    }
+    if (xsAll.length) {
+      xsAll.sort((a, b) => a.sA - b.sA)
+      const first = xsAll[0], last = xsAll[xsAll.length - 1]
+      const braid = xsAll.length >= 2 ? ` · WEAVE braid ${(last.sA - first.sA).toFixed(0)} m (sA ${first.sA.toFixed(0)}→${last.sA.toFixed(0)})` : ''
+      conflicts.push({ type: 'cross', A, B, nCross: xsAll.length,
+        detail: `${xsAll.length}× gap ${xsAll.map(x => x.gap.toFixed(1)).join('/')} m, ${first.fromEnd.toFixed(0)} m from run end${braid}` })
     }
   }
 
@@ -169,7 +176,9 @@ for (const seed of [6, 20, 11, 67]) {
   compSeen.add(compQ[0])
   while (compQ.length) { const u = compQ.pop(); for (const { n } of adj.get(u) || []) if (!compSeen.has(n)) { compSeen.add(n); compQ.push(n) } }
   const comps = compSeen.size === adj.size ? 1 : '>1'
-  console.log(`\nseed ${seed}: ${runs.length} runs, ${kmTotal.toFixed(1)} km, ${comps} component(s), ${pairsTotal} node-sharing pairs · conflicts: ${conflicts.filter(c => c.type === 'cross').length} crossing, ${conflicts.filter(c => c.type === 'overlap').length} overlap`)
+  const nWeave = conflicts.filter(c => c.type === 'cross' && c.nCross >= 2).length
+  const nSingle = conflicts.filter(c => c.type === 'cross' && c.nCross === 1).length
+  console.log(`\nseed ${seed}: ${runs.length} runs, ${kmTotal.toFixed(1)} km, ${comps} component(s), ${pairsTotal} node-sharing pairs · conflicts: ${nWeave} weave (≥2 crossings), ${nSingle} single-cross, ${conflicts.filter(c => c.type === 'overlap').length} overlap`)
   const dist = overlapLens.filter(x => x > 1)
   dist.sort((a, b) => b - a)
   console.log(`   from-node overlap distribution (top 8): ${dist.slice(0, 8).map(x => x.toFixed(0)).join(', ')} m`)
