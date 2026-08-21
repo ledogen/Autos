@@ -1252,8 +1252,11 @@ few metres; it does nothing about two roads sharing a corridor for 244 m. The ow
 
 ### Acceptance (BUG-53)
 
-- [ ] A census per eval seed of BOTH classes — node-sharing overlap (arc length within 18 m, min
-      separation) and disjoint crossings — with the vertical gap at each.
+- [x] A census per eval seed of BOTH classes — node-sharing overlap (arc length within 18 m, min
+      separation) and disjoint crossings — with the vertical gap at each. (`test/overlap-census.mjs`
+      + `test/crossing-census.mjs`, 2026-08-21 — the overlap instrument also carries the 3D tear
+      predicate, a disjoint-pair proximity sweep, and the drop-a-leg simulation; see the worked
+      section below.)
 - [ ] No pair of runs sharing a node runs within shared-earthworks distance for more than ~the
       junction pad radius; the seed-6 `-7,2,0` case (244 m at 0.1 m) is the regression test.
 - [ ] Zero non-node crossings that read as defects on the eval seeds (a bore passing under a road is
@@ -1263,70 +1266,185 @@ few metres; it does nothing about two roads sharing a corridor for 244 m. The ow
 - [ ] A gate: the `road-connectivity` gate already asserts "no real crossings" on the eval trio —
       confirm what it currently measures and tighten it to this definition.
 
+## BUG-53 worked (2026-08-21): three measured verdicts, junction chord pins SHIPPED, −58% defects
+
+Session ran the ticket's own discipline — measure before build — and the measurements overturned
+the plan twice before landing the fix. All numbers from the branch at radius 1400, seeds 6/20/11/67.
+
+### The instrument (`test/overlap-census.mjs`, c5a2d0f + 5a5be89)
+
+Per seed: every node-sharing pair's from-node contiguous overlap (centres within 18 m), mid-span
+near-length, min separation, and **deck mismatch** (|Δy| where the stencils meet); REAL crossings
+(same rules as crossing-census); a **disjoint-pair proximity sweep**; and per defect pair a
+bounded-hop detour test plus a deterministic greedy **drop simulation** at hop caps 4/6/∞. Defect
+predicate is 3D: a crossing, or ≥20 m of shared-earthworks proximity with minSep < 9 m OR deck
+mismatch > 3 m — the vertical term is load-bearing (two benches 14.7 m apart laterally with a 28 m
+height difference tear the carve; lateral separation alone called that pair "benign").
+
+### Verdict 1 — the owner's preference 1 (delete a leg) is measured INSUFFICIENT alone
+
+Pre-fix defect pairs 12/18/11/16 (57 total). The greedy sim at the degree-cap's own redundancy
+standard (detour ≤ 4 hops) clears only ~1/3 of them for 2–4 edges lost per seed; with UNBOUNDED
+detours (connectivity preserved but any length) it still leaves 3–5 pairs per seed where BOTH legs
+are bridges — dropping either strands a component — and costs 6–8 edges / 6–7 km per seed
+(~15% of network km), which the connectivity-first ruling forbids. The stuck pairs are geography
+funnels: one good pass out of a node, two connections that must exist.
+
+### Verdict 2 — NEGATIVE RESULT, do not re-attempt for BUG-53: cost-weighted Urquhart (QUAL-22)
+
+Inventory item 10's hypothesis — prune each triangle's most-EXPENSIVE chord (v2 chord cost on the
+truncated field) so redundant funnel legs are never proposed — was implemented param-gated,
+measured, and REVERTED. Same instrument, pre-3D predicate: defect pairs 11/16/10/14 (Euclidean
+vote) → 9/**24**/**14**/**16** (cost vote) — WORSE on 3 of 4 seeds. Mechanism, clear in hindsight:
+pricing the vote herds the surviving edges into the same cheap valleys — it kills absurd ridge
+chords (QUAL-22's original goal, which may still be wanted for character) but CONCENTRATES
+corridors, which is exactly the funnel generator. QUAL-22 remains re-openable for character
+reasons; it is not the BUG-53 fix.
+
+### Verdict 3 — proximity tears are 3D and not strictly node-sharing
+
+The crossing class really is node-sharing-only (0 disjoint everywhere, again). The TEAR class is
+not: graph-topology's window of seed 6 carries two runs with NO shared node 11.1 m apart with a
+30.7 m deck mismatch. Rare (0 instances in the four census windows), but the census now sweeps
+disjoint pairs too.
+
+### The fix shipped — junction CHORD pins (`5a5be89`): every deg-3+ leg departs toward its far node
+
+Root cause of the dominant class: junction (deg ≥ 3) legs routed UNPINNED, so siblings all picked
+the same best exit and left the node collinear. Junction ends now get a chord pin through the
+existing deg-2 pin machinery unchanged (60° cone, terminal-region rule, feasibility-ladder
+demotion, `_v2Dirs` cache tag). The chord is a pure fn of the two endpoint positions — window-
+invariant wherever the degree class is, by the same settled-adjacency argument as deg-2 — and this
+also lands the "canonical approach headings at junctions" piece the junction plan owed before
+sign-off. Measured, same 3D instrument:
+
+| metric (seeds 6/20/11/67) | before | after |
+|---|---|---|
+| defect pairs | 12 / 18 / 11 / 16 (57) | **7 / 5 / 6 / 6 (24, −58%)** |
+| REAL crossings (crossing-census, seeds 6/20/11) | 11 / 13 / 4 | **10 / 3 / 3** |
+| marked edges (eval trio) | 0 / 0 / 1 | **0 / 0 / 0** |
+| max sustained-24 m (eval trio) | 35 / 33 / 63% | **35 / 35 / 35%** |
+| km | 39.1 / 45.0 / 41.1 / 41.8 | 37.3 / 42.2 / 39.2 / 40.0 |
+
+The km drop is de-duplicated pavement, not lost coverage — run counts, components (1 each), and
+y-spread (0.000) are unchanged; pin fallbacks 1/1/4. Seed 67's summit-knob mark SOLVES under its
+chord pin, so "zero marked edges across the eval set" now holds on the whole trio (the gate +
+in-game disclaimer are still to wire). Hairpins 13/17/24 (was 17/21/25) — a nudge on the cTurn
+dial's territory, for the owner's eye. Deg-2 kink means unchanged. Network build 1.6–2.3 s at 1×.
+
+**Gates: full suite 45/50** (was 46/50; story-poi went GREEN). All five reds diagnosed; the two
+new ones are canaries of the residual defect class, verified by stash A/B against pre-pin src:
+- `road-smoothness` — lone-pine: EIGHT 15 cm steps at one spot = a node-sharing pair 14.7 m apart
+  with 28 m deck mismatch (the tear class, mid-span, 303 m from the node); plus two 15 cm
+  portal-face lips exactly at span boundaries (pre-existing class, spans moved); plus one 28 cm
+  naive-meet step at a junction (deferred junction pass).
+- `graph-topology` — the three booked re-baseline sub-checks, plus SURFACE-SMOOTH now red on the
+  disjoint tear above (verdict 3).
+- `paper-tour` — tier-2/3 customer-consistency margin, network-shape-sensitive (same class as the
+  checkpoint-1 loop item; different customer each re-route).
+- `mission-network` (BUG-41) and `pond-route-around` (non-vacuity precondition) — pre-existing.
+- `road-tunnel` went red then green: its 20% bore ceiling was a round number predating the
+  solver's documented cap tolerance; now asserts gMaxBore + 0.03 (quantum + rounding bound,
+  measured worst 20.53%).
+
+### What remains (24 defect pairs), and the decision that is the owner's
+
+The drop simulation on the POST-pin network: hop ≤ 4 clears 6 of 24 (~5.7 km lost across four
+seeds); hop ≤ 6 clears 12 (~11.6 km); unbounded clears 19 (~17.8 km) and 5 pairs are stuck
+forever (both legs bridges). Options, rankable only by the owner:
+1. **Build the drop-a-leg resolver at hop ≤ 4** — preference 1 at the degree cap's precedented
+   redundancy standard; cheap in km, clears a quarter of the residue; real machinery cost
+   (spec-time drops need routed geometry for a margin ring + the order-free candidate/BFS
+   discipline `_degreeDropSet` uses).
+2. **Trim to the crossing / fork the overlap** — the owner's option 2; handles the funnel pairs
+   properly (one shared approach + a Y where corridors diverge) but manufactures nodes the site
+   layer never placed, and every consumer keyed on site ids must accept them.
+3. **Carve-side reconciliation** — where two runs share earthworks, blend the second stencil onto
+   the first instead of fighting it (the junction triple-overlay precedent). Kills the TEAR read
+   without touching topology; tight parallels would read as one wide road. Dresses the symptom;
+   does nothing for at-grade crossings.
+4. **Accept and judge in the drive** — at 5–7 pairs per seed the map A/B (~2.5 s a flip) can show
+   whether what's left reads as defect or as mountain roads sharing a valley.
+
+Recommendation on the record: 1 + judge the rest driven (3 as follow-up if tears still read);
+avoid 2 until nothing else serves.
+
 ---
 
-# CURRENT HANDOFF (2026-08-20) — read this one
+# CURRENT HANDOFF (2026-08-21) — read this one
 
 **Where the work lives.** ONE ticket — this file. Everything above is a dated record, appended in
 order; this section is the only live "what now". (BUG-53 — the road-overlap defects filed
 2026-08-20 from the owner's capture — was ABSORBED into this ticket 2026-08-20 so handoffs stay a
-single document: its full record + acceptance is the "BUG-53 (absorbed)" section above, its work is
-next-step 2 below, and its old file is a closed-merged stub in `.planning/todos/completed/`.)
+single document: its full record + acceptance is the "BUG-53 (absorbed)" section above, its
+measured verdicts + the shipped junction-chord-pin fix are the "BUG-53 worked" section above, its
+remaining decision is next-step 2 below, and its old file is a closed-merged stub in
+`.planning/todos/completed/`.)
 
-**Branch:** `feature/corridor-router` at `e1aa55b`, worktree `/Users/ledogen/CodeShit/CarGame-corridor-router`,
+**Branch:** `feature/corridor-router` at `5a5be89`, worktree `/Users/ledogen/CodeShit/CarGame-corridor-router`,
 dev server **:3343**, tree CLEAN. Main is untouched and still ships v1 — the swap is one merge at
 sign-off. (Planning docs commit to main; code to the branch. Both trees clean as of this handoff.)
-Battery: `node perf-runs/v2-integration-check.mjs`. Gallery: `perf-runs/gallery.html`.
-Crossing census: `node test/crossing-census.mjs`.
+Battery: `node perf-runs/v2-integration-check.mjs`. Gallery: `perf-runs/gallery.html` (predates the
+pins — refresh before the next feel visit). Censuses: `node test/crossing-census.mjs` +
+`node test/overlap-census.mjs` (the BUG-53 instruments).
 
-**State (eval seeds 20/11/67):** 56/50/55 runs, 45.0/41.1/41.8 km, one component each, node y-spread
-0.000 m, marks 0/0/1, sustained 35/33/63% (the 63 is that one marked run), hairpins 17/21/25, deg-2
-joint kink mean 30/41/50°. Cold→driving with NO route cache of any kind: **6.8–8.5 s on this
-machine**, 22–28 s at the 4× old-hardware proxy.
+**State (eval seeds 20/11/67):** 56/50/55 runs, 42.2/39.2/40.0 km, one component each, node y-spread
+0.000 m, **marks 0/0/0** (seed 67's summit-knob mark solves under its chord pin), sustained
+**35/35/35%**, zero runs over the 40% ceiling, hairpins 13/17/24, deg-2 joint kink mean 30/39/49°,
+BUG-53 defect pairs 5/6/6 (seed 6: 7). Cold→driving with NO route cache: **6.8–8.5 s on this
+machine**, 22–28 s at the 4× old-hardware proxy (pre-pin numbers; re-bench at the next checkpoint).
 
-**Landed since the last handoff (all measured, all recorded above):** deg-2 approach headings ·
-route Worker ported to a module import (mirror + 1,979 lines deleted) · route-cache bake subsystem
-deleted outright · v1 arc router deleted from road-carve.js (1823→430 lines) + 41 dead params ·
-debug panel rebuilt for v2 (25 dead sliders out, the price list in) · map paramSig fix (the map now
-follows price edits) · profile dequantise + station-corner rounding (jolt p99 halved) · owner's
-weights (wGrade 180, cTurn 55) · Max Road Grade actually honoured.
+**Landed since the last handoff (all measured, all recorded above):** BUG-53 Phase A censuses
+(overlap instrument + drop simulation) · verdict: drop-a-leg alone insufficient · negative result:
+QUAL-22 cost-weighted vote makes BUG-53 WORSE (reverted) · **junction chord pins** (defect pairs
+−58%, crossings 11/13/4 → 10/3/3, marks 0/0/0, sustained ceiling 35% network-wide) · road-tunnel
+bore ceiling aligned to the solver's documented cap tolerance.
 
-**Gates: `npm run test:all` = 46/50, four standing reds**, all diagnosed, none blocking a character
-judgment:
+**Gates: `npm run test:all` = 45/50, five reds**, all diagnosed, none blocking a character
+judgment (stash-A/B'd against pre-pin src):
 | gate | what it is |
 |---|---|
 | `mission-network` | BUG-41 interior drift, p99 2.4 m. The one real unexplained defect. Arc-domain hypothesis DISPROVEN. Needs its own session. |
-| `graph-topology` | Re-baseline: its node-departure rule encodes v1's "node Y rides road grade", and two sub-checks test culls that no longer exist. |
-| `story-poi` | Pad flatness, 1 of 14 pads varies 1.27 m. |
-| `pond-route-around` | Its GUARANTEE passes (0 of 13468 points in water); only the non-vacuity precondition fails at the new weights. |
+| `graph-topology` | Re-baseline (node-departure encodes v1's rule; two sub-checks test deleted culls) + SURFACE-SMOOTH newly red on a DISJOINT proximity tear (BUG-53 residual class, verdict 3). |
+| `road-smoothness` | NEW — lone-pine canary of the BUG-53 tear class (8 steps at one stacked-siblings spot) + two 15 cm portal-face lips (pre-existing class) + one naive-meet step (junction pass). |
+| `paper-tour` | NEW — tier-2/3 customer-consistency margin, network-shape-sensitive (same class as the checkpoint-1 loop item). |
+| `pond-route-around` | Its GUARANTEE passes (0 points in water); only the non-vacuity precondition fails at the new weights. |
+
+(`story-poi` went GREEN with the pins.)
 
 ## Next, in the order I'd take them
 
 1. **Finish the price review (owner).** Reviewed: `cTurn 55`, `wGrade 180`. **Not yet reviewed:** cut,
    cut², fill, bore, portal, max bore grade, cut→bore depth, max fill — and **re-review Max Road
-   Grade**, which only started behaving correctly today (it was being overridden by the ladder). All
-   live in the `Router v2 (prices)` folder; the map A/B loop is ~2.5 s to first change, ~9 s settled.
-2. **BUG-53 — roads crossing and overlapping mid-span. CENSUSED, ready to implement.**
-   `node test/crossing-census.mjs`: eval seeds carry **11 / 13 / 4 real mid-span crossings** (seeds
-   6/20/11), 58–473 m from any run end, and 11/10/3 of them have **under 6 m of vertical
-   separation** — two roads at the same height with nothing between them. Plus the separate overlap
-   case (two runs sharing earthworks for 244 m at 0.1 m).
-   **Every single crossing is between runs that share a node elsewhere; disjoint crossings are ZERO
-   across all three seeds** — so the fix is local to each node's incident edges, not an all-pairs
-   problem. Owner's preference: delete a leg (with the degree-cap's bounded-hop detour guarantee)
-   over trimming to the crossing. NOT solved by the junction pass — a pad dresses metres.
-   Full record + acceptance: the "BUG-53 (absorbed)" section above.
+   Grade**, which only started behaving correctly 2026-08-20 (it was being overridden by the ladder).
+   All live in the `Router v2 (prices)` folder; the map A/B loop is ~2.5 s to first change, ~9 s
+   settled. The pins changed every network — drive/map-judge them in the same visit.
+2. **BUG-53 remainder — owner ruling needed.** Chord pins cut the defect class 58% (shipped,
+   `5a5be89`); 24 pairs remain across seeds 6/20/11/67, and every further move is a priced
+   tradeoff the owner must rank — the full menu with measured costs is the end of the "BUG-53
+   worked" section above: drop-a-leg at hop ≤ 4 (clears 6 of 24, ~5.7 km) · trim/fork
+   (manufactured nodes) · carve-side blend (kills tears, not crossings) · accept-and-judge-driven.
+   Recorded recommendation: drop-a-leg at hop ≤ 4 + judge the rest on the map/drive.
 3. **Junction geometry (deferred pass).** Naive meets at degree ≥ 3. Mostly REATTACHMENT of shipped
    machinery (pads/fillets/aprons consume the run contract + node incidence, both of which survive).
-   The one genuinely new piece: canonical approach headings at junctions — deg-2 already has them.
+   Canonical approach headings now exist at BOTH deg-2 and junctions (the chord pins) — what
+   remains is the dressing: pads, fillets, aprons, and the naive-meet seam steps the gates flag.
 4. **BUG-41 interior drift** — own session, own head.
-5. **Gate re-baselines** (graph-topology, story-poi, pond-route-around's precondition).
-6. **Acceptance leftovers before the swap merge:** wire the in-game marked-seed disclaimer; character
-   sign-off from driven checkpoints; retire the remaining v1 gates' dead sub-checks; delete the old
-   router from main in the swap commit. Also still known-dead: `_smoothDesignGrade` (legacy per-tile
-   path, reachable only from a dead test hook).
+5. **Gate re-baselines** (graph-topology's booked sub-checks, pond-route-around's precondition) +
+   the two portal-face 15 cm lips road-smoothness caught (small pre-existing class, fix or book).
+6. **Acceptance leftovers before the swap merge:** wire the zero-marked-edges gate + in-game
+   marked-seed disclaimer (the trio now MEASURES 0/0/0 — gate it before it drifts); character
+   sign-off from driven checkpoints; tighten `road-connectivity` to the BUG-53 definition once the
+   remainder is ruled; retire the remaining v1 gates' dead sub-checks; delete the old router from
+   main in the swap commit. Also still known-dead: `_smoothDesignGrade` (legacy per-tile path,
+   reachable only from a dead test hook).
 
-## Two things a future session must NOT re-attempt
+## Things a future session must NOT re-attempt
+
+- **Cost-weighted Urquhart pruning AS the BUG-53 fix** — measured 2026-08-21: the cost vote makes
+  the defect count WORSE on 3 of 4 seeds (16→24 on seed 20) because it herds surviving edges into
+  the same cheap valleys, concentrating exactly the corridors that overlap. QUAL-22 stays
+  re-openable for its original character goal; it is contraindicated for BUG-53.
 
 - **Strict pin-signature cache matching** — measured 18 s → 195 s cold load. Deg-2 pins are
   window-invariant for interior edges but NOT at window frontiers, so strict matching thrashes.
@@ -1340,24 +1458,21 @@ judgment:
   are fine". A targeted resolver (only actual crossings, only a node's own incident edges, with the
   detour guarantee) is exactly what BUG-53 is for.
 
-## Session close (2026-08-20)
+## Session close (2026-08-21)
 
 **Where to pick up:** the CURRENT HANDOFF above is the whole orientation — it lists the
-branch/worktree/port, the verified state, the four standing gate reds and what each one is, the
-ranked next steps, and the two things not to re-attempt. (BUG-53 is absorbed into this file — there
-is no second ticket to read.)
+branch/worktree/port, the verified state, the five gate reds and what each one is, the ranked next
+steps (the two waiting on the owner: the price review and the BUG-53-remainder ruling), and the
+things not to re-attempt. (BUG-53 is absorbed into this file — there is no second ticket to read.)
 
 **Fastest way back in:**
 1. `cd /Users/ledogen/CodeShit/CarGame-corridor-router && npm run dev` (port 3343) — drive
    `?seed=20|11|67|6`, map on **M**, price sliders under `Roads → Router v2 (prices)`.
 2. `node perf-runs/v2-integration-check.mjs` — one line per eval seed, the contract at a glance.
-3. `open perf-runs/gallery.html` — the checkpoint gallery, including the cTurn A/B and the
-   micro-crest before/after.
+3. `node test/overlap-census.mjs` — the BUG-53 defect state + drop simulation per seed.
+4. `open perf-runs/gallery.html` — the checkpoint gallery. ⚠ Its renders predate the chord pins;
+   re-shoot before using it to judge.
 
 **The one thing most likely to confuse a fresh session:** planning docs live on **main**, code lives
 on **feature/corridor-router**. They are different worktrees. Main also carries unrelated asset work
 committed in parallel, so main's HEAD will not be a FEAT-68 commit.
-
-**Loose end, not mine:** `.planning/todos/pending/bug-54-buried-rock-invisible-collider.md` is
-UNTRACKED on main — it predates this session and was never committed. Someone should `git add` it or
-delete it deliberately; leaving it untracked risks losing it.
