@@ -272,12 +272,15 @@ export const DAMAGE_PARAMS = {
   // A multiple of STATIC deflection (mass·g / 4 / tireStiffness ≈ 33 mm) is the ratio a linear
   // spring does represent honestly, and it tracks the tire spring and the vehicle mass if either is
   // retuned — which a fixed 165 mm would not. Calibrated against measured drops: 0.5 m does nothing,
-  // 0.9 m costs about 1%, 1.5 m about 11%, 4 m writes the wheel off.
+  // 0.9 m costs a fifth of a percent, 1.5 m about 3%, 2.5 m about 12%, 4 m about 25%.
   //
   // If the tire model ever gets a progressive / bottoming rate, move this back to the sidewall —
   // that anchor is the better one the moment `depth` means what it says.
   wheelStrikeStaticMult:     6.6,   // x static deflection (≈220 mm): where the rim starts taking load
-  wheelStrikeFullStaticMult: 4.2,   // x static deflection BEYOND that (≈140 mm): writes the wheel off
+  // DOUBLED 2026-08-20 (owner: "wheels are too delicate, I need like 4x the headroom"). Square law,
+  // so doubling the scale quarters the damage per strike — a wheel now survives four times as much
+  // of everything. One 4 m drop wrote a wheel off before; now it takes four.
+  wheelStrikeFullStaticMult: 8.4,   // x static deflection BEYOND that (≈280 mm): writes the wheel off
   wheelStrikeExp:            2,
 
   // ── Live tuning multipliers ────────────────────────────────────────────────────────────────

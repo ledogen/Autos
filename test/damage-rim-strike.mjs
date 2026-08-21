@@ -63,6 +63,14 @@ console.log('\n§2 priced on how far PAST the point it went, square-law')
   ok(Math.abs(ratio - 4) < 0.05, `doubling the excess quadruples the damage (x${ratio.toFixed(2)})`)
   const kill = fresh(); strike(kill, TRIP + FULL)
   ok(kill.get('wheelFL') <= 0.001, `${(FULL * 1000).toFixed(0)} mm past the point destroys the wheel outright`)
+  // The headroom itself is the thing the owner asked for, so pin it: four of the worst landing the
+  // lab can produce, not one. (4 m drop = 361 mm measured in-game.)
+  const four = fresh()
+  for (let i = 0; i < 4; i++) strike(four, 0.361)
+  ok(four.get('wheelFL') <= 0.02, 'four 4 m drops finish a wheel')
+  const three = fresh()
+  for (let i = 0; i < 3; i++) strike(three, 0.361)
+  ok(three.get('wheelFL') > 0.10, '...and three do not — the wheel survives worse than one bad landing')
 }
 
 console.log('\n§3 it is an EVENT, on the corner that took it')
@@ -103,7 +111,10 @@ console.log('\n§6 the drop anchors measured in the lab')
 {
   // Peak tire deflection measured in-game via window.__tp(x, z, h, drop) — see the note in
   // DAMAGE_PARAMS. These are the numbers the multipliers were calibrated against.
-  for (const [h, defl, lo, hi] of [[0.5, 0.154, 0, 0.01], [0.9, 0.233, 0.1, 4], [1.5, 0.267, 5, 20], [4.0, 0.361, 90, 100]]) {
+  // Bands widened 2026-08-20 with the 4x headroom the owner asked for: the whole point is that a
+  // single bad landing no longer writes a wheel off, so the top anchor is a QUARTER of a wheel.
+  for (const [h, defl, lo, hi] of [[0.5, 0.154, 0, 0.01], [0.9, 0.233, 0.05, 1], [1.5, 0.267, 1, 6],
+                                   [2.5, 0.315, 7, 18], [4.0, 0.361, 18, 35]]) {
     const d = fresh(); strike(d, defl)
     const lost = (1 - d.get('wheelFL')) * 100
     console.log(`  a ${h} m drop (${(defl * 1000).toFixed(0)} mm) costs the wheel ${lost.toFixed(1)}%`)
