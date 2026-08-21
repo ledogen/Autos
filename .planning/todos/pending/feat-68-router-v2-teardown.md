@@ -6,7 +6,9 @@ severity: major
 opened: 2026-08-18
 source: owner decision after the BUG-51 grade-ceiling work (feature/seed20-road, unmerged) — full
   requirements Q&A recorded 2026-08-18
-relates: BUG-51 (absorbed — grade ceiling becomes core spec), BUG-52 (planner weights, separate),
+relates: BUG-51 (absorbed — grade ceiling becomes core spec), BUG-53 (absorbed 2026-08-20 —
+  off-node crossings/overlap; was its own ticket, now the "BUG-53 (absorbed)" section here, its
+  old file a closed-merged stub in completed/), BUG-52 (planner weights, separate),
   FEAT-28 (unsatisfiable region — its "no compliant interface" case shrinks under this),
   FEAT-40 (tunnels — subsumed by the profile stage), PERF-03/PERF-27 (cold load), QUAL-05/BUG-16
   (arc quantization — dies with the old router)
@@ -277,6 +279,8 @@ The branch is the **reference implementation** for these; its numbers are ground
 - [ ] Cold-to-driving on old hardware: < 10 s, or owner explicitly accepts the relief valve.
 - [ ] Contract gates re-baselined green; implementation gates retired in the same commit that
       retires the code they tested; bundles rebaked; old router deleted from main in the swap merge.
+- [ ] BUG-53 (absorbed 2026-08-20): no defect-class off-node crossings/overlaps on the eval seeds —
+      full checklist in the "BUG-53 (absorbed)" section below.
 
 ## Junction plan (owner-confirmed 2026-08-18: geometry deferred, heights are not)
 
@@ -1081,8 +1085,8 @@ weights, and it is benign. Standing reds now: `mission-network` (BUG-41), `graph
 **Owner has NOT yet reviewed:** cut, cut², fill, bore, portal, max road grade, max bore grade,
 cut→bore depth, max fill. All in the same folder, all re-route live.
 
-**Filed, not fixed (owner: "we don't have to fix this now"):** `BUG-53` — road edges cross away from
-nodes. Records their ranked preference (delete a leg > trim to the crossing > legitimise it, with
+**Filed, not fixed (owner: "we don't have to fix this now"):** `BUG-53` (filed as its own ticket,
+since absorbed into this file — full section below) — road edges cross away from nodes. Records their ranked preference (delete a leg > trim to the crossing > legitimise it, with
 their own "causes lots of chaos" doubt), why there are more now (the cull deletion was right on its
 evidence, but that evidence predates the 2.5D corridor whose switchback stacks can excurse into a
 neighbour), and the census that should decide the design — including the VERTICAL GAP at each
@@ -1112,7 +1116,7 @@ road exists", not "your design cap was ambitious".
 Net at cap 0.20: instantaneous max **38% → 23%** (seed 20), **106% → 31%** (seed 11), zero marks on
 both. Ladder use is instrumented (`_v2Rung`), so "which rung did this edge land on" is answerable.
 
-### The captured tear is NODE-SHARING OVERLAP — see BUG-53
+### The captured tear is NODE-SHARING OVERLAP — see the BUG-53 section below
 
 `rangersim-capture-1787289162055.json` (seed 6, mark −4420, 1535, *"4 roads converging mostly to one
 spot, huge tear in terrain"*). Replay says the world is **fine by every contract**: window-invariance
@@ -1125,17 +1129,149 @@ BUG-53: the disjoint-crossing class really is empty-to-rare as the purity probe 
 probe recorded **59–82 node-sharing crossings per seed** and dismissed them as v1 wander managed by
 the corridor discs — machinery v2 deleted with nothing in its place. **Node-sharing overlap is the
 class that reaches the player.** And it is not the deferred junction pass in disguise: a pad dresses
-a few metres, not a 244 m shared corridor. Full detail + the census to run: BUG-53.
+a few metres, not a 244 m shared corridor. Full detail + the census: the "BUG-53 (absorbed)"
+section below.
+
+## BUG-53 (absorbed 2026-08-20): road edges cross and overlap away from junctions
+
+Filed as its own ticket the same day (owner capture while evaluating the v2 network on the 2D map)
+and ABSORBED here 2026-08-20 so handoffs stay a single document — the old file
+(`bug-53-offnode-edge-crossings.md`) is a closed-merged stub in `.planning/todos/completed/`.
+Relates beyond this ticket: BUG-25 (v1's crossing-cull edge-flip class, retired with the cull),
+QUAL-10/QUAL-16 (junction pads — where a LEGITIMISED crossing would have to land). The census tool
+lives on the branch worktree like all v2 tooling: `node test/crossing-census.mjs` on
+`feature/corridor-router`.
+
+**Owner, 2026-08-20:** "there are lots of edge intersections that don't happen at nodes. We used to
+try to avoid this, maybe there's a way we can work it in, though I feel like it causes lots of chaos
+so we will probably just want to choose to delete one of the legs or trim it to the crossing."
+
+### What this is
+
+Two registered runs cross in plan view at a point that is not a graph node. Nothing there is a
+junction: no pad, no fillet, no apron, no vertical agreement — the two roads simply intersect, and
+whichever one carves second wins the surface. It reads as a defect and it is one.
+
+**Why there are more of them now.** FEAT-68 deleted the crossing + clearance culls (commit acb42f3)
+on measured evidence: across 10 seeds they removed 11–21 GOOD edges per seed, collapsing
+connectivity from 95.7% to 54.1% mean largest-component share, while preventing ZERO crossings
+between non-adjacent runs *at that time*. That measurement was taken on the pre-2.5D corridor. The
+2.5D search (8981406) then made routes far more three-dimensional — switchback stacks, spiralling
+descents — and those excursions can cross a neighbour. So the cull deletion was right on its
+evidence and this is the follow-on it did not predict, not a reason to restore the culls
+(connectivity outranks tidiness, and the culls cost 11–21 edges a seed to buy it).
+
+### Owner's stated preference for the fix
+
+Ranked in the quote, and worth honouring in this order:
+
+1. **Delete one of the legs** at the crossing — simplest, and it is what the topology layer already
+   does for degree caps. Needs the detour guarantee the degree cap uses (drop only if the endpoints
+   reconnect within a bounded hop count) so it can never strand a component.
+2. **Trim to the crossing** — turn the intersection into a real node: split both runs there, register
+   four half-edges, let the junction machinery pad/fillet it. Correct-looking but it manufactures
+   nodes the site layer never placed, and every downstream consumer keyed on site ids
+   (`cellA`/`cellB`, POIs, missions, par) would have to accept them.
+3. **"Maybe there's a way we can work it in"** — the owner's own doubt is recorded: *"I feel like it
+   causes lots of chaos"*. Do not build 2 before measuring how often 1 is sufficient.
+
+### MEASURED 2026-08-20 — the dominant class is NODE-SHARING overlap, not disjoint crossings
+
+The owner captured a spot on seed 6 (`rangersim-capture-1787289162055.json`, mark −4420, 1535) —
+*"4 roads converging mostly to one spot, huge tear in terrain."* Replayed and probed:
+
+- `test/replay.mjs` says the world is **fine by every contract**: surface window-invariance holds
+  (gradeΔ 0.000 m, hitΔ 0 over 88 on-road points) and the local centerline radius is 938 m against a
+  15 m design minimum. So this is NOT a streaming tear, a fold, or a carve-composition bug.
+- The spot is a **degree-3 node** (`-7,2,0` at −4418, 1535), not four roads, and its three run ends
+  agree in height to **0.000 m** — the node-height rule is doing its job.
+- The defect is **lateral**. Two of the three runs (`g:-7,2,0:-6,2,1` and `g:-8,1,1:-7,2,0`) leave
+  the node nearly collinear and their carve footprints overlap **out to 244 m, with a minimum
+  centre separation of 0.1 m**. Two roads are laid on top of each other for a quarter kilometre,
+  each carving its own profile into the same dirt. THAT is the "huge tear".
+  (Two roads need ≈18 m of centre separation not to share earthworks: 2 × (halfWidth 5 + shoulder
+  2.5) + carve extra 3.)
+
+#### Second and third captures (2026-08-20, same day) — MID-SPAN crossings, and the census
+
+The owner then captured two more spots (`…3171385`, `…3164102`, seed 6) — *"points where I just
+cross mid-span"* — and asked where this sits in the plan. Both are **two runs that share a node
+somewhere, crossing each other far from it**: at 72%/53% and 72%/18% along their respective lengths,
+with vertical gaps of 31 m and **7.95 m**. That is a THIRD geometry, distinct from the near-parallel
+departure above, and the first framing of this ticket did not cover it.
+
+**Census over the eval seeds** (`node test/crossing-census.mjs`), excluding crossings within 40 m of
+a shared node (expected junction geometry) and crossings where one run is inside a bore (the
+vocabulary working):
+
+| seed | runs | REAL crossings | node-sharing | disjoint | under 6 m vertical gap |
+|---|---|---|---|---|---|
+| 6 | 52 | **11** | 11 | 0 | 11 of 11 |
+| 20 | 56 | **13** | 13 | 0 | 10 of 13 |
+| 11 | 50 | **4** | 4 | 0 | 3 of 4 |
+
+Distance from the nearest run end: **58–473 m** — genuinely mid-span, not junction spill. Vertical
+gaps run 0.1–4.9 m on the bad ones: two roads at the same height crossing with nothing to separate
+them.
+
+**What this settles.** The DISJOINT class really is empty — 0 across three seeds, consistent with the
+purity probe. Every real crossing is between runs that share a node elsewhere. So the fix does not
+need a global all-pairs search: for each node, only its own incident edges can collide, which makes
+this a bounded, local problem.
+
+**And it falsifies the claim that retired the culls.** FEAT-68 deleted the crossing/clearance culls
+on the finding that they prevented ZERO crossings while costing 11–21 good edges per seed. That
+measurement was taken on the pre-2.5D corridor and is now STALE: the 2.5D search produces 4–13 real
+crossings per seed. The conclusion to draw is NOT "restore the culls" — they were blunt (they
+dropped edges for mere proximity and took connectivity from 95.7% to 54.1%) — but "the targeted
+replacement they were standing in for is now genuinely needed".
+
+Note this is NOT the deferred junction-geometry pass in disguise. A pad or fillet dresses the first
+few metres; it does nothing about two roads sharing a corridor for 244 m. The owner's own instinct
+— delete one of the legs, or trim it — is the right shape of fix.
+
+### Before building anything — measure (the Q1/Q2 discipline this ticket family runs on)
+
+- **DONE — the crossing census** (`test/crossing-census.mjs`, table above). Re-run it after any
+  routing change; it is the measurement this work is judged on.
+- **Still to measure — the OVERLAP kind** (distinct from crossing): per eval seed, for every pair of
+  runs meeting at a node, the arc length over which their centres stay within ~18 m (the
+  shared-earthworks threshold) and the minimum separation. The seed-6 `-7,2,0` case (244 m at 0.1 m)
+  is the shape to hunt. A pair can overlap without ever crossing, so the census above does not see
+  it. (The FEAT-68 purity probe already has the geometry for this: it
+  counted crossings among pure routes and found the disjoint-pair class empty-to-rare on the OLD
+  search — that number needs re-taking on the 2.5D corridor.)
+- **What kind?** Split them: (a) a genuine geography funnel — one good pass, two connections, the
+  legitimate case the vocabulary section always allowed for; (b) a switchback stack whose arms
+  wander into a neighbour; (c) two long runs genuinely overlapping. Each wants a different answer.
+- **Would deleting a leg strand anything?** Run the degree-cap's bounded-hop detour test on each
+  candidate before costing the rest of the design.
+- **Vertical separation:** a "crossing" in plan view where the two decks are metres apart in Y is
+  not the same defect — with bores in the vocabulary some of these may already pass under. Report
+  the Y gap at each crossing; those may need nothing at all.
+
+### Acceptance (BUG-53)
+
+- [ ] A census per eval seed of BOTH classes — node-sharing overlap (arc length within 18 m, min
+      separation) and disjoint crossings — with the vertical gap at each.
+- [ ] No pair of runs sharing a node runs within shared-earthworks distance for more than ~the
+      junction pad radius; the seed-6 `-7,2,0` case (244 m at 0.1 m) is the regression test.
+- [ ] Zero non-node crossings that read as defects on the eval seeds (a bore passing under a road is
+      not a defect and should be reported separately).
+- [ ] Connectivity unchanged: still 1 component per eval seed, ≥ the 0.981 / 10-of-10 floor on the
+      10-seed sweep — whatever the fix, it may not cost the connectivity the cull deletion bought.
+- [ ] A gate: the `road-connectivity` gate already asserts "no real crossings" on the eval trio —
+      confirm what it currently measures and tighten it to this definition.
 
 ---
 
 # CURRENT HANDOFF (2026-08-20) — read this one
 
-**Where the work lives.** Two tickets track it, both in `.planning/todos/pending/`:
-- **`feat-68-router-v2-teardown.md`** (this file) — the corridor router itself. Everything above is a
-  dated record, appended in order; this section is the only live "what now".
-- **`bug-53-offnode-edge-crossings.md`** — road-overlap defects, filed 2026-08-20 from the owner's
-  capture. Not started.
+**Where the work lives.** ONE ticket — this file. Everything above is a dated record, appended in
+order; this section is the only live "what now". (BUG-53 — the road-overlap defects filed
+2026-08-20 from the owner's capture — was ABSORBED into this ticket 2026-08-20 so handoffs stay a
+single document: its full record + acceptance is the "BUG-53 (absorbed)" section above, its work is
+next-step 2 below, and its old file is a closed-merged stub in `.planning/todos/completed/`.)
 
 **Branch:** `feature/corridor-router` at `e1aa55b`, worktree `/Users/ledogen/CodeShit/CarGame-corridor-router`,
 dev server **:3343**, tree CLEAN. Main is untouched and still ships v1 — the swap is one merge at
@@ -1179,6 +1315,7 @@ judgment:
    across all three seeds** — so the fix is local to each node's incident edges, not an all-pairs
    problem. Owner's preference: delete a leg (with the degree-cap's bounded-hop detour guarantee)
    over trimming to the crossing. NOT solved by the junction pass — a pad dresses metres.
+   Full record + acceptance: the "BUG-53 (absorbed)" section above.
 3. **Junction geometry (deferred pass).** Naive meets at degree ≥ 3. Mostly REATTACHMENT of shipped
    machinery (pads/fillets/aprons consume the run contract + node incidence, both of which survive).
    The one genuinely new piece: canonical approach headings at junctions — deg-2 already has them.
@@ -1205,9 +1342,10 @@ judgment:
 
 ## Session close (2026-08-20)
 
-**Where to pick up:** the CURRENT HANDOFF above is the whole orientation — it lists both tickets,
-the branch/worktree/port, the verified state, the four standing gate reds and what each one is, the
-ranked next steps, and the two things not to re-attempt.
+**Where to pick up:** the CURRENT HANDOFF above is the whole orientation — it lists the
+branch/worktree/port, the verified state, the four standing gate reds and what each one is, the
+ranked next steps, and the two things not to re-attempt. (BUG-53 is absorbed into this file — there
+is no second ticket to read.)
 
 **Fastest way back in:**
 1. `cd /Users/ledogen/CodeShit/CarGame-corridor-router && npm run dev` (port 3343) — drive
