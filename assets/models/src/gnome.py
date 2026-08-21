@@ -37,10 +37,11 @@ asked for by name.
 
 BUILT 2026-08-20 against Blender 5.2.0 LTS.  FINAL: 492 tris (budget 500),
 264 verts, 6 materials, 0 images, 0 UV layers, one mesh object, 31.0 kB .glb.
-0.1964 W x 0.400 H x 0.170 D m -- inside the ticket's 0.22 x 0.40 x 0.22 --
+0.2015 W x 0.400 H x 0.1652 D m -- inside the ticket's 0.22 x 0.40 x 0.22 --
 base-seated at exactly y = 0 in the GLB (both soles flat on it), forward = -Z,
-single-sided, no Draco.  Audit clean: 0 object-vs-object clips, 0 coplanar
-pairs, 0 non-manifold edges, 0/4000 inverted first-hit rays.
+single-sided, no Draco.  THE BOUNDS ARE NOT SYMMETRIC IN X (-0.1033 .. +0.0982)
+and that is the pose, not an error.  Audit clean: 0 object-vs-object clips,
+0 coplanar pairs, 0 non-manifold edges, 0/5000 inverted first-hit rays.
 Rebuild:  exec(open(__file__).read()); build(); export()
 
 AXIS TRAP.  The glTF exporter's "+Y up" maps blender (x,y,z) -> gltf (x, z, -y),
@@ -57,6 +58,20 @@ spine), and the angle set is closed under reflection about the forward axis, so
 the gnome is exactly left-right symmetric.  It was 9 while the figure was an egg;
 the humanoid rebuild needs a belt band and two limbs it could not otherwise
 afford, and one ring segment across the whole model pays for them.
+
+ASYMMETRY IS THE POSE.  Everything below is built per-side (ARM_R/ARM_L,
+LIMB_R/LIMB_L) rather than mirrored, because a perfectly mirrored figure reads
+as a mannequin no matter how good the proportions are.  Four cheap deviations
+carry it, none of them costing a triangle:
+
+  * CONTRAPPOSTO.  Weight on his right leg: hips shift +4 mm toward it, the
+    shoulders counter-tilt -3 mm, and the head comes back +2 mm over the hips.
+    3-4 mm on a 0.4 m figure is 1% -- below "he is leaning", above "he is stiff".
+  * The right hand rests on the belt by the buckle; the LEFT hangs loose at the
+    hip, lower, further out and barely forward.
+  * The right foot is planted forward and toed out 9 degrees; the left is set
+    16 mm BACK and toed out 25.
+  * The hat tip flops forward AND to his left.
 
 STOCKY, NOT WILLOWY.  The first humanoid pass narrowed the torso correctly and
 then left everything else at that width, producing a slim 0.156 m figure.  The
@@ -116,14 +131,14 @@ MAT_ORDER = ["GnomeHat", "GnomeCoat", "GnomeBeard", "GnomeSkin",
 # rx > ry throughout -- a torso is wider than it is deep, and a circular section
 # is most of why the previous pass read as a skittle.
 BODY = [
-    (0.067, 0.0, 0.076, 0.062),   # coat hem, slight flare
-    (0.112, 0.0, 0.071, 0.058),   # belt, lower edge      [band -> GnomeLeather]
-    (0.132, 0.0, 0.072, 0.059),   # belt, upper edge
-    (0.166, 0.0, 0.077, 0.062),   # chest
-    (0.196, 0.0, 0.081, 0.065),   # SHOULDERS - the widest point on the torso,
-    (0.216, 0.0, 0.050, 0.043),   #   at half the figure's height
-    (0.238, 0.0, 0.064, 0.057),   # head       [band -> GnomeSkin]
-    (0.258, 0.0, 0.058, 0.052),   # crown, capped by the hat
+    (0.067,  0.004, 0.0, 0.076, 0.062),   # coat hem - hips over the weight leg
+    (0.112,  0.004, 0.0, 0.071, 0.058),   # belt, lower edge  [-> GnomeLeather]
+    (0.132,  0.003, 0.0, 0.072, 0.059),   # belt, upper edge
+    (0.166,  0.000, 0.0, 0.077, 0.062),   # chest - the S-curve crosses here
+    (0.196, -0.003, 0.0, 0.081, 0.065),   # SHOULDERS - widest point on the
+    (0.216, -0.001, 0.0, 0.050, 0.043),   #   torso, at half the figure's
+    (0.238,  0.002, 0.0, 0.064, 0.057),   #   height, and counter-tilted
+    (0.258,  0.003, 0.0, 0.058, 0.052),   # crown, capped by the hat
 ]
 BODY_BANDS = ["GnomeCoat", "GnomeLeather", "GnomeCoat", "GnomeCoat",
               "GnomeCoat", "GnomeSkin", "GnomeSkin"]
@@ -132,39 +147,49 @@ BODY_BANDS = ["GnomeCoat", "GnomeLeather", "GnomeCoat", "GnomeCoat",
 # The band matters: without it the hat sits on top of the skull like a lid and
 # the back of the head is bare skin, since there is no hair on this model.
 HAT = [
-    (0.240, 0.000, 0.070, 0.062),   # band, hugging the head below the brim
-    (0.272, 0.000, 0.079, 0.070),   # brim flare - widest, and it shades the face
-    (0.284, 0.001, 0.065, 0.058),
-    (0.316, 0.005, 0.048, 0.043),
-    (0.350, 0.012, 0.031, 0.028),
-    (0.380, 0.022, 0.015, 0.014),
-    (0.400, 0.032, 0.005, 0.005),   # tip -> total height 0.400 m
+    (0.240,  0.003, 0.000, 0.070, 0.062),  # band, hugging the head
+    (0.272,  0.003, 0.000, 0.079, 0.070),  # brim flare - widest, shades the face
+    (0.284,  0.003, 0.001, 0.065, 0.058),
+    (0.316,  0.001, 0.005, 0.048, 0.043),
+    (0.350, -0.003, 0.012, 0.031, 0.028),  # the cone leaves the head's axis and
+    (0.380, -0.009, 0.022, 0.015, 0.014),  #   leans forward AND to his left
+    (0.400, -0.016, 0.032, 0.005, 0.005),  # tip -> total height 0.400 m
 ]
 
 # --- beard: (z, rx, ry, PROUD).  `proud` is how far the beard's front face
 # clears the body's front face at that height; the cy offset is solved from the
 # body profile.  See the header note on why this is not an absolute offset.
 BEARD_SHAPE = [
-    (0.266, 0.048, 0.036, 0.014),   # tucked under the hat band
-    (0.240, 0.064, 0.050, 0.018),
-    (0.214, 0.072, 0.058, 0.020),   # widest - and DELIBERATELY NARROWER than
-    (0.184, 0.062, 0.052, 0.018),   #   the 0.081 shoulders, so blue shows at
-                                    #   either side of it.  At 0.082 the beard
-                                    #   ate them and the torso lost its slope.
-    (0.150, 0.018, 0.024, 0.010),   # tip, landing just above the belt
+    (0.266, 0.003, 0.048, 0.036, 0.014),  # tucked under the hat band.  cx
+    (0.240, 0.003, 0.064, 0.050, 0.018),  #   tracks the head so the beard does
+    (0.214, 0.002, 0.072, 0.058, 0.020),  #   not slide off it.  Widest, and
+    (0.184, 0.001, 0.062, 0.052, 0.018),  #   DELIBERATELY NARROWER than the
+                                          #   0.081 shoulders so blue shows at
+                                          #   either side; at 0.082 the beard
+                                          #   ate them and the torso lost its
+                                          #   slope.
+    (0.150, 0.000, 0.018, 0.024, 0.010),  # tip, landing just above the belt
 ]
 
 # --- arms: shoulder -> hand, two bands, the second one bare skin.  The hands
 # come FORWARD onto the belly at the belt line (cy 0.040), the way the reference
 # rests them either side of the buckle -- hung straight down they read as two
 # pink dots on the flanks.
-ARM = [
+ARM_R = [
     (0.192, 0.078, 0.004, 0.023, 0.023),   # shoulder     [sleeve]
     (0.150, 0.080, 0.026, 0.021, 0.021),   # cuff         [hand starts]
     (0.130, 0.066, 0.046, 0.022, 0.022),   # hand, ON the belly by the buckle -
                                            #   9 mm proud, no more.  At 23 mm
                                            #   the forward sweep from the cuff
                                            #   became a pale spike in profile.
+]
+# The idle arm.  Lower, further out, and barely forward -- it hangs at the hip
+# instead of matching its partner at the belt.  This one deviation does more for
+# the pose than the contrapposto does.
+ARM_L = [
+    (0.194, 0.076, 0.002, 0.023, 0.023),   # shoulder, a touch higher and back
+    (0.142, 0.086, 0.014, 0.020, 0.020),   # elbow, swung out
+    (0.112, 0.082, 0.030, 0.022, 0.022),   # hand, hanging at the hip
 ]
 ARM_BANDS = ["GnomeCoat", "GnomeSkin"]
 
@@ -173,43 +198,39 @@ ARM_BANDS = ["GnomeCoat", "GnomeSkin"]
 # 88 and the trouser-to-boot flare is free.  A scaled icosphere boot is the
 # obvious cheap option and is wrong -- its sole is a point, so the gnome
 # balances on two dots and only two vertices touch z = 0.
-LIMB = [
-    (0.000, 0.048, 0.034, 0.038, 0.066),   # sole, toe forward and PAST THE HEM
-    (0.026, 0.047, 0.018, 0.034, 0.050),
-    (0.048, 0.043, 0.004, 0.028, 0.033),   # boot cuff
-    (0.082, 0.038, 0.000, 0.020, 0.020),   # trouser, up inside the coat hem
+#
+# THE TOE BOX MUST BE A SLAB, NOT A TAPER.  Stations 0 and 1 are the same size
+# 20 mm apart, so the foot is flat-topped and the step up to the ankle is a hard
+# crease that flat shading turns into the top of the shoe.  The previous cut ran
+# a single smooth taper from sole to cuff over 48 mm and read as a traffic cone.
+#
+# LIMB_YAW rotates each ring about its own centre in plan -- real splay, which is
+# most of what stops two feet reading as a pair of parked objects.
+LIMB_R = [
+    (0.000, 0.046, 0.034, 0.038, 0.062),   # sole, toe forward and PAST THE HEM
+    (0.020, 0.046, 0.032, 0.037, 0.060),   # toe box top - SAME footprint
+    (0.034, 0.045, 0.010, 0.027, 0.033),   # ankle - steps back off the foot
+    (0.082, 0.042, 0.000, 0.020, 0.020),   # trouser, up inside the coat hem
 ]
+LIMB_L = [
+    (0.000, 0.052, 0.018, 0.038, 0.062),   # set 16 mm BACK - he is standing on
+    (0.020, 0.052, 0.016, 0.037, 0.060),   #   the other one
+    (0.034, 0.050, -0.004, 0.027, 0.033),
+    (0.082, 0.044, 0.000, 0.020, 0.020),   # trouser rejoins the hip
+]
+LIMB_YAW_R = 0.16          # radians, toe-out.  ~9 degrees on the planted foot
+LIMB_YAW_L = 0.44          # ~25 degrees on the idle one
 
 # --- nose: an icosahedron (20 tris), the ONLY face feature.  Sits at the hat
 # band so it emerges from under the brim -- that gap IS the face.  It has to
 # clear THE BRIM (y 0.050), not just the beard: past the beard alone it reads as
 # a sliver in profile.
-NOSE = ("GnomeSkin", (0.000, 0.066, 0.250), (0.024, 0.029, 0.024))
+NOSE = ("GnomeSkin", (0.005, 0.066, 0.250), (0.024, 0.029, 0.024))
 
 # --- buckle: a brass box on the front of the belt.  Six quads, twelve tris, and
 # it is the single detail that says "garden gnome" rather than "small monk".
-BUCKLE = ("GnomeBuckle", (-0.017, 0.056, 0.110), (0.017, 0.068, 0.134))
+BUCKLE = ("GnomeBuckle", (-0.014, 0.056, 0.110), (0.021, 0.068, 0.134))
 
-
-def _body_front(z):
-    """Forward reach (max y) of the coat surface at height z."""
-    pts = [(s[0], s[1] + s[3]) for s in BODY]
-    if z <= pts[0][0]:
-        return pts[0][1]
-    for (z0, f0), (z1, f1) in zip(pts, pts[1:]):
-        if z <= z1:
-            t = (z - z0) / (z1 - z0)
-            return f0 + t * (f1 - f0)
-    return pts[-1][1]
-
-
-BEARD = [(z, _body_front(z) + proud - ry, rx, ry)
-         for (z, rx, ry, proud) in BEARD_SHAPE]
-
-
-# ---------------------------------------------------------------------------
-# GEOMETRY HELPERS
-# ---------------------------------------------------------------------------
 
 def _unpack(station):
     """(z, cy, rx, ry) or (z, cx, cy, rx, ry) -> (z, cx, cy, rx, ry)."""
@@ -219,19 +240,43 @@ def _unpack(station):
     return station
 
 
-def ring(bm, station, seg, phase=PHASE, mirror=1.0):
-    """One horizontal cross-section, CCW seen from +Z."""
+def _body_front(z):
+    """Forward reach (max y) of the coat surface at height z."""
+    pts = [(t[0], t[2] + t[4]) for t in (_unpack(s) for s in BODY)]
+    if z <= pts[0][0]:
+        return pts[0][1]
+    for (z0, f0), (z1, f1) in zip(pts, pts[1:]):
+        if z <= z1:
+            t = (z - z0) / (z1 - z0)
+            return f0 + t * (f1 - f0)
+    return pts[-1][1]
+
+
+BEARD = [(z, cx, _body_front(z) + proud - ry, rx, ry)
+         for (z, cx, rx, ry, proud) in BEARD_SHAPE]
+
+
+# ---------------------------------------------------------------------------
+# GEOMETRY HELPERS
+# ---------------------------------------------------------------------------
+
+def ring(bm, station, seg, phase=PHASE, mirror=1.0, yaw=0.0):
+    """One horizontal cross-section, CCW seen from +Z.  `yaw` rotates the ring
+    about its own centre in plan (used for foot splay); `mirror` reflects the
+    finished point in x, which flips the yaw with it."""
     z, cx, cy, rx, ry = _unpack(station)
-    cx *= mirror
+    cw, sw = math.cos(yaw), math.sin(yaw)
     out = []
     for k in range(seg):
         a = phase + 2.0 * math.pi * k / seg
-        out.append(bm.verts.new((cx + mirror * rx * math.cos(a),
-                                 cy + ry * math.sin(a), z)))
+        ox, oy = rx * math.cos(a), ry * math.sin(a)
+        px = cx + ox * cw - oy * sw
+        py = cy + ox * sw + oy * cw
+        out.append(bm.verts.new((mirror * px, py, z)))
     return out
 
 
-def sweep(bm, stations, bands, seg=SEG, mirror=1.0,
+def sweep(bm, stations, bands, seg=SEG, mirror=1.0, yaw=0.0,
           cap_bottom=True, cap_top=True):
     """Vertical swept tube.  `bands[i]` names the material of the band between
     station i and i+1; caps inherit the adjacent band's material.
@@ -244,7 +289,7 @@ def sweep(bm, stations, bands, seg=SEG, mirror=1.0,
     if stations[0][0] > stations[-1][0]:
         stations = list(reversed(stations))
         bands = list(reversed(bands))
-    rings = [ring(bm, s, seg, mirror=mirror) for s in stations]
+    rings = [ring(bm, s, seg, mirror=mirror, yaw=yaw) for s in stations]
     flip = mirror < 0
     for i in range(len(rings) - 1):
         lo, hi = rings[i], rings[i + 1]
@@ -332,10 +377,11 @@ def build():
     sweep(bm, BODY, BODY_BANDS)
     sweep(bm, HAT, ["GnomeHat"] * (len(HAT) - 1))
     sweep(bm, BEARD, ["GnomeBeard"] * (len(BEARD) - 1))
-    for m in (1.0, -1.0):
-        sweep(bm, ARM, ARM_BANDS, seg=SEG_LIMB, mirror=m)
-        sweep(bm, LIMB, ["GnomeLeather"] * (len(LIMB) - 1),
-              seg=SEG_LIMB, mirror=m)
+    for arm, limb, lyaw, m in ((ARM_R, LIMB_R, LIMB_YAW_R, 1.0),
+                               (ARM_L, LIMB_L, LIMB_YAW_L, -1.0)):
+        sweep(bm, arm, ARM_BANDS, seg=SEG_LIMB, mirror=m)
+        sweep(bm, limb, ["GnomeLeather"] * (len(limb) - 1),
+              seg=SEG_LIMB, mirror=m, yaw=lyaw)
     blob(bm, *NOSE)
     box(bm, *BUCKLE)
 
