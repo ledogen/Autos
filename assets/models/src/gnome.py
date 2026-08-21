@@ -38,9 +38,9 @@ asked for by name.
 BUILT 2026-08-20 against Blender 5.2.0 LTS.  FINAL: 500 tris (budget 500 --
 EXACTLY at the cap, so anything added here has to be paid for), 268 verts,
 6 materials, 0 images, 0 UV layers, one mesh object, 31.4 kB .glb.
-0.2070 W x 0.400 H x 0.1652 D m -- inside the ticket's 0.22 x 0.40 x 0.22 --
+0.2062 W x 0.400 H x 0.1652 D m -- inside the ticket's 0.22 x 0.40 x 0.22 --
 base-seated at exactly y = 0 in the GLB (both soles flat on it), forward = -Z,
-single-sided, no Draco.  THE BOUNDS ARE NOT SYMMETRIC IN X (-0.1035 .. +0.1035 by
+single-sided, no Draco.  THE BOUNDS ARE NOT SYMMETRIC IN X (-0.1031 .. +0.1031 by
 coincidence; Z is where the pose shows, -0.0952 .. +0.0700)
 and that is the pose, not an error.  Audit clean: 0 object-vs-object clips,
 0 coplanar pairs, 0 non-manifold edges, 0/6000 inverted first-hit rays.
@@ -92,6 +92,7 @@ the lower beard, cutting the white silhouette off with a horizontal edge.
 import bpy
 import bmesh
 import math
+import mathutils
 
 # ---------------------------------------------------------------------------
 # PARAMETERS
@@ -194,6 +195,11 @@ BEARD_SHAPE = [
 # doing two different things.  Get that wrong and it reads instantly: the first
 # cut ran the right hand's skin band over 20 mm and the left's over 30, and one
 # hand was half again the size of the other.
+#
+# Built with sweep_path(), NOT sweep(): the rings sit perpendicular to the arm,
+# so the limb keeps its thickness through the bend and the hand is capped square
+# to the forearm rather than sliced off parallel to the ground.  The legs stay on
+# the horizontal sweep() on purpose -- a boot sole has to be FLAT ON z = 0.
 #
 # FOUR STATIONS: shoulder, ELBOW, cuff, hand.  Three stations put the elbow and
 # the wrist at the same point, so the "hand" was really a forearm and the arm
@@ -372,6 +378,80 @@ def box(bm, mat, lo, hi):
         bm.faces.new(tuple(v[k] for k in q)).material_index = mi
 
 
+def _frames(pts):
+    """Unit tangent per station: the segment direction at the ends, and the
+    normalised sum of the two adjacent segments at a joint -- a mitre, so the
+    ring at an elbow splits the angle instead of belonging to one bone."""
+    segs = [(b - a).normalized() for a, b in zip(pts, pts[1:])]
+    return [segs[0] if i == 0 else segs[-1] if i == len(pts) - 1
+            else (segs[i - 1] + segs[i]).normalized() for i in range(len(pts))]
+
+
+def _bases(tangents):
+    """A ring basis (u, v) per station, carried along the path by projecting the
+    previous u onto the new ring plane.  Re-deriving u from a fixed world axis at
+    every station instead makes the tube twist wherever the path turns."""
+    ref = mathutils.Vector((0.0, 1.0, 0.0))
+    if abs(tangents[0].dot(ref)) > 0.9:
+        ref = mathutils.Vector((0.0, 0.0, 1.0))
+    u = ref.cross(tangents[0]).normalized()
+    out = []
+    for t in tangents:
+        u = u - t * u.dot(t)                  # project back into the ring plane
+        if u.length < 1e-6:
+            u = mathutils.Vector((1.0, 0.0, 0.0))
+        u.normalize()
+        out.append((u.copy(), t.cross(u)))
+    return out
+
+
+def sweep_path(bm, stations, bands, seg, phase=PHASE, mirror=1.0):
+    """A tube whose rings sit PERPENDICULAR TO THE PATH, not horizontal.
+
+    This is the difference between a limb and a stack of pancakes.  A horizontal
+    ring of radius r on an axis tilted t off vertical gives a tube whose true
+    perpendicular radius is only r*cos(t).  Measured per band on the old build:
+
+        right   upper arm 11.2 deg -> 98%   forearm 62.0 -> 47%   hand 59.1 -> 51%
+        left    upper arm 14.1 deg -> 97%   forearm 21.0 -> 93%   hand 24.8 -> 91%
+
+    which is exactly why the RIGHT arm read as a skewed drinking straw and the
+    left did not: reaching for the belt tips the forearm past 60 degrees and
+    halves its apparent thickness.  Fattening the radii to compensate would have
+    been the wrong fix -- it makes the near-vertical upper arm balloon.  It also
+    left both hands capped by a disc parallel to the ground, as if sliced off.
+
+    Stations are (z, cx, cy, rx, ry) like everywhere else in this file; rx is
+    measured along the ring's lateral axis and ry along the other one.
+    """
+    pts = [mathutils.Vector((t[1], t[2], t[0]))
+           for t in (_unpack(s) for s in stations)]
+    bases = _bases(_frames(pts))
+    rings = []
+    for p, (u, v), st in zip(pts, bases, stations):
+        _, _, _, rx, ry = _unpack(st)
+        r = []
+        for k in range(seg):
+            a = phase + 2.0 * math.pi * k / seg
+            q = p + u * (rx * math.cos(a)) + v * (ry * math.sin(a))
+            r.append(bm.verts.new((mirror * q.x, q.y, q.z)))
+        rings.append(r)
+
+    flip = mirror < 0
+    for i in range(len(rings) - 1):
+        lo, hi = rings[i], rings[i + 1]
+        mi = MAT_ORDER.index(bands[i])
+        for k in range(seg):
+            k2 = (k + 1) % seg
+            quad = (lo[k], lo[k2], hi[k2], hi[k])
+            f = bm.faces.new(tuple(reversed(quad)) if flip else quad)
+            f.material_index = mi
+    head = rings[0] if flip else tuple(reversed(rings[0]))
+    tail = tuple(reversed(rings[-1])) if flip else rings[-1]
+    bm.faces.new(head).material_index = MAT_ORDER.index(bands[0])
+    bm.faces.new(tail).material_index = MAT_ORDER.index(bands[-1])
+
+
 def blob(bm, mat, centre, radii):
     """A scaled icosahedron - 20 flat facets, no smoothing, no subdivision."""
     res = bmesh.ops.create_icosphere(bm, subdivisions=1, radius=1.0)
@@ -419,7 +499,7 @@ def build():
     sweep(bm, BEARD, ["GnomeBeard"] * (len(BEARD) - 1))
     for arm, limb, lyaw, m in ((ARM_R, LIMB_R, LIMB_YAW_R, 1.0),
                                (ARM_L, LIMB_L, LIMB_YAW_L, -1.0)):
-        sweep(bm, arm, ARM_BANDS, seg=SEG_ARM, mirror=m, phase=PHASE_ARM)
+        sweep_path(bm, arm, ARM_BANDS, seg=SEG_ARM, mirror=m, phase=PHASE_ARM)
         sweep(bm, limb, ["GnomeLeather"] * (len(limb) - 1),
               seg=SEG_LIMB, mirror=m, yaw=lyaw)
     blob(bm, *NOSE)

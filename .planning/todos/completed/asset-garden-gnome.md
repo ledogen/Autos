@@ -58,9 +58,9 @@ Registered as `gnome` in `data/prop-models.js` (FEAT-59), **no pool tag** — sa
 flamingos: a gnome is not a mission giver, and `lawnFurniture` has no consumer yet.
 `node test/dist-assets.mjs` green.
 
-**0.207 W × 0.400 H × 0.165 D m** — inside the spec's 0.22 × 0.40 × 0.22. Origin and forward as
+**0.206 W × 0.400 H × 0.165 D m** — inside the spec's 0.22 × 0.40 × 0.22. Origin and forward as
 specified: base-seated at exactly y = 0 (both boot soles flat on it), forward = −Z. **The bounds
-are not symmetric** — X comes out even at ±0.1035 by coincidence, but Z runs −0.095 … +0.070 — because the pose puts
+are not symmetric** — X comes out even at ±0.1031 by coincidence, but Z runs −0.095 … +0.070 — because the pose puts
 weight on one leg, hangs the other arm, and pushes the nose and boot toes forward. The registry
 box is a size rather than a centred extent, so it over-covers by ~3 mm on one side.
 
@@ -118,6 +118,15 @@ Seven things the generator records so they are not re-discovered:
 - **The toe box must be a SLAB.** Stations 0 and 1 are the same size 20 mm apart, so the foot is
   flat-topped and the step up to the ankle is a hard crease that flat shading turns into the top of
   the shoe. A single smooth taper from sole to cuff over 48 mm reads as a traffic cone.
+- **Arm rings sit perpendicular to the arm, not horizontal** (`sweep_path`, not `sweep`). A
+  horizontal ring of radius r on an axis tilted t off vertical yields a tube whose true
+  perpendicular radius is only `r·cos t`. Measured per band: the right arm ran 11°/62°/59° off
+  vertical → 98%/47%/51% of nominal thickness, the left 14°/21°/25° → 97%/93%/91%. That is exactly
+  why the *right* arm read as a skewed drinking straw and the left did not — reaching for the belt
+  tips the forearm past 60° and halves its apparent thickness. Fattening the radii to compensate
+  would have ballooned the near-vertical upper arm; the fix is the frame. It also squares the end
+  cap to the forearm instead of slicing the hand off parallel to the ground. **The legs stay on the
+  horizontal sweep on purpose** — a boot sole has to be flat on y = 0.
 - **Arms have four stations — shoulder, elbow, cuff, hand.** Three put the elbow and the wrist at
   the same point, so the "hand" was really a forearm and the arm could only bend by *lengthening
   that band*, which is exactly how the two hands ended up different sizes. With a real elbow the

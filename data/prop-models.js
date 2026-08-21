@@ -93,14 +93,14 @@ export const PROP_MODELS = {
   // buckle and is the only thing that could not be merged into it.
   gnome: {
     url: 'assets/models/gnome.glb',
-    // 0.207 wide x 0.400 tall x 0.165 deep, measured off the GLB — inside the
+    // 0.206 wide x 0.400 tall x 0.165 deep, measured off the GLB — inside the
     // ticket's 0.22 envelope.  THE MODEL IS NOT SYMMETRIC: the pose puts weight
     // on one leg, bends one arm to the belt and hangs the other at the hip.
-    // X happens to come out even at -0.1035 .. +0.1035; Z is where the pose
+    // X happens to come out even at -0.1031 .. +0.1031; Z is where the pose
     // shows, running -0.095 .. +0.070 (the nose and boot toes reach forward,
     // i.e. -Z).  This box is a size, not a centred extent, so it over-covers on
     // one side — the right way round for knockable set dressing.
-    collision: { shape: 'box', size: [0.207, 0.400, 0.165] },
+    collision: { shape: 'box', size: [0.206, 0.400, 0.165] },
   },
 
   // ASSET-03 — segmented beach ball, 252 tris, 0.40 m across.  Six vertical
