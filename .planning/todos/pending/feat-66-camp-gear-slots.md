@@ -25,7 +25,7 @@ Four **named slots** on the pad, per the camp anchor convention in ASSET-23..26:
 | Slot | Gear | Asset |
 |---|---|---|
 | `shelter` | bedroll / sleeping bag / tent | ASSET-23 (tent.glb, done) |
-| `fire` | campfire | ASSET-24 |
+| `fire` | campfire | ASSET-24 (**campfire.glb, done** — registered as `campfire`) |
 | `over-fire` | cooking kit | ASSET-25 |
 | `shade` | tarp | ASSET-26 |
 
@@ -41,7 +41,18 @@ origin ⇒ swapping the model is the whole upgrade** — the renderer resolves s
   `src/model-service.js` (FEAT-59), and leaves room for the `fire` slot and the parked Ranger
   inside the 6 m pad.
 - Empty slots render nothing — no placeholder, no phantom gear.
-- Adding ASSET-24/25/26 later is a registry entry plus a slot mapping, not renderer work.
+- Adding ASSET-25/26 later is a registry entry plus a slot mapping, not renderer work.
+
+**Update 2026-08-22 — ASSET-24 closed, so TWO slots now have models waiting.** `campfire.glb` is
+registered in `data/prop-models.js` as `campfire` (472 tris, 0.708 x 0.378 x 0.675 m, base-seated,
+`collision: none`), so the `fire` slot needs only the mapping. Two things about it the renderer
+should know:
+
+- It carries an empty node **`FireFlameAnchor` at (0, 0.085, 0)** in model space. The flame/light/
+  flicker VFX is a separate ticket, but whoever writes it will parent to that node, so do not strip
+  non-mesh children when placing the model.
+- Its footprint is 0.708 m, and the `over-fire` slot (ASSET-25's A-frame) has to straddle it without
+  intersecting — that is ASSET-24's own acceptance line and it lands here.
 
 ## Notes
 

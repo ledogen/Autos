@@ -52,3 +52,20 @@ rather than floating on a lip.
   gameplay/VFX ticket citing this asset, and it will want to interact with the day/night lighting
   pass. Model an unlit pit that a light can be attached to at placement; do not bake glow in.
 - Yaw-randomising placement is what keeps a repeated ring from reading as repeated.
+
+> **FLAG (2026-08-22, raised when ASSET-24 closed): this ticket's read is now contested.**
+> ASSET-24's Notes made the stone ring *this* asset's entire identity — a stone-ringed pit says
+> **someone lives here**, a bare laid fire says **I slept here**, and "the difference between those
+> two is the entire point of both". ASSET-24 first shipped with no stones for exactly that reason,
+> then the owner's 2026-08-21/22 calls put an 11-stone ring on it and re-framed it as a *found* ring
+> the player is re-using. `campfire.glb` is now 0.708 m across with a tight, gapless, half-buried
+> ring of icosahedral stones.
+>
+> **So the ring can no longer carry the distinction, and this asset needs another one** — a built
+> kerb, a taller second course, a genuinely dug pit, a larger diameter, dressed rather than found
+> stone. The 1.0 m spec above already helps; it is probably not enough on its own at 20 m through
+> fog, where only the silhouette survives. Decide this before modelling, not after.
+>
+> Free win if it helps: `assets/models/src/campfire.py` already has a parametric stone-ring
+> generator (`make_stone`, plus the sizing rule that guarantees no gaps). Reuse it and spend the
+> difference on whatever makes this one read as *built*.
