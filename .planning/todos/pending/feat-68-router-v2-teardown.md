@@ -1602,6 +1602,121 @@ sit beyond radius 1400). Battery: zero marks, sustained 25/38/25%, one component
 0.000. Full suite **46/50**, standing booked reds only. **The remaining BUG-53 defect mass is the
 OVERLAP class: 9/7/6/15 conflicts per seed — parallels that never cross. That is phase 2.**
 
+## BUG-53 phase 2 SHIPPED (2026-08-22) — one catch-all merge rule; all 7 owner captures answered
+
+**The owner's two rulings, and what they collapsed to.** (1) *"Evaluate where these come within
+some proximity of one another, then merge and share one run until they diverge again or hit a
+node."* (2) *"Instead of coming up with a case for every single type of mid-edge crossing, come up
+with a catch-all — widen the capture and fix criteria from the previous session."* So phase 2 is
+NOT a second mechanism beside the crossing trim: it REPLACES the crossing anchor, and the trim's
+whole `_segCrossParam` search is deleted. Two runs leaving a node CONFLICT while their centres are
+within `mergeProxM`; the merge runs from the node to the far end of the last conflict; a crossing
+needs no rule of its own because two polylines that meet are already in conflict.
+
+**What the seven seed-3 captures actually were** (measured before touching anything, with the new
+`test/capture-classify.mjs`) — and note that ZERO of them had a trim applied, because none of them
+is anchored on a crossing:
+
+| # | mark | what is there |
+|---|---|---|
+| C1 | (−3505, 1181) | 236 m alongside, 11.1 m deck gap |
+| C2 | (−2309, 2195) | 136 m alongside + a crossing at the mark |
+| C3 | (−105, 2418) | flares to 44 m, comes back, 48 m alongside, 7.8 m deck gap |
+| C4 | (2293, 4118) | 112 m alongside, 8.4 m deck gap |
+| C5 | (1598, 5875) | flares to 35 m, comes back, 155 m alongside; a second pair at the same node |
+| C6 | (1044, 7423) | flares to 49 m, comes back, CROSSES at 4.9 m clearance, forks at 108° |
+| C7 | (1668, 7534) | THREE legs at one node: 152 / 140 / 119 m alongside + a crossing |
+
+### The rule, and the five things the build taught
+
+- **Conflict = within `mergeProxM` (18 m, owner-set).** The shared-earthworks distance: below it the
+  two roads write their cut/fill stencils into the same terrain vertices.
+- **FLARE BRIDGING is what makes it a catch-all** (`mergeFlareM` 60 m, `mergeGapM` 200 m). A pair
+  that swings apart and closes again is ONE road with a bulge, not two roads: C3/C5/C6 all flare
+  35–49 m mid-merge. Bridging them gives one pavement out of the junction and a single fork. Without
+  it C3 and C5 never became candidates at all (their from-node conflict is under 30 m).
+- **The winner is the SPINE — the longer run.** The shipped rule ("shorter node→fork strand
+  survives") degenerates under a proximity anchor, because both strands now end at the same place,
+  so it became a lexicographic coin flip. At C7's three-leg node that made the through-road a LOSER,
+  which then barred it from serving the third leg. Longest-run-wins has a single maximum, so a
+  bundle resolves to one winner and the others all join it. (The role sets already permitted one
+  winner : many losers — that part needed no change.)
+- **The taper is a decaying LATERAL OFFSET on the loser's own course**, not a free curve from fork to
+  join. NEGATIVE RESULT, do not re-attempt either of the two obvious constructions: a lerp between
+  the two courses zigzags on a wide fork (the weight's derivative times a large course separation
+  swamps the tangents), and a cubic Hermite straight from fork to join has curvature going as the
+  angle between its START TANGENT and its CHORD — at a fork those differ by most of a right angle,
+  so it bulged to a **3.4 m radius on an ordinary 23° fork** and got no better with a longer band. In
+  the loser's own frame that same fork is a 16 m offset decaying over 40 m, which is nothing.
+- **The guard is a MEASUREMENT, not a formula.** The band is scored on the curve the ribbon will
+  actually sweep — same centripetal Catmull-Rom, three real vertices of context at each end, only
+  the band itself scored — and the ladder steps up until it clears 6 m. This is what replaced the
+  ≤30° crossing-angle guard, and it is why wide forks are now buildable (C6 forks at 108°). Three
+  numbers bound the floor: the ribbon folds below 5.5 m, the shipped network's own tightest corner
+  is 5.70 m, and at 7 m the band is held to a standard the roads it joins do not meet.
+- **Two seams had to be welded, and both were silent.** The band's end tangents must be anchored on
+  the ACTUAL neighbouring vertices — the one the ceded head ends on, the one the loser's own
+  geometry resumes at — not on interpolated points at a fixed arc offset, because the assembly drops
+  vertices within `SPLICE_EPS` of a cut and the segment actually built then leaves at a different
+  heading. That seam alone folded the ribbon to **3.76 m** at seed 6 (−941,−790). `SPLICE_EPS` is
+  now one constant shared by planner and assembly for exactly this reason.
+- **VARIANTS: merge as much as is buildable.** Only a solved profile can say whether the loser's
+  remaining road still grades from the winner's DECK at the fork, and C1's full 236 m merge is
+  infeasible. The planner therefore offers the full merge and then progressively shorter ones
+  (100/75/50%, each with up to three band lengths); the assembly takes the first that builds. C1
+  lands on a 176 m merge. Deterministic — same list, same order, same pick in every window.
+
+### Spans split in two, which retired a fudge
+
+`cededSpans` now answers OWNERSHIP only (these vertices are the winner's; the winner draws and owns
+the surface, with the fringe rule unchanged). A new `offCurveSpans` answers CURVE VALIDITY — ceded
+strand PLUS taper band, i.e. everywhere the run's points are not on its own primitive centerline —
+and it is what the ribbon sweep, the analytic refine, and the points-backed sampler read. Conflating
+the two is what the `FORK_BLEND = 20` fudge existed to paper over (a hard fork edge read as a 33 cm
+step); the taper band IS that blend, honestly built, so the constant is **deleted**. `offCurveSpans`
+also carries the partner arcs extended through the fork band, which is the extent the censuses must
+discount before counting a defect.
+
+### Measured
+
+**Captures: 6 of 7 fully CLEAN.** C1 is merged on its shorter variant and its 236 m of doubled road
+is down to a 24 m tail at 4.8 m separation just past the fork — the residue of a deliberately
+shortened merge, not a missed one.
+
+**Censuses (radius-1400 origin windows, seeds 6/20/11/67):** overlap conflicts **9/7/6/15 → 3/1/1/5**,
+single-cross 3/3/2/0 → 2/1/0/0, weave 0/0/1/1 → 1/0/1/0. Total conflicts **47 → 15 (−68%)**.
+
+**Contract battery unchanged:** 56/50/55 runs, 43.4/39.7/41.6 km, one component each, node y-spread
+**0.000 m**, zero runs over the 40% ceiling, infeasible 0, deg-2 joint kinks byte-identical to the
+pre-change build (stash A/B — merges never touch a through-road). Sustained-24 m moved 25/38/25 →
+**31/38/27%**: a merged loser inherits the winner's deck at the fork and re-solves from there, which
+can steepen its outer strand. Still well inside the ceiling; worth an eye on the next feel pass.
+
+**Gates: `npm run test:all` = 45/50, the same five booked reds, no new ones.** `road-minradius` is
+green at **7.40 m** worst dense radius (pre-change: 5.70 m — the merge made the network's tightest
+corner *better*). `road-smoothness` is down to **one 17 cm step** on lone-pine (was eight steps plus
+two portal lips). `graph-topology`'s SURFACE-SMOOTH still fails on the seed-6 (3328,−27) DISJOINT
+stacked tear — no shared node, so node-anchored merging cannot see it, exactly as booked.
+
+**Perf: no measurable change.** Network build 2.1–3.7 s at 1× headless against a pre-change 3.0–5.1 s
+measured back-to-back on the same (loaded) machine — inside the noise either way. Re-bench the 4×
+cold load on a quiet machine at the next checkpoint.
+
+### What is left, and it is one named class
+
+The residue is **mid-span conflicts**: a pair that parts at the node, goes its own way, and conflicts
+again deep mid-span past a flare wider than 60 m. Merging those needs a band tapered at BOTH ends
+rather than node-exact at one — the same machinery, a different assembly shape (own head → taper →
+ceded middle → taper → own tail, with two profile strands instead of one). Seed 11's remaining pair
+`-3,-3,1|-2,-2,0 × -1,-3,1|-2,-2,0` is the reproducer: 16 m of conflict at the node, then a wide
+flare, then a 121 m weave at arc ~500. The overlap census reports them; `node test/capture-classify.mjs
+<seed> <x> <z>` names the guard for any single spot. The rare DISJOINT class (no shared node) still
+needs its own derivation for window invariance and stays booked.
+
+Also still open and unchanged by this work: wide-angle forks now BUILD, but a fork FILLET is still
+the junction-dressing follow-up; and the `short` guard (fork under 30 m from the node) declines five
+merges per window that are really junction-apron geometry — deliberately left to the junction pass.
+
 ---
 
 # CURRENT HANDOFF (2026-08-22) — read this one
