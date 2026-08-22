@@ -465,6 +465,14 @@ export function initDebug (params, callbacks = {}, options = {}) {
   v2Folder.add(params.roadV2, 'vSmoothM', 0, 25, 2.5).name('Corner Rounding (m)').onChange(fireRoadParam)
   v2Folder.add(params.roadV2, 'gMaxRoad', 0.15, 0.40, 0.01).name('Max Road Grade').onChange(fireRoadParam)
   v2Folder.add(params.roadV2, 'gMaxBore', 0.05, 0.30, 0.01).name('Max Bore Grade').onChange(fireRoadParam)
+  //   Merge Distance (BUG-53): two roads leaving the same junction count as ONE road while their
+  //   centres are this close, and the loser gives up its own line over that stretch — one pavement
+  //   out of the junction, then a tapered fork where they finally part. 18 m is where their
+  //   earthworks touch (5 m carriageway + 2.5 m shoulder each side + 3 m carve margin), so below
+  //   it the two roads are carving the same dirt. Raise it to merge pairs that merely LOOK
+  //   doubled; lower it to merge only hard overlaps; 0 disables merging entirely (an A/B, not a
+  //   shipping value — it restores the doubled roads).
+  v2Folder.add(params.roadV2, 'mergeProxM', 0, 40, 1).name('Merge Distance (m)').onChange(fireRoadParam)
   //   Class boundaries: deeper than cutMax below ground becomes a BORE; higher than fillMax above
   //   it would become a bridge (bridges are de-scoped — owner ruling 2026-08-18 — so fill is
   //   capped there instead). A 12-20 m trench is an open rock cutting, not a tunnel.

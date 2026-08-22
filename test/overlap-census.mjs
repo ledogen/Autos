@@ -110,13 +110,15 @@ for (const seed of [6, 20, 11, 67]) {
     if (pairsSeen.has(pk)) continue
     pairsSeen.add(pk)
     pairsTotal++
-    // BUG-53 trims: a loser's ceded interval COINCIDES with its winner by design — that proximity
-    // is the fix working, not a defect. Skip the sanctioned interval on whichever side of the pair
-    // carries it (near = Infinity there ⇒ no overlap, no crossing can fire on identical vertices).
+    // BUG-53 merges: a loser's ceded interval COINCIDES with its winner by design, and the TAPER
+    // BAND past the fork is the two of them parting on purpose — both are the fix working, not a
+    // defect. offCurveSpans is exactly that extent (ceded + taper, with the partner's matching
+    // arcs), so skip it on whichever side of the pair carries it. `near = Infinity` there ⇒ no
+    // overlap and no crossing can fire on the identical vertices of a shared strand.
     const sanction = (run, partner) => {
       const spans = []
-      for (const sp of run.e.cededSpans || []) if (sp.owner === partner.k) spans.push([sp.s0, sp.s1])
-      for (const sp of partner.e.cededSpans || []) if (sp.owner === run.k) spans.push([sp.ownerS0 ?? -1, sp.ownerS1 ?? -1])
+      for (const sp of run.e.offCurveSpans || []) if (sp.owner === partner.k) spans.push([sp.s0, sp.s1])
+      for (const sp of partner.e.offCurveSpans || []) if (sp.owner === run.k) spans.push([sp.ownerS0 ?? -1, sp.ownerS1 ?? -1])
       return spans
     }
     const sancA = sanction(A, B)

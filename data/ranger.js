@@ -485,6 +485,23 @@ export const RANGER_PARAMS = {
     // then solves refusals at min(0.38, 0.27), and the ceiling rung still guards the 0.38 contract.
     gMaxRoad: 0.24,   // hard vocabulary cap for surface states (the sustained ceiling is 0.40)
     gMaxBore: 0.18,   // bores are gentler by construction (FEAT-40 lineage)
+    // BUG-53 merge (phase 2, owner ruling 2026-08-22): "evaluate where these come within some
+    // proximity of one another, then merge and share one run until they diverge again or hit a
+    // node". Two runs leaving the same node CONFLICT while their centres are within mergeProxM;
+    // the loser adopts the winner's course from the node out to the last conflict, then tapers
+    // back onto its own. 18 m is the shared-earthworks distance — halfWidth 5 + shoulder 2.5 each
+    // side + 3 m carve extra — i.e. the separation below which the two roads write their cut/fill
+    // stencils into the same terrain vertices. Owner-set 2026-08-22.
+    mergeProxM: 18,
+    // A merged pair may swing apart and come back — that FLARE is a bulge in one road, not two
+    // roads going different places, so the merge bridges it and the bulge disappears. Both bounds
+    // are measured off the owner's seed-3 captures, whose flares run 35 m (1598/5875), 44 m
+    // (-105/2418) and 49 m (1044/7423, which also crosses itself inside its flare — the reason no
+    // separate crossing rule is needed: two polylines that meet are already in conflict). Wider or
+    // longer than these and the legs are genuinely going somewhere different: the merge stops at
+    // the first divergence and the flare is counted.
+    mergeFlareM: 60,   // m — widest the pair may swing apart inside a merge
+    mergeGapM: 200,    // m — longest flare the merge may bridge, measured along the run
   },
 
   // roadSiteCandidates: seeded candidate sites PER cell before Poisson-disk thinning. >1 breaks the
