@@ -578,12 +578,14 @@ export class DamageModel {
    *
    * @param {'front'|'left'|'right'|'rear'|null} region - from classifyImpactRegion; null (a ground
    *   or roof contact, which no armor covers) closes any burst in progress and starts nothing.
-   * @param {number} impulseNs - the engine's accumulated contact normal impulse [N·s], peak-held.
+   * @param {number} impulseNs - the engine's accumulated contact normal impulse [N·s]. Detects that
+   *   a collision is happening; the SEVERITY comes from `vel` (see the note at the bank).
+   * @param {{x,y,z}} [vel] - the vehicle's velocity this step. The burst's Δv is what prices the hit.
    * @param {number} mass - vehicle mass [kg].
    * @param {number} dt - physics step [s].
    * @returns {{region, v, passed, fatal}|null} the landed impact, or null on a step that banked none.
    */
-  feedContact (region, impulseNs, mass, dt) {
+  feedContact (region, impulseNs, mass, dt, vel) {
     const P = DAMAGE_PARAMS
     // `impulseNs` is the engine's accumulated normal impulse on the hardest manifold point. It is
     // the only impulse field the contact buffer actually populates — the per-step `normalImpulse`
@@ -597,7 +599,7 @@ export class DamageModel {
     const live = region != null && impactSpeed(impulseNs, mass) >= P.impactMinMph * MPH
 
     if (live) {
-      if (!this._burst) this._burst = { region, impulse: impulseNs, t: 0 }
+      if (!this._burst) this._burst = { region, impulse: impulseNs, t: 0, v0: vel ? { ...vel } : null }
       else {
         this._burst.t += dt
         // The region travels with the peak: a truck that clips a post front-first and slews into it
@@ -609,7 +611,21 @@ export class DamageModel {
     const b = this._burst
     if (!b) return null
     this._burst = null
-    return { region: b.region, ...this.applyImpact(b.region, b.impulse, mass) }
+    // Price on the truck's OWN Δv across the burst, not on the engine's accumulated contact impulse.
+    //
+    // The two should agree — J = m·Δv is the definition — and on a clean flat-on wall strike they
+    // do, within the rebound. They come apart on a messy one: a solver's accumulated normal impulse
+    // on a manifold point includes the impulses it spends pushing penetration back out, which move
+    // no net momentum. Measured against the owner's captures, that read a 60 mph tree strike as 104
+    // and a 30 as 65 — a little over 2x the truck's real Δv both times.
+    //
+    // Δv keeps everything the ratified impulse model was chosen for. The point of pricing on
+    // impulse rather than speed was that a glancing clip at 60 mph should cost almost nothing while
+    // a square hit costs everything — and Δv expresses exactly that, because a glance barely
+    // deflects the truck. It is the same quantity, measured off the body instead of off the solver.
+    const j = (b.v0 && vel) ? mass * Math.hypot(vel.x - b.v0.x, vel.y - b.v0.y, vel.z - b.v0.z)
+                            : b.impulse
+    return { region: b.region, ...this.applyImpact(b.region, j, mass) }
   }
 
   /**

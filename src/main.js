@@ -1513,10 +1513,23 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
   // near-stationary wheel reuse one query instead of each re-scanning a switchback's many slices
   // (the slow-CPU 5fps lock that recovers airborne). Height stays accurate: at the query center the
   // projection is ~0 (perp foot) so rest height ≈ exact (≤~5 mm via the memo).
-  const _hint = (!_labActive && roadSystem) ? roadSystem.carveHint(cx, cz) : undefined
+  // The road run is resolved PER SAMPLE, not once at the wheel centre.
+  //
+  // It used to be resolved once at (cx,cz) and threaded into every footprint sample, which quietly
+  // defeated the tire envelope at exactly the place it matters most — a road EDGE. With the wheel
+  // centre still off the road, the centre's hint says "no run here", so every sample ahead resolved
+  // against bare terrain and the envelope never saw the raised road at all. The tire clipped through
+  // the edge until the centre crossed it, at which point the hint flipped and the surface snapped up
+  // under the wheel (owner, 2026-08-22). The whole point of the envelope is to feel an edge before
+  // the centre reaches it.
+  //
+  // The perf that motivated the shared hint (PERF-24) is preserved by carveHint's own memo, which is
+  // keyed per 0.05 m cell: the stencil's nine offsets are distinct cells, but every substep and every
+  // repeat query at the same spot still shares them, which is what the death-spiral case needs.
+  const _hintAt = (!_labActive && roadSystem) ? (x, z) => roadSystem.carveHint(x, z) : () => undefined
   // FEAT-40: cy disambiguates the two stacked surfaces in a bore span (floor vs hill overhead).
   const groundH = (x, z) => _labActive ? labSystem.groundHeight(x, z)
-                                       : (terrainSystem ? terrainSystem.analyticHeight(x, z, _hint, cy) : 0)
+                                       : (terrainSystem ? terrainSystem.analyticHeight(x, z, _hintAt(x, z), cy) : 0)
 
   // TIRE-ENVELOPE (footprint sampling). A wheel is a disc of radius r; it rests on the HIGHEST
   // terrain its circular profile can touch, NOT the single point under the hub. The legacy probe
@@ -1526,8 +1539,9 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
   // (d = horizontal offset; the sqrt is the circle's height above ground at that offset). The winning
   // sample sets penetration depth, contact point, and surface normal. At d=0 this reduces EXACTLY to
   // the old  terrainH + r − cy, so flat ground and the m4-* assertions are unchanged.
-  // PERF: _hint is threaded into every sample, so the whole stencil costs ONE road resolve (PERF-24) —
-  // only the cheap noise eval multiplies. Wheel callers pass footprint=true; body probes do not.
+  // PERF: each sample resolves its OWN road run, memoized per 0.05 m cell — see the note above the
+  // stencil for why a single shared hint broke the envelope at road edges. Wheel callers pass
+  // footprint=true; body probes do not.
   const doFootprint = footprint && r > 0 && RANGER_PARAMS.wheelFootprint !== false
   let bestH   = groundH(cx, cz)
   let bestTop = bestH + r        // d=0 term — identical to the legacy single probe
@@ -1551,7 +1565,7 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
   const gd = bestTop - cy
   if (gd > 0) {
     const n = _labActive ? labSystem.groundNormal(bestX, bestZ)
-                         : (terrainSystem ? terrainSystem.analyticNormal(bestX, bestZ, _hint, cy) : { x: 0, y: 1, z: 0 })
+                         : (terrainSystem ? terrainSystem.analyticNormal(bestX, bestZ, _hintAt(bestX, bestZ), cy) : { x: 0, y: 1, z: 0 })
     hits.push({
       normal:       new THREE.Vector3(n.x, n.y, n.z),
       depth:        gd,
@@ -1609,9 +1623,10 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
   // BUG-37: bore WALL contact — terrainSystem's ground block above only resolves the bore FLOOR
   // (bore-ownership rule); the curved half-tube sides have no matching collision without this. Same
   // {normal,depth,contactPoint} shape as prop hits, so the wheel solver treats a wall like any other
-  // surface. Reuses _hint (already resolved for the ground query above) — no extra tile scan.
+  // surface. Reuses the CENTRE's run (memoized, so no extra tile scan) — a tunnel wall is a
+  // property of the run the wheel is in, not of the envelope's outlying samples.
   if (!_labActive && roadSystem) {
-    const wallHit = roadSystem.queryTunnelWallContact(cx, cy, cz, r, _hint)
+    const wallHit = roadSystem.queryTunnelWallContact(cx, cy, cz, r, _hintAt(cx, cz))
     if (wallHit) hits.push(wallHit)
   }
 
@@ -4699,7 +4714,8 @@ function loop () {
     {
       const hit = physicsEngine.maxContactImpulse(vehicleChassis)
       const landed = damageModel.feedContact(
-        classifyImpactRegion(hit.point, hit.normal), hit.impulse, RANGER_PARAMS.mass, PHYSICS_DT)
+        classifyImpactRegion(hit.point, hit.normal), hit.impulse, RANGER_PARAMS.mass, PHYSICS_DT,
+        vehicleState.velocity)
       if (landed) damageHUD.noteImpact(landed)
     }
     simTime += PHYSICS_DT
