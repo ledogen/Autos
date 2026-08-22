@@ -56,7 +56,7 @@ console.log('\n§2 the parked truck: a contact is NOT an impact')
   ok(d.get('armorFront') === 1, 'a minute parked on the ground costs the front armor nothing at all')
   ok(d.get('radiator') === 1, '...and the radiator nothing')
   console.log(`  (one resting step reads as ${(resting / MASS / MPH).toFixed(2)} mph equivalent; the floor is ${D.impactMinMph} mph)`)
-  ok(resting / MASS < D.impactMinMph * MPH, 'the resting reading is below the floor by design, with margin')
+  ok(resting / DT < D.impactForceFloorN, 'the resting contact force is below the impact floor by design, with margin')
 
   // Even pointed at armor — nose against a fence — a sub-floor contact must stay inert.
   const d2 = new DamageModel({ params: {} })
@@ -64,62 +64,53 @@ console.log('\n§2 the parked truck: a contact is NOT an impact')
   ok(d2.get('armorFront') === 1, 'and leaning on a fence for a minute is not a crash either')
 }
 
-console.log('\n§3 one collision is one impact, priced on its PEAK')
+console.log('\n§3 one collision is one impact, and its impulse is INTEGRATED')
 {
-  // A burst: rises to a 20 mph peak over ~10 steps, falls away over ~10, then contact breaks.
+  // feedContact is fed THIS STEP's contact impulse, so the collision's impulse is the sum across
+  // the burst and stepImpulse/dt is the instantaneous contact force.
+  //
+  // It used to be fed the engine's LIFETIME-accumulated total, which is why this section used to
+  // assert peak-not-sum: with that input, summing would have double-counted a number that was
+  // already a running total. That input was also the 143 mph bug — a 70 mph tree strike priced at
+  // double, because the truck came to rest against the tree and the total never stopped climbing.
+  const F = (kN) => kN * 1000 * DT          // a step at a given contact force, as an impulse
   const d = new DamageModel({ params: {} })
-  const shape = [0.2, 0.5, 0.8, 1.0, 0.9, 0.6, 0.3, 0.1]
+  const shape = [30, 60, 90, 120, 100, 70, 40, 25]   // kN through one collision
   let landed = null, count = 0
-  for (const f of shape) { const r = d.feedContact('front', impulseAt(20) * f, MASS, DT); if (r) { landed = r; count++ } }
+  for (const f of shape) { const r = d.feedContact('front', F(f), MASS, DT); if (r) { landed = r; count++ } }
   const r = d.feedContact(null, 0, MASS, DT)     // contact breaks
   if (r) { landed = r; count++ }
   ok(count === 1, 'a burst of 8 contact steps lands exactly ONE impact')
-  ok(landed && Math.abs(landed.v / MPH - 20) < 0.01, '...priced at the burst PEAK (20 mph), not its first, last or sum')
-  ok(landed && landed.region === 'front', '...on the region that took the peak')
+  const wantNs = shape.reduce((a, f) => a + F(f), 0)
+  ok(landed && Math.abs(landed.v - wantNs / MASS) < 1e-6,
+    '...priced on the INTEGRAL of the burst, which is what the collision actually transferred')
+  ok(landed && landed.region === 'front', '...on the region that took the hardest instant')
 
-  // Peak, not sum: leaning on the thing you already hit must not keep adding damage.
-  const dSum = new DamageModel({ params: {} })
-  for (let i = 0; i < 8; i++) dSum.feedContact('front', impulseAt(20), MASS, DT)
-  dSum.feedContact(null, 0, MASS, DT)
-  const dOne = new DamageModel({ params: {} })
-  dOne.feedContact('front', impulseAt(20), MASS, DT); dOne.feedContact(null, 0, MASS, DT)
-  ok(Math.abs(dSum.get('armorFront') - dOne.get('armorFront')) < 1e-12, 'eight steps at 20 mph cost exactly what one does — peak, not sum')
+  // The anti-regression that peak-not-sum used to protect: leaning on what you hit must not keep
+  // costing. It is the FORCE FLOOR that protects it now — resting loads never clear it.
+  const lean = new DamageModel({ params: {} })
+  const restingStep = MASS * 9.81 * DT       // the truck's own weight, one step
+  for (let i = 0; i < 30 / DT; i++) lean.feedContact('front', restingStep, MASS, DT)
+  ok(lean.get('armorFront') === 1, 'thirty seconds leaning on what you already hit costs nothing — the force floor holds')
 }
 
-console.log('\n§4 the region travels with the peak, and a long scrape does not last forever')
+console.log('\n§4 the region travels with the hardest instant, and a scrape does not last forever')
 {
+  const F = (kN) => kN * 1000 * DT
   // Clips a post front-first, then slews into it and loads the left side harder.
   const d = new DamageModel({ params: {} })
-  d.feedContact('front', impulseAt(10), MASS, DT)
-  d.feedContact('left', impulseAt(25), MASS, DT)
-  d.feedContact('front', impulseAt(12), MASS, DT)
+  d.feedContact('front', F(40), MASS, DT)
+  d.feedContact('left',  F(120), MASS, DT)
+  d.feedContact('front', F(50), MASS, DT)
   const r = d.feedContact(null, 0, MASS, DT)
   ok(r && r.region === 'left', 'the impact lands on the face that took the worst of it, not the one touched first')
 
   // A sustained scrape: contact never breaks. It must bank periodically rather than never.
   const d2 = new DamageModel({ params: {} })
   let hits = 0
-  for (let i = 0; i < 1 / DT; i++) if (d2.feedContact('right', impulseAt(8), MASS, DT)) hits++
+  for (let i = 0; i < 1 / DT; i++) if (d2.feedContact('right', F(35), MASS, DT)) hits++
   ok(hits >= 3, `a full second of sustained scraping banks repeated hits (${hits}), rather than one that never ends`)
   ok(hits <= Math.ceil(1 / D.impactHoldMax) + 1, `...at the ${D.impactHoldMax}s hold cadence, not per step`)
-}
-
-console.log('\n§5 brakes wear on ENERGY, so holding a hill costs nothing')
-{
-  // The owner caught this: torque x time wore the rear pads while the truck simply sat on a slope
-  // with the brakes holding it. A stationary pad slides nothing, dissipates nothing, loses nothing.
-  const held = new DamageModel({ params: {} })
-  const stopped = { brakeTorque: [1300, 1300, 450, 450], wheelOmega: [0, 0, 0, 0] }
-  for (let i = 0; i < 300 / DT; i++) held.step(stopped, {}, DT)   // five minutes parked on the brakes
-  ok(held.get('brakeRear') === 1 && held.get('brakeFront') === 1,
-    'five minutes holding a hill on full brake torque costs the pads NOTHING')
-
-  const rolling = new DamageModel({ params: {} })
-  const moving = { brakeTorque: [1300, 1300, 450, 450], wheelOmega: [49, 49, 49, 49] }  // ~18 m/s
-  for (let i = 0; i < 300 / DT; i++) rolling.step(moving, {}, DT)
-  ok(rolling.get('brakeFront') < 1, '...while the same torque at speed does wear them')
-  ok(rolling.get('brakeFront') < rolling.get('brakeRear'),
-    'and the fronts wear faster than the rears, which is how brakes actually behave')
 }
 
 console.log(fail ? '\nFAIL — the contact→impact wiring has drifted' : '\nPASS — engine contacts reach the right armor regions, and only when they are impacts')

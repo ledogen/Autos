@@ -922,6 +922,7 @@ async function _reseatTruckAtSpawnInner () {
   vehicleState.tireFlat       = [0, 0, 0, 0]
   vehicleState.bumpForce      = [0, 0, 0, 0]
   vehicleState.rimForce       = [0, 0, 0, 0]
+  vehicleState.rimForceRoad   = [0, 0, 0, 0]
   vehicleState.brakeTorque    = [0, 0, 0, 0]
   vehicleState.wheelPhase     = [0, 0, 0, 0]
   vehicleState.drivetrain     = { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 }
@@ -1047,6 +1048,7 @@ const vehicleState = {
   slipVel:         [0, 0, 0, 0],                   // m/s — raw contact-patch sliding speed (tire wear, dominant term)
   tireFlat:        [0, 0, 0, 0],                   // N   — cornering force magnitude (tire wear, minor term)
   bumpForce:       [0, 0, 0, 0],                   // N   — peak bump-stop force this step (spring wear)
+  rimForceRoad:    [0, 0, 0, 0],                   // N   — rim load from ROAD/terrain: the squashed-carcass load past full compression (a different measurement from rimForce — see suspension.js)
   rimForce:        [0, 0, 0, 0],                   // N   — engine contact FORCE on each WHEEL HARD CORE (QUAL-25). Non-zero only when the rim itself is hit — rim damage
   brakeTorque:     [0, 0, 0, 0],                   // N·m — applied brake torque (brake wear)
   wheelPhase:      [0, 0, 0, 0],                   // per-wheel spin phase [rad], fixed-step; feeds the out-of-round radius (params.wheelRunout)
@@ -4697,7 +4699,7 @@ function loop () {
     {
       const hit = physicsEngine.maxContactImpulse(vehicleChassis)
       const landed = damageModel.feedContact(
-        classifyImpactRegion(hit.point, hit.normal), hit.impulse, RANGER_PARAMS.mass, PHYSICS_DT)
+        classifyImpactRegion(hit.point, hit.normal), hit.stepImpulse, RANGER_PARAMS.mass, PHYSICS_DT)
       if (landed) damageHUD.noteImpact(landed)
     }
     simTime += PHYSICS_DT

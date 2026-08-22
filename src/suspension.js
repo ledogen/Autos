@@ -286,6 +286,7 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
   // hard-core contacts (debris) in on top with a max. Two paths, ONE signal — a rim does not care
   // whether it was the road or a rock that reached it, and the cores collide with debris only.
   if (vehicleState.rimForce) { vehicleState.rimForce[0] = 0; vehicleState.rimForce[1] = 0; vehicleState.rimForce[2] = 0; vehicleState.rimForce[3] = 0 }
+  if (vehicleState.rimForceRoad) { vehicleState.rimForceRoad[0] = 0; vehicleState.rimForceRoad[1] = 0; vehicleState.rimForceRoad[2] = 0; vehicleState.rimForceRoad[3] = 0 }
   // Paranoid guard (Phase 4.1 D-01): if strutComp/strutCompVel not initialized, skip.
   if (!vehicleState.strutComp || vehicleState.strutComp.length !== 4) return
   if (!vehicleState.strutCompVel || vehicleState.strutCompVel.length !== 4) return
@@ -503,16 +504,50 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         const env = (c.sizeR !== undefined)
           ? Math.min(1, 2 * Math.PI * c.sizeR * Math.max(0, c.depth) / (params.tireContactAreaM2 || 0.0166))
           : 1
+        // PROGRESSIVE CARCASS RATE. A real tire cannot be squashed past its own sidewall: as the
+        // carcass runs out of travel the rate climbs steeply and the rim takes over. A LINEAR
+        // spring has no such limit, and the owner's 0.5 m drop capture shows what that costs —
+        // the strut bottoms at 299 mm, the tire becomes the only compliance left, and a 100 kN/m
+        // linear rate then crushes 264 mm into a 165 mm tire, putting the rim a hand's width below
+        // the road. That is the "floaty, clips through the ground" feel, and it is also why a rim
+        // strike was guaranteed on any landing at any pressure.
+        //
+        // rate multiplier = 1 / (1 - (d/sidewall)^2), clamped. At static deflection (~33 mm of 165)
+        // it is 1.04, so ordinary ride and every handling gate are untouched; by 100 mm it is 1.6,
+        // by 140 mm it is 3.6, and it runs away as the sidewall is used up. The tire stops the
+        // truck because it has run out of rubber, not because a number was raised.
+        const sidewall = (params.wheelRadius || 0.368) - (params.rimRadius || 0.203)
+        // Clamped at 0.94 (≈8.6x rate), not at the asymptote. Past the sidewall the rim is on the
+        // surface and this spring is no longer the thing resisting — letting the multiplier run to
+        // 25x there produced a 5.5 cm single-frame shove on a 0.34 m shoulder step, which reads as
+        // a teleport and trips the penetration failsafe gate. Deep penetration is the failsafe's
+        // job, not the carcass's.
+        const dNorm = Math.min(0.94, Math.max(0, c.depth) / sidewall)
+        const carcass = 1 / (1 - dNorm * dNorm)
         const tireFnAtContact = Math.max(0,
-          params.tireStiffness * c.depth + params.tireDamping * compressionVel
+          params.tireStiffness * c.depth * carcass + params.tireDamping * compressionVel
         ) * env
 
         // RIM CONTACT from the analytic path. Depth is measured from the tire's OUTER radius, so
-        // once it exceeds the soft band the contact has reached the rim and the wheel is bearing
-        // on it directly. A hard enough landing over a shoulder step really does kiss the rim, and
-        // the engine's hard cores can never report it because they collide with debris only.
-        if (vehicleState.rimForce && c.depth > WHEEL_SOFT_BAND && tireFnAtContact > vehicleState.rimForce[i]) {
-          vehicleState.rimForce[i] = tireFnAtContact
+        // once it exceeds the soft band the contact has reached the rim. A hard enough landing over
+        // a shoulder step really does kiss the rim, and the engine's hard cores can never report it
+        // because they collide with debris only, by construction.
+        //
+        // What is published is the RESIDUAL — the load beyond what the carcass alone carries when
+        // fully compressed — not the whole contact force. That matters: the debris path reports
+        // what the rigid core exchanges with a rock, which is already a residual, and the two must
+        // be the same quantity or one yield threshold cannot serve both.
+        //
+        // It is NOT the same quantity, and measurement settled that rather than argument: a 2 m
+        // drop reads 349 kN here against 0.3-5 kN for a rock strike on the core. Same name, two
+        // different measurements — the core exchanges only what a rigid pinch transmits, this is
+        // the whole squashed-carcass load past full compression. So they are published separately
+        // and carry their own yield thresholds (rimYieldMult vs rimYieldRoadMult in damage.js).
+        if (vehicleState.rimForceRoad && c.depth > WHEEL_SOFT_BAND) {
+          const bandNorm = Math.min(0.98, WHEEL_SOFT_BAND / sidewall)
+          const atBand = params.tireStiffness * WHEEL_SOFT_BAND / (1 - bandNorm * bandNorm)
+          const residual = tireFnAtContact - atBand
+          if (residual > vehicleState.rimForceRoad[i]) vehicleState.rimForceRoad[i] = residual
         }
         // D-06: split contact normal force into strut-axis and X/Z residual components
         // bodyUpDot = dot(c.normal, body_up): the fraction of contact normal force along the strut axis

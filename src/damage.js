@@ -278,7 +278,13 @@ export const DAMAGE_PARAMS = {
   // over a 34 cm rock reads 0.3-5.1 kN across 11-61 mph, so this sits just under the worst of those:
   // nothing at ordinary speeds, and only the hardest hits mark a wheel. That matches the owner's
   // read that a straight-on rock or kerb at 20 mph should leave the rim fine.
-  rimYieldMult:   1.5,    // x static wheel load (≈5 kN): below this the rim springs back
+  rimYieldMult:   1.5,    // x static wheel load (≈5 kN): DEBRIS core contacts — below this it springs back
+  // ROAD contacts are a different measurement (see suspension.js): the load past full carcass
+  // compression, not what a rigid pinch exchanges. Measured on drops: 0.5 m and 1.0 m never reach
+  // the rim at all now, 2 m reads 349 kN and 4 m reads 458 kN, so this sits above a 2 m landing —
+  // the tire is meant to carry that — and a 4 m one costs real but survivable damage.
+  rimYieldRoadMult: 90,   // x static wheel load (≈300 kN): ROAD/terrain contacts
+  rimFullRoadMult: 180,   // x static wheel load (≈600 kN) of OVERLOAD writes the wheel off
   rimFullMult:    30,     // x static wheel load (≈100 kN) of OVERLOAD writes the wheel off
   rimStrikeExp:   1.5,    // between linear and square — plastic work rises faster than the overload
 
@@ -312,6 +318,10 @@ export const DAMAGE_PARAMS = {
   //   sustained scrape along a wall, which becomes a series of hits rather than one endless one.
   impactMinMph:    2,
   impactHoldMax:   0.25,
+  // A step only counts toward a collision's impulse while the contact FORCE is above this. The
+  // engine's per-step impulses are summed across a burst to get the collision's true impulse, and
+  // without a floor a truck leaning on what it hit would keep adding to it forever.
+  impactForceFloorN: 20000,   // N — about 1.5x the truck's own weight
 }
 
 // ── Curves ────────────────────────────────────────────────────────────────────────────────────────
@@ -554,22 +564,30 @@ export class DamageModel {
    *
    * @param {'front'|'left'|'right'|'rear'|null} region - from classifyImpactRegion; null (a ground
    *   or roof contact, which no armor covers) closes any burst in progress and starts nothing.
-   * @param {number} impulseNs - max contact normal impulse this step [N·s].
+   * @param {number} stepImpulseNs - THIS STEP's contact normal impulse [N·s]; summed over the burst.
    * @param {number} mass - vehicle mass [kg].
    * @param {number} dt - physics step [s].
    * @returns {{region, v, passed, fatal}|null} the landed impact, or null on a step that banked none.
    */
-  feedContact (region, impulseNs, mass, dt) {
+  feedContact (region, stepImpulseNs, mass, dt) {
     const P = DAMAGE_PARAMS
-    const live = region != null && impactSpeed(impulseNs, mass) >= P.impactMinMph * MPH
+    // stepImpulseNs is THIS STEP's contact impulse, so stepImpulseNs/dt is the contact force and
+    // the SUM across the burst is the collision's true impulse.
+    //
+    // This used to read the engine's lifetime-accumulated total, which kept climbing for as long as
+    // the bodies stayed touching — so a 70 mph tree strike priced as a 143 mph one (owner, 2026-08
+    // -22), because the truck came to rest against the tree and never stopped adding to it.
+    const force = dt > 0 ? stepImpulseNs / dt : 0
+    const live = region != null && force >= P.impactForceFloorN
 
     if (live) {
-      if (!this._burst) this._burst = { region, impulse: impulseNs, t: 0 }
+      if (!this._burst) this._burst = { region, impulse: stepImpulseNs, peak: force, t: 0 }
       else {
         this._burst.t += dt
-        // The region travels with the peak: a truck that clips a post front-first and slews into it
-        // sideways took its worst hit on whichever face was loaded hardest.
-        if (impulseNs > this._burst.impulse) { this._burst.impulse = impulseNs; this._burst.region = region }
+        this._burst.impulse += stepImpulseNs        // integrate the collision
+        // The region travels with the hardest instant: a truck that clips a post front-first and
+        // slews into it sideways took its worst hit on whichever face was loaded hardest.
+        if (force > this._burst.peak) { this._burst.peak = force; this._burst.region = region }
       }
       if (this._burst.t < P.impactHoldMax) return null
     }
@@ -807,14 +825,21 @@ export class DamageModel {
     // other event, but the criterion is yield: only the peak matters, and only if it exceeded it.
     const rimF = vehicleState.rimForce
     if (rimF && params) {
-      const yieldN = P.rimYieldMult * DamageModel.staticWheelLoad(params)
+      const staticW = DamageModel.staticWheelLoad(params)
+      const road = vehicleState.rimForceRoad
+      const yieldN = P.rimYieldMult * staticW
+      const yieldRoad = P.rimYieldRoadMult * staticW
       if (!this._strikePeak) this._strikePeak = [0, 0, 0, 0]
       for (let i = 0; i < 4; i++) {
-        const f = rimF[i] || 0
+        // Two sources, each normalised against its OWN yield, then whichever is further past it
+        // drives the event. Expressed as a fraction of yield so one peak-hold can serve both.
+        const fDebris = (rimF[i] || 0) / yieldN
+        const fRoad   = road ? (road[i] || 0) / yieldRoad : 0
+        const f = Math.max(fDebris, fRoad) * yieldN
         const peak = this._strikePeak[i]
         if (f > peak) { this._strikePeak[i] = f; continue }
         if (peak > yieldN && (f <= yieldN || f < peak * P.eventDecayFrac)) {
-          this._landRimStrike(i, peak, DamageModel.staticWheelLoad(params))
+          this._landRimStrike(i, peak, staticW)
           this._strikePeak[i] = 0
         } else if (f <= yieldN) {
           this._strikePeak[i] = 0
