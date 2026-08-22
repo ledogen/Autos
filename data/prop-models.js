@@ -236,6 +236,30 @@ export const PROP_MODELS = {
     yawOffset: Math.PI * 0.5,
     tags: ['missionGiver'],
   },
+
+  // ASSET-14 — the lone gas pump, 520 tris, 2.30 x 4.55 x 1.24 m. RESHAPED BY THE OWNER
+  // 2026-08-22 from "one pump on a small pad" into the roadside island in the reference photo:
+  // a 4.55 m pole carrying a lit GAS sign, and at its foot TWO box pumps back to back so a car
+  // can pull up on either side. Five materials, one 512x192 texture carrying only the word GAS.
+  gasPump: {
+    url: 'assets/models/gas-pump.glb',
+    // ISLAND AND PUMPS ONLY, up to the crown at 1.44 m. The pole above that is 0.13 m of
+    // galvanised tube and is deliberately NOT in the box: a 4.55 m collider would be an
+    // invisible wall to anything tall, and clipping a mirror on a sign post is not a crash.
+    // The 2.30 m length runs along +X (pole at x -0.95, pumps at x +0.30); the first pump's
+    // dial, holster and hose face -Z.
+    collision: { shape: 'box', size: [2.30, 1.45, 1.24] },
+    // yawOffset 0 ON PURPOSE. The pad is 14 m along the road x 8 m across, and the marker yaw
+    // already points model -Z at the road — which lays the island's 2.30 m length ALONG the
+    // road and turns the -Z pump to face it, exactly how a car pulls in alongside. A quarter
+    // turn (the Winnebago's fix, for an 8 m body) would point both pumps up and down the road
+    // instead, which is the one orientation you cannot fuel from.
+    //
+    // PumpSkirt is the recolourable material if this ever wants a curated pool; none is
+    // declared, because nothing passes a `variant` yet and an unused palette is only gate
+    // surface. The pole and sign stay white in every case — that is what reads as "gas".
+    tags: ['missionGiver'],
+  },
 }
 
 /** Every registry key carrying `tag`, in registry order — the pool a roster slot draws from. */
