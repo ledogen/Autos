@@ -97,6 +97,37 @@ export const PROP_MODELS = {
     collision: { shape: 'box', size: [0.16, 0.59, 0.73] },
   },
 
+  // ASSET-24 — the player's campfire.  472 tris, 0.714 x 0.378 x 0.677 m, four
+  // flat materials, no textures.  CAMP GEAR, not lawn furniture: it renders at
+  // the player's own campsite under items.md's visible-kit rule, and per that
+  // doc the bedroll-and-campfire is the DEFAULT camp with no modifier — so this
+  // is on screen every night of a 20-day run.
+  //
+  // OVER THE TICKET'S 300-TRI BUDGET, deliberately.  The 11-stone fire ring is
+  // 220 of the 472; everything the ticket actually specified is 252.  ASSET-08
+  // (the permanent fire pit, the other asset with a stone ring) budgets 450 with
+  // ~300 earmarked for stones, which is the right order for a ring-fire.
+  //
+  // FLAG: the ring means this and ASSET-08 now share their strongest silhouette
+  // cue.  The tickets are explicit that a stone-ringed pit must read as "someone
+  // lives here" against this one's "I slept here", so ASSET-08 needs a different
+  // distinguishing feature — a built kerb, a dug pit — before both ship.
+  //
+  // SHIPS COLD.  glTF carries no lights and no particle systems, so the flames,
+  // the point light and the flicker are a VFX ticket.  What the .glb provides is
+  // the empty node FireFlameAnchor at (0, 0.085, 0) in model space — parent the
+  // flame quads and the light to that.  Find it by name off the loaded scene;
+  // it is a plain Object3D with no geometry.
+  //
+  // NO COLLISION, by the ticket.  A 0.38 m fire sits on the 6 m camp pad the
+  // player parks the truck on, and colliding it would make the campsite a
+  // hazard course.  Material names are the API for the VFX rig: FireAsh,
+  // FireCoal, FireLog, FireStone.  No palette — a fire is not recolourable.
+  campfire: {
+    url: 'assets/models/campfire.glb',
+    collision: { shape: 'none', size: [0.714, 0.378, 0.677] },
+  },
+
   // ASSET-02 — ceramic garden gnome, 500 tris, the classic STANDING lawn
   // ornament: boots, belted coat, beard over the chest, tall red hat.  Lawn
   // furniture, same rule as the flamingos: scatter WITH a POI, never on bare
