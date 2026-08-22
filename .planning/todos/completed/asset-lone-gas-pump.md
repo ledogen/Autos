@@ -58,67 +58,94 @@ Hose and nozzle as a simple hanging tube, ≤60 tris. Dial face is texture; do n
 
 ## Resolution — 2026-08-22
 
-Shipped as `assets/models/gas-pump.glb`, **520 tris**, 5 materials, one 512×192 texture.
-Sources: `assets/models/src/gas-pump.{blend,py}`. Registered as `gasPump` in `data/prop-models.js`,
-tagged `missionGiver`, so it loads and places through FEAT-59 with no code change.
+Shipped as `assets/models/gas-pump.glb`, **460 tris**, 6 materials, one 512×512 texture atlas.
+Sources: `assets/models/src/gas-pump.{blend,py}`. Registered as `gasPump` in `data/prop-models.js`
+under a **new `gasStation` pool** — see "Open items", it does not spawn yet and that is deliberate.
 
-### The owner reshaped it, and that moved four numbers in the Spec table
+### The owner reshaped it twice, and that moved five rows of the Spec table
 
-The brief on the day was: *a vertical pole that says GAS, and at its base two pumps that face
-opposite sides; handle visible on the side; simple box-style pumps, nothing flashy or retro.*
-So this is an **island**, not a lone pump — and the shipped asset knowingly departs from the
-table above on four rows. The table is left as written; this section is what was actually built.
+Pass 1: *a vertical pole that says GAS, and at its base two pumps that face opposite sides; handle
+visible on the side; simple box-style pumps, nothing flashy or retro.* So the asset is an **island**,
+not a lone pump. Pass 2, against a second reference (a Wayne/Bennett-era cabinet): the pump itself
+was *"a little bit too narrow and upright"* — so the body is now **wide and squat** under a
+**chrome-framed head that overhangs it on three sides**, and the head carries a real gauge face.
+The Spec table above is left as written; this section is what was actually built.
 
 | Field | Spec said | Shipped | Why |
 |---|---|---|---|
-| Tri budget | ≤600 | **520** | Still inside, but it now buys two pumps, a 4.55 m pole, a sign and a floodlight. |
-| Texture | 512×512, dial + livery + rust + digits | **512×192, the word GAS and nothing else** | ART-STYLE rule 1 buys a texture for information geometry cannot carry. Livery and rust are *wear*, the named anti-pattern; digits are one grey smudge past 15 m. The word on a 4 m sign is the whole point of the asset. Same grounds as `news-roll` and `produce-stall`; this is the third instance, not a new exception. |
-| Real size | 0.6 × 1.1 m, 1.9 m tall | **2.30 × 1.24 m, 4.55 m tall** | The pole is the asset. Everything below it is detail the player only gets once they have already arrived. |
-| Collision | `[0.6, 1.9, 1.1]` | `{ shape: 'box', size: [2.30, 1.45, 1.24] }` | Island and pumps up to the crown. **The pole above 1.45 m is deliberately not collided** — a 4.55 m box would be an invisible wall to anything tall, and clipping a mirror on a sign post is not a crash. Note the registry field is `size`, not the ticket's `dims`. |
+| Tri budget | ≤600 | **460** | Inside, and it now buys two pumps, a 4.55 m pole, a sign and a floodlight. Pass 2 *saved* 60 tris: the blank-window dial and the roof crown went, the head frame and gauge plate came in. |
+| Texture | 512×512, dial + livery + rust + digits | **512×512 atlas: GAS + the gauge face** | Livery and rust are *wear*, the named ART-STYLE anti-pattern — still dropped. The dial and digits stayed on the owner's 2026-08-22 call: a pump register is printed information, which is exactly what rule 1 buys a texture for. |
+| Real size | 0.6 × 1.1 m, 1.9 m tall | **2.50 × 1.40 m, 4.55 m tall**; each pump 0.72 × 0.53 × 1.42 | The pole is the asset. Everything below it is detail the player only gets once they have already arrived. |
+| Collision | `[0.6, 1.9, 1.1]` | `{ shape: 'box', size: [2.50, 1.45, 1.40] }` | Island and pumps up to the head at 1.42 m. **The pole above that is deliberately not collided** — a 4.55 m box would be an invisible wall to anything tall, and clipping a mirror on a sign post is not a crash. Note the registry field is `size`, not the ticket's `dims`. |
+| Material names | (implicit, "stable") | `PumpSign` became **`PumpGraphic`** in pass 2 | It carries the gauge artwork as well as the sign now, so the old name lied. Nothing referenced it — no palette, no loader hook. |
 
-Forward (−Z) is unchanged and is what the first pump's dial, holster and hose face. Base-seated at
-y = 0, unchanged. `yawOffset: 0` is deliberate — the pad yaw already points model −Z at the road,
-which lays the island's 2.30 m length *along* the road and turns one pump to face it, exactly how a
-car pulls in alongside.
+Forward (−Z) is unchanged and is what the first pump's gauge face, holster and hose face.
+Base-seated at y = 0, unchanged. `yawOffset: 0` is deliberate — the pad yaw already points model −Z
+at the road, which lays the island's 2.50 m length *along* the road and turns one pump to face it,
+exactly how a car pulls in alongside.
 
 ### Composition
 
-Five materials, five draw calls. `PumpConcrete` slab · `PumpBody` cream cabinets, pole, arm, sign
-bezel · `PumpSkirt` faded-red lower panels · `PumpTrim` every dark part (plinth, dial bezel,
-holsters, nozzles, hoses — merged, same colour and same role) · `PumpSign` the baked artwork.
-Value structure bottom to top: near-black plinth, red skirts, cream cabinets, white pole, white sign
-with black letters at 4 m.
+Six materials, six draw calls. `PumpConcrete` slab · `PumpBody` pole, sign arm, sign bezel,
+floodlight arm · `PumpSkirt` the red pump bodies · `PumpTrim` every dark part (plinth, holsters,
+nozzles, hoses, lamp head — merged, same colour and same role) · `PumpChrome` the head frame ·
+`PumpGraphic` the baked atlas.
+
+**`PumpChrome` is the one split that needed arguing.** It is a thin rim at distance, and the merge
+rule says don't. But a bright cool band framing a warm cream dial over a red body is the entire read
+of this pump: cream (`PumpBody`) makes the frame vanish into the face, dark (`PumpTrim`) turns it
+into a picture frame. Bought deliberately.
+
+Value structure bottom to top: near-black plinth, wide red bodies carrying the only saturation, a
+bright head with a cream dial as the thing you look *at*, then a white pole to a white sign at 4 m.
 
 The two pumps are one part list and its mirror through y = 0, separated by a 30 mm gap so they read
-as two. The **squeeze handle** the owner asked for by name is real geometry, not implied by the
-hose. The **floodlight** part-way up the pole is in the reference photo and earns its 24 tris:
-without it the pole is 3 m of blank white through the middle of the silhouette.
+as two. The **squeeze handle** the owner asked for by name is real geometry. The **floodlight**
+part-way up the pole is in the first reference and earns its 24 tris: without it the pole is 3 m of
+blank white through the middle of the silhouette.
 
-The GAS artwork is **generated by `gas-pump.py`**, not hand-painted — an orthographic render of flat
-emitters laid out in sign metres, packed into the `.blend`. Re-running the generator reproduces the
-texture along with the mesh, so the sign's proportions and its pixels cannot drift apart.
+### The atlas
+
+One 512×512, two artworks: **GAS** on the top strip (192 px, plate aspect 2.667) and the **gauge
+face** on the lower block (288 px, aspect 1.778), with a 32 px gutter between them against mip
+bleed. One image and one material instead of two of each.
+
+Everything is laid out in **atlas units** — the unit square that maps to the image — never in
+per-region normalised coordinates, because the regions have different aspects and region-normalised
+drawing would stretch the gauge and not the sign. Plate aspects are **derived** from the region
+pixel sizes in the same file, so mesh and artwork cannot drift apart.
+
+The registers **size themselves**: the digits are placed first at a chosen cap height, their glyph
+box is measured, and the cream strip and dark surround are drawn around it at a fixed padding.
+Fitting digits to a hand-typed window *width* is what the first bake did, and five digits fitted to
+a wide window came out taller than the window and spilled over both edges.
 
 ### Audit (all clean at hand-over)
 
-- Overlapping coplanar faces within 1 mm: **0**. Two were found and fixed — the skirt now runs
-  20 mm past the cabinet underside instead of ending flush with it.
-- Non-manifold edges / loose verts: **0**. The sign faces started as single open quads and were
-  closed into thin plates (+20 tris) rather than shipped as boundaries.
+- Overlapping coplanar faces within 1 mm: **0**. Three were found and fixed across the two passes —
+  the skirt now runs 20 mm past the cabinet underside, and the body top runs 20 mm into the head,
+  rather than either ending flush.
+- Non-manifold edges / loose verts / degenerate faces: **0**. The sign faces started as single open
+  quads and were closed into thin plates (+20 tris) rather than shipped as boundaries.
 - Exports single-sided (`campfire`/`gnome` convention), no Draco, no KTX2, one embedded PNG,
-  metalness 0 throughout, 130 KB.
-- **Sign handedness verified rendered from both sides.** It shipped as `SAG` on the +Y face at
-  first: a bmesh face has a zero normal until `normal_update()` runs, so the `face.normal.y > 0`
-  test silently returned false on both plates. The side is now read off the vertex, and the trap is
-  commented in the generator.
+  metalness 0 throughout, 272 KB.
+- **Artwork handedness verified rendered from both sides**, sign and gauge. It shipped as `SAG` on
+  the +Y face in pass 1: a bmesh face has a zero normal until `normal_update()` runs, so the
+  `face.normal.y > 0` test silently returned false on both plates. Pass 2 removed the class of bug
+  rather than the instance — `mirror_y()` now owns both the winding flip and the `u → 1 − u`, and
+  every atlas region spans the full U range so that flip is always correct.
 
 ### Open items
 
-- **`missionGiver` is a judgement call, reversible in one line.** It is the only pool in the
-  registry, and adding to a pool is allowed to reshuffle which POI wears what. If a gas stop should
-  not hand out work until FEAT-50 refuelling exists, drop the `tags` line.
+- **`gasStation` is a pool of its own and NOTHING CONSUMES IT YET.** Owner ruling 2026-08-22: this
+  POI does not hand out work, it sells you fuel. No roster slot in `src/poi.js` names `gasStation`,
+  so **the model does not spawn**. That is deliberate and follows the flamingo rule in
+  `prop-models.js` — do not re-tag it `missionGiver` to make it appear. The slot arrives with
+  **FEAT-50 refuelling**, which is what gives a gas stop something to do. Until then the asset is
+  reachable only through `spawnModel('gasPump')`.
 - **`PumpSkirt` is the recolourable material** if this ever wants a curated pool (2026-08-21 palette
-  ruling). None is declared: nothing passes a `variant` yet, and an unused palette is only gate
-  surface. The pole and sign stay white in every case — that is what reads as "gas".
+  ruling). None is declared: nothing passes a `variant` yet. **Caveat if one is added** — the gauge
+  face's red GASOLINE band is baked into the atlas at the same red and a palette swap will not move
+  it. Keep any pool to reds, or re-bake per variant.
 - **ASSET-13 (full gas station) should now converge on this pump**, per the Notes above. Its four
-  pumps under the canopy can reuse `pump_parts()` at a coarser setting; the island, pole and sign
-  are this ticket's alone.
+  pumps under the canopy can reuse `pump_parts()`; the island, pole and sign are this ticket's alone.

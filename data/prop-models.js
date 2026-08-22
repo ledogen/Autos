@@ -237,28 +237,37 @@ export const PROP_MODELS = {
     tags: ['missionGiver'],
   },
 
-  // ASSET-14 — the lone gas pump, 520 tris, 2.30 x 4.55 x 1.24 m. RESHAPED BY THE OWNER
-  // 2026-08-22 from "one pump on a small pad" into the roadside island in the reference photo:
-  // a 4.55 m pole carrying a lit GAS sign, and at its foot TWO box pumps back to back so a car
-  // can pull up on either side. Five materials, one 512x192 texture carrying only the word GAS.
+  // ASSET-14 — the lone gas pump, 460 tris, 2.50 x 4.55 x 1.40 m. RESHAPED BY THE OWNER
+  // twice on 2026-08-22: first from "one pump on a small pad" into the roadside island in
+  // the reference photo — a 4.55 m pole carrying a lit GAS sign, and at its foot TWO box
+  // pumps back to back so a car can pull up on either side — then the pump itself, from
+  // narrow-and-upright into the wide, squat cabinet with an overhanging chrome-framed head.
+  // Six materials, one 512x512 atlas carrying the word GAS and the gauge face.
   gasPump: {
     url: 'assets/models/gas-pump.glb',
-    // ISLAND AND PUMPS ONLY, up to the crown at 1.44 m. The pole above that is 0.13 m of
+    // ISLAND AND PUMPS ONLY, up to the head at 1.42 m. The pole above that is 0.13 m of
     // galvanised tube and is deliberately NOT in the box: a 4.55 m collider would be an
     // invisible wall to anything tall, and clipping a mirror on a sign post is not a crash.
-    // The 2.30 m length runs along +X (pole at x -0.95, pumps at x +0.30); the first pump's
-    // dial, holster and hose face -Z.
-    collision: { shape: 'box', size: [2.30, 1.45, 1.24] },
+    // The 2.50 m length runs along +X (pole at x -1.05, pumps at x +0.28); the first pump's
+    // gauge face, holster and hose face -Z.
+    collision: { shape: 'box', size: [2.50, 1.45, 1.40] },
     // yawOffset 0 ON PURPOSE. The pad is 14 m along the road x 8 m across, and the marker yaw
-    // already points model -Z at the road — which lays the island's 2.30 m length ALONG the
+    // already points model -Z at the road — which lays the island's 2.50 m length ALONG the
     // road and turns the -Z pump to face it, exactly how a car pulls in alongside. A quarter
     // turn (the Winnebago's fix, for an 8 m body) would point both pumps up and down the road
     // instead, which is the one orientation you cannot fuel from.
     //
     // PumpSkirt is the recolourable material if this ever wants a curated pool; none is
     // declared, because nothing passes a `variant` yet and an unused palette is only gate
-    // surface. The pole and sign stay white in every case — that is what reads as "gas".
-    tags: ['missionGiver'],
+    // surface. CAVEAT: the gauge face's red GASOLINE band is baked into the atlas at the same
+    // red, and a palette swap would not move it — keep any pool to reds or re-bake per variant.
+    //
+    // 'gasStation' IS A POOL OF ITS OWN, NOT 'missionGiver' (owner ruling 2026-08-22): this POI
+    // does not hand out work, it sells you fuel. NOTHING CONSUMES THIS POOL YET — no roster slot
+    // in src/poi.js names it, so the model does not spawn. That is deliberate and matches the
+    // flamingo rule above: do not re-tag it missionGiver to make it appear. The slot arrives
+    // with FEAT-50 refuelling, which is what gives a gas stop something to do.
+    tags: ['gasStation'],
   },
 }
 

@@ -4,58 +4,69 @@ ASSET-14 - the lone gas pump, parametric generator.
 Built for: Blender 5.x  |  Target: assets/models/gas-pump.glb
 Style brief: .planning/research/ART-STYLE.md  |  Mechanics: .planning/research/ASSETS.md
 
-RESHAPED BY OWNER 2026-08-22.  The ticket specified ONE pump on a small pad.  The
-owner's brief replaced that with the roadside island from the reference photo: a
-tall vertical pole carrying a lit GAS sign, and at its foot TWO box pumps mounted
-back to back so a car can pull up on either side.  So the asset is an ISLAND, not
-a pump, and its footprint, tri count and collision box all grew accordingly --
-see the ticket's Resolution note.  The name gas-pump.glb is kept because it is the
-name the acceptance criteria and the model registry use.
+RESHAPED BY OWNER 2026-08-22, TWICE.  The ticket specified ONE pump on a small pad.
+Pass 1 replaced that with the roadside island from the first reference photo: a tall
+pole carrying a lit GAS sign, and at its foot TWO box pumps back to back so a car can
+pull up on either side.  Pass 2 replaced the pump ITSELF, against a second reference
+(a Wayne/Bennett-era cabinet): the first pump was "a little bit too narrow and
+upright", so the body is now WIDE and SQUAT under a CHROME-FRAMED HEAD THAT OVERHANGS
+it on three sides, and the head carries a real gauge face instead of two blank
+windows.  The name gas-pump.glb is kept because it is the name the acceptance criteria
+and the model registry use.
 
-ONE TEXTURE, AND ONLY FOR THE WORD.  512x192, carrying nothing but "GAS" on a
-white field.  That is the ART-STYLE rule-1 lettering exception (news-roll, then
-produce-stall): a texture buys information geometry cannot carry, which is
-printed words and nothing else.  The ticket also budgeted the texture for "dial
-face, faded livery, rust streaks, price digits" -- all four are WEAR or are too
-small to read at driving distance, so all four are dropped.  The pump registers
-are modelled as two pale windows in a dark bezel, with no digits.
+ONE TEXTURE, AN ATLAS, AND ONLY FOR THINGS GEOMETRY CANNOT SAY.  512x512, holding two
+artworks: the word GAS for the pole sign (top strip) and the pump's gauge face (lower
+block) - registers, digits, captions and the red GASOLINE band.  Both are the
+ART-STYLE rule-1 lettering exception (news-roll, then produce-stall): printed words
+and printed dials, not wear.  The ticket ALSO budgeted its texture for "faded livery,
+rust streaks" - those are wear, the named anti-pattern, and they are still dropped.
 
-THE ARTWORK IS BAKED BY THIS SCRIPT, not hand-painted -- an orthographic render
-of flat emitters laid out in sign metres, packed into the .blend.  Re-running the
-generator reproduces the texture along with the mesh, so the sign's proportions
-and its pixels can never drift apart.  The font is baked to pixels, so the .glb
-carries no font reference; the script warns and falls back to Bfont if the font
-is missing.
+ONE ATLAS, NOT TWO IMAGES, AND THAT IS WHY IT IS SQUARE.  Sign and gauge share one
+image so they can share ONE material and ONE draw call.  Everything is laid out in
+ATLAS UNITS (the unit square that renders to 512x512), never in per-region normalised
+coordinates - the two regions have different aspects, so region-normalised drawing
+would stretch the gauge artwork and not the sign.  The regions leave a 32 px gutter
+between them so minification cannot bleed one into the other.
 
-FIVE MATERIALS = five draw calls.  This is a POI placed a handful of times, not
-scatter density, so five is affordable.
+THE ARTWORK IS BAKED BY THIS SCRIPT, not hand-painted -- an orthographic render of
+flat emitters, packed into the .blend.  Re-running the generator reproduces the
+texture along with the mesh, so a plate's proportions and its pixels can never drift
+apart: PLATE ASPECTS ARE DERIVED FROM THE REGION PIXEL SIZES, not typed in twice.
+The fonts are baked to pixels, so the .glb carries no font reference; the script warns
+and falls back to Bfont if one is missing.
+
+SIX MATERIALS = six draw calls.  This is a POI placed a handful of times, not scatter
+density, so six is affordable.
   PumpConcrete  the island slab.  Mid grey, the ground the whole thing sits on.
-  PumpBody      cream cabinet tops, the pole, the sign arm, the sign bezel.
-  PumpSkirt     the faded-red lower panels.  THE RECOLOURABLE ONE (see below).
-  PumpTrim      every dark part: plinth, dial bezel, holsters, nozzles, hoses.
-                Hose and bezel do NOT get their own materials -- same colour,
-                same role, so the ART-STYLE rule-6 merge applies and two draw
-                calls are saved.
-  PumpSign      the baked GAS artwork.  Textured; everything else is flat.
+  PumpBody      the pole, the sign arm, the sign bezel, the floodlight arm.
+  PumpSkirt     the pump bodies.  Faded red, THE RECOLOURABLE ONE (see below).
+  PumpTrim      every dark part: plinth, holsters, nozzles, hoses, lamp head.
+  PumpChrome    the head frame.  THE ONE MATERIAL SPLIT THAT NEEDED ARGUING: it is a
+                thin rim at distance, but a bright band framing a cream dial over a
+                red body is the whole read of this pump, and cream (PumpBody) or dark
+                (PumpTrim) both kill it.  Bought deliberately, not by accident.
+  PumpGraphic   the baked atlas: sign faces AND gauge faces.  Textured; the other five
+                are flat colour with no UVs that mean anything.
 
-RECOLOUR: PumpSkirt only.  A curated pool belongs on the data/prop-models.js
-entry per the 2026-08-21 palette ruling, not here.  The other four are fixed --
-the pole and sign read as "gas station" precisely because they are always white.
+RECOLOUR: PumpSkirt only.  A curated pool belongs on the data/prop-models.js entry per
+the 2026-08-21 palette ruling, not here.  CAVEAT IF ONE IS EVER ADDED: the gauge
+face's red GASOLINE band is BAKED at the same red, and a palette swap will not move
+it.  Either keep the pool to reds or re-bake per variant.
 
-VALUE STRUCTURE (ART-STYLE rule 5), bottom to top: near-black plinth seats the
-pumps, faded red skirts carry the only saturation, cream cabinets lift, then a
-white pole runs up to a white sign with black letters at 4 m.  The sign is the
-silhouette the player actually navigates by -- everything below it is detail they
-only get when they have already arrived.
+VALUE STRUCTURE (ART-STYLE rule 5), bottom to top: near-black plinth seats the pumps,
+wide red bodies carry the saturation, a bright chrome head with a cream dial reads as
+the one thing you look AT, then a white pole runs up to a white sign with black
+letters at 4 m.  The sign is the silhouette the player navigates by; the gauge face is
+what they get once they have already arrived.
 
-FORWARD IS -Z (glTF), i.e. +Y in Blender: that is the direction the FIRST pump's
-dial, holster-side nozzle and hose face, and one of the two faces the sign reads
-from.  The second pump is that pump mirrored through y = 0, so the island is
-symmetric about its long axis and either approach direction works.  Base-seated:
-the island slab's underside is at exactly z = 0 in Blender (y = 0 in the GLB).
+FORWARD IS -Z (glTF), i.e. +Y in Blender: that is the direction the FIRST pump's gauge
+face, holster-side nozzle and hose face, and one of the two faces the sign reads from.
+The second pump is that pump mirrored through y = 0, so the island is symmetric about
+its long axis and either approach direction works.  Base-seated: the island slab's
+underside is at exactly z = 0 in Blender (y = 0 in the GLB).
 
-AXIS NOTE.  The exporter's "+Y up" maps blender (x,y,z) -> gltf (x, z, -y).  So
-glTF -Z (forward) is blender +Y, and the island's long axis X survives unchanged.
+AXIS NOTE.  The exporter's "+Y up" maps blender (x,y,z) -> gltf (x, z, -y).  So glTF
+-Z (forward) is blender +Y, and the island's long axis X survives unchanged.
 """
 
 import bpy
@@ -69,13 +80,13 @@ from mathutils import Vector
 # ---------------------------------------------------------------------------
 
 # --- island slab (a battered frustum, as a poured concrete kerb really is) ---
-PAD_X0, PAD_X1 = -1.35, 0.95     # 2.30 m along the island
-PAD_Y = 0.62                     # half-width, 1.24 m across
+PAD_X0, PAD_X1 = -1.50, 1.00     # 2.50 m along the island
+PAD_Y = 0.70                     # half-width, 1.40 m across
 PAD_H = 0.16
 PAD_BATTER = 0.05                # how far the top face is inset from the bottom
 
 # --- pole ---
-POLE_X = -0.95                   # at the far end of the island from the pumps
+POLE_X = -1.05                   # at the far end of the island from the pumps
 POLE_R = 0.065
 POLE_SIDES = 8
 POLE_TOP = 4.55
@@ -83,101 +94,124 @@ COLLAR_R = 0.105                 # cast base collar, the thing that sits it down
 COLLAR_TOP = 0.34
 
 # --- sign arm and sign box ---
-ARM_X1 = 0.62                    # arm runs +X from the pole, out over the pumps
+ARM_X1 = 0.56                    # arm runs +X from the pole, out over the pumps
 ARM_Z0, ARM_Z1 = 4.09, 4.20
 ARM_HW = 0.045                   # half-thickness across Y
 BRACE_Z = 3.62                   # where the diagonal brace leaves the pole
-BRACE_X = -0.34                  # where it meets the arm
+BRACE_X = -0.44                  # where it meets the arm
 BRACE_W = 0.05
 
-# Floodlight part-way up, aimed down at the island.  It is in the reference photo,
-# and without it the pole is 3 m of blank white in the middle of the silhouette.
+# Floodlight part-way up, aimed down at the island.  It is in the reference photo, and
+# without it the pole is 3 m of blank white in the middle of the silhouette.
 LAMP_Z = 3.02
 LAMP_REACH = 0.40
 LAMP_ARM_W = 0.038
 LAMP_HEAD = (0.17, 0.15)         # length along its own axis, cross-section
 LAMP_DROP = 0.13                 # how far the head's far end hangs below its root
 
-SIGN_CX = -0.12                  # sign box centre
+SIGN_CX = -0.24                  # sign box centre
 SIGN_W = 1.46                    # box, along X
 SIGN_H = 0.60                    # box, along Z
 SIGN_T = 0.20                    # box, across Y
 SIGN_CZ = 3.81
-SIGN_TEXT = "GAS"
-SIGN_FONT = "/System/Library/Fonts/Supplemental/Arial Black.ttf"
-
-# The lit face plate. Its aspect MUST equal the texture's or the letters stretch:
-# 1.40 / 0.525 = 2.6667 = 512 / 192, exactly.
-SIGN_FACE_W = 1.40
-SIGN_FACE_H = 0.525
+SIGN_FACE_W = 1.40               # lit face plate width; its HEIGHT is derived from the
+                                 # atlas region so artwork and plate cannot drift
 SIGN_FACE_PROUD = 0.006          # stands off the bezel; 6 mm, well clear of the
                                  # 1 mm parallel-face z-fighting threshold
 SIGN_FACE_T = 0.010              # plate thickness.  A single quad would be cheaper by
                                  # 10 tris and leave an open, non-manifold boundary --
                                  # closed geometry is worth more than 10 tris here.
-SIGN_TEX_W = 512
-SIGN_TEX_H = 192
-SIGN_TXT_FILL = 0.62             # letter block width as a fraction of the face
-SIGN_MARGIN = 0.055              # dark rule inset from the face edge, in face metres
-SIGN_RULE_W = 0.022
 
-# --- pumps ---
-PUMP_CX = 0.30                   # both pumps sit at this X; they differ only in Y
-PUMP_HW = 0.29                   # cabinet half-width along X
-PUMP_Y0 = 0.015                  # cabinet back, just off the centreline: the 30 mm
-PUMP_Y1 = 0.415                  # gap is what makes them read as TWO pumps
-PLINTH_H = 0.24                  # dark base, shared by both cabinets
-SKIRT_TOP = 0.78
-CAB_TOP = 1.30
-SKIRT_INSET = 0.012              # lower panel recessed: a free shadow line under
-                                 # flat shading (ART-STYLE rule 2)
-# The light panel on the roof is ONE box spanning BOTH cabinets, not one per pump.
-# Mirrored per-pump panels stepped away from each other and read as two hats stacked
-# behind one another; a single crown is what a back-to-back twin actually has, and
-# it costs 12 tris instead of 24.
-TOP_HW = 0.255
-TOP_H = 0.14
-TOP_INSET_Y = 0.022              # how far the crown is pulled in from the cabinet ends
+# --- pumps: WIDE AND SQUAT, per the second reference ---
+PUMP_CX = 0.28                   # both pumps sit at this X; they differ only in Y
+PUMP_HW = 0.330                  # body half-width along X -> 0.66 m wide
+PUMP_Y0 = 0.015                  # body back, just off the centreline: the 30 mm gap
+PUMP_Y1 = 0.480                  # is what makes them read as TWO pumps
+PLINTH_H = 0.24                  # dark base, shared by both bodies
+BODY_TOP = 0.98
+BODY_TAPER = 0.028               # the red panel narrows going DOWN, as in the reference
 
-BEZEL_HW = 0.235                 # dark register surround on the face
-BEZEL_Z0, BEZEL_Z1 = 0.88, 1.20
-BEZEL_PROUD = 0.010
-WIN_Z0, WIN_Z1 = 0.93, 1.15      # the two pale register windows
-WIN_GAP = 0.020
-WIN_PROUD = 0.004
+HEAD_OVER_X = 0.031              # the head OVERHANGS the body: sides...
+HEAD_OVER_Y = 0.035              # ...and front.  NOT the back - two mirrored heads
+                                 # would interpenetrate across the centreline.
+HEAD_MARGIN = 0.035              # chrome frame width around the gauge plate
+FACE_PROUD = 0.008               # gauge plate stands off the frame
+FACE_T = 0.014
 
-# Holster, nozzle, handle and hose, all on the +X end of the cabinet.  These X
-# values are PUMP-LOCAL (0 = cabinet centre); the builder adds PUMP_CX.  Y and Z
-# are already world, since the cabinet is not offset in either.
-# The four boxes below are deliberately close together and share edges: they have
-# to read as ONE hanging nozzle at 10 m, not as four dark sticks.
-FIT_X0, FIT_X1 = 0.258, 0.330       # hose fitting, straddling the cabinet edge
-FIT_Y0, FIT_Y1 = 0.298, 0.362
-FIT_Z0, FIT_Z1 = 0.905, 0.985
-BOOT_X0, BOOT_X1 = 0.283, 0.357     # holster the nozzle hangs in
-BOOT_Y0, BOOT_Y1 = 0.155, 0.268
-BOOT_Z0, BOOT_Z1 = 0.775, 0.888
-NOZ_X0, NOZ_X1 = 0.295, 0.345       # nozzle body
-NOZ_Y0, NOZ_Y1 = 0.172, 0.252
-NOZ_Z0, NOZ_Z1 = 0.640, 0.800
-SPOUT_X0, SPOUT_X1 = 0.307, 0.333   # spout, pointing down
-SPOUT_Y0, SPOUT_Y1 = 0.188, 0.232
-SPOUT_Z0, SPOUT_Z1 = 0.482, 0.655
-LEVER_X0, LEVER_X1 = 0.299, 0.341   # the squeeze handle: the one detail the owner
-LEVER_Y0, LEVER_Y1 = 0.250, 0.300   # asked for by name, so it gets real geometry
-LEVER_Z0, LEVER_Z1 = 0.688, 0.728
+# Holster, nozzle, handle and hose.  X values are offsets from the BODY EDGE
+# (PUMP_HW), Y values are offsets back from the BODY FRONT (PUMP_Y1), so
+# re-proportioning the cabinet above drags the whole cluster with it instead of
+# stranding it mid-panel.
+FIT_DX = (-0.032, 0.040)         # hose fitting, straddling the body edge
+FIT_DY = (-0.405, -0.335)        # set BACK, so it never fouls the holster
+FIT_Z = (0.815, 0.895)
+BOOT_DX = (-0.007, 0.067)        # holster: hung high so it tucks under the head
+                                 # overhang, the way the reference hooks its nozzle
+BOOT_DY = (-0.245, -0.120)
+BOOT_Z = (0.815, 0.928)
+NOZ_DX = (0.005, 0.055)          # nozzle body
+NOZ_DY = (-0.228, -0.145)
+NOZ_Z = (0.680, 0.840)
+SPOUT_DX = (0.017, 0.043)        # spout, pointing down
+SPOUT_DY = (-0.212, -0.165)
+SPOUT_Z = (0.522, 0.695)
+LEVER_DX = (0.009, 0.051)        # the squeeze handle: the one detail the owner asked
+LEVER_DY = (-0.120, -0.068)      # for by name, so it gets real geometry
+LEVER_Z = (0.728, 0.768)
 
 HOSE_R = 0.018
 HOSE_SIDES = 4
-HOSE_SEGS = 6                       # 4 segments read as two straight sticks
-# Cubic Bezier in pump-local coordinates: out of the fitting, sagging in a U that
-# hugs the cabinet flank, then back up into the nozzle in its holster.  Keep the
-# out-swing modest - past x ~ 0.42 local the loop hangs off the island entirely.
-HOSE_P0 = (0.300, 0.330, 0.945)
-HOSE_P1 = (0.430, 0.300, 0.560)
-HOSE_P2 = (0.430, 0.120, 0.370)
-HOSE_P3 = (0.320, 0.212, 0.855)   # ends INSIDE the holster box, so no open seam
-                                  # and the loop never crosses in front of the grip
+HOSE_SEGS = 6                    # 4 segments read as two straight sticks
+# Cubic Bezier, (dx from body edge, dy back from body front, z): out of the fitting,
+# sagging in a U that hugs the body flank, then back up into the nozzle in its
+# holster.  Keep the out-swing modest - past dx ~ 0.15 the loop hangs off the island.
+HOSE_P0 = (0.010, -0.370, 0.860)
+HOSE_P1 = (0.140, -0.350, 0.560)
+HOSE_P2 = (0.140, -0.180, 0.380)
+HOSE_P3 = (0.032, -0.185, 0.890)  # ends INSIDE the holster box, so no open seam and
+                                  # the loop never crosses in front of the grip
+
+# ---------------------------------------------------------------------------
+# TEXTURE ATLAS
+#
+# One 512x512 image, two artworks.  Regions are (v0, v1) - both span the full u
+# range, which is what lets mirror_y() flip a plate with a plain u -> 1 - u.
+# ---------------------------------------------------------------------------
+ATLAS_PX = 512
+SIGN_REGION = (0.625, 1.000)     # 192 px tall -> plate aspect 512/192 = 2.6667
+GAUGE_REGION = (0.000, 0.5625)   # 288 px tall -> plate aspect 512/288 = 1.7778
+                                 # 32 px of gutter between them, against mip bleed
+
+SIGN_TEXT = "GAS"
+SIGN_FONT = "/System/Library/Fonts/Supplemental/Arial Black.ttf"
+GAUGE_FONT = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
+
+# Sign artwork, in ATLAS UNITS measured inside its region
+SIGN_TXT_FILL = 0.62             # letter block width as a fraction of the inner field
+SIGN_MARGIN = 0.040              # dark rule inset from the region edge
+SIGN_RULE_W = 0.016
+
+# Gauge artwork, in ATLAS UNITS with y measured up from the region's bottom edge.
+# Rows are (row centre y, digit cap height, digits, caption).
+#
+# THE WINDOWS SIZE THEMSELVES.  Each register is drawn by placing its digits FIRST at
+# a chosen cap height, measuring the glyph box that came back, and then laying the
+# cream strip and the dark surround around it at a fixed padding.  Fitting digits to
+# a hand-typed window WIDTH instead is what the first bake did, and five digits fitted
+# to a wide window came out taller than the window and spilled over both edges.  Rects
+# are placed by Z, not by call order, so drawing the backing after the text is fine.
+GAUGE_BAND_H = 0.150             # red GASOLINE band across the bottom
+GAUGE_BAND_TEXT = "GASOLINE"
+GAUGE_BAND_FILL = 0.60
+GAUGE_ROWS = (
+    (0.4750, 0.052, "00000", "TOTAL SALE"),
+    (0.3520, 0.052, "0000",  "GALLONS"),
+    (0.2380, 0.038, "149",   "PRICE PER GALLON"),
+)
+GAUGE_STRIP_IN = 0.008           # dark surround width outside the cream strip
+GAUGE_PAD = (0.016, 0.008)       # cream strip padding around the digit glyph box
+GAUGE_CAP_H = 0.017              # caption cap height, in atlas units
+GAUGE_CAP_GAP = 0.020            # caption baseline gap below its window
 
 # ---------------------------------------------------------------------------
 # COLOURS  (LINEAR - renders ~1.5x lighter than the number reads; ART-STYLE
@@ -188,38 +222,60 @@ MATERIALS = [
     ("PumpBody",     (0.700, 0.675, 0.600), 0.60),
     ("PumpSkirt",    (0.360, 0.075, 0.055), 0.75),
     ("PumpTrim",     (0.045, 0.046, 0.048), 0.55),
-    ("PumpSign",     (1.000, 1.000, 1.000), 0.70),   # baseColor is the bake
+    ("PumpChrome",   (0.660, 0.675, 0.700), 0.30),
+    ("PumpGraphic",  (1.000, 1.000, 1.000), 0.68),   # baseColor is the bake
 ]
+
+# artwork colours, linear, matched to the materials they sit beside
+INK = (0.012, 0.012, 0.013)
+ENAMEL = (0.780, 0.770, 0.735)    # weathered sign white
+CREAM = (0.690, 0.660, 0.575)     # the gauge face
+BAND_RED = (0.360, 0.075, 0.055)  # SAME red as PumpSkirt - see the RECOLOUR caveat
+GLASS = (0.055, 0.052, 0.050)     # register window surround
 
 OBJ_NAME = 'GasPump'
 OUT_GLB = os.path.join(os.path.dirname(bpy.data.filepath) or '.', '..', 'gas-pump.glb')
+
+# Plate aspects DERIVED from the atlas, never typed twice.
+SIGN_FACE_H = SIGN_FACE_W * (SIGN_REGION[1] - SIGN_REGION[0])
+GAUGE_PLATE_W = 2.0 * (PUMP_HW + HEAD_OVER_X) - 2.0 * HEAD_MARGIN
+GAUGE_PLATE_H = GAUGE_PLATE_W * (GAUGE_REGION[1] - GAUGE_REGION[0])
+HEAD_TOP = BODY_TOP + GAUGE_PLATE_H + 2.0 * HEAD_MARGIN
 
 
 # ---------------------------------------------------------------------------
 # GEOMETRY HELPERS
 #
-# Every helper returns (verts, faces, matnames) so a whole part list can be
+# Every helper returns (verts, faces, matnames, uvs) so a whole part list can be
 # mirrored through y = 0 in one place -- see mirror_y().  Faces are index tuples
-# wound counter-clockwise seen from outside.
+# wound counter-clockwise seen from outside.  uvs[i] is None for every face that
+# carries no artwork, which is nearly all of them.
 # ---------------------------------------------------------------------------
+
+# box() face order, referred to by index elsewhere in this file
+BOX_MZ, BOX_PZ, BOX_MY, BOX_PX, BOX_PY, BOX_MX = 0, 1, 2, 3, 4, 5
+
 
 def box(x0, x1, y0, y1, z0, z1, mat):
     v = [Vector((x0, y0, z0)), Vector((x1, y0, z0)), Vector((x1, y1, z0)), Vector((x0, y1, z0)),
          Vector((x0, y0, z1)), Vector((x1, y0, z1)), Vector((x1, y1, z1)), Vector((x0, y1, z1))]
     f = [(0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4),
          (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]
-    return v, f, [mat] * len(f)
+    return v, f, [mat] * len(f), [None] * len(f)
 
 
-def frustum(x0, x1, y0, y1, z0, z1, inset, mat):
-    """A box whose top face is inset on all four sides - the batter every poured
-    kerb has, and the cheapest way to stop a slab reading as a floating cuboid."""
-    v = [Vector((x0, y0, z0)), Vector((x1, y0, z0)), Vector((x1, y1, z0)), Vector((x0, y1, z0)),
-         Vector((x0 + inset, y0 + inset, z1)), Vector((x1 - inset, y0 + inset, z1)),
-         Vector((x1 - inset, y1 - inset, z1)), Vector((x0 + inset, y1 - inset, z1))]
+def frustum(x0, x1, y0, y1, z0, z1, inset_lo, inset_hi, mat):
+    """A box with an independent inset at each end.  inset_lo > 0 narrows the BOTTOM,
+    which is the batter on the pump's red panel; inset_hi > 0 narrows the top, which
+    is the batter on a poured concrete kerb."""
+    a, b = inset_lo, inset_hi
+    v = [Vector((x0 + a, y0 + a, z0)), Vector((x1 - a, y0 + a, z0)),
+         Vector((x1 - a, y1 - a, z0)), Vector((x0 + a, y1 - a, z0)),
+         Vector((x0 + b, y0 + b, z1)), Vector((x1 - b, y0 + b, z1)),
+         Vector((x1 - b, y1 - b, z1)), Vector((x0 + b, y1 - b, z1))]
     f = [(0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4),
          (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]
-    return v, f, [mat] * len(f)
+    return v, f, [mat] * len(f), [None] * len(f)
 
 
 def prism_z(cx, cy, z0, z1, r0, r1, sides, mat, phase=0.0):
@@ -234,13 +290,13 @@ def prism_z(cx, cy, z0, z1, r0, r1, sides, mat, phase=0.0):
     for i in range(sides):
         j = (i + 1) % sides
         f.append((i, j, sides + j, sides + i))
-    return v, f, [mat] * len(f)
+    return v, f, [mat] * len(f), [None] * len(f)
 
 
 def beam(p0, p1, w, h, mat):
-    """Rectangular beam between two points.  Cross-section w across the beam's
-    own horizontal normal, h across its own vertical - so a diagonal brace keeps
-    a constant section instead of shearing."""
+    """Rectangular beam between two points.  Cross-section w across the beam's own
+    horizontal normal, h across its own vertical - so a diagonal brace keeps a
+    constant section instead of shearing."""
     p0, p1 = Vector(p0), Vector(p1)
     d = (p1 - p0).normalized()
     up = Vector((0.0, 0.0, 1.0))
@@ -253,7 +309,7 @@ def beam(p0, p1, w, h, mat):
          p1 - a - b, p1 + a - b, p1 + a + b, p1 - a + b]
     f = [(0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4),
          (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]
-    return v, f, [mat] * len(f)
+    return v, f, [mat] * len(f), [None] * len(f)
 
 
 def bezier(p0, p1, p2, p3, n):
@@ -268,9 +324,9 @@ def bezier(p0, p1, p2, p3, n):
 
 
 def tube(points, r, sides, mat):
-    """Capped n-gon tube swept along a polyline.  The ring frame is carried along
-    the curve (parallel transport) rather than rebuilt per segment, so the tube
-    does not spin about its own axis where the curve bends hardest."""
+    """Capped n-gon tube swept along a polyline.  The ring frame is carried along the
+    curve (parallel transport) rather than rebuilt per segment, so the tube does not
+    spin about its own axis where the curve bends hardest."""
     pts = [Vector(p) for p in points]
     tangents = []
     for i, p in enumerate(pts):
@@ -303,30 +359,56 @@ def tube(points, r, sides, mat):
                 f.append((prev + k, prev + j, base + j, base + k))
     f.append(tuple(range(sides - 1, -1, -1)))
     f.append(tuple(range(len(v) - sides, len(v))))
-    return v, f, [mat] * len(f)
+    return v, f, [mat] * len(f), [None] * len(f)
+
+
+def plate_uv(verts, face, region, x0, x1, z0, z1):
+    """UVs for an artwork face on a +Y-facing plate.
+
+    Screen-right for a viewer at +Y is -X (right = cross(view_dir, up), with view_dir
+    = -Y), so U must run BACKWARDS along X or the artwork reads mirrored.  mirror_y()
+    flips it again for the -Y copy, which is why every atlas region spans the full U
+    range.
+    """
+    v0, v1 = region
+    out = []
+    for i in face:
+        p = verts[i]
+        u = 1.0 - (p.x - x0) / (x1 - x0)
+        t = (p.z - z0) / (z1 - z0)
+        out.append((u, v0 + t * (v1 - v0)))
+    return out
 
 
 def mirror_y(parts):
-    """Mirror a part list through y = 0.  A mirror flips handedness, so every
-    face has to be re-wound or the whole copy renders inside-out - invisible in
-    Blender's default two-sided viewport and very visible in the game."""
+    """Mirror a part list through y = 0.  Two things have to flip together:
+
+    WINDING - a mirror reverses handedness, so every face is re-wound or the copy
+    renders inside-out: invisible in Blender's two-sided viewport, very visible in the
+    game with backface culling on.
+
+    U - the mirrored plate faces the other way, so its artwork must run the other way
+    too, or the sign reads SAG from one side.  Every atlas region spans the full U
+    range, which makes that a plain u -> 1 - u.
+    """
     out = []
-    for v, f, m in parts:
+    for v, f, m, uvs in parts:
         mv = [Vector((p.x, -p.y, p.z)) for p in v]
         mf = [tuple(reversed(idx)) for idx in f]
-        out.append((mv, mf, list(m)))
+        mu = [None if uv is None else [(1.0 - u, w) for u, w in reversed(uv)]
+              for uv in uvs]
+        out.append((mv, mf, list(m), mu))
     return out
 
 
 # ---------------------------------------------------------------------------
-# SIGN TEXTURE BAKE
+# ATLAS BAKE
 # ---------------------------------------------------------------------------
 
 def _emission(name, col):
-    """Flat emitter.  With the Standard view transform an emission of value v
-    writes exactly v, so the linear colours below survive the round trip:
-    Blender sRGB-encodes on save and the sRGB texture decodes back to the same
-    linear value at sample time."""
+    """Flat emitter.  With the Standard view transform an emission of value v writes
+    exactly v, so the linear colours below survive the round trip: Blender sRGB-encodes
+    on save and the sRGB texture decodes back to the same linear value at sample time."""
     m = bpy.data.materials.new(name)
     m.use_nodes = True
     nt = m.node_tree
@@ -339,44 +421,42 @@ def _emission(name, col):
 
 
 def _purge_bake_leftovers():
-    """Re-running the generator must not accumulate a new copy of the artwork
-    every time - the .blend would grow a 512x192 image per run."""
+    """Re-running the generator must not accumulate a new copy of the artwork every
+    time - the .blend would grow a 512x512 image per run."""
     for img in list(bpy.data.images):
-        if img.name.startswith("GasPumpSign"):
+        if img.name.startswith(("GasPumpAtlas", "GasPumpSign")):
             bpy.data.images.remove(img)
     for m in list(bpy.data.materials):
-        if m.name.startswith(("Sign", "GasPumpSign")) and m.users == 0:
+        if m.name.startswith(("Sign", "Gauge", "Atlas")) and m.users == 0:
             bpy.data.materials.remove(m)
     for sc in list(bpy.data.scenes):
-        if sc.name.startswith("SignBake"):
+        if sc.name.startswith("AtlasBake"):
             bpy.data.scenes.remove(sc)
 
 
-def bake_sign_texture():
-    """Render the GAS artwork from an ortho camera and return a packed image.
+def bake_atlas():
+    """Render both artworks into one square image and return it, packed.
 
-    Drawn in FACE METRES in the XY plane and stacked in Z in painter's order, so
-    the numbers here are the same numbers the geometry uses."""
-    W, H = SIGN_FACE_W, SIGN_FACE_H
-    white = (0.780, 0.770, 0.735)      # weathered enamel, not paper white
-    ink = (0.012, 0.012, 0.013)
-
+    EVERYTHING IS DRAWN IN ATLAS UNITS: the camera frames the unit square, which maps
+    to ATLAS_PX in both axes, so a shape drawn 0.1 x 0.1 is square on the plate no
+    matter which region it lands in.  Stacked in Z in painter's order.
+    """
     engines = {i.identifier for i in
                bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items}
-    sc = bpy.data.scenes.new("SignBake")
+    sc = bpy.data.scenes.new("AtlasBake")
     sc.render.engine = 'BLENDER_EEVEE_NEXT' if 'BLENDER_EEVEE_NEXT' in engines else 'BLENDER_EEVEE'
-    sc.render.resolution_x, sc.render.resolution_y = SIGN_TEX_W, SIGN_TEX_H
+    sc.render.resolution_x = sc.render.resolution_y = ATLAS_PX
     sc.render.resolution_percentage = 100
     sc.render.film_transparent = False
     sc.view_settings.view_transform = 'Standard'
     sc.render.image_settings.file_format = 'PNG'
     sc.render.image_settings.color_mode = 'RGB'
 
-    cam_data = bpy.data.cameras.new("SignCam")
+    cam_data = bpy.data.cameras.new("AtlasCam")
     cam_data.type = 'ORTHO'
-    cam_data.ortho_scale = W
-    cam = bpy.data.objects.new("SignCam", cam_data)
-    cam.location = (0.0, 0.0, 2.0)
+    cam_data.ortho_scale = 1.0
+    cam = bpy.data.objects.new("AtlasCam", cam_data)
+    cam.location = (0.5, 0.5, 2.0)
     sc.collection.objects.link(cam)
     sc.camera = cam
 
@@ -394,16 +474,17 @@ def bake_sign_texture():
         sc.collection.objects.link(o)
         scratch.append(o)
 
-    def text(body, x, y, z, col, tag, inner_w):
+    def text(body, cx, cy, z, col, tag, font, width=None, cap_h=None):
+        """Centred text.  Give it EITHER a width to fit to or a cap height."""
         cu = bpy.data.curves.new(tag, type='FONT')
         cu.body = body
         cu.size = 1.0
         cu.align_x = 'CENTER'
         cu.align_y = 'CENTER'
         try:
-            cu.font = bpy.data.fonts.load(SIGN_FONT, check_existing=True)
+            cu.font = bpy.data.fonts.load(font, check_existing=True)
         except (RuntimeError, OSError):
-            print("WARN: sign font not found, falling back to Bfont:", SIGN_FONT)
+            print("WARN: font not found, falling back to Bfont:", font)
         o = bpy.data.objects.new(tag, cu)
         mat = _emission(tag, col)
         scratch_mats.append(mat)
@@ -413,29 +494,59 @@ def bake_sign_texture():
         me = o.to_mesh()
         xs = [v.co.x for v in me.vertices]
         ys = [v.co.y for v in me.vertices]
-        k = inner_w / (max(xs) - min(xs)) if xs and max(xs) > min(xs) else 1.0
-        # align_y='CENTER' centres on the FONT's metrics, which reserve descender
-        # space these all-caps lines never use - so the block sits low.  Centre on
-        # the measured glyph bounding box instead and the row number means what
-        # it says.
-        mid = (max(ys) + min(ys)) * 0.5 if ys else 0.0
+        if not xs:
+            o.to_mesh_clear()
+            return (cx, cx, cy, cy)
+        if width is not None:
+            k = width / (max(xs) - min(xs)) if max(xs) > min(xs) else 1.0
+        else:
+            k = cap_h / (max(ys) - min(ys)) if max(ys) > min(ys) else 1.0
+        # align_y='CENTER' centres on the FONT's metrics, which reserve descender space
+        # these all-caps lines never use - so the block sits low.  Centre on the
+        # measured glyph bounding box instead and the row number means what it says.
+        mid = (max(ys) + min(ys)) * 0.5
         o.to_mesh_clear()
         o.scale = (k, k, k)
-        o.location = (x, y - k * mid, z)
+        o.location = (cx, cy - k * mid, z)
+        # placed glyph box, in atlas units - what the register backing is drawn around
+        h = k * (max(ys) - min(ys)) * 0.5
+        return (cx + k * min(xs), cx + k * max(xs), cy - h, cy + h)
 
-    # painter's order, back to front
-    rect(-W / 2, W / 2, -H / 2, H / 2, 0.00, ink, "SignEdge")
-    m = SIGN_MARGIN
-    rect(-W / 2 + SIGN_RULE_W * 0.5, W / 2 - SIGN_RULE_W * 0.5,
-         -H / 2 + SIGN_RULE_W * 0.5, H / 2 - SIGN_RULE_W * 0.5, 0.01, white, "SignField")
-    rect(-W / 2 + m, W / 2 - m, -H / 2 + m, H / 2 - m, 0.02, ink, "SignRule")
-    n = m + SIGN_RULE_W
-    rect(-W / 2 + n, W / 2 - n, -H / 2 + n, H / 2 - n, 0.03, white, "SignInner")
+    # ---- background: fill the whole atlas so the gutter is never garbage ----
+    rect(0.0, 1.0, 0.0, 1.0, 0.00, INK, "AtlasGutter")
 
-    text(SIGN_TEXT, 0.0, 0.0, 0.05, ink, "SignLetters",
-         (W - 2 * n) * SIGN_TXT_FILL)
+    # ---- sign region: black edge, enamel field, black rule, GAS ------------
+    s0, s1 = SIGN_REGION
+    m, w = SIGN_MARGIN, SIGN_RULE_W
+    rect(0.0, 1.0, s0, s1, 0.01, INK, "SignEdge")
+    rect(w, 1.0 - w, s0 + w, s1 - w, 0.02, ENAMEL, "SignField")
+    rect(m, 1.0 - m, s0 + m, s1 - m, 0.03, INK, "SignRule")
+    n = m + w
+    rect(n, 1.0 - n, s0 + n, s1 - n, 0.04, ENAMEL, "SignInner")
+    text(SIGN_TEXT, 0.5, (s0 + s1) * 0.5, 0.06, INK, "SignLetters", SIGN_FONT,
+         width=(1.0 - 2 * n) * SIGN_TXT_FILL)
 
-    path = os.path.join(bpy.app.tempdir, "gas-pump-sign.png")
+    # ---- gauge region: cream face, three registers, red band ---------------
+    g0, g1 = GAUGE_REGION
+    rect(0.0, 1.0, g0, g1, 0.01, CREAM, "GaugeFace")
+    rect(0.0, 1.0, g0, g0 + GAUGE_BAND_H, 0.02, BAND_RED, "GaugeBand")
+    text(GAUGE_BAND_TEXT, 0.5, g0 + GAUGE_BAND_H * 0.5, 0.06, ENAMEL,
+         "GaugeBandText", SIGN_FONT, width=GAUGE_BAND_FILL)
+
+    px, py = GAUGE_PAD
+    e = GAUGE_STRIP_IN
+    for i, (cy, digit_h, digits, caption) in enumerate(GAUGE_ROWS):
+        # digits first, then the strip and the surround measured around them
+        bx0, bx1, by0, by1 = text(digits, 0.5, g0 + cy, 0.05, INK,
+                                  "GaugeDigits%d" % i, GAUGE_FONT, cap_h=digit_h)
+        rect(bx0 - px, bx1 + px, by0 - py, by1 + py, 0.03,
+             ENAMEL, "GaugeStrip%d" % i)
+        rect(bx0 - px - e, bx1 + px + e, by0 - py - e, by1 + py + e, 0.02,
+             GLASS, "GaugeWin%d" % i)
+        text(caption, 0.5, by0 - py - e - GAUGE_CAP_GAP, 0.05, INK,
+             "GaugeCap%d" % i, GAUGE_FONT, cap_h=GAUGE_CAP_H)
+
+    path = os.path.join(bpy.app.tempdir, "gas-pump-atlas.png")
     sc.render.filepath = path
     win = bpy.context.window
     prev = win.scene
@@ -446,7 +557,7 @@ def bake_sign_texture():
         win.scene = prev
 
     img = bpy.data.images.load(path, check_existing=False)
-    img.name = "GasPumpSign"
+    img.name = "GasPumpAtlas"
     img.pack()                # NEVER leave it in tempdir - that is wiped on quit
     img.filepath_raw = ""
 
@@ -464,44 +575,44 @@ def bake_sign_texture():
 # ---------------------------------------------------------------------------
 
 def pump_parts():
-    """One pump, facing +Y (= glTF -Z, forward).  The second pump is this list
-    put through mirror_y()."""
+    """One pump, facing +Y (= glTF -Z, forward).  The second pump is this list put
+    through mirror_y()."""
     p = []
-    cx = PUMP_CX
-    x0, x1 = cx - PUMP_HW, cx + PUMP_HW
-    i = SKIRT_INSET
+    cx, e, fy = PUMP_CX, PUMP_HW, PUMP_Y1
 
-    # lower panel, recessed all round so the flat-shaded step reads as a groove
-    # The skirt runs 20 mm PAST the cabinet's underside on purpose.  Ending both at
-    # SKIRT_TOP leaves two exactly-coplanar faces there; burying the skirt's top face
-    # inside the cabinet removes the z-fight and leaves only the overhang lip, which
-    # is the detail we actually wanted.
-    p.append(box(x0 + i, x1 - i, PUMP_Y0 + i, PUMP_Y1 - i,
-                 PLINTH_H, SKIRT_TOP + 0.02, "PumpSkirt"))
-    # upper cabinet
-    p.append(box(x0, x1, PUMP_Y0, PUMP_Y1, SKIRT_TOP, CAB_TOP, "PumpBody"))
-    # dial bezel and its two pale register windows.  No digits: at 20 m through
-    # fog they are one grey smudge, and ART-STYLE rule 1 does not buy smudges.
-    p.append(box(cx - BEZEL_HW, cx + BEZEL_HW, PUMP_Y1 - 0.004, PUMP_Y1 + BEZEL_PROUD,
-                 BEZEL_Z0, BEZEL_Z1, "PumpTrim"))
-    wy = PUMP_Y1 + BEZEL_PROUD
-    edge = BEZEL_HW - 0.020
-    for wx0, wx1 in ((cx - edge, cx - WIN_GAP), (cx + WIN_GAP, cx + edge)):
-        p.append(box(wx0, wx1, wy - 0.002, wy + WIN_PROUD, WIN_Z0, WIN_Z1, "PumpBody"))
+    # --- body: wide, squat, and narrowing toward the floor -----------------
+    # Runs 20 mm PAST BODY_TOP on purpose.  Ending it flush leaves the body's top face
+    # and the head's underside exactly coplanar, which z-fights; burying the body top
+    # inside the head removes it and leaves only the overhang shadow, which is the
+    # detail the reference is actually built on.
+    p.append(frustum(cx - e, cx + e, PUMP_Y0, fy, PLINTH_H, BODY_TOP + 0.02,
+                     BODY_TAPER, 0.0, "PumpSkirt"))
 
-    # fitting, holster, nozzle, spout, squeeze handle - all on the +X cabinet end
-    p.append(box(cx + FIT_X0, cx + FIT_X1, FIT_Y0, FIT_Y1, FIT_Z0, FIT_Z1, "PumpTrim"))
-    p.append(box(cx + BOOT_X0, cx + BOOT_X1, BOOT_Y0, BOOT_Y1,
-                 BOOT_Z0, BOOT_Z1, "PumpTrim"))
-    p.append(box(cx + NOZ_X0, cx + NOZ_X1, NOZ_Y0, NOZ_Y1, NOZ_Z0, NOZ_Z1, "PumpTrim"))
-    p.append(box(cx + SPOUT_X0, cx + SPOUT_X1, SPOUT_Y0, SPOUT_Y1,
-                 SPOUT_Z0, SPOUT_Z1, "PumpTrim"))
-    p.append(box(cx + LEVER_X0, cx + LEVER_X1, LEVER_Y0, LEVER_Y1,
-                 LEVER_Z0, LEVER_Z1, "PumpTrim"))
+    # --- head: chrome box overhanging the body on three sides --------------
+    hx = e + HEAD_OVER_X
+    hy1 = fy + HEAD_OVER_Y
+    p.append(box(cx - hx, cx + hx, PUMP_Y0, hy1, BODY_TOP, HEAD_TOP, "PumpChrome"))
 
-    # hose: high fitting, sagging loop, back up into the nozzle
-    curve = [(cx + q[0], q[1], q[2]) for q in
-             (HOSE_P0, HOSE_P1, HOSE_P2, HOSE_P3)]
+    # --- gauge plate: the only face on this pump carrying artwork ----------
+    px0, px1 = cx - GAUGE_PLATE_W * 0.5, cx + GAUGE_PLATE_W * 0.5
+    pz0 = BODY_TOP + HEAD_MARGIN
+    pz1 = pz0 + GAUGE_PLATE_H
+    v, f, m, uvs = box(px0, px1, hy1 + FACE_PROUD - FACE_T, hy1 + FACE_PROUD,
+                       pz0, pz1, "PumpChrome")
+    m[BOX_PY] = "PumpGraphic"
+    uvs[BOX_PY] = plate_uv(v, f[BOX_PY], GAUGE_REGION, px0, px1, pz0, pz1)
+    p.append((v, f, m, uvs))
+
+    # --- fitting, holster, nozzle, spout, squeeze handle -------------------
+    for dx, dy, dz in ((FIT_DX, FIT_DY, FIT_Z), (BOOT_DX, BOOT_DY, BOOT_Z),
+                       (NOZ_DX, NOZ_DY, NOZ_Z), (SPOUT_DX, SPOUT_DY, SPOUT_Z),
+                       (LEVER_DX, LEVER_DY, LEVER_Z)):
+        p.append(box(cx + e + dx[0], cx + e + dx[1],
+                     fy + dy[0], fy + dy[1], dz[0], dz[1], "PumpTrim"))
+
+    # --- hose: high fitting, sagging loop, back up into the nozzle ---------
+    curve = [(cx + e + q[0], fy + q[1], q[2])
+             for q in (HOSE_P0, HOSE_P1, HOSE_P2, HOSE_P3)]
     p.append(tube(bezier(*curve, HOSE_SEGS), HOSE_R, HOSE_SIDES, "PumpTrim"))
     return p
 
@@ -517,7 +628,7 @@ def build():
     for me in list(bpy.data.meshes):
         bpy.data.meshes.remove(me)
 
-    img = bake_sign_texture()
+    img = bake_atlas()
 
     order = [n for n, _, _ in MATERIALS]
     slot_of = {n: i for i, n in enumerate(order)}
@@ -533,7 +644,7 @@ def build():
         # The mesh is closed and manifold everywhere, so a back face is never wanted
         # and culling them halves the fill on the sign box and the hoses.
         m.use_backface_culling = True
-        if name == "PumpSign":
+        if name == "PumpGraphic":
             tex = m.node_tree.nodes.new("ShaderNodeTexImage")
             tex.image = img
             tex.interpolation = 'Linear'
@@ -545,7 +656,7 @@ def build():
 
     # --- island slab -------------------------------------------------------
     parts.append(frustum(PAD_X0, PAD_X1, -PAD_Y, PAD_Y, 0.0, PAD_H,
-                         PAD_BATTER, "PumpConcrete"))
+                         0.0, PAD_BATTER, "PumpConcrete"))
 
     # --- shared dark plinth under both pumps -------------------------------
     parts.append(box(PUMP_CX - PUMP_HW - 0.012, PUMP_CX + PUMP_HW + 0.012,
@@ -557,21 +668,16 @@ def build():
     parts.extend(front)
     parts.extend(mirror_y(front))
 
-    # --- one light crown over the pair --------------------------------------
-    parts.append(box(PUMP_CX - TOP_HW, PUMP_CX + TOP_HW,
-                     -PUMP_Y1 + TOP_INSET_Y, PUMP_Y1 - TOP_INSET_Y,
-                     CAB_TOP, CAB_TOP + TOP_H, "PumpBody"))
-
     # --- pole --------------------------------------------------------------
-    # phase = pi/8 puts a FACE, not a vertex, square on to +/-Y, so the pole
-    # shows a flat to the road instead of a bright edge highlight.
+    # phase = pi/8 puts a FACE, not a vertex, square on to +/-Y, so the pole shows a
+    # flat to the road instead of a bright edge highlight.
     ph = math.pi / POLE_SIDES
     parts.append(prism_z(POLE_X, 0.0, PAD_H - 0.005, COLLAR_TOP,
                          COLLAR_R, COLLAR_R * 0.80, POLE_SIDES, "PumpTrim", ph))
     parts.append(prism_z(POLE_X, 0.0, COLLAR_TOP - 0.02, POLE_TOP,
                          POLE_R, POLE_R * 0.88, POLE_SIDES, "PumpBody", ph))
 
-    # --- floodlight -------------------------------------------------------
+    # --- floodlight --------------------------------------------------------
     lx = POLE_X + LAMP_REACH
     parts.append(beam((POLE_X, 0.0, LAMP_Z), (lx, 0.0, LAMP_Z + 0.04),
                       LAMP_ARM_W, LAMP_ARM_W, "PumpBody"))
@@ -591,49 +697,31 @@ def build():
 
     fx0, fx1 = SIGN_CX - SIGN_FACE_W * 0.5, SIGN_CX + SIGN_FACE_W * 0.5
     fz0, fz1 = SIGN_CZ - SIGN_FACE_H * 0.5, SIGN_CZ + SIGN_FACE_H * 0.5
-    for s in (1, -1):
-        inner = s * (SIGN_T * 0.5 + SIGN_FACE_PROUD - SIGN_FACE_T)  # buried in the bezel
-        outer = s * (SIGN_T * 0.5 + SIGN_FACE_PROUD)
-        y0, y1 = min(inner, outer), max(inner, outer)
-        v, f, m = box(fx0, fx1, y0, y1, fz0, fz1, "PumpBody")
-        # box() face order is [-Z, +Z, -Y, +X, +Y, -X]; only the outward-facing one
-        # carries the artwork, the four narrow rims stay bezel-coloured.
-        m[4 if s > 0 else 2] = "PumpSign"
-        parts.append((v, f, m))
+    # Build the +Y plate, then mirror it: mirror_y() owns both the winding flip and
+    # the u -> 1 - u, so the two faces cannot drift apart the way they did when each
+    # side computed its own handedness.
+    v, f, m, uvs = box(fx0, fx1, SIGN_T * 0.5 + SIGN_FACE_PROUD - SIGN_FACE_T,
+                       SIGN_T * 0.5 + SIGN_FACE_PROUD, fz0, fz1, "PumpBody")
+    m[BOX_PY] = "PumpGraphic"
+    uvs[BOX_PY] = plate_uv(v, f[BOX_PY], SIGN_REGION, fx0, fx1, fz0, fz1)
+    parts.append((v, f, m, uvs))
+    parts.extend(mirror_y([(v, f, m, uvs)]))
 
     # --- assemble one mesh --------------------------------------------------
     bm = bmesh.new()
     uv_layer = bm.loops.layers.uv.new("UVMap")
-    for verts, faces, mnames in parts:
+    for verts, faces, mnames, uvs in parts:
         bverts = [bm.verts.new(v) for v in verts]
         bm.verts.ensure_lookup_table()
-        for idx, mname in zip(faces, mnames):
+        for idx, mname, uv in zip(faces, mnames, uvs):
             try:
                 face = bm.faces.new([bverts[i] for i in idx])
             except ValueError:
                 continue
             face.material_index = slot_of[mname]
             face.smooth = False       # ART-STYLE rule 3: faceted, always
-            if mname == "PumpSign":
-                # Screen-right on the +Y face is -X, and +X on the -Y face (right =
-                # cross(view_dir, up); view_dir is -Y and +Y respectively), so the
-                # +Y face's U must run backwards or the sign reads SAG from one side.
-                #
-                # WHICH SIDE IS THIS?  From the vertex, NOT from face.normal: a face
-                # just made by bmesh has a zero normal until normal_update() runs, so
-                # testing face.normal.y here silently returns False on both plates and
-                # ships a mirrored sign.  The plates sit at y = +/-0.106, so the vertex
-                # y sign is unambiguous and needs no update pass.
-                s = 1.0 if face.verts[0].co.y > 0 else -1.0
-                for loop in face.loops:
-                    px, pz = loop.vert.co.x, loop.vert.co.z
-                    u = (px - fx0) / (fx1 - fx0)
-                    if s > 0:
-                        u = 1.0 - u
-                    loop[uv_layer].uv = (u, (pz - fz0) / (fz1 - fz0))
-            else:
-                for loop in face.loops:
-                    loop[uv_layer].uv = (0.0, 0.0)
+            for k, loop in enumerate(face.loops):
+                loop[uv_layer].uv = uv[k] if uv else (0.0, 0.0)
 
     bm.normal_update()
     mesh = bpy.data.meshes.new(OBJ_NAME)
@@ -664,6 +752,8 @@ def stats():
             max(v.z for v in bb) - min(v.z for v in bb))
     out = dict(tris=tris, verts=len(me.vertices), per_material=per,
                dims=dims, minz=min(v.z for v in bb),
+               head_top=round(HEAD_TOP, 4),
+               plate=(round(GAUGE_PLATE_W, 4), round(GAUGE_PLATE_H, 4)),
                materials=len(ob.data.materials), images=len(bpy.data.images),
                uvs=len(ob.data.uv_layers))
     ob.evaluated_get(dg).to_mesh_clear()
