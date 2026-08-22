@@ -79,6 +79,9 @@ const FIELDS = [
   // FEAT-23 additions — drivetrain (appended at END): active gear (0=reverse) + engine RPM + the
   // coupled (locked/no-slip) RPM the shift schedule keys off + wheelspin (driven-vs-ground m/s excess).
   'gear', 'eng_rpm', 'coupled_rpm', 'wheelspin',
+  // FEAT-33 ignition: 0 = off, 1 = cranking, 2 = running. Numeric so the column stays plottable
+  // alongside eng_rpm — a key-off coast and a stall look identical in the RPM trace otherwise.
+  'ign',
 ]
 
 // ── Private helpers ───────────────────────────────────────────────────────────
@@ -219,6 +222,8 @@ export function captureFrame (simTime, vehicleState, wheelDebug, roadDebug) {
     wgh[0] ?? null, wgh[1] ?? null, wgh[2] ?? null, wgh[3] ?? null,
     // FEAT-23 drivetrain (appended at END): active gear (0=reverse) + engine RPM + coupled RPM + wheelspin.
     vehicleState.drivetrain?.activeGear ?? 0, vehicleState.drivetrain?.engineRPM ?? 0, vehicleState.drivetrain?.coupledRPM ?? 0, vehicleState.drivetrain?.wheelspin ?? 0,
+    // FEAT-33 ignition state (absent ⇒ 2, the RUNNING default).
+    { off: 0, cranking: 1, running: 2 }[vehicleState.ignition?.state ?? 'running'] ?? 2,
   ])
 }
 

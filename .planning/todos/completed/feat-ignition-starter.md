@@ -1,8 +1,9 @@
 ---
 id: FEAT-33
 type: feature
-status: open
+status: done
 opened: 2026-07-16
+closed: 2026-08-22
 severity: minor
 source: user-request
 relates_to: FEAT-23 (drivetrain / engineRPM), FEAT-26 + SM milestone 3 (wear/condition model), story mode (SM-INV-5/7/10/1/6/12)
@@ -116,3 +117,47 @@ in the cold morning whether it'll start.
 - Engine audio hook: `src/engine-audio.js` (`ensureEngineAudio` / `updateEngineAudio`).
 - vehicleState field discipline: [[project_vehiclestate_three_places]].
 - Story invariants + camping/doze framing: [[project_story_mode_framing.md]].
+
+
+---
+
+## Resolution (2026-08-22, `feature/ignition`)
+
+Shipped. `src/ignition.js` is the state machine (OFF → CRANKING → RUNNING), `I` is the key, and the
+cluster grew an ignition switch in its bottom-right corner.
+
+**Owner rulings taken at implementation (2026-08-22)** — these close four of the open design
+questions above:
+
+- **Scope:** global mechanic. Story mode re-seats you with a DEAD truck (the SM-INV-6 bookend);
+  free roam / lab / scenario spawn RUNNING so a debug reset is never gated behind a keypress.
+  Sleeping at camp also leaves the truck off, so you start the morning by starting it.
+- **Stalling: OUT of v1.** The engine only stops when the player turns the key. Stall is deferred
+  until the manual transmission exists — tracked as **FEAT-70**.
+- **Kill at speed: allowed at any speed.** You really can turn the key off at 50 mph.
+- **Engine braking with the key off (owner's correction):** a dead engine in an automatic left in
+  gear does NOT freewheel — above the converter's coupling speed the turbine drags the impeller and
+  the whole engine round, so the truck coasts down on pumping and friction losses. Modelled as
+  `engineOffDrag` N·m per 1000 rpm of dragged engine speed, faded out below `engineOffCouplingRPM`
+  so a key-off roll frees up as you slow toward a stop.
+- **Catch model:** deterministic threshold, not a per-crank-second probability roll.
+
+**Wear seam.** Catch time interpolates `ignitionCatchTime` (0.25 s, healthy) → `ignitionCatchTimeWorn`
+(4 s, beater) on `vehicleState.engineHealth`. Nothing writes that field yet — SM-3 / FEAT-26 does.
+Absent ⇒ 1 ⇒ a single nominal catch time, exactly as this ticket specified.
+
+**Files:** `src/ignition.js` (new) · `src/drivetrain.js` (ignition gate + dead-engine drag) ·
+`src/vehicle.js` (the `I` key, gated by free-cam and the doze attenuation) · `src/cluster.js`
+(the switch: 448×244 canvas, merged indent, 10/12/2 detents, live key) · `src/engine-audio.js`
+(starter loop, catch bark, shutoff thump; the drone goes silent whenever the engine is not firing) ·
+`src/main.js` (state + reset + sleep + audio events + cluster wiring + `window.__vs` handle) ·
+`src/logger.js` (`ign` column) · `src/debug.js` (Ignition & Starter sliders incl. Engine Health) ·
+`data/ranger.js` (params) · `test/ignition-starter.mjs` + `test/gates.mjs` (new physics gate).
+
+**Verified:** `test/ignition-starter.mjs` green (state machine, wear scaling, drivetrain gating, and
+the absent-ignition ⇒ RUNNING default every other headless gate relies on); the full affected gate
+set green; and driven live in-browser over CDP — boot/off/held/running plus a health-0 crank caught
+in the act at 250 rpm with the barrel lit, no console errors.
+
+**Deferred, unchanged:** battery / over-crank spiral and flooding / throttle-on-crank were flagged
+as follow-ons in this ticket and stay that way.

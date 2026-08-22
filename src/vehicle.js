@@ -12,9 +12,10 @@
  */
 
 import { getCameraMode } from './camera.js'
+import { stepIgnition } from './ignition.js'
 
 // ── Keyboard input state (module-private) ────────────────────────────────────
-const keys = { w: false, s: false, a: false, d: false, r: false, ' ': false }
+const keys = { w: false, s: false, a: false, d: false, r: false, i: false, ' ': false }
 let _prevHandKey = false   // Space state last frame — rising-edge (tap) detection for the parking-brake toggle
 
 // Register listeners at module load (module scripts run after parse — no DOMContentLoaded needed).
@@ -24,7 +25,9 @@ let _prevHandKey = false   // Space state last frame — rising-edge (tap) detec
 // focus is inside the panel, and a bubble-phase keyup that never arrives leaves a driving key
 // STUCK ON (hold W, click a slider, release W → full throttle with no key down). Releases must
 // always land; presses stay bubble-phase so genuine text fields can still swallow them.
-document.addEventListener('keydown', e => { if (e.shiftKey && e.key.toLowerCase() === 'r') return; const k = e.key === ' ' ? ' ' : e.key.toLowerCase(); if (k in keys) keys[k] = true })
+// Ctrl+I / Cmd+I is main.js's initial-condition file picker (FEAT-33 chose I for the ignition), so a
+// modified I must NOT also reach for the starter. Plain I is the key.
+document.addEventListener('keydown', e => { if (e.shiftKey && e.key.toLowerCase() === 'r') return; if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i') return; const k = e.key === ' ' ? ' ' : e.key.toLowerCase(); if (k in keys) keys[k] = true })
 document.addEventListener('keyup',   e => { const k = e.key === ' ' ? ' ' : e.key.toLowerCase(); if (k in keys) keys[k] = false }, true)
 
 // ── Launch hold (story-mode countdown) ───────────────────────────────────────
@@ -59,6 +62,10 @@ export const SPAWN_STATE = {
   quatX: 0, quatY: 0, quatZ: 0, quatW: 1,        // identity quaternion
   angVelX: 0, angVelY: 0, angVelZ: 0,
   steerAngle: 0, throttle: 0, brake: 0,
+  // FEAT-33: the ignition is an OBJECT on the live vehicleState (see makeIgnitionState in
+  // ignition.js), not a scalar — main.js rebuilds it on reset rather than copying this field.
+  // Recorded here only so the convention stays visible: 'running' in free roam, 'off' in story.
+  ignitionState: 'running',
   smoothThrottle: 0, smoothBrake: 0,
   wheelAngles: [0, 0, 0, 0],
   wheelSteerAngles: [0, 0, 0, 0],
@@ -97,6 +104,13 @@ export function updateVehicle (vehicleState, params, dt) {
   // The smooth accumulators decay to zero naturally via the ramp logic below.
   // C/Shift+C (camera mode toggle) and R (reset) are NOT blocked here.
   const freecamActive = getCameraMode() === 'freecam'
+
+  // ── 0.5 Ignition key (FEAT-33) ─────────────────────────────────────────────
+  // Stepped here because this module owns driver input. Gated by the same two things that gate
+  // throttle: free-cam (you are not in the truck) and the doze attenuation — during a doze the
+  // driver's hands go slack, so they cannot reach the key, and the engine stays RUNNING (SM-INV-1:
+  // inputs drop, they never invert; a doze must never shut the truck off).
+  stepIgnition(vehicleState, params, dt, !freecamActive && _controlAtten > 0.5 && keys.i)
 
   // ── 1. Throttle / Brake (M1-05, FEAT-01) ──────────────────────────────────
   // Ramp smoothed accumulators toward raw input; fast release, slow press.

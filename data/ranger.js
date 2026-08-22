@@ -48,6 +48,23 @@ export const RANGER_PARAMS = {
   engineIdleThrottle:  0.0,  // [-] idle-throttle floor for creep torque; 0 = no creep (keeps BUG-20 slope-hold at zero input). Raise (~0.04) for authentic automatic idle-creep.
   engineRpmLag:        0.0,  // s — first-order lag on engine RPM (0 = instant; ~0.1 adds rev-flare feel)
 
+  // ── Ignition + starter (FEAT-33) ────────────────────────────────────────────────────────────────
+  // The key has three positions (OFF / ON / START); see src/ignition.js. Catch time is what the
+  // player feels: a healthy engine fires in a quarter second, a worn one grinds for seconds. The
+  // interpolation runs on vehicleState.engineHealth (absent ⇒ 1 ⇒ ignitionCatchTime flat), which is
+  // the seam the SM-3 wear model plugs into — NOT a per-vehicle scripted timer.
+  ignitionCatchTime:     0.25,  // s — crank time before the engine catches at full engine health
+  ignitionCatchTimeWorn: 4.0,   // s — crank time at zero engine health (a beater, cranking forever)
+  ignitionCrankRPM:      250,   // rpm — speed the starter turns the engine at (makes no drive torque)
+  ignitionCrankRpmLag:   0.12,  // s — RPM lag while the starter picks the engine up
+  // Key OFF but still in gear: the driveline drags the dead engine round through the converter, so
+  // the truck coasts down on pumping/friction losses instead of freewheeling. engineOffDrag is that
+  // drag at 1000 rpm of dragged engine speed; the effect fades below engineOffCouplingRPM as the
+  // fluid coupling slips, so a key-off roll frees up as you slow toward a stop.
+  engineOffDrag:         90,    // N·m per 1000 rpm — dead-engine drag torque at the crankshaft
+  engineOffCouplingRPM:  1100,  // rpm(turbine) — above this the converter drags the engine fully
+  engineOffRpmLag:       0.7,   // s — RPM lag as a killed engine coasts down
+
   // Torque converter (simplified quasi-static slip model): torque ratio = converterStallTorqueRatio
   // at zero speed ratio, falling to 1.0 at converterCouplingSR. converterStallRPM is the WOT stall
   // speed the engine holds against a locked turbine (the low-speed torque multiplication that launches

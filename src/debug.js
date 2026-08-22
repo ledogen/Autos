@@ -148,6 +148,21 @@ export function initDebug (params, callbacks = {}, options = {}) {
   driveFolder.add(params, 'shiftHoldTime', 0.1, 1.5, 0.05).name('Shift Hold (s)')
   driveFolder.add(params, 'wheelspinShiftLock').name('Wheelspin Shift-Lock')
   driveFolder.add(params, 'wheelspinThreshold', 1, 20, 0.5).name('Wheelspin Lock (m/s)')
+
+  // FEAT-33 ignition + starter (src/ignition.js). Engine Health is the only one that is NOT a
+  // param: it lives on the live vehicleState as the seam for the SM-3 wear model, so the slider
+  // pushes it through a callback. Drag it down and the truck takes measurably longer to catch —
+  // that is the whole feature, previewable before any wear model exists.
+  const ignFolder = driveFolder.addFolder('Ignition & Starter')
+  ignFolder.add(params, 'ignitionCatchTime', 0.05, 2.0, 0.05).name('Catch Time — healthy (s)')
+  ignFolder.add(params, 'ignitionCatchTimeWorn', 0.5, 10, 0.25).name('Catch Time — worn (s)')
+  ignFolder.add(params, 'ignitionCrankRPM', 100, 500, 10).name('Crank RPM')
+  ignFolder.add(params, 'engineOffDrag', 0, 250, 5).name('Dead-Engine Drag (N·m/1000rpm)')
+  ignFolder.add(params, 'engineOffCouplingRPM', 300, 2500, 50).name('Off-Coast Couple RPM')
+  ignFolder.add(params, 'engineOffRpmLag', 0.05, 3, 0.05).name('Coast-Down Lag (s)')
+  const ignState = { engineHealth: 1 }
+  ignFolder.add(ignState, 'engineHealth', 0, 1, 0.05).name('Engine Health (1 = fresh)')
+    .onChange(v => callbacks.setEngineHealth?.(v))
   driveFolder.add(params, 'maxBrakeTorqueFront', 200, 4000, 50).name('Brake Torque Front (N·m)')
   driveFolder.add(params, 'maxBrakeTorqueRear', 200, 4000, 50).name('Brake Torque Rear (N·m)')
   driveFolder.add(params, 'maxHandbrakeTorque', 500, 5000, 100).name('Handbrake Torque (Nm)')
