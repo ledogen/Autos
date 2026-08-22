@@ -1569,9 +1569,42 @@ load at the next checkpoint).
 stacked tears (graph-topology's canary), wide-angle forks (need the fillet), and re-judging the
 drop-a-leg menu for whatever the map still shows.
 
+## Two owner captures harden the trim (2026-08-22, `78a97f2` + `e64e7c2`) — owner: "it looks very good"
+
+The owner drove the map at their capture spots and twice found braids the trim had skipped. Each
+capture pinned a guard that was too coarse; both are now precise:
+
+1. **Capture at −1707/1758** ("it doesn't look fixed at all"): the original 3-crossing braid was
+   guard-skipped because its weave spans ~55% of each run and the blanket **region ≤ half-run**
+   bound rejected it. That bound existed to stop cross-node trim chains; the REAL condition is now
+   checked directly at apply time — a spec is dropped only when its winner has a loser-plan of its
+   own whose ceded interval OVERLAPS the adopted strand (raw per-node lookups only; plans never
+   depend on other plans, so order-free and cycle-free). The fraction bound stays as a loose 0.85
+   sanity check. The captured pair now cedes 600–1189 to a winner that is itself trimmed 0–64 at
+   its far end — disjoint, exactly the case the precise guard admits.
+2. **Capture at −1906/1807** ("two parallel edges crossing one another", 4 crossings): two
+   blockers. (a) **One-trim-per-run** kept only the longer of a run's two loser roles — but a run
+   can braid with DIFFERENT partners at both its nodes. `_v2TrimFor` now returns up to one spec
+   per end (both applied when the ceded regions are ≥30 m disjoint) and the registration
+   assembles head/middle/tail with the middle re-solved against BOTH pinned fork heights;
+   cededSpans carry their owner PER SPAN (two ends, two winners). (b) The **blanket bore guard**
+   rejected any region overlapping a tunnel — but the loser's own bore vanishes with its replaced
+   strand (nothing to protect), and a winner bore deep in the adopted stretch just means the
+   tunnel is SHARED (winner provides tube + collider; the loser is excluded from resolve there).
+   The only real hazard — a winner bore within 30 m of the fork, where the blend zone would fight
+   the portal — is all the guard checks now.
+
+**State after (origin-window censuses, owner prices):** weave pairs **0/0/1/1** on seeds
+6/20/11/67 (from 7 total pre-trim), single-cross 3/3/2/0, crossing EVENTS 3/3/4 on the census
+trio (from 11/13/4 at ticket opening, and that old number was measured with an inclusive test that
+under-counted braids). Trims 5/2/1/4 per origin window (more fire outside — both owner captures
+sit beyond radius 1400). Battery: zero marks, sustained 25/38/25%, one component each, y-spread
+0.000. Full suite **46/50**, standing booked reds only. **The remaining BUG-53 defect mass is the
+OVERLAP class: 9/7/6/15 conflicts per seed — parallels that never cross. That is phase 2.**
+
 ---
 
-# CURRENT HANDOFF (2026-08-21) — read this one
+# CURRENT HANDOFF (2026-08-22) — read this one
 
 **Where the work lives.** ONE ticket — this file. Everything above is a dated record, appended in
 order; this section is the only live "what now". (BUG-53 — the road-overlap defects filed
@@ -1581,33 +1614,35 @@ measured verdicts + the shipped junction-chord-pin fix are the "BUG-53 worked" s
 remaining decision is next-step 2 below, and its old file is a closed-merged stub in
 `.planning/todos/completed/`.)
 
-**Branch:** `feature/corridor-router` at `13b19bb`, worktree `/Users/ledogen/CodeShit/CarGame-corridor-router`,
+**Branch:** `feature/corridor-router` at `e64e7c2`, worktree `/Users/ledogen/CodeShit/CarGame-corridor-router`,
 dev server **:3343**, tree CLEAN. Main is untouched and still ships v1 — the swap is one merge at
 sign-off. (Planning docs commit to main; code to the branch. Both trees clean as of this handoff.)
 Battery: `node perf-runs/v2-integration-check.mjs`. Gallery: `perf-runs/gallery.html` (§8 = the
 chord-pin checkpoint, fresh map renders of all four seeds). Censuses:
 `node test/crossing-census.mjs` + `node test/overlap-census.mjs` (the BUG-53 instruments).
 
-**Prices (owner-ratified 2026-08-21, now the defaults):** `cTurn 45`, `wGrade 180`,
-`gMaxRoad 0.24`, corner rounding 15 m; cut/cut²/fill/bore/portal unchanged from the panel.
+**Prices (owner-ratified from the live sliders, now the defaults):** `cTurn 45`, `wGrade 180`,
+`gMaxRoad 0.24`, corner rounding 15 m, cut/cut²/fill/bore/portal at the panel values. The whole
+visible panel is ratified; only Max Bore Grade (0.18) never appeared in a review screenshot.
 
-**State (eval seeds 20/11/67, at those prices, trims active):** 56/50/55 runs, 43.3/39.6/41.5 km,
-one component each, node y-spread 0.000 m, **marks 0/0/0**, sustained **25/38/25%** (the 38 is one
-seed-11 edge on the ladder's ceiling rung — legal, unmarked), zero runs over the 40% ceiling,
-hairpins 19/20/23, spans 19/13/19, trims 2/1/4 (+4 on seed 6). Pairs-with-crossings 3/3/1
-(seed 6: 3); the remaining BUG-53 defect mass is OVERLAP-class (7/6/15 conflicts, seed 6: 9) —
-phase-2 territory. Cold→driving with NO route cache: **6.8–8.5 s on this machine**, 22–28 s at the
-4× proxy (pre-pin numbers; the trim's plan phase added ~1 s headless at 1× — re-bench next
-checkpoint).
+**State (eval seeds 20/11/67, at those prices, trims + both-end trims active):** 56/50/55 runs,
+43.3/39.6/41.5 km, one component each, node y-spread 0.000 m, **marks 0/0/0**, sustained
+**25/38/25%** (the 38 is one seed-11 edge on the ladder's ceiling rung — legal, unmarked), zero
+runs over the 40% ceiling, hairpins 19/20/23, spans 19/13/19, trims 2/1/4 in the origin window
+(seed 6: 5; more fire off-origin — both owner captures sat beyond radius 1400 and both now trim).
+Weave pairs 0/1/1 (seed 6: 0); crossing events 3/4 on 20/11 (seed 6: 3). **The remaining BUG-53
+defect mass is OVERLAP-class — 7/6/15 conflicts (seed 6: 9): parallels that never cross. Phase 2.**
+Cold→driving with NO route cache: **6.8–8.5 s on this machine**, 22–28 s at the 4× proxy (pre-pin
+numbers; the trim's plan phase added ~1 s headless at 1× — re-bench next checkpoint).
 
-**Landed since the last handoff (all measured, all recorded above):** BUG-53 Phase A censuses
-(overlap instrument + drop simulation) · verdict: drop-a-leg alone insufficient · negative result:
-QUAL-22 cost-weighted vote makes BUG-53 WORSE (reverted) · **junction chord pins** (defect pairs
-−58%, marks 0/0/0) · road-tunnel bore ceiling aligned to the solver contract · **owner's prices
-ratified as defaults** (cTurn 45, gMaxRoad 0.24) · the WEAVE class measured · **the polyline-level
-TRIM designed, built and verified** (`13b19bb`): loser adopts winner's course node→last-crossing,
-cededSpans drive slicer/resolve suppression with fringe serving, crossing pairs halved, gates
-46/50 with only pre-existing reds, road-smoothness 0 steps on all scan seeds.
+**Landed since the last handoff (all measured, all recorded above):** BUG-53 Phase A censuses +
+drop simulation (drop-a-leg alone insufficient) · negative result: QUAL-22 cost-weighted vote makes
+BUG-53 WORSE · **junction chord pins** (`5a5be89`) · **owner's prices as defaults** (`3a0240e`) ·
+**the polyline-level TRIM** (`13b19bb`): loser adopts winner's course node→last-crossing,
+cededSpans drive slicer/resolve suppression with fringe serving · **capture-driven guard
+hardening** (`78a97f2`, `e64e7c2`): precise winner-overlap check replaces the half-run bound,
+both-end trims for runs braiding at both nodes, fork-band-only bore guard (shared tunnels are
+legitimate). Owner verdict on the map: "it looks very good".
 
 **Gates: `npm run test:all` = 45/50, five reds**, all diagnosed, none blocking a character
 judgment (stash-A/B'd against pre-pin src):
@@ -1623,18 +1658,19 @@ judgment (stash-A/B'd against pre-pin src):
 
 ## Next, in the order I'd take them
 
-1. **Finish the price review (owner).** Reviewed: `cTurn 55`, `wGrade 180`. **Not yet reviewed:** cut,
-   cut², fill, bore, portal, max bore grade, cut→bore depth, max fill — and **re-review Max Road
-   Grade**, which only started behaving correctly 2026-08-20 (it was being overridden by the ladder).
-   All live in the `Router v2 (prices)` folder; the map A/B loop is ~2.5 s to first change, ~9 s
-   settled. The pins changed every network — drive/map-judge them in the same visit.
-2. **BUG-53 phase 2 — what the trim leaves.** Phase 1 (crossing-anchored trims) SHIPPED at
-   `13b19bb`; judge it on the map/drive first (:3343 — the owner's captured weave spots should now
-   read as Y-forks). Remaining classes, in rough size order: **pure-overlap pairs** (9/7/6/15
-   conflicts per seed — parallels that never cross; the merge needs a taper join), **wide-angle
-   forks** (the ≤30° guard skips them for the fold floor — a fork fillet readmits them),
-   **disjoint stacked tears** (rare; graph-topology's SURFACE-SMOOTH canary), and whatever the
-   drop-a-leg menu still earns after those. Design notes in "The trim SHIPPED" section above.
+1. **Price review: DONE** (the owner set the panel and said "set these as defaults" — all shipped
+   as defaults, `3a0240e`). Only Max Bore Grade (0.18) was never explicitly on screen; mention it
+   whenever the owner is next in the panel. The map-judging verdict on the trims: "it looks very
+   good" — a DRIVEN pass (feel, forks, tunnels) is still wanted before character sign-off.
+2. **BUG-53 phase 2 — the OVERLAP class is now the defect mass.** Crossing-anchored trims are
+   DONE (phase 1, map-approved). What's left: **pure-overlap pairs** (9/7/6/15 conflicts per seed
+   — parallels within shared-earthworks distance that never cross, so there is no crossing point
+   to anchor a splice; the merge needs a TAPER JOIN at the divergence end — same machinery,
+   node-exact at one end, a short blend ramp at the other). Then **wide-angle forks** (the ≤30°
+   guard skips them for the fold floor — a real fork FILLET readmits them and doubles as junction
+   dressing), and **disjoint stacked tears** (rare; graph-topology's SURFACE-SMOOTH canary at
+   seed 6 (3328,-27) is the reproducer). The overlap census's per-pair details (mid-span
+   near-length, minSep, deck mismatch) are the work list: `node test/overlap-census.mjs`.
 3. **Junction geometry (deferred pass).** Naive meets at degree ≥ 3. Mostly REATTACHMENT of shipped
    machinery (pads/fillets/aprons consume the run contract + node incidence, both of which survive).
    Canonical approach headings now exist at BOTH deg-2 and junctions (the chord pins) — what
@@ -1668,21 +1704,28 @@ judgment (stash-A/B'd against pre-pin src):
   are fine". A targeted resolver (only actual crossings, only a node's own incident edges, with the
   detour guarantee) is exactly what BUG-53 is for.
 
-## Session close (2026-08-21)
+## Session close (2026-08-22)
 
-**Where to pick up:** the CURRENT HANDOFF above is the whole orientation — it lists the
-branch/worktree/port, the verified state, the five gate reds and what each one is, the ranked next
-steps (the two waiting on the owner: the price review and the BUG-53-remainder ruling), and the
-things not to re-attempt. (BUG-53 is absorbed into this file — there is no second ticket to read.)
+**Where to pick up:** the CURRENT HANDOFF above is the whole orientation — branch/worktree/port,
+the verified state, the four standing gate reds, and the ranked next steps. The next real work item
+is **BUG-53 phase 2** (the overlap class — taper-join merges; next-steps item 2 has the shape), and
+the next owner moment is a DRIVEN feel pass. (BUG-53 is absorbed into this file — there is no
+second ticket to read.)
 
 **Fastest way back in:**
-1. `cd /Users/ledogen/CodeShit/CarGame-corridor-router && npm run dev` (port 3343) — drive
-   `?seed=20|11|67|6`, map on **M**, price sliders under `Roads → Router v2 (prices)`.
+1. `cd /Users/ledogen/CodeShit/CarGame-corridor-router && npm run dev -- --port 3343 --strictPort`
+   — drive `?seed=20|11|67|6`, map on **M**, price sliders under `Roads → Router v2 (prices)`.
 2. `node perf-runs/v2-integration-check.mjs` — one line per eval seed, the contract at a glance.
-3. `node test/overlap-census.mjs` — the BUG-53 defect state + drop simulation per seed.
-4. `open perf-runs/gallery.html` — the checkpoint gallery; §8 is the chord-pin checkpoint with
-   fresh map renders of all four seeds and the waiting decision spelled out.
+3. `node test/overlap-census.mjs` — the BUG-53 defect state per seed; its per-pair overlap detail
+   is phase 2's work list. `node test/crossing-census.mjs` for the crossing view.
+4. `open perf-runs/gallery.html` — ⚠ §8's renders predate the trims and the ratified prices;
+   re-shoot before using the gallery to judge (the live map is the honest surface meanwhile).
 
-**The one thing most likely to confuse a fresh session:** planning docs live on **main**, code lives
-on **feature/corridor-router**. They are different worktrees. Main also carries unrelated asset work
-committed in parallel, so main's HEAD will not be a FEAT-68 commit.
+**Gotchas for the next session:** planning docs live on **main**, code on
+**feature/corridor-router** — different worktrees, and main's HEAD is not a FEAT-68 commit. The
+map page caches its network — after a code change, reload the tab (Vite HMR alone does not rebuild
+it). The census tools use a STRICT proper-crossing test on purpose: an inclusive test counts every
+shared vertex of the exactly-coincident trim chains as a crossing (168 phantoms on seed 6) — the
+old `perf-runs/weave-probe.mjs` still has the inclusive test, so don't trust its counts on trimmed
+pairs. And the owner's two captures both sat OUTSIDE the radius-1400 origin window the censuses
+measure — when a capture arrives, stream AT the capture point before concluding anything.
