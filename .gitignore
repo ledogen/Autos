@@ -57,6 +57,9 @@ captures/
 # Blender autosave backups beside the asset sources (assets/models/src/*.blend1)
 *.blend1
 
+# Python bytecode from running an asset generator via importlib in Blender
+__pycache__/
+
 # PERF-08 profiling harness output (test/profile.mjs) — traces are tens of MB, per-machine
 perf-runs/
 
