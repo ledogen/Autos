@@ -1729,26 +1729,29 @@ measured verdicts + the shipped junction-chord-pin fix are the "BUG-53 worked" s
 remaining decision is next-step 2 below, and its old file is a closed-merged stub in
 `.planning/todos/completed/`.)
 
-**Branch:** `feature/corridor-router` at `e64e7c2`, worktree `/Users/ledogen/CodeShit/CarGame-corridor-router`,
+**Branch:** `feature/corridor-router` at `e5b3205`, worktree `/Users/ledogen/CodeShit/CarGame-corridor-router`,
 dev server **:3343**, tree CLEAN. Main is untouched and still ships v1 — the swap is one merge at
 sign-off. (Planning docs commit to main; code to the branch. Both trees clean as of this handoff.)
 Battery: `node perf-runs/v2-integration-check.mjs`. Gallery: `perf-runs/gallery.html` (§8 = the
 chord-pin checkpoint, fresh map renders of all four seeds). Censuses:
-`node test/crossing-census.mjs` + `node test/overlap-census.mjs` (the BUG-53 instruments).
+`node test/crossing-census.mjs` + `node test/overlap-census.mjs`, and
+`node test/capture-classify.mjs <seed> <x> <z>` — point it at an owner capture mark and it says
+what is there and, if nothing merged, which guard declined (the BUG-53 instruments).
 
 **Prices (owner-ratified from the live sliders, now the defaults):** `cTurn 45`, `wGrade 180`,
 `gMaxRoad 0.24`, corner rounding 15 m, cut/cut²/fill/bore/portal at the panel values. The whole
 visible panel is ratified; only Max Bore Grade (0.18) never appeared in a review screenshot.
 
-**State (eval seeds 20/11/67, at those prices, trims + both-end trims active):** 56/50/55 runs,
-43.3/39.6/41.5 km, one component each, node y-spread 0.000 m, **marks 0/0/0**, sustained
-**25/38/25%** (the 38 is one seed-11 edge on the ladder's ceiling rung — legal, unmarked), zero
-runs over the 40% ceiling, hairpins 19/20/23, spans 19/13/19, trims 2/1/4 in the origin window
-(seed 6: 5; more fire off-origin — both owner captures sat beyond radius 1400 and both now trim).
-Weave pairs 0/1/1 (seed 6: 0); crossing events 3/4 on 20/11 (seed 6: 3). **The remaining BUG-53
-defect mass is OVERLAP-class — 7/6/15 conflicts (seed 6: 9): parallels that never cross. Phase 2.**
-Cold→driving with NO route cache: **6.8–8.5 s on this machine**, 22–28 s at the 4× proxy (pre-pin
-numbers; the trim's plan phase added ~1 s headless at 1× — re-bench next checkpoint).
+**State (eval seeds 20/11/67, owner prices, the PROXIMITY MERGE active):** 56/50/55 runs,
+43.4/39.7/41.6 km, one component each, node y-spread 0.000 m, **marks 0/0/0**, zero runs over the
+40% ceiling, infeasible 0, hairpins 20/21/24, spans 19/13/19. Sustained-24 m **31/38/27%** (was
+25/38/25 — a merged loser inherits the winner's deck at the fork and re-solves from there, which
+can steepen its outer strand; well inside the ceiling, but worth an eye on the next feel pass).
+Census conflicts across seeds 6/20/11/67: overlap **3/1/1/5** (was 9/7/6/15), single-cross 2/1/0/0,
+weave 1/0/1/0 — **47 → 15 total**. Six of the owner's seven seed-3 capture marks are fully clean;
+the seventh is merged on a shorter variant with a 24 m tail left. Cold→driving with NO route cache:
+**6.8–8.5 s on this machine**, 22–28 s at the 4× proxy (stale — the merge measured flat against
+pre-change on a loaded machine, so re-bench on a quiet one at the next checkpoint).
 
 **Landed since the last handoff (all measured, all recorded above):** BUG-53 Phase A censuses +
 drop simulation (drop-a-leg alone insufficient) · negative result: QUAL-22 cost-weighted vote makes
@@ -1777,15 +1780,22 @@ judgment (stash-A/B'd against pre-pin src):
    as defaults, `3a0240e`). Only Max Bore Grade (0.18) was never explicitly on screen; mention it
    whenever the owner is next in the panel. The map-judging verdict on the trims: "it looks very
    good" — a DRIVEN pass (feel, forks, tunnels) is still wanted before character sign-off.
-2. **BUG-53 phase 2 — the OVERLAP class is now the defect mass.** Crossing-anchored trims are
-   DONE (phase 1, map-approved). What's left: **pure-overlap pairs** (9/7/6/15 conflicts per seed
-   — parallels within shared-earthworks distance that never cross, so there is no crossing point
-   to anchor a splice; the merge needs a TAPER JOIN at the divergence end — same machinery,
-   node-exact at one end, a short blend ramp at the other). Then **wide-angle forks** (the ≤30°
-   guard skips them for the fold floor — a real fork FILLET readmits them and doubles as junction
-   dressing), and **disjoint stacked tears** (rare; graph-topology's SURFACE-SMOOTH canary at
-   seed 6 (3328,-27) is the reproducer). The overlap census's per-pair details (mid-span
-   near-length, minSep, deck mismatch) are the work list: `node test/overlap-census.mjs`.
+2. **BUG-53 phase 2: SHIPPED** (`e5b3205`, record above) — the proximity merge replaced the
+   crossing anchor as one catch-all rule, and the wide-angle-fork item went with it (forks build
+   at 108° now). **A DRIVEN pass over the new forks is the owner moment this is waiting on.**
+   What remains of the class, named and reproducible:
+   **(a) mid-span conflicts** — a pair that parts at the node, goes its own way, and conflicts
+   again deep mid-span past a flare wider than 60 m. Needs a band tapered at BOTH ends instead of
+   node-exact at one: same machinery, different assembly (own head → taper → ceded middle → taper
+   → own tail, two profile strands instead of one). Reproducer: seed 11
+   `-3,-3,1|-2,-2,0 × -1,-3,1|-2,-2,0`.
+   **(b) disjoint tears** — no shared node, so per-node planning cannot see them at all; needs its
+   own window-invariance derivation. Reproducer: graph-topology's SURFACE-SMOOTH at seed 6
+   (3328,-27).
+   **(c) the `short` guard** declines ~5 merges per window whose fork lands under 30 m from the
+   node. Those are junction-apron geometry and are deliberately left to the junction pass (item 3).
+   `node test/overlap-census.mjs` for the list; `node test/capture-classify.mjs <seed> <x> <z>`
+   names the guard at any single spot.
 3. **Junction geometry (deferred pass).** Naive meets at degree ≥ 3. Mostly REATTACHMENT of shipped
    machinery (pads/fillets/aprons consume the run contract + node incidence, both of which survive).
    Canonical approach headings now exist at BOTH deg-2 and junctions (the chord pins) — what
