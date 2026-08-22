@@ -115,8 +115,8 @@ for (const seed of [6, 20, 11, 67]) {
     // carries it (near = Infinity there ⇒ no overlap, no crossing can fire on identical vertices).
     const sanction = (run, partner) => {
       const spans = []
-      for (const sp of run.e.cededSpans || []) if (run.e.cededOwner === partner.k) spans.push([sp.s0, sp.s1])
-      for (const sp of partner.e.cededSpans || []) if (partner.e.cededOwner === run.k) spans.push([sp.ownerS0 ?? -1, sp.ownerS1 ?? -1])
+      for (const sp of run.e.cededSpans || []) if (sp.owner === partner.k) spans.push([sp.s0, sp.s1])
+      for (const sp of partner.e.cededSpans || []) if (sp.owner === run.k) spans.push([sp.ownerS0 ?? -1, sp.ownerS1 ?? -1])
       return spans
     }
     const sancA = sanction(A, B)

@@ -2360,10 +2360,16 @@ export class RoadSystem {
             const span = pc[lo + 1] - pc[lo] || 1
             return ca[lo] + (ca[lo + 1] - ca[lo]) * (cum - pc[lo]) / span
         }
-        const boreHit = (S, nodeAtStart, cutCum) => {
+        // A WINNER bore near the fork blocks the trim (the 20 m blend zone would fight the
+        // portal); bores deeper inside the adopted stretch are fine — the tunnel is simply
+        // shared, the winner provides tube + collider, and the loser is excluded from resolve
+        // there. The LOSER's own bores need no guard at all: a ceded strand is replaced
+        // wholesale (its bore vanishes with it) and the outer re-solve makes fresh spans.
+        const winnerBoreAtFork = (S, nodeAtStart, cutCum) => {
             if (!S.spans) return false
-            const a = nodeAtStart ? 0 : clArcAt(S, cutCum)
-            const b = nodeAtStart ? clArcAt(S, cutCum) : S.clArc[S.clArc.length - 1]
+            const cutCl = clArcAt(S, cutCum)
+            const a = nodeAtStart ? cutCl - 30 : cutCl
+            const b = nodeAtStart ? cutCl : cutCl + 30
             return S.spans.some((sp2) => sp2.s1 > a && sp2.s0 < b)
         }
         const pairs = []
@@ -2396,11 +2402,11 @@ export class RoadSystem {
             if (!best) continue
             if (best.fA < MINREG || best.fB < MINREG) continue
             if (best.fA > MAXFRAC * A.S.L || best.fB > MAXFRAC * B.S.L) { this._v2TrimSkip = (this._v2TrimSkip || 0) + 1; continue }
-            if (boreHit(A.S, A.nodeAtStart, best.sA) || boreHit(B.S, B.nodeAtStart, best.sB)) { this._v2TrimSkip = (this._v2TrimSkip || 0) + 1; continue }
             // shorter node→fork strand survives (straighter course); tie: lexicographic canon key
             const aWins = best.fA < best.fB || (best.fA === best.fB && A.ck < B.ck)
             const W = aWins ? A : B, L2 = aWins ? B : A
             const wCut = aWins ? best.sA : best.sB, lCut = aWins ? best.sB : best.sA
+            if (winnerBoreAtFork(W.S, W.nodeAtStart, wCut)) { this._v2TrimSkip = (this._v2TrimSkip || 0) + 1; continue }
             pairs.push({ W, L: L2, wCut, lCut, X: { x: best.x, z: best.z }, sortKey: L2.ck + '>' + W.ck })
         }
         pairs.sort((a, b) => (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0))
@@ -2418,164 +2424,162 @@ export class RoadSystem {
         return out
     }
 
-    // The trim spec (if any) for an edge about to register. Loser at BOTH ends: keep the longer
-    // region (one trim per run — Phase 1), skip + count the other. A spec is DROPPED when its
-    // winner has a loser-plan of its own whose ceded interval overlaps the adopted strand — the
-    // adopted vertices must be the winner's REGISTERED (pure) geometry, and a far-end trim on the
-    // winner is fine only while it stays clear of what we copy. Raw per-node lookups only (plans
-    // never depend on other plans), so this stays order-free and cycle-free.
+    // The trim spec(s) for an edge about to register — up to ONE PER END, both applied when
+    // their ceded regions are disjoint (a run can braid with different partners at both its
+    // nodes: the owner's seed-6 capture). Overlapping regions keep the longer one. Each spec is
+    // DROPPED when its winner has a loser-plan of its own whose ceded interval overlaps the
+    // adopted strand — the adopted vertices must be the winner's REGISTERED (pure) geometry.
+    // Raw per-node lookups only (plans never depend on other plans): order-free, cycle-free.
     _v2TrimFor(g, drop, c1, c2) {
         const kA = g.key(c1), kB = g.key(c2)
         const ck = kA < kB ? kA + '|' + kB : kB + '|' + kA
-        const sA = this._v2NodeTrims(g, drop, kA).get(ck)
-        const sB = this._v2NodeTrims(g, drop, kB).get(ck)
-        let spec = null
-        if (sA && sB) {
-            this._v2TrimSkip = (this._v2TrimSkip || 0) + 1
-            spec = sA.region >= sB.region ? sA : sB
-        } else spec = sA || sB || null
-        if (!spec) return null
-        const wkA = g.key(spec.winner[0]), wkB = g.key(spec.winner[1])
-        const wck = wkA < wkB ? wkA + '|' + wkB : wkB + '|' + wkA
-        const wRaw = this._v2NodeTrims(g, drop, wkA).get(wck) || this._v2NodeTrims(g, drop, wkB).get(wck)
-        if (wRaw) {
+        const winnerOk = (spec) => {
+            const wkA = g.key(spec.winner[0]), wkB = g.key(spec.winner[1])
+            const wck = wkA < wkB ? wkA + '|' + wkB : wkB + '|' + wkA
+            const wRaw = this._v2NodeTrims(g, drop, wkA).get(wck) || this._v2NodeTrims(g, drop, wkB).get(wck)
+            if (!wRaw) return true
             const wS = this._v2RunSample(g, drop, spec.winner[0], spec.winner[1])
-            if (!wS) return null
+            if (!wS) return false
             const adopt = spec.winnerNodeAtStart ? [0, spec.winnerCutCum] : [spec.winnerCutCum, wS.L]
             const wOwn = wRaw.loserNodeAtStart ? [0, wRaw.loserCutCum] : [wRaw.loserCutCum, wS.L]
-            if (adopt[1] > wOwn[0] + 1 && wOwn[1] > adopt[0] + 1) {
-                this._v2TrimSkip = (this._v2TrimSkip || 0) + 1
-                return null
-            }
+            return !(adopt[1] > wOwn[0] + 1 && wOwn[1] > adopt[0] + 1)
         }
-        return spec
+        let sA = this._v2NodeTrims(g, drop, kA).get(ck)
+        let sB = this._v2NodeTrims(g, drop, kB).get(ck)
+        if (sA && !winnerOk(sA)) { this._v2TrimSkip = (this._v2TrimSkip || 0) + 1; sA = null }
+        if (sB && !winnerOk(sB)) { this._v2TrimSkip = (this._v2TrimSkip || 0) + 1; sB = null }
+        if (sA && sB) {
+            const st = sA.loserNodeAtStart ? sA : (sB.loserNodeAtStart ? sB : null)
+            const en = !sB.loserNodeAtStart ? sB : (!sA.loserNodeAtStart ? sA : null)
+            if (st && en && st !== en && st.loserCutCum + 30 < en.loserCutCum) return [st, en]
+            this._v2TrimSkip = (this._v2TrimSkip || 0) + 1
+            return [sA.region >= sB.region ? sA : sB]
+        }
+        const one = sA || sB
+        return one ? [one] : null
     }
 
-    // Register a TRIMMED (loser) run: winner's vertices + heights verbatim over [node..fork], the
-    // exact crossing point as the fork vertex, own geometry beyond with the profile re-solved
-    // against the pinned fork height. cededSpans marks the adopted interval for the slicer +
-    // surface resolve. The winner registers untouched through the ordinary path.
-    _v2RegisterTrimmed(key, cl, cellA, cellB, spec, g, drop) {
+    // Register a TRIMMED (loser) run: per active end, winner vertices + heights verbatim over
+    // [node..fork] with the exact crossing point as the fork vertex; the remaining own geometry
+    // re-solves through the ladder with each active fork height pinned. cededSpans (one per end,
+    // each carrying its own owner) drive the slicer + surface-resolve suppression. Any refusal —
+    // missing sample, degenerate middle, infeasible solve — backs the whole trim off to the
+    // untrimmed registration (deterministic either way, so window invariance holds).
+    _v2RegisterTrimmed(key, cl, cellA, cellB, specs, g, drop) {
         const own = this._v2RunSample(g, drop, cellA, cellB)
-        const win = this._v2RunSample(g, drop, spec.winner[0], spec.winner[1])
-        if (!own || !win) { this._registerRun(key, cl, cellA, cellB); return }
+        if (!own) { this._registerRun(key, cl, cellA, cellB); return }
+        const bail = () => { this._v2TrimSkip = (this._v2TrimSkip || 0) + 1; this._registerRun(key, cl, cellA, cellB) }
         const yAtCum = (S, cum) => {
-            const pc = S.polyCum, n = pc.length
-            let lo = 0, hi = n - 1
-            while (lo + 1 < hi) { const mid = (lo + hi) >> 1; if (pc[mid] <= cum) lo = mid; else hi = mid }
+            const pc = S.polyCum, n2 = pc.length
+            let lo = 0, hi = n2 - 1
+            while (lo + 1 < hi) { const mid2 = (lo + hi) >> 1; if (pc[mid2] <= cum) lo = mid2; else hi = mid2 }
             const span = pc[lo + 1] - pc[lo] || 1
             const t = (cum - pc[lo]) / span
             return S.pts[lo].y + (S.pts[lo + 1].y - S.pts[lo].y) * t
         }
-        const wY = yAtCum(win, spec.winnerCutCum)
-        // winner's node-side vertices, ordered NODE-FIRST
+        const clArcAtCum = (S, cum) => {
+            const pc = S.polyCum, ca = S.clArc, n2 = pc.length
+            let lo = 0, hi = n2 - 1
+            while (lo + 1 < hi) { const mid2 = (lo + hi) >> 1; if (pc[mid2] <= cum) lo = mid2; else hi = mid2 }
+            const span = pc[lo + 1] - pc[lo] || 1
+            return ca[lo] + (ca[lo + 1] - ca[lo]) * (cum - pc[lo]) / span
+        }
         const EPSV = 0.01
-        const wSeg = []
-        if (spec.winnerNodeAtStart) {
-            for (let i = 0; i < win.pts.length && win.polyCum[i] < spec.winnerCutCum - EPSV; i++) wSeg.push(win.pts[i])
-        } else {
-            for (let i = win.pts.length - 1; i >= 0; i--) {
-                if (win.polyCum[i] > spec.winnerCutCum + EPSV) wSeg.push(win.pts[i])
-                else break
+        const sS = specs.find((sp) => sp.loserNodeAtStart) || null
+        const sE = specs.find((sp) => !sp.loserNodeAtStart) || null
+        const endData = (sp) => {
+            const win = this._v2RunSample(g, drop, sp.winner[0], sp.winner[1])
+            if (!win) return null
+            const wY = yAtCum(win, sp.winnerCutCum)
+            const wSeg = []   // winner's node-side vertices, ordered NODE-FIRST
+            if (sp.winnerNodeAtStart) {
+                for (let i = 0; i < win.pts.length && win.polyCum[i] < sp.winnerCutCum - EPSV; i++) wSeg.push(win.pts[i])
+            } else {
+                for (let i = win.pts.length - 1; i >= 0; i--) {
+                    if (win.polyCum[i] > sp.winnerCutCum + EPSV) wSeg.push(win.pts[i])
+                    else break
+                }
+            }
+            if (wSeg.length < 1) return null
+            return {
+                wY, wSeg,
+                cutClArc: clArcAtCum(own, sp.loserCutCum),
+                Xv: new THREE.Vector3(sp.X.x, wY, sp.X.z),
+                oS: sp.winnerNodeAtStart ? [0, sp.winnerCutCum] : [sp.winnerCutCum, win.L],
+                wk: `g:${g.key(sp.winner[0])}:${g.key(sp.winner[1])}`,
             }
         }
-        const Xv = new THREE.Vector3(spec.X.x, wY, spec.X.z)
-        // loser's own outer samples (beyond the cut, away from the node)
-        const outer = [], outerClArc = []
-        if (spec.loserNodeAtStart) {
-            for (let i = 0; i < own.pts.length; i++) if (own.polyCum[i] > spec.loserCutCum + EPSV) { outer.push(own.pts[i]); outerClArc.push(own.clArc[i]) }
-        } else {
-            for (let i = 0; i < own.pts.length; i++) if (own.polyCum[i] < spec.loserCutCum - EPSV) { outer.push(own.pts[i]); outerClArc.push(own.clArc[i]) }
-        }
-        if (outer.length < 2 || wSeg.length < 1) { this._registerRun(key, cl, cellA, cellB); return }
-        const cutClArc = (() => {
-            const pc = own.polyCum, ca = own.clArc, n = pc.length
-            let lo = 0, hi = n - 1
-            while (lo + 1 < hi) { const mid = (lo + hi) >> 1; if (pc[mid] <= spec.loserCutCum) lo = mid; else hi = mid }
-            const span = pc[lo + 1] - pc[lo] || 1
-            return ca[lo] + (ca[lo + 1] - ca[lo]) * (spec.loserCutCum - pc[lo]) / span
-        })()
-        // outer profile re-solve, fork end pinned to the winner's height (clones — memos stay pure).
-        // If the ladder REFUSES (the fork height is unreachable from the far node within the caps),
-        // the whole trim backs off to the untrimmed registration — a visible crossing beats a
-        // marked 50% terrain-follow. Deterministic either way, so window invariance holds.
+        const dS = sS ? endData(sS) : null
+        const dE = sE ? endData(sE) : null
+        if ((sS && !dS) || (sE && !dE)) { bail(); return }
+        // own middle: samples strictly between the active cut arcs
+        const loC = sS ? sS.loserCutCum : -Infinity
+        const hiC = sE ? sE.loserCutCum : Infinity
+        const mid = [], midClArc = []
+        for (let i = 0; i < own.pts.length; i++)
+            if (own.polyCum[i] > loC + EPSV && own.polyCum[i] < hiC - EPSV) { mid.push(own.pts[i]); midClArc.push(own.clArc[i]) }
+        if (mid.length < 2) { bail(); return }
+        // middle profile re-solve with the active fork pin(s) (clones — memos stay pure)
+        const sub = [], subArcL = []
+        if (dS) { sub.push(dS.Xv.clone()); subArcL.push(dS.cutClArc) }
+        for (let i = 0; i < mid.length; i++) { sub.push(mid[i].clone()); subArcL.push(midClArc[i]) }
+        if (dE) { sub.push(dE.Xv.clone()); subArcL.push(dE.cutClArc) }
+        const subArc = Float64Array.from(subArcL)
+        const base = subArc[0]
+        for (let i = 0; i < subArc.length; i++) subArc[i] -= base
+        for (let i = 0; i < sub.length; i++) sub[i].y = this._coarseH(sub[i].x, sub[i].z)
         const infBefore = this._v2Infeasible || 0
-        let solvedOuter, outerSpans
-        if (spec.loserNodeAtStart) {
-            const sub = [Xv.clone(), ...outer.map((p2) => p2.clone())]
-            const subArc = Float64Array.from([cutClArc, ...outerClArc])
-            for (let i = subArc.length - 1; i >= 0; i--) subArc[i] -= subArc[0]
-            for (let i = 0; i < sub.length; i++) sub[i].y = this._coarseH(sub[i].x, sub[i].z)
-            outerSpans = this._v2GradePts(sub, subArc, { yA: wY })   // sub-arc domain; mapped to final polyCum below
-            solvedOuter = sub
-            this._v2TrimSubArc = subArc
-        } else {
-            const sub = [...outer.map((p2) => p2.clone()), Xv.clone()]
-            const subArc = Float64Array.from([...outerClArc, cutClArc])
-            for (let i = 0; i < sub.length; i++) sub[i].y = this._coarseH(sub[i].x, sub[i].z)
-            outerSpans = this._v2GradePts(sub, subArc, { yB: wY })   // sub-arc domain; mapped to final polyCum below
-            solvedOuter = sub
-            this._v2TrimSubArc = subArc
-        }
-        if ((this._v2Infeasible || 0) > infBefore) {
-            this._v2Infeasible = infBefore
-            this._v2TrimSkip = (this._v2TrimSkip || 0) + 1
-            this._registerRun(key, cl, cellA, cellB)
-            return
-        }
+        const solveOpts = {}
+        if (dS) solveOpts.yA = dS.wY
+        if (dE) solveOpts.yB = dE.wY
+        let midSpans = this._v2GradePts(sub, subArc, solveOpts)
+        if ((this._v2Infeasible || 0) > infBefore) { this._v2Infeasible = infBefore; bail(); return }
         // assemble the final polyline in the loser's registered direction
         const pts = [], clArc = []
-        if (spec.loserNodeAtStart) {
-            const nW = wSeg.length + 1   // wSeg + Xv carry the ceded monotone clArc fill 0 → cutClArc
-            for (let i = 0; i < wSeg.length; i++) { pts.push(wSeg[i].clone()); clArc.push(cutClArc * i / nW) }
-            pts.push(solvedOuter[0]); clArc.push(cutClArc)   // Xv (solved: y pinned to wY)
-            for (let i = 1; i < solvedOuter.length; i++) { pts.push(solvedOuter[i]); clArc.push(outerClArc[i - 1]) }
-        } else {
-            for (let i = 0; i < solvedOuter.length - 1; i++) { pts.push(solvedOuter[i]); clArc.push(outerClArc[i]) }
-            pts.push(solvedOuter[solvedOuter.length - 1]); clArc.push(cutClArc)   // Xv
+        if (dS) {
+            const nW = dS.wSeg.length + 1   // head carries the ceded monotone clArc fill 0 → cut
+            for (let i = 0; i < dS.wSeg.length; i++) { pts.push(dS.wSeg[i].clone()); clArc.push(dS.cutClArc * i / nW) }
+        }
+        const x1Idx = dS ? pts.length : -1   // Xv1 lands here (sub[0])
+        for (let i = 0; i < sub.length; i++) { pts.push(sub[i]); clArc.push(subArcL[i]) }
+        const x2Idx = pts.length - 1         // Xv2 (when dE) is sub's last element
+        if (dE) {
             const L0 = own.clArc[own.clArc.length - 1]
-            const nW = wSeg.length
+            const nW = dE.wSeg.length
             // wSeg is NODE-FIRST; the tail runs fork → node, so append it REVERSED.
-            for (let i = nW - 1; i >= 0; i--) { pts.push(wSeg[i].clone()); clArc.push(cutClArc + (L0 - cutClArc) * (nW - i) / nW) }
+            for (let i = nW - 1; i >= 0; i--) { pts.push(dE.wSeg[i].clone()); clArc.push(dE.cutClArc + (L0 - dE.cutClArc) * (nW - i) / nW) }
         }
         const n = pts.length - 1
         const polyCum = new Float64Array(n + 1)
         for (let i = 1; i <= n; i++) polyCum[i] = polyCum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
-        const xIdx = spec.loserNodeAtStart ? wSeg.length : solvedOuter.length - 1
-        // Spans came out of the OUTER sub-solve in its own (rebased) arc domain; the splice changed
-        // the run's arc, so map them onto the FINAL polyCum through the solved-outer vertices (whose
-        // final indices are known) — consumers (bore probes, carve-skip, tube meshes) all read
-        // spans against the run's own arc.
-        if (outerSpans && outerSpans.length) {
-            const subArc = this._v2TrimSubArc
-            const outerBaseIdx = spec.loserNodeAtStart ? wSeg.length : 0   // final index of solvedOuter[0]
+        // Spans came out of the middle sub-solve in its own (rebased) arc domain; the splice
+        // changed the run's arc, so map them onto the FINAL polyCum through the sub vertices
+        // (whose final indices are known) — span consumers read run-arc.
+        if (midSpans && midSpans.length) {
+            const subBaseIdx = dS ? x1Idx : 0
             const subToFinal = (sv) => {
                 let lo = 0, hi = subArc.length - 1
-                while (lo + 1 < hi) { const mid = (lo + hi) >> 1; if (subArc[mid] <= sv) lo = mid; else hi = mid }
+                while (lo + 1 < hi) { const mid2 = (lo + hi) >> 1; if (subArc[mid2] <= sv) lo = mid2; else hi = mid2 }
                 const span = subArc[hi] - subArc[lo] || 1
                 const t = Math.max(0, Math.min(1, (sv - subArc[lo]) / span))
-                const pLo = polyCum[outerBaseIdx + lo], pHi = polyCum[outerBaseIdx + hi]
+                const pLo = polyCum[subBaseIdx + lo], pHi = polyCum[subBaseIdx + hi]
                 return pLo + (pHi - pLo) * t
             }
-            outerSpans = outerSpans.map((sp2) => ({ s0: subToFinal(sp2.s0), s1: subToFinal(sp2.s1) }))
+            midSpans = midSpans.map((sp2) => ({ s0: subToFinal(sp2.s0), s1: subToFinal(sp2.s1) }))
         }
-        this._v2TrimSubArc = null
-        // ownerS0/S1: the SAME pavement in the winner's own arc domain — instrumentation (census)
+        // ownerS0/S1: the SAME pavement in each winner's own arc domain — instrumentation (census)
         // needs both sides of the sanctioned coincidence.
-        const oS = spec.winnerNodeAtStart ? [0, spec.winnerCutCum] : [spec.winnerCutCum, win.L]
-        const cededSpans = spec.loserNodeAtStart
-            ? [{ s0: 0, s1: polyCum[xIdx], ownerS0: oS[0], ownerS1: oS[1] }]
-            : [{ s0: polyCum[xIdx], s1: polyCum[n], ownerS0: oS[0], ownerS1: oS[1] }]
-        const wk = `g:${g.key(spec.winner[0])}:${g.key(spec.winner[1])}`
+        const cededSpans = []
+        if (dS) cededSpans.push({ s0: 0, s1: polyCum[x1Idx], owner: dS.wk, ownerS0: dS.oS[0], ownerS1: dS.oS[1] })
+        if (dE) cededSpans.push({ s0: polyCum[x2Idx], s1: polyCum[n], owner: dE.wk, ownerS0: dE.oS[0], ownerS1: dE.oS[1] })
         this._network.set(key, {
             points: pts, arcOrigin: 0, centerline: cl,
             polyCum, clArc: Float64Array.from(clArc), cellA, cellB,
-            tunnelSpans: outerSpans && outerSpans.length ? outerSpans : null,
-            cededSpans, cededOwner: wk,
+            tunnelSpans: midSpans && midSpans.length ? midSpans : null,
+            cededSpans,
         })
-        this._v2Trims = (this._v2Trims || 0) + 1
+        this._v2Trims = (this._v2Trims || 0) + specs.length
     }
-
 
     // Smooth a polyline's Y in place (shared by the rows row-polyline and the graph per-edge polyline).
     // Off-earthwork: legacy ±designGradeWindow terrain-following smoothing. Earthwork: (1) wide-smooth raw
@@ -3036,9 +3040,10 @@ export class RoadSystem {
             // duplicate ribbon z-fights the winner's. Phase-1 ceded regions are a contiguous prefix
             // or suffix ending exactly at the fork vertex, so the kept range is one window.
             let i0 = 0, i1 = points.length - 1
-            if (entry.cededSpans && this._network.has(entry.cededOwner)) {
+            if (entry.cededSpans) {
                 const pc = entry.polyCum
                 for (const csp of entry.cededSpans) {
+                    if (!this._network.has(csp.owner)) continue   // fringe: the loser serves this span itself
                     if (csp.s0 <= 1e-6) { while (i0 < i1 && pc[i0] < csp.s1 - 1e-6) i0++ }
                     else { while (i1 > i0 && pc[i1] > csp.s0 + 1e-6) i1-- }
                 }
@@ -3906,7 +3911,7 @@ export class RoadSystem {
                     const lo2 = forkAtHi ? csp.s0 - 0.5 : csp.s0 + FORK_BLEND
                     const hi2 = forkAtHi ? csp.s1 - FORK_BLEND : csp.s1 + 0.5
                     if (aC >= lo2 && aC <= hi2) {
-                        if (this._network.has(neC.cededOwner)) return
+                        if (this._network.has(csp.owner)) return
                         break
                     }
                 }
