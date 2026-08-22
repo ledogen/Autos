@@ -77,17 +77,17 @@ band, which is the only thing making the bed read as two-tone at all.
 TALLER THAN THE TICKET: 0.381 m against its stated 0.30 m.  The ticket's
 0.7 m dia x 0.3 m tall makes a teepee twice as wide as it is high, and at that
 ratio the logs come out near horizontal and read as three logs lying down.
-Diameter is 0.714 m against the ticket's 0.7 -- 14 mm over, and that is the
+Diameter is 0.708 m against the ticket's 0.7 -- 8 mm over, and that is the
 constructed stone ring, which the ticket never budgeted a footprint for either.
 
 BUILT 2026-08-21, ring reworked 2026-08-22, against Blender 5.2.0 LTS.
 FINAL: 472 tris (ticket budget 300 -- see above), 286 verts, 4 materials,
 0 images, 0 UV layers, one mesh object + one empty.
-0.7138 W x 0.3778 H x 0.6773 D m, base-seated at exactly y = 0 in the
+0.7085 W x 0.3778 H x 0.6746 D m, base-seated at exactly y = 0 in the
 GLB -- the BED DISC defines the seat, and every log, coal and stone is lifted
 individually until it clears the ground plane.  Single-sided, no Draco.
 Audit clean: 0 object-vs-object clips, 0 coplanar pairs, 0 non-manifold edges,
-0 loose verts, 0/7792 inverted first-hit rays.
+0 loose verts, 0/7784 inverted first-hit rays.
 Rebuild:  exec(open(__file__).read()); build(); export()
 """
 
@@ -95,7 +95,7 @@ import bpy
 import bmesh
 import math
 import os
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 # ---------------------------------------------------------------------------
 # Parameters.  Everything tunable lives here; the body below only consumes it.
@@ -179,9 +179,22 @@ P = dict(
                            # this number: near 1.0 the stones read as tall cut
                            # crystals, and at 0.40 they lie so low the ring reads
                            # as a scatter of flakes on the dirt.
-    ring_sink=0.34,        # fraction of its own height each stone is bedded in.
-                           # DEEP, on purpose: a found ring has settled and silted
-                           # in, where a freshly-set one sits on top of the ground.
+    ring_sink=0.34,        # MEAN fraction of its own height each stone is bedded
+                           # in.  Deep, on purpose: a found ring has settled and
+                           # silted in, where a freshly-set one sits on top of the
+                           # ground.
+    ring_sink_var=0.26,    # PER-STONE spread on that, so the depths run 0.12..0.56
+                           # instead of every stone being bedded identically.  With
+                           # a single uniform sink all eleven bottom out on the same
+                           # plane AND stand to nearly the same height (tops varied
+                           # by 16 mm, purely from the size spread), and the ring
+                           # reads as a machined collar sitting on a shelf.  Varying
+                           # the depth doubles the spread of top heights, which is
+                           # the part the eye actually reads -- the flat underside
+                           # caps are buried and never seen.
+                           # The phase here is deliberately different from the size
+                           # wobble's, so the big stone is not always the deep one.
+    ring_tilt=0.34,        # max lean per stone, radians (~19 deg).  See make_stone.
 
     # --- teepee logs --------------------------------------------------------
     log_count=3,
@@ -401,7 +414,7 @@ _ICO_F = [(0, 11, 5), (0, 5, 1), (0, 1, 7), (0, 7, 10), (0, 10, 11),
           (4, 9, 5), (2, 4, 11), (6, 2, 10), (8, 6, 7), (9, 8, 1)]
 
 
-def make_stone(centre, r, flatten, seed_a, mat):
+def make_stone(centre, r, flatten, seed_a, mat, tilt=0.0):
     """A squashed, jittered icosahedron: 12 verts, 20 tris, no apex anywhere.
 
     THIS IS THE SHAPE THE GAME ALREADY USES FOR ROCKS.  test-rock.glb (the
@@ -428,18 +441,25 @@ def make_stone(centre, r, flatten, seed_a, mat):
     sx = r * (0.92 + 0.18 * ((math.sin(seed_a * 3.1) + 1.0) * 0.5))
     sy = r * (0.92 + 0.18 * ((math.cos(seed_a * 2.3) + 1.0) * 0.5))
     sz = r * flatten * (0.85 + 0.30 * ((math.sin(seed_a * 5.7) + 1.0) * 0.5))
-    ca, sa = math.cos(seed_a), math.sin(seed_a)
     n = 1.0 / math.sqrt(1.0 + _PHI * _PHI)      # |icosahedron vertex| == sqrt(1+phi^2)
+
+    # TILT.  A stone that has sat in the ground for years leans; one sitting bolt
+    # upright reads as placed by a level.  Squash first, THEN tilt, so the lean
+    # tips the whole squashed lump rather than skewing it -- which is also why
+    # this is a matrix and not another term in pt().  Up to `tilt` radians about a
+    # horizontal axis whose bearing varies per stone, then the usual yaw so the
+    # facets never line up between neighbours.
+    lean = tilt * math.sin(seed_a * 1.3 + 0.4)
+    axis_a = seed_a * 2.1
+    rot = (Matrix.Rotation(seed_a, 3, 'Z')
+           @ Matrix.Rotation(lean, 3, Vector((math.cos(axis_a), math.sin(axis_a), 0.0))))
 
     verts = []
     for k, (vx, vy, vz) in enumerate(_ICO_V):
         # per-vertex radial jitter: knocks the regular solid off true so no two
         # stones share a silhouette, at no tri cost
         j = n * (1.0 + 0.16 * math.sin(seed_a * (1.9 + 0.6 * k) + k * 2.3))
-        dx, dy, dz = vx * j, vy * j, vz * j
-        verts.append(centre + Vector((dx * sx * ca - dy * sy * sa,
-                                      dx * sx * sa + dy * sy * ca,
-                                      dz * sz)))
+        verts.append(centre + rot @ Vector((vx * j * sx, vy * j * sy, vz * j * sz)))
     return verts, list(_ICO_F), [mat] * len(_ICO_F)
 
 
@@ -549,6 +569,7 @@ def build():
         bearing = a + 0.028 * math.sin(a * 5.0 + 2.1)
         rad = p['ring_r'] * (1.0 + 0.025 * w)
         size = p['ring_r_min'] + (p['ring_r_max'] - p['ring_r_min']) * (0.5 + 0.5 * math.cos(a * 2.3 + 1.1 * math.sin(a * 1.3)))
+        sink = p['ring_sink'] + p['ring_sink_var'] * math.sin(a * 2.7 + 1.6)
         half_h = size * p['ring_flatten']
         # BURIAL IS A CLAMP, NOT A TRANSLATE, and getting that wrong cost a pass.
         # Every other part of this model is seated by lifting it until its lowest
@@ -561,8 +582,9 @@ def build():
         # polygon lying on the ground rather than a degenerate sliver -- the mesh
         # stays closed and manifold, and the stone reads as bedded in.
         centre = Vector((rad * math.cos(bearing), rad * math.sin(bearing),
-                         half_h * (1.0 - 2.0 * p['ring_sink'])))
-        sv, sf, sm = make_stone(centre, size, p['ring_flatten'], a * 1.7 + 0.4, 'FireStone')
+                         half_h * (1.0 - 2.0 * sink)))
+        sv, sf, sm = make_stone(centre, size, p['ring_flatten'], a * 1.7 + 0.4,
+                                'FireStone', tilt=p['ring_tilt'])
         sv = [Vector((v.x, v.y, max(0.0, v.z))) for v in sv]
         parts.append((sv, sf, sm))
 

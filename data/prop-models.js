@@ -97,7 +97,7 @@ export const PROP_MODELS = {
     collision: { shape: 'box', size: [0.16, 0.59, 0.73] },
   },
 
-  // ASSET-24 — the player's campfire.  472 tris, 0.714 x 0.378 x 0.677 m, four
+  // ASSET-24 — the player's campfire.  472 tris, 0.708 x 0.378 x 0.675 m, four
   // flat materials, no textures.  CAMP GEAR, not lawn furniture: it renders at
   // the player's own campsite under items.md's visible-kit rule, and per that
   // doc the bedroll-and-campfire is the DEFAULT camp with no modifier — so this
@@ -125,7 +125,7 @@ export const PROP_MODELS = {
   // FireCoal, FireLog, FireStone.  No palette — a fire is not recolourable.
   campfire: {
     url: 'assets/models/campfire.glb',
-    collision: { shape: 'none', size: [0.714, 0.378, 0.677] },
+    collision: { shape: 'none', size: [0.708, 0.378, 0.675] },
   },
 
   // ASSET-02 — ceramic garden gnome, 500 tris, the classic STANDING lawn
