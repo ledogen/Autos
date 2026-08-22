@@ -172,7 +172,10 @@ export const DAMAGE_PARAMS = {
   // 40 mph landing ~6% (about 16). durSpring no longer applies to this track — the curve IS the
   // calibration — but the parts durability multiplier and the wear-speed slider still do.
   springForceFloor: 3000,    // N — below this, bump-stop contact costs nothing at all
-  springBumpFullN:  85000,   // N — a single bump-stop hit this hard destroys the spring outright
+  // RESCALED 2026-08-22 for the progressive tire carcass. A stiff tire transmits far more into the
+  // stops than the old linear one did: a 2 m drop measured 75.6 kN of bump-stop force where a 4 m
+  // drop used to measure 15. At the old 85 kN a 2 m drop destroyed the springs outright.
+  springBumpFullN:  300000,  // N — a single bump-stop hit this hard destroys the spring outright
   springBumpExp:    2,       // square law: peak stress, the same reason armor is square-law
 
   // Dampers: suspension displacement RATE above a no-harm floor.
@@ -321,7 +324,10 @@ export const DAMAGE_PARAMS = {
   // A step only counts toward a collision's impulse while the contact FORCE is above this. The
   // engine's per-step impulses are summed across a burst to get the collision's true impulse, and
   // without a floor a truck leaning on what it hit would keep adding to it forever.
-  impactForceFloorN: 20000,   // N — about 1.5x the truck's own weight
+  // How long one collision is allowed to keep accumulating before it is banked. SHORT on purpose:
+  // the engine's impulse total climbs for as long as the bodies touch, so a long window lets the
+  // post-crash settle join the crash. 60 ms covers the spike and excludes the lean.
+  impactHoldMaxCrash: 0.06,
 }
 
 // ── Curves ────────────────────────────────────────────────────────────────────────────────────────
@@ -564,32 +570,33 @@ export class DamageModel {
    *
    * @param {'front'|'left'|'right'|'rear'|null} region - from classifyImpactRegion; null (a ground
    *   or roof contact, which no armor covers) closes any burst in progress and starts nothing.
-   * @param {number} stepImpulseNs - THIS STEP's contact normal impulse [N·s]; summed over the burst.
+   * @param {number} impulseNs - the engine's accumulated contact normal impulse [N·s], peak-held.
    * @param {number} mass - vehicle mass [kg].
    * @param {number} dt - physics step [s].
    * @returns {{region, v, passed, fatal}|null} the landed impact, or null on a step that banked none.
    */
-  feedContact (region, stepImpulseNs, mass, dt) {
+  feedContact (region, impulseNs, mass, dt) {
     const P = DAMAGE_PARAMS
-    // stepImpulseNs is THIS STEP's contact impulse, so stepImpulseNs/dt is the contact force and
-    // the SUM across the burst is the collision's true impulse.
+    // `impulseNs` is the engine's accumulated normal impulse on the hardest manifold point. It is
+    // the only impulse field the contact buffer actually populates — the per-step `normalImpulse`
+    // reads zero there, and switching to it silently killed every collision (owner: a 70 mph tree
+    // strike did nothing at all). So: accumulated total, peak-held.
     //
-    // This used to read the engine's lifetime-accumulated total, which kept climbing for as long as
-    // the bodies stayed touching — so a 70 mph tree strike priced as a 143 mph one (owner, 2026-08
-    // -22), because the truck came to rest against the tree and never stopped adding to it.
-    const force = dt > 0 ? stepImpulseNs / dt : 0
-    const live = region != null && force >= P.impactForceFloorN
+    // Because it ACCUMULATES for as long as the bodies stay touching, the burst window is what
+    // keeps a crash honest: a truck that comes to rest against the tree it hit would otherwise go
+    // on adding to its own impact forever, which is what priced a 70 mph strike at 143 mph. A real
+    // crash peaks in tens of milliseconds, so the window is short and the settle never joins it.
+    const live = region != null && impactSpeed(impulseNs, mass) >= P.impactMinMph * MPH
 
     if (live) {
-      if (!this._burst) this._burst = { region, impulse: stepImpulseNs, peak: force, t: 0 }
+      if (!this._burst) this._burst = { region, impulse: impulseNs, t: 0 }
       else {
         this._burst.t += dt
-        this._burst.impulse += stepImpulseNs        // integrate the collision
-        // The region travels with the hardest instant: a truck that clips a post front-first and
-        // slews into it sideways took its worst hit on whichever face was loaded hardest.
-        if (force > this._burst.peak) { this._burst.peak = force; this._burst.region = region }
+        // The region travels with the peak: a truck that clips a post front-first and slews into it
+        // sideways took its worst hit on whichever face was loaded hardest.
+        if (impulseNs > this._burst.impulse) { this._burst.impulse = impulseNs; this._burst.region = region }
       }
-      if (this._burst.t < P.impactHoldMax) return null
+      if (this._burst.t < P.impactHoldMaxCrash) return null
     }
     const b = this._burst
     if (!b) return null

@@ -87,16 +87,24 @@ console.log('\n§4 alignment crosstalk — only really hard bumps, and only that
     'the bend is seeded, so a run replays identically')
 }
 
-console.log('\n§5 the ramp anchors the owner drove')
+console.log('\n§5 the drop anchors, re-measured after the progressive tire carcass')
 {
-  // Per-corner peaks measured on the lab ramp at each speed (test/lab-wear-drive.mjs).
-  for (const [mph, peaks] of [[30, [9900, 15800]], [40, [21200, 12500]]]) {
+  // The old anchors here were ramp landings measured with a LINEAR tire spring, and they no longer
+  // describe the truck: a stiff carcass transmits far more into the stops. Measured bump-stop peak
+  // on the lab drops after that change — a 2 m drop reads 75.6 kN where a 4 m drop used to read 15.
+  // springBumpFullN was rescaled with them (85 kN -> 300 kN); at the old value a 2 m drop destroyed
+  // the springs outright. NOTE these drive ONE corner, so the whole-axle cost in game is roughly
+  // double — the measured 2 m drop cost springFront 14.6% with both front corners landing.
+  for (const [h, peakN, lo, hi] of [[0.5, 2400, 0, 0.01], [1.0, 23000, 0.3, 3], [2.0, 75600, 4, 12]]) {
     const d = fresh()
-    peaks.forEach((p, i) => bump(d, p, i))
+    bump(d, peakN)
     const lost = (1 - d.get('springFront')) * 100
-    console.log(`  a ${mph} mph ramp landing costs the front springs ${lost.toFixed(1)}% → ${Math.round(100 / lost)} landings`)
-    ok(lost > 0.5 && lost < 15, `...which is felt without being absurd (was 0.5-0.7% before the rewrite)`)
+    console.log(`  a ${h} m drop (${(peakN / 1000).toFixed(1)} kN on the stops) costs the front springs ${lost.toFixed(1)}%`)
+    ok(lost >= lo && lost <= hi, `...within the intended ${lo}-${hi}% band`)
   }
+  // The no-harm floor still holds at the bottom: a gentle landing must be free.
+  ok(fresh().get('springFront') === 1 && (() => { const d = fresh(); bump(d, D.springForceFloor - 1); return d.get('springFront') === 1 })(),
+    'a bump-stop touch below the floor still costs nothing')
 }
 
 console.log(fail ? '\nFAIL — the bump-stop model has drifted' : '\nPASS — bump-stop hits are peak-priced events, and hard ones throw the alignment')

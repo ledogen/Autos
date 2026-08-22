@@ -4699,7 +4699,7 @@ function loop () {
     {
       const hit = physicsEngine.maxContactImpulse(vehicleChassis)
       const landed = damageModel.feedContact(
-        classifyImpactRegion(hit.point, hit.normal), hit.stepImpulse, RANGER_PARAMS.mass, PHYSICS_DT)
+        classifyImpactRegion(hit.point, hit.normal), hit.impulse, RANGER_PARAMS.mass, PHYSICS_DT)
       if (landed) damageHUD.noteImpact(landed)
     }
     simTime += PHYSICS_DT
