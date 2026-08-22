@@ -2335,7 +2335,10 @@ export class RoadSystem {
         if (hit !== undefined) return hit
         const PADX = 40      // m — crossings inside pad territory are junction geometry, not trims
         const MINREG = 30    // m — a region shorter than this is pad-dressing territory
-        const MAXFRAC = 0.5  // regions ≤ half the run keep the two ends' trims disjoint (no chains)
+        const MAXFRAC = 0.85 // sanity only — cross-node conflicts are checked PRECISELY at apply
+                             // time (_v2TrimFor: the winner's own loser-region must not overlap the
+                             // adopted strand). The old blanket 0.5 rejected the owner's captured
+                             // braid, whose weave legitimately spans ~55% of each run.
         const out = new Map()
         const nbrsRaw = g.adj.get(nk)
         const nbrs = nbrsRaw ? [...nbrsRaw].filter((o) => !drop || !drop.has(nk + '|' + o)).sort() : []
@@ -2416,17 +2419,36 @@ export class RoadSystem {
     }
 
     // The trim spec (if any) for an edge about to register. Loser at BOTH ends: keep the longer
-    // region (one trim per run — Phase 1), skip + count the other.
+    // region (one trim per run — Phase 1), skip + count the other. A spec is DROPPED when its
+    // winner has a loser-plan of its own whose ceded interval overlaps the adopted strand — the
+    // adopted vertices must be the winner's REGISTERED (pure) geometry, and a far-end trim on the
+    // winner is fine only while it stays clear of what we copy. Raw per-node lookups only (plans
+    // never depend on other plans), so this stays order-free and cycle-free.
     _v2TrimFor(g, drop, c1, c2) {
         const kA = g.key(c1), kB = g.key(c2)
         const ck = kA < kB ? kA + '|' + kB : kB + '|' + kA
         const sA = this._v2NodeTrims(g, drop, kA).get(ck)
         const sB = this._v2NodeTrims(g, drop, kB).get(ck)
+        let spec = null
         if (sA && sB) {
             this._v2TrimSkip = (this._v2TrimSkip || 0) + 1
-            return sA.region >= sB.region ? sA : sB
+            spec = sA.region >= sB.region ? sA : sB
+        } else spec = sA || sB || null
+        if (!spec) return null
+        const wkA = g.key(spec.winner[0]), wkB = g.key(spec.winner[1])
+        const wck = wkA < wkB ? wkA + '|' + wkB : wkB + '|' + wkA
+        const wRaw = this._v2NodeTrims(g, drop, wkA).get(wck) || this._v2NodeTrims(g, drop, wkB).get(wck)
+        if (wRaw) {
+            const wS = this._v2RunSample(g, drop, spec.winner[0], spec.winner[1])
+            if (!wS) return null
+            const adopt = spec.winnerNodeAtStart ? [0, spec.winnerCutCum] : [spec.winnerCutCum, wS.L]
+            const wOwn = wRaw.loserNodeAtStart ? [0, wRaw.loserCutCum] : [wRaw.loserCutCum, wS.L]
+            if (adopt[1] > wOwn[0] + 1 && wOwn[1] > adopt[0] + 1) {
+                this._v2TrimSkip = (this._v2TrimSkip || 0) + 1
+                return null
+            }
         }
-        return sA || sB || null
+        return spec
     }
 
     // Register a TRIMMED (loser) run: winner's vertices + heights verbatim over [node..fork], the
