@@ -109,8 +109,12 @@ point of both". The first build honoured that by dropping the stones; the owner'
 put an 11-stone ring back on and re-framed this as a **found** ring the player is re-using.
 
 **The two assets now share their strongest silhouette cue.** ASSET-08 needs a different
-distinguishing feature — a built kerb, a taller course, a properly dug pit — or the pair will read as
-the same object at any distance. That is ASSET-08's to resolve, not this one's.
+distinguishing feature or the pair will read as the same object at any distance.
+
+**Resolved the same day:** ASSET-08 was re-specced by owner ruling from "a ring of stones around a
+bed of ash" to a **brick-and-mortar backyard fire ring** — coursed blocks, staggered joints, dead
+level, 1.0 m across, sitting on a footing. The distinction is now *built versus found*, carried by a
+straight level top edge that nothing natural has, and it survives at silhouette distance.
 
 ### One acceptance line is NOT met, and is carried forward, not dropped
 
