@@ -57,17 +57,30 @@ console.log(`§1 yield — below it the rim springs back (static ${(STATIC / 100
     `doubling the OVERLOAD raises the damage by 2^${D.rimStrikeExp} (x${ratio.toFixed(2)}) — plastic work, not total load`)
 }
 
-console.log('\n§2 measured: running over a rock does not reach the rim')
+console.log('\n§2 measured: the two sources are priced on their OWN scales')
 {
-  // Peak core force measured in-game over a settled 34 cm debris rock, 11-61 mph, AFTER the
-  // contact model was fixed to engage progressively (it read tens of kN before, with the rock
-  // sinking to the rim at walking pace).
+  // Running over a rock does not reach the rim (peak core force 3-5 kN, measured 11-55 mph).
   for (const [mph, kN] of [[11, 3.2], [34, 3.9], [55, 5.1]]) {
     const d = fresh(); strike(d, kN * 1000)
     const lost = (1 - d.get('wheelFL')) * 100
     console.log(`  ${mph} mph over a rock peaks the core at ${kN} kN → ${lost.toFixed(2)}% of the wheel`)
-    ok(lost < 1, `...which leaves the rim essentially intact, as a real tire would`)
+    ok(lost < 1, '...which leaves the rim essentially intact, as a real tire would')
   }
+  // Landing loads come through the ROAD path and are an order of magnitude larger, so they get
+  // their own yield and overload scale. Owner's target shape: a 1 m drop damages SPRINGS ONLY, a
+  // 2 m drop damages springs AND rim. Measured with test/collision-drop-lab.mjs.
+  const road = (d, n, corner = 0, steps = 3) => {
+    const vs = { rimForce: [0, 0, 0, 0], rimForceRoad: [0, 0, 0, 0] }
+    for (let i = 0; i < steps; i++) { vs.rimForceRoad[corner] = n; d.step(vs, P, DT) }
+    vs.rimForceRoad[corner] = 0
+    d.step(vs, P, DT)
+  }
+  const oneM = fresh(); road(oneM, 0)          // a 1 m drop never bottoms the tire at all
+  ok(oneM.get('wheelFL') === 1, 'a 1 m drop puts NO load on the rim — the tire does not bottom, so lesser drops cost springs only')
+  const twoM = fresh(); road(twoM, 86200)      // 2 m drop, measured
+  const lost2 = (1 - twoM.get('wheelFL')) * 100
+  console.log(`  a 2 m drop puts 86.2 kN past full compression → ${lost2.toFixed(1)}% of the wheel`)
+  ok(lost2 > 1 && lost2 < 10, '...which marks the rim without writing it off')
 }
 
 console.log('\n§3 nothing but a core contact can bend a rim')

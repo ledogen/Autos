@@ -283,11 +283,19 @@ export const DAMAGE_PARAMS = {
   // read that a straight-on rock or kerb at 20 mph should leave the rim fine.
   rimYieldMult:   1.5,    // x static wheel load (≈5 kN): DEBRIS core contacts — below this it springs back
   // ROAD contacts are a different measurement (see suspension.js): the load past full carcass
-  // compression, not what a rigid pinch exchanges. Measured on drops: 0.5 m and 1.0 m never reach
-  // the rim at all now, 2 m reads 349 kN and 4 m reads 458 kN, so this sits above a 2 m landing —
-  // the tire is meant to carry that — and a 4 m one costs real but survivable damage.
-  rimYieldRoadMult: 90,   // x static wheel load (≈300 kN): ROAD/terrain contacts
-  rimFullRoadMult: 180,   // x static wheel load (≈600 kN) of OVERLOAD writes the wheel off
+  // compression, not what a rigid pinch exchanges.
+  //
+  // Calibrated against the owner's stated target (2026-08-22) — a 1 m drop should damage the
+  // SPRINGS only, and a 2 m drop should damage the springs AND fully compress the tire onto the
+  // rim. Measured with test/collision-drop-lab.mjs, the rim load past full compression is:
+  //
+  //     0.5 m  0 kN      1.0 m  0 kN      2.0 m  86.2 kN      3.0 m  87.5 kN
+  //
+  // The tire genuinely does not bottom below 2 m, so "lesser drops damage springs only" falls out
+  // of the geometry rather than being thresholded in. Yield sits under the 2 m figure and the
+  // overload scale puts a 2 m landing at about a tenth of a wheel.
+  rimYieldRoadMult: 18,   // x static wheel load (≈60 kN): ROAD/terrain contacts
+  rimFullRoadMult:  81,   // x static wheel load (≈270 kN) of OVERLOAD writes the wheel off
   rimFullMult:    30,     // x static wheel load (≈100 kN) of OVERLOAD writes the wheel off
   rimStrikeExp:   1.5,    // between linear and square — plastic work rises faster than the overload
 
@@ -699,11 +707,16 @@ export class DamageModel {
    * flange took load. `excessM` is how far the deflection went past the sidewall fraction where
    * the rubber runs out — the only thing that decides how bad it was.
    */
-  _landRimStrike (corner, forceN, staticLoad) {
+  _landRimStrike (corner, forceN, staticLoad, road) {
     const P = DAMAGE_PARAMS
-    const overload = forceN - P.rimYieldMult * staticLoad
+    // Each source carries its OWN yield and overload scale, because they are different
+    // measurements: `road` is the squashed-carcass load past full compression, `debris` is what a
+    // rigid pinch exchanges with the core, and the two differ by more than an order of magnitude.
+    const yieldN = (road ? P.rimYieldRoadMult : P.rimYieldMult) * staticLoad
+    const fullN  = (road ? P.rimFullRoadMult  : P.rimFullMult)  * staticLoad
+    const overload = forceN - yieldN
     if (overload <= 0) return                       // elastic: the rim springs back, nothing kept
-    const dmg = Math.pow(Math.min(1, overload / (P.rimFullMult * staticLoad)), P.rimStrikeExp)
+    const dmg = Math.pow(Math.min(1, overload / fullN), P.rimStrikeExp)
     this.wear(['wheelFL', 'wheelFR', 'wheelRL', 'wheelRR'][corner], dmg, 1)
   }
 
@@ -837,18 +850,23 @@ export class DamageModel {
       const yieldN = P.rimYieldMult * staticW
       const yieldRoad = P.rimYieldRoadMult * staticW
       if (!this._strikePeak) this._strikePeak = [0, 0, 0, 0]
+      if (!this._strikeRoad) this._strikeRoad = [false, false, false, false]
       for (let i = 0; i < 4; i++) {
-        // Two sources, each normalised against its OWN yield, then whichever is further past it
-        // drives the event. Expressed as a fraction of yield so one peak-hold can serve both.
-        const fDebris = (rimF[i] || 0) / yieldN
-        const fRoad   = road ? (road[i] || 0) / yieldRoad : 0
-        const f = Math.max(fDebris, fRoad) * yieldN
+        // Two sources. Compare them as MULTIPLES OF THEIR OWN YIELD — the only way to ask "which is
+        // further past the point where it starts bending" when the two are different measurements —
+        // then carry the winner in its own units so it is priced on its own scale.
+        const nDebris = (rimF[i] || 0) / yieldN
+        const nRoad   = road ? (road[i] || 0) / yieldRoad : 0
+        const isRoad  = nRoad > nDebris
+        const f = isRoad ? (road[i] || 0) : (rimF[i] || 0)
+        const trip = isRoad ? yieldRoad : yieldN
+        if (f > this._strikePeak[i]) this._strikeRoad[i] = isRoad
         const peak = this._strikePeak[i]
         if (f > peak) { this._strikePeak[i] = f; continue }
-        if (peak > yieldN && (f <= yieldN || f < peak * P.eventDecayFrac)) {
-          this._landRimStrike(i, peak, staticW)
+        if (peak > trip && (f <= trip || f < peak * P.eventDecayFrac)) {
+          this._landRimStrike(i, peak, staticW, this._strikeRoad[i])
           this._strikePeak[i] = 0
-        } else if (f <= yieldN) {
+        } else if (f <= trip) {
           this._strikePeak[i] = 0
         }
       }
