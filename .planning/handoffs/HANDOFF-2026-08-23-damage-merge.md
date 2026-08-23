@@ -1,9 +1,10 @@
 # HANDOFF 2026-08-23 — SM-3 damage model, READY TO MERGE
 
 **Worktree:** `/Users/ledogen/CodeShit/CarGame-damage` · **branch** `feature/damage` · **dev server**
-`http://localhost:3686`. 37 commits ahead of main, 46 files, ~4.8k insertions.
+`http://localhost:3686`. 39 commits ahead of main, 47 files, ~5.0k insertions.
 
-**Gate status: `npm run test:all` green, 61/61**, last full run 2026-08-23. The owner has driven
+**Gate status: `npm run test:all` green, 61/61** at the last full run; every commit since has been
+gated on its affected set and the tree is clean. The owner has driven
 every wear track and signed each one off; the remaining work is listed under "Not built" and none of
 it blocks the merge.
 
@@ -27,9 +28,9 @@ effects go through `publish()`, new signals through `vehicleState`.
 | Class | Damaged by | Effect |
 |---|---|---|
 | Armor ×4 | impact | absorbs what reaches everything behind it; absorbs less as it degrades |
-| Tires ×4 | slip velocity (dominant) + cornering force. **Puncture** on bump-stop force vs wear | grip falls; a FLAT drops grip 30% and lets the load through to the rim |
+| Tires ×4 | slip velocity (dominant) + cornering force. **Puncture** on bump-stop force vs wear — 84 kN at 50% condition, 30 kN at 10% | grip falls **flat-then-cliff** (97% left at half worn); a FLAT drops grip 30% and lets the load through to the rim |
 | Wheels ×4 | rim contact past a YIELD force, from road or debris; plus impact | radial runout — out of round, ≤ 0.04 m p-p, oval (2nd harmonic) |
-| Springs F/R | bump-stop PEAK force per event | rate falls to a floor of 50% of stock, never zero |
+| Springs F/R | bump-stop PEAK force per event, above a PER-AXLE no-harm floor (front 5 kN, rear 3 kN — the truck lands nose-first) | rate falls to a floor of 50% of stock, never zero |
 | Dampers F/R | strut velocity above a floor | damping falls |
 | Brakes F/R | ∫(torque × wheel speed) — friction ENERGY | max torque falls |
 | Engine | rpm×load, ×20 on a blocked filter, + front impact | torque falls |
@@ -115,6 +116,11 @@ Both are recorded in DESIGN.md's open-questions list (item 8):
 - **`durTire` / `durBrake` are fitted by `test/calibrate-wear.mjs`**, anchored on a measured
   one-wheel peel and a duty cycle. Re-run it after tire or brake changes; do not hand-edit.
 - **Alignment randomness is seeded** (mulberry32). Punctures are deterministic for the same reason.
+- **Condition→effect curves and wear RATES are separate knobs, and were tuned separately.** The tire
+  grip curve went flat-then-cliff on 2026-08-23 without touching `durTire` — a tire reaches 50%
+  condition at exactly the same mileage, it just grips like new there now. Changing how something
+  FEELS at a given condition is not the same as changing how long it lasts, and conflating the two
+  is how a "grip" tune quietly becomes an economy change.
 
 **About the harness**
 
