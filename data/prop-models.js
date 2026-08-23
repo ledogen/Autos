@@ -246,6 +246,7 @@ export const PROP_MODELS = {
   // dark boxes into a real cast handheld one — body, tapered spout, open D-guard, trigger —
   // and the pole's single aimed floodlight into TWO flat luminaires on a crossbar through the
   // pole's top, one per sign face, each tilted to throw down the sign's length onto the letters.
+  // The sign box itself is BLACK with a white face — cream-on-cream gave the board no boundary.
   // Six materials, one 512x512 atlas carrying the word GAS and the gauge face. Head casing,
   // bezel and nozzle all share PumpMetal (owner ruling: the frame is the handle's metal).
   gasPump: {

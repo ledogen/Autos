@@ -38,10 +38,12 @@ and falls back to Bfont if one is missing.
 SIX MATERIALS = six draw calls.  This is a POI placed a handful of times, not scatter
 density, so six is affordable.
   PumpConcrete  the island slab.  Mid grey, the ground the whole thing sits on.
-  PumpBody      the pole, the sign arm, the sign bezel, the floodlight arm.
+  PumpBody      the pole, the sign crossbar and arm, the luminaire lenses.  NOT the
+                sign bezel any more - that is black, see PumpTrim.
   PumpSkirt     the pump bodies.  Faded red, THE RECOLOURABLE ONE (see below).
-  PumpTrim      every near-black part: plinth, hoses, lamp head.  NOT the nozzle any
-                more - that is bare metal now, see PumpMetal.
+  PumpTrim      every near-black part: plinth, hoses, luminaire housings, AND the sign
+                box - its black edge trim is what gives the white face a boundary.
+                NOT the nozzle - that is bare metal now, see PumpMetal.
   PumpMetal     the head casing and its bezel, AND the whole nozzle casting.  Owner
                 ruling 2026-08-22: the frame is the same metal as the pump handle, so
                 the two share one material - which is also the merge rule doing its
@@ -132,8 +134,10 @@ LAMP_DEEP = 0.085                # housing depth
 LAMP_TILT = 31.0
 
 SIGN_CX = -0.24                  # sign box centre
-SIGN_W = 1.46                    # box, along X
-SIGN_H = 0.60                    # box, along Z
+SIGN_W = 1.490                   # box, along X.  Sized with SIGN_H for an EVEN 45 mm
+SIGN_H = 0.615                   # trim all round the face plate - at 1.46/0.60 the trim
+                                 # was 30 mm across and 37.5 mm up, which reads as a
+                                 # mistake once it is black against white.
 SIGN_T = 0.20                    # box, across Y
 SIGN_CZ = 3.81
 SIGN_FACE_W = 1.40               # lit face plate width; its HEIGHT is derived from the
@@ -850,7 +854,11 @@ def build():
     # --- sign box: cream bezel, two lit faces standing proud of it ---------
     sx0, sx1 = SIGN_CX - SIGN_W * 0.5, SIGN_CX + SIGN_W * 0.5
     sz0, sz1 = SIGN_CZ - SIGN_H * 0.5, SIGN_CZ + SIGN_H * 0.5
-    parts.append(box(sx0, sx1, -SIGN_T * 0.5, SIGN_T * 0.5, sz0, sz1, "PumpBody"))
+    # BLACK BODY, white face (owner, 2026-08-23).  Cream-on-cream gave the sign no edge
+    # at all against the pole and the lit faces; the trim has to be the dark value or the
+    # board has no boundary.  The thin black rule INSIDE the white is the baked artwork's,
+    # not this - the two together are the layered look the reference has.
+    parts.append(box(sx0, sx1, -SIGN_T * 0.5, SIGN_T * 0.5, sz0, sz1, "PumpTrim"))
 
     fx0, fx1 = SIGN_CX - SIGN_FACE_W * 0.5, SIGN_CX + SIGN_FACE_W * 0.5
     fz0, fz1 = SIGN_CZ - SIGN_FACE_H * 0.5, SIGN_CZ + SIGN_FACE_H * 0.5
@@ -858,7 +866,7 @@ def build():
     # the u -> 1 - u, so the two faces cannot drift apart the way they did when each
     # side computed its own handedness.
     v, f, m, uvs = box(fx0, fx1, SIGN_T * 0.5 + SIGN_FACE_PROUD - SIGN_FACE_T,
-                       SIGN_T * 0.5 + SIGN_FACE_PROUD, fz0, fz1, "PumpBody")
+                       SIGN_T * 0.5 + SIGN_FACE_PROUD, fz0, fz1, "PumpTrim")
     m[BOX_PY] = "PumpGraphic"
     uvs[BOX_PY] = plate_uv(v, f[BOX_PY], SIGN_REGION, fx0, fx1, fz0, fz1)
     parts.append((v, f, m, uvs))

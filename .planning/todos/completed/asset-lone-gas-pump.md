@@ -86,9 +86,17 @@ exactly how a car pulls in alongside.
 
 ### Composition
 
-Six materials, six draw calls. `PumpConcrete` slab · `PumpBody` pole, sign arm, sign bezel,
-floodlight arm · `PumpSkirt` the red pump bodies · `PumpTrim` the near-black parts (plinth, hoses,
-lamp head) · `PumpMetal` head casing, bezel and nozzle castings · `PumpGraphic` the baked atlas.
+Six materials, six draw calls. `PumpConcrete` slab · `PumpBody` the pole, the sign arm and light
+crossbar, the luminaire lenses · `PumpSkirt` the red pump bodies · `PumpTrim` the near-black parts
+(plinth, hoses, luminaire housings, **and the sign box**) · `PumpMetal` head casing, bezel and
+nozzle castings · `PumpGraphic` the baked atlas.
+
+**The sign box is black** (owner, 2026-08-23). Cream-on-cream gave the board no boundary at all
+against the pole and the lit faces — it needed the dark value to have an edge. The result is the
+layered look the reference has: black edge trim, white face, and a thin black rule *inside* the
+white that comes from the baked artwork rather than from geometry. The trim was resized to an even
+**45 mm all round** at the same time; at the old 1.46 × 0.60 it was 30 mm across and 37.5 mm up,
+which passes unnoticed in cream and reads as a mistake in black.
 
 **`PumpMetal` is the one split that needed arguing**, and pass 4 made it pay for itself twice. It is
 a thin rim at distance and the merge rule says don't — but a mid-grey band framing a warm cream dial
