@@ -1977,7 +1977,8 @@ window.__vs = vehicleState                    // dev handle — read live vehicl
 
 // FEAT-33: is the starter motor actually turning? Not the same as state === 'cranking' — the key
 // stays at START while it is held, so an over-crank against an already-running engine still has the
-// starter engaged. Drives both the crank audio level and the cluster's lit barrel, which must agree.
+// starter engaged. Drives the crank audio level. (The cluster needs no equivalent: it draws the key
+// at the START detent under exactly this condition, so the picture already says it.)
 const _starterEngaged = (ign) => !!ign && (ign.state === 'cranking' || ign.startHeld)
 window.__debris = debrisSystem                 // dev handle — debug.js projectile selector + clear button
 perfMark('init: physics engine ready')
@@ -5193,7 +5194,7 @@ function loop () {
   // FEAT-49: gauge cluster — every frame (needles must be smooth, unlike the 10 Hz text HUD),
   // hidden while the map is open, live in chase/hood/freecam alike. update() early-outs when hidden.
   gaugeCluster.setVisible(!map2d.isOpen())
-  gaugeCluster.setIgnition(keyPosition(vehicleState.ignition), _starterEngaged(vehicleState.ignition))
+  gaugeCluster.setIgnition(keyPosition(vehicleState.ignition))
   gaugeCluster.update(frameTime, vehicleState.velocity.length(), vehicleState.drivetrain?.engineRPM ?? 0)
 
   // feature/teleport: show the "teleport here" button only in free-cam + free-roam. Toggle on

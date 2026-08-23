@@ -53,6 +53,11 @@ const KEY_FASCIA_R = 12   // the silver escutcheon the key turns in
 const STEEL_HI = '#e4e4de'
 const STEEL    = '#b4b4ac'
 const STEEL_LO = '#6f6f68'
+// Vertical foreshortening of the dial plane — the whole isometric read in one number. Lower = the
+// dash is seen from further above, so a key pointing up flattens more against one pointing sideways.
+const ISO = 0.80
+const KEY_PLASTIC = '#242428'   // moulded plastic key body
+const KEY_BLADE   = '#8d8d94'   // the cut metal blade between body and barrel
 
 // Indent geometry (the recessed regions the dials sit in) and the housing margin around them.
 // The housing outline is NOT drawn as its own shape: it is the indent geometry dilated by
@@ -95,12 +100,12 @@ export class GaugeCluster {
     this._tempShown = 0
     this._odoMiles = 0
     this._visible = true
-    // FEAT-33 ignition: _keyTarget is the detent the key is being held at; _keyAngle chases it so
-    // the key SWEEPS between positions instead of teleporting (a quarter-second start would
-    // otherwise be a single-frame flicker at the START detent and easy to miss).
+    // FEAT-33 ignition. _keyPos is which of the three renderings to draw; _keyAngle chases
+    // _keyTarget so the key SWEEPS between 12 and 2 o'clock instead of teleporting (a
+    // quarter-second start would otherwise be a single-frame flicker at START and easy to miss).
+    this._keyPos = 'on'
     this._keyTarget = KEY_ANGLE.on
     this._keyAngle = KEY_ANGLE.on
-    this._cranking = false
 
     this._bg = document.createElement('canvas')
     this._bg.width = W * this._dpr
@@ -122,12 +127,18 @@ export class GaugeCluster {
   odometerMiles () { return this._odoMiles }
 
   /**
-   * FEAT-33: where the ignition key is. `pos` is 'off' | 'on' | 'start' (src/ignition.js
-   * keyPosition()); `cranking` lights the START tick while the starter is actually turning.
+   * FEAT-33: which of the three switch renderings to draw — 'off' | 'on' | 'start', straight from
+   * src/ignition.js keyPosition(). No second argument: 'start' happens exactly when the key is held
+   * against the spring, which is exactly when the starter is turning, so the position IS the tell.
    */
-  setIgnition (pos, cranking) {
-    this._keyTarget = KEY_ANGLE[pos] ?? KEY_ANGLE.on
-    this._cranking = !!cranking
+  setIgnition (pos) {
+    const next = KEY_ANGLE[pos] ? pos : 'on'
+    // Leaving OFF, the key was not on screen at all, so there is nothing to sweep FROM — snap to
+    // the new detent. Otherwise a start would animate the key up from 10 o'clock as if it had been
+    // sitting there, which is the one transition the three-rendering design is meant to avoid.
+    if (this._keyPos === 'off' && next !== 'off') this._keyAngle = KEY_ANGLE[next]
+    this._keyPos = next
+    this._keyTarget = KEY_ANGLE[next]
   }
 
   setVisible (v) {
@@ -501,73 +512,88 @@ export class GaugeCluster {
     ctx.fill()
   }
 
-  // FEAT-33: the key itself, drawn at the current (lagged) angle. NOT a needle — a key grip standing
-  // out of the escutcheon, which is what makes the switch read at a glance: you are looking at an
-  // object, not at an instrument pointer.
+  // FEAT-33: the ignition switch has THREE distinct renderings, not one shape swept through three
+  // angles (owner, 2026-08-22). Each state is a different picture, and that is what makes it
+  // readable at a glance rather than something you have to measure:
   //
-  // The "sticking out" read comes from two cheap tricks, no 3D:
-  //   1. A vertical squash applied BEFORE the rotation, so it is a fixed viewpoint rather than
-  //      something that spins with the key: the grip sweeps a slight ellipse, seen from a bit above.
-  //   2. The same silhouette drawn twice — once in near-black as the grip's THICKNESS, then the face
-  //      on top. THE OFFSET BETWEEN THEM IS IN SCREEN SPACE (always down-right), not in the key's
-  //      rotated frame: an extrusion that turns with the object reads as a smear, not as depth.
+  //   OFF     no key at all — a bare silver disc with a dark slot lying on the 10 o'clock axis.
+  //           An empty keyhole IS the "this truck is dead" read; nothing else has to say it.
+  //   START   the plastic key body, turned to 2 o'clock. Only ever seen while the key is held.
+  //   ON      the same key body at 12 o'clock — and it LOOKS different there, because the
+  //           projection foreshortens vertically (see ISO below), so a key pointing up reads
+  //           shorter and flatter than the same key pointing up-right. That is the perspective
+  //           change, and it falls out of the projection rather than being drawn twice.
+  //
+  // THE PROJECTION. The key turns in the plane of the dial, and we view that plane from slightly
+  // above, so screen_y = y · ISO. Applying that squash BEFORE the rotation is what makes it a fixed
+  // viewpoint — squash after and the foreshortening spins with the key, which reads as a wobble.
+  // Thickness is the silhouette drawn twice with the dark copy offset in SCREEN space (always down);
+  // offsetting it inside the key's rotated frame — the obvious way — reads as a smear, not depth.
   _drawKey (ctx) {
     const g = KEY
-    const draw = (ox, oy, fill) => {
+    if (this._keyPos === 'off') { this._drawKeyhole(ctx); return }
+
+    const draw = (oy, body, blade) => {
       ctx.save()
-      ctx.translate(g.cx + ox, g.cy + oy)
-      ctx.scale(1, 0.86)                 // viewpoint foreshortening — before rotate, see above
+      ctx.translate(g.cx, g.cy + oy)
+      ctx.scale(1, ISO)                  // viewpoint foreshortening — before rotate, see above
       ctx.rotate(this._keyAngle)
-      this._keyGrip(ctx, fill)
+      ctx.fillStyle = blade
+      ctx.fillRect(1.6, -1.0, 4.6, 2.0)                            // blade out of the barrel
+      ctx.fillStyle = body
+      const x = 5.6; const y = -4.0; const w = 9.4; const h = 8.0; const rr = 2.9
+      ctx.beginPath()
+      ctx.moveTo(x + rr, y)
+      ctx.arcTo(x + w, y, x + w, y + h, rr)
+      ctx.arcTo(x + w, y + h, x, y + h, rr)
+      ctx.arcTo(x, y + h, x, y, rr)
+      ctx.arcTo(x, y, x + w, y, rr)
+      ctx.closePath()
+      ctx.fill()
       ctx.restore()
     }
-    draw(0.8, 1.1, '#08080a')                                     // extruded thickness
-    draw(0, 0, this._cranking ? '#5e2820' : '#2a2a30')            // face, warmed while cranking
-    // Keyring hole punched through the grip, filled with the metal tone as if you can see the
-    // escutcheon through it. This one detail is what stops the silhouette reading as a dark blob.
+    // Thickness first, then the face on top of it. 2 px of extrusion, not 1 — at this size a
+    // one-pixel offset reads as a printing error rather than as a body standing off the metal.
+    draw(2.0, '#08080a', '#08080a')
+    draw(0, KEY_PLASTIC, KEY_BLADE)
+
+    // Details on the face only, in the same projected frame.
     ctx.save()
     ctx.translate(g.cx, g.cy)
-    ctx.scale(1, 0.86)
+    ctx.scale(1, ISO)
     ctx.rotate(this._keyAngle)
-    ctx.beginPath()
-    ctx.arc(10.9, 0, 1.85, 0, Math.PI * 2)
+    ctx.beginPath()                                                // keyring hole, punched through
+    ctx.arc(11.4, 0, 1.9, 0, Math.PI * 2)
     ctx.fillStyle = STEEL_HI
     ctx.fill()
-    ctx.strokeStyle = 'rgba(0,0,0,0.5)'
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)'
     ctx.lineWidth = 0.6
+    ctx.stroke()
+    ctx.strokeStyle = 'rgba(255,255,255,0.22)'                     // bevel along the moulding edge
+    ctx.lineWidth = 0.9
+    ctx.beginPath()
+    ctx.moveTo(7.4, -3.4)
+    ctx.lineTo(13.2, -3.4)
     ctx.stroke()
     ctx.restore()
-    // The barrel collar sits on the shank root: the key goes INTO the switch, not onto it. It is
-    // the crank tell-tale too — lit red while the starter turns, which at this size is the thing you
-    // actually notice from the corner of your eye.
-    ctx.beginPath()
-    ctx.arc(g.cx, g.cy, 2.0, 0, Math.PI * 2)
-    ctx.fillStyle = this._cranking ? RED : '#3a3a3e'
-    ctx.fill()
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)'
-    ctx.lineWidth = 0.8
-    ctx.stroke()
   }
 
-  // One key silhouette in the caller's already-rotated frame: a shank out of the barrel into a
-  // rounded grip. Stroked as well as filled so the dark key keeps a crisp edge against the metal.
-  _keyGrip (ctx, fill) {
-    ctx.fillStyle = fill
-    ctx.strokeStyle = 'rgba(0,0,0,0.75)'
-    ctx.lineWidth = 0.6
+  // OFF: the slot the key goes into, lying along the 10 o'clock axis — the direction the key points
+  // when it is in and turned off. Dark, with a light lower lip so it reads as cut INTO the metal.
+  _drawKeyhole (ctx) {
+    const g = KEY
+    ctx.save()
+    ctx.translate(g.cx, g.cy)
+    ctx.rotate(KEY_ANGLE.off)
+    ctx.fillStyle = 'rgba(255,255,255,0.30)'                       // lip catching the light below
     ctx.beginPath()
-    ctx.rect(1.4, -0.9, 4.2, 1.8)                                // shank
+    ctx.roundRect(-5.6, -1.1 + 0.9, 11.2, 2.2, 1.1)
     ctx.fill()
+    ctx.fillStyle = '#141416'
     ctx.beginPath()
-    const x = 5.0; const y = -3.6; const w = 8.8; const h = 7.2; const rr = 2.7
-    ctx.moveTo(x + rr, y)
-    ctx.arcTo(x + w, y, x + w, y + h, rr)
-    ctx.arcTo(x + w, y + h, x, y + h, rr)
-    ctx.arcTo(x, y + h, x, y, rr)
-    ctx.arcTo(x, y, x + w, y, rr)
-    ctx.closePath()
+    ctx.roundRect(-5.6, -1.1, 11.2, 2.2, 1.1)
     ctx.fill()
-    ctx.stroke()
+    ctx.restore()
   }
 
   // Six-digit drum, white on black; the ones digit rolls continuously with the fraction.
