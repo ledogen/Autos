@@ -34,12 +34,22 @@ for (const seed of [6, 20, 11]) {
   const runs = [...road._network.entries()].map(([k,e]) => ({ k, e,
     a: e.cellA?.join(','), b: e.cellB?.join(','),
     inBore: (s) => (e.tunnelSpans||[]).some(sp => s >= sp.s0 && s <= sp.s1) }))
-  let disjoint = 0, shared = 0, nearNode = 0, structural = 0, worst = null
+  let disjoint = 0, shared = 0, nearNode = 0, structural = 0, merged = 0, worst = null
   const report = []
   for (let i = 0; i < runs.length; i++) for (let j = i+1; j < runs.length; j++) {
     const A = runs[i], B = runs[j]
     const shareN = [A.a,A.b].filter(n => n===B.a || n===B.b)
     const pA = A.e.points, cA = A.e.polyCum, pB = B.e.points, cB = B.e.polyCum
+    // BUG-55: a merge's own extent is intended geometry — the ceded strand is coincident (the
+    // STRICT test already ignores it) but a TAPER BAND may properly cross its winner while
+    // parting. Same three-way sanction as capture-classify, checked in each run's own arc.
+    const sancOf = (run, partner) => {
+      const spans = []
+      for (const sp of run.e.offCurveSpans || []) if (sp.owner === partner.k) spans.push([sp.s0, sp.s1])
+      for (const sp of run.e.offCurveSpans || []) if ((partner.e.offCurveSpans || []).some(o => o.owner === sp.owner)) spans.push([sp.s0, sp.s1])
+      return spans
+    }
+    const sancA = sancOf(A, B), sancB = sancOf(B, A)
     for (let m = 1; m < pA.length; m++) for (let n = 1; n < pB.length; n++) {
       const X = seg(pA[m-1].x,pA[m-1].z,pA[m].x,pA[m].z, pB[n-1].x,pB[n-1].z,pB[n].x,pB[n].z)
       if (!X) continue
@@ -49,6 +59,8 @@ for (const seed of [6, 20, 11]) {
       const fromNode = Math.min(dA, dB)
       const gap = Math.abs(yA-yB)
       const inStruct = A.inBore(sA) || B.inBore(sB)
+      if (sancA.some(([s0, s1]) => sA >= s0 - 1 && sA <= s1 + 1)
+        || sancB.some(([s0, s1]) => sB >= s0 - 1 && sB <= s1 + 1)) { merged++; continue }  // inside a merge extent: the fix working
       if (shareN.length && fromNode < 40) { nearNode++; continue }   // at the shared junction: expected
       if (inStruct) { structural++; continue }                        // a bore passing under: not a defect
       if (shareN.length) shared++; else disjoint++
@@ -57,7 +69,7 @@ for (const seed of [6, 20, 11]) {
     }
   }
   report.sort((a,b) => a.gap - b.gap)
-  console.log(`\nseed ${seed}: ${runs.length} runs · REAL crossings ${report.length} (node-sharing ${shared}, disjoint ${disjoint}) · at-junction ${nearNode} (expected) · through a bore ${structural} (fine)`)
+  console.log(`\nseed ${seed}: ${runs.length} runs · REAL crossings ${report.length} (node-sharing ${shared}, disjoint ${disjoint}) · at-junction ${nearNode} (expected) · through a bore ${structural} (fine) · in a merge extent ${merged} (the fix working)`)
   for (const r of report.slice(0, 5))
     console.log(`   (${r.x.toFixed(0)}, ${r.z.toFixed(0)})  vertical gap ${r.gap.toFixed(1)} m · ${r.fromNode.toFixed(0)} m from the nearest run end · ${r.sh ? 'share a node' : 'DISJOINT'}`)
   const tight = report.filter(r => r.gap < 6).length

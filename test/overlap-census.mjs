@@ -118,8 +118,16 @@ for (const seed of [6, 20, 11, 67]) {
       // SURFACE-SMOOTH step at seed 6 (3328,-27) is two NO-shared-node runs 11 m apart with a
       // 31 m deck mismatch. Crossings between disjoint runs stay censused by crossing-census.
       const pA0 = A.e.points, cA0 = A.e.polyCum
+      // BUG-55 phase 4: disjoint pairs can MERGE now — the loser's ceded strand coincides with
+      // the winner and the taper bands part on purpose. Same three-way sanction as
+      // capture-classify: A ceding to B, B ceding to A (partner arcs), both ceding to one spine.
+      const sanc0 = []
+      for (const sp of A.e.offCurveSpans || []) if (sp.owner === B.k) sanc0.push([sp.s0, sp.s1])
+      for (const sp of B.e.offCurveSpans || []) if (sp.owner === A.k) sanc0.push([sp.ownerS0 ?? -1, sp.ownerS1 ?? -1])
+      for (const sp of A.e.offCurveSpans || []) if ((B.e.offCurveSpans || []).some(o => o.owner === sp.owner)) sanc0.push([sp.s0, sp.s1])
       let nearLen = 0, minSep = Infinity, maxDy = 0
       for (let m = 0; m < pA0.length; m++) {
+        if (sanc0.some(([s0, s1]) => cA0[m] >= s0 - 1 && cA0[m] <= s1 + 1)) continue
         const r = minDistTo(pA0[m].x, pA0[m].z, B.e.points)
         if (r.d < NEAR) {
           minSep = Math.min(minSep, r.d)
@@ -145,6 +153,8 @@ for (const seed of [6, 20, 11, 67]) {
       const spans = []
       for (const sp of run.e.offCurveSpans || []) if (sp.owner === partner.k) spans.push([sp.s0, sp.s1])
       for (const sp of partner.e.offCurveSpans || []) if (sp.owner === run.k) spans.push([sp.ownerS0 ?? -1, sp.ownerS1 ?? -1])
+      // both ceding to the SAME third run (a junction bundling several legs onto one spine)
+      for (const sp of run.e.offCurveSpans || []) if ((partner.e.offCurveSpans || []).some(o => o.owner === sp.owner)) spans.push([sp.s0, sp.s1])
       return spans
     }
     const sancA = sanction(A, B)
@@ -226,10 +236,10 @@ for (const seed of [6, 20, 11, 67]) {
   // BUG-55: the road-side pair census (route-vs-chord discovery on the margin-8 graph). discD is
   // the discovery-direction chord-to-route distance — the number censusChordM must stay above
   // over real conflicts for the census to keep seeing them.
-  const cen = road._v2Census
+  const cen = road._v2CensusStampResolved()
   if (cen) console.log(`   pair census: ${cen.regEdges} reg edges, ${cen.wideChords} wide chords, ${cen.candPairs} candidates, ${cen.walked} walked, ${cen.routedFresh} fresh routes · disjoint conflicts ${cen.disjoint.length} (${cen.disjoint.filter(d => d.tear).length} tears) · max conflict discD ${Math.max(0, ...(cen.disjoint.map(d => d.discD))).toFixed(0)} m (censusChordM ${RANGER_PARAMS.roadV2?.censusChordM ?? 300})`)
   for (const d of (cen?.disjoint || []))
-    console.log(`   CENSUS-DISJOINT  ${d.a} × ${d.b} · near ${d.nearLen.toFixed(0)} m, minSep ${d.minSep.toFixed(1)}, deck mismatch ${d.maxDy.toFixed(1)} m, discD ${d.discD.toFixed(0)} m${d.tear ? ' · TEAR' : ''}`)
+    console.log(`   CENSUS-DISJOINT  ${d.a} × ${d.b} · near ${d.nearLen.toFixed(0)} m, minSep ${d.minSep.toFixed(1)}, deck mismatch ${d.maxDy.toFixed(1)} m, discD ${d.discD.toFixed(0)} m${d.resolved ? ' · resolved (merged)' : d.tear ? ' · TEAR' : ''}`)
   const dist = overlapLens.filter(x => x > 1)
   dist.sort((a, b) => b - a)
   console.log(`   from-node overlap distribution (top 8): ${dist.slice(0, 8).map(x => x.toFixed(0)).join(', ')} m`)

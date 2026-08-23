@@ -3229,6 +3229,31 @@ export class RoadSystem {
         return out
     }
 
+    /**
+     * BUG-55 phase 4: stamp each disjoint census entry with whether the REGISTERED network
+     * resolved it. The census walks PURE samples before registration, so it cannot know — a
+     * merged pair still shows its raw conflict there, and without this flag the instruments
+     * cannot tell "left over" from "unseen". Resolved means a merge extent between the pair is
+     * in the network: either run's offCurveSpans naming the other, or both naming the same
+     * third run (bundled onto one spine — the same three-way sanction capture-classify uses).
+     * Read-time only — instruments call it AFTER the window has streamed; it never feeds
+     * planning. (Phase 5: a pair resolved by DELETION gets stamped from _v2Deleted here too.)
+     */
+    _v2CensusStampResolved() {
+        const cs = this._v2Census
+        if (!cs) return cs
+        const flip = (gk) => 'g:' + gk.slice(2).split(':').reverse().join(':')
+        const runOf = (gk) => this._network.get(gk) ?? this._network.get(flip(gk))
+        const names = (sp, gk) => sp.owner === gk || sp.owner === flip(gk)
+        for (const d of cs.disjoint) {
+            const offA = runOf(d.a)?.offCurveSpans || [], offB = runOf(d.b)?.offCurveSpans || []
+            d.resolved = offA.some((sp) => names(sp, d.b))
+                || offB.some((sp) => names(sp, d.a))
+                || offA.some((sp) => offB.some((o) => o.owner === sp.owner))
+        }
+        return cs
+    }
+
     // ── BUG-55: the bundle solve — negotiated fork decks ──────────────────────────────────────
     // The Wall-2/Wall-1 fix. Today's shipped merge solves each loser strand ALONE, pinned to the
     // winner's independently-solved deck at the fork — so a stacked pair can never reach it, and
