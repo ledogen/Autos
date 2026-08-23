@@ -274,131 +274,115 @@ can weigh rather than rediscover them:
 
 ---
 
-## CURRENT HANDOFF (2026-08-23) — phases 1–3 SHIPPED, phase 4 mid-diagnosis, phase 5 unstarted
+## CURRENT HANDOFF (2026-08-23, session 2) — ALL FIVE PHASES SHIPPED; what remains is owner acceptance
 
-Read this section INSTEAD of re-deriving. Code on `feature/corridor-router` (worktree
-`CarGame-corridor-router`, dev :3343): `2568d1a` (census) → `b6d4012` (bundle) → `1306eeb`
-(mid-span ON) → `bdd09f2` (phase-4 WIP). Docs here on main. A fuller session plan exists at
-`~/.claude/plans/sleepy-wondering-newell.md` (same machine only).
+Code on `feature/corridor-router` (worktree `CarGame-corridor-router`, dev :3343):
+`2568d1a` census → `b6d4012` bundle → `1306eeb` mid-span ON → `bdd09f2` phase-4 WIP →
+`6696445` phase 4 closed → `5f6d423` delete rung → `f28d90e` cleanup (map2d/poi/gate) →
+`3daadc5` dry-run built-ness. Docs here on main.
 
-### Owner rulings (2026-08-22/23, binding)
+### Owner rulings (2026-08-23 session 2, binding — added to the earlier set)
 
-- Acceptable resolutions per conflicting pair: **merge into one shared run** or **delete the
-  redundant edge**. NOT crossing→junction promotion, NOT reroute-away.
-- **Full redesign allowed** — but what shipped keeps the merge machinery and replaced only the
-  discovery + the solve topology. §5's 13 negative results all still stand untouched.
-- Junction pass is **NOT a prerequisite** (evidence below — Wall 1 died at plan level).
-- Checkpoints need NOT be byte-identical to `100dc29`: the bar is a connected network with no
-  innavigable roads.
+- **deleteDetourHops = 6** (slider "Delete Detour Cap", 0 disables). Chosen over 4 (fires on
+  nothing known) and 8 (also deletes seed-20's 2 km trunk at 7 hops).
+- **Victim = the LONGER member confirmed** (tie → lexicographic). The wanderer dies, the direct
+  connection survives.
+- **One-machinery-per-run stays STRICT** — a node-merge winner refuses the disjoint-loser role
+  even when the intervals don't overlap (seed-20's tear therefore resolves by slider or stays a
+  named decline; the drift class stays impossible by construction).
 
-### What shipped, with the measurements that justify it
+### Phase 4 (closed at `6696445`)
 
-**Phase 1 — pair census (`_v2PairCensus`), discovery anchored on the interval.**
-Chord-to-chord candidate discovery is DEAD — measured: blue-noise keeps disjoint chords ≥ 407 m
-apart while routes wander up to 657 m off their chords and land 0.3 m from each other. Discovery
-is **route-vs-chord**: each registering edge scans its routed polyline against every margin-8
-graph chord (`_degreeDrops` now carries that wide graph on its memo as `wide`); a partner whose
-own wander is under `roadV2.censusChordM` (300) is found, and only then routes. Cost: within
-noise (interleaved A/B, `perf-runs/bench-census-ab.mjs`, gitignored dir), 0–4 fresh partner
-routes/window. It immediately found a never-before-seen shape-E tear on seed 20 (148 m, minSep
-0.0, deck gap 13.2 m, partner UNREGISTERED — why every registered-only sweep missed it).
-**Discovery is asymmetric** (the (3328,−27) pair: 4 m one direction, 405 m the other) — that
-asymmetry became phase 4's role rule. Mid-span candidates now COUNT via a `midspanOff` decline
-when the flag is off. The conflict walk lives at module scope (`_conflictIntervalsXZ`).
+The (3328,−27) non-resolution was DIAGNOSED, not fixed — the planner declines correctly: pair 1
+declines 'taper' (65° fork on a 76 m interval, best swept R 2.1 m vs floor 6 at every band; too
+short for any shrink combo), pair 2 declines 'bore' (winner tunnel span clArc 499–659 exactly
+where the in-fork lands for every combo but [0.55,0], which then fails taper-out 5.8 vs 6.0 at a
+54° divergence). Both pairs share the 1867 m run `5,0,1:6,0,0` as their longer member — the
+delete rung's case. Instruments finished: overlap-census DISJOINT branch + node-sharing helper +
+crossing-census all carry the three-way offCurveSpans sanction (A→B, B→A, both→one spine);
+`_v2CensusStampResolved()` stamps census disjoint entries `resolved: 'merged'|'deleted'|false`
+at read time (the census walks pure pre-registration samples and cannot know).
 
-**Phase 2 — joint bundle solve (`profileSolveBundle` + `_v2BundleSolve`), Walls 1–2.**
-The joint DP folds each loser strand's cost-to-arrive-at-the-fork array (over the shared y-grid)
-into the winner's trunk DP at its fork station — fork decks are **negotiated** under the caps by
-the identical stepCost. The DP only negotiates: the winner then re-solves through the ordinary
-`_v2GradePts` ladder with the negotiated decks as interior pins (`profileSolve` gained
-`opts.pins`; pins snap to the nearest station — harmless, the strand re-pins to the winner's
-FINAL deck so no seam), and losers read the winner through `_v2WinnerView` (XZ from the pure
-sample, Y from the bundle — one authority, three readers). Membership is deliberately narrow so
-evaluation order can't matter: a winner that is itself a loser anywhere heads no bundle; a
-both-ends loser (two winners) keeps dictated decks. A member tries the negotiated band FIRST
-then falls back to the full ladder — **a hard band lock measurably lost a seed-11 merge; do not
-re-tighten it**. Declines ('pad'/'bundle', counted) fall back to the dictated merge: the status
-quo is the failure mode. Result: seed 3 (−3505,1181) merges its full 235 m (was 176/236);
-y-spread 0.000 confirmed (JUNCTION-AT-ROAD-GRADE worstErr 0).
+### Phase 5 (shipped `5f6d423` + `f28d90e` + `3daadc5`)
 
-**Phase 3 — `mergeMidSpan: true`, held safe by the arrival guard (Wall 1 dead).**
-`roadV2.mergePadArrivalMax` (0.12, slider "Pad Arrival Cap") checks every mid-span variant's
-FINAL solved arrival grade at each far node — bundled AND dictated. **Measured load-bearing in
-both directions**: cap at 0.24 reproduces the ticket's cliffs to the centimetre (237 cm seed 6
-at (877,921), 175 cm seed 7 at (−638,−7)); cap at 0.12 clears them completely. With the flag ON:
-road-smoothness seeds 6 and 7 report ZERO steps, lone-pine keeps only its booked 16 cm canary,
-census conflicts 14 (< the 15 baseline — seed 20's single-cross cleared by a mid-span merge),
-(−1091,2792) CLEAN with a 172 m interior ceded span. Mechanism, traced: the pad plane clamps to
-`roadJunctionPadMaxGrade` 0.07 while roads run 0.24; the cliff is (arrival − plane) × the ~14 m
-ring reach. This is NOT negative result #10 — that capped the strand's own max grade (lives in
-the junction-BLENDED profile, never fires); arrival at the node is the predictive quantity.
+**The delete rung.** `_v2ConflictPairs` (geometry-only per-edge conflict enumeration: route vs
+wide chords, node-sharing partners INCLUDED, 30 m junction THROAT TRIMMED off intervals — trim,
+never discard: discarding hid (932,793)'s 332 m overlap that merely begins 16 m from its node) →
+`_v2DeleteFor` nominates when a tear-grade pair ≥ 60 m has no merge plan THAT WOULD BUILD, then
+BFS with `_degreeDropSet`'s no-candidate-as-detour discipline applied lazily (vet path edges
+with the same geometry-only ≥60 m possible-victim test, re-BFS excluding failures) — every
+deletion reconnects through edges that cannot vanish, so simultaneous deletions never strand.
+The wide box grew margin 8→10 to hold the cap-6 reach (PERF-26 argument). `g.adj` deliberately
+untouched (consistently stale pins beat inconsistently fresh — method header has the argument).
 
-**Phase 4 (WIP, `bdd09f2`) — disjoint pairs.** `buildTaper`/`midSpanPair` extracted VERBATIM to
-`_v2BuildTaper`/`_v2MidSpanPair` (ctx carries constants + report tag + two hooks:
-`allIntervals` — a disjoint pair has no node-anchored interval[0] to skip — and `winnerCk` — the
-winner override). Extraction verified byte-identical at the (−1091,2792) reproducer.
-`_v2DisjointFor(g, drop, wide, c1, c2)` plans per registering edge: discovery from its own route
-vs wide chords; **roles by DISCOVERABILITY** — the winner must satisfy dist(winner.chord,
-loser.route) ≤ censusChordM so every loser-registering window finds the same winner, and
-winner-only windows need no plan (the winner is never modified); spine breaks ties among
-eligibles. The winner must be PLAIN: in the stream graph (registered spelling known), not a
-node-merge loser, heading no bundle — its registered profile is then exactly its pure sample and
-the loser's verbatim copy cannot drift. Wired into `_assembleGraphEdges` (node-merge → disjoint
-→ bundle-or-plain).
+Load-bearing subtleties, each measured in:
+- **Same-spine pairs count as planned** — both ceding to one winner is the junction bundle;
+  deleting a bundled leg measured an 87 m carve crease at the shared node's chunk.
+- **'angle' (>135°) never falls to delete** — recorded on the node-planner memo
+  (`out.declinedAngle`), read invariantly.
+- **A victim that wins any BUILDABLE plan declines 'role'.**
+- **"Planned" means A PLAN THAT BUILDS**: `_v2RegisterMidSpan` gained a `dry` mode (identical
+  walk and guards, no side effects, boolean result) because only a solved profile answers the
+  pad-arrival cap — (932,793)'s spec had six variants, all died at 19–20% > cap 12%, and the
+  doomed plan both shielded the pair and role-blocked its winner. End-anchored specs keep
+  spec-exists semantics (conservative; no mark is blocked on one) — booked follow-up.
+- **The 60 m substantiality floor is LOCKSTEP** between nomination and BFS vetting (deleted ⇒
+  possible-victim must hold). Without it, throat-overflow pairs blackballed every detour path.
+- Reporting: capture-classify prints "resolved by DELETING <key> (detour n hops)" from
+  `road._v2Deleted` (a mark over deleted tarmac never silently prints CLEAN); map2d
+  `_surfaceSlices` slices ceded spans like tunnel spans (absent-winner rule kept); poi.js
+  rejects lay-by candidates inside a ceded span (taper band stays eligible — the loser owns its
+  surface there); graph-topology re-baselined — (f) exempts merged-loser endpoints, (h) RETIRED
+  (tested a deleted cull flag), (j) has the three-way sanction.
 
-### THE OPEN ITEM: seed 6 (3328,−27) does not resolve yet
+### The eleven-mark scorecard (acceptance #1 evidence, all via capture-classify at `3daadc5`)
 
-Both census pairs at the mark still print `TEAR (unresolved)`. The planner gets past discovery
-(no `'winner'` skip in the tally) and declines inside `_v2MidSpanPair` under disjoint anchoring.
-Facts for the diagnosis: loser = `g:5,0,1:6,0,0` (1867 m, wander 649, NOT discoverable — 405 m);
-winner = `g:5,-1,1:4,0,0` (899 m, wander 152, discD 4 m); conflict = 240 m alongside + 4
-crossings, deck gap up to 31.2 m. Suspects in order: (a) `'room'` — headRoom/tailRoom < MINREG
-when the conflict interval reaches near a run end; (b) the interval itself — with `fromStart`
-anchoring and FLARE bridging over the 4 crossings the merged interval may exceed what MINSPAN
-shrink combos can place forks in; (c) `'taper'` — R floor at the crossing angles. Recipe: probe
-`_v2DisjointFor`'s loop for that pair (temporarily log which `continue` fires, or read
-`_v2MergeSkipWhy` for `disjoint`-tagged entries); note `_v2MergeSkip` counters ACCUMULATE across
-re-streams, read deltas not totals. Also still to do in phase 4: overlap-census's DISJOINT
-branch + crossing-census need the offCurveSpans sanction (+ the third-run sanction
-capture-classify has); `_v2PairCensus.disjoint` entries should carry a `resolved` flag so
-instruments distinguish "left over" from "unseen".
+- **8 CLEAN**: all seven seed-3 marks + seed-6 (−1091,2792).
+- **2 resolved by DELETION at the mark**: (932,793) — `g:1,1,2:2,1,0`, 4 hops (kills the origin
+  weave; a benign 24 m/0.4 m-deck near-node leftover remains) · (3328,−27) — `g:5,0,1:6,0,0`,
+  5 hops, one deletion clears BOTH tears.
+- **1 booked owner-judgment case** (two marks, same spot): the stacked pair
+  (−1710,1760)/(−1712,1743) keeps its 84 m merge-leftover at 0.6 m separation — merge is
+  partial at any pad cap (14.5 m vertical stack), deletion would STRAND (census: detour NONE).
 
-### Phase 5 (unstarted) — the delete rung + cleanup + acceptance
+### Verification (all at `3daadc5`)
 
-Per the approved plan: `_v2DeleteSet` in the order-free `_degreeDropSet` v3 shape, applied
-beside the degree drops in `_assembleGraphEdges` — reached only when the merge ladder is
-exhausted or the pair is unmergeable; **victim = the longer member** (owner to confirm; it keeps
-the direct connection), tie → lexicographic; a victim that wins any plan declines `'role'`;
-**`'angle'** (>135°) declines never fall through to delete** — those are hairpins the owner
-wants. Victim drops iff its endpoints reconnect within `deleteDetourHops` (4, + slider) in
-(settled graph − all candidates), BFS inside the margin-8 box — connectivity holds by
-construction. Plus: capture-classify must report "resolved by DELETING <victim> (detour <n>
-hops)" from a `_v2Deleted` list (a mark over deleted tarmac must not silently print CLEAN);
-map2d `_surfaceSlices` learns cededSpans (kills the double-stroke on shared roads); poi.js
-rejects a pad landing inside a ceded span (seed-pure ⇒ deterministic); graph-topology
-re-baselines per the FEAT-68 handoff's booked plan — (f) exempts merged losers, (h) retires
-(tests deleted cull machinery), (j) gains the ceded/offCurve sanction. Known hard cases the
-delete rung will meet: the stacked pair (−1710,1760) leaves 84 m at 0.6 m separation at ANY pad
-cap (not pad-limited; its census detour sim says dropping would STRAND — may end as an
-owner-accepted reason instead), and seed 11's small surfaced tear (minSep 1.5 over 40 m, detour
-NONE both ways — mid-span/accepted-reason territory, not delete).
+Census conflicts **4/1/4/2 = 11** (entry baseline 15, phase-4 baseline 14); seed-6's weave gone;
+one component per seed; y-spread 0.000. `npm run test:all` **45/50** — the five booked reds, two
+now improved inside: road-smoothness = lone-pine 16 cm canary only; graph-topology **7/9** —
+SURFACE-SMOOTH (the shape-E red — died with the (3328,−27) deletion) and FLAT-MERGES now green,
+(f)+(j) stay red DIAGNOSED (below). carve-mesh-smoothness 2/2 WITH deletions live. Origin
+deletions: seed 6 ×1, seed 7 ×2, seeds 20/11/67 ×0. Delete-rung cost, interleaved A/B:
+**+270–360 ms per origin build** (~7%; includes dry-run solves and the wider box) — vs the
+2.3–4.1 s budget this is above noise and honestly booked; consolidating the census walk with
+`_v2ConflictPairs` (two per-edge scans today) is the identified lever if it matters.
 
-### Traps discovered this session (add to §5's spirit — do not re-attempt)
+### Open items — all owner-side or booked follow-ups
 
-1. **Chord-to-chord discovery finds nothing** (min disjoint chordD 407 m > any sane threshold).
-2. **A hard negotiated-band lock loses merges** — negotiated-first-then-full-ladder.
-3. **`routedFresh` must count partner samples only** — the census runs before the node planner
-   and otherwise absorbs all its memo misses (~55/window, alarming and meaningless).
-4. **Wide-only edges must sample through the wide graph** (complete 1-rings ⇒ correct heading
-   pins); `_v2RunSample`'s memo key is graph-agnostic, so a g-clipped sample would poison it.
-5. **The winner-is-loser drift class is pre-existing and accepted** for node merges (winnerOk
-   guards overlap only); bundles and disjoint winners simply refuse those roles.
+1. **Owner drives it** (acceptance #7): map judgment + driven pass. Deleted-edge spots worth
+   eyeballing: (932,793) and (3328,−27); the seed-7 deletions at (−1650..−1315, 310..837) and
+   (−640..−247, −429..11).
+2. **The two hairpin stacks** — graph-topology (j)'s ONLY remaining violations:
+   `4,1,1|5,1,0 × 3,1,0|4,1,1` (153°) and `6,3,0|6,4,1 × 5,3,2|6,3,0` (138°), 1.2–1.3 m apart
+   mid-span. Real tears the 'angle' ruling protects from both merge and delete. Owner call:
+   accept as character, or carve out a rule.
+3. **The stacked pair's 84 m leftover** (above) — accept, or invent new machinery.
+4. **Seed-20's disjoint tear** — needs cap 7 (slider) or stays a named 'detour' decline.
+5. **(f) NODE-DEPARTURE bounds** (avg<22/worst<60 vs measured 28.4/106 over 24 endpoints):
+   predate chord-pin demotions; needs its own pass, not a fit-to-current loosening.
+6. Booked code follow-ups: dry-run for END-anchored specs (`_v2RegisterMerged`); the
+   census/`_v2ConflictPairs` scan consolidation (perf); disjoint both-to-same-spine planned
+  check (node case is measured, disjoint analog is not).
 
-### Verification state (2026-08-23, all at `bdd09f2`)
+### Traps discovered this session (append to the do-not-reattempt list)
 
-Census conflicts 6/1/4/3 = 14 (baseline 15; seed 67 −2 genuinely, seed 11 +2 surfaced
-pre-existing). road-smoothness: lone-pine 1×16 cm booked canary only. road-minradius 7.22 m
-PASS. invariance 5/5 · restream 3/3 · road-connectivity 6/6 · graph-topology = exactly the four
-booked reds (SURFACE-SMOOTH shape-E, NODE-DEPARTURE, CORRIDOR-CLEARANCE, CROSSINGS-CULLED),
-WINDOW-INVARIANT green. Builds 2.0–3.1 s headless (budget 2.3–4.1). `npm run test:all` NOT yet
-run this session — do it before the swap conversation.
+1. **Raw census tear thresholds nominate half the network** on node-sharing pairs — junction
+   throats have minSep ≈ 0 by construction. Trim 30 m, never discard the interval.
+2. **A conservative possible-victim test without the 60 m floor deadlocks the BFS** — every
+   throat-overflow pair blocks every path. Nomination and vetting must share one floor.
+3. **Plan-existence is NOT resolution** — a spec whose variants all die on apply guards must
+   neither shield its pair nor role-block its winner. Dry-run the walk; never re-guess the
+   solved profile at plan level (that is negative result #10's lesson from the other side).
+4. **Deleting a bundled leg tears the junction carve** (87 m second-diff) — same-spine pairs
+   are planned, full stop.
+5. **zsh does not word-split `$m`** — use `${=m}` in capture-classify sweep loops.
