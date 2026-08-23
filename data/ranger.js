@@ -502,6 +502,13 @@ export const RANGER_PARAMS = {
     // the first divergence and the flare is counted.
     mergeFlareM: 60,   // m — widest the pair may swing apart inside a merge
     mergeGapM: 200,    // m — longest flare the merge may bridge, measured along the run
+    // MID-SPAN merges (legs that part at the node and only run together far out) are built and
+    // measured but OFF by default: re-solving the loser's tail from the winner's deck changes its
+    // approach grade into its far node, and the junction pad there — which is not part of that
+    // solve — ends up sitting above the road it serves. Measured as collision cliffs of 1.75 m
+    // (seed 7) and 2.37 m (seed 6) about 14 m out from the node, which road-smoothness catches.
+    // Turn on to work the class; it needs the junction pass (naive meets at degree >= 3) first.
+    mergeMidSpan: false,
   },
 
   // roadSiteCandidates: seeded candidate sites PER cell before Poisson-disk thinning. >1 breaks the

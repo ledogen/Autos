@@ -2446,6 +2446,7 @@ export class RoadSystem {
                              // bounds the remaining conflicts.)
         const FORKWIN = 80   // m — arc window for locating the fork abreast on the loser
         const MINSPAN = 60   // m — a mid-span strand shorter than this is not worth two forks
+        const MIDSPAN_ON = C.mergeMidSpan !== false
         // Floor for the band's DENSE radius (see buildTaper — it measures the swept curve, not the
         // control polyline). Two numbers bound it: the ribbon FOLDS below 5.5 m (BUG-12, gated by
         // road-minradius), and the shipped network's own tightest corner measures 5.70 m. A floor
@@ -2764,7 +2765,7 @@ export class RoadSystem {
                 // is not reported. But the legs may still come back together further out: the
                 // owner's seed-6 marks part at the node, swing 82–121 m apart, and only then run
                 // 170–195 m dead parallel. That is a MID-SPAN merge, forked at both ends.
-                if (!maybeMidSpan(A, B, fA)) continue
+                if (!MIDSPAN_ON || !maybeMidSpan(A, B, fA)) continue
                 const mid = midSpanPair(A, B, conflictIntervals(A, B))
                 if (mid) pairs.push(mid)
                 continue
@@ -3670,57 +3671,71 @@ export class RoadSystem {
             // seam harness's single-.spline-per-tile comparison green by construction.
             const runWeight = points.length
 
-            // BUG-53: a trimmed run's ceded interval belongs to its winner — never slice it, or the
-            // duplicate ribbon z-fights the winner's. Phase-1 ceded regions are a contiguous prefix
-            // or suffix ending exactly at the fork vertex, so the kept range is one window.
-            let i0 = 0, i1 = points.length - 1
-            if (entry.cededSpans) {
-                const pc = entry.polyCum
-                for (const csp of entry.cededSpans) {
-                    if (!this._network.has(csp.owner)) continue   // fringe: the loser serves this span itself
-                    if (csp.s0 <= 1e-6) { while (i0 < i1 && pc[i0] < csp.s1 - 1e-6) i0++ }
-                    else { while (i1 > i0 && pc[i1] > csp.s0 + 1e-6) i1-- }
+            // BUG-53: a merged run's ceded interval belongs to its winner — never slice it, or the
+            // duplicate ribbon z-fights the winner's. A ceded span can sit anywhere in the run:
+            // node-anchored merges cede a prefix or a suffix, MID-SPAN merges cede a stretch out of
+            // the middle and keep the loser's own road on BOTH sides. So this builds a list of kept
+            // index ranges, not one window. (Assuming a single window is what silently deleted the
+            // ribbon past an interior ceded span, leaving its earthworks carved with no road on
+            // them — the carve reads _resolveRoadSurface, which had the interval right all along.)
+            const pc = entry.polyCum
+            let keep = [[0, points.length - 1]]
+            for (const csp of entry.cededSpans || []) {
+                if (!this._network.has(csp.owner)) continue   // fringe: the loser serves this span itself
+                const next = []
+                for (const [a0, a1] of keep) {
+                    let lo = a0
+                    while (lo <= a1 && pc[lo] < csp.s0 - 1e-6) lo++
+                    let hi = a1
+                    while (hi >= a0 && pc[hi] > csp.s1 + 1e-6) hi--
+                    // [a0..lo-1] survives below the span, [hi+1..a1] above it
+                    if (lo - 1 - a0 >= 1) next.push([a0, lo - 1])
+                    if (a1 - (hi + 1) >= 1) next.push([hi + 1, a1])
                 }
-                if (i1 - i0 < 1) continue
+                keep = next
             }
 
             // Walk the polyline, cutting at every x/z integer-multiple-of-S boundary crossing.
             // `current` accumulates the active sub-polyline; on a cut we push the boundary point to
             // BOTH the closing sub-polyline and the new one (shared C0 point).
-            let current = [points[i0].clone()]
-            // BUG-10 camber continuity: track cumulative XZ run arc-length so each slice records the
-            // run-arc at its endpoints. XZ metric matches _buildCamberProfile's arcPos. Without this,
-            // arcSOffset defaulted to 0 and camber sawtoothed back to the run start at every tile seam.
-            let runArcAtA = (entry.polyCum ? entry.polyCum[i0] : 0) - arcOrigin   // run-arc at points[i-1] (owner-origined)
-            let sliceStartArc = runArcAtA    // run-arc at current[0] (owner-origined)
-            const flush = (sliceEndArc) => {
-                if (current.length >= 2) this._assignSlice(current, runKey, runWeight, sliceStartArc, sliceEndArc)
-                // start the next sub-polyline at the same boundary point we just closed on (shared)
-            }
-            for (let i = i0 + 1; i <= i1; i++) {
-                const a = points[i - 1], b = points[i]
-                const segLen = Math.hypot(b.x - a.x, b.z - a.z)  // XZ segment length (matches camber arcPos)
-                // Collect all boundary crossings along segment a→b, ordered by parametric t∈(0,1).
-                const crossings = []
-                this._collectCrossings(a.x, b.x, S, (t) => crossings.push(t))
-                this._collectCrossings(a.z, b.z, S, (t) => crossings.push(t))
-                crossings.sort((p, q) => p - q)
-                let prevT = 0
-                for (const t of crossings) {
-                    if (t <= 1e-9 || t >= 1 - 1e-9) continue        // skip endpoints (no zero-length cut)
-                    if (t <= prevT + 1e-9) continue                  // coincident crossings (corner) → one cut
-                    const cp = _lerpVec3(a, b, t)
-                    current.push(cp.clone())                          // close current sub-polyline ON the boundary
-                    const cpArc = runArcAtA + segLen * t
-                    flush(cpArc)
-                    current = [cp.clone()]                            // next sub-polyline STARTS on the same point (C0)
-                    sliceStartArc = cpArc
-                    prevT = t
+            for (const [i0, i1] of keep) {
+                if (i1 - i0 < 1) continue
+                let current = [points[i0].clone()]
+                // BUG-10 camber continuity: track cumulative XZ run arc-length so each slice records
+                // the run-arc at its endpoints. XZ metric matches _buildCamberProfile's arcPos.
+                // Without this, arcSOffset defaulted to 0 and camber sawtoothed back to the run start
+                // at every tile seam.
+                let runArcAtA = (entry.polyCum ? entry.polyCum[i0] : 0) - arcOrigin   // run-arc at points[i-1]
+                let sliceStartArc = runArcAtA    // run-arc at current[0] (owner-origined)
+                const flush = (sliceEndArc) => {
+                    if (current.length >= 2) this._assignSlice(current, runKey, runWeight, sliceStartArc, sliceEndArc)
+                    // start the next sub-polyline at the same boundary point we just closed on
                 }
-                current.push(b.clone())
-                runArcAtA += segLen
+                for (let i = i0 + 1; i <= i1; i++) {
+                    const a = points[i - 1], b = points[i]
+                    const segLen = Math.hypot(b.x - a.x, b.z - a.z)  // XZ segment length (matches camber arcPos)
+                    // Collect all boundary crossings along segment a→b, ordered by parametric t∈(0,1).
+                    const crossings = []
+                    this._collectCrossings(a.x, b.x, S, (t) => crossings.push(t))
+                    this._collectCrossings(a.z, b.z, S, (t) => crossings.push(t))
+                    crossings.sort((p2, q) => p2 - q)
+                    let prevT = 0
+                    for (const t of crossings) {
+                        if (t <= 1e-9 || t >= 1 - 1e-9) continue        // skip endpoints (no zero-length cut)
+                        if (t <= prevT + 1e-9) continue                  // coincident crossings (corner) → one cut
+                        const cp = _lerpVec3(a, b, t)
+                        current.push(cp.clone())                          // close current sub-polyline ON the boundary
+                        const cpArc = runArcAtA + segLen * t
+                        flush(cpArc)
+                        current = [cp.clone()]                            // next sub-polyline STARTS on the same point (C0)
+                        sliceStartArc = cpArc
+                        prevT = t
+                    }
+                    current.push(b.clone())
+                    runArcAtA += segLen
+                }
+                flush(runArcAtA)  // trailing slice of this range
             }
-            flush(runArcAtA)  // trailing slice ends at the run's total arc
         }
 
         this._slicedFrom = this._network
@@ -4534,14 +4549,15 @@ export class RoadSystem {
             // the winner's course verbatim, so serving them keeps the surface window-invariant.
             const neC = this._network.get(runKey)
             if (neC && neC.cededSpans) {
-                // The exclusion ends exactly at the fork vertex. Past it lies the TAPER BAND, which
-                // is the loser's own road — both providers are live across it and the resolver's
-                // rival cross-fade smooths the ownership flip on real geometry. (Before the taper
-                // existed this boundary was a hard corner and needed a 20 m fudge to stop it
-                // reading as a 33 cm step; the band replaced the fudge.)
+                // The exclusion ends exactly at the ceded boundary. NEGATIVE RESULT (measured
+                // 2026-08-22): extending it past the fork the way the pre-taper code did makes
+                // things far WORSE (steps up to 489 cm), because past the fork the loser's taper
+                // band is the only road there — the winner has pulled away — so excluding the loser
+                // leaves nobody owning the surface and the terrain reverts to raw under it.
                 const aC = pr.arcS + (neC.arcOrigin ?? 0)
                 for (const csp of neC.cededSpans) {
-                    if (aC >= csp.s0 - 0.5 && aC <= csp.s1 + 0.5) {
+                    const lo2 = csp.s0 - 0.5, hi2 = csp.s1 + 0.5
+                    if (aC >= lo2 && aC <= hi2) {
                         if (this._network.has(csp.owner)) return
                         break
                     }
