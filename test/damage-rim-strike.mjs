@@ -95,7 +95,10 @@ console.log('\n§3 nothing but a core contact can bend a rim')
     // Cycle the bump stops so they bank real landings rather than resting on them (a steady load
     // deliberately never banks — see the decay rule).
     const on = (i % 250) < 8
-    for (let k = 0; k < 4; k++) vs.bumpForce[k] = on ? 20000 : 0
+    // Well past the alignment floor: the point of this line is that the OTHER tracks all move, so
+    // the rim staying pristine is a real result and not an inert state. The floor rose with the
+    // progressive carcass (18 -> 60 kN), so 20 kN no longer reaches alignment.
+    for (let k = 0; k < 4; k++) vs.bumpForce[k] = on ? 120000 : 0
     d.step(vs, P, DT)
   }
   ok(d.get('wheelFL') === 1, 'a minute of max cornering load, repeated hard bottoming and full wheelspin bends no rim')
