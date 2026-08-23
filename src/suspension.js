@@ -528,8 +528,19 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         // It scales the LINEAR term only — the progressive `carcass` term stays, because a flat tire
         // still stacks up against its rim, and that is what stops the wheel sinking through the road.
         const rate = params._tireRateScale ? params._tireRateScale[i] : 1
+        // The rate scales the AIR SPRING only, never the bottoming term. Those are two different
+        // structures: the air is what a puncture lets out, and the carcass stacking against the rim
+        // is what is left when it is gone. Scaling both made a flat tire uniformly soft, so it never
+        // generated a large force at ANY depth — and since rim load is the force past full
+        // compression, a flat rim came out SAFER than an inflated one. Backwards, and the owner
+        // caught it: with no air to absorb the hit, the load goes straight to the rim.
+        //
+        // Split like this a flat tire is limp under its own load and then goes rigid the moment the
+        // rubber is squashed out — metal on road — which is exactly the failure being modelled.
+        const airTerm  = params.tireStiffness * rate * c.depth
+        const bottomTerm = params.tireStiffness * c.depth * (carcass - 1)
         const tireFnAtContact = Math.max(0,
-          params.tireStiffness * rate * c.depth * carcass + params.tireDamping * rate * compressionVel
+          airTerm + bottomTerm + params.tireDamping * rate * compressionVel
         ) * env
 
         // RIM CONTACT from the analytic path. Depth is measured from the tire's OUTER radius, so
@@ -547,9 +558,18 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         // different measurements — the core exchanges only what a rigid pinch transmits, this is
         // the whole squashed-carcass load past full compression. So they are published separately
         // and carry their own yield thresholds (rimYieldMult vs rimYieldRoadMult in damage.js).
+        //
+        // The reference is THIS tire's carcass, not a healthy one — `rate` belongs in it. A flat
+        // tire carries almost nothing, so almost the whole load past the band goes straight into
+        // the rim, which is the point of a flat: there is no air left to absorb it. Subtracting a
+        // HEALTHY carcass's reference from a flat tire's force made the residual deeply negative
+        // and reported no rim load at all, so a flat rim was SAFER than an inflated one — exactly
+        // backwards (owner, 2026-08-23).
         if (vehicleState.rimForceRoad && c.depth > WHEEL_SOFT_BAND) {
           const bandNorm = Math.min(0.98, WHEEL_SOFT_BAND / sidewall)
-          const atBand = params.tireStiffness * WHEEL_SOFT_BAND / (1 - bandNorm * bandNorm)
+          // The reference is what this tire's AIR carries at full compression — for a flat that is
+          // almost nothing, so almost the whole load past the band is rim load.
+          const atBand = params.tireStiffness * rate * WHEEL_SOFT_BAND / (1 - bandNorm * bandNorm)
           const residual = tireFnAtContact - atBand
           if (residual > vehicleState.rimForceRoad[i]) vehicleState.rimForceRoad[i] = residual
         }
