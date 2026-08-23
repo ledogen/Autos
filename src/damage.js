@@ -205,7 +205,12 @@ export const DAMAGE_PARAMS = {
   // Measured on the lab ramp: a 30 mph landing costs the front axle ~3% (about 32 landings), a
   // 40 mph landing ~6% (about 16). durSpring no longer applies to this track — the curve IS the
   // calibration — but the parts durability multiplier and the wear-speed slider still do.
-  springForceFloor: 3000,    // N — below this, bump-stop contact costs nothing at all
+  // No-harm floor, PER AXLE. The front takes noticeably more bump-stop force than the rear on any
+  // landing — the truck lands nose-first and the front carries more static load — so a single floor
+  // meant the front wore faster on every ordinary bump. Raising the front's floor is the honest
+  // knob for that: it is a statement about which hits are harmless, not a fudge on the rate.
+  springForceFloorFront: 5000,  // N (owner, 2026-08-23: "up a little")
+  springForceFloorRear:  3000,  // N — unchanged
   // RESCALED 2026-08-22 for the progressive tire carcass. A stiff tire transmits far more into the
   // stops than the old linear one did: a 2 m drop measured 75.6 kN of bump-stop force where a 4 m
   // drop used to measure 15. At the old 85 kN a 2 m drop destroyed the springs outright.
@@ -893,10 +898,11 @@ export class DamageModel {
    */
   _landBumpStop (corner, peakN) {
     const P = DAMAGE_PARAMS
-    if (peakN <= P.springForceFloor) return
+    const floorN = corner < 2 ? P.springForceFloorFront : P.springForceFloorRear
+    if (peakN <= floorN) return
 
     // Spring: square law between the no-harm floor and the one-hit-kills force.
-    const t = (peakN - P.springForceFloor) / (P.springBumpFullN - P.springForceFloor)
+    const t = (peakN - floorN) / (P.springBumpFullN - floorN)
     const dmg = Math.pow(Math.max(0, t), P.springBumpExp)
     const id = corner < 2 ? 'springFront' : 'springRear'
     // durability 1 = the insult IS the damage fraction, the same idiom applyImpact uses. There is
@@ -1058,10 +1064,11 @@ export class DamageModel {
         // Banked on decay as well as release, for the same reason as the rim strike: a truck that
         // settles onto its stops and stays there would otherwise never bank the landing that put
         // it there. A steady resting load does not decay, so it is never banked twice.
-        if (peak > P.springForceFloor && (f <= P.springForceFloor || f < peak * P.eventDecayFrac)) {
+        const floorN = i < 2 ? P.springForceFloorFront : P.springForceFloorRear
+        if (peak > floorN && (f <= floorN || f < peak * P.eventDecayFrac)) {
           this._landBumpStop(i, peak)
           this._bumpPeak[i] = 0
-        } else if (f <= P.springForceFloor) {
+        } else if (f <= floorN) {
           this._bumpPeak[i] = 0
         }
       }

@@ -46,10 +46,21 @@ console.log('§1 a bump-stop hit is priced on its PEAK, not on how long it laste
 
 console.log('\n§2 the floor is absolute, and the curve is square')
 {
-  const under = fresh(); bump(under, D.springForceFloor - 1)
-  ok(under.get('springFront') === 1, `below the ${D.springForceFloor / 1000} kN floor a stop costs nothing at all`)
+  const under = fresh(); bump(under, D.springForceFloorFront - 1)
+  ok(under.get('springFront') === 1, `below the ${D.springForceFloorFront / 1000} kN FRONT floor a stop costs nothing at all`)
+  // The floor is PER AXLE (owner, 2026-08-23). The truck lands nose-first and the front carries more
+  // static load, so one shared floor made the front wear faster on every ordinary bump; the front's
+  // is now higher, which is a statement about which hits are harmless rather than a rate fudge.
+  ok(D.springForceFloorFront > D.springForceFloorRear, 'the front floor sits above the rear')
+  {
+    const mid = (D.springForceFloorFront + D.springForceFloorRear) / 2
+    const fr = fresh(); bump(fr, mid, 0)      // front-left
+    const rr = fresh(); bump(rr, mid, 2)      // rear-left
+    ok(fr.get('springFront') === 1 && rr.get('springRear') < 1,
+      `a ${(mid / 1000).toFixed(0)} kN hit is free at the front and costs the rear — the axles have their own floors`)
+  }
 
-  const f = D.springForceFloor
+  const f = D.springForceFloorFront
   const a = fresh(); bump(a, f + 10000)
   const b = fresh(); bump(b, f + 20000)
   const ratio = (1 - b.get('springFront')) / (1 - a.get('springFront'))
@@ -114,7 +125,7 @@ console.log('\n§5 the drop anchors, re-measured after the progressive tire carc
     ok(lost >= lo && lost <= hi, `...within the intended ${lo}-${hi}% band`)
   }
   // The no-harm floor still holds at the bottom: a gentle landing must be free.
-  ok(fresh().get('springFront') === 1 && (() => { const d = fresh(); bump(d, D.springForceFloor - 1); return d.get('springFront') === 1 })(),
+  ok(fresh().get('springFront') === 1 && (() => { const d = fresh(); bump(d, D.springForceFloorFront - 1); return d.get('springFront') === 1 })(),
     'a bump-stop touch below the floor still costs nothing')
 }
 

@@ -227,7 +227,8 @@ export class DamageHUD {
     out.push('<div class="dh-sig"><span>&nbsp;</span><span>FL</span><span>FR</span><span>RL</span><span>RR</span></div>')
     out.push(`<div class="dh-sig"><span>slip m/s</span>${corner(vs.slipVel, P.tireSlipFloor, 2)}</div>`)
     out.push(`<div class="dh-sig"><span>bump kN</span>${[0, 1, 2, 3].map(i =>
-      fmt(Math.abs(vs.bumpForce?.[i] || 0) / 1000, P.springForceFloor / 1000, 1)).join('')}</div>`)
+      fmt(Math.abs(vs.bumpForce?.[i] || 0) / 1000,
+        (i < 2 ? P.springForceFloorFront : P.springForceFloorRear) / 1000, 1)).join('')}</div>`)
     out.push(`<div class="dh-sig"><span>strut m/s</span>${corner(vs.strutCompVel, P.damperVelFloor, 2)}</div>`)
     // Rim-core contact impulse, PEAK-HELD. A strike lasts a couple of physics steps and this pane
     // redraws at 10 Hz, so the instantaneous value is almost never the one you want to read — the
@@ -238,7 +239,7 @@ export class DamageHUD {
       fmt(this._rimHold[i] / 1000, trip / 1000, 1)).join('')}</div>`)
     out.push(`<div class="dh-sig"><span>rim/road kN</span>${[0, 1, 2, 3].map(i =>
       fmt(this._roadHold[i] / 1000, tripRoad / 1000, 0)).join('')}</div>`)
-    out.push(`<div class="dh-note">floors — slip ${P.tireSlipFloor} m/s · bump ${(P.springForceFloor / 1000).toFixed(0)} kN`
+    out.push(`<div class="dh-note">floors — slip ${P.tireSlipFloor} m/s · bump ${(P.springForceFloorFront / 1000).toFixed(0)}/${(P.springForceFloorRear / 1000).toFixed(0)} kN F/R`
       + ` (align ${(P.alignBumpFloorN / 1000).toFixed(0)} kN) · strut ${P.damperVelFloor} m/s`
       + ` · rim yield — rock ${(trip / 1000).toFixed(1)} kN on the core, road ${(tripRoad / 1000).toFixed(0)} kN past full tire compression`
       + ` (peaks held ${HOLD_S}s). Below yield the rim springs back.</div>`)
