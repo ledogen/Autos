@@ -509,6 +509,17 @@ export const RANGER_PARAMS = {
     // (seed 7) and 2.37 m (seed 6) about 14 m out from the node, which road-smoothness catches.
     // Turn on to work the class; it needs the junction pass (naive meets at degree >= 3) first.
     mergeMidSpan: false,
+    // BUG-55 pair census: an edge is a CANDIDATE conflict partner of a registering edge when its
+    // node-to-node CHORD comes within this of the registering edge's ROUTE polyline. Chord-to-
+    // chord was measured useless (blue-noise keeps chords >= 407 m apart while routes wander up
+    // to 657 m off their chords and land 0.3 m from each other — the seed-6 (3328,-27) tear);
+    // chord-to-ROUTE catches a conflict whenever the partner's own wander is under this bound,
+    // measured 0-4 fresh partner routes per window at 300. A pair BOTH of whose members wander
+    // beyond this is blind to the census — identically so in every window (the test is a pure fn
+    // of one route + one chord), so it is a counted coverage bound, never a tear risk.
+    // overlap-census reports each real conflict's best-direction chord-to-route distance so this
+    // stays measurably above the max.
+    censusChordM: 300,
   },
 
   // roadSiteCandidates: seeded candidate sites PER cell before Poisson-disk thinning. >1 breaks the

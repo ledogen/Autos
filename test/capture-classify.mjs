@@ -67,6 +67,10 @@ const atMark = runs
 console.log(`\n#### seed ${SEED}  mark (${MX}, ${MZ})  — ${runs.length} runs in the window, ${atMark.length} within ${LOOK} m`)
 console.log(`     merges applied: ${road._v2Merges || 0} · guard skips: ${JSON.stringify(road._v2MergeSkip || {})}`)
 for (const why of road._v2MergeSkipWhy || []) console.log(`       skipped  ${why}`)
+// BUG-55: the pair census's disjoint findings (pairs sharing NO node — invisible to the per-node
+// planner). Phase 1 counts them; the resolution ladder lands on them later.
+for (const d of road._v2Census?.disjoint || [])
+  console.log(`     census disjoint: ${d.a} × ${d.b} · near ${d.nearLen.toFixed(0)} m, minSep ${d.minSep.toFixed(1)}, deck gap ${d.maxDy.toFixed(1)} m${d.tear ? ' · TEAR (unresolved)' : ''}`)
 for (const o of atMark) {
   const ceded = (o.r.e.cededSpans || []).map((s) => `${s.s0.toFixed(0)}–${s.s1.toFixed(0)} m to ${s.owner}`)
   console.log(`     ${o.r.k}  ${o.r.len.toFixed(0)} m · ${o.hit.d.toFixed(0)} m from mark` +

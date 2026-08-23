@@ -333,6 +333,65 @@ function _polyTangentAtCum(pts, polyCum, cum, fwd) {
 }
 
 /**
+ * BUG-55 pair census: min XZ distance between two segments (0 when they properly cross). Used to
+ * test node-to-node CHORDS for candidate conflict partnership — cheap, and a pure function of the
+ * site positions, so the candidate set is identical from every window.
+ */
+function _segSegDistXZ(a, b, c, d) {
+    const d1x = b.x - a.x, d1z = b.z - a.z, d2x = d.x - c.x, d2z = d.z - c.z
+    const den = d1x * d2z - d1z * d2x
+    if (Math.abs(den) > 1e-12) {
+        const t = ((c.x - a.x) * d2z - (c.z - a.z) * d2x) / den
+        const u = ((c.x - a.x) * d1z - (c.z - a.z) * d1x) / den
+        if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return 0
+    }
+    const pt = (px, pz, sx, sz, ex, ez) => {
+        const vx = ex - sx, vz = ez - sz
+        const l2 = vx * vx + vz * vz
+        const tt = l2 > 1e-12 ? Math.max(0, Math.min(1, ((px - sx) * vx + (pz - sz) * vz) / l2)) : 0
+        return Math.hypot(px - (sx + tt * vx), pz - (sz + tt * vz))
+    }
+    return Math.min(pt(a.x, a.z, c.x, c.z, d.x, d.z), pt(b.x, b.z, c.x, c.z, d.x, d.z),
+                    pt(c.x, c.z, a.x, a.z, b.x, b.z), pt(d.x, d.z, a.x, a.z, b.x, b.z))
+}
+
+/**
+ * BUG-55: the conflict walk, anchored on the INTERVAL rather than a node. WHERE do P and Q stay
+ * one road? Every maximal interval in which P's samples sit within PROX of Q's polyline, each
+ * already extended across its FLARES (a stretch where they swing apart and come back — one road
+ * with a bulge, not two roads going different places). Intervals are in P's arc, measured from
+ * P's start when `fromStart`, else from its end — the node-anchored planner passes its
+ * node-at-start flag so interval [0] starts at the shared node exactly as before; the pair census
+ * walks disjoint pairs with `fromStart` true. `onFlare` fires when a flare exceeds the bound
+ * (genuinely two roads) so the planner's skip-and-count telemetry stays attached.
+ */
+function _conflictIntervalsXZ(PS, fromStart, QS, PROX, GAPM, FLARE, onFlare) {
+    const n = PS.pts.length
+    const idx = (k) => (fromStart ? k : n - 1 - k)
+    const sepAt = (k) => _nearestOnPolyXZ(PS.pts[idx(k)].x, PS.pts[idx(k)].z, QS.pts, QS.polyCum).d
+    const arcAt = (k) => (fromStart ? PS.polyCum[idx(k)] : PS.L - PS.polyCum[idx(k)])
+    const out = []
+    let k = 0
+    while (k < n) {
+        while (k < n && sepAt(k) > PROX) k++
+        if (k >= n) break
+        const s0 = arcAt(k)
+        let end = arcAt(k)
+        while (k < n && sepAt(k) <= PROX) { end = arcAt(k); k++ }
+        for (;;) {
+            let j = k, flare = 0, sp2 = Infinity
+            while (j < n && (sp2 = sepAt(j)) > PROX && arcAt(j) - end <= GAPM) { flare = Math.max(flare, sp2); j++ }
+            if (j >= n || sp2 > PROX) break             // parted for good
+            if (flare > FLARE) { if (onFlare) onFlare(); break } // genuinely two roads
+            while (j < n && sepAt(j) <= PROX) { end = arcAt(j); j++ }
+            k = j
+        }
+        out.push({ s0, s1: end })
+    }
+    return out
+}
+
+/**
  * Allocating linear interpolation between two Vector3 (used at SLICE time, not query cadence —
  * slicing is a one-shot per re-stream, so the allocation here is not on the hot query path).
  * @param {THREE.Vector3} a
@@ -2170,9 +2229,13 @@ export class RoadSystem {
     // PERF-26: the margin is roadGraphMargin + degreeDetourHops + 1, because _degreeDropSet's
     // Phase-2 BFS reaches at most roadGraphDegreeDetourHops (4) — that box already contains the
     // detour neighbourhood of every in-window candidate, which is the whole window-invariance
-    // argument; a wider box cannot change an in-window decision, only cost more. (The wider `dg`
-    // graph this used to also carry — margin roadGraphCullMaxHops — died with the crossing and
-    // clearance culls in FEAT-68; it was the only consumer.)
+    // argument; a wider box cannot change an in-window decision, only cost more.
+    //
+    // BUG-55: the entry also carries that same wide graph as `wide` — the pair census scans its
+    // chords against each registering edge's ROUTE for conflict partners that share no node
+    // (shape E). A discoverable partner's chord lies within censusChordM of a route that stays
+    // near the band, comfortably inside this box. One build, two readers; the census inherits
+    // the identical invariance argument.
     _degreeDrops(mx0, mx1, mz0, mz1) {
         const sig = `${mx0}:${mx1}:${mz0}:${mz1}`
         if (!this._degreeDropsMemo || this._degreeDropsMemo.rev !== this._networkRev)
@@ -2182,9 +2245,8 @@ export class RoadSystem {
         if (hit) return hit
         const gMargin = this._params?.roadGraphMargin ?? 3
         const dropMargin = gMargin + (this._params?.roadGraphDegreeDetourHops ?? 4) + 1
-        const entry = {
-            drop: this._degreeDropSet(this._buildUrquhart(mx0, mx1, mz0, mz1, false, dropMargin)),
-        }
+        const wide = this._buildUrquhart(mx0, mx1, mz0, mz1, false, dropMargin)
+        const entry = { drop: this._degreeDropSet(wide), wide }
         if (memo.size > 6) memo.clear()   // warm/stream/spawn windows alternate — keep a handful
         memo.set(sig, entry)
         return entry
@@ -2562,31 +2624,10 @@ export class RoadSystem {
             }
             return false
         }
-        const conflictIntervals = (P, Q) => {
-            const n = P.S.pts.length
-            const idx = (k) => (P.nodeAtStart ? k : n - 1 - k)
-            const sepAt = (k) => _nearestOnPolyXZ(P.S.pts[idx(k)].x, P.S.pts[idx(k)].z, Q.S.pts, Q.S.polyCum).d
-            const arcAt = (k) => fromNode(P, P.S.polyCum[idx(k)])
-            const out = []
-            let k = 0
-            while (k < n) {
-                while (k < n && sepAt(k) > PROX) k++
-                if (k >= n) break
-                const s0 = arcAt(k)
-                let end = arcAt(k)
-                while (k < n && sepAt(k) <= PROX) { end = arcAt(k); k++ }
-                for (;;) {
-                    let j = k, flare = 0, sp2 = Infinity
-                    while (j < n && (sp2 = sepAt(j)) > PROX && arcAt(j) - end <= GAPM) { flare = Math.max(flare, sp2); j++ }
-                    if (j >= n || sp2 > PROX) break                            // parted for good
-                    if (flare > FLARE) { this._v2MergeSkipped('flare'); break } // genuinely two roads
-                    while (j < n && sepAt(j) <= PROX) { end = arcAt(j); j++ }
-                    k = j
-                }
-                out.push({ s0, s1: end })
-            }
-            return out
-        }
+        // BUG-55: the walk itself lives at module scope (_conflictIntervalsXZ) so the pair census
+        // can run it on DISJOINT pairs too; anchored here at this node, exactly as before.
+        const conflictIntervals = (P, Q) =>
+            _conflictIntervalsXZ(P.S, P.nodeAtStart, Q.S, PROX, GAPM, FLARE, () => this._v2MergeSkipped('flare'))
 
         // Build the fork corner and measure it.
         //
@@ -2765,7 +2806,11 @@ export class RoadSystem {
                 // is not reported. But the legs may still come back together further out: the
                 // owner's seed-6 marks part at the node, swing 82–121 m apart, and only then run
                 // 170–195 m dead parallel. That is a MID-SPAN merge, forked at both ends.
-                if (!MIDSPAN_ON || !maybeMidSpan(A, B, fA)) continue
+                // BUG-55: the coarse gate runs even with the feature off, so a declined candidate
+                // is COUNTED — capture-classify can then answer "why didn't this pair merge" with
+                // a named reason instead of silence.
+                if (!maybeMidSpan(A, B, fA)) continue
+                if (!MIDSPAN_ON) { this._v2MergeSkipped('midspanOff', `${A.ck} x ${B.ck} @${nk}`); continue }
                 const mid = midSpanPair(A, B, conflictIntervals(A, B))
                 if (mid) pairs.push(mid)
                 continue
@@ -2901,6 +2946,152 @@ export class RoadSystem {
         }
         const one = sA || sB
         return one ? [one] : null
+    }
+
+    // ── BUG-55: the pair census ────────────────────────────────────────────────────────────────
+    // WHICH pairs of edges conflict, over the whole window — including pairs that share NO node
+    // (shape E), which per-node planning cannot see at all.
+    //
+    // Discovery is ROUTE-vs-CHORD, and the direction matters. Chord-to-chord was measured dead:
+    // blue-noise site spacing keeps disjoint chords >= 407 m apart, while routes wander up to
+    // 657 m off their chords and land 0.3 m from each other (the seed-6 (3328,-27) tear). What a
+    // registering edge CAN afford is a scan of its own routed polyline against every wide-graph
+    // chord: a partner whose own wander stays under censusChordM shows up there, and only then
+    // does that partner pay for a route. Measured 0-4 fresh partner routes per window at 300 m.
+    //
+    // Window invariance: "partner chord within T of MY route" is a pure function of one pure
+    // route and one pure chord — no window extent anywhere — and the partner chords come from
+    // the same margin-8 graph the degree pass builds, whose box contains every chord within
+    // reach (see _degreeDrops). A pair BOTH of whose members wander beyond the bound is blind to
+    // the census in every window equally: a counted coverage limit, not a tear risk (the offline
+    // overlap-census O(n²) sweep and graph-topology SURFACE-SMOOTH stay the safety net).
+    //
+    // Phase 1 (this): disjoint pairs are MEASURED and counted, not resolved — the numbers feed
+    // overlap-census and capture-classify so the class is visible before the resolution ladder
+    // (merge → delete-with-detour → report) lands on it. Node-sharing pairs keep planning
+    // through _v2NodeMerges exactly as before.
+    _v2PairCensus(mx0, mx1, mz0, mz1, g, drop, wide) {
+        const sig = `${mx0}:${mx1}:${mz0}:${mz1}`
+        if (!this._v2CensusMemo || this._v2CensusMemo.rev !== this._networkRev)
+            this._v2CensusMemo = { rev: this._networkRev, map: new Map() }
+        const memo = this._v2CensusMemo.map
+        const hit = memo.get(sig)
+        if (hit) { this._v2Census = hit; return hit }
+        const C = this._v2Costs()
+        const CHORD = C.censusChordM ?? 300
+        const PROX = C.mergeProxM ?? 18
+        const GAPM = C.mergeGapM ?? 200
+        const FLARE = C.mergeFlareM ?? 60
+        const out = { regEdges: 0, wideChords: 0, candPairs: 0, walked: 0, routedFresh: 0, disjoint: [] }
+        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
+        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
+        const inBand = (p) => p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1
+        const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
+        const spellG = this._v2EdgeSpellings(g)
+        // routedFresh counts PARTNER samples that were memo misses at walk time — the census's
+        // own marginal routing cost. The registration-set samples in step 1 are NOT counted: the
+        // node planner walks those same edges regardless, the census just meets them first.
+        const sampleOf = (gg, sp, countFresh) => {
+            const key = `g:${gg.key(sp[0])}:${gg.key(sp[1])}`
+            if (countFresh && (!this._v2SampleMemo || this._v2SampleMemo.rev !== this._networkRev
+                || !this._v2SampleMemo.map.has(key))) out.routedFresh++
+            return this._v2RunSample(gg, drop, sp[0], sp[1])
+        }
+        // 1. the registration set, sampled exactly as it will register (memo shared with the
+        //    node planner, which walks these same edges anyway)
+        const reg = []
+        for (const [c1, c2] of g.edges) {
+            const kA = g.key(c1), kB = g.key(c2)
+            if (drop.has(kA + '|' + kB)) continue
+            const A = this._nodePos(c1), B = this._nodePos(c2)
+            if (!inBand(A) && !inBand(B)) continue
+            { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }
+            const S = sampleOf(g, [c1, c2], false)   // registration spelling = g.edges tuple order
+            if (!S || S.L < 60) continue
+            let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
+            for (const p of S.pts) {
+                if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x
+                if (p.z < minz) minz = p.z; if (p.z > maxz) maxz = p.z
+            }
+            reg.push({ kA, kB, ck: kA < kB ? kA + '|' + kB : kB + '|' + kA, S,
+                       minx, maxx, minz, maxz })
+        }
+        out.regEdges = reg.length
+        // 2. every wide-graph chord that could be a partner
+        const chords = []
+        for (const [c1, c2] of wide.edges) {
+            const kA = wide.key(c1), kB = wide.key(c2)
+            if (drop.has(kA + '|' + kB)) continue
+            const A = this._nodePos(c1), B = this._nodePos(c2)
+            { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }
+            chords.push({ c1, c2, kA, kB, ck: kA < kB ? kA + '|' + kB : kB + '|' + kA, A, B })
+        }
+        out.wideChords = chords.length
+        // 3. discovery: partner chords within CHORD of a registered route (box pre-culls)
+        const cand = new Map()   // canonical pair key → {P (reg entry), Q (chord entry), discD}
+        for (const P of reg) {
+            for (const c of chords) {
+                if (c.kA === P.kA || c.kA === P.kB || c.kB === P.kA || c.kB === P.kB) continue // planner's business
+                if (c.ck === P.ck) continue
+                const cnx = Math.min(c.A.x, c.B.x) - CHORD, cxx = Math.max(c.A.x, c.B.x) + CHORD
+                const cnz = Math.min(c.A.z, c.B.z) - CHORD, cxz = Math.max(c.A.z, c.B.z) + CHORD
+                if (cxx < P.minx || cnx > P.maxx || cxz < P.minz || cnz > P.maxz) continue
+                let d = Infinity
+                for (const p of P.S.pts) {
+                    if (p.x < cnx || p.x > cxx || p.z < cnz || p.z > cxz) continue
+                    const dd = _segSegDistXZ(p, p, c.A, c.B)
+                    if (dd < d) { d = dd; if (d <= 0) break }
+                }
+                if (d > CHORD) continue
+                const pk = P.ck < c.ck ? P.ck + '#' + c.ck : c.ck + '#' + P.ck
+                const prev = cand.get(pk)
+                if (!prev || d < prev.discD) cand.set(pk, { P, Q: c, discD: d })
+            }
+        }
+        out.candPairs = cand.size
+        // 4. walk each candidate pair (partner sampled in its registered spelling when the
+        //    stream graph knows it; a wide-only partner's complete 1-ring gives it the same pins
+        //    any window would derive)
+        for (const { P, Q, discD } of cand.values()) {
+            const spQ = spellG.get(Q.ck)
+            const SQ = sampleOf(spQ ? g : wide, spQ ?? [Q.c1, Q.c2], true)
+            if (!SQ || SQ.L < 60) continue
+            const SP = P.S
+            // the same coarse both-sides gate the mid-span planner uses, before paying for a
+            // full point-to-polyline walk
+            const lim = PROX + 8 * PROTO_SAMPLE_DS
+            const lim2 = lim * lim
+            let near = false
+            for (let ip = 0; ip < SP.pts.length && !near; ip += 8) {
+                const px = SP.pts[ip].x, pz = SP.pts[ip].z
+                for (let iq = 0; iq < SQ.pts.length; iq += 8) {
+                    const dx = px - SQ.pts[iq].x, dz = pz - SQ.pts[iq].z
+                    if (dx * dx + dz * dz <= lim2) { near = true; break }
+                }
+            }
+            if (!near) continue
+            out.walked++
+            const ivs = _conflictIntervalsXZ(SP, true, SQ, PROX, GAPM, FLARE, null)
+            if (!ivs.length) continue
+            let nearLen = 0, minSep = Infinity, maxDy = 0
+            for (const iv of ivs) nearLen += iv.s1 - iv.s0
+            for (let ip = 0; ip < SP.pts.length; ip++) {
+                const s = SP.polyCum[ip]
+                if (!ivs.some((iv) => s >= iv.s0 - 1 && s <= iv.s1 + 1)) continue
+                const q = _nearestOnPolyXZ(SP.pts[ip].x, SP.pts[ip].z, SQ.pts, SQ.polyCum)
+                if (q.d > PROX) continue
+                if (q.d < minSep) minSep = q.d
+                const dy = Math.abs(SP.pts[ip].y - q.y)
+                if (dy > maxDy) maxDy = dy
+            }
+            if (nearLen < 20) continue   // grazing contact, not a shared-pavement stretch
+            out.disjoint.push({ a: `g:${P.kA}:${P.kB}`, b: `g:${Q.kA}:${Q.kB}`,
+                                nearLen, minSep, maxDy, discD, tear: minSep < 9 || maxDy > 3 })
+        }
+        if (memo.size > 6) memo.clear()
+        memo.set(sig, out)
+        this._v2Census = out
+        return out
     }
 
     // Register a MID-SPAN merged run: the loser keeps its own road at BOTH ends and cedes a stretch
@@ -3416,12 +3607,15 @@ export class RoadSystem {
         // streaming graph can see (junction degrees agree with what wide windows build — the old
         // pass's unregistered-edge branch). _cullNetwork's ring + the warm paths apply the same
         // memoized decisions, and _nodeThroughPairs pairs over this settled adjacency.
-        const { drop } = this._degreeDrops(mx0, mx1, mz0, mz1)
+        const { drop, wide } = this._degreeDrops(mx0, mx1, mz0, mz1)
         for (const [c1, c2] of g.edges) {
             if (drop.has(g.key(c1) + '|' + g.key(c2))) {
                 g.adj.get(g.key(c1))?.delete(g.key(c2)); g.adj.get(g.key(c2))?.delete(g.key(c1))
             }
         }
+        // BUG-55: the pair census, on the settled adjacency (dirs sampled here must match what
+        // registration builds). Phase 1: measures + counts the disjoint class; resolution follows.
+        this._v2PairCensus(mx0, mx1, mz0, mz1, g, drop, wide)
         this._proto.nodeInc.clear()
         const addInc = (idKey, runKey) => { const a = this._proto.nodeInc.get(idKey) || this._proto.nodeInc.set(idKey, []).get(idKey); a.push(runKey) }
         for (const [c1, c2] of g.edges) {

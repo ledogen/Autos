@@ -18,8 +18,34 @@ if (process.argv.includes('--costprune')) {
   console.log('== QUAL-22 cost-weighted Urquhart vote: ON ==')
 }
 
-const NEAR = 18      // m — shared-earthworks centre separation
+// BUG-55: read the live param — this census must measure the same proximity the merge planner
+// plans with, or a re-tuned mergeProxM silently splits the two vocabularies.
+const NEAR = RANGER_PARAMS.roadV2?.mergeProxM ?? 18   // m — shared-earthworks centre separation
 const PAD = 40       // m — junction vicinity: overlap inside this is expected pad geometry
+
+// BUG-55: min distance between two segments (chord-to-chord), for the census prefilter bound —
+// every real conflict's chord distance is reported so censusChordM stays measurably above the max.
+const segSegDist = (ax, az, bx, bz, cx, cz, dx2, dz2) => {
+  const r1 = bx - ax, r2 = bz - az, s1 = dx2 - cx, s2 = dz2 - cz
+  const den = r1 * s2 - r2 * s1
+  if (Math.abs(den) > 1e-12) {
+    const t = ((cx - ax) * s2 - (cz - az) * s1) / den, u = ((cx - ax) * r2 - (cz - az) * r1) / den
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return 0
+  }
+  const p2s = (px, pz, sx, sz, ex, ez) => {
+    const vx = ex - sx, vz = ez - sz
+    const l2 = vx * vx + vz * vz
+    const t = l2 > 1e-12 ? Math.max(0, Math.min(1, ((px - sx) * vx + (pz - sz) * vz) / l2)) : 0
+    return Math.hypot(px - (sx + t * vx), pz - (sz + t * vz))
+  }
+  return Math.min(p2s(ax, az, cx, cz, dx2, dz2), p2s(bx, bz, cx, cz, dx2, dz2),
+                  p2s(cx, cz, ax, az, bx, bz), p2s(dx2, dz2, ax, az, bx, bz))
+}
+const chordDistOf = (A, B) => {
+  const pA = A.e.points, pB = B.e.points
+  return segSegDist(pA[0].x, pA[0].z, pA[pA.length - 1].x, pA[pA.length - 1].z,
+                    pB[0].x, pB[0].z, pB[pB.length - 1].x, pB[pB.length - 1].z)
+}
 
 // point→segment distance in XZ
 const d2seg = (px, pz, ax, az, bx, bz) => {
@@ -197,6 +223,13 @@ for (const seed of [6, 20, 11, 67]) {
   const nWeave = conflicts.filter(c => c.type === 'cross' && c.nCross >= 2).length
   const nSingle = conflicts.filter(c => c.type === 'cross' && c.nCross === 1).length
   console.log(`\nseed ${seed}: ${runs.length} runs, ${kmTotal.toFixed(1)} km, ${comps} component(s), ${pairsTotal} node-sharing pairs · conflicts: ${nWeave} weave (≥2 crossings), ${nSingle} single-cross, ${conflicts.filter(c => c.type === 'overlap').length} overlap`)
+  // BUG-55: the road-side pair census (route-vs-chord discovery on the margin-8 graph). discD is
+  // the discovery-direction chord-to-route distance — the number censusChordM must stay above
+  // over real conflicts for the census to keep seeing them.
+  const cen = road._v2Census
+  if (cen) console.log(`   pair census: ${cen.regEdges} reg edges, ${cen.wideChords} wide chords, ${cen.candPairs} candidates, ${cen.walked} walked, ${cen.routedFresh} fresh routes · disjoint conflicts ${cen.disjoint.length} (${cen.disjoint.filter(d => d.tear).length} tears) · max conflict discD ${Math.max(0, ...(cen.disjoint.map(d => d.discD))).toFixed(0)} m (censusChordM ${RANGER_PARAMS.roadV2?.censusChordM ?? 300})`)
+  for (const d of (cen?.disjoint || []))
+    console.log(`   CENSUS-DISJOINT  ${d.a} × ${d.b} · near ${d.nearLen.toFixed(0)} m, minSep ${d.minSep.toFixed(1)}, deck mismatch ${d.maxDy.toFixed(1)} m, discD ${d.discD.toFixed(0)} m${d.tear ? ' · TEAR' : ''}`)
   const dist = overlapLens.filter(x => x > 1)
   dist.sort((a, b) => b - a)
   console.log(`   from-node overlap distribution (top 8): ${dist.slice(0, 8).map(x => x.toFixed(0)).join(', ')} m`)
@@ -204,7 +237,7 @@ for (const seed of [6, 20, 11, 67]) {
     const [long_, short_] = c.A.len >= c.B.len ? [c.A, c.B] : [c.B, c.A]
     const hL = detourHops(long_.a, long_.b, long_.k)
     const hS = detourHops(short_.a, short_.b, short_.k)
-    console.log(`   ${c.type.toUpperCase()}  ${c.A.k} × ${c.B.k}`)
+    console.log(`   ${c.type.toUpperCase()}  ${c.A.k} × ${c.B.k}  (chordD ${chordDistOf(c.A, c.B).toFixed(0)} m)`)
     console.log(`       ${c.detail} · legs ${c.A.len.toFixed(0)}/${c.B.len.toFixed(0)} m`)
     console.log(`       drop LONGER (${long_.k}, ${long_.len.toFixed(0)} m): detour ${hL === Infinity ? 'NONE — would strand' : hL + ' hops'} · drop shorter: ${hS === Infinity ? 'NONE' : hS + ' hops'}`)
   }
