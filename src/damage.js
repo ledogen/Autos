@@ -240,6 +240,12 @@ export const DAMAGE_PARAMS = {
   alignBumpFloorN: 18000,    // N — below this a bump-stop hit costs alignment nothing
   alignBumpFullN:  60000,    // N — a hit this hard is a full-severity bend
   alignBumpScale:  0.5,      // a bump bends less than a crash of the same severity does
+  // Impacts bend the alignment much less than they used to (owner, 2026-08-22: cut by ~70%). The
+  // impact model itself is unchanged — this scales only what a collision does to the GEOMETRY, so
+  // a crash still costs the same armor and components, it just does not throw the truck out of
+  // line as violently. The caps (alignMaxCamberDeg / alignMaxToeDeg) are untouched, so a long run
+  // of hits can still accumulate to a fully bent corner.
+  alignImpactScale: 0.3,
 
   // Death: a hit at or above this equivalent speed is the fatal-crash fail state (SM-INV-1).
   //
@@ -714,7 +720,7 @@ export class DamageModel {
     const P = DAMAGE_PARAMS
     const vMin = P.alignMinMph * MPH, vMax = P.alignMaxMph * MPH
     if (v <= vMin) return
-    const sev = Math.min(1, (v - vMin) / (vMax - vMin)) * passed
+    const sev = Math.min(1, (v - vMin) / (vMax - vMin)) * passed * P.alignImpactScale
     if (sev <= 0) return
 
     for (const id of TRACK_IDS) {
