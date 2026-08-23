@@ -3403,6 +3403,25 @@ export class RoadSystem {
                 why = `strand profile infeasible (head ${iA + 1} pts / ${(clArc[iA] - clArc[0]).toFixed(0)} m to deck ${deckA.toFixed(1)}, tail ${pts.length - iB} pts / ${(clArc[pts.length - 1] - clArc[iB]).toFixed(0)} m from deck ${deckB.toFixed(1)})`
                 continue
             }
+            // BUG-55 'pad' (phase 3, the guard that turned mergeMidSpan on): the FINAL solved
+            // arrival grade at each far node, checked on every variant — bundled AND dictated.
+            // The junction pad plane is clamped to ~7% grade; an arrival past this cap parks the
+            // measured 1.75–2.37 m cliff at the pad ring, so the variant declines and the ladder
+            // tries the next. Decline, never force.
+            const padMax = this._v2Costs().mergePadArrivalMax ?? 0.12
+            const arrGrade = (from, toward) => {
+                let k = from
+                const dir = toward > from ? 1 : -1
+                while (k !== toward && Math.abs(clArc[k] - clArc[from]) < 24) k += dir
+                const ds = Math.abs(clArc[k] - clArc[from])
+                return ds > 1e-6 ? Math.abs(pts[k].y - pts[from].y) / ds : 0
+            }
+            const gS = arrGrade(0, iA), gE = arrGrade(pts.length - 1, iB)
+            if (gS > padMax || gE > padMax) {
+                why = `pad arrival ${(Math.max(gS, gE) * 100).toFixed(0)}% > cap ${(padMax * 100).toFixed(0)}%`
+                this._v2MergeSkipped('pad', `${key} mid-span: ${why}`)
+                continue
+            }
             const n = pts.length - 1
             const polyCum = new Float64Array(n + 1)
             for (let i = 1; i <= n; i++) polyCum[i] = polyCum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
