@@ -3108,16 +3108,24 @@ export class RoadSystem {
             if (!near) continue
             const ivs0 = _conflictIntervalsXZ(own, true, SQ, PROX, GAPM, FLARE, null)
             if (!ivs0.length) continue
-            // Node-sharing pairs: the contiguous stretch AT the shared node is the junction
-            // THROAT — two legs leaving one node inside earthworks distance is every ordinary
-            // junction, and the node planner owns that shape (it measured minSep ~0 there by
-            // construction, which is what made the raw tear test nominate half the network).
-            // Only an interval CLEAR of the shared node — genuine mid-span conflict — is
-            // delete-rung business.
+            // Node-sharing pairs: the stretch AT the shared node is the junction THROAT — two
+            // legs leaving one node inside earthworks distance is every ordinary junction, and
+            // the node planner owns that shape (minSep is ~0 there by construction, which is
+            // what made the raw tear test nominate half the network). TRIM the 30 m throat off
+            // the interval rather than discarding intervals that touch the node: a 300 m overlap
+            // that merely BEGINS at the junction is mid-span conflict, not a throat (discarding
+            // it hid the owner's (932,793) 332 m tear from the delete rung). Ordinary throats
+            // are ≤ ~30 m, so after the trim they fall under the 20 m conflict floor.
             const shared = [kA, kB].filter((k) => k === qA || k === qB)
             const ownStartKey = wide.key((spOwn ?? [c1, c2])[0])
-            const ivs = shared.length ? ivs0.filter((iv) =>
-                !shared.some((sk) => (sk === ownStartKey ? iv.s0 <= 30 : iv.s1 >= own.L - 30))) : ivs0
+            const ivs = shared.length ? ivs0.map((iv) => {
+                let s0 = iv.s0, s1 = iv.s1
+                for (const sk of shared) {
+                    if (sk === ownStartKey) s0 = Math.max(s0, 30)
+                    else s1 = Math.min(s1, own.L - 30)
+                }
+                return { s0, s1 }
+            }).filter((iv) => iv.s1 > iv.s0) : ivs0
             if (!ivs.length) continue
             let nearLen = 0, minSep = Infinity, maxDy = 0
             for (const iv of ivs) nearLen += iv.s1 - iv.s0
@@ -3182,19 +3190,27 @@ export class RoadSystem {
         const pairs = this._v2ConflictPairs(g, drop, wide, c1, c2)
         if (!pairs.length) return fin(null)
         const ckOf = (sp) => { const a = wide.key(sp[0]), b = wide.key(sp[1]); return a < b ? a + '|' + b : b + '|' + a }
+        // "Planned" and "wins a plan" mean a plan that would BUILD. A mid-span spec is dry-run
+        // through the identical assembly walk (see _v2RegisterMidSpan) — a plan whose every
+        // variant dies on the apply guards resolves nothing and must not shield the pair from
+        // the delete rung, nor role-block its winner. End-anchored specs keep spec-exists
+        // semantics (conservative: fewer deletions) — no mark is blocked on one today.
+        const spellG = this._v2EdgeSpellings(g)
+        const builds = (spec, loserSp) => !spec.midSpan
+            || (loserSp ? this._v2RegisterMidSpan(null, null, loserSp[0], loserSp[1], spec, g, drop, true) : true)
         let winsAny = !!this._v2BundleSolve(g, drop, c1, c2)
         for (const nk of [kA, kB]) {
             if (winsAny) break
-            for (const [, spec] of this._v2NodeMerges(g, drop, nk))
-                if (ckOf(spec.winner) === ck) { winsAny = true; break }
+            for (const [lck, spec] of this._v2NodeMerges(g, drop, nk))
+                if (ckOf(spec.winner) === ck && builds(spec, spellG.get(lck))) { winsAny = true; break }
         }
         const nominating = []
         for (const t of pairs) {
             let planned = false, angleExempt = false
             for (const nk of t.shared) {
                 const nm = this._v2NodeMerges(g, drop, nk)
-                const sE = nm.get(ck); if (sE && ckOf(sE.winner) === t.qck) planned = true
-                const sY = nm.get(t.qck); if (sY && ckOf(sY.winner) === ck) { planned = true; winsAny = true }
+                const sE = nm.get(ck); if (sE && ckOf(sE.winner) === t.qck && builds(sE, spellG.get(ck) ?? [c1, c2])) planned = true
+                const sY = nm.get(t.qck); if (sY && ckOf(sY.winner) === ck && (!t.inG || builds(sY, t.spQ))) { planned = true; winsAny = true }
                 // Both ceding to the SAME spine is the junction-bundle shape — the pair rides one
                 // pavement by construction and is the merge machinery's business. Deleting a
                 // bundled leg rips a limb out of a composed junction: measured as an 87 m carve
@@ -3204,13 +3220,19 @@ export class RoadSystem {
             }
             if (!t.shared.length) {
                 const dOwn = this._v2DisjointFor(g, drop, wide, c1, c2)
-                if (dOwn && ckOf(dOwn[0].winner) === t.qck) planned = true
+                if (dOwn && ckOf(dOwn[0].winner) === t.qck && builds(dOwn[0], spellG.get(ck) ?? [c1, c2])) planned = true
                 if (!planned && t.inG) {
                     const dQ = this._v2DisjointFor(g, drop, wide, t.spQ[0], t.spQ[1])
-                    if (dQ && ckOf(dQ[0].winner) === ck) { planned = true; winsAny = true }
+                    if (dQ && ckOf(dQ[0].winner) === ck && builds(dQ[0], t.spQ)) { planned = true; winsAny = true }
                 }
             }
-            if (t.tear && t.longer && !planned && !angleExempt) nominating.push(t)
+            // Substantiality floor: only a conflict of MINSPAN grade (60 m — the same "worth
+            // two forks" bar the merge ladder uses) drives a deletion. Below it the leftover is
+            // junction-dressing / merge-quality territory, censused and owner-judged — and the
+            // floor is what keeps the BFS vetting below from blackballing every edge with a few
+            // metres of throat overflow. The vetting test MUST stay in lockstep (deleted ⇒
+            // possible-victim), so both read the same 60.
+            if (t.tear && t.longer && t.nearLen >= 60 && !planned && !angleExempt) nominating.push(t)
         }
         if (!nominating.length) return fin(null)
         if (winsAny) { this._v2MergeSkipped('role', `${ck} delete: wins a plan`); return fin(null) }
@@ -3243,7 +3265,7 @@ export class RoadSystem {
             for (const pe of path) {
                 const pc = cells.get(pe)
                 const pt = pc ? this._v2ConflictPairs(g, drop, wide, pc[0], pc[1]) : []
-                if (!pc || pt.some((t2) => t2.tear && t2.longer)) { bad = pe; break }
+                if (!pc || pt.some((t2) => t2.tear && t2.longer && t2.nearLen >= 60)) { bad = pe; break }
             }
             if (!bad) {
                 const rec = { ck, key: `g:${g.key(c1)}:${g.key(c2)}`, hops: path.length,
@@ -3702,12 +3724,22 @@ export class RoadSystem {
     // Three pieces of geometry in travel order (own head + inner band · the winner's vertices and
     // heights verbatim · outer band + own tail) and TWO profile solves, each pinned to the winner's
     // deck at its own fork. Any refusal backs the whole thing off to the plain registration.
-    _v2RegisterMidSpan(key, cl, cellA, cellB, spec, g, drop) {
+    // BUG-55 phase 5, `dry` mode: evaluate WHETHER this merge would build — same walk, same
+    // pure inputs, but no registration, no fallback, no tallies; returns true/false instead.
+    // The delete rung needs it because "a plan exists" is the wrong question: only a solved
+    // profile can say whether any variant survives the pad-arrival guard (the (932,793) pair had
+    // six variants and all died at 19-20% > cap 12%, leaving the tear while the doomed plan
+    // blocked the delete). Deterministic: the dry answer always equals what the loser's real
+    // registration will do.
+    _v2RegisterMidSpan(key, cl, cellA, cellB, spec, g, drop, dry = false) {
         const own = this._v2RunSample(g, drop, cellA, cellB)
         // BUG-55: winner VIEW — Y from the bundle when one negotiated (see _v2WinnerView)
         const win = this._v2WinnerView(g, drop, spec.winner[0], spec.winner[1])
-        const bail = (why) => { this._v2MergeSkipped('assemble', `${key} mid-span: ${why}`); this._registerRun(key, cl, cellA, cellB) }
-        if (!own || !win) { bail('no sample'); return }
+        const bail = (why) => {
+            if (!dry) { this._v2MergeSkipped('assemble', `${key} mid-span: ${why}`); this._registerRun(key, cl, cellA, cellB) }
+            return false
+        }
+        if (!own || !win) return bail('no sample')
         const wk = `g:${g.key(spec.winner[0])}:${g.key(spec.winner[1])}`
         const EPSV = SPLICE_EPS
         const clAt = (S, cum) => {
@@ -3812,7 +3844,7 @@ export class RoadSystem {
             const gS = arrGrade(0, iA), gE = arrGrade(pts.length - 1, iB)
             if (gS > padMax || gE > padMax) {
                 why = `pad arrival ${(Math.max(gS, gE) * 100).toFixed(0)}% > cap ${(padMax * 100).toFixed(0)}%`
-                this._v2MergeSkipped('pad', `${key} mid-span: ${why}`)
+                if (!dry) this._v2MergeSkipped('pad', `${key} mid-span: ${why}`)
                 continue
             }
             const n = pts.length - 1
@@ -3831,6 +3863,7 @@ export class RoadSystem {
                 return r.spans.map((sp) => ({ s0: toFinal(sp.s0), s1: toFinal(sp.s1) }))
             }
             const tunnelSpans = [...mapSpans(r1), ...mapSpans(r2)]
+            if (dry) return true
             const wLo = Math.min(v.wIn, v.wOut), wHi = Math.max(v.wIn, v.wOut)
             this._network.set(key, {
                 points: pts, arcOrigin: 0, centerline: cl,
@@ -3841,9 +3874,9 @@ export class RoadSystem {
                                   owner: wk, ownerS0: wLo - bOut.Lb, ownerS1: wHi + bOut.Lb }],
             })
             this._v2Merges = (this._v2Merges || 0) + 1
-            return
+            return true
         }
-        bail(why)
+        return bail(why)
     }
 
     // Register a MERGED (loser) run: per active end, winner vertices + heights verbatim over
