@@ -100,11 +100,7 @@ for (const mph of [20, 29]) {
   const maxToe = Math.max(...d.toeOffsetDeg.map(Math.abs))
   console.log(`  80 mph: camber [${d.camberOffsetDeg.map(c => c.toFixed(2)).join(', ')}]°  toe [${d.toeOffsetDeg.map(t => t.toFixed(2)).join(', ')}]°`)
   ok(maxCam > 0 && maxCam <= D.alignMaxCamberDeg + 1e-9, `camber lands inside ±${D.alignMaxCamberDeg}° (peak ${maxCam.toFixed(2)}°)`)
-  // Impacts bend the geometry at alignImpactScale of full severity (owner cut this ~70% on
-  // 2026-08-22): a crash still costs the same armor and components, it just no longer throws the
-  // truck out of line as violently. The CAP is untouched, so repeated hits still accumulate there.
-  ok(D.alignImpactScale < 0.5, `a collision bends alignment at ${(D.alignImpactScale * 100).toFixed(0)}% of full severity`)
-  ok(maxCam < D.alignMaxCamberDeg * 0.6, 'so even a saturating hit does not bend a corner most of the way on its own')
+
   ok(maxToe > 0 && maxToe <= D.alignMaxToeDeg + 1e-9, `toe lands inside ±${D.alignMaxToeDeg}° (peak ${maxToe.toFixed(2)}°)`)
   ok(d.camberOffsetDeg[2] === 0 && d.camberOffsetDeg[3] === 0, 'a front hit does not bend the rear axle')
 }

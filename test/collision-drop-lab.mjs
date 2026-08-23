@@ -115,7 +115,7 @@ for (const holdS of [1.2, 2.0, 3.0, 4.5]) {
 }
 // ── DROPS ────────────────────────────────────────────────────────────────────────────────────
 console.log('\n═══ DROP: the whole chain, stage by stage ═══')
-console.log('  height   tire Fz    bump      rim(road)  rim(deb)   spring%   wheel%')
+console.log('  height   tire Fz    bump      rim(road)  rim(deb)   spring%   wheel%   camberFL')
 console.log('  ' + '─'.repeat(68))
 for (const h of [0.5, 1.0, 2.0, 3.0]) {
   await ev(`window.__tp(60, 40, -Math.PI/2); true`); await sleep(2200)
@@ -125,17 +125,12 @@ for (const h of [0.5, 1.0, 2.0, 3.0]) {
   const b = await cond(); const T = await trace()
   console.log(`  ${h.toFixed(1)} m  ${(T.tireFz / 1000).toFixed(1).padStart(8)} kN ${(T.bump / 1000).toFixed(1).padStart(8)} kN`
     + ` ${(T.rimRoad / 1000).toFixed(1).padStart(9)} kN ${(T.rimDeb / 1000).toFixed(1).padStart(8)} kN`
-    + ` ${lost(a, b, 'springFront').toFixed(1).padStart(8)}% ${lost(a, b, 'wheelFL').toFixed(1).padStart(7)}%`)
+    + ` ${lost(a, b, 'springFront').toFixed(1).padStart(8)}% ${lost(a, b, 'wheelFL').toFixed(1).padStart(7)}%`
+    + ` ${(await ev('window.__damage.camberOffsetDeg[0]')).toFixed(3).padStart(9)}°`)
 }
 const TH = JSON.parse(await ev(`(() => { const p = window.__damage.params, D = window.__damage.constructor
-  const sw = D.staticWheelLoad(p)
-  return JSON.stringify({ sw }) })()`))
-const DP = JSON.parse(await ev(`(async () => { const m = await import('/src/damage.js')
-  const D = m.DAMAGE_PARAMS
-  return JSON.stringify({ sf: D.springForceFloor, sk: D.springBumpFullN,
-    ry: D.rimYieldRoadMult, rd: D.rimYieldMult }) })()`).catch(() => '{}') || '{}')
-console.log(`\n  spring: floor ${(DP.sf/1000).toFixed(0)} kN, one-hit kill ${(DP.sk/1000).toFixed(0)} kN`
-  + ` · rim yield — road ${(DP.ry*TH.sw/1000).toFixed(0)} kN, debris ${(DP.rd*TH.sw/1000).toFixed(1)} kN`)
-console.log('  target shape (owner, 2026-08-22): 1 m damages SPRINGS only; 2 m damages springs AND rim.')
+  return JSON.stringify({ sw: D.staticWheelLoad(p) }) })()`))
+console.log('\n  target shape (owner): 1 m damages SPRINGS only; 2 m damages springs AND rim;'
+  + ' alignment only on REALLY hard bumps.')
 
 ws.close(); process.kill(-chrome.pid, 'SIGKILL'); process.exit(0)

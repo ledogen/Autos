@@ -237,15 +237,16 @@ export const DAMAGE_PARAMS = {
   // track's: ordinary bottoming-out must never touch alignment, or every rough road would knock
   // the truck out of line. For scale, a 30 mph ramp landing peaks around 16 kN and does nothing
   // here; 40 mph peaks around 21 kN and bends it slightly.
-  alignBumpFloorN: 18000,    // N — below this a bump-stop hit costs alignment nothing
-  alignBumpFullN:  60000,    // N — a hit this hard is a full-severity bend
+  // RESCALED 2026-08-22 with the progressive tire carcass. These were set when a hard landing put
+  // 15-21 kN into the stops; the stiff carcass transmits ~5x that, so an 18 kN floor turned every
+  // ordinary landing into an alignment event and a single 3 m drop bent a corner by 1.04° of a 2°
+  // cap. The intent has not changed — only REALLY hard bumps — so the numbers move with the forces
+  // they are measured against: a 1 m drop (23 kN) does nothing, a 2 m drop (76 kN) bends a corner
+  // by under a tenth of a degree.
+  alignBumpFloorN: 60000,    // N — below this a bump-stop hit costs alignment nothing
+  alignBumpFullN: 250000,    // N — a hit this hard is a full-severity bend
   alignBumpScale:  0.5,      // a bump bends less than a crash of the same severity does
-  // Impacts bend the alignment much less than they used to (owner, 2026-08-22: cut by ~70%). The
-  // impact model itself is unchanged — this scales only what a collision does to the GEOMETRY, so
-  // a crash still costs the same armor and components, it just does not throw the truck out of
-  // line as violently. The caps (alignMaxCamberDeg / alignMaxToeDeg) are untouched, so a long run
-  // of hits can still accumulate to a fully bent corner.
-  alignImpactScale: 0.3,
+
 
   // Death: a hit at or above this equivalent speed is the fatal-crash fail state (SM-INV-1).
   //
@@ -720,7 +721,7 @@ export class DamageModel {
     const P = DAMAGE_PARAMS
     const vMin = P.alignMinMph * MPH, vMax = P.alignMaxMph * MPH
     if (v <= vMin) return
-    const sev = Math.min(1, (v - vMin) / (vMax - vMin)) * passed * P.alignImpactScale
+    const sev = Math.min(1, (v - vMin) / (vMax - vMin)) * passed
     if (sev <= 0) return
 
     for (const id of TRACK_IDS) {

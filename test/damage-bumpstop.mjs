@@ -74,7 +74,18 @@ console.log('\n§4 alignment crosstalk — only really hard bumps, and only that
     `a bump below the ${D.alignBumpFloorN / 1000} kN alignment floor bends nothing — ordinary bottoming is not a wheel alignment`)
   ok(mild.get('springFront') < 1, '...though it still wears the spring, which is the point of two different floors')
 
-  const hard = fresh(); bump(hard, 40000, 1)    // front-right, well over the floor
+  // MEASURED anchors (test/collision-drop-lab.mjs, after the progressive tire carcass). These are
+  // the whole reason the floor was rescaled: the stiff carcass transmits ~5x into the stops, so at
+  // the old 18 kN floor an ordinary landing was an alignment event and a single 3 m drop bent a
+  // corner 1.04° of a 2° cap. Alignment is meant to go only on REALLY hard bumps.
+  for (const [h, peakN, maxDeg] of [[1.0, 23000, 0], [2.0, 75600, 0.05], [3.0, 76700, 0.15]]) {
+    const d = fresh(); bump(d, peakN)
+    const bent = Math.abs(d.camberOffsetDeg[0])
+    console.log(`  a ${h} m drop (${(peakN / 1000).toFixed(0)} kN on the stops) bends camber ${bent.toFixed(3)}°`)
+    ok(bent <= maxDeg + 1e-9, `...at most ${maxDeg}°, so a landing is not an alignment job`)
+  }
+
+  const hard = fresh(); bump(hard, 400000, 1)   // front-right, well over the floor
   ok(hard.get('alignFR') < 1, 'a hard enough bump DOES throw that corner out')
   ok(hard.get('alignFL') === 1 && hard.get('alignRR') === 1, '...and only the corner that took it')
   ok(Math.abs(hard.camberOffsetDeg[1]) > 0 || Math.abs(hard.toeOffsetDeg[1]) > 0,
