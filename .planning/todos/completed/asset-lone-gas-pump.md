@@ -125,9 +125,11 @@ now enters the casting's **rear boss above the guard**, the way a real one is pl
 threading past the loop.
 
 The two pumps are one part list and its mirror through y = 0, separated by a 30 mm gap so they read
-as two. The **squeeze handle** the owner asked for by name is real geometry. The **floodlight**
+as two. The **squeeze handle** the owner asked for by name is real geometry. The **area light**
 part-way up the pole is in the first reference and earns its 24 tris: without it the pole is 3 m of
-blank white through the middle of the silhouette.
+blank white through the middle of the silhouette. Pass 5 made it a **flat, level luminaire** —
+the shallow shoebox an HPS or fluorescent area light actually comes in, on the owner's call — with
+its underside given the pale material as a lens. That costs nothing: a box already has that face.
 
 ### The atlas
 
@@ -146,6 +148,15 @@ Fitting digits to a hand-typed window *width* is what the first bake did, and fi
 a wide window came out taller than the window and spilled over both edges.
 
 ### Audit (all clean at hand-over)
+
+- **Inside-out faces: 0** — but only after pass 5. `beam()` built its cross-section on a
+  LEFT-handed frame (`side.cross(d)` instead of `d.cross(side)`), so every beam in the model
+  exported with its normals pointing inward: both sign braces, the light arm and head, and three
+  guard rails per nozzle — **54 faces**. It never showed in Blender's viewport and the owner caught
+  it in-game. The check that finds it is cheap and should be part of every audit here: copy the mesh
+  into a bmesh, record the face normals, run `bmesh.ops.recalc_face_normals`, and count the ones that
+  reversed. Note the mirrored pump was *correct* the whole time — `mirror_y()` re-winds, which
+  cancelled the fault on exactly one of the two.
 
 - Overlapping coplanar faces within 1 mm: **0**. The same fault was found and fixed **four times**
   across the four passes, always where **two boxes end flush**: skirt into cabinet, body into head,

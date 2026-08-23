@@ -105,13 +105,21 @@ BRACE_Z = 3.62                   # where the diagonal brace leaves the pole
 BRACE_X = -0.44                  # where it meets the arm
 BRACE_W = 0.05
 
-# Floodlight part-way up, aimed down at the island.  It is in the reference photo, and
-# without it the pole is 3 m of blank white in the middle of the silhouette.
-LAMP_Z = 3.02
-LAMP_REACH = 0.40
+# Area light part-way up, over the island.  It is in the reference photo, and without it
+# the pole is 3 m of blank white through the middle of the silhouette.
+#
+# A FLAT LUMINAIRE, mounted level - the shallow shoebox an HPS or fluorescent area light
+# actually comes in, not an aimed can.  Its underside is the lens and is the ONE face
+# given a different material, which costs nothing: a box already has that face.
+LAMP_Z = 3.02                    # height of the arm's centreline
+LAMP_REACH = 0.52                # arm length out from the pole
 LAMP_ARM_W = 0.038
-LAMP_HEAD = (0.17, 0.15)         # length along its own axis, cross-section
-LAMP_DROP = 0.13                 # how far the head's far end hangs below its root
+LAMP_BACK = 0.11                 # housing extent behind the arm's outer end...
+LAMP_FWD = 0.25                  # ...and ahead of it: 360 mm overall
+LAMP_HW = 0.120                  # half-width across the pole
+LAMP_DEEP = 0.095                # housing depth
+LAMP_HANG = 0.010                # top of the housing, below the arm's centreline
+LAMP_TAPER = 0.018               # sides slope in toward the top
 
 SIGN_CX = -0.24                  # sign box centre
 SIGN_W = 1.46                    # box, along X
@@ -379,8 +387,13 @@ def beam(p0, p1, w, h, mat):
     up = Vector((0.0, 0.0, 1.0))
     if abs(d.dot(up)) > 0.999:
         up = Vector((0.0, 1.0, 0.0))
+    # HANDEDNESS.  The faces below are wound for a RIGHT-handed (side, vert, d) frame,
+    # the same order box() uses for (x, y, z).  side.cross(d) gives -d back through the
+    # triple product, i.e. a LEFT-handed frame, and every beam in the model then exports
+    # inside-out: invisible in a two-sided viewport, a hole in the game.  d.cross(side)
+    # is the one that satisfies side x vert == d.
     side = d.cross(up).normalized()
-    vert = side.cross(d).normalized()
+    vert = d.cross(side).normalized()
     a, b = side * (w * 0.5), vert * (h * 0.5)
     v = [p0 - a - b, p0 + a - b, p0 + a + b, p0 - a + b,
          p1 - a - b, p1 + a - b, p1 + a + b, p1 - a + b]
@@ -788,13 +801,15 @@ def build():
     parts.append(prism_z(POLE_X, 0.0, COLLAR_TOP - 0.02, POLE_TOP,
                          POLE_R, POLE_R * 0.88, POLE_SIDES, "PumpBody", ph))
 
-    # --- floodlight --------------------------------------------------------
+    # --- area light --------------------------------------------------------
     lx = POLE_X + LAMP_REACH
-    parts.append(beam((POLE_X, 0.0, LAMP_Z), (lx, 0.0, LAMP_Z + 0.04),
+    parts.append(beam((POLE_X, 0.0, LAMP_Z), (lx, 0.0, LAMP_Z),
                       LAMP_ARM_W, LAMP_ARM_W, "PumpBody"))
-    parts.append(beam((lx - 0.02, 0.0, LAMP_Z + 0.04),
-                      (lx + LAMP_HEAD[0], 0.0, LAMP_Z + 0.04 - LAMP_DROP),
-                      LAMP_HEAD[1], LAMP_HEAD[1], "PumpTrim"))
+    lz1 = LAMP_Z - LAMP_HANG      # overlaps the arm, so no flush pair to z-fight
+    v, f, m, uvs = frustum(lx - LAMP_BACK, lx + LAMP_FWD, -LAMP_HW, LAMP_HW,
+                           lz1 - LAMP_DEEP, lz1, 0.0, LAMP_TAPER, "PumpTrim")
+    m[BOX_MZ] = "PumpBody"        # the underside IS the lens
+    parts.append((v, f, m, uvs))
 
     # --- sign arm and its brace --------------------------------------------
     parts.append(box(POLE_X, ARM_X1, -ARM_HW, ARM_HW, ARM_Z0, ARM_Z1, "PumpBody"))

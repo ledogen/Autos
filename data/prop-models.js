@@ -243,7 +243,8 @@ export const PROP_MODELS = {
   // pumps back to back so a car can pull up on either side — then the pump itself, from
   // narrow-and-upright into the wide, squat cabinet with an overhanging chrome head whose
   // raised bezel recesses the dial under a rain hood, and finally the nozzle, from four
-  // dark boxes into a real cast handheld one — body, tapered spout, open D-guard, trigger.
+  // dark boxes into a real cast handheld one — body, tapered spout, open D-guard, trigger —
+  // and the pole's aimed floodlight into a flat level luminaire with a lit-looking lens face.
   // Six materials, one 512x512 atlas carrying the word GAS and the gauge face. Head casing,
   // bezel and nozzle all share PumpMetal (owner ruling: the frame is the handle's metal).
   gasPump: {
