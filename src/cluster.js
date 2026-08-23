@@ -57,7 +57,10 @@ const STEEL_LO = '#6f6f68'
 // dash is seen from further above, so a key pointing up flattens more against one pointing sideways.
 const ISO = 0.80
 const KEY_PLASTIC = '#242428'   // moulded plastic key body
-const KEY_BLADE   = '#8d8d94'   // the cut metal blade between body and barrel
+// The key body is the keyhole slot's shape at a larger size — half-length and thickness, vs the
+// slot's 5.6 / 2.2. Keep it wider AND thicker than the slot or the two states stop reading apart.
+const KEY_BODY_L = 8.0
+const KEY_BODY_W = 5.2
 
 // Indent geometry (the recessed regions the dials sit in) and the housing margin around them.
 // The housing outline is NOT drawn as its own shape: it is the indent geometry dilated by
@@ -518,7 +521,8 @@ export class GaugeCluster {
   //
   //   OFF     no key at all — a bare silver disc with a dark slot lying on the 10 o'clock axis.
   //           An empty keyhole IS the "this truck is dead" read; nothing else has to say it.
-  //   START   the plastic key body, turned to 2 o'clock. Only ever seen while the key is held.
+  //   START   the plastic key body — the slot shape, fattened — turned to 2 o'clock. Only ever
+  //           on screen while the key is physically held against the spring.
   //   ON      the same key body at 12 o'clock — and it LOOKS different there, because the
   //           projection foreshortens vertically (see ISO below), so a key pointing up reads
   //           shorter and flatter than the same key pointing up-right. That is the perspective
@@ -533,47 +537,35 @@ export class GaugeCluster {
     const g = KEY
     if (this._keyPos === 'off') { this._drawKeyhole(ctx); return }
 
-    const draw = (oy, body, blade) => {
+    // The key body is deliberately the SAME shape as the keyhole, just wider and thicker (owner,
+    // 2026-08-22). That is the whole visual language of the switch: a thin dark slot means empty,
+    // a fat plastic bar means the key is in, and which way the bar lies is which detent it is at.
+    // No head, no blade, no keyring — none of that survives being 34 px across anyway.
+    const bar = (oy, fill) => {
       ctx.save()
       ctx.translate(g.cx, g.cy + oy)
       ctx.scale(1, ISO)                  // viewpoint foreshortening — before rotate, see above
       ctx.rotate(this._keyAngle)
-      ctx.fillStyle = blade
-      ctx.fillRect(1.6, -1.0, 4.6, 2.0)                            // blade out of the barrel
-      ctx.fillStyle = body
-      const x = 5.6; const y = -4.0; const w = 9.4; const h = 8.0; const rr = 2.9
+      ctx.fillStyle = fill
       ctx.beginPath()
-      ctx.moveTo(x + rr, y)
-      ctx.arcTo(x + w, y, x + w, y + h, rr)
-      ctx.arcTo(x + w, y + h, x, y + h, rr)
-      ctx.arcTo(x, y + h, x, y, rr)
-      ctx.arcTo(x, y, x + w, y, rr)
-      ctx.closePath()
+      ctx.roundRect(-KEY_BODY_L, -KEY_BODY_W / 2, KEY_BODY_L * 2, KEY_BODY_W, KEY_BODY_W / 2)
       ctx.fill()
       ctx.restore()
     }
     // Thickness first, then the face on top of it. 2 px of extrusion, not 1 — at this size a
     // one-pixel offset reads as a printing error rather than as a body standing off the metal.
-    draw(2.0, '#08080a', '#08080a')
-    draw(0, KEY_PLASTIC, KEY_BLADE)
-
-    // Details on the face only, in the same projected frame.
+    bar(2.0, '#08080a')
+    bar(0, KEY_PLASTIC)
+    // Moulding highlight down the body's upper edge, in the same projected frame.
     ctx.save()
     ctx.translate(g.cx, g.cy)
     ctx.scale(1, ISO)
     ctx.rotate(this._keyAngle)
-    ctx.beginPath()                                                // keyring hole, punched through
-    ctx.arc(11.4, 0, 1.9, 0, Math.PI * 2)
-    ctx.fillStyle = STEEL_HI
-    ctx.fill()
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)'
-    ctx.lineWidth = 0.6
-    ctx.stroke()
-    ctx.strokeStyle = 'rgba(255,255,255,0.22)'                     // bevel along the moulding edge
+    ctx.strokeStyle = 'rgba(255,255,255,0.20)'
     ctx.lineWidth = 0.9
     ctx.beginPath()
-    ctx.moveTo(7.4, -3.4)
-    ctx.lineTo(13.2, -3.4)
+    ctx.moveTo(-KEY_BODY_L + 2, -KEY_BODY_W / 2 + 0.9)
+    ctx.lineTo(KEY_BODY_L - 2, -KEY_BODY_W / 2 + 0.9)
     ctx.stroke()
     ctx.restore()
   }
