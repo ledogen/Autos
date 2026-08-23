@@ -38,13 +38,21 @@ const SPEEDO= { cx: 318, cy: 102, well: 70, scaleR: 62, start: 135, sweep: 270, 
 // It carries its OWN indent pad (smaller than DIAL_PAD) because at this size the standard ring would
 // be most of the dial. Three distances have to hold, and they are tight — check all three before
 // moving it (all measured from the speedo centre, 90.5 px away):
-//   wells apart      90.5 > SPEEDO.well + KEY.well (83)      or the key face eats the speedo face
-//   indent clears    90.5 − (well+pad) = 72.5 > SPEEDO.well   or it bites a crescent out of 120/km-h
-//   indents overlap  90.5 < SPEEDO.well + DIAL_PAD + well+pad or the switch reads as a detached island
-const KEY   = { cx: 382, cy: 166, well: 13, pad: 5 }
+//   wells apart      93.3 > SPEEDO.well + KEY.well (87)      or the key face eats the speedo face
+//   indent clears    93.3 − (well+pad) = 73.3 > SPEEDO.well   or it bites a crescent out of 120/km-h
+//   indents overlap  93.3 < SPEEDO.well + DIAL_PAD + well+pad or the switch reads as a detached island
+// The well grew 13 → 17 when the needle became a key grip: a key silhouette needs pixels to read as
+// an object, and 26 px of dial was not enough. 34 px is the most the three distances above allow.
+const KEY   = { cx: 384, cy: 168, well: 17, pad: 3 }
 // Key detents, in canvas angles (0 = 3 o'clock, increasing clockwise): 10 / 12 / 2 o'clock.
 const KEY_ANGLE = { off: 210 * DEG, on: 270 * DEG, start: 330 * DEG }
-const KEY_TICK_R = 11.5   // outer radius of the detent ticks (they run inward 3 px, to r=8.5)
+const KEY_TICK_R = 16.5   // detent ticks run inward from here to r=14.5 — OUTSIDE the fascia, framing it
+const KEY_FASCIA_R = 12   // the silver escutcheon the key turns in
+// Escutcheon metal. The rest of the cluster is dark plastic; the ignition surround is the one part
+// of a real dash that is bare metal, and that contrast is what makes the switch findable.
+const STEEL_HI = '#e4e4de'
+const STEEL    = '#b4b4ac'
+const STEEL_LO = '#6f6f68'
 
 // Indent geometry (the recessed regions the dials sit in) and the housing margin around them.
 // The housing outline is NOT drawn as its own shape: it is the indent geometry dilated by
@@ -182,10 +190,26 @@ export class GaugeCluster {
     this._paintKeyFace(ctx)
   }
 
-  // FEAT-33 ignition switch face: three detent ticks at 10 / 12 / 2 o'clock (OFF / ON / START) and
-  // the barrel the key turns in. The key itself is live — see _drawKey.
+  // FEAT-33 ignition switch face: a silver escutcheon with three detent ticks FRAMING it at
+  // 10 / 12 / 2 o'clock (OFF / ON / START). There is no needle — the key grip itself is the pointer,
+  // drawn live in _drawKey.
   _paintKeyFace (ctx) {
     const g = KEY
+    // Escutcheon: lit from the top-left like the rest of the cluster's shading, with a dark seam
+    // where the metal meets the plastic recess.
+    const grad = ctx.createRadialGradient(g.cx - 4.5, g.cy - 5, 0.5, g.cx, g.cy, KEY_FASCIA_R)
+    grad.addColorStop(0, STEEL_HI)
+    grad.addColorStop(0.55, STEEL)
+    grad.addColorStop(1, STEEL_LO)
+    ctx.beginPath()
+    ctx.arc(g.cx, g.cy, KEY_FASCIA_R, 0, Math.PI * 2)
+    ctx.fillStyle = grad
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(0,0,0,0.65)'
+    ctx.lineWidth = 1
+    ctx.stroke()
+    // Ticks sit on the dark recess OUTSIDE the metal, so they frame the escutcheon instead of
+    // competing with the key for the middle of the dial.
     const r = KEY_TICK_R
     for (const [pos, a] of Object.entries(KEY_ANGLE)) {
       const c = Math.cos(a); const sn = Math.sin(a)
@@ -195,7 +219,7 @@ export class GaugeCluster {
       ctx.lineWidth = pos === 'on' ? 1.6 : 1.2
       ctx.beginPath()
       ctx.moveTo(g.cx + c * r, g.cy + sn * r)
-      ctx.lineTo(g.cx + c * (r - 3), g.cy + sn * (r - 3))
+      ctx.lineTo(g.cx + c * (r - 2), g.cy + sn * (r - 2))
       ctx.stroke()
     }
     // No 'IGN' legend at this size — a 7 px word inside a 26 px dial is mud, and the three detents
@@ -477,43 +501,73 @@ export class GaugeCluster {
     ctx.fill()
   }
 
-  // FEAT-33: the key in the barrel, drawn at the current (lagged) angle. A short blade with a bow at
-  // the tip, sized to stay inside the detent ticks so it never covers the mark it is pointing at.
-  // While the starter is turning the barrel glows the same red as the START tick, which is what
-  // actually reads at this size — the key shape only has to say WHICH detent.
+  // FEAT-33: the key itself, drawn at the current (lagged) angle. NOT a needle — a key grip standing
+  // out of the escutcheon, which is what makes the switch read at a glance: you are looking at an
+  // object, not at an instrument pointer.
+  //
+  // The "sticking out" read comes from two cheap tricks, no 3D:
+  //   1. A vertical squash applied BEFORE the rotation, so it is a fixed viewpoint rather than
+  //      something that spins with the key: the grip sweeps a slight ellipse, seen from a bit above.
+  //   2. The same silhouette drawn twice — once in near-black as the grip's THICKNESS, then the face
+  //      on top. THE OFFSET BETWEEN THEM IS IN SCREEN SPACE (always down-right), not in the key's
+  //      rotated frame: an extrusion that turns with the object reads as a smear, not as depth.
   _drawKey (ctx) {
     const g = KEY
-    const a = this._keyAngle
-    const c = Math.cos(a); const s = Math.sin(a)
+    const draw = (ox, oy, fill) => {
+      ctx.save()
+      ctx.translate(g.cx + ox, g.cy + oy)
+      ctx.scale(1, 0.86)                 // viewpoint foreshortening — before rotate, see above
+      ctx.rotate(this._keyAngle)
+      this._keyGrip(ctx, fill)
+      ctx.restore()
+    }
+    draw(0.8, 1.1, '#08080a')                                     // extruded thickness
+    draw(0, 0, this._cranking ? '#5e2820' : '#2a2a30')            // face, warmed while cranking
+    // Keyring hole punched through the grip, filled with the metal tone as if you can see the
+    // escutcheon through it. This one detail is what stops the silhouette reading as a dark blob.
     ctx.save()
     ctx.translate(g.cx, g.cy)
-    ctx.rotate(a)
-    // Blade: a wedge from the barrel out to r = 17, with two cut notches along its lower edge.
-    ctx.fillStyle = NEEDLE
+    ctx.scale(1, 0.86)
+    ctx.rotate(this._keyAngle)
     ctx.beginPath()
-    ctx.moveTo(1.8, -1.15)
-    ctx.lineTo(3.6, -1.15)
-    ctx.lineTo(3.6, -0.5); ctx.lineTo(4.4, -0.5)   // notches along the blade's back
-    ctx.lineTo(4.4, -1.15)
-    ctx.lineTo(5.6, -1.15)
-    ctx.lineTo(5.6, 1.15)
-    ctx.lineTo(1.8, 1.15)
+    ctx.arc(10.9, 0, 1.85, 0, Math.PI * 2)
+    ctx.fillStyle = STEEL_HI
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)'
+    ctx.lineWidth = 0.6
+    ctx.stroke()
+    ctx.restore()
+    // The barrel collar sits on the shank root: the key goes INTO the switch, not onto it. It is
+    // the crank tell-tale too — lit red while the starter turns, which at this size is the thing you
+    // actually notice from the corner of your eye.
+    ctx.beginPath()
+    ctx.arc(g.cx, g.cy, 2.0, 0, Math.PI * 2)
+    ctx.fillStyle = this._cranking ? RED : '#3a3a3e'
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)'
+    ctx.lineWidth = 0.8
+    ctx.stroke()
+  }
+
+  // One key silhouette in the caller's already-rotated frame: a shank out of the barrel into a
+  // rounded grip. Stroked as well as filled so the dark key keeps a crisp edge against the metal.
+  _keyGrip (ctx, fill) {
+    ctx.fillStyle = fill
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)'
+    ctx.lineWidth = 0.6
+    ctx.beginPath()
+    ctx.rect(1.4, -0.9, 4.2, 1.8)                                // shank
+    ctx.fill()
+    ctx.beginPath()
+    const x = 5.0; const y = -3.6; const w = 8.8; const h = 7.2; const rr = 2.7
+    ctx.moveTo(x + rr, y)
+    ctx.arcTo(x + w, y, x + w, y + h, rr)
+    ctx.arcTo(x + w, y + h, x, y + h, rr)
+    ctx.arcTo(x, y + h, x, y, rr)
+    ctx.arcTo(x, y, x + w, y, rr)
     ctx.closePath()
     ctx.fill()
-    ctx.restore()
-    // Barrel over the blade root, so the key reads as going INTO the switch rather than sitting on it.
-    ctx.beginPath()
-    ctx.arc(g.cx, g.cy, 3.1, 0, Math.PI * 2)
-    ctx.fillStyle = this._cranking ? RED : '#2a2624'
-    ctx.fill()
-    ctx.strokeStyle = 'rgba(0,0,0,0.6)'
-    ctx.lineWidth = 1
     ctx.stroke()
-    // Bow (the part you hold), out past the blade tip.
-    ctx.beginPath()
-    ctx.arc(g.cx + c * 6.3, g.cy + s * 6.3, 1.25, 0, Math.PI * 2)
-    ctx.fillStyle = NEEDLE
-    ctx.fill()
   }
 
   // Six-digit drum, white on black; the ones digit rolls continuously with the fraction.
