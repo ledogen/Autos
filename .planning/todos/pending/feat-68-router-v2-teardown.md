@@ -1805,7 +1805,14 @@ component, infeasible 0) · build 2.3–4.1 s at 1× headless.
 
 # CURRENT HANDOFF (2026-08-22) — read this one
 
-**Where the work lives.** ONE ticket — this file. Everything above is a dated record, appended in
+**The mid-edge crossing/overlap class has MOVED to its own ticket: `BUG-55`** (owner instruction
+2026-08-22 — "bring out a more powerful model to reassess and figure out how to clean up all the
+mid-edge crossings once and for all"). BUG-55 is a re-design mandate, written to be read cold: the
+measured taxonomy, what ships, the three walls that stopped the current mechanism, and the thirteen
+negative results. Everything below in this file stays the build lineage. **Start there for anything
+about crossings, overlaps or merging; start here for the router itself.**
+
+**Where the rest of the work lives.** ONE ticket — this file. Everything above is a dated record, appended in
 order; this section is the only live "what now". (BUG-53 — the road-overlap defects filed
 2026-08-20 from the owner's capture — was ABSORBED into this ticket 2026-08-20 so handoffs stay a
 single document: its full record + acceptance is the "BUG-53 (absorbed)" section above, its
@@ -1864,7 +1871,8 @@ judgment (stash-A/B'd against pre-pin src):
    as defaults, `3a0240e`). Only Max Bore Grade (0.18) was never explicitly on screen; mention it
    whenever the owner is next in the panel. The map-judging verdict on the trims: "it looks very
    good" — a DRIVEN pass (feel, forks, tunnels) is still wanted before character sign-off.
-2. **BUG-53 phase 2: SHIPPED** (`e5b3205`, record above) — the proximity merge replaced the
+2. **Crossings / overlaps / merging → `BUG-55`** (re-design mandate; supersedes what follows).
+   For the record, where this left off: **BUG-53 phase 2 SHIPPED** (`e5b3205`, record above) — the proximity merge replaced the
    crossing anchor as one catch-all rule, and the wide-angle-fork item went with it (forks build
    at 108° now). **A DRIVEN pass over the new forks is the owner moment this is waiting on.**
    What remains of the class, named and reproducible:
