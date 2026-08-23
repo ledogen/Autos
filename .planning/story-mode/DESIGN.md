@@ -838,7 +838,18 @@ well-defined as an endpoint. The consequences that *do* need honoring:
   POIs — the random-point generator is the stand-in until FEAT-21 gives the world real destinations
   worth naming ("the milk's at the store" needs a store).
 
-### Damage, wear & repair [DEFAULT — owner brain-dump 2026-07-19, mechanism proposals mine]
+### Damage, wear & repair [DEFAULT 2026-07-19 · AMENDED 2026-08-23]
+
+> **Amended by the SM-3 ratification and build, 2026-08-19 → 2026-08-22.** The framework below
+> stands unchanged — one framework, per-component 0–100% condition, honest signals only, out of the
+> hot loop, per-run state (SM-INV-8), time+intensity never distance (SM-INV-5). Six things moved:
+> suspension split into **springs and dampers**; four new classes (**armor, wheels, headlights,
+> alignment**) that this section does not otherwise have, with **armor** the routing mechanism every
+> impact goes through; **brakes wear on energy, not time**; the suspension-trigger sub-question is
+> closed; the fatal-crash metric is Δv measured off the vehicle; and the **air filter is not in the
+> ratified track list** — an open question, marked below. The full track table is
+> `MILESTONES.md` § SM-3. Provenance and the fuller argument:
+> `design-amendments-2026-08-23-sm3.md` §1–6.
 
 The second death (breakdown) lives here. **One framework, per-component condition tracks** (see the
 economy note above): each component below carries an independent 0–100% condition, integrated cheaply
@@ -870,22 +881,44 @@ tracks obey SM-INV-5 (time + intensity, never distance).
 **Engine.**
 - **Wear = f(rpm, load, time)** — gentle cruising costs far less than aggressive driving; both integrate
   over time (SM-INV-5). rpm-hours + load are the signals.
-- **Air filter condition** is its own track and the one the player must *watch*: it does ~nothing until
+- **Air filter condition** — **OPEN, NOT IN THE RATIFIED TRACK LIST** [2026-08-23]. SM-3 ratifies
+  twenty-six tracks in eight classes and none of them is a filter; engine damage there is front
+  impact, coolant above 105 °C, and a slow f(rpm, torque, load). Needs a ruling — dropped (and this
+  paragraph struck, along with the diagnostic screen's stated headline job), deferred (a known gap
+  with a ticket), or restored (wants a class and a damage source).
+  > Provenance: `design-amendments-2026-08-23-sm3.md` §6. As written it is its own track and the one
+  > the player must *watch*: it does ~nothing until
   ~20%, then **sharply accelerates engine wear**. **Dusty / dirt roads degrade it faster** — the direct
   FEAT-38 tie (dust exposure feeds filter degradation). It's a cheap consumable to replace; letting it
   bottom out silently kills the engine. The diagnostic screen (below) exists largely to flag this.
 - **Overheating** (see radiator) causes temporary power loss **and** heavy engine wear; prolonged or
   repeated overheat blows the head gasket (a hard engine failure).
 
-**Suspension.**
-- Wear primarily degrades **shock damping** (the damper coefficient drops → floatier, worse-controlled
-  truck). Ratified anchor: **severity-thresholded, no-harm floor** — light bump-stop contact is
-  harmless; hard hits damage. Trigger reads an honest signal — either **bump-stop over-travel past a
-  distance** or a **suspension-velocity component threshold** (open sub-question, both are honest;
-  probably the bump-stop force the physics already computes).
+**Suspension — TWO tracks: springs and dampers** [AMENDED 2026-08-19].
+- Front pair and rear pair each, damaged by different things and failing differently: a dead damper is
+  floaty and poorly controlled, a dead spring sits the truck down on its stops. Folding them together
+  loses that, and "the suspension is shot" stops meaning anything specific enough to diagnose.
+- **Dampers** — damaged by suspension displacement RATE above a no-harm floor; damping rate falls.
+- **Springs** — damaged by bump-stop PEAK FORCE, per event; spring rate falls, bottoming out at **50%
+  of stock, never zero** (a real spring keeps some elastic, and below half the truck stops being
+  drivable).
+- Ratified anchor unchanged: **severity-thresholded, no-harm floor** — light bump-stop contact is
+  harmless; hard hits damage.
+- The old open sub-question (bump-stop over-travel vs suspension-velocity threshold) is **closed, and
+  split**: dampers take the velocity answer, springs take the force answer but priced on the PEAK of
+  each event, never integrated over time — a landing spike is enormous and lasts ~15 ms, so an
+  integral barely saw it while a long lean on the stops accumulated forever.
+  > Provenance: `design-amendments-2026-08-23-sm3.md` §1, §4.
 
 **Brakes — front pair + rear pair (two tracks, deliberately coarse).**
-- Wear = **∫(brake torque × time)** (N·m·time). Worn pads = less stopping power. Simple.
+- Wear = **∫(brake torque × wheel speed × time)** — the friction ENERGY the pads dissipate. Worn pads
+  = less stopping power.
+  > **REVERSES** this section's original `∫(brake torque × time)` [2026-08-22]. Torque×time wore the
+  > pads while the truck simply sat on a hill with the brakes holding it; a stationary pad slides
+  > nothing and loses nothing, so it was the wrong quantity rather than a wrong coefficient. Energy
+  > beats the speed floor that would also have hidden the symptom: no threshold, standstill is zero
+  > by construction, and a crawl-speed drag correctly costs far less than the same torque at 60 mph.
+  > Provenance: `design-amendments-2026-08-23-sm3.md` §3.
 - Pairs (not four corners) so the player can **mix pad grades front vs rear** (standard / sport / race)
   to tune **brake bias** — a big handling lever (bias shifts lock-up and rotation). Pads are
   *described, never scored* (SM-INV-10): a race pad changes what the truck does under braking, it
@@ -912,9 +945,15 @@ tracks obey SM-INV-5 (time + intensity, never distance).
   The **tow fast-travels to the nearest town** but is priced **near-prohibitively** — usually the
   economically run-ending choice, a genuine last resort — so the player is forced to weigh limping vs.
   paying. Can't afford it → automatic run-end.
-- **Fatal-crash threshold:** a deceleration / G threshold (e.g. Δv ≈ 60 mph shed in ~0.1 s). Acknowledged
-  hard to tune and dependent on the collision model (FEAT-09/26); a raw Δv-over-Δt threshold is the
-  fallback. This is the **crash** death — SM-INV-1 is unchanged, no new fail state.
+- **Fatal-crash threshold:** **Δv measured off the vehicle** — an impact's severity is the truck's own
+  velocity change across the collision, and 60 mph equivalent is fatal. This is the **crash** death —
+  SM-INV-1 is unchanged, no new fail state.
+  > The Δv-over-Δt route was written here as the *fallback*; it is now the primary, because the
+  > contact-impulse route it was a fallback to is what failed. A solver's accumulated normal impulse
+  > is not net momentum transfer — it includes the impulses spent pushing penetration back out — and
+  > measured against owner captures it read a 60 mph strike as 104. Δv keeps the property impulse was
+  > chosen for: a glance barely deflects the truck, so it still prices as the small hit it is.
+  > Provenance: `design-amendments-2026-08-23-sm3.md` §5.
 
 **Repair & maintenance venues.**
 - **Roadside self-service** for tires (and likely the filter): burn hours, need the part on hand.
@@ -1365,8 +1404,15 @@ escalate rather than assuming the pane is licensed for it.
    credits energy** rather than draining it. No residual.
 8. **Two damage-model mechanisms flagged for owner OK** (proposals in "Damage, wear & repair"):
    the **head-gasket metric** (proposed: an overheat integral — time-above-threshold × severity)
-   and the **suspension-damage trigger** (bump-stop over-travel distance vs. suspension-velocity
-   threshold). Both read honest signals; pick at SM-3 planning.
+   and the ~~**suspension-damage trigger**~~. **The trigger is RESOLVED 2026-08-22, and split** —
+   dampers take suspension velocity above a no-harm floor, springs take bump-stop force but priced
+   on the PEAK of each event rather than integrated over time (a landing spike is enormous and lasts
+   ~15 ms, so an integral barely saw it). The gasket metric is still a proposal, and still
+   unimplemented. **Two new SM-3 questions join this item**: whether the **air filter** is dropped,
+   deferred or restored (it has a whole paragraph above but is not in the ratified 26-track list),
+   and whether **death and total armor loss should be the same impact again** — they were both 60 mph
+   by design until armor was re-anchored to saturate at 80.
+   Provenance: `design-amendments-2026-08-23-sm3.md` §4, §5, §6.
 9. **Forced progression: what pushes the player out of the easy early zones?** (owner, 2026-07-19,
    UNDECIDED — two live options, not mutually exclusive.) **Status 2026-07-29: (A) is the operative
    difficulty ramp** — SM-INV-14 makes XP *position against A's cost curve*, so A is now load-bearing
