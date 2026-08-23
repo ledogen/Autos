@@ -135,8 +135,26 @@ HEAD_OVER_X = 0.031              # the head OVERHANGS the body: sides...
 HEAD_OVER_Y = 0.035              # ...and front.  NOT the back - two mirrored heads
                                  # would interpenetrate across the centreline.
 HEAD_MARGIN = 0.035              # chrome frame width around the gauge plate
-FACE_PROUD = 0.008               # gauge plate stands off the frame
+FACE_PROUD = 0.008               # gauge plate stands off the head's front face
 FACE_T = 0.014
+
+# THE BEZEL.  Four raised chrome rails tiling the margin band, so the dial sits in a
+# RECESS instead of being a decal on a flat box - the reference has this and the owner
+# asked for it read louder than the reference does it.  The top rail is proud twice as
+# far as the others and rises a little above the head: that is the drip hood, the thing
+# that would actually keep rain off the digits, and it is the whole point of the part.
+#
+# Every rail is deliberately kept off the head's own faces.  A rail whose outer face
+# lands exactly ON the head's side, top or bottom face is the flush-ending z-fight this
+# model has already hit three times, so the sides inset, the sill starts high, and the
+# hood overshoots.
+FRAME_LAP = 0.008                # how far the rails overlap the plate's edges
+FRAME_INSET = 0.005              # rail outer edge, inset from the head's side faces
+FRAME_SILL = 0.006               # bottom rail start, above the head's underside
+FRAME_CAP = 0.006                # top rail rise, above the head's top face
+FRAME_ROOT = 0.015               # how far the rails are rooted back into the head
+FRAME_PROUD = 0.026              # sides and sill
+HOOD_PROUD = 0.048               # top rail: the rain hood
 
 # Holster, nozzle, handle and hose.  X values are offsets from the BODY EDGE
 # (PUMP_HW), Y values are offsets back from the BODY FRONT (PUMP_Y1), so
@@ -236,11 +254,16 @@ GLASS = (0.055, 0.052, 0.050)     # register window surround
 OBJ_NAME = 'GasPump'
 OUT_GLB = os.path.join(os.path.dirname(bpy.data.filepath) or '.', '..', 'gas-pump.glb')
 
-# Plate aspects DERIVED from the atlas, never typed twice.
+# Plate aspects DERIVED from the atlas, never typed twice.  The PLATE is the artwork;
+# the OPENING is the hole the bezel leaves, one FRAME_LAP smaller all round, so the
+# rails cover the plate's outer 8 mm the way a real bezel covers a dial's rim.
 SIGN_FACE_H = SIGN_FACE_W * (SIGN_REGION[1] - SIGN_REGION[0])
-GAUGE_PLATE_W = 2.0 * (PUMP_HW + HEAD_OVER_X) - 2.0 * HEAD_MARGIN
+HEAD_HW = PUMP_HW + HEAD_OVER_X
+GAUGE_PLATE_W = 2.0 * HEAD_HW - 2.0 * HEAD_MARGIN + 2.0 * FRAME_LAP
 GAUGE_PLATE_H = GAUGE_PLATE_W * (GAUGE_REGION[1] - GAUGE_REGION[0])
-HEAD_TOP = BODY_TOP + GAUGE_PLATE_H + 2.0 * HEAD_MARGIN
+OPEN_W = GAUGE_PLATE_W - 2.0 * FRAME_LAP
+OPEN_H = GAUGE_PLATE_H - 2.0 * FRAME_LAP
+HEAD_TOP = BODY_TOP + OPEN_H + 2.0 * HEAD_MARGIN
 
 
 # ---------------------------------------------------------------------------
@@ -589,19 +612,36 @@ def pump_parts():
                      BODY_TAPER, 0.0, "PumpSkirt"))
 
     # --- head: chrome box overhanging the body on three sides --------------
-    hx = e + HEAD_OVER_X
+    hx = HEAD_HW
     hy1 = fy + HEAD_OVER_Y
     p.append(box(cx - hx, cx + hx, PUMP_Y0, hy1, BODY_TOP, HEAD_TOP, "PumpChrome"))
 
     # --- gauge plate: the only face on this pump carrying artwork ----------
-    px0, px1 = cx - GAUGE_PLATE_W * 0.5, cx + GAUGE_PLATE_W * 0.5
-    pz0 = BODY_TOP + HEAD_MARGIN
-    pz1 = pz0 + GAUGE_PLATE_H
+    # It is FRAME_LAP bigger than the opening in both axes, so its rim tucks under the
+    # bezel rails below rather than butting them edge to edge.  The artwork is mapped
+    # to the PLATE, so that lap hides 8 mm of cream margin and nothing that reads.
+    ox0, ox1 = cx - OPEN_W * 0.5, cx + OPEN_W * 0.5
+    oz0 = BODY_TOP + HEAD_MARGIN
+    oz1 = oz0 + OPEN_H
+    px0, px1 = ox0 - FRAME_LAP, ox1 + FRAME_LAP
+    pz0, pz1 = oz0 - FRAME_LAP, oz1 + FRAME_LAP
     v, f, m, uvs = box(px0, px1, hy1 + FACE_PROUD - FACE_T, hy1 + FACE_PROUD,
                        pz0, pz1, "PumpChrome")
     m[BOX_PY] = "PumpGraphic"
     uvs[BOX_PY] = plate_uv(v, f[BOX_PY], GAUGE_REGION, px0, px1, pz0, pz1)
     p.append((v, f, m, uvs))
+
+    # --- bezel: four raised rails, the top one a rain hood -----------------
+    rx0, rx1 = cx - hx + FRAME_INSET, cx + hx - FRAME_INSET
+    y0 = hy1 - FRAME_ROOT
+    rails = (
+        (rx0, rx1, BODY_TOP + FRAME_SILL, oz0, FRAME_PROUD),   # sill
+        (rx0, rx1, oz1, HEAD_TOP + FRAME_CAP, HOOD_PROUD),     # hood
+        (rx0, ox0, oz0, oz1, FRAME_PROUD),                     # left stile
+        (ox1, rx1, oz0, oz1, FRAME_PROUD),                     # right stile
+    )
+    for a, b, z0, z1, proud in rails:
+        p.append(box(a, b, y0, hy1 + proud, z0, z1, "PumpChrome"))
 
     # --- fitting, holster, nozzle, spout, squeeze handle -------------------
     for dx, dy, dz in ((FIT_DX, FIT_DY, FIT_Z), (BOOT_DX, BOOT_DY, BOOT_Z),
@@ -754,6 +794,7 @@ def stats():
                dims=dims, minz=min(v.z for v in bb),
                head_top=round(HEAD_TOP, 4),
                plate=(round(GAUGE_PLATE_W, 4), round(GAUGE_PLATE_H, 4)),
+               opening=(round(OPEN_W, 4), round(OPEN_H, 4)),
                materials=len(ob.data.materials), images=len(bpy.data.images),
                uvs=len(ob.data.uv_layers))
     ob.evaluated_get(dg).to_mesh_clear()

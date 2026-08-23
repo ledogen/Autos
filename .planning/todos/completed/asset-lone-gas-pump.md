@@ -58,7 +58,7 @@ Hose and nozzle as a simple hanging tube, ≤60 tris. Dial face is texture; do n
 
 ## Resolution — 2026-08-22
 
-Shipped as `assets/models/gas-pump.glb`, **460 tris**, 6 materials, one 512×512 texture atlas.
+Shipped as `assets/models/gas-pump.glb`, **556 tris**, 6 materials, one 512×512 texture atlas.
 Sources: `assets/models/src/gas-pump.{blend,py}`. Registered as `gasPump` in `data/prop-models.js`
 under a **new `gasStation` pool** — see "Open items", it does not spawn yet and that is deliberate.
 
@@ -73,9 +73,9 @@ The Spec table above is left as written; this section is what was actually built
 
 | Field | Spec said | Shipped | Why |
 |---|---|---|---|
-| Tri budget | ≤600 | **460** | Inside, and it now buys two pumps, a 4.55 m pole, a sign and a floodlight. Pass 2 *saved* 60 tris: the blank-window dial and the roof crown went, the head frame and gauge plate came in. |
+| Tri budget | ≤600 | **556** | Inside, and it now buys two pumps, a 4.55 m pole, a sign, a floodlight and two four-rail bezels. Pass 2 first *saved* 60 tris (the blank-window dial and the roof crown went), then pass 3 spent 96 on the bezels. |
 | Texture | 512×512, dial + livery + rust + digits | **512×512 atlas: GAS + the gauge face** | Livery and rust are *wear*, the named ART-STYLE anti-pattern — still dropped. The dial and digits stayed on the owner's 2026-08-22 call: a pump register is printed information, which is exactly what rule 1 buys a texture for. |
-| Real size | 0.6 × 1.1 m, 1.9 m tall | **2.50 × 1.40 m, 4.55 m tall**; each pump 0.72 × 0.53 × 1.42 | The pole is the asset. Everything below it is detail the player only gets once they have already arrived. |
+| Real size | 0.6 × 1.1 m, 1.9 m tall | **2.50 × 1.40 m, 4.55 m tall**; each pump 0.72 × 0.56 × 1.42 | The pole is the asset. Everything below it is detail the player only gets once they have already arrived. |
 | Collision | `[0.6, 1.9, 1.1]` | `{ shape: 'box', size: [2.50, 1.45, 1.40] }` | Island and pumps up to the head at 1.42 m. **The pole above that is deliberately not collided** — a 4.55 m box would be an invisible wall to anything tall, and clipping a mirror on a sign post is not a crash. Note the registry field is `size`, not the ticket's `dims`. |
 | Material names | (implicit, "stable") | `PumpSign` became **`PumpGraphic`** in pass 2 | It carries the gauge artwork as well as the sign now, so the old name lied. Nothing referenced it — no palette, no loader hook. |
 
@@ -98,6 +98,17 @@ into a picture frame. Bought deliberately.
 
 Value structure bottom to top: near-black plinth, wide red bodies carrying the only saturation, a
 bright head with a cream dial as the thing you look *at*, then a white pole to a white sign at 4 m.
+
+**The bezel is pass 3, and it is the part that finishes the head.** Four raised chrome rails tile
+the margin band around the dial, so the artwork sits in a real recess rather than reading as a decal
+on a flat box. The top rail is proud 48 mm against the others' 26 mm and rises 6 mm above the head:
+that is the drip hood — the owner's brief was *"something that would keep the rain off the digits;
+the reference has this but it's very subtle, we need something"*, so it is deliberately louder than
+the reference. The plate is 8 mm bigger than the opening in both axes so its rim tucks *under* the
+rails instead of butting them edge to edge; the artwork is mapped to the plate, so that lap hides
+8 mm of cream margin and nothing that reads. Every rail is kept off the head's own faces — sides
+inset 5 mm, sill starts 6 mm high, hood overshoots 6 mm — because a rail landing flush on the head's
+side, top or bottom face is the same z-fight this model has now hit four times.
 
 The two pumps are one part list and its mirror through y = 0, separated by a 30 mm gap so they read
 as two. The **squeeze handle** the owner asked for by name is real geometry. The **floodlight**
@@ -122,13 +133,14 @@ a wide window came out taller than the window and spilled over both edges.
 
 ### Audit (all clean at hand-over)
 
-- Overlapping coplanar faces within 1 mm: **0**. Three were found and fixed across the two passes —
-  the skirt now runs 20 mm past the cabinet underside, and the body top runs 20 mm into the head,
-  rather than either ending flush.
+- Overlapping coplanar faces within 1 mm: **0**. The same fault was found and fixed three times
+  across the three passes, always where **two stacked boxes end flush**: skirt into cabinet, body
+  into head, and the bezel rails against the head's own faces. Fix is always to overlap or offset,
+  never to butt.
 - Non-manifold edges / loose verts / degenerate faces: **0**. The sign faces started as single open
   quads and were closed into thin plates (+20 tris) rather than shipped as boundaries.
 - Exports single-sided (`campfire`/`gnome` convention), no Draco, no KTX2, one embedded PNG,
-  metalness 0 throughout, 272 KB.
+  metalness 0 throughout, 285 KB.
 - **Artwork handedness verified rendered from both sides**, sign and gauge. It shipped as `SAG` on
   the +Y face in pass 1: a bmesh face has a zero normal until `normal_update()` runs, so the
   `face.normal.y > 0` test silently returned false on both plates. Pass 2 removed the class of bug
