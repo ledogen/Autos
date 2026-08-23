@@ -237,13 +237,15 @@ export const PROP_MODELS = {
     tags: ['missionGiver'],
   },
 
-  // ASSET-14 — the lone gas pump, 556 tris, 2.50 x 4.55 x 1.40 m. RESHAPED BY THE OWNER
+  // ASSET-14 — the lone gas pump, 580 tris, 2.50 x 4.55 x 1.40 m. RESHAPED BY THE OWNER
   // twice on 2026-08-22: first from "one pump on a small pad" into the roadside island in
   // the reference photo — a 4.55 m pole carrying a lit GAS sign, and at its foot TWO box
   // pumps back to back so a car can pull up on either side — then the pump itself, from
   // narrow-and-upright into the wide, squat cabinet with an overhanging chrome head whose
-  // raised bezel recesses the dial under a rain hood.
-  // Six materials, one 512x512 atlas carrying the word GAS and the gauge face.
+  // raised bezel recesses the dial under a rain hood, and finally the nozzle, from four
+  // dark boxes into a real cast handheld one — body, tapered spout, open D-guard, trigger.
+  // Six materials, one 512x512 atlas carrying the word GAS and the gauge face. Head casing,
+  // bezel and nozzle all share PumpMetal (owner ruling: the frame is the handle's metal).
   gasPump: {
     url: 'assets/models/gas-pump.glb',
     // ISLAND AND PUMPS ONLY, up to the head's hood at 1.42 m. The pole above that is 0.13 m of

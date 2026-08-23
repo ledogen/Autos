@@ -40,11 +40,15 @@ density, so six is affordable.
   PumpConcrete  the island slab.  Mid grey, the ground the whole thing sits on.
   PumpBody      the pole, the sign arm, the sign bezel, the floodlight arm.
   PumpSkirt     the pump bodies.  Faded red, THE RECOLOURABLE ONE (see below).
-  PumpTrim      every dark part: plinth, holsters, nozzles, hoses, lamp head.
-  PumpChrome    the head frame.  THE ONE MATERIAL SPLIT THAT NEEDED ARGUING: it is a
-                thin rim at distance, but a bright band framing a cream dial over a
-                red body is the whole read of this pump, and cream (PumpBody) or dark
-                (PumpTrim) both kill it.  Bought deliberately, not by accident.
+  PumpTrim      every near-black part: plinth, hoses, lamp head.  NOT the nozzle any
+                more - that is bare metal now, see PumpMetal.
+  PumpMetal     the head casing and its bezel, AND the whole nozzle casting.  Owner
+                ruling 2026-08-22: the frame is the same metal as the pump handle, so
+                the two share one material - which is also the merge rule doing its
+                job, since they are the same colour and the same role (bare cast
+                metal).  It is the one split that needed arguing: a mid-grey band
+                framing a cream dial over a red body is the whole read of this pump,
+                and cream (PumpBody) or near-black (PumpTrim) both kill it.
   PumpGraphic   the baked atlas: sign faces AND gauge faces.  Textured; the other five
                 are flat colour with no UVs that mean anything.
 
@@ -156,38 +160,65 @@ FRAME_ROOT = 0.015               # how far the rails are rooted back into the he
 FRAME_PROUD = 0.026              # sides and sill
 HOOD_PROUD = 0.048               # top rail: the rain hood
 
-# Holster, nozzle, handle and hose.  X values are offsets from the BODY EDGE
-# (PUMP_HW), Y values are offsets back from the BODY FRONT (PUMP_Y1), so
-# re-proportioning the cabinet above drags the whole cluster with it instead of
-# stranding it mid-panel.
-FIT_DX = (-0.032, 0.040)         # hose fitting, straddling the body edge
-FIT_DY = (-0.405, -0.335)        # set BACK, so it never fouls the holster
-FIT_Z = (0.815, 0.895)
-BOOT_DX = (-0.007, 0.067)        # holster: hung high so it tucks under the head
-                                 # overhang, the way the reference hooks its nozzle
-BOOT_DY = (-0.245, -0.120)
-BOOT_Z = (0.815, 0.928)
-NOZ_DX = (0.005, 0.055)          # nozzle body
-NOZ_DY = (-0.228, -0.145)
-NOZ_Z = (0.680, 0.840)
-SPOUT_DX = (0.017, 0.043)        # spout, pointing down
-SPOUT_DY = (-0.212, -0.165)
-SPOUT_Z = (0.522, 0.695)
-LEVER_DX = (0.009, 0.051)        # the squeeze handle: the one detail the owner asked
-LEVER_DY = (-0.120, -0.068)      # for by name, so it gets real geometry
-LEVER_Z = (0.728, 0.768)
+# THE NOZZLE.  X values are offsets from the BODY EDGE (PUMP_HW), Y values are offsets
+# back from the BODY FRONT (PUMP_Y1), so re-proportioning the cabinet drags the whole
+# cluster with it instead of stranding it mid-panel.
+#
+# REBUILT 2026-08-22 pass 4.  The first version was four dark boxes and did not read as
+# a handheld nozzle at all.  This one is the anatomy of the reference casting: a chunky
+# BODY, a tapered SPOUT leaving its top-front and leaning up and forward, a big open
+# D-shaped GUARD hanging below, and a TRIGGER inside the guard.  The guard loop is the
+# signature silhouette - it is what says "you pick this up" - so it gets three of the
+# five parts.  The loop lies in the Y-Z plane, flat against the pump's flank, because
+# that is how a nozzle actually hangs and it keeps the thing out of the driving line.
+NOZ_DX = 0.040                   # nozzle plane, out from the body edge
+NOZ_BODY_HT = 0.025              # casting half-thickness across X
+NOZ_BODY_DY = (-0.125, -0.023)   # casting, front to back along the flank
+NOZ_BODY_Z = (0.730, 0.808)
+
+NOZ_SPOUT_A = (-0.060, 0.800)    # (dy, z) where the spout leaves the casting
+NOZ_SPOUT_B = ( 0.018, 0.944)    # ...and its tip.  Forward travel is capped by the
+                                 # head's front overhang, so the length comes from Z.
+NOZ_SPOUT_R = (0.023, 0.013)     # tapered: root, tip
+NOZ_SPOUT_SIDES = 5              # 5 reads round enough at 20 mm and costs 16 tris
+
+NOZ_GUARD_DY = (-0.115, -0.026)  # the D-loop's rear and front stiles
+NOZ_GUARD_Z = 0.615              # its bottom rail
+NOZ_GUARD_W = 0.030              # section across X...
+NOZ_GUARD_H = 0.019              # ...and across the rail's own thickness
+
+NOZ_TRIG_HT = 0.007              # Trigger: a SHORT bar tucked against the front stile,
+                                 # not a bar across the middle.  At 60 mm it split the
+                                 # loop into two small holes and the D stopped reading.
+NOZ_TRIG_DY = (-0.076, -0.028)   # front end runs INTO the guard's front stile:
+                                 # stopping 0.5 mm short of it was a coplanar pair
+NOZ_TRIG_Z = (0.672, 0.692)
+
+# The bracket the casting hangs on AND the port the hose leaves by - one part doing two
+# jobs, which is both 12 tris cheaper than two and how a real pump is plumbed: the hose
+# comes out of the flank right where the nozzle is holstered.
+# A RAIL, not a bracket: 230 mm along the flank, hanging the nozzle at its front end and
+# porting the hose at its rear.  Two jobs, one part, and the LENGTH is the point - the
+# hose has to leave the flank well behind where the nozzle hangs or its loop has nowhere
+# to sag and ends up swinging outboard, straight across the nozzle's own silhouette,
+# which is exactly what pass 4's first routing did.  The nozzle itself sits as far
+# FORWARD as the head's overhang allows, for the same reason.
+HOOK_DX = (-0.010, 0.038)
+HOOK_DY = (-0.290, -0.060)
+HOOK_Z = (0.795, 0.832)
 
 HOSE_R = 0.018
 HOSE_SIDES = 4
-HOSE_SEGS = 6                    # 4 segments read as two straight sticks
-# Cubic Bezier, (dx from body edge, dy back from body front, z): out of the fitting,
-# sagging in a U that hugs the body flank, then back up into the nozzle in its
-# holster.  Keep the out-swing modest - past dx ~ 0.15 the loop hangs off the island.
-HOSE_P0 = (0.010, -0.370, 0.860)
-HOSE_P1 = (0.140, -0.350, 0.560)
-HOSE_P2 = (0.140, -0.180, 0.380)
-HOSE_P3 = (0.032, -0.185, 0.890)  # ends INSIDE the holster box, so no open seam and
-                                  # the loop never crosses in front of the grip
+HOSE_SEGS = 4
+# Cubic Bezier, (dx from body edge, dy back from body front, z): out of the rail's REAR
+# end, a U that sags below the guard, then up into the casting's rear boss - which sits
+# ABOVE the guard, the way a real one is plumbed.  dx stays near the nozzle's own plane
+# throughout, so the loop hangs along the flank BEHIND the nozzle rather than swinging
+# out in front of it.
+HOSE_P0 = (0.018, -0.272, 0.790)
+HOSE_P1 = (0.058, -0.320, 0.520)
+HOSE_P2 = (0.058, -0.180, 0.470)
+HOSE_P3 = (0.032, -0.120, 0.756)
 
 # ---------------------------------------------------------------------------
 # TEXTURE ATLAS
@@ -240,7 +271,7 @@ MATERIALS = [
     ("PumpBody",     (0.700, 0.675, 0.600), 0.60),
     ("PumpSkirt",    (0.360, 0.075, 0.055), 0.75),
     ("PumpTrim",     (0.045, 0.046, 0.048), 0.55),
-    ("PumpChrome",   (0.660, 0.675, 0.700), 0.30),
+    ("PumpMetal",    (0.395, 0.405, 0.420), 0.38),
     ("PumpGraphic",  (1.000, 1.000, 1.000), 0.68),   # baseColor is the bake
 ]
 
@@ -309,6 +340,29 @@ def prism_z(cx, cy, z0, z1, r0, r1, sides, mat, phase=0.0):
         lo.append(Vector((cx + r0 * math.cos(a), cy + r0 * math.sin(a), z0)))
         hi.append(Vector((cx + r1 * math.cos(a), cy + r1 * math.sin(a), z1)))
     v = lo + hi
+    f = [tuple(range(sides - 1, -1, -1)), tuple(range(sides, 2 * sides))]
+    for i in range(sides):
+        j = (i + 1) % sides
+        f.append((i, j, sides + j, sides + i))
+    return v, f, [mat] * len(f), [None] * len(f)
+
+
+def prism_axis(p0, p1, r0, r1, sides, mat):
+    """Tapered n-gon prism between two arbitrary points, capped both ends.  prism_z()
+    only runs up Z; the nozzle spout leaves its casting at an angle, and rotating a
+    Z-prism into place would need a transform this file otherwise never uses."""
+    p0, p1 = Vector(p0), Vector(p1)
+    d = (p1 - p0).normalized()
+    ref = Vector((1.0, 0.0, 0.0))
+    if abs(d.dot(ref)) > 0.9:
+        ref = Vector((0.0, 0.0, 1.0))
+    u = (ref - d * ref.dot(d)).normalized()
+    w = d.cross(u).normalized()
+    v = []
+    for p, r in ((p0, r0), (p1, r1)):
+        for i in range(sides):
+            a = 2.0 * math.pi * i / sides
+            v.append(p + u * (r * math.cos(a)) + w * (r * math.sin(a)))
     f = [tuple(range(sides - 1, -1, -1)), tuple(range(sides, 2 * sides))]
     for i in range(sides):
         j = (i + 1) % sides
@@ -614,7 +668,7 @@ def pump_parts():
     # --- head: chrome box overhanging the body on three sides --------------
     hx = HEAD_HW
     hy1 = fy + HEAD_OVER_Y
-    p.append(box(cx - hx, cx + hx, PUMP_Y0, hy1, BODY_TOP, HEAD_TOP, "PumpChrome"))
+    p.append(box(cx - hx, cx + hx, PUMP_Y0, hy1, BODY_TOP, HEAD_TOP, "PumpMetal"))
 
     # --- gauge plate: the only face on this pump carrying artwork ----------
     # It is FRAME_LAP bigger than the opening in both axes, so its rim tucks under the
@@ -626,7 +680,7 @@ def pump_parts():
     px0, px1 = ox0 - FRAME_LAP, ox1 + FRAME_LAP
     pz0, pz1 = oz0 - FRAME_LAP, oz1 + FRAME_LAP
     v, f, m, uvs = box(px0, px1, hy1 + FACE_PROUD - FACE_T, hy1 + FACE_PROUD,
-                       pz0, pz1, "PumpChrome")
+                       pz0, pz1, "PumpMetal")
     m[BOX_PY] = "PumpGraphic"
     uvs[BOX_PY] = plate_uv(v, f[BOX_PY], GAUGE_REGION, px0, px1, pz0, pz1)
     p.append((v, f, m, uvs))
@@ -641,16 +695,33 @@ def pump_parts():
         (ox1, rx1, oz0, oz1, FRAME_PROUD),                     # right stile
     )
     for a, b, z0, z1, proud in rails:
-        p.append(box(a, b, y0, hy1 + proud, z0, z1, "PumpChrome"))
+        p.append(box(a, b, y0, hy1 + proud, z0, z1, "PumpMetal"))
 
-    # --- fitting, holster, nozzle, spout, squeeze handle -------------------
-    for dx, dy, dz in ((FIT_DX, FIT_DY, FIT_Z), (BOOT_DX, BOOT_DY, BOOT_Z),
-                       (NOZ_DX, NOZ_DY, NOZ_Z), (SPOUT_DX, SPOUT_DY, SPOUT_Z),
-                       (LEVER_DX, LEVER_DY, LEVER_Z)):
-        p.append(box(cx + e + dx[0], cx + e + dx[1],
-                     fy + dy[0], fy + dy[1], dz[0], dz[1], "PumpTrim"))
+    # --- the nozzle, hung on its hook -------------------------------------
+    # nx is the plane the whole casting lies in; the guard loop lives in it too, so
+    # the nozzle hangs flat against the flank instead of sticking into the driving line.
+    nx = cx + e + NOZ_DX
+    p.append(box(cx + e + HOOK_DX[0], cx + e + HOOK_DX[1],
+                 fy + HOOK_DY[0], fy + HOOK_DY[1], HOOK_Z[0], HOOK_Z[1], "PumpMetal"))
+    p.append(box(nx - NOZ_BODY_HT, nx + NOZ_BODY_HT,
+                 fy + NOZ_BODY_DY[0], fy + NOZ_BODY_DY[1],
+                 NOZ_BODY_Z[0], NOZ_BODY_Z[1], "PumpMetal"))
+    # spout: rooted INSIDE the casting at both the dy and the z, so there is no seam
+    p.append(prism_axis((nx, fy + NOZ_SPOUT_A[0], NOZ_SPOUT_A[1]),
+                        (nx, fy + NOZ_SPOUT_B[0], NOZ_SPOUT_B[1]),
+                        NOZ_SPOUT_R[0], NOZ_SPOUT_R[1], NOZ_SPOUT_SIDES, "PumpMetal"))
+    # the D-guard: front stile down, bottom rail back, rear stile up into the casting
+    gf, gr = fy + NOZ_GUARD_DY[1], fy + NOZ_GUARD_DY[0]
+    gz, gtop = NOZ_GUARD_Z, NOZ_BODY_Z[0]
+    for a, b in (((nx, gf, gtop), (nx, gf, gz)),
+                 ((nx, gf, gz), (nx, gr, gz)),
+                 ((nx, gr, gz), (nx, gr, gtop))):
+        p.append(beam(a, b, NOZ_GUARD_W, NOZ_GUARD_H, "PumpMetal"))
+    p.append(box(nx - NOZ_TRIG_HT, nx + NOZ_TRIG_HT,
+                 fy + NOZ_TRIG_DY[0], fy + NOZ_TRIG_DY[1],
+                 NOZ_TRIG_Z[0], NOZ_TRIG_Z[1], "PumpMetal"))
 
-    # --- hose: high fitting, sagging loop, back up into the nozzle ---------
+    # --- hose: out of the hook, sagging U, back up into the casting -------
     curve = [(cx + e + q[0], fy + q[1], q[2])
              for q in (HOSE_P0, HOSE_P1, HOSE_P2, HOSE_P3)]
     p.append(tube(bezier(*curve, HOSE_SEGS), HOSE_R, HOSE_SIDES, "PumpTrim"))
