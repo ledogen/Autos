@@ -1,5 +1,10 @@
 # HANDOFF 2026-08-19 (b) — SM-3 damage model, slice 2 mostly done
 
+> **SUPERSEDED 2026-08-23 by `HANDOFF-2026-08-23-damage-merge.md`.** Read that one. Several damage
+> SOURCES named below were later found to be the wrong quantity and were replaced — brakes, springs,
+> wheels and the impact metric all changed after driving them. Kept as the record of how slice 2
+> stood.
+
 Supersedes the movement notes in `HANDOFF-2026-08-19-damage-model.md`; everything that handoff says
 about the SEAM, the rulings, and the "do not rediscover these" list still stands and is not repeated
 here.
