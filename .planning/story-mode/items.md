@@ -126,6 +126,73 @@ Open, and the owner's to settle:
   ("pallets"). A pick-list needs three or four masses with different shapes — and shape matters as
   much as mass once it's in the bed.
 
+### 1b. The spoilage clock [owner-specified 2026-08-22]
+
+**A real timer, running all the time, measured in hours.** Every food and perishable item carries a
+spoilage clock that ticks against the day clock whether you are driving, parked or asleep. This is
+the first piece of §1a's missing timed-effect layer to be specified — and note it is a **decay**
+clock, not a buff clock: it takes things away rather than granting them, which is why it can exist
+before the buff question is settled.
+
+**Everything is in hours.** Multi-day durations are still expressible — they are just written 24 or
+48, never "two days." One unit, one clock, no second vocabulary.
+
+| Perishable | Fresh for | Consequence when it runs out |
+|---|---|---|
+| **Fish, uncooked** | **~4–5 h** | Gone. Cook and eat it on the spot, or lose it |
+| **Fish, in a cooler** | **~24 h basic, ~48 h better** | You can carry it, camp on it, and still eat it tomorrow — a two-rung ladder, see below |
+| *(everything else)* | unspecified | Cooked fish, bought food and food-as-cargo all want a figure |
+
+**What the fish number actually does.** The day is 12–16 h (the alertness ladder, FEAT-54), so a
+fish landed in the morning is dead by mid-afternoon. Without cooling, **fishing early is a
+commitment to stopping early** — you break off, make a fire, and cook it, which spends the one thing
+the day is made of. Fishing late is the free version; fishing at dawn costs you the middle of the
+day. That tension is entirely a product of the two clocks meeting, and nobody had to author it.
+
+**The cooler is the modifier, and it is a rate multiplier** (§2) — owner-ruled 2026-08-22. The
+owner's first shaping was *a flat percentage reduction to the spoilage timer*; the stored form is a
+**multiplier on the decay rate**, because multipliers compose when a second modifier turns up and
+percentages-off do not. Same design, honest arithmetic.
+
+> **The arithmetic, stated because it changes what kind of item this is.** 4–5 h → 24–48 h is not a
+> trim: it is the decay rate divided by roughly five to ten. So a cooler is never a marginal
+> modifier — it is the switch between two regimes, *eat it now* and *carry it*.
+
+**There is deliberately room above the first cooler** — owner-ruled 2026-08-22. This is why the
+multiplier form matters: at ~80–90% off there is almost no percentage left to give a better box, but
+as a rate multiplier the ladder just keeps halving and never runs out of room. So the first cooler
+must **not** be authored at the top of the range — a basic box that already gets you 48 h leaves the
+better one nothing to sell.
+
+The natural split — *proposed, not ruled; the owner has ratified the headroom, not these figures*:
+
+| Tier | Rate multiplier | Fish keeps for | Reads as |
+|---|---|---|---|
+| **None** | ×1 | ~4–5 h | An appointment: cook it where you stand |
+| **Cooler** | **×0.2** | **~24 h** | Carry it through the day, eat it at camp tonight |
+| **Better cooler** | **×0.1** | **~48 h** | Camp on it and still have it tomorrow |
+
+That reading takes the owner's own *"a day or two"* and treats **24–48 h as the ladder rather than
+one item's spread**, which is the cheapest way to honour the headroom ruling. The second tier is also
+where §3d's brand logic would naturally land if the shop ever wants it: same object, better
+insulation, priced as durability is priced.
+
+**SM-INV-10 is satisfied the same way the sleeping bag satisfies it:** the multiplier is legal as
+*internals* — the game is full of them — provided the figure never surfaces in the UI. The player is
+told *the fish is still good* or *the fish has turned*, never a percentage or a countdown bar.
+
+Open, and the owner's:
+
+- **Does the clock pause anywhere?** Sleeping advances hours, so an uncooled fish dies overnight by
+  simple arithmetic — which is the right answer. But if a *cooled* fish is meant to survive two
+  nights, 48 h has to be measured against nights slept, not just hours elapsed.
+- **Can you cook away from camp?** The fish rule leans on being able to make a fire and cook. Camping
+  is a gated button in campable regions (SM-INV-6, FEAT-45). If cooking is camping, then a morning
+  fish forces an early *camp*, not just an early *stop* — a much bigger cost, and possibly the more
+  interesting one.
+- **What else is on the clock?** The table above has one row filled in. Bought food, cooked fish and
+  any perishable freight need figures before this is a system rather than a fish rule.
+
 ## 2. Tools
 
 Kept, re-used, and heavy. The distinction from consumables is that a tool's cost is **permanent mass
@@ -137,6 +204,7 @@ plus a slot**, paid on every mile you carry it, against a payoff you only occasi
 | **Breaker bar** | Roadside wrenching. Paired with the quick-jack in the bible's own list. | Bought/found | Real mass, always | **IMPLIED** — same |
 | **Chain** | Chains onto a downed log for the drag. **A one-sided distance constraint** — zero force slack, hard tension taut — and the snatch impulse *is* the damage signal. | Main-mission equipment | The truck, by design | **RATIFIED premise** — `missions.md` "Main missions". *Open: carried item, or supplied by the mission?* |
 | **Fishing gear** | Required for the fishing minigame. | ? | ? | **IMPLIED / UNSPECIFIED** — see the gap note below |
+| **Cooler** | **A flat rate reduction on the spoilage clock (§1b).** Uncooled, a fish is good for about four or five hours — cook it on the spot or lose it. In the cooler it keeps for a day or two, so you can carry the catch, camp on it, and eat it tomorrow. **Primarily fishing kit** — it is the thing that lets a catch leave the water without being eaten where it was landed. | Bought/found | Cash; a slot; **deliberately trivial mass — which is the problem, see the note below** | **IDEA** — owner, 2026-08-22 |
 | **GPS unit** | **Draws the mission route in the 3D world** so you drive it by looking out of the windscreen instead of stopping to read the map — FEAT-39's chevrons + junction arrow boards, already shipped in `src/gps.js`. A **direct convenience upgrade for any player**, and deliberately a common find: it does not make you *faster*, it makes knowing-the-way *free*. A skilled player reads the map and spends the cash elsewhere. **Until you find one, the paper map (FEAT-16, `M`) is all you get** — navigation is map-reading, landmarks, and memory. | Found or bought within a run | Cash; a slot; trivial mass — the real cost is that you had to *earn* legibility | **RATIFIED premise** — owner, 2026-07-31: "GPS should be an item; until you find it you navigate via the map alone." *Open: strictly per-run (SM-INV-8 says items die with the run — you re-find it every run), or does knowing-where-one-sells count as the literacy that persists?* |
 | **Destination beacon** | Shows a **beam of light rising from the destination**, visible over terrain from far off. Gives *bearing*, not route — the point is that it makes **off-route travel** findable: you can leave the road, crest the ridge, and steer by the light. It answers "where," never "how." | Found or bought within a run | Cash; a slot | **IDEA** — owner, 2026-07-31. *Open: always-on while carried, or aimed/activated? Render: a sky-beam is cheap and reads at range, but must respect fog/night (day/night pass made fogColor a radiance value).* |
 | **Shortcut GPS** | **The Shortcut's relationship, rendered on the windscreen.** It ties cut generation (FEAT-52) into the on-screen navigation — FEAT-39's chevrons and junction boards applied to **cuts** as well as roads. It shows you what the Shortcut has **already revealed to you**, so it is worthless at zero esteem and better the warmer he gets. Par is unaffected: par is always the road route (SM-INV-2). The advanced GPS — very rare. | Found or bought within a run; **very rare** | Cash; a slot | **RATIFIED** — owner, 2026-08-02 (**rebuilt**; was "his knowledge on a chip, strictly stronger than his pact"). *The "what is a shortcut" tech question is ANSWERED: cuts are real worldgen objects (FEAT-52), not an overland-routing problem.* |
@@ -204,6 +272,56 @@ plus a slot**, paid on every mile you carry it, against a payoff you only occasi
 > (*do I carry the jack today?*) **only if the mass is felt**. If it isn't, tools are free and the
 > category collapses into "things you buy once." Decide whether stowed mass is legible to the player
 > before authoring more of them.
+
+> **The cooler is the first item aimed at a *spoilage clock* — and that clock is already ratified**
+> [owner, 2026-08-22]. It is one object sitting across two mechanics, which is why it is worth more
+> than its row.
+>
+> - **The catch — this is the primary one** [owner, 2026-08-22]. Uncooled, a fish is good for about
+>   four or five hours: cook and eat it where you stand, or lose it. Cooled, it keeps a day or two,
+>   so the catch can travel. That is the whole item, and it is a **flat rate reduction on the
+>   spoilage clock** — the mechanic is specified in §1b. It also unblocks the *fish-as-cargo* axis in
+>   §5's species table, and carries a hoarding hazard — see the flag there.
+> - **Perishable quest cargo — secondary, and open.** DESIGN.md "The day and the clock"
+>   (ratification pass 2026-07-19) commits that camping mid-mission is job-dependent: *short,
+>   perishable ones die overnight — the milk spoils, the fiction supplies the penalty*. **The milk is
+>   a quest item, not a food item** [owner, 2026-08-22] — that rule is mission fiction, not the §1b
+>   clock, and the two must not be conflated. There is *potentially* room for the cooler to assist
+>   here, but it is a separate ruling and it has not been made. If it ever does, rule 4 holds **only
+>   under the acceptance framing**: it lets you take a perishable job you *cannot* finish before
+>   dark — one you'd otherwise refuse — and it must not make an ordinary same-day milk run safer,
+>   because that run was never at risk. Write it that way or it becomes insurance.
+>
+> **Its cost is the unsolved half, because trivial mass means no continuing cost at all.** This is
+> §2's carry-cost question arriving with a second concrete instance (the cooking kit's 23 kg was the
+> first): bought with cash, paying out in jobs you can now accept, it is a price tag with a lid.
+> Three candidate costs, none ruled — **owner's call**:
+>
+> 1. **Ice.** The box is only cold while it has ice, and ice is bought in town and gone on the day
+>   clock. That prices the effect in cash *plus a detour*, which is precisely how fuel was priced
+>   when it was ratified (2026-08-01), and it makes the cooler **the first tool in the catalog that
+>   eats a consumable**. The fiction and the POI both already exist — `asset-gas-station.md` puts an
+>   ice chest by the door.
+> 2. **Volume, not mass.** A cooler in the bed competes for space with the load-budget pick-list
+>   (§1a): free on an empty run, and on a freight run it is the reason the big item doesn't fit.
+>   Self-policing, and it needs no plumbing that the pick-list ruling doesn't already want.
+> 3. **A slot and nothing else** — the honest minimum, and the weakest.
+>
+> *(Read: 1 and 2 together are the strong version — ice gives it a running cost in the currency the
+> day is already made of, volume gives it a cost that only bites when you're being greedy.)*
+>
+> **Everything is in hours** [owner-ruled 2026-08-22 — this replaces an earlier reading in this note
+> that put the unit in nights]. Multi-day durations are written 24 or 48, not "two days." One clock,
+> one unit. The figures the cooler is measured against live in §1b.
+>
+> **Describe it, never score it (SM-INV-10).** *The milk is still cold in the morning* — not a
+> freshness percentage, not a spoil timer on the HUD. **Legibility is half-solved for free:** a
+> cooler is a box in the bed, so ownership reads without a UI (camp gear's visible-kit rule applies
+> here too). Whether its *state* reads — still cold vs. ice long gone — is the open one; a puddle
+> under the tailgate is the diegetic answer if it needs one.
+>
+> ⚠ **The fishing half is downstream of gap 2** — there is no fishing system, so the cargo half
+> (perishable freight) is buildable today and the catch half is not.
 
 ## 2b. Camp gear
 
@@ -442,7 +560,7 @@ each entry here is really an instance of a type in `missions.md` §3.
 | Cargo | Type / axis | Mass | The fear |
 |---|---|---|---|
 | **Newspapers** | Paper route — **coverage** | Light; a fixed stack that is also the mission's second budget | Running out of daylight with papers left |
-| **Milk / small errand goods** | Point-to-point — **margin** | Light | Crashing; earning nothing. *Perishable: dies overnight if you camp mid-job* |
+| **Milk / small errand goods** | Point-to-point — **margin** | Light | Crashing; earning nothing. *Perishable: dies overnight if you camp mid-job* — **quest fiction, not the §1b spoilage clock**; whether a cooler may assist here is open (§2) |
 | **Grandma's vase** | Fragile — **restraint** | Light–medium | Vertical shock. **The type that makes surface class (FEAT-38) matter** — the paved detour vs. the dirt shortcut |
 | **Eggs** | Fragile — **restraint** | Light | Same. *"Arrive with the eggs unbroken"* is the bible's own phrasing |
 | **Pallets / freight** | Freight — **mass does the work** | **Heavy** | The truck. Sustained load on a long grade is what marginal early cooling cannot survive |
@@ -470,6 +588,23 @@ What the docs currently commit to:
 second use, and it **conflicts with *coffee is debt, fish is income***; see §1a for the conflict and
 the cooked-at-camp compromise.
 
+**Fish spoil in about four or five hours, and a cooler buys a day or two** [owner-specified
+2026-08-22; the clock is §1b, the item is §2]. This is the first hard number the catch category has
+ever had, and it does two useful things at once. **Uncooled, the catch is not a resource — it is an
+appointment:** cook and eat it where you are, or lose it, so fishing in the morning costs you the
+middle of the day. **Cooled, it becomes a thing you carry**, which is the first time anything in this
+category touches the world outside *eat it at camp tonight*. That cuts two ways:
+
+- **It unblocks the bottom row of the species table.** Fish-as-cargo is a perishable delivery, and
+  without cold a fish cannot leave the valley it came out of. With a cooler that row stops being
+  hypothetical.
+- ⚠ **It also makes fish bankable, which is the exact greed this ledger exists to punish.** The
+  commitment is *distinct waters visited*, with one hole fished repeatedly reading as greed and
+  depleting. Stockpiled fish is stored alertness, and stored restoration is a power floor
+  (SM-INV-9) — *coffee is debt, fish is income* only stays honest while the income is perishable.
+  The cheap guard: **cold slows spoilage, it never stops it**, so a cooler buys *travel*, not
+  *storage* — the clock keeps running and the box holds few fish. Owner's call, flagged not resolved.
+
 **Species: unspecified, and that's the burn-down question.** Nothing in the docs names a single fish.
 Before authoring a species list, the axis it varies along has to exist. Candidates, cheapest first:
 
@@ -492,9 +627,11 @@ Before authoring a species list, the axis it varies along has to exist. Candidat
 
 ## Gaps worth knowing before burning down assets
 
-1. **There is no timed-effect layer.** §1a is a nine-idea dump, not a system: no duration model, no
-   way to show an effect is running without a meter (SM-INV-10), no ruling on whether food acts on the
-   driver or the truck. Upstream of every food asset.
+1. **There is no timed-effect layer** — *narrowed 2026-08-22*. §1a is still a nine-idea dump, not a
+   system: no duration model for *effects*, no way to show one is running without a meter
+   (SM-INV-10), no ruling on whether food acts on the driver or the truck. **What now exists is the
+   other half — §1b's spoilage clock**, a decay timer in hours with the fish figures set. Effects
+   remain unspecified; expiry does not, and anything authored later should expire on the same clock.
 2. **There is no fishing system.** DESIGN.md mentions fish exactly once, in passing ("no fire, no
    fish, wake half-tired"). The whole catch category, The Confluence, and *coffee-is-debt-fish-is-
    income* rest on a minigame nobody has framed. **This is the single biggest gap in the catalog** —
