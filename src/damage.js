@@ -125,6 +125,18 @@ export const DAMAGE_PARAMS = {
   engineKnee: 0.20, engineAtKnee: 0.90, engineAtZero: 0.40,
   // Tires: condition scales the friction coefficient directly. Linear from new to bald is fine —
   // a half-worn tire really is meaningfully worse, unlike a half-worn spring.
+  // Grip is FLAT-THEN-CLIFF, not linear: mu = atZero + (1 − atZero)·(1 − (1 − c)^tireMuExp).
+  //
+  // Linear was wrong in a way the owner named precisely — a real tire at 50% tread grips very nearly
+  // like a new one, and only lets go once it is genuinely down to the wear bars. Linear charged 22%
+  // of the grip for that first half of the tread, which is both unrealistic and bad play: it made
+  // fresh rubber feel mandatory rather than valuable. At exponent 4 a half-worn tire keeps 97% of
+  // its grip and the loss arrives where it should:
+  //
+  //     100%  1.00      75%  1.00      50%  0.97      25%  0.86      10%  0.71      0%  0.55
+  //
+  // The 0% anchor is untouched — a bald tire is still a bald tire, it just takes longer to get there.
+  tireMuExp:         4,
   tireMuAtZero:      0.55,   // paved:  μ multiplier at 0% condition
   tireMuAtZeroDirt:  0.35,   // dirt:   worse, per the ratified rule (loose surface, no tread bite)
 
@@ -365,7 +377,9 @@ export const DAMAGE_PARAMS = {
   // Deterministic rather than random on purpose: the same drive over the same rock pops the same
   // tire every replay (INFRA-03), and a player who knows their tires are down can read the risk.
   punctureCond:    0.50,     // condition above which a tire cannot be punctured at all
-  punctureAtHalf:  70000,    // N — bump-stop force that pops a 50% tire
+  // Raised 20% on 2026-08-23 (owner): a player should not be surprised by a puncture at 50% on a
+  // sizeable pothole. The 10% anchor is unchanged — a nearly-bald tire is meant to be fragile.
+  punctureAtHalf:  84000,    // N — bump-stop force that pops a 50% tire
   punctureFloorC:  0.10,     // at and below this condition the threshold stops falling
   punctureAtFloor: 30000,    // N — bump-stop force that pops a 10%-or-worse tire
   // A flat is not a hole in the ground: the air is gone, so the carcass carries almost nothing at
@@ -626,7 +640,8 @@ export class DamageModel {
     const id = ['tireFL', 'tireFR', 'tireRL', 'tireRR'][wheelIndex]
     const atZero = dirt ? DAMAGE_PARAMS.tireMuAtZeroDirt : DAMAGE_PARAMS.tireMuAtZero
     const c = this.get(id)
-    const worn = atZero + (1 - atZero) * c
+    const shaped = 1 - Math.pow(1 - Math.max(0, Math.min(1, c)), DAMAGE_PARAMS.tireMuExp)
+    const worn = atZero + (1 - atZero) * shaped
     return this.flat[wheelIndex] ? worn * DAMAGE_PARAMS.tireFlatMu : worn
   }
 

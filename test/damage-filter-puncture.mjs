@@ -20,6 +20,7 @@ const ok = (c, m) => { console.log(`  ${c ? '✓' : '✗'} ${m}`); if (!c) fail 
 const DT = 1 / 60
 const P = { engineIdleRPM: 750, engineRedlineRPM: 5500 }
 const fresh = () => new DamageModel({ params: P })
+const d0 = fresh()   // for pure threshold/curve queries
 /** Sustained driving at a normalised insult of `x` (1.0 = redline at full throttle). */
 const drive = (d, x, secs) => {
   const rpmN = Math.sqrt(x)                       // insult = rpmN^2 * load, load = 1
@@ -94,13 +95,40 @@ console.log('\n§3 punctures — fresh rubber is safe, worn rubber is not')
   ok(pop(D.punctureCond + 0.05, 500000).flat[0] === false, `...nor one above the ${D.punctureCond * 100}% fragility threshold`)
 
   // The owner's two anchors, and the line between them.
-  ok(pop(0.50, 71000).flat[0] === true && pop(0.50, 69000).flat[0] === false, 'a 50% tire pops at 70 kN, not at 69')
+  ok(pop(0.50, D.punctureAtHalf + 1000).flat[0] === true && pop(0.50, D.punctureAtHalf - 1000).flat[0] === false,
+    `a 50% tire pops at ${D.punctureAtHalf / 1000} kN, not below it`)
   ok(pop(0.10, 31000).flat[0] === true && pop(0.10, 29000).flat[0] === false, 'a 10% tire pops at 30 kN, not at 29')
   ok(pop(0.02, 31000).flat[0] === true, '...and below 10% the threshold stops falling — it is already as fragile as it gets')
-  ok(pop(0.30, 51000).flat[0] === true && pop(0.30, 49000).flat[0] === false, 'a 30% tire sits on the line between them, at 50 kN')
+  {
+    const mid = d0.punctureThreshold(0.30)
+    ok(pop(0.30, mid + 1000).flat[0] === true && pop(0.30, mid - 1000).flat[0] === false,
+      `a 30% tire sits on the line between them, at ${(mid / 1000).toFixed(0)} kN`)
+  }
 
   // Deterministic, not a probability roll: the same drive pops the same tire every replay.
   ok(pop(0.30, 60000).flat[0] === pop(0.30, 60000).flat[0], 'the same hit on the same tire always gives the same answer')
+}
+
+console.log('\n§3b grip is flat-then-cliff, not linear')
+{
+  // Owner, 2026-08-23: a real tire at 50% tread grips very nearly like a new one. Linear charged 22%
+  // of the grip for the first half of the tread, which made fresh rubber feel mandatory rather than
+  // valuable. The shape must hold near-full grip for a long time and then fall away.
+  const mu = (c) => { const d = fresh(); d.set('tireFL', c); return d.tireMuScale(0) }
+  ok(mu(1) === 1, 'a new tire is a new tire')
+  ok(mu(0.5) > 0.95, `a HALF-WORN tire keeps ${(mu(0.5) * 100).toFixed(0)}% of its grip — the whole point of the change`)
+  ok(mu(0.75) > 0.99, '...and three-quarters is indistinguishable from new')
+  ok(Math.abs(mu(0) - D.tireMuAtZero) < 1e-9, 'a bald tire is still a bald tire — the 0% anchor did not move')
+
+  // The cliff has to actually be a cliff: the second half of the tread must cost far more grip than
+  // the first, or this is just a gentler line.
+  const firstHalf = mu(1) - mu(0.5), secondHalf = mu(0.5) - mu(0)
+  ok(secondHalf > 10 * firstHalf,
+    `the last half of the tread costs ${(secondHalf / firstHalf).toFixed(0)}x the grip the first half did`)
+  // Monotonic, or a worn tire could out-grip a fresher one somewhere.
+  let ok2 = true
+  for (let c = 0; c < 1; c += 0.01) if (mu(c + 0.01) < mu(c) - 1e-12) ok2 = false
+  ok(ok2, 'and grip never rises as a tire wears')
 }
 
 console.log('\n§4 what a flat actually does')
