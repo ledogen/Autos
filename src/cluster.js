@@ -25,25 +25,26 @@ const DEG = Math.PI / 180
 
 // Layout in CSS pixels (canvas logical size — scaled by devicePixelRatio at construction).
 // Temp and fuel are staggered like the reference — temp high and inboard, fuel low and outboard.
-// W/H grew from 416x200 (FEAT-49) to make room for the FEAT-33 ignition switch in the bottom-right
-// corner. The canvas is anchored bottom-right in CSS, so the extra size grows INTO the screen and
-// the corner stays put.
-const W = 448
-const H = 244
+// W/H are FEAT-49's 416x200 plus a few px of slack: the FEAT-33 ignition switch is small enough to
+// tuck into the housing's existing bottom-right corner, so it only bumps the outline out slightly
+// rather than growing a whole extra lobe. The canvas is anchored bottom-right in CSS.
+const W = 420
+const H = 204
 const TEMP  = { cx: 86,  cy: 70,  well: 33, scaleR: 26, start: 215, sweep: 110 }
 const FUEL  = { cx: 62,  cy: 136, well: 33, scaleR: 26, start: 215, sweep: 110 }
 const TACH  = { cx: 180, cy: 102, well: 62, scaleR: 54, start: 135, sweep: 195, max: 6 }    // ×1000 RPM
 const SPEEDO= { cx: 318, cy: 102, well: 70, scaleR: 62, start: 135, sweep: 270, max: 120 }  // MPH
-// FEAT-33 ignition switch — its own small well, diagonally out from the speedo at the cluster's
-// bottom-right corner. Its indent MERGES with the speedo's (they overlap), like the tach/speedo
-// pair, but the WELLS must not: keep hypot(dx,dy) > SPEEDO.well + KEY.well or the key face eats
-// into the speedometer face, and its INDENT (well + DIAL_PAD) must clear the speedo WELL or it
-// bites a crescent out of the 120/km-h corner. Currently 109.4 apart: 12 px of well gap, and the
-// two indents still overlap by ~4 px so they read as one merged housing recess.
-const KEY   = { cx: 388, cy: 186, well: 27 }
+// FEAT-33 ignition switch — a small well tucked diagonally into the housing's bottom-right corner.
+// It carries its OWN indent pad (smaller than DIAL_PAD) because at this size the standard ring would
+// be most of the dial. Three distances have to hold, and they are tight — check all three before
+// moving it (all measured from the speedo centre, 90.5 px away):
+//   wells apart      90.5 > SPEEDO.well + KEY.well (83)      or the key face eats the speedo face
+//   indent clears    90.5 − (well+pad) = 72.5 > SPEEDO.well   or it bites a crescent out of 120/km-h
+//   indents overlap  90.5 < SPEEDO.well + DIAL_PAD + well+pad or the switch reads as a detached island
+const KEY   = { cx: 382, cy: 166, well: 13, pad: 5 }
 // Key detents, in canvas angles (0 = 3 o'clock, increasing clockwise): 10 / 12 / 2 o'clock.
 const KEY_ANGLE = { off: 210 * DEG, on: 270 * DEG, start: 330 * DEG }
-const KEY_TICK_R = 25   // outer radius of the detent ticks (they run inward 6 px, to r=19)
+const KEY_TICK_R = 11.5   // outer radius of the detent ticks (they run inward 3 px, to r=8.5)
 
 // Indent geometry (the recessed regions the dials sit in) and the housing margin around them.
 // The housing outline is NOT drawn as its own shape: it is the indent geometry dilated by
@@ -191,17 +192,14 @@ export class GaugeCluster {
       // START is the momentary position you have to hold against a spring, so it wears the warning
       // colour the redlines use — the same "don't sit here" language as the rest of the cluster.
       ctx.strokeStyle = pos === 'start' ? RED : WHITE
-      ctx.lineWidth = pos === 'on' ? 2 : 1.5
+      ctx.lineWidth = pos === 'on' ? 1.6 : 1.2
       ctx.beginPath()
       ctx.moveTo(g.cx + c * r, g.cy + sn * r)
-      ctx.lineTo(g.cx + c * (r - 6), g.cy + sn * (r - 6))
+      ctx.lineTo(g.cx + c * (r - 3), g.cy + sn * (r - 3))
       ctx.stroke()
     }
-    ctx.fillStyle = WHITE
-    ctx.font = 'bold 7px Arial, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText('IGN', g.cx, g.cy + 18)
+    // No 'IGN' legend at this size — a 7 px word inside a 26 px dial is mud, and the three detents
+    // plus a key shape already say what it is.
   }
 
   // Fill the housing silhouette at dilation `pad`: the convex hull of the four outline circles
@@ -214,7 +212,7 @@ export class GaugeCluster {
     const F = { x: FUEL.cx, y: FUEL.cy, r: POD_R + pad }
     const K = { x: TACH.cx, y: TACH.cy, r: TACH.well + DIAL_PAD + pad }
     const S = { x: SPEEDO.cx, y: SPEEDO.cy, r: SPEEDO.well + DIAL_PAD + pad }
-    const G = { x: KEY.cx, y: KEY.cy, r: KEY.well + DIAL_PAD + pad }      // FEAT-33 ignition switch
+    const G = { x: KEY.cx, y: KEY.cy, r: KEY.well + KEY.pad + pad }        // FEAT-33 ignition switch
     // Outward normals of the common external tangents, in clockwise boundary order. The tach
     // crests above the temp→speedo line, so the top edge is two tangent segments (temp→tach,
     // tach→speedo); it stays inside the bottom edge, so the bottom is one (speedo→fuel).
@@ -292,7 +290,7 @@ export class GaugeCluster {
     // FIRST, then all three are filled, so each fill covers the stroke halves that fall inside its
     // neighbours and only the outer 1.5 px of rim survives. That gives a true union outline —
     // including the concave pinches where the circles meet — without computing the outline path.
-    const dials = [[TACH, TACH.well + DIAL_PAD], [SPEEDO, SPEEDO.well + DIAL_PAD], [KEY, KEY.well + DIAL_PAD]]
+    const dials = [[TACH, TACH.well + DIAL_PAD], [SPEEDO, SPEEDO.well + DIAL_PAD], [KEY, KEY.well + KEY.pad]]
     ctx.strokeStyle = RIM
     ctx.lineWidth = 3
     for (const [g, r] of dials) {
@@ -479,10 +477,10 @@ export class GaugeCluster {
     ctx.fill()
   }
 
-  // FEAT-33: the key in the barrel, drawn at the current (lagged) angle. A tapered blade out to just
-  // inside the detent ticks with a rounded bow at the tip — enough to read as a key at 40 px across,
-  // and unambiguous about which tick it is pointing at. While the starter is turning, the barrel
-  // glows the same red as the START tick so cranking is legible even at a glance.
+  // FEAT-33: the key in the barrel, drawn at the current (lagged) angle. A short blade with a bow at
+  // the tip, sized to stay inside the detent ticks so it never covers the mark it is pointing at.
+  // While the starter is turning the barrel glows the same red as the START tick, which is what
+  // actually reads at this size — the key shape only has to say WHICH detent.
   _drawKey (ctx) {
     const g = KEY
     const a = this._keyAngle
@@ -493,19 +491,19 @@ export class GaugeCluster {
     // Blade: a wedge from the barrel out to r = 17, with two cut notches along its lower edge.
     ctx.fillStyle = NEEDLE
     ctx.beginPath()
-    ctx.moveTo(4, -2.2)
-    ctx.lineTo(7.5, -2.2)
-    ctx.lineTo(7.5, -1.0); ctx.lineTo(9, -1.0)   // notches along the blade's back
-    ctx.lineTo(9, -2.2)
-    ctx.lineTo(11, -2.2)
-    ctx.lineTo(11, 2.2)
-    ctx.lineTo(4, 2.2)
+    ctx.moveTo(1.8, -1.15)
+    ctx.lineTo(3.6, -1.15)
+    ctx.lineTo(3.6, -0.5); ctx.lineTo(4.4, -0.5)   // notches along the blade's back
+    ctx.lineTo(4.4, -1.15)
+    ctx.lineTo(5.6, -1.15)
+    ctx.lineTo(5.6, 1.15)
+    ctx.lineTo(1.8, 1.15)
     ctx.closePath()
     ctx.fill()
     ctx.restore()
     // Barrel over the blade root, so the key reads as going INTO the switch rather than sitting on it.
     ctx.beginPath()
-    ctx.arc(g.cx, g.cy, 6.2, 0, Math.PI * 2)
+    ctx.arc(g.cx, g.cy, 3.1, 0, Math.PI * 2)
     ctx.fillStyle = this._cranking ? RED : '#2a2624'
     ctx.fill()
     ctx.strokeStyle = 'rgba(0,0,0,0.6)'
@@ -513,7 +511,7 @@ export class GaugeCluster {
     ctx.stroke()
     // Bow (the part you hold), out past the blade tip.
     ctx.beginPath()
-    ctx.arc(g.cx + c * 12.4, g.cy + s * 12.4, 2.3, 0, Math.PI * 2)
+    ctx.arc(g.cx + c * 6.3, g.cy + s * 6.3, 1.25, 0, Math.PI * 2)
     ctx.fillStyle = NEEDLE
     ctx.fill()
   }

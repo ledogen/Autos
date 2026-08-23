@@ -141,6 +141,16 @@ questions above:
   `engineOffDrag` N·m per 1000 rpm of dragged engine speed, faded out below `engineOffCouplingRPM`
   so a key-off roll frees up as you slow toward a stop.
 - **Catch model:** deterministic threshold, not a per-crank-second probability roll.
+- **The starter keeps turning while the key is held**, even after the engine has caught — an
+  over-crank against a running engine is a thing you can do, and letting go is how the player ends
+  it. So the crank audio is a LEVEL driven by `_starterEngaged()` (state === cranking OR the key is
+  still held), not an edge; the catch and shutoff stay one-shot edges. The lit barrel on the cluster
+  reads the same predicate so the two can never disagree.
+- **Sound shape:** starter grinding → its own catch sound → the normal idle drone. The starter is
+  built on filtered NOISE (bandpass ~1.5 kHz for ring-gear teeth, lowpass <240 Hz for compression,
+  each amplitude-modulated at its own rate) rather than oscillators, which read as a beep. Owner
+  expects to replace all of it with a sampled start eventually — this is a placeholder that only has
+  to read as mechanical.
 
 **Wear seam.** Catch time interpolates `ignitionCatchTime` (0.25 s, healthy) → `ignitionCatchTimeWorn`
 (4 s, beater) on `vehicleState.engineHealth`. Nothing writes that field yet — SM-3 / FEAT-26 does.
@@ -148,7 +158,7 @@ Absent ⇒ 1 ⇒ a single nominal catch time, exactly as this ticket specified.
 
 **Files:** `src/ignition.js` (new) · `src/drivetrain.js` (ignition gate + dead-engine drag) ·
 `src/vehicle.js` (the `I` key, gated by free-cam and the doze attenuation) · `src/cluster.js`
-(the switch: 448×244 canvas, merged indent, 10/12/2 detents, live key) · `src/engine-audio.js`
+(the switch: a small dial tucked into the housing's existing bottom-right corner, 420×204 canvas, merged indent, 10/12/2 detents, live key) · `src/engine-audio.js`
 (starter loop, catch bark, shutoff thump; the drone goes silent whenever the engine is not firing) ·
 `src/main.js` (state + reset + sleep + audio events + cluster wiring + `window.__vs` handle) ·
 `src/logger.js` (`ign` column) · `src/debug.js` (Ignition & Starter sliders incl. Engine Health) ·

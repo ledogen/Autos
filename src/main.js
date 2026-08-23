@@ -1974,6 +1974,11 @@ window.__physWireframes = physicsWireframes    // dev handle — debug.js checkb
 window.__physicsEngine = physicsEngine         // dev handle (counters in the HUD / console)
 window.__vehicleChassis = vehicleChassis       // dev handle — debug.js restitution slider targets it
 window.__vs = vehicleState                    // dev handle — read live vehicle state from the console / CDP probes
+
+// FEAT-33: is the starter motor actually turning? Not the same as state === 'cranking' — the key
+// stays at START while it is held, so an over-crank against an already-running engine still has the
+// starter engaged. Drives both the crank audio level and the cluster's lit barrel, which must agree.
+const _starterEngaged = (ign) => !!ign && (ign.state === 'cranking' || ign.startHeld)
 window.__debris = debrisSystem                 // dev handle — debug.js projectile selector + clear button
 perfMark('init: physics engine ready')
 
@@ -4992,14 +4997,20 @@ function loop () {
     updateEngineAudio(dtrain.engineRPM, vehicleState.throttle, (vehicleState.ignition?.state ?? 'running') === 'running')
   }
 
-  // FEAT-33 ignition audio. The state machine leaves a ONE-SHOT event on vehicleState.ignition.event
-  // for exactly the step it happened on; consuming it here (once per frame, not per physics step)
-  // is fine because the events are edges the player caused, never per-step continuous values.
+  // FEAT-33 ignition audio, in two halves.
+  //
+  // The STARTER is a level, not an edge: it runs for as long as the key is physically held at START
+  // — including after the engine has caught, because you really can keep grinding the starter
+  // against a running engine and the driver decides when to stop by letting go (owner, 2026-08-22).
+  // start/stopCrankAudio are idempotent, so calling the level every frame is free.
+  //
+  // The CATCH and SHUTOFF are edges. The state machine leaves a one-shot on ignition.event for
+  // exactly the step it happened on; consuming it here (once per frame, not per physics step) is
+  // fine because these are edges the player caused, never per-step continuous values.
   const ign = vehicleState.ignition
   if (ign) {
-    if (ign.event === 'crank') startCrankAudio()
-    else if (ign.event === 'catch') playCatchAudio()
-    else if (ign.event === 'abort') stopCrankAudio()
+    if (_starterEngaged(ign)) startCrankAudio(); else stopCrankAudio()
+    if (ign.event === 'catch') playCatchAudio()
     else if (ign.event === 'shutoff') playShutoffAudio()
     ign.event = null
   }
@@ -5182,7 +5193,7 @@ function loop () {
   // FEAT-49: gauge cluster — every frame (needles must be smooth, unlike the 10 Hz text HUD),
   // hidden while the map is open, live in chase/hood/freecam alike. update() early-outs when hidden.
   gaugeCluster.setVisible(!map2d.isOpen())
-  gaugeCluster.setIgnition(keyPosition(vehicleState.ignition), vehicleState.ignition?.state === 'cranking')
+  gaugeCluster.setIgnition(keyPosition(vehicleState.ignition), _starterEngaged(vehicleState.ignition))
   gaugeCluster.update(frameTime, vehicleState.velocity.length(), vehicleState.drivetrain?.engineRPM ?? 0)
 
   // feature/teleport: show the "teleport here" button only in free-cam + free-roam. Toggle on
