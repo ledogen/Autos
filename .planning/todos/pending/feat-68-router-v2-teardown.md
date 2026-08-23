@@ -1760,6 +1760,47 @@ raw numbers swing 2× on a loaded machine and nearly sent this down a wrong path
 out · contract intact (y-spread 0.000, one component, infeasible 0) · gates **45/50**, same five
 booked reds · `road-minradius` still 7.40 m.
 
+## The slicer bug, and why MID-SPAN merges are OFF (2026-08-22, `100dc29`)
+
+The owner captured (-1712,1743) and (932,793) with two complaints: both original edges still on the
+map, and **"the road work from the original road building is still there... it should revert to
+normal terrain if we don't end up building that road."** The second one was a real bug, and a bad one.
+
+**The slicer assumed a ceded span is a PREFIX or a SUFFIX.** True for node-anchored merges; false for
+mid-span ones, which cede a stretch out of the MIDDLE. Its else-branch trimmed the kept window back
+to the START of the ceded span, so everything past it was never sliced: seed 6's `g:1,0,0:1,1,2` is
+810 m, cedes 405–649, and had ribbon for **0–405 only**. The carve reads `_resolveRoadSurface`, which
+had the interval right all along — so 161 m of road sat carved into the terrain with no pavement on
+it. Exactly what the owner saw. The slicer now keeps a LIST of index ranges (the old code's own
+comment stated the prefix/suffix assumption, which is how it was found).
+
+**Fixing that exposed what the missing ribbon had been hiding.** With the tail carved, road-smoothness
+went from 1 step / 17 cm to 3 seeds failing with **1.75 m (seed 7) and 2.37 m (seed 6)** collision
+cliffs, each about 14 m from the merged run's FAR node. Diagnosed: re-solving the loser's tail from
+the winner's deck steepens its approach into the junction; the pad there — a near-flat plaza the
+truck actually rides, built from all of that node's legs — then sits above the leg it serves, and the
+pad ring edge is the step. `_resolveRoadSurface` ownership and the deck are both smooth across it;
+the jump is `padTopY` vs the leg. That is the deferred junction pass (naive meets at degree ≥ 3), not
+something a guard inside the merge can answer.
+
+So **`roadV2.mergeMidSpan` defaults FALSE** — the machinery is built, measured and off. Turning it on
+is one flag once junction geometry lands. The owner's two mid-span marks ((-1710,1760) and
+(-1091,2792)) therefore revert to unfixed; the node-anchored merge and all seven earlier captures are
+unaffected.
+
+**Two negative results, both measured, neither to be re-attempted:**
+- **Extending the ceded exclusion past the fork** (what the pre-taper `FORK_BLEND = 20` did) makes it
+  far WORSE — steps up to **489 cm**. Past the fork the loser's taper band is the only road there,
+  because the winner has pulled away, so excluding the loser leaves nobody owning the surface and the
+  terrain reverts to raw under a drawn road. The exclusion must end exactly at the ceded boundary.
+- **Capping the re-solved strand's max grade** never fires. The steepness is in the junction-BLENDED
+  profile near the node (`runProfile` diverges from `points[].y` there by design), not in the
+  strand's own vertices, so a guard on the solved points cannot see it.
+
+**State:** road-smoothness back to its booked 1 step / 17 cm with seeds 6 and 7 fully green ·
+road-minradius 7.40 m · gates **45/50**, same five booked reds · contract intact (y-spread 0.000, one
+component, infeasible 0) · build 2.3–4.1 s at 1× headless.
+
 ---
 
 # CURRENT HANDOFF (2026-08-22) — read this one
@@ -1772,7 +1813,7 @@ measured verdicts + the shipped junction-chord-pin fix are the "BUG-53 worked" s
 remaining decision is next-step 2 below, and its old file is a closed-merged stub in
 `.planning/todos/completed/`.)
 
-**Branch:** `feature/corridor-router` at `e3b2904`, worktree `/Users/ledogen/CodeShit/CarGame-corridor-router`,
+**Branch:** `feature/corridor-router` at `100dc29`, worktree `/Users/ledogen/CodeShit/CarGame-corridor-router`,
 dev server **:3343**, tree CLEAN. Main is untouched and still ships v1 — the swap is one merge at
 sign-off. (Planning docs commit to main; code to the branch. Both trees clean as of this handoff.)
 Battery: `node perf-runs/v2-integration-check.mjs`. Gallery: `perf-runs/gallery.html` (§8 = the
@@ -1827,12 +1868,13 @@ judgment (stash-A/B'd against pre-pin src):
    crossing anchor as one catch-all rule, and the wide-angle-fork item went with it (forks build
    at 108° now). **A DRIVEN pass over the new forks is the owner moment this is waiting on.**
    What remains of the class, named and reproducible:
-   **(a) mid-span conflicts: SHIPPED** (`e3b2904`, record above). What bounds them now is the
-   DECK GAP, not the geometry — the fork pins the loser to the winner's deck, so a stacked pair
-   (seed 6 at (-1710,1760): 17 m apart horizontally, 14.5 m vertically) merges only the sub-strand
-   where the two decks are close, leaving a tail. Making those merge whole needs the loser's height
-   to be re-solved across the WHOLE run with the fork decks as interior constraints, instead of two
-   strands each also pinned at a node.
+   **(a) mid-span conflicts: BUILT BUT OFF** (`e3b2904` + `100dc29`, records above).
+   `roadV2.mergeMidSpan` is false because a mid-span merge puts a 1.75–2.37 m collision cliff at the
+   run's far node: the tail re-solve steepens the approach and the junction pad ends up above the
+   leg. **It is blocked on item 3 (junction geometry), and is one flag once that lands.** A second
+   bound waits behind it — the DECK GAP: the fork pins the loser to the winner's deck, so a stacked
+   pair (seed 6 at (-1710,1760): 17 m apart horizontally, 14.5 m vertically) merges only the
+   sub-strand where the decks are close.
    **(b) disjoint tears** — no shared node, so per-node planning cannot see them at all; needs its
    own window-invariance derivation. Reproducer: graph-topology's SURFACE-SMOOTH at seed 6
    (3328,-27).
