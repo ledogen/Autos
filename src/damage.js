@@ -336,6 +336,13 @@ export const DAMAGE_PARAMS = {
   // the engine's impulse total climbs for as long as the bodies touch, so a long window lets the
   // post-crash settle join the crash. 60 ms covers the spike and excludes the lean.
   impactHoldMaxCrash: 0.06,
+  // How long a burst survives with no contact reported before it is treated as over. The engine's
+  // manifold flickers through a collision, so this must be longer than a dropped step or two.
+  impactGapS:      0.02,
+  // How many steps of velocity history a burst reaches back through for its pre-impact speed.
+  // 10 steps is 40 ms — comfortably before the impulse crosses the trigger, and short enough that
+  // ordinary acceleration in that window is negligible against a crash.
+  impactPreSteps:  10,
 }
 
 // ── Curves ────────────────────────────────────────────────────────────────────────────────────────
@@ -596,17 +603,36 @@ export class DamageModel {
     // keeps a crash honest: a truck that comes to rest against the tree it hit would otherwise go
     // on adding to its own impact forever, which is what priced a 70 mph strike at 143 mph. A real
     // crash peaks in tens of milliseconds, so the window is short and the settle never joins it.
+    // Rolling history of recent velocity. A burst cannot use the velocity of the step it STARTS on:
+    // the engine's accumulated impulse only crosses the trigger a step or two into the hit, by which
+    // time most of the deceleration has already happened, and Δv measured from there is ~nothing
+    // (a 34 mph crash priced at 0.4 mph). So the burst reaches BACK for the velocity from before
+    // the contact began.
+    if (vel) {
+      if (!this._velRing) this._velRing = []
+      this._velRing.push({ x: vel.x, y: vel.y, z: vel.z })
+      if (this._velRing.length > P.impactPreSteps) this._velRing.shift()
+    }
     const live = region != null && impactSpeed(impulseNs, mass) >= P.impactMinMph * MPH
 
     if (live) {
-      if (!this._burst) this._burst = { region, impulse: impulseNs, t: 0, v0: vel ? { ...vel } : null }
+      if (!this._burst) this._burst = { region, impulse: impulseNs, t: 0, gap: 0, v0: this._velRing ? this._velRing[0] : null }
       else {
         this._burst.t += dt
+        this._burst.gap = 0
         // The region travels with the peak: a truck that clips a post front-first and slews into it
         // sideways took its worst hit on whichever face was loaded hardest.
         if (impulseNs > this._burst.impulse) { this._burst.impulse = impulseNs; this._burst.region = region }
       }
       if (this._burst.t < P.impactHoldMaxCrash) return null
+    } else if (this._burst) {
+      // A collision does NOT report a contact on every single step — the engine's manifold comes
+      // and goes as the pair separates and re-touches through the hit. Banking on the first quiet
+      // step measured Δv over one 4 ms step and priced a 34 mph crash at 0.4 mph, i.e. nothing at
+      // all. So a burst survives a short gap; only a real separation ends it.
+      this._burst.t += dt
+      this._burst.gap += dt
+      if (this._burst.gap < P.impactGapS && this._burst.t < P.impactHoldMaxCrash) return null
     }
     const b = this._burst
     if (!b) return null

@@ -65,50 +65,77 @@ console.log('\n§2 the parked truck: a contact is NOT an impact')
 }
 
 
-console.log('\n§3 one collision is one impact, priced on its PEAK')
+console.log('\n§3 one collision is one impact, priced on the truck\'s own Δv')
 {
-  // feedContact is fed the engine's ACCUMULATED normal impulse — the only impulse field the
-  // contact buffer populates. Per-step `normalImpulse` reads zero there, and switching to it once
-  // silently killed every collision in the game, so that is pinned below. Because the total
-  // accumulates, the burst PEAK is the collision's impulse and summing would double-count.
+  // Severity comes from the VEHICLE's velocity change across the burst, not from the engine's
+  // accumulated contact impulse. A solver's accumulated normal impulse includes what it spends
+  // pushing penetration back out, which moves no momentum — measured against owner captures that
+  // read a 60 mph strike as 104 and a 30 as 65. Δv keeps the glancing-blow property the impulse
+  // model was chosen for, because a glance barely deflects the truck.
+  const v = (mph) => ({ x: mph * MPH, y: 0, z: 0 })
+  const quiet = (d, atMph) => { let r = null
+    for (let i = 0; i < 20; i++) { const x = d.feedContact(null, 0, MASS, DT, v(atMph)); if (x && !r) r = x }
+    return r }
+
   const d = new DamageModel({ params: {} })
-  const shape = [0.2, 0.5, 0.8, 1.0, 1.0, 1.0, 1.0, 1.0]   // accumulating: rises, then plateaus
   let landed = null, count = 0
-  for (const f of shape) { const r = d.feedContact('front', impulseAt(20) * f, MASS, DT); if (r) { landed = r; count++ } }
-  const r = d.feedContact(null, 0, MASS, DT)     // contact breaks
-  if (r) { landed = r; count++ }
+  // 40 ms of approach at 50 mph so the pre-impact history is populated, then the hit.
+  for (let i = 0; i < 12; i++) d.feedContact(null, 0, MASS, DT, v(50))
+  for (let i = 0; i < 10; i++) {
+    const mph = 50 - 45 * Math.min(1, i / 6)
+    const r = d.feedContact('front', impulseAt(30), MASS, DT, v(mph))
+    if (r) { landed = r; count++ }
+  }
+  const r = quiet(d, 5); if (r) { landed = r; count++ }
   ok(count === 1, 'a burst of contact steps lands exactly ONE impact')
-  ok(landed && Math.abs(landed.v / MPH - 20) < 0.01, '...priced at the burst PEAK, which for an accumulating total IS the collision')
+  ok(landed && Math.abs(landed.v / MPH - 45) < 1.5,
+    `...priced at the truck\'s own Δv, 50 → 5 mph (model says ${landed ? (landed.v / MPH).toFixed(1) : '-'})`)
   ok(landed && landed.region === 'front', '...on the region that took the peak')
 
-  // THE 143 MPH BUG (owner, 2026-08-22): the total keeps climbing for as long as the bodies touch,
-  // so a truck that comes to rest against the tree it hit goes on adding to its own impact. The
-  // burst WINDOW is what stops that — short enough that the settle never joins the crash.
-  ok(D.impactHoldMaxCrash <= 0.1,
-    `the crash window is ${D.impactHoldMaxCrash * 1000} ms — too short for a post-crash lean to join the hit`)
-  const lean = new DamageModel({ params: {} })
-  let total = impulseAt(20), landedLean = null
-  for (let i = 0; i < 2 / DT; i++) {            // two seconds pinned against what it hit
-    total += impulseAt(20) * 0.01               // the engine total creeping up all the while
-    const rr = lean.feedContact('front', total, MASS, DT)
-    if (rr && !landedLean) landedLean = rr
+  // THE PRE-IMPACT REACH-BACK. The engine's impulse only crosses the trigger a step or two into the
+  // hit, by which time the deceleration has already happened. A burst that used the velocity of the
+  // step it STARTED on measured Δv over ~4 ms and priced a 34 mph crash at 0.4 mph — nothing.
+  ok(D.impactPreSteps >= 5, `a burst reaches ${D.impactPreSteps} steps back for its pre-impact speed`)
+  const late = new DamageModel({ params: {} })
+  // No approach history at all: the hit starts on the very first step it is ever fed.
+  let landedLate = null
+  for (let i = 0; i < 10; i++) {
+    const rr = late.feedContact('front', impulseAt(30), MASS, DT, v(i === 0 ? 50 : 5))
+    if (rr && !landedLate) landedLate = rr
   }
-  ok(landedLean && landedLean.v / MPH < 30,
-    `a hit that stays in contact for two seconds prices near its own peak (${landedLean ? (landedLean.v / MPH).toFixed(0) : '-'} mph), not double it`)
+  const rl = quiet(late, 5); if (rl && !landedLate) landedLate = rl
+  ok(landedLate && landedLate.v / MPH > 30, 'even with the drop happening immediately, the reach-back still catches most of it')
+
+  // A COLLISION DOES NOT REPORT A CONTACT EVERY STEP. The manifold comes and goes as the pair
+  // separates and re-touches, and banking on the first quiet step cut every crash to one step.
+  const flick = new DamageModel({ params: {} })
+  for (let i = 0; i < 12; i++) flick.feedContact(null, 0, MASS, DT, v(50))
+  let landedFlick = null
+  for (let i = 0; i < 10; i++) {
+    const on = i % 3 !== 1                       // contact drops out every third step
+    const mph = 50 - 45 * Math.min(1, i / 6)
+    const rr = flick.feedContact(on ? 'front' : null, on ? impulseAt(30) : 0, MASS, DT, v(mph))
+    if (rr && !landedFlick) landedFlick = rr
+  }
+  const rf = quiet(flick, 5); if (rf && !landedFlick) landedFlick = rf
+  ok(landedFlick && landedFlick.v / MPH > 30,
+    `a flickering manifold still prices the whole collision (${landedFlick ? (landedFlick.v / MPH).toFixed(1) : '-'} mph), not one step of it`)
 }
 
 console.log('\n§4 the region travels with the peak, and a long scrape does not last forever')
 {
+  const v = (mph) => ({ x: mph * MPH, y: 0, z: 0 })
   const d = new DamageModel({ params: {} })
-  d.feedContact('front', impulseAt(10), MASS, DT)
-  d.feedContact('left',  impulseAt(25), MASS, DT)
-  d.feedContact('front', impulseAt(12), MASS, DT)
-  const r = d.feedContact(null, 0, MASS, DT)
+  d.feedContact('front', impulseAt(10), MASS, DT, v(30))
+  d.feedContact('left',  impulseAt(25), MASS, DT, v(20))
+  d.feedContact('front', impulseAt(12), MASS, DT, v(15))
+  let r = null
+  for (let i = 0; i < 20; i++) { const x = d.feedContact(null, 0, MASS, DT, v(10)); if (x && !r) r = x }
   ok(r && r.region === 'left', 'the impact lands on the face that took the worst of it, not the one touched first')
 
   const d2 = new DamageModel({ params: {} })
   let hits = 0
-  for (let i = 0; i < 1 / DT; i++) if (d2.feedContact('right', impulseAt(8), MASS, DT)) hits++
+  for (let i = 0; i < 1 / DT; i++) if (d2.feedContact('right', impulseAt(8), MASS, DT, v(20))) hits++
   ok(hits >= 3, `a full second of sustained scraping banks repeated hits (${hits}), rather than one that never ends`)
 }
 

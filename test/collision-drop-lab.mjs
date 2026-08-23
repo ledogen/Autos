@@ -70,9 +70,12 @@ await ev(`(() => {
     if (T.spd.length > 4000) T.spd.shift()
     return os(vs, p, dt)
   }
-  d.feedContact = (r, ns, m, dt) => {
-    if (ns > window.__T.maxNs) window.__T.maxNs = ns
-    const res = of_(r, ns, m, dt)
+  // FORWARD EVERY ARGUMENT. A hook with a fixed arity silently drops later parameters, and this
+  // one dropped the velocity feedContact prices the hit on — so the instrument exercised the old
+  // impulse path and reported collisions healthy while they were dead in the game.
+  d.feedContact = (...a) => {
+    if (a[1] > window.__T.maxNs) window.__T.maxNs = a[1]
+    const res = of_(...a)
     if (res) window.__T.landed.push({ region: res.region, mph: +(res.v / 0.44704).toFixed(1) })
     return res
   }

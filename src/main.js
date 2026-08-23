@@ -1547,15 +1547,25 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
   let bestTop = bestH + r        // d=0 term — identical to the legacy single probe
   let bestX = cx, bestZ = cz
   if (doFootprint) {
-    // Cardinal cross at 0.55 r and 0.9 r (8 offsets). Direction-agnostic so it bridges bumps and
-    // slopes in any orientation without knowing the wheel's heading.
-    const STEN = [0.55, 0.9]
+    // Four rings x eight directions (32 offsets), direction-agnostic so it bridges bumps and slopes
+    // in any orientation without knowing the wheel's heading.
+    //
+    // It was two rings x four directions, and the owner could see the seams: rolling onto a road
+    // edge the wheel climbed in two visible steps — one per ring — because the envelope only knows
+    // the surface at the radii it samples. The disc it is approximating is continuous, so the fix
+    // is resolution: more rings make the climb finer, and the diagonals matter because a wheel
+    // rarely meets an edge square-on to the world axes.
+    //
+    // Cost is bounded by carveHint's 0.05 m memo — these offsets are distinct cells for one wheel,
+    // but every suspension substep and every repeat query at the same spot reuse them.
+    const STEN = [0.35, 0.6, 0.8, 0.95]
+    const DIRS = 8
     for (let k = 0; k < STEN.length; k++) {
       const d    = STEN[k] * r
       const lift = Math.sqrt(Math.max(0, r * r - d * d))
-      const offs = [[d, 0], [-d, 0], [0, d], [0, -d]]
-      for (let o = 0; o < 4; o++) {
-        const sx = cx + offs[o][0], sz = cz + offs[o][1]
+      for (let o = 0; o < DIRS; o++) {
+        const a = o * Math.PI * 2 / DIRS
+        const sx = cx + d * Math.cos(a), sz = cz + d * Math.sin(a)
         const h   = groundH(sx, sz)
         const top = h + lift
         if (top > bestTop) { bestTop = top; bestH = h; bestX = sx; bestZ = sz }
