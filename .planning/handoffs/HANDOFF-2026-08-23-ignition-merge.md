@@ -88,6 +88,9 @@ per §2.2 stalling does not exist yet anyway.
 
 ## 4. VERIFY AFTER MERGING
 
+**Pre-merge state on the branch: `npm run test:all` — all 56 gates green** (wall 551 s, gate-cpu
+3109 s, 2026-08-23). So anything red after the merge came from the merge, not from this branch.
+
 ```
 npm run test:all                 # full suite; the new gate is test/ignition-starter.mjs
 node test/ignition-starter.mjs   # or just this one — pure math, milliseconds
