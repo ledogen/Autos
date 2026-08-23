@@ -105,21 +105,31 @@ BRACE_Z = 3.62                   # where the diagonal brace leaves the pole
 BRACE_X = -0.44                  # where it meets the arm
 BRACE_W = 0.05
 
-# Area light part-way up, over the island.  It is in the reference photo, and without it
-# the pole is 3 m of blank white through the middle of the silhouette.
+# SIGN LIGHTING.  Two flat luminaires on a crossbar THROUGH the top of the pole, one
+# per sign face, each aimed down and inward at the lettering (owner, 2026-08-23).
 #
-# A FLAT LUMINAIRE, mounted level - the shallow shoebox an HPS or fluorescent area light
-# actually comes in, not an aimed can.  Its underside is the lens and is the ONE face
-# given a different material, which costs nothing: a box already has that face.
-LAMP_Z = 3.02                    # height of the arm's centreline
-LAMP_REACH = 0.52                # arm length out from the pole
-LAMP_ARM_W = 0.038
-LAMP_BACK = 0.11                 # housing extent behind the arm's outer end...
-LAMP_FWD = 0.25                  # ...and ahead of it: 360 mm overall
-LAMP_HW = 0.120                  # half-width across the pole
-LAMP_DEEP = 0.095                # housing depth
-LAMP_HANG = 0.010                # top of the housing, below the arm's centreline
-LAMP_TAPER = 0.018               # sides slope in toward the top
+# THE FIXTURES' LONG AXIS RUNS ALONG X, i.e. ALONG THE SIGN, not along their own arm.
+# The brief was "rotate it 90 degrees about the pole", and the arm does exactly that -
+# it now reaches out to +/-Y instead of over the pumps.  But the stated goal was that
+# the throw covers the sign text, and a fixture turned bodily with the arm would spread
+# its light across the sign's 200 mm thickness instead of down its 1.46 m length.  So
+# the arm turned and the housing did not, which is also how every real sign floodlight
+# is mounted.
+#
+# ONE CROSSBAR, NOT TWO ARMS: a single beam from -Y to +Y through the pole is 12 tris
+# instead of 24 and reads as the gantry it is.  Its tips are buried in the housings.
+LAMP_Z = 4.40                    # crossbar centreline, just under the pole cap
+LAMP_BAR_HALF = 0.44             # crossbar half-length across Y
+LAMP_BAR_W = 0.038
+LAMP_Y = 0.42                    # housing axis, out from the pole (mirrored)
+LAMP_DROP = 0.035                # housing axis, below the crossbar
+LAMP_X = (-1.14, 0.06)           # housing extent ALONG the sign: 1.20 m
+LAMP_W = 0.190                   # housing width
+LAMP_DEEP = 0.085                # housing depth
+# Aim, in degrees off vertical.  From (y 0.42, z 4.365) to the letter block's centre
+# (y 0.106, z 3.81) is atan(0.314 / 0.555) = 29.5 degrees, so this points at the text
+# rather than at whatever happens to be under the fixture.
+LAMP_TILT = 31.0
 
 SIGN_CX = -0.24                  # sign box centre
 SIGN_W = 1.46                    # box, along X
@@ -378,13 +388,15 @@ def prism_axis(p0, p1, r0, r1, sides, mat):
     return v, f, [mat] * len(f), [None] * len(f)
 
 
-def beam(p0, p1, w, h, mat):
+def beam(p0, p1, w, h, mat, up=None):
     """Rectangular beam between two points.  Cross-section w across the beam's own
     horizontal normal, h across its own vertical - so a diagonal brace keeps a
-    constant section instead of shearing."""
+    constant section instead of shearing.  Pass `up` to roll the section about the
+    beam's own axis; that is how the sign lights get their downward tilt without a
+    transform."""
     p0, p1 = Vector(p0), Vector(p1)
     d = (p1 - p0).normalized()
-    up = Vector((0.0, 0.0, 1.0))
+    up = Vector((0.0, 0.0, 1.0)) if up is None else Vector(up).normalized()
     if abs(d.dot(up)) > 0.999:
         up = Vector((0.0, 1.0, 0.0))
     # HANDEDNESS.  The faces below are wound for a RIGHT-handed (side, vert, d) frame,
@@ -400,6 +412,22 @@ def beam(p0, p1, w, h, mat):
     f = [(0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4),
          (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]
     return v, f, [mat] * len(f), [None] * len(f)
+
+
+def face_toward(verts, faces, mats, direction, mat):
+    """Give `mat` to whichever face of a convex part points most along `direction`.
+
+    Chosen by measured normal, NOT by index into box()'s face order: once a part is
+    built through beam() with a rolled `up`, which index is "the underside" depends on
+    the roll, and hardcoding it is how a lens ends up on the roof."""
+    direction = Vector(direction).normalized()
+    best, bi = -2.0, 0
+    for i, idx in enumerate(faces):
+        a, b, c = verts[idx[0]], verts[idx[1]], verts[idx[2]]
+        d = (b - a).cross(c - a).normalized().dot(direction)
+        if d > best:
+            best, bi = d, i
+    mats[bi] = mat
 
 
 def bezier(p0, p1, p2, p3, n):
@@ -801,15 +829,18 @@ def build():
     parts.append(prism_z(POLE_X, 0.0, COLLAR_TOP - 0.02, POLE_TOP,
                          POLE_R, POLE_R * 0.88, POLE_SIDES, "PumpBody", ph))
 
-    # --- area light --------------------------------------------------------
-    lx = POLE_X + LAMP_REACH
-    parts.append(beam((POLE_X, 0.0, LAMP_Z), (lx, 0.0, LAMP_Z),
-                      LAMP_ARM_W, LAMP_ARM_W, "PumpBody"))
-    lz1 = LAMP_Z - LAMP_HANG      # overlaps the arm, so no flush pair to z-fight
-    v, f, m, uvs = frustum(lx - LAMP_BACK, lx + LAMP_FWD, -LAMP_HW, LAMP_HW,
-                           lz1 - LAMP_DEEP, lz1, 0.0, LAMP_TAPER, "PumpTrim")
-    m[BOX_MZ] = "PumpBody"        # the underside IS the lens
-    parts.append((v, f, m, uvs))
+    # --- sign lights -------------------------------------------------------
+    parts.append(beam((POLE_X, -LAMP_BAR_HALF, LAMP_Z), (POLE_X, LAMP_BAR_HALF, LAMP_Z),
+                      LAMP_BAR_W, LAMP_BAR_W, "PumpBody"))
+    tilt = math.radians(LAMP_TILT)
+    lz = LAMP_Z - LAMP_DROP
+    for s in (1, -1):
+        # aim: down, and inward toward this side's sign face
+        aim = Vector((0.0, -s * math.sin(tilt), -math.cos(tilt)))
+        v, f, m, uvs = beam((LAMP_X[0], s * LAMP_Y, lz), (LAMP_X[1], s * LAMP_Y, lz),
+                            LAMP_W, LAMP_DEEP, "PumpTrim", up=-aim)
+        face_toward(v, f, m, aim, "PumpBody")   # the lens is the face that faces the throw
+        parts.append((v, f, m, uvs))
 
     # --- sign arm and its brace --------------------------------------------
     parts.append(box(POLE_X, ARM_X1, -ARM_HW, ARM_HW, ARM_Z0, ARM_Z1, "PumpBody"))

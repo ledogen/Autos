@@ -58,7 +58,7 @@ Hose and nozzle as a simple hanging tube, ≤60 tris. Dial face is texture; do n
 
 ## Resolution — 2026-08-22
 
-Shipped as `assets/models/gas-pump.glb`, **580 tris**, 6 materials, one 512×512 texture atlas.
+Shipped as `assets/models/gas-pump.glb`, **592 tris**, 6 materials, one 512×512 texture atlas.
 Sources: `assets/models/src/gas-pump.{blend,py}`. Registered as `gasPump` in `data/prop-models.js`
 under a **new `gasStation` pool** — see "Open items", it does not spawn yet and that is deliberate.
 
@@ -73,7 +73,7 @@ The Spec table above is left as written; this section is what was actually built
 
 | Field | Spec said | Shipped | Why |
 |---|---|---|---|
-| Tri budget | ≤600 | **580** | Inside, and it now buys two pumps, a 4.55 m pole, a sign, a floodlight, two four-rail bezels and two cast nozzles. Pass 2 *saved* 60 (the blank-window dial and the roof crown went), pass 3 spent 96 on the bezels, pass 4 spent 24 net on the nozzles after shortening the hoses. |
+| Tri budget | ≤600 | **592** | Inside, but only just — this is the number to watch if anything else is added. It buys two pumps, a 4.55 m pole, a sign, two sign lights, two four-rail bezels and two cast nozzles. Pass 2 *saved* 60 (the blank-window dial and the roof crown went), pass 3 spent 96 on the bezels, pass 4 spent 24 net on the nozzles after shortening the hoses, pass 5 spent 12 on the second light. |
 | Texture | 512×512, dial + livery + rust + digits | **512×512 atlas: GAS + the gauge face** | Livery and rust are *wear*, the named ART-STYLE anti-pattern — still dropped. The dial and digits stayed on the owner's 2026-08-22 call: a pump register is printed information, which is exactly what rule 1 buys a texture for. |
 | Real size | 0.6 × 1.1 m, 1.9 m tall | **2.50 × 1.40 m, 4.55 m tall**; each pump 0.72 × 0.56 × 1.42 | The pole is the asset. Everything below it is detail the player only gets once they have already arrived. |
 | Collision | `[0.6, 1.9, 1.1]` | `{ shape: 'box', size: [2.50, 1.45, 1.40] }` | Island and pumps up to the head at 1.42 m. **The pole above that is deliberately not collided** — a 4.55 m box would be an invisible wall to anything tall, and clipping a mirror on a sign post is not a crash. Note the registry field is `size`, not the ticket's `dims`. |
@@ -125,11 +125,21 @@ now enters the casting's **rear boss above the guard**, the way a real one is pl
 threading past the loop.
 
 The two pumps are one part list and its mirror through y = 0, separated by a 30 mm gap so they read
-as two. The **squeeze handle** the owner asked for by name is real geometry. The **area light**
-part-way up the pole is in the first reference and earns its 24 tris: without it the pole is 3 m of
-blank white through the middle of the silhouette. Pass 5 made it a **flat, level luminaire** —
-the shallow shoebox an HPS or fluorescent area light actually comes in, on the owner's call — with
-its underside given the pale material as a lens. That costs nothing: a box already has that face.
+as two. The **squeeze handle** the owner asked for by name is real geometry. **The sign lights are pass 5**, and they moved from lighting the island to lighting the sign. There
+are now **two flat luminaires on a single crossbar through the top of the pole**, one per sign face,
+each tilted 31° — the angle from the fixture to the letter block's centre, so it points at the text
+rather than at whatever is under it. Their lens is the one face given the pale material, chosen by
+**measured normal, not by index** into the box's face order: once a part is rolled about its own
+axis, which index is "the underside" depends on the roll, and hardcoding it is how a lens ends up on
+the roof.
+
+Two shapes here are deliberate. **One crossbar, not two arms** — a single beam from −Y to +Y through
+the pole is 12 tris instead of 24, its tips buried in the housings, and it reads as the gantry it is.
+And **the fixtures' long axis runs along X, along the sign, not along their own arm**: the brief was
+"rotate it 90° about the pole", and the arm does exactly that, but the stated goal was that the throw
+covers the sign text, and a fixture turned bodily with the arm would spread its light across the
+sign's 200 mm thickness instead of down its 1.46 m length. So the arm turned and the housing did not,
+which is also how every real sign floodlight is mounted.
 
 ### The atlas
 
