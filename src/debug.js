@@ -473,6 +473,11 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   doubled; lower it to merge only hard overlaps; 0 disables merging entirely (an A/B, not a
   //   shipping value — it restores the doubled roads).
   v2Folder.add(params.roadV2, 'mergeProxM', 0, 40, 1).name('Merge Distance (m)').onChange(fireRoadParam)
+  //   Pad Arrival Cap (BUG-55): a merged strand may not arrive at its far junction steeper than
+  //   this — the pad there is a near-flat plaza (clamped ~7%), and a steep arrival parks a step
+  //   at its rim (the measured 1.75-2.37 m cliff class). A merge that cannot meet it is declined
+  //   with reason 'pad', never forced.
+  v2Folder.add(params.roadV2, 'mergePadArrivalMax', 0.07, 0.24, 0.01).name('Pad Arrival Cap').onChange(fireRoadParam)
   //   Class boundaries: deeper than cutMax below ground becomes a BORE; higher than fillMax above
   //   it would become a bridge (bridges are de-scoped — owner ruling 2026-08-18 — so fill is
   //   capped there instead). A 12-20 m trench is an open rock cutting, not a tunnel.

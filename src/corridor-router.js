@@ -422,27 +422,16 @@ function stationRate(d, C) {
  * @returns {{y:number[], cls:number[], cost:number, segs:{cls:number,s0:number,s1:number,len:number}[]}|null}
  *          null = infeasible under the caps (mark-and-ship is the CALLER's job)
  */
-export function profileSolve(st, yA, yB, opts = {}) {
-    const C = opts.costs ?? V2_COSTS
-    const yStep = opts.yStep ?? 0.5
-    const n = st.s.length
-    if (n < 2) return null
-
-    let lo = Math.min(yA, yB), hi = Math.max(yA, yB)
-    for (const g of st.ground) { if (g < lo) lo = g; if (g > hi) hi = g }
-    lo -= C.cutMax + 8
-    hi += C.fillMax + 8
-    const ny = Math.max(2, Math.round((hi - lo) / yStep) + 1)
-    const yOf = j => lo + j * yStep
-
-    // One transition step: cost of arriving at (ground g1, deck y1) from (g0, y0) over ds.
-    // Infinity when the grade cap of the classes involved is exceeded.
-    // Cap check carries a HALF-QUANTUM tolerance (yStep/2 of Δy): on a y-grid the legal grades
-    // come in yStep/ds increments, so a hard cap silently truncates to the next lower increment —
-    // measured on seed 20 edge -5,-1,0:-5,0,1, floor(0.35·9.993/0.5)=6 made the effective cap 30%
-    // and a feasible 28.5%-mean descent "infeasible". Tolerating cap + yStep/(2·ds) (≤2.5% grade
-    // at defaults) biases the error to a bounded overshoot instead of an unbounded undershoot.
-    const stepCost = (y0, g0, y1, g1, ds) => {
+// One transition step: cost of arriving at (ground g1, deck y1) from (g0, y0) over ds.
+// Infinity when the grade cap of the classes involved is exceeded.
+// Cap check carries a HALF-QUANTUM tolerance (yStep/2 of Δy): on a y-grid the legal grades
+// come in yStep/ds increments, so a hard cap silently truncates to the next lower increment —
+// measured on seed 20 edge -5,-1,0:-5,0,1, floor(0.35·9.993/0.5)=6 made the effective cap 30%
+// and a feasible 28.5%-mean descent "infeasible". Tolerating cap + yStep/(2·ds) (≤2.5% grade
+// at defaults) biases the error to a bounded overshoot instead of an unbounded undershoot.
+// (BUG-55: factored out of profileSolve so profileSolveBundle prices with the identical rule.)
+function makeStepCost(C, yStep) {
+    return (y0, g0, y1, g1, ds) => {
         const g = (y1 - y0) / ds
         const cls0 = classOf(y0 - g0, C), cls1 = classOf(y1 - g1, C)
         // class-aware grade cap: any bore endpoint tightens the cap
@@ -452,6 +441,39 @@ export function profileSolve(st, yA, yB, opts = {}) {
         if ((cls0 === CLS.BORE) !== (cls1 === CLS.BORE)) c += C.cPortal
         if ((cls0 === CLS.BRIDGE) !== (cls1 === CLS.BRIDGE)) c += C.cAbutment
         return c
+    }
+}
+
+export function profileSolve(st, yA, yB, opts = {}) {
+    const C = opts.costs ?? V2_COSTS
+    const yStep = opts.yStep ?? 0.5
+    const n = st.s.length
+    if (n < 2) return null
+
+    let lo = Math.min(yA, yB), hi = Math.max(yA, yB)
+    for (const g of st.ground) { if (g < lo) lo = g; if (g > hi) hi = g }
+    if (opts.pins) for (const p of opts.pins) { if (p.y < lo) lo = p.y; if (p.y > hi) hi = p.y }
+    lo -= C.cutMax + 8
+    hi += C.fillMax + 8
+    const ny = Math.max(2, Math.round((hi - lo) / yStep) + 1)
+    const yOf = j => lo + j * yStep
+
+    const stepCost = makeStepCost(C, yStep)
+
+    // BUG-55: INTERIOR PINS — [{i, y}] forces station i (interior only) to the grid state nearest
+    // y. This is how a bundled winner's trunk carries the fork decks the joint solve negotiated:
+    // the DP still owns everything between the pins, so the trunk bends toward each fork exactly
+    // as the negotiation priced it. A pin the caps cannot reach nulls the solve (the caller's
+    // ladder handles it) — never silently ignored.
+    const pinAt = new Map()
+    if (opts.pins) for (const p of opts.pins) {
+        const i = Math.max(1, Math.min(n - 2, p.i))
+        pinAt.set(i, Math.max(0, Math.min(ny - 1, Math.round((p.y - lo) / yStep))))
+    }
+    const applyPin = (i, arr) => {
+        const jPin = pinAt.get(i)
+        if (jPin === undefined) return
+        for (let j = 0; j < ny; j++) if (j !== jPin) arr[j] = Infinity
     }
 
     // ENDPOINTS ARE EXACT, not grid states: station 0 sits at yA and station n-1 at yB precisely
@@ -484,6 +506,7 @@ export function profileSolve(st, yA, yB, opts = {}) {
         for (let j = Math.max(0, jNear - kMax); j <= Math.min(ny - 1, jNear + kMax); j++) {
             c1[j] = stepCost(yA, st.ground[0], yOf(j), st.ground[1], ds)
         }
+        applyPin(1, c1)
         cost[1] = c1
         from[1] = null
     }
@@ -506,6 +529,7 @@ export function profileSolve(st, yA, yB, opts = {}) {
             ci[j] = best
             fi[j] = bestK
         }
+        applyPin(i, ci)
         cost[i] = ci
         from[i] = fi
     }
@@ -541,6 +565,208 @@ export function profileSolve(st, yA, yB, opts = {}) {
     }
     for (const sg of segs) sg.len = sg.s1 - sg.s0
     return { y, cls, cost: total, segs }
+}
+
+/**
+ * BUG-55: the JOINT bundle solve — negotiate fork deck heights across a winner's trunk and every
+ * loser strand that forks off it, instead of letting the winner solve alone and dictate.
+ *
+ * Structure: the trunk DP runs exactly like profileSolve (exact pinned ends, interior y-grid).
+ * Each BRANCH is a loser's outer strand, solved first from its own exact pinned end (its far
+ * node) up to its fork, yielding "cheapest cost to arrive at the fork at each grid elevation".
+ * That array is ADDED into the trunk's cost table at the fork station, so the trunk's own
+ * minimisation weighs a bend toward a branch against its own grade cost — the fork elevation is
+ * negotiated under the caps, priced by the identical stepCost the ordinary solve uses (a class
+ * flip at the fork pays its cPortal through the same rule; no new vocabulary).
+ *
+ * One shared y-grid spans every strand, so a branch's arrival cost at grid j and the trunk's cost
+ * at grid j describe the same elevation — the fold-in is exact. Endpoints of every strand stay
+ * exact (yA/yB/yPin), so the y-spread-0.000 node contract is preserved by construction.
+ *
+ * The caller consumes the negotiated FORK HEIGHTS (plus the raw branch profiles, for the pad
+ * arrival-grade guard); the shipped per-strand profiles are then re-solved through the ordinary
+ * ladder with these heights as pins, inheriting dequantise/finish behaviour unchanged.
+ *
+ * @param {{s:number[],ground:number[],yA:number,yB:number}} trunk winner stations, node to node
+ * @param {{s:number[],ground:number[],yPin:number,forkIdx:number}[]} branches loser strands —
+ *        station 0 = the strand's own pinned far end, last station = the fork; forkIdx names the
+ *        INTERIOR trunk station the strand attaches to
+ * @param {object} [opts] { yStep=0.5, costs=V2_COSTS }
+ * @returns {{forkY:number[], trunkY:number[], branchY:number[][], cost:number}|null}
+ *          null = no joint profile exists under the caps (the caller's ladder handles it)
+ */
+export function profileSolveBundle(trunk, branches, opts = {}) {
+    const C = opts.costs ?? V2_COSTS
+    const yStep = opts.yStep ?? 0.5
+    const n = trunk.s.length
+    if (n < 4 || !branches.length) return null
+    const { yA, yB } = trunk
+
+    let lo = Math.min(yA, yB), hi = Math.max(yA, yB)
+    for (const g of trunk.ground) { if (g < lo) lo = g; if (g > hi) hi = g }
+    for (const b of branches) {
+        if (b.yPin < lo) lo = b.yPin; if (b.yPin > hi) hi = b.yPin
+        for (const g of b.ground) { if (g < lo) lo = g; if (g > hi) hi = g }
+    }
+    lo -= C.cutMax + 8
+    hi += C.fillMax + 8
+    const ny = Math.max(2, Math.round((hi - lo) / yStep) + 1)
+    const yOf = j => lo + j * yStep
+    const stepCost = makeStepCost(C, yStep)
+
+    // ── branch forward passes: arr[j] = cheapest arrival at the fork at elevation yOf(j) ──
+    const bs = []
+    for (const b of branches) {
+        const m = b.s.length
+        if (m < 2) return null
+        const forkIdx = Math.max(1, Math.min(n - 2, b.forkIdx))
+        const arr = new Float64Array(ny).fill(Infinity)
+        const arrFrom = new Int32Array(ny).fill(-1)
+        if (m === 2) {
+            const ds = b.s[1] - b.s[0]
+            for (let j = 0; j < ny; j++) {
+                arr[j] = stepCost(b.yPin, b.ground[0], yOf(j), b.ground[1], ds)
+                arrFrom[j] = -2   // direct from the exact pin
+            }
+            bs.push({ b, forkIdx, arr, arrFrom, cost: null, from: null })
+            continue
+        }
+        const cost = [], from = []
+        {   // first step: exact yPin → grid states of station 1
+            const ds = b.s[1] - b.s[0]
+            const kMax = Math.ceil(C.gMaxRoad * ds / yStep) + 1
+            const c1 = new Float64Array(ny).fill(Infinity)
+            const jNear = Math.round((b.yPin - lo) / yStep)
+            for (let j = Math.max(0, jNear - kMax); j <= Math.min(ny - 1, jNear + kMax); j++)
+                c1[j] = stepCost(b.yPin, b.ground[0], yOf(j), b.ground[1], ds)
+            cost[1] = c1
+            from[1] = null
+        }
+        for (let i = 2; i <= m - 2; i++) {
+            const ds = b.s[i] - b.s[i - 1]
+            const kMax = Math.ceil(C.gMaxRoad * ds / yStep)
+            const ci = new Float64Array(ny).fill(Infinity)
+            const fi = new Int32Array(ny).fill(-1)
+            const prev = cost[i - 1]
+            const g0 = b.ground[i - 1], g1 = b.ground[i]
+            for (let j = 0; j < ny; j++) {
+                const y1 = yOf(j)
+                let best = Infinity, bestK = -1
+                for (let k = Math.max(0, j - kMax); k <= Math.min(ny - 1, j + kMax); k++) {
+                    const p = prev[k]
+                    if (p === Infinity) continue
+                    const c = p + stepCost(yOf(k), g0, y1, g1, ds)
+                    if (c < best) { best = c; bestK = k }
+                }
+                ci[j] = best
+                fi[j] = bestK
+            }
+            cost[i] = ci
+            from[i] = fi
+        }
+        {   // last step: grid states of station m-2 → grid states of the fork
+            const ds = b.s[m - 1] - b.s[m - 2]
+            const kMax = Math.ceil(C.gMaxRoad * ds / yStep)
+            const prev = cost[m - 2]
+            const g0 = b.ground[m - 2], g1 = b.ground[m - 1]
+            for (let j = 0; j < ny; j++) {
+                const y1 = yOf(j)
+                let best = Infinity, bestK = -1
+                for (let k = Math.max(0, j - kMax); k <= Math.min(ny - 1, j + kMax); k++) {
+                    const p = prev[k]
+                    if (p === Infinity) continue
+                    const c = p + stepCost(yOf(k), g0, y1, g1, ds)
+                    if (c < best) { best = c; bestK = k }
+                }
+                arr[j] = best
+                arrFrom[j] = bestK
+            }
+        }
+        bs.push({ b, forkIdx, arr, arrFrom, cost, from })
+    }
+
+    // ── trunk pass, with each branch's arrival cost folded in at its fork station ──
+    const foldAt = (i, arr) => {
+        for (const e of bs) if (e.forkIdx === i)
+            for (let j = 0; j < ny; j++) arr[j] += e.arr[j]
+    }
+    const cost = [], from = []
+    {
+        const ds = trunk.s[1] - trunk.s[0]
+        const kMax = Math.ceil(C.gMaxRoad * ds / yStep) + 1
+        const c1 = new Float64Array(ny).fill(Infinity)
+        const jNear = Math.round((yA - lo) / yStep)
+        for (let j = Math.max(0, jNear - kMax); j <= Math.min(ny - 1, jNear + kMax); j++)
+            c1[j] = stepCost(yA, trunk.ground[0], yOf(j), trunk.ground[1], ds)
+        foldAt(1, c1)
+        cost[1] = c1
+        from[1] = null
+    }
+    for (let i = 2; i <= n - 2; i++) {
+        const ds = trunk.s[i] - trunk.s[i - 1]
+        const kMax = Math.ceil(C.gMaxRoad * ds / yStep)
+        const ci = new Float64Array(ny).fill(Infinity)
+        const fi = new Int32Array(ny).fill(-1)
+        const prev = cost[i - 1]
+        const g0 = trunk.ground[i - 1], g1 = trunk.ground[i]
+        for (let j = 0; j < ny; j++) {
+            const y1 = yOf(j)
+            let best = Infinity, bestK = -1
+            for (let k = Math.max(0, j - kMax); k <= Math.min(ny - 1, j + kMax); k++) {
+                const p = prev[k]
+                if (p === Infinity) continue
+                const c = p + stepCost(yOf(k), g0, y1, g1, ds)
+                if (c < best) { best = c; bestK = k }
+            }
+            ci[j] = best
+            fi[j] = bestK
+        }
+        foldAt(i, ci)
+        cost[i] = ci
+        from[i] = fi
+    }
+    let total = Infinity, jEnd = -1
+    {
+        const ds = trunk.s[n - 1] - trunk.s[n - 2]
+        const prev = cost[n - 2]
+        const g0 = trunk.ground[n - 2], g1 = trunk.ground[n - 1]
+        for (let k = 0; k < ny; k++) {
+            const p = prev[k]
+            if (p === Infinity) continue
+            const c = p + stepCost(yOf(k), g0, yB, g1, ds)
+            if (c < total) { total = c; jEnd = k }
+        }
+    }
+    if (!Number.isFinite(total)) return null
+
+    // ── backtrace: trunk first (recording the chosen grid state at every station), then each
+    //    branch from its fork's chosen state down to its own exact pin ──
+    const trunkY = new Array(n)
+    const jAt = new Int32Array(n).fill(-1)
+    trunkY[0] = yA; trunkY[n - 1] = yB
+    let j = jEnd
+    for (let i = n - 2; i >= 1; i--) {
+        trunkY[i] = yOf(j)
+        jAt[i] = j
+        j = from[i] ? from[i][j] : j
+    }
+    const forkY = [], branchY = []
+    for (const e of bs) {
+        const m = e.b.s.length
+        const jF = jAt[e.forkIdx]
+        const y = new Array(m)
+        y[m - 1] = yOf(jF)
+        forkY.push(y[m - 1])
+        let k = e.arrFrom[jF]
+        if (k === -2) { y[0] = e.b.yPin; branchY.push(y); continue }
+        for (let i = m - 2; i >= 1; i--) {
+            y[i] = yOf(k)
+            k = e.from && e.from[i] ? e.from[i][k] : k
+        }
+        y[0] = e.b.yPin
+        branchY.push(y)
+    }
+    return { forkY, trunkY, branchY, cost: total }
 }
 
 /**

@@ -509,6 +509,13 @@ export const RANGER_PARAMS = {
     // (seed 7) and 2.37 m (seed 6) about 14 m out from the node, which road-smoothness catches.
     // Turn on to work the class; it needs the junction pass (naive meets at degree >= 3) first.
     mergeMidSpan: false,
+    // BUG-55 'pad' guard: a bundle rung is DECLINED (counted, never forced) when any loser
+    // strand's solved arrival grade at its far node exceeds this. The junction pad plane is
+    // clamped to roadJunctionPadMaxGrade (0.07) while roads may run gMaxRoad (0.24); the
+    // measured 1.75-2.37 m mid-span collision cliffs are (arrival - plane) x the ~14 m ring
+    // reach, so bounding the arrival is what keeps a merge from parking a step at a junction.
+    // 0.12 = the plane clamp plus what the junction blend absorbs over its reach.
+    mergePadArrivalMax: 0.12,
     // BUG-55 pair census: an edge is a CANDIDATE conflict partner of a registering edge when its
     // node-to-node CHORD comes within this of the registering edge's ROUTE polyline. Chord-to-
     // chord was measured useless (blue-noise keeps chords >= 407 m apart while routes wander up
