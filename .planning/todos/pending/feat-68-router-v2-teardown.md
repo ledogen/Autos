@@ -1717,6 +1717,49 @@ Also still open and unchanged by this work: wide-angle forks now BUILD, but a fo
 the junction-dressing follow-up; and the `short` guard (fork under 30 m from the node) declines five
 merges per window that are really junction-apron geometry — deliberately left to the junction pass.
 
+## MID-SPAN merges (2026-08-22, `e3b2904`) — the owner's next two marks, and what bounds them
+
+The owner reloaded, found two more spots on seed 6, and asked whether the change had landed. It
+had (the served bundle carried `_v2NodeMerges` and the new prices); those two marks are a shape the
+node-anchored rule cannot see:
+
+| mark | flare between the node and the parallel run | the parallel run |
+|---|---|---|
+| (−1710, 1760) | **121 m**, with a 25 m deck difference through the bulge | 195 m alongside + 2 crossings |
+| (−1091, 2792) | **82 m** | **170 m at a constant 10.0 m separation** |
+
+The legs part AT the junction and only meet again far out, so the from-node interval is under
+MINREG and nothing is a candidate. Merging them back to the node would work, but it would erase the
+bulge — and at mark A the bulge is a real alternative line with 25 m of height in it, not a wobble.
+So: **a mid-span merge cedes a stretch in the middle and forks at BOTH ends.**
+
+- `conflictIntervals()` replaces the prefix walk and returns EVERY maximal in-conflict interval,
+  each already flare-extended. Interval [0] is the node-anchored one; later ones are mid-span.
+- `buildTaper` now takes explicit directions — which way the shared strand lies on the winner, which
+  way the band extends on the loser. A node-anchored merge forks at one end and a mid-span one at
+  each; they differ in nothing but those two signs.
+- `_v2RegisterMidSpan` assembles own head + inner band · the winner's vertices and heights verbatim ·
+  outer band + own tail, and solves **two** profile strands, each pinned to the winner's deck at its
+  own fork.
+- **A SHRINK LADDER on the shared strand is load-bearing, not a nicety.** The fork pins the loser to
+  the winner's DECK, and mark A's pair is 14.5 m apart vertically at its worst — its full strand is
+  infeasible at any band length, and it only grades once the fork is pulled back to where the two
+  decks are close. That is also what bounds the result: mark A merges 62 m of its 195 m and keeps an
+  84 m tail. **The deck gap, not the geometry, is what limits a mid-span merge.**
+
+**PERF, and the trap in it.** The full-run walk ran for nearly every pair — every junction has legs
+that part immediately — and TRIPLED the network build (2–4 s → 9–11 s). Two fixes: the node-anchored
+answer goes back to a lazy prefix walk (`firstInterval`), and the mid-span path is gated by a coarse
+BOTH-SIDES pre-check (every 8th vertex, point-to-point, threshold widened by the stride so it cannot
+miss a real conflict). Back to **3.2–4.3 s at 1× headless**, level with the pre-change build —
+verified by disabling the gate in place and measuring both ways in the same session, because the
+raw numbers swing 2× on a loaded machine and nearly sent this down a wrong path twice.
+
+**Measured:** both new marks merge · the seven earlier captures unchanged (6 clean, C1's 24 m tail)
+· census 15 → 13 in the origin windows, where this shape is rare and the owner's marks are 2–3 km
+out · contract intact (y-spread 0.000, one component, infeasible 0) · gates **45/50**, same five
+booked reds · `road-minradius` still 7.40 m.
+
 ---
 
 # CURRENT HANDOFF (2026-08-22) — read this one
@@ -1729,7 +1772,7 @@ measured verdicts + the shipped junction-chord-pin fix are the "BUG-53 worked" s
 remaining decision is next-step 2 below, and its old file is a closed-merged stub in
 `.planning/todos/completed/`.)
 
-**Branch:** `feature/corridor-router` at `e5b3205`, worktree `/Users/ledogen/CodeShit/CarGame-corridor-router`,
+**Branch:** `feature/corridor-router` at `e3b2904`, worktree `/Users/ledogen/CodeShit/CarGame-corridor-router`,
 dev server **:3343**, tree CLEAN. Main is untouched and still ships v1 — the swap is one merge at
 sign-off. (Planning docs commit to main; code to the branch. Both trees clean as of this handoff.)
 Battery: `node perf-runs/v2-integration-check.mjs`. Gallery: `perf-runs/gallery.html` (§8 = the
@@ -1784,11 +1827,12 @@ judgment (stash-A/B'd against pre-pin src):
    crossing anchor as one catch-all rule, and the wide-angle-fork item went with it (forks build
    at 108° now). **A DRIVEN pass over the new forks is the owner moment this is waiting on.**
    What remains of the class, named and reproducible:
-   **(a) mid-span conflicts** — a pair that parts at the node, goes its own way, and conflicts
-   again deep mid-span past a flare wider than 60 m. Needs a band tapered at BOTH ends instead of
-   node-exact at one: same machinery, different assembly (own head → taper → ceded middle → taper
-   → own tail, two profile strands instead of one). Reproducer: seed 11
-   `-3,-3,1|-2,-2,0 × -1,-3,1|-2,-2,0`.
+   **(a) mid-span conflicts: SHIPPED** (`e3b2904`, record above). What bounds them now is the
+   DECK GAP, not the geometry — the fork pins the loser to the winner's deck, so a stacked pair
+   (seed 6 at (-1710,1760): 17 m apart horizontally, 14.5 m vertically) merges only the sub-strand
+   where the two decks are close, leaving a tail. Making those merge whole needs the loser's height
+   to be re-solved across the WHOLE run with the fork decks as interior constraints, instead of two
+   strands each also pinned at a node.
    **(b) disjoint tears** — no shared node, so per-node planning cannot see them at all; needs its
    own window-invariance derivation. Reproducer: graph-topology's SURFACE-SMOOTH at seed 6
    (3328,-27).
