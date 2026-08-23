@@ -239,7 +239,7 @@ for (const seed of [6, 20, 11, 67]) {
   const cen = road._v2CensusStampResolved()
   if (cen) console.log(`   pair census: ${cen.regEdges} reg edges, ${cen.wideChords} wide chords, ${cen.candPairs} candidates, ${cen.walked} walked, ${cen.routedFresh} fresh routes · disjoint conflicts ${cen.disjoint.length} (${cen.disjoint.filter(d => d.tear).length} tears) · max conflict discD ${Math.max(0, ...(cen.disjoint.map(d => d.discD))).toFixed(0)} m (censusChordM ${RANGER_PARAMS.roadV2?.censusChordM ?? 300})`)
   for (const d of (cen?.disjoint || []))
-    console.log(`   CENSUS-DISJOINT  ${d.a} × ${d.b} · near ${d.nearLen.toFixed(0)} m, minSep ${d.minSep.toFixed(1)}, deck mismatch ${d.maxDy.toFixed(1)} m, discD ${d.discD.toFixed(0)} m${d.resolved ? ' · resolved (merged)' : d.tear ? ' · TEAR' : ''}`)
+    console.log(`   CENSUS-DISJOINT  ${d.a} × ${d.b} · near ${d.nearLen.toFixed(0)} m, minSep ${d.minSep.toFixed(1)}, deck mismatch ${d.maxDy.toFixed(1)} m, discD ${d.discD.toFixed(0)} m${d.resolved ? ` · resolved (${d.resolved})` : d.tear ? ' · TEAR' : ''}`)
   const dist = overlapLens.filter(x => x > 1)
   dist.sort((a, b) => b - a)
   console.log(`   from-node overlap distribution (top 8): ${dist.slice(0, 8).map(x => x.toFixed(0)).join(', ')} m`)

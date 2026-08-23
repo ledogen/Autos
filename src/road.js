@@ -2268,7 +2268,11 @@ export class RoadSystem {
         const hit = memo.get(sig)
         if (hit) return hit
         const gMargin = this._params?.roadGraphMargin ?? 3
-        const dropMargin = gMargin + (this._params?.roadGraphDegreeDetourHops ?? 4) + 1
+        // BUG-55 phase 5: the delete rung's BFS shares this box, so the margin covers whichever
+        // detour cap reaches further (same PERF-26 argument — the box holds the full detour
+        // neighbourhood of every in-window candidate; wider cannot change an in-window decision).
+        const dropMargin = gMargin + Math.max(this._params?.roadGraphDegreeDetourHops ?? 4,
+                                              this._params?.roadV2?.deleteDetourHops ?? 6) + 1
         const wide = this._buildUrquhart(mx0, mx1, mz0, mz1, false, dropMargin)
         const entry = { drop: this._degreeDropSet(wide), wide }
         if (memo.size > 6) memo.clear()   // warm/stream/spawn windows alternate — keep a handful
@@ -2543,6 +2547,10 @@ export class RoadSystem {
         // upper rungs to swing the whole turn at road radius.
         const TAPER_LADDER = [40, 55, 70, 90, 110, 130]
         const out = new Map()
+        // BUG-55 phase 5: pairs declined 'angle' on the FULL merge are recorded on the memo —
+        // hairpins never fall through to the delete rung (owner ruling), and the rung must read
+        // that from planner state that every window derives identically.
+        out.declinedAngle = new Set()
         const nbrsRaw = g.adj.get(nk)
         const nbrs = nbrsRaw ? [...nbrsRaw].filter((o) => !drop || !drop.has(nk + '|' + o)).sort() : []
         if (nbrs.length < 2) { memo.set(nk, out); return out }
@@ -2709,7 +2717,13 @@ export class RoadSystem {
                 // point. What no band can express is a leg DOUBLING BACK: past 135° the loser would
                 // U-turn off the winner, which is a switchback, not a fork, and merging one would
                 // delete a hairpin.
-                if (th > Math.PI * 0.75) { if (report) this._v2MergeSkipped('angle', `${L2.ck} x ${W.ck} @${nk} ${(th * 180 / Math.PI).toFixed(0)}deg`); continue }
+                if (th > Math.PI * 0.75) {
+                    if (report) {
+                        this._v2MergeSkipped('angle', `${L2.ck} x ${W.ck} @${nk} ${(th * 180 / Math.PI).toFixed(0)}deg`)
+                        out.declinedAngle.add(L2.ck < W.ck ? L2.ck + '#' + W.ck : W.ck + '#' + L2.ck)
+                    }
+                    continue
+                }
                 if (_winnerBoreAtFork(W.S, W.nodeAtStart, wCutF)) { if (report) this._v2MergeSkipped('bore', `${L2.ck} x ${W.ck} @${nk}`); continue }
                 const taper = this._v2BuildTaper(ctx, W, wCutF, W.nodeAtStart ? -1 : 1, L2, lCutF, L2.nodeAtStart ? 1 : -1)
                 if (taper.fail) { if (report) this._v2MergeSkipped('taper', `${L2.ck} x ${W.ck} @${nk} best R ${taper.bestR.toFixed(1)} m at a ${taper.bestLb} m band (floor ${RFLOOR})`); continue }
@@ -3025,6 +3039,223 @@ export class RoadSystem {
         return fail(bestSpec ? [bestSpec] : null)
     }
 
+    // ── BUG-55 phase 5: conflict-pair enumeration for the DELETE rung ─────────────────────────
+    // Every wide-graph partner whose route shares dirt with this edge's route — node-sharing
+    // partners INCLUDED (unlike _v2DisjointFor's discovery, which leaves those to the per-node
+    // planner: the delete rung answers for node-anchored unmergeables too). GEOMETRY ONLY — no
+    // planner lookups — because this doubles as the BFS path-vetting test in _v2DeleteFor, where
+    // the edge under test may sit outside the stream graph and planner state would differ by
+    // window. Pure fn of (routes, wide chords), so it reads the same from every window (the
+    // census's invariance argument; censusChordM is the same accepted discovery bound). Tear
+    // thresholds are the census's: 20 m of shared earthworks at minSep < 9 or a deck gap > 3.
+    _v2ConflictPairs(g, drop, wide, c1, c2) {
+        const kA = wide.key(c1), kB = wide.key(c2)
+        const ck = kA < kB ? kA + '|' + kB : kB + '|' + kA
+        if (!this._v2ConflictMemo || this._v2ConflictMemo.rev !== this._networkRev)
+            this._v2ConflictMemo = { rev: this._networkRev, map: new Map() }
+        const memo = this._v2ConflictMemo.map
+        if (memo.has(ck)) return memo.get(ck)
+        const fin = (v) => { memo.set(ck, v); return v }
+        const C = this._v2Costs()
+        const PROX = C.mergeProxM ?? 18, GAPM = C.mergeGapM ?? 200, FLARE = C.mergeFlareM ?? 60
+        const CHORD = C.censusChordM ?? 300
+        const spell = this._v2EdgeSpellings(g)
+        const spOwn = spell.get(ck)
+        const own = this._v2RunSample(spOwn ? g : wide, drop, ...(spOwn ?? [c1, c2]))
+        if (!own || own.L < 60) return fin([])
+        let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
+        for (const p of own.pts) {
+            if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x
+            if (p.z < minz) minz = p.z; if (p.z > maxz) maxz = p.z
+        }
+        const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
+        const out = []
+        for (const [q1, q2] of wide.edges) {
+            const qA = wide.key(q1), qB = wide.key(q2)
+            const qck = qA < qB ? qA + '|' + qB : qB + '|' + qA
+            if (qck === ck) continue
+            if (drop.has(qA + '|' + qB)) continue
+            const A2 = this._nodePos(q1), B2 = this._nodePos(q2)
+            { const ex = A2.x - B2.x, ez = A2.z - B2.z; if (ex * ex + ez * ez <= _mband2) continue }
+            if (Math.max(A2.x, B2.x) < minx - CHORD || Math.min(A2.x, B2.x) > maxx + CHORD
+                || Math.max(A2.z, B2.z) < minz - CHORD || Math.min(A2.z, B2.z) > maxz + CHORD) continue
+            const cnx = Math.min(A2.x, B2.x) - CHORD, cxx = Math.max(A2.x, B2.x) + CHORD
+            const cnz = Math.min(A2.z, B2.z) - CHORD, cxz = Math.max(A2.z, B2.z) + CHORD
+            // Stride-8 walk (32 m steps) against a 300 m threshold with the stride's error bound
+            // as slack: a real conflict needs routes within mergeProxM (18 m), so nothing real
+            // can slip a 300+16 m discovery net. Deterministic, ~8× cheaper than full-stride —
+            // this scan runs per registering edge and was the delete rung's measured cost.
+            let dDisc = Infinity
+            for (let ip = 0; ip < own.pts.length; ip += 8) {
+                const p = own.pts[ip]
+                if (p.x < cnx || p.x > cxx || p.z < cnz || p.z > cxz) continue
+                const dd = _segSegDistXZ(p, p, A2, B2)
+                if (dd < dDisc) { dDisc = dd; if (dDisc <= 0) break }
+            }
+            if (dDisc > CHORD + 16) continue
+            const spQ = spell.get(qck)
+            const SQ = this._v2RunSample(spQ ? g : wide, drop, ...(spQ ?? [q1, q2]))
+            if (!SQ || SQ.L < 60) continue
+            const lim = PROX + 8 * PROTO_SAMPLE_DS, lim2 = lim * lim
+            let near = false
+            for (let ip = 0; ip < own.pts.length && !near; ip += 8) {
+                const px = own.pts[ip].x, pz = own.pts[ip].z
+                for (let iq = 0; iq < SQ.pts.length; iq += 8) {
+                    const dx = px - SQ.pts[iq].x, dz = pz - SQ.pts[iq].z
+                    if (dx * dx + dz * dz <= lim2) { near = true; break }
+                }
+            }
+            if (!near) continue
+            const ivs0 = _conflictIntervalsXZ(own, true, SQ, PROX, GAPM, FLARE, null)
+            if (!ivs0.length) continue
+            // Node-sharing pairs: the contiguous stretch AT the shared node is the junction
+            // THROAT — two legs leaving one node inside earthworks distance is every ordinary
+            // junction, and the node planner owns that shape (it measured minSep ~0 there by
+            // construction, which is what made the raw tear test nominate half the network).
+            // Only an interval CLEAR of the shared node — genuine mid-span conflict — is
+            // delete-rung business.
+            const shared = [kA, kB].filter((k) => k === qA || k === qB)
+            const ownStartKey = wide.key((spOwn ?? [c1, c2])[0])
+            const ivs = shared.length ? ivs0.filter((iv) =>
+                !shared.some((sk) => (sk === ownStartKey ? iv.s0 <= 30 : iv.s1 >= own.L - 30))) : ivs0
+            if (!ivs.length) continue
+            let nearLen = 0, minSep = Infinity, maxDy = 0
+            for (const iv of ivs) nearLen += iv.s1 - iv.s0
+            for (let ip = 0; ip < own.pts.length; ip++) {
+                const sArc = own.polyCum[ip]
+                if (!ivs.some((iv) => sArc >= iv.s0 - 1 && sArc <= iv.s1 + 1)) continue
+                const qn = _nearestOnPolyXZ(own.pts[ip].x, own.pts[ip].z, SQ.pts, SQ.polyCum)
+                if (qn.d > PROX) continue
+                if (qn.d < minSep) minSep = qn.d
+                const dy = Math.abs(own.pts[ip].y - qn.y)
+                if (dy > maxDy) maxDy = dy
+            }
+            if (nearLen < 20) continue
+            out.push({ qck, spQ: spQ ?? [q1, q2], inG: !!spQ, shared,
+                       longer: own.L > SQ.L || (own.L === SQ.L && ck < qck),
+                       tear: minSep < 9 || maxDy > 3, nearLen, minSep, maxDy })
+        }
+        return fin(out)
+    }
+
+    // ── BUG-55 phase 5: the DELETE rung ───────────────────────────────────────────────────────
+    // When a tear-grade pair exhausts the merge ladder, the remaining resolution is to DELETE
+    // the redundant edge (owner ruling 2026-08-22: merge or delete, nothing else). Victim = the
+    // LONGER member — the wanderer dies, the direct connection survives (tie → lexicographic;
+    // confirmed with deleteDetourHops 6 on 2026-08-23). The victim drops only when its endpoints
+    // reconnect within the cap in the settled graph MINUS every edge that could itself be
+    // deleted — _degreeDropSet's "no candidate edge may serve as detour" discipline, applied
+    // lazily: BFS, vet each path edge with the geometry-only possible-victim test
+    // (_v2ConflictPairs: tear-grade pair where it is the longer member), re-BFS excluding any
+    // that fail, until a victim-free path exists (delete) or none remains within the cap
+    // (decline 'detour', counted). Every deleted victim therefore reconnects through edges that
+    // cannot vanish, so simultaneous deletions can never strand a component. The vetting is an
+    // over-approximation on purpose: a path edge whose own delete would be refused (role, its
+    // own detour) is still avoided, which only costs missed deletes, never a strand — and it
+    // keeps the test free of planner state, which is what makes it window-invariant for edges
+    // beyond the stream graph.
+    //
+    // 'angle' (>135°) declines never reach here — a leg that would U-turn off its winner is a
+    // hairpin the owner wants, not redundancy (the node planner records those on its memo). A
+    // victim that WINS any plan declines 'role': its losers' adopted vertices and negotiated
+    // decks would reference a run that never registers. (Coverage bound, stated plainly: a
+    // disjoint loser whose own wander exceeds censusChordM can adopt a winner this edge's scan
+    // cannot see; if that winner is deleted the loser simply serves the ceded span itself — the
+    // absent-winner rule — navigable, just no longer shared.)
+    //
+    // The settled adjacency (g.adj) is deliberately NOT edited: registration-derived state
+    // (pads, inc, surface) follows the surviving legs per-window as usual, while pins and
+    // degrees keep reading the full graph identically everywhere — consistently stale beats
+    // inconsistently fresh (a margin window cannot know what a distant band decided).
+    _v2DeleteFor(g, drop, wide, c1, c2) {
+        const kA = wide.key(c1), kB = wide.key(c2)
+        const ck = kA < kB ? kA + '|' + kB : kB + '|' + kA
+        if (!this._v2DeleteMemo || this._v2DeleteMemo.rev !== this._networkRev) {
+            this._v2DeleteMemo = { rev: this._networkRev, map: new Map() }
+            this._v2Deleted = new Map()
+        }
+        const memo = this._v2DeleteMemo.map
+        if (memo.has(ck)) return memo.get(ck)
+        const fin = (v) => { memo.set(ck, v); return v }
+        const CAP = this._v2Costs().deleteDetourHops ?? 6
+        if (!CAP) return fin(null)
+        const pairs = this._v2ConflictPairs(g, drop, wide, c1, c2)
+        if (!pairs.length) return fin(null)
+        const ckOf = (sp) => { const a = wide.key(sp[0]), b = wide.key(sp[1]); return a < b ? a + '|' + b : b + '|' + a }
+        let winsAny = !!this._v2BundleSolve(g, drop, c1, c2)
+        for (const nk of [kA, kB]) {
+            if (winsAny) break
+            for (const [, spec] of this._v2NodeMerges(g, drop, nk))
+                if (ckOf(spec.winner) === ck) { winsAny = true; break }
+        }
+        const nominating = []
+        for (const t of pairs) {
+            let planned = false, angleExempt = false
+            for (const nk of t.shared) {
+                const nm = this._v2NodeMerges(g, drop, nk)
+                const sE = nm.get(ck); if (sE && ckOf(sE.winner) === t.qck) planned = true
+                const sY = nm.get(t.qck); if (sY && ckOf(sY.winner) === ck) { planned = true; winsAny = true }
+                // Both ceding to the SAME spine is the junction-bundle shape — the pair rides one
+                // pavement by construction and is the merge machinery's business. Deleting a
+                // bundled leg rips a limb out of a composed junction: measured as an 87 m carve
+                // crease at the shared node's chunk when this check was missing.
+                if (sE && sY && ckOf(sE.winner) === ckOf(sY.winner)) planned = true
+                if (nm.declinedAngle?.has(ck < t.qck ? ck + '#' + t.qck : t.qck + '#' + ck)) angleExempt = true
+            }
+            if (!t.shared.length) {
+                const dOwn = this._v2DisjointFor(g, drop, wide, c1, c2)
+                if (dOwn && ckOf(dOwn[0].winner) === t.qck) planned = true
+                if (!planned && t.inG) {
+                    const dQ = this._v2DisjointFor(g, drop, wide, t.spQ[0], t.spQ[1])
+                    if (dQ && ckOf(dQ[0].winner) === ck) { planned = true; winsAny = true }
+                }
+            }
+            if (t.tear && t.longer && !planned && !angleExempt) nominating.push(t)
+        }
+        if (!nominating.length) return fin(null)
+        if (winsAny) { this._v2MergeSkipped('role', `${ck} delete: wins a plan`); return fin(null) }
+        const cells = new Map()
+        for (const [q1, q2] of wide.edges) {
+            const a = wide.key(q1), b = wide.key(q2)
+            cells.set(a < b ? a + '|' + b : b + '|' + a, [q1, q2])
+        }
+        const eK = (a, b) => (a < b ? a + '|' + b : b + '|' + a)
+        const adjOf = (u) => [...(wide.adj.get(u) || [])].filter((v) => !drop.has(u + '|' + v)).sort()
+        const excl = new Set([ck])
+        for (;;) {
+            const parent = new Map([[kA, null]])
+            const bq = [[kA, 0]]
+            let hit = false
+            while (bq.length && !hit) {
+                const [u, d] = bq.shift()
+                if (d >= CAP) continue
+                for (const v of adjOf(u)) {
+                    if (excl.has(eK(u, v)) || parent.has(v)) continue
+                    parent.set(v, u)
+                    if (v === kB) { hit = true; break }
+                    bq.push([v, d + 1])
+                }
+            }
+            if (!hit) { this._v2MergeSkipped('detour', `${ck} delete: no victim-free detour <= ${CAP} hops`); return fin(null) }
+            const path = []
+            for (let v = kB; parent.get(v) !== null; v = parent.get(v)) path.push(eK(parent.get(v), v))
+            let bad = null
+            for (const pe of path) {
+                const pc = cells.get(pe)
+                const pt = pc ? this._v2ConflictPairs(g, drop, wide, pc[0], pc[1]) : []
+                if (!pc || pt.some((t2) => t2.tear && t2.longer)) { bad = pe; break }
+            }
+            if (!bad) {
+                const rec = { ck, key: `g:${g.key(c1)}:${g.key(c2)}`, hops: path.length,
+                              pairs: nominating.map((t) => t.qck),
+                              pts: this._v2RunSample(g, drop, c1, c2)?.pts ?? null }
+                this._v2Deleted.set(ck, rec)
+                return fin(rec)
+            }
+            excl.add(bad)
+        }
+    }
+
     // Guard telemetry: every merge guard SKIPS AND COUNTS, never forces. Read by
     // test/capture-classify.mjs to answer "the owner's capture did not merge — which guard?".
     // The detail list names the pair as well as the reason (capped — this is a report, not a log).
@@ -3245,11 +3476,13 @@ export class RoadSystem {
         const flip = (gk) => 'g:' + gk.slice(2).split(':').reverse().join(':')
         const runOf = (gk) => this._network.get(gk) ?? this._network.get(flip(gk))
         const names = (sp, gk) => sp.owner === gk || sp.owner === flip(gk)
+        const delCk = (gk) => { const [a, b] = gk.slice(2).split(':'); return a < b ? a + '|' + b : b + '|' + a }
         for (const d of cs.disjoint) {
             const offA = runOf(d.a)?.offCurveSpans || [], offB = runOf(d.b)?.offCurveSpans || []
-            d.resolved = offA.some((sp) => names(sp, d.b))
+            d.resolved = (offA.some((sp) => names(sp, d.b))
                 || offB.some((sp) => names(sp, d.a))
-                || offA.some((sp) => offB.some((o) => o.owner === sp.owner))
+                || offA.some((sp) => offB.some((o) => o.owner === sp.owner))) ? 'merged'
+                : (this._v2Deleted?.has(delCk(d.a)) || this._v2Deleted?.has(delCk(d.b))) ? 'deleted' : false
         }
         return cs
     }
@@ -4047,6 +4280,11 @@ export class RoadSystem {
             if (!inBand(c1) && !inBand(c2)) continue   // fully-margin edge: not registered (frontier, like rows pad)
             const A = this._nodePos(c1), B = this._nodePos(c2)
             { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }   // degenerate (coincident) edge
+            // BUG-55 phase 5: the delete rung — a tear-grade pair past the merge ladder loses
+            // its longer member when its endpoints reconnect without leaning on any other
+            // possible victim (_v2DeleteFor). A deleted edge never builds a centerline and never
+            // registers; g.adj stays untouched (see the method header for why).
+            if (this._v2DeleteFor(g, drop, wide, c1, c2)) continue
             const key = `g:${g.key(c1)}:${g.key(c2)}`
             const cl = this._edgeCenterline(c1, c2, this._v2EdgeDirs(g, drop, g.key(c1), g.key(c2)))
             if (!cl || cl.length < 1e-6) continue

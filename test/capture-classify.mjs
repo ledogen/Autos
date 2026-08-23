@@ -70,7 +70,16 @@ for (const why of road._v2MergeSkipWhy || []) console.log(`       skipped  ${why
 // BUG-55: the pair census's disjoint findings (pairs sharing NO node — invisible to the per-node
 // planner). Phase 1 counts them; the resolution ladder lands on them later.
 for (const d of road._v2CensusStampResolved()?.disjoint || [])
-  console.log(`     census disjoint: ${d.a} × ${d.b} · near ${d.nearLen.toFixed(0)} m, minSep ${d.minSep.toFixed(1)}, deck gap ${d.maxDy.toFixed(1)} m${d.resolved ? ' · resolved (merged)' : d.tear ? ' · TEAR (unresolved)' : ''}`)
+  console.log(`     census disjoint: ${d.a} × ${d.b} · near ${d.nearLen.toFixed(0)} m, minSep ${d.minSep.toFixed(1)}, deck gap ${d.maxDy.toFixed(1)} m${d.resolved ? ` · resolved (${d.resolved})` : d.tear ? ' · TEAR (unresolved)' : ''}`)
+// BUG-55 phase 5: a mark over deleted tarmac must not silently print CLEAN — say what was
+// deleted, why, and whether the mark sits on it.
+let deletedAtMark = 0
+for (const rec of (road._v2Deleted || new Map()).values()) {
+  let dMin = Infinity
+  for (const p of rec.pts || []) { const dd = Math.hypot(p.x - MX, p.z - MZ); if (dd < dMin) dMin = dd }
+  if (dMin < LOOK) deletedAtMark++
+  console.log(`     resolved by DELETING ${rec.key} (detour ${rec.hops} hops) · pairs: ${rec.pairs.join(', ')}${dMin < LOOK ? '   <<< AT THE MARK' : ''}`)
+}
 for (const o of atMark) {
   const ceded = (o.r.e.cededSpans || []).map((s) => `${s.s0.toFixed(0)}–${s.s1.toFixed(0)} m to ${s.owner}`)
   console.log(`     ${o.r.k}  ${o.r.len.toFixed(0)} m · ${o.hit.d.toFixed(0)} m from mark` +
@@ -122,4 +131,4 @@ for (let i = 0; i < atMark.length; i++) for (let j = i + 1; j < atMark.length; j
   for (const x of xs)
     console.log(`      CROSSES @(${x.px.toFixed(0)},${x.pz.toFixed(0)}) with ${x.gap.toFixed(1)} m between decks · ${x.dMark.toFixed(0)} m from mark${x.dMark < LOOK ? '   <<< AT THE MARK' : ''}`)
 }
-if (!defects) console.log(`\n   CLEAN — no unmerged conflict between any pair of runs at this mark.`)
+if (!defects) console.log(`\n   CLEAN — no unmerged conflict between any pair of runs at this mark.${deletedAtMark ? ` (${deletedAtMark} DELETED run(s) pass within ${LOOK} m — see above)` : ''}`)
